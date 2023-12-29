@@ -64,3 +64,10 @@ add_executable(
   cpp11.cu
 )
 
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  target_compile_options(
+    cutlass_test_unit_core_cpp11
+    PRIVATE
+    $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler -Werror>
+  )
+endif()

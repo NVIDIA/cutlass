@@ -46,6 +46,7 @@
 #include "cutlass/numeric_types.h"
 #include "cutlass/arch/arch.h"
 #include "cutlass/device_kernel.h"
+#include "cutlass/cuda_host_adapter.hpp"
 
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/gemm/kernel/gemm_universal.h"
@@ -69,6 +70,8 @@ class GemmUniversalBase {
 public:
 
   using GemmKernel = GemmKernel_;
+  static bool const kEnableCudaHostAdapter = CUTLASS_ENABLE_CUDA_HOST_ADAPTER;
+
   using ThreadblockShape = typename GemmKernel::Mma::Shape;
 
   using ElementA = typename GemmKernel::ElementA;
@@ -295,7 +298,8 @@ public:
   Status initialize(
     Arguments const &args,
     void *workspace = nullptr,
-    cudaStream_t stream = nullptr)
+    cudaStream_t stream = nullptr,
+    CudaHostAdapter *cuda_adapter = nullptr)
   {
     CUTLASS_TRACE_HOST("GemmUniversalBase::initialize() - workspace "
       << workspace << ", stream: " << (stream ? "non-null" : "null"));
@@ -323,9 +327,8 @@ public:
     return Status::kSuccess;
   }
 
-
   /// Runs the kernel using initialized state.
-  Status run(cudaStream_t stream = nullptr)
+  Status run(cudaStream_t stream = nullptr, CudaHostAdapter *cuda_adapter = nullptr)
   {
     CUTLASS_TRACE_HOST("GemmUniversalBase::run()");
 
@@ -339,13 +342,27 @@ public:
       "block: (" << block << "), "
       "SMEM: (" << smem_size_ << ")");
 
-    Kernel2<GemmKernel><<<grid, block, smem_size_, stream>>>(params_);
+    if constexpr (kEnableCudaHostAdapter) {
+      CUTLASS_ASSERT(cuda_adapter);
+      if (cuda_adapter) {
+        void* kernel_params[] = {&params_};
+        return cuda_adapter->launch(grid, block, smem_size_, stream, kernel_params, 0);
+      }
+      else {
+        return Status::kErrorInternal;
+      }
+    }
+    else {
+      CUTLASS_ASSERT(cuda_adapter == nullptr);
 
-    // Query for errors
-    cudaError_t result = cudaGetLastError();
-    if (result != cudaSuccess) {
-      CUTLASS_TRACE_HOST("  grid launch failed with error " << cudaGetErrorString(result));
-      return Status::kErrorInternal;
+      Kernel2<GemmKernel><<<grid, block, smem_size_, stream>>>(params_);
+
+      // Query for errors
+      cudaError_t result = cudaGetLastError();
+      if (result != cudaSuccess) {
+        CUTLASS_TRACE_HOST("  grid launch failed with error " << cudaGetErrorString(result));
+        return Status::kErrorInternal;
+      }
     }
 
     return Status::kSuccess;
@@ -363,12 +380,13 @@ public:
   Status operator()(
     Arguments const &args, 
     void *workspace = nullptr, 
-    cudaStream_t stream = nullptr)
+    cudaStream_t stream = nullptr,
+    CudaHostAdapter *cuda_adapter = nullptr)
   {
     Status status = initialize(args, workspace, stream);
 
     if (status == Status::kSuccess) {
-      status = run(stream);
+      status = run(stream, cuda_adapter);
     }
 
     return status;

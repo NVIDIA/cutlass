@@ -57,61 +57,6 @@ num_digits(int x)
                   10)))))))));
 }
 
-template <class T>
-struct format_and_size {
-  using type = T;
-  char const* format;
-  int digits;
-};
-
-CUTE_HOST_DEVICE
-format_and_size<int>
-get_format(bool) {
-  return {"%*d", 3};
-}
-
-CUTE_HOST_DEVICE
-format_and_size<int32_t>
-get_format(int32_t) {
-  return {"%*d", 5};
-}
-
-CUTE_HOST_DEVICE
-format_and_size<uint32_t>
-get_format(uint32_t) {
-  return {"%*d", 5};
-}
-
-CUTE_HOST_DEVICE
-format_and_size<int64_t>
-get_format(int64_t) {
-  return {"%*d", 5};
-}
-
-CUTE_HOST_DEVICE
-format_and_size<uint64_t>
-get_format(uint64_t) {
-  return {"%*d", 5};
-}
-
-CUTE_HOST_DEVICE
-format_and_size<float>
-get_format(half_t) {
-  return {"%*.2f", 8};
-}
-
-CUTE_HOST_DEVICE
-format_and_size<float>
-get_format(float) {
-  return {"%*.2e", 10};
-}
-
-CUTE_HOST_DEVICE
-format_and_size<double>
-get_format(double) {
-  return {"%*.3e", 11};
-}
-
 //
 // print dispatcher
 //
@@ -193,6 +138,56 @@ CUTE_HOST_DEVICE
 void
 print(char const* format) {
   printf("%s", format);
+}
+
+//
+// pretty printing
+//
+
+template <class T>
+CUTE_HOST_DEVICE void
+pretty_print(T const& v) {
+  printf("  "); print(v);
+}
+
+CUTE_HOST_DEVICE void
+pretty_print(bool const& v) {
+  printf("%*d", 3, int(v));
+}
+
+CUTE_HOST_DEVICE void
+pretty_print(int32_t const& v) {
+  printf("%*d", 5, v);
+}
+
+CUTE_HOST_DEVICE void
+pretty_print(uint32_t const& v) {
+  printf("%*d", 5, v);
+}
+
+CUTE_HOST_DEVICE void
+pretty_print(int64_t const& v) {
+  printf("%*lld", 5, static_cast<long long>(v));
+}
+
+CUTE_HOST_DEVICE void
+pretty_print(uint64_t const& v) {
+  printf("%*llu", 5, static_cast<unsigned long long>(v));
+}
+
+CUTE_HOST_DEVICE void
+pretty_print(half_t const& v) {
+  printf("%*.2f", 8, float(v));
+}
+
+CUTE_HOST_DEVICE void
+pretty_print(float const& v) {
+  printf("%*.2e", 10, v);
+}
+
+CUTE_HOST_DEVICE void
+pretty_print(double const& v) {
+  printf("%*.3e", 11, v);
 }
 
 } // end namespace cute

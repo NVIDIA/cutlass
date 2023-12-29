@@ -147,6 +147,20 @@ TEST(FastNumericConversion, s32_to_f32) {
   test::core::kernel::run_test_integer_range_limited<Destination, Source, kN>();
 }
 
+TEST(FastNumericConversion, s8_to_f32_array) {
+  int const kN = 256;
+  using Source = int8_t;
+  using Destination = float;
+  test::core::kernel::run_test_integer_range_all<Destination, Source, kN>();
+}
+
+TEST(FastNumericConversion, u8_to_f32_array) {
+  int const kN = 256;
+  using Source = uint8_t;
+  using Destination = float;
+  test::core::kernel::run_test_integer_range_all<Destination, Source, kN>();
+}
+
 TEST(FastNumericConversion, s8_to_f16_array) {
   int const kN = 256;
   using Source = int8_t;

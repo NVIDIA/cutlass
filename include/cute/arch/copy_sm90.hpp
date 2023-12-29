@@ -40,6 +40,11 @@
 #  define CUTE_ARCH_TMA_SM90_ENABLED
 #endif
 
+#if defined(CUTE_ARCH_TMA_SM90_ENABLED) && \
+  ((__CUDACC_VER_MAJOR__ > 12) || ((__CUDACC_VER_MAJOR__ == 12) && (__CUDACC_VER_MINOR__ >= 3)))
+#  define CUTE_ARCH_DEVICE_MODIFIABLE_TMA_SM90_ENABLED
+#endif
+
 namespace cute
 {
 

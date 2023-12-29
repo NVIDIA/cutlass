@@ -69,6 +69,7 @@ enum class GemmUniversalMode {
   kGemmSplitKParallel,
   kBatched,
   kArray,
+  kGrouped,
   kInvalid
 };
 

@@ -36,7 +36,7 @@
 #include <fstream>
 
 #include "../../common/cutlass_unit_test.h"
-#include "cache_testbed_output.h"
+#include "../cache_testbed_output.h"
 #include "conv2d_problems.h"
 #include "cutlass/conv/device/direct_convolution.h"
 
@@ -466,8 +466,8 @@ bool TestSpecificDepthwiseDirectConv2d(const Conv2dProblemVector &problem_sizes)
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-}  // namespace device
-}  // namespace conv
-}  // namespace test
+} // namespace device
+} // namespace conv
+} // namespace test
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

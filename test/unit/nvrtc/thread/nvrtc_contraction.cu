@@ -43,6 +43,7 @@
 static_assert(0, "CUDA include path is not defined");
 #endif
 
+#if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
 TEST(SM90_nvrtc_kernel, Contraction) {
   static const char* nvrtc_opts[] = {
     "-w",
@@ -62,5 +63,5 @@ TEST(SM90_nvrtc_kernel, Contraction) {
     { nvrtc_opts, nvrtc_opts + 5 }
   ));
 }
-
+#endif
 /////////////////////////////////////////////////////////////////////////////////////////////////

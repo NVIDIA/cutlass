@@ -981,7 +981,6 @@ auto
 composition(Layout<LShape,LStride> const& lhs,
             Layout<RShape,RStride> const& rhs)
 {
-  //return detail::composition_impl(flatten(lhs), rhs.shape(), rhs.stride());
   return detail::composition_impl(lhs, rhs.shape(), rhs.stride());
 }
 
@@ -997,8 +996,8 @@ composition(Layout<LShape,LStride> const& lhs,
     return detail::transform_layout(lhs, rhs, [](auto const& l, auto const& r) { return composition(l,r); }, make_seq<tuple_size<IntTuple>::value>{}, seq<>{}, seq<>{});
   } else if constexpr (is_underscore<IntTuple>::value) {
     return lhs;
-  } else {
-    return composition(lhs, make_layout(rhs));
+  } else if constexpr (is_integral<IntTuple>::value) {
+    return detail::composition_impl(lhs, rhs, Int<1>{});
   }
 
   CUTE_GCC_UNREACHABLE;
@@ -1097,15 +1096,18 @@ inverse_seq(Shape const& shape, Stride const& stride, seq<Is...>)
   auto next_I = cute::find_if(stride, [](auto a) { return is_constant<NextStride, decltype(a)>{}; });
 
   if constexpr (next_I == decltype(rank(stride))::value) {
+    // If not found, return current seq
     return seq<Is...>{};
   } else {
     // auto next_stride = get<next_I>(shape) * get<next_I>(stride);
     // NOTE: Needed for g++-7
     using next_stride = decltype(get<next_I>(shape) * get<next_I>(stride));
 
-    if constexpr (is_static<next_stride>::value) {
+    if constexpr (is_static<next_stride>::value && !is_constant<NextStride, next_stride>::value) {
+      // If next_stride is static and unique, then continue
       return inverse_seq<next_stride::value>(shape, stride, seq<Is..., next_I>{});
     } else {
+      // Else return current seq + next_I
       return seq<Is..., next_I>{};
     }
   }
@@ -1340,28 +1342,24 @@ template <class LShape, class LStride,
 CUTE_HOST_DEVICE constexpr
 auto
 logical_divide(Layout<LShape,LStride> const& layout,
-               Layout<TShape,TStride> const& tile)
+               Layout<TShape,TStride> const& tiler)
 {
-  //CUTE_STATIC_ASSERT_V(size(layout) % size(tile) == Int<0>{},
-  //                     "Tiling does not evenly divide the block");
-  // NOTE: With tiles that have stride-0, this doesn't have to be true
-
-  return composition(layout, make_layout(tile, complement(tile, size(layout))));
+  return composition(layout, make_layout(tiler, complement(tiler, size(layout))));
 }
 
-template <class LShape, class LStride, class IntTuple>
+template <class LShape, class LStride, class Tiler>
 CUTE_HOST_DEVICE constexpr
 auto
 logical_divide(Layout<LShape,LStride> const& layout,
-               IntTuple               const& tile)
+               Tiler                  const& tiler)
 {
-  if constexpr (is_tuple<IntTuple>::value) {
-    static_assert(tuple_size<IntTuple>::value <= Layout<LShape,LStride>::rank, "logical_divide: Too many modes in tile.");
-    return transform_layout(layout, tile, [](auto const& l, auto const& t) { return logical_divide(l,t); });
-  } else if constexpr (is_underscore<IntTuple>::value) {
+  if constexpr (is_tuple<Tiler>::value) {
+    static_assert(tuple_size<Tiler>::value <= Layout<LShape,LStride>::rank, "logical_divide: Too many modes in tiler.");
+    return transform_layout(layout, tiler, [](auto const& l, auto const& t) { return logical_divide(l,t); });
+  } else if constexpr (is_underscore<Tiler>::value) {
     return layout;
-  } else if constexpr (is_integral<IntTuple>::value) {
-    return logical_divide(layout, make_layout(tile));
+  } else if constexpr (is_integral<Tiler>::value) {
+    return logical_divide(layout, make_layout(tiler));
   }
 
   CUTE_GCC_UNREACHABLE;
@@ -1374,24 +1372,24 @@ logical_divide(Layout<LShape,LStride> const& layout,
 //
 
 template <class LShape, class LStride,
-          class Tile>
+          class Tiler>
 CUTE_HOST_DEVICE constexpr
 auto
 zipped_divide(Layout<LShape,LStride> const& layout,
-              Tile                   const& tile)
+              Tiler                  const& tiler)
 {
-  return tile_unzip(logical_divide(layout, tile), tile);
+  return tile_unzip(logical_divide(layout, tiler), tiler);
 }
 
 // Same as zipped_divide, but unpacks the second mode: ((BLK_A,BLK_B,...),a,b,...,x,y)
 template <class LShape, class LStride,
-          class Tile>
+          class Tiler>
 CUTE_HOST_DEVICE constexpr
 auto
 tiled_divide(Layout<LShape,LStride> const& layout,
-             Tile                   const& tile)
+             Tiler                  const& tiler)
 {
-  auto div = zipped_divide(layout, tile);
+  auto div = zipped_divide(layout, tiler);
 
   auto R = rank<1>(div);
   return div(_, repeat<R>(_));
@@ -1399,13 +1397,13 @@ tiled_divide(Layout<LShape,LStride> const& layout,
 
 // Same as zipped_divide, but unpacks both modes: (BLK_A,BLK_B,...,a,b,...,x,y)
 template <class LShape, class LStride,
-          class Tile>
+          class Tiler>
 CUTE_HOST_DEVICE constexpr
 auto
 flat_divide(Layout<LShape,LStride> const& layout,
-            Tile                   const& tile)
+            Tiler                  const& tiler)
 {
-  auto div = zipped_divide(layout, tile);
+  auto div = zipped_divide(layout, tiler);
 
   auto R0 = rank<0>(div);
   auto R1 = rank<1>(div);
@@ -1421,24 +1419,24 @@ template <class LShape, class LStride,
 CUTE_HOST_DEVICE constexpr
 auto
 logical_product(Layout<LShape,LStride> const& layout,
-                Layout<TShape,TStride> const& tile)
+                Layout<TShape,TStride> const& tiler)
 {
-  return make_layout(layout, composition(complement(layout, size(layout)*cosize(tile)), tile));
+  return make_layout(layout, composition(complement(layout, size(layout)*cosize(tiler)), tiler));
 }
 
-template <class LShape, class LStride, class IntTuple>
+template <class LShape, class LStride, class Tiler>
 CUTE_HOST_DEVICE constexpr
 auto
 logical_product(Layout<LShape,LStride> const& layout,
-                IntTuple               const& tile)
+                Tiler                  const& tiler)
 {
-  if constexpr (is_tuple<IntTuple>::value) {
-    static_assert(tuple_size<IntTuple>::value <= Layout<LShape,LStride>::rank);
-    return transform_layout(layout, tile, [](auto const& l, auto const& t) { return logical_product(l,t); });
-  } else if constexpr (is_underscore<IntTuple>::value) {
+  if constexpr (is_tuple<Tiler>::value) {
+    static_assert(tuple_size<Tiler>::value <= Layout<LShape,LStride>::rank, "logical_product: Too many modes in tiler.");
+    return transform_layout(layout, tiler, [](auto const& l, auto const& t) { return logical_product(l,t); });
+  } else if constexpr (is_underscore<Tiler>::value) {
     return layout;
-  } else if constexpr (is_integral<IntTuple>::value) {
-    return logical_product(layout, make_layout(tile));
+  } else if constexpr (is_integral<Tiler>::value) {
+    return logical_product(layout, make_layout(tiler));
   }
 
   CUTE_GCC_UNREACHABLE;
@@ -1451,45 +1449,43 @@ logical_product(Layout<LShape,LStride> const& layout,
 //
 
 template <class LShape, class LStride,
-          class Tile>
+          class Tiler>
 CUTE_HOST_DEVICE constexpr
 auto
 zipped_product(Layout<LShape,LStride> const& layout,
-               Tile                   const& tile)
+               Tiler                  const& tiler)
 {
-  return tile_unzip(logical_product(layout, tile), tile);
+  return tile_unzip(logical_product(layout, tiler), tiler);
 }
 
 // Same as zipped_product, but unpacks the second mode: ((BLK_A,BLK_B,...),a,b,...,x,y)
 template <class LShape, class LStride,
-          class Tile>
+          class Tiler>
 CUTE_HOST_DEVICE constexpr
 auto
 tiled_product(Layout<LShape,LStride> const& layout,
-              Tile                   const& tile)
+              Tiler                  const& tiler)
 {
-  auto div = zipped_product(layout, tile);
+  auto div = zipped_product(layout, tiler);
 
-  auto R = rank(tile);
+  auto R = rank<1>(div);
   return div(_, repeat<R>(_));
 }
 
-// Attempts to reproduce layout "block" over layout "layout"
-// That is, think of every element of "layout" as a "block"
+// Attempts to reproduce a layout over a tiler
+// That is, think of every element of "tiler" as a "layout"
 //   and return the layout of the resulting structure
 template <class TShape, class TStride,
           class UShape, class UStride>
 CUTE_HOST_DEVICE constexpr
 auto
-blocked_product(Layout<TShape,TStride> const& block,
-                Layout<UShape,UStride> const& layout)
+blocked_product(Layout<TShape,TStride> const& layout,
+                Layout<UShape,UStride> const& tiler)
 {
   constexpr int R = cute::max(rank_v<TShape>, rank_v<UShape>);
-  auto padded_block  = append<R>(block);
-  auto padded_layout = append<R>(layout);
 
-  auto result = logical_product(padded_block, padded_layout);
-
+  auto result = logical_product(append<R>(layout), append<R>(tiler));
+  
   return coalesce(zip(get<0>(result), get<1>(result)), repeat<R>(Int<1>{}));
 }
 
@@ -1497,14 +1493,12 @@ template <class TShape, class TStride,
           class UShape, class UStride>
 CUTE_HOST_DEVICE constexpr
 auto
-raked_product(Layout<TShape,TStride> const& block,
-              Layout<UShape,UStride> const& layout)
+raked_product(Layout<TShape,TStride> const& layout,
+              Layout<UShape,UStride> const& tiler)
 {
   constexpr int R = cute::max(rank_v<TShape>, rank_v<UShape>);
-  auto padded_block  = append<R>(block);
-  auto padded_layout = append<R>(layout);
 
-  auto result = logical_product(padded_block, padded_layout);
+  auto result = logical_product(append<R>(layout), append<R>(tiler));
 
   return coalesce(zip(get<1>(result), get<0>(result)), repeat<R>(Int<1>{}));
 }

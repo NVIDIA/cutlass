@@ -44,7 +44,7 @@ function(cutlass_example_add_executable NAME)
     set(__DISABLE_TESTS OFF)
   endif()
 
-  cutlass_add_executable(${NAME} ${__UNPARSED_ARGUMENTS})
+  cutlass_add_executable(${NAME} ${__UNPARSED_ARGUMENTS} BATCH_SOURCES OFF)
 
   add_dependencies(cutlass_examples ${NAME})
 
@@ -136,6 +136,8 @@ foreach(EXAMPLE
   53_hopper_gemm_permute
   54_hopper_fp8_warp_specialized_gemm
   55_hopper_mixed_dtype_gemm
+  56_hopper_ptr_array_batched_gemm
+  57_hopper_grouped_gemm
   )
 
   add_subdirectory(${EXAMPLE})

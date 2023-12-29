@@ -382,7 +382,7 @@ public:
   HostAuxLoad(){}
   template<typename ProblemShapeType>
   HostAuxLoad(ProblemShapeType problem_size, TestBedImpl impl, bool check_relative_equality=false)
-    : Base(check_relative_equality), impl_(impl){
+    : Base(check_relative_equality), impl_(impl) {
     auto problem_shape_NMKL = cute::append<4>(problem_size, 1);
     auto [_M, _N, K, _L] = problem_shape_NMKL;
     auto aux_coord = cutlass::make_Coord(_M * _L, _N);

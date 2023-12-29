@@ -76,6 +76,12 @@ public:
     is_final_split(uint32_t k_tiles_per_output_tile) const {
       return true;
     }
+
+    CUTLASS_HOST_DEVICE
+    int32_t
+    reduction_subtile_idx() const {
+      return -1;
+    }
   };
 
   using Params = PersistentTileSchedulerSm90Params;
@@ -101,7 +107,8 @@ public:
     ClusterShape cluster_shape,
     [[maybe_unused]] KernelHardwareInfo const& hw_info,
     Arguments const& arguments,
-    [[maybe_unused]] void* workspace=nullptr) {
+    [[maybe_unused]] void* workspace=nullptr,
+    [[maybe_unused]] const uint32_t epilogue_subtile = 1) {
 
     // We only need the tile and cluster shape during scheduler setup, so let FTAD do the magic
     static_assert(cute::is_static<TileShape>::value);
@@ -114,11 +121,17 @@ public:
       problem_blocks,
       to_gemm_coord(cluster_shape),
       hw_info,
-      arguments.max_swizzle_size, 
+      arguments.max_swizzle_size,
       arguments.raster_order
     );
 
     return params;
+  }
+
+  CUTLASS_HOST_DEVICE
+  static bool
+  can_implement(Arguments const& args) {
+    return true;
   }
 
   CUTLASS_HOST_DEVICE
@@ -164,7 +177,7 @@ public:
                                                          scheduler_params.divmod_cluster_shape_major_,
                                                          scheduler_params.divmod_cluster_shape_minor_,
                                                          scheduler_params.divmod_cluster_blk_major_,
-                                                         scheduler_params.log_swizzle_size_, 
+                                                         scheduler_params.log_swizzle_size_,
                                                          scheduler_params.raster_order_);
 
     return {work_idx_m, work_idx_n, static_cast<int32_t>(work_idx_l), true};
@@ -180,11 +193,11 @@ public:
   static CUTLASS_DEVICE
   cute::tuple<int32_t, int32_t>
   get_work_idx_m_and_n(
-      uint64_t blk_per_grid_dim, 
+      uint64_t blk_per_grid_dim,
       FastDivmodU64Pow2 const& divmod_cluster_shape_major,
       FastDivmodU64Pow2 const& divmod_cluster_shape_minor,
       FastDivmodU64 const& divmod_cluster_blk_major,
-      int32_t log_swizzle_size, 
+      int32_t log_swizzle_size,
       RasterOrder raster_order) {
 
     uint64_t cluster_id, cluster_major_offset = 0, cluster_minor_offset = 0;
@@ -199,26 +212,26 @@ public:
     }
 
     uint64_t cluster_idx_minor, cluster_idx_major;
-    
+
     uint64_t cluster_idx_minor_div_swizzle, extra, offset;
 
     offset = cluster_id & ((1 << log_swizzle_size) - 1);
     extra = cluster_id >> log_swizzle_size;
-    
+
     divmod_cluster_blk_major(cluster_idx_minor_div_swizzle, cluster_idx_major, extra);
 
     cluster_idx_minor = cluster_idx_minor_div_swizzle * (1 << log_swizzle_size) + offset;
 
-    auto minor_work_idx = static_cast<int32_t>(cluster_idx_minor * divmod_cluster_shape_minor.divisor + 
+    auto minor_work_idx = static_cast<int32_t>(cluster_idx_minor * divmod_cluster_shape_minor.divisor +
                                                cluster_minor_offset);
-    auto major_work_idx = static_cast<int32_t>(cluster_idx_major * divmod_cluster_shape_major.divisor + 
+    auto major_work_idx = static_cast<int32_t>(cluster_idx_major * divmod_cluster_shape_major.divisor +
                                                cluster_major_offset);
 
     if (raster_order == RasterOrder::AlongN) {
       return {minor_work_idx, major_work_idx};
     }
     else {
-      return {major_work_idx, minor_work_idx}; 
+      return {major_work_idx, minor_work_idx};
     }
 
   }
@@ -331,13 +344,14 @@ public:
   // The basic tile scheduler does not require any additional workspace
   template <class ProblemShape, class ElementAccumulator>
   static int
-  get_workspace_size(Arguments const&, ProblemShape, KernelHardwareInfo const&, uint32_t) {
+  get_workspace_size(Arguments const&, ProblemShape, KernelHardwareInfo const&, uint32_t, const uint32_t = 1) {
     return 0;
   }
 
   template <class ProblemShape, class ElementAccumulator>
   static cutlass::Status
-  initialize_workspace(Arguments const&, void*, cudaStream_t, ProblemShape, KernelHardwareInfo const&, uint32_t) {
+  initialize_workspace(Arguments const&, void*, cudaStream_t, ProblemShape, KernelHardwareInfo const&,
+    uint32_t, const uint32_t = 1) {
     return Status::kSuccess;
   }
 
@@ -353,8 +367,61 @@ public:
   CUTLASS_HOST_DEVICE
   static uint32_t
   get_work_k_tile_start(WorkTileInfo const&) {
-    // All work units returned by this scheduler start from K tile 0
-    return 0u;
+  // All work units returned by this scheduler start from K tile 0
+  return 0u;
+  }
+
+  CUTLASS_DEVICE
+  static bool
+  need_separate_reduction(Params const& params) {
+    return false;
+  }
+
+  CUTLASS_DEVICE
+  bool
+  is_work_tile_for_reduction(WorkTileInfo const& work_tile_info, Params const& params) {
+    return false;
+  }
+
+  CUTLASS_DEVICE
+  uint32_t
+  epilgoue_subtile_idx(WorkTileInfo const& work_tile_info, Params const& params) const {
+    return 0;
+  }
+
+  template <class FrgTensorC>
+  CUTLASS_DEVICE
+  void
+  separate_reduction(
+    Params const& params,
+    WorkTileInfo const& work_tile_info,
+    FrgTensorC& accumulators,
+    uint32_t num_barriers,
+    uint32_t barrier_idx) {
+  }
+
+  // Shares the accumulator set with peers in the global workspace
+  template <class FrgTensorC>
+  CUTLASS_DEVICE
+  static void
+  share(
+    Params const& params,
+    WorkTileInfo const& work_tile_info,
+    FrgTensorC& accumulators,
+    uint32_t num_barriers,
+    uint32_t barrier_idx) {
+  }
+
+  CUTLASS_DEVICE
+  static bool
+  valid_warpgroup_in_work_tile(WorkTileInfo const& work_tile_info) {
+    return true;
+  }
+
+  CUTLASS_DEVICE
+  static bool
+  requires_separate_reduction(Params const& params) {
+    return false;
   }
 };
 

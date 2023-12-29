@@ -181,7 +181,7 @@ template <class T0, class T1, class... Ts>
 CUTE_HOST_DEVICE constexpr
 auto
 make_inttuple_iter(T0 const& t0, T1 const& t1, Ts const&... ts) {
-  return make_tuple_iter(cute::make_tuple(t0, t1, ts...));
+  return make_inttuple_iter(cute::make_tuple(t0, t1, ts...));
 }
 
 //

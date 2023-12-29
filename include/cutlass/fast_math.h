@@ -187,7 +187,7 @@ CUTLASS_CONSTEXPR_IF_CXX17
 value_t lcm(value_t a, value_t b) {
   value_t temp = gcd(a, b);
 
-  return temp ? (cutlass::abs_for_integer(a) / temp * cutlass::abs_for_integer(b)) : 0;
+  return temp ? (cutlass::abs_for_integer(a) / temp * cutlass::abs_for_integer(b)) : value_t();
 }
 
 /**
@@ -207,8 +207,11 @@ template <typename value_t>
 CUTLASS_HOST_DEVICE
 constexpr
 value_t lcm_cxx11(value_t a, value_t b) {
-  return gcd_cxx11(a, b) ? (cutlass::abs_for_integer(a) / gcd_cxx11(a, b) * cutlass::abs_for_integer(b)) : 0;
+  return gcd_cxx11(a, b) ? (cutlass::abs_for_integer(a) / gcd_cxx11(a, b) *
+                            cutlass::abs_for_integer(b))
+                         : value_t();
 }
+
 /// Returns the smallest value in the half-open range [a, a+b) that is a multiple of b
 CUTLASS_HOST_DEVICE
 CUTLASS_CONSTEXPR_IF_CXX17

@@ -47,8 +47,8 @@ from utils.evt_testbed import EVTTestBed, EVTTestCaseBase
 cutlass.set_log_level(logging.WARNING)
 
 
-@unittest.skipIf(device_cc() not in [80, 90], "This unittest is for Sm80 and Sm90 only")
-class TestEVTMixedSM90(EVTTestCaseBase):
+@unittest.skipIf(device_cc() not in [80, 86, 89, 90], "This unittest is only supported on CC [80, 86, 89, 90]")
+class TestEVTMixed(EVTTestCaseBase):
     def test_mixed_dag(self):
         def evt_mixed_dag(accum, alpha, C, beta, aux, cbias, rbias):
             F = alpha * accum + (beta * C + aux)
@@ -84,7 +84,7 @@ class TestEVTMixedSM90(EVTTestCaseBase):
                 result_keys = ["D", "F", "F_row_max", "E_col_max"]
                 launcher.verify((m, n, k), input_keys, result_keys, l)
 
-    @unittest.skipIf(device_cc() != 80, "This unittest is for cc = Sm80 only")
+    @unittest.skipIf(device_cc() not in [80, 89], "This unittest is for cc 80 and 89 only")
     def test_mixed_dag_float(self):
         def evt_mixed_dag(accum, alpha, C, beta, aux, cbias, rbias):
             F = alpha * accum + (beta * C + aux)
@@ -114,7 +114,7 @@ class TestEVTMixedSM90(EVTTestCaseBase):
                 result_keys = ["D", "F", "F_row_max", "E_col_max"]
                 launcher.verify((m, n, k), input_keys, result_keys, l)
 
-    @unittest.skipIf(device_cc() != 80, "This unittest is for cc = Sm80 only")
+    @unittest.skipIf(device_cc() not in [80, 89], "This unittest is for cc 80 and 89 only")
     def test_mixed_dag_stage2(self):
         def evt_mixed_dag(accum, alpha, C, beta, aux, cbias, rbias):
             F = alpha * accum + (beta * C + aux)
@@ -144,7 +144,7 @@ class TestEVTMixedSM90(EVTTestCaseBase):
             result_keys = ["D", "F", "F_row_max", "E_col_max"]
             launcher.verify((m, n, k), input_keys, result_keys, l)
 
-    @unittest.skipIf(device_cc() != 80, "This unittest is for cc = Sm80 only")
+    @unittest.skipIf(device_cc() not in [80, 89], "This unittest is for cc 80 and 89 only")
     def test_mixed_dag_partition_k(self):
         def evt_mixed_dag(accum, alpha, C, beta, aux, cbias, rbias):
             F = alpha * accum + (beta * C + aux)
@@ -179,7 +179,7 @@ class TestEVTMixedSM90(EVTTestCaseBase):
             result_keys = ["D", "F", "F_row_max", "E_col_max"]
             launcher.verify((m, n, k), input_keys, result_keys, l)
 
-    @unittest.skipIf(device_cc() != 80, "This unittest is for cc = Sm80 only")
+    @unittest.skipIf(device_cc() not in [80, 89], "This unittest is for cc 80 and 89 only")
     def test_mixed_dag_stream_k(self):
         def evt_mixed_dag(accum, alpha, C, beta, aux, cbias, rbias):
             F = alpha * accum + (beta * C + aux)

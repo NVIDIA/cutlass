@@ -99,7 +99,8 @@ TEST(SM90_Device_Gemm_e4m3t_e4m3n_f32n_tensor_op_gmma_f32_cooperative_stream_k, 
   >;
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
-  EXPECT_TRUE(test::gemm::device::TestAllBiasElementwise<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllBiasElementwise<Gemm>(1.0, 0.0));
+  EXPECT_TRUE(test::gemm::device::TestAllBiasElementwise<Gemm>(1.0, 1.0));
 }
 
 TEST(SM90_Device_Gemm_e4m3t_e4m3n_f32n_tensor_op_gmma_f32_cooperative_stream_k, 256x128x128_1x1x1) {
@@ -146,7 +147,8 @@ TEST(SM90_Device_Gemm_e4m3t_e4m3n_f32n_tensor_op_gmma_f32_cooperative_stream_k, 
   >;
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
-  EXPECT_TRUE(test::gemm::device::TestAllBiasElementwise<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllBiasElementwise<Gemm>(1.0, 0.0));
+  EXPECT_TRUE(test::gemm::device::TestAllBiasElementwise<Gemm>(1.0, 1.0));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -197,7 +199,8 @@ TEST(SM90_Device_Gemm_e4m3t_e4m3n_f32n_tensor_op_gmma_f32_cooperative_stream_k, 
   >;
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
-  EXPECT_TRUE(test::gemm::device::TestAllBiasElementwise<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllBiasElementwise<Gemm>(1.0, 0.0));
+  EXPECT_TRUE(test::gemm::device::TestAllBiasElementwise<Gemm>(1.0, 1.0));
 }
 
 TEST(SM90_Device_Gemm_e4m3t_e4m3n_f32n_tensor_op_gmma_f32_cooperative_stream_k, 256x128x128_1x2x1) {
@@ -244,7 +247,8 @@ TEST(SM90_Device_Gemm_e4m3t_e4m3n_f32n_tensor_op_gmma_f32_cooperative_stream_k, 
   >;
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
-  EXPECT_TRUE(test::gemm::device::TestAllBiasElementwise<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllBiasElementwise<Gemm>(1.0, 0.0));
+  EXPECT_TRUE(test::gemm::device::TestAllBiasElementwise<Gemm>(1.0, 1.0));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -295,7 +299,8 @@ TEST(SM90_Device_Gemm_e4m3t_e4m3n_f32n_tensor_op_gmma_f32_cooperative_stream_k, 
   >;
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
-  EXPECT_TRUE(test::gemm::device::TestAllBiasElementwise<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllBiasElementwise<Gemm>(1.0, 0.0));
+  EXPECT_TRUE(test::gemm::device::TestAllBiasElementwise<Gemm>(1.0, 1.0));
 }
 
 TEST(SM90_Device_Gemm_e4m3t_e4m3n_f32n_tensor_op_gmma_f32_cooperative_stream_k, 256x128x128_1x4x1) {
@@ -342,7 +347,8 @@ TEST(SM90_Device_Gemm_e4m3t_e4m3n_f32n_tensor_op_gmma_f32_cooperative_stream_k, 
   >;
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
-  EXPECT_TRUE(test::gemm::device::TestAllBiasElementwise<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllBiasElementwise<Gemm>(1.0, 0.0));
+  EXPECT_TRUE(test::gemm::device::TestAllBiasElementwise<Gemm>(1.0, 1.0));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -393,7 +399,8 @@ TEST(SM90_Device_Gemm_e4m3t_e4m3n_f32n_tensor_op_gmma_f32_cooperative_stream_k, 
   >;
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
-  EXPECT_TRUE(test::gemm::device::TestAllBiasElementwise<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllBiasElementwise<Gemm>(1.0, 0.0));
+  EXPECT_TRUE(test::gemm::device::TestAllBiasElementwise<Gemm>(1.0, 1.0));
 }
 
 TEST(SM90_Device_Gemm_e4m3t_e4m3n_f32n_tensor_op_gmma_f32_cooperative_stream_k, 256x128x128_4x1x1) {
@@ -440,7 +447,8 @@ TEST(SM90_Device_Gemm_e4m3t_e4m3n_f32n_tensor_op_gmma_f32_cooperative_stream_k, 
   >;
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
-  EXPECT_TRUE(test::gemm::device::TestAllBiasElementwise<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllBiasElementwise<Gemm>(1.0, 0.0));
+  EXPECT_TRUE(test::gemm::device::TestAllBiasElementwise<Gemm>(1.0, 1.0));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -491,7 +499,8 @@ TEST(SM90_Device_Gemm_e4m3t_e4m3n_f32n_tensor_op_gmma_f32_cooperative_stream_k, 
   >;
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
-  EXPECT_TRUE(test::gemm::device::TestAllBiasElementwise<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllBiasElementwise<Gemm>(1.0, 0.0));
+  EXPECT_TRUE(test::gemm::device::TestAllBiasElementwise<Gemm>(1.0, 1.0));
 }
 
 TEST(SM90_Device_Gemm_e4m3t_e4m3n_f32n_tensor_op_gmma_f32_cooperative_stream_k, 256x128x128_2x4x1_fp8_fast_accum) {
@@ -538,7 +547,8 @@ TEST(SM90_Device_Gemm_e4m3t_e4m3n_f32n_tensor_op_gmma_f32_cooperative_stream_k, 
   >;
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
-  EXPECT_TRUE(test::gemm::device::TestAllBiasElementwise<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllBiasElementwise<Gemm>(1.0, 0.0));
+  EXPECT_TRUE(test::gemm::device::TestAllBiasElementwise<Gemm>(1.0, 1.0));
 }
 
 #endif // defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)

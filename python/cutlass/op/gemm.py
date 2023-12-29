@@ -202,14 +202,14 @@ class Gemm(OperationBase):
     :type element_C: cutlass.DataType
     :param element_D: data type to be used for operand D
     :type element_D: cutlass.DataType
-    :type layout_A: layout of operand A
-    :param layout_A: cutlass.LayoutType
-    :type layout_B: layout of operand B
-    :param layout_B: cutlass.LayoutType
-    :type layout_C: layout of operand C
-    :param layout_C: cutlass.LayoutType
-    :type layout_D: layout of operand D
-    :param layout_D: cutlass.LayoutType
+    :param layout_A: layout of operand A
+    :type layout_A: cutlass.LayoutType
+    :param layout_B: layout of operand B
+    :type layout_B: cutlass.LayoutType
+    :param layout_C: layout of operand C
+    :type layout_C: cutlass.LayoutType
+    :param layout_D: layout of operand D
+    :type layout_D: cutlass.LayoutType
     """
 
     def __init__(
@@ -281,17 +281,23 @@ class Gemm(OperationBase):
         # Set the default op class
         datatype_comb = (self._element_a, self._element_b, self._element_accumulator)
         layout_comb = (self._layout_a, self._layout_b)
+
         self.possible_op_classes = self.options.supporting_opclasses(
             self._element_a, self._element_b, self._element_accumulator,
-            self._layout_a, self._layout_b)
+            self._layout_a, self._layout_b, self._math_operation)
 
         if cutlass.OpcodeClass.TensorOp in self.possible_op_classes:
             self.opclass = cutlass.OpcodeClass.TensorOp
         elif cutlass.OpcodeClass.Simt in self.possible_op_classes:
             self.opclass = cutlass.OpcodeClass.Simt
         else:
+            if self._math_operation is not None:
+                math_op_str = f' and math operation {self._math_operation}'
+            else:
+                math_op_str = ''
+
             raise Exception(f'No kernel configuration found for supported data type and layout '
-                            f'combination {datatype_comb}x{layout_comb}')
+                            f'combination {datatype_comb}x{layout_comb}{math_op_str}')
 
         if reset_epilogue:
             self._reset_epilogue_functor_activation(cutlass.epilogue.identity)
@@ -349,7 +355,7 @@ class Gemm(OperationBase):
             return
         if isinstance(td, dict):
             if self._tile_description is None:
-                op = self.possible_operations.default_operation()
+                op = self.possible_operations.default_operation(self._math_operation)
                 self._tile_description = datatypes.td_from_profiler_op(op)
             td = self._tile_description.clone_and_update(td)
 
@@ -394,7 +400,10 @@ class Gemm(OperationBase):
         :returns: list of valid tile descriptions for the operations
         :rtype: list
         """
-        return [datatypes.td_from_profiler_op(op) for op in self.possible_operations.all_operations]
+        tds = [datatypes.td_from_profiler_op(op) for op in self.possible_operations.all_operations]
+        if self._math_operation is not None:
+            tds = [td for td in tds if td.tile_description.math_instruction == self._math_operation]
+        return tds
 
     def construct(
         self, tile_description: TileDescription = None,
@@ -423,18 +432,19 @@ class Gemm(OperationBase):
         tensor_A = TensorDescription(self._element_a, self._layout_a, alignment_A)
         tensor_B = TensorDescription(self._element_b, self._layout_b, alignment_B)
 
-        alignment_pref_C = max(self.possible_operations.alignments("C"))
-        if self._element_c != DataType.void:
-            alignment_pref_C = min(128 // DataTypeSize[self._element_c], alignment_pref_C)
-
-        alignment_C = check.alignment_or_default(alignment_C, alignment_pref_C)
-        tensor_C = TensorDescription(self._element_c, self._layout_c, alignment_C)
-        self.epilogue_functor = self._reset_epilogue_functor_alignment(alignment_C, self.epilogue_functor)
+        if alignment_C is None:
+            alignment_C = max(self.possible_operations.alignments("C"))
+            if self._element_c != DataType.void:
+                alignment_C = min(128 // DataTypeSize[self._element_c], alignment_C)
 
         if tile_description is None:
             if self._tile_description is None:
-                op = self.possible_operations.operations(alignment_A, alignment_B, alignment_C)[0]
+                op = self.possible_operations.operations(alignment_A, alignment_B, alignment_C, self._math_operation)[0]
                 tile_description = datatypes.td_from_profiler_op(op)
+
+                # The selected op may have lower alignment than that determined above, so we must
+                # reset alignment here.
+                alignment_C = op.C.alignment
             else:
                 tile_description = self._tile_description
         else:
@@ -442,6 +452,9 @@ class Gemm(OperationBase):
             if not valid:
                 raise Exception(f"Invalid tile description. {err_str}")
             self._tile_description = tile_description
+
+        tensor_C = TensorDescription(self._element_c, self._layout_c, alignment_C)
+        self.epilogue_functor = self._reset_epilogue_functor_alignment(alignment_C, self.epilogue_functor)
 
         operation = GemmOperationUniversal(
             arch=self.current_cc,
@@ -599,9 +612,13 @@ class Gemm(OperationBase):
         """
         dtype, layout = datatypes.get_datatype_and_layout(tensor)
         if dtype != ref_type or layout != ref_layout:
-            raise Exception(f'Tensor {name} with type and layout ({dtype}, {layout}) '
-                            f'does not match the expected type and '
-                            f'layout of ({ref_type}, {ref_layout}).')
+            try:
+                # Attempt to transpose the tensor to fit the desired layout
+                tensor = tensor.transpose(-1, -2)
+            except:
+                raise Exception(f'Tensor {name} with type and layout ({dtype}, {layout}) '
+                                f'does not match the expected type and '
+                                f'layout of ({ref_type}, {ref_layout}) and transpose failed.')
 
     def run(self, A=None, B=None, C=None, D=None,
             alpha=None, beta=None, sync: bool = True, print_module: bool = False, visitor_args: dict = None) -> GemmArguments:

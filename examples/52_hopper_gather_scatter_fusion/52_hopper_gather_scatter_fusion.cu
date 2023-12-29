@@ -568,7 +568,7 @@ struct ExampleRunner
     if (options.reference_check) {
       if (!verify()) {
         std::cout << "Failed validation" << std::endl;
-#if 1
+#if 0
         debug_output(std::cout);
 #endif
         return false;

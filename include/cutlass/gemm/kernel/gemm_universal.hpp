@@ -61,6 +61,19 @@ template <
 >
 class GemmUniversal;
 
+
+////////////////////////////////////////////////////////////////////////////////
+
+// In cases where ProblemShape is not a tuple, this is used to check if the
+// underlying problem shape type is aliased within or not.
+// Used for dispatching GemmUniversal to 2.x API or 3.x API
+template <class ProblemShape, class = void>
+struct IsCutlass3ArrayKernel : cute::false_type { };
+
+template <typename ProblemShape>
+struct IsCutlass3ArrayKernel<ProblemShape, cute::void_t<typename ProblemShape::UnderlyingProblemShape>>
+    : cute::true_type { };
+
 ////////////////////////////////////////////////////////////////////////////////
 
 } // namespace cutlass::gemm::kernel
@@ -75,4 +88,5 @@ class GemmUniversal;
 #include "cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized.hpp"
 #include "cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized_pingpong.hpp"
 #include "cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized_cooperative.hpp"
+#include "cutlass/gemm/kernel/sm90_gemm_array_tma_warpspecialized_cooperative.hpp"
 ////////////////////////////////////////////////////////////////////////////////

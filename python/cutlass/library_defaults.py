@@ -34,6 +34,7 @@
 Classes containing valid operations for a given compute capability and data types.
 """
 
+from itertools import combinations_with_replacement
 import logging
 
 from cuda import __version__
@@ -60,6 +61,7 @@ class KernelsForDataType:
     def __init__(self, datatype_comb: tuple, layout_comb: tuple):
         self.datatype_comb = datatype_comb
         self.layout_comb = layout_comb
+        self.math_operations = set()
 
         # Dictionary mapping from alignment (int) to a list of kernels that fit the alignment
         # constraint for the data type combination
@@ -73,6 +75,7 @@ class KernelsForDataType:
         if alignment_key not in self.kernels_by_alignment:
             self.kernels_by_alignment[alignment_key] = []
         self.kernels_by_alignment[alignment_key].append(operation)
+        self.math_operations.add(operation.tile_description.math_instruction.math_operation)
 
     def alignments(self, operand: str):
         """
@@ -100,11 +103,14 @@ class KernelsForDataType:
             ops.extend(alignment_ops)
         return ops
 
-    def default_operation(self):
+    def default_operation(self, math_operation: cutlass.MathOperation):
         key = sorted(list(self.kernels_by_alignment.keys()))[0]
-        return self.kernels_by_alignment[key][0]
+        kernels = self.kernels_by_alignment[key]
+        if math_operation is not None:
+            kernels = [x for x in kernels if x.tile_description.math_instruction.math_operation == math_operation]
+        return kernels[0]
 
-    def operations(self, alignment_A: int, alignment_B: int, alignment_C: int):
+    def operations(self, alignment_A: int, alignment_B: int, alignment_C: int, math_operation: cutlass.MathOperation):
         """
         Returns operations satisfying the alignment constraints
 
@@ -114,6 +120,8 @@ class KernelsForDataType:
         :type alignment_B: int
         :param alignment_C: alignment constraint of operations to return
         :type alignment_C: int
+        :param math_operation: math operation to consider
+        :type math_operation: cutlass.MathOperation
 
         :return: list of operations
         :rtype: list
@@ -126,13 +134,26 @@ class KernelsForDataType:
             min_alignment = min(alignment_A, alignment_B, alignment_C)
             key = f"{min_alignment} {min_alignment} {min_alignment}"
             if key not in self.kernels_by_alignment:
-                raise Exception(
-                    f"No operations of alignment {og_key} found for data type and layout "
-                    f"combination {self.datatype_comb} {self.layout_comb}. Tried to fall back "
-                    f"to alignment {key}, but that was also not compatible. Compatible alignments "
-                    f"are {self.kernels_by_alignment.keys()}"
-                )
-        return self.kernels_by_alignment[key]
+                # Finally, go through all available alignment combinations and find
+                # one for which all values are less than those passed in.
+                key = None
+                alignments = sorted([(int(x) for x in k.split(" ")) for k in self.kernels_by_alignment.keys()], reverse=True)
+                for align_A, align_B, align_C in alignments:
+                    if align_A <= alignment_A and align_B <= alignment_B and align_C <= alignment_C:
+                        key = f"{align_A} {align_B} {align_C}"
+                        break
+
+                if key is None:
+                    raise Exception(
+                        f"No operations of alignment {og_key} found for data type and layout "
+                        f"combination {self.datatype_comb} {self.layout_comb}. Compatible alignments "
+                        f"are {self.kernels_by_alignment.keys()}"
+                    )
+
+        ops = self.kernels_by_alignment[key]
+        if math_operation is not None:
+            ops = [op for op in ops if op.tile_description.math_instruction.math_operation == math_operation]
+        return ops
 
     def _operand_idx(self, key: str) -> int:
         operand_list = ["A", "B", "C"]
@@ -187,6 +208,18 @@ class KernelsForDataType:
         for alignment in self.kernels_by_alignment.keys():
             self.kernels_by_alignment[alignment].sort(key=key, reverse=True)
 
+    def supports_math_operation(self, math_operation: cutlass.MathOperation) -> bool:
+        """
+        Returns whether `math_operation` is supported by at least one operation.
+
+        :param math_operation: math operation to consider
+        :type math_operation: cutlass.MathOperation
+
+        :return: whether math_operation is supported by at least one operation
+        :rtype: bool
+        """
+        return math_operation is None or math_operation in self.math_operations
+
 
 class ArchOptions:
     """
@@ -213,7 +246,8 @@ class ArchOptions:
         allowed_math_operations: list = [
             cutlass_library.MathOperation.multiply_add,
             cutlass_library.MathOperation.multiply_add_saturate,
-            cutlass_library.MathOperation.multiply_add_mixed_input_upcast
+            cutlass_library.MathOperation.multiply_add_mixed_input_upcast,
+            cutlass_library.MathOperation.multiply_add_fast_f32
         ]
     ):
         self.cc = kernel_cc
@@ -270,8 +304,6 @@ class ArchOptions:
                 if mi.math_operation not in self.allowed_math_operations:
                     continue
 
-                datatype_comb = (mi.element_a, mi.element_b, mi.element_accumulator)
-
                 # Prune operations that don't fit in shared memory
                 td = td_from_profiler_op(op)
                 if not valid_stage_count(target_cc, kernel_cc, td, verbose=False)[0]:
@@ -322,6 +354,15 @@ class ArchOptions:
                 (cutlass_library.DataType.f32, cutlass_library.DataType.f32, cutlass_library.DataType.f32),
                 (cutlass_library.DataType.f64, cutlass_library.DataType.f64, cutlass_library.DataType.f64),
             ]
+
+            # Add FP8 A/B/C
+            fp8_types = [cutlass_library.DataType.e4m3, cutlass_library.DataType.e5m2]
+            for type_comb in combinations_with_replacement(fp8_types, 3):
+                types.append(type_comb)
+
+            # Add FP8 A/B with FP32 C
+            for type_comb in combinations_with_replacement(fp8_types, 2):
+                types.append(type_comb + (cutlass.DataType.f32,))
 
             layouts = [
                 (cutlass_library.LayoutType.RowMajor, cutlass_library.LayoutType.RowMajor),
@@ -395,7 +436,7 @@ class ArchOptions:
                 self.operations_by_opclass[oc][comb].sort()
 
     def opclass_supports_combination(
-        self, op_class: cutlass_library.OpcodeClass, datatype_comb: tuple, layout_comb: tuple
+        self, op_class: cutlass_library.OpcodeClass, datatype_comb: tuple, layout_comb: tuple, math_operation: cutlass_library.MathOperation
     ) -> bool:
         """
         Returns whether the provided operation class supports the provided data type and layout combination
@@ -406,6 +447,8 @@ class ArchOptions:
         :type datatype_comb: tuple[cutlass_library.DataType]
         :param layout_comb: tuple of data types for (layout_A, layout_B)
         :type layout_comb: tuple[cutlass_library.LayoutType]
+        :param math_operation: math operation to consider or None if any can be considered
+        :type math_operation: cutlass.MathOperation
 
         :return: set of operation classes that support the provided data type and layout combination
         :rtype: set
@@ -413,7 +456,14 @@ class ArchOptions:
         if op_class not in self.operations_by_opclass:
             raise Exception(f"Unexpected or unsupported operation class {op_class}")
 
-        return (datatype_comb, layout_comb) in self.operations_by_opclass[op_class]
+        if operations := self.operations_by_opclass[op_class].get((datatype_comb, layout_comb)):
+            if math_operation is not None:
+                return operations.supports_math_operation(math_operation)
+            else:
+                return True
+
+        return False
+
 
     def supporting_opclasses(
         self,
@@ -422,6 +472,7 @@ class ArchOptions:
         element_accumulator: cutlass_library.DataType,
         layout_a: cutlass_library.LayoutType,
         layout_b: cutlass_library.LayoutType,
+        math_operation: cutlass_library.MathOperation,
     ) -> set:
         """
         Returns a set of operation classes that support the provided data type combination
@@ -436,6 +487,8 @@ class ArchOptions:
         :type layout_a: cutlass_library.LayoutType
         :param layout_b: layout of operand B
         :type layout_b: cutlass_library.LayoutType
+        :param math_operation: math operation to consider
+        :type math_operation: cutlass.MathOperation
 
         :return: set of operation classes that support the provided data type combination
         :rtype: set
@@ -445,7 +498,7 @@ class ArchOptions:
         layout_comb = (layout_a, layout_b)
 
         for op_class in self.operations_by_opclass.keys():
-            if self.opclass_supports_combination(op_class, datatype_comb, layout_comb):
+            if self.opclass_supports_combination(op_class, datatype_comb, layout_comb, math_operation):
                 supporting_op_classes.add(op_class)
         return supporting_op_classes
 
@@ -457,6 +510,7 @@ class ArchOptions:
         element_accumulator: cutlass_library.DataType,
         layout_a: cutlass_library.LayoutType,
         layout_b: cutlass_library.LayoutType,
+        math_operation: cutlass_library.MathOperation,
     ) -> KernelsForDataType:
         """
         Returns whether the provided operation class supports the provided data type combination
@@ -473,13 +527,15 @@ class ArchOptions:
         :type layout_a: cutlass_library.LayoutType
         :param layout_b: layout of operand B
         :type layout_b: cutlass_library.LayoutType
+        :param math_operation: math operation to consider
+        :type math_operation: cutlass.MathOperation
 
         :return: container of kernels by alignment supported by the provided combination of parameters
         :rtype: KernelsForDataType
         """
         datatype_comb = (element_a, element_b, element_accumulator)
         layout_comb = (layout_a, layout_b)
-        if not self.opclass_supports_combination(op_class, datatype_comb, layout_comb):
+        if not self.opclass_supports_combination(op_class, datatype_comb, layout_comb, math_operation):
             raise Exception(
                 f"Data type layout combination {datatype_comb}, {layout_comb} "
                 f"is not supported by opcode class {op_class} on CC {self.cc}."

@@ -563,7 +563,6 @@ struct Sm90TreeVisitor : Sm90VisitorImpl<ChildOps..., NodeOp> {
       template get_consumer_store_callbacks<ReferenceSrc>(args);
     return ConsumerStoreCallbacks<decltype(callbacks_tuple)>(std::move(callbacks_tuple));
   }
-
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -614,7 +613,6 @@ struct Sm90SplitTreeVisitor : Sm90VisitorImpl<InputTree, AuxOutTrees..., OutputT
       template get_consumer_store_callbacks<ReferenceSrc>(args);
     return ConsumerStoreCallbacks<decltype(callbacks_tuple)>(std::move(callbacks_tuple));
   }
-
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -692,7 +690,6 @@ struct Sm90TopologicalVisitor : Sm90VisitorImpl<Ops...> {
       template get_consumer_store_callbacks<ReferenceSrc>(args);
     return ConsumerStoreCallbacks<decltype(callbacks_tuple)>(std::move(callbacks_tuple));
   }
-
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

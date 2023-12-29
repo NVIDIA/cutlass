@@ -14,7 +14,7 @@ import cutlass
 import numpy as np
 
 plan = cutlass.op.Gemm(element=np.float16, layout=cutlass.LayoutType.RowMajor)
-A, B, C, D = [np.ones((4096, 4096), dtype=np.float16) for i in range(4)]
+A, B, C, D = [np.ones((1024, 1024), dtype=np.float16) for i in range(4)]
 plan.run(A, B, C, D)
 ```
 
@@ -67,7 +67,7 @@ The CUTLASS Python interface currently supports the following operations:
 We recommend using the CUTLASS Python interface via an [NGC PyTorch Docker container](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/pytorch):
 
 ```bash
-docker run --gpus all -it --rm nvcr.io/nvidia/pytorch:23.08-py3
+docker run --gpus all -it --rm nvcr.io/nvidia/pytorch:23.08-py3 -p 8888:8888
 ```
 
 The CUTLASS Python interface has been tested with CUDA 11.8, 12.0, and 12.1 on Python 3.8 and 3.9.
@@ -98,6 +98,24 @@ If you would like to be able to make changes to CUTLASS Python interface and hav
 ```bash
 pip install -e .
 ```
+
+To test that your installation was successful, you can run:
+```python
+import cutlass
+import numpy as np
+
+plan = cutlass.op.Gemm(element=np.float16, layout=cutlass.LayoutType.RowMajor)
+A, B, C, D = [np.ones((128, 128), dtype=np.float16) for i in range(4)]
+plan.run(A, B, C, D)
+```
+
+### Deep learning framework CUDA extensions
+The CUTLASS Python interface provides utilities for exporting a CUTLASS kernel to a deep learning framework CUDA extensions. Currently, PyTorch CUDA extensions can be exported, but a similar pattern could be applied for other frameworks as well. An example of this is provided [here](/examples/python/02_pytorch_extension_grouped_gemm.ipynb).
+
+Currently, the following operations can be exported to a PyTorch CUDA extension:
+* GEMM
+* Grouped GEMM
+* Conv2d
 
 ### Examples
 Jupyter notebook examples of using the CUTLASS Python interface are located in [examples/python](/examples/python).

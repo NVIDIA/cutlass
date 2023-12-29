@@ -131,8 +131,9 @@ public:
     return true;
   }
 
+  // Note: SharedStorage is unused for DefaultEpilogue
   CUTLASS_HOST_DEVICE
-  DefaultEpilogue(Params const& params_)
+  DefaultEpilogue(Params const& params_, SharedStorage const& shared_storage = SharedStorage())
       : params(params_), epilogue_op(params_.thread) { }
 
   CUTLASS_DEVICE

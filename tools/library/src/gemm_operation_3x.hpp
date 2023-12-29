@@ -257,11 +257,11 @@ protected:
         case RasterOrder::kAlongM:
           operator_args.scheduler.raster_order = Enum_t::AlongM;
           break;
-        default: 
+        default:
           operator_args.scheduler.raster_order = Enum_t::Heuristic;
       }
     }
-
+    
     return status;
   }
 
@@ -271,7 +271,7 @@ public:
   Status can_implement(
       void const *configuration_ptr, void const *arguments_ptr) const override {
 
-    GemmUniversalConfiguration const *configuration = 
+    GemmUniversalConfiguration const *configuration =
       static_cast<GemmUniversalConfiguration const *>(configuration_ptr);
     GemmUniversalArguments const *arguments =
       static_cast<GemmUniversalArguments const *>(arguments_ptr);

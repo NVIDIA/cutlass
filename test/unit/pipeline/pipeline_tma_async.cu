@@ -60,10 +60,10 @@ using namespace cute;
 
 //////////////////// KERNEL /////////////////////////
 
-template <uint32_t Stages, typename ClusterShape>
+template <uint32_t Stages>
 struct SharedStorage
 {
-  typename cutlass::PipelineTmaAsync<Stages, ClusterShape>::SharedStorage storage;
+  typename cutlass::PipelineTmaAsync<Stages>::SharedStorage storage;
 };
 
 // Goal of this kernel is to complete deadlock-free
@@ -73,10 +73,10 @@ void pipeline_device(uint32_t const NumIterations)
 {
 
   extern __shared__ char shared_memory[];
-  using MainloopPipeline = cutlass::PipelineTmaAsync<NumStages, ClusterShape>;
+  using MainloopPipeline = cutlass::PipelineTmaAsync<NumStages>;
   using PipelineState = cutlass::PipelineState<NumStages>;
 
-  using SharedStorage = SharedStorage<NumStages, ClusterShape>;
+  using SharedStorage = SharedStorage<NumStages>;
   SharedStorage& shared_storage = *reinterpret_cast<SharedStorage*>(shared_memory);
 
   [[maybe_unused]] auto cta_layout = Layout<ClusterShape>{}; // (m,n) -> cta_id
@@ -98,7 +98,7 @@ void pipeline_device(uint32_t const NumIterations)
   params.is_leader = warp_group_thread_idx == 0;
   params.num_consumers = 128;
 
-  MainloopPipeline pipeline(shared_storage.storage, params);
+  MainloopPipeline pipeline(shared_storage.storage, params, cluster_shape);
 
   __syncthreads();
 
@@ -223,7 +223,7 @@ struct PipelineTest {
     }
 
     for (int iter = 0; iter < iterations; ++iter) {
-      int smem_size = int(sizeof(SharedStorage<Stages, decltype(cluster_shape)>));
+      int smem_size = int(sizeof(SharedStorage<Stages>));
 
       result = cudaFuncSetAttribute(
         pipeline_device<decltype(cluster_shape), Stages>,

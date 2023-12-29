@@ -9,7 +9,8 @@ Clang as both host and device compiler ("CUDA Clang").
 
 # Software prerequisites
 
-1. Clang (tested with Clang 14)
+1. Clang (regularly tested with Clang 14;
+   occasionally tested with Clang 10 and greater)
 
 2. CUDA Toolkit (tested with 12.2; other versions likely work)
 
@@ -32,14 +33,18 @@ is the following error when attempting to use clang:
 
 # Running CMake
 
-The Clang build requires specifying the following three CMake options.
+## Required CMake options
 
-* `CMAKE_CXX_COMPILER=clang++`
-* `CMAKE_CUDA_HOST_COMPILER=clang++`
+The Clang build requires specifying the following CMake options.
+Replace `<path-to-clang++>` with the path to your `clang++` executable,
+and replace `<path-to-clang>` with the path to your `clang` executable
+(which must have the same version as your `clang++` executable).
+You may use `clang++` resp. `clang` directly if they are in your `PATH`.
 
-* `CMAKE_C_COMPILER=clang`
+* `CMAKE_CXX_COMPILER=<path-to-clang++>`
+* `CMAKE_CUDA_HOST_COMPILER=<path-to-clang++>`
+* `CMAKE_C_COMPILER=<path-to-clang>`
 
-This assumes that `clang++` and `clang` are in the user's `PATH`.
 Please note that both `CMAKE_CXX_COMPILER` and `CMAKE_C_COMPILER`
 must be set, even though CUTLASS is a C++ project, not a C project.
 
@@ -51,3 +56,4 @@ if `${PATH_TO_CUDA_TOOLKIT}` is the CUDA Toolkit directory,
 then one can set `CMAKE_CUDA_COMPILER` as follows.
 
 * `CMAKE_CUDA_COMPILER=${PATH_TO_CUDA_TOOLKIT}/bin/nvcc`
+
