@@ -381,11 +381,13 @@ class ReductionOperation:
 
         host_workspace = arguments.host_workspace
         device_workspace = None
+        stream = cuda.CUstream(0)
 
         err = self.rt_module.run(
             host_workspace,
             device_workspace,
             launch_config,
+            stream
         )
 
         if err != cuda.CUresult.CUDA_SUCCESS:

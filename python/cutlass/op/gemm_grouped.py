@@ -65,6 +65,7 @@ from cutlass.backend.library import (
 from cutlass.op.gemm import Gemm
 from cutlass.shape import GemmCoord
 from cutlass.utils import check, datatypes
+from cuda import cuda
 
 
 class GroupedGemm(Gemm):
@@ -194,7 +195,8 @@ class GroupedGemm(Gemm):
 
     def run(self, A, B, C, D,
             alpha=None, beta=None, sync: bool = True,
-            print_module: bool = False) -> GemmGroupedArguments:
+            print_module: bool = False,
+            stream: cuda.CUstream = cuda.CUstream(0)) -> GemmGroupedArguments:
         """
         Runs the kernel currently specified.
 
@@ -248,7 +250,8 @@ class GroupedGemm(Gemm):
             operation=self.operation,
             problem_sizes=problem_sizes,
             A=As, B=Bs, C=Cs, D=Ds,
-            output_op=self.operation.epilogue_type(alpha, beta)
+            output_op=self.operation.epilogue_type(alpha, beta),
+            stream=stream
         )
 
         self.operation.run(arguments)

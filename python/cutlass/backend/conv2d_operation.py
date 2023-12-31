@@ -448,6 +448,7 @@ class Conv2dOperation:
             arguments.host_workspace,
             arguments.device_workspace,
             arguments.launch_config,
+            arguments.stream
         )
 
         if err != cuda.CUresult.CUDA_SUCCESS:
