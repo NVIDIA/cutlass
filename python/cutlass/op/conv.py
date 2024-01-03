@@ -762,6 +762,8 @@ class Conv2d(OperationBase):
         :type sync: bool
         :param print_module: whether to print the emitted C++ code
         :type print_module: bool
+        :param stream: cuda stream, defaults to cuda.cuda.CUstream(0)
+        :type stream: :class:`cuda.cuda.CUstream`
 
         :return: arguments passed in to the kernel
         :rtype: cutlass.backend.Conv2dArguments

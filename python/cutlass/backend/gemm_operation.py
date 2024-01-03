@@ -164,6 +164,9 @@ class GemmArguments2x(ArgumentBase):
 
     :param output_op: output operator, optional
     :type output_op: :class:`cutlass.backend.LinearCombinationFunctorArguments`
+
+    :param stream: cuda stream, defaults to cuda.cuda.CUstream(0)
+    :type stream: :class:`cuda.cuda.CUstream`
     """
 
     def __init__(self, operation, problem_size, A, B, C, D, gemm_mode=GemmUniversalMode.Gemm, **kwargs):
