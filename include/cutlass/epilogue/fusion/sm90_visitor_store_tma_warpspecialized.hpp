@@ -68,6 +68,7 @@ template <
   bool EnableNullptr = true // Noop on nullptr params
 >
 struct Sm90AuxStore {
+  using ElementAux = Element;
   static_assert(Alignment * sizeof_bits_v<Element> % 128 == 0, "sub-16B alignment not supported yet");
 
   constexpr static bool is_m_major = epilogue::collective::detail::is_m_major<StrideMNL>();
