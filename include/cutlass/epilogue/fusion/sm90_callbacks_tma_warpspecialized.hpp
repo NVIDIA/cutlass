@@ -1264,8 +1264,11 @@ struct get_element_aux<Sm90TreeVisitor<NodeOp, ChildOps...>, cute::void_t<>> {
 };
 
 template <class... Ts>
-struct get_element_aux<FusionCallbacks<Ts...>, cute::void_t<>> {
-  using type = typename FusionCallbacks<Ts...>::Operation;
+struct get_element_aux<FusionCallbacks<Ts...>, cute::void_t<typename FusionCallbacks<Ts...>::Operation>> {
+ private:
+  using Operation = typename FusionCallbacks<Ts...>::Operation;
+ public:
+  using type = typename get_element_aux<Operation>::type;
 };
 }
 
