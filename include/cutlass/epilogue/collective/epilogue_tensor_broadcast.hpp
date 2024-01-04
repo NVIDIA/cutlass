@@ -69,7 +69,8 @@ template <
   class StrideC_,
   class StrideD_,
   class ThreadEpilogueOp_,
-  class EpilogueSchedule_
+  class EpilogueSchedule_,
+  bool PerColumnBias_ = false
 >
 class EpilogueTensorBroadcast {
 public:
@@ -100,6 +101,9 @@ public:
   static constexpr bool IsBinaryOp0Enabled = ThreadEpilogueOp::IsBinaryOp0Enabled;
   static constexpr bool IsBinaryOp1Enabled = ThreadEpilogueOp::IsBinaryOp1Enabled;
   static constexpr bool IsUnaryOpEnabled = ThreadEpilogueOp::IsUnaryOpEnabled;
+
+  static constexpr bool PerColumnBias = PerColumnBias_;
+  using BiasStride = typename cute::conditional_t<PerColumnBias, Stride<_0, _1, _0>, Stride<_1, _0, _0>>;
 
   struct SharedStorage { };
 
@@ -194,7 +198,7 @@ public:
 
     auto stride_c    = detail::get_epilogue_stride<EpilogueSchedule>(params.dC);
     auto stride_d    = detail::get_epilogue_stride<EpilogueSchedule>(params.dD);
-    auto stride_bias = detail::get_epilogue_stride<EpilogueSchedule>(Stride<_1, _0, _0>{});
+    auto stride_bias = detail::get_epilogue_stride<EpilogueSchedule>(BiasStride{});
 
     // Represent the full output tensor
     Tensor mC0_mnl = make_tensor(make_gmem_ptr(params.ptr_C0), make_shape(M,N,L), stride_c);                   // (m,n,l)

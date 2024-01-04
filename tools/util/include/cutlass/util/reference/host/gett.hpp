@@ -93,7 +93,8 @@ template<
   class VectorAlpha_ = TensorD_,                                                                           //    (M, 1)
   class VectorBeta_ = VectorAlpha_,                                                                        //    (M, 1)
   class ActivationFunctor_ = cutlass::epilogue::thread::Identity<ElementCompute_>,
-  class BiasBinaryOp_ = cutlass::plus<ElementCompute_>
+  class BiasBinaryOp_ = cutlass::plus<ElementCompute_>,
+  bool PerColumnBias_ = false
 >
 struct GettEpilogueParams {
   using ElementScalar = ElementScalar_;
@@ -113,6 +114,8 @@ struct GettEpilogueParams {
   using LayoutC = typename TensorC::layout_type;
   using EngineD =  typename TensorD::engine_type;
   using LayoutD = typename TensorD::layout_type;
+
+  static constexpr bool PerColumnBias = PerColumnBias_;
 
   ElementScalar alpha = ElementScalar(1);
   ElementScalar beta = ElementScalar(0);
@@ -256,6 +259,8 @@ void gett_epilogue(
   using ActivationFunctor = typename EpilogueParams::ActivationFunctor;
   using BiasBinaryOp = typename EpilogueParams::BiasBinaryOp;
 
+  constexpr bool PerColBias = EpilogueParams::PerColumnBias;
+
   constexpr bool IsScalingAndAmaxOutputNeeded = 
       cute::is_same_v<ElementD, cutlass::float_e4m3_t> or
       cute::is_same_v<ElementD, cutlass::float_e5m2_t>;
@@ -334,7 +339,7 @@ void gett_epilogue(
         ElementCompute output = mul(converted_alpha, converted_acc);
 
         if (raw_pointer_cast(epilogue_params.Bias.data()) && not IsBackpropFusion) {
-          ElementCompute converted_bias = bias_converter(epilogue_params.Bias(m + m_b));
+          ElementCompute converted_bias = bias_converter(epilogue_params.Bias(PerColBias ? n + n_b : m + m_b));
           output = bias_op(output, converted_bias);
         }
 
