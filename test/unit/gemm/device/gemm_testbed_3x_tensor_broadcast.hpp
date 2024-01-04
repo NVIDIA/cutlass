@@ -76,6 +76,8 @@ struct Testbed3xTensorBroadcast {
   static constexpr bool IsBinaryOp1Enabled = Epilogue::IsBinaryOp1Enabled;
   static constexpr bool IsUnaryOpEnabled   = Epilogue::IsUnaryOpEnabled;
 
+  static constexpr bool PerColBias = Epilogue::PerColumnBias;
+
   using LayoutTagA = typename TestBedImpl::LayoutTagA;
   using LayoutTagB = typename TestBedImpl::LayoutTagB;
   using LayoutTagC = typename TestBedImpl::LayoutTagC;
@@ -130,8 +132,8 @@ struct Testbed3xTensorBroadcast {
 
   void initialize_bias(ProblemShapeType problem_size) {
     auto problem_shape_MNKL = cute::append<4>(problem_size, 1);
-    auto M = cute::get<0>(problem_shape_MNKL);
-    bias.resize(cutlass::Coord<1>(M));
+    auto bias_size = PerColBias ? cute::get<1>(problem_shape_MNKL) : cute::get<0>(problem_shape_MNKL);
+    bias.resize(cutlass::Coord<1>(bias_size));
 
     EXPECT_TRUE(impl_.initialize_tensor(bias.host_view(), cutlass::Distribution::Uniform, impl_.seed + 2023));
     bias.sync_device();
@@ -186,7 +188,8 @@ struct Testbed3xTensorBroadcast {
       std::ofstream file(fname.str());
       file
         << "problem: " << ' ' << M << "x" << N << "x" << K << ", Batch count = " << L
-        << ", alpha: " << float(alpha) << ", beta: " << float(beta) << ", use_bias: " << use_bias << "\n\n";
+        << ", alpha: " << float(alpha) << ", beta: " << float(beta) << ", use_bias: " << use_bias 
+        << ", per-col bias: " << PerColBias << "\n\n";
 
       if (use_bias){
         file << "Bias = \n" << bias.host_view()<< "\n\n";
@@ -225,7 +228,7 @@ struct Testbed3xTensorBroadcast {
     auto D = cute::make_tensor(impl_.reference_D.host_data(),
         cute::make_layout(cute::make_shape(M, N, L), impl_.stride_d));
     auto Bias = cute::make_tensor(static_cast<ElementBias*>(use_bias ? bias.host_data() : nullptr),
-        cute::make_layout(cute::make_shape(M, 1)));
+        cute::make_layout(PerColBias ? cute::make_shape(1, N) : cute::make_shape(M, 1)));
     auto C0 = cute::make_tensor(impl_.tensor_C.host_data(),
         cute::make_layout(cute::make_shape(M, N, L), impl_.stride_c));
     auto C1 = cute::make_tensor(tensor_C1.host_data(),
@@ -263,7 +266,9 @@ struct Testbed3xTensorBroadcast {
         decltype(dummy_Aux),      
         decltype(dummy_Valpha),
         decltype(dummy_Vbeta),
-        ActivationFunctor> epilogue_params{
+        ActivationFunctor,
+        cutlass::plus<ElementCompute>,
+        PerColBias> epilogue_params{
           alpha,
           dummy_beta,
           dummy_C,
