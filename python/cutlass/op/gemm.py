@@ -131,6 +131,7 @@ from cutlass.backend.library import TensorDescription, TileDescription
 from cutlass.op.op import OperationBase
 from cutlass.shape import GemmCoord
 from cutlass.utils import check, datatypes
+from cuda import cuda
 
 
 class Gemm(OperationBase):
@@ -621,7 +622,8 @@ class Gemm(OperationBase):
                                 f'layout of ({ref_type}, {ref_layout}) and transpose failed.')
 
     def run(self, A=None, B=None, C=None, D=None,
-            alpha=None, beta=None, sync: bool = True, print_module: bool = False, visitor_args: dict = None) -> GemmArguments:
+            alpha=None, beta=None, sync: bool = True, print_module: bool = False, visitor_args: dict = None,
+            stream: cuda.CUstream = cuda.CUstream(0)) -> GemmArguments:
         """
         Runs the kernel currently specified. If it has not already been, the kernel is emitted and
         compiled. Tensors holding operands and outputs of the kernel are sourced either from the
@@ -644,6 +646,8 @@ class Gemm(OperationBase):
         :type sync: bool
         :param print_module: whether to print the emitted C++ code
         :type print_module: bool
+        :param stream: cuda stream, defaults to cuda.cuda.CUstream(0)
+        :type stream: :class:`cuda.cuda.CUstream`
 
         :return: arguments passed in to the kernel
         :rtype: cutlass.backend.GemmArguments
@@ -687,6 +691,7 @@ class Gemm(OperationBase):
                     'D': self._get_batch_stride(D)
                 }
             }
+        kwargs['stream'] = stream
 
         if isinstance(self.epilogue_functor, EpilogueFunctorVisitor):
             output_op = self.operation.epilogue_type(visitor_args)
