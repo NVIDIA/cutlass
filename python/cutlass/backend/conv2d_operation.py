@@ -97,6 +97,8 @@ class Conv2dArguments(ArgumentBase):
     :type split_k_mode: cutlass_library.library.SplitKMode, optional
     :param output_op: output operator, optional
     :type output_op: :class:`cutlass.backend.LinearCombinationFunctorArguments`
+    :param stream: cuda stream, defaults to cuda.cuda.CUstream(0)
+    :type stream: :class:`cuda.cuda.CUstream`
     """
 
     def __init__(self, operation, problem_size, A, B, C, D,
@@ -448,6 +450,7 @@ class Conv2dOperation:
             arguments.host_workspace,
             arguments.device_workspace,
             arguments.launch_config,
+            arguments.stream
         )
 
         if err != cuda.CUresult.CUDA_SUCCESS:

@@ -164,6 +164,9 @@ class GemmArguments2x(ArgumentBase):
 
     :param output_op: output operator, optional
     :type output_op: :class:`cutlass.backend.LinearCombinationFunctorArguments`
+
+    :param stream: cuda stream, defaults to cuda.cuda.CUstream(0)
+    :type stream: :class:`cuda.cuda.CUstream`
     """
 
     def __init__(self, operation, problem_size, A, B, C, D, gemm_mode=GemmUniversalMode.Gemm, **kwargs):
@@ -666,6 +669,9 @@ class GemmGroupedArguments:
 
     :param output_op: output operator, optional
     :type output_op: :class:`cutlass.backend.LinearCombinationFunctorArguments`
+
+    :param stream: cuda stream, defaults to cuda.cuda.CUstream(0)
+    :type stream: :class:`cuda.cuda.CUstream`
     """
 
     def __init__(self, operation, problem_sizes, A, B, C, D, **kwargs):
@@ -765,6 +771,11 @@ class GemmGroupedArguments:
             self.output_op = kwargs["output_op"]
         else:
             self.output_op = self.operation.epilogue_type(1.0, 0.0)
+        
+        if "stream" in kwargs.keys():
+            self.stream = kwargs["stream"]
+        else:
+            self.stream = cuda.CUstream(0)
 
         # Get host problem size
         self.host_problem_size_ptr = np.array(problem_size_host, dtype=np.int32).__array_interface__["data"][0]
@@ -1542,6 +1553,7 @@ class GemmOperationBase:
             arguments.host_workspace,
             arguments.device_workspace,
             arguments.launch_config,
+            arguments.stream
         )
 
         if err != cuda.CUresult.CUDA_SUCCESS:

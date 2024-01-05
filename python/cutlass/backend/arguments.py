@@ -62,6 +62,11 @@ class ArgumentBase:
             # by default, tensor_C is not bias
             self.bias = False
 
+        if "stream" in kwargs.keys():
+            self.stream = kwargs["stream"]
+        else:
+            self.stream = cuda.CUstream(0)
+
         # RMM buffers used to track tensor lifetime
         self.buffers = {}
         # Host tensor to copy the computed result back
