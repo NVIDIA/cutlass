@@ -173,8 +173,8 @@ struct Options {
   /// Compute performance in GFLOP/s
   double gflops(double runtime_s) const {
 
-    // Number of real-valued multiply-adds 
-    int64_t fmas = problem_size.product();
+    // Number of real-valued multiply-adds
+    int64_t fmas = problem_size.m() * int64_t(index_size) * problem_size.k();
     
     // Two flops per multiply-add
     return 2.0 * double(fmas) / double(1.0e9) / runtime_s;
@@ -349,7 +349,7 @@ int run(Options &options) {
       tensor_c.device_data(),             // <- reference to matrix C on device
       tensor_d_scattered.device_data(),   // <- reference to matrix D on device
       tensor_a.layout().capacity(problem_size.mk()),
-      tensor_b.layout().capacity(cutlass::make_Coord(options.index_size, problem_size.n())),
+      tensor_b.layout().capacity(cutlass::make_Coord(options.index_size, problem_size.k())),
       tensor_c.layout().capacity(problem_size.mn()),
       tensor_d_scattered.layout().capacity(problem_size.mn()),
       tensor_a.layout().stride(),
