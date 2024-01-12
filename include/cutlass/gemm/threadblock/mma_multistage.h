@@ -181,6 +181,15 @@ public:
     /// Pair of B fragments used to overlap shared memory loads and math instructions
     WarpLoadedFragmentB warp_loaded_frag_B_[2];
     WarpTransformedFragmentB warp_transformed_frag_B_[2];
+
+    using ElementA = typename WarpLoadedFragmentA::Element;
+    using ElementB = typename WarpLoadedFragmentB::Element;
+    static constexpr size_t sizeof_bits_A =
+      cutlass::sizeof_bits<ElementA>::value;
+    static constexpr size_t sizeof_bits_B =
+      cutlass::sizeof_bits<ElementB>::value;
+    static constexpr bool is_mixed_and_B_4bit =
+      (sizeof_bits_A != sizeof_bits_B) && (sizeof_bits_B == 4);
   };
 
 
@@ -254,7 +263,7 @@ public:
     if (smem_read_stage_idx_ == Base::kStages) {
       // Wrap back around to the 'start' of the circular buffer in shared memory
       this->warp_tile_iterator_A_.add_tile_offset({0, -Base::kStages * Policy::kPartitionsK * Base::kWarpGemmIterations});
-      this->warp_tile_iterator_B_.add_tile_offset({-Base::kStages * Policy::kPartitionsK * Base::kWarpGemmIterations, 0});
+      this->warp_tile_iterator_B_.add_tile_offset({-Base::kStages * Policy::kPartitionsK * Base::kWarpGemmIterations / (PipeState::is_mixed_and_B_4bit ? 2 : 1), 0});
       smem_read_stage_idx_ = 0;
     }
   }
@@ -510,17 +519,23 @@ public:
       ++this->warp_tile_iterator_A_;
 
       // Load the next warp-tile's B fragment from shared memory
-      this->warp_tile_iterator_B_.set_kgroup_index((warp_mma_k + 1) % Base::kWarpGemmIterations);
-      this->warp_tile_iterator_B_.load(pipe_state.warp_loaded_frag_B_[(warp_mma_k + 1) % 2]);
-      ++this->warp_tile_iterator_B_;
+      if constexpr (!PipeState::is_mixed_and_B_4bit) {
+        this->warp_tile_iterator_B_.set_kgroup_index((warp_mma_k + 1) % Base::kWarpGemmIterations);
+        this->warp_tile_iterator_B_.load(pipe_state.warp_loaded_frag_B_[(warp_mma_k + 1) % 2]);
+        ++this->warp_tile_iterator_B_;
+      } else if ((warp_mma_k + 1) % 2 == 0) {
+        this->warp_tile_iterator_B_.set_kgroup_index((warp_mma_k / 2 + 1) % Base::kWarpGemmIterations);
+        this->warp_tile_iterator_B_.load(pipe_state.warp_loaded_frag_B_[(warp_mma_k / 2 + 1) % 2]);
+        ++this->warp_tile_iterator_B_;
+      }
 
       // Except for the first warp-tile, all warp-tiles convert their incoming shared memory fragments as necessary
       if (warp_mma_k > 0) {
         warp_mma_.transform(
           pipe_state.warp_transformed_frag_A_[warp_mma_k % 2],
-          pipe_state.warp_transformed_frag_B_[warp_mma_k % 2],
+          pipe_state.warp_transformed_frag_B_[PipeState::is_mixed_and_B_4bit ? (warp_mma_k / 2) % 2 : warp_mma_k % 2],
           pipe_state.warp_loaded_frag_A_[warp_mma_k % 2],
-          pipe_state.warp_loaded_frag_B_[warp_mma_k % 2]);
+          pipe_state.warp_loaded_frag_B_[PipeState::is_mixed_and_B_4bit ? (warp_mma_k / 2) % 2 : warp_mma_k % 2]);
       }
 
       // Execute the current warp-tile of MMA operations
@@ -528,7 +543,7 @@ public:
         warp_mma_(
           pipe_state.tmp_accum_,
           pipe_state.warp_transformed_frag_A_[warp_mma_k % 2],
-          pipe_state.warp_transformed_frag_B_[warp_mma_k % 2],
+          pipe_state.warp_transformed_frag_B_[PipeState::is_mixed_and_B_4bit ? (warp_mma_k / 2) % 2 : warp_mma_k % 2],
           pipe_state.tmp_accum_
         );
 
@@ -541,7 +556,7 @@ public:
         warp_mma_(
           accum,
           pipe_state.warp_transformed_frag_A_[warp_mma_k % 2],
-          pipe_state.warp_transformed_frag_B_[warp_mma_k % 2],
+          pipe_state.warp_transformed_frag_B_[PipeState::is_mixed_and_B_4bit ? (warp_mma_k / 2) % 2 : warp_mma_k % 2],
           accum
         );
       }
@@ -596,12 +611,11 @@ public:
       // the first warp-tile of the next iteration, if necessary (so we can
       // immediately start issuing MMA instructions at the top of the loop )
       if (warp_mma_k + 1 == Base::kWarpGemmIterations) {
-
         warp_mma_.transform(
           pipe_state.warp_transformed_frag_A_[(warp_mma_k + 1) % 2],
-          pipe_state.warp_transformed_frag_B_[(warp_mma_k + 1) % 2],
+          pipe_state.warp_transformed_frag_B_[PipeState::is_mixed_and_B_4bit ? (warp_mma_k / 2 + 1) % 2 : (warp_mma_k + 1) % 2],
           pipe_state.warp_loaded_frag_A_[(warp_mma_k + 1) % 2],
-          pipe_state.warp_loaded_frag_B_[(warp_mma_k + 1) % 2]);
+          pipe_state.warp_loaded_frag_B_[PipeState::is_mixed_and_B_4bit ? (warp_mma_k / 2 + 1) % 2 : (warp_mma_k + 1) % 2]);
       }
 
     }
