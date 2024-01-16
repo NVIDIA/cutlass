@@ -112,6 +112,8 @@ TEST(SM80_Device_Gemm_tf32t_tf32n_f32n_tensor_op_f32, 128x128x32_64x64x64) {
   EXPECT_TRUE(test::gemm::device::TestAll<Gemm>());
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 TEST(SM80_Device_Gemm_tf32t_tf32t_f32n_tensor_op_f32, 128x128x32_64x64x64) {
   using Config = cutlass::gemm::device::DefaultGemmConfigurationToCutlass3Types<
     cutlass::arch::OpClassTensorOp, cutlass::arch::Sm80,
@@ -128,6 +130,26 @@ TEST(SM80_Device_Gemm_tf32t_tf32t_f32n_tensor_op_f32, 128x128x32_64x64x64) {
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
   EXPECT_TRUE(test::gemm::device::TestAll<Gemm>());
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+TEST(SM80_Device_Gemm_tf32t_tf32n_f32n_tensor_op_f32, 128x128x32_64x64x64_profiling) {
+  using Config = cutlass::gemm::device::DefaultGemmConfigurationToCutlass3Types<
+    cutlass::arch::OpClassTensorOp, cutlass::arch::Sm80,
+    cutlass::tfloat32_t, cutlass::layout::RowMajor,
+    cutlass::tfloat32_t, cutlass::layout::ColumnMajor,
+    float, cutlass::layout::RowMajor,
+    float>;
+
+  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+      Shape<int,int,int,int>,
+      Config::CollectiveMainloop,
+      Config::CollectiveEpilogue
+  >;
+
+  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  EXPECT_TRUE(test::gemm::device::TestGemmPerf3x<Gemm>());
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

@@ -53,6 +53,7 @@
 
 from cutlass_library import DataTypeSize
 
+from cuda import cuda
 from cutlass.backend.gemm_operation import (
     GemmGroupedArguments,
     GemmOperationGrouped,
@@ -65,7 +66,6 @@ from cutlass.backend.library import (
 from cutlass.op.gemm import Gemm
 from cutlass.shape import GemmCoord
 from cutlass.utils import check, datatypes
-from cuda import cuda
 
 
 class GroupedGemm(Gemm):

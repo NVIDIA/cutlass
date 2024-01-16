@@ -380,15 +380,10 @@ struct CollectiveMma<
       KTileIterator k_tile_iter, int k_tile_count,
       int thread_idx,
       uint32_t block_rank_in_cluster,
-      TensorStorage& shared_tensors)
-  {
-
-    using namespace cute;
-    int warp_idx = canonical_warp_idx_sync();
-    int warp_idx_in_warp_group  = warp_idx % 4;
+      TensorStorage& shared_tensors) {
     int lane_predicate = cute::elect_one_sync();
 
-    if (warp_idx_in_warp_group == 0 and lane_predicate) {
+    if (lane_predicate) {
       Tensor sA_ = make_tensor(make_smem_ptr(shared_tensors.smem_A.data()), SmemLayoutA{});       // (BLK_M,BLK_K,PIPE)
       Tensor sB_ = make_tensor(make_smem_ptr(shared_tensors.smem_B.data()), SmemLayoutB{});       // (BLK_N,BLK_K,PIPE)
       Tensor sA  = as_position_independent_swizzle_tensor(sA_);                                   // (BLK_M,BLK_K,PIPE)
@@ -464,14 +459,11 @@ struct CollectiveMma<
 
   /// Perform a Producer Epilogue to prevent early exit of blocks in a Cluster
   CUTLASS_DEVICE void
-  load_tail(MainloopPipeline pipeline, PipelineState smem_pipe_write)
-  {
-    int warp_idx = canonical_warp_idx_sync();
-    int warp_idx_in_warp_group = warp_idx % 4;
+  load_tail(MainloopPipeline pipeline, PipelineState smem_pipe_write) {
     int lane_predicate = cute::elect_one_sync();
 
     // Issue the epilogue waits
-    if (warp_idx_in_warp_group == 0 and lane_predicate) {
+    if (lane_predicate) {
       /* This helps avoid early exit of blocks in Cluster
        * Waits for all stages to either be released (all 
        * Consumer UNLOCKs), or if the stage was never used
@@ -494,9 +486,7 @@ struct CollectiveMma<
       int k_tile_count,
       int thread_idx,
       TensorStorage& shared_tensors,
-      Params const& mainloop_params)
-  {
-    using namespace cute;
+      Params const& mainloop_params) {
     static_assert(is_rmem<FrgTensorC>::value, "C tensor must be rmem resident.");
     static_assert(cute::rank(SmemLayoutA{}) == 3, "Smem layout must be rank 3.");
     static_assert(cute::rank(SmemLayoutB{}) == 3, "Smem layout must be rank 3.");

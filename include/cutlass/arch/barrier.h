@@ -236,7 +236,7 @@ public:
     uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
     asm volatile(
         "{\n\t"
-        "mbarrier.init.shared.b64 [%1], %0; \n"
+        "mbarrier.init.shared::cta.b64 [%1], %0; \n"
         "}"
         :
         : "r"(arrive_count), "r"(smem_addr));
@@ -256,7 +256,7 @@ public:
         "{\n\t"
         ".reg .pred       P1; \n\t"
         "LAB_WAIT: \n\t"
-        "mbarrier.try_wait.parity.shared.b64 P1, [%0], %1, %2; \n\t"
+        "mbarrier.try_wait.parity.shared::cta.b64 P1, [%0], %1, %2; \n\t"
         "@P1 bra.uni DONE; \n\t"
         "bra.uni     LAB_WAIT; \n\t"
         "DONE: \n\t"
@@ -280,7 +280,7 @@ public:
         ".reg .pred P1; \n\t"
         ".reg .pred P2; \n\t"
         "setp.eq.u32 P2, %3, 1;\n\t"
-        "@P2 mbarrier.test_wait.parity.shared.b64 P1, [%1], %2; \n\t"
+        "@P2 mbarrier.test_wait.parity.shared::cta.b64 P1, [%1], %2; \n\t"
         "selp.b32 %0, 1, 0, P1; \n\t"
         "}"
         : "=r"(waitComplete)
@@ -302,7 +302,7 @@ public:
     asm volatile(
         "{\n\t"
         ".reg .pred P1; \n\t"
-        "mbarrier.try_wait.parity.shared.b64 P1, [%1], %2; \n\t"
+        "mbarrier.try_wait.parity.shared::cta.b64 P1, [%1], %2; \n\t"
         "selp.b32 %0, 1, 0, P1; \n\t"
         "}"
         : "=r"(waitComplete)
@@ -342,7 +342,7 @@ public:
     uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
     asm volatile(
         "{\n\t"
-        "mbarrier.arrive.shared.b64 _, [%0];\n\t"
+        "mbarrier.arrive.shared::cta.b64 _, [%0];\n\t"
         "}"
         :
         : "r"(smem_addr));
@@ -357,7 +357,7 @@ public:
     uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
     asm volatile(
         "{\n\t"
-        "mbarrier.ival.shared.b64 [%0]; \n\t"
+        "mbarrier.ival.shared::cta.b64 [%0]; \n\t"
         "}"
         :
         : "r"(smem_addr));
@@ -418,7 +418,7 @@ struct ClusterTransactionBarrier : public ClusterBarrier {
     uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
     asm volatile(
         "{\n\t"
-        "mbarrier.arrive.expect_tx.shared.b64 _, [%1], %0; \n\t"
+        "mbarrier.arrive.expect_tx.shared::cta.b64 _, [%1], %0; \n\t"
         "}"
         :
         : "r"(transaction_bytes), "r"(smem_addr));
@@ -455,7 +455,7 @@ struct ClusterTransactionBarrier : public ClusterBarrier {
     uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
     asm volatile(
         "{\n\t"
-        "mbarrier.expect_tx.shared.b64 [%1], %0; \n\t"
+        "mbarrier.expect_tx.shared::cta.b64 [%1], %0; \n\t"
         "}"
         :
         : "r"(transaction_bytes), "r"(smem_addr));
@@ -563,7 +563,7 @@ void cpasync_barrier_arrive(uint64_t const* smem_ptr) {
   uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
   asm volatile(
     "{\n\t"
-    "cp.async.mbarrier.arrive.shared.b64 [%0];\n\t"
+    "cp.async.mbarrier.arrive.shared::cta.b64 [%0];\n\t"
     "}"
     :
     : "r"(smem_addr));

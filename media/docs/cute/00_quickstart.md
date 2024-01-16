@@ -6,12 +6,12 @@ The core abstraction of CuTe are the hierarchically multidimensional layouts whi
 
 ## System Requirements
 
-CuTe shares CUTLASS 3.0's software requirements,
+CuTe shares CUTLASS 3.x's software requirements,
 including NVCC with a C++17 host compiler.
 
 ## Knowledge prerequisites
 
-CuTe is a CUDA C++ library.  It requires C++17
+CuTe is a CUDA C++ header-only library.  It requires C++17
 (the revision of the C++ Standard that was released in 2017).
 
 Throughout this tutorial, we assume intermediate C++ experience.
@@ -29,8 +29,10 @@ and how to launch kernels.
 ## Building Tests and Examples
 
 CuTe's tests and examples build and run as part of CUTLASS's normal build process.
+
 CuTe's unit tests live in the [`test/unit/cute`](../../../test/unit/cute) subdirectory.
-Its examples live in the [`examples/cute`](../../../examples/cute) subdirectory.
+
+CuTe's examples live in the [`examples/cute`](../../../examples/cute) subdirectory.
 
 ## Library Organization
 
@@ -38,9 +40,9 @@ CuTe is a header-only C++ library, so there is no source code that needs buildin
 
 |        Directory       |        Contents        |
 |------------------------|------------------------|
-| [`include/cute`](../../../include/cute) | Each header in the top level corresponds to one of the fundamental building blocks of CuTe, such as [`Layout`](../../../include/cute/layout.hpp) or [`Tensor`](../../../include/cute/tensor.hpp). |
-| [`include/cute/container`](../../../include/cute/container) | Implementations of STL-like container objects, such as tuple, array, aligned array, and array views.  |
-| [`include/cute/numeric`](../../../include/cute/numeric) | Templates that handle nonstandard floating-point types, unsigned integers, complex numbers, and integer sequence - like fundamental numeric data types.  |
+| [`include/cute`](../../../include/cute) | Each header in the top level corresponds to one of the fundamental building blocks of CuTe, such as [`Layout`](../../../include/cute/layout.hpp) and [`Tensor`](../../../include/cute/tensor.hpp). |
+| [`include/cute/container`](../../../include/cute/container) | Implementations of STL-like objects, such as tuple, array, and aligned array.  |
+| [`include/cute/numeric`](../../../include/cute/numeric) | Fundamental numeric data types that include nonstandard floating-point types, nonstandard integer types, complex numbers, and integer sequence.  |
 | [`include/cute/algorithm`](../../../include/cute/algorithm) | Implementations of utility algorithms such as copy, fill, and clear that automatically leverage architecture-specific features if available. |
 | [`include/cute/arch`](../../../include/cute/arch) | Wrappers for architecture-specific matrix-matrix multiply and copy instructions. |
 | [`include/cute/atom`](../../../include/cute/atom) | Meta-information for instructions in `arch` and utilities like partitioning and tiling.
@@ -57,7 +59,7 @@ Other files in this directory discuss specific parts of CuTe.
 
 * [`01_layout.md`](./01_layout.md) describes `Layout`, CuTe's core abstraction.
 
-* [`02_layout_operations.md`](./02_layout_operations.md) describes more advanced `Layout` operations and the CuTe layout algebra.
+* [`02_layout_algebra.md`](./02_layout_algebra.md) describes more advanced `Layout` operations and the CuTe layout algebra.
 
 * [`03_tensor.md`](./03_tensor.md) describes `Tensor`,
   a multidimensional array abstraction which composes `Layout`
@@ -74,5 +76,44 @@ Other files in this directory discuss specific parts of CuTe.
 * [`0y_predication.md`](./0y_predication.md) explains what to do
   if a tiling doesn't fit evenly into a matrix.
 
-* [`0z_tma_tensors.md`](./0z_tma_tensors.md) summarizes
-  how CuTe supports TMA loads and stores.
+* [`0z_tma_tensors.md`](./0z_tma_tensors.md) explains an advanced `Tensor` type that CuTe uses to support TMA loads and stores.
+
+## Quick Tips
+
+### How do I print CuTe objects on host or device?
+
+The `cute::print` function has overloads for almost all CuTe types, including Pointers, Integers, Strides, Shapes, Layouts, and Tensors.  When in doubt, try calling `print` on it.  
+
+CuTe's print functions work on either host or device.
+Note that on device, printing is expensive.
+Even just leaving print code in place on device,
+even if it is never called
+(e.g., printing in an `if` branch that is not taken at run time),
+may generate slower code.
+Thus, be sure to remove code that prints on device after debugging.
+
+You might also only want to print on thread 0 of each threadblock, or threadblock 0 of the grid.  The `thread0()` function returns true only for global thread 0 of the kernel, that is, for thread 0 of threadblock 0.  A common idiom for printing CuTe objects to print only on global thread 0.
+
+```c++
+if (thread0()) {
+  print(some_cute_object);
+}
+```
+
+Some algorithms depend on some thread or threadblock,
+so you may need to print on threads or threadblocks other than zero.
+The header file
+[`cute/util/debug.hpp`](../../../include/cute/util/debug.hpp),
+among other utilities,
+includes the function `bool thread(int tid, int bid)`
+that returns `true` if running on thread `tid` and threadblock `bid`.
+
+#### Other output formats
+
+Some CuTe types have special printing functions that use a different output format.
+
+The `cute::print_layout` function will display any rank-2 layout in a plain test table. This is excellent for visualizing the map from coordinates to indices.
+
+The `cute::print_tensor` function will display any rank-1, rank-2, rank-3, or rank-4 tensor in a plain text multidimensional table. The values of the tensor are printed so you can verify the tile of data is what you expect after a copy, for example.
+
+The `cute::print_latex` function will print LaTeX commands that you can use to build a nicely formatted and colored tables via `pdflatex`. This work for `Layout`, `TiledCopy`, and `TiledMMA`, which can be very useful to get a sense of layout patterns and partitioning patterns within CuTe.

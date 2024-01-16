@@ -2160,7 +2160,7 @@ static void tensor_fill(DeviceAllocation &allocation, Element val = Element()) {
 }
 
 /// Fills a tensor uniformly with a value (most frequently used to clear the tensor)
-void DeviceAllocation::fill(double val = 0.0) {
+void DeviceAllocation::fill_device(double val = 0.0) {
 
   switch (this->type()) {
   case library::NumericTypeID::kFE4M3:
@@ -2258,6 +2258,180 @@ void DeviceAllocation::fill(double val = 0.0) {
     throw std::runtime_error(std::string("Unsupported numeric type: ") + to_string(this->type()));
   }
 }
+
+/// Fills a tensor uniformly with a value (most frequently used to clear the tensor)
+void DeviceAllocation::fill_host(double val = 0.0) {
+
+  std::vector<uint8_t> host_data(bytes());
+
+  switch (this->type()) {
+  case library::NumericTypeID::kFE4M3:
+    cutlass::reference::host::BlockFill<float_e4m3_t>(
+      reinterpret_cast<float_e4m3_t *>(host_data.data()),
+      capacity_,
+      static_cast<float_e4m3_t>(val)
+    );
+    break;
+
+  case library::NumericTypeID::kFE5M2:
+    cutlass::reference::host::BlockFill<float_e5m2_t>(
+      reinterpret_cast<float_e5m2_t *>(host_data.data()),
+      capacity_,
+      static_cast<float_e5m2_t>(val)
+    );
+    break;
+
+  case library::NumericTypeID::kF16:
+    cutlass::reference::host::BlockFill<half_t>(
+      reinterpret_cast<half_t *>(host_data.data()),
+      capacity_,
+      static_cast<half_t>(val)
+    );
+    break;
+
+  case library::NumericTypeID::kBF16:
+    cutlass::reference::host::BlockFill<bfloat16_t>(
+      reinterpret_cast<bfloat16_t *>(host_data.data()),
+      capacity_,
+      static_cast<bfloat16_t>(val)
+    );
+    break;
+
+  case library::NumericTypeID::kTF32:
+    cutlass::reference::host::BlockFill<tfloat32_t>(
+      reinterpret_cast<tfloat32_t *>(host_data.data()),
+      capacity_,
+      static_cast<tfloat32_t>(val)
+    );
+    break;
+
+  case library::NumericTypeID::kF32:
+    cutlass::reference::host::BlockFill<float>(
+      reinterpret_cast<float *>(host_data.data()),
+      capacity_,
+      static_cast<float>(val)
+    );
+    break;
+
+  case library::NumericTypeID::kF64:
+    cutlass::reference::host::BlockFill<double>(
+      reinterpret_cast<double *>(host_data.data()),
+      capacity_,
+      static_cast<double>(val)
+    );
+    break;
+
+  case library::NumericTypeID::kS2:
+    cutlass::reference::host::BlockFill<int2b_t>(
+      reinterpret_cast<int2b_t *>(host_data.data()),
+      capacity_,
+      static_cast<int2b_t>(val)
+    );
+    break;
+
+  case library::NumericTypeID::kS4:
+    cutlass::reference::host::BlockFill<int4b_t>(
+      reinterpret_cast<int4b_t *>(host_data.data()),
+      capacity_,
+      static_cast<int4b_t>(val)
+    );
+    break;
+
+  case library::NumericTypeID::kS8:
+    cutlass::reference::host::BlockFill<int8_t>(
+      reinterpret_cast<int8_t *>(host_data.data()),
+      capacity_,
+      static_cast<int8_t>(val)
+    );
+    break;
+
+  case library::NumericTypeID::kS16:
+    cutlass::reference::host::BlockFill<int16_t>(
+      reinterpret_cast<int16_t *>(host_data.data()),
+      capacity_,
+      static_cast<int16_t>(val)
+    );
+    break;
+
+  case library::NumericTypeID::kS32:
+    cutlass::reference::host::BlockFill<int32_t>(
+      reinterpret_cast<int32_t *>(host_data.data()),
+      capacity_,
+      static_cast<int32_t>(val)
+    );
+    break;
+
+  case library::NumericTypeID::kS64:
+    cutlass::reference::host::BlockFill<int64_t>(
+      reinterpret_cast<int64_t *>(host_data.data()),
+      capacity_,
+      static_cast<int64_t>(val)
+    );
+    break;
+
+  case library::NumericTypeID::kB1:
+    cutlass::reference::host::BlockFill<uint1b_t>(
+      reinterpret_cast<uint1b_t *>(host_data.data()),
+      capacity_,
+      static_cast<uint1b_t>(val)
+    );
+    break;
+
+  case library::NumericTypeID::kU2:
+    cutlass::reference::host::BlockFill<uint2b_t>(
+      reinterpret_cast<uint2b_t *>(host_data.data()),
+      capacity_,
+      static_cast<uint2b_t>(val)
+    );
+    break;
+
+  case library::NumericTypeID::kU4:
+    cutlass::reference::host::BlockFill<uint4b_t>(
+      reinterpret_cast<uint4b_t *>(host_data.data()),
+      capacity_,
+      static_cast<uint4b_t>(val)
+    );
+    break;
+
+  case library::NumericTypeID::kU8:
+    cutlass::reference::host::BlockFill<uint8_t>(
+      reinterpret_cast<uint8_t *>(host_data.data()),
+      capacity_,
+      static_cast<uint8_t>(val)
+    );
+    break;
+
+  case library::NumericTypeID::kU16:
+    cutlass::reference::host::BlockFill<uint16_t>(
+      reinterpret_cast<uint16_t *>(host_data.data()),
+      capacity_,
+      static_cast<uint16_t>(val)
+    );
+    break;
+
+  case library::NumericTypeID::kU32:
+    cutlass::reference::host::BlockFill<uint32_t>(
+      reinterpret_cast<uint32_t *>(host_data.data()),
+      capacity_,
+      static_cast<uint32_t>(val)
+    );
+    break;
+
+  case library::NumericTypeID::kU64:
+    cutlass::reference::host::BlockFill<uint64_t>(
+      reinterpret_cast<uint64_t *>(host_data.data()),
+      capacity_,
+      static_cast<uint64_t>(val)
+    );
+    break;
+
+  default:
+    throw std::runtime_error(std::string("Unsupported numeric type: ") + to_string(this->type()));
+  }
+
+  copy_from_host(host_data.data());
+}
+
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

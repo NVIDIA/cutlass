@@ -116,6 +116,7 @@
 
 from math import prod
 
+from cuda import cuda
 from cutlass_library import (
     DataType,
     DataTypeSize,
@@ -131,7 +132,6 @@ from cutlass.backend.library import TensorDescription, TileDescription
 from cutlass.op.op import OperationBase
 from cutlass.shape import GemmCoord
 from cutlass.utils import check, datatypes
-from cuda import cuda
 
 
 class Gemm(OperationBase):
@@ -691,6 +691,7 @@ class Gemm(OperationBase):
                     'D': self._get_batch_stride(D)
                 }
             }
+
         kwargs['stream'] = stream
 
         if isinstance(self.epilogue_functor, EpilogueFunctorVisitor):

@@ -60,7 +60,7 @@ namespace cutlass {
 
 /// Generic CUTLASS kernel template.
 template <typename Operator>
-__global__
+CUTLASS_GLOBAL
 void Kernel(typename Operator::Params params) {
   // Dynamic shared memory base pointer
   extern __shared__ int SharedStorageBase[];
@@ -76,7 +76,7 @@ void Kernel(typename Operator::Params params) {
 
 /// Generic CUTLASS kernel template.
 template <typename Operator>
-__global__
+CUTLASS_GLOBAL
 void Kernel2(typename Operator::Params params) {
   // Dynamic shared memory base pointer
   extern __shared__ int SharedStorageBase[];
@@ -96,7 +96,7 @@ void Kernel2(typename Operator::Params params) {
 
 /// Generic CUTLASS kernel template.
 template <typename Operator>
-__global__
+CUTLASS_GLOBAL
 #ifdef __CUDACC__
 // Enclosing this in __CUDACC__ suppresses MSVC warnings.
 __launch_bounds__(Operator::MaxThreadsPerBlock, Operator::MinBlocksPerMultiprocessor)

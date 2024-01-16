@@ -227,7 +227,7 @@ raw_pointer_cast(counting_iterator<T> const& x) {
 template <class T>
 CUTE_HOST_DEVICE void print(T const* const ptr)
 {
-  printf("ptr[%db](%p)", int(sizeof_bits<T>::value), ptr);
+  printf("ptr["); print(sizeof_bits<T>::value); printf("b](%p)", ptr);
 }
 
 template <class T>

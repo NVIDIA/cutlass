@@ -108,6 +108,28 @@ CUTE_NAMED_UNARY_OP(conjugate, cute::conj);
 #undef CUTE_RIGHT_UNARY_OP
 #undef CUTE_NAMED_UNARY_OP
 
+template <int Shift_>
+struct shift_right_const {
+  static constexpr int Shift = Shift_;
+
+  template <class T>
+  CUTE_HOST_DEVICE constexpr
+  decltype(auto) operator()(T&& arg) const {
+    return std::forward<T>(arg) >> Shift;
+  }
+};
+
+template <int Shift_>
+struct shift_left_const {
+  static constexpr int Shift = Shift_;
+
+  template <class T>
+  CUTE_HOST_DEVICE constexpr
+  decltype(auto) operator()(T&& arg) const {
+    return std::forward<T>(arg) << Shift;
+  }
+};
+
 /************/
 /** Binary **/
 /************/

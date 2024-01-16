@@ -77,7 +77,7 @@ struct ClusterLauncher {
   constexpr static int MaxClusterSize = 32;
 
   // Check for hardware compatibility
-  static inline __host__
+  static inline CUTLASS_HOST
   Status check_cluster_dims(dim3 grid, dim3 cluster) {
     if (((cluster.x * cluster.y * cluster.z) <= MaxClusterSize) &&
         (grid.x % cluster.x == 0) && (grid.y % cluster.y == 0) && (grid.z % cluster.z == 0)) {
@@ -89,7 +89,7 @@ struct ClusterLauncher {
     }
   }
 
-  static inline __host__
+  static inline CUTLASS_HOST
   Status
 #if defined(CUTLASS_SM90_CLUSTER_LAUNCH_ENABLED)
   init(void const* kernel_function)
@@ -109,7 +109,7 @@ struct ClusterLauncher {
   }
 
   // This is the method we expect to use going forward
-  static inline __host__
+  static inline CUTLASS_HOST
   Status launch(
       dim3 const grid_dims,
       dim3 const cluster_dims,
@@ -217,7 +217,7 @@ struct ClusterLaunchParams {
 ///   kernel_ptr, x, y, z);
 /// @endcode
 template<class ... Args>
-__host__ cutlass::Status
+CUTLASS_HOST cutlass::Status
 launch_kernel_on_cluster(const ClusterLaunchParams& params,
   void const* kernel_ptr,
   Args&& ... args)

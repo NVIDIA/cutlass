@@ -339,7 +339,10 @@ public:
   /// Primary run() entry point API that is static allowing users to create and manage their own params.
   /// Supplied params struct must be construct by calling GemmKernel::to_underling_arguments()
   static Status
-  run(Params& params, cudaStream_t stream = nullptr, CudaHostAdapter *cuda_adapter = nullptr) {
+  run(Params& params,
+      cudaStream_t stream = nullptr,
+      CudaHostAdapter *cuda_adapter = nullptr) {
+
     CUTLASS_TRACE_HOST("GemmUniversal::run()");
     dim3 const block = GemmKernel::get_block_shape();
     dim3 const grid = get_grid_shape(params);
@@ -425,7 +428,9 @@ public:
     cudaStream_t stream = nullptr,
     CudaHostAdapter *cuda_adapter = nullptr
   ) {
-    Status status = initialize(args, workspace, stream);
+
+    Status status = initialize(args, workspace, stream, cuda_adapter);
+
     if (Status::kSuccess == status) {
       status = run(params_, stream, cuda_adapter);
     }
@@ -444,14 +449,14 @@ public:
 
   /// Overload that allows a user to re-launch the same kernel without updating internal params struct.
   Status
-  run(cudaStream_t stream = nullptr) {
-    return run(params_, stream);
+  run(cudaStream_t stream = nullptr, CudaHostAdapter *cuda_adapter = nullptr) {
+    return run(params_, stream, cuda_adapter);
   }
 
   /// Overload that allows a user to re-launch the same kernel without updating internal params struct.
   Status
-  operator()(cudaStream_t stream = nullptr) {
-    return run(params_, stream);
+  operator()(cudaStream_t stream = nullptr, CudaHostAdapter *cuda_adapter = nullptr) {
+    return run(params_, stream, cuda_adapter);
   }
 };
 
