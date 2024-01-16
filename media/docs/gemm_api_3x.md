@@ -673,7 +673,7 @@ please refer to CuTe's tutorial, e.g., the sections on
 
 # Copyright
 
-Copyright (c) 2023 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: BSD-3-Clause
 
 ```
