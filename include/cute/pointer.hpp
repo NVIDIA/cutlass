@@ -41,6 +41,7 @@
 
 #include <cute/pointer_base.hpp>
 #include <cute/pointer_swizzle.hpp>
+#include <cute/layout.hpp>
 namespace cute
 {
 

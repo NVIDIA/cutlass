@@ -208,6 +208,32 @@ set(CUTLASS_ENABLE_F16C OFF CACHE BOOL "Enable F16C x86 extensions in host code.
 # CUTLASS generator cmake configuration
 #
 
+# Kernel unified filter file
+
+set(KERNEL_FILTER_FILE "" CACHE STRING "KERNEL FILTER FILE FULL PATH")
+
+if (KERNEL_FILTER_FILE AND NOT CUTLASS_LIBRARY_KERNELS) 
+  # If a kernel filter file is specified, we want to generate and then
+  # filter on the entire kernel set, not the default kernel
+  # (sub)set. The user may overried CUTLASS_LIBRRARY_KERNELS, in which
+  # case the resulting kernel set will be the intersection of the two
+  # options differenced against CUTLASS_LIBRARY_IGNORE_KERNELS.
+  set(CUTLASS_LIBRARY_KERNELS_INIT "*")
+else() 
+  set(CUTLASS_LIBRARY_KERNELS_INIT "") 
+endif()
+
+if (KERNEL_FILTER_FILE)
+  get_filename_component(KERNEL_FILTER_FILE "${KERNEL_FILTER_FILE}" ABSOLUTE)
+  set(KERNEL_FILTER_FILE "${KERNEL_FILTER_FILE}" CACHE STRING "KERNEL FILTER FILE FULL PATH" FORCE)
+endif()
+
+set(SELECTED_KERNEL_LIST "selected" CACHE STRING "Name of the filtered kernel list")
+
+if(KERNEL_FILTER_FILE)
+  message(STATUS "Full path of filter file: ${KERNEL_FILTER_FILE}")
+endif()
+
 set(CUTLASS_LIBRARY_OPERATIONS "all" CACHE STRING "Comma delimited list of operation name filters. Default '' means all operations are enabled.")
 set(CUTLASS_LIBRARY_KERNELS ${CUTLASS_LIBRARY_KERNELS_INIT} CACHE STRING "Comma delimited list of kernel name filters. If unspecified, only the largest tile size is enabled. If 'all' is specified, all kernels are enabled.")
 set(CUTLASS_LIBRARY_IGNORE_KERNELS "" CACHE STRING "Comma delimited list of kernel names to exclude from build.")

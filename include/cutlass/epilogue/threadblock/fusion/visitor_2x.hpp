@@ -402,7 +402,7 @@ struct OutputTileThreadLayout: DefaultThreadMapTensorOp<
 
   CUTLASS_DEVICE
   static auto tid2coord(int thread_idx) {
-    return make_layout(ThreadShape{})[thread_idx];
+    return cute::idx2crd(thread_idx, ThreadShape{});
   }
 
   template <class TensorInput>

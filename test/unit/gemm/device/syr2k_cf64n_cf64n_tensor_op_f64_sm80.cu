@@ -50,6 +50,7 @@
 #if defined(CUTLASS_ARCH_MMA_SM80_SUPPORTED)
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+#if (!((__CUDACC_VER_MAJOR__ == 11) && (__CUDACC_VER_MINOR__ == 8)))
 
 TEST(SM80_Device_Syr2k_cf64n_cf64n_l_tensor_op_f64, 32x32x16_16x16x16) {
 
@@ -145,6 +146,7 @@ TEST(SM80_Device_Syr2k_cf64n_cf64n_u_tensor_op_f64, 32x32x16_16x16x16) {
   EXPECT_TRUE(test::gemm::device::TestAllRank2KUniversal<Rank2K>());
 }
 
+#endif
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 #endif // #if defined(CUTLASS_ARCH_MMA_SM80_SUPPORTED)

@@ -434,15 +434,20 @@ CUTE_HOST_DEVICE constexpr
 auto
 recast_layout(Swizzle<B,M,S> const& swizzle)
 {
-  if constexpr (sizeof_bits<NewType>::value == sizeof_bits<OldType>::value) {
+  using scale = decltype(trait_ratio(sizeof_bits<NewType>{}, sizeof_bits<OldType>{}));
+  if constexpr (scale::num == 1 && scale::den == 1) {
     return swizzle;
-  } else if constexpr (sizeof_bits<NewType>::value > sizeof_bits<OldType>::value) {
-    static_assert(sizeof_bits<NewType>::value % sizeof_bits<OldType>::value == 0, "NewType must be a multiple of OldType");
-    return upcast<sizeof_bits<NewType>::value/sizeof_bits<OldType>::value>(swizzle);
-  } else if constexpr (sizeof_bits<NewType>::value < sizeof_bits<OldType>::value) {
-    static_assert(sizeof_bits<OldType>::value % sizeof_bits<NewType>::value == 0, "NewType must be a divisor of OldType");
-    return downcast<sizeof_bits<OldType>::value/sizeof_bits<NewType>::value>(swizzle);
   }
+  else if constexpr (scale::num == 1) {
+    return downcast<scale::den>(swizzle);
+  }
+  else if constexpr (scale::den == 1) { 
+    return upcast<scale::num>(swizzle);
+  }
+  else {
+    static_assert(dependent_false<scale>, "Recast not supported.");
+  }
+  CUTE_GCC_UNREACHABLE;
 }
 
 //
@@ -453,7 +458,7 @@ template <int B, int M, int S, class Offset, class LayoutB, class Shape, class S
 CUTE_HOST_DEVICE constexpr
 auto
 max_common_layout(ComposedLayout<Swizzle<B,M,S>,Offset,LayoutB> const& a,
-                  Layout<Shape,Stride> const& b)
+                  Layout<Shape,Stride>                          const& b)
 {
   auto common = max_common_layout(a.layout_b(), b);
   auto base = Int<(1 << M)>{};
@@ -467,7 +472,7 @@ max_common_layout(ComposedLayout<Swizzle<B,M,S>,Offset,LayoutB> const& a,
 template <class Shape, class Stride, int B, int M, int S, class Offset, class LayoutB>
 CUTE_HOST_DEVICE constexpr
 auto
-max_common_layout(Layout<Shape,Stride> const& a,
+max_common_layout(Layout<Shape,Stride>                          const& a,
                   ComposedLayout<Swizzle<B,M,S>,Offset,LayoutB> const& b)
 {
   return max_common_layout(b, a);
@@ -477,7 +482,7 @@ template <int B, int M, int S, class Offset, class LayoutB, class Shape, class S
 CUTE_HOST_DEVICE constexpr
 auto
 max_common_vector(ComposedLayout<Swizzle<B,M,S>,Offset,LayoutB> const& a,
-                  Layout<Shape,Stride> const& b)
+                  Layout<Shape,Stride>                          const& b)
 {
   // This assumes that Offset is in the YZ domain of the Swizzle...
   return cute::min(Int<(1 << M)>{}, max_common_vector(a.layout_b(), b));
@@ -486,7 +491,7 @@ max_common_vector(ComposedLayout<Swizzle<B,M,S>,Offset,LayoutB> const& a,
 template <class Shape, class Stride, int B, int M, int S, class Offset, class LayoutB>
 CUTE_HOST_DEVICE constexpr
 auto
-max_common_vector(Layout<Shape,Stride> const& a,
+max_common_vector(Layout<Shape,Stride>                          const& a,
                   ComposedLayout<Swizzle<B,M,S>,Offset,LayoutB> const& b)
 {
   return max_common_vector(b, a);
@@ -517,13 +522,13 @@ template <class Shape, class Stride,
           int B, int M, int S, class Offset, class LayoutT>
 CUTE_HOST_DEVICE constexpr
 auto
-logical_product(Layout<Shape,Stride>                          const& block,
-                ComposedLayout<Swizzle<B,M,S>,Offset,LayoutT> const& tile)
+logical_product(Layout<Shape,Stride>                          const& layout,
+                ComposedLayout<Swizzle<B,M,S>,Offset,LayoutT> const& tiler)
 {
-  CUTE_STATIC_ASSERT_V(tile.offset() == Int<0>{}, "Require Swizzle offset == 0.");
+  CUTE_STATIC_ASSERT_V(tiler.offset() == Int<0>{}, "Require Swizzle offset == 0.");
   // The new layout -- if swizzle wasn't an issue, this is the result
   //   our goal is to determine a new swizzle for these strides
-  auto new_layout = logical_product(block, tile.layout_b());
+  auto new_layout = logical_product(layout, tiler.layout_b());
 
   // This is accomplished by identifying
   //  S o L  :=:  S? o L*
@@ -536,8 +541,8 @@ logical_product(Layout<Shape,Stride>                          const& block,
   auto swizzle_only_zy = make_layout(make_shape (Int<(1 << M)>{}, Int<(1 << B)>{}, Int<(1 << (abs(S)-B))>{}, Int<(1 <<  B        )>{}, Int<1>{}),
                                      make_stride(       Int<0>{}, Int<(1 << M)>{},                 Int<0>{}, Int<(1 << (M+abs(S)))>{}, Int<0>{}));
 
-  // Compose with the tile to get the swizzle projection, P o L  [The Z and Y contributing portions of L]
-  auto layout_only_zy       = composition(swizzle_only_zy, tile.layout_b());
+  // Compose with the tiler to get the swizzle projection, P o L  [The Z and Y contributing portions of L]
+  auto layout_only_zy       = composition(swizzle_only_zy, tiler.layout_b());
   // Transform the end coordinate to get the active bits of the swizzle, (P o L)(c*)
   auto swizzle_active_bits  = layout_only_zy(size(layout_only_zy)-Int<1>{});
   // Get the Z bit and the Y bits
@@ -545,8 +550,8 @@ logical_product(Layout<Shape,Stride>                          const& block,
   auto active_Y = swizzle_active_bits & typename Swizzle<B,M,S>::yyy_msk{};
 
   // Pass the identifiers through the old layout and new layout to make a new swizzle identifier, L*(L[(P o L)(c*)])
-  auto new_active_Z = new_layout(Int<0>{}, tile.layout_b()[active_Z]);
-  auto new_active_Y = new_layout(Int<0>{}, tile.layout_b()[active_Y]);
+  auto new_active_Z = new_layout(Int<0>{}, tiler.layout_b()[active_Z]);
+  auto new_active_Y = new_layout(Int<0>{}, tiler.layout_b()[active_Y]);
 
   // Use this new swizzle identifier to construxt the new swizzle for new_layout
   //   (this also makes sure it's a "valid" swizzle that Swizzle can represent)

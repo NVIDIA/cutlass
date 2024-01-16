@@ -65,10 +65,68 @@ class R {
   using type = typename conditional<num == 0 || den == 1, C<num>, R<num,den>>::type;
 };
 
+template <class T>
+struct is_ratio : false_type {};
+template <auto n, auto d>
+struct is_ratio<R<n,d>> : true_type {};
+
 template <auto a, auto b>
 CUTE_HOST_DEVICE constexpr
 typename R<a,b>::type
 ratio(C<a>, C<b>) {
+  return {};
+}
+
+template <auto a, auto b, auto c>
+CUTE_HOST_DEVICE constexpr
+typename R<a*c,b>::type
+ratio(C<a>, R<b,c>) {
+  return {};
+}
+
+template <auto a, auto b, auto c>
+CUTE_HOST_DEVICE constexpr
+typename R<b,a*c>::type
+ratio(R<b,c>, C<a>) {
+  return {};
+}
+
+template <auto a, auto b, auto c, auto d>
+CUTE_HOST_DEVICE constexpr
+typename R<a*d,b*c>::type
+ratio(R<a,b>, R<c,d>) {
+  return {};
+}
+
+//
+// Non-reduced ratio implementations
+//
+
+template <auto a, auto b>
+CUTE_HOST_DEVICE constexpr
+R<a,b>
+nratio(C<a>, C<b>) {
+  return {};
+}
+
+template <auto a, auto b, auto c>
+CUTE_HOST_DEVICE constexpr
+R<a*c,b>
+nratio(C<a>, R<b,c>) {
+  return {};
+}
+
+template <auto a, auto b, auto c>
+CUTE_HOST_DEVICE constexpr
+R<b,a*c>
+nratio(R<b,c>, C<a>) {
+  return {};
+}
+
+template <auto a, auto b, auto c, auto d>
+CUTE_HOST_DEVICE constexpr
+R<a*d,b*c>
+nratio(R<a,b>, R<c,d>) {
   return {};
 }
 
@@ -90,6 +148,13 @@ template <auto c, auto a, auto b>
 CUTE_HOST_DEVICE constexpr
 typename R<a*c,b>::type
 operator*(C<c>, R<a,b>) {
+  return {};
+}
+
+template <auto c, auto a, auto b>
+CUTE_HOST_DEVICE constexpr
+typename R<c*b,a>::type
+operator/(C<c>, R<a,b>) {
   return {};
 }
 
@@ -158,6 +223,23 @@ CUTE_HOST_DEVICE constexpr
 typename R<abs(a),abs(b)>::type
 abs(R<a,b>) {
   return {};
+}
+
+template <auto a, auto b>
+CUTE_HOST_DEVICE constexpr
+auto
+log_2(R<a,b>) {
+  static_assert(R<a,b>::num > 0);
+  static_assert(R<a,b>::den > 0);
+  return log_2(static_cast<uint32_t>(R<a,b>::num)) - log_2(static_cast<uint32_t>(R<a,b>::den));
+}
+
+
+template <class Trait0, class Trait1>
+CUTE_HOST_DEVICE constexpr
+auto
+trait_ratio(Trait0, Trait1) {
+  return nratio(static_value<Trait0>(), static_value<Trait1>());
 }
 
 //

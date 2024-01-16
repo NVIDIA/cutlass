@@ -97,9 +97,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_cooperative_epilogue, 25
   >;
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
-
-  test::gemm::device::Testbed3x<Gemm, cutlass::epilogue::thread::ReLu> testbed;
-  bool passed = test::gemm::device::TestAll<Gemm>(1, 1, testbed);
+  bool passed = test::gemm::device::TestAll<Gemm, cutlass::epilogue::thread::ReLu>(1, 1);
   EXPECT_TRUE(passed);
 }
 
@@ -155,6 +153,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_cooperative_epilogue, 25
 #endif // _MSC_VER
 #pragma GCC diagnostic pop // Re-enable deprecation warnings
 }
+
 
 TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_cooperative_epilogue, 256x128x64_2x2x1_BiasF32_ReLU) {
   using LayoutA = cutlass::layout::RowMajor;
@@ -239,9 +238,8 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_cooperative_epilogue, 25
   >;
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
-
-  bool check_relative_equality = true;
-  bool passed = test::gemm::device::TestAllBiasElementwise<Gemm>(1, 1, check_relative_equality);
+  using namespace test::gemm::device; 
+  bool passed = TestAllBiasElementwise<Gemm>(1, 1, CheckEquality::RELATIVE);
   EXPECT_TRUE(passed);
 }
 
@@ -600,8 +598,8 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_cooperative_epilogue, 25
   >;
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
-
-  bool passed = test::gemm::device::TestAllBiasElementwise<Gemm>(1.0, 0.0, /*check_relative_equality=*/true);
+  using namespace test::gemm::device; 
+  bool passed = TestAllBiasElementwise<Gemm>(1.0, 0.0, CheckEquality::RELATIVE);
   EXPECT_TRUE(passed);
 }
 

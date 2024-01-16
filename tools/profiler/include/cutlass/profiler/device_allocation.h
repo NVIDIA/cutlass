@@ -207,7 +207,10 @@ public:
   void initialize_random_sparsemeta_host(int seed, int MetaSizeInBits);
   
   /// Uniformly fills a tensor with a value when provided o.w. zero
-  void fill(double value);
+  void fill_device(double value);
+
+  /// Uniformly fills a host allocation with a value when provided o.w. zero
+  void fill_host(double value);
 
   /// Copies from an equivalent-sized tensor in device memory
   void copy_from_device(void const *ptr);

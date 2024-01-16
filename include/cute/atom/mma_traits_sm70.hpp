@@ -63,10 +63,10 @@ using SM70_8x8_32b  = Layout<Shape <Shape <_2, _2,_2>,Shape <_2,_2, _2>>,
 template <>
 struct MMA_Traits<SM70_8x8x4_F16F16F16F16_TN>
 {
-  using ElementDVal = half_t;
-  using ElementAVal = half_t;
-  using ElementBVal = half_t;
-  using ElementCVal = half_t;
+  using ValTypeD = half_t;
+  using ValTypeA = half_t;
+  using ValTypeB = half_t;
+  using ValTypeC = half_t;
 
   using Shape_MNK = Shape<_8,_8,_4>;
   using ThrID   = SM70_QuadPair;
@@ -80,10 +80,10 @@ struct MMA_Traits<SM70_8x8x4_F16F16F16F16_TN>
 template <>
 struct MMA_Traits<SM70_8x8x4_F16F16F16F16_NT>
 {
-  using ElementDVal = half_t;
-  using ElementAVal = half_t;
-  using ElementBVal = half_t;
-  using ElementCVal = half_t;
+  using ValTypeD = half_t;
+  using ValTypeA = half_t;
+  using ValTypeB = half_t;
+  using ValTypeC = half_t;
 
   using Shape_MNK = Shape<_8,_8,_4>;
   using ThrID   = SM70_QuadPair;
@@ -97,10 +97,10 @@ struct MMA_Traits<SM70_8x8x4_F16F16F16F16_NT>
 template <>
 struct MMA_Traits<SM70_8x8x4_F16F16F16F16_NN>
 {
-  using ElementDVal = half_t;
-  using ElementAVal = half_t;
-  using ElementBVal = half_t;
-  using ElementCVal = half_t;
+  using ValTypeD = half_t;
+  using ValTypeA = half_t;
+  using ValTypeB = half_t;
+  using ValTypeC = half_t;
 
   using Shape_MNK = Shape<_8,_8,_4>;
   using ThrID   = SM70_QuadPair;
@@ -114,10 +114,10 @@ struct MMA_Traits<SM70_8x8x4_F16F16F16F16_NN>
 template <>
 struct MMA_Traits<SM70_8x8x4_F16F16F16F16_TT>
 {
-  using ElementDVal = half_t;
-  using ElementAVal = half_t;
-  using ElementBVal = half_t;
-  using ElementCVal = half_t;
+  using ValTypeD = half_t;
+  using ValTypeA = half_t;
+  using ValTypeB = half_t;
+  using ValTypeC = half_t;
 
   using Shape_MNK = Shape<_8,_8,_4>;
   using ThrID   = SM70_QuadPair;
@@ -131,10 +131,10 @@ struct MMA_Traits<SM70_8x8x4_F16F16F16F16_TT>
 template <>
 struct MMA_Traits<SM70_8x8x4_F32F16F16F32_TN>
 {
-  using ElementDVal = float;
-  using ElementAVal = half_t;
-  using ElementBVal = half_t;
-  using ElementCVal = float;
+  using ValTypeD = float;
+  using ValTypeA = half_t;
+  using ValTypeB = half_t;
+  using ValTypeC = float;
 
   using Shape_MNK = Shape<_8,_8,_4>;
   using ThrID   = SM70_QuadPair;
@@ -148,10 +148,10 @@ struct MMA_Traits<SM70_8x8x4_F32F16F16F32_TN>
 template <>
 struct MMA_Traits<SM70_8x8x4_F32F16F16F32_NT>
 {
-  using ElementDVal = float;
-  using ElementAVal = half_t;
-  using ElementBVal = half_t;
-  using ElementCVal = float;
+  using ValTypeD = float;
+  using ValTypeA = half_t;
+  using ValTypeB = half_t;
+  using ValTypeC = float;
 
   using Shape_MNK = Shape<_8,_8,_4>;
   using ThrID   = SM70_QuadPair;
@@ -165,10 +165,10 @@ struct MMA_Traits<SM70_8x8x4_F32F16F16F32_NT>
 template <>
 struct MMA_Traits<SM70_8x8x4_F32F16F16F32_NN>
 {
-  using ElementDVal = float;
-  using ElementAVal = half_t;
-  using ElementBVal = half_t;
-  using ElementCVal = float;
+  using ValTypeD = float;
+  using ValTypeA = half_t;
+  using ValTypeB = half_t;
+  using ValTypeC = float;
 
   using Shape_MNK = Shape<_8,_8,_4>;
   using ThrID   = SM70_QuadPair;
@@ -182,10 +182,10 @@ struct MMA_Traits<SM70_8x8x4_F32F16F16F32_NN>
 template <>
 struct MMA_Traits<SM70_8x8x4_F32F16F16F32_TT>
 {
-  using ElementDVal = float;
-  using ElementAVal = half_t;
-  using ElementBVal = half_t;
-  using ElementCVal = float;
+  using ValTypeD = float;
+  using ValTypeA = half_t;
+  using ValTypeB = half_t;
+  using ValTypeC = float;
 
   using Shape_MNK = Shape<_8,_8,_4>;
   using ThrID   = SM70_QuadPair;

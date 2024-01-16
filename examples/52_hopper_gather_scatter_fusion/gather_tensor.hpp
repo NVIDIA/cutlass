@@ -101,6 +101,11 @@ struct CustomStride
   auto
   operator*(I i, CustomStride const &s) { return s.func_(i) * s.stride_; }
 
+  template <class I>
+  CUTE_HOST_DEVICE constexpr friend
+  auto
+  operator*(CustomStride const &s, I i) { return s.func_(i) * s.stride_; }
+
   CUTE_HOST_DEVICE friend
   void
   print(CustomStride const & s) {

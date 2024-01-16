@@ -947,6 +947,20 @@ void TensorFillPadDiagonalRandomUniform(
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+/// Fills a tensor with a uniform value
+template <
+  typename Element                        ///< Element type
+>
+void BlockFill(
+  Element *ptr,
+  size_t capacity,
+  Element val
+  ) {                                       
+  for (size_t i = 0; i < capacity; ++i) {
+    ReferenceFactory<Element>::get(ptr, i) = val;
+  }
+}
+
 /// Fills a tensor with random values with a uniform random distribution.
 template <
   typename Element                        ///< Element type

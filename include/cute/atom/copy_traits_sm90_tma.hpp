@@ -673,15 +673,14 @@ fill_tma_gmem_shape_stride(Tensor<GEngine,GLayout>   const& gtensor,           /
       // Trivial contribution of this gmem mode to this tma mode
       auto ej = unwrap(get<i>(tma_gbasis_stride));
       gmem_prob_shape[i]  = basis_get(ej, gmem_shape);
-      gmem_prob_stride[i] = basis_get(ej, gmem_stride) * sizeof_bits_v<TmaInternalType> / 8;
+      gmem_prob_stride[i] = basis_get(ej, gmem_stride);
     } else {
       // Apply a recurrence to each gmem mode that contributes to this tma mode
       for_each(get<i>(tma_gbasis_stride), [&](auto ej) {
         // Problem shape
         uint64_t shape_j  = basis_get(ej, gmem_shape);
         // Problem stride (in bytes)
-        uint64_t stride_j = basis_get(ej, gmem_stride) * sizeof_bits_v<TmaInternalType> / 8;
-
+        uint64_t stride_j = basis_get(ej, gmem_stride);
         uint64_t old_stride = gmem_prob_stride[i];
         gmem_prob_stride[i] = gcd(gmem_prob_stride[i], stride_j);
 
@@ -764,8 +763,14 @@ make_tma_copy_desc(Tensor<GEngine,GLayout> const& gtensor,         // The origin
   assert(gmem_prob_shape[4] <= (uint64_t(1) << 32));         // Size must be max 2^32
 
   // TMA descriptor does not store the zeroth stride and assumes it is 1 (TmaInternalType element).
-  assert(gmem_prob_stride[0] == sizeof(TmaInternalType) && "Majorness of smem doesn't match majorness of gmem");
+  assert(gmem_prob_stride[0] == 1 && "Majorness of smem doesn't match majorness of gmem");
 
+  // convert strides to byte strides
+  for(uint64_t& stride : gmem_prob_stride) {
+    stride = (stride * sizeof_bits_v<TmaInternalType>) / 8;
+  }
+
+  // Assert the byte strides. Tma Descriptor uses byte strides
   assert((gmem_prob_stride[1]) < (uint64_t(1) << 40));       // Stride must be max 2^40
   assert((gmem_prob_stride[1] & 0b1111) == 0);               // Stride must be multiple of 16B (128b)
   assert((gmem_prob_stride[2]) < (uint64_t(1) << 40));       // Stride must be max 2^40
@@ -866,8 +871,8 @@ make_tma_copy_desc(Tensor<GEngine,GLayout> const& gtensor,         // The origin
     }
 
   #endif // (__CUDACC_VER_MAJOR__ >= 12) && !defined(__CUDACC_RTC__)
-  auto recast_ratio = cute::ratio(Int<sizeof_bits<typename GEngine::value_type>::value>{},
-                                  Int<sizeof_bits<             TmaInternalType>::value>{});
+  auto recast_ratio = cute::trait_ratio(sizeof_bits<typename GEngine::value_type>{},
+                                        sizeof_bits<             TmaInternalType>{});
 
   auto gbasis = make_basis_like(shape(gtensor));
 
@@ -943,7 +948,7 @@ make_tma_copy_atom(CopyOp,
   // Construct the Copy_Traits
   //
 
-  constexpr int num_bits_per_tma = decltype(size(tma_gbasis))::value * sizeof_bits_v<TmaInternalType>;
+  constexpr int num_bits_per_tma = size(tma_gbasis) * sizeof_bits<TmaInternalType>::value;
   using Traits = Copy_Traits<CopyOp, cute::C<num_bits_per_tma>, decltype(aux_params)>;
   using Atom   = Copy_Atom<Traits, typename GEngine::value_type>;
 
@@ -985,7 +990,7 @@ make_tma_copy_tiled(CopyOp                  const& copy_op,
 
   [[maybe_unused]] auto cta_tiler = product_each(shape(cta_v_map));
 
-  auto num_elems_per_tma = size<1>(typename decltype(atom)::RefLayout{}) / Int<sizeof_bits_v<typename GEngine::value_type>>{};
+  auto num_elems_per_tma = size<1>(typename decltype(atom)::RefLayout{}) / static_value<sizeof_bits<typename GEngine::value_type>>();
 
   // smem idx -> smem coord
   auto inv_smem_layout = right_inverse(get_nonswizzle_portion(slayout));

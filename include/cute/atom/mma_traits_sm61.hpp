@@ -41,10 +41,10 @@ namespace cute
 template <>
 struct MMA_Traits<SM61_DP4A>
 {
-  using ElementDVal = int32_t;
-  using ElementAVal = int8_t;
-  using ElementBVal = int8_t;
-  using ElementCVal = int32_t;
+  using ValTypeD = int32_t;
+  using ValTypeA = int8_t;
+  using ValTypeB = int8_t;
+  using ValTypeC = int32_t;
 
   using Shape_MNK = Shape<_1,_1,_4>;
   using ThrID   = Layout<_1>;
@@ -58,10 +58,10 @@ struct MMA_Traits<SM61_DP4A>
 template <>
 struct MMA_Traits<SM61_DP2A>
 {
-  using ElementDVal = int32_t;
-  using ElementAVal = int16_t;
-  using ElementBVal = int16_t;
-  using ElementCVal = int32_t;
+  using ValTypeD = int32_t;
+  using ValTypeA = int16_t;
+  using ValTypeB = int16_t;
+  using ValTypeC = int32_t;
 
   using Shape_MNK = Shape<_1,_1,_2>;
   using ThrID   = Layout<_1>;

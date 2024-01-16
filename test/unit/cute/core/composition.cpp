@@ -42,8 +42,8 @@ using namespace cute;
 
 template <class LayoutA, class LayoutB>
 void
-test_composition(const LayoutA& layoutA,
-                 const LayoutB& layoutB)
+test_composition(LayoutA const& layoutA,
+                 LayoutB const& layoutB)
 {
   auto layoutR = composition(layoutA, layoutB);
 
@@ -52,14 +52,12 @@ test_composition(const LayoutA& layoutA,
   CUTLASS_TRACE_HOST("  =>  ");
   CUTLASS_TRACE_HOST(layoutR);
 
-  // Test that layout R is compatible with layout B
+  // Test that layout B is compatible with layout R
   EXPECT_TRUE(compatible(layoutB, layoutR));
 
-  // True post-condition: Every coordinate c of layoutB with L1D(c) < size(layoutR) is a coordinate of layoutR.
-
-  // Test that R(c) = A(B(c)) for all coordinates c in layoutR
-  for (int i = 0; i < size(layoutR); ++i) {
-    EXPECT_EQ(layoutR(i), layoutA(layoutB(i)));
+  // Test that R(c) = A(B(c)) for all coordinates c in layoutB
+  for (int c = 0; c < size(layoutB); ++c) {
+    EXPECT_EQ(layoutR(c), layoutA(layoutB(c)));
   }
 }
 

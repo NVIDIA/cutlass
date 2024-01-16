@@ -94,6 +94,7 @@ struct SparseGemm {
     //
     // Data members
     //
+
     typename Epilogue::OutputTileIterator::Params params_C;
     typename Epilogue::OutputTileIterator::TensorRef ref_C;
     typename Epilogue::OutputTileIterator::Params params_D;
@@ -125,8 +126,8 @@ struct SparseGemm {
       ref_C(ref_C),
       params_D(ref_D.layout()),
       ref_D(ref_D),
-      output_op(output_op),
-      semaphore(workspace) {
+      output_op(output_op) {
+    semaphore = workspace;
     }
   };
 

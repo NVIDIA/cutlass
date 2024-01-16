@@ -58,7 +58,6 @@ struct FusionOperation {
   static constexpr int AlignmentScalar = 0;
   static constexpr bool IsScaleFactorSupported = false;
   static constexpr bool IsPerRowScaleSupported = false;
-
   using ElementBias = void;
   static constexpr int AlignmentBias = 0;
   static constexpr bool IsPerRowBiasSupported = false;

@@ -195,4 +195,3 @@ struct DefaultSparseGemmWithVisitor<ElementA, LayoutA, kAlignmentA, ElementB, La
 }  // namespace kernel
 }  // namespace gemm
 }  // namespace cutlass
-

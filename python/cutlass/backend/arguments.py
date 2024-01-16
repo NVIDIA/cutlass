@@ -56,16 +56,9 @@ class ArgumentBase:
         **kwargs,
     ) -> None:
         # tensor_C can be interpreted as the bias with bias=True in keyword args
-        if "bias" in kwargs.keys():
-            self.bias = kwargs["bias"]
-        else:
-            # by default, tensor_C is not bias
-            self.bias = False
+        self.bias = kwargs.get("bias", False)
 
-        if "stream" in kwargs.keys():
-            self.stream = kwargs["stream"]
-        else:
-            self.stream = cuda.CUstream(0)
+        self.stream = kwargs.get("stream", cuda.CUstream(0))
 
         # RMM buffers used to track tensor lifetime
         self.buffers = {}
