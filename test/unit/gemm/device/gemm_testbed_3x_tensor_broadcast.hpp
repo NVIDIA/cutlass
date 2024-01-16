@@ -101,7 +101,8 @@ struct Testbed3xTensorBroadcast {
     cutlass::Distribution::Kind init_C_ = cutlass::Distribution::Uniform,
     uint64_t seed_ = TestBedImpl::kDefaultSeed
   ) :
-    impl_(init_A_, init_B_, init_C_, seed_) { }
+    impl_(CheckEquality::EXACT, ScalarLoc::ON_DEVICE, VectorBeta::ENABLED,
+          init_A_, init_B_, init_C_, cutlass::Distribution::Uniform, cutlass::Distribution::Uniform, seed_) { }
 
   Testbed3xTensorBroadcast(
     typename LayoutTagA::Stride stride_factor_A_,
@@ -117,9 +118,12 @@ struct Testbed3xTensorBroadcast {
           stride_factor_B_,
           stride_factor_C_,
           stride_factor_D_,
+          CheckEquality::EXACT, ScalarLoc::ON_HOST, VectorBeta::ENABLED,
           init_A_,
           init_B_,
           init_C_,
+          cutlass::Distribution::Uniform,
+          cutlass::Distribution::Uniform,
           seed_) { }
 
   /// Initializes data structures
@@ -135,7 +139,7 @@ struct Testbed3xTensorBroadcast {
     auto bias_size = PerColBias ? cute::get<1>(problem_shape_MNKL) : cute::get<0>(problem_shape_MNKL);
     bias.resize(cutlass::Coord<1>(bias_size));
 
-    EXPECT_TRUE(impl_.initialize_tensor(bias.host_view(), cutlass::Distribution::Uniform, impl_.seed + 2023));
+    EXPECT_TRUE(detail::initialize_tensor(bias.host_view(), cutlass::Distribution::Uniform, impl_.collective_mma_inputs.seed + 2023));
     bias.sync_device();
   }
 
@@ -147,8 +151,8 @@ struct Testbed3xTensorBroadcast {
 
     auto c_coord = cutlass::make_Coord(M * L, N);
 
-    tensor_C1.resize(c_coord, cutlass::layout::Affine2Layout_Factory<LayoutTagD>::layout_factory(c_coord, impl_.stride_factor_C));
-    EXPECT_TRUE(impl_.initialize_tensor(tensor_C1.host_view(), cutlass::Distribution::Uniform, impl_.seed + 2024));
+    tensor_C1.resize(c_coord, cutlass::layout::Affine2Layout_Factory<LayoutTagD>::layout_factory(c_coord, impl_.collective_epilogue.stride_factor_C));
+    EXPECT_TRUE(detail::initialize_tensor(tensor_C1.host_view(), cutlass::Distribution::Uniform, impl_.collective_mma_inputs.seed + 2024));
     tensor_C1.sync_device();
   }
 
@@ -161,19 +165,19 @@ struct Testbed3xTensorBroadcast {
   {
     auto [M, N, K, L] = problem_shape_MNKL;
 
-    impl_.tensor_D.sync_host();
-    EXPECT_GT(cutlass::reference::host::TensorNorm(impl_.tensor_A.host_view()), 0);
-    EXPECT_GT(cutlass::reference::host::TensorNorm(impl_.tensor_B.host_view()), 0);
+    impl_.collective_epilogue.tensor_D.sync_host();
+    EXPECT_GT(cutlass::reference::host::TensorNorm(impl_.collective_mma_inputs.tensor_A.host_view()), 0);
+    EXPECT_GT(cutlass::reference::host::TensorNorm(impl_.collective_mma_inputs.tensor_B.host_view()), 0);
 
-    if (impl_.tensor_D.size() > 1) {
-      EXPECT_GT(cutlass::reference::host::TensorNorm(impl_.tensor_D.host_view()), 0);
+    if (impl_.collective_epilogue.tensor_D.size() > 1) {
+      EXPECT_GT(cutlass::reference::host::TensorNorm(impl_.collective_epilogue.tensor_D.host_view()), 0);
     }
 
-    if (impl_.reference_D.size() > 1) {
-      EXPECT_GT(cutlass::reference::host::TensorNorm(impl_.reference_D.host_view()), 0);
+    if (impl_.collective_epilogue.reference_D.size() > 1) {
+      EXPECT_GT(cutlass::reference::host::TensorNorm(impl_.collective_epilogue.reference_D.host_view()), 0);
     }
 
-    bool passed = cutlass::reference::host::TensorEquals(impl_.reference_D.host_view(), impl_.tensor_D.host_view());
+    bool passed = cutlass::reference::host::TensorEquals(impl_.collective_epilogue.reference_D.host_view(), impl_.collective_epilogue.tensor_D.host_view());
 
     EXPECT_TRUE(passed);
 
@@ -196,12 +200,12 @@ struct Testbed3xTensorBroadcast {
       }
 
       file
-        << "A =\n" << impl_.tensor_A.host_view()
-        << "\nB =\n" << impl_.tensor_B.host_view()
-        << "\nC0 =\n" << impl_.tensor_C.host_view()
+        << "A =\n" << impl_.collective_mma_inputs.tensor_A.host_view()
+        << "\nB =\n" << impl_.collective_mma_inputs.tensor_B.host_view()
+        << "\nC0 =\n" << impl_.collective_epilogue.tensor_C.host_view()
         << "\nC1 =\n" << tensor_C1.host_view()
-        << "\n\nReference =\n" << impl_.reference_D.host_view()
-        << "\n\nComputed =\n" <<impl_.tensor_D.host_view();
+        << "\n\nReference =\n" << impl_.collective_epilogue.reference_D.host_view()
+        << "\n\nComputed =\n" <<impl_.collective_epilogue.tensor_D.host_view();
     }
 
     return passed;
@@ -221,40 +225,39 @@ struct Testbed3xTensorBroadcast {
     auto K = cute::get<2>(problem_shape_MNKL);
     auto L = cute::get<3>(problem_shape_MNKL);
 
-    auto A = cute::make_tensor(impl_.tensor_A.host_data(),
-        cute::make_layout(cute::make_shape(M, K, L), impl_.stride_a));
-    auto B = cute::make_tensor(impl_.tensor_B.host_data(),
-        cute::make_layout(cute::make_shape(N, K, L), impl_.stride_b));
-    auto D = cute::make_tensor(impl_.reference_D.host_data(),
-        cute::make_layout(cute::make_shape(M, N, L), impl_.stride_d));
+    auto A = cute::make_tensor(impl_.collective_mma_inputs.tensor_A.host_data(),
+        cute::make_layout(cute::make_shape(M, K, L), impl_.collective_mma_inputs.stride_a));
+    auto B = cute::make_tensor(impl_.collective_mma_inputs.tensor_B.host_data(),
+        cute::make_layout(cute::make_shape(N, K, L), impl_.collective_mma_inputs.stride_b));
+    auto D = cute::make_tensor(impl_.collective_epilogue.reference_D.host_data(),
+        cute::make_layout(cute::make_shape(M, N, L), impl_.collective_epilogue.stride_d));
     auto Bias = cute::make_tensor(static_cast<ElementBias*>(use_bias ? bias.host_data() : nullptr),
         cute::make_layout(PerColBias ? cute::make_shape(1, N) : cute::make_shape(M, 1)));
-    auto C0 = cute::make_tensor(impl_.tensor_C.host_data(),
-        cute::make_layout(cute::make_shape(M, N, L), impl_.stride_c));
+    auto C0 = cute::make_tensor(impl_.collective_epilogue.tensor_C.host_data(),
+        cute::make_layout(cute::make_shape(M, N, L), impl_.collective_epilogue.stride_c));
     auto C1 = cute::make_tensor(tensor_C1.host_data(),
-        cute::make_layout(cute::make_shape(M, N, L), impl_.stride_c));
+        cute::make_layout(cute::make_shape(M, N, L), impl_.collective_epilogue.stride_c));
 
     // Create host workspace for output of testbed. This computes a portion of the epilogue:
     //    ref_compute_out = Activation(alpha * (A @ B) + bias)
     cutlass::HostTensor<ElementCompute, LayoutTagC> ref_compute_out;
     auto c_coord = cutlass::make_Coord(M * L, N);
-    ref_compute_out.resize(c_coord, cutlass::layout::Affine2Layout_Factory<LayoutTagD>::layout_factory(c_coord, impl_.stride_factor_C), false);
+    ref_compute_out.resize(c_coord, cutlass::layout::Affine2Layout_Factory<LayoutTagD>::layout_factory(c_coord, impl_.collective_epilogue.stride_factor_C), false);
     auto RefComputeOut = cute::make_tensor(ref_compute_out.host_data(),
-        cute::make_layout(cute::make_shape(M, N, L), impl_.stride_c));
+        cute::make_layout(cute::make_shape(M, N, L), impl_.collective_epilogue.stride_c));
 
     cutlass::reference::host::GettMainloopParams<ElementAccumulator, decltype(A), decltype(B)> mainloop_params{A, B};
 
     // Use a dummy null tensor for operand C because the epilogue overrides C.
     auto dummy_C = cute::make_tensor(static_cast<ElementC*>(nullptr),
-        cute::make_layout(cute::make_shape(M, N, L), impl_.stride_c));
+        cute::make_layout(cute::make_shape(M, N, L), impl_.collective_epilogue.stride_c));
     ElementCompute dummy_beta(0);
     auto dummy_Aux = cute::make_tensor(static_cast<ElementD*>(nullptr),
-        cute::make_layout(cute::make_shape(M, N, L), impl_.stride_d));
+        cute::make_layout(cute::make_shape(M, N, L), impl_.collective_epilogue.stride_d));
     auto dummy_Valpha = cute::make_tensor(static_cast<ElementCompute*>(nullptr),
         cute::make_layout(cute::make_shape(M, 1)));
     auto dummy_Vbeta = cute::make_tensor(static_cast<ElementCompute*>(nullptr),
         cute::make_layout(cute::make_shape(M, 1)));
-
     cutlass::reference::host::GettEpilogueParams<
         ElementScalar,
         ElementScalar,
@@ -361,17 +364,17 @@ struct Testbed3xTensorBroadcast {
     arguments = typename Gemm::Arguments{
       cutlass::gemm::GemmUniversalMode::kGemm,
         problem_size,
-        { impl_.tensor_A.device_data(), impl_.stride_a,
-          impl_.tensor_B.device_data(), impl_.stride_b,
+        { impl_.collective_mma_inputs.tensor_A.device_data(), impl_.collective_mma_inputs.stride_a,
+          impl_.collective_mma_inputs.tensor_B.device_data(), impl_.collective_mma_inputs.stride_b,
           impl_.mma_promotion_interval
         },
         { // Epilogue arguments
           { alpha, beta }, // ThreadOp arguments
-          impl_.stride_c,
-          impl_.tensor_D.device_data(),
-          impl_.stride_d,
+          impl_.collective_epilogue.stride_c,
+          impl_.collective_epilogue.tensor_D.device_data(),
+          impl_.collective_epilogue.stride_d,
           use_bias ? bias.device_data() : nullptr,
-          impl_.tensor_C.device_data(),
+          impl_.collective_epilogue.tensor_C.device_data(),
           tensor_C1.device_data()
         }, // Epilogue arguments end
         hw_info

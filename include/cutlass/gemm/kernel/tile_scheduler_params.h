@@ -87,6 +87,12 @@ struct PersistentTileSchedulerSm90Params {
   int32_t log_swizzle_size_ = 0;
   RasterOrder raster_order_ = RasterOrder::AlongN;
 
+  uint32_t problem_tiles_m_ = 0;
+  uint32_t problem_tiles_n_ = 0;
+  uint32_t problem_tiles_l_ = 0;
+  uint32_t cluster_shape_m_ = 0;
+  uint32_t cluster_shape_n_ = 0;
+
   // Initializes members. This variant of the method should only be used when
   // problem_shape and tile_shape contain modes of only rank 1.
   void
@@ -126,6 +132,12 @@ struct PersistentTileSchedulerSm90Params {
     auto log_swizzle_size = get_log_swizzle_size(problem_blocks.x, problem_blocks.y, max_swizzle_size);
     auto problem_blocks_m = round_up(problem_blocks.x, (1 << log_swizzle_size) * cluster_shape.m());
     auto problem_blocks_n = round_up(problem_blocks.y, (1 << log_swizzle_size) * cluster_shape.n());
+
+    problem_tiles_m_ = problem_blocks_m / cluster_shape.m();
+    problem_tiles_n_ = problem_blocks_n / cluster_shape.n();
+    problem_tiles_l_ = problem_blocks.z;
+    cluster_shape_m_ = cluster_shape.m();
+    cluster_shape_n_ = cluster_shape.n();
 
     RasterOrder raster_order = get_rasterization_order(
       problem_blocks_m,

@@ -63,7 +63,7 @@ initialize_barrier(uint64_t& smem_barrier,                 // 64 bits user-mange
 {
 #if defined(CUTE_ARCH_TMA_SM90_ENABLED)
   uint32_t smem_int_ptr = cast_smem_ptr_to_uint(&smem_barrier);
-  asm volatile ("mbarrier.init.shared.b64 [%0], %1;\n"
+  asm volatile ("mbarrier.init.shared::cta.b64 [%0], %1;\n"
     :: "r"(smem_int_ptr),
        "r"(thread_count));
 #endif
@@ -77,7 +77,7 @@ set_barrier_transaction_bytes(uint64_t& smem_barrier,      // 64 bits user-mange
 {
 #if defined(CUTE_ARCH_TMA_SM90_ENABLED)
   uint32_t smem_int_ptr = cast_smem_ptr_to_uint(&smem_barrier);
-  asm volatile ("mbarrier.arrive.expect_tx.shared.b64 _, [%0], %1;\n"
+  asm volatile ("mbarrier.arrive.expect_tx.shared::cta.b64 _, [%0], %1;\n"
     :: "r"(smem_int_ptr),
        "r"(bytes));
 #endif
@@ -95,7 +95,7 @@ wait_barrier(uint64_t& smem_barrier,                       // 64 bits user-mange
     "{\n"
     ".reg .pred                P1;\n"
     "LAB_WAIT:\n"
-    "mbarrier.try_wait.parity.shared.b64 P1, [%0], %1;\n"
+    "mbarrier.try_wait.parity.shared::cta.b64 P1, [%0], %1;\n"
     "@P1                       bra.uni DONE;\n"
     "bra.uni                   LAB_WAIT;\n"
     "DONE:\n"
@@ -116,7 +116,7 @@ arrive_barrier(uint64_t& smem_barrier)                      // 64 bits user-mang
   asm volatile(
     "{\n"
     ".reg .b64 state; \n"
-    "mbarrier.arrive.shared.b64   state, [%0];\n"
+    "mbarrier.arrive.shared::cta.b64   state, [%0];\n"
     "}\n"
     :: "r"(smem_int_ptr));
 #endif

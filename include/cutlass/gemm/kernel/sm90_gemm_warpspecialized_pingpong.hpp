@@ -44,7 +44,6 @@
 #include "cutlass/trace.h"
 
 #include "cute/tensor.hpp"
-
 ///////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass::gemm::kernel {

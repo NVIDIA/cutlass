@@ -77,6 +77,7 @@ struct GettMainloopParams {
 
   ComplexTransform transform_A = ComplexTransform::kNone;
   ComplexTransform transform_B = ComplexTransform::kNone;
+  
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -126,6 +127,7 @@ struct GettEpilogueParams {
   TensorAux Aux{};
   VectorAlpha Valpha{};
   VectorBeta Vbeta{};
+  ElementCompute st = ElementCompute(1);
 
   ElementAccumulator* abs_max_D = nullptr;
   ElementAccumulator* abs_max_Aux = nullptr;
@@ -204,6 +206,7 @@ void gett_mainloop(
       if (m + m_b < cute::size<0>(mainloop_params.A.layout())) {
         // Perform reference GEMM calculations at the accumulator's precision. Cast A value to accumulator type.
         a_frag[m_b] = static_cast<ElementAccumulator>(ElementA(mainloop_params.A(m + m_b, k, l)));
+        
         if (mainloop_params.transform_A == ComplexTransform::kConjugate) {
           a_frag[m_b] = conj(a_frag[m_b]);
         }
@@ -218,6 +221,7 @@ void gett_mainloop(
       if (n + n_b < cute::size<0>(mainloop_params.B.layout())) {
         // Perform reference GEMM calculations at the accumulator's precision. Cast A value to accumulator type.
         b_frag[n_b] = static_cast<ElementAccumulator>(ElementB(mainloop_params.B(n + n_b, k, l)));
+
         if (mainloop_params.transform_B == ComplexTransform::kConjugate) {
           b_frag[n_b] = conj(b_frag[n_b]);
         }
@@ -325,6 +329,8 @@ void gett_epilogue(
   converted_alpha = mul(converted_alpha, mul(converted_scale_a, converted_scale_b));
   converted_beta = mul(converted_beta, converted_scale_c);
 
+  ElementCompute inter_accum[kBlockM][kBlockN];
+
   for (int m_b = 0; m_b < kBlockM; ++m_b) {
     ElementCompute local_dBias = ElementCompute(0);
 
@@ -391,7 +397,7 @@ void gett_epilogue(
           output = epilogue_fma(converted_scale_d, output, ElementCompute(0));
         }
 
-        epilogue_params.D(m + m_b, n + n_b, l) = destination_converter(output);
+        inter_accum[m_b][n_b] = ElementCompute(output);
       }
     } // n_b
 
@@ -403,6 +409,13 @@ void gett_epilogue(
       }
     }
   } // m_b
+  for (int m_b = 0; m_b < kBlockM; ++m_b) {
+    for (int n_b = 0; n_b < kBlockN; ++n_b) {
+      if (m + m_b < cute::size<0>(epilogue_params.D.layout()) && n + n_b < cute::size<1>(epilogue_params.D.layout())) {
+        epilogue_params.D(m + m_b, n + n_b, l) = destination_converter(inter_accum[m_b][n_b]);
+      }
+    }
+  }
 #if defined(_OPENMP)
   #pragma omp critical(Abs_Max_Data_Update)
 #endif

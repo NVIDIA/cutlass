@@ -32,11 +32,9 @@
 /**
 Please check example 07, 08 and 17 for the basics of dense tensor op gemm kernels.  NVIDIA Ampere
 architecture also supports structured sparse tensor op for tf32, fp16, int8 and int4.
-
 Sparse GEMM kernels needs to takes an additional E matrix which stores the meta data.  The format of
 meta data is different for every data types.   CUTLASS templates can automatically infer it based on
 input A and B.  Check code below.
-
 Moreover, matrix E needs to be preprocessed so that it can use ldmatrix to load into the registers
 efficiently.
 */
@@ -307,7 +305,7 @@ int run() {
   // uncompress tensor_a based on meta data tensor_e. We need it for reference computing.
   cutlass::uncompress(tensor_a_uncompressed.host_ref(), tensor_a.host_ref(),
                       tensor_e.host_ref(), problem_size.m(), problem_size.k());
- 
+
   // Create instantiation for host reference gemm kernel
   cutlass::reference::host::Gemm<ElementInputA,
                                  LayoutInputA,
@@ -343,14 +341,14 @@ int run() {
 }
 
 int main() {
-  
+
   bool notSupported = false;
 
   // Ampere Sparse Tensor Core operations exposed with mma.sync and ldmatrix are first available
   // in CUDA 11.1. 
   //
   // CUTLASS must be compiled with CUDA 11.1 Toolkit to run these examples.
-  
+
   if (!(__CUDACC_VER_MAJOR__ > 11 || (__CUDACC_VER_MAJOR__ == 11 && __CUDACC_VER_MINOR__ >= 1))) {
     std::cerr << "Ampere Tensor Core operations must be compiled with CUDA 11.1 Toolkit or later." << std::endl;
     notSupported = true;

@@ -66,10 +66,10 @@ using SM80_16x8_Row = Layout<Shape <Shape < _4,_8>,Shape < _2,_2>>,
 template <>
 struct MMA_Traits<SM80_16x8x8_F16F16F16F16_TN>
 {
-  using ElementDVal = half_t;
-  using ElementAVal = half_t;
-  using ElementBVal = half_t;
-  using ElementCVal = half_t;
+  using ValTypeD = half_t;
+  using ValTypeA = half_t;
+  using ValTypeB = half_t;
+  using ValTypeC = half_t;
 
   using Shape_MNK = Shape<_16,_8,_8>;
   using ThrID   = Layout<_32>;
@@ -81,10 +81,10 @@ struct MMA_Traits<SM80_16x8x8_F16F16F16F16_TN>
 template <>
 struct MMA_Traits<SM80_16x8x16_F16F16F16F16_TN>
 {
-  using ElementDVal = half_t;
-  using ElementAVal = half_t;
-  using ElementBVal = half_t;
-  using ElementCVal = half_t;
+  using ValTypeD = half_t;
+  using ValTypeA = half_t;
+  using ValTypeB = half_t;
+  using ValTypeC = half_t;
 
   using Shape_MNK = Shape<_16,_8,_16>;
   using ThrID   = Layout<_32>;
@@ -103,20 +103,20 @@ template <>
 struct MMA_Traits<SM80_16x8x8_F32F16F16F32_TN>
      : MMA_Traits<SM80_16x8x8_F16F16F16F16_TN>
 {
-  using ElementDVal = float;
-  using ElementAVal = half_t;
-  using ElementBVal = half_t;
-  using ElementCVal = float;
+  using ValTypeD = float;
+  using ValTypeA = half_t;
+  using ValTypeB = half_t;
+  using ValTypeC = float;
 };
 
 template <>
 struct MMA_Traits<SM80_16x8x16_F32F16F16F32_TN>
      : MMA_Traits<SM80_16x8x16_F16F16F16F16_TN>
 {
-  using ElementDVal = float;
-  using ElementAVal = half_t;
-  using ElementBVal = half_t;
-  using ElementCVal = float;
+  using ValTypeD = float;
+  using ValTypeA = half_t;
+  using ValTypeB = half_t;
+  using ValTypeC = float;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -127,20 +127,20 @@ template <>
 struct MMA_Traits<SM80_16x8x8_F32BF16BF16F32_TN>
      : MMA_Traits<SM80_16x8x8_F16F16F16F16_TN>
 {
-  using ElementDVal = float;
-  using ElementAVal = bfloat16_t;
-  using ElementBVal = bfloat16_t;
-  using ElementCVal = float;
+  using ValTypeD = float;
+  using ValTypeA = bfloat16_t;
+  using ValTypeB = bfloat16_t;
+  using ValTypeC = float;
 };
 
 template <>
 struct MMA_Traits<SM80_16x8x16_F32BF16BF16F32_TN>
      : MMA_Traits<SM80_16x8x16_F16F16F16F16_TN>
 {
-  using ElementDVal = float;
-  using ElementAVal = bfloat16_t;
-  using ElementBVal = bfloat16_t;
-  using ElementCVal = float;
+  using ValTypeD = float;
+  using ValTypeA = bfloat16_t;
+  using ValTypeB = bfloat16_t;
+  using ValTypeC = float;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -150,10 +150,10 @@ struct MMA_Traits<SM80_16x8x16_F32BF16BF16F32_TN>
 template <>
 struct MMA_Traits<SM80_16x8x4_F32TF32TF32F32_TN>
 {
-  using ElementDVal = float;
-  using ElementAVal = cutlass::tfloat32_t;
-  using ElementBVal = cutlass::tfloat32_t;
-  using ElementCVal = float;
+  using ValTypeD = float;
+  using ValTypeA = cutlass::tfloat32_t;
+  using ValTypeB = cutlass::tfloat32_t;
+  using ValTypeC = float;
 
   using Shape_MNK = Shape<_16,_8,_4>;
   using ThrID   = Layout<_32>;
@@ -166,10 +166,10 @@ struct MMA_Traits<SM80_16x8x4_F32TF32TF32F32_TN>
 template <>
 struct MMA_Traits<SM80_16x8x8_F32TF32TF32F32_TN>
 {
-  using ElementDVal = float;
-  using ElementAVal = cutlass::tfloat32_t;
-  using ElementBVal = cutlass::tfloat32_t;
-  using ElementCVal = float;
+  using ValTypeD = float;
+  using ValTypeA = cutlass::tfloat32_t;
+  using ValTypeB = cutlass::tfloat32_t;
+  using ValTypeC = float;
 
   using Shape_MNK = Shape<_16,_8,_8>;
   using ThrID   = Layout<_32>;
@@ -187,10 +187,10 @@ struct MMA_Traits<SM80_16x8x8_F32TF32TF32F32_TN>
 template <>
 struct MMA_Traits<SM80_8x8x4_F64F64F64F64_TN>
 {
-  using ElementDVal = double;
-  using ElementAVal = double;
-  using ElementBVal = double;
-  using ElementCVal = double;
+  using ValTypeD = double;
+  using ValTypeA = double;
+  using ValTypeB = double;
+  using ValTypeC = double;
 
   using Shape_MNK = Shape<_8,_8,_4>;
   using ThrID   = Layout<_32>;
@@ -204,10 +204,10 @@ template <>
 struct MMA_Traits<SM80_8x8x4_C64C64C64C64_TN>
      : MMA_Traits<SM80_8x8x4_F64F64F64F64_TN>
 {
-  using ElementDVal = complex<double>;
-  using ElementAVal = complex<double>;
-  using ElementBVal = complex<double>;
-  using ElementCVal = complex<double>;
+  using ValTypeD = complex<double>;
+  using ValTypeA = complex<double>;
+  using ValTypeB = complex<double>;
+  using ValTypeC = complex<double>;
 };
 
 // Custom complex fp64 MMA composed of 3 fp64 MMAs -- same layouts
@@ -215,10 +215,10 @@ template <>
 struct MMA_Traits<SM80_8x8x4_GC64C64C64GC64_TN>
      : MMA_Traits<SM80_8x8x4_F64F64F64F64_TN>
 {
-  using ElementDVal = typename SM80_8x8x4_GC64C64C64GC64_TN::GaussComplex;
-  using ElementAVal = complex<double>;
-  using ElementBVal = complex<double>;
-  using ElementCVal = typename SM80_8x8x4_GC64C64C64GC64_TN::GaussComplex;
+  using ValTypeD = typename SM80_8x8x4_GC64C64C64GC64_TN::GaussComplex;
+  using ValTypeA = complex<double>;
+  using ValTypeB = complex<double>;
+  using ValTypeC = typename SM80_8x8x4_GC64C64C64GC64_TN::GaussComplex;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -228,10 +228,10 @@ struct MMA_Traits<SM80_8x8x4_GC64C64C64GC64_TN>
 template <>
 struct MMA_Traits<SM80_8x8x16_S32S8S8S32_TN>
 {
-  using ElementDVal = int32_t;
-  using ElementAVal = int8_t;
-  using ElementBVal = int8_t;
-  using ElementCVal = int32_t;
+  using ValTypeD = int32_t;
+  using ValTypeA = int8_t;
+  using ValTypeB = int8_t;
+  using ValTypeC = int32_t;
 
   using Shape_MNK = Shape<_8,_8,_16>;
   using ThrID   = Layout<_32>;
@@ -247,10 +247,10 @@ struct MMA_Traits<SM80_8x8x16_S32S8S8S32_TN_SATURATE>
 template <>
 struct MMA_Traits<SM80_16x8x16_S32S8S8S32_TN>
 {
-  using ElementDVal = int32_t;
-  using ElementAVal = int8_t;
-  using ElementBVal = int8_t;
-  using ElementCVal = int32_t;
+  using ValTypeD = int32_t;
+  using ValTypeA = int8_t;
+  using ValTypeB = int8_t;
+  using ValTypeC = int32_t;
 
   using Shape_MNK = Shape<_16,_8,_16>;
   using ThrID   = Layout<_32>;
@@ -267,10 +267,10 @@ struct MMA_Traits<SM80_16x8x16_S32S8S8S32_TN_SATURATE>
 template <>
 struct MMA_Traits<SM80_16x8x32_S32S8S8S32_TN>
 {
-  using ElementDVal = int32_t;
-  using ElementAVal = int8_t;
-  using ElementBVal = int8_t;
-  using ElementCVal = int32_t;
+  using ValTypeD = int32_t;
+  using ValTypeA = int8_t;
+  using ValTypeB = int8_t;
+  using ValTypeC = int32_t;
 
   using Shape_MNK = Shape<_16,_8,_32>;
   using ThrID   = Layout<_32>;
@@ -293,10 +293,10 @@ template <>
 struct MMA_Traits<SM80_8x8x16_S32S8U8S32_TN>
      : MMA_Traits<SM80_8x8x16_S32S8S8S32_TN>
 {
-  using ElementDVal = int32_t;
-  using ElementAVal = int8_t;
-  using ElementBVal = uint8_t;
-  using ElementCVal = int32_t;
+  using ValTypeD = int32_t;
+  using ValTypeA = int8_t;
+  using ValTypeB = uint8_t;
+  using ValTypeC = int32_t;
 };
 
 template <>
@@ -307,10 +307,10 @@ template <>
 struct MMA_Traits<SM80_16x8x16_S32S8U8S32_TN>
      : MMA_Traits<SM80_16x8x16_S32S8S8S32_TN>
 {
-  using ElementDVal = int32_t;
-  using ElementAVal = int8_t;
-  using ElementBVal = uint8_t;
-  using ElementCVal = int32_t;
+  using ValTypeD = int32_t;
+  using ValTypeA = int8_t;
+  using ValTypeB = uint8_t;
+  using ValTypeC = int32_t;
 };
 
 template <>
@@ -321,10 +321,10 @@ template <>
 struct MMA_Traits<SM80_16x8x32_S32S8U8S32_TN>
      : MMA_Traits<SM80_16x8x32_S32S8S8S32_TN>
 {
-  using ElementDVal = int32_t;
-  using ElementAVal = int8_t;
-  using ElementBVal = uint8_t;
-  using ElementCVal = int32_t;
+  using ValTypeD = int32_t;
+  using ValTypeA = int8_t;
+  using ValTypeB = uint8_t;
+  using ValTypeC = int32_t;
 };
 
 template <>
@@ -339,10 +339,10 @@ template <>
 struct MMA_Traits<SM80_8x8x16_S32U8S8S32_TN>
      : MMA_Traits<SM80_8x8x16_S32S8S8S32_TN>
 {
-  using ElementDVal = int32_t;
-  using ElementAVal = uint8_t;
-  using ElementBVal = int8_t;
-  using ElementCVal = int32_t;
+  using ValTypeD = int32_t;
+  using ValTypeA = uint8_t;
+  using ValTypeB = int8_t;
+  using ValTypeC = int32_t;
 };
 
 template <>
@@ -353,10 +353,10 @@ template <>
 struct MMA_Traits<SM80_16x8x16_S32U8S8S32_TN>
      : MMA_Traits<SM80_16x8x16_S32S8S8S32_TN>
 {
-  using ElementDVal = int32_t;
-  using ElementAVal = uint8_t;
-  using ElementBVal = int8_t;
-  using ElementCVal = int32_t;
+  using ValTypeD = int32_t;
+  using ValTypeA = uint8_t;
+  using ValTypeB = int8_t;
+  using ValTypeC = int32_t;
 };
 
 template <>
@@ -367,10 +367,10 @@ template <>
 struct MMA_Traits<SM80_16x8x32_S32U8S8S32_TN>
      : MMA_Traits<SM80_16x8x32_S32S8S8S32_TN>
 {
-  using ElementDVal = int32_t;
-  using ElementAVal = uint8_t;
-  using ElementBVal = int8_t;
-  using ElementCVal = int32_t;
+  using ValTypeD = int32_t;
+  using ValTypeA = uint8_t;
+  using ValTypeB = int8_t;
+  using ValTypeC = int32_t;
 };
 
 template <>
@@ -385,10 +385,10 @@ template <>
 struct MMA_Traits<SM80_8x8x16_S32U8U8S32_TN>
      : MMA_Traits<SM80_8x8x16_S32S8S8S32_TN>
 {
-  using ElementDVal = int32_t;
-  using ElementAVal = uint8_t;
-  using ElementBVal = uint8_t;
-  using ElementCVal = int32_t;
+  using ValTypeD = int32_t;
+  using ValTypeA = uint8_t;
+  using ValTypeB = uint8_t;
+  using ValTypeC = int32_t;
 };
 
 template <>
@@ -399,10 +399,10 @@ template <>
 struct MMA_Traits<SM80_16x8x16_S32U8U8S32_TN>
      : MMA_Traits<SM80_16x8x16_S32S8S8S32_TN>
 {
-  using ElementDVal = int32_t;
-  using ElementAVal = uint8_t;
-  using ElementBVal = uint8_t;
-  using ElementCVal = int32_t;
+  using ValTypeD = int32_t;
+  using ValTypeA = uint8_t;
+  using ValTypeB = uint8_t;
+  using ValTypeC = int32_t;
 };
 
 template <>
@@ -413,10 +413,10 @@ template <>
 struct MMA_Traits<SM80_16x8x32_S32U8U8S32_TN>
      : MMA_Traits<SM80_16x8x32_S32S8S8S32_TN>
 {
-  using ElementDVal = int32_t;
-  using ElementAVal = uint8_t;
-  using ElementBVal = uint8_t;
-  using ElementCVal = int32_t;
+  using ValTypeD = int32_t;
+  using ValTypeA = uint8_t;
+  using ValTypeB = uint8_t;
+  using ValTypeC = int32_t;
 };
 
 template <>
@@ -430,10 +430,10 @@ struct MMA_Traits<SM80_16x8x32_S32U8U8S32_TN_SATURATE>
 template <>
 struct MMA_Traits<SM80_16x8x256_S32U1U1S32_TN_XORPOPC>
 {
-  using ElementDVal = int32_t;
-  using ElementAVal = cute::uint1b_t;
-  using ElementBVal = cute::uint1b_t;
-  using ElementCVal = int32_t;
+  using ValTypeD = int32_t;
+  using ValTypeA = cute::uint1b_t;
+  using ValTypeB = cute::uint1b_t;
+  using ValTypeC = int32_t;
 
   using Shape_MNK = Shape<_16,_8,_256>;
   using ThrID   = Layout<_32>;

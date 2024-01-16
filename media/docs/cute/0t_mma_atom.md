@@ -142,13 +142,13 @@ directory, in header files starting with `mma_traits`.
 
 An `MMA_Traits` specialization defines the following public type aliases.
 
-* `ElementDVal`: Compute type of the D matrix
+* `ValTypeD`: Compute type of the D matrix
 
-* `ElementAVal`: Compute type of the A matrix
+* `ValTypeA`: Compute type of the A matrix
 
-* `ElementBVal`: Compute type of the B matrix
+* `ValTypeB`: Compute type of the B matrix
 
-* `ElementCVal`: Compute type of the C matrix
+* `ValTypeC`: Compute type of the C matrix
 
 * `Shape_MNK`: Logical MxNxK shape of the MMA operation
 
@@ -172,10 +172,10 @@ It looks like this.
 template <>
 struct MMA_Traits<SM70_8x8x4_F32F16F16F32_NT>
 {
-  using ElementDVal = float;
-  using ElementAVal = half_t;
-  using ElementBVal = half_t;
-  using ElementCVal = float;
+  using ValTypeD = float;
+  using ValTypeA = half_t;
+  using ValTypeB = half_t;
+  using ValTypeC = float;
 
   using Shape_MNK = Shape<_8,_8,_4>;
   using ThrID   = SM70_QuadPair;
@@ -207,10 +207,10 @@ We first take a look at how we would take the ISA semantics of thread and data p
 The HMMA NT above uses types:
 
 ```cpp
-  using ElementDVal = float;
-  using ElementAVal = half_t;
-  using ElementBVal = half_t;
-  using ElementCVal = float;
+  using ValTypeD = float;
+  using ValTypeA = half_t;
+  using ValTypeB = half_t;
+  using ValTypeC = float;
 ```
 
 The rest of the `MMA_Traits` will be described in units of these types.

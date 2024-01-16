@@ -55,10 +55,10 @@ struct MMA_Atom<MMA_Traits<Args...>>
   using Traits = MMA_Traits<Args...>;
 
   // Element value types from the MMA_Traits
-  using ValTypeD = typename Traits::ElementDVal;
-  using ValTypeA = typename Traits::ElementAVal;
-  using ValTypeB = typename Traits::ElementBVal;
-  using ValTypeC = typename Traits::ElementCVal;
+  using ValTypeD = typename Traits::ValTypeD;
+  using ValTypeA = typename Traits::ValTypeA;
+  using ValTypeB = typename Traits::ValTypeB;
+  using ValTypeC = typename Traits::ValTypeC;
 
   // Thr-Val layouts from the MMA_Traits
   using Shape_MNK  = typename Traits::Shape_MNK;

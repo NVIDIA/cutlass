@@ -186,7 +186,7 @@ CUTLASS_DEVICE void GemvBatchedStridedDevice(
 }
 
 template <typename GemvKernel, typename ElementAlphaBeta, bool BetaIsZero>
-__global__ void GemvBatchedStrided(
+CUTLASS_GLOBAL void GemvBatchedStrided(
   cutlass::gemm::BatchedGemmCoord problem_size,
   ElementAlphaBeta alpha,
   ElementAlphaBeta beta,
@@ -205,7 +205,7 @@ __global__ void GemvBatchedStrided(
 }
 
 template <typename GemvKernel, typename ElementAlphaBeta>
-__global__ void GemvBatchedStrided(
+CUTLASS_GLOBAL void GemvBatchedStrided(
   cutlass::gemm::BatchedGemmCoord problem_size,
   ElementAlphaBeta alpha,
   typename GemvKernel::IteratorA::TensorRef ref_A,
@@ -221,7 +221,7 @@ __global__ void GemvBatchedStrided(
 }
 
 template <typename GemvKernel>
-__global__ void GemvBatchedStrided(
+CUTLASS_GLOBAL void GemvBatchedStrided(
   cutlass::gemm::BatchedGemmCoord problem_size,
   typename GemvKernel::IteratorA::TensorRef ref_A,
   typename GemvKernel::IteratorA::TensorRef::LongIndex lda, 

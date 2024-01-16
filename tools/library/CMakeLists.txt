@@ -278,6 +278,7 @@ execute_process(
     --architectures "${CUTLASS_NVCC_ARCHS_ENABLED}"
     --kernels "${CUTLASS_LIBRARY_KERNELS}"
     --ignore-kernels "${CUTLASS_LIBRARY_IGNORE_KERNELS}"
+    --kernel-filter-file "${KERNEL_FILTER_FILE}"
     --selected-kernel-list "${CUTLASS_LIBRARY_GENERATED_KERNEL_LIST_FILE}"
     --cuda-version "${CUTLASS_GENERATOR_CUDA_COMPILER_VERSION}"
     --log-level DEBUG

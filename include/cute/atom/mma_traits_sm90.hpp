@@ -44,10 +44,10 @@ namespace cute {
 template <>
 struct MMA_Traits<SM90_16x8x4_F64F64F64F64_TN>
 {
-  using ElementDVal = double;
-  using ElementAVal = double;
-  using ElementBVal = double;
-  using ElementCVal = double;
+  using ValTypeD = double;
+  using ValTypeA = double;
+  using ValTypeB = double;
+  using ValTypeC = double;
 
   using Shape_MNK = Shape<_16,_8,_4>;
   using ThrID =  Layout<_32>;
@@ -62,10 +62,10 @@ struct MMA_Traits<SM90_16x8x4_F64F64F64F64_TN>
 template <>
 struct MMA_Traits<SM90_16x8x8_F64F64F64F64_TN>
 {
-  using ElementDVal = double;
-  using ElementAVal = double;
-  using ElementBVal = double;
-  using ElementCVal = double;
+  using ValTypeD = double;
+  using ValTypeA = double;
+  using ValTypeB = double;
+  using ValTypeC = double;
 
   using Shape_MNK = Shape<_16,_8,_8>;
   using ThrID   = Layout<_32>;
@@ -80,10 +80,10 @@ struct MMA_Traits<SM90_16x8x8_F64F64F64F64_TN>
 template <>
 struct MMA_Traits<SM90_16x8x16_F64F64F64F64_TN>
 {
-  using ElementDVal = double;
-  using ElementAVal = double;
-  using ElementBVal = double;
-  using ElementCVal = double;
+  using ValTypeD = double;
+  using ValTypeA = double;
+  using ValTypeB = double;
+  using ValTypeC = double;
 
   using Shape_MNK = Shape<_16,_8,_16>;
   using ThrID   = Layout<_32>;
@@ -103,30 +103,30 @@ template <>
 struct MMA_Traits<SM90_16x8x4_C64C64C64C64_TN>
      : MMA_Traits<SM90_16x8x4_F64F64F64F64_TN> 
 {
-  using ElementDVal = complex<double>;
-  using ElementAVal = complex<double>;
-  using ElementBVal = complex<double>;
-  using ElementCVal = complex<double>;
+  using ValTypeD = complex<double>;
+  using ValTypeA = complex<double>;
+  using ValTypeB = complex<double>;
+  using ValTypeC = complex<double>;
 };
 
 template <>
 struct MMA_Traits<SM90_16x8x8_C64C64C64C64_TN>
      : MMA_Traits<SM90_16x8x8_F64F64F64F64_TN> 
 {
-  using ElementDVal = complex<double>;
-  using ElementAVal = complex<double>;
-  using ElementBVal = complex<double>;
-  using ElementCVal = complex<double>;
+  using ValTypeD = complex<double>;
+  using ValTypeA = complex<double>;
+  using ValTypeB = complex<double>;
+  using ValTypeC = complex<double>;
 };
 
 template <>
 struct MMA_Traits<SM90_16x8x16_C64C64C64C64_TN>
      : MMA_Traits<SM90_16x8x16_F64F64F64F64_TN> 
 {
-  using ElementDVal = complex<double>;
-  using ElementAVal = complex<double>;
-  using ElementBVal = complex<double>;
-  using ElementCVal = complex<double>;
+  using ValTypeD = complex<double>;
+  using ValTypeA = complex<double>;
+  using ValTypeB = complex<double>;
+  using ValTypeC = complex<double>;
 };
 
 } // end namespace cute

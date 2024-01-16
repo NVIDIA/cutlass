@@ -38,8 +38,9 @@
 #include <vector>
 #include <numeric>
 
-#include <cute/tensor.hpp>
 #include <cute/container/bit_field.hpp>
+
+#include <cute/algorithm/tuple_algorithms.hpp>
 
 using namespace cute;
 

@@ -112,6 +112,7 @@
         args.sync()
 """
 
+from cuda import cuda
 from cutlass_library import (
     ConvKind,
     ConvMode,
@@ -131,7 +132,6 @@ from cutlass.backend.library import TensorDescription, TileDescription
 from cutlass.op.op import OperationBase
 from cutlass.shape import Conv2DProblemSize, MatrixCoord
 from cutlass.utils import check, datatypes
-from cuda import cuda
 
 
 class Conv2d(OperationBase):

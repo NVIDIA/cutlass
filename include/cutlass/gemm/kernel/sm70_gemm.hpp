@@ -59,7 +59,6 @@ public:
   // Type Aliases
   //
   using ProblemShape = ProblemShape_;
-
   static_assert(rank(ProblemShape{}) == 3 or rank(ProblemShape{}) == 4,
     "ProblemShape{} should be <M,N,K> or <M,N,K,L>");
 
@@ -77,13 +76,14 @@ public:
   using MainloopArguments = typename CollectiveMainloop::Arguments;
   using MainloopParams = typename CollectiveMainloop::Params;
 
-  static_assert(cute::is_void_v<TileScheduler_> or cute::is_same_v<TileScheduler_, PersistentScheduler>,
-    "SM70 kernel does not support specializing the tile scheduler.");
   using TileSchedulerTag = TileScheduler_;
   using TileScheduler = typename detail::TileSchedulerSelector<
     TileScheduler_, ArchTag, TileShape,
     cute::Shape<cute::Int<1>, cute::Int<1>, cute::Int<1>>>::Scheduler;
   using TileSchedulerArguments = typename TileScheduler::Arguments;
+  static constexpr bool is_valid_tile_scheduler =
+  cute::is_void_v<TileScheduler_> or cute::is_same_v<TileScheduler_, PersistentScheduler>;
+static_assert(is_valid_tile_scheduler, "SM70 kernel does not support specializing the tile scheduler.");
 
   // Epilogue derived types
   using CollectiveEpilogue = CollectiveEpilogue_;
@@ -131,6 +131,10 @@ public:
   Params
   to_underlying_arguments(Arguments const& args, void* workspace) {
     (void) workspace;
+
+    KernelHardwareInfo hw_info{args.hw_info.device_id, args.hw_info.sm_count};
+    auto problem_shape_MNKL = append<4>(args.problem_shape, Int<1>{});
+
     return {
       args.mode,
       args.problem_shape,
@@ -148,13 +152,16 @@ public:
 
   static int
   get_workspace_size(Arguments const& args) {
-    return 0;
+    int workspace_size = 0;
+    return workspace_size;
   }
 
   static
   cutlass::Status
   initialize_workspace(Arguments const& args, void* workspace = nullptr, cudaStream_t stream = nullptr) {
-    return Status::kSuccess;
+    cutlass::Status status = Status::kSuccess;
+
+    return status;
   }
 
   static dim3

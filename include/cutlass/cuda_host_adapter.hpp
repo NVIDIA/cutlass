@@ -81,23 +81,59 @@ struct CudaHostAdapter {
   void        *kernel_handles[kMaximumKernelCount];
   int32_t      kernel_count = 0;
 
+  //
+  // Methods
+  //
+
+  /// Ctor
   CudaHostAdapter() = default;
 
   /// Dtor
   virtual ~CudaHostAdapter() {}
 
-  /// Copy Ctor deleted
-  CudaHostAdapter(const CudaHostAdapter&) = delete;
+  /// Copy Ctor
+  inline CudaHostAdapter(const CudaHostAdapter & rhs):
+    kernel_count(rhs.kernel_count)
+  {
+    CUTLASS_ASSERT(rhs.kernel_count >= 0 && rhs.kernel_count < kMaximumKernelCount);
+    for (int32_t i = 0; i < rhs.kernel_count && i < kMaximumKernelCount; ++i) {
+      kernel_handles[i] = rhs.kernel_handles[i];
+    }
+  }
 
-  /// Copy Assignment deleted
-  CudaHostAdapter& operator=(const CudaHostAdapter&) = delete;
+  /// Copy Assignment
+  inline CudaHostAdapter& operator=(const CudaHostAdapter & rhs) {
 
-  /// Move ctor deleted
-  CudaHostAdapter(CudaHostAdapter&&) = delete;
+    CUTLASS_ASSERT(rhs.kernel_count >= 0 && rhs.kernel_count < kMaximumKernelCount);
+    for (int32_t i = 0; i < rhs.kernel_count && i < kMaximumKernelCount; ++i) {
+      kernel_handles[i] = rhs.kernel_handles[i];
+    }
+    kernel_count = rhs.kernel_count;
+    return *this;
+  }
 
-  /// Move assignment deleted
-  CudaHostAdapter& operator=(CudaHostAdapter&&) = delete;
+  /// Move ctor
+  inline CudaHostAdapter(CudaHostAdapter && rhs):
+    kernel_count(rhs.kernel_count)
+  {
+    CUTLASS_ASSERT(rhs.kernel_count >= 0 && rhs.kernel_count < kMaximumKernelCount);
+    for (int32_t i = 0; i < rhs.kernel_count && i < kMaximumKernelCount; ++i) {
+      kernel_handles[i] = rhs.kernel_handles[i];
+    }
+  }
 
+  /// Move assignment
+  inline CudaHostAdapter& operator=(CudaHostAdapter && rhs) {
+
+    CUTLASS_ASSERT(rhs.kernel_count >= 0 && rhs.kernel_count < kMaximumKernelCount);
+    for (int32_t i = 0; i < rhs.kernel_count && i < kMaximumKernelCount; ++i) {
+      kernel_handles[i] = rhs.kernel_handles[i];
+    }
+
+    kernel_count = rhs.kernel_count;
+
+    return *this;
+  }
 
   /// Ctor
   inline CudaHostAdapter(
@@ -112,13 +148,19 @@ struct CudaHostAdapter {
     }
   }
 
+  /// Returns true if the CudaHostAdapter is empty (kernel_count == 0)
+  inline bool empty() const { return !kernel_count; }
+
+  /// Returns kernel_count
+  inline size_t size() const { return static_cast<size_t>(kernel_count); }
+
   /// Queries the occupancy of a kernel
   virtual Status query_occupancy(
     int32_t *device_sms, 
     int32_t *sm_occupancy,
     int32_t kernel_index,
     int32_t thread_count,
-    int32_t smem_size)  = 0;
+    int32_t smem_size) const = 0;
  
   /// Launches a kernel without using Threadblock Clusters. 
   virtual Status launch(
@@ -127,7 +169,7 @@ struct CudaHostAdapter {
     size_t const smem_size,
     cudaStream_t cuda_stream,
     void** kernel_params,
-    int32_t kernel_index) = 0;
+    int32_t kernel_index) const = 0;
 
   /// Launches a kernel using the CUDA Extensible Launch API and Threadblock Clusters.
   virtual Status launch(
@@ -137,7 +179,7 @@ struct CudaHostAdapter {
     size_t const smem_size,
     cudaStream_t cuda_stream,
     void** kernel_params,
-    int32_t kernel_index) = 0;
+    int32_t kernel_index) const = 0;
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

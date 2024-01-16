@@ -413,6 +413,19 @@ conditional_return(TrueType const& t, FalseType const& f) {
   }
 }
 
+template <class Trait>
+CUTE_HOST_DEVICE constexpr
+auto
+static_value()
+{
+  if constexpr (is_std_integral<decltype(Trait::value)>::value) {
+    return Int<Trait::value>{};
+  } else {
+    return Trait::value;
+  } 
+  CUTE_GCC_UNREACHABLE;
+}
+
 //
 // Display utilities
 //

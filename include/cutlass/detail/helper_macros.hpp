@@ -57,6 +57,9 @@
 #define CUTLASS_DEVICE inline
 #endif
 
+#define CUTLASS_HOST __host__
+#define CUTLASS_GLOBAL __global__ static
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<typename T>

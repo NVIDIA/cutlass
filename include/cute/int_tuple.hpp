@@ -479,8 +479,9 @@ weakly_congruent(IntTupleA const& a, IntTupleB const& b)
 template <class A, class B>
 using is_weakly_congruent = decltype(weakly_congruent(declval<A>(), declval<B>()));
 
-/** Test if Shape B is compatible with Shape A:
- * Any coordinate into A can also be used as a coordinate into B
+/** Test if Shape A is compatible with Shape B:
+ *    the size of A and B are the same, and
+ *    any coordinate into A can also be used as a coordinate into B
  * compatible is a partial order on A and B: A <= B
  */
 template <class IntTupleA, class IntTupleB>
@@ -509,8 +510,8 @@ compatible(IntTupleA const& a, IntTupleB const& b)
 template <class A, class B>
 using is_compatible = decltype(compatible(declval<A>(), declval<B>()));
 
-/** Test if Shape B is weakly compatible with Shape A:
- * Shape B is a multiple of a shape that is compatible with Shape A
+/** Test if Shape A is weakly compatible with Shape B:
+ *    there exists a Shape C congruent to A such that compatible(elem_scale(A,C), B)
  * weakly_compatible is a partial order on A and B: A <= B
  */
 template <class IntTupleA, class IntTupleB>

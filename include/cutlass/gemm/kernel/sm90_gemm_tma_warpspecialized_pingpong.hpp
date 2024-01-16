@@ -45,7 +45,6 @@
 #include "cutlass/trace.h"
 
 #include "cute/tensor.hpp"
-
 ///////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass::gemm::kernel {
@@ -72,7 +71,6 @@ public:
   using ProblemShape = ProblemShape_;
   static_assert(cute::rank(ProblemShape{}) == 3 or cute::rank(ProblemShape{}) == 4,
     "ProblemShape{} should be <M,N,K> or <M,N,K,L>");
-
   // Mainloop derived types
   using CollectiveMainloop = CollectiveMainloop_;
   using TileShape = typename CollectiveMainloop::TileShape;
@@ -521,10 +519,10 @@ public:
             shared_storage.tensors.epilogue
           );
 
-        // Get next work tile
-        scheduler.advance_to_next_work();
-        work_tile_info = scheduler.get_current_work();
-      } // Scheduler work fetch loop
+          // Get next work tile
+          scheduler.advance_to_next_work();
+          work_tile_info = scheduler.get_current_work();
+        } // Scheduler work fetch loop
 
         // Make sure all Consumer Warp Groups have been waited upon
         collective_epilogue.load_tail(epi_load_pipeline, epi_load_pipe_producer_state);

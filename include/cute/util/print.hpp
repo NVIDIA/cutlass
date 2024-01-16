@@ -127,6 +127,18 @@ print(unsigned long long a) {
   printf("%llu", a);
 }
 
+CUTE_HOST_DEVICE
+void
+print(float a) {
+  printf("%f", a);
+}
+
+CUTE_HOST_DEVICE
+void
+print(double a) {
+  printf("%f", a);
+}
+
 template <class... T>
 CUTE_HOST_DEVICE
 void

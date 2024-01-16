@@ -854,11 +854,12 @@ rs_op_selector()
 
   // FP32 accumulator
   else if constexpr (is_same_v<ElementC, float>) {
-    static_assert(is_same_v<ElementA, ElementB>, "ElementA and ElementB must be the same type for this config.");
-    static_assert(size<2>(TileShape_MNK{}) % 16 == 0, "Tile_K must be a multiple of 16.");
 
     // FP16 inputs
     if constexpr (is_same_v<ElementA, half_t>) {
+      static_assert(size<2>(TileShape_MNK{}) % 16 == 0, "Tile_K must be a multiple of 16.");
+      static_assert(is_same_v<ElementA, ElementB>, "ElementA and ElementB must be the same type for this config.");
+
       if constexpr (Tile_N % 256 == 0) {
         return SM90_64x256x16_F32F16F16_RS<MajorA, MajorB, Args...>{};
       }
@@ -891,6 +892,7 @@ rs_op_selector()
     // BF16 inputs
     else if constexpr (is_same_v<ElementA, bfloat16_t>) {
       static_assert(size<2>(TileShape_MNK{}) % 16 == 0, "Tile_K must be a multiple of 16.");
+      static_assert(is_same_v<ElementA, ElementB>, "ElementA and ElementB must be the same type for this config.");
 
       if constexpr (Tile_N % 256 == 0) {
         return SM90_64x256x16_F32BF16BF16_RS<MajorA, MajorB, Args...>{};
@@ -925,6 +927,7 @@ rs_op_selector()
     else if constexpr (is_same_v<ElementA, tfloat32_t>) {
       static_assert(MajorB == GMMA::Major::K, "MajorB must be GMMA::Major::K for this config.");
       static_assert(size<2>(TileShape_MNK{}) % 8 == 0, "Tile_K must be a multiple of 8.");
+      static_assert(is_same_v<ElementA, ElementB>, "ElementA and ElementB must be the same type for this config.");
 
       if constexpr (Tile_N % 256 == 0) {
         return SM90_64x256x8_F32TF32TF32_RS_TN<Args...>{};
@@ -1023,7 +1026,7 @@ rs_op_selector()
         return SM90_64x8x32_F32E4M3E5M2_RS_TN<Args...>{};
       }
       else {
-        static_aRSert(Tile_N % 8 == 0, "Tile_N must be a multiple of 8.");
+        static_assert(Tile_N % 8 == 0, "Tile_N must be a multiple of 8.");
       }
     }
 

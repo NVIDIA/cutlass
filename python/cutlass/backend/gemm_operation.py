@@ -1,4 +1,4 @@
-################################################################################
+#################################################################################################
 #
 # Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
@@ -28,7 +28,7 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
-################################################################################
+#################################################################################################
 
 import copy
 import ctypes
@@ -712,6 +712,8 @@ class GemmGroupedArguments:
 
         self.gemm_arguments = []
 
+        self.stream = kwargs.get("stream", cuda.CUstream(0))
+
         # Process the input arguments
         for idx, problem_size in enumerate(problem_sizes):
             M, N, K = problem_size.m, problem_size.n, problem_size.k
@@ -771,11 +773,6 @@ class GemmGroupedArguments:
             self.output_op = kwargs["output_op"]
         else:
             self.output_op = self.operation.epilogue_type(1.0, 0.0)
-        
-        if "stream" in kwargs.keys():
-            self.stream = kwargs["stream"]
-        else:
-            self.stream = cuda.CUstream(0)
 
         # Get host problem size
         self.host_problem_size_ptr = np.array(problem_size_host, dtype=np.int32).__array_interface__["data"][0]

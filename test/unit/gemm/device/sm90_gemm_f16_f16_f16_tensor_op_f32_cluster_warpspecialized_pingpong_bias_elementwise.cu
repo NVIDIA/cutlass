@@ -97,8 +97,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128
   >;
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
-  test::gemm::device::Testbed3x<Gemm, cutlass::epilogue::thread::ReLu> testbed;
-  bool passed = test::gemm::device::TestAll<Gemm>(1, 1, testbed);
+  bool passed = test::gemm::device::TestAll<Gemm, cutlass::epilogue::thread::ReLu>(1, 1);
   EXPECT_TRUE(passed);
 }
 
@@ -186,8 +185,8 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
 
-  bool check_relative_equality = true;
-  bool passed = test::gemm::device::TestAllBiasElementwise<Gemm>(1, 1, check_relative_equality);
+  using namespace test::gemm::device; 
+  bool passed = TestAllBiasElementwise<Gemm>(1, 1, CheckEquality::RELATIVE);
   EXPECT_TRUE(passed);
 }
 

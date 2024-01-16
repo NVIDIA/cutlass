@@ -65,9 +65,9 @@ struct Copy_Atom<Copy_Traits<Args...>, CopyInternalType>
 
   using ValType = CopyInternalType;
 
-  using ValLayoutSrc = decltype(upcast<sizeof_bits<ValType>::value>(BitLayoutSrc{}));
-  using ValLayoutDst = decltype(upcast<sizeof_bits<ValType>::value>(BitLayoutDst{}));
-  using ValLayoutRef = decltype(upcast<sizeof_bits<ValType>::value>(BitLayoutRef{}));
+  using ValLayoutSrc = decltype(recast_layout<uint1_t, ValType>(BitLayoutSrc{}));
+  using ValLayoutDst = decltype(recast_layout<uint1_t, ValType>(BitLayoutDst{}));
+  using ValLayoutRef = decltype(recast_layout<uint1_t, ValType>(BitLayoutRef{}));
 
   CUTE_STATIC_ASSERT_V(size<0>(ValLayoutSrc{}) == size(ThrID{}), "CopyOperation is not valid for Src of ValType.");
   CUTE_STATIC_ASSERT_V(size<0>(ValLayoutDst{}) == size(ThrID{}), "CopyOperation is not valid for Dst of ValType.");
@@ -479,20 +479,24 @@ make_tiled_copy(Copy_Atom<Args...> const& copy_atom,
                 ThrLayout          const& thr_layout = {},     // (m,n) -> thr_idx
                 ValLayout          const& val_layout = {})     // (m,n) -> val_idx
 {
-  constexpr int R = cute::max(rank_v<ThrLayout>, rank_v<ValLayout>);
-
-  auto thr_layout_mn  = append<R>(thr_layout, Layout<_1>{});
-  auto val_layout_mn  = append<R>(val_layout, Layout<_1>{});
-
   // Take the raked_products to compute the Layout_MN
-  auto layout_mn = raked_product(thr_layout_mn, val_layout_mn);
+  // (M,N) -> (thr_idx, val_idx)
+  auto layout_mn = raked_product(thr_layout, val_layout);
+  // (thr_idx, val_idx) -> (M,N)
   auto layout_tv = right_inverse(layout_mn).with_shape(make_shape(size(thr_layout), size(val_layout)));
-  //   print("thr_layout: "); print(thr_layout_mn); print("\n");
-  //   print("val_layout: "); print(val_layout_mn); print("\n");
-  //   print("layout_mn : "); print(layout_mn);     print("\n");
-  //   print("layout_tv : "); print(layout_tv);     print("\n");
+  // Tiler for extracting relevant elements
+  // (M,N) -> tensor coord
+  auto tiler = product_each(shape(layout_mn));
 
-  return make_tiled_copy_impl(copy_atom, layout_tv, product_each(shape(layout_mn)));
+#if 0
+  print("thr_layout: "); print(thr_layout); print("\n");
+  print("val_layout: "); print(val_layout); print("\n");
+  print("layout_mn : "); print(layout_mn);  print("\n");
+  print("layout_tv : "); print(layout_tv);  print("\n");
+  print("tiler     : "); print(tiler);      print("\n");
+#endif
+
+  return make_tiled_copy_impl(copy_atom, layout_tv, tiler);
 }
 
 /** Produce a TiledCopy from thread and value offset maps.
@@ -622,7 +626,7 @@ print(Copy_Atom<Copy_Traits<Args...>, T> const&)
   print("  ValLayoutSrc: "); print(typename Atom::ValLayoutSrc{}); print("\n");
   print("  ValLayoutDst: "); print(typename Atom::ValLayoutDst{}); print("\n");
   print("  ValLayoutRef: "); print(typename Atom::ValLayoutRef{}); print("\n");
-  print("  ValueType:    %db\n", int(sizeof_bits<typename Atom::ValType>::value));
+  print("  ValueType:    "); print(sizeof_bits<typename Atom::ValType>::value); print("b\n");
 }
 
 template <class Atom, class... Args>
@@ -755,6 +759,7 @@ print_latex_copy(LayoutS const& S, ThrIDS const& TS,  // (m,n) -> (tid,vid)  and
 #include <cute/atom/copy_traits_sm75.hpp>
 #include <cute/atom/copy_traits_sm80.hpp>
 #include <cute/atom/copy_traits_sm90.hpp>
+
 // Config
 #if (__CUDACC_VER_MAJOR__ >= 12)
 #  define CUTE_COPY_ATOM_TMA_SM90_ENABLED
