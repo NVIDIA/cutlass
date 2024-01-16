@@ -254,17 +254,21 @@ template <
   class ElementC_,
   class GmemLayoutTagC_,
   int AlignmentC,
-  class ElementD,
+  class ElementD_,
   class GmemLayoutTagD,
   int AlignmentD,
   class FusionOpOrCallbacks,
   class DispatchPolicy
 >
 struct Sm90TmaBuilderImpl {
+  // Passing void D disables destination store + smem allocation
+  using ElementD = cute::conditional_t<cute::is_void_v<ElementD_>,
+                     fusion::get_element_aux_t<FusionOpOrCallbacks>, ElementD_>;
+
   // Passing void C disables source load + smem allocation
   using ElementC = cute::conditional_t<cute::is_void_v<ElementC_>,ElementD,ElementC_>; // prevents void ref breakages
   using GmemLayoutTagC = cute::conditional_t<cute::is_void_v<ElementC_>,GmemLayoutTagD,GmemLayoutTagC_>;
-
+  
   using GmemStrideTypeC = cutlass::detail::TagToStrideC_t<GmemLayoutTagC>;
   using GmemStrideTypeD = cutlass::detail::TagToStrideC_t<GmemLayoutTagD>;
 
@@ -292,7 +296,7 @@ struct Sm90TmaBuilderImpl {
       EpilogueTile_MN,
       ElementC_, // Need to pass void through to expose via GemmUniversal
       GmemStrideTypeC,
-      ElementD,
+      ElementD_,
       GmemStrideTypeD,
       FusionCallbacks,
       CopyOpG2S,
@@ -474,7 +478,7 @@ template <
   class ElementC,
   class GmemLayoutTagC,
   int AlignmentC,
-  class ElementD,
+  class ElementD_,
   class GmemLayoutTagD,
   int AlignmentD,
   class Schedule,
@@ -491,7 +495,7 @@ struct CollectiveBuilder<
     ElementC,
     GmemLayoutTagC,
     AlignmentC,
-    ElementD,
+    ElementD_,
     GmemLayoutTagD,
     AlignmentD,
     Schedule,
@@ -499,6 +503,8 @@ struct CollectiveBuilder<
     cute::enable_if_t<cute::is_same_v<Schedule, TmaWarpSpecialized> ||
                       cute::is_same_v<Schedule, TmaWarpSpecializedCooperative> >> {
 private:
+  using ElementD = cute::conditional_t<cute::is_void_v<ElementD_>,
+                     fusion::get_element_aux_t<FusionOperation>, ElementD_>;
   using EpilogueTile_MN =
     decltype(detail::sm90_compute_tile_shape_or_override<ElementD, EpilogueTileType, Schedule, TileShape_MNK>());
   using DispatchPolicy =
@@ -514,7 +520,7 @@ public:
       ElementC,
       GmemLayoutTagC,
       AlignmentC,
-      ElementD,
+      ElementD_,
       GmemLayoutTagD,
       AlignmentD,
       FusionOperation,
