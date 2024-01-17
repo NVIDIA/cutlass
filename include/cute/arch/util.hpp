@@ -112,15 +112,13 @@ cast_smem_ptr_to_uint(void const* const ptr)
 
   return __nvvm_get_smem_pointer(ptr);
 
-#elif defined(__CUDA_ARCH__) || defined(__SYCL_CUDA_ARCH__)
+#elif defined(__CUDA_ARCH__)
 
   uint32_t smem_ptr;
 
-#if defined(SYCL_ENABLE_NVPTX)
   asm(
   "{ .reg .u64 smem_ptr; cvta.to.shared.u64 smem_ptr, %1; cvt.u32.u64 %0, smem_ptr; }\n"
     : "=r"(smem_ptr) : "l"(ptr));
-#endif
 
   return smem_ptr;
 

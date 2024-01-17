@@ -54,7 +54,6 @@ function(cutlass_example_add_executable NAME)
     CUTLASS
     cutlass_tools_util_includes
     $<$<BOOL:${CUTLASS_ENABLE_CUBLAS}>:nvidia::cublas>
-    $<$<BOOL:${CUTLASS_ENABLE_SYCL}>:nvidia::cudart>
     cuda
     )
 

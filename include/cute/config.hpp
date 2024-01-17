@@ -34,23 +34,11 @@
 #  define CUTE_HOST_DEVICE __forceinline__ __host__ __device__
 #  define CUTE_DEVICE      __forceinline__          __device__
 #  define CUTE_HOST        __forceinline__ __host__
-#elif defined(__SYCL_CUDA_ARCH__)
-#  define CUTE_HOST_DEVICE __attribute__((always_inline))
-#  define CUTE_DEVICE      __attribute__((always_inline))
-#  define CUTE_HOST        inline
 #else
 #  define CUTE_HOST_DEVICE inline
 #  define CUTE_DEVICE      inline
 #  define CUTE_HOST        inline
 #endif // CUTE_HOST_DEVICE, CUTE_DEVICE
-
-#if defined(CUTLASS_ENABLE_SYCL)
-#if defined(__SYCL_DEVICE_ONLY__) && defined(__NVPTX__)
-#  define SYCL_ENABLE_NVPTX 1
-#endif
-#else
-#  define SYCL_ENABLE_NVPTX 1
-#endif
 
 #if defined(__CUDACC_RTC__)
 #  define CUTE_HOST_RTC CUTE_HOST_DEVICE
