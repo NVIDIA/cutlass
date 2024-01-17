@@ -146,6 +146,10 @@ endif()
 
 ################################################################################
 
+set(CUTLASS_ENABLE_SYCL OFF CACHE BOOL "Enable SYCL")
+
+################################################################################
+
 set(CUTLASS_NVCC_ARCHS_SUPPORTED "")
 if (CUDA_VERSION VERSION_GREATER_EQUAL 11.4 AND NOT CUDA_COMPILER MATCHES "[Cc]lang")
   list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 70 72 75 80 86 87)
@@ -332,6 +336,19 @@ endif()
 if(ENABLE_ASAN)  # https://github.com/google/sanitizers/wiki/AddressSanitizer
   list(APPEND CUTLASS_CUDA_NVCC_FLAGS --compiler-options=-fsanitize=address --compiler-options=-fno-omit-frame-pointer)
   string(APPEND CMAKE_EXE_LINKER_FLAGS " -fsanitize=address")
+endif()
+
+###################################################################################################
+#
+# Configure SYCL build options
+#
+###################################################################################################
+
+if(CUTLASS_ENABLE_SYCL)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -fsycl -fsycl-targets=nvptx64-nvidia-cuda -Xsycl-target-backend")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --cuda-gpu-arch=sm_${CUTLASS_NVCC_ARCHS}")
+  set(CMAKE_CUDA_ARCHITECTURES "${CUTLASS_NVCC_ARCHS}")
+  add_definitions( -DCUTLASS_ENABLE_SYCL=${CUTLASS_ENABLE_SYCL} )
 endif()
 
 ###################################################################################################
@@ -718,6 +735,12 @@ endif()
 if(NOT WIN32)
   # Add common library search paths so executables and libraries can load and run
   # without LD_LIBRARY_PATH being set.
+  if(CUTLASS_ENABLE_SYCL)
+  link_libraries(
+    "-Wl,-rpath,'${CUDA_TOOLKIT_ROOT_DIR}/lib64'"
+    "-Wl,-rpath,'${CUDA_TOOLKIT_ROOT_DIR}/lib'"
+    )
+   else()
   link_libraries(
     "-Wl,-rpath,'$ORIGIN'"
     "-Wl,-rpath,'$ORIGIN/../lib64'"
@@ -726,6 +749,7 @@ if(NOT WIN32)
     "-Wl,-rpath,'${CUDA_TOOLKIT_ROOT_DIR}/lib'"
     ${CMAKE_DL_LIBS}
     )
+   endif()
 endif()
 
 ################################################################################
