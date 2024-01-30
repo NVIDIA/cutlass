@@ -70,13 +70,13 @@ print(char c) {
 CUTE_HOST_DEVICE
 void
 print(signed char a) {
-  printf("%hhd", a);
+  printf("%d", static_cast<int>(a));
 }
 
 CUTE_HOST_DEVICE
 void
 print(unsigned char a) {
-  printf("%hhu", a);
+  printf("%u", static_cast<unsigned int>(a));
 }
 
 CUTE_HOST_DEVICE
