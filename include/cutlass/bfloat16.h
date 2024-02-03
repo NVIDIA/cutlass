@@ -57,6 +57,7 @@
 
 #include <cuda_bf16.h>
 #include "cutlass/cutlass.h"
+#include "cutlass/platform/platform.h"
 
 namespace cutlass {
 
