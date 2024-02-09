@@ -268,6 +268,15 @@ protected:
     void *host_workspace,
     void *device_workspace);
 
+  /// Method to profile a CUTLASS Operation
+  Status profile_cublas_(
+    double &runtime,
+    Options const &options,
+    library::Operation const *operation,
+    void *arguments,
+    void *host_workspace,
+    void *device_workspace);
+
   /// Initialize reduction problem dimensions and library::Operation
   bool initialize_reduction_configuration_(
     library::Operation const *operation,

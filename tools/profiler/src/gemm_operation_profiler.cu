@@ -42,6 +42,8 @@
 #include "cutlass/profiler/cublas_helpers.h"
 #include "cutlass/profiler/gemm_operation_profiler.h"
 #include "cutlass/profiler/gpu_timer.h"
+#include <float.h>
+
 #include "cutlass/library/singleton.h"
 #include "cutlass/library/library.h"
 #include "cutlass/library/handle.h"
@@ -621,6 +623,41 @@ Status GemmOperationProfiler::initialize_workspace(
     }
   }
 
+  if (options.profiling.provider_enabled(library::Provider::kCUBLAS)) {
+
+    if (options.execution_mode != ExecutionMode::kDryRun) {
+
+      uint64_t workspace_size = underlying_operation->get_host_workspace_size(&gemm_workspace_.configuration);
+      gemm_workspace_.host_workspace.resize(workspace_size, 0);
+
+      workspace_size = underlying_operation->get_device_workspace_size(&gemm_workspace_.configuration,
+                                                            &gemm_workspace_.arguments);
+      gemm_workspace_.device_workspace.reset(library::NumericTypeID::kU8, workspace_size);
+
+      status = underlying_operation->initialize(
+        &gemm_workspace_.configuration,
+        gemm_workspace_.host_workspace.data(),
+        gemm_workspace_.device_workspace.data());
+
+      if (status != Status::kSuccess) {
+        return status;
+      }
+
+    }
+
+    //
+    // If CUBLAS is enabled, generate a result for it
+    //
+    results_.push_back(model_result_);
+    results_.back().provider = library::Provider::kCUBLAS;
+    results_.back().op_kind = library::OperationKind::kGemm;
+    results_.back().disposition = Disposition::kNotRun;
+
+    for(auto provider : verification_providers_) {
+      results_.back().verification_map[provider] = Disposition::kNotRun;
+    }
+  }
+
   return status;
 }
 
@@ -1093,10 +1130,159 @@ bool GemmOperationProfiler::profile(
       gemm_workspace_.device_workspace.data()
     );
   }
+
+  if (options.profiling.provider_enabled(library::Provider::kCUBLAS)) {
+    
+#if CUTLASS_ENABLE_CUBLAS
+    // Initialize structure containing GEMM arguments
+    gemm_workspace_.arguments.A = gemm_workspace_.A->data();
+    gemm_workspace_.arguments.B = gemm_workspace_.B->data();
+    gemm_workspace_.arguments.C = gemm_workspace_.C->data();
+    gemm_workspace_.arguments.D = gemm_workspace_.Computed->data();
+    gemm_workspace_.arguments.alpha = problem_.alpha.data();
+    gemm_workspace_.arguments.beta = problem_.beta.data();
+    gemm_workspace_.arguments.pointer_mode = library::ScalarPointerMode::kHost;
+    gemm_workspace_.arguments.batch_stride_A = gemm_workspace_.A->batch_stride();
+    gemm_workspace_.arguments.batch_stride_B = gemm_workspace_.B->batch_stride();
+    gemm_workspace_.arguments.batch_stride_C = gemm_workspace_.C->batch_stride();
+    gemm_workspace_.arguments.batch_stride_D = gemm_workspace_.Computed->batch_stride();
+
+    results_.back().status = profile_cublas_(
+      results_.back().runtime,
+      options,
+      operation,
+      &gemm_workspace_.arguments,
+      gemm_workspace_.host_workspace.data(),
+      gemm_workspace_.device_workspace.data()
+    );
+#endif // #if CUTLASS_ENABLE_CUBLAS
+
+  }
   return true;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Method to profile a CUBLAS GEMM
+Status GemmOperationProfiler::profile_cublas_(
+    double &runtime,
+    Options const &options,
+    library::Operation const *operation,
+    void *arguments,
+    void *host_workspace,
+    void *device_workspace) {
+  
+  GpuTimer timer;
+  
+  //
+  // Optional sleep to limit power consumption and thermals
+  //
+
+  sleep(options.profiling.sleep_duration);
+
+  // Guard against unsupported cases
+  auto const & gemm_desc = static_cast<library::GemmDescription const &>(operation->description());
+  
+  CublasCreate handle;
+  cublasStatus_t status = handle.get_cublas_create_status();
+  runtime = DBL_MAX;
+  
+  if (status != CUBLAS_STATUS_SUCCESS) {
+    return Status::kErrorNotSupported;
+  }
+
+  std::vector<cublasGemmAlgo_t> algorithms;
+  
+  detail::select_cublas_algorithms(
+    algorithms, 
+    options, 
+    gemm_desc);
+
+  if (algorithms.empty()) {
+    // no algorithm selected
+    return Status::kInvalid;
+  }
+  
+  
+  if (cublas_satisfies(gemm_desc) != Status::kSuccess) {
+    return Status::kErrorNotSupported;
+  }
+
+  
+  for(cublasGemmAlgo_t algorithm : algorithms) {
+    
+    detail::cublasGemmExDispatcher gemm_op( 
+      gemm_desc, 
+      gemm_workspace_.configuration,
+      gemm_workspace_.arguments,
+      algorithm
+    );
+
+    if (gemm_op.status != Status::kSuccess) {
+      return Status::kErrorNotSupported;
+    }
+    
+    // 
+    // Warm up loop
+    //
+    for (int iteration = 0; iteration < options.profiling.warmup_iterations; ++iteration) {
+      int problem_idx = (iteration % gemm_workspace_.problem_count) * problem_.batch_count;
+
+      gemm_workspace_.arguments.A = gemm_workspace_.A->batch_data(problem_idx);
+      gemm_workspace_.arguments.B = gemm_workspace_.B->batch_data(problem_idx);
+      gemm_workspace_.arguments.C = gemm_workspace_.C->batch_data(problem_idx);
+      gemm_workspace_.arguments.D = gemm_workspace_.Computed->batch_data(problem_idx);
+
+      status = gemm_op(handle);
+
+      if (status != CUBLAS_STATUS_SUCCESS) {
+        return Status::kErrorNotSupported;
+      }
+      
+    }
+
+    //
+    // Initialize GPU timer
+    //
+
+    timer.start();
+
+    //
+    // Profiling loop
+    //
+    int Iterations = options.profiling.iterations;
+
+    int iteration = 0;
+
+    for(; iteration < Iterations; ++iteration) {
+
+      int problem_idx = (iteration % gemm_workspace_.problem_count) * problem_.batch_count;
+
+      gemm_workspace_.arguments.A = gemm_workspace_.A->batch_data(problem_idx);
+      gemm_workspace_.arguments.B = gemm_workspace_.B->batch_data(problem_idx);
+      gemm_workspace_.arguments.C = gemm_workspace_.C->batch_data(problem_idx);
+      gemm_workspace_.arguments.D = gemm_workspace_.Computed->batch_data(problem_idx);
+
+      status = gemm_op(handle);
+
+      if (status != CUBLAS_STATUS_SUCCESS) {
+        return Status::kErrorNotSupported;
+      }
+    }
+
+    //
+    // Wait for completion
+    //
+    timer.stop_and_wait();
+
+    // 
+    // Update performance result
+    //
+    runtime = std::min(runtime, timer.duration(iteration));
+  }
+  
+  return Status::kSuccess;
+}
 
 /// Method to profile a CUTLASS Operation
 Status GemmOperationProfiler::profile_cutlass_(
