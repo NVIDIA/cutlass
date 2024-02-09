@@ -267,8 +267,7 @@ Status cublas_satisfies(library::GemmDescription const &desc) {
   }
 
   // input type BF16 and TF32 not supported in cuBLAS
-  if (desc.A.element == library::NumericTypeID::kBF16 || 
-    desc.A.element == library::NumericTypeID::kTF32) {
+  if (desc.A.element == library::NumericTypeID::kTF32) {
 
     return Status::kErrorNotSupported;
   }
