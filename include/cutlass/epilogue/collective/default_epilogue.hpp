@@ -63,6 +63,7 @@ public:
   // Type Aliases
   //
   using EpilogueSchedule = EpilogueSchedule_;
+  using DispatchPolicy = EpilogueSchedule_;
   
   // derived types of output thread level operator
   using ThreadEpilogueOp = ThreadEpilogueOp_;

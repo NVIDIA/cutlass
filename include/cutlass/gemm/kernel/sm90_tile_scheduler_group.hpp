@@ -55,7 +55,7 @@ private:
 
   // Tracking current group, its starting linear idx and total tiles
   struct GroupInfo {
-    uint64_t group = 0;
+    int group_idx = 0;
     uint64_t start_linear_idx = 0;
     uint64_t total_tiles = 0;
   } current_group_info_;
@@ -115,7 +115,7 @@ public:
     GroupProblemShape problem_shapes,
     TileShape tile_shape,
     ClusterShape cluster_shape,
-    [[maybe_unused]] KernelHardwareInfo const& hw_info,
+    KernelHardwareInfo const& hw_info,
     Arguments const& arguments,
     [[maybe_unused]] void* workspace=nullptr,
     [[maybe_unused]] const uint32_t epilogue_subtile = 1) {
@@ -126,14 +126,16 @@ public:
 
     dim3 problem_blocks = get_tiled_cta_shape_mnl(
       problem_shapes.groups(),
-      reinterpret_cast<ProblemShape const*>(problem_shapes.host_problem_shapes),
+      problem_shapes,
+      hw_info,
       tile_shape, cluster_shape);
 
     Params params;
     params.initialize(
       problem_blocks,
       problem_shapes.groups(),
-      reinterpret_cast<ProblemShape*>(problem_shapes.problem_shapes),
+      problem_shapes.problem_shapes,
+      problem_shapes.host_problem_shapes,
       to_gemm_coord(tile_shape),
       to_gemm_coord(cluster_shape),
       hw_info,
@@ -142,6 +144,64 @@ public:
     );
 
     return params;
+  }
+
+  // Given the inputs, computes the physical grid we should launch.
+  template<class TileShape, class ClusterShape>
+  CUTLASS_HOST_DEVICE static
+  dim3
+  get_grid_shape(
+    GroupProblemShape problem_shapes,
+    TileShape tile_shape,
+    ClusterShape cluster_shape,
+    KernelHardwareInfo hw_info,
+    Arguments arguments,
+    bool truncate_by_problem_size=true) {
+
+    dim3 problem_blocks = get_tiled_cta_shape_mnl(
+      problem_shapes.groups(),
+      problem_shapes,
+      hw_info,
+      tile_shape, cluster_shape);
+
+    return Params::get_grid_shape(
+      problem_blocks,
+      to_gemm_coord(cluster_shape),
+      hw_info,
+      arguments.max_swizzle_size,
+      arguments.raster_order,
+      /* truncate_by_problem_size = */true
+    );
+  }
+
+  // Given the inputs, computes the total number of output blocks this problem will compute over
+  // Note that this is only the logical size of our grid, not the physical grid we will actually launch.
+  template<class BlockShape, class ClusterShape>
+  CUTLASS_HOST_DEVICE static
+  dim3
+  get_tiled_cta_shape_mnl(int groups, GroupProblemShape problem_shapes, KernelHardwareInfo hw_info, BlockShape cta_shape, ClusterShape cluster_shape) {
+    uint32_t total_ctas = 0;
+    uint32_t cta_in_N_dim = 1; // We linearize the blocks across all the problems here
+
+    // If host problem shapes are not provided.
+    if (!problem_shapes.is_host_problem_shape_available()) {
+      total_ctas = hw_info.sm_count;
+    }
+    // If host problem shapes are provided, make a better decision about possibility to launch smaller grid.
+    else {
+      for (int group = 0; group < groups; group++) {
+        auto ctas_along_m = cute::size(cute::ceil_div(cute::shape<0>(problem_shapes.get_host_problem_shape(group)), cute::shape<0>(cta_shape)));
+        auto ctas_along_n = cute::size(cute::ceil_div(cute::shape<1>(problem_shapes.get_host_problem_shape(group)), cute::shape<1>(cta_shape)));
+        auto problem_blocks_m = round_up(ctas_along_m, cute::get<0>(cluster_shape));
+        auto problem_blocks_n = round_up(ctas_along_n, cute::get<1>(cluster_shape));
+        total_ctas += problem_blocks_m * problem_blocks_n;
+      }
+    }
+
+    return Params::get_tiled_cta_shape_mnl(
+      to_gemm_coord(cluster_shape),
+      total_ctas, cta_in_N_dim
+    );
   }
 
   CUTLASS_HOST_DEVICE
@@ -156,7 +216,7 @@ public:
     // MSVC requires protecting use of CUDA-specific nonstandard syntax,
     // like blockIdx and gridDim, with __CUDA_ARCH__.
 #if defined(__CUDA_ARCH__)
-    if (params_.raster_order_ == RasterOrder::AlongN) {
+    if (scheduler_params.raster_order_ == RasterOrder::AlongN) {
       current_work_linear_idx_ = uint64_t(blockIdx.x) + uint64_t(blockIdx.y) * uint64_t(gridDim.x);
     }
     else {
@@ -165,9 +225,19 @@ public:
 
     total_grid_size_ = uint64_t(gridDim.x) * uint64_t(gridDim.y) * uint64_t(gridDim.z);
 
-    auto cta_m = cute::size(cute::ceil_div(cute::shape<0>(params_.problem_shapes_[0]), params_.cta_shape_.m()));
-    auto cta_n = cute::size(cute::ceil_div(cute::shape<1>(params_.problem_shapes_[0]), params_.cta_shape_.n()));
-    current_group_info_.total_tiles = cta_m * cta_n;
+    uint64_t ctas_along_m, ctas_along_n;
+    if (is_tuple<decltype(cute::shape<0>(params_.problem_shapes_[0]))>::value ||
+        is_tuple<decltype(cute::shape<1>(params_.problem_shapes_[0]))>::value) {
+      ctas_along_m = cute::size(cute::ceil_div(cute::shape<0>(params_.problem_shapes_[0]), scheduler_params.cta_shape_.m()));
+      ctas_along_n = cute::size(cute::ceil_div(cute::shape<1>(params_.problem_shapes_[0]), scheduler_params.cta_shape_.n()));
+    }
+    else {
+      ctas_along_m = scheduler_params.divmod_cta_shape_m_.divide(cute::shape<0>(params_.problem_shapes_[0]) +  scheduler_params.divmod_cta_shape_m_.divisor - 1);
+      ctas_along_n = scheduler_params.divmod_cta_shape_n_.divide(cute::shape<1>(params_.problem_shapes_[0]) +  scheduler_params.divmod_cta_shape_n_.divisor - 1);
+    }
+    auto problem_blocks_m = round_up(ctas_along_m, (1 << params_.log_swizzle_size_) * params_.cluster_shape_.m());
+    auto problem_blocks_n = round_up(ctas_along_n, (1 << params_.log_swizzle_size_) * params_.cluster_shape_.n());
+    current_group_info_.total_tiles = problem_blocks_m * problem_blocks_n;
 #else
     CUTLASS_ASSERT(false && "This line should never be reached");
 #endif
@@ -182,24 +252,22 @@ public:
   CUTLASS_DEVICE
   WorkTileInfo
   get_current_work_for_linear_idx(uint64_t linear_idx) {
-    if (linear_idx >= scheduler_params.blocks_per_problem_) {
+    if (scheduler_params.pre_processed_problem_shapes && linear_idx >= scheduler_params.blocks_across_problem_) {
       return WorkTileInfo::invalid_work_tile();
     }
 
-    uint64_t blk_per_grid_dim = scheduler_params.divmod_cluster_shape_minor_.divide(linear_idx);
-
-    auto [work_idx_m, work_idx_n, new_group_info, valid_tile] = get_work_idx_m_and_n(blk_per_grid_dim,
-                                                         current_group_info_,
-                                                         scheduler_params.groups_,
-                                                         scheduler_params.problem_shapes_,
-                                                         scheduler_params.cta_shape_,
-                                                         scheduler_params.divmod_cluster_shape_major_,
-                                                         scheduler_params.divmod_cluster_shape_minor_,
-                                                         scheduler_params.log_swizzle_size_, 
-                                                         scheduler_params.raster_order_);
-
-    current_group_info_ = new_group_info;
-    return {work_idx_m, work_idx_n, static_cast<int>(current_group_info_.group), valid_tile};
+    return get_work_idx_m_and_n(linear_idx,
+                                current_group_info_,
+                                scheduler_params.groups_,
+                                scheduler_params.problem_shapes_,
+                                scheduler_params.cta_shape_,
+                                scheduler_params.cluster_shape_,
+                                scheduler_params.divmod_cluster_shape_major_,
+                                scheduler_params.divmod_cluster_shape_minor_,
+                                scheduler_params.divmod_cta_shape_m_,
+                                scheduler_params.divmod_cta_shape_n_,
+                                scheduler_params.log_swizzle_size_, 
+                                scheduler_params.raster_order_);
   }
 
   CUTLASS_DEVICE
@@ -208,34 +276,62 @@ public:
     current_work_linear_idx_ += total_grid_size_ * uint64_t(advance_count);
   }
 
-  // get work_idx_m, work_idx_n from blk_per_grid_dim while applying swizzle
+  // get work_idx_m, work_idx_n from linear_idx while applying swizzle
   static CUTLASS_DEVICE
-  cute::tuple<int32_t, int32_t, struct GroupInfo, bool>
+  WorkTileInfo
   get_work_idx_m_and_n(
-      uint64_t blk_per_grid_dim,
-      struct GroupInfo group_info,
+      uint64_t linear_idx,
+      struct GroupInfo& group_info,
       int32_t total_problem_groups,
       ProblemShape* problem_shapes,
       GemmCoord cta_shape,
+      GemmCoord cluster_shape,
       FastDivmodU64Pow2 const& divmod_cluster_shape_major,
       FastDivmodU64Pow2 const& divmod_cluster_shape_minor,
+      FastDivmodU64 const& divmod_cta_shape_m,
+      FastDivmodU64 const& divmod_cta_shape_n,
       int32_t log_swizzle_size, 
       RasterOrder raster_order) {
 
     bool valid_tile = true;
-    int cta_m = cute::size(cute::ceil_div(cute::shape<0>(problem_shapes[group_info.group]), cta_shape.m()));
-    int cta_n = cute::size(cute::ceil_div(cute::shape<1>(problem_shapes[group_info.group]), cta_shape.n()));
+    uint64_t ctas_along_m, ctas_along_n;
+    if (is_tuple<decltype(cute::shape<0>(problem_shapes[group_info.group_idx]))>::value ||
+        is_tuple<decltype(cute::shape<1>(problem_shapes[group_info.group_idx]))>::value) {
+      ctas_along_m = cute::size(cute::ceil_div(cute::shape<0>(problem_shapes[group_info.group_idx]), cta_shape.m()));
+      ctas_along_n = cute::size(cute::ceil_div(cute::shape<1>(problem_shapes[group_info.group_idx]), cta_shape.n()));
+    }
+    else {
+      ctas_along_m = divmod_cta_shape_m.divide(cute::shape<0>(problem_shapes[group_info.group_idx]) +  divmod_cta_shape_m.divisor - 1);
+      ctas_along_n = divmod_cta_shape_n.divide(cute::shape<1>(problem_shapes[group_info.group_idx]) +  divmod_cta_shape_n.divisor - 1);
+    }
+    auto problem_blocks_m = round_up(ctas_along_m, (1 << log_swizzle_size) * cluster_shape.m());
+    auto problem_blocks_n = round_up(ctas_along_n, (1 << log_swizzle_size) * cluster_shape.n());
+    group_info.total_tiles = problem_blocks_m * problem_blocks_n;
 
-    while (group_info.start_linear_idx + group_info.total_tiles <= blk_per_grid_dim) {
-      group_info.group++;
+    while (group_info.start_linear_idx + group_info.total_tiles <= linear_idx) {
+      group_info.group_idx++;
+
+      if (group_info.group_idx >= total_problem_groups)
+        return WorkTileInfo::invalid_work_tile();
+
       group_info.start_linear_idx += group_info.total_tiles;
-      cta_m = cute::size(cute::ceil_div(cute::shape<0>(problem_shapes[group_info.group]), cta_shape.m()));
-      cta_n = cute::size(cute::ceil_div(cute::shape<1>(problem_shapes[group_info.group]), cta_shape.n()));
-      group_info.total_tiles = cta_m * cta_n;
+      if (is_tuple<decltype(cute::shape<0>(problem_shapes[group_info.group_idx]))>::value ||
+          is_tuple<decltype(cute::shape<1>(problem_shapes[group_info.group_idx]))>::value) {
+        ctas_along_m = cute::size(cute::ceil_div(cute::shape<0>(problem_shapes[group_info.group_idx]), cta_shape.m()));
+        ctas_along_n = cute::size(cute::ceil_div(cute::shape<1>(problem_shapes[group_info.group_idx]), cta_shape.n()));
+      }
+      else {
+        ctas_along_m = divmod_cta_shape_m.divide(cute::shape<0>(problem_shapes[group_info.group_idx]) +  divmod_cta_shape_m.divisor - 1);
+        ctas_along_n = divmod_cta_shape_n.divide(cute::shape<1>(problem_shapes[group_info.group_idx]) +  divmod_cta_shape_n.divisor - 1);
+      }
+      problem_blocks_m = round_up(ctas_along_m, (1 << log_swizzle_size) * cluster_shape.m());
+      problem_blocks_n = round_up(ctas_along_n, (1 << log_swizzle_size) * cluster_shape.n());
+      group_info.total_tiles = problem_blocks_m * problem_blocks_n;
     }
 
     uint64_t cluster_id, cluster_major_offset = 0, cluster_minor_offset = 0;
-    divmod_cluster_shape_major(cluster_id, cluster_major_offset, blk_per_grid_dim - group_info.start_linear_idx);
+    uint64_t blk_per_grid_dim = divmod_cluster_shape_minor.divide(linear_idx - group_info.start_linear_idx);
+    divmod_cluster_shape_major(cluster_id, cluster_major_offset, blk_per_grid_dim);
 
     auto [cta_m_in_cluster, cta_n_in_cluster, _] = cute::block_id_in_cluster();
     if (raster_order == RasterOrder::AlongN) {
@@ -252,8 +348,13 @@ public:
     offset = cluster_id & ((1 << log_swizzle_size) - 1);
     extra = cluster_id >> log_swizzle_size;
 
-    uint64_t curr_group_cluster_blk_major, remainder;
-    divmod_cluster_shape_major(curr_group_cluster_blk_major, remainder, cta_m);
+    uint64_t curr_group_cluster_blk_major;
+    if (raster_order == RasterOrder::AlongN) {
+      curr_group_cluster_blk_major = divmod_cluster_shape_major.divide(problem_blocks_n);
+    }
+    else {
+      curr_group_cluster_blk_major = divmod_cluster_shape_major.divide(problem_blocks_m);
+    }
     cluster_idx_minor_div_swizzle = extra / curr_group_cluster_blk_major;
     cluster_idx_major = extra % curr_group_cluster_blk_major;
 
@@ -265,59 +366,12 @@ public:
                                                cluster_major_offset);
 
     if (raster_order == RasterOrder::AlongN) {
-      return {minor_work_idx, major_work_idx, group_info, valid_tile};
+      return {minor_work_idx, major_work_idx, group_info.group_idx, valid_tile};
     }
     else {
-      return {major_work_idx, minor_work_idx, group_info, valid_tile}; 
+      return {major_work_idx, minor_work_idx, group_info.group_idx, valid_tile}; 
     }
 
-  }
-
-  // Given the inputs, computes the total number of output blocks this problem will compute over
-  // Note that this is only the logical size of our grid, not the physical grid we will actually launch.
-  template<class BlockShape, class ClusterShape>
-  CUTLASS_HOST_DEVICE static
-  dim3
-  get_tiled_cta_shape_mnl(int groups, ProblemShape const* problem_shapes, BlockShape cta_shape, ClusterShape cluster_shape) {
-    uint32_t total_ctas = 0;
-    uint32_t cta_in_N_dim = 1; // We linearize the blocks across all the problems here
-    for (int group = 0; group < groups; group++) {
-      auto cta_m = cute::size(cute::ceil_div(cute::shape<0>(problem_shapes[group]), cute::shape<0>(cta_shape)));
-      auto cta_n = cute::size(cute::ceil_div(cute::shape<1>(problem_shapes[group]), cute::shape<1>(cta_shape)));
-      total_ctas += cta_m * cta_n;
-    }
-
-    return Params::get_tiled_cta_shape_mnl(
-      to_gemm_coord(cluster_shape),
-      total_ctas, cta_in_N_dim
-    );
-  }
-
-  // Given the inputs, computes the physical grid we should launch.
-  template<class BlockShape, class ClusterShape>
-  CUTLASS_HOST_DEVICE static
-  dim3
-  get_grid_shape(
-    GroupProblemShape problem_shapes,
-    BlockShape cta_shape,
-    ClusterShape cluster_shape,
-    KernelHardwareInfo hw_info,
-    Arguments arguments,
-    bool truncate_by_problem_size=true) {
-
-    dim3 problem_blocks = get_tiled_cta_shape_mnl(
-      problem_shapes.groups(),
-      reinterpret_cast<ProblemShape const*>(problem_shapes.host_problem_shapes),
-      cta_shape, cluster_shape);
-
-    return Params::get_grid_shape(
-      problem_blocks,
-      to_gemm_coord(cluster_shape),
-      hw_info,
-      arguments.max_swizzle_size,
-      arguments.raster_order,
-      /* truncate_by_problem_size = */true
-    );
   }
 
   // Returns whether the block assigned this work should compute the epilogue for the corresponding

@@ -80,6 +80,40 @@ struct TagToStrideB<layout::ColumnMajor> {
   using tag = layout::ColumnMajor;
 };
 
+// For each cutlass::layout *, provides its corresponding cute stride types, 64b by default
+// Used by pointer array and grouped gemm
+// Maps to modes [M, K, L]
+template <>
+struct TagToStrideA<layout::RowMajor *> {
+  using UnderlyingType = cute::Stride<int64_t, cute::Int<1>, int64_t>;
+  using type = UnderlyingType*;
+  using tag = layout::RowMajor;
+};
+
+// Maps to modes [M, K, L]
+template <>
+struct TagToStrideA<layout::ColumnMajor *> {
+  using UnderlyingType = cute::Stride<cute::Int<1>, int64_t, int64_t>;
+  using type = UnderlyingType*;
+  using tag = layout::ColumnMajor;
+};
+
+// Maps to modes [N, K, L]
+template <>
+struct TagToStrideB<layout::RowMajor *> {
+  using UnderlyingType = cute::Stride<cute::Int<1>, int64_t, int64_t>;
+  using type = UnderlyingType*;
+  using tag = layout::RowMajor;
+};
+
+// Maps to modes [N, K, L]
+template <>
+struct TagToStrideB<layout::ColumnMajor *> {
+  using UnderlyingType = cute::Stride<int64_t, cute::Int<1>, int64_t>;
+  using type = UnderlyingType*;
+  using tag = layout::ColumnMajor;
+};
+
 // Maps to modes [M, N, L]
 template <class LayoutTag>
 struct TagToStrideC : TagToStrideA<LayoutTag> { };
@@ -101,7 +135,7 @@ template<int ModeIndex, class Stride>
 constexpr bool
 is_major(Stride = {}) {
   // Account for stride types with and without batch mode and batch modes with static zero stride
-  return cute::is_constant<1, decltype(cute::front(cute::get<ModeIndex>(Stride{})))>::value;
+  return cute::is_constant<1, decltype(cute::front(cute::get<ModeIndex>(cute::remove_pointer_t<Stride>{})))>::value;
 }
 
 // Note : This method can be used for deducing the Layout Tag of A, C, D Matrices

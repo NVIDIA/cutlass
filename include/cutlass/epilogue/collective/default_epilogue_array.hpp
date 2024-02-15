@@ -73,12 +73,10 @@ public:
   using ElementScalar = ElementCompute;
   using ElementC = typename ThreadEpilogueOp::ElementC;
   using StrideC = StrideC_;
+  using UnderlyingStrideC = cute::remove_pointer_t<StrideC>;
   using ElementD = typename ThreadEpilogueOp::ElementD;
   using StrideD = StrideD_;
-  using StridesC = cute::conditional_t<cute::is_same_v<EpilogueSchedule, NoSmemWarpSpecializedGroup>,
-    StrideC const*, StrideC>;
-  using StridesD = cute::conditional_t<cute::is_same_v<EpilogueSchedule, NoSmemWarpSpecializedGroup>,
-    StrideD const*, StrideD>;
+  using UnderlyingStrideD = cute::remove_pointer_t<StrideD>;
 
   using GmemTiledCopyC = void;
   using GmemTiledCopyD = void;
@@ -86,10 +84,9 @@ public:
   static const int kOutputAlignment = ThreadEpilogueOp::kCount;
   using AlignmentType = typename cute::uint_bit<sizeof_bits<ElementOutput>::value * kOutputAlignment>::type;
 
-  static_assert(cute::is_same_v<EpilogueSchedule, NoSmemWarpSpecializedGroup> ||
-    cute::is_same_v<EpilogueSchedule, NoSmemWarpSpecializedArray>, "Incompatible epilogue schedule.");
-  static_assert(rank(StrideC{}) == 3, "StrideCD must be rank-3: [M, N, L]");
-  static_assert(rank(StrideD{}) == 3, "StrideCD must be rank-3: [M, N, L]");
+  static_assert(cute::is_same_v<EpilogueSchedule, PtrArrayNoSmemWarpSpecialized>, "Incompatible epilogue schedule.");
+  static_assert(rank(UnderlyingStrideC{}) == 3, "StrideCD must be rank-3: [M, N, L]");
+  static_assert(rank(UnderlyingStrideD{}) == 3, "StrideCD must be rank-3: [M, N, L]");
 
   struct SharedStorage { };
 
@@ -97,9 +94,9 @@ public:
   struct Arguments {
     typename ThreadEpilogueOp::Params thread{};
     ElementC const** ptr_C = nullptr;
-    StridesC dC{};
+    StrideC dC{};
     ElementD** ptr_D = nullptr;
-    StridesD dD{};
+    StrideD dD{};
   };
 
   // Device side epilogue params
@@ -140,12 +137,13 @@ public:
 
   CUTLASS_HOST_DEVICE
   DefaultEpilogueArray(Params const& params_)
-      : params(params_), epilogue_op(params_.thread) { }
+      : params(params_) { }
 
   CUTLASS_DEVICE
   bool
   is_source_needed() {
-    return epilogue_op.is_source_needed();
+    // For Ptr-Array or Grouped Gemm we cannot determine if source is needed based on first beta.
+    return true;
   }
 
   template<
@@ -185,10 +183,23 @@ public:
     // Slice to get the tile this CTA is responsible for
     auto [m_coord, n_coord, k_coord, l_coord] = blk_coord_mnkl;
 
-    StrideC stride_c;
-    StrideD stride_d;
-    if constexpr (cute::is_same_v<EpilogueSchedule, NoSmemWarpSpecializedGroup>) {
-      stride_c = detail::get_epilogue_stride<EpilogueSchedule>(params.dC[l_coord]);
+    // If scalar alpha/beta are provided, i.e., same alpha/beta applies to all batches/groups.
+    // If pointers to alpha/beta are provided, i.e., alpha/beta can differ between batches/groups,
+    // we get the correct alpha/beta values for the current batch/group using group index.
+    ThreadEpilogueOp epilogue_op = ThreadEpilogueOp(params.thread, l_coord);
+
+    if (epilogue_op.is_source_needed() && params.dC == nullptr) {
+      // Beta value is non-zero while pointer to C is a nullptr
+      assert(0);
+    }
+
+    UnderlyingStrideC stride_c;
+    UnderlyingStrideD stride_d;
+    if constexpr (!cute::is_same_v<UnderlyingStrideC, StrideC>) {
+      // If grouped gemm
+      if (epilogue_op.is_source_needed()) {
+        stride_c = detail::get_epilogue_stride<EpilogueSchedule>(params.dC[l_coord]);
+      }
       stride_d = detail::get_epilogue_stride<EpilogueSchedule>(params.dD[l_coord]);
     }
     else {
@@ -197,7 +208,11 @@ public:
     }
 
     // Represent the full output tensor
-    Tensor mC_mnl = make_tensor(make_gmem_ptr(params.ptr_C[l_coord]), make_shape(M,N,mock_L), stride_c);      // (m,n,l)
+    ElementC const* ptr_C_l = nullptr;
+    if (epilogue_op.is_source_needed()) {
+      ptr_C_l = params.ptr_C[l_coord];
+    }
+    Tensor mC_mnl = make_tensor(make_gmem_ptr(ptr_C_l), make_shape(M,N,mock_L), stride_c);      // (m,n,l)
     Tensor mD_mnl = make_tensor(make_gmem_ptr(params.ptr_D[l_coord]), make_shape(M,N,mock_L), stride_d);      // (m,n,l)
     Tensor gC_mnl = local_tile(mC_mnl, blk_shape_MNK, make_coord(_,_,_), Step<_1,_1, X>{});    // (BLK_M,BLK_N,m,n,l)
     Tensor gD_mnl = local_tile(mD_mnl, blk_shape_MNK, make_coord(_,_,_), Step<_1,_1, X>{});    // (BLK_M,BLK_N,m,n,l)
@@ -242,7 +257,6 @@ public:
 
 private:
   Params params;
-  ThreadEpilogueOp epilogue_op;
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

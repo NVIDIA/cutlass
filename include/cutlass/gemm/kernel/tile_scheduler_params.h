@@ -1273,15 +1273,18 @@ struct PersistentTileSchedulerSm90GroupParams {
 
   FastDivmodU64Pow2 divmod_cluster_shape_major_{};
   FastDivmodU64Pow2 divmod_cluster_shape_minor_{};
-  FastDivmodU64 divmod_batch_{};
+  FastDivmodU64 divmod_cta_shape_m_{};
+  FastDivmodU64 divmod_cta_shape_n_{};
 
-  uint64_t blocks_per_problem_ = 0;
+  uint64_t blocks_across_problem_ = 0;
+  bool pre_processed_problem_shapes = true;
   int32_t log_swizzle_size_ = 0;
   RasterOrder raster_order_ = RasterOrder::AlongN;
 
   int32_t groups_ = 0;
   ProblemShape* problem_shapes_ = nullptr;
   GemmCoord cta_shape_;
+  GemmCoord cluster_shape_;
 
   // Version of initialize that takes in as input the number of CTAs in the M and N and L dimensions.
   // This is useful for calculating the tiled shape when a mode of problem and/or CTA shape has rank > 1,
@@ -1291,6 +1294,7 @@ struct PersistentTileSchedulerSm90GroupParams {
     dim3 problem_blocks,
     int32_t groups,
     ProblemShape* problem_shapes,
+    ProblemShape const* host_problem_shapes,
     GemmCoord cta_shape,
     GemmCoord cluster_shape,
     KernelHardwareInfo const& hw_info,
@@ -1317,11 +1321,12 @@ struct PersistentTileSchedulerSm90GroupParams {
     groups_ = groups;
     problem_shapes_ = problem_shapes;
     cta_shape_ = cta_shape;
+    cluster_shape_ = cluster_shape;
 
-    blocks_per_problem_ = problem_blocks_m * problem_blocks_n * problem_blocks.z;
+    blocks_across_problem_ = problem_blocks.x * problem_blocks.y * problem_blocks.z;
+    pre_processed_problem_shapes = (host_problem_shapes == nullptr) ? false : true;
     log_swizzle_size_ = log_swizzle_size;
     raster_order_ = raster_order;
-    divmod_batch_ = FastDivmodU64(problem_blocks_m * problem_blocks_n);
 
     if (raster_order == RasterOrder::AlongN) {
       divmod_cluster_shape_major_ = FastDivmodU64Pow2(cluster_shape.n());
@@ -1331,6 +1336,9 @@ struct PersistentTileSchedulerSm90GroupParams {
       divmod_cluster_shape_major_ = FastDivmodU64Pow2(cluster_shape.m());
       divmod_cluster_shape_minor_ = FastDivmodU64Pow2(cluster_shape.n());
     }
+
+    divmod_cta_shape_m_ = FastDivmodU64(cta_shape_.m());
+    divmod_cta_shape_n_ = FastDivmodU64(cta_shape_.n());
   }
 
   // Version of get_tiled_cta_shape_mnl that takes in as input the number of CTAs in the M and N dimensions.
@@ -1344,8 +1352,8 @@ struct PersistentTileSchedulerSm90GroupParams {
     auto problem_blocks_n = ((cta_n + cluster_shape.n() - 1) / cluster_shape.n()) * cluster_shape.n();
 
     return {
-      static_cast<uint32_t>(problem_blocks_m),
-      static_cast<uint32_t>(problem_blocks_n),
+      static_cast<uint32_t>(cta_m),
+      static_cast<uint32_t>(cta_n),
       static_cast<uint32_t>(1) // Only a single batch per group is currently supported
     };
   }

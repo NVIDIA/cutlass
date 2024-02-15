@@ -40,7 +40,7 @@ import cutlass_library
 def _cuda_install_path_from_nvcc() -> str:
     import subprocess
     # Attempt to detect CUDA_INSTALL_PATH based on location of NVCC
-    result = subprocess.run(['which', 'nvcc'], capture_output=True)
+    result = subprocess.run(['/usr/bin/which', 'nvcc'], capture_output=True)
     if result.returncode != 0:
         raise Exception(f'Unable to find nvcc via `which` utility.')
 
@@ -121,7 +121,7 @@ def get_option_registry():
         this._option_registry = OptionRegistry(device_cc())
     return this._option_registry
 
-this.__version__ = '3.4.0'
+this.__version__ = '3.4.1'
 
 from cutlass.backend import create_memory_pool
 from cutlass.emit.pytorch import pytorch
@@ -169,7 +169,7 @@ def initialize_cuda_context():
             raise Exception("No CUDA devices found")
         device_id = 0
 
-    this._device_id = device_id
+    this._device_id = int(device_id)
 
 
 def device_id() -> int:

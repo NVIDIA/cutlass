@@ -391,7 +391,7 @@ struct TiledMMA : MMA_Atom
     } else {
       return cute::max(core_size, perm_size);
     }
-
+  
     CUTE_GCC_UNREACHABLE;
   }
 
