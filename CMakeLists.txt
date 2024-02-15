@@ -40,7 +40,25 @@ endif()
 message(STATUS "CMake Version: ${CMAKE_VERSION}")
 set(IMPLICIT_CMAKE_CXX_STANDARD OFF CACHE BOOL "Do not explicitly specify -std=c++11 if set")
 
-project(CUTLASS VERSION 3.4.0 LANGUAGES CXX)
+# To reduce duplicate version locations, parse the version out of the
+# main versions.h file and reuse it here.
+
+file(READ ${CMAKE_CURRENT_SOURCE_DIR}/include/cutlass/version.h VERSION_FILE_CONTENTS)
+string(REGEX MATCH "#define CUTLASS_MAJOR ([0-9]+)" _CUTLASS_VERSION_MAJOR "${VERSION_FILE_CONTENTS}")
+set(_CUTLASS_VERSION_MAJOR ${CMAKE_MATCH_1})
+string(REGEX MATCH "#define CUTLASS_MINOR ([0-9]+)" _CUTLASS_VERSION_MINOR "${VERSION_FILE_CONTENTS}")
+set(_CUTLASS_VERSION_MINOR ${CMAKE_MATCH_1})
+string(REGEX MATCH "#define CUTLASS_PATCH ([0-9]+)" _CUTLASS_VERSION_PATCH "${VERSION_FILE_CONTENTS}")
+set(_CUTLASS_VERSION_PATCH ${CMAKE_MATCH_1})
+
+message(STATUS "CUTLASS ${_CUTLASS_VERSION_MAJOR}.${_CUTLASS_VERSION_MINOR}.${_CUTLASS_VERSION_PATCH}")
+
+## CUTLASS PROJECT #############################################################
+
+project(CUTLASS VERSION ${_CUTLASS_VERSION_MAJOR}.${_CUTLASS_VERSION_MINOR}.${_CUTLASS_VERSION_PATCH} LANGUAGES CXX)
+
+################################################################################
+
 include(${CMAKE_CURRENT_SOURCE_DIR}/CUDA.cmake)
 
 if (CUDA_VERSION VERSION_LESS 11.3)
@@ -177,6 +195,9 @@ if(WIN32)
   # On Windows we link against the shared (DLL) runtime. Change gtest settings to match this.
   set(gtest_force_shared_crt ON CACHE BOOL "Use shared (DLL) run-time lib even when Google Test is built as static lib" FORCE)
 endif()
+
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DCUTLASS_VERSIONS_GENERATED")
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -DCUTLASS_VERSIONS_GENERATED")
 
 if (WIN32)
   # Enable more warnings.  Add "-Xcompiler=/WX" to enable warnings as errors.
@@ -589,8 +610,8 @@ if (NOT DEFINED CUTLASS_REVISION)
 endif()
 
 configure_file(
-  ${CMAKE_CURRENT_SOURCE_DIR}/cmake/version.h.in
-  ${CMAKE_CURRENT_BINARY_DIR}/include/cutlass/version.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/cmake/version_extended.h.in
+  ${CMAKE_CURRENT_BINARY_DIR}/include/cutlass/version_extended.h
   @ONLY)
 
 target_include_directories(

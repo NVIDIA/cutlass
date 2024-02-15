@@ -71,6 +71,12 @@ struct GroupProblemShape {
   get_host_problem_shape(int32_t group_idx) const {
     return host_problem_shapes[group_idx];
   }
+
+  CUTLASS_HOST_DEVICE
+  bool
+  is_host_problem_shape_available() {
+    return host_problem_shapes != nullptr;
+  }
 };
 
 template <class ProblemShape_>
@@ -103,6 +109,12 @@ public:
   UnderlyingProblemShape const
   get_host_problem_shape(int32_t /* unused */ = 0) const {
     return problem_shape_;
+  }
+
+  CUTLASS_HOST_DEVICE
+  bool
+  is_host_problem_shape_available() {
+    return true;
   }
 private:
   UnderlyingProblemShape problem_shape_{};

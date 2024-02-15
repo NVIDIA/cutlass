@@ -325,7 +325,7 @@ class GemmArguments2x(ArgumentBase):
     def initialize(self):
         launch_config = self.operation.rt_module.plan(self)
 
-        # Get the host and evice workspace
+        # Get the host and device workspace
         device_workspace_size = self.operation.rt_module.get_device_workspace_size(self)
 
         if device_workspace_size > 0:
@@ -512,6 +512,18 @@ class GemmArguments3x(GemmArguments2x):
         super().__init__(operation, problem_size, A, B, C, D, gemm_mode, **kwargs)
 
     def get_arguments(self):
+        mainloop_args = get_mainloop_arguments_3x(
+            self.operation.tile_description.kernel_schedule,
+            self.operation.A.element,
+            self.operation.B.element,
+            self.operation.A.alignment,
+            self.operation.B.alignment
+        )
+        scheduler_args = get_tile_scheduler_arguments_3x(self.operation.tile_description.tile_scheduler)
+        uses_default_epilogue = self.operation.rt_module.uses_default_epilogue()
+        argument_type, epilogue_args, epilogue_type, hw_info = get_gemm_arguments_3x(
+            mainloop_args, self.operation.epilogue_functor, scheduler_args, uses_default_epilogue)
+
         problem_size_ = GemmCoordBatched_(self.problem_size, self.batch_count)
 
         if self.batch_count > 1:
@@ -539,9 +551,12 @@ class GemmArguments3x(GemmArguments2x):
         )
 
         # Set of mainloop arguments needed for this kernel
-        mainloop = self.operation.rt_module.mainloop_args.from_generic_mainloop_args(generic_args)
+        mainloop = mainloop_args.from_generic_mainloop_args(generic_args)
 
-        epilogue = self.operation.rt_module.epilogue_args(
+        if not uses_default_epilogue and hasattr(self.output_op, "to_evt_params"):
+            self.output_op = self.output_op.to_evt_params()
+
+        epilogue = epilogue_args(
             self.output_op,
             int(self.ptr_C),
             stride_C,
@@ -550,15 +565,15 @@ class GemmArguments3x(GemmArguments2x):
         )
 
         # Set hardware info
-        hw_info = self.operation.rt_module.hw_info(0, device_sm_count())
+        hw_info_ = hw_info(0, device_sm_count())
 
-        self.arguments = self.operation.argument_type(
+        self.arguments = argument_type(
             int(self.gemm_mode),
             problem_size_,
             mainloop,
             epilogue,
-            hw_info,
-            self.operation.rt_module.scheduler_args
+            hw_info_,
+            scheduler_args
         )
         return self.arguments
 
@@ -1119,6 +1134,10 @@ extern "C" {
 
   using GemmType = ${operation_name}_base;
 
+  bool ${operation_name}_uses_default_epilogue() {
+    return std::is_same_v<GemmType::CollectiveEpilogue::DispatchPolicy, cutlass::gemm::EpilogueDefault>;
+  }
+
   // Get the workspace size
   uint64_t ${operation_name}_get_kernel_workspace_size(GemmType::Arguments* argument) {
     return GemmType::get_workspace_size(*argument);
@@ -1163,19 +1182,10 @@ extern "C" {
             "get_grid_shape": dim3_,
             "get_block_shape": dim3_,
             "get_persistent_tiled_blk_shape_mnl": ctypes.c_uint64,
-            "get_kernel_workspace_size": ctypes.c_uint64
+            "get_kernel_workspace_size": ctypes.c_uint64,
+            "uses_default_epilogue": ctypes.c_bool,
         }
         self.emitter = EmitGemmUniversalInstance3x("_type")
-        self.mainloop_args = get_mainloop_arguments_3x(
-            operation.tile_description.kernel_schedule,
-            operation.A.element,
-            operation.B.element,
-            operation.A.alignment,
-            operation.B.alignment
-        )
-        self.scheduler_args = get_tile_scheduler_arguments_3x(operation.tile_description.tile_scheduler)
-        self.argument_type, self.epilogue_args, self.epilogue_type, self.hw_info = get_gemm_arguments_3x(
-            self.mainloop_args, operation.epilogue_functor, self.scheduler_args)
 
     def get_device_workspace_size(self, arguments: GemmArguments3x):
         return self.get_kernel_workspace_size(ctypes.byref(arguments.get_arguments()))

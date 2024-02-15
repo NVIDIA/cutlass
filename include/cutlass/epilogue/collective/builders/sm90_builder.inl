@@ -268,7 +268,7 @@ struct Sm90TmaBuilderImpl {
   // Passing void C disables source load + smem allocation
   using ElementC = cute::conditional_t<cute::is_void_v<ElementC_>,ElementD,ElementC_>; // prevents void ref breakages
   using GmemLayoutTagC = cute::conditional_t<cute::is_void_v<ElementC_>,GmemLayoutTagD,GmemLayoutTagC_>;
-  
+
   using GmemStrideTypeC = cutlass::detail::TagToStrideC_t<GmemLayoutTagC>;
   using GmemStrideTypeD = cutlass::detail::TagToStrideC_t<GmemLayoutTagD>;
 
@@ -434,8 +434,7 @@ struct CollectiveBuilder<
     Schedule,
     fusion::LinearCombination<ElementD,ElementCompute,ElementC_,ElementCompute,RoundStyle>,
     cute::enable_if_t<cute::is_same_v<Schedule, NoSmemWarpSpecialized> ||
-                      cute::is_same_v<Schedule, NoSmemWarpSpecializedArray> ||
-                      cute::is_same_v<Schedule, NoSmemWarpSpecializedGroup> >> {
+                      cute::is_same_v<Schedule, PtrArrayNoSmemWarpSpecialized> >> {
 
   // Passing void C disables source load
   using ElementC = cute::conditional_t<cute::is_void_v<ElementC_>,

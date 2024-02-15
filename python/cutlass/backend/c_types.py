@@ -213,8 +213,12 @@ def get_mainloop_arguments_3x(
     return _MainloopArgumentsTma
 
 
-def get_gemm_arguments_3x(mainloop_arguments, epilogue_functor, scheduler_args):
-    _EpilogueOutputOpParams = epilogue_functor.epilogue_type
+def get_gemm_arguments_3x(mainloop_arguments, epilogue_functor, scheduler_args, default_epilogue):
+    if not default_epilogue and hasattr(epilogue_functor, "epilogue_type_evt"):
+        _EpilogueOutputOpParams = epilogue_functor.epilogue_type_evt
+    else:
+        _EpilogueOutputOpParams = epilogue_functor.epilogue_type
+
     if hasattr(epilogue_functor, "visitor"):
         class _EpilogueArguments(ctypes.Structure):
             _fields_ = [

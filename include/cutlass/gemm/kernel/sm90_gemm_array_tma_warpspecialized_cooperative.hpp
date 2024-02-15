@@ -62,8 +62,7 @@ class GemmUniversal<
   CollectiveMainloop_,
   CollectiveEpilogue_,
   TileScheduler_,
-  cute::enable_if_t<cute::is_base_of_v<KernelArrayTmaWarpSpecializedCooperative, typename CollectiveMainloop_::DispatchPolicy::Schedule> ||
-                    cute::is_base_of_v<KernelGroupTmaWarpSpecializedCooperative, typename CollectiveMainloop_::DispatchPolicy::Schedule>>
+  cute::enable_if_t<cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedCooperative, typename CollectiveMainloop_::DispatchPolicy::Schedule>>
 >
 {
 public:
@@ -80,7 +79,9 @@ public:
   using ArchTag   = typename CollectiveMainloop::ArchTag;
   using ElementA  = typename CollectiveMainloop::ElementA;
   using StrideA   = typename CollectiveMainloop::StrideA;
+  using UnderlyingStrideA = typename CollectiveMainloop::UnderlyingStrideA;
   using ElementB  = typename CollectiveMainloop::ElementB;
+  using UnderlyingStrideB = typename CollectiveMainloop::UnderlyingStrideB;
   using StrideB   = typename CollectiveMainloop::StrideB;
   using DispatchPolicy = typename CollectiveMainloop::DispatchPolicy;
   using Schedule = typename DispatchPolicy::Schedule;
@@ -93,8 +94,10 @@ public:
   using CollectiveEpilogue = CollectiveEpilogue_;
   using ElementC = typename CollectiveEpilogue::ElementC;
   using StrideC  = typename CollectiveEpilogue::StrideC;
+  using UnderlyingStrideC = typename CollectiveEpilogue::UnderlyingStrideC;
   using ElementD = typename CollectiveEpilogue::ElementD;
   using StrideD  = typename CollectiveEpilogue::StrideD;
+  using UnderlyingStrideD = typename CollectiveEpilogue::UnderlyingStrideD;
   using EpilogueArguments = typename CollectiveEpilogue::Arguments;
   using EpilogueParams = typename CollectiveEpilogue::Params;
 
@@ -102,7 +105,7 @@ public:
   static_assert(cute::is_void_v<TileScheduler_>,
     "Ptr-Array Cooperative and Grouped Gemm Cooperative kernel only supports the default scheduler.");
   
-  static constexpr bool IsGroupedGemmKernel = cute::is_base_of_v<KernelGroupTmaWarpSpecializedCooperative, Schedule>;
+  static constexpr bool IsGroupedGemmKernel = !cute::is_same_v<UnderlyingStrideA, StrideA>;
 
   using TileScheduler = cute::conditional_t<IsGroupedGemmKernel,
     typename detail::TileSchedulerSelector<
@@ -204,7 +207,7 @@ public:
 
     void* scheduler_workspace = workspace_ptr;
     workspace_offset += TileScheduler::template get_workspace_size<typename ProblemShape::UnderlyingProblemShape, ElementAccumulator>(
-      args.scheduler, problem_shapes.get_host_problem_shape(0), args.hw_info, NumMmaWarpGroups);
+      args.scheduler, typename ProblemShape::UnderlyingProblemShape{}, args.hw_info, NumMmaWarpGroups);
     workspace_offset = round_nearest(workspace_offset,  MinWorkspaceAlignment);
 
     void* epilogue_workspace = workspace_ptr + workspace_offset;
@@ -244,14 +247,11 @@ public:
   bool
   can_implement(Arguments const& args) {
     bool implementable = true;
-    if constexpr (cute::is_base_of_v<KernelArrayTmaWarpSpecializedCooperative, Schedule>) {
-      implementable &= (args.mode == GemmUniversalMode::kArray && rank(typename ProblemShape::UnderlyingProblemShape{}) == 4);
-    } else if constexpr (IsGroupedGemmKernel) {
+    if constexpr (IsGroupedGemmKernel) {
       // Group GEMM currently only supports rank-3 problem shapes
       implementable &= (args.mode == GemmUniversalMode::kGrouped && rank(typename ProblemShape::UnderlyingProblemShape{}) == 3);
-    }
-    else {
-      implementable = false;
+    } else {
+      implementable &= (args.mode == GemmUniversalMode::kArray && rank(typename ProblemShape::UnderlyingProblemShape{}) == 4);
     }
     if (!implementable) {
       CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Arguments or Problem Shape don't meet the requirements for Ptr Array Gemm or Grouped Gemm.\n");
@@ -269,7 +269,7 @@ public:
     constexpr uint32_t NumEpilogueSubTiles = CollectiveEpilogue::get_store_pipe_increment(TileShape{});
 
     workspace_size += TileScheduler::template get_workspace_size<typename ProblemShape::UnderlyingProblemShape, ElementAccumulator>(
-      args.scheduler, args.problem_shape.get_host_problem_shape(0), args.hw_info, NumMmaWarpGroups, NumEpilogueSubTiles);
+      args.scheduler, typename ProblemShape::UnderlyingProblemShape{}, args.hw_info, NumMmaWarpGroups, NumEpilogueSubTiles);
     workspace_size = round_nearest(workspace_size,  MinWorkspaceAlignment);
 
     workspace_size += CollectiveEpilogue::get_workspace_size(args.problem_shape, args.epilogue);
@@ -297,9 +297,9 @@ public:
     constexpr uint32_t NumEpilogueSubTiles = CollectiveEpilogue::get_store_pipe_increment(TileShape{});
 
     status = TileScheduler::template initialize_workspace<typename ProblemShape::UnderlyingProblemShape, ElementAccumulator>(
-      args.scheduler, workspace_ptr + workspace_offset, stream, args.problem_shape.get_host_problem_shape(0), args.hw_info, NumMmaWarpGroups, NumEpilogueSubTiles);
+      args.scheduler, workspace_ptr + workspace_offset, stream, typename ProblemShape::UnderlyingProblemShape{}, args.hw_info, NumMmaWarpGroups, NumEpilogueSubTiles);
     workspace_offset += TileScheduler::template get_workspace_size<typename ProblemShape::UnderlyingProblemShape, ElementAccumulator>(
-      args.scheduler, args.problem_shape.get_host_problem_shape(0), args.hw_info, NumMmaWarpGroups, NumEpilogueSubTiles);
+      args.scheduler, typename ProblemShape::UnderlyingProblemShape{}, args.hw_info, NumMmaWarpGroups, NumEpilogueSubTiles);
     workspace_offset = round_nearest(workspace_offset,  MinWorkspaceAlignment);
     if (status != Status::kSuccess) {
       return status;
@@ -350,23 +350,20 @@ public:
     using namespace cute;
     using X = Underscore;
 
-    // Any Tensor Op MMA Atom in the WGMMA ISA is arch conditional to sm90a.
-    #if ! defined(__CUDA_ARCH_FEAT_SM90_ALL)
-      if constexpr(size<0>(typename TiledMma::AtomShape_MNK{}) == 64) {
-        printf("ERROR : Arch conditional MMA instruction used without targeting sm90a compute capability. Aborting.\n");
-        return;
-      }
-    #endif
+// Any Tensor Op MMA Atom in the WGMMA ISA is arch conditional to sm90a.
+#if ! defined(__CUDA_ARCH_FEAT_SM90_ALL)
+    printf("ERROR : Arch conditional MMA instruction used without targeting sm90a compute capability. Aborting.\n");
+#else
 
     // Preconditions
     static_assert(size(TiledMma{}) == 256, "Cooperative kernel must have TiledMMA operating using 256 threads.");
     static_assert(size<0>(TileShape{}) >= 128,
         "Cooperative kernel requires Tile Size to be greater than or equal to 128 along the M-dimension.");
 
-    static_assert(cute::rank(StrideA{}) == 3, "StrideA must be rank-3: [M, K, L]. If batch mode is not needed, set L stride to Int<0>.");
-    static_assert(cute::rank(StrideB{}) == 3, "StrideB must be rank-3: [N, K, L]. If batch mode is not needed, set L stride to Int<0>.");
-    static_assert(cute::rank(StrideC{}) == 3, "StrideC must be rank-3: [M, N, L]. If batch mode is not needed, set L stride to Int<0>.");
-    static_assert(cute::rank(StrideD{}) == 3, "StrideD must be rank-3: [M, N, L]. If batch mode is not needed, set L stride to Int<0>.");
+    static_assert(cute::rank(UnderlyingStrideA{}) == 3, "StrideA must be rank-3: [M, K, L]. If batch mode is not needed, set L stride to Int<0>.");
+    static_assert(cute::rank(UnderlyingStrideB{}) == 3, "StrideB must be rank-3: [N, K, L]. If batch mode is not needed, set L stride to Int<0>.");
+    static_assert(cute::rank(UnderlyingStrideC{}) == 3, "StrideC must be rank-3: [M, N, L]. If batch mode is not needed, set L stride to Int<0>.");
+    static_assert(cute::rank(UnderlyingStrideD{}) == 3, "StrideD must be rank-3: [M, N, L]. If batch mode is not needed, set L stride to Int<0>.");
 
     /* In the Cooperative kernel, Consumer0 and Consumer1 collaborate on the same tile */
     enum class WarpGroupRole {
@@ -441,8 +438,6 @@ public:
     // Epilogue store pipe is producer-only (consumer is TMA unit, waits via scoreboarding)
     typename CollectiveMainloop::PipelineState mainloop_pipe_consumer_state;
     typename CollectiveEpilogue::LoadPipelineState epi_load_pipe_consumer_state;
-    // Purpose of maintaining this pipeline state is to make sure TMA loads have finished before doing descriptor updates
-    typename CollectiveMainloop::PipelineState mainloop_pipe_tma_consumer_state;
 
     // For the DMA Load (producer) we start with an opposite phase
     // i.e., we skip all waits since we know that the buffer is indeed empty
@@ -554,7 +549,8 @@ public:
             shared_storage.tensors.mainloop
           );
           // Update starting pipeline state for the next tile
-          mainloop_pipe_producer_state.advance(work_k_tile_count);
+          // Wait for the last TMA stage to complete loading, before issuing tensormap updates
+          mainloop_pipe_producer_state.advance(work_k_tile_count - 1);
 
           // Signal for the epilogue load warp to begin
           if (do_load_order_arrive) {
@@ -570,8 +566,10 @@ public:
             if constexpr (IsGroupedGemmKernel) {
               problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(next_batch), Int<1>{});
             }
-            // Wait for the last TMA stage to complete loading, before issuing tensormap updates
-            mainloop_pipe_tma_consumer_state.advance(work_k_tile_count-1);
+            // Purpose of this pipeline state is to make sure TMA loads have finished before doing descriptor updates
+            // Since this state is waiting for loads to finish, it must start in the inverted phase.
+            typename CollectiveMainloop::PipelineState mainloop_pipe_tma_consumer_state = 
+              {mainloop_pipe_producer_state.index(), !mainloop_pipe_producer_state.phase(), mainloop_pipe_producer_state.count()};
             mainloop_pipeline.consumer_wait(mainloop_pipe_tma_consumer_state);
             collective_mainloop.tensormaps_perform_update(
               shared_storage.tensormaps.mainloop,
@@ -585,13 +583,9 @@ public:
             // Entire warp must do this (ie its aligned)
             collective_mainloop.tensormaps_cp_fence_release(shared_storage.tensormaps.mainloop, input_tensormaps);
             curr_batch = next_batch;
-            // Advance the TMA consumer state for the last remaining stage that was being waited for above
-            mainloop_pipe_tma_consumer_state.advance(1);
-          } 
-          else if (work_tile_info.is_valid()) { // case where batch/group didn't change between tiles
-            // Advance the TMA consumer state for all the stages to be in sync
-            mainloop_pipe_tma_consumer_state.advance(work_k_tile_count);
           }
+          // Advance the producer state for the last remaining stage that was being waited for above
+          mainloop_pipe_producer_state.advance(1);
         } // Scheduler work fetch loop
 
         // Make sure all Consumer Warp Groups have been waited upon
@@ -720,6 +714,7 @@ public:
         );
       }
     } // Consumer Warp Groups End
+#endif
   }
 
 private:

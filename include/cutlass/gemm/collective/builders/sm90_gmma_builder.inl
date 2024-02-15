@@ -185,8 +185,7 @@ struct CollectiveBuilder<
       (cute::is_same_v<KernelScheduleType, KernelTmaWarpSpecialized> ||
        cute::is_same_v<KernelScheduleType, KernelTmaWarpSpecializedPingpong> ||
        cute::is_same_v<KernelScheduleType, KernelTmaWarpSpecializedCooperative> ||
-       cute::is_same_v<KernelScheduleType, KernelArrayTmaWarpSpecializedCooperative> ||
-       cute::is_same_v<KernelScheduleType, KernelGroupTmaWarpSpecializedCooperative>) &&
+       cute::is_same_v<KernelScheduleType, KernelPtrArrayTmaWarpSpecializedCooperative>) &&
        not detail::is_use_rmem_A<ElementA, GmemLayoutA, ElementB, GmemLayoutB>()>
 > {
   static_assert(is_static<TileShape_MNK>::value);
@@ -197,8 +196,7 @@ struct CollectiveBuilder<
   static_assert(detail::is_aligned<ElementA, AlignmentA, ElementB, AlignmentB, detail::tma_alignment_bytes>(),
                 "Should meet TMA alignment requirement\n");
 
-  static constexpr bool IsArrayOfPointersGemm = (cute::is_same_v<KernelScheduleType, KernelArrayTmaWarpSpecializedCooperative> ||
-                                                 cute::is_same_v<KernelScheduleType, KernelGroupTmaWarpSpecializedCooperative>);
+  static constexpr bool IsArrayOfPointersGemm = (cute::is_same_v<KernelScheduleType, KernelPtrArrayTmaWarpSpecializedCooperative>);
   static constexpr bool IsFP8Input = detail::is_input_fp8<ElementA, ElementB>();
   static_assert(!IsFP8Input || (IsFP8Input && !IsArrayOfPointersGemm),
                 "Kernel[Array/Group]TmaWarpSpecializedCooperative is only compatible with FP8 FastAccum version right now\n");
@@ -515,8 +513,7 @@ struct CollectiveBuilder<
       cute::is_same_v<KernelScheduleType, KernelTmaWarpSpecializedFP8FastAccum> ||
       cute::is_same_v<KernelScheduleType, KernelTmaWarpSpecializedPingpongFP8FastAccum> ||
       cute::is_same_v<KernelScheduleType, KernelTmaWarpSpecializedCooperativeFP8FastAccum> ||
-       cute::is_same_v<KernelScheduleType, KernelArrayTmaWarpSpecializedCooperativeFP8FastAccum> ||
-       cute::is_same_v<KernelScheduleType, KernelGroupTmaWarpSpecializedCooperativeFP8FastAccum>>
+       cute::is_same_v<KernelScheduleType, KernelPtrArrayTmaWarpSpecializedCooperativeFP8FastAccum>>
 > {
   static_assert(is_static<TileShape_MNK>::value);
   static_assert(is_static<ClusterShape_MNK>::value);
@@ -534,8 +531,7 @@ struct CollectiveBuilder<
   static constexpr cute::GMMA::Major GmmaMajorA = detail::gmma_ss_tag_to_major_A<ElementA, GmemLayoutA>();
   static constexpr cute::GMMA::Major GmmaMajorB = detail::gmma_ss_tag_to_major_B<ElementB, GmemLayoutB>();
 
-  static constexpr bool IsArrayOfPointersGemm = (cute::is_same_v<KernelScheduleType, KernelArrayTmaWarpSpecializedCooperativeFP8FastAccum> ||
-                                              cute::is_same_v<KernelScheduleType, KernelGroupTmaWarpSpecializedCooperativeFP8FastAccum>);
+  static constexpr bool IsArrayOfPointersGemm = (cute::is_same_v<KernelScheduleType, KernelPtrArrayTmaWarpSpecializedCooperativeFP8FastAccum>);
   using AtomLayoutMNK = cute::conditional_t<cute::is_same_v<KernelScheduleType, KernelTmaWarpSpecializedCooperativeFP8FastAccum> ||
                                             IsArrayOfPointersGemm,
       Layout<Shape<_2,_1,_1>>, Layout<Shape<_1,_1,_1>>>;

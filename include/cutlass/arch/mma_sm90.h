@@ -64,6 +64,10 @@
   #endif
 #endif
 
+#if ((__CUDACC_VER_MAJOR__ > 12) || ((__CUDACC_VER_MAJOR__ == 12) && (__CUDACC_VER_MINOR__ >= 3)))
+  #define CUTLASS_ARCH_MMA_MODIFIABLE_TMA_SM90_SUPPORTED
+#endif
+
 ////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {

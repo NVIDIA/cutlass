@@ -241,10 +241,10 @@ class EVTFrontendBase:
         :param name: the name of the graph
         """
         drawer = EVTGraphDrawer(self.dag_ir, name)
-        if drawer.dot_available:
+        try:
             for name, graph in drawer.get_dot_graph():
                 graph.write_svg(f"./{name}.svg")
-        else:
+        except:
             raise RuntimeError(
                 "'dot' is not found in path. GraphDrawer is disabled. "
                 "Please install it with 'sudo apt-get install graphviz'."
