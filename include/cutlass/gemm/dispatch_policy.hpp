@@ -53,8 +53,7 @@ struct KernelTma { };
 struct KernelTmaWarpSpecialized { };
 struct KernelTmaWarpSpecializedPingpong { };
 struct KernelTmaWarpSpecializedCooperative { };
-struct KernelArrayTmaWarpSpecializedCooperative { };
-struct KernelGroupTmaWarpSpecializedCooperative { };
+struct KernelPtrArrayTmaWarpSpecializedCooperative { };
 
 //////////////////////////////////////////////////////////////////////////////
 
@@ -67,8 +66,7 @@ struct KernelGroupTmaWarpSpecializedCooperative { };
 struct KernelTmaWarpSpecializedFP8FastAccum : KernelTmaWarpSpecialized { };
 struct KernelTmaWarpSpecializedPingpongFP8FastAccum : KernelTmaWarpSpecializedPingpong { };
 struct KernelTmaWarpSpecializedCooperativeFP8FastAccum: KernelTmaWarpSpecializedCooperative { };
-struct KernelArrayTmaWarpSpecializedCooperativeFP8FastAccum : KernelArrayTmaWarpSpecializedCooperative { };
-struct KernelGroupTmaWarpSpecializedCooperativeFP8FastAccum : KernelGroupTmaWarpSpecializedCooperative { };
+struct KernelPtrArrayTmaWarpSpecializedCooperativeFP8FastAccum : KernelPtrArrayTmaWarpSpecializedCooperative { };
 
 // Policies to opt into mixed type GEMMs
 struct KernelTmaWarpSpecializedMixedInput : KernelTmaWarpSpecialized { };
@@ -233,7 +231,7 @@ struct MainloopSm90TmaGmmaWarpSpecializedFP8
 template<
   int Stages_,
   class ClusterShape_ = Shape<_1,_1,_1>,
-  class KernelSchedule = KernelGroupTmaWarpSpecializedCooperative
+  class KernelSchedule = KernelPtrArrayTmaWarpSpecializedCooperative
 >
 struct MainloopSm90ArrayTmaGmmaWarpSpecialized {
   constexpr static int Stages = Stages_;
@@ -241,8 +239,7 @@ struct MainloopSm90ArrayTmaGmmaWarpSpecialized {
   using ArchTag = arch::Sm90;
   using Schedule = KernelSchedule;
   static_assert(
-    cute::is_base_of_v<KernelArrayTmaWarpSpecializedCooperative, KernelSchedule> ||
-    cute::is_base_of_v<KernelGroupTmaWarpSpecializedCooperative, KernelSchedule>,
+    cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedCooperative, KernelSchedule>,
     "KernelSchedule must be one of the Ptr-Array or Grouped Gemm TMA Warp Specialized Cooperative policies");
 };
 

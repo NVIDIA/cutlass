@@ -27,17 +27,17 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-# Note that we set --iterations=0 for all tests below to disable the performance benchmarking.
-# Only the correctness check will be run by these commands.
+set(TEST_SQUARE --m=2048 --n=2048 --k=2048 -l=10 --iterations=1)                   # Square problem sizes
+set(TEST_SQUARE_LARGE_BATCH --m=2048 --n=2048 --k=2048 -l=500 --iterations=1)      # Square problem sizes
 
-set(TEST_SQUARE --m=2048 --n=2048 --k=2048 -l=10 --iterations=0)                   # Square problem sizes
-set(TEST_SQUARE_LARGE_BATCH --m=2048 --n=2048 --k=2048 -l=500 --iterations=0)      # Square problem sizes
+set(TEST_EPILOGUE --alpha=0.5 --beta=0.7 --iterations=1)                           # Default problem sizes
+set(TEST_EPILOGUE_LARGE_BATCH --alpha=1.5 --beta=2.0 -l=500 --iterations=1)        # Default problem sizes
 
-set(TEST_EPILOGUE --alpha=0.5 --beta=0.7 --iterations=0)                           # Default problem sizes
-set(TEST_EPILOGUE_LARGE_BATCH --alpha=1.5 --beta=2.0 -l=500 --iterations=0)        # Default problem sizes
+set(TEST_EPILOGUE_OP --beta=0.7 --iterations=1)                                    # Default problem sizes w/ Epilogue Op test
+set(TEST_EPILOGUE_OP_LARGE_BATCH --alpha=1.5 -l=500 --iterations=1)                # Default problem sizes w/ Epilogue Op test
 
-set(TEST_SMALLK --m=2048 --n=5120 --k=128 --l=5 --iterations=0)                    # Small-k problem sizes
-set(TEST_SMALLK_LARGE_BATCH --m=1024 --n=512 --k=64 --l=500 --iterations=0)        # Small-k problem sizes
+set(TEST_SMALLK --m=2048 --n=5120 --k=128 --l=5 --iterations=1)                    # Small-k problem sizes
+set(TEST_SMALLK_LARGE_BATCH --m=1024 --n=512 --k=64 --l=500 --iterations=1)        # Small-k problem sizes
 
 cutlass_example_add_executable(
   56_hopper_ptr_array_batched_gemm
@@ -47,6 +47,8 @@ cutlass_example_add_executable(
   TEST_SQUARE_LARGE_BATCH
   TEST_EPILOGUE
   TEST_EPILOGUE_LARGE_BATCH
+  TEST_EPILOGUE_OP
+  TEST_EPILOGUE_OP_LARGE_BATCH
   TEST_SMALLK
   TEST_SMALLK_LARGE_BATCH
   )

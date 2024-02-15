@@ -1247,6 +1247,7 @@ struct FusionCallbacks<
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+
 namespace detail {
 template <class FusionOpOrCallbacks, class = cute::void_t<>>
 struct get_element_aux {
@@ -1257,7 +1258,7 @@ template <class FusionOpOrCallbacks>
 struct get_element_aux<FusionOpOrCallbacks, cute::void_t<typename FusionOpOrCallbacks::ElementAux>> {
   using type = typename FusionOpOrCallbacks::ElementAux;
 };
-  
+
 template <class NodeOp, class... ChildOps>
 struct get_element_aux<Sm90TreeVisitor<NodeOp, ChildOps...>, cute::void_t<>> {
   using type = typename get_element_aux<NodeOp>::type;
@@ -1270,7 +1271,7 @@ struct get_element_aux<FusionCallbacks<Ts...>, cute::void_t<typename FusionCallb
  public:
   using type = typename get_element_aux<Operation>::type;
 };
-}
+} // namespace cutlass:epilogue::fusion::detail
 
 template <class Callbacks>
 using get_element_aux_t = typename detail::get_element_aux<Callbacks>::type;

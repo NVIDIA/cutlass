@@ -35,8 +35,14 @@ set(TEST_RANDOM_LARGE_GROUP --groups=500 --iterations=0)                        
 set(TEST_EPILOGUE --alpha=0.5 --beta=0.7 --iterations=0)                            # Random problem sizes
 set(TEST_EPILOGUE_LARGE_GROUP --alpha=1.5 --beta=2.0 --groups=500 --iterations=0)   # Random problem sizes
 
+set(TEST_EPILOGUE_OP --beta=0.7 --iterations=1)                                     # Random problem sizes
+set(TEST_EPILOGUE_OP_LARGE_GROUP --alpha=1.5 --iterations=1)                        # Random problem sizes
+
 set(TEST_FIXED --m=2048 --n=5120 --k=8192 --groups=50 --iterations=0)               # Fixed problem sizes
 set(TEST_FIXED_LARGE_GROUP --m=2048 --n=512 --k=512 --groups=512 --iterations=0)    # Fixed problem sizes
+
+set(TEST_SMALL --m=256 --n=128 --iterations=0)                                      # Small problem sizes
+set(TEST_SMALL_LARGE_GROUP --m=128 --n=128 --groups=500 --iterations=0)             # Small problem sizes
 
 set(TEST_RANDOM_PERF --iterations=10)                                               # Random problem sizes
 set(TEST_RANDOM_PERF_LARGE_GROUP --groups=500 --iterations=10)                      # Random problem sizes
@@ -49,8 +55,12 @@ cutlass_example_add_executable(
   TEST_RANDOM_LARGE_GROUP
   TEST_EPILOGUE
   TEST_EPILOGUE_LARGE_GROUP
+  TEST_EPILOGUE_OP
+  TEST_EPILOGUE_OP_LARGE_GROUP
   TEST_FIXED
   TEST_FIXED_LARGE_GROUP
+  TEST_SMALL
+  TEST_SMALL_LARGE_GROUP
   TEST_RANDOM_PERF
   TEST_RANDOM_PERF_LARGE_GROUP
   )

@@ -125,6 +125,9 @@ using CUTE_STL_NAMESPACE::invoke_result_t;
 using CUTE_STL_NAMESPACE::common_type;
 using CUTE_STL_NAMESPACE::common_type_t;
 
+using CUTE_STL_NAMESPACE::remove_pointer;
+using CUTE_STL_NAMESPACE::remove_pointer_t;
+
 // <utility>
 using CUTE_STL_NAMESPACE::declval;
 

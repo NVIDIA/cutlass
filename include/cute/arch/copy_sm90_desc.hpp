@@ -265,7 +265,7 @@ tma_descriptor_replace_dims_strides_in_shared_mem(TmaDescriptor                 
     asm volatile (
       "tensormap.replace.tile.global_dim.shared::cta.b1024.b32 [%0], 2, %1;"
       :: "l"(smem_int64_desc), "r"(prob_shape[2]));
-    // Strides must be a multiple of 16. Also, stride for the intermost dimension is implicitly 1 
+    // Strides must be a multiple of 16. Also, stride for the intermost dimension is implicitly 1
     asm volatile (
       "tensormap.replace.tile.global_stride.shared::cta.b1024.b64 [%0], 0, %1;"
       :: "l"(smem_int64_desc), "l"(prob_stride[1] >> 4));

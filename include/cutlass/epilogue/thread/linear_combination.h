@@ -88,43 +88,72 @@ public:
   /// Host-constructable parameters structure
   struct Params 
   {
-    ElementCompute alpha;                  ///< scales accumulators
-    ElementCompute beta;                   ///< scales source tensor
-    ElementCompute const *alpha_ptr;       ///< pointer to accumulator scalar - if not null, loads it from memory
-    ElementCompute const *beta_ptr;        ///< pointer to source scalar - if not null, loads it from memory
+    ElementCompute alpha;                         ///< scales accumulators
+    ElementCompute beta;                          ///< scales source tensor
+    ElementCompute const *alpha_ptr;              ///< pointer to accumulator scalar - if not null, loads it from memory
+    ElementCompute const *beta_ptr;               ///< pointer to source scalar - if not null, loads it from memory
+    ElementCompute const* const* alpha_ptr_array; ///< array of pointers to accumulator scalar per group/batch
+    ElementCompute const* const* beta_ptr_array;  ///< array of pointers to source scalar per group/batch
 
     CUTLASS_HOST_DEVICE
     Params():
       alpha(ElementCompute(1)),
       beta(ElementCompute(0)),
       alpha_ptr(nullptr),
-      beta_ptr(nullptr) { }
+      beta_ptr(nullptr),
+      alpha_ptr_array(nullptr),
+      beta_ptr_array(nullptr) { }
 
     CUTLASS_HOST_DEVICE
     Params(
       ElementCompute alpha,
       ElementCompute beta
     ):
-      alpha(alpha), beta(beta), alpha_ptr(nullptr), beta_ptr(nullptr) { }
+      alpha(alpha), beta(beta),
+      alpha_ptr(nullptr), beta_ptr(nullptr),
+      alpha_ptr_array(nullptr), beta_ptr_array(nullptr) { }
 
     CUTLASS_HOST_DEVICE
     Params(
       ElementCompute alpha
     ):
-      alpha(alpha), beta(0), alpha_ptr(nullptr), beta_ptr(nullptr) { }
+      alpha(alpha), beta(0),
+      alpha_ptr(nullptr), beta_ptr(nullptr),
+      alpha_ptr_array(nullptr), beta_ptr_array(nullptr) { }
 
     CUTLASS_HOST_DEVICE
     Params(
       ElementCompute const *alpha_ptr,
       ElementCompute const *beta_ptr
     ):
-      alpha(0), beta(0), alpha_ptr(alpha_ptr), beta_ptr(beta_ptr) { }
+      alpha(0), beta(0),
+      alpha_ptr(alpha_ptr), beta_ptr(beta_ptr),
+      alpha_ptr_array(nullptr), beta_ptr_array(nullptr) { }
 
     CUTLASS_HOST_DEVICE
     Params(
       ElementCompute const *alpha_ptr
     ):
-      alpha(0), beta(0), alpha_ptr(alpha_ptr), beta_ptr(nullptr) { }
+      alpha(0), beta(0),
+      alpha_ptr(alpha_ptr), beta_ptr(nullptr),
+      alpha_ptr_array(nullptr), beta_ptr_array(nullptr) { }
+
+    CUTLASS_HOST_DEVICE
+    Params(
+      ElementCompute const* const* alpha_ptr_array,
+      ElementCompute const* const* beta_ptr_array
+    ):
+      alpha(0), beta(0),
+      alpha_ptr(nullptr), beta_ptr(nullptr),
+      alpha_ptr_array(alpha_ptr_array), beta_ptr_array(beta_ptr_array) { }
+
+    CUTLASS_HOST_DEVICE
+    Params(
+      ElementCompute const* const* alpha_ptr_array
+    ):
+      alpha(0), beta(0),
+      alpha_ptr(nullptr), beta_ptr(nullptr),
+      alpha_ptr_array(alpha_ptr_array), beta_ptr_array(nullptr) { }
   };
 
 private:
@@ -140,9 +169,25 @@ public:
 
   /// Constructs the function object, possibly loading from pointers in host memory
   CUTLASS_HOST_DEVICE
-  LinearCombination(Params const &params) {
-    alpha_ = (params.alpha_ptr ? *params.alpha_ptr : params.alpha);
-    beta_ = (params.beta_ptr ? *params.beta_ptr : params.beta);
+  LinearCombination(Params const &params, int group_idx = 0) {
+    if (params.alpha_ptr_array != nullptr && params.alpha_ptr_array[group_idx] != nullptr) {
+      alpha_ = *(params.alpha_ptr_array[group_idx]);
+    }
+    else if (params.alpha_ptr != nullptr) {
+      alpha_ = *params.alpha_ptr;
+    }
+    else {
+      alpha_ = params.alpha;
+    }
+    if (params.beta_ptr_array != nullptr && params.beta_ptr_array[group_idx] != nullptr) {
+      beta_ = *(params.beta_ptr_array[group_idx]);
+    }
+    else if (params.beta_ptr != nullptr) {
+      beta_ = *params.beta_ptr;
+    }
+    else {
+      beta_ = params.beta;
+    }
   }
 
   /// Returns true if source is needed

@@ -148,12 +148,12 @@ private:
 
   constexpr static size_t SmemAlignmentD = cutlass::detail::alignment_for_swizzle(SmemLayoutD{});
   constexpr static size_t SmemAlignmentC = cutlass::detail::alignment_for_swizzle(SmemLayoutC{});
-  
+
   using EmptyType = cute::tuple<>;
-  using SmemCStorage = cute::conditional_t<is_source_supported and (not ReuseSmemC), 
+  using SmemCStorage = cute::conditional_t<is_source_supported and (not ReuseSmemC),
                          array_aligned<SmemElementC, size(SmemLayoutC{}), SmemAlignmentC>,
                          EmptyType>;
-  using SmemDStorage = cute::conditional_t<is_destination_supported, 
+  using SmemDStorage = cute::conditional_t<is_destination_supported,
                          array_aligned<SmemElementD, size(SmemLayoutD{}), SmemAlignmentD>,
                          EmptyType>;
 
@@ -189,6 +189,7 @@ public:
 
   struct SharedStorage {
     using TensorStorage = TensorStorageImpl;
+
     TensorStorage tensors;
 
     using PipelineStorage = typename LoadPipeline::SharedStorage;
@@ -249,12 +250,12 @@ public:
       Tensor tensor_c = make_tensor(make_gmem_ptr(args.ptr_C), make_layout(make_shape(M_C,N,L), args.dC));
       tma_load_c = make_tma_copy(CopyOpG2S{}, tensor_c, SmemLayoutC{}(_,_,0));
     }
-    
+
     typename Params::TMA_D tma_store_d;
     if constexpr (is_destination_supported) {
       Tensor tensor_d = make_tensor(make_gmem_ptr(args.ptr_D), make_layout(make_shape(M_D,N,L), args.dD));
       tma_store_d = make_tma_copy(CopyOpS2G{}, tensor_d, SmemLayoutD{}(_,_,0));
-    } 
+    }
 
     return {
       FusionCallbacks::to_underlying_arguments(problem_shape, args.thread, workspace),
@@ -385,13 +386,13 @@ public:
 
     // Apply epilogue subtile, get matching smem tensor
     SmemElementC* ptr_sC = nullptr;
-    
+
     if constexpr (is_source_supported) {
       if constexpr (ReuseSmemC) {
         ptr_sC = reinterpret_cast<SmemElementC*>(shared_tensors.smem_D().data());
       } else {
         ptr_sC = shared_tensors.smem_C().data();
-      } 
+      }
     }
     Tensor gC_epi = flat_divide(gC, EpilogueTile{});                             // (EPI_TILE_M,EPI_TILE_N,EPI_M,EPI_N)
     Tensor sC_epi = make_tensor(make_smem_ptr(ptr_sC), SmemLayoutC{});           //      (EPI_TILE_M,EPI_TILE_N,PIPE_C)
@@ -559,7 +560,7 @@ public:
     // Vectorized fragment view
     constexpr int FragmentSize = DispatchPolicy::FragmentSize;
     Tensor tRS_rAcc_frg = recast<Array<ElementAccumulator, FragmentSize>>(tRS_rAcc);
-    Tensor tRS_rD_frg   = recast<Array<SmemElementD          , FragmentSize>>(tRS_rD);
+    Tensor tRS_rD_frg   = recast<Array<SmemElementD      , FragmentSize>>(tRS_rD);
     CUTE_STATIC_ASSERT(size<0>(tRS_rAcc) % FragmentSize == 0, "Fragment size does not vectorize properly");
 
     // (t)hread-partition for (s)mem to (r)egister copy (tSR_)

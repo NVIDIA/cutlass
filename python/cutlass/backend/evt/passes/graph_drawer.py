@@ -61,22 +61,6 @@ class EVTGraphDrawer:
         self._dot_graphs = {}
 
         self._dot_graphs[name] = self._to_dot(graph, name)
-        self.dot_available = self._check_dot_availability()
-
-    def _check_dot_availability(self):
-        """
-        Check if graphviz is installed
-        """
-        try:
-            # Run the 'dot' command and capture its output
-            result = subprocess.run(
-                ["dot", "-V"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            # Check if the command was successful and the output contains version information
-            if result.returncode == 0 and "dot - graphviz" in result.stderr:
-                return True
-        except FileNotFoundError:
-            pass
-        return False
 
     def _get_node_style(self, node):
         template = {

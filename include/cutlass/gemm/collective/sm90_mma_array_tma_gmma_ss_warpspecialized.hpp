@@ -93,8 +93,10 @@ struct CollectiveMma<
   using TileShape = TileShape_;
   using ElementA = ElementA_;
   using StrideA = StrideA_;
+  using UnderlyingStrideA = cute::remove_pointer_t<StrideA>;
   using ElementB = ElementB_;
   using StrideB = StrideB_;
+  using UnderlyingStrideB = cute::remove_pointer_t<StrideB>;
   using TiledMma = TiledMma_;
   using ElementAccumulator = typename TiledMma::ValTypeC;
   using GmemTiledCopyA = GmemTiledCopyA_;
@@ -149,14 +151,14 @@ struct CollectiveMma<
   // Assumption: StrideA is congruent with Problem_MK
   using TMA_A = decltype(make_tma_copy(
       GmemTiledCopyA{},
-      make_tensor(static_cast<InternalElementA const*>(nullptr), repeat_like(StrideA{}, int32_t(0)), StrideA{}),
+      make_tensor(static_cast<InternalElementA const*>(nullptr), repeat_like(UnderlyingStrideA{}, int32_t(0)), UnderlyingStrideA{}),
       SmemLayoutA{}(_,_,cute::Int<0>{}),
       make_shape(shape<0>(TileShape{}), shape<2>(TileShape{})),
       size<1>(ClusterShape{})));  // mcast along N mode for this M load, if any
   // Assumption: StrideB is congruent with Problem_NK
   using TMA_B = decltype(make_tma_copy(
       GmemTiledCopyB{},
-      make_tensor(static_cast<InternalElementB const*>(nullptr), repeat_like(StrideB{}, int32_t(0)), StrideB{}),
+      make_tensor(static_cast<InternalElementB const*>(nullptr), repeat_like(UnderlyingStrideB{}, int32_t(0)), UnderlyingStrideB{}),
       SmemLayoutB{}(_,_,cute::Int<0>{}),
       make_shape(shape<1>(TileShape{}), shape<2>(TileShape{})),
       size<0>(ClusterShape{}))); // mcast along M mode for this N load, if any
@@ -179,16 +181,14 @@ struct CollectiveMma<
   using TensorMapStorage = typename SharedStorage::TensorMapStorage;
   using PipelineStorage = typename SharedStorage::PipelineStorage;
 
-  static constexpr bool IsGroupedGemmKernel = cute::is_base_of_v<KernelGroupTmaWarpSpecializedCooperative, KernelSchedule>;
-  using StridesA = cute::conditional_t<IsGroupedGemmKernel, StrideA const*, StrideA>;
-  using StridesB = cute::conditional_t<IsGroupedGemmKernel, StrideB const*, StrideB>;
+  static constexpr bool IsGroupedGemmKernel = !cute::is_same_v<UnderlyingStrideA, StrideA>;
 
   // Host side kernel arguments
   struct Arguments {
     ElementA const** ptr_A;
-    StridesA dA;
+    StrideA dA;
     ElementB const** ptr_B;
-    StridesB dB;
+    StrideB dB;
   };
 
   // Device side kernel params
@@ -197,9 +197,9 @@ struct CollectiveMma<
     TMA_B tma_load_b;
     void* tensormaps;
     InternalElementA const** ptr_A;
-    StridesA dA;
+    StrideA dA;
     InternalElementB const** ptr_B;
-    StridesB dB;
+    StrideB dB;
   };
 
   //
@@ -212,30 +212,36 @@ struct CollectiveMma<
       ProblemShape problem_shapes,
       Arguments const& args,
       void* workspace) {
-    // Optionally append 1s until problem shape is rank-4 (MNKL), in case it is only rank-3 (MNK)
-    auto problem_shape_MNKL = append<4>(problem_shapes.get_host_problem_shape(0), 1);
-    auto [M,N,K,L] = problem_shape_MNKL;
+    // These tensor shapes (only applicable for grouped gemm) and pointers are only used to create tensormap/tma desc.
+    // These will be replaced with correct values before the initial tma load.
+    auto init_shape = repeat_like(typename ProblemShape::UnderlyingProblemShape{}, int32_t(1));
+    auto init_M = get<0>(init_shape);
+    auto init_N = get<1>(init_shape);
+    auto init_K = get<2>(init_shape);
+    // Batches/Groups are managed by using appropriate pointers to input matrices
     const uint32_t mock_L = 1;
-
-    // These tensor pointers are only used to create tensormap/tma desc.
-    // This address to the tensor will be replaced with correct address before the initial tma load
     InternalElementA const* ptr_A_first_batch = reinterpret_cast<InternalElementA const*>(args.ptr_A);
     InternalElementB const* ptr_B_first_batch = reinterpret_cast<InternalElementA const*>(args.ptr_B);
-    cudaError_t cuda_error = cudaGetLastError(); // clear previous error
 
-    StrideA stride_a;
-    StrideB stride_b;
+    UnderlyingStrideA stride_a;
+    UnderlyingStrideB stride_b;
     if constexpr (IsGroupedGemmKernel) {
-      // Strides for Grouped Gemm will be replaced prior to the first access regardless
-      stride_a = StrideA{};
-      stride_b = StrideB{};
+      // Strides for Grouped Gemm will be replaced prior to the first access regardless.
+      stride_a = UnderlyingStrideA{};
+      stride_b = UnderlyingStrideB{};
     }
     else {
+      // Tensor shapes for Ptr-Array are initialized correctly only here.
+      auto problem_shape_MNK = problem_shapes.get_host_problem_shape(0);
+      init_M = get<0>(problem_shape_MNK);
+      init_N = get<1>(problem_shape_MNK);
+      init_K = get<2>(problem_shape_MNK);
+
       stride_a = args.dA;
       stride_b = args.dB;
     }
-    Tensor tensor_a = make_tensor(ptr_A_first_batch, make_layout(make_shape(M,K,mock_L), stride_a));
-    Tensor tensor_b = make_tensor(ptr_B_first_batch, make_layout(make_shape(N,K,mock_L), stride_b));
+    Tensor tensor_a = make_tensor(ptr_A_first_batch, make_layout(make_shape(init_M,init_K,mock_L), stride_a));
+    Tensor tensor_b = make_tensor(ptr_B_first_batch, make_layout(make_shape(init_N,init_K,mock_L), stride_b));
     TMA_A tma_load_a = make_tma_copy(
         GmemTiledCopyA{},
         tensor_a,
@@ -287,12 +293,14 @@ struct CollectiveMma<
     constexpr int min_tma_aligned_elements_B = tma_alignment_bits / cutlass::sizeof_bits<ElementB>::value;
 
     bool implementable = true;
-    // Check alignment for all problem sizes
-    for (int i = 0; i < problem_shapes.groups(); i++) {
-      auto problem_shape_MNKL = append<4>(problem_shapes.get_host_problem_shape(i), 1);
-      auto [M,N,K,L] = problem_shape_MNKL;
-      implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_A>(cute::make_shape(M,K,L), StrideA{});
-      implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_B>(cute::make_shape(N,K,L), StrideB{});
+    if (problem_shapes.is_host_problem_shape_available()) {
+      // Check alignment for all problem sizes
+      for (int i = 0; i < problem_shapes.groups(); i++) {
+        auto problem_shape_MNKL = append<4>(problem_shapes.get_host_problem_shape(i), 1);
+        auto [M,N,K,L] = problem_shape_MNKL;
+        implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_A>(cute::make_shape(M,K,L), UnderlyingStrideA{});
+        implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_B>(cute::make_shape(N,K,L), UnderlyingStrideB{});
+      }
     }
 
     if (!implementable) {
@@ -675,6 +683,14 @@ struct CollectiveMma<
                                              prob_shape_A, prob_stride_A);
     cute::detail::fill_tma_gmem_shape_stride(mainloop_params.tma_load_b, tensor_b, 
                                              prob_shape_B, prob_stride_B);
+
+    // Convert strides to byte strides
+    for (uint64_t& stride : prob_stride_A) {
+      stride = (stride * sizeof_bits_v<InternalElementA>) / 8;
+    }
+    for (uint64_t& stride : prob_stride_B) {
+      stride = (stride * sizeof_bits_v<InternalElementB>) / 8;
+    }
 
     cute::tma_descriptor_replace_dims_strides_in_shared_mem(shared_tensormap.smem_tensormap_A,
                                                             prob_shape_A,
