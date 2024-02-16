@@ -56,12 +56,12 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 
-TEST(SM80_Device_GemmUniversal_f16n_u8n_f16t_mixed_input_tensor_op_f16, 128x128x64_64x64x64) {
+TEST(SM80_Device_GemmUniversal_f16t_s8n_f32t_mixed_input_tensor_op_f32, 128x128x64_64x64x64) {
 
   using ElementA = cutlass::half_t;
-  using ElementB = uint8_t;
-  using ElementOutput = cutlass::half_t;
-  using ElementAccumulator = cutlass::half_t;
+  using ElementB = int8_t;
+  using ElementOutput = float;
+  using ElementAccumulator = float;
 
   using Gemm = cutlass::gemm::device::GemmUniversal<
     ElementA, 

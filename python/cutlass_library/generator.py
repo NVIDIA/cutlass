@@ -2571,11 +2571,6 @@ def GenerateSM80_TensorOp_16816_mixed_input_upcast_a(manifest, cuda_version):
   math_instructions = [
     MathInstruction(                                  \
       [16, 8, 16],                                    \
-      DataType.s8, DataType.f16, DataType.f16,        \
-      OpcodeClass.TensorOp,                           \
-      MathOperation.multiply_add_mixed_input_upcast),
-    MathInstruction(                                  \
-      [16, 8, 16],                                    \
       DataType.s8, DataType.f16, DataType.f32,        \
       OpcodeClass.TensorOp,                           \
       MathOperation.multiply_add_mixed_input_upcast),
@@ -2586,12 +2581,22 @@ def GenerateSM80_TensorOp_16816_mixed_input_upcast_a(manifest, cuda_version):
       MathOperation.multiply_add_mixed_input_upcast),
     MathInstruction(                                  \
       [16, 8, 16],                                    \
+      DataType.s8, DataType.bf16, DataType.f32,       \
+      OpcodeClass.TensorOp,                           \
+      MathOperation.multiply_add_mixed_input_upcast),
+    MathInstruction(                                  \
+      [16, 8, 16],                                    \
       DataType.u8, DataType.bf16, DataType.f32,       \
       OpcodeClass.TensorOp,                           \
       MathOperation.multiply_add_mixed_input_upcast),
     MathInstruction(                                  \
       [16, 8, 16],                                    \
-      DataType.s8, DataType.bf16, DataType.f32,       \
+      DataType.s8, DataType.f16, DataType.f16,        \
+      OpcodeClass.TensorOp,                           \
+      MathOperation.multiply_add_mixed_input_upcast),
+    MathInstruction(                                  \
+      [16, 8, 16],                                    \
+      DataType.u8, DataType.f16, DataType.f16,        \
       OpcodeClass.TensorOp,                           \
       MathOperation.multiply_add_mixed_input_upcast),
   ]
@@ -2613,9 +2618,6 @@ def GenerateSM80_TensorOp_16816_mixed_input_upcast_a(manifest, cuda_version):
       TileDescription([128, 64, 64],  5, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([128, 64, 64],  4, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([128, 64, 64],  3, [2, 2, 1], math_inst, min_cc, max_cc),
-      # 128x32
-      TileDescription([128, 32, 64],  9, [2, 2, 1], math_inst, min_cc, max_cc),
-      TileDescription([128, 32, 64],  5, [2, 2, 1], math_inst, min_cc, max_cc),
       # 128x16
       TileDescription([128, 16, 64],  5, [2, 1, 1], math_inst, min_cc, max_cc),
       TileDescription([128, 16, 64],  3, [2, 1, 1], math_inst, min_cc, max_cc),
@@ -2633,7 +2635,7 @@ def GenerateSM80_TensorOp_16816_mixed_input_upcast_a(manifest, cuda_version):
       data_type, alignment_constraints, None, EpilogueFunctor.LinearCombination, SwizzlingFunctor.Identity8)
 
     # Avoid emitting two kernels if the accumulator type does not differ from the input type (e.g. F16 accumulation)
-    if math_inst.element_a != math_inst.element_accumulator:
+    if math_inst.element_b != math_inst.element_accumulator:
 
       data_type_mixed = [
         math_inst.element_a,
@@ -2668,17 +2670,27 @@ def GenerateSM80_TensorOp_16816_mixed_input_upcast_b(manifest, cuda_version):
       MathOperation.multiply_add_mixed_input_upcast),
     MathInstruction(                                  \
       [16, 8, 16],                                    \
-      DataType.bf16, DataType.s8, DataType.f32,       \
-      OpcodeClass.TensorOp,                           \
-      MathOperation.multiply_add_mixed_input_upcast),
-    MathInstruction(                                  \
-      [16, 8, 16],                                    \
       DataType.f16, DataType.u8, DataType.f32,        \
       OpcodeClass.TensorOp,                           \
       MathOperation.multiply_add_mixed_input_upcast),
     MathInstruction(                                  \
       [16, 8, 16],                                    \
+      DataType.bf16, DataType.s8, DataType.f32,       \
+      OpcodeClass.TensorOp,                           \
+      MathOperation.multiply_add_mixed_input_upcast),
+    MathInstruction(                                  \
+      [16, 8, 16],                                    \
       DataType.bf16, DataType.u8, DataType.f32,       \
+      OpcodeClass.TensorOp,                           \
+      MathOperation.multiply_add_mixed_input_upcast),
+    MathInstruction(                                  \
+      [16, 8, 16],                                    \
+      DataType.f16, DataType.s8, DataType.f16,        \
+      OpcodeClass.TensorOp,                           \
+      MathOperation.multiply_add_mixed_input_upcast),
+    MathInstruction(                                  \
+      [16, 8, 16],                                    \
+      DataType.f16, DataType.u8, DataType.f16,        \
       OpcodeClass.TensorOp,                           \
       MathOperation.multiply_add_mixed_input_upcast),
   ]
@@ -2700,11 +2712,6 @@ def GenerateSM80_TensorOp_16816_mixed_input_upcast_b(manifest, cuda_version):
       TileDescription([128, 64, 64],  5, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([128, 64, 64],  4, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([128, 64, 64],  3, [2, 2, 1], math_inst, min_cc, max_cc),
-      # 128x32
-      TileDescription([128, 32, 64],  9, [2, 2, 1], math_inst, min_cc, max_cc),
-      TileDescription([128, 32, 64],  5, [2, 2, 1], math_inst, min_cc, max_cc),
-      TileDescription([128, 32, 32],  9, [2, 2, 1], math_inst, min_cc, max_cc),
-      TileDescription([128, 32, 32],  5, [2, 2, 1], math_inst, min_cc, max_cc),
       # 128x16
       TileDescription([128, 16, 64],  5, [2, 1, 1], math_inst, min_cc, max_cc),
       TileDescription([128, 16, 64],  3, [2, 1, 1], math_inst, min_cc, max_cc),
