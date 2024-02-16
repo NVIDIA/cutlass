@@ -56,7 +56,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 
-TEST(SM80_Device_GemmUniversal_u8t_f16t_f16t_mixed_input_tensor_op_f16, 128x128x64_64x64x64) {
+TEST(SM80_Device_GemmUniversal_u8t_f16n_f16t_mixed_input_tensor_op_f16, 128x128x64_64x64x64) {
 
   using ElementA = uint8_t;
   using ElementB = cutlass::half_t;
