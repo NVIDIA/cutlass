@@ -599,7 +599,7 @@ CUTE_HOST_DEVICE constexpr
 auto
 tile_size(TiledCopy<Args...> const&)
 {
-  return size<I...>(typename TiledCopy<Args...>::TiledShape_MN{});
+  return size<I...>(typename TiledCopy<Args...>::Tiler_MN{});
 }
 
 // The number of threads involved in a TiledCopy
