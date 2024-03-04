@@ -315,7 +315,7 @@ Before getting to "product" and "divide," we need one more operation. We can thi
 
 The `complement` of a layout attempts to find another layout that represents the "rest" -- the elements that aren't touched by the layout. 
 
-You can many examples and checked post-conditions in [the `complement` unit test](../../../test/unit/cute/core/complement.cpp). The post-conditions include
+You can find many examples and checked post-conditions in [the `complement` unit test](../../../test/unit/cute/core/complement.cpp). The post-conditions include
 ```cpp
 // @post cosize(make_layout(@a layout_a, @a result))) >= @a cosize_hi
 // @post cosize(@a result) >= round_up(@a cosize_hi, cosize(@a layout_a))
