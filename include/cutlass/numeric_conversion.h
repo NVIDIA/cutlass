@@ -3705,7 +3705,7 @@ struct PackPredicates {
       int word_idx = (i / kWordSize);
       int bit_idx = (i % kWordSize);
 
-      uint8_t mask = ((predicates[i] ? 1u : 0u) << bit_idx);
+      uint8_t mask = uint8_t((predicates[i] ? 1u : 0u) << bit_idx);
       bytes[word_idx] = (bytes[word_idx] | mask);
     }
     return packed;
