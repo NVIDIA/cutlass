@@ -151,7 +151,7 @@ bit_width(T x) {
                     (numeric_limits<T>::digits ==  8 ? 3 : (assert(false),0)))));
   T r = 0;
   for (int i = N - 1; i >= 0; --i) {
-    T shift = (x > ((T(1) << (T(1) << i))-1)) << i;
+    T shift = T(x > ((T(1) << (T(1) << i))-1)) << i;
     x >>= shift;
     r  |= shift;
   }
