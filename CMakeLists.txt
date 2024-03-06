@@ -689,7 +689,10 @@ include(CTest)
 enable_testing()
 
 if (CUTLASS_ENABLE_GTEST_UNIT_TESTS)
-  include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/googletest.cmake)
+  find_package(GTest QUIET)
+  if (NOT GTest_FOUND)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/googletest.cmake)
+  endif()
 endif()
 
 if (NOT TARGET test_all)
