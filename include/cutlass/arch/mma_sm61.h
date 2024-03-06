@@ -82,7 +82,7 @@ struct Mma<
     d[0] = c[0];
 
     CUTLASS_PRAGMA_UNROLL
-    for (int k = 0; k < 4; ++k) {
+    for (size_t k = 0; k < 4; ++k) {
       d[0] += a[k] * b[k];
     }
 
@@ -129,7 +129,7 @@ struct Mma<
     d[0] = c[0];
 
     CUTLASS_PRAGMA_UNROLL
-    for (int k = 0; k < 2; ++k) {
+    for (size_t k = 0; k < 2; ++k) {
       d[0] += a[k] * b[k];
     }
 #endif

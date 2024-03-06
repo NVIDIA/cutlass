@@ -84,7 +84,7 @@ struct Mma<
 
 #else
     CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < 2; ++i) {
+    for (size_t i = 0; i < 2; ++i) {
       d[i] = a[i] * b[0] + c[i];
     }
 #endif
@@ -130,7 +130,7 @@ struct Mma<
 
 #else
     CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < 2; ++i) {
+    for (size_t i = 0; i < 2; ++i) {
       d[i] = a[0] * b[i] + c[i];
     }
 #endif
@@ -182,9 +182,9 @@ struct Mma <
 
 #else
     CUTLASS_PRAGMA_UNROLL
-    for (int j = 0; j < 2; ++j) {
+    for (size_t j = 0; j < 2; ++j) {
       CUTLASS_PRAGMA_UNROLL
-      for (int i = 0; i < 2; ++i) {
+      for (size_t i = 0; i < 2; ++i) {
         d[i + 2 * j] = a[i] * b[j] + c[i + 2 * j];
       }
     }
@@ -236,9 +236,9 @@ struct Mma<
     D[1] = reinterpret_cast<Array<half_t, 2> &>(Dhi);
 #else
     CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < 2; ++i) {
+    for (size_t i = 0; i < 2; ++i) {
       CUTLASS_PRAGMA_UNROLL
-      for (int j = 0; j < 2; ++j) {
+      for (size_t j = 0; j < 2; ++j) {
         d[i * 2 + j] = a[i] * b[j] + c[i * 2 + j];
       }
     }

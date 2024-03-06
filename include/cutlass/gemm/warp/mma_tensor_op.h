@@ -100,7 +100,7 @@ struct ConvertAndPack<bfloat16_t, float, N, Round> {
 
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < N; ++i) {
-      int idx = (((i << 1) & 2) | ((i >> 1) & 1) | (i & 0xfffffffc));
+      int idx = (((i << 1) & 2) | ((i >> 1) & 1) | (i & 0x7ffffffc));
       tmp[i] = source[idx];
     }
 
@@ -121,7 +121,7 @@ struct ConvertAndPack<half_t, float, N, Round> {
 
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < N; ++i) {
-      int idx = (((i << 1) & 2) | ((i >> 1) & 1) | (i & 0xfffffffc));
+      int idx = (((i << 1) & 2) | ((i >> 1) & 1) | (i & 0x7ffffffc));
       tmp[i] = source[idx];
     }
 

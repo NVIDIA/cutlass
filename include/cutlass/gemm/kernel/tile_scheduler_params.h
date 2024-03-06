@@ -647,7 +647,7 @@ struct PersistentTileSchedulerSm90StreamKParams {
 
     // Calculate the number of stream-K units that would be needed if each stream-K unit
     // computed the minimum allowable k iterations. Truncate this to be in units of clusters.
-    auto cluster_size = cluster_shape.m() * cluster_shape.n();
+    uint64_t cluster_size = cluster_shape.m() * cluster_shape.n();
     uint64_t min_sized_sk_units = (k_tiles_sk_total / min_iters_per_sk_unit_);
     min_sized_sk_units = (min_sized_sk_units / cluster_size) * cluster_size;
 
@@ -915,7 +915,7 @@ struct PersistentTileSchedulerSm90StreamKParams {
 
     // Calculate the number of stream-K units that would be needed if each stream-K unit
     // computed the minimum allowable k iterations. Truncate this to be in units of clusters.
-    auto cluster_size = cluster_shape.m() * cluster_shape.n();
+    uint64_t cluster_size = cluster_shape.m() * cluster_shape.n();
     uint64_t min_sized_sk_units = (k_tiles_sk_total / min_iters_per_sk_unit_);
     min_sized_sk_units = (min_sized_sk_units / cluster_size) * cluster_size;
 
@@ -935,7 +935,7 @@ struct PersistentTileSchedulerSm90StreamKParams {
   CUTLASS_HOST_DEVICE
   static int
   get_reduction_workspace_size(uint64_t num_tiles, GemmCoord tile_shape, uint32_t accumulator_bits) {
-    auto output_tile_size = tile_shape.m() * tile_shape.n();
+    uint64_t output_tile_size = tile_shape.m() * tile_shape.n();
     auto workspace_bits = accumulator_bits * output_tile_size * num_tiles;
     return round_up_to_l2_alignment(bits_to_bytes(static_cast<int>(workspace_bits)));
   }
@@ -959,9 +959,9 @@ struct PersistentTileSchedulerSm90StreamKParams {
     uint32_t accumulator_bits,
     uint32_t epilogue_subtile = 1) {
 
-    auto log_swizzle_size = UnderlyingParams::get_log_swizzle_size(problem_blocks.x, problem_blocks.y, max_swizzle);
-    problem_blocks.x = round_up(problem_blocks.x, (1 << log_swizzle_size) * cluster_shape.m());
-    problem_blocks.y = round_up(problem_blocks.y, (1 << log_swizzle_size) * cluster_shape.n());
+    auto log_swizzle_size = UnderlyingParams::get_log_swizzle_size(int(problem_blocks.x), int(problem_blocks.y), max_swizzle);
+    problem_blocks.x = unsigned(round_up(int(problem_blocks.x), (1 << log_swizzle_size) * cluster_shape.m()));
+    problem_blocks.y = unsigned(round_up(int(problem_blocks.y), (1 << log_swizzle_size) * cluster_shape.n()));
 
     // Workspace is needed only for output tiles that will be split. Thus, we first determine the number
     // of output tiles that will be split, and then calculate the workspace needed to cover these.

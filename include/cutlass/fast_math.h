@@ -246,7 +246,7 @@ template <typename value_t>
 CUTLASS_HOST_DEVICE value_t find_log2(value_t x) {
   int a = int(31 - clz(x));
   a += (x & (x - 1)) != 0;  // Round up, add 1 if not a power of 2.
-  return a;
+  return value_t(a);
 }
 
 
@@ -365,7 +365,7 @@ struct FastDivmod {
   FastDivmod(int divisor): divisor(divisor) {
 
     if (divisor != 1) {
-      unsigned int p = 31 + find_log2(divisor);
+      unsigned int p = 31 + unsigned(find_log2(divisor));
       unsigned m = unsigned(((1ull << p) + unsigned(divisor) - 1) / unsigned(divisor));
 
       multiplier = m;
