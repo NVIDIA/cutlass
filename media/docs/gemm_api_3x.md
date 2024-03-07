@@ -357,7 +357,7 @@ struct CollectiveBuilder {
 the best performing `CollectiveMma` from the given parameters.
 
 - `ArchTag` is one of the SM architectures tags from `cutlass::arch::Sm*`.
-- `OpClass` is one of the operator class tags from `cutlass::arch::Sm*`.
+- `OpClass` is one of the operator class tags from `cutlass::arch::OpClass*`.
 - `ElementA` and `ElementB` are the logical value types of the A resp. B tensors.
 - `ElementAccumulator` is the accumulator type to be used in the instruction.
 - `GmemLayoutA` and `GmemLayoutB` are CUTLASS 2.x layout tags, `layout::RowMajor` or `layout::ColumnMajor`.
