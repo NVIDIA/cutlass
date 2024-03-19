@@ -145,10 +145,10 @@ copy_if(PrdTensor                    const& pred,
 namespace detail {
 
 // Trait that detects if atom's traits has a member function with(bool)
-template<typename, typename Enable = void>
+template <class, class Enable = void>
 constexpr bool has_with_bool = false;
 
-template<typename T>
+template <class T>
 constexpr bool has_with_bool<T, cute::void_t<decltype(declval<typename T::Traits>().with(declval<bool>()))>> = true;
 
 } // end namespace detail

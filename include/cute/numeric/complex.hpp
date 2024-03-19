@@ -30,9 +30,9 @@
  **************************************************************************************************/
 #pragma once
 
-#include <cute/config.hpp>
-#include <cute/util/type_traits.hpp>
 #include <cutlass/complex.h>
+#include <cute/util/type_traits.hpp>
+#include <cute/numeric/numeric_types.hpp>
 
 namespace cute
 {
@@ -43,6 +43,9 @@ using cutlass::RealType;
 using cutlass::real;
 using cutlass::imag;
 using cutlass::conj;
+
+template <class T>
+static constexpr auto is_complex_v = is_complex<T>::value;
 
 /// Fused multiply-add for complex numbers
 template <class T>

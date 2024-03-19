@@ -272,7 +272,7 @@ struct TestbedRank2KUniversal {
     // Determine SMEM requirements and waive if not satisfied
     //
 
-    int smem_size = int(sizeof(typename RankK::RankKkernel::SharedStorage));
+    size_t smem_size = sizeof(typename RankK::RankKkernel::SharedStorage);
 
     cudaDeviceProp properties;
     int device_idx;

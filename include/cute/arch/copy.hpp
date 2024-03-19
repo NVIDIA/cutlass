@@ -33,7 +33,7 @@
 #include <cute/config.hpp>
 
 #include <cute/arch/util.hpp>
-#include <cute/numeric/int.hpp>
+#include <cute/numeric/numeric_types.hpp>
 
 namespace cute
 {
@@ -88,5 +88,18 @@ using AutoVectorizingCopy = AutoVectorizingCopyWithAssumedAlignment<8>;
 
 // Alias
 using DefaultCopy = AutoVectorizingCopy;
+
+
+//
+// Global memory prefetch into L2
+//
+
+CUTE_HOST_DEVICE static void
+prefetch(void const* gmem_ptr)
+{
+#if defined(__CUDA_ARCH__)
+  asm volatile("prefetch.global.L2 [%0];\n" : : "l"(gmem_ptr) : "memory");
+#endif
+}
 
 } // end namespace cute

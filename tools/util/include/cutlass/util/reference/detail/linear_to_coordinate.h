@@ -68,7 +68,7 @@ template <int Rank>
 struct LinearToCoordinateHelper<Rank, 0> {
 
   CUTLASS_HOST_DEVICE
-  void operator()(Coord<Rank> &coord, int64_t idx, Coord<Rank> const &extent) const {
+  void operator()(Coord<Rank> &coord, int64_t idx, Coord<Rank> const &) const {
     coord[Rank - 1] = int(idx);
   }
 };

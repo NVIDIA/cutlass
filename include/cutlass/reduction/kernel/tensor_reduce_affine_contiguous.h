@@ -262,7 +262,7 @@ private:
     ComputeFragment accumulator;
     
     CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < accumulator.size(); ++i) {
+    for (int i = 0; i < int(accumulator.size()); ++i) {
       accumulator[i] = params.reduction_identity;
     }
     

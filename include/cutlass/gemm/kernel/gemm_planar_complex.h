@@ -112,51 +112,39 @@ public:
     // Data members
     //
 
-    typename EpilogueOutputOp::Params epilogue;
+    typename EpilogueOutputOp::Params epilogue{};
 
-    void const * ptr_A_real;
-    void const * ptr_A_imag;
+    void const * ptr_A_real{nullptr};
+    void const * ptr_A_imag{nullptr};
+    void const * ptr_B_real{nullptr};
+    void const * ptr_B_imag{nullptr};
+    void const * ptr_C_real{nullptr};
+    void const * ptr_C_imag{nullptr};
+    void * ptr_D_real{nullptr};
+    void * ptr_D_imag{nullptr};
 
-    void const * ptr_B_real;
-    void const * ptr_B_imag;
-
-    void const * ptr_C_real;
-    void const * ptr_C_imag;
-
-    void * ptr_D_real;
-    void * ptr_D_imag;
-
-    typename LayoutA::Stride::Index lda_real;
-    typename LayoutA::Stride::Index lda_imag;
-    typename LayoutB::Stride::Index ldb_real;
-    typename LayoutB::Stride::Index ldb_imag;
-    typename LayoutC::Stride::Index ldc_real;
-    typename LayoutC::Stride::Index ldc_imag;
-    typename LayoutC::Stride::Index ldd_real;
-    typename LayoutC::Stride::Index ldd_imag;
+    typename LayoutA::Stride::Index lda_real{};
+    typename LayoutA::Stride::Index lda_imag{};
+    typename LayoutB::Stride::Index ldb_real{};
+    typename LayoutB::Stride::Index ldb_imag{};
+    typename LayoutC::Stride::Index ldc_real{};
+    typename LayoutC::Stride::Index ldc_imag{};
+    typename LayoutC::Stride::Index ldd_real{};
+    typename LayoutC::Stride::Index ldd_imag{};
     
-    int64_t batch_stride_A;
-    int64_t batch_stride_A_imag;
-    int64_t batch_stride_B;
-    int64_t batch_stride_B_imag;
-    int64_t batch_stride_C;
-    int64_t batch_stride_C_imag;
-    int64_t batch_stride_D_imag;
+    int64_t batch_stride_A{0};
+    int64_t batch_stride_A_imag{0};
+    int64_t batch_stride_B{0};
+    int64_t batch_stride_B_imag{0};
+    int64_t batch_stride_C{0};
+    int64_t batch_stride_C_imag{0};
+    int64_t batch_stride_D_imag{0};
 
     //
     // Methods
     //
-    
-    Arguments() :
-      ptr_A_real(nullptr), 
-      ptr_A_imag(nullptr), 
-      ptr_B_real(nullptr), 
-      ptr_B_imag(nullptr), 
-      ptr_C_real(nullptr), 
-      ptr_C_imag(nullptr), 
-      ptr_D_real(nullptr),
-      ptr_D_imag(nullptr)
-    {}
+
+    Arguments() = default;
 
     /// constructs an arguments structure
     Arguments(
@@ -260,34 +248,34 @@ public:
     // Data members
     //
 
-    typename Mma::IteratorA::Params params_A_real;
-    typename Mma::IteratorA::Params params_A_imag;
-    typename Mma::IteratorB::Params params_B_real;
-    typename Mma::IteratorB::Params params_B_imag;
-    typename Epilogue::OutputTileIterator::Params params_C_real;
-    typename Epilogue::OutputTileIterator::Params params_C_imag;
-    typename Epilogue::OutputTileIterator::Params params_D_real;
-    typename Epilogue::OutputTileIterator::Params params_D_imag;
+    typename Mma::IteratorA::Params params_A_real{};
+    typename Mma::IteratorA::Params params_A_imag{};
+    typename Mma::IteratorB::Params params_B_real{};
+    typename Mma::IteratorB::Params params_B_imag{};
+    typename Epilogue::OutputTileIterator::Params params_C_real{};
+    typename Epilogue::OutputTileIterator::Params params_C_imag{};
+    typename Epilogue::OutputTileIterator::Params params_D_real{};
+    typename Epilogue::OutputTileIterator::Params params_D_imag{};
     
-    typename EpilogueOutputOp::Params output_op;
+    typename EpilogueOutputOp::Params output_op{};
 
-    void * ptr_A_real;
-    void * ptr_A_imag;
-    void * ptr_B_real;
-    void * ptr_B_imag;
-    void * ptr_C_real;
-    void * ptr_C_imag;
-    void * ptr_D_real;
-    void * ptr_D_imag;
+    void * ptr_A_real{nullptr};
+    void * ptr_A_imag{nullptr};
+    void * ptr_B_real{nullptr};
+    void * ptr_B_imag{nullptr};
+    void * ptr_C_real{nullptr};
+    void * ptr_C_imag{nullptr};
+    void * ptr_D_real{nullptr};
+    void * ptr_D_imag{nullptr};
 
-    int64_t batch_stride_A;
-    int64_t batch_stride_B;
-    int64_t batch_stride_C;
+    int64_t batch_stride_A{0};
+    int64_t batch_stride_B{0};
+    int64_t batch_stride_C{0};
 
-    int64_t batch_stride_A_imag;
-    int64_t batch_stride_B_imag;
-    int64_t batch_stride_C_imag;
-    int64_t batch_stride_D_imag;
+    int64_t batch_stride_A_imag{0};
+    int64_t batch_stride_B_imag{0};
+    int64_t batch_stride_C_imag{0};
+    int64_t batch_stride_D_imag{0};
 
     //
     // Host dispatch API

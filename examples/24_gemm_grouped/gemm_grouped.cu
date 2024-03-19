@@ -789,7 +789,7 @@ public:
       problem_count_check += bin.second.size();
     }
 
-    if (problem_count_check != this->problem_count()) {
+    if (problem_count_check != size_t(this->problem_count())) {
       std::cout << "\n***\nERROR in BINNING LOGIC!\n***\n" << std::endl;
     }
 

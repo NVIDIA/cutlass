@@ -29,7 +29,7 @@
  *
  **************************************************************************************************/
 /* \file
-   \brief Defines a math function
+   \brief Gemm Profiler
 */
 
 #pragma once
@@ -67,23 +67,23 @@ public:
   /// Problem structure obtained from problem space
   struct GemmProblem {
 
-    cutlass::library::GemmUniversalMode mode;
+    cutlass::library::GemmUniversalMode mode{library::GemmUniversalMode::kGemm};
 
-    int64_t m;
-    int64_t n;
-    int64_t k;
-    
-    int64_t lda;
-    int64_t ldb;
-    int64_t ldc;
+    int64_t m{16};
+    int64_t n{16};
+    int64_t k{16};
+
+    int64_t lda{0};
+    int64_t ldb{0};
+    int64_t ldc{0};
     std::vector<uint8_t> alpha;
     std::vector<uint8_t> beta;
 
-    cutlass::library::SplitKMode split_k_mode;
-    int split_k_slices;
-    int batch_count;
+    cutlass::library::SplitKMode split_k_mode{library::SplitKMode::kNone};
+    int split_k_slices{1};
+    int batch_count{1};
 
-    cutlass::library::RasterOrder raster_order;
+    cutlass::library::RasterOrder raster_order{cutlass::library::RasterOrder::kHeuristic};
     // gemm with parallel interleaved reduction
     // gemm epilogue (alpha, beta) = (1.0, 0.0)
     // reduction epilogue (alpha, beta) = (GemmProblem::alpha, GemmProblem::beta)
@@ -93,18 +93,6 @@ public:
     //
     // Methods
     //
-
-    GemmProblem():
-      mode(library::GemmUniversalMode::kGemm),
-      m(16), 
-      n(16), 
-      k(16),
-      lda(0), 
-      ldb(0), 
-      ldc(0), 
-      split_k_slices(1), 
-      batch_count(1),
-      raster_order(cutlass::library::RasterOrder::kHeuristic){ }
 
     /// Parses the problem
     Status parse(
@@ -128,15 +116,15 @@ public:
   /// Workspace used
   struct GemmWorkspace {
 
-    DeviceAllocation *A;
-    DeviceAllocation *B;
-    DeviceAllocation *C;
-    DeviceAllocation *Computed;
-    DeviceAllocation *Reference;
+    DeviceAllocation *A{nullptr};
+    DeviceAllocation *B{nullptr};
+    DeviceAllocation *C{nullptr};
+    DeviceAllocation *Computed{nullptr};
+    DeviceAllocation *Reference{nullptr};
 
     /// Number of copies of the problem workspace which are visited sequentially during
     /// profiling to avoid camping in the last level cache.
-    int problem_count;
+    int problem_count{1};
 
     library::GemmUniversalConfiguration configuration;
     library::GemmUniversalArguments arguments;
@@ -153,13 +141,6 @@ public:
 
     /// Buffer used for the cutlass reduction operations' host workspace
     std::vector<uint8_t> reduction_host_workspace;
-
-    //
-    // Methods
-    //
-
-    GemmWorkspace():
-      A(nullptr), B(nullptr), C(nullptr), Computed(nullptr), Reference(nullptr), problem_count(1) { }
   };
 
 protected:

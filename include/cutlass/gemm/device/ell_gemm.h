@@ -366,7 +366,7 @@ class EllGemm {
 private:
 
   /// Kernel parameters object
-  typename GemmKernel::Params params_;
+  typename GemmKernel::Params params_{};
 
 public:
 

@@ -299,7 +299,7 @@ class Sm90ColumnReductionImpl(ColumnReductionImpl):
 
         self._type_decl = f"""
 using {self.name_camel} = cutlass::epilogue::fusion::Sm90ColReduction<
-    {op_tag(self.reg_reduce_fn)}, {op_tag(self.gmem_reduce_fn)}, 0,
+    {op_tag(self.reg_reduce_fn)}, {op_tag(self.reg_reduce_fn)}, {op_tag(self.gmem_reduce_fn)}, 0,
     typename EpilogueDescriptor::TileShape, {DataTypeTag[self.element]},
     {DataTypeTag[self.element_compute]}, {FloatRoundStyleTag[self.round_style]},
     {self.stride_mnl}
@@ -321,7 +321,7 @@ class Sm90RowReductionImpl(RowReductionImpl):
 
         self._type_decl = f"""
 using {self.name_camel} = cutlass::epilogue::fusion::Sm90RowReduction<
-    {op_tag(self.reg_reduce_fn)}, {op_tag(self.gmem_reduce_fn)}, 0 /* Stages */,
+    {op_tag(self.reg_reduce_fn)}, {op_tag(self.reg_reduce_fn)}, {op_tag(self.gmem_reduce_fn)}, 0 /* Stages */,
     typename EpilogueDescriptor::TileShape, {DataTypeTag[self.element]},
     {DataTypeTag[self.element_compute]}, {FloatRoundStyleTag[self.round_style]},
     {self.stride_mnl}

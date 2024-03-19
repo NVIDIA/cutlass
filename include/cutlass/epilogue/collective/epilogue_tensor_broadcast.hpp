@@ -55,6 +55,7 @@
 #include "cutlass/epilogue/collective/detail.hpp"
 
 #include "cute/tensor.hpp"
+#include "cutlass/cuda_host_adapter.hpp"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -142,7 +143,8 @@ public:
 
   template <class ProblemShape>
   static cutlass::Status
-  initialize_workspace(ProblemShape const& problem_shape, Arguments const& args, void* workspace, cudaStream_t stream) {
+  initialize_workspace(ProblemShape const& problem_shape, Arguments const& args, void* workspace, cudaStream_t stream,
+    CudaHostAdapter* cuda_adapter = nullptr) {
     return cutlass::Status::kSuccess;
   }
 

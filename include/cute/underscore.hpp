@@ -45,6 +45,9 @@ struct Underscore : Int<0> {};
 
 CUTE_INLINE_CONSTANT Underscore _;
 
+// Convenient alias
+using X = Underscore;
+
 // Treat Underscore as an integral like integral_constant
 template <>
 struct is_integral<Underscore> : true_type {};

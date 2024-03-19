@@ -1,6 +1,6 @@
-![ALT](/media/images/gemm-hierarchy-with-epilogue-no-labels.png "CUTLASS Tile Iterator Concepts")
+![ALT](../images/gemm-hierarchy-with-epilogue-no-labels.png "CUTLASS Tile Iterator Concepts")
 
-[README](/README.md#documentation) > **Tile Iterator Concepts**
+[README](../../README.md#documentation) > **Tile Iterator Concepts**
 
 # Tile Iterator Concepts
 

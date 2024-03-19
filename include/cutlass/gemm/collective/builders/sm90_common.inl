@@ -30,8 +30,12 @@
  **************************************************************************************************/
 #pragma once
 
+#include "cutlass/arch/mma.h"
+#include "cutlass/gemm/gemm.h"
+#include "cutlass/gemm/dispatch_policy.hpp"
 #include "cutlass/detail/layout.hpp"
 #include "cutlass/detail/collective.hpp"
+#include "cutlass/detail/dependent_false.hpp"
 
 #include "cute/atom/mma_traits_sm90_gmma.hpp"
 #include "cute/atom/copy_traits_sm90_tma.hpp"
@@ -123,6 +127,8 @@ sm90_cluster_shape_to_tma_atom(UnimodalClusterShape) {
 template<int ThreadCount, class Element, int Alignment, class StrideType, class TileMN, class TileK>
 constexpr auto
 make_cp_async_gmem_tiled_copy() {
+  using namespace cute;
+
   using AlignmentType = cute::uint_byte_t<static_cast<int>(sizeof(Element)) * Alignment>;
   constexpr int TileSizeMN  = cute::size(TileMN{});
   constexpr int TileSizeK   = cute::size(TileK{});
@@ -166,9 +172,11 @@ make_cp_async_gmem_tiled_copy() {
 //   or hierarchically
 //   ((BLK_MN0,BLK_MN1,...),(BLK_K0,BLK_K1,...))
 //   and returns the optimal GMMA::Layout that fits BLK_MN0 and BLK_K0
-template <GMMA::Major major, class ElementType, class BLK_MN, class BLK_K, const bool is_ws_transposed_B = false>
+template <cute::GMMA::Major major, class ElementType, class BLK_MN, class BLK_K, const bool is_ws_transposed_B = false>
 constexpr auto
 rs_smem_selector() {
+  using namespace cute;
+
   auto BLK_MN0 = size<0>(BLK_MN{});
   auto BLK_K0  = size<0>(BLK_K{});
 
@@ -260,17 +268,18 @@ rs_smem_selector() {
 //   or hierarchically
 //   ((BLK_MN0,BLK_MN1,...),(BLK_K0,BLK_K1,...))
 //   and returns the largest GMMA::Layout that fits BLK_MN0 and BLK_K0
-template <GMMA::Major major, class ElementType, class BLK_MN, class BLK_K>
+template <cute::GMMA::Major major, class ElementType, class BLK_MN, class BLK_K>
 CUTE_HOST_DEVICE constexpr
 auto
 ss_smem_selector()
 {
+  using namespace cute;
+
   auto BLK_MN0 = size<0>(BLK_MN{});
   auto BLK_K0  = size<0>(BLK_K{});
 
   static_assert(BLK_MN0 % 8 == 0, "BLK_MN0 must be a multiple of 8.");
   static_assert(BLK_K0 % 8 == 0,  "BLK_K0 must be a multiple of 8.");
-
 
   if constexpr (major == GMMA::Major::MN) {
     if constexpr (BLK_MN0 % size<0>(GMMA::Layout_MN_SW128_Atom<ElementType>{}) == 0) {

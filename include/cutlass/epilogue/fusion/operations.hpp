@@ -122,6 +122,7 @@ struct LinCombEltAct
   static constexpr bool IsEltActSupported = true;
 };
 
+
 // D = alpha * acc + beta * C + per-row bias
 template<
   class ElementOutput_,

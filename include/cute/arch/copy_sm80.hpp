@@ -64,7 +64,7 @@ struct SM80_CP_ASYNC_CACHEALWAYS
            "l"(gmem_ptr),
            "n"(sizeof(TS)));
 #else
-    CUTE_RUNTIME_ASSERT("Support for cp.async instructions has not been enabled");
+    CUTE_INVALID_CONTROL_PATH("Support for cp.async instructions has not been enabled");
 #endif
   }
 };
@@ -91,7 +91,7 @@ struct SM80_CP_ASYNC_CACHEGLOBAL
            "l"(gmem_ptr),
            "n"(sizeof(TS)));
 #else
-    CUTE_RUNTIME_ASSERT("Support for cp.async instructions has not been enabled");
+    CUTE_INVALID_CONTROL_PATH("Support for cp.async instructions has not been enabled");
 #endif
   }
 };
@@ -121,7 +121,7 @@ struct SM80_CP_ASYNC_CACHEALWAYS_ZFILL
            "n"(sizeof(TS)),
            "r"(src_size));
 #else
-    CUTE_RUNTIME_ASSERT("Support for cp.async instructions has not been enabled");
+    CUTE_INVALID_CONTROL_PATH("Support for cp.async instructions has not been enabled");
 #endif
   }
 };
@@ -151,7 +151,7 @@ struct SM80_CP_ASYNC_CACHEGLOBAL_ZFILL
            "n"(sizeof(TS)),
            "r"(src_size));
 #else
-    CUTE_RUNTIME_ASSERT("Support for cp.async instructions has not been enabled");
+    CUTE_INVALID_CONTROL_PATH("Support for cp.async instructions has not been enabled");
 #endif
   }
 };

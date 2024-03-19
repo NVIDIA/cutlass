@@ -122,33 +122,33 @@ public:
     // Data members
     //
 
-    GemmUniversalMode mode;
-    GemmCoord problem_size;
-    int batch_count;        // Either (mode == GemmUniversalMode::kBatched) the batch count, or (mode == GemmUniversalMode::kGemm) the tile-splitting factor
+    GemmUniversalMode mode = GemmUniversalMode::kGemm;
+    GemmCoord problem_size {};
+    int batch_count {1};        // Either (mode == GemmUniversalMode::kBatched) the batch count, or (mode == GemmUniversalMode::kGemm) the tile-splitting factor
 
-    typename EpilogueOutputOp::Params epilogue;
+    typename EpilogueOutputOp::Params epilogue{};
 
-    void const * ptr_A;
-    void const * ptr_B;
-    void const * ptr_C;
-    void * ptr_D;
+    void const * ptr_A = nullptr;
+    void const * ptr_B = nullptr;
+    void const * ptr_C = nullptr;
+    void * ptr_D = nullptr;
 
-    int64_t batch_stride_A;
-    int64_t batch_stride_B;
-    int64_t batch_stride_C;
-    int64_t batch_stride_D;
+    int64_t batch_stride_A{0};
+    int64_t batch_stride_B{0};
+    int64_t batch_stride_C{0};
+    int64_t batch_stride_D{0};
 
-    typename LayoutA::Stride stride_a;
-    typename LayoutB::Stride stride_b;
-    typename LayoutC::Stride stride_c;
-    typename LayoutC::Stride stride_d;
+    typename LayoutA::Stride stride_a{0};
+    typename LayoutB::Stride stride_b{0};
+    typename LayoutC::Stride stride_c{0};
+    typename LayoutC::Stride stride_d{0};
 
-    typename LayoutA::Stride::LongIndex lda;
-    typename LayoutB::Stride::LongIndex ldb;
-    typename LayoutC::Stride::LongIndex ldc;
-    typename LayoutC::Stride::LongIndex ldd;
+    typename LayoutA::Stride::LongIndex lda{0};
+    typename LayoutB::Stride::LongIndex ldb{0};
+    typename LayoutC::Stride::LongIndex ldc{0};
+    typename LayoutC::Stride::LongIndex ldd{0};
 
-    int avail_sms;          /// The number of SMs that StreamK dispatch heuristics will attempt to load-balance across (-1 defaults to device width, 1 implies classic data-parallel scheduling)
+    int avail_sms{-1};          /// The number of SMs that StreamK dispatch heuristics will attempt to load-balance across (-1 defaults to device width, 1 implies classic data-parallel scheduling)
 
 
     //
@@ -156,15 +156,7 @@ public:
     //
 
     /// Default Constructor
-    Arguments():
-      mode(GemmUniversalMode::kGemm),
-      batch_count(1),
-      ptr_A(nullptr),
-      ptr_B(nullptr),
-      ptr_C(nullptr),
-      ptr_D(nullptr),
-      avail_sms(-1)
-    {}
+    Arguments() = default;
 
     /// Constructor
     Arguments(
@@ -257,32 +249,32 @@ public:
     // Data members
     //
 
-    void * ptr_A;
-    void * ptr_B;
+    void * ptr_A = nullptr;
+    void * ptr_B = nullptr;
 
-    typename Mma::IteratorA::Params params_A;
-    typename Mma::IteratorB::Params params_B;
+    typename Mma::IteratorA::Params params_A{};
+    typename Mma::IteratorB::Params params_B{};
 
-    int64_t batch_stride_A;
-    int64_t batch_stride_B;
+    int64_t batch_stride_A{0};
+    int64_t batch_stride_B{0};
 
-    GemmUniversalMode mode;
+    GemmUniversalMode mode = GemmUniversalMode::kGemm;
 
-    ThreadblockSwizzle block_mapping;
+    ThreadblockSwizzle block_mapping{};
 
-    void *barrier_workspace;
-    void *partials_workspace;
+    void *barrier_workspace = nullptr;
+    void *partials_workspace = nullptr;
 
-    typename EpilogueOutputOp::Params output_op;
+    typename EpilogueOutputOp::Params output_op{};
 
-    void * ptr_D;
-    void * ptr_C;
+    void * ptr_D = nullptr;
+    void * ptr_C = nullptr;
 
-    typename Epilogue::OutputTileIterator::Params params_D;
-    typename Epilogue::OutputTileIterator::Params params_C;
+    typename Epilogue::OutputTileIterator::Params params_D{};
+    typename Epilogue::OutputTileIterator::Params params_C{};
 
-    int64_t batch_stride_D;
-    int64_t batch_stride_C;
+    int64_t batch_stride_D{0};
+    int64_t batch_stride_C{0};
 
 
   protected:
@@ -325,7 +317,6 @@ public:
 
     /// Default constructor
     Params() = default;
-
 
     /// Constructor
     Params(

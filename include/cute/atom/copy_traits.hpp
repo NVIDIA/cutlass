@@ -94,15 +94,53 @@ struct Copy_Traits<AutoVectorizingCopyWithAssumedAlignment<MaxVecBits>>
 
 namespace detail {
 
+// Utility for exploding pointers, arrays, or tensors into Operation::copy
 template <class Operation,
-          class PtrS, int... Is,
-          class PtrD, int... Id>
+          class PtrSrc, int... Is,
+          class PtrDst, int... Id>
 CUTE_HOST_DEVICE constexpr
 void
-copy_explode(PtrS&& s, int_sequence<Is...>,
-             PtrD&& d, int_sequence<Id...>)
+copy_explode_index(PtrSrc&& s, int_sequence<Is...>,
+                   PtrDst&& d, int_sequence<Id...>)
 {
   return Operation::copy(s[Is]..., d[Id]...);
+}
+
+// Utility for exploding tuples into ::copy
+template <class Operation,
+          class TupleArg, int... I>
+CUTE_HOST_DEVICE constexpr
+void
+copy_explode(TupleArg&& t, int_sequence<I...>)
+{
+  return Operation::copy(get<I>(static_cast<TupleArg&&>(t))...);
+}
+
+template <class Operation,
+          class TupleSrc, int... Is,
+          class TupleDst, int... Id>
+CUTE_HOST_DEVICE constexpr
+void
+copy_explode(TupleSrc&& s, int_sequence<Is...>,
+             TupleDst&& d, int_sequence<Id...>)
+{
+  return Operation::copy(get<Is>(static_cast<TupleSrc&&>(s))...,
+                         get<Id>(static_cast<TupleDst&&>(d))...);
+}
+
+template <class Operation,
+          class TupleAux, int... Ia,
+          class TupleSrc, int... Is,
+          class TupleDst, int... Id>
+CUTE_HOST_DEVICE constexpr
+void
+copy_explode(TupleAux&& a, int_sequence<Ia...>,
+             TupleSrc&& s, int_sequence<Is...>,
+             TupleDst&& d, int_sequence<Id...>)
+{
+  return Operation::copy(get<Ia>(static_cast<TupleAux&&>(a))...,
+                         get<Is>(static_cast<TupleSrc&&>(s))...,
+                         get<Id>(static_cast<TupleDst&&>(d))...);
 }
 
 } // end namespace detail
@@ -139,8 +177,8 @@ copy_unpack(Copy_Traits<CopyOp,Args...> const&,
   CUTE_STATIC_ASSERT_V(size(rD) == Int<RegNumDst>{},
     "Copy_Traits: dst failed to vectorize into registers. Layout is incompatible with this CopyOp.");
 
-  detail::copy_explode<CopyOp>(rS, make_int_sequence<RegNumSrc>{},
-                               rD, make_int_sequence<RegNumDst>{});
+  detail::copy_explode_index<CopyOp>(rS, make_int_sequence<RegNumSrc>{},
+                                     rD, make_int_sequence<RegNumDst>{});
 }
 
 //

@@ -132,13 +132,15 @@ template<
   int StagesC_,
   int StagesD_,
   int FragmentSize_,
-  bool ReuseSmemC_
+  bool ReuseSmemC_,
+  bool DelayTmaStore_
 >
 struct Sm90TmaWarpSpecialized {
   constexpr static int StagesC = StagesC_;
   constexpr static int StagesD = StagesD_;
   constexpr static int FragmentSize = FragmentSize_;
   constexpr static bool ReuseSmemC = ReuseSmemC_;
+  constexpr static bool DelayTmaStore = DelayTmaStore_;
 };
 
 

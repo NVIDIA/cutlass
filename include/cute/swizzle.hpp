@@ -87,6 +87,14 @@ struct Swizzle
   {
     return apply(offset);
   }
+
+  template <int B, int M, int S>
+  CUTE_HOST_DEVICE constexpr
+  auto
+  operator==(Swizzle<B,M,S> const&) const
+  {
+    return B == BBits && M == MBase && S == SShift;
+  }
 };
 
 //

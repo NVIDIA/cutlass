@@ -108,6 +108,7 @@ struct CollectiveMma<
   using TransformB = TransformB_;
   using ArchTag = typename DispatchPolicy::ArchTag;
 
+  using CtaShape_MNK = decltype(shape_div(TileShape{}, ClusterShape{}));
   using MainloopPipeline = cutlass::PipelineAsync<DispatchPolicy::Stages>;
   using PipelineState    = typename MainloopPipeline::PipelineState;
   using PipelineParams   = typename MainloopPipeline::Params;

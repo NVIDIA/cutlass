@@ -131,8 +131,8 @@ public:
 
     std::array<uint32_t, 5> kNumIters;
 
-    for (int i = 0; i < kNumIters.size(); ++i) {
-      kNumIters[i] = (rand() % 1000) + 1;
+    for (size_t i = 0; i < kNumIters.size(); ++i) {
+      kNumIters[i] = static_cast<uint32_t>( (rand() % 1000) + 1 );
     }
 
     for (int n : kNumIters) {

@@ -348,7 +348,7 @@ struct TestbedTrmmUniversal {
     // Determine SMEM requirements and waive if not satisfied
     //
 
-    int smem_size = int(sizeof(typename Trmm::TrmmKernel::SharedStorage));
+    size_t smem_size = sizeof(typename Trmm::TrmmKernel::SharedStorage);
 
     cudaDeviceProp properties;
     int device_idx;

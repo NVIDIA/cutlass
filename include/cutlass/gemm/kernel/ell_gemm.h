@@ -73,32 +73,30 @@ struct EllGemm {
 
   /// Parameters structure
   struct Params {
-    cutlass::gemm::GemmCoord problem_size;
-    cutlass::gemm::GemmCoord grid_tiled_shape;
-    int swizzle_log_tile;
-    typename Mma::IteratorA::Params params_A;
-    typename Mma::IteratorA::TensorRef ref_A;
-    typename Mma::IteratorB::Params params_B;
-    typename Mma::IteratorB::TensorRef ref_B;
-    typename Epilogue::OutputTileIterator::Params params_C;
-    typename Epilogue::OutputTileIterator::TensorRef ref_C;
-    typename Epilogue::OutputTileIterator::Params params_D;
-    typename Epilogue::OutputTileIterator::TensorRef ref_D;
-    typename OutputOp::Params output_op;
-    int *semaphore;
-    int gemm_k_iterations;
-    int gemm_k_size;
-    const int* ell_idx;
-    int ell_ncol;
-    int ell_blocksize;
-    int ell_base_idx;
+    cutlass::gemm::GemmCoord problem_size{};
+    cutlass::gemm::GemmCoord grid_tiled_shape{};
+    int swizzle_log_tile{0};
+    typename Mma::IteratorA::Params params_A{};
+    typename Mma::IteratorA::TensorRef ref_A{};
+    typename Mma::IteratorB::Params params_B{};
+    typename Mma::IteratorB::TensorRef ref_B{};
+    typename Epilogue::OutputTileIterator::Params params_C{};
+    typename Epilogue::OutputTileIterator::TensorRef ref_C{};
+    typename Epilogue::OutputTileIterator::Params params_D{};
+    typename Epilogue::OutputTileIterator::TensorRef ref_D{};
+    typename OutputOp::Params output_op{};
+    int *semaphore = nullptr;
+    int gemm_k_iterations{0};
+    int gemm_k_size{0};
+    const int* ell_idx = nullptr;
+    int ell_ncol{0};
+    int ell_blocksize{0};
+    int ell_base_idx{0};
 
     //
     // Methods
     //
-
-    CUTLASS_HOST_DEVICE
-    Params(): swizzle_log_tile(0), semaphore(0), gemm_k_iterations(0), gemm_k_size(0) { }
+   Params() = default;
 
     CUTLASS_HOST_DEVICE
     Params(
@@ -154,9 +152,7 @@ struct EllGemm {
   //
   // Methods
   //
-
-  CUTLASS_HOST_DEVICE
-  EllGemm() { }
+  EllGemm() = default;
 
   /// Determines whether kernel satisfies alignment
     static Status can_implement(
@@ -458,32 +454,30 @@ struct EllGemm<Mma_, Epilogue_, ThreadblockSwizzle_, SplitKSerial, false> {
 
   /// Parameters structure
   struct Params {
-    cutlass::gemm::GemmCoord problem_size;
-    cutlass::gemm::GemmCoord grid_tiled_shape;
-    int swizzle_log_tile;
-    typename Mma::IteratorA::Params params_A;
-    typename Mma::IteratorA::TensorRef ref_A;
-    typename Mma::IteratorB::Params params_B;
-    typename Mma::IteratorB::TensorRef ref_B;
-    typename Epilogue::OutputTileIterator::Params params_C;
-    typename Epilogue::OutputTileIterator::TensorRef ref_C;
-    typename Epilogue::OutputTileIterator::Params params_D;
-    typename Epilogue::OutputTileIterator::TensorRef ref_D;
-    typename OutputOp::Params output_op;
-    int *semaphore;
-    int gemm_k_iterations;
-    int gemm_k_size;
-    const int* ell_idx;
-    int ell_ncol;
-    int ell_blocksize;
-    int ell_base_idx;
+    cutlass::gemm::GemmCoord problem_size{};
+    cutlass::gemm::GemmCoord grid_tiled_shape{};
+    int swizzle_log_tile{0};
+    typename Mma::IteratorA::Params params_A{};
+    typename Mma::IteratorA::TensorRef ref_A{};
+    typename Mma::IteratorB::Params params_B{};
+    typename Mma::IteratorB::TensorRef ref_B{};
+    typename Epilogue::OutputTileIterator::Params params_C{};
+    typename Epilogue::OutputTileIterator::TensorRef ref_C{};
+    typename Epilogue::OutputTileIterator::Params params_D{};
+    typename Epilogue::OutputTileIterator::TensorRef ref_D{};
+    typename OutputOp::Params output_op{};
+    int *semaphore = nullptr;
+    int gemm_k_iterations{0};
+    int gemm_k_size{0};
+    const int* ell_idx = nullptr;
+    int ell_ncol{0};
+    int ell_blocksize{0};
+    int ell_base_idx{0};
 
     //
     // Methods
     //
-
-    CUTLASS_HOST_DEVICE
-    Params(): swizzle_log_tile(0), semaphore(0), gemm_k_iterations(0), gemm_k_size(0) { }
+    Params() = default;
 
     CUTLASS_HOST_DEVICE
     Params(

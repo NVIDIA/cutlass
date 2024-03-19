@@ -122,7 +122,7 @@ class LinearCombination(EpilogueFunctorBase):
     :param element_output: data type used to load and store tensors
 
     :param epilogue_vector_length: number of elements computed per operation.
-    Usually it is 128/sizeof_bits<ElementOutput_>, but we use 64 and 32 sometimes
+    Usually it is 128/sizeof_bits_v<ElementOutput_>, but we use 64 and 32 sometimes
     when there are not enough data to store
 
     :param element_accumulator: Accumulator data type
@@ -207,7 +207,7 @@ class LinearCombinationClamp(LinearCombination):
     :param element_output: data type used to load and store tensors
 
     :param epilogue_vector_length: number of elements computed per operation.
-    Usually it is 128/sizeof_bits<ElementOutput_>, but we use 64 and 32 sometimes
+    Usually it is 128/sizeof_bits_v<ElementOutput_>, but we use 64 and 32 sometimes
     when there are not enough data to store
 
     :param element_accumulator: Accumulator data type
@@ -260,7 +260,7 @@ class FastLinearCombinationClamp(EpilogueFunctorBase):
     :param element_output: data type used to load and store tensors
 
     :param epilogue_vector_length: number of elements computed per operation.
-    Usually it is 128/sizeof_bits<ElementOutput_>, but we use 64 and 32 sometimes
+    Usually it is 128/sizeof_bits_v<ElementOutput_>, but we use 64 and 32 sometimes
     when there are not enough data to store
     """
 
@@ -310,7 +310,7 @@ class LinearCombinationGeneric(LinearCombination):
     :param element_output: data type used to load and store tensors
 
     :param epilogue_vector_length: number of elements computed per operation.
-    Usually it is 128/sizeof_bits<ElementOutput_>, but we use 64 and 32 sometimes
+    Usually it is 128/sizeof_bits_v<ElementOutput_>, but we use 64 and 32 sometimes
     when there are not enough data to store
 
     :param element_accumulator: Accumulator data type

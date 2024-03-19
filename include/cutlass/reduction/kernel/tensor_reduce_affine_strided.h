@@ -258,7 +258,7 @@ private:
     ComputeFragment identity_frag;
 
     CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < identity_frag.size(); ++i) {
+    for (int i = 0; i < int(identity_frag.size()); ++i) {
       identity_frag[i] = params.reduction_identity;
     }
 
@@ -536,7 +536,7 @@ private:
     ComputeFragment identity_frag;
     
     CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < identity_frag.size(); ++i) {
+    for (int i = 0; i < int(identity_frag.size()); ++i) {
       identity_frag[i] = params.reduction_identity;
     }
 

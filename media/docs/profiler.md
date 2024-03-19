@@ -1,6 +1,6 @@
-![ALT](/media/images/gemm-hierarchy-with-epilogue-no-labels.png "CUTLASS Profiler")
+![ALT](../images/gemm-hierarchy-with-epilogue-no-labels.png "CUTLASS Profiler")
 
-[README](/README.md#documentation) > **CUTLASS Profiler**
+[README](../../README.md#documentation) > **CUTLASS Profiler**
 
 # CUTLASS Profiler
 

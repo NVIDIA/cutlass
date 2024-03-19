@@ -35,7 +35,6 @@
 #include <cute/arch/mma.hpp>
 
 #include <cute/atom/mma_traits.hpp>
-
 #include <cute/tensor.hpp>
 #include <cute/util/type_traits.hpp>
 
@@ -78,7 +77,7 @@ struct MMA_Atom<MMA_Traits<Args...>>
   CUTE_HOST_DEVICE
   auto
   with(TraitsArgs&&... args) const {
-    auto traits = Traits::with(std::forward<TraitsArgs>(args)...);
+    auto traits = Traits::with(static_cast<TraitsArgs&&>(args)...);
     return MMA_Atom<decltype(traits)>{traits};
   }
 
@@ -157,7 +156,7 @@ struct MMA_Atom<MMA_Traits<Args...>>
       // If the intended FrgTypeA is a view (of the current tensor), forward the whole
       static_assert(is_same<ValTypeA, typename remove_cvref_t<ATensor>::value_type>::value
                       , "Expecting ValTypeA type");
-      return make_tensor<FrgTypeA>(std::forward<ATensor>(atensor));
+      return make_tensor<FrgTypeA>(static_cast<ATensor&&>(atensor));
     } else {
       // Else, the intended FrgTypeA is a value type, construct a new tensor with a fragment layout
       return make_fragment_like<FrgTypeA>(atensor);
@@ -179,7 +178,7 @@ struct MMA_Atom<MMA_Traits<Args...>>
       // If the intended FrgTypeB is a view (of the current tensor), forward the whole
       static_assert(is_same<ValTypeB, typename remove_cvref_t<BTensor>::value_type>::value
                       , "Expecting ValTypeB type");
-      return make_tensor<FrgTypeB>(std::forward<BTensor>(btensor));
+      return make_tensor<FrgTypeB>(static_cast<BTensor&&>(btensor));
     } else {
       // Else, the intended FrgTypeB is a value type, construct a new tensor with a fragment layout
       return make_fragment_like<FrgTypeB>(btensor);
@@ -213,7 +212,7 @@ struct TiledMMA : MMA_Atom
 
   static_assert(   rank_v<AtomLayoutMNK>  == 3,   "TiledMMA requires rank-3 AtomLayoutMNK");
   static_assert(   rank_v<PermutationMNK> == 3,   "TiledMMA requires rank-3 PermutationMNK");
-  static_assert(  is_tile<PermutationMNK>::value, "TiledMMA requires independent permutations of MNK.");
+  static_assert( is_tuple<PermutationMNK>::value, "TiledMMA requires independent permutations of MNK.");
   static_assert(is_static<PermutationMNK>::value, "TiledMMA requires static permutations of MNK.");
 
   using ThrLayoutVMNK = decltype(tiled_product(AtomThrID{}, AtomLayoutMNK{}));
@@ -391,7 +390,7 @@ struct TiledMMA : MMA_Atom
     } else {
       return cute::max(core_size, perm_size);
     }
-  
+
     CUTE_GCC_UNREACHABLE;
   }
 
@@ -517,7 +516,7 @@ struct ThrMMA : TiledMMA
   auto
   partition_C(CTensor&& ctensor) const
   {
-    auto thr_tensor = make_tensor(std::forward<CTensor>(ctensor).data(), this->thrfrg_C(ctensor.layout()));
+    auto thr_tensor = make_tensor(static_cast<CTensor&&>(ctensor).data(), this->thrfrg_C(ctensor.layout()));
 
     auto thr_vmn = make_coord(get<0>(thr_vmnk_), make_coord(get<1>(thr_vmnk_), get<2>(thr_vmnk_)));
     return thr_tensor(thr_vmn, make_coord(_, repeat<rank<1,1>(thr_tensor)>(_)));
@@ -528,7 +527,7 @@ struct ThrMMA : TiledMMA
   auto
   partition_A(ATensor&& atensor) const
   {
-    auto thr_tensor = make_tensor(std::forward<ATensor>(atensor).data(), this->thrfrg_A(atensor.layout()));
+    auto thr_tensor = make_tensor(static_cast<ATensor&&>(atensor).data(), this->thrfrg_A(atensor.layout()));
 
     auto thr_vmk = make_coord(get<0>(thr_vmnk_), make_coord(get<1>(thr_vmnk_), get<3>(thr_vmnk_)));
     return thr_tensor(thr_vmk, make_coord(_, repeat<rank<1,1>(thr_tensor)>(_)));
@@ -539,7 +538,7 @@ struct ThrMMA : TiledMMA
   auto
   partition_B(BTensor&& btensor) const
   {
-    auto thr_tensor = make_tensor(std::forward<BTensor>(btensor).data(), this->thrfrg_B(btensor.layout()));
+    auto thr_tensor = make_tensor(static_cast<BTensor&&>(btensor).data(), this->thrfrg_B(btensor.layout()));
 
     auto thr_vnk = make_coord(get<0>(thr_vmnk_), make_coord(get<2>(thr_vmnk_), get<3>(thr_vmnk_)));
     return thr_tensor(thr_vnk, make_coord(_, repeat<rank<1,1>(thr_tensor)>(_)));
@@ -744,7 +743,15 @@ print(ThrMMA<TiledMMA, ThrVMNK> const& thr_mma)
 
 template <class... Args>
 CUTE_HOST_DEVICE
-auto
+void
+print_latex(MMA_Atom<Args...> const& mma_atom)
+{
+  print_latex(make_tiled_mma(mma_atom));
+}
+
+template <class... Args>
+CUTE_HOST_DEVICE
+void
 print_latex(TiledMMA<Args...> const& mma)
 {
   auto layout_and_thrid_C = mma.get_layoutC_MN();
@@ -764,7 +771,7 @@ print_latex(TiledMMA<Args...> const& mma)
                   layoutB_NK, thrID_B);
 }
 
-// MNK MMA Layout to console printer -- 8-value color coded by thread
+// MNK MMA Layout to console printer
 template <class LayoutC, class ThrIDC,
           class LayoutA, class ThrIDA,
           class LayoutB, class ThrIDB>

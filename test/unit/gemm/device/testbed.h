@@ -132,8 +132,8 @@ struct Testbed {
         scope_max = 2;
         scope_min = 0;
       } else if (bits_input <= 8) {
-        scope_max = 2;
-        scope_min = -2;
+        scope_max = 1;
+        scope_min = -1;
       } else if (bits_output == 16) {
         scope_max = 5;
         scope_min = -5;
@@ -297,7 +297,7 @@ struct Testbed {
     // Determine SMEM requirements and waive if not satisfied
     //
 
-    int smem_size = int(sizeof(typename Gemm::GemmKernel::SharedStorage));
+    size_t smem_size = sizeof(typename Gemm::GemmKernel::SharedStorage);
 
     cudaDeviceProp properties;
     int device_idx;

@@ -112,9 +112,13 @@ public:
   /// Example
   ///  int2:  kBitsStoredVec = 8; kElementsPerStoredVec = 4; kNumStoragePerStoredVec = 1 uint8_t;
   ///  int4:  kBitsStoredVec = 8; kElementsPerStoredVec = 2; kNumStoragePerStoredVec = 1 uint8_t;
-  static int const kBitsStoredVec        = (sizeof_bits<Element>::value < 8) ? cutlass::lcm(static_cast<int>(sizeof_bits<Element>::value), 8) : sizeof_bits<Element>::value; 
-  static int const kElementsPerStoredVec = kBitsStoredVec / sizeof_bits<Element>::value;
-  static int const kNumStoragePerStoredVec = kBitsStoredVec / (sizeof(Element) * 8);
+  static constexpr int kBitsStoredVec        = (sizeof_bits<Element>::value < 8) ? cutlass::lcm(sizeof_bits<Element>::value, 8) : sizeof_bits<Element>::value; 
+  static constexpr int kElementsPerStoredVec = kBitsStoredVec / sizeof_bits<Element>::value;
+  static constexpr int kNumStoragePerStoredVec = kBitsStoredVec / (sizeof(Element) * 8);
+
+  static_assert(kBitsStoredVec != 0, "kBitsStoredVec can not be zero");
+  static_assert(kElementsPerStoredVec != 0, "kElementsPerStoredVec can not be zero");
+  static_assert(kNumStoragePerStoredVec != 0, "kNumStoragePerStoredVec can not be zero");
 
  private:
 

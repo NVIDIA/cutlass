@@ -40,7 +40,6 @@
 #include <cmath>
 #include <vector>
 
-#include "cutlass/bfloat16.h"
 #include "cutlass/fast_math.h"
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/layout/matrix.h"

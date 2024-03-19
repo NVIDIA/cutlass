@@ -109,7 +109,7 @@ as_position_independent_swizzle_tensor(Tensor&& tensor)
   } else {
 #if !defined(NDEBUG)
     {
-    uint32_t address = cast_smem_ptr_to_uint(raw_pointer_cast(std::forward<Tensor>(tensor).data()));
+    uint32_t address = cast_smem_ptr_to_uint(raw_pointer_cast(static_cast<Tensor&&>(tensor).data()));
     uint32_t mask    = ((uint32_t(1) << SwizzleFn::num_base) - 1) | SwizzleFn::swizzle_code;
     assert((address & mask) == 0);  // Alignment to the Base, Z, and Y of Swizzle
     }
@@ -118,7 +118,7 @@ as_position_independent_swizzle_tensor(Tensor&& tensor)
     // Recast swizzle from acting on byte-addressed pointers to elements of type-T
     auto new_swizzle = recast_layout<uint8_t, T>(SwizzleFn{});
     // Strip off everything and create a new smem_ptr for type-T
-    auto new_ptr = make_smem_ptr<T>(raw_pointer_cast(std::forward<Tensor>(tensor).data()));
+    auto new_ptr = make_smem_ptr<T>(raw_pointer_cast(static_cast<Tensor&&>(tensor).data()));
     return make_tensor(new_ptr, composition(new_swizzle, Int<0>{}, tensor.layout()));
   }
   CUTE_GCC_UNREACHABLE;

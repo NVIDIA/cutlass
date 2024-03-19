@@ -1,4 +1,4 @@
-[README](/README.md#documentation) > **CUTLASS 3: Building with Clang as host compiler**
+[README](../../README.md#documentation) > **CUTLASS 3: Building with Clang as host compiler**
 
 # Building with Clang as host compiler
 

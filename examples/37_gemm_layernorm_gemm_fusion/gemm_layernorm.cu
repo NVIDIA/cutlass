@@ -454,48 +454,48 @@ struct Testbed {
     cutlass::reference::host::TensorFillRandomUniform(
       tensor_A0.host_view(),
         options.seed,
-        ElementInputA0(5),
-        ElementInputA0(-5),
+        ElementInputA0(4),
+        ElementInputA0(-4),
         0
       );
 
     cutlass::reference::host::TensorFillRandomUniform(
       tensor_B0.host_view(),
         options.seed + 1,
-        ElementInputB0(5),
-        ElementInputB0(-5),
+        ElementInputB0(4),
+        ElementInputB0(-4),
         0
       );
 
     cutlass::reference::host::TensorFillRandomUniform(
       tensor_A1.host_view(),
         options.seed + 2,
-        ElementInputA1(5),
-        ElementInputA1(-5),
+        ElementInputA1(4),
+        ElementInputA1(-4),
         0
       );
 
     cutlass::reference::host::TensorFillRandomUniform(
       tensor_Beta.host_view(),
         options.seed + 3,
-        ElementInputScaleBias(5),
-        ElementInputScaleBias(-5),
+        ElementInputScaleBias(4),
+        ElementInputScaleBias(-4),
         0
       );
 
     cutlass::reference::host::TensorFillRandomUniform(
       tensor_Gamma.host_view(),
         options.seed + 4,
-        ElementInputScaleBias(5),
-        ElementInputScaleBias(-5),
+        ElementInputScaleBias(4),
+        ElementInputScaleBias(-4),
         0
       );
 
     cutlass::reference::host::TensorFillRandomUniform(
       tensor_Shifted_K.host_view(),
         options.seed + 5,
-        ElementOutput(5),
-        ElementOutput(-6),
+        ElementOutput(4),
+        ElementOutput(-5),
         0
       );
 

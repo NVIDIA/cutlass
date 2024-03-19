@@ -163,14 +163,15 @@ public:
   using ElementCompute = typename Base::ElementCompute;
 
   struct Arguments {
-    ElementCompute scalar[BroadcastCount];
-    ElementCompute const* scalar_ptrs[BroadcastCount];
-    cute::Stride<cute::_0,cute::_0,cute::_0> dScalar;
+    ElementCompute scalar[BroadcastCount] = {0};
+    ElementCompute const* scalar_ptrs[BroadcastCount] = { nullptr };
+    cute::Stride<cute::_0,cute::_0,cute::_0> dScalar{};
   };
 private:
-  ElementCompute _scalar;
+  ElementCompute _scalar{};
 public:
   HostScalarBroadcast(){}
+
   template<typename ProblemShapeType, typename TestBedImpl>
   HostScalarBroadcast(ProblemShapeType problem_size, TestBedImpl impl, bool check_relative_equality=false)
     : Base(check_relative_equality), _scalar(ElementCompute(Value)) {}
@@ -1313,7 +1314,7 @@ public:
     }
 
     typename Gemm::GemmKernel::TileScheduler::Arguments scheduler_args;
-    if constexpr (std::is_same_v<typename Gemm::GemmKernel::TileSchedulerTag, cutlass::gemm::StreamKScheduler>) {
+    if constexpr (cute::is_same_v<typename Gemm::GemmKernel::TileSchedulerTag, cutlass::gemm::StreamKScheduler>) {
       scheduler_args = { splits };
     }
 
@@ -1399,7 +1400,7 @@ bool TestAllEVT(bool check_relative_equality=false) {
   std::vector<int> problem_size_m = {max_alignment, 512 - 3 * max_alignment};
   std::vector<int> problem_size_n = {max_alignment, 512 - 2 * max_alignment};
 
-  if constexpr (std::is_same_v<typename Gemm::GemmKernel::DispatchPolicy::Schedule,
+  if constexpr (cute::is_same_v<typename Gemm::GemmKernel::DispatchPolicy::Schedule,
         cutlass::gemm::KernelTmaWarpSpecializedPingpong>) {
   problem_size_m.push_back(768);
   problem_size_n.push_back(768);

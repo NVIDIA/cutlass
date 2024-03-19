@@ -67,6 +67,26 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class EmitOperationKindAll:
+  """
+  Emit the OperationKind-level CUTLASS library initialization code.
+  The code is generated in the {generated_path}/{operation_kind} directory
+  (e.g., tools/library/generated/gemm in the build directory,
+  for OperationKind=Gemm), in the all_{operation_kind}_operations.cu file
+  (e.g., all_gemm_operations.cu for OperationKind=Gemm).
+  That file declares several functions in namespace cutlass::library.
+  The functions all have this form,
+
+  void initialize_{configuration_name}(Manifest& manifest);
+
+  The file also _defines_ the following function in that namespace.
+
+  void initialize_all_{operation_kind}_operations(Manifest& manifest);
+
+  That function calls all of the functions declared in this file.
+  Those functions are defined in subdirectories
+  (which this class does not create).
+  """
+
   def __init__(self, generated_path, kind, args):
     self.generated_path = generated_path
     self.kind = kind
@@ -109,10 +129,15 @@ void initialize_all_${operation_name}_operations(Manifest &manifest) {
 
   #
   def __enter__(self):
+    _LOGGER.debug("*** EmitOperationKindAll::__enter__")
+
     self.operation_path = os.path.join(self.generated_path, OperationKindNames[self.kind])
+    _LOGGER.debug('***   operation_path (directory to create): ' +
+                  str(self.operation_path));
     os.makedirs(self.operation_path, exist_ok=True)
 
     self.top_level_path = os.path.join(self.operation_path, f"all_{OperationKindNames[self.kind]}_operations.cu")
+    _LOGGER.debug(f"***   top_level_path (file to write): {str(self.top_level_path)}")
 
     self.top_level_file = open(self.top_level_path, "w")
     self.top_level_file.write(self.header_template)
@@ -125,13 +150,22 @@ void initialize_all_${operation_name}_operations(Manifest &manifest) {
 
   #
   def emit(self, operations):
+    _LOGGER.debug('*** EmitOperationKindAll::emit')
+    _LOGGER.debug(f"***   len(operations): {len(operations)}")
+    _LOGGER.debug(f"***   min_cc list: {sorted(min_cc for min_cc, _ in operations.items())}")
+
     for min_cc, configurations in sorted(operations.items()):
+      _LOGGER.debug(f"***   min_cc={min_cc}")
+
       for configuration_name, _ in configurations.items():
+        _LOGGER.debug(f"***     configuration_name={configuration_name}")
         self.configurations.append(configuration_name)
         self.top_level_file.write(SubstituteTemplate(self.configuration_prototype_template, {'configuration_name': configuration_name} ))
 
   #
   def __exit__(self, exception_type, exception_value, traceback):
+    _LOGGER.debug("*** EmitOperationKindAll::__exit__")
+
     self.top_level_file.write(SubstituteTemplate(self.entry_template, {'operation_name': OperationKindNames[self.kind]}))
 
     for configuration_name in self.configurations:
@@ -142,6 +176,37 @@ void initialize_all_${operation_name}_operations(Manifest &manifest) {
 
 
 class EmitOperationKindLibrary:
+  """
+  Emit the CUTLASS library initialization code for each OperationKind.
+  The code is generated in the directory
+  {generated_path}/{operation_kind}/{min_cc}
+  (e.g., tools/library/generated/gemm/90 in the build directory,
+  for min_cc=90 and OperationKind=Gemm), in the file
+  all_sm{min_cc}_{operation_kind}_operations.cu
+  (e.g., all_sm90_gemm_operations.cu for min_cc=90 and OperationKind=Gemm).
+  The min_cc variable here indicates the minimum GPU architecture version
+  that the things to be initialized require.
+  For example, min_cc=90 indicates sm90.
+
+  That file declares several functions in namespace cutlass::library.
+  The functions all have this form,
+
+  void initialize_all_sm{min_cc}_{subclass_name}_{extended_name}_operations(Manifest& manifest);
+
+  where extended_name is operation.extended_name() for all the operations
+  given to the emit method (which see below).  (All operations for a given
+  configuration_name are guaranteed to have the same extended_name().)
+
+  The file also _defines_ the following function in that namespace.
+
+  void initialize_all_sm{min_cc}__{operation_kind}_operations(Manifest& manifest);
+
+  That function calls all of the functions declared in this file.
+  Those functions are defined in subdirectories.
+  The mapping from OperationKind to emitter handles the details
+  of what happens in each of those subdirectories.
+  """
+
   def __init__(self, generated_path, min_cc, kind, args):
     self.generated_path = generated_path
     self.min_cc = min_cc
@@ -194,10 +259,17 @@ void initialize_all_sm${min_cc}_${subclass_name}_${operation_name}_operations(Ma
 
   #
   def __enter__(self):
+    _LOGGER.debug("*** EmitOperationKindLibrary::__enter__")
+    _LOGGER.debug(f"***   generated_path: {str(self.generated_path)}")
+    _LOGGER.debug(f"***   OperationKindNames[kind]: {OperationKindNames[self.kind]}")
+    _LOGGER.debug(f"***   min_cc: {self.min_cc}")
+
     self.operation_path = os.path.join(self.generated_path, OperationKindNames[self.kind], str(self.min_cc))
+    _LOGGER.debug(f"***   operation_path (directory to make): {str(self.operation_path)}")
     os.makedirs(self.operation_path)
 
     self.top_level_path = os.path.join(self.operation_path, f"all_sm{self.min_cc}_{OperationKindNames[self.kind]}_operations.cu")
+    _LOGGER.debug(f"***   top_level_path (file to write): {str(self.top_level_path)}")
 
     self.top_level_file = open(self.top_level_path, "w")
     self.top_level_file.write(self.header_template)
@@ -216,16 +288,21 @@ void initialize_all_sm${min_cc}_${subclass_name}_${operation_name}_operations(Ma
 
   #
   def emit(self, configuration_name, operations):
+    _LOGGER.debug("*** EmitOperationKindLibrary::emit")
+    _LOGGER.debug(f"***   configuration_name: {configuration_name}")
+
     assert len(operations) > 0
 
     # The extended name for all operations of a given configuration_name is guaranteed
     # to be the same because extended_name() is used in defining configuration_name. Thus,
     # we can safely use the extended_name() of the first operation.
     extended_name = operations[0].extended_name()
+    _LOGGER.debug('***   extended_name (for all ops): ' + extended_name)
 
     # Create a directory for operations with this subclass if it does not exist
     if extended_name not in self.subclass_files:
       subclass_path = os.path.join(self.operation_path, extended_name)
+      _LOGGER.debug(f"***     subclass_path: {str(subclass_path)}")
       os.mkdir(subclass_path)
 
       self.subclass_configurations[extended_name] = []
@@ -233,16 +310,23 @@ void initialize_all_sm${min_cc}_${subclass_name}_${operation_name}_operations(Ma
       # Open a new top-level file for this sub class
       subclass_top_level_path = os.path.join(
         subclass_path, f"all_sm{self.min_cc}_{extended_name}_{OperationKindNames[self.kind]}_operations.cu")
+      _LOGGER.debug('***     subclass_top_level_path (min_cc, extended_name, ' +
+                    'OperationKind): ' + str(subclass_top_level_path))
+
       self.subclass_files[extended_name] = open(subclass_top_level_path, "w")
       self.subclass_files[extended_name].write(self.header_template)
 
       self.source_files[extended_name] = [subclass_top_level_path]
 
     subclass_dir = os.path.dirname(self.subclass_files[extended_name].name)
+    _LOGGER.debug('***   subclass_dir: ' + str(subclass_dir))
+
     with self.emitters[self.kind](subclass_dir, configuration_name) as configuration_emitter:
       for operation in operations:
         configuration_emitter.emit(operation)
 
+      _LOGGER.debug('***   configuration_emitter.configuration_path: ' +
+                    str(configuration_emitter.configuration_path))
       self.source_files[extended_name].append(configuration_emitter.configuration_path)
 
     self.subclass_configurations[extended_name].append(configuration_name)
@@ -250,6 +334,7 @@ void initialize_all_sm${min_cc}_${subclass_name}_${operation_name}_operations(Ma
 
   #
   def __exit__(self, exception_type, exception_value, traceback):
+    _LOGGER.debug("*** EmitOperationKindLibrary::__exit__")    
     for subclass_name, subclass_file in sorted(self.subclass_files.items()):
       subclass_cfg = {
         'min_cc': str(self.min_cc),
@@ -290,6 +375,29 @@ void initialize_all_sm${min_cc}_${subclass_name}_${operation_name}_operations(Ma
     self.top_level_file.close()
 
 class EmitInterfaceLibrary:
+  """
+  Emit the topmost-level CUTLASS library initialization code.
+  The code is generated in the generated_path directory
+  (e.g., tools/library/generated in the build directory),
+  in the initialize_all.cpp file.
+  That file declares several functions in namespace cutlass::library.
+  The functions all have this form,
+
+  void initialize_all_{operation_kind}_operations(Manifest& manifest);
+
+  where {operation_kind} abbreviates the "kind" of operation
+  (e.g., gemm for matrix-matrix multiply, conv2d for 2-d convolution,
+  or trmm for triangular solve with multiple right-hand sides).
+  The definitions of these functions live in subdirectories.
+
+  The file also _defines_ the following function in that namespace.
+
+  void initialize_all(Manifest& manifest);
+
+  That function first prepares the manifest, and then
+  calls all of the functions declared in this file.
+  """
+
   def __init__(self, generated_path, operation_count, args):
     self.generated_path = generated_path
     self.args = args
@@ -335,7 +443,10 @@ ${fn_calls}
 
   #
   def __enter__(self):
+    _LOGGER.debug("*** EmitInterfaceLibrary::__enter__")
+
     self.top_level_path = os.path.join(self.generated_path, 'initialize_all.cpp')
+    _LOGGER.debug("***   top_level_path: " + str(self.top_level_path))
 
     self.top_level_file = open(self.top_level_path, "w")
     self.top_level_file.write(self.top_level_hdr_template)
@@ -346,6 +457,9 @@ ${fn_calls}
 
   #
   def emit(self, operation_name):
+    _LOGGER.debug("*** EmitInterfaceLibrary::emit")
+    _LOGGER.debug("***   operation_name: " + operation_name)
+
     self.prototypes.append(SubstituteTemplate(
        "\t\tvoid initialize_all_${operation_kind}_operations(Manifest &manifest);",
        {'operation_kind': operation_name}))
@@ -356,6 +470,8 @@ ${fn_calls}
 
   #
   def __exit__(self, exception_type, exception_value, traceback):
+    _LOGGER.debug("*** EmitInterfaceLibrary::__exit__")
+
     self.top_level_file.write(SubstituteTemplate(self.top_level_prologue, {'prototypes':"\n".join(self.prototypes)}))
 
     # Write out initialize_all method
@@ -398,8 +514,14 @@ class Manifest:
       self.kernel_filter = self.args.kernels
       self.curr_build_dir = args.curr_build_dir
 
+      # A common user error is to use commas instead of semicolons.
+      if ',' in args.architectures:
+        raise RuntimeError("The list of architectures (CMake option CUTLASS_NVCC_ARCHS) must be semicolon-delimited.\nDon't use commas to separate the architectures; use semicolons.\nYou specified the list as: " + args.architectures)
       architectures = args.architectures.split(';') if len(args.architectures) else ['50',]
-      architectures = [x if x != '90a' else '90' for x in architectures]
+
+      arch_conditional_cc = ['90a']
+      architectures = [x if x not in arch_conditional_cc else x.split('a')[0] for x in architectures]
+
       self.compute_capabilities = [int(x) for x in architectures]
 
       if args.filter_by_cc in ['false', 'False', '0']:
@@ -681,8 +803,7 @@ class Manifest:
       for min_cc, configurations in sorted(ops.items()):
         with operation_emitters[target](generated_path, min_cc, operation_kind, self.args) as operation_kind_emitter:
           for configuration_name, operations in configurations.items():
-            _LOGGER.info("Emitting {config} with {num_ops} operations.".format(
-                config = configuration_name, num_ops = len(operations)))
+            _LOGGER.info(f"Emitting {configuration_name} with {len(operations)} operation{'' if len(operations) == 1 else 's'}.")
             operation_kind_emitter.emit(configuration_name, operations)
 
           for subclass, files in operation_kind_emitter.source_files.items():

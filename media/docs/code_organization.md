@@ -1,6 +1,6 @@
-![ALT](/media/images/gemm-hierarchy-with-epilogue-no-labels.png "CUTLASS Code Organization")
+![ALT](../images/gemm-hierarchy-with-epilogue-no-labels.png "CUTLASS Code Organization")
 
-[README](/README.md#documentation) > **Code Organization**
+[README](../../README.md#documentation) > **Code Organization**
 
 # CUTLASS Code Organization
 

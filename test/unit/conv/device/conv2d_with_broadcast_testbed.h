@@ -254,7 +254,7 @@ public:
     // Determine SMEM requirements and waive if not satisfied
     //
 
-    int smem_size = int(sizeof(typename Conv2d::UnderlyingKernel::SharedStorage));
+    size_t smem_size = sizeof(typename Conv2d::UnderlyingKernel::SharedStorage);
 
     cudaDeviceProp properties;
     int device_idx;
@@ -408,11 +408,11 @@ public:
         for (int q = 0; q < problem_size.Q; ++q) {
           for (int k = 0; k < problem_size.K; ++k) {
   
-            ElementZ z;
-            ElementT t;
+            ElementZ z{};
+            ElementT t{};
     
             ElementCompute accum = tensor_Y_reference.at({n, p, q, k});
-	    ElementCompute bias = ElementCompute(tensor_Broadcast.at({0, 0, 0, k}));
+	          ElementCompute bias = ElementCompute(tensor_Broadcast.at({0, 0, 0, k}));
 
 
             if (kAddBroadcastFirst) {
@@ -498,6 +498,52 @@ public:
     return passed;
   }
 };
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <typename ImplicitGemm,
+          typename ReferenceOp = Conv2dWithBroadcastReferenceOp<ImplicitGemm>,
+          bool AddBroadcastFirst = false>
+bool TestSpecificConv2dWithBroadcast(
+  const Conv2dProblemVector & problem_sizes) {
+
+  bool passed = true;
+
+  //
+  // Testbed object
+  //
+
+  TestbedConv2dWithBroadcast<ImplicitGemm, ReferenceOp, AddBroadcastFirst> testbed;
+
+  // Sweep conv2d problem sizes (split-k-mode=kSerial, split-k-slice=1, alpha=1.0, beta=0.0)
+  for(auto conv_problem : problem_sizes) {
+
+    //
+    // Test
+    //
+
+    // test mode = xcross
+    passed = testbed.run(
+      conv_problem,
+      cutlass::conv::SplitKMode::kSerial);
+
+    if (!passed) {
+      return false;
+    }
+
+    // test mode = convolution
+    passed = testbed.run(
+      conv_problem.reset_mode(cutlass::conv::Mode::kConvolution),
+      cutlass::conv::SplitKMode::kSerial);
+
+    if (!passed) {
+      return false;
+    }
+  }
+
+  return true;
+}
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 // TestAllConv: Runs cutlass::conv::device::ImplicitGemmConvolution operator and compares it with reference

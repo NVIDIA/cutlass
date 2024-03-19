@@ -516,6 +516,48 @@ TEST(SM80_warp_gemm_tensor_op_congruous_f16, 128x128x32_32x32x32_16x8x16) {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+TEST(SM80_warp_gemm_tensor_op_congruous_f16, 16x16x32_16x16x32_16x8x16) {
+  using Shape = cutlass::gemm::GemmShape<16, 16, 32>;
+  using InstructionShape = cutlass::gemm::GemmShape<16, 8, 16>;
+  using Element = cutlass::half_t;
+  using ElementC = float;
+  using LayoutA = cutlass::layout::ColumnMajorTensorOpMultiplicandCongruous<
+      cutlass::sizeof_bits<Element>::value, 16>;
+  using LayoutB = cutlass::layout::RowMajorTensorOpMultiplicandCongruous<
+      cutlass::sizeof_bits<Element>::value, 16>;
+
+  using MmaTensorOp = typename cutlass::gemm::warp::DefaultMmaTensorOp<
+      Shape, InstructionShape, Element, LayoutA, Element, LayoutB, ElementC,
+      cutlass::layout::RowMajor>::Type;
+
+  test::gemm::warp::Testbed<MmaTensorOp,
+                            cutlass::gemm::GemmShape<16, 16, 32> >()
+      .run();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+TEST(SM80_warp_gemm_tensor_op_congruous_f16, 32x32x32_32x32x32_16x8x16) {
+  using Shape = cutlass::gemm::GemmShape<32, 32, 32>;
+  using InstructionShape = cutlass::gemm::GemmShape<16, 8, 16>;
+  using Element = cutlass::half_t;
+  using ElementC = float;
+  using LayoutA = cutlass::layout::ColumnMajorTensorOpMultiplicandCongruous<
+      cutlass::sizeof_bits<Element>::value, 32>;
+  using LayoutB = cutlass::layout::RowMajorTensorOpMultiplicandCongruous<
+      cutlass::sizeof_bits<Element>::value, 32>;
+
+  using MmaTensorOp = typename cutlass::gemm::warp::DefaultMmaTensorOp<
+      Shape, InstructionShape, Element, LayoutA, Element, LayoutB, ElementC,
+      cutlass::layout::RowMajor>::Type;
+
+  test::gemm::warp::Testbed<MmaTensorOp,
+                            cutlass::gemm::GemmShape<32, 32, 32> >()
+      .run();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 TEST(SM80_warp_gemm_tensor_op_congruous_f16, 128x128x64_64x64x64_16x8x16) {
   using Shape = cutlass::gemm::GemmShape<64, 64, 64>;
   using InstructionShape = cutlass::gemm::GemmShape<16, 8, 16>;

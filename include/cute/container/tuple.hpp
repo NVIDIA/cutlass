@@ -126,18 +126,14 @@ CUTE_HOST_DEVICE constexpr T& getv(EBO<N, T, false>& x)
 
 template <size_t N, class T>
 CUTE_HOST_DEVICE constexpr T&& getv(EBO<N, T, false>&& x)
-{ return static_cast<T&&>(x.t_); }
+{ return cute::move(x.t_); }
 
 template <class IdxSeq, class... T>
 struct TupleBase;
 
-// Base class of cute::tuple.
-// It inherits from EBO<i, t> for each (i, t) in (I..., T...).
-// The actual storage (for nonempty t) lives in the base classes.
-// index_sequence is a way to wrap up a sequence of zero or more
-// compile-time integer values in a single type.
-// We only ever use index_sequence<0, 1, ..., sizeof...(T)> in practice,
-// as the type alias TupleBase below indicates.
+// Base class of cute::tuple binds each element to an index
+// by inheriting from EBO<i, t> for each (i, t) in (I..., T...).
+// The storage (for nonempty t) lives in the base classes.
 template <size_t... I, class... T>
 struct TupleBase<index_sequence<I...>, T...>
     : EBO<I,T>...
@@ -169,11 +165,6 @@ struct TupleBase<index_sequence<I...>, T...>
 //
 // Inheriting from the above alias TupleBase
 // causes MSVC 2022 build errors when assigning one tuple to another:
-//
-// illegal member initialization:
-// 'TupleBase< /* template arguments */ >' is not a base or member
-//
-// Not using the alias or any kind of alias fixed the errors.
 // In summary: this is verbose as a work-around for MSVC build errors.
 template <class... T>
 struct tuple : detail::TupleBase<make_index_sequence<sizeof...(T)>, T...>
@@ -365,10 +356,10 @@ tuple_cat(T0 const& t0, T1 const& t1, T2 const& t2, T3 const& t3, T4 const& t4,
   return cute::make_tuple(get<I0>(t0)..., get<I1>(t1)..., get<I2>(t2)..., get<I3>(t3)..., get<I4>(t4)...);
 }
 
-template<class T0, class T1>
+template <class T0, class T1>
 struct tuple_cat_static;
 
-template<class... T0s, class... T1s>
+template <class... T0s, class... T1s>
 struct tuple_cat_static<tuple<T0s...>, tuple<T1s...>> {
   using type = tuple<T0s..., T1s...>;
 };
@@ -630,11 +621,8 @@ template <class Tuple, size_t... Is>
 CUTE_HOST_DEVICE void print_tuple(Tuple const& t,
                                   index_sequence<Is...>, char s = '(', char e = ')')
 {
-  using eat = int[];
   using cute::print;
-  (void) eat {(print(s), 0),
-              (print(Is == 0 ? "" : ","), print(get<Is>(t)), 0)...,
-              (print(e), 0)};
+  ((void(print(Is == 0 ? s : ',')), void(print(get<Is>(t)))), ...); print(e);
 }
 
 #if !defined(__CUDACC_RTC__)
@@ -642,11 +630,8 @@ template <class Tuple, std::size_t... Is>
 CUTE_HOST std::ostream& print_tuple_os(std::ostream& os, Tuple const& t,
                                        index_sequence<Is...>, char s = '(', char e = ')')
 {
-  using eat = int[];
-  (void) eat {(void(os << s), 0),
-              (void(os << (Is == 0 ? "" : ",") << get<Is>(t)), 0)...,
-              (void(os << e), 0)};
-  return os;
+  (void(os << (Is == 0 ? s : ',') << get<Is>(t)), ...);
+  return os << e;
 }
 #endif // !defined(__CUDACC_RTC__)
 
@@ -707,7 +692,7 @@ namespace std
 template <class... _Tp>
 struct tuple_size;
 
-template<size_t _Ip, class... _Tp>
+template <size_t _Ip, class... _Tp>
 struct tuple_element;
 #endif
 

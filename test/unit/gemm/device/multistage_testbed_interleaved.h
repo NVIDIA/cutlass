@@ -118,7 +118,7 @@ struct MultistageInterleavedTestbed {
     // Determine SMEM requirements and waive if not satisfied
     //
 
-    int smem_size = int(sizeof(typename Gemm::GemmKernel::SharedStorage));
+    size_t smem_size = sizeof(typename Gemm::GemmKernel::SharedStorage);
 
     cudaDeviceProp properties;
     int device_idx;

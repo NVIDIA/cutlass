@@ -73,7 +73,7 @@ struct SM90_16x8x4_F64F64F64F64_TN
          "d"(b0),
          "d"(c0),  "d"(c1),  "d"(c2),  "d"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_16x8x4_F64F64F64F64_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_16x8x4_F64F64F64F64_TN without CUTE_ARCH_MMA_SM90_ENABLED");
 #endif
   }
 };
@@ -106,7 +106,7 @@ struct SM90_16x8x8_F64F64F64F64_TN
          "d"(b0),  "d"(b1),
          "d"(c0),  "d"(c1),  "d"(c2),  "d"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_16x8x8_F64F64F64F64_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_16x8x8_F64F64F64F64_TN without CUTE_ARCH_MMA_SM90_ENABLED");
 #endif
   }
 };
@@ -141,7 +141,7 @@ struct SM90_16x8x16_F64F64F64F64_TN
          "d"(b0),  "d"(b1),  "d"(b2),  "d"(b3),
          "d"(c0),  "d"(c1),  "d"(c2),  "d"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_16x8x16_F64F64F64F64_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_16x8x16_F64F64F64F64_TN without CUTE_ARCH_MMA_SM90_ENABLED");
 #endif
   }
 };
@@ -364,37 +364,185 @@ ss_op_selector()
 
   // FP16 accumulator
   if constexpr (is_same_v<ElementC, half_t>) {
-    static_assert(is_same_v<ElementA, half_t>, "Element types for AB must be half if ElementC is half.");
-    static_assert(is_same_v<ElementB, half_t>, "Element types for AB must be half if ElementC is half.");
-    static_assert(size<2>(TileShape_MNK{}) % 16 == 0, "Tile_K must be a multiple of 16.");
+    if constexpr (is_same_v<ElementA, half_t> && is_same_v<ElementB, half_t>) {
+      static_assert(size<2>(TileShape_MNK{}) % 16 == 0, "Tile_K must be a multiple of 16.");
 
-    // Dispatch against the Tile N mode size
-    if constexpr (Tile_N % 256 == 0) {
-      return SM90_64x256x16_F16F16F16_SS<MajorA, MajorB, Args...>{};
+      // Dispatch against the Tile N mode size
+      if constexpr (Tile_N % 256 == 0) {
+        return SM90_64x256x16_F16F16F16_SS<MajorA, MajorB, Args...>{};
+      }
+      else if constexpr (Tile_N % 192 == 0) {
+        return SM90_64x192x16_F16F16F16_SS<MajorA, MajorB, Args...>{};
+      }
+      else if constexpr (Tile_N % 128 == 0) {
+        return SM90_64x128x16_F16F16F16_SS<MajorA, MajorB, Args...>{};
+      }
+      else if constexpr (Tile_N % 96 == 0) {
+        return SM90_64x96x16_F16F16F16_SS<MajorA, MajorB, Args...>{};
+      }
+      else if constexpr (Tile_N % 64 == 0) {
+        return SM90_64x64x16_F16F16F16_SS<MajorA, MajorB, Args...>{};
+      }
+      else if constexpr (Tile_N % 32 == 0) {
+        return SM90_64x32x16_F16F16F16_SS<MajorA, MajorB, Args...>{};
+      }
+      else if constexpr (Tile_N % 16 == 0) {
+        return SM90_64x16x16_F16F16F16_SS<MajorA, MajorB, Args...>{};
+      }
+      else if constexpr (Tile_N % 8 == 0) {
+        return SM90_64x8x16_F16F16F16_SS<MajorA, MajorB, Args...>{};
+      }
+      else {
+          static_assert(Tile_N % 8 == 0, "Tile_N must be a multiple of 8.");
+      }
     }
-    else if constexpr (Tile_N % 192 == 0) {
-      return SM90_64x192x16_F16F16F16_SS<MajorA, MajorB, Args...>{};
-    }
-    else if constexpr (Tile_N % 128 == 0) {
-      return SM90_64x128x16_F16F16F16_SS<MajorA, MajorB, Args...>{};
-    }
-    else if constexpr (Tile_N % 96 == 0) {
-      return SM90_64x96x16_F16F16F16_SS<MajorA, MajorB, Args...>{};
-    }
-    else if constexpr (Tile_N % 64 == 0) {
-      return SM90_64x64x16_F16F16F16_SS<MajorA, MajorB, Args...>{};
-    }
-    else if constexpr (Tile_N % 32 == 0) {
-      return SM90_64x32x16_F16F16F16_SS<MajorA, MajorB, Args...>{};
-    }
-    else if constexpr (Tile_N % 16 == 0) {
-      return SM90_64x16x16_F16F16F16_SS<MajorA, MajorB, Args...>{};
-    }
-    else if constexpr (Tile_N % 8 == 0) {
-      return SM90_64x8x16_F16F16F16_SS<MajorA, MajorB, Args...>{};
-    }
-    else {
+
+    // FP8
+    // Input A: float_e4m3_t ; Input B: float_e4m3_t
+    else if constexpr (is_same_v<ElementA, float_e4m3_t> && is_same_v<ElementB, float_e4m3_t>) {
+      static_assert(MajorA == GMMA::Major::K, "MajorA must be GMMA::Major::K for this config.");
+      static_assert(MajorB == GMMA::Major::K, "MajorB must be GMMA::Major::K for this config.");
+      static_assert(size<2>(TileShape_MNK{}) % 32 == 0, "Tile_K must be a multiple of 32.");
+
+      if constexpr (Tile_N % 256 == 0) {
+        return SM90_64x256x32_F16E4M3E4M3_SS_TN<Args...>{};
+      }
+      else if constexpr (Tile_N % 192 == 0) {
+        return SM90_64x192x32_F16E4M3E4M3_SS_TN<Args...>{};
+      }
+      else if constexpr (Tile_N % 128 == 0) {
+        return SM90_64x128x32_F16E4M3E4M3_SS_TN<Args...>{};
+      }
+      else if constexpr (Tile_N % 96 == 0) {
+        return SM90_64x96x32_F16E4M3E4M3_SS_TN<Args...>{};
+      }
+      else if constexpr (Tile_N % 64 == 0) {
+        return SM90_64x64x32_F16E4M3E4M3_SS_TN<Args...>{};
+      }
+      else if constexpr (Tile_N % 32 == 0) {
+        return SM90_64x32x32_F16E4M3E4M3_SS_TN<Args...>{};
+      }
+      else if constexpr (Tile_N % 16 == 0) {
+        return SM90_64x16x32_F16E4M3E4M3_SS_TN<Args...>{};
+      }
+      else if constexpr (Tile_N % 8 == 0) {
+        return SM90_64x8x32_F16E4M3E4M3_SS_TN<Args...>{};
+      }
+      else {
         static_assert(Tile_N % 8 == 0, "Tile_N must be a multiple of 8.");
+      }
+    }
+
+    // FP8
+    // Input A: float_e4m3_t ; Input B: float_e5m2_t
+    else if constexpr (is_same_v<ElementA, float_e4m3_t> && is_same_v<ElementB, float_e5m2_t>) {
+      static_assert(MajorA == GMMA::Major::K, "MajorA must be GMMA::Major::K for this config.");
+      static_assert(MajorB == GMMA::Major::K, "MajorB must be GMMA::Major::K for this config.");
+      static_assert(size<2>(TileShape_MNK{}) % 32 == 0, "Tile_K must be a multiple of 32.");
+
+      if constexpr (Tile_N % 256 == 0) {
+        return SM90_64x256x32_F16E4M3E5M2_SS_TN<Args...>{};
+      }
+      else if constexpr (Tile_N % 192 == 0) {
+        return SM90_64x192x32_F16E4M3E5M2_SS_TN<Args...>{};
+      }
+      else if constexpr (Tile_N % 128 == 0) {
+        return SM90_64x128x32_F16E4M3E5M2_SS_TN<Args...>{};
+      }
+      else if constexpr (Tile_N % 96 == 0) {
+        return SM90_64x96x32_F16E4M3E5M2_SS_TN<Args...>{};
+      }
+      else if constexpr (Tile_N % 64 == 0) {
+        return SM90_64x64x32_F16E4M3E5M2_SS_TN<Args...>{};
+      }
+      else if constexpr (Tile_N % 32 == 0) {
+        return SM90_64x32x32_F16E4M3E5M2_SS_TN<Args...>{};
+      }
+      else if constexpr (Tile_N % 16 == 0) {
+        return SM90_64x16x32_F16E4M3E5M2_SS_TN<Args...>{};
+      }
+      else if constexpr (Tile_N % 8 == 0) {
+        return SM90_64x8x32_F16E4M3E5M2_SS_TN<Args...>{};
+      }
+      else {
+        static_assert(Tile_N % 8 == 0, "Tile_N must be a multiple of 8.");
+      }
+    }
+
+    // FP8
+    // Input A: float_e5m2_t ; Input B: float_e5m2_t
+    else if constexpr (is_same_v<ElementA, float_e5m2_t> && is_same_v<ElementB, float_e5m2_t>) {
+      static_assert(MajorA == GMMA::Major::K, "MajorA must be GMMA::Major::K for this config.");
+      static_assert(MajorB == GMMA::Major::K, "MajorB must be GMMA::Major::K for this config.");
+      static_assert(size<2>(TileShape_MNK{}) % 32 == 0, "Tile_K must be a multiple of 32.");
+
+      if constexpr (Tile_N % 256 == 0) {
+        return SM90_64x256x32_F16E5M2E5M2_SS_TN<Args...>{};
+      }
+      else if constexpr (Tile_N % 192 == 0) {
+        return SM90_64x192x32_F16E5M2E5M2_SS_TN<Args...>{};
+      }
+      else if constexpr (Tile_N % 128 == 0) {
+        return SM90_64x128x32_F16E5M2E5M2_SS_TN<Args...>{};
+      }
+      else if constexpr (Tile_N % 96 == 0) {
+        return SM90_64x96x32_F16E5M2E5M2_SS_TN<Args...>{};
+      }
+      else if constexpr (Tile_N % 64 == 0) {
+        return SM90_64x64x32_F16E5M2E5M2_SS_TN<Args...>{};
+      }
+      else if constexpr (Tile_N % 32 == 0) {
+        return SM90_64x32x32_F16E5M2E5M2_SS_TN<Args...>{};
+      }
+      else if constexpr (Tile_N % 16 == 0) {
+        return SM90_64x16x32_F16E5M2E5M2_SS_TN<Args...>{};
+      }
+      else if constexpr (Tile_N % 8 == 0) {
+        return SM90_64x8x32_F16E5M2E5M2_SS_TN<Args...>{};
+      }
+      else {
+        static_assert(Tile_N % 8 == 0, "Tile_N must be a multiple of 8.");
+      }
+    }
+
+    // FP8
+    // Input A: float_e5m2_t ; Input B: float_e4m3_t
+    else if constexpr (is_same_v<ElementA, float_e5m2_t> && is_same_v<ElementB, float_e4m3_t>) {
+      static_assert(MajorA == GMMA::Major::K, "MajorA must be GMMA::Major::K for this config.");
+      static_assert(MajorB == GMMA::Major::K, "MajorB must be GMMA::Major::K for this config.");
+      static_assert(size<2>(TileShape_MNK{}) % 32 == 0, "Tile_K must be a multiple of 32.");
+
+      if constexpr (Tile_N % 256 == 0) {
+        return SM90_64x256x32_F16E5M2E4M3_SS_TN<Args...>{};
+      }
+      else if constexpr (Tile_N % 192 == 0) {
+        return SM90_64x192x32_F16E5M2E4M3_SS_TN<Args...>{};
+      }
+      else if constexpr (Tile_N % 128 == 0) {
+        return SM90_64x128x32_F16E5M2E4M3_SS_TN<Args...>{};
+      }
+      else if constexpr (Tile_N % 96 == 0) {
+        return SM90_64x96x32_F16E5M2E4M3_SS_TN<Args...>{};
+      }
+      else if constexpr (Tile_N % 64 == 0) {
+        return SM90_64x64x32_F16E5M2E4M3_SS_TN<Args...>{};
+      }
+      else if constexpr (Tile_N % 32 == 0) {
+        return SM90_64x32x32_F16E5M2E4M3_SS_TN<Args...>{};
+      }
+      else if constexpr (Tile_N % 16 == 0) {
+        return SM90_64x16x32_F16E5M2E4M3_SS_TN<Args...>{};
+      }
+      else if constexpr (Tile_N % 8 == 0) {
+        return SM90_64x8x32_F16E5M2E4M3_SS_TN<Args...>{};
+      }
+      else {
+        static_assert(Tile_N % 8 == 0, "Tile_N must be a multiple of 8.");
+      }
+    }
+
+    else {
+      static_assert(sizeof(ElementA) == 0, "No eligible GMMA operator for request configuration.");
     }
   }
 

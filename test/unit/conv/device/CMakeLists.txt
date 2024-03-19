@@ -93,6 +93,20 @@ if (CUTLASS_NVCC_MAX_ARCH GREATER_EQUAL 80)
 
 endif()
 
+if (CUTLASS_NVCC_MAX_ARCH GREATER_EQUAL 89)
+
+  add_dependencies(
+    cutlass_test_unit_conv_device
+    cutlass_test_unit_conv_device_tensorop_f8_sm89
+  )
+
+  add_dependencies(
+    test_unit_conv_device
+    test_unit_conv_device_tensorop_f8_sm89
+  )
+
+endif()
+
 #
 # OpClassSimt (CUDA cores)
 #
@@ -126,6 +140,14 @@ if (CUTLASS_NVCC_MAX_ARCH GREATER_EQUAL 80)
     conv2d_fprop_implicit_gemm_cf32nhwc_cf32nhwc_cf32nhwc_simt_f32_sm80.cu
     conv2d_dgrad_implicit_gemm_cf32nhwc_cf32nhwc_cf32nhwc_simt_f32_sm80.cu
     conv2d_wgrad_implicit_gemm_cf32nhwc_cf32nhwc_cf32nhwc_simt_f32_sm80.cu
+
+    conv2d_fprop_with_broadcast_simt_sm80.cu
+
+    conv3d_fprop_implicit_gemm_f32ndhwc_f32ndhwc_f32ndhwc_simt_f32_sm80.cu
+    conv3d_dgrad_implicit_gemm_f32ndhwc_f32ndhwc_f32ndhwc_simt_f32_sm80.cu
+    conv3d_wgrad_implicit_gemm_f32ndhwc_f32ndhwc_f32ndhwc_simt_f32_sm80.cu
+
+    conv3d_fprop_with_broadcast_simt_sm80.cu
   )
 
 endif()
@@ -242,6 +264,17 @@ if (CUTLASS_NVCC_MAX_ARCH GREATER_EQUAL 75)
     )
 
   endif()
+
+endif()
+
+if (CUTLASS_NVCC_MAX_ARCH GREATER_EQUAL 89)
+
+  # Conv - F8 input, F8 output, F32 accumulation
+  cutlass_test_unit_add_executable(
+    cutlass_test_unit_conv_device_tensorop_f8_sm89
+
+    conv2d_fprop_implicit_gemm_f8nhwc_f8nhwc_f8nhwc_tensor_op_f32_sm89.cu
+  )
 
 endif()
 

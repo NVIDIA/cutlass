@@ -139,7 +139,7 @@ public:
     // accuracy, where each mainloop iteration first accumulates into a temporary
     // set of freshly-cleared accumulators, which are subsequently added to the
     // final accumulator set.
-    static bool const kStagedAccumulation = arch::UseStagedAccumulation<typename Operator::MathOperator>::value;
+    static bool const kStagedAccumulation = arch::detail::UseStagedAccumulation<Operator>::value;
   };
 
  private:

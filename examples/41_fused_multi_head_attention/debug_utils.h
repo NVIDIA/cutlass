@@ -40,7 +40,7 @@
 // Nans & inf detection
 #define NANCHECK(frag)                         \
   {                                            \
-    for (int _i = 0; _i < frag.size(); ++_i) { \
+    for (size_t _i = 0; _i < frag.size(); ++_i) { \
       assert(std::isfinite(float(frag[_i])));  \
       assert(!std::isnan(float(frag[_i])));    \
     }                                          \
@@ -147,7 +147,7 @@ constexpr __string_view __get_type_name() {
   {                                                           \
     auto typeStr = __get_type_name<decltype(frag)>();         \
     PRINT_B0_T0("printing %s (%s)", name, typeStr.data);      \
-    for (int _start = 0; _start < frag.size(); _start += 8) { \
+    for (size_t _start = 0; _start < frag.size(); _start += 8) { \
       PRINT_ACCUM8_T0_L0_START("  ", frag, _start);           \
     }                                                         \
     /*__syncthreads();                                        \

@@ -33,7 +33,7 @@
 #include <cute/config.hpp>
 
 #include <cute/util/type_traits.hpp>
-#include <cute/numeric/int.hpp>        // sizeof_bits
+#include <cute/numeric/numeric_types.hpp>        // sizeof_bits
 
 namespace cute
 {

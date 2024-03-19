@@ -70,7 +70,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128
 
   using EpilogueSchedule = cutlass::epilogue::TmaWarpSpecialized;
   using FusionCallbacks = cutlass::epilogue::fusion::Sm90LinCombPerColumnReduce<
-    cutlass::plus, cutlass::red, float, TileShape_MNK, cutlass::half_t, float, float>;
+    cutlass::plus, cutlass::atomic_add, float, TileShape_MNK, cutlass::half_t, float, float>;
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
@@ -89,7 +89,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128
       cutlass::half_t, LayoutB, 8,
       float,
       TileShape_MNK, ClusterShape_MNK,
-      cutlass::gemm::collective::StageCountAutoCarveout<sizeof(typename CollectiveEpilogue::SharedStorage)>,
+      cutlass::gemm::collective::StageCountAutoCarveout<static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
       cutlass::gemm::KernelTmaWarpSpecializedPingpong
     >::CollectiveOp;
 
@@ -116,7 +116,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128
 
   using EpilogueSchedule = cutlass::epilogue::TmaWarpSpecialized;
   using FusionCallbacks = cutlass::epilogue::fusion::Sm90LinCombPerRowReduce<
-    cutlass::plus, cutlass::red, float, TileShape_MNK, cutlass::half_t, float, float>;
+    cutlass::plus, cutlass::atomic_add, float, TileShape_MNK, cutlass::half_t, float, float>;
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
@@ -135,7 +135,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128
       cutlass::half_t, LayoutB, 8,
       float,
       TileShape_MNK, ClusterShape_MNK,
-      cutlass::gemm::collective::StageCountAutoCarveout<sizeof(typename CollectiveEpilogue::SharedStorage)>,
+      cutlass::gemm::collective::StageCountAutoCarveout<static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
       cutlass::gemm::KernelTmaWarpSpecializedPingpong
     >::CollectiveOp;
 
@@ -162,7 +162,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128
 
   using EpilogueSchedule = cutlass::epilogue::TmaWarpSpecialized;
   using FusionCallbacks = cutlass::epilogue::fusion::Sm90LinCombScalarReduce<
-    cutlass::plus, cutlass::red, float, cutlass::half_t, float, float>;
+    cutlass::plus, cutlass::atomic_add, float, cutlass::half_t, float, float>;
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
@@ -181,7 +181,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128
       cutlass::half_t, LayoutB, 8,
       float,
       TileShape_MNK, ClusterShape_MNK,
-      cutlass::gemm::collective::StageCountAutoCarveout<sizeof(typename CollectiveEpilogue::SharedStorage)>,
+      cutlass::gemm::collective::StageCountAutoCarveout<static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
       cutlass::gemm::KernelTmaWarpSpecializedPingpong
     >::CollectiveOp;
 

@@ -121,47 +121,47 @@ public:
 struct GemmConfiguration {
 
   /// GEMM problem size
-  gemm::GemmCoord problem_size;
+  gemm::GemmCoord problem_size{};
 
   /// Leading dimension of A matrix
-  int64_t lda;
+  int64_t lda{0};
 
   /// Leading dimension of B matrix
-  int64_t ldb;
+  int64_t ldb{0};
 
   /// Leading dimension of C matrix
-  int64_t ldc;
+  int64_t ldc{0};
 
   /// Leading dimension of D matrix
-  int64_t ldd;
+  int64_t ldd{0};
 
   /// Number of partitions of K dimension
-  int split_k_slices;
+  int split_k_slices{0};
 };
 
 /// Arguments for GEMM
 struct GemmArguments {
 
   /// Pointer to A matrix
-  void const *A;
+  void const *A{nullptr};
 
   /// Pointer to B matrix
-  void const *B;
+  void const *B{nullptr};
 
   /// Pointer to C matrix
-  void const *C;
+  void const *C{nullptr};
 
   /// Pointer to D matrix
-  void *D;
+  void *D{nullptr};
 
   /// Host or device pointer to alpha scalar
-  void const *alpha;
+  void const *alpha{nullptr};
 
   /// Host or device pointer to beta scalar
-  void const *beta;
+  void const *beta{nullptr};
 
   /// Enumerant indicating whether alpha/beta point to host or device memory
-  ScalarPointerMode pointer_mode;
+  ScalarPointerMode pointer_mode{};
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -174,34 +174,34 @@ struct GemmArguments {
 struct GemmBatchedConfiguration {
 
   /// GEMM problem size
-  gemm::GemmCoord problem_size;
+  gemm::GemmCoord problem_size{};
 
   /// Leading dimension of A matrix
-  int64_t lda;
+  int64_t lda{0};
 
   /// Leading dimension of B matrix
-  int64_t ldb;
+  int64_t ldb{0};
 
   /// Leading dimension of C matrix
-  int64_t ldc;
+  int64_t ldc{0};
 
   /// Leading dimension of D matrix
-  int64_t ldd;
+  int64_t ldd{0};
 
   /// Stride between instances of the A matrix in memory
-  int64_t batch_stride_A;
+  int64_t batch_stride_A{0};
 
   /// Stride between instances of the B matrix in memory
-  int64_t batch_stride_B;
+  int64_t batch_stride_B{0};
 
   /// Stride between instances of the C matrix in memory
-  int64_t batch_stride_C;
+  int64_t batch_stride_C{0};
 
   /// Stride between instances of the D matrix in memory
-  int64_t batch_stride_D;
+  int64_t batch_stride_D{0};
 
   /// Number of GEMMs in batch
-  int batch_count;
+  int batch_count{1};
 };
 
 /// Arguments to batched GEMM
@@ -216,32 +216,32 @@ using GemmBatchedArguments = GemmArguments;
 
 struct GemmArrayConfiguration {
 
-  gemm::GemmCoord problem_size;
+  gemm::GemmCoord problem_size{};
 
   /// Leading dimension of A matrix
-  int64_t lda;
+  int64_t lda{0};
 
   /// Leading dimension of B matrix
-  int64_t ldb;
+  int64_t ldb{0};
 
   /// Leading dimension of C matrix
-  int64_t ldc;
+  int64_t ldc{0};
 
   /// Leading dimension of D matrix
-  int64_t ldd;
+  int64_t ldd{0};
 
-  int batch_count;
+  int batch_count{1};
 };
 
 /// Arguments for GEMM - used by all the GEMM operations
 struct GemmArrayArguments {
-  void const * const *A;
-  void const * const *B;
-  void const * const *C;
-  void * const *D;
-  void const *alpha;
-  void const *beta;
-  ScalarPointerMode pointer_mode;
+  void const * const *A{nullptr};
+  void const * const *B{nullptr};
+  void const * const *C{nullptr};
+  void * const *D{nullptr};
+  void const *alpha{nullptr};
+  void const *beta{nullptr};
+  ScalarPointerMode pointer_mode{};
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -253,45 +253,45 @@ struct GemmArrayArguments {
 
 struct GemmUniversalConfiguration {
 
-  GemmUniversalMode mode;
-  gemm::GemmCoord problem_size;
-  int batch_count;
+  GemmUniversalMode mode{GemmUniversalMode::kGemm};
+  gemm::GemmCoord problem_size{};
+  int batch_count{1};
 
-  int64_t lda;
-  int64_t ldb;
-  int64_t ldc;
-  int64_t ldd;
+  int64_t lda{0};
+  int64_t ldb{0};
+  int64_t ldc{0};
+  int64_t ldd{0};
 };
 
 struct GemmUniversalArguments {
   // NOTE: these are replicated for 3.0 interfaces
-  gemm::GemmCoord problem_size;
-  int batch_count;
+  gemm::GemmCoord problem_size{};
+  int batch_count{1};
 
-  void const *A;
-  void const *B;
-  void const *C;
-  void *D;
+  void const *A{nullptr};
+  void const *B{nullptr};
+  void const *C{nullptr};
+  void *D{nullptr};
 
-  void const *alpha;
-  void const *beta;
-  ScalarPointerMode pointer_mode;
+  void const *alpha{nullptr};
+  void const *beta{nullptr};
+  ScalarPointerMode pointer_mode{};
 
   // NOTE: these are replicated for 3.0 interfaces
-  int64_t lda;
-  int64_t ldb;
-  int64_t ldc;
-  int64_t ldd;
+  int64_t lda{0};
+  int64_t ldb{0};
+  int64_t ldc{0};
+  int64_t ldd{0};
 
-  int64_t batch_stride_A;
-  int64_t batch_stride_B;
-  int64_t batch_stride_C;
-  int64_t batch_stride_D;
+  int64_t batch_stride_A{0};
+  int64_t batch_stride_B{0};
+  int64_t batch_stride_C{0};
+  int64_t batch_stride_D{0};
 
   // Needed for some 3.x kernels
-  int sm_count;
+  int sm_count{0};
 
-  library::RasterOrder raster_order;
+  library::RasterOrder raster_order{};
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -303,53 +303,42 @@ struct GemmUniversalArguments {
 
 struct GemmPlanarComplexConfiguration {
 
-  GemmUniversalMode mode;
-  gemm::GemmCoord problem_size;
-  int batch_count;
-
-  int64_t lda_real;
-  int64_t lda_imag;
-
-  int64_t ldb_real;
-  int64_t ldb_imag;
-
-  int64_t ldc_real;
-  int64_t ldc_imag;
-
-  int64_t ldd_real;
-  int64_t ldd_imag;
+  GemmUniversalMode mode{GemmUniversalMode::kGemm};
+  gemm::GemmCoord problem_size{};
+  int batch_count{1};
+  int64_t lda_real{0};
+  int64_t lda_imag{0};
+  int64_t ldb_real{0};
+  int64_t ldb_imag{0};
+  int64_t ldc_real{0};
+  int64_t ldc_imag{0};
+  int64_t ldd_real{0};
+  int64_t ldd_imag{0};
 };
 
 /// Arguments for planar complex GEMMs
 struct GemmPlanarComplexArguments {
 
-  void const *A_real;
-  void const *A_imag;
+  void const *A_real{nullptr};
+  void const *A_imag{nullptr};
+  void const *B_real{nullptr};
+  void const *B_imag{nullptr};
+  void const *C_real{nullptr};
+  void const *C_imag{nullptr};
+  void *D_real{nullptr};
+  void *D_imag{nullptr};
+  void const *alpha{nullptr};
+  void const *beta{nullptr};
+  ScalarPointerMode pointer_mode{};
 
-  void const *B_real;
-  void const *B_imag;
-
-  void const *C_real;
-  void const *C_imag;
-
-  void *D_real;
-  void *D_imag;
-
-  void const *alpha;
-  void const *beta;
-  ScalarPointerMode pointer_mode;
-
-  int64_t batch_stride_A_real;
-  int64_t batch_stride_A_imag;
-
-  int64_t batch_stride_B_real;
-  int64_t batch_stride_B_imag;
-
-  int64_t batch_stride_C_real;
-  int64_t batch_stride_C_imag;
-
-  int64_t batch_stride_D_real;
-  int64_t batch_stride_D_imag;
+  int64_t batch_stride_A_real{0};
+  int64_t batch_stride_A_imag{0};
+  int64_t batch_stride_B_real{0};
+  int64_t batch_stride_B_imag{0};
+  int64_t batch_stride_C_real{0};
+  int64_t batch_stride_C_imag{0};
+  int64_t batch_stride_D_real{0};
+  int64_t batch_stride_D_imag{0};
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -358,41 +347,38 @@ struct GemmPlanarComplexArguments {
 /// from memory.
 struct GemmPlanarComplexArrayConfiguration {
 
-  gemm::GemmCoord problem_size;
-  int batch_count;
+  gemm::GemmCoord problem_size{};
+  int batch_count{1};
 
-  int64_t lda_real;
-  int64_t lda_imag;
-
-  int64_t ldb_real;
-  int64_t ldb_imag;
-
-  int64_t ldc_real;
-  int64_t ldc_imag;
-
-  int64_t ldd_real;
-  int64_t ldd_imag;
+  int64_t lda_real{0};
+  int64_t lda_imag{0};
+  int64_t ldb_real{0};
+  int64_t ldb_imag{0};
+  int64_t ldc_real{0};
+  int64_t ldc_imag{0};
+  int64_t ldd_real{0};
+  int64_t ldd_imag{0};
 };
 
 /// Arguments for planar complex GEMMs
 struct GemmPlanarComplexArrayArguments {
 
-  int const *M;
-  int const *N;
-  int const *K;
+  int const *M{nullptr};
+  int const *N{nullptr};
+  int const *K{nullptr};
 
-  void const * const * A_real;
-  void const * const * A_imag;
-  void const * const * B_real;
-  void const * const * B_imag;
-  void const * const * C_real;
-  void const * const * C_imag;
-  void * const * D_real;
-  void * const * D_imag;
+  void const * const * A_real{nullptr};
+  void const * const * A_imag{nullptr};
+  void const * const * B_real{nullptr};
+  void const * const * B_imag{nullptr};
+  void const * const * C_real{nullptr};
+  void const * const * C_imag{nullptr};
+  void * const * D_real{nullptr};
+  void * const * D_imag{nullptr};
 
-  void const * alpha;
-  void const * beta;
-  ScalarPointerMode pointer_mode;
+  void const * alpha{nullptr};
+  void const * beta{nullptr};
+  ScalarPointerMode pointer_mode{};
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -403,29 +389,27 @@ struct GemmPlanarComplexArrayArguments {
 // GemmKind:      Grouped
 
 struct GemmGroupedConfiguration {
-
-  int problem_count;
-  int threadblock_count;
-
+  int problem_count{0};
+  int threadblock_count{0};
 };
 
 struct GemmGroupedArguments {
 
-  gemm::GemmCoord *problem_sizes;
+  gemm::GemmCoord *problem_sizes{nullptr};
 
-  void * ptr_A;
-  void * ptr_B;
-  void * ptr_C;
-  void * ptr_D;
+  void * ptr_A{nullptr};
+  void * ptr_B{nullptr};
+  void * ptr_C{nullptr};
+  void * ptr_D{nullptr};
 
-  int64_t *lda;
-  int64_t *ldb;
-  int64_t *ldc;
-  int64_t *ldd;
+  int64_t *lda{nullptr};
+  int64_t *ldb{nullptr};
+  int64_t *ldc{nullptr};
+  int64_t *ldd{nullptr};
 
-  void const *alpha;
-  void const *beta;
-  ScalarPointerMode pointer_mode;
+  void const *alpha{nullptr};
+  void const *beta{nullptr};
+  ScalarPointerMode pointer_mode{};
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -436,35 +420,31 @@ struct GemmGroupedArguments {
 /// Computes GEMM assuming one of the inputs has 2:4 structured sparsity.
 struct SparseGemmConfiguration {
 
-  GemmUniversalMode mode;
-  gemm::GemmCoord problem_size;
-  int batch_count;                /// number of sparse matrix products in batch
-
-  int64_t lda;                    /// leading dimension of A operand
-  int64_t ldb;                    /// leading dimension of B operand
-  int64_t ldc;                    /// leading dimension of C operand
-  int64_t ldd;                    /// leading dimension of D operand
-  int64_t lde;                    /// leading dimension of E operand (metadata matrix)
-
-  int64_t batch_stride_A;         // stride between matrices
-  int64_t batch_stride_B;         // stride between matrices
-  int64_t batch_stride_C;         // stride between matrices
-  int64_t batch_stride_D;         // stride between matrices
-  int64_t batch_stride_E;         // stride between matrices
+  GemmUniversalMode mode{GemmUniversalMode::kGemm};
+  gemm::GemmCoord problem_size{};
+  int batch_count{1};         /// number of sparse matrix products in batch
+  int64_t lda{0};             /// leading dimension of A operand
+  int64_t ldb{0};             /// leading dimension of B operand
+  int64_t ldc{0};             /// leading dimension of C operand
+  int64_t ldd{0};             /// leading dimension of D operand
+  int64_t lde{0};             /// leading dimension of E operand (metadata matrix)
+  int64_t batch_stride_A{0};  // stride between matrices
+  int64_t batch_stride_B{0};  // stride between matrices
+  int64_t batch_stride_C{0};  // stride between matrices
+  int64_t batch_stride_D{0};  // stride between matrices
+  int64_t batch_stride_E{0};  // stride between matrices
 };
 
 /// Arguments for sparse GEMMs
 struct SparseGemmArguments {
-
-  void const *A;                    /// pointer to A matrix
-  void const *B;                    /// pointer to B matrix
-  void const *C;                    /// pointer to C matrix
-  void *D;                          /// pointer to D matrix
-  void const *E;                    /// pointer to E matrix (metadata)
-
-  void const *alpha;                /// pointer to alpha scalar
-  void const *beta;                 /// pointer to beta scalar
-  ScalarPointerMode pointer_mode;   /// enumerant indicating whether alpha/beta pointers are host
+  void const *A{nullptr};          /// pointer to A matrix
+  void const *B{nullptr};          /// pointer to B matrix
+  void const *C{nullptr};          /// pointer to C matrix
+  void *D{nullptr};                  /// pointer to D matrix
+  void const *E{nullptr};          /// pointer to E matrix (metadata)
+  void const *alpha{nullptr};      /// pointer to alpha scalar
+  void const *beta{nullptr};       /// pointer to beta scalar
+  ScalarPointerMode pointer_mode{}; /// enumerant indicating whether alpha/beta pointers are host
                                     ///   or device pointers.
 };
 
@@ -478,52 +458,52 @@ struct SparseGemmArguments {
 struct RankKConfiguration {
 
   /// SYRK problem size
-  gemm::GemmCoord problem_size;
+  gemm::GemmCoord problem_size{};
 
   /// Leading dimension of A matrix
-  int64_t lda;
+  int64_t lda{0};
 
   /// Leading dimension of B matrix
-  int64_t ldb;
+  int64_t ldb{0};
 
   /// Leading dimension of C matrix
-  int64_t ldc;
+  int64_t ldc{0};
 
   /// Leading dimension of D matrix
-  int64_t ldd;
+  int64_t ldd{0};
 
   /// Batch Count
-  int batch_count;
+  int batch_count{1};
 };
 
 /// Arguments for (Syrk, Herk, Syr2k, Her2k)
 struct RankKArguments {
 
   /// Pointer to A matrix
-  void const *A;
+  void const *A{nullptr};
 
   /// Pointer to B matrix (used only for Syr2k and Her2k)
-  void const *B;
+  void const *B{nullptr};
 
   /// Pointer to C matrix
-  void const *C;
+  void const *C{nullptr};
 
   /// Pointer to D matrix
-  void *D;
+  void *D{nullptr};
 
   /// Host or device pointer to alpha scalar
-  void const *alpha;
+  void const *alpha{nullptr};
 
   /// Host or device pointer to beta scalar
-  void const *beta;
+  void const *beta{nullptr};
 
   /// Enumerant indicating whether alpha/beta point to host or device memory
-  ScalarPointerMode pointer_mode;
+  ScalarPointerMode pointer_mode{};
 
-  int64_t batch_stride_A;
-  int64_t batch_stride_B;
-  int64_t batch_stride_C;
-  int64_t batch_stride_D;
+  int64_t batch_stride_A{0};
+  int64_t batch_stride_B{0};
+  int64_t batch_stride_C{0};
+  int64_t batch_stride_D{0};
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -536,45 +516,45 @@ struct RankKArguments {
 struct TrmmConfiguration {
 
   /// TRMM problem size
-  gemm::GemmCoord problem_size;
+  gemm::GemmCoord problem_size{};
 
   /// Leading dimension of A matrix
-  int64_t lda;
+  int64_t lda{0};
 
   /// Leading dimension of B matrix
-  int64_t ldb;
+  int64_t ldb{0};
 
   /// Leading dimension of D matrix
-  int64_t ldd;
+  int64_t ldd{0};
 
   /// Batch Count
-  int batch_count;
+  int batch_count{1};
 };
 
 /// Arguments for TRMM
 struct TrmmArguments {
 
   /// Pointer to A matrix
-  void const *A;
+  void const *A{nullptr};
 
   /// Pointer to B matrix
-  void const *B;
+  void const *B{nullptr};
 
   /// Pointer to D matrix
-  void *D;
+  void *D{nullptr};
 
   /// Host or device pointer to alpha scalar
-  void const *alpha;
+  void const *alpha{nullptr};
 
   /// Host or device pointer to beta scalar
-  void const *beta;
+  void const *beta{nullptr};
 
   /// Enumerant indicating whether alpha/beta point to host or device memory
-  ScalarPointerMode pointer_mode;
+  ScalarPointerMode pointer_mode{};
 
-  int64_t batch_stride_A;
-  int64_t batch_stride_B;
-  int64_t batch_stride_D;
+  int64_t batch_stride_A{0};
+  int64_t batch_stride_B{0};
+  int64_t batch_stride_D{0};
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -587,52 +567,52 @@ struct TrmmArguments {
 struct SymmConfiguration {
 
   /// SYMM/HEMM problem size
-  gemm::GemmCoord problem_size;
+  gemm::GemmCoord problem_size{};
 
   /// Leading dimension of A matrix
-  int64_t lda;
+  int64_t lda{0};
 
   /// Leading dimension of B matrix
-  int64_t ldb;
+  int64_t ldb{0};
 
   /// Leading dimension of C matrix
-  int64_t ldc;
+  int64_t ldc{0};
 
   /// Leading dimension of D matrix
-  int64_t ldd;
+  int64_t ldd{0};
 
   /// Batch Count
-  int batch_count;
+  int batch_count{1};
 };
 
 /// Arguments for (Symm, Hemm)
 struct SymmArguments {
 
   /// Pointer to A matrix
-  void const *A;
+  void const *A{nullptr};
 
   /// Pointer to B matrix
-  void const *B;
+  void const *B{nullptr};
 
   /// Pointer to C matrix
-  void const *C;
+  void const *C{nullptr};
 
   /// Pointer to D matrix
-  void *D;
+  void *D{nullptr};
 
   /// Host or device pointer to alpha scalar
-  void const *alpha;
+  void const *alpha{nullptr};
 
   /// Host or device pointer to beta scalar
-  void const *beta;
+  void const *beta{nullptr};
 
   /// Enumerant indicating whether alpha/beta point to host or device memory
-  ScalarPointerMode pointer_mode;
+  ScalarPointerMode pointer_mode{};
 
-  int64_t batch_stride_A;
-  int64_t batch_stride_B;
-  int64_t batch_stride_C;
-  int64_t batch_stride_D;
+  int64_t batch_stride_A{0};
+  int64_t batch_stride_B{0};
+  int64_t batch_stride_C{0};
+  int64_t batch_stride_D{0};
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -649,16 +629,16 @@ struct Conv2dConfiguration {
   /// Conv2d problem size
   //  contains strictly conv2d size (N,H,W,C,K,R,S,P,Q,padding,stride,dilation,mode)
   //  also includes (split_k_slices, groups)
-  conv::Conv2dProblemSize problem_size;
+  conv::Conv2dProblemSize problem_size{};
 
   // stride of operand A
-  std::vector<int64_t> stride_a;
+  std::vector<int64_t> stride_a{};
 
   // stride of operand B
-  std::vector<int64_t> stride_b;
+  std::vector<int64_t> stride_b{};
 
   // stride of operand C
-  std::vector<int64_t> stride_c;
+  std::vector<int64_t> stride_c{};
 };
 
 
@@ -668,24 +648,24 @@ struct Conv2dConfiguration {
 //
 struct Conv3dConfiguration {
 
-  conv::SplitKMode split_k_mode;
+  conv::SplitKMode split_k_mode{};
 
   /// Conv2d problem size
   //  contains strictly conv2d size (N,D,H,W,C,K,T,R,S,Z,P,Q,padding,stride,dilation,mode)
   //  also includes (split_k_slices, groups)
-  conv::Conv3dProblemSize problem_size;
+  conv::Conv3dProblemSize problem_size{};
 
   /// Layout object for activations tensor
-  layout::TensorNDHWC layout_activations;
+  layout::TensorNDHWC layout_activations{};
 
   /// Layout object for filters tensor
-  layout::TensorNDHWC layout_filters;
+  layout::TensorNDHWC layout_filters{};
 
   /// Layout object for source tensor
-  layout::TensorNDHWC layout_source;
+  layout::TensorNDHWC layout_source{};
 
   /// Layout object for output tensor
-  layout::TensorNDHWC layout_output;
+  layout::TensorNDHWC layout_output{};
 
   //
   // Methods
@@ -727,29 +707,28 @@ struct ConvArguments {
   /// ImplicitGemm matrices A, B, C, D
   /////////////////////////////////////////////////////////
   /// pointer to implicit gemm matrix A
-  void const *A;
+  void const *A{nullptr};
 
   /// pointer to implicit gemm matrix B
-  void const *B;
+  void const *B{nullptr};
 
   /// pointer to reordered matrix B
-  void const *reordered_B;
+  void const *reordered_B{nullptr};
 
   /// pointer to implicit gemm matrix C
-  void const *C;
+  void const *C{nullptr};
 
   /// pointer to implicit gemm destination matrix D
-  void *D;
+  void *D{nullptr};
 
   /// Host or device pointer to alpha scalar
-  void const *alpha;
+  void const *alpha{nullptr};
 
   /// Host or device pointer to beta scalar
-  void const *beta;
+  void const *beta{nullptr};
 
   /// Enumerant indicating whether alpha/beta point to host or device memory
-  ScalarPointerMode pointer_mode;
-
+  ScalarPointerMode pointer_mode{};
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -761,47 +740,47 @@ struct ConvArguments {
 struct ReductionConfiguration {
 
   /// Reduction problem size
-  MatrixCoord problem_size;
+  MatrixCoord problem_size{};
 
   /// Number of partitions to reduce
-  int partitions;
+  int partitions{0};
 
   /// Number of elements between each partition
-  int64_t partition_stride;
+  int64_t partition_stride{0};
 
   /// leading dimension of 'w'orkspace operand
-  int64_t ldw;
+  int64_t ldw{0};
 
   /// leading dimension of 's'ource operand
-  int64_t lds;
+  int64_t lds{0};
 
   /// leading dimension of 'd'estination operand
-  int64_t ldd;
+  int64_t ldd{0};
 };
 
 /// Arguments for Reduction
 struct ReductionArguments {
 
   /// Pointer to workspace matrix
-  void const *workspace;
+  void const *workspace{nullptr};
 
   /// Pointer to source matrix
-  void const *source;
+  void const *source{nullptr};
 
   /// Pointer to destination matrix
-  void *destination;
+  void *destination{nullptr};
 
   /// pointer to reference matrix
-  void *reference;
+  void *reference{nullptr};
 
   /// Host or device pointer to alpha scalar
-  void const *alpha;
+  void const *alpha{nullptr};
 
   /// Host or device pointer to beta scalar
-  void const *beta;
+  void const *beta{nullptr};
 
   /// Enumerant indicating whether alpha/beta point to host or device memory
-  ScalarPointerMode pointer_mode;
+  ScalarPointerMode pointer_mode{};
 };
 
 } // namespace library

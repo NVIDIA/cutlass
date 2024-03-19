@@ -60,11 +60,11 @@ namespace threadblock {
 ///            WriteableContiguousTileIteratorConcept
 ///
 template <typename Shape_, typename Element_, int AdvanceRank,
-          typename ThreadMap_, int Alignment>
+          typename ThreadMap_, int Alignment, int Crosswise>
 class RegularTileAccessIterator<
     Shape_, Element_,
     layout::TensorOpMultiplicandCongruous<sizeof_bits<Element_>::value,
-                                          int(128 / sizeof(Element_))>,
+                                          Crosswise>,
     AdvanceRank, ThreadMap_, Alignment> {
  public:
   static_assert(
@@ -76,9 +76,10 @@ class RegularTileAccessIterator<
   using Element = Element_;
   using Layout =
       layout::TensorOpMultiplicandCongruous<sizeof_bits<Element_>::value,
-                                            int(128 / sizeof(Element_))>;
+                                            Crosswise>;
   static int const kAdvanceRank = AdvanceRank;
   static int const kAlignment = Alignment;
+  static int const kCrosswise = Crosswise;
 
   using Index = typename Layout::Index;
   using LongIndex = typename Layout::LongIndex;
@@ -134,7 +135,7 @@ class RegularTileAccessIterator<
   RegularTileAccessIterator(TensorRef ref,  ///< Pointer to start of tensor
                             int thread_id   ///< ID of each participating thread
                             )
-      : stride_(ref.stride(0) / Layout::kElementsPerAccess),
+      : stride_(ref.stride(0) * Layout::kFactor / Layout::kElementsPerAccess),
         byte_offset_(0) {
     layout::PitchLinearCoord thread_offset_base =
         ThreadMap::initial_offset(thread_id);
@@ -175,7 +176,7 @@ class RegularTileAccessIterator<
     AccessType *access_ptr = pointer_[iteration_strided_ & 1];
     int stride_idx = (iteration_strided_ & ~1);
 
-    int access_offset = stride_idx * ThreadMap::Delta::kStrided * stride_ +
+    int access_offset = stride_idx * ThreadMap::Delta::kStrided * stride_ / Layout::kFactor +
                         iteration_contiguous_ * ThreadMap::Delta::kContiguous /
                             ThreadMap::kElementsPerAccess;
 
@@ -220,9 +221,9 @@ class RegularTileAccessIterator<
   /// Adds a tile offset
   CUTLASS_DEVICE
   void add_tile_offset(TensorCoord const &coord) {
-    add_pointer_offset(coord.contiguous() * Shape::kContiguous +
+    add_pointer_offset(coord.contiguous() * Shape::kContiguous * Layout::kFactor +
                        coord.strided() * Shape::kStrided * stride_ *
-                           Layout::kElementsPerAccess);
+                           Layout::kElementsPerAccess / Layout::kFactor);
   }
 };
 
@@ -236,11 +237,11 @@ class RegularTileAccessIterator<
 ///            WriteableContiguousTileIteratorConcept
 ///
 template <typename Shape_, typename Element_, int AdvanceRank,
-          typename ThreadMap_, int Alignment>
+          typename ThreadMap_, int Alignment, int Crosswise>
 class RegularTileAccessIterator<
     Shape_, Element_,
     layout::ColumnMajorTensorOpMultiplicandCongruous<
-        sizeof_bits<Element_>::value, int(128 / sizeof(Element_))>,
+        sizeof_bits<Element_>::value, Crosswise>,
     AdvanceRank, ThreadMap_, Alignment> {
  public:
   static_assert(
@@ -251,7 +252,7 @@ class RegularTileAccessIterator<
   using Shape = Shape_;
   using Element = Element_;
   using Layout = layout::ColumnMajorTensorOpMultiplicandCongruous<
-      sizeof_bits<Element_>::value, int(128 / sizeof(Element_))>;
+      sizeof_bits<Element_>::value, Crosswise>;
   static int const kAdvanceRank = AdvanceRank;
   static int const kAlignment = Alignment;
 
@@ -267,7 +268,7 @@ class RegularTileAccessIterator<
   using UnderlyingIterator = RegularTileAccessIterator<
       layout::PitchLinearShape<Shape::kRow, Shape::kColumn>, Element,
       layout::TensorOpMultiplicandCongruous<sizeof_bits<Element_>::value,
-                                            int(128 / sizeof(Element_))>,
+                                            Crosswise>,
       (kAdvanceRank == 0 ? 0 : 1), ThreadMap_>;
 
   using AccessType = typename UnderlyingIterator::AccessType;
@@ -333,11 +334,11 @@ class RegularTileAccessIterator<
 ///            WriteableContiguousTileIteratorConcept
 ///
 template <typename Shape_, typename Element_, int AdvanceRank,
-          typename ThreadMap_, int Alignment>
+          typename ThreadMap_, int Alignment, int Crosswise>
 class RegularTileAccessIterator<
     Shape_, Element_,
     layout::RowMajorTensorOpMultiplicandCongruous<sizeof_bits<Element_>::value,
-                                                  int(128 / sizeof(Element_))>,
+                                                  Crosswise>,
     AdvanceRank, ThreadMap_, Alignment> {
  public:
   static_assert(
@@ -348,7 +349,7 @@ class RegularTileAccessIterator<
   using Shape = Shape_;
   using Element = Element_;
   using Layout = layout::RowMajorTensorOpMultiplicandCongruous<
-      sizeof_bits<Element_>::value, int(128 / sizeof(Element_))>;
+      sizeof_bits<Element_>::value, Crosswise>;
   static int const kAdvanceRank = AdvanceRank;
   static int const kAlignment = Alignment;
 
@@ -364,7 +365,7 @@ class RegularTileAccessIterator<
   using UnderlyingIterator = RegularTileAccessIterator<
       layout::PitchLinearShape<Shape::kColumn, Shape::kRow>, Element,
       layout::TensorOpMultiplicandCongruous<sizeof_bits<Element_>::value,
-                                            int(128 / sizeof(Element_))>,
+                                            Crosswise>,
       (kAdvanceRank == 0 ? 1 : 0), ThreadMap_>;
 
   using AccessType = typename UnderlyingIterator::AccessType;

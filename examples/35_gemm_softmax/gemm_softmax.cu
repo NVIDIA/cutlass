@@ -456,7 +456,7 @@ struct Testbed {
   bool verify_tensor(std::vector<Element> vector_Input, \
                        std::vector<Element> vector_Input_Ref) {
 
-    int64_t size = (vector_Input.size() < vector_Input_Ref.size()) ? vector_Input.size() : vector_Input_Ref.size();
+    auto size = int64_t((vector_Input.size() < vector_Input_Ref.size()) ? vector_Input.size() : vector_Input_Ref.size());
     float abs_tol = options.tolerance;
     float rel_tol = options.tolerance;
     

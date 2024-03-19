@@ -171,6 +171,30 @@ struct TensorNHWCShape {
   }
 };
 
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Shape of a conv2d stride, which controls how the filter convolves around the input volume
+template <
+  /// Stride in horizontal direction
+  int u = 1,
+  /// Stride in vertical direction
+  int v = 1
+>
+struct Stride2D {
+  static int const kU = u;
+  static int const kV = v;
+
+  //
+  // Static member functions
+  //
+
+  /// Returns a Coord object
+  CUTLASS_HOST_DEVICE
+  static Coord<2> toCoord() {
+    return make_Coord(kU, kV);
+  }
+};
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace conv

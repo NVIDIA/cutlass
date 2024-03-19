@@ -167,58 +167,39 @@ public:
     // Data members
     //
 
-    GemmCoord *problem_sizes0;
-    GemmCoord *problem_sizes1;
+    GemmCoord *problem_sizes0{nullptr};
+    GemmCoord *problem_sizes1{nullptr};
 
-    int problem_count;
-    int threadblock_count;
+    int problem_count{0};
+    int threadblock_count{0};
 
-    ElementQ ** ptr_Q;
-    ElementK ** ptr_K;
-    ElementP ** ptr_P;
-    ElementV ** ptr_V;
-    ElementO ** ptr_O;
-    ElementOAccum ** ptr_O_accum;
+    ElementQ ** ptr_Q{nullptr};
+    ElementK ** ptr_K{nullptr};
+    ElementP ** ptr_P{nullptr};
+    ElementV ** ptr_V{nullptr};
+    ElementO ** ptr_O{nullptr};
+    ElementOAccum ** ptr_O_accum{nullptr};
 
-    typename LayoutQ::Stride::LongIndex *ldq;
-    typename LayoutK::Stride::LongIndex *ldk;
-    typename LayoutP::Stride::LongIndex *ldv;
-    typename LayoutO::Stride::LongIndex *ldo;
-
-    // Scale
-    ElementAccumulator scale;
+    typename LayoutQ::Stride::LongIndex *ldq{nullptr};
+    typename LayoutK::Stride::LongIndex *ldk{nullptr};
+    typename LayoutP::Stride::LongIndex *ldv{nullptr};
+    typename LayoutO::Stride::LongIndex *ldo{nullptr};
 
     // Whether causal masking is to be performed
-    bool causal;
+    bool causal{false};
+
+    // Scale
+    ElementAccumulator scale{0};
 
     // Only used by device-level operator
-    GemmCoord *host_problem_sizes;
+    GemmCoord *host_problem_sizes{nullptr};
 
     //
     // Methods
     //
-
-    /// Default ctor
-    CUTLASS_HOST_DEVICE
-    Arguments():
-      problem_count(0),
-      threadblock_count(0),
-      ptr_Q(nullptr),
-      ptr_K(nullptr),
-      ptr_P(nullptr),
-      ptr_V(nullptr),
-      ptr_O(nullptr),
-      ptr_O_accum(nullptr),
-      ldq(nullptr),
-      ldk(nullptr),
-      ldv(nullptr),
-      ldo(nullptr),
-      scale(0),
-      causal(false),
-      host_problem_sizes(nullptr)
-    {
-
-    }
+  
+      /// Default ctor
+    Arguments() = default;
 
     /// Ctor
     CUTLASS_HOST_DEVICE

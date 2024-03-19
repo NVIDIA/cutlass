@@ -133,46 +133,32 @@ public:
     // Data members
     //
 
-    GemmCoord *problem_sizes;
-    int problem_count;
-    int threadblock_count;
+    GemmCoord *problem_sizes{nullptr};
+    int problem_count{0};
+    int threadblock_count{0};
 
-    typename EpilogueOutputOp::Params output_op;
+    typename EpilogueOutputOp::Params output_op{};
 
-    ElementA ** ptr_A;
-    ElementB ** ptr_B;
-    ElementC ** ptr_C;
-    ElementC ** ptr_D;
+    ElementA ** ptr_A{nullptr};
+    ElementB ** ptr_B{nullptr};
+    ElementC ** ptr_C{nullptr};
+    ElementC ** ptr_D{nullptr};
 
-    typename LayoutA::Stride::LongIndex *lda;
-    typename LayoutB::Stride::LongIndex *ldb;
-    typename LayoutC::Stride::LongIndex *ldc;
-    typename LayoutC::Stride::LongIndex *ldd;
+    typename LayoutA::Stride::LongIndex *lda{nullptr};
+    typename LayoutB::Stride::LongIndex *ldb{nullptr};
+    typename LayoutC::Stride::LongIndex *ldc{nullptr};
+    typename LayoutC::Stride::LongIndex *ldd{nullptr};
 
     // Only used by device-level operator
-    GemmCoord *host_problem_sizes;
+    GemmCoord *host_problem_sizes{nullptr};
+
 
     //
     // Methods
     //
 
     /// Default ctor
-    CUTLASS_HOST_DEVICE
-    Arguments(): 
-      problem_count(0),
-      threadblock_count(0), 
-      ptr_A(nullptr), 
-      ptr_B(nullptr), 
-      ptr_C(nullptr), 
-      ptr_D(nullptr), 
-      lda(nullptr),
-      ldb(nullptr),
-      ldc(nullptr),
-      ldd(nullptr),
-      host_problem_sizes(nullptr)
-    {
-
-    }
+    Arguments() = default;
 
     /// Ctor
     CUTLASS_HOST_DEVICE
@@ -216,36 +202,26 @@ public:
   /// Parameters structure
   struct Params {
 
-    typename ProblemVisitor::Params problem_visitor;
-    int threadblock_count;
+    typename ProblemVisitor::Params problem_visitor{};
+    int threadblock_count{0};
 
-    typename EpilogueOutputOp::Params output_op;
+    typename EpilogueOutputOp::Params output_op{};
 
-    ElementA ** ptr_A;
-    ElementB ** ptr_B;
-    ElementC ** ptr_C;
-    ElementC ** ptr_D;
+    ElementA ** ptr_A{nullptr};
+    ElementB ** ptr_B{nullptr};
+    ElementC ** ptr_C{nullptr};
+    ElementC ** ptr_D{nullptr};
 
-    typename LayoutA::Stride::LongIndex *lda;
-    typename LayoutB::Stride::LongIndex *ldb;
-    typename LayoutC::Stride::LongIndex *ldc;
-    typename LayoutC::Stride::LongIndex *ldd;
+    typename LayoutA::Stride::LongIndex *lda{nullptr};
+    typename LayoutB::Stride::LongIndex *ldb{nullptr};
+    typename LayoutC::Stride::LongIndex *ldc{nullptr};
+    typename LayoutC::Stride::LongIndex *ldd{nullptr};
 
     //
     // Methods
     //
 
-    CUTLASS_HOST_DEVICE
-    Params():
-      ptr_A(nullptr),
-      ptr_B(nullptr),
-      ptr_C(nullptr),
-      ptr_D(nullptr),
-      lda(nullptr),
-      ldb(nullptr),
-      ldc(nullptr),
-      ldd(nullptr)
-    { }
+    Params() = default;
 
     CUTLASS_HOST_DEVICE
     Params(Arguments const &args,

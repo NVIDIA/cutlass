@@ -111,59 +111,52 @@ public:
     // Data members
     //
 
-    typename EpilogueOutputOp::Params epilogue;
+    typename EpilogueOutputOp::Params epilogue{};
 
-    void const * ptr_A;
-    void const * ptr_B;
-    void const * ptr_var;
-    void const * ptr_mean;
-    void const * ptr_gamma;
-    void const * ptr_beta;
-    void const * ptr_C;
-    void * ptr_D;
+    void const * ptr_A{nullptr};
+    void const * ptr_B{nullptr};
+    void const * ptr_var{nullptr};
+    void const * ptr_mean{nullptr};
+    void const * ptr_gamma{nullptr};
+    void const * ptr_beta{nullptr};
+    void const * ptr_C{nullptr};
+    void * ptr_D{nullptr};
 
-    int64_t batch_stride_A;
-    int64_t batch_stride_B;
-    int64_t batch_stride_var;
-    int64_t batch_stride_mean;
-    int64_t batch_stride_gamma;
-    int64_t batch_stride_beta;
-    int64_t batch_stride_C;
+    int64_t batch_stride_A{0};
+    int64_t batch_stride_B{0};
+    int64_t batch_stride_var{0};
+    int64_t batch_stride_mean{0};
+    int64_t batch_stride_gamma{0};
+    int64_t batch_stride_beta{0};
+    int64_t batch_stride_C{0};
 
-    typename LayoutA::Stride stride_a;
-    typename LayoutB::Stride stride_b;
-    typename LayoutScaleBias::Stride stride_var;
-    typename LayoutScaleBias::Stride stride_mean;
-    typename LayoutScaleBias::Stride stride_gamma;
-    typename LayoutScaleBias::Stride stride_beta;
-    typename LayoutC::Stride stride_c;
-    typename LayoutC::Stride stride_d;
+    typename LayoutA::Stride stride_a{};
+    typename LayoutB::Stride stride_b{};
+    typename LayoutScaleBias::Stride stride_var{};
+    typename LayoutScaleBias::Stride stride_mean{};
+    typename LayoutScaleBias::Stride stride_gamma{};
+    typename LayoutScaleBias::Stride stride_beta{};
+    typename LayoutC::Stride stride_c{};
+    typename LayoutC::Stride stride_d{};
 
-    typename LayoutA::Stride::LongIndex lda;
-    typename LayoutB::Stride::LongIndex ldb;
-    typename LayoutScaleBias::Stride::LongIndex ld_var;
-    typename LayoutScaleBias::Stride::LongIndex ld_mean;
-    typename LayoutScaleBias::Stride::LongIndex ld_gamma;
-    typename LayoutScaleBias::Stride::LongIndex ld_beta;
-    typename LayoutC::Stride::LongIndex ldc;
-    typename LayoutC::Stride::LongIndex ldd;
+    typename LayoutA::Stride::LongIndex lda{};
+    typename LayoutB::Stride::LongIndex ldb{};
+    typename LayoutScaleBias::Stride::LongIndex ld_var{};
+    typename LayoutScaleBias::Stride::LongIndex ld_mean{};
+    typename LayoutScaleBias::Stride::LongIndex ld_gamma{};
+    typename LayoutScaleBias::Stride::LongIndex ld_beta{};
+    typename LayoutC::Stride::LongIndex ldc{};
+    typename LayoutC::Stride::LongIndex ldd{};
 
-    int const * ptr_gather_A_indices;
-    int const * ptr_gather_B_indices;
-    int const * ptr_scatter_D_indices;
+    int const * ptr_gather_A_indices{nullptr};
+    int const * ptr_gather_B_indices{nullptr};
+    int const * ptr_scatter_D_indices{nullptr};
 
     //
     // Methods
     //
     
-    Arguments(): 
-      ptr_A(nullptr), ptr_B(nullptr), ptr_C(nullptr), ptr_D(nullptr),
-      ptr_var(nullptr), ptr_mean(nullptr),
-      ptr_gamma(nullptr), ptr_beta(nullptr),
-      ptr_gather_A_indices(nullptr),
-      ptr_gather_B_indices(nullptr),
-      ptr_scatter_D_indices(nullptr)
-    {}
+    Arguments() = default;
 
     /// constructs an arguments structure
     Arguments(

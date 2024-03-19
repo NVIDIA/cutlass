@@ -182,7 +182,7 @@ struct DefaultSymmUniversal<
   SplitKSerial,
   Operator,
   BlasMode::kSymmetric,
-  typename std::enable_if< ! cutlass::is_complex<ElementAccumulator>::value>::type
+  typename platform::enable_if< ! cutlass::is_complex<ElementAccumulator>::value>::type
 > {
 
   using DefaultSymmkernel = typename kernel::DefaultSymm<
@@ -298,7 +298,7 @@ struct DefaultSymmUniversal<
   SplitKSerial,
   Operator,
   kBlasMode,
-  typename std::enable_if<cutlass::is_complex<ElementAccumulator>::value>::type
+  typename platform::enable_if<cutlass::is_complex<ElementAccumulator>::value>::type
 > {
 
   using DefaultSymmkernel = typename kernel::DefaultSymmComplex<

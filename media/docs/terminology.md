@@ -1,6 +1,6 @@
-![ALT](/media/images/gemm-hierarchy-with-epilogue-no-labels.png "CUTLASS Terminology")
+![ALT](../images/gemm-hierarchy-with-epilogue-no-labels.png "CUTLASS Terminology")
 
-[README](/README.md#documentation) > **Terminology**
+[README](../../README.md#documentation) > **Terminology**
 
 # CUTLASS Terminology
 

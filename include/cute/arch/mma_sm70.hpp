@@ -74,7 +74,7 @@ struct SM70_8x8x4_F16F16F16F16_TN
            "r"(b0),  "r"(b1),
            "r"(c0),  "r"(c1),  "r"(c2),  "r"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM70_8x8x4_F16F16F16F16_TN without CUTE_ARCH_MMA_SM70_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM70_8x8x4_F16F16F16F16_TN without CUTE_ARCH_MMA_SM70_ENABLED");
 #endif
   }
 };
@@ -106,7 +106,7 @@ struct SM70_8x8x4_F16F16F16F16_NT
            "r"(b0),  "r"(b1),
            "r"(c0),  "r"(c1),  "r"(c2),  "r"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM70_8x8x4_F16F16F16F16_NT without CUTE_ARCH_MMA_SM70_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM70_8x8x4_F16F16F16F16_NT without CUTE_ARCH_MMA_SM70_ENABLED");
 #endif
   }
 };
@@ -138,7 +138,7 @@ struct SM70_8x8x4_F16F16F16F16_NN
            "r"(b0),  "r"(b1),
            "r"(c0),  "r"(c1),  "r"(c2),  "r"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM70_8x8x4_F16F16F16F16_NN without CUTE_ARCH_MMA_SM70_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM70_8x8x4_F16F16F16F16_NN without CUTE_ARCH_MMA_SM70_ENABLED");
 #endif
   }
 };
@@ -170,7 +170,7 @@ struct SM70_8x8x4_F16F16F16F16_TT
            "r"(b0),  "r"(b1),
            "r"(c0),  "r"(c1),  "r"(c2),  "r"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM70_8x8x4_F16F16F16F16_TT without CUTE_ARCH_MMA_SM70_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM70_8x8x4_F16F16F16F16_TT without CUTE_ARCH_MMA_SM70_ENABLED");
 #endif
   }
 };
@@ -210,7 +210,7 @@ struct SM70_8x8x4_F32F16F16F32_TN
            "f"(c0),  "f"(c1),  "f"(c2),  "f"(c3),
            "f"(c4),  "f"(c5),  "f"(c6),  "f"(c7));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM70_8x8x4_F32F16F16F32_TN without CUTE_ARCH_MMA_SM70_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM70_8x8x4_F32F16F16F32_TN without CUTE_ARCH_MMA_SM70_ENABLED");
 #endif
   }
 };
@@ -246,7 +246,7 @@ struct SM70_8x8x4_F32F16F16F32_NT
            "f"(c0),  "f"(c1),  "f"(c2),  "f"(c3),
            "f"(c4),  "f"(c5),  "f"(c6),  "f"(c7));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM70_8x8x4_F32F16F16F32_NT without CUTE_ARCH_MMA_SM70_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM70_8x8x4_F32F16F16F32_NT without CUTE_ARCH_MMA_SM70_ENABLED");
 #endif
   }
 };
@@ -282,7 +282,7 @@ struct SM70_8x8x4_F32F16F16F32_NN
            "f"(c0),  "f"(c1),  "f"(c2),  "f"(c3),
            "f"(c4),  "f"(c5),  "f"(c6),  "f"(c7));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM70_8x8x4_F32F16F16F32_NN without CUTE_ARCH_MMA_SM70_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM70_8x8x4_F32F16F16F32_NN without CUTE_ARCH_MMA_SM70_ENABLED");
 #endif
   }
 };
@@ -318,7 +318,7 @@ struct SM70_8x8x4_F32F16F16F32_TT
            "f"(c0),  "f"(c1),  "f"(c2),  "f"(c3),
            "f"(c4),  "f"(c5),  "f"(c6),  "f"(c7));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM70_8x8x4_F32F16F16F32_TT without CUTE_ARCH_MMA_SM70_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM70_8x8x4_F32F16F16F32_TT without CUTE_ARCH_MMA_SM70_ENABLED");
 #endif
   }
 

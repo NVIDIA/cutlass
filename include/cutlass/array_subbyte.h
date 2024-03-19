@@ -402,7 +402,7 @@ public:
 private:
 
   /// Internal storage
-  Storage storage[kStorageElements];
+  Storage storage[kStorageElements] = {Storage{0}};
 
 public:
 

@@ -58,11 +58,34 @@ public:
       FastDivmodU64 const& divmod_cluster_blk_major,
       int32_t log_swizzle_size,
       RasterOrder raster_order) {
+    auto [cta_m_in_cluster, cta_n_in_cluster, _] = cute::block_id_in_cluster();
+    return get_work_idx_m_and_n(
+      blk_per_grid_dim,
+      divmod_cluster_shape_major,
+      divmod_cluster_shape_minor,
+      divmod_cluster_blk_major,
+      log_swizzle_size,
+      raster_order,
+      cta_m_in_cluster,
+      cta_n_in_cluster
+    );
+  }
+
+  static CUTLASS_DEVICE
+  cute::tuple<int32_t, int32_t>
+  get_work_idx_m_and_n(
+      uint64_t blk_per_grid_dim,
+      FastDivmodU64Pow2 const& divmod_cluster_shape_major,
+      FastDivmodU64Pow2 const& divmod_cluster_shape_minor,
+      FastDivmodU64 const& divmod_cluster_blk_major,
+      int32_t log_swizzle_size,
+      RasterOrder raster_order,
+      uint64_t cta_m_in_cluster,
+      uint64_t cta_n_in_cluster) {
 
     uint64_t cluster_id, cluster_major_offset = 0, cluster_minor_offset = 0;
     divmod_cluster_shape_major(cluster_id, cluster_major_offset, blk_per_grid_dim);
 
-    auto [cta_m_in_cluster, cta_n_in_cluster, _] = cute::block_id_in_cluster();
     if (raster_order == RasterOrder::AlongN) {
       cluster_minor_offset = cta_m_in_cluster;
     }
@@ -97,7 +120,7 @@ public:
 
   // The basic tile scheduler does not require any additional workspace
   template <class ProblemShape, class ElementAccumulator>
-  static int
+  static size_t
   get_workspace_size(Arguments const&, ProblemShape, KernelHardwareInfo const&, uint32_t, const uint32_t = 1) {
     return 0;
   }

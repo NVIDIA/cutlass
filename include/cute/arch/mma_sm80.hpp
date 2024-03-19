@@ -33,6 +33,7 @@
 
 #include <cute/config.hpp>
 #include <cute/arch/mma.hpp>
+#include <cute/numeric/complex.hpp>
 
 // Config
 #if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800))
@@ -80,7 +81,7 @@ struct SM80_16x8x8_F16F16F16F16_TN
          "r"(b0),
          "r"(c0),  "r"(c1));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x8_F16F16F16F16_TN without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x8_F16F16F16F16_TN without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -113,7 +114,7 @@ struct SM80_16x8x16_F16F16F16F16_TN
          "r"(b0),  "r"(b1),
          "r"(c0),  "r"(c1));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x16_F16F16F16F16_TN without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x16_F16F16F16F16_TN without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -146,7 +147,7 @@ struct SM80_16x8x8_F32F16F16F32_TN
          "r"(b0),
          "f"(c0),  "f"(c1),  "f"(c2),  "f"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x8_F32F16F16F32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x8_F32F16F16F32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -179,7 +180,7 @@ struct SM80_16x8x16_F32F16F16F32_TN
          "r"(b0),  "r"(b1),
          "f"(c0),  "f"(c1),  "f"(c2),  "f"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x16_F32F16F16F32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x16_F32F16F16F32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -212,7 +213,7 @@ struct SM80_16x8x8_F32BF16BF16F32_TN
          "r"(b0),
          "f"(c0),  "f"(c1),  "f"(c2),  "f"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x8_F32BF16BF16F32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x8_F32BF16BF16F32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -245,7 +246,7 @@ struct SM80_16x8x16_F32BF16BF16F32_TN
          "r"(b0),  "r"(b1),
          "f"(c0),  "f"(c1),  "f"(c2),  "f"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x16_F32BF16BF16F32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x16_F32BF16BF16F32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -278,7 +279,7 @@ struct SM80_16x8x4_F32TF32TF32F32_TN
          "r"(b0),
          "f"(c0),  "f"(c1),  "f"(c2),  "f"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x4_F32TF32TF32F32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x4_F32TF32TF32F32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -311,7 +312,7 @@ struct SM80_16x8x8_F32TF32TF32F32_TN
          "r"(b0),  "r"(b1),
          "f"(c0),  "f"(c1),  "f"(c2),  "f"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x8_F32TF32TF32F32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x8_F32TF32TF32F32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -344,7 +345,7 @@ struct SM80_8x8x4_F64F64F64F64_TN
          "d"(b0),
          "d"(c0),  "d"(c1));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_8x8x4_F64F64F64F64_TN without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_8x8x4_F64F64F64F64_TN without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -385,14 +386,14 @@ struct SM80_8x8x4_C64C64C64C64_TN
 
     // d.real() = -a.imag() * b.imag() + d.real();
     SM80_8x8x4_F64F64F64F64_TN::fma(
-      rd0, rd1, 
+      rd0, rd1,
       -a0.imag(),
       b0.imag(),
       d0.real(), d1.real());
 
     // d.imag() =  a.real() * b.imag() + d.imag();
     SM80_8x8x4_F64F64F64F64_TN::fma(
-      id0, id1, 
+      id0, id1,
       a0.real(),
       b0.imag(),
       d0.imag(), d1.imag());
@@ -412,15 +413,15 @@ struct SM80_8x8x4_GC64C64C64GC64_TN
 {
   struct GaussComplex {
     double t0, t1, t2;
-    
+
     CUTE_HOST_DEVICE //constexpr
     operator complex<double>() const { return complex<double>(t0 - t1, t2 - t0 - t1); }
-    
+
     CUTE_HOST_DEVICE friend //constexpr
     complex<double> operator*(GaussComplex const& a, complex<double> const& b) { return static_cast<complex<double>>(a) * b; }
     CUTE_HOST_DEVICE friend //constexpr
     complex<double> operator*(complex<double> const& a, GaussComplex const& b) { return b * a; }
-    
+
     CUTE_HOST_DEVICE friend //constexpr
     complex<double> operator+(GaussComplex const& a, complex<double> const& b) { return static_cast<complex<double>>(a) + b; }
     CUTE_HOST_DEVICE friend //constexpr
@@ -481,7 +482,7 @@ struct SM80_8x8x16_S32S8S8S32_TN
          "r"(b0),
          "r"(c0),  "r"(c1));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_8x8x16_S32S8S8S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_8x8x16_S32S8S8S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -514,7 +515,7 @@ struct SM80_8x8x16_S32S8S8S32_TN_SATURATE
          "r"(b0),
          "r"(c0),  "r"(c1));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_8x8x16_S32S8S8S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_8x8x16_S32S8S8S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -547,7 +548,7 @@ struct SM80_16x8x16_S32S8S8S32_TN
          "r"(b0),
          "r"(c0),  "r"(c1),  "r"(c2),  "r"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x16_S32S8S8S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x16_S32S8S8S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -580,7 +581,7 @@ struct SM80_16x8x16_S32S8S8S32_TN_SATURATE
          "r"(b0),
          "r"(c0),  "r"(c1),  "r"(c2),  "r"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x16_S32S8S8S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x16_S32S8S8S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -613,7 +614,7 @@ struct SM80_16x8x32_S32S8S8S32_TN
          "r"(b0),  "r"(b1),
          "r"(c0),  "r"(c1),  "r"(c2),  "r"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x32_S32S8S8S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x32_S32S8S8S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -646,7 +647,7 @@ struct SM80_16x8x32_S32S8S8S32_TN_SATURATE
          "r"(b0),  "r"(b1),
          "r"(c0),  "r"(c1),  "r"(c2),  "r"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x32_S32S8S8S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x32_S32S8S8S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -679,7 +680,7 @@ struct SM80_8x8x16_S32S8U8S32_TN
          "r"(b0),
          "r"(c0),  "r"(c1));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_8x8x16_S32S8U8S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_8x8x16_S32S8U8S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -712,7 +713,7 @@ struct SM80_8x8x16_S32S8U8S32_TN_SATURATE
          "r"(b0),
          "r"(c0),  "r"(c1));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_8x8x16_S32S8U8S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_8x8x16_S32S8U8S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -745,7 +746,7 @@ struct SM80_16x8x16_S32S8U8S32_TN
          "r"(b0),
          "r"(c0),  "r"(c1),  "r"(c2),  "r"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x16_S32S8U8S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x16_S32S8U8S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -778,7 +779,7 @@ struct SM80_16x8x16_S32S8U8S32_TN_SATURATE
          "r"(b0),
          "r"(c0),  "r"(c1),  "r"(c2),  "r"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x16_S32S8U8S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x16_S32S8U8S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -811,7 +812,7 @@ struct SM80_16x8x32_S32S8U8S32_TN
          "r"(b0),  "r"(b1),
          "r"(c0),  "r"(c1),  "r"(c2),  "r"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x32_S32S8U8S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x32_S32S8U8S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -844,7 +845,7 @@ struct SM80_16x8x32_S32S8U8S32_TN_SATURATE
          "r"(b0),  "r"(b1),
          "r"(c0),  "r"(c1),  "r"(c2),  "r"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x32_S32S8U8S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x32_S32S8U8S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -877,7 +878,7 @@ struct SM80_8x8x16_S32U8S8S32_TN
          "r"(b0),
          "r"(c0),  "r"(c1));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_8x8x16_S32U8S8S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_8x8x16_S32U8S8S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -910,7 +911,7 @@ struct SM80_8x8x16_S32U8S8S32_TN_SATURATE
          "r"(b0),
          "r"(c0),  "r"(c1));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_8x8x16_S32U8S8S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_8x8x16_S32U8S8S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -943,7 +944,7 @@ struct SM80_16x8x16_S32U8S8S32_TN
          "r"(b0),
          "r"(c0),  "r"(c1),  "r"(c2),  "r"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x16_S32U8S8S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x16_S32U8S8S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -976,7 +977,7 @@ struct SM80_16x8x16_S32U8S8S32_TN_SATURATE
          "r"(b0),
          "r"(c0),  "r"(c1),  "r"(c2),  "r"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x16_S32U8S8S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x16_S32U8S8S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -1009,7 +1010,7 @@ struct SM80_16x8x32_S32U8S8S32_TN
          "r"(b0),  "r"(b1),
          "r"(c0),  "r"(c1),  "r"(c2),  "r"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x32_S32U8S8S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x32_S32U8S8S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -1042,7 +1043,7 @@ struct SM80_16x8x32_S32U8S8S32_TN_SATURATE
          "r"(b0),  "r"(b1),
          "r"(c0),  "r"(c1),  "r"(c2),  "r"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x32_S32U8S8S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x32_S32U8S8S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -1075,7 +1076,7 @@ struct SM80_8x8x16_S32U8U8S32_TN
          "r"(b0),
          "r"(c0),  "r"(c1));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_8x8x16_S32U8U8S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_8x8x16_S32U8U8S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -1108,7 +1109,7 @@ struct SM80_8x8x16_S32U8U8S32_TN_SATURATE
          "r"(b0),
          "r"(c0),  "r"(c1));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_8x8x16_S32U8U8S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_8x8x16_S32U8U8S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -1141,7 +1142,7 @@ struct SM80_16x8x16_S32U8U8S32_TN
          "r"(b0),
          "r"(c0),  "r"(c1),  "r"(c2),  "r"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x16_S32U8U8S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x16_S32U8U8S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -1174,7 +1175,7 @@ struct SM80_16x8x16_S32U8U8S32_TN_SATURATE
          "r"(b0),
          "r"(c0),  "r"(c1),  "r"(c2),  "r"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x16_S32U8U8S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x16_S32U8U8S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -1207,7 +1208,7 @@ struct SM80_16x8x32_S32U8U8S32_TN
          "r"(b0),  "r"(b1),
          "r"(c0),  "r"(c1),  "r"(c2),  "r"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x32_S32U8U8S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x32_S32U8U8S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -1240,7 +1241,7 @@ struct SM80_16x8x32_S32U8U8S32_TN_SATURATE
          "r"(b0),  "r"(b1),
          "r"(c0),  "r"(c1),  "r"(c2),  "r"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x32_S32U8U8S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x32_S32U8U8S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -1273,7 +1274,7 @@ struct SM80_8x8x32_S32S4S4S32_TN
          "r"(b0),
          "r"(c0),  "r"(c1));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_8x8x32_S32S4S4S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_8x8x32_S32S4S4S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -1306,7 +1307,7 @@ struct SM80_8x8x32_S32S4S4S32_TN_SATURATE
          "r"(b0),
          "r"(c0),  "r"(c1));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_8x8x32_S32S4S4S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_8x8x32_S32S4S4S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -1339,7 +1340,7 @@ struct SM80_16x8x32_S32S4S4S32_TN
          "r"(b0),
          "r"(c0),  "r"(c1),  "r"(c2),  "r"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x32_S32S4S4S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x32_S32S4S4S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -1372,7 +1373,7 @@ struct SM80_16x8x32_S32S4S4S32_TN_SATURATE
          "r"(b0),
          "r"(c0),  "r"(c1),  "r"(c2),  "r"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x32_S32S4S4S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x32_S32S4S4S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -1405,7 +1406,7 @@ struct SM80_16x8x64_S32S4S4S32_TN
          "r"(b0),  "r"(b1),
          "r"(c0),  "r"(c1),  "r"(c2),  "r"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x64_S32S4S4S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x64_S32S4S4S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -1438,7 +1439,7 @@ struct SM80_16x8x64_S32S4S4S32_TN_SATURATE
          "r"(b0),  "r"(b1),
          "r"(c0),  "r"(c1),  "r"(c2),  "r"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x64_S32S4S4S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x64_S32S4S4S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -1471,7 +1472,7 @@ struct SM80_8x8x32_S32S4U4S32_TN
          "r"(b0),
          "r"(c0),  "r"(c1));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_8x8x32_S32S4U4S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_8x8x32_S32S4U4S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -1504,7 +1505,7 @@ struct SM80_8x8x32_S32S4U4S32_TN_SATURATE
          "r"(b0),
          "r"(c0),  "r"(c1));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_8x8x32_S32S4U4S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_8x8x32_S32S4U4S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -1537,7 +1538,7 @@ struct SM80_16x8x32_S32S4U4S32_TN
          "r"(b0),
          "r"(c0),  "r"(c1),  "r"(c2),  "r"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x32_S32S4U4S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x32_S32S4U4S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -1570,7 +1571,7 @@ struct SM80_16x8x32_S32S4U4S32_TN_SATURATE
          "r"(b0),
          "r"(c0),  "r"(c1),  "r"(c2),  "r"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x32_S32S4U4S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x32_S32S4U4S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -1603,7 +1604,7 @@ struct SM80_16x8x64_S32S4U4S32_TN
          "r"(b0),  "r"(b1),
          "r"(c0),  "r"(c1),  "r"(c2),  "r"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x64_S32S4U4S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x64_S32S4U4S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -1636,7 +1637,7 @@ struct SM80_16x8x64_S32S4U4S32_TN_SATURATE
          "r"(b0),  "r"(b1),
          "r"(c0),  "r"(c1),  "r"(c2),  "r"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x64_S32S4U4S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x64_S32S4U4S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -1669,7 +1670,7 @@ struct SM80_8x8x32_S32U4S4S32_TN
          "r"(b0),
          "r"(c0),  "r"(c1));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_8x8x32_S32U4S4S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_8x8x32_S32U4S4S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -1702,7 +1703,7 @@ struct SM80_8x8x32_S32U4S4S32_TN_SATURATE
          "r"(b0),
          "r"(c0),  "r"(c1));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_8x8x32_S32U4S4S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_8x8x32_S32U4S4S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -1735,7 +1736,7 @@ struct SM80_16x8x32_S32U4S4S32_TN
          "r"(b0),
          "r"(c0),  "r"(c1),  "r"(c2),  "r"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x32_S32U4S4S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x32_S32U4S4S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -1768,7 +1769,7 @@ struct SM80_16x8x32_S32U4S4S32_TN_SATURATE
          "r"(b0),
          "r"(c0),  "r"(c1),  "r"(c2),  "r"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x32_S32U4S4S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x32_S32U4S4S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -1801,7 +1802,7 @@ struct SM80_16x8x64_S32U4S4S32_TN
          "r"(b0),  "r"(b1),
          "r"(c0),  "r"(c1),  "r"(c2),  "r"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x64_S32U4S4S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x64_S32U4S4S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -1834,7 +1835,7 @@ struct SM80_16x8x64_S32U4S4S32_TN_SATURATE
          "r"(b0),  "r"(b1),
          "r"(c0),  "r"(c1),  "r"(c2),  "r"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x64_S32U4S4S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x64_S32U4S4S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -1867,7 +1868,7 @@ struct SM80_8x8x32_S32U4U4S32_TN
          "r"(b0),
          "r"(c0),  "r"(c1));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_8x8x32_S32U4U4S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_8x8x32_S32U4U4S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -1900,7 +1901,7 @@ struct SM80_8x8x32_S32U4U4S32_TN_SATURATE
          "r"(b0),
          "r"(c0),  "r"(c1));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_8x8x32_S32U4U4S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_8x8x32_S32U4U4S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -1933,7 +1934,7 @@ struct SM80_16x8x32_S32U4U4S32_TN
          "r"(b0),
          "r"(c0),  "r"(c1),  "r"(c2),  "r"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x32_S32U4U4S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x32_S32U4U4S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -1966,7 +1967,7 @@ struct SM80_16x8x32_S32U4U4S32_TN_SATURATE
          "r"(b0),
          "r"(c0),  "r"(c1),  "r"(c2),  "r"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x32_S32U4U4S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x32_S32U4U4S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -1999,7 +2000,7 @@ struct SM80_16x8x64_S32U4U4S32_TN
          "r"(b0),  "r"(b1),
          "r"(c0),  "r"(c1),  "r"(c2),  "r"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x64_S32U4U4S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x64_S32U4U4S32_TN without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -2032,7 +2033,7 @@ struct SM80_16x8x64_S32U4U4S32_TN_SATURATE
          "r"(b0),  "r"(b1),
          "r"(c0),  "r"(c1),  "r"(c2),  "r"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x64_S32U4U4S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x64_S32U4U4S32_TN_SATURATE without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -2067,7 +2068,7 @@ struct SM80_8x8x128_S32U1U1S32_TN_XORPOPC
          "r"(b0),
          "r"(c0),  "r"(c1));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_8x8x128_S32U1U1S32_TN_XORPOPC without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_8x8x128_S32U1U1S32_TN_XORPOPC without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -2100,7 +2101,7 @@ struct SM80_16x8x128_S32U1U1S32_TN_XORPOPC
          "r"(b0),
          "r"(c0),  "r"(c1),  "r"(c2),  "r"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x128_S32U1U1S32_TN_XORPOPC without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x128_S32U1U1S32_TN_XORPOPC without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };
@@ -2133,7 +2134,7 @@ struct SM80_16x8x256_S32U1U1S32_TN_XORPOPC
          "r"(b0),  "r"(b1),
          "r"(c0),  "r"(c1),  "r"(c2),  "r"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM80_16x8x256_S32U1U1S32_TN_XORPOPC without CUTE_ARCH_MMA_SM80_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM80_16x8x256_S32U1U1S32_TN_XORPOPC without CUTE_ARCH_MMA_SM80_ENABLED");
 #endif
   }
 };

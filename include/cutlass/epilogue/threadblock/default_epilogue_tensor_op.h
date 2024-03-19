@@ -287,7 +287,7 @@ struct DefaultIteratorsTensorOp<
                 platform::is_same<ElementOutput, uint8_t>::value,
                 "ElementOutput needs to be 4 or 8 bit (unsigned) int.");
 
-   static_assert((ElementsPerAccess == 16 || ElementsPerAccess == 8),
+   static_assert((ElementsPerAccess == 16 || ElementsPerAccess == 8 || ElementsPerAccess == 4),
                 "ElementsPerAccess needs to be 16 or 8.");
   
   using WarpTileIteratorMixed = cutlass::epilogue::warp::TileIteratorTensorOpMixed<
@@ -308,7 +308,7 @@ struct DefaultIteratorsTensorOp<
   >;
 
   using WarpTileIterator = typename platform::conditional<
-                             (ThreadblockShape::kN == 256) || (ThreadblockShape::kN == 128 && ElementsPerAccess == 8),
+                             (ThreadblockShape::kN == 256) || (ThreadblockShape::kN == 128 && ElementsPerAccess == 8) || (ElementsPerAccess == 4),
                              WarpTileIteratorNotMixed,
                              WarpTileIteratorMixed>::type;
 
@@ -327,7 +327,7 @@ struct DefaultIteratorsTensorOp<
   >;
 
   using SharedLoadIterator = typename platform::conditional<
-                             (ThreadblockShape::kN == 256) || (ThreadblockShape::kN == 128 && ElementsPerAccess == 8),
+                             (ThreadblockShape::kN == 256) || (ThreadblockShape::kN == 128 && ElementsPerAccess == 8) || (ElementsPerAccess == 4),
                              SharedLoadIteratorNotMixed,
                              SharedLoadIteratorMixed>::type;
 
@@ -354,7 +354,7 @@ struct DefaultIteratorsTensorOp<
 
   using ElementOutput = cutlass::float_e4m3_t;
 
-  static_assert((ElementsPerAccess == 16 || ElementsPerAccess == 8),
+  static_assert((ElementsPerAccess == 16 || ElementsPerAccess == 8 || ElementsPerAccess == 4),
               "ElementsPerAccess needs to be 16 or 8.");
   
   using WarpTileIteratorMixed = cutlass::epilogue::warp::TileIteratorTensorOpMixed<
@@ -375,7 +375,7 @@ struct DefaultIteratorsTensorOp<
   >;
 
   using WarpTileIterator = typename platform::conditional<
-                             (ThreadblockShape::kN == 256) || (ThreadblockShape::kN == 128 && ElementsPerAccess == 8),
+                             (ThreadblockShape::kN == 256) || (ThreadblockShape::kN == 128 && ElementsPerAccess == 8) || (ElementsPerAccess == 4),
                              WarpTileIteratorNotMixed,
                              WarpTileIteratorMixed>::type;
 
@@ -394,7 +394,7 @@ struct DefaultIteratorsTensorOp<
   >;
 
   using SharedLoadIterator = typename platform::conditional<
-                             (ThreadblockShape::kN == 256) || (ThreadblockShape::kN == 128 && ElementsPerAccess == 8),
+                             (ThreadblockShape::kN == 256) || (ThreadblockShape::kN == 128 && ElementsPerAccess == 8) || (ElementsPerAccess == 4),
                              SharedLoadIteratorNotMixed,
                              SharedLoadIteratorMixed>::type;
 
@@ -421,7 +421,7 @@ struct DefaultIteratorsTensorOp<
 
   using ElementOutput = cutlass::float_e5m2_t;
 
-  static_assert((ElementsPerAccess == 16 || ElementsPerAccess == 8),
+  static_assert((ElementsPerAccess == 16 || ElementsPerAccess == 8 || ElementsPerAccess == 4),
               "ElementsPerAccess needs to be 16 or 8.");
   
   using WarpTileIteratorMixed = cutlass::epilogue::warp::TileIteratorTensorOpMixed<
@@ -442,7 +442,7 @@ struct DefaultIteratorsTensorOp<
   >;
 
   using WarpTileIterator = typename platform::conditional<
-                             (ThreadblockShape::kN == 256) || (ThreadblockShape::kN == 128 && ElementsPerAccess == 8),
+                             (ThreadblockShape::kN == 256) || (ThreadblockShape::kN == 128 && ElementsPerAccess == 8) || (ElementsPerAccess == 4),
                              WarpTileIteratorNotMixed,
                              WarpTileIteratorMixed>::type;
 
@@ -461,7 +461,7 @@ struct DefaultIteratorsTensorOp<
   >;
 
   using SharedLoadIterator = typename platform::conditional<
-                             (ThreadblockShape::kN == 256) || (ThreadblockShape::kN == 128 && ElementsPerAccess == 8),
+                             (ThreadblockShape::kN == 256) || (ThreadblockShape::kN == 128 && ElementsPerAccess == 8) || (ElementsPerAccess == 4),
                              SharedLoadIteratorNotMixed,
                              SharedLoadIteratorMixed>::type;
 

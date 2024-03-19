@@ -178,6 +178,16 @@ struct ComposedLayout : private cute::tuple<LayoutA, Offset, LayoutB>  // EBO fo
   tile(Layouts const&... layouts) const {
     return tiled_divide(*this, make_tile(layouts...));
   }
+
+  // Equality, return a static or dynamic boolean
+  template <class... Args>
+  CUTE_HOST_DEVICE constexpr
+  auto
+  operator==(ComposedLayout<Args...> const& other) const {
+    return this->layout_a() == other.layout_a() &&
+           this->layout_b() == other.layout_b() &&
+           this->offset()   == other.offset();
+  }
 };
 
 template <class A, class O, class B>

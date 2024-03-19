@@ -69,7 +69,7 @@ CUTLASS_DEVICE void dump_fragment(Fragment const& frag, int N = 0, int M = 0,
     return;
   }
 
-  int total_elements = frag.size();
+  int total_elements = int(frag.size());
 
   if (M < 0 || M > total_elements) {
     if (thread_id == 0 && block_id == 0)

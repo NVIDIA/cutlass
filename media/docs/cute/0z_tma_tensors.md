@@ -194,8 +194,8 @@ Evaluating the layout would give `i@1 + j@0 = (j,i)`.
 A linear combination of basis elements
 can be interpreted as a possibly multidimensional and hierarchical coordinate.
 For instance, `2*2@1@0 + 3*1@1 + 4*5@1 + 7*1@0@0`
-means `((0,2,...),0,...) + (0,3,0,...) + (0,20,0,...) + ((7,...),...) = ((7,2,...),23,...)`
-and can be interpreted as the coordinate `((7,2),23)`.
+means `((0,4,...),0,...) + (0,3,0,...) + (0,20,0,...) + ((7,...),...) = ((7,4,...),23,...)`
+and can be interpreted as the coordinate `((7,4),23)`.
 
 Thus, linear combinations of these strides can be used to generate TMA coordinates.
 These coordinates, in turn, can be used to offset TMA coordinate iterators.

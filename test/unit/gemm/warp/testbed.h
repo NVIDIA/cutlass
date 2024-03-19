@@ -78,7 +78,7 @@ __global__ void kernel(
   if (threadIdx.x == 0) {
     typename Mma::ElementA *smem_ptr_A = smem_buffer_A.data();
     #pragma unroll 1
-    for (int i = 0; i < smem_buffer_A.size(); ++i) {
+    for (size_t i = 0; i < smem_buffer_A.size(); ++i) {
       cutlass::ReferenceFactory<typename Mma::ElementA>::get(smem_ptr_A, i) =
           cutlass::ReferenceFactory<typename cutlass::platform::remove_const<
               typename Mma::ElementA>::type>::get(input_A, i);
@@ -86,7 +86,7 @@ __global__ void kernel(
 
     typename Mma::ElementB *smem_ptr_B = smem_buffer_B.data();
     #pragma unroll 1
-    for (int i = 0; i < smem_buffer_B.size(); ++i) {
+    for (size_t i = 0; i < smem_buffer_B.size(); ++i) {
       cutlass::ReferenceFactory<typename Mma::ElementB>::get(smem_ptr_B, i) =
           cutlass::ReferenceFactory<typename cutlass::platform::remove_const<
               typename Mma::ElementB>::type>::get(input_B, i);
@@ -624,7 +624,7 @@ __global__ void kernel_transform(
   if (threadIdx.x == 0) {
     typename Mma::ElementA *smem_ptr_A = smem_buffer_A.data();
     #pragma unroll 1
-    for (int i = 0; i < smem_buffer_A.size(); ++i) {
+    for (size_t i = 0; i < smem_buffer_A.size(); ++i) {
       cutlass::ReferenceFactory<typename Mma::ElementA>::get(smem_ptr_A, i) =
           cutlass::ReferenceFactory<typename cutlass::platform::remove_const<
               typename Mma::ElementA>::type>::get(input_A, i);
@@ -632,7 +632,7 @@ __global__ void kernel_transform(
 
     typename Mma::ElementB *smem_ptr_B = smem_buffer_B.data();
     #pragma unroll 1
-    for (int i = 0; i < smem_buffer_B.size(); ++i) {
+    for (size_t i = 0; i < smem_buffer_B.size(); ++i) {
       cutlass::ReferenceFactory<typename Mma::ElementB>::get(smem_ptr_B, i) =
           cutlass::ReferenceFactory<typename cutlass::platform::remove_const<
               typename Mma::ElementB>::type>::get(input_B, i);
@@ -1179,7 +1179,7 @@ __global__ void sparse_kernel(
   if (threadIdx.x == 0) {
     typename Mma::ElementA *smem_ptr_A = smem_buffer_A.data();
     #pragma unroll 1
-    for (int i = 0; i < smem_buffer_A.size(); ++i) {
+    for (size_t i = 0; i < smem_buffer_A.size(); ++i) {
       cutlass::ReferenceFactory<typename Mma::ElementA>::get(smem_ptr_A, i) =
           cutlass::ReferenceFactory<typename cutlass::platform::remove_const<
               typename Mma::ElementA>::type>::get(input_A, i);
@@ -1187,7 +1187,7 @@ __global__ void sparse_kernel(
 
     typename Mma::ElementB *smem_ptr_B = smem_buffer_B.data();
     #pragma unroll 1
-    for (int i = 0; i < smem_buffer_B.size(); ++i) {
+    for (size_t i = 0; i < smem_buffer_B.size(); ++i) {
       cutlass::ReferenceFactory<typename Mma::ElementB>::get(smem_ptr_B, i) =
           cutlass::ReferenceFactory<typename cutlass::platform::remove_const<
               typename Mma::ElementB>::type>::get(input_B, i);
@@ -1195,7 +1195,7 @@ __global__ void sparse_kernel(
 
     typename Mma::ElementE *smem_ptr_E = smem_buffer_E.data();
     #pragma unroll 1
-    for (int i = 0; i < smem_buffer_E.size(); ++i) {
+    for (size_t i = 0; i < smem_buffer_E.size(); ++i) {
       cutlass::ReferenceFactory<typename Mma::ElementE>::get(smem_ptr_E, i) =
           cutlass::ReferenceFactory<typename cutlass::platform::remove_const<
               typename Mma::ElementE>::type>::get(input_E, i);

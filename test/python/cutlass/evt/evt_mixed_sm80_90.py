@@ -59,11 +59,11 @@ class TestEVTMixed(EVTTestCaseBase):
             return D, F, F_row_max, E_col_max
 
         if device_cc() == 80:
-            aligments = [2, 4, 8]
+            alignments = [2, 4, 8]
         else:
             # Sm90 EVT currently only supports 128-bit alignment
-            aligments = [8,]
-        for align in aligments:
+            alignments = [8,]
+        for align in alignments:
             for m, n, k, l in self.get_problem_sizes(align):
                 example_inputs = {
                     "accum": self.fake_tensor(self.element, (l, m, n)),
