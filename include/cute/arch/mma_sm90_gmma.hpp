@@ -49,7 +49,7 @@ warpgroup_arrive()
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
   asm volatile ("wgmma.fence.sync.aligned;\n" ::: "memory");
 #else
-  CUTE_RUNTIME_ASSERT("Attempting to use wgmma.fence without CUTE_ARCH_MMA_SM90A_ENABLED");
+  CUTE_INVALID_CONTROL_PATH("Attempting to use wgmma.fence without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
 }
 
@@ -62,7 +62,7 @@ warpgroup_wait()
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
   asm volatile("wgmma.wait_group.sync.aligned %0;\n" :: "n"(N) : "memory");
 #else
-  CUTE_RUNTIME_ASSERT("Attempting to use wgmma.wait_group<N> without CUTE_ARCH_MMA_SM90A_ENABLED");
+  CUTE_INVALID_CONTROL_PATH("Attempting to use wgmma.wait_group<N> without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
 }
 
@@ -74,7 +74,7 @@ warpgroup_commit_batch()
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
   asm volatile("wgmma.commit_group.sync.aligned;\n" ::: "memory");
 #else
-  CUTE_RUNTIME_ASSERT("Attempting to use wgmma.commit_group without CUTE_ARCH_MMA_SM90A_ENABLED");
+  CUTE_INVALID_CONTROL_PATH("Attempting to use wgmma.commit_group without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
 }
 
@@ -156,7 +156,7 @@ struct SM90_64x8x16_F16F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -202,7 +202,7 @@ struct SM90_64x8x16_F16F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -245,7 +245,7 @@ struct SM90_64x16x16_F16F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -291,7 +291,7 @@ struct SM90_64x16x16_F16F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -336,7 +336,7 @@ struct SM90_64x32x16_F16F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -384,7 +384,7 @@ struct SM90_64x32x16_F16F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -434,7 +434,7 @@ struct SM90_64x64x16_F16F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -487,7 +487,7 @@ struct SM90_64x64x16_F16F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -542,7 +542,7 @@ struct SM90_64x96x16_F16F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -600,7 +600,7 @@ struct SM90_64x96x16_F16F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -660,7 +660,7 @@ struct SM90_64x128x16_F16F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -723,7 +723,7 @@ struct SM90_64x128x16_F16F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -793,7 +793,7 @@ struct SM90_64x192x16_F16F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -866,7 +866,7 @@ struct SM90_64x192x16_F16F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -946,7 +946,7 @@ struct SM90_64x256x16_F16F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1029,7 +1029,7 @@ struct SM90_64x256x16_F16F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1072,7 +1072,7 @@ struct SM90_64x8x16_F32F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1118,7 +1118,7 @@ struct SM90_64x8x16_F32F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1163,7 +1163,7 @@ struct SM90_64x16x16_F32F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1211,7 +1211,7 @@ struct SM90_64x16x16_F32F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1261,7 +1261,7 @@ struct SM90_64x32x16_F32F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1314,7 +1314,7 @@ struct SM90_64x32x16_F32F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1374,7 +1374,7 @@ struct SM90_64x64x16_F32F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1437,7 +1437,7 @@ struct SM90_64x64x16_F32F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1507,7 +1507,7 @@ struct SM90_64x96x16_F32F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1580,7 +1580,7 @@ struct SM90_64x96x16_F32F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1660,7 +1660,7 @@ struct SM90_64x128x16_F32F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1743,7 +1743,7 @@ struct SM90_64x128x16_F32F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1843,7 +1843,7 @@ struct SM90_64x192x16_F32F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1946,7 +1946,7 @@ struct SM90_64x192x16_F32F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2066,7 +2066,7 @@ struct SM90_64x256x16_F32F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2189,7 +2189,7 @@ struct SM90_64x256x16_F32F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2232,7 +2232,7 @@ struct SM90_64x8x16_F32BF16BF16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2278,7 +2278,7 @@ struct SM90_64x8x16_F32BF16BF16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2323,7 +2323,7 @@ struct SM90_64x16x16_F32BF16BF16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2371,7 +2371,7 @@ struct SM90_64x16x16_F32BF16BF16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2421,7 +2421,7 @@ struct SM90_64x32x16_F32BF16BF16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2474,7 +2474,7 @@ struct SM90_64x32x16_F32BF16BF16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2534,7 +2534,7 @@ struct SM90_64x64x16_F32BF16BF16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2597,7 +2597,7 @@ struct SM90_64x64x16_F32BF16BF16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2667,7 +2667,7 @@ struct SM90_64x96x16_F32BF16BF16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2740,7 +2740,7 @@ struct SM90_64x96x16_F32BF16BF16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2820,7 +2820,7 @@ struct SM90_64x128x16_F32BF16BF16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2903,7 +2903,7 @@ struct SM90_64x128x16_F32BF16BF16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3003,7 +3003,7 @@ struct SM90_64x192x16_F32BF16BF16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3106,7 +3106,7 @@ struct SM90_64x192x16_F32BF16BF16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3226,7 +3226,7 @@ struct SM90_64x256x16_F32BF16BF16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3349,7 +3349,7 @@ struct SM90_64x256x16_F32BF16BF16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3390,7 +3390,7 @@ struct SM90_64x8x8_F32TF32TF32_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3431,7 +3431,7 @@ struct SM90_64x8x8_F32TF32TF32_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3474,7 +3474,7 @@ struct SM90_64x16x8_F32TF32TF32_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3517,7 +3517,7 @@ struct SM90_64x16x8_F32TF32TF32_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3565,7 +3565,7 @@ struct SM90_64x32x8_F32TF32TF32_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3613,7 +3613,7 @@ struct SM90_64x32x8_F32TF32TF32_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3671,7 +3671,7 @@ struct SM90_64x64x8_F32TF32TF32_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3729,7 +3729,7 @@ struct SM90_64x64x8_F32TF32TF32_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3797,7 +3797,7 @@ struct SM90_64x96x8_F32TF32TF32_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3865,7 +3865,7 @@ struct SM90_64x96x8_F32TF32TF32_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3943,7 +3943,7 @@ struct SM90_64x128x8_F32TF32TF32_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -4021,7 +4021,7 @@ struct SM90_64x128x8_F32TF32TF32_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -4119,7 +4119,7 @@ struct SM90_64x192x8_F32TF32TF32_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -4217,7 +4217,7 @@ struct SM90_64x192x8_F32TF32TF32_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -4335,7 +4335,7 @@ struct SM90_64x256x8_F32TF32TF32_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -4453,7 +4453,7 @@ struct SM90_64x256x8_F32TF32TF32_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -4490,7 +4490,7 @@ struct SM90_64x8x32_S32S8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -4527,7 +4527,7 @@ struct SM90_64x8x32_S32S8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -4566,7 +4566,7 @@ struct SM90_64x16x32_S32S8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -4605,7 +4605,7 @@ struct SM90_64x16x32_S32S8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -4649,7 +4649,7 @@ struct SM90_64x32x32_S32S8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -4693,7 +4693,7 @@ struct SM90_64x32x32_S32S8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -4747,7 +4747,7 @@ struct SM90_64x64x32_S32S8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -4801,7 +4801,7 @@ struct SM90_64x64x32_S32S8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -4865,7 +4865,7 @@ struct SM90_64x96x32_S32S8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -4929,7 +4929,7 @@ struct SM90_64x96x32_S32S8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -5003,7 +5003,7 @@ struct SM90_64x128x32_S32S8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -5077,7 +5077,7 @@ struct SM90_64x128x32_S32S8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -5171,7 +5171,7 @@ struct SM90_64x192x32_S32S8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -5265,7 +5265,7 @@ struct SM90_64x192x32_S32S8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -5379,7 +5379,7 @@ struct SM90_64x256x32_S32S8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -5493,7 +5493,7 @@ struct SM90_64x256x32_S32S8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -5530,7 +5530,7 @@ struct SM90_64x8x32_S32S8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -5567,7 +5567,7 @@ struct SM90_64x8x32_S32S8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -5606,7 +5606,7 @@ struct SM90_64x16x32_S32S8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -5645,7 +5645,7 @@ struct SM90_64x16x32_S32S8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -5689,7 +5689,7 @@ struct SM90_64x32x32_S32S8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -5733,7 +5733,7 @@ struct SM90_64x32x32_S32S8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -5787,7 +5787,7 @@ struct SM90_64x64x32_S32S8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -5841,7 +5841,7 @@ struct SM90_64x64x32_S32S8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -5905,7 +5905,7 @@ struct SM90_64x96x32_S32S8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -5969,7 +5969,7 @@ struct SM90_64x96x32_S32S8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -6043,7 +6043,7 @@ struct SM90_64x128x32_S32S8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -6117,7 +6117,7 @@ struct SM90_64x128x32_S32S8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -6211,7 +6211,7 @@ struct SM90_64x192x32_S32S8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -6305,7 +6305,7 @@ struct SM90_64x192x32_S32S8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -6419,7 +6419,7 @@ struct SM90_64x256x32_S32S8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -6533,7 +6533,7 @@ struct SM90_64x256x32_S32S8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -6570,7 +6570,7 @@ struct SM90_64x8x32_S32S8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -6607,7 +6607,7 @@ struct SM90_64x8x32_S32S8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -6646,7 +6646,7 @@ struct SM90_64x16x32_S32S8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -6685,7 +6685,7 @@ struct SM90_64x16x32_S32S8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -6729,7 +6729,7 @@ struct SM90_64x32x32_S32S8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -6773,7 +6773,7 @@ struct SM90_64x32x32_S32S8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -6827,7 +6827,7 @@ struct SM90_64x64x32_S32S8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -6881,7 +6881,7 @@ struct SM90_64x64x32_S32S8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -6945,7 +6945,7 @@ struct SM90_64x96x32_S32S8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -7009,7 +7009,7 @@ struct SM90_64x96x32_S32S8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -7083,7 +7083,7 @@ struct SM90_64x128x32_S32S8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -7157,7 +7157,7 @@ struct SM90_64x128x32_S32S8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -7251,7 +7251,7 @@ struct SM90_64x192x32_S32S8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -7345,7 +7345,7 @@ struct SM90_64x192x32_S32S8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -7459,7 +7459,7 @@ struct SM90_64x256x32_S32S8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -7573,7 +7573,7 @@ struct SM90_64x256x32_S32S8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -7610,7 +7610,7 @@ struct SM90_64x8x32_S32S8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -7647,7 +7647,7 @@ struct SM90_64x8x32_S32S8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -7686,7 +7686,7 @@ struct SM90_64x16x32_S32S8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -7725,7 +7725,7 @@ struct SM90_64x16x32_S32S8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -7769,7 +7769,7 @@ struct SM90_64x32x32_S32S8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -7813,7 +7813,7 @@ struct SM90_64x32x32_S32S8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -7867,7 +7867,7 @@ struct SM90_64x64x32_S32S8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -7921,7 +7921,7 @@ struct SM90_64x64x32_S32S8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -7985,7 +7985,7 @@ struct SM90_64x96x32_S32S8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -8049,7 +8049,7 @@ struct SM90_64x96x32_S32S8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -8123,7 +8123,7 @@ struct SM90_64x128x32_S32S8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -8197,7 +8197,7 @@ struct SM90_64x128x32_S32S8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -8291,7 +8291,7 @@ struct SM90_64x192x32_S32S8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -8385,7 +8385,7 @@ struct SM90_64x192x32_S32S8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -8499,7 +8499,7 @@ struct SM90_64x256x32_S32S8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -8613,7 +8613,7 @@ struct SM90_64x256x32_S32S8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -8650,7 +8650,7 @@ struct SM90_64x8x32_S32U8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -8687,7 +8687,7 @@ struct SM90_64x8x32_S32U8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -8726,7 +8726,7 @@ struct SM90_64x16x32_S32U8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -8765,7 +8765,7 @@ struct SM90_64x16x32_S32U8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -8809,7 +8809,7 @@ struct SM90_64x32x32_S32U8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -8853,7 +8853,7 @@ struct SM90_64x32x32_S32U8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -8907,7 +8907,7 @@ struct SM90_64x64x32_S32U8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -8961,7 +8961,7 @@ struct SM90_64x64x32_S32U8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -9025,7 +9025,7 @@ struct SM90_64x96x32_S32U8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -9089,7 +9089,7 @@ struct SM90_64x96x32_S32U8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -9163,7 +9163,7 @@ struct SM90_64x128x32_S32U8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -9237,7 +9237,7 @@ struct SM90_64x128x32_S32U8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -9331,7 +9331,7 @@ struct SM90_64x192x32_S32U8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -9425,7 +9425,7 @@ struct SM90_64x192x32_S32U8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -9539,7 +9539,7 @@ struct SM90_64x256x32_S32U8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -9653,7 +9653,7 @@ struct SM90_64x256x32_S32U8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -9690,7 +9690,7 @@ struct SM90_64x8x32_S32U8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -9727,7 +9727,7 @@ struct SM90_64x8x32_S32U8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -9766,7 +9766,7 @@ struct SM90_64x16x32_S32U8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -9805,7 +9805,7 @@ struct SM90_64x16x32_S32U8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -9849,7 +9849,7 @@ struct SM90_64x32x32_S32U8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -9893,7 +9893,7 @@ struct SM90_64x32x32_S32U8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -9947,7 +9947,7 @@ struct SM90_64x64x32_S32U8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -10001,7 +10001,7 @@ struct SM90_64x64x32_S32U8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -10065,7 +10065,7 @@ struct SM90_64x96x32_S32U8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -10129,7 +10129,7 @@ struct SM90_64x96x32_S32U8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -10203,7 +10203,7 @@ struct SM90_64x128x32_S32U8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -10277,7 +10277,7 @@ struct SM90_64x128x32_S32U8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -10371,7 +10371,7 @@ struct SM90_64x192x32_S32U8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -10465,7 +10465,7 @@ struct SM90_64x192x32_S32U8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -10579,7 +10579,7 @@ struct SM90_64x256x32_S32U8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -10693,7 +10693,7 @@ struct SM90_64x256x32_S32U8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -10730,7 +10730,7 @@ struct SM90_64x8x32_S32U8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -10767,7 +10767,7 @@ struct SM90_64x8x32_S32U8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -10806,7 +10806,7 @@ struct SM90_64x16x32_S32U8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -10845,7 +10845,7 @@ struct SM90_64x16x32_S32U8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -10889,7 +10889,7 @@ struct SM90_64x32x32_S32U8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -10933,7 +10933,7 @@ struct SM90_64x32x32_S32U8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -10987,7 +10987,7 @@ struct SM90_64x64x32_S32U8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -11041,7 +11041,7 @@ struct SM90_64x64x32_S32U8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -11105,7 +11105,7 @@ struct SM90_64x96x32_S32U8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -11169,7 +11169,7 @@ struct SM90_64x96x32_S32U8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -11243,7 +11243,7 @@ struct SM90_64x128x32_S32U8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -11317,7 +11317,7 @@ struct SM90_64x128x32_S32U8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -11411,7 +11411,7 @@ struct SM90_64x192x32_S32U8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -11505,7 +11505,7 @@ struct SM90_64x192x32_S32U8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -11619,7 +11619,7 @@ struct SM90_64x256x32_S32U8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -11733,7 +11733,7 @@ struct SM90_64x256x32_S32U8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -11770,7 +11770,7 @@ struct SM90_64x8x32_S32U8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -11807,7 +11807,7 @@ struct SM90_64x8x32_S32U8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -11846,7 +11846,7 @@ struct SM90_64x16x32_S32U8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -11885,7 +11885,7 @@ struct SM90_64x16x32_S32U8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -11929,7 +11929,7 @@ struct SM90_64x32x32_S32U8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -11973,7 +11973,7 @@ struct SM90_64x32x32_S32U8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -12027,7 +12027,7 @@ struct SM90_64x64x32_S32U8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -12081,7 +12081,7 @@ struct SM90_64x64x32_S32U8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -12145,7 +12145,7 @@ struct SM90_64x96x32_S32U8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -12209,7 +12209,7 @@ struct SM90_64x96x32_S32U8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -12283,7 +12283,7 @@ struct SM90_64x128x32_S32U8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -12357,7 +12357,7 @@ struct SM90_64x128x32_S32U8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -12451,7 +12451,7 @@ struct SM90_64x192x32_S32U8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -12545,7 +12545,7 @@ struct SM90_64x192x32_S32U8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -12659,7 +12659,7 @@ struct SM90_64x256x32_S32U8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -12773,7 +12773,7 @@ struct SM90_64x256x32_S32U8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -12814,7 +12814,7 @@ struct SM90_64x8x32_F16E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -12855,7 +12855,7 @@ struct SM90_64x8x32_F16E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -12896,7 +12896,7 @@ struct SM90_64x8x32_F32E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -12937,7 +12937,7 @@ struct SM90_64x8x32_F32E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -12978,7 +12978,7 @@ struct SM90_64x16x32_F16E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -13019,7 +13019,7 @@ struct SM90_64x16x32_F16E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -13062,7 +13062,7 @@ struct SM90_64x16x32_F32E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -13105,7 +13105,7 @@ struct SM90_64x16x32_F32E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -13148,7 +13148,7 @@ struct SM90_64x32x32_F16E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -13191,7 +13191,7 @@ struct SM90_64x32x32_F16E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -13239,7 +13239,7 @@ struct SM90_64x32x32_F32E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -13287,7 +13287,7 @@ struct SM90_64x32x32_F32E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -13335,7 +13335,7 @@ struct SM90_64x64x32_F16E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -13383,7 +13383,7 @@ struct SM90_64x64x32_F16E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -13441,7 +13441,7 @@ struct SM90_64x64x32_F32E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -13499,7 +13499,7 @@ struct SM90_64x64x32_F32E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -13552,7 +13552,7 @@ struct SM90_64x96x32_F16E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -13605,7 +13605,7 @@ struct SM90_64x96x32_F16E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -13673,7 +13673,7 @@ struct SM90_64x96x32_F32E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -13741,7 +13741,7 @@ struct SM90_64x96x32_F32E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -13799,7 +13799,7 @@ struct SM90_64x128x32_F16E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -13857,7 +13857,7 @@ struct SM90_64x128x32_F16E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -13935,7 +13935,7 @@ struct SM90_64x128x32_F32E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -14013,7 +14013,7 @@ struct SM90_64x128x32_F32E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -14081,7 +14081,7 @@ struct SM90_64x192x32_F16E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -14149,7 +14149,7 @@ struct SM90_64x192x32_F16E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -14247,7 +14247,7 @@ struct SM90_64x192x32_F32E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -14345,7 +14345,7 @@ struct SM90_64x192x32_F32E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -14423,7 +14423,7 @@ struct SM90_64x256x32_F16E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -14501,7 +14501,7 @@ struct SM90_64x256x32_F16E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -14619,7 +14619,7 @@ struct SM90_64x256x32_F32E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -14737,7 +14737,7 @@ struct SM90_64x256x32_F32E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -14778,7 +14778,7 @@ struct SM90_64x8x32_F16E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -14819,7 +14819,7 @@ struct SM90_64x8x32_F16E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -14860,7 +14860,7 @@ struct SM90_64x8x32_F32E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -14901,7 +14901,7 @@ struct SM90_64x8x32_F32E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -14942,7 +14942,7 @@ struct SM90_64x16x32_F16E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -14983,7 +14983,7 @@ struct SM90_64x16x32_F16E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -15026,7 +15026,7 @@ struct SM90_64x16x32_F32E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -15069,7 +15069,7 @@ struct SM90_64x16x32_F32E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -15112,7 +15112,7 @@ struct SM90_64x32x32_F16E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -15155,7 +15155,7 @@ struct SM90_64x32x32_F16E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -15203,7 +15203,7 @@ struct SM90_64x32x32_F32E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -15251,7 +15251,7 @@ struct SM90_64x32x32_F32E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -15299,7 +15299,7 @@ struct SM90_64x64x32_F16E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -15347,7 +15347,7 @@ struct SM90_64x64x32_F16E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -15405,7 +15405,7 @@ struct SM90_64x64x32_F32E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -15463,7 +15463,7 @@ struct SM90_64x64x32_F32E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -15516,7 +15516,7 @@ struct SM90_64x96x32_F16E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -15569,7 +15569,7 @@ struct SM90_64x96x32_F16E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -15637,7 +15637,7 @@ struct SM90_64x96x32_F32E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -15705,7 +15705,7 @@ struct SM90_64x96x32_F32E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -15763,7 +15763,7 @@ struct SM90_64x128x32_F16E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -15821,7 +15821,7 @@ struct SM90_64x128x32_F16E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -15899,7 +15899,7 @@ struct SM90_64x128x32_F32E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -15977,7 +15977,7 @@ struct SM90_64x128x32_F32E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -16045,7 +16045,7 @@ struct SM90_64x192x32_F16E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -16113,7 +16113,7 @@ struct SM90_64x192x32_F16E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -16211,7 +16211,7 @@ struct SM90_64x192x32_F32E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -16309,7 +16309,7 @@ struct SM90_64x192x32_F32E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -16387,7 +16387,7 @@ struct SM90_64x256x32_F16E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -16465,7 +16465,7 @@ struct SM90_64x256x32_F16E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -16583,7 +16583,7 @@ struct SM90_64x256x32_F32E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -16701,7 +16701,7 @@ struct SM90_64x256x32_F32E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -16742,7 +16742,7 @@ struct SM90_64x8x32_F16E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -16783,7 +16783,7 @@ struct SM90_64x8x32_F16E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -16824,7 +16824,7 @@ struct SM90_64x8x32_F32E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -16865,7 +16865,7 @@ struct SM90_64x8x32_F32E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -16906,7 +16906,7 @@ struct SM90_64x16x32_F16E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -16947,7 +16947,7 @@ struct SM90_64x16x32_F16E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -16990,7 +16990,7 @@ struct SM90_64x16x32_F32E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -17033,7 +17033,7 @@ struct SM90_64x16x32_F32E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -17076,7 +17076,7 @@ struct SM90_64x32x32_F16E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -17119,7 +17119,7 @@ struct SM90_64x32x32_F16E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -17167,7 +17167,7 @@ struct SM90_64x32x32_F32E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -17215,7 +17215,7 @@ struct SM90_64x32x32_F32E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -17263,7 +17263,7 @@ struct SM90_64x64x32_F16E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -17311,7 +17311,7 @@ struct SM90_64x64x32_F16E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -17369,7 +17369,7 @@ struct SM90_64x64x32_F32E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -17427,7 +17427,7 @@ struct SM90_64x64x32_F32E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -17480,7 +17480,7 @@ struct SM90_64x96x32_F16E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -17533,7 +17533,7 @@ struct SM90_64x96x32_F16E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -17601,7 +17601,7 @@ struct SM90_64x96x32_F32E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -17669,7 +17669,7 @@ struct SM90_64x96x32_F32E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -17727,7 +17727,7 @@ struct SM90_64x128x32_F16E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -17785,7 +17785,7 @@ struct SM90_64x128x32_F16E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -17863,7 +17863,7 @@ struct SM90_64x128x32_F32E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -17941,7 +17941,7 @@ struct SM90_64x128x32_F32E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -18009,7 +18009,7 @@ struct SM90_64x192x32_F16E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -18077,7 +18077,7 @@ struct SM90_64x192x32_F16E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -18175,7 +18175,7 @@ struct SM90_64x192x32_F32E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -18273,7 +18273,7 @@ struct SM90_64x192x32_F32E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -18351,7 +18351,7 @@ struct SM90_64x256x32_F16E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -18429,7 +18429,7 @@ struct SM90_64x256x32_F16E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -18547,7 +18547,7 @@ struct SM90_64x256x32_F32E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -18665,7 +18665,7 @@ struct SM90_64x256x32_F32E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -18706,7 +18706,7 @@ struct SM90_64x8x32_F16E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -18747,7 +18747,7 @@ struct SM90_64x8x32_F16E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -18788,7 +18788,7 @@ struct SM90_64x8x32_F32E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -18829,7 +18829,7 @@ struct SM90_64x8x32_F32E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -18870,7 +18870,7 @@ struct SM90_64x16x32_F16E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -18911,7 +18911,7 @@ struct SM90_64x16x32_F16E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -18954,7 +18954,7 @@ struct SM90_64x16x32_F32E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -18997,7 +18997,7 @@ struct SM90_64x16x32_F32E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -19040,7 +19040,7 @@ struct SM90_64x32x32_F16E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -19083,7 +19083,7 @@ struct SM90_64x32x32_F16E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -19131,7 +19131,7 @@ struct SM90_64x32x32_F32E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -19179,7 +19179,7 @@ struct SM90_64x32x32_F32E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -19227,7 +19227,7 @@ struct SM90_64x64x32_F16E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -19275,7 +19275,7 @@ struct SM90_64x64x32_F16E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -19333,7 +19333,7 @@ struct SM90_64x64x32_F32E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -19391,7 +19391,7 @@ struct SM90_64x64x32_F32E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -19444,7 +19444,7 @@ struct SM90_64x96x32_F16E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -19497,7 +19497,7 @@ struct SM90_64x96x32_F16E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -19565,7 +19565,7 @@ struct SM90_64x96x32_F32E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -19633,7 +19633,7 @@ struct SM90_64x96x32_F32E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -19691,7 +19691,7 @@ struct SM90_64x128x32_F16E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -19749,7 +19749,7 @@ struct SM90_64x128x32_F16E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -19827,7 +19827,7 @@ struct SM90_64x128x32_F32E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -19905,7 +19905,7 @@ struct SM90_64x128x32_F32E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -19973,7 +19973,7 @@ struct SM90_64x192x32_F16E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -20041,7 +20041,7 @@ struct SM90_64x192x32_F16E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -20139,7 +20139,7 @@ struct SM90_64x192x32_F32E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -20237,7 +20237,7 @@ struct SM90_64x192x32_F32E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -20315,7 +20315,7 @@ struct SM90_64x256x32_F16E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -20393,7 +20393,7 @@ struct SM90_64x256x32_F16E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -20511,7 +20511,7 @@ struct SM90_64x256x32_F32E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -20629,7 +20629,7 @@ struct SM90_64x256x32_F32E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };

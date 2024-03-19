@@ -37,29 +37,20 @@
 
 #include <cute/config.hpp>
 
-#include <cute/numeric/int.hpp>           // sizeof_bits
+#include <cute/numeric/numeric_types.hpp>
 #include <cute/numeric/integral_constant.hpp>
 
 namespace cute
 {
-
-template <class T>
-struct is_subbyte {
-  static constexpr bool value = sizeof_bits_v<T> < 8;
-};
-
-template <class T>
-constexpr bool is_subbyte_v = is_subbyte<T>::value;
-
 //
 // Underlying subbyte storage type
 //
 template <class T>
-using subbyte_storage_type_t = conditional_t<(sizeof_bits_v<T> <=   8), uint8_t,
-                               conditional_t<(sizeof_bits_v<T> <=  16), uint16_t,
-                               conditional_t<(sizeof_bits_v<T> <=  32), uint32_t,
-                               conditional_t<(sizeof_bits_v<T> <=  64), uint64_t,
-                               conditional_t<(sizeof_bits_v<T> <= 128), uint128_t,
+using subbyte_storage_type_t = conditional_t<(cute::sizeof_bits_v<T> <=   8), uint8_t,
+                               conditional_t<(cute::sizeof_bits_v<T> <=  16), uint16_t,
+                               conditional_t<(cute::sizeof_bits_v<T> <=  32), uint32_t,
+                               conditional_t<(cute::sizeof_bits_v<T> <=  64), uint64_t,
+                               conditional_t<(cute::sizeof_bits_v<T> <= 128), uint128_t,
                                T>>>>>;
 
 template <class T> struct subbyte_iterator;
@@ -182,6 +173,11 @@ public:
   CUTE_HOST_DEVICE constexpr
   operator element_type() const {
     return get();
+  }
+
+  // Address
+  subbyte_iterator<T> operator&() const {
+    return {ptr_, idx_};
   }
 };
 
@@ -314,7 +310,7 @@ public:
   CUTE_HOST_DEVICE constexpr friend
   auto recast_ptr(subbyte_iterator const& x) {
     using NewT = conditional_t<(is_const_v<T>), NewT_ const, NewT_>;
-    if constexpr (is_subbyte<NewT>::value) {       // Making subbyte_iter, preserve the subbyte idx
+    if constexpr (cute::is_subbyte_v<NewT>) {       // Making subbyte_iter, preserve the subbyte idx
       return subbyte_iterator<NewT>(x.ptr_, x.idx_);
     } else {                                       // Not subbyte, assume/assert subbyte idx 0
       return reinterpret_cast<NewT*>(raw_pointer_cast(x));
@@ -323,7 +319,7 @@ public:
   }
 
   CUTE_HOST_DEVICE friend void print(subbyte_iterator x) {
-    printf("subptr[%db](%p.%u)", int(sizeof_bits<T>::value), x.ptr_, x.idx_);
+    printf("subptr[%db](%p.%u)", int(sizeof_bits_v<T>), x.ptr_, x.idx_);
   }
 };
 
@@ -369,8 +365,8 @@ private:
 
 public:
 
-  CUTE_HOST_DEVICE constexpr
-  array_subbyte() {}
+  constexpr
+  array_subbyte() = default;
 
   CUTE_HOST_DEVICE constexpr
   array_subbyte(array_subbyte const& x) {
@@ -562,7 +558,7 @@ CUTE_HOST_DEVICE constexpr
 T&& get(array_subbyte<T,N>&& a)
 {
   static_assert(I < N, "Index out of range");
-  return std::move(a[I]);
+  return cute::move(a[I]);
 }
 
 } // end namespace cute
@@ -608,7 +604,7 @@ namespace std
 template <class... _Tp>
 struct tuple_size;
 
-template<size_t _Ip, class... _Tp>
+template <size_t _Ip, class... _Tp>
 struct tuple_element;
 #endif
 

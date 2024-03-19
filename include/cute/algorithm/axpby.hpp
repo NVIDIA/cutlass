@@ -33,6 +33,7 @@
 #include <cute/config.hpp>
 
 #include <cute/tensor.hpp>
+#include <cute/tensor_predicate.hpp>
 
 namespace cute
 {
@@ -43,15 +44,17 @@ namespace cute
 template <class Alpha,
           class XEngine, class XLayout,
           class Beta,
-          class YEngine, class YLayout>
+          class YEngine, class YLayout,
+          class PrdTensor = TrivialPredTensor>
 CUTE_HOST_DEVICE
 void
 axpby(Alpha                    const& alpha,
       Tensor<XEngine, XLayout> const& x,
       Beta                     const& beta,
-      Tensor<YEngine, YLayout>     && y)
+      Tensor<YEngine, YLayout>     && y,
+      PrdTensor                const& p = {})
 {
-  return axpby(alpha, x, beta, y);
+  return axpby(alpha, x, beta, y, p);
 }
 
 //
@@ -60,13 +63,15 @@ axpby(Alpha                    const& alpha,
 template <class Alpha,
           class XEngine, class XLayout,
           class Beta,
-          class YEngine, class YLayout>
+          class YEngine, class YLayout,
+          class PrdTensor = TrivialPredTensor>
 CUTE_HOST_DEVICE
 void
 axpby(Alpha                    const& alpha,
       Tensor<XEngine, XLayout> const& x,
       Beta                     const& beta,
-      Tensor<YEngine, YLayout>      & y)
+      Tensor<YEngine, YLayout>      & y,
+      PrdTensor                const& p = {})
 {
   auto isBetaZero = [&] () {
     if constexpr (is_complex<Beta>::value) {
@@ -81,7 +86,9 @@ axpby(Alpha                    const& alpha,
 
   CUTE_UNROLL
   for (int i = 0; i < size(x); ++i) {
-    y(i) = (isBetaZero ? alpha * x(i) : alpha * x(i) + beta * y(i));
+    if (p(i)) {
+      y(i) = (isBetaZero ? alpha * x(i) : alpha * x(i) + beta * y(i));
+    }
   }
 }
 

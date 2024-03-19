@@ -190,7 +190,7 @@ struct DefaultTrmmUniversal<
   Stages,
   SplitKSerial,
   Operator,
-  typename std::enable_if< ! cutlass::is_complex<ElementAccumulator>::value>::type
+  typename platform::enable_if< ! cutlass::is_complex<ElementAccumulator>::value>::type
 > {
 
   using DefaultTrmmKernel = typename kernel::DefaultTrmm<
@@ -311,7 +311,7 @@ struct DefaultTrmmUniversal<
   Stages,
   SplitKSerial,
   Operator,
-  typename std::enable_if<cutlass::is_complex<ElementAccumulator>::value>::type
+  typename platform::enable_if<cutlass::is_complex<ElementAccumulator>::value>::type
 > {
 
   using DefaultTrmmKernel = typename kernel::DefaultTrmmComplex<

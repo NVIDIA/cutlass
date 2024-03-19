@@ -157,35 +157,34 @@ struct B2bGemm {
     // Data members
     //
 
-    GemmUniversalMode mode;
-    GemmCoord problem_size_0;
-    GemmCoord problem_size_1;
-    typename B2bMma::IteratorA0::TensorRef ref_A0;
-    typename B2bMma::IteratorB0::TensorRef ref_B0;
-    typename Epilogue::OutputTileIterator::TensorRef ref_C0;
-    typename B2bMma::IteratorAccumulatorScaleBias::TensorRef ref_Scale0;
-    typename B2bMma::IteratorAccumulatorScaleBias::TensorRef ref_Bias0;
-    typename B2bMma::IteratorB1::TensorRef ref_B1;
-    typename Epilogue::OutputTileIterator::TensorRef ref_C1;
-    typename Epilogue::OutputTileIterator::TensorRef ref_D1;
-    int64_t batch_stride_A0;
-    int64_t batch_stride_B0;
-    int64_t batch_stride_B1;
-    int64_t batch_stride_C1;
-    int64_t batch_stride_D1;
-    int64_t batch_stride_Bias0;
-    int64_t batch_stride_Scale0;
-    typename OutputOp0::Params epilogue0;
-    typename OutputOp1::Params epilogue1;
-    int batch_count;
+    GemmUniversalMode mode = cutlass::gemm::GemmUniversalMode::kGemm;
+    GemmCoord problem_size_0{0,0,0};
+    GemmCoord problem_size_1{0,0,0};
+    typename B2bMma::IteratorA0::TensorRef ref_A0{};
+    typename B2bMma::IteratorB0::TensorRef ref_B0{};
+    typename Epilogue::OutputTileIterator::TensorRef ref_C0{};
+    typename B2bMma::IteratorAccumulatorScaleBias::TensorRef ref_Scale0{};
+    typename B2bMma::IteratorAccumulatorScaleBias::TensorRef ref_Bias0{};
+    typename B2bMma::IteratorB1::TensorRef ref_B1{};
+    typename Epilogue::OutputTileIterator::TensorRef ref_C1{};
+    typename Epilogue::OutputTileIterator::TensorRef ref_D1{};
+    int64_t batch_stride_A0{0};
+    int64_t batch_stride_B0{0};
+    int64_t batch_stride_B1{0};
+    int64_t batch_stride_C1{0};
+    int64_t batch_stride_D1{0};
+    int64_t batch_stride_Bias0{0};
+    int64_t batch_stride_Scale0{0};
+    typename OutputOp0::Params epilogue0 {};
+    typename OutputOp1::Params epilogue1 {};
+    int batch_count{1};
 
     //
     // Methods
     //
 
     /// Default ctor
-    CUTLASS_HOST_DEVICE
-    Arguments() : mode(mode), problem_size_0(0, 0, 0), problem_size_1(0, 0, 0), batch_count(1) {}
+    Arguments() = default;
 
     /// Constructs an Arguments structure
     CUTLASS_HOST_DEVICE
@@ -285,47 +284,45 @@ struct B2bGemm {
 
   /// Parameters structure
   struct Params {
-    cutlass::gemm::GemmUniversalMode mode;
-    cutlass::gemm::GemmCoord problem_size_0;
-    cutlass::gemm::GemmCoord problem_size_1;
-    cutlass::gemm::GemmCoord grid_tiled_shape;
-    int swizzle_log_tile;
-    typename B2bMma::IteratorA0::Params params_A0;
-    typename B2bMma::IteratorA0::TensorRef ref_A0;
-    typename B2bMma::IteratorB0::Params params_B0;
-    typename B2bMma::IteratorB0::TensorRef ref_B0;
-    typename Epilogue::OutputTileIterator::Params params_C0;
-    typename Epilogue::OutputTileIterator::TensorRef ref_C0;
-    typename B2bMma::IteratorAccumulatorScaleBias::TensorRef ref_Scale0;
-    typename B2bMma::IteratorAccumulatorScaleBias::TensorRef ref_Bias0;
-    typename B2bMma::IteratorB1::Params params_B1;
-    typename B2bMma::IteratorB1::TensorRef ref_B1;
-    typename Epilogue::OutputTileIterator::Params params_C1;
-    typename Epilogue::OutputTileIterator::TensorRef ref_C1;
-    typename Epilogue::OutputTileIterator::Params params_D1;
-    typename Epilogue::OutputTileIterator::TensorRef ref_D1;
-    typename OutputOp0::Params output_op_0;
-    typename OutputOp1::Params output_op_1;
-    int64_t batch_stride_A0;
-    int64_t batch_stride_B0;
-    int64_t batch_stride_B1;
-    int64_t batch_stride_C1;
-    int64_t batch_stride_D1;
-    int64_t batch_stride_Bias0;
-    int64_t batch_stride_Scale0;
-    int *semaphore;
-    int gemm_k_iterations_0;
-    int gemm_k_size_0;
-    int gemm_k_iterations_1;
-    int gemm_k_size_1;
+    cutlass::gemm::GemmUniversalMode mode = cutlass::gemm::GemmUniversalMode::kGemm;
+    cutlass::gemm::GemmCoord problem_size_0{};
+    cutlass::gemm::GemmCoord problem_size_1{};
+    cutlass::gemm::GemmCoord grid_tiled_shape{};
+    int swizzle_log_tile{0};
+    typename B2bMma::IteratorA0::Params params_A0{};
+    typename B2bMma::IteratorA0::TensorRef ref_A0{};
+    typename B2bMma::IteratorB0::Params params_B0{};
+    typename B2bMma::IteratorB0::TensorRef ref_B0{};
+    typename Epilogue::OutputTileIterator::Params params_C0{};
+    typename Epilogue::OutputTileIterator::TensorRef ref_C0{};
+    typename B2bMma::IteratorAccumulatorScaleBias::TensorRef ref_Scale0{};
+    typename B2bMma::IteratorAccumulatorScaleBias::TensorRef ref_Bias0{};
+    typename B2bMma::IteratorB1::Params params_B1{};
+    typename B2bMma::IteratorB1::TensorRef ref_B1{};
+    typename Epilogue::OutputTileIterator::Params params_C1{};
+    typename Epilogue::OutputTileIterator::TensorRef ref_C1{};
+    typename Epilogue::OutputTileIterator::Params params_D1{};
+    typename Epilogue::OutputTileIterator::TensorRef ref_D1{};
+    typename OutputOp0::Params output_op_0{};
+    typename OutputOp1::Params output_op_1{};
+    int64_t batch_stride_A0{0};
+    int64_t batch_stride_B0{0};
+    int64_t batch_stride_B1{0};
+    int64_t batch_stride_C1{0};
+    int64_t batch_stride_D1{0};
+    int64_t batch_stride_Bias0{0};
+    int64_t batch_stride_Scale0{0};
+    int *semaphore = nullptr;
+    int gemm_k_iterations_0{0};
+    int gemm_k_size_0{0};
+    int gemm_k_iterations_1{0};
+    int gemm_k_size_1{0};
 
     //
     // Methods
     //
 
-    CUTLASS_HOST_DEVICE
-    Params(): mode(mode), swizzle_log_tile(0), semaphore(0), gemm_k_iterations_0(0), gemm_k_size_0(0),
-        gemm_k_iterations_1(0), gemm_k_size_1(0) { }
+    Params() = default;
 
     CUTLASS_HOST_DEVICE
     Params(

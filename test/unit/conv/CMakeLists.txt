@@ -47,3 +47,4 @@ foreach(SUBDIR
 
 endforeach()
 
+add_subdirectory(device_3x)

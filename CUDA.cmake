@@ -326,6 +326,14 @@ function(cutlass_add_library NAME)
    cxx_std_11
    )
 
+  get_target_property(TARGET_TYPE ${NAME} TYPE)
+
+  if (TARGET_TYPE MATCHES "SHARED")
+    set_target_properties(${NAME} PROPERTIES CUDA_RUNTIME_LIBRARY Shared)
+  elseif(TARGET_TYPE MATCHES "STATIC")
+    set_target_properties(${NAME} PROPERTIES CUDA_RUNTIME_LIBRARY Static)
+  endif()
+
   if(__EXPORT_NAME)
     add_library(nvidia::cutlass::${__EXPORT_NAME} ALIAS ${NAME})
     set_target_properties(${NAME} PROPERTIES EXPORT_NAME ${__EXPORT_NAME})
@@ -336,9 +344,18 @@ endfunction()
 function(cutlass_add_executable NAME)
 
   set(options)
-  set(oneValueArgs)
+  set(oneValueArgs CUDA_RUNTIME_LIBRARY)
   set(multiValueArgs)
   cmake_parse_arguments(_ "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+
+  if (NOT DEFINED __CUDA_RUNTIME_LIBRARY)
+    set(__CUDA_RUNTIME_LIBRARY Shared)
+  endif()
+
+  set(__CUDA_RUNTIME_LIBRARY_ALLOWED None Shared Static)
+  if (NOT __CUDA_RUNTIME_LIBRARY IN_LIST __CUDA_RUNTIME_LIBRARY_ALLOWED)
+    message(FATAL_ERROR "CUDA_RUNTIME_LIBRARY value '${__CUDA_RUNTIME_LIBRARY}' is not in allowed list of '${__CUDA_RUNTIME_LIBRARY_ALLOWED}'")
+  endif()
 
   cutlass_unify_source_files(TARGET_SOURCE_ARGS ${__UNPARSED_ARGUMENTS})
 
@@ -358,6 +375,8 @@ function(cutlass_add_executable NAME)
    INTERFACE
    cxx_std_11
    )
+
+  set_target_properties(${NAME} PROPERTIES CUDA_RUNTIME_LIBRARY ${__CUDA_RUNTIME_LIBRARY})
 
 endfunction()
 

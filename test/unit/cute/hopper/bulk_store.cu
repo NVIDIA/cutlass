@@ -106,8 +106,8 @@ void run_and_validate(GLayout gmem_layout,
                       SLayout smem_layout)
 {
   thrust::host_vector<T> h_in(cosize(gmem_layout));
-  for (int32_t i = 0; i < h_in.size(); ++i) {
-    h_in[i] = T(i);
+  for (size_t i = 0; i < h_in.size(); ++i) {
+    h_in[i] = static_cast<T>(int(i));
   }
 
   thrust::device_vector<T> d_in = h_in;

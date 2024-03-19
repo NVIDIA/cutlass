@@ -61,6 +61,7 @@ template <
   int StagesD,
   int FragmentSize,
   bool ReuseSmemC,
+  bool DelayTmaStore,
   class ElementOutput,
   class ElementCompute,
   class ElementScalar,
@@ -69,7 +70,7 @@ template <
   class EpilogueTile
 >
 struct FusionCallbacks<
-    epilogue::Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC>,
+    epilogue::Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore>,
     fusion::ScaledAcc<ElementOutput, ElementCompute, ElementScalar, RoundStyle>,
     CtaTileShapeMNK,
     EpilogueTile
@@ -132,6 +133,7 @@ template <
   int StagesD,
   int FragmentSize,
   bool ReuseSmemC,
+  bool DelayTmaStore,
   class ElementOutput,
   class ElementCompute,
   class ElementSource,
@@ -141,7 +143,7 @@ template <
   class EpilogueTile
 >
 struct FusionCallbacks<
-    epilogue::Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC>,
+    epilogue::Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore>,
     fusion::LinearCombination<ElementOutput, ElementCompute, ElementSource, ElementScalar, RoundStyle>,
     CtaTileShapeMNK,
     EpilogueTile
@@ -196,6 +198,7 @@ template <
   int StagesD,
   int FragmentSize,
   bool ReuseSmemC,
+  bool DelayTmaStore,
   template <class> class ActivationFn,
   class ElementOutput,
   class ElementCompute,
@@ -206,7 +209,7 @@ template <
   class EpilogueTile
 >
 struct FusionCallbacks<
-    epilogue::Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC>,
+    epilogue::Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore>,
     fusion::LinCombEltAct<ActivationFn, ElementOutput, ElementCompute, ElementSource, ElementScalar, RoundStyle>,
     CtaTileShapeMNK,
     EpilogueTile
@@ -275,6 +278,7 @@ template <
   int StagesD,
   int FragmentSize,
   bool ReuseSmemC,
+  bool DelayTmaStore,
   class ElementOutput,
   class ElementCompute,
   class ElementBias,
@@ -286,7 +290,7 @@ template <
   class EpilogueTile
 >
 struct FusionCallbacks<
-    epilogue::Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC>,
+    epilogue::Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore>,
     fusion::LinCombPerRowBias<ElementOutput, ElementCompute, ElementBias, ElementSource, ElementScalar, AlignmentBias, RoundStyle>,
     CtaTileShapeMNK,
     EpilogueTile
@@ -351,6 +355,7 @@ template <
   int StagesD,
   int FragmentSize,
   bool ReuseSmemC,
+  bool DelayTmaStore,
   template <class> class ActivationFn,
   class ElementOutput,
   class ElementCompute,
@@ -363,7 +368,7 @@ template <
   class EpilogueTile
 >
 struct FusionCallbacks<
-    epilogue::Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC>,
+    epilogue::Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore>,
     fusion::LinCombPerRowBiasEltAct<
       ActivationFn, ElementOutput, ElementCompute, ElementBias, ElementSource, ElementScalar, AlignmentBias, RoundStyle
     >,
@@ -452,6 +457,7 @@ template <
   int StagesD,
   int FragmentSize,
   bool ReuseSmemC,
+  bool DelayTmaStore,
   class GmemLayoutTagAux,
   template <class> class ActivationFn,
   class ElementOutput,
@@ -469,7 +475,7 @@ template <
   class CopyOpR2S
 >
 struct FusionCallbacks<
-    epilogue::Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC>,
+    epilogue::Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore>,
     fusion::LinCombPerRowBiasEltActAux<
       GmemLayoutTagAux, ActivationFn, ElementOutput, ElementCompute,
       ElementAux, ElementBias, ElementSource, ElementScalar, AlignmentAux, AlignmentBias, RoundStyle
@@ -553,10 +559,10 @@ template<
 >
 using Sm90PerRowLinCombPerRowBias =
   Sm90EVT<Sm90Compute<homogeneous_multiply_add, ElementOutput, ElementCompute, RoundStyle>, // beta * C + (alpha * acc + bias)
-    Sm90ColBroadcast<0, CtaTileShapeMNK, ElementScalar, Stride<_1,_0,_0>, AlignmentScalar>, // beta
+    Sm90ColBroadcast<0, CtaTileShapeMNK, ElementScalar, Stride<_1,_0,int>, AlignmentScalar>, // beta
     Sm90SrcFetch<ElementSource>, // C
     Sm90EVT<Sm90Compute<homogeneous_multiply_add, ElementCompute, ElementCompute, RoundStyle>, // alpha * acc + bias
-      Sm90ColBroadcast<0, CtaTileShapeMNK, ElementScalar, Stride<_1,_0,_0>, AlignmentScalar>, // alpha
+      Sm90ColBroadcast<0, CtaTileShapeMNK, ElementScalar, Stride<_1,_0,int>, AlignmentScalar>, // alpha
       Sm90AccFetch, // acc
       Sm90ColBroadcast<0, CtaTileShapeMNK, ElementBias, Stride<_1,_0,int>, AlignmentBias> // bias
     >
@@ -586,6 +592,7 @@ template <
   int StagesD,
   int FragmentSize,
   bool ReuseSmemC,
+  bool DelayTmaStore,
   template <class> class ActivationFn,
   class ElementOutput,
   class ElementCompute,
@@ -599,7 +606,7 @@ template <
   class EpilogueTile
 >
 struct FusionCallbacks<
-    epilogue::Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC>,
+    epilogue::Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore>,
     fusion::PerRowLinCombPerRowBiasEltAct<
       ActivationFn, ElementOutput, ElementCompute, ElementBias, ElementSource, ElementScalar, AlignmentBias, AlignmentScalar, RoundStyle
     >,
@@ -619,10 +626,14 @@ struct FusionCallbacks<
     >;
 
   struct Arguments {
+    using StrideAlpha = Stride<_1,_0,int>;
+    using StrideBeta  = Stride<_1,_0,int>;
     ElementScalar alpha = ElementScalar(1);
     ElementScalar beta = ElementScalar(0);
     ElementScalar const* alpha_ptr = nullptr;
     ElementScalar const* beta_ptr = nullptr;
+    StrideAlpha dAlpha = {};
+    StrideBeta  dBeta  = {};
 
     using StrideBias = Stride<_1,_0,int>;
     ElementBias const* bias_ptr = nullptr;
@@ -635,14 +646,14 @@ struct FusionCallbacks<
       return
         {    // unary op : activation(beta * C + (alpha * acc + bias))
           {    // ternary op : beta * C + (alpha * acc + bias)
-            {beta_ptr, beta}, // leaf args : beta
-            {},               // leaf args : C
-            {                 // ternary op : alpha * acc + bias
-              {alpha_ptr, alpha},   // leaf args : alpha
-              {},                   // leaf args : acc
+            {beta_ptr, beta, dBeta}, // leaf args : beta
+            {},                      // leaf args : C
+            {                        // ternary op : alpha * acc + bias
+              {alpha_ptr, alpha, dAlpha}, // leaf args : alpha
+              {},                         // leaf args : acc
               {bias_ptr, ElementBias(0), dBias}, // leaf args : bias
-              {}              // ternary args : multiply_add
-            },                // end ternary op
+              {}                     // ternary args : multiply_add
+            },                       // end ternary op
             {} // ternary args : multiply_add
           },   // end ternary op
           activation // unary args : activation
@@ -657,6 +668,9 @@ struct FusionCallbacks<
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace detail {
+
+template <typename T>
+constexpr bool is_fp8_v = cute::is_same_v<T,float_e4m3_t> || cute::is_same_v<T,float_e5m2_t>;
 
 // We only apply the scaling factor if output is fp8
 template <typename ElementOutput>
@@ -723,6 +737,7 @@ template <
   int StagesD,
   int FragmentSize,
   bool ReuseSmemC,
+  bool DelayTmaStore,
   template <class> class ActivationFn,
   class ElementOutput,
   class ElementCompute,
@@ -735,7 +750,7 @@ template <
   class EpilogueTile
 >
 struct FusionCallbacks<
-    epilogue::Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC>,
+    epilogue::Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore>,
     fusion::ScaledLinCombPerRowBiasEltAct<
       ActivationFn, ElementOutput, ElementCompute, ElementBias, ElementSource, ElementScalar, AlignmentBias, RoundStyle
     >,
@@ -822,6 +837,8 @@ struct FusionCallbacks<
 //   Aux = scale_aux * Z
 // else
 //   Aux = Z
+
+// fp8 aux specialization
 template<
   class CtaTileShapeMNK,
   class EpilogueTile,
@@ -841,7 +858,7 @@ template<
   int AlignmentBias = 128 / sizeof_bits_v<ElementBias>,
   FloatRoundStyle RoundStyle = FloatRoundStyle::round_to_nearest
 >
-using Sm90ScaledLinCombPerRowBiasEltActAmaxAux =
+using Sm90ScaledLinCombPerRowBiasEltActAmaxAuxFp8 =
   Sm90SplitTreeVisitor<
     // Z = scale_a * scale_b * alpha * acc + scale_c * beta * C + per-row bias
     Sm90ScaledLinCombPerRowBias<CtaTileShapeMNK, ElementCompute, ElementCompute, ElementBias, ElementSource, ElementScalar, AlignmentBias, RoundStyle>,
@@ -856,7 +873,7 @@ using Sm90ScaledLinCombPerRowBiasEltActAmaxAux =
     >,
     // Aux = Z * scale_aux, amax_aux = max(abs(elements in Aux))
     Sm90EVT<Sm90AuxStore<StagesD, EpilogueTile, ElementAux, RoundStyle, StrideAux, SmemLayoutAtom, CopyOpR2S, AlignmentAux>, // store(Aux)
-      Sm90EVT<Sm90Compute<detail::ScaleOutOp<ElementAux>::template Op, ElementCompute, ElementCompute, RoundStyle>, // Z * scale_aux
+      Sm90EVT<Sm90Compute<cutlass::multiplies, ElementCompute, ElementCompute, RoundStyle>, // Z * scale_aux
         Sm90EVT<Sm90ScalarReduction<detail::amax, atomic_maximum, ElementAmax, ElementCompute, RoundStyle>, // amax_aux
           Sm90SplitTreeFetch // Z
         >,
@@ -865,11 +882,79 @@ using Sm90ScaledLinCombPerRowBiasEltActAmaxAux =
     >
   >;
 
+// non-fp8 aux specialization
+// lets us use some EVT specializations such as relu + uint1b_t aux
+template<
+  class CtaTileShapeMNK,
+  class EpilogueTile,
+  int StagesD,
+  class StrideAux,
+  class SmemLayoutAtom,
+  class CopyOpR2S,
+  template <class> class ActivationFn,
+  class ElementOutput,
+  class ElementCompute,
+  class ElementAux = ElementOutput,
+  class ElementAmax = ElementCompute,
+  class ElementBias = ElementOutput,
+  class ElementSource = ElementOutput,
+  class ElementScalar = ElementCompute,
+  int AlignmentAux = 128 / sizeof_bits_v<ElementAux>,
+  int AlignmentBias = 128 / sizeof_bits_v<ElementBias>,
+  FloatRoundStyle RoundStyle = FloatRoundStyle::round_to_nearest
+>
+using Sm90ScaledLinCombPerRowBiasEltActAmaxAuxNotFp8 =
+  // D = activation(Z) * scale_d, amax_d = max(abs(elements in D))
+  Sm90EVT<Sm90Compute<detail::ScaleOutOp<ElementOutput>::template Op, ElementOutput, ElementCompute, RoundStyle>, // activation(Z) * scale_d
+    Sm90EVT<Sm90ScalarReduction<detail::amax, atomic_maximum, ElementAmax, ElementCompute, RoundStyle>, // amax_d
+      Sm90EVT<Sm90Compute<ActivationFn, ElementCompute, ElementCompute, RoundStyle>, // activation(Z)
+        Sm90EVT<Sm90AuxStore<StagesD, EpilogueTile, ElementAux, RoundStyle, StrideAux, SmemLayoutAtom, CopyOpR2S, AlignmentAux>, // Aux = Z
+          // Z = scale_a * scale_b * alpha * acc + scale_c * beta * C + per-row bias
+          Sm90ScaledLinCombPerRowBias<CtaTileShapeMNK, ElementCompute, ElementCompute, ElementBias, ElementSource, ElementScalar, AlignmentBias, RoundStyle>,
+        >
+      >
+    >,
+    Sm90ScalarBroadcast<ElementScalar> // scale_d
+  >;
+
+// dispatcher
+template<
+  class CtaTileShapeMNK,
+  class EpilogueTile,
+  int StagesD,
+  class StrideAux,
+  class SmemLayoutAtom,
+  class CopyOpR2S,
+  template <class> class ActivationFn,
+  class ElementOutput,
+  class ElementCompute,
+  class ElementAux = ElementOutput,
+  class ElementAmax = ElementCompute,
+  class ElementBias = ElementOutput,
+  class ElementSource = ElementOutput,
+  class ElementScalar = ElementCompute,
+  int AlignmentAux = 128 / sizeof_bits_v<ElementAux>,
+  int AlignmentBias = 128 / sizeof_bits_v<ElementBias>,
+  FloatRoundStyle RoundStyle = FloatRoundStyle::round_to_nearest
+>
+using Sm90ScaledLinCombPerRowBiasEltActAmaxAux = conditional_t<detail::is_fp8_v<ElementAux>,
+  Sm90ScaledLinCombPerRowBiasEltActAmaxAuxFp8<
+    CtaTileShapeMNK, EpilogueTile, StagesD, StrideAux, SmemLayoutAtom, CopyOpR2S, ActivationFn,
+    ElementOutput, ElementCompute, ElementAux, ElementAmax, ElementBias, ElementSource, ElementScalar,AlignmentAux, AlignmentBias, RoundStyle
+  >,
+  Sm90ScaledLinCombPerRowBiasEltActAmaxAuxNotFp8<
+    CtaTileShapeMNK, EpilogueTile, StagesD, StrideAux, SmemLayoutAtom, CopyOpR2S, ActivationFn,
+    ElementOutput, ElementCompute, ElementAux, ElementAmax, ElementBias, ElementSource, ElementScalar, AlignmentAux, AlignmentBias, RoundStyle
+  >
+>;
+
+
 template <
   int StagesC,
   int StagesD,
   int FragmentSize,
   bool ReuseSmemC,
+  bool DelayTmaStore,
   class GmemLayoutTagAux,
   template <class> class ActivationFn,
   class ElementOutput,
@@ -888,7 +973,7 @@ template <
   class CopyOpR2S
 >
 struct FusionCallbacks<
-    epilogue::Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC>,
+    epilogue::Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore>,
     fusion::ScaledLinCombPerRowBiasEltActAmaxAux<
       GmemLayoutTagAux, ActivationFn, ElementOutput, ElementCompute,
       ElementAux, ElementAmax, ElementBias, ElementSource, ElementScalar, AlignmentAux, AlignmentBias, RoundStyle
@@ -948,70 +1033,101 @@ struct FusionCallbacks<
     StrideAux dAux = {};
 
     operator typename Impl::Arguments() const {
-      typename Impl::Arguments args;
-      // always use structured binding to unpack DAG args since it may or may not be a tuple
-      auto& [Z_args, aux_args, D_args] = args;
-
-      Z_args =
-        {    // ternary op : (scale_c * beta) * C + ((scale_a * scale_b * alpha) * acc + bias)
-          {{scale_c, beta},
-           {scale_c_ptr, beta_ptr}
-           },  // leaf args : (scale_c * beta)
-          {},  // leaf args : C
-          {    // ternary op : (scale_a * scale_b * alpha) * acc + bias
-            {{scale_a, scale_b, alpha}, 
-             {scale_a_ptr, scale_b_ptr, alpha_ptr}
-             },                   // leaf args : (scale_a * scale_b * alpha)
-            {},                   // leaf args : acc
-            {bias_ptr, ElementBias(0), dBias}, // leaf args : bias
-            {} // ternary args : multiply_add
-          },   // end ternary op
-          {} // ternary args : multiply_add
-        };   // end ternary op
-
       // Only compute amax_d if D is fp8
       ElementAmax* amax_D_ptr_ = nullptr;
-      if constexpr (cute::is_same_v<ElementOutput, float_e4m3_t> ||
-                    cute::is_same_v<ElementOutput, float_e5m2_t>) {
+      if constexpr (detail::is_fp8_v<ElementOutput>) {
         amax_D_ptr_ = amax_D_ptr;
       }
-      D_args =
-        {    // binary op : activation(Z) * scale_d or activation(Z)
-          {    // unary op : reduce(activation(Z))
-            {             // unary op : activation(Z)
-              {},             // leaf args : Z
-              activation      // unary args : activation
-            },                // end unary op
-            {amax_D_ptr_} // unary args : reduce
-          },              // end unary op
-          {{scale_d},
-           {scale_d_ptr}
-           },  // leaf args : scale_d
-          {} // binary args : multiplies or first
-        };   // end binary op
 
-      // Only compute amax_aux if aux is fp8
-      ElementAmax* amax_aux_ptr_ = nullptr;
-      if constexpr (cute::is_same_v<ElementAux, float_e4m3_t> ||
-                    cute::is_same_v<ElementAux, float_e5m2_t>) {
-        amax_aux_ptr_ = amax_aux_ptr;
-      }
-      aux_args =
-        {    // unary op : store(Aux)
-          {    // binary op : Z * scale_d or Z
-            {    // unary op : reduce(Z)
-              {},             // leaf args : Z
-              {amax_aux_ptr_} // unary args : reduce
-            },   // end unary op
-            {{scale_aux},
-             {scale_aux_ptr}
+      // Aux is fp8 -> DAG arguments
+      if constexpr (detail::is_fp8_v<ElementAux>) {
+        typename Impl::Arguments args;
+        // always use structured binding to unpack DAG args since it may or may not be a tuple
+        auto& [Z_args, aux_args, D_args] = args;
+
+        Z_args =
+          {    // ternary op : (scale_c * beta) * C + ((scale_a * scale_b * alpha) * acc + bias)
+            {{scale_c, beta},
+             {scale_c_ptr, beta_ptr}
+             },  // leaf args : (scale_c * beta)
+            {},  // leaf args : C
+            {    // ternary op : (scale_a * scale_b * alpha) * acc + bias
+              {{scale_a, scale_b, alpha}, 
+               {scale_a_ptr, scale_b_ptr, alpha_ptr}
+               },                   // leaf args : (scale_a * scale_b * alpha)
+              {},                   // leaf args : acc
+              {bias_ptr, ElementBias(0), dBias}, // leaf args : bias
+              {} // ternary args : multiply_add
+            },   // end ternary op
+            {} // ternary args : multiply_add
+          };   // end ternary op
+
+        D_args =
+          {    // binary op : activation(Z) * scale_d or activation(Z)
+            {    // unary op : reduce(activation(Z))
+              {             // unary op : activation(Z)
+                {},             // leaf args : Z
+                activation      // unary args : activation
+              },                // end unary op
+              {amax_D_ptr_} // unary args : reduce
+            },              // end unary op
+            {{scale_d},
+             {scale_d_ptr}
              },  // leaf args : scale_d
             {} // binary args : multiplies or first
-          },   // end binary op
-          {aux_ptr, dAux} // unary args : store
-        };   // end unary op
+          };   // end binary op
 
-      return args;
+        aux_args =
+          {    // unary op : store(Aux)
+            {    // binary op : Z * scale_d or Z
+              {    // unary op : reduce(Z)
+                {},            // leaf args : Z
+                {amax_aux_ptr} // unary args : reduce
+              },   // end unary op
+              {{scale_aux},
+               {scale_aux_ptr}
+               },  // leaf args : scale_d
+              {} // binary args : multiplies
+            },   // end binary op
+            {aux_ptr, dAux} // unary args : store
+          };   // end unary op
+
+        return args;
+      }
+
+      // Aux is not fp8 -> Tree arguments
+      else {
+        return
+          {  // binary op : activation(Z) * scale_d or activation(Z)
+            {  // unary op : reduce(activation(Z))
+              {  // unary op : activation(Z)
+                {  // unary op : store(Z)
+                  {  // ternary op : (scale_c * beta) * C + ((scale_a * scale_b * alpha) * acc + bias)
+                    {{scale_c, beta},
+                     {scale_c_ptr, beta_ptr}
+                    },                // leaf args : (scale_c * beta)
+                    {},               // leaf args : C
+                    {                 // ternary op : (scale_a * scale_b * alpha) * acc + bias
+                      {{scale_a, scale_b, alpha}, 
+                       {scale_a_ptr, scale_b_ptr, alpha_ptr}
+                      },                // leaf args : (scale_a * scale_b * alpha)
+                      {},               // leaf args : acc
+                      {bias_ptr, ElementBias(0), dBias
+                      },                // leaf args : bias
+                      {}              // ternary args : multiply_add
+                    },                // end ternary op
+                    {}              // ternary args : multiply_add
+                  },                // end ternary op
+                  {aux_ptr, dAux} // unary args : store
+                },                // end unary op
+                activation     // unary args : activation
+              },               // end unary op
+              {amax_D_ptr_} // unary args : reduce
+            },              // end unary op
+            {{scale_d},{scale_d_ptr}}, // leaf args : scale_d
+            {} // binary args : multiplies or first
+          };   // end binary op
+      }
     }
   };
 
@@ -1048,6 +1164,7 @@ template <
   int StagesD,
   int FragmentSize,
   bool ReuseSmemC,
+  bool DelayTmaStore,
   class GmemLayoutTagAux,
   template <class> class ActivationFn,
   class ElementOutput,
@@ -1063,7 +1180,7 @@ template <
   class CopyOpS2R
 >
 struct FusionCallbacks<
-    epilogue::Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC>,
+    epilogue::Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore>,
     fusion::LinCombDeEltAct<
       GmemLayoutTagAux, ActivationFn, ElementOutput, ElementCompute,
       ElementAux, ElementSource, ElementScalar, AlignmentAux, RoundStyle
@@ -1146,7 +1263,7 @@ template<
 >
 using Sm90LinCombDeEltActDePerRowBias =
   Sm90EVT<Sm90Compute<cutlass::epilogue::thread::Identity, ElementOutput, ElementCompute, RoundStyle>, // Identity for final conversion
-    Sm90EVT<Sm90ColReduction<plus, plus, 0, CtaTileShapeMNK,
+    Sm90EVT<Sm90ColReduction<plus, plus, plus, 0, CtaTileShapeMNK,
                              ElementBias, ElementCompute, RoundStyle, Stride<_1,_0,int>, AlignmentBias>,
       Sm90LinCombDeEltAct<CtaTileShapeMNK, EpilogueTile, Stages, StrideAux, SmemLayoutAtom, CopyOpS2R, ActivationFn,
                           ElementCompute, ElementCompute, ElementAux, ElementSource, ElementScalar, AlignmentAux, RoundStyle>
@@ -1158,6 +1275,7 @@ template <
   int StagesD,
   int FragmentSize,
   bool ReuseSmemC,
+  bool DelayTmaStore,
   class GmemLayoutTagAux,
   template <class> class ActivationFn,
   class ElementOutput,
@@ -1175,7 +1293,7 @@ template <
   class CopyOpS2R
 >
 struct FusionCallbacks<
-    epilogue::Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC>,
+    epilogue::Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore>,
     fusion::LinCombDeEltActDePerRowBias<
       GmemLayoutTagAux, ActivationFn, ElementOutput, ElementCompute,
       ElementAux, ElementBias, ElementSource, ElementScalar, AlignmentAux, AlignmentBias, RoundStyle

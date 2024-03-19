@@ -35,7 +35,7 @@
     activation (NHWC), 
     filter (KRSC), 
     output (NPQK), 
-    pading (pad_h, pad_w), 
+    pading (pad_h, pad_w),
     stride (stride_h, stride_w),
     dilation (dilation_h, dilation_w).
     
@@ -109,7 +109,7 @@ public:
     Mode mode
   ): 
     N(N), H(H), W(W), C(C), P(P), Q(Q), K(K), R(R), S(S),
-    pad_h(R / 2), pad_w(S / 2), stride_h(1), stride_w(1), dilation_h(1), dilation_w(1), 
+    pad_h(R / 2), pad_w(S / 2), stride_h(1), stride_w(1), dilation_h(1), dilation_w(1),
     mode(mode), split_k_slices(1), groups (1) { }
   
   /// Constructor
@@ -133,9 +133,9 @@ public:
     Mode mode,
     int split_k_slices = 1,
     int groups = 1
-  ): 
+  ):
     N(N), H(H), W(W), C(C), P(P), Q(Q), K(K), R(R), S(S),
-    pad_h(pad_h), pad_w(pad_w), stride_h(stride_h), stride_w(stride_w), 
+    pad_h(pad_h), pad_w(pad_w), stride_h(stride_h), stride_w(stride_w),
     dilation_h(dilation_h), dilation_w(dilation_w), 
     mode(mode), split_k_slices(split_k_slices), groups (groups) { }
 
@@ -156,8 +156,8 @@ public:
     N(input_size.n()), H(input_size.h()), W(input_size.w()), C(input_size.c()),
     P(output_size.h()), Q(output_size.w()),
     K(filter_size.n()), R(filter_size.h()), S(filter_size.w()),
-    pad_h(padding[0]), pad_w(padding[2]), 
-    stride_h(stride.row()), stride_w(stride.column()), 
+    pad_h(padding[0]), pad_w(padding[2]),
+    stride_h(stride.row()), stride_w(stride.column()),
     dilation_h(dilation.row()), dilation_w(dilation.column()),
     mode(mode), split_k_slices(split_k_slices), groups(groups) {}
 
@@ -167,7 +167,7 @@ public:
   Conv2dProblemSize(
     cutlass::Tensor4DCoord input_size,   // NHWC
     cutlass::Tensor4DCoord filter_size,  // KRSC
-    cutlass::Tensor4DCoord padding,      // pad_h, _, pad_w, _
+    cutlass::Tensor4DCoord padding,      // pad_h, upper_pad_h, pad_w, upper_pad_w
     cutlass::MatrixCoord stride,         // stride_h, stride_w
     cutlass::MatrixCoord dilation,       // dilation_h, dilation_w
     cutlass::conv::Mode mode = cutlass::conv::Mode::kCrossCorrelation,
@@ -177,12 +177,12 @@ public:
     N(input_size.n()), H(input_size.h()), W(input_size.w()), C(input_size.c()),
     K(filter_size.n()), R(filter_size.h()), S(filter_size.w()),
     pad_h(padding[0]), pad_w(padding[2]),
-    stride_h(stride.row()), stride_w(stride.column()), 
+    stride_h(stride.row()), stride_w(stride.column()),
     dilation_h(dilation.row()), dilation_w(dilation.column()),
     mode(mode), split_k_slices(split_k_slices), groups(groups) {
       // set output P and Q
-      P = ((H + pad_h * 2 - R * dilation_h) / stride_h) + 1;
-      Q = ((W + pad_w * 2 - S * dilation_w) / stride_w) + 1;
+      P = ((H + pad_h + padding[1] - R * dilation_h) / stride_h) + 1;
+      Q = ((W + pad_w + padding[3] - S * dilation_w) / stride_w) + 1;
     }
 
   /// Constructs convolution problem size from cutlass Tensor4DCoord and MatrixCoord 
@@ -199,7 +199,7 @@ public:
     N(input_size.n()), H(input_size.h()), W(input_size.w()), C(input_size.c()),
     P(output_size.h()), Q(output_size.w()),
     K(filter_size.n()), R(filter_size.h()), S(filter_size.w()),
-    pad_h(R / 2), pad_w(S / 2), stride_h(1), stride_w(1), 
+    pad_h(R / 2), pad_w(S / 2), stride_h(1), stride_w(1),
     dilation_h(1), dilation_w(1),
     mode(mode), split_k_slices(split_k_slices), groups(groups) {}
 

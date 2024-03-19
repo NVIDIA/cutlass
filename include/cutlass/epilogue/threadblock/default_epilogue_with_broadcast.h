@@ -57,6 +57,63 @@
 namespace cutlass {
 namespace epilogue {
 namespace threadblock {
+////////////////////////////////////////////////////////////////////////////////
+
+/// Defines sensible defaults for epilogues for SimtOps.
+template <
+  typename Shape,
+  typename WarpMmaSimt,
+  typename ElementOutput,
+  typename ElementTensor,
+  typename ElementVector,
+  typename OutputOp,
+  int ElementsPerAccess,
+  bool ScatterD = false,
+  typename PermuteDLayout = layout::NoPermute
+>
+struct DefaultEpilogueWithBroadcastSimt {
+
+  /// Use defaults related to the existing epilogue
+  using Base = DefaultEpilogueSimt<
+    Shape,
+    WarpMmaSimt,
+    OutputOp,
+    ElementsPerAccess
+  >;
+
+  //
+  // Stores the result z = (y = GEMM(A, B, C), broadcast)
+  //
+  using OutputTileIterator = cutlass::epilogue::threadblock::PredicatedTileIterator<
+    typename Base::OutputTileThreadMap,
+    ElementOutput,
+    ScatterD,
+    PermuteDLayout
+  >;
+
+  //
+  // Additional tensor tile iterator - stores t = Elementwise(z)
+  //
+  using TensorTileIterator = cutlass::epilogue::threadblock::PredicatedTileIterator<
+    typename Base::OutputTileThreadMap,
+    ElementTensor
+  >;
+
+  /// Define the epilogue
+  using Epilogue = EpilogueWithBroadcast<
+    Shape,
+    WarpMmaSimt,
+    Base::kPartitionsK,
+    OutputTileIterator,
+    TensorTileIterator,
+    ElementVector,
+    typename Base::AccumulatorFragmentIterator,
+    typename Base::WarpTileIterator,
+    typename Base::SharedLoadIterator,
+    OutputOp,
+    typename Base::Padding
+  >;
+};
 
 ////////////////////////////////////////////////////////////////////////////////
 

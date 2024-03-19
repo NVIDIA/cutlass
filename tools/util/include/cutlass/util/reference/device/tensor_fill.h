@@ -134,9 +134,8 @@ struct RandomGaussianFunc {
       stddev(static_cast<FloatType>(stddev_)), 
       int_scale(int_scale_) {
 
-      float_scale_up = FloatType(IntType(1) << int_scale);
-      float_scale_up += FloatType(0.5) * float_scale_up;
-      float_scale_down = FloatType(1) / FloatType(IntType(1) << int_scale);
+      float_scale_up = FloatType(IntType(2) << int_scale); // scale up to clamp low order bits
+      float_scale_down = FloatType(1) / FloatType(IntType(2) << int_scale);
     }
   };
 
@@ -172,8 +171,8 @@ struct RandomGaussianFunc {
 
     Element result;
     if (params.int_scale >= 0) {
-      rnd = FloatType(IntType(rnd * params.float_scale_up));
-      result = Element(rnd * params.float_scale_down);
+      rnd = FloatType(IntType(std::llround(rnd * params.float_scale_up)));
+      result = Element(IntType(rnd * params.float_scale_down));
     }
     else {
       result = Element(rnd);
@@ -448,9 +447,8 @@ struct RandomUniformFunc {
       max(static_cast<FloatType>(max_)),
       int_scale(int_scale_) {
 
-      float_scale_up = FloatType(IntType(1) << int_scale);
-      float_scale_up += FloatType(0.5) * float_scale_up;
-      float_scale_down = FloatType(1) / FloatType(IntType(1) << int_scale);
+      float_scale_up = FloatType(IntType(2) << int_scale); // scale up to clamp low order bits
+      float_scale_down = FloatType(1) / FloatType(IntType(2) << int_scale);
     }
   };
 
@@ -489,8 +487,8 @@ struct RandomUniformFunc {
     Element result;
 
     if (params.int_scale >= 0) {
-      rnd = FloatType(IntType(rnd * params.float_scale_up));
-      result = Element(rnd * params.float_scale_down);
+      rnd = FloatType(IntType(std::llround(rnd * params.float_scale_up)));
+      result = Element(IntType(rnd * params.float_scale_down));
     }
     else {
       result = Element(rnd);
@@ -774,8 +772,12 @@ struct RandomSparseMetaFunc {
       MetaSizeInBits(MetaSizeInBits_) {
       if (MetaSizeInBits_ == 2) {
         range = 6;
-      } else if (MetaSizeInBits_ == 4) {
+      }
+      else if (MetaSizeInBits_ == 4) {
         range = 2;
+      }
+      else {
+        throw std::invalid_argument("Invalid MetaSizeInBits");
       }
     }
   };
@@ -1161,34 +1163,10 @@ struct TensorClearPartialFunc {
 
   /// Parameters structure
   struct Params {
-
-    //
-    // Data members
-    //
-
-    TensorView view;
-    Element element;
-    FillMode fill_mode;
-    int alignment;
-
-    /// Default ctor
-    CUTLASS_HOST_DEVICE
-    Params(): fill_mode(FillMode::kNone) { }
-
-    //
-    // Methods
-    //
-
-    /// Construction of Gaussian RNG functor.
-    Params(
-      TensorView view_,
-      Element element_,
-      FillMode fill_mode_,
-      int alignment_
-    ):
-      view(view_), element(element_), fill_mode(fill_mode_), alignment(alignment_) {
-
-    }
+    TensorView view{};
+    Element element{};
+    FillMode fill_mode{FillMode::kNone};
+    int alignment{0};
   };
 
   //
@@ -1307,7 +1285,7 @@ void TensorClearPartial(
 
   TensorForEach<Func, Layout::kRank, Params>(
     view.extent(),
-    Params(view, element, fill_mode, alignment),
+    Params{view, element, fill_mode, alignment},
     /*grid_size*/0, /*block_size*/0,
     stream
   );

@@ -82,7 +82,7 @@ such as `cp.async`, or its C++ interface `memcpy_async`.
 In that case, users will need to perform
 the additional synchronization appropriate to that underlying implementation
 before they may use the results of the `copy` algorithm.
-[The CuTe GEMM tutorial example](../../../examples/cute/tutorial/sgemm_nt_1.cu)
+[The CuTe GEMM tutorial example](../../../examples/cute/tutorial/)
 shows one such synchronization method.
 More optimized GEMM implementations use pipelining techniques
 to overlap asynchronous `copy` operations with other useful work.
@@ -117,11 +117,11 @@ would include the following.
    custom instruction.
 
 2. The two `Tensor`s have static layouts and it can be proven
-   that element vectorization is valid -- for example, four `LDS.32`s
-   can be combined into a single `LDS.128` -- then vectorize the source
+that element vectorization is valid -- for example, four `ld.global.b32`s
+can be combined into a single `ld.global.b128` -- then vectorize the source
    and destinations tensors.
 
-3. If possible, validate that the copy instruction to be used is 
+3. If possible, validate that the copy instruction to be used is
    appropriate for the source and destination tensors.
 
 CuTe's optimized copy implementations can do all of these.

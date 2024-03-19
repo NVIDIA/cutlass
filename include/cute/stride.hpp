@@ -394,20 +394,26 @@ compact_row_major(Shape   const& shape,
 
 namespace detail {
 
-template <class Shape, class Order, class OrigShape, class OrigOrder>
+// @pre weakly_congruent(order, shape)
+// @pre is_congruent<RefShape, RefOrder>
+// @pre is_static<Order>
+// @pre is_static<RefOrder>
+template <class Shape, class Order, class RefShape, class RefOrder>
 CUTE_HOST_DEVICE constexpr
 auto
 compact_order(Shape const& shape, Order const& order,
-              OrigShape const& orig_shape, OrigOrder const& orig_order)
+              RefShape const& ref_shape, RefOrder const& ref_order)
 {
   if constexpr (is_tuple<Order>::value) {
-    return transform(shape, order, [&](auto const& x, auto const& y) { return compact_order(x, y, orig_shape, orig_order); });
+    static_assert(tuple_size<Shape>::value == tuple_size<Order>::value, "Need equal rank of shape and order");
+    return transform(shape, order, [&](auto const& s, auto const& o) { return compact_order(s, o, ref_shape, ref_order); });
   } else {
-    auto d = product(transform(orig_shape, orig_order,
-                               [&](auto const& s, auto const& o) {
-                                  return conditional_return(o < order, product(s), Int<1>{});
-                                }));
-    return compact_col_major(shape, d);
+    // Compute the starting stride for this shape by accumulating all shapes corresponding to lesser orders
+    auto stride_start = product(transform(ref_shape, ref_order,
+                                          [&](auto const& s, auto const& o) {
+                                            return conditional_return(o < order, s, Int<1>{});
+                                          }));
+    return compact_col_major(shape, stride_start);
   }
 
   CUTE_GCC_UNREACHABLE;
@@ -420,15 +426,30 @@ CUTE_HOST_DEVICE constexpr
 auto
 compact_order(Shape const& shape, Order const& order)
 {
-  if constexpr(is_congruent<Shape,Order>::value) {
-    return detail::compact_order(shape, order, flatten_to_tuple(shape), flatten_to_tuple(order));
-  }
-  else
-  {
-    // Here we only want to apply order to top-level subshapes and default (col-major) order on other levels
-    static_assert(rank(Shape{}) == rank(Order{}), "Need equal rank of shape and order");
-    return detail::compact_order(shape, order, shape, order);
-  }
+  auto ref_shape = flatten_to_tuple(product_like(shape, order));
+
+  auto flat_order = flatten_to_tuple(order);
+  // Find the largest static element of order
+  auto max_order = cute::fold(flat_order, Int<0>{}, [](auto v, auto order) {
+    if constexpr (is_constant<true, decltype(v < order)>::value) {  
+      return order;
+    } else {
+      return v;
+    }
+  });
+  // Replace any dynamic elements within order with large-static elements
+  auto max_seq = make_range<max_order+1, max_order+1+rank(flat_order)>{};
+  auto ref_order = cute::transform(max_seq, flat_order, [](auto seq_v, auto order) {
+    if constexpr (is_static<decltype(order)>::value) {
+      return order;
+    } else {
+      return seq_v;
+    }
+  });
+
+  auto new_order = unflatten(ref_order, order);
+
+  return detail::compact_order(shape, new_order, ref_shape, ref_order);
 }
 
 template <class Shape>

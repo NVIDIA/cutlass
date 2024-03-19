@@ -38,7 +38,6 @@
 #include <cuda_runtime_api.h>
 #include "cutlass/cutlass.h"
 #include "cutlass/trace.h"
-
 #if defined(__CUDACC_RTC__)
 #include <cuda/std/type_traits>
 #else
@@ -98,6 +97,23 @@ struct ClusterLauncher {
 #endif
   {
 #if defined(CUTLASS_SM90_CLUSTER_LAUNCH_ENABLED)
+#if defined(CUTLASS_DEBUG_TRACE_LEVEL) && (CUTLASS_DEBUG_TRACE_LEVEL > 1)
+    if (kernel_function == nullptr) {
+      CUTLASS_TRACE_HOST("kernel_function is null");
+      return Status::kInvalid;
+    }
+    CUTLASS_TRACE_HOST("Checking previous error state before calling cudaFuncSetAttribute");
+    cudaError_t prevStatus = cudaGetLastError();
+    if (prevStatus != cudaSuccess) {
+      fprintf(stderr,
+              "[ ERROR: CUDA Runtime ] %s:%d: %s\n",
+              __FILE__,
+              __LINE__,
+              cudaGetErrorString(prevStatus));
+      return Status::kInvalid;
+    }
+    CUTLASS_TRACE_HOST("Calling cudaFuncSetAttribute");
+#endif
     // This attribute was added in CUDA 11.8.
     cudaError_t status =
         cudaFuncSetAttribute(
@@ -157,6 +173,7 @@ struct ClusterLauncher {
     return Status::kInvalid;
 #endif
   }
+
 };
 
 namespace detail {
@@ -226,8 +243,11 @@ launch_kernel_on_cluster(const ClusterLaunchParams& params,
   // the parameters as an array of raw pointers.
   if constexpr (sizeof...(Args) == 0) {
     return cutlass::ClusterLauncher::launch(
-      params.grid_dims, params.cluster_dims, params.block_dims,
-      params.smem_size_in_bytes, params.cuda_stream,
+      params.grid_dims, 
+      params.cluster_dims, 
+      params.block_dims,
+      params.smem_size_in_bytes, 
+      params.cuda_stream,
       kernel_ptr, nullptr);
   }
   else {
@@ -235,9 +255,13 @@ launch_kernel_on_cluster(const ClusterLaunchParams& params,
       detail::checked_addressof(std::forward<Args>(args))...
     };
     return cutlass::ClusterLauncher::launch(
-      params.grid_dims, params.cluster_dims, params.block_dims,
-      params.smem_size_in_bytes, params.cuda_stream,
-      kernel_ptr, kernel_params);
+      params.grid_dims, 
+      params.cluster_dims, 
+      params.block_dims,
+      params.smem_size_in_bytes, 
+      params.cuda_stream,
+      kernel_ptr, 
+      kernel_params);
   }
 }
 

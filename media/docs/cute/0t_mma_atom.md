@@ -8,12 +8,20 @@ Different generations of GPU architectures
 introduce different sets of MMA instructions.
 However, CuTe features such as `Layout`
 makes it possible to expose MMAs for use in generic CUDA C++ code.
-We do this in two steps.
+We accomplish this in multiple steps.
 
 1. We wrap each MMA's PTX instruction in an "Operation" struct.
 
 2. For each Operation struct, we define a "Traits" struct
    that defines all of the meta-information needed to use the Operation.
+
+3. Combining the above, an "Atom" is the combination of the PTX Operation struct with the
+   meta-information Traits struct and provides methods to construct
+   `cute::Tensor` "fragments" for that Operation and to use that Operation
+   on existing `cute::Tensor`s.
+
+4. Combining potentially multiple Atoms, a "TiledMMA" provides utilities for building
+   more complex partitioning patterns by creating layouts and interleavings of Atoms.
 
 ## CuTe MMA Atoms
 
@@ -25,14 +33,15 @@ An "Operation" struct exposes the PTX instruction
 for that specific operation.
 It defines the arguments and interface it expects.
 Operation structs have minimal software dependencies --
-they do not use layouts, tensors, or non-standard numeric data types.
+they do not use layouts, tensors, or non-standard numeric data types -- and
+describe only the physical inputs and outputs to the instruction.
 Different structs have different names
 that describe what the MMA instruction does.
 We will explain the naming scheme below.
 
 A corresponding `MMA_Traits` struct specialization
 defines meta-information about the Operation,
-such as the compute types, the logical shape of the operation,
+such as the logical compute types, the logical shape of the operation,
 and the `Layout`s of threads and values within the operation.
 The `MMA_Traits` struct takes the Operation as a template parameter.
 CuTe specializes `MMA_Traits` for each Operation type that it supports.
@@ -62,7 +71,8 @@ directory, in header files starting with `mma`.
 
 #### Operation struct's name
 
-A CuTe Operation struct's name encodes information about
+A CuTe Operation struct's name principally encodes the PTX instruction it wraps.
+These often include
 
 * its first supported architecture,
 
@@ -70,7 +80,7 @@ A CuTe Operation struct's name encodes information about
 
 * the types that it takes, and
 
-* the expected A and B layouts.
+* the arrangement of the A and B inputs.
 
 For example, the Volta section below will refer to the
 `SM70_8x8x4_F32F16F16F32_NT` Operation struct defined in
@@ -80,17 +90,17 @@ For example, the Volta section below will refer to the
 
 * "8x8x4" refers to M = 8, N = 8, and K = 4,
   the dimensions of the MMA operation that the quadpair performs
-  (see below).
+  (see below). This is reflected in the PTX as `.m8n8k4.`.
 
 * "F32F16F16F32" refers to the element types
   of the four matrix operands A, B, C, and D.
   An MMA computes D = C + A * B,
   so we read the types from left to right:
   D is F32 (`float`), A is F16 (half),
-  B is F16 (half), and C is F32 (`float`).
+  B is F16 (half), and C is F32 (`float`). This is reflected in the PTX instruction name as `.f32.f16.f16.f32`.
 
-* "NT" means that A is M-major (not transposed)
-  and B is N-major (transposed).
+* "NT" means that the PTX instruction is designed for inputs A as M-major (not transposed, column-major)
+  and inputs B as N-major (transposed, row-major). This is reflected in the PTX instruction name as `.col.row.`.
 
 #### Contents
 
@@ -142,24 +152,24 @@ directory, in header files starting with `mma_traits`.
 
 An `MMA_Traits` specialization defines the following public type aliases.
 
-* `ValTypeD`: Compute type of the D matrix
+* `ValTypeD`: Logical compute type of the D matrix
 
-* `ValTypeA`: Compute type of the A matrix
+* `ValTypeA`: Logical compute type of the A matrix
 
-* `ValTypeB`: Compute type of the B matrix
+* `ValTypeB`: Logical compute type of the B matrix
 
-* `ValTypeC`: Compute type of the C matrix
+* `ValTypeC`: Logical compute type of the C matrix
 
 * `Shape_MNK`: Logical MxNxK shape of the MMA operation
 
 * `ThrID`: Logical thread mapping within the single MMA operation
-  (specifying the quadpair, warp, or warpgroup view)
+  (specifying the thread, quadpair, warp, or warpgroup view)
 
-* `ALayout`: Mapping of (thread,value) pairs to the logical MxK A matrix
+* `ALayout`: Mapping of (thread,value) pairs to coordinates in the MxK A matrix
 
-* `BLayout`: Mapping of (thread,value) pairs to the logical NxK B matrix
+* `BLayout`: Mapping of (thread,value) pairs to coordinates in the NxK B matrix
 
-* `CLayout`: Mapping of (thread,value) pairs to the logical MxN C matrix
+* `CLayout`: Mapping of (thread,value) pairs to coordinates in the MxN C matrix
 
 #### Example
 
@@ -249,7 +259,7 @@ The metainformation of this single instruction level view is what we want to enc
 We can start constructing a `CLayout` from the picture above. As with any CuTe layout, it is a pair of `Shape` and corresponding `Stride`. Let us just look at the shape for now. We know that the HMMA uses 8 threads each of which own 8 values. Therefore, the shape of our mapping must have a size of 8 along two modes. With this, we have
 
 ```cpp
-  // (T8,V8) -> (m,n) 
+  // (T8,V8) -> (m,n)
   using CLayout = Layout<Shape <_8, _8>,
                          Stride<_?, _?>;  // Stride to be filled in below
 ```
@@ -260,7 +270,7 @@ This is not to be confused with the logical 8x8 shape of the C matrix. This is 8
 (logical_thr_id, logical_val_id) -> (m, n) == m + n * M
 ```
 
-With this in place, we can start thinking about how to construct the strides in `CLayout`. Let's begin by looking at the strides between threads. Note that 
+With this in place, we can start thinking about how to construct the strides in `CLayout`. Let's begin by looking at the strides between threads. Note that
 * `(T0,V0)` is located at `(m,n) = (0,0) = 0`
 * `(T1,V0)` is located at `(m,n) = (1,0) = 1`
 * `(T2,V0)` is located at `(m,n) = (0,2) = 16`
@@ -279,7 +289,7 @@ We note that the pattern can be transcribed to a layout. We can find the positio
                          Stride<Stride<_1, _16, _4>, _?>;
 ```
 
-With the exact same approach, we can construct the stride along the `logical value id` mode. 
+With the exact same approach, we can construct the stride along the `logical value id` mode.
 * `(T0,V0)` is located at `(m,n) = (0,0) = 0`
 * `(T0,V1)` is located at `(m,n) = (0,1) = 8`
 * `(T0,V2)` is located at `(m,n) = (2,0) = 2`
@@ -317,7 +327,7 @@ A and B matrix layouts depend on whether the sources are transposed or not. The 
 Let's look at the TN layout for A matrix first (right side in the diagram). Again, there are the same 8 logical threads, but each threads owns only 4 elements this time. The shape of `ALayout` will then be `Shape<_8, _4>`. As for the strides, we again need a similar mapping between `(m, k) == m + k * M`. Looking down the `M` mode, we go from `(T0, V0)` to `(T1, V0)` which is a stride of 1 for all 8 threads. For the `K` mode, as we go across, we go from `(T0, V0)` to `(T0, V1)`, which makes a stride of 8 for all 4 values. Therefore, the A layout is:
 
 ```cpp
-  // (T8,V4) -> (m,k) 
+  // (T8,V4) -> (m,k)
   using ALayout = Layout<Shape <_8,_4>,
                          Stride<_1,_8>>;
 ```
@@ -325,7 +335,7 @@ Let's look at the TN layout for A matrix first (right side in the diagram). Agai
 Source B layout is constructed similarly for the TN HMMA, except that we want write it as `(N,K)` rather than `(K,N)` for convenience. For the strides, as we go across the `N` mode, we go from `(T0, V0)` to `(T1, V0)`, making this a stride of 1 for all 8 threads. As we go down the `K` mode, `(T0, V0)` to `(T0, V1)` which is a stride of 8 for all 4 values. So the B layout is the same as A:
 
 ```cpp
-  // (T8,V4) -> (n,k) 
+  // (T8,V4) -> (n,k)
   using BLayout = Layout<Shape <_8,_4>,
                          Stride<_1,_8>>;
 ```
@@ -403,7 +413,7 @@ using CLayout = Layout<Shape <Shape <  _4, _8, ...>, Shape < _2, _2>>,
                        Stride<Stride<_128, _1, ...>, Stride<_64, _8>>>;
 ```
 
-Finally, we get this entire pattern repeating four times, once for each warp, down the `M`-mode starting at `(m,n) = (16,0) = 16`. where two core matrices that belong to the same warp are stacked on top of each other. This makes the size of the final sub-mode of M 4. As for the stride, this time we go to `(T32, V0)`, which makes it a stride of 32. 
+Finally, we get this entire pattern repeating four times, once for each warp, down the `M`-mode starting at `(m,n) = (16,0) = 16`. where two core matrices that belong to the same warp are stacked on top of each other. This makes the size of the final sub-mode of M 4. As for the stride, this time we go to `(T32, V0)`, which makes it a stride of 32.
 
 ```cpp
 // (T128,V4) -> (M64,N8)
@@ -432,3 +442,86 @@ using ALayout = Layout<Shape <_128, Shape <_64,_16>>,
 ```
 
 That is, all threads are mapped the to `(m,k) = (0,0) = 0` element and the values (and shape of the values) remains unchanged. The GMMA Descriptor Constructor can then inspect the `(M,K)` layout of this data and create an appropriate GMMA Descriptor or produce an error message saying the data is in an invalid layout for GMMA.
+
+## `TiledMMA`s
+
+We can make more complex patterns by combining and interleaving multiple atoms.
+
+Let's start with `SM70_8x8x4_F32F16F16F32_NT`.
+```cpp
+MMA_Atom mma = MMA_Atom<SM70_8x8x4_F32F16F16F32_NT>{};
+print_latex(mma);
+```
+<p align="center">
+  <img src="../../images/cute/HMMA.8x8x4.NT_Atom.png" alt="HMMA.8x8x4.NT_Atom.png" height="400"/>
+</p>
+
+The above is equivalent to 
+```cpp
+    TiledMMA mma = make_tiled_mma(SM70_8x8x4_F32F16F16F32_NT{},
+                                  Layout<Shape<_1,_1,_1>>{},   // Layout of Atoms
+                                  Tile<_8,_8,_4>{});           // Tiler
+    print_latex(mma);
+```
+as it is a single atom and has a natural tile size of 8x8x4.
+
+We can create an object akin to a WMMA by using four of these quadpair MMAs:
+```cpp
+    TiledMMA mma = make_tiled_mma(SM70_8x8x4_F32F16F16F32_NT{},
+                                  Layout<Shape <_2,_2>,
+                                         Stride<_2,_1>>{});   // 2x2 n-major layout of Atoms
+    print_latex(mma);
+```
+<p align="center">
+  <img src="../../images/cute/HMMA.8x8x4.NT_2x2.png" alt="HMMA.8x8x4.NT_2x2.png" height="400"/>
+</p>
+This `TiledMMA` replicates the `MMA_Atom` across threads as we can see the `T4` and `T8` and `T12` threads in the `C`-matrix that were not used before. Each quadrant of the `C`-matrix is a replica of the atom's partitioning pattern for a new quadpair and this replication follows a `(2,2):(2,1)` layout.
+
+The above represents a 16x16x4 MMA now, but we can immediately expand this "tile size" up to 32x32x4 instead:
+```cpp
+    TiledMMA mma = make_tiled_mma(SM70_8x8x4_F32F16F16F32_NT{},
+                                  Layout<Shape <_2,_2>,
+                                         Stride<_2,_1>>{},  // 2x2 n-major layout of Atoms
+                                  Tile<_32,_32,_4>{});      // 32x32x4 tiler
+    print_latex(mma);
+```
+<p align="center">
+  <img src="../../images/cute/HMMA.8x8x4.NT_2x2_32x32x4.png" alt="HMMA.8x8x4.NT_2x2_32x32x4.png" height="400"/>
+</p>
+This `TiledMMA` replicates the previous `TiledMMA` across values instead of threads. We can see the `T0V8` and `T16V8` and `T8V8` values in the `C`-matrix that were not used before. Each quadrant of the `C`-matrix is a replica of the previous `TiledMMA`'s partitioning pattern for a new set of values.
+
+Continuing, we see that there are eight values that `T0` receives from the `A`-matrix. Those reads occur at coordinates
+```
+T0V0 => ( 0,0)
+T0V1 => ( 1,0)
+T0V2 => ( 2,0)
+T0V3 => ( 3,0)
+T0V4 => (16,0)
+T0V5 => (17,0)
+T0V6 => (18,0)
+T0V7 => (19,0)
+```
+which are separate, but we might prefer them to be next to each other. That is we would like to permute the `M`-mode to create another valid `TiledMMA`.
+
+```cpp
+    TiledMMA mma = make_tiled_mma(SM70_8x8x4_F32F16F16F32_NT{},
+                                  Layout<Shape <_2,_2>,
+                                         Stride<_2,_1>>{},       // 2x2 n-major layout of Atoms
+                                  Tile<Layout<Shape <_4,_4,_2>,
+                                              Stride<_1,_8,_4>>, // Permutation on M, size 32
+                                       _32,                      // Permutation on N, size 32 identity
+                                       _4>{});                   // Permutation on K, size 4 identity
+    print_latex(mma);
+```
+<p align="center">
+  <img src="../../images/cute/HMMA.8x8x4.NT_2x2_32Mx32x4.png" alt="HMMA.8x8x4.NT_2x2_32Mx32x4.png" height="400"/>
+</p>
+
+That layout `(4,4,2):(1,8,4)` is read like a scatter permutation, telling the m-coords of the original image where to go in the new image.
+```
+old m-coord:  0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31
+new m-coord:  0  1  2  3  8  9 10 11 16 17 18 19 24 25 26 27  4  5  6  7 12 13 14 15 20 21 22 23 28 29 30 31
+```
+This permutes only the M-mode (in `A` and `C` accordingly) and brings the access of all threads to be contiguous in m-coordinates in the `A`-matrix. This is convenient when designing layouts for shared memory or registers, for example. The MMA instructions contained within the image above are now effectively interleaved in the logical m-coordinates. Of course, permutations in the N-mode and K-mode are also valid.
+
+To see how these `TiledMMA`s are used to partition data tensors, see the [`0x_gemm_tutorial.md`](./0x_gemm_tutorial.md).

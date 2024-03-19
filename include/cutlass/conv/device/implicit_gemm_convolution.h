@@ -39,6 +39,7 @@
 #include "cutlass/cutlass.h"
 #include "cutlass/device_kernel.h"
 #include "cutlass/conv/convolution.h"
+#include "cutlass/cuda_host_adapter.hpp"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -79,6 +80,8 @@ public:
   static cutlass::conv::IteratorAlgorithm const kIteratorAlgorithm = UnderlyingKernel::kIteratorAlgorithm;
   static cutlass::conv::StrideSupport const kStrideSupport = UnderlyingKernel::kStrideSupport;
   static cutlass::conv::GroupMode const kGroupMode = UnderlyingKernel::kGroupMode;
+
+  static bool const kEnableCudaHostAdapter = CUTLASS_ENABLE_CUDA_HOST_ADAPTER;
 
   static int const kWarpCount = 
     (ThreadblockShape::kM / WarpShape::kM) * 
@@ -230,7 +233,8 @@ public:
   Status initialize(
     Arguments const &args, 
     void *workspace = nullptr, 
-    cudaStream_t stream = nullptr) {
+    cudaStream_t stream = nullptr,
+    CudaHostAdapter *cuda_adapter = nullptr) {
    
     if (args.problem_size.split_k_slices > 1) {
 
@@ -250,16 +254,22 @@ public:
     	args,
     	static_cast<int *>(workspace)
     );
-    
-    int smem_size = int(sizeof(typename UnderlyingKernel::SharedStorage));
 
-    if (smem_size >= (48 << 10)) {
-      cudaError_t result = cudaFuncSetAttribute(cutlass::Kernel<UnderlyingKernel>,
-                                    cudaFuncAttributeMaxDynamicSharedMemorySize,
-                                    smem_size);
-
-      if (result != cudaSuccess) {
-        return Status::kErrorInternal;
+    if constexpr (kEnableCudaHostAdapter) {
+      CUTLASS_ASSERT(cuda_adapter);
+      return Status::kSuccess;
+    }
+    else {
+      int smem_size = int(sizeof(typename UnderlyingKernel::SharedStorage));
+  
+      if (smem_size >= (48 << 10)) {
+        cudaError_t result = cudaFuncSetAttribute(cutlass::Kernel<UnderlyingKernel>,
+                                      cudaFuncAttributeMaxDynamicSharedMemorySize,
+                                      smem_size);
+  
+        if (result != cudaSuccess) {
+          return Status::kErrorInternal;
+        }
       }
     }
     
@@ -281,7 +291,7 @@ public:
   }
 
   /// Runs the kernel using initialized state.
-  Status run(cudaStream_t stream = nullptr) {
+  Status run(cudaStream_t stream = nullptr, CudaHostAdapter *cuda_adapter = nullptr) {
 
 
     ThreadblockSwizzle threadblock_swizzle;
@@ -290,29 +300,53 @@ public:
     dim3 block(32 * kWarpCount, 1, 1);
 
     int smem_size = int(sizeof(typename UnderlyingKernel::SharedStorage));
+    cutlass::Status launch_result = cutlass::Status::kSuccess ;
 
-    cutlass::Kernel<UnderlyingKernel><<<grid, block, smem_size, stream>>>(params_);
+    if constexpr (kEnableCudaHostAdapter) {
+        //
+        // Use the cuda host adapter
+        //
+        CUTLASS_ASSERT(cuda_adapter);
+        if (cuda_adapter) {
+
+          void* kernel_params[] = {&params_};
+          launch_result = cuda_adapter->launch(
+              grid, dim3(1,1,1), block, smem_size, stream, kernel_params, 0
+              );
+        }
+        else {
+          launch_result = Status::kErrorInternal;
+        }
+    }
+    else {
+      cutlass::Kernel<UnderlyingKernel><<<grid, block, smem_size, stream>>>(params_);      
+    }
 
     cudaError_t result = cudaGetLastError();
-
-    return result == cudaSuccess ? Status::kSuccess : Status::kErrorInternal;
+    if (cudaSuccess == result && Status::kSuccess == launch_result) {
+      return Status::kSuccess;
+    }
+    else {
+      CUTLASS_TRACE_HOST("  Kernel launch failed. Reason: " << result);
+      return Status::kErrorInternal;
+    }
   }
 
   /// Runs the kernel using initialized state.
-  Status operator()(cudaStream_t stream = nullptr) {
-    return run(stream);
+  Status operator()(cudaStream_t stream = nullptr, CudaHostAdapter *cuda_adapter = nullptr) {
+    return run(stream, cuda_adapter);
   }
 
   /// Runs the kernel using initialized state.
   Status operator()(
     Arguments const &args, 
     void *workspace = nullptr, 
-    cudaStream_t stream = nullptr) {
+    cudaStream_t stream = nullptr, CudaHostAdapter *cuda_adapter = nullptr) {
     
-    Status status = initialize(args, workspace, stream);
+    Status status = initialize(args, workspace, stream, cuda_adapter);
     
     if (status == Status::kSuccess) {
-      status = run(stream);
+      status = run(stream, cuda_adapter);
     }
 
     return status;

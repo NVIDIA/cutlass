@@ -1,12 +1,14 @@
 ![ALT](/media/images/gemm-hierarchy-with-epilogue-no-labels.png "Complete CUDA GEMM decomposition")
 
 # Python packages associated with CUTLASS
+
 This directory contains Python packages that are associated with CUTLASS:
 
 * `cutlass`: the CUTLASS Python interface, which enables one to compile and run CUTLASS kernels from within Python
 * `cutlass_library`: utilities used for enumerating and emitting C++ code for CUTLASS kernels
 
 ## CUTLASS Python Interface
+
 The CUTLASS Python interface enables one to compile and run CUTLASS operations from within Python.
 
 ```python
@@ -19,34 +21,46 @@ plan.run(A, B, C, D)
 ```
 
 ### Overview
-The CUTLASS Python interface aims to provide an ease-of-use interface for using CUTLASS via Python. Toward this goal,
-the CUTLASS Python interface attempts to:
 
-* Present high-level interfaces for operators that require only few parameters
-* Select sensible default configurations for an operator given the parameters that have been specified
-* Enumerate configurations for users that are known to work in a given setting
-* Reduce the occurrence of C++ compile-time errors in favor of descriptive Python exceptions
-* Make it easy to export CUTLASS kernels to framework extensions (e.g., PyTorch CUDA extensions)
+The CUTLASS Python interface prioritizes ease of use.
+It has the following features that support this goal.
+
+* It presents high-level interfaces for operators, that require only few parameters.
+* It selects sensible default configurations for an operator given the parameters that have been specified.
+* It enumerates configurations for users that are known to work in a given setting.
+* It favors emitting descriptive Python run-time exceptions instead of C++ compile-time errors, where possible.
+* It simplifies exporting CUTLASS kernels to framework extensions (e.g., PyTorch CUDA extensions).
 
 #### Non-goals
-The CUTLASS Python interface does not intended to:
+The CUTLASS Python interface does not intend to:
 
-**Select optimal kernel configurations.**
-As an ease-of-use interface, the default selections for operator parameters made by the CUTLASS Python interface may
-not achieve the highest possible performance in all scenarios. Users wishing to achieve the highest performance possible
-should consider profile different combinations of configuration parameters, or use a library such as [cuBLAS](https://developer.nvidia.com/cublas)
-that contains heuristics for selecting kernels.
+1. select optimal kernel configurations,
+2. act as a fast container for CUTLASS kernels, or
+3. act as a Python-to-CUDA-kernel just-in-time (JIT) compilation engine.
 
-**Act as a fast container for CUTLASS kernels.**
-The CUTLASS Python interface does not strive to minimize overhead in its Python functions surrounding the running of a kernel.
-Those wishing to deploy a CUTLASS kernel should consider either using the C++ emitted by the Python interface directly, or using
-one of the CUTLASS emitters for automatically creating a framework extension for the kernel (e.g., a PyTorch CUDA extension).
+Regarding selection of optimal kernel configurations,
+the interface favors ease-of-use over maximum configurability.
+Thus, its default selections for operator parameters may
+not achieve the highest possible performance in all scenarios. Users wishing to achieve the highest performance possible should either
 
-**Act as a Python-to-CUDA-kernel JIT compilation engine.**
-The CUTLASS Python interface intends to enable one to use CUTLASS via Python. It can be used by frameworks for JIT compiling
+* select parameters by profiling different combinations of them, or
+* use a library such as [cuBLAS](https://developer.nvidia.com/cublas)
+  that contains heuristics for selecting kernels.
+
+Regarding acting as a fast container for CUTLASS kernels:
+the interface does not strive to minimize overhead in its Python functions surrounding the running of a kernel.
+Those wishing to deploy a CUTLASS kernel should either
+
+* use the C++ emitted by the Python interface directly, or
+* use one of the CUTLASS emitters for automatically creating a framework extension for the kernel (e.g., a PyTorch CUDA extension).
+
+Regarding acting as a Python-to-CUDA-kernel JIT compilation engine:
+the interface enables use of CUTLASS in Python code.
+It can be used by frameworks for JIT compiling
 Python to CUDA kernels, but does not set out to be such a framework.
 
 #### Comparison to PyCUTLASS
+
 The CUTLASS Python interface builds atop CUTLASS's [PyCUTLASS](https://github.com/NVIDIA/cutlass/tree/v3.0.0/tools/library/scripts/pycutlass) library. PyCUTLASS enables
 one to declare, compile, and run GEMMs, convolutions, and grouped GEMM operators with nearly the same configuration
 space as CUTLASS's C++ interface. While this flexibility enables one to achieve the similar levels of functionality
@@ -73,17 +87,21 @@ docker run --gpus all -it --rm nvcr.io/nvidia/pytorch:23.08-py3 -p 8888:8888
 The CUTLASS Python interface has been tested with CUDA 11.8, 12.0, and 12.1 on Python 3.8 and 3.9.
 
 #### Optional environment variables
+
 Prior to installing the CUTLASS Python interface, one may optionally set the following environment variables:
+
 * `CUTLASS_PATH`: the path to the cloned CUTLASS repository
 * `CUDA_INSTALL_PATH`: the path to the installation of CUDA
 
 If these environment variables are not set, the installation process will infer them to be the following:
+
 * `CUTLASS_PATH`: either one directory level above the current directory (i.e., `$(pwd)/..`) if installed locally or in the `source` directory of the location in which `cutlass_library` was installed
 * `CUDA_INSTALL_PATH`: the directory holding `/bin/nvcc` for the first version of `nvcc` on `$PATH` (i.e., `which nvcc | awk -F'/bin/nvcc' '{print $1}'`)
 
 **NOTE:** The version of `cuda-python` installed must match the CUDA version in `CUDA_INSTALL_PATH`.
 
 #### Installation
+
 Stable releases of the CUTLASS Python interface are available via the `nvidia-cutlass` PyPI package. Any other packages with the name `cutlass` are not affiliated with NVIDIA CUTLASS.
 ```bash
 pip install nvidia-cutlass
@@ -94,7 +112,7 @@ The CUTLASS Python interface can also be installed from source by navigating to 
 pip install .
 ```
 
-If you would like to be able to make changes to CUTLASS Python interface and have them reflected when using the interface, perform:
+If you would like to be able to make changes to the CUTLASS Python interface and have them reflected when using the interface, perform:
 ```bash
 pip install -e .
 ```
@@ -118,6 +136,7 @@ Currently, the following operations can be exported to a PyTorch CUDA extension:
 * Conv2d
 
 ### Examples
+
 Jupyter notebook examples of using the CUTLASS Python interface are located in [examples/python](/examples/python).
 
 To launch these notebooks from this directory, run:
@@ -126,9 +145,10 @@ jupyter-lab ../examples/python
 ```
 
 ### Building documentation
+
 The CUTLASS Python interface uses [Sphinx](https://www.sphinx-doc.org/en/master/) for documentation.
 
-Building the documentation requires additional packages. These can be installed via:
+Building the documentation requires additional packages.  The following commands will install them.
 ```bash
 sudo apt-get install pandoc
 pip install --upgrade Sphinx furo pandoc myst-parser sphinx-copybutton nbsphinx nbsphinx-link sphinx-inline-tabs
@@ -137,7 +157,7 @@ pip install --upgrade Sphinx furo pandoc myst-parser sphinx-copybutton nbsphinx 
 To build documentation, you must first have installed the CUTLASS Python interface via the
 [installation instructions](#installation).
 
-Documentation can then be built via the following commands:
+Documentation can then be built via the following commands.
 ```bash
 sphinx-apidoc -o docs_src/source/ cutlass/ cutlass/backend*
 cd docs_src
@@ -146,6 +166,7 @@ mv _build/* ../docs
 ```
 
 ## CUTLASS library package
+
 [cutlass_library](/python/cutlass_library) contains utilities for enumerating and emitting CUTLASS C++ kernels.
 It is used by the CUTLASS CMake system to construct a library of kernels that can be profiled using the CUTLASS profiler.
 

@@ -68,6 +68,7 @@ class NamedBarrier {
   uint32_t const num_threads_;
 
   // Range : [0, 15]
+  // Note that should be set to the final barrier ID, including ReserveNamedBarrierCount should be considered
   uint32_t const id_;
 
  public:
@@ -88,12 +89,14 @@ class NamedBarrier {
 
   CUTLASS_DEVICE
   void arrive_and_wait() const {
-    NamedBarrier::arrive_and_wait(num_threads_, id_);
+    // Note: The value of id_ is already the final barrier id (set correctly in the constructor).
+    NamedBarrier::arrive_and_wait_internal(num_threads_, id_);
   }
 
   CUTLASS_DEVICE
   void arrive() const {
-    NamedBarrier::arrive(num_threads_, id_);
+    // Note: The value of id_ is already the final barrier id (set correctly in the constructor).
+    NamedBarrier::arrive_internal(num_threads_, id_);
   }
 
   CUTLASS_DEVICE
@@ -384,8 +387,8 @@ struct ClusterTransactionBarrier : public ClusterBarrier {
 
   // Performs an arrive operation + expected transaction bytes increment
   CUTLASS_DEVICE
-  void arrive_and_expect_tx(uint32_t transaction_bytes, uint32_t cta_id) const {
-    ClusterTransactionBarrier::arrive_and_expect_tx(&this->barrier_, transaction_bytes , cta_id, true);
+  void arrive_and_expect_tx(uint32_t transaction_bytes, uint32_t cta_id, uint32_t pred = 1u) const {
+    ClusterTransactionBarrier::arrive_and_expect_tx(&this->barrier_, transaction_bytes , cta_id, pred);
   }
 
   // Performs an expected transaction bytes increment without doing an arrive operation

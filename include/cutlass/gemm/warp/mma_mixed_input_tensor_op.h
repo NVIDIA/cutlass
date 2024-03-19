@@ -374,10 +374,10 @@ public:
   using ArchMmaOperator = typename Policy::Operator;
 
   /// Underlying arch::Mma instruction datatype for A operand
-  using MmaElementA = typename ArchMmaOperator::ElementA;
+  using ElementAMma = typename ArchMmaOperator::ElementA;
 
   /// Underlying arch::Mma instruction datatype for B operand
-  using MmaElementB = typename ArchMmaOperator::ElementB;
+  using ElementBMma = typename ArchMmaOperator::ElementB;
 
   /// Underlying arch::Mma instruction datatype for C operand
   using MmaElementC = typename ArchMmaOperator::ElementC;
@@ -408,7 +408,7 @@ public:
 
   /// 
   // static int const kLoadShapeK = InstructionShape::kK * 
-  //  (sizeof_bits<MmaElementA>::value / sizeof_bits<ElementB>::value);
+  //  (sizeof_bits<ElementAMma>::value / sizeof_bits<ElementB>::value);
 
 public:
 
@@ -423,7 +423,7 @@ public:
 
   /// Storage for transformed A tile in registers (for use in Mma instruction)
   using TransformedFragmentA =
-      Array<MmaElementA, FragmentA::kElements>;
+      Array<ElementAMma, FragmentA::kElements>;
 
   /// Underlying arch::Mma instruction operand fragement for matrix A
   using MmaOperandA = typename ArchMmaOperator::FragmentA;
@@ -439,7 +439,7 @@ public:
 
   /// Storage for transformed B tile in registers (for use in Mma instruction)
   using TransformedFragmentB =
-      Array<MmaElementB, FragmentB::kElements>;
+      Array<ElementBMma, FragmentB::kElements>;
 
   /// Underlying arch::Mma instruction operand fragement for matrix B
   using MmaOperandB = typename ArchMmaOperator::FragmentB;
@@ -523,13 +523,13 @@ public:
                  FragmentA const &A, FragmentB const &B) const {
 
     // Shuffle data within warp to obtain the mma.sync operand layout
-    detail::FragmentShuffler<MmaElementB, ElementB, MmaIterations::kColumn, 
+    detail::FragmentShuffler<ElementBMma, ElementB, MmaIterations::kColumn, 
              FragmentB::kElements, MmaOperandB::kElements, Operand::kB> shuffler_B;
     FragmentB tmp_B; 
     tmp_B = shuffler_B(B);
 
     // Convert the B operand to the Mma Instruction operand type
-    detail::FragmentConverter<MmaElementB, ElementB, FragmentB::kElements> convert_B;
+    detail::FragmentConverter<ElementBMma, ElementB, FragmentB::kElements> convert_B;
     dst_B = convert_B(tmp_B);
 
     FragmentA tmp_A;
@@ -537,16 +537,16 @@ public:
     Array<ElementA, FragmentA::kElements / 2> *
         ptr_tmp_A = reinterpret_cast<Array<ElementA,
                                              FragmentA::kElements / 2> *>(&tmp_A);
-    Array<MmaElementA, FragmentA::kElements / 2> *
-        ptr_dst_A = reinterpret_cast<Array<MmaElementA,
+    Array<ElementAMma, FragmentA::kElements / 2> *
+        ptr_dst_A = reinterpret_cast<Array<ElementAMma,
                                              FragmentA::kElements / 2> *>(&dst_A);
 
     // Shuffle data within warp to obtain the mma.sync operand layout
-    detail::FragmentShuffler<MmaElementA, ElementA, MmaIterations::kRow,
+    detail::FragmentShuffler<ElementAMma, ElementA, MmaIterations::kRow,
              FragmentA::kElements, MmaOperandA::kElements, Operand::kA> shuffler_A;
 
     // Convert the A operand to the Mma Instruction operand type
-    detail::FragmentConverter<MmaElementA, ElementA, FragmentA::kElements / 2> convert_A;
+    detail::FragmentConverter<ElementAMma, ElementA, FragmentA::kElements / 2> convert_A;
 
     tmp_A = shuffler_A(A);
     ptr_dst_A[0] = convert_A(ptr_tmp_A[0]);

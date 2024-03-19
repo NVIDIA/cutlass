@@ -100,7 +100,7 @@ struct CallbacksBuilder<
   TileShape_MNK,
   EpilogueTile_MN,
   ElementAccumulator,
-  enable_if_t<not is_base_of_v<fusion::FusionOperation, FusionCallbacks>>
+  cute::enable_if_t<not is_base_of_v<fusion::FusionOperation, FusionCallbacks>>
 > {
   using Callbacks = FusionCallbacks;
 };

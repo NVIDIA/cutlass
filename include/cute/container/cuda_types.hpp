@@ -96,11 +96,11 @@ uint32_t&& get(dim3&& a)
 {
   static_assert(I < 3, "Index out of range");
   if constexpr (I == 0) {
-    return std::move(a.x);
+    return cute::move(a.x);
   } else if constexpr (I == 1) {
-    return std::move(a.y);
+    return cute::move(a.y);
   } else if constexpr (I == 2) {
-    return std::move(a.z);
+    return cute::move(a.z);
   }
 
   CUTE_GCC_UNREACHABLE;
@@ -162,11 +162,11 @@ uint32_t&& get(uint3&& a)
 {
   static_assert(I < 3, "Index out of range");
   if constexpr (I == 0) {
-    return std::move(a.x);
+    return cute::move(a.x);
   } else if constexpr (I == 1) {
-    return std::move(a.y);
+    return cute::move(a.y);
   } else if constexpr (I == 2) {
-    return std::move(a.z);
+    return cute::move(a.z);
   }
 
   CUTE_GCC_UNREACHABLE;

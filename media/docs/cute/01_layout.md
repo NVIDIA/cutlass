@@ -7,7 +7,7 @@ to an index space.
 `Layout`s present a common interface to multidimensional array access
 that abstracts away the details of how the array's elements are organized in memory.
 This lets users write algorithms that access multidimensional arrays generically,
-so that layouts can change, without users' code needing to change. For example, a row-major MxN layout and a column-major MxN layout can be treated identically in software. 
+so that layouts can change, without users' code needing to change. For example, a row-major MxN layout and a column-major MxN layout can be treated identically in software.
 
 CuTe also provides an "algebra of `Layout`s."
 `Layout`s can be combined and manipulated
@@ -200,17 +200,17 @@ which produces the following output for the above examples.
 
 ```
 > print2D(s2xs4)
-  0    2    4    6  
-  1    3    5    7  
+  0    2    4    6
+  1    3    5    7
 > print2D(s2xd4_a)
-  0    1    2    3  
+  0    1    2    3
  12   13   14   15
 > print2D(s2xh4_col)
-  0    2    4    6  
-  1    3    5    7  
+  0    2    4    6
+  1    3    5    7
 > print2D(s2xh4)
-  0    2    1    3  
-  4    6    5    7 
+  0    2    1    3
+  4    6    5    7
 ```
 
 We can see static, dynamic, row-major, column-major, and hierarchical layouts printed here. The statement `layout(m,n)` provides the mapping of
@@ -232,13 +232,13 @@ produces the following output for the above examples.
 
 ```
 > print1D(s2xs4)
-  0    1    2    3    4    5    6    7  
+  0    1    2    3    4    5    6    7
 > print1D(s2xd4_a)
-  0   12    1   13    2   14    3   15  
+  0   12    1   13    2   14    3   15
 > print1D(s2xh4_col)
-  0    1    2    3    4    5    6    7  
+  0    1    2    3    4    5    6    7
 > print1D(s2xh4)
-  0    4    2    6    1    5    3    7  
+  0    4    2    6    1    5    3    7
 ```
 
 Any multi-mode of a layout, including the entire layout itself, can accept a 1-D coordinate. More on this in the following sections.
@@ -248,7 +248,7 @@ CuTe provides more printing utilities for visualizing Layouts. The `print_layout
 ```text
 > print_layout(s2xh4)
 (2,(2,2)):(4,(2,1))
-      0   1   2   3 
+      0   1   2   3
     +---+---+---+---+
  0  | 0 | 2 | 1 | 3 |
     +---+---+---+---+
@@ -261,15 +261,15 @@ The `print_latex` function generates LaTeX that can be compiled with `pdflatex` 
 ### Vector Layouts
 
 We define a vector as any `Layout` with `rank == 1`.
-For example, the layout `8:1` can be interpreted as an 8-element vector whose indices are contiguous. 
+For example, the layout `8:1` can be interpreted as an 8-element vector whose indices are contiguous.
 
 ```
 Layout:  8:1
 Coord :  0  1  2  3  4  5  6  7
-Index :  0  1  2  3  4  5  6  7 
+Index :  0  1  2  3  4  5  6  7
 ```
 
-Similarly, 
+Similarly,
 the layout `8:2` can be interpreted as an 8-element vector where the indices of the elements are strided by `2`.
 
 ```
@@ -278,12 +278,12 @@ Coord :  0  1  2  3  4  5  6  7
 Index :  0  2  4  6  8 10 12 14
 ```
 
-By the above rank-1 definition, we *also* interpret layout `((4,2)):((2,1))` as a vector, since its shape is rank-1. The inner shape looks like a 4x2 column-major matrix, but the extra pair of parenthesis suggest we can interpret those two modes as a 1-D 8-element vector. The strides tell us that the first `4` elements are strided by `2` and then there are `2` of those first elements strided by `1`.
+By the above rank-1 definition, we *also* interpret layout `((4,2)):((2,1))` as a vector, since its shape is rank-1. The inner shape looks like a 4x2 row-major matrix, but the extra pair of parenthesis suggest we can interpret those two modes as a 1-D 8-element vector. The strides tell us that the first `4` elements are strided by `2` and then there are `2` of those first elements strided by `1`.
 
 ```
 Layout:  ((4,2)):((2,1))
 Coord :  0  1  2  3  4  5  6  7
-Index :  0  2  4  8  1  3  5  7 
+Index :  0  2  4  6  1  3  5  7
 ```
 
 We can see the second set of `4` elements are duplicates of the first `4` with an extra stride of `1`.
@@ -293,7 +293,7 @@ Consider the layout `((4,2)):((1,4))`. Again, it's `4` elements strided by `1` a
 ```
 Layout:  ((4,2)):((1,4))
 Coord :  0  1  2  3  4  5  6  7
-Index :  0  1  2  3  4  5  6  7 
+Index :  0  1  2  3  4  5  6  7
 ```
 
 As a function from integers to integers, it's identical to `8:1`. It's the identity function.
@@ -373,8 +373,8 @@ With the notion of compatibility above, we emphasize that every `Layout` accepts
 
 Thus, all Layouts provide two fundamental mappings:
 
-* the map from an input coordinate to the corresponding natural coordinate via the `Shape`,
-* and the map from a natural coordinate to the index via the `Stride`.
+* the map from an input coordinate to the corresponding natural coordinate via the `Shape`, and
+* the map from a natural coordinate to the index via the `Stride`.
 
 #### Coordinate Mapping
 
@@ -447,7 +447,7 @@ print(crd2idx(make_coord(_1{},make_coord(_1{},_2{})), shape, stride));  // _17
 Sublayouts can be retrieved with `layout<I...>`
 ```cpp
 Layout a   = Layout<Shape<_4,Shape<_3,_6>>>{}; // (4,(3,6)):(1,(4,12))
-Layout a0  = layout<0>(a);                     // 4:1     
+Layout a0  = layout<0>(a);                     // 4:1
 Layout a1  = layout<1>(a);                     // (3,6):(4,12)
 Layout a10 = layout<1,0>(a);                   // 3:4
 Layout a11 = layout<1,1>(a);                   // 6:12
@@ -480,7 +480,7 @@ Layout aa  = make_layout(a);                    // (3):(1)
 Layout aaa = make_layout(aa);                   // ((3)):((1))
 Layout d   = make_layout(a, make_layout(a), a); // (3,(3),3):(1,(1),1)
 ```
-or can be combined with `append`, `prepend`, or `replace`
+or can be combined with `append`, `prepend`, or `replace`.
 ```cpp
 Layout a = Layout<_3,_1>{};                     // 3:1
 Layout b = Layout<_4,_3>{};                     // 4:3
@@ -490,15 +490,17 @@ Layout c  = append(ab, ab);                     // (3,4,(3,4)):(1,3,(1,3))
 Layout d  = replace<2>(c, b);                   // (3,4,4):(1,3,3)
 ```
 
-### Grouping
+### Grouping and flattening
 
-Layout modes can be grouped with `group<ModeBegin, ModeEnd>` and flattened with `flatten`
+Layout modes can be grouped with `group<ModeBegin, ModeEnd>` and flattened with `flatten`.
 ```cpp
-Layout a = Layout<Shape<_2,_3,_5,_7>>{}; // (_2,_3,_5,_7)
-Layout b = group<0,2>(a);                // ((_2,_3),_5,_7)
-Layout c = group<1,3>(b);                // ((_2,_3),(_5,_7))
-Layout f = flatten(c);                   // (_2,_3,_5,_7)
+Layout a = Layout<Shape<_2,_3,_5,_7>>{};  // (_2,_3,_5,_7):(_1,_2,_6,_30)
+Layout b = group<0,2>(a);                 // ((_2,_3),_5,_7):((_1,_2),_6,_30)
+Layout c = group<1,3>(b);                 // ((_2,_3),(_5,_7)):((_1,_2),(_6,_30))
+Layout f = flatten(b);                    // (_2,_3,_5,_7):(_1,_2,_6,_30)
+Layout e = flatten(c);                    // (_2,_3,_5,_7):(_1,_2,_6,_30)
 ```
+Grouping, flattening, and reordering modes allows the reinterpretation of tensors in place as matrices, matrices as vectors, vectors as matrices, etc.
 
 ### Slicing
 

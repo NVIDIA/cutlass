@@ -33,7 +33,7 @@
 #include <cute/config.hpp>
 
 #include <cute/util/type_traits.hpp>
-#include <cute/numeric/int.hpp>        // sizeof_bits
+#include <cute/numeric/numeric_types.hpp>        // sizeof_bits
 #include <cute/numeric/math.hpp>
 #include <cute/numeric/integral_constant.hpp>
 
@@ -58,7 +58,7 @@ CUTE_HOST_DEVICE constexpr
 auto
 recast_ptr(void* ptr)
 {
-  if constexpr (is_subbyte<NewT>::value) {
+  if constexpr (cute::is_subbyte_v<NewT>) {
     return subbyte_iterator<NewT>(ptr);
   } else {
     return reinterpret_cast<NewT*>(ptr);
@@ -71,7 +71,7 @@ CUTE_HOST_DEVICE constexpr
 auto
 recast_ptr(void const* ptr)
 {
-  if constexpr (is_subbyte<NewT>::value) {
+  if constexpr (cute::is_subbyte_v<NewT>) {
     return subbyte_iterator<NewT const>(ptr);
   } else {
     return reinterpret_cast<NewT const*>(ptr);

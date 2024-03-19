@@ -117,9 +117,11 @@ void FilterArchitecture() {
     { "SM70*",                      70, 75},
     { "SM75*",                      75, kMaxDevice},
     { "SM80*",                      80, kMaxDevice},
-    { "SM90*",                      90, 90        },
+    { "SM89*",                      89, 89},
+    { "SM90*",                      90, 90},
     { 0, 0, false }
   };
+
 
   // Set negative test filters
   std::stringstream ss;

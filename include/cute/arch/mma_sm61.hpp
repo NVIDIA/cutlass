@@ -58,7 +58,7 @@ struct SM61_DP4A
                  : "=r"(d)
                  : "r"(a), "r"(b), "r"(c));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM61_DP4A without CUTE_ARCH_MMA_SM61_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM61_DP4A without CUTE_ARCH_MMA_SM61_ENABLED");
 #endif
   }
 };
@@ -79,7 +79,7 @@ struct SM61_DP2A
                  : "=r"(d)
                  : "r"(a), "r"(b), "r"(c));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM61_DP2A without CUTE_ARCH_MMA_SM61_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM61_DP2A without CUTE_ARCH_MMA_SM61_ENABLED");
 #endif
   }
 };

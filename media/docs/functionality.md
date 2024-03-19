@@ -1,6 +1,6 @@
-![ALT](/media/images/gemm-hierarchy-with-epilogue-no-labels.png "CUTLASS Functionality")
+![ALT](../images/gemm-hierarchy-with-epilogue-no-labels.png "CUTLASS Functionality")
 
-[README](/README.md#documentation) > **Functionality**
+[README](../../README.md#documentation) > **Functionality**
 
 # Functionality
 

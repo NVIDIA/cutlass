@@ -1,6 +1,6 @@
-![ALT](/media/images/gemm-hierarchy-with-epilogue-no-labels.png "CUTLASS Code Organization")
+![ALT](../images/gemm-hierarchy-with-epilogue-no-labels.png "CUTLASS Code Organization")
 
-[README](/README.md#documentation) > **CUTLASS Utilities**
+[README](../../README.md#documentation) > **CUTLASS Utilities**
 
 Note: This document discusses utilities commonly used with code that targets CUTLASS 2.x.
 Although CUTLASS 3.0's primary entry point APIs do not transact in these `cutlass::*` tensor types anymore,

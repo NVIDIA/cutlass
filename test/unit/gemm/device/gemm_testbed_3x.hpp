@@ -41,7 +41,6 @@
 #include <random>
 
 #include "../../common/cutlass_unit_test.h"
-
 #include "cutlass/util/host_tensor.h"
 #include "cutlass/util/tensor_view_io.h"
 #include "cutlass/util/distribution.h"
@@ -54,7 +53,6 @@
 #include "cutlass/epilogue/collective/default_epilogue.hpp"
 #include "cutlass/epilogue/fusion/operations.hpp"
 #include "cutlass/complex.h"
-
 #include "testbed_utils.h"
 
 #include "cutlass/kernel_hardware_info.hpp"
@@ -64,6 +62,7 @@
 
 #include "cute/int_tuple.hpp"
 #include "cute/layout.hpp"
+#include "cute/numeric/int.hpp"
 
 namespace test {
 namespace gemm {
@@ -122,7 +121,7 @@ public:
 
   template<class IntegralNotBool,
     __CUTE_REQUIRES((std::is_integral_v<IntegralNotBool> &&
-      !std::is_same_v<IntegralNotBool, bool>)) >
+      !cute::is_same_v<IntegralNotBool, bool>)) >
   explicit MaxSwizzleSize(IntegralNotBool max_swizzle_size) : max_swizzle_size_(max_swizzle_size) {}
   explicit operator int() const { return max_swizzle_size_; }
 private:
@@ -132,7 +131,7 @@ private:
 template <typename T>
 auto make_iterator(T* ptr) {
   using namespace cute;
-  if constexpr (is_subbyte_v<T>) {
+  if constexpr (cute::is_subbyte_v<T>) {
     return subbyte_iterator<T>(ptr);
   }
   else {
@@ -174,7 +173,7 @@ public:
 
   template<class IntegralNotBool,
     __CUTE_REQUIRES((std::is_integral_v<IntegralNotBool> &&
-      !std::is_same_v<IntegralNotBool, bool>)) >
+      !cute::is_same_v<IntegralNotBool, bool>)) >
   explicit Splits(IntegralNotBool splits) : splits_(splits) {}
   explicit operator int() const { return splits_; }
 private:
@@ -192,7 +191,7 @@ public:
 
   template<class IntegralNotBool,
     __CUTE_REQUIRES((std::is_integral_v<IntegralNotBool> &&
-      !std::is_same_v<IntegralNotBool, bool>)) >
+      !cute::is_same_v<IntegralNotBool, bool>)) >
   explicit Iterations(IntegralNotBool iterations) : iterations_(iterations) {}
   explicit operator int() const { return iterations_; }
 private:
@@ -214,12 +213,12 @@ bool initialize_tensor(
       scope_min = 0;
     }
     else if (bits_input <= 8) {
-        scope_max = 2;
-        scope_min = -2;
+        scope_max = 1;
+        scope_min = -1;
     }
     else{
-      scope_max = 5;
-      scope_min = -5;
+      scope_max = 4;
+      scope_min = -4;
     }
     cutlass::reference::host::TensorFillRandomUniform(
       view, seed, scope_max, scope_min, 0);
@@ -263,12 +262,16 @@ static constexpr bool is_row_or_col_major(){
 //
 // Default MMA input Operands : A , B
 //
-template<class ScheduleType_, class Gemm> 
+template<
+  class ScheduleType_, 
+  class Gemm, 
+  class ElementA_ = typename Gemm::GemmKernel::ElementA,
+  class ElementB_ = typename Gemm::GemmKernel::ElementB> 
 struct HostCollectiveMainloop {
   // Kernel data types
-  using ElementA = typename Gemm::GemmKernel::ElementA;
+  using ElementA = ElementA_;
   using StrideA  = typename Gemm::GemmKernel::StrideA;
-  using ElementB = typename Gemm::GemmKernel::ElementB;
+  using ElementB = ElementB_;
   using StrideB  = typename Gemm::GemmKernel::StrideB;
   using ScheduleType = typename Gemm::GemmKernel::CollectiveMainloop::DispatchPolicy::Schedule;
   using LayoutTagA = cutlass::detail::StrideToLayoutTagA_t<StrideA>;
@@ -295,6 +298,8 @@ struct HostCollectiveMainloop {
 
   cutlass::HostTensor<ElementA, LayoutTagA> tensor_A;
   cutlass::HostTensor<ElementB, LayoutTagB> tensor_B;
+  // Whether to use relative equality checks
+  CheckEquality check_relative_equality = CheckEquality::EXACT;
 
   uint64_t seed;
   static constexpr uint64_t kDefaultSeed = 4096;
@@ -306,6 +311,7 @@ struct HostCollectiveMainloop {
     "ERROR : B Layout is neither Row / Column Major)");
 
   HostCollectiveMainloop(
+    CheckEquality check_relative_equality_ = CheckEquality::EXACT,
     cutlass::Distribution::Kind init_A_ = cutlass::Distribution::Uniform,
     cutlass::Distribution::Kind init_B_ = cutlass::Distribution::Uniform,
     uint64_t seed_ = kDefaultSeed,
@@ -314,10 +320,11 @@ struct HostCollectiveMainloop {
   ):
     stride_factor_A(stride_factor_A_),
     stride_factor_B(stride_factor_B_),
-    init_A(init_A_), init_B(init_B_), seed(seed_) { }
+    init_A(init_A_), init_B(init_B_), seed(seed_),
+    check_relative_equality(check_relative_equality_) { }
 
   template<class ProblemShapeType>
-  void initialize(ProblemShapeType problem_size) {
+  bool initialize(ProblemShapeType problem_size) {
     //
     // Allocate the GEMM workspace
     //
@@ -350,13 +357,17 @@ struct HostCollectiveMainloop {
 
     tensor_A.sync_device();
     tensor_B.sync_device();
+
+    return true;
   }
 
   Arguments to_args() {
-    return {
-      tensor_A.device_data(), stride_a,
-      tensor_B.device_data(), stride_b
+
+    Arguments arguments = 
+    {
+      tensor_A.device_data(), stride_a, tensor_B.device_data(), stride_b
     };
+    return arguments;
   }
 
   auto to_host_args(ProblemShapeType problem_size) {
@@ -374,7 +385,16 @@ struct HostCollectiveMainloop {
     auto B = make_tensor(make_iterator(tensor_B.host_data()),
         make_layout(make_shape(N, K, L), stride_b));
 
-    cutlass::reference::host::GettMainloopParams<ElementAccumulator, decltype(A), decltype(B)> mainloop_params{A, B, TransformA, TransformB};
+    cutlass::reference::host::GettMainloopParams<ElementAccumulator, 
+                                                 decltype(A), 
+                                                 decltype(B)
+                                                 > mainloop_params{};
+
+    mainloop_params.A = A;
+    mainloop_params.B = B;
+    mainloop_params.transform_A = TransformA;
+    mainloop_params.transform_B = TransformB;
+
     return mainloop_params;
   }
 
@@ -383,16 +403,44 @@ struct HostCollectiveMainloop {
          << "\nB =\n" << tensor_B.host_view();
   }
 
+  template <
+    class Element,
+    class Layout
+  >
+  bool equality_check(
+    cutlass::TensorView<Element, Layout> const& lhs,
+    cutlass::TensorView<Element, Layout> const& rhs) const {
+
+    // Factors used for calculating relative equality. CUTLASS's relative-equality
+    // checks in include/cutlass/relatively_equal.h  are inspired by
+    // https://floating-point-gui.de/errors/comparison/. This reference suggests using
+    // the minimum normal value of a given type as the nonzero_floor.
+    Element epsilon(static_cast<Element>(0.1f));
+    Element nonzero_floor(std::numeric_limits<Element>::min());
+
+    if constexpr (!cutlass::is_complex<Element>::value) {
+      if (check_relative_equality == CheckEquality::RELATIVE) {
+        return cutlass::reference::host::TensorRelativelyEquals(
+          lhs, rhs, epsilon, nonzero_floor);
+      }
+      else {
+        return cutlass::reference::host::TensorEquals(lhs, rhs);
+      }
+    }
+    else {
+      return cutlass::reference::host::TensorEquals(lhs, rhs);
+    }
+  }
+
   bool compare_reference(
       cute::Shape<int,int,int,int> problem_shape_MNKL) {
-    auto [M, N, K, L] = problem_shape_MNKL;
-
     EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_A.host_view()), 0);
     EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_B.host_view()), 0);
-    return true;
+
+    bool passed = true;
+    return passed;
   }
 };
-
 
 template<class Gemm>
 struct HostCollectiveDefaultEpilogue {
@@ -474,7 +522,7 @@ struct HostCollectiveDefaultEpilogue {
      check_relative_equality(check_relative_equality_),
      use_device_scalars(use_device_scalars_){ }
 
-  void initialize(ProblemShapeType problem_size, ElementScalar alpha_=1.f, ElementScalar beta_=0.f) {
+  bool initialize(ProblemShapeType problem_size, ElementScalar alpha_=1.f, ElementScalar beta_=0.f) {
     // Initialize Epilogue tensors
     auto problem_shape_MNKL = cute::append<4>(problem_size, 1);
     auto [M, N, K, L] = problem_shape_MNKL;
@@ -496,6 +544,8 @@ struct HostCollectiveDefaultEpilogue {
 
     alpha = alpha_;
     beta = beta_;
+
+    return true;
   }
 
   template <
@@ -510,7 +560,7 @@ struct HostCollectiveDefaultEpilogue {
     // checks in include/cutlass/relatively_equal.h  are inspired by
     // https://floating-point-gui.de/errors/comparison/. This reference suggests using
     // the minimum normal value of a given type as the nonzero_floor.
-    Element epsilon(0.1f);
+    Element epsilon(static_cast<Element>(0.1f));
     Element nonzero_floor(std::numeric_limits<Element>::min());
 
     if constexpr (!cutlass::is_complex<Element>::value) {
@@ -559,7 +609,6 @@ struct HostCollectiveDefaultEpilogue {
   }
 
   Arguments to_args(ProblemShapeType problem_size) {
-    auto coord_0 = cutlass::make_Coord(0);
     Arguments arguments = 
       {
         {alpha, beta},
@@ -693,6 +742,7 @@ struct HostCollectiveEpilogue {
   cutlass::HostTensor<ElementScalar, LayoutTagScalar> scale_Aux;
   cutlass::HostTensor<ElementBias  , LayoutTagVector> bias;
   cutlass::HostTensor<ElementC, LayoutTagC> tensor_C;
+  cutlass::HostTensor<ElementCompute, LayoutTagScalar> norm_constant;
 
   // Outputs
   cutlass::HostTensor<ElementAmax, LayoutTagScalar> abs_max_Aux;
@@ -738,10 +788,13 @@ struct HostCollectiveEpilogue {
      check_relative_equality(check_relative_equality_),
      use_device_scalars(use_device_scalars_){ }
 
-  void initialize(ProblemShapeType problem_size, ElementScalar alpha_=1.f, ElementScalar beta_=0.f) {
+  bool initialize(ProblemShapeType problem_size, ElementScalar alpha_=1.f, ElementScalar beta_=0.f) {
     // Initialize Epilogue tensors
     auto problem_shape_MNKL = cute::append<4>(problem_size, 1);
-    auto [M, N, K, L] = problem_shape_MNKL;
+    auto M = cute::size<0>(problem_shape_MNKL);
+    auto N = cute::size<1>(problem_shape_MNKL);
+    auto K = cute::size<2>(problem_shape_MNKL);
+    auto L = cute::size<3>(problem_shape_MNKL);
 
     stride_c = cutlass::make_cute_packed_stride(StrideC{}, cute::make_shape(M, N, L));
     stride_d = cutlass::make_cute_packed_stride(StrideD{}, cute::make_shape(M, N, L));
@@ -854,6 +907,7 @@ struct HostCollectiveEpilogue {
       }
     }
 
+    return true;
   }
 
   template <
@@ -868,7 +922,7 @@ struct HostCollectiveEpilogue {
     // checks in include/cutlass/relatively_equal.h  are inspired by
     // https://floating-point-gui.de/errors/comparison/. This reference suggests using
     // the minimum normal value of a given type as the nonzero_floor.
-    Element epsilon(0.1f);
+    Element epsilon(static_cast<Element>(0.1f));
     Element nonzero_floor(std::numeric_limits<Element>::min());
 
     if constexpr (!cutlass::is_complex<Element>::value) {
@@ -889,8 +943,6 @@ struct HostCollectiveEpilogue {
       cute::Shape<int,int,int,int> problem_shape_MNKL,
       ElementScalar alpha,
       ElementScalar beta) {
-    auto [M, N, K, L] = problem_shape_MNKL;
-
     tensor_D.sync_host();
     EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_C.host_view()), 0);
 
@@ -1169,13 +1221,15 @@ struct HostCollectiveEpilogue {
 template <
   typename Gemm,
   template <class T> class ActivationFunctor_ = cutlass::epilogue::thread::Identity,
-  bool force_legacy_epilogue = false
+  bool force_legacy_epilogue = false,
+  typename ElementA = typename Gemm::GemmKernel::ElementA,
+  typename ElementB = typename Gemm::GemmKernel::ElementB
 >
 struct TestbedImpl {
   // Kernel data types
   using ScheduleType = typename Gemm::GemmKernel::CollectiveMainloop::DispatchPolicy::Schedule;
   // All Collective MMA operands are defined by HostCollectiveMainloopType based on the schedule type
-  using HostCollectiveMainloopType = HostCollectiveMainloop<ScheduleType, Gemm>;
+  using HostCollectiveMainloopType = HostCollectiveMainloop<ScheduleType, Gemm, ElementA, ElementB>;
   using CollectiveEpilogue = cute::conditional_t<IsDefaultEpilogue<typename Gemm::GemmKernel::CollectiveEpilogue>::value || force_legacy_epilogue, 
                                                 HostCollectiveDefaultEpilogue<Gemm>, 
                                                 HostCollectiveEpilogue<Gemm>>;
@@ -1215,7 +1269,7 @@ struct TestbedImpl {
     cutlass::Distribution::Kind init_scale_ = cutlass::Distribution::Uniform,
     cutlass::Distribution::Kind init_bias_ = cutlass::Distribution::Uniform,
     uint64_t seed_ = kDefaultSeed
-  ): collective_mma_inputs(HostCollectiveMainloopType(init_A_, init_B_, seed_)), 
+  ): collective_mma_inputs(HostCollectiveMainloopType(check_relative_equality_, init_A_, init_B_, seed_)), 
      collective_epilogue(CollectiveEpilogue(check_relative_equality_, use_device_scalars_, disable_vector_beta_, init_C_, init_scale_, init_bias_, seed_)) { }
 
   TestbedImpl(
@@ -1232,13 +1286,15 @@ struct TestbedImpl {
     cutlass::Distribution::Kind init_scale_ = cutlass::Distribution::Uniform,
     cutlass::Distribution::Kind init_bias_ = cutlass::Distribution::Uniform,
     uint64_t seed_ = kDefaultSeed
-  ): collective_mma_inputs(HostCollectiveMainloopType(stride_factor_A_, stride_factor_B_, init_A_, init_B_, seed_)),
+  ): collective_mma_inputs(HostCollectiveMainloopType(check_relative_equality_, stride_factor_A_, stride_factor_B_, init_A_, init_B_, seed_)),
      collective_epilogue(CollectiveEpilogue(check_relative_equality_, use_device_scalars_, disable_vector_beta_, init_C_, init_scale_, init_bias_, seed_)) { }
 
   /// Initializes data structures
-  void initialize(ProblemShapeType problem_size, ElementScalar alpha_=1.f, ElementScalar beta_=0.f) {
+  bool initialize(ProblemShapeType problem_size, ElementScalar alpha_=1.f, ElementScalar beta_=0.f) {
     collective_mma_inputs.initialize(problem_size);
     collective_epilogue.initialize(problem_size, alpha_, beta_);
+
+    return true;
   }
 
   /// Compares computed reference with device reference and outputs to a file if incorrect
@@ -1280,7 +1336,6 @@ struct TestbedImpl {
   {
     using namespace cute;
     auto problem_shape_MNKL = cute::append<4>(problem_size, 1);
-    auto [M, N, K, L] = problem_shape_MNKL;
 
     auto mainloop_params = collective_mma_inputs.to_host_args(problem_size);
     auto epilogue_params = collective_epilogue.to_host_args(problem_size);
@@ -1297,7 +1352,7 @@ struct TestbedImpl {
     // Determine SMEM requirements and waive if not satisfied
     //
 
-    int smem_size = Gemm::GemmKernel::SharedStorageSize;
+    size_t smem_size = static_cast<size_t>(Gemm::GemmKernel::SharedStorageSize);
 
     int device_idx;
     cudaError_t result = cudaGetDevice(&device_idx);
@@ -1371,7 +1426,8 @@ struct TestbedImpl {
     RasterOrderOptions raster_order = RasterOrderOptions::Heuristic,
     detail::MaxSwizzleSize max_swizzle = detail::MaxSwizzleSize{},
     detail::Splits splits = detail::Splits{},
-    DecompositionMode decomposition_mode = DecompositionMode::Heuristic)
+    DecompositionMode decomposition_mode = DecompositionMode::Heuristic
+    )
   {
 
     // Fail test if insufficient CUDA device
@@ -1380,7 +1436,10 @@ struct TestbedImpl {
       return false;
     }
 
-    this->initialize(problem_size, alpha, beta);
+    if (!this->initialize(problem_size, alpha, beta)) {
+      std::cerr << "Initialization failed \n";
+      return false;
+    }
 
     //
     // Initialize the GEMM operator
@@ -1399,16 +1458,21 @@ struct TestbedImpl {
     }
 
     typename Gemm::GemmKernel::TileScheduler::Arguments scheduler_args;
-    if constexpr (std::is_same_v<typename Gemm::GemmKernel::TileSchedulerTag, cutlass::gemm::StreamKScheduler>) {
+    if constexpr (cute::is_same_v<typename Gemm::GemmKernel::TileSchedulerTag, cutlass::gemm::StreamKScheduler>) {
       scheduler_args = { static_cast<int>(splits), static_cast<int>(max_swizzle), raster_order, decomposition_mode };
     }
     else {
       scheduler_args = { static_cast<int>(max_swizzle), raster_order };
     }
-    arguments = {
+    typename HostCollectiveMainloopType::Arguments mainloop_args;
+
+    mainloop_args = collective_mma_inputs.to_args();
+
+    arguments =
+    {
       cutlass::gemm::GemmUniversalMode::kGemm,
       problem_size,
-      collective_mma_inputs.to_args(),
+      mainloop_args,
       collective_epilogue.to_args(problem_size),
       hw_info,
       scheduler_args
@@ -1471,11 +1535,19 @@ struct TestbedImpl {
 template <
   typename Gemm,
   template <class T> class ActivationFunctor = cutlass::epilogue::thread::Identity,
-  bool force_legacy_epilogue = false
+  bool force_legacy_epilogue = false,
+  typename ElementA = typename Gemm::GemmKernel::ElementA,
+  typename ElementB = typename Gemm::GemmKernel::ElementB
 >
 struct Testbed3x {
 
-  using TestBedImpl = typename detail::TestbedImpl<Gemm, ActivationFunctor, force_legacy_epilogue>;
+  using TestBedImpl = typename detail::TestbedImpl<
+                        Gemm, 
+                        ActivationFunctor, 
+                        force_legacy_epilogue, 
+                        ElementA, 
+                        ElementB
+                        >;
   using Kernel      = typename Gemm::GemmKernel;
   using Epilogue    = typename Gemm::GemmKernel::CollectiveEpilogue;
 
@@ -1514,7 +1586,8 @@ struct Testbed3x {
     detail::Splits splits = detail::Splits{},
     DecompositionMode decomposition_mode = DecompositionMode::Heuristic,
     bool profiling = false,
-    detail::Iterations iterations = detail::Iterations{})
+    detail::Iterations iterations = detail::Iterations{}
+    )
   {
     return impl_.run(
         problem_size, alpha, beta, profiling, iterations, raster_order, max_swizzle, splits, decomposition_mode
@@ -1582,7 +1655,7 @@ bool TestAll(double alpha = 1.0, double beta = 0.0, CheckEquality check_relative
   std::vector<int> problem_size_m = {max_alignment, 512 - 3 * max_alignment};
   std::vector<int> problem_size_n = {max_alignment, 512 - 2 * max_alignment};
 
-  if constexpr (std::is_same_v<typename Gemm::GemmKernel::DispatchPolicy::Schedule,
+  if constexpr (cute::is_same_v<typename Gemm::GemmKernel::DispatchPolicy::Schedule,
                 cutlass::gemm::KernelTmaWarpSpecializedPingpong>) {
     problem_size_m.push_back(768);
     problem_size_n.push_back(768);
@@ -1596,7 +1669,7 @@ bool TestAll(double alpha = 1.0, double beta = 0.0, CheckEquality check_relative
   using DecompositionMode = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90StreamKParams::DecompositionMode;
   std::vector<DecompositionMode> decomposition_modes = {DecompositionMode::Heuristic};
   std::vector problem_splits = {detail::Splits{1}};
-  static constexpr bool UsesStreamKScheduler = std::is_same_v<typename Gemm::GemmKernel::TileSchedulerTag, cutlass::gemm::StreamKScheduler>;
+  static constexpr bool UsesStreamKScheduler = cute::is_same_v<typename Gemm::GemmKernel::TileSchedulerTag, cutlass::gemm::StreamKScheduler>;
   if constexpr (UsesStreamKScheduler) {
     problem_splits.push_back(detail::Splits{2});
     problem_splits.push_back(detail::Splits{3});

@@ -117,8 +117,8 @@ public:
   void run() {
 
     /// Device memory containing output
-    cutlass::device_memory::allocation< ArrayTy > output(kThreads);
-    std::vector< ArrayTy > output_host(kThreads);
+    cutlass::device_memory::allocation< ArrayTy > output(static_cast<size_t>(kThreads));
+    std::vector< ArrayTy > output_host(static_cast<size_t>(kThreads));
 
     dim3 grid(1,1);
     dim3 block(kThreads, 1, 1);
@@ -138,7 +138,7 @@ public:
     ASSERT_EQ(result, cudaSuccess) << "CUDA error: " << cudaGetErrorString(result);
 
     char const *ptr_host = reinterpret_cast<char const *>(output_host.data());
-    for (int i = 0; i < sizeof(ArrayTy) * kThreads; ++i) {
+    for (size_t i = 0; i < sizeof(ArrayTy) * kThreads; ++i) {
       EXPECT_FALSE(ptr_host[i]);
     }
 

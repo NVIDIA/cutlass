@@ -63,6 +63,9 @@ struct ArithmeticTuple : tuple<T...>
 template <class... T>
 struct is_tuple<ArithmeticTuple<T...>> : true_type {};
 
+template <class... Ts>
+struct is_flat<ArithmeticTuple<Ts...>> : is_flat<tuple<Ts...>> {};
+
 template <class... T>
 CUTE_HOST_DEVICE constexpr
 auto
@@ -108,16 +111,45 @@ template <class... T, class... U>
 CUTE_HOST_DEVICE constexpr
 auto
 operator+(ArithmeticTuple<T...> const& t, tuple<U...> const& u) {
-  constexpr int R = cute::max(int(sizeof...(T)), int(sizeof...(U)));
-  return transform_apply(append<R>(t,Int<0>{}), append<R>(u,Int<0>{}), plus{}, [](auto const&... a){ return make_arithmetic_tuple(a...); });
+  return t + ArithmeticTuple<U...>(u);
 }
 
 template <class... T, class... U>
 CUTE_HOST_DEVICE constexpr
 auto
 operator+(tuple<T...> const& t, ArithmeticTuple<U...> const& u) {
+  return ArithmeticTuple<T...>(t) + u;
+}
+
+// Subtraction
+template <class... T, class... U>
+CUTE_HOST_DEVICE constexpr
+auto
+operator-(ArithmeticTuple<T...> const& t, ArithmeticTuple<U...> const& u) {
   constexpr int R = cute::max(int(sizeof...(T)), int(sizeof...(U)));
-  return transform_apply(append<R>(t,Int<0>{}), append<R>(u,Int<0>{}), plus{}, [](auto const&... a){ return make_arithmetic_tuple(a...); });
+  return transform_apply(append<R>(t,Int<0>{}), append<R>(u,Int<0>{}), minus{}, [](auto const&... a){ return make_arithmetic_tuple(a...); });
+}
+
+template <class... T, class... U>
+CUTE_HOST_DEVICE constexpr
+auto
+operator-(ArithmeticTuple<T...> const& t, tuple<U...> const& u) {
+  return t - ArithmeticTuple<U...>(u);
+}
+
+template <class... T, class... U>
+CUTE_HOST_DEVICE constexpr
+auto
+operator-(tuple<T...> const& t, ArithmeticTuple<U...> const& u) {
+  return ArithmeticTuple<T...>(t) - u;
+}
+
+// Negation
+template <class... T>
+CUTE_HOST_DEVICE constexpr
+auto
+operator-(ArithmeticTuple<T...> const& t) {
+  return transform_apply(t, negate{}, [](auto const&... a){ return make_arithmetic_tuple(a...); });
 }
 
 //
@@ -128,7 +160,7 @@ template <auto t, class... U>
 CUTE_HOST_DEVICE constexpr
 ArithmeticTuple<U...> const&
 operator+(C<t>, ArithmeticTuple<U...> const& u) {
-  static_assert(t == 0, "Artihmetic tuple op+ error!");
+  static_assert(t == 0, "Arithmetic tuple op+ error!");
   return u;
 }
 
@@ -136,7 +168,23 @@ template <class... T, auto u>
 CUTE_HOST_DEVICE constexpr
 ArithmeticTuple<T...> const&
 operator+(ArithmeticTuple<T...> const& t, C<u>) {
-  static_assert(u == 0, "Artihmetic tuple op+ error!");
+  static_assert(u == 0, "Arithmetic tuple op+ error!");
+  return t;
+}
+
+template <auto t, class... U>
+CUTE_HOST_DEVICE constexpr
+ArithmeticTuple<U...> const&
+operator-(C<t>, ArithmeticTuple<U...> const& u) {
+  static_assert(t == 0, "Arithmetic tuple op- error!");
+  return -u;
+}
+
+template <class... T, auto u>
+CUTE_HOST_DEVICE constexpr
+ArithmeticTuple<T...> const&
+operator-(ArithmeticTuple<T...> const& t, C<u>) {
+  static_assert(u == 0, "Arithmetic tuple op- error!");
   return t;
 }
 
@@ -531,7 +579,7 @@ namespace std
 template <class... _Tp>
 struct tuple_size;
 
-template<size_t _Ip, class... _Tp>
+template <size_t _Ip, class... _Tp>
 struct tuple_element;
 #endif
 

@@ -67,14 +67,13 @@ elseif (CUDA_VERSION VERSION_LESS 11.4)
   message(WARNING "CUTLASS ${CUTLASS_VERSION} support for CUDA ${CUDA_VERSION} is deprecated, please use CUDA 11.8 or higher.")
 endif()
 
-if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7.5)
-  message(FATAL_ERROR "GCC version must be at least 7.5!")
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7.3)
+  message(FATAL_ERROR "GCC version must be at least 7.3!")
 endif()
 
 if (CUDA_COMPILER MATCHES "[Cc]lang" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7.0)
   message(FATAL_ERROR "Clang 7.0+ required for GPU compilation")
 endif()
-
 find_package(Doxygen QUIET)
 
 ################################################################################
@@ -168,6 +167,7 @@ endif()
 include(GNUInstallDirs)
 
 link_directories(${CUDA_TOOLKIT_ROOT_DIR}/lib64/stubs)
+link_directories(${CUDA_TOOLKIT_ROOT_DIR}/lib64)
 
 ###################################################################################################
 #

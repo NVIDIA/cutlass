@@ -31,18 +31,19 @@
 #pragma once
 
 #include "cutlass/cutlass.h"
+#include "cutlass/gemm/dispatch_policy.hpp"
+#include "cutlass/numeric_types.h"
+#include "cutlass/pipeline/pipeline.hpp"
+#include "cutlass/transform/collective/sm90_wgmma_transpose.hpp"
+#include "cutlass/trace.h"
+
 #include "cute/arch/cluster_sm90.hpp"
 #include "cute/arch/copy_sm90.hpp"
-#include "cutlass/gemm/dispatch_policy.hpp"
-
 #include "cute/algorithm/functional.hpp"
 #include "cute/atom/mma_atom.hpp"
 #include "cute/algorithm/gemm.hpp"
 #include "cute/tensor_predicate.hpp"
 #include "cute/numeric/arithmetic_tuple.hpp"
-#include "cutlass/pipeline/pipeline.hpp"
-#include "cutlass/transform/collective/sm90_wgmma_transpose.hpp"
-#include "cutlass/trace.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -106,6 +107,7 @@ struct CollectiveMma<
   using SmemCopyAtomA = SmemCopyAtomA_;
   using SmemCopyAtomB = SmemCopyAtomB_;
 
+  using CtaShape_MNK = decltype(shape_div(TileShape{}, ClusterShape{}));
   // Swap and transpose A/B for A k-major layout and B mn-major layout since WGMMA is k-major only (e.g. tf32, Fp32, Int8, Fp8 WGMMA)
   static constexpr bool IsLayoutAkBmn =
     cute::is_same_v<gemm::detail::StrideToLayoutTagA_t<StrideA>, layout::RowMajor> &&
@@ -178,7 +180,7 @@ struct CollectiveMma<
   static_assert(!SwapAB || !TransposeB, "Cannot SwapAB and TransposeB at the same time.");
   static_assert(TransposeB xor (cute::is_same_v<SmemLayoutB, GmmaSmemLayoutB>),
     "Should be same layout if not TransposeB.");
-  static_assert(!TransposeB || ((size<1>(SmemLayoutB{}) * sizeof_bits<InternalElementB>::value) / 8) == 128,
+  static_assert(!TransposeB || (cutlass::bits_to_bytes(size<1>(SmemLayoutB{}) * sizeof_bits<InternalElementB>::value)) == 128,
     "SmemLayoutB K must be 128bytes to be transposed.");
   static_assert(!transform::collective::detail::use_universal_transposition<InternalSmemLayoutAtomB, InternalElementB>(),
     "Warp specialized ARF kernels have not supported universal B transposition yet.");

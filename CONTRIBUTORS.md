@@ -1,6 +1,6 @@
-![ALT](/media/images/gemm-hierarchy-with-epilogue-no-labels.png "CUTLASS")
+![ALT](./media/images/gemm-hierarchy-with-epilogue-no-labels.png "CUTLASS")
 
-[README](/README.md#documentation) > **Contributors**
+[README](./README.md#documentation) > **Contributors**
 
 # CUTLASS Developers and Contributors
 

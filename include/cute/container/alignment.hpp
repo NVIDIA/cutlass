@@ -32,7 +32,7 @@
 
 #include <cute/config.hpp>
 
-#include <cute/numeric/int.hpp>
+#include <cute/numeric/numeric_types.hpp>
 #include <cute/numeric/math.hpp>
 
 namespace cute

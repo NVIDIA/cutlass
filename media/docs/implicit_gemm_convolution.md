@@ -1,6 +1,6 @@
-![ALT](/media/images/gemm-hierarchy-with-epilogue-no-labels.png "CUTLASS Implicit GEMM API")
+![ALT](../images/gemm-hierarchy-with-epilogue-no-labels.png "CUTLASS Implicit GEMM API")
 
-[README](/README.md#documentation) > **Implicit GEMM Convolution**
+[README](../../README.md#documentation) > **Implicit GEMM Convolution**
 
 # CUTLASS Convolution
 

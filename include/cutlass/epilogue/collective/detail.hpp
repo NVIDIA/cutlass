@@ -38,7 +38,7 @@
 #include "cutlass/epilogue/dispatch_policy.hpp"
 
 #include "cute/tensor.hpp"
-#include "cute/numeric/int.hpp"
+#include "cute/numeric/numeric_types.hpp"
 #include "cute/util/type_traits.hpp"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -63,6 +63,14 @@ is_n_major() {
   return cutlass::gemm::detail::is_major<1,Stride>();
 }
 
+template <class Stride>
+constexpr bool
+is_im2col() {
+  return cute::is_same_v<Stride, cutlass::detail::TagToStrideC_t<cutlass::layout::TensorNWC>>
+      || cute::is_same_v<Stride, cutlass::detail::TagToStrideC_t<cutlass::layout::TensorNHWC>>
+      || cute::is_same_v<Stride, cutlass::detail::TagToStrideC_t<cutlass::layout::TensorNDHWC>>;
+}
+
 using cutlass::atomic_maximum;
 
 template <class T>
@@ -75,6 +83,12 @@ static constexpr bool sm90_is_cooperative_v =
 template <class EpilogueSchedule>
 static constexpr bool sm90_is_warp_specialized_v =
   cute::is_base_of_v<cutlass::epilogue::TmaWarpSpecialized, EpilogueSchedule>;
+
+template <class GmemLayoutTag>
+static constexpr bool is_im2col_mode =
+  cute::is_same_v<GmemLayoutTag, cutlass::layout::TensorNWC> ||
+  cute::is_same_v<GmemLayoutTag, cutlass::layout::TensorNHWC> ||
+  cute::is_same_v<GmemLayoutTag, cutlass::layout::TensorNDHWC>;
 
 template <class T>
 struct EmptyStorage {
@@ -103,6 +117,28 @@ template <typename ThreadEpilogueOp>
 struct IsThreadEpilogueOpWithBias <ThreadEpilogueOp, cute::void_t<typename ThreadEpilogueOp::ElementBias>> { 
   static constexpr bool value = true; 
   using type = typename ThreadEpilogueOp::ElementBias; 
+};
+
+template <typename ThreadEpilogueOp, typename = void>
+struct IsThreadEpilogueOpWithPerChannelScaling {
+  static constexpr bool value = false;
+};
+
+template <typename ThreadEpilogueOp>
+struct IsThreadEpilogueOpWithPerChannelScaling <ThreadEpilogueOp, cute::enable_if_t<ThreadEpilogueOp::IsPerChannelScalingSupported>> {
+  static constexpr bool value = true;
+};
+
+template <typename ThreadEpilogueOp, typename = void>
+struct IsThreadEpilogueOpWithActivation {
+  static constexpr bool value = false;
+  using type = void;
+};
+
+template <typename ThreadEpilogueOp>
+struct IsThreadEpilogueOpWithActivation <ThreadEpilogueOp, cute::enable_if_t<ThreadEpilogueOp::IsEltActSupported>> {
+  static constexpr bool value = true;
+  using type = typename ThreadEpilogueOp::ActivationFn;
 };
 
 // Wrapper class to use operator-style epilogues in sm90 TMA warp-specialized kernels

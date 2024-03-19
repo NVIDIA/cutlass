@@ -32,8 +32,10 @@
 
 #include "cutlass/layout/matrix.h"
 #include "cutlass/layout/tensor.h"
+#include "cutlass/numeric_types.h"
 
 #include "cute/layout.hpp"
+#include "cute/util/type_traits.hpp"
 #include "cute/arch/copy_sm90_tma.hpp"
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -117,6 +119,60 @@ struct TagToStrideB<layout::ColumnMajor *> {
 // Maps to modes [M, N, L]
 template <class LayoutTag>
 struct TagToStrideC : TagToStrideA<LayoutTag> { };
+
+// Conv: Maps to modes ((P,N), C, _0) for compatiblity with GEMM epilogues expecting a batch mode stride
+template <>
+struct TagToStrideC<cutlass::layout::TensorNWC> {
+  using type = cute::Stride<cute::Stride<int64_t, int64_t>, cute::Int<1>, cute::Int<0>>;
+};
+
+// Conv: Maps to modes (PN, C, _0) for compatiblity with GEMM epilogues expecting a batch mode stride
+template <>
+struct TagToStrideC<cutlass::layout::TensorLinearizedNWC> {
+  using type = cute::Stride<int64_t, cute::Int<1>, cute::Int<0>>;
+};
+
+// Conv: Maps to modes ((P,Q,N), C, _0) for compatiblity with GEMM epilogues expecting a batch mode stride
+template <>
+struct TagToStrideC<cutlass::layout::TensorNHWC> {
+  using type = cute::Stride<cute::Stride<int64_t, int64_t, int64_t>, cute::Int<1>, cute::Int<0>>;
+};
+
+// Conv: Maps to modes (PQN, C, _0) for compatiblity with GEMM epilogues expecting a batch mode stride
+template <>
+struct TagToStrideC<cutlass::layout::TensorLinearizedNHWC> {
+  using type = cute::Stride<int64_t, cute::Int<1>, cute::Int<0>>;
+};
+
+// Conv: Maps to modes ((P,Q,Z,N), C, _0) for compatiblity with GEMM epilogues expecting a batch mode stride
+template <>
+struct TagToStrideC<cutlass::layout::TensorNDHWC> {
+  using type = cute::Stride<cute::Stride<int64_t, int64_t, int64_t, int64_t>, cute::Int<1>, cute::Int<0>>;
+};
+
+// Conv: Maps to modes (PQZN, C, _0) for compatiblity with GEMM epilogues expecting a batch mode stride
+template <>
+struct TagToStrideC<cutlass::layout::TensorLinearizedNDHWC> {
+  using type = cute::Stride<int64_t, cute::Int<1>, cute::Int<0>>;
+};
+
+// Conv: Maps to modes (K, (C,S), _0) for compatiblity with GEMM epilogues expecting a batch mode stride
+template <>
+struct TagToStrideC<cutlass::layout::TensorKCS> {
+  using type = cute::Stride<int64_t, cute::Stride<cute::Int<1>, int64_t>, cute::Int<0>>;
+};
+
+// Conv: Maps to modes (K, (C,S,R), _0) for compatiblity with GEMM epilogues expecting a batch mode stride
+template <>
+struct TagToStrideC<cutlass::layout::TensorKCSR> {
+  using type = cute::Stride<int64_t, cute::Stride<cute::Int<1>, int64_t, int64_t>, cute::Int<0>>;
+};
+
+// Conv: Maps to modes (K, (C,S,R,T), _0) for compatiblity with GEMM epilogues expecting a batch mode stride
+template <>
+struct TagToStrideC<cutlass::layout::TensorKCSRT> {
+  using type = cute::Stride<int64_t, cute::Stride<cute::Int<1>, int64_t, int64_t, int64_t>, cute::Int<0>>;
+};
 
 // Convenience aliases
 template<class LayoutTag>
@@ -229,8 +285,15 @@ constexpr bool is_tma_copy_engine() {
   return false;
 }
 
+template <class X, class = void>
+struct RawDtype { using type = X; };
+
+template <class X>
+struct RawDtype<X,cute::void_t<typename X::raw_type>> { using type = typename X::raw_type; };
+
+
 // Inspects a TiledCopy and returns its alignment in terms of element count
-template <class GmemTiledCopy, class Element>
+template <class GmemTiledCopy, class Element, class ElementMma = Element>
 constexpr int
 get_alignment_count_from_gmem_tiled_copy() {
 

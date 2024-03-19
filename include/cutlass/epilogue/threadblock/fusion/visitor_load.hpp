@@ -113,6 +113,12 @@ struct VisitorScalarBroadcast {
     return args;
   }
 
+  template <class ProblemShape>
+  static size_t
+  get_workspace_size(ProblemShape const& problem_shape, Arguments const& args) {
+    return 0;
+  }
+
   CUTLASS_HOST_DEVICE
   VisitorScalarBroadcast() { }
 
@@ -214,6 +220,12 @@ struct VisitorAuxLoad{
   static constexpr Params
   to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
     return args;
+  }
+
+  template <class ProblemShape>
+  static size_t
+  get_workspace_size(ProblemShape const& problem_shape, Arguments const& args) {
+    return 0;
   }
 
   // Software pipeline stages
@@ -341,6 +353,12 @@ struct VisitorRowBroadcast {
     return args;
   }
 
+  template <class ProblemShape>
+  static size_t
+  get_workspace_size(ProblemShape const& problem_shape, Arguments const& args) {
+    return 0;
+  }
+
   struct SharedStorage {};
 
   // Global load type
@@ -462,6 +480,12 @@ struct VisitorColBroadcast {
   static constexpr Params
   to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
     return args;
+  }
+
+  template <class ProblemShape>
+  static size_t
+  get_workspace_size(ProblemShape const& problem_shape, Arguments const& args) {
+    return 0;
   }
 
   struct SharedStorage { };

@@ -74,6 +74,12 @@ struct VisitorAuxStore{
     return args;
   }
 
+  template <class ProblemShape>
+  static size_t
+  get_workspace_size(ProblemShape const& problem_shape, Arguments const& args) {
+    return 0;
+  }
+
   struct SharedStorage {};
 
   static int constexpr vec_bits = ThreadMap::kElementsPerAccess * sizeof_bits<Element>::value;
@@ -258,6 +264,12 @@ struct VisitorColReduction {
     return args;
   }
 
+  template <class ProblemShape>
+  static size_t
+  get_workspace_size(ProblemShape const& problem_shape, Arguments const& args) {
+    return 0;
+  }
+
   struct SharedStorage { };
 
   CUTLASS_HOST_DEVICE
@@ -396,6 +408,12 @@ struct VisitorRowReduction {
   static constexpr Params
   to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
     return args;
+  }
+
+  template <class ProblemShape>
+  static size_t
+  get_workspace_size(ProblemShape const& problem_shape, Arguments const& args) {
+    return 0;
   }
 
   using SharedStorageShape = decltype(select<0,1,2,3,5,8,10>(typename ThreadMap::ThreadMapShape{}));
@@ -670,6 +688,12 @@ struct VisitorScalarReduction {
   static constexpr Params
   to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
     return args;
+  }
+
+  template <class ProblemShape>
+  static size_t
+  get_workspace_size(ProblemShape const& problem_shape, Arguments const& args) {
+    return 0;
   }
 
   struct SharedStorage { };

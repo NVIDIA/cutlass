@@ -39,6 +39,11 @@
 
 #include "gather_tensor.hpp"
 
+namespace cutlass {
+  ///Forward declaration
+  struct CudaHostAdapter;
+}
+
 namespace cutlass::gemm::kernel {
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -143,10 +148,10 @@ public:
 
   // Kernel entry point API
   struct Params {
-    GemmUniversalMode mode;
-    ProblemShape problem_shape;
-    MainloopParams mainloop;
-    EpilogueParams epilogue;
+    GemmUniversalMode mode{};
+    ProblemShape problem_shape{};
+    MainloopParams mainloop{};
+    EpilogueParams epilogue{};
     GatherA gather_A{};
     GatherB gather_B{};
   };
@@ -191,14 +196,15 @@ public:
   }
 
   static
-  int
+  size_t
   get_workspace_size(Arguments const& args) {
     return 0;
   }
 
   static
   cutlass::Status
-  initialize_workspace(Arguments const& args, void* workspace = nullptr, cudaStream_t stream = nullptr) {
+  initialize_workspace(Arguments const& args, void* workspace = nullptr, cudaStream_t stream = nullptr,
+    CudaHostAdapter* cuda_adapter = nullptr) {
     return Status::kSuccess;
   }
 

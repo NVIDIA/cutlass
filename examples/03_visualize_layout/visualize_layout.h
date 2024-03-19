@@ -260,7 +260,7 @@ private:
     if (options.vectorize <= 2) return std::make_pair(false, -1);
 
     // Boundary check.
-    if (i > elements.size() || (i + options.vectorize - 1) > elements.size())
+    if (i > int(elements.size()) || (i + options.vectorize - 1) > int(elements.size()))
       return std::make_pair(false, -1);
 
     // Check if either all elements are valid or invalid.

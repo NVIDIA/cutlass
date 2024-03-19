@@ -37,6 +37,7 @@ Utilities for emitting GEMM kernels
 import collections
 import enum
 import functools
+import logging
 import operator
 import os.path
 import shutil
@@ -48,6 +49,8 @@ try:
   from cutlass_library.library import *
 except ImportError:
   from library import *
+
+_LOGGER = logging.getLogger(__name__)
 
 ###################################################################################################
 #
@@ -139,7 +142,8 @@ class GemmOperation:
 
     math_operations_map = {
       MathOperation.xor_popc: 'xor',
-      MathOperation.and_popc: 'and'
+      MathOperation.and_popc: 'and',
+      MathOperation.multiply_add_fast_accum: 'fastaccum',
     }
 
     tensor_ops = [
@@ -256,18 +260,14 @@ class GemmOperation:
     ''' The full procedural name indicates architecture, extended name, tile size, and layout. '''
     opcode_class_name = OpcodeClassNames[self.tile_description.math_instruction.opcode_class]
     if self.arch >= 90:
-      kernel_name_template = "cutlass{p}_sm{ar}_{op}_{ex}_{tbm}x{tbn}x{tbk}_{cm}x{cn}x{ck}_{l}_{s}_align{al}{t}{k}{e}"
+      kernel_name_template = "cutlass{p}_sm{ar}_{op}_{ex}{ct}{cs}_{l}_{s}_align{al}{t}{k}{e}"
       return kernel_name_template.format(
           p = self.prefix,
           ar = self.arch,
           op = opcode_class_name,
           ex = self.extended_name_3x(),
-          tbm = self.tile_description.tile_shape[0],
-          tbn = self.tile_description.tile_shape[1],
-          tbk = self.tile_description.tile_shape[2],
-          cm = self.tile_description.cluster_shape[0],
-          cn = self.tile_description.cluster_shape[1],
-          ck = self.tile_description.cluster_shape[2],
+          ct = '_' + 'x'.join([str(i) for i in self.tile_description.tile_shape]) if self.tile_description.tile_shape[0] > 0 else "",
+          cs = '_' + 'x'.join([str(i) for i in self.tile_description.cluster_shape]),
           l = self.tile_description.stages,
           s = self.layout_name_3x(),
           al = str(max(self.A.alignment, self.B.alignment)),
@@ -725,8 +725,8 @@ class EmitGemmUniversal3xInstance:
 using ${operation_name}_epilogue =
   typename cutlass::epilogue::collective::CollectiveBuilder<
     ${arch}, ${opcode_class_epi},
-    cute::Shape<cute::_${tile_shape_m}, cute::_${tile_shape_n}, cute::_${tile_shape_k}>,
-    cute::Shape<cute::_${cluster_m},cute::_${cluster_n},cute::_${cluster_k}>,
+    cute::Shape<cute::_${tile_shape_epi_m}, cute::_${tile_shape_epi_n}, cute::_${tile_shape_epi_k}>,
+    cute::Shape<${cluster_shape_m}, ${cluster_shape_n}, ${cluster_shape_k}>,
     ${epi_tile_mn},
     ${element_accumulator}, ${element_epilogue},
     ${element_c}, ${layout_c}, ${align_c},
@@ -741,8 +741,8 @@ using ${operation_name}_mainloop =
     ${element_a}, ${layout_a}, ${align_a},
     ${element_b}, ${layout_b}, ${align_b},
     ${element_accumulator},
-    cute::Shape<cute::_${tile_shape_m}, cute::_${tile_shape_n}, cute::_${tile_shape_k}>,
-    cute::Shape<cute::_${cluster_m},cute::_${cluster_n},cute::_${cluster_k}>,
+    cute::Shape<cute::_${tile_shape_main_m}, cute::_${tile_shape_main_n}, cute::_${tile_shape_main_k}>,
+    cute::Shape<${cluster_shape_m}, ${cluster_shape_n}, ${cluster_shape_k}>,
     ${stages},
   ${kernel_schedule}
   >::CollectiveOp;
@@ -773,19 +773,33 @@ ${compile_guard_end}
 
   #
   def emit(self, operation):
+    _LOGGER.debug("*** EmitGemmConfigurationLibrary::emit(operation)")
+    _LOGGER.debug("***   operation.procedural_name(): " + operation.procedural_name())
+    _LOGGER.debug("***   tile_shape: " + str(operation.tile_description.tile_shape))
+    _LOGGER.debug("***   warp_count: " + str(operation.tile_description.warp_count))
+
+    opcode_class_main = operation.tile_description.math_instruction.opcode_class
+    opcode_class_epi = opcode_class_main
 
     tile_shape = operation.tile_description.tile_shape
-    warp_count = operation.tile_description.warp_count
+    instruction_shape = operation.tile_description.math_instruction.instruction_shape
+    cluster_m = operation.tile_description.cluster_shape[0]
+    cluster_n = operation.tile_description.cluster_shape[1]
+
+    tile_shape_main_m, tile_shape_main_n, tile_shape_main_k = tile_shape
+    tile_shape_epi_m, tile_shape_epi_n, tile_shape_epi_k = tile_shape
+
+    # account for static/dynamic cluster shapes
+    cta_m = tile_shape[0] // cluster_m if cluster_m > 0 else tile_shape[0]
+    cta_n = tile_shape[1] // cluster_n if cluster_n > 0 else tile_shape[1]
+
     # stage count set to zero indicates builder automatic stage selection
     if operation.tile_description.stages > 0:
       stage_count_string = f"cutlass::gemm::collective::StageCount<{str(operation.tile_description.stages)}>"
     else:
-      stage_count_string = f"cutlass::gemm::collective::StageCountAutoCarveout<sizeof(typename {str(operation.procedural_name())}_epilogue::SharedStorage)>"
-    warp_shape = [tile_shape[idx] // warp_count[idx] for idx in range(3)]
+      stage_count_string = f"cutlass::gemm::collective::StageCountAutoCarveout<static_cast<int>(sizeof(typename {str(operation.procedural_name())}_epilogue::SharedStorage))>"
 
     epi_tile_mn = "cutlass::epilogue::collective::EpilogueTileAuto"
-    opcode_class_main = operation.tile_description.math_instruction.opcode_class
-    opcode_class_epi = opcode_class_main
 
     instance_layout_A, instance_layout_B, instance_layout_C , instance_layout_D = \
       (operation.A.layout, operation.B.layout, operation.C.layout, operation.D.layout)
@@ -806,9 +820,6 @@ ${compile_guard_end}
     element_a = DataTypeTag[operation.A.element]
     element_b = DataTypeTag[operation.B.element]
     epilogue_schedule_type = EpilogueScheduleTag[operation.epilogue_schedule]
-    element_a = DataTypeTag[operation.A.element]
-    element_b = DataTypeTag[operation.B.element]
-    epilogue_schedule_type = EpilogueScheduleTag[operation.epilogue_schedule]
     values = {
       'operation_name': operation.procedural_name(),
       'operation_suffix': self.operation_suffix,
@@ -824,18 +835,18 @@ ${compile_guard_end}
       'opcode_class_main': OpcodeClassTag[opcode_class_main],
       'opcode_class_epi': OpcodeClassTag[opcode_class_epi],
       'arch': "cutlass::arch::Sm%d" % operation.arch,
-      'tile_shape_m': str(operation.tile_description.tile_shape[0]),
-      'tile_shape_n': str(operation.tile_description.tile_shape[1]),
-      'tile_shape_k': str(operation.tile_description.tile_shape[2]),
-      'cluster_m': str(operation.tile_description.cluster_shape[0]),
-      'cluster_n': str(operation.tile_description.cluster_shape[1]),
-      'cluster_k': str(operation.tile_description.cluster_shape[2]),
-      'warp_shape_m': str(warp_shape[0]),
-      'warp_shape_n': str(warp_shape[1]),
-      'warp_shape_k': str(warp_shape[2]),
-      'instruction_shape_m': str(operation.tile_description.math_instruction.instruction_shape[0]),
-      'instruction_shape_n': str(operation.tile_description.math_instruction.instruction_shape[1]),
-      'instruction_shape_k': str(operation.tile_description.math_instruction.instruction_shape[2]),
+      'tile_shape_epi_m': str(tile_shape_epi_m),
+      'tile_shape_epi_n': str(tile_shape_epi_n),
+      'tile_shape_epi_k': str(tile_shape_epi_k),
+      'tile_shape_main_m': str(tile_shape_main_m),
+      'tile_shape_main_n': str(tile_shape_main_n),
+      'tile_shape_main_k': str(tile_shape_main_k),
+      'cluster_shape_m': 'cute::_' + str(operation.tile_description.cluster_shape[0]) if operation.tile_description.cluster_shape[0] > 0 else "int",
+      'cluster_shape_n': 'cute::_' + str(operation.tile_description.cluster_shape[1]) if operation.tile_description.cluster_shape[1] > 0 else "int",
+      'cluster_shape_k': 'cute::_' + str(operation.tile_description.cluster_shape[2]) if operation.tile_description.cluster_shape[2] > 0 else "int",
+      'instruction_shape_m': str(instruction_shape[0]),
+      'instruction_shape_n': str(instruction_shape[1]),
+      'instruction_shape_k': str(instruction_shape[2]),
       'kernel_schedule' : str(KernelScheduleTag[operation.kernel_schedule]),
       'epilogue_schedule' : str(epilogue_schedule_type),
       'epi_tile_mn' : epi_tile_mn,
@@ -1227,6 +1238,10 @@ void initialize_${configuration_name}(Manifest &manifest) {
 """
 
   def __enter__(self):
+    _LOGGER.debug("*** EmitGemmConfigurationLibrary::__enter__")
+    _LOGGER.debug("***   configuration_path (file to write): " +
+                  str(self.configuration_path))
+
     self.configuration_file = open(self.configuration_path, "w")
     self.configuration_file.write(self.header_template)
     self.configuration_file.write(self.separator)
@@ -1248,6 +1263,9 @@ void initialize_${configuration_name}(Manifest &manifest) {
     return self
 
   def emit(self, operation):
+    _LOGGER.debug("*** EmitGemmConfigurationLibrary::emit(operation)")
+    _LOGGER.debug("***   operation.gemm_kind: " + str(operation.gemm_kind))
+
     emitter = self.instance_emitter[operation.gemm_kind]()
 
     for incl in emitter.includes:
@@ -1293,4 +1311,3 @@ void initialize_${configuration_name}(Manifest &manifest) {
 
 ###################################################################################################
 ###################################################################################################
-

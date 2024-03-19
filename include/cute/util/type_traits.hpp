@@ -131,22 +131,21 @@ using CUTE_STL_NAMESPACE::remove_pointer_t;
 // <utility>
 using CUTE_STL_NAMESPACE::declval;
 
-template< class T >
+template <class T>
 constexpr T&& forward(remove_reference_t<T>& t) noexcept
 {
   return static_cast<T&&>(t);
 }
 
-template< class T >
+template <class T>
 constexpr T&& forward(remove_reference_t<T>&& t) noexcept
 {
-  static_assert(! is_lvalue_reference_v<T>,
-    "T cannot be an lvalue reference (e.g., U&).");
+  static_assert(! is_lvalue_reference_v<T>, "T cannot be an lvalue reference (e.g., U&).");
   return static_cast<T&&>(t);
 }
 
-template< class T >
-constexpr remove_reference_t<T>&& move( T&& t ) noexcept
+template <class T>
+constexpr remove_reference_t<T>&& move(T&& t) noexcept
 {
   return static_cast<remove_reference_t<T>&&>(t);
 }

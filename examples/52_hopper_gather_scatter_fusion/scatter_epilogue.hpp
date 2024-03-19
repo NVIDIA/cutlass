@@ -39,7 +39,7 @@
 #include "cutlass/epilogue/collective/detail.hpp"
 
 #include "cute/tensor.hpp"
-#include "cute/numeric/int.hpp"
+#include "cute/numeric/numeric_types.hpp"
 
 #include "gather_tensor.hpp"
 

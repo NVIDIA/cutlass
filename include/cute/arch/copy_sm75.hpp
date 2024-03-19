@@ -78,7 +78,7 @@ struct SM75_U32x1_LDSM_N
         : "=r"(dst)
         :  "r"(smem_int_ptr));
 #else
-    CUTE_RUNTIME_ASSERT("Trying to use ldmatrix without CUTE_ARCH_LDSM_SM75_ACTIVATED.");
+    CUTE_INVALID_CONTROL_PATH("Trying to use ldmatrix without CUTE_ARCH_LDSM_SM75_ACTIVATED.");
 #endif
   }
 };
@@ -98,7 +98,7 @@ struct SM75_U32x2_LDSM_N
         : "=r"(dst0), "=r"(dst1)
         :  "r"(smem_int_ptr));
 #else
-    CUTE_RUNTIME_ASSERT("Trying to use ldmatrix without CUTE_ARCH_LDSM_SM75_ACTIVATED.");
+    CUTE_INVALID_CONTROL_PATH("Trying to use ldmatrix without CUTE_ARCH_LDSM_SM75_ACTIVATED.");
 #endif
   }
 };
@@ -118,7 +118,7 @@ struct SM75_U32x4_LDSM_N
         : "=r"(dst0), "=r"(dst1), "=r"(dst2), "=r"(dst3)
         :  "r"(smem_int_ptr));
 #else
-    CUTE_RUNTIME_ASSERT("Trying to use ldmatrix without CUTE_ARCH_LDSM_SM75_ACTIVATED.");
+    CUTE_INVALID_CONTROL_PATH("Trying to use ldmatrix without CUTE_ARCH_LDSM_SM75_ACTIVATED.");
 #endif
   }
 };
@@ -138,7 +138,7 @@ struct SM75_U16x2_LDSM_T
         : "=r"(dst)
         :  "r"(smem_int_ptr));
 #else
-    CUTE_RUNTIME_ASSERT("Trying to use ldmatrix without CUTE_ARCH_LDSM_SM75_ACTIVATED.");
+    CUTE_INVALID_CONTROL_PATH("Trying to use ldmatrix without CUTE_ARCH_LDSM_SM75_ACTIVATED.");
 #endif
   }
 };
@@ -158,7 +158,7 @@ struct SM75_U16x4_LDSM_T
         : "=r"(dst0), "=r"(dst1)
         :  "r"(smem_int_ptr));
 #else
-    CUTE_RUNTIME_ASSERT("Trying to use ldmatrix without CUTE_ARCH_LDSM_SM75_ACTIVATED.");
+    CUTE_INVALID_CONTROL_PATH("Trying to use ldmatrix without CUTE_ARCH_LDSM_SM75_ACTIVATED.");
 #endif
   }
 };
@@ -178,7 +178,7 @@ struct SM75_U16x8_LDSM_T
         : "=r"(dst0), "=r"(dst1), "=r"(dst2), "=r"(dst3)
         :  "r"(smem_int_ptr));
 #else
-    CUTE_RUNTIME_ASSERT("Trying to use ldmatrix without CUTE_ARCH_LDSM_SM75_ACTIVATED.");
+    CUTE_INVALID_CONTROL_PATH("Trying to use ldmatrix without CUTE_ARCH_LDSM_SM75_ACTIVATED.");
 #endif
   }
 };

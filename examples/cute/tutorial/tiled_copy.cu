@@ -67,7 +67,7 @@
 //
 // Uses local_partition() to partition a tile among threads arranged as (THR_M, THR_N).
 template <class TensorS, class TensorD, class ThreadLayout>
-__global__ void copy_kernel(TensorS S, TensorD D, ThreadLayout) 
+__global__ void copy_kernel(TensorS S, TensorD D, ThreadLayout)
 {
   using namespace cute;
 
@@ -77,12 +77,13 @@ __global__ void copy_kernel(TensorS S, TensorD D, ThreadLayout)
 
   // Construct a partitioning of the tile among threads with the given thread arrangement.
 
-  // Concept:                       Tensor    Layout          Index
-  Tensor thr_tile_S = local_partition(tile_S, ThreadLayout{}, threadIdx.x);
-  Tensor thr_tile_D = local_partition(tile_D, ThreadLayout{}, threadIdx.x);
+  // Concept:                         Tensor  ThrLayout       ThrIndex
+  Tensor thr_tile_S = local_partition(tile_S, ThreadLayout{}, threadIdx.x);  // (ThrValM, ThrValN)
+  Tensor thr_tile_D = local_partition(tile_D, ThreadLayout{}, threadIdx.x);  // (ThrValM, ThrValN)
 
   // Construct a register-backed Tensor with the same shape as each thread's partition
-  auto fragment = make_fragment_like(thr_tile_S);
+  // Use make_tensor to try to match the layout of thr_tile_S
+  Tensor fragment = make_tensor_like(thr_tile_S);               // (ThrValM, ThrValN)
 
   // Copy from GMEM to RMEM and from RMEM to GMEM
   copy(thr_tile_S, fragment);
@@ -95,17 +96,17 @@ __global__ void copy_kernel(TensorS S, TensorD D, ThreadLayout)
 /// has the precondition that pointers are aligned to the vector size.
 ///
 template <class TensorS, class TensorD, class ThreadLayout, class VecLayout>
-__global__ void copy_kernel_vectorized(TensorS S, TensorD D, ThreadLayout, VecLayout) 
+__global__ void copy_kernel_vectorized(TensorS S, TensorD D, ThreadLayout, VecLayout)
 {
   using namespace cute;
   using Element = typename TensorS::value_type;
 
   // Slice the tensors to obtain a view into each tile.
-  Tensor tile_S = S(make_coord(_, _), blockIdx.x, blockIdx.y);   // (BlockShape_M, BlockShape_N)
-  Tensor tile_D = D(make_coord(_, _), blockIdx.x, blockIdx.y);   // (BlockShape_M, BlockShape_N)
+  Tensor tile_S = S(make_coord(_, _), blockIdx.x, blockIdx.y);  // (BlockShape_M, BlockShape_N)
+  Tensor tile_D = D(make_coord(_, _), blockIdx.x, blockIdx.y);  // (BlockShape_M, BlockShape_N)
 
   // Define `AccessType` which controls the size of the actual memory access.
-  using AccessType = cutlass::AlignedArray<Element, size(shape(VecLayout{}))>;
+  using AccessType = cutlass::AlignedArray<Element, size(VecLayout{})>;
 
   // A copy atom corresponds to one hardware memory access.
   using Atom = Copy_Atom<UniversalCopy<AccessType>, Element>;
@@ -125,27 +126,16 @@ __global__ void copy_kernel_vectorized(TensorS S, TensorD D, ThreadLayout, VecLa
   // Construct a Tensor corresponding to each thread's slice.
   auto thr_copy = tiled_copy.get_thread_slice(threadIdx.x);
 
-  Tensor thr_tile_S = thr_copy.partition_S(tile_S);
-  Tensor thr_tile_D = thr_copy.partition_D(tile_D);
+  Tensor thr_tile_S = thr_copy.partition_S(tile_S);             // (CopyOp, CopyM, CopyN)
+  Tensor thr_tile_D = thr_copy.partition_D(tile_D);             // (CopyOp, CopyM, CopyN)
 
   // Construct a register-backed Tensor with the same shape as each thread's partition
-  auto fragment = make_fragment_like(thr_tile_D);
+  // Use make_fragment because the first mode is the instruction-local mode
+  Tensor fragment = make_fragment_like(thr_tile_D);             // (CopyOp, CopyM, CopyN)
 
   // Copy from GMEM to RMEM and from RMEM to GMEM
   copy(tiled_copy, thr_tile_S, fragment);
   copy(tiled_copy, fragment, thr_tile_D);
-}
-
-/// Helper to convert a shape to a dim3
-template <class Shape>
-dim3 shape_to_dim3(Shape shape)
-{
-  using namespace cute;
-
-  CUTE_STATIC_ASSERT_V(rank(shape) <= Int<3>{});
-  auto result = append<3>(product_each(shape), 1u);
-
-  return dim3(get<0>(result), get<1>(result), get<2>(result));
 }
 
 /// Main function
@@ -161,12 +151,12 @@ int main(int argc, char** argv)
   // Define a tensor shape with dynamic extents (m, n)
   auto tensor_shape = make_shape(256, 512);
 
+  //
+  // Allocate and initialize
+  //
+
   thrust::host_vector<Element> h_S(size(tensor_shape));
   thrust::host_vector<Element> h_D(size(tensor_shape));
-
-  //
-  // Initialize
-  //
 
   for (size_t i = 0; i < h_S.size(); ++i) {
     h_S[i] = static_cast<Element>(i);
@@ -180,33 +170,36 @@ int main(int argc, char** argv)
   // Make tensors
   //
 
-  Tensor tensor_S = make_tensor(make_gmem_ptr(d_S.data().get()), make_layout(tensor_shape));  
-  Tensor tensor_D = make_tensor(make_gmem_ptr(d_D.data().get()), make_layout(tensor_shape));
+  Tensor tensor_S = make_tensor(make_gmem_ptr(thrust::raw_pointer_cast(d_S.data())), make_layout(tensor_shape));
+  Tensor tensor_D = make_tensor(make_gmem_ptr(thrust::raw_pointer_cast(d_D.data())), make_layout(tensor_shape));
 
   //
-  // Partition
+  // Tile tensors
   //
-
 
   // Define a statically sized block (M, N).
-  //
   // Note, by convention, capital letters are used to represent static modes.
   auto block_shape = make_shape(Int<128>{}, Int<64>{});
 
-  if ((get<0>(tensor_shape) % get<0>(block_shape)) || (get<1>(tensor_shape) % get<1>(block_shape))) {
+  if ((size<0>(tensor_shape) % size<0>(block_shape)) || (size<1>(tensor_shape) % size<1>(block_shape))) {
     std::cerr << "The tensor shape must be divisible by the block shape." << std::endl;
     return -1;
   }
+  // Equivalent check to the above
+  if (not weakly_compatible(block_shape, tensor_shape)) {
+    std::cerr << "Expected the tensors to be weakly compatible with the block_shape." << std::endl;
+    return -1;
+  }
 
-  // Tile the tensor (m, m) ==> ((M, N), m', n') where (M, N) is the static tile
+  // Tile the tensor (m, n) ==> ((M, N), m', n') where (M, N) is the static tile
   // shape, and modes (m', n') correspond to the number of tiles.
-  // 
-  // These will be used to determine the CUDA kernel grid dimensinos.
-  Tensor tiled_tensor_S = tiled_divide(tensor_S, block_shape);
-  Tensor tiled_tensor_D = tiled_divide(tensor_D, block_shape);
+  //
+  // These will be used to determine the CUDA kernel grid dimensions.
+  Tensor tiled_tensor_S = tiled_divide(tensor_S, block_shape);      // ((M, N), m', n')
+  Tensor tiled_tensor_D = tiled_divide(tensor_D, block_shape);      // ((M, N), m', n')
 
   // Thread arrangement
-  Layout thr_layout = make_layout(make_shape(Int<32>{}, Int< 8>{}));
+  Layout thr_layout = make_layout(make_shape(Int<32>{}, Int<8>{}));
 
   // Vector dimensions
   Layout vec_layout = make_layout(make_shape(Int<4>{}, Int<1>{}));
@@ -215,16 +208,16 @@ int main(int argc, char** argv)
   // Determine grid and block dimensions
   //
 
-  dim3 gridDim = shape_to_dim3(select<1,2>(shape(tiled_tensor_D))); // Grid shape corresponds to  modes m' and n'
-  dim3 blockDim(size(shape(thr_layout)));
+  dim3 gridDim (size<1>(tiled_tensor_D), size<2>(tiled_tensor_D));   // Grid shape corresponds to modes m' and n'
+  dim3 blockDim(size(thr_layout));
 
   //
   // Launch the kernel
   //
   copy_kernel_vectorized<<< gridDim, blockDim >>>(
-    tiled_tensor_S, 
-    tiled_tensor_D, 
-    thr_layout, 
+    tiled_tensor_S,
+    tiled_tensor_D,
+    thr_layout,
     vec_layout);
 
   cudaError result = cudaDeviceSynchronize();

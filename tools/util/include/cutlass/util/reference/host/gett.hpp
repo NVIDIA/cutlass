@@ -236,6 +236,7 @@ void gett_mainloop(
         acc[m_b][n_b] = fma_op(a_frag[m_b], b_frag[n_b], acc[m_b][n_b]);
       }
     }
+
   }
 }
 

@@ -334,8 +334,8 @@ public:
 
   // Convert CTA-level work tile info to cluster-level tile coord
   CUTLASS_DEVICE
-  cute::Coord<int,int,int,int>
-  tile_info_to_coord_mnkl(WorkTileInfo work_tile_info) const {
+  auto
+  work_tile_to_cluster_coord_mnkl(WorkTileInfo work_tile_info) const {
     // TileScheduler works at CTA-level, kernel works at cluster-level
     int m_coord = idx2crd(work_tile_info.M_idx / scheduler_params.cluster_shape_m_,
                           scheduler_params.problem_tiles_m_);

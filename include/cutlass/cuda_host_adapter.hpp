@@ -180,6 +180,38 @@ struct CudaHostAdapter {
     cudaStream_t cuda_stream,
     void** kernel_params,
     int32_t kernel_index) const = 0;
+
+protected:
+
+  /**
+   * Fills a buffer in Global Memory with a byte sequence copied from host memory.
+   * This function can be overriden to dispatch to the appropriate cuMemsetD*Async API
+  */
+  virtual Status memsetDeviceImpl(
+    void* destination, ///< Device memory pointer to be filled
+    void const* fill_value, ///< Value to be filled in the buffer
+    size_t fill_size, ///< Size of the data type to be used for filling the buffer
+    size_t count, ///< Number of elements of size fill_size
+    cudaStream_t stream) const = 0;
+
+public:
+
+  /// Fills a buffer in Global Memory with a byte sequence copied from host memory
+  template<class FillValueType>
+  Status memsetDevice(
+    void* destination,
+    FillValueType fill_value, 
+    size_t count,
+    cudaStream_t stream) const
+  {
+    return this->memsetDeviceImpl(
+      destination,
+      &fill_value,
+      sizeof(FillValueType),
+      count,
+      stream);
+  }
+
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

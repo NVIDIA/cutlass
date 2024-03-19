@@ -74,7 +74,7 @@ struct SM75_16x8x8_F32F16F16F32_TN
            "r"(b0),
            "f"(c0),  "f"(c1),  "f"(c2),  "f"(c3));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM75_16x8x8_F32F16F16F32_TN without CUTE_ARCH_MMA_SM75_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM75_16x8x8_F32F16F16F32_TN without CUTE_ARCH_MMA_SM75_ENABLED");
 #endif
   }
 };
@@ -110,7 +110,7 @@ struct SM75_8x8x16_S32S8S8S32_TN
            "r"(b0),
            "r"(c0),  "r"(c1));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM75_8x8x16_S32S8S8S32_TN without CUTE_ARCH_MMA_SM75_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM75_8x8x16_S32S8S8S32_TN without CUTE_ARCH_MMA_SM75_ENABLED");
 #endif
   }
 };

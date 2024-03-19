@@ -76,10 +76,15 @@ struct GemmWithBroadcastReferenceOp {
   void operator()(ElementZ &Z, ElementT &T, ElementCompute gemm, ElementCompute bias) {
 
     ElementCompute t_full = binary_op(gemm, bias);
-    T = ElementT(t_full);
 
-    ElementCompute z_full = elementwise_op(t_full);
-    Z = ElementZ(z_full);
+    if (OutputOp::kStoreT) {
+      T = ElementT(t_full);
+    }
+
+    if (OutputOp::kStoreZ) {
+      ElementCompute z_full = elementwise_op(t_full);
+      Z = ElementZ(z_full);
+    }
   }
 };
 
@@ -252,12 +257,16 @@ struct TestbedGemmWithBroadcast {
     EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_A.host_view()), 0);
     EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_B.host_view()), 0);
     EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_C.host_view()), 0);
-    
-    EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_Z.host_view()), 0);
-    EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_T.host_view()), 0);
 
-    EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_Z_ref.host_view()), 0);
-    EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_T_ref.host_view()), 0);
+    if (OutputOp::kStoreZ) {
+      EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_Z.host_view()), 0);
+      EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_Z_ref.host_view()), 0);
+    }
+
+    if (OutputOp::kStoreT) {
+      EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_T.host_view()), 0);
+      EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_T_ref.host_view()), 0);
+    }
 
     bool passed = true;
     float norm_diff = 0;
@@ -359,8 +368,13 @@ struct TestbedGemmWithBroadcast {
 
         reference_op(z, t, tensor_Y_ref.at({m, n}), tensor_Broadcast.at({m, 0}));
 
-        tensor_Z_ref.at({m, n}) = z;
-        tensor_T_ref.at({m, n}) = t;
+        if (OutputOp::kStoreZ) {
+          tensor_Z_ref.at({m, n}) = z;
+        }
+
+        if (OutputOp::kStoreT) {
+          tensor_T_ref.at({m, n}) = t;
+        }
       }
     }
 
@@ -374,7 +388,7 @@ struct TestbedGemmWithBroadcast {
     // Determine SMEM requirements and waive if not satisfied
     //
 
-    int smem_size = int(sizeof(typename Gemm::GemmKernel::SharedStorage));
+    size_t smem_size = sizeof(typename Gemm::GemmKernel::SharedStorage);
 
     cudaDeviceProp properties;
     int device_idx;
@@ -451,7 +465,6 @@ struct TestbedGemmWithBroadcast {
     cutlass::device_memory::allocation<uint8_t> workspace(workspace_size);
 
     cutlass::Status status = gemm_op.initialize(arguments, workspace.get());
-
 
     EXPECT_TRUE(status == cutlass::Status::kSuccess) << to_string(status);
 
@@ -630,7 +643,7 @@ bool TestAllGemmWithBroadcast() {
               cutlass::from_real<ElementAccumulator>(alpha), 
               cutlass::from_real<ElementAccumulator>(beta)
             );
-            
+
             EXPECT_TRUE(passed) 
               << "M: " << M << ", N: " << N << ", K: " << K << ", alpha: " << alpha << ", beta: " << beta;
 

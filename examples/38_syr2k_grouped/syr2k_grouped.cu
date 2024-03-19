@@ -803,7 +803,7 @@ public:
     // Use 'D' for the in/out workspace
     this->block_D.copy_from_device(this->block_C.get());
 
-    for (int i = 0; i < this->options.problem_sizes.size(); ++i) {
+    for (size_t i = 0; i < this->options.problem_sizes.size(); ++i) {
       cutlass::gemm::GemmCoord const & problem = this->options.problem_sizes[i];
       int32_t batch_count = 1;
       int64_t lda = this->lda_host.at(i);
@@ -904,10 +904,10 @@ public:
     // Run profiling loop
     //
 
-    int last_stream_idx = 0;
+    size_t last_stream_idx = 0;
 
     for (int iter = 0; iter < this->options.iterations; ++iter) {
-      for (int i = 0; i < this->options.problem_sizes.size(); ++i) {
+      for (size_t i = 0; i < this->options.problem_sizes.size(); ++i) {
         cutlass::gemm::GemmCoord const & problem = this->options.problem_sizes[i];
         int32_t batch_count = 1;
         int64_t lda = this->lda_host.at(i);
@@ -1146,7 +1146,7 @@ public:
     );
 
     // Initialize the Rank2K object
-    Rank2K rank2k;
+    Rank2K rank2k{};
     size_t workspace_size = rank2k.get_workspace_size(args);
     cutlass::DeviceAllocation<uint8_t> workspace(workspace_size);
 

@@ -36,8 +36,7 @@
 #include <cstdint>
 #endif
 
-#include <cute/numeric/integer_subbyte.hpp>
-#include <cute/numeric/uint128.hpp>
+#include <cutlass/numeric_types.h>
 
 namespace cute
 {
@@ -46,16 +45,16 @@ namespace cute
 // Signed integers
 //
 
-using int2_t  = cute::int2b_t;
-using int4_t  = cute::int4b_t;
-using int8_t  = CUTE_STL_NAMESPACE::int8_t;
-using int16_t = CUTE_STL_NAMESPACE::int16_t;
-using int32_t = CUTE_STL_NAMESPACE::int32_t;
-using int64_t = CUTE_STL_NAMESPACE::int64_t;
+using int2_t  = cutlass::int2b_t;
+using int4_t  = cutlass::int4b_t;
+using CUTE_STL_NAMESPACE::int8_t;
+using CUTE_STL_NAMESPACE::int16_t;
+using CUTE_STL_NAMESPACE::int32_t;
+using CUTE_STL_NAMESPACE::int64_t;
 
 template <int N> struct int_bit;
-template <> struct int_bit<  2>  { using type = cute::int2b_t; };
-template <> struct int_bit<  4>  { using type = cute::int4b_t; };
+template <> struct int_bit<  2>  { using type = cutlass::int2b_t; };
+template <> struct int_bit<  4>  { using type = cutlass::int4b_t; };
 template <> struct int_bit<  8>  { using type = int8_t;  };
 template <> struct int_bit< 16>  { using type = int16_t; };
 template <> struct int_bit< 32>  { using type = int32_t; };
@@ -74,24 +73,24 @@ using int_byte_t = typename int_byte<N>::type;
 // Unsigned integers
 //
 
-using uint1_t   = cute::uint1b_t;
-using uint2_t   = cute::uint2b_t;
-using uint4_t   = cute::uint4b_t;
-using uint8_t   = CUTE_STL_NAMESPACE::uint8_t;
-using uint16_t  = CUTE_STL_NAMESPACE::uint16_t;
-using uint32_t  = CUTE_STL_NAMESPACE::uint32_t;
-using uint64_t  = CUTE_STL_NAMESPACE::uint64_t;
-using uint128_t = cute::uint128_t;
+using uint1_t   = cutlass::uint1b_t;
+using uint2_t   = cutlass::uint2b_t;
+using uint4_t   = cutlass::uint4b_t;
+using CUTE_STL_NAMESPACE::uint8_t;
+using CUTE_STL_NAMESPACE::uint16_t;
+using CUTE_STL_NAMESPACE::uint32_t;
+using CUTE_STL_NAMESPACE::uint64_t;
+using cutlass::uint128_t;
 
 template <int N> struct uint_bit;
-template <> struct uint_bit<  1> { using type = cute::uint1b_t; };
-template <> struct uint_bit<  2> { using type = cute::uint2b_t; };
-template <> struct uint_bit<  4> { using type = cute::uint4b_t; };
+template <> struct uint_bit<  1> { using type = cutlass::uint1b_t; };
+template <> struct uint_bit<  2> { using type = cutlass::uint2b_t; };
+template <> struct uint_bit<  4> { using type = cutlass::uint4b_t; };
 template <> struct uint_bit<  8> { using type = uint8_t;  };
 template <> struct uint_bit< 16> { using type = uint16_t; };
 template <> struct uint_bit< 32> { using type = uint32_t; };
 template <> struct uint_bit< 64> { using type = uint64_t; };
-template <> struct uint_bit<128> { using type = cute::uint128_t; };
+template <> struct uint_bit<128> { using type = cutlass::uint128_t; };
 
 template <int N>
 using uint_bit_t = typename uint_bit<N>::type;
@@ -101,51 +100,5 @@ using uint_byte = uint_bit<8*N>;
 
 template <int N>
 using uint_byte_t = typename uint_byte<N>::type;
-
-//
-// sizeof_bytes
-//
-
-template <class T>
-struct sizeof_bytes {
-  static constexpr size_t value = sizeof(T);
-};
-template <class T>
-static constexpr int sizeof_bytes_v = sizeof_bytes<T>::value;
-
-//
-// sizeof_bits
-//
-
-template <class T>
-struct sizeof_bits {
-  static constexpr size_t value = sizeof(T) * 8;
-};
-
-template <class T>
-struct sizeof_bits<T const>: sizeof_bits<T> {};
-
-template <>
-struct sizeof_bits<void> {
-  static constexpr size_t value = 0;
-};
-
-template <>
-struct sizeof_bits<bool> {
-  static constexpr size_t value = 1;
-};
-
-template <int Bits, bool Signed>
-struct sizeof_bits<integer_subbyte<Bits,Signed>> {
-  static constexpr size_t value = Bits;
-};
-
-template <int Bits, bool Signed>
-struct sizeof_bits<cutlass::integer_subbyte<Bits,Signed>> {
-  static constexpr size_t value = Bits;
-};
-
-template <class T>
-static constexpr int sizeof_bits_v = sizeof_bits<T>::value;
 
 } // namespace cute

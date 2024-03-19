@@ -113,10 +113,10 @@ cudaError_t CutlassSsyrkNN(
     >,
     cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<8>,
     5,     // Stages
-    1,     // AligmentA
+    1,     // AlignmentA
     false, // SplitKSerail
-    cutlass::arch::OpMultiplyAdd, 
-    cutlass::ComplexTransform::kNone, 
+    cutlass::arch::OpMultiplyAdd,
+    cutlass::ComplexTransform::kNone,
     cutlass::BlasMode::kSymmetric
   >;
 
@@ -149,7 +149,7 @@ cudaError_t CutlassSsyrkNN(
   //
   // Launch the CUTLASS SYRK kernel.
   //
-  
+
   cutlass::Status status = syrk_operator(args);
 
   //

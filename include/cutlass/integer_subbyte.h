@@ -60,24 +60,21 @@ namespace cutlass {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// 4-bit signed integer type
 template <int Bits, bool Signed = true>
 struct integer_subbyte {
-
-  /// Number of bits
-  static int const kBits = Bits;
-
-  /// Whether type is signed
-  static bool const kSigned = Signed;
-
-  /// External type
-  using T = typename platform::conditional<kSigned, int, unsigned>::type;
-
   /// Storage type
   using Storage = uint8_t;
 
-  /// Bitmask used to truncate from larger integers
-  static Storage const kMask = Storage((1 << kBits) - 1);
+  /// Number of bits
+  static_assert(Bits <= 8*sizeof(Storage), "Require a subbyte of bits in integer_subbyte");
+
+  /// External type
+  using xint_t = typename platform::conditional<Signed, int, unsigned>::type;
+
+  /// Bitmask for truncation from larger integers
+  static constexpr Storage bits_mask_ = Storage(Storage(-1) >> (8 - Bits));
+  /// Bitmask for the sign bit
+  static constexpr Storage sign_mask_ = Storage((Signed ? 1 : 0) << (Bits - 1));
 
   //
   // Data members
@@ -93,81 +90,76 @@ struct integer_subbyte {
   integer_subbyte() = default;
 
   /// Conversion from integer type
-  CUTLASS_HOST_DEVICE
+  CUTLASS_HOST_DEVICE explicit
   integer_subbyte(int value)
-      : storage(reinterpret_cast<Storage const &>(value) & kMask) {}
+      : storage(reinterpret_cast<Storage const&>(value) & bits_mask_) {}
 
-  CUTLASS_HOST_DEVICE
+  CUTLASS_HOST_DEVICE explicit
   integer_subbyte(unsigned value)
-      : storage(reinterpret_cast<Storage const &>(value) & kMask) {}
+      : storage(reinterpret_cast<Storage const&>(value) & bits_mask_) {}
 
-  CUTLASS_HOST_DEVICE
+  CUTLASS_HOST_DEVICE explicit
   integer_subbyte(double value) {
-    T tmp = static_cast<T>(value);
-    storage = Storage(reinterpret_cast<unsigned const &>(tmp) & kMask);
+    xint_t tmp = static_cast<xint_t>(value);
+    storage = reinterpret_cast<Storage const &>(tmp) & bits_mask_;
   }
 
-  ///
+  /// Convert to int or unsigned
   CUTLASS_HOST_DEVICE
-  operator T() const {
-    if (kSigned) {
-      // Sign extend
-      if (storage & Storage(1 << (kBits - 1))) {
-        return T(storage) | ~T(kMask);
-      }
+  operator xint_t() const {
+    if (sign_mask_ & storage) {  // Sign extend
+      return xint_t(storage) | ~xint_t(bits_mask_);
+    } else {
+      return xint_t(storage);
     }
-    return T(storage);
   }
 
   /// Equality
   CUTLASS_HOST_DEVICE
-  bool operator==(integer_subbyte const &rhs) const {
+  bool operator==(integer_subbyte const& rhs) const {
     return storage == rhs.storage;
   }
 
   /// Inequality
   CUTLASS_HOST_DEVICE
-  bool operator!=(integer_subbyte const &rhs) const {
+  bool operator!=(integer_subbyte const& rhs) const {
     return storage != rhs.storage;
   }
 
   /// Less than or equal
   CUTLASS_HOST_DEVICE
-  bool operator<=(integer_subbyte const &rhs) const {
-    if (kSigned) {
-      if (storage & (1 << (kBits - 1))) {
-        return !(rhs.storage < storage);
-      }
+  bool operator<=(integer_subbyte const& rhs) const {
+    if (sign_mask_ & storage) {
+      return !(rhs.storage < storage);
+    } else {
+      return storage <= rhs.storage;
     }
-    return storage <= rhs.storage;
   }
 
   /// Less than
   CUTLASS_HOST_DEVICE
-  bool operator<(integer_subbyte const &rhs) const {
-    if (kSigned) {
-      if (storage & (1 << (kBits - 1))) {
-        return !(rhs.storage <= storage);
-      }
+  bool operator<(integer_subbyte const& rhs) const {
+    if (sign_mask_ & storage) {
+      return !(rhs.storage <= storage);
+    } else {
+      return storage < rhs.storage;
     }
-    return storage < rhs.storage;
   }
 
   /// Greater than or equal
   CUTLASS_HOST_DEVICE
-  bool operator>=(integer_subbyte const &rhs) const {
+  bool operator>=(integer_subbyte const& rhs) const {
     return !(*this < rhs);
   }
 
   /// Greater than
   CUTLASS_HOST_DEVICE
-  bool operator>(integer_subbyte const &rhs) const {
+  bool operator>(integer_subbyte const& rhs) const {
     return !(*this <= rhs);
   }
 };
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-
 
 /// 1-bit Unsigned integer type
 using uint1b_t = integer_subbyte<1, false>;
@@ -184,36 +176,20 @@ using int4b_t = integer_subbyte<4, true>;
 /// 4-bit Unsigned integer type
 using uint4b_t = integer_subbyte<4, false>;
 
+/// 1-bit binary type
+using bin1_t = bool;
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Defines the size of an element in bits - specialized for uint1b_t
-template <>
-struct sizeof_bits<uint1b_t> {
-  static int const value = 1;
+template <int Bits, bool Signed>
+struct sizeof_bits<integer_subbyte<Bits,Signed>> {
+  static constexpr int value = Bits;
 };
 
-/// Defines the size of an element in bits - specialized for int2b_t
+/// Defines the size of an element in bits - specialized for bin1_t
 template <>
-struct sizeof_bits<int2b_t> {
-  static int const value = 2;
-};
-
-/// Defines the size of an element in bits - specialized for uint2b_t
-template <>
-struct sizeof_bits<uint2b_t> {
-  static int const value = 2;
-};
-
-/// Defines the size of an element in bits - specialized for int4b_t
-template <>
-struct sizeof_bits<int4b_t> {
-  static int const value = 4;
-};
-
-/// Defines the size of an element in bits - specialized for uint4b_t
-template <>
-struct sizeof_bits<uint4b_t> {
-  static int const value = 4;
+struct sizeof_bits<bin1_t> {
+  static constexpr int value = 1;
 };
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -222,29 +198,77 @@ namespace platform {
 
 template <>
 struct numeric_limits<cutlass::int4b_t> {
-  CUTLASS_HOST_DEVICE
-  static cutlass::int4b_t const lowest() noexcept { return -8;}
-  CUTLASS_HOST_DEVICE
-  static cutlass::int4b_t const max() noexcept { return 7;}
+  CUTLASS_HOST_DEVICE static
+  cutlass::int4b_t const lowest() noexcept { return int4b_t{-8};}
+
+  CUTLASS_HOST_DEVICE static
+  cutlass::int4b_t const max() noexcept { return int4b_t{7};}
+
+  CUTLASS_HOST_DEVICE static
+  cutlass::int4b_t const min() noexcept { return lowest();}
+
   static constexpr bool is_integer = true;
+  static constexpr bool is_signed = true;
 };
 
 template <>
 struct numeric_limits<cutlass::uint4b_t> {
-  CUTLASS_HOST_DEVICE
-  static cutlass::uint4b_t const lowest() noexcept { return 0;}
-  CUTLASS_HOST_DEVICE
-  static cutlass::uint4b_t const max() noexcept { return 15;}
+  CUTLASS_HOST_DEVICE static
+ cutlass::uint4b_t const lowest() noexcept { return uint4b_t{0};}
+
+  CUTLASS_HOST_DEVICE static
+  cutlass::uint4b_t const max() noexcept { return uint4b_t{15};}
+
+  CUTLASS_HOST_DEVICE static
+  cutlass::uint4b_t const min() noexcept { return lowest();}
+
   static constexpr bool is_integer = true;
+  static constexpr bool is_signed = false;
 };
 
 template <>
 struct numeric_limits<cutlass::uint1b_t> {
-  CUTLASS_HOST_DEVICE
-  static cutlass::uint1b_t const lowest() noexcept { return 0;}
-  CUTLASS_HOST_DEVICE
-  static cutlass::uint1b_t const max() noexcept { return 1;}
+  CUTLASS_HOST_DEVICE static
+  cutlass::uint1b_t const lowest() noexcept { return uint1b_t{0};}
+
+  CUTLASS_HOST_DEVICE static
+  cutlass::uint1b_t const max() noexcept { return uint1b_t{1};}
+
+  CUTLASS_HOST_DEVICE static
+  cutlass::uint1b_t const min() noexcept { return lowest();}
+
   static constexpr bool is_integer = true;
+  static constexpr bool is_signed = false;
+};
+
+template <>
+struct numeric_limits<cutlass::int2b_t> {
+  CUTLASS_HOST_DEVICE static
+  cutlass::int2b_t lowest() noexcept { return int2b_t{-2}; }
+
+  CUTLASS_HOST_DEVICE static
+  cutlass::int2b_t min() noexcept { return lowest(); }
+
+  CUTLASS_HOST_DEVICE static
+  cutlass::int2b_t max() noexcept { return int2b_t{1}; }
+
+  static constexpr bool is_integer = true;
+  static constexpr bool is_signed = true;
+};
+
+template <>
+struct numeric_limits<cutlass::uint2b_t> {
+  CUTLASS_HOST_DEVICE static
+  cutlass::uint2b_t const lowest() noexcept { return uint2b_t{0}; }
+
+  CUTLASS_HOST_DEVICE static
+  cutlass::uint2b_t const min() noexcept { return lowest(); }
+
+  CUTLASS_HOST_DEVICE static
+  cutlass::uint2b_t const max() noexcept { return uint2b_t{3}; }
+
+  static constexpr bool is_integer = true;
+  static constexpr bool is_signed = false;
 };
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

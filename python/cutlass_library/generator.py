@@ -40,9 +40,22 @@ from itertools import product
 import logging
 import os.path
 import shutil
-
 import sys
+import copy
+from typing import Any, Optional, Sequence, Tuple
 
+_LOGGER = logging.getLogger(__name__)
+
+def logging_prefix(indent_level: int = 0) -> str:
+  """String prefix for start of each debug log entry"""
+  prefix = '*** '
+  indent = '  '
+  return f"{prefix}{indent_level * indent}"
+
+def log_debug_line(line: str, indent_level: int = 0) -> None:
+  """Log one line of debug output"""
+  prefix = logging_prefix(indent_level)
+  _LOGGER.debug(prefix + line)
 
 # Certain usecases of cutlass_library nearly always prefer to run as scripts with
 # relative imports, rather than via an installed Python package. An example of this
@@ -789,6 +802,359 @@ def CreateDepthwiseConv2dOperator(manifest, layout, tile_descriptions, data_type
 
           manifest.append(new_operation)
           operations.append(new_operation)
+
+  return operations
+
+class ConvOperation3x:
+  """All parameters of a CUTLASS 3 convolution operation.
+
+  Unlike CUTLASS 2 convolutions, CUTLASS 3 convolutions do not
+  distinguish between 2-D and 3-D convolutions by kernel class name.
+  Instead, for CUTLASS 3 convolutions, the tensor layouts encode
+  whether the convolution is 2-D or 3-D.  Thus, this class deduces
+  the OperationKind (either Conv2d or Conv3d) from the layouts,
+  rather than taking it as a constructor parameter.
+  """
+  def __init__(self,
+               conv_kind: ConvKind,
+               tile_description: TileDescription,
+               A: TensorDescription,
+               B: TensorDescription,
+               C: TensorDescription,
+               element_compute: Optional[DataType] = None,
+               D: Optional[TensorDescription] = None,
+               kernel_schedule: KernelScheduleType = KernelScheduleType.ScheduleAuto,
+               epilogue_schedule: EpilogueScheduleType = EpilogueScheduleType.ScheduleAuto,
+               tile_scheduler: TileSchedulerType = TileSchedulerType.Default,
+               log_indent_level: int = 1):
+    log_debug_line(f'ConvOperation3x::init: conv_kind: {conv_kind}', log_indent_level)
+    log_indent_level = log_indent_level + 1
+
+    self.conv_kind = conv_kind
+    self.tile_description = tile_description
+    self.A = A
+    self.B = B
+    self.C = C
+    self.element_compute = C.element if element_compute is None else element_compute
+    self.kernel_schedule = kernel_schedule
+    self.epilogue_schedule = epilogue_schedule
+
+    self.arch = tile_description.minimum_compute_capability
+    self.tile_scheduler = tile_scheduler
+    if D == None:
+      self.D = C
+    else:
+      self.D = D
+
+    self.is_3x = True
+    self.group_mode = GroupMode.NoneGroup # CUTLASS 3 convolutions currently aren't grouped
+
+    operation_kind = None
+    for layout in (A.layout, B.layout, C.layout):
+      assert(isinstance(layout, LayoutType))
+      new_operation_kind = convolution_tensor_layout_type_to_operation_kind(layout)
+      if operation_kind is None:
+        operation_kind = new_operation_kind
+      else: # CUTLASS 3 convolutions don't permit mixing 2-D and 3-D layouts.
+        assert(operation_kind == new_operation_kind)
+    assert(operation_kind is not None)
+    self.operation_kind = operation_kind
+
+  def __str__(self):
+    return f"ConvOperation3x: operation_kind={self.operation_kind}, conv_kind={self.conv_kind}, tile_description={self.tile_description}"
+
+  def is_complex(self):
+    complex_operators = [
+      MathOperation.multiply_add_complex,
+      MathOperation.multiply_add_complex_gaussian,
+      MathOperation.multiply_add_complex_fast_f32
+    ]
+    return self.tile_description.math_instruction.math_operation in complex_operators
+
+  def is_mixed_input(self):
+    return self.A.element != self.B.element
+
+  def accumulator_type(self):
+    accum = self.tile_description.math_instruction.element_accumulator
+    if self.is_complex():
+      return get_complex_from_real(accum)
+    return accum
+
+  def short_math_name(self):
+    prefix = ''
+    if self.tile_description.math_instruction.math_operation == MathOperation.multiply_add_complex_gaussian:
+      prefix = 'g'
+    return prefix + ShortDataTypeNames[self.accumulator_type()]
+
+  def is_tensor_op(self):
+    tensor_ops = [
+      OpcodeClass.TensorOp,
+      OpcodeClass.WmmaTensorOp
+    ]
+    return self.tile_description.math_instruction.opcode_class in tensor_ops
+
+  def instruction_shape_string(self):
+    math_operations_map = {
+      MathOperation.xor_popc: 'xor',
+      MathOperation.and_popc: 'and'
+    }
+    if self.is_tensor_op():
+      is0, is1, is2 = self.tile_description.math_instruction.instruction_shape
+      math_op = self.tile_description.math_instruction.math_operation
+      math_op_string = math_operations_map[math_op] if math_op in math_operations_map.keys() else ''
+      return f"{is0}x{is1}x{is2}{math_op_string}"
+    else:
+      return ''
+
+  def intermediate_type_string(self):
+    '''
+    Name of the distinct intermediate type used by the tensor operation,
+    or the empty string if none.
+
+    Tensor ops (opcode_clas *TensorOp) may use an intermediate data type
+    that differs from the element type of A or the accumulator type.
+    '''
+    if not self.is_tensor_op():
+      return ''
+    elif self.tile_description.math_instruction.element_a == self.A.element:
+      return ''
+    elif self.tile_description.math_instruction.element_a == self.tile_description.math_instruction.element_accumulator:
+      return ''
+    else:
+      return DataTypeNames[self.tile_description.math_instruction.element_a]
+
+  def core_name(self):
+    inst_shape = self.instruction_shape_string()
+    intermediate_type = self.intermediate_type_string()
+    conv_kind_name = ConvKindNames[self.conv_kind]
+    return f"{self.short_math_name()}{inst_shape}{intermediate_type}{conv_kind_name}"
+
+  def extended_name(self):
+    core_name = self.core_name()
+    element_a = DataTypeNames[self.A.element]
+    element_b = DataTypeNames[self.B.element]
+    element_acc = DataTypeNames[self.tile_description.math_instruction.element_accumulator]
+    element_c = DataTypeNames[self.C.element]
+    element_d = DataTypeNames[self.D.element]
+    return f"{core_name}_{element_a}_{element_b}_{element_acc}_{element_c}_{element_d}"
+
+  def is_complex(self):
+    complex_operators = [
+      MathOperation.multiply_add_complex,
+      MathOperation.multiply_add_complex_gaussian,
+      MathOperation.multiply_add_complex_fast_f32
+    ]
+    return self.tile_description.math_instruction.math_operation in complex_operators
+
+  def layout_names(self):
+    '''Layout strings for A and B, respectively'''
+    if self.is_complex():
+      return (ShortComplexLayoutNames[(self.A.layout, self.A.complex_transform)],
+              ShortComplexLayoutNames[(self.B.layout, self.B.complex_transform)])
+    else:
+      return (ShortLayoutTypeNames[self.A.layout],
+              ShortLayoutTypeNames[self.B.layout])
+
+  def extended_name(self):
+    core_name = self.core_name()
+    element_a = DataTypeNames[self.A.element]
+    element_b = DataTypeNames[self.B.element]
+    element_acc = DataTypeNames[self.tile_description.math_instruction.element_accumulator]
+    element_c = DataTypeNames[self.C.element]
+    element_d = DataTypeNames[self.D.element]
+    layout_a, layout_b = self.layout_names()
+    return f"{core_name}_{element_a}{layout_a}_{element_b}{layout_b}_{element_acc}_{element_c}_{element_d}"
+
+  def configuration_name(self):
+    prefix = 'cutlass3x'
+    opcode_class_name = OpcodeClassNames[self.tile_description.math_instruction.opcode_class]
+    tbm = self.tile_description.tile_shape[0]
+    tbn = self.tile_description.tile_shape[1]
+    tbk = self.tile_description.tile_shape[2]
+    cm = self.tile_description.cluster_shape[0]
+    cn = self.tile_description.cluster_shape[1]
+    ck = self.tile_description.cluster_shape[2]
+    alignment = max(self.A.alignment, self.B.alignment)
+    tile_scheduler = TileSchedulerSuffixes[self.tile_scheduler]
+    kernel_schedule = KernelScheduleSuffixes[self.kernel_schedule]
+    epilogue_schedule = EpilogueScheduleSuffixes[self.epilogue_schedule]
+
+    return f"{prefix}_{opcode_class_name}_{self.extended_name()}_{tbm}x{tbn}x{tbk}_{cm}x{cn}x{ck}_{self.tile_description.stages}_align{alignment}{tile_scheduler}{kernel_schedule}{epilogue_schedule}"
+
+  def procedural_name(self):
+    return self.configuration_name()
+
+def convolution_tensor_layout_type_to_operation_kind(layout: LayoutType) -> OperationKind:
+  if layout == LayoutType.TensorNHWC or layout == LayoutType.TensorKCSR:
+    return OperationKind.Conv2d
+  elif layout == LayoutType.TensorNDHWC or layout == LayoutType.TensorKCSRT:
+    return OperationKind.Conv3d
+  else:
+    raise RuntimeError(f'LayoutType {layout} does not have a corresponding OperationKind')
+
+def CreateConvOperator3x(manifest: Manifest,
+                         dims_and_alignments: Sequence[Tuple[Tuple[int, int], Tuple[int, int], Tuple[int, int]]],
+                         tile_descriptions: Sequence[Sequence[TileDescription]],
+                         data_types,
+                         schedule_pairs: Sequence[Tuple[KernelScheduleType, KernelScheduleType]] = \
+                           [(KernelScheduleType.ScheduleAuto, EpilogueScheduleType.ScheduleAuto)],
+                         complex_transforms: Optional[Sequence[ComplexTransform]] = None,
+                         tile_schedulers: Sequence[TileSchedulerType] = [TileSchedulerType.Persistent],
+                         conv_kind: ConvKind = ConvKind.Fprop,
+                         log_indent_level: int = 1):
+  """
+  Create zero or more CUTLASS 3 two-dimensional convolution operators.
+
+  Create a CUTLASS 3 two-dimensional convolution operator
+  for all feasible combinations of the input parameters.
+  Add the operators to the manifest.
+
+  dims_and_alignments: 3-level list.  Each outer list term is a list [A, B, C].
+    Each inner list (A, B, or C) has the form [num_spatial_dimensions, alignment].
+    Both are integers; the first is the number of spatial dimensions
+    (currently, only 2 or 3 are supported), and the second is the byte alignment.
+    We deduce the operation_kind (either OperationKind.Conv2d or OperationKind.Conv3d)
+    from num_spatial_dimensions.
+
+  This function doesn't take layouts, unlike the GEMM functions.
+  CUTLASS 3 convolutions currently support three input layouts:
+
+  * TensorNWC for 1-D convolutions,
+  * TensorNHWC for 2-D convolutions, and
+  * TensorNDHWC for 3-D convolutions.
+
+  Output (C and D) layouts are the same as input layouts,
+  except for Wgrad convolutions, where the layouts are
+
+  * TensorKCS for 1-D convolutions,
+  * TensorKCSR for 2-D convolutions, and
+  * TensorKCSRT for 3-D convolutions.
+
+  The output layouts are completely constrained by the input layouts
+  and the convolution kind.
+
+  tile_descriptions: 2-level list.
+    Outer level has one list per math instruction.
+    Inner level has one TileDescription for each cluster shape.
+
+  data_types: Either a single data_type dictionary, or a list of them.
+    Keys: 'a_type', 'b_type', 'c_type', 'd_type', 'acc_type', 'epi_type'
+
+  complex_transforms: Optional list of pairs.
+    First element of each pair is the complex transform for A, and
+    second element of each pair is the complex transform for B.
+
+  schedule_pairs: [(kernel_schedule, epilogue_schedule), ...]
+
+  conv_kind: Convolution kind (Fprop, Dgrad, or Wgrad).
+  """
+  log_debug_line('CreateConvOperator3x', log_indent_level)
+  log_indent_level = log_indent_level + 1
+  log_debug_line(f'conv_kind: {conv_kind}', log_indent_level)
+
+  for triple in dims_and_alignments:
+    spatial_dimensionality = None # to be determined by loop below
+    assert(len(triple) == 3)
+    for entry in triple: # [A, B, C]
+      assert(len(entry) == 2)
+      [dim, alignment] = entry
+      assert(type(dim) is int)
+      assert(dim == 2 or dim == 3)
+      assert(type(alignment) is int)
+      assert(alignment > 0)
+      if spatial_dimensionality is None:
+        spatial_dimensionality = dim
+      else:
+        # A, B, and C need to have the same spatial dimensionality
+        assert(spatial_dimensionality == dim)
+
+  def input_and_output_layouts(spatial_dim: int, kind: ConvKind) -> Tuple[LayoutType, LayoutType]:
+    if spatial_dim == 1:
+      input_layout = LayoutType.TensorNWC
+      if kind == ConvKind.Wgrad:
+        output_layout = LayoutType.TensorKCS
+      else:
+        output_layout = input_layout
+    elif spatial_dim == 2:
+      input_layout = LayoutType.TensorNHWC
+      if kind == ConvKind.Wgrad:
+        output_layout = LayoutType.TensorKCSR
+      else:
+        output_layout = input_layout
+    elif spatial_dim == 3:
+      input_layout = LayoutType.TensorNDHWC
+      if kind == ConvKind.Wgrad:
+        output_layout = LayoutType.TensorKCSRT
+      else:
+        output_layout = input_layout
+    else:
+      assert(False)
+    return (input_layout, output_layout)
+
+  def dims_to_layouts(A_B_C: Tuple[Tuple[int, int], Tuple[int, int], Tuple[int, int]]) -> \
+      Tuple[Tuple[LayoutType, int], Tuple[LayoutType, int], Tuple[LayoutType, int]]:
+    [A, B, C] = A_B_C
+    [spatial_dim, alignment] = A
+    [input_layout, output_layout] = input_and_output_layouts(spatial_dim, conv_kind)
+    return ((input_layout, A[1]),
+            (input_layout, B[1]),
+            (output_layout, C[1]))
+
+  # layouts: list of triples (A, B, C).
+  # Each of A, B, and C has the form [layout, alignment].
+  layouts = [dims_to_layouts(A_B_C) for A_B_C in dims_and_alignments]
+
+  if type(data_types) is dict:
+    data_types = [data_types]
+
+  for s in schedule_pairs:
+    assert(len(s) == 2)
+
+  if complex_transforms is None:
+    complex_transforms = [(ComplexTransform.none, ComplexTransform.none)]
+
+  # product produces a one-pass generator, so the loop must call it anew each time.
+  def make_combinations():
+    return product(
+      layouts,
+      tile_descriptions,
+      data_types,
+      complex_transforms,
+      schedule_pairs,
+      tile_schedulers
+    )
+
+  operations = []
+  for layout_triple, tile_description, data_type, complex_transform_pair, schedule_pair, tile_scheduler in make_combinations():
+    A_layout, A_alignment = layout_triple[0]
+    A_xform = complex_transform_pair[0]
+    B_layout, B_alignment = layout_triple[1]
+    B_xform = complex_transform_pair[1]
+    C_layout, C_alignment = layout_triple[2]
+    D_layout = C_layout
+    D_alignment = C_alignment
+
+    A = TensorDescription(data_type["a_type"], A_layout, A_alignment, A_xform)
+    B = TensorDescription(data_type["b_type"], B_layout, B_alignment, B_xform)
+    C = TensorDescription(data_type["c_type"], C_layout, C_alignment)
+    D = TensorDescription(data_type["d_type"], D_layout, D_alignment)
+    element_compute = data_type.get("epi_type", data_type["acc_type"])
+    kernel_schedule, epilogue_schedule = schedule_pair
+
+    operation = ConvOperation3x(conv_kind=conv_kind,
+                                tile_description=tile_description,
+                                A=A,
+                                B=B,
+                                C=C,
+                                element_compute=element_compute,
+                                D=D,
+                                kernel_schedule=kernel_schedule,
+                                epilogue_schedule=epilogue_schedule,
+                                tile_scheduler=tile_scheduler,
+                                log_indent_level=log_indent_level)
+    log_debug_line(f'Created ConvOperation3x: {str(operation)}', log_indent_level)
+    manifest.append(operation)
+    operations.append(operation)
 
   return operations
 
@@ -2233,8 +2599,8 @@ def GenerateSM80_TensorOp_16816_mixed_input_upcast_a(manifest, cuda_version):
   min_cc = 80
   max_cc = 1024
 
-  # For mixed-input alignment constraints are a list of lists, where the 
-  # inner list contains the alignment constraints for operands/matrices 
+  # For mixed-input alignment constraints are a list of lists, where the
+  # inner list contains the alignment constraints for operands/matrices
   # [[alignA, alignB, alignC],..]
   alignment_constraints = [[16, 8, 8],]
 
@@ -2277,7 +2643,7 @@ def GenerateSM80_TensorOp_16816_mixed_input_upcast_a(manifest, cuda_version):
       ]
 
       operations += CreateGemmOperator(manifest, layouts, tile_descriptions, \
-        data_type_mixed, alignment_constraints, None, EpilogueFunctor.LinearCombination, SwizzlingFunctor.Identity8) 
+        data_type_mixed, alignment_constraints, None, EpilogueFunctor.LinearCombination, SwizzlingFunctor.Identity8)
 
       for op in operations:
         if (DataTypeSize[op.C.element] == 16) and \
@@ -2320,8 +2686,8 @@ def GenerateSM80_TensorOp_16816_mixed_input_upcast_b(manifest, cuda_version):
   min_cc = 80
   max_cc = 1024
 
-  # For mixed-input alignment constraints are a list of lists, where the 
-  # inner list contains the alignment constraints for operands/matrices 
+  # For mixed-input alignment constraints are a list of lists, where the
+  # inner list contains the alignment constraints for operands/matrices
   # [[alignA, alignB, alignC],..]
   alignment_constraints = [[8, 16, 8],]
 
@@ -2346,8 +2712,8 @@ def GenerateSM80_TensorOp_16816_mixed_input_upcast_b(manifest, cuda_version):
       TileDescription([128, 16, 32],  5, [2, 1, 1], math_inst, min_cc, max_cc),
       TileDescription([128, 16, 32],  3, [2, 1, 1], math_inst, min_cc, max_cc),
       # 256x16
-      TileDescription([256, 16, 32],  5, [2, 1, 1], math_inst, min_cc, max_cc), 
-      TileDescription([256, 16, 32],  3, [2, 1, 1], math_inst, min_cc, max_cc), 
+      TileDescription([256, 16, 32],  5, [2, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([256, 16, 32],  3, [2, 1, 1], math_inst, min_cc, max_cc),
     ]
 
     data_type = [
@@ -2372,7 +2738,7 @@ def GenerateSM80_TensorOp_16816_mixed_input_upcast_b(manifest, cuda_version):
       ]
 
       operations = CreateGemmOperator(manifest, layouts, tile_descriptions, \
-        data_type_mixed, alignment_constraints, None, EpilogueFunctor.LinearCombination, SwizzlingFunctor.Identity8) 
+        data_type_mixed, alignment_constraints, None, EpilogueFunctor.LinearCombination, SwizzlingFunctor.Identity8)
 
       for op in operations:
         if op.tile_description.threadblock_shape[1] <= 32:
@@ -4326,6 +4692,241 @@ def GenerateSM80(manifest, cuda_version):
 
 ###################################################################################################
 
+def GenerateSM89_TensorOp_16832_fp8(manifest, cuda_version):
+  if (
+    not CudaToolkitVersionSatisfies(cuda_version, 12, 4)
+  ):
+    return
+
+  layouts = [
+    (LayoutType.RowMajor, LayoutType.ColumnMajor, LayoutType.ColumnMajor)
+  ]
+
+  math_instructions = [
+    MathInstruction(
+      [16, 8, 32],
+      DataType.e4m3, DataType.e4m3, DataType.f32,
+      OpcodeClass.TensorOp,
+      MathOperation.multiply_add),
+    MathInstruction(
+      [16, 8, 32],
+      DataType.e4m3, DataType.e5m2, DataType.f32,
+      OpcodeClass.TensorOp,
+      MathOperation.multiply_add),
+    MathInstruction(
+      [16, 8, 32],
+      DataType.e5m2, DataType.e4m3, DataType.f32,
+      OpcodeClass.TensorOp,
+      MathOperation.multiply_add),
+    MathInstruction(
+      [16, 8, 32],
+      DataType.e5m2, DataType.e5m2, DataType.f32,
+      OpcodeClass.TensorOp,
+      MathOperation.multiply_add),
+    MathInstruction(
+      [16, 8, 32],
+      DataType.e4m3, DataType.e4m3, DataType.f32,
+      OpcodeClass.TensorOp,
+      MathOperation.multiply_add_fast_accum),
+    MathInstruction(
+      [16, 8, 32],
+      DataType.e4m3, DataType.e5m2, DataType.f32,
+      OpcodeClass.TensorOp,
+      MathOperation.multiply_add_fast_accum),
+    MathInstruction(
+      [16, 8, 32],
+      DataType.e5m2, DataType.e4m3, DataType.f32,
+      OpcodeClass.TensorOp,
+      MathOperation.multiply_add_fast_accum),
+    MathInstruction(
+      [16, 8, 32],
+      DataType.e5m2, DataType.e5m2, DataType.f32,
+      OpcodeClass.TensorOp,
+      MathOperation.multiply_add_fast_accum),
+  ]
+
+  min_cc = 89
+  max_cc = 89
+
+  alignment_constraints = [16,]
+  alignment_constraints_small_channels = [16, 8, 4]
+
+  for math_inst in math_instructions:
+    tile_descriptions = [
+      TileDescription([256, 128,  64],  3, [4, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 256,  64],  3, [2, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([256, 128,  64],  6, [4, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 256,  64],  6, [2, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([256,  64,  64],  3, [4, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64, 256,  64],  3, [1, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([256,  64,  64],  4, [4, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64, 256,  64],  4, [1, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([256,  32,  64],  4, [4, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 32, 256,  64],  4, [1, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 128,  64],  3, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 128,  64],  4, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 128,  64],  5, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 128,  64],  6, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128,  64,  64],  6, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64, 128,  64],  6, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128,  32,  64],  6, [4, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 32, 128,  64],  6, [1, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64,  64,  64],  6, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64,  64,  64], 10, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([256, 128, 128],  3, [4, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 256, 128],  3, [2, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([256,  64, 128],  4, [4, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64, 256, 128],  4, [1, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([256,  32, 128],  4, [4, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 32, 256, 128],  4, [1, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 128, 128],  3, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 128, 128],  4, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 128, 128],  5, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128,  64, 128],  3, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64, 128, 128],  3, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128,  64, 128],  4, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64, 128, 128],  4, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128,  32, 128],  4, [4, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 32, 128, 128],  4, [1, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64,  64, 128],  5, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64,  64, 128],  6, [2, 2, 1], math_inst, min_cc, max_cc),
+    ]
+
+    data_types = [
+      [
+        math_inst.element_a,
+        math_inst.element_b,
+        DataType.f32,
+        math_inst.element_accumulator
+      ],
+    ]
+
+    operations = []
+    for data_type in data_types:
+      operations += CreateGemmOperator(manifest, layouts, tile_descriptions, data_type,
+        alignment_constraints, None, EpilogueFunctor.LinearCombination)
+
+      conv_layout = (LayoutType.TensorNHWC, LayoutType.TensorNHWC, LayoutType.TensorNHWC)
+      operations += CreateConv2dOperator(manifest, conv_layout, tile_descriptions,
+        data_type, alignment_constraints, [ConvKind.Fprop], EpilogueFunctor.LinearCombination)
+
+      operations += CreateConv2dFixedChannelsOperator(manifest, conv_layout, tile_descriptions,
+        data_type, alignment_constraints_small_channels, [ConvKind.Fprop], EpilogueFunctor.LinearCombination)
+
+    for op in operations:
+      if op.tile_description.threadblock_shape[1] >= 128:
+        if op.tile_description.threadblock_shape[0] == 32:
+          op.C.alignment = 8
+        else:
+          op.C.alignment = 16
+      else:
+        op.C.alignment = 8
+
+#
+def GenerateSM89_SparseTensorOp_16864_fp8(manifest, cuda_version):
+
+  if (
+    not CudaToolkitVersionSatisfies(cuda_version, 12, 4)
+  ):
+    return
+
+  layouts = [
+    (LayoutType.RowMajor, LayoutType.ColumnMajor, LayoutType.RowMajor)
+  ]
+
+  math_instructions = [
+    MathInstruction(
+      [16, 8, 64],
+      DataType.e4m3, DataType.e4m3, DataType.f32,
+      OpcodeClass.TensorOp,
+      MathOperation.multiply_add),
+    MathInstruction(
+      [16, 8, 64],
+      DataType.e4m3, DataType.e5m2, DataType.f32,
+      OpcodeClass.TensorOp,
+      MathOperation.multiply_add),
+    MathInstruction(
+      [16, 8, 64],
+      DataType.e5m2, DataType.e4m3, DataType.f32,
+      OpcodeClass.TensorOp,
+      MathOperation.multiply_add),
+    MathInstruction(
+      [16, 8, 64],
+      DataType.e5m2, DataType.e5m2, DataType.f32,
+      OpcodeClass.TensorOp,
+      MathOperation.multiply_add),
+    MathInstruction(
+      [16, 8, 64],
+      DataType.e4m3, DataType.e4m3, DataType.f32,
+      OpcodeClass.TensorOp,
+      MathOperation.multiply_add_fast_accum),
+    MathInstruction(
+      [16, 8, 64],
+      DataType.e4m3, DataType.e5m2, DataType.f32,
+      OpcodeClass.TensorOp,
+      MathOperation.multiply_add_fast_accum),
+    MathInstruction(
+      [16, 8, 64],
+      DataType.e5m2, DataType.e4m3, DataType.f32,
+      OpcodeClass.TensorOp,
+      MathOperation.multiply_add_fast_accum),
+    MathInstruction(
+      [16, 8, 64],
+      DataType.e5m2, DataType.e5m2, DataType.f32,
+      OpcodeClass.TensorOp,
+      MathOperation.multiply_add_fast_accum),
+  ]
+
+  min_cc = 89
+  max_cc = 89
+
+  alignment_constraints = [16,]
+
+  for math_inst in math_instructions:
+    tile_descriptions = [
+      TileDescription([128,  64, 128],  3, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([256, 128, 128],  3, [4, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 256, 128],  3, [2, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 128, 128],  3, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([256,  64, 128],  3, [4, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64, 256, 128],  4, [1, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64, 128, 128],  6, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64,  64, 128],  4, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 128, 256],  3, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128,  64, 256],  4, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64, 128, 256],  3, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64,  64, 256],  3, [2, 2, 1], math_inst, min_cc, max_cc),
+    ]
+
+    data_types = [
+      [
+        math_inst.element_a,
+        math_inst.element_b,
+        DataType.f32,
+        math_inst.element_accumulator
+      ],
+    ]
+
+    operations = []
+    for data_type in data_types:
+      operations += CreateSparseGemmOperator(manifest, layouts, tile_descriptions, data_type,
+        alignment_constraints, None, EpilogueFunctor.LinearCombination)
+
+    for op in operations:
+      if op.tile_description.threadblock_shape[1] >= 128:
+        op.C.alignment = 16
+      else:
+        op.C.alignment = 8
+
+###################################################################################################
+
+#
+def GenerateSM89(manifest, cuda_version):
+  GenerateSM89_TensorOp_16832_fp8(manifest, cuda_version)
+  GenerateSM89_SparseTensorOp_16864_fp8(manifest, cuda_version)
+
+###################################################################################################
+
 #
 def GenerateSM90_TensorOp_16b_WGMMA_gemm(manifest, cuda_version):
   if not CudaToolkitVersionSatisfies(cuda_version, 12, 0):
@@ -4790,7 +5391,7 @@ def GenerateSM90_TensorOp_tf32_WGMMA_alignx_gemm(manifest, cuda_version):
       DataType.tf32, DataType.tf32, DataType.f32,
       OpcodeClass.TensorOp,
       MathOperation.multiply_add)
-  
+
   min_cc = 90
   max_cc = 90
 
@@ -4798,7 +5399,7 @@ def GenerateSM90_TensorOp_tf32_WGMMA_alignx_gemm(manifest, cuda_version):
     TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
       0, [4, 1, 1], math_inst, min_cc, max_cc, [1,1,1])
   ]
- 
+
   tile_descriptions_small = [
     # TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
     #   0, [4, 1, 1], math_inst, min_cc, max_cc, [1,1,1])
@@ -5395,7 +5996,7 @@ def GenerateSM90_TensorOp_fp8_WGMMA_alignx_gemm(manifest, cuda_version):
       ]
       stream_k_schedules = []
 
-    
+
     for data_type in data_types:
       # With No-SMEM epilogues
       CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type, schedules)
@@ -6013,7 +6614,102 @@ def GenerateSM90_TensorOp_1684_symm_complex_gaussian(manifest, cuda_version):
 
 ###################################################################################################
 
-#
+def GenerateSM90_Conv3x(manifest, cuda_version,
+                        log_indent_level: int = 0):
+  """
+  Generate CUTLASS 3 convolution kernel(s) for SM90.
+
+  This is meant to be called from GenerateSM90.
+  """
+  log_debug_line('GenerateSM90_Conv3x', log_indent_level)
+  log_indent_level = log_indent_level + 1
+
+  if not CudaToolkitVersionSatisfies(cuda_version, 12, 0):
+    return
+
+  minimum_compute_capability = 90
+  maximum_compute_capability = 90
+
+  spatial_dims = [2, 3]
+
+  def make_dims_and_alignments_triple(dim: int):
+    byte_alignment_required_by_tma = 16
+    return ((dim, byte_alignment_required_by_tma), # A
+            (dim, byte_alignment_required_by_tma), # B
+            (dim, byte_alignment_required_by_tma)) # C
+  dims_and_alignments = [make_dims_and_alignments_triple(dim) for dim in spatial_dims]
+
+  def make_math_instruction(data_types: Tuple[DataType, DataType, DataType],
+                            instruction_shape: Tuple[int, int, int]) -> MathInstruction:
+    default_opcode = OpcodeClass.TensorOp
+    default_math_op = MathOperation.multiply_add
+    [A_data_type, B_data_type, C_data_type] = data_types
+    return MathInstruction(
+      instruction_shape,
+      A_data_type, B_data_type, C_data_type,
+      default_opcode,
+      default_math_op
+    )
+  data_types_and_instruction_shapes = [
+    ((DataType.f16, DataType.f16, DataType.f16),   (64, 64, 16)),
+    ((DataType.f16, DataType.f16, DataType.f32),   (64, 64, 16)),
+    ((DataType.bf16, DataType.bf16, DataType.f32), (64, 64, 16)),
+  ]
+  math_instructions = map(lambda x: make_math_instruction(*x),
+                          data_types_and_instruction_shapes)
+
+  cluster_shapes = [
+    [2, 1, 1],
+    [1, 1, 1],
+  ]
+  conv_kinds = [
+    ConvKind.Fprop,
+    ConvKind.Dgrad
+  ]
+  mainloop_schedule = KernelScheduleType.ImplicitTmaWarpSpecializedSm90
+  stages = 0 # zero means "deduce the number of stages automatically"
+
+  # tile_descriptions is a 2-level list.
+  # Each inner list is for each cluster shape.
+  for math_inst in math_instructions:
+    tile_descriptions = []
+    for cluster_shape in cluster_shapes:
+      tile_shape = [
+        math_inst.instruction_shape[0],
+        math_inst.instruction_shape[1],
+        math_inst.instruction_shape[2] * 4
+      ]
+      warp_count = [4, 1, 1]
+      tile_description = TileDescription(
+        tile_shape, stages, warp_count, math_inst,
+        minimum_compute_capability, maximum_compute_capability,
+        cluster_shape)
+      tile_descriptions.append(tile_description)
+
+    # It's typical to get the data types from the math instruction.
+    data_type = {
+      "a_type"   : math_inst.element_a,
+      "b_type"   : math_inst.element_b,
+      "c_type"   : math_inst.element_accumulator,
+      "d_type"   : math_inst.element_accumulator,
+      "acc_type" : math_inst.element_accumulator,
+      "epi_type" : math_inst.element_accumulator
+    }
+
+    for conv_kind in conv_kinds:
+      epilogue_schedule = EpilogueScheduleType.TmaWarpSpecialized
+      schedule_pairs = [
+        (mainloop_schedule, epilogue_schedule)
+      ]
+      CreateConvOperator3x(manifest,
+                           dims_and_alignments = dims_and_alignments,
+                           tile_descriptions = tile_descriptions,
+                           data_types = data_type,
+                           schedule_pairs = schedule_pairs,
+                           tile_schedulers = [TileSchedulerType.Default], # -> void
+                           conv_kind = conv_kind,
+                           log_indent_level = log_indent_level)
+
 def GenerateSM90(manifest, cuda_version):
   GenerateSM90_TensorOp_16b_WGMMA_gemm(manifest, cuda_version)
   GenerateSM90_TensorOp_16b_WGMMA_alignx_gemm(manifest, cuda_version)
@@ -6035,6 +6731,7 @@ def GenerateSM90(manifest, cuda_version):
   GenerateSM90_TensorOp_1684_symm(manifest, cuda_version)
   GenerateSM90_TensorOp_1684_symm_complex(manifest, cuda_version)
   GenerateSM90_TensorOp_1684_symm_complex_gaussian(manifest, cuda_version)
+  GenerateSM90_Conv3x(manifest, cuda_version)
 
 ###################################################################################################
 
@@ -6094,6 +6791,7 @@ if __name__ == "__main__":
   GenerateSM70(manifest, args.cuda_version)
   GenerateSM75(manifest, args.cuda_version)
   GenerateSM80(manifest, args.cuda_version)
+  GenerateSM89(manifest, args.cuda_version)
   GenerateSM90(manifest, args.cuda_version)
   if 'library' in args.generator_target.split(','):
     manifest.emit(GeneratorTarget.Library)

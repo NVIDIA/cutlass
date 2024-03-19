@@ -67,11 +67,14 @@ sm90_get_tma_dispatch_policy() {
 
   constexpr int EpiTiles = size(shape_div(take<0,2>(TileShapeMNK{}), EpilogueTileMN{}));
   constexpr int FragmentSize = size(EpilogueTileMN{}) / (detail::sm90_is_cooperative_v<Schedule> ? 256 : 128);
-  constexpr int ReuseSmemC = (sizeof_bits_v<ElementC> == sizeof_bits_v<ElementD>) && (sizeof_bits_v<ElementD> > 8);
-  constexpr int StagesD = 2;
-  constexpr int StagesC = ReuseSmemC ? cute::max(EpiTiles, StagesD + 1) : EpiTiles;
+  // 8b residuals load fast and consume little smem, so the perf cost of waiting on stores to finish outweighs the cost of extra allocation
+  constexpr bool ReuseSmem = (sizeof_bits_v<ElementC> == sizeof_bits_v<ElementD>) && (sizeof_bits_v<ElementD> > 8);
+  constexpr bool DelayTmaStore = is_void_v<ElementC>; // TMA store delay performs worse with residual loads
+  constexpr int StagesD = cute::min(EpiTiles, 2);
+  constexpr int StagesC = ReuseSmem ? cute::max(cute::min(EpiTiles, 4), StagesD+1)
+                                    : cute::min(EpiTiles, 4);
 
-  return Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC>{};
+  return Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmem, DelayTmaStore>{};
 }
 
 // Returns the smem layout atom to be used for C or D matrix
@@ -102,29 +105,42 @@ template <class ElementD, class EpilogueTileType, class Schedule, class TileShap
 constexpr auto
 sm90_compute_tile_shape_or_override() {
   if constexpr (cute::is_same_v<EpilogueTileType, EpilogueTileAuto>) {
+    auto epi_tile = [&] () {
+      if constexpr (detail::sm90_is_cooperative_v<Schedule>) {
+        auto tile_m = cute::min(_128{}, size<0>(TileShape_MNK{}));
+        auto tile_n = cute::min(_32{}, size<1>(TileShape_MNK{}));
+        return make_shape(tile_m, tile_n);
+      }
+      else if constexpr (detail::sm90_is_warp_specialized_v<Schedule>) {
+        constexpr int N_perf = sizeof_bits_v<ElementD> == 8 ? 64 : 32;
+        auto tile_m = cute::min(_64{}, size<0>(TileShape_MNK{}));
+        auto tile_n = cute::min(Int<N_perf>{}, size<1>(TileShape_MNK{}));
+        return make_shape(tile_m, tile_n);
+      }
+      else {
+        static_assert(cutlass::detail::dependent_false<Schedule>, "Unsupported schedule.");
+      }
+    }();
 
-    if constexpr (detail::sm90_is_cooperative_v<Schedule>) {
-      using N_tile = decltype(cute::min(_32{}, get<1>(TileShape_MNK{})));
-      if constexpr (size<0>(TileShape_MNK{}) >= 128) {
-        return Shape<_128, N_tile>{};
-      }
-      else {
-        return Shape<_64, N_tile>{};
-      }
-    }
-    else if constexpr (detail::sm90_is_warp_specialized_v<Schedule>) {
-      if constexpr (sizeof_bits_v<ElementD> == 8) {
-        using N_tile = decltype(cute::min(_64{}, get<1>(TileShape_MNK{})));
-        return Shape<_64, N_tile>{};
-      }
-      else {
-        using N_tile = decltype(cute::min(_32{}, get<1>(TileShape_MNK{})));
-        return Shape<_64,N_tile>{};
-      }
-    }
-    else {
-      static_assert(cutlass::detail::dependent_false<Schedule>, "Unsupported schedule.");
-    }
+    return cute::transform(epi_tile, seq<0,1>{},
+      [] (auto epi_tiler, auto I) {
+        auto cta_tiler = make_layout(get<I>(TileShape_MNK{}));
+        // This is a multimodal CTA tiler, transform before returning
+        if constexpr (depth(cta_tiler) > 0) {
+          // This is an implicit multimodal tiler, match profile and return
+          if constexpr (tuple_size_v<decltype(shape(cta_tiler))> == 1) {
+            return make_tile(epi_tiler);
+          }
+          // This is an explicit multimodal tiler, compose out epi tiler
+          else {
+            return composition(cta_tiler, epi_tiler);
+          }
+        }
+        // This is a flat CTA tiler, no need for transformation
+        else {
+          return epi_tiler;
+        }
+      });
   }
   else if constexpr (cute::is_tuple<EpilogueTileType>::value) {
     EpilogueTileType epi_tile;
@@ -178,7 +194,7 @@ sm90_get_smem_load_op_for_source() {
   }
   else {
     // auto-vectorizing load
-    return AutoVectorizingCopyWithAssumedAlignment{};
+    return AutoVectorizingCopyWithAssumedAlignment<128>{};
   }
 }
 
@@ -188,19 +204,20 @@ template <
   int StagesD,
   int FragmentSize,
   bool ReuseSmemC,
+  bool DelayTmaStore,
   class FusionOp,
   class TileShape_MNK,
   class EpilogueTile_MN,
   class ElementAccumulator
 >
 struct CallbacksBuilder<
-  Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC>,
+  Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore>,
   FusionOp,
   TileShape_MNK,
   EpilogueTile_MN,
   ElementAccumulator,
-  enable_if_t<(FusionOp::IsAuxOutSupported ^ FusionOp::IsAuxInSupported) // only one aux tensor
-              && not is_subbyte_v<typename FusionOp::ElementAux>>
+  cute::enable_if_t<(FusionOp::IsAuxOutSupported ^ FusionOp::IsAuxInSupported) // only one aux tensor
+              && not cute::is_subbyte_v<typename FusionOp::ElementAux>>
 > {
   using GmemStrideTypeAux = gemm::TagToStrideC_t<typename FusionOp::GmemLayoutTagAux>;
   using SmemLayoutAtomAux = decltype(detail::sm90_get_epilogue_smem_swizzle_layout_atom<
@@ -209,10 +226,10 @@ struct CallbacksBuilder<
     GmemStrideTypeAux, typename FusionOp::ElementAux>());
   using CopyOpS2R = decltype(detail::sm90_get_smem_load_op_for_source<
     GmemStrideTypeAux, typename FusionOp::ElementAux>());
-  using SmemCopyOpAux = conditional_t<FusionOp::IsAuxOutSupported, CopyOpR2S, CopyOpS2R>;
+  using SmemCopyOpAux = cute::conditional_t<FusionOp::IsAuxOutSupported, CopyOpR2S, CopyOpS2R>;
 
   using Callbacks = fusion::FusionCallbacks<
-    Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC>,
+    Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore>,
     FusionOp, TileShape_MNK, EpilogueTile_MN,
     SmemLayoutAtomAux, SmemCopyOpAux
   >;
@@ -223,22 +240,23 @@ template <
   int StagesD,
   int FragmentSize,
   bool ReuseSmemC,
+  bool DelayTmaStore,
   class FusionOp,
   class TileShape_MNK,
   class EpilogueTile_MN,
   class ElementAccumulator
 >
 struct CallbacksBuilder<
-  Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC>,
+  Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore>,
   FusionOp,
   TileShape_MNK,
   EpilogueTile_MN,
   ElementAccumulator,
-  enable_if_t<(FusionOp::IsAuxOutSupported ^ FusionOp::IsAuxInSupported) // only one aux tensor
+  cute::enable_if_t<(FusionOp::IsAuxOutSupported ^ FusionOp::IsAuxInSupported) // only one aux tensor
               && sizeof_bits_v<typename FusionOp::ElementAux> == 1>
 > {
   using Callbacks = fusion::FusionCallbacks<
-    Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC>,
+    Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore>,
     FusionOp, TileShape_MNK, EpilogueTile_MN,
     Layout<_1,_0>, DefaultCopy // aux bit tensor doesn't use smem
   >;
@@ -272,12 +290,14 @@ struct Sm90TmaBuilderImpl {
   using GmemStrideTypeC = cutlass::detail::TagToStrideC_t<GmemLayoutTagC>;
   using GmemStrideTypeD = cutlass::detail::TagToStrideC_t<GmemLayoutTagD>;
 
-  using CopyOpS2G =
+  using CopyOpS2G = cute::conditional_t<detail::is_im2col_mode<GmemLayoutTagD>,
+      SM90_TMA_STORE_IM2COL,
       SM90_TMA_STORE
-    ;
-  using CopyOpG2S =
+    >;
+  using CopyOpG2S = cute::conditional_t<detail::is_im2col_mode<GmemLayoutTagC>,
+      SM90_TMA_LOAD_IM2COL,
       SM90_TMA_LOAD
-    ;
+    >;
 
   // TMA builder allows for passing callbacks directly, which is either a fusion::FusionCallbacks
   // instance or a direct visitor implementation, e.g. fusion::Sm90LinearCombination
@@ -697,7 +717,8 @@ private:
     /* StagesC = */ size(shape_div(take<0, 2>(TileShape_MNK{}), EpilogueTile_MN{})),
     /* StagesD = */ 2,
     /* FragmentSize = */ size(EpilogueTile_MN{}) / (detail::sm90_is_cooperative_v<Schedule> ? 256 : 128),
-    /* ReuseSmemC = */ sizeof_bits_v<ElementC_> == sizeof_bits_v<ElementD>
+    /* ReuseSmemC = */ sizeof_bits_v<ElementC_> == sizeof_bits_v<ElementD>,
+    false
   >;
 
   using GmemStrideTypeAux = gemm::TagToStrideC_t<GmemLayoutTagD>;

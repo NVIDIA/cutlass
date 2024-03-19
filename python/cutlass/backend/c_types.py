@@ -244,7 +244,7 @@ def get_gemm_arguments_3x(mainloop_arguments, epilogue_functor, scheduler_args, 
     class _HardwareInfo(ctypes.Structure):
         _fields_ = [
             ("device_id", ctypes.c_int),
-            ("sm_count", ctypes.c_int)
+            ("sm_count", ctypes.c_int),
         ]
 
     class _GemmArguments(ctypes.Structure):

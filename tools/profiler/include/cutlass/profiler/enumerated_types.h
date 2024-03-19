@@ -158,8 +158,8 @@ using DispositionMap = std::map<library::Provider, Disposition>;
 // Print vector for the report
 template <typename T>
 std::ostream& operator<< (std::ostream& out, const std::vector<T>& v) {
-  for(int i = 0; i < v.size(); ++i) {
-    out << to_string(v[i], true) << (i+1 != v.size() ? "," : "");
+  for (size_t i = 0; i < v.size(); ++i) {
+    out << to_string(v[i], true) << (i + 1u != v.size() ? "," : "");
   }
   return out;
 }

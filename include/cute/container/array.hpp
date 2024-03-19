@@ -355,7 +355,7 @@ void clear(array<T,N>& a)
   a.fill(T(0));
 }
 
-template <typename T, size_t N>
+template <class T, size_t N>
 CUTE_HOST_DEVICE constexpr
 void fill(array<T,N>& a, T const& value)
 {
@@ -370,14 +370,14 @@ void swap(array<T,N>& a, array<T,N>& b)
 }
 
 /// @return A cute::array of the elements of @c t in reverse order.
-template <typename T, size_t N>
-CUTE_HOST_DEVICE constexpr cute::array<T, N>
-reverse(cute::array<T, N> const& t) {
+template <class T, size_t N>
+CUTE_HOST_DEVICE constexpr
+cute::array<T,N> reverse(cute::array<T,N> const& t) 
+{
   if constexpr (N == 0u) {
     return t;
-  }
-  else {
-    cute::array<T, N> t_r{};
+  } else {
+    cute::array<T,N> t_r{};
     for (size_t k = 0; k < N; ++k) {
       t_r[k] = t[N - k - 1];
     }
@@ -422,7 +422,7 @@ CUTE_HOST_DEVICE constexpr
 T&& get(array<T,N>&& a)
 {
   static_assert(I < N, "Index out of range");
-  return std::move(a[I]);
+  return cute::move(a[I]);
 }
 
 } // end namespace cute
@@ -442,12 +442,12 @@ struct tuple_element<I, cute::array<T,N>>
 };
 
 template <class T, size_t N>
-struct tuple_size<const cute::array<T,N>>
+struct tuple_size<cute::array<T,N> const>
     : CUTE_STL_NAMESPACE::integral_constant<size_t, N>
 {};
 
 template <size_t I, class T, size_t N>
-struct tuple_element<I, const cute::array<T,N>>
+struct tuple_element<I, cute::array<T,N> const>
 {
   using type = T;
 };
@@ -462,7 +462,7 @@ namespace std
 template <class... _Tp>
 struct tuple_size;
 
-template<size_t _Ip, class... _Tp>
+template <size_t _Ip, class... _Tp>
 struct tuple_element;
 #endif
 
@@ -478,12 +478,12 @@ struct tuple_element<I, cute::array<T,N>>
 };
 
 template <class T, size_t N>
-struct tuple_size<const cute::array<T,N>>
+struct tuple_size<cute::array<T,N> const>
     : CUTE_STL_NAMESPACE::integral_constant<size_t, N>
 {};
 
 template <size_t I, class T, size_t N>
-struct tuple_element<I, const cute::array<T,N>>
+struct tuple_element<I, cute::array<T,N> const>
 {
   using type = T;
 };

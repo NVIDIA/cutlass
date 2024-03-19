@@ -39,10 +39,20 @@ namespace cutlass::gemm::collective {
 
 // Used to specify stage counts or dispatch to automatic computation of stage count
 template<int num_stages>
-struct StageCount { static constexpr int value = num_stages; };
+struct StageCount {
+  static constexpr int value = num_stages;
+
+  StageCount() = default;
+  explicit StageCount(cute::Int<num_stages>) {}
+};
 
 template<int carveout_bytes>
-struct StageCountAutoCarveout { static constexpr int bytes = carveout_bytes; };
+struct StageCountAutoCarveout {
+  static constexpr int bytes = carveout_bytes;
+
+  StageCountAutoCarveout() = default;
+  explicit StageCountAutoCarveout(cute::Int<carveout_bytes>) {}
+};
 
 using StageCountAuto = StageCountAutoCarveout<0>;
 

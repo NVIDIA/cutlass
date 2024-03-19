@@ -64,9 +64,6 @@
 
 namespace cutlass {
 
-
-
-
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /// Enumeraed type describing a transformation on a complex value.
 enum class ComplexTransform {

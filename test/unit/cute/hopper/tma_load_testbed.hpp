@@ -34,6 +34,7 @@
 #include "cutlass_unit_test.h"
 
 #include <iostream>
+#include <cstdint>
 
 #include <thrust/host_vector.h>
 #include <thrust/device_vector.h>
@@ -46,7 +47,7 @@ template <class ElementType, class SmemLayout>
 struct SharedStorage
 {
   cute::ArrayEngine<ElementType, cute::cosize_v<SmemLayout>> smem;
-  cute::uint64_t tma_load_mbar[1];
+  alignas(16) cute::uint64_t tma_load_mbar[1];
 };
 
 #if CUDA_12_0_SM90_FEATURES_SUPPORTED
@@ -146,14 +147,6 @@ tma_test_device_cute(T const* g_in, T* g_out,
     // Write out trivially smem -> gmem
     //
 
-    //if (thread0()) {
-    //  print_tensor(sA);
-    //}
-
-    // for (int i = threadIdx.x; i < size(sA); i += blockDim.x) {
-    //   tBgB(i,stage) = sA(i);
-    // }
-
     // Subbyte elements could cause race conditions, so be even more conservative
     if (thread0()) {
       copy(sA, tBgB(_,stage));
@@ -174,13 +167,15 @@ test_tma_load(CopyOp      const& copy_op,
 
   // Allocate and initialize host test data
   size_t N = ceil_div(cosize(gmem_layout) * sizeof_bits<T>::value, 8);
-  thrust::host_vector<char> h_in(N);
+  thrust::host_vector<uint8_t> h_in(N);
+  for (size_t i = 0; i < h_in.size(); ++i) {
+    h_in[i] = uint8_t(i % 13);
+  }
   Tensor hA_in  = make_tensor(recast_ptr<T>(h_in.data()), gmem_layout);
-  for (int i = 0; i < size(hA_in); ++i) { hA_in(i) = static_cast<T>(i % 13); }
 
   // Allocate and initialize device test data
-  thrust::device_vector<char> d_in = h_in;
-  thrust::device_vector<char> d_out(h_in.size(), char(-1));
+  thrust::device_vector<uint8_t> d_in = h_in;
+  thrust::device_vector<uint8_t> d_out(h_in.size(), uint8_t(-1)); // overflow uint
 
   // Create TMA for this device Tensor
   Tensor gA = make_tensor(make_gmem_ptr<T>(raw_pointer_cast(d_in.data())), gmem_layout);
@@ -197,12 +192,12 @@ test_tma_load(CopyOp      const& copy_op,
     smem_layout);
 
   // Copy results back to host
-  thrust::host_vector<char> h_out = d_out;
+  thrust::host_vector<uint8_t> h_out = d_out;
   Tensor hA_out = make_tensor(recast_ptr<T>(h_out.data()), gmem_layout);
 
   // Validate the results. Print only the first 3 errors.
   int count = 3;
-  for (int i = 0; i < size(hA_out) && count > 0; ++i) {
+  for (int i = 0; i < int(size(hA_out)) && count > 0; ++i) {
     EXPECT_EQ(hA_in(i), hA_out(i));
     if (hA_in(i) != hA_out(i)) {
       --count;

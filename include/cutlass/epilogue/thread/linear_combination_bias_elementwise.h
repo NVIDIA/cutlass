@@ -213,6 +213,74 @@ public:
     }
   }
 
+  /// Applies the operation when elementwise_op require arguments and is_source_needed() is true
+  template <typename ElementwiseArgs>
+  CUTLASS_HOST_DEVICE
+  void operator()(
+    FragmentZ &frag_Z,
+    FragmentT &frag_T,
+    FragmentAccumulator const &AB,
+    FragmentC const &frag_C,
+    FragmentCompute const &V,
+    ElementwiseArgs const &elementwise_args) const {
+
+    ElementwiseOp elementwise_op;
+    BinaryOp binary_op;
+
+    FragmentCompute tmp_Accum = NumericArrayConverter<ElementCompute, ElementAccumulator, kElementsPerAccess>()(AB);
+    FragmentCompute tmp_C = NumericArrayConverter<ElementCompute, ElementC, kElementsPerAccess>()(frag_C);
+    FragmentCompute result_Z;
+    FragmentCompute result_T;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < kElementsPerAccess; ++i) {
+      ElementCompute z = binary_op(alpha_ * tmp_Accum[i] + beta_ * tmp_C[i], V[i]);
+      result_T[i] = z;
+      result_Z[i] = skip_elementwise_ ? z : elementwise_op(z, elementwise_args);
+    }
+
+    NumericArrayConverter<ElementZ, ElementCompute, kElementsPerAccess> convert_z;
+    frag_Z = convert_z(result_Z);
+
+    if constexpr (kStoreT) {
+      NumericArrayConverter<ElementT, ElementCompute, kElementsPerAccess> convert_t;
+      frag_T = convert_t(result_T);
+    }
+  }
+
+  /// Applies the operation when elementwise_op require arguments and is_source_needed() is false
+  template <typename ElementwiseArgs>
+  CUTLASS_HOST_DEVICE
+  void operator()(
+    FragmentZ &frag_Z,
+    FragmentT &frag_T,
+    FragmentAccumulator const &AB,
+    FragmentCompute const &V,
+    ElementwiseArgs const &elementwise_args) const {
+
+    ElementwiseOp elementwise_op;
+    BinaryOp binary_op;
+
+    FragmentCompute tmp_Accum = NumericArrayConverter<ElementCompute, ElementAccumulator, kElementsPerAccess>()(AB);
+    FragmentCompute result_Z;
+    FragmentCompute result_T;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < kElementsPerAccess; ++i) {
+      ElementCompute z = binary_op(alpha_ * tmp_Accum[i], V[i]);
+      result_T[i] = z;
+      result_Z[i] = skip_elementwise_ ? z : elementwise_op(z, elementwise_args);
+    }
+
+    NumericArrayConverter<ElementZ, ElementCompute, kElementsPerAccess> convert_z;
+    frag_Z = convert_z(result_Z);
+
+    if constexpr (kStoreT) {
+      NumericArrayConverter<ElementT, ElementCompute, kElementsPerAccess> convert_t;
+      frag_T = convert_t(result_T);
+    }
+  }
+
   /// Applies the operation when is_source_needed() is true
   CUTLASS_HOST_DEVICE
   void operator()(

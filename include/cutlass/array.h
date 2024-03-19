@@ -46,12 +46,7 @@
 #pragma once
 #include "cutlass/cutlass.h"
 #include "cutlass/functional.h"
-#include "cutlass/numeric_size.h"
-#include "cutlass/half.h"
-#include "cutlass/integer_subbyte.h"
-#include "cutlass/tfloat32.h"
-#include "cutlass/bfloat16.h"
-#include "cutlass/half.h"
+#include "cutlass/numeric_types.h"
 namespace cutlass {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -69,8 +64,7 @@ class Array;
 /// Defines the size of an Array<> in bits
 template <typename T, int N, bool RegisterSized>
 struct sizeof_bits<Array<T, N, RegisterSized> > {
-  static int const value =
-    int(sizeof(typename Array<T, N, RegisterSized>::Storage)) * 8 * int(Array<T, N, RegisterSized>::kStorageElements);
+  static constexpr int value = sizeof(Array<T, N, RegisterSized>) * 8;
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -457,7 +451,7 @@ public:
   CUTLASS_HOST_DEVICE
   void fill(T const &value) {
     CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < kElements; ++i) {
+    for (int i = 0; i < int(kElements); ++i) {
       storage[i] = static_cast<Storage>(value);
     }
   }
@@ -1089,6 +1083,24 @@ struct multiply_add<Array<T, N>, Array<T, N>, Array<T, N>> {
     }
 
     return result;
+  }
+};
+
+/// Fused square-and-plus
+template <typename T, int N>
+struct square_and_plus<Array<T, N>> {
+
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &lhs, Array<T, N> const &rhs) const {
+    multiply_add<Array<T, N>, Array<T, N>, Array<T, N>> ma_op;
+    return ma_op(rhs, rhs, lhs);
+  }
+
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &lhs, T const &rhs) const {
+    plus<Array<T, N>> plus_op;
+    multiplies<T> multiplies_op;
+    return plus_op(multiplies_op(rhs, rhs), lhs);
   }
 };
 
@@ -2609,7 +2621,7 @@ template <
   /// Number of elements in the array
   int N,
   /// Alignment requirement in bytes
-  int Alignment = sizeof_bits<T>::value * N / 8
+  int Alignment = ( sizeof_bits<T>::value * N + 7 ) / 8
 >
 class alignas(Alignment) AlignedArray: public Array<T, N> {
 public:

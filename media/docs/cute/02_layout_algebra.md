@@ -4,7 +4,7 @@ CuTe provides an "algebra of `Layout`s" to support combining layouts in differen
 
 * `Layout` functional composition,
 * a notion of `Layout` "product" to reproduce one layout according to another, and
-* a notion of `Layout` "divide" to split one layout according to another. 
+* a notion of `Layout` "divide" to split one layout according to another.
 
 Common utilities for building complicated layouts from simpler ones depend on the `Layout` product. Common utilities for partitioning layouts (of data, for example) across other layouts (of threads, for example) depend on the `Layout` divide. All of these utilities rely on the functional composition of `Layout`s.
 
@@ -35,7 +35,7 @@ auto result = coalesce(layout);    // _12:_1
 
 where we can see the result has fewer modes and is "simpler." Indeed, this could save us a few operations in the coordinate mapping and index mapping (if those are performed dynamically).
 
-So, how do we get there? 
+So, how do we get there?
 
 * We've already seen that column-major `Layout`s like `(_2,_4):(_1,_2)` act identically to `_8:_1` for 1-D coordinates.
 * Modes with size static-1 will always produce a natural coordinate of static-0. They can be ignored no matter the stride.
@@ -65,8 +65,8 @@ which can be used as follows
 auto a = Layout<Shape <_2,Shape <_1,_6>>,
                 Stride<_1,Stride<_6,_2>>>{};
 auto result = coalesce(a, Step<_1,_1>{});   // (_2,_6):(_1,_2)
-// Identical to 
-auto same_r = make_layout(coalesce(layout<0>(a)), 
+// Identical to
+auto same_r = make_layout(coalesce(layout<0>(a)),
                           coalesce(layout<1>(a)));
 ```
 
@@ -76,7 +76,7 @@ This function is recursing into `Step<_1,_1>{}` and applying `coalesce` to the c
 
 ## Composition
 
-Functional composition of `Layout`s is the core of CuTe and is used in just about every higher-level operation. 
+Functional composition of `Layout`s is the core of CuTe and is used in just about every higher-level operation.
 
 Starting again from the observation that `Layout`s are just functions from integers to integers, we can define functional composition that results in another `Layout`. First, an example.
 
@@ -108,7 +108,7 @@ The absolutely amazing observation is that the function `R(c) = k` defined above
 R = ((2,2),3):((24,2),8)
 ```
 
-AND 
+AND
 
 ```
 compatible(B, R)
@@ -133,7 +133,7 @@ First, a few observations:
 
 With the above, we can assume without loss of generality that `B = s:d` is a layout with integral shape and stride. We can also assume that `A` is a flattened, coalesced layout.
 
-When `A` is integral, `A = a:b`, the result is rather trivial: `R = A o B = a:b o s:d = s:(b*d)`. But when `A` is multimodal, we need to be more careful. 
+When `A` is integral, `A = a:b`, the result is rather trivial: `R = A o B = a:b o s:d = s:(b*d)`. But when `A` is multimodal, we need to be more careful.
 
 Put into words, `A o B = A o s:d`, for integral `s` and `d` means that we want (1) every `d`th element of `A`, and then (2) keep the first `s` of those strided elements.
 
@@ -141,7 +141,7 @@ Put into words, `A o B = A o s:d`, for integral `s` and `d` means that we want (
 ```cpp
 void shape_div(int* shapeA, int N, int& strideB) {
    for (int i = 0; i < N; ++i) {
-      assert(shapeA[i] %   strideB == 0 or 
+      assert(shapeA[i] %   strideB == 0 or
                strideB % shapeA[i] == 0);
       int new_shape  = ceil_div(shapeA[i], strideB);
       int new_stride = ceil_div(strideB, shapeA[i]);
@@ -166,7 +166,7 @@ As you may have noticed, we can only divide shapes by certain values and get a s
 ```cpp
 void shape_mod(int* shapeA, int N, int& shapeB) {
    for (int i = 0; i < N; ++i) {
-      assert(shapeA[i] %    shapeB == 0 or 
+      assert(shapeA[i] %    shapeB == 0 or
                 shapeB % shapeA[i] == 0);
       int new_shapeA =      min(shapeA[i], shapeB);
       int new_shapeB = ceil_div(shapeB, shapeA[i]);
@@ -212,7 +212,7 @@ as a 5x4 matrix in a row-major order.
 `(10,2):(16,4)  o  (5,4):(1,5)`
 
 This describes interpreting the layout `(10,2):(16,4)`
-as a 5x4 matrix in a col-major order.
+as a 5x4 matrix in a column-major order.
 
 1. ` = (10,2):(16,4) o (5:1,4:5)`. Concatenation of sublayouts.
 
@@ -232,9 +232,9 @@ if we use compile-time shapes and strides.
 The following C++ code prints `(_5,(_2,_2)):(_16,(_80,_4))`.
 
 ```cpp
-Layout a = make_layout(make_shape (Int<10>{}, Int<2>{}), 
+Layout a = make_layout(make_shape (Int<10>{}, Int<2>{}),
                        make_stride(Int<16>{}, Int<4>{}));
-Layout b = make_layout(make_shape (Int< 5>{}, Int<4>{}), 
+Layout b = make_layout(make_shape (Int< 5>{}, Int<4>{}),
                        make_stride(Int< 1>{}, Int<5>{}));
 Layout c = composition(a, b);
 print(c);
@@ -243,9 +243,9 @@ print(c);
 If we use dynamic integers, the following C++ code prints `((5,1),(2,2)):((16,4),(80,4))`.
 
 ```cpp
-Layout a = make_layout(make_shape (10, 2), 
+Layout a = make_layout(make_shape (10, 2),
                        make_stride(16, 4));
-Layout b = make_layout(make_shape ( 5, 4), 
+Layout b = make_layout(make_shape ( 5, 4),
                        make_stride( 1, 5));
 Layout c = composition(a, b);
 print(c);
@@ -264,7 +264,7 @@ auto a = make_layout(make_shape (12,make_shape ( 4,8)),
                      make_stride(59,make_stride(13,1)));
 // <3:4, 8:2>
 auto tiler = make_tile(Layout<_3,_4>{},  // Apply 3:4 to mode-0
-                       Layout<_8,_2>{}); // Apply 8:2 to mode-1                 
+                       Layout<_8,_2>{}); // Apply 8:2 to mode-1
 
 // (_3,(2,4)):(236,(26,1))
 auto result = composition(a, tiler);
@@ -291,7 +291,7 @@ auto tiler = make_shape(Int<3>{}, Int<8>{});
 //                        Layout<_8,_1>{}); // Apply 8:1 to mode-1
 
 // (_3,(4,2)):(59,(13,1))
-auto result = composition(a, tiler);     
+auto result = composition(a, tiler);
 ```
 where `result` can be depicted as the 3x8 sublayout of the original layout highlighted in the figure below.
 <p align="center">
@@ -307,19 +307,19 @@ In summary, a `Tiler` is one of the following objects.
 
 Any of the above can be used as the second argument in `composition`. With (1), we think of the `composition` as between two functions from integers to integers, no matter the ranks of the layouts. With (2) and (3), the `composition` is performed on each pair of corresponding modes of `A` and `B`, until case (1) is found.
 
-This allows composition to be applied by-mode to retrieve arbitrary sublayouts of specified modes of a tensor ("Give me the 3x5x8 subblock of this MxNxL tensor") but also allows entire tiles of data to be reshaped and reordered as if they were 1-D vectors ("Reorder this 8x16 block of data into a 32x4 block using this weird order of elements"). We will see the by-mode cases appear often when we are tiling for threadblocks in examples that follow. We will see 1-D reshaping and reordering when we want to apply arbitrary partitioning patterns for threads and values in MMAs in examples that follow. 
+This allows composition to be applied by-mode to retrieve arbitrary sublayouts of specified modes of a tensor ("Give me the 3x5x8 subblock of this MxNxL tensor") but also allows entire tiles of data to be reshaped and reordered as if they were 1-D vectors ("Reorder this 8x16 block of data into a 32x4 block using this weird order of elements"). We will see the by-mode cases appear often when we are tiling for threadblocks in examples that follow. We will see 1-D reshaping and reordering when we want to apply arbitrary partitioning patterns for threads and values in MMAs in examples that follow.
 
 ## Complement
 
 Before getting to "product" and "divide," we need one more operation. We can think of `composition` as a layout `B` that is "selecting" certain coordinates from another layout `A`. But what about the coordinates that aren't "selected"? To implement generic tiling, we want to be able to select arbitrary elements -- the tile -- and to describe the layout of those tiles -- the leftovers, or the "rest."
 
-The `complement` of a layout attempts to find another layout that represents the "rest" -- the elements that aren't touched by the layout. 
+The `complement` of a layout attempts to find another layout that represents the "rest" -- the elements that aren't touched by the layout.
 
 You can find many examples and checked post-conditions in [the `complement` unit test](../../../test/unit/cute/core/complement.cpp). The post-conditions include
 ```cpp
 // @post cosize(make_layout(@a layout_a, @a result))) >= @a cosize_hi
 // @post cosize(@a result) >= round_up(@a cosize_hi, cosize(@a layout_a))
-// @post for all i, 1 <= i < size(@a result), 
+// @post for all i, 1 <= i < size(@a result),
 //         @a result(i-1) < @a result(i)
 // @post for all i, 1 <= i < size(@a result),
 //         for all j, 0 <= j < size(@a layout_a),
@@ -327,7 +327,7 @@ You can find many examples and checked post-conditions in [the `complement` unit
 Layout complement(LayoutA const& layout_a, Integral const& cosize_hi)
 ```
 That is, the complement `R` of a layout `A` with respect to an integer `M` satisfies the following properties.
-1. The size (and cosize) of `R` is bounded by `M`.
+1. The size (and cosize) of `R` is *bounded* by `M`.
 2. `R` is *ordered*.  That is, the strides of `R` are positive and increasing.  This means that `R` is unique.
 3. `A` and `R` have *disjoint* codomains. `R` attempts to "complete" the codomain of `A`.
 
@@ -341,7 +341,7 @@ That is, the complement `R` of a layout `A` with respect to an integer `M` satis
 
 * `complement((4,6):(1,4), 24)` is `1:0`. Nothing needs to be appended.
 
-* `complement(4:2, 24)` is `(2,4):(1,8)`. Note that `(4,(2,4)):(2,(1,8))` has cosize `24`. The "hole" in `4:2` is filled with `2:1` first, then everything is repeated 4 times with `4:8`.
+* `complement(4:2, 24)` is `(2,3):(1,8)`. Note that `(4,(2,3)):(2,(1,8))` has cosize `24`. The "hole" in `4:2` is filled with `2:1` first, then everything is repeated 3 times with `3:8`.
 
 * `complement((2,4):(1,6), 24)` is `3:2`. Note that `((2,4),3):((1,6),2)` has cosize `24` and produces unique indices.
 
@@ -436,16 +436,16 @@ For example, the `zipped_divide` function applies `logical_divide`, and then gat
 auto layout_a = make_layout(make_shape (Int< 9>{}, make_shape (Int< 4>{}, Int<8>{})),
                             make_stride(Int<59>{}, make_stride(Int<13>{}, Int<1>{})));
 // B: shape is (3,8)
-auto tiler = make_tile(Layout<_3,_3>{},           // Apply     3:3     to mode-0           
+auto tiler = make_tile(Layout<_3,_3>{},           // Apply     3:3     to mode-0
                        Layout<Shape <_2,_4>,      // Apply (2,4):(1,8) to mode-1
                               Stride<_1,_8>>{});
 
 // ((TileM,RestM), (TileN,RestN)) with shape ((3,3), (8,4))
-auto ld = logical_divide(layout_a, tiler);                   
+auto ld = logical_divide(layout_a, tiler);
 // ((TileM,TileN), (RestM,RestN)) with shape ((3,8), (3,4))
 auto zd = zipped_divide(layout_a, tiler);
 ```
-Then, the offset to the `3`rd tile is `zd(0,3)`. The offset to the `7`th tile is `zd(0,7)`. The offset to the `(1,2)`th tile is `zd(0,make_coord(1,2))`. The tile itself always has layout `layout<0>(zd)`. Indeed, it is always the case that 
+Then, the offset to the `3`rd tile is `zd(0,3)`. The offset to the `7`th tile is `zd(0,7)`. The offset to the `(1,2)`th tile is `zd(0,make_coord(1,2))`. The tile itself always has layout `layout<0>(zd)`. Indeed, it is always the case that
 
 `layout<0>(zipped_divide(a, b)) == composition(a, b)`.
 
@@ -524,13 +524,13 @@ We can use the by-mode `tiler` strategies previously developed to write multidim
   <img src="../../images/cute/product2d.png" alt="product2d.png" height="250"/>
 </p>
 
-The above image demonstates the use of a `tiler` to apply `logical_product` by-mode. Despite this **not being the recommended approach**, the result is a rank-2 layout consisting of 2x5 row-major block that is tiled across a 3x4 col-major arrangement.
+The above image demonstates the use of a `tiler` to apply `logical_product` by-mode. Despite this **not being the recommended approach**, the result is a rank-2 layout consisting of 2x5 row-major block that is tiled across a 3x4 column-major arrangement.
 
 The reason **this is not the recommended approach** is that the `tiler B` in the above expression is highly unintuitive. In fact, it requires perfect knowledge of the shape and strides of `A` in order to construct. We would like to express "Tile Layout `A` according to Layout `B`" in a way that makes `A` and `B` independent and is much more intuitive.
 
 #### Blocked and Raked Products
 
-The `blocked_product(LayoutA, LayoutB)` and `raked_product(LayoutA, LayoutB)` are interesting, more intuitive, rank-sensitive transformations on top of 1-D `logical_product` that let us express the intuitive Layout products that we most often want to express.
+The `blocked_product(LayoutA, LayoutB)` and `raked_product(LayoutA, LayoutB)` are rank-sensitive transformations on top of 1-D `logical_product` that let us express the more intuitive `Layout` products that we most often want to express.
 
 A key observation in the implementation of these functions are the compatibility post-conditions of `logical_product`:
 ```
@@ -539,7 +539,7 @@ A key observation in the implementation of these functions are the compatibility
 // @post compatible(layout_b, layout<1>(result))
 ```
 
-Because `A` is always compatible with mode-0 of the result and `B` is always compatible with mode-1 of the result, if we made `A` and `B` the same rank then we could "reassociate" like-modes after the product. That is, the "col" mode in `A` could be combined with the "col" mode in `B` and the "row" mode in `A` could be combined with the "row" mode in `B`, etc.
+Because `A` is always compatible with mode-0 of the result and `B` is always compatible with mode-1 of the result, if we made `A` and `B` the same rank then we could "reassociate" like-modes after the product. That is, the "column" mode in `A` could be combined with the "column" mode in `B` and the "row" mode in `A` could be combined with the "row" mode in `B`, etc.
 
 This is exactly what `blocked_product` and `raked_product` do and it is why they are called rank-sensitive. Unlike other CuTe functions that take `Layout` arguments, these care about the top-level rank of the arguments so that each mode can be reassociated after the `logical_product`.
 
@@ -547,9 +547,9 @@ This is exactly what `blocked_product` and `raked_product` do and it is why they
   <img src="../../images/cute/productblocked2d.png" alt="productblocked2d.png" height="250"/>
 </p>
 
-The above image shows the same result as the `tiler` approach, but with much more intuitive arguments. A 2x5 row-major layout is arranged as a tile in a 3x4 col-major arrangement. Also note that `blocked_product` went ahead and `coalesced` mode-0 for us.
+The above image shows the same result as the `tiler` approach, but with much more intuitive arguments. A 2x5 row-major layout is arranged as a tile in a 3x4 column-major arrangement. Also note that `blocked_product` went ahead and `coalesced` mode-0 for us.
 
-Similarly, `raked_product` combines the modes slightly differently. Instead of the resulting "col" mode being constructed from the `A` "col" mode then the `B` "col" mode, the resulting "col" mode is constructed from the `B` "col" mode then the `A` "col" mode.
+Similarly, `raked_product` combines the modes slightly differently. Instead of the resulting "column" mode being constructed from the `A` "column" mode then the `B` "column" mode, the resulting "column" mode is constructed from the `B` "column" mode then the `A` "column" mode.
 
 <p align="center">
   <img src="../../images/cute/productraked2d.png" alt="productraked2d.png" height="250"/>

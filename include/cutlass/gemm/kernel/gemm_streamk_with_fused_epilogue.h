@@ -29,7 +29,7 @@
  *
  **************************************************************************************************/
 /*! \file
-    \brief Stream-K Gemm kernel compatible with fused epilogues 
+    \brief Stream-K Gemm kernel compatible with fused epilogues
     that broadcast a bias vector over the MMA output.
 */
 
@@ -65,7 +65,7 @@ struct GemmStreamkWithFusedEpilogue;
 
 // GemmStreamkWithFusedEpilogue with two sources
 template <
-  typename Mma_,                  ///! Threadblock-scoped matrix multiply-accumulate 
+  typename Mma_,                  ///! Threadblock-scoped matrix multiply-accumulate
   typename Epilogue_,             ///! Epilogue
   typename ThreadblockSwizzle_    ///! Threadblock swizzling function
 >
@@ -126,55 +126,46 @@ struct GemmStreamkWithFusedEpilogue<Mma_, Epilogue_, ThreadblockSwizzle_, false>
     // Data members
     //
 
-    GemmUniversalMode mode;
-    GemmCoord problem_size;
-    int batch_count;        // Either (mode == GemmUniversalMode::kBatched) the batch count, or (mode == GemmUniversalMode::kGemm) the tile-splitting factor
+    GemmUniversalMode mode{GemmUniversalMode::kGemm};
+    GemmCoord problem_size{};
+    int batch_count{1};        // Either (mode == GemmUniversalMode::kBatched) the batch count, or (mode == GemmUniversalMode::kGemm) the tile-splitting factor
 
-    typename EpilogueOutputOp::Params epilogue;
+    typename EpilogueOutputOp::Params epilogue{};
 
-    void const * ptr_A;
-    void const * ptr_B;
-    void const * ptr_C1;
-    void const * ptr_C2;
-    void * ptr_D;
+    void const * ptr_A{nullptr};
+    void const * ptr_B{nullptr};
+    void const * ptr_C1{nullptr};
+    void const * ptr_C2{nullptr};
+    void * ptr_D{nullptr};
 
     void * ptr_Vector;
     void * ptr_Tensor;
 
-    int64_t batch_stride_A;
-    int64_t batch_stride_B;
-    int64_t batch_stride_C1;
-    int64_t batch_stride_C2;
-    int64_t batch_stride_D;
-    int64_t batch_stride_Vector;
-    int64_t batch_stride_Tensor;
+    int64_t batch_stride_A{0};
+    int64_t batch_stride_B{0};
+    int64_t batch_stride_C1{0};
+    int64_t batch_stride_C2{0};
+    int64_t batch_stride_D{0};
+    int64_t batch_stride_Vector{0};
+    int64_t batch_stride_Tensor{0};
 
-    typename LayoutA::Stride::Index lda;
-    typename LayoutB::Stride::Index ldb;
-    typename LayoutC::Stride::Index ldc1;
-    typename LayoutC::Stride::Index ldc2;
-    typename LayoutC::Stride::Index ldd;
-    typename LayoutC::Stride::Index ldr;
-    typename LayoutC::Stride::Index ldt;
+    typename LayoutA::Stride::Index lda{};
+    typename LayoutB::Stride::Index ldb{};
+    typename LayoutC::Stride::Index ldc1{};
+    typename LayoutC::Stride::Index ldc2{};
+    typename LayoutC::Stride::Index ldd{};
+    typename LayoutC::Stride::Index ldr{};
+    typename LayoutC::Stride::Index ldt{};
 
-    int avail_sms;          /// The number of SMs that StreamK dispatch heuristics will attempt to load-balance across (-1 defaults to device width, 1 implies classic data-parallel scheduling)
+    int avail_sms{-1};          /// The number of SMs that StreamK dispatch heuristics will attempt to load-balance across (-1 defaults to device width, 1 implies classic data-parallel scheduling)
 
 
     //
     // Methods
     //
-    
+
     /// Default Constructor
-    Arguments():
-      mode(GemmUniversalMode::kGemm),
-      batch_count(1),
-      ptr_A(nullptr),
-      ptr_B(nullptr),
-      ptr_C1(nullptr),
-      ptr_C2(nullptr),
-      ptr_D(nullptr),
-      avail_sms(-1)
-    {}
+    Arguments() = default;
 
     /// constructs an arguments structure
     Arguments(
@@ -208,14 +199,14 @@ struct GemmStreamkWithFusedEpilogue<Mma_, Epilogue_, ThreadblockSwizzle_, false>
       mode(mode),
       problem_size(problem_size),
       batch_count(batch_split),
-      epilogue(epilogue), 
-      ptr_A(ptr_A), ptr_B(ptr_B), ptr_C1(ptr_C1), ptr_C2(ptr_C2), ptr_D(ptr_D), 
-      ptr_Vector(ptr_Vector), 
+      epilogue(epilogue),
+      ptr_A(ptr_A), ptr_B(ptr_B), ptr_C1(ptr_C1), ptr_C2(ptr_C2), ptr_D(ptr_D),
+      ptr_Vector(ptr_Vector),
       ptr_Tensor(ptr_Tensor),
-      batch_stride_A(batch_stride_A), 
-      batch_stride_B(batch_stride_B), 
-      batch_stride_C1(batch_stride_C1), 
-      batch_stride_C2(batch_stride_C2), 
+      batch_stride_A(batch_stride_A),
+      batch_stride_B(batch_stride_B),
+      batch_stride_C1(batch_stride_C1),
+      batch_stride_C2(batch_stride_C2),
       batch_stride_Vector(batch_stride_Vector),
       batch_stride_Tensor(batch_stride_Tensor),
       lda(lda), ldb(ldb), ldc1(ldc1), ldc2(ldc2), ldd(ldd), ldr(ldr), ldt(ldt), avail_sms(avail_sms)
@@ -251,42 +242,42 @@ struct GemmStreamkWithFusedEpilogue<Mma_, Epilogue_, ThreadblockSwizzle_, false>
     // Data members
     //
 
-    void * ptr_A;
-    void * ptr_B;
+    void * ptr_A{nullptr};
+    void * ptr_B{nullptr};
 
-    typename Mma::IteratorA::Params params_A;
-    typename Mma::IteratorB::Params params_B;
+    typename Mma::IteratorA::Params params_A{};
+    typename Mma::IteratorB::Params params_B{};
 
-    int64_t batch_stride_A;
-    int64_t batch_stride_B;
+    int64_t batch_stride_A{0};
+    int64_t batch_stride_B{0};
 
-    GemmUniversalMode mode;
+    GemmUniversalMode mode{GemmUniversalMode::kGemm};
 
-    ThreadblockSwizzle block_mapping;
+    ThreadblockSwizzle block_mapping{};
 
-    void *barrier_workspace;
-    void *partials_workspace;
+    void *barrier_workspace{nullptr};
+    void *partials_workspace{nullptr};
 
-    typename EpilogueOutputOp::Params output_op;
+    typename EpilogueOutputOp::Params output_op{};
 
-    void * ptr_C1;
-    void * ptr_C2;
-    void * ptr_D;
-    void * ptr_Tensor;
-    void * ptr_Vector;
+    void * ptr_C1{nullptr};
+    void * ptr_C2{nullptr};
+    void * ptr_D{nullptr};
+    void * ptr_Tensor{nullptr};
+    void * ptr_Vector{nullptr};
 
-    typename Epilogue::OutputTileIterator::Params params_C1;
-    typename Epilogue::OutputTileIterator::Params params_C2;
-    typename Epilogue::OutputTileIterator::Params params_D;
-    typename Epilogue::TensorTileIterator::Params params_Tensor;
+    typename Epilogue::OutputTileIterator::Params params_C1{};
+    typename Epilogue::OutputTileIterator::Params params_C2{};
+    typename Epilogue::OutputTileIterator::Params params_D{};
+    typename Epilogue::TensorTileIterator::Params params_Tensor{};
 
-    int64_t batch_stride_C1;
-    int64_t batch_stride_C2;
-    int64_t batch_stride_D;
-    int64_t batch_stride_Vector;
-    int64_t batch_stride_Tensor;
+    int64_t batch_stride_C1{0};
+    int64_t batch_stride_C2{0};
+    int64_t batch_stride_D{0};
+    int64_t batch_stride_Vector{0};
+    int64_t batch_stride_Tensor{0};
 
-    typename LayoutC::Stride::Index ldr;
+    typename LayoutC::Stride::Index ldr{};
 
   protected:
 
@@ -361,17 +352,17 @@ struct GemmStreamkWithFusedEpilogue<Mma_, Epilogue_, ThreadblockSwizzle_, false>
       barrier_workspace(nullptr),
       partials_workspace(nullptr)
     {
-      CUTLASS_TRACE_HOST("GemmStreamkWithFusedEpilogue::Params::Params() - problem_size: " << problem_size);
+      CUTLASS_TRACE_HOST("GemmStreamkWithFusedEpilogue::Params::Params()");
       CUTLASS_TRACE_HOST("  ptr_Vector: " << (void *)this->ptr_Vector);
       CUTLASS_TRACE_HOST("  ptr_Tensor: " << (void *)this->ptr_Tensor);
       CUTLASS_TRACE_HOST("  ldr: " << this->ldr);
       CUTLASS_TRACE_HOST("  ldt: " << args.ldt);
-      CUTLASS_TRACE_HOST("  avail_sms: " << avail_sms);
 
       // Number of SMs to make available for StreamK decomposition
       int avail_sms = (args.avail_sms == -1) ?
                         device_sms :
                         fast_min(args.avail_sms, device_sms);
+      CUTLASS_TRACE_HOST("  avail_sms: " << avail_sms);
 
       // Initialize the block mapping structure
       block_mapping = ThreadblockSwizzle(
@@ -403,7 +394,6 @@ struct GemmStreamkWithFusedEpilogue<Mma_, Epilogue_, ThreadblockSwizzle_, false>
       cudaStream_t stream = nullptr)
     {
       uint8_t *ptr = static_cast<uint8_t*>(workspace);
-
 
       // Establish partials workspace
       partials_workspace = nullptr;
@@ -840,7 +830,7 @@ protected:
     typename Epilogue::ElementTensor *ptr_Tensor = static_cast<typename Epilogue::ElementTensor *>(params.ptr_Tensor);
 
     // Define the reduction output pointer and move to the appropriate place
-    typename Epilogue::ElementVector *ptr_Vector = 
+    typename Epilogue::ElementVector *ptr_Vector =
       static_cast<typename Epilogue::ElementVector *>(params.ptr_Vector);
 
     // Update pointers for batched/array mode(s)
@@ -969,7 +959,7 @@ protected:
     typename Epilogue::ElementTensor *ptr_Tensor = static_cast<typename Epilogue::ElementTensor *>(params.ptr_Tensor);
 
     // Define the reduction output pointer and move to the appropriate place
-    typename Epilogue::ElementVector *ptr_Vector = 
+    typename Epilogue::ElementVector *ptr_Vector =
       static_cast<typename Epilogue::ElementVector *>(params.ptr_Vector);
 
     // Tile iterator loading from residual1.
@@ -1256,7 +1246,7 @@ public:
 
 // GemmStreamkWithFusedEpilogue with one source
 template <
-  typename Mma_,                  ///! Threadblock-scoped matrix multiply-accumulate 
+  typename Mma_,                  ///! Threadblock-scoped matrix multiply-accumulate
   typename Epilogue_,             ///! Epilogue
   typename ThreadblockSwizzle_    ///! Threadblock swizzling function
 >
@@ -1318,51 +1308,43 @@ struct GemmStreamkWithFusedEpilogue<Mma_, Epilogue_, ThreadblockSwizzle_, true> 
     // Data members
     //
 
-    GemmUniversalMode mode;
-    GemmCoord problem_size;
-    int batch_count;        // Either (mode == GemmUniversalMode::kBatched) the batch count, or (mode == GemmUniversalMode::kGemm) the tile-splitting factor
+    GemmUniversalMode mode{GemmUniversalMode::kGemm};
+    GemmCoord problem_size{};
+    int batch_count{1};        // Either (mode == GemmUniversalMode::kBatched) the batch count, or (mode == GemmUniversalMode::kGemm) the tile-splitting factor
 
-    typename EpilogueOutputOp::Params epilogue;
+    typename EpilogueOutputOp::Params epilogue{};
 
-    void const * ptr_A;
-    void const * ptr_B;
-    void const * ptr_C;
-    void * ptr_D;
+    void const * ptr_A{nullptr};
+    void const * ptr_B{nullptr};
+    void const * ptr_C{nullptr};
+    void * ptr_D{nullptr};
 
-    void * ptr_Vector;
-    void * ptr_Tensor;
+    void * ptr_Vector{nullptr};
+    void * ptr_Tensor{nullptr};
 
-    int64_t batch_stride_A;
-    int64_t batch_stride_B;
-    int64_t batch_stride_C;
-    int64_t batch_stride_D;
-    int64_t batch_stride_Vector;
-    int64_t batch_stride_Tensor;
+    int64_t batch_stride_A{0};
+    int64_t batch_stride_B{0};
+    int64_t batch_stride_C{0};
+    int64_t batch_stride_D{0};
+    int64_t batch_stride_Vector{0};
+    int64_t batch_stride_Tensor{0};
 
-    typename LayoutA::Stride::Index lda;
-    typename LayoutB::Stride::Index ldb;
-    typename LayoutC::Stride::Index ldc;
-    typename LayoutC::Stride::Index ldd;
-    typename LayoutC::Stride::Index ldr;
-    typename LayoutC::Stride::Index ldt;
+    typename LayoutA::Stride::Index lda{};
+    typename LayoutB::Stride::Index ldb{};
+    typename LayoutC::Stride::Index ldc{};
+    typename LayoutC::Stride::Index ldd{};
+    typename LayoutC::Stride::Index ldr{};
+    typename LayoutC::Stride::Index ldt{};
 
-    int avail_sms;          /// The number of SMs that StreamK dispatch heuristics will attempt to load-balance across (-1 defaults to device width, 1 implies classic data-parallel scheduling)
+    int avail_sms{-1};          /// The number of SMs that StreamK dispatch heuristics will attempt to load-balance across (-1 defaults to device width, 1 implies classic data-parallel scheduling)
 
 
     //
     // Methods
     //
-    
+
     /// Default Constructor
-    Arguments(): 
-      mode(GemmUniversalMode::kGemm),
-      batch_count(1),
-      ptr_A(nullptr),
-      ptr_B(nullptr),
-      ptr_C(nullptr),
-      ptr_D(nullptr),
-      avail_sms(-1)
-    {}
+    Arguments() = default;
 
     /// constructs an arguments structure
     Arguments(
@@ -1393,13 +1375,13 @@ struct GemmStreamkWithFusedEpilogue<Mma_, Epilogue_, ThreadblockSwizzle_, true> 
       mode(mode),
       problem_size(problem_size),
       batch_count(batch_split),
-      epilogue(epilogue), 
-      ptr_A(ptr_A), ptr_B(ptr_B), ptr_C(ptr_C), ptr_D(ptr_D), 
-      ptr_Vector(ptr_Vector), 
+      epilogue(epilogue),
+      ptr_A(ptr_A), ptr_B(ptr_B), ptr_C(ptr_C), ptr_D(ptr_D),
+      ptr_Vector(ptr_Vector),
       ptr_Tensor(ptr_Tensor),
-      batch_stride_A(batch_stride_A), 
-      batch_stride_B(batch_stride_B), 
-      batch_stride_C(batch_stride_C), 
+      batch_stride_A(batch_stride_A),
+      batch_stride_B(batch_stride_B),
+      batch_stride_C(batch_stride_C),
       batch_stride_Vector(batch_stride_Vector),
       batch_stride_Tensor(batch_stride_Tensor),
       lda(lda), ldb(ldb), ldc(ldc), ldd(ldd), ldr(ldr), ldt(ldt), avail_sms(avail_sms)
@@ -1415,7 +1397,7 @@ struct GemmStreamkWithFusedEpilogue<Mma_, Epilogue_, ThreadblockSwizzle_, true> 
     /// Returns arguments for the transposed problem
     Arguments transposed_problem() const {
       Arguments args(*this);
-      
+
       std::swap(args.problem_size.m(), args.problem_size.n());
       std::swap(args.ptr_A, args.ptr_B);
       std::swap(args.lda, args.ldb);
@@ -1436,40 +1418,39 @@ struct GemmStreamkWithFusedEpilogue<Mma_, Epilogue_, ThreadblockSwizzle_, true> 
     // Data members
     //
 
-    void * ptr_A;
-    void * ptr_B;
+    void * ptr_A{nullptr};
+    void * ptr_B{nullptr};
 
-    typename Mma::IteratorA::Params params_A;
-    typename Mma::IteratorB::Params params_B;
+    typename Mma::IteratorA::Params params_A{};
+    typename Mma::IteratorB::Params params_B{};
 
-    int64_t batch_stride_A;
-    int64_t batch_stride_B;
+    int64_t batch_stride_A{0};
+    int64_t batch_stride_B{0};
 
-    GemmUniversalMode mode;
+    GemmUniversalMode mode{GemmUniversalMode::kGemm};
 
-    ThreadblockSwizzle block_mapping;
+    ThreadblockSwizzle block_mapping{};
 
-    void *barrier_workspace;
-    void *partials_workspace;
+    void *barrier_workspace{nullptr};
+    void *partials_workspace{nullptr};
 
-    typename EpilogueOutputOp::Params output_op;
+    typename EpilogueOutputOp::Params output_op{};
 
-    void * ptr_C;
-    void * ptr_D;
-    void * ptr_Tensor;
-    void * ptr_Vector;
+    void * ptr_C{nullptr};
+    void * ptr_D{nullptr};
+    void * ptr_Tensor{nullptr};
+    void * ptr_Vector{nullptr};
 
-    typename Epilogue::OutputTileIterator::Params params_C;
-    typename Epilogue::OutputTileIterator::Params params_D;
-    typename Epilogue::TensorTileIterator::Params params_Tensor;
+    typename Epilogue::OutputTileIterator::Params params_C{};
+    typename Epilogue::OutputTileIterator::Params params_D{};
+    typename Epilogue::TensorTileIterator::Params params_Tensor{};
 
-    int64_t batch_stride_C;
-    int64_t batch_stride_D;
-    int64_t batch_stride_Vector;
-    int64_t batch_stride_Tensor;
+    int64_t batch_stride_C{0};
+    int64_t batch_stride_D{0};
+    int64_t batch_stride_Vector{0};
+    int64_t batch_stride_Tensor{0};
 
-
-    typename LayoutC::Stride::Index ldr;
+    typename LayoutC::Stride::Index ldr{};
 
   protected:
 
@@ -1540,17 +1521,17 @@ struct GemmStreamkWithFusedEpilogue<Mma_, Epilogue_, ThreadblockSwizzle_, true> 
       barrier_workspace(nullptr),
       partials_workspace(nullptr)
     {
-      CUTLASS_TRACE_HOST("GemmStreamkWithFusedEpilogue::Params::Params() - problem_size: " << problem_size);
+      CUTLASS_TRACE_HOST("GemmStreamkWithFusedEpilogue::Params::Params()");
       CUTLASS_TRACE_HOST("  ptr_Vector: " << (void *)this->ptr_Vector);
       CUTLASS_TRACE_HOST("  ptr_Tensor: " << (void *)this->ptr_Tensor);
       CUTLASS_TRACE_HOST("  ldr: " << this->ldr);
       CUTLASS_TRACE_HOST("  ldt: " << args.ldt);
-      CUTLASS_TRACE_HOST("  avail_sms: " << avail_sms);
 
       // Number of SMs to make available for StreamK decomposition
       int avail_sms = (args.avail_sms == -1) ?
                         device_sms :
                         fast_min(args.avail_sms, device_sms);
+      CUTLASS_TRACE_HOST("  avail_sms: " << avail_sms);
 
       // Initialize the block mapping structure
       block_mapping = ThreadblockSwizzle(
@@ -2018,7 +1999,7 @@ protected:
     typename Epilogue::ElementTensor *ptr_Tensor = static_cast<typename Epilogue::ElementTensor *>(params.ptr_Tensor);
 
     // Define the reduction output pointer and move to the appropriate place
-    typename Epilogue::ElementVector *ptr_Vector = 
+    typename Epilogue::ElementVector *ptr_Vector =
       static_cast<typename Epilogue::ElementVector *>(params.ptr_Vector);
 
     // Update pointers for batched/array mode(s)
@@ -2131,7 +2112,7 @@ protected:
     typename Epilogue::ElementTensor *ptr_Tensor = static_cast<typename Epilogue::ElementTensor *>(params.ptr_Tensor);
 
     // Define the reduction output pointer and move to the appropriate place
-    typename Epilogue::ElementVector *ptr_Vector = 
+    typename Epilogue::ElementVector *ptr_Vector =
       static_cast<typename Epilogue::ElementVector *>(params.ptr_Vector);
 
     // Tile iterator loading from source tensor.

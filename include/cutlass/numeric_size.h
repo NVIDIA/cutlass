@@ -56,37 +56,36 @@ namespace cutlass {
 /// Defines the size of an element in bits
 template <typename T>
 struct sizeof_bits {
-  static int const value = int(sizeof(T) * 8);
+  static constexpr int value = int(sizeof(T) * 8);
 };
 
 template <typename T>
 struct sizeof_bits<T const>: sizeof_bits<T> {};
 
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
-//
-// Definitions for 1-bit binary and 4-bit integer types
-//
-
-/// 1-bit binary type
-using bin1_t = bool;
-
-/// Defines the size of an element in bits - specialized for bin1_t
 template <>
-struct sizeof_bits<bin1_t> {
-  static int const value = 1;
+struct sizeof_bits<void> {
+  static constexpr int value = 0;
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Returns the number of bytes required to hold a specified number of bits
 CUTLASS_HOST_DEVICE
-constexpr int
+CUTLASS_CONSTEXPR_IF_CXX17
+int
 bits_to_bytes(int bits) {
   return (bits + 7) / 8;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <class T>
+struct is_subbyte {
+  static constexpr bool value = sizeof_bits<T>::value < 8;
+};
+
+template <class T>
+struct is_subbyte<T const> : is_subbyte<T> {};
 
 }  // namespace cutlass
 

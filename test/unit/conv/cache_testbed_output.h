@@ -122,14 +122,19 @@ inline std::ostream &operator<<(std::ostream &out, CachedTestKey const &result) 
 
 struct CachedTestResult {
   uint32_t D;
-
+  uint32_t sum;
+  uint32_t sum_of_square;
+  uint32_t second_sum_of_square;
   //
   // Methods
   //
 
-  CachedTestResult(): D() { }
+  CachedTestResult(): D(), sum(), sum_of_square(), second_sum_of_square() { }
 
-  CachedTestResult(uint32_t D): D(D) { }
+  CachedTestResult(uint32_t D): D(D), sum(), sum_of_square(), second_sum_of_square() { }
+
+  CachedTestResult(uint32_t D, uint32_t sum, uint32_t sum_of_square, uint32_t second_sum_of_square):
+      D(D), sum(sum), sum_of_square(sum_of_square), second_sum_of_square(second_sum_of_square) { }
 
   operator bool() const {
     return bool(D);
@@ -325,6 +330,34 @@ inline std::ostream &EncodeProblemSize(
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+// Encode 3.x ConvNd ProblemShape
+template <class ProblemShape>
+inline std::ostream &EncodeProblemSize(
+  std::ostream &out, 
+  ProblemShape const& problem_shape) {
+
+  out << problem_shape.shape_A << "_";
+  out << problem_shape.shape_B << "_";
+
+  out << "padl" << problem_shape.lower_padding << "_";
+  out << "padu" << problem_shape.upper_padding << "_";
+  out << "str"  << problem_shape.traversal_stride << "_";
+  out << "dil"  << problem_shape.dilation << "_";
+
+  switch (problem_shape.mode) {
+    case cutlass::conv::Mode::kCrossCorrelation:
+        out << "corr";
+        break;
+    case cutlass::conv::Mode::kConvolution:
+        out << "conv";
+        break;
+  }
+
+  return out;
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 template <typename Element>
 inline std::string ElementTypeName() {
   return std::string(typeid(Element).name());
@@ -809,6 +842,56 @@ inline CachedTestKey CreateCachedConv3dTestKey(
         ElementC, LayoutC,
         ElementAccumulator,
         ElementCompute>(ss_types);
+  key.types = ss_types.str();
+
+  // Encode problem data
+  CRC32 crc_hash;
+  key.A = TensorHash(A, crc_hash);
+  key.B = TensorHash(B, crc_hash);
+  key.C = TensorHash(C, crc_hash);
+
+  return key;
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  class ProblemShape,
+  typename ElementA,
+  typename ElementB,
+  typename ElementC,
+  typename ElementD
+>
+inline CachedTestKey CreateCachedConvNd3xTestKey(
+  cutlass::conv::Operator conv_operator,
+  ProblemShape const& problem_shape,
+  double alpha,
+  double beta,
+  thrust::universal_vector<ElementA> A,
+  thrust::universal_vector<ElementB> B,
+  thrust::universal_vector<ElementC> C
+) {
+
+  CachedTestKey key;
+ 
+  // Encode convNd operator and problem sizes
+  std::stringstream ss_op;
+  ss_op << "conv" << ProblemShape::RankS <<  "d";
+  key.op = ss_op.str();
+
+  std::stringstream ss_problem;
+  ss_problem << EncodeOperator(conv_operator) << "_";
+  EncodeProblemSize(ss_problem, problem_shape);
+  ss_problem << "_alpha" << EncodeScalar(alpha) << "_beta" << EncodeScalar(beta);
+  key.problem = ss_problem.str();
+
+  // Encode problem data types
+  std::stringstream ss_types;
+  EncodeTypes<
+        ElementA,
+        ElementB,
+        ElementC,
+        ElementD>(ss_types);
   key.types = ss_types.str();
 
   // Encode problem data

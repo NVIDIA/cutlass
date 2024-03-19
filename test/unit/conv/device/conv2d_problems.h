@@ -232,6 +232,75 @@ struct TestbedConv2dProblemSizes {
     ));
 
     ////////////////////////////////////////////////////////////////////////////////////////////
+    // Small input size x stride (1,1) asymmetric paddings (1, 0, 1, 0)
+    // C < CTA::K and non-multiples of CTA::K. Typical CTA::K = {32, 64}
+    ////////////////////////////////////////////////////////////////////////////////////////////
+    
+    conv2d_default_sizes.push_back(cutlass::conv::Conv2dProblemSize( 
+      {1, 1, 1, minimum_channel_size},   // input size  (NHWC)
+      {8, 1, 1, minimum_channel_size},   // filter size (KRSC)
+      {1, 0, 1, 0},                      // padding (pad_h, _, pad_w, _)
+      {1, 1},                            // stride (stride_h, stride_w)
+      {1, 1}                             // dilation (dilation_h, dilation_w) 
+    ));
+
+    conv2d_default_sizes.push_back(cutlass::conv::Conv2dProblemSize( 
+      {1, 1, 8, minimum_channel_size},   // input size  (NHWC)
+      {8, 1, 3, minimum_channel_size},   // filter size (KRSC)
+      {1, 0, 1, 0},                      // padding (pad_h, _, pad_w, _)
+      {1, 1},                            // stride (stride_h, stride_w)
+      {1, 1}                             // dilation (dilation_h, dilation_w) 
+    ));
+
+    conv2d_default_sizes.push_back(cutlass::conv::Conv2dProblemSize( 
+      {1, 7, 8, minimum_channel_size},   // input size  (NHWC)
+      {8, 3, 3, minimum_channel_size},   // filter size (KRSC)
+      {1, 0, 1, 0},                      // padding (pad_h, _, pad_w, _)
+      {1, 1},                            // stride (stride_h, stride_w)
+      {1, 1}                             // dilation (dilation_h, dilation_w) 
+    ));
+
+    conv2d_default_sizes.push_back(cutlass::conv::Conv2dProblemSize(
+      {1, 7, 9, minimum_channel_size},  // input size  (NHWC)
+      {8, 4, 4, minimum_channel_size},  // filter size (KRSC)
+      {1, 0, 1, 0},                     // padding (pad_h, _, pad_w, _)
+      {1, 1},                           // stride (stride_h, stride_w)
+      {1, 1}                            // dilation (dilation_h, dilation_w) 
+    ));
+
+    conv2d_default_sizes.push_back(cutlass::conv::Conv2dProblemSize(
+      {2, 7, 9, minimum_channel_size},   // input size  (NHWC)
+      {8, 5, 5, minimum_channel_size},   // filter size (KRSC)
+      {1, 0, 1, 0},                      // padding (pad_h, _, pad_w, _)
+      {1, 1},                            // stride (stride_h, stride_w)
+      {1, 1}                             // dilation (dilation_h, dilation_w) 
+    ));
+
+    conv2d_default_sizes.push_back(cutlass::conv::Conv2dProblemSize(
+      {3, 7, 9, minimum_channel_size},   // input size  (NHWC)
+      {8, 6, 5, minimum_channel_size},   // filter size (KRSC)
+      {1, 0, 1, 0},                      // padding (pad_h, _, pad_w, _)
+      {1, 1},                            // stride (stride_h, stride_w)
+      {1, 1}                             // dilation (dilation_h, dilation_w) 
+    ));
+
+    conv2d_default_sizes.push_back(cutlass::conv::Conv2dProblemSize(
+      {3, 7, 9, minimum_channel_size},   // input size  (NHWC)
+      {8, 6, 6, minimum_channel_size},   // filter size (KRSC)
+      {1, 0, 1, 0},                      // padding (pad_h, _, pad_w, _)
+      {1, 1},                            // stride (stride_h, stride_w)
+      {1, 1}                             // dilation (dilation_h, dilation_w) 
+    ));
+
+    conv2d_default_sizes.push_back(cutlass::conv::Conv2dProblemSize(
+      {3, 7, 9, minimum_channel_size},   // input size  (NHWC)
+      {8, 7, 7, minimum_channel_size},   // filter size (KRSC)
+      {1, 0, 1, 0},                      // padding (pad_h, _, pad_w, _)
+      {1, 1},                            // stride (stride_h, stride_w)
+      {1, 1}                             // dilation (dilation_h, dilation_w) 
+    ));
+
+    ////////////////////////////////////////////////////////////////////////////////////////////
     // Small input size x stride (2,2)
     // C < CTA::K and non-multiples of CTA::K. Typical CTA::K = {32, 64}
     ////////////////////////////////////////////////////////////////////////////////////////////

@@ -99,7 +99,7 @@ TEST(SM90_Device_Gemm_e4m3t_e4m3n_bf16t_tensor_op_gmma_f32_epilogue, 64x128x128_
       cutlass::float_e4m3_t, LayoutB, 16,
       float,
       TileShape_MNK, ClusterShape_MNK,
-      cutlass::gemm::collective::StageCountAutoCarveout<sizeof(typename CollectiveEpilogue::SharedStorage)>,
+      cutlass::gemm::collective::StageCountAutoCarveout<static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
       cutlass::gemm::KernelTmaWarpSpecialized
     >::CollectiveOp;
 
@@ -175,7 +175,7 @@ TEST(SM90_Device_Gemm_e4m3t_e4m3n_bf16n_tensor_op_gmma_f32_epilogue, 64x128x128_
       cutlass::float_e4m3_t, LayoutB, 16,
       float,
       TileShape_MNK, ClusterShape_MNK,
-      cutlass::gemm::collective::StageCountAutoCarveout<sizeof(typename CollectiveEpilogue::SharedStorage)>,
+      cutlass::gemm::collective::StageCountAutoCarveout<static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
       cutlass::gemm::KernelTmaWarpSpecialized
     >::CollectiveOp;
 

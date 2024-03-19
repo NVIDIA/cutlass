@@ -40,6 +40,7 @@
 #include "cutlass/array_planar_complex.h"
 #include "cutlass/functional.h"
 #include "cutlass/numeric_conversion.h"
+#include "cutlass/epilogue/thread/scale_type.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -62,7 +63,8 @@ template <
                                                        ///< but we use 64 or 32 sometimes when there are not enough data to store
   typename ElementAccumulator_ = ElementOutput_,       ///< Accumulator data type
   typename ElementCompute_ = ElementOutput_,           ///< Data type used to compute linear combination
-  FloatRoundStyle Round = FloatRoundStyle::round_to_nearest
+  FloatRoundStyle Round = FloatRoundStyle::round_to_nearest,
+  ScaleType::Kind Scale = ScaleType::Default           ///< Control Alpha and Beta scaling
 >
 class LinearCombinationPlanarComplex {
 public:
@@ -70,8 +72,10 @@ public:
   using ElementOutput = ElementOutput_;
   using ElementAccumulator = ElementAccumulator_;
   using ElementCompute = ElementCompute_;
+  using ElementScalar = complex<ElementCompute>;
 
   static int const kCount = Count;
+  static const ScaleType::Kind kScale = Scale;
 
   using FragmentOutput = ArrayPlanarComplex<ElementOutput, kCount>;
   using FragmentAccumulator = ArrayPlanarComplex<ElementAccumulator, kCount>;
@@ -82,37 +86,30 @@ public:
   /// Host-constructable parameters structure
   struct Params {
 
-    complex<ElementCompute> alpha;                  ///< scales accumulators
-    complex<ElementCompute> beta;                   ///< scales source tensor
-    complex<ElementCompute> const *alpha_ptr;       ///< pointer to accumulator scalar - if not null, loads it from memory
-    complex<ElementCompute> const *beta_ptr;        ///< pointer to source scalar - if not null, loads it from memory
+    ElementScalar alpha{ElementCompute(1)};         ///< scales accumulators
+    ElementScalar beta{ElementCompute(0)};          ///< scales source tensor
+    ElementScalar const* alpha_ptr{nullptr};        ///< pointer to accumulator scalar - if not null, loads it from memory
+    ElementScalar const* beta_ptr{nullptr};         ///< pointer to source scalar - if not null, loads it from memory
 
     //
     // Methods
     //
 
-    CUTLASS_HOST_DEVICE
-    Params(): 
-      alpha(ElementCompute(1)), 
-      beta(ElementCompute(0)), 
-      alpha_ptr(nullptr), 
-      beta_ptr(nullptr) { }
+    Params() = default;
 
     CUTLASS_HOST_DEVICE
     Params(
-      complex<ElementCompute> alpha,
-      complex<ElementCompute> beta
-    ): alpha(alpha), beta(beta), alpha_ptr(nullptr), beta_ptr(nullptr) {
-
-    }
+      ElementScalar alpha,
+      ElementScalar beta
+    ): alpha(alpha), beta(beta)
+    {}
 
     CUTLASS_HOST_DEVICE
     Params(
-      complex<ElementCompute> const *alpha_ptr,
-      complex<ElementCompute> const *beta_ptr
-    ): alpha(complex<ElementCompute>()), beta(complex<ElementCompute>()), alpha_ptr(alpha_ptr), beta_ptr(beta_ptr) {
-
-    }
+      ElementScalar const *alpha_ptr,
+      ElementScalar const *beta_ptr
+    ): alpha_ptr(alpha_ptr), beta_ptr(beta_ptr) 
+    {}
   };
 
 private:
@@ -121,15 +118,14 @@ private:
   // Data members
   //
 
-  complex<ElementCompute> alpha_;
-  complex<ElementCompute> beta_;
+  ElementScalar alpha_;
+  ElementScalar beta_;
 
 public:
 
   /// Constructs the function object, possibly loading from pointers in host memory
   CUTLASS_HOST_DEVICE
   LinearCombinationPlanarComplex(Params const &params) {
-
     alpha_ = (params.alpha_ptr ? *params.alpha_ptr : params.alpha);
     beta_ = (params.beta_ptr ? *params.beta_ptr : params.beta);
   }
@@ -137,6 +133,8 @@ public:
   /// Returns true if source is needed
   CUTLASS_HOST_DEVICE
   bool is_source_needed() const {
+    if (Scale == ScaleType::OnlyAlphaScaling) return false;
+
     return beta_.real() != ElementCompute(0) || beta_.imag() != ElementCompute(0);
   }
 
@@ -213,8 +211,8 @@ public:
     multiply_add<Array<ElementCompute, kCount> > mul_add_op;
 
     // complex multiply-add: I = alpha * AB + I
-    intermediate.real = mul_add_op(alpha_.real(), converted_accumulator.real);
-    intermediate.imag = mul_add_op(alpha_.real(), converted_accumulator.imag);
+    intermediate.real = mul_op(alpha_.real(), converted_accumulator.real);
+    intermediate.imag = mul_op(alpha_.real(), converted_accumulator.imag);
 
     intermediate.real = mul_add_op(-alpha_.imag(), converted_accumulator.imag, intermediate.real);
     intermediate.imag = mul_add_op( alpha_.imag(), converted_accumulator.real, intermediate.imag);

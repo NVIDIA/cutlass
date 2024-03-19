@@ -121,7 +121,7 @@ struct CommandLine {
    * Returns the commandline parameter for a given index (not including flags)
    */
   template <typename value_t>
-  void get_cmd_line_argument(int index, value_t& val) const {
+  void get_cmd_line_argument(size_t index, value_t& val) const {
     using namespace std;
     if (index < args.size()) {
       istringstream str_stream(args[index]);

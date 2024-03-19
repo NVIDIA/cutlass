@@ -174,8 +174,7 @@ struct ThreadblockSwizzleStreamK {
   //
 
   /// Constructor
-  CUTLASS_HOST_DEVICE
-  ThreadblockSwizzleStreamK() {}
+  ThreadblockSwizzleStreamK() = default;
 
   /// Returns the GEMM volume in thread block tiles
   CUTLASS_HOST_DEVICE

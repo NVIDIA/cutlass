@@ -457,6 +457,38 @@ TEST(SM80_Device_GemmWithBroadcast_RELU_f16n_f16n_f16n_tensor_op_f32, 128x128_32
   test::gemm::device::TestAllGemmWithBroadcast<Gemm, GemmWithBiasReluReferenceOp<Gemm> >();
 }
 
+TEST(SM80_Device_GemmWithBroadcast_RELU_f32n_f32n_f32n_tensor_op_f32, 64x64_16x10_32x32x16_16x8x8) {
+
+  using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombinationBiasRelu<
+    float,
+    float,
+    float,
+    float,
+    4,
+    false
+  >;
+
+  using GemmKernel =
+    typename cutlass::gemm::kernel::DefaultGemmWithBroadcast<
+      float, cutlass::layout::RowMajor, cutlass::ComplexTransform::kNone, 4,    // transposed B operand
+      float, cutlass::layout::RowMajor, cutlass::ComplexTransform::kNone, 4,    // transposed A operand
+      float, cutlass::layout::RowMajor,
+      float,
+      cutlass::arch::OpClassTensorOp,
+      cutlass::arch::Sm80,
+      cutlass::gemm::GemmShape<64, 64, 16>,
+      cutlass::gemm::GemmShape<32, 32, 16>,
+      cutlass::gemm::GemmShape<16, 8, 8>,
+      EpilogueOutputOp,
+      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<8>,
+      10,
+      cutlass::arch::OpMultiplyAdd
+  >::GemmKernel;
+
+  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+
+  test::gemm::device::TestAllGemmWithBroadcast<Gemm, GemmWithBiasReluReferenceOp<Gemm> >();
+}
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 #endif

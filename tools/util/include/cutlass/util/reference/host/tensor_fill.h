@@ -39,6 +39,7 @@
 #include <cstdlib>
 #include <cmath>
 #include <random>
+#include <stdexcept>
 
 // Cutlass includes
 #include "cutlass/cutlass.h"
@@ -196,7 +197,7 @@ struct RandomGaussianFunc {
     // Sample from the Gaussian distribution for a nonzero element
     if (bernoulli_result) {
       if (int_scale >= 0) {
-        rnd = double(int64_t(rnd * double(1 << int_scale))) / double(1 << int_scale);
+        rnd = double(std::llround(rnd * double(1 << int_scale))) / double(1 << int_scale);
         result = static_cast<Element>(rnd);
       }
       else {
@@ -567,7 +568,7 @@ struct RandomUniformFunc {
     // testing
     Element result;
     if (int_scale >= 0) {
-      rnd = double(int64_t(rnd * double(1 << int_scale))) / double(1 << int_scale);
+      rnd = double(std::llround(rnd * double(1 << int_scale))) / double(1 << int_scale);
       result = static_cast<Element>(Real(rnd));
     }
     else {
@@ -1381,8 +1382,12 @@ struct RandomSparseMetaFunc {
       std::srand((unsigned)seed);
       if (MetaSizeInBits_ == 2) {
         range = 6;
-      } else if (MetaSizeInBits_ == 4) {
+      }
+      else if (MetaSizeInBits_ == 4) {
         range = 2;
+      }
+      else {
+        throw std::invalid_argument("Invalid MetaSizeInBits");
       }
     }
 

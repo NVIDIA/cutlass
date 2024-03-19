@@ -31,3 +31,8 @@ cutlass_test_unit_add_executable(
   cp_async.cu
   ldsm.cu
 )
+
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_cute_ampere_tiled_cp_async
+  tiled_cp_async.cu
+)

@@ -63,7 +63,7 @@ struct SM90_U32x1_STSM_N
         :: "r"(smem_int_ptr),
            "r"(src));
 #else
-    CUTE_RUNTIME_ASSERT("Trying to use stmatrix without CUTE_ARCH_STSM_SM90_ENABLED.");
+    CUTE_INVALID_CONTROL_PATH("Trying to use stmatrix without CUTE_ARCH_STSM_SM90_ENABLED.");
 #endif
   }
 };
@@ -83,7 +83,7 @@ struct SM90_U32x2_STSM_N
         :: "r"(smem_int_ptr),
            "r"(src0), "r"(src1));
 #else
-    CUTE_RUNTIME_ASSERT("Trying to use stmatrix without CUTE_ARCH_STSM_SM90_ENABLED.");
+    CUTE_INVALID_CONTROL_PATH("Trying to use stmatrix without CUTE_ARCH_STSM_SM90_ENABLED.");
 #endif
   }
 };
@@ -103,7 +103,7 @@ struct SM90_U32x4_STSM_N
         :: "r"(smem_int_ptr),
           "r"(src0), "r"(src1), "r"(src2), "r"(src3));
 #else
-    CUTE_RUNTIME_ASSERT("Trying to use stmatrix without CUTE_ARCH_STSM_SM90_ENABLED.");
+    CUTE_INVALID_CONTROL_PATH("Trying to use stmatrix without CUTE_ARCH_STSM_SM90_ENABLED.");
 #endif
   }
 };
@@ -123,7 +123,7 @@ struct SM90_U16x2_STSM_T
         :: "r"(smem_int_ptr),
            "r"(src));
 #else
-    CUTE_RUNTIME_ASSERT("Trying to use stmatrix without CUTE_ARCH_STSM_SM90_ENABLED.");
+    CUTE_INVALID_CONTROL_PATH("Trying to use stmatrix without CUTE_ARCH_STSM_SM90_ENABLED.");
 #endif
   }
 };
@@ -143,7 +143,7 @@ struct SM90_U16x4_STSM_T
         :: "r"(smem_int_ptr),
            "r"(src0), "r"(src1));
 #else
-    CUTE_RUNTIME_ASSERT("Trying to use stmatrix without CUTE_ARCH_STSM_SM90_ENABLED.");
+    CUTE_INVALID_CONTROL_PATH("Trying to use stmatrix without CUTE_ARCH_STSM_SM90_ENABLED.");
 #endif
   }
 };
@@ -163,7 +163,7 @@ struct SM90_U16x8_STSM_T
         :: "r"(smem_int_ptr),
           "r"(src0), "r"(src1), "r"(src2), "r"(src3));
 #else
-    CUTE_RUNTIME_ASSERT("Trying to use stmatrix without CUTE_ARCH_STSM_SM90_ENABLED.");
+    CUTE_INVALID_CONTROL_PATH("Trying to use stmatrix without CUTE_ARCH_STSM_SM90_ENABLED.");
 #endif
   }
 };

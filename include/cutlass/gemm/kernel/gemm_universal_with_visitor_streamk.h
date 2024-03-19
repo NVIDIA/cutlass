@@ -129,35 +129,35 @@ public:
     //
     // Data members
     //
-    cute::Shape<int32_t,int32_t,int32_t> problem_shape;
+    cute::Shape<int32_t,int32_t,int32_t> problem_shape{};
 
-    void * ptr_A;
-    void * ptr_B;
+    void * ptr_A{nullptr};
+    void * ptr_B{nullptr};
 
-    typename Mma::IteratorA::Params params_A;
-    typename Mma::IteratorB::Params params_B;
+    typename Mma::IteratorA::Params params_A{};
+    typename Mma::IteratorB::Params params_B{};
 
-    int64_t batch_stride_A;
-    int64_t batch_stride_B;
+    int64_t batch_stride_A{0};
+    int64_t batch_stride_B{0};
 
-    GemmUniversalMode mode;
+    GemmUniversalMode mode{GemmUniversalMode::kGemm};
 
-    ThreadblockSwizzle block_mapping;
+    ThreadblockSwizzle block_mapping{};
 
-    void *barrier_workspace;
-    void *partials_workspace;
+    void *barrier_workspace{nullptr};
+    void *partials_workspace{nullptr};
 
-    typename FusionCallbacks::Params output_op;
+    typename FusionCallbacks::Params output_op{};
 
 
-    void * ptr_D;
-    void * ptr_C;
+    void * ptr_D{nullptr};
+    void * ptr_C{nullptr};
 
-    typename Epilogue::OutputTileIterator::Params params_D;
-    typename Epilogue::OutputTileIterator::Params params_C;
+    typename Epilogue::OutputTileIterator::Params params_D{};
+    typename Epilogue::OutputTileIterator::Params params_C{};
 
-    int64_t batch_stride_D;
-    int64_t batch_stride_C;
+    int64_t batch_stride_D{0};
+    int64_t batch_stride_C{0};
 
 
   protected:
