@@ -1,4 +1,4 @@
-[README](/README.md#documentation) > **CUTLASS 3.0 Design and Hierarchy**
+[README](../../README.md#documentation) > **CUTLASS 3.0 Design and Hierarchy**
 
 # CUTLASS 3.0 Design
 

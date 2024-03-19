@@ -60,26 +60,24 @@ struct SparseParamsBase
   // Data members
   //
 
-  cutlass::gemm::GemmCoord problem_size;
-  cutlass::gemm::GemmCoord grid_tiled_shape;
+  cutlass::gemm::GemmCoord problem_size{};
+  cutlass::gemm::GemmCoord grid_tiled_shape{};
   int swizzle_log_tile;
-  ParamsA params_A;
-  TensorRefA ref_A;
-  ParamsB params_B;
-  TensorRefB ref_B;
-  ParamsE params_E;
-  TensorRefE ref_E;
-  int gemm_k_iterations;
-  int gemm_k_size;
+  ParamsA params_A{};
+  TensorRefA ref_A{};
+  ParamsB params_B{};
+  TensorRefB ref_B{};
+  ParamsE params_E{};
+  TensorRefE ref_E{};
+  int gemm_k_iterations{0};
+  int gemm_k_size{0};
 
   //
   // Host dispatch API
   //
 
   /// Default constructor
-  CUTLASS_HOST_DEVICE
-  SparseParamsBase() : swizzle_log_tile(0), gemm_k_iterations(0), gemm_k_size(0) { }
-
+  SparseParamsBase() = default;
 
   /// Constructor
   CUTLASS_HOST_DEVICE

@@ -65,7 +65,7 @@ template <
 >
 class Sm90EpilogueTmaWarpSpecializedBiasElementwise
   : public CollectiveEpilogue<
-      Sm90TmaWarpSpecialized<StagesC_, StagesD_, FragmentSize_, false>,
+      Sm90TmaWarpSpecialized<StagesC_, StagesD_, FragmentSize_, false, false>,
       BlockTileShape_,
       EpilogueTileShape_,
       ElementC_,
@@ -83,7 +83,7 @@ class Sm90EpilogueTmaWarpSpecializedBiasElementwise
 private:
   using Impl =
     CollectiveEpilogue<
-      Sm90TmaWarpSpecialized<StagesC_, StagesD_, FragmentSize_, false>,
+      Sm90TmaWarpSpecialized<StagesC_, StagesD_, FragmentSize_, false, false>,
       BlockTileShape_,
       EpilogueTileShape_,
       ElementC_,
@@ -111,17 +111,17 @@ public:
   struct [[deprecated("use Sm90TmaWarpSpecialized Arguments instead")]]
   Arguments {
     struct ThreadArgs {
-      ElementCompute alpha;
-      ElementCompute beta;
-      ElementCompute const *alpha_ptr;
-      ElementCompute const *beta_ptr;
+      ElementCompute alpha{1};
+      ElementCompute beta{0};
+      ElementCompute const *alpha_ptr{nullptr};
+      ElementCompute const *beta_ptr{nullptr};
     } thread;
-    ElementC_ const* ptr_C;
-    StrideC_ dC;
-    ElementD_* ptr_D;
-    StrideD_ dD;
-    ElementBias const* ptr_Bias = nullptr;
-    ElementT* ptr_T = nullptr;
+    ElementC_ const* ptr_C{nullptr};
+    StrideC_ dC{};
+    ElementD_* ptr_D{nullptr};
+    StrideD_ dD{};
+    ElementBias const* ptr_Bias{nullptr};
+    ElementT* ptr_T{nullptr};
 
     CUTLASS_HOST_DEVICE
     operator typename Impl::Arguments() const {

@@ -122,6 +122,96 @@ struct DefaultConv2dFpropWithBroadcast {
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+//                            OpClassSimt convolutions
+/////////////////////////////////////////////////////////////////////////////////////////////////
+/// Defines a kernel for Conv2dFprop specialization for Analytic IteratorAlgorithm,
+/// multi-stage pipeline, and FFMA-based mainloop for SM80
+
+template <
+  typename ElementA,
+  typename LayoutA,
+  typename ElementB,
+  typename LayoutB,
+  typename ElementC,
+  typename LayoutC,
+  typename ElementAccumulator,
+  typename ArchTag,
+  typename ThreadblockShape,
+  typename WarpShape,
+  typename InstructionShape,
+  typename EpilogueOutputOp,
+  typename ThreadblockSwizzle,
+  int Stages,
+  typename MathOperatorTag,
+  conv::StrideSupport StrideSupport,
+  int AlignmentA,
+  int AlignmentB
+>
+struct DefaultConv2dFpropWithBroadcast <
+  ElementA,
+  LayoutA,
+  ElementB,
+  LayoutB,
+  ElementC,
+  LayoutC,
+  ElementAccumulator,
+  arch::OpClassSimt,
+  ArchTag,
+  ThreadblockShape,
+  WarpShape,
+  InstructionShape,
+  EpilogueOutputOp,
+  ThreadblockSwizzle,
+  Stages,
+  MathOperatorTag,
+  IteratorAlgorithm::kAnalytic,
+  StrideSupport,
+  AlignmentA,
+  AlignmentB
+> {
+
+  using ImplicitGemmBase = typename DefaultConv2dFprop<
+    ElementA, LayoutA,
+    ElementB, LayoutB,
+    ElementC, LayoutC,
+    ElementAccumulator,
+    arch::OpClassSimt,
+    ArchTag,
+    ThreadblockShape,
+    WarpShape,
+    InstructionShape,
+    EpilogueOutputOp,
+    ThreadblockSwizzle,
+    Stages,
+    MathOperatorTag,
+    IteratorAlgorithm::kAnalytic,
+    StrideSupport,
+    AlignmentA,
+    AlignmentB
+  >::Kernel;
+
+  // Define epilogue
+  using Epilogue = typename cutlass::conv::kernel::detail::DefaultConvEpilogueWithBroadcastSimt<
+    ArchTag,
+    typename ImplicitGemmBase::Epilogue::Shape,
+    typename ImplicitGemmBase::Epilogue::WarpMmaOperator,
+    ElementC,
+    typename EpilogueOutputOp::ElementT,
+    typename EpilogueOutputOp::ElementVector,
+    EpilogueOutputOp,
+    ImplicitGemmBase::Epilogue::kElementsPerAccess
+  >::Epilogue;
+
+  // Define the kernel
+  using Kernel = cutlass::conv::kernel::ImplicitGemmConvolutionWithFusedEpilogue<
+    typename ImplicitGemmBase::Mma,
+    Epilogue,
+    ThreadblockSwizzle,
+    conv::Operator::kFprop
+  >;
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
 
 }  // namespace kernel
 }  // namespace conv

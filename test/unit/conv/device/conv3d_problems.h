@@ -117,6 +117,17 @@ struct TestbedConv3dProblemSizes {
       {8, 1, 1, 3, minimum_channel_size},   // filter size (KTRSC)
       cutlass::Coord<3>({1, 1, 1}),         // padding (pad_d, pad_h, pad_w)
       cutlass::Coord<3>({1, 1, 1}),         // stride (stride_d, stride_h, stride_w)
+      cutlass::Coord<3>({1, 1, 1})          // dilation (dilation_d, dilation_h, dilation_w)
+    ));
+
+    conv3d_default_sizes.push_back(cutlass::conv::Conv3dProblemSize(
+      {1, 1, 1, 8, minimum_channel_size},   // input size  (NDHWC)
+      {8, 1, 1, 3, minimum_channel_size},   // filter size (KTRSC)
+      CUTLASS_STL_NAMESPACE::make_tuple(
+        cutlass::Coord<3>({1, 1, 1}),       // near padding (pad_d, pad_h, pad_w)
+        cutlass::Coord<3>({0, 0, 0})        // far padding (pad_d, pad_h, pad_w)
+      ),
+      cutlass::Coord<3>({1, 1, 1}),         // stride (stride_d, stride_h, stride_w)
       cutlass::Coord<3>({1, 1, 1})          // dilation (dilation_d, dilation_h, dilation_w) 
     ));
 
@@ -126,6 +137,17 @@ struct TestbedConv3dProblemSizes {
       cutlass::Coord<3>({1, 1, 1}),         // padding (pad_d, pad_h, pad_w)
       cutlass::Coord<3>({1, 1, 1}),         // stride (stride_d, stride_h, stride_w)
       cutlass::Coord<3>({1, 1, 1})          // dilation (dilation_d, dilation_h, dilation_w) 
+    ));
+
+    conv3d_default_sizes.push_back(cutlass::conv::Conv3dProblemSize(
+      {1, 8, 8, 8, minimum_channel_size},    // input size  (NDHWC)
+      {8, 3, 3, 3, minimum_channel_size},    // filter size (KTRSC)
+      CUTLASS_STL_NAMESPACE::make_tuple(
+        cutlass::Coord<3>({1, 1, 1}),       // near padding (pad_d, pad_h, pad_w)
+        cutlass::Coord<3>({0, 0, 0})        // far padding (pad_d, pad_h, pad_w)
+      ),
+      cutlass::Coord<3>({1, 1, 1}),          // stride (stride_d, stride_h, stride_w)
+      cutlass::Coord<3>({1, 1, 1})           // dilation (dilation_d, dilation_h, dilation_w) 
     ));
 
     conv3d_default_sizes.push_back(cutlass::conv::Conv3dProblemSize(

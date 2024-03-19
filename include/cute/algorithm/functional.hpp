@@ -33,6 +33,7 @@
 #include <cute/config.hpp>
 
 #include <cute/util/type_traits.hpp>
+#include <cute/numeric/complex.hpp>
 
 /** C++14 <functional> extensions */
 
@@ -46,7 +47,7 @@ struct identity {
   template <class T>
   CUTE_HOST_DEVICE constexpr
   decltype(auto) operator()(T&& arg) const {
-    return std::forward<T>(arg);
+    return static_cast<T&&>(arg);
   }
 };
 
@@ -69,7 +70,7 @@ struct constant_fn {
     template <class T>                                               \
     CUTE_HOST_DEVICE constexpr                                       \
     decltype(auto) operator()(T&& arg) const {                       \
-      return OP std::forward<T>(arg);                                \
+      return OP static_cast<T&&>(arg);                                \
     }                                                                \
   }
 #define CUTE_RIGHT_UNARY_OP(NAME,OP)                                 \
@@ -77,7 +78,7 @@ struct constant_fn {
     template <class T>                                               \
     CUTE_HOST_DEVICE constexpr                                       \
     decltype(auto) operator()(T&& arg) const {                       \
-      return std::forward<T>(arg) OP ;                               \
+      return static_cast<T&&>(arg) OP ;                               \
     }                                                                \
   }
 #define CUTE_NAMED_UNARY_OP(NAME,OP)                                 \
@@ -85,7 +86,7 @@ struct constant_fn {
     template <class T>                                               \
     CUTE_HOST_DEVICE constexpr                                       \
     decltype(auto) operator()(T&& arg) const {                       \
-      return OP (std::forward<T>(arg));                              \
+      return OP (static_cast<T&&>(arg));                              \
     }                                                                \
   }
 
@@ -115,7 +116,7 @@ struct shift_right_const {
   template <class T>
   CUTE_HOST_DEVICE constexpr
   decltype(auto) operator()(T&& arg) const {
-    return std::forward<T>(arg) >> Shift;
+    return static_cast<T&&>(arg) >> Shift;
   }
 };
 
@@ -126,7 +127,7 @@ struct shift_left_const {
   template <class T>
   CUTE_HOST_DEVICE constexpr
   decltype(auto) operator()(T&& arg) const {
-    return std::forward<T>(arg) << Shift;
+    return static_cast<T&&>(arg) << Shift;
   }
 };
 
@@ -139,7 +140,7 @@ struct shift_left_const {
     template <class T, class U>                                      \
     CUTE_HOST_DEVICE constexpr                                       \
     decltype(auto) operator()(T&& lhs, U&& rhs) const {              \
-      return std::forward<T>(lhs) OP std::forward<U>(rhs);           \
+      return static_cast<T&&>(lhs) OP static_cast<U&&>(rhs);           \
     }                                                                \
   }
 #define CUTE_NAMED_BINARY_OP(NAME,OP)                                \
@@ -147,7 +148,7 @@ struct shift_left_const {
     template <class T, class U>                                      \
     CUTE_HOST_DEVICE constexpr                                       \
     decltype(auto) operator()(T&& lhs, U&& rhs) const {              \
-      return OP (std::forward<T>(lhs), std::forward<U>(rhs));        \
+      return OP (static_cast<T&&>(lhs), static_cast<U&&>(rhs));        \
     }                                                                \
   }
 
@@ -273,7 +274,7 @@ struct bound_fn {
   CUTE_HOST_DEVICE constexpr
   decltype(auto)
   operator()(T&& arg) {
-    return fn_(arg_, std::forward<T>(arg));
+    return fn_(arg_, static_cast<T&&>(arg));
   }
 
   Fn fn_;

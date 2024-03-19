@@ -71,25 +71,21 @@ public:
     // Data members
     //
 
-    MatrixCoord problem_size;
-    int partitions;
-    size_t partition_stride;
-    WorkspaceTensorRef workspace;
-    OutputTensorRef destination;
-    OutputTensorRef source;
-    typename OutputOp::Params output;
-    typename ReductionOp::Params reduction;
+    MatrixCoord problem_size{0,0};
+    int partitions{1};
+    size_t partition_stride{0};
+    WorkspaceTensorRef workspace{};
+    OutputTensorRef destination{};
+    OutputTensorRef source{};
+    typename OutputOp::Params output{};
+    typename ReductionOp::Params reduction{};
 
     //
     // Methods
     //
 
     /// Default ctor
-    CUTLASS_HOST_DEVICE
-    Arguments() : 
-      problem_size(0, 0), 
-      partitions(1), 
-      partition_stride(0) { }
+    Arguments() = default;
    
     CUTLASS_HOST_DEVICE 
     Arguments(

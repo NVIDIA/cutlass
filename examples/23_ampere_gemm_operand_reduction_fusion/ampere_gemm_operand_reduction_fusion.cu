@@ -377,22 +377,22 @@ Result profile(Options const &options) {
   cutlass::reference::host::TensorFillRandomUniform(
       tensor_a.host_view(),
       1997,
-      ElementInputA(2),
-      ElementInputA(-2),
+      ElementInputA(1),
+      ElementInputA(-1),
       0);  // <- Fill tensor A on host with uniform-distribution random data
 
   cutlass::reference::host::TensorFillRandomUniform(
       tensor_b.host_view(),
       2003,
-      ElementInputB(2),
-      ElementInputB(-2),
+      ElementInputB(1),
+      ElementInputB(-1),
       0);  // <- Fill tensor B on host with uniform-distribution random data
 
   cutlass::reference::host::TensorFillRandomUniform(
       tensor_c.host_view(),
       2017,
-      ElementOutput(2),
-      ElementOutput(-2),
+      ElementOutput(1),
+      ElementOutput(-1),
       0);  // <- Fill matrix C on host with uniform-distribution random data
   cutlass::reference::host::TensorFill(
       tensor_d.host_view());  // <- fill matrix D on host with zeros

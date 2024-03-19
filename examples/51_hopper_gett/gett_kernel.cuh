@@ -102,7 +102,8 @@ gett_kernel(
       ElementB, StrideB, 128 / cutlass::sizeof_bits<ElementB>::value,
       ElementAccumulator,
       TileShape, Shape<_1,_2,_1>,
-      cutlass::gemm::collective::StageCountAutoCarveout<sizeof(typename CollectiveEpilogue::SharedStorage)>,
+      cutlass::gemm::collective::StageCountAutoCarveout<
+        static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
       cutlass::gemm::collective::KernelScheduleAuto
     >::CollectiveOp;
 

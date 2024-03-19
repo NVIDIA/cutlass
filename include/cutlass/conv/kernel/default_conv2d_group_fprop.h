@@ -57,7 +57,7 @@ namespace conv {
 namespace kernel {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-/// Defines a kernel for Conv2dGroupFpro
+/// Defines a kernel for Conv2dGroupFprop
 template <
   typename ElementA,
   typename LayoutA,
@@ -135,11 +135,11 @@ struct DefaultConv2dGroupFprop <
   AlignmentB
 > {
 
-  static_assert(std::is_same<LayoutA, cutlass::layout::TensorNHWC>::value,
+  static_assert(platform::is_same<LayoutA, cutlass::layout::TensorNHWC>::value,
     "Current group conv only support NHWC layout");
-  static_assert(std::is_same<LayoutB, cutlass::layout::TensorNHWC>::value,
+  static_assert(platform::is_same<LayoutB, cutlass::layout::TensorNHWC>::value,
     "Current group conv only support NHWC layout");
-  static_assert(std::is_same<LayoutC, cutlass::layout::TensorNHWC>::value,
+  static_assert(platform::is_same<LayoutC, cutlass::layout::TensorNHWC>::value,
     "Current group conv only support NHWC layout");
 
   // Define the core components from GEMM
@@ -269,11 +269,11 @@ struct DefaultConv2dGroupFprop <
   AlignmentB
 > {
 
-  static_assert(std::is_same<LayoutA, cutlass::layout::TensorNHWC>::value,
+  static_assert(platform::is_same<LayoutA, cutlass::layout::TensorNHWC>::value,
     "Current group conv only support NHWC layout");
-  static_assert(std::is_same<LayoutB, cutlass::layout::TensorNHWC>::value,
+  static_assert(platform::is_same<LayoutB, cutlass::layout::TensorNHWC>::value,
     "Current group conv only support NHWC layout");
-  static_assert(std::is_same<LayoutC, cutlass::layout::TensorNHWC>::value,
+  static_assert(platform::is_same<LayoutC, cutlass::layout::TensorNHWC>::value,
     "Current group conv only support NHWC layout");
 
   // Define the core components from GEMM
@@ -400,11 +400,11 @@ struct DefaultConv2dGroupFprop <
   AlignmentB
 > {
 
-  static_assert(std::is_same<LayoutA, cutlass::layout::TensorNHWC>::value,
+  static_assert(platform::is_same<LayoutA, cutlass::layout::TensorNHWC>::value,
     "Current group conv only support NHWC layout");
-  static_assert(std::is_same<LayoutB, cutlass::layout::TensorNHWC>::value,
+  static_assert(platform::is_same<LayoutB, cutlass::layout::TensorNHWC>::value,
     "Current group conv only support NHWC layout");
-  static_assert(std::is_same<LayoutC, cutlass::layout::TensorNHWC>::value,
+  static_assert(platform::is_same<LayoutC, cutlass::layout::TensorNHWC>::value,
     "Current group conv only support NHWC layout");
 
   // Define the core components from GEMM
@@ -530,11 +530,11 @@ struct DefaultConv2dGroupFprop <
   AlignmentB
 > {
 
-  static_assert(std::is_same<LayoutA, cutlass::layout::TensorNHWC>::value,
+  static_assert(platform::is_same<LayoutA, cutlass::layout::TensorNHWC>::value,
     "Current group conv only support NHWC layout");
-  static_assert(std::is_same<LayoutB, cutlass::layout::TensorNHWC>::value,
+  static_assert(platform::is_same<LayoutB, cutlass::layout::TensorNHWC>::value,
     "Current group conv only support NHWC layout");
-  static_assert(std::is_same<LayoutC, cutlass::layout::TensorNHWC>::value,
+  static_assert(platform::is_same<LayoutC, cutlass::layout::TensorNHWC>::value,
     "Current group conv only support NHWC layout");
 
   // Define the core components from GEMM

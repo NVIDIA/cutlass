@@ -400,7 +400,7 @@ public:
 
   // The basic tile scheduler does not require any additional workspace
   template <class ProblemShape, class ElementAccumulator>
-  static int
+  static size_t
   get_workspace_size(Arguments const&, ProblemShape, KernelHardwareInfo const&, uint32_t, const uint32_t = 1) {
     return 0;
   }

@@ -439,7 +439,7 @@ bool TestAllTensorBroadcast(bool use_bias=true) {
   std::vector<int> problem_size_m = {max_alignment, 512 - 3 * max_alignment};
   std::vector<int> problem_size_n = {max_alignment, 512 - 2 * max_alignment};
 
-  if constexpr (std::is_same_v<typename Gemm::GemmKernel::DispatchPolicy::Schedule,
+  if constexpr (cute::is_same_v<typename Gemm::GemmKernel::DispatchPolicy::Schedule,
                 cutlass::gemm::KernelTmaWarpSpecializedPingpong>) {
     problem_size_m.push_back(768);
     problem_size_n.push_back(768);

@@ -763,6 +763,94 @@ struct DefaultGemmConfiguration<
 };
 
 ////////////////////////////////////////////////////////////////////////////////
+
+/// Base configuration for all {fe4m3, fe5m2} x {fe4m3, fe5m2} combinations on SM89
+template <
+  typename ElementA,
+  typename ElementB,
+  typename ElementC,
+  typename ElementAccumulator>
+struct DefaultGemmConfigurationSm89F8 {
+  static_assert((platform::is_same<ElementA, cutlass::float_e4m3_t>::value ||
+                 platform::is_same<ElementA, cutlass::float_e5m2_t>::value),
+                "ElementA must be of type float_e4m3_t or float_e5m2_t");
+  static_assert((platform::is_same<ElementB, cutlass::float_e4m3_t>::value ||
+                 platform::is_same<ElementB, cutlass::float_e5m2_t>::value),
+                "ElementB must be of type float_e4m3_t or float_e5m2_t");
+
+  static int const kAlignmentA = 128 / sizeof_bits<ElementA>::value;
+  static int const kAlignmentB = 128 / sizeof_bits<ElementB>::value;
+
+  using ThreadblockShape = GemmShape<128, 256, 64>;
+  using WarpShape = GemmShape<64, 64, 64>;
+  using InstructionShape = GemmShape<16, 8, 32>;
+  static int const kStages = 3;
+
+  using EpilogueOutputOp = epilogue::thread::LinearCombination<
+      ElementC, 128 / sizeof_bits<ElementC>::value, ElementAccumulator,
+      ElementAccumulator>;
+
+  using Operator = arch::OpMultiplyAdd;
+};
+
+/// Partial specialization for SM89 fe4m3 x fe4m3
+template <typename ElementC, typename ElementAccumulator>
+struct DefaultGemmConfiguration<
+  arch::OpClassTensorOp,
+  arch::Sm89,
+  cutlass::float_e4m3_t,
+  cutlass::float_e4m3_t,
+  ElementC,
+  ElementAccumulator> : DefaultGemmConfigurationSm89F8<
+                            cutlass::float_e4m3_t,
+                            cutlass::float_e4m3_t,
+                            ElementC,
+                            ElementAccumulator> {};
+
+/// Partial specialization for SM89 fe4m3 x fe5m2
+template <typename ElementC, typename ElementAccumulator>
+struct DefaultGemmConfiguration<
+  arch::OpClassTensorOp,
+  arch::Sm89,
+  cutlass::float_e4m3_t,
+  cutlass::float_e5m2_t,
+  ElementC,
+  ElementAccumulator> : DefaultGemmConfigurationSm89F8<
+                            cutlass::float_e4m3_t,
+                            cutlass::float_e5m2_t,
+                            ElementC,
+                            ElementAccumulator> {};
+
+/// Partial specialization for SM89 fe5m2 x fe4m3
+template <typename ElementC, typename ElementAccumulator>
+struct DefaultGemmConfiguration<
+  arch::OpClassTensorOp,
+  arch::Sm89,
+  cutlass::float_e5m2_t,
+  cutlass::float_e4m3_t,
+  ElementC,
+  ElementAccumulator> : DefaultGemmConfigurationSm89F8<
+                            cutlass::float_e5m2_t,
+                            cutlass::float_e4m3_t,
+                            ElementC,
+                            ElementAccumulator> {};
+
+/// Partial specialization for SM89 fe5m2 x fe5m2
+template <typename ElementC, typename ElementAccumulator>
+struct DefaultGemmConfiguration<
+  arch::OpClassTensorOp,
+  arch::Sm89,
+  cutlass::float_e5m2_t,
+  cutlass::float_e5m2_t,
+  ElementC,
+  ElementAccumulator> : DefaultGemmConfigurationSm89F8<
+                            cutlass::float_e5m2_t,
+                            cutlass::float_e5m2_t,
+                            ElementC,
+                            ElementAccumulator> {};
+
+////////////////////////////////////////////////////////////////////////////////
+
 template <typename ElementC,
           typename ElementAccumulator>
 struct DefaultGemmConfiguration<arch::OpClassTensorOp, arch::Sm90, double,

@@ -56,6 +56,9 @@ using Step = cute::tuple<Strides...>;
 template <class... Coords>
 using Coord = cute::tuple<Coords...>;
 
+template <class... Layouts>
+using Tile = cute::tuple<Layouts...>;
+
 template <class... Ts>
 CUTE_HOST_DEVICE constexpr
 Shape<Ts...>
@@ -80,7 +83,17 @@ Coord<Ts...>
 make_coord(Ts const&... t) {
   return {t...};
 }
+template <class... Ts>
+CUTE_HOST_DEVICE constexpr
+Tile<Ts...>
+make_tile(Ts const&... t)
+{
+  return {t...};
+}
 
+//
+// Layout
+//
 
 template <class Shape, class Stride = LayoutLeft::Apply<Shape> >
 struct Layout
@@ -366,59 +379,56 @@ make_layout(Shape const& shape, GenRowMajor)
   return make_layout(shape, compact_row_major(shape));
 }
 
-// Follow the same ordering induced by the strides, but make the layout compact
+//
+// Advanced Layout constructions
+//
+
+// Make a compact layout with shape @a shape and strides following the order induced by @a order.
+// Dynamic values in @a order are ignored, considered large, and considered ordered from left to right.
+// Example:
+//   make_ordered_layout(Shape<_2,_2,_2,_2>{}, Step<_0,_2,_3,_1>{})
+//     ->  (_2,_2,_2,_2):(_1,_4,_8,_2)
+//   make_ordered_layout(make_shape(2,3,4,5), make_step(Int<2>{}, 67, 42, Int<50>{}))
+//     -> (2,3,4,5):(_1,10,30,2)
 template <class Shape, class Order>
 CUTE_HOST_DEVICE constexpr
 auto
 make_ordered_layout(Shape const& shape, Order const& order)
 {
-  static_assert(is_static<Order>::value);
   return make_layout(shape, compact_order(shape, order));
 }
 
-template <class Shape, class Stride>
-CUTE_HOST_DEVICE constexpr
-auto
-make_ordered_layout(Layout<Shape,Stride> const& layout)
-{
-  return make_ordered_layout(layout.shape(), layout.stride());
-}
-
-// Make a layout of the same shape that is either ordered or colmajor depending on staticness
+// Make a compact layout with the same shape as @a layout
+//   and strides following the order induced by @a layout.stride().
+// Static-0 strides in the input @a layout are preserved in the output.
+// Example:
+//   make_layout_like(Layout<Shape<_2,_2,_2,_2>, Stride<_0,_2,_4,_1>>{})
+//     ->  (_2,_2,_2,_2):(_0,_2,_4,_1)
+//   make_layout_like(make_layout(make_shape(2,3,4,5), make_stride(Int<0>{},42,Int<1>{},Int<0>{})))
+//     -> (2,3,4,5):(_0,4,_1,_0)
 template <class Shape, class Stride>
 CUTE_HOST_DEVICE constexpr
 auto
 make_layout_like(Layout<Shape,Stride> const& layout)
 {
-  auto any_zero = any_of(layout.stride(), [](auto d) { return is_constant<0, decltype(d)>{}; });
-  if constexpr (any_zero) {
-    // If there are static-0 strides, then make a col-major layout that keeps those 0s
-    return make_layout(layout.shape(),
-                       compact_col_major(filter_zeros(layout.stride(), layout.shape())));
-  } else
-  if constexpr (is_static<Shape>::value && is_static<Stride>::value) {
-    // If the layout is fully static, then make a layout that follows the same order as the strides
-    // Assumes the strides are unique
-    return make_ordered_layout(layout.shape(), layout.stride());
-  } else {
-    return make_layout(layout.shape());
-  }
-
-  CUTE_GCC_UNREACHABLE;
+  return make_layout(layout.shape(),
+                     compact_order(filter_zeros(layout.stride(), layout.shape()), layout.stride()));
 }
 
-//
-// Make a layout of the same shape,
-//   with mode-0 being colmajor then following the mode order in layout
-//
+// Make a compact layout with the same shape as @a layout
+//   and strides following the order induced by @a layout.stride(),
+//   except mode-0 is always stride-1 and generated column-major.
+// The 0th mode is commonly used for MMA_Atoms or Copy_Atoms
+//   so this generates the 0th mode with LayoutLeft regardless of the reference layout.
 template <class Shape, class Stride>
 CUTE_HOST_DEVICE constexpr
 auto
 make_fragment_like(Layout<Shape,Stride> const& layout)
 {
   constexpr int R = Layout<Shape,Stride>::rank;
-  if constexpr (R > 1 && is_static<Shape>::value && is_static<Stride>::value) {
-    return tiled_product(make_layout(shape<0>(layout)), make_ordered_layout(take<1,R>(layout)));
+  if constexpr (R > 1 && is_static<Shape>::value) {
+    return tiled_product(make_layout(shape<0>(layout)),
+                         make_ordered_layout(take<1,R>(layout.shape()), take<1,R>(layout.stride())));
   } else {
     return make_layout(layout.shape());
   }
@@ -458,11 +468,11 @@ CUTE_HOST_DEVICE constexpr
 auto
 get(Layout<Shape,Stride> const& layout)
 {
-  return make_layout(get<Is...>(layout.shape()), 
+  return make_layout(get<Is...>(layout.shape()),
                      get<Is...>(layout.stride()));
 }
 
-// Return a new layout with only the modes in the range [B,E) 
+// Return a new layout with only the modes in the range [B,E)
 template <int B, int E, class Shape, class Stride>
 CUTE_HOST_DEVICE constexpr
 auto
@@ -470,7 +480,7 @@ take(Layout<Shape,Stride> const& layout)
 {
   static_assert(B < E, "take: empty range error");
   static_assert(0 <= B && E <= Layout<Shape,Stride>::rank, "take: range out of bounds");
-  return make_layout(take<B,E>(layout.shape()), 
+  return make_layout(take<B,E>(layout.shape()),
                      take<B,E>(layout.stride()));
 }
 
@@ -490,7 +500,7 @@ CUTE_HOST_DEVICE constexpr
 auto
 flatten(Layout<Shape,Stride> const& layout)
 {
-  return make_layout(flatten(layout.shape()), 
+  return make_layout(flatten(layout.shape()),
                      flatten(layout.stride()));
 }
 
@@ -1376,6 +1386,23 @@ logical_divide(Layout<LShape,LStride> const& layout,
   CUTE_GCC_UNREACHABLE;
 }
 
+// Generalization of ceil_div for Layout lhs
+//   is effectively the "rest mode" of logical_divide.
+// Occurs in the calculation of gridDim, for example, for generalized tilers
+// Example:
+//   dim3 gridDim(size(ceil_div(problem_shape_M, cta_tiler_M)),
+//                size(ceil_div(problem_shape_N, cta_tiler_N)));
+// This does not consider compositional acceptance, so it may be the case that
+//   ceil_div produces a result while logical_divide (and friends) do not.
+template <class Target, class TShape, class TStride>
+CUTE_HOST_DEVICE constexpr
+auto
+ceil_div(Target                 const& target,
+         Layout<TShape,TStride> const& tiler)
+{
+  return complement(tiler, size(target));
+}
+
 //
 // Convenience operator
 //   that produces layouts like ((BLK_A,BLK_B,...),(a,b,...,x,y))
@@ -1425,7 +1452,6 @@ flat_divide(Layout<LShape,LStride> const& layout,
 // Logical product
 //
 
-// @post compatible()
 template <class LShape, class LStride,
           class TShape, class TStride>
 CUTE_HOST_DEVICE constexpr
@@ -1501,7 +1527,7 @@ flat_product(Layout<LShape,LStride> const& block,
 
 //
 // Rank-sensitive products
-// 
+//
 
 // blocked_product -- Reproduce a block over a tiler.
 // Think of every element of "tiler" as a "block"
@@ -1517,7 +1543,7 @@ blocked_product(Layout<TShape,TStride> const& block,
   constexpr int R = cute::max(rank_v<TShape>, rank_v<UShape>);
 
   auto result = logical_product(append<R>(block), append<R>(tiler));
-  
+
   return coalesce(zip(get<0>(result), get<1>(result)), tuple_repeat<R>(Int<1>{}));
 }
 
@@ -1545,7 +1571,7 @@ raked_product(Layout<TShape,TStride> const& block,
 // @param block The layout to repeat
 // @param trg_shape The target shape of the result
 // @param ord_shape The order of the modes of @a trg_shape to tile @a layout with.
-//                  Defaults to GenColMajor, so @a layout will repeat 
+//                  Defaults to GenColMajor, so @a layout will repeat
 //                    across the first mode first, the second mode second, etc
 //                  E.g. Step<_2,_1,_3> will cause @a layout to repeat
 //                    across the second mode first, the first mode second, and the third mode last.
@@ -1659,7 +1685,7 @@ recast_layout(Layout<Shape,Stride> const& layout)
   else if constexpr (scale::num == 1) {
     return downcast<scale::den>(layout);
   }
-  else if constexpr (scale::den == 1) { 
+  else if constexpr (scale::den == 1) {
     return upcast<scale::num>(layout);
   }
   else {

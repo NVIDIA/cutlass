@@ -37,7 +37,7 @@
 #include "cutlass/layout/matrix.h"
 #include "cutlass/tensor_view.h"
 #include "cutlass/fast_math.h"
-#include "cute/numeric/uint128.hpp"
+#include "cute/numeric/numeric_types.hpp"
 
 namespace example
 {

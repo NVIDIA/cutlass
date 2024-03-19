@@ -393,7 +393,8 @@ private:
     ElementB, StrideB, 128 / cutlass::sizeof_bits<ElementB>::value,
     ElementAccumulator,
     TileShape, ClusterShape,
-    cutlass::gemm::collective::StageCountAutoCarveout<sizeof(typename CollectiveEpilogue::SharedStorage)>,
+    cutlass::gemm::collective::StageCountAutoCarveout<
+      static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
     cutlass::gemm::collective::KernelScheduleAuto
   >::CollectiveOp;
 
@@ -403,7 +404,8 @@ private:
     ElementB, StrideBPermute, 128 / cutlass::sizeof_bits<ElementB>::value,
     ElementAccumulator,
     TileShapePermute, ClusterShape,
-    cutlass::gemm::collective::StageCountAutoCarveout<sizeof(typename CollectiveEpiloguePermute::SharedStorage)>,
+    cutlass::gemm::collective::StageCountAutoCarveout<
+      static_cast<int>(sizeof(typename CollectiveEpiloguePermute::SharedStorage))>,
     cutlass::gemm::collective::KernelScheduleAuto
   >::CollectiveOp;
 

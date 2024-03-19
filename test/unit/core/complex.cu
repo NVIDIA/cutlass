@@ -49,7 +49,7 @@ TEST(complex, f64_to_f32_conversion) {
 
   cutlass::complex<float> dest = cutlass::complex<float>(source); // explicit conversion
 
-  EXPECT_TRUE(source.real() == 1.5 && source.imag() == -1.25 && 
+  EXPECT_TRUE(source.real() == 1.5 && source.imag() == -1.25 &&
     dest.real() == 1.5f && dest.imag() == -1.25f);
 }
 
@@ -61,7 +61,7 @@ TEST(complex, f32_to_f64_conversion) {
 
   cutlass::complex<double> dest = source;  // implicit conversion
 
-  EXPECT_TRUE(source.real() == -1.5f && source.imag() == 1.25f && 
+  EXPECT_TRUE(source.real() == -1.5f && source.imag() == 1.25f &&
     dest.real() == -1.5 && dest.imag() == 1.25);
 }
 
@@ -73,7 +73,7 @@ TEST(complex, s32_to_f64_conversion) {
 
   cutlass::complex<double> dest = source;  // implicit conversion
 
-  EXPECT_TRUE(source.real() == -2 && source.imag() == 1 && 
+  EXPECT_TRUE(source.real() == -2 && source.imag() == 1 &&
     dest.real() == -2 && dest.imag() == 1);
 }
 
@@ -86,14 +86,14 @@ TEST(complex, f16_to_f32_conversion) {
 
   cutlass::complex<float> dest = cutlass::complex<float>(source); // explicit conversion
 
-  EXPECT_TRUE(source.real() == 1.5_hf && source.imag() == -1.25_hf && 
+  EXPECT_TRUE(source.real() == 1.5_hf && source.imag() == -1.25_hf &&
     dest.real() == 1.5f && dest.imag() == -1.25f);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 TEST(complex, exp_f32) {
-  
+
   cutlass::complex<float> Z[] = {
     {1, 1},
     {2   ,  cutlass::constants::pi<float>()/2.0f   },
@@ -103,16 +103,16 @@ TEST(complex, exp_f32) {
   };
 
   cutlass::complex<double> Expected[] = {
-    {1.4686939399158851, 2.2873552871788423}, 
+    {1.4686939399158851, 2.2873552871788423},
     {4.524491950137825e-16, 7.38905609893065},
-    {-1.6487212707001282, 2.019101226849069e-16}, 
+    {-1.6487212707001282, 2.019101226849069e-16},
     {-0.9079430793557842, 0.9079430793557843},
     {1, 0}
   };
 
   double tolerance = 0.00001;
 
-  for (int i = 0; cutlass::real(Z[i]); ++i) {
+  for (int i = 0; cutlass::real(Z[i]) != 0.0f; ++i) {
     double e_r = cutlass::real(Expected[i]);
     double e_i = cutlass::real(Expected[i]);
 

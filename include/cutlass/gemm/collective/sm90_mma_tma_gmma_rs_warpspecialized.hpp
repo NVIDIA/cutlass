@@ -31,21 +31,22 @@
 #pragma once
 
 #include "cutlass/cutlass.h"
-#include "cute/arch/cluster_sm90.hpp"
-#include "cute/arch/copy_sm90.hpp"
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/detail/dependent_false.hpp"
 #include "cutlass/gemm/dispatch_policy.hpp"
 #include "cutlass/detail/layout.hpp"
+#include "cutlass/numeric_types.h"
+#include "cutlass/pipeline/pipeline.hpp"
+#include "cutlass/transform/collective/sm90_wgmma_transpose.hpp"
+#include "cutlass/trace.h"
 
+#include "cute/arch/cluster_sm90.hpp"
+#include "cute/arch/copy_sm90.hpp"
 #include "cute/algorithm/functional.hpp"
 #include "cute/atom/mma_atom.hpp"
 #include "cute/algorithm/gemm.hpp"
 #include "cute/tensor_predicate.hpp"
 #include "cute/numeric/arithmetic_tuple.hpp"
-#include "cutlass/pipeline/pipeline.hpp"
-#include "cutlass/transform/collective/sm90_wgmma_transpose.hpp"
-#include "cutlass/trace.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -108,6 +109,7 @@ struct CollectiveMma<
   using SmemCopyAtomA = SmemCopyAtomA_;
   using SmemCopyAtomB = SmemCopyAtomB_;
 
+  using CtaShape_MNK = decltype(shape_div(TileShape{}, ClusterShape{}));
   // Swap and transpose A/B for A k-major layout and B mn-major layout since WGMMA is k-major only (e.g. tf32, Fp32, Int8, Fp8 WGMMA)
   static constexpr bool IsLayoutAkBmn =
     cute::is_same_v<gemm::detail::StrideToLayoutTagA_t<StrideA>, layout::RowMajor> &&
@@ -151,11 +153,11 @@ struct CollectiveMma<
   using SmemLayoutA = decltype(tile_to_shape(
       InternalSmemLayoutAtomA{},
       make_shape(shape<0>(TileShape{}), shape<2>(TileShape{}), Int<DispatchPolicy::Stages>{}),
-      conditional_t< ::cutlass::gemm::detail::is_major<0,InternalStrideA>(), Step<_2,_1,_3>, Step<_1,_2,_3>>{}));
+      cute::conditional_t< ::cutlass::gemm::detail::is_major<0,InternalStrideA>(), Step<_2,_1,_3>, Step<_1,_2,_3>>{}));
   using SmemLayoutB = decltype(tile_to_shape(
       InternalSmemLayoutAtomB{},
       make_shape(shape<1>(TileShape{}), shape<2>(TileShape{}), Int<DispatchPolicy::Stages>{}),
-      conditional_t< ::cutlass::gemm::detail::is_major<0,InternalStrideB>(), Step<_2,_1,_3>, Step<_1,_2,_3>>{}));
+      cute::conditional_t< ::cutlass::gemm::detail::is_major<0,InternalStrideB>(), Step<_2,_1,_3>, Step<_1,_2,_3>>{}));
 
   // If A mn-layout and B mn-layout, transposing B matrix since WGMMA is k-major only (e.g. tf32, fp32, fp8, int8).
   static constexpr bool IsLayoutAmnBmn =
@@ -182,12 +184,12 @@ struct CollectiveMma<
   using GmmaSmemLayoutB = decltype(tile_to_shape(
       GmmaSmemLayoutAtomB{},
       make_shape(shape<1>(TileShape{}), shape<2>(TileShape{}), Int<DispatchPolicy::Stages>{}),
-      conditional_t< ::cutlass::gemm::detail::is_major<0,InternalStrideB>(), Step<_2,_1,_3>, Step<_1,_2,_3>>{}));
+      cute::conditional_t< ::cutlass::gemm::detail::is_major<0,InternalStrideB>(), Step<_2,_1,_3>, Step<_1,_2,_3>>{}));
 
   static_assert(!SwapAB || !TransposeB, "Cannot SwapAB and TransposeB at the same time.");
   static_assert(TransposeB xor (cute::is_same_v<SmemLayoutB, GmmaSmemLayoutB>),
     "Should be same layout if not TransposeB.");
-  static_assert(!TransposeB || (((size<1>(SmemLayoutB{}) * sizeof_bits<InternalElementB>::value)) / 8) == 128,
+  static_assert(!TransposeB || (cutlass::bits_to_bytes((size<1>(SmemLayoutB{}) * sizeof_bits<InternalElementB>::value))) == 128,
     "SmemLayoutB K must be 128bytes to be transposed.");
 
   static constexpr bool uses_universal_transposition() {
@@ -329,8 +331,8 @@ struct CollectiveMma<
 
   static constexpr int K_PIPE_MAX = DispatchPolicy::Stages;
   static constexpr uint32_t TmaTransactionBytes =
-        (size<0>(SmemLayoutA{}) * size<1>(SmemLayoutA{}) * static_cast<uint32_t>(sizeof_bits<InternalElementA>::value)) / 8 +
-        (size<0>(SmemLayoutB{}) * size<1>(SmemLayoutB{}) * static_cast<uint32_t>(sizeof_bits<InternalElementB>::value)) / 8 ;
+        cutlass::bits_to_bytes(size<0>(SmemLayoutA{}) * size<1>(SmemLayoutA{}) * static_cast<uint32_t>(sizeof_bits<InternalElementA>::value)) +
+        cutlass::bits_to_bytes(size<0>(SmemLayoutB{}) * size<1>(SmemLayoutB{}) * static_cast<uint32_t>(sizeof_bits<InternalElementB>::value)) ;
 
   /// Issue Tma Descriptor Prefetch -- ideally from a single thread for best performance
   CUTLASS_DEVICE
@@ -547,6 +549,7 @@ struct CollectiveMma<
     CUTE_STATIC_ASSERT_V(size<3>(tCsA) == size<3>(tCsB));                                                       // PIPE
     CUTE_STATIC_ASSERT_V(Int<DispatchPolicy::Stages>{} == size<2>(sA));                                         // PIPE
     CUTE_STATIC_ASSERT_V(Int<DispatchPolicy::Stages>{} == size<2>(sB));                                         // PIPE
+    CUTE_STATIC_ASSERT_V(size<2>(tCrA) > _2{}, "RS loops require more than 2 MMA k-iterations for correctness.");
 
     //
     // PIPELINED MAIN LOOP

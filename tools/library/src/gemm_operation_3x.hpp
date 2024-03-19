@@ -37,6 +37,7 @@
 #include "cutlass/cutlass.h"
 #include "cutlass/library/library.h"
 #include "library_internal.h"
+#include "cutlass/gemm/dispatch_policy.hpp"
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -63,7 +64,6 @@ public:
   using ElementCompute = typename Operator::EpilogueOutputOp::ElementCompute;
 
 private:
-
   GemmDescription description_;
 
 public:
@@ -215,7 +215,8 @@ protected:
 
   /// Constructs the arguments structure given the configuration and arguments
   static Status update_arguments_(
-      OperatorArguments &operator_args, GemmUniversalArguments const *arguments) {
+      OperatorArguments &operator_args,
+      GemmUniversalArguments const *arguments) {
     Status status = Status::kSuccess;
 
     status = UpdateFusionArgs<decltype(operator_args.epilogue.thread)>::update_(
@@ -261,7 +262,7 @@ protected:
           operator_args.scheduler.raster_order = Enum_t::Heuristic;
       }
     }
-    
+
     return status;
   }
 

@@ -39,12 +39,12 @@ import re
 
 # The following block implements enum.auto() for Python 3.5 variants that don't include it such
 # as the default 3.5.2 on Ubuntu 16.04.
-# 
+#
 # https://codereview.stackexchange.com/questions/177309/reimplementing-pythons-enum-auto-for-compatibility
 
 try:
   from enum import auto as enum_auto
-except ImportError: 
+except ImportError:
   __cutlass_library_auto_enum = 0
   def enum_auto() -> int:
     global __cutlass_library_auto_enum
@@ -298,10 +298,11 @@ class MathOperation(enum.Enum):
   multiply_add_complex_fast_f32 = enum_auto()
   multiply_add_complex = enum_auto()
   multiply_add_complex_gaussian = enum_auto()
+  multiply_add_fast_accum = enum_auto()
 
 #
 MathOperationTag = {
-  MathOperation.multiply_add: 'cutlass::arch::OpMultiplyAdd', 
+  MathOperation.multiply_add: 'cutlass::arch::OpMultiplyAdd',
   MathOperation.multiply_add_saturate: 'cutlass::arch::OpMultiplyAddSaturate',
   MathOperation.multiply_add_mixed_input_upcast: 'cutlass::arch::OpMultiplyAddMixedInputUpcast',
   MathOperation.xor_popc: 'cutlass::arch::OpXorPopc',
@@ -312,6 +313,7 @@ MathOperationTag = {
   MathOperation.multiply_add_complex_fast_f32: 'cutlass::arch::OpMultiplyAddComplexFastF32',
   MathOperation.multiply_add_complex: 'cutlass::arch::OpMultiplyAddComplex',
   MathOperation.multiply_add_complex_gaussian: 'cutlass::arch::OpMultiplyAddGaussianComplex',
+  MathOperation.multiply_add_fast_accum: 'cutlass::arch::OpMultiplyAddFastAccum',
 }
 
 ###################################################################################################
@@ -326,6 +328,7 @@ class LayoutType(enum.Enum):
   RowMajorInterleaved32 = enum_auto()
   ColumnMajorInterleaved64 = enum_auto()
   RowMajorInterleaved64 = enum_auto()
+  TensorNWC = enum_auto()
   TensorNHWC = enum_auto()
   TensorNDHWC = enum_auto()
   TensorNCHW = enum_auto()
@@ -334,6 +337,9 @@ class LayoutType(enum.Enum):
   TensorNC64HW64 = enum_auto()
   TensorC32RSK32 = enum_auto()
   TensorC64RSK64 = enum_auto()
+  TensorKCS = enum_auto()
+  TensorKCSR = enum_auto()
+  TensorKCSRT = enum_auto()
 
 #
 LayoutTag = {
@@ -345,6 +351,7 @@ LayoutTag = {
   LayoutType.RowMajorInterleaved32: 'cutlass::layout::RowMajorInterleaved<32>',
   LayoutType.ColumnMajorInterleaved64: 'cutlass::layout::ColumnMajorInterleaved<64>',
   LayoutType.RowMajorInterleaved64: 'cutlass::layout::RowMajorInterleaved<64>',
+  LayoutType.TensorNWC: 'cutlass::layout::TensorNWC',
   LayoutType.TensorNHWC: 'cutlass::layout::TensorNHWC',
   LayoutType.TensorNDHWC: 'cutlass::layout::TensorNDHWC',
   LayoutType.TensorNCHW: 'cutlass::layout::TensorNCHW',
@@ -353,6 +360,9 @@ LayoutTag = {
   LayoutType.TensorC32RSK32: 'cutlass::layout::TensorCxRSKx<32>',
   LayoutType.TensorNC64HW64: 'cutlass::layout::TensorNCxHWx<64>',
   LayoutType.TensorC64RSK64: 'cutlass::layout::TensorCxRSKx<64>',
+  LayoutType.TensorKCS: 'cutlass::layout::TensorKCS',
+  LayoutType.TensorKCSR: 'cutlass::layout::TensorKCSR',
+  LayoutType.TensorKCSRT: 'cutlass::layout::TensorKCSRT'
 }
 
 #
@@ -378,6 +388,7 @@ ShortLayoutTypeNames = {
   LayoutType.RowMajorInterleaved2: 't2',
   LayoutType.RowMajorInterleaved32: 't32',
   LayoutType.RowMajorInterleaved64: 't64',
+  LayoutType.TensorNWC: 'nwc',
   LayoutType.TensorNHWC: 'nhwc',
   LayoutType.TensorNDHWC: 'ndhwc',
   LayoutType.TensorNCHW: 'nchw',
@@ -385,7 +396,10 @@ ShortLayoutTypeNames = {
   LayoutType.TensorNC32HW32: 'nc32hw32',
   LayoutType.TensorNC64HW64: 'nc64hw64',
   LayoutType.TensorC32RSK32: 'c32rsk32',
-  LayoutType.TensorC64RSK64: 'c64rsk64'
+  LayoutType.TensorC64RSK64: 'c64rsk64',
+  LayoutType.TensorKCS: 'kcs',
+  LayoutType.TensorKCSR: 'kcsr',
+  LayoutType.TensorKCSRT: 'kcsrt'
 }
 
 #
@@ -410,6 +424,7 @@ class KernelScheduleType(enum.Enum):
   TmaWarpSpecializedFP8FastAccum = enum_auto()
   TmaWarpSpecializedCooperativeFP8FastAccum = enum_auto()
   TmaWarpSpecializedPingpongFP8FastAccum = enum_auto()
+  ImplicitTmaWarpSpecializedSm90 = enum_auto()
 #
 KernelScheduleTag = {
   KernelScheduleType.ScheduleAuto: 'cutlass::gemm::collective::KernelScheduleAuto',
@@ -424,6 +439,7 @@ KernelScheduleTag = {
   KernelScheduleType.TmaWarpSpecializedFP8FastAccum: 'cutlass::gemm::KernelTmaWarpSpecializedFP8FastAccum',
   KernelScheduleType.TmaWarpSpecializedCooperativeFP8FastAccum: 'cutlass::gemm::KernelTmaWarpSpecializedCooperativeFP8FastAccum',
   KernelScheduleType.TmaWarpSpecializedPingpongFP8FastAccum: 'cutlass::gemm::KernelTmaWarpSpecializedPingpongFP8FastAccum',
+  KernelScheduleType.ImplicitTmaWarpSpecializedSm90: 'cutlass::conv::KernelImplicitTmaWarpSpecializedSm90',
 }
 
 #
@@ -440,6 +456,7 @@ KernelScheduleSuffixes = {
   KernelScheduleType.TmaWarpSpecializedFP8FastAccum: '_warpspecialized_fp8_fastaccum',
   KernelScheduleType.TmaWarpSpecializedCooperativeFP8FastAccum: '_warpspecialized_cooperative_fp8_fastaccum',
   KernelScheduleType.TmaWarpSpecializedPingpongFP8FastAccum: '_warpspecialized_pingpong_fp8_fastaccum',
+  KernelScheduleType.ImplicitTmaWarpSpecializedSm90: '_warpspecialized',
 }
 
 class EpilogueScheduleType(enum.Enum):
@@ -578,8 +595,8 @@ class OperationKind(enum.Enum):
   Rank2K = enum_auto()
   Trmm = enum_auto()
   Symm = enum_auto()
-  Conv2d = enum_auto()        
-  Conv3d = enum_auto()        
+  Conv2d = enum_auto()
+  Conv3d = enum_auto()
 
 #
 OperationKindNames = {
@@ -588,11 +605,11 @@ OperationKindNames = {
   , OperationKind.Rank2K: 'rank_2k'
   , OperationKind.Trmm: 'trmm'
   , OperationKind.Symm: 'symm'
-  , OperationKind.Conv2d: 'conv2d'  
-  , OperationKind.Conv3d: 'conv3d' 
+  , OperationKind.Conv2d: 'conv2d'
+  , OperationKind.Conv3d: 'conv3d'
 }
 
-# 
+#
 class Target(enum.Enum):
   library = enum_auto()
 #
@@ -708,7 +725,7 @@ class SwizzlingFunctor(enum.Enum):
   StridedDgradIdentity4 = enum_auto()
   StridedDgradHorizontal = enum_auto()
   StreamK = enum_auto()
-  
+
 #
 SwizzlingFunctorTag = {
   SwizzlingFunctor.Identity1: 'cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<1>',
@@ -834,11 +851,11 @@ GroupModeNames = {
 
 #
 class MathInstruction:
-  def __init__(self, 
+  def __init__(self,
       instruction_shape,                                            \
       element_a, element_b, element_accumulator,                    \
       opcode_class, math_operation = MathOperation.multiply_add     \
-    ): 
+    ):
 
     self.instruction_shape = instruction_shape
     self.element_a = element_a
@@ -887,15 +904,15 @@ class Direct2dConvFixedStrideDilationTileDescription:
     self.maximum_compute_capability = max_compute
 
   def procedural_name(self):
-    str_name = "%dx%dx%d_%dx%dx%dx%d_%d_filter%dx%d" % (self.threadblock_shape[0], 
-                                      self.threadblock_shape[1], 
+    str_name = "%dx%dx%d_%dx%dx%dx%d_%d_filter%dx%d" % (self.threadblock_shape[0],
+                                      self.threadblock_shape[1],
                                       self.threadblock_shape[2],
                                       self.threadblock_output_shape[0],
                                       self.threadblock_output_shape[1],
                                       self.threadblock_output_shape[2],
                                       self.threadblock_output_shape[3],
-                                      self.stages, 
-                                      self.filter_shape[0], 
+                                      self.stages,
+                                      self.filter_shape[0],
                                       self.filter_shape[1])
     # Fixed Strided and dilation
     if self.stride != [-1, -1] and self.dilation != [-1, -1]:
@@ -920,15 +937,15 @@ class Direct2dConvFixedStrideDilationTileDescription:
     self.maximum_compute_capability = max_compute
 
   def procedural_name(self):
-    str_name = "%dx%dx%d_%dx%dx%dx%d_%d_filter%dx%d" % (self.threadblock_shape[0], 
-                                      self.threadblock_shape[1], 
+    str_name = "%dx%dx%d_%dx%dx%dx%d_%d_filter%dx%d" % (self.threadblock_shape[0],
+                                      self.threadblock_shape[1],
                                       self.threadblock_shape[2],
                                       self.threadblock_output_shape[0],
                                       self.threadblock_output_shape[1],
                                       self.threadblock_output_shape[2],
                                       self.threadblock_output_shape[3],
-                                      self.stages, 
-                                      self.filter_shape[0], 
+                                      self.stages,
+                                      self.filter_shape[0],
                                       self.filter_shape[1])
     # Fixed Strided and dilation
     if self.stride != [-1, -1] and self.dilation != [-1, -1]:

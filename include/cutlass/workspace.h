@@ -52,7 +52,7 @@
 #endif
 
 #include "cutlass.h"
-
+#include "cutlass/cuda_host_adapter.hpp"
 namespace cutlass {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -84,7 +84,7 @@ zero_workspace(void* workspace, size_t workspace_size, cudaStream_t stream = nul
 #if !defined(__CUDACC_RTC__)
 template <typename T>
 Status
-fill_workspace(void* workspace, T fill_value, size_t fill_count, cudaStream_t stream = nullptr) {
+fill_workspace(void* workspace, T fill_value, size_t fill_count, cudaStream_t stream = nullptr, CudaHostAdapter *cuda_adapter = nullptr) {
   static_assert(sizeof(T) == 4 || sizeof(T) == 2 || sizeof(T) == 1, "Unsupported fill type");
   if (fill_count > 0) {
     if (workspace == nullptr) {
@@ -94,6 +94,26 @@ fill_workspace(void* workspace, T fill_value, size_t fill_count, cudaStream_t st
 
     CUTLASS_TRACE_HOST("  filling workspace");
     CUdeviceptr d_workspace = reinterpret_cast<CUdeviceptr>(workspace);
+
+#if defined(CUTLASS_ENABLE_CUDA_HOST_ADAPTER) && CUTLASS_ENABLE_CUDA_HOST_ADAPTER
+
+    //
+    // Use the cuda host adapter
+    //
+    CUTLASS_ASSERT(cuda_adapter);
+    if (cuda_adapter) {
+      Status status = Status::kErrorInternal;
+
+      status = cuda_adapter->memsetDevice(workspace, fill_value, fill_count, stream);
+
+      if (status!=Status::kSuccess) {
+        return Status::kErrorInternal;
+      }
+    }
+    else {
+      return Status::kErrorInternal;
+    }
+#else
     CUresult result = CUDA_SUCCESS;
     if (sizeof(T) == 4) {
       result = cuMemsetD32Async(d_workspace, reinterpret_cast<uint32_t&>(fill_value), fill_count, stream);
@@ -116,6 +136,7 @@ fill_workspace(void* workspace, T fill_value, size_t fill_count, cudaStream_t st
       }
       return Status::kErrorInternal;
     }
+#endif
   }
 
   return Status::kSuccess;

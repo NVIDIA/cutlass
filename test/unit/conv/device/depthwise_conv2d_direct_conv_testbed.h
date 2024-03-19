@@ -165,7 +165,7 @@ class TestbedDepthwiseDirectConv2d {
       throw std::runtime_error("cudaGetDeviceProperties() failed");
     }
 
-    if (properties.sharedMemPerBlockOptin < smem_size) {
+    if (properties.sharedMemPerBlockOptin < static_cast<size_t>(smem_size)) {
       return false;
     }
 

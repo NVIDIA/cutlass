@@ -54,8 +54,8 @@ template <class LayoutA, class LayoutB>
 CUTLASS_HOST_DEVICE
 static bool 
 is_continous_k_aligned(GemmCoord problem_size, size_t alignmentA, size_t alignmentB) {
-  return (std::is_same<LayoutA, layout::RowMajor>::value && (problem_size.k() % alignmentA) == 0) ||
-         (std::is_same<LayoutB, layout::ColumnMajor>::value && (problem_size.k() % alignmentB) == 0);
+  return (platform::is_same<LayoutA, layout::RowMajor>::value && (problem_size.k() % alignmentA) == 0) ||
+         (platform::is_same<LayoutB, layout::ColumnMajor>::value && (problem_size.k() % alignmentB) == 0);
 }
 
 }  // namespace util
@@ -69,21 +69,16 @@ struct UniversalArgumentsBase
   // Data members
   //
 
-  GemmUniversalMode mode;
-  GemmCoord problem_size;
-  int batch_count;
-
-  int64_t batch_stride_D;
+  GemmUniversalMode mode = cutlass::gemm::GemmUniversalMode::kGemm;
+  GemmCoord problem_size{};
+  int batch_count{1};
+  int64_t batch_stride_D{0};
 
   //
   // Methods
   //
 
-  UniversalArgumentsBase() :
-    mode(GemmUniversalMode::kGemm),
-    batch_count(1),
-    batch_stride_D(0)
-  {}
+  UniversalArgumentsBase() = default;
 
   /// constructs an arguments structure
   UniversalArgumentsBase(
@@ -117,17 +112,14 @@ struct UniversalParamsBase
   // Data members
   //
 
-  GemmCoord problem_size;
-  GemmCoord grid_tiled_shape;
-  int swizzle_log_tile;
-
-  GemmUniversalMode mode;
-  int batch_count;
-  int gemm_k_size;
-
-  int64_t batch_stride_D;
-
-  int *semaphore;
+  GemmCoord problem_size{};
+  GemmCoord grid_tiled_shape{};
+  int swizzle_log_tile{0};
+  GemmUniversalMode mode = cutlass::gemm::GemmUniversalMode::kGemm;
+  int batch_count {0};
+  int gemm_k_size {0};
+  int64_t batch_stride_D {0};
+  int *semaphore = nullptr;
 
 
   //
@@ -136,7 +128,6 @@ struct UniversalParamsBase
 
   /// Default constructor
   UniversalParamsBase() = default;
-
 
   /// Constructor
   UniversalParamsBase(

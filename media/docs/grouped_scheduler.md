@@ -1,6 +1,6 @@
-![ALT](/media/images/gemm-hierarchy-with-epilogue-no-labels.png "CUTLASS Grouped Kernel Schedulers")
+![ALT](../images/gemm-hierarchy-with-epilogue-no-labels.png "CUTLASS Grouped Kernel Schedulers")
 
-[README](/README.md#documentation) > **Grouped Kernel Schedulers**
+[README](../../README.md#documentation) > **Grouped Kernel Schedulers**
 
 # CUTLASS Grouped Kernel Schedulers
 

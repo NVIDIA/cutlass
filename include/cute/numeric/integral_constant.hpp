@@ -443,4 +443,35 @@ CUTE_HOST std::ostream& operator<<(std::ostream& os, C<t> const&) {
 }
 #endif
 
+
+namespace detail {
+
+// parse_int_digits takes a variadic number of digits and converts them into an int
+template <class... Ts>
+constexpr uint64_t parse_int_digits(uint64_t result, int digit, Ts... digits)
+{
+  if constexpr (sizeof...(Ts) == 0) {
+    return 10 * result + digit;
+  } else {
+    return parse_int_digits(10 * result + digit, digits...);
+  }
+}
+
+} // end namespace detail
+
+
+// This user-defined literal operator allows cute::constant written as literals. For example,
+//
+//    auto var = 32_c;
+//
+//  var has type cute::constant<int,32>.
+//
+template <char... digits>
+constexpr cute::constant<int,detail::parse_int_digits(0, (digits - '0')...)> operator "" _c()
+{
+  static_assert((('0' <= digits && digits <= '9') && ...),
+                "Expected 0 <= digit <= 9 for each digit of the integer.");
+  return {};
+}
+
 } // end namespace cute

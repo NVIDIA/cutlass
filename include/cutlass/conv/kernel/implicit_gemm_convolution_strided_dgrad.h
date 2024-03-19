@@ -158,21 +158,20 @@ struct ImplicitGemmConvolutionStridedDgrad {
     // Data members
     //
 
-    ConvProblemSize problem_size;
-    TensorRefA ref_A;
-    TensorRefB ref_B;
-    TensorRefC ref_C;
-    TensorRefC ref_D;
-    typename EpilogueOutputOp::Params output_op;
-    SplitKMode split_k_mode;
+    ConvProblemSize problem_size{};
+    TensorRefA ref_A{};
+    TensorRefB ref_B{};
+    TensorRefC ref_C{};
+    TensorRefC ref_D{};
+    typename EpilogueOutputOp::Params output_op{};
+    SplitKMode split_k_mode{};
 
     //
     // Methods
     //
 
     /// Default ctor
-    CUTLASS_HOST_DEVICE
-    Arguments() { }
+    Arguments() = default;
    
     CUTLASS_HOST_DEVICE 
     Arguments(
@@ -205,30 +204,28 @@ struct ImplicitGemmConvolutionStridedDgrad {
 
   /// Parameters structure
   struct Params {
-    ConvProblemSize problem_size;
-    cutlass::gemm::GemmCoord grid_tiled_shape;
-    int swizzle_log_tile;
-    FastDivmod stride_h_divmod;
-    FastDivmod stride_w_divmod;
-    int gemm_k_iterations;
-    typename Mma::IteratorA::Params iterator_A;
-    typename Mma::IteratorA::Element const *ptr_A;
-    typename Mma::IteratorB::Params iterator_B;
-    typename Mma::IteratorB::Element const *ptr_B;
-    typename Epilogue::OutputTileIterator::Params iterator_C;
-    typename Epilogue::OutputTileIterator::Element *ptr_C;
-    typename Epilogue::OutputTileIterator::Params iterator_D;
-    typename Epilogue::OutputTileIterator::Element *ptr_D;
-    typename EpilogueOutputOp::Params output_op;
-    int *semaphore;
-    SplitKMode split_k_mode;
+    ConvProblemSize problem_size{};
+    cutlass::gemm::GemmCoord grid_tiled_shape{};
+    int swizzle_log_tile{0};
+    FastDivmod stride_h_divmod{};
+    FastDivmod stride_w_divmod{};
+    int gemm_k_iterations{0};
+    typename Mma::IteratorA::Params iterator_A{};
+    typename Mma::IteratorA::Element const *ptr_A = nullptr;
+    typename Mma::IteratorB::Params iterator_B{};
+    typename Mma::IteratorB::Element const *ptr_B = nullptr;
+    typename Epilogue::OutputTileIterator::Params iterator_C{};
+    typename Epilogue::OutputTileIterator::Element *ptr_C = nullptr;
+    typename Epilogue::OutputTileIterator::Params iterator_D{};
+    typename Epilogue::OutputTileIterator::Element *ptr_D = nullptr;
+    typename EpilogueOutputOp::Params output_op {};
+    int *semaphore = nullptr;
+    SplitKMode split_k_mode {};
 
     //
     // Methods
     //
-
-    CUTLASS_HOST_DEVICE
-    Params(): gemm_k_iterations(0) { }
+    Params() = default;
 
     /// 
     CUTLASS_HOST_DEVICE

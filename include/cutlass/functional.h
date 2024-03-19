@@ -45,9 +45,7 @@
 #pragma once
 
 #include "cutlass/cutlass.h"
-#include "cutlass/half.h"
-#include "cutlass/tfloat32.h"
-#include "cutlass/bfloat16.h"
+#include "cutlass/numeric_types.h"
 
 #if defined(CUTLASS_ARCH_WMMA_ENABLED)
 #include <mma.h>
@@ -106,7 +104,7 @@ struct multiplies {
 template <typename T>
 struct scale {
   T const scaling_factor_;
-  
+
   CUTLASS_HOST_DEVICE
   scale(float scaling_factor) : scaling_factor_(scaling_factor) {
   }
@@ -228,19 +226,19 @@ struct divides {
   }
 };
 
-/// reciprocal_approximate 
+/// reciprocal_approximate
 template <typename T>
 struct reciprocal_approximate {
   CUTLASS_HOST_DEVICE
   T operator()(T lhs) const {
-    return divide(T(1), lhs);
+    return divides<T>{}(T(1), lhs);
   }
 };
 
 template <>
 struct reciprocal_approximate <float> {
   CUTLASS_HOST_DEVICE
-  float operator()(float lhs) const { 
+  float operator()(float lhs) const {
     float ret;
       ret = 1.0f / lhs;
     return ret;
@@ -256,7 +254,7 @@ struct negate {
   }
 };
 
-/// Greater equal 
+/// Greater equal
 template <typename T>
 struct greater_equal {
   CUTLASS_HOST_DEVICE
@@ -265,7 +263,7 @@ struct greater_equal {
   }
 };
 
-/// Greater  
+/// Greater
 template <typename T>
 struct greater {
   CUTLASS_HOST_DEVICE
@@ -274,7 +272,7 @@ struct greater {
   }
 };
 
-/// Less equal 
+/// Less equal
 template <typename T>
 struct less_equal {
   CUTLASS_HOST_DEVICE
@@ -283,7 +281,7 @@ struct less_equal {
   }
 };
 
-/// Less  
+/// Less
 template <typename T>
 struct less {
   CUTLASS_HOST_DEVICE
@@ -421,6 +419,15 @@ struct multiply_add {
   }
 };
 
+template <typename T>
+struct square_and_plus {
+  CUTLASS_HOST_DEVICE
+  T operator()(T lhs, T const &rhs) const {
+    multiply_add<T> multiply_add_op;
+    return multiply_add_op(rhs, rhs, lhs);
+  }
+};
+
 // Fused multiply-add that takes exactly one template parameter.
 // This is useful for working around a known Clang issue,
 // where a template template parameter with one template parameter
@@ -473,6 +480,10 @@ struct first {
   T operator()(T const & first, T const &...) const {
     return first;
   }
+  CUTLASS_HOST_DEVICE
+  T operator()(T const & first) const {
+    return first;
+  }
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -481,7 +492,7 @@ template <typename T>
 struct logical_and {
   CUTLASS_HOST_DEVICE
   T operator()(T const &a, T const &b) const {
-    return ((a && b) ? T(1) : T());
+    return ((static_cast<bool>(a) && static_cast<bool>(b)) ? T(1) : T());
   }
 };
 
@@ -489,7 +500,7 @@ template <typename T>
 struct logical_or {
   CUTLASS_HOST_DEVICE
   T operator()(T const &a, T const &b) const {
-    return ((a || b) ? T(1) : T());
+    return ((static_cast<bool>(a) || static_cast<bool>(b)) ? T(1) : T());
   }
 };
 

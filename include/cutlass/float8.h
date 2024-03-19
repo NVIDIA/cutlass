@@ -55,6 +55,10 @@
 #    if (__CUDACC_VER_MAJOR__ >= 12) || ((__CUDACC_VER_MAJOR__ == 11) && (__CUDACC_VER_MINOR__ >= 8))
 #      define CUDA_PTX_FP8_CVT_ENABLED 1
 #    endif // (__CUDACC_VER_MAJOR__ >= 12) || ((__CUDACC_VER_MAJOR__ == 11) && (__CUDACC_VER_MINOR__ >= 8))
+#  elif (__CUDA_ARCH__ == 890)
+#    if (__CUDACC_VER_MAJOR__ > 12) || ((__CUDACC_VER_MAJOR__ == 12) && (__CUDACC_VER_MINOR__ >= 1))
+#      define CUDA_PTX_FP8_CVT_ENABLED 1
+#    endif // (__CUDACC_VER_MAJOR__ > 12) || ((__CUDACC_VER_MAJOR__ == 12) && (__CUDACC_VER_MINOR__ >= 1))
 #  endif // (__CUDA_ARCH__ >= 900)
 #endif // defined(__CUDA_ARCH__)
 
@@ -131,7 +135,7 @@ struct alignas(1) float8_base {
     static constexpr int FP8_NUM_BITS = 8;
     static constexpr int FP8_NUM_EXPONENT_BITS = IS_E4M3 ? 4 : 5;
     static constexpr int FP8_NUM_MANTISSA_BITS = IS_E4M3 ? 3 : 2;
-    static constexpr uint8_t  FP8_NAN = 0x7f; // Also F8_INF 
+    static constexpr uint8_t  FP8_NAN = 0x7f; // Also F8_INF
     static constexpr uint8_t  FP8_INFINITY_MASK = IS_E4M3 ? 0x78 : 0x7c;
     static constexpr int FP8_MAX_EXPONENT  = IS_E4M3 ?  7 :  15;
     static constexpr int FP8_MIN_EXPONENT  = IS_E4M3 ? -6 : -14;
@@ -1039,6 +1043,34 @@ float_e5m2_t::float_e5m2_t(float_e4m3_t x) {
     storage = from_float(float_e4m3_t::to_float(x)).storage;
 }
 
+///////////////////////////////////////////////////////////////
+///
+/// Umbrella floating-point 8-bit data type : type_erased_dynamic_float8_t
+/// This umbrella datatype can be enabled when a user provides a specific
+/// datatype in runtime argument list.
+///
+/// Currently supported runtime datatypes compatible with type_erased_dynamic_float8_t:
+///   QMMAFormat::E5M2
+///   QMMAFormat::E4M3
+///
+///////////////////////////////////////////////////////////////
+
+union type_erased_dynamic_float8_t {
+  uint8_t data;
+  cutlass::float_e5m2_t e5m2;
+  cutlass::float_e4m3_t e4m3;
+  CUTLASS_HOST_DEVICE
+  explicit operator cutlass::float_e5m2_t() const {
+    return e5m2;
+  }
+
+  CUTLASS_HOST_DEVICE
+  explicit operator cutlass::float_e4m3_t() const {
+    return e4m3;
+  }
+
+};
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace cutlass
@@ -1073,24 +1105,31 @@ public:
   static int const digits = F8Type::FP8_NUM_MANTISSA_BITS;
 
   /// Least positive value
+  CUTLASS_HOST_DEVICE
   static F8Type min() { return F8Type::bitcast(0x01); }
 
   /// Maximum finite value
+  CUTLASS_HOST_DEVICE
   static F8Type max() { return F8Type::bitcast(F8Type::FP8_MAX_FLT); }
 
   /// Returns maximum rounding error
+  CUTLASS_HOST_DEVICE
   static F8Type round_error() { return F8Type(0.5f); }
 
   /// Returns positive infinity value
+  CUTLASS_HOST_DEVICE
   static F8Type infinity() { return F8Type::bitcast(F8Type::FP8_INFINITY_MASK); }
 
   /// Returns quiet NaN value
+  CUTLASS_HOST_DEVICE
   static F8Type quiet_NaN() { return F8Type::bitcast(F8Type::FP8_NAN); }
 
   /// Returns signaling NaN value
+  CUTLASS_HOST_DEVICE
   static F8Type signaling_NaN() { return F8Type::bitcast(F8Type::FP8_NAN); }
 
   /// Returns smallest positive subnormal value
+  CUTLASS_HOST_DEVICE
   static F8Type denorm_min() { return F8Type::bitcast(0x01); }
 };
 
@@ -1150,24 +1189,31 @@ public:
   static int const digits = F8Type::FP8_NUM_MANTISSA_BITS;
 
   /// Least positive value
+  CUTLASS_HOST_DEVICE
   static F8Type min() { return F8Type::bitcast(0x01); }
 
   /// Maximum finite value
+  CUTLASS_HOST_DEVICE
   static F8Type max() { return F8Type::bitcast(F8Type::FP8_MAX_FLT); }
 
   /// Returns maximum rounding error
+  CUTLASS_HOST_DEVICE
   static F8Type round_error() { return F8Type(0.5f); }
 
   /// Returns positive infinity value
+  CUTLASS_HOST_DEVICE
   static F8Type infinity() { return F8Type::bitcast(F8Type::FP8_INFINITY_MASK); }
 
   /// Returns quiet NaN value
+  CUTLASS_HOST_DEVICE
   static F8Type quiet_NaN() { return F8Type::bitcast(F8Type::FP8_NAN); }
 
   /// Returns signaling NaN value
+  CUTLASS_HOST_DEVICE
   static F8Type signaling_NaN() { return F8Type::bitcast(F8Type::FP8_NAN); }
 
   /// Returns smallest positive subnormal value
+  CUTLASS_HOST_DEVICE
   static F8Type denorm_min() { return F8Type::bitcast(0x01); }
 };
 

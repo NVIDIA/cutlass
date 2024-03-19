@@ -30,7 +30,7 @@
  **************************************************************************************************/
 /*! \file
     \brief Tests for Sm90 f16_f16_f16 with cooperative EVT epilogue
-    D = alpha * acc + beta * c + aux_load 
+    D = alpha * acc + beta * c + aux_load
 */
 
 #include <iostream>
@@ -72,15 +72,15 @@ static constexpr auto select_evt_d() {
                                    RoundStyle>,                          // alpha * acc
                             Sm90ScalarBroadcast<ElementAccumulator>,  // alpha
                             Sm90AccFetch                              // acc
-                         >;       
+                         >;
   if constexpr (IsCNeed) {
     using EVT_D = Sm90EVT<Sm90Compute<cutlass::homogeneous_multiply_add, ElementCompute, ElementCompute, RoundStyle>,
                     Sm90ScalarBroadcast<ElementAccumulator>,  // beta
                     Sm90SrcFetch<ElementCompute>,                             // C
                     BinaryCompute0>;
-    return *(EVT_D *)(nullptr);
+    return EVT_D{};
   } else {
-    return *(BinaryCompute0 *)(nullptr);
+    return BinaryCompute0{};
   }
 }
 
@@ -152,7 +152,7 @@ bool testEVTAuxStoreWithoutD() {
         D_block.get(), stride_D,
       },  // Epilogue arguments end
       /*hw_info=*/{},
-      /*scheduler_args=*/{} 
+      /*scheduler_args=*/{}
     };
 
     // check without D aux store
@@ -275,7 +275,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_cooperative_epilogue, 25
 
   using EpilogueDescriptor = cutlass::epilogue::collective::detail::EpilogueDescriptor<
     TileShape_MNK, EpilogueTileType, cutlass::half_t, cutlass::half_t, EpilogueSchedule
-  >; 
+  >;
   using AuxStoreDescriptor = cutlass::epilogue::collective::detail::AuxStoreDescriptor<
     EpilogueDescriptor, cutlass::layout::RowMajor, cutlass::half_t
   >;
@@ -292,7 +292,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_cooperative_epilogue, 25
                      typename AuxStoreDescriptor::CopyOpR2S>;
 
   constexpr auto select_kernel = [](auto has_c, auto has_d) {
-    using FusionCallbacks = 
+    using FusionCallbacks =
         cute::conditional_t<decltype(has_d){}, EVT_D, Sm90EVT<AuxStore, EVT_D>>;
     using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
         cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
@@ -310,7 +310,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_cooperative_epilogue, 25
         cutlass::half_t, LayoutB, 8,
         float,
         TileShape_MNK, ClusterShape_MNK,
-        cutlass::gemm::collective::StageCountAutoCarveout<sizeof(typename CollectiveEpilogue::SharedStorage)>,
+        cutlass::gemm::collective::StageCountAutoCarveout<static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
         cutlass::gemm::KernelTmaWarpSpecializedCooperative
       >::CollectiveOp;
 
@@ -319,7 +319,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_cooperative_epilogue, 25
         CollectiveMainloop,
         CollectiveEpilogue>;
 
-    return *(GemmKernel *)(nullptr);
+    return GemmKernel{};
   };
 
   using GemmKernel = decltype(select_kernel(cute::C<has_c>{}, cute::C<true>{}));
@@ -345,7 +345,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32n_tensor_op_gmma_f32_cooperative_epilogue, 25
 
   using EpilogueDescriptor = cutlass::epilogue::collective::detail::EpilogueDescriptor<
     TileShape_MNK, EpilogueTileType, cutlass::half_t, cutlass::half_t, EpilogueSchedule
-  >; 
+  >;
   using AuxStoreDescriptor = cutlass::epilogue::collective::detail::AuxStoreDescriptor<
     EpilogueDescriptor, cutlass::layout::ColumnMajor, cutlass::half_t
   >;
@@ -362,7 +362,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32n_tensor_op_gmma_f32_cooperative_epilogue, 25
                      typename AuxStoreDescriptor::CopyOpR2S>;
 
   constexpr auto select_kernel = [](auto has_c, auto has_d) {
-    using FusionCallbacks = 
+    using FusionCallbacks =
         cute::conditional_t<decltype(has_d){}, EVT_D, Sm90EVT<AuxStore, EVT_D>>;
     using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
         cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
@@ -380,7 +380,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32n_tensor_op_gmma_f32_cooperative_epilogue, 25
         cutlass::half_t, LayoutB, 8,
         float,
         TileShape_MNK, ClusterShape_MNK,
-        cutlass::gemm::collective::StageCountAutoCarveout<sizeof(typename CollectiveEpilogue::SharedStorage)>,
+        cutlass::gemm::collective::StageCountAutoCarveout<static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
         cutlass::gemm::KernelTmaWarpSpecializedCooperative
       >::CollectiveOp;
 
@@ -389,7 +389,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32n_tensor_op_gmma_f32_cooperative_epilogue, 25
         CollectiveMainloop,
         CollectiveEpilogue>;
 
-    return *(GemmKernel *)(nullptr);
+    return GemmKernel{};
   };
 
   using GemmKernel = decltype(select_kernel(cute::C<has_c>{}, cute::C<true>{}));
@@ -415,7 +415,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_cooperative_epilogue, 12
 
   using EpilogueDescriptor = cutlass::epilogue::collective::detail::EpilogueDescriptor<
     TileShape_MNK, EpilogueTileType, cutlass::half_t, cutlass::half_t, EpilogueSchedule
-  >; 
+  >;
   using AuxStoreDescriptor = cutlass::epilogue::collective::detail::AuxStoreDescriptor<
     EpilogueDescriptor, cutlass::layout::RowMajor, cutlass::half_t
   >;
@@ -432,7 +432,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_cooperative_epilogue, 12
                      typename AuxStoreDescriptor::CopyOpR2S>;
 
   constexpr auto select_kernel = [](auto has_c, auto has_d) {
-    using FusionCallbacks = 
+    using FusionCallbacks =
         cute::conditional_t<decltype(has_d){}, EVT_D, Sm90EVT<AuxStore, EVT_D>>;
     using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
         cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
@@ -450,7 +450,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_cooperative_epilogue, 12
         cutlass::half_t, LayoutB, 8,
         float,
         TileShape_MNK, ClusterShape_MNK,
-        cutlass::gemm::collective::StageCountAutoCarveout<sizeof(typename CollectiveEpilogue::SharedStorage)>,
+        cutlass::gemm::collective::StageCountAutoCarveout<static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
         cutlass::gemm::KernelTmaWarpSpecializedCooperative
       >::CollectiveOp;
 
@@ -459,7 +459,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_cooperative_epilogue, 12
         CollectiveMainloop,
         CollectiveEpilogue>;
 
-    return *(GemmKernel *)(nullptr);
+    return GemmKernel{};
   };
 
   using GemmKernel = decltype(select_kernel(cute::C<has_c>{}, cute::C<true>{}));
@@ -485,7 +485,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_cooperative_epilogue, 25
 
   using EpilogueDescriptor = cutlass::epilogue::collective::detail::EpilogueDescriptor<
     TileShape_MNK, EpilogueTileType, cutlass::half_t, cutlass::half_t, EpilogueSchedule
-  >; 
+  >;
   using AuxStoreDescriptor = cutlass::epilogue::collective::detail::AuxStoreDescriptor<
     EpilogueDescriptor, cutlass::layout::RowMajor, cutlass::half_t
   >;
@@ -502,7 +502,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_cooperative_epilogue, 25
                      typename AuxStoreDescriptor::CopyOpR2S>;
 
   constexpr auto select_kernel = [](auto has_c, auto has_d) {
-    using FusionCallbacks = 
+    using FusionCallbacks =
         cute::conditional_t<decltype(has_d){}, EVT_D, Sm90EVT<AuxStore, EVT_D>>;
     using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
         cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
@@ -520,7 +520,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_cooperative_epilogue, 25
         cutlass::half_t, LayoutB, 8,
         float,
         TileShape_MNK, ClusterShape_MNK,
-        cutlass::gemm::collective::StageCountAutoCarveout<sizeof(typename CollectiveEpilogue::SharedStorage)>,
+        cutlass::gemm::collective::StageCountAutoCarveout<static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
         cutlass::gemm::KernelTmaWarpSpecializedCooperative
       >::CollectiveOp;
 
@@ -529,7 +529,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_cooperative_epilogue, 25
         CollectiveMainloop,
         CollectiveEpilogue>;
 
-    return *(GemmKernel *)(nullptr);
+    return GemmKernel{};
   };
 
   using GemmKernel = decltype(select_kernel(cute::C<has_c>{}, cute::C<true>{}));
@@ -555,7 +555,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32n_tensor_op_gmma_f32_cooperative_epilogue, 25
 
   using EpilogueDescriptor = cutlass::epilogue::collective::detail::EpilogueDescriptor<
     TileShape_MNK, EpilogueTileType, cutlass::half_t, cutlass::half_t, EpilogueSchedule
-  >; 
+  >;
   using AuxStoreDescriptor = cutlass::epilogue::collective::detail::AuxStoreDescriptor<
     EpilogueDescriptor, cutlass::layout::ColumnMajor, cutlass::half_t
   >;
@@ -572,7 +572,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32n_tensor_op_gmma_f32_cooperative_epilogue, 25
                      typename AuxStoreDescriptor::CopyOpR2S>;
 
   constexpr auto select_kernel = [](auto has_c, auto has_d) {
-    using FusionCallbacks = 
+    using FusionCallbacks =
         cute::conditional_t<decltype(has_d){}, EVT_D, Sm90EVT<AuxStore, EVT_D>>;
     using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
         cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
@@ -590,7 +590,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32n_tensor_op_gmma_f32_cooperative_epilogue, 25
         cutlass::half_t, LayoutB, 8,
         float,
         TileShape_MNK, ClusterShape_MNK,
-        cutlass::gemm::collective::StageCountAutoCarveout<sizeof(typename CollectiveEpilogue::SharedStorage)>,
+        cutlass::gemm::collective::StageCountAutoCarveout<static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
         cutlass::gemm::KernelTmaWarpSpecializedCooperative
       >::CollectiveOp;
 
@@ -599,7 +599,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32n_tensor_op_gmma_f32_cooperative_epilogue, 25
         CollectiveMainloop,
         CollectiveEpilogue>;
 
-    return *(GemmKernel *)(nullptr);
+    return GemmKernel{};
   };
 
   using GemmKernel = decltype(select_kernel(cute::C<has_c>{}, cute::C<true>{}));
@@ -625,7 +625,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_cooperative_epilogue, 12
 
   using EpilogueDescriptor = cutlass::epilogue::collective::detail::EpilogueDescriptor<
     TileShape_MNK, EpilogueTileType, cutlass::half_t, cutlass::half_t, EpilogueSchedule
-  >; 
+  >;
   using AuxStoreDescriptor = cutlass::epilogue::collective::detail::AuxStoreDescriptor<
     EpilogueDescriptor, cutlass::layout::RowMajor, cutlass::half_t
   >;
@@ -642,7 +642,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_cooperative_epilogue, 12
                      typename AuxStoreDescriptor::CopyOpR2S>;
 
   constexpr auto select_kernel = [](auto has_c, auto has_d) {
-    using FusionCallbacks = 
+    using FusionCallbacks =
         cute::conditional_t<decltype(has_d){}, EVT_D, Sm90EVT<AuxStore, EVT_D>>;
     using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
         cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
@@ -660,7 +660,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_cooperative_epilogue, 12
         cutlass::half_t, LayoutB, 8,
         float,
         TileShape_MNK, ClusterShape_MNK,
-        cutlass::gemm::collective::StageCountAutoCarveout<sizeof(typename CollectiveEpilogue::SharedStorage)>,
+        cutlass::gemm::collective::StageCountAutoCarveout<static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
         cutlass::gemm::KernelTmaWarpSpecializedCooperative
       >::CollectiveOp;
 
@@ -669,7 +669,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_cooperative_epilogue, 12
         CollectiveMainloop,
         CollectiveEpilogue>;
 
-    return *(GemmKernel *)(nullptr);
+    return GemmKernel{};
   };
 
   using GemmKernel = decltype(select_kernel(cute::C<has_c>{}, cute::C<true>{}));

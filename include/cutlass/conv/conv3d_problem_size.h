@@ -91,7 +91,7 @@ public:
   Conv3dProblemSize(): 
     Conv2dProblemSize(),
     D(0), T(0), Z(0), 
-    pad_d(0), 
+    pad_d(0),
     stride_d(1), 
     dilation_d(1) { }
  
@@ -205,6 +205,34 @@ public:
       Z = ((D + pad_d * 2 - T * dilation_d) / stride_d) + 1;
     }
 
+  /// Constructs convolution problem size from cutlass Tensor5DCoord, Coord3D
+  // *computes* output size and sets Z, P and Q (include all data members in ctor)
+  CUTLASS_HOST_DEVICE
+  Conv3dProblemSize(
+    cutlass::Tensor5DCoord input_size,    // NDHWC
+    cutlass::Tensor5DCoord filter_size,   // KTRSC
+    CUTLASS_STL_NAMESPACE::tuple<Coord3D, Coord3D> padding, // Coord3D {pad_d, pad_h, pad_w} & Coord3D {far pad_d, pad_h, pad_w} to calculate o/p/q
+    Coord3D stride,                       // stride_d, stride_h, stride_w
+    Coord3D dilation,                     // dilation_d, dilation_h, dilation_w
+    cutlass::conv::Mode mode = cutlass::conv::Mode::kCrossCorrelation,
+    int split_k_slices = 1,
+    int groups = 1
+  ):
+    Conv2dProblemSize(
+      {input_size.n(), input_size.h(), input_size.w(), input_size.c()},
+      {filter_size.n(), filter_size.h(), filter_size.w(), filter_size.c()},
+      {CUTLASS_STL_NAMESPACE::get<0>(padding)[1], CUTLASS_STL_NAMESPACE::get<1>(padding)[1],
+       CUTLASS_STL_NAMESPACE::get<0>(padding)[2], CUTLASS_STL_NAMESPACE::get<1>(padding)[2]},
+      {stride[1], stride[2]},
+      {dilation[1], dilation[2]},
+      mode, split_k_slices, groups),
+    D(input_size.d()), T(filter_size.d()),
+    pad_d(CUTLASS_STL_NAMESPACE::get<0>(padding)[0]), stride_d(stride[0]), dilation_d(dilation[0])
+    {
+      // set output Z
+      Z = ((D + pad_d + CUTLASS_STL_NAMESPACE::get<1>(padding)[0] - T * dilation_d) / stride_d) + 1;
+    }
+
   /// Equality operator (ignores mode and split_k_slice)
   CUTLASS_HOST_DEVICE
   bool operator==(Conv3dProblemSize const &conv) const {
@@ -282,7 +310,7 @@ public:
     return (N * Z * P * Q * K);
   }
 
-  /// Returns output extent as Tensor5DCoord
+  /// Returns padding as Coord3D
   CUTLASS_HOST_DEVICE
   Coord3D padding() const {
 

@@ -100,6 +100,9 @@ struct CollectiveMma<
   using TransformA = TransformA_;
   using TransformB = TransformB_;
   using ArchTag = typename DispatchPolicy::ArchTag;
+  // Follow the change in TestSmall: TileShape switch to CtaShape 
+  // For sm80 arch, CtaShape should euqal to TileShape
+  using CtaShape_MNK = TileShape;
 
   static_assert(cute::rank(SmemLayoutAtomA{}) == 2, "SmemLayoutAtom must be rank 2 (M/N, K)");
   static_assert((size<0>(TileShape{}) % size<0>(SmemLayoutAtomA{})) == 0, "SmemLayoutAtom must evenly divide tile shape.");
@@ -332,6 +335,8 @@ struct CollectiveMma<
 
     }
 
+    cp_async_wait<0>();
+    __syncthreads();
   }
 };
 
@@ -377,6 +382,9 @@ struct CollectiveMma<
   //
   using DispatchPolicy = MainloopSm80CpAsync<Stages>;
   using TileShape = TileShape_;
+  // Follow the change in TestSmall: TileShape switch to CtaShape 
+  // In legacy arch, it should be same
+  using CtaShape_MNK = TileShape;
   using ElementA = ElementA_;
   using StrideA = StrideA_;
   using ElementB = ElementB_;
@@ -391,7 +399,6 @@ struct CollectiveMma<
   using TransformA = TransformA_;
   using TransformB = TransformB_;
   using ArchTag = typename DispatchPolicy::ArchTag;
-
   static_assert(cute::rank(SmemLayoutAtomA{}) == 2, "SmemLayoutAtom must be rank 2 (M/N, K)");
   static_assert((size<0>(TileShape{}) % size<0>(SmemLayoutAtomA{})) == 0, "SmemLayoutAtom must evenly divide tile shape.");
   static_assert((size<2>(TileShape{}) % size<1>(SmemLayoutAtomA{})) == 0, "SmemLayoutAtom must evenly divide tile shape.");
@@ -680,6 +687,8 @@ struct CollectiveMma<
 
     }
 
+    cp_async_wait<0>();
+    __syncthreads();
   }
 };
 

@@ -192,7 +192,7 @@ public:
     // Determine SMEM requirements and waive if not satisfied
     //
 
-    int smem_size = int(sizeof(typename Conv2d::UnderlyingKernel::SharedStorage));
+    size_t smem_size = sizeof(typename Conv2d::UnderlyingKernel::SharedStorage);
 
     cudaDeviceProp properties;
     int device_idx;

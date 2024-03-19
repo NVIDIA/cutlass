@@ -194,12 +194,12 @@ public:
 //   Aux = scale_aux * Z
 // else
 //   Aux = Z
-template <class Gemm, template <class> class ActivationFn, class ElementD>
+template <class Gemm, template <class> class ActivationFn, class ElementD, class ElementAux = ElementD>
 class HostScaledLinCombPerRowBiasEltActAmaxAux {
 public:
   template <typename T>
   using amax = cutlass::maximum_absolute_value_reduction<T, true>;
-  using EVTModule = HEVT<
+  using EVTModuleAuxFp8 = HEVT<
     HostAuxStore<Gemm, true>,
     HST<Gemm,
       // Z = scale_a * scale_b * alpha * acc + scale_c * beta * C + per-row bias
@@ -228,9 +228,9 @@ public:
       >,
       // Aux = Z * scale_aux, amax_aux = max(abs(elements in Aux))
       HEVT<
-        HostAuxStore<Gemm, false, ElementD, cutlass::layout::RowMajor>,
+        HostAuxStore<Gemm, false, ElementAux, cutlass::layout::RowMajor>,
         HEVT<
-          HostCompute<Gemm, cutlass::epilogue::fusion::detail::ScaleOutOp<ElementD>::template Op>,
+          HostCompute<Gemm, cutlass::multiplies>,
           HEVT<
             HostScalarReduce<Gemm, amax, float>,
             HostAccumulator<Gemm>
@@ -240,6 +240,40 @@ public:
       >
     >
   >;
+
+  using EVTModuleAuxNotFp8 = HEVT<
+    // D = activation(Z) * scaled_d, amax_d = max(abs(elements in D))
+    HostAuxStore<Gemm, true>,
+      HEVT<
+        HostCompute<Gemm, cutlass::epilogue::fusion::detail::ScaleOutOp<ElementD>::template Op>,
+        HEVT<
+          HostScalarReduce<Gemm, amax, float>,
+          HEVT<
+            HostCompute<Gemm, ActivationFn>, //activation(Z) * scaled_d
+            HEVT<
+              // Aux = Z
+              HostAuxStore<Gemm, false, ElementAux, cutlass::layout::RowMajor>,
+              // Z = scale_a * scale_b * alpha * acc + scale_c * beta * C + per-row bias
+              HEVT<
+                HostCompute<Gemm, cutlass::homogeneous_multiply_add>,
+                HostScalarBroadcast<Gemm, 1, 2>, // scale_c * beta
+                HostAuxLoad<Gemm, true>, // C
+                HEVT<
+                  HostCompute<Gemm, cutlass::homogeneous_multiply_add>,
+                  HostScalarBroadcast<Gemm, 1, 3>, // scale_a * scale_b * alpha
+                  HostAccumulator<Gemm>,
+                  HostColBroadcast<Gemm, ElementD>
+                >
+              >
+            >
+          >
+        >,
+        HostScalarBroadcast<Gemm, 1> // scale_d
+      >
+    >;
+      
+  using EVTModule = cute::conditional_t<cutlass::epilogue::fusion::detail::is_fp8_v<ElementAux>, EVTModuleAuxFp8, EVTModuleAuxNotFp8>;
+
 };
 } // namespace test::gemm::device
 
@@ -400,7 +434,7 @@ template<
   FloatRoundStyle RoundStyle = FloatRoundStyle::round_to_nearest
 >
 using Sm90LinCombPerColumnReduce =
-  Sm90EVT<Sm90RowReduction<RegReduceFn, GmemReduceFn, 0, CtaTileShapeMNK, ElementReduce, ElementCompute, RoundStyle>, // per column reduce
+  Sm90EVT<Sm90RowReduction<RegReduceFn, RegReduceFn, GmemReduceFn, 0, CtaTileShapeMNK, ElementReduce, ElementCompute, RoundStyle>, // per column reduce
     Sm90EVT<Sm90Compute<homogeneous_multiply_add, ElementOutput, ElementCompute, RoundStyle>, // beta * C + alpha * acc
       Sm90ScalarBroadcast<ElementScalar>, // beta
       Sm90SrcFetch<ElementOutput>, // C
@@ -425,7 +459,7 @@ template<
   FloatRoundStyle RoundStyle = FloatRoundStyle::round_to_nearest
 >
 using Sm90LinCombPerRowReduce =
-  Sm90EVT<Sm90ColReduction<RegReduceFn, GmemReduceFn, 0, CtaTileShapeMNK, ElementReduce, ElementCompute, RoundStyle>, // per column reduce
+  Sm90EVT<Sm90ColReduction<RegReduceFn, RegReduceFn, GmemReduceFn, 0, CtaTileShapeMNK, ElementReduce, ElementCompute, RoundStyle>, // per column reduce
     Sm90EVT<Sm90Compute<homogeneous_multiply_add, ElementOutput, ElementCompute, RoundStyle>, // beta * C + alpha * acc
       Sm90ScalarBroadcast<ElementScalar>, // beta
       Sm90SrcFetch<ElementOutput>, // C

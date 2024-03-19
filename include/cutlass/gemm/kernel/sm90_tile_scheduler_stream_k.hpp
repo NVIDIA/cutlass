@@ -386,7 +386,8 @@ public:
     WorkTileInfo const& work_tile_info,
     FrgTensorC& accumulators,
     uint32_t num_barriers,
-    uint32_t barrier_idx) {
+    uint32_t barrier_idx,
+    uint32_t num_accumulator_mtxs = 1) {
 
     using ElementAccumulator = typename FrgTensorC::value_type;
 
@@ -412,7 +413,7 @@ public:
     // Reductions use BlockStripedReduce with a width of BarrierManager::ThreadCount under the hood.
     // Thus, the start of the reduction space is the same across all threads in a warp group.
     int reduction_offset =
-      (cute::size<0>(TileShape{}) * cute::size<1>(TileShape{}) * reduction_tile_idx) +
+      (cute::size<0>(TileShape{}) * cute::size<1>(TileShape{}) * reduction_tile_idx * num_accumulator_mtxs) +
       reduction_peer_offset +
       (size(accumulators) * barrier_idx * BarrierManager::ThreadCount);
 
@@ -444,7 +445,7 @@ public:
     }
 
     auto reduction_workspace_size = Params::get_reduction_workspace_size(
-      reduction_tiles, to_gemm_coord(TileShape{}), sizeof_bits<ElementAccumulator>::value);
+      reduction_tiles, to_gemm_coord(TileShape{}), sizeof_bits<ElementAccumulator>::value, num_accumulator_mtxs);
     BarrierType* lock_workspace = reinterpret_cast<BarrierType*>(
       reinterpret_cast<uint8_t*>(params.reduction_workspace_) + reduction_workspace_size);
 
@@ -540,7 +541,7 @@ public:
   }
 
   template <class ProblemShape, class ElementAccumulator>
-  static int
+  static size_t
   get_workspace_size(
     Arguments const& args,
     ProblemShape problem_shape,
@@ -836,7 +837,8 @@ private:
                                           params.divmod_cluster_shape_minor_,
                                           params.divmod_cluster_blk_major_,
                                           params.log_swizzle_size_,
-                                          params.raster_order_);
+                                          params.raster_order_
+                                        );
 
     // Set the M, N, and L block offsets
     work_tile_info.M_idx = work_idx_m;

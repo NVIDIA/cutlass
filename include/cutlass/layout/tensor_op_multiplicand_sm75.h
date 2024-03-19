@@ -260,6 +260,8 @@ struct TensorOpMultiplicandCongruous {
 
   static int const kElementSize = Base::kElementSize;
   static int const kElementsPerAccess = Base::kElementsPerAccess;
+  static int const kCrosswise = Base::kCrosswise;
+  static int const kFactor = Base::kFactor;
   using PartitionCount =  typename Base::PartitionCount;
   using AccessCount = typename Base::AccessCount;
 
@@ -369,6 +371,8 @@ struct TensorOpMultiplicandCongruous<32, Crosswise> {
   //
   static int const kElementSize = 32;
   static int const kElementsPerAccess = kAccessSize / kElementSize;
+  static int const kCrosswise = Crosswise;
+  static int const kFactor = 1;
 
  private:
   //
@@ -471,6 +475,8 @@ struct ColumnMajorTensorOpMultiplicandCongruous {
 
   static int const kElementSize = Base::kElementSize;
   static int const kElementsPerAccess = Base::kElementsPerAccess;
+  static int const kCrosswise = Base::kCrosswise;
+  static int const kFactor = Base::kFactor;
   using PartitionCount =  typename Base::PartitionCount;
   using AccessCount = typename Base::AccessCount;
 
@@ -576,6 +582,8 @@ struct RowMajorTensorOpMultiplicandCongruous {
 
   static int const kElementSize = Base::kElementSize;
   static int const kElementsPerAccess = Base::kElementsPerAccess;
+  static int const kCrosswise = Base::kCrosswise;
+  static int const kFactor = Base::kFactor;
   using PartitionCount =  typename Base::PartitionCount;
   using AccessCount = typename Base::AccessCount;
 

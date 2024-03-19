@@ -110,32 +110,29 @@ public:
     // Data members
     //
 
-    GemmUniversalMode mode;
-    GemmCoord problem_size;
-    int batch_count;
+    GemmUniversalMode mode{GemmUniversalMode::kGemm};
+    GemmCoord problem_size{};
+    int batch_count{1};
 
-    typename EpilogueOutputOp::Params epilogue;
+    typename EpilogueOutputOp::Params epilogue{};
 
-    void const * ptr_A;
-    void const * ptr_B;
-    void * ptr_D;
+    void const * ptr_A{nullptr};
+    void const * ptr_B{nullptr};
+    void * ptr_D{nullptr};
 
-    int64_t batch_stride_A;
-    int64_t batch_stride_B;
-    int64_t batch_stride_D;
+    int64_t batch_stride_A{0};
+    int64_t batch_stride_B{0};
+    int64_t batch_stride_D{0};
 
-    typename LayoutA::Stride::Index lda;
-    typename LayoutB::Stride::Index ldb;
-    typename LayoutC::Stride::Index ldd;
+    typename LayoutA::Stride::Index lda{0};
+    typename LayoutB::Stride::Index ldb{0};
+    typename LayoutC::Stride::Index ldd{0};
 
     //
     // Methods
     //
-    
-    Arguments(): 
-      mode(GemmUniversalMode::kGemm), 
-      batch_count(1), 
-      ptr_A(nullptr), ptr_B(nullptr), ptr_D(nullptr) { }
+
+    Arguments() = default;
 
     /// constructs an arguments structure
     Arguments(
@@ -161,7 +158,7 @@ public:
       batch_stride_A(batch_stride_A), batch_stride_B(batch_stride_B), batch_stride_D(batch_stride_D), 
       lda(lda), ldb(ldb), ldd(ldd) {
       }
-
+    
     /// Returns arguments for the transposed problem sizes
     Arguments transposed_problem_size() const {
       Arguments args(*this);
@@ -190,50 +187,34 @@ public:
   /// Parameters structure
   struct Params {
 
-    cutlass::gemm::GemmCoord problem_size;
-    cutlass::gemm::GemmCoord grid_tiled_shape;
-    int swizzle_log_tile;
+    cutlass::gemm::GemmCoord problem_size{};
+    cutlass::gemm::GemmCoord grid_tiled_shape{};
+    int swizzle_log_tile{0};
    
-    typename Mma::IteratorA::Params params_A;
-    typename Mma::IteratorB::Params params_B;
-    typename Epilogue::OutputTileIterator::Params params_D;
+    typename Mma::IteratorA::Params params_A{};
+    typename Mma::IteratorB::Params params_B{};
+    typename Epilogue::OutputTileIterator::Params params_D{};
     
-    typename EpilogueOutputOp::Params output_op;
+    typename EpilogueOutputOp::Params output_op{};
 
-    GemmUniversalMode mode;
-    int batch_count;
-    int gemm_k_size;
+    GemmUniversalMode mode = cutlass::gemm::GemmUniversalMode::kGemm;
+    int batch_count {0};
+    int gemm_k_size {0};
 
-    void * ptr_A;
-    void * ptr_B;
-    void * ptr_D;
+    void * ptr_A{nullptr};
+    void * ptr_B{nullptr};
+    void * ptr_D{nullptr};
 
-    int64_t batch_stride_A;
-    int64_t batch_stride_B;
-    int64_t batch_stride_D;
+    int64_t batch_stride_A {0};
+    int64_t batch_stride_B {0};
+    int64_t batch_stride_D {0};
 
-    int *semaphore;
+    int *semaphore{nullptr};
 
     //
     // Methods
     //
-
-    CUTLASS_HOST_DEVICE
-    Params():
-      swizzle_log_tile(0),
-      params_A(0),
-      params_B(0),
-      params_D(0),
-      batch_count(0),
-      gemm_k_size(0),
-      mode(cutlass::gemm::GemmUniversalMode::kGemm),
-      ptr_A(nullptr),
-      ptr_B(nullptr),
-      ptr_D(nullptr),
-      batch_stride_A(0),
-      batch_stride_B(0),
-      batch_stride_D(0),
-      semaphore(nullptr) { }
+    Params() = default;
 
     CUTLASS_HOST_DEVICE
     Params(

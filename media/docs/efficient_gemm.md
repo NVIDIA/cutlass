@@ -1,6 +1,6 @@
-![ALT](/media/images/gemm-hierarchy-with-epilogue-no-labels.png "Efficient GEMM in CUDA")
+![ALT](../images/gemm-hierarchy-with-epilogue-no-labels.png "Efficient GEMM in CUDA")
 
-[README](/README.md#documentation) > **Efficient GEMM in CUDA**
+[README](../../README.md#documentation) > **Efficient GEMM in CUDA**
 
 # Efficient GEMM in CUDA
 
@@ -60,7 +60,7 @@ This is the hierarchical GEMM computation embodied by CUTLASS. Each stage depict
 nested level of tiling which corresponds to a layer of concurrency within the CUDA execution model and to a
 level within the memory hierarchy, becoming increasingly finer moving left to right.
 
-![ALT](/media/images/gemm-hierarchy-with-epilogue.png "Hierarchical GEMM in CUDA")
+![ALT](../images/gemm-hierarchy-with-epilogue.png "Hierarchical GEMM in CUDA")
 
 
 ### Threadblock-level GEMM
@@ -154,7 +154,7 @@ following scopes.
 
 The following diagram illustrates the efficient, pipelined mainloop body used in CUTLASS GEMMs.
 
-![ALT](/media/images/software-pipeline.png "Software pipeline in CUTLASS")
+![ALT](../images/software-pipeline.png "Software pipeline in CUTLASS")
 
 ### Threadblock Rasterization
 
@@ -164,7 +164,7 @@ consecutively launched threadblocks to packed two-dimensional regions of the par
 problem to increase the probability that these will access the same tiles of global memory at
 approximately the same time.
 
-Several functions are defined in [cutlass/gemm/threadblock_swizzle.h](/include/cutlass/gemm/threadblock/threadblock_swizzle.h).
+Several functions are defined in [cutlass/gemm/threadblock_swizzle.h](../../include/cutlass/gemm/threadblock/threadblock_swizzle.h).
 
 
 ### Parallelized Reductions
@@ -222,26 +222,26 @@ so each warp only has a partial sum before the reduction.
 ### Warp Specialization
 
 Starting with Hopper, CUTLASS 3.0 incorporates the concept of [Warp Specialization](https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#spatial-partitioning-also-known-as-warp-specialization)
-as part of the kernel design. A thread block is partitioned into two sets of warps, [*producer* warp group](/include/cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized.hpp) and [*consumer* warp group](/include/cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized.hpp). The *producer* warp group loads data from global memory into shared memory buffers using the new [Tensor Memory Accelerator (TMA)](https://developer.nvidia.com/blog/nvidia-hopper-architecture-in-depth/). 
+as part of the kernel design. A thread block is partitioned into two sets of warps, [*producer* warp group](../../include/cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized.hpp) and [*consumer* warp group](../../include/cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized.hpp). The *producer* warp group loads data from global memory into shared memory buffers using the new [Tensor Memory Accelerator (TMA)](https://developer.nvidia.com/blog/nvidia-hopper-architecture-in-depth/). 
 
-[*Producer* warp group (DMA)](/include/cutlass/gemm/collective/sm90_mma_tma_gmma_ss_warpspecialized.hpp) waits for the shared memory buffers to be signaled as [empty](/include/cutlass/gemm/collective/sm90_mma_tma_gmma_ss_warpspecialized.hpp) by the *consumer* warp group using the newly added **Async Pipeline class** ([refer](/media/docs/pipeline.md)). Once the data is written into the shared memory, TMA is also updates the barrier associated with that stage to notify affected threads that the buffer has been [filled](/include/cutlass/gemm/collective/sm90_mma_tma_gmma_ss_warpspecialized.hpp). The [*Consumer* warp group (MMA)](/include/cutlass/gemm/collective/sm90_mma_tma_gmma_ss_warpspecialized.hpp) on the other hand waits for the *producer* warp group to signal that the buffer is [filled](/include/cutlass/gemm/collective/sm90_mma_tma_gmma_ss_warpspecialized.hpp) and then launches tensor core MMA operations. Finally, the *consumer* warp group [releases](/include/cutlass/gemm/collective/sm90_mma_tma_gmma_ss_warpspecialized.hpp) the buffers for the next set of TMA loads to happens.
+[*Producer* warp group (DMA)](../../include/cutlass/gemm/collective/sm90_mma_tma_gmma_ss_warpspecialized.hpp) waits for the shared memory buffers to be signaled as [empty](../../include/cutlass/gemm/collective/sm90_mma_tma_gmma_ss_warpspecialized.hpp) by the *consumer* warp group using the newly added **Async Pipeline class** ([refer](pipeline.md)). Once the data is written into the shared memory, TMA is also updates the barrier associated with that stage to notify affected threads that the buffer has been [filled](../../include/cutlass/gemm/collective/sm90_mma_tma_gmma_ss_warpspecialized.hpp). The [*Consumer* warp group (MMA)](../../include/cutlass/gemm/collective/sm90_mma_tma_gmma_ss_warpspecialized.hpp) on the other hand waits for the *producer* warp group to signal that the buffer is [filled](../../include/cutlass/gemm/collective/sm90_mma_tma_gmma_ss_warpspecialized.hpp) and then launches tensor core MMA operations. Finally, the *consumer* warp group [releases](../../include/cutlass/gemm/collective/sm90_mma_tma_gmma_ss_warpspecialized.hpp) the buffers for the next set of TMA loads to happens.
 
 **Warp-Specialized Persistent Cooperative kernel design**
 
-Another flavor of Warp-Specialized kernel design being introduced starting with Hopper is the [*Warp-Specialized Persistent Cooperative*](/include/cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized_cooperative.hpp) kernel. Like the Warp-Specialized kernel, the concepts of warp groups and barrier synchronization between warp groups remain the same in the cooperative design. 
+Another flavor of Warp-Specialized kernel design being introduced starting with Hopper is the [*Warp-Specialized Persistent Cooperative*](../../include/cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized_cooperative.hpp) kernel. Like the Warp-Specialized kernel, the concepts of warp groups and barrier synchronization between warp groups remain the same in the cooperative design. 
 The distinctive feature of the Warp-Specialized Persistent Cooperative kernel are the following :
-* Persistent thread blocks launched to occupy as many SMs as mentioned in the [KernelHardwareInfo](/include/cutlass/kernel_hardware_info.hpp) struct. These persistent thread blocks are used to tile the output and thus (potentially) compute multiple output tiles through their lifetime. The main benefit this adds is amortization of the thread-block launch and kernel prologue overheads which are typical of all kernels.
+* Persistent thread blocks launched to occupy as many SMs as mentioned in the [KernelHardwareInfo](../../include/cutlass/kernel_hardware_info.hpp) struct. These persistent thread blocks are used to tile the output and thus (potentially) compute multiple output tiles through their lifetime. The main benefit this adds is amortization of the thread-block launch and kernel prologue overheads which are typical of all kernels.
 * Presence of two *consumer* warp groups cooperating on the same output tile by splitting the tile in half across the M dimension. This allows for larger tile sizes to be enabled - since the register pressure per *consumer* warp group is reduced - and hence improving performance.
 
-Since each thread block now computes multiple output tiles, the shape of the grid launch and the scheduling of tiles to the thread blocks is managed using the new [*Tile Scheduler*](/include/cutlass/gemm/kernel/sm90_tile_scheduler.hpp). The *Tile Scheduler* considers the shape of the *clusters* as well as the available number of available SMs to compute a valid scheduling of the output tiles to launched thread blocks.
+Since each thread block now computes multiple output tiles, the shape of the grid launch and the scheduling of tiles to the thread blocks is managed using the new [*Tile Scheduler*](../../include/cutlass/gemm/kernel/sm90_tile_scheduler.hpp). The *Tile Scheduler* considers the shape of the *clusters* as well as the available number of available SMs to compute a valid scheduling of the output tiles to launched thread blocks.
 
 **Warp-Specialized Persistent Ping-Pong kernel design**
 
-The third kernel design is the [*Warp-Specialized Persistent Ping-Pong*](/include/cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized_pingpong.hpp) kernel. 
+The third kernel design is the [*Warp-Specialized Persistent Ping-Pong*](../../include/cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized_pingpong.hpp) kernel. 
 Like the Warp-Specialized Persistent Cooperative, kernel the concepts of warp groups, barrier synchronization between warp groups, and the shape of the grid launch remain the same in the persistent ping-pong design. 
 The distinctive feature of the Warp-Specialized Persistent Ping-Pong kernel is the following :
 * The two *consumer* warp groups are assigned a different output tile using the Tile Scheduler. This allows for *epilogue* of one *consumer* warp group to be overlapped with the math operations of the other *consumer* warp group - thus maximizing tensor core utilization. 
-* The *producer* warp group synchronizes using the [Ordered Sequence Barrier](/include/cutlass/pipeline/pipeline.hpp) to fill buffers of the two *consumer* warp groups one after the other in order.
+* The *producer* warp group synchronizes using the [Ordered Sequence Barrier](../../include/cutlass/pipeline/pipeline.hpp) to fill buffers of the two *consumer* warp groups one after the other in order.
 
 # Resources
 

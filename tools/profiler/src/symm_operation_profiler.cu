@@ -234,7 +234,7 @@ Status SymmOperationProfiler::SymmProblem::parse(
 
 /// Total number of bytes loaded
 int64_t SymmOperationProfiler::SymmProblem::bytes(library::SymmDescription const &operation_desc) const {
-  int64_t bytes;
+  int64_t bytes = 0;
   // Input bytes read and Output bytes written for the gemm problem
   // Half matrix including the diagonal will have (X*(X+1))/2 elements
   if (operation_desc.side_mode == SideMode::kLeft) {

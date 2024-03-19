@@ -98,16 +98,16 @@
 #  endif
 #endif
 
-#ifdef _MSC_VER
+#if defined(_MSC_VER)
 // Provides support for alternative operators 'and', 'or', and 'not'
-#include <iso646.h>
+#  include <iso646.h>
 #endif // _MSC_VER
 
 #if defined(__CUDACC_RTC__)
-#define CUTE_STL_NAMESPACE cuda::std
-#define CUTE_STL_NAMESPACE_IS_CUDA_STD
+#  define CUTE_STL_NAMESPACE cuda::std
+#  define CUTE_STL_NAMESPACE_IS_CUDA_STD
 #else
-#define CUTE_STL_NAMESPACE std
+#  define CUTE_STL_NAMESPACE std
 #endif
 
 //
@@ -115,9 +115,9 @@
 //
 
 #if defined(__CUDACC_RTC__)
-#include <cuda/std/cassert>
+#  include <cuda/std/cassert>
 #else
-#include <cassert>
+#  include <cassert>
 #endif
 
 #define CUTE_STATIC_V(x)            decltype(x)::value
@@ -125,10 +125,11 @@
 #define CUTE_STATIC_ASSERT          static_assert
 #define CUTE_STATIC_ASSERT_V(x,...) static_assert(decltype(x)::value, ##__VA_ARGS__)
 
+// Fail and print a message. Typically used for notification of a compiler misconfiguration.
 #if defined(__CUDA_ARCH__)
-#  define CUTE_RUNTIME_ASSERT(x) __brkpt()
+#  define CUTE_INVALID_CONTROL_PATH(x) assert(0 && x); printf(x); __brkpt()
 #else
-#  define CUTE_RUNTIME_ASSERT(x) assert(0 && x)
+#  define CUTE_INVALID_CONTROL_PATH(x) assert(0 && x); printf(x)
 #endif
 
 //
@@ -136,9 +137,9 @@
 //
 
 #if !defined(__CUDACC_RTC__)
-#include <cstdio>
-#include <iostream>
-#include <iomanip>
+#  include <cstdio>
+#  include <iostream>
+#  include <iomanip>
 #endif
 
 //
@@ -151,13 +152,8 @@
 // Basic types
 //
 
-#include <cute/numeric/int.hpp>
-#include <cute/numeric/real.hpp>
-#include <cute/numeric/half.hpp>
-#include <cute/numeric/float8.hpp>
-#include <cute/numeric/bfloat.hpp>
-#include <cute/numeric/tfloat.hpp>
-#include <cute/numeric/complex.hpp>
+#include <cute/numeric/numeric_types.hpp>
+
 //
 // Debugging utilities
 //

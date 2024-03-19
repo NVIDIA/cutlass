@@ -42,7 +42,6 @@
 
 #include <cute/pointer.hpp>
 #include <cute/layout.hpp>
-#include <cute/tile.hpp>
 
 namespace cute
 {
@@ -481,7 +480,7 @@ CUTE_HOST_DEVICE constexpr
 decltype(auto)
 tensor(Tensor&& tensor)
 {
-  return std::forward<Tensor>(tensor);
+  return static_cast<Tensor&&>(tensor);
 }
 
 template <int I, int... Is, class Tensor,
@@ -490,17 +489,7 @@ CUTE_HOST_DEVICE constexpr
 decltype(auto)
 tensor(Tensor&& tensor)
 {
-  return make_tensor(std::forward<Tensor>(tensor).data(), get<I,Is...>(tensor.layout()));
-}
-
-// Return the subtensor of a range of modes
-template <int B, int E, class Tensor,
-          __CUTE_REQUIRES(is_tensor<remove_cvref_t<Tensor>>::value)>
-CUTE_HOST_DEVICE constexpr
-decltype(auto)
-take(Tensor&& tensor)
-{
-  return make_tensor(std::forward<Tensor>(tensor).data(), take<B,E>(tensor.layout()));
+  return make_tensor(static_cast<Tensor&&>(tensor).data(), get<I,Is...>(tensor.layout()));
 }
 
 // Return the layout of a mode
@@ -567,7 +556,7 @@ CUTE_HOST_DEVICE constexpr
 auto
 flatten(Tensor&& tensor)
 {
-  return make_tensor(std::forward<Tensor>(tensor).data(), flatten(tensor.layout()));
+  return make_tensor(static_cast<Tensor&&>(tensor).data(), flatten(tensor.layout()));
 }
 
 template <class Tensor,
@@ -576,7 +565,7 @@ CUTE_HOST_DEVICE constexpr
 auto
 coalesce(Tensor&& tensor)
 {
-  return make_tensor(std::forward<Tensor>(tensor).data(), coalesce(tensor.layout()));
+  return make_tensor(static_cast<Tensor&&>(tensor).data(), coalesce(tensor.layout()));
 }
 
 template <class Tensor, class Profile,
@@ -585,7 +574,7 @@ CUTE_HOST_DEVICE constexpr
 auto
 coalesce(Tensor&& tensor, Profile const& profile)
 {
-  return make_tensor(std::forward<Tensor>(tensor).data(), coalesce(tensor.layout(), profile));
+  return make_tensor(static_cast<Tensor&&>(tensor).data(), coalesce(tensor.layout(), profile));
 }
 
 template <class Tensor,
@@ -594,7 +583,7 @@ CUTE_HOST_DEVICE constexpr
 auto
 filter_zeros(Tensor&& tensor)
 {
-  return make_tensor(cute::forward<Tensor>(tensor).data(), filter_zeros(tensor.layout()));
+  return make_tensor(static_cast<Tensor&&>(tensor).data(), filter_zeros(tensor.layout()));
 }
 
 template <class Tensor,
@@ -603,7 +592,7 @@ CUTE_HOST_DEVICE constexpr
 auto
 filter(Tensor&& tensor)
 {
-  return make_tensor(std::forward<Tensor>(tensor).data(), filter(tensor.layout()));
+  return make_tensor(static_cast<Tensor&&>(tensor).data(), filter(tensor.layout()));
 }
 
 template <class Tensor, class Profile,
@@ -612,7 +601,7 @@ CUTE_HOST_DEVICE constexpr
 auto
 filter(Tensor&& tensor, Profile const& profile)
 {
-  return make_tensor(std::forward<Tensor>(tensor).data(), filter(tensor.layout(), profile));
+  return make_tensor(static_cast<Tensor&&>(tensor).data(), filter(tensor.layout(), profile));
 }
 
 // Return a tensor with the same shape as input but offset by a given coordinate
@@ -623,7 +612,7 @@ auto
 domain_offset(Coord const& coord, Tensor&& tensor)
 {
   auto [layout, ptr_offset] = domain_offset(coord, tensor.layout());
-  return make_tensor(std::forward<Tensor>(tensor).data() + ptr_offset, layout);
+  return make_tensor(static_cast<Tensor&&>(tensor).data() + ptr_offset, layout);
 }
 
 // Group the modes [B,E) into a single mode
@@ -635,8 +624,18 @@ CUTE_HOST_DEVICE constexpr
 auto
 group_modes(Tensor&& tensor)
 {
-  return make_tensor(std::forward<Tensor>(tensor).data(),
+  return make_tensor(static_cast<Tensor&&>(tensor).data(),
                      group<B,E>(tensor.layout()));
+}
+
+// Return the subtensor of a range of modes
+template <int B, int E, class Tensor,
+          __CUTE_REQUIRES(is_tensor<remove_cvref_t<Tensor>>::value)>
+CUTE_HOST_DEVICE constexpr
+decltype(auto)
+take(Tensor&& tensor)
+{
+  return make_tensor(static_cast<Tensor&&>(tensor).data(), take<B,E>(tensor.layout()));
 }
 
 //
@@ -662,9 +661,9 @@ recast(Tensor&& tensor)
     auto extent_diff = transform(shape_diff, flatten(old_layout.stride()), multiplies{});
     auto offset = fold(extent_diff, Int<0>{}, [](auto const& i, auto const& a) { return i + cute::min(a,Int<0>{}); });
 
-    return make_tensor(recast_ptr<NewType>(std::forward<Tensor>(tensor).data() + offset), new_layout);
+    return make_tensor(recast_ptr<NewType>(static_cast<Tensor&&>(tensor).data() + offset), new_layout);
   } else {
-    return make_tensor(recast_ptr<NewType>(std::forward<Tensor>(tensor).data()         ), new_layout);
+    return make_tensor(recast_ptr<NewType>(static_cast<Tensor&&>(tensor).data()         ), new_layout);
   }
 
   CUTE_GCC_UNREACHABLE;
@@ -788,7 +787,7 @@ auto
 logical_divide(Tensor    && tensor,
                Tiler const& tiler)   // Layout or Tile<Layout...> or Shape
 {
-  return make_tensor(std::forward<Tensor>(tensor).data(),
+  return make_tensor(static_cast<Tensor&&>(tensor).data(),
                      logical_divide(tensor.layout(), tiler));
 }
 
@@ -802,7 +801,7 @@ auto
 zipped_divide(Tensor    && tensor,
               Tiler const& tiler)    // Layout or Tile<Layout...> or Shape
 {
-  return make_tensor(std::forward<Tensor>(tensor).data(),
+  return make_tensor(static_cast<Tensor&&>(tensor).data(),
                      zipped_divide(tensor.layout(), tiler));
 }
 
@@ -811,10 +810,10 @@ template <class Tensor, class Tiler,
           __CUTE_REQUIRES(is_tensor<remove_cvref_t<Tensor>>::value)>
 CUTE_HOST_DEVICE constexpr
 auto
-tiled_divide(Tensor   && tensor,
+tiled_divide(Tensor    && tensor,
              Tiler const& tiler)     // Layout or Tile<Layout...> or Shape
 {
-  return make_tensor(std::forward<Tensor>(tensor).data(),
+  return make_tensor(static_cast<Tensor&&>(tensor).data(),
                      tiled_divide(tensor.layout(), tiler));
 }
 
@@ -826,7 +825,7 @@ auto
 flat_divide(Tensor    && tensor,
             Tiler const& tiler)      // Layout or Tile<Layout...> or Shape
 {
-  return make_tensor(std::forward<Tensor>(tensor).data(),
+  return make_tensor(static_cast<Tensor&&>(tensor).data(),
                      flat_divide(tensor.layout(), tiler));
 }
 
@@ -850,7 +849,7 @@ inner_partition(Tensor    && tensor,
                 Tiler const& tiler,
                 Coord const& coord)
 {
-  auto tensor_tiled = zipped_divide(std::forward<Tensor>(tensor), tiler);
+  auto tensor_tiled = zipped_divide(static_cast<Tensor&&>(tensor), tiler);
   constexpr int R0 = decltype(rank<0>(tensor_tiled))::value;
 
   // The coord slices into the second mode (the "rest" mode), flatten the first
@@ -877,7 +876,7 @@ outer_partition(Tensor    && tensor,
                 Tiler const& tiler,
                 Coord const& coord)
 {
-  auto tensor_tiled = zipped_divide(std::forward<Tensor>(tensor), tiler);
+  auto tensor_tiled = zipped_divide(static_cast<Tensor&&>(tensor), tiler);
   constexpr int R1 = decltype(rank<1>(tensor_tiled))::value;
 
   // The coord slices into the first mode (the "tile" mode), flatten the second
@@ -903,7 +902,7 @@ local_tile(Tensor    && tensor,
            Tiler const& tiler,   // tiler to apply
            Coord const& coord)   // coord to slice into "remainder"
 {
-  return inner_partition(std::forward<Tensor>(tensor),
+  return inner_partition(static_cast<Tensor&&>(tensor),
                          tiler,
                          coord);
 }
@@ -928,7 +927,7 @@ local_tile(Tensor    && tensor,
            Coord const& coord,   // coord to slice into "remainder"
            Proj  const& proj)    // projection to apply to tiler and coord
 {
-  return local_tile(std::forward<Tensor>(tensor),
+  return local_tile(static_cast<Tensor&&>(tensor),
                     dice(proj, tiler),
                     dice(proj, coord));
 }
@@ -946,7 +945,7 @@ local_partition(Tensor                     && tensor,
                 Index                  const& index)   // index to slice for
 {
   static_assert(is_integral<Index>::value);
-  return outer_partition(std::forward<Tensor>(tensor),
+  return outer_partition(static_cast<Tensor&&>(tensor),
                          product_each(shape(tile)),
                          tile.get_flat_coord(index));
 }
@@ -970,7 +969,7 @@ local_partition(Tensor                     && tensor,
                 Index                  const& index,  // index to slice for
                 Projection             const& proj)
 {
-  return local_partition(std::forward<Tensor>(tensor),
+  return local_partition(static_cast<Tensor&&>(tensor),
                          dice(proj, tile),
                          index);
 }
@@ -986,9 +985,11 @@ CUTE_HOST_DEVICE void print(Tensor<Engine,Layout> const& tensor)
 }
 
 template <class Engine, class Layout>
-CUTE_HOST_DEVICE void print_tensor(Tensor<Engine,Layout> const& tensor)
+CUTE_HOST_DEVICE void print_tensor(Tensor<Engine,Layout> const& tensor, bool print_type = true)
 {
-  print(tensor); print(":\n");
+  if (print_type) {
+    print(tensor); print(":\n");
+  }
 
   if constexpr (Layout::rank == 1)
   {
@@ -1008,18 +1009,18 @@ CUTE_HOST_DEVICE void print_tensor(Tensor<Engine,Layout> const& tensor)
   } else
   if constexpr (Layout::rank == 3)
   {
-    print_tensor(tensor(_,_,0));
+    print_tensor(tensor(_,_,0), false);
     for (int k = 1; k < size<2>(tensor); ++k) {
       for (int i = 0; i < 5*size<1>(tensor); ++i) { print("-"); } print("\n");
-      print_tensor(tensor(_,_,k));
+      print_tensor(tensor(_,_,k), false);
     }
   } else
   if constexpr (Layout::rank == 4)
   {
-    print_tensor(tensor(_,_,_,0));
+    print_tensor(tensor(_,_,_,0), false);
     for (int p = 1; p < size<3>(tensor); ++p) {
       for (int i = 0; i < 5*size<1>(tensor); ++i) { print("="); } print("\n");
-      print_tensor(tensor(_,_,_,p));
+      print_tensor(tensor(_,_,_,p), false);
     }
   }
 }
@@ -1090,5 +1091,9 @@ CUTE_HOST std::ostream& operator<<(std::ostream& os, Tensor<Engine,Layout> const
 #include <cute/algorithm/fill.hpp>
 #include <cute/algorithm/clear.hpp>
 #include <cute/algorithm/copy.hpp>
+#include <cute/algorithm/prefetch.hpp>
 #include <cute/algorithm/axpby.hpp>
 #include <cute/algorithm/gemm.hpp>
+
+#include <cute/algorithm/cooperative_copy.hpp>
+#include <cute/algorithm/cooperative_gemm.hpp>

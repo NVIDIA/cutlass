@@ -36,6 +36,7 @@
 #include <stdexcept>
 #include <iomanip>
 #include <ios>
+#include <vector>
 
 #include "cutlass/core_io.h"
 
@@ -167,7 +168,7 @@ Status GemmOperationProfiler::GemmProblem::parse(
     // default value
     this->k = 1024;
   }
-  
+
   if (!arg_as_SplitKModeID(this->split_k_mode, "split_k_mode", problem_space, problem)) {
     // default value
     this->split_k_mode = library::SplitKMode::kSerial;
@@ -421,6 +422,7 @@ void GemmOperationProfiler::initialize_result_(
 bool GemmOperationProfiler::initialize_reduction_configuration_(
   library::Operation const *operation,
   ProblemSpace::Problem const &problem) {
+
   library::GemmDescription const &gemm_desc =
     static_cast<library::GemmDescription const&>(operation->description());
 
@@ -577,7 +579,6 @@ Status GemmOperationProfiler::initialize_workspace(
   if (options.profiling.provider_enabled(library::Provider::kCUTLASS)) {
 
     if (options.execution_mode != ExecutionMode::kDryRun) {
-
       uint64_t workspace_size = underlying_operation->get_host_workspace_size(&gemm_workspace_.configuration);
       gemm_workspace_.host_workspace.resize(workspace_size, 0);
 
@@ -620,7 +621,6 @@ Status GemmOperationProfiler::initialize_workspace(
       results_.back().verification_map[provider] = Disposition::kNotRun;
     }
   }
-
   return status;
 }
 
@@ -793,7 +793,6 @@ bool GemmOperationProfiler::verify_with_cublas_(
   library::Operation const *operation,
   ProblemSpace const &problem_space,
   ProblemSpace::Problem const &problem) {
-
 
 #if CUTLASS_ENABLE_CUBLAS
 

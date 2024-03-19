@@ -146,12 +146,12 @@ public:
 
   // Kernel entry point API
   struct Params {
-    GemmUniversalMode mode;
-    ProblemShape problem_shape;
-    MainloopParams mainloop;
-    EpilogueParams epilogue;
-    KernelHardwareInfo hw_info;
-    TileSchedulerParams scheduler;
+    GemmUniversalMode mode{};
+    ProblemShape problem_shape{};
+    MainloopParams mainloop{};
+    EpilogueParams epilogue{};
+    KernelHardwareInfo hw_info{};
+    TileSchedulerParams scheduler{};
   };
 
   //
@@ -213,7 +213,7 @@ public:
   }
 
   static
-  int
+  size_t
   get_workspace_size(Arguments const& args) {
     TileScheduler t;
     return t.template get_workspace_size<ProblemShape, ElementAccumulator>(
@@ -222,7 +222,8 @@ public:
 
   static
   cutlass::Status
-  initialize_workspace(Arguments const& args, void* workspace = nullptr, cudaStream_t stream = nullptr) {
+  initialize_workspace(Arguments const& args, void* workspace = nullptr, cudaStream_t stream = nullptr,
+    CudaHostAdapter* cuda_adapter = nullptr) {
     TileScheduler t;
     return t.template initialize_workspace<ProblemShape, ElementAccumulator>(
       args.scheduler, workspace, stream, args.problem_shape, args.hw_info, NumMmaWarpGroups);

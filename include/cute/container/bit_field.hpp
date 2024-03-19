@@ -37,7 +37,7 @@
 
 #include <cute/config.hpp>
 
-#include <cute/numeric/int.hpp>   // uint_bit_t
+#include <cute/numeric/numeric_types.hpp>   // uint_bit_t
 
 namespace cute
 {

@@ -1,6 +1,6 @@
-![ALT](/media/images/gemm-hierarchy-with-epilogue-no-labels.png "CUTLASS Quick Start Guide")
+![ALT](../images/gemm-hierarchy-with-epilogue-no-labels.png "CUTLASS Quick Start Guide")
 
-[README](/README.md#documentation) > **Quick Start**
+[README](../../README.md#documentation) > **Quick Start**
 
 # Quickstart
 

@@ -119,7 +119,7 @@ struct DefaultEpilogueTensorOpBlas3 {
     kBlasMode
   >;
 
-  using AccumulatorFragmentIterator = typename std::conditional<is_complex<ElementOutput>::value,
+  using AccumulatorFragmentIterator = typename platform::conditional<is_complex<ElementOutput>::value,
                                     cutlass::epilogue::warp::FragmentIteratorComplexTensorOp<
                                         typename WarpMmaTensorOp::Shape,
                                         typename WarpMmaTensorOp::Policy::Operator::Shape,

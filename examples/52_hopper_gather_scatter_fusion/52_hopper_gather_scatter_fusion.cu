@@ -289,7 +289,8 @@ struct ExampleRunner
     ElementAccumulator,
     Shape<_128,_128,_64>,
     Shape<_2,_2,_1>,
-    cutlass::gemm::collective::StageCountAutoCarveout<sizeof(typename EpilogueOpt::SharedStorage)>,
+    cutlass::gemm::collective::StageCountAutoCarveout<
+      static_cast<int>(sizeof(typename EpilogueOpt::SharedStorage))>,
     cutlass::gemm::collective::KernelScheduleAuto
   >::CollectiveOp;
 

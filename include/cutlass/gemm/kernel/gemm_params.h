@@ -70,46 +70,36 @@ struct GemmParams {
   // Data members
   //
 
-  cutlass::gemm::GemmCoord problem_size;
-  cutlass::gemm::GemmCoord grid_tiled_shape;
-  int swizzle_log_tile;
+  cutlass::gemm::GemmCoord problem_size{};
+  cutlass::gemm::GemmCoord grid_tiled_shape{};
+  int swizzle_log_tile{};
 
-  // Data members for Mma::Iterator::Params
-  MmaIteratorParams params_itr_a;
-  MmaIteratorParams params_itr_b;  
+  GemmUniversalMode mode{GemmUniversalMode::kGemm};
+  int batch_count{1};
+  int gemm_k_size{0};
 
-  // Data member for Epilogue::OutputTileIterator::Params 
-  EpilogueIteratorParams params_itr_c;
-  EpilogueIteratorParams params_itr_d;
+  void * ptr_A{nullptr};
+  void * ptr_B{nullptr};
+  void * ptr_C{nullptr};
+  void * ptr_D{nullptr};
 
+  LongIndex lda{0};
+  LongIndex ldb{0};
+  LongIndex ldc{0};
+  LongIndex ldd{0};
 
-  GemmUniversalMode mode;
-  int batch_count;
-  int gemm_k_size;
+  LongIndex batch_stride_A{0};
+  LongIndex batch_stride_B{0};
+  LongIndex batch_stride_C{0};
+  LongIndex batch_stride_D{0};
 
-  void * ptr_A;
-  void * ptr_B;
-  void * ptr_C;
-  void * ptr_D;
-
-  LongIndex lda; 
-  LongIndex ldb; 
-  LongIndex ldc; 
-  LongIndex ldd;
-
-  LongIndex batch_stride_A;
-  LongIndex batch_stride_B;
-  LongIndex batch_stride_C;
-  LongIndex batch_stride_D;
-
-  int *semaphore;
+  int *semaphore{nullptr};
 
   //
   // Methods
   //
 
-  CUTLASS_HOST_DEVICE
-  GemmParams()  {}
+  GemmParams() = default;
 
   CUTLASS_HOST_DEVICE
   GemmParams(

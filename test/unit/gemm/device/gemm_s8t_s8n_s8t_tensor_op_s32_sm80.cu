@@ -389,6 +389,956 @@ CUTLASS_TEST_L0(SM80_Device_Gemm_s8t_s8n_s8t_tensor_op_s32, 64x64x64_32x32x64, {
   EXPECT_TRUE(testbed.run_all());
 } )
 
+TEST(SM80_Device_Gemm_s8t_s8n_s8t_tensor_op_s32, 16x64x128_16x16x128) {
+
+  using ElementOutput = int8_t;
+  using ElementAccumulator = int32_t;
+  using ElementCompute = float;
+
+  using Gemm = cutlass::gemm::device::Gemm<
+    int8_t,
+    cutlass::layout::RowMajor,
+    int8_t,
+    cutlass::layout::ColumnMajor,
+    ElementOutput,
+    cutlass::layout::RowMajor,
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
+    cutlass::arch::Sm80,
+    cutlass::gemm::GemmShape<16, 64, 128>,
+    cutlass::gemm::GemmShape<16, 16, 128>,
+    cutlass::gemm::GemmShape<16, 8, 32>,
+    cutlass::epilogue::thread::LinearCombinationClamp<
+      ElementOutput,
+      32 / cutlass::sizeof_bits<ElementOutput>::value,
+      ElementAccumulator,
+      ElementCompute
+    >,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+    3
+  >;
+
+  test::gemm::device::MultistageTestbed<Gemm> testbed;
+
+  EXPECT_TRUE(testbed.run_all());
+}
+
+TEST(SM80_Device_Gemm_s8t_s8n_s8t_tensor_op_s32, 16x128x128_16x32x128) {
+
+  using ElementOutput = int8_t;
+  using ElementAccumulator = int32_t;
+  using ElementCompute = float;
+
+  using Gemm = cutlass::gemm::device::Gemm<
+    int8_t,
+    cutlass::layout::RowMajor,
+    int8_t,
+    cutlass::layout::ColumnMajor,
+    ElementOutput,
+    cutlass::layout::RowMajor,
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
+    cutlass::arch::Sm80,
+    cutlass::gemm::GemmShape<16, 128, 128>,
+    cutlass::gemm::GemmShape<16, 32, 128>,
+    cutlass::gemm::GemmShape<16, 8, 32>,
+    cutlass::epilogue::thread::LinearCombinationClamp<
+      ElementOutput,
+      64 / cutlass::sizeof_bits<ElementOutput>::value,
+      ElementAccumulator,
+      ElementCompute
+    >,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+    3
+  >;
+
+  test::gemm::device::MultistageTestbed<Gemm> testbed;
+
+  EXPECT_TRUE(testbed.run_all());
+}
+
+TEST(SM80_Device_Gemm_s8t_s8n_s8t_tensor_op_s32, 16x256x128_16x64x128) {
+
+  using ElementOutput = int8_t;
+  using ElementAccumulator = int32_t;
+  using ElementCompute = float;
+
+  using Gemm = cutlass::gemm::device::Gemm<
+    int8_t,
+    cutlass::layout::RowMajor,
+    int8_t,
+    cutlass::layout::ColumnMajor,
+    ElementOutput,
+    cutlass::layout::RowMajor,
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
+    cutlass::arch::Sm80,
+    cutlass::gemm::GemmShape<16, 256, 128>,
+    cutlass::gemm::GemmShape<16, 64, 128>,
+    cutlass::gemm::GemmShape<16, 8, 32>,
+    cutlass::epilogue::thread::LinearCombinationClamp<
+      ElementOutput,
+      128 / cutlass::sizeof_bits<ElementOutput>::value,
+      ElementAccumulator,
+      ElementCompute
+    >,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+    3
+  >;
+
+  test::gemm::device::MultistageTestbed<Gemm> testbed;
+
+  EXPECT_TRUE(testbed.run_all());
+}
+
+TEST(SM80_Device_Gemm_s8t_s8n_s8t_tensor_op_s32, 64x16x128_16x16x128) {
+
+  using ElementOutput = int8_t;
+  using ElementAccumulator = int32_t;
+  using ElementCompute = float;
+
+  using Gemm = cutlass::gemm::device::Gemm<
+    int8_t,
+    cutlass::layout::RowMajor,
+    int8_t,
+    cutlass::layout::ColumnMajor,
+    ElementOutput,
+    cutlass::layout::RowMajor,
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
+    cutlass::arch::Sm80,
+    cutlass::gemm::GemmShape<64, 16, 128>,
+    cutlass::gemm::GemmShape<16, 16, 128>,
+    cutlass::gemm::GemmShape<16, 8, 32>,
+    cutlass::epilogue::thread::LinearCombinationClamp<
+      ElementOutput,
+      32 / cutlass::sizeof_bits<ElementOutput>::value,
+      ElementAccumulator,
+      ElementCompute
+    >,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+    3
+  >;
+
+  test::gemm::device::MultistageTestbed<Gemm> testbed;
+
+  EXPECT_TRUE(testbed.run_all());
+}
+
+TEST(SM80_Device_Gemm_s8t_s8n_s8t_tensor_op_s32, 128x16x128_32x16x128) {
+
+  using ElementOutput = int8_t;
+  using ElementAccumulator = int32_t;
+  using ElementCompute = float;
+
+  using Gemm = cutlass::gemm::device::Gemm<
+    int8_t,
+    cutlass::layout::RowMajor,
+    int8_t,
+    cutlass::layout::ColumnMajor,
+    ElementOutput,
+    cutlass::layout::RowMajor,
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
+    cutlass::arch::Sm80,
+    cutlass::gemm::GemmShape<128, 16, 128>,
+    cutlass::gemm::GemmShape<32, 16, 128>,
+    cutlass::gemm::GemmShape<16, 8, 32>,
+    cutlass::epilogue::thread::LinearCombinationClamp<
+      ElementOutput,
+      32 / cutlass::sizeof_bits<ElementOutput>::value,
+      ElementAccumulator,
+      ElementCompute
+    >,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+    3
+  >;
+
+  test::gemm::device::MultistageTestbed<Gemm> testbed;
+
+  EXPECT_TRUE(testbed.run_all());
+}
+
+TEST(SM80_Device_Gemm_s8t_s8n_s8t_tensor_op_s32, 256x16x128_64x16x128) {
+
+  using ElementOutput = int8_t;
+  using ElementAccumulator = int32_t;
+  using ElementCompute = float;
+
+  using Gemm = cutlass::gemm::device::Gemm<
+    int8_t,
+    cutlass::layout::RowMajor,
+    int8_t,
+    cutlass::layout::ColumnMajor,
+    ElementOutput,
+    cutlass::layout::RowMajor,
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
+    cutlass::arch::Sm80,
+    cutlass::gemm::GemmShape<256, 16, 128>,
+    cutlass::gemm::GemmShape<64, 16, 128>,
+    cutlass::gemm::GemmShape<16, 8, 32>,
+    cutlass::epilogue::thread::LinearCombinationClamp<
+      ElementOutput,
+      32 / cutlass::sizeof_bits<ElementOutput>::value,
+      ElementAccumulator,
+      ElementCompute
+    >,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+    3
+  >;
+
+  test::gemm::device::MultistageTestbed<Gemm> testbed;
+
+  EXPECT_TRUE(testbed.run_all());
+}
+
+TEST(SM80_Device_Gemm_s8t_s8n_s8t_tensor_op_s32, 32x32x64_16x16x64) {
+
+  using ElementOutput = int8_t;
+  using ElementAccumulator = int32_t;
+  using ElementCompute = float;
+
+  using Gemm = cutlass::gemm::device::Gemm<
+    int8_t,
+    cutlass::layout::RowMajor,
+    int8_t,
+    cutlass::layout::ColumnMajor,
+    ElementOutput,
+    cutlass::layout::RowMajor,
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
+    cutlass::arch::Sm80,
+    cutlass::gemm::GemmShape<32, 32, 64>,
+    cutlass::gemm::GemmShape<16, 16, 64>,
+    cutlass::gemm::GemmShape<16, 8, 32>,
+    cutlass::epilogue::thread::LinearCombinationClamp<
+      ElementOutput,
+      32 / cutlass::sizeof_bits<ElementOutput>::value,
+      ElementAccumulator,
+      ElementCompute
+    >,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+    3 
+  >;
+
+  test::gemm::device::MultistageTestbed<Gemm> testbed;
+
+  EXPECT_TRUE(testbed.run_all());
+}
+
+TEST(SM80_Device_Gemm_s8t_s8n_s8t_tensor_op_s32, 32x64x64_16x32x64) {
+
+  using ElementOutput = int8_t;
+  using ElementAccumulator = int32_t;
+  using ElementCompute = float;
+
+  using Gemm = cutlass::gemm::device::Gemm<
+    int8_t,
+    cutlass::layout::RowMajor,
+    int8_t,
+    cutlass::layout::ColumnMajor,
+    ElementOutput,
+    cutlass::layout::RowMajor,
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
+    cutlass::arch::Sm80,
+    cutlass::gemm::GemmShape<32, 64, 64>,
+    cutlass::gemm::GemmShape<16, 32, 64>,
+    cutlass::gemm::GemmShape<16, 8, 32>,
+    cutlass::epilogue::thread::LinearCombinationClamp<
+      ElementOutput,
+      64 / cutlass::sizeof_bits<ElementOutput>::value,
+      ElementAccumulator,
+      ElementCompute
+    >,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+    3 
+  >;
+
+  test::gemm::device::MultistageTestbed<Gemm> testbed;
+
+  EXPECT_TRUE(testbed.run_all());
+}
+
+TEST(SM80_Device_Gemm_s8t_s8n_s8t_tensor_op_s32, 32x128x64_16x64x64) {
+
+  using ElementOutput = int8_t;
+  using ElementAccumulator = int32_t;
+  using ElementCompute = float;
+
+  using Gemm = cutlass::gemm::device::Gemm<
+    int8_t,
+    cutlass::layout::RowMajor,
+    int8_t,
+    cutlass::layout::ColumnMajor,
+    ElementOutput,
+    cutlass::layout::RowMajor,
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
+    cutlass::arch::Sm80,
+    cutlass::gemm::GemmShape<32, 128, 64>,
+    cutlass::gemm::GemmShape<16, 64, 64>,
+    cutlass::gemm::GemmShape<16, 8, 32>,
+    cutlass::epilogue::thread::LinearCombinationClamp<
+      ElementOutput,
+      128 / cutlass::sizeof_bits<ElementOutput>::value,
+      ElementAccumulator,
+      ElementCompute
+    >,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+    3 
+  >;
+
+  test::gemm::device::MultistageTestbed<Gemm> testbed;
+
+  EXPECT_TRUE(testbed.run_all());
+}
+
+TEST(SM80_Device_Gemm_s8t_s8n_s8t_tensor_op_s32, 32x64x64_32x16x64) {
+
+  using ElementOutput = int8_t;
+  using ElementAccumulator = int32_t;
+  using ElementCompute = float;
+
+  using Gemm = cutlass::gemm::device::Gemm<
+    int8_t,
+    cutlass::layout::RowMajor,
+    int8_t,
+    cutlass::layout::ColumnMajor,
+    ElementOutput,
+    cutlass::layout::RowMajor,
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
+    cutlass::arch::Sm80,
+    cutlass::gemm::GemmShape<32, 64, 64>,
+    cutlass::gemm::GemmShape<32, 16, 64>,
+    cutlass::gemm::GemmShape<16, 8, 32>,
+    cutlass::epilogue::thread::LinearCombinationClamp<
+      ElementOutput,
+      32 / cutlass::sizeof_bits<ElementOutput>::value,
+      ElementAccumulator,
+      ElementCompute
+    >,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+    3 
+  >;
+
+  test::gemm::device::MultistageTestbed<Gemm> testbed;
+
+  EXPECT_TRUE(testbed.run_all());
+}
+
+TEST(SM80_Device_Gemm_s8t_s8n_s8t_tensor_op_s32, 32x128x64_32x32x64) {
+
+  using ElementOutput = int8_t;
+  using ElementAccumulator = int32_t;
+  using ElementCompute = float;
+
+  using Gemm = cutlass::gemm::device::Gemm<
+    int8_t,
+    cutlass::layout::RowMajor,
+    int8_t,
+    cutlass::layout::ColumnMajor,
+    ElementOutput,
+    cutlass::layout::RowMajor,
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
+    cutlass::arch::Sm80,
+    cutlass::gemm::GemmShape<32, 128, 64>,
+    cutlass::gemm::GemmShape<32, 32, 64>,
+    cutlass::gemm::GemmShape<16, 8, 32>,
+    cutlass::epilogue::thread::LinearCombinationClamp<
+      ElementOutput,
+      64 / cutlass::sizeof_bits<ElementOutput>::value,
+      ElementAccumulator,
+      ElementCompute
+    >,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+    3 
+  >;
+
+  test::gemm::device::MultistageTestbed<Gemm> testbed;
+
+  EXPECT_TRUE(testbed.run_all());
+}
+
+TEST(SM80_Device_Gemm_s8t_s8n_s8t_tensor_op_s32, 32x256x64_32x64x64) {
+
+  using ElementOutput = int8_t;
+  using ElementAccumulator = int32_t;
+  using ElementCompute = float;
+
+  using Gemm = cutlass::gemm::device::Gemm<
+    int8_t,
+    cutlass::layout::RowMajor,
+    int8_t,
+    cutlass::layout::ColumnMajor,
+    ElementOutput,
+    cutlass::layout::RowMajor,
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
+    cutlass::arch::Sm80,
+    cutlass::gemm::GemmShape<32, 256, 64>,
+    cutlass::gemm::GemmShape<32, 64, 64>,
+    cutlass::gemm::GemmShape<16, 8, 32>,
+    cutlass::epilogue::thread::LinearCombinationClamp<
+      ElementOutput,
+      128 / cutlass::sizeof_bits<ElementOutput>::value,
+      ElementAccumulator,
+      ElementCompute
+    >,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+    3 
+  >;
+
+  test::gemm::device::MultistageTestbed<Gemm> testbed;
+
+  EXPECT_TRUE(testbed.run_all());
+}
+
+TEST(SM80_Device_Gemm_s8t_s8n_s8t_tensor_op_s32, 64x32x64_32x16x64) {
+
+  using ElementOutput = int8_t;
+  using ElementAccumulator = int32_t;
+  using ElementCompute = float;
+
+  using Gemm = cutlass::gemm::device::Gemm<
+    int8_t,
+    cutlass::layout::RowMajor,
+    int8_t,
+    cutlass::layout::ColumnMajor,
+    ElementOutput,
+    cutlass::layout::RowMajor,
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
+    cutlass::arch::Sm80,
+    cutlass::gemm::GemmShape<64, 32, 64>,
+    cutlass::gemm::GemmShape<32, 16, 64>,
+    cutlass::gemm::GemmShape<16, 8, 32>,
+    cutlass::epilogue::thread::LinearCombinationClamp<
+      ElementOutput,
+      32 / cutlass::sizeof_bits<ElementOutput>::value,
+      ElementAccumulator,
+      ElementCompute
+    >,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+    3
+  >;
+
+  test::gemm::device::MultistageTestbed<Gemm> testbed;
+
+  EXPECT_TRUE(testbed.run_all());
+}
+
+TEST(SM80_Device_Gemm_s8t_s8n_s8t_tensor_op_s32, 128x32x64_64x16x64) {
+
+  using ElementOutput = int8_t;
+  using ElementAccumulator = int32_t;
+  using ElementCompute = float;
+
+  using Gemm = cutlass::gemm::device::Gemm<
+    int8_t,
+    cutlass::layout::RowMajor,
+    int8_t,
+    cutlass::layout::ColumnMajor,
+    ElementOutput,
+    cutlass::layout::RowMajor,
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
+    cutlass::arch::Sm80,
+    cutlass::gemm::GemmShape<128, 32, 64>,
+    cutlass::gemm::GemmShape<64, 16, 64>,
+    cutlass::gemm::GemmShape<16, 8, 32>,
+    cutlass::epilogue::thread::LinearCombinationClamp<
+      ElementOutput,
+      32 / cutlass::sizeof_bits<ElementOutput>::value,
+      ElementAccumulator,
+      ElementCompute
+    >,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+    3 
+  >;
+
+  test::gemm::device::MultistageTestbed<Gemm> testbed;
+
+  EXPECT_TRUE(testbed.run_all());
+}
+
+TEST(SM80_Device_Gemm_s8t_s8n_s8t_tensor_op_s32, 64x32x64_16x32x64) {
+
+  using ElementOutput = int8_t;
+  using ElementAccumulator = int32_t;
+  using ElementCompute = float;
+
+  using Gemm = cutlass::gemm::device::Gemm<
+    int8_t,
+    cutlass::layout::RowMajor,
+    int8_t,
+    cutlass::layout::ColumnMajor,
+    ElementOutput,
+    cutlass::layout::RowMajor,
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
+    cutlass::arch::Sm80,
+    cutlass::gemm::GemmShape<64, 32, 64>,
+    cutlass::gemm::GemmShape<16, 32, 64>,
+    cutlass::gemm::GemmShape<16, 8, 32>,
+    cutlass::epilogue::thread::LinearCombinationClamp<
+      ElementOutput,
+      64 / cutlass::sizeof_bits<ElementOutput>::value,
+      ElementAccumulator,
+      ElementCompute
+    >,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+    3 
+  >;
+
+  test::gemm::device::MultistageTestbed<Gemm> testbed;
+
+  EXPECT_TRUE(testbed.run_all());
+}
+
+TEST(SM80_Device_Gemm_s8t_s8n_s8t_tensor_op_s32, 128x32x64_32x32x64) {
+
+  using ElementOutput = int8_t;
+  using ElementAccumulator = int32_t;
+  using ElementCompute = float;
+
+  using Gemm = cutlass::gemm::device::Gemm<
+    int8_t,
+    cutlass::layout::RowMajor,
+    int8_t,
+    cutlass::layout::ColumnMajor,
+    ElementOutput,
+    cutlass::layout::RowMajor,
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
+    cutlass::arch::Sm80,
+    cutlass::gemm::GemmShape<128, 32, 64>,
+    cutlass::gemm::GemmShape<32, 32, 64>,
+    cutlass::gemm::GemmShape<16, 8, 32>,
+    cutlass::epilogue::thread::LinearCombinationClamp<
+      ElementOutput,
+      64 / cutlass::sizeof_bits<ElementOutput>::value,
+      ElementAccumulator,
+      ElementCompute
+    >,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+    3 
+  >;
+
+  test::gemm::device::MultistageTestbed<Gemm> testbed;
+
+  EXPECT_TRUE(testbed.run_all());
+}
+
+TEST(SM80_Device_Gemm_s8t_s8n_s8t_tensor_op_s32, 256x32x64_64x32x64) {
+
+  using ElementOutput = int8_t;
+  using ElementAccumulator = int32_t;
+  using ElementCompute = float;
+
+  using Gemm = cutlass::gemm::device::Gemm<
+    int8_t,
+    cutlass::layout::RowMajor,
+    int8_t,
+    cutlass::layout::ColumnMajor,
+    ElementOutput,
+    cutlass::layout::RowMajor,
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
+    cutlass::arch::Sm80,
+    cutlass::gemm::GemmShape<256, 32, 64>,
+    cutlass::gemm::GemmShape<64, 32, 64>,
+    cutlass::gemm::GemmShape<16, 8, 32>,
+    cutlass::epilogue::thread::LinearCombinationClamp<
+      ElementOutput,
+      64 / cutlass::sizeof_bits<ElementOutput>::value,
+      ElementAccumulator,
+      ElementCompute
+    >,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+    3 
+  >;
+
+  test::gemm::device::MultistageTestbed<Gemm> testbed;
+
+  EXPECT_TRUE(testbed.run_all());
+}
+
+TEST(SM80_Device_Gemm_s8t_s8n_s8t_tensor_op_s32, 32x32x128_16x16x128) {
+
+  using ElementOutput = int8_t;
+  using ElementAccumulator = int32_t;
+  using ElementCompute = float;
+
+  using Gemm = cutlass::gemm::device::Gemm<
+    int8_t,
+    cutlass::layout::RowMajor,
+    int8_t,
+    cutlass::layout::ColumnMajor,
+    ElementOutput,
+    cutlass::layout::RowMajor,
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
+    cutlass::arch::Sm80,
+    cutlass::gemm::GemmShape<32, 32, 128>,
+    cutlass::gemm::GemmShape<16, 16, 128>,
+    cutlass::gemm::GemmShape<16, 8, 32>,
+    cutlass::epilogue::thread::LinearCombinationClamp<
+      ElementOutput,
+      32 / cutlass::sizeof_bits<ElementOutput>::value,
+      ElementAccumulator,
+      ElementCompute
+    >,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+    3 
+  >;
+
+  test::gemm::device::MultistageTestbed<Gemm> testbed;
+
+  EXPECT_TRUE(testbed.run_all());
+}
+
+TEST(SM80_Device_Gemm_s8t_s8n_s8t_tensor_op_s32, 32x64x128_16x32x128) {
+
+  using ElementOutput = int8_t;
+  using ElementAccumulator = int32_t;
+  using ElementCompute = float;
+
+  using Gemm = cutlass::gemm::device::Gemm<
+    int8_t,
+    cutlass::layout::RowMajor,
+    int8_t,
+    cutlass::layout::ColumnMajor,
+    ElementOutput,
+    cutlass::layout::RowMajor,
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
+    cutlass::arch::Sm80,
+    cutlass::gemm::GemmShape<32, 64, 128>,
+    cutlass::gemm::GemmShape<16, 32, 128>,
+    cutlass::gemm::GemmShape<16, 8, 32>,
+    cutlass::epilogue::thread::LinearCombinationClamp<
+      ElementOutput,
+      64 / cutlass::sizeof_bits<ElementOutput>::value,
+      ElementAccumulator,
+      ElementCompute
+    >,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+    3 
+  >;
+
+  test::gemm::device::MultistageTestbed<Gemm> testbed;
+
+  EXPECT_TRUE(testbed.run_all());
+}
+
+TEST(SM80_Device_Gemm_s8t_s8n_s8t_tensor_op_s32, 32x128x128_16x64x128) {
+
+  using ElementOutput = int8_t;
+  using ElementAccumulator = int32_t;
+  using ElementCompute = float;
+
+  using Gemm = cutlass::gemm::device::Gemm<
+    int8_t,
+    cutlass::layout::RowMajor,
+    int8_t,
+    cutlass::layout::ColumnMajor,
+    ElementOutput,
+    cutlass::layout::RowMajor,
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
+    cutlass::arch::Sm80,
+    cutlass::gemm::GemmShape<32, 128, 128>,
+    cutlass::gemm::GemmShape<16, 64, 128>,
+    cutlass::gemm::GemmShape<16, 8, 32>,
+    cutlass::epilogue::thread::LinearCombinationClamp<
+      ElementOutput,
+      128 / cutlass::sizeof_bits<ElementOutput>::value,
+      ElementAccumulator,
+      ElementCompute
+    >,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+    3 
+  >;
+
+  test::gemm::device::MultistageTestbed<Gemm> testbed;
+
+  EXPECT_TRUE(testbed.run_all());
+}
+
+TEST(SM80_Device_Gemm_s8t_s8n_s8t_tensor_op_s32, 32x64x128_32x16x128) {
+
+  using ElementOutput = int8_t;
+  using ElementAccumulator = int32_t;
+  using ElementCompute = float;
+
+  using Gemm = cutlass::gemm::device::Gemm<
+    int8_t,
+    cutlass::layout::RowMajor,
+    int8_t,
+    cutlass::layout::ColumnMajor,
+    ElementOutput,
+    cutlass::layout::RowMajor,
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
+    cutlass::arch::Sm80,
+    cutlass::gemm::GemmShape<32, 64, 128>,
+    cutlass::gemm::GemmShape<32, 16, 128>,
+    cutlass::gemm::GemmShape<16, 8, 32>,
+    cutlass::epilogue::thread::LinearCombinationClamp<
+      ElementOutput,
+      32 / cutlass::sizeof_bits<ElementOutput>::value,
+      ElementAccumulator,
+      ElementCompute
+    >,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+    3 
+  >;
+
+  test::gemm::device::MultistageTestbed<Gemm> testbed;
+
+  EXPECT_TRUE(testbed.run_all());
+}
+
+TEST(SM80_Device_Gemm_s8t_s8n_s8t_tensor_op_s32, 32x128x128_32x32x128) {
+
+  using ElementOutput = int8_t;
+  using ElementAccumulator = int32_t;
+  using ElementCompute = float;
+
+  using Gemm = cutlass::gemm::device::Gemm<
+    int8_t,
+    cutlass::layout::RowMajor,
+    int8_t,
+    cutlass::layout::ColumnMajor,
+    ElementOutput,
+    cutlass::layout::RowMajor,
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
+    cutlass::arch::Sm80,
+    cutlass::gemm::GemmShape<32, 128, 128>,
+    cutlass::gemm::GemmShape<32, 32, 128>,
+    cutlass::gemm::GemmShape<16, 8, 32>,
+    cutlass::epilogue::thread::LinearCombinationClamp<
+      ElementOutput,
+      64 / cutlass::sizeof_bits<ElementOutput>::value,
+      ElementAccumulator,
+      ElementCompute
+    >,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+    3 
+  >;
+
+  test::gemm::device::MultistageTestbed<Gemm> testbed;
+
+  EXPECT_TRUE(testbed.run_all());
+}
+
+TEST(SM80_Device_Gemm_s8t_s8n_s8t_tensor_op_s32, 32x256x128_32x64x128) {
+
+  using ElementOutput = int8_t;
+  using ElementAccumulator = int32_t;
+  using ElementCompute = float;
+
+  using Gemm = cutlass::gemm::device::Gemm<
+    int8_t,
+    cutlass::layout::RowMajor,
+    int8_t,
+    cutlass::layout::ColumnMajor,
+    ElementOutput,
+    cutlass::layout::RowMajor,
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
+    cutlass::arch::Sm80,
+    cutlass::gemm::GemmShape<32, 256, 128>,
+    cutlass::gemm::GemmShape<32, 64, 128>,
+    cutlass::gemm::GemmShape<16, 8, 32>,
+    cutlass::epilogue::thread::LinearCombinationClamp<
+      ElementOutput,
+      128 / cutlass::sizeof_bits<ElementOutput>::value,
+      ElementAccumulator,
+      ElementCompute
+    >,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+    3 
+  >;
+
+  test::gemm::device::MultistageTestbed<Gemm> testbed;
+
+  EXPECT_TRUE(testbed.run_all());
+}
+
+TEST(SM80_Device_Gemm_s8t_s8n_s8t_tensor_op_s32, 64x32x128_32x16x128) {
+
+  using ElementOutput = int8_t;
+  using ElementAccumulator = int32_t;
+  using ElementCompute = float;
+
+  using Gemm = cutlass::gemm::device::Gemm<
+    int8_t,
+    cutlass::layout::RowMajor,
+    int8_t,
+    cutlass::layout::ColumnMajor,
+    ElementOutput,
+    cutlass::layout::RowMajor,
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
+    cutlass::arch::Sm80,
+    cutlass::gemm::GemmShape<64, 32, 128>,
+    cutlass::gemm::GemmShape<32, 16, 128>,
+    cutlass::gemm::GemmShape<16, 8, 32>,
+    cutlass::epilogue::thread::LinearCombinationClamp<
+      ElementOutput,
+      32 / cutlass::sizeof_bits<ElementOutput>::value,
+      ElementAccumulator,
+      ElementCompute
+    >,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+    3
+  >;
+
+  test::gemm::device::MultistageTestbed<Gemm> testbed;
+
+  EXPECT_TRUE(testbed.run_all());
+}
+
+TEST(SM80_Device_Gemm_s8t_s8n_s8t_tensor_op_s32, 128x32x128_64x16x128) {
+
+  using ElementOutput = int8_t;
+  using ElementAccumulator = int32_t;
+  using ElementCompute = float;
+
+  using Gemm = cutlass::gemm::device::Gemm<
+    int8_t,
+    cutlass::layout::RowMajor,
+    int8_t,
+    cutlass::layout::ColumnMajor,
+    ElementOutput,
+    cutlass::layout::RowMajor,
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
+    cutlass::arch::Sm80,
+    cutlass::gemm::GemmShape<128, 32, 128>,
+    cutlass::gemm::GemmShape<64, 16, 128>,
+    cutlass::gemm::GemmShape<16, 8, 32>,
+    cutlass::epilogue::thread::LinearCombinationClamp<
+      ElementOutput,
+      32 / cutlass::sizeof_bits<ElementOutput>::value,
+      ElementAccumulator,
+      ElementCompute
+    >,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+    3 
+  >;
+
+  test::gemm::device::MultistageTestbed<Gemm> testbed;
+
+  EXPECT_TRUE(testbed.run_all());
+}
+
+TEST(SM80_Device_Gemm_s8t_s8n_s8t_tensor_op_s32, 64x32x128_16x32x128) {
+
+  using ElementOutput = int8_t;
+  using ElementAccumulator = int32_t;
+  using ElementCompute = float;
+
+  using Gemm = cutlass::gemm::device::Gemm<
+    int8_t,
+    cutlass::layout::RowMajor,
+    int8_t,
+    cutlass::layout::ColumnMajor,
+    ElementOutput,
+    cutlass::layout::RowMajor,
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
+    cutlass::arch::Sm80,
+    cutlass::gemm::GemmShape<64, 32, 128>,
+    cutlass::gemm::GemmShape<16, 32, 128>,
+    cutlass::gemm::GemmShape<16, 8, 32>,
+    cutlass::epilogue::thread::LinearCombinationClamp<
+      ElementOutput,
+      64 / cutlass::sizeof_bits<ElementOutput>::value,
+      ElementAccumulator,
+      ElementCompute
+    >,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+    3 
+  >;
+
+  test::gemm::device::MultistageTestbed<Gemm> testbed;
+
+  EXPECT_TRUE(testbed.run_all());
+}
+
+TEST(SM80_Device_Gemm_s8t_s8n_s8t_tensor_op_s32, 128x32x128_32x32x128) {
+
+  using ElementOutput = int8_t;
+  using ElementAccumulator = int32_t;
+  using ElementCompute = float;
+
+  using Gemm = cutlass::gemm::device::Gemm<
+    int8_t,
+    cutlass::layout::RowMajor,
+    int8_t,
+    cutlass::layout::ColumnMajor,
+    ElementOutput,
+    cutlass::layout::RowMajor,
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
+    cutlass::arch::Sm80,
+    cutlass::gemm::GemmShape<128, 32, 128>,
+    cutlass::gemm::GemmShape<32, 32, 128>,
+    cutlass::gemm::GemmShape<16, 8, 32>,
+    cutlass::epilogue::thread::LinearCombinationClamp<
+      ElementOutput,
+      64 / cutlass::sizeof_bits<ElementOutput>::value,
+      ElementAccumulator,
+      ElementCompute
+    >,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+    3 
+  >;
+
+  test::gemm::device::MultistageTestbed<Gemm> testbed;
+
+  EXPECT_TRUE(testbed.run_all());
+}
+
+TEST(SM80_Device_Gemm_s8t_s8n_s8t_tensor_op_s32, 256x32x128_64x32x128) {
+
+  using ElementOutput = int8_t;
+  using ElementAccumulator = int32_t;
+  using ElementCompute = float;
+
+  using Gemm = cutlass::gemm::device::Gemm<
+    int8_t,
+    cutlass::layout::RowMajor,
+    int8_t,
+    cutlass::layout::ColumnMajor,
+    ElementOutput,
+    cutlass::layout::RowMajor,
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
+    cutlass::arch::Sm80,
+    cutlass::gemm::GemmShape<256, 32, 128>,
+    cutlass::gemm::GemmShape<64, 32, 128>,
+    cutlass::gemm::GemmShape<16, 8, 32>,
+    cutlass::epilogue::thread::LinearCombinationClamp<
+      ElementOutput,
+      64 / cutlass::sizeof_bits<ElementOutput>::value,
+      ElementAccumulator,
+      ElementCompute
+    >,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+    3 
+  >;
+
+  test::gemm::device::MultistageTestbed<Gemm> testbed;
+
+  EXPECT_TRUE(testbed.run_all());
+}
 ////////////////////////////////////////////////////////////////////////////////
 #endif // #if (CUTLASS_ARCH_MMA_SM80_SUPPORTED)
-

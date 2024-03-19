@@ -111,19 +111,20 @@ public:
 
   template <class ProblemShape>
   static constexpr Params
-  to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
+  to_underlying_arguments(ProblemShape const&, Arguments const& args, void*) {
     return args;
   }
 
   template <class ProblemShape>
   static size_t
-  get_workspace_size(ProblemShape const& problem_shape, Arguments const& args) {
+  get_workspace_size(ProblemShape const&, Arguments const&) {
     return 0;
   }
 
   template <class ProblemShape>
   static cutlass::Status
-  initialize_workspace(ProblemShape const& problem_shape, Arguments const& args, void* workspace, cudaStream_t stream) {
+  initialize_workspace(ProblemShape const& problem_shape, Arguments const& args, void* workspace, cudaStream_t stream, 
+    CudaHostAdapter* cuda_adapter = nullptr) {
     return cutlass::Status::kSuccess;
   }
 
@@ -177,7 +178,7 @@ public:
           ComputeOutput compute_output{};
           ConvertOutput convert_output{};
 
-          if constexpr (is_same_v<Arguments, EmptyArguments>) {
+          if constexpr (cute::is_same_v<Arguments, EmptyArguments>) {
             return convert_output(compute_output(cvt_frg_inputs...));
           }
           else {
@@ -211,20 +212,18 @@ template <
   class ElementOutput,
   class ElementCompute,
   FloatRoundStyle RoundStyle,
-  class ElementScalar,
-  class StrideScalar,
-  int ScalarCount,
-  template <class> class ScalarReduceFn,
-  class ElementSource,
-  class InputAddOp // Z
+  class InputScaleOp,  // beta
+  class ElementSource, // C
+  class InputAddOp     // Z
 >
 struct Sm90TreeVisitor<
-  Sm90Compute<homogeneous_multiply_add, ElementOutput, ElementCompute, RoundStyle>,
-  Sm90ScalarBroadcast<ElementScalar, StrideScalar, ScalarCount, ScalarReduceFn>,
+  Sm90Compute<homogeneous_multiply_add, ElementOutput, ElementCompute, RoundStyle,
+              cute::void_t<decltype(declval<InputScaleOp>().is_zero())>>,
+  InputScaleOp,
   Sm90SrcFetch<ElementSource>,
   InputAddOp
 > : Sm90VisitorImpl<
-      Sm90ScalarBroadcast<ElementScalar, StrideScalar, ScalarCount, ScalarReduceFn>,
+      InputScaleOp,
       Sm90SrcFetch<ElementSource>,
       InputAddOp,
       Sm90Compute<homogeneous_multiply_add, ElementOutput, ElementCompute, RoundStyle>
@@ -232,7 +231,7 @@ struct Sm90TreeVisitor<
 {
   using Impl =
     Sm90VisitorImpl<
-      Sm90ScalarBroadcast<ElementScalar, StrideScalar, ScalarCount, ScalarReduceFn>,
+      InputScaleOp,
       Sm90SrcFetch<ElementSource>,
       InputAddOp,
       Sm90Compute<homogeneous_multiply_add, ElementOutput, ElementCompute, RoundStyle>
@@ -251,18 +250,16 @@ struct Sm90TreeVisitor<
 
   CUTLASS_DEVICE bool
   is_producer_load_needed() const {
-    auto const& bcast_op = get<0>(Impl::ops);
     auto const& added_op = get<2>(Impl::ops);
-    return not (bcast_op.params_ptr->dScalar == Stride<_0,_0,_0>{} && not is_C_load_needed()) ||
-           added_op.is_producer_load_needed();
+    return is_C_load_needed() || added_op.is_producer_load_needed();
   }
 
   CUTLASS_DEVICE bool
   is_C_load_needed() const {
-    auto const& bcast_op = get<0>(Impl::ops);
+    auto const& scale_op = get<0>(Impl::ops);
     auto const& src_op = get<1>(Impl::ops);
     auto const& added_op = get<2>(Impl::ops);
-    return (bcast_op.scalar != 0 && src_op.is_C_load_needed()) || added_op.is_C_load_needed();
+    return (not scale_op.is_zero() && src_op.is_C_load_needed()) || added_op.is_C_load_needed();
   }
 
   template <class CallbacksImpl>
@@ -347,7 +344,8 @@ struct Sm90ReLUAuxStore : Sm90VisitorImpl<> {
 
   template <class ProblemShape>
   static cutlass::Status
-  initialize_workspace(ProblemShape const& problem_shape, Arguments const& args, void* workspace, cudaStream_t stream) {
+  initialize_workspace(ProblemShape const& problem_shape, Arguments const& args, void* workspace, cudaStream_t stream,
+    CudaHostAdapter* cuda_adapter = nullptr) {
     return cutlass::Status::kSuccess;
   }
 
@@ -379,8 +377,8 @@ template <
 >
 struct Sm90TreeVisitor<
   Sm90Compute<Activation, ElementOutput, ElementCompute, RoundStyle,
-              enable_if_t<is_same_v<Activation<ElementCompute>, cutlass::epilogue::thread::ReLu<ElementCompute>> ||
-                          is_same_v<Activation<ElementCompute>, cutlass::epilogue::thread::Clamp<ElementCompute>>  >>,
+              cute::enable_if_t<cute::is_same_v<Activation<ElementCompute>, cutlass::epilogue::thread::ReLu<ElementCompute>> ||
+                                cute::is_same_v<Activation<ElementCompute>, cutlass::epilogue::thread::Clamp<ElementCompute>>  >>,
   Sm90TreeVisitor<
     Sm90AuxStore<
       Stages,
@@ -474,7 +472,7 @@ struct Sm90TreeVisitor<
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < FragmentSize; ++i) {
         ElementCompute pre_relu = frg_compute[i];
-        if constexpr (is_same_v<Activation<ElementCompute>, cutlass::epilogue::thread::Clamp<ElementCompute>>) {
+        if constexpr (cute::is_same_v<Activation<ElementCompute>, cutlass::epilogue::thread::Clamp<ElementCompute>>) {
           frg_compute[i] = relu(frg_compute[i], params_compute);
         }
         else {
@@ -606,7 +604,8 @@ struct Sm90AuxLoad<
 
   template <class ProblemShape>
   static cutlass::Status
-  initialize_workspace(ProblemShape const& problem_shape, Arguments const& args, void* workspace, cudaStream_t stream) {
+  initialize_workspace(ProblemShape const& problem_shape, Arguments const& args, void* workspace, cudaStream_t stream,
+    CudaHostAdapter* cuda_adapter = nullptr) {
     return cutlass::Status::kSuccess;
   }
 

@@ -60,6 +60,14 @@ namespace layout {
 //
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+/// Tag used for 3-D NWC tensors for 1D conv, only used in 3.x API
+class TensorNWC {};
+
+/// Tag used for n-D KCSRT tensors for nD conv, only used in 3.x API for wgrad output layouts
+class TensorKCS {};
+class TensorKCSR {};
+class TensorKCSRT {};
+
 /// Mapping function for 4-D NHWC tensors.
 class TensorNHWC {
 public:

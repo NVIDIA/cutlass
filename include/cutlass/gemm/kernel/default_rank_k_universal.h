@@ -165,7 +165,7 @@ struct DefaultRankKUniversal<
   SplitKSerial,
   Operator,
   BlasMode::kSymmetric,
-  typename std::enable_if< ! cutlass::is_complex<ElementAccumulator>::value>::type
+  typename platform::enable_if< ! cutlass::is_complex<ElementAccumulator>::value>::type
 > {
 
   using DefaultRankKkernel = typename kernel::DefaultRankK<
@@ -265,7 +265,7 @@ struct DefaultRankKUniversal<
   SplitKSerial,
   Operator,
   kBlasMode,
-  typename std::enable_if<cutlass::is_complex<ElementAccumulator>::value>::type
+  typename platform::enable_if<cutlass::is_complex<ElementAccumulator>::value>::type
 > {
 
   using DefaultRankKkernel = typename kernel::DefaultRankKComplex<

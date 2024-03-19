@@ -102,7 +102,7 @@ struct B2bFusedGroupedGemmRun
     if (dist_kind == cutlass::Distribution::Uniform) {
 
       cutlass::reference::host::TensorFillRandomUniform(
-        view, seed, 2, -2, 0);
+        view, seed, 1, -1, 0);
     } 
     else if (dist_kind == cutlass::Distribution::Identity) {
 

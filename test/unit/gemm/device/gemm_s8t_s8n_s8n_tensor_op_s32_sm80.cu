@@ -389,6 +389,26 @@ CUTLASS_TEST_L0(SM80_Device_Gemm_s8t_s8n_s8n_tensor_op_s32, 64x64x64_32x32x64, {
   EXPECT_TRUE(testbed.run_all());
 } )
 
+CUTLASS_TEST_L0(SM80_Device_Gemm_s8t_s8n_s8n_tensor_op_s32, 256x64x128_64x64x128_align4, {
+  using ElementOutput = int8_t;
+  using ElementAccumulator = int32_t;
+  using ElementCompute = float;
+
+  using Gemm = cutlass::gemm::device::Gemm<
+      int8_t, cutlass::layout::RowMajor, int8_t, cutlass::layout::ColumnMajor,
+      ElementOutput, cutlass::layout::RowMajor, ElementAccumulator,
+      cutlass::arch::OpClassTensorOp, cutlass::arch::Sm80,
+      cutlass::gemm::GemmShape<256, 64, 128>,
+      cutlass::gemm::GemmShape<64, 64, 128>, cutlass::gemm::GemmShape<16, 8, 32>,
+      cutlass::epilogue::thread::LinearCombinationClamp<
+          ElementOutput, 4, int32_t, float>,
+      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 4>;
+
+  test::gemm::device::MultistageTestbed<Gemm> testbed;
+
+  EXPECT_TRUE(testbed.run_all());
+} )
+
 ////////////////////////////////////////////////////////////////////////////////
 #endif // if (CUTLASS_ARCH_MMA_SM80_SUPPORTED)
 

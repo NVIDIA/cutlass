@@ -165,7 +165,7 @@ struct DefaultRank2KGrouped<ElementA, LayoutA, TransformA, kAlignmentA,
           FillModeC, ElementAccumulator, OperatorClass, ArchTag, ThreadblockShape,
           WarpShape, InstructionShape, EpilogueOutputOp,
           ThreadblockSwizzle, Stages, Operator, BlasMode_, GroupScheduleMode_,
-          typename std::enable_if< ! cutlass::is_complex<ElementAccumulator>::value>::type
+          typename platform::enable_if< ! cutlass::is_complex<ElementAccumulator>::value>::type
 > {
   // If true, we must construct a 'transposed-and-exchanged' Rank2K operator.
   static bool const kInternalTranspose = platform::is_same<LayoutC, layout::ColumnMajor>::value;
@@ -283,7 +283,7 @@ struct DefaultRank2KGrouped<ElementA, LayoutA, TransformA, kAlignmentA,
           FillModeC, ElementAccumulator, OperatorClass, ArchTag, ThreadblockShape,
           WarpShape, InstructionShape, EpilogueOutputOp,
           ThreadblockSwizzle, Stages, Operator, BlasMode_, GroupScheduleMode_,
-          typename std::enable_if<cutlass::is_complex<ElementAccumulator>::value>::type
+          typename platform::enable_if<cutlass::is_complex<ElementAccumulator>::value>::type
 > {
   // If true, we must construct a 'transposed-and-exchanged' Rank2K operator.
   static bool const kInternalTranspose = platform::is_same<LayoutC, layout::ColumnMajor>::value;

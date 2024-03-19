@@ -66,7 +66,7 @@ struct Identity {
 template <typename T, int N>
 struct Identity<Array<T, N> > {
   CUTLASS_HOST_DEVICE
-  Array<T, N> operator()(Array<T, N> const &value) const {
+  Array<T, N> operator()(Array<T, N> value) const {
     return value;
   }
 };
@@ -75,17 +75,18 @@ struct Identity<Array<T, N> > {
 template <typename T>
 struct Scale {
   struct Arguments {
+    using scale_type = T;
     T scale = T(1);
   };
 
   CUTLASS_HOST_DEVICE
-  T operator()(T const& value, T const& scale) const {
+  T operator()(T value, T scale) const {
     multiplies<T> mul;
     return mul(scale, value);
   }
 
   CUTLASS_HOST_DEVICE
-  T operator()(T const& value, Arguments const& args = Arguments()) const {
+  T operator()(T value, Arguments args = Arguments()) const {
     return this->operator()(value, args.scale);
   }
 };
@@ -95,13 +96,13 @@ struct Scale<Array<T, N>> {
   using Arguments = typename Scale<T>::Arguments;
 
   CUTLASS_HOST_DEVICE
-  Array<T, N> operator()(Array<T, N> const& values, T const& scale) const {
+  Array<T, N> operator()(Array<T, N> values, T scale) const {
     multiplies<Array<T, N>> mul;
     return mul(scale, values);
   }
 
   CUTLASS_HOST_DEVICE
-  Array<T, N> operator()(Array<T, N> const& values, Arguments const& args = Arguments()) const {
+  Array<T, N> operator()(Array<T, N> values, Arguments args = Arguments()) const {
     return this->operator()(values, args.scale);
   }
 };
@@ -113,14 +114,14 @@ struct Scale<Activation<T>> {
   using Arguments = typename Scale<T>::Arguments;
 
   CUTLASS_HOST_DEVICE
-  T operator()(T const &value, decltype(Arguments{}.scale) const& scale) const {
+  T operator()(T value, typename Arguments::scale_type scale) const {
     multiplies<T> mul;
     Activation<T> act;
     return mul(scale, act(value));
   }
 
   CUTLASS_HOST_DEVICE
-  T operator()(T const& value, Arguments const& args = Arguments()) const {
+  T operator()(T value, Arguments args = Arguments()) const {
     return this->operator()(value, args.scale);
   }
 };
@@ -132,7 +133,7 @@ struct ReLu {
   static const bool kIsHeavy = false;
 
   CUTLASS_HOST_DEVICE
-  T operator()(T const & threshold, T value) const {
+  T operator()(T threshold, T value) const {
     maximum<T> mx;
 
     return mx(value, threshold);
@@ -660,6 +661,32 @@ struct dReLU<Array<T, N>> {
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < N; ++i) {
       y[i] = relu_op(d_t[i], d_relu[i]);
+    }
+
+    return y;
+  }
+};
+
+/// Computes backwards pass for ReLU operator assuming d_t is the layer gradient and
+/// z is computed from the forward pass.
+template <typename T>
+struct dReLU_Z {
+  CUTLASS_HOST_DEVICE
+  T operator()(T d_t, T z) const {
+    return z < 0 ? T(0) : d_t;
+  }
+};
+
+template <typename T, int N>
+struct dReLU_Z<Array<T, N>> {
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const& d_t, Array<T, N> const& z) const {
+    Array<T, N> y;
+    dReLU_Z<T> relu_op;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      y[i] = relu_op(d_t[i], z[i]);
     }
 
     return y;

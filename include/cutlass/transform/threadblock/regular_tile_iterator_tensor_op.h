@@ -53,11 +53,11 @@ namespace threadblock {
 ///            WriteableContiguousTileIteratorConcept
 ///
 template <typename Shape_, typename Element_, int AdvanceRank,
-          typename ThreadMap_, int Alignment>
+          typename ThreadMap_, int Alignment, int Crosswise>
 class RegularTileIterator<
     Shape_, Element_,
     layout::TensorOpMultiplicandCongruous<sizeof_bits<Element_>::value,
-                                          int(128 / sizeof(Element_))>,
+                                          Crosswise>,
     AdvanceRank, ThreadMap_, Alignment> {
  public:
 
@@ -69,7 +69,7 @@ class RegularTileIterator<
   using Element = Element_;
   using Layout =
       layout::TensorOpMultiplicandCongruous<sizeof_bits<Element_>::value,
-                                            int(128 / sizeof(Element))>;
+                                            Crosswise>;
   static int const kAdvanceRank = AdvanceRank;
   static int const kAlignment = Alignment;
 
@@ -228,11 +228,11 @@ public:
 ///            WriteableContiguousTileIteratorConcept
 ///
 template <typename Shape_, typename Element_, int AdvanceRank,
-          typename ThreadMap_, int Alignment>
+          typename ThreadMap_, int Alignment, int Crosswise>
 class RegularTileIterator<
     Shape_, Element_,
     layout::ColumnMajorTensorOpMultiplicandCongruous<
-        sizeof_bits<Element_>::value, int(128 / sizeof(Element_))>,
+        sizeof_bits<Element_>::value, Crosswise>,
     AdvanceRank, ThreadMap_, Alignment> {
  public:
 
@@ -243,7 +243,7 @@ class RegularTileIterator<
   using Shape = Shape_;
   using Element = Element_;
   using Layout = layout::ColumnMajorTensorOpMultiplicandCongruous<
-      sizeof_bits<Element_>::value, int(128 / sizeof(Element))>;
+      sizeof_bits<Element_>::value, Crosswise>;
   static int const kAdvanceRank = AdvanceRank;
   static int const kAlignment = Alignment;
 
@@ -259,7 +259,7 @@ class RegularTileIterator<
   using UnderlyingIterator = RegularTileIterator<
       layout::PitchLinearShape<Shape::kRow, Shape::kColumn>, Element,
       layout::TensorOpMultiplicandCongruous<sizeof_bits<Element_>::value,
-                                            int(128 / sizeof(Element))>,
+                                            Crosswise>,
       (kAdvanceRank == 0 ? 0 : 1), ThreadMap_>;
 
  public:
@@ -349,11 +349,11 @@ public:
 ///            WriteableContiguousTileIteratorConcept
 ///
 template <typename Shape_, typename Element_, int AdvanceRank,
-          typename ThreadMap_, int Alignment>
+          typename ThreadMap_, int Alignment, int Crosswise>
 class RegularTileIterator<
     Shape_, Element_,
     layout::RowMajorTensorOpMultiplicandCongruous<sizeof_bits<Element_>::value,
-                                                  int(128 / sizeof(Element_))>,
+                                                  Crosswise>,
     AdvanceRank, ThreadMap_, Alignment> {
  public:
 
@@ -364,7 +364,7 @@ class RegularTileIterator<
   using Shape = Shape_;
   using Element = Element_;
   using Layout = layout::RowMajorTensorOpMultiplicandCongruous<
-      sizeof_bits<Element_>::value, int(128 / sizeof(Element))>;
+      sizeof_bits<Element_>::value, Crosswise>;
   static int const kAdvanceRank = AdvanceRank;
   static int const kAlignment = Alignment;
 
@@ -380,7 +380,7 @@ class RegularTileIterator<
   using UnderlyingIterator = RegularTileIterator<
       layout::PitchLinearShape<Shape::kColumn, Shape::kRow>, Element,
       layout::TensorOpMultiplicandCongruous<sizeof_bits<Element_>::value,
-                                            int(128 / sizeof(Element))>,
+                                            Crosswise>,
       (kAdvanceRank == 0 ? 1 : 0), ThreadMap_>;
 
  public:

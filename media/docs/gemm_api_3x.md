@@ -1,6 +1,6 @@
-![ALT](/media/images/gemm-hierarchy-with-epilogue-no-labels.png "CUTLASS GEMM API")
+![ALT](../images/gemm-hierarchy-with-epilogue-no-labels.png "CUTLASS GEMM API")
 
-[README](/README.md#documentation) > **CUTLASS 3.0 GEMM API**
+[README](../../README.md#documentation) > **CUTLASS 3.0 GEMM API**
 
 # CUTLASS 3.0 GEMM API
 

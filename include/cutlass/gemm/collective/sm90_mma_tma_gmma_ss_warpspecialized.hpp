@@ -31,17 +31,18 @@
 #pragma once
 
 #include "cutlass/cutlass.h"
+#include "cutlass/gemm/dispatch_policy.hpp"
+#include "cutlass/numeric_types.h"
+#include "cutlass/pipeline/pipeline.hpp"
+#include "cutlass/trace.h"
+
 #include "cute/arch/cluster_sm90.hpp"
 #include "cute/arch/copy_sm90.hpp"
-#include "cutlass/gemm/dispatch_policy.hpp"
-
 #include "cute/algorithm/functional.hpp"
 #include "cute/atom/mma_atom.hpp"
 #include "cute/algorithm/gemm.hpp"
 #include "cute/tensor_predicate.hpp"
 #include "cute/numeric/arithmetic_tuple.hpp"
-#include "cutlass/pipeline/pipeline.hpp"
-#include "cutlass/trace.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -107,6 +108,7 @@ struct CollectiveMma<
   using TransformB = TransformB_;
   using ArchTag = typename DispatchPolicy::ArchTag;
 
+  using CtaShape_MNK = decltype(shape_div(TileShape{}, ClusterShape{}));
   using MainloopPipeline = cutlass::PipelineTmaAsync<DispatchPolicy::Stages>;
   using PipelineState = cutlass::PipelineState<DispatchPolicy::Stages>;
 
@@ -124,11 +126,11 @@ struct CollectiveMma<
   using SmemLayoutA = decltype(tile_to_shape(
       SmemLayoutAtomA{},
       make_shape(shape<0>(TileShape{}), shape<2>(TileShape{}), Int<DispatchPolicy::Stages>{}),
-      conditional_t< ::cutlass::gemm::detail::is_major<0,StrideA>(), Step<_2,_1,_3>, Step<_1,_2,_3>>{}));
+      cute::conditional_t< ::cutlass::gemm::detail::is_major<0,StrideA>(), Step<_2,_1,_3>, Step<_1,_2,_3>>{}));
   using SmemLayoutB = decltype(tile_to_shape(
       SmemLayoutAtomB{},
       make_shape(shape<1>(TileShape{}), shape<2>(TileShape{}), Int<DispatchPolicy::Stages>{}),
-      conditional_t< ::cutlass::gemm::detail::is_major<0,StrideB>(), Step<_2,_1,_3>, Step<_1,_2,_3>>{}));
+      cute::conditional_t< ::cutlass::gemm::detail::is_major<0,StrideB>(), Step<_2,_1,_3>, Step<_1,_2,_3>>{}));
 
   static_assert(DispatchPolicy::Stages >= 2, "Specialization requires Stages set to value 2 or more.");
   static_assert(cute::is_base_of<cute::GMMA::DescriptorIterator, typename TiledMma::FrgTypeA>::value &&
@@ -248,8 +250,8 @@ struct CollectiveMma<
   static constexpr int K_PIPE_MAX = DispatchPolicy::Stages;
   static constexpr int K_PIPE_MMAS = 1;
   static constexpr uint32_t TmaTransactionBytes =
-        (size<0>(SmemLayoutA{}) * size<1>(SmemLayoutA{}) * static_cast<uint32_t>(sizeof_bits<ElementA>::value)) / 8+
-        (size<0>(SmemLayoutB{}) * size<1>(SmemLayoutB{}) * static_cast<uint32_t>(sizeof_bits<ElementB>::value)) / 8;
+        cutlass::bits_to_bytes(size<0>(SmemLayoutA{}) * size<1>(SmemLayoutA{}) * static_cast<uint32_t>(sizeof_bits<ElementA>::value))+
+        cutlass::bits_to_bytes(size<0>(SmemLayoutB{}) * size<1>(SmemLayoutB{}) * static_cast<uint32_t>(sizeof_bits<ElementB>::value));
 
   /// Issue Tma Descriptor Prefetch -- ideally from a single thread for best performance
   CUTLASS_DEVICE

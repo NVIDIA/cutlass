@@ -40,8 +40,9 @@
 #include <cute/util/type_traits.hpp>
 #include <cute/tensor.hpp>
 
-#include <cute/numeric/half.hpp>
+#include <cute/numeric/numeric_types.hpp>
 #include <cute/numeric/complex.hpp>
+
 #include <cutlass/layout/layout.h>
 
 // The computed infinity norm does not include
@@ -233,7 +234,8 @@ print_relative_error(
     T1 const& data,
     T2 const& reference,
     bool print_verbose = false,
-    bool print_error = true) {
+    bool print_error = true,
+    double error_margin = 0.00001) {
   using std::abs; using std::sqrt;
 
   // Use either double or complex<double> for error computation
@@ -252,8 +254,8 @@ print_relative_error(
   double tot_norm_sq = 0;
   double tot_ind_rel_err = 0;
   double max_ind_rel_err = 0;
-  for (std::size_t i = 0; i < n; ++i)
-  {
+  double max_diff = 0;
+  for (std::size_t i = 0; i < n; ++i) {
     error_type val = data[i];
     error_type ref = reference[i];
 
@@ -267,6 +269,9 @@ print_relative_error(
     // Maximum relative error
     max_ind_rel_err  = std::max(max_ind_rel_err, rel_error);
 
+    // Maximum delta in value error
+    max_diff = std::max(max_diff, diff);
+
     // Total relative error
     tot_error_sq += diff * diff;
     tot_norm_sq  += aref * aref;
@@ -276,18 +281,40 @@ print_relative_error(
     }
   }
 
-  printf("Vector reference  norm: [%.5e]\n", sqrt(tot_norm_sq));
+  double ave_rel_err = tot_ind_rel_err / double(n);
+  if (print_error) {
+    printf("Average relative error: %.3e\n", ave_rel_err);
+  }
+
+  if (print_error) {
+    printf("Maximum relative error: %.3e\n", max_ind_rel_err);
+  }
+
+  if (print_error) {
+    printf("Maximum difference    : %.3e\n", max_diff);
+  }
 
   double tot_rel_err = sqrt(tot_error_sq/(tot_norm_sq+eps));
-  if (print_error)
-    printf("Vector  relative error: [%.5e]\n", tot_rel_err);
+  if (print_error) {
+    printf("Vector relative error:  %.3e\n", tot_rel_err);
+  }
 
-  double ave_rel_err = tot_ind_rel_err / double(n);
-  if (print_error)
-    printf("Average relative error: [%.5e]\n", ave_rel_err);
+  printf("Vector reference  norm: %.3e\n", sqrt(tot_norm_sq));
 
-  if (print_error)
-    printf("Maximum relative error: [%.5e]\n", max_ind_rel_err);
+  return (tot_rel_err <= error_margin) ? EXIT_SUCCESS : EXIT_FAILURE;
+}
 
-  return (tot_rel_err == 0.0) ? EXIT_SUCCESS : EXIT_FAILURE;
+// Overload for cute::Tensor<>
+template <class Engine, class Layout>
+int
+print_relative_error(
+    cute::Tensor<Engine, Layout> data,
+    cute::Tensor<Engine, Layout> reference,
+    bool print_verbose = false,
+    bool print_error = true,
+    double error_margin = 0.00001) {
+  assert(size(data) == size(reference));
+  return print_relative_error(static_cast<std::size_t>(size(data)), 
+                              data, reference, 
+                              print_verbose, print_error, error_margin);
 }

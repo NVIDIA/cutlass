@@ -37,32 +37,33 @@
 
 #include <cute/container/array_subbyte.hpp>
 #include <cute/tensor.hpp>
+#include <cute/numeric/numeric_types.hpp>
 
 TEST(CuTe_core, ArraySubbyte)
 {
   using namespace cute;
   {
-    array_subbyte<int4_t, 10> array0;
-    array_subbyte<int4_t,  5> array1;
+    array_subbyte<int4_t, 10> array0{};
+    array_subbyte<int4_t,  5> array1{};
     fill(array0, int4_t(0));
     fill(array1, int4_t(1));
 
-    for (int i = 0; i < array1.size(); ++i) {
+    for (size_t i = 0; i < array1.size(); ++i) {
       array0[i+5] = array1[i];
     }
     
     EXPECT_EQ(int4_t(array0.back()), int4_t(1));
 
-    for (int i = 0; i < array1.size(); ++i) {
-      EXPECT_EQ(int4_t(array0[i]), int4_t(i / 5));
+    for (size_t i = 0; i < array1.size(); ++i) {
+      EXPECT_EQ(int4_t(array0[i]), int4_t(int(i) / 5));
     }
   }
 
   {
-  array_subbyte<uint8_t, 14> a;
+  array_subbyte<uint8_t, 14> a{};
 
   //std::cout << sizeof_bits<decltype(a)>::value << std::endl;
-  EXPECT_EQ(sizeof_bits<decltype(a)>::value, 14*8);
+  EXPECT_EQ(cute::sizeof_bits_v<decltype(a)>, 14*8);
 
   fill(a, uint8_t(13));
   for (int i = 0; i < int(a.size()); ++i) {
@@ -77,10 +78,10 @@ TEST(CuTe_core, ArraySubbyte)
   }
 
   {
-  array_subbyte<int4_t, 14> a;
+  array_subbyte<int4_t, 14> a{};
 
   //std::cout << sizeof_bits<decltype(a)>::value << std::endl;
-  EXPECT_EQ(sizeof_bits<decltype(a)>::value, 14/2*8);
+  EXPECT_EQ(cute::sizeof_bits_v<decltype(a)>, 14/2*8);
 
   fill(a, int4_t(-5));
   for (int i = 0; i < int(a.size()); ++i) {
@@ -95,10 +96,10 @@ TEST(CuTe_core, ArraySubbyte)
   }
 
   {
-  array_subbyte<uint2_t, 14> a;
+  array_subbyte<uint2_t, 14> a{};
 
   //std::cout << sizeof_bits<decltype(a)>::value << std::endl;
-  EXPECT_EQ(sizeof_bits<decltype(a)>::value, 4*8);
+  EXPECT_EQ(cute::sizeof_bits_v<decltype(a)>, 4*8);
 
   fill(a, uint2_t(-5));
   for (int i = 0; i < int(a.size()); ++i) {
@@ -113,10 +114,10 @@ TEST(CuTe_core, ArraySubbyte)
   }
 
   {
-  array_subbyte<bool, 14> a;
+  array_subbyte<bool, 14> a{};
 
   //std::cout << sizeof_bits<decltype(a)>::value << std::endl;
-  EXPECT_EQ(sizeof_bits<decltype(a)>::value, 2*8);
+  EXPECT_EQ(cute::sizeof_bits_v<decltype(a)>, 2*8);
 
   fill(a, bool(1));
   for (int i = 0; i < int(a.size()); ++i) {
@@ -135,7 +136,7 @@ TEST(CuTe_core, Subbyte_iterator)
   using namespace cute;
 
   {
-  array_subbyte<uint8_t, 15> a;
+  array_subbyte<uint8_t, 15> a{};
   auto tensor = make_tensor(subbyte_iterator<uint8_t>(a.raw_data()), make_shape(15));
 
   fill(a, uint8_t(13));
@@ -148,7 +149,7 @@ TEST(CuTe_core, Subbyte_iterator)
   }
 
   {
-  array_subbyte<int4_t, 15> a;
+  array_subbyte<int4_t, 15> a{};
   auto tensor = make_tensor(subbyte_iterator<int4_t>(a.raw_data()), make_shape(15));
 
   fill(a, int4_t(-5));
@@ -161,7 +162,7 @@ TEST(CuTe_core, Subbyte_iterator)
   }
 
   {
-  array_subbyte<uint2_t, 15> a;
+  array_subbyte<uint2_t, 15> a{};
   auto tensor = make_tensor(subbyte_iterator<uint2_t>(a.raw_data()), make_shape(15));
 
   fill(a, uint2_t(-5));
@@ -174,7 +175,7 @@ TEST(CuTe_core, Subbyte_iterator)
   }
 
   {
-  array_subbyte<bool, 15> a;
+  array_subbyte<bool, 15> a{};
   auto tensor = make_tensor(subbyte_iterator<bool>(a.raw_data()), make_shape(15));
 
   fill(a, bool(1));
@@ -191,7 +192,7 @@ TEST(CuTe_core, Const_subbyte_iterator)
   using namespace cute;
 
   {
-  array_subbyte<uint8_t, 15> a;
+  array_subbyte<uint8_t, 15> a{};
   auto tensor = make_tensor(subbyte_iterator<uint8_t const>(a.raw_data()), make_shape(15));
 
   fill(a, uint8_t(13));
@@ -204,7 +205,7 @@ TEST(CuTe_core, Const_subbyte_iterator)
   }
 
   {
-  array_subbyte<int4_t, 15> a;
+  array_subbyte<int4_t, 15> a{};
   auto tensor = make_tensor(subbyte_iterator<int4_t const>(a.raw_data()), make_shape(15));
 
   fill(a, int4_t(-5));
@@ -217,7 +218,7 @@ TEST(CuTe_core, Const_subbyte_iterator)
   }
 
   {
-  array_subbyte<uint2_t, 15> a;
+  array_subbyte<uint2_t, 15> a{};
   auto tensor = make_tensor(subbyte_iterator<uint2_t const>(a.raw_data()), make_shape(15));
 
   fill(a, uint2_t(-5));
@@ -230,7 +231,7 @@ TEST(CuTe_core, Const_subbyte_iterator)
   }
 
   {
-  array_subbyte<bool, 15> a;
+  array_subbyte<bool, 15> a{};
   auto tensor = make_tensor(subbyte_iterator<bool const>(a.raw_data()), make_shape(15));
 
   fill(a, bool(1));

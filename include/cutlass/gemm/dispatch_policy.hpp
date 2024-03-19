@@ -37,8 +37,34 @@
 #include "cute/numeric/integral_constant.hpp"
 //////////////////////////////////////////////////////////////////////////////
 
+namespace cutlass::detail {
+
+template <class T, template <int...> class U>
+struct is_kernel_tag_of : cute::false_type {};
+
+template <template <int...> class U, int... Args>
+struct is_kernel_tag_of<U<Args...>, U> : cute::true_type {};
+
+template <class T, template <int...> class U>
+constexpr bool is_kernel_tag_of_v = is_kernel_tag_of<T, U>::value;
+
+}
+
+//////////////////////////////////////////////////////////////////////////////
+
 namespace cutlass::gemm {
 using namespace cute;
+
+//////////////////////////////////////////////////////////////////////////////
+
+namespace detail {
+
+enum class KernelInputTransformType {
+    FastF32,
+    InterleavedComplexTF32
+};
+
+} // namespace detail
 
 //////////////////////////////////////////////////////////////////////////////
 
@@ -58,7 +84,7 @@ struct KernelPtrArrayTmaWarpSpecializedCooperative { };
 //////////////////////////////////////////////////////////////////////////////
 
 //
-// Builder dispatch policies (not a part of the main CUTLASS layers, simply used to opt into 
+// Builder dispatch policies (not a part of the main CUTLASS layers, simply used to opt into
 // specific collective builder dispatches)
 //
 
@@ -219,7 +245,7 @@ template<
   class KernelSchedule = KernelTmaWarpSpecialized
 >
 struct MainloopSm90TmaGmmaWarpSpecializedFP8
-  : MainloopSm90TmaGmmaWarpSpecialized<Stages_, ClusterShape_, KernelSchedule> { 
+  : MainloopSm90TmaGmmaWarpSpecialized<Stages_, ClusterShape_, KernelSchedule> {
   static_assert(
     cute::is_same_v<KernelSchedule, KernelTmaWarpSpecialized> ||
     cute::is_same_v<KernelSchedule, KernelTmaWarpSpecializedPingpong> ||

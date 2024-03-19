@@ -39,7 +39,8 @@
 #include "cutlass/epilogue/collective/detail.hpp"
 
 #include "cute/tensor.hpp"
-#include "cute/numeric/int.hpp"
+#include "cute/numeric/numeric_types.hpp"
+#include "cutlass/cuda_host_adapter.hpp"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -64,7 +65,7 @@ public:
   //
   using EpilogueSchedule = EpilogueSchedule_;
   using DispatchPolicy = EpilogueSchedule_;
-  
+
   // derived types of output thread level operator
   using ThreadEpilogueOp = ThreadEpilogueOp_;
   using ElementOutput = typename ThreadEpilogueOp::ElementOutput;
@@ -86,6 +87,8 @@ public:
   static_assert(cute::rank(StrideD{}) == 3, "StrideCD must be rank-3: [M, N, L]");
 
   struct SharedStorage { };
+
+  using TensorStorage = SharedStorage;
 
   // Host side epilogue arguments
   struct Arguments {
@@ -120,7 +123,8 @@ public:
 
   template <class ProblemShape>
   static cutlass::Status
-  initialize_workspace(ProblemShape const& problem_shape, Arguments const& args, void* workspace, cudaStream_t stream) {
+  initialize_workspace(ProblemShape const& problem_shape, Arguments const& args, void* workspace, cudaStream_t stream,
+    CudaHostAdapter* cuda_adapter = nullptr) {
     return cutlass::Status::kSuccess;
   }
 

@@ -1,6 +1,6 @@
-![ALT](/media/images/gemm-hierarchy-with-epilogue-no-labels.png "CUTLASS")
+![ALT](../images/gemm-hierarchy-with-epilogue-no-labels.png "CUTLASS")
 
-[README](/README.md#documentation) > **Fundamental Types**
+[README](../../README.md#documentation) > **Fundamental Types**
 
 # Fundamental Types
 

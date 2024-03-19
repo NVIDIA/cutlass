@@ -340,7 +340,7 @@ struct Options {
     // Number of real-valued multiply-adds 
     int64_t fops = int64_t();
 
-    for (int i = 0; i < problem_sizes0.size(); ++i) {
+    for (size_t i = 0; i < problem_sizes0.size(); ++i) {
       auto const& problem0 = problem_sizes0[i];
       auto const& problem1 = problem_sizes1[i];
 

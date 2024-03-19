@@ -94,7 +94,7 @@ __global__ void copy(
 
     typename Iterator::Fragment fragment;
 
-    for(int i = 0; i < fragment.size(); ++i) {
+    for(size_t i = 0; i < fragment.size(); ++i) {
       fragment[i] = 0;
     }
 

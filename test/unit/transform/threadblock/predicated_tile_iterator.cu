@@ -68,7 +68,7 @@ __global__ void copy(
 
   typename Iterator::Fragment frag;
 
-  for(int i = 0; i < frag.size(); i++)
+  for(size_t i = 0; i < frag.size(); i++)
     frag[i] = 0;
 
   src_iterator.load(frag);

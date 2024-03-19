@@ -316,11 +316,11 @@ safe_div(T const& t, U const& u) {
 
 template <class T>
 CUTE_HOST_DEVICE constexpr
-auto
+int32_t
 log_2(T x) {
   assert(x > 0);
   static_assert(is_unsigned<T>::value, "Only to be used for unsigned integral types.");
-  return bit_width(x) - 1;
+  return static_cast<int32_t>(bit_width(x)) - 1;
 }
 
 } // namespace cute

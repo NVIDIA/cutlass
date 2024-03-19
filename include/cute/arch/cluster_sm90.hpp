@@ -49,7 +49,7 @@ CUTE_DEVICE void cluster_arrive_relaxed()
 #if defined(CUTE_ARCH_CLUSTER_SM90_ENABLED)
   asm volatile("barrier.cluster.arrive.relaxed.aligned;\n" : : );
 #else
-  CUTE_RUNTIME_ASSERT("CUTE_ARCH_CLUSTER_SM90_ENABLED is not defined");
+  CUTE_INVALID_CONTROL_PATH("CUTE_ARCH_CLUSTER_SM90_ENABLED is not defined");
 #endif
 }
 
@@ -58,7 +58,7 @@ CUTE_DEVICE void cluster_arrive()
 #if defined(CUTE_ARCH_CLUSTER_SM90_ENABLED)
   asm volatile("barrier.cluster.arrive.aligned;\n" : : );
 #else
-  CUTE_RUNTIME_ASSERT("CUTE_ARCH_CLUSTER_SM90_ENABLED is not defined");
+  CUTE_INVALID_CONTROL_PATH("CUTE_ARCH_CLUSTER_SM90_ENABLED is not defined");
 #endif
 }
 
@@ -67,7 +67,7 @@ CUTE_DEVICE void cluster_wait()
 #if defined(CUTE_ARCH_CLUSTER_SM90_ENABLED)
   asm volatile("barrier.cluster.wait.aligned;\n" : : );
 #else
-  CUTE_RUNTIME_ASSERT("CUTE_ARCH_CLUSTER_SM90_ENABLED is not defined");
+  CUTE_INVALID_CONTROL_PATH("CUTE_ARCH_CLUSTER_SM90_ENABLED is not defined");
 #endif
 }
 
@@ -77,7 +77,7 @@ CUTE_DEVICE void cluster_sync()
   cluster_arrive();
   cluster_wait();
 #else
-  CUTE_RUNTIME_ASSERT("CUTE_ARCH_CLUSTER_SM90_ENABLED is not defined");
+  CUTE_INVALID_CONTROL_PATH("CUTE_ARCH_CLUSTER_SM90_ENABLED is not defined");
 #endif
 }
 
@@ -94,7 +94,7 @@ CUTE_DEVICE dim3 cluster_grid_dims()
   // MSVC requires protecting use of gridDim with __CUDA_ARCH__.
   return gridDim;
 #elif defined(_MSC_VER)
-  CUTE_RUNTIME_ASSERT("cluster_grid_dims() can only be called on device");
+  CUTE_INVALID_CONTROL_PATH("cluster_grid_dims() can only be called on device");
   return {0, 0, 0};
 #else
   return {0, 0, 0};
@@ -114,7 +114,7 @@ CUTE_DEVICE dim3 cluster_id_in_grid()
   // MSVC requires protecting use of blockIdx with __CUDA_ARCH__.
   return blockIdx;
 #elif defined(_MSC_VER)
-  CUTE_RUNTIME_ASSERT("cluster_id_in_grid() can only be called on device");
+  CUTE_INVALID_CONTROL_PATH("cluster_id_in_grid() can only be called on device");
   return {0, 0, 0};
 #else
   return {0, 0, 0};

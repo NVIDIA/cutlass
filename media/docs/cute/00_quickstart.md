@@ -82,7 +82,7 @@ Other files in this directory discuss specific parts of CuTe.
 
 ### How do I print CuTe objects on host or device?
 
-The `cute::print` function has overloads for almost all CuTe types, including Pointers, Integers, Strides, Shapes, Layouts, and Tensors.  When in doubt, try calling `print` on it.  
+The `cute::print` function has overloads for almost all CuTe types, including Pointers, Integers, Strides, Shapes, Layouts, and Tensors.  When in doubt, try calling `print` on it.
 
 CuTe's print functions work on either host or device.
 Note that on device, printing is expensive.

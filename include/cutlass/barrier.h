@@ -276,10 +276,8 @@ struct NamedBarrierManager {
 private:
   CUTLASS_DEVICE
   static void
-  check_barrier_in_range(uint32_t idx) {
-    if (idx >= MaxNumNamedBarriers) {
-      CUTE_RUNTIME_ASSERT("Index exceeds barrier count");
-    }
+  check_barrier_in_range([[maybe_unused]] uint32_t idx) {
+    assert((idx >= MaxNumNamedBarriers) && "Index exceeds barrier count");
   }
 
   template <uint32_t... Idx>

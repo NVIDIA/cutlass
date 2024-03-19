@@ -130,6 +130,10 @@ nratio(R<a,b>, R<c,d>) {
   return {};
 }
 
+//
+// Operators
+//
+
 template <auto a, auto b, auto x, auto y>
 CUTE_HOST_DEVICE constexpr
 typename R<a*x,b*y>::type
@@ -227,14 +231,14 @@ abs(R<a,b>) {
 
 template <auto a, auto b>
 CUTE_HOST_DEVICE constexpr
-auto
+int32_t
 log_2(R<a,b>) {
   static_assert(R<a,b>::num > 0);
   static_assert(R<a,b>::den > 0);
   return log_2(static_cast<uint32_t>(R<a,b>::num)) - log_2(static_cast<uint32_t>(R<a,b>::den));
 }
 
-
+// @return A non-reduced ratio cute::R of the Trait0::value / Trait1::value
 template <class Trait0, class Trait1>
 CUTE_HOST_DEVICE constexpr
 auto

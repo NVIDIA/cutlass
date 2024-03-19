@@ -31,17 +31,18 @@
 #pragma once
 
 #include "cutlass/cutlass.h"
+#include "cutlass/gemm/dispatch_policy.hpp"
+#include "cutlass/numeric_types.h"
+#include "cutlass/pipeline/pipeline.hpp"
+#include "cutlass/trace.h"
+
 #include "cute/arch/cluster_sm90.hpp"
 #include "cute/arch/copy_sm90.hpp"
-#include "cutlass/gemm/dispatch_policy.hpp"
-
 #include "cute/algorithm/functional.hpp"
 #include "cute/atom/mma_atom.hpp"
 #include "cute/algorithm/gemm.hpp"
 #include "cute/tensor_predicate.hpp"
 #include "cute/numeric/arithmetic_tuple.hpp"
-#include "cutlass/pipeline/pipeline.hpp"
-#include "cutlass/trace.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -106,6 +107,7 @@ struct CollectiveMma<
   using TransformB = TransformB_;
   using ArchTag = typename DispatchPolicy::ArchTag;
 
+  using CtaShape_MNK = decltype(shape_div(TileShape{}, ClusterShape{}));
   using MainloopPipeline = cutlass::PipelineTmaAsync<DispatchPolicy::Stages>;
 
   using PipelineParams = typename MainloopPipeline::Params;
@@ -125,11 +127,11 @@ struct CollectiveMma<
   using SmemLayoutA = decltype(tile_to_shape(
       SmemLayoutAtomA{},
       make_shape(shape<0>(TileShape{}), shape<2>(TileShape{}), Int<DispatchPolicy::Stages>{}),
-      conditional_t< ::cutlass::gemm::detail::is_major<0,StrideA>(), Step<_2,_1,_3>, Step<_1,_2,_3>>{}));
+      cute::conditional_t< ::cutlass::gemm::detail::is_major<0,StrideA>(), Step<_2,_1,_3>, Step<_1,_2,_3>>{}));
   using SmemLayoutB = decltype(tile_to_shape(
       SmemLayoutAtomB{},
       make_shape(shape<1>(TileShape{}), shape<2>(TileShape{}), Int<DispatchPolicy::Stages>{}),
-      conditional_t< ::cutlass::gemm::detail::is_major<0,StrideB>(), Step<_2,_1,_3>, Step<_1,_2,_3>>{}));
+      cute::conditional_t< ::cutlass::gemm::detail::is_major<0,StrideB>(), Step<_2,_1,_3>, Step<_1,_2,_3>>{}));
 
   static_assert(DispatchPolicy::Stages >= 2, "Specialization requires Stages set to value 1 or more.");
   static_assert(cute::is_base_of<cute::GMMA::DescriptorIterator, typename TiledMma::FrgTypeA>::value &&
@@ -320,9 +322,8 @@ struct CollectiveMma<
 
     // Set the bytes transferred in this TMA transaction (may involve multiple issues)
     constexpr uint32_t TmaTransactionBytes = static_cast<uint32_t>(
-        (size<0>(sA) * size<1>(sA) * sizeof_bits<InternalElementA>::value) / 8 +
-        (size<0>(sB) * size<1>(sB) * sizeof_bits<InternalElementB>::value) / 8);
-
+        cutlass::bits_to_bytes(size<0>(sA) * size<1>(sA) * sizeof_bits<InternalElementA>::value) +
+        cutlass::bits_to_bytes(size<0>(sB) * size<1>(sB) * sizeof_bits<InternalElementB>::value));
 
     // Obtain warp index
     int warp_idx = canonical_warp_idx_sync();

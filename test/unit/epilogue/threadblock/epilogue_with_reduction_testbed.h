@@ -133,28 +133,10 @@ __global__ void epilogue_with_reduction_threadblock(
   // For debugging, enable this block of code to fill each accumulator element with its
   // source thread ID.
   CUTLASS_PRAGMA_UNROLL
-  for (int i = 0; i < accumulators.size(); ++i) {
+  for (size_t i = 0; i < accumulators.size(); ++i) {
     typename Epilogue::WarpMmaOperator::ElementC x(threadIdx.x);
-    //typename Epilogue::WarpMmaOperator::ElementC x(i);
     accumulators[i] = x;
   }
-
-  /*
-  #pragma unroll 1
-  for (int tid = 0; tid < 32; ++tid) {
-    if (tid == thread_idx) {
-      printf("\nT%d: ", thread_idx);
-      CUTLASS_PRAGMA_UNROLL
-      for (int i = 0; i < accumulators.size(); ++i) {
-        printf("%d ", int(accumulators[i]));
-      }  
-    }
-  }
-
-  if (thread_idx == 0) {
-    printf("\n\n");  
-  }
-  */
 
   __syncthreads();
 

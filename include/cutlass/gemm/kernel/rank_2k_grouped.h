@@ -197,51 +197,34 @@ public:
     // Data members
     //
 
-    GemmUniversalMode mode;
-    GemmCoord *problem_sizes;
-    int problem_count;
-    int threadblock_count;
+    GemmUniversalMode mode = GemmUniversalMode::kGemm;
+    GemmCoord *problem_sizes = nullptr;
+    int problem_count{0};
+    int threadblock_count{0};
 
     typename EpilogueOutputOp::Params epilogue;
 
-    ElementA ** ptr_A;
-    ElementB ** ptr_B;
-    ElementC ** ptr_C;
-    ElementC ** ptr_D;
+    ElementA ** ptr_A = nullptr;
+    ElementB ** ptr_B = nullptr;
+    ElementC ** ptr_C = nullptr;
+    ElementC ** ptr_D = nullptr;
 
-    typename LayoutA::Stride::LongIndex *lda;
-    typename LayoutB::Stride::LongIndex *ldb;
-    typename LayoutC::Stride::LongIndex *ldc;
-    typename LayoutC::Stride::LongIndex *ldd;
+    typename LayoutA::Stride::LongIndex *lda = nullptr;
+    typename LayoutB::Stride::LongIndex *ldb = nullptr;
+    typename LayoutC::Stride::LongIndex *ldc = nullptr;
+    typename LayoutC::Stride::LongIndex *ldd = nullptr;
 
     // Only used by device-level operator
-    GemmCoord *host_problem_sizes;
+    GemmCoord *host_problem_sizes = nullptr;
 
-    bool allow_early_exit;
+    bool allow_early_exit = false;
 
     //
     // Methods
     //
 
     /// Default ctor
-    CUTLASS_HOST_DEVICE
-    Arguments():
-      mode(GemmUniversalMode::kGemm),
-      problem_count(0),
-      threadblock_count(0),
-      ptr_A(nullptr),
-      ptr_B(nullptr),
-      ptr_C(nullptr),
-      ptr_D(nullptr),
-      lda(nullptr),
-      ldb(nullptr),
-      ldc(nullptr),
-      ldd(nullptr),
-      host_problem_sizes(nullptr),
-      allow_early_exit(false)
-    {
-
-    }
+    Arguments() = default;
 
     /// Ctor
     CUTLASS_HOST_DEVICE
@@ -290,43 +273,31 @@ public:
   /// Parameters structure
   struct Params {
 
-    typename ProblemVisitor::Params problem_visitor;
-    int threadblock_count;
+    typename ProblemVisitor::Params problem_visitor{};
+    int threadblock_count = 0;
 
-    typename EpilogueOutputOp::Params output_op;
+    typename EpilogueOutputOp::Params output_op{};
 
-    GemmUniversalMode mode;
-    int batch_count;
+    GemmUniversalMode mode = cutlass::gemm::GemmUniversalMode::kGemm;
+    int batch_count = 0;
 
-    ElementA ** ptr_A;
-    ElementB ** ptr_B;
-    ElementC ** ptr_C;
-    ElementC ** ptr_D;
+    ElementA** ptr_A = nullptr;
+    ElementB** ptr_B = nullptr;
+    ElementC** ptr_C = nullptr;
+    ElementC** ptr_D = nullptr;
 
-    typename LayoutA::Stride::LongIndex *lda;
-    typename LayoutB::Stride::LongIndex *ldb;
-    typename LayoutC::Stride::LongIndex *ldc;
-    typename LayoutC::Stride::LongIndex *ldd;
+    typename LayoutA::Stride::LongIndex* lda = nullptr;
+    typename LayoutB::Stride::LongIndex* ldb = nullptr;
+    typename LayoutC::Stride::LongIndex* ldc = nullptr;
+    typename LayoutC::Stride::LongIndex* ldd = nullptr;
 
-    bool allow_early_exit;
+    bool allow_early_exit = false;
 
     //
     // Methods
     //
 
-    CUTLASS_HOST_DEVICE
-    Params():
-      mode(cutlass::gemm::GemmUniversalMode::kGemm),
-      ptr_A(nullptr),
-      ptr_B(nullptr),
-      ptr_C(nullptr),
-      ptr_D(nullptr),
-      lda(nullptr),
-      ldb(nullptr),
-      ldc(nullptr),
-      ldd(nullptr),
-      allow_early_exit(false)
-    { }
+    Params() = default;
 
     CUTLASS_HOST_DEVICE
     Params(Arguments const &args, void *workspace = nullptr, int tile_count = 0):
@@ -380,8 +351,7 @@ public:
   // Methods
   //
 
-  CUTLASS_DEVICE
-  Rank2KGrouped() { }
+  Rank2KGrouped() = default;
 
   /// Determines whether kernel satisfies alignment
   static Status can_implement(cutlass::gemm::GemmCoord const & problem_size) {
