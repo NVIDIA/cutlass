@@ -87,7 +87,7 @@ struct TagToStrideB<layout::ColumnMajor> {
 // Maps to modes [M, K, L]
 template <>
 struct TagToStrideA<layout::RowMajor *> {
-  using UnderlyingType = cute::Stride<int64_t, cute::Int<1>, int64_t>;
+  using UnderlyingType = cute::Stride<int64_t, cute::Int<1>, cute::Int<0>>;
   using type = UnderlyingType*;
   using tag = layout::RowMajor;
 };
@@ -95,7 +95,7 @@ struct TagToStrideA<layout::RowMajor *> {
 // Maps to modes [M, K, L]
 template <>
 struct TagToStrideA<layout::ColumnMajor *> {
-  using UnderlyingType = cute::Stride<cute::Int<1>, int64_t, int64_t>;
+  using UnderlyingType = cute::Stride<cute::Int<1>, int64_t, cute::Int<0>>;
   using type = UnderlyingType*;
   using tag = layout::ColumnMajor;
 };
@@ -103,7 +103,7 @@ struct TagToStrideA<layout::ColumnMajor *> {
 // Maps to modes [N, K, L]
 template <>
 struct TagToStrideB<layout::RowMajor *> {
-  using UnderlyingType = cute::Stride<cute::Int<1>, int64_t, int64_t>;
+  using UnderlyingType = cute::Stride<cute::Int<1>, int64_t, cute::Int<0>>;
   using type = UnderlyingType*;
   using tag = layout::RowMajor;
 };
@@ -111,7 +111,7 @@ struct TagToStrideB<layout::RowMajor *> {
 // Maps to modes [N, K, L]
 template <>
 struct TagToStrideB<layout::ColumnMajor *> {
-  using UnderlyingType = cute::Stride<int64_t, cute::Int<1>, int64_t>;
+  using UnderlyingType = cute::Stride<int64_t, cute::Int<1>, cute::Int<0>>;
   using type = UnderlyingType*;
   using tag = layout::ColumnMajor;
 };
