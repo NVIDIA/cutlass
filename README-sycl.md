@@ -44,8 +44,7 @@ make -G Ninja  \
 
 # Running the example
 
-Currently there is only one sample enabled, 
-build it with:
+Currently, you can build the CuTe Tutorial using the following command: 
 
 ```
 ninja sgemm_nt_1_sycl
