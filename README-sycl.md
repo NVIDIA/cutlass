@@ -1,8 +1,8 @@
 # SYCL support for CUTLASS
 
 This repository contains a development version of the CUTLASS repository
-with experimental SYCL support enabled. The aim is for the CUTLASS code to
-support other SYCL-enabled devices with the minimal source code modifications
+with experimental SYCL support enabled. The aim is to
+support other SYCL-enabled devices with the minimal source code modifications by using the same CUTLASS features.
 possible, facilitating maintenance.
 Given that most of the backend work happens on the CUTE implementation,
 the CUTLASS interface remains the same, and the SYCL support only needs 
