@@ -108,6 +108,30 @@ make_cute_packed_stride(cute::Stride<cute::Int<1>, IntT, int64_t> s, cute::Shape
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+// Strides with group mode
+
+template <class StrideIntT>
+cute::Stride<StrideIntT, cute::Int<1>, cute::Int<0>>
+make_cute_packed_stride(cute::Stride<StrideIntT, cute::Int<1>, cute::Int<0>> s, cute::Shape<int,int,int> shape_MKL) {
+  static_assert(std::is_integral_v<StrideIntT>,
+    "Stride must have an integral type so it can be set dynamically. Static strides not supported.");
+  auto s_copy = s;
+  cute::get<0>(s_copy) = static_cast<StrideIntT>(cute::get<1>(shape_MKL));
+  return s_copy;
+}
+
+template <class StrideIntT>
+cute::Stride<cute::Int<1>, StrideIntT, cute::Int<0>>
+make_cute_packed_stride(cute::Stride<cute::Int<1>, StrideIntT, cute::Int<0>> s, cute::Shape<int,int,int> shape_MKL) {
+  static_assert(std::is_integral_v<StrideIntT>,
+    "Stride must have an integral type so it can be set dynamically. Static strides not supported.");
+  auto s_copy = s;
+  cute::get<1>(s_copy) = static_cast<StrideIntT>(cute::get<0>(shape_MKL));
+  return s_copy;
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 // Strides for convolutions
 
 // Output cutlass::layout::TensorNDHWC -> rank-3 stride (InT,_1,_0)
