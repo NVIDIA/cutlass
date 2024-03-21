@@ -2,7 +2,7 @@
 #include <thrust/host_vector.h>
 #include <thrust/device_vector.h>
 
-#include <CL/sycl.hpp>
+#include <sycl/sycl.hpp>
 #include <cute/tensor.hpp>
 #include <syclcompat.hpp>
 
