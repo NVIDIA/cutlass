@@ -138,7 +138,7 @@ struct alignas(16) uint128_t
     y.native = native + rhs.native;
 #else
     y.hilo_.lo = hilo_.lo + rhs.hilo_.lo;
-    y.hilo_.hi = hilo_.hi + rhs.hilo_.hi + (!y.hilo_.lo && (rhs.hilo_.lo));
+    y.hilo_.hi = hilo_.hi + rhs.hilo_.hi + (y.hilo_.lo < hilo_.lo);
 #endif
     return y;
   }
