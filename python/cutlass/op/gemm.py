@@ -116,8 +116,14 @@
 
 from math import prod
 
-import cutlass
 from cuda import cuda
+from cutlass_library import (
+    DataType,
+    DataTypeSize,
+    GemmUniversalMode,
+)
+
+import cutlass
 from cutlass import epilogue, swizzle
 from cutlass.backend import compiler
 from cutlass.backend.evt import EpilogueFunctorVisitor
@@ -126,7 +132,6 @@ from cutlass.backend.library import TensorDescription, TileDescription
 from cutlass.op.op import OperationBase
 from cutlass.shape import GemmCoord
 from cutlass.utils import check, datatypes
-from cutlass_library import DataType, DataTypeSize, GemmUniversalMode
 
 
 class Gemm(OperationBase):
