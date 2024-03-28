@@ -116,14 +116,8 @@
 
 from math import prod
 
-from cuda import cuda
-from cutlass_library import (
-    DataType,
-    DataTypeSize,
-    GemmUniversalMode,
-)
-
 import cutlass
+from cuda import cuda
 from cutlass import epilogue, swizzle
 from cutlass.backend import compiler
 from cutlass.backend.evt import EpilogueFunctorVisitor
@@ -132,6 +126,7 @@ from cutlass.backend.library import TensorDescription, TileDescription
 from cutlass.op.op import OperationBase
 from cutlass.shape import GemmCoord
 from cutlass.utils import check, datatypes
+from cutlass_library import DataType, DataTypeSize, GemmUniversalMode
 
 
 class Gemm(OperationBase):
@@ -403,7 +398,7 @@ class Gemm(OperationBase):
         """
         tds = [datatypes.td_from_profiler_op(op) for op in self.possible_operations.all_operations]
         if self._math_operation is not None:
-            tds = [td for td in tds if td.math_instruction == self._math_operation]
+            tds = [td for td in tds if td.math_instruction.math_operation == self._math_operation]
         return tds
 
     def construct(
