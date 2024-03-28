@@ -43,6 +43,8 @@
 */
 #pragma once
 
+#include <cstddef>
+
 #include "cutlass/cutlass.h"
 #include "cutlass/numeric_size.h"
 
