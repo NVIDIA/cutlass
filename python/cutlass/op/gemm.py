@@ -403,7 +403,7 @@ class Gemm(OperationBase):
         """
         tds = [datatypes.td_from_profiler_op(op) for op in self.possible_operations.all_operations]
         if self._math_operation is not None:
-            tds = [td for td in tds if td.tile_description.math_instruction == self._math_operation]
+            tds = [td for td in tds if td.math_instruction.math_operation == self._math_operation]
         return tds
 
     def construct(
