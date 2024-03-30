@@ -436,6 +436,8 @@ compact_order(Shape const& shape, Order const& order)
     } else {
       return v;
     }
+
+    CUTE_GCC_UNREACHABLE;
   });
   // Replace any dynamic elements within order with large-static elements
   auto max_seq = make_range<max_order+1, max_order+1+rank(flat_order)>{};
@@ -445,6 +447,8 @@ compact_order(Shape const& shape, Order const& order)
     } else {
       return seq_v;
     }
+
+    CUTE_GCC_UNREACHABLE;
   });
 
   auto new_order = unflatten(ref_order, order);
