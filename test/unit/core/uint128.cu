@@ -52,10 +52,10 @@ TEST(uint128_t, host_arithmetic) {
   using T = cutlass::uint128_t;
 
   // only low 64bit
-  for (int i = 0; i < 1024; ++i) {
-    for (int j = 0; j < 1024; ++j) {
-      T x = static_cast<uint64_t>(i);
-      T y = static_cast<uint64_t>(j);
+  for (uint64_t i = 0; i < 1024; ++i) {
+    for (uint64_t j = 0; j < 1024; ++j) {
+      T x = i;
+      T y = j;
 
       EXPECT_TRUE(static_cast<uint64_t>(x + y) == (i + j));
     }
@@ -63,14 +63,14 @@ TEST(uint128_t, host_arithmetic) {
 
   // carry overflow for low uint64_t 
   {
-    for (int i = 0; i < 1024; ++i) {
+    for (uint64_t i = 0; i < 1024; ++i) {
       T x = static_cast<uint64_t>(0xFFFFFFFFFFFFFFFF);
-      T y = static_cast<uint64_t>(i + 1);
+      T y = i + 1;
 
       T z = x + y;
 
       EXPECT_EQ(z.hilo_.hi, static_cast<uint64_t>(0x1));
-      EXPECT_EQ(z.hilo_.lo, static_cast<uint64_t>(i));
+      EXPECT_EQ(z.hilo_.lo, i);
     }
   }
 }
