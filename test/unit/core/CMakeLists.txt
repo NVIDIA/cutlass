@@ -34,6 +34,7 @@ cutlass_test_unit_add_executable(
   float8.cu
   tfloat32.cu
   complex.cu
+  uint128.cu
   quaternion.cu
   matrix.cu
   predicate_vector.cu
