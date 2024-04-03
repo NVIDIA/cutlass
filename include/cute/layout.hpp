@@ -398,6 +398,14 @@ make_ordered_layout(Shape const& shape, Order const& order)
   return make_layout(shape, compact_order(shape, order));
 }
 
+template <class Shape, class Stride>
+CUTE_HOST_DEVICE constexpr
+auto
+make_ordered_layout(Layout<Shape,Stride> const& layout)
+{
+  return make_ordered_layout(layout.shape(), layout.stride());
+}
+
 // Make a compact layout with the same shape as @a layout
 //   and strides following the order induced by @a layout.stride().
 // Static-0 strides in the input @a layout are preserved in the output.
