@@ -120,10 +120,8 @@ protected:
 
     // Release pattern using acq_rel fence + relaxed modifier.  (The fence also releases data
     // that was weakly-written by other threads prior to the last syncthreads)
-#if defined(ENABLE_NVPTX)
     asm volatile ("fence.acq_rel.gpu;\n");
     asm volatile ("red.relaxed.gpu.global.add.s32 [%0], %1;\n" : : "l"(ptr), "r"(val));
-#endif
 #else
     threadfence();
     atomicAdd(ptr, val);

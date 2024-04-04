@@ -165,18 +165,6 @@ namespace cutlass {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-#if defined(CUTLASS_ENABLE_SYCL)
-// the flag ENABLE_NVPTX should be set to 1 for SYCL Nvidia backend and CUDA backend. However, this flag will be set to 0 for SYCL backend on non-Nvidia devices
-#if defined(__SYCL_DEVICE_ONLY__) && defined(__NVPTX__)
-// the flag ENABLE_NVPTX should be set to 1 for SYCL Nvidia backend and CUDA backend. However, this flag will be set to 0 for SYCL backend on non-Nvidia devices
-#  define ENABLE_NVPTX 1
-#endif
-#else
-#  define ENABLE_NVPTX 1
-#endif
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
 }; // namespace cutlass
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

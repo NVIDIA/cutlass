@@ -47,7 +47,7 @@ namespace arch {
 CUTLASS_DEVICE
 int LaneId() {
   int ret;
-#if defined(ENABLE_NVPTX)
+#if !defined(CUTLASS_ENABLE_SYCL) || defined(__SYCL_CUDA_ARCH__)
   asm ("mov.u32 %0, %%laneid;" : "=r"(ret) : );
 #endif
   return ret;
@@ -57,7 +57,7 @@ int LaneId() {
 CUTLASS_DEVICE
 int SmId() {
   int ret;
-#if defined(ENABLE_NVPTX)
+#if !defined(CUTLASS_ENABLE_SYCL) || defined(__SYCL_CUDA_ARCH__)
   asm ("mov.u32 %0, %%smid;" : "=r"(ret) : );
 #endif
   return ret;
@@ -100,7 +100,7 @@ struct Sm90 {
 /// Triggers a breakpoint on the device
 CUTLASS_DEVICE
 void device_breakpoint() {
-#if (defined(__CUDA_ARCH__) || defined(__SYCL_CUDA_ARCH__)) && defined(ENABLE_NVPTX)
+#if defined(__CUDA_ARCH__) || defined(__SYCL_CUDA_ARCH__)
   asm volatile ("  brkpt;\n");
 #endif
 }

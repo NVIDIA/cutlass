@@ -128,14 +128,9 @@ block([[maybe_unused]] int bid)
 {
 #if defined(CUTLASS_ENABLE_SYCL)
     using sycl::ext::oneapi::experimental::this_nd_item;
-    return (this_nd_item<3>.get_linear_id()==bid);
+    return (this_nd_item<3>().get_group_linear_id()==bid);
 #elif defined(__CUDA_ARCH__)
   return blockIdx.x + blockIdx.y*gridDim.x + blockIdx.z*gridDim.x*gridDim.y == bid;
-#elif defined(CUTLASS_ENABLE_SYCL)
-    using namespace syclcompat;
-    return (work_group_id::x() +
-       work_group_id::y() * global_range::x() +
-       work_group_id::z() * global_range::x() * global_range::y() == bid);
 #else
   return true;
 #endif
@@ -147,14 +142,9 @@ thread([[maybe_unused]] int tid, [[maybe_unused]] int bid)
 {
 #if defined(CUTLASS_ENABLE_SYCL)
     using sycl::ext::oneapi::experimental::this_nd_item;
-    return (this_nd_item<3>.get_linear_id()==bid);
+    return (this_nd_item<3>().get_global_linear_id()==bid);
 #elif defined(__CUDA_ARCH__)
   return (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y == tid) && block(bid);
-#elif defined(CUTLASS_ENABLE_SYCL)
-    using namespace syclcompat;
-    return (local_id::x() +
-       local_id::y() * work_group_range::x() +
-       local_id::z() * work_group_range::x() * work_group_range::y() == tid) && block(bid);
 #else
   return true;
 #endif
