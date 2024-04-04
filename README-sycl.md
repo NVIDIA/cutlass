@@ -17,14 +17,14 @@ resources for GPUs.
 
 Currently, only one example works on NVIDIA SM 80.
 
+## Requirements
+ 
+To build CUTLASS SYCL support you need the latest version of DPC++ compiler. You can either use a recent [nighly build](https://github.com/intel/llvm/releases)
+or build the compiler from source as described in [oneAPI DPC++ guidline]((https://github.com/intel/llvm/blob/sycl/sycl/doc/GetStartedGuide.md#build-dpc-toolchain-with-support-for-nvidia-cuda)).
+
+In either case, CUDA version >= 12.0 is required.
+
 ## Building with SYCL support
-
-To build CUTLASS SYCL support you need the latest version of DPC++ compiler, 
-you can either use a recent [nighly build](https://github.com/intel/llvm/releases)
-or build the compiler from source.
-In either case, make sure to enable the NVIDIA plugin so you can build applications
-for NVIDIA GPUs.
-
 Once you have your compiler installed, you need to point the
 `CMAKE_CUDA_HOST_COMPILER` flag to the clang++ provided by it.
 This enables the compilation of SYCL sources without altering the current NVCC path.
@@ -44,17 +44,28 @@ make -G Ninja  \
 
 # Running the example
 
+## CuTe 
 Currently, you can build the CuTe Tutorial using the following command: 
 
 ```
-ninja sgemm_nt_1_sycl
+ninja [EXAMPLE_NAME]_sycl
 ```
 
 You can run it like this from your build directory
 
 ```
-LD_LIBRARY_PATH=/path/to/sycl/install/lib ./examples/cute/tutorial/sgemm_nt_1_sycl
+LD_LIBRARY_PATH=/path/to/sycl/install/lib ./examples/cute/tutorial/[EXAMPLE_NAME]_sycl
 ```
+
+## CUTLASS Example
+ Currently, the the example `14_amper_tf32_tensorop_gemm` has been implemented for SYCL on Nvidia Ampere architecture. You can build this from your build directory by running :
+ ```
+  ninja 14_ampere_tf32_tensorop_gemm_cute
+ ```
+ You can run it like this from your build directory
+ ```
+  NVIDIA_TF32_OVERRIDE=1 LD_LIBRARY_PATH=/path/to/sycl/install/lib ./examples/14_ampere_tf32_tensorop_gemm/14_ampere_tf32_tensorop_gemm_cute
+ ```
 
 # References
 
