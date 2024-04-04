@@ -241,7 +241,7 @@ public:
     // Kernel level shared memory storage
     SharedStorage& shared_storage = *reinterpret_cast<SharedStorage*>(smem_buf);
 
-    int thread_idx = int(threadIdx.x);
+    int thread_idx = int(ThreadIdxX());
     int lane_idx = canonical_lane_idx();
     int warp_idx = canonical_warp_idx_sync();
     int warp_idx_in_warp_group = warp_idx % NumWarpsPerWarpGroup;
@@ -314,7 +314,7 @@ public:
         return [] () { cute::cluster_wait(); };
       }
       else {
-        __syncthreads();
+        syncthreads();
         return [] () {}; // do nothing
       }
     } ();
@@ -347,9 +347,9 @@ public:
     Tensor gB_nkl = get<1>(load_inputs);
 
     // Compute m_coord, n_coord, and l_coord with their post-tiled shapes
-    auto m_coord = idx2crd(int(blockIdx.x), shape<2>(gA_mkl));
-    auto n_coord = idx2crd(int(blockIdx.y), shape<2>(gB_nkl));
-    auto l_coord = idx2crd(int(blockIdx.z), shape<4>(gB_nkl));
+    auto m_coord = idx2crd(int(BlockIdxX()), shape<2>(gA_mkl));
+    auto n_coord = idx2crd(int(BlockIdxY()), shape<2>(gB_nkl));
+    auto l_coord = idx2crd(int(BlockIdxZ()), shape<4>(gB_nkl));
     auto blk_coord = make_coord(m_coord, n_coord, _, l_coord);
 
     // Get pipeline iterators and increments from tensor shapes
@@ -379,7 +379,7 @@ public:
 
         if (collective_epilogue.is_producer_load_needed()) {
           // Ensure warp is converged before issuing epilogue loads
-          __syncwarp();
+          syncwarp();
           epi_load_pipe_producer_state = collective_epilogue.load(
             epi_load_pipeline,
             epi_load_pipe_producer_state,

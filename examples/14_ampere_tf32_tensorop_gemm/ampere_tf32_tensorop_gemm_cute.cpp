@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -29,45 +29,4 @@
  *
  **************************************************************************************************/
 
-#pragma once
-
-#include <cuda_runtime.h>
-
-struct GPU_Clock
-{
-  GPU_Clock() {
-    cudaEventCreate(&start_);
-    cudaEventCreate(&stop_);
-    cudaEventRecord(start_);
-  }
-
-  ~GPU_Clock() {
-    cudaEventDestroy(start_);
-    cudaEventDestroy(stop_);
-  }
-
-  void start() {
-#if defined(CUTLASS_ENABLE_SYCL)
-    syclcompat::get_default_queue().wait();
-#endif
-    cudaEventRecord(start_);
-  }
-
-  float milliseconds() {
-#if defined(CUTLASS_ENABLE_SYCL)
-    syclcompat::get_default_queue().wait();
-#endif
-    cudaEventRecord(stop_);
-    cudaEventSynchronize(stop_);
-    float time;
-    cudaEventElapsedTime(&time, start_, stop_);
-    return time;
-  }
-
-  float seconds() {
-    return milliseconds() * float(1e-3);
-  }
-
- private:
-  cudaEvent_t start_, stop_;
-};
+#include "ampere_tf32_tensorop_gemm_cute.cu"

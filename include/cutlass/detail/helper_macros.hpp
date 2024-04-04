@@ -49,6 +49,9 @@
 #if defined(__NVCC__) || (defined(__clang__) && defined(__CUDA__))
 #define CUTLASS_HOST_DEVICE __forceinline__ __device__ __host__
 #define CUTLASS_DEVICE __forceinline__ __device__
+#elif defined(CUTLASS_ENABLE_SYCL)
+#define CUTLASS_HOST_DEVICE __attribute__((always_inline))
+#define CUTLASS_DEVICE __attribute__((always_inline))
 #elif defined(__CUDACC_RTC__)
 #define CUTLASS_HOST_DEVICE __forceinline__ __device__
 #define CUTLASS_DEVICE __forceinline__ __device__
@@ -117,8 +120,8 @@ namespace cutlass {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // CUTLASS_PRAGMA_(UNROLL|NO_UNROLL) optimization directives for the CUDA compiler.
-#if defined(__CUDA_ARCH__) && !defined(__INTELLISENSE__)
-  #if defined(__CUDACC_RTC__) || (defined(__clang__) && defined(__CUDA__))
+#if (defined(__CUDA_ARCH__) || defined(CUTLASS_ENABLE_SYCL)) && !defined(__INTELLISENSE__)
+  #if defined(__CUDACC_RTC__) || (defined(__clang__) && defined(__CUDA__)) || defined(CUTLASS_ENABLE_SYCL)
     #define CUTLASS_PRAGMA_UNROLL _Pragma("unroll")
     #define CUTLASS_PRAGMA_NO_UNROLL _Pragma("unroll 1")
   #else
@@ -158,6 +161,18 @@ namespace cutlass {
 #else
 #define CUTLASS_CONSTEXPR_IF_CXX17
 #define CUTLASS_CXX17_OR_LATER 0
+#endif
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+#if defined(CUTLASS_ENABLE_SYCL)
+// the flag ENABLE_NVPTX should be set to 1 for SYCL Nvidia backend and CUDA backend. However, this flag will be set to 0 for SYCL backend on non-Nvidia devices
+#if defined(__SYCL_DEVICE_ONLY__) && defined(__NVPTX__)
+// the flag ENABLE_NVPTX should be set to 1 for SYCL Nvidia backend and CUDA backend. However, this flag will be set to 0 for SYCL backend on non-Nvidia devices
+#  define ENABLE_NVPTX 1
+#endif
+#else
+#  define ENABLE_NVPTX 1
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

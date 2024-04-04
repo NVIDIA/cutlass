@@ -274,7 +274,7 @@ public:
   CUTLASS_DEVICE
   void gmem_wait()
   {
-    __syncthreads();
+    syncthreads();
   }
 
 

@@ -60,6 +60,10 @@
   #define CUTE_ARCH_LDSM_SM75_ACTIVATED 1
 #endif
 
+#if ((CUTE_ARCH_LDSM_SM75_ENABLED) && defined(__SYCL_CUDA_ARCH__) && __SYCL_CUDA_ARCH__ >= 750)
+  #define CUTE_ARCH_LDSM_SM75_ACTIVATED 1
+#endif
+
 namespace cute
 {
 

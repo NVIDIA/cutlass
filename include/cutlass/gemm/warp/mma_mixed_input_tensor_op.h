@@ -170,14 +170,14 @@ public:
         uint32_t *dst_ptr = reinterpret_cast<uint32_t *>(&mma_frag_dst_ptr[n]);
 
         // Shuffle data within the warp, pull from other threads within the warp
-        uint32_t tmp0 = __shfl_up_sync(0xFFFFFFFF, src_ptr[0], delta_up_);
-        uint32_t tmp1 = __shfl_down_sync(0xFFFFFFFF, src_ptr[0], delta_down_);
-        uint32_t tmp2 = __shfl_up_sync(0xFFFFFFFF, src_ptr[1], delta_up_);
-        uint32_t tmp3 = __shfl_down_sync(0xFFFFFFFF, src_ptr[1], delta_down_);
+        uint32_t tmp0 = shfl_up_sync(0xFFFFFFFF, src_ptr[0], delta_up_);
+        uint32_t tmp1 = shfl_down_sync(0xFFFFFFFF, src_ptr[0], delta_down_);
+        uint32_t tmp2 = shfl_up_sync(0xFFFFFFFF, src_ptr[1], delta_up_);
+        uint32_t tmp3 = shfl_down_sync(0xFFFFFFFF, src_ptr[1], delta_down_);
 
         // Reorder the data within the 32-bit word (4x8b) required for mma.sync
-        dst_ptr[0] = __byte_perm(tmp0, tmp2, byte_selector_);
-        dst_ptr[1] = __byte_perm(tmp1, tmp3, byte_selector_);
+        dst_ptr[0] = byte_perm(tmp0, tmp2, byte_selector_);
+        dst_ptr[1] = byte_perm(tmp1, tmp3, byte_selector_);
     }
 
     return result;
@@ -254,11 +254,11 @@ public:
         uint32_t* dst_ptr = reinterpret_cast<uint32_t*>(&mma_frag_dst_ptr[n]);
 
         // Shuffle data within the warp, pull from other threads within the warp
-        uint32_t tmp0 = __shfl_up_sync(0xFFFFFFFF, src_ptr[0], delta_up_);
-        uint32_t tmp1 = __shfl_down_sync(0xFFFFFFFF, src_ptr[0], delta_down_);
+        uint32_t tmp0 = shfl_up_sync(0xFFFFFFFF, src_ptr[0], delta_up_);
+        uint32_t tmp1 = shfl_down_sync(0xFFFFFFFF, src_ptr[0], delta_down_);
 
         // Reorder the data within the 32-bit word (4x8b) required for mma.sync
-        dst_ptr[0] = __byte_perm(tmp0, tmp1, byte_selector_);
+        dst_ptr[0] = byte_perm(tmp0, tmp1, byte_selector_);
     }
 
     return result;

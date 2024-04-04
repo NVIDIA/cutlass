@@ -224,7 +224,7 @@ public:
         copy(sB_tiled_copy, tCsB_copy_tile(_,step), transpose_fragment);
 
         // Make sure all elements are read before being overwritten
-        __syncthreads();
+        syncthreads();
 
         copy(sB_tiled_copy, transpose_fragment, tCsB_copy_tile_transposed(_,step));
       }
@@ -432,7 +432,7 @@ public:
         }
 
         // Make sure elements in two 8x8 warp tiles are all consumed
-        __syncwarp();
+        syncwarp();
 
         CUTLASS_PRAGMA_UNROLL
         for (int warp_tile = 0; warp_tile < TilesPerWarp; ++warp_tile) {
@@ -657,7 +657,7 @@ public:
         }
 
         // Make sure elements in two 8x8 warp tiles are all consumed
-        __syncwarp();
+        syncwarp();
 
         CUTLASS_PRAGMA_UNROLL
         for (int warp_tile = 0; warp_tile < TilesPerWarp; ++warp_tile) {

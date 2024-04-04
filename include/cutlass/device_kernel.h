@@ -60,10 +60,16 @@ namespace cutlass {
 
 /// Generic CUTLASS kernel template.
 template <typename Operator>
+#if defined(CUTLASS_ENABLE_SYCL)
+void Kernel(typename Operator::Params params, char* smem) {
+  // Dynamic shared memory base pointer
+  int* SharedStorageBase = reinterpret_cast<int*>(smem);
+#else
 CUTLASS_GLOBAL
 void Kernel(typename Operator::Params params) {
   // Dynamic shared memory base pointer
   extern __shared__ int SharedStorageBase[];
+#endif
   // Declare pointer to dynamic shared memory.
   typename Operator::SharedStorage *shared_storage =
       reinterpret_cast<typename Operator::SharedStorage *>(SharedStorageBase);
@@ -76,10 +82,16 @@ void Kernel(typename Operator::Params params) {
 
 /// Generic CUTLASS kernel template.
 template <typename Operator>
+#if defined(CUTLASS_ENABLE_SYCL)
+void Kernel2(typename Operator::Params params, char* smem) {
+  // Dynamic shared memory base pointer
+  int* SharedStorageBase = reinterpret_cast<int*>(smem);
+#else
 CUTLASS_GLOBAL
 void Kernel2(typename Operator::Params params) {
   // Dynamic shared memory base pointer
   extern __shared__ int SharedStorageBase[];
+#endif
   // Declare pointer to dynamic shared memory.
   typename Operator::SharedStorage *shared_storage =
       reinterpret_cast<typename Operator::SharedStorage *>(SharedStorageBase);
@@ -96,6 +108,9 @@ void Kernel2(typename Operator::Params params) {
 
 /// Generic CUTLASS kernel template.
 template <typename Operator>
+#if defined(CUTLASS_ENABLE_SYCL)
+void device_kernel(typename Operator::Params const params, char* smem) {
+#else
 CUTLASS_GLOBAL
 #ifdef __CUDACC__
 // Enclosing this in __CUDACC__ suppresses MSVC warnings.
@@ -105,6 +120,7 @@ void device_kernel(CUTLASS_GRID_CONSTANT typename Operator::Params const params)
 {
   // Dynamic shared memory base pointer
   extern __shared__ char smem[];
+#endif
   Operator op;
   op(params, smem);
 }

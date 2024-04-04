@@ -3213,7 +3213,7 @@ private:
     uint32_t const prmt_indices[4] = {0x7650, 0x7651, 0x7652, 0x7653};
     uint32_t* result_as_int = reinterpret_cast<uint32_t*>(&r);
     for (int ii = 0; ii < PackedResultType::kElements; ++ii) {
-      result_as_int[ii] = __byte_perm(src_reg, 0x4B000000, prmt_indices[ii]);
+      result_as_int[ii] = byte_perm(src_reg, 0x4B000000, prmt_indices[ii]);
       // Subtract the magic number 0x4B000000 from tmp in floating-point arithmetic to obtain final result
       r[ii] -= 8388608.f;
     }
@@ -3362,7 +3362,7 @@ private:
     CUTLASS_PRAGMA_UNROLL
     for (int ii = 0; ii < RegArray::kElements; ++ii) {
       half2& fp16x2_val = reinterpret_cast<__half2&>(r[ii]);
-      fp16x2_val = __hfma2(hfma_scale, fp16x2_val, hfma_bias);
+      fp16x2_val = hfma2(hfma_scale, fp16x2_val, hfma_bias);
     }
     return reinterpret_cast<PackedResultType&>(r);
   }
@@ -3903,9 +3903,9 @@ struct FastNumericArrayConverter<int8_t, float, 4, Round> {
       result[i] = reinterpret_cast<int32_t const &>(tmp);
     }
 
-    result[0] = __byte_perm(result[0], result[1], 0x40);
-    result[2] = __byte_perm(result[2], result[3], 0x40);
-    result[0] = __byte_perm(result[0], result[2], 0x5410);
+    result[0] = byte_perm(result[0], result[1], 0x40);
+    result[2] = byte_perm(result[2], result[3], 0x40);
+    result[0] = byte_perm(result[0], result[2], 0x5410);
 
     return reinterpret_cast<result_type const &>(result[0]);
   }

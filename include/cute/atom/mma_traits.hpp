@@ -156,10 +156,9 @@ mma_unpack(MMA_Traits<MMA_Op, MMA_Args...> const& traits,
                       &(traits.accumulate_), seq<0>{});
     }
     else {
-      detail::explode(MMA_Op::fma,
-                      rA, make_int_sequence<RegNumA>{},
-                      rB, make_int_sequence<RegNumB>{},
-                      rC, make_int_sequence<RegNumC>{});
+      detail::explode<MMA_Op>(rA, make_int_sequence<RegNumA>{},
+                              rB, make_int_sequence<RegNumB>{},
+                              rC, make_int_sequence<RegNumC>{});
     }
   }
   else {
@@ -177,11 +176,10 @@ mma_unpack(MMA_Traits<MMA_Op, MMA_Args...> const& traits,
                         &(traits.accumulate_), seq<0>{});
       }
       else {
-        detail::explode(MMA_Op::fma,
-                        rD, make_int_sequence<RegNumD>{},
-                        rA, make_int_sequence<RegNumA>{},
-                        rB, make_int_sequence<RegNumB>{},
-                        rC, make_int_sequence<RegNumC>{});
+        detail::explode<MMA_Op>(rD, make_int_sequence<RegNumD>{},
+                                rA, make_int_sequence<RegNumA>{},
+                                rB, make_int_sequence<RegNumB>{},
+                                rC, make_int_sequence<RegNumC>{});
       }
   }
 }

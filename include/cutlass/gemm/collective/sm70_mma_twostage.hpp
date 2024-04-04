@@ -237,7 +237,7 @@ struct CollectiveMma<
     copy(tArA, tAsA);
     copy(tBrB, tBsB);
     // Clear accumulators
-    __syncthreads();
+    syncthreads();
 
     // Load A, B smem->rmem for k=0
     copy(tCsA(_,_,0), tCrA_copy_view(_,_,0));
@@ -257,12 +257,12 @@ struct CollectiveMma<
       {
         if (k_block == K_BLOCK_MAX - 1)
         {
-          __syncthreads();
+          syncthreads();
 
           // Copy rmem to smem
           copy(tArA, tAsA);
           copy(tBrB, tBsB);
-          __syncthreads();
+          syncthreads();
         }
 
         // Load A, B smem->rmem for k+1
@@ -534,7 +534,7 @@ struct CollectiveMma<
     copy(tArA, tAsA);
     copy(tBrB, tBsB);
     // Clear accumulators
-    __syncthreads();
+    syncthreads();
 
     // Load A, B smem->rmem for k=0
     copy(tCsA(_,_,0), tCrA_copy_view(_,_,0));
@@ -554,12 +554,12 @@ struct CollectiveMma<
       {
         if (k_block == K_BLOCK_MAX - 1)
         {
-          __syncthreads();
+          syncthreads();
 
           // Copy rmem to smem
           copy(tArA, tAsA);
           copy(tBrB, tBsB);
-          __syncthreads();
+          syncthreads();
         }
 
         // Load A, B smem->rmem for k+1

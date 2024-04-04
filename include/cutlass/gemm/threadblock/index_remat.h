@@ -47,55 +47,55 @@ namespace threadblock {
 /// Helper to rematerialize block Idx. Reduces register liveness.
 CUTLASS_DEVICE
 int RematerializeThreadIdxX() {
-  return threadIdx.x;
+  return ThreadIdxX();
 }
 
 /// Helper to rematerialize block Idx. Reduces register liveness.
 CUTLASS_DEVICE
 int RematerializeThreadIdxY() {
-  return threadIdx.y;
+  return ThreadIdxY();
 }
 
 /// Helper to rematerialize block Idx. Reduces register liveness.
 CUTLASS_DEVICE
 int RematerializeThreadIdxZ() {
-  return threadIdx.z;
+  return ThreadIdxZ();
 }
 
 /// Helper to rematerialize block Idx. Reduces register liveness.
 CUTLASS_DEVICE
 int RematerializeBlockIdxX() {
-  return blockIdx.x;
+  return BlockIdxX();
 }
 
 /// Helper to rematerialize block Idx. Reduces register liveness.
 CUTLASS_DEVICE
 int RematerializeBlockIdxY() {
-  return blockIdx.y;
+  return BlockIdxY();
 }
 
 /// Helper to rematerialize block Idx. Reduces register liveness.
 CUTLASS_DEVICE
 int RematerializeBlockIdxZ() {
-  return blockIdx.z;
+  return BlockIdxZ();
 }
 
 /// Helper to rematerialize block Dim. Reduces register liveness.
 CUTLASS_DEVICE
 int RematerializeBlockDimX() {
-  return blockDim.x;
+  return BlockDimX();
 }
 
 /// Helper to rematerialize block Dim. Reduces register liveness.
 CUTLASS_DEVICE
 int RematerializeBlockDimY() {
-  return blockDim.y;
+  return BlockDimY();
 }
 
 /// Helper to rematerialize block Dim. Reduces register liveness.
 CUTLASS_DEVICE
 int RematerializeBlockDimZ() {
-  return blockDim.z;
+  return BlockDimZ();
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

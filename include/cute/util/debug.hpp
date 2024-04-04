@@ -126,7 +126,10 @@ CUTE_HOST_DEVICE
 bool
 block([[maybe_unused]] int bid)
 {
-#if defined(__CUDA_ARCH__)
+#if defined(CUTLASS_ENABLE_SYCL)
+    using sycl::ext::oneapi::experimental::this_nd_item;
+    return (this_nd_item<3>.get_linear_id()==bid);
+#elif defined(__CUDA_ARCH__)
   return blockIdx.x + blockIdx.y*gridDim.x + blockIdx.z*gridDim.x*gridDim.y == bid;
 #elif defined(CUTLASS_ENABLE_SYCL)
     using namespace syclcompat;
@@ -142,7 +145,10 @@ CUTE_HOST_DEVICE
 bool
 thread([[maybe_unused]] int tid, [[maybe_unused]] int bid)
 {
-#if defined(__CUDA_ARCH__)
+#if defined(CUTLASS_ENABLE_SYCL)
+    using sycl::ext::oneapi::experimental::this_nd_item;
+    return (this_nd_item<3>.get_linear_id()==bid);
+#elif defined(__CUDA_ARCH__)
   return (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y == tid) && block(bid);
 #elif defined(CUTLASS_ENABLE_SYCL)
     using namespace syclcompat;

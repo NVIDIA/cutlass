@@ -282,7 +282,7 @@ struct CollectiveMma<
     if (K_BLOCK_MAX > 1) {
       // Wait until our first prefetched tile is loaded in
       cp_async_wait<DispatchPolicy::Stages-2>();
-      __syncthreads();
+      syncthreads();
 
       // Prefetch the first rmem from the first k-tile
       copy(smem_tiled_copy_A, tCsA_p(_,_,Int<0>{}), tCrA_copy_view(_,_,Int<0>{}));
@@ -294,8 +294,13 @@ struct CollectiveMma<
     {
       // Pipeline the outer products with a static for loop.
       //
-      // Note, the for_each() function is required here to ensure `k_block` is of type Int<x>.
+#if defined(CUTLASS_ENABLE_SYCL)
+      CUTLASS_PRAGMA_UNROLL
+      for (auto k_block = 0; k_block < K_BLOCK_MAX; ++k_block)
+#else
+      // Note, the for_each() function is required here to ensure `k_block` is of type Int<N>.
       for_each(make_int_sequence<K_BLOCK_MAX>{}, [&] (auto k_block)
+#endif
       {
         if (k_block == K_BLOCK_MAX - 1)
         {
@@ -305,7 +310,7 @@ struct CollectiveMma<
 
           // Commit the smem for smem_pipe_read
           cp_async_wait<DispatchPolicy::Stages-2>();
-          __syncthreads();
+          syncthreads();
         }
 
         // Load A, B shmem->regs for k_block+1
@@ -334,12 +339,14 @@ struct CollectiveMma<
         cute::transform(tCrB(_,_,k_block), TransformB{});
         // Thread-level register gemm for k_block
         cute::gemm(tiled_mma, accum, tCrA(_,_,k_block), tCrB(_,_,k_block), src_accum);
-      });
-
+      }
+#if !defined(CUTLASS_ENABLE_SYCL)
+      );
+#endif
     }
 
     cp_async_wait<0>();
-    __syncthreads();
+    syncthreads();
   }
 };
 
@@ -637,7 +644,7 @@ struct CollectiveMma<
     if (K_BLOCK_MAX > 1) {
       // Wait until our first prefetched tile is loaded in
       cp_async_wait<DispatchPolicy::Stages-2>();
-      __syncthreads();
+      syncthreads();
 
       // Prefetch the first rmem from the first k-tile
       copy(smem_tiled_copy_A, tCsA_p(_,_,Int<0>{}), tCrA_copy_view(_,_,Int<0>{}));
@@ -649,8 +656,13 @@ struct CollectiveMma<
     {
       // Pipeline the outer products with a static for loop.
       //
+#if defined(CUTLASS_ENABLE_SYCL)
+      CUTLASS_PRAGMA_UNROLL
+      for (auto k_block = 0; k_block < K_BLOCK_MAX; ++k_block)
+#else
       // Note, the for_each() function is required here to ensure `k_block` is of type Int<N>.
       for_each(make_int_sequence<K_BLOCK_MAX>{}, [&] (auto k_block)
+#endif
       {
         if (k_block == K_BLOCK_MAX - 1)
         {
@@ -660,7 +672,7 @@ struct CollectiveMma<
 
           // Commit the smem for smem_pipe_read
           cp_async_wait<DispatchPolicy::Stages-2>();
-          __syncthreads();
+          syncthreads();
         }
 
         // Load A, B shmem->regs for k_block+1
@@ -691,12 +703,14 @@ struct CollectiveMma<
         cute::transform(tCrB(_,_,k_block), TransformB{});
         // Thread-level register gemm for k_block
         cute::gemm(tiled_mma, accum, tCrA(_,_,k_block), tCrB(_,_,k_block), src_accum);
-      });
-
+      }
+#if !defined(CUTLASS_ENABLE_SYCL)
+      );
+#endif
     }
 
     cp_async_wait<0>();
-    __syncthreads();
+    syncthreads();
   }
 };
 

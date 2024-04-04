@@ -211,7 +211,7 @@ public:
     static_assert(cute::rank(StrideC{}) == 3, "StrideC must be rank-3: [M, N, L]. If batch mode is not needed, set L stride to Int<0>.");
     static_assert(cute::rank(StrideD{}) == 3, "StrideD must be rank-3: [M, N, L]. If batch mode is not needed, set L stride to Int<0>.");
 
-    int thread_idx = int(threadIdx.x);
+    int thread_idx = int(ThreadIdxX());
     int warp_idx   = canonical_warp_idx_sync();
     int lane_predicate = cute::elect_one_sync();
     uint32_t block_rank_in_cluster = cute::block_rank_in_cluster();
@@ -243,9 +243,9 @@ public:
     Tensor gB_nkl = local_tile(mB_nkl, blk_shape, blk_coord, Step< X,_1,_1>{});                  // (BLK_N,BLK_K,n,k,l)
 
     // Compute m_coord, n_coord, and l_coord with their post-tiled shapes
-    auto m_coord = idx2crd(int(blockIdx.x), shape<2>(gA_mkl));
-    auto n_coord = idx2crd(int(blockIdx.y), shape<2>(gB_nkl));
-    auto l_coord = idx2crd(int(blockIdx.z), shape<4>(gB_nkl));
+    auto m_coord = idx2crd(int(BlockIdxX()), shape<2>(gA_mkl));
+    auto n_coord = idx2crd(int(BlockIdxY()), shape<2>(gB_nkl));
+    auto l_coord = idx2crd(int(BlockIdxZ()), shape<4>(gB_nkl));
     auto output_tile_coord = make_coord(m_coord, n_coord, _, l_coord);
 
     // Slice with m_coord and n_coord

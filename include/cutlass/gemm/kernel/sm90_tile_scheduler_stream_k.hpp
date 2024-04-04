@@ -240,10 +240,10 @@ public:
   CUTLASS_HOST_DEVICE
   PersistentTileSchedulerSm90StreamK(Params const& params_) : scheduler_params(params_) {
     if (params_.raster_order_ == RasterOrder::AlongN) {
-      current_work_linear_idx_ = uint64_t(blockIdx.x) + uint64_t(blockIdx.y) * uint64_t(gridDim.x);
+      current_work_linear_idx_ = uint64_t(BlockIdxX()) + uint64_t(BlockIdxY()) * uint64_t(GridDimX());
     }
     else {
-      current_work_linear_idx_ = uint64_t(blockIdx.x) * uint64_t(gridDim.y) + uint64_t(blockIdx.y);
+      current_work_linear_idx_ = uint64_t(BlockIdxX()) * uint64_t(GridDimY()) + uint64_t(BlockIdxY());
     }
   }
 
@@ -302,7 +302,7 @@ public:
   CUTLASS_DEVICE
   void
   advance_to_next_work(uint32_t advance_count = 1) {
-    current_work_linear_idx_ += uint64_t(gridDim.x) * uint64_t(gridDim.y) * uint64_t(gridDim.z) * uint64_t(advance_count);
+    current_work_linear_idx_ += uint64_t(GridDimX()) * uint64_t(GridDimY()) * uint64_t(GridDimZ()) * uint64_t(advance_count);
   }
 
   // Given the inputs, computes the total number of output blocks this problem will compute over
@@ -424,7 +424,7 @@ public:
     AccumulatorArrayT* reduction_workspace_array = reinterpret_cast<AccumulatorArrayT*>(group_reduction_workspace);
     AccumulatorArrayT* accumulator_array = reinterpret_cast<AccumulatorArrayT*>(accumulators.data());
 
-    int barrier_group_thread_idx = threadIdx.x % BarrierManager::ThreadCount;
+    int barrier_group_thread_idx = ThreadIdxX() % BarrierManager::ThreadCount;
 
     // The number of tiles for which reduction is required is either:
     //   (a) the total number of output tiles (in the case of split-K)

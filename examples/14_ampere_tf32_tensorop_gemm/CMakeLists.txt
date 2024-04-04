@@ -33,3 +33,14 @@ cutlass_example_add_executable(
   ampere_tf32_tensorop_gemm.cu
   )
 
+if (CUTLASS_ENABLE_SYCL)
+cutlass_example_add_executable(
+  14_ampere_tf32_tensorop_gemm_cute
+  ampere_tf32_tensorop_gemm_cute.cpp
+  )
+else()
+cutlass_example_add_executable(
+  14_ampere_tf32_tensorop_gemm_cute
+  ampere_tf32_tensorop_gemm_cute.cu
+  )
+endif()

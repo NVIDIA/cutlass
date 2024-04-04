@@ -37,6 +37,10 @@
 
 #include "cutlass/detail/helper_macros.hpp"
 
+#if defined(CUTLASS_ENABLE_SYCL)
+#include "syclcompat.hpp"
+#endif
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
@@ -97,6 +101,211 @@ static const int NumWarpsPerWarpGroup = NumThreadsPerWarpGroup / NumThreadsPerWa
 static const int NumThreadsPerHalfWarp = NumThreadsPerWarp / 2;
 static const int NumThreadsPerQuad = 4;
 static const int NumThreadsPerQuadPair = NumThreadsPerQuad * 2;
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+CUTLASS_HOST_DEVICE uint ThreadIdxX() {
+#if defined(CUTLASS_ENABLE_SYCL)
+  return syclcompat::local_id::x();
+#else
+  return threadIdx.x;
+#endif
+}
+
+CUTLASS_HOST_DEVICE uint ThreadIdxY() {
+#if defined(CUTLASS_ENABLE_SYCL)
+  return syclcompat::local_id::y();
+#else
+  return threadIdx.y;
+#endif
+}
+
+CUTLASS_HOST_DEVICE uint ThreadIdxZ() {
+#if defined(CUTLASS_ENABLE_SYCL)
+  return syclcompat::local_id::z();
+#else
+  return threadIdx.z;
+#endif
+}
+
+CUTLASS_HOST_DEVICE uint BlockIdxX() {
+#if defined(CUTLASS_ENABLE_SYCL)
+  return syclcompat::work_group_id::x();
+#else
+  return blockIdx.x;
+#endif
+}
+
+CUTLASS_HOST_DEVICE uint BlockIdxY() {
+#if defined(CUTLASS_ENABLE_SYCL)
+  return syclcompat::work_group_id::y();
+#else
+  return blockIdx.y;
+#endif
+}
+
+CUTLASS_HOST_DEVICE uint BlockIdxZ() {
+#if defined(CUTLASS_ENABLE_SYCL)
+  return syclcompat::work_group_id::z();
+#else
+  return blockIdx.z;
+#endif
+}
+
+CUTLASS_HOST_DEVICE uint BlockDimX() {
+#if defined(CUTLASS_ENABLE_SYCL)
+  return syclcompat::work_group_range::x();
+#else
+  return blockDim.x;
+#endif
+}
+
+CUTLASS_HOST_DEVICE uint BlockDimY() {
+#if defined(CUTLASS_ENABLE_SYCL)
+  return syclcompat::work_group_range::y();
+#else
+  return blockDim.y;
+#endif
+}
+
+CUTLASS_HOST_DEVICE uint BlockDimZ() {
+#if defined(CUTLASS_ENABLE_SYCL)
+  return syclcompat::work_group_range::z();
+#else
+  return blockDim.z;
+#endif
+}
+
+CUTLASS_HOST_DEVICE uint GridDimX() {
+#if defined(CUTLASS_ENABLE_SYCL)
+  return syclcompat::global_range::x();
+#else
+  return gridDim.x;
+#endif
+}
+
+CUTLASS_HOST_DEVICE uint GridDimY() {
+#if defined(CUTLASS_ENABLE_SYCL)
+  return syclcompat::global_range::y();
+#else
+  return gridDim.y;
+#endif
+}
+
+CUTLASS_HOST_DEVICE uint GridDimZ() {
+#if defined(CUTLASS_ENABLE_SYCL)
+  return syclcompat::global_range::z();
+#else
+  return gridDim.z;
+#endif
+}
+
+// syncthreads
+
+CUTLASS_DEVICE void syncthreads() {
+#if defined(CUTLASS_ENABLE_SYCL)
+  syclcompat::wg_barrier();
+#else
+  __syncthreads();
+#endif
+}
+
+CUTLASS_DEVICE int syncthreads_and(int cond) {
+#if defined(CUTLASS_ENABLE_SYCL)
+  // TODO: Add SYCL equivalent function
+  assert(false);
+#else
+  return __syncthreads_and(cond);
+#endif
+}
+
+CUTLASS_DEVICE void syncwarp() {
+#if defined(CUTLASS_ENABLE_SYCL)
+  // TODO: Add SYCL equivalent function
+  assert(false);
+#else
+  __syncwarp();
+#endif
+}
+
+CUTLASS_DEVICE void threadfence() {
+#if defined(CUTLASS_ENABLE_SYCL)
+  // TODO: Add SYCL equivalent function
+  assert(false);
+#else
+  __threadfence();
+#endif
+}
+
+// byte perm
+
+CUTLASS_DEVICE
+uint byte_perm(uint x, uint y, uint s) {
+#if defined(CUTLASS_ENABLE_SYCL)
+  // TODO: Add SYCL equivalent function
+  assert(false);
+#else
+  return __byte_perm(x, y, s);
+#endif
+}
+
+// shfl
+
+CUTLASS_DEVICE
+uint shfl_up_sync(const unsigned mask, const uint var, const int delta, const int width = NumThreadsPerWarp) {
+#if defined(CUTLASS_ENABLE_SYCL)
+  // TODO: Add SYCL equivalent function
+  assert(false);
+#else
+  return __shfl_up_sync(mask, var, delta, width);
+#endif
+}
+
+CUTLASS_DEVICE
+uint shfl_down_sync(const unsigned mask, const uint var, const int delta, const int width = NumThreadsPerWarp) {
+#if defined(CUTLASS_ENABLE_SYCL)
+  // TODO: Add SYCL equivalent function
+  assert(false);
+#else
+  return __shfl_down_sync(mask, var, delta, width);
+#endif
+}
+
+CUTLASS_DEVICE
+uint shfl_sync(const unsigned mask, const uint var, const int delta, const int width = NumThreadsPerWarp) {
+#if defined(CUTLASS_ENABLE_SYCL)
+  // TODO: Add SYCL equivalent function
+  assert(false);
+#else
+  return __shfl_sync(mask, var, delta, width);
+#endif
+}
+
+// math
+
+template <typename T>
+CUTLASS_DEVICE T hfma2(const T a, const T b, const T c) {
+#if defined(CUTLASS_ENABLE_SYCL)
+  // TODO: Add SYCL equivalent function
+  assert(false);
+#else
+  return hfma2(a, b, c);
+#endif
+}
+
+// atomic
+
+#if defined(CUTLASS_ENABLE_SYCL)
+CUTLASS_DEVICE int atomicAdd(int *address, int val) {
+  // TODO: Add SYCL equivalent function
+  assert(false);
+}
+
+CUTLASS_DEVICE int atomicCAS(int *address, int compare, int val) {
+  // TODO: Add SYCL equivalent function
+  assert(false);
+}
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 

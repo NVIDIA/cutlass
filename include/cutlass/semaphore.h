@@ -89,17 +89,17 @@ public:
   /// Waits until the semaphore is equal to the given value
   CUTLASS_DEVICE
   void wait(int status = 0) {
-    while( __syncthreads_and(state != status) ) {
+    while( syncthreads_and(state != status) ) {
       fetch();
     }
 
-    __syncthreads();
+    syncthreads();
   }
 
   /// Updates the lock with the given result
   CUTLASS_DEVICE
   void release(int status = 0) {
-    __syncthreads();
+    syncthreads();
 
     if (wait_thread) {
       #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 700

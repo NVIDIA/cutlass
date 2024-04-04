@@ -45,11 +45,12 @@
 #endif // CUTE_HOST_DEVICE, CUTE_DEVICE
 
 #if defined(CUTLASS_ENABLE_SYCL)
+// the flag ENABLE_NVPTX should be set to 1 for SYCL Nvidia backend and CUDA backend. However, this flag will be set to 0 for SYCL backend on non-Nvidia devices
 #if defined(__SYCL_DEVICE_ONLY__) && defined(__NVPTX__)
-#  define SYCL_ENABLE_NVPTX 1
+#  define ENABLE_NVPTX 1
 #endif
 #else
-#  define SYCL_ENABLE_NVPTX 1
+#  define ENABLE_NVPTX 1
 #endif
 
 #if defined(__CUDACC_RTC__)
@@ -62,7 +63,7 @@
   (defined(__CUDA_ARCH__) || defined(_NVHPC_CUDA))
 #  define CUTE_UNROLL    #pragma unroll
 #  define CUTE_NO_UNROLL #pragma unroll 1
-#elif defined(__CUDACC_RTC__) || defined(CUTLASS_ENABLE_SYCL)
+#elif defined(__CUDACC_RTC__) || defined(__clang__)
 #  define CUTE_UNROLL    _Pragma("unroll")
 #  define CUTE_NO_UNROLL _Pragma("unroll 1")
 #else

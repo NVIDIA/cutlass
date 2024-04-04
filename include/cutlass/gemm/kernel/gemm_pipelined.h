@@ -94,7 +94,7 @@ CUTLASS_GLOBAL void GemmPipelined(
   };
 
   // Compute position within threadblock
-  int tb_thread_id = threadIdx.x;
+  int tb_thread_id = ThreadIdxX();
 
   // Construct iterators to A and B operands
   typename Mma::IteratorA iterator_A(
@@ -112,7 +112,7 @@ CUTLASS_GLOBAL void GemmPipelined(
     tb_offset_B);
 
   int warp_id = canonical_warp_idx_sync();
-  int lane_id = threadIdx.x % 32;
+  int lane_id = ThreadIdxX() % 32;
 
   //
   // Main loop

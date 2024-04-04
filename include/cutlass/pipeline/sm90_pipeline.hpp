@@ -266,7 +266,7 @@ public :
 
     // STEP 1 : Use Cute Layout function to generate an optimal dst block-id (0-15)
     if (params_.num_consumers % NumThreadsPerWarpGroup == 0) {
-      int thread_idx = threadIdx.x % NumThreadsPerWarpGroup;
+      int thread_idx = ThreadIdxX() % NumThreadsPerWarpGroup;
       is_signalling_thread_ = (thread_idx % (NumThreadsPerWarpGroup / MaxClusterSize)) == 0;
       auto layout = cute::composition(Swizzle<2,0,-2>{},
                                       Layout<Shape<_4,_4>,Stride<_4,_1>>{});
@@ -275,7 +275,7 @@ public :
       dst_blockid_ = layout(thread_row, thread_col);
     }
     else if (params_.num_consumers == 32) {
-      int thread_idx = threadIdx.x % 32;
+      int thread_idx = ThreadIdxX() % 32;
       is_signalling_thread_ = (thread_idx % (32 / MaxClusterSize)) == 0;
       auto layout = Layout<Shape<_4,_4>,Stride<_4, _1>>{};
       uint32_t thread_row = thread_idx / 8;

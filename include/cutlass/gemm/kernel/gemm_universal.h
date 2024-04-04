@@ -511,7 +511,7 @@ public:
       ptr_B = static_cast<ElementB * const *>(params.ptr_B)[threadblock_tile_offset.k()];
     }
 
-    __syncthreads();
+    syncthreads();
 
     // Compute initial location in logical coordinates
     cutlass::MatrixCoord tb_offset_A{
@@ -525,7 +525,7 @@ public:
     };
 
     // Compute position within threadblock
-    int thread_idx = threadIdx.x;
+    int thread_idx = ThreadIdxX();
 
     // Construct iterators to A and B operands
     typename Mma::IteratorA iterator_A(
@@ -548,7 +548,7 @@ public:
     // is compiled as warp-uniform.
     int warp_idx = canonical_warp_idx_sync();
 
-    int lane_idx = threadIdx.x % 32;
+    int lane_idx = ThreadIdxX() % 32;
 
     //
     // Main loop

@@ -345,7 +345,7 @@ endif()
 ###################################################################################################
 
 if(CUTLASS_ENABLE_SYCL)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -fsycl -fsycl-targets=nvptx64-nvidia-cuda -Xsycl-target-backend")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -fsycl -ffast-math -mllvm -enable-global-offset=false -fsycl-targets=nvptx64-nvidia-cuda -Xsycl-target-backend")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --cuda-gpu-arch=sm_${CUTLASS_NVCC_ARCHS}")
   set(CMAKE_CUDA_ARCHITECTURES "${CUTLASS_NVCC_ARCHS}")
   add_definitions( -DCUTLASS_ENABLE_SYCL=${CUTLASS_ENABLE_SYCL} )

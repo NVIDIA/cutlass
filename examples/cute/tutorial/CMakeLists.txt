@@ -32,7 +32,6 @@ if (CUTLASS_ENABLE_SYCL)
     sgemm_nt_1_sycl
     sgemm_nt_1_sycl.cpp
   )
-
 else ()
   cutlass_example_add_executable(
     sgemm_1
