@@ -48,6 +48,10 @@ function(cutlass_example_add_executable NAME)
 
   add_dependencies(cutlass_examples ${NAME})
 
+  if (${CUTLASS_ENABLE_DEBUG_PRINTS})
+    target_compile_definitions(${NAME} INTERFACE CUTLASS_ENABLE_DEBUG_PRINTS)
+  endif()
+  
   target_link_libraries(
     ${NAME}
     PRIVATE
