@@ -99,8 +99,9 @@ and in `gemm_tn` the strides are defined as
 
 We've found that the BLAS convention of using "non-transposed" (N) and "transposed" (T) flags in conjunction with the mode conventions of `MxK * KxN` to confuse the core issue of "what layout does this matrix use" and "in which mode does my matrix have a stride-1?". Indeed, the answer to those questions can always be found by inspecting the CuTe `Layout`.
 
-Instead of row-major or column-major (or Transposed
-and Not-Transposed), we have found it much more convenient to say that a matrix is "M-major" if it is stride-1 in the M-mode, "N-major" if it is stride-1 in the N-mode, or "K-major" if it is stride-1 in the K-mode. Furthermore, knowing that matrix multiply always performs a reduction in the K-mode, it is very convenient from a software perspective to always have the K-mode in the same place and adopt the mode convention `MxK * NxK`. Implementations will always reduce over the second mode (the K mode) of both input matrices and leads to cases where implementations can treat both input matrices the same way.
+Instead of row-major or column-major (or Transposed and Not-Transposed), we have found it much more convenient to say that a matrix is "M-major" if it is stride-1 in the M-mode, "N-major" if it is stride-1 in the N-mode, or "K-major" if it is stride-1 in the K-mode.  Note that this is the **opposite** of the [usual meanings](https://en.wikipedia.org/wiki/Row-_and_column-major_order) of "major" and "minor".  Outside of CuTe, we'd say that a matrix is "row-major" if the stride in the row dimension is `num_cols` and "row-minor" if the stride in the row dimension is 1.  Inside of CuTe we say it's "M-**major**" if the stride in the M dimension is 1.
+
+Knowing that matrix multiply always performs a reduction in the K-mode, it is very convenient from a software perspective to always have the K-mode in the same place and adopt the mode convention `MxK * NxK`. Implementations will always reduce over the second mode (the K mode) of both input matrices and leads to cases where implementations can treat both input matrices the same way.
 
 How do we translate this into the BLAS user's experience?
 
