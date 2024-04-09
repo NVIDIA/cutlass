@@ -44,6 +44,7 @@
 #pragma once
 
 #include "cutlass/cutlass.h"
+#include "cutlass/platform/platform.h"
 #include "cutlass/numeric_size.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
