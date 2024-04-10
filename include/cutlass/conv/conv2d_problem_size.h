@@ -44,15 +44,6 @@
     Map tensor sizes (Conv2d -> ImplicitGemm)        : implicit_gemm_tensor_[a|b|c]_size(ConvolutionOperator)
     Map tensor problem sizes (Conv2d -> ImplicitGemm): implicit_gemm_problem_size(ConvolutionOperator)
 */
-/*
-  Note:  CUTLASS 3x increases the host compiler requirements to C++17. However, certain
-         existing integrations of CUTLASS require C++11 host compilers.
-
-         Until this requirement can be lifted, certain headers with this annotation are required
-         to be remain consistent with C++11 syntax.
-
-         C++11 compatibility is enforced by `cutlass_test_unit_core_cpp11`.
-*/
 
 #pragma once
 
@@ -247,9 +238,10 @@ public:
 
   /// Returns filter extent as Tensor4DCoord
   CUTLASS_HOST_DEVICE
-  cutlass::Tensor4DCoord filter_extent() const {
+  cutlass::Tensor4DCoord filter_extent(bool is_deconv = false) const {
 
-    return cutlass::Tensor4DCoord ({K, R, S, C / groups});
+    return is_deconv ? cutlass::Tensor4DCoord ({C, R, S, K / groups})
+        : cutlass::Tensor4DCoord ({K, R, S, C / groups});
   }
 
   /// Returns output extent as Tensor4DCoord
@@ -340,6 +332,7 @@ cutlass::gemm::GemmCoord implicit_gemm_problem_size(
       problem_size.K,
       problem_size.R * problem_size.S * problem_size.C / problem_size.groups
     );
+  case Operator::kDeconv:
   case Operator::kDgrad:
     return gemm::GemmCoord(
       problem_size.N * problem_size.H * problem_size.W,
@@ -404,6 +397,7 @@ int implicit_gemm_k_iterations(
         iterations = problem_size.R * problem_size.S * ((elements_per_split_k_slice + threadblock_K - 1) / threadblock_K);
         break;
 
+      case Operator::kDeconv:
       case Operator::kDgrad:
         elements_per_split_k_slice = (problem_size.K + problem_size.split_k_slices - 1) / problem_size.split_k_slices;
         iterations = problem_size.R * problem_size.S * ((elements_per_split_k_slice + threadblock_K - 1) / threadblock_K);
@@ -505,6 +499,7 @@ int implicit_gemm_k_iterations_per_channel(
         iterations = problem_size.R * problem_size.S;
         break;
 
+      case Operator::kDeconv:
       case Operator::kDgrad:
         iterations = problem_size.R * problem_size.S;
         break;
@@ -526,6 +521,7 @@ cutlass::Tensor4DCoord implicit_gemm_tensor_a_extent(
   Conv2dProblemSize const &problem_size) {
   switch (conv_operator) {
     case cutlass::conv::Operator::kFprop: return problem_size.activation_extent();
+    case cutlass::conv::Operator::kDeconv:
     case cutlass::conv::Operator::kDgrad: return problem_size.output_extent();
     case cutlass::conv::Operator::kWgrad: return problem_size.output_extent();
     default : break;
@@ -540,6 +536,7 @@ cutlass::Tensor4DCoord implicit_gemm_tensor_b_extent(
   Conv2dProblemSize const &problem_size) {
   switch (conv_operator) {
     case cutlass::conv::Operator::kFprop: return problem_size.filter_extent();
+    case cutlass::conv::Operator::kDeconv: return problem_size.filter_extent(true);
     case cutlass::conv::Operator::kDgrad: return problem_size.filter_extent();
     case cutlass::conv::Operator::kWgrad: return problem_size.activation_extent();
     default : break;
@@ -554,6 +551,7 @@ cutlass::Tensor4DCoord implicit_gemm_tensor_c_extent(
   Conv2dProblemSize const &problem_size) {
   switch (conv_operator) {
     case cutlass::conv::Operator::kFprop: return problem_size.output_extent();
+    case cutlass::conv::Operator::kDeconv:
     case cutlass::conv::Operator::kDgrad: return problem_size.activation_extent();
     case cutlass::conv::Operator::kWgrad: return problem_size.filter_extent();
     default : break;
@@ -568,6 +566,7 @@ int64_t implicit_gemm_tensor_a_size(
   Conv2dProblemSize const &problem_size) {
   switch (conv_operator) {
     case cutlass::conv::Operator::kFprop: return problem_size.activation_size();
+    case cutlass::conv::Operator::kDeconv:
     case cutlass::conv::Operator::kDgrad: return problem_size.output_size();
     case cutlass::conv::Operator::kWgrad: return problem_size.output_size();
     default : break;
@@ -582,6 +581,7 @@ int64_t implicit_gemm_tensor_b_size(
   Conv2dProblemSize const &problem_size) {
   switch (conv_operator) {
     case cutlass::conv::Operator::kFprop: return problem_size.filter_size();
+    case cutlass::conv::Operator::kDeconv:
     case cutlass::conv::Operator::kDgrad: return problem_size.filter_size();
     case cutlass::conv::Operator::kWgrad: return problem_size.activation_size();
     default : break;
@@ -596,6 +596,7 @@ int64_t implicit_gemm_tensor_c_size(
   Conv2dProblemSize const &problem_size) {
   switch (conv_operator) {
     case cutlass::conv::Operator::kFprop: return problem_size.output_size();
+    case cutlass::conv::Operator::kDeconv:
     case cutlass::conv::Operator::kDgrad: return problem_size.activation_size();
     case cutlass::conv::Operator::kWgrad: return problem_size.filter_size();
     default : break;

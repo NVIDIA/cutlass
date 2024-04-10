@@ -1336,7 +1336,6 @@ struct TestbedImpl {
   {
     using namespace cute;
     auto problem_shape_MNKL = cute::append<4>(problem_size, 1);
-
     auto mainloop_params = collective_mma_inputs.to_host_args(problem_size);
     auto epilogue_params = collective_epilogue.to_host_args(problem_size);
     

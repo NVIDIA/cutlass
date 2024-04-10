@@ -208,7 +208,7 @@ make_gmma_desc(Tensor<TEngine,TLayout> const& tensor)
 
   // Start address (4LSB not included)
   uint32_t start_address = cast_smem_ptr_to_uint(raw_pointer_cast(u128_tensor.data()));
-  desc.bitfield.start_address_ = start_address >> 4;
+  desc.bitfield.start_address_ = static_cast<uint16_t>(start_address >> 4);
 
   constexpr uint8_t base_offset = 0;
   desc.bitfield.base_offset_ = base_offset;

@@ -1713,7 +1713,7 @@ void BlockFillSequential(
   Layout layout = Layout::packed(size);
   TensorView<Element, Layout> view(ptr, layout, size);
 
-  Array<Element, Layout::kRank> c;
+  Array<Element, Layout::kRank> c{};
   c[0] = v;
 
   TensorFillLinear(view, c, s);

@@ -163,6 +163,50 @@ TEST(SM90_Device_Gemm_f32t_f32t_f32n_tensor_op_gmma_f32, 128x128x32_1x1x1_cooper
   EXPECT_TRUE(test::gemm::device::TestAll<Gemm>());
 }
 
+TEST(SM90_Device_Gemm_f32t_f32t_f32n_tensor_op_gmma_f32, 128x128x32_1x1x1_cooperative_narrow_wgmma) {
+  using LayoutA = cutlass::layout::RowMajor;
+  using LayoutB = cutlass::layout::ColumnMajor;
+  using LayoutC = cutlass::layout::ColumnMajor;
+
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+      Shape<_128,_128,_32>, Shape<_1,_1,_1>,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      float, float,
+      float, LayoutC, 4,
+      float, LayoutC, 4,
+      cutlass::epilogue::TmaWarpSpecializedCooperative
+    >::CollectiveOp;
+
+  // Manually configure a half-tile wide MMA instruction
+  using CollectiveMainloop = cutlass::gemm::collective::CollectiveMma<
+      cutlass::gemm::MainloopSm90TmaGmmaWarpSpecialized<5, Shape<_1,_1,_1>, cutlass::gemm::KernelTmaWarpSpecializedCooperative>,
+      Shape<_128,_128,_32>,
+      float,
+      cutlass::detail::TagToStrideA_t<LayoutA>,
+      float,
+      cutlass::detail::TagToStrideB_t<LayoutB>,
+      decltype(cute::make_tiled_mma(cute::SM90_64x64x8_F32TF32TF32_SS_TN{}, Layout<Shape<_2,_1,_1>>{})),
+      cute::SM90_TMA_LOAD,
+      cute::GMMA::Layout_K_SW128_Atom<tfloat32_t>,
+      void,
+      cute::identity,
+      cute::SM90_TMA_LOAD,
+      cute::GMMA::Layout_K_SW128_Atom<tfloat32_t>,
+      void,
+      cute::identity
+    >;
+
+  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+      Shape<int,int,int,int>,
+      CollectiveMainloop,
+      CollectiveEpilogue
+  >;
+
+  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  EXPECT_TRUE(test::gemm::device::TestAll<Gemm>());
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
 #endif // defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)

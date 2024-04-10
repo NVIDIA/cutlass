@@ -212,13 +212,12 @@ TEST(CuTe_core, Composition)
     test_composition(a, b);
   }
 
-  // FAILS due to b not "dividing into" a properly
-  //{
-  //  auto a = make_layout(Shape<_4,_3>{});
-  //  auto b = make_layout(Shape<_6>{});
+  {
+   auto a = make_layout(Shape<_4,_3>{});
+   auto b = make_layout(Shape<_6>{});
 
-  //  test_composition(a, b);
-  //}
+   test_composition(a, b);
+  }
 
   {
     auto a = make_layout(Shape<_4,_3>{});
@@ -234,13 +233,12 @@ TEST(CuTe_core, Composition)
     test_composition(a, b);
   }
 
-  // FAILS due to b not "dividing into" a properly
-  //{
-  //  auto a = make_layout(Shape<_4,_3>{});
-  //  auto b = make_layout(Shape<_4,_3>{}, Stride<_3,_1>{});
+  {
+   auto a = make_layout(Shape<_4,_3>{});
+   auto b = make_layout(Shape<_4,_3>{}, Stride<_3,_1>{});
 
-  //  test_composition(a, b);
-  //}
+   test_composition(a, b);
+  }
 
   {
     auto a = make_layout(Shape<_4,_3>{}, Stride<_3,_1>{});
@@ -523,4 +521,21 @@ TEST(CuTe_core, Composition)
     test_composition(a, b);
   }
 
+  CUTLASS_TRACE_HOST("-------------------------------");
+  CUTLASS_TRACE_HOST("BETA: Tuple strides"            );
+  CUTLASS_TRACE_HOST("-------------------------------");
+
+  {
+   auto a = make_layout(Shape<_4,_4>{}, Stride<_4,_1>{});
+   auto b = make_layout(Shape<_4,_4>{}, Stride<E<1>,E<0>>{});
+
+   test_composition(a, b);
+  }
+
+  {
+   auto a = make_layout(Shape<_4,Shape<_2,_3>>{}, Stride<_6,Stride<_3,_1>>{});
+   auto b = make_layout(Shape<_2,_4>{}, Stride<E<1,1>,E<0>>{});
+
+   test_composition(a, b);
+  }
 }

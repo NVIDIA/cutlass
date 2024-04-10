@@ -38,7 +38,7 @@ else()
 endif()
 
 message(STATUS "CMake Version: ${CMAKE_VERSION}")
-set(IMPLICIT_CMAKE_CXX_STANDARD OFF CACHE BOOL "Do not explicitly specify -std=c++11 if set")
+set(IMPLICIT_CMAKE_CXX_STANDARD OFF CACHE BOOL "Do not explicitly specify -std=c++17 if set")
 
 # To reduce duplicate version locations, parse the version out of the
 # main versions.h file and reuse it here.
@@ -332,6 +332,18 @@ endif()
 
 
 
+# Warnings-as-error exceptions and warning suppressions for Clang builds
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-error=implicit-int-conversion ")
+  list(APPEND CUTLASS_CUDA_NVCC_FLAGS "-Wno-error=implicit-int-conversion" )
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-error=pass-failed ")
+  list(APPEND CUTLASS_CUDA_NVCC_FLAGS "-Wno-error=pass-failed" )
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-error=inconsistent-missing-override ")
+  list(APPEND CUTLASS_CUDA_NVCC_FLAGS "-Wno-error=inconsistent-missing-override" )
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-sign-conversion ")
+  list(APPEND CUTLASS_CUDA_NVCC_FLAGS "-Wno-sign-conversion" )
+endif()
+
 if (NOT MSVC AND CUTLASS_NVCC_KEEP)
   # MSVC flow handles caching already, but for other generators we handle it here.
   set(CUTLASS_NVCC_KEEP_DIR ${CMAKE_CURRENT_BINARY_DIR}/tmp CACHE PATH "Location to store NVCC scratch files")
@@ -357,6 +369,7 @@ if (CUTLASS_ENABLE_OPENMP_TESTS)
     message(WARNING "CUTLASS_ENABLE_OPENMP_TESTS set but OpenMP not found.")
   endif()
 endif()
+
 if(UNIX)
   list(APPEND CUTLASS_CUDA_NVCC_FLAGS -Xcompiler=-Wconversion)
   list(APPEND CUTLASS_CUDA_NVCC_FLAGS -Xcompiler=-fno-strict-aliasing)

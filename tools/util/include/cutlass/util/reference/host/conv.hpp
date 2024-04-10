@@ -41,6 +41,8 @@
 
 #include "cute/tensor.hpp"
 
+#include <cuda_runtime.h>
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass::reference::host {
@@ -93,7 +95,8 @@ template<
   class TensorAlpha_,
   class TensorBeta_,
   class TensorBias_,
-  class ActivationFunctor_ = cutlass::epilogue::thread::Identity<ElementCompute_>>
+  class ActivationFunctor_ = cutlass::epilogue::thread::Identity<ElementCompute_>
+>
 struct ConvEpilogueFusionParams {
   using ElementAcc = ElementAcc_;
   using ElementScalar = ElementScalar_;
@@ -104,7 +107,6 @@ struct ConvEpilogueFusionParams {
   using TensorBeta = TensorBeta_;
   using TensorBias = TensorBias_;
   using ActivationFunctor = ActivationFunctor_;
-
   ElementScalar alpha = ElementScalar(1);
   ElementScalar beta = ElementScalar(0);
 
@@ -155,6 +157,7 @@ struct ConvReferenceImpl {
 
   // Epilogue activation operation
   ActivationFunctor epi_activation;
+
   ConvReferenceImpl(
     TensorA const& tensor_a,
     TensorB const& tensor_b,
@@ -201,7 +204,7 @@ private:
   #pragma omp parallel for collapse(2)
 #endif
     for (int32_t n = 0; n < N; ++n) {
-      for (int32_t q = 0; q < Q; ++q) {    
+      for (int32_t q = 0; q < Q; ++q) {
         for (int32_t k = 0; k < K; ++k) {
           auto accumulator = ElementAcc(0);
           for (int32_t s = 0; s < S; ++s) {
@@ -226,6 +229,7 @@ private:
         }
       }
     }
+
   }
 
   // Specialization for 2D fprop kernel
@@ -272,6 +276,7 @@ private:
         }
       }
     }
+
   }
 
   // Specialization for 3D fprop kernel
@@ -325,6 +330,7 @@ private:
         }
       }
     }
+
   }
 
   // Specialization for 1D dgrad kernel
@@ -371,6 +377,7 @@ private:
         }
       }
     }
+
   }
 
   // Specialization for 2D dgrad kernel
@@ -424,11 +431,14 @@ private:
             if (raw_pointer_cast(epi_fusion_params_.tensor_bias.data())) {
               output += bias_converter(epi_fusion_params_.tensor_bias[c]);
             }
+            output = epi_activation(output);
+
             tensor_d_(c, w, h, n) = output_converter(output);
           }
         }
       }
     }
+
   }
 
   // Specialization for 3D dgrad kernel
@@ -501,6 +511,7 @@ private:
         }
       }
     }
+
   }
 
   // Specialization for 1D wgrad kernel

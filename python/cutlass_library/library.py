@@ -250,6 +250,12 @@ ComplexTransformTag = {
   ComplexTransform.conj: 'cutlass::ComplexTransform::kConjugate',
 }
 
+# Used for cutlass3x complex kernel collective mainloop builder instantiation
+ComplexTransformTag3x = {
+  ComplexTransform.none: 'cute::identity',
+  ComplexTransform.conj: 'cute::conjugate',
+}
+
 #
 RealComplexBijection = [
   (DataType.f16, DataType.cf16),

@@ -137,9 +137,9 @@ class KernelsForDataType:
                 # Finally, go through all available alignment combinations and find
                 # one for which all values are less than those passed in.
                 key = None
-                alignments = sorted([(int(x) for x in k.split(" ")) for k in self.kernels_by_alignment.keys()], reverse=True)
+                alignments = sorted([tuple(int(x) for x in k.split(" ")) for k in self.kernels_by_alignment.keys()], reverse=True)
                 for align_A, align_B, align_C in alignments:
-                    if align_A <= alignment_A and align_B <= alignment_B and align_C <= alignment_C:
+                    if alignment_A % align_A == 0 and alignment_B % align_B == 0 and alignment_C % align_C == 0:
                         key = f"{align_A} {align_B} {align_C}"
                         break
 

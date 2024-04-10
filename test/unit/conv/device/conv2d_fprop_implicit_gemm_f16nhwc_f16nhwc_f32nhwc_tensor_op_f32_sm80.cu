@@ -85,7 +85,7 @@ TEST(SM80_Device_Conv2d_Fprop_Analytic_ImplicitGemm_f16nhwc_f16nhwc_f32nhwc_tens
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-#if 0
+
 TEST(SM80_Device_Conv2d_Fprop_Precomputed_ImplicitGemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f32,
   128x128_64x3_64x64x64) {
 
@@ -116,7 +116,8 @@ TEST(SM80_Device_Conv2d_Fprop_Precomputed_ImplicitGemm_f16nhwc_f16nhwc_f32nhwc_t
     cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
     3,
     cutlass::arch::OpMultiplyAdd,
-    cutlass::conv::IteratorAlgorithm::kOptimized
+    cutlass::conv::IteratorAlgorithm::kOptimized,
+    cutlass::conv::StrideSupport::kStrided
   >::Kernel;
 
   using Conv2dFprop = cutlass::conv::device::ImplicitGemmConvolution<Conv2dFpropKernel>;
@@ -124,7 +125,6 @@ TEST(SM80_Device_Conv2d_Fprop_Precomputed_ImplicitGemm_f16nhwc_f16nhwc_f32nhwc_t
   /// Run all unit test sizes with device-level Conv2d instance
   EXPECT_TRUE(test::conv::device::TestAllConv2d<Conv2dFprop>());
 }
-#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 #endif  // CUTLASS_ARCH_MMA_SM80_SUPPORTED

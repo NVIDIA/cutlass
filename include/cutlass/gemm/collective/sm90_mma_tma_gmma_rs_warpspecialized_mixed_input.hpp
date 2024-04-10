@@ -1093,7 +1093,7 @@ private:
     else if constexpr (ModeHasScales) {
       Tensor sS = make_tensor(make_smem_ptr(shared_tensors.smem_scale.begin()), SmemLayoutScale{});    // (BLK_M,BLK_SCALE_K,PIPE)
       Tensor tCsS = thread_mma.partition_A(sS);
-      Tensor tCrS = make_fragment_like<ElementScale>(thread_mma.partition_fragment_A(sS(_,_,Int<0>{}))); 
+      Tensor tCrS = make_tensor<ElementScale>(thread_mma.partition_fragment_A(sS(_,_,Int<0>{})).shape()); 
 
       if constexpr (KernelConversionMode == ConversionMode::ConvertAndScale) {
         return cute::make_tuple(tCsS, tCrS);
@@ -1101,7 +1101,7 @@ private:
       else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
         Tensor sZ = make_tensor(make_smem_ptr(shared_tensors.smem_zero.begin()), SmemLayoutScale{});    // (BLK_M,BLK_SCALE_K,PIPE)
         Tensor tCsZ = thread_mma.partition_A(sZ);
-        Tensor tCrZ = make_fragment_like<ElementZero>(thread_mma.partition_fragment_A(sZ(_,_,Int<0>{}))); 
+        Tensor tCrZ = make_tensor<ElementZero>(thread_mma.partition_fragment_A(sZ(_,_,Int<0>{})).shape()); 
         return cute::make_tuple(tCsS, tCrS, tCsZ, tCrZ);
       }
       else {

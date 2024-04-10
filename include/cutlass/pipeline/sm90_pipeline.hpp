@@ -264,7 +264,6 @@ public :
     dim3 block_id = cute::block_id_in_cluster();
     auto cluster_size = cute::size(cluster_shape);
     static constexpr int MaxClusterSize = 16;
-    static_assert(cluster_size <= MaxClusterSize, "ERROR : Cluster size too large !" );
 
     // STEP 1 : Use Cute Layout function to generate an optimal dst block-id (0-15)
     if (params_.num_consumers % NumThreadsPerWarpGroup == 0) {

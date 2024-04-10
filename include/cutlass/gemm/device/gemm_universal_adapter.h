@@ -96,7 +96,7 @@ public:
   using ElementB = typename GemmKernel::ElementB;
   using ElementC = typename GemmKernel::ElementC;
   using ElementD = typename GemmKernel::ElementD;
-  using ElementAccumulator = typename GemmKernel::TiledMma::ValTypeC;
+  using ElementAccumulator = typename GemmKernel::ElementAccumulator;
   using DispatchPolicy = typename GemmKernel::DispatchPolicy;
   using CollectiveMainloop = typename GemmKernel::CollectiveMainloop;
   using CollectiveEpilogue = typename GemmKernel::CollectiveEpilogue;
@@ -361,9 +361,13 @@ public:
         CUTLASS_ASSERT(cuda_adapter);
         if (cuda_adapter) {
 
-          launch_result = cuda_adapter->launch(
-            grid, cluster, block, smem_size, stream, kernel_params, 0
-          );
+          launch_result = cuda_adapter->launch(grid,
+                                               cluster,
+                                               block,
+                                               smem_size,
+                                               stream,
+                                               kernel_params,
+                                               0);
         }
         else {
           return Status::kErrorInternal;

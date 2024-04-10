@@ -66,7 +66,8 @@ template <
   typename Shape_,
   typename Element_,
   typename Layout_,
-  typename ThreadMap_
+  typename ThreadMap_,
+  bool IsDeconv_ = false
 >
 class Conv3dFpropFilterTileAccessIteratorOptimized{
 public:
@@ -84,6 +85,7 @@ public:
   using TensorCoord = typename Layout::TensorCoord;
   using Index = typename Layout::Index;
   using LongIndex = typename Layout::LongIndex;
+  static bool const IsDeconv = IsDeconv_;
   static IteratorAlgorithm const kIteratorAlgorithm = conv::IteratorAlgorithm::kOptimized;
   static StrideSupport const kStrideSupport = conv::StrideSupport::kStrided;
   static int const kConvDim = 3;
@@ -172,11 +174,11 @@ public:
 
     CUTLASS_PRAGMA_UNROLL
     for (int s = 0; s < ThreadMap::Iterations::kStrided; ++s) {
-      uint32_t pred = ((column + s * ThreadMap::Delta::kStrided < problem_size_.K) ? 1u : 0);
+      uint32_t pred = ((column + s * ThreadMap::Delta::kStrided < (IsDeconv ? problem_size_.C : problem_size_.K)) ? 1u : 0);
       predicates_ |= (pred << s);
     }
 
-    if (filter_c_ >= problem_size.C) {
+    if (filter_c_ >= (IsDeconv ? problem_size_.K : problem_size_.C)) {
       predicates_ = 0u;
     }
 
@@ -214,7 +216,7 @@ public:
       filter_c_ += params_.filter_c_delta;
     }
       
-    if (filter_c_ >= problem_size_.C) {
+    if (filter_c_ >= (IsDeconv ? problem_size_.K : problem_size_.C)) {
       predicates_ = 0;
     }
       
@@ -259,8 +261,10 @@ public:
   CUTLASS_HOST_DEVICE
   static Status can_implement(Conv3dProblemSize const &problem_size) {
 
+    auto input_channels = (IsDeconv ? problem_size.K : problem_size.C);
+
     // check alignment constraint on iterator's contiguous dimension
-    if (problem_size.C % (128/sizeof_bits<Element>::value)) {
+    if (input_channels % (128/sizeof_bits<Element>::value)) {
       return Status::kErrorInvalidProblem;
     }
 

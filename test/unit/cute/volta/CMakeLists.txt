@@ -30,4 +30,5 @@ cutlass_test_unit_add_executable(
   cutlass_test_unit_cute_volta
   vectorization_auto.cu
   cooperative_copy.cu
+  cooperative_gemm.cu
 )

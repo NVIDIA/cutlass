@@ -122,19 +122,15 @@ inline std::ostream &operator<<(std::ostream &out, CachedTestKey const &result) 
 
 struct CachedTestResult {
   uint32_t D;
-  uint32_t sum;
-  uint32_t sum_of_square;
-  uint32_t second_sum_of_square;
   //
   // Methods
   //
 
-  CachedTestResult(): D(), sum(), sum_of_square(), second_sum_of_square() { }
+  CachedTestResult(): D()
+      { }
 
-  CachedTestResult(uint32_t D): D(D), sum(), sum_of_square(), second_sum_of_square() { }
-
-  CachedTestResult(uint32_t D, uint32_t sum, uint32_t sum_of_square, uint32_t second_sum_of_square):
-      D(D), sum(sum), sum_of_square(sum_of_square), second_sum_of_square(second_sum_of_square) { }
+  CachedTestResult(uint32_t D): D(D)
+      { }
 
   operator bool() const {
     return bool(D);
@@ -262,6 +258,7 @@ inline char const *EncodeOperator(cutlass::conv::Operator conv_op) {
       case cutlass::conv::Operator::kFprop: return "fprop";
       case cutlass::conv::Operator::kDgrad: return "dgrad";
       case cutlass::conv::Operator::kWgrad: return "wgrad";
+      case cutlass::conv::Operator::kDeconv: return "deconv";
     }
     return "conv_unknown";
 }
