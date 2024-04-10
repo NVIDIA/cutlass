@@ -345,7 +345,7 @@ That is, the complement `R` of a layout `A` with respect to an integer `M` satis
 
 * `complement((2,4):(1,6), 24)` is `3:2`. Note that `((2,4),3):((1,6),2)` has cosize `24` and produces unique indices.
 
-* `complement((2,2):(1,6), 24)` is `(3,2):(2,12)`. Note that `((2,4),(2,2)):((1,6),(2,12))` has cosize `24` and produces unique indices.
+* `complement((2,2):(1,6), 24)` is `(3,2):(2,12)`. Note that `((2,2),(3,2)):((1,6),(2,12))` has cosize `24` and produces unique indices.
 
 <p align="center">
   <img src="../../images/cute/complement1.png" alt="complement1.png" height="75"/>
