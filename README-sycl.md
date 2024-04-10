@@ -22,7 +22,7 @@ Currently, only one example works on NVIDIA SM 80.
 To build CUTLASS SYCL support you need the latest version of DPC++ compiler. You can either use a recent [nighly build](https://github.com/intel/llvm/releases)
 or build the compiler from source as described in [oneAPI DPC++ guidline]((https://github.com/intel/llvm/blob/sycl/sycl/doc/GetStartedGuide.md#build-dpc-toolchain-with-support-for-nvidia-cuda)).
 
-In either case, CUDA version >= 12.0 is required.
+In either case, CUDA version >= 12.3 is required.
 
 ## Building with SYCL support
 Once you have your compiler installed, you need to point the
@@ -52,6 +52,7 @@ ninja [EXAMPLE_NAME]_sycl
 You can run it like this from your build directory
 
 ```
+LD_LIBRARY_PATH=/path/to/sycl/install/lib 
 ./examples/cute/tutorial/[EXAMPLE_NAME]_sycl
 ```
 
@@ -62,7 +63,8 @@ You can run it like this from your build directory
  ```
  You can run it like this from your build directory
  ```
-  NVIDIA_TF32_OVERRIDE=1 ./examples/14_ampere_tf32_tensorop_gemm/14_ampere_tf32_tensorop_gemm_cute
+  NVIDIA_TF32_OVERRIDE=1 LD_LIBRARY_PATH=/path/to/sycl/install/lib 
+ ./examples/14_ampere_tf32_tensorop_gemm/14_ampere_tf32_tensorop_gemm_cute
  ```
 
 # References
