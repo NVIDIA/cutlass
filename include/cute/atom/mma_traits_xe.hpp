@@ -10,10 +10,10 @@ namespace cute
 template <>
 struct MMA_Traits<XE_8x16x16_BF16BF16F32F32_NN>
 {
-  using ElementDVal = float;
-  using ElementAVal = sycl::ext::oneapi::bfloat16;
-  using ElementBVal = sycl::ext::oneapi::bfloat16;
-  using ElementCVal = float;
+  using ValTypeD = float;
+  using ValTypeA = sycl::ext::oneapi::bfloat16;
+  using ValTypeB = sycl::ext::oneapi::bfloat16;
+  using ValTypeC = float;
 
   using Shape_MNK = Shape<_8,_16,_16>;
   using ThrID   = Layout<_16>;
