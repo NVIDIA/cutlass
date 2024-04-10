@@ -59,6 +59,10 @@ project(CUTLASS VERSION ${_CUTLASS_VERSION_MAJOR}.${_CUTLASS_VERSION_MINOR}.${_C
 
 ################################################################################
 
+if (CUTLASS_ENABLE_SYCL)
+  set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --allow-unsupported-compiler")
+endif()
+
 include(${CMAKE_CURRENT_SOURCE_DIR}/CUDA.cmake)
 
 if (CUDA_VERSION VERSION_LESS 11.3)
@@ -346,10 +350,11 @@ endif()
 ###################################################################################################
 
 if(CUTLASS_ENABLE_SYCL)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -fsycl -ffast-math -mllvm -enable-global-offset=false -fsycl-targets=nvptx64-nvidia-cuda -Xsycl-target-backend")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --cuda-gpu-arch=sm_${CUTLASS_NVCC_ARCHS}")
-  set(CMAKE_CUDA_ARCHITECTURES "${CUTLASS_NVCC_ARCHS}")
-  add_definitions( -DCUTLASS_ENABLE_SYCL=${CUTLASS_ENABLE_SYCL} )
+  set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
+
+  add_compile_definitions(CUTLASS_ENABLE_SYCL)
+  set(DPCPP_SYCL_TARGET "nvptx64-nvidia-cuda" CACHE STRING "Default target for Nvidia GPU")
+  find_package(DPCPP)
 endif()
 
 ###################################################################################################

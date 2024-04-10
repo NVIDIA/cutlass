@@ -31,14 +31,12 @@ This enables the compilation of SYCL sources without altering the current NVCC p
 
 ```
 make -G Ninja  \
-  -DCMAKE_C_COMPILER_WORKS=1  \
-  -DCMAKE_CXX_COMPILER_WORKS=1  \
-  -DCUTLASS_NVCC_ARCHS=80  \
   -DCUTLASS_ENABLE_CUBLAS=ON \ 
   -DCMAKE_CUDA_HOST_COMPILER=/path/to/clang++  \
   -DCMAKE_CUDA_COMPILER=/path/to/nvcc \ 
-  -DCMAKE_CUDA_FLAGS="--allow-unsupported-compiler" \
-  -DCUTLASS_ENABLE_SYCL=ON 
+  -DCUTLASS_ENABLE_SYCL=ON \
+  -DDPCPP_SYCL_TARGET=nvptx64-nvidia-cuda \
+  -DDPCPP_SYCL_ARCH=sm_80
 ```
 
 
@@ -54,7 +52,7 @@ ninja [EXAMPLE_NAME]_sycl
 You can run it like this from your build directory
 
 ```
-LD_LIBRARY_PATH=/path/to/sycl/install/lib ./examples/cute/tutorial/[EXAMPLE_NAME]_sycl
+./examples/cute/tutorial/[EXAMPLE_NAME]_sycl
 ```
 
 ## CUTLASS Example
@@ -64,7 +62,7 @@ LD_LIBRARY_PATH=/path/to/sycl/install/lib ./examples/cute/tutorial/[EXAMPLE_NAME
  ```
  You can run it like this from your build directory
  ```
-  NVIDIA_TF32_OVERRIDE=1 LD_LIBRARY_PATH=/path/to/sycl/install/lib ./examples/14_ampere_tf32_tensorop_gemm/14_ampere_tf32_tensorop_gemm_cute
+  NVIDIA_TF32_OVERRIDE=1 ./examples/14_ampere_tf32_tensorop_gemm/14_ampere_tf32_tensorop_gemm_cute
  ```
 
 # References
