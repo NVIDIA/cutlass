@@ -35,7 +35,8 @@
 #include <cute/arch/mma.hpp>
 
 // Config
-#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 610))
+#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 610)) || \
+    (defined(__SYCL_CUDA_ARCH) && (__SYCL_CUDA_ARCH__ >= 610))
 #  define CUTE_ARCH_MMA_SM61_ENABLED
 #endif
 

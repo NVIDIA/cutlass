@@ -40,11 +40,11 @@
   (defined(__SYCL_CUDA_ARCH__) && (__SYCL_CUDA_ARCH__ >= 800))
 #  define CUTE_ARCH_MMA_SM80_ENABLED
 
-#if (__CUDA_ARCH__ <= 900)
+#if (__CUDA_ARCH__ <= 900 || __SYCL_CUDA_ARCH__ <= 900)
 #define CUTE_ARCH_MMA_B1_AND_SM80_ENABLED
 #endif
 
-#if (__CUDA_ARCH__ <= 890)
+#if (__CUDA_ARCH__ <= 890 || __SYCL_CUDA_ARCH__ <= 890)
 #define CUTE_ARCH_MMA_B1_XOR_SM80_ENABLED
 #endif
 
