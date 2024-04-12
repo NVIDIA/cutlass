@@ -152,7 +152,7 @@ namespace cutlass {
 #define MSCV_LANG 0
 #endif
 
-#if (201700L <= __cplusplus || 201700L <= MSVC_LANG)
+#if (201700L <= __cplusplus || 201700L <= MSCV_LANG)
 #define CUTLASS_CONSTEXPR_IF_CXX17 constexpr
 #define CUTLASS_CXX17_OR_LATER 1
 #else
