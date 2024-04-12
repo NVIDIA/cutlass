@@ -36,7 +36,7 @@ implicitly to tf32 inside the SYMM kernel which means no change is needed to acc
 F32 data by using NVIDIA Ampere architecture.
 
 We can use the tf32 mode of tensor core to emulate a fast accurate SYMM kernel which is accelerated
-using Ampere Tensor Cores (see include/cutlass/gemm/warp/mma_tensor_op_fast_f32.h). 
+using Ampere Tensor Cores (see include/cutlass/gemm/warp/mma_tensor_op_fast_f32.h).
 
 The trick is very simple
   a x b = (a_big + a_small) x (b_big + b_small) = a_big x b_big + a_big x b_small + a_small x b_big
@@ -45,11 +45,11 @@ The trick is very simple
 
 a_small x b_small is discarded because they are too small.
 
-This example demonstrates usage of this kernel, along with accuracy measurements w.r.t. actual F32 
+This example demonstrates usage of this kernel, along with accuracy measurements w.r.t. actual F32
 results (SSYMM from cuBLAS) and against F64 results (DSYMM from CUTLASS)
 
-To enable this feature, the only change needs to make is to change the default OpMultiplyAdd to 
-OpMultiplyAddFastF32. 
+To enable this feature, the only change needs to make is to change the default OpMultiplyAdd to
+OpMultiplyAddFastF32.
 
 Now, we have two different flavors of SSYMM in the profiler for Ampere:
 
@@ -95,7 +95,7 @@ struct Options {
   float beta;
   std::string rand_mode;
   int seed;
-  
+
   Options():
     help(false),
     problem_size({4096, 4096, 4096}),
@@ -137,7 +137,7 @@ struct Options {
 
     cmd.get_cmd_line_argument("alpha", alpha);
     cmd.get_cmd_line_argument("beta", beta);
-    
+
     cmd.get_cmd_line_argument("seed", seed);
     cmd.get_cmd_line_argument("rand_mode", rand_mode);
 
@@ -207,10 +207,10 @@ using EpilogueOp = cutlass::epilogue::thread::LinearCombination<
 
 // Number of pipelines you want to use
 constexpr int NumStages = 3;
-// Alignment 
+// Alignment
 constexpr int Alignment = 4;
 
-// 
+//
 // CUTLASS Symm Operators (SSYM: Symm_3xTF32, Symm_1xTF32, DSYMM: Symm_F64)
 //
 
@@ -233,7 +233,7 @@ using Symm_3xTF32 = cutlass::gemm::device::Symm<
                                               EpilogueOp,
                                               SwizzleThreadBlock,
                                               NumStages,
-                                              1, // Symmetric matrix is always align 1 
+                                              1, // Symmetric matrix is always align 1
                                               Alignment,
                                               false,
                                               cutlass::arch::OpMultiplyAddFastF32>;
@@ -257,7 +257,7 @@ using Symm_1xTF32 = cutlass::gemm::device::Symm<
                                               EpilogueOp,
                                               SwizzleThreadBlock,
                                               NumStages,
-                                              1, // Symmetric matrix is always align 1 
+                                              1, // Symmetric matrix is always align 1
                                               Alignment,
                                               false,
                                               cutlass::arch::OpMultiplyAdd>;
@@ -298,7 +298,7 @@ bool run(Options &options) {
   cutlass::HostTensor<float, LayoutInputA> tensor_a_F32(problem_size.mk());  // <- Create matrix A with dimensions M x K
   cutlass::HostTensor<float, LayoutInputB> tensor_b_F32(problem_size.kn());  // <- Create matrix B with dimensions K x N
   cutlass::HostTensor<float, LayoutOutput> tensor_c_F32(problem_size.mn());  // <- Create matrix C with dimensions M x N
-  cutlass::HostTensor<float, LayoutOutput> tensor_d_F32(problem_size.mn());  // <- Create matrix D with dimensions M x N 
+  cutlass::HostTensor<float, LayoutOutput> tensor_d_F32(problem_size.mn());  // <- Create matrix D with dimensions M x N
 
   if (options.rand_mode == "uniform") {
     const float min = -1;
@@ -339,7 +339,7 @@ bool run(Options &options) {
   }
   cutlass::reference::host::TensorFill(
       tensor_d_F32.host_view());  // <- fill matrix D on host with zeros
-  
+
   // Copy data from host to GPU
   tensor_a_F32.sync_device();
   tensor_b_F32.sync_device();
@@ -353,7 +353,7 @@ bool run(Options &options) {
   cutlass::HostTensor<double, LayoutInputA> tensor_a_F64(problem_size.mk());  // <- Create matrix A with dimensions M x K
   cutlass::HostTensor<double, LayoutInputB> tensor_b_F64(problem_size.kn());  // <- Create matrix B with dimensions K x N
   cutlass::HostTensor<double, LayoutOutput> tensor_c_F64(problem_size.mn());  // <- Create matrix C with dimensions M x N
-  
+
   // Symm output (D) for SYMM_3xTF32
   cutlass::HostTensor<float, LayoutOutput> tensor_d_3xTF32(problem_size.mn());  // <- Create matrix D with dimensions M x N
   // Symm output (D) for SYMM_1xTF32
@@ -375,7 +375,7 @@ bool run(Options &options) {
 #if CUTLASS_ENABLE_CUBLAS
   cutlass::reference::host::TensorCopy(tensor_d_cublasF32.host_view(), tensor_d_F32.host_view());
 #endif
-  
+
   // Copy data from host to GPU
   tensor_a_F64.sync_device();
   tensor_b_F64.sync_device();
@@ -430,7 +430,7 @@ bool run(Options &options) {
   // Instantiate CUTLASS kernel depending on templates
   Symm_3xTF32 symm_op_3xtf32;
 
-  // Check the problem size is supported or not 
+  // Check the problem size is supported or not
   cutlass::Status status_3xtf32 = symm_op_3xtf32.can_implement(arguments_3xtf32);
   CUTLASS_CHECK(status_3xtf32);
 
@@ -477,7 +477,7 @@ bool run(Options &options) {
   // Instantiate CUTLASS kernel depending on templates
   Symm_1xTF32 symm_op_1xtf32;
 
-  // Check the problem size is supported or not 
+  // Check the problem size is supported or not
   cutlass::Status status_1xtf32 = symm_op_1xtf32.can_implement(arguments_1xtf32);
   CUTLASS_CHECK(status_1xtf32);
 
@@ -524,7 +524,7 @@ bool run(Options &options) {
   // Instantiate CUTLASS kernel depending on templates
   Symm_F64 symm_op_f64;
 
-  // Check the problem size is supported or not 
+  // Check the problem size is supported or not
   cutlass::Status status_f64 = symm_op_f64.can_implement(arguments_f64);
   CUTLASS_CHECK(status_f64);
 
@@ -568,7 +568,7 @@ bool run(Options &options) {
       static_cast<const float*>(&beta),
       static_cast<float*>(tensor_d_cublasF32.device_data()),
       int(tensor_d_cublasF32.layout().stride(0))
-    );   
+    );
 
   cudaDeviceSynchronize();
 
@@ -576,7 +576,7 @@ bool run(Options &options) {
 #endif
 
   ////////////////////////////////////////////////////////////////////////////////
-  /// 7. Compute l2 norms 
+  /// 7. Compute l2 norms
   ////////////////////////////////////////////////////////////////////////////////
 
 #if CUTLASS_ENABLE_CUBLAS
@@ -605,20 +605,20 @@ bool run(Options &options) {
   double l2_norm_3xtf32_vs_cublasf32 = cutlass::reference::host::TensorRelativeErrorMetric(
     tensor_d_3xTF32.host_view(), tensor_d_cublasF32.host_view());
 #endif
-  
+
   // l2 norm 3xTF32 vs 1xTF32
   double l2_norm_3xtf32_vs_1xtf32 = cutlass::reference::host::TensorRelativeErrorMetric(
     tensor_d_3xTF32.host_view(), tensor_d_1xTF32.host_view());
 
   ///////////////////////////////////////////////////////////////////////////////
 
-  // Print kernel info and L2 norms 
+  // Print kernel info and L2 norms
   std::cout << "Problem Size: (" << problem_size.m() << "," << problem_size.n() << "," << problem_size.k() << ") "
             << "Alpha: "  << alpha << "," << " Beta: "  << beta << std::endl;
   std::cout << std::fixed;
   std::cout << "Normalized L2 norm of" << std::endl;
   std::cout.precision(8);
-  std::cout << std::scientific 
+  std::cout << std::scientific
 #if CUTLASS_ENABLE_CUBLAS
             << " - cuBLAS F32 error with F64 reference    : " << l2_norm_cublasf32_vs_f64 << std::endl
 #endif
@@ -633,11 +633,11 @@ bool run(Options &options) {
 }
 
 int main(int argc, const char **argv) {
-  
+
   bool notSupported = false;
 
   // Ampere Tensor Core operations exposed with mma.sync and ldmatrix are first available
-  // in CUDA 11.0. 
+  // in CUDA 11.0.
   //
   // CUTLASS must be compiled with CUDA 11.0 Toolkit to run these examples.
   if (!(__CUDACC_VER_MAJOR__ >= 11)) {
@@ -650,7 +650,7 @@ int main(int argc, const char **argv) {
   cudaError_t error = cudaGetDeviceProperties(&props, 0);
   if (error != cudaSuccess) {
     std::cerr << "cudaGetDeviceProperties() returned an error: " << cudaGetErrorString(error) << std::endl;
-    return false;
+    return -1;
   }
 
   if (!((props.major * 10 + props.minor) >= 80)) {

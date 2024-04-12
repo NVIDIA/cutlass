@@ -967,6 +967,7 @@ class ConvOperation3x:
 
   def configuration_name(self):
     prefix = 'cutlass3x'
+    arch = self.arch
     opcode_class_name = OpcodeClassNames[self.tile_description.math_instruction.opcode_class]
     tbm = self.tile_description.tile_shape[0]
     tbn = self.tile_description.tile_shape[1]
@@ -979,7 +980,7 @@ class ConvOperation3x:
     kernel_schedule = KernelScheduleSuffixes[self.kernel_schedule]
     epilogue_schedule = EpilogueScheduleSuffixes[self.epilogue_schedule]
 
-    return f"{prefix}_{opcode_class_name}_{self.extended_name()}_{tbm}x{tbn}x{tbk}_{cm}x{cn}x{ck}_{self.tile_description.stages}_align{alignment}{tile_scheduler}{kernel_schedule}{epilogue_schedule}"
+    return f"{prefix}_sm{arch}_{opcode_class_name}_{self.extended_name()}_{tbm}x{tbn}x{tbk}_{cm}x{cn}x{ck}_{self.tile_description.stages}_align{alignment}{tile_scheduler}{kernel_schedule}{epilogue_schedule}"
 
   def procedural_name(self):
     return self.configuration_name()

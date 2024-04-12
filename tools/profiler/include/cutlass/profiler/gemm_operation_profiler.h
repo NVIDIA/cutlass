@@ -238,7 +238,9 @@ protected:
     DeviceContext &device_context,
     library::Operation const *operation,
     ProblemSpace const &problem_space,
-    ProblemSpace::Problem const &problem);
+    ProblemSpace::Problem const &problem,
+    cutlass::library::NumericTypeID element_A,
+    cutlass::library::NumericTypeID element_B);
 
   /// Method to profile a CUTLASS Operation
   Status profile_cutlass_(

@@ -169,7 +169,7 @@ public:
     tensor_D_reference.resize(implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size));
 
     initialize_tensor(tensor_A.host_view(), init_A, seed); 
-    initialize_tensor(tensor_B.host_view(), init_B, seed * 17); 
+    initialize_tensor(tensor_B.host_view(), init_B, seed * 17);
     initialize_tensor(tensor_C.host_view(), init_C, seed * 39);
 
     tensor_A.sync_device();
@@ -358,12 +358,12 @@ public:
     bool cached_result_loaded = false;
     CachedTestResult cached_test_result;
 
-    std::string conv2d_result_cache_name = 
+    std::string conv3d_result_cache_name =
       std::string("cached_results_") + CUTLASS_TARGET_NAME + ".txt";
-    
+
     if (CUTLASS_TEST_ENABLE_CACHED_RESULTS) {
 
-      CachedTestResultListing cached_results(conv2d_result_cache_name);
+      CachedTestResultListing cached_results(conv3d_result_cache_name);
 
       auto cached = cached_results.find(cached_test_key);
 
@@ -376,7 +376,7 @@ public:
     if (!cached_result_loaded) {
 
 #if CUTLASS_CONV_TEST_UNIT_REFERENCE_DEVICE_ENABLED
-    
+
     cutlass::reference::device::Conv3d<
       ElementA,
       LayoutA,
@@ -426,15 +426,14 @@ public:
 
         cached_test_result.D = TensorHash(tensor_D_reference.host_view());
 
-        CachedTestResultListing cached_results(conv2d_result_cache_name);
+        CachedTestResultListing cached_results(conv3d_result_cache_name);
 
         cached_results.append(cached_test_key, cached_test_result);
-        cached_results.write(conv2d_result_cache_name);
+        cached_results.write(conv3d_result_cache_name);
       }
     } // if (!cached_result_loaded)
 
     uint32_t tensor_D_hash = TensorHash(tensor_D_computed.host_view());
-    
     if (CUTLASS_TEST_ENABLE_CACHED_RESULTS) {
       passed = (tensor_D_hash == cached_test_result.D);
 
@@ -456,7 +455,8 @@ public:
       fname << "error_Conv3d_ImplicitGemm_device_"
         << (split_k_mode == cutlass::conv::SplitKMode::kSerial ? "serial_reduction_" : "parallel_reduction_")
         << (Conv3d::kConvolutionalOperator == cutlass::conv::Operator::kFprop ? "fprop_" :
-            (Conv3d::kConvolutionalOperator == cutlass::conv::Operator::kDgrad ? "dgrad_" : "wgrad_")) 
+            (Conv3d::kConvolutionalOperator == cutlass::conv::Operator::kDgrad ? "dgrad_" :
+              (Conv3d::kConvolutionalOperator == cutlass::conv::Operator::kDeconv ? "deconv_" : "wgrad_")))
         << "ndhwc_"
         << problem_size.N << "x"
         << problem_size.D << "x"
@@ -571,8 +571,8 @@ bool TestAllConv3d(
       //
   
       // CUTLASS DGRAD's unity stride specialization only support stride {1, 1, 1} 
-      if ((ImplicitGemm::kConvolutionalOperator == 
-            cutlass::conv::Operator::kDgrad) && 
+      if ((ImplicitGemm::kConvolutionalOperator == cutlass::conv::Operator::kDgrad ||
+            ImplicitGemm::kConvolutionalOperator == cutlass::conv::Operator::kDeconv) &&
           ((ImplicitGemm::UnderlyingKernel::Mma::IteratorA::kStrideSupport == 
             cutlass::conv::StrideSupport::kUnity) ||
            (ImplicitGemm::UnderlyingKernel::Mma::IteratorB::kStrideSupport == 

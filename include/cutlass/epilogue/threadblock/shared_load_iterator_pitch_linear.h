@@ -66,7 +66,7 @@ namespace threadblock {
 template <typename ThreadMap_,  ///< Thread map (conept: PitchLinearThreadMap)
           typename Element_,    ///< Element data type
           int MaxAlignment = ThreadMap_::kElementsPerAccess *sizeof_bits<Element_>::value / 8>
-class SharedLoadIteratorPitchLiner {
+class SharedLoadIteratorPitchLinear {
  public:
   using ThreadMap = ThreadMap_;
   using Element = Element_;
@@ -123,7 +123,7 @@ class SharedLoadIteratorPitchLiner {
 
   /// Constructor
   CUTLASS_DEVICE
-  SharedLoadIteratorPitchLiner(TensorRef ref, int thread_idx)
+  SharedLoadIteratorPitchLinear(TensorRef ref, int thread_idx)
       : byte_pointer_(reinterpret_cast<uint8_t *>(ref.data())),
         stride_((ref.stride(0) * sizeof_bits<Element>::value) / 8),
         base_smem_address_(0) {

@@ -723,7 +723,8 @@ public:
         }
 
         // Vectorized fragment loop with visitor callback entry point
-        int r2s_v = epi_n * size(tRS_rD_frg);
+        int epi_n_in_mma = epi_n % (mma_tile_n / epi_tile_n);
+        int r2s_v = epi_n_in_mma * size(tRS_rD_frg);
         CUTLASS_PRAGMA_UNROLL
         for (int epi_v = 0; epi_v < size(tRS_rD_frg); ++epi_v) {
           tRS_rD_frg(epi_v) = cst_callbacks.visit(tRS_rAcc_frg_mn(r2s_v + epi_v), epi_v, epi_m, epi_n);

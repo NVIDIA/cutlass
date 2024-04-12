@@ -111,7 +111,8 @@ TEST(SM80_Device_Conv3d_Fprop_Optimized_ImplicitGemm_f16ndhwc_f16ndhwc_f32ndhwc_
     cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
     4,
     cutlass::arch::OpMultiplyAdd,
-    cutlass::conv::IteratorAlgorithm::kOptimized
+    cutlass::conv::IteratorAlgorithm::kOptimized,
+    cutlass::conv::StrideSupport::kStrided
   >::Kernel;
 
   using Conv3dFprop = cutlass::conv::device::ImplicitGemmConvolution<Conv3dFpropKernel>;

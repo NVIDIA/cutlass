@@ -76,7 +76,7 @@ template <
   int Stages,
   typename MathOperatorTag,
   conv::IteratorAlgorithm IteratorAlgorithm = IteratorAlgorithm::kOptimized,
-  conv::StrideSupport StrideSupport = StrideSupport::kStrided
+  conv::StrideSupport StrideSupport = StrideSupport::kUnity
 > struct DefaultConv2dFpropFusion;
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

@@ -73,14 +73,16 @@ struct TMA_LOAD_IM2COL_Unpack
     CUTE_STATIC_ASSERT_V(rank<1>(src_coord_offset) == rank<3>(src_coord_offset));
 
     if constexpr (detail::is_prefetch<CopyOp>) {
-      return detail::copy_explode<CopyOp>(traits.opargs_, tuple_seq<decltype(traits.opargs_)>{},
-                                          src_coord_cwhdn_offset_srt, tuple_seq<decltype(src_coord_cwhdn_offset_srt)>{});
+      return detail::explode_tuple(detail::CallCOPY<CopyOp>{},
+                                   traits.opargs_, tuple_seq<decltype(traits.opargs_)>{},
+                                   src_coord_cwhdn_offset_srt, tuple_seq<decltype(src_coord_cwhdn_offset_srt)>{});
     } else {
       static_assert(is_smem<TD>::value, "SM90_TMA_LOAD_IM2COL requires the destination be shared memory.");
       void* dst_ptr = cute::raw_pointer_cast(dst.data());
-      return detail::copy_explode<CopyOp>(traits.opargs_, tuple_seq<decltype(traits.opargs_)>{},
-                                          make_tuple(dst_ptr), seq<0>{},
-                                          src_coord_cwhdn_offset_srt, tuple_seq<decltype(src_coord_cwhdn_offset_srt)>{});
+      return detail::explode_tuple(detail::CallCOPY<CopyOp>{},
+                                   traits.opargs_, tuple_seq<decltype(traits.opargs_)>{},
+                                   make_tuple(dst_ptr), seq<0>{},
+                                   src_coord_cwhdn_offset_srt, tuple_seq<decltype(src_coord_cwhdn_offset_srt)>{});
     }
   }
 };
@@ -349,8 +351,9 @@ struct Copy_Traits<SM90_TMA_STORE_IM2COL, NumBitsPerTMA, TMATensor>
     void const* const src_ptr  = cute::raw_pointer_cast(src.data());
     auto dst_coord = flatten(take<0,3>(dst(Int<0>{})));
 
-    return detail::copy_explode<SM90_TMA_STORE_IM2COL>(make_tuple(desc_ptr, src_ptr), seq<0,1>{},
-                                                       dst_coord, tuple_seq<decltype(dst_coord)>{});
+    return detail::explode_tuple(detail::CallCOPY<SM90_TMA_STORE_IM2COL>{},
+                                 make_tuple(desc_ptr, src_ptr), seq<0,1>{},
+                                 dst_coord, tuple_seq<decltype(dst_coord)>{});
   }
 };
 
@@ -537,6 +540,133 @@ make_im2col_tma_copy_desc(
   return cute::make_tuple(tma_desc, tma_tensor);
 }
 
+template <class CopyOp,
+          class GEngine, class GLayout,
+          class SLayout,
+          class VShape, class VStride,
+          class LowerCornerStride,
+          class UpperCornerStride,
+          class LowerPaddingStride,
+          class UpperPaddingStride,
+          class TraversalStride,
+          class LowerSRTStride,
+          class DilationStride>
+CUTE_HOST_RTC
+auto
+make_tma_atom_im2col(CopyOp,
+                     Tensor<GEngine,GLayout> const& gtensor,           // Full GMEM Tensor: ((w, h, d, n), c)
+                     SLayout                 const& slayout,           // CTA Tile of SMEM, potentially swizzled
+                     int32_t                 const& num_multicast,     // The number of CTAs involved in multicasting
+                     Layout<VShape,VStride>  const& cta_v_map,         // V: CTA val idx -> gmem mode
+                     LowerCornerStride       const& lower_corner_whd,
+                     UpperCornerStride       const& upper_corner_whd,
+                     LowerPaddingStride      const& lower_padding_whd,
+                     UpperPaddingStride      const& upper_padding_whd,
+                     TraversalStride         const& stride_whd,        // traversal stride
+                     LowerSRTStride          const& lower_srt,
+                     DilationStride          const& stride_srt)        // dilation
+{
+  //
+  // TMA parameter checking
+  //
+
+  CUTE_STATIC_ASSERT_V(product_each(shape(slayout)) == product_each(shape(cta_v_map)),
+    "TMA requires CTA_Tile and SLayout top-level shape equivalence.");
+
+  //
+  // TMA slayout manipulation
+  //
+
+  // Invert the smem to get the largest contiguous vector in the smem layout
+  auto inv_smem_layout = right_inverse(get_nonswizzle_portion(slayout));
+  // trunc_smem_idx -> trunc_smem_coord
+
+  // Map from smem idx to a gmem mode
+  auto sidx_to_gmode = coalesce(composition(cta_v_map, inv_smem_layout));
+
+#if 0
+  print("g_layout         : "); print(gtensor.layout()); print("\n");
+  print("s_layout         : "); print(slayout); print("\n");
+  print("cta_t_map        : "); print(cta_t_map); print("\n");
+  print("cta_v_map        : "); print(cta_v_map); print("\n");
+  print("inv_smem         : "); print(inv_smem_layout); print("\n");
+  print("sidx_to_gmode    : "); print(sidx_to_gmode); print("\n");
+#endif
+
+  //
+  // TMA gtensor manipulation
+  //
+
+  // Generate a TupleBasis for the gtensor
+  auto glayout_basis = make_identity_layout(product_each(shape(gtensor)));
+
+  // Tile the modes of gtensor with the truncated cta_v_map o inv_smem_layout_trunc
+  auto tma_layout_full = flatten(composition(glayout_basis, sidx_to_gmode));
+
+  // Truncate any incompatibilities -- no starting in the middle of gmodes
+  auto smem_rank = find_if(stride(tma_layout_full), [](auto e) {
+    [[maybe_unused]] auto v = basis_value(e);
+    return not is_constant<1,decltype(v)>{};
+  });
+  static_assert(smem_rank >= 2, "IM2COL expects at least 2 modes of the smem to vectorize with gmem.");
+  // IM2COL uses a maximum of 2 modes
+  constexpr int smem_tma_rank = cute::min(int(smem_rank), 2);
+
+  // Keep only the static-1 basis modes into gmem
+  auto tma_layout_trunc = take<0,smem_tma_rank>(tma_layout_full);
+
+  // Split according to the portion each multicast CTA will be responsible for
+  auto tma_layout_vt = logical_divide(tma_layout_trunc, shape_div(size(tma_layout_trunc), num_multicast));
+
+#if 0
+  print("glayout_basis   : "); print(glayout_basis); print("\n");
+  print("tma_layout_full : "); print(tma_layout_full); print("\n");
+
+  print("tma_layout_trunc: "); print(tma_layout_trunc); print("\n");
+  print("tma_layout_vt   : "); print(tma_layout_vt); print("\n");
+#endif
+
+  auto range_c    = size<0,0>(tma_layout_vt);
+  auto range_whdn = size<0,1>(tma_layout_vt);
+
+  Tensor gtensor_cwhdn = make_tensor(gtensor.data(),
+                                     flatten(make_layout(basis_get(stride<0,0>(tma_layout_vt), gtensor.layout()),
+                                                         basis_get(stride<0,1>(tma_layout_vt), gtensor.layout()))));
+
+  auto [tma_desc, tma_tensor] = make_im2col_tma_copy_desc(
+      gtensor_cwhdn,
+      range_c,
+      range_whdn,
+      detail::get_swizzle_portion(slayout),
+      tma_layout_vt,
+      lower_corner_whd,
+      upper_corner_whd,
+      lower_padding_whd,
+      upper_padding_whd,
+      stride_whd,
+      lower_srt,
+      stride_srt);
+
+  //
+  // Construct the Copy_Traits
+  //
+
+  using T = typename GEngine::value_type;
+  constexpr int num_bits_per_tma = decltype(size(tma_layout_trunc))::value * sizeof(T) * 8;
+
+  using Traits = Copy_Traits<CopyOp, cute::C<num_bits_per_tma>, decltype(tma_tensor)>;
+  using Atom = Copy_Atom<Traits, typename GEngine::value_type>;
+
+#if 0
+  print("num_bits      :  "); print(num_bits_per_tma); print("\n");
+#endif
+
+  Traits tma_traits{tma_desc, tma_tensor};
+
+  // Return the Copy_Atom
+  return Atom{tma_traits};
+}
+
 /// Make a TiledCopy for im2col TMA load.
 ///
 /// @param copy_op The copy implementation: either
@@ -584,99 +714,12 @@ make_tma_copy_im2col(CopyOp                  const& copy_op,
   // TMA parameter checking
   //
 
-  CUTE_STATIC_ASSERT_V(product_each(shape(slayout)) == product_each(shape(cta_v_map)),
-    "TMA requires CTA_Tile and SLayout top-level shape equivalence.");
   CUTE_STATIC_ASSERT_V(size(slayout) % cosize(cta_t_map) == Int<0>{},
     "Number of active CTAs in TMA must divide domain size of slayout.");
 
-  //
-  // TMA slayout manipulation
-  //
-
-  // Invert the smem to get the largest contiguous vector in the smem layout
-  auto inv_smem_layout = right_inverse(get_nonswizzle_portion(slayout));
-  // trunc_smem_idx -> trunc_smem_coord
-
-  // Map from smem idx to a gmem mode
-  auto sidx_to_gmode = coalesce(composition(cta_v_map, inv_smem_layout));
-
-#if 0
-  print("g_layout         : "); print(gtensor.layout()); print("\n");
-  print("s_layout         : "); print(slayout); print("\n");
-  print("cta_t_map        : "); print(cta_t_map); print("\n");
-  print("cta_v_map        : "); print(cta_v_map); print("\n");
-  print("inv_smem         : "); print(inv_smem_layout); print("\n");
-  print("sidx_to_gmode    : "); print(sidx_to_gmode); print("\n");
-#endif
-
-  //
-  // TMA gtensor manipulation
-  //
-
-  // Generate a TupleBasis for the gtensor
-  auto glayout_basis = make_identity_layout(product_each(shape(gtensor)));
-
-  // Tile the modes of gtensor with the truncated cta_v_map o inv_smem_layout_trunc
-  auto tma_layout_full = flatten(composition(glayout_basis, sidx_to_gmode));
-
-  // Truncate any incompatibilities -- no starting in the middle of gmodes
-  auto smem_rank = find_if(stride(tma_layout_full), [](auto e) {
-    [[maybe_unused]] auto v = basis_value(e);
-    return not is_constant<1,decltype(v)>{};
-  });
-  static_assert(smem_rank >= 2, "IM2COL expects at least 2 modes of the smem to vectorize with gmem.");
-  // IM2COL uses a maximum of 2 modes
-  constexpr int smem_tma_rank = cute::min(int(smem_rank), 2);
-
-  // Keep only the static-1 basis modes into gmem
-  auto tma_layout_trunc = take<0,smem_tma_rank>(tma_layout_full);
-
-  // Split according to the portion each multicast CTA will be responsible for
-  auto tma_layout_vt = logical_divide(tma_layout_trunc, shape_div(size(tma_layout_trunc), cosize(cta_t_map)));
-
-#if 0
-  print("glayout_basis   : "); print(glayout_basis); print("\n");
-  print("tma_layout_full : "); print(tma_layout_full); print("\n");
-
-  print("tma_layout_trunc: "); print(tma_layout_trunc); print("\n");
-  print("tma_layout_vt   : "); print(tma_layout_vt); print("\n");
-#endif
-
-  auto range_c    = size<0,0>(tma_layout_vt);
-  auto range_whdn = size<0,1>(tma_layout_vt);
-
-  Tensor gtensor_cwhdn = make_tensor(gtensor.data(),
-                                     flatten(make_layout(basis_get(stride<0,0>(tma_layout_vt), gtensor.layout()),
-                                                         basis_get(stride<0,1>(tma_layout_vt), gtensor.layout()))));
-
-  auto [tma_desc, tma_tensor] = make_im2col_tma_copy_desc(
-      gtensor_cwhdn,
-      range_c,
-      range_whdn,
-      detail::get_swizzle_portion(slayout),
-      tma_layout_vt,
-      lower_corner_whd,
-      upper_corner_whd,
-      lower_padding_whd,
-      upper_padding_whd,
-      stride_whd,
-      lower_srt,
-      stride_srt);
-
-  //
-  // Construct the Copy_Traits
-  //
-
-  using T = typename GEngine::value_type;
-  constexpr int num_bits_per_tma = decltype(size<0>(tma_layout_vt))::value * sizeof(T) * 8;
-
-  using Traits = Copy_Traits<CopyOp, cute::C<num_bits_per_tma>, decltype(tma_tensor)>;
-
-#if 0
-  print("num_bits      :  "); print(NumBitsPerTMA{}); print("\n");
-#endif
-
-  Traits tma_traits{tma_desc, tma_tensor};
+  Copy_Atom atom = make_tma_atom_im2col(copy_op, gtensor, slayout, cosize(cta_t_map), cta_v_map,
+                                        lower_corner_whd, upper_corner_whd, lower_padding_whd,
+                                        upper_padding_whd, stride_whd, lower_srt, stride_srt);
 
   //
   // Construct the TiledCopy
@@ -684,25 +727,31 @@ make_tma_copy_im2col(CopyOp                  const& copy_op,
 
   auto cta_tiler = product_each(shape(cta_v_map));
 
-  // (CTA V, CTA T) -> smem_coord
-  auto layout_vt = composition(inv_smem_layout, make_layout(shape(tma_layout_vt)));
+  auto num_elems_per_tma = size<1>(typename decltype(atom)::RefLayout{}) / static_value<sizeof_bits<typename GEngine::value_type>>();
+
+  // smem idx -> smem coord
+  auto inv_smem_layout = right_inverse(get_nonswizzle_portion(slayout));
+  // CTA V -> smem_coord
+  auto layout_v = composition(inv_smem_layout, num_elems_per_tma);
   // Scale that up to cover all of the smem_coords
-  //
-  // The smem vector might not cover all of the tile,
-  // so multiply it up to cover the entire tile.
-  // "T" here (the parallel index) is a CTA index.
-  auto layout_VT = tile_to_shape(layout_vt, make_shape(size(cta_v_map)/size<1>(layout_vt), size<1>(layout_vt)));
-  // Flip it and change the domain of the T from logical thr to thr_idx
-  auto layout_TV = make_layout(composition(layout<1>(layout_VT), cta_t_map), layout<0>(layout_VT));
+  auto layout_V = tile_to_shape(make_layout(layout_v), size(cta_v_map));
+  // CTA T -> smem idx
+  auto layout_t = make_layout(cosize(cta_t_map), shape_div(num_elems_per_tma, cosize(cta_t_map)));
+  // CTA TID -> smem coord
+  auto layout_T = composition(inv_smem_layout, composition(layout_t, cta_t_map));
+  // Combine with the T mapping
+  [[maybe_unused]] auto layout_TV = make_layout(layout_T, layout_V);
 
 #if 0
   print("cta_tiler : "); print(cta_tiler); print("\n");
-  print("layout_VT : "); print(layout_VT); print("\n");
+  print("layout_v : "); print(layout_v); print("\n");
+  print("layout_V : "); print(layout_V); print("\n");
+  print("layout_t : "); print(layout_t); print("\n");
+  print("layout_T : "); print(layout_T); print("\n");
   print("layout_TV : "); print(layout_TV); print("\n");
 #endif
 
-  using T = typename GEngine::value_type;
-  return TiledCopy<Copy_Atom<Traits,T>, decltype(layout_TV), decltype(cta_tiler)>{tma_traits};
+  return TiledCopy<decltype(atom), decltype(layout_TV), decltype(cta_tiler)>{atom};
 }
 
 /// Make a TiledCopy for im2col TMA with no offsets.

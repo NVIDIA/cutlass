@@ -95,16 +95,6 @@
  * counterparts (or trivially find-and-replace their occurrences in code text).
  */
 
-/*
-  Note:  CUTLASS 3x increases the host compiler requirements to C++17. However, certain
-         existing integrations of CUTLASS require C++11 host compilers.
-
-         Until this requirement can be lifted, certain headers with this annotation are required
-         to be remain consistent with C++11 syntax.
-
-         C++11 compatibility is enforced by `cutlass_test_unit_core_cpp11`.
-*/
-
 //-----------------------------------------------------------------------------
 // Dependencies
 //-----------------------------------------------------------------------------
@@ -159,7 +149,7 @@
 
 /// builtin_unreachable
 #if !defined(CUTLASS_GCC_UNREACHABLE)
-#  if defined(__clang__) || defined(__GNUC__)
+#  if defined(__GNUC__)
 #    define CUTLASS_GCC_UNREACHABLE __builtin_unreachable()
 #  else
 #    define CUTLASS_GCC_UNREACHABLE
@@ -950,7 +940,6 @@ struct numeric_limits<uint8_t> {
   static constexpr bool is_integer = true;
 };
 
-#if !defined(__CUDACC_RTC__)
 template <>
 struct numeric_limits<float> {
   CUTLASS_HOST_DEVICE
@@ -958,7 +947,6 @@ struct numeric_limits<float> {
   static constexpr bool is_integer = false;
   static constexpr bool has_infinity = true;
 };
-#endif
 
 /// std::float_round_style
 using CUTLASS_STL_NAMESPACE::float_round_style;

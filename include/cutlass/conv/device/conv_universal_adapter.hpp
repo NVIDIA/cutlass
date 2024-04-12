@@ -144,6 +144,11 @@ private:
 
 public:
 
+  /// Access the Params structure
+  Params const& params() const {
+    return params_;
+  }
+
   /// Determines whether the conv can execute the given problem.
   static Status
   can_implement(Arguments const& args) {
@@ -323,13 +328,12 @@ public:
         }
       }
       else {
-
         CUTLASS_ASSERT(cuda_adapter == nullptr);
         void const* kernel = (void const*) device_kernel<ConvKernel>;
-
-        launch_result = ClusterLauncher::launch(
-            grid, cluster, block, smem_size, stream, kernel, kernel_params);
-
+        if constexpr (ConvKernel::ArchTag::kMinComputeCapability == 90) {
+          launch_result = ClusterLauncher::launch(
+              grid, cluster, block, smem_size, stream, kernel, kernel_params);
+        }
       }
     }
     else {

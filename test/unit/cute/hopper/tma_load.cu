@@ -44,7 +44,6 @@ test_tma_load(GMEM_Layout const& gmem_layout,
               SMEM_Layout const& smem_layout,
               CTA_Tile    const& cta_tile)
 {
-  using namespace cute;
   return test_tma_load<T, TmaType>(SM90_TMA_LOAD{}, gmem_layout, smem_layout, cta_tile);
 }
 
@@ -53,7 +52,6 @@ auto
 test_tma_load(GMEM_Layout const& gmem_layout,
               SMEM_Layout const& smem_layout)
 {
-  using namespace cute;
   return test_tma_load<T, TmaType>(gmem_layout, smem_layout, product_each(shape(smem_layout)));
 }
 

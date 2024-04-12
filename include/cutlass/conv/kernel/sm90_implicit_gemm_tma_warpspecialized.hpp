@@ -81,7 +81,6 @@ public:
   using MainloopParams = typename CollectiveMainloop::Params;
   static constexpr int NumSpatialDimensions = CollectiveMainloop::NumSpatialDimensions;
   static_assert(ArchTag::kMinComputeCapability >= 90);
-
   // Epilogue derived types
   using CollectiveEpilogue = CollectiveEpilogue_;
   using ElementC = typename CollectiveEpilogue::ElementC;

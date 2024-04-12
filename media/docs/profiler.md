@@ -210,7 +210,6 @@ GEMM
   [int]       --inst_k,--instruction-shape::k                   Math instruction shape in the K dimension
   [int]       --min_cc,--minimum-compute-capability             Minimum device compute capability
   [int]       --max_cc,--maximum-compute-capability             Maximum device compute capability
-
 Examples:
 
 Profile a particular problem size:

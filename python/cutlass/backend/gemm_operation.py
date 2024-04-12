@@ -1654,7 +1654,7 @@ class GemmOperationBase:
         extended_name = "{core_name}_{element_a}_{element_b}_{element_acc}_{element_c}_{element_d}".format(
             element_a=DataTypeNames[self.A.element],
             element_b=DataTypeNames[self.B.element],
-            element_acc=DataTypeNames[self.tile_description.math_instruction.element_accumulator],
+            element_acc=DataTypeNames[self.accumulator_type()],
             element_c=DataTypeNames[self.C.element],
             element_d=DataTypeNames[self.epilogue_functor.element_output],
             core_name=self.core_name())

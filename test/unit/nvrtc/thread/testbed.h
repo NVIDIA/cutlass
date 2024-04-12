@@ -275,7 +275,7 @@ struct Testbed {
     nvrtcAddNameExpression(program, gemm_kernel_instantiation.c_str());
 
     const char *opts[] = {"--gpu-architecture=compute_75",
-                          "--std=c++11",
+                          "--std=c++17",
                           "--include-path=/usr/local/cuda-10.1/include"};
 
     result_nvrtc = nvrtcCompileProgram(program, 3, opts);

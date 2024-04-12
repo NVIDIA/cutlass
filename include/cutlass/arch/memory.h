@@ -36,6 +36,7 @@
 
 #include "cutlass/cutlass.h"
 #include "cutlass/arch/cache_operation.h"
+#include "cutlass/platform/platform.h"
 
 namespace cutlass {
 namespace arch {

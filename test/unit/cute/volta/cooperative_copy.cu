@@ -263,11 +263,42 @@ TYPED_TEST(SM70_CuTe_Volta, CooperativeCopyDefault1D)
                                 value_type>();
 }
 
+TYPED_TEST(SM70_CuTe_Volta, CooperativeCopyDefault1DFallback)
+{
+  using value_type = float;
+  constexpr uint32_t count = 99;
+  using gmem_layout_t = decltype(make_layout(make_shape(Int<count>{})));
+  using smem_layout_t = decltype(make_layout(make_shape(Int<count>{})));
+  constexpr uint32_t thread_block_size = 128;
+  test_cooperative_copy_default<typename TestFixture::mode,
+                                TestFixture::max_vec_bits,
+                                gmem_layout_t,
+                                smem_layout_t,
+                                thread_block_size,
+                                value_type>();
+}
+
 TYPED_TEST(SM70_CuTe_Volta, CooperativeCopyDefaultGSSG2D)
 {
   using value_type = float;
   constexpr uint32_t x = 32;
   constexpr uint32_t y = 32;
+  using gmem_layout_t = decltype(make_layout(make_shape(Int<x>{}, Int<y>{})));
+  using smem_layout_t = decltype(make_layout(make_shape(Int<x>{}, Int<y>{})));
+  constexpr uint32_t thread_block_size = 64;
+  test_cooperative_copy_default<typename TestFixture::mode,
+                                TestFixture::max_vec_bits,
+                                gmem_layout_t,
+                                smem_layout_t,
+                                thread_block_size,
+                                value_type>();
+}
+
+TYPED_TEST(SM70_CuTe_Volta, CooperativeCopyDefaultGSSG2DFallback)
+{
+  using value_type = float;
+  constexpr uint32_t x = 37;
+  constexpr uint32_t y = 37;
   using gmem_layout_t = decltype(make_layout(make_shape(Int<x>{}, Int<y>{})));
   using smem_layout_t = decltype(make_layout(make_shape(Int<x>{}, Int<y>{})));
   constexpr uint32_t thread_block_size = 64;
@@ -304,6 +335,23 @@ TYPED_TEST(SM70_CuTe_Volta, CooperativeCopyDefaultGSSG3D)
   using gmem_layout_t = decltype(make_layout(make_shape(Int<x>{}, Int<y>{}, Int<z>{})));
   using smem_layout_t = decltype(make_layout(make_shape(Int<x>{}, Int<y>{}, Int<z>{})));
   constexpr uint32_t thread_block_size = 64;
+  test_cooperative_copy_default<typename TestFixture::mode,
+                                TestFixture::max_vec_bits,
+                                gmem_layout_t,
+                                smem_layout_t,
+                                thread_block_size,
+                                value_type>();
+}
+
+TYPED_TEST(SM70_CuTe_Volta, CooperativeCopyDefaultGSSG3DFallback)
+{
+  using value_type = cute::half_t;
+  constexpr uint32_t x = 44;
+  constexpr uint32_t y = 24;
+  constexpr uint32_t z = 14;
+  using gmem_layout_t = decltype(make_layout(make_shape(Int<x>{}, Int<y>{}, Int<z>{})));
+  using smem_layout_t = decltype(make_layout(make_shape(Int<x>{}, Int<y>{}, Int<z>{})));
+  constexpr uint32_t thread_block_size = 128;
   test_cooperative_copy_default<typename TestFixture::mode,
                                 TestFixture::max_vec_bits,
                                 gmem_layout_t,

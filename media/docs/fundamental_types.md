@@ -63,13 +63,12 @@ template <
   typename T,       // element type
   int N             // number of elements
 >
-class Array;
+struct Array;
 ```
 
 `Array<class T, int N>` defines a statically sized array of elements of type _T_ and size _N_. This class is similar to 
-[`std::array<>`](https://en.cppreference.com/w/cpp/container/array) in the Standard Library with two notable exceptions:
-* constructors for each element may not be called
-* partial specializations exist to pack or unpack elements smaller than one byte.
+[`std::array<>`](https://en.cppreference.com/w/cpp/container/array) in the Standard Library with one notable exception:
+partial specializations exist to pack or unpack elements smaller than one byte.
 
 `Array<>` is intended to be a convenient and uniform container class to store arrays of numeric elements regardless of data type or vector length. The storage needed is expected to be the minimum necessary given the logical size of each numeric type in bits (numeric types smaller than one byte are densely packed). Nevertheless, the size reported by `sizeof(Array<T, N>)` is always an integer multiple of bytes.
 
