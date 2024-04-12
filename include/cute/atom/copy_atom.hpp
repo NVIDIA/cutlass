@@ -770,6 +770,8 @@ print_latex_copy(LayoutS const& S, ThrIDS const& TS,  // (m,n) -> (tid,vid)  and
 #include <cute/atom/copy_traits_sm90_tma.hpp>
 #endif
 
+#if defined(CUTLASS_ENABLE_SYCL)
 #include <cute/atom/copy_traits_xe.hpp>
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

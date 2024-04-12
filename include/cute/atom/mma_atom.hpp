@@ -938,5 +938,7 @@ print_latex_mma(LayoutC const& C, ThrIDC const& TC,  // (m,n) -> (tid,vid)  and 
 #include <cute/atom/mma_traits_sm80.hpp>
 #include <cute/atom/mma_traits_sm90.hpp>
 #include <cute/atom/mma_traits_sm90_gmma.hpp>
+#if defined(CUTLASS_ENABLE_SYCL)
 #include <cute/atom/mma_traits_xe.hpp>
+#endif
 ////////////////////////////////////////////////////////////////////////////////////////////////////
