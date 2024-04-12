@@ -746,7 +746,13 @@ bool GemmOperationProfiler::verify_cutlass(
     }
 #endif // #if CUTLASS_ENABLE_CUBLAS
 
-    bool verification_status = verify_with_reference_(options, report, device_context, operation, problem_space, problem);
+    library::GemmDescription const &gemm_desc =
+      static_cast<library::GemmDescription const &>(operation->description());
+
+
+    cutlass::library::NumericTypeID element_A = gemm_desc.A.element;
+    cutlass::library::NumericTypeID element_B = gemm_desc.B.element;
+    bool verification_status = verify_with_reference_(options, report, device_context, operation, problem_space, problem, element_A, element_B);
 
     // Update disposition to worst case verification outcome among all
     // verification providers which are supported
@@ -912,8 +918,10 @@ bool GemmOperationProfiler::verify_with_reference_(
   DeviceContext &device_context,
   library::Operation const *operation,
   ProblemSpace const &problem_space,
-  ProblemSpace::Problem const &problem) {
-
+  ProblemSpace::Problem const &problem, 
+  cutlass::library::NumericTypeID element_A, 
+  cutlass::library::NumericTypeID element_B) 
+{
   library::GemmDescription const &gemm_desc =
     static_cast<library::GemmDescription const &>(operation->description());
 
@@ -976,13 +984,13 @@ bool GemmOperationProfiler::verify_with_reference_(
 
       problem_.alpha.data(),
 
-      gemm_desc.A.element,
+      element_A,
       gemm_desc.A.layout,
       gemm_desc.transform_A,
       ptr_A,
       int(gemm_workspace_.configuration.lda),
 
-      gemm_desc.B.element,
+      element_B,
       gemm_desc.B.layout,
       gemm_desc.transform_B,
       ptr_B,
@@ -1010,7 +1018,6 @@ bool GemmOperationProfiler::verify_with_reference_(
       results_.back().verification_map[provider] = Disposition::kNotRun;
       continue;
     }
-
     results_.back().status = status;
 
     if (provider == library::Provider::kReferenceHost) {

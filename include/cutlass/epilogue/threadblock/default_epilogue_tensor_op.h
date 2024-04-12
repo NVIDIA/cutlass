@@ -66,6 +66,7 @@
 #include "cutlass/epilogue/warp/tile_iterator_tensor_op_mixed.h"
 #include "cutlass/epilogue/threadblock/default_thread_map_tensor_op.h"
 #include "cutlass/epilogue/threadblock/predicated_tile_iterator.h"
+#include "cutlass/epilogue/threadblock/predicated_tile_iterator_conv.h"
 #include "cutlass/epilogue/threadblock/predicated_tile_iterator_strided_dgrad.h"
 #include "cutlass/epilogue/threadblock/predicated_tile_iterator_affine.h"
 #include "cutlass/epilogue/threadblock/shared_load_iterator.h"
@@ -480,7 +481,9 @@ template <
   typename OutputOp_,
   int ElementsPerAccess,
   bool ScatterD = false,
-  typename PermuteDLayout = layout::NoPermute
+  typename PermuteDLayout = layout::NoPermute,
+  conv::StrideSupport StrideSupport = conv::StrideSupport::kUnity,
+  int Rank = 4
 >
 struct DefaultEpilogueTensorOp {
 
@@ -493,6 +496,8 @@ struct DefaultEpilogueTensorOp {
   using ElementOutput = typename OutputOp::ElementOutput;
   using LayoutC = typename WarpMmaTensorOp::LayoutC;
   using ElementAccumulator = typename WarpMmaTensorOp::ElementC;
+  static conv::StrideSupport const kStrideSupport = StrideSupport;
+  static int const kRank = Rank;
 
   //
   // Thread map
@@ -508,13 +513,26 @@ struct DefaultEpilogueTensorOp {
 
   static bool const UseCUDAStore = platform::is_same<ElementOutput, double>::value;
 
-  using OutputTileIterator = cutlass::epilogue::threadblock::PredicatedTileIterator<
+  using PackedOutputTileIterator = cutlass::epilogue::threadblock::PredicatedTileIterator<
     OutputTileThreadMap,
     ElementOutput,
     ScatterD,
     PermuteDLayout,
     UseCUDAStore
   >;
+
+  using StridedOutputTileIterator = cutlass::epilogue::threadblock::PredicatedTileIteratorConv<
+    OutputTileThreadMap,
+    ElementOutput,
+    ScatterD,
+    PermuteDLayout,
+    UseCUDAStore,
+    kRank
+  >;
+
+  using OutputTileIterator = typename platform::conditional<StrideSupport == cutlass::conv::StrideSupport::kUnity,
+                                                            PackedOutputTileIterator,
+                                                            StridedOutputTileIterator>::type;
 
   using AccumulatorFragmentIterator = typename platform::conditional<is_complex<ElementOutput>::value,
                                     cutlass::epilogue::warp::FragmentIteratorComplexTensorOp<

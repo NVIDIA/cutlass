@@ -140,14 +140,19 @@ if (CUTLASS_NVCC_MAX_ARCH GREATER_EQUAL 80)
     conv2d_fprop_implicit_gemm_cf32nhwc_cf32nhwc_cf32nhwc_simt_f32_sm80.cu
     conv2d_dgrad_implicit_gemm_cf32nhwc_cf32nhwc_cf32nhwc_simt_f32_sm80.cu
     conv2d_wgrad_implicit_gemm_cf32nhwc_cf32nhwc_cf32nhwc_simt_f32_sm80.cu
+    deconv2d_implicit_gemm_f32nhwc_f32nhwc_f32nhwc_simt_f32_sm80.cu
 
     conv2d_fprop_with_broadcast_simt_sm80.cu
+    deconv2d_with_broadcast_simt_sm80.cu
 
     conv3d_fprop_implicit_gemm_f32ndhwc_f32ndhwc_f32ndhwc_simt_f32_sm80.cu
     conv3d_dgrad_implicit_gemm_f32ndhwc_f32ndhwc_f32ndhwc_simt_f32_sm80.cu
     conv3d_wgrad_implicit_gemm_f32ndhwc_f32ndhwc_f32ndhwc_simt_f32_sm80.cu
+    deconv3d_implicit_gemm_f32ndhwc_f32ndhwc_f32ndhwc_simt_f32_sm80.cu
 
     conv3d_fprop_with_broadcast_simt_sm80.cu
+    deconv3d_with_broadcast_simt_sm80.cu
+
   )
 
 endif()
@@ -176,6 +181,7 @@ cutlass_test_unit_add_executable(
   conv2d_fprop_with_broadcast_sm75.cu
   conv2d_fprop_with_reduction_sm75.cu
 
+  conv3d_fprop_implicit_gemm_f16ndhwc_f16ndhwc_f32ndhwc_tensor_op_f32_sm75.cu
   conv3d_wgrad_implicit_gemm_f16ndhwc_f16ndhwc_f32ndhwc_tensor_op_f32_sm75.cu
 )
 
@@ -209,6 +215,7 @@ if (CUTLASS_NVCC_MAX_ARCH GREATER_EQUAL 80)
     conv2d_strided_dgrad_implicit_gemm_swizzling4_sm80.cu
 
     # Conv3d
+    conv3d_fprop_implicit_gemm_f16ndhwc_f16ndhwc_f32ndhwc_tensor_op_f32_sm80.cu
     conv3d_wgrad_implicit_gemm_f16ndhwc_f16ndhwc_f32ndhwc_tensor_op_f32_sm80.cu
 
     # Group Conv2d

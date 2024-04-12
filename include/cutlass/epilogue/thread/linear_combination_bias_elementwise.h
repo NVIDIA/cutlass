@@ -63,7 +63,51 @@ template<class Op>
 struct kIsHeavy_member_or_false<Op, typename cutlass::platform::enable_if<Op::kIsHeavy>::type> {
   static constexpr bool value = Op::kIsHeavy;
 };
+
 } // namespace (anonymous)
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+namespace detail {
+
+struct EmptyArguments {};
+
+template<class T, class = void>
+struct ElementwiseOpDispatcher {
+  using Arguments = EmptyArguments;
+
+  T op;
+
+  CUTLASS_HOST_DEVICE
+  ElementwiseOpDispatcher(Arguments) {}
+
+  template <typename ValueType>
+  CUTLASS_HOST_DEVICE
+  ValueType operator()(ValueType value) {
+    return op(value);
+  }
+};
+
+template<class T>
+struct ElementwiseOpDispatcher<T, std::void_t<typename T::Arguments>> {
+  using Arguments = typename T::Arguments;
+
+  Arguments args;
+  T op;
+
+  CUTLASS_HOST_DEVICE
+  ElementwiseOpDispatcher(Arguments args_):args(args_) {}
+
+  template <typename ValueType>
+  CUTLASS_HOST_DEVICE
+  ValueType operator()(ValueType value) {
+    return op(value, args);
+  }
+};
+
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// This base class is meant to define the concept required of the
 /// EpilogueWithBroadcast::OutputOp
@@ -95,8 +139,12 @@ public:
   using ElementwiseOp = ElementwiseOp_;
   using BinaryOp = BinaryOp_;
 
+  using ElementwiseOpDispatcher = detail::ElementwiseOpDispatcher<ElementwiseOp>;
+  using ElementwiseArguments = typename ElementwiseOpDispatcher::Arguments;
+
   // Indicates that this epilogue applies only one binary operation
   static bool const kIsSingleSource = true;
+
 
   using FragmentAccumulator = Array<ElementAccumulator, kElementsPerAccess>;
   using FragmentCompute = Array<ElementCompute, kElementsPerAccess>;
@@ -127,6 +175,7 @@ public:
     ElementCompute beta;                   ///< scales source tensor
     ElementCompute const *alpha_ptr;       ///< pointer to accumulator scalar - if not null, loads it from memory
     ElementCompute const *beta_ptr;        ///< pointer to source scalar - if not null, loads it from memory
+    ElementwiseArguments  elementwise;     ///< Arguments for elementwise operation
 
     //
     // Methods
@@ -142,8 +191,9 @@ public:
     CUTLASS_HOST_DEVICE
     Params(
       ElementCompute alpha,
-      ElementCompute beta
-    ): alpha(alpha), beta(beta), alpha_ptr(nullptr), beta_ptr(nullptr) {
+      ElementCompute beta,
+      ElementwiseArguments  elementwise_ = ElementwiseArguments{}
+    ): alpha(alpha), beta(beta), alpha_ptr(nullptr), beta_ptr(nullptr), elementwise(elementwise_) {
 
     }
 
@@ -157,8 +207,9 @@ public:
     CUTLASS_HOST_DEVICE
     Params(
       ElementCompute const *alpha_ptr,
-      ElementCompute const *beta_ptr
-    ): alpha(0), beta(0), alpha_ptr(alpha_ptr), beta_ptr(beta_ptr) {
+      ElementCompute const *beta_ptr,
+      ElementwiseArguments  elementwise_ = ElementwiseArguments{}
+    ): alpha(0), beta(0), alpha_ptr(alpha_ptr), beta_ptr(beta_ptr), elementwise(elementwise_) {
 
     }
 
@@ -178,6 +229,7 @@ private:
 
   ElementCompute alpha_;
   ElementCompute beta_;
+  ElementwiseArguments const &elementwise_;
   bool skip_elementwise_;
 
 public:
@@ -188,7 +240,7 @@ public:
 
   /// Constructor from Params
   CUTLASS_HOST_DEVICE
-  LinearCombinationBiasElementwise(Params const &params) {
+  LinearCombinationBiasElementwise(Params const &params): elementwise_(params.elementwise) {
 
     alpha_ = (params.alpha_ptr ? *params.alpha_ptr : params.alpha);
     beta_ = (params.beta_ptr ? *params.beta_ptr : params.beta);
@@ -290,7 +342,7 @@ public:
     FragmentC const &frag_C,
     FragmentCompute const &V) const {
 
-    ElementwiseOp elementwise_op;
+    ElementwiseOpDispatcher elementwise_op(elementwise_);
     BinaryOp binary_op;
 
     FragmentCompute tmp_Accum = NumericArrayConverter<ElementCompute, ElementAccumulator, kElementsPerAccess>()(AB);
@@ -322,7 +374,7 @@ public:
     FragmentAccumulator const &AB,
     FragmentCompute const &V) const {
 
-    ElementwiseOp elementwise_op;
+    ElementwiseOpDispatcher elementwise_op(elementwise_);
     BinaryOp binary_op;
 
     FragmentCompute tmp_Accum = NumericArrayConverter<ElementCompute, ElementAccumulator, kElementsPerAccess>()(AB);

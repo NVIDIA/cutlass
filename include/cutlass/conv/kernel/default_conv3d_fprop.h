@@ -73,7 +73,7 @@ template <
   int Stages,
   typename MathOperatorTag,
   conv::IteratorAlgorithm IteratorAlgorithm = IteratorAlgorithm::kOptimized,
-  conv::StrideSupport StrideSupport = StrideSupport::kStrided
+  conv::StrideSupport StrideSupport = StrideSupport::kUnity
 > struct DefaultConv3dFprop;
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -94,7 +94,8 @@ template <
   typename InstructionShape,
   typename EpilogueOutputOp,
   typename ThreadblockSwizzle,
-  typename MathOperatorTag
+  typename MathOperatorTag,
+  conv::StrideSupport StrideSupport
 >
 struct DefaultConv3dFprop <
   ElementA,
@@ -113,7 +114,8 @@ struct DefaultConv3dFprop <
   ThreadblockSwizzle,
   2,
   MathOperatorTag,
-  IteratorAlgorithm::kAnalytic
+  IteratorAlgorithm::kAnalytic,
+  StrideSupport
 > {
 
   // Define the core components from GEMM
@@ -202,7 +204,8 @@ template <
   typename EpilogueOutputOp,
   typename ThreadblockSwizzle,
   int Stages,
-  typename MathOperatorTag
+  typename MathOperatorTag,
+  conv::StrideSupport StrideSupport
 >
 struct DefaultConv3dFprop <
   ElementA,
@@ -221,7 +224,8 @@ struct DefaultConv3dFprop <
   ThreadblockSwizzle,
   Stages,
   MathOperatorTag,
-  IteratorAlgorithm::kAnalytic
+  IteratorAlgorithm::kAnalytic,
+  StrideSupport
 > {
 
   // Define the core components from GEMM
@@ -306,7 +310,8 @@ template <
   typename InstructionShape,
   typename EpilogueOutputOp,
   typename ThreadblockSwizzle,
-  typename MathOperatorTag
+  typename MathOperatorTag,
+  conv::StrideSupport StrideSupport
 >
 struct DefaultConv3dFprop <
   ElementA,
@@ -325,7 +330,8 @@ struct DefaultConv3dFprop <
   ThreadblockSwizzle,
   2,
   MathOperatorTag,
-  IteratorAlgorithm::kOptimized
+  IteratorAlgorithm::kOptimized,
+  StrideSupport
 > {
 
   // Define the core components from GEMM
@@ -416,7 +422,8 @@ template <
   typename EpilogueOutputOp,
   typename ThreadblockSwizzle,
   int Stages,
-  typename MathOperatorTag
+  typename MathOperatorTag,
+  conv::StrideSupport StrideSupport
 >
 struct DefaultConv3dFprop <
   ElementA,
@@ -435,7 +442,8 @@ struct DefaultConv3dFprop <
   ThreadblockSwizzle,
   Stages,
   MathOperatorTag,
-  IteratorAlgorithm::kOptimized
+  IteratorAlgorithm::kOptimized,
+  StrideSupport
 > {
 
   // Define the core components from GEMM
@@ -492,7 +500,11 @@ struct DefaultConv3dFprop <
     WarpMmaTensorOp,
     1,
     EpilogueOutputOp,
-    EpilogueOutputOp::kCount
+    EpilogueOutputOp::kCount,
+    false,
+    layout::NoPermute,
+    StrideSupport,
+    5
   >::Epilogue;
 
   // Define the kernel
@@ -526,7 +538,8 @@ template <
   typename EpilogueOutputOp,
   typename ThreadblockSwizzle,
   int Stages,
-  typename MathOperatorTag
+  typename MathOperatorTag,
+  conv::StrideSupport StrideSupport
 >
 struct DefaultConv3dFprop <
   ElementA,
@@ -545,7 +558,8 @@ struct DefaultConv3dFprop <
   ThreadblockSwizzle,
   Stages,
   MathOperatorTag,
-  IteratorAlgorithm::kAnalytic
+  IteratorAlgorithm::kAnalytic,
+  StrideSupport
 > {
 
   // Define the core components from GEMM
@@ -598,7 +612,11 @@ struct DefaultConv3dFprop <
     ThreadblockShape,
     WarpMmaSimtOp,
     EpilogueOutputOp,
-    EpilogueOutputOp::kCount
+    EpilogueOutputOp::kCount,
+    false,
+    layout::NoPermute,
+    StrideSupport,
+    5
   >::Epilogue;
 
   // Define the kernel
@@ -632,7 +650,8 @@ template <
   typename EpilogueOutputOp,
   typename ThreadblockSwizzle,
   int Stages,
-  typename MathOperatorTag
+  typename MathOperatorTag,
+  conv::StrideSupport StrideSupport
 >
 struct DefaultConv3dFprop <
   ElementA,
@@ -651,7 +670,8 @@ struct DefaultConv3dFprop <
   ThreadblockSwizzle,
   Stages,
   MathOperatorTag,
-  IteratorAlgorithm::kOptimized
+  IteratorAlgorithm::kOptimized,
+  StrideSupport
 > {
 
   // Define the core components from GEMM
@@ -706,7 +726,11 @@ struct DefaultConv3dFprop <
     ThreadblockShape,
     WarpMmaSimtOp,
     EpilogueOutputOp,
-    EpilogueOutputOp::kCount
+    EpilogueOutputOp::kCount,
+    false,
+    layout::NoPermute,
+    StrideSupport,
+    5
   >::Epilogue;
 
   // Define the kernel
@@ -738,7 +762,8 @@ template <
   typename InstructionShape,
   typename EpilogueOutputOp,
   typename ThreadblockSwizzle,
-  typename MathOperatorTag
+  typename MathOperatorTag,
+  conv::StrideSupport StrideSupport
 >
 struct DefaultConv3dFprop <
   ElementA,
@@ -757,7 +782,8 @@ struct DefaultConv3dFprop <
   ThreadblockSwizzle,
   2,
   MathOperatorTag,
-  IteratorAlgorithm::kAnalytic
+  IteratorAlgorithm::kAnalytic,
+  StrideSupport
 > {
 
   // Define the core components from GEMM
@@ -813,7 +839,11 @@ struct DefaultConv3dFprop <
     ThreadblockShape,
     WarpMmaSimtOp,
     EpilogueOutputOp,
-    EpilogueOutputOp::kCount
+    EpilogueOutputOp::kCount,
+    false,
+    layout::NoPermute,
+    StrideSupport,
+    5
   >::Epilogue;
 
   // Define the kernel
@@ -845,7 +875,8 @@ template <
   typename InstructionShape,
   typename EpilogueOutputOp,
   typename ThreadblockSwizzle,
-  typename MathOperatorTag
+  typename MathOperatorTag,
+  conv::StrideSupport StrideSupport
 >
 struct DefaultConv3dFprop <
   ElementA,
@@ -864,7 +895,8 @@ struct DefaultConv3dFprop <
   ThreadblockSwizzle,
   2,
   MathOperatorTag,
-  IteratorAlgorithm::kOptimized
+  IteratorAlgorithm::kOptimized,
+  StrideSupport
 > {
 
   // Define the core components from GEMM
@@ -922,7 +954,11 @@ struct DefaultConv3dFprop <
     ThreadblockShape,
     WarpMmaSimtOp,
     EpilogueOutputOp,
-    EpilogueOutputOp::kCount
+    EpilogueOutputOp::kCount,
+    false,
+    layout::NoPermute,
+    StrideSupport,
+    5
   >::Epilogue;
 
   // Define the kernel
@@ -933,10 +969,10 @@ struct DefaultConv3dFprop <
     conv::Operator::kFprop,
     Conv3dProblemSize
   >;
-
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+
 } // namespace kernel
 } // namespace conv
 } // namespace cutlass

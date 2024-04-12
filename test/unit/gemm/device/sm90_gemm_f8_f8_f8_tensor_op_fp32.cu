@@ -54,6 +54,7 @@
 #if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
 
 using namespace cute;
+
 ///////////////////////////////////////////////////////////////////////////////
 //////////////////////////////// output: E4M3 /////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -760,7 +761,8 @@ TEST(SM90_Device_Gemm_e4m3t_e4m3n_e5m2n_tensor_op_gmma_f32, 64x128x128_2x4x1_non
   EXPECT_TRUE(test::gemm::device::TestAllBiasElementwise<Gemm>());
 }
 
-
+// Use Hopper FP8+AUX from 12.1
+#if (!((__CUDACC_VER_MAJOR__ == 12) && (__CUDACC_VER_MINOR__ == 0)))
 
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////////// output: E4M3 + Aux Tensor ///////////////////////////
@@ -808,6 +810,7 @@ TEST(SM90_Device_Gemm_e4m3t_e4m3n_e4m3n_tensor_op_gmma_f32, 64x128x128_aux_tenso
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
   EXPECT_TRUE(test::gemm::device::TestAllBiasElementwise<Gemm>());
 }
+#endif
 
 ///////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////// FP8 Accum  /////////////////////////////////
@@ -990,6 +993,10 @@ TEST(SM90_Device_Gemm_e4m3t_e4m3n_e4m3n_tensor_op_gmma_f32, 64x128x128_bias_bf16
   EXPECT_TRUE(test::gemm::device::TestAllBiasElementwise<Gemm>());
 }
 
+
+// Use Hopper FP8+AUX from 12.1
+#if (!((__CUDACC_VER_MAJOR__ == 12) && (__CUDACC_VER_MINOR__ == 0)))
+
 ///////////////////////////////////////////////////////////////////////////////
 ///////////////////// output: E4M3 + Aux Tensor + Bias/////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -1141,6 +1148,8 @@ TEST(SM90_Device_Gemm_e4m3t_e5m2n_e4m3n_tensor_op_gmma_f32, 64x128x128_aux_tenso
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
   EXPECT_TRUE(test::gemm::device::TestAllBiasElementwise<Gemm>());
 }
+
+#endif
 
 ///////////////////////////////////////////////////////////////////////////////
 //////////////////////////////// TMA epilogue /////////////////////////////////

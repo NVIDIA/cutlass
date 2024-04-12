@@ -42,6 +42,7 @@
 #include "cutlass/half.h"
 #include "cutlass/complex.h"
 #include "cutlass/quaternion.h"
+#include "cutlass/platform/platform.h"
 #include "cutlass/epilogue/thread/linear_combination.h"
 
 #include "cutlass/util/host_tensor.h"
@@ -193,15 +194,15 @@ public:
     cutlass::reference::host::TensorFillRandomUniform(
       accumulator_tensor.host_view(), 
       seed, 
-      20, 
-      -20, 
+      2,
+      -2,
       0);
 
     cutlass::reference::host::TensorFillRandomUniform(
       source_tensor.host_view(),
       seed + 2018, 
-      20, 
-      -20, 
+      2,
+      -2,
       0);
   }
 
@@ -300,7 +301,9 @@ public:
             output_params.alpha * ElementCompute(accumulator_tensor.at(coord)) + 
             output_params.beta * ElementCompute(source_tensor.at(coord));
           
-          if (std::numeric_limits<ElementOutput>::is_integer
+          if ((cutlass::platform::is_same<ElementOutput, cutlass::int4b_t>::value
+              || cutlass::platform::is_same<ElementOutput, cutlass::uint4b_t>::value
+              || std::numeric_limits<ElementOutput>::is_integer)
               && !std::numeric_limits<ElementCompute>::is_integer) {
             std::fesetround(FE_TONEAREST);
             expected = ElementOutput(std::nearbyint(float(cutlass::real(intermediate))));

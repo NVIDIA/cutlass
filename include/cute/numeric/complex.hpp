@@ -56,10 +56,10 @@ fma(complex<T>      & d,
     complex<T> const& b,
     complex<T> const& c)
 {
-  d.real(fma( a.real(), b.real(), c.real()));
-  d.imag(fma( a.real(), b.imag(), c.imag()));
-  d.real(fma(-a.imag(), b.imag(), d.real()));
-  d.imag(fma( a.imag(), b.real(), d.imag()));
+  fma(d.real(),  a.real(), b.real(), c.real());
+  fma(d.imag(),  a.real(), b.imag(), c.imag());
+  fma(d.real(), -a.imag(), b.imag(), d.real());
+  fma(d.imag(),  a.imag(), b.real(), d.imag());
 }
 
 /// Fused multiply-add for triplets

@@ -197,7 +197,7 @@ void Depsep_Fprop(cutlass::TensorView<ElementA, LayoutA> tensor_A,
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
-/// Dgrad
+/// Dgrad / Deconv
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// dx = dgrad(dy, w)
@@ -221,7 +221,8 @@ void Conv2dDgrad(
   TensorRef<ElementC, LayoutC> tensor_dx_in,
   TensorRef<ElementD, LayoutC> tensor_dx_out,
   ElementCompute alpha,
-  ElementCompute beta) {
+  ElementCompute beta,
+  bool is_deconv = false) {
 
   ConvertOp convert_op;
   InnerProductOp inner_product_op;
@@ -272,7 +273,8 @@ void Conv2dDgrad(
                   if (p < problem_size.P && q < problem_size.Q) {
 
                     ElementA a = tensor_dy.at(cutlass::make_Coord(n, p, q, k));
-                    ElementB b = tensor_w.at(cutlass::make_Coord(k, r, s, c));
+                    ElementB b = is_deconv ? tensor_w.at(cutlass::make_Coord(c, r, s, k))
+                        : tensor_w.at(cutlass::make_Coord(k, r, s, c));
 
                     acc = inner_product_op(ElementAccumulator(a), ElementAccumulator(b), acc);
                   }
@@ -420,6 +422,7 @@ void Conv2d(
     >(problem_size, tensor_A, tensor_B, tensor_C, tensor_D, alpha, beta);
     break;
 
+  case conv::Operator::kDeconv:
   case conv::Operator::kDgrad:
     Conv2dDgrad<
       ElementA, LayoutA,
@@ -429,7 +432,7 @@ void Conv2d(
       ElementAccumulator,
       ElementD,
       ConvertOp, InnerProductOp
-    >(problem_size, tensor_A, tensor_B, tensor_C, tensor_D, alpha, beta);
+    >(problem_size, tensor_A, tensor_B, tensor_C, tensor_D, alpha, beta, (convolutional_operator == conv::Operator::kDeconv));
     break;
 
   case conv::Operator::kWgrad:
@@ -537,7 +540,7 @@ void Conv3dFprop(
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
-/// Dgrad
+/// Dgrad / Deconv
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// dx = dgrad(dy, w)
@@ -560,7 +563,8 @@ void Conv3dDgrad(
   TensorRef<ElementC, LayoutC> tensor_dx_in,
   TensorRef<ElementC, LayoutC> tensor_dx_out,
   ElementCompute alpha,
-  ElementCompute beta) {
+  ElementCompute beta,
+  bool is_deconv = false) {
 
   ConvertOp convert_op;
   InnerProductOp inner_product_op;
@@ -604,8 +608,8 @@ void Conv3dDgrad(
                       if (z < problem_size.Z && p < problem_size.P && q < problem_size.Q) {
 
                         ElementA a = tensor_dy.at(cutlass::make_Coord(n, z, p, q, k));
-                        ElementB b = tensor_w.at(cutlass::make_Coord(k, t, r, s, c));
-
+                        ElementB b = is_deconv ? tensor_w.at(cutlass::make_Coord(c, t, r, s, k))
+                            : tensor_w.at(cutlass::make_Coord(k, t, r, s, c));
                         acc = inner_product_op(ElementAccumulator(a), ElementAccumulator(b), acc);
                       }
                     }
@@ -760,6 +764,7 @@ void Conv3d(
     >(problem_size, tensor_A, tensor_B, tensor_C, tensor_D, alpha, beta);
     break;
 
+  case conv::Operator::kDeconv:
   case conv::Operator::kDgrad:
     Conv3dDgrad<
       ElementA, LayoutA,
@@ -768,7 +773,7 @@ void Conv3d(
       ElementCompute,
       ElementAccumulator, 
       ConvertOp, InnerProductOp
-    >(problem_size, tensor_A, tensor_B, tensor_C, tensor_D, alpha, beta);
+    >(problem_size, tensor_A, tensor_B, tensor_C, tensor_D, alpha, beta, (convolutional_operator == conv::Operator::kDeconv));
     break;
 
   case conv::Operator::kWgrad:

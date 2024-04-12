@@ -118,16 +118,18 @@ cutlass::Status ${name}_kernel_run(
   typename DeviceKernel::Arguments arguments{
       cutlass::gemm::GemmUniversalMode::kGemm,
       {M, N, K, L},                                                              // problem size
-      A,                                                                         // ptrA
-      cutlass::make_cute_packed_stride(StrideA{}, cute::make_shape(M, K, L)),    // stride A
-      B,                                                                         // ptrB
-      cutlass::make_cute_packed_stride(StrideB{}, cute::make_shape(N, K, L)),    // stride B
       {
+        A,                                                                         // ptrA
+        cutlass::make_cute_packed_stride(StrideA{}, cute::make_shape(M, K, L)),    // stride A
+        B,                                                                         // ptrB
+        cutlass::make_cute_packed_stride(StrideB{}, cute::make_shape(N, K, L)),    // stride B
+      },
+      {
+        {alpha, beta},
         C,                                                                       // ptrC
         cutlass::make_cute_packed_stride(StrideC{}, cute::make_shape(M, N, L)),  // stride C
         D,                                                                       // ptrD
         cutlass::make_cute_packed_stride(StrideD{}, cute::make_shape(M, N, L)),  // stride D
-        {alpha, beta},
       },
       hw_info
   };

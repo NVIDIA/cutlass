@@ -89,7 +89,7 @@ downcast(ComposedLayout<SwizzleFn,smem_ptr_flag_bits<B>,Layout> const& layout)
 // Conversion with swizzle_layout
 //
 
-template <class T, class SwizzleFn, int B, class Layout>
+template <class SwizzleFn, int B, class Layout>
 CUTE_HOST_DEVICE
 auto
 as_position_independent_swizzle_layout(ComposedLayout<SwizzleFn,smem_ptr_flag_bits<B>,Layout> const& layout)
@@ -129,6 +129,14 @@ as_position_independent_swizzle_tensor(Tensor&& tensor)
 //
 
 // Capture and cast smem_ptr_flag Layouts to offset-0 layouts
+template <class SwizzleFn, int B, class Layout>
+CUTE_HOST_DEVICE
+void
+print_layout(ComposedLayout<SwizzleFn,smem_ptr_flag_bits<B>,Layout> const& layout)
+{
+  print_layout(as_position_independent_swizzle_layout(layout));
+}
+
 template <class SwizzleFn, int B, class Layout>
 CUTE_HOST_DEVICE
 void

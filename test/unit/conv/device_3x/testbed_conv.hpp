@@ -53,7 +53,6 @@
 #include "cutlass/util/reference/host/tensor_norm.h"
 #include "cutlass/util/reference/device/tensor_fill.h"
 #include "cutlass/util/reference/device/tensor_compare.h"
-
 #include "conv_problem_sizes.hpp"
 #include "../cache_testbed_output.h"
 
@@ -195,7 +194,8 @@ struct ConvTestbed {
   bool run(
     ProblemShape const& problem_shape,
     ElementScalar alpha = ElementScalar(1),
-    ElementScalar beta = ElementScalar(0)) {
+    ElementScalar beta = ElementScalar(0)
+  ) {
 
     // Waive test if insufficient CUDA device
     if (!sufficient()) {
@@ -250,14 +250,16 @@ struct ConvTestbed {
 
     auto &fusion_args = args.epilogue.thread;
 
-    // some fused patterns have no linear combination
+    fusion_args.alpha = alpha;
+    fusion_args.beta = beta;
+
     if constexpr (IsBiasEnabled) {
       fusion_args.bias_ptr = tensor_bias.data().get();
     }
 
     // Clamp bound
     if constexpr (cute::is_same_v<ActivationFunctor, cutlass::epilogue::thread::Clamp<ElementCompute>>) {
-      fusion_args.activation.lower_bound = ElementCompute{0};
+      fusion_args.activation.lower_bound = CUTLASS_STL_NAMESPACE::numeric_limits<ElementCompute>::lowest();
       fusion_args.activation.upper_bound = CUTLASS_STL_NAMESPACE::numeric_limits<ElementCompute>::max();
     }
 
@@ -422,17 +424,11 @@ struct ConvTestbed {
           reference_impl.compute_reference();
         }
         // Validate kernel against reference
-        passed = compare_reference(
-            mD_ref, mD_computed, mA, mB, mAlpha,
-            mBeta, mBias,
-            this->epsilon);
+        passed = compare_reference(mD_ref, mD_computed, mA, mB, mAlpha, mBeta, mBias, this->epsilon);
       }
     #else
       // Validate kernel against reference
-      passed = compare_reference(
-          mD_ref, mD_computed, mA, mB, mAlpha,
-          mBeta, mBias,
-          this->epsilon);
+      passed = compare_reference(mD_ref, mD_computed, mA, mB, mAlpha, mBeta, mBias, this->epsilon);
     #endif
 
     EXPECT_TRUE(passed);
@@ -445,8 +441,7 @@ struct ConvTestbed {
     class EngineB, class LayoutB,
     class EngineAlpha, class LayoutAlpha,
     class EngineBeta, class LayoutBeta,
-    class EngineBias, class LayoutBias
-    >
+    class EngineBias, class LayoutBias>
   static constexpr bool
   compare_reference(
       cute::Tensor<Engine, Layout> const& reference,
@@ -503,7 +498,6 @@ struct ConvTestbed {
           printf("[%ld]: bias = %f\n", i, float(tensor_bias(i)));
         }
       }
-
       for (size_t i = 0; i < size_t(size(reference)); ++i) {
         printf("[%ld]: ref = %f, computed = %f\n", i, float(reference(i)), float(computed(i)));
       }

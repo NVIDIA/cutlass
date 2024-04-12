@@ -62,7 +62,6 @@ template <typename EngineType, typename LayoutType>
 matrix_inf_norm_result
 matrix_inf_norm(cute::Tensor<EngineType, LayoutType> const& host_matrix)
 {
-  using std::abs;
   using error_type = decltype(std::declval<matrix_inf_norm_result>().inf_norm);
   using element_type = typename EngineType::value_type;
 
@@ -74,14 +73,25 @@ matrix_inf_norm(cute::Tensor<EngineType, LayoutType> const& host_matrix)
   const int64_t num_rows = cute::size<0>(host_matrix);
   const int64_t num_cols = cute::size<1>(host_matrix);
 
-  for(int64_t i = 0; i < num_rows; ++i) {
+  auto abs_fn = [] (element_type A_ij) {
+    if constexpr (not std::is_unsigned_v<element_type>) {
+      using std::abs;
+      return abs(A_ij);
+    }
+    else {
+      return A_ij;
+    }
+  };
+
+  for (int64_t i = 0; i < num_rows; ++i) {
     error_type row_abs_sum = 0.0;
     for(int64_t j = 0; j < num_cols; ++j) {
-      row_abs_sum += abs(host_matrix(i, j));
+      row_abs_sum += abs_fn(host_matrix(i, j));
     }
-    if(std::isnan(row_abs_sum)) {
+    if (std::isnan(row_abs_sum)) {
       found_nan = true;
-    } else {
+    }
+    else {
       inf_norm = row_abs_sum > inf_norm ? row_abs_sum : inf_norm;
     }
   }
@@ -95,9 +105,18 @@ matrix_inf_norm_result
 matrix_diff_inf_norm(cute::Tensor<EngineType, LayoutType> const& X,
                      cute::Tensor<EngineType, LayoutType> const& Y)
 {
-  using std::abs;
   using error_type = decltype(std::declval<matrix_inf_norm_result>().inf_norm);
   using element_type = typename EngineType::value_type;
+
+  auto abs_fn = [] (element_type A_ij) {
+    if constexpr (not std::is_unsigned_v<element_type>) {
+      using std::abs;
+      return abs(A_ij);
+    }
+    else {
+      return A_ij;
+    }
+  };
 
   assert(cute::size<0>(X) == cute::size<0>(Y));
   assert(cute::size<1>(X) == cute::size<1>(Y));
@@ -110,15 +129,16 @@ matrix_diff_inf_norm(cute::Tensor<EngineType, LayoutType> const& X,
   error_type inf_norm = 0.0;
   bool found_nan = false;
 
-  for(int64_t i = 0; i < num_rows; ++i) {
+  for (int64_t i = 0; i < num_rows; ++i) {
     error_type row_abs_sum = 0.0;
-    for(int64_t j = 0; j < num_cols; ++j) {
-      row_abs_sum += error_type(abs(element_type(X(i,j)) - 
-                                    element_type(Y(i,j))));
+    for (int64_t j = 0; j < num_cols; ++j) {
+      row_abs_sum += error_type(abs_fn(element_type(X(i,j)) -
+                                       element_type(Y(i,j))));
     }
-    if(std::isnan(row_abs_sum)) {
+    if (std::isnan(row_abs_sum)) {
       found_nan = true;
-    } else {
+    }
+    else {
       inf_norm = row_abs_sum > inf_norm ? row_abs_sum : inf_norm;
     }
   }
@@ -130,7 +150,7 @@ template <typename EngineType_A, typename LayoutType_A,
           typename EngineType_B, typename LayoutType_B,
           typename EngineType_C, typename LayoutType_C,
           typename EngineType_C_ref, typename LayoutType_C_ref>
-void
+auto
 print_matrix_multiply_mollified_relative_error(
   char const A_value_type_name[],
   cute::Tensor<EngineType_A, LayoutType_A> const& A,
@@ -158,13 +178,13 @@ print_matrix_multiply_mollified_relative_error(
   using std::cout;
   using cute::shape;
   cout << "Matrix A: " << shape<0>(A) << "x" << shape<1>(A) << " of " << A_value_type_name << '\n'
-       << "Matrix B: " << shape<0>(B) << "x" << shape<1>(B) << " of " << B_value_type_name << '\n'
-       << "Matrix C: " << shape<0>(C) << "x" << shape<1>(C) << " of " << C_value_type_name << '\n'
-       << std::scientific
-       << "Infinity norm of A: " << A_norm << '\n'
-       << "Infinity norm of B: " << B_norm << '\n'
-       << "Infinity norm of C: " << C_norm << '\n'
-       << "Infinity norm of (C - C_ref): " << diff_norm << '\n';
+      << "Matrix B: " << shape<0>(B) << "x" << shape<1>(B) << " of " << B_value_type_name << '\n'
+      << "Matrix C: " << shape<0>(C) << "x" << shape<1>(C) << " of " << C_value_type_name << '\n'
+      << std::scientific
+      << "Infinity norm of A: " << A_norm << '\n'
+      << "Infinity norm of B: " << B_norm << '\n'
+      << "Infinity norm of C: " << C_norm << '\n'
+      << "Infinity norm of (C - C_ref): " << diff_norm << '\n';
 
   if(A_norm_times_B_norm == 0.0) {
     cout << "Mollified relative error: " << relative_error << '\n';
@@ -173,15 +193,16 @@ print_matrix_multiply_mollified_relative_error(
   }
 
   if (A_has_nan || B_has_nan || C_has_nan || diff_has_nan) {
-    cout << "Did we encounter NaN in A? " << (A_has_nan ? "yes" : "no") << '\n' 
-         << "Did we encounter NaN in B? " << (B_has_nan ? "yes" : "no") << '\n'
-         << "Did we encounter NaN in C? " << (C_has_nan ? "yes" : "no") << '\n'
-         << "Did we encounter NaN in (C - C_ref)? " << (diff_has_nan ? "yes" : "no") << '\n';
+    cout << "Did we encounter NaN in A? " << (A_has_nan ? "yes" : "no") << '\n'
+        << "Did we encounter NaN in B? " << (B_has_nan ? "yes" : "no") << '\n'
+        << "Did we encounter NaN in C? " << (C_has_nan ? "yes" : "no") << '\n'
+        << "Did we encounter NaN in (C - C_ref)? " << (diff_has_nan ? "yes" : "no") << '\n';
   }
+  return relative_error;
 }
 
 template <typename EngineType, typename LayoutType>
-void
+auto
 print_matrix_multiply_mollified_relative_error(
   const char value_type_name[],
   const cute::Tensor<EngineType, LayoutType>& A,
@@ -189,7 +210,7 @@ print_matrix_multiply_mollified_relative_error(
   const cute::Tensor<EngineType, LayoutType>& C_computed,
   const cute::Tensor<EngineType, LayoutType>& C_expected)
 {
-  print_matrix_multiply_mollified_relative_error(value_type_name, A, value_type_name, B,
+  return print_matrix_multiply_mollified_relative_error(value_type_name, A, value_type_name, B,
                                                  value_type_name, C_computed, C_expected);
 }
 
@@ -314,7 +335,7 @@ print_relative_error(
     bool print_error = true,
     double error_margin = 0.00001) {
   assert(size(data) == size(reference));
-  return print_relative_error(static_cast<std::size_t>(size(data)), 
-                              data, reference, 
+  return print_relative_error(static_cast<std::size_t>(size(data)),
+                              data, reference,
                               print_verbose, print_error, error_margin);
 }

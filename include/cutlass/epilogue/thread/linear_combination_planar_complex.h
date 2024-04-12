@@ -156,23 +156,24 @@ public:
     NumericArrayConverter<ElementCompute, ElementOutput, kCount, Round> source_converter;
     NumericArrayConverter<ElementCompute, ElementAccumulator, kCount, Round> accumulator_converter;
 
-    ComputeFragment converted_source(
+    ComputeFragment converted_source{
       source_converter(source.real), 
-      source_converter(source.imag));
+      source_converter(source.imag)};
 
-    ComputeFragment converted_accumulator(
+    ComputeFragment converted_accumulator{
       accumulator_converter(accumulator.real), 
-      accumulator_converter(accumulator.imag));
-
-    // Perform binary operations
-    ComputeFragment intermediate;
+      accumulator_converter(accumulator.imag)};
 
     multiplies<Array<ElementCompute, kCount> > mul_op;
     multiply_add<Array<ElementCompute, kCount> > mul_add_op;
 
+    // Perform binary operations
+  
     // complex multiply: I = beta * C
-    intermediate.real = mul_op(beta_.real(), converted_source.real);
-    intermediate.imag = mul_op(beta_.real(), converted_source.imag);
+    ComputeFragment intermediate {
+      mul_op(beta_.real(), converted_source.real),
+      mul_op(beta_.real(), converted_source.imag)
+    };
 
     intermediate.real = mul_add_op(-beta_.imag(), converted_source.imag, intermediate.real);
     intermediate.imag = mul_add_op( beta_.imag(), converted_source.real, intermediate.imag);
@@ -187,9 +188,9 @@ public:
     // Convert to destination numeric type
     NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round> destination_converter;
 
-    return FragmentOutput(
+    return FragmentOutput{
       destination_converter(intermediate.real), 
-      destination_converter(intermediate.imag));
+      destination_converter(intermediate.imag)};
   }
 
   /// Computes linear scaling: D = alpha * accumulator + beta * source
@@ -200,19 +201,19 @@ public:
     // Convert source to interal compute numeric type
     NumericArrayConverter<ElementCompute, ElementAccumulator, kCount, Round> accumulator_converter;
 
-    ComputeFragment converted_accumulator(
+    ComputeFragment converted_accumulator{
       accumulator_converter(accumulator.real), 
-      accumulator_converter(accumulator.imag));
+      accumulator_converter(accumulator.imag)};
 
     // Perform binary operations
-    ComputeFragment intermediate;
-
     multiplies<Array<ElementCompute, kCount> > mul_op;
     multiply_add<Array<ElementCompute, kCount> > mul_add_op;
 
     // complex multiply-add: I = alpha * AB + I
-    intermediate.real = mul_op(alpha_.real(), converted_accumulator.real);
-    intermediate.imag = mul_op(alpha_.real(), converted_accumulator.imag);
+    ComputeFragment intermediate {
+      mul_op(alpha_.real(), converted_accumulator.real),
+      mul_op(alpha_.real(), converted_accumulator.imag)
+    };
 
     intermediate.real = mul_add_op(-alpha_.imag(), converted_accumulator.imag, intermediate.real);
     intermediate.imag = mul_add_op( alpha_.imag(), converted_accumulator.real, intermediate.imag);
@@ -220,9 +221,9 @@ public:
     // Convert to destination numeric type
     NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round> destination_converter;
 
-    return FragmentOutput(
+    return FragmentOutput{
       destination_converter(intermediate.real), 
-      destination_converter(intermediate.imag));
+      destination_converter(intermediate.imag)};
   }
 };
 

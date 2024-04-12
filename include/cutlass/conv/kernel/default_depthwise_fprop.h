@@ -80,7 +80,7 @@ template <
   int Stages,
   typename MathOperatorTag,
   conv::IteratorAlgorithm IteratorAlgorithm = IteratorAlgorithm::kAnalytic,
-  conv::StrideSupport StrideSupport = StrideSupport::kStrided,
+  conv::StrideSupport StrideSupport = StrideSupport::kUnity,
   /// Access granularity of A matrix in units of elements
   int AlignmentA = 128 / cutlass::sizeof_bits<ElementA>::value,
   /// Access granularity of B matrix in units of elements
@@ -109,7 +109,7 @@ template <
   int Stages,
   typename MathOperatorTag,
   conv::IteratorAlgorithm IteratorAlgorithm = IteratorAlgorithm::kAnalytic,
-  conv::StrideSupport StrideSupport = StrideSupport::kStrided,
+  conv::StrideSupport StrideSupport = StrideSupport::kUnity,
   // MatrixShape<Height, Width>
   typename StrideShape = cutlass::MatrixShape<-1, -1>,
   // MatrixShape< Height, Width> 

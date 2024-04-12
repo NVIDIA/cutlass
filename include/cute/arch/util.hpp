@@ -117,7 +117,7 @@ cast_smem_ptr_to_uint(void const* const ptr)
   uint32_t smem_ptr;
 
   asm(
-  "{ .reg .u64 smem_ptr; cvta.to.shared.u64 smem_ptr, %1; cvt.u32.u64 %0, smem_ptr; }\n" 
+  "{ .reg .u64 smem_ptr; cvta.to.shared.u64 smem_ptr, %1; cvt.u32.u64 %0, smem_ptr; }\n"
     : "=r"(smem_ptr) : "l"(ptr));
 
   return smem_ptr;
@@ -132,11 +132,47 @@ cast_smem_ptr_to_uint(void const* const ptr)
 #endif
 }
 
+namespace detail {
+
 //
-// Utility for pointer interfaces
+// Wrapper for MMAOp::fma
 //
 
-namespace detail {
+template <class MmaOp>
+struct CallFMA {
+  template <class... Args>
+  CUTE_HOST_DEVICE constexpr void
+  operator()(Args&&... args) const {
+    return MmaOp::fma(static_cast<Args&&>(args)...);
+  }
+};
+
+//
+// Wrapper for CopyOp::copy
+//
+
+template <class CopyOp>
+struct CallCOPY {
+  template <class... Args>
+  CUTE_HOST_DEVICE constexpr void
+  operator()(Args&&... args) const {
+    return CopyOp::copy(static_cast<Args&&>(args)...);
+  }
+};
+
+//
+// Utility for exploding pointers/arrays/tensors into functions
+//
+
+template <class Fn,
+          class PtrA, int... I>
+CUTE_HOST_DEVICE constexpr
+void
+explode(Fn fn,
+        PtrA&& a, int_sequence<I...>)
+{
+  return fn(a[I]...);
+}
 
 template <class Fn,
           class PtrS, int... Is,
@@ -181,75 +217,82 @@ explode(Fn fn,
 }
 
 template <class Fn,
-          class PtrA, int... Ia,
-          class PtrB, int... Ib,
-          class PtrC, int... Ic,
-          class ParamType>
-CUTE_HOST_DEVICE constexpr
-void
-explode_with_d_scaling(Fn fn,
-        PtrA&& a, int_sequence<Ia...>,
-        PtrB&& b, int_sequence<Ib...>,
-        PtrC&& c, int_sequence<Ic...>,
-        ParamType&& p0)
-{
-  return fn(a[Ia]..., b[Ib]..., c[Ic]..., p0);
-}
-
-template <class Fn,
           class PtrD, int... Id,
           class PtrA, int... Ia,
           class PtrB, int... Ib,
           class PtrC, int... Ic,
-          class ParamType>
+          class PtrE, int... Ie>
 CUTE_HOST_DEVICE constexpr
 void
-explode_with_d_scaling(Fn fn,
+explode(Fn fn,
         PtrD&& d, int_sequence<Id...>,
         PtrA&& a, int_sequence<Ia...>,
         PtrB&& b, int_sequence<Ib...>,
         PtrC&& c, int_sequence<Ic...>,
-        ParamType&& p0)
+        PtrE&& e, int_sequence<Ie...>)
 {
-  return fn(d[Id]..., a[Ia]..., b[Ib]..., c[Ic]..., p0);
+  return fn(d[Id]..., a[Ia]..., b[Ib]..., c[Ic]..., e[Ie]...);
+}
+
+template <class Fn,
+          class PtrD,   int... Id,
+          class PtrA,   int... Ia,
+          class PtrB,   int... Ib,
+          class PtrC,   int... Ic,
+          class PtrSFA, int... Isfa,
+          class PtrSFB, int... Isfb>
+CUTE_HOST_DEVICE constexpr
+void
+explode(Fn fn,
+        PtrD&& d,     int_sequence<Id...>,
+        PtrA&& a,     int_sequence<Ia...>,
+        PtrB&& b,     int_sequence<Ib...>,
+        PtrC&& c,     int_sequence<Ic...>,
+        PtrSFA&& sfa, int_sequence<Isfa...>,
+        PtrSFB&& sfb, int_sequence<Isfb...>)
+{
+  return fn(d[Id]..., a[Ia]..., b[Ib]..., c[Ic]..., sfa[Isfa]..., sfb[Isfb]...);
+}
+//
+// Utility for exploding tuples into functions
+//
+
+template <class Fn,
+          class TupleA, int... I>
+CUTE_HOST_DEVICE constexpr
+void
+explode_tuple(Fn fn,
+              TupleA&& a, int_sequence<I...>)
+{
+  return fn(get<I>(a)...);
+}
+
+template <class Fn,
+          class TupleA, int... Ia,
+          class TupleB, int... Ib>
+CUTE_HOST_DEVICE constexpr
+void
+explode_tuple(Fn fn,
+              TupleA&& a, int_sequence<Ia...>,
+              TupleB&& b, int_sequence<Ib...>)
+{
+  return fn(get<Ia>(a)..., get<Ib>(b)...);
+}
+
+template <class Fn,
+          class TupleA, int... Ia,
+          class TupleB, int... Ib,
+          class TupleC, int... Ic>
+CUTE_HOST_DEVICE constexpr
+void
+explode_tuple(Fn fn,
+              TupleA&& a, int_sequence<Ia...>,
+              TupleB&& b, int_sequence<Ib...>,
+              TupleC&& c, int_sequence<Ic...>)
+{
+  return fn(get<Ia>(a)..., get<Ib>(b)..., get<Ic>(c)...);
 }
 
 } // end namespace detail
-
-template <int SRegCount, int DRegCount,
-          class Fn, class PtrS, class PtrD>
-CUTE_HOST_DEVICE constexpr
-void
-explode(Fn fn, PtrS&& s, PtrD&& d)
-{
-  return detail::explode(fn,
-                         s, make_int_sequence<SRegCount>{},
-                         d, make_int_sequence<DRegCount>{});
-}
-
-template <int ARegCount, int BRegCount, int CRegCount, 
-          class Fn, class PtrA, class PtrB, class PtrC>
-CUTE_HOST_DEVICE constexpr
-void
-explode(Fn fn, PtrA&& a, PtrB&& b, PtrC&& c)
-{
-  return detail::explode(fn,
-                         a, make_int_sequence<ARegCount>{},
-                         b, make_int_sequence<BRegCount>{},
-                         c, make_int_sequence<CRegCount>{});
-}
-
-template <int DRegCount, int ARegCount, int BRegCount, int CRegCount,
-          class Fn, class PtrD, class PtrA, class PtrB, class PtrC>
-CUTE_HOST_DEVICE constexpr
-void
-explode(Fn fn, PtrD&& d, PtrA&& a, PtrB&& b, PtrC&& c)
-{
-  return detail::explode(fn,
-                         d, make_int_sequence<DRegCount>{},
-                         a, make_int_sequence<ARegCount>{},
-                         b, make_int_sequence<BRegCount>{},
-                         c, make_int_sequence<CRegCount>{});
-}
 
 } // end namespace cute

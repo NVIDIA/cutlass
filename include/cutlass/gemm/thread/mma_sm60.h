@@ -147,9 +147,7 @@ struct Mma_HFMA2 <
         CUTLASS_PRAGMA_UNROLL
         for(auto n=0; n < Shape::kN / Mma::Shape::kN; n++){
 
-            Array<half_t, 2> tmp;
-            Array<half_t, 2> *ptr_tmp = &tmp;
-            ptr_tmp[0] = ptr_D[n*Shape::kM/2 + m];
+            Array<half_t, 2> tmp { ptr_D[n*Shape::kM/2 + m] };
 
             mma(
                 tmp,
@@ -157,7 +155,7 @@ struct Mma_HFMA2 <
                 ptr_B[n*Shape::kK + k],
                 tmp);
 
-            ptr_D[n*Shape::kM/2 + m] = ptr_tmp[0];
+            ptr_D[n*Shape::kM/2 + m] = tmp;
         }
       }
     }
@@ -239,9 +237,7 @@ struct Mma_HFMA2<
           CUTLASS_PRAGMA_UNROLL
           for(auto m=0; m < Shape::kM / Mma::Shape::kM; m++){
 
-            Array<half_t, 2> tmp;
-            Array<half_t, 2> *ptr_tmp = &tmp;
-            ptr_tmp[0] = ptr_D[m*Shape::kN/2 + n];
+            Array<half_t, 2> tmp { ptr_D[m*Shape::kN/2 + n] };
 
             Array<half_t, 2> tmp_B;
             tmp_B[0] = ptr_B->at(2*n*Shape::kK + k);
@@ -253,7 +249,7 @@ struct Mma_HFMA2<
                 tmp_B,
                 tmp);
 
-            ptr_D[m*Shape::kN/2 + n] = ptr_tmp[0];
+            ptr_D[m*Shape::kN/2 + n] = tmp;
         }
       }
     }
@@ -335,10 +331,7 @@ struct Mma_HFMA2 <
           CUTLASS_PRAGMA_UNROLL
           for (int n = 0; n < Shape::kN / Mma::Shape::kN; ++n) {
 
-          Array<half_t, 2> tmp;
-          Array<half_t, 2> *ptr_tmp = &tmp;
-
-          ptr_tmp[0] = ptr_D[m + n * Shape::kM/2];
+          Array<half_t, 2> tmp { ptr_D[m + n * Shape::kM/2] };
 
           mma(
             tmp,
@@ -346,7 +339,7 @@ struct Mma_HFMA2 <
             ptr_B[k * Shape::kN + n],
             tmp);
 
-          ptr_D[m + n * Shape::kM/2] = ptr_tmp[0];
+          ptr_D[m + n * Shape::kM/2] = tmp;
         }
       }
     }
@@ -428,9 +421,7 @@ struct Mma_HFMA2<
           CUTLASS_PRAGMA_UNROLL
           for(auto m=0; m < Shape::kM / Mma::Shape::kM; m++){
 
-            Array<half_t, 2> tmp;
-            Array<half_t, 2> *ptr_tmp = &tmp;
-            ptr_tmp[0] = ptr_D[m*Shape::kN/2 + n];
+            Array<half_t, 2> tmp { ptr_D[m*Shape::kN/2 + n] };
 
             mma(
                 tmp,
@@ -438,7 +429,7 @@ struct Mma_HFMA2<
                 ptr_B[k*Shape::kN/2 + n],
                 tmp);
 
-            ptr_D[m*Shape::kN/2 + n] = ptr_tmp[0];
+            ptr_D[m*Shape::kN/2 + n] = tmp;
         }
       }
     }
@@ -521,9 +512,7 @@ struct Mma_HFMA2 <
         CUTLASS_PRAGMA_UNROLL
         for(auto n=0; n < Shape::kN / Mma::Shape::kN; n++){
 
-            Array<half_t, 2> tmp;
-            Array<half_t, 2> *ptr_tmp = &tmp;
-            ptr_tmp[0] = ptr_D[n*Shape::kM/2 + m];
+            Array<half_t, 2> tmp { ptr_D[n*Shape::kM/2 + m] };
 
             Array<half_t, 2> tmp_A;
             tmp_A[0] = ptr_A->at(2*m*Shape::kK + k);
@@ -535,7 +524,7 @@ struct Mma_HFMA2 <
                 ptr_B[n*Shape::kK + k],
                 tmp);
 
-            ptr_D[n*Shape::kM/2 + m] = ptr_tmp[0];
+            ptr_D[n*Shape::kM/2 + m] = tmp;
         }
       }
     }
@@ -617,9 +606,7 @@ struct Mma_HFMA2 <
           CUTLASS_PRAGMA_UNROLL
           for(auto m=0; m < Shape::kM / Mma::Shape::kM; m++){
 
-            Array<half_t, 2> tmp;
-            Array<half_t, 2> *ptr_tmp = &tmp;
-            ptr_tmp[0] = ptr_D[m*Shape::kN/2 + n];
+            Array<half_t, 2> tmp { ptr_D[m*Shape::kN/2 + n] };
 
             Array<half_t, 2> tmp_B;
             tmp_B[0] = ptr_B->at(2*n*Shape::kK + k);
@@ -631,7 +618,7 @@ struct Mma_HFMA2 <
                 tmp_B,
                 tmp);
 
-            ptr_D[m*Shape::kN/2 + n] = ptr_tmp[0];
+            ptr_D[m*Shape::kN/2 + n] = tmp;
         }
       }
     }
@@ -713,9 +700,7 @@ struct Mma_HFMA2 <
         CUTLASS_PRAGMA_UNROLL
         for(auto n=0; n < Shape::kN / Mma::Shape::kN; n++){
 
-            Array<half_t, 2> tmp;
-            Array<half_t, 2> *ptr_tmp = &tmp;
-            ptr_tmp[0] = ptr_D[n*Shape::kM/2 + m];
+            Array<half_t, 2> tmp { ptr_D[n*Shape::kM/2 + m] };
 
             Array<half_t, 2> tmp_A;
             tmp_A[0] = ptr_A->at(2*m*Shape::kK + k);
@@ -727,7 +712,7 @@ struct Mma_HFMA2 <
                 ptr_B[k*Shape::kN + n],
                 tmp);
 
-            ptr_D[n*Shape::kM/2 + m] = ptr_tmp[0];
+            ptr_D[n*Shape::kM/2 + m] = tmp;
         }
       }
     }
@@ -810,9 +795,7 @@ struct Mma_HFMA2<
           CUTLASS_PRAGMA_UNROLL
           for(auto m=0; m < Shape::kM / Mma::Shape::kM; m++){
 
-            Array<half_t, 2> tmp;
-            Array<half_t, 2> *ptr_tmp = &tmp;
-            ptr_tmp[0] = ptr_D[m*Shape::kN/2 + n];
+            Array<half_t, 2> tmp { ptr_D[m*Shape::kN/2 + n] };
 
             mma(
                 tmp,
@@ -820,7 +803,7 @@ struct Mma_HFMA2<
                 ptr_B[k*Shape::kN/2 + n],
                 tmp);
 
-            ptr_D[m*Shape::kN/2 + n] = ptr_tmp[0];
+            ptr_D[m*Shape::kN/2 + n] = tmp;
         }
       }
     }

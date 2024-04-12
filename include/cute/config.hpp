@@ -91,7 +91,7 @@
 // It's harmless to use the macro for other GCC versions or other
 // compilers, but it has no effect.
 #if ! defined(CUTE_GCC_UNREACHABLE)
-#  if defined(__clang__) || defined(__GNUC__)
+#  if defined(__GNUC__)
 #    define CUTE_GCC_UNREACHABLE __builtin_unreachable()
 #  else
 #    define CUTE_GCC_UNREACHABLE

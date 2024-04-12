@@ -153,7 +153,7 @@ public:
     if (kConvolutionalOperator == conv::Operator::kFprop) {
       if (args.problem_size.K % kAlignmentC)
         return Status::kErrorMisalignedOperand;
-    } else if (kConvolutionalOperator == conv::Operator::kDgrad) {
+    } else if (kConvolutionalOperator == conv::Operator::kDgrad || kConvolutionalOperator == conv::Operator::kDeconv) {
        if (args.problem_size.C % kAlignmentC)
         return Status::kErrorMisalignedOperand;
     } else if (kConvolutionalOperator == conv::Operator::kWgrad) {
@@ -161,16 +161,16 @@ public:
         return Status::kErrorMisalignedOperand;
     }
 
-    // check for unsupported problem sizes for strided dgrad implementation
-    if (kConvolutionalOperator == conv::Operator::kDgrad && 
+    // check for unsupported problem sizes for strided dgrad / deconv implementation
+    if ((kConvolutionalOperator == conv::Operator::kDgrad || kConvolutionalOperator == conv::Operator::kDeconv) &&
       kStrideSupport == conv::StrideSupport::kStrided) {
 
-      // split-k (serial or parallel) is not supported for strided dgrad
+      // split-k (serial or parallel) is not supported for strided dgrad / deconv
       if(args.problem_size.split_k_slices > 1) {
         return Status::kErrorNotSupported;
       }
-      
-      // dilation > {1x1} is not supported for strided dgrad
+
+      // dilation > {1x1} is not supported for strided dgrad / deconv
       if(args.problem_size.dilation_h > 1 || args.problem_size.dilation_w > 1) {
         return Status::kErrorNotSupported;
       }

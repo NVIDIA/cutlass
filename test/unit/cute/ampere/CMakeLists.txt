@@ -30,6 +30,7 @@ cutlass_test_unit_add_executable(
   cutlass_test_unit_cute_ampere
   cp_async.cu
   ldsm.cu
+  cooperative_gemm.cu
 )
 
 cutlass_test_unit_add_executable(

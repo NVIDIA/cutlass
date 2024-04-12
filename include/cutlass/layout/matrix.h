@@ -38,16 +38,6 @@
     defined in cutlass/tensor_ref.h.
 */
 
-/*
-  Note:  CUTLASS 3x increases the host compiler requirements to C++17. However, certain
-         existing integrations of CUTLASS require C++11 host compilers.
-
-         Until this requirement can be lifted, certain headers with this annotation are required
-         to be remain consistent with C++11 syntax.
-
-         C++11 compatibility is enforced by this unit test: `cutlass_test_unit_core_cpp11`.
-*/
-
 #pragma once
 
 #include "cutlass/cutlass.h"

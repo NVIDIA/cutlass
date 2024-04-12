@@ -392,12 +392,12 @@ composition(Layout<ShapeA,StrideA> const& a,
 // complement
 //
 
-template <class A, class O, class B, class CoSizeHi>
+template <class A, class O, class B, class CoTarget>
 CUTE_HOST_DEVICE constexpr
 auto
-complement(ComposedLayout<A,O,B> const& layout, CoSizeHi const& cosize_hi)
+complement(ComposedLayout<A,O,B> const& layout, CoTarget const& cotarget)
 {
-  return complement(layout.layout_b(), cosize_hi);
+  return complement(layout.layout_b(), cotarget);
 }
 
 template <class A, class O, class B>
@@ -610,7 +610,7 @@ recast_layout(ComposedLayout<A,O,B> const& layout)
   else if constexpr (scale::num == 1) {
     return downcast<scale::den>(layout);
   }
-  else if constexpr (scale::den == 1) { 
+  else if constexpr (scale::den == 1) {
     return upcast<scale::num>(layout);
   }
   else {

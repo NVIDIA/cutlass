@@ -77,7 +77,7 @@ template <
   typename MathOperatorTag,
   conv::GroupMode GroupMode,
   conv::IteratorAlgorithm IteratorAlgorithm = IteratorAlgorithm::kOptimized,
-  conv::StrideSupport StrideSupport = StrideSupport::kStrided,
+  conv::StrideSupport StrideSupport = StrideSupport::kUnity,
   /// Access granularity of A matrix in units of elements
   int AlignmentA = 128 / cutlass::sizeof_bits<ElementA>::value,
   /// Access granularity of B matrix in units of elements

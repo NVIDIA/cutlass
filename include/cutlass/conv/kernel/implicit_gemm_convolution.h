@@ -61,7 +61,7 @@ template <
   typename Mma_,                                  ///! Threadblock-scoped matrix multiply-accumulate 
   typename Epilogue_,                             ///! Epilogue
   typename ThreadblockSwizzle_,                   ///! Threadblock swizzling function
-  conv::Operator ConvOperator,                    ///! Convolutional operator (Fprop, Dgrad, Wgrad)
+  conv::Operator ConvOperator,                    ///! Convolutional operator (Fprop, Dgrad, Wgrad, Deconv)
   typename ConvProblemSize_ = Conv2dProblemSize,  ///! Convolutional operator on 2D or 3D problem
   conv::GroupMode GroupMode_ = conv::GroupMode::kNone    ///! Group mode
 >
@@ -233,9 +233,9 @@ struct ImplicitGemmConvolution {
       ptr_A(args.ref_A.data()),
       iterator_B(args.problem_size, args.ref_B.layout()),
       ptr_B(args.ref_B.data()),
-      iterator_C(ConvOutputIteratorParameter::layout(args.ref_C)),
+      iterator_C(ConvOutputIteratorParameter::layout(args.ref_C), args.problem_size),
       ptr_C(args.ref_C.data()),
-      iterator_D(ConvOutputIteratorParameter::layout(args.ref_D)),
+      iterator_D(ConvOutputIteratorParameter::layout(args.ref_D), args.problem_size),
       ptr_D(args.ref_D.data()),
       output_op(args.output_op),
       semaphore(semaphore),
@@ -396,7 +396,6 @@ struct ImplicitGemmConvolution {
       thread_idx,
       threadblock_offset
     );
-
 
     // Construct the epilogue
     Epilogue epilogue(

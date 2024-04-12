@@ -317,23 +317,25 @@ The `complement` of a layout attempts to find another layout that represents the
 
 You can find many examples and checked post-conditions in [the `complement` unit test](../../../test/unit/cute/core/complement.cpp). The post-conditions include
 ```cpp
-// @post cosize(make_layout(@a layout_a, @a result))) >= @a cosize_hi
-// @post cosize(@a result) >= round_up(@a cosize_hi, cosize(@a layout_a))
+// @post cosize(make_layout(@a layout_a, @a result))) >= size(@a cotarget)
+// @post cosize(@a result) >= round_up(size(@a cotarget), cosize(@a layout_a))
 // @post for all i, 1 <= i < size(@a result),
 //         @a result(i-1) < @a result(i)
 // @post for all i, 1 <= i < size(@a result),
 //         for all j, 0 <= j < size(@a layout_a),
 //           @a result(i) != @a layout_a(j)
-Layout complement(LayoutA const& layout_a, Integral const& cosize_hi)
+Layout complement(LayoutA const& layout_a, Shape const& cotarget)
 ```
-That is, the complement `R` of a layout `A` with respect to an integer `M` satisfies the following properties.
-1. The size (and cosize) of `R` is *bounded* by `M`.
+That is, the complement `R` of a layout `A` with respect to a Shape (IntTuple) `M` satisfies the following properties.
+1. The size (and cosize) of `R` is *bounded* by `size(M)`.
 2. `R` is *ordered*.  That is, the strides of `R` are positive and increasing.  This means that `R` is unique.
 3. `A` and `R` have *disjoint* codomains. `R` attempts to "complete" the codomain of `A`.
 
+The `cotarget` parameter above is most commonly an integer -- you can see we only use `size(cotarget)` above. However, sometimes it is useful to specify an integer that has static properties. For example, `28` is a dynamic integer and `(_4,7)` is a shape with size `28` that is statically known to be divisible by `_4`. Both will produce the same `complement` mathematically, but the extra information can used by `complement` to preserve the staticness of the result as much as possible.
+
 ### Complement Examples
 
-`complement` is most effective on static shapes and strides, so consider all integers below to be static. Similar examples for dynamic shapes and strides can be found in the unit test.
+`complement` is most effective on static shapes and strides, so consider all integers below to be static. Similar examples for dynamic shapes and strides as well as IntTuple `cotarget` can be found in [the unit test](../../../test/unit/cute/core/complement.cpp).
 
 * `complement(4:1, 24)` is `6:4`. Note that `(4,6):(1,4)` has cosize `24`. The layout `4:1` is effectively repeated 6 times with `6:4`.
 
@@ -425,9 +427,9 @@ Layout Shape : (M, N, L, ...)
 Tiler Shape  : <TileM, TileN>
 
 logical_divide : ((TileM,RestM), (TileN,RestN), L, ...)
-zipped_divide  : ((TileM,TileN,...), (RestM,RestN,L,...))
-tiled_divide   : ((TileM,TileN,...), RestM, RestN, L, ...)
-flat_divide    : (TileM, TileN, ..., RestM, RestN, L, ...)
+zipped_divide  : ((TileM,TileN), (RestM,RestN,L,...))
+tiled_divide   : ((TileM,TileN), RestM, RestN, L, ...)
+flat_divide    : (TileM, TileN, RestM, RestN, L, ...)
 ```
 
 For example, the `zipped_divide` function applies `logical_divide`, and then gathers the "subtiles" into a single mode and the "rest" into a single mode.

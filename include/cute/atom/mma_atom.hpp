@@ -715,6 +715,7 @@ print(MMA_Atom<MMA_Traits<Args...>> const&)
   using Atom = MMA_Atom<MMA_Traits<Args...>>;
   print("MMA_Atom\n");
   print("  ThrID:      "); print(typename Atom::ThrID{});      print("\n");
+  print("  Shape_MNK:  "); print(typename Atom::Shape_MNK{});  print("\n");
   print("  LayoutA_TV: "); print(typename Atom::LayoutA_TV{}); print("\n");
   print("  LayoutB_TV: "); print(typename Atom::LayoutB_TV{}); print("\n");
   print("  LayoutC_TV: "); print(typename Atom::LayoutC_TV{}); print("\n");

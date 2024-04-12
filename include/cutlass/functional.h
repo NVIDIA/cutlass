@@ -33,19 +33,12 @@
 
     This is inspired by the Standard Library's <functional> header.
 */
-/*
-  Note:  CUTLASS 3x increases the host compiler requirements to C++17. However, certain
-         existing integrations of CUTLASS require C++11 host compilers.
-
-         Until this requirement can be lifted, certain headers with this annotation are required
-         to be remain consistent with C++11 syntax.
-
-         C++11 compatibility is enforced by `cutlass_test_unit_core_cpp11`.
-*/
 #pragma once
 
 #include "cutlass/cutlass.h"
 #include "cutlass/numeric_types.h"
+
+#include <cuda_runtime.h>
 
 #if defined(CUTLASS_ARCH_WMMA_ENABLED)
 #include <mma.h>
@@ -213,6 +206,35 @@ struct magnitude_squared_difference {
 
     Output y = Output(lhs) - Output(rhs);
     return mul_op(y, y);
+  }
+};
+
+// Computes the reciprocal square root
+template <typename T>
+struct inverse_square_root;
+
+template <>
+struct inverse_square_root<float> {
+  CUTLASS_HOST_DEVICE
+  float operator()(float const &lhs) const {
+#if defined(__CUDA_ARCH__)
+    return rsqrtf(lhs);
+#else
+    return 1.f / std::sqrt(lhs);
+#endif
+  }
+};
+
+template <>
+struct inverse_square_root<half_t> {
+  CUTLASS_HOST_DEVICE
+  half_t operator()(half_t const &lhs) const {
+#if defined(__CUDA_ARCH__)
+    auto result = hrsqrt(reinterpret_cast<__half const &>(lhs));
+    return reinterpret_cast<half_t const &>(result);
+#else
+    return half_t(1.f / std::sqrt(half_t::convert(lhs)));
+#endif
   }
 };
 
@@ -545,8 +567,6 @@ struct bit_xor {
     return a ^ b;
   }
 };
-
-
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 /// Atomic reductions

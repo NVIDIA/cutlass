@@ -57,6 +57,11 @@ cutlass_test_unit_add_executable(
 )
 
 cutlass_test_unit_add_executable(
+  cutlass_test_unit_cute_hopper_tma_mcast_load
+  tma_mcast_load.cu
+)
+
+cutlass_test_unit_add_executable(
   cutlass_test_unit_cute_hopper_tma_store
   tma_store.cu
 )
