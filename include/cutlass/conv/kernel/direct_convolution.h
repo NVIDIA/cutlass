@@ -155,7 +155,7 @@ struct DirectConvolutionParams {
     swizzle_log_tile = threadblock_swizzle.get_log_tile(grid_tiled_shape);
 
     // Dynamic SMEM usage because stride and dilation are runtime params.
-    smem_size_ = (iterator_A.activation_size * kStages + iterator_B.filter_size);
+    smem_size_ = (max(iterator_A.activation_size, int(sizeof(typename Epilogue::SharedStorage))) * kStages + iterator_B.filter_size);
   }
 
   CUTLASS_HOST_DEVICE

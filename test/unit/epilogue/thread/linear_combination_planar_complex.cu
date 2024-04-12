@@ -183,7 +183,7 @@ TEST(Epilogue_thread_linear_combination_planar_complex, f16_f32) {
     source.imag[i] = ElementOutput(((i * 5 + 2) % 9) - 4);
   }
 
-  cutlass::ArrayPlanarComplex<ElementOutput, kCount> destination = linear_combination_op(accum, source);
+  cutlass::ArrayPlanarComplex<ElementOutput, kCount> destination{ linear_combination_op(accum, source) };
 
   // Verify each result
   for (int i = 0; i < kCount; ++i) {

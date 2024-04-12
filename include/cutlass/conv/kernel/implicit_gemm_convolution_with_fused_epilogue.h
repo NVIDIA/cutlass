@@ -61,7 +61,7 @@ template <
   typename Mma_,                                  ///! Threadblock-scoped matrix multiply-accumulate 
   typename Epilogue_,                             ///! Epilogue
   typename ThreadblockSwizzle_,                   ///! Threadblock swizzling function
-  conv::Operator ConvOperator,                    ///! Convolutional operator (Fprop, Dgrad, Wgrad)
+  conv::Operator ConvOperator,                    ///! Convolutional operator (Fprop, Dgrad, Wgrad, Deconv)
   typename ConvProblemSize_ = Conv2dProblemSize   ///! Convolutional operator on 2D or 3D problem
 >
 struct ImplicitGemmConvolutionWithFusedEpilogue {

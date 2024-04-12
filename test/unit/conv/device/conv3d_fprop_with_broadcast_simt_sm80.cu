@@ -81,7 +81,8 @@ TEST(SM80_Device_Conv3d_Fprop_With_Broadcast_Analytic_ImplicitGemm_f32ndhwc_f32n
     cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
     4,
     cutlass::arch::OpMultiplyAdd,
-    cutlass::conv::IteratorAlgorithm::kAnalytic
+    cutlass::conv::IteratorAlgorithm::kAnalytic,
+    cutlass::conv::StrideSupport::kStrided
   >::Kernel;
 
   using Conv3dFprop = cutlass::conv::device::ImplicitGemmConvolution<Conv3dFpropKernel>;
@@ -103,7 +104,7 @@ template <
  template<typename T> class UnaryOp,
  bool TestSplitK = true
 >
-void TestResidaulBlock() {
+static void Conv3dFpropSM80TestResidaulBlock() {
   using ElementA = float;
   using ElementB = float;
   using ElementC = float;
@@ -161,7 +162,7 @@ void TestResidaulBlock() {
 TEST(SM80_Device_Conv3d_Fprop_With_Residual_Block_Plus_Analytic_ImplicitGemm_f32ndhwc_f32ndhwc_f32ndhwc_simt_f32,
      128x128_8x4_32x64x8) {
   // Resnet
-  TestResidaulBlock<cutlass::epilogue::thread::Identity, cutlass::plus, cutlass::epilogue::thread::ReLu>();
+  Conv3dFpropSM80TestResidaulBlock<cutlass::epilogue::thread::Identity, cutlass::plus, cutlass::epilogue::thread::ReLu>();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

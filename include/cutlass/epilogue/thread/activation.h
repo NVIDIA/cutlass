@@ -172,7 +172,7 @@ struct ReLu<Array<T, N>> {
 template <typename T>
 struct Clamp {
   struct Arguments {
-    T lower_bound = CUTLASS_STL_NAMESPACE::numeric_limits<T>::min();
+    T lower_bound = CUTLASS_STL_NAMESPACE::numeric_limits<T>::lowest();
     T upper_bound = CUTLASS_STL_NAMESPACE::numeric_limits<T>::max();
   };
 

@@ -69,8 +69,9 @@ struct TMA_LOAD_Unpack
   {
     auto src_coord = src.data().coord_;
     if constexpr (detail::is_prefetch<CopyOp>) {
-      return detail::copy_explode<CopyOp>(traits.opargs_, tuple_seq<decltype(traits.opargs_)>{},
-                                          src_coord, tuple_seq<decltype(src_coord)>{});
+      return detail::explode_tuple(detail::CallCOPY<CopyOp>{},
+                                   traits.opargs_, tuple_seq<decltype(traits.opargs_)>{},
+                                   src_coord, tuple_seq<decltype(src_coord)>{});
     } else {
       static_assert(is_smem<TD>::value, "SM90_TMA_LOAD requires the destination be shared memory.");
       void* dst_ptr = cute::raw_pointer_cast(dst.data());
@@ -81,9 +82,10 @@ struct TMA_LOAD_Unpack
             blockIdx.x, blockIdx.y, blockIdx.z,
             int32_t(c0), int32_t(c1), int32_t(c2), int32_t(c3), int32_t(c4), dst_ptr);
 #endif
-      return detail::copy_explode<CopyOp>(traits.opargs_, tuple_seq<decltype(traits.opargs_)>{},
-                                          make_tuple(dst_ptr), seq<0>{},
-                                          src_coord, tuple_seq<decltype(src_coord)>{});
+      return detail::explode_tuple(detail::CallCOPY<CopyOp>{},
+                                   traits.opargs_, tuple_seq<decltype(traits.opargs_)>{},
+                                   make_tuple(dst_ptr), seq<0>{},
+                                   src_coord, tuple_seq<decltype(src_coord)>{});
     }
   }
 };
@@ -337,8 +339,9 @@ struct Copy_Traits<SM90_TMA_STORE, NumBitsPerTMA, AuxParams_>
            blockIdx.x, blockIdx.y, blockIdx.z,
            int32_t(c0), int32_t(c1), int32_t(c2), int32_t(c3), int32_t(c4), src_ptr);
 #endif
-    return detail::copy_explode<SM90_TMA_STORE>(make_tuple(desc_ptr, src_ptr), seq<0,1>{},
-                                                dst_coord, tuple_seq<decltype(dst_coord)>{});
+    return detail::explode_tuple(detail::CallCOPY<SM90_TMA_STORE>{},
+                                 make_tuple(desc_ptr, src_ptr), seq<0,1>{},
+                                 dst_coord, tuple_seq<decltype(dst_coord)>{});
   }
 };
 
@@ -1278,7 +1281,7 @@ tma_partition(Copy_Atom<Args...>      const& copy_atom,
   // Factor out the single-instrucion portion
   Layout tma_layout_v = make_layout(Int<Copy_Atom<Args...>::NumValSrc>{});
   auto layout_V = make_tile(logical_divide(layout_v, tma_layout_v));
-  
+
   // Append with _ until we cover all Rest... modes
   auto glayout_V = append<rank_v<decltype(gtensor)>>(layout_V, _);
   auto slayout_V = append<rank_v<decltype(stensor)>>(layout_V, _);
@@ -1288,39 +1291,45 @@ tma_partition(Copy_Atom<Args...>      const& copy_atom,
 
 #if 0
   if (thread0()) {
-    print("gtensor : "); print(gtensor); print("\n");
-    print("stensor : "); print(stensor); print("\n");
+    print("cta_coord  : "); print(cta_coord); print("\n");
+    print("cta_layout : "); print(cta_layout); print("\n");
+    print("gtensor   : "); print(gtensor); print("\n");
+    print("stensor   : "); print(stensor); print("\n");
     print("layout_V  : "); print(layout_V); print("\n");
     print("gtensor_v : "); print(gtensor_v); print("\n");
     print("stensor_v : "); print(stensor_v); print("\n");
   }
 #endif
 
-  // Restride the cta-into-tma-instr layout
-  Layout tma_layout_t  = composition(make_layout(Int<1>{}, shape_div(size(tma_layout_v), cosize(cta_layout))), cta_layout);
-  auto tma_layout_tv = make_tile(make_tile(make_layout(tma_layout_t, tma_layout_v), _));
+  // Offset inside the TMA-mode for the multicast
+  auto multicast_offset = cta_layout(cta_coord) * (size(tma_layout_v) / cosize(cta_layout));
+  auto multicast_coord  = make_coord(make_coord(multicast_offset, Int<0>{}));
+  auto scoord = append<SLayout::rank>(multicast_coord, Int<0>{});
+  auto gcoord = append<GLayout::rank>(multicast_coord, Int<0>{});
 
-  // Append with _ until we cover all Rest... modes
-  auto gtma_layout_tv = append<rank_v<decltype(gtensor)>>(tma_layout_tv, _);
-  auto stma_layout_tv = append<rank_v<decltype(stensor)>>(tma_layout_tv, _);
+  Tensor gresult = domain_offset(gcoord, gtensor_v);
+  Tensor sresult = domain_offset(scoord, stensor_v);
 
-  // Transform TMA mode
-  Tensor gtensor_tv = gtensor_v.compose(gtma_layout_tv);                              // (((Thr,Frg),TMA_Iter), Rest...)
-  Tensor stensor_tv = stensor_v.compose(stma_layout_tv);                              // (((Thr,Frg),TMA_Iter), Rest...)
+  return cute::make_tuple(gresult, sresult);
+}
 
-#if 0
-  if (thread0()) {
-    print("tma_layout_tv : "); print(tma_layout_tv); print("\n");
-    print("gtensor_tv : "); print(gtensor_tv); print("\n");
-    print("stensor_tv : "); print(stensor_tv); print("\n");
+// TMA Multicast Masks Calculation
+template <int Mode, class CtaLayout, class CtaCoord>
+CUTE_HOST_DEVICE constexpr
+auto
+create_tma_multicast_mask(CtaLayout const& cta_layout_vmnk,
+                          CtaCoord  const& cta_coord_vmnk)
+{
+  auto cta_coord_slicer = replace<Mode>(cta_coord_vmnk, _);
+  auto [cta_layout, elected_cta] = slice_and_offset(cta_coord_slicer, cta_layout_vmnk);
+  // Get the instruction code
+  uint16_t mcast_mask = 0;
+  for (int i = 0; i < size(cta_layout); ++i) {
+    mcast_mask |= uint16_t(1) << cta_layout(i);
   }
-#endif
-
-  auto c   = make_coord(make_coord(make_coord(cta_coord, _), _));
-  auto c_s = append<rank_v<decltype(stensor_tv)>>(c, _);
-  auto c_g = append<rank_v<decltype(gtensor_tv)>>(c, _);
-
-  return cute::make_tuple(group_modes<0,2>(gtensor_tv(c_g)), group_modes<0,2>(stensor_tv(c_s)));
+  // Shift by the instruction's elected block rank (dynamic)
+  mcast_mask <<= elected_cta;
+  return mcast_mask;
 }
 
 } // end namespace cute

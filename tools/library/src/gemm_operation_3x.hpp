@@ -38,6 +38,7 @@
 #include "cutlass/library/library.h"
 #include "library_internal.h"
 #include "cutlass/gemm/dispatch_policy.hpp"
+#include <unordered_map>
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -271,7 +272,6 @@ public:
   /// Returns success if the operation can proceed
   Status can_implement(
       void const *configuration_ptr, void const *arguments_ptr) const override {
-
     GemmUniversalConfiguration const *configuration =
       static_cast<GemmUniversalConfiguration const *>(configuration_ptr);
     GemmUniversalArguments const *arguments =
@@ -289,7 +289,6 @@ public:
       configuration->problem_size.n(),
       configuration->problem_size.k(),
       configuration->batch_count);
-
     return Operator::can_implement(args);
   }
 

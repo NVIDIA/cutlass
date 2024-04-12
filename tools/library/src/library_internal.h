@@ -152,6 +152,7 @@ template <> struct NumericTypeMap<cutlass::tfloat32_t> {
   static NumericTypeID const kId = NumericTypeID::kTF32;
 };
 
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename T> struct MathOperationMap {

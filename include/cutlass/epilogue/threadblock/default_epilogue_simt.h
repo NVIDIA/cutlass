@@ -64,11 +64,12 @@
 #include "cutlass/transform/pitch_linear_thread_map.h"
 
 #include "cutlass/epilogue/threadblock/predicated_tile_iterator.h"
+#include "cutlass/epilogue/threadblock/predicated_tile_iterator_conv.h"
 #include "cutlass/epilogue/threadblock/predicated_tile_iterator_strided_dgrad.h"
 #include "cutlass/epilogue/threadblock/predicated_tile_iterator_affine.h"
 #include "cutlass/epilogue/threadblock/predicated_tile_iterator_direct_conv.h" 
 #include "cutlass/epilogue/threadblock/shared_load_iterator.h"
-#include "cutlass/epilogue/threadblock/shared_load_iterator_pitch_liner.h"
+#include "cutlass/epilogue/threadblock/shared_load_iterator_pitch_linear.h"
 #include "cutlass/epilogue/threadblock/epilogue.h"
 #include "cutlass/epilogue/threadblock/epilogue_depthwise.h"
 
@@ -89,7 +90,9 @@ template <
   typename OutputOp_,
   int ElementsPerAccess,
   bool ScatterD = false,
-  typename PermuteDLayout = layout::NoPermute
+  typename PermuteDLayout = layout::NoPermute,
+  conv::StrideSupport StrideSupport = conv::StrideSupport::kUnity,
+  int Rank = 4
 >
 struct DefaultEpilogueSimt {
 
@@ -102,6 +105,8 @@ struct DefaultEpilogueSimt {
   using ElementOutput = typename OutputOp::ElementOutput;
   using LayoutC = typename WarpMmaSimt::LayoutC;
   using ElementAccumulator = typename WarpMmaSimt::ElementC;
+  static conv::StrideSupport const kStrideSupport = StrideSupport;
+  static int const kRank = Rank;
 
   //
   // Thread map
@@ -116,12 +121,28 @@ struct DefaultEpilogueSimt {
     kElementsPerAccess
   >::Type;
 
-  using OutputTileIterator = cutlass::epilogue::threadblock::PredicatedTileIterator<
+  static bool const UseCUDAStore = platform::is_same<ElementOutput, double>::value;
+
+  using PackedOutputTileIterator = cutlass::epilogue::threadblock::PredicatedTileIterator<
     OutputTileThreadMap,
     ElementOutput,
     ScatterD,
-    PermuteDLayout
+    PermuteDLayout,
+    UseCUDAStore
   >;
+
+  using StridedOutputTileIterator = cutlass::epilogue::threadblock::PredicatedTileIteratorConv<
+    OutputTileThreadMap,
+    ElementOutput,
+    ScatterD,
+    PermuteDLayout,
+    UseCUDAStore,
+    kRank
+  >;
+
+  using OutputTileIterator = typename platform::conditional<StrideSupport == cutlass::conv::StrideSupport::kUnity,
+                                                            PackedOutputTileIterator,
+                                                            StridedOutputTileIterator>::type;
 
   using AccumulatorFragmentIterator = cutlass::epilogue::warp::FragmentIteratorSimt<
     typename WarpMmaSimt::Shape,
@@ -389,7 +410,7 @@ struct DefaultDirectConvEpilogueSimt {
     typename WarpMmaSimt::Policy
   >;
 
-  using SharedLoadIterator = cutlass::epilogue::threadblock::SharedLoadIteratorPitchLiner<
+  using SharedLoadIterator = cutlass::epilogue::threadblock::SharedLoadIteratorPitchLinear<
     OutputTileThreadMap,
     ElementAccumulator
   >;

@@ -131,6 +131,28 @@ struct DefaultConvEpilogueWithBroadcastSimt {
 template <
   typename ArchTag,
   typename Shape,
+  typename WarpMmaSimt,
+  typename ElementOutput,
+  typename ElementTensor,
+  typename ElementVector,
+  typename OutputOp,
+  int ElementsPerAccess
+>
+struct DefaultConvEpilogueWithBroadcastSimtStridedDgrad {
+  using Epilogue = typename epilogue::threadblock::DefaultEpilogueWithBroadcastSimtStridedDgrad<
+    Shape,
+    WarpMmaSimt,
+    ElementOutput,
+    ElementTensor,
+    ElementVector,
+    OutputOp,
+    ElementsPerAccess
+  >::Epilogue;
+};
+
+template <
+  typename ArchTag,
+  typename Shape,
   typename WarpMmaTensorOp,
   int PartitionsK,
   typename ElementOutput,

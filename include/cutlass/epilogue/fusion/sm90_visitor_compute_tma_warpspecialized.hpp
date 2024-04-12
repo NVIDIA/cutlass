@@ -634,17 +634,19 @@ struct Sm90AuxLoad<
     return EmptyProducerLoadCallbacks{};
   }
 
-  template <class RTensor, class GTensor, class ResidueMN>
+  template <class RTensor, class GTensor, class CTensor, class ResidueMN>
   struct ConsumerStoreCallbacks : EmptyConsumerStoreCallbacks {
     CUTLASS_DEVICE
-    ConsumerStoreCallbacks(RTensor&& tC_rAux_, GTensor&& tC_gAux_, ResidueMN residue_mn_, Params const& params_)
+    ConsumerStoreCallbacks(RTensor&& tC_rAux_, GTensor&& tC_gAux_, CTensor tC_cAux_, ResidueMN residue_mn_, Params const& params_)
       : tC_rAux(cute::forward<RTensor>(tC_rAux_)),
         tC_gAux(cute::forward<GTensor>(tC_gAux_)),
+        tC_cAux(tC_cAux_),
         residue_mn(residue_mn_),
         params(params_) {}
 
     RTensor tC_rAux;                                                                   // (CPY,CPY_M,CPY_N,{EPI_M,EPI_N})
     GTensor tC_gAux;                                                                   // (CPY,CPY_M,CPY_N,EPI_M,EPI_N)
+    CTensor tC_cAux;                                                                   // (CPY,CPY_M,CPY_N,EPI_M,EPI_N)
     ResidueMN residue_mn;
     Params const& params;
 
@@ -657,8 +659,18 @@ struct Sm90AuxLoad<
           }
         }
 
-        if (elem_less(repeat_like(residue_mn, _0{}), residue_mn)) { // (partially) in-bounds CTA tile
-          copy_aligned(tC_gAux, tC_rAux);
+        constexpr int V = cute::min(Alignment, decltype(max_common_vector(tC_rAux, tC_gAux))::value);
+        if constexpr (V > 0) {
+          using VecType = uint_bit_t<V>;
+          Tensor tC_gAux_vec = recast<VecType>(tC_gAux);
+          Tensor tC_rAux_vec = recast<VecType>(tC_rAux);
+          Tensor tC_cAux_vec = tC_cAux.compose(make_layout(Int<size(tC_rAux_vec)>{}, Int<V>{})); // only works if vector is logically sequential
+          auto predicate_fn = [&] (auto&&... coords) { return elem_less(tC_cAux_vec(coords...), residue_mn); };
+          copy_if(FunctionPredTensor(predicate_fn), tC_gAux_vec, tC_rAux_vec);
+        }
+        else {
+          auto predicate_fn = [&] (auto&&... coords) { return elem_less(tC_cAux(coords...), residue_mn); };
+          copy_if(FunctionPredTensor(predicate_fn), tC_gAux, tC_rAux);
         }
       }
     }
@@ -672,9 +684,8 @@ struct Sm90AuxLoad<
           }
         }
 
-        if (elem_less(repeat_like(residue_mn, _0{}), residue_mn)) {
-          copy_aligned(tC_gAux(_,_,_,epi_m,epi_n), tC_rAux);
-        }
+        auto predicate_fn = [&] (auto&&... coords) { return elem_less(tC_cAux(_,_,_,epi_m,epi_n)(coords...), residue_mn); };
+        copy_if(FunctionPredTensor(predicate_fn), tC_gAux(_,_,_,epi_m,epi_n), tC_rAux);
       }
     }
 
@@ -723,8 +734,8 @@ struct Sm90AuxLoad<
       }
     }
 
-    return ConsumerStoreCallbacks<decltype(tC_rAux), decltype(tC_gAux), decltype(args.residue_mn)>(
-        cute::move(tC_rAux), cute::move(tC_gAux), args.residue_mn, params);
+    return ConsumerStoreCallbacks<decltype(tC_rAux), decltype(tC_gAux), decltype(args.tCcD), decltype(args.residue_mn)>(
+        cute::move(tC_rAux), cute::move(tC_gAux), args.tCcD, args.residue_mn, params);
   }
 };
 

@@ -229,7 +229,7 @@ struct ClusterLaunchParams {
 /// void const* kernel_ptr =
 ///   const_cast<void const*>(reinterpret_cast<void*>(
 ///     &kernel<SharedMemory, X, Y, Z>));
-/// auto status = launch_on_cluster(
+/// auto status = launch_kernel_on_cluster(
 ///   {grid_dims, block_dims, cluster_dims, sizeof(SharedMemory)},
 ///   kernel_ptr, x, y, z);
 /// @endcode
@@ -243,10 +243,10 @@ launch_kernel_on_cluster(const ClusterLaunchParams& params,
   // the parameters as an array of raw pointers.
   if constexpr (sizeof...(Args) == 0) {
     return cutlass::ClusterLauncher::launch(
-      params.grid_dims, 
-      params.cluster_dims, 
+      params.grid_dims,
+      params.cluster_dims,
       params.block_dims,
-      params.smem_size_in_bytes, 
+      params.smem_size_in_bytes,
       params.cuda_stream,
       kernel_ptr, nullptr);
   }
@@ -255,12 +255,12 @@ launch_kernel_on_cluster(const ClusterLaunchParams& params,
       detail::checked_addressof(std::forward<Args>(args))...
     };
     return cutlass::ClusterLauncher::launch(
-      params.grid_dims, 
-      params.cluster_dims, 
+      params.grid_dims,
+      params.cluster_dims,
       params.block_dims,
-      params.smem_size_in_bytes, 
+      params.smem_size_in_bytes,
       params.cuda_stream,
-      kernel_ptr, 
+      kernel_ptr,
       kernel_params);
   }
 }

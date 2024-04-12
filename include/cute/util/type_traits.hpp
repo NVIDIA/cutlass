@@ -101,6 +101,9 @@ using CUTE_STL_NAMESPACE::is_lvalue_reference_v;
 using CUTE_STL_NAMESPACE::is_reference;
 using CUTE_STL_NAMESPACE::is_trivially_copyable;
 
+using CUTE_STL_NAMESPACE::is_convertible;
+using CUTE_STL_NAMESPACE::is_convertible_v;
+
 using CUTE_STL_NAMESPACE::is_same;
 using CUTE_STL_NAMESPACE::is_same_v;
 
@@ -247,4 +250,15 @@ is_valid(F&&, Args&&...) {
   return detail::is_valid_impl<F&&, Args&&...>(int{});
 }
 
+template <bool B, template<class...> class True, template<class...> class False>
+struct conditional_template {
+  template <class... U>
+  using type = True<U...>;
+};
+
+template <template<class...> class True, template<class...> class False>
+struct conditional_template<false, True, False> {
+  template <class... U>
+  using type = False<U...>;
+};
 } // end namespace cute

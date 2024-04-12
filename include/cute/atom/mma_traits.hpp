@@ -149,17 +149,17 @@ mma_unpack(MMA_Traits<MMA_Op, MMA_Args...> const& traits,
     //CUTE_STATIC_ASSERT_V(size(rC) == Int<RegNumC>{});
 
     if constexpr (detail::supports_output_scaling<MMATraits>::value) {
-      detail::explode_with_d_scaling(MMA_Op::fma,
-            rA, make_int_sequence<RegNumA>{},
-            rB, make_int_sequence<RegNumB>{},
-            rC, make_int_sequence<RegNumC>{},
-            traits.accumulate_);
+      detail::explode(MMA_Op::fma,
+                      rA, make_int_sequence<RegNumA>{},
+                      rB, make_int_sequence<RegNumB>{},
+                      rC, make_int_sequence<RegNumC>{},
+                      &(traits.accumulate_), seq<0>{});
     }
     else {
       detail::explode(MMA_Op::fma,
-                  rA, make_int_sequence<RegNumA>{},
-                  rB, make_int_sequence<RegNumB>{},
-                  rC, make_int_sequence<RegNumC>{});
+                      rA, make_int_sequence<RegNumA>{},
+                      rB, make_int_sequence<RegNumB>{},
+                      rC, make_int_sequence<RegNumC>{});
     }
   }
   else {
@@ -169,19 +169,19 @@ mma_unpack(MMA_Traits<MMA_Op, MMA_Args...> const& traits,
       CUTE_STATIC_ASSERT_V(size(rD) == Int<RegNumD>{});
       CUTE_STATIC_ASSERT_V(size(rC) == Int<RegNumC>{});
       if constexpr (detail::supports_output_scaling<MMATraits>::value) {
-        detail::explode_with_d_scaling(MMA_Op::fma,
+        detail::explode(MMA_Op::fma,
                         rD, make_int_sequence<RegNumD>{},
                         rA, make_int_sequence<RegNumA>{},
                         rB, make_int_sequence<RegNumB>{},
                         rC, make_int_sequence<RegNumC>{},
-                        traits.accumulate_);
+                        &(traits.accumulate_), seq<0>{});
       }
       else {
         detail::explode(MMA_Op::fma,
-                  rD, make_int_sequence<RegNumD>{},
-                  rA, make_int_sequence<RegNumA>{},
-                  rB, make_int_sequence<RegNumB>{},
-                  rC, make_int_sequence<RegNumC>{});
+                        rD, make_int_sequence<RegNumD>{},
+                        rA, make_int_sequence<RegNumA>{},
+                        rB, make_int_sequence<RegNumB>{},
+                        rC, make_int_sequence<RegNumC>{});
       }
   }
 }
@@ -198,7 +198,7 @@ template <class MMA_Op, class... MMA_Args,
 CUTE_HOST_DEVICE constexpr
 void
 mma_unpack(MMA_Traits<MMA_Op, MMA_Args...> const& traits,
-           Tensor<TD, DLayout>      && D,
+           Tensor<TD, DLayout>     &&  D,
            Tensor<TA, ALayout> const&  A,
            Tensor<TB, BLayout> const&  B,
            Tensor<TC, CLayout> const&  C)

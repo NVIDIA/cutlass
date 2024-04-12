@@ -61,7 +61,7 @@ template <
   class ElementD,
   class GmemLayoutTagD,
   int AlignmentD,
-  class Schedule,
+  class EpilogueScheduleType,
   class FusionOpOrCallbacks = cutlass::epilogue::fusion::LinearCombination<ElementD,ElementCompute,ElementC,ElementCompute>,
   class Enable = void
 >

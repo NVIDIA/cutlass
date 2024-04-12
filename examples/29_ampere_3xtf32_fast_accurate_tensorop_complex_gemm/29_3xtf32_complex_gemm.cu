@@ -34,7 +34,7 @@
   difference is that this example uses 3xtf32 on complex gemm.
 
   To enable this feature, the only change needs to make is to change OpMultiplyAddComplex
-  to OpMultiplyAddComplexFastF32. 
+  to OpMultiplyAddComplexFastF32.
 */
 
 #include <iostream>
@@ -74,14 +74,14 @@ struct Result {
   double l2_norm_fp32_vs_fp64;
 
   // ctor
-  Result(  
+  Result(
     int m, int n, int k,
     double runtime_ms, double gflops,
     double l2_norm_3xtf32_vs_fp64,
     double l2_norm_1xtf32_vs_fp64,
-    double l2_norm_fp32_vs_fp64) : 
+    double l2_norm_fp32_vs_fp64) :
     m(m), n(n), k(k),
-    runtime_ms(runtime_ms), gflops(gflops), 
+    runtime_ms(runtime_ms), gflops(gflops),
     l2_norm_3xtf32_vs_fp64(l2_norm_3xtf32_vs_fp64),
     l2_norm_1xtf32_vs_fp64(l2_norm_1xtf32_vs_fp64),
     l2_norm_fp32_vs_fp64(l2_norm_fp32_vs_fp64)   {}
@@ -124,7 +124,7 @@ struct Options {
   int iterations;
   int seed;
   bool benchmark;
-  
+
   Options():
     help(false),
     problem_size({3456, 4096, 4096}),
@@ -153,7 +153,7 @@ struct Options {
 
     cmd.get_cmd_line_argument("alpha", alpha);
     cmd.get_cmd_line_argument("beta", beta);
-    
+
     cmd.get_cmd_line_argument("iterations", iterations);
     cmd.get_cmd_line_argument("seed", seed);
     cmd.get_cmd_line_argument("rand_mode", rand_mode);
@@ -190,9 +190,9 @@ struct Options {
   /// Compute performance in GFLOP/s
   double gflops(double runtime_s) const {
 
-    // Number of real-valued multiply-adds 
+    // Number of real-valued multiply-adds
     int64_t fmas = problem_size.product();
-    
+
     // Two flops per multiply-add
     return 2.0 * double(fmas) / double(1.0e9) / runtime_s;
   }
@@ -239,7 +239,7 @@ constexpr int NumStages = 3;
 constexpr cutlass::ComplexTransform TransformA = cutlass::ComplexTransform::kNone;
 constexpr cutlass::ComplexTransform TransformB = cutlass::ComplexTransform::kNone;
 
-// 
+//
 // Gemm Operators (Gemm_3xTF32, Gemm_1xTF32, GEMM_F32, GEMM_F64)
 //
 
@@ -260,7 +260,7 @@ using Gemm_3xTF32 = cutlass::gemm::device::GemmComplex<
                                               EpilogueOp,
                                               SwizzleThreadBlock,
                                               NumStages,
-                                              TransformA, 
+                                              TransformA,
                                               TransformB,
                                               cutlass::arch::OpMultiplyAddComplexFastF32>;
 
@@ -281,7 +281,7 @@ using Gemm_1xTF32 = cutlass::gemm::device::GemmComplex<
                                               EpilogueOp,
                                               SwizzleThreadBlock,
                                               NumStages,
-                                              TransformA, 
+                                              TransformA,
                                               TransformB,
                                               cutlass::arch::OpMultiplyAddComplex>;
 
@@ -296,7 +296,7 @@ bool run(Options &options) {
   cutlass::HostTensor<cutlass::complex<float>, LayoutInputA> tensor_a_F32(problem_size.mk());  // <- Create matrix A with dimensions M x K
   cutlass::HostTensor<cutlass::complex<float>, LayoutInputB> tensor_b_F32(problem_size.kn());  // <- Create matrix B with dimensions K x N
   cutlass::HostTensor<cutlass::complex<float>, LayoutOutput> tensor_c_F32(problem_size.mn());  // <- Create matrix C with dimensions M x N
-  cutlass::HostTensor<cutlass::complex<float>, LayoutOutput> tensor_d_F32(problem_size.mn());  // <- Create matrix D with dimensions M x N 
+  cutlass::HostTensor<cutlass::complex<float>, LayoutOutput> tensor_d_F32(problem_size.mn());  // <- Create matrix D with dimensions M x N
 
   if (options.rand_mode == "uniform") {
     const float min = -1;
@@ -337,7 +337,7 @@ bool run(Options &options) {
   }
   cutlass::reference::host::TensorFill(
       tensor_d_F32.host_view());  // <- fill matrix D on host with zeros
-  
+
   // Copy data from host to GPU
   tensor_a_F32.sync_device();
   tensor_b_F32.sync_device();
@@ -351,7 +351,7 @@ bool run(Options &options) {
   cutlass::HostTensor<cutlass::complex<double>, LayoutInputA> tensor_a_F64(problem_size.mk());  // <- Create matrix A with dimensions M x K
   cutlass::HostTensor<cutlass::complex<double>, LayoutInputB> tensor_b_F64(problem_size.kn());  // <- Create matrix B with dimensions K x N
   cutlass::HostTensor<cutlass::complex<double>, LayoutOutput> tensor_c_F64(problem_size.mn());  // <- Create matrix C with dimensions M x N
-  
+
   // Gemm output (D) for GEMM_F64
   cutlass::HostTensor<cutlass::complex<double>, LayoutOutput> tensor_d_F64(problem_size.mn());  // <- Create matrix D with dimensions M x N
   // Gemm output (D) for GEMM_3xTF32
@@ -366,7 +366,7 @@ bool run(Options &options) {
   cutlass::reference::host::TensorCopy(tensor_d_F64.host_view(), tensor_d_F32.host_view());
   cutlass::reference::host::TensorCopy(tensor_d_3xTF32.host_view(), tensor_d_F32.host_view());
   cutlass::reference::host::TensorCopy(tensor_d_1xTF32.host_view(), tensor_d_F32.host_view());
-  
+
   // Copy data from host to GPU
   tensor_a_F64.sync_device();
   tensor_b_F64.sync_device();
@@ -404,7 +404,7 @@ bool run(Options &options) {
   // Instantiate CUTLASS kernel depending on templates
   Gemm_3xTF32 gemm_op;
 
-  // Check the problem size is supported or not 
+  // Check the problem size is supported or not
   cutlass::Status status_3xtf32 = gemm_op.can_implement(arguments_3xtf32);
   CUTLASS_CHECK(status_3xtf32);
 
@@ -508,7 +508,7 @@ bool run(Options &options) {
   // Instantiate CUTLASS kernel depending on templates
   Gemm_1xTF32 gemm_op_1xtf32;
 
-  // Check the problem size is supported or not 
+  // Check the problem size is supported or not
   cutlass::Status status_1xtf32 = gemm_op_1xtf32.can_implement(arguments_1xtf32);
   CUTLASS_CHECK(status_1xtf32);
 
@@ -569,7 +569,7 @@ bool run(Options &options) {
   tensor_d_F32.sync_host();
 
   ////////////////////////////////////////////////////////////////////////////////
-  ///////               Compute l2 norms 
+  ///////               Compute l2 norms
   ////////////////////////////////////////////////////////////////////////////////
 
   // l2 norm 3xTF32 vs F64
@@ -606,7 +606,7 @@ bool run(Options &options) {
   std::cout << "GFLOPs: " << result.gflops << std::endl;
   std::cout << "Normalized L2 norm of" << std::endl;
   std::cout.precision(8);
-  std::cout << std::scientific 
+  std::cout << std::scientific
             << " - 3xTF32 error with FP64 reference : " << result.l2_norm_3xtf32_vs_fp64 << std::endl
             << " - 1xTF32 error with FP64 reference : " << result.l2_norm_1xtf32_vs_fp64 << std::endl
             << " - FP32 error with FP64 reference   : " << result.l2_norm_fp32_vs_fp64 << std::endl;
@@ -615,11 +615,11 @@ bool run(Options &options) {
 }
 
 int main(int argc, const char **argv) {
-  
+
   bool notSupported = false;
 
   // Ampere Tensor Core operations exposed with mma.sync and ldmatrix are first available
-  // in CUDA 11.0. 
+  // in CUDA 11.0.
   //
   // CUTLASS must be compiled with CUDA 11.0 Toolkit to run these examples.
   if (!(__CUDACC_VER_MAJOR__ >= 11)) {
@@ -632,7 +632,7 @@ int main(int argc, const char **argv) {
   cudaError_t error = cudaGetDeviceProperties(&props, 0);
   if (error != cudaSuccess) {
     std::cerr << "cudaGetDeviceProperties() returned an error: " << cudaGetErrorString(error) << std::endl;
-    return false;
+    return -1;
   }
 
   if (!((props.major * 10 + props.minor) >= 80)) {
@@ -658,17 +658,17 @@ int main(int argc, const char **argv) {
 
   if (options.benchmark) {
     for (int k = 4; k <= 65536; k *= 2) {
-  
+
       options.problem_size[2] = k;
-  
+
       printf("Gemm problem size: %d x %d x %d\n", \
         options.problem_size.m(), options.problem_size.n(), options.problem_size.k());
-  
+
       if (!options.valid()) {
         std::cerr << "Invalid problem." << std::endl;
         return -1;
       }
-  
+
       result &= run(options);
     }
   } else {

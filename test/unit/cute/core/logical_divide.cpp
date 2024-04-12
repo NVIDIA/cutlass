@@ -227,27 +227,42 @@ TEST(CuTe_core, Logical_divide)
   ASSERT_TRUE(decltype(stride<1>(result) == Int<48>{})::value);
   }
 
-  // DISALLOWED
-  //{
-  //auto layout = make_layout(make_shape(128,4,3), make_stride(1,512,0));
-  //auto tile   = Layout<_32>{};
+  {
+  auto layout = make_layout(make_shape(Int<32>{}, Int<4>{}, 4));
+  auto tile   = Layout<_64>{};
 
-  //test_logical_divide(layout, tile);
-  //}
+  test_logical_divide(layout, tile);
 
-  //{
-  //auto layout = make_layout(make_shape(128,4,3), make_stride(1,512,0));
-  //auto tile   = Layout<_32,_2>{};
+  // Enforcement of result
+  auto result = logical_divide(layout, tile);
+  ASSERT_TRUE(bool( shape(result) == make_shape (_64{}, make_shape ( _2{},     4))));
+  ASSERT_TRUE(bool(stride(result) == make_stride( _1{}, make_stride(_64{},_128{}))));
+  }
 
-  //CUTLASS_TRACE_HOST("complement: " << complement(tile, size(layout)));
-  //test_logical_divide(layout, tile);
-  //}
 
-  //{
-  //auto layout = make_layout(make_shape(16,4,3), make_stride(1,512,0));
-  //auto tile   = Layout<_32>{};
+  //
+  // ALLOWED, but dangerous due to the dynamic lhs shapes
+  //   Consider disallowing...
+  //
 
-  //CUTLASS_TRACE_HOST("complement: " << complement(tile, size(layout)));
-  //test_logical_divide(layout, tile);
-  //}
+  {
+  auto layout = make_layout(make_shape(128,4,3), make_stride(1,512,0));
+  auto tile   = Layout<_32>{};
+
+  test_logical_divide(layout, tile);
+  }
+
+  {
+  auto layout = make_layout(make_shape(128,4,3), make_stride(1,512,0));
+  auto tile   = Layout<_32,_2>{};
+
+  test_logical_divide(layout, tile);
+  }
+
+  {
+  auto layout = make_layout(make_shape(16,4,3), make_stride(1,512,0));
+  auto tile   = Layout<_32>{};
+
+  test_logical_divide(layout, tile);
+  }
 }
