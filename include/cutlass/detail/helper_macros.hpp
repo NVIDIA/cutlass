@@ -146,13 +146,13 @@ namespace cutlass {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-#ifdef _MSVC_LANG  
-#define MSVC_LANG _MSVC_LANG
+#if defined(_MSVC_LANG)
+#  define CUTLASS_CPLUSPLUS _MSVC_LANG
 #else
-#define MSVC_LANG 0
+#  define CUTLASS_CPLUSPLUS __cplusplus
 #endif
 
-#if (201700L <= __cplusplus || 201700L <= MSVC_LANG)
+#if (201700L <= CUTLASS_CPLUSPLUS)
 #define CUTLASS_CONSTEXPR_IF_CXX17 constexpr
 #define CUTLASS_CXX17_OR_LATER 1
 #else
