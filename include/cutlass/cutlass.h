@@ -107,7 +107,7 @@ static const int NumThreadsPerQuadPair = NumThreadsPerQuad * 2;
 CUTLASS_HOST_DEVICE uint ThreadIdxX() {
 #if defined(__CUDA_ARCH__)
   return threadIdx.x;
-#elif defined(__SYCL_Device_ONLY__)
+#elif defined(__SYCL_DEVICE_ONLY__)
   return syclcompat::local_id::x();
 #else
   return 0;
@@ -117,7 +117,7 @@ CUTLASS_HOST_DEVICE uint ThreadIdxX() {
 CUTLASS_HOST_DEVICE uint ThreadIdxY() {
 #if defined(__CUDA_ARCH__) 
   return threadIdx.y;
-#elif defined(__SYCL_Device_ONLY__)
+#elif defined(__SYCL_DEVICE_ONLY__)
   return syclcompat::local_id::y();
 #else
   return 0;
@@ -127,7 +127,7 @@ CUTLASS_HOST_DEVICE uint ThreadIdxY() {
 CUTLASS_HOST_DEVICE uint ThreadIdxZ() {
 #if defined(__CUDA_ARCH__)
   return threadIdx.z;
-#elif defined(__SYCL_Device_ONLY__)
+#elif defined(__SYCL_DEVICE_ONLY__)
   return syclcompat::local_id::z();
 #else
   return 0;
@@ -137,7 +137,7 @@ CUTLASS_HOST_DEVICE uint ThreadIdxZ() {
 CUTLASS_HOST_DEVICE uint BlockIdxX() {
 #if defined(__CUDA_ARCH__)
   return blockIdx.x; 
-#elif defined(__SYCL_Device_ONLY__)
+#elif defined(__SYCL_DEVICE_ONLY__)
   return syclcompat::work_group_id::x();
 #else
   return 0;
@@ -147,7 +147,7 @@ CUTLASS_HOST_DEVICE uint BlockIdxX() {
 CUTLASS_HOST_DEVICE uint BlockIdxY() {
 #if defined(__CUDA_ARCH__)
   return blockIdx.y; 
-#elif defined(__SYCL_Device_ONLY__)
+#elif defined(__SYCL_DEVICE_ONLY__)
   return syclcompat::work_group_id::y();
 #else
   return 0;
@@ -157,7 +157,7 @@ CUTLASS_HOST_DEVICE uint BlockIdxY() {
 CUTLASS_HOST_DEVICE uint BlockIdxZ() {
 #if defined(__CUDA_ARCH__) 
   return blockIdx.z;
-#elif defined(__SYCL_Device_ONLY__)
+#elif defined(__SYCL_DEVICE_ONLY__)
   return syclcompat::work_group_id::z();
 #else
   return 0;
@@ -167,7 +167,7 @@ CUTLASS_HOST_DEVICE uint BlockIdxZ() {
 CUTLASS_HOST_DEVICE uint BlockDimX() {
 #if defined(__CUDA_ARCH__) 
   return blockDim.x;
-#elif defined(__SYCL_Device_ONLY__)
+#elif defined(__SYCL_DEVICE_ONLY__)
   return syclcompat::work_group_range::x();
 #else
   return 0;
@@ -177,7 +177,7 @@ CUTLASS_HOST_DEVICE uint BlockDimX() {
 CUTLASS_HOST_DEVICE uint BlockDimY() {
 #if defined(__CUDA_ARCH__) 
   return blockDim.y;
-#elif defined(__SYCL_Device_ONLY__)
+#elif defined(__SYCL_DEVICE_ONLY__)
   return syclcompat::work_group_range::y();
 #else
   return 0;
@@ -187,7 +187,7 @@ CUTLASS_HOST_DEVICE uint BlockDimY() {
 CUTLASS_HOST_DEVICE uint BlockDimZ() {
 #if defined(__CUDA_ARCH__) 
   return blockDim.z;
-#elif defined(__SYCL_Device_ONLY__)
+#elif defined(__SYCL_DEVICE_ONLY__)
   return syclcompat::work_group_range::z();
 #else
   return 0;
@@ -197,7 +197,7 @@ CUTLASS_HOST_DEVICE uint BlockDimZ() {
 CUTLASS_HOST_DEVICE uint GridDimX() {
 #if defined(__CUDA_ARCH__) 
   return gridDim.x;
-#elif defined(__SYCL_Device_ONLY__)
+#elif defined(__SYCL_DEVICE_ONLY__)
   return syclcompat::global_range::x();
 #else
   return 0;
@@ -207,7 +207,7 @@ CUTLASS_HOST_DEVICE uint GridDimX() {
 CUTLASS_HOST_DEVICE uint GridDimY() {
 #if defined(__CUDA_ARCH__) 
   return gridDim.y;
-#elif defined(__SYCL_Device_ONLY__)
+#elif defined(__SYCL_DEVICE_ONLY__)
   return syclcompat::global_range::y();
 #else
   return 0;
@@ -217,7 +217,7 @@ CUTLASS_HOST_DEVICE uint GridDimY() {
 CUTLASS_HOST_DEVICE uint GridDimZ() {
 #if defined(__CUDA_ARCH__) 
   return gridDim.z;
-#elif defined(__SYCL_Device_ONLY__)
+#elif defined(__SYCL_DEVICE_ONLY__)
   return syclcompat::global_range::z();
 #else
   return 0;
@@ -229,7 +229,7 @@ CUTLASS_HOST_DEVICE uint GridDimZ() {
 CUTLASS_DEVICE void syncthreads() {
 #if defined(__CUDA_ARCH__) 
     __syncthreads();
-#elif defined(__SYCL_Device_ONLY__)
+#elif defined(__SYCL_DEVICE_ONLY__)
   syclcompat::wg_barrier();
 #endif
 }
@@ -237,7 +237,7 @@ CUTLASS_DEVICE void syncthreads() {
 CUTLASS_DEVICE int syncthreads_and(int cond) {
 #if defined(__CUDA_ARCH__) 
   return __syncthreads_and(cond);
-#elif defined(__SYCL_Device_ONLY__)
+#elif defined(__SYCL_DEVICE_ONLY__)
   // TODO: Add SYCL equivalent function
   assert(false);
 #else
@@ -248,7 +248,7 @@ CUTLASS_DEVICE int syncthreads_and(int cond) {
 CUTLASS_DEVICE void syncwarp() {
 #if defined(__CUDA_ARCH__) 
     __syncwarp();
-#elif defined(__SYCL_Device_ONLY__)
+#elif defined(__SYCL_DEVICE_ONLY__)
   // TODO: Add SYCL equivalent function
   assert(false);
 #endif
@@ -257,7 +257,7 @@ CUTLASS_DEVICE void syncwarp() {
 CUTLASS_DEVICE void threadfence() {
 #if defined(__CUDA_ARCH__) 
     __threadfence();
-#elif defined(__SYCL_Device_ONLY__)
+#elif defined(__SYCL_DEVICE_ONLY__)
   // TODO: Add SYCL equivalent function
   assert(false);
 #endif
@@ -269,7 +269,7 @@ CUTLASS_DEVICE
 uint byte_perm(uint x, uint y, uint s) {
 #if defined(__CUDA_ARCH__) 
    return __byte_perm(x, y, s);
-#elif defined(__SYCL_Device_ONLY__)
+#elif defined(__SYCL_DEVICE_ONLY__)
   // TODO: Add SYCL equivalent function
   assert(false);
   return 0;
@@ -284,7 +284,7 @@ CUTLASS_DEVICE
 uint shfl_up_sync(const unsigned mask, const uint var, const int delta, const int width = NumThreadsPerWarp) {
 #if defined(__CUDA_ARCH__) 
   return __shfl_up_sync(mask, var, delta, width);
-#elif defined(__SYCL_Device_ONLY__)
+#elif defined(__SYCL_DEVICE_ONLY__)
   // TODO: Add SYCL equivalent function
   assert(false);
   return 0;
@@ -297,7 +297,7 @@ CUTLASS_DEVICE
 uint shfl_down_sync(const unsigned mask, const uint var, const int delta, const int width = NumThreadsPerWarp) {
 #if defined(__CUDA_ARCH__) 
   return __shfl_down_sync(mask, var, delta, width);
-#elif defined(__SYCL_Device_ONLY__)
+#elif defined(__SYCL_DEVICE_ONLY__)
   // TODO: Add SYCL equivalent function
   assert(false);
   return 0;
@@ -310,7 +310,7 @@ CUTLASS_DEVICE
 uint shfl_sync(const unsigned mask, const uint var, const int delta, const int width = NumThreadsPerWarp) {
 #if defined(__CUDA_ARCH__) 
   return __shfl_sync(mask, var, delta, width);
-#elif defined(__SYCL_Device_ONLY__)
+#elif defined(__SYCL_DEVICE_ONLY__)
   // TODO: Add SYCL equivalent function
   assert(false);
   return 0;
@@ -325,7 +325,7 @@ template <typename T>
 CUTLASS_DEVICE T hfma2(const T a, const T b, const T c) {
 #if defined(__CUDA_ARCH__)
   return hfma2(a, b, c);
-#elif defined(__SYCL_Device_ONLY__)
+#elif defined(__SYCL_DEVICE_ONLY__)
   // TODO: Add SYCL equivalent function
   assert(false);
   return  T(0);
@@ -338,7 +338,7 @@ CUTLASS_DEVICE T hfma2(const T a, const T b, const T c) {
 
 #if defined(CUTLASS_ENABLE_SYCL)
 CUTLASS_DEVICE int atomicAdd(int *address, int val) {
-#if defined(__SYCL_Device_ONLY__)
+#if defined(__SYCL_DEVICE_ONLY__)
   // TODO: Add SYCL equivalent function
   assert(false);
 #else 
@@ -347,7 +347,7 @@ CUTLASS_DEVICE int atomicAdd(int *address, int val) {
 }
 
 CUTLASS_DEVICE int atomicCAS(int *address, int compare, int val) {
-#if defined(__SYCL_Device_ONLY__)
+#if defined(__SYCL_DEVICE_ONLY__)
   // TODO: Add SYCL equivalent function
   assert(false);
 #else 
