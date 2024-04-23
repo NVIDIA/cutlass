@@ -221,7 +221,7 @@ as a 5x4 matrix in a column-major order.
     * `(10,2):(16,4) o 5:1 => (5,1):(16,4)`. Mod out the shape `5`.
     * `(10,2):(16,4) o 4:5 => (2,2):(80,4)`. Div out the stride `5`.
 
-3. ` = ((5,1):(16,4), (2,2):(80,4))`. Collect results.
+3. ` = ((5,1):(16,4), (2,2):(80,4))`. Composed Layout as concatenation of sublayouts.
 
 4. ` = (5:16, (2,2):(80,4))`. By-mode coalesce.
 
