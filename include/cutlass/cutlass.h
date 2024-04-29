@@ -168,7 +168,7 @@ CUTLASS_HOST_DEVICE uint BlockDimX() {
 #if defined(__CUDA_ARCH__) 
   return blockDim.x;
 #elif defined(__SYCL_DEVICE_ONLY__)
-  return syclcompat::work_group_range::x();
+  return syclcompat::local_range::x();
 #else
   return 0;
 #endif
@@ -178,7 +178,7 @@ CUTLASS_HOST_DEVICE uint BlockDimY() {
 #if defined(__CUDA_ARCH__) 
   return blockDim.y;
 #elif defined(__SYCL_DEVICE_ONLY__)
-  return syclcompat::work_group_range::y();
+  return syclcompat::local_range::y();
 #else
   return 0;
 #endif
@@ -188,7 +188,7 @@ CUTLASS_HOST_DEVICE uint BlockDimZ() {
 #if defined(__CUDA_ARCH__) 
   return blockDim.z;
 #elif defined(__SYCL_DEVICE_ONLY__)
-  return syclcompat::work_group_range::z();
+  return syclcompat::local_range::z();
 #else
   return 0;
 #endif
@@ -198,7 +198,7 @@ CUTLASS_HOST_DEVICE uint GridDimX() {
 #if defined(__CUDA_ARCH__) 
   return gridDim.x;
 #elif defined(__SYCL_DEVICE_ONLY__)
-  return syclcompat::global_range::x();
+  return syclcompat::work_group_range::x();
 #else
   return 0;
 #endif
@@ -208,7 +208,7 @@ CUTLASS_HOST_DEVICE uint GridDimY() {
 #if defined(__CUDA_ARCH__) 
   return gridDim.y;
 #elif defined(__SYCL_DEVICE_ONLY__)
-  return syclcompat::global_range::y();
+  return syclcompat::work_group_range::y();
 #else
   return 0;
 #endif
@@ -218,7 +218,7 @@ CUTLASS_HOST_DEVICE uint GridDimZ() {
 #if defined(__CUDA_ARCH__) 
   return gridDim.z;
 #elif defined(__SYCL_DEVICE_ONLY__)
-  return syclcompat::global_range::z();
+  return syclcompat::work_group_range::z();
 #else
   return 0;
 #endif
@@ -362,6 +362,8 @@ CUTLASS_DEVICE int atomicCAS(int *address, int compare, int val) {
 CUTLASS_HOST_DEVICE bool thread0() {
   #if defined(__CUDA_ARCH__)
     return (!threadIdx.x && !threadIdx.y && !threadIdx.z) && (!blockIdx.x && !blockIdx.y && !blockIdx.z);
+  #elif defined(CUTLASS_ENABLE_SYCL)
+    return (!syclcompat::global_id::x() && !syclcompat::global_id::y() && !syclcompat::global_id::z());
   #else
     return false;
   #endif
