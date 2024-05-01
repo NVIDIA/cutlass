@@ -49,7 +49,7 @@ namespace cute
 
 SYCL_DEVICE_BUILTIN(void __builtin_IB_subgroup_block_write_flat_u32_m8k16v1(
     long baseoffset, int width_minus_one, int height_minus_one,
-    int pitch_minus_one, intel::coord_t coord, uint8 data));
+    int pitch_minus_one, intel::coord_t coord, intel::uint8 data));
 SYCL_DEVICE_BUILTIN(intel::ushort8 __builtin_IB_subgroup_block_read_flat_u16_m8k16v1(
     long baseoffset, int width_minus_one, int height_minus_one,
     int pitch_minus_one, intel::coord_t coord));
@@ -63,7 +63,7 @@ SYCL_DEVICE_BUILTIN(intel::ushort32 __builtin_IB_subgroup_block_read_flat_u16_m1
     long baseoffset, int width_minus_one, int height_minus_one,
     int pitch_minus_one, intel::coord_t coord));
 SYCL_DEVICE_BUILTIN(intel::ushort16 intel_subgroup_block_read_u16_m8k16v2(
-    __global void *baseoffset, int width_minus_one, int height_minus_one,
+    long baseoffset, int width_minus_one, int height_minus_one,
     int pitch_minus_one, intel::coord_t coord));
 SYCL_DEVICE_BUILTIN(intel::ushort32 __builtin_IB_subgroup_block_read_flat_u16_m32k16v1(
     long baseoffset, int width_minus_one, int height_minus_one,
@@ -81,7 +81,7 @@ SYCL_DEVICE_BUILTIN(intel::int16 __builtin_IB_subgroup_block_read_flat_transform
     long baseoffset, int width_minus_one, int height_minus_one,
     int pitch_minus_one, intel::coord_t coord));
 SYCL_DEVICE_BUILTIN(intel::int8 intel_subgroup_block_read_transform_u16_k16(
-    __global void * baseoffset, int width_minus_one, int height_minus_one,
+    long baseoffset, int width_minus_one, int height_minus_one,
     int pitch_minus_one, intel::coord_t coord));
 
 
@@ -176,7 +176,7 @@ struct XE_2D_U16x8x16x1x2_LD_N
     #if defined(ARCH_PVC_ACTIVATED)
       static_assert(sizeof(T) == 2, "Expected T to have size 2");
       intel::ushort16 tmp = (intel_subgroup_block_read_u16_m8k16v2(
-          (__global void *)baseoffset, width, height, pitch, coord));
+          (long)baseoffset, width, height, pitch, coord));
       *(intel::ushort16 *)dst = *reinterpret_cast<intel::ushort16 *>(&tmp);
     #else
       CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware")
@@ -280,7 +280,7 @@ struct XE_2D_U16x16x16x1x1_V
     #if defined(ARCH_PVC_ACTIVATED)
       static_assert(sizeof(T) == 2, "Expected T to have size 2");
       // Note: this function is in the headers, but is named confusingly and returns unsigned integers rather than signed integers:
-      *(intel::int8*) dst = intel_subgroup_block_read_transform_u16_k16((__global void *)base_address, width, height, pitch, coord);
+      *(intel::int8*) dst = intel_subgroup_block_read_transform_u16_k16((long)base_address, width, height, pitch, coord);
     #else
       CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware")
     #endif
