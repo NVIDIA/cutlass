@@ -191,21 +191,21 @@ Clearly, CuTe does not use arrays to store shapes or strides and the above code 
 
 #### Example 1 -- Reshape a layout into a matrix
 
-`20:2  o  (5,4):(4,1)`.
+`20:2  o  (5,4):(4,1)`. Composition formulation.
 
 This describes interpreting the layout `20:2`
 as a 5x4 matrix in a row-major order.
 
-1. ` = 20:2 o (5:4,4:1)`. Concatenation of sublayouts.
+1. ` = 20:2 o (5:4,4:1)`. Layout `(5,4):(4,1)` as concatenation of sublayouts.
 
 2. ` = (20:2 o 5:4, 20:2 o 4:1)`. Left distributivity.
 
     * `20:2 o 5:4  =>  5:8`. Trivial case.
     * `20:2 o 4:1  =>  4:2`. Trivial case.
 
-3. ` = (5:8, 4:2)`.
+3. ` = (5:8, 4:2)`. Composed Layout as concatenation of sublayouts.
 
-4. ` = (5,4):(8,2)`. Concatenation of sublayouts.
+4. ` = (5,4):(8,2)`. Final composed layout.
 
 #### Example 2 -- Reshape a layout into a matrix
 
@@ -214,18 +214,18 @@ as a 5x4 matrix in a row-major order.
 This describes interpreting the layout `(10,2):(16,4)`
 as a 5x4 matrix in a column-major order.
 
-1. ` = (10,2):(16,4) o (5:1,4:5)`. Concatenation of sublayouts.
+1. ` = (10,2):(16,4) o (5:1,4:5)`. Layout `(5,4):(1,5)` as concatenation of sublayouts.
 
 2. ` = ((10,2):(16,4) o 5:1, (10,2):(16,4) o 4:5)`. Left distributivity.
 
     * `(10,2):(16,4) o 5:1 => (5,1):(16,4)`. Mod out the shape `5`.
     * `(10,2):(16,4) o 4:5 => (2,2):(80,4)`. Div out the stride `5`.
 
-3. ` = ((5,1):(16,4), (2,2):(80,4))`. Collect results.
+3. ` = ((5,1):(16,4), (2,2):(80,4))`. Composed Layout as concatenation of sublayouts.
 
 4. ` = (5:16, (2,2):(80,4))`. By-mode coalesce.
 
-5. ` = (5,(2,2))):(16,(80,4))`. Concatenation of sublayouts.
+5. ` = (5,(2,2))):(16,(80,4))`. Final composed layout.
 
 We get exactly this result with CuTe
 if we use compile-time shapes and strides.
