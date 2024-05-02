@@ -390,12 +390,12 @@ The elements NOT pointed to by `B` sounds like a complement, `B*`, up to the siz
 
 ### Logical Divide 1-D Example
 
-Consider tiling the 1-D layout `A = (2,4,3):(4,1,8)` with the tiler `B = 4:2`. Informally, this means that we have a 1-D vector of 24 elements in some storage order defined by `A` and we want to extract tiles of 4 elements strided by 2.
+Consider tiling the 1-D layout `A = (4,2,3):(2,1,8)` with the tiler `B = 4:2`. Informally, this means that we have a 1-D vector of 24 elements in some storage order defined by `A` and we want to extract tiles of 4 elements strided by 2.
 
 This is computed in the three steps described in the implementation above.
 * Complement of `B = 4:2` under `size(A) = 24` is `B* = (2,3):(1,8)`.
 * Concantenation of `(B,B*) = (4,(2,3)):(2,(1,8))`.
-* Composition of `A = (2,4,3):(4,1,8)` with `(B,B*)` is then `((2,2),(2,3)):((4,1),(2,8))`.
+* Composition of `A = (4,2,3):(2,1,8)` with `(B,B*)` is then `((2,2),(2,3)):((4,1),(2,8))`.
 
 <p align="center">
   <img src="../../images/cute/divide1.png" alt="divide1.png" height="150"/>
@@ -415,7 +415,7 @@ Similar to the 2-D composition example above, consider a 2-D layout `A = (9,(4,8
 
 The above figure depicts `A` as a 2-D layout with the elements pointed to by `B` highlighted in gray. The layout `B` describes our "tile" of data, and there are twelve of those tiles in `A` shown by each of the colors. After the divide, the first mode of each mode of the result is the tile of data and the second mode of each mode iterates over each tile. In that sense, this operation can be viewed as a kind of `gather` operation or as simply a permutation on the rows and cols.
 
-Note that the first mode of each mode of the result is the sublayout `(3,(2,4)):(236,(13,52))` and is precisely the result we would have received if we had applied `composition` instead of `logical_divide`.
+Note that the first mode of each mode of the result is the sublayout `(3,(2,4)):(177,(13,2))` and is precisely the result we would have received if we had applied `composition` instead of `logical_divide`.
 
 ### Zipped, Tiled, Flat Divides
 

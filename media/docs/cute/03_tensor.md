@@ -157,8 +157,8 @@ Tensor rmem_4x8_col = make_tensor<float>(Shape<_4,_8>{});
 Tensor rmem_4x8_row = make_tensor<float>(Shape<_4,_8>{},
                                          LayoutRight{});
 Tensor rmem_4x8_pad = make_tensor<float>(Shape <_4, _8>{},
-                                         Stride<_2,_32>{});
-Tensor rmem_4x8_like = make_tensor_like(smem_4x8_pad);
+                                         Stride<_32,_2>{});
+Tensor rmem_4x8_like = make_tensor_like(rmem_4x8_pad);
 ```
 
 The `make_tensor_like` function makes an owning Tensor of register memory with the same value type and shape as its input `Tensor` argument and attempts to use the same order of strides as well.
@@ -168,7 +168,7 @@ Calling `print` on each of the above tensors produces similar output
 ```
 rmem_4x8_col  : ptr[32b](0x7ff1c8fff820) o (_4,_8):(_1,_4)
 rmem_4x8_row  : ptr[32b](0x7ff1c8fff8a0) o (_4,_8):(_8,_1)
-rmem_4x8_pad  : ptr[32b](0x7ff1c8fff920) o (_4,_8):(_2,_32)
+rmem_4x8_pad  : ptr[32b](0x7ff1c8fff920) o (_4,_8):(_32,_2)
 rmem_4x8_like : ptr[32b](0x7f4158fffc60) o (_4,_8):(_8,_1)
 ```
 
@@ -194,8 +194,9 @@ decltype(auto) operator[](Coord const& coord) {
 For example, we can read and write to `Tensor`s using natural coordinates, using the variadic `operator()`, or the container-like `operator[]`.
 
 ```c++
-Tensor A = make_tensor<float>(Shape <Shape < _4,_5>,_13>{},
+Tensor A = make_tensor<float>(Shape <Shape < _4,_5>,Int<13>>{},
                               Stride<Stride<_12,_1>,_64>{});
+float* b_ptr = ...;
 Tensor B = make_tensor(b_ptr, make_shape(13, 20));
 
 // Fill A via natural coordinates op[]
@@ -261,8 +262,11 @@ Tensor C = A(_,5);
 // (_3,2):(4,1)
 Tensor D = A(make_coord(_,_),5);
 
+// (_3,_5):(4,13)
+Tensor E = A(make_coord(_,1),make_coord(0,_,1));
+
 // (2,2,_2):(1,_2,100)
-Tensor E = A(make_coord(2,_),make_coord(_,3,_));
+Tensor F = A(make_coord(2,_),make_coord(_,3,_));
 ```
 
 <p align="center">
@@ -280,8 +284,8 @@ To implement generic partitioning of a `Tensor`, we apply composition or tiling 
 Let's take a tiled example and look at how we can slice it in useful ways.
 
 ```cpp
-Tensor A = make_tensor(ptr, make_shape(24,8));  // (8,24)
-auto tiler = Shape<_8,_4>{};                    // (_4,_8)
+Tensor A = make_tensor(ptr, make_shape(8,24));  // (8,24)
+auto tiler = Shape<_4,_8>{};                    // (_4,_8)
 
 Tensor tiled_a = zipped_divide(A, tiler);       // ((_4,_8),(2,3))
 ```
@@ -313,7 +317,7 @@ Another common partitioning strategy is called a thread-value partitioning. In t
 //   to 1D coordinates within a 4x8 tensor
 // (T8,V4) -> (M4,N8)
 auto tv_layout = Layout<Shape <Shape <_2,_4>,Shape <_2, _2>>,
-                        Stride<Stride<_8,_1>,Stride<_4,_16>>{};  // (8,4)
+                        Stride<Stride<_8,_1>,Stride<_4,_16>>>{};  // (8,4)
 
 // Construct a 4x8 tensor with any layout
 Tensor A = make_tensor<float>(Shape<_4,_8>{}, LayoutRight{});    // (4,8)
