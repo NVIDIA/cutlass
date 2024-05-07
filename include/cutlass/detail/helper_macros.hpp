@@ -60,9 +60,15 @@
 #define CUTLASS_DEVICE inline
 #endif
 
+#if defined(CUTLASS_ENABLE_SYCL)
+#define CUTLASS_HOST
+#define CUTLASS_GLOBAL
+#define CUTLASS_SHARED
+#else
 #define CUTLASS_HOST __host__
 #define CUTLASS_GLOBAL __global__ static
-
+#define CUTLASS_SHARED __shared__
+#endif
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<typename T>

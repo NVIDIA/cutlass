@@ -45,7 +45,10 @@
 #include <cstring>
 #endif
 
+#if !defined(CUTLASS_ENABLE_SYCL)
 #include <cuda_bf16.h>
+#endif
+
 #include "cutlass/cutlass.h"
 #include "cutlass/platform/platform.h"
 

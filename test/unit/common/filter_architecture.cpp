@@ -29,7 +29,9 @@
  *
  **************************************************************************************************/
 
+#if !defined(CUTLASS_ENABLE_SYCL)
 #include <cuda_runtime_api.h>
+#endif
 
 #include "cutlass_unit_test.h"
 

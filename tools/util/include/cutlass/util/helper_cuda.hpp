@@ -31,7 +31,9 @@
 
 #pragma once
 
+#if !defined(CUTLASS_ENABLE_SYCL)
 #include <cuda.h>
+#endif
 
 #include <cute/util/debug.hpp>
 

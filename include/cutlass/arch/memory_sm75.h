@@ -50,7 +50,7 @@ template <
   /// .x1, .x2, or .x4
   int MatrixCount
 >
-inline __device__ void ldsm(Array<unsigned, MatrixCount> & D, void const* ptr);
+CUTLASS_DEVICE void ldsm(Array<unsigned, MatrixCount> & D, void const* ptr);
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 //
@@ -59,19 +59,19 @@ inline __device__ void ldsm(Array<unsigned, MatrixCount> & D, void const* ptr);
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// CUTLASS helper to get SMEM pointer
-inline __device__ unsigned cutlass_get_smem_pointer(void *ptr) {
+CUTLASS_DEVICE unsigned cutlass_get_smem_pointer(void *ptr) {
   return cute::cast_smem_ptr_to_uint(ptr);
 }
 
 /// CUTLASS helper to get SMEM pointer
-inline __device__ unsigned cutlass_get_smem_pointer(void const *ptr) {
+CUTLASS_DEVICE unsigned cutlass_get_smem_pointer(void const *ptr) {
   return cutlass_get_smem_pointer(const_cast<void *>(ptr));
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <>
-inline __device__ void ldsm<layout::RowMajor, 1>(
+CUTLASS_DEVICE void ldsm<layout::RowMajor, 1>(
     Array<unsigned, 1> & D,
     void const* ptr) {
 
@@ -95,7 +95,7 @@ inline __device__ void ldsm<layout::RowMajor, 1>(
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <>
-inline __device__ void ldsm<layout::RowMajor, 2>(
+CUTLASS_DEVICE void ldsm<layout::RowMajor, 2>(
     Array<unsigned, 2> & D,
     void const* ptr) {
 
@@ -119,7 +119,7 @@ inline __device__ void ldsm<layout::RowMajor, 2>(
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <>
-inline __device__ void ldsm<layout::RowMajor, 4>(
+CUTLASS_DEVICE void ldsm<layout::RowMajor, 4>(
     Array<unsigned, 4> & D,
     void const* ptr) {
 
@@ -147,7 +147,7 @@ inline __device__ void ldsm<layout::RowMajor, 4>(
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <>
-inline __device__ void ldsm<layout::ColumnMajor, 1>(
+CUTLASS_DEVICE void ldsm<layout::ColumnMajor, 1>(
     Array<unsigned, 1> & D,
     void const* ptr) {
 
@@ -171,7 +171,7 @@ inline __device__ void ldsm<layout::ColumnMajor, 1>(
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <>
-inline __device__ void ldsm<layout::ColumnMajor, 2>(
+CUTLASS_DEVICE void ldsm<layout::ColumnMajor, 2>(
     Array<unsigned, 2> & D,
     void const* ptr) {
 
@@ -195,7 +195,7 @@ inline __device__ void ldsm<layout::ColumnMajor, 2>(
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <>
-inline __device__ void ldsm<layout::ColumnMajor, 4>(
+CUTLASS_DEVICE void ldsm<layout::ColumnMajor, 4>(
     Array<unsigned, 4> & D,
     void const* ptr) {
 

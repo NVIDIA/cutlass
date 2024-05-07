@@ -33,7 +33,7 @@
 /// @file copy_traits_sm90_tma_swizzle.hpp
 /// @brief Functions for converting swizzle layout to TMA descriptor
 
-#if !defined(__CUDACC_RTC__)
+#if !defined(__CUDACC_RTC__) && !defined(CUTLASS_ENABLE_SYCL)
 #include <cuda.h>
 #endif
 

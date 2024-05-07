@@ -22,8 +22,6 @@ Currently, only one example works on NVIDIA SM 80.
 To build CUTLASS SYCL support you need the latest version of DPC++ compiler. You can either use a recent [nighly build](https://github.com/intel/llvm/releases)
 or build the compiler from source as described in [oneAPI DPC++ guidline]((https://github.com/intel/llvm/blob/sycl/sycl/doc/GetStartedGuide.md#build-dpc-toolchain-with-support-for-nvidia-cuda)).
 
-In either case, CUDA version >= 12.3 is required.
-
 ## Building with SYCL support
 Once you have your compiler installed, you need to point the
 `CMAKE_CUDA_HOST_COMPILER` flag to the clang++ provided by it.
@@ -31,9 +29,7 @@ This enables the compilation of SYCL sources without altering the current NVCC p
 
 ```
 make -G Ninja  \
-  -DCUTLASS_ENABLE_CUBLAS=ON \ 
   -DCMAKE_CUDA_HOST_COMPILER=/path/to/clang++  \
-  -DCMAKE_CUDA_COMPILER=/path/to/nvcc \ 
   -DCUTLASS_ENABLE_SYCL=ON \
   -DDPCPP_SYCL_TARGET=nvptx64-nvidia-cuda \
   -DDPCPP_SYCL_ARCH=sm_80

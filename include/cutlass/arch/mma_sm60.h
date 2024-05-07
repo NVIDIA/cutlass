@@ -34,7 +34,7 @@
 
 #pragma once
 
-#include <cuda_fp16.h>
+#include <cutlass/fp16.h>
 
 #include "cutlass/arch/mma.h"
 

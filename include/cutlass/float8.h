@@ -77,7 +77,7 @@
 #ifdef CUDA_FP8_ENABLED
 #include <cuda_fp8.h>
 #endif
-#include <cuda_fp16.h>
+#include <cutlass/fp16.h>
 
 #include "cutlass/cutlass.h"
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -413,7 +413,7 @@ struct alignas(1) float_e4m3_t : float8_base<FloatEncoding::E4M3> {
 
         return *reinterpret_cast<float_e4m3_t *>(&tmp);
     #else
-        return bitcast(Base::convert_float_to_fp8(__half2float(flt)));
+        return bitcast(Base::convert_float_to_fp8(half2float(flt)));
     #endif
     }
 
@@ -427,7 +427,7 @@ struct alignas(1) float_e4m3_t : float8_base<FloatEncoding::E4M3> {
 
         return reinterpret_cast<half2 const &>(packed).x;
     #else
-        return __float2half(Base::convert_fp8_to_float(x.storage));
+        return float2half(Base::convert_fp8_to_float(x.storage));
     #endif
     }
 
@@ -622,7 +622,7 @@ struct alignas(1) float_e5m2_t : float8_base<FloatEncoding::E5M2> {
 
         return *reinterpret_cast<float_e5m2_t *>(&tmp);
     #else
-        return bitcast(Base::convert_float_to_fp8(__half2float(flt)));
+        return bitcast(Base::convert_float_to_fp8(half2float(flt)));
     #endif
     }
 
@@ -636,7 +636,7 @@ struct alignas(1) float_e5m2_t : float8_base<FloatEncoding::E5M2> {
 
         return reinterpret_cast<half2 const &>(packed).x;
     #else
-        return __float2half(Base::convert_fp8_to_float(x.storage));
+        return float2half(Base::convert_fp8_to_float(x.storage));
     #endif
     }
 

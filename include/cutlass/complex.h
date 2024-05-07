@@ -31,9 +31,47 @@
 
 #pragma once
 
-#include <cuComplex.h>
+#if defined(CUTLASS_ENABLE_SYCL)
 
-#include <cuda_fp16.h>
+namespace cutlass {
+    // Add these definitions in the cutlass namespace, so they do not clash with the ones in cuda
+    using cuFloatComplex = std::complex<float>;
+    using cuDoubleComplex = std::complex<double>;
+
+    CUTLASS_HOST_DEVICE
+    float cuCrealf(cuFloatComplex x)
+    {
+      return x.real();
+    }
+
+    CUTLASS_HOST_DEVICE
+    float cuCimagf(cuFloatComplex x)
+    {
+      return x.imag();
+    }
+
+    CUTLASS_HOST_DEVICE double cuCreal(cuDoubleComplex x)
+    {
+      return x.real();
+    }
+
+    CUTLASS_HOST_DEVICE double cuCimag(cuDoubleComplex x)
+    {
+      return x.imag();
+    }
+
+    CUTLASS_HOST_DEVICE
+    cuFloatComplex make_cuFloatComplex(float r, float i)
+    {
+      return cuFloatComplex{r, i};
+    }
+}
+
+#else
+#include <cuComplex.h>
+#endif
+
+#include <cutlass/fp16.h>
 
 #if defined(__CUDACC_RTC__)
 #include <cuda/std/cstdint>
@@ -86,7 +124,7 @@ struct InvertComplexTransform<ComplexTransform::kConjugate> {
 // Accessors for CUDA complex types
 //
 
-#if !defined(__CUDACC_RTC__)
+#if !defined(__CUDACC_RTC__) && !defined(CUTLASS_ENABLE_SYCL)
 /// Returns the real part of the complex number
 CUTLASS_HOST_DEVICE
 float const &real(cuFloatComplex const &z) { return z.x; }

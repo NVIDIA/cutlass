@@ -3361,7 +3361,7 @@ private:
     // Scale and subtract the FP16s to get the original int4 number as FP16.
     CUTLASS_PRAGMA_UNROLL
     for (int ii = 0; ii < RegArray::kElements; ++ii) {
-      half2& fp16x2_val = reinterpret_cast<__half2&>(r[ii]);
+      half2& fp16x2_val = reinterpret_cast<half2&>(r[ii]);
       fp16x2_val = hfma2(hfma_scale, fp16x2_val, hfma_bias);
     }
     return reinterpret_cast<PackedResultType&>(r);
@@ -3475,8 +3475,8 @@ private:
     const half2& bias = reinterpret_cast<const half2&>(bias_rep);
     CUTLASS_PRAGMA_UNROLL
     for (int ii = 0; ii < RegArray::kElements; ++ii) {
-      half2& fp16x2_val = reinterpret_cast<__half2&>(r[ii]);
-      fp16x2_val = __hsub2(fp16x2_val, bias);
+      half2& fp16x2_val = reinterpret_cast<half2&>(r[ii]);
+      fp16x2_val = hsub2(fp16x2_val, bias);
     }
     return reinterpret_cast<PackedResultType&>(r);
   }
@@ -3554,8 +3554,8 @@ private:
     const half2& bias = reinterpret_cast<const half2&>(bias_rep);
     CUTLASS_PRAGMA_UNROLL
     for (int ii = 0; ii < RegArray::kElements; ++ii) {
-      half2& fp16x2_val = reinterpret_cast<__half2&>(r[ii]);
-      fp16x2_val = __hsub2(fp16x2_val, bias);
+      half2& fp16x2_val = reinterpret_cast<half2&>(r[ii]);
+      fp16x2_val = hsub2(fp16x2_val, bias);
     }
 
     return reinterpret_cast<PackedResultType&>(r);

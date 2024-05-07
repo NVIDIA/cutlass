@@ -51,6 +51,7 @@
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+#if !defined(CUTLASS_ENABLE_SYCL)
 /// Output operator for CUDA built-in dim3 type
 inline std::ostream &operator<<(std::ostream &out, dim3 d) {
   return out << d.x << ", " << d.y << ", " << d.z;
@@ -60,6 +61,7 @@ inline std::ostream &operator<<(std::ostream &out, dim3 d) {
 inline std::ostream &operator<<(std::ostream &out, cudaError_t error) {
   return out << cudaGetErrorString(error);
 }
+#endif
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 

@@ -30,7 +30,7 @@
  **************************************************************************************************/
 #pragma once
 
-#include <vector_types.h>
+#include <cutlass/vector_types.h>
 
 #include <cute/config.hpp>
 

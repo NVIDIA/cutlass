@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,47 +30,65 @@
  **************************************************************************************************/
 #pragma once
 
-#if !defined(__CUDACC_RTC__) && !defined(CUTLASS_ENABLE_SYCL)
-#include "cuda_runtime.h"
-
-#include "cutlass/trace.h"
+#if defined(CUTLASS_ENABLE_SYCL)
+#include <sycl/sycl.hpp>
+#else
+#include <cuda_fp16.h>
 #endif
 
+// Add these definitions in the cutlass namespace, so they do not clash with the ones in cuda
 namespace cutlass {
 
-struct KernelHardwareInfo {
-  //
-  // Data members
-  //
-  int device_id = 0;
-  int sm_count  = 0;
-
-  //
-  // Methods
-  //
-
-#if !defined(__CUDACC_RTC__)
-  static inline int
-  query_device_multiprocessor_count(int device_id = 0) {
-    cudaError_t result = cudaGetDevice(&device_id);
-    if (result != cudaSuccess) {
-      CUTLASS_TRACE_HOST(
-        "  cudaGetDevice() returned error "
-        << cudaGetErrorString(result));
-      return 0;
-    }
-    int multiprocessor_count;
-    result = cudaDeviceGetAttribute(&multiprocessor_count,
-      cudaDevAttrMultiProcessorCount, device_id);
-    if (result != cudaSuccess) {
-      CUTLASS_TRACE_HOST(
-        "  cudaDeviceGetAttribute() returned error "
-        << cudaGetErrorString(result));
-      return 0;
-    }
-    return multiprocessor_count;
-  }
+#if defined(CUTLASS_ENABLE_SYCL)
+    using half = sycl::half;
+    using half2 = sycl::half2;
+#else
+    using half_raw = __half_raw;
+    using half2 = __half2;
 #endif
-};
 
-} // namespace cutlass
+    CUTLASS_HOST_DEVICE
+    float half2float (half const& flt) {
+#if defined(CUTLASS_ENABLE_SYCL)
+      return static_cast<float>(flt);
+#else
+      return __half2float(flt);
+#endif
+    }
+
+    CUTLASS_HOST_DEVICE
+    half float2half (float const& flt) {
+#if defined(CUTLASS_ENABLE_SYCL)
+      return static_cast<half>(flt);
+#else
+      return __float2half(flt);
+#endif
+    }
+
+    CUTLASS_HOST_DEVICE
+    half float2half_rn (float const& flt) {
+#if defined(CUTLASS_ENABLE_SYCL)
+      return static_cast<half>(flt);
+#else
+      return __float2half_rn(flt);
+#endif
+    }
+
+    CUTLASS_HOST_DEVICE
+    int int2half_rn (half const& flt) {
+#if defined(CUTLASS_ENABLE_SYCL)
+      return static_cast<int>(flt);
+#else
+      return __int2half_rn(flt);
+#endif
+    }
+
+    CUTLASS_HOST_DEVICE
+    half2 hsub2(const half2 a, const half2 b) {
+#if defined(CUTLASS_ENABLE_SYCL)
+      return a - b;
+#else
+      return __hsub2(a, b);
+#endif
+    }
+}

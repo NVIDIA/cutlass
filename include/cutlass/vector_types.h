@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,47 +30,62 @@
  **************************************************************************************************/
 #pragma once
 
-#if !defined(__CUDACC_RTC__) && !defined(CUTLASS_ENABLE_SYCL)
-#include "cuda_runtime.h"
+#if defined(CUTLASS_ENABLE_SYCL)
+#include <sycl/sycl.hpp>
 
-#include "cutlass/trace.h"
-#endif
-
+// Add these definitions in the cutlass namespace, so they do not clash with the ones in cuda
 namespace cutlass {
+    // We use this struct instead of sycl::int4 because the sycl version requires x() to access x,
+    // while the struct does not need the (). This prevents us from having to modify the Cutlass
+    // implementation in all the places where these vector types are used.
+    using int4 = struct alignas(16) {
+        int x, y, z, w;
+    };
 
-struct KernelHardwareInfo {
-  //
-  // Data members
-  //
-  int device_id = 0;
-  int sm_count  = 0;
+    using uint2 = struct alignas(8) {
+        unsigned int x, y;
+    };
 
-  //
-  // Methods
-  //
+    using uint4 = struct alignas(16) {
+        unsigned int x, y, z, w;
+    };
 
-#if !defined(__CUDACC_RTC__)
-  static inline int
-  query_device_multiprocessor_count(int device_id = 0) {
-    cudaError_t result = cudaGetDevice(&device_id);
-    if (result != cudaSuccess) {
-      CUTLASS_TRACE_HOST(
-        "  cudaGetDevice() returned error "
-        << cudaGetErrorString(result));
-      return 0;
-    }
-    int multiprocessor_count;
-    result = cudaDeviceGetAttribute(&multiprocessor_count,
-      cudaDevAttrMultiProcessorCount, device_id);
-    if (result != cudaSuccess) {
-      CUTLASS_TRACE_HOST(
-        "  cudaDeviceGetAttribute() returned error "
-        << cudaGetErrorString(result));
-      return 0;
-    }
-    return multiprocessor_count;
-  }
+    using float4 = struct alignas(16) {
+        float x, y, z, w;
+    };
+
+    using long4 = struct alignas(16) {
+        long int x, y, z, w;
+    };
+
+    using ulong4 = struct alignas(16) {
+        unsigned long int x, y, z, w;
+    };
+
+    using longlong2 = struct alignas(16) {
+        long long int x, y;
+    };
+
+    using ulonglong2 = struct alignas(16) {
+        unsigned long long int x, y;
+    };
+
+    using longlong4 = struct alignas(16) {
+        long long int x, y, z, w;
+    };
+
+    using ulonglong4 = struct alignas(16) {
+        unsigned long long int x, y, z, w;
+    };
+
+    using double2 = struct alignas(16) {
+        long long int x, y;
+    };
+
+    using double4 = struct alignas(16) {
+        long long int x, y, z, w;
+    };
+}
+#else
+#include <vector_types.h>
 #endif
-};
-
-} // namespace cutlass

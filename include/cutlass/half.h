@@ -60,7 +60,7 @@
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-#include <cuda_fp16.h>
+#include <cutlass/fp16.h>
 
 #include "cutlass/cutlass.h"
 #include "cutlass/float8.h"
@@ -194,7 +194,7 @@ struct alignas(2) half_t {
   #endif  
   static half_t convert(float const& flt) {
   #if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 530)) || (defined(__SYCL_CUDA_ARCH__) && (__SYCL_CUDA_ARCH__ >= 530))
-    return half_t(__float2half_rn(flt));
+    return half_t(float2half_rn(flt));
   #else
 
     #if !defined(__CUDA_ARCH__) && CUTLASS_ENABLE_F16C
@@ -275,7 +275,7 @@ struct alignas(2) half_t {
   CUTLASS_HOST_DEVICE
   static half_t convert(int const& n) {
   #if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 530)) || (defined(__SYCL_CUDA_ARCH__) && (__SYCL_CUDA_ARCH__ >= 530))
-    return half_t(__int2half_rn(n));
+    return half_t(int2half_rn(n));
   #else
     return convert(float(n));
   #endif
@@ -300,7 +300,7 @@ struct alignas(2) half_t {
   #endif
   static float convert(half_t const& x) {
   #if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 530)) || (defined(__SYCL_CUDA_ARCH__) && (__SYCL_CUDA_ARCH__ >= 530))
-    return __half2float(x.to_half());
+    return half2float(x.to_half());
   #else
 
     #if !defined(__CUDA_ARCH__) && CUTLASS_ENABLE_F16C
@@ -361,10 +361,10 @@ struct alignas(2) half_t {
   /// Reinterpret cast from CUDA's half type
   CUTLASS_HOST_DEVICE
   explicit half_t(half const & x) {
-    #if defined(__CUDA_ARCH__) || defined(__SYCL_CUDA_ARCH__)
+    #if defined(__CUDA_ARCH__) || defined(CUTLASS_ENABLE_SYCL)
     storage = reinterpret_cast<uint16_t const &>(x);
     #else
-    __half_raw raw(x);
+    half_raw raw(x);
     std::memcpy(&storage, &raw.x, sizeof(storage));
     #endif
   }
@@ -408,10 +408,10 @@ struct alignas(2) half_t {
   /// Assignment
   CUTLASS_HOST_DEVICE
   half_t & operator=(half const &x) {
-    #if defined(__CUDA_ARCH__)
+    #if defined(__CUDA_ARCH__) || defined(CUTLASS_ENABLE_SYCL)
     storage = reinterpret_cast<uint16_t const &>(x);
     #else
-    __half_raw raw(x);
+    half_raw raw(x);
     std::memcpy(&storage, &raw.x, sizeof(storage));
     #endif
     return *this;
@@ -444,10 +444,10 @@ struct alignas(2) half_t {
   /// Bitcasts to CUDA's half type
   CUTLASS_HOST_DEVICE
   half to_half() const {
-    #if defined(__CUDA_ARCH__)
+    #if defined(__CUDA_ARCH__) || defined(CUTLASS_ENABLE_SYCL)
     return reinterpret_cast<half const &>(storage);
     #else
-    __half_raw raw;
+    half_raw raw;
     std::memcpy(&raw.x, &storage, sizeof(raw.x));
     return half(raw);
     #endif

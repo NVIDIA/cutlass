@@ -38,7 +38,12 @@ find_library(DPCPP_LIB_DIR NAMES sycl sycl6 PATHS "${DPCPP_BIN_DIR}/../lib")
 
 add_library(DPCPP::DPCPP INTERFACE IMPORTED)
 
-set(DPCPP_FLAGS "-fsycl;-mllvm;-enable-global-offset=false;-fsycl-targets=${DPCPP_SYCL_TARGET};${DPCPP_USER_FLAGS};")
+set(DPCPP_FLAGS "-fsycl;-mllvm;-enable-global-offset=false;")
+if(NOT "${DPCPP_SYCL_TARGET}" STREQUAL "")
+  list(APPEND DPCPP_FLAGS "-fsycl-targets=${DPCPP_SYCL_TARGET};")
+endif()
+list(APPEND DPCPP_FLAGS "${DPCPP_USER_FLAGS};")
+
 if(NOT "${DPCPP_SYCL_ARCH}" STREQUAL "")
   if("${DPCPP_SYCL_TARGET}" STREQUAL "nvptx64-nvidia-cuda")
     list(APPEND DPCPP_FLAGS "-Xsycl-target-backend")

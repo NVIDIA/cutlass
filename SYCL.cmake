@@ -1,5 +1,4 @@
-
-# Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -27,22 +26,48 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+function(cutlass_add_library NAME)
+  set(options SKIP_GENCODE_FLAGS)
+  set(oneValueArgs EXPORT_NAME)
+  set(multiValueArgs)
+  cmake_parse_arguments(_ "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
-if (CUTLASS_ENABLE_SYCL)
-  if (SYCL_NVIDIA_TARGET)
-    cutlass_example_add_executable(
-      14_ampere_tf32_tensorop_gemm_cute
-      ampere_tf32_tensorop_gemm_cute.cpp
-    )
+  set(TARGET_SOURCE_ARGS ${__UNPARSED_ARGUMENTS})
+  set(${TARGET_ARGS_VAR} ${TARGET_SOURCE_ARGS} PARENT_SCOPE)
+
+  add_library(${NAME} ${TARGET_SOURCE_ARGS} "")
+
+  cutlass_apply_standard_compile_options(${NAME})
+
+  target_compile_features(
+    ${NAME}
+    INTERFACE
+    cxx_std_17
+  )
+
+  get_target_property(TARGET_TYPE ${NAME} TYPE)
+
+  if(__EXPORT_NAME)
+    add_library(nvidia::cutlass::${__EXPORT_NAME} ALIAS ${NAME})
+    set_target_properties(${NAME} PROPERTIES EXPORT_NAME ${__EXPORT_NAME})
   endif()
-else()
-  cutlass_example_add_executable(
-    14_ampere_tf32_tensorop_gemm
-    ampere_tf32_tensorop_gemm.cu
-  )
+endfunction()
 
-  cutlass_example_add_executable(
-    14_ampere_tf32_tensorop_gemm_cute
-    ampere_tf32_tensorop_gemm_cute.cu
+function(cutlass_add_executable NAME)
+  set(options)
+  set(oneValueArgs BATCH_SOURCES)
+  set(multiValueArgs)
+  cmake_parse_arguments(_ "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+
+  set(TARGET_SOURCE_ARGS ${__UNPARSED_ARGUMENTS})
+  set(${TARGET_ARGS_VAR} ${TARGET_SOURCE_ARGS} PARENT_SCOPE)
+
+  add_executable(${NAME} ${TARGET_SOURCE_ARGS})
+
+  cutlass_apply_standard_compile_options(${NAME})
+  target_compile_features(
+    ${NAME}
+    INTERFACE
+    cxx_std_11
   )
-endif()
+endfunction()

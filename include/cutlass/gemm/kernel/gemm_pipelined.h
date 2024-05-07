@@ -64,7 +64,7 @@ CUTLASS_GLOBAL void GemmPipelined(
   ) {
 
   // Shared storage needed by threadblock-scoped matrix multiply-accumulate
-  __shared__ union {
+  CUTLASS_SHARED union {
     typename Mma::SharedStorage main_loop;
     typename Epilogue::SharedStorage epilogue;
   } shared_storage;

@@ -57,26 +57,45 @@ message(STATUS "CUTLASS ${_CUTLASS_VERSION_MAJOR}.${_CUTLASS_VERSION_MINOR}.${_C
 
 project(CUTLASS VERSION ${_CUTLASS_VERSION_MAJOR}.${_CUTLASS_VERSION_MINOR}.${_CUTLASS_VERSION_PATCH} LANGUAGES CXX)
 
-################################################################################
+###################################################################################################
+#
+# Configure SYCL build options
+#
+###################################################################################################
+
+set(CUTLASS_ENABLE_SYCL OFF CACHE BOOL "Enable SYCL")
 
 if (CUTLASS_ENABLE_SYCL)
-  set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --allow-unsupported-compiler")
-endif()
+  set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
-include(${CMAKE_CURRENT_SOURCE_DIR}/CUDA.cmake)
+  if("${DPCPP_SYCL_TARGET}" STREQUAL "nvptx64-nvidia-cuda")
+    set(SYCL_NVIDIA_TARGET ON)
+    add_compile_definitions(SYCL_NVIDIA_TARGET)
+  elseif("${DPCPP_SYCL_TARGET}" STREQUAL "intel_gpu_pvc")
+    set(SYCL_INTEL_TARGET ON)
+    add_compile_definitions(SYCL_INTEL_TARGET)
+  endif()
 
-if (CUDA_VERSION VERSION_LESS 11.3)
-  message(WARNING "CUTLASS ${CUTLASS_VERSION} requires CUDA 11.4 or higher, and strongly recommends CUDA 11.8 or higher.")
-elseif (CUDA_VERSION VERSION_LESS 11.4)
-  message(WARNING "CUTLASS ${CUTLASS_VERSION} support for CUDA ${CUDA_VERSION} is deprecated, please use CUDA 11.8 or higher.")
+  add_compile_definitions(CUTLASS_ENABLE_SYCL)
+  find_package(DPCPP)
+  include(${CMAKE_CURRENT_SOURCE_DIR}/SYCL.cmake)
+
+else()
+  include(${CMAKE_CURRENT_SOURCE_DIR}/CUDA.cmake)
+
+  if (CUDA_VERSION VERSION_LESS 11.3)
+    message(WARNING "CUTLASS ${CUTLASS_VERSION} requires CUDA 11.4 or higher, and strongly recommends CUDA 11.8 or higher.")
+  elseif (CUDA_VERSION VERSION_LESS 11.4)
+    message(WARNING "CUTLASS ${CUTLASS_VERSION} support for CUDA ${CUDA_VERSION} is deprecated, please use CUDA 11.8 or higher.")
+  endif()
+
+  if (CUDA_COMPILER MATCHES "[Cc]lang" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7.0)
+    message(FATAL_ERROR "Clang 7.0+ required for GPU compilation")
+  endif()
 endif()
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7.3)
   message(FATAL_ERROR "GCC version must be at least 7.3!")
-endif()
-
-if (CUDA_COMPILER MATCHES "[Cc]lang" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7.0)
-  message(FATAL_ERROR "Clang 7.0+ required for GPU compilation")
 endif()
 find_package(Doxygen QUIET)
 
@@ -151,32 +170,31 @@ endif()
 
 ################################################################################
 
-set(CUTLASS_ENABLE_SYCL OFF CACHE BOOL "Enable SYCL")
+if (NOT CUTLASS_ENABLE_SYCL)
 
-################################################################################
-
-set(CUTLASS_NVCC_ARCHS_SUPPORTED "")
-if (CUDA_VERSION VERSION_GREATER_EQUAL 11.4 AND NOT CUDA_COMPILER MATCHES "[Cc]lang")
-  list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 70 72 75 80 86 87)
-endif()
-if (CUDA_VERSION VERSION_GREATER_EQUAL 11.8 AND NOT CUDA_COMPILER MATCHES "[Cc]lang")
-  list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 89 90)
-endif()
-if (CUDA_VERSION VERSION_GREATER_EQUAL 12.0 AND NOT CUDA_COMPILER MATCHES "[Cc]lang")
-  list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 90a)
-endif()
-set(CUTLASS_NVCC_ARCHS ${CUTLASS_NVCC_ARCHS_SUPPORTED} CACHE STRING "The SM architectures requested.")
-set(CUTLASS_NVCC_ARCHS_ENABLED ${CUTLASS_NVCC_ARCHS} CACHE STRING "The SM architectures to build code for.")
-
-# Find unsupported and deprecated compute capabilities
-if (CUTLASS_NVCC_ARCHS_SUPPORTED)
-  set(CUTLASS_NVCC_ARCHS_UNSUPPORTED ${CUTLASS_NVCC_ARCHS})
-  list(REMOVE_ITEM CUTLASS_NVCC_ARCHS_UNSUPPORTED ${CUTLASS_NVCC_ARCHS_SUPPORTED})
-  if (CUTLASS_NVCC_ARCHS_UNSUPPORTED)
-    message(WARNING "Using unsupported or deprecated compute capabilities ${CUTLASS_NVCC_ARCHS_UNSUPPORTED}. Support may be removed in future versions.")
+  set(CUTLASS_NVCC_ARCHS_SUPPORTED "")
+  if (CUDA_VERSION VERSION_GREATER_EQUAL 11.4 AND NOT CUDA_COMPILER MATCHES "[Cc]lang")
+    list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 70 72 75 80 86 87)
   endif()
-else()
-  message(WARNING "No supported compute capabilities for CUDA ${CUDA_VERSION}.")
+  if (CUDA_VERSION VERSION_GREATER_EQUAL 11.8 AND NOT CUDA_COMPILER MATCHES "[Cc]lang")
+    list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 89 90)
+  endif()
+  if (CUDA_VERSION VERSION_GREATER_EQUAL 12.0 AND NOT CUDA_COMPILER MATCHES "[Cc]lang")
+    list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 90a)
+  endif()
+  set(CUTLASS_NVCC_ARCHS ${CUTLASS_NVCC_ARCHS_SUPPORTED} CACHE STRING "The SM architectures requested.")
+  set(CUTLASS_NVCC_ARCHS_ENABLED ${CUTLASS_NVCC_ARCHS} CACHE STRING "The SM architectures to build code for.")
+
+  # Find unsupported and deprecated compute capabilities
+  if (CUTLASS_NVCC_ARCHS_SUPPORTED)
+    set(CUTLASS_NVCC_ARCHS_UNSUPPORTED ${CUTLASS_NVCC_ARCHS})
+    list(REMOVE_ITEM CUTLASS_NVCC_ARCHS_UNSUPPORTED ${CUTLASS_NVCC_ARCHS_SUPPORTED})
+    if (CUTLASS_NVCC_ARCHS_UNSUPPORTED)
+      message(WARNING "Using unsupported or deprecated compute capabilities ${CUTLASS_NVCC_ARCHS_UNSUPPORTED}. Support may be removed in future versions.")
+    endif()
+  else()
+    message(WARNING "No supported compute capabilities for CUDA ${CUDA_VERSION}.")
+  endif()
 endif()
 
 # Special policy introduced in CMake 3.13
@@ -195,7 +213,9 @@ link_directories(${CUDA_TOOLKIT_ROOT_DIR}/lib64)
 #
 ###################################################################################################
 
+if (NOT CUTLASS_ENABLE_SYCL)
 message(STATUS "CUDA Compilation Architectures: ${CUTLASS_NVCC_ARCHS_ENABLED}")
+endif()
 
 if (NOT (CMAKE_BUILD_TYPE OR CONFIGURATION_TYPES))
   # By default we want to build in Release mode to ensure that we're getting best performance.
@@ -345,20 +365,6 @@ endif()
 
 ###################################################################################################
 #
-# Configure SYCL build options
-#
-###################################################################################################
-
-if(CUTLASS_ENABLE_SYCL)
-  set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
-
-  add_compile_definitions(CUTLASS_ENABLE_SYCL)
-  set(DPCPP_SYCL_TARGET "nvptx64-nvidia-cuda" CACHE STRING "Default target for Nvidia GPU")
-  find_package(DPCPP)
-endif()
-
-###################################################################################################
-#
 # Configure CUDA build options
 #
 ###################################################################################################
@@ -428,47 +434,49 @@ if (NOT CMAKE_BUILD_TYPE MATCHES "Release")
   list(APPEND CUTLASS_CUDA_NVCC_FLAGS -lineinfo)
 endif()
 
-#Report CUDA build flags
-if (CUDA_COMPILER MATCHES "[Cc]lang")
-  if(CUTLASS_CUDA_CLANG_FLAGS)
-    message(STATUS "Using CLANG flags: ${CUTLASS_CUDA_CLANG_FLAGS}")
+if (NOT CUTLASS_ENABLE_SYCL)
+  #Report CUDA build flags
+  if (CUDA_COMPILER MATCHES "[Cc]lang")
+    if(CUTLASS_CUDA_CLANG_FLAGS)
+      message(STATUS "Using CLANG flags: ${CUTLASS_CUDA_CLANG_FLAGS}")
+    endif()
+  else()
+    if(CUTLASS_CUDA_NVCC_FLAGS)
+      message(STATUS "Using NVCC flags: ${CUTLASS_CUDA_NVCC_FLAGS}")
+    endif()
   endif()
-else()
-  if(CUTLASS_CUDA_NVCC_FLAGS)
-    message(STATUS "Using NVCC flags: ${CUTLASS_CUDA_NVCC_FLAGS}")
-  endif()
-endif()
 
-if(CUDA_COMPILER MATCHES "[Cc]lang")
-  if( NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang" )
-    message(FATAL_ERROR "Clang CUDA compilation requires Clang CXX compilation. Currently CMAKE_CXX_COMPILER is ${CMAKE_CXX_COMPILER_ID}" )
-  endif()
+  if(CUDA_COMPILER MATCHES "[Cc]lang")
+    if( NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang" )
+      message(FATAL_ERROR "Clang CUDA compilation requires Clang CXX compilation. Currently CMAKE_CXX_COMPILER is ${CMAKE_CXX_COMPILER_ID}" )
+    endif()
 
   # There are numerous Clang versions that can work with each CUDA toolkit and the
   # the checks are not very useful so we are turning them off and using testing to
   # ensure the various combinations work properly.
 
-  list(APPEND CUTLASS_CUDA_CLANG_FLAGS --cuda-path=${CUDA_TOOLKIT_ROOT_DIR})
-  list(APPEND CUTLASS_CUDA_CLANG_FLAGS -D__NV_NO_HOST_COMPILER_CHECK=1)
-  list(APPEND CUTLASS_CUDA_CLANG_FLAGS -Wno-unknown-cuda-version)
+    list(APPEND CUTLASS_CUDA_CLANG_FLAGS --cuda-path=${CUDA_TOOLKIT_ROOT_DIR})
+    list(APPEND CUTLASS_CUDA_CLANG_FLAGS -D__NV_NO_HOST_COMPILER_CHECK=1)
+    list(APPEND CUTLASS_CUDA_CLANG_FLAGS -Wno-unknown-cuda-version)
 
-  list(APPEND CUTLASS_CUDA_CLANG_FLAGS -mllvm -pragma-unroll-threshold=100000)
-  list(APPEND CUTLASS_CUDA_CLANG_FLAGS -mllvm -unroll-threshold=5000)
-  list(APPEND CUTLASS_CUDA_CLANG_FLAGS -Wno-unused-command-line-argument)
+    list(APPEND CUTLASS_CUDA_CLANG_FLAGS -mllvm -pragma-unroll-threshold=100000)
+    list(APPEND CUTLASS_CUDA_CLANG_FLAGS -mllvm -unroll-threshold=5000)
+    list(APPEND CUTLASS_CUDA_CLANG_FLAGS -Wno-unused-command-line-argument)
 
-  string(REPLACE "." ";" CUDA_VERSION_PARTS ${CMAKE_CUDA_COMPILER_VERSION})
-  list(GET CUDA_VERSION_PARTS 0 CUDA_VERSION_MAJOR)
-  list(GET CUDA_VERSION_PARTS 1 CUDA_VERSION_MINOR)
-  list(APPEND CUTLASS_CUDA_CLANG_FLAGS -D__CUDACC_VER_MAJOR__=${CUDA_VERSION_MAJOR} -D__CUDACC_VER_MINOR__=${CUDA_VERSION_MINOR})
+    string(REPLACE "." ";" CUDA_VERSION_PARTS ${CMAKE_CUDA_COMPILER_VERSION})
+    list(GET CUDA_VERSION_PARTS 0 CUDA_VERSION_MAJOR)
+    list(GET CUDA_VERSION_PARTS 1 CUDA_VERSION_MINOR)
+    list(APPEND CUTLASS_CUDA_CLANG_FLAGS -D__CUDACC_VER_MAJOR__=${CUDA_VERSION_MAJOR} -D__CUDACC_VER_MINOR__=${CUDA_VERSION_MINOR})
 
 
-  # needed for libcublasLt.so in case it's installed in the same location as libcudart.so
-  # dynamic linker can find it if linker sets RPATH (forced by --disable-new-tags)
-  # Otherwise linker uses RUNPATH and that does not propagate to loaded libs.
-  list(APPEND CUTLASS_CUDA_CLANG_FLAGS -Wl,--disable-new-dtags)
+    # needed for libcublasLt.so in case it's installed in the same location as libcudart.so
+    # dynamic linker can find it if linker sets RPATH (forced by --disable-new-tags)
+    # Otherwise linker uses RUNPATH and that does not propagate to loaded libs.
+    list(APPEND CUTLASS_CUDA_CLANG_FLAGS -Wl,--disable-new-dtags)
 
-  link_libraries(nvidia::cudart)
-  link_libraries(nvidia::cuda_driver)
+    link_libraries(nvidia::cudart)
+    link_libraries(nvidia::cuda_driver)
+  endif()
 endif()
 
 # Known gcc 8.1-8.3 SFINAE issue (fixed in gcc 8.4), check https://gcc.gnu.org/bugzilla/show_bug.cgi?id=87748
@@ -741,21 +749,16 @@ endif()
 if(NOT WIN32)
   # Add common library search paths so executables and libraries can load and run
   # without LD_LIBRARY_PATH being set.
-  if(CUTLASS_ENABLE_SYCL)
-  link_libraries(
-    "-Wl,-rpath,'${CUDA_TOOLKIT_ROOT_DIR}/lib64'"
-    "-Wl,-rpath,'${CUDA_TOOLKIT_ROOT_DIR}/lib'"
+  if(NOT CUTLASS_ENABLE_SYCL)
+    link_libraries(
+      "-Wl,-rpath,'$ORIGIN'"
+      "-Wl,-rpath,'$ORIGIN/../lib64'"
+      "-Wl,-rpath,'$ORIGIN/../lib'"
+      "-Wl,-rpath,'${CUDA_TOOLKIT_ROOT_DIR}/lib64'"
+      "-Wl,-rpath,'${CUDA_TOOLKIT_ROOT_DIR}/lib'"
+      ${CMAKE_DL_LIBS}
     )
-   else()
-  link_libraries(
-    "-Wl,-rpath,'$ORIGIN'"
-    "-Wl,-rpath,'$ORIGIN/../lib64'"
-    "-Wl,-rpath,'$ORIGIN/../lib'"
-    "-Wl,-rpath,'${CUDA_TOOLKIT_ROOT_DIR}/lib64'"
-    "-Wl,-rpath,'${CUDA_TOOLKIT_ROOT_DIR}/lib'"
-    ${CMAKE_DL_LIBS}
-    )
-   endif()
+  endif()
 endif()
 
 ################################################################################
@@ -989,7 +992,7 @@ endfunction()
 
 if (CUTLASS_ENABLE_TOOLS)
   add_subdirectory(tools)
-  if (CUTLASS_ENABLE_PROFILER)
+  if (CUTLASS_ENABLE_PROFILER AND NOT CUTLASS_ENABLE_SYCL)
     add_dependencies(test_all test_profiler)
   endif()
 endif()

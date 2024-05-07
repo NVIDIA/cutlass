@@ -30,7 +30,9 @@
  **************************************************************************************************/
 #pragma once
 
+#if !defined(CUTLASS_ENABLE_SYCL)
 #include "cuda_runtime.h"
+#endif
 #include <iostream>
 
 /**
@@ -61,6 +63,7 @@
   }
 
 
+#if !defined(CUTLASS_ENABLE_SYCL)
 /**
  * GPU timer for recording the elapsed time across kernel(s) launched in GPU stream
  */
@@ -106,3 +109,5 @@ struct GpuTimer
         return elapsed;
     }
 };
+
+#endif

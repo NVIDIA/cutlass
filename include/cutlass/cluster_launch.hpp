@@ -35,7 +35,9 @@
 
 #pragma once
 
+#if !defined(CUTLASS_ENABLE_SYCL)
 #include <cuda_runtime_api.h>
+#endif
 #include "cutlass/cutlass.h"
 #include "cutlass/trace.h"
 #if defined(__CUDACC_RTC__)
