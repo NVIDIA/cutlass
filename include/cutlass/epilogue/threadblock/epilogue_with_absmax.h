@@ -215,7 +215,7 @@ template <
   typename OutputOp_,                       ///< Output operator
   typename Padding_,                        ///< Padding added to SMEM allocation to avoid bank conflicts (concept: MatrixShape)
   int FragmentsPerPartition = 1,            ///< Used to coarsen the epilogue granularity
-  int IterationsUnroll =                    ///< Used to reduce binary size when epilogue op is large
+  bool IterationsUnroll =                    ///< Used to reduce binary size when epilogue op is large
     (!IsEpilogueFunctorHeavy<OutputOp_>::value)
 >
 class EpilogueWithAbsMax :

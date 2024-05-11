@@ -60,7 +60,7 @@ template <
   typename DefaultEpilogue,                 ///< Default Epilogue Descriptor
   typename FusionCallbacks_,                ///< The called fusion callbacks
   int Stages = 2,                           ///< Software pipeline stages for epilogue
-  int IterationsUnroll = true               ///< Used to reduce binary size when epilogue op is large
+  bool IterationsUnroll = true               ///< Used to reduce binary size when epilogue op is large
 >
 class EpilogueWithVisitorCallbacks :
   public EpilogueBase<

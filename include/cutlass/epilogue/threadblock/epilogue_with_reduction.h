@@ -86,7 +86,7 @@ template <
   typename OutputOp_,                       ///< Output operator
   typename ReductionOp_,                    ///< Reduction operator
   typename Padding_,                        ///< Padding added to SMEM allocation to avoid bank conflicts (concept: MatrixShape)
-  int IterationsUnroll =                    ///< Used to reduce binary size when epilogue op is large
+  bool IterationsUnroll =                    ///< Used to reduce binary size when epilogue op is large
     (!IsEpilogueFunctorHeavy<OutputOp_>::value)
 >
 class EpilogueWithReduction : 
