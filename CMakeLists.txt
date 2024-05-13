@@ -26,8 +26,12 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-cmake_minimum_required(VERSION 3.19 FATAL_ERROR)
-cmake_policy(SET CMP0112 NEW)
+if(CUTLASS_ENABLE_SYCL)
+  cmake_minimum_required(VERSION 3.22 FATAL_ERROR)
+else()
+  cmake_minimum_required(VERSION 3.19 FATAL_ERROR)
+  cmake_policy(SET CMP0112 NEW)
+endif()
 
 if(cutlass_LOADED)
   # If CUTLASS has been previously fetched and loaded, don't do it again.

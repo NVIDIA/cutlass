@@ -72,7 +72,7 @@ function(cutlass_example_add_executable NAME)
     ${CUTLASS_EXAMPLES_UTILS_DIR}
     )
 
-  if (${CUTLASS_ENABLE_SYCL})
+  if (CUTLASS_ENABLE_SYCL)
     add_sycl_to_target(TARGET ${NAME})
   endif()
 

@@ -57,7 +57,7 @@ if(UNIX)
     INTERFACE_LINK_OPTIONS "${DPCPP_FLAGS}"
     INTERFACE_LINK_LIBRARIES ${DPCPP_LIB_DIR}
     INTERFACE_INCLUDE_DIRECTORIES "${DPCPP_BIN_DIR}/../include/sycl;${DPCPP_BIN_DIR}/../include")
-  message(STATUS "DPCPP INCLUDE DIR: ${DPCPP_BIN_DIR}/../include/sycl")
+  message(STATUS "DPCPP INCLUDE DIR: ${DPCPP_BIN_DIR}/../include/sycl;${DPCPP_BIN_DIR}/../include")
   message(STATUS "Using DPCPP flags: ${DPCPP_FLAGS}")
 else()
   set_target_properties(DPCPP::DPCPP PROPERTIES
@@ -87,3 +87,9 @@ function(add_sycl_to_target)
   endif()
 endfunction()
 
+function(add_sycl_include_directories_to_target NAME)
+  target_include_directories(${NAME}
+    PUBLIC ${DPCPP_BIN_DIR}/../include/sycl
+    PUBLIC ${DPCPP_BIN_DIR}/../include>
+  )
+endfunction()

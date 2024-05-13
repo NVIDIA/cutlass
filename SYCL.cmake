@@ -59,6 +59,12 @@ function(cutlass_add_executable NAME)
   set(multiValueArgs)
   cmake_parse_arguments(_ "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
+  foreach(File ${ARGN})
+    if(File MATCHES ".*\.cu$")
+      set_source_files_properties(${File} PROPERTIES LANGUAGE CXX)
+    endif()
+  endforeach()
+
   set(TARGET_SOURCE_ARGS ${__UNPARSED_ARGUMENTS})
   set(${TARGET_ARGS_VAR} ${TARGET_SOURCE_ARGS} PARENT_SCOPE)
 
@@ -68,6 +74,6 @@ function(cutlass_add_executable NAME)
   target_compile_features(
     ${NAME}
     INTERFACE
-    cxx_std_11
+    cxx_std_17
   )
 endfunction()

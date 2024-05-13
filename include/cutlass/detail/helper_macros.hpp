@@ -50,8 +50,8 @@
 #define CUTLASS_HOST_DEVICE __forceinline__ __device__ __host__
 #define CUTLASS_DEVICE __forceinline__ __device__
 #elif defined(CUTLASS_ENABLE_SYCL)
-#define CUTLASS_HOST_DEVICE __attribute__((always_inline))
-#define CUTLASS_DEVICE __attribute__((always_inline))
+#define CUTLASS_HOST_DEVICE __attribute__((always_inline)) inline 
+#define CUTLASS_DEVICE __attribute__((always_inline)) inline 
 #elif defined(__CUDACC_RTC__)
 #define CUTLASS_HOST_DEVICE __forceinline__ __device__
 #define CUTLASS_DEVICE __forceinline__ __device__
@@ -61,7 +61,7 @@
 #endif
 
 #if defined(CUTLASS_ENABLE_SYCL)
-#define CUTLASS_HOST
+#define CUTLASS_HOST inline
 #define CUTLASS_GLOBAL
 #define CUTLASS_SHARED
 #else
