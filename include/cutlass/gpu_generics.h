@@ -36,6 +36,11 @@
  * frameworks such as CUDA and SYCL.
  */
 
+#if defined(CUTLASS_ENABLE_SYCL)
+#include <sycl/sycl.hpp>
+#include <syclcompat.hpp>
+#endif
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 static const int NumThreadsPerWarp = 32;
