@@ -53,8 +53,17 @@ struct XE_2D_LD_Unpack
       static_assert(is_rmem<TD>::value);
       int H = size<0>(traits.tensor);
       int W = size<1>(traits.tensor) * sizeof(typename Copy_Traits::CopyInternalType);
-      auto [y, x] = src.data().coord_;
-      CopyOp::copy(traits.tensor.data().get(), W, H, W, intel::coord_t{static_cast<int>(x), static_cast<int>(y)}, &*dst.data());
+      auto [y, x, z] = src.data().coord_;
+      CopyOp::copy(traits.tensor.data() + z, W, H, W, intel::coord_t{x, y}, &*dst.data());
+  }
+
+  template <class GCoord, class GShape, class GStride>
+  CUTE_HOST_DEVICE constexpr auto
+  get_pvc_tensor(GCoord const& coord, GShape const& shape, GStride const& stride_mul) const 
+  {
+    return make_tensor(make_inttuple_iter(coord), 
+                        make_layout(make_shape(_1{}, get<0>(shape), get<1>(shape), get<2>(shape)), 
+                                    make_stride(_1{}, E<0>{} * get<0>(stride_mul), E<1>{} * get<1>(stride_mul), E<2>{} * get<2>(stride(tensor)))));
   }
 };
 
@@ -274,8 +283,17 @@ struct XE_2D_ST_Unpack
       static_assert(is_rmem<TS>::value);
       int H = size<0>(traits.tensor);
       int W = size<1>(traits.tensor) * sizeof(typename Copy_Traits::CopyInternalType);
-      auto [y, x] = dst.data().coord_;
-      CopyOp::copy(traits.tensor.data().get(), W, H, W, intel::coord_t{static_cast<int>(x), static_cast<int>(y)}, &*src.data());
+      auto [y, x, z] = dst.data().coord_;
+      CopyOp::copy(traits.tensor.data() + z, W, H, W, intel::coord_t{x, y}, &*src.data());
+  }
+
+  template <class GCoord, class GShape, class GStride>
+  CUTE_HOST_DEVICE constexpr auto
+  get_pvc_tensor(GCoord const& coord, GShape const& shape, GStride const& stride_mul) const 
+  {
+    return make_tensor(make_inttuple_iter(coord), 
+                        make_layout(make_shape(_1{}, get<0>(shape), get<1>(shape), get<2>(shape)), 
+                                    make_stride(_1{}, E<0>{} * get<0>(stride_mul), E<1>{} * get<1>(stride_mul), E<2>{} * get<2>(stride(tensor)))));
   }
 };
 

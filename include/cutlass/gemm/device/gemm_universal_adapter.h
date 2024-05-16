@@ -419,7 +419,11 @@ public:
         const auto sycl_block = syclcompat::dim3(block.x, block.y, block.z);
         const auto sycl_grid = syclcompat::dim3(grid.x, grid.y, grid.z);
 
+#if defined (SYCL_INTEL_TARGET)
+        syclcompat::experimental::launch<device_kernel<GemmKernel>, DispatchPolicy::SubgroupSize>(sycl_grid, sycl_block, smem_size, params);
+#else
         syclcompat::launch<device_kernel<GemmKernel>>(sycl_grid, sycl_block, smem_size, params);
+#endif
 #else
         device_kernel<GemmKernel><<<grid, block, smem_size, stream>>>(params);
 #endif

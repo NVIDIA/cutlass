@@ -97,6 +97,13 @@ struct Sm90 {
   static int const kMinComputeCapability = 90; 
 };
 
+#if defined(CUTLASS_ENABLE_SYCL)
+struct IntelPVC {
+  static int const kMinComputeCapability = 0;
+};
+
+#endif
+
 /// Triggers a breakpoint on the device
 CUTLASS_DEVICE
 void device_breakpoint() {
