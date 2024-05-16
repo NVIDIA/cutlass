@@ -49,7 +49,15 @@ struct KernelHardwareInfo {
   // Methods
   //
 
-#if !defined(__CUDACC_RTC__)
+#if defined (CUTLASS_ENABLE_SYCL)
+  static inline int
+  query_device_multiprocessor_count(int device_id = 0) {
+    syclcompat::device_ext dev;
+    int multiprocessor_count = dev.get_max_compute_units();
+    return multiprocessor_count;
+  }
+
+#elif !defined(__CUDACC_RTC__)
   static inline int
   query_device_multiprocessor_count(int device_id = 0) {
     cudaError_t result = cudaGetDevice(&device_id);

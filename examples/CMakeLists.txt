@@ -97,6 +97,7 @@ if (CUTLASS_ENABLE_SYCL)
   foreach(EXAMPLE
     14_ampere_tf32_tensorop_gemm
     cute
+    sycl
   )
   add_subdirectory(${EXAMPLE})
   endforeach()

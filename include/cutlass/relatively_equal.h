@@ -56,8 +56,10 @@ namespace detail {
 template <typename T>
 CUTLASS_HOST_DEVICE
 bool relatively_equal_float(T a, T b, T epsilon, T nonzero_floor) {
-  
-#if defined(__CUDACC_RTC__)
+
+#if defined (CUTLASS_ENABLE_SYCL)
+  using cutlass::abs;
+#elif defined(__CUDACC_RTC__)
   using cuda::std::abs;
 #else
   using std::abs;
