@@ -222,11 +222,11 @@ public:
     const int n_coord = (BlockIdxY() * num_sg + thread_idx / SubgroupSize) * get<1>(subgroup_shape);
     const int l_coord = BlockIdxZ();
 
-    Tensor tAi = params.mainloop.gmem_tiled_copy_a.get_pvc_tensor(make_coord(m_coord, 0, l_coord),
+    Tensor tAi = params.mainloop.gmem_tiled_copy_a.get_pvc_tensor(make_coord(m_coord, 0, 0),
                                                                   make_shape(_1{}, K, L),
                                                                   make_stride(Int<FragsM * DpasM>{}, _1{}));
 
-    Tensor tBi = params.mainloop.gmem_tiled_copy_b.get_pvc_tensor(make_coord(0, n_coord, l_coord),
+    Tensor tBi = params.mainloop.gmem_tiled_copy_b.get_pvc_tensor(make_coord(0, n_coord, 0),
                                                                   make_shape(K, Int<FragsN>{}, L),
                                                                   make_stride(_1{}, Int<DpasN>{}));
 
@@ -260,7 +260,7 @@ public:
     );
     auto gmem_tiled_copy_c = make_xe_2d_copy<XE_2D_U32x8x16x1x1_ST_N>(make_tensor(params.epilogue.ptr_D, make_shape(M, N, L), params.epilogue.dD));
 
-    Tensor tCi = gmem_tiled_copy_c.get_pvc_tensor(make_coord(m_coord, n_coord, l_coord),
+    Tensor tCi = gmem_tiled_copy_c.get_pvc_tensor(make_coord(m_coord, n_coord, 0),
                                                   make_shape(Int<FragsM>{}, Int<FragsN>{}, L),
                                                   make_stride(Int<DpasM>{}, Int<DpasN>{}));
 
