@@ -239,7 +239,7 @@ public:
     // Allocate the tiled_mma and the accumulators for the (M,N) subgroup_shape
     TiledMma tiled_mma;
 
-    Tensor accumulators = make_tensor<float>(Shape<Int<VecC>, Int<FragsM>, Int<FragsN>>{});
+    Tensor accumulators = make_tensor<ElementAccumulator>(Shape<Int<VecC>, Int<FragsM>, Int<FragsN>>{});
     clear(accumulators);
 
     auto k_tile_iter  = cute::make_coord_iterator(make_shape(K / get<2>(subgroup_shape)));
