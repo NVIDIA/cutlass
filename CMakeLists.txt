@@ -133,6 +133,7 @@ set(CUTLASS_ENABLE_PERFORMANCE ${CUTLASS_ENABLE_PROFILER} CACHE BOOL "Enable CUT
 
 set(CUTLASS_ENABLE_TESTS ${CUTLASS_ENABLE_TESTS_INIT} CACHE BOOL "Enable CUTLASS Tests")
 set(CUTLASS_ENABLE_GTEST_UNIT_TESTS ${CUTLASS_ENABLE_TESTS} CACHE BOOL "Enable CUTLASS GTest-based Unit Tests")
+set(CUTLASS_USE_SYSTEM_GOOGLETEST OFF CACHE BOOL "Use system/external installation of GTest")
 ################################################################################
 
 set(CUTLASS_NVCC_ARCHS_SUPPORTED "")
@@ -702,7 +703,11 @@ include(CTest)
 enable_testing()
 
 if (CUTLASS_ENABLE_GTEST_UNIT_TESTS)
-  include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/googletest.cmake)
+  if (CUTLASS_USE_SYSTEM_GOOGLETEST)
+    find_package(GTest REQUIRED)
+  else()
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/googletest.cmake)
+  endif()
 endif()
 
 if (NOT TARGET test_all)
@@ -747,6 +752,7 @@ set(CUTLASS_DEFAULT_ACTIVE_TEST_SETS "default" CACHE STRING "Default
   with CUTLASS_TEST_SETS environment variable when running the ctest
   executable.")
 
+file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}")
 set(CUTLASS_CTEST_TEMPLATE_FILE ${CMAKE_CURRENT_LIST_DIR}/cmake/CTestTestfile.configure.cmake)
 set(CUTLASS_CTEST_GENERATED_FILES "" CACHE INTERNAL "")
 
