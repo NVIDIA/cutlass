@@ -27,6 +27,6 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-if("${DPCPP_SYCL_TARGET}" STREQUAL "intel_gpu_pvc")
+if(SYCL_INTEL_TARGET)
   add_subdirectory(pvc)
 endif()
