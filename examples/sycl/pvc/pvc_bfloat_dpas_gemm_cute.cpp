@@ -233,7 +233,7 @@ struct ExampleRunner {
     block_D.reset(M * N * L);
     block_ref_D.reset(M * N * L);
 
-    // TODO: Enable initialization on device directly once RNG is 
+    // TODO: Enable initialization on device directly once RNG is
     // available through SYCL.
     std::vector<ElementA> a(K * M * L);
     std::vector<ElementB> b(K * N * L);
