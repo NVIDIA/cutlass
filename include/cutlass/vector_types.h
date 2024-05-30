@@ -31,13 +31,17 @@
 #pragma once
 
 #if defined(CUTLASS_ENABLE_SYCL)
-#include <sycl/sycl.hpp>
+#include "cutlass/detail/helper_macros.hpp"
 
 // Add these definitions in the cutlass namespace, so they do not clash with the ones in cuda
 namespace cutlass {
     // We use this struct instead of sycl::int4 because the sycl version requires x() to access x,
     // while the struct does not need the (). This prevents us from having to modify the Cutlass
     // implementation in all the places where these vector types are used.
+    using int2 = struct alignas(8) {
+        int x, y;
+    };
+
     using int4 = struct alignas(16) {
         int x, y, z, w;
     };
@@ -85,6 +89,16 @@ namespace cutlass {
     using double4 = struct alignas(16) {
         long long int x, y, z, w;
     };
+
+    CUTLASS_HOST_DEVICE
+    int2 make_int2(int x, int y) {
+      return int2{x,y};
+    }
+
+    CUTLASS_HOST_DEVICE
+    int4 make_int4(int x, int y, int z, int w) {
+      return int4 {x,y,z,w};
+    }
 }
 #else
 #include <vector_types.h>

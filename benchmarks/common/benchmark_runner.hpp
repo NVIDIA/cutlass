@@ -53,7 +53,7 @@ template <typename T>
 static void fill_matrix(std::vector<T> &M)
 {
   std::generate(std::begin(M), std::end(M), [&]
-  { return static_cast<T>( (rand() / double(RAND_MAX)) ); });
+  { return static_cast<T>( 2 * (rand() / double(RAND_MAX)) - 1); });
 }
 
 using namespace cute;
