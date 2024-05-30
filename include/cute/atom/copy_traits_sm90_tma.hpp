@@ -302,12 +302,31 @@ struct Copy_Traits<SM90_TMA_STORE, NumBitsPerTMA, AuxParams_>
   TmaDescriptor tma_desc_;
   using AuxParams = AuxParams_;
   AuxParams aux_params_;
+  // Allow setting a custom TmaDescriptor.
+  // When p_tma_desc_ is nullptr, tma_desc_ is used.
+  // Otherwise, p_tma_desc_ is used.
+  // Note: need to make it a pointer to a global memory address
+  // since TmaDescriptor only lives in global space, kernel param space or constant space.
+  // Refer to https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#tensor-tensormap.
+  const TmaDescriptor* p_tma_desc_ = nullptr;
+
+  // Construct a new SM90_TMA_STORE Copy_Traits with a custom TmaDescriptor.
+  // Useful for variable sequence length, etc.
+  CUTE_HOST_DEVICE constexpr
+  Copy_Traits<SM90_TMA_STORE, NumBitsPerTMA, AuxParams>
+  with(TmaDescriptor const* new_tma_desc) const {
+    return {*new_tma_desc, aux_params_, new_tma_desc};
+  }
 
   // Return TmaDescriptor/TensorMap
   CUTE_HOST_DEVICE constexpr
   TmaDescriptor const*
   get_tma_descriptor() const {
-    return &tma_desc_;
+    if (p_tma_desc_) {
+      return p_tma_desc_;
+    } else {
+      return &tma_desc_;
+    }
   }
 
   // Generate the TMA coord tensor
@@ -329,7 +348,7 @@ struct Copy_Traits<SM90_TMA_STORE, NumBitsPerTMA, AuxParams_>
     static_assert(is_smem<TS>::value, "Expected smem src for SM90_TMA_STORE");
     //static_assert(is_gmem<TD>::value, "Expected gmem dst for SM90_TMA_STORE");  // TMA spoofed src tensor
 
-    void const* const desc_ptr = &(traits.tma_desc_);
+    void const* const desc_ptr = traits.get_tma_descriptor();
     void const* const src_ptr  = cute::raw_pointer_cast(src.data());
     auto dst_coord = dst.data().coord_;
 #if 0
