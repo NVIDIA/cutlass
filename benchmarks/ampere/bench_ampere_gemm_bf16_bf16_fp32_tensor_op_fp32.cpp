@@ -30,10 +30,7 @@
  **************************************************************************************************/
 
 #include "../common/benchmark_runner.hpp"
-
-using namespace cute;
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
+#include "gemm_configuration.hpp"
 
 int main(int argc, const char** argv)
 {
@@ -67,31 +64,43 @@ int main(int argc, const char** argv)
   // to use a GPU other than that with device ID 0.
   hw_info.sm_count = cutlass::KernelHardwareInfo::query_device_multiprocessor_count(hw_info.device_id);
 
-  bool passed;
-
-  // The code section below describes datatype for input, output matrices and computation between
-  // elements in input matrices.
+// The code section below describes datatype for input, output matrices and computation between
+// elements in input matrices.
   using ElementAccumulator = float;                   // <- data type of accumulator
   using ElementComputeEpilogue = float;  // <- data type of epilogue operations
   using ElementInputA = bfloat16_t;                        // <- data type of elements in input matrix A
   using ElementInputB = bfloat16_t;                        // <- data type of elements in input matrix B
   using ElementOutput = float;                        // <- data type of elements in output matrix D
 
-  using LayoutA = cutlass::layout::RowMajor;
-  using LayoutB = cutlass::layout::RowMajor;
-  using LayoutC = cutlass::layout::RowMajor;
-  using LayoutD = cutlass::layout::RowMajor;
+  using LayoutA = cutlass::layout::ColumnMajor;
+  using LayoutB = cutlass::layout::ColumnMajor;
+  using LayoutC = cutlass::layout::ColumnMajor;
+  using LayoutD = cutlass::layout::ColumnMajor;
 
-  using GmemTiledCopyA = XE_2D_U16x8x16x4x2_LD_N;
-  using GmemTiledCopyB = XE_2D_U16x16x16x2x1_LD_N;
+  using TileShape = Shape<_128, _128, _32>;
 
-  using TileShape = Shape<_32, _64, _32>;
+  using TiledMma = TiledMMA<
+          MMA_Atom<SM80_16x8x16_F32BF16BF16F32_TN>,
+          Layout<Shape<_2,_2,_1>>, // 2x2x1 thread group
+          Tile<_32,_32,_16>>;                           // 32x32x8 MMA for LDSM, 1x2x1 value group
 
-  using TiledMma = TiledMMA<MMA_Atom<XE_8x16x16_BF16BF16F32F32_NN>,
-          Layout<Shape<_8,_16,_1>>>;
+  static constexpr int kAlignmentA = 8;
+  using DefaultOperandA = DefaultGemm_TensorOpSm80_OperandA<
+          ElementInputA, LayoutA, kAlignmentA, 32>;
+  using SmemLayoutAtomA = typename DefaultOperandA::SmemLayoutAtom; // M, K
+  using SmemCopyAtomA = typename DefaultOperandA::SmemCopyAtom;
+  using GmemTiledCopyA = typename DefaultOperandA::GmemTiledCopy;
 
-  using DispatchPolicy = cutlass::gemm::MainloopIntelPVCUnpredicated;
+  static constexpr int kAlignmentB = 8;
+  using DefaultOperandB = DefaultGemm_TensorOpSm80_OperandB<
+          ElementInputB, LayoutB, kAlignmentB, 32>;
+  using SmemLayoutAtomB = typename DefaultOperandB::SmemLayoutAtom; // N, K
+  using SmemCopyAtomB = typename DefaultOperandB::SmemCopyAtom;
+  using GmemTiledCopyB = typename DefaultOperandB::GmemTiledCopy;
 
+  using Stages = Int<3>;
+
+  // This code section describes the epilogue part of the kernel
   using EpilogueOp = cutlass::epilogue::thread::LinearCombination<
           ElementOutput,                                     // <- data type of output matrix
           128 / cutlass::sizeof_bits<ElementOutput>::value,  // <- the number of elements per vectorized
@@ -101,34 +110,42 @@ int main(int argc, const char** argv)
           ElementAccumulator,                                // <- data type of accumulator
           ElementComputeEpilogue>;  // <- data type for alpha/beta in linear combination function
 
+  using DispatchPolicy = cutlass::gemm::MainloopSm80CpAsync<Stages{}>;
+
+  // Define strides (mixed)
+  using StrideA = cutlass::detail::TagToStrideA_t<LayoutA>;
+  using StrideB = cutlass::detail::TagToStrideB_t<LayoutB>;
+  using StrideC = cutlass::detail::TagToStrideC_t<LayoutC>;
+  using StrideD = cutlass::detail::TagToStrideC_t<LayoutD>;
+
   using CollectiveEpilogue = cutlass::epilogue::collective::DefaultEpilogue<
-          cutlass::gemm::TagToStrideC_t<LayoutC>,
-          cutlass::gemm::TagToStrideC_t<LayoutD>,
+          StrideC,
+          StrideD,
           EpilogueOp,
           cutlass::gemm::EpilogueDefault>;
 
-// Mainloop
+  // Mainloop
   using CollectiveMainloop = cutlass::gemm::collective::CollectiveMma<
           DispatchPolicy,
           TileShape,
           ElementInputA,
-          cutlass::gemm::TagToStrideA_t<LayoutA>,
+          StrideA,
           ElementInputB,
-          cutlass::gemm::TagToStrideB_t<LayoutB>,
+          StrideB,
           TiledMma,
-          GmemTiledCopyA, void, void, cute::identity,  // A
-          GmemTiledCopyB, void, void, cute::identity   // B
+          GmemTiledCopyA, SmemLayoutAtomA, SmemCopyAtomA, cute::identity,  // A
+          GmemTiledCopyB, SmemLayoutAtomB, SmemCopyAtomB, cute::identity   // B
   >;
 
   using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
-  Shape<int, int, int, int>,
-  CollectiveMainloop,
-  CollectiveEpilogue
+          Shape<int, int, int, int>,
+          CollectiveMainloop,
+          CollectiveEpilogue
   >;
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
 
-  PvcBenchmarkRunner<Gemm> runner;
+  BenchmarkRunner<Gemm> runner;
 
   runner.run(options, hw_info);
 

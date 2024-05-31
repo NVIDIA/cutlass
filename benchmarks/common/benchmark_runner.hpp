@@ -97,7 +97,7 @@ struct Options {
     /// Prints the usage statement.
     std::ostream & print_usage(std::ostream &out) const {
 
-      out << "PVC GEMM Example\n\n"
+      out << "PVC GEMM Benchmark\n\n"
           << "Options:\n\n"
           << "  --help                      If specified, displays this usage statement\n\n"
           << "  --m=<int>                   Sets the M extent of the GEMM\n"
