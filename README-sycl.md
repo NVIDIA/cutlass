@@ -1,5 +1,7 @@
 # SYCL support for CUTLASS
 
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/codeplaysoftware/cutlass-fork/badge)](https://scorecard.dev/viewer/?uri=github.com/codeplaysoftware/cutlass-fork)
+
 This repository contains a development version of the CUTLASS repository
 with experimental SYCL support enabled. The aim is to
 support other SYCL-enabled devices with the minimal source code modifications by using the same CUTLASS features.
