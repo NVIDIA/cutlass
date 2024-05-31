@@ -43,30 +43,32 @@ function(cutlass_benchmark_add_executable NAME)
 
   add_dependencies(cutlass_benchmarks ${NAME})
 
+  if (NOT CUTLASS_ENABLE_SYCL)
+    SET(ADD_CUDA ON)
+  endif()
+
   target_link_libraries(
     ${NAME}
     PRIVATE
     CUTLASS
     cutlass_tools_util_includes
-    )
+    $<$<BOOL:${CUTLASS_ENABLE_CUBLAS}>:nvidia::cublas>
+    $<$<BOOL:${ADD_CUDA}>:cuda>
+  )
 
-  target_include_directories(
-    ${NAME}
-    PRIVATE
-    ${CUTLASS_BENCHMARKS_COMMON_SOURCE_DIR}
-    )
-
-  add_sycl_to_target(TARGET ${NAME})
+  if (CUTLASS_ENABLE_SYCL)
+    add_sycl_to_target(TARGET ${NAME})
+  endif()
 
   install(
     TARGETS ${NAME}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-    )
+  )
 endfunction()
 
 if(SYCL_INTEL_TARGET)
   add_subdirectory(pvc)
 endif()
-if (SYCL_NVIDIA_TARGET)
+if(SYCL_NVIDIA_TARGET OR NOT CUTLASS_ENABLE_SYCL)
   add_subdirectory(ampere)
 endif()
