@@ -360,7 +360,7 @@ public:
     uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
     asm volatile(
         "{\n\t"
-        "mbarrier.ival.shared::cta.b64 [%0]; \n\t"
+        "mbarrier.inval.shared::cta.b64 [%0]; \n\t"
         "}"
         :
         : "r"(smem_addr));
