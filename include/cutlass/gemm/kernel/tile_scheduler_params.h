@@ -958,9 +958,9 @@ struct PersistentTileSchedulerSm90StreamKParams {
     uint32_t epilogue_subtile = 1,
     uint32_t num_accumulator_mtxs = 1) {
 
-    auto log_swizzle_size = UnderlyingParams::get_log_swizzle_size(problem_blocks.x, problem_blocks.y, max_swizzle);
-    problem_blocks.x = round_up(problem_blocks.x, (1 << log_swizzle_size) * cluster_shape.m());
-    problem_blocks.y = round_up(problem_blocks.y, (1 << log_swizzle_size) * cluster_shape.n());
+    auto log_swizzle_size = UnderlyingParams::get_log_swizzle_size(int(problem_blocks.x), int(problem_blocks.y), max_swizzle);
+    problem_blocks.x = unsigned(round_up(int(problem_blocks.x), (1 << log_swizzle_size) * cluster_shape.m()));
+    problem_blocks.y = unsigned(round_up(int(problem_blocks.y), (1 << log_swizzle_size) * cluster_shape.n()));
 
     // Workspace is needed only for output tiles that will be split. Thus, we first determine the number
     // of output tiles that will be split, and then calculate the workspace needed to cover these.

@@ -451,7 +451,7 @@ template <class... Ts>
 constexpr uint64_t parse_int_digits(uint64_t result, int digit, Ts... digits)
 {
   if constexpr (sizeof...(Ts) == 0) {
-    return 10 * result + digit;
+    return 10 * result + uint64_t(digit);
   } else {
     return parse_int_digits(10 * result + digit, digits...);
   }
