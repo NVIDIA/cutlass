@@ -105,8 +105,9 @@ public:
 
   static constexpr int num_sg = MaxThreadsPerBlock / SubgroupSize; // number of sub_groups per work group
 
-  static constexpr int DpasM = CollectiveMainloop::DpasM;
-  static constexpr int DpasN = CollectiveMainloop::DpasN;
+  using DpasShape = typename CollectiveMainloop::DpasShape;
+  using TileDpasShape = typename CollectiveMainloop::TileDpasShape;
+
 
   static constexpr int FragsM = CollectiveMainloop::FragsM;
   static constexpr int FragsN = CollectiveMainloop::FragsN;
@@ -177,8 +178,8 @@ public:
     auto M = get<0>(params.problem_shape);
     auto N = get<1>(params.problem_shape);
 
-    const int sg_m = (M - 1) / get<0>(TileShape{}) + 1; // sub_groups required to process A fragments
-    const int sg_n = (N - 1) / get<1>(TileShape{}) + 1; // sub_groups required to process B fragments
+    const int sg_m = (M - 1) / get<0>(TileDpasShape{}) + 1; // sub_groups required to process A fragments
+    const int sg_n = (N - 1) / get<1>(TileDpasShape{}) + 1; // sub_groups required to process B fragments
 
     return dim3(
       sg_m,
@@ -217,18 +218,18 @@ public:
 
     // Get the appropriate blocks for this sub_group -- potential for sub_group locality
     int thread_idx = int(ThreadIdxX());
-    auto subgroup_shape = TileShape{};                                                  // (SUB_M,SUB_N,SUB_K)
+    auto subgroup_shape = TileDpasShape{};                                                  // (SUB_M,SUB_N,SUB_K)
     const int m_coord = BlockIdxX() * get<0>(subgroup_shape);
     const int n_coord = (BlockIdxY() * num_sg + thread_idx / SubgroupSize) * get<1>(subgroup_shape);
     const int l_coord = BlockIdxZ();
 
     Tensor tAi = params.mainloop.gmem_tiled_copy_a.get_pvc_tensor(make_coord(m_coord, 0, 0),
                                                                   make_shape(_1{}, K, L),
-                                                                  make_stride(Int<FragsM * DpasM>{}, _1{}));
+                                                                  make_stride(Int<FragsM>{} * get<0>(DpasShape()), _1{}));
 
     Tensor tBi = params.mainloop.gmem_tiled_copy_b.get_pvc_tensor(make_coord(0, n_coord, 0),
                                                                   make_shape(K, Int<FragsN>{}, L),
-                                                                  make_stride(_1{}, Int<DpasN>{}));
+                                                                  make_stride(_1{}, get<1>(DpasShape())));
 
     // Compute tile residues for predication
     auto m_max_coord = M - get<0>(subgroup_shape) * m_coord;                             // M - SUB_M * m_coord
@@ -262,7 +263,7 @@ public:
 
     Tensor tCi = gmem_tiled_copy_c.get_pvc_tensor(make_coord(m_coord, n_coord, 0),
                                                   make_shape(Int<FragsM>{}, Int<FragsN>{}, L),
-                                                  make_stride(Int<DpasM>{}, Int<DpasN>{}));
+                                                  make_stride(get<0>(DpasShape()), get<1>(DpasShape())));
 
     copy(gmem_tiled_copy_c, accumulators, tCi(_,_,_,l_coord));
   }

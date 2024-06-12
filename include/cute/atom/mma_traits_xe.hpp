@@ -38,7 +38,7 @@
 namespace cute
 {
 template <>
-struct MMA_Traits<XE_8x16x16_BF16BF16F32F32_NN>
+struct MMA_Traits<XE_8x16x16_F32BF16BF16F32_TN>
 {
   using ValTypeD = float;
   using ValTypeA = bfloat16_t;

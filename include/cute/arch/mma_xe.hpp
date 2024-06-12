@@ -45,11 +45,7 @@ SYCL_DEVICE_OCL(float  intel_sub_group_bf16_bf16_matrix_mad_k16(short a, cute::i
 #undef SYCL_DEVICE_OCL
 
 namespace cute {
-//MxNxK_A,B,C,D
-//# of vector component of a x subgroup-size x function name
-//float8 intel_sub_group_bf16_bf16_matrix_mad_k16(short8 a, int8 b, float8 acc);
-//TODO: Is A really not transposed? Maybe better a macro than separate define for 1,2,4,8
-struct XE_8x16x16_BF16BF16F32F32_NN
+struct XE_8x16x16_F32BF16BF16F32_TN
 {
   using DRegisters = intel::float8[1];
   using ARegisters = intel::short8[1];
@@ -69,8 +65,7 @@ struct XE_8x16x16_BF16BF16F32F32_NN
 #endif
   }
 };
-//float  intel_sub_group_bf16_bf16_matrix_mad_k16(short  a, int8 b, float  acc)
-struct XE_1x16x16_BF16BF16F32F32_NN
+struct XE_1x16x16_F32BF16BF16F32_TN
 {
   using DRegisters = float[1];
   using ARegisters = short[1];
