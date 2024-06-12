@@ -91,7 +91,7 @@ struct Gemm {
       A_tile[i] = ElementA(0);
     }
 
-    for (int j = 0; j < OutputTile::kColumn; ++j) {
+    for (int j = 0; j < OutputTile::kRow; ++j) {
       B_tile[j] = ElementB(0);
     }
 
