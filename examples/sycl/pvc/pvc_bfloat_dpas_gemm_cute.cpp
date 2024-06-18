@@ -353,11 +353,12 @@ int main(int argc, const char** argv)
   using GmemTiledCopyA = XE_2D_U16x8x16x4x2_LD_N;
   using GmemTiledCopyB = XE_2D_U16x16x16x2x1_LD_N;
 
-  using TileShape = Shape<_1, _1, _1>;
+  // Workgroup-level tile
+  using TileShape = Shape<_32, _256, _32>;
 
   using TiledMma = TiledMMA<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TN>,
           Layout<Shape<_1,_1,_1>>,
-          Tile<_32,_64,_32>>;
+          Tile<_32,_64,_32>>;  // Subgroup level-tile
 
   using DispatchPolicy = cutlass::gemm::MainloopIntelPVCUnpredicated;
 
