@@ -221,9 +221,9 @@ public:
             make_stride(Int<FragsM>{} * get<0>(MmaAtomShape()),_1{}));
 
     Tensor tBi = params.mainloop.gmem_tiled_copy_b.get_pvc_tensor(
-            make_coord(0, n_coord, 0),
-            make_shape(K, Int<FragsN>{}, L),
-            make_stride(_1{}, get<1>(MmaAtomShape())));
+            make_coord(n_coord, 0, 0),
+            make_shape(Int<FragsN>{}, K / 2, L),
+            make_stride(get<1>(MmaAtomShape()), _1{}));
 
     // Compute tile residues for predication
     auto m_max_coord = M - get<0>(subgroup_shape) * m_coord;                             // M - SUB_M * m_coord

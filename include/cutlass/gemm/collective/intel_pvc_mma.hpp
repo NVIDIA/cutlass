@@ -149,7 +149,7 @@ struct CollectiveMma<
     auto [M,N,K,L] = problem_shape_MNKL;
 
     Tensor tensorA = make_tensor(args.ptr_A, make_layout(make_shape(M,K,L), args.dA));
-    Tensor tensorB = make_tensor(args.ptr_B, make_layout(make_shape(K,N,L), args.dB));
+    Tensor tensorB = make_tensor(args.ptr_B, make_layout(make_shape(N,K,L), args.dB));
 
     typename Params::XE_Copy_A copyA = make_xe_2d_copy<GmemTiledCopyA>(tensorA);
     typename Params::XE_Copy_B copyB = make_xe_2d_copy<GmemTiledCopyB>(tensorB);
@@ -187,14 +187,14 @@ struct CollectiveMma<
     static_assert(is_rmem<FrgTensorC>::value, "C tensor must be rmem resident.");
 
     // Tensor to hold input data
-    Tensor tAr = make_tensor<typename TiledMma::ValTypeA>(Shape<Int<get<0>(SubgroupTileShape{}) * FragsK>, Int<1>>{});
-    Tensor tBr = make_tensor<typename TiledMma::ValTypeB>(
-            Shape<Int<FragsK * get<1>(SubgroupTileShape{}) / FragsN>, Int<FragsN>>{});
+    Tensor tAr = make_tensor<typename TiledMma::ValTypeA>(Shape<Int<get<0>(SubgroupTileShape{}) * FragsK>, _1>{});
+    Tensor tBr = make_tensor<typename TiledMma::ValTypeB>(Shape<Int<get<1>(SubgroupTileShape{}) / 2>, Int<FragsN>>{});
 
     Tensor tAr_view = make_tensor(static_cast<decltype(tAr) &&>(tAr).data(),
                             Shape<Int<VecA>, Int<FragsM>, Int<FragsK>>{});
     Tensor tBr_view = make_tensor(static_cast<decltype(tBr) &&>(tBr).data(),
-                            Shape<Int<VecB>, Int<FragsK>, Int<FragsN>>{});
+                            Shape<Int<VecB>, Int<FragsN>, Int<FragsK>>{},
+                            Stride<_1, Int<get<1>(SubgroupTileShape{}) / 2>, Int<VecB>>{});
 
     // Instantiate the M MA object
     TiledMma tiled_mma;
@@ -206,11 +206,9 @@ struct CollectiveMma<
    {
      // Copy gmem to rmem for the first k_tile
      copy(mainloop.gmem_tiled_copy_a, gA(_,_,k), tAr);
-     copy(mainloop.gmem_tiled_copy_b, gB(_,k/2,_), tBr);
+     copy(mainloop.gmem_tiled_copy_b, gB(_,_,k/2), tBr);
 
-     for (int kl = 0; kl < FragsK; kl++) {
-       cute::gemm(tiled_mma, accum, tAr_view(_, _, kl), tBr_view(_, kl, _), src_accum);
-     }
+     cute::gemm(tiled_mma, accum, tAr_view, tBr_view, src_accum);
    }
   }
 };
