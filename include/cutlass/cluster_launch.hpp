@@ -36,6 +36,9 @@
 #pragma once
 
 #include <cuda_runtime_api.h>
+
+#include <memory>
+
 #include "cutlass/cutlass.h"
 #include "cutlass/trace.h"
 #if defined(__CUDACC_RTC__)
