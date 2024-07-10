@@ -42,7 +42,7 @@ target_link_libraries(
   CUTLASS
   cutlass_tools_util_includes
   $<$<BOOL:${CUTLASS_ENABLE_CUBLAS}>:nvidia::cublas>
-  gtest
+  GTest::gtest
   cudart
   cuda_driver
   )
@@ -84,7 +84,7 @@ function(cutlass_test_unit_add_executable NAME)
     target_link_libraries(
       ${NAME}
       PUBLIC
-      gtest
+      GTest::gtest
     )
   else()
     target_link_libraries(
