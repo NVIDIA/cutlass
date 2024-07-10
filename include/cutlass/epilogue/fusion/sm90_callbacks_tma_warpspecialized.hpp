@@ -544,7 +544,6 @@ struct FusionCallbacks<
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-
 // D = per-row alpha * acc + per-row beta * C + per-row bias
 template<
   class CtaTileShapeMNK,

@@ -235,21 +235,24 @@ struct CollectiveMma<
   // Device side kernel params
   struct Params {
     // Assumption: StrideA is congruent with Problem_MK
-    using TMA_A = decltype(make_tma_copy(
+    using TMA_A = decltype(make_tma_copy_A_sm90(
         GmemTiledCopyA{},
         make_tensor(static_cast<InternalElementA const*>(nullptr), repeat_like(InternalStrideA{}, int32_t(0)), InternalStrideA{}),
         SmemLayoutA{}(_,_,cute::Int<0>{}),
-        make_shape(shape<0>(TileShape{}), shape<2>(TileShape{})),
-        size<1>(ClusterShape{})));  // mcast along N mode for this M load, if any
+        TileShape{},
+        ClusterShape{}));
     // Assumption: StrideB is congruent with Problem_NK
-    using TMA_B = decltype(make_tma_copy(
+    using TMA_B = decltype(make_tma_copy_B_sm90(
         GmemTiledCopyB{},
         make_tensor(static_cast<InternalElementB const*>(nullptr), repeat_like(InternalStrideB{}, int32_t(0)), InternalStrideB{}),
         SmemLayoutB{}(_,_,cute::Int<0>{}),
-        make_shape(shape<1>(TileShape{}), shape<2>(TileShape{})),
-        size<0>(ClusterShape{}))); // mcast along M mode for this N load, if any
+        TileShape{},
+        ClusterShape{}));
     TMA_A tma_load_a;
     TMA_B tma_load_b;
+    uint32_t tma_transaction_bytes = TmaTransactionBytes;
+    uint32_t tma_transaction_bytes_mk = TmaTransactionBytesMK;
+    uint32_t tma_transaction_bytes_nk = TmaTransactionBytesNK;
   };
 
   //
@@ -290,26 +293,33 @@ struct CollectiveMma<
 
     Tensor tensor_a = make_tensor(ptr_A, make_layout(make_shape(M,K,L), dA));
     Tensor tensor_b = make_tensor(ptr_B, make_layout(make_shape(N,K,L), dB));
-    typename Params::TMA_A tma_load_a = make_tma_copy(
+    typename Params::TMA_A tma_load_a = make_tma_copy_A_sm90(
         GmemTiledCopyA{},
         tensor_a,
         SmemLayoutA{}(_,_,cute::Int<0>{}),
-        make_shape(shape<0>(TileShape{}), shape<2>(TileShape{})),
-        size<1>(ClusterShape{})); // mcast along N mode for this M load, if any
-    typename Params::TMA_B tma_load_b = make_tma_copy(
+        TileShape{},
+        ClusterShape{});
+    typename Params::TMA_B tma_load_b = make_tma_copy_B_sm90(
         GmemTiledCopyB{},
         tensor_b,
         SmemLayoutB{}(_,_,cute::Int<0>{}),
-        make_shape(shape<1>(TileShape{}), shape<2>(TileShape{})),
-        size<0>(ClusterShape{})); // mcast along M mode for this N load, if any
+        TileShape{},
+        ClusterShape{});
+    uint32_t transaction_bytes_mk = TmaTransactionBytesMK;
+    uint32_t transaction_bytes_nk = TmaTransactionBytesNK;
+    uint32_t transaction_bytes = transaction_bytes_mk + transaction_bytes_nk;
+
     return {
       tma_load_a,
-      tma_load_b
+      tma_load_b,
+      transaction_bytes,
+      transaction_bytes_mk,
+      transaction_bytes_nk
     };
   }
 
   template<class ProblemShape>
-  CUTLASS_HOST_DEVICE static bool
+  static bool
   can_implement(
       ProblemShape const& problem_shape,
       [[maybe_unused]] Arguments const& args) {
@@ -330,9 +340,11 @@ struct CollectiveMma<
   }
 
   static constexpr int K_PIPE_MAX = DispatchPolicy::Stages;
-  static constexpr uint32_t TmaTransactionBytes =
-        cutlass::bits_to_bytes(size<0>(SmemLayoutA{}) * size<1>(SmemLayoutA{}) * static_cast<uint32_t>(sizeof_bits<InternalElementA>::value)) +
+  static constexpr uint32_t TmaTransactionBytesMK =
+        cutlass::bits_to_bytes(size<0>(SmemLayoutA{}) * size<1>(SmemLayoutA{}) * static_cast<uint32_t>(sizeof_bits<InternalElementA>::value));
+  static constexpr uint32_t TmaTransactionBytesNK =
         cutlass::bits_to_bytes(size<0>(SmemLayoutB{}) * size<1>(SmemLayoutB{}) * static_cast<uint32_t>(sizeof_bits<InternalElementB>::value)) ;
+  static constexpr uint32_t TmaTransactionBytes = TmaTransactionBytesMK + TmaTransactionBytesNK;
 
   /// Issue Tma Descriptor Prefetch -- ideally from a single thread for best performance
   CUTLASS_DEVICE
@@ -375,7 +387,7 @@ struct CollectiveMma<
   CUTLASS_DEVICE void
   load(
       Params const& mainloop_params,
-      MainloopPipeline pipeline, 
+      MainloopPipeline pipeline,
       PipelineState smem_pipe_write,
       cute::tuple<TensorA, TensorB> const& load_inputs,
       BlockCoord const& blk_coord,
@@ -422,14 +434,14 @@ struct CollectiveMma<
       // Issue TmaLoads
       // Maps the tile -> block, value
       if constexpr (cute::is_same_v<GmemTiledCopyA, SM90_TMA_LOAD_MULTICAST>) {
-        auto block_layout = Layout<typename DispatchPolicy::ClusterShape>{}; // (m,n) -> block_id
+        auto block_layout = Layout<typename DispatchPolicy::ClusterShape>{};                       // (m,n) -> block_id
         for (int n = 0; n < size<1>(block_layout); ++n) {
           mcast_mask_a |= (uint16_t(1) << block_layout(cluster_local_block_id.x,n,Int<0>{}));
         }
       }
 
       if constexpr (cute::is_same_v<GmemTiledCopyB, SM90_TMA_LOAD_MULTICAST>) {
-        auto block_layout = Layout<typename DispatchPolicy::ClusterShape>{}; // (m,n) -> block_id
+        auto block_layout = Layout<typename DispatchPolicy::ClusterShape>{};                       // (m,n) -> block_id
         for (int m = 0; m < size<0>(block_layout); ++m) {
           mcast_mask_b |= (uint16_t(1) << block_layout(m,cluster_local_block_id.y,Int<0>{}));
         }

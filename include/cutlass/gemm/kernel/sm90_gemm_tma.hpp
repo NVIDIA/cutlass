@@ -38,26 +38,15 @@
 #include "cutlass/epilogue/collective/detail.hpp"
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/gemm/dispatch_policy.hpp"
+#include "cutlass/gemm/kernel/gemm_universal_decl.h"
 #include "cutlass/gemm/kernel/sm90_tile_scheduler.hpp"
+#include "cutlass/gemm/kernel/tile_scheduler.hpp"
 #include "cutlass/trace.h"
 #include "cute/tensor.hpp"
 
 ///////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass::gemm::kernel {
-
-namespace detail {
-
-// IF_SWAP_AB<T>::value will be true only if:
-//   class T has member SwapAB and T::SwapAB is true
-template <typename T, typename = void>
-struct IF_SWAP_AB { static constexpr bool value = false; };
-
-template <typename T>
-struct IF_SWAP_AB <T, void_t<decltype(T::SwapAB)>>
-{ static constexpr bool value = T::SwapAB; };
-
-} // namespace
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -151,7 +140,7 @@ public:
   to_underlying_arguments(Arguments const& args, void* workspace) {
     (void) workspace;
     auto problem_shape = args.problem_shape;
-    if constexpr (detail::IF_SWAP_AB<CollectiveMainloop>::value) {
+    if constexpr (detail::Has_SwapAB_v<CollectiveMainloop>) {
       // swap M/N
       get<0>(problem_shape) = get<1>(args.problem_shape);
       get<1>(problem_shape) = get<0>(args.problem_shape);
@@ -164,8 +153,7 @@ public:
     };
   }
 
-  CUTLASS_HOST_DEVICE static
-  bool
+  static bool
   can_implement(Arguments const& args) {
     bool implementable = (args.mode == GemmUniversalMode::kGemm) or
         (args.mode == GemmUniversalMode::kBatched && cute::rank(ProblemShape{}) == 4);
@@ -285,15 +273,13 @@ public:
     );
 
     constexpr int BLK_M_RANK = cute::rank<0>(blk_shape);
-    bool m_oob = int(blockIdx.x) >= size<2>(gA_mkl);
     auto m_max_coord = unwrap(cute::transform(make_seq<BLK_M_RANK>{}, [&](auto i) {
-        return  m_oob ? 0 : get<i>(M) - get<0,i>(blk_shape) * get<i>(m_coord);
+        return  get<i>(M) - get<0,i>(blk_shape) * get<i>(m_coord);
       }));
 
     constexpr int BLK_N_RANK = cute::rank<1>(blk_shape);
-    bool n_oob = int(blockIdx.y) >= size<2>(gB_nkl);
     auto n_max_coord = unwrap(cute::transform(make_seq<BLK_N_RANK>{}, [&](auto i) {
-        return  n_oob ? 0 : get<i>(N) - get<1,i>(blk_shape) * get<i>(n_coord);
+        return  get<i>(N) - get<1,i>(blk_shape) * get<i>(n_coord);
       }));
     auto residue_mnk = make_tuple(m_max_coord, n_max_coord, Int<0>{});
 

@@ -35,7 +35,7 @@
 #include <cute/util/type_traits.hpp>
 #include <cute/algorithm/functional.hpp>
 
-#include <cute/tensor.hpp>
+#include <cute/tensor_impl.hpp>
 
 #include <cute/atom/mma_atom.hpp>
 

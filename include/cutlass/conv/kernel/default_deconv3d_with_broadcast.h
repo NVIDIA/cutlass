@@ -196,7 +196,10 @@ struct DefaultDeconv3dWithBroadcast <
     typename EpilogueOutputOp::ElementT,
     typename EpilogueOutputOp::ElementVector,
     EpilogueOutputOp,
-    ImplicitGemmBase::Epilogue::kElementsPerAccess
+    ImplicitGemmBase::Epilogue::kElementsPerAccess,
+    layout::NoPermute,
+    StrideSupport::kStrided,
+    5
   >::Epilogue;
 
   // Define the kernel
@@ -273,7 +276,7 @@ struct DefaultDeconv3dWithBroadcast <
   >::Kernel;
 
   // Define epilogue
-  using Epilogue = typename cutlass::conv::kernel::detail::DefaultConvEpilogueWithBroadcastSimtStridedDgrad<
+  using Epilogue = typename cutlass::conv::kernel::detail::DefaultConvEpilogueWithBroadcastSimt<
     ArchTag,
     typename ImplicitGemmBase::Epilogue::Shape,
     typename ImplicitGemmBase::Epilogue::WarpMmaOperator,
@@ -281,7 +284,10 @@ struct DefaultDeconv3dWithBroadcast <
     typename EpilogueOutputOp::ElementT,
     typename EpilogueOutputOp::ElementVector,
     EpilogueOutputOp,
-    ImplicitGemmBase::Epilogue::kElementsPerAccess
+    ImplicitGemmBase::Epilogue::kElementsPerAccess,
+    layout::NoPermute,
+    StrideSupport::kStrided,
+    5
   >::Epilogue;
 
   // Define the kernel

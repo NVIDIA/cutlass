@@ -41,6 +41,8 @@
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/gemm/dispatch_policy.hpp"
 #include "cutlass/gemm/kernel/sm90_tile_scheduler.hpp"
+#include "cutlass/gemm/kernel/tile_scheduler.hpp"
+#include "cutlass/gemm/kernel/gemm_universal_decl.h"
 #include "cutlass/pipeline/pipeline.hpp"
 #include "cutlass/trace.h"
 
@@ -119,27 +121,31 @@ public:
   static constexpr uint32_t StagesPerMathWarpGroup = 2;
   using MathWarpGroupOrderBarrier = cutlass::OrderedSequenceBarrier<
     StagesPerMathWarpGroup, NumMmaWarpGroups>;
+  using MathWarpGroupOrderBarrierSharedStorage =
+    cutlass::PipelineDetail::OrderedSequenceBarrierSharedStorage<
+      MathWarpGroupOrderBarrier::SequenceDepth,
+      MathWarpGroupOrderBarrier::SequenceLength>;
 
   // Kernel level shared memory storage
   struct SharedStorage {
-    struct TensorStorage : cute::aligned_struct<128> {
-      using MainloopTensorStorage = typename CollectiveMainloop::TensorStorage;
-      using EpilogueTensorStorage = typename CollectiveEpilogue::TensorStorage;
-
-      MainloopTensorStorage mainloop;
-      EpilogueTensorStorage epilogue;
-    } tensors;
-
     struct PipelineStorage : cute::aligned_struct<16> {
       using MainloopPipelineStorage = typename CollectiveMainloop::PipelineStorage;
       using EpiLoadPipelineStorage = typename CollectiveEpilogue::PipelineStorage;
-      using MathWarpGroupOrderBarrierStorage = typename MathWarpGroupOrderBarrier::SharedStorage;
+      using MathWarpGroupOrderBarrierStorage = MathWarpGroupOrderBarrierSharedStorage;
 
       alignas(16) MainloopPipelineStorage mainloop;
       alignas(16) EpiLoadPipelineStorage epi_load;
       alignas(16) MathWarpGroupOrderBarrierStorage math_wg_order;
       alignas(16) typename LoadWarpOrderBarrier::SharedStorage load_order;
     } pipelines;
+
+    struct TensorStorage : cute::aligned_struct<128> {
+      using MainloopTensorStorage = typename CollectiveMainloop::TensorStorage;
+      using EpilogueTensorStorage = typename CollectiveEpilogue::TensorStorage;
+
+      EpilogueTensorStorage epilogue;
+      MainloopTensorStorage mainloop;
+    } tensors;
   };
 
   static constexpr int SharedStorageSize = sizeof(SharedStorage);
@@ -176,7 +182,7 @@ public:
 
     (void) workspace;
     auto problem_shape = args.problem_shape;
-    if constexpr (detail::IF_SWAP_AB<CollectiveMainloop>::value) {
+    if constexpr (detail::Has_SwapAB_v<CollectiveMainloop>) {
       // swap M/N
       get<0>(problem_shape) = get<1>(args.problem_shape);
       get<1>(problem_shape) = get<0>(args.problem_shape);
@@ -219,8 +225,7 @@ public:
     };
   }
 
-  CUTLASS_HOST_DEVICE static
-  bool
+  static bool
   can_implement(Arguments const& args) {
     bool implementable = (args.mode == GemmUniversalMode::kGemm) or
         (args.mode == GemmUniversalMode::kBatched && cute::rank(ProblemShape{}) == 4);
@@ -256,7 +261,7 @@ public:
     size_t workspace_offset = 0;
 
     status = TileScheduler::template initialize_workspace<ProblemShape, ElementAccumulator>(
-      args.scheduler, workspace_ptr + workspace_offset, stream, args.problem_shape, args.hw_info, NumMmaWarpGroups);
+      args.scheduler, workspace_ptr + workspace_offset, stream, args.problem_shape, args.hw_info, NumMmaWarpGroups, 1, cuda_adapter);
     workspace_offset += TileScheduler::template get_workspace_size<ProblemShape, ElementAccumulator>(
       args.scheduler, args.problem_shape, args.hw_info, NumMmaWarpGroups);
     workspace_offset = round_nearest(workspace_offset,  MinWorkspaceAlignment);
@@ -350,7 +355,7 @@ public:
     }
     mainloop_pipeline_params.is_leader = warp_group_thread_idx == 0;
     mainloop_pipeline_params.num_consumers = NumThreadsPerWarpGroup;
-    mainloop_pipeline_params.transaction_bytes = CollectiveMainloop::TmaTransactionBytes;
+    mainloop_pipeline_params.transaction_bytes = params.mainloop.tma_transaction_bytes;
     MainloopPipeline mainloop_pipeline(shared_storage.pipelines.mainloop, mainloop_pipeline_params, ClusterShape{});
 
     // Epilogue Load pipeline
@@ -365,7 +370,9 @@ public:
     epi_load_pipeline_params.dst_blockid = cute::block_rank_in_cluster();
     epi_load_pipeline_params.producer_arv_count = NumThreadsPerWarp;
     epi_load_pipeline_params.consumer_arv_count = NumThreadsPerWarpGroup;
-    epi_load_pipeline_params.transaction_bytes = CollectiveEpilogue::TmaTransactionBytes;
+    if constexpr (CollectiveEpilogue::RequiresTransactionBytes) {
+      epi_load_pipeline_params.transaction_bytes = params.epilogue.tma_transaction_bytes;
+    }
     EpiLoadPipeline epi_load_pipeline(shared_storage.pipelines.epi_load, epi_load_pipeline_params);
 
     // Epilogue Store pipeline
@@ -446,7 +453,7 @@ public:
       epi_load_pipe_consumer_state.advance(c_tile_count);
       epi_store_pipe_producer_state.advance(d_tile_count);
     }
-    auto work_tile_info = scheduler.get_current_work();
+    auto work_tile_info = scheduler.initial_work_tile_info(ClusterShape{});
 
     // Wait for all thread blocks in the Cluster
     cluster_wait_fn();
@@ -493,10 +500,12 @@ public:
 
         // Make sure all Consumer Warp Groups have been waited upon
         collective_mainloop.load_tail(mainloop_pipeline, mainloop_pipe_producer_state);
+
       } // Mainloop Producer Warp End
 
       // Epilogue Producer Warp
       else if (producer_warp_role == ProducerWarpRole::Epilogue && collective_epilogue.is_producer_load_needed()) {
+
         load_order_barrier.wait();
         while (work_tile_info.is_valid()) {
           // Compute m_coord, n_coord, l_coord with the post-tiled m-shape and n-shape

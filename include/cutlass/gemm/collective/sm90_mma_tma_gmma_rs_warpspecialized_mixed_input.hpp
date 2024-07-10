@@ -39,6 +39,7 @@
 #include "cutlass/detail/layout.hpp"
 #include "cutlass/pipeline/pipeline.hpp"
 #include "cutlass/transform/collective/sm90_wgmma_transpose.hpp"
+#include "cutlass/pipeline/pipeline.hpp"
 #include "cutlass/trace.h"
 #include "cutlass/detail/collective.hpp"
 
@@ -50,9 +51,6 @@
 #include "cute/algorithm/gemm.hpp"
 #include "cute/tensor_predicate.hpp"
 #include "cute/numeric/arithmetic_tuple.hpp"
-#include "cutlass/pipeline/pipeline.hpp"
-#include "cutlass/trace.h"
-#include "cutlass/detail/collective.hpp"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -303,11 +301,8 @@ private:
 
   // These methods use some the public members of the class. For that reason, we define them after the public section.
   static constexpr uint32_t
-  compute_tma_transaction_bytes() {
-    constexpr uint32_t a_bytes = cutlass::bits_to_bytes(size<0>(SmemLayoutA{}) * size<1>(SmemLayoutA{}) * static_cast<uint32_t>(cute::sizeof_bits_v<InternalElementA>));
-    constexpr uint32_t b_bytes = cutlass::bits_to_bytes(size<0>(SmemLayoutB{}) * size<1>(SmemLayoutB{}) * static_cast<uint32_t>(cute::sizeof_bits_v<InternalElementB>));
-
-    constexpr uint32_t baseline_bytes = a_bytes + b_bytes;
+  compute_tma_transaction_bytes_mk() {
+    constexpr uint32_t baseline_bytes = cutlass::bits_to_bytes(size<0>(SmemLayoutA{}) * size<1>(SmemLayoutA{}) * static_cast<uint32_t>(cute::sizeof_bits_v<InternalElementA>));
 
     if constexpr (KernelConversionMode == ConversionMode::DirectConvert) {
       return baseline_bytes;
@@ -331,6 +326,11 @@ private:
     else {
       static_assert(cutlass::detail::dependent_false<KernelSchedule>, "Type not handled in tma transaction bytes computation.");
     }
+  }
+
+  static constexpr uint32_t
+  compute_tma_transaction_bytes_nk() {
+    return cutlass::bits_to_bytes(size<0>(SmemLayoutB{}) * size<1>(SmemLayoutB{}) * static_cast<uint32_t>(cute::sizeof_bits_v<InternalElementB>));
   }
 
 public:
@@ -421,6 +421,9 @@ public:
     TMA_Zero tma_load_zero;
     int64_t scale_k;
     int group_size;
+    uint32_t tma_transaction_bytes = TmaTransactionBytes;
+    uint32_t tma_transaction_bytes_mk = TmaTransactionBytesMK;
+    uint32_t tma_transaction_bytes_nk = TmaTransactionBytesNK;
   };
 
   //
@@ -478,7 +481,7 @@ public:
     typename Params::TMA_Scale tma_load_scale;
     typename Params::TMA_Zero tma_load_zero;
     if constexpr (KernelConversionMode == ConversionMode::DirectConvert) {
-      return { tma_load_a, tma_load_b, tma_load_scale, tma_load_zero, 0, 0 };
+      return { tma_load_a, tma_load_b, tma_load_scale, tma_load_zero, 0, 0, TmaTransactionBytes, TmaTransactionBytesMK, TmaTransactionBytesNK };
     } 
     else if constexpr (ModeHasScales) {
       auto scale_k = (K + args.group_size - 1) / args.group_size;
@@ -493,7 +496,7 @@ public:
           _1{}); // mcast along N mode for this M load, if any
 
       if constexpr(KernelConversionMode == ConversionMode::ConvertAndScale) {
-        return { tma_load_a, tma_load_b, tma_load_scale, tma_load_zero, scale_k, args.group_size };
+        return { tma_load_a, tma_load_b, tma_load_scale, tma_load_zero, scale_k, args.group_size, TmaTransactionBytes, TmaTransactionBytesMK, TmaTransactionBytesNK };
       }
       else if constexpr(KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
         Tensor tensor_zero = make_tensor(get_logical_ptr(args.ptr_Z), make_layout(make_shape(M,scale_k,L), dS));
@@ -503,7 +506,7 @@ public:
             SmemLayoutScale{}(_,_,cute::Int<0>{}),
             ScaleTileShape{},
             _1{}); // mcast along N mode for this M load, if any
-        return { tma_load_a, tma_load_b, tma_load_scale, tma_load_zero, scale_k, args.group_size };
+        return { tma_load_a, tma_load_b, tma_load_scale, tma_load_zero, scale_k, args.group_size, TmaTransactionBytes, TmaTransactionBytesMK, TmaTransactionBytesNK };
       } else {
         static_assert(cutlass::detail::dependent_false<KernelSchedule>, "Conversion mode not handled in to_underlying_arguments.");
       }
@@ -514,7 +517,7 @@ public:
   }
 
   template<class ProblemShape>
-  CUTLASS_HOST_DEVICE static bool
+  static bool
   can_implement(
       ProblemShape const& problem_shape,
       [[maybe_unused]] Arguments const& args) {
@@ -564,7 +567,9 @@ public:
   }
 
   static constexpr int K_PIPE_MAX = DispatchPolicy::Stages;
-  static constexpr uint32_t TmaTransactionBytes = compute_tma_transaction_bytes();
+  static constexpr uint32_t TmaTransactionBytesMK = compute_tma_transaction_bytes_mk();
+  static constexpr uint32_t TmaTransactionBytesNK = compute_tma_transaction_bytes_nk();
+  static constexpr uint32_t TmaTransactionBytes = TmaTransactionBytesMK + TmaTransactionBytesNK;
 
   /// Issue Tma Descriptor Prefetch -- ideally from a single thread for best performance
   CUTLASS_DEVICE
@@ -668,10 +673,10 @@ public:
     int lane_predicate = cute::elect_one_sync();
 
     if (lane_predicate) {
-      Tensor sA_ = make_tensor(make_smem_ptr(shared_tensors.smem_A.begin()), SmemLayoutA{});          // (BLK_M,BLK_K,PIPE)
-      Tensor sB_ = make_tensor(make_smem_ptr(shared_tensors.smem_B.begin()), SmemLayoutB{});          // (BLK_N,BLK_K,PIPE)
-      Tensor sA  = as_position_independent_swizzle_tensor(sA_);                                       // (BLK_M,BLK_K,PIPE)
-      Tensor sB  = as_position_independent_swizzle_tensor(sB_);                                       // (BLK_N,BLK_K,PIPE)
+      Tensor sA_ = make_tensor(make_smem_ptr(shared_tensors.smem_A.begin()), SmemLayoutA{});      // (BLK_M,BLK_K,PIPE)
+      Tensor sB_ = make_tensor(make_smem_ptr(shared_tensors.smem_B.begin()), SmemLayoutB{});      // (BLK_N,BLK_K,PIPE)
+      Tensor sA  = as_position_independent_swizzle_tensor(sA_);                                   // (BLK_M,BLK_K,PIPE)
+      Tensor sB  = as_position_independent_swizzle_tensor(sB_);                                   // (BLK_N,BLK_K,PIPE)
 
       //
       // Prepare the TMA loads for A, B and Scales
@@ -692,10 +697,10 @@ public:
       Tensor gB = gB_nkl(_,_,n_coord,_,l_coord);                                                     // (BLK_N,BLK_K,k)
 
       // Applies the mapping from block_tma_a
-      Tensor tAgA = block_tma_a.partition_S(gA);                                              // (TMA,TMA_M,TMA_K,k)
+      Tensor tAgA = block_tma_a.partition_S(gA);                                                 // (TMA,TMA_M,TMA_K,k)
       Tensor tAsA = block_tma_a.partition_D(sA);                                              // (TMA,TMA_M,TMA_K,PIPE)
 
-      Tensor tBgB = block_tma_b.partition_S(gB);                                              // (TMA,TMA_N,TMA_K,k)
+      Tensor tBgB = block_tma_b.partition_S(gB);                                                 // (TMA,TMA_N,TMA_K,k)
       Tensor tBsB = block_tma_b.partition_D(sB);                                              // (TMA,TMA_N,TMA_K,PIPE)
 
       uint16_t mcast_mask_a = 0;
@@ -705,14 +710,14 @@ public:
       // Issue TmaLoads
       // Maps the tile -> block, value
       if constexpr (cute::is_same_v<GmemTiledCopyA, SM90_TMA_LOAD_MULTICAST>) {
-        auto block_layout = Layout<typename DispatchPolicy::ClusterShape>{}; // (m,n) -> block_id
+        auto block_layout = Layout<typename DispatchPolicy::ClusterShape>{};                       // (m,n) -> block_id
         for (int n = 0; n < size<1>(block_layout); ++n) {
           mcast_mask_a |= (uint16_t(1) << block_layout(cluster_local_block_id.x,n,Int<0>{}));
         }
       }
 
       if constexpr (cute::is_same_v<GmemTiledCopyB, SM90_TMA_LOAD_MULTICAST>) {
-        auto block_layout = Layout<typename DispatchPolicy::ClusterShape>{}; // (m,n) -> block_id
+        auto block_layout = Layout<typename DispatchPolicy::ClusterShape>{};                       // (m,n) -> block_id
         for (int m = 0; m < size<0>(block_layout); ++m) {
           mcast_mask_b |= (uint16_t(1) << block_layout(m,cluster_local_block_id.y,Int<0>{}));
         }
@@ -1047,7 +1052,7 @@ private:
     int const l_coord) {
 
     if constexpr (KernelConversionMode == ConversionMode::DirectConvert) {
-      return cute::tuple{};
+      return cute::make_tuple();
     } 
     else if constexpr (ModeHasScales) {
       Tensor sS  = make_tensor(make_smem_ptr(shared_tensors.smem_scale.begin()), SmemLayoutScale{}); // (BLK_M,BLK_K,PIPE)
@@ -1087,8 +1092,8 @@ private:
     TensorStorage& shared_tensors) {
 
     if constexpr (KernelConversionMode == ConversionMode::DirectConvert) {
-      // noting to do
-      return cute::tuple{};
+      // nothing to do
+      return cute::make_tuple();
     }
     else if constexpr (ModeHasScales) {
       Tensor sS = make_tensor(make_smem_ptr(shared_tensors.smem_scale.begin()), SmemLayoutScale{});    // (BLK_M,BLK_SCALE_K,PIPE)
@@ -1122,8 +1127,8 @@ private:
     int const warp_group_thread_idx) {
 
     if constexpr (KernelConversionMode == ConversionMode::DirectConvert) {
-      // noting to do
-      return cute::tuple{};
+      // nothing to do
+      return cute::make_tuple();
     }
     else if constexpr (ModeHasScales) {
       auto smem_tiled_copy_S = make_tiled_copy_A(SmemCopyAtomScale{}, tiled_mma);

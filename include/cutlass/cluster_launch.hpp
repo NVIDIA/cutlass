@@ -133,7 +133,8 @@ struct ClusterLauncher {
       size_t const smem_size,
       cudaStream_t cuda_stream,
       void const* kernel,
-      void** kernel_params) {
+      void** kernel_params,
+      bool launch_with_pdl = false) {
 #if defined(CUTLASS_SM90_CLUSTER_LAUNCH_ENABLED)
     if (check_cluster_dims(grid_dims, cluster_dims) != Status::kSuccess) {
       CUTLASS_TRACE_HOST("ClusterLauncher: check_cluster_dims() failed. Aborting.");
@@ -152,14 +153,19 @@ struct ClusterLauncher {
     launch_config.dynamicSmemBytes = smem_size;
     launch_config.stream = cuda_stream;
 
-    cudaLaunchAttribute launch_attribute[1];
+    cudaLaunchAttribute launch_attribute[2];
+
     launch_attribute[0].id = cudaLaunchAttributeClusterDimension;
     launch_attribute[0].val.clusterDim.x = cluster_dims.x;
     launch_attribute[0].val.clusterDim.y = cluster_dims.y;
     launch_attribute[0].val.clusterDim.z = cluster_dims.z;
 
+    launch_attribute[1].id = cudaLaunchAttributeProgrammaticStreamSerialization;
+    launch_attribute[1].val.programmaticStreamSerializationAllowed = 1;
+
+    launch_config.numAttrs = launch_with_pdl ? 2 : 1;
+
     launch_config.attrs = launch_attribute;
-    launch_config.numAttrs = 1;
 
     CUTLASS_TRACE_HOST("ClusterLauncher: Launching GPC_CLUSTER_GRID GridDims = "
         "(" << grid_dims.x << ", " << grid_dims.y << ", " << grid_dims.z << "), "

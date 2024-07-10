@@ -33,7 +33,6 @@
   \brief The universal GEMM accommodates streamk, batched strided, and batched array variants.
 */
 
-
 #pragma once
 
 #if defined(__CUDACC_RTC__)
@@ -271,12 +270,33 @@ public:
   {
     CUTLASS_TRACE_HOST("GemmUniversalBase::can_implement()");
 
-    dim3 grid = get_grid_shape(args, cuda_adapter);
+    if (!kEnableCudaHostAdapter || cuda_adapter) {
 
-    if (!(grid.y <= std::numeric_limits<uint16_t>::max() &&
-          grid.z <= std::numeric_limits<uint16_t>::max()))
-    {
-      return Status::kErrorInvalidProblem;
+      dim3 grid = get_grid_shape(args, cuda_adapter);
+
+      if (!(grid.y <= std::numeric_limits<uint16_t>::max() &&
+            grid.z <= std::numeric_limits<uint16_t>::max()))
+      {
+        return Status::kErrorInvalidProblem;
+      }
+    }
+    else {
+      //
+      // With a null host adapter, a conservative grid shape is computed and required to conform to CUDA grid
+      // dimension limits.
+      //
+
+      int64_t logicalGridM = (int64_t(args.problem_size.m()) + ThreadblockShape::kM - 1) / ThreadblockShape::kM;
+      int64_t logicalGridN = (int64_t(args.problem_size.n()) + ThreadblockShape::kN - 1) / ThreadblockShape::kN;
+      int32_t logicalGridL = args.batch_count;
+
+      if ((int64_t(std::numeric_limits<uint32_t>::max()) < logicalGridM) ||
+          (int64_t(std::numeric_limits<uint16_t>::max()) < logicalGridN) ||
+          (int32_t(std::numeric_limits<uint16_t>::max()) < logicalGridL)) {
+
+        return Status::kErrorInvalidProblem;
+      }
+
     }
 
     return GemmKernel::can_implement(args);

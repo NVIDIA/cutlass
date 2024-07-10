@@ -56,7 +56,7 @@ TEST(CuTe_core, WeaklyCongruent)
   EXPECT_TRUE (weakly_congruent(a0, a0));
   EXPECT_TRUE (weakly_congruent(b0, b0));
   EXPECT_TRUE (weakly_congruent(a0, b0));
-  
+
   auto a1 = Shape<_1, _1>{};
   EXPECT_TRUE (weakly_congruent(a , a1));
   EXPECT_FALSE(weakly_congruent(a0, a1));
@@ -93,7 +93,7 @@ TEST(CuTe_core, WeaklyCompatible)
   EXPECT_TRUE (weakly_compatible(a, a));
   EXPECT_TRUE (weakly_compatible(b, b));
   EXPECT_TRUE (weakly_compatible(c, c));
-  EXPECT_FALSE(weakly_compatible(a, b)); 
+  EXPECT_FALSE(weakly_compatible(a, b));
   EXPECT_FALSE(weakly_compatible(a, c));
   EXPECT_TRUE (weakly_compatible(c, a));
 
@@ -102,9 +102,9 @@ TEST(CuTe_core, WeaklyCompatible)
   EXPECT_TRUE (weakly_compatible(a , a0));
   EXPECT_FALSE(weakly_compatible(a0, a ));
   EXPECT_TRUE (weakly_compatible(c , a0));
-  EXPECT_FALSE(weakly_compatible(a0, c ));  
+  EXPECT_FALSE(weakly_compatible(a0, c ));
   EXPECT_FALSE(weakly_compatible(b , a0));
-  EXPECT_FALSE(weakly_compatible(a0, b ));  
+  EXPECT_FALSE(weakly_compatible(a0, b ));
 
   auto a1 = Shape<_2,_8>{};
   EXPECT_TRUE (weakly_compatible(a1, a1));
@@ -128,4 +128,51 @@ TEST(CuTe_core, WeaklyCompatible)
   EXPECT_FALSE(weakly_compatible(a3, a0));
   EXPECT_TRUE (weakly_compatible(a2, a3));
   EXPECT_FALSE(weakly_compatible(a3, a2));
+}
+
+TEST(CuTe_core, SoftlyCompatible)
+{
+  using namespace cute;
+
+  auto a = _16{};
+  auto b = _12{};
+  auto c = _8{};
+  EXPECT_TRUE (softly_compatible(a, a));
+  EXPECT_TRUE (softly_compatible(b, b));
+  EXPECT_TRUE (softly_compatible(c, c));
+  EXPECT_FALSE(softly_compatible(a, b));
+  EXPECT_TRUE (softly_compatible(a, c));
+  EXPECT_FALSE(softly_compatible(c, a));
+
+  auto a0 = Shape<_16>{};
+  EXPECT_TRUE (softly_compatible(a0, a0));
+  EXPECT_TRUE (softly_compatible(a , a0));
+  EXPECT_FALSE(softly_compatible(a0, a ));
+  EXPECT_FALSE(softly_compatible(c , a0));
+  EXPECT_FALSE(softly_compatible(a0, c ));
+  EXPECT_FALSE(softly_compatible(b , a0));
+  EXPECT_FALSE(softly_compatible(a0, b ));
+
+  auto a1 = Shape<_2,_8>{};
+  EXPECT_TRUE (softly_compatible(a1, a1));
+  EXPECT_TRUE (softly_compatible(a , a1));
+  EXPECT_FALSE(softly_compatible(a0, a1));
+  EXPECT_FALSE(softly_compatible(a1, a0));
+  EXPECT_TRUE (softly_compatible(a1, Shape<_2,Shape<_2,_4>>{}));
+
+  auto a2 = Shape<Shape<_2,_8>>{};
+  EXPECT_TRUE (softly_compatible(a2, a2));
+  EXPECT_TRUE (softly_compatible(a , a2));
+  EXPECT_FALSE(softly_compatible(c , a2));
+  EXPECT_TRUE (softly_compatible(a0, a2));
+  EXPECT_FALSE(softly_compatible(a2, a0));
+
+  auto a3 = Shape<Shape<_2,Shape<_4,_2>>>{};
+  EXPECT_TRUE (softly_compatible(a3, a3));
+  EXPECT_TRUE (softly_compatible(a , a3));
+  EXPECT_FALSE(softly_compatible(c , a3));
+  EXPECT_TRUE (softly_compatible(a0, a3));
+  EXPECT_FALSE(softly_compatible(a3, a0));
+  EXPECT_TRUE (softly_compatible(a2, a3));
+  EXPECT_FALSE(softly_compatible(a3, a2));
 }

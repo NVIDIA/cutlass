@@ -323,23 +323,9 @@ using std::pair;
 
 #endif
 
-/// The type used as a compile-time boolean with true value.
-typedef integral_constant<bool, true> true_type;
-
-/// The type used as a compile-time boolean with false value.
-typedef integral_constant<bool, false> false_type;
-
-#if defined(__CUDACC_RTC__) || (!defined(_MSC_VER) && (__cplusplus <= 201402L)) || (defined(_MSC_VER) && (_MSC_VER < 1900))
-
-/// std::bool_constant
-template <bool V>
-struct bool_constant : platform::integral_constant<bool, V> {};
-
-#else
-
-using std::bool_constant;
-
-#endif
+using CUTLASS_STL_NAMESPACE::bool_constant;
+using CUTLASS_STL_NAMESPACE::true_type;
+using CUTLASS_STL_NAMESPACE::false_type;
 
 #if defined(__CUDACC_RTC__) || (!defined(_MSC_VER) && (__cplusplus < 201103L)) || (defined(_MSC_VER) && (_MSC_VER < 1700))
 
@@ -356,125 +342,52 @@ using std::nullptr_t;
 // Conditional metaprogramming <type_traits>
 //-----------------------------------------------------------------------------
 
-#if defined(__CUDACC_RTC__) || (!defined(_MSC_VER) && (__cplusplus < 201700L)) || (defined(_MSC_VER) && (_MSC_VER < 1600))
-
-/// std::enable_if (true specialization)
-template <bool C, typename T = void>
-struct enable_if {
-  typedef T type;
-};
-
-/// std::enable_if (false specialization)
-template <typename T>
-struct enable_if<false, T> {};
-
-/// std::conditional (true specialization)
-template <bool B, class T, class F>
-struct conditional {
-  typedef T type;
-};
-
-/// std::conditional (false specialization)
-template <class T, class F>
-struct conditional<false, T, F> {
-  typedef F type;
-};
-
-template <class...>
-using void_t = void;
-
-#else
-
-using std::enable_if;
-using std::conditional;
-using std::void_t;
-
-#endif
-
-#if (201703L <=__cplusplus)
-/// std::conditional_t
+using CUTLASS_STL_NAMESPACE::conditional;
 using CUTLASS_STL_NAMESPACE::conditional_t;
-#endif
+using CUTLASS_STL_NAMESPACE::enable_if;
+using CUTLASS_STL_NAMESPACE::enable_if_t;
+using CUTLASS_STL_NAMESPACE::void_t;
 
 //-----------------------------------------------------------------------------
 // Const/volatility specifiers <type_traits>
 //-----------------------------------------------------------------------------
 
-#if defined(__CUDACC_RTC__) || (!defined(_MSC_VER) && (__cplusplus < 201703L)) || (defined(_MSC_VER) && (_MSC_VER < 1500))
+using CUTLASS_STL_NAMESPACE::remove_const;
+using CUTLASS_STL_NAMESPACE::remove_const_t;
+using CUTLASS_STL_NAMESPACE::remove_cv;
+using CUTLASS_STL_NAMESPACE::remove_cv_t;
+using CUTLASS_STL_NAMESPACE::remove_reference;
+using CUTLASS_STL_NAMESPACE::remove_reference_t;
+using CUTLASS_STL_NAMESPACE::remove_volatile;
+using CUTLASS_STL_NAMESPACE::remove_volatile_t;
 
-/// std::remove_const (non-const specialization)
-template <typename T>
-struct remove_const {
-  typedef T type;
-};
+// remove_cvref and remove_cvref_t are C++20 features,
+// but CUTLASS finds them useful enough to back-port.
+#if defined(__cpp_lib_remove_cvref)
 
-/// std::remove_const (const specialization)
-template <typename T>
-struct remove_const<const T> {
-  typedef T type;
-};
-
-/// std::remove_volatile (non-volatile specialization)
-template <typename T>
-struct remove_volatile {
-  typedef T type;
-};
-
-/// std::remove_volatile (volatile specialization)
-template <typename T>
-struct remove_volatile<volatile T> {
-  typedef T type;
-};
-
-/// std::remove_cv
-template <typename T>
-struct remove_cv {
-  typedef typename remove_volatile<typename remove_const<T>::type>::type type;
-};
+using CUTLASS_STL_NAMESPACE::remove_cvref;
+using CUTLASS_STL_NAMESPACE::remove_cvref_t;
 
 #else
 
-using std::remove_const;
-using std::remove_volatile;
-using std::remove_cv;
-
-#endif
-
-#if (201703L <=__cplusplus)
-
-/// std::remove_cv_t
-using CUTLASS_STL_NAMESPACE::remove_cv_t;
-/// std::remove_reference_t
-using CUTLASS_STL_NAMESPACE::remove_reference_t;
-
-// C++20
-// using std::remove_cvref;
 template <class T>
 struct remove_cvref {
   using type = remove_cv_t<remove_reference_t<T>>;
 };
 
-// C++20
-// using std::remove_cvref_t;
 template <class T>
 using remove_cvref_t = typename remove_cvref<T>::type;
 
 #endif
 
-
 //-----------------------------------------------------------------------------
 // Type relationships <type_traits>
 //-----------------------------------------------------------------------------
 
+using CUTLASS_STL_NAMESPACE::is_same;  
+using CUTLASS_STL_NAMESPACE::is_same_v;
+
 #if defined(__CUDACC_RTC__) || (!defined(_MSC_VER) && (__cplusplus < 201103L)) || (defined(_MSC_VER) && (_MSC_VER < 1500))
-
-/// std::is_same (false specialization)
-template <typename A, typename B>
-struct is_same : false_type {};
-
-/// std::is_same (true specialization)
-template <typename A>
-struct is_same<A, A> : true_type {};
 
 /// Helper for std::is_base_of
 template <typename BaseT, typename DerivedT>
@@ -507,7 +420,6 @@ struct is_base_of
 
 #else
 
-using std::is_same;
 using std::is_base_of;
 
 #endif
@@ -515,6 +427,11 @@ using std::is_base_of;
 //-----------------------------------------------------------------------------
 // Type properties <type_traits>
 //-----------------------------------------------------------------------------
+
+using CUTLASS_STL_NAMESPACE::is_arithmetic;
+using CUTLASS_STL_NAMESPACE::is_arithmetic_v;
+using CUTLASS_STL_NAMESPACE::is_void;
+using CUTLASS_STL_NAMESPACE::is_void_v;
 
 #if defined(__CUDACC_RTC__) || (!defined(_MSC_VER) && (__cplusplus < 201103L)) || (defined(_MSC_VER) && (_MSC_VER < 1500))
 
@@ -535,10 +452,6 @@ struct is_pointer_helper<T*> : true_type {};
 /// std::is_pointer
 template <typename T>
 struct is_pointer : is_pointer_helper<typename remove_cv<T>::type> {};
-
-/// std::is_void
-template <typename T>
-struct is_void : is_same<void, typename remove_cv<T>::type> {};
 
 /// std::is_integral
 template <typename T>
@@ -579,11 +492,6 @@ struct is_floating_point
                         (is_same<float, typename remove_cv<T>::type>::value ||
                          is_same<double, typename remove_cv<T>::type>::value)> {};
 
-/// std::is_arithmetic
-template <typename T>
-struct is_arithmetic
-    : integral_constant<bool, (is_integral<T>::value || is_floating_point<T>::value)> {};
-
 /// std::is_fundamental
 template <typename T>
 struct is_fundamental
@@ -595,10 +503,8 @@ struct is_fundamental
 
 using std::is_volatile;
 using std::is_pointer;
-using std::is_void;
 using std::is_integral;
 using std::is_floating_point;
-using std::is_arithmetic;
 using std::is_fundamental;
 
 #endif
@@ -636,6 +542,12 @@ using CUTLASS_STL_NAMESPACE::is_unsigned_v;
 #endif
 
 //-----------------------------------------------------------------------------
+// <utility>
+//-----------------------------------------------------------------------------
+
+using CUTLASS_STL_NAMESPACE::declval;
+  
+//-----------------------------------------------------------------------------
 // bit_cast <bit>
 //-----------------------------------------------------------------------------
 
@@ -648,6 +560,12 @@ constexpr To CUTLASS_HOST_DEVICE bit_cast(const From& src) noexcept
   static_assert(sizeof(To) == sizeof(From), "sizes must match");
   return reinterpret_cast<To const &>(src);
 }
+
+//-----------------------------------------------------------------------------
+// Convertable
+//-----------------------------------------------------------------------------
+using CUTLASS_STL_NAMESPACE::is_convertible;
+using CUTLASS_STL_NAMESPACE::is_convertible_v;
 
 //-----------------------------------------------------------------------------
 // Alignment and layout utilities
@@ -892,6 +810,7 @@ struct numeric_limits<int32_t> {
   CUTLASS_HOST_DEVICE
   static constexpr int32_t max() noexcept { return 2147483647;}
   static constexpr bool is_integer = true;
+  static constexpr bool has_infinity = false;
 };
 
 template <>
@@ -901,6 +820,7 @@ struct numeric_limits<int16_t> {
   CUTLASS_HOST_DEVICE
   static constexpr int16_t max() noexcept { return 32767;}
   static constexpr bool is_integer = true;
+  static constexpr bool has_infinity = false;
 };
 
 template <>
@@ -910,6 +830,7 @@ struct numeric_limits<int8_t> {
   CUTLASS_HOST_DEVICE
   static constexpr int8_t max() noexcept { return 127;}
   static constexpr bool is_integer = true;
+  static constexpr bool has_infinity = false;
 };
 
 
@@ -920,6 +841,7 @@ struct numeric_limits<uint32_t> {
   CUTLASS_HOST_DEVICE
   static constexpr uint32_t max() noexcept { return 4294967295U;}
   static constexpr bool is_integer = true;
+  static constexpr bool has_infinity = false;
 };
 
 template <>
@@ -929,6 +851,7 @@ struct numeric_limits<uint16_t> {
   CUTLASS_HOST_DEVICE
   static constexpr uint16_t max() noexcept { return 65535U;}
   static constexpr bool is_integer = true;
+  static constexpr bool has_infinity = false;
 };
 
 template <>
@@ -938,15 +861,40 @@ struct numeric_limits<uint8_t> {
   CUTLASS_HOST_DEVICE
   static constexpr uint8_t max() noexcept { return 255U;}
   static constexpr bool is_integer = true;
+  static constexpr bool has_infinity = false;
 };
 
 template <>
 struct numeric_limits<float> {
   CUTLASS_HOST_DEVICE
   static constexpr float infinity() noexcept { return bit_cast<float, int32_t>(0x7f800000);}
+  CUTLASS_HOST_DEVICE
+  static constexpr float max() noexcept { return bit_cast<float, int32_t>(0x7f7fffff);}
   static constexpr bool is_integer = false;
   static constexpr bool has_infinity = true;
 };
+
+/// Returns a value that curries the `std::maximum()` function into the identity
+/// function. No value will compare < than this value.
+template <typename T>
+constexpr T identity_for_maximum() {
+  if constexpr (numeric_limits<T>::has_infinity) {
+    return -numeric_limits<T>::infinity();
+  } else {
+    return numeric_limits<T>::lowest();
+  }
+}
+
+/// Returns a value that curries the `std::minimum()` function into the identity
+/// function. No value will compare > than this value.
+template <typename T>
+constexpr T identity_for_minimum() {
+  if constexpr (numeric_limits<T>::has_infinity) {
+    return numeric_limits<T>::infinity();
+  } else {
+    return numeric_limits<T>::max();
+  }
+}
 
 /// std::float_round_style
 using CUTLASS_STL_NAMESPACE::float_round_style;

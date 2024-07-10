@@ -44,7 +44,7 @@ namespace cute
 struct SM90_TMA_LOAD_1D
 {
   CUTE_HOST_DEVICE static void
-  copy(void const* desc_ptr, uint64_t* mbar_ptr,
+  copy(void const* desc_ptr, uint64_t* mbar_ptr, uint64_t cache_hint,
        void      * smem_ptr,
        int32_t const& crd0)
   {
@@ -53,11 +53,11 @@ struct SM90_TMA_LOAD_1D
     uint32_t smem_int_mbar = cast_smem_ptr_to_uint(mbar_ptr);
     uint32_t smem_int_ptr  = cast_smem_ptr_to_uint(smem_ptr);
     asm volatile (
-      "cp.async.bulk.tensor.1d.shared::cluster.global.mbarrier::complete_tx::bytes"
-      " [%0], [%1, {%3}], [%2];"
+      "cp.async.bulk.tensor.1d.shared::cluster.global.mbarrier::complete_tx::bytes.L2::cache_hint"
+      " [%0], [%1, {%3}], [%2], %4;"
       :
       : "r"(smem_int_ptr), "l"(gmem_int_desc), "r"(smem_int_mbar),
-        "r"(crd0)
+        "r"(crd0), "l"(cache_hint)
       : "memory");
 #else
     CUTE_INVALID_CONTROL_PATH("Trying to use tma without CUTE_ARCH_TMA_SM90_ENABLED.");
@@ -89,7 +89,7 @@ struct SM90_TMA_LOAD_1D
 struct SM90_TMA_LOAD_2D
 {
   CUTE_HOST_DEVICE static void
-  copy(void const* desc_ptr, uint64_t* mbar_ptr,
+  copy(void const* desc_ptr, uint64_t* mbar_ptr, uint64_t cache_hint,
        void      * smem_ptr,
        int32_t const& crd0, int32_t const& crd1)
   {
@@ -98,11 +98,11 @@ struct SM90_TMA_LOAD_2D
     uint32_t smem_int_mbar = cast_smem_ptr_to_uint(mbar_ptr);
     uint32_t smem_int_ptr  = cast_smem_ptr_to_uint(smem_ptr);
     asm volatile (
-      "cp.async.bulk.tensor.2d.shared::cluster.global.mbarrier::complete_tx::bytes"
-      " [%0], [%1, {%3, %4}], [%2];"
+      "cp.async.bulk.tensor.2d.shared::cluster.global.mbarrier::complete_tx::bytes.L2::cache_hint"
+      " [%0], [%1, {%3, %4}], [%2], %5;"
       :
       : "r"(smem_int_ptr), "l"(gmem_int_desc), "r"(smem_int_mbar),
-        "r"(crd0), "r"(crd1)
+        "r"(crd0), "r"(crd1), "l"(cache_hint)
       : "memory");
 #else
     CUTE_INVALID_CONTROL_PATH("Trying to use tma without CUTE_ARCH_TMA_SM90_ENABLED.");
@@ -134,7 +134,7 @@ struct SM90_TMA_LOAD_2D
 struct SM90_TMA_LOAD_3D
 {
   CUTE_HOST_DEVICE static void
-  copy(void const* desc_ptr, uint64_t* mbar_ptr,
+  copy(void const* desc_ptr, uint64_t* mbar_ptr, uint64_t cache_hint,
        void      * smem_ptr,
        int32_t const& crd0, int32_t const& crd1, int32_t const& crd2)
   {
@@ -143,11 +143,11 @@ struct SM90_TMA_LOAD_3D
     uint32_t smem_int_mbar = cast_smem_ptr_to_uint(mbar_ptr);
     uint32_t smem_int_ptr  = cast_smem_ptr_to_uint(smem_ptr);
     asm volatile (
-      "cp.async.bulk.tensor.3d.shared::cluster.global.mbarrier::complete_tx::bytes"
-      " [%0], [%1, {%3, %4, %5}], [%2];"
+      "cp.async.bulk.tensor.3d.shared::cluster.global.mbarrier::complete_tx::bytes.L2::cache_hint"
+      " [%0], [%1, {%3, %4, %5}], [%2], %6;"
       :
       : "r"(smem_int_ptr), "l"(gmem_int_desc), "r"(smem_int_mbar),
-        "r"(crd0), "r"(crd1), "r"(crd2)
+        "r"(crd0), "r"(crd1), "r"(crd2), "l"(cache_hint)
       : "memory");
 #else
     CUTE_INVALID_CONTROL_PATH("Trying to use tma without CUTE_ARCH_TMA_SM90_ENABLED.");
@@ -179,7 +179,7 @@ struct SM90_TMA_LOAD_3D
 struct SM90_TMA_LOAD_4D
 {
   CUTE_HOST_DEVICE static void
-  copy(void const* desc_ptr, uint64_t* mbar_ptr,
+  copy(void const* desc_ptr, uint64_t* mbar_ptr, uint64_t cache_hint,
        void      * smem_ptr,
        int32_t const& crd0, int32_t const& crd1, int32_t const& crd2, int32_t const& crd3)
   {
@@ -188,11 +188,11 @@ struct SM90_TMA_LOAD_4D
     uint32_t smem_int_mbar = cast_smem_ptr_to_uint(mbar_ptr);
     uint32_t smem_int_ptr  = cast_smem_ptr_to_uint(smem_ptr);
     asm volatile (
-      "cp.async.bulk.tensor.4d.shared::cluster.global.mbarrier::complete_tx::bytes"
-      " [%0], [%1, {%3, %4, %5, %6}], [%2];"
+      "cp.async.bulk.tensor.4d.shared::cluster.global.mbarrier::complete_tx::bytes.L2::cache_hint"
+      " [%0], [%1, {%3, %4, %5, %6}], [%2], %7;"
       :
       : "r"(smem_int_ptr), "l"(gmem_int_desc), "r"(smem_int_mbar),
-        "r"(crd0), "r"(crd1), "r"(crd2), "r"(crd3)
+        "r"(crd0), "r"(crd1), "r"(crd2), "r"(crd3), "l"(cache_hint)
       : "memory");
 #else
     CUTE_INVALID_CONTROL_PATH("Trying to use tma without CUTE_ARCH_TMA_SM90_ENABLED.");
@@ -224,7 +224,7 @@ struct SM90_TMA_LOAD_4D
 struct SM90_TMA_LOAD_5D
 {
   CUTE_HOST_DEVICE static void
-  copy(void const* desc_ptr, uint64_t* mbar_ptr,
+  copy(void const* desc_ptr, uint64_t* mbar_ptr, uint64_t cache_hint,
        void      * smem_ptr,
        int32_t const& crd0, int32_t const& crd1, int32_t const& crd2, int32_t const& crd3, int32_t const& crd4)
   {
@@ -233,11 +233,11 @@ struct SM90_TMA_LOAD_5D
     uint32_t smem_int_mbar = cast_smem_ptr_to_uint(mbar_ptr);
     uint32_t smem_int_ptr  = cast_smem_ptr_to_uint(smem_ptr);
     asm volatile (
-      "cp.async.bulk.tensor.5d.shared::cluster.global.mbarrier::complete_tx::bytes"
-      " [%0], [%1, {%3, %4, %5, %6, %7}], [%2];"
+      "cp.async.bulk.tensor.5d.shared::cluster.global.mbarrier::complete_tx::bytes.L2::cache_hint"
+      " [%0], [%1, {%3, %4, %5, %6, %7}], [%2], %8;"
       :
       : "r"(smem_int_ptr), "l"(gmem_int_desc), "r"(smem_int_mbar),
-        "r"(crd0), "r"(crd1), "r"(crd2), "r"(crd3), "r"(crd4)
+        "r"(crd0), "r"(crd1), "r"(crd2), "r"(crd3), "r"(crd4), "l"(cache_hint)
       : "memory");
 #else
     CUTE_INVALID_CONTROL_PATH("Trying to use tma without CUTE_ARCH_TMA_SM90_ENABLED.");
@@ -269,39 +269,39 @@ struct SM90_TMA_LOAD_5D
 struct SM90_TMA_LOAD
 {
   CUTE_HOST_DEVICE static void
-  copy(void const* desc_ptr, uint64_t* mbar_ptr,
+  copy(void const* desc_ptr, uint64_t* mbar_ptr, uint64_t cache_hint,
        void      * smem_ptr,
        int32_t const& crd0)
   {
-    return SM90_TMA_LOAD_1D::copy(desc_ptr, mbar_ptr, smem_ptr, crd0);
+    return SM90_TMA_LOAD_1D::copy(desc_ptr, mbar_ptr, cache_hint, smem_ptr, crd0);
   }
   CUTE_HOST_DEVICE static void
-  copy(void const* desc_ptr, uint64_t* mbar_ptr,
+  copy(void const* desc_ptr, uint64_t* mbar_ptr, uint64_t cache_hint,
        void      * smem_ptr,
        int32_t const& crd0, int32_t const& crd1)
   {
-    return SM90_TMA_LOAD_2D::copy(desc_ptr, mbar_ptr, smem_ptr, crd0, crd1);
+    return SM90_TMA_LOAD_2D::copy(desc_ptr, mbar_ptr, cache_hint, smem_ptr, crd0, crd1);
   }
   CUTE_HOST_DEVICE static void
-  copy(void const* desc_ptr, uint64_t* mbar_ptr,
+  copy(void const* desc_ptr, uint64_t* mbar_ptr, uint64_t cache_hint,
        void      * smem_ptr,
        int32_t const& crd0, int32_t const& crd1, int32_t const& crd2)
   {
-    return SM90_TMA_LOAD_3D::copy(desc_ptr, mbar_ptr, smem_ptr, crd0, crd1, crd2);
+    return SM90_TMA_LOAD_3D::copy(desc_ptr, mbar_ptr, cache_hint, smem_ptr, crd0, crd1, crd2);
   }
   CUTE_HOST_DEVICE static void
-  copy(void const* desc_ptr, uint64_t* mbar_ptr,
+  copy(void const* desc_ptr, uint64_t* mbar_ptr, uint64_t cache_hint,
        void      * smem_ptr,
        int32_t const& crd0, int32_t const& crd1, int32_t const& crd2, int32_t const& crd3)
   {
-    return SM90_TMA_LOAD_4D::copy(desc_ptr, mbar_ptr, smem_ptr, crd0, crd1, crd2, crd3);
+    return SM90_TMA_LOAD_4D::copy(desc_ptr, mbar_ptr, cache_hint, smem_ptr, crd0, crd1, crd2, crd3);
   }
   CUTE_HOST_DEVICE static void
-  copy(void const* desc_ptr, uint64_t* mbar_ptr,
+  copy(void const* desc_ptr, uint64_t* mbar_ptr, uint64_t cache_hint,
        void      * smem_ptr,
        int32_t const& crd0, int32_t const& crd1, int32_t const& crd2, int32_t const& crd3, int32_t const& crd4)
   {
-    return SM90_TMA_LOAD_5D::copy(desc_ptr, mbar_ptr, smem_ptr, crd0, crd1, crd2, crd3, crd4);
+    return SM90_TMA_LOAD_5D::copy(desc_ptr, mbar_ptr, cache_hint, smem_ptr, crd0, crd1, crd2, crd3, crd4);
   }
 
   struct PREFETCH

@@ -595,12 +595,10 @@ private:
 
       const TensorStride stride_A = vector_to_array_strides(config.stride_a, the_stride_size);
       const TensorStride stride_B = vector_to_array_strides(config.stride_b, the_stride_size);
-      const TensorStride stride_C = vector_to_array_strides(config.stride_c, the_stride_size);
 
       // cutlass::library::Conv2dConfiguration has no member stride_d.
       // The code below imitates the testbed,
       // which just sets D's strides to C's strides.
-      const TensorStride stride_D = stride_C;
 
       const int num_groups = config.problem_size.groups;
       if (num_groups != 1) {
@@ -773,9 +771,7 @@ private:
 
       const TensorStride stride_A = coord_to_array_strides(input_stride_a);
       const TensorStride stride_B = coord_to_array_strides(input_stride_b);
-      const TensorStride stride_C = coord_to_array_strides(input_stride_c);
 
-      const TensorStride stride_D = stride_C;
       const int num_groups = config.problem_size.groups;
       if (num_groups != 1) {
         CUTLASS_TRACE_HOST("CUTLASS 3 kernels currently only support groups = 1.");
@@ -851,6 +847,12 @@ private:
 #if defined(CUTLASS_DEBUG_TRACE_LEVEL) && (CUTLASS_DEBUG_TRACE_LEVEL > 1)
     std::cerr << "ConvOperation3x::update_operator_arguments_from_arguments\n";
 #endif
+
+    auto status = UpdateFusionArgs<decltype(out_args.epilogue.thread)>::update_(
+      out_args.epilogue.thread, in_args);
+    if (status != Status::kSuccess) {
+      return status;
+    }
 
     out_args.mainloop.ptr_A = reinterpret_cast<ElementA const*>(in_args.A);
     out_args.mainloop.ptr_B = reinterpret_cast<ElementB const*>(in_args.B);

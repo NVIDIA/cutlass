@@ -43,7 +43,7 @@
 #include "cutlass/cutlass.h"
 #include "cutlass/epilogue/thread/activation.h"
 #include "cutlass/epilogue/thread/linear_combination_generic_with_scaling.h"
-#include "cutlass/gemm/device/gemm_sparse_with_absmax.h"
+#include "cutlass/gemm/device/gemm_sparse_universal_with_absmax.h"
 #include "cutlass/util/host_tensor.h"
 #include "cutlass/util/reference/host/gemm.h"
 #include "cutlass/util/reference/host/tensor_compare.h"
@@ -78,7 +78,41 @@ TEST(SM89_Device_Sparse_Gemm_fe4m3t_fe4m3n_fe4m3t_tensor_op_f32, identity_128x12
     ElementAccumulator
   >;
 
-  using Gemm = cutlass::gemm::device::SparseGemmWithAbsmax<
+  using Gemm = cutlass::gemm::device::GemmSparseUniversalWithAbsmax<
+    ElementA, LayoutA, ElementB, LayoutB, ElementOutput, LayoutC,
+    ElementAccumulator, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm89,
+    cutlass::gemm::GemmShape<128, 128, 128>, cutlass::gemm::GemmShape<64, 64, 128>, cutlass::gemm::GemmShape<16, 8, 64>,
+    EpilogueOutputOp, cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, kStages
+  >;
+
+  bool passed = test::gemm::device::TestAllGemmWithAbsmax<Gemm, test::gemm::device::SparseTestbed<Gemm>, cutlass::epilogue::thread::Identity>();
+  EXPECT_TRUE(passed);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+TEST(SM89_Device_Sparse_Gemm_fe4m3t_fe4m3n_f32t_tensor_op_f32, identity_128x128x128_64x64x128) {
+  // Test with float D and Aux for testing split-K without needing relative equality checks
+  using ElementA = cutlass::float_e4m3_t;
+  using ElementB = cutlass::float_e4m3_t;
+  using ElementOutput = float;
+  using ElementAuxOutput = ElementOutput;
+  using ElementAccumulator = float;
+  using LayoutA = cutlass::layout::RowMajor;
+  using LayoutB = cutlass::layout::ColumnMajor;
+  using LayoutC = cutlass::layout::RowMajor;
+  static int const kStages = 3;
+
+  using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombinationGenericWithScalingAndAbsMax<
+    cutlass::epilogue::thread::Identity,
+    ElementOutput,
+    ElementAuxOutput,
+    128 / cutlass::sizeof_bits<ElementOutput>::value,
+    ElementAccumulator,
+    ElementAccumulator
+  >;
+
+  using Gemm = cutlass::gemm::device::GemmSparseUniversalWithAbsmax<
     ElementA, LayoutA, ElementB, LayoutB, ElementOutput, LayoutC,
     ElementAccumulator, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm89,
     cutlass::gemm::GemmShape<128, 128, 128>, cutlass::gemm::GemmShape<64, 64, 128>, cutlass::gemm::GemmShape<16, 8, 64>,
@@ -112,12 +146,12 @@ TEST(SM89_Device_Sparse_Gemm_fe4m3t_fe4m3n_fe4m3t_tensor_op_f32, identity_fastac
     ElementAccumulator
   >;
 
-  using Gemm = cutlass::gemm::device::SparseGemmWithAbsmax<
+  using Gemm = cutlass::gemm::device::GemmSparseUniversalWithAbsmax<
     ElementA, LayoutA, ElementB, LayoutB, ElementOutput, LayoutC,
     ElementAccumulator, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm89,
     cutlass::gemm::GemmShape<128, 128, 128>, cutlass::gemm::GemmShape<64, 64, 128>, cutlass::gemm::GemmShape<16, 8, 64>,
     EpilogueOutputOp, cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, kStages,
-    kAlignment, kAlignment, false, cutlass::arch::OpMultiplyAddFastAccum
+    kAlignment, kAlignment, cutlass::arch::OpMultiplyAddFastAccum
   >;
 
   bool passed = test::gemm::device::TestAllGemmWithAbsmax<Gemm, test::gemm::device::SparseTestbed<Gemm>, cutlass::epilogue::thread::Identity>();
@@ -146,7 +180,7 @@ TEST(SM89_Device_Sparse_Gemm_fe4m3t_fe4m3n_fe4m3t_tensor_op_f32, relu_128x128x12
     ElementAccumulator
   >;
 
-  using Gemm = cutlass::gemm::device::SparseGemmWithAbsmax<
+  using Gemm = cutlass::gemm::device::GemmSparseUniversalWithAbsmax<
     ElementA, LayoutA, ElementB, LayoutB, ElementOutput, LayoutC,
     ElementAccumulator, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm89,
     cutlass::gemm::GemmShape<128, 128, 128>, cutlass::gemm::GemmShape<64, 64, 128>, cutlass::gemm::GemmShape<16, 8, 64>,
@@ -179,7 +213,7 @@ TEST(SM89_Device_Sparse_Gemm_fe4m3t_fe5m2n_fe4m3t_tensor_op_f32, identity_128x12
     ElementAccumulator
   >;
 
-  using Gemm = cutlass::gemm::device::SparseGemmWithAbsmax<
+  using Gemm = cutlass::gemm::device::GemmSparseUniversalWithAbsmax<
     ElementA, LayoutA, ElementB, LayoutB, ElementOutput, LayoutC,
     ElementAccumulator, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm89,
     cutlass::gemm::GemmShape<128, 128, 128>, cutlass::gemm::GemmShape<64, 64, 128>, cutlass::gemm::GemmShape<16, 8, 64>,
@@ -212,7 +246,7 @@ TEST(SM89_Device_Sparse_Gemm_fe5m2t_fe4m3n_fe4m3t_tensor_op_f32, identity_128x12
     ElementAccumulator
   >;
 
-  using Gemm = cutlass::gemm::device::SparseGemmWithAbsmax<
+  using Gemm = cutlass::gemm::device::GemmSparseUniversalWithAbsmax<
     ElementA, LayoutA, ElementB, LayoutB, ElementOutput, LayoutC,
     ElementAccumulator, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm89,
     cutlass::gemm::GemmShape<128, 128, 128>, cutlass::gemm::GemmShape<64, 64, 128>, cutlass::gemm::GemmShape<16, 8, 64>,
@@ -245,7 +279,7 @@ TEST(SM89_Device_Sparse_Gemm_fe5m2t_fe5m2n_fe4m3t_tensor_op_f32, identity_128x12
     ElementAccumulator
   >;
 
-  using Gemm = cutlass::gemm::device::SparseGemmWithAbsmax<
+  using Gemm = cutlass::gemm::device::GemmSparseUniversalWithAbsmax<
     ElementA, LayoutA, ElementB, LayoutB, ElementOutput, LayoutC,
     ElementAccumulator, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm89,
     cutlass::gemm::GemmShape<128, 128, 128>, cutlass::gemm::GemmShape<64, 64, 128>, cutlass::gemm::GemmShape<16, 8, 64>,
@@ -278,7 +312,7 @@ TEST(SM89_Device_Sparse_Gemm_fe4m3t_fe4m3n_fe5m2t_tensor_op_f32, identity_128x12
     ElementAccumulator
   >;
 
-  using Gemm = cutlass::gemm::device::SparseGemmWithAbsmax<
+  using Gemm = cutlass::gemm::device::GemmSparseUniversalWithAbsmax<
     ElementA, LayoutA, ElementB, LayoutB, ElementOutput, LayoutC,
     ElementAccumulator, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm89,
     cutlass::gemm::GemmShape<128, 128, 128>, cutlass::gemm::GemmShape<64, 64, 128>, cutlass::gemm::GemmShape<16, 8, 64>,
@@ -311,7 +345,7 @@ TEST(SM89_Device_Sparse_Gemm_fe5m2t_fe5m2n_fe5m2t_tensor_op_f32, identity_diff_a
     ElementAccumulator
   >;
 
-  using Gemm = cutlass::gemm::device::SparseGemmWithAbsmax<
+  using Gemm = cutlass::gemm::device::GemmSparseUniversalWithAbsmax<
     ElementA, LayoutA, ElementB, LayoutB, ElementOutput, LayoutC,
     ElementAccumulator, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm89,
     cutlass::gemm::GemmShape<128, 128, 128>, cutlass::gemm::GemmShape<64, 64, 128>, cutlass::gemm::GemmShape<16, 8, 64>,
@@ -344,7 +378,7 @@ TEST(SM89_Device_Sparse_Gemm_fe4m3t_fe4m3n_fe4m3t_tensor_op_f32, identity_128x64
     ElementAccumulator
   >;
 
-  using Gemm = cutlass::gemm::device::SparseGemmWithAbsmax<
+  using Gemm = cutlass::gemm::device::GemmSparseUniversalWithAbsmax<
     ElementA, LayoutA, ElementB, LayoutB, ElementOutput, LayoutC,
     ElementAccumulator, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm89,
     cutlass::gemm::GemmShape<128, 64, 128>, cutlass::gemm::GemmShape<32, 64, 128>, cutlass::gemm::GemmShape<16, 8, 64>,
@@ -377,7 +411,7 @@ TEST(SM89_Device_Sparse_Gemm_fe4m3t_fe4m3n_fe4m3t_tensor_op_f32, identity_noScal
     ElementAccumulator
   >;
 
-  using Gemm = cutlass::gemm::device::SparseGemmWithAbsmax<
+  using Gemm = cutlass::gemm::device::GemmSparseUniversalWithAbsmax<
     ElementA, LayoutA, ElementB, LayoutB, ElementOutput, LayoutC,
     ElementAccumulator, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm89,
     cutlass::gemm::GemmShape<128, 128, 128>, cutlass::gemm::GemmShape<64, 64, 128>, cutlass::gemm::GemmShape<16, 8, 64>,
@@ -414,7 +448,7 @@ TEST(SM89_Device_Sparse_Gemm_fe4m3t_fe4m3n_fe4m3t_tensor_op_f32, identity_noAux_
     ElementAccumulator
   >;
 
-  using Gemm = cutlass::gemm::device::SparseGemmWithAbsmax<
+  using Gemm = cutlass::gemm::device::GemmSparseUniversalWithAbsmax<
     ElementA, LayoutA, ElementB, LayoutB, ElementOutput, LayoutC,
     ElementAccumulator, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm89,
     cutlass::gemm::GemmShape<128, 128, 128>, cutlass::gemm::GemmShape<64, 64, 128>, cutlass::gemm::GemmShape<16, 8, 64>,

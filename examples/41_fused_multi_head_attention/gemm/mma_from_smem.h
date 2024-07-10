@@ -1799,7 +1799,7 @@ struct B2bGemm<
           if (rowIdx == 1) {
             lse_prefetched[colIdx] = accum_n < lse_extent
                 ? lse[accum_n]
-                : platform::numeric_limits<accum_t>::infinity();
+                : cutlass::platform::numeric_limits<accum_t>::infinity();
           }
           accum[idx] = expf(accum[idx] - lse_prefetched[colIdx]);
           ++colIdx;
@@ -1938,7 +1938,7 @@ struct B2bGemm<
           if (rowIdx == 1) {
             lse_prefetched[colIdx] = accum_n < lse_extent
                 ? lse[accum_n]
-                : platform::numeric_limits<accum_t>::infinity();
+                : cutlass::platform::numeric_limits<accum_t>::infinity();
           }
           accum[idx] = expf(accum[idx] - lse_prefetched[colIdx]);
           ++colIdx;

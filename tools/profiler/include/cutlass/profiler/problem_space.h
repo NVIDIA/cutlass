@@ -256,7 +256,7 @@ struct ScalarArgument : public KernelArgument {
     virtual std::ostream &print(std::ostream &out) const;
   };
 
-  using ValueCollection = std::vector<std::string>;
+  using ValueCollection = std::vector<decltype(ScalarValue::value)>;
 
   /// Abstract base class to iterate over values within arguments
   struct ScalarValueIterator : public KernelArgument::ValueIterator {
@@ -271,7 +271,7 @@ struct ScalarArgument : public KernelArgument {
     // Methods
     //
 
-    ScalarValueIterator(ScalarArgument const *argument = nullptr);
+    explicit ScalarValueIterator(ScalarArgument const *argument = nullptr);
 
     virtual void operator++();
     virtual bool operator==(ValueIterator const &it) const;
@@ -292,7 +292,7 @@ struct ScalarArgument : public KernelArgument {
   //
 
   /// Default ctor
-  ScalarArgument(
+  explicit ScalarArgument(
     ArgumentDescription const *description
   ): 
     KernelArgument(description) { }
@@ -632,7 +632,7 @@ struct TensorArgument : public KernelArgument {
     // Methods
     //
 
-    TensorValueIterator(TensorArgument const *argument_);
+    explicit TensorValueIterator(TensorArgument const *argument_);
 
     virtual void operator++();
     virtual bool operator==(ValueIterator const &it) const;
@@ -649,7 +649,7 @@ struct TensorArgument : public KernelArgument {
   //
 
   /// Default ctor
-  TensorArgument(
+  explicit TensorArgument(
     ArgumentDescription const *description
   ): 
     KernelArgument(description) { }
@@ -690,7 +690,7 @@ struct EnumeratedTypeArgument : public KernelArgument {
     virtual std::ostream &print(std::ostream &out) const;
   };
 
-  using ValueCollection = std::vector<std::string>;
+  using ValueCollection = std::vector<decltype(EnumeratedTypeValue::element)>;
 
   /// Abstract base class to iterate over values within arguments
   struct EnumeratedTypeValueIterator : public KernelArgument::ValueIterator {
@@ -705,7 +705,7 @@ struct EnumeratedTypeArgument : public KernelArgument {
     // Methods
     //
 
-    EnumeratedTypeValueIterator(EnumeratedTypeArgument const *argument_ = nullptr);
+    explicit EnumeratedTypeValueIterator(EnumeratedTypeArgument const *argument_ = nullptr);
 
     virtual void operator++();
     virtual bool operator==(ValueIterator const &it) const;
@@ -725,7 +725,7 @@ struct EnumeratedTypeArgument : public KernelArgument {
   //
 
   /// Default ctor
-  EnumeratedTypeArgument(ArgumentDescription const *description):
+  explicit EnumeratedTypeArgument(ArgumentDescription const *description):
     KernelArgument(description) {}
 
   virtual bool not_null() const {
@@ -819,7 +819,7 @@ public:
   //
 
   /// Default ctor
-  ProblemSpace() {}
+  ProblemSpace() = default;
 
   /// Constructs a problem space from a vector of arguments. This vector must outlive
   /// the ProblemSpace object, which stores pointers to objects within the

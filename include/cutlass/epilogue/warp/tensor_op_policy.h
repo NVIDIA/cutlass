@@ -98,6 +98,47 @@ struct TensorOpPolicy<WarpShape, OperatorShape, layout::RowMajor> {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+/// Partial specialization for row-major
+template <
+  typename WarpShape,           ///< shape of warp-level GEMM (concept: MatrixShape)
+  typename OperatorShape        ///< matrix multiply operation shape (concept: gemm::GemmShape)
+>
+struct TensorOpPolicy<WarpShape, OperatorShape, layout::ColumnMajor> {
+
+  /// Number of operations
+  using OperatorCount = MatrixShape<
+    (WarpShape::kM + OperatorShape::kM - 1) / OperatorShape::kM,
+    (WarpShape::kN + OperatorShape::kN - 1) / OperatorShape::kN
+  >;
+
+  //
+  // Hard-coded constants regarding Tensor Operations
+  //
+
+  static int const kElementsPerAccess = 1;
+  static int const kColumnsPerIteration = 8;
+  static bool const kDivisible = 
+    !(WarpShape::kM % OperatorShape::kM) && !(WarpShape::kN % OperatorShape::kN);
+
+  //
+  // Derived quantities
+  //
+
+  // Number of 'externally visible' iterations per actual instruction
+  static int const kIterationsPerInstruction = OperatorShape::kN / kColumnsPerIteration;
+
+  // Number of externally visible iterations
+  static int const kIterations = OperatorCount::kColumn * kIterationsPerInstruction;
+
+  using TileIterations = MatrixShape<kIterations, 1>;
+
+  // Hard code for 16x8
+  static int const kAccumulatorRowStride = 2;
+  static int const kAccumulatorColumnStride = 4 * OperatorCount::kRow;
+};
+
+////////////////////////////////////////////////////////////////////////////////
+
 /// Partial specialization for column-major-interleaved
 template <
     typename WarpShape,  ///< shape of warp-level GEMM (concept: MatrixShape)

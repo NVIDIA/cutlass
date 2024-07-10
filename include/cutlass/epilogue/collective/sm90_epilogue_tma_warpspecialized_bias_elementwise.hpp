@@ -61,7 +61,8 @@ template <
   class CopyOpS2R_,
   class CopyOpS2G_,
   class SmemLayoutAtomD_,
-  class CopyOpR2S_
+  class CopyOpR2S_,
+  class CopyAtomC_
 >
 class Sm90EpilogueTmaWarpSpecializedBiasElementwise
   : public CollectiveEpilogue<
@@ -78,7 +79,8 @@ class Sm90EpilogueTmaWarpSpecializedBiasElementwise
       CopyOpS2R_,
       CopyOpS2G_,
       SmemLayoutAtomD_,
-      CopyOpR2S_
+      CopyOpR2S_,
+      CopyAtomC_
 > {
 private:
   using Impl =
@@ -96,7 +98,8 @@ private:
       CopyOpS2R_,
       CopyOpS2G_,
       SmemLayoutAtomD_,
-      CopyOpR2S_
+      CopyOpR2S_,
+      CopyAtomC_
     >;
 public:
   using DispatchPolicy = Sm90TmaWarpSpecializedBiasElementwise<StagesC_, StagesD_, FragmentSize_>;

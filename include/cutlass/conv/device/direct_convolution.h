@@ -197,7 +197,7 @@ public:
     params_.ptr_C = args.ref_C.data();
     params_.ptr_D = args.ref_D.data();
     params_.output_op = args.output_op;
-    params_.ptr_reordered_B = args.ref_reordered_B.data();;
+    params_.ptr_reordered_B = args.ref_reordered_B.data();
     params_.semaphore = static_cast<int *>(workspace);
 
     return Status::kSuccess;

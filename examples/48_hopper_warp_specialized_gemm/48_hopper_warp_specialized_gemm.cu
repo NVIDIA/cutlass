@@ -35,10 +35,10 @@
     This example demonstrate a simple way to instantiate and run a TF32 GEMM using the new CUTLASS 3.0
     APIs on NVIDIA Hopper architecture. New features that will be showcased in this example are as follows:
 
-    1. NVIDIA Hopper architecture introduces a new series of tensor core instructions (GMMA) 
+    1. NVIDIA Hopper architecture introduces a new series of tensor core instructions (GMMA)
     which are more efficient than the Ampere tensor core instructions.
 
-    2. NVIDIA Hopper architecture includes new Tensor Memory Accelerator (TMA) unit to transfer large 
+    2. NVIDIA Hopper architecture includes new Tensor Memory Accelerator (TMA) unit to transfer large
     blocks of data efficiently between global memory and shared memory. TMA also supports asynchronous
     copies between thread blocks in a cluster. Another advantage is that TMA can load in FP32 data and
     convert them implicitly to TF32.
@@ -105,7 +105,7 @@ using OperatorClass       = cutlass::arch::OpClassTensorOp;                 // O
 using TileShape           = Shape<_128,_128,_32>;                           // Threadblock-level tile size
 using ClusterShape        = Shape<_1,_2,_1>;                                // Shape of the threadblocks in a cluster
 using StageCountType = cutlass::gemm::collective::StageCountAuto;           // Stage count maximized based on the tile size
-using KernelSchedule = cutlass::gemm::collective::KernelScheduleAuto;       // Kernel to launch based on the default setting in the Collective Builder 
+using KernelSchedule = cutlass::gemm::collective::KernelScheduleAuto;       // Kernel to launch based on the default setting in the Collective Builder
 
 using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
     cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
@@ -294,10 +294,10 @@ bool initialize_block(
 /// Initialize operands to be used in the GEMM and reference GEMM
 void initialize(const Options &options) {
 
-  stride_A = cutlass::make_cute_packed_stride(StrideA{}, cute::make_shape(options.m, options.k, Int<1>{}));
-  stride_B = cutlass::make_cute_packed_stride(StrideB{}, cute::make_shape(options.n, options.k, Int<1>{}));
-  stride_C = cutlass::make_cute_packed_stride(StrideC{}, cute::make_shape(options.m, options.n, Int<1>{}));
-  stride_D = cutlass::make_cute_packed_stride(StrideD{}, cute::make_shape(options.m, options.n, Int<1>{}));
+  stride_A = cutlass::make_cute_packed_stride(StrideA{}, {options.m, options.k, 1});
+  stride_B = cutlass::make_cute_packed_stride(StrideB{}, {options.n, options.k, 1});
+  stride_C = cutlass::make_cute_packed_stride(StrideC{}, {options.m, options.n, 1});
+  stride_D = cutlass::make_cute_packed_stride(StrideD{}, {options.m, options.n, 1});
 
   block_A.reset(options.m * options.k);
   block_B.reset(options.k * options.n);
@@ -441,7 +441,6 @@ int main(int argc, char const **args) {
       << "later (compute capability 90 or greater).\n";
     return 0;
   }
-
   //
   // Parse options
   //

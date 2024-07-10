@@ -395,10 +395,6 @@ std::unique_ptr<KernelArgument::ValueIterator> EnumeratedTypeArgument::end() con
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
-ProblemSpace::Iterator::Iterator() {
-
-}
-
 ProblemSpace::Iterator::Iterator(ProblemSpace const &problem_space) {
   for (auto const & arg_ptr : problem_space.arguments) {
     construct_(arg_ptr.get());

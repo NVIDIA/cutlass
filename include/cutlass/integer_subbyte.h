@@ -48,53 +48,79 @@
 
 namespace cutlass {
 
-///////////////////////////////////////////////////////////////////////////////////////////////////
-
 template <int Bits, bool Signed = true>
 struct integer_subbyte {
-  /// Storage type
   using Storage = uint8_t;
 
-  /// Number of bits
   static_assert(Bits <= 8*sizeof(Storage), "Require a subbyte of bits in integer_subbyte");
 
-  /// External type
-  using xint_t = typename platform::conditional<Signed, int, unsigned>::type;
+  // "External type"; the integer type for which
+  // integer_subbyte has a conversion-to operator
+  using xint_t = typename cutlass::platform::conditional<Signed, int, unsigned>::type;
 
-  /// Bitmask for truncation from larger integers
+  // Bitmask for truncation from larger integers
   static constexpr Storage bits_mask_ = Storage(Storage(-1) >> (8 - Bits));
-  /// Bitmask for the sign bit
+  // Bitmask for the sign bit
   static constexpr Storage sign_mask_ = Storage((Signed ? 1 : 0) << (Bits - 1));
 
-  //
-  // Data members
-  //
-
+  // Where the bits are stored
   Storage storage;
 
-  //
-  // Methods
-  //
-
-  /// No operation
+  // Default construction does NOT zero-initialize
   integer_subbyte() = default;
 
-  /// Conversion from integer type
+  // Implicit conversion is DEPRECATED.
+  // Please use one of the two explicit constructors below.
+  template<class T,
+    class Enable = cutlass::platform::enable_if_t<cutlass::platform::is_convertible_v<T, int>>
+  >
+  [[deprecated("Implicit conversion is deprecated; please use explicit construction instead")]]
+  CUTLASS_HOST_DEVICE
+  integer_subbyte(T value)
+      : integer_subbyte(static_cast<xint_t>(value)) {}
+
+  // CUTLASS code commonly converts both signed and unsigned integers
+  // into integer_subbyte, so the class provides both explicit
+  // conversions.
+
+  // Precondition: If the external type is unsigned int, then value
+  // fits in unsigned int (is nonnegative).
   CUTLASS_HOST_DEVICE explicit
   integer_subbyte(int value)
-      : storage(reinterpret_cast<Storage const&>(value) & bits_mask_) {}
-
-  CUTLASS_HOST_DEVICE explicit
-  integer_subbyte(unsigned value)
-      : storage(reinterpret_cast<Storage const&>(value) & bits_mask_) {}
-
-  CUTLASS_HOST_DEVICE explicit
-  integer_subbyte(double value) {
-    xint_t tmp = static_cast<xint_t>(value);
-    storage = reinterpret_cast<Storage const &>(tmp) & bits_mask_;
+      : storage(reinterpret_cast<Storage const&>(value) & bits_mask_)
+  {
+    if constexpr (Signed) {
+      [[maybe_unused]] constexpr int lower_bound = -(1 << (Bits - 1));
+      [[maybe_unused]] constexpr int upper_bound = (1 << (Bits - 1)) - 1;
+      assert(value >= lower_bound);
+      assert(value < upper_bound);
+    }
+    else {
+      [[maybe_unused]] constexpr unsigned upper_bound = 1u << Bits;
+      assert(value >= 0);
+      assert(value < static_cast<int>(upper_bound));
+    }
   }
 
-  /// Convert to int or unsigned
+  // Precondition: If the external type is (signed) int, then value
+  // fits in int.
+  CUTLASS_HOST_DEVICE explicit
+  integer_subbyte(unsigned value)
+      : storage(reinterpret_cast<Storage const&>(value) & bits_mask_)
+  {
+    if constexpr (Signed) {
+      [[maybe_unused]] constexpr int lower_bound = -(1 << (Bits - 1));
+      [[maybe_unused]] constexpr int upper_bound = (1 << (Bits - 1)) - 1;
+      assert(value >= lower_bound);
+      assert(value < upper_bound);
+    }
+    else {
+      [[maybe_unused]] constexpr unsigned upper_bound = 1u << Bits;
+      assert(value < upper_bound);
+    }
+  }
+
+  // Convert to the "external" integer type (int or unsigned)
   CUTLASS_HOST_DEVICE
   operator xint_t() const {
     if (sign_mask_ & storage) {  // Sign extend
@@ -104,48 +130,55 @@ struct integer_subbyte {
     }
   }
 
-  /// Equality
   CUTLASS_HOST_DEVICE
   bool operator==(integer_subbyte const& rhs) const {
     return storage == rhs.storage;
   }
 
-  /// Inequality
   CUTLASS_HOST_DEVICE
   bool operator!=(integer_subbyte const& rhs) const {
     return storage != rhs.storage;
   }
 
-  /// Less than or equal
-  CUTLASS_HOST_DEVICE
-  bool operator<=(integer_subbyte const& rhs) const {
-    if (sign_mask_ & storage) {
-      return !(rhs.storage < storage);
-    } else {
-      return storage <= rhs.storage;
-    }
-  }
-
-  /// Less than
   CUTLASS_HOST_DEVICE
   bool operator<(integer_subbyte const& rhs) const {
-    if (sign_mask_ & storage) {
-      return !(rhs.storage <= storage);
-    } else {
+    if ((sign_mask_ & storage) == (sign_mask_ & rhs.storage)) {
+      // If both *this and rhs have the same sign, compare storage directly.
       return storage < rhs.storage;
+    }
+    else {
+      // If *this and rhs don't have the same sign,
+      // then return whether *this is negative.
+      return sign_mask_ & storage;
     }
   }
 
-  /// Greater than or equal
+  CUTLASS_HOST_DEVICE
+  bool operator<=(integer_subbyte const& rhs) const {
+    if ((sign_mask_ & storage) == (sign_mask_ & rhs.storage)) {
+      // If both *this and rhs have the same sign, compare storage directly.
+      return storage <= rhs.storage;
+    }
+    else {
+      // If *this and rhs don't have the same sign,
+      // then return whether *this is negative.
+      return sign_mask_ & storage;
+    }
+  }
+
   CUTLASS_HOST_DEVICE
   bool operator>=(integer_subbyte const& rhs) const {
     return !(*this < rhs);
   }
 
-  /// Greater than
   CUTLASS_HOST_DEVICE
   bool operator>(integer_subbyte const& rhs) const {
     return !(*this <= rhs);
+  }
+
+  CUTLASS_HOST_DEVICE friend integer_subbyte
+  conj(integer_subbyte const& x) {
+    return x;
   }
 };
 
@@ -186,83 +219,62 @@ struct sizeof_bits<bin1_t> {
 
 namespace platform {
 
-template <>
-struct numeric_limits<cutlass::int4b_t> {
-  CUTLASS_HOST_DEVICE static
-  cutlass::int4b_t const lowest() noexcept { return int4b_t{-8};}
+/// Forward Declaration
+template <class T>
+struct numeric_limits;
 
-  CUTLASS_HOST_DEVICE static
-  cutlass::int4b_t const max() noexcept { return int4b_t{7};}
+// Specialization for signed integer_subbyte
+template<int NumBits>
+struct numeric_limits<cutlass::integer_subbyte<NumBits, true>> {
+private:
+  using value_type = cutlass::integer_subbyte<NumBits, true>;
 
-  CUTLASS_HOST_DEVICE static
-  cutlass::int4b_t const min() noexcept { return lowest();}
+public:
+  CUTLASS_HOST_DEVICE static value_type lowest() noexcept {
+    return value_type{
+      -(1 << (NumBits - 1))
+    };
+  }
 
-  static constexpr bool is_integer = true;
-  static constexpr bool is_signed = true;
-};
+  CUTLASS_HOST_DEVICE static value_type max() noexcept {
+    return value_type{
+      (1 << (NumBits - 1)) - 1
+    };
+  }
 
-template <>
-struct numeric_limits<cutlass::uint4b_t> {
-  CUTLASS_HOST_DEVICE static
- cutlass::uint4b_t const lowest() noexcept { return uint4b_t{0};}
-
-  CUTLASS_HOST_DEVICE static
-  cutlass::uint4b_t const max() noexcept { return uint4b_t{15};}
-
-  CUTLASS_HOST_DEVICE static
-  cutlass::uint4b_t const min() noexcept { return lowest();}
-
-  static constexpr bool is_integer = true;
-  static constexpr bool is_signed = false;
-};
-
-template <>
-struct numeric_limits<cutlass::uint1b_t> {
-  CUTLASS_HOST_DEVICE static
-  cutlass::uint1b_t const lowest() noexcept { return uint1b_t{0};}
-
-  CUTLASS_HOST_DEVICE static
-  cutlass::uint1b_t const max() noexcept { return uint1b_t{1};}
-
-  CUTLASS_HOST_DEVICE static
-  cutlass::uint1b_t const min() noexcept { return lowest();}
-
-  static constexpr bool is_integer = true;
-  static constexpr bool is_signed = false;
-};
-
-template <>
-struct numeric_limits<cutlass::int2b_t> {
-  CUTLASS_HOST_DEVICE static
-  cutlass::int2b_t lowest() noexcept { return int2b_t{-2}; }
-
-  CUTLASS_HOST_DEVICE static
-  cutlass::int2b_t min() noexcept { return lowest(); }
-
-  CUTLASS_HOST_DEVICE static
-  cutlass::int2b_t max() noexcept { return int2b_t{1}; }
+  CUTLASS_HOST_DEVICE static value_type const min() noexcept {
+    return lowest();
+  }
 
   static constexpr bool is_integer = true;
   static constexpr bool is_signed = true;
+  static constexpr bool has_infinity = false;
 };
 
-template <>
-struct numeric_limits<cutlass::uint2b_t> {
-  CUTLASS_HOST_DEVICE static
-  cutlass::uint2b_t const lowest() noexcept { return uint2b_t{0}; }
+// Specialization for unsigned integer_subbyte
+template<int NumBits>
+struct numeric_limits<cutlass::integer_subbyte<NumBits, false>> {
+private:
+  using value_type = cutlass::integer_subbyte<NumBits, false>;
 
-  CUTLASS_HOST_DEVICE static
-  cutlass::uint2b_t const min() noexcept { return lowest(); }
+public:
+  CUTLASS_HOST_DEVICE static value_type lowest() noexcept {
+    return value_type{0u};
+  }
 
-  CUTLASS_HOST_DEVICE static
-  cutlass::uint2b_t const max() noexcept { return uint2b_t{3}; }
+  CUTLASS_HOST_DEVICE static value_type max() noexcept {
+    return value_type{
+      (1u << NumBits) - 1u
+    };
+  }
+
+  CUTLASS_HOST_DEVICE static value_type const min() noexcept {
+    return lowest();
+  }
 
   static constexpr bool is_integer = true;
   static constexpr bool is_signed = false;
 };
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace platform
 } // namespace cutlass
-

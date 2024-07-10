@@ -61,7 +61,19 @@ struct alignas(4) tfloat32_t {
   //
   // Methods
   //
+  private:
+    CUTLASS_HOST_DEVICE
+    static uint32_t float_to_storage(float s) {
+  #if defined(__CUDA_ARCH__)
+      uint32_t result = reinterpret_cast<uint32_t const &>(s);
+  #else
+      uint32_t result;
+      std::memcpy(&result, &s, sizeof(float));
+  #endif
+      return result;
+    }
 
+  public:
   /// Constructs from an unsigned int
   CUTLASS_HOST_DEVICE
   static tfloat32_t bitcast(uint32_t x) {
@@ -73,7 +85,7 @@ struct alignas(4) tfloat32_t {
   /// Emulated rounding is fast in device code
   CUTLASS_HOST_DEVICE
   static tfloat32_t round_half_ulp_truncate(float const &s) {
-    uint32_t x = reinterpret_cast<uint32_t const &>(s);
+    uint32_t x = float_to_storage(s);
 
     #if defined(__CUDA_ARCH__)
     if (::isfinite(s)) {
@@ -88,24 +100,19 @@ struct alignas(4) tfloat32_t {
     return tfloat32_t::bitcast(x);
   }
 
-  /// Default constructor
   tfloat32_t() = default;
 
   /// Floating-point conversion - round toward nearest even
   CUTLASS_HOST_DEVICE
-//  explicit tfloat32_t(float x): storage(round_half_ulp_truncate(x).storage) { }
-  tfloat32_t(float x): storage(round_half_ulp_truncate(x).storage) { }
+  explicit tfloat32_t(float x): storage(round_half_ulp_truncate(x).raw()) { }
 
-  /// Floating-point conversion - round toward nearest even
+  // Conversion from double (this rounds twice)
   CUTLASS_HOST_DEVICE
-//  explicit tfloat32_t(double x): tfloat32_t(float(x)) {
-  tfloat32_t(double x): tfloat32_t(float(x)) {
-  }
+  explicit tfloat32_t(double x): tfloat32_t(float(x)) { }
 
   /// Integer conversion - round toward zero
   CUTLASS_HOST_DEVICE
-//  explicit tfloat32_t(int x) {
-  tfloat32_t(int x) {
+  explicit tfloat32_t(int x) {
     float flt = static_cast<float>(x);
     #if defined(__CUDA_ARCH__)
     storage = reinterpret_cast<uint32_t const &>(flt);
@@ -114,7 +121,7 @@ struct alignas(4) tfloat32_t {
     #endif
   }
 
-  /// Converts to float
+  // Conversion to float
   CUTLASS_HOST_DEVICE
   operator float() const {
 
@@ -122,7 +129,7 @@ struct alignas(4) tfloat32_t {
     // of the mantissa.
     unsigned bits = (storage & ~0x1fffu);
 
-    #if defined(__CUDA_ARCH__)    
+    #if defined(__CUDA_ARCH__)
     return reinterpret_cast<float const &>(bits);
     #else
     float flt;
@@ -131,7 +138,7 @@ struct alignas(4) tfloat32_t {
     #endif
   }
 
-  /// Converts to float
+  /// Converts to double
   CUTLASS_HOST_DEVICE
   explicit operator double() const {
     return double(float(*this));
@@ -253,11 +260,11 @@ cutlass::tfloat32_t sqrt(cutlass::tfloat32_t const& h) {
 CUTLASS_HOST_DEVICE
 tfloat32_t copysign(tfloat32_t const& a, tfloat32_t const& b) {
 
-  uint32_t a_mag = (reinterpret_cast<uint32_t const &>(a) & 0x7fffffff);  
-  uint32_t b_sign = (reinterpret_cast<uint32_t const &>(b) & 0x80000000);
+  uint32_t a_mag = (a.raw() & 0x7fffffff);
+  uint32_t b_sign = (b.raw() & 0x80000000);
   uint32_t result = (a_mag | b_sign);
 
-  return reinterpret_cast<tfloat32_t const &>(result);
+  return tfloat32_t::bitcast(result);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -372,13 +379,7 @@ tfloat32_t operator+(tfloat32_t const& lhs, tfloat32_t const& rhs) {
 
 CUTLASS_HOST_DEVICE
 tfloat32_t operator-(tfloat32_t const& lhs) {
-  union u_tff32 {
-    float val_f32;
-    tfloat32_t val_tf;
-    CUTLASS_HOST_DEVICE u_tff32() : val_f32(0) { }
-  };
-  union u_tff32 x; x.val_f32 = -reinterpret_cast<float const &>(lhs);
-  return x.val_tf;
+  return tfloat32_t::bitcast(0x80000000 ^ lhs.raw());
 }
 
 CUTLASS_HOST_DEVICE

@@ -33,6 +33,7 @@
 #include <cute/config.hpp>
 
 #include <cute/util/type_traits.hpp>
+#include <cutlass/fast_math.h>
 
 namespace cute
 {
@@ -321,6 +322,35 @@ log_2(T x) {
   assert(x > 0);
   static_assert(is_unsigned<T>::value, "Only to be used for unsigned integral types.");
   return static_cast<int32_t>(bit_width(x)) - 1;
+}
+
+template <class IntDiv, class IntMod>
+struct DivModReturnType {
+  IntDiv div_;
+  IntMod mod_;
+  CUTE_HOST_DEVICE constexpr
+  DivModReturnType(IntDiv const& div, IntMod const& mod) : div_(div), mod_(mod) {}
+};
+
+// General divmod
+template <class CInt0, class CInt1>
+CUTE_HOST_DEVICE constexpr
+auto
+divmod(CInt0 const& a, CInt1 const& b) {
+  return DivModReturnType{a / b, a % b};
+}
+
+// Specialized function with fastDivmod input
+template <class CInt>
+CUTE_HOST_DEVICE constexpr
+auto
+divmod(CInt const& a, cutlass::FastDivmod const& b) {
+  using val_div_type = typename cutlass::FastDivmod::value_div_type;
+  using val_mod_type = typename cutlass::FastDivmod::value_mod_type;
+  val_div_type div = 0;
+  val_mod_type mod = 0;
+  b(div, mod, a);
+  return DivModReturnType{div, mod};
 }
 
 } // namespace cute

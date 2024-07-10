@@ -31,10 +31,13 @@
 #pragma once
 
 #include "cutlass/conv/convolution.h"
+#include "cutlass/epilogue/thread/activation.h"
 #include "cutlass/arch/arch.h"
 
 #include "cute/layout.hpp"
 #include "cute/numeric/integral_constant.hpp"
+
+//////////////////////////////////////////////////////////////////////////////
 
 //////////////////////////////////////////////////////////////////////////////
 

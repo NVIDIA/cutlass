@@ -125,7 +125,8 @@ template<
   class ShapePadding,
   class StrideTraversal,
   class ShapeDilation,
-  class EpilogueFusionParams>
+  class EpilogueFusionParams
+>
 struct ConvReferenceImpl {
   using ElementAcc = typename EpilogueFusionParams::ElementAcc;
   using ElementC = typename EpilogueFusionParams::ElementC;
@@ -145,7 +146,6 @@ struct ConvReferenceImpl {
   NumericConverter<ElementOut, ElementCompute> output_converter;
 
   EpilogueFusionParams& epi_fusion_params_;
-
   TensorA const& tensor_a_;
   TensorB const& tensor_b_;
   TensorC const& tensor_c_;
@@ -174,7 +174,8 @@ struct ConvReferenceImpl {
     padding_(padding),
     tstride_(tstride),
     dilation_(dilation),
-    epi_fusion_params_(epi_fusion_params) {
+    epi_fusion_params_(epi_fusion_params)
+  {
     static_assert(rank(ShapePadding{}) == rank(ShapeDilation{}));
     static_assert(rank(ShapePadding{}) == rank(StrideTraversal{}));
   }
@@ -211,7 +212,9 @@ private:
             for (int32_t c = 0; c < C; ++c) {
               int32_t w =  q * cute::get<0>(tstride_) - cute::get<0>(padding_) + s * cute::get<0>(dilation_);
               if (detail::is_activation_in_bounds(tensor_a_, n, w, c)) {
-                accumulator += ElementAcc(tensor_a_(c, w, n) * tensor_b_(c, s, k));
+                auto a = tensor_a_(c, w, n);
+                auto b = tensor_b_(c, s, k);
+                accumulator += ElementAcc(a * b);
               }
             }
           }
@@ -256,7 +259,9 @@ private:
                   int32_t w =  q * cute::get<0>(tstride_) - cute::get<0>(padding_) + s * cute::get<0>(dilation_);
                   int32_t h =  p * cute::get<1>(tstride_) - cute::get<1>(padding_) + r * cute::get<1>(dilation_);
                   if (detail::is_activation_in_bounds(tensor_a_, n, h, w, c)) {
-                    accumulator += ElementAcc(tensor_a_(c, w, h, n) * tensor_b_(c, s, r, k));
+                    auto a = tensor_a_(c, w, h, n);
+                    auto b = tensor_b_(c, s, r, k);
+                    accumulator += ElementAcc(a * b);
                   }
                 }
               }
@@ -308,7 +313,9 @@ private:
                       int32_t h =  p * cute::get<1>(tstride_) - cute::get<1>(padding_) + r * cute::get<1>(dilation_);
                       int32_t d =  z * cute::get<2>(tstride_) - cute::get<2>(padding_) + t * cute::get<2>(dilation_);
                       if (detail::is_activation_in_bounds(tensor_a_, n, d, h, w, c)) {
-                        accumulator += ElementAcc(tensor_a_(c, w, h, d, n) * tensor_b_(c, s, r, t, k));
+                        auto a = tensor_a_(c, w, h, d, n);
+                        auto b = tensor_b_(c, s, r, t, k);
+                        accumulator += ElementAcc(a * b);
                       }
                     }
                   }
@@ -516,9 +523,12 @@ private:
 
   // Specialization for 1D wgrad kernel
   void wgrad_reference(cute::Int<1> spatial_dims) {
-    int32_t N = size<2>(tensor_a_);
-    int32_t Q = size<1>(tensor_a_);
-    int32_t K = size<0>(tensor_a_);
+    int32_t N =
+        size<2>(tensor_a_);
+    int32_t Q =
+        size<1>(tensor_a_);
+    int32_t K =
+        size<0>(tensor_a_);
     int32_t S = size<1>(tensor_d_);
     int32_t C = size<0>(tensor_d_);
 
@@ -536,8 +546,14 @@ private:
           for (int32_t n = 0; n < N; ++n) {
             for (int32_t q = 0; q < Q; ++q) {
               int32_t w =  q * cute::get<0>(tstride_) - cute::get<0>(padding_) + s * cute::get<0>(dilation_);
-              if (detail::is_activation_in_bounds(tensor_b_, n, w, c)) {
-                accumulator += ElementAcc(tensor_b_(c, w, n) * tensor_a_(k, q, n));
+              bool is_in_bounds =
+                  detail::is_activation_in_bounds(tensor_b_, n, w, c);
+              if (is_in_bounds) {
+                auto act =
+                    tensor_b_(c, w, n);
+                auto xformed_act =
+                    tensor_a_(k, q, n);
+                accumulator += ElementAcc(act * xformed_act);
               }
             }
           }
@@ -555,10 +571,14 @@ private:
 
   // Specialization for 2D wgrad kernel
   void wgrad_reference(cute::Int<2> spatial_dims) {
-    int32_t N = size<3>(tensor_a_);
-    int32_t P = size<2>(tensor_a_);
-    int32_t Q = size<1>(tensor_a_);
-    int32_t K = size<0>(tensor_a_);
+    int32_t N =
+        size<3>(tensor_a_);
+    int32_t P =
+        size<2>(tensor_a_);
+    int32_t Q =
+        size<1>(tensor_a_);
+    int32_t K =
+        size<0>(tensor_a_);
     int32_t R = size<2>(tensor_d_);
     int32_t S = size<1>(tensor_d_);
     int32_t C = size<0>(tensor_d_);
@@ -580,8 +600,14 @@ private:
                 for (int32_t q = 0; q < Q; ++q) {
                   int32_t w =  q * cute::get<0>(tstride_) - cute::get<0>(padding_) + s * cute::get<0>(dilation_);
                   int32_t h =  p * cute::get<1>(tstride_) - cute::get<1>(padding_) + r * cute::get<1>(dilation_);
-                  if (detail::is_activation_in_bounds(tensor_b_, n, h, w, c)) {
-                    accumulator += ElementAcc(tensor_b_(c, w, h, n) * tensor_a_(k, q, p, n));
+                  bool is_in_bounds =
+                      detail::is_activation_in_bounds(tensor_b_, n, h, w, c);
+                  if (is_in_bounds) {
+                    auto act =
+                        tensor_b_(c, w, h, n);
+                    auto xformed_act =
+                        tensor_a_(k, q, p, n);
+                    accumulator += ElementAcc(act * xformed_act);
                   }
                 }
               }
@@ -601,11 +627,16 @@ private:
 
   // Specialization for 3D wgrad kernel
   void wgrad_reference(cute::Int<3> spatial_dims) {
-    int32_t N = size<4>(tensor_a_);
-    int32_t Z = size<3>(tensor_a_);
-    int32_t P = size<2>(tensor_a_);
-    int32_t Q = size<1>(tensor_a_);
-    int32_t K = size<0>(tensor_a_);
+    int32_t N =
+        size<4>(tensor_a_);
+    int32_t Z =
+        size<3>(tensor_a_);
+    int32_t P =
+        size<2>(tensor_a_);
+    int32_t Q =
+        size<1>(tensor_a_);
+    int32_t K =
+        size<0>(tensor_a_);
     int32_t T = size<3>(tensor_d_);
     int32_t R = size<2>(tensor_d_);
     int32_t S = size<1>(tensor_d_);
@@ -631,8 +662,14 @@ private:
                       int32_t w =  q * cute::get<0>(tstride_) - cute::get<0>(padding_) + s * cute::get<0>(dilation_);
                       int32_t h =  p * cute::get<1>(tstride_) - cute::get<1>(padding_) + r * cute::get<1>(dilation_);
                       int32_t d =  z * cute::get<2>(tstride_) - cute::get<2>(padding_) + t * cute::get<2>(dilation_);
-                      if (detail::is_activation_in_bounds(tensor_b_, n, d, h, w, c)) {
-                        accumulator += ElementAcc(tensor_b_(c, w, h, d, n) * tensor_a_(k, q, p, z, n));
+                      bool is_in_bounds =
+                          detail::is_activation_in_bounds(tensor_b_, n, d, h, w, c);
+                      if (is_in_bounds) {
+                        auto act =
+                            tensor_b_(c, w, h, d, n);
+                        auto xformed_act =
+                            tensor_a_(k, q, p, z, n);
+                        accumulator += ElementAcc(act * xformed_act);
                       }
                     }
                   }
