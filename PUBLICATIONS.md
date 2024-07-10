@@ -1,6 +1,6 @@
 # Publications Using Cutlass
 
-# 2024
+## 2024
 
 - ["Faster Neighborhood Attention: Reducing the O(n^2) Cost of Self Attention at the Threadblock Level"](https://arxiv.org/abs/2403.04690). Ali Hassani, Wen-Mei Hwu, Humphrey Shi. _arXiv_, March 2024.
 

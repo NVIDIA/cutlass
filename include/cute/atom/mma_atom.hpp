@@ -331,7 +331,7 @@ struct TiledMMA : MMA_Atom
                             make_layout(size<2>(AtomShape_MNK{})));
     auto b_tensor = zipped_divide(t_tensor, b_tile);                 // ((AtomN,AtomK),(RestN,RestK))
 
-    // Transform the Atom mode from (M,K) to (Thr,Val)
+    // Transform the Atom mode from (N,K) to (Thr,Val)
     auto tv_tensor = b_tensor.compose(AtomLayoutB_TV{},_);           // ((ThrV,FrgV),(RestN,RestK))
 
     // Tile the tensor for the Thread
