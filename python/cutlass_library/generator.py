@@ -2619,6 +2619,9 @@ def GenerateSM80_TensorOp_16816_mixed_input_upcast_a(manifest, cuda_version):
       TileDescription([128, 64, 64],  5, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([128, 64, 64],  4, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([128, 64, 64],  3, [2, 2, 1], math_inst, min_cc, max_cc),
+      # 128x32
+      TileDescription([128, 32, 64],  9, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 32, 64],  5, [2, 2, 1], math_inst, min_cc, max_cc),
       # 128x16
       TileDescription([128, 16, 64],  5, [2, 1, 1], math_inst, min_cc, max_cc),
       TileDescription([128, 16, 64],  3, [2, 1, 1], math_inst, min_cc, max_cc),
@@ -2648,10 +2651,10 @@ def GenerateSM80_TensorOp_16816_mixed_input_upcast_a(manifest, cuda_version):
       operations += CreateGemmOperator(manifest, layouts, tile_descriptions, \
         data_type_mixed, alignment_constraints, None, EpilogueFunctor.LinearCombination, SwizzlingFunctor.Identity8)
 
-      for op in operations:
-        if (DataTypeSize[op.C.element] == 16) and \
-           (op.tile_description.threadblock_shape[1] <= 32):
-          op.C.alignment = 4
+    for op in operations:
+      if (DataTypeSize[op.C.element] == 16) and \
+         (op.tile_description.threadblock_shape[1] <= 32):
+        op.C.alignment = 4
 
 #
 def GenerateSM80_TensorOp_16816_mixed_input_upcast_b(manifest, cuda_version):
@@ -2713,6 +2716,11 @@ def GenerateSM80_TensorOp_16816_mixed_input_upcast_b(manifest, cuda_version):
       TileDescription([128, 64, 64],  5, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([128, 64, 64],  4, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([128, 64, 64],  3, [2, 2, 1], math_inst, min_cc, max_cc),
+      # 128x32
+      TileDescription([128, 32, 64],  9, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 32, 64],  5, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 32, 32],  9, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 32, 32],  5, [2, 2, 1], math_inst, min_cc, max_cc),
       # 128x16
       TileDescription([128, 16, 64],  5, [2, 1, 1], math_inst, min_cc, max_cc),
       TileDescription([128, 16, 64],  3, [2, 1, 1], math_inst, min_cc, max_cc),
@@ -2732,7 +2740,7 @@ def GenerateSM80_TensorOp_16816_mixed_input_upcast_b(manifest, cuda_version):
     ]
 
     # streamk uses more regs which can cause spill for the biggest warp tile size when the accumulators are 32bit.
-    CreateGemmOperator(manifest, layouts, tile_descriptions, \
+    operations = CreateGemmOperator(manifest, layouts, tile_descriptions, \
       data_type, alignment_constraints, None, EpilogueFunctor.LinearCombination, SwizzlingFunctor.Identity8)
 
     # Avoid emitting two kernels if the accumulator type does not differ from the input type (e.g. F16 accumulation)
@@ -2745,12 +2753,12 @@ def GenerateSM80_TensorOp_16816_mixed_input_upcast_b(manifest, cuda_version):
         math_inst.element_accumulator,
       ]
 
-      operations = CreateGemmOperator(manifest, layouts, tile_descriptions, \
+      operations += CreateGemmOperator(manifest, layouts, tile_descriptions, \
         data_type_mixed, alignment_constraints, None, EpilogueFunctor.LinearCombination, SwizzlingFunctor.Identity8)
 
-      for op in operations:
-        if op.tile_description.threadblock_shape[1] <= 32:
-          op.C.alignment = 4
+    for op in operations:
+      if op.tile_description.threadblock_shape[1] <= 32:
+        op.C.alignment = 4
 
 #
 def GenerateSM80_TensorOp_16832_TN(manifest, cuda_version):
