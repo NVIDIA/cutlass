@@ -1321,6 +1321,119 @@ struct SM90_64x32x16_F32F16F16_RS
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+// GMMA 64x48x16 F32+=F16*F16
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+struct SM90_64x48x16_F32F16F16_SS
+{
+  using DRegisters = void;
+  using ARegisters = uint64_t[1];
+  using BRegisters = uint64_t[1];
+  using CRegisters = float[24];
+
+  CUTE_HOST_DEVICE static void
+  fma(uint64_t const& desc_a,
+      uint64_t const& desc_b,
+      float         & d00, float         & d01, float         & d02, float         & d03,
+      float         & d04, float         & d05, float         & d06, float         & d07,
+      float         & d08, float         & d09, float         & d10, float         & d11,
+      float         & d12, float         & d13, float         & d14, float         & d15,
+      float         & d16, float         & d17, float         & d18, float         & d19,
+      float         & d20, float         & d21, float         & d22, float         & d23,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
+  {
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %26, 0;\n"
+      "wgmma.mma_async.sync.aligned.m64n48k16.f32.f16.f16 "
+      "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
+      " %8,  %9,  %10, %11, %12, %13, %14, %15, "
+      " %16, %17, %18, %19, %20, %21, %22, %23},"
+      " %24,"
+      " %25,"
+      " p,   %27, %28, %29, %30;\n"
+    "}\n"
+      : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
+        "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
+        "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
+        "+f"(d12), "+f"(d13), "+f"(d14), "+f"(d15),
+        "+f"(d16), "+f"(d17), "+f"(d18), "+f"(d19),
+        "+f"(d20), "+f"(d21), "+f"(d22), "+f"(d23)
+      :  "l"(desc_a),
+         "l"(desc_b),
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
+#else
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+#endif
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// GMMA 64x48x16 F32+=F16*F16
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+struct SM90_64x48x16_F32F16F16_RS
+{
+  using DRegisters = void;
+  using ARegisters = uint32_t[4];
+  using BRegisters = uint64_t[1];
+  using CRegisters = float[24];
+
+  static_assert(tnspA == GMMA::Major::K,
+      "Register source operand A must have K major layout.");
+
+  CUTE_HOST_DEVICE static void
+  fma(uint32_t const& a00, uint32_t const& a01, uint32_t const& a02, uint32_t const& a03,
+      uint64_t const& desc_b,
+      float         & d00, float         & d01, float         & d02, float         & d03,
+      float         & d04, float         & d05, float         & d06, float         & d07,
+      float         & d08, float         & d09, float         & d10, float         & d11,
+      float         & d12, float         & d13, float         & d14, float         & d15,
+      float         & d16, float         & d17, float         & d18, float         & d19,
+      float         & d20, float         & d21, float         & d22, float         & d23,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
+  {
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %29, 0;\n"
+      "wgmma.mma_async.sync.aligned.m64n48k16.f32.f16.f16 "
+      "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
+      " %8,  %9,  %10, %11, %12, %13, %14, %15, "
+      " %16, %17, %18, %19, %20, %21, %22, %23},"
+      "{%24, %25, %26, %27},"
+      " %28,"
+      " p,   %30, %31, %32;\n"
+    "}\n"
+      : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
+        "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
+        "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
+        "+f"(d12), "+f"(d13), "+f"(d14), "+f"(d15),
+        "+f"(d16), "+f"(d17), "+f"(d18), "+f"(d19),
+        "+f"(d20), "+f"(d21), "+f"(d22), "+f"(d23)
+      :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
+         "l"(desc_b),
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
+#else
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+#endif
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
 // GMMA 64x64x16 F32+=F16*F16
 template <
   GMMA::Major tnspA,
@@ -1438,6 +1551,139 @@ struct SM90_64x64x16_F32F16F16_RS
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
     CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+#endif
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// GMMA 64x80x16 F32+=F16*F16
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+struct SM90_64x80x16_F32F16F16_SS
+{
+  using DRegisters = void;
+  using ARegisters = uint64_t[1];
+  using BRegisters = uint64_t[1];
+  using CRegisters = float[40];
+
+  CUTE_HOST_DEVICE static void
+  fma(uint64_t const& desc_a,
+      uint64_t const& desc_b,
+      float         & d00, float         & d01, float         & d02, float         & d03,
+      float         & d04, float         & d05, float         & d06, float         & d07,
+      float         & d08, float         & d09, float         & d10, float         & d11,
+      float         & d12, float         & d13, float         & d14, float         & d15,
+      float         & d16, float         & d17, float         & d18, float         & d19,
+      float         & d20, float         & d21, float         & d22, float         & d23,
+      float         & d24, float         & d25, float         & d26, float         & d27,
+      float         & d28, float         & d29, float         & d30, float         & d31,
+      float         & d32, float         & d33, float         & d34, float         & d35,
+      float         & d36, float         & d37, float         & d38, float         & d39,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
+  {
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %42, 0;\n"
+      "wgmma.mma_async.sync.aligned.m64n80k16.f32.f16.f16 "
+      "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
+      " %8,  %9,  %10, %11, %12, %13, %14, %15, "
+      " %16, %17, %18, %19, %20, %21, %22, %23, "
+      " %24, %25, %26, %27, %28, %29, %30, %31, "
+      " %32, %33, %34, %35, %36, %37, %38, %39},"
+      " %40,"
+      " %41,"
+      " p,   %43, %44, %45, %46;\n"
+    "}\n"
+      : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
+        "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
+        "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
+        "+f"(d12), "+f"(d13), "+f"(d14), "+f"(d15),
+        "+f"(d16), "+f"(d17), "+f"(d18), "+f"(d19),
+        "+f"(d20), "+f"(d21), "+f"(d22), "+f"(d23),
+        "+f"(d24), "+f"(d25), "+f"(d26), "+f"(d27),
+        "+f"(d28), "+f"(d29), "+f"(d30), "+f"(d31),
+        "+f"(d32), "+f"(d33), "+f"(d34), "+f"(d35),
+        "+f"(d36), "+f"(d37), "+f"(d38), "+f"(d39)
+      :  "l"(desc_a),
+         "l"(desc_b),
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
+#else
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+#endif
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// GMMA 64x80x16 F32+=F16*F16
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+struct SM90_64x80x16_F32F16F16_RS
+{
+  using DRegisters = void;
+  using ARegisters = uint32_t[4];
+  using BRegisters = uint64_t[1];
+  using CRegisters = float[40];
+
+  static_assert(tnspA == GMMA::Major::K,
+      "Register source operand A must have K major layout.");
+
+  CUTE_HOST_DEVICE static void
+  fma(uint32_t const& a00, uint32_t const& a01, uint32_t const& a02, uint32_t const& a03,
+      uint64_t const& desc_b,
+      float         & d00, float         & d01, float         & d02, float         & d03,
+      float         & d04, float         & d05, float         & d06, float         & d07,
+      float         & d08, float         & d09, float         & d10, float         & d11,
+      float         & d12, float         & d13, float         & d14, float         & d15,
+      float         & d16, float         & d17, float         & d18, float         & d19,
+      float         & d20, float         & d21, float         & d22, float         & d23,
+      float         & d24, float         & d25, float         & d26, float         & d27,
+      float         & d28, float         & d29, float         & d30, float         & d31,
+      float         & d32, float         & d33, float         & d34, float         & d35,
+      float         & d36, float         & d37, float         & d38, float         & d39,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
+  {
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %45, 0;\n"
+      "wgmma.mma_async.sync.aligned.m64n80k16.f32.f16.f16 "
+      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
+      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
+      " %16,  %17,  %18,  %19,  %20,  %21,  %22,  %23,  "
+      " %24,  %25,  %26,  %27,  %28,  %29,  %30,  %31,  "
+      " %32,  %33,  %34,  %35,  %36,  %37,  %38,  %39}, "
+      "{%40,  %41,  %42,  %43},"
+      " %44,"
+      " p,    %46,  %47,  %48;\n"
+    "}\n"
+      : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
+        "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
+        "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
+        "+f"(d12), "+f"(d13), "+f"(d14), "+f"(d15),
+        "+f"(d16), "+f"(d17), "+f"(d18), "+f"(d19),
+        "+f"(d20), "+f"(d21), "+f"(d22), "+f"(d23),
+        "+f"(d24), "+f"(d25), "+f"(d26), "+f"(d27),
+        "+f"(d28), "+f"(d29), "+f"(d30), "+f"(d31),
+        "+f"(d32), "+f"(d33), "+f"(d34), "+f"(d35),
+        "+f"(d36), "+f"(d37), "+f"(d38), "+f"(d39)
+      :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
+         "l"(desc_b),
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
+#else
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1581,6 +1827,159 @@ struct SM90_64x96x16_F32F16F16_RS
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
     CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+#endif
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// GMMA 64x112x16 F32+=F16*F16
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+struct SM90_64x112x16_F32F16F16_SS
+{
+  using DRegisters = void;
+  using ARegisters = uint64_t[1];
+  using BRegisters = uint64_t[1];
+  using CRegisters = float[56];
+
+  CUTE_HOST_DEVICE static void
+  fma(uint64_t const& desc_a,
+      uint64_t const& desc_b,
+      float         & d00, float         & d01, float         & d02, float         & d03,
+      float         & d04, float         & d05, float         & d06, float         & d07,
+      float         & d08, float         & d09, float         & d10, float         & d11,
+      float         & d12, float         & d13, float         & d14, float         & d15,
+      float         & d16, float         & d17, float         & d18, float         & d19,
+      float         & d20, float         & d21, float         & d22, float         & d23,
+      float         & d24, float         & d25, float         & d26, float         & d27,
+      float         & d28, float         & d29, float         & d30, float         & d31,
+      float         & d32, float         & d33, float         & d34, float         & d35,
+      float         & d36, float         & d37, float         & d38, float         & d39,
+      float         & d40, float         & d41, float         & d42, float         & d43,
+      float         & d44, float         & d45, float         & d46, float         & d47,
+      float         & d48, float         & d49, float         & d50, float         & d51,
+      float         & d52, float         & d53, float         & d54, float         & d55,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
+  {
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %58, 0;\n"
+      "wgmma.mma_async.sync.aligned.m64n112k16.f32.f16.f16 "
+      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
+      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
+      " %16,  %17,  %18,  %19,  %20,  %21,  %22,  %23,  "
+      " %24,  %25,  %26,  %27,  %28,  %29,  %30,  %31,  "
+      " %32,  %33,  %34,  %35,  %36,  %37,  %38,  %39,  "
+      " %40,  %41,  %42,  %43,  %44,  %45,  %46,  %47,  "
+      " %48,  %49,  %50,  %51,  %52,  %53,  %54,  %55},"
+      " %56,"
+      " %57,"
+      " p,    %59,  %60,  %61,  %62;\n"
+    "}\n"
+      : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
+        "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
+        "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
+        "+f"(d12), "+f"(d13), "+f"(d14), "+f"(d15),
+        "+f"(d16), "+f"(d17), "+f"(d18), "+f"(d19),
+        "+f"(d20), "+f"(d21), "+f"(d22), "+f"(d23),
+        "+f"(d24), "+f"(d25), "+f"(d26), "+f"(d27),
+        "+f"(d28), "+f"(d29), "+f"(d30), "+f"(d31),
+        "+f"(d32), "+f"(d33), "+f"(d34), "+f"(d35),
+        "+f"(d36), "+f"(d37), "+f"(d38), "+f"(d39),
+        "+f"(d40), "+f"(d41), "+f"(d42), "+f"(d43),
+        "+f"(d44), "+f"(d45), "+f"(d46), "+f"(d47),
+        "+f"(d48), "+f"(d49), "+f"(d50), "+f"(d51),
+        "+f"(d52), "+f"(d53), "+f"(d54), "+f"(d55)
+      :  "l"(desc_a),
+         "l"(desc_b),
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
+#else
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+#endif
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// GMMA 64x112x16 F32+=F16*F16
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+struct SM90_64x112x16_F32F16F16_RS
+{
+  using DRegisters = void;
+  using ARegisters = uint32_t[4];
+  using BRegisters = uint64_t[1];
+  using CRegisters = float[56];
+
+  static_assert(tnspA == GMMA::Major::K,
+      "Register source operand A must have K major layout.");
+
+  CUTE_HOST_DEVICE static void
+  fma(uint32_t const& a00, uint32_t const& a01, uint32_t const& a02, uint32_t const& a03,
+      uint64_t const& desc_b,
+      float         & d00, float         & d01, float         & d02, float         & d03,
+      float         & d04, float         & d05, float         & d06, float         & d07,
+      float         & d08, float         & d09, float         & d10, float         & d11,
+      float         & d12, float         & d13, float         & d14, float         & d15,
+      float         & d16, float         & d17, float         & d18, float         & d19,
+      float         & d20, float         & d21, float         & d22, float         & d23,
+      float         & d24, float         & d25, float         & d26, float         & d27,
+      float         & d28, float         & d29, float         & d30, float         & d31,
+      float         & d32, float         & d33, float         & d34, float         & d35,
+      float         & d36, float         & d37, float         & d38, float         & d39,
+      float         & d40, float         & d41, float         & d42, float         & d43,
+      float         & d44, float         & d45, float         & d46, float         & d47,
+      float         & d48, float         & d49, float         & d50, float         & d51,
+      float         & d52, float         & d53, float         & d54, float         & d55,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
+  {
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %61, 0;\n"
+      "wgmma.mma_async.sync.aligned.m64n112k16.f32.f16.f16 "
+      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
+      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
+      " %16,  %17,  %18,  %19,  %20,  %21,  %22,  %23,  "
+      " %24,  %25,  %26,  %27,  %28,  %29,  %30,  %31,  "
+      " %32,  %33,  %34,  %35,  %36,  %37,  %38,  %39,  "
+      " %40,  %41,  %42,  %43,  %44,  %45,  %46,  %47,  "
+      " %48,  %49,  %50,  %51,  %52,  %53,  %54,  %55},"
+      "{%56,  %57,  %58,  %59},"
+      " %60,"
+      " p,    %62,  %63,  %64;\n"
+    "}\n"
+      : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
+        "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
+        "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
+        "+f"(d12), "+f"(d13), "+f"(d14), "+f"(d15),
+        "+f"(d16), "+f"(d17), "+f"(d18), "+f"(d19),
+        "+f"(d20), "+f"(d21), "+f"(d22), "+f"(d23),
+        "+f"(d24), "+f"(d25), "+f"(d26), "+f"(d27),
+        "+f"(d28), "+f"(d29), "+f"(d30), "+f"(d31),
+        "+f"(d32), "+f"(d33), "+f"(d34), "+f"(d35),
+        "+f"(d36), "+f"(d37), "+f"(d38), "+f"(d39),
+        "+f"(d40), "+f"(d41), "+f"(d42), "+f"(d43),
+        "+f"(d44), "+f"(d45), "+f"(d46), "+f"(d47),
+        "+f"(d48), "+f"(d49), "+f"(d50), "+f"(d51),
+        "+f"(d52), "+f"(d53), "+f"(d54), "+f"(d55)
+      :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
+         "l"(desc_b),
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
+#else
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1744,6 +2143,555 @@ struct SM90_64x128x16_F32F16F16_RS
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
     CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+#endif
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// GMMA 64x144x16 F32+=F16*F16
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+struct SM90_64x144x16_F32F16F16_SS
+{
+  using DRegisters = void;
+  using ARegisters = uint64_t[1];
+  using BRegisters = uint64_t[1];
+  using CRegisters = float[72];
+
+  CUTE_HOST_DEVICE static void
+  fma(uint64_t const& desc_a,
+      uint64_t const& desc_b,
+      float         & d00, float         & d01, float         & d02, float         & d03,
+      float         & d04, float         & d05, float         & d06, float         & d07,
+      float         & d08, float         & d09, float         & d10, float         & d11,
+      float         & d12, float         & d13, float         & d14, float         & d15,
+      float         & d16, float         & d17, float         & d18, float         & d19,
+      float         & d20, float         & d21, float         & d22, float         & d23,
+      float         & d24, float         & d25, float         & d26, float         & d27,
+      float         & d28, float         & d29, float         & d30, float         & d31,
+      float         & d32, float         & d33, float         & d34, float         & d35,
+      float         & d36, float         & d37, float         & d38, float         & d39,
+      float         & d40, float         & d41, float         & d42, float         & d43,
+      float         & d44, float         & d45, float         & d46, float         & d47,
+      float         & d48, float         & d49, float         & d50, float         & d51,
+      float         & d52, float         & d53, float         & d54, float         & d55,
+      float         & d56, float         & d57, float         & d58, float         & d59,
+      float         & d60, float         & d61, float         & d62, float         & d63,
+      float         & d64, float         & d65, float         & d66, float         & d67,
+      float         & d68, float         & d69, float         & d70, float         & d71,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
+  {
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %74, 0;\n"
+      "wgmma.mma_async.sync.aligned.m64n144k16.f32.f16.f16 "
+      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
+      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
+      " %16,  %17,  %18,  %19,  %20,  %21,  %22,  %23,  "
+      " %24,  %25,  %26,  %27,  %28,  %29,  %30,  %31,  "
+      " %32,  %33,  %34,  %35,  %36,  %37,  %38,  %39,  "
+      " %40,  %41,  %42,  %43,  %44,  %45,  %46,  %47,  "
+      " %48,  %49,  %50,  %51,  %52,  %53,  %54,  %55,  "
+      " %56,  %57,  %58,  %59,  %60,  %61,  %62,  %63,  "
+      " %64,  %65,  %66,  %67,  %68,  %69,  %70,  %71},"
+      " %72,"
+      " %73,"
+      " p,    %75,  %76, %77, %78;\n"
+    "}\n"
+      : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
+        "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
+        "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
+        "+f"(d12), "+f"(d13), "+f"(d14), "+f"(d15),
+        "+f"(d16), "+f"(d17), "+f"(d18), "+f"(d19),
+        "+f"(d20), "+f"(d21), "+f"(d22), "+f"(d23),
+        "+f"(d24), "+f"(d25), "+f"(d26), "+f"(d27),
+        "+f"(d28), "+f"(d29), "+f"(d30), "+f"(d31),
+        "+f"(d32), "+f"(d33), "+f"(d34), "+f"(d35),
+        "+f"(d36), "+f"(d37), "+f"(d38), "+f"(d39),
+        "+f"(d40), "+f"(d41), "+f"(d42), "+f"(d43),
+        "+f"(d44), "+f"(d45), "+f"(d46), "+f"(d47),
+        "+f"(d48), "+f"(d49), "+f"(d50), "+f"(d51),
+        "+f"(d52), "+f"(d53), "+f"(d54), "+f"(d55),
+        "+f"(d56), "+f"(d57), "+f"(d58), "+f"(d59),
+        "+f"(d60), "+f"(d61), "+f"(d62), "+f"(d63),
+        "+f"(d64), "+f"(d65), "+f"(d66), "+f"(d67),
+        "+f"(d68), "+f"(d69), "+f"(d70), "+f"(d71)
+      :  "l"(desc_a),
+         "l"(desc_b),
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
+#else
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+#endif
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// GMMA 64x144x16 F32+=F16*F16
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+struct SM90_64x144x16_F32F16F16_RS
+{
+  using DRegisters = void;
+  using ARegisters = uint32_t[4];
+  using BRegisters = uint64_t[1];
+  using CRegisters = float[72];
+
+  static_assert(tnspA == GMMA::Major::K,
+      "Register source operand A must have K major layout.");
+
+  CUTE_HOST_DEVICE static void
+  fma(uint32_t const& a00, uint32_t const& a01, uint32_t const& a02, uint32_t const& a03,
+      uint64_t const& desc_b,
+      float         & d00, float         & d01, float         & d02, float         & d03,
+      float         & d04, float         & d05, float         & d06, float         & d07,
+      float         & d08, float         & d09, float         & d10, float         & d11,
+      float         & d12, float         & d13, float         & d14, float         & d15,
+      float         & d16, float         & d17, float         & d18, float         & d19,
+      float         & d20, float         & d21, float         & d22, float         & d23,
+      float         & d24, float         & d25, float         & d26, float         & d27,
+      float         & d28, float         & d29, float         & d30, float         & d31,
+      float         & d32, float         & d33, float         & d34, float         & d35,
+      float         & d36, float         & d37, float         & d38, float         & d39,
+      float         & d40, float         & d41, float         & d42, float         & d43,
+      float         & d44, float         & d45, float         & d46, float         & d47,
+      float         & d48, float         & d49, float         & d50, float         & d51,
+      float         & d52, float         & d53, float         & d54, float         & d55,
+      float         & d56, float         & d57, float         & d58, float         & d59,
+      float         & d60, float         & d61, float         & d62, float         & d63,
+      float         & d64, float         & d65, float         & d66, float         & d67,
+      float         & d68, float         & d69, float         & d70, float         & d71,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
+  {
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %77, 0;\n"
+      "wgmma.mma_async.sync.aligned.m64n144k16.f32.f16.f16 "
+      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
+      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
+      " %16,  %17,  %18,  %19,  %20,  %21,  %22,  %23,  "
+      " %24,  %25,  %26,  %27,  %28,  %29,  %30,  %31,  "
+      " %32,  %33,  %34,  %35,  %36,  %37,  %38,  %39,  "
+      " %40,  %41,  %42,  %43,  %44,  %45,  %46,  %47,  "
+      " %48,  %49,  %50,  %51,  %52,  %53,  %54,  %55,  "
+      " %56,  %57,  %58,  %59,  %60,  %61,  %62,  %63,  "
+      " %64,  %65,  %66,  %67,  %68,  %69,  %70,  %71},"
+      "{%72,  %73,  %74,  %75},"
+      " %76,"
+      " p,    %78, %79, %80;\n"
+    "}\n"
+      : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
+        "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
+        "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
+        "+f"(d12), "+f"(d13), "+f"(d14), "+f"(d15),
+        "+f"(d16), "+f"(d17), "+f"(d18), "+f"(d19),
+        "+f"(d20), "+f"(d21), "+f"(d22), "+f"(d23),
+        "+f"(d24), "+f"(d25), "+f"(d26), "+f"(d27),
+        "+f"(d28), "+f"(d29), "+f"(d30), "+f"(d31),
+        "+f"(d32), "+f"(d33), "+f"(d34), "+f"(d35),
+        "+f"(d36), "+f"(d37), "+f"(d38), "+f"(d39),
+        "+f"(d40), "+f"(d41), "+f"(d42), "+f"(d43),
+        "+f"(d44), "+f"(d45), "+f"(d46), "+f"(d47),
+        "+f"(d48), "+f"(d49), "+f"(d50), "+f"(d51),
+        "+f"(d52), "+f"(d53), "+f"(d54), "+f"(d55),
+        "+f"(d56), "+f"(d57), "+f"(d58), "+f"(d59),
+        "+f"(d60), "+f"(d61), "+f"(d62), "+f"(d63),
+        "+f"(d64), "+f"(d65), "+f"(d66), "+f"(d67),
+        "+f"(d68), "+f"(d69), "+f"(d70), "+f"(d71),
+      :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
+         "l"(desc_b),
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
+#else
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+#endif
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// GMMA 64x160x16 F32+=F16*F16
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+struct SM90_64x160x16_F32F16F16_SS
+{
+  using DRegisters = void;
+  using ARegisters = uint64_t[1];
+  using BRegisters = uint64_t[1];
+  using CRegisters = float[80];
+
+  CUTE_HOST_DEVICE static void
+  fma(uint64_t const& desc_a,
+      uint64_t const& desc_b,
+      float         & d00, float         & d01, float         & d02, float         & d03,
+      float         & d04, float         & d05, float         & d06, float         & d07,
+      float         & d08, float         & d09, float         & d10, float         & d11,
+      float         & d12, float         & d13, float         & d14, float         & d15,
+      float         & d16, float         & d17, float         & d18, float         & d19,
+      float         & d20, float         & d21, float         & d22, float         & d23,
+      float         & d24, float         & d25, float         & d26, float         & d27,
+      float         & d28, float         & d29, float         & d30, float         & d31,
+      float         & d32, float         & d33, float         & d34, float         & d35,
+      float         & d36, float         & d37, float         & d38, float         & d39,
+      float         & d40, float         & d41, float         & d42, float         & d43,
+      float         & d44, float         & d45, float         & d46, float         & d47,
+      float         & d48, float         & d49, float         & d50, float         & d51,
+      float         & d52, float         & d53, float         & d54, float         & d55,
+      float         & d56, float         & d57, float         & d58, float         & d59,
+      float         & d60, float         & d61, float         & d62, float         & d63,
+      float         & d64, float         & d65, float         & d66, float         & d67,
+      float         & d68, float         & d69, float         & d70, float         & d71,
+      float         & d72, float         & d73, float         & d74, float         & d75,
+      float         & d76, float         & d77, float         & d78, float         & d79,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
+  {
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %82, 0;\n"
+      "wgmma.mma_async.sync.aligned.m64n160k16.f32.f16.f16 "
+      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
+      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
+      " %16,  %17,  %18,  %19,  %20,  %21,  %22,  %23,  "
+      " %24,  %25,  %26,  %27,  %28,  %29,  %30,  %31,  "
+      " %32,  %33,  %34,  %35,  %36,  %37,  %38,  %39,  "
+      " %40,  %41,  %42,  %43,  %44,  %45,  %46,  %47,  "
+      " %48,  %49,  %50,  %51,  %52,  %53,  %54,  %55,  "
+      " %56,  %57,  %58,  %59,  %60,  %61,  %62,  %63,  "
+      " %64,  %65,  %66,  %67,  %68,  %69,  %70,  %71,  "
+      " %72,  %73,  %74,  %75,  %76,  %77,  %78,  %79},"
+      " %80,"
+      " %81,"
+      " p,    %83,  %84, %85, %86;\n"
+    "}\n"
+      : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
+        "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
+        "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
+        "+f"(d12), "+f"(d13), "+f"(d14), "+f"(d15),
+        "+f"(d16), "+f"(d17), "+f"(d18), "+f"(d19),
+        "+f"(d20), "+f"(d21), "+f"(d22), "+f"(d23),
+        "+f"(d24), "+f"(d25), "+f"(d26), "+f"(d27),
+        "+f"(d28), "+f"(d29), "+f"(d30), "+f"(d31),
+        "+f"(d32), "+f"(d33), "+f"(d34), "+f"(d35),
+        "+f"(d36), "+f"(d37), "+f"(d38), "+f"(d39),
+        "+f"(d40), "+f"(d41), "+f"(d42), "+f"(d43),
+        "+f"(d44), "+f"(d45), "+f"(d46), "+f"(d47),
+        "+f"(d48), "+f"(d49), "+f"(d50), "+f"(d51),
+        "+f"(d52), "+f"(d53), "+f"(d54), "+f"(d55),
+        "+f"(d56), "+f"(d57), "+f"(d58), "+f"(d59),
+        "+f"(d60), "+f"(d61), "+f"(d62), "+f"(d63),
+        "+f"(d64), "+f"(d65), "+f"(d66), "+f"(d67),
+        "+f"(d68), "+f"(d69), "+f"(d70), "+f"(d71),
+        "+f"(d72), "+f"(d73), "+f"(d74), "+f"(d75),
+        "+f"(d76), "+f"(d77), "+f"(d78), "+f"(d79)
+      :  "l"(desc_a),
+         "l"(desc_b),
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
+#else
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+#endif
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// GMMA 64x160x16 F32+=F16*F16
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+struct SM90_64x160x16_F32F16F16_RS
+{
+  using DRegisters = void;
+  using ARegisters = uint32_t[4];
+  using BRegisters = uint64_t[1];
+  using CRegisters = float[80];
+
+  static_assert(tnspA == GMMA::Major::K,
+      "Register source operand A must have K major layout.");
+
+  CUTE_HOST_DEVICE static void
+  fma(uint32_t const& a00, uint32_t const& a01, uint32_t const& a02, uint32_t const& a03,
+      uint64_t const& desc_b,
+      float         & d00, float         & d01, float         & d02, float         & d03,
+      float         & d04, float         & d05, float         & d06, float         & d07,
+      float         & d08, float         & d09, float         & d10, float         & d11,
+      float         & d12, float         & d13, float         & d14, float         & d15,
+      float         & d16, float         & d17, float         & d18, float         & d19,
+      float         & d20, float         & d21, float         & d22, float         & d23,
+      float         & d24, float         & d25, float         & d26, float         & d27,
+      float         & d28, float         & d29, float         & d30, float         & d31,
+      float         & d32, float         & d33, float         & d34, float         & d35,
+      float         & d36, float         & d37, float         & d38, float         & d39,
+      float         & d40, float         & d41, float         & d42, float         & d43,
+      float         & d44, float         & d45, float         & d46, float         & d47,
+      float         & d48, float         & d49, float         & d50, float         & d51,
+      float         & d52, float         & d53, float         & d54, float         & d55,
+      float         & d56, float         & d57, float         & d58, float         & d59,
+      float         & d60, float         & d61, float         & d62, float         & d63,
+      float         & d64, float         & d65, float         & d66, float         & d67,
+      float         & d68, float         & d69, float         & d70, float         & d71,
+      float         & d72, float         & d73, float         & d74, float         & d75,
+      float         & d76, float         & d77, float         & d78, float         & d79,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
+  {
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %85, 0;\n"
+      "wgmma.mma_async.sync.aligned.m64n160k16.f32.f16.f16 "
+      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
+      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
+      " %16,  %17,  %18,  %19,  %20,  %21,  %22,  %23,  "
+      " %24,  %25,  %26,  %27,  %28,  %29,  %30,  %31,  "
+      " %32,  %33,  %34,  %35,  %36,  %37,  %38,  %39,  "
+      " %40,  %41,  %42,  %43,  %44,  %45,  %46,  %47,  "
+      " %48,  %49,  %50,  %51,  %52,  %53,  %54,  %55,  "
+      " %56,  %57,  %58,  %59,  %60,  %61,  %62,  %63,  "
+      " %64,  %65,  %66,  %67,  %68,  %69,  %70,  %71,  "
+      " %72,  %73,  %74,  %75,  %76,  %77,  %78,  %79},"
+      "{%80,  %81,  %82,  %83},"
+      " %84,"
+      " p,    %86, %87, %88;\n"
+    "}\n"
+      : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
+        "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
+        "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
+        "+f"(d12), "+f"(d13), "+f"(d14), "+f"(d15),
+        "+f"(d16), "+f"(d17), "+f"(d18), "+f"(d19),
+        "+f"(d20), "+f"(d21), "+f"(d22), "+f"(d23),
+        "+f"(d24), "+f"(d25), "+f"(d26), "+f"(d27),
+        "+f"(d28), "+f"(d29), "+f"(d30), "+f"(d31),
+        "+f"(d32), "+f"(d33), "+f"(d34), "+f"(d35),
+        "+f"(d36), "+f"(d37), "+f"(d38), "+f"(d39),
+        "+f"(d40), "+f"(d41), "+f"(d42), "+f"(d43),
+        "+f"(d44), "+f"(d45), "+f"(d46), "+f"(d47),
+        "+f"(d48), "+f"(d49), "+f"(d50), "+f"(d51),
+        "+f"(d52), "+f"(d53), "+f"(d54), "+f"(d55),
+        "+f"(d56), "+f"(d57), "+f"(d58), "+f"(d59),
+        "+f"(d60), "+f"(d61), "+f"(d62), "+f"(d63),
+        "+f"(d64), "+f"(d65), "+f"(d66), "+f"(d67),
+        "+f"(d68), "+f"(d69), "+f"(d70), "+f"(d71),
+        "+f"(d72), "+f"(d73), "+f"(d74), "+f"(d75),
+        "+f"(d76), "+f"(d77), "+f"(d78), "+f"(d79)
+      :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
+         "l"(desc_b),
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
+#else
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+#endif
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// GMMA 64x176x16 F32+=F16*F16
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+struct SM90_64x176x16_F32F16F16_SS
+{
+  using DRegisters = void;
+  using ARegisters = uint64_t[1];
+  using BRegisters = uint64_t[1];
+  using CRegisters = float[88];
+
+  CUTE_HOST_DEVICE static void
+  fma(uint64_t const& desc_a,
+      uint64_t const& desc_b,
+      float         & d00, float         & d01, float         & d02, float         & d03,
+      float         & d04, float         & d05, float         & d06, float         & d07,
+      float         & d08, float         & d09, float         & d10, float         & d11,
+      float         & d12, float         & d13, float         & d14, float         & d15,
+      float         & d16, float         & d17, float         & d18, float         & d19,
+      float         & d20, float         & d21, float         & d22, float         & d23,
+      float         & d24, float         & d25, float         & d26, float         & d27,
+      float         & d28, float         & d29, float         & d30, float         & d31,
+      float         & d32, float         & d33, float         & d34, float         & d35,
+      float         & d36, float         & d37, float         & d38, float         & d39,
+      float         & d40, float         & d41, float         & d42, float         & d43,
+      float         & d44, float         & d45, float         & d46, float         & d47,
+      float         & d48, float         & d49, float         & d50, float         & d51,
+      float         & d52, float         & d53, float         & d54, float         & d55,
+      float         & d56, float         & d57, float         & d58, float         & d59,
+      float         & d60, float         & d61, float         & d62, float         & d63,
+      float         & d64, float         & d65, float         & d66, float         & d67,
+      float         & d68, float         & d69, float         & d70, float         & d71,
+      float         & d72, float         & d73, float         & d74, float         & d75,
+      float         & d76, float         & d77, float         & d78, float         & d79,
+      float         & d80, float         & d81, float         & d82, float         & d83,
+      float         & d84, float         & d85, float         & d86, float         & d87,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
+  {
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %90, 0;\n"
+      "wgmma.mma_async.sync.aligned.m64n176k16.f32.f16.f16 "
+      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
+      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
+      " %16,  %17,  %18,  %19,  %20,  %21,  %22,  %23,  "
+      " %24,  %25,  %26,  %27,  %28,  %29,  %30,  %31,  "
+      " %32,  %33,  %34,  %35,  %36,  %37,  %38,  %39,  "
+      " %40,  %41,  %42,  %43,  %44,  %45,  %46,  %47,  "
+      " %48,  %49,  %50,  %51,  %52,  %53,  %54,  %55,  "
+      " %56,  %57,  %58,  %59,  %60,  %61,  %62,  %63,  "
+      " %64,  %65,  %66,  %67,  %68,  %69,  %70,  %71,  "
+      " %72,  %73,  %74,  %75,  %76,  %77,  %78,  %79,  "
+      " %80,  %81,  %82,  %83,  %84,  %85,  %86,  %87},"
+      " %88,"
+      " %89,"
+      " p,    %91,  %92, %93, %94;\n"
+    "}\n"
+      : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
+        "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
+        "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
+        "+f"(d12), "+f"(d13), "+f"(d14), "+f"(d15),
+        "+f"(d16), "+f"(d17), "+f"(d18), "+f"(d19),
+        "+f"(d20), "+f"(d21), "+f"(d22), "+f"(d23),
+        "+f"(d24), "+f"(d25), "+f"(d26), "+f"(d27),
+        "+f"(d28), "+f"(d29), "+f"(d30), "+f"(d31),
+        "+f"(d32), "+f"(d33), "+f"(d34), "+f"(d35),
+        "+f"(d36), "+f"(d37), "+f"(d38), "+f"(d39),
+        "+f"(d40), "+f"(d41), "+f"(d42), "+f"(d43),
+        "+f"(d44), "+f"(d45), "+f"(d46), "+f"(d47),
+        "+f"(d48), "+f"(d49), "+f"(d50), "+f"(d51),
+        "+f"(d52), "+f"(d53), "+f"(d54), "+f"(d55),
+        "+f"(d56), "+f"(d57), "+f"(d58), "+f"(d59),
+        "+f"(d60), "+f"(d61), "+f"(d62), "+f"(d63),
+        "+f"(d64), "+f"(d65), "+f"(d66), "+f"(d67),
+        "+f"(d68), "+f"(d69), "+f"(d70), "+f"(d71),
+        "+f"(d72), "+f"(d73), "+f"(d74), "+f"(d75),
+        "+f"(d76), "+f"(d77), "+f"(d78), "+f"(d79),
+        "+f"(d80), "+f"(d81), "+f"(d82), "+f"(d83),
+        "+f"(d84), "+f"(d85), "+f"(d86), "+f"(d87)
+      :  "l"(desc_a),
+         "l"(desc_b),
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
+#else
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+#endif
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// GMMA 64x176x16 F32+=F16*F16
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+struct SM90_64x176x16_F32F16F16_RS
+{
+  using DRegisters = void;
+  using ARegisters = uint32_t[4];
+  using BRegisters = uint64_t[1];
+  using CRegisters = float[88];
+
+  static_assert(tnspA == GMMA::Major::K,
+      "Register source operand A must have K major layout.");
+
+  CUTE_HOST_DEVICE static void
+  fma(uint32_t const& a00, uint32_t const& a01, uint32_t const& a02, uint32_t const& a03,
+      uint64_t const& desc_b,
+      float         & d00, float         & d01, float         & d02, float         & d03,
+      float         & d04, float         & d05, float         & d06, float         & d07,
+      float         & d08, float         & d09, float         & d10, float         & d11,
+      float         & d12, float         & d13, float         & d14, float         & d15,
+      float         & d16, float         & d17, float         & d18, float         & d19,
+      float         & d20, float         & d21, float         & d22, float         & d23,
+      float         & d24, float         & d25, float         & d26, float         & d27,
+      float         & d28, float         & d29, float         & d30, float         & d31,
+      float         & d32, float         & d33, float         & d34, float         & d35,
+      float         & d36, float         & d37, float         & d38, float         & d39,
+      float         & d40, float         & d41, float         & d42, float         & d43,
+      float         & d44, float         & d45, float         & d46, float         & d47,
+      float         & d48, float         & d49, float         & d50, float         & d51,
+      float         & d52, float         & d53, float         & d54, float         & d55,
+      float         & d56, float         & d57, float         & d58, float         & d59,
+      float         & d60, float         & d61, float         & d62, float         & d63,
+      float         & d64, float         & d65, float         & d66, float         & d67,
+      float         & d68, float         & d69, float         & d70, float         & d71,
+      float         & d72, float         & d73, float         & d74, float         & d75,
+      float         & d76, float         & d77, float         & d78, float         & d79,
+      float         & d80, float         & d81, float         & d82, float         & d83,
+      float         & d84, float         & d85, float         & d86, float         & d87,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
+  {
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %93, 0;\n"
+      "wgmma.mma_async.sync.aligned.m64n176k16.f32.f16.f16 "
+      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
+      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
+      " %16,  %17,  %18,  %19,  %20,  %21,  %22,  %23,  "
+      " %24,  %25,  %26,  %27,  %28,  %29,  %30,  %31,  "
+      " %32,  %33,  %34,  %35,  %36,  %37,  %38,  %39,  "
+      " %40,  %41,  %42,  %43,  %44,  %45,  %46,  %47,  "
+      " %48,  %49,  %50,  %51,  %52,  %53,  %54,  %55,  "
+      " %56,  %57,  %58,  %59,  %60,  %61,  %62,  %63,  "
+      " %64,  %65,  %66,  %67,  %68,  %69,  %70,  %71,  "
+      " %72,  %73,  %74,  %75,  %76,  %77,  %78,  %79,  "
+      " %80,  %81,  %82,  %83,  %84,  %85,  %86,  %87},"
+      "{%88,  %89,  %90,  %91},"
+      " %92,"
+      " p,    %94, %95, %96;\n"
+    "}\n"
+      : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
+        "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
+        "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
+        "+f"(d12), "+f"(d13), "+f"(d14), "+f"(d15),
+        "+f"(d16), "+f"(d17), "+f"(d18), "+f"(d19),
+        "+f"(d20), "+f"(d21), "+f"(d22), "+f"(d23),
+        "+f"(d24), "+f"(d25), "+f"(d26), "+f"(d27),
+        "+f"(d28), "+f"(d29), "+f"(d30), "+f"(d31),
+        "+f"(d32), "+f"(d33), "+f"(d34), "+f"(d35),
+        "+f"(d36), "+f"(d37), "+f"(d38), "+f"(d39),
+        "+f"(d40), "+f"(d41), "+f"(d42), "+f"(d43),
+        "+f"(d44), "+f"(d45), "+f"(d46), "+f"(d47),
+        "+f"(d48), "+f"(d49), "+f"(d50), "+f"(d51),
+        "+f"(d52), "+f"(d53), "+f"(d54), "+f"(d55),
+        "+f"(d56), "+f"(d57), "+f"(d58), "+f"(d59),
+        "+f"(d60), "+f"(d61), "+f"(d62), "+f"(d63),
+        "+f"(d64), "+f"(d65), "+f"(d66), "+f"(d67),
+        "+f"(d68), "+f"(d69), "+f"(d70), "+f"(d71),
+        "+f"(d72), "+f"(d73), "+f"(d74), "+f"(d75),
+        "+f"(d76), "+f"(d77), "+f"(d78), "+f"(d79),
+        "+f"(d80), "+f"(d81), "+f"(d82), "+f"(d83),
+        "+f"(d84), "+f"(d85), "+f"(d86), "+f"(d87)
+      :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
+         "l"(desc_b),
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
+#else
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1947,6 +2895,462 @@ struct SM90_64x192x16_F32F16F16_RS
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
     CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+#endif
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// GMMA 64x224x16 F32+=F16*F16
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+struct SM90_64x224x16_F32F16F16_SS
+{
+  using DRegisters = void;
+  using ARegisters = uint64_t[1];
+  using BRegisters = uint64_t[1];
+  using CRegisters = float[112];
+
+  CUTE_HOST_DEVICE static void
+  fma(uint64_t const& desc_a,
+      uint64_t const& desc_b,
+      float         & d000, float         & d001, float         & d002, float         & d003,
+      float         & d004, float         & d005, float         & d006, float         & d007,
+      float         & d008, float         & d009, float         & d010, float         & d011,
+      float         & d012, float         & d013, float         & d014, float         & d015,
+      float         & d016, float         & d017, float         & d018, float         & d019,
+      float         & d020, float         & d021, float         & d022, float         & d023,
+      float         & d024, float         & d025, float         & d026, float         & d027,
+      float         & d028, float         & d029, float         & d030, float         & d031,
+      float         & d032, float         & d033, float         & d034, float         & d035,
+      float         & d036, float         & d037, float         & d038, float         & d039,
+      float         & d040, float         & d041, float         & d042, float         & d043,
+      float         & d044, float         & d045, float         & d046, float         & d047,
+      float         & d048, float         & d049, float         & d050, float         & d051,
+      float         & d052, float         & d053, float         & d054, float         & d055,
+      float         & d056, float         & d057, float         & d058, float         & d059,
+      float         & d060, float         & d061, float         & d062, float         & d063,
+      float         & d064, float         & d065, float         & d066, float         & d067,
+      float         & d068, float         & d069, float         & d070, float         & d071,
+      float         & d072, float         & d073, float         & d074, float         & d075,
+      float         & d076, float         & d077, float         & d078, float         & d079,
+      float         & d080, float         & d081, float         & d082, float         & d083,
+      float         & d084, float         & d085, float         & d086, float         & d087,
+      float         & d088, float         & d089, float         & d090, float         & d091,
+      float         & d092, float         & d093, float         & d094, float         & d095,
+      float         & d096, float         & d097, float         & d098, float         & d099,
+      float         & d100, float         & d101, float         & d102, float         & d103,
+      float         & d104, float         & d105, float         & d106, float         & d107,
+      float         & d108, float         & d109, float         & d110, float         & d111,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
+  {
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %114, 0;\n"
+      "wgmma.mma_async.sync.aligned.m64n224k16.f32.f16.f16 "
+      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
+      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
+      " %16,  %17,  %18,  %19,  %20,  %21,  %22,  %23,  "
+      " %24,  %25,  %26,  %27,  %28,  %29,  %30,  %31,  "
+      " %32,  %33,  %34,  %35,  %36,  %37,  %38,  %39,  "
+      " %40,  %41,  %42,  %43,  %44,  %45,  %46,  %47,  "
+      " %48,  %49,  %50,  %51,  %52,  %53,  %54,  %55,  "
+      " %56,  %57,  %58,  %59,  %60,  %61,  %62,  %63,  "
+      " %64,  %65,  %66,  %67,  %68,  %69,  %70,  %71,  "
+      " %72,  %73,  %74,  %75,  %76,  %77,  %78,  %79,  "
+      " %80,  %81,  %82,  %83,  %84,  %85,  %86,  %87,  "
+      " %88,  %89,  %90,  %91,  %92,  %93,  %94,  %95,  "
+      " %96,  %97,  %98,  %99,  %100, %101, %102, %103, "
+      " %104, %105, %106, %107, %108, %109, %110, %111},"
+      " %112,"
+      " %113,"
+      " p,    %115, %116, %117, %118;\n"
+    "}\n"
+      : "+f"(d000), "+f"(d001), "+f"(d002), "+f"(d003),
+        "+f"(d004), "+f"(d005), "+f"(d006), "+f"(d007),
+        "+f"(d008), "+f"(d009), "+f"(d010), "+f"(d011),
+        "+f"(d012), "+f"(d013), "+f"(d014), "+f"(d015),
+        "+f"(d016), "+f"(d017), "+f"(d018), "+f"(d019),
+        "+f"(d020), "+f"(d021), "+f"(d022), "+f"(d023),
+        "+f"(d024), "+f"(d025), "+f"(d026), "+f"(d027),
+        "+f"(d028), "+f"(d029), "+f"(d030), "+f"(d031),
+        "+f"(d032), "+f"(d033), "+f"(d034), "+f"(d035),
+        "+f"(d036), "+f"(d037), "+f"(d038), "+f"(d039),
+        "+f"(d040), "+f"(d041), "+f"(d042), "+f"(d043),
+        "+f"(d044), "+f"(d045), "+f"(d046), "+f"(d047),
+        "+f"(d048), "+f"(d049), "+f"(d050), "+f"(d051),
+        "+f"(d052), "+f"(d053), "+f"(d054), "+f"(d055),
+        "+f"(d056), "+f"(d057), "+f"(d058), "+f"(d059),
+        "+f"(d060), "+f"(d061), "+f"(d062), "+f"(d063),
+        "+f"(d064), "+f"(d065), "+f"(d066), "+f"(d067),
+        "+f"(d068), "+f"(d069), "+f"(d070), "+f"(d071),
+        "+f"(d072), "+f"(d073), "+f"(d074), "+f"(d075),
+        "+f"(d076), "+f"(d077), "+f"(d078), "+f"(d079),
+        "+f"(d080), "+f"(d081), "+f"(d082), "+f"(d083),
+        "+f"(d084), "+f"(d085), "+f"(d086), "+f"(d087),
+        "+f"(d088), "+f"(d089), "+f"(d090), "+f"(d091),
+        "+f"(d092), "+f"(d093), "+f"(d094), "+f"(d095),
+        "+f"(d096), "+f"(d097), "+f"(d098), "+f"(d099),
+        "+f"(d100), "+f"(d101), "+f"(d102), "+f"(d103),
+        "+f"(d104), "+f"(d105), "+f"(d106), "+f"(d107),
+        "+f"(d108), "+f"(d109), "+f"(d110), "+f"(d111)
+      :  "l"(desc_a),
+         "l"(desc_b),
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
+#else
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+#endif
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// GMMA 64x224x16 F32+=F16*F16
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+struct SM90_64x224x16_F32F16F16_RS
+{
+  using DRegisters = void;
+  using ARegisters = uint32_t[4];
+  using BRegisters = uint64_t[1];
+  using CRegisters = float[112];
+
+  static_assert(tnspA == GMMA::Major::K,
+      "Register source operand A must have K major layout.");
+
+  CUTE_HOST_DEVICE static void
+  fma(uint32_t const& a000, uint32_t const& a001, uint32_t const& a002, uint32_t const& a003,
+      uint64_t const& desc_b,
+      float         & d000, float         & d001, float         & d002, float         & d003,
+      float         & d004, float         & d005, float         & d006, float         & d007,
+      float         & d008, float         & d009, float         & d010, float         & d011,
+      float         & d012, float         & d013, float         & d014, float         & d015,
+      float         & d016, float         & d017, float         & d018, float         & d019,
+      float         & d020, float         & d021, float         & d022, float         & d023,
+      float         & d024, float         & d025, float         & d026, float         & d027,
+      float         & d028, float         & d029, float         & d030, float         & d031,
+      float         & d032, float         & d033, float         & d034, float         & d035,
+      float         & d036, float         & d037, float         & d038, float         & d039,
+      float         & d040, float         & d041, float         & d042, float         & d043,
+      float         & d044, float         & d045, float         & d046, float         & d047,
+      float         & d048, float         & d049, float         & d050, float         & d051,
+      float         & d052, float         & d053, float         & d054, float         & d055,
+      float         & d056, float         & d057, float         & d058, float         & d059,
+      float         & d060, float         & d061, float         & d062, float         & d063,
+      float         & d064, float         & d065, float         & d066, float         & d067,
+      float         & d068, float         & d069, float         & d070, float         & d071,
+      float         & d072, float         & d073, float         & d074, float         & d075,
+      float         & d076, float         & d077, float         & d078, float         & d079,
+      float         & d080, float         & d081, float         & d082, float         & d083,
+      float         & d084, float         & d085, float         & d086, float         & d087,
+      float         & d088, float         & d089, float         & d090, float         & d091,
+      float         & d092, float         & d093, float         & d094, float         & d095,
+      float         & d096, float         & d097, float         & d098, float         & d099,
+      float         & d100, float         & d101, float         & d102, float         & d103,
+      float         & d104, float         & d105, float         & d106, float         & d107,
+      float         & d108, float         & d109, float         & d110, float         & d111,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
+  {
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %117, 0;\n"
+      "wgmma.mma_async.sync.aligned.m64n224k16.f32.f16.f16 "
+      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
+      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
+      " %16,  %17,  %18,  %19,  %20,  %21,  %22,  %23,  "
+      " %24,  %25,  %26,  %27,  %28,  %29,  %30,  %31,  "
+      " %32,  %33,  %34,  %35,  %36,  %37,  %38,  %39,  "
+      " %40,  %41,  %42,  %43,  %44,  %45,  %46,  %47,  "
+      " %48,  %49,  %50,  %51,  %52,  %53,  %54,  %55,  "
+      " %56,  %57,  %58,  %59,  %60,  %61,  %62,  %63,  "
+      " %64,  %65,  %66,  %67,  %68,  %69,  %70,  %71,  "
+      " %72,  %73,  %74,  %75,  %76,  %77,  %78,  %79,  "
+      " %80,  %81,  %82,  %83,  %84,  %85,  %86,  %87,  "
+      " %88,  %89,  %90,  %91,  %92,  %93,  %94,  %95,  "
+      " %96,  %97,  %98,  %99,  %100, %101, %102, %103, "
+      " %104, %105, %106, %107, %108, %109, %110, %111},"
+      "{%112, %113, %114, %115},"
+      " %116,"
+      " p,    %118, %119, %120;\n"
+    "}\n"
+      : "+f"(d000), "+f"(d001), "+f"(d002), "+f"(d003),
+        "+f"(d004), "+f"(d005), "+f"(d006), "+f"(d007),
+        "+f"(d008), "+f"(d009), "+f"(d010), "+f"(d011),
+        "+f"(d012), "+f"(d013), "+f"(d014), "+f"(d015),
+        "+f"(d016), "+f"(d017), "+f"(d018), "+f"(d019),
+        "+f"(d020), "+f"(d021), "+f"(d022), "+f"(d023),
+        "+f"(d024), "+f"(d025), "+f"(d026), "+f"(d027),
+        "+f"(d028), "+f"(d029), "+f"(d030), "+f"(d031),
+        "+f"(d032), "+f"(d033), "+f"(d034), "+f"(d035),
+        "+f"(d036), "+f"(d037), "+f"(d038), "+f"(d039),
+        "+f"(d040), "+f"(d041), "+f"(d042), "+f"(d043),
+        "+f"(d044), "+f"(d045), "+f"(d046), "+f"(d047),
+        "+f"(d048), "+f"(d049), "+f"(d050), "+f"(d051),
+        "+f"(d052), "+f"(d053), "+f"(d054), "+f"(d055),
+        "+f"(d056), "+f"(d057), "+f"(d058), "+f"(d059),
+        "+f"(d060), "+f"(d061), "+f"(d062), "+f"(d063),
+        "+f"(d064), "+f"(d065), "+f"(d066), "+f"(d067),
+        "+f"(d068), "+f"(d069), "+f"(d070), "+f"(d071),
+        "+f"(d072), "+f"(d073), "+f"(d074), "+f"(d075),
+        "+f"(d076), "+f"(d077), "+f"(d078), "+f"(d079),
+        "+f"(d080), "+f"(d081), "+f"(d082), "+f"(d083),
+        "+f"(d084), "+f"(d085), "+f"(d086), "+f"(d087),
+        "+f"(d088), "+f"(d089), "+f"(d090), "+f"(d091),
+        "+f"(d092), "+f"(d093), "+f"(d094), "+f"(d095),
+        "+f"(d096), "+f"(d097), "+f"(d098), "+f"(d099),
+        "+f"(d100), "+f"(d101), "+f"(d102), "+f"(d103),
+        "+f"(d104), "+f"(d105), "+f"(d106), "+f"(d107),
+        "+f"(d108), "+f"(d109), "+f"(d110), "+f"(d111)
+      :  "r"(a000),  "r"(a001),  "r"(a002),  "r"(a003),
+         "l"(desc_b),
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
+#else
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+#endif
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// GMMA 64x240x16 F32+=F16*F16
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+struct SM90_64x240x16_F32F16F16_SS
+{
+  using DRegisters = void;
+  using ARegisters = uint64_t[1];
+  using BRegisters = uint64_t[1];
+  using CRegisters = float[120];
+
+  CUTE_HOST_DEVICE static void
+  fma(uint64_t const& desc_a,
+      uint64_t const& desc_b,
+      float         & d000, float         & d001, float         & d002, float         & d003,
+      float         & d004, float         & d005, float         & d006, float         & d007,
+      float         & d008, float         & d009, float         & d010, float         & d011,
+      float         & d012, float         & d013, float         & d014, float         & d015,
+      float         & d016, float         & d017, float         & d018, float         & d019,
+      float         & d020, float         & d021, float         & d022, float         & d023,
+      float         & d024, float         & d025, float         & d026, float         & d027,
+      float         & d028, float         & d029, float         & d030, float         & d031,
+      float         & d032, float         & d033, float         & d034, float         & d035,
+      float         & d036, float         & d037, float         & d038, float         & d039,
+      float         & d040, float         & d041, float         & d042, float         & d043,
+      float         & d044, float         & d045, float         & d046, float         & d047,
+      float         & d048, float         & d049, float         & d050, float         & d051,
+      float         & d052, float         & d053, float         & d054, float         & d055,
+      float         & d056, float         & d057, float         & d058, float         & d059,
+      float         & d060, float         & d061, float         & d062, float         & d063,
+      float         & d064, float         & d065, float         & d066, float         & d067,
+      float         & d068, float         & d069, float         & d070, float         & d071,
+      float         & d072, float         & d073, float         & d074, float         & d075,
+      float         & d076, float         & d077, float         & d078, float         & d079,
+      float         & d080, float         & d081, float         & d082, float         & d083,
+      float         & d084, float         & d085, float         & d086, float         & d087,
+      float         & d088, float         & d089, float         & d090, float         & d091,
+      float         & d092, float         & d093, float         & d094, float         & d095,
+      float         & d096, float         & d097, float         & d098, float         & d099,
+      float         & d100, float         & d101, float         & d102, float         & d103,
+      float         & d104, float         & d105, float         & d106, float         & d107,
+      float         & d108, float         & d109, float         & d110, float         & d111,
+      float         & d112, float         & d113, float         & d114, float         & d115,
+      float         & d116, float         & d117, float         & d118, float         & d119,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
+  {
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %122, 0;\n"
+      "wgmma.mma_async.sync.aligned.m64n240k16.f32.f16.f16 "
+      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
+      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
+      " %16,  %17,  %18,  %19,  %20,  %21,  %22,  %23,  "
+      " %24,  %25,  %26,  %27,  %28,  %29,  %30,  %31,  "
+      " %32,  %33,  %34,  %35,  %36,  %37,  %38,  %39,  "
+      " %40,  %41,  %42,  %43,  %44,  %45,  %46,  %47,  "
+      " %48,  %49,  %50,  %51,  %52,  %53,  %54,  %55,  "
+      " %56,  %57,  %58,  %59,  %60,  %61,  %62,  %63,  "
+      " %64,  %65,  %66,  %67,  %68,  %69,  %70,  %71,  "
+      " %72,  %73,  %74,  %75,  %76,  %77,  %78,  %79,  "
+      " %80,  %81,  %82,  %83,  %84,  %85,  %86,  %87,  "
+      " %88,  %89,  %90,  %91,  %92,  %93,  %94,  %95,  "
+      " %96,  %97,  %98,  %99,  %100, %101, %102, %103, "
+      " %104, %105, %106, %107, %108, %109, %110, %111, "
+      " %112, %113, %114, %115, %116, %117, %118, %119},"
+      " %120,"
+      " %121,"
+      " p,    %123, %124, %125, %126;\n"
+    "}\n"
+      : "+f"(d000), "+f"(d001), "+f"(d002), "+f"(d003),
+        "+f"(d004), "+f"(d005), "+f"(d006), "+f"(d007),
+        "+f"(d008), "+f"(d009), "+f"(d010), "+f"(d011),
+        "+f"(d012), "+f"(d013), "+f"(d014), "+f"(d015),
+        "+f"(d016), "+f"(d017), "+f"(d018), "+f"(d019),
+        "+f"(d020), "+f"(d021), "+f"(d022), "+f"(d023),
+        "+f"(d024), "+f"(d025), "+f"(d026), "+f"(d027),
+        "+f"(d028), "+f"(d029), "+f"(d030), "+f"(d031),
+        "+f"(d032), "+f"(d033), "+f"(d034), "+f"(d035),
+        "+f"(d036), "+f"(d037), "+f"(d038), "+f"(d039),
+        "+f"(d040), "+f"(d041), "+f"(d042), "+f"(d043),
+        "+f"(d044), "+f"(d045), "+f"(d046), "+f"(d047),
+        "+f"(d048), "+f"(d049), "+f"(d050), "+f"(d051),
+        "+f"(d052), "+f"(d053), "+f"(d054), "+f"(d055),
+        "+f"(d056), "+f"(d057), "+f"(d058), "+f"(d059),
+        "+f"(d060), "+f"(d061), "+f"(d062), "+f"(d063),
+        "+f"(d064), "+f"(d065), "+f"(d066), "+f"(d067),
+        "+f"(d068), "+f"(d069), "+f"(d070), "+f"(d071),
+        "+f"(d072), "+f"(d073), "+f"(d074), "+f"(d075),
+        "+f"(d076), "+f"(d077), "+f"(d078), "+f"(d079),
+        "+f"(d080), "+f"(d081), "+f"(d082), "+f"(d083),
+        "+f"(d084), "+f"(d085), "+f"(d086), "+f"(d087),
+        "+f"(d088), "+f"(d089), "+f"(d090), "+f"(d091),
+        "+f"(d092), "+f"(d093), "+f"(d094), "+f"(d095),
+        "+f"(d096), "+f"(d097), "+f"(d098), "+f"(d099),
+        "+f"(d100), "+f"(d101), "+f"(d102), "+f"(d103),
+        "+f"(d104), "+f"(d105), "+f"(d106), "+f"(d107),
+        "+f"(d108), "+f"(d109), "+f"(d110), "+f"(d111),
+        "+f"(d112), "+f"(d113), "+f"(d114), "+f"(d115),
+        "+f"(d116), "+f"(d117), "+f"(d118), "+f"(d119)
+      :  "l"(desc_a),
+         "l"(desc_b),
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
+#else
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+#endif
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// GMMA 64x240x16 F32+=F16*F16
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+struct SM90_64x240x16_F32F16F16_RS
+{
+  using DRegisters = void;
+  using ARegisters = uint32_t[4];
+  using BRegisters = uint64_t[1];
+  using CRegisters = float[120];
+
+  static_assert(tnspA == GMMA::Major::K,
+      "Register source operand A must have K major layout.");
+
+  CUTE_HOST_DEVICE static void
+  fma(uint32_t const& a000, uint32_t const& a001, uint32_t const& a002, uint32_t const& a003,
+      uint64_t const& desc_b,
+      float         & d000, float         & d001, float         & d002, float         & d003,
+      float         & d004, float         & d005, float         & d006, float         & d007,
+      float         & d008, float         & d009, float         & d010, float         & d011,
+      float         & d012, float         & d013, float         & d014, float         & d015,
+      float         & d016, float         & d017, float         & d018, float         & d019,
+      float         & d020, float         & d021, float         & d022, float         & d023,
+      float         & d024, float         & d025, float         & d026, float         & d027,
+      float         & d028, float         & d029, float         & d030, float         & d031,
+      float         & d032, float         & d033, float         & d034, float         & d035,
+      float         & d036, float         & d037, float         & d038, float         & d039,
+      float         & d040, float         & d041, float         & d042, float         & d043,
+      float         & d044, float         & d045, float         & d046, float         & d047,
+      float         & d048, float         & d049, float         & d050, float         & d051,
+      float         & d052, float         & d053, float         & d054, float         & d055,
+      float         & d056, float         & d057, float         & d058, float         & d059,
+      float         & d060, float         & d061, float         & d062, float         & d063,
+      float         & d064, float         & d065, float         & d066, float         & d067,
+      float         & d068, float         & d069, float         & d070, float         & d071,
+      float         & d072, float         & d073, float         & d074, float         & d075,
+      float         & d076, float         & d077, float         & d078, float         & d079,
+      float         & d080, float         & d081, float         & d082, float         & d083,
+      float         & d084, float         & d085, float         & d086, float         & d087,
+      float         & d088, float         & d089, float         & d090, float         & d091,
+      float         & d092, float         & d093, float         & d094, float         & d095,
+      float         & d096, float         & d097, float         & d098, float         & d099,
+      float         & d100, float         & d101, float         & d102, float         & d103,
+      float         & d104, float         & d105, float         & d106, float         & d107,
+      float         & d108, float         & d109, float         & d110, float         & d111,
+      float         & d112, float         & d113, float         & d114, float         & d115,
+      float         & d116, float         & d117, float         & d118, float         & d119,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
+  {
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %125, 0;\n"
+      "wgmma.mma_async.sync.aligned.m64n240k16.f32.f16.f16 "
+      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
+      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
+      " %16,  %17,  %18,  %19,  %20,  %21,  %22,  %23,  "
+      " %24,  %25,  %26,  %27,  %28,  %29,  %30,  %31,  "
+      " %32,  %33,  %34,  %35,  %36,  %37,  %38,  %39,  "
+      " %40,  %41,  %42,  %43,  %44,  %45,  %46,  %47,  "
+      " %48,  %49,  %50,  %51,  %52,  %53,  %54,  %55,  "
+      " %56,  %57,  %58,  %59,  %60,  %61,  %62,  %63,  "
+      " %64,  %65,  %66,  %67,  %68,  %69,  %70,  %71,  "
+      " %72,  %73,  %74,  %75,  %76,  %77,  %78,  %79,  "
+      " %80,  %81,  %82,  %83,  %84,  %85,  %86,  %87,  "
+      " %88,  %89,  %90,  %91,  %92,  %93,  %94,  %95,  "
+      " %96,  %97,  %98,  %99,  %100, %101, %102, %103, "
+      " %104, %105, %106, %107, %108, %109, %110, %111, "
+      " %112, %113, %114, %115, %116, %117, %118, %119},"
+      "{%120, %121, %122, %123},"
+      " %124,"
+      " p,    %126, %127, %128;\n"
+    "}\n"
+      : "+f"(d000), "+f"(d001), "+f"(d002), "+f"(d003),
+        "+f"(d004), "+f"(d005), "+f"(d006), "+f"(d007),
+        "+f"(d008), "+f"(d009), "+f"(d010), "+f"(d011),
+        "+f"(d012), "+f"(d013), "+f"(d014), "+f"(d015),
+        "+f"(d016), "+f"(d017), "+f"(d018), "+f"(d019),
+        "+f"(d020), "+f"(d021), "+f"(d022), "+f"(d023),
+        "+f"(d024), "+f"(d025), "+f"(d026), "+f"(d027),
+        "+f"(d028), "+f"(d029), "+f"(d030), "+f"(d031),
+        "+f"(d032), "+f"(d033), "+f"(d034), "+f"(d035),
+        "+f"(d036), "+f"(d037), "+f"(d038), "+f"(d039),
+        "+f"(d040), "+f"(d041), "+f"(d042), "+f"(d043),
+        "+f"(d044), "+f"(d045), "+f"(d046), "+f"(d047),
+        "+f"(d048), "+f"(d049), "+f"(d050), "+f"(d051),
+        "+f"(d052), "+f"(d053), "+f"(d054), "+f"(d055),
+        "+f"(d056), "+f"(d057), "+f"(d058), "+f"(d059),
+        "+f"(d060), "+f"(d061), "+f"(d062), "+f"(d063),
+        "+f"(d064), "+f"(d065), "+f"(d066), "+f"(d067),
+        "+f"(d068), "+f"(d069), "+f"(d070), "+f"(d071),
+        "+f"(d072), "+f"(d073), "+f"(d074), "+f"(d075),
+        "+f"(d076), "+f"(d077), "+f"(d078), "+f"(d079),
+        "+f"(d080), "+f"(d081), "+f"(d082), "+f"(d083),
+        "+f"(d084), "+f"(d085), "+f"(d086), "+f"(d087),
+        "+f"(d088), "+f"(d089), "+f"(d090), "+f"(d091),
+        "+f"(d092), "+f"(d093), "+f"(d094), "+f"(d095),
+        "+f"(d096), "+f"(d097), "+f"(d098), "+f"(d099),
+        "+f"(d100), "+f"(d101), "+f"(d102), "+f"(d103),
+        "+f"(d104), "+f"(d105), "+f"(d106), "+f"(d107),
+        "+f"(d108), "+f"(d109), "+f"(d110), "+f"(d111),
+        "+f"(d112), "+f"(d113), "+f"(d114), "+f"(d115),
+        "+f"(d116), "+f"(d117), "+f"(d118), "+f"(d119)
+      :  "r"(a000),  "r"(a001),  "r"(a002),  "r"(a003),
+         "l"(desc_b),
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
+#else
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
