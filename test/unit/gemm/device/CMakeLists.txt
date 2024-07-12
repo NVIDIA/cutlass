@@ -251,14 +251,32 @@ cutlass_test_unit_add_executable(
   BATCH_SIZE 4
 
   # Upcast on Operand A
-  gemm_universal_u8t_f16n_f16t_mixed_input_tensor_op_f16_sm80.cu
-  gemm_universal_s8t_f16n_f16t_mixed_input_tensor_op_f16_sm80.cu
+  gemm_universal_s8t_f16n_f32t_mixed_input_tensor_op_f32_sm80.cu
+  gemm_universal_u8t_f16n_f32t_mixed_input_tensor_op_f32_sm80.cu
+  gemm_universal_s8t_f16n_f16t_mixed_input_tensor_op_f32_sm80.cu
+  gemm_universal_u8t_f16n_f16t_mixed_input_tensor_op_f32_sm80.cu
+  
+  gemm_universal_s8t_bf16n_f32t_mixed_input_tensor_op_f32_sm80.cu
+  gemm_universal_u8t_bf16n_f32t_mixed_input_tensor_op_f32_sm80.cu
   gemm_universal_s8t_bf16n_bf16t_mixed_input_tensor_op_f32_sm80.cu
+  gemm_universal_u8t_bf16n_bf16t_mixed_input_tensor_op_f32_sm80.cu
+
+  gemm_universal_s8t_f16n_f16t_mixed_input_tensor_op_f16_sm80.cu
+  gemm_universal_u8t_f16n_f16t_mixed_input_tensor_op_f16_sm80.cu
 
   # Upcast on Operand B
-  gemm_universal_f16t_u8n_f16t_mixed_input_tensor_op_f16_sm80.cu
-  gemm_universal_f16t_s8n_f16t_mixed_input_tensor_op_f16_sm80.cu
+  gemm_universal_f16t_s8n_f32t_mixed_input_tensor_op_f32_sm80.cu
+  gemm_universal_f16t_u8n_f32t_mixed_input_tensor_op_f32_sm80.cu
+  gemm_universal_f16t_s8n_f16t_mixed_input_tensor_op_f32_sm80.cu
+  gemm_universal_f16t_u8n_f16t_mixed_input_tensor_op_f32_sm80.cu
+
+  gemm_universal_bf16t_s8n_f32t_mixed_input_tensor_op_f32_sm80.cu
+  gemm_universal_bf16t_u8n_f32t_mixed_input_tensor_op_f32_sm80.cu
   gemm_universal_bf16t_s8n_bf16t_mixed_input_tensor_op_f32_sm80.cu
+  gemm_universal_bf16t_u8n_bf16t_mixed_input_tensor_op_f32_sm80.cu
+
+  gemm_universal_f16t_s8n_f16t_mixed_input_tensor_op_f16_sm80.cu
+  gemm_universal_f16t_u8n_f16t_mixed_input_tensor_op_f16_sm80.cu
 )
 
 cutlass_test_unit_add_executable(
