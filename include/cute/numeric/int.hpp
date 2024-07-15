@@ -36,6 +36,8 @@
 #include <cstdint>
 #endif
 
+#include <cute/numeric/integral_constant.hpp>
+#include <cutlass/integer_subbyte.h>
 #include <cutlass/numeric_types.h>
 
 namespace cute
@@ -100,5 +102,8 @@ using uint_byte = uint_bit<8*N>;
 
 template <int N>
 using uint_byte_t = typename uint_byte<N>::type;
+
+template<int Bits, bool Signed>
+struct is_integral<cutlass::integer_subbyte<Bits, Signed>> : true_type {};
 
 } // namespace cute
