@@ -329,7 +329,7 @@ CUTLASS_HOST_DEVICE
 void cuGetErrorString(cudaError_t error, const char **) {
 }
 
-CUTLASS_HOST
+inline CUTLASS_HOST
 cudaError_t cudaGetLastError() {
   return cudaSuccess;
 }
@@ -382,7 +382,7 @@ CUresult cuMemsetD8Async(CUdeviceptr devPtr, uint8_t value, size_t count, cudaSt
 using cudaFuncAttribute = unsigned int;
 constexpr cudaFuncAttribute cudaFuncAttributeMaxDynamicSharedMemorySize = 0;
 
-CUTLASS_HOST
+inline CUTLASS_HOST
 cudaError_t cudaFuncSetAttribute(const void *func, cudaFuncAttribute attr, int value) {
   return cudaSuccess;
 }
@@ -397,7 +397,7 @@ cudaError_t cudaDeviceGetAttribute(int *value, cudaDeviceAttr attr, int device) 
 
 constexpr unsigned int cudaOccupancyDisableCachingOverride = 0;
 
-CUTLASS_HOST
+inline CUTLASS_HOST
 cudaError_t cudaOccupancyMaxActiveBlocksPerMultiprocessorWithFlags(
         int *numBlocks, const void *func, int blockSize, size_t dynamicSMemSize, unsigned int flags) {
   return cudaSuccess;

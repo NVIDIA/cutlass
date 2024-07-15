@@ -61,7 +61,7 @@
 #endif
 
 #if defined(CUTLASS_ENABLE_SYCL)
-#define CUTLASS_HOST inline
+#define CUTLASS_HOST
 #define CUTLASS_GLOBAL
 #define CUTLASS_SHARED
 #else
