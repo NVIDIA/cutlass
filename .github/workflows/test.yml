@@ -1,0 +1,79 @@
+name: "Test"
+
+on:
+  push:
+    branches: [ "sycl-develop" ]
+  pull_request:
+    branches: [ "sycl-develop" ]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  run-tests:
+    name: Run tests
+    runs-on: cp-nvidia-gpu
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          nvidia-smi
+          mkdir ~/dpcpp
+          pushd ~/dpcpp
+          echo "Will use DPCPP $DPCPP_VERSION."
+          if [[ "$DPCPP_VERSION" != "" ]]; then \
+            echo "Downloading DPCPP from https://github.com/intel/llvm/releases/download/$DPCPP_VERSION/sycl_linux.tar.gz"; \
+            wget -q https://github.com/intel/llvm/releases/download/$DPCPP_VERSION/sycl_linux.tar.gz; \
+          else
+            latest=$(curl -sS https://api.github.com/repos/intel/llvm/releases | jq -r '[.[].tag_name|select(match("nightly-[0-9]{4}-[0-9]{2}-[0-9]{2}"))][0]') && \
+            echo "Downloading DPCPP from https://github.com/intel/llvm/releases/download/${latest}/sycl_linux.tar.gz"; \
+            wget -q https://github.com/intel/llvm/releases/download/${latest}/sycl_linux.tar.gz; \
+          fi
+          tar -xf sycl_linux.tar.gz
+          rm sycl_linux.tar.gz
+          popd
+
+      # For a specific DPC++ nightly build define the repository variable DPCPP_VERSION
+      # for example using the tag: 'nightly-2024-04-22'
+      - name: Build
+        shell: bash
+        run: |
+          export PATH=~/dpcpp/bin/:$PATH
+          export C_INCLUDE_PATH=~/dpcpp/include/:$C_INCLUDE_PATH
+          export CPLUS_INCLUDE_PATH=~/dpcpp/include/:$CPLUS_INCLUDE_PATH
+          export LD_LIBRARY_PATH=~/dpcpp/lib/:$LD_LIBRARY_PATH
+          export CC=clang
+          export CXX=clang++
+          clang++ --version
+          cmake -G Ninja  \
+            -DCMAKE_CUDA_HOST_COMPILER=clang++  \
+            -DCUTLASS_ENABLE_SYCL=ON \
+            -DDPCPP_SYCL_TARGET=nvptx64-nvidia-cuda \
+            -DDPCPP_SYCL_ARCH=sm_80
+          cmake --build .
+
+      - name: Unit test
+        shell: bash
+        run: |
+          export LD_LIBRARY_PATH=~/dpcpp/lib/:$LD_LIBRARY_PATH
+          cmake --build . --target test_unit -j 24
+
+      - name: Examples
+        shell: bash
+        run: |
+          export LD_LIBRARY_PATH=~/dpcpp/lib/:$LD_LIBRARY_PATH
+          echo Run sgemm_1
+          ./examples/cute/tutorial/sgemm_1
+          echo Run sgemm_2
+          ./examples/cute/tutorial/sgemm_2
+          echo Run sgemm_sm70
+          ./examples/cute/tutorial/sgemm_sm70
+          echo Run sgemm_sm80
+          ./examples/cute/tutorial/sgemm_sm80
+          echo Run tiled_copy
+          ./examples/cute/tutorial/tiled_copy
