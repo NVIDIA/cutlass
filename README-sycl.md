@@ -30,7 +30,7 @@ Once you have your compiler installed, you need to point the
 This enables the compilation of SYCL sources without altering the current NVCC path.
 
 ```
-make -G Ninja  \
+cmake -G Ninja  \
   -DCMAKE_CUDA_HOST_COMPILER=/path/to/clang++  \
   -DCUTLASS_ENABLE_SYCL=ON \
   -DDPCPP_SYCL_TARGET=nvptx64-nvidia-cuda \
