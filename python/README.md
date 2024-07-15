@@ -152,6 +152,10 @@ Building the documentation requires additional packages.  The following commands
 ```bash
 sudo apt-get install pandoc
 pip install --upgrade Sphinx furo pandoc myst-parser sphinx-copybutton nbsphinx nbsphinx-link sphinx-inline-tabs
+# Needed for jupyter notebooks
+pip install ipykernel
+# Needed as latest versions are not compatible with Sphinx as of now.
+pip install docutils~=0.20.0
 ```
 
 To build documentation, you must first have installed the CUTLASS Python interface via the
