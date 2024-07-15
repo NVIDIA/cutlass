@@ -800,7 +800,7 @@ public:
       //
       if constexpr (not IsAtomic && FinalReduction) {
         // Ensure gmem writes are visible to other threads before incrementing counter
-        __threadfence();
+        threadfence();
         sync_fn();
         // Collective thread 0 increments atomic tile counter and copies value to smem
         int* prev_tile_count = reinterpret_cast<int*>(raw_pointer_cast(smem_buffer.data()));
@@ -1277,7 +1277,7 @@ public:
       //
       if constexpr (not IsAtomic && FinalReduction) {
         // Ensure gmem writes are visible to other threads before incrementing counter
-        __threadfence();
+        threadfence();
         sync_fn();
         // Collective thread 0 increments atomic tile counter and copies value to smem
         int* prev_tile_count = reinterpret_cast<int*>(raw_pointer_cast(smem_buffer.data()));

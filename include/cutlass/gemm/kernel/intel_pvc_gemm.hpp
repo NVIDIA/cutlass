@@ -111,6 +111,12 @@ public:
 
   static constexpr int VecC = CollectiveMainloop::VecC;
 
+  // Kernel level shared memory storage
+  struct SharedStorage {
+    using EpilogueTensorStorage = typename CollectiveEpilogue::TensorStorage;
+    EpilogueTensorStorage epilogue;
+  };
+
   // Device side arguments
   struct Arguments {
     GemmUniversalMode mode{};
@@ -188,7 +194,7 @@ public:
   void
   operator()(Params const& params, char* smem_buf) {
 
-    (void)smem_buf;
+    SharedStorage& shared_storage = *reinterpret_cast<SharedStorage*>(smem_buf);
 
     // Preconditions
     CUTE_STATIC_ASSERT(is_static<WorkgroupTileShape>::value);
@@ -214,6 +220,7 @@ public:
     const int m_coord = BlockIdxX() * get<0>(subgroup_shape);
     const int n_coord = BlockIdxY() * get<1>(workgroup_shape) + thread_idx / SubgroupSize * get<1>(subgroup_shape);
     const int l_coord = BlockIdxZ();
+    const auto tile_coord = make_coord(m_coord, n_coord, _, l_coord);
 
     Tensor tAi = params.mainloop.gmem_tiled_copy_a.get_pvc_tensor(
             make_coord(m_coord, 0, 0),
@@ -253,13 +260,18 @@ public:
       smem_buf,
       params.mainloop
     );
-    auto gmem_tiled_copy_c = make_xe_2d_copy<XE_2D_U32x8x16x1x1_ST_N>(make_tensor(params.epilogue.ptr_D, make_shape(M, N, L), params.epilogue.dD));
 
-    Tensor tCi = gmem_tiled_copy_c.get_pvc_tensor(make_coord(m_coord, n_coord, 0),
-                                                  make_shape(Int<FragsM>{}, Int<FragsN>{}, L),
-                                                  make_stride(get<0>(MmaAtomShape()), get<1>(MmaAtomShape())));
-
-    copy(gmem_tiled_copy_c, accumulators, tCi(_,_,_,l_coord));
+    CollectiveEpilogue epilogue{params.epilogue, shared_storage.epilogue};
+    epilogue(
+      problem_shape_MNKL,
+      subgroup_shape,
+      tile_coord,
+      accumulators,
+      tiled_mma,
+      residue_mnk,
+      thread_idx,
+      smem_buf
+      );
   }
 };
 
