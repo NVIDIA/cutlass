@@ -1609,6 +1609,49 @@ struct MMA_Traits<SM90_64x32x16_F32BF16BF16_RS<tnspA, tnspB, scaleA, scaleB>>
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
+struct MMA_Traits<SM90_64x48x16_F32BF16BF16_SS<tnspA, tnspB, scaleA, scaleB>>
+{
+  using ValTypeD = float;
+  using ValTypeA = bfloat16_t;
+  using ValTypeB = bfloat16_t;
+  using ValTypeC = float;
+
+  using FrgTypeA = GMMA::smem_desc<tnspA>;
+  using FrgTypeB = GMMA::smem_desc<tnspB>;
+
+  using Shape_MNK = Shape<_64,Int<48>,_16>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 16>;
+  using BLayout = GMMA::ABLayout< 48, 16>;
+  using CLayout = GMMA::CLayout_64x48;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
+struct MMA_Traits<SM90_64x48x16_F32BF16BF16_RS<tnspA, tnspB, scaleA, scaleB>>
+{
+  using ValTypeD = float;
+  using ValTypeA = bfloat16_t;
+  using ValTypeB = bfloat16_t;
+  using ValTypeC = float;
+
+  using FrgTypeB = GMMA::smem_desc<tnspB>;
+
+  using Shape_MNK = Shape<_64,Int<48>,_16>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x16;
+  using BLayout = GMMA::ABLayout< 48, 16>;
+  using CLayout = GMMA::CLayout_64x48;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x64x16_F32BF16BF16_SS<tnspA, tnspB, scaleA, scaleB>>
 {
   using ValTypeD = float;
@@ -1645,6 +1688,49 @@ struct MMA_Traits<SM90_64x64x16_F32BF16BF16_RS<tnspA, tnspB, scaleA, scaleB>>
   using ALayout = GMMA::ALayout_64x16;
   using BLayout = GMMA::ABLayout< 64, 16>;
   using CLayout = GMMA::CLayout_64x64;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
+struct MMA_Traits<SM90_64x80x16_F32BF16BF16_SS<tnspA, tnspB, scaleA, scaleB>>
+{
+  using ValTypeD = float;
+  using ValTypeA = bfloat16_t;
+  using ValTypeB = bfloat16_t;
+  using ValTypeC = float;
+
+  using FrgTypeA = GMMA::smem_desc<tnspA>;
+  using FrgTypeB = GMMA::smem_desc<tnspB>;
+
+  using Shape_MNK = Shape<_64,Int<80>,_16>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 16>;
+  using BLayout = GMMA::ABLayout< 80, 16>;
+  using CLayout = GMMA::CLayout_64x80;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
+struct MMA_Traits<SM90_64x80x16_F32BF16BF16_RS<tnspA, tnspB, scaleA, scaleB>>
+{
+  using ValTypeD = float;
+  using ValTypeA = bfloat16_t;
+  using ValTypeB = bfloat16_t;
+  using ValTypeC = float;
+
+  using FrgTypeB = GMMA::smem_desc<tnspB>;
+
+  using Shape_MNK = Shape<_64,Int<80>,_16>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x16;
+  using BLayout = GMMA::ABLayout< 80, 16>;
+  using CLayout = GMMA::CLayout_64x80;
 
   GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
 };
@@ -1695,6 +1781,49 @@ struct MMA_Traits<SM90_64x96x16_F32BF16BF16_RS<tnspA, tnspB, scaleA, scaleB>>
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
+struct MMA_Traits<SM90_64x112x16_F32BF16BF16_SS<tnspA, tnspB, scaleA, scaleB>>
+{
+  using ValTypeD = float;
+  using ValTypeA = bfloat16_t;
+  using ValTypeB = bfloat16_t;
+  using ValTypeC = float;
+
+  using FrgTypeA = GMMA::smem_desc<tnspA>;
+  using FrgTypeB = GMMA::smem_desc<tnspB>;
+
+  using Shape_MNK = Shape<_64,Int<112>,_16>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 16>;
+  using BLayout = GMMA::ABLayout< 112, 16>;
+  using CLayout = GMMA::CLayout_64x112;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
+struct MMA_Traits<SM90_64x112x16_F32BF16BF16_RS<tnspA, tnspB, scaleA, scaleB>>
+{
+  using ValTypeD = float;
+  using ValTypeA = bfloat16_t;
+  using ValTypeB = bfloat16_t;
+  using ValTypeC = float;
+
+  using FrgTypeB = GMMA::smem_desc<tnspB>;
+
+  using Shape_MNK = Shape<_64,Int<112>,_16>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x16;
+  using BLayout = GMMA::ABLayout< 112, 16>;
+  using CLayout = GMMA::CLayout_64x112;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x128x16_F32BF16BF16_SS<tnspA, tnspB, scaleA, scaleB>>
 {
   using ValTypeD = float;
@@ -1738,6 +1867,135 @@ struct MMA_Traits<SM90_64x128x16_F32BF16BF16_RS<tnspA, tnspB, scaleA, scaleB>>
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
+struct MMA_Traits<SM90_64x144x16_F32BF16BF16_SS<tnspA, tnspB, scaleA, scaleB>>
+{
+  using ValTypeD = float;
+  using ValTypeA = bfloat16_t;
+  using ValTypeB = bfloat16_t;
+  using ValTypeC = float;
+
+  using FrgTypeA = GMMA::smem_desc<tnspA>;
+  using FrgTypeB = GMMA::smem_desc<tnspB>;
+
+  using Shape_MNK = Shape<_64,Int<144>,_16>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 16>;
+  using BLayout = GMMA::ABLayout< 144, 16>;
+  using CLayout = GMMA::CLayout_64x144;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
+struct MMA_Traits<SM90_64x144x16_F32BF16BF16_RS<tnspA, tnspB, scaleA, scaleB>>
+{
+  using ValTypeD = float;
+  using ValTypeA = bfloat16_t;
+  using ValTypeB = bfloat16_t;
+  using ValTypeC = float;
+
+  using FrgTypeB = GMMA::smem_desc<tnspB>;
+
+  using Shape_MNK = Shape<_64,Int<144>,_16>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x16;
+  using BLayout = GMMA::ABLayout< 144, 16>;
+  using CLayout = GMMA::CLayout_64x144;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
+struct MMA_Traits<SM90_64x160x16_F32BF16BF16_SS<tnspA, tnspB, scaleA, scaleB>>
+{
+  using ValTypeD = float;
+  using ValTypeA = bfloat16_t;
+  using ValTypeB = bfloat16_t;
+  using ValTypeC = float;
+
+  using FrgTypeA = GMMA::smem_desc<tnspA>;
+  using FrgTypeB = GMMA::smem_desc<tnspB>;
+
+  using Shape_MNK = Shape<_64,Int<160>,_16>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 16>;
+  using BLayout = GMMA::ABLayout< 160, 16>;
+  using CLayout = GMMA::CLayout_64x160;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
+struct MMA_Traits<SM90_64x160x16_F32BF16BF16_RS<tnspA, tnspB, scaleA, scaleB>>
+{
+  using ValTypeD = float;
+  using ValTypeA = bfloat16_t;
+  using ValTypeB = bfloat16_t;
+  using ValTypeC = float;
+
+  using FrgTypeB = GMMA::smem_desc<tnspB>;
+
+  using Shape_MNK = Shape<_64,Int<160>,_16>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x16;
+  using BLayout = GMMA::ABLayout< 160, 16>;
+  using CLayout = GMMA::CLayout_64x160;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
+struct MMA_Traits<SM90_64x176x16_F32BF16BF16_SS<tnspA, tnspB, scaleA, scaleB>>
+{
+  using ValTypeD = float;
+  using ValTypeA = bfloat16_t;
+  using ValTypeB = bfloat16_t;
+  using ValTypeC = float;
+
+  using FrgTypeA = GMMA::smem_desc<tnspA>;
+  using FrgTypeB = GMMA::smem_desc<tnspB>;
+
+  using Shape_MNK = Shape<_64,Int<176>,_16>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 16>;
+  using BLayout = GMMA::ABLayout< 176, 16>;
+  using CLayout = GMMA::CLayout_64x176;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
+struct MMA_Traits<SM90_64x176x16_F32BF16BF16_RS<tnspA, tnspB, scaleA, scaleB>>
+{
+  using ValTypeD = float;
+  using ValTypeA = bfloat16_t;
+  using ValTypeB = bfloat16_t;
+  using ValTypeC = float;
+
+  using FrgTypeB = GMMA::smem_desc<tnspB>;
+
+  using Shape_MNK = Shape<_64,Int<176>,_16>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x16;
+  using BLayout = GMMA::ABLayout< 176, 16>;
+  using CLayout = GMMA::CLayout_64x176;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x192x16_F32BF16BF16_SS<tnspA, tnspB, scaleA, scaleB>>
 {
   using ValTypeD = float;
@@ -1774,6 +2032,92 @@ struct MMA_Traits<SM90_64x192x16_F32BF16BF16_RS<tnspA, tnspB, scaleA, scaleB>>
   using ALayout = GMMA::ALayout_64x16;
   using BLayout = GMMA::ABLayout<192, 16>;
   using CLayout = GMMA::CLayout_64x192;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
+struct MMA_Traits<SM90_64x224x16_F32BF16BF16_SS<tnspA, tnspB, scaleA, scaleB>>
+{
+  using ValTypeD = float;
+  using ValTypeA = bfloat16_t;
+  using ValTypeB = bfloat16_t;
+  using ValTypeC = float;
+
+  using FrgTypeA = GMMA::smem_desc<tnspA>;
+  using FrgTypeB = GMMA::smem_desc<tnspB>;
+
+  using Shape_MNK = Shape<_64,Int<224>,_16>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 16>;
+  using BLayout = GMMA::ABLayout< 224, 16>;
+  using CLayout = GMMA::CLayout_64x224;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
+struct MMA_Traits<SM90_64x224x16_F32BF16BF16_RS<tnspA, tnspB, scaleA, scaleB>>
+{
+  using ValTypeD = float;
+  using ValTypeA = bfloat16_t;
+  using ValTypeB = bfloat16_t;
+  using ValTypeC = float;
+
+  using FrgTypeB = GMMA::smem_desc<tnspB>;
+
+  using Shape_MNK = Shape<_64,Int<224>,_16>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x16;
+  using BLayout = GMMA::ABLayout< 224, 16>;
+  using CLayout = GMMA::CLayout_64x224;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
+struct MMA_Traits<SM90_64x240x16_F32BF16BF16_SS<tnspA, tnspB, scaleA, scaleB>>
+{
+  using ValTypeD = float;
+  using ValTypeA = bfloat16_t;
+  using ValTypeB = bfloat16_t;
+  using ValTypeC = float;
+
+  using FrgTypeA = GMMA::smem_desc<tnspA>;
+  using FrgTypeB = GMMA::smem_desc<tnspB>;
+
+  using Shape_MNK = Shape<_64,Int<240>,_16>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 16>;
+  using BLayout = GMMA::ABLayout< 240, 16>;
+  using CLayout = GMMA::CLayout_64x240;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
+struct MMA_Traits<SM90_64x240x16_F32BF16BF16_RS<tnspA, tnspB, scaleA, scaleB>>
+{
+  using ValTypeD = float;
+  using ValTypeA = bfloat16_t;
+  using ValTypeB = bfloat16_t;
+  using ValTypeC = float;
+
+  using FrgTypeB = GMMA::smem_desc<tnspB>;
+
+  using Shape_MNK = Shape<_64,Int<240>,_16>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x16;
+  using BLayout = GMMA::ABLayout< 240, 16>;
+  using CLayout = GMMA::CLayout_64x240;
 
   GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
 };
