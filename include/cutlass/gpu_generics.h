@@ -294,128 +294,120 @@ CUTLASS_DEVICE T hfma2(const T a, const T b, const T c) {
 
 namespace cutlass {
 
-    // Stream
-    using cudaStream_t = void *;
+// Stream
+using cudaStream_t = void *;
 
-    // dim3
-    struct dim3 {
-        uint x, y, z;
+using dim3 = syclcompat::dim3;
 
-        dim3() = default;
+// Atomic
 
-        dim3(uint x, uint y, uint z) : x(x), y(y), z(z) {}
-    };
-
-
-    // Atomic
-
-    CUTLASS_DEVICE int atomicAdd(int *address, int val) {
+CUTLASS_DEVICE int atomicAdd(int *address, int val) {
 #if defined(__SYCL_DEVICE_ONLY__)
-      return syclcompat::atomic_fetch_add(address, val);
+  return syclcompat::atomic_fetch_add(address, val);
 #endif
-      return 0;
-    }
-
-    CUTLASS_DEVICE int atomicCAS(int *address, int compare, int val) {
-#if defined(__SYCL_DEVICE_ONLY__)
-      syclcompat::atomic_compare_exchange_strong(address, compare, val);
-#endif
-      return 0;
-    }
-
-    // Error
-    using cudaError_t = unsigned int;
-    constexpr cudaError_t cudaSuccess = 0;
-    constexpr cudaError_t cudaErrorUnknown = 100;
-
-    CUTLASS_HOST_DEVICE
-    const char *cudaGetErrorString(cudaError_t error) {
-      return "";
-    }
-
-    CUTLASS_HOST_DEVICE
-    void cuGetErrorString(cudaError_t error, const char **) {
-    }
-
-    CUTLASS_HOST
-    cudaError_t cudaGetLastError() {
-      return cudaSuccess;
-    }
-
-    CUTLASS_HOST_DEVICE
-    cudaError_t cudaGetDevice(int *device) {
-      return cudaSuccess;
-    }
-
-    // Mem copy
-    enum cudaMemcpyKind {
-        cudaMemcpyHostToHost = 0,
-        cudaMemcpyHostToDevice = 1,
-        cudaMemcpyDeviceToHost = 2,
-        cudaMemcpyDeviceToDevice = 3
-    };
-
-    CUTLASS_HOST_DEVICE
-    cudaError_t cudaMemsetAsync(void *devPtr, unsigned int value, size_t count, cudaStream_t stream = nullptr) {
-      syclcompat::fill_async(devPtr, value, count);
-      return cudaSuccess;
-    }
-
-    using CUresult = unsigned int;
-    using CUdeviceptr = unsigned int*;
-    constexpr CUresult CUDA_SUCCESS = 0;
-
-    CUTLASS_HOST_DEVICE
-    CUresult cuMemsetD32Async(CUdeviceptr devPtr, uint32_t value, size_t count, cudaStream_t stream = nullptr) {
-      void *ptr = reinterpret_cast<void *>(devPtr);
-      syclcompat::fill_async(ptr, value, count);
-      return cudaSuccess;
-    }
-
-    CUTLASS_HOST_DEVICE
-    CUresult cuMemsetD16Async(CUdeviceptr devPtr, uint16_t value, size_t count, cudaStream_t stream = nullptr) {
-      void *ptr = reinterpret_cast<void *>(devPtr);
-      syclcompat::fill_async(ptr, value, count);
-      return cudaSuccess;
-    }
-
-    CUTLASS_HOST_DEVICE
-    CUresult cuMemsetD8Async(CUdeviceptr devPtr, uint8_t value, size_t count, cudaStream_t stream = nullptr) {
-      void *ptr = reinterpret_cast<void *>(devPtr);
-      syclcompat::fill_async(ptr, value, count);
-      return cudaSuccess;
-    }
-
-    // FuncAttribute
-    using cudaFuncAttribute = unsigned int;
-    constexpr cudaFuncAttribute cudaFuncAttributeMaxDynamicSharedMemorySize = 0;
-
-    CUTLASS_HOST
-    cudaError_t cudaFuncSetAttribute(const void *func, cudaFuncAttribute attr, int value) {
-      return cudaSuccess;
-    }
-
-    using cudaDeviceAttr = unsigned int;
-    constexpr cudaDeviceAttr cudaDevAttrMultiProcessorCount = 0;
-
-    CUTLASS_HOST_DEVICE
-    cudaError_t cudaDeviceGetAttribute(int *value, cudaDeviceAttr attr, int device) {
-      return cudaSuccess;
-    }
-
-    constexpr unsigned int cudaOccupancyDisableCachingOverride = 0;
-
-    CUTLASS_HOST
-    cudaError_t cudaOccupancyMaxActiveBlocksPerMultiprocessorWithFlags(
-            int *numBlocks, const void *func, int blockSize, size_t dynamicSMemSize, unsigned int flags) {
-      return cudaSuccess;
-    }
-
+  return 0;
 }
+
+CUTLASS_DEVICE int atomicCAS(int *address, int compare, int val) {
+#if defined(__SYCL_DEVICE_ONLY__)
+  syclcompat::atomic_compare_exchange_strong(address, compare, val);
+#endif
+  return 0;
+}
+
+// Error
+using cudaError_t = unsigned int;
+constexpr cudaError_t cudaSuccess = 0;
+constexpr cudaError_t cudaErrorUnknown = 100;
+
+CUTLASS_HOST_DEVICE
+const char *cudaGetErrorString(cudaError_t error) {
+  return "";
+}
+
+CUTLASS_HOST_DEVICE
+void cuGetErrorString(cudaError_t error, const char **) {
+}
+
+CUTLASS_HOST
+cudaError_t cudaGetLastError() {
+  return cudaSuccess;
+}
+
+CUTLASS_HOST_DEVICE
+cudaError_t cudaGetDevice(int *device) {
+  return cudaSuccess;
+}
+
+// Mem copy
+enum cudaMemcpyKind {
+  cudaMemcpyHostToHost = 0,
+  cudaMemcpyHostToDevice = 1,
+  cudaMemcpyDeviceToHost = 2,
+  cudaMemcpyDeviceToDevice = 3
+};
+
+CUTLASS_HOST_DEVICE
+cudaError_t cudaMemsetAsync(void *devPtr, unsigned int value, size_t count, cudaStream_t stream = nullptr) {
+  syclcompat::fill_async(devPtr, value, count);
+  return cudaSuccess;
+}
+
+using CUresult = unsigned int;
+using CUdeviceptr = unsigned int*;
+constexpr CUresult CUDA_SUCCESS = 0;
+
+CUTLASS_HOST_DEVICE
+CUresult cuMemsetD32Async(CUdeviceptr devPtr, uint32_t value, size_t count, cudaStream_t stream = nullptr) {
+  void *ptr = reinterpret_cast<void *>(devPtr);
+  syclcompat::fill_async(ptr, value, count);
+  return cudaSuccess;
+}
+
+CUTLASS_HOST_DEVICE
+CUresult cuMemsetD16Async(CUdeviceptr devPtr, uint16_t value, size_t count, cudaStream_t stream = nullptr) {
+  void *ptr = reinterpret_cast<void *>(devPtr);
+  syclcompat::fill_async(ptr, value, count);
+  return cudaSuccess;
+}
+
+CUTLASS_HOST_DEVICE
+CUresult cuMemsetD8Async(CUdeviceptr devPtr, uint8_t value, size_t count, cudaStream_t stream = nullptr) {
+  void *ptr = reinterpret_cast<void *>(devPtr);
+  syclcompat::fill_async(ptr, value, count);
+  return cudaSuccess;
+}
+
+// FuncAttribute
+using cudaFuncAttribute = unsigned int;
+constexpr cudaFuncAttribute cudaFuncAttributeMaxDynamicSharedMemorySize = 0;
+
+CUTLASS_HOST
+cudaError_t cudaFuncSetAttribute(const void *func, cudaFuncAttribute attr, int value) {
+  return cudaSuccess;
+}
+
+using cudaDeviceAttr = unsigned int;
+constexpr cudaDeviceAttr cudaDevAttrMultiProcessorCount = 0;
+
+CUTLASS_HOST_DEVICE
+cudaError_t cudaDeviceGetAttribute(int *value, cudaDeviceAttr attr, int device) {
+  return cudaSuccess;
+}
+
+constexpr unsigned int cudaOccupancyDisableCachingOverride = 0;
+
+CUTLASS_HOST
+cudaError_t cudaOccupancyMaxActiveBlocksPerMultiprocessorWithFlags(
+        int *numBlocks, const void *func, int blockSize, size_t dynamicSMemSize, unsigned int flags) {
+  return cudaSuccess;
+}
+
+} // cutlass namespace
 
 // Expose dim3 in the cute namespace
 namespace cute {
-    using dim3 = cutlass::dim3;
+  using dim3 = syclcompat::dim3;
 }
 #endif
 
