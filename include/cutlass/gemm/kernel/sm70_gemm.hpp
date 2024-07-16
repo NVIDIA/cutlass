@@ -72,6 +72,7 @@ public:
   using ElementB  = typename CollectiveMainloop::ElementB;
   using StrideB   = typename CollectiveMainloop::StrideB;
   using DispatchPolicy = typename CollectiveMainloop::DispatchPolicy;
+  using Schedule = typename DispatchPolicy::Schedule;
   using ElementAccumulator = typename CollectiveMainloop::ElementAccumulator;
   using MainloopArguments = typename CollectiveMainloop::Arguments;
   using MainloopParams = typename CollectiveMainloop::Params;
