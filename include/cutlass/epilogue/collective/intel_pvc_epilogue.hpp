@@ -43,7 +43,6 @@
 #include "cutlass/epilogue/fusion/sm90_visitor_tma_warpspecialized.hpp"
 #include "cutlass/detail/layout.hpp"
 
-
 #include "cute/tensor.hpp"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -55,7 +54,7 @@ namespace collective {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <
-  class CtaTileMNK_, 
+  class CtaTileMNK_,
   class ElementC_,
   class StrideC_,
   class ElementD_,
@@ -318,7 +317,6 @@ public:
         for (int epi_v = 0; epi_v < FragmentSize; ++epi_v) {
           trD_frag(epi_v) = cst_callbacks.visit(acc_frag_mn(epi_v), epi_v, epi_m, epi_n);
         }
-        
         copy(params.xe_store_d, trD, rw_coord(_, epi_m, epi_n));
       }
     }

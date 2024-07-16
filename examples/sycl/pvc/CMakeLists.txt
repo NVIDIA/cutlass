@@ -28,6 +28,11 @@
 
 
 cutlass_example_add_executable(
-  pvc_bfloat_dpas_gemm_cute
-  pvc_bfloat_dpas_gemm_cute.cpp
+  pvc_gemm
+  pvc_gemm.cpp
+)
+
+cutlass_example_add_executable(
+  pvc_gemm_with_epilogue_relu
+  pvc_gemm_with_epilogue_relu.cpp
 )

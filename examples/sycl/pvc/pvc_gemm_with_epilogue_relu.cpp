@@ -29,9 +29,6 @@
  *
  **************************************************************************************************/
 
-#define CUTLASS_SYCLCOMPAT_PROFILING_ENABLED
-
-#include "cutlass/gemm/device/gemm.h"
 #include "cutlass/epilogue/collective/default_epilogue.hpp"
 #include "cutlass/epilogue/collective/intel_pvc_epilogue.hpp"
 #include "cutlass/epilogue/fusion/intel_pvc_callbacks.hpp"
@@ -48,6 +45,9 @@
 #include "cutlass/util/packed_stride.hpp"
 #include "cutlass/util/reference/device/gemm_complex.h"
 #include "cutlass/util/reference/device/tensor_compare.h"
+#include "cutlass/util/reference/device/tensor_relu.h"
+#include "cutlass/tensor_view.h"
+#include "cutlass/coord.h"
 
 template <typename T>
 static void fill_matrix(std::vector<T> &vector)
@@ -208,6 +208,12 @@ struct ExampleRunner {
 
     syclcompat::wait();
 
+    using TensorView = cutlass::TensorView<ElementOutput, LayoutD>;
+    cutlass::reference::device::TensorReLu(TensorView(block_ref_D.get(), LayoutD::packed({M, N}),
+                                                      cutlass::make_Coord(M, N)));
+
+    syclcompat::wait();
+
     // Check if output from CUTLASS kernel and reference kernel are relatively equal or not
     // need to set a larger error margin for comparison to succeed
     auto epsilon = static_cast<ElementOutput>(0.1f);
@@ -261,14 +267,6 @@ struct ExampleRunner {
     ProblemShapeType problem_size = ProblemShapeType{options.m, options.n, options.k, options.l};
 
     initialize(problem_size);
-
-    sycl::property_list prop = {
-      sycl::property::queue::in_order(),
-      sycl::property::queue::enable_profiling()
-    };
-
-    auto q = sycl::queue(syclcompat::get_default_context(), syclcompat::get_current_device(), prop);
-    syclcompat::set_default_queue(q);
 
     typename Gemm::GemmKernel::Arguments arguments{
       cutlass::gemm::GemmUniversalMode::kGemm,
@@ -375,8 +373,8 @@ int main(int argc, const char** argv)
   using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelPVCUnpredicated;
   using EpilogueDispatchPolicy = cutlass::epilogue::IntelPVCEpilogue;
 
-  using EpilogueOp = cutlass::epilogue::fusion::LinearCombination<ElementOutput, ElementComputeEpilogue,
-          ElementAccumulator, ElementAccumulator, cutlass::FloatRoundStyle::round_to_nearest>;
+  using EpilogueOp = cutlass::epilogue::fusion::LinCombEltAct<cutlass::epilogue::thread::ReLu, ElementOutput,
+          ElementComputeEpilogue, ElementAccumulator, ElementAccumulator, cutlass::FloatRoundStyle::round_to_nearest>;
 
   using FusionCallBacks = cutlass::epilogue::fusion::FusionCallbacks<EpilogueDispatchPolicy, EpilogueOp, TileShape,
           decltype(tile_shape(TiledMma()))>;
