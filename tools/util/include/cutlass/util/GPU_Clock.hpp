@@ -32,31 +32,37 @@
 #pragma once
 
 #if defined(CUTLASS_ENABLE_SYCL)
-#include <syclcompat.hpp>
-#include <chrono>
+#include "cutlass/util/sycl_event_manager.hpp"
 #else
 #include <cuda_runtime.h>
 #endif
 
 struct GPU_Clock
 {
-#if !defined(CUTLASS_ENABLE_SYCL)
   GPU_Clock() {
+#if defined(CUTLASS_ENABLE_SYCL)
+    start_ = SyclEvent{};
+    stop_ = SyclEvent{};
+#else
     cudaEventCreate(&start_);
     cudaEventCreate(&stop_);
     cudaEventRecord(start_);
+#endif
   }
 
   ~GPU_Clock() {
+#if defined(CUTLASS_ENABLE_SYCL)
+    syclEventDestroy(start_);
+    syclEventDestroy(stop_);
+#else
     cudaEventDestroy(start_);
     cudaEventDestroy(stop_);
-  }
 #endif
+  }
 
   void start() {
 #if defined(CUTLASS_ENABLE_SYCL)
-    syclcompat::get_default_queue().wait();
-    start_ = std::chrono::high_resolution_clock::now();
+    syclEventRecord(start_);
 #else
     cudaEventRecord(start_);
 #endif
@@ -64,10 +70,11 @@ struct GPU_Clock
 
   float milliseconds() {
 #if defined(CUTLASS_ENABLE_SYCL)
-    syclcompat::get_default_queue().wait();
-    auto stop = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<float, std::milli> time = stop - start_;
-    return time.count();
+    syclEventRecord(stop_);
+    syclEventSynchronize(start_, stop_);
+    float time;
+    syclEventElapsedTime(&time, start_, stop_);
+    return time;
 #else
     cudaEventRecord(stop_);
     cudaEventSynchronize(stop_);
@@ -83,11 +90,7 @@ struct GPU_Clock
 
  private:
 #if defined(CUTLASS_ENABLE_SYCL)
-    typedef std::chrono::nanoseconds				                  duration;
-    typedef std::chrono::high_resolution_clock		                  high_resolution_clock;
-    typedef std::chrono::time_point<high_resolution_clock, duration>  time_point;
-
-    time_point start_ = std::chrono::high_resolution_clock::now();
+    SyclEvent start_, stop_;
 #else
     cudaEvent_t start_, stop_;
 #endif

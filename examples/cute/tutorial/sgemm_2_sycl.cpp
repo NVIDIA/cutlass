@@ -29,6 +29,8 @@
  *
  **************************************************************************************************/
 
+#define CUTLASS_SYCLCOMPAT_PROFILING_ENABLED
+
 #include "cutlass/util/GPU_Clock.hpp"
 #include "cutlass/util/print_error.hpp"
 
@@ -287,12 +289,13 @@ void gemm_nt(int m, int n, int k, Alpha alpha, TA const* A, int ldA, TB const* B
 
   auto dimBlock = syclcompat::dim3(size(mmaC));
   auto dimGrid = syclcompat::dim3(size(ceil_div(M, bM)), size(ceil_div(N, bN)));
-  syclcompat::launch<
+  auto event = syclcompat::launch<
       gemm_device<decltype(prob_shape), decltype(cta_tiler), TA, decltype(dA), decltype(sA),
                   decltype(copyA), TB, decltype(dB), decltype(sB), decltype(copyB), TC,
                   decltype(dC), decltype(sC), decltype(mmaC), Alpha, Beta>>(
       dimGrid, dimBlock, prob_shape, cta_tiler, A, dA, sA, copyA, B, dB, sB, copyB, C, dC,
       sC, mmaC, alpha, beta);
+  EventManager::getInstance().addEvent(event);
 }
 
 // Setup params for a TN GEMM
@@ -361,12 +364,13 @@ void gemm_tn(int m, int n, int k, Alpha alpha, TA const* A, int ldA, TB const* B
 
   auto dimBlock = syclcompat::dim3(size(mmaC));
   auto dimGrid = syclcompat::dim3(size(ceil_div(M, bM)), size(ceil_div(N, bN)));
-  syclcompat::launch<
+  auto event = syclcompat::launch<
       gemm_device<decltype(prob_shape), decltype(cta_tiler), TA, decltype(dA), decltype(sA),
                   decltype(copyA), TB, decltype(dB), decltype(sB), decltype(copyB), TC,
                   decltype(dC), decltype(sC), decltype(mmaC), Alpha, Beta>>(
       dimGrid, dimBlock, prob_shape, cta_tiler, A, dA, sA, copyA, B, dB, sB, copyB, C, dC,
       sC, mmaC, alpha, beta);
+  EventManager::getInstance().addEvent(event);
 }
 
 template <class TA, class TB, class TC, class Alpha, class Beta>
@@ -396,6 +400,14 @@ int main(int argc, char** argv) {
 
   char transB = 'T';
   if (argc >= 6) sscanf(argv[5], "%c", &transB);
+
+  sycl::property_list prop = {
+          sycl::property::queue::in_order(),
+          sycl::property::queue::enable_profiling()
+  };
+
+  auto q = sycl::queue(syclcompat::get_default_context(), syclcompat::get_current_device(), prop);
+  syclcompat::set_default_queue(q);
 
   using TA = float;
   using TB = float;

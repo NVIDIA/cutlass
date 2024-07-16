@@ -29,6 +29,8 @@
  *
  **************************************************************************************************/
 
+#define CUTLASS_SYCLCOMPAT_PROFILING_ENABLED
+
 #include <cstdlib>
 #include <cstdio>
 
@@ -121,6 +123,13 @@ run(Gemm_Op gemm_op)
 
 void test_gemm(int m, int n, int k)
 {
+  sycl::property_list prop = {
+          sycl::property::queue::in_order(),
+          sycl::property::queue::enable_profiling()
+  };
+
+  auto q = sycl::queue(syclcompat::get_default_context(), syclcompat::get_current_device(), prop);
+  syclcompat::set_default_queue(q);
 
   std::cout << "M = " << m << std::endl;
   std::cout << "N = " << n << std::endl;
