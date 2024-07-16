@@ -159,6 +159,15 @@ struct BenchmarkRunner {
     cutlass::DeviceAllocation<ElementOutput> block_D;
     cutlass::DeviceAllocation<ElementOutput> block_ref_D;
 
+    ElementOutput epsilon;
+    ElementOutput nonzero_floor;
+
+    BenchmarkRunner() : epsilon(static_cast<ElementOutput>(0.1f)),
+                      nonzero_floor(static_cast<ElementOutput>(0.1f)) {};
+
+    BenchmarkRunner(ElementOutput epsilon, ElementOutput nonzeroFloor) :
+            epsilon(epsilon), nonzero_floor(nonzeroFloor) {}
+
     //
     // Methods
     //
