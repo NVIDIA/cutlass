@@ -43,7 +43,9 @@
 #include "cutlass/floating_point_nvrtc.h"
 #endif
 
+#if defined(CUTLASS_SYCL_ENABLED)
 #include <cuda_runtime.h>
+#endif
 
 #if defined(CUTLASS_ARCH_WMMA_ENABLED)
 #include <mma.h>
