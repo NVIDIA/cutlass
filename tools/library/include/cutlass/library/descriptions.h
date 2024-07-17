@@ -34,7 +34,7 @@
 #include <cutlass/library/types.h>
 #include <cutlass/blas3_types.h>
 #include <cutlass/gemm_coord.h>
-
+#include <stdexcept>
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
