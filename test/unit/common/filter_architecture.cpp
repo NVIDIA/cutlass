@@ -29,9 +29,13 @@
  *
  **************************************************************************************************/
 
+#if !defined(CUTLASS_ENABLE_SYCL)
 #include <cuda_runtime_api.h>
+#endif
 
 #include "cutlass_unit_test.h"
+
+#if !defined(CUTLASS_ENABLE_SYCL)
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -70,10 +74,14 @@ std::ostream &operator<<(std::ostream &out, cudaDeviceProp const &deviceProperti
 
   return out;
 }
+
+#endif
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Sets flags for Unit test
 void FilterArchitecture() {
+#if !defined(CUTLASS_ENABLE_SYCL)
   // Default flags can be overwritten by --gtest_filter from commandline
 
   int const kMaxDevice = 999;
@@ -136,6 +144,7 @@ void FilterArchitecture() {
   }
 
   ::testing::GTEST_FLAG(filter) = ss.str();
+#endif
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

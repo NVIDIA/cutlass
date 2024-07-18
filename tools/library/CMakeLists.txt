@@ -211,47 +211,49 @@ endfunction()
 
 ################################################################################
 
-cutlass_add_cutlass_library(
+if (NOT CUTLASS_ENABLE_SYCL)
 
-  src/handle.cu
-  src/manifest.cpp
-  src/operation_table.cu
-  src/singleton.cu
-  src/util.cu
+  cutlass_add_cutlass_library(
 
-  # files split for parallel compilation
-  src/reference/gemm_int4.cu
-  src/reference/gemm_int8_canonical.cu
-  src/reference/gemm_int8_interleaved_32.cu
-  src/reference/gemm_int8_interleaved_64.cu
-  src/reference/gemm_e4m3a_e4m3out.cu
-  src/reference/gemm_e5m2a_e4m3out.cu
-  src/reference/gemm_e4m3a_e5m2out.cu
-  src/reference/gemm_e5m2a_e5m2out.cu
-  src/reference/gemm_fp8in_fp16out.cu
-  src/reference/gemm_fp8in_bf16out.cu
-  src/reference/gemm_fp8in_fp32out.cu
-  src/reference/gemm_fp32out.cu
-  src/reference/gemm_fp_other.cu
-  src/reference/gemm_fp_mixed_input.cu
-  src/reference/initialize_reference_operations.cu
+    src/handle.cu
+    src/manifest.cpp
+    src/operation_table.cu
+    src/singleton.cu
+    src/util.cu
 
-  # cutlass reduction instances in cutlass library
+    # files split for parallel compilation
+    src/reference/gemm_int4.cu
+    src/reference/gemm_int8_canonical.cu
+    src/reference/gemm_int8_interleaved_32.cu
+    src/reference/gemm_int8_interleaved_64.cu
+    src/reference/gemm_e4m3a_e4m3out.cu
+    src/reference/gemm_e5m2a_e4m3out.cu
+    src/reference/gemm_e4m3a_e5m2out.cu
+    src/reference/gemm_e5m2a_e5m2out.cu
+    src/reference/gemm_fp8in_fp16out.cu
+    src/reference/gemm_fp8in_bf16out.cu
+    src/reference/gemm_fp8in_fp32out.cu
+    src/reference/gemm_fp32out.cu
+    src/reference/gemm_fp_other.cu
+    src/reference/gemm_fp_mixed_input.cu
+    src/reference/initialize_reference_operations.cu
 
-  src/reduction/reduction_device.cu
-  src/reduction/init_reduction_operations.cu
-  
-  # cutlass conv reference instances in cutlass library
+    # cutlass reduction instances in cutlass library
 
-  src/reference/conv2d.cu
-  src/reference/conv3d.cu
+    src/reduction/reduction_device.cu
+    src/reduction/init_reduction_operations.cu
+
+    # cutlass conv reference instances in cutlass library
+
+    src/reference/conv2d.cu
+    src/reference/conv3d.cu
 
   )
 
-# For backward compatibility with the old name
-add_library(cutlass_lib ALIAS cutlass_library)
-add_library(cutlass_lib_static ALIAS cutlass_library_static)
-
+  # For backward compatibility with the old name
+  add_library(cutlass_lib ALIAS cutlass_library)
+  add_library(cutlass_lib_static ALIAS cutlass_library_static)
+endif()
 ################################################################################
 
 file(GLOB_RECURSE GENERATOR_PYTHON_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/scripts/*.py)
@@ -295,12 +297,14 @@ endif()
 
 message(STATUS "Completed generation of library instances. See ${CMAKE_CURRENT_BINARY_DIR}/library_instance_generation.log for more information.")
 
-# include auto-instantiated kernels in he CUTLASS Deliverables Library
-set(CUTLASS_LIBRARY_MANIFEST_CMAKE_FILE ${CMAKE_CURRENT_BINARY_DIR}/generated/manifest.cmake)
-if(EXISTS "${CUTLASS_LIBRARY_MANIFEST_CMAKE_FILE}")
-  include(${CUTLASS_LIBRARY_MANIFEST_CMAKE_FILE})
-else()
-  message(STATUS "auto-generated library manifest cmake file (${CUTLASS_LIBRARY_MANIFEST_CMAKE_FILE}) not found.")
+if (NOT CUTLASS_ENABLE_SYCL)
+  # include auto-instantiated kernels in he CUTLASS Deliverables Library
+  set(CUTLASS_LIBRARY_MANIFEST_CMAKE_FILE ${CMAKE_CURRENT_BINARY_DIR}/generated/manifest.cmake)
+  if(EXISTS "${CUTLASS_LIBRARY_MANIFEST_CMAKE_FILE}")
+    include(${CUTLASS_LIBRARY_MANIFEST_CMAKE_FILE})
+  else()
+    message(STATUS "auto-generated library manifest cmake file (${CUTLASS_LIBRARY_MANIFEST_CMAKE_FILE}) not found.")
+  endif()
 endif()
 
 ################################################################################

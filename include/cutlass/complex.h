@@ -31,9 +31,13 @@
 
 #pragma once
 
+#if defined(CUTLASS_ENABLE_SYCL)
+#include <cutlass/sycl_complex.h>
+#include <cutlass/sycl_fp16.h>
+#else
 #include <cuComplex.h>
-
 #include <cuda_fp16.h>
+#endif
 
 #if defined(__CUDACC_RTC__)
 #include <cuda/std/cstdint>
@@ -85,7 +89,7 @@ struct InvertComplexTransform<ComplexTransform::kConjugate> {
 // Accessors for CUDA complex types
 //
 
-#if !defined(__CUDACC_RTC__)
+#if !defined(__CUDACC_RTC__) && !defined(CUTLASS_ENABLE_SYCL)
 /// Returns the real part of the complex number
 CUTLASS_HOST_DEVICE
 float const &real(cuFloatComplex const &z) { return z.x; }

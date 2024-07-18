@@ -73,6 +73,13 @@ Scott Yokim<br />
 Xiuxia Zhang<br />
 Nick Zhao<br />
 
+## SYCL CONTRIBUTORS
+Alejandro Acosta<br />
+Atharva Dubey<br />
+Mehdi Goli<br />
+Ruyman Reyes<br />
+Muhammad Tanvir<br />
+
 ## ACKNOWLEDGEMENTS
 
 Girish Bharambe<br />

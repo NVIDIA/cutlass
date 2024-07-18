@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -28,70 +28,74 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
-
 #pragma once
 
-#if defined(CUTLASS_ENABLE_SYCL)
-#include "cutlass/util/sycl_event_manager.hpp"
-#else
-#include <cuda_runtime.h>
-#endif
+#include "cutlass/detail/helper_macros.hpp"
 
-struct GPU_Clock
-{
-  GPU_Clock() {
-#if defined(CUTLASS_ENABLE_SYCL)
-    start_ = SyclEvent{};
-    stop_ = SyclEvent{};
-#else
-    cudaEventCreate(&start_);
-    cudaEventCreate(&stop_);
-    cudaEventRecord(start_);
-#endif
-  }
-
-  ~GPU_Clock() {
-#if defined(CUTLASS_ENABLE_SYCL)
-    syclEventDestroy(start_);
-    syclEventDestroy(stop_);
-#else
-    cudaEventDestroy(start_);
-    cudaEventDestroy(stop_);
-#endif
-  }
-
-  void start() {
-#if defined(CUTLASS_ENABLE_SYCL)
-    syclEventRecord(start_);
-#else
-    cudaEventRecord(start_);
-#endif
-  }
-
-  float milliseconds() {
-#if defined(CUTLASS_ENABLE_SYCL)
-    syclEventRecord(stop_);
-    syclEventSynchronize(start_, stop_);
-    float time;
-    syclEventElapsedTime(&time, start_, stop_);
-    return time;
-#else
-    cudaEventRecord(stop_);
-    cudaEventSynchronize(stop_);
-    float time;
-    cudaEventElapsedTime(&time, start_, stop_);
-    return time;
-#endif
-  }
-
-  float seconds() {
-    return milliseconds() * float(1e-3);
-  }
-
- private:
-#if defined(CUTLASS_ENABLE_SYCL)
-    SyclEvent start_, stop_;
-#else
-    cudaEvent_t start_, stop_;
-#endif
+// Add these definitions in the cutlass namespace, so they do not clash with the ones in cuda
+namespace cutlass {
+// We use this struct instead of sycl::int2 because the sycl type requires x() to access x,
+// while the struct does not need the (). This prevents us from having to modify the Cutlass
+// implementation in all the places where these vector types are used.
+using int2 = struct alignas(8) {
+  int x, y;
 };
+
+using int4 = struct alignas(16) {
+  int x, y, z, w;
+};
+
+using uint2 = struct alignas(8) {
+  unsigned int x, y;
+};
+
+using uint4 = struct alignas(16) {
+  unsigned int x, y, z, w;
+};
+
+using float4 = struct alignas(16) {
+  float x, y, z, w;
+};
+
+using long4 = struct alignas(16) {
+  long int x, y, z, w;
+};
+
+using ulong4 = struct alignas(16) {
+  unsigned long int x, y, z, w;
+};
+
+using longlong2 = struct alignas(16) {
+  long long int x, y;
+};
+
+using ulonglong2 = struct alignas(16) {
+  unsigned long long int x, y;
+};
+
+using longlong4 = struct alignas(16) {
+  long long int x, y, z, w;
+};
+
+using ulonglong4 = struct alignas(16) {
+  unsigned long long int x, y, z, w;
+};
+
+using double2 = struct alignas(16) {
+  long long int x, y;
+};
+
+using double4 = struct alignas(16) {
+  long long int x, y, z, w;
+};
+
+CUTLASS_HOST_DEVICE
+int2 make_int2(int x, int y) {
+  return int2{x,y};
+}
+
+CUTLASS_HOST_DEVICE
+int4 make_int4(int x, int y, int z, int w) {
+  return int4 {x,y,z,w};
+}
+}

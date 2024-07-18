@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -28,70 +28,12 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
-
 #pragma once
 
-#if defined(CUTLASS_ENABLE_SYCL)
-#include "cutlass/util/sycl_event_manager.hpp"
-#else
-#include <cuda_runtime.h>
-#endif
+#include <sycl/sycl.hpp>
 
-struct GPU_Clock
-{
-  GPU_Clock() {
-#if defined(CUTLASS_ENABLE_SYCL)
-    start_ = SyclEvent{};
-    stop_ = SyclEvent{};
-#else
-    cudaEventCreate(&start_);
-    cudaEventCreate(&stop_);
-    cudaEventRecord(start_);
-#endif
-  }
-
-  ~GPU_Clock() {
-#if defined(CUTLASS_ENABLE_SYCL)
-    syclEventDestroy(start_);
-    syclEventDestroy(stop_);
-#else
-    cudaEventDestroy(start_);
-    cudaEventDestroy(stop_);
-#endif
-  }
-
-  void start() {
-#if defined(CUTLASS_ENABLE_SYCL)
-    syclEventRecord(start_);
-#else
-    cudaEventRecord(start_);
-#endif
-  }
-
-  float milliseconds() {
-#if defined(CUTLASS_ENABLE_SYCL)
-    syclEventRecord(stop_);
-    syclEventSynchronize(start_, stop_);
-    float time;
-    syclEventElapsedTime(&time, start_, stop_);
-    return time;
-#else
-    cudaEventRecord(stop_);
-    cudaEventSynchronize(stop_);
-    float time;
-    cudaEventElapsedTime(&time, start_, stop_);
-    return time;
-#endif
-  }
-
-  float seconds() {
-    return milliseconds() * float(1e-3);
-  }
-
- private:
-#if defined(CUTLASS_ENABLE_SYCL)
-    SyclEvent start_, stop_;
-#else
-    cudaEvent_t start_, stop_;
-#endif
-};
+// Add these definitions in the cutlass namespace, so they do not clash with the ones in cuda
+namespace cutlass {
+using half = sycl::half;
+using half2 = sycl::half2;
+}

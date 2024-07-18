@@ -47,7 +47,7 @@
 #include "cutlass/cutlass.h"
 
 /// Optionally enable GCC's built-in type
-#if (defined(__x86_64) || defined (__aarch64__)) && !(defined(__CUDA_ARCH__) && ((__CUDACC_VER_MAJOR__ <= 10) || ((__CUDACC_VER_MAJOR__ == 11) && (__CUDACC_VER_MINOR__ <= 4)))) && defined(__GNUC__)
+#if (defined(__x86_64) || defined (__aarch64__)) && !((defined(__CUDA_ARCH__) || defined(__SYCL_DEVICE_ONLY__)) && ((__CUDACC_VER_MAJOR__ <= 10) || ((__CUDACC_VER_MAJOR__ == 11) && (__CUDACC_VER_MINOR__ <= 4)))) && defined(__GNUC__)
 #define CUTLASS_UINT128_NATIVE
 #elif defined(_MSC_VER) && defined(_M_AMD64) && !(defined(__CUDA_ARCH__) && ((__CUDACC_VER_MAJOR__ <= 10) || ((__CUDACC_VER_MAJOR__ == 11) && (__CUDACC_VER_MINOR__ <= 4))))
 #define CUTLASS_INT128_ARITHMETIC
@@ -112,7 +112,7 @@ struct alignas(16) uint128_t
   CUTLASS_HOST_DEVICE
   static void exception()
   {
-#if defined(__CUDA_ARCH__)
+#if defined(__CUDA_ARCH__) || defined(__SYCL_CUDA_ARCH__)
   asm volatile ("  brkpt;\n");
 #else
   // throw std::runtime_error("Not yet implemented.");

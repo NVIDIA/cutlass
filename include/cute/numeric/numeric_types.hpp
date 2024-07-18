@@ -30,7 +30,11 @@
  **************************************************************************************************/
 #pragma once
 
+#if defined(CUTLASS_ENABLE_SYCL)
+#include <cutlass/sycl_vector_types.h>
+#else
 #include <vector_types.h>
+#endif
 #include <cutlass/numeric_types.h>
 #include <cutlass/numeric_size.h>
 

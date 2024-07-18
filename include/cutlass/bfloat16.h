@@ -45,7 +45,10 @@
 #include <cstring>
 #endif
 
+#if !defined(CUTLASS_ENABLE_SYCL)
 #include <cuda_bf16.h>
+#endif
+
 #include "cutlass/cutlass.h"
 #include "cutlass/platform/platform.h"
 
@@ -107,6 +110,10 @@ public:
     #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800) && (__CUDACC_VER_MAJOR__ >= 11)
 
     asm("cvt.rn.bf16.f32 %0, %1;\n" : "=h"(storage) : "f"(x));
+
+    #elif defined(CUTLASS_ENABLE_SYCL)
+
+    storage = sycl::ext::oneapi::detail::bfloat16ToBits(sycl::ext::oneapi::bfloat16(x));
 
     #else
     uint32_t bits;

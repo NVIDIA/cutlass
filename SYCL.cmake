@@ -1,5 +1,4 @@
-
-# Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -27,56 +26,54 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-if (NOT CUTLASS_ENABLE_SYCL)
-  cutlass_example_add_executable(
-    sgemm_1
-    sgemm_1.cu
+function(cutlass_add_library NAME)
+  set(options SKIP_GENCODE_FLAGS)
+  set(oneValueArgs EXPORT_NAME)
+  set(multiValueArgs)
+  cmake_parse_arguments(_ "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+
+  set(TARGET_SOURCE_ARGS ${__UNPARSED_ARGUMENTS})
+  set(${TARGET_ARGS_VAR} ${TARGET_SOURCE_ARGS} PARENT_SCOPE)
+
+  add_library(${NAME} ${TARGET_SOURCE_ARGS} "")
+
+  cutlass_apply_standard_compile_options(${NAME})
+
+  target_compile_features(
+    ${NAME}
+    INTERFACE
+    cxx_std_17
   )
 
-  cutlass_example_add_executable(
-    sgemm_2
-    sgemm_2.cu
-  )
+  get_target_property(TARGET_TYPE ${NAME} TYPE)
 
-  cutlass_example_add_executable(
-    sgemm_sm70
-    sgemm_sm70.cu
-  )
-
-  cutlass_example_add_executable(
-    sgemm_sm80
-    sgemm_sm80.cu
-  )
-
-  cutlass_example_add_executable(
-    tiled_copy
-    tiled_copy.cu
-  )
-else()
-  cutlass_example_add_executable(
-    sgemm_1
-    sgemm_1_sycl.cpp
-  )
-
-  cutlass_example_add_executable(
-    sgemm_2
-    sgemm_2_sycl.cpp
-  )
-
-  cutlass_example_add_executable(
-    tiled_copy
-    tiled_copy_sycl.cpp
-  )
-
-  if (SYCL_NVIDIA_TARGET)
-    cutlass_example_add_executable(
-      sgemm_sm70
-      sgemm_sm70_sycl.cpp
-    )
-
-    cutlass_example_add_executable(
-      sgemm_sm80
-      sgemm_sm80_sycl.cpp
-    )
+  if(__EXPORT_NAME)
+    add_library(nvidia::cutlass::${__EXPORT_NAME} ALIAS ${NAME})
+    set_target_properties(${NAME} PROPERTIES EXPORT_NAME ${__EXPORT_NAME})
   endif()
-endif()
+endfunction()
+
+function(cutlass_add_executable NAME)
+  set(options)
+  set(oneValueArgs BATCH_SOURCES)
+  set(multiValueArgs)
+  cmake_parse_arguments(_ "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+
+  foreach(File ${ARGN})
+    if(File MATCHES ".*\.cu$")
+      set_source_files_properties(${File} PROPERTIES LANGUAGE CXX)
+    endif()
+  endforeach()
+
+  set(TARGET_SOURCE_ARGS ${__UNPARSED_ARGUMENTS})
+  set(${TARGET_ARGS_VAR} ${TARGET_SOURCE_ARGS} PARENT_SCOPE)
+
+  add_executable(${NAME} ${TARGET_SOURCE_ARGS})
+
+  cutlass_apply_standard_compile_options(${NAME})
+  target_compile_features(
+    ${NAME}
+    INTERFACE
+    cxx_std_17
+  )
+endfunction()

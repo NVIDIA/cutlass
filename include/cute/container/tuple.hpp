@@ -35,8 +35,9 @@
 #include <cute/numeric/integral_constant.hpp>  // cute::true_type, cute::false_type
 #include <cute/numeric/integer_sequence.hpp>
 
+#if !defined(CUTLASS_ENABLE_SYCL)
 #include <cute/container/cuda_types.hpp>
-
+#endif
 //#include <cute/container/array.hpp>            // Advanced optimizations
 
 //
