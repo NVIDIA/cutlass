@@ -125,6 +125,7 @@
 
 #include <vector_types.h>
 #include <cutlass/cutlass.h>
+#include <cutlass/half.h>
 
 #endif
 
@@ -947,6 +948,15 @@ struct numeric_limits<float> {
   static constexpr bool is_integer = false;
   static constexpr bool has_infinity = true;
 };
+
+template <>
+struct numeric_limits<half_t> {
+  CUTLASS_HOST_DEVICE
+  static constexpr half_t infinity() noexcept { return bit_cast<half_t, int16_t>(0x7c00);}
+  static constexpr bool is_integer = false;
+  static constexpr bool has_infinity = true;
+};
+
 
 /// std::float_round_style
 using CUTLASS_STL_NAMESPACE::float_round_style;
