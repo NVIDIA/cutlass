@@ -35,6 +35,7 @@
 
 #pragma once
 
+#include "bfloat16.h"
 #include "cutlass/cutlass.h"
 #include "cutlass/array.h"
 #include "cutlass/wmma_array.h"
@@ -253,6 +254,37 @@ struct BlockStripedReduce<BlockThreads, ArrayT, half_t> :
     cutlass::atomic_add<half2> reduce;
     half2 *access_output = reinterpret_cast<half2*>(ptr);
     const half2 *access_data = reinterpret_cast<const half2*>(&data);
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < BlockStripedReduce::kStripes; ++i)
+    {
+      reduce(access_output + (BlockThreads * i) + thread_idx, access_data[i]);
+    }
+  }
+};
+
+
+/// Utility for performing block-striped access (load, store, reduce) of trivially-copyable,
+/// statically-sized array types to global memory.
+/// (Specialization for bfloat16_t.  Uses __nv_bfloat162 vectorized-reduction.)
+template <
+  int BlockThreads,
+  typename ArrayT>
+struct BlockStripedReduce<BlockThreads, ArrayT, bfloat16_t> :
+  BlockStriped<
+    BlockThreads,
+    ArrayT,
+    __nv_bfloat162>
+{
+  static_assert(BlockStripedReduce::kStripes % 2 == 0, "Array of half must be even number in length");
+
+  /// Reduce
+  CUTLASS_DEVICE
+  static void reduce(ArrayT *ptr, const ArrayT &data, int thread_idx)
+  {
+    cutlass::atomic_add<__nv_bfloat162> reduce;
+    __nv_bfloat162 *access_output = reinterpret_cast<__nv_bfloat162*>(ptr);
+    const __nv_bfloat162 *access_data = reinterpret_cast<const __nv_bfloat162*>(&data);
 
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < BlockStripedReduce::kStripes; ++i)
