@@ -35,7 +35,6 @@
 
 #pragma once
 
-#include "bfloat16.h"
 #include "cutlass/cutlass.h"
 #include "cutlass/array.h"
 #include "cutlass/wmma_array.h"
@@ -276,7 +275,7 @@ struct BlockStripedReduce<BlockThreads, ArrayT, bfloat16_t> :
     ArrayT,
     __nv_bfloat162>
 {
-  static_assert(BlockStripedReduce::kStripes % 2 == 0, "Array of half must be even number in length");
+  static_assert(BlockStripedReduce::kStripes % 2 == 0, "Array of bfloat16 must be even number in length");
 
   /// Reduce
   CUTLASS_DEVICE
