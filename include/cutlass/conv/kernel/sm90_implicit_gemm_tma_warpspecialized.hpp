@@ -51,12 +51,12 @@ namespace cutlass::conv::kernel {
 template <
   class CollectiveMainloop_,
   class CollectiveEpilogue_,
-  class TileSchedulerTag
+  class TileSchedulerTag_
 >
 class ConvUniversal<
   CollectiveMainloop_,
   CollectiveEpilogue_,
-  TileSchedulerTag,
+  TileSchedulerTag_,
   cute::enable_if_t<cute::is_base_of_v<cutlass::conv::KernelImplicitTmaWarpSpecializedSm90,
                                        typename CollectiveMainloop_::DispatchPolicy::Schedule>>>
 {
@@ -90,6 +90,7 @@ public:
   using EpilogueArguments = typename CollectiveEpilogue::Arguments;
   using EpilogueParams = typename CollectiveEpilogue::Params;
 
+  using TileSchedulerTag = TileSchedulerTag_;
   static_assert(cute::is_void_v<TileSchedulerTag>,
     "TMA warp-specialized kernel does not support specializing the tile scheduler.");
   using TileScheduler = typename cutlass::gemm::kernel::detail::TileSchedulerSelector<
@@ -144,7 +145,7 @@ public:
   to_underlying_arguments(Arguments const& args, void* workspace) {
     (void) workspace;
     auto mainloop_params = CollectiveMainloop::to_underlying_arguments(args.mainloop, workspace);
-    auto problem_shape_MNKL = append<4>(mainloop_params.problem_shape, Int<1>{});
+    auto problem_shape_MNKL = args.mainloop.problem_shape.get_transformed_problem_shape_MNKL();
 
     return {
       mainloop_params,
@@ -157,7 +158,7 @@ public:
   can_implement(Arguments const& args) {
     bool implementable = true;
     implementable &= CollectiveMainloop::can_implement(args.mainloop.problem_shape, args.mainloop);
-    implementable &= CollectiveEpilogue::can_implement(args.mainloop.problem_shape.get_transformed_problem_shape_MNK(), args.epilogue);
+    implementable &= CollectiveEpilogue::can_implement(args.mainloop.problem_shape.get_transformed_problem_shape_MNKL(), args.epilogue);
     return implementable;
   }
 
@@ -166,19 +167,17 @@ public:
     return 0;
   }
 
+  static cutlass::Status
+  initialize_workspace(Arguments const& args, void* workspace = nullptr, cudaStream_t stream = nullptr,
+    CudaHostAdapter* cuda_adapter = nullptr) {
+    return Status::kSuccess;
+  }
+
   // Computes the kernel launch grid shape based on runtime parameters
   static dim3
   get_grid_shape(Params const& params) {
-    // The CONV mainloop params problem shape will be the cute::Shape<> rank-3 MNK tuple we want for grid planning
-    // Although conv problems do not have an L mode, we add it here to comply with the scheduler API
-    auto linear_problem_shape_MNKL = make_shape(
-        size<0>(params.mainloop.problem_shape), // M mode is linearized.
-        shape<1>(params.mainloop.problem_shape),
-        shape<2>(params.mainloop.problem_shape),
-        Int<1>{});
-
     return cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90::get_tiled_cta_shape_mnl(
-        linear_problem_shape_MNKL, TileShape{}, ClusterShape{});
+        params.mainloop.problem_shape, TileShape{}, ClusterShape{});
   }
 
   static dim3
@@ -205,14 +204,25 @@ public:
       Consumer = 1,
     };
 
+    enum class ProducerWarpRole {
+      MainloopEpilogue = 0,
+      Warp1 = 1,
+      Warp2 = 2,
+      Warp3 = 3
+    };
+    
     // Kernel level shared memory storage
     SharedStorage& shared_storage = *reinterpret_cast<SharedStorage*>(smem_buf);
 
     int thread_idx = int(threadIdx.x);
+    int lane_idx = canonical_lane_idx();
     int warp_idx   = canonical_warp_idx_sync();
+    int warp_idx_in_warp_group = warp_idx % NumWarpsPerWarpGroup;
     int warp_group_thread_idx = thread_idx % NumThreadsPerWarpGroup;
     auto warp_group_role = WarpGroupRole(canonical_warp_group_idx());
+    auto producer_warp_role = ProducerWarpRole(warp_idx_in_warp_group);
     int lane_predicate = cute::elect_one_sync();
+    uint32_t block_rank_in_cluster = cute::block_rank_in_cluster();
 
     // Issue Tma Descriptor Prefetch from a single thread
     if ((warp_idx == 0) && lane_predicate) {
@@ -223,7 +233,7 @@ public:
     // Mainloop Load pipeline
     using MainloopPipeline = typename CollectiveMainloop::MainloopPipeline;
     typename MainloopPipeline::Params mainloop_pipeline_params;
-    if (warp_group_role == WarpGroupRole::Producer) {
+    if (warp_group_role == WarpGroupRole::Producer && producer_warp_role == ProducerWarpRole::MainloopEpilogue) {
       mainloop_pipeline_params.role = MainloopPipeline::ThreadCategory::Producer;
     }
     if (warp_group_role == WarpGroupRole::Consumer) {
@@ -231,22 +241,24 @@ public:
     }
     mainloop_pipeline_params.is_leader = warp_group_thread_idx == 0;
     mainloop_pipeline_params.num_consumers = NumThreadsPerWarpGroup;
-    mainloop_pipeline_params.transaction_bytes = CollectiveMainloop::TmaTransactionBytes;
+    mainloop_pipeline_params.transaction_bytes = params.mainloop.tma_transaction_bytes;
     MainloopPipeline mainloop_pipeline(shared_storage.pipelines.mainloop, mainloop_pipeline_params, ClusterShape{});
 
     // Epilogue Load pipeline
     using EpiLoadPipeline = typename CollectiveEpilogue::LoadPipeline;
     typename EpiLoadPipeline::Params epi_load_pipeline_params;
-    if (warp_group_role == WarpGroupRole::Producer) {
+    if (warp_group_role == WarpGroupRole::Producer && producer_warp_role == ProducerWarpRole::MainloopEpilogue) {
       epi_load_pipeline_params.role = EpiLoadPipeline::ThreadCategory::Producer;
     }
     if (warp_group_role == WarpGroupRole::Consumer) {
       epi_load_pipeline_params.role = EpiLoadPipeline::ThreadCategory::Consumer;
     }
     epi_load_pipeline_params.dst_blockid = cute::block_rank_in_cluster();
-    epi_load_pipeline_params.producer_arv_count = 1; // 1 thread issues TMA load
+    epi_load_pipeline_params.producer_arv_count = NumThreadsPerWarp;
     epi_load_pipeline_params.consumer_arv_count = NumThreadsPerWarpGroup;
-    epi_load_pipeline_params.transaction_bytes = CollectiveEpilogue::TmaTransactionBytes;
+    if constexpr (CollectiveEpilogue::RequiresTransactionBytes) {
+      epi_load_pipeline_params.transaction_bytes = params.epilogue.tma_transaction_bytes;
+    }
     EpiLoadPipeline epi_load_pipeline(shared_storage.pipelines.epi_load, epi_load_pipeline_params);
 
     // Epilogue Store pipeline
@@ -266,16 +278,26 @@ public:
     PipelineState epi_load_pipe_producer_state = cutlass::make_producer_start_state<EpiLoadPipeline>();
     PipelineState epi_store_pipe_producer_state = cutlass::make_producer_start_state<EpiStorePipeline>();
 
+    auto cluster_wait_fn = [&] () {
+      // We need this to guarantee that the Pipeline init is visible
+      // To all producers and consumer thread blocks in the Cluster
+      if constexpr (size(ClusterShape{}) > 1) {
+        cute::cluster_arrive_relaxed();
+        return [] () { cute::cluster_wait(); };
+      }
+      else {
+        __syncthreads();
+        return [] () {}; // do nothing
+      }
+    } ();
+
     // Separate out problem shape for convenience
-    auto M = get<0>(params.mainloop.problem_shape);
-    auto N = get<1>(params.mainloop.problem_shape);
-    auto K = get<2>(params.mainloop.problem_shape);
-    // output strides are coalesced so we linearize the output shape to match the shape/stride profiles
-    auto linear_problem_shape_MNKL = make_shape(size(M), N, K, Int<1>{});
+    auto problem_shape_MNKL = append<4>(params.mainloop.problem_shape, _1{});
+    auto [M, N, K, L] = problem_shape_MNKL;
 
     // TMA requires special handling of strides to deal with coord codomain mapping
     // Represent the full tensors -- get these from TMA
-    Tensor mA_mk = params.mainloop.tma_load_a.get_tma_tensor(make_shape(M, size(K)));
+    Tensor mA_mk = params.mainloop.tma_load_a.get_tma_tensor(make_shape(M, K));
     Tensor mB_nk = params.mainloop.tma_load_b.get_tma_tensor(make_shape(N, K));
 
     // Get the appropriate blocks for this thread block -- potential for thread block locality
@@ -288,7 +310,8 @@ public:
 
     // Compute m_coord, n_coord, and l_coord with their post-tiled shapes
     auto m_coord = idx2crd(int(blockIdx.x), shape<2>(gA_mk));
-    auto n_coord = idx2crd(int(blockIdx.y), shape<2>(gB_nk));
+    auto n_coord = idx2crd(int(blockIdx.y), shape<2>(gB_nk), compact_col_major(shape<2>(gB_nk)));
+
     // The output shape M is linearized so the output coord M here should also be linearized.
     auto output_tile_coord = make_coord(int(blockIdx.x), n_coord, _, Int<0>{});
 
@@ -300,51 +323,43 @@ public:
     auto k_tile_iter  = cute::make_coord_iterator(shape<2>(gA));
     auto k_tile_count = size<2>(gA);
 
-    auto c_tile_count = CollectiveEpilogue::get_load_pipe_increment(cta_tile_shape);
-    auto d_tile_count = CollectiveEpilogue::get_store_pipe_increment(cta_tile_shape);
-
-    // Make sure pipeline init is visible to all producers and consumer CTAs in cluster
-    if constexpr (size(ClusterShape{}) > 1) {
-      cute::cluster_arrive_relaxed();
-      cute::cluster_wait();
-    }
-    else {
-      __syncthreads();
-    }
-
     // In a warp specialized kernel, collectives expose data movement and compute operations separately
     CollectiveMainloop collective_mainloop;
     CollectiveEpilogue collective_epilogue{params.epilogue, shared_storage.tensors.epilogue};
 
-    if (warp_group_role == WarpGroupRole::Producer) {
-      collective_mainloop.load(
-        mainloop_pipeline,
-        mainloop_pipe_producer_state,
-        gA, params.mainloop.tma_load_a,
-        gB, params.mainloop.tma_load_b,
-        k_tile_iter, k_tile_count,
-        thread_idx,
-        shared_storage.tensors.mainloop
-      );
-      // Update starting mainloop pipeline state for the pipeline drain
-      mainloop_pipe_producer_state.advance(k_tile_count);
-      // Make sure mainloop consumer has been waited upon before issuing epilogue load
-      collective_mainloop.load_tail(mainloop_pipeline, mainloop_pipe_producer_state);
+    // Wait for all thread blocks in Cluster
+    cluster_wait_fn();
 
-      if (collective_epilogue.is_producer_load_needed()) {
-        collective_epilogue.load(
-          epi_load_pipeline,
-          epi_load_pipe_producer_state,
-          linear_problem_shape_MNKL,
-          cta_tile_shape,
-          output_tile_coord,
-          tiled_mma,
-          warp_group_thread_idx,
-          shared_storage.tensors.epilogue
+    if (warp_group_role == WarpGroupRole::Producer) {
+      if (producer_warp_role == ProducerWarpRole::MainloopEpilogue) {
+        collective_mainloop.load(
+          mainloop_pipeline,
+          mainloop_pipe_producer_state,
+          gA, params.mainloop.tma_load_a,
+          gB, params.mainloop.tma_load_b,
+          k_tile_iter, k_tile_count,
+          lane_idx,
+          block_rank_in_cluster,
+          shared_storage.tensors.mainloop
         );
-        // Update starting load pipeline state for the pipeline drain
-        epi_load_pipe_producer_state.advance(c_tile_count);
-        collective_epilogue.load_tail(epi_load_pipeline, epi_load_pipe_producer_state);
+        // Update starting mainloop pipeline state for the pipeline drain
+        mainloop_pipe_producer_state.advance(k_tile_count);
+        // Make sure mainloop consumer has been waited upon before issuing epilogue load
+        collective_mainloop.load_tail(mainloop_pipeline, mainloop_pipe_producer_state);
+      
+        if (collective_epilogue.is_producer_load_needed()) {
+          epi_load_pipe_producer_state = collective_epilogue.load(
+            epi_load_pipeline,
+            epi_load_pipe_producer_state,
+            problem_shape_MNKL,
+            cta_tile_shape,
+            output_tile_coord,
+            tiled_mma,
+            lane_idx,
+            shared_storage.tensors.epilogue
+          );
+          collective_epilogue.load_tail(epi_load_pipeline, epi_load_pipe_producer_state);
+        }
       }
     }
     else if (warp_group_role == WarpGroupRole::Consumer) {
@@ -368,18 +383,26 @@ public:
       );
 
       // Epilogue and write to gD
+      auto [epi_load_pipe_consumer_state_next, epi_store_pipe_producer_state_next] =
       collective_epilogue.store(
         epi_load_pipeline,
         epi_load_pipe_consumer_state,
         epi_store_pipeline,
         epi_store_pipe_producer_state,
-        linear_problem_shape_MNKL,
+        problem_shape_MNKL,
         cta_tile_shape,
         output_tile_coord,
         accumulators,
         tiled_mma,
         warp_group_thread_idx,
         shared_storage.tensors.epilogue
+      );
+
+      collective_epilogue.store_tail(
+        epi_load_pipeline,
+        epi_load_pipe_consumer_state_next,
+        epi_store_pipeline,
+        epi_store_pipe_producer_state_next
       );
     }
   }

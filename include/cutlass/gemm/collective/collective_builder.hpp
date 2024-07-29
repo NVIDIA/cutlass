@@ -31,62 +31,11 @@
 #pragma once
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+#include "cutlass/gemm/collective/collective_mma_decl.hpp"
 #include "cutlass/gemm/collective/collective_mma.hpp"
 
-namespace cutlass::gemm::collective {
-
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-// Used to specify stage counts or dispatch to automatic computation of stage count
-template<int num_stages>
-struct StageCount {
-  static constexpr int value = num_stages;
-
-  StageCount() = default;
-  explicit StageCount(cute::Int<num_stages>) {}
-};
-
-template<int carveout_bytes>
-struct StageCountAutoCarveout {
-  static constexpr int bytes = carveout_bytes;
-
-  StageCountAutoCarveout() = default;
-  explicit StageCountAutoCarveout(cute::Int<carveout_bytes>) {}
-};
-
-using StageCountAuto = StageCountAutoCarveout<0>;
-
-// Used to automatically let the builder pick the kernel schedule.
-// Can be overridden with kernel schedule tags in cutlass/gemm/dispatch_policy.hpp
-struct KernelScheduleAuto {};
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
-template <
-  class ArchTag,
-  class OpClass,
-  class ElementA,
-  class GmemLayoutA,
-  int AlignmentA,
-  class ElementB,
-  class GmemLayoutB,
-  int AlignmentB,
-  class ElementAccumulator,
-  class TileShape_MNK,
-  class ClusterShape_MNK,
-  class StageCountType,
-  class KernelScheduleType,
-  class Enable = void
->
-struct CollectiveBuilder {
-  static_assert(sizeof(ElementA) == 0, "Could not build a collective for given parameters.");
-};
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
-} // namespace cutlass::gemm::collective
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
+#include "cutlass/gemm/collective/collective_builder_decl.hpp"
 #include "cutlass/gemm/collective/builders/sm90_gmma_builder.inl"
 /////////////////////////////////////////////////////////////////////////////////////////////////

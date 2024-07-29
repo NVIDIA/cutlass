@@ -30,38 +30,8 @@
  **************************************************************************************************/
 #pragma once
 
-#include "cutlass/detail/dependent_false.hpp"
+#include "cutlass/gemm/collective/collective_mma_decl.hpp"
 
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
-namespace cutlass::gemm::collective {
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
-template <
-  class DispatchPolicy,
-  class TileShape,
-  class ElementA,
-  class StrideA,
-  class ElementB,
-  class StrideB,
-  class TiledMma,
-  class GmemTiledCopyA,
-  class SmemLayoutAtomA,
-  class SmemCopyAtomA,
-  class TransformA,
-  class GmemTiledCopyB,
-  class SmemLayoutAtomB,
-  class SmemCopyAtomB,
-  class TransformB
->
-struct CollectiveMma {
-  static_assert(cutlass::detail::dependent_false<ElementA>, "Could not find a mainloop specialization.");
-};
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
-} // namespace cutlass::gemm::collective
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

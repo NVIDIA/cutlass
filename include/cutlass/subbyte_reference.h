@@ -39,6 +39,43 @@
 
 namespace cutlass {
 
+namespace detail {
+// This is an implementation detail of cutlass::SubbyteReference and.
+// cutlass::HostTensor.  For a given logical element type Element,
+// and its corresponding storage (physical) element type StorageUnit,
+// it computes quantities that help with managing allocations.
+//
+// CUTLASS uses a hidden "ContainerUnitType" or StorageUnit type to support
+// packed arrays of subbyte types such as int4.  Element is the "logical" type
+// for computations, while CUTLASS uses StorageUnit as the element type
+// of a packed array of Element.  If Element is not a subbyte type,
+// then the corresponding StorageUnit type is just Element itself.
+//
+// The ContainerType is always calculated as an array StorageUnit type (the StorageUnit
+// is always a byte for subbyte types),
+// and its number of bits is the lcm of the subbyte type's number of bits and 8.
+// Below are some examples for different subbyte types.
+//
+// * Subbyte Type=int2, ContainerType=StorageUnit[1] (StorageUnit=uint8_t)
+// * Subbyte Type=int4, ContainerType=StorageUnit[1] (StorageUnit=uint8_t)
+template<class Element, class StorageUnit>
+struct StorageContainerCalculator {
+  // kContainerTypeNumBits: The number of bits needed for ContainerType
+  static constexpr int kContainerTypeNumBits   = (sizeof_bits<Element>::value < 8) ? cutlass::lcm_cxx11(sizeof_bits<Element>::value, sizeof_bits<StorageUnit>::value) : sizeof_bits<Element>::value;
+  static_assert(kContainerTypeNumBits % sizeof_bits<Element>::value == 0, "The bits of ContainerType should be divisible by the element's number of bits");
+  // kContainerTypeNumLogicalElements: The number of logical Element instance(s) that can be stored per ContainerType instance
+  static constexpr int kContainerTypeNumLogicalElements = kContainerTypeNumBits / sizeof_bits<Element>::value;
+  /// 3. kContainerTypeNumBytes: The number of bytes per ContainerType instance
+  static constexpr int kContainerTypeNumBytes = kContainerTypeNumBits / 8;
+  /// 4. kContainerTypeNumBytes: The number of base StorageUnit in the ContainerType
+  static constexpr int kContainerTypeNumStorageUnit = kContainerTypeNumBits / sizeof_bits<StorageUnit>::value;
+
+  static_assert(kContainerTypeNumBits != 0, "kContainerTypeNumBits can not be zero");
+  static_assert(kContainerTypeNumLogicalElements != 0, "kContainerTypeNumLogicalElements can not be zero");
+  static_assert(kContainerTypeNumBytes != 0, "kContainerTypeNumBytes can not be zero");
+};
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// This class provides a mechanism for packing and unpacking elements smaller than one byte. It
@@ -623,12 +660,16 @@ class SubbyteReference<Element_, Storage_,
 public:
 
   using Element = Element_;
-  ///! Note: Storage unit could not be divisibale by Element,   
-  ///   Type element may be stored across 2 storage units, so need a storage vector to hold integer
-  ///   number of objects of type Element.
+  /// Note: It's possible that StorageUnit is not divisible by Element.
+  /// For example, an Element instance might be stored across 2 StorageUnit instances.
+  /// Thus, CUTLASS needs a storage vector to hold an integer number of Element instances.
+
   using StorageUnit = Storage_;
-  static int const kBitsStoredVec = cutlass::lcm_cxx11(sizeof_bits<Element>::value, sizeof_bits<StorageUnit>::value); 
-  static int const kNumStorageUnitPerStoredVec = kBitsStoredVec / sizeof_bits<StorageUnit>::value;
+private:
+  using StorageContainerCalculator = cutlass::detail::StorageContainerCalculator<Element, StorageUnit>;
+public:
+  static int const kBitsStoredVec = StorageContainerCalculator::kContainerTypeNumBits; 
+  static int const kNumStorageUnitPerStoredVec = StorageContainerCalculator::kContainerTypeNumStorageUnit;
 
   using StorageVec = StorageUnit[kNumStorageUnitPerStoredVec];
   using StorageVecPointer = StorageVec *;

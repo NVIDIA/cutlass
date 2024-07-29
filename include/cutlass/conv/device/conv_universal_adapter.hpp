@@ -228,29 +228,18 @@ public:
   /// Initializes conv state from arguments.
   Status
   initialize(
-  Arguments const& args,
-  void* workspace = nullptr,
-  cudaStream_t stream = nullptr,
-  CudaHostAdapter *cuda_adapter = nullptr) {
+    Arguments const& args,
+    void* workspace = nullptr,
+    cudaStream_t stream = nullptr,
+    CudaHostAdapter *cuda_adapter = nullptr) {
+
     CUTLASS_TRACE_HOST("ConvUniversal::initialize() - workspace "
       << workspace << ", stream: " << (stream ? "non-null" : "null"));
 
-    size_t workspace_bytes = ConvKernel::get_workspace_size(args);
-    CUTLASS_TRACE_HOST("  workspace_bytes: " << workspace_bytes);
-
-    if (workspace_bytes) {
-      if (!workspace) {
-        CUTLASS_TRACE_HOST("  error: device workspace must not be null");
-        return Status::kErrorWorkspaceNull;
-      }
-
-      CUTLASS_TRACE_HOST("  clearing device workspace");
-      cudaError_t result = cudaMemsetAsync(workspace, 0, workspace_bytes, stream);
-      if (cudaSuccess != result) {
-        result = cudaGetLastError(); // to clear the error bit
-        CUTLASS_TRACE_HOST("  cudaMemsetAsync() returned error " << cudaGetErrorString(result));
-        return Status::kErrorInternal;
-      }
+    // Initialize the workspace
+    Status status = ConvKernel::initialize_workspace(args, workspace, stream, cuda_adapter);
+    if (status != Status::kSuccess) {
+      return status;
     }
 
     // Initialize the Params structure
@@ -297,7 +286,7 @@ public:
   /// Primary run() entry point API that is static allowing users to create and manage their own params.
   /// Supplied params struct must be construct by calling ConvKernel::to_underling_arguments()
   static Status
-  run(Params& params, cudaStream_t stream = nullptr, CudaHostAdapter *cuda_adapter = nullptr) {
+  run(Params& params, cudaStream_t stream = nullptr, CudaHostAdapter *cuda_adapter = nullptr, int32_t kernel_index = 0) {
     CUTLASS_TRACE_HOST("ConvUniversal::run()");
     dim3 const block = ConvKernel::get_block_shape();
     dim3 const grid = get_grid_shape(params);
@@ -319,9 +308,13 @@ public:
         CUTLASS_ASSERT(cuda_adapter);
         if (cuda_adapter) {
 
-          launch_result = cuda_adapter->launch(
-              grid, cluster, block, smem_size, stream, kernel_params, 0
-              );
+          launch_result = cuda_adapter->launch(grid,
+                                               cluster, 
+                                               block, 
+                                               smem_size, 
+                                               stream, 
+                                               kernel_params,
+                                               kernel_index);
         }
         else {
           return Status::kErrorInternal;
@@ -379,11 +372,12 @@ public:
     Arguments const& args,
     void* workspace = nullptr,
     cudaStream_t stream = nullptr,
-    CudaHostAdapter *cuda_adapter = nullptr
+    CudaHostAdapter *cuda_adapter = nullptr,
+    int32_t kernel_index = 0
   ) {
     Status status = initialize(args, workspace, stream, cuda_adapter);
     if (Status::kSuccess == status) {
-      status = run(params_, stream, cuda_adapter);
+      status = run(params_, stream, cuda_adapter, kernel_index);
     }
     return status;
   }

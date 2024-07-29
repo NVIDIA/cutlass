@@ -27,15 +27,18 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 add_subdirectory(threadblock)
+add_subdirectory(kernel)
 
 add_custom_target(
   cutlass_test_unit_transform
   DEPENDS
   cutlass_test_unit_transform_threadblock
-  )
+  cutlass_test_unit_transform_filter_format
+)
 
 add_custom_target(
   test_unit_transform
   DEPENDS
   test_unit_transform_threadblock
-  )
+  test_unit_transform_kernel
+)

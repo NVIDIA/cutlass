@@ -130,14 +130,10 @@ bool testEVTAuxStoreWithoutD() {
     aux_store_D_block.reset(m * n);
     Gemm gemm_op_base;
 
-    auto stride_A = cutlass::make_cute_packed_stride(
-        typename GemmKernel::StrideA{}, cute::make_shape(m, k, cute::Int<1>{}));
-    auto stride_B = cutlass::make_cute_packed_stride(
-        typename GemmKernel::StrideB{}, cute::make_shape(n, k, cute::Int<1>{}));
-    auto stride_C = cutlass::make_cute_packed_stride(
-        typename GemmKernel::StrideC{}, cute::make_shape(m, n, cute::Int<1>{}));
-    auto stride_D = cutlass::make_cute_packed_stride(
-        typename GemmKernel::StrideD{}, cute::make_shape(m, n, cute::Int<1>{}));
+    auto stride_A = cutlass::make_cute_packed_stride(typename GemmKernel::StrideA{}, {m, k, 1});
+    auto stride_B = cutlass::make_cute_packed_stride(typename GemmKernel::StrideB{}, {n, k, 1});
+    auto stride_C = cutlass::make_cute_packed_stride(typename GemmKernel::StrideC{}, {m, n, 1});
+    auto stride_D = cutlass::make_cute_packed_stride(typename GemmKernel::StrideD{}, {m, n, 1});
 
     auto arguments_base = typename Gemm::Arguments {
       cutlass::gemm::GemmUniversalMode::kGemm,

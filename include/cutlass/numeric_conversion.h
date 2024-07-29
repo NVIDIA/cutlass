@@ -104,7 +104,6 @@ struct NumericConverter<int32_t, float, FloatRoundStyle::round_to_nearest> {
 
   CUTLASS_DEVICE
   static result_type convert(source_type const & s) {
-
     return __float2int_rn(s);
   }
 
@@ -221,6 +220,50 @@ struct NumericConverter<int8_t, float, FloatRoundStyle::round_toward_zero> {
   }
 };
 
+template <>
+struct NumericConverter<uint8_t, float, FloatRoundStyle::round_to_nearest> {
+
+  using result_type = uint8_t;
+  using source_type = float;
+  static FloatRoundStyle const round_style = FloatRoundStyle::round_to_nearest;
+
+  CUTLASS_DEVICE
+  static result_type convert(source_type const & s) {
+
+    int32_t intermediate;
+    asm volatile("cvt.rni.sat.u8.f32 %0, %1;" : "=r"(intermediate) : "f"(s));
+
+    return static_cast<result_type>(intermediate);
+  }
+
+  CUTLASS_HOST_DEVICE
+  result_type operator()(source_type const &s) const {
+    return convert(s);
+  }
+};
+
+template <>
+struct NumericConverter<uint8_t, float, FloatRoundStyle::round_toward_zero> {
+
+  using result_type = uint8_t;
+  using source_type = float;
+  static FloatRoundStyle const round_style =  FloatRoundStyle::round_toward_zero;
+
+  CUTLASS_DEVICE
+  static result_type convert(source_type const & s) {
+
+    int32_t intermediate;
+    asm volatile("cvt.rzi.sat.u8.f32 %0, %1;" : "=r"(intermediate) : "f"(s));
+
+    return static_cast<result_type>(intermediate);
+  }
+
+  CUTLASS_DEVICE
+  result_type operator()(source_type const &s) const {
+    return convert(s);
+  }
+};
+
 #elif !defined(__CUDACC_RTC__)
 
 template <>
@@ -273,8 +316,118 @@ struct NumericConverter<int8_t, float, FloatRoundStyle::round_toward_zero> {
   }
 };
 
+template <>
+struct NumericConverter<uint8_t, float, FloatRoundStyle::round_to_nearest> {
+
+  using result_type = uint8_t;
+  using source_type = float;
+  static FloatRoundStyle const round_style = FloatRoundStyle::round_to_nearest;
+
+  static result_type convert(source_type const & s) {
+    std::fesetround(FE_TONEAREST);
+    int32_t intermediate = (int32_t)std::nearbyint(s);
+
+    // Low-end saturation
+    intermediate = std::max(intermediate, (int32_t)std::numeric_limits<uint8_t>::lowest());
+
+    // High-end saturation
+    intermediate = std::min(intermediate, (int32_t)std::numeric_limits<uint8_t>::max());
+
+    return static_cast<result_type>(intermediate);
+  }
+
+  result_type operator()(source_type const &s) const {
+    return convert(s);
+  }
+};
+
+template <>
+struct NumericConverter<uint8_t, float, FloatRoundStyle::round_toward_zero> {
+
+  using result_type = uint8_t;
+  using source_type = float;
+  static FloatRoundStyle const round_style =  FloatRoundStyle::round_toward_zero;
+
+  static result_type convert(source_type const & s) {
+    std::fesetround(FE_TOWARDZERO);
+    int32_t intermediate = (int32_t)std::nearbyint(s);
+
+    // Low-end saturation
+    intermediate = std::max(intermediate, (int32_t)std::numeric_limits<uint8_t>::lowest());
+
+    // High-end saturation
+    intermediate = std::min(intermediate, (int32_t)std::numeric_limits<uint8_t>::max());
+
+    return static_cast<result_type>(intermediate);
+  }
+
+  result_type operator()(source_type const &s) const {
+    return convert(s);
+  }
+};
+
 #endif
 
+/////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// Partial specializations for float => integer_subbyte
+//
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+template<int Bits, FloatRoundStyle Round>
+struct NumericConverter<integer_subbyte<Bits, /* Signed = */ true>, float, Round> {
+private:
+  static constexpr bool result_is_signed = true;
+
+public:
+  using result_type = integer_subbyte<Bits, result_is_signed>;
+  using source_type = float;
+  static constexpr FloatRoundStyle round_style = Round;
+
+  CUTLASS_HOST_DEVICE static result_type
+  convert(source_type const& src) {
+    using middle_type = int;
+    static_assert(8 * sizeof(middle_type) > Bits, "This conversion "
+      "requires that integer_subbyte have fewer representation bits "
+      "than the number of bits in int.");
+
+    auto middle = NumericConverter<middle_type, source_type, Round>::convert(src);
+    return NumericConverter<result_type, middle_type, Round>::convert(middle);
+  }
+
+  CUTLASS_HOST_DEVICE result_type
+  operator()(source_type const& s) const {
+    return convert(s);
+  }
+};
+
+template<int Bits, FloatRoundStyle Round>
+struct NumericConverter<integer_subbyte<Bits, /* Signed = */ false>, float, Round> {
+private:
+  static constexpr bool result_is_signed = false;
+
+public:
+  using result_type = integer_subbyte<Bits, result_is_signed>;
+  using source_type = float;
+  static constexpr FloatRoundStyle round_style = Round;
+
+  CUTLASS_HOST_DEVICE static result_type
+  convert(source_type const& src) {
+    using middle_type = unsigned;
+    static_assert(8 * sizeof(middle_type) > Bits, "This conversion "
+      "requires that integer_subbyte have fewer representation bits "
+      "than the number of bits in unsigned int.");
+
+    auto middle = NumericConverter<middle_type, source_type, Round>::convert(src);
+    return NumericConverter<result_type, middle_type, Round>::convert(middle);
+  }
+
+  CUTLASS_HOST_DEVICE result_type  
+  operator()(source_type const& s) const {
+    return convert(s);
+  }
+};
+  
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Partial specialization for float <= cutlass::half_t
@@ -706,8 +859,8 @@ struct NumericConverterClamp {
   CUTLASS_HOST_DEVICE
     static result_type convert(source_type const & s) {
     NumericConverter<result_type, source_type> convert_op;
-    result_type const kClamp_max = platform::numeric_limits<result_type>::max();
-    result_type const kClamp_min = platform::numeric_limits<result_type>::lowest();
+    result_type const kClamp_max = cutlass::platform::numeric_limits<result_type>::max();
+    result_type const kClamp_min = cutlass::platform::numeric_limits<result_type>::lowest();
     if (s < (source_type)kClamp_min)
       return kClamp_min;
     if (s > (source_type)kClamp_max)
@@ -814,7 +967,7 @@ struct NumericArrayConverter<T, T, N, Round, Transform> {
     } else {
       result_type result;
       for (int i = 0; i < N; ++i) {
-          result[i] = conj(source[i]);
+        result[i] = conj(static_cast<typename source_type::Element>(source[i]));
       }
       return result;
     }
@@ -2317,8 +2470,30 @@ struct NumericArrayConverter<int8_t, float, 1, Round> {
 
   CUTLASS_HOST_DEVICE
   static result_type convert(source_type const & source) {
-    // Convert to int to int8_t
     NumericConverter<int8_t, float, Round> destination_converter;
+    result_type result;
+    result[0] = destination_converter(source[0]);
+    return result;
+  }
+
+  CUTLASS_HOST_DEVICE
+  result_type operator()(source_type const &s) const {
+    return convert(s);
+  }
+};
+
+template <
+  FloatRoundStyle Round
+>
+struct NumericArrayConverter<uint8_t, float, 1, Round> {
+
+  using result_type = Array<uint8_t, 1>;
+  using source_type = Array<float, 1>;
+  static FloatRoundStyle const round_style = Round;
+
+  CUTLASS_HOST_DEVICE
+  static result_type convert(source_type const & source) {
+    NumericConverter<uint8_t, float, Round> destination_converter;
     result_type result;
     result[0] = destination_converter(source[0]);
     return result;
@@ -2342,7 +2517,7 @@ struct NumericArrayFP32ToIntConverter {
   using source_type = Array<float, N>;
   static FloatRoundStyle const round_style = Round;
 
-  static_assert(platform::numeric_limits<T>::is_integer, "the dest type has to be int.");
+  static_assert(cutlass::platform::numeric_limits<T>::is_integer, "the dest type has to be int.");
 
   CUTLASS_HOST_DEVICE
   static result_type convert(source_type const & source) {

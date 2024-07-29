@@ -72,7 +72,7 @@ public:
     // Methods
     //
 
-    Library(CommandLine const &cmdline);
+    explicit Library(CommandLine const &cmdline);
 
     void print_usage(std::ostream &out) const;
     void print_options(std::ostream &out, int indent = 0) const;
@@ -94,7 +94,7 @@ public:
     // Methods
     //
 
-    Device(CommandLine const &cmdline);
+    explicit Device(CommandLine const &cmdline);
 
     void print_usage(std::ostream &out) const;
     void print_options(std::ostream &out, int indent = 0) const;
@@ -128,7 +128,7 @@ public:
     // Methods
     //
 
-    Initialization(CommandLine const &cmdline);
+    explicit Initialization(CommandLine const &cmdline);
     
     void print_usage(std::ostream &out) const;
     void print_options(std::ostream &out, int indent = 0) const;
@@ -170,7 +170,7 @@ public:
     // Methods
     //
 
-    Verification(CommandLine const &cmdline);
+    explicit Verification(CommandLine const &cmdline);
   
     void print_usage(std::ostream &out) const;
     void print_options(std::ostream &out, int indent = 0) const;
@@ -186,22 +186,26 @@ public:
   struct Profiling {
 
     /// Number of workspaces to rotate through to avoid cache-resident working sets
-    int workspace_count;
+    int workspace_count{0};
 
     /// Number of iterations to warmup each kernel prior to profiling
-    int warmup_iterations;
+    int warmup_iterations{10};
 
     /// Number of iterations to profile each kernel - if 0, kernels are launched up to the profiling duration
-    int iterations;
+    int iterations{100};
 
     /// Number of ms to sleep between profiling periods (ms)
-    int sleep_duration;
+    int sleep_duration{50};
 
     /// If true, profiling is actually conducted.
-    bool enabled;
+    bool enabled{true};
 
     /// If true, profiling returns an error code if no kernels are found to match the filters.
-    bool error_on_no_match = false;
+    bool error_on_no_match{false};
+
+    /// If true, profiling returns an error code if no kernel are profiled
+    // Sometimes the kernel matches but failed to profile (e.g. can_implement() error)
+    bool error_if_nothing_is_profiled{false};
 
     /// List of providers of each functionality to be profiled
     ProviderVector providers;
@@ -210,7 +214,7 @@ public:
     // Methods
     //
 
-    Profiling(CommandLine const &cmdline);
+    explicit Profiling(CommandLine const &cmdline);
 
     void print_usage(std::ostream &out) const;
     void print_options(std::ostream &out, int indent = 0) const;
@@ -255,7 +259,7 @@ public:
     // Methods
     //
 
-    Report(CommandLine const &cmdline);
+    explicit Report(CommandLine const &cmdline);
     
     void print_usage(std::ostream &out) const;
     void print_options(std::ostream &out, int indent = 0) const;
@@ -277,7 +281,7 @@ public:
     // Methods
     //
 
-    About(CommandLine const &cmdline);
+    explicit About(CommandLine const &cmdline);
     
     void print_usage(std::ostream &out) const;
     void print_options(std::ostream &out, int indent = 0) const;
@@ -320,7 +324,7 @@ public:
 
 public:
 
-  Options(CommandLine const &cmdline);
+  explicit Options(CommandLine const &cmdline);
 
   void print_usage(std::ostream &out) const;
   void print_options(std::ostream &out) const;

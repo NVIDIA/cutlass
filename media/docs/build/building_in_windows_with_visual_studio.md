@@ -50,18 +50,6 @@ before attempting to clone or build CUTLASS.
 [This Microsoft help article](https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation?tabs=registry)
 explains different ways to change the registry setting.
 
-# Limitations
-
-Currently, it's possible to build examples and tests.
-Building the CUTLASS library (e.g., for profiling) with default settings does not currently work,
-because Visual Studio's linker cannot handle more than 65535 symbols in a library.
-(The symptom of this issue is a LNK1189 linker error.)
-The known way to work around this Visual Studio limitation is to disable building CUTLASS's library,
-by setting the CMake option `CUTLASS_ENABLE_LIBRARY` to `OFF`.
-Another approach may be to limit the number of kernels in the library
-by setting the CMake option `CUTLASS_LIBRARY_KERNELS`
-so that CUTLASS tries to put fewer kernels in the library.
-
 # Set up build environment
 
 1. Run "git bash" to get a familiar command-line interface
@@ -72,7 +60,7 @@ so that CUTLASS tries to put fewer kernels in the library.
 
 4. Create the `build` subdirectory in the CUTLASS clone directory, and run CMake in it,
     specifying whatever CMake options are desired, e.g.,
-    `cmake .. -DCUTLASS_NVCC_ARCHS=90a -DCUTLASS_ENABLE_LIBRARY=OFF`
+    `cmake .. -DCUTLASS_NVCC_ARCHS=90a`
 
 Alternate approaches may rely on the CMake GUI and/or Windows' native command line.
 
@@ -90,4 +78,13 @@ The `--config` option specifies the kind of build;
 Unlike with CMake's Makefile or Ninja generators,
 `CMAKE_BUILD_TYPE` has no effect on the Visual Studio generator,
 because the Visual Studio generator creates all build configurations.
+
+# Tips
+
+With Windows builds, one may find that CMake reruns unnecessarily.
+For example, cancelling a build and starting it again may rerun CMake.
+This will in turn touch build files that result in unnecessary rebuilds.
+One work-around is to set the CMake option `CMAKE_SUPPRESS_REGENERATION=ON`.
+However, this turns off CMake's ability to detect on its own when it needs to rerun.
+As a result, one will need to know when to rerun CMake by hand.
 

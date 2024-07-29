@@ -32,7 +32,7 @@
 /*! \file
     \brief Hopper Grouped GEMM example using CUTLASS 3 APIs for NVIDIA Hopper architecture.
 
-    This example demonstrates an implementation of Grouped GEMM using a TMA + GMMA 
+    This example demonstrates an implementation of Grouped GEMM using a TMA + GMMA
     warp-specialized cooperative kernel.
     For this example all scheduling work is performed on the device.
     The new feature showcased in this example is on-the-fly modification of TMA descriptors
@@ -42,7 +42,7 @@
 
       $ ./examples/57_hopper_grouped_gemm/57_hopper_grouped_gemm --m=2048 --n=2048 --k=2048 --groups=10
 
-      The above example command makes all 10 groups to be sized at the given m, n, k sizes. 
+      The above example command makes all 10 groups to be sized at the given m, n, k sizes.
       Skipping any of the problem dimensions randomizes it across the different groups.
       Same applies for alpha and beta values that are randomized across the different groups.
 
@@ -117,7 +117,7 @@ constexpr int AlignmentC  = 128 / cutlass::sizeof_bits<ElementC>::value;    // A
 using ElementAccumulator  = float;                                          // Element type for internal accumulation
 using ArchTag             = cutlass::arch::Sm90;                            // Tag indicating the minimum SM that supports the intended feature
 using OperatorClass       = cutlass::arch::OpClassTensorOp;                 // Operator class tag
-using TileShape           = Shape<_256,_128,_64>;                           // Threadblock-level tile size
+using TileShape           = Shape<_256,_128,_128>;                          // Threadblock-level tile size
 using ClusterShape        = Shape<_2,_2,_1>;                                // Shape of the threadblocks in a cluster
 using StageCountType = cutlass::gemm::collective::StageCountAuto;           // Stage count maximized based on the tile size
 using KernelSchedule = cutlass::gemm::KernelPtrArrayTmaWarpSpecializedCooperativeFP8FastAccum; // Kernel to launch
@@ -163,10 +163,10 @@ using DeviceGemmReference = cutlass::reference::device::Gemm<
   ElementAccumulator,
   ElementAccumulator>;
 
-using StrideA = typename Gemm::GemmKernel::UnderlyingStrideA;
-using StrideB = typename Gemm::GemmKernel::UnderlyingStrideB;
-using StrideC = typename Gemm::GemmKernel::UnderlyingStrideC;
-using StrideD = typename Gemm::GemmKernel::UnderlyingStrideD;
+using StrideA = typename Gemm::GemmKernel::InternalStrideA;
+using StrideB = typename Gemm::GemmKernel::InternalStrideB;
+using StrideC = typename Gemm::GemmKernel::InternalStrideC;
+using StrideD = typename Gemm::GemmKernel::InternalStrideD;
 
 // Host-side allocations
 std::vector<int64_t> offset_A;
@@ -226,7 +226,7 @@ struct Options {
   std::string benchmark_path;
   std::vector<typename ProblemShape::UnderlyingProblemShape> problem_sizes_host;
   int const tma_alignment_bits = 128;
-  int const alignment = tma_alignment_bits / cutlass::sizeof_bits<ElementA>::value; 
+  int const alignment = tma_alignment_bits / cutlass::sizeof_bits<ElementA>::value;
 
   // Parses the command line
   void parse(int argc, char const **args) {
@@ -438,10 +438,10 @@ void allocate(const Options &options) {
     total_elements_C += elements_C;
     total_elements_D += elements_D;
 
-    stride_A_host.push_back(cutlass::make_cute_packed_stride(StrideA{}, cute::make_shape(M, K, Int<1>{})));
-    stride_B_host.push_back(cutlass::make_cute_packed_stride(StrideB{}, cute::make_shape(N, K, Int<1>{})));
-    stride_C_host.push_back(cutlass::make_cute_packed_stride(StrideC{}, cute::make_shape(M, N, Int<1>{})));
-    stride_D_host.push_back(cutlass::make_cute_packed_stride(StrideD{}, cute::make_shape(M, N, Int<1>{})));
+    stride_A_host.push_back(cutlass::make_cute_packed_stride(StrideA{}, {M, K, 1}));
+    stride_B_host.push_back(cutlass::make_cute_packed_stride(StrideB{}, {N, K, 1}));
+    stride_C_host.push_back(cutlass::make_cute_packed_stride(StrideC{}, {M, N, 1}));
+    stride_D_host.push_back(cutlass::make_cute_packed_stride(StrideD{}, {M, N, 1}));
 
   }
 
@@ -456,7 +456,7 @@ void allocate(const Options &options) {
 
 /// Initialize operands to be used in the GEMM and reference GEMM
 void initialize(const Options &options) {
-  
+
   uint64_t seed = 2020;
 
   problem_sizes.reset(options.groups);
@@ -695,7 +695,6 @@ int main(int argc, char const **args) {
       << "later (compute capability 90 or greater).\n";
     return 0;
   }
-
   //
   // Parse options
   //

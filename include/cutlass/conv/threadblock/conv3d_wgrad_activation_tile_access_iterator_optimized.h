@@ -250,7 +250,7 @@ public:
     fast_divmod(p, q, residual, problem_size_.Q, params_.q_mul, params_.q_shr);
  
     int d = z * problem_size_.stride_d + precomputed_filter_t_[iteration_contiguous_];
-    int h = p * problem_size_.stride_h + precomputed_filter_r_[iteration_contiguous_];;
+    int h = p * problem_size_.stride_h + precomputed_filter_r_[iteration_contiguous_];
     int w = q * problem_size_.stride_w + precomputed_filter_s_[iteration_contiguous_];
 
     return TensorCoord(n, d, h, w, filter_c_[iteration_contiguous_]);
@@ -300,7 +300,7 @@ public:
   static Status can_implement(Conv3dProblemSize const &problem_size) {
 
     // check alignment constraint on iterator's contiguous dimension
-    if (problem_size.C % (128/sizeof_bits<Element>::value)) {
+    if (problem_size.C % AccessType::kElements) {
       return Status::kErrorInvalidProblem;
     }
 

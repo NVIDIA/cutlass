@@ -35,6 +35,7 @@
     \brief Utilities for selecting default tile schedulers
 */
 
+#include "cutlass/arch/arch.h"
 #include "cutlass/detail/dependent_false.hpp"
 #include "cutlass/gemm/kernel/sm90_tile_scheduler.hpp"
 #include "cutlass/gemm/kernel/sm90_tile_scheduler_stream_k.hpp"

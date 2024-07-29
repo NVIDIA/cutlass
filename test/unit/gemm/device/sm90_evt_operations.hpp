@@ -409,14 +409,7 @@ using Sm90LinCombPerColumnBias =
     Sm90EVT<Sm90Compute<homogeneous_multiply_add, ElementCompute, ElementCompute, RoundStyle>, // alpha * acc + bias
       Sm90ScalarBroadcast<ElementScalar>, // alpha
       Sm90AccFetch, // acc
-      Sm90RowBroadcast<
-        ceil_div(
-          EpilogueDescriptor::StagesC,
-          size(shape_div(take<0, 2>(typename EpilogueDescriptor::TileShape{}), typename EpilogueDescriptor::EpilogueTile{}))
-        ) + 1,
-        typename EpilogueDescriptor::TileShape,
-        ElementBias
-      >
+      Sm90RowBroadcast<0, typename EpilogueDescriptor::TileShape, ElementBias>
     >
   >;
 

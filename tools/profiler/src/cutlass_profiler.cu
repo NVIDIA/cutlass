@@ -143,16 +143,19 @@ void CutlassProfiler::enumerate_() {
 /// Profiles all operations
 int CutlassProfiler::profile_() {
 
-  int result = 0;
+  // Keep track of all device memory tensor in map
   DeviceContext device_context;
-  // For all profilers
+
+  int result = 0;
+  // For all profilers (e.g. gemm/sparse_gemm/conv2d...)
   for (auto & profiler : operation_profilers_) {
 
     if (options_.operation_kind == library::OperationKind::kInvalid ||
-      options_.operation_kind == profiler->kind()) {
+        options_.operation_kind == profiler->kind()) {
 
       result = profiler->profile_all(options_, library::Singleton::get().manifest, device_context);
 
+      // If some profile failed, terminate immediately
       if (result) {
         return result;
       }

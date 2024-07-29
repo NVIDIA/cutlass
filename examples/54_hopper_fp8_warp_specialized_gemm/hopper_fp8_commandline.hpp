@@ -30,6 +30,7 @@
  **************************************************************************************************/
 
 // Command line options parsing
+template<typename RasterOrderOptions>
 struct Options {
 
   bool help = false;
@@ -41,6 +42,8 @@ struct Options {
   bool save_amax = true;
   int iterations = 1000;
   int m = 1024, n = 512, k = 1024, l = 1;
+  RasterOrderOptions raster;
+  int swizzle;
 
   // Parses the command line
   void parse(int argc, char const **args) {
@@ -66,6 +69,21 @@ struct Options {
     cmd.get_cmd_line_argument("save_aux", save_aux, true);
     cmd.get_cmd_line_argument("save_amax", save_amax, true);
     cmd.get_cmd_line_argument("iterations", iterations);
+
+    char raster_char;
+    cmd.get_cmd_line_argument("raster", raster_char);
+
+    if (raster_char == 'N' || raster_char == 'n') {
+      raster = RasterOrderOptions::AlongN;
+    }
+    else if (raster_char == 'M' || raster_char == 'm') {
+      raster = RasterOrderOptions::AlongM;
+    }
+    else if (raster_char == 'H' || raster_char == 'h') {
+      raster = RasterOrderOptions::Heuristic;
+    }
+
+    cmd.get_cmd_line_argument("swizzle", swizzle, 1);
   }
 
   /// Prints the usage statement.
@@ -89,6 +107,8 @@ struct Options {
       << "  --device_scale=<bool>       Copy scalars to device memory before kernel launch (default: false)\n"
       << "  --save_aux=<bool>           Save the pre-activation as an auxiliary tensor (default: true)\n"
       << "  --save_amax=<bool>          Save the pre-scaled max absolute value of any fp8 outputs (aux and/or D) (default: true)\n"
+      << "  --raster=<char>             CTA Rasterization direction (N for along N, M for along M, and H for heuristic)\n\n"
+      << "  --swizzle=<int>             CTA Rasterization swizzle\n\n"
       << "  --iterations=<int>          Number of profiling iterations to perform.\n\n";
 
     out

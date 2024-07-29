@@ -126,34 +126,16 @@ struct TagToStrideC<cutlass::layout::TensorNWC> {
   using type = cute::Stride<cute::Stride<int64_t, int64_t>, cute::Int<1>, cute::Int<0>>;
 };
 
-// Conv: Maps to modes (PN, C, _0) for compatiblity with GEMM epilogues expecting a batch mode stride
-template <>
-struct TagToStrideC<cutlass::layout::TensorLinearizedNWC> {
-  using type = cute::Stride<int64_t, cute::Int<1>, cute::Int<0>>;
-};
-
 // Conv: Maps to modes ((P,Q,N), C, _0) for compatiblity with GEMM epilogues expecting a batch mode stride
 template <>
 struct TagToStrideC<cutlass::layout::TensorNHWC> {
   using type = cute::Stride<cute::Stride<int64_t, int64_t, int64_t>, cute::Int<1>, cute::Int<0>>;
 };
 
-// Conv: Maps to modes (PQN, C, _0) for compatiblity with GEMM epilogues expecting a batch mode stride
-template <>
-struct TagToStrideC<cutlass::layout::TensorLinearizedNHWC> {
-  using type = cute::Stride<int64_t, cute::Int<1>, cute::Int<0>>;
-};
-
 // Conv: Maps to modes ((P,Q,Z,N), C, _0) for compatiblity with GEMM epilogues expecting a batch mode stride
 template <>
 struct TagToStrideC<cutlass::layout::TensorNDHWC> {
   using type = cute::Stride<cute::Stride<int64_t, int64_t, int64_t, int64_t>, cute::Int<1>, cute::Int<0>>;
-};
-
-// Conv: Maps to modes (PQZN, C, _0) for compatiblity with GEMM epilogues expecting a batch mode stride
-template <>
-struct TagToStrideC<cutlass::layout::TensorLinearizedNDHWC> {
-  using type = cute::Stride<int64_t, cute::Int<1>, cute::Int<0>>;
 };
 
 // Conv: Maps to modes (K, (C,S), _0) for compatiblity with GEMM epilogues expecting a batch mode stride
@@ -172,6 +154,24 @@ struct TagToStrideC<cutlass::layout::TensorKCSR> {
 template <>
 struct TagToStrideC<cutlass::layout::TensorKCSRT> {
   using type = cute::Stride<int64_t, cute::Stride<cute::Int<1>, int64_t, int64_t, int64_t>, cute::Int<0>>;
+};
+
+// Conv: Maps to modes ((C,S), K, _0) for compatiblity with GEMM epilogues expecting a batch mode stride
+template <>
+struct TagToStrideC<cutlass::layout::TensorCSK> {
+  using type = cute::Stride<cute::Stride<cute::Int<1>, int64_t>, int64_t, cute::Int<0>>;
+};
+
+// Conv: Maps to modes ((C,S,R), K, _0) for compatiblity with GEMM epilogues expecting a batch mode stride
+template <>
+struct TagToStrideC<cutlass::layout::TensorCSRK> {
+  using type = cute::Stride<cute::Stride<cute::Int<1>, int64_t, int64_t>, int64_t, cute::Int<0>>;
+};
+
+// Conv: Maps to modes ((C,S,R,T), K, _0) for compatiblity with GEMM epilogues expecting a batch mode stride
+template <>
+struct TagToStrideC<cutlass::layout::TensorCSRTK> {
+  using type = cute::Stride<cute::Stride<cute::Int<1>, int64_t, int64_t, int64_t>, int64_t, cute::Int<0>>;
 };
 
 // Convenience aliases
@@ -317,6 +317,23 @@ get_alignment_count_from_gmem_tiled_copy() {
     }
   }
 }
+
+// Return alignment bit requirements for the GEMM inputs.
+template <
+  class ElementType
+>
+constexpr int
+get_input_alignment_bits() {
+  return 128;
+}
+
+// Return alignment bit requirements for the GEMM outputs.
+template <class ElementType>
+constexpr int
+get_output_alignment_bits() {
+  return 128;
+}
+
 
 // Return the shape that is associated with stride-1 mode, or 1 if not found
 template<typename Shape, typename Stride>
