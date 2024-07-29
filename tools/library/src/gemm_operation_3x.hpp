@@ -250,6 +250,10 @@ protected:
     /* Query device SM count to pass onto the kernel as an argument, where needed */
     operator_args.hw_info.sm_count = arguments->sm_count;
 
+    if constexpr (!std::is_const_v<decltype(operator_args.scheduler.max_swizzle_size)>) {
+      operator_args.scheduler.max_swizzle_size = arguments->swizzle_size;
+    }
+
     if constexpr (!std::is_const_v<decltype(operator_args.scheduler.raster_order)>) {
       using Enum_t = decltype(operator_args.scheduler.raster_order);
       switch (arguments->raster_order) {

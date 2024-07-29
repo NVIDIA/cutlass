@@ -126,7 +126,8 @@ public:
   using TileShape = TileShape_;
 
   static_assert(cute::is_tuple<ElementAOptionalTuple>::value ^ cute::is_tuple<ElementBOptionalTuple>::value, 
-    "Either A OR B must be a tuple. It must take the from {ElementOperand, [ElementScale], [ElementZero]}. Inputs in [] are optional.");
+    "Either A OR B must be a tuple. It must take the from {ElementOperand, [ElementScale],"
+    "[ElementZero]}. Inputs in [] are optional.");
 
   using ElementA = detail::deduce_mixed_width_dtype_t<0, ElementAOptionalTuple>;
   using ElementB = detail::deduce_mixed_width_dtype_t<0, ElementBOptionalTuple>;
@@ -142,7 +143,8 @@ public:
   // These are always MN major
   using StrideScale = cute::Stride<cute::Int<1>, int64_t, int64_t>;
   // For cases where we can't have a void scale, we can use this to allow the code to compile when the scale is void.
-  using NonVoidStrideScale = cute::conditional_t<cute::is_void_v<StrideScale>, cute::Stride<_1, int64_t, int64_t>, StrideScale>;
+  using NonVoidStrideScale = cute::conditional_t<
+      cute::is_void_v<StrideScale>, cute::Stride<_1, int64_t, int64_t>, StrideScale>;
 
   static_assert((IsATransformed && cutlass::gemm::detail::is_k_major<StrideA>()) || 
                 (!IsATransformed && cutlass::gemm::detail::is_k_major<StrideB>()),
@@ -612,22 +614,22 @@ public:
     Tensor mB_nkl = mainloop_params.tma_load_b.get_tma_tensor(make_shape(N,K,L));                            // (n,k,l)
 
     // Make tiled views, defer the slice
-    Tensor gA_mkl = local_tile(mA_mkl, TileShape{}, make_coord(_,_,_), Step<_1, X,_1>{});       // (BLK_M,BLK_K,m,k,l)
-    Tensor gB_nkl = local_tile(mB_nkl, TileShape{}, make_coord(_,_,_), Step< X,_1,_1>{});       // (BLK_N,BLK_K,n,k,l)
+    Tensor gA_mkl = local_tile(mA_mkl, TileShape{}, make_coord(_,_,_), Step<_1, X,_1>{});        // (BLK_M,BLK_K,m,k,l)
+    Tensor gB_nkl = local_tile(mB_nkl, TileShape{}, make_coord(_,_,_), Step< X,_1,_1>{});        // (BLK_N,BLK_K,n,k,l)
 
     if constexpr (KernelConversionMode == ConversionMode::DirectConvert) {
       return cute::make_tuple(gA_mkl, gB_nkl);
     } 
     else if constexpr (ModeHasScales) {
       auto scale_k = mainloop_params.scale_k;
-      Tensor mS_mkl = mainloop_params.tma_load_scale.get_tma_tensor(make_shape(M,scale_k,L));      // (m,scale_k,l)
-      Tensor gS_mkl = local_tile(mS_mkl, ScaleTileShape{}, make_coord(_,_));       // (BLK_M,BLK_Scale_K,m,scale_k,l)
+      Tensor mS_mkl = mainloop_params.tma_load_scale.get_tma_tensor(make_shape(M,scale_k,L));          // (m,scale_k,l)
+      Tensor gS_mkl = local_tile(mS_mkl, ScaleTileShape{}, make_coord(_,_));         // (BLK_M,BLK_Scale_K,m,scale_k,l)
       if constexpr (KernelConversionMode == ConversionMode::ConvertAndScale) {
         return cute::make_tuple(gA_mkl, gB_nkl, gS_mkl);
       }
       else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
-        Tensor mZ_mkl = mainloop_params.tma_load_zero.get_tma_tensor(make_shape(M,scale_k,L));      // (m,scale_k,l)
-        Tensor gZ_mkl = local_tile(mZ_mkl, ScaleTileShape{}, make_coord(_,_));      // (BLK_M,BLK_Scale_K,m,scale_k,l)
+        Tensor mZ_mkl = mainloop_params.tma_load_zero.get_tma_tensor(make_shape(M,scale_k,L));         // (m,scale_k,l)
+        Tensor gZ_mkl = local_tile(mZ_mkl, ScaleTileShape{}, make_coord(_,_));       // (BLK_M,BLK_Scale_K,m,scale_k,l)
         return cute::make_tuple(gA_mkl, gB_nkl, gS_mkl, gZ_mkl);
       }
       else {
@@ -834,16 +836,29 @@ public:
     // Define C accumulators and A/B partitioning
     //
 
+    // Layout of warp group to thread mapping
+
+    static_assert(stride<0>(typename TiledMma::BLayout{}) == 0 and
+                  size<0>(typename TiledMma::BLayout{}) == NumThreadsPerWarpGroup, 
+                  "Stride of the first mode must be 0 and the size of the mode must be NumThreadsPerWarpGroup");
+
+    constexpr int MmaWarpGroups = size(TiledMma{}) / NumThreadsPerWarpGroup;
+    Layout warp_group_thread_layout = make_layout(Int<MmaWarpGroups>{}, 
+                                                  Int<NumThreadsPerWarpGroup>{});
+
+    int warp_group_idx = __shfl_sync(0xFFFFFFFF, thread_idx / NumThreadsPerWarpGroup, 0);
+
     TiledMma tiled_mma;
-    auto thread_mma = tiled_mma.get_thread_slice(thread_idx);
-    Tensor tCsA = thread_mma.partition_A(sA);
+    auto mma_thread_slice = tiled_mma.get_thread_slice(thread_idx);
+    Tensor tCsA = mma_thread_slice.partition_A(sA);
+    auto mma_warpgroup_slice = tiled_mma.get_slice(warp_group_thread_layout(warp_group_idx));
 
     // Allocate fragments and descriptors
-    Tensor tCrA_mma = thread_mma.partition_fragment_A(sA(_,_,Int<0>{}));                      // (MMA,MMA_M,MMA_K,PIPE)
+    Tensor tCrA_mma = mma_thread_slice.partition_fragment_A(sA(_,_,Int<0>{}));                // (MMA,MMA_M,MMA_K,PIPE)
     Tensor tCrA_load = make_fragment_like<RealInternalElementA>(tCrA_mma);
     
-    Tensor tCsB = thread_mma.partition_B(sB);                                                 // (MMA,MMA_N,MMA_K,PIPE)
-    Tensor tCrB = thread_mma.make_fragment_B(tCsB);                                           // (MMA,MMA_N,MMA_K,PIPE)
+    Tensor tCsB = mma_warpgroup_slice.partition_B(sB);                                        // (MMA,MMA_N,MMA_K,PIPE)
+    Tensor tCrB = mma_warpgroup_slice.make_fragment_B(tCsB);                                  // (MMA,MMA_N,MMA_K,PIPE)
 
     //
     // Copy Atom A retiling
@@ -851,7 +866,7 @@ public:
     auto smem_tiled_copy_A = make_tiled_copy_A(InternalSmemCopyAtomA{}, tiled_mma);
     auto smem_thr_copy_A   = smem_tiled_copy_A.get_thread_slice(warp_group_thread_idx);
 
-    Tensor tCrA_copy_view  = smem_thr_copy_A.retile_D(tCrA_load);                             // (CPY,CPY_M,CPY_K)
+    Tensor tCrA_copy_view  = smem_thr_copy_A.retile_D(tCrA_load);                                  // (CPY,CPY_M,CPY_K)
 
     // Compute the max vector length that can be used to copy A. This will match the vector width of the 
     // conversions used. It helps by allowing the compiler to convert using the same register that was used
@@ -861,7 +876,7 @@ public:
     using A_CPY_VEC = decltype(max_common_vector(tCsA, tCrA_copy_view));
 
     // Partition of thread -> shared and thread -> RF
-    auto partitioned_extra_info = partition_extra_mma_info(thread_mma, shared_tensors);
+    auto partitioned_extra_info = partition_extra_mma_info(mma_thread_slice, shared_tensors);
     auto copy_partitions_extra_info = retile_extra_mma_info(tiled_mma, partitioned_extra_info, warp_group_thread_idx);
 
     CUTE_STATIC_ASSERT_V(size<1>(tCsA) == size<1>(tCrA_copy_view));                                            // CPY_M
@@ -1058,10 +1073,10 @@ private:
       Tensor sS  = make_tensor(make_smem_ptr(shared_tensors.smem_scale.begin()), SmemLayoutScale{}); // (BLK_M,BLK_K,PIPE)
       Tensor gS_mkl = get<2>(load_inputs);
       auto block_tma_s = mainloop_params.tma_load_scale.get_slice(cluster_local_block_id.y);
-      Tensor gS = gS_mkl(_,_,m_coord,_,l_coord);                                                     // (BLK_M,BLK_K,k)
+      Tensor gS = gS_mkl(_,_,m_coord,_,l_coord);                                                  // (BLK_M,BLK_K,k)
 
-      Tensor tSgS = block_tma_s.partition_S(gS);                                                     // (TMA,TMA_M,TMA_K,k)
-      Tensor tSsS = block_tma_s.partition_D(sS);                                                     // (TMA,TMA_M,TMA_K,PIPE)
+      Tensor tSgS = block_tma_s.partition_S(gS);                                              // (TMA,TMA_M,TMA_K,k)
+      Tensor tSsS = block_tma_s.partition_D(sS);                                              // (TMA,TMA_M,TMA_K,PIPE)
       if constexpr (KernelConversionMode == ConversionMode::ConvertAndScale) {
         return cute::make_tuple(tSgS, tSsS);
       } 
@@ -1069,10 +1084,10 @@ private:
         Tensor sZ  = make_tensor(make_smem_ptr(shared_tensors.smem_zero.begin()), SmemLayoutScale{}); // (BLK_M,BLK_K,PIPE)
         Tensor gZ_mkl = get<3>(load_inputs);
         auto block_tma_z = mainloop_params.tma_load_zero.get_slice(cluster_local_block_id.y);
-        Tensor gZ = gZ_mkl(_,_,m_coord,_,l_coord);                                                     // (BLK_M,BLK_K,k)
+        Tensor gZ = gZ_mkl(_,_,m_coord,_,l_coord);                                            // (BLK_M,BLK_K,k)
 
-        Tensor tZgZ = block_tma_z.partition_S(gZ);                                                     // (TMA,TMA_M,TMA_K,k)
-        Tensor tZsZ = block_tma_z.partition_D(sZ);                                                     // (TMA,TMA_M,TMA_K,PIPE)
+        Tensor tZgZ = block_tma_z.partition_S(gZ);                                            // (TMA,TMA_M,TMA_K,k)
+        Tensor tZsZ = block_tma_z.partition_D(sZ);                                            // (TMA,TMA_M,TMA_K,PIPE)
         return cute::make_tuple(tSgS, tSsS, tZgZ, tZsZ);          
       }
       else {
@@ -1088,7 +1103,7 @@ private:
   template <class ThreadMma>
   CUTLASS_DEVICE 
   auto partition_extra_mma_info(
-    ThreadMma const& thread_mma,
+    ThreadMma const& mma_thread_slice,
     TensorStorage& shared_tensors) {
 
     if constexpr (KernelConversionMode == ConversionMode::DirectConvert) {
@@ -1096,17 +1111,17 @@ private:
       return cute::make_tuple();
     }
     else if constexpr (ModeHasScales) {
-      Tensor sS = make_tensor(make_smem_ptr(shared_tensors.smem_scale.begin()), SmemLayoutScale{});    // (BLK_M,BLK_SCALE_K,PIPE)
-      Tensor tCsS = thread_mma.partition_A(sS);
-      Tensor tCrS = make_tensor<ElementScale>(thread_mma.partition_fragment_A(sS(_,_,Int<0>{})).shape()); 
+      Tensor sS = make_tensor(make_smem_ptr(shared_tensors.smem_scale.begin()), SmemLayoutScale{});// (BLK_M,BLK_SCALE_K,PIPE)
+      Tensor tCsS = mma_thread_slice.partition_A(sS);
+      Tensor tCrS = make_tensor<ElementScale>(mma_thread_slice.partition_fragment_A(sS(_,_,Int<0>{})).shape()); 
 
       if constexpr (KernelConversionMode == ConversionMode::ConvertAndScale) {
         return cute::make_tuple(tCsS, tCrS);
       }
       else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
-        Tensor sZ = make_tensor(make_smem_ptr(shared_tensors.smem_zero.begin()), SmemLayoutScale{});    // (BLK_M,BLK_SCALE_K,PIPE)
-        Tensor tCsZ = thread_mma.partition_A(sZ);
-        Tensor tCrZ = make_tensor<ElementZero>(thread_mma.partition_fragment_A(sZ(_,_,Int<0>{})).shape()); 
+        Tensor sZ = make_tensor(make_smem_ptr(shared_tensors.smem_zero.begin()), SmemLayoutScale{});// (BLK_M,BLK_SCALE_K,PIPE)
+        Tensor tCsZ = mma_thread_slice.partition_A(sZ);
+        Tensor tCrZ = make_tensor<ElementZero>(mma_thread_slice.partition_fragment_A(sZ(_,_,Int<0>{})).shape()); 
         return cute::make_tuple(tCsS, tCrS, tCsZ, tCrZ);
       }
       else {

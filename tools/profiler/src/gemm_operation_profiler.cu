@@ -75,6 +75,7 @@ GemmOperationProfiler::GemmOperationProfiler(Options const &options):
       {ArgumentTypeID::kInteger, {"split_k_slices", "split-k-slices"}, "Number of partitions of K dimension"},
       {ArgumentTypeID::kInteger, {"batch_count", "batch-count"}, "Number of GEMMs computed in one batch"},
       {ArgumentTypeID::kEnumerated, {"raster_order", "raster-order"}, "Raster order (heuristic, along_n, along_m)"},
+      {ArgumentTypeID::kInteger, {"swizzle_size", "swizzle-size"}, "Size to swizzle"},
     },
     { library::Provider::kCUBLAS}
   ) {
@@ -189,6 +190,14 @@ Status GemmOperationProfiler::GemmProblem::parse(
     this->batch_count = 1;
   } else if (this->batch_count > 1) {
     this->mode = library::GemmUniversalMode::kBatched;
+  }
+
+  if (!arg_as_int(this->swizzle_size, "swizzle_size", problem_space, problem)) {
+    // default value
+    this->swizzle_size = 1;
+    if (this->swizzle_size <= 0) {
+      return Status::kErrorInvalidProblem;
+    }
   }
 
   if (!arg_as_RasterOrder(this->raster_order, "raster_order", problem_space, problem)) {
@@ -329,6 +338,8 @@ void GemmOperationProfiler::GemmProblem::initialize_result(
   set_argument(result, "split_k_slices", problem_space, split_k_slices);
   set_argument(result, "batch_count", problem_space, batch_count);
   set_argument(result, "raster_order", problem_space, library::to_string(raster_order));
+  set_argument(result, "swizzle_size", problem_space, swizzle_size);
+
   set_argument(result, "alpha", problem_space,
     library::lexical_cast(alpha, operation_desc.element_epilogue));
 
@@ -383,6 +394,7 @@ Status GemmOperationProfiler::initialize_configuration(
   gemm_workspace_.arguments.alpha = problem_.alpha.data();
   gemm_workspace_.arguments.beta = problem_.beta.data();
   gemm_workspace_.arguments.pointer_mode = library::ScalarPointerMode::kHost;
+  gemm_workspace_.arguments.swizzle_size = problem_.swizzle_size;
   gemm_workspace_.arguments.raster_order = problem_.raster_order;
   // initialize reduction operation for parallel splitKMode
   if (problem_.split_k_mode == library::SplitKMode::kParallel) {

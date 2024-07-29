@@ -210,6 +210,8 @@ GEMM
   [int]       --inst_k,--instruction-shape::k                   Math instruction shape in the K dimension
   [int]       --min_cc,--minimum-compute-capability             Minimum device compute capability
   [int]       --max_cc,--maximum-compute-capability             Maximum device compute capability
+  [enum]      --raster_order={H|M|N}                            If supported by kernel, sets the tile raster direction
+  [int]       --swizzle_size                                    If supported by kernel, sets the 2D tile swizzle extent
 Examples:
 
 Profile a particular problem size:
@@ -228,6 +230,9 @@ Using various input value distribution:
   $ cutlass_profiler --operation=Gemm --dist=uniform,min:0,max:3
   $ cutlass_profiler --operation=Gemm --dist=gaussian,mean:0,stddev:3
   $ cutlass_profiler --operation=Gemm --dist=sequential,start:0,delta:1
+
+Using CUTLASS 3.x GEMM kernel with a tile scheduler that supports runtime tile remapping and raster mode order:
+  $ cutlass_profiler --operation=Gemm --m=2048 --n=2048 --k=2048 --raster_order=M --swizzle_size=2
 
 Run a kernel with cta tile size of 256x128x32 and save workspace if results are incorrect (note that --cta-tile::k=32 is default cta-tile size):
  $ cutlass_profiler --operation=Gemm --cta_m=256 --cta_n=128  --cta_k=32 --save-workspace=incorrect

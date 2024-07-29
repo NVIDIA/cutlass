@@ -127,7 +127,7 @@ public:
   CUTLASS_HOST_DEVICE
   static bool
   can_implement(Arguments const& args) {
-    return true;
+    return args.max_swizzle_size >= 1;
   }
 
   CUTLASS_HOST_DEVICE

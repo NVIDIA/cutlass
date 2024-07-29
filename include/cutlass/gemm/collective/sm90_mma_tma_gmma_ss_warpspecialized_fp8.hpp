@@ -433,9 +433,23 @@ struct CollectiveMma<
     //
     // Define C accumulators and A/B partitioning
     //
+    
+    // Layout of warp group to thread mapping
+
+    static_assert(stride<0>(typename TiledMma::ALayout{}) == 0 and 
+                  stride<0>(typename TiledMma::BLayout{}) == 0 and
+                  size<0>(typename TiledMma::ALayout{}) == NumThreadsPerWarpGroup and
+                  size<0>(typename TiledMma::BLayout{}) == NumThreadsPerWarpGroup, 
+                  "Stride of the first mode must be 0 and the size of the mode must be NumThreadsPerWarpGroup");
+
+    constexpr int MmaWarpGroups = size(TiledMma{}) / NumThreadsPerWarpGroup;
+    Layout warp_group_thread_layout = make_layout(Int<MmaWarpGroups>{}, 
+                                                  Int<NumThreadsPerWarpGroup>{});
+
+    int warp_group_idx = __shfl_sync(0xFFFFFFFF, thread_idx / NumThreadsPerWarpGroup, 0);
 
     TiledMma tiled_mma;
-    auto thread_mma = tiled_mma.get_thread_slice(thread_idx);
+    auto thread_mma = tiled_mma.get_slice(warp_group_thread_layout(warp_group_idx));
 
     Tensor tCsA = thread_mma.partition_A(sA);                                                 // (MMA,MMA_M,MMA_K,PIPE)
     Tensor tCsB = thread_mma.partition_B(sB);                                                 // (MMA,MMA_N,MMA_K,PIPE)

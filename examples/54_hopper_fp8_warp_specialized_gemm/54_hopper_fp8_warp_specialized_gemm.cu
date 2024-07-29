@@ -47,9 +47,13 @@
     4. This example shows all important fusions used by FP8 gemm kernels, 
     i.e., scale factor for A, B, C, D tensor, the abs_max value of D tensor.
 
+    5. A simple way to tune the CTA rasterization direction and swizzle pattern of Hopper kernels. Both the 
+    CTA rasterization direction and swizzle pattern impact cross-CTA locality of accesses. By tuning we can 
+    improve performance.
+
     Examples:
 
-      $ ./examples/54_hopper_fp8_warp_specialized_gemm/54_hopper_fp8_warp_specialized_gemm --m=2048 --n=2048 --k=2048
+      $ ./examples/54_hopper_fp8_warp_specialized_gemm/54_hopper_fp8_warp_specialized_gemm --m=2048 --n=2048 --k=2048 --rasterization=N --swizzle=2
 */
 
 #include <iostream>
@@ -63,6 +67,7 @@
 #include "cutlass/gemm/collective/collective_builder.hpp"
 #include "cutlass/gemm/device/gemm_universal_adapter.h"
 #include "cutlass/gemm/kernel/gemm_universal.hpp"
+#include "cutlass/gemm/kernel/tile_scheduler_params.h"
 #include "cutlass/epilogue/dispatch_policy.hpp"
 #include "cutlass/epilogue/collective/collective_builder.hpp"
 
@@ -214,6 +219,8 @@ cutlass::HostTensor<ElementAmax  , LayoutScalar> reference_abs_max_aux;
 /// Testbed utility types
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90Params::RasterOrderOptions;
+
 /// Result structure
 struct Result
 {
@@ -273,7 +280,7 @@ bool initialize_tensor(
 }
 
 /// Initialize operands to be used in the GEMM and reference GEMM
-void initialize(const Options &options) {
+void initialize(const Options<RasterOrderOptions> &options) {
 
   stride_A = cutlass::make_cute_packed_stride(StrideA{}, cute::make_shape(options.m, options.k, options.l));
   stride_B = cutlass::make_cute_packed_stride(StrideB{}, cute::make_shape(options.n, options.k, options.l));
@@ -346,7 +353,7 @@ void initialize(const Options &options) {
 }
 
 /// Populates a Gemm::Arguments structure from the given commandline options
-typename Gemm::Arguments args_from_options(const Options &options)
+typename Gemm::Arguments args_from_options(const Options<RasterOrderOptions> &options)
 {
   typename Gemm::Arguments arguments{
     cutlass::gemm::GemmUniversalMode::kGemm,
@@ -392,10 +399,14 @@ typename Gemm::Arguments args_from_options(const Options &options)
     fusion_args.amax_D_ptr = abs_max_D.device_data();
   }
 
+  arguments.scheduler.raster_order = options.raster;
+  // The tile scheduler will swizzle up to 8 and with the nearest multiple of 2 (i.e., 1, 2, 4, and 8) 
+  arguments.scheduler.max_swizzle_size = options.swizzle;
+
   return arguments;
 }
 
-bool verify(const Options &options) {
+bool verify(const Options<RasterOrderOptions> &options) {
   //
   // Compute reference output
   //
@@ -468,7 +479,7 @@ bool verify(const Options &options) {
 
 /// Execute a given example GEMM computation
 template <typename Gemm>
-int run(Options &options)
+int run(Options<RasterOrderOptions> &options)
 {
   initialize(options);
 
@@ -518,7 +529,17 @@ int run(Options &options)
     result.avg_runtime_ms = double(elapsed_ms) / double(options.iterations);
     result.gflops = options.gflops(result.avg_runtime_ms / 1000.0);
 
+    std::string raster = "Heuristic";
+
+    if (options.raster == RasterOrderOptions::AlongN) {
+      raster = "Along N";
+    }
+    else if (options.raster == RasterOrderOptions::AlongM) {
+      raster = "Along M";
+    }
+
     std::cout << "  Problem Size: " << options.m << 'x' << options.n << 'x' << options.k << 'x' << options.l << std::endl;
+    std::cout << "  Rasterization: " << raster << " with a maximum CTA swizzle of " << options.swizzle << std::endl;
     std::cout << "  Avg runtime: " << result.avg_runtime_ms << " ms" << std::endl;
     std::cout << "  GFLOPS: " << result.gflops << std::endl;
   }
@@ -555,7 +576,7 @@ int main(int argc, char const **args) {
   // Parse options
   //
 
-  Options options;
+  Options<RasterOrderOptions> options;
 
   options.parse(argc, args);
 

@@ -45,9 +45,13 @@
 
     3. This example uses the Warp Specialized kernel design (see /media/docs/efficient_gemm.md for details).
 
+    4. A simple way to tune the CTA rasterization direction and swizzle pattern of Hopper kernels. Both the 
+    CTA rasterization direction and swizzle pattern impact cross-CTA locality of accesses. By tuning we can 
+    improve performance.
+
     Examples:
 
-      $ ./examples/48_hopper_warp_specialized_gemm/48_hopper_warp_specialized_gemm --m=2048 --n=2048 --k=2048
+      $ ./examples/48_hopper_warp_specialized_gemm/48_hopper_warp_specialized_gemm --m=2048 --n=2048 --k=2048 --rasterization=N --swizzle=2
 */
 
 #include <iostream>
@@ -63,6 +67,7 @@
 #include "cutlass/epilogue/collective/collective_builder.hpp"
 #include "cutlass/gemm/device/gemm_universal_adapter.h"
 #include "cutlass/gemm/kernel/gemm_universal.hpp"
+#include "cutlass/gemm/kernel/tile_scheduler_params.h"
 
 #include "cutlass/util/command_line.h"
 #include "cutlass/util/distribution.h"
@@ -175,6 +180,8 @@ cutlass::DeviceAllocation<typename Gemm::EpilogueOutputOp::ElementOutput> block_
 /// Testbed utility types
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90Params::RasterOrderOptions;
+
 // Command line options parsing
 struct Options {
 
@@ -183,12 +190,16 @@ struct Options {
   float alpha, beta;
   int iterations;
   int m, n, k;
+  RasterOrderOptions raster;
+  int swizzle;
 
   Options():
     help(false),
     m(5120), n(4096), k(4096),
     alpha(1.f), beta(0.f),
-    iterations(1000)
+    iterations(1000),
+    raster(RasterOrderOptions::Heuristic),
+    swizzle(1)
   { }
 
   // Parses the command line
@@ -206,6 +217,21 @@ struct Options {
     cmd.get_cmd_line_argument("alpha", alpha, 1.f);
     cmd.get_cmd_line_argument("beta", beta, 0.f);
     cmd.get_cmd_line_argument("iterations", iterations);
+
+    char raster_char;
+    cmd.get_cmd_line_argument("raster", raster_char);
+
+    if (raster_char == 'N' || raster_char == 'n') {
+      raster = RasterOrderOptions::AlongN;
+    }
+    else if (raster_char == 'M' || raster_char == 'm') {
+      raster = RasterOrderOptions::AlongM;
+    }
+    else if (raster_char == 'H' || raster_char == 'h') {
+      raster = RasterOrderOptions::Heuristic;
+    }
+
+    cmd.get_cmd_line_argument("swizzle", swizzle, 1);
   }
 
   /// Prints the usage statement.
@@ -220,6 +246,8 @@ struct Options {
       << "  --k=<int>                   Sets the K extent of the GEMM\n"
       << "  --alpha=<f32>               Epilogue scalar alpha\n"
       << "  --beta=<f32>                Epilogue scalar beta\n\n"
+      << "  --raster=<char>             CTA Rasterization direction (N for along N, M for along M, and H for heuristic)\n\n"
+      << "  --swizzle=<int>             CTA Rasterization swizzle\n\n"
       << "  --iterations=<int>          Number of profiling iterations to perform.\n\n";
 
     out
@@ -320,6 +348,10 @@ typename Gemm::Arguments args_from_options(const Options &options)
     {{options.alpha, options.beta}, block_C.get(), stride_C, block_D.get(), stride_D}
   };
 
+  arguments.scheduler.raster_order = options.raster;
+  // The tile scheduler will swizzle up to 8 and with the nearest multiple of 2 (i.e., 1, 2, 4, and 8) 
+  arguments.scheduler.max_swizzle_size = options.swizzle;
+
   return arguments;
 }
 
@@ -408,7 +440,17 @@ int run(Options &options)
     result.avg_runtime_ms = double(elapsed_ms) / double(options.iterations);
     result.gflops = options.gflops(result.avg_runtime_ms / 1000.0);
 
+    std::string raster = "Heuristic";
+
+    if (options.raster == RasterOrderOptions::AlongN) {
+      raster = "Along N";
+    }
+    else if (options.raster == RasterOrderOptions::AlongM) {
+      raster = "Along M";
+    }
+
     std::cout << "  Problem Size: " << options.m << 'x' << options.n << 'x' << options.k << std::endl;
+    std::cout << "  Rasterization: " << raster << " with a maximum CTA swizzle of " << options.swizzle << std::endl;
     std::cout << "  Avg runtime: " << result.avg_runtime_ms << " ms" << std::endl;
     std::cout << "  GFLOPS: " << result.gflops << std::endl;
   }

@@ -292,6 +292,7 @@ struct GemmUniversalArguments {
   int sm_count{0};
 
   library::RasterOrder raster_order{};
+  int swizzle_size{1};
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

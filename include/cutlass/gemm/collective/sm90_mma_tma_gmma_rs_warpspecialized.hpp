@@ -110,7 +110,8 @@ struct CollectiveMma<
   using SmemCopyAtomB = SmemCopyAtomB_;
 
   using CtaShape_MNK = decltype(shape_div(TileShape{}, ClusterShape{}));
-  // Swap and transpose A/B for A k-major layout and B mn-major layout since WGMMA is k-major only (e.g. tf32, Fp32, Int8, Fp8 WGMMA)
+  // Swap and transpose A/B for A k-major layout and B mn-major layout since WGMMA is k-major only
+  // (e.g. tf32, Fp32, Int8, Fp8 WGMMA)
   static constexpr bool IsLayoutAkBmn =
     cute::is_same_v<gemm::detail::StrideToLayoutTagA_t<StrideA>, layout::RowMajor> &&
     cute::is_same_v<gemm::detail::StrideToLayoutTagB_t<StrideB>, layout::RowMajor>;
@@ -530,14 +531,27 @@ struct CollectiveMma<
     // Define C accumulators and A/B partitioning
     //
 
+    // Layout of warp group to thread mapping
+
+    static_assert(stride<0>(typename TiledMma::BLayout{}) == 0 and
+                  size<0>(typename TiledMma::BLayout{}) == NumThreadsPerWarpGroup, 
+                  "Stride of the first mode must be 0 and the size of the mode must be NumThreadsPerWarpGroup");
+
+    constexpr int MmaWarpGroups = size(TiledMma{}) / NumThreadsPerWarpGroup;
+    Layout warp_group_thread_layout = make_layout(Int<MmaWarpGroups>{}, 
+                                                  Int<NumThreadsPerWarpGroup>{});
+
+    int warp_group_idx = __shfl_sync(0xFFFFFFFF, thread_idx / NumThreadsPerWarpGroup, 0);
+
     TiledMma tiled_mma;
-    auto thread_mma = tiled_mma.get_thread_slice(thread_idx);
+    auto mma_thread_slice = tiled_mma.get_thread_slice(thread_idx);
+    auto mma_warpgroup_slice = tiled_mma.get_slice(warp_group_thread_layout(warp_group_idx));
 
     // Allocate fragments and descriptors
-    Tensor tCsA = thread_mma.partition_A(sA);
-    Tensor tCrA = thread_mma.partition_fragment_A(sA(_,_,Int<0>{}));                          // (MMA,MMA_M,MMA_K,PIPE)
-    Tensor tCsB = thread_mma.partition_B(gmma_sB_position_dependent);                         // (MMA,MMA_N,MMA_K,PIPE)
-    Tensor tCrB = thread_mma.make_fragment_B(tCsB);                                           // (MMA,MMA_N,MMA_K,PIPE)
+    Tensor tCsA = mma_thread_slice.partition_A(sA);
+    Tensor tCrA = mma_thread_slice.partition_fragment_A(sA(_,_,Int<0>{}));                    // (MMA,MMA_M,MMA_K,PIPE)
+    Tensor tCsB = mma_warpgroup_slice.partition_B(gmma_sB_position_dependent);                // (MMA,MMA_N,MMA_K,PIPE)
+    Tensor tCrB = mma_warpgroup_slice.make_fragment_B(tCsB);                                  // (MMA,MMA_N,MMA_K,PIPE)
 
     //
     // Copy Atom A retiling

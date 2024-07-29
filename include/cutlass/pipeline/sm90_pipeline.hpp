@@ -240,7 +240,7 @@ public :
       , full_barrier_ptr_(&storage.full_barrier_[0])
       , empty_barrier_ptr_(&storage.empty_barrier_[0]) {
 
-    int warp_idx = canonical_warp_idx();
+    int warp_idx = canonical_warp_idx_sync();
     int lane_predicate = cute::elect_one_sync();
 
     if (warp_idx == 0 && lane_predicate == 1) {
@@ -655,7 +655,7 @@ public :
     , full_barrier_ptr_(storage.full_barrier_.data())
     , empty_barrier_ptr_(storage.empty_barrier_.data()) {
 
-    int warp_idx = canonical_warp_idx();
+    int warp_idx = canonical_warp_idx_sync();
     int lane_predicate = cute::elect_one_sync();
 
     // Barrier FULL, EMPTY init
@@ -874,7 +874,7 @@ public :
       full_barrier_ptr_(&storage.full_barrier_[0]),
       empty_barrier_ptr_(&storage.empty_barrier_[0]) {
 
-    int warp_idx = canonical_warp_idx();
+    int warp_idx = canonical_warp_idx_sync();
     int lane_predicate = cute::elect_one_sync();
 
     // Barrier FULL, EMPTY init
@@ -1094,7 +1094,7 @@ public:
       barrier_ptr_(&storage.barrier_[0][0]),
       // Group 0 - starts with an opposite phase
       stage_({0, params.group_id == 0, 0}) {
-    int warp_idx = canonical_warp_idx();
+    int warp_idx = canonical_warp_idx_sync();
     int lane_predicate = cute::elect_one_sync();
 
     // Barrier FULL, EMPTY init
