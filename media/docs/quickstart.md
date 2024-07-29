@@ -179,10 +179,12 @@ $ make test_unit_gemm_warp -j
 To minimize compilation time, specific GPU architectures can be enabled via the CMake command,
 selected by [CUDA Compute Capability.](https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#compute-capabilities)
 
-**NVIDIA Ampere Architecture.**
+**NVIDIA Hopper Architecture.**
 ```bash
 $ cmake .. -DCUTLASS_NVCC_ARCHS=90a              # compiles for NVIDIA Hopper GPU architecture
 ```
+
+**NVIDIA Ampere Architecture.**
 
 ```bash
 $ cmake .. -DCUTLASS_NVCC_ARCHS=80               # compiles for NVIDIA Ampere GPU architecture
