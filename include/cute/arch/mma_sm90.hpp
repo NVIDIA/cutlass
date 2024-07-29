@@ -556,17 +556,41 @@ ss_op_selector()
       if constexpr (Tile_N % 256 == 0) {
         return SM90_64x256x16_F32F16F16_SS<MajorA, MajorB, Args...>{};
       }
+      else if constexpr (Tile_N % 240 == 0) {
+        return SM90_64x240x16_F32F16F16_SS<MajorA, MajorB, Args...>{};
+      }
+      else if constexpr (Tile_N % 224 == 0) {
+        return SM90_64x224x16_F32F16F16_SS<MajorA, MajorB, Args...>{};
+      }
       else if constexpr (Tile_N % 192 == 0) {
         return SM90_64x192x16_F32F16F16_SS<MajorA, MajorB, Args...>{};
+      }
+      else if constexpr (Tile_N % 176 == 0) {
+        return SM90_64x176x16_F32F16F16_SS<MajorA, MajorB, Args...>{};
+      }
+      else if constexpr (Tile_N % 160 == 0) {
+        return SM90_64x160x16_F32F16F16_SS<MajorA, MajorB, Args...>{};
+      }
+      else if constexpr (Tile_N % 144 == 0) {
+        return SM90_64x144x16_F32F16F16_SS<MajorA, MajorB, Args...>{};
       }
       else if constexpr (Tile_N % 128 == 0) {
         return SM90_64x128x16_F32F16F16_SS<MajorA, MajorB, Args...>{};
       }
+      else if constexpr (Tile_N % 112 == 0) {
+        return SM90_64x112x16_F32F16F16_SS<MajorA, MajorB, Args...>{};
+      }
       else if constexpr (Tile_N % 96 == 0) {
         return SM90_64x96x16_F32F16F16_SS<MajorA, MajorB, Args...>{};
       }
+      else if constexpr (Tile_N % 80 == 0) {
+        return SM90_64x80x16_F32F16F16_SS<MajorA, MajorB, Args...>{};
+      }
       else if constexpr (Tile_N % 64 == 0) {
         return SM90_64x64x16_F32F16F16_SS<MajorA, MajorB, Args...>{};
+      }
+      else if constexpr (Tile_N % 48 == 0) {
+        return SM90_64x48x16_F32F16F16_SS<MajorA, MajorB, Args...>{};
       }
       else if constexpr (Tile_N % 32 == 0) {
         return SM90_64x32x16_F32F16F16_SS<MajorA, MajorB, Args...>{};
@@ -590,17 +614,41 @@ ss_op_selector()
       if constexpr (Tile_N % 256 == 0) {
         return SM90_64x256x16_F32BF16BF16_SS<MajorA, MajorB, Args...>{};
       }
+      else if constexpr (Tile_N % 240 == 0) {
+        return SM90_64x240x16_F32BF16BF16_SS<MajorA, MajorB, Args...>{};
+      }
+      else if constexpr (Tile_N % 224 == 0) {
+        return SM90_64x224x16_F32BF16BF16_SS<MajorA, MajorB, Args...>{};
+      }
       else if constexpr (Tile_N % 192 == 0) {
         return SM90_64x192x16_F32BF16BF16_SS<MajorA, MajorB, Args...>{};
+      }
+      else if constexpr (Tile_N % 176 == 0) {
+        return SM90_64x176x16_F32BF16BF16_SS<MajorA, MajorB, Args...>{};
+      }
+      else if constexpr (Tile_N % 160 == 0) {
+        return SM90_64x160x16_F32BF16BF16_SS<MajorA, MajorB, Args...>{};
+      }
+      else if constexpr (Tile_N % 144 == 0) {
+        return SM90_64x144x16_F32BF16BF16_SS<MajorA, MajorB, Args...>{};
       }
       else if constexpr (Tile_N % 128 == 0) {
         return SM90_64x128x16_F32BF16BF16_SS<MajorA, MajorB, Args...>{};
       }
+      else if constexpr (Tile_N % 112 == 0) {
+        return SM90_64x112x16_F32BF16BF16_SS<MajorA, MajorB, Args...>{};
+      }
       else if constexpr (Tile_N % 96 == 0) {
         return SM90_64x96x16_F32BF16BF16_SS<MajorA, MajorB, Args...>{};
       }
+      else if constexpr (Tile_N % 80 == 0) {
+        return SM90_64x80x16_F32BF16BF16_SS<MajorA, MajorB, Args...>{};
+      }
       else if constexpr (Tile_N % 64 == 0) {
         return SM90_64x64x16_F32BF16BF16_SS<MajorA, MajorB, Args...>{};
+      }
+      else if constexpr (Tile_N % 48 == 0) {
+        return SM90_64x48x16_F32BF16BF16_SS<MajorA, MajorB, Args...>{};
       }
       else if constexpr (Tile_N % 32 == 0) {
         return SM90_64x32x16_F32BF16BF16_SS<MajorA, MajorB, Args...>{};
@@ -1011,17 +1059,41 @@ rs_op_selector()
       if constexpr (Tile_N % 256 == 0) {
         return SM90_64x256x16_F32F16F16_RS<MajorA, MajorB, Args...>{};
       }
+      else if constexpr (Tile_N % 240 == 0) {
+        return SM90_64x240x16_F32F16F16_RS<MajorA, MajorB, Args...>{};
+      }
+      else if constexpr (Tile_N % 224 == 0) {
+        return SM90_64x224x16_F32F16F16_RS<MajorA, MajorB, Args...>{};
+      }
       else if constexpr (Tile_N % 192 == 0) {
         return SM90_64x192x16_F32F16F16_RS<MajorA, MajorB, Args...>{};
+      }
+      else if constexpr (Tile_N % 176 == 0) {
+        return SM90_64x176x16_F32F16F16_RS<MajorA, MajorB, Args...>{};
+      }
+      else if constexpr (Tile_N % 160 == 0) {
+        return SM90_64x160x16_F32F16F16_RS<MajorA, MajorB, Args...>{};
+      }
+      else if constexpr (Tile_N % 144 == 0) {
+        return SM90_64x144x16_F32F16F16_RS<MajorA, MajorB, Args...>{};
       }
       else if constexpr (Tile_N % 128 == 0) {
         return SM90_64x128x16_F32F16F16_RS<MajorA, MajorB, Args...>{};
       }
+      else if constexpr (Tile_N % 112 == 0) {
+        return SM90_64x112x16_F32F16F16_RS<MajorA, MajorB, Args...>{};
+      }
       else if constexpr (Tile_N % 96 == 0) {
         return SM90_64x96x16_F32F16F16_RS<MajorA, MajorB, Args...>{};
       }
+      else if constexpr (Tile_N % 80 == 0) {
+        return SM90_64x80x16_F32F16F16_RS<MajorA, MajorB, Args...>{};
+      }
       else if constexpr (Tile_N % 64 == 0) {
         return SM90_64x64x16_F32F16F16_RS<MajorA, MajorB, Args...>{};
+      }
+      else if constexpr (Tile_N % 48 == 0) {
+        return SM90_64x48x16_F32F16F16_RS<MajorA, MajorB, Args...>{};
       }
       else if constexpr (Tile_N % 32 == 0) {
         return SM90_64x32x16_F32F16F16_RS<MajorA, MajorB, Args...>{};
@@ -1045,17 +1117,41 @@ rs_op_selector()
       if constexpr (Tile_N % 256 == 0) {
         return SM90_64x256x16_F32BF16BF16_RS<MajorA, MajorB, Args...>{};
       }
+      else if constexpr (Tile_N % 240 == 0) {
+        return SM90_64x240x16_F32BF16BF16_RS<MajorA, MajorB, Args...>{};
+      }
+      else if constexpr (Tile_N % 224 == 0) {
+        return SM90_64x224x16_F32BF16BF16_RS<MajorA, MajorB, Args...>{};
+      }
       else if constexpr (Tile_N % 192 == 0) {
         return SM90_64x192x16_F32BF16BF16_RS<MajorA, MajorB, Args...>{};
+      }
+      else if constexpr (Tile_N % 176 == 0) {
+        return SM90_64x176x16_F32BF16BF16_RS<MajorA, MajorB, Args...>{};
+      }
+      else if constexpr (Tile_N % 160 == 0) {
+        return SM90_64x160x16_F32BF16BF16_RS<MajorA, MajorB, Args...>{};
+      }
+      else if constexpr (Tile_N % 144 == 0) {
+        return SM90_64x144x16_F32BF16BF16_RS<MajorA, MajorB, Args...>{};
       }
       else if constexpr (Tile_N % 128 == 0) {
         return SM90_64x128x16_F32BF16BF16_RS<MajorA, MajorB, Args...>{};
       }
+      else if constexpr (Tile_N % 112 == 0) {
+        return SM90_64x112x16_F32BF16BF16_RS<MajorA, MajorB, Args...>{};
+      }
       else if constexpr (Tile_N % 96 == 0) {
         return SM90_64x96x16_F32BF16BF16_RS<MajorA, MajorB, Args...>{};
       }
+      else if constexpr (Tile_N % 80 == 0) {
+        return SM90_64x80x16_F32BF16BF16_RS<MajorA, MajorB, Args...>{};
+      }
       else if constexpr (Tile_N % 64 == 0) {
         return SM90_64x64x16_F32BF16BF16_RS<MajorA, MajorB, Args...>{};
+      }
+      else if constexpr (Tile_N % 48 == 0) {
+        return SM90_64x48x16_F32BF16BF16_RS<MajorA, MajorB, Args...>{};
       }
       else if constexpr (Tile_N % 32 == 0) {
         return SM90_64x32x16_F32BF16BF16_RS<MajorA, MajorB, Args...>{};
