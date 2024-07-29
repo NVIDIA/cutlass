@@ -44,7 +44,7 @@ CUTE_HOST_DEVICE constexpr
 bool
 is_byte_aligned(void const* const ptr)
 {
-  static_assert(N > 0 && (N & (N - 1)) == 0, "N must be a power of 2 in alignment check");
+  static_assert(has_single_bit(N), "N must be a power of 2 in alignment check");
   return (reinterpret_cast<uintptr_t>(ptr) & (N-1)) == 0;
 }
 

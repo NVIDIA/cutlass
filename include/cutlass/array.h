@@ -786,6 +786,24 @@ struct reciprocal_approximate<Array<T, N>> {
 };
 
 template <typename T, int N>
+struct reciprocal_approximate_ftz<Array<T, N>> {
+  
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &lhs) const {
+
+    Array<T, N> result;
+    reciprocal_approximate_ftz<T> scalar_op;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = scalar_op(lhs[i]);
+    }
+
+    return result;
+  }
+};
+
+template <typename T, int N>
 struct maximum<Array<T, N>, false> {
 
   CUTLASS_HOST_DEVICE
@@ -978,6 +996,10 @@ struct minimum<Array<T, N>, true> {
     return result;
   }
 };
+
+template <typename T, int N>
+struct minimum_with_nan_propagation<Array<T, N>> : minimum<Array<T, N>, true> 
+{};
 
 template <typename T, int N>
 struct negate<Array<T, N>> {

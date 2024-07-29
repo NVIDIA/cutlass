@@ -127,7 +127,7 @@ public:
   CUTLASS_HOST_DEVICE
   static bool
   can_implement(Arguments const& args) {
-    return true;
+    return args.max_swizzle_size >= 1;
   }
 
   CUTLASS_HOST_DEVICE
@@ -206,18 +206,18 @@ public:
     int32_t log_swizzle_size,
     RasterOrder raster_order) {
 
-    auto [cta_m_in_cluster, cta_n_in_cluster, _] = cute::block_id_in_cluster();
-
     uint64_t minor_work_idx, major_work_idx, cluster_minor_offset;
     if (raster_order == RasterOrder::AlongN) {
       minor_work_idx = static_cast<uint64_t>(tile_m);
       major_work_idx = static_cast<uint64_t>(tile_n);
-      cluster_minor_offset = cta_m_in_cluster;
+      uint64_t cluster_m = divmod_cluster_shape_minor.divide(tile_m) * divmod_cluster_shape_minor.divisor;
+      cluster_minor_offset = tile_m - cluster_m;
     }
     else {
       major_work_idx = static_cast<uint64_t>(tile_m);
       minor_work_idx = static_cast<uint64_t>(tile_n);
-      cluster_minor_offset = cta_n_in_cluster;
+      uint64_t cluster_n = divmod_cluster_shape_minor.divide(tile_n) * divmod_cluster_shape_minor.divisor;
+      cluster_minor_offset = tile_n - cluster_n;
     }
 
     uint64_t cluster_idx_minor, cluster_idx_major, cluster_major_offset;
@@ -247,21 +247,6 @@ public:
       to_gemm_coord(cluster_shape),
       cta_m, cta_n
     );
-  }
-  // Kernel helper function to get next work ID
-  template <class WorkIdPipeline, class WorkIdPipelineState>
-  CUTLASS_DEVICE
-  auto
-  fetch_next_work(
-    WorkTileInfo work_tile_info,
-    WorkIdPipeline& work_id_pipeline,
-    WorkIdPipelineState work_id_pipe_consumer_state) {
-      WorkTileInfo new_work_tile_info;
-      advance_to_next_work();
-      new_work_tile_info = get_current_work();
-
-    // Return true to indicate that the WorkID pipeline state should be advanced
-    return cute::make_tuple(new_work_tile_info, true);
   }
 
   CUTLASS_DEVICE

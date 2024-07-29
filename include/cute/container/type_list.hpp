@@ -30,18 +30,23 @@
  **************************************************************************************************/
 #pragma once
 
-#include <cute/numeric/integral_constant.hpp>
+#include <cute/config.hpp>
+#include <cute/util/type_traits.hpp>
 
 namespace cute
 {
 
-template <class T>
-struct type_c {
-  using type = T;
-};
-
 template <class... T>
 struct type_list {};
+
+// get<I> for type_list<T...>
+//   requires tuple_element_t<I,type_list<T...>> to have std::is_default_constructible
+template <size_t I, class... T>
+CUTE_HOST_DEVICE constexpr
+CUTE_STL_NAMESPACE::tuple_element_t<I, type_list<T...>>
+get(type_list<T...> const& t) noexcept {
+  return {};
+}
 
 } // end namespace cute
 
@@ -55,26 +60,6 @@ struct type_list {};
 #include <tuple>
 #endif
 
-#include <cute/container/tuple.hpp>
-
-namespace cute
-{
-
-template <int I, class... T>
-CUTE_HOST_DEVICE constexpr
-CUTE_STL_NAMESPACE::tuple_element_t<I, type_list<T...>>
-get(type_list<T...>&) noexcept {
-  return {};
-}
-template <int I, class... T>
-CUTE_HOST_DEVICE constexpr
-CUTE_STL_NAMESPACE::tuple_element_t<I, type_list<T...>>
-get(type_list<T...> const& t) noexcept {
-  return {};
-}
-
-} // end namespace cute
-
 namespace CUTE_STL_NAMESPACE
 {
 
@@ -85,8 +70,9 @@ struct tuple_size<cute::type_list<T...>>
 
 template <size_t I, class... T>
 struct tuple_element<I, cute::type_list<T...>>
-    : cute::type_c<typename CUTE_STL_NAMESPACE::tuple_element<I, CUTE_STL_NAMESPACE::tuple<T...>>::type>
-{};
+{
+  using type = typename CUTE_STL_NAMESPACE::tuple_element<I, CUTE_STL_NAMESPACE::tuple<T...>>::type;
+};
 
 template <class... T>
 struct tuple_size<const cute::type_list<T...>>
@@ -95,8 +81,9 @@ struct tuple_size<const cute::type_list<T...>>
 
 template <size_t I, class... T>
 struct tuple_element<I, const cute::type_list<T...>>
-    : cute::type_c<typename CUTE_STL_NAMESPACE::tuple_element<I, CUTE_STL_NAMESPACE::tuple<T...>>::type>
-{};
+{
+  using type = typename CUTE_STL_NAMESPACE::tuple_element<I, CUTE_STL_NAMESPACE::tuple<T...>>::type;
+};
 
 } // end namespace std
 
@@ -119,8 +106,9 @@ struct tuple_size<cute::type_list<T...>>
 
 template <size_t I, class... T>
 struct tuple_element<I, cute::type_list<T...>>
-    : cute::type_c<typename CUTE_STL_NAMESPACE::tuple_element<I, CUTE_STL_NAMESPACE::tuple<T...>>::type>
-{};
+{
+  using type = typename CUTE_STL_NAMESPACE::tuple_element<I, CUTE_STL_NAMESPACE::tuple<T...>>::type;
+};
 
 template <class... T>
 struct tuple_size<const cute::type_list<T...>>
@@ -129,8 +117,9 @@ struct tuple_size<const cute::type_list<T...>>
 
 template <size_t I, class... T>
 struct tuple_element<I, const cute::type_list<T...>>
-    : cute::type_c<typename CUTE_STL_NAMESPACE::tuple_element<I, CUTE_STL_NAMESPACE::tuple<T...>>::type>
-{};
+{
+  using type = typename CUTE_STL_NAMESPACE::tuple_element<I, CUTE_STL_NAMESPACE::tuple<T...>>::type;
+};
 
 } // end namespace std
 #endif // CUTE_STL_NAMESPACE_IS_CUDA_STD

@@ -238,11 +238,10 @@ public:
   /// Determines whether the Implicit GEMM can execute the given problem.
   CUTLASS_HOST_DEVICE
   static Status can_implement(ConvProblemSize const &problem_size) {
-
     auto input_channels = (IsDeconv ? problem_size.K : problem_size.C);
     auto output_channels = (IsDeconv ? problem_size.C : problem_size.K);
     // check alignment constraint on iterator's contiguous dimension
-    if (input_channels % (128/sizeof_bits<Element>::value)) {
+    if (input_channels % AccessType::kElements) {
       return Status::kErrorInvalidProblem;
     }
     return Status::kSuccess;

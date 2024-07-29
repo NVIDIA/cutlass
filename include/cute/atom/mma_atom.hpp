@@ -31,11 +31,9 @@
 #pragma once
 
 #include <cute/config.hpp>
-
 #include <cute/arch/mma.hpp>
-
 #include <cute/atom/mma_traits.hpp>
-#include <cute/tensor.hpp>
+#include <cute/tensor_impl.hpp>
 #include <cute/util/type_traits.hpp>
 
 namespace cute {
@@ -102,7 +100,7 @@ struct MMA_Atom<MMA_Traits<Args...>>
     static_assert(BLayout::rank == 1, "Expected rank-1 B tensor");
     static_assert(CLayout::rank == 1, "Expected rank-1 C tensor");
 
-    return mma_unpack(*this, D, A, B, C);
+    return mma_unpack(static_cast<Traits const&>(*this), D, A, B, C);
   }
 
   // Three arguments reproduces C
@@ -245,12 +243,9 @@ struct TiledMMA : MMA_Atom
   thrfrg_C(CTensor&& ctensor) const
   {
     CUTE_STATIC_ASSERT_V(rank(ctensor) >= Int<2>{});
-    //CUTE_STATIC_ASSERT_V(size<0>(ctensor) % size<0>(TiledShape_MNK{}) == Int<0>{});
-    //CUTE_STATIC_ASSERT_V(size<1>(ctensor) % size<1>(TiledShape_MNK{}) == Int<0>{});
-
     // Reorder the tensor for the TiledAtom
-    auto t_tile = make_tile(get<0>(PermutationMNK{}),
-                            get<1>(PermutationMNK{}));
+    auto t_tile = make_tile(permutation_mnk<0>(),
+                            permutation_mnk<1>());
     auto t_tensor = logical_divide(ctensor, t_tile);                 // (PermM,PermN)
 
     // Tile the tensor for the Atom
@@ -287,12 +282,9 @@ struct TiledMMA : MMA_Atom
   thrfrg_A(ATensor&& atensor) const
   {
     CUTE_STATIC_ASSERT_V(rank(atensor) >= Int<2>{});
-    //CUTE_STATIC_ASSERT_V(size<0>(atensor) % size<0>(TiledShape_MNK{}) == Int<0>{});
-    //CUTE_STATIC_ASSERT_V(size<1>(atensor) % size<2>(TiledShape_MNK{}) == Int<0>{});
-
     // Reorder the tensor for the TiledAtom
-    auto t_tile = make_tile(get<0>(PermutationMNK{}),
-                            get<2>(PermutationMNK{}));
+    auto t_tile = make_tile(permutation_mnk<0>(),
+                            permutation_mnk<2>());
     auto t_tensor = logical_divide(atensor, t_tile);                 // (PermM,PermK)
 
     // Tile the tensor for the Atom
@@ -329,12 +321,9 @@ struct TiledMMA : MMA_Atom
   thrfrg_B(BTensor&& btensor) const
   {
     CUTE_STATIC_ASSERT_V(rank(btensor) >= Int<2>{});
-    //CUTE_STATIC_ASSERT_V(size<0>(btensor) % size<1>(TiledShape_MNK{}) == Int<0>{});
-    //CUTE_STATIC_ASSERT_V(size<1>(btensor) % size<2>(TiledShape_MNK{}) == Int<0>{});
-
     // Reorder the tensor for the TiledAtom
-    auto t_tile = make_tile(get<1>(PermutationMNK{}),
-                            get<2>(PermutationMNK{}));
+    auto t_tile = make_tile(permutation_mnk<1>(),
+                            permutation_mnk<2>());
     auto t_tensor = logical_divide(btensor, t_tile);                 // (PermN,PermK)
 
     // Tile the tensor for the Atom
@@ -377,21 +366,23 @@ struct TiledMMA : MMA_Atom
   // Utility for printing and visualization
   //
 
+  // The permutation applied to the MNK-mode data
+  template <int I>
+  CUTE_HOST_DEVICE constexpr
+  auto
+  permutation_mnk() const {
+    static_assert(0 <= I && I < 3);
+    auto perm = get<I>(PermutationMNK{});
+    return conditional_return(is_underscore<decltype(perm)>{}, size<I>(AtomShape_MNK{}) * size<I+1>(get_thr_layout_vmnk()), perm);
+  }
+
   // The size of the MNK-mode
   template <int I>
   CUTE_HOST_DEVICE constexpr
   auto
   tile_size_mnk() const {
     static_assert(0 <= I && I < 3);
-    auto core_size = size<I>(AtomShape_MNK{}) * size<I+1>(get_thr_layout_vmnk());
-    [[maybe_unused]] auto perm_size = size<I>(PermutationMNK{});
-    if constexpr (is_underscore<decltype(perm_size)>::value) {
-      return core_size;
-    } else {
-      return cute::max(core_size, perm_size);
-    }
-
-    CUTE_GCC_UNREACHABLE;
+    return size(permutation_mnk<I>());
   }
 
   CUTE_HOST_DEVICE constexpr

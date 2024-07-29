@@ -32,7 +32,7 @@
 
 #include <cute/arch/mma.hpp>
 
-#include <cute/tensor.hpp>
+#include <cute/tensor_impl.hpp>
 
 namespace cute
 {

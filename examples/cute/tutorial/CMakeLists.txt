@@ -53,3 +53,8 @@ cutlass_example_add_executable(
   tiled_copy.cu
 )
 
+cutlass_example_add_executable(
+  wgmma_sm90
+  wgmma_sm90.cu
+)
+

@@ -104,7 +104,7 @@ TEST(SM80_warp_gemm_mixed_input_tensor_op_crosswise_i8_f16, 128x128x64_64x64x64_
   using Shape = cutlass::gemm::GemmShape<64, 64, 64>;
   using InstructionShape = cutlass::gemm::GemmShape<16, 8, 16>;
   using ElementA = int8_t;
-  using ElementB = cutlass::half_t;;
+  using ElementB = cutlass::half_t;
   using ElementC = float;
   using LayoutA = cutlass::layout::RowMajorTensorOpMultiplicandCrosswise<
       cutlass::sizeof_bits<ElementA>::value, 64>;

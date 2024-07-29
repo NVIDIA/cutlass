@@ -293,7 +293,7 @@ template <
   typename InnerProductOp_ = multiply_add<ElementAccumulator_>
 >
 void make_gemm(Manifest &manifest) {
-  
+#if !defined(CUTLASS_PROFILER_DISABLE_REFERENCE)
   manifest.append(new GemmReferenceOperation<
     Provider::kReferenceHost,
     ElementA_, LayoutA_, TransformA,
@@ -317,6 +317,7 @@ void make_gemm(Manifest &manifest) {
     ConvertOp_,
     InnerProductOp_
   >);
+#endif
 }
 
 /// Helper to create NN, NT, TN, and TT GEMM layouts.

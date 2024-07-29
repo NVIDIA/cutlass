@@ -352,15 +352,16 @@ struct ConvProblemShape {
     }
   }
 
-  // Get problem shape MNK according to following table:
-  // |               |   Fprop   |   Dgrad   |   Wgrad   |
-  // |   ----        | --------- | --------  | --------  |
-  // |   Shape_M     | (Q,P,Z,N) | (W,H,D,N) | (K)       |
-  // |   Shape_N     | (K)       | (C)       | (C,S,R,T) |
-  // |   Shape_K     | (C,S,R,T) | (K,S,R,T) | (Q,P,Z,N) |
+  // Get problem shape MNKL according to following table:
+  // |               |   Fprop   |   Dgrad         |   Wgrad   |
+  // |   ----        | --------- | --------        | --------  |
+  // |   Shape_M     | (Q,P,Z,N) | (W/V,H/U,D/O,N) | (K)       |
+  // |   Shape_N     | (K)       | (C)             | (C,S,R,T) |
+  // |   Shape_K     | (C,S,R,T) | (K,S,R,T)       | (Q,P,Z,N) |
+  // |   Shape_L     | _1        | (V,U,O)         | _1        |
   CUTLASS_HOST_DEVICE
   constexpr auto
-  get_transformed_problem_shape_MNK() const {
+  get_transformed_problem_shape_MNKL() const {
     using cute::insert;
     using cute::make_shape;
     using cute::reverse;
@@ -370,32 +371,56 @@ struct ConvProblemShape {
       auto M_xformed = shape_C[0];
       auto N_xformed = reverse(take<1, RankT>(shape_C));
       auto K_xformed = reverse(take<0, RankT - 1>(shape_A));
+      auto L_xformed = cute::Int<1>{};
 
-      return make_shape(M_xformed, N_xformed, K_xformed);
+      return make_shape(M_xformed, N_xformed, K_xformed, L_xformed);
     }
     else if constexpr (ConvOp == conv::Operator::kFprop){
       auto M_xformed = reverse(take<0, RankT - 1>(shape_C));
       auto N_xformed = shape_C[RankT - 1];
       auto K_xformed = reverse(take<1, RankT>(shape_B));
+      auto L_xformed = cute::Int<1>{};
 
-      return make_shape(M_xformed, N_xformed, K_xformed);
+      return make_shape(M_xformed, N_xformed, K_xformed, L_xformed);
     }
     else if constexpr (ConvOp == conv::Operator::kDgrad) {
-      auto M_xformed = reverse(take<0,RankT - 1>(shape_C));
+      auto L_xformed = reverse(traversal_stride); // (V,U,O)
+      auto M_xformed = ceil_div(reverse(take<0,RankT - 1>(shape_C)), L_xformed);
       auto N_xformed = shape_C[RankT - 1];
       // shape_B: [K,T,R,S,C], K_xformed: [K,S,R,T]
       auto K_xformed = insert<0>(
                   (reverse(take<1,RankT - 1>(shape_B))),
                   shape_B[0]);
-      return make_shape(M_xformed, N_xformed, K_xformed);
+
+      return make_shape(M_xformed, N_xformed, K_xformed, L_xformed);
     }
   }
 
+  // Assuming im2col linearization
+  // Get problem shape MNKL according to following table:
+  // |               |   Fprop   |   Dgrad               |   Wgrad   |
+  // |   ----        | --------- | --------              | --------  |
+  // |   Shape_M     | (Q*P*Z*N) | ([W/V]*[H/U]*[D/O]*N) | (K)       |
+  // |   Shape_N     | (K)       | (C)                   | (C,S,R,T) |
+  // |   Shape_K     | (C,S,R,T) | (K,S,R,T)             | (Q*P*Z*N) |
+  // |   Shape_L     | _1        | (V*U*O)               | _1        |
+  CUTLASS_HOST_DEVICE
+  constexpr auto
+  get_linearized_problem_shape_MNKL() const {
+    auto [M, N, K, L] = get_transformed_problem_shape_MNKL();
+
+    if constexpr (ConvOp == conv::Operator::kFprop || ConvOp == conv::Operator::kDgrad) {
+      return cute::make_shape(cute::product(M), N, K, cute::product(L));
+    }
+    else if constexpr (ConvOp == conv::Operator::kWgrad) {
+      return cute::make_shape(M, N, cute::product(K), L);
+    }
+  }
 
   // Get A extents.
   // fprop: A extents array contains [N,D,H,W,C]. Turn that into ((W,H,D,N), (C))
-  // wgrad: A extents array contains [N,Z,P,Q,K]. Turn that into ((K), (Q,P,Z,N))
   // dgrad: A extents array contains [N,Z,P,Q,K]. Turn that into ((Q,P,Z,N), (K))
+  // wgrad: A extents array contains [N,Z,P,Q,K]. Turn that into ((K), (Q,P,Z,N))
   CUTLASS_HOST_DEVICE
   constexpr auto
   get_shape_A() const {
@@ -418,8 +443,8 @@ struct ConvProblemShape {
 
   // Get B extents.
   // fprop: B extents array contains [K,T,R,S,C]. Turn that into ((K), (C,S,R,T))
-  // wgrad: B extents array contains [N,D,H,W,C]. Turn that into ((C), (W,H,D,N))
   // dgrad: B extents array contains [K,T,R,S,C]. Turn that into ((C), (K,S,R,T))
+  // wgrad: B extents array contains [N,D,H,W,C]. Turn that into ((C), (W,H,D,N))
   CUTLASS_HOST_DEVICE
   constexpr auto
   get_shape_B() const {
@@ -444,6 +469,30 @@ struct ConvProblemShape {
         cute::insert<0>(
           reverse(take<1, RankT - 1>(shape_B)),
           shape_B[0]));
+    }
+  }
+
+  // Get C extents.
+  // fprop: C extents array contains [N,Z,P,Q,K]. Turn that into ((Q,P,Z,N), (K))
+  // dgrad: C extents array contains [N,D,H,W,C]. Turn that into ((W,H,D,N), (C))
+  // wgrad: C extents array contains [K,T,R,S,C]. Turn that into ((K), (C,S,R,T))
+  CUTLASS_HOST_DEVICE
+  constexpr auto
+  get_shape_C() const {
+    using cute::make_shape;
+    using cute::reverse;
+    using cute::take;
+
+    if constexpr (ConvOp == conv::Operator::kFprop ||
+                  ConvOp == conv::Operator::kDgrad) {
+      return make_shape(
+        reverse(take<0, RankT - 1>(shape_C)),
+        shape_C[RankT - 1]);
+    }
+    else if constexpr (ConvOp == conv::Operator::kWgrad) {
+      return make_shape(
+        shape_C[0],
+        reverse(take<1, RankT>(shape_C)));
     }
   }
 
@@ -529,7 +578,9 @@ private:
     // calculate n,z,p,q,k.
     // a helper lambda to compute a single spatial extent of the nzpqk tensor
     auto nzpqk_extent = [](int act_ext, int filter_ext, int pad_total, int dilation, int tstride) {
-      return 1 + (act_ext + pad_total - ((filter_ext -1) * dilation + 1)) / tstride;
+      auto tmp = act_ext + pad_total - ((filter_ext -1) * dilation + 1);
+      CUTLASS_ASSERT(tmp % tstride == 0);
+      return 1 + tmp / tstride;
     };
 
     shape_xformed_act[0] = shape_act[0]; // Activation N extent

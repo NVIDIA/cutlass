@@ -631,9 +631,10 @@ struct numeric_limits<cutlass::half_t> {
 }  // namespace std
 #endif
 
+namespace cutlass {
 namespace platform {
 
-/// std::numeric_limits
+/// Forward Declaration
 template <class T>
 struct numeric_limits;
 
@@ -696,6 +697,7 @@ struct numeric_limits<cutlass::half_t> {
   static cutlass::half_t denorm_min() { return cutlass::half_t::bitcast(0x0001); }
 };
 }  // namespace platform 
+}  // namespace cutlass
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 //

@@ -332,9 +332,6 @@ struct DescriptorIterator
   {
     return { GmmaDescriptor{desc_ + uint64_t(offset)} };
   }
-
-  CUTE_HOST_DEVICE friend void
-  print(DescriptorIterator) { printf("GMMA::DescriptorIterator"); }
 };
 
 template <class T>
@@ -351,6 +348,11 @@ DescriptorIterator
 recast_ptr(DescriptorIterator const& iter) {
   static_assert(is_same<NewT, uint64_t>::value, "Can only cast GmmaDescriptorIterator to uint64_t.");
   return iter;  // Do nothing, it will still dereference to GmmaDescriptor and decay to uint64_t
+}
+
+CUTE_HOST_DEVICE void
+print(DescriptorIterator) {
+  printf("GMMA::DescriptorIterator");
 }
 
 // The GMMA Traits below have custom fragment type flags for their smem desc tensors.

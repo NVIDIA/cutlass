@@ -125,6 +125,12 @@ struct Sm90AuxStore {
   }
 
   template <class ProblemShape>
+  static bool
+  can_implement(ProblemShape const& problem_shape, Arguments const& args) {
+    return true;
+  }
+
+  template <class ProblemShape>
   static size_t
   get_workspace_size(ProblemShape const& problem_shape, Arguments const& args) {
     return 0;
@@ -323,6 +329,12 @@ public:
   }
 
   template <class ProblemShape>
+  static bool
+  can_implement(ProblemShape const& problem_shape, Arguments const& args) {
+    return true;
+  }
+
+  template <class ProblemShape>
   static size_t
   get_workspace_size(ProblemShape const& problem_shape, Arguments const& args) {
     return 0;
@@ -368,24 +380,24 @@ public:
     return EmptyProducerLoadCallbacks{};
   }
 
-  template<class CTensor, class ResidueMN>
+  template<class CTensor, class ThrResidue>
   struct ConsumerStoreCallbacks : EmptyConsumerStoreCallbacks {
     CUTLASS_DEVICE
     ConsumerStoreCallbacks(
         int l_coord,
         CTensor tCcScalar,
-        ResidueMN residue_mn,
+        ThrResidue residue_tCcScalar,
         Params const& params)
       : scalar(params.reduction_identity),
         l_coord(l_coord),
         tCcScalar(tCcScalar),
-        residue_mn(residue_mn),
+        residue_tCcScalar(residue_tCcScalar),
         params(params) {}
 
     ElementCompute scalar;
     int l_coord;
     CTensor tCcScalar;                                                                 // (CPY,CPY_M,CPY_N,EPI_M,EPI_N)
-    ResidueMN residue_mn;
+    ThrResidue residue_tCcScalar;
     Params params;
 
     template <typename ElementAccumulator, typename ElementInput, int FragmentSize>
@@ -408,7 +420,7 @@ public:
 
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < FragmentSize; ++i) {
-        if (elem_less(tCcScalar_mn(epi_v * FragmentSize + i), residue_mn)) {
+        if (elem_less(tCcScalar_mn(epi_v * FragmentSize + i), residue_tCcScalar)) {
           scalar = reduce_input(scalar, frg_I[i]);
         }
       }
@@ -442,8 +454,8 @@ public:
   >
   CUTLASS_DEVICE auto
   get_consumer_store_callbacks(ConsumerStoreArgs<Args...> const& args) {
-    return ConsumerStoreCallbacks<decltype(args.tCcD), decltype(args.residue_mn)>(
-      get<3>(args.tile_coord_mnkl), args.tCcD, args.residue_mn, params);
+    return ConsumerStoreCallbacks<decltype(args.tCcD), decltype(args.residue_tCcD)>(
+      get<3>(args.tile_coord_mnkl), args.tCcD, args.residue_tCcD, params);
   }
 
 };
@@ -505,17 +517,17 @@ public:
     if constexpr (IsAtomic) {
       reduction_buffer = nullptr;
     }
-    else if constexpr (not FinalReduction) {
-      reduction_buffer = reinterpret_cast<ElementCompute*>(args.ptr_row);
-    }
-    else {
+    else if constexpr (FinalReduction) {
       auto [M, N, K, L] = problem_shape;
       auto [tile_M, tile_N, tile_K] = CtaTileShapeMNK{};
       size_t tile_counters_offset = product(ceil_div(make_shape(size<>(M), size<>(N), L), make_shape(tile_M, tile_N))) * tile_N * sizeof(ElementCompute);
-      tile_counters_offset = round_nearest(tile_counters_offset, sizeof(int));
+      tile_counters_offset = round_nearest(tile_counters_offset, MinWorkspaceAlignment);
 
       reduction_buffer = reinterpret_cast<ElementCompute*>(workspace);
       tile_counters = reinterpret_cast<int*>(reinterpret_cast<uint8_t*>(workspace) + tile_counters_offset);
+    }
+    else {
+      reduction_buffer = reinterpret_cast<ElementCompute*>(args.ptr_row);
     }
 
     return {
@@ -525,6 +537,12 @@ public:
       reduction_buffer,
       tile_counters
     };
+  }
+
+  template <class ProblemShape>
+  static bool
+  can_implement(ProblemShape const& problem_shape, Arguments const& args) {
+    return true;
   }
 
   template <class ProblemShape>
@@ -540,7 +558,7 @@ public:
     // Increment by size of reduction buffer
     workspace_size += product(ceil_div(make_shape(size<>(M),size<>(N),L), make_shape(tile_M, tile_N))) * tile_N * sizeof(ElementCompute);
     // Align and increment by size of tile counters
-    workspace_size = round_nearest(workspace_size, sizeof(int));
+    workspace_size = round_nearest(workspace_size, MinWorkspaceAlignment);
     workspace_size += cute::ceil_div(size<>(N), tile_N) * sizeof(int);
     return workspace_size;
   }
@@ -551,19 +569,25 @@ public:
     CudaHostAdapter* cuda_adapter = nullptr) {
     if constexpr (IsAtomic) {
       auto [M, N, K, L] = problem_shape;
-      Layout mRow_layout = make_layout(make_shape(M,N,L), args.dRow);
+      Layout mRow_layout = make_layout(make_shape(size<>(M),size<>(N),size<>(L)), args.dRow);
       if (args.ptr_row != nullptr) {
         return fill_workspace(args.ptr_row, ElementOutput(args.reduction_identity), cosize(mRow_layout), stream, cuda_adapter);
       }
       return Status::kSuccess;
     }
-    auto [M, N, K, L] = problem_shape;
-    auto [tile_M, tile_N, tile_K] = CtaTileShapeMNK{};
-    size_t tile_counters_offset = product(ceil_div(make_shape(size<>(M),size<>(N),L), make_shape(tile_M, tile_N))) * tile_N * sizeof(ElementCompute);
+    else if constexpr (FinalReduction) {
+      auto [M, N, K, L] = problem_shape;
+      auto [tile_M, tile_N, tile_K] = CtaTileShapeMNK{};
+      size_t tile_counters_offset = product(ceil_div(make_shape(size<>(M),size<>(N),L), make_shape(tile_M, tile_N))) * tile_N * sizeof(ElementCompute);
+      tile_counters_offset = round_nearest(tile_counters_offset, MinWorkspaceAlignment);
 
-    int* tile_counters = reinterpret_cast<int*>(reinterpret_cast<uint8_t*>(workspace) + tile_counters_offset);
-    size_t tile_counters_size = cute::ceil_div(size<>(N), tile_N) * sizeof(int);
-    return zero_workspace(tile_counters, tile_counters_size, stream);
+      int* tile_counters = reinterpret_cast<int*>(reinterpret_cast<uint8_t*>(workspace) + tile_counters_offset);
+      size_t tile_counters_size = cute::ceil_div(size<>(N), tile_N) * sizeof(int);
+      return zero_workspace(tile_counters, tile_counters_size, stream, cuda_adapter);
+    }
+    else {
+      return Status::kSuccess;
+    }
   }
 
   CUTLASS_DEVICE bool
@@ -615,7 +639,7 @@ public:
 
       auto& [ref_src, tCrRow, tCcRow, gRow_l, cRow, gBuf_ml, sBuf_layout,
         lane_layout_MN, lane_mn, warp_layout_MN, warp_mn,
-        tile_coord_mnkl, residue_mn, epi_tile, tiled_copy, thread_idx] = args_tuple;
+        tile_coord_mnkl, residue_cRow, residue_tCcRow, epi_tile, tiled_copy, thread_idx] = args_tuple;
       Tensor tCrRow_mn = tCrRow(_,_,_,epi_m,epi_n);
       Tensor tCcRow_mn = tCcRow(_,_,_,epi_m,epi_n);
 
@@ -627,13 +651,7 @@ public:
       Array frg_I = convert_input(frg_input);
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < FragmentSize; ++i) {
-        if constexpr (VisitCheckOOB) {
-          if (elem_less(tCcRow_mn(epi_v * FragmentSize + i), residue_mn)) {
-            ElementCompute& tCrRow_vmn = tCrRow_mn(epi_v * FragmentSize + i);
-            tCrRow_vmn = reduce_input(tCrRow_vmn, frg_I[i]);
-          }
-        }
-        else {
+        if (!VisitCheckOOB || elem_less(tCcRow_mn(epi_v * FragmentSize + i), residue_tCcRow)) {
           ElementCompute& tCrRow_vmn = tCrRow_mn(epi_v * FragmentSize + i);
           tCrRow_vmn = reduce_input(tCrRow_vmn, frg_I[i]);
         }
@@ -642,16 +660,16 @@ public:
       return frg_input;
     }
 
-    template <class STensor, class SyncFn>
+    template <class STensor, class SyncFn, class VTensor>
     CUTLASS_DEVICE void
-    reduce(STensor&& smem_buffer, SyncFn const& sync_fn, int epi_m, int epi_n, bool is_last_iteration) {
+    reduce(STensor&& smem_buffer, SyncFn const& sync_fn, int epi_m, int epi_n, bool is_last_iteration, VTensor visit_results) {
       if (not is_last_iteration) {
         return;
       }
 
       auto& [ref_src, tCrRow, tCcRow, gRow_l, cRow, gBuf_ml, sBuf_layout,
         lane_layout_MN, lane_mn, warp_layout_MN, warp_mn,
-        tile_coord_mnkl, residue_mn, epi_tile, tiled_copy, thread_idx] = args_tuple;
+        tile_coord_mnkl, residue_cRow, residue_tCcRow, epi_tile, tiled_copy, thread_idx] = args_tuple;
       auto [m, n, k, l] = tile_coord_mnkl;
       constexpr bool ReferenceSrc = decltype(ref_src)::value;
       if constexpr (EnableNullptr) {
@@ -661,7 +679,7 @@ public:
       }
 
       // fully OOB CTA in partially OOB cluster
-      if (not elem_less(cRow(_0{},_0{}), residue_mn)) {
+      if (not elem_less(cRow(_0{},_0{}), residue_cRow)) {
         return;
       }
 
@@ -702,7 +720,7 @@ public:
         if (is_reduced_lane) {
           CUTLASS_PRAGMA_UNROLL
           for (int i = 0; i < size(tCrRow_flt); ++i) {
-            if (elem_less(tCcRow_flt(i), residue_mn)) {
+            if (elem_less(tCcRow_flt(i), residue_tCcRow)) {
               reduce_output(&tCgRow_flt(i), convert_output(tCrRow_flt(i)));
             }
           }
@@ -733,6 +751,7 @@ public:
         static_assert(decltype(cosize(sBuf.layout()))::value * sizeof(ElementCompute) <=
                       decltype(cosize(smem_buffer.layout()))::value * sizeof(typename remove_cvref_t<STensor>::value_type),
                       "smem reduction buffer not large enough, use a larger epilogue tile");
+        sync_fn();
 
         // Dump warp reduction to smem workspace
         Tensor tCsBuf = sm90_partition_for_epilogue<ReferenceSrc>(sBuf(_,_,get<0>(warp_mn)), epi_tile, tiled_copy, thread_idx);
@@ -807,7 +826,7 @@ public:
 
         auto& [ref_src, tCrRow, tCcRow, gRow_l, cRow, gBuf_ml, sBuf_layout,
           lane_layout_MN, lane_mn, warp_layout_MN, warp_mn,
-          tile_coord_mnkl, residue_mn, epi_tile, tiled_copy, thread_idx] = args_tuple;
+          tile_coord_mnkl, residue_cRow, residue_tCcRow, epi_tile, tiled_copy, thread_idx] = args_tuple;
 
         using ReduceOutput = GmemReduceFn<ElementCompute>;
         using ConvertOutput = NumericConverter<ElementOutput, ElementCompute, RoundStyle>;
@@ -824,7 +843,7 @@ public:
             for (int ml = 1; ml < size(tRgBuf_ml); ++ml) {
               output = reduce_output(output, tRgBuf_ml(ml));
             }
-            if (elem_less(cRow(_0{},n), residue_mn)) {
+            if (elem_less(cRow(_0{},n), residue_cRow)) {
               gRow_l(_0{},n,_0{}) = convert_output(output);
             }
           }
@@ -833,7 +852,7 @@ public:
         else {
           CUTLASS_PRAGMA_NO_UNROLL
           for (int n = thread_idx; n < size<1>(gBuf_ml); n += size(tiled_copy)) {
-            bool do_store = elem_less(cRow(_0{},n), residue_mn);
+            bool do_store = elem_less(cRow(_0{},n), residue_cRow);
             CUTLASS_PRAGMA_NO_UNROLL
             for (int l = 0; l < size<3>(gBuf_ml); ++l) {
               Tensor tRgBuf_m = gBuf_ml(_0{},n,_,l);
@@ -910,7 +929,7 @@ public:
     auto args_tuple = make_tuple(
         bool_constant<ReferenceSrc>{}, cute::move(tCrRow), args.tCcD, gRow_l, args.cD, gBuf_ml, sBuf_layout,
         lane_layout_MN, lane_mn, warp_layout_MN, warp_mn,
-        args.tile_coord_mnkl, args.residue_mn, args.epi_tile, args.tiled_copy, args.thread_idx);
+        args.tile_coord_mnkl, args.residue_cD, args.residue_tCcD, args.epi_tile, args.tiled_copy, args.thread_idx);
     return ConsumerStoreCallbacks<decltype(args_tuple)>(cute::move(args_tuple), params);
   }
 };
@@ -971,17 +990,17 @@ public:
     if constexpr (IsAtomic) {
       reduction_buffer = nullptr;
     }
-    else if constexpr (not FinalReduction) {
-      reduction_buffer = reinterpret_cast<ElementCompute*>(args.ptr_col);
-    }
-    else {
+    else if constexpr (FinalReduction) {
       auto [M, N, K, L] = problem_shape;
       auto [tile_M, tile_N, tile_K] = CtaTileShapeMNK{};
       size_t tile_counters_offset = product(ceil_div(make_shape(M,N,L), make_shape(tile_M, tile_N))) * tile_M * sizeof(ElementCompute);
-      tile_counters_offset = round_nearest(tile_counters_offset, sizeof(int));
+      tile_counters_offset = round_nearest(tile_counters_offset, MinWorkspaceAlignment);
 
       reduction_buffer = reinterpret_cast<ElementCompute*>(workspace);
       tile_counters = reinterpret_cast<int*>(reinterpret_cast<uint8_t*>(workspace) + tile_counters_offset);
+    }
+    else {
+      reduction_buffer = reinterpret_cast<ElementCompute*>(args.ptr_col);
     }
 
     return {
@@ -991,6 +1010,12 @@ public:
       reduction_buffer,
       tile_counters
     };
+  }
+
+  template <class ProblemShape>
+  static bool
+  can_implement(ProblemShape const& problem_shape, Arguments const& args) {
+    return true;
   }
 
   template <class ProblemShape>
@@ -1007,7 +1032,7 @@ public:
     // Increment by size of reduction buffer
     workspace_size += product(ceil_div(make_shape(M,N,L), make_shape(tile_M, tile_N))) * tile_M * sizeof(ElementCompute);
     // Align and increment by size of tile counters
-    workspace_size = round_nearest(workspace_size, sizeof(int));
+    workspace_size = round_nearest(workspace_size, MinWorkspaceAlignment);
     workspace_size += cute::ceil_div(M, tile_M) * sizeof(int);
 
     return workspace_size;
@@ -1019,21 +1044,25 @@ public:
     CudaHostAdapter* cuda_adapter = nullptr) {
     if constexpr (IsAtomic) {
       auto [M, N, K, L] = problem_shape;
-      Layout mCol_layout = make_layout(make_shape(M,N,L), args.dCol);
+      Layout mCol_layout = make_layout(make_shape(size<>(M),size<>(N),size<>(L)), args.dCol);
       if (args.ptr_col != nullptr) {
         return fill_workspace(args.ptr_col, ElementOutput(args.reduction_identity), cosize(mCol_layout), stream, cuda_adapter);
       }
       return Status::kSuccess;
     }
+    else if constexpr (FinalReduction) {
+      auto [M, N, K, L] = problem_shape;
+      auto [tile_M, tile_N, tile_K] = CtaTileShapeMNK{};
+      size_t tile_counters_offset = product(ceil_div(make_shape(M,N,L), make_shape(tile_M, tile_N))) * tile_M * sizeof(ElementCompute);
+      tile_counters_offset = round_nearest(tile_counters_offset, MinWorkspaceAlignment);
 
-    auto [M, N, K, L] = problem_shape;
-    auto [tile_M, tile_N, tile_K] = CtaTileShapeMNK{};
-    size_t tile_counters_offset = product(ceil_div(make_shape(M,N,L), make_shape(tile_M, tile_N))) * tile_M * sizeof(ElementCompute);
-    tile_counters_offset = round_nearest(tile_counters_offset, sizeof(int));
-
-    int* tile_counters = reinterpret_cast<int*>(reinterpret_cast<uint8_t*>(workspace) + tile_counters_offset);
-    size_t tile_counters_size = cute::ceil_div(M, tile_M) * sizeof(int);
-    return zero_workspace(tile_counters, tile_counters_size, stream);
+      int* tile_counters = reinterpret_cast<int*>(reinterpret_cast<uint8_t*>(workspace) + tile_counters_offset);
+      size_t tile_counters_size = cute::ceil_div(M, tile_M) * sizeof(int);
+      return zero_workspace(tile_counters, tile_counters_size, stream, cuda_adapter);
+    }
+    else {
+      return Status::kSuccess;
+    }
   }
 
   CUTLASS_DEVICE bool
@@ -1084,7 +1113,7 @@ public:
 
       auto& [ref_src, tCrCol, tCcCol, gCol_l, cCol, gBuf_nl, sBuf_layout,
               lane_layout_MN, lane_mn, warp_layout_MN, warp_mn,
-              tile_coord_mnkl, residue_mn, epi_tile, tiled_copy, thread_idx] = args_tuple;
+              tile_coord_mnkl, residue_cCol, residue_tCcCol, epi_tile, tiled_copy, thread_idx] = args_tuple;
       Tensor tCrCol_mn = tCrCol(_,_,_,epi_m,epi_n);
       Tensor tCcCol_mn = tCcCol(_,_,_,epi_m,epi_n);
 
@@ -1096,33 +1125,25 @@ public:
       Array frg_I = convert_input(frg_input);
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < FragmentSize; ++i) {
-        if constexpr (VisitCheckOOB) {
-          if (elem_less(tCcCol_mn(epi_v * FragmentSize + i), residue_mn)) {
-            ElementCompute& tCrCol_vmn = tCrCol_mn(epi_v * FragmentSize + i);
-            tCrCol_vmn = reduce_input(tCrCol_vmn, frg_I[i]);
-          }
-        }
-        else {
-          if (elem_less(tCcCol_mn(epi_v * FragmentSize + i), residue_mn)) {
-            ElementCompute& tCrCol_vmn = tCrCol_mn(epi_v * FragmentSize + i);
-            tCrCol_vmn = reduce_input(tCrCol_vmn, frg_I[i]);
-          }
+        if (!VisitCheckOOB || elem_less(tCcCol_mn(epi_v * FragmentSize + i), residue_tCcCol)) {
+          ElementCompute& tCrCol_vmn = tCrCol_mn(epi_v * FragmentSize + i);
+          tCrCol_vmn = reduce_input(tCrCol_vmn, frg_I[i]);
         }
       }
 
       return frg_input;
     }
 
-    template <class STensor, class SyncFn>
+    template <class STensor, class SyncFn, class VTensor>
     CUTLASS_DEVICE void
-    reduce(STensor&& smem_buffer, SyncFn const& sync_fn, int epi_m, int epi_n, bool is_last_iteration) {
+    reduce(STensor&& smem_buffer, SyncFn const& sync_fn, int epi_m, int epi_n, bool is_last_iteration, VTensor visit_results) {
       if (not is_last_iteration) {
         return;
       }
 
       auto& [ref_src, tCrCol, tCcCol, gCol_l, cCol, gBuf_nl, sBuf_layout,
               lane_layout_MN, lane_mn, warp_layout_MN, warp_mn,
-              tile_coord_mnkl, residue_mn, epi_tile, tiled_copy, thread_idx] = args_tuple;
+              tile_coord_mnkl, residue_cCol, residue_tCcCol, epi_tile, tiled_copy, thread_idx] = args_tuple;
       auto [m, n, k, l] = tile_coord_mnkl;
       constexpr bool ReferenceSrc = decltype(ref_src)::value;
 
@@ -1134,7 +1155,7 @@ public:
       }
 
       // fully OOB CTA in partially OOB cluster
-      if (not elem_less(cCol(_0{},_0{}), residue_mn)) {
+      if (not elem_less(cCol(_0{},_0{}), residue_cCol)) {
         return;
       }
 
@@ -1176,7 +1197,7 @@ public:
         if (is_reduced_lane) {
           CUTLASS_PRAGMA_UNROLL
           for (int i = 0; i < size(tCrCol_flt); ++i) {
-            if (elem_less(tCcCol_flt(i), residue_mn)) {
+            if (elem_less(tCcCol_flt(i), residue_tCcCol)) {
               reduce_output(&tCgCol_flt(i), convert_output(tCrCol_flt(i)));
             }
           }
@@ -1207,6 +1228,7 @@ public:
         static_assert(decltype(cosize(sBuf.layout()))::value * sizeof(ElementCompute) <=
                       decltype(cosize(smem_buffer.layout()))::value * sizeof(typename remove_cvref_t<STensor>::value_type),
                       "smem reduction buffer not large enough, use a larger epilogue tile");
+        sync_fn();
 
         // Dump warp reduction to smem workspace
         Tensor tCsBuf = sm90_partition_for_epilogue<ReferenceSrc>(sBuf(_,_,get<1>(warp_mn)), epi_tile, tiled_copy, thread_idx);
@@ -1281,7 +1303,7 @@ public:
 
         auto& [ref_src, tCrCol, tCcCol, gCol_l, cCol, gBuf_nl, sBuf_layout,
                 lane_layout_MN, lane_mn, warp_layout_MN, warp_mn,
-                tile_coord_mnkl, residue_mn, epi_tile, tiled_copy, thread_idx] = args_tuple;
+                tile_coord_mnkl, residue_cCol, residue_tCcCol, epi_tile, tiled_copy, thread_idx] = args_tuple;
 
         using ReduceOutput = GmemReduceFn<ElementCompute>;
         using ConvertOutput = NumericConverter<ElementOutput, ElementCompute, RoundStyle>;
@@ -1298,7 +1320,7 @@ public:
             for (int nl = 1; nl < size(tRgBuf_nl); ++nl) {
               output = reduce_output(output, tRgBuf_nl(nl));
             }
-            if (elem_less(cCol(m,_0{}), residue_mn)) {
+            if (elem_less(cCol(m,_0{}), residue_cCol)) {
               gCol_l(m,_0{},_0{}) = convert_output(output);
             }
           }
@@ -1307,7 +1329,7 @@ public:
         else {
           CUTLASS_PRAGMA_NO_UNROLL
           for (int m = thread_idx; m < size<0>(gBuf_nl); m += size(tiled_copy)) {
-            bool do_store = elem_less(cCol(m,_0{}), residue_mn);
+            bool do_store = elem_less(cCol(m,_0{}), residue_cCol);
             CUTLASS_PRAGMA_NO_UNROLL
             for (int l = 0; l < size<3>(gBuf_nl); ++l) {
               Tensor tRgBuf_n = gBuf_nl(m,_0{},_,l);
@@ -1378,7 +1400,7 @@ public:
     auto args_tuple = make_tuple(
         bool_constant<ReferenceSrc>{}, cute::move(tCrCol), args.tCcD, gCol_l, args.cD, gBuf_nl, sBuf_layout,
         lane_layout_MN, lane_mn, warp_layout_MN, warp_mn,
-        args.tile_coord_mnkl, args.residue_mn, args.epi_tile, args.tiled_copy, args.thread_idx);
+        args.tile_coord_mnkl, args.residue_cD, args.residue_tCcD, args.epi_tile, args.tiled_copy, args.thread_idx);
     return ConsumerStoreCallbacks<decltype(args_tuple)>(std::move(args_tuple), params);
   }
 };

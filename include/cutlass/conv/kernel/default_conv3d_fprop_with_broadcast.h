@@ -197,7 +197,10 @@ struct DefaultConv3dFpropWithBroadcast <
     typename EpilogueOutputOp::ElementT,
     typename EpilogueOutputOp::ElementVector,
     EpilogueOutputOp,
-    ImplicitGemmBase::Epilogue::kElementsPerAccess
+    ImplicitGemmBase::Epilogue::kElementsPerAccess,
+    layout::NoPermute,
+    StrideSupport,
+    5
   >::Epilogue;
 
   // Define the kernel

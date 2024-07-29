@@ -92,8 +92,12 @@ for (int idx = 0; idx < kN; ++idx) {      // Loop has constant number of iterati
                                           // direct register access.
 }
 ```
-
 ## Style
+
+### If you see an issue in code formatting, fix it
+
+You are empowered to reformat code.
+Please, however, consider making reformatting changes separately from content-related changes.
 
 ### No automatic code formatting
 
@@ -128,48 +132,111 @@ and we should always strive to eliminate them.
 
 * [Google C++ Style Guide](https://google.github.io/styleguide/cppguide.html)
 
+#### C is not a subset of C++
+
+C is not a subset of C++.
+Some valid C is not valid C++, and some valid "C-looking" C++ is not valid C.
+See e.g., the informative C++ Standard Committee (WG21) document
+[P2735R0](https://isocpp.org/files/papers/P2735R0.pdf),
+which explains ways in which the same code has different behavior in C vs. C++.
+In some cases, code that compiles in both C and C++,
+and is correct in C, has undefined behavior (can crash or worse) in C++.
+The "type.punning" section of P2735R0 specifically relates to unions.
+
 #### Spacing and line length
 
 * Use spaces, not tabs.
 
 * Use 2 spaces to indent.
 
-* Max 100 characters per line.
+* Use at most 100 characters per line.
 
+(Right-align tensor shape layout comments at column 120.
+Please see below.)
 Lines longer than 100 characters typically wrap unfavorably
 when viewed in Github's pretty printer.
 
-#### Function indentation
+#### Formatting function declarations and definitions
+
+Short function headers can go on one line.
+
+Do not insert a newline between the parenthesis
+that closes the function's parameters and
+the curly bracket that opens the function's body.
+
+```c++
+int short_name(int x, int y) {
+  return x + y;
+}
+```
+
+If the function name and its parameters are too long to fit on one line,
+break the line immediately after the opening parenthesis
+that starts the parameter list.  Then, double-indent the parameters
+to distinguish them from the body of the function.
+
+```c++
+void indeed_my_fellowbeings_this_function_name_is_unusually_long(
+    std::uint32_t foo, // parameters are double-indented
+    std::uint32_t const* bar,
+    TypeA a,
+    TypeB b,
+    TypeC c) { // the ) and { go on the same line still
+  auto d = body_of_the_function(a, b, c); // body is single-indented
+  // ... more code ...
+}
+```
+
+For a constructor with a long parameter list,
+break the line after the parentheses, just as with other functions.
+Align the colon that starts the constructor's initializer list
+flush with the comma on the next line.
+
+As with functions, double-indent the parameters
+to distinguish them from the constructor body.
+Here is an example.
+
+```c++
+class YesTheCommunityAgreesThatTheNameOfThisClassIsIndeedExtremelyLong {
+public:
+  CUTLASS_HOST_DEVICE
+  YesTheCommunityAgreesThatTheNameOfThisClassIsIndeedExtremelyLong(
+      int this_is_the_first_parameter_and_its_name_is_long,
+      int this_is_the_second_parameter_and_its_name_is_also_long,
+      int this_is_the_third_parameter_and_its_name_is_long_too)
+  : x_(this_is_the_first_parameter_and_its_name_is_long)
+  , y_(this_is_the_second_parameter_and_its_name_is_also_long)
+  , z_(this_is_the_third_parameter_and_its_name_is_long_too) {
+    // constructor body
+    // more of the constructor body
+  }
+
+private:
+  int x_ = 0;
+  int y_ = 0;
+  int z_ = 0;
+};
+```
+
+#### Formatting function calls
 
 When calling a function or function object with a long name,
 break the line right after the invoking open parenthesis.
-Here is an example.
+Here are some examples.
 
 ```c++
 detail::very_long_function_object_name<TemplateArgument>{}(
   params.long_parameter_name, some_operator.another_long_function_name());
+
+detail::an_even_longer_function_object_name<TemplateArgument1, TemplateArgument2>{}(
+  params.long_parameter_name, some_operator.long_member_function_name(),
+  another_operator.another_long_member_function_name(x, y, z));
 ```
-
-When declaring functions, indent function parameters like this.
-
-```c++
-void possibly_an_unusually_long_function_name(
-    std::uint32_t foo
-    std::uint32_t const* bar,
-    TypeA a,
-    TypeB b,
-    TypeC c) {
-  // ... the function's body ...
-}
-```
-
-A newline should not be inserted between the parenthesis
-that closes the function's parameters and the curly bracket
-that opens the function's body. Note the double indent for function parameters.
 
 #### If-else brackets and spacing
 
-* Always use braces with conditionals such as `if`.
+* Always use braces with conditionals such as `if`,
+  even if the body is a single line.
 
 * Use a space after control flow keywords
   such as `if`, `for`, and `while`.
@@ -181,13 +248,14 @@ that opens the function's body. Note the double indent for function parameters.
   of an `if` branch, and the `else` keyword.
 
 ```c++
-if (condition) {
+if (condition) { // space after if, and between ) and {
   // ... code ...
-}
+} // newline after }
 else {
   // ... other code ...
 }
 
+// space after keyword for
 for (int k = 0; k < num_iters; ++k) {
   // ... still more code ...
 }
@@ -244,7 +312,6 @@ and not this.
 int const &var;
 int const *var;
 ```
-
 #### Avoid calling functions "fast" or "optimized"
 
 Putting words like "fast" or "optimized"
@@ -394,6 +461,9 @@ Sometimes a function needs to return multiple values.  In that case, consider th
    (Please note that `cute::tuple` does not work
    for all the types that work in `std::tuple`.
    CuTe's documentation explains.)
+
+3. Resort to "returning" multiple values by output references
+   only if performance requires it.
 
 Here is an example of the struct approach for named values.
 For a comparable example in the C++ Standard,
@@ -655,6 +725,158 @@ private:
 };
 ```
 
+#### For code reuse, prefer composition over inheritance
+
+* [C++ Core Guidelines C.129](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#c129-when-designing-a-class-hierarchy-distinguish-between-implementation-inheritance-and-interface-inheritance): "When designing a class hierarchy, distinguish between implementation inheritance and interface inheritance"
+* [C++ Core Guidelines ES.63](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#Res-slice): "Don't slice"
+
+Suppose that a class hierarchy exists entirely for implementation convenience, so that implementers can reuse code and "program by difference" (changing or adding only what's different from the base class).  In the example below, both `PipelineA` and `PipelineB` are used by themselves.  `PipelineB` inherits from `PipelineA` just to avoid duplicating code.  There are no virtual member functions, and users don't expect to rely on run-time polymorphism.
+
+```c++
+class PipelineA {
+public:
+  PipelineA(Arg0 arg0, Arg1 arg1)
+    : arg0_(arg0), arg1_(arg1)
+  {}
+
+  void producer_acquire(uint32_t stage, uint32_t phase, uint32_t skip_wait) {
+    // ... implementation ... 
+  }
+
+  void consumer_release(uint32_t stage, uint32_t skip) {
+    // ... implementation ...
+  }
+
+private:
+  Arg0 arg0_;
+  Arg1 arg1_;
+};
+
+class PipelineB : public PipelineA {
+public:
+  PipelineB(Arg0 arg0, Arg1 arg1, Arg2 arg2) :
+    PipelineA(arg0, arg1), arg2_(arg2)
+  {}
+
+  // Reuse PipelineA::producer_acquire via inheritance
+
+  // Override PipelineA::consumer_release
+  void consumer_release(uint32_t stage, uint32_t skip) {
+    // ... some other implementation, not invoking parent ...
+  }
+
+private:
+  Arg2 arg2_;
+};
+```
+
+The problem with public inheritance here is that `PipelineB` is NOT a (versus "is-a," i.e., substitutable-as) `PipelineA`. In particular, the following code would be incorrect.
+
+```c++
+void consume_and_release_pipeline(PipelineA* parent) {
+  // ... code ...
+  parent->consumer_release(stage, skip);
+  // ... code ...
+}
+
+void use_pipeline( /* other args */ ) {
+  // ... code ...
+  PipelineB child{arg0, arg1, arg2};
+  // ... code ...
+
+  // WRONG!!! SLICES CHILD TO PARENT!!!
+  consume_and_release_pipeline(&child); // BAD
+
+  // ... code ...
+}
+```
+
+`PipelineA::consumer_release` is not a virtual member function, so `consume_and_release_pipeline` would not actually be polymorphic, as callers might have expected from an interface that takes a base class pointer. What's worse is that the resulting slicing could violate `PipelineB`'s invariants, thus putting it in an incorrect state.
+
+The most straightforward way to reuse code would be by changing from inheritance (is-a) to composition (has-a).
+
+```c++
+namespace detail {
+
+// Implementation class; not for users
+class PipelineImpl {
+public:
+  PipelineImpl(Arg0 arg0, Arg1 arg1)
+    : arg0_(arg0), arg1_(arg1)
+  {}
+
+  void producer_acquire(uint32_t stage, uint32_t phase, uint32_t skip_wait) {
+    // ... implementation ...
+  }
+
+  void consumer_release(uint32_t stage, uint32_t skip) {
+    // ... implementation ...
+  }
+
+private:
+  Arg0 arg0_;
+  Arg1 arg1_;
+};
+
+} // namespace detail
+
+class PipelineA {
+public:
+  PipelineA(Arg0 arg0, Arg1 arg1) :
+    impl_(arg0, arg1)
+  {}
+
+  void producer_acquire(uint32_t stage, uint32_t phase, uint32_t skip_wait) {
+    impl_.producer_acquire(stage, phase, skip_wait);
+  }
+
+  void consumer_release(uint32_t stage, uint32_t skip) {
+    impl_.consumer_release(stage, skip);
+  }
+
+private:
+  detail::PipelineImpl impl_;
+};
+
+// A second kind of pipeline.
+// Note that this does NOT inherit from PipelineB!
+// The two pipeline classes have the same compile-time interface
+// (for compile-time polymorphism), but do not belong in an 
+// inheritance hierarchy (as would imply run-time polymorphism).
+class PipelineB {
+public:
+  PipelineB(Arg0 arg0, Arg1 arg1, Arg2 arg2) :
+    impl_(arg0, arg1), otherTwo_(arg2)
+  {}
+
+  void producer_acquire(uint32_t stage, uint32_t phase, uint32_t skip_wait) {
+    impl_.producer_acquire(stage, phase, skip_wait);
+  }
+
+  void consumer_release(uint32_t stage, uint32_t skip) {
+    // this class doesn't actually use impl_ here
+    otherTwo_.other_action(stage, skip);
+    // ... some other code not using impl_ ...
+  }
+
+private:
+  detail::PipelineImpl impl_;
+  OtherTwo otherTwo_;
+  // ... other member data ...
+};
+```
+
+This design prevents users at compile time from incorrectly assuming that `PipelineB` is a `PipelineA`.  Implementers continue to get compile-time polymorphism, as long as `PipelineA` and `PipelineB` implement the same compile-time interface.
+
+##### Behavioral subtyping
+
+Another reason to avoid public inheritance would be if the public member functions of `PipelineA` and `PipelineB` have different behavior, such that the invariants satisfied by the member functions of the base class `PipelineA` are not satisfied by the correspondingly named member functions of the subclass `PipelineB`.  For example, suppose that both classes have a public `producer_arrive` member function.  However, for `PipelineA`, this issues a producer arrival only for its own block, whereas for `PipelineB`, this issues a producer arrival for all blocks in the cluster.  Again, PipelineB "is-not-a" PipelineA.  The child class doesn't just add behavior onto the parent class; it has completely different behavior. Thus, it fails to satisfy behavioral subtyping: invariants of the parent class's member functions are not satisfied by the child class.  Behavioral subtyping is especially important when reasoning about already difficult things like parallel synchronization.  The inheritance design would give developers the false impression that `PipelineB` just adds behavior atop `PipelineA`, whereas in fact, developers would need to understand both pipeline classes completely to build a correct mental model about their behavior.
+
+The fix is the same: Use composition, not inheritance.  As [C++ Core Guidelines C.120](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#c120-use-class-hierarchies-to-represent-concepts-with-inherent-hierarchical-structure-only) explains: "Use class hierarchies to represent concepts with inherent hierarchical structure (only)."
+
+1. "Make sure the idea represented in the base class exactly matches all derived types and there is not a better way to express it than using the tight coupling of inheritance."
+2. "Do not use inheritance when simply having a data member will do."
+
 #### Use scoped enums
 
 Use scoped enums (a C++11 feature) for enumerated types.
@@ -765,17 +987,118 @@ Use `#pragma once` to guard all headers.
 
 ### CuTe Layout Comments
 
-* Right align CuTe layout comments at column 120. 
+* Right-align tensor shape layout comments at column 120. 
 * If layout comment is too long do your best to align it.
-* If layout comment is too long and there are many related tensors that reader should read together, try to align the layout comments of related tensors.
+* If layout comment is too long and there are many related tensors
+  that the reader should read together,
+  try to align the layout comments of related tensors.
+
+Here are a couple examples.
 
 ```c++
-    Tensor my_tensor = make_tensor<Type>(Layout<Shape<_2,_2>{}, Stride<_1,_2>>{});                       // (2,2):(1,2)
-    
-    // Related tensors
-    Tensor my_tensor1 = make_tensor<Type>(ThisIsAVeryComplicatedLayoutWithAVeryLongName);         // ((Mode0_0,Mode0_1,Mode0_2),Mode1,Mode2,Mode3)
-    Tensor my_tensor2_related = make_tensor<Type>(ThisIsAVeryComplicatedLayoutWithAVeryLongName); // ((Mode0_0,Mode0_1,Mode0_2),Mode1,Mode2,Mode3)
+Tensor mC = make_tensor(make_gmem_ptr(params.ptr_C), make_shape(M,N), params.dC);                              // (M,N)
+Tensor mD = make_tensor(make_gmem_ptr(params.ptr_D), make_shape(M,N), params.dD);                              // (M,N)
+Tensor mAux = make_tensor(make_gmem_ptr(params.ptr_Aux), make_shape(M,N), params.dAux);                        // (M,N)
+
+auto thr_mma = tiled_mma.get_thread_slice(thread_idx);
+Tensor tCgD = thr_mma.partition_C(gD);                                                             // (VEC,THR_M,THR_N)
+Tensor tCgC = thr_mma.partition_C(gC);                                                             // (VEC,THR_M,THR_N)
+Tensor tCgAux = thr_mma.partition_C(gAux);                                                         // (VEC,THR_M,THR_N)
 ```
+
+```c++
+Tensor my_tensor = make_tensor<Type>(Layout<Shape<_2,_2>{}, Stride<_1,_2>>{});                           // (2,2):(1,2)
+    
+// Related tensors
+Tensor my_tensor1 = make_tensor<Type>(ThisIsAVeryComplicatedLayoutWithAVeryLongName);         // ((Mode0_0,Mode0_1,Mode0_2),Mode1,Mode2,Mode3)
+Tensor my_tensor2_related = make_tensor<Type>(ThisIsAVeryComplicatedLayoutWithAVeryLongName); // ((Mode0_0,Mode0_1,Mode0_2),Mode1,Mode2,Mode3)
+```
+
+### Warnings
+
+CUTLASS code aims to build free of warnings.
+
+#### Spurious warnings
+
+Some compilers, or some versions of a compiler, emit spurious warnings, that is, "false positives" for perfectly fine code.  While such code is correct, the warnings can obscure errors.  Users also may report warnings as bugs, and processing those bugs takes developer time away from other tasks.  Thus, it's good to try to "fix" the warnings, if doing so wouldn't make the code worse.
+
+#### Missing return statement
+
+GCC 10 (but not 7.5, 9.4.0, or 11) has trouble deducing that a function with `auto` return type and all of its returns in an `if constexpr` ... `else` statement must actually return.  As a result, GCC emits spurious "missing return statement" build warnings.  Such functions have one of two forms: `if constexpr` ... `else` where `else` returns, and `if constexpr` ... `else` where `else` is meant to fail at compile time.  Here is an example of the first form.
+
+```c++
+template<class T>
+constexpr auto first_form(T t) {
+  if constexpr (some_condition_v<T>) {
+    return some_function(t);
+  }
+  else if constexpr (another_condition_v<T>) {
+    return another_function(t);
+  }
+  else {
+    return yet_another_function(t);
+  }
+}
+```
+
+In this form, the `if constexpr` ... `else` sequence of branches covers all possibilities.  Here is an example of the second form.
+
+```c++
+template<class T>
+constexpr auto second_form(T t) {
+  if constexpr (some_condition_v<T>) {
+    return some_function(t);
+  }
+  else if constexpr (another_condition_v<T>) {
+    return another_function(t);
+  }
+  else {
+    static_assert(sizeof(T) < 0, "This branch always fails");
+  }
+}
+```
+
+In this form, the `else` branch had a `static_assert` that was meant always to fail if the `else` branch were taken, such as `static_assert(sizeof(T) < 0)`.  (Note that we cannot use `static_assert(false)` here, because it will ALWAYS fail at compile time, even if the `else` branch is not taken.  C++23 fixes this behavior, but CUTLASS currently requires that its code be compatible with C++17.  As a result, CUTLASS includes a `dependent_false<T>` library function that you can use in place of the always-`false` test `sizeof(T) < 0`.)
+
+One can suppress "missing return statement" warnings for both forms by invoking CUTLASS' function-like macro `CUTE_GCC_UNREACHABLE()`.  When building with GCC, this invokes the GCC-specific built-in function `__builtin_unreachable()`.  Actually calling this function is undefined behavior, so using this lets the programmer declare that the code path calling that function will never be taken.  (C++23 introduces the `std::unreachable()` function, which achieves the same goal.  Again, though, CUTLASS cannot currently use C++23 library functions.)  Here is an example of how to use `CUTE_GCC_UNREACHABLE()`.
+
+```c++
+template<class T>
+constexpr auto second_form(T t) {
+  if constexpr (some_condition_v<T>) {
+    return some_function(t);
+  }
+  else if constexpr (another_condition_v<T>) {
+    return another_function(t);
+  }
+  else {
+    static_assert(sizeof(T) < 0, "This branch always fails");
+  }
+  CUTE_GCC_UNREACHABLE();
+}
+```
+
+This macro should only be used if it is needed to suppress spurious warnings.  Also, this function should not be used if the developer is not sure whether the code exhaustively tests all possibilities.  For example, some functions may look like this.
+
+```c++
+template<class T>
+constexpr auto possibly_nonexhaustive(T t) {
+  if constexpr (some_condition_v<T>) {
+    return some_function(t);
+  }
+  else if constexpr (another_condition_v<T>) {
+    return another_function(t);
+  }
+ 
+  // NOTE lack of unadorned "else" here
+}
+```
+
+This is a good opportunity to review the function.  If the branches are obviously meant to be exhaustive, you can add an `else` branch with a `static_assert` (see above for how to express this).  If you're not sure, leave it alone and let the compiler issue warnings.
+
+#### Unused variable
+
+Some compilers may emit spurious unused warnings for some variable declarations, where the variable was only being used inside a `decltype` in an `if constexpr` test. Marking the variables as `[[maybe_unused]]` (a standard C++17 attribute) suppresses these warnings.  Again, please only do this if you're sure that the code is right.
 
 ### CUDA C++ style
 

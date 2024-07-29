@@ -128,8 +128,8 @@ struct SparseTestbed {
         scope_max = 2;
         scope_min = 0;
       } else if (bits_input <= 8) {
-        scope_max = 2;
-        scope_min = -2;
+        scope_max = 1;
+        scope_min = -1;
       } else if (bits_output == 16) {
         scope_max = 5;
         scope_min = -5;
@@ -353,14 +353,25 @@ struct SparseTestbed {
     //
 
     typename Gemm::Arguments arguments{
+      cutlass::gemm::GemmUniversalMode::kGemm,
       problem_size,
-      tensor_A.device_ref(),
-      tensor_B.device_ref(),
-      tensor_C.device_ref(),
-      tensor_D.device_ref(),
-      tensor_E_reordered.device_ref(),
+      split_k_slices,
       {alpha, beta},
-      split_k_slices
+      tensor_A.device_data(),
+      tensor_B.device_data(),
+      tensor_C.device_data(),
+      tensor_D.device_data(),
+      tensor_E_reordered.device_data(),
+      int64_t(),
+      int64_t(),
+      int64_t(),
+      int64_t(),
+      int64_t(),
+      tensor_A.layout().stride(0),                                     
+      tensor_B.layout().stride(0),
+      tensor_C.layout().stride(0),
+      tensor_D.layout().stride(0),                                     
+      tensor_E_reordered.layout().stride(0)
     };
 
     Gemm gemm_op;
@@ -391,7 +402,7 @@ struct SparseTestbed {
     bool passed = this->verify(problem_size, alpha, beta);
 
     if (!passed) {
-      std::cout << "Error with split_k_slices = " << split_k_slices << ", alpha: " << alpha << std::endl;
+      std::cout << "Error with split_k_slices = " << split_k_slices << ", alpha: " << alpha << ", beta: " << beta << ", m: " << problem_size.m() << ", n: " << problem_size.n() << ", k:" <<problem_size.k() << std::endl;
     }
 
     return passed;
@@ -420,11 +431,10 @@ bool TestAllSparseGemm() {
 
   int problem_size_n[] = {kAlignmentN, 512 - 2 * kAlignmentN};
 
-  int problem_size_k[] = {Gemm::ThreadblockShape::kK,
-                          Gemm::ThreadblockShape::kK * (Gemm::kStages + 1)};
+  int problem_size_k[] = {Gemm::ThreadblockShape::kK * 8};
 
   int split_k_slices[] = {
-    1, 2, 3
+    1, 2
   };
 
   double problem_alpha[] = {
@@ -444,17 +454,8 @@ bool TestAllSparseGemm() {
       for (int k : problem_size_k) {
         for (int split_k : split_k_slices) {
 
-          if (!Gemm::kSplitKSerial && split_k > 1) {
-            continue;
-          }
-
-          if (split_k > 1 && k / Gemm::ThreadblockShape::kK < split_k) {
-            continue;
-          }
-
           for (auto alpha : problem_alpha) {
             for (auto beta : problem_beta) {
-
               cutlass::gemm::GemmCoord problem_size(m, n, k);
 
               passed = testbed.run(

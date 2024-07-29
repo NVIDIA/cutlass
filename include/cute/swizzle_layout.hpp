@@ -36,6 +36,7 @@
 #include <cute/layout_composed.hpp>
 
 #include <cute/swizzle.hpp>
+#include <cute/pointer_swizzle.hpp>  // get_swizzle
 
 /* Specialized functionality for a ComposedLayout of the form
  *   InvolutionFn o Offset o LayoutB
@@ -55,6 +56,9 @@
 
 namespace cute
 {
+
+template <int B, int M, int S, class Offset, class LayoutB>
+struct get_swizzle<ComposedLayout<Swizzle<B,M,S>,Offset,LayoutB>> { using type = Swizzle<B,M,S>; };
 
 //
 // Constructors
@@ -117,7 +121,7 @@ CUTE_HOST_DEVICE constexpr
 auto
 make_fragment_like(ComposedLayout<Swizzle<B,M,S>,Offset,Layout> const& layout)
 {
-  return detail::transfer_swizzle<B,M,S>(layout.layout_b(), make_fragment_like(layout.layout_b()));
+  return make_fragment_like(layout.layout_b());
 }
 
 //
@@ -441,13 +445,31 @@ recast_layout(Swizzle<B,M,S> const& swizzle)
   else if constexpr (scale::num == 1) {
     return downcast<scale::den>(swizzle);
   }
-  else if constexpr (scale::den == 1) { 
+  else if constexpr (scale::den == 1) {
     return upcast<scale::num>(swizzle);
   }
   else {
     static_assert(dependent_false<scale>, "Recast not supported.");
   }
   CUTE_GCC_UNREACHABLE;
+}
+
+template <int B, int M, int S>
+CUTE_HOST_DEVICE constexpr
+auto
+max_alignment(Swizzle<B,M,S> const&)
+{
+  return Int<M>{};
+}
+
+template <int B, int M, int S, class Offset, class LayoutB>
+CUTE_HOST_DEVICE constexpr
+auto
+max_alignment(ComposedLayout<Swizzle<B,M,S>,Offset,LayoutB> const& layout)
+{
+  return gcd(max_alignment(layout.layout_a()),
+             max_alignment(layout.offset()),
+             max_alignment(layout.layout_b()));
 }
 
 //
@@ -485,7 +507,7 @@ max_common_vector(ComposedLayout<Swizzle<B,M,S>,Offset,LayoutB> const& a,
                   Layout<Shape,Stride>                          const& b)
 {
   // This assumes that Offset is in the YZ domain of the Swizzle...
-  return cute::min(Int<(1 << M)>{}, max_common_vector(a.layout_b(), b));
+  return cute::min(max_common_vector(a.layout_b(), b), Int<(1 << M)>{});
 }
 
 template <class Shape, class Stride, int B, int M, int S, class Offset, class LayoutB>
@@ -504,12 +526,15 @@ auto
 max_common_vector(ComposedLayout<Swizzle<B0,M0,S0>,Offset0,LayoutB0> const& a,
                   ComposedLayout<Swizzle<B1,M1,S1>,Offset1,LayoutB1> const& b)
 {
-  auto result = coalesce(composition(a, right_inverse(b)));
+  // Typical impl is composition(a, right_inverse(b))
+  // so this is  Sw0 o B0 o rinv(Sw1 o B1) = Sw0 o B0 o rinv(B1) o Sw1
+  auto vec = max_common_vector(a.layout_b(), b.layout_b());
 
-  if constexpr (is_constant<1, decltype(stride<0>(result.layout_b()))>::value) {
-    return shape<0>(result);
+  // This assumes that Offset is in the YZ domain of the Swizzle...
+  if constexpr (Swizzle<B0,M0,S0>{} == Swizzle<B1,M1,S1>{}) {
+    return vec;
   } else {
-    return Int<1>{};
+    return cute::min(vec, Int<(1 << M0)>{}, Int<(1 << M1)>{});
   }
 
   CUTE_GCC_UNREACHABLE;

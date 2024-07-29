@@ -60,7 +60,7 @@ TEST(SM89_Device_Conv2d_Fprop_Analytic_ImplicitGemm_fe4m3nhwc_fe4mnhwc_fe4mnhwc_
   using ElementB = cutlass::float_e4m3_t;
   using ElementOutput = cutlass::float_e4m3_t;
   using ElementAuxOutput = ElementOutput;
-  using ElementAccumulator = float;;
+  using ElementAccumulator = float;
   static int const kStages = 3;
 
   using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombinationGenericWithScalingAndAbsMax<
@@ -104,7 +104,7 @@ TEST(SM89_Device_Conv2d_Fprop_Analytic_ImplicitGemm_fe5m2nhwc_fe4m3nhwc_fe4m3nhw
   using ElementB = cutlass::float_e4m3_t;
   using ElementOutput = cutlass::float_e4m3_t;
   using ElementAuxOutput = ElementOutput;
-  using ElementAccumulator = float;;
+  using ElementAccumulator = float;
   static int const kStages = 3;
 
   using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombinationGenericWithScalingAndAbsMax<
@@ -148,7 +148,7 @@ TEST(SM89_Device_Conv2d_Fprop_Analytic_ImplicitGemm_fe5m2nhwc_fe4m3nhwc_fe5m2nhw
   using ElementB = cutlass::float_e4m3_t;
   using ElementOutput = cutlass::float_e5m2_t;
   using ElementAuxOutput = ElementOutput;
-  using ElementAccumulator = float;;
+  using ElementAccumulator = float;
   static int const kStages = 3;
 
   using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombinationGenericWithScalingAndAbsMax<
@@ -192,7 +192,7 @@ TEST(SM89_Device_Conv2d_Fprop_Optimized_ImplicitGemm_fe4m3nhwc_fe4mnhwc_fe4mnhwc
   using ElementB = cutlass::float_e4m3_t;
   using ElementOutput = cutlass::float_e4m3_t;
   using ElementAuxOutput = ElementOutput;
-  using ElementAccumulator = float;;
+  using ElementAccumulator = float;
   static int const kStages = 3;
 
   using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombinationGenericWithScalingAndAbsMax<
@@ -236,7 +236,7 @@ TEST(SM89_Device_Conv2d_Fprop_Optimized_ImplicitGemm_fe4m3nhwc_fe4mnhwc_fe4mnhwc
   using ElementB = cutlass::float_e4m3_t;
   using ElementOutput = cutlass::float_e4m3_t;
   using ElementAuxOutput = ElementOutput;
-  using ElementAccumulator = float;;
+  using ElementAccumulator = float;
   static int const kStages = 3;
 
   using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombinationGenericWithScalingAndAbsMax<
@@ -280,7 +280,7 @@ TEST(SM89_Device_Conv2d_Fprop_Optimized_ImplicitGemm_fe4m3nhwc_fe4mnhwc_fe4mnhwc
   using ElementB = cutlass::float_e4m3_t;
   using ElementOutput = cutlass::float_e4m3_t;
   using ElementAuxOutput = ElementOutput;
-  using ElementAccumulator = float;;
+  using ElementAccumulator = float;
   static int const kStages = 3;
 
   using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombinationGenericWithScalingAndAbsMax<
@@ -324,7 +324,7 @@ TEST(SM89_Device_Conv2d_Fprop_Optimized_ImplicitGemm_fe4m3nhwc_fe4mnhwc_fe4mnhwc
   using ElementB = cutlass::float_e4m3_t;
   using ElementOutput = cutlass::float_e4m3_t;
   using ElementAuxOutput = ElementOutput;
-  using ElementAccumulator = float;;
+  using ElementAccumulator = float;
   static int const kStages = 3;
 
   using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombinationGenericWithScalingAndAbsMax<

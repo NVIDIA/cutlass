@@ -65,6 +65,7 @@ public:
   // Type Aliases
   //
   using EpilogueSchedule = EpilogueSchedule_;
+  using DispatchPolicy = EpilogueSchedule_;
   
   // derived types of output thread level operator
   using ThreadEpilogueOp = ThreadEpilogueOp_;
@@ -74,10 +75,10 @@ public:
   using ElementScalar = ElementCompute;
   using ElementC = typename ThreadEpilogueOp::ElementC;
   using StrideC = StrideC_;
-  using UnderlyingStrideC = cute::remove_pointer_t<StrideC>;
+  using InternalStrideC = cute::remove_pointer_t<StrideC>;
   using ElementD = typename ThreadEpilogueOp::ElementD;
   using StrideD = StrideD_;
-  using UnderlyingStrideD = cute::remove_pointer_t<StrideD>;
+  using InternalStrideD = cute::remove_pointer_t<StrideD>;
 
   using GmemTiledCopyC = void;
   using GmemTiledCopyD = void;
@@ -85,11 +86,13 @@ public:
   static const int kOutputAlignment = ThreadEpilogueOp::kCount;
   using AlignmentType = typename cute::uint_bit<sizeof_bits<ElementOutput>::value * kOutputAlignment>::type;
 
-  static_assert(cute::is_same_v<EpilogueSchedule, PtrArrayNoSmemWarpSpecialized>, "Incompatible epilogue schedule.");
-  static_assert(rank(UnderlyingStrideC{}) == 3, "StrideCD must be rank-3: [M, N, L]");
-  static_assert(rank(UnderlyingStrideD{}) == 3, "StrideCD must be rank-3: [M, N, L]");
+  static_assert(cute::is_same_v<EpilogueSchedule, PtrArrayNoSmemWarpSpecialized> || cute::is_same_v<EpilogueSchedule, PtrArrayDefault>, "Incompatible epilogue schedule.");
+  static_assert(rank(InternalStrideC{}) == 3, "StrideCD must be rank-3: [M, N, L]");
+  static_assert(rank(InternalStrideD{}) == 3, "StrideCD must be rank-3: [M, N, L]");
 
   struct SharedStorage { };
+
+  using TensorMapStorage = SharedStorage;
 
   // Host side epilogue arguments
   struct Arguments {
@@ -118,7 +121,7 @@ public:
 
   template <class ProblemShape>
   static size_t
-  get_workspace_size(ProblemShape const& problem_shape, Arguments const& args) {
+  get_workspace_size(ProblemShape const& problem_shape, Arguments const& args, int sm_count) {
     return 0;
   }
 
@@ -130,7 +133,7 @@ public:
   }
 
   template<class ProblemShape>
-  CUTLASS_HOST_DEVICE static bool
+  static bool
   can_implement(
       [[maybe_unused]] ProblemShape const& problem_shape,
       [[maybe_unused]] Arguments const& args) {
@@ -195,9 +198,9 @@ public:
       assert(0);
     }
 
-    UnderlyingStrideC stride_c;
-    UnderlyingStrideD stride_d;
-    if constexpr (!cute::is_same_v<UnderlyingStrideC, StrideC>) {
+    InternalStrideC stride_c;
+    InternalStrideD stride_d;
+    if constexpr (!cute::is_same_v<InternalStrideC, StrideC>) {
       // If grouped gemm
       if (epilogue_op.is_source_needed()) {
         stride_c = detail::get_epilogue_stride<EpilogueSchedule>(params.dC[l_coord]);

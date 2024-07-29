@@ -100,6 +100,17 @@ public:
   /// Default constructor
   bfloat16_t() = default;
 
+  /// Reinterpret cast from CUDA's __nv_bfloat16 type
+  CUTLASS_HOST_DEVICE
+  explicit bfloat16_t(__nv_bfloat16 const & x) {
+    #if defined(__CUDA_ARCH__)
+    storage = reinterpret_cast<uint16_t const &>(x);
+    #else
+    __nv_bfloat16_raw raw(x);
+    std::memcpy(&storage, &raw.x, sizeof(storage));
+    #endif
+  }
+
   /// Floating-point conversion - round toward nearest
   CUTLASS_HOST_DEVICE
   explicit bfloat16_t(float x) {

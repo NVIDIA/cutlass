@@ -466,7 +466,7 @@ public:
     }
 
     // check alignment constraint on iterator's contiguous dimension
-    if (problem_size.K % (128/sizeof_bits<Element>::value)) {
+    if (problem_size.K % AccessType::kElements) {
       return Status::kErrorNotSupported;
     }
 

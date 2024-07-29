@@ -138,7 +138,7 @@ using Gemm = typename cutlass::gemm::device::GemmWithKReduction<
 >;
 
 // Below is the reduction kernel used in the case of parallel split-k
-using ReduceGemmSplitKShape = cutlass::MatrixShape<4, 64>;;
+using ReduceGemmSplitKShape = cutlass::MatrixShape<4, 64>;
 
 using ReduceOp = cutlass::reduction::thread::ReduceAdd<
     ElementAccumulator,
@@ -154,7 +154,7 @@ using ReduceGemmSplitKKernel = cutlass::reduction::kernel::ReduceSplitK<
 
 using ReduceGemmSplitK = cutlass::reduction::device::ReduceSplitK<ReduceGemmSplitKKernel>;
 
-using ReduceVectorSplitKShape = cutlass::MatrixShape<1, 256>;;
+using ReduceVectorSplitKShape = cutlass::MatrixShape<1, 256>;
 
 // This code section describes the epilogue part of the kernel, we use default value
 using DummyEpilogueOp = cutlass::epilogue::thread::LinearCombination<

@@ -173,21 +173,24 @@ struct CollectiveMma<
   // Device side kernel params
   struct Params {
     // Assumption: StrideA is congruent with Problem_MK
-    using TMA_A = decltype(make_tma_copy(
+    using TMA_A = decltype(make_tma_copy_A_sm90(
         GmemTiledCopyA{},
         make_tensor(static_cast<InternalElementA const*>(nullptr), repeat_like(StrideA{}, int32_t(0)), StrideA{}),
         SmemLayoutA{}(_,_,cute::Int<0>{}),
-        make_shape(shape<0>(TileShape{}), shape<2>(TileShape{})),
-        size<1>(ClusterShape{})));  // mcast along N mode for this M load, if any
+        TileShape{},
+        ClusterShape{}));
     // Assumption: StrideB is congruent with Problem_NK
-    using TMA_B = decltype(make_tma_copy(
+    using TMA_B = decltype(make_tma_copy_B_sm90(
         GmemTiledCopyB{},
         make_tensor(static_cast<InternalElementB const*>(nullptr), repeat_like(StrideB{}, int32_t(0)), StrideB{}),
         SmemLayoutB{}(_,_,cute::Int<0>{}),
-        make_shape(shape<1>(TileShape{}), shape<2>(TileShape{})),
-        size<0>(ClusterShape{}))); // mcast along M mode for this N load, if any
+        TileShape{},
+        ClusterShape{}));
     TMA_A tma_load_a;
     TMA_B tma_load_b;
+    uint32_t tma_transaction_bytes = TmaTransactionBytes;
+    uint32_t tma_transaction_bytes_mk = TmaTransactionBytesMK;
+    uint32_t tma_transaction_bytes_nk = TmaTransactionBytesNK;
   };
 
   //
@@ -208,26 +211,34 @@ struct CollectiveMma<
 
     Tensor tensor_a = make_tensor(ptr_A, make_layout(make_shape(M,K,L), args.dA));
     Tensor tensor_b = make_tensor(ptr_B, make_layout(make_shape(N,K,L), args.dB));
-    typename Params::TMA_A tma_load_a = make_tma_copy(
+
+    typename Params::TMA_A tma_load_a = make_tma_copy_A_sm90(
         GmemTiledCopyA{},
         tensor_a,
         SmemLayoutA{}(_,_,cute::Int<0>{}),
-        make_shape(shape<0>(TileShape{}), shape<2>(TileShape{})),
-        size<1>(ClusterShape{})); // mcast along N mode for this M load, if any
-    typename Params::TMA_B tma_load_b = make_tma_copy(
+        TileShape{},
+        ClusterShape{});
+    typename Params::TMA_B tma_load_b = make_tma_copy_B_sm90(
         GmemTiledCopyB{},
         tensor_b,
         SmemLayoutB{}(_,_,cute::Int<0>{}),
-        make_shape(shape<1>(TileShape{}), shape<2>(TileShape{})),
-        size<0>(ClusterShape{})); // mcast along M mode for this N load, if any
+        TileShape{},
+        ClusterShape{});
+    uint32_t transaction_bytes_mk = TmaTransactionBytesMK;
+    uint32_t transaction_bytes_nk = TmaTransactionBytesNK;
+    uint32_t transaction_bytes = transaction_bytes_mk + transaction_bytes_nk;
+
     return {
       tma_load_a,
-      tma_load_b
+      tma_load_b,
+      transaction_bytes,
+      transaction_bytes_mk,
+      transaction_bytes_nk
     };
   }
 
   template<class ProblemShape>
-  CUTLASS_HOST_DEVICE static bool
+  static bool
   can_implement(
       ProblemShape const& problem_shape,
       [[maybe_unused]] Arguments const& args) {
@@ -249,9 +260,11 @@ struct CollectiveMma<
 
   static constexpr int K_PIPE_MAX = DispatchPolicy::Stages;
   static constexpr int K_PIPE_MMAS = 1;
-  static constexpr uint32_t TmaTransactionBytes =
-        cutlass::bits_to_bytes(size<0>(SmemLayoutA{}) * size<1>(SmemLayoutA{}) * static_cast<uint32_t>(sizeof_bits<ElementA>::value))+
+  static constexpr uint32_t TmaTransactionBytesMK =
+        cutlass::bits_to_bytes(size<0>(SmemLayoutA{}) * size<1>(SmemLayoutA{}) * static_cast<uint32_t>(sizeof_bits<ElementA>::value));
+  static constexpr uint32_t TmaTransactionBytesNK =
         cutlass::bits_to_bytes(size<0>(SmemLayoutB{}) * size<1>(SmemLayoutB{}) * static_cast<uint32_t>(sizeof_bits<ElementB>::value));
+  static constexpr uint32_t TmaTransactionBytes = TmaTransactionBytesMK + TmaTransactionBytesNK;
 
   /// Issue Tma Descriptor Prefetch -- ideally from a single thread for best performance
   CUTLASS_DEVICE
@@ -294,7 +307,7 @@ struct CollectiveMma<
   CUTLASS_DEVICE void
   load(
       Params const& mainloop_params,
-      MainloopPipeline pipeline, 
+      MainloopPipeline pipeline,
       PipelineState smem_pipe_write,
       cute::tuple<TensorA, TensorB> const& load_inputs,
       BlockCoord const& blk_coord,
@@ -354,8 +367,7 @@ struct CollectiveMma<
 
       // Mainloop
       CUTLASS_PRAGMA_NO_UNROLL
-      for ( ; k_tile_count > 0; --k_tile_count)
-      {
+      for ( ; k_tile_count > 0; --k_tile_count) {
         // LOCK smem_pipe_write for _writing_
         pipeline.producer_acquire(smem_pipe_write);
 
@@ -422,8 +434,22 @@ struct CollectiveMma<
     // Define C accumulators and A/B partitioning
     //
 
+    // Layout of warp group to thread mapping
+
+    static_assert(stride<0>(typename TiledMma::ALayout{}) == 0 and 
+                  stride<0>(typename TiledMma::BLayout{}) == 0 and
+                  size<0>(typename TiledMma::ALayout{}) == NumThreadsPerWarpGroup and
+                  size<0>(typename TiledMma::BLayout{}) == NumThreadsPerWarpGroup, 
+                  "Stride of the first mode must be 0 and the size of the mode must be NumThreadsPerWarpGroup");
+
+    constexpr int MmaWarpGroups = size(TiledMma{}) / NumThreadsPerWarpGroup;
+    Layout warp_group_thread_layout = make_layout(Int<MmaWarpGroups>{}, 
+                                                  Int<NumThreadsPerWarpGroup>{});
+
+    int warp_group_idx = __shfl_sync(0xFFFFFFFF, thread_idx / NumThreadsPerWarpGroup, 0);
+
     TiledMma tiled_mma;
-    auto thread_mma = tiled_mma.get_thread_slice(thread_idx);
+    auto thread_mma = tiled_mma.get_slice(warp_group_thread_layout(warp_group_idx));
 
     Tensor tCsA = thread_mma.partition_A(sA);                                                 // (MMA,MMA_M,MMA_K,PIPE)
     Tensor tCsB = thread_mma.partition_B(sB);                                                 // (MMA,MMA_N,MMA_K,PIPE)
@@ -450,12 +476,9 @@ struct CollectiveMma<
 
     // Prologue GMMAs
     int prologue_mma_count = min(K_PIPE_MMAS, k_tile_count);
-
+    assert(k_tile_count >= 1);
     tiled_mma.accumulate_ = GMMA::ScaleOut::Zero;
-
     warpgroup_fence_operand(accum);
-    CUTLASS_PRAGMA_UNROLL
-    for (int k_tile_prologue = prologue_mma_count; k_tile_prologue > 0; --k_tile_prologue)
     {
       // WAIT on smem_pipe_read until its data are available (phase bit flips from rdPhaseBit value)
       auto barrier_token = pipeline.consumer_try_wait(smem_pipe_read);
@@ -463,6 +486,7 @@ struct CollectiveMma<
 
       int read_stage = smem_pipe_read.index();
       warpgroup_arrive();
+      tiled_mma.accumulate_ = GMMA::ScaleOut::Zero;
       // Unroll the K mode manually to set scale D to 1
       CUTLASS_PRAGMA_UNROLL
       for (int k_block = 0; k_block < size<2>(tCrA); ++k_block) {
@@ -471,6 +495,25 @@ struct CollectiveMma<
         tiled_mma.accumulate_ = GMMA::ScaleOut::One;
       }
 
+      warpgroup_commit_batch();
+
+      ++smem_pipe_read;
+    }
+
+    tiled_mma.accumulate_ = GMMA::ScaleOut::One;
+
+    warpgroup_fence_operand(accum);
+    CUTLASS_PRAGMA_UNROLL
+    for (int k_tile_prologue = prologue_mma_count - 1; k_tile_prologue > 0; --k_tile_prologue)
+    {
+      // WAIT on smem_pipe_read until its data are available (phase bit flips from rdPhaseBit value)
+      auto barrier_token = pipeline.consumer_try_wait(smem_pipe_read);
+      pipeline.consumer_wait(smem_pipe_read, barrier_token);
+
+      int read_stage = smem_pipe_read.index();
+      warpgroup_arrive();
+      // (V,M,K) x (V,N,K) => (V,M,N)
+      cute::gemm(tiled_mma, tCrA(_,_,_,read_stage), tCrB(_,_,_,read_stage), accum);
       warpgroup_commit_batch();
 
       ++smem_pipe_read;
@@ -494,13 +537,8 @@ struct CollectiveMma<
       int read_stage = smem_pipe_read.index();
       warpgroup_fence_operand(accum);
       warpgroup_arrive();
-      // Unroll the K mode manually to set scale D to 1
-      CUTLASS_PRAGMA_UNROLL
-      for (int k_block = 0; k_block < size<2>(tCrA); ++k_block) {
-        // (V,M,K) x (V,N,K) => (V,M,N)
-        cute::gemm(tiled_mma, tCrA(_,_,k_block,read_stage), tCrB(_,_,k_block,read_stage), accum);
-        tiled_mma.accumulate_ = GMMA::ScaleOut::One;
-      }
+      // (V,M,K) x (V,N,K) => (V,M,N)
+      cute::gemm(tiled_mma, tCrA(_,_,_,read_stage), tCrB(_,_,_,read_stage), accum);
       warpgroup_commit_batch();
 
       /// Wait on the GMMA barrier for K_PIPE_MMAS (or fewer) outstanding to ensure smem_pipe_write is consumed

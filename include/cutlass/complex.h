@@ -43,6 +43,7 @@
 
 #include "cutlass/cutlass.h"
 #include "cutlass/functional.h"
+#include "cutlass/platform/platform.h"
 #include "cutlass/real.h"
 
 #include "cutlass/numeric_types.h"
@@ -117,6 +118,18 @@ double const &imag(cuDoubleComplex const &z) { return z.y; }
 /// Returns the imaginary part of the complex number
 CUTLASS_HOST_DEVICE
 double &imag(cuDoubleComplex &z) { return z.y; }
+
+// Returns the conjugate of the complex number
+CUTLASS_HOST_DEVICE cuFloatComplex
+conj(cuFloatComplex const& z) {
+  return make_cuFloatComplex(z.x, -z.y);
+}
+
+// Returns the conjugate of the complex number
+CUTLASS_HOST_DEVICE cuDoubleComplex
+conj(cuDoubleComplex const& z) {
+  return make_cuDoubleComplex(z.x, -z.y);
+}
 #endif
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -315,60 +328,90 @@ class complex
   #endif
 };
 
+// Complex conjugate
+template<class T>
+CUTLASS_HOST_DEVICE complex<T> conj(complex<T> const& z) {
+  return {z.real(), -z.imag()};
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 //
 // Accessors for complex template
 //
 
-/// Returns the real part of the complex number
-template <typename T>
-CUTLASS_HOST_DEVICE T const &real(complex<T> const &z) {
-  return z.real();
-}
+// Nonmember real and imag need to work for non-complex numbers too.
+// That means cutlass::complex, std::complex, cuda::std::complex, and
+// any user-defined complex number type that looks like std::complex.
+// It's reasonable to assume that a "complex number type" has
+// zero-argument real() and imag() member functions returning
+// non-void.  While cuFloatComplex and cuDoubleComplex lack those
+// member functions, one-argument nonmember real and imag overloads
+// for those types are defined above.
 
-/// Returns the real part of the complex number
-template <typename T>
-CUTLASS_HOST_DEVICE T &real(complex<T> &z) {
-  return z.real();
-}
+namespace detail {
 
-/// Returns the imaginary part of the complex number
-template <typename T>
-CUTLASS_HOST_DEVICE T const &imag(complex<T> const &z) {
-  return z.imag();
-}
+template <typename T, typename Enable = void>
+struct has_zero_argument_real_member_function :
+  cutlass::platform::false_type
+{};
 
-/// Returns the imaginary part of the complex number
 template <typename T>
-CUTLASS_HOST_DEVICE T &imag(complex<T> &z) {
-  return z.imag();
-}
+struct has_zero_argument_real_member_function<T,
+  cutlass::platform::enable_if_t<
+    ! cutlass::platform::is_void_v<
+      decltype(cutlass::platform::declval<T>().real())
+    >
+  >
+> : cutlass::platform::true_type
+{};
 
-/// Returns the real part of the real number
 template <typename T>
-CUTLASS_HOST_DEVICE T const &real(T const &r) {
-  return r;
-}
+constexpr bool has_zero_argument_real_member_function_v =
+  has_zero_argument_real_member_function<T>::value;
 
-/// Returns the real part of the real number
+template <typename T, typename Enable = void>
+struct has_zero_argument_imag_member_function :
+  cutlass::platform::false_type
+{};
+
 template <typename T>
-CUTLASS_HOST_DEVICE T &real(T &r) {
-  return r;
-}
+struct has_zero_argument_imag_member_function<T,
+  cutlass::platform::enable_if_t<
+    ! cutlass::platform::is_void_v<
+      decltype(cutlass::platform::declval<T>().imag())
+    >
+  >
+> : cutlass::platform::true_type
+{};
 
-/// Returns the imaginary part of the real number
 template <typename T>
-CUTLASS_HOST_DEVICE T const &imag(T const &r) {
-  return T();
-}
+constexpr bool has_zero_argument_imag_member_function_v =
+  has_zero_argument_imag_member_function<T>::value;
 
-/// Returns the imaginary part of the complex number
-template <typename T>
-CUTLASS_HOST_DEVICE T &imag(T &r) {
-  return T();
-}
+} // namespace detail
 
+template<typename T>
+CUTLASS_HOST_DEVICE auto real(T z) {
+  if constexpr (detail::has_zero_argument_real_member_function_v<T>) {
+    return z.real();
+  } else {
+    return z;
+  }
+}
+  
+template<typename T>
+CUTLASS_HOST_DEVICE auto imag(T z) {
+  if constexpr (detail::has_zero_argument_imag_member_function_v<T>) {
+    return z.imag();
+  } else {
+    // Imaginary part of a non-complex input has the same type as the
+    // input, and its value is zero.  CUTLASS assumes in this case
+    // that value-initializing T is well-formed and results in zero.
+    return T{};
+  }
+}
+  
 //
 // Output operators
 //
@@ -395,10 +438,36 @@ std::ostream &operator<<(std::ostream &out, complex<T> const &z) {
 // Non-member functions defined for complex numbers
 //
 
-/// Returns the magnitude of the complex number
+// abs returns the magnitude of the complex number.
+
+CUTLASS_HOST_DEVICE float abs(complex<float> const &z) {
+  return ::hypot(z.real(), z.imag());
+}
+
+CUTLASS_HOST_DEVICE double abs(complex<double> const &z) {
+  return ::hypot(z.real(), z.imag());
+}
+
+// In theory, it would make sense to add a complex<long double>
+// specialization of abs here, since hypot works for long double too.
+// In practice, long double doesn't have a portable number of bits or
+// behavior, so users who care about higher-precision floating-point
+// computation should probably insist on an actual FP128 type.
+
 template <typename T>
 CUTLASS_HOST_DEVICE T abs(complex<T> const &z) {
-  return sqrt(norm(z));
+  // cutlass::complex permits all kinds of T, including types that
+  // don't have NaN.  For a generic floating-point type with Inf
+  // and/or NaN, LAPACK's DLAPY2 algorithm would make sense, as it
+  // would handle issues like avoiding unwarranted overflow if
+  // z.real() or z.imag() is slightly bigger than the square root of
+  // the max finite number.  That could be a future improvement; for
+  // now, the code just uses the naive algorithm.
+  //
+  // Use the "swap two-step" idiom so that argument-dependent lookup
+  // can find any CUTLASS-specific overloads.
+  using cutlass::sqrt;
+  return sqrt(z.real() * z.real() + z.imag() * z.imag());
 }
 
 /// Returns the magnitude of the complex number
@@ -438,67 +507,66 @@ CUTLASS_HOST_DEVICE R norm_accumulate(complex<T> const &z, R const &accumulator)
     static_cast<R>(imag(z)) * static_cast<R>(imag(z));
 }
 
-CUTLASS_HOST_DEVICE float conj(float const &z) {
+namespace detail {
+  
+template<class T>
+CUTLASS_HOST_DEVICE T conj_impl(T const& z, cutlass::platform::true_type) {
+  return conj(z);
+}
+
+template<class T>
+CUTLASS_HOST_DEVICE T conj_impl(T const& z, cutlass::platform::false_type) {
   return z;
 }
 
-CUTLASS_HOST_DEVICE double conj(double const &z) {
-  return z;
+template<class T>
+CUTLASS_HOST_DEVICE T conj_impl(T const& z) {
+  constexpr bool use_unqualified_conj =
+    ! cutlass::platform::is_arithmetic_v<T> &&
+    ! detail::has_cutlass_conj_v<T> &&
+    detail::has_unqualified_conj_v<T>;
+  return conj_impl(z, cutlass::platform::bool_constant<use_unqualified_conj>{});
 }
+  
+} // namespace detail
 
-CUTLASS_HOST_DEVICE half_t conj(half_t const& z) {
-  return z;
-}
-
-CUTLASS_HOST_DEVICE int32_t conj(int32_t const& z) {
-  return z;
-}
-
-CUTLASS_HOST_DEVICE uint32_t conj(uint32_t const& z) {
-  return z;
-}
-
-CUTLASS_HOST_DEVICE int64_t conj(int64_t const& z) {
-  return z;
-}
-
-CUTLASS_HOST_DEVICE uint64_t conj(uint64_t const& z) {
-  return z;
-}
-
-CUTLASS_HOST_DEVICE int4b_t conj(int4b_t const& z) {
-  return z;
-}
-
-CUTLASS_HOST_DEVICE uint4b_t conj(uint4b_t const& z) {
-  return z;
-}
-
-CUTLASS_HOST_DEVICE bfloat16_t conj(bfloat16_t const& z) {
-  return z;
-}
-
-CUTLASS_HOST_DEVICE uint1b_t conj(uint1b_t const& z) {
-  return z;
-}
-
-CUTLASS_HOST_DEVICE tfloat32_t conj(tfloat32_t const& z) {
-  return z;
-}
-
-CUTLASS_HOST_DEVICE float_e4m3_t conj(float_e4m3_t const& z) {
-  return z;
-}
-
-CUTLASS_HOST_DEVICE float_e5m2_t conj(float_e5m2_t const& z) {
-  return z;
-}
-
-
-/// Returns the complex conjugate
-template <typename T>
-CUTLASS_HOST_DEVICE complex<T> conj(complex<T> const &z) {
-  return complex<T>(real(z), -imag(z));
+// Return the complex conjugate of the input.
+//
+// This MUST be a function and not a function object, because it may
+// be common practice for downstream types to define specifically
+// cutlass::conj overloads, instead of overloads in their namespace.
+//
+// As a result of this being a function and not a function object,
+// CUTLASS code needs to declare "using cutlass::conj;" in scope and
+// then call this function unqualified, just like std::swap.
+//
+// If an overload already exists for cutlass::conj(T), that overload
+// will be called instead of this one.  Otherwise:
+//
+// 1. for arithmetic types, return z;
+//
+// 2. for types where (namespace-unqualified) conj(z) is well formed
+//    and cutlass::conj(z) is NOT well formed, return conj(z); and,
+//
+// 3. for everything else, return z.
+//
+// Regarding (1), the C++ Standard Library makes std::conj always
+// return std::complex, even for (noncomplex) arithmetic types.
+// cutlass::conj(T t) needs to return type T.  This follows the
+// convention of linear algebra software like the BLAS, where
+// "conjugate transpose" means the same thing as "transpose" for a
+// matrix of noncomplex numbers.
+//
+// Case (2) covers std::complex, cuda::std::complex, and non-Standard
+// (including user-defined) complex number types (for which "conj(z)"
+// is findable via argument-dependent lookup, but does not live in the
+// cutlass namespace).  It excludes cutlass::conj(z) in order to
+// prevent infinite recursion.
+//
+// Case (3) covers non-Standard non-complex number types.
+template<class T>
+CUTLASS_HOST_DEVICE T conj(T const& z) {
+  return detail::conj_impl(z);
 }
 
 /// Projects the complex number z onto the Riemann sphere
@@ -699,10 +767,30 @@ template <typename T>
 struct conjugate<complex<T>>  {
   CUTLASS_HOST_DEVICE
   complex<T> operator()(complex<T> const &a) const {
-    return conj(a);
+    // Invoke the complex<T> overload specifically, rather than
+    // wasting the compiler's effort on overload resolution.
+    return cutlass::conj(a);
   }
 };
 
+#if ! defined(__CUDACC_RTC__)
+template <>
+struct conjugate<cuFloatComplex>  {
+  CUTLASS_HOST_DEVICE
+  cuFloatComplex operator()(cuFloatComplex const& z) const {
+    return make_cuFloatComplex(z.x, -z.y);
+  }
+};
+
+template <>
+struct conjugate<cuDoubleComplex>  {
+  CUTLASS_HOST_DEVICE
+  cuDoubleComplex operator()(cuDoubleComplex const& z) const {
+    return make_cuDoubleComplex(z.x, -z.y);
+  }
+};
+#endif
+  
 /// Computes the square of a difference with optional conversion
 template <typename T, typename Output>
 struct magnitude_squared_difference<complex<T>, Output> {

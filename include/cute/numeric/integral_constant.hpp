@@ -33,6 +33,7 @@
 #include "cute/util/print.hpp"
 #include "cute/util/type_traits.hpp"
 #include "cute/numeric/math.hpp"
+#include "cutlass/fast_math.h"
 
 namespace cute
 {
@@ -82,8 +83,11 @@ struct is_integral<C<v>                  > : true_type {};
 template <class T, T v>
 struct is_integral<integral_constant<T,v>> : true_type {};
 
-// is_static detects if an (abstract) value is defined completely by it's type (no members)
+// Register FastDivmod as the integral type
+template<>
+struct is_integral<cutlass::FastDivmod> : true_type {};
 
+// is_static detects if an (abstract) value is defined completely by its type (no members)
 template <class T>
 struct is_static : bool_constant<is_empty<remove_cvref_t<T>>::value> {};
 

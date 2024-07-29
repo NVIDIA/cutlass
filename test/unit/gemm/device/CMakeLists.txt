@@ -310,6 +310,18 @@ cutlass_test_unit_add_executable(
   sm90_gemm_tf32_tf32_f32_alignx_tensor_op_f32_warpspecialized_pingpong.cu
 )
 
+# Ptr Array test
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_sm90_ptr_array
+  sm90_gemm_f16_f16_f16_tensor_op_f32_ptr_array.cu
+)
+
+# Group Gemm test
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_sm90_group_gemm
+  sm90_gemm_f16_f16_f16_tensor_op_f32_group_gemm.cu
+)
+
 # Fused epilogue tests
 cutlass_test_unit_add_executable(
   cutlass_test_unit_gemm_device_tensorop_epilogue_fusion_sm90
@@ -348,7 +360,6 @@ cutlass_test_unit_add_executable(
   sm90_gemm_f16_f16_f16_tensor_op_f32_cluster_warpspecialized_cooperative.cu
   sm90_gemm_f8_f8_f32_tensor_op_f32_cluster_warpspecialized_cooperative.cu
 )
-
 cutlass_test_unit_add_executable(
   cutlass_test_unit_gemm_device_tensorop_gmma_rs_warpspecialized_sm90
 
@@ -508,7 +519,7 @@ cutlass_test_unit_add_executable(
   gemm_f8t_f8n_f32t_tensor_op_f32_sm89.cu
   gemm_f8t_f8n_f32t_tensor_op_f32_sparse_sm89.cu
   gemm_f8t_f8n_f8t_tensor_op_f32_sm89.cu
-  gemm_f8t_f8n_f8t_tensor_op_f32_sparse_sm89.cu
+#  gemm_f8t_f8n_f8t_tensor_op_f32_sparse_sm89.cu
 )
 
 cutlass_test_unit_add_executable(

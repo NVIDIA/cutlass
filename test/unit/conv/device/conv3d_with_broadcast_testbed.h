@@ -204,17 +204,29 @@ public:
   }
 
   void initialize(
-    cutlass::conv::Conv3dProblemSize const &problem_size, uint64_t seed = 2019) {
+    cutlass::conv::Conv3dProblemSize const &problem_size, bool non_packed_test = false, uint64_t seed = 2019) {
         
-    tensor_A.resize(implicit_gemm_tensor_a_extent(kConvolutionalOperator, problem_size));
-    tensor_B.resize(implicit_gemm_tensor_b_extent(kConvolutionalOperator, problem_size));
-    tensor_C.resize(implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size));
-    tensor_C_reference.resize(implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size));
-    tensor_Z_computed.resize(implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size));
-    tensor_Z_reference.resize(implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size));
+    // to make the layout of tensors a little bit bigger than the problem size
+    cutlass::Tensor5DCoord stride_increment = cutlass::Tensor5DCoord(8, 16, 32, 32, 64);
+
+    cutlass::Tensor5DCoord tensor_A_extent = implicit_gemm_tensor_a_extent(kConvolutionalOperator, problem_size);
+    cutlass::Tensor5DCoord tensor_B_extent = implicit_gemm_tensor_b_extent(kConvolutionalOperator, problem_size);
+    cutlass::Tensor5DCoord tensor_C_extent = implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size);
+
+    if (non_packed_test) {
+      tensor_A_extent += stride_increment;
+      tensor_C_extent += stride_increment;
+    }
+
+    tensor_A.resize(tensor_A_extent);
+    tensor_B.resize(tensor_B_extent);
+    tensor_C.resize(tensor_C_extent);
+    tensor_C_reference.resize(tensor_C_extent);
+    tensor_Z_computed.resize(tensor_C_extent);
+    tensor_Z_reference.resize(tensor_C_extent);
     tensor_T_computed.resize(implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size));
     tensor_T_reference.resize(implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size));
-    tensor_Y_reference.resize(implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size));
+    tensor_Y_reference.resize(tensor_C_extent);
     tensor_Broadcast.resize({
       1,
       1,
@@ -282,6 +294,7 @@ public:
   bool run(
     cutlass::conv::Conv3dProblemSize const &problem_size,
     cutlass::conv::SplitKMode const &split_k_mode = cutlass::conv::SplitKMode::kSerial,
+    bool non_packed_test = false,
     ElementCompute alpha = ElementCompute(1),
     ElementCompute beta = ElementCompute(1)) {
 
@@ -300,7 +313,7 @@ public:
               << std::endl;
 #endif
 
-    initialize(problem_size);
+    initialize(problem_size, non_packed_test);
 
     // configure the operator
     Conv3d conv3d_op;
@@ -479,6 +492,7 @@ public:
         << problem_size.dilation_h << "x"
         << problem_size.dilation_w << "_"
         << (problem_size.mode == cutlass::conv::Mode::kCrossCorrelation ? "xcorr_" : "conv_")
+        << (non_packed_test ? "non_packed_tensor_test_" : "packed_tensor_test_")
         << Conv3d::ThreadblockShape::kM << "x"  
         << Conv3d::ThreadblockShape::kN << "x"  
         << Conv3d::ThreadblockShape::kK << "_"
@@ -521,7 +535,8 @@ template <typename ImplicitGemm,
 >
 bool TestAllConv3dWithBroadcast(
   const Conv3dProblemVector &conv_test_sizes = Conv3dProblemVector(),
-  const Conv3dProblemVector &conv_blacklist_sizes = Conv3dProblemVector()) {
+  const Conv3dProblemVector &conv_blacklist_sizes = Conv3dProblemVector(),
+  bool non_packed_test = false) {
 
   bool passed = true;
 
@@ -595,17 +610,17 @@ bool TestAllConv3dWithBroadcast(
       // test mode = xcross
       passed = testbed.run(
         conv_problem,
-        cutlass::conv::SplitKMode::kSerial);
-    
+        cutlass::conv::SplitKMode::kSerial, non_packed_test);
+
       if (!passed) {
         return false;
       }
-      
+
       // test mode = convolution
       passed = testbed.run(
         conv_problem.reset_mode(cutlass::conv::Mode::kConvolution),
-        cutlass::conv::SplitKMode::kSerial);
-    
+        cutlass::conv::SplitKMode::kSerial, non_packed_test);
+
       if (!passed) {
         return false;
       }
@@ -651,6 +666,7 @@ bool TestAllConv3dWithBroadcast(
           passed = testbed.run(
             conv3d_split_k_test_size.reset_split_k_slices(split_k_slice),
             split_k_mode,
+            false,/*non_packed_test*/
             cutlass::from_real<typename ImplicitGemm::ElementCompute>(alpha), 
             cutlass::from_real<typename ImplicitGemm::ElementCompute>(beta));
 
@@ -669,7 +685,8 @@ template <typename ImplicitGemm,
           typename ReferenceOp = Conv3dWithBroadcastReferenceOp<ImplicitGemm>,
           bool AddBroadcastFirst = false>
 bool TestSpecificConv3dWithBroadcast(
-  const Conv3dProblemVector & problem_sizes) {
+  const Conv3dProblemVector & problem_sizes,
+  bool non_packed_test = false) {
 
   bool passed = true;
 
@@ -686,19 +703,19 @@ bool TestSpecificConv3dWithBroadcast(
     // Test
     //
 
-    // test mode = xcross
+    // test mode = xcross, non_packed_test = false
     passed = testbed.run(
       conv_problem,
-      cutlass::conv::SplitKMode::kSerial);
+      cutlass::conv::SplitKMode::kSerial, non_packed_test);
 
     if (!passed) {
       return false;
     }
 
-    // test mode = convolution
+    // test mode = convolution, non_packed_test = false
     passed = testbed.run(
       conv_problem.reset_mode(cutlass::conv::Mode::kConvolution),
-      cutlass::conv::SplitKMode::kSerial);
+      cutlass::conv::SplitKMode::kSerial, non_packed_test);
 
     if (!passed) {
       return false;

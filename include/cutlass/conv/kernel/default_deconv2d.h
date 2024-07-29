@@ -181,7 +181,11 @@ struct DefaultDeconv2d <
     ThreadblockShape,
     WarpMmaSimtOp,
     EpilogueOutputOp,
-    EpilogueOutputOp::kCount
+    EpilogueOutputOp::kCount,
+    false,
+    layout::NoPermute,
+    StrideSupport::kStrided,
+    4
   >::Epilogue;
 
   // Define the kernel
@@ -405,7 +409,11 @@ struct DefaultDeconv2d <
     ThreadblockShape,
     WarpMmaSimtOp,
     EpilogueOutputOp,
-    EpilogueOutputOp::kCount
+    EpilogueOutputOp::kCount,
+    false,
+    layout::NoPermute,
+    StrideSupport::kStrided,
+    4
   >::Epilogue;
 
   // Define the kernel
@@ -627,7 +635,11 @@ struct DefaultDeconv2d <
     ThreadblockShape,
     WarpMmaSimtOp,
     EpilogueOutputOp,
-    EpilogueOutputOp::kCount
+    EpilogueOutputOp::kCount,
+    false,
+    layout::NoPermute,
+    StrideSupport::kStrided,
+    4
   >::Epilogue;
 
   // Define the kernel
@@ -852,7 +864,11 @@ struct DefaultDeconv2d <
     ThreadblockShape,
     WarpMmaSimtOp,
     EpilogueOutputOp,
-    EpilogueOutputOp::kCount
+    EpilogueOutputOp::kCount,
+    false,
+    layout::NoPermute,
+    StrideSupport::kStrided,
+    4
   >::Epilogue;
 
   // Define the kernel

@@ -117,6 +117,9 @@ tma_test_device_cute(T const* g_in, T* g_out,
   }
 #endif
 
+  // Test L2 prefetch
+  cooperative_prefetch<128>(threadIdx.x, gA);
+
   // Loop over the TMA stages, using smem as our buffer
   for (int stage = 0; stage < size<1>(tBgB); ++stage)
   {
