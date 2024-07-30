@@ -50,6 +50,18 @@
 
 namespace cutlass::epilogue::fusion {
 
+namespace detail {
+
+template <class ElementSource, class Arguments>
+bool
+is_void_c_and_non_zero_beta(Arguments const& args) {
+  using ElementBeta = decltype(args.beta);
+  bool has_beta = args.beta != static_cast<ElementBeta>(0.0) || args.beta_ptr != nullptr;
+  return has_beta && is_void_v<ElementSource>;
+}
+
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <class NodeOp, class... ChildOps>
@@ -64,6 +76,7 @@ template <
   bool DelayTmaStore,
   class ElementOutput,
   class ElementCompute,
+  class ElementSource,
   class ElementScalar,
   FloatRoundStyle RoundStyle,
   class CtaTileShapeMNK,
@@ -71,7 +84,7 @@ template <
 >
 struct FusionCallbacks<
     epilogue::Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore>,
-    fusion::ScaledAcc<ElementOutput, ElementCompute, ElementScalar, RoundStyle>,
+    fusion::ScaledAcc<ElementOutput, ElementCompute, ElementSource, ElementScalar, RoundStyle>,
     CtaTileShapeMNK,
     EpilogueTile
 > : Sm90EVT<Sm90Compute<multiplies, ElementOutput, ElementCompute, RoundStyle>,
@@ -83,7 +96,7 @@ struct FusionCallbacks<
       Sm90ScalarBroadcast<ElementScalar>,
       Sm90AccFetch
     >;
-  using Operation = fusion::ScaledAcc<ElementOutput, ElementCompute, ElementScalar, RoundStyle>;
+  using Operation = fusion::ScaledAcc<ElementOutput, ElementCompute, ElementSource, ElementScalar, RoundStyle>;
 
   struct Arguments {
     // Give a name and flat ordering to the fusion callback args
@@ -106,6 +119,13 @@ struct FusionCallbacks<
 
   // Ctor inheritance
   using Impl::Impl;
+
+  template <class ProblemShape>
+  static bool
+  can_implement(ProblemShape const& problem_shape, Arguments const& args) {
+    return Impl::can_implement(problem_shape, args) && 
+      not detail::is_void_c_and_non_zero_beta<ElementSource>(args);
+  }
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -175,6 +195,13 @@ struct FusionCallbacks<
 
   // Ctor inheritance
   using Impl::Impl;
+
+  template <class ProblemShape>
+  static bool
+  can_implement(ProblemShape const& problem_shape, Arguments const& args) {
+    return Impl::can_implement(problem_shape, args) && 
+      not detail::is_void_c_and_non_zero_beta<ElementSource>(args);
+  }
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -247,6 +274,13 @@ struct FusionCallbacks<
 
   // Ctor inheritance
   using Impl::Impl;
+
+  template <class ProblemShape>
+  static bool
+  can_implement(ProblemShape const& problem_shape, Arguments const& args) {
+    return Impl::can_implement(problem_shape, args) && 
+      not detail::is_void_c_and_non_zero_beta<ElementSource>(args);
+  }
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -329,6 +363,13 @@ struct FusionCallbacks<
 
   // Ctor inheritance
   using Impl::Impl;
+
+  template <class ProblemShape>
+  static bool
+  can_implement(ProblemShape const& problem_shape, Arguments const& args) {
+    return Impl::can_implement(problem_shape, args) && 
+      not detail::is_void_c_and_non_zero_beta<ElementSource>(args);
+  }
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -421,6 +462,13 @@ struct FusionCallbacks<
 
   // Ctor inheritance
   using Impl::Impl;
+
+  template <class ProblemShape>
+  static bool
+  can_implement(ProblemShape const& problem_shape, Arguments const& args) {
+    return Impl::can_implement(problem_shape, args) && 
+      not detail::is_void_c_and_non_zero_beta<ElementSource>(args);
+  }
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -541,6 +589,13 @@ struct FusionCallbacks<
 
   // Ctor inheritance
   using Impl::Impl;
+
+  template <class ProblemShape>
+  static bool
+  can_implement(ProblemShape const& problem_shape, Arguments const& args) {
+    return Impl::can_implement(problem_shape, args) && 
+      not detail::is_void_c_and_non_zero_beta<ElementSource>(args);
+  }
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -662,6 +717,13 @@ struct FusionCallbacks<
 
   // Ctor inheritance
   using Impl::Impl;
+
+  template <class ProblemShape>
+  static bool
+  can_implement(ProblemShape const& problem_shape, Arguments const& args) {
+    return Impl::can_implement(problem_shape, args) && 
+      not detail::is_void_c_and_non_zero_beta<ElementSource>(args);
+  }
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -821,6 +883,13 @@ struct FusionCallbacks<
 
   // Ctor inheritance
   using Impl::Impl;
+
+  template <class ProblemShape>
+  static bool
+  can_implement(ProblemShape const& problem_shape, Arguments const& args) {
+    return Impl::can_implement(problem_shape, args) && 
+      not detail::is_void_c_and_non_zero_beta<ElementSource>(args);
+  }
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1132,6 +1201,13 @@ struct FusionCallbacks<
 
   // Ctor inheritance
   using Impl::Impl;
+
+  template <class ProblemShape>
+  static bool
+  can_implement(ProblemShape const& problem_shape, Arguments const& args) {
+    return Impl::can_implement(problem_shape, args) && 
+      not detail::is_void_c_and_non_zero_beta<ElementSource>(args);
+  }
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1238,6 +1314,13 @@ struct FusionCallbacks<
 
   // Ctor inheritance
   using Impl::Impl;
+
+  template <class ProblemShape>
+  static bool
+  can_implement(ProblemShape const& problem_shape, Arguments const& args) {
+    return Impl::can_implement(problem_shape, args) && 
+      not detail::is_void_c_and_non_zero_beta<ElementSource>(args);
+  }
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1361,6 +1444,13 @@ struct FusionCallbacks<
 
   // Ctor inheritance
   using Impl::Impl;
+
+  template <class ProblemShape>
+  static bool
+  can_implement(ProblemShape const& problem_shape, Arguments const& args) {
+    return Impl::can_implement(problem_shape, args) && 
+      not detail::is_void_c_and_non_zero_beta<ElementSource>(args);
+  }
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
