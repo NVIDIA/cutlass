@@ -135,7 +135,7 @@ class CpuId {
     // GCC / Clang
        int eax, ebx, ecx, edx;
 
-      __cpuid (1 , eax, ebx, ecx, edx); 
+      __cpuid (1, eax, ebx, ecx, edx); 
       f16c_enabled = ecx & 0x20000000;
     #endif
   #else 
