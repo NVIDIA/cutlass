@@ -310,6 +310,13 @@ list(APPEND CUTLASS_CUDA_NVCC_FLAGS -DCUTLASS_DEBUG_TRACE_LEVEL=${CUTLASS_DEBUG_
 set(CUTLASS_ENABLE_TENSOR_CORE_MMA ${CUTLASS_ENABLE_TENSOR_CORE_MMA_DEFAULT} CACHE BOOL
   "Enable PTX mma instruction for collective matrix multiply operations.")
 
+set(CUTLASS_ENABLE_SM90_EXTENDED_MMA_SHAPES OFF CACHE BOOL
+  "Enable an extended set of SM90 WGMMA instruction shapes (may lead to increased compilation times)")
+if(CUTLASS_ENABLE_SM90_EXTENDED_MMA_SHAPES)
+  message(STATUS "Enabled extended SM90 WGMMA instruction shapes")
+  list(APPEND CUTLASS_CUDA_NVCC_FLAGS -DCUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
+endif()
+
 #
 # NOTE: running with asan and CUDA requires the following environment variable:
 #
