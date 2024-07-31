@@ -234,7 +234,7 @@ template <>
 struct inverse_square_root<half_t> {
   CUTLASS_HOST_DEVICE
   half_t operator()(half_t const &lhs) const {
-#if defined(__CUDA_ARCH__)
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ > 520
     auto result = hrsqrt(reinterpret_cast<__half const &>(lhs));
     return reinterpret_cast<half_t const &>(result);
 #else
