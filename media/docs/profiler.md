@@ -210,8 +210,8 @@ GEMM
   [int]       --inst_k,--instruction-shape::k                   Math instruction shape in the K dimension
   [int]       --min_cc,--minimum-compute-capability             Minimum device compute capability
   [int]       --max_cc,--maximum-compute-capability             Maximum device compute capability
-  [enum]      --raster_order={H|M|N}                            If supported by kernel, sets the tile raster direction
-  [int]       --swizzle_size                                    If supported by kernel, sets the 2D tile swizzle extent
+  [enum]      --raster_order={heuristic|H|along_m|M|along_n|N}  If supported by kernel, sets the tile raster direction
+  [int]       --swizzle_size={1,2,4,8}                          If supported by kernel, sets the 2D tile swizzle extent (In Hopper, other values will be rounded down to the nearest supported value)
 Examples:
 
 Profile a particular problem size:
