@@ -82,14 +82,12 @@ struct FusionOperation {
 template<
   class ElementOutput_,
   class ElementCompute_,
-  class ElementSource_ = ElementOutput_,
   class ElementScalar_ = ElementCompute_,
   FloatRoundStyle RoundStyle_ = FloatRoundStyle::round_to_nearest
 >
 struct ScaledAcc : FusionOperation {
   using ElementOutput = ElementOutput_;
   using ElementCompute = ElementCompute_;
-  using ElementSource = ElementSource_;
   using ElementScalar = ElementScalar_;
   static constexpr int AlignmentScalar = 1;
   static constexpr auto RoundStyle = RoundStyle_;
@@ -104,7 +102,7 @@ template<
   FloatRoundStyle RoundStyle_ = FloatRoundStyle::round_to_nearest
 >
 struct LinearCombination
-    : ScaledAcc<ElementOutput_, ElementCompute_, ElementSource_, ElementScalar_, RoundStyle_> {
+    : ScaledAcc<ElementOutput_, ElementCompute_, ElementScalar_, RoundStyle_> {
   using ElementSource = ElementSource_;
   static constexpr bool IsSourceSupported = true;
 };

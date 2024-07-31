@@ -339,7 +339,23 @@ public:
     if (!fusion_implementable) {
       CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Problem Size doesn't meet the minimum requirements for FusionCallbacks.\n");
     }
-    return implementable && fusion_implementable;
+
+    bool beta_implementable = true;
+
+    if constexpr (cute::is_void_v<ElementC>) {
+      if constexpr (detail::has_beta<Arguments>::value) {
+        beta_implementable = args.thread.beta == 0.0;
+      }
+      if constexpr (detail::has_beta_ptr<Arguments>::value) {
+        beta_implementable = beta_implementable && args.thread.beta_ptr == nullptr;
+      }
+    }
+
+    if (!beta_implementable) {
+      CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Beta/beta pointer was set, but epilogue is sourceless (void-C).\n");
+    }
+
+    return implementable && fusion_implementable && beta_implementable;
   }
 
   template<class TileShapeMNK>
