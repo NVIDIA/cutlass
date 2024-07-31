@@ -1010,12 +1010,13 @@ ConvKind from_string<ConvKind>(std::string const &str) {
 static struct {
   char const *text;
   char const *pretty;
+  char const *character;
   RasterOrder enumerant;
 }
 RasterOrder_enumerants[] = {
-  {"along_n", "<along_n>", RasterOrder::kAlongN},
-  {"along_m", "<along_m>", RasterOrder::kAlongM},
-  {"heuristic", "<heuristic>", RasterOrder::kHeuristic},
+  {"along_n", "<along_n>", "N", RasterOrder::kAlongN},
+  {"along_m", "<along_m>", "M", RasterOrder::kAlongM},
+  {"heuristic", "<heuristic>", "H", RasterOrder::kHeuristic},
 };
 
 /// Converts a RasterOrder enumerant to a string
@@ -1042,7 +1043,8 @@ RasterOrder from_string<RasterOrder>(std::string const &str) {
 
   for (auto const & possible : RasterOrder_enumerants) {
     if ((str.compare(possible.text) == 0) ||
-        (str.compare(possible.pretty) == 0)) {
+        (str.compare(possible.pretty) == 0) ||
+        (str.compare(possible.character) == 0)) {
       return possible.enumerant;
     }
   }
