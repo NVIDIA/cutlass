@@ -392,6 +392,27 @@ public:
   tensormaps_fence_acquire([[maybe_unused]] cute::TmaDescriptor const* tensormap) { }
 };
 
+// SFINAE helpers for detecting beta/beta_ptr in EVT arguments.
+template <class Arguments, class = void>
+struct has_beta {
+  static constexpr bool value = false;
+};
+
+template <class Arguments>
+struct has_beta<Arguments, cute::void_t<decltype(Arguments{}.thread.beta)>> {
+  static constexpr bool value = true;
+};
+
+template <class Arguments, class = void>
+struct has_beta_ptr {
+  static constexpr bool value = false;
+};
+
+template <class Arguments>
+struct has_beta_ptr<Arguments, cute::void_t<decltype(Arguments{}.thread.beta_ptr)>> {
+  static constexpr bool value = true;
+};
+
 } // namespace detail
 } // namespace collective
 } // namespace epilogue
