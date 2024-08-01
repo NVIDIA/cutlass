@@ -424,7 +424,11 @@ public:
         const auto sycl_grid = syclcompat::dim3(grid.x, grid.y, grid.z);
 
 #if defined (SYCL_INTEL_TARGET)
-        auto event = syclcompat::experimental::launch<device_kernel<GemmKernel>, DispatchPolicy::SubgroupSize>(sycl_grid, sycl_block, smem_size, params);
+        using namespace syclcompat::experimental;
+        auto event = launch<device_kernel<GemmKernel>>(launch_policy{
+          sycl_grid, sycl_block, local_mem_size{static_cast<std::size_t>(smem_size)}, 
+          kernel_properties{sycl_exp::sub_group_size<DispatchPolicy::SubgroupSize>}
+        }, params);
 #else
         auto event = syclcompat::launch<device_kernel<GemmKernel>>(sycl_grid, sycl_block, smem_size, params);
 #endif
