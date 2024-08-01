@@ -296,7 +296,9 @@ public:
 
     Status launch_result;
     // Use extended launch API only for mainloops that use it
-    if constexpr(ConvKernel::ArchTag::kMinComputeCapability >= 90) {
+    if constexpr (ConvKernel::ArchTag::kMinComputeCapability >= 90) {
+      constexpr bool is_static_1x1x1 = cute::is_static_v<typename ConvKernel::DispatchPolicy::ClusterShape> and
+                                       cute::size(typename ConvKernel::DispatchPolicy::ClusterShape{}) == 1;
       dim3 cluster(cute::size<0>(typename ConvKernel::DispatchPolicy::ClusterShape{}),
                    cute::size<1>(typename ConvKernel::DispatchPolicy::ClusterShape{}),
                    cute::size<2>(typename ConvKernel::DispatchPolicy::ClusterShape{}));
@@ -324,8 +326,14 @@ public:
         CUTLASS_ASSERT(cuda_adapter == nullptr);
         void const* kernel = (void const*) device_kernel<ConvKernel>;
         if constexpr (ConvKernel::ArchTag::kMinComputeCapability == 90) {
-          launch_result = ClusterLauncher::launch(
-              grid, cluster, block, smem_size, stream, kernel, kernel_params);
+          if constexpr (is_static_1x1x1) {
+            device_kernel<ConvKernel><<<grid, block, smem_size, stream>>>(params);
+            launch_result = Status::kSuccess;
+          }
+          else {
+            launch_result = ClusterLauncher::launch(
+                grid, cluster, block, smem_size, stream, kernel, kernel_params);
+          }
         }
       }
     }
