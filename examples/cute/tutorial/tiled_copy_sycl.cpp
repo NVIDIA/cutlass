@@ -29,6 +29,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
+
+#include <sycl.hpp>
 #include <syclcompat.hpp>
 
 #include <cute/tensor.hpp>

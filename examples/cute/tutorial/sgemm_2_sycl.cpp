@@ -32,7 +32,9 @@
 
 #define SYCLCOMPAT_PROFILING_ENABLED
 
+#include <sycl.hpp>
 #include <syclcompat.hpp>
+
 
 #include <cute/tensor.hpp>
 
