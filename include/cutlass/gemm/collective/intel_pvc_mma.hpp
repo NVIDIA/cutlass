@@ -36,11 +36,10 @@
 #include "cute/algorithm/functional.hpp"
 #include "cute/atom/mma_atom.hpp"
 #include "cute/algorithm/gemm.hpp"
-#include "cute/atom/mma_atom.hpp"
 #include "cute/tensor_predicate.hpp"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
- 
+
 namespace cutlass::gemm::collective {
 using namespace cute;
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -103,8 +102,11 @@ struct CollectiveMma<
   using MmaAtomShape = typename TiledMma::AtomShape_MNK;
   using SubgroupTileShape = decltype(tile_shape(TiledMma()));
 
+  static constexpr auto sg_per_wg_m = get<0>(WorkgroupTileShape{}) / get<0>(SubgroupTileShape{});
+  static constexpr auto sg_per_wg_n = get<1>(WorkgroupTileShape{}) / get<1>(SubgroupTileShape{});
+
   static constexpr uint32_t MaxThreadsPerBlock =
-          cute::size(WorkgroupTileShape{}) / cute::size(SubgroupTileShape{})* SubgroupSize;
+          cute::size(WorkgroupTileShape{}) / cute::size(SubgroupTileShape{}) * SubgroupSize;
 
   static constexpr int FragsM = get<0>(SubgroupTileShape{}) / get<0>(MmaAtomShape()); // A frags per sub_group
   static constexpr int FragsN = get<1>(SubgroupTileShape{}) / get<1>(MmaAtomShape()); // B frags per sub_group
@@ -187,29 +189,70 @@ struct CollectiveMma<
     static_assert(is_rmem<FrgTensorC>::value, "C tensor must be rmem resident.");
 
     // Tensor to hold input data
-    Tensor tAr = make_tensor<typename TiledMma::ValTypeA>(Shape<Int<get<0>(SubgroupTileShape{}) * FragsK>, _1>{});
-    Tensor tBr = make_tensor<typename TiledMma::ValTypeB>(Shape<Int<get<1>(SubgroupTileShape{}) / 2>, Int<FragsN>>{});
+    constexpr int version =
+        is_same_v<GmemTiledCopyB, XE_2D_U16x16x16x2x1_V> ? 1 : 2;
+
+    Tensor tAr = make_tensor<typename TiledMma::ValTypeA>(Shape<Int<get<0>(SubgroupTileShape{}) * FragsK>, Int<1>>{});
+    Tensor tBr = make_tensor<typename TiledMma::ValTypeB>(Shape<Int<get<2>(SubgroupTileShape{}) * version>, Int<FragsN / version>>{});
 
     Tensor tAr_view = make_tensor(static_cast<decltype(tAr) &&>(tAr).data(),
                             Shape<Int<VecA>, Int<FragsM>, Int<FragsK>>{});
     Tensor tBr_view = make_tensor(static_cast<decltype(tBr) &&>(tBr).data(),
                             Shape<Int<VecB>, Int<FragsN>, Int<FragsK>>{},
-                            Stride<_1, Int<get<1>(SubgroupTileShape{}) / 2>, Int<VecB>>{});
+                            Stride<_1, Int<VecB * FragsK>, Int<VecB>>{});
 
     // Instantiate the M MA object
     TiledMma tiled_mma;
 
+    int K = size<1>(mainloop.gmem_tiled_copy_a.tensor);
+
+    auto sub_group_id = ThreadIdxX() / SubgroupSize;
+    /* Cooperative prefetch
+       Divice the thread space to sg_per_wg_m x sg_per_wg_n, all the threads in one row/col use the same tile A/B. 
+       Each thread loads sizeof(tile A or B) / numof(sg_per_wg_n or sg_per_wg_m). 
+       
+       Currently, sg_per_wg_m x sg_per_wg_n = 4 x 8 is the most efficient
+    */
+    // TODO: Replace the demo cooperative prefetch with more general way.
+    Tensor tAi = make_tensor(
+        make_inttuple_iter(
+            *gA.data() +
+            make_coord((sub_group_id % sg_per_wg_n % 4) * get<0>(MmaAtomShape{}), 0)),
+        make_layout(make_shape(_1{}, _1{}, K),
+                    make_stride(_1{}, E<0>{}, E<1>{})));
+    Tensor tBi = make_tensor(
+        make_inttuple_iter(
+            *gB.data() +
+            make_coord((sub_group_id / sg_per_wg_n % 2 * 2) * get<1>(MmaAtomShape{}),
+                       (sub_group_id / sg_per_wg_n / 2 % 2) * get<2>(MmaAtomShape{}))),
+        make_layout(make_shape(_1{}, _1{}, K),
+                    make_stride(_1{}, E<0>{}, E<1>{})));
     //
     // Mainloop
     //
-   for (int k_tile = 0, k = 0; k_tile < k_tile_count; ++k_tile, k += get<2>(MmaAtomShape()) * FragsK)
-   {
-     // Copy gmem to rmem for the first k_tile
-     copy(mainloop.gmem_tiled_copy_a, gA(_,_,k), tAr);
-     copy(mainloop.gmem_tiled_copy_b, gB(_,_,k/2), tBr);
+    int prefetch_k = 0;
 
-     cute::gemm(tiled_mma, accum, tAr_view, tBr_view, src_accum);
-   }
+    // Manually set the prefetch_distance to 3
+    // TODO: Expose to users like stages parameter
+    int constexpr prefetch_distance = 3;
+    for (int i = 0; i < prefetch_distance; i++) {
+      prefetch(mainloop.gmem_tiled_copy_a, tAi(_, _, prefetch_k));
+      prefetch(mainloop.gmem_tiled_copy_b, tBi(_, _, prefetch_k));
+      prefetch_k += get<2>(SubgroupTileShape{});
+    }
+
+    for (int k_tile = 0, k = 0; k_tile < k_tile_count;
+         ++k_tile, k += get<2>(SubgroupTileShape{})) {
+      // Copy gmem to rmem for the first k_tile
+      copy(mainloop.gmem_tiled_copy_a, gA(_, _, k), tAr);
+      copy(mainloop.gmem_tiled_copy_b, gB(_, _, k), tBr);
+
+      prefetch(mainloop.gmem_tiled_copy_a, tAi(_, _, prefetch_k));
+      prefetch(mainloop.gmem_tiled_copy_b, tBi(_, _, prefetch_k));
+      prefetch_k += get<2>(SubgroupTileShape{});
+
+      cute::gemm(tiled_mma, accum, tAr_view, tBr_view, src_accum);
+    }
   }
 };
 

@@ -57,23 +57,6 @@ static void fill_matrix(std::vector<T> &vector)
   });
 }
 
-template <typename T>
-static void vnni_matrix(
-    T* dst, const T* src,
-    int batch, int numRows, int numCols, int factor)
-{
-    for (int b = 0; b < batch; b++) {
-      for (int r = 0; r < numRows / factor; r++) {
-          for (int c = 0; c < numCols; c++) {
-              for (int k = 0; k < factor; k++) {
-                  dst[((b * (numRows / factor) + r) * numCols + c) * factor + k] =
-                      src[((b * (numRows / factor) + r) * factor + k) * numCols + c];
-              }
-          }
-      }
-    }
-}
-
 using namespace cute;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -171,7 +154,6 @@ struct ExampleRunner {
 
   cutlass::DeviceAllocation<ElementA> block_A;
   cutlass::DeviceAllocation<ElementB> block_B;
-  cutlass::DeviceAllocation<ElementB> block_B_vnni;
   cutlass::DeviceAllocation<ElementC> block_C;
   cutlass::DeviceAllocation<ElementOutput> block_D;
   cutlass::DeviceAllocation<ElementOutput> block_ref_D;
@@ -238,7 +220,6 @@ struct ExampleRunner {
 
     block_A.reset(M * K * L);
     block_B.reset(K * N * L);
-    block_B_vnni.reset(K * N * L);
     block_C.reset(M * N * L);
     block_D.reset(M * N * L);
     block_ref_D.reset(M * N * L);
@@ -247,18 +228,15 @@ struct ExampleRunner {
     // available through SYCL.
     std::vector<ElementA> a(K * M * L);
     std::vector<ElementB> b(K * N * L);
-    std::vector<ElementB> b_vnni(b.size());
     std::vector<ElementC> c(M * N * L);
     std::vector<ElementC> d(M * N * L, ElementC{0});
 
     fill_matrix(a);
     fill_matrix(b);
     fill_matrix(c);
-    vnni_matrix(b_vnni.data(), b.data(), L, K, N, 2);
 
     syclcompat::memcpy(block_A.get(), a.data(), a.size() * sizeof(ElementA));
     syclcompat::memcpy(block_B.get(), b.data(), b.size() * sizeof(ElementB));
-    syclcompat::memcpy(block_B_vnni.get(), b_vnni.data(), b.size() * sizeof(ElementB));
     syclcompat::memcpy(block_C.get(), c.data(), c.size() * sizeof(ElementC));
     syclcompat::memcpy(block_D.get(), d.data(), d.size() * sizeof(ElementC));
   }
@@ -271,7 +249,7 @@ struct ExampleRunner {
     typename Gemm::GemmKernel::Arguments arguments{
       cutlass::gemm::GemmUniversalMode::kGemm,
       problem_size,
-      {block_A.get(), stride_A, block_B_vnni.get(), stride_B},
+      {block_A.get(), stride_A, block_B.get(), stride_B},
       {{options.alpha, options.beta}, block_C.get(), stride_C, block_D.get(), stride_D},
       hw_info
     };
@@ -361,12 +339,12 @@ int main(int argc, const char** argv)
   using LayoutD = cutlass::layout::RowMajor;
 
   using GmemTiledCopyA = XE_2D_U16x8x16x4x2_LD_N;
-  using GmemTiledCopyB = XE_2D_U16x16x16x2x1_LD_N;
+  using GmemTiledCopyB = XE_2D_U16x16x16x2x2_V;
 
   // Workgroup-level tile
-  using TileShape = Shape<_32, _256, _32>;
+  using TileShape = Shape<_256, _256, _32>;
 
-  using TiledMma = TiledMMA<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TN>,
+  using TiledMma = TiledMMA<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
           Layout<Shape<_1,_1,_1>>,
           Tile<_32,_64,_32>>;  // Subgroup level-tile
 

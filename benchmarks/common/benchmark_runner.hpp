@@ -320,42 +320,10 @@ struct PvcBenchmarkRunner : BenchmarkRunner<Gemm> {
 
     using ProblemShapeType = typename Base::ProblemShapeType;
 
-    cutlass::DeviceAllocation<ElementB> block_B_vnni;
-
-    template <typename T>
-    void vnni_matrix(
-            T* dst, const T* src,
-            int batch, int numRows, int numCols, int factor)
-    {
-      for (int b = 0; b < batch; b++) {
-        for (int r = 0; r < numRows / factor; r++) {
-          for (int c = 0; c < numCols; c++) {
-            for (int k = 0; k < factor; k++) {
-              dst[((b * (numRows / factor) + r) * numCols + c) * factor + k] =
-                      src[((b * (numRows / factor) + r) * factor + k) * numCols + c];
-            }
-          }
-        }
-      }
-    }
-
     void initialize(const ProblemShapeType& problem_size) override {
       Base::initialize(problem_size);
-
-      auto problem_shape_MNKL = cute::append<4>(problem_size, 1);
-      auto [M, N, K, L] = problem_shape_MNKL;
-
-      block_B_vnni.reset(Base::block_B.size());
-
-      std::vector<ElementB> b(K * N * L);
-      std::vector<ElementB> b_vnni(b.size());
-
-      Base::block_B.copy_to_host(b.data());
-      vnni_matrix(b_vnni.data(), b.data(), L, K, N, 2);
-
-      block_B_vnni.copy_from_host(b_vnni.data());
     }
-
+    
     void run(const Options& options, const cutlass::KernelHardwareInfo& hw_info) override {
       ProblemShapeType problem_size = ProblemShapeType{options.m, options.n, options.k, options.l};
 
@@ -364,7 +332,7 @@ struct PvcBenchmarkRunner : BenchmarkRunner<Gemm> {
       typename Gemm::GemmKernel::Arguments arguments{
               cutlass::gemm::GemmUniversalMode::kGemm,
               problem_size,
-              {Base::block_A.get(), Base::stride_A, block_B_vnni.get(), Base::stride_B},
+              {Base::block_A.get(), Base::stride_A, Base::block_B.get(), Base::stride_B},
               {
                 {options.alpha, options.beta},
                 Base::block_C.get(), Base::stride_C, Base::block_D.get(), Base::stride_D

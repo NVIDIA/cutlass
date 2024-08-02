@@ -102,7 +102,6 @@ public:
 
   static constexpr int SubgroupSize = CollectiveMainloop::SubgroupSize; // sub_group size
   static constexpr uint32_t MaxThreadsPerBlock = CollectiveMainloop::MaxThreadsPerBlock;
-
   using MmaAtomShape = typename CollectiveMainloop::MmaAtomShape;
   using SubgroupTileShape = typename CollectiveMainloop::SubgroupTileShape;
 
@@ -177,7 +176,6 @@ public:
     if constexpr (cute::rank(ProblemShape{}) == 4) {
       batch_count = cute::size<3>(params.problem_shape);
     }
-
     return dim3(
             cute::size(cute::ceil_div(cute::shape<0>(params.problem_shape), cute::shape<0>(WorkgroupTileShape{}))),
             cute::size(cute::ceil_div(cute::shape<1>(params.problem_shape), cute::shape<1>(WorkgroupTileShape{}))),
@@ -193,9 +191,7 @@ public:
   CUTLASS_DEVICE
   void
   operator()(Params const& params, char* smem_buf) {
-
     SharedStorage& shared_storage = *reinterpret_cast<SharedStorage*>(smem_buf);
-
     // Preconditions
     CUTE_STATIC_ASSERT(is_static<WorkgroupTileShape>::value);
 
@@ -215,10 +211,11 @@ public:
 
     // Get the appropriate blocks for this sub_group -- potential for sub_group locality
     int thread_idx = int(ThreadIdxX());
+    int sub_group_id = thread_idx / SubgroupSize;
     constexpr auto workgroup_shape = WorkgroupTileShape{};                                                  // (SUB_M,SUB_N,SUB_K)
     constexpr auto subgroup_shape = SubgroupTileShape{};                                                  // (SUB_M,SUB_N,SUB_K)
-    const int m_coord = BlockIdxX() * get<0>(subgroup_shape);
-    const int n_coord = BlockIdxY() * get<1>(workgroup_shape) + thread_idx / SubgroupSize * get<1>(subgroup_shape);
+    const int m_coord = BlockIdxX() * get<0>(workgroup_shape) + sub_group_id / CollectiveMainloop::sg_per_wg_n * get<0>(subgroup_shape);
+    const int n_coord = BlockIdxY() * get<1>(workgroup_shape) + sub_group_id % CollectiveMainloop::sg_per_wg_n * get<1>(subgroup_shape);
     const int l_coord = BlockIdxZ();
     const auto tile_coord = make_coord(m_coord, n_coord, _, l_coord);
 
@@ -226,11 +223,16 @@ public:
             make_coord(m_coord, 0, 0),
             make_shape(_1{}, K, L),
             make_stride(Int<FragsM>{} * get<0>(MmaAtomShape()),_1{}));
+    constexpr int version =
+        is_same_v<typename CollectiveMainloop::GmemTiledCopyB,
+                  XE_2D_U16x16x16x2x1_V>
+            ? 1
+            : 2;
 
     Tensor tBi = params.mainloop.gmem_tiled_copy_b.get_pvc_tensor(
             make_coord(n_coord, 0, 0),
-            make_shape(Int<FragsN>{}, K / 2, L),
-            make_stride(get<1>(MmaAtomShape()), _1{}));
+            make_shape(Int<FragsN / version>{}, K, L),
+            make_stride(Int<version * get<1>(MmaAtomShape())>{}, _1{}));
 
     // Compute tile residues for predication
     auto m_max_coord = M - get<0>(subgroup_shape) * m_coord;                             // M - SUB_M * m_coord
@@ -271,7 +273,7 @@ public:
       residue_mnk,
       thread_idx,
       smem_buf
-      );
+    );
   }
 };
 

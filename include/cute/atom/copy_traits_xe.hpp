@@ -35,11 +35,11 @@
 
 #include <cute/arch/copy_xe.hpp>
 
-namespace cute
+namespace cute 
 {
 
 template <class IntT>
-CUTE_HOST_DEVICE constexpr
+CUTE_HOST_DEVICE constexpr      
 auto get_shape_WHD(cute::Stride<Int<1>, IntT, IntT> , cute::Shape<int,int,int> shape_MKL) {
   return shape_MKL;
 }
@@ -67,286 +67,406 @@ auto get_coordinates(cute::Stride<IntT, Int<1>, IntT> ,
 }
 
 template <class CopyOp, class GTensor>
-struct XE_2D_LD_Unpack
-{
-  GTensor tensor;
+struct XE_2D_LD_Unpack {
+    GTensor tensor;
 
-  using Copy_Traits = Copy_Traits<CopyOp, GTensor>;
+    using Copy_Traits = Copy_Traits<CopyOp, GTensor>;
+    template <class TS, class SLayout, class TD, class DLayout>
+    CUTE_HOST_DEVICE friend constexpr void copy_unpack(
+            Copy_Traits const &traits,
+            Tensor<ViewEngine<ArithmeticTupleIterator<TS>>, SLayout> const &src,
+            Tensor<TD, DLayout> &dst) {
+        static_assert(is_rmem<TD>::value);
+        auto shape_whd = get_shape_WHD(traits.tensor.stride(), traits.tensor.shape());
+        int W = size<0>(shape_whd) * sizeof(typename Copy_Traits::CopyInternalType);
+        int H = size<1>(shape_whd);
+        auto [x, y, z] = get_coordinates(traits.tensor.stride(), src);
+        CopyOp::copy(traits.tensor.data() + z, W, H, W, intel::coord_t{x, y},
+                &*dst.data());
+    }
 
-  template <class TS, class SLayout,
-            class TD, class DLayout>
-  CUTE_HOST_DEVICE friend constexpr void
-  copy_unpack(Copy_Traits const &traits,
-              Tensor<ViewEngine<ArithmeticTupleIterator<TS>>, SLayout> const &src,
-              Tensor<TD, DLayout> &dst)
-  {
-    static_assert(is_rmem<TD>::value);
-    auto shape_whd = get_shape_WHD(traits.tensor.stride(), traits.tensor.shape());
-    int W = size<0>(shape_whd) * sizeof(typename Copy_Traits::CopyInternalType);
-    int H = size<1>(shape_whd);
-    auto [x, y, z] = get_coordinates(traits.tensor.stride(), src);
-    CopyOp::copy(traits.tensor.data() + z, W, H, W, intel::coord_t{x, y}, &*dst.data());
-  }
+    template <class GCoord, class GShape, class GStride>
+    CUTE_HOST_DEVICE constexpr auto get_pvc_tensor(GCoord const &coord,
+            GShape const &shape, GStride const &stride_mul) const {
+        return make_tensor(make_inttuple_iter(coord),
+                make_layout(make_shape(_1 {}, get<0>(shape), get<1>(shape),
+                                    get<2>(shape)),
+                        make_stride(_1 {}, E<0> {} * get<0>(stride_mul),
+                                E<1> {} * get<1>(stride_mul),
+                                E<2> {} * get<2>(stride(tensor)))));
+    }
+};
 
-  template <class GCoord, class GShape, class GStride>
-  CUTE_HOST_DEVICE constexpr auto
-  get_pvc_tensor(GCoord const& coord, GShape const& shape, GStride const& stride_mul) const 
-  {
-    return make_tensor(make_inttuple_iter(coord), 
-                        make_layout(make_shape(_1{}, get<0>(shape), get<1>(shape), get<2>(shape)), 
-                                    make_stride(_1{}, E<0>{} * get<0>(stride_mul), E<1>{} * get<1>(stride_mul), E<2>{} * get<2>(stride(tensor)))));
-  }
+/// ThrID: How many threads involved.
+/// DstLayout: Size<0>(DstLayout) same as thrID, Size<1>(DstLayout) represents data layout that hold by each thread in bits.
+/// TODO: SrcLayout just a placeHolder, not used.
+template <class GTensor>
+struct Copy_Traits<XE_2D_U16x8x16x1x1_LD_N, GTensor>
+    : XE_2D_LD_Unpack<XE_2D_U16x8x16x1x1_LD_N, GTensor> {
+    // Logical thread id to thread idx
+    using ThrID = Layout<_16>;
+    // Map from (src-thr,src-val) to bit
+    using SrcLayout = Layout<Shape<_16, _64>, Stride<_0, _1>>;
+    // Map from (dst-thr,dst-val) to bit
+    using DstLayout
+            = Layout<Shape<_16, Shape<_8, _16>>, Stride<_16, Stride<_256, _1>>>;
+    // Reference map from (thr,val) to bit
+    using RefLayout = DstLayout;
+    using CopyInternalType = ushort;
+};
+
+template <class CopyOp, class GTensor>
+struct XE_2D_PF_Unpack {
+    GTensor tensor;
+
+    template <class G_Tensor>
+    CUTE_HOST_DEVICE XE_2D_PF_Unpack(G_Tensor const &t) : tensor(t) {}
+
+    using Copy_Traits = Copy_Traits<CopyOp, GTensor>;
+    template <class TS, class SLayout, class TD, class DLayout>
+    CUTE_HOST_DEVICE friend constexpr void copy_unpack(
+            Copy_Traits const &traits,
+            Tensor<ViewEngine<ArithmeticTupleIterator<TS>>, SLayout> const &src,
+            Tensor<TD, DLayout> &dst) {
+        using T = typename Copy_Traits::CopyInternalType;
+        auto shape_whd = get_shape_WHD(traits.tensor.stride(), traits.tensor.shape());
+        int W = size<0>(shape_whd) * sizeof(T);
+        int H = size<1>(shape_whd);
+        auto [x, y, z] = get_coordinates(traits.tensor.stride(), src);
+        CopyOp::template copy<T>(traits.tensor.data() + z, W, H, W,
+                intel::coord_t {static_cast<int>(x), static_cast<int>(y)});
+    }
 };
 
 template <class GTensor>
-struct Copy_Traits<XE_2D_U16x8x16x1x1_LD_N, GTensor>
-     : XE_2D_LD_Unpack<XE_2D_U16x8x16x1x1_LD_N, GTensor>
-{
-  // Logical thread id to thread idx
-  using ThrID = Layout<_16>;
-  // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape<_16, _64>, Stride<_0, _1>>;
-  // Map from (dst-thr,dst-val) to bit
-  using DstLayout =
-    Layout<Shape<_16, Shape<_8, _16>>, Stride<_16, Stride<_256, _1>>>;
-  // Reference map from (thr,val) to bit
-  using RefLayout = DstLayout;
-  using CopyInternalType = ushort;
+struct Copy_Traits<XE_2D_U16x8x16x1x1_LD_N::PREFETCH, GTensor>
+    : XE_2D_PF_Unpack<XE_2D_U16x8x16x1x1_LD_N::PREFETCH, GTensor> {
+    template <class... CopyArgs>
+    CUTE_HOST_DEVICE Copy_Traits(Copy_Traits<CopyArgs...> const &traits)
+        : XE_2D_PF_Unpack<XE_2D_U16x8x16x1x1_LD_N::PREFETCH, GTensor>(
+                  traits.tensor) {}
 
+    // Logical thread id to thread idx
+    using ThrID = Layout<_16>;
+    // Map from (src-thr,src-val) to bit
+    using SrcLayout
+            = Layout<Shape<_16, Shape<_1, _16>>, Stride<_16, Stride<_16, _1>>>;
+    // Map from (dst-thr,dst-val) to bit
+    using DstLayout
+            = Layout<Shape<_16, Shape<_8, _16>>, Stride<_16, Stride<_256, _1>>>;
+    // Reference map from (thr,val) to bit
+    using RefLayout = DstLayout;
+    using CopyInternalType = ushort;
+};
+
+template <class GTensor>
+struct Copy_Traits<XE_2D_U16x8x16x1x2_LD_N::PREFETCH, GTensor>
+    : XE_2D_PF_Unpack<XE_2D_U16x8x16x1x2_LD_N::PREFETCH, GTensor> {
+
+    template <class... CopyArgs>
+    CUTE_HOST_DEVICE Copy_Traits(Copy_Traits<CopyArgs...> const &traits)
+        : XE_2D_PF_Unpack<XE_2D_U16x8x16x1x2_LD_N::PREFETCH, GTensor>(
+                  traits.tensor) {}
+
+    // Logical thread id to thread idx
+    using ThrID = Layout<_16>;
+    // Map from (src-thr,src-val) to bit
+    using SrcLayout
+            = Layout<Shape<_16, Shape<_1, _16>>, Stride<_16, Stride<_16, _1>>>;
+    // Map from (dst-thr,dst-val) to bit
+    using DstLayout
+            = Layout<Shape<_16, Shape<_8, _32>>, Stride<_32, Stride<_512, _1>>>;
+    // Reference map from (thr,val) to bit
+    using RefLayout = DstLayout;
+    using CopyInternalType = ushort;
+};
+
+template <class GTensor>
+struct Copy_Traits<XE_2D_U16x8x16x4x1_LD_N::PREFETCH, GTensor>
+    : XE_2D_PF_Unpack<XE_2D_U16x8x16x4x1_LD_N::PREFETCH, GTensor> {
+
+    template <class... CopyArgs>
+    CUTE_HOST_DEVICE Copy_Traits(Copy_Traits<CopyArgs...> const &traits)
+        : XE_2D_PF_Unpack<XE_2D_U16x8x16x4x1_LD_N::PREFETCH, GTensor>(
+                  traits.tensor) {}
+
+    // Logical thread id to thread idx
+    using ThrID = Layout<_16>;
+    // Map from (src-thr,src-val) to bit
+    using SrcLayout
+            = Layout<Shape<_16, Shape<_1, _16>>, Stride<_16, Stride<_16, _1>>>;
+    // Map from (dst-thr,dst-val) to bit
+    using DstLayout = Layout<Shape<_16, Shape<_32, _16>>,
+            Stride<_16, Stride<_256, _1>>>;
+    // Reference map from (thr,val) to bit
+    using RefLayout = DstLayout;
+    using CopyInternalType = ushort;
+};
+
+template <class GTensor>
+struct Copy_Traits<XE_2D_U16x8x16x4x2_LD_N::PREFETCH, GTensor>
+    : XE_2D_PF_Unpack<XE_2D_U16x8x16x4x2_LD_N::PREFETCH, GTensor> {
+
+    template <class... CopyArgs>
+    CUTE_HOST_DEVICE Copy_Traits(Copy_Traits<CopyArgs...> const &traits)
+        : XE_2D_PF_Unpack<XE_2D_U16x8x16x4x2_LD_N::PREFETCH, GTensor>(
+                  traits.tensor) {}
+
+    // Logical thread id to thread idx
+    using ThrID = Layout<_16>;
+    // Map from (src-thr,src-val) to bit
+    using SrcLayout
+            = Layout<Shape<_16, Shape<_1, _16>>, Stride<_16, Stride<_16, _1>>>;
+    // Map from (dst-thr,dst-val) to bit
+    using DstLayout = Layout<Shape<_16, Shape<_32, _32>>,
+            Stride<_32, Stride<_512, _1>>>;
+    // Reference map from (thr,val) to bit
+    using RefLayout = DstLayout;
+    using CopyInternalType = ushort;
+};
+
+template <class GTensor>
+struct Copy_Traits<XE_2D_U16x8x16x2x2_LD_N::PREFETCH, GTensor>
+    : XE_2D_PF_Unpack<XE_2D_U16x8x16x2x2_LD_N::PREFETCH, GTensor> {
+    template <class... CopyArgs>
+    CUTE_HOST_DEVICE Copy_Traits(Copy_Traits<CopyArgs...> const &traits)
+        : XE_2D_PF_Unpack<XE_2D_U16x8x16x2x2_LD_N::PREFETCH, GTensor>(
+                  traits.tensor) {}
+
+    // Logical thread id to thread idx
+    using ThrID = Layout<_16>;
+    // Map from (src-thr,src-val) to bit
+    using SrcLayout
+            = Layout<Shape<_16, Shape<_1, _16>>, Stride<_16, Stride<_16, _1>>>;
+    // Map from (dst-thr,dst-val) to bit
+    using DstLayout = Layout<Shape<_16, Shape<_16, _32>>,
+            Stride<_32, Stride<_512, _1>>>;
+    // Reference map from (thr,val) to bit
+    using RefLayout = DstLayout;
+    using CopyInternalType = ushort;
+};
+
+template <class GTensor>
+struct Copy_Traits<XE_2D_U16x8x16x2x1_LD_N::PREFETCH, GTensor>
+    : XE_2D_PF_Unpack<XE_2D_U16x8x16x2x1_LD_N::PREFETCH, GTensor> {
+
+    template <class... CopyArgs>
+    CUTE_HOST_DEVICE Copy_Traits(Copy_Traits<CopyArgs...> const &traits)
+        : XE_2D_PF_Unpack<XE_2D_U16x8x16x2x1_LD_N::PREFETCH, GTensor>(
+                  traits.tensor) {}
+
+    // Logical thread id to thread idx
+    using ThrID = Layout<_16>;
+    // Map from (src-thr,src-val) to bit
+    using SrcLayout
+            = Layout<Shape<_16, Shape<_1, _16>>, Stride<_16, Stride<_16, _1>>>;
+    // Map from (dst-thr,dst-val) to bit
+    using DstLayout = Layout<Shape<_16, Shape<_16, _16>>,
+            Stride<_16, Stride<_256, _1>>>;
+    // Reference map from (thr,val) to bit
+    using RefLayout = DstLayout;
+    using CopyInternalType = ushort;
 };
 
 template <class GTensor>
 struct Copy_Traits<XE_2D_U32x8x16x1x1_LD_N, GTensor>
-     : XE_2D_LD_Unpack<XE_2D_U32x8x16x1x1_LD_N, GTensor>
-{
-  // Logical thread id to thread idx
-  using ThrID = Layout<_16>;
-  // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape<_16, _64>, Stride<_0, _1>>;
-  // Map from (dst-thr,dst-val) to bit
-  using DstLayout =
-    Layout<Shape<_16, Shape<_8, _32>>, Stride<_32, Stride<_512, _1>>>;
-  // Reference map from (thr,val) to bit
-  using RefLayout = DstLayout;
-  using CopyInternalType = uint;
+    : XE_2D_LD_Unpack<XE_2D_U32x8x16x1x1_LD_N, GTensor> {
+    // Logical thread id to thread idx
+    using ThrID = Layout<_16>;
+    // Map from (src-thr,src-val) to bit
+    using SrcLayout = Layout<Shape<_16, _64>, Stride<_0, _1>>;
+    // Map from (dst-thr,dst-val) to bit
+    using DstLayout
+            = Layout<Shape<_16, Shape<_8, _32>>, Stride<_32, Stride<_512, _1>>>;
+    // Reference map from (thr,val) to bit
+    using RefLayout = DstLayout;
+    using CopyInternalType = uint;
 };
 
 template <class GTensor>
 struct Copy_Traits<XE_2D_U16x8x16x4x2_LD_N, GTensor>
-     : XE_2D_LD_Unpack<XE_2D_U16x8x16x4x2_LD_N, GTensor>
-{
-  // Logical thread id to thread idx
-  using ThrID = Layout<_1>;
-  // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape<_1, Shape<_1, _1>>>; // one coordinate
-  // Map from (dst-thr,dst-val) to bit
-  using DstLayout = Layout<Shape<_1, Shape<_64, _1>>>;
-  // Reference map from (thr,val) to bit
-  using RefLayout = SrcLayout;
-  using CopyInternalType = ushort;
+    : XE_2D_LD_Unpack<XE_2D_U16x8x16x4x2_LD_N, GTensor> {
+    // Logical thread id to thread idx
+    using ThrID = Layout<_16>;
+    // Map from (src-thr,src-val) to bit
+    using SrcLayout = Layout<Shape<_16, _64>, Stride<_0, _1>>;
+    // Map from (dst-thr,dst-val) to bit
+    using DstLayout = Layout<Shape<_16, Shape<Shape<_8, _4>, Shape<_16, _2>>>,
+            Stride<_16, Stride<Stride<_512, _4096>, Stride<_1, _256>>>>;
+    // Reference map from (thr,val) to bit
+    using RefLayout = DstLayout;
+    using CopyInternalType = ushort;
 };
 
 template <class GTensor>
 struct Copy_Traits<XE_2D_U16x8x16x2x2_LD_N, GTensor>
-     : XE_2D_LD_Unpack<XE_2D_U16x8x16x2x2_LD_N, GTensor>
-{
-  // Logical thread id to thread idx
-  using ThrID = Layout<_16>;
-  // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape<_16, _64>, Stride<_0, _1>>;
-  // Map from (dst-thr,dst-val) to bit
-  using DstLayout =
-      Layout<Shape<_16, Shape<Shape<_8, _2>, Shape<_16, _2>>>,
-             Stride<_16, Stride<Stride<_512, _4096>, Stride<_1, _256>>>>;
-  // Reference map from (thr,val) to bit
-  using RefLayout = DstLayout;
-  using CopyInternalType = ushort;
+    : XE_2D_LD_Unpack<XE_2D_U16x8x16x2x2_LD_N, GTensor> {
+    // Logical thread id to thread idx
+    using ThrID = Layout<_16>;
+    // Map from (src-thr,src-val) to bit
+    using SrcLayout = Layout<Shape<_16, _64>, Stride<_0, _1>>;
+    // Map from (dst-thr,dst-val) to bit
+    using DstLayout = Layout<Shape<_16, Shape<Shape<_8, _2>, Shape<_16, _2>>>,
+            Stride<_16, Stride<Stride<_512, _4096>, Stride<_1, _256>>>>;
+    // Reference map from (thr,val) to bit
+    using RefLayout = DstLayout;
+    using CopyInternalType = ushort;
 };
 
 template <class GTensor>
 struct Copy_Traits<XE_2D_U16x8x16x1x2_LD_N, GTensor>
-     : XE_2D_LD_Unpack<XE_2D_U16x8x16x1x2_LD_N, GTensor>
-{
-  // Logical thread id to thread idx
-  using ThrID = Layout<_16>;
-  // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape<_16, _64>, Stride<_0, _1>>;
-  // Map from (dst-thr,dst-val) to bit
-  using DstLayout = Layout<Shape<_16, Shape<_8, Shape<_16, _2>>>,
-                           Stride<_16, Stride<_512, Stride<_1, _256>>>>;
-  // Reference map from (thr,val) to bit
-  using RefLayout = DstLayout;
-  using CopyInternalType = ushort;
+    : XE_2D_LD_Unpack<XE_2D_U16x8x16x1x2_LD_N, GTensor> {
+    // Logical thread id to thread idx
+    using ThrID = Layout<_16>;
+    // Map from (src-thr,src-val) to bit
+    using SrcLayout = Layout<Shape<_16, _64>, Stride<_0, _1>>;
+    // Map from (dst-thr,dst-val) to bit
+    using DstLayout = Layout<Shape<_16, Shape<_8, Shape<_16, _2>>>,
+            Stride<_16, Stride<_512, Stride<_1, _256>>>>;
+    // Reference map from (thr,val) to bit
+    using RefLayout = DstLayout;
+    using CopyInternalType = ushort;
 };
 
 template <class GTensor>
 struct Copy_Traits<XE_2D_U16x8x16x4x1_LD_N, GTensor>
-     : XE_2D_LD_Unpack<XE_2D_U16x8x16x4x1_LD_N, GTensor>
-{
-  // Logical thread id to thread idx
-  using ThrID = Layout<_16>;
-  // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape<_16, _64>, Stride<_0, _1>>;
-  // Map from (dst-thr,dst-val) to bit
-  using DstLayout =
-      Layout<Shape<_16, Shape<_32, _16>>, Stride<_16, Stride<_256, _1>>>;
-  // Reference map from (thr,val) to bit
-  using RefLayout = DstLayout;
-  using CopyInternalType = ushort;
+    : XE_2D_LD_Unpack<XE_2D_U16x8x16x4x1_LD_N, GTensor> {
+    // Logical thread id to thread idx
+    using ThrID = Layout<_16>;
+    // Map from (src-thr,src-val) to bit
+    using SrcLayout = Layout<Shape<_16, _64>, Stride<_0, _1>>;
+    // Map from (dst-thr,dst-val) to bit
+    using DstLayout = Layout<Shape<_16, Shape<_32, _16>>,
+            Stride<_16, Stride<_256, _1>>>;
+    // Reference map from (thr,val) to bit
+    using RefLayout = DstLayout;
+    using CopyInternalType = ushort;
 };
 
 template <class GTensor>
 struct Copy_Traits<XE_2D_U32x8x16x2x1_LD_N, GTensor>
-     : XE_2D_LD_Unpack<XE_2D_U32x8x16x2x1_LD_N, GTensor>
-{
-  // Logical thread id to thread idx
-  using ThrID = Layout<_16>;
-  // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape<_16, _64>, Stride<_0, _1>>;
-  // Map from (dst-thr,dst-val) to bit
-  using DstLayout =
-      Layout<Shape<_16, Shape<_16, _32>>, Stride<_32, Stride<_512, _1>>>;
-  // Reference map from (thr,val) to bit
-  using RefLayout = DstLayout;
-  // 32 bits register file
-  using CopyInternalType = uint;
-};
-
-template <class GTensor>
-struct Copy_Traits<XE_2D_U16x16x16x2x1_LD_N, GTensor>
-     : XE_2D_LD_Unpack<XE_2D_U16x16x16x2x1_LD_N, GTensor>
-{
-  // Logical thread id to thread idx
-  using ThrID = Layout<_1>;
-  // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape<_1, Shape<_1, _4>>>;   // expected 4 coordinates
-  // Map from (dst-thr,dst-val) to bit
-  using DstLayout = Layout<Shape<_1, Shape<_32, _4>>>;
-  // Reference map from (thr,val) to bit
-  using RefLayout = SrcLayout;
-  // 32 bits register file
-  using CopyInternalType = uint;
+    : XE_2D_LD_Unpack<XE_2D_U32x8x16x2x1_LD_N, GTensor> {
+    // Logical thread id to thread idx
+    using ThrID = Layout<_16>;
+    // Map from (src-thr,src-val) to bit
+    using SrcLayout = Layout<Shape<_16, _64>, Stride<_0, _1>>;
+    // Map from (dst-thr,dst-val) to bit
+    using DstLayout = Layout<Shape<_16, Shape<_16, _32>>,
+            Stride<_32, Stride<_512, _1>>>;
+    // Reference map from (thr,val) to bit
+    using RefLayout = DstLayout;
+    // 32 bits register file
+    using CopyInternalType = uint;
 };
 
 template <class GTensor>
 struct Copy_Traits<XE_2D_U16x16x16x2x2_V, GTensor>
-     : XE_2D_LD_Unpack<XE_2D_U16x16x16x2x2_V, GTensor>
-{
-  // Logical thread id to thread idx
-  using ThrID = Layout<_16>;
-  // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape<_16, _64>, Stride<_0, _1>>;
-  // Map from (dst-thr,dst-val) to bit
-  using DstLayout =
-      Layout< Shape<_16,  Shape< Shape<   _8,    _2>,  Shape<_16,   _2,   _2>>>,
-             Stride<_16, Stride<Stride<_1024, _8192>, Stride< _1, _512, _256>>>>;
-  // Reference map from (thr,val) to bit
-  using RefLayout = DstLayout;
-  using CopyInternalType = ushort;
+    : XE_2D_LD_Unpack<XE_2D_U16x16x16x2x2_V, GTensor> {
+    // Logical thread id to thread idx
+    using ThrID = Layout<_16>;
+    // Map from (src-thr,src-val) to bit
+    using SrcLayout = Layout<Shape<_16, _64>, Stride<_0, _1>>;
+    // Map from (dst-thr,dst-val) to bit
+    using DstLayout = Layout<
+            Shape<_16, Shape<Shape<_8, _2>, Shape<_16, _2, _2>>>,
+            Stride<_16, Stride<Stride<_1024, _8192>, Stride<_1, _512, _256>>>>;
+    // Reference map from (thr,val) to bit
+    using RefLayout = DstLayout;
+    using CopyInternalType = ushort;
 };
 
 template <class GTensor>
 struct Copy_Traits<XE_2D_U16x16x16x1x2_V, GTensor>
-     : XE_2D_LD_Unpack<XE_2D_U16x16x16x1x2_V, GTensor>
-{
-  // Logical thread id to thread idx
-  using ThrID = Layout<_16>;
-  // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape<_16, _64>, Stride<_0, _1>>;
-  // Map from (dst-thr,dst-val) to bit
-  using DstLayout =
-      Layout< Shape<_16,  Shape<   _8,  Shape<_16,   _2,   _2>>>,
-             Stride<_16, Stride<_1024, Stride< _1, _512, _256>>>>;
-  // Reference map from (thr,val) to bit
-  using RefLayout = DstLayout;
-  using CopyInternalType = ushort;
+    : XE_2D_LD_Unpack<XE_2D_U16x16x16x1x2_V, GTensor> {
+    // Logical thread id to thread idx
+    using ThrID = Layout<_16>;
+    // Map from (src-thr,src-val) to bit
+    using SrcLayout = Layout<Shape<_16, _64>, Stride<_0, _1>>;
+    // Map from (dst-thr,dst-val) to bit
+    using DstLayout = Layout<Shape<_16, Shape<_8, Shape<_16, _2, _2>>>,
+            Stride<_16, Stride<_1024, Stride<_1, _512, _256>>>>;
+    // Reference map from (thr,val) to bit
+    using RefLayout = DstLayout;
+    using CopyInternalType = ushort;
 };
 
 template <class GTensor>
 struct Copy_Traits<XE_2D_U16x16x16x2x1_V, GTensor>
-     : XE_2D_LD_Unpack<XE_2D_U16x16x16x2x1_V, GTensor>
-{
-  // Logical thread id to thread idx
-  using ThrID = Layout<_16>;
-  // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape<_16, _64>, Stride<_0, _1>>;
-  // Map from (dst-thr,dst-val) to bit
-  using DstLayout =
-      Layout< Shape<_16,  Shape<Shape<_8, _2>, Shape<_16, _2>>>,
-             Stride<_16, Stride<Stride<_512, _4096>, Stride<_1, _256>>>>;
-  // Reference map from (thr,val) to bit
-  using RefLayout = DstLayout;
-  using CopyInternalType = ushort;
+    : XE_2D_LD_Unpack<XE_2D_U16x16x16x2x1_V, GTensor> {
+    // Logical thread id to thread idx
+    using ThrID = Layout<_16>;
+    // Map from (src-thr,src-val) to bit
+    using SrcLayout = Layout<Shape<_16, _64>, Stride<_0, _1>>;
+    // Map from (dst-thr,dst-val) to bit
+    using DstLayout = Layout<Shape<_16, Shape<Shape<_8, _2>, Shape<_16, _2>>>,
+            Stride<_16, Stride<Stride<_512, _4096>, Stride<_1, _256>>>>;
+    // Reference map from (thr,val) to bit
+    using RefLayout = DstLayout;
+    using CopyInternalType = ushort;
 };
 
 template <class GTensor>
 struct Copy_Traits<XE_2D_U16x16x16x1x1_V, GTensor>
-     : XE_2D_LD_Unpack<XE_2D_U16x16x16x1x1_V, GTensor>
-{
-  // Logical thread id to thread idx
-  using ThrID = Layout<_16>;
-  // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape<_16, _64>, Stride<_0, _1>>;
-  // Map from (dst-thr,dst-val) to bit
-  using DstLayout =
-      Layout< Shape<_16,  Shape<_8,    Shape<_16, _2>>>,
-             Stride<_16, Stride<_512, Stride<_1, _256>>>>;
-  // Reference map from (thr,val) to bit
-  using RefLayout = DstLayout;
-  using CopyInternalType = ushort;
+    : XE_2D_LD_Unpack<XE_2D_U16x16x16x1x1_V, GTensor> {
+    // Logical thread id to thread idx
+    using ThrID = Layout<_16>;
+    // Map from (src-thr,src-val) to bit
+    using SrcLayout = Layout<Shape<_16, _64>, Stride<_0, _1>>;
+    // Map from (dst-thr,dst-val) to bit
+    using DstLayout = Layout<Shape<_16, Shape<_8, Shape<_16, _2>>>,
+            Stride<_16, Stride<_512, Stride<_1, _256>>>>;
+    // Reference map from (thr,val) to bit
+    using RefLayout = DstLayout;
+    using CopyInternalType = ushort;
 };
 
 template <class CopyOp, class GTensor>
-struct XE_2D_ST_Unpack
-{
-  GTensor tensor;
-  using Copy_Traits = Copy_Traits<CopyOp, GTensor>;
-  template <class TS, class SLayout,
-            class TD, class DLayout>
-  CUTE_HOST_DEVICE friend constexpr void
-  copy_unpack(Copy_Traits const &traits,
-              Tensor<TS, SLayout> const &src,
-              Tensor<ViewEngine<ArithmeticTupleIterator<TD>>, DLayout> &dst)
-  {
-      static_assert(is_rmem<TS>::value);
-      int H = size<0>(traits.tensor);
-      int W = size<1>(traits.tensor) * sizeof(typename Copy_Traits::CopyInternalType);
-      auto [y, x, z] = dst.data().coord_;
-      CopyOp::copy(traits.tensor.data() + z, W, H, W, intel::coord_t{x, y}, &*src.data());
-  }
+struct XE_2D_ST_Unpack {
+    GTensor tensor;
+    using Copy_Traits = Copy_Traits<CopyOp, GTensor>;
+    template <class TS, class SLayout, class TD, class DLayout>
+    CUTE_HOST_DEVICE friend constexpr void copy_unpack(
+            Copy_Traits const &traits, Tensor<TS, SLayout> const &src,
+            Tensor<ViewEngine<ArithmeticTupleIterator<TD>>, DLayout> &dst) {
+        static_assert(is_rmem<TS>::value);
+        int H = size<0>(traits.tensor);
+        int W = size<1>(traits.tensor) * sizeof(typename Copy_Traits::CopyInternalType);
+        auto [y, x, z] = dst.data().coord_;
+        CopyOp::copy(traits.tensor.data() + z, W, H, W, intel::coord_t{x, y}, &*src.data());
+    }
 
-  template <class GCoord, class GShape, class GStride>
-  CUTE_HOST_DEVICE constexpr auto
-  get_pvc_tensor(GCoord const& coord, GShape const& shape, GStride const& stride_mul) const 
-  {
-    return make_tensor(make_inttuple_iter(coord), 
-                        make_layout(make_shape(_1{}, get<0>(shape), get<1>(shape), get<2>(shape)), 
-                                    make_stride(_1{}, E<0>{} * get<0>(stride_mul), E<1>{} * get<1>(stride_mul), E<2>{} * get<2>(stride(tensor)))));
-  }
+    template <class GCoord, class GShape, class GStride>
+    CUTE_HOST_DEVICE constexpr auto get_pvc_tensor(GCoord const &coord,
+            GShape const &shape, GStride const &stride_mul) const {
+        return make_tensor(make_inttuple_iter(coord),
+                make_layout(make_shape(_1 {}, get<0>(shape), get<1>(shape),
+                                    get<2>(shape)),
+                        make_stride(_1 {}, E<0> {} * get<0>(stride_mul),
+                                E<1> {} * get<1>(stride_mul),
+                                E<2> {} * get<2>(stride(tensor)))));
+    }
 };
 
 template <class GTensor>
 struct Copy_Traits<XE_2D_U32x8x16x1x1_ST_N, GTensor>
-     : XE_2D_ST_Unpack<XE_2D_U32x8x16x1x1_ST_N, GTensor>
-{
-  // Logical thread id to thread idx
-  using ThrID = Layout<_16>;
-  // Map from (src-thr,src-val) to bit
-  using SrcLayout =
-    Layout<Shape<_16, Shape<_8, _32>>, Stride<_32, Stride<_512, _1>>>;
-  // Map from (dst-thr,dst-val) to bit
-  using DstLayout = Layout<Shape<_16, _64>, Stride<_0, _1>>;
-  // Reference map from (thr,val) to bit
-  using RefLayout = SrcLayout;
-  using CopyInternalType = uint;
+    : XE_2D_ST_Unpack<XE_2D_U32x8x16x1x1_ST_N, GTensor> {
+    // Logical thread id to thread idx
+    using ThrID = Layout<_16>;
+    // Map from (src-thr,src-val) to bit
+    using SrcLayout
+            = Layout<Shape<_16, Shape<_8, _32>>, Stride<_32, Stride<_512, _1>>>;
+    // Map from (dst-thr,dst-val) to bit
+    using DstLayout = Layout<Shape<_16, _64>, Stride<_0, _1>>;
+    // Reference map from (thr,val) to bit
+    using RefLayout = SrcLayout;
+    using CopyInternalType = uint;
 };
 
 template <class Copy, class GEngine, class GLayout>
-auto make_xe_2d_copy(Tensor<GEngine, GLayout> gtensor)
-{
+auto make_xe_2d_copy(Tensor<GEngine, GLayout> gtensor) {
     using GTensor = Tensor<GEngine, GLayout>;
     using Traits = Copy_Traits<Copy, GTensor>;
-    Traits traits{gtensor};
-    return Copy_Atom<Traits, typename GEngine::value_type>{traits};
+    Traits traits {gtensor};
+    return Copy_Atom<Traits, typename GEngine::value_type> {traits};
 }
 } // end namespace cute
