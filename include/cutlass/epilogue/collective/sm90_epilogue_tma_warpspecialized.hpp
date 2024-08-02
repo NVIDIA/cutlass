@@ -670,7 +670,8 @@ public:
     // We can delay issue of TMA store by one iteration to achieve better interleaving of non-TMA instructions
     // Sync requirements of smem reuse may preclude this optimization
     // Delayed stores cause delayed stage releases which causes deadlock when StagesC == StagesD
-    int epi_m_prev = 0, epi_n_prev = 0;
+    [[maybe_unused]] int epi_m_prev = 0;
+    [[maybe_unused]] int epi_n_prev = 0;
     static_assert(not (DelayTmaStore and ReuseSmemC and StagesC == StagesD), "This TMA epilogue configuration will deadlock");
 
     // The TMA store sequence for one subtile iteration
@@ -725,7 +726,7 @@ public:
     for (int epi_n = 0; epi_n < size<3>(gD_epi); ++epi_n) {
       CUTLASS_PRAGMA_UNROLL
       for (int epi_m = 0; epi_m < size<2>(gD_epi); ++epi_m) {
-        bool is_first_iteration = epi_m == 0 && epi_n == 0;
+        [[maybe_unused]] bool is_first_iteration = epi_m == 0 && epi_n == 0;
         bool is_last_iteration = epi_m == size<2>(gD_epi)-1 && epi_n == size<3>(gD_epi)-1;
 
         if (subtile_idx != -1 && (epi_n * static_cast<int>(size<2>(gD_epi)) + epi_m) != subtile_idx) {
