@@ -37,7 +37,7 @@
 
 // Config
 #if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)) || \
-  (defined(__SYCL_CUDA_ARCH__) && (__SYCL_CUDA_ARCH__ >= 800))
+    (defined(__SYCL_CUDA_ARCH__) && (__SYCL_CUDA_ARCH__ >= 800))
 #  define CUTE_ARCH_MMA_SM80_ENABLED
 
 #if (__CUDA_ARCH__ <= 900 || __SYCL_CUDA_ARCH__ <= 900)

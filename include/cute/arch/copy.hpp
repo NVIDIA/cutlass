@@ -99,7 +99,7 @@ using DefaultCopy = AutoVectorizingCopyWithAssumedAlignment<8>;
 CUTE_HOST_DEVICE static void
 prefetch(void const* gmem_ptr)
 {
-#if defined(__CUDA_ARCH__)
+#if defined(__CUDA_ARCH__) || defined(__SYCL_CUDA_ARCH__)
   asm volatile("prefetch.global.L2 [%0];\n" : : "l"(gmem_ptr) : "memory");
 #endif
 }

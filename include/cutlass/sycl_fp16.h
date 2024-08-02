@@ -30,76 +30,10 @@
  **************************************************************************************************/
 #pragma once
 
-#if defined(CUTLASS_ENABLE_SYCL)
-#include "cutlass/detail/helper_macros.hpp"
+#include <sycl/sycl.hpp>
 
 // Add these definitions in the cutlass namespace, so they do not clash with the ones in cuda
 namespace cutlass {
-    // We use this struct instead of sycl::int4 because the sycl version requires x() to access x,
-    // while the struct does not need the (). This prevents us from having to modify the Cutlass
-    // implementation in all the places where these vector types are used.
-    using int2 = struct alignas(8) {
-        int x, y;
-    };
-
-    using int4 = struct alignas(16) {
-        int x, y, z, w;
-    };
-
-    using uint2 = struct alignas(8) {
-        unsigned int x, y;
-    };
-
-    using uint4 = struct alignas(16) {
-        unsigned int x, y, z, w;
-    };
-
-    using float4 = struct alignas(16) {
-        float x, y, z, w;
-    };
-
-    using long4 = struct alignas(16) {
-        long int x, y, z, w;
-    };
-
-    using ulong4 = struct alignas(16) {
-        unsigned long int x, y, z, w;
-    };
-
-    using longlong2 = struct alignas(16) {
-        long long int x, y;
-    };
-
-    using ulonglong2 = struct alignas(16) {
-        unsigned long long int x, y;
-    };
-
-    using longlong4 = struct alignas(16) {
-        long long int x, y, z, w;
-    };
-
-    using ulonglong4 = struct alignas(16) {
-        unsigned long long int x, y, z, w;
-    };
-
-    using double2 = struct alignas(16) {
-        long long int x, y;
-    };
-
-    using double4 = struct alignas(16) {
-        long long int x, y, z, w;
-    };
-
-    CUTLASS_HOST_DEVICE
-    int2 make_int2(int x, int y) {
-      return int2{x,y};
-    }
-
-    CUTLASS_HOST_DEVICE
-    int4 make_int4(int x, int y, int z, int w) {
-      return int4 {x,y,z,w};
-    }
+using half = sycl::half;
+using half2 = sycl::half2;
 }
-#else
-#include <vector_types.h>
-#endif

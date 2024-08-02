@@ -123,7 +123,11 @@
 #include <type_traits>  // For integral constants, conditional metaprogramming, and type traits
 #endif
 
-#include <cutlass/vector_types.h>
+#if defined(CUTLASS_ENABLE_SYCL)
+#include <cutlass/sycl_vector_types.h>
+#else
+#include <vector_types.h>
+#endif
 #include <cutlass/cutlass.h>
 
 #endif

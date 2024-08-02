@@ -34,7 +34,9 @@
 
 #pragma once
 
-#include <cutlass/fp16.h>
+#if !defined(CUTLASS_ENABLE_SYCL)
+#include <cuda_fp16.h>
+#endif
 
 #include "cutlass/arch/mma.h"
 

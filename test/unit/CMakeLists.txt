@@ -49,7 +49,7 @@ target_link_libraries(
   GTest::gtest
   $<$<BOOL:${ADD_CUDA}>:nvidia::cudart>
   $<$<BOOL:${ADD_CUDA}>:nvidia::cuda_driver>
-)
+  )
 
 if(CUTLASS_ENABLE_SYCL)
   add_sycl_include_directories_to_target(cutlass_test_unit_infra)
@@ -150,7 +150,7 @@ else()
     pipeline
     substrate
     cluster_launch
-  )
+    )
 endif()
 if(TARGET nvidia::nvrtc AND TARGET nvidia::cuda_driver)
   set(CUTLASS_NVRTC_ENABLE_INIT ON)

@@ -54,7 +54,8 @@ static const int NumThreadsPerQuadPair = NumThreadsPerQuad * 2;
 
 // Generalization of CUDA's threadIdx, blockIdx, and gridDim.
 
-CUTLASS_HOST_DEVICE uint ThreadIdxX() {
+CUTLASS_HOST_DEVICE
+unsigned int ThreadIdxX() {
 #if defined(__CUDA_ARCH__)
   return threadIdx.x;
 #elif defined(__SYCL_DEVICE_ONLY__)
@@ -64,7 +65,8 @@ CUTLASS_HOST_DEVICE uint ThreadIdxX() {
 #endif
 }
 
-CUTLASS_HOST_DEVICE uint ThreadIdxY() {
+CUTLASS_HOST_DEVICE
+unsigned int ThreadIdxY() {
 #if defined(__CUDA_ARCH__)
   return threadIdx.y;
 #elif defined(__SYCL_DEVICE_ONLY__)
@@ -74,7 +76,8 @@ CUTLASS_HOST_DEVICE uint ThreadIdxY() {
 #endif
 }
 
-CUTLASS_HOST_DEVICE uint ThreadIdxZ() {
+CUTLASS_HOST_DEVICE
+unsigned int ThreadIdxZ() {
 #if defined(__CUDA_ARCH__)
   return threadIdx.z;
 #elif defined(__SYCL_DEVICE_ONLY__)
@@ -84,7 +87,8 @@ CUTLASS_HOST_DEVICE uint ThreadIdxZ() {
 #endif
 }
 
-CUTLASS_HOST_DEVICE uint BlockIdxX() {
+CUTLASS_HOST_DEVICE
+unsigned int BlockIdxX() {
 #if defined(__CUDA_ARCH__)
   return blockIdx.x;
 #elif defined(__SYCL_DEVICE_ONLY__)
@@ -94,7 +98,8 @@ CUTLASS_HOST_DEVICE uint BlockIdxX() {
 #endif
 }
 
-CUTLASS_HOST_DEVICE uint BlockIdxY() {
+CUTLASS_HOST_DEVICE
+unsigned int BlockIdxY() {
 #if defined(__CUDA_ARCH__)
   return blockIdx.y;
 #elif defined(__SYCL_DEVICE_ONLY__)
@@ -104,7 +109,8 @@ CUTLASS_HOST_DEVICE uint BlockIdxY() {
 #endif
 }
 
-CUTLASS_HOST_DEVICE uint BlockIdxZ() {
+CUTLASS_HOST_DEVICE
+unsigned int BlockIdxZ() {
 #if defined(__CUDA_ARCH__)
   return blockIdx.z;
 #elif defined(__SYCL_DEVICE_ONLY__)
@@ -114,7 +120,8 @@ CUTLASS_HOST_DEVICE uint BlockIdxZ() {
 #endif
 }
 
-CUTLASS_HOST_DEVICE uint BlockDimX() {
+CUTLASS_HOST_DEVICE
+unsigned int BlockDimX() {
 #if defined(__CUDA_ARCH__)
   return blockDim.x;
 #elif defined(__SYCL_DEVICE_ONLY__)
@@ -124,7 +131,8 @@ CUTLASS_HOST_DEVICE uint BlockDimX() {
 #endif
 }
 
-CUTLASS_HOST_DEVICE uint BlockDimY() {
+CUTLASS_HOST_DEVICE
+unsigned int BlockDimY() {
 #if defined(__CUDA_ARCH__)
   return blockDim.y;
 #elif defined(__SYCL_DEVICE_ONLY__)
@@ -134,7 +142,8 @@ CUTLASS_HOST_DEVICE uint BlockDimY() {
 #endif
 }
 
-CUTLASS_HOST_DEVICE uint BlockDimZ() {
+CUTLASS_HOST_DEVICE
+unsigned int BlockDimZ() {
 #if defined(__CUDA_ARCH__)
   return blockDim.z;
 #elif defined(__SYCL_DEVICE_ONLY__)
@@ -144,7 +153,8 @@ CUTLASS_HOST_DEVICE uint BlockDimZ() {
 #endif
 }
 
-CUTLASS_HOST_DEVICE uint GridDimX() {
+CUTLASS_HOST_DEVICE
+unsigned int GridDimX() {
 #if defined(__CUDA_ARCH__)
   return gridDim.x;
 #elif defined(__SYCL_DEVICE_ONLY__)
@@ -154,7 +164,8 @@ CUTLASS_HOST_DEVICE uint GridDimX() {
 #endif
 }
 
-CUTLASS_HOST_DEVICE uint GridDimY() {
+CUTLASS_HOST_DEVICE
+unsigned int GridDimY() {
 #if defined(__CUDA_ARCH__)
   return gridDim.y;
 #elif defined(__SYCL_DEVICE_ONLY__)
@@ -164,7 +175,8 @@ CUTLASS_HOST_DEVICE uint GridDimY() {
 #endif
 }
 
-CUTLASS_HOST_DEVICE uint GridDimZ() {
+CUTLASS_HOST_DEVICE
+unsigned int GridDimZ() {
 #if defined(__CUDA_ARCH__)
   return gridDim.z;
 #elif defined(__SYCL_DEVICE_ONLY__)
@@ -182,7 +194,8 @@ CUTLASS_HOST_DEVICE uint GridDimZ() {
 
 // syncthreads
 
-CUTLASS_DEVICE void syncthreads() {
+CUTLASS_DEVICE
+void syncthreads() {
 #if defined(__CUDA_ARCH__)
   __syncthreads();
 #elif defined(__SYCL_DEVICE_ONLY__)
@@ -190,7 +203,8 @@ CUTLASS_DEVICE void syncthreads() {
 #endif
 }
 
-CUTLASS_DEVICE int syncthreads_and(int cond) {
+CUTLASS_DEVICE
+int syncthreads_and(int cond) {
 #if defined(__CUDA_ARCH__)
   return __syncthreads_and(cond);
 #elif defined(__SYCL_DEVICE_ONLY__)
@@ -202,7 +216,8 @@ CUTLASS_DEVICE int syncthreads_and(int cond) {
 #endif
 }
 
-CUTLASS_DEVICE void syncwarp() {
+CUTLASS_DEVICE
+void syncwarp() {
 #if defined(__CUDA_ARCH__)
   __syncwarp();
 #elif defined(__SYCL_DEVICE_ONLY__)
@@ -210,7 +225,8 @@ CUTLASS_DEVICE void syncwarp() {
 #endif
 }
 
-CUTLASS_DEVICE void threadfence() {
+CUTLASS_DEVICE
+void threadfence() {
 #if defined(__CUDA_ARCH__)
   __threadfence();
 #elif defined(__SYCL_DEVICE_ONLY__)
@@ -219,9 +235,8 @@ CUTLASS_DEVICE void threadfence() {
 }
 
 // byte perm
-
 CUTLASS_DEVICE
-uint byte_perm(uint x, uint y, uint s) {
+unsigned int byte_perm(unsigned int x, unsigned int y, unsigned int s) {
 #if defined(__CUDA_ARCH__)
   return __byte_perm(x, y, s);
 #elif defined(__SYCL_DEVICE_ONLY__)
@@ -234,7 +249,11 @@ uint byte_perm(uint x, uint y, uint s) {
 // shfl
 
 CUTLASS_DEVICE
-uint shfl_up_sync(const unsigned mask, const uint var, const int delta, const int width = NumThreadsPerWarp) {
+unsigned int shfl_up_sync(
+  unsigned int const mask,
+  unsigned int const var,
+  int const delta,
+  int const width = NumThreadsPerWarp) {
 #if defined(__CUDA_ARCH__)
   return __shfl_up_sync(mask, var, delta, width);
 #elif defined(__SYCL_DEVICE_ONLY__)
@@ -245,7 +264,11 @@ uint shfl_up_sync(const unsigned mask, const uint var, const int delta, const in
 }
 
 CUTLASS_DEVICE
-uint shfl_down_sync(const unsigned mask, const uint var, const int delta, const int width = NumThreadsPerWarp) {
+unsigned int shfl_down_sync(
+  unsigned int const mask,
+  unsigned int const var,
+  int const delta,
+  int const width = NumThreadsPerWarp) {
 #if defined(__CUDA_ARCH__)
   return __shfl_down_sync(mask, var, delta, width);
 #elif defined(__SYCL_DEVICE_ONLY__)
@@ -256,7 +279,11 @@ uint shfl_down_sync(const unsigned mask, const uint var, const int delta, const 
 }
 
 CUTLASS_DEVICE
-uint shfl_sync(const unsigned mask, const uint var, const int delta, const int width = NumThreadsPerWarp) {
+unsigned int shfl_sync(
+  unsigned int const mask,
+  unsigned int const var,
+  int const delta,
+  int const width = NumThreadsPerWarp) {
 #if defined(__CUDA_ARCH__)
   return __shfl_sync(mask, var, delta, width);
 #elif defined(__SYCL_DEVICE_ONLY__)
@@ -265,19 +292,6 @@ uint shfl_sync(const unsigned mask, const uint var, const int delta, const int w
   return sycl::select_from_group(g, var, start_index + delta % width);
 #else
   return 0;
-#endif
-}
-
-// math
-
-template <typename T>
-CUTLASS_DEVICE T hfma2(const T a, const T b, const T c) {
-#if defined(__CUDA_ARCH__)
-  return hfma2(a, b, c);
-#elif defined(__SYCL_DEVICE_ONLY__)
-  return sycl::fma(a, b, c);
-#else
-  return T(0);
 #endif
 }
 

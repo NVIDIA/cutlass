@@ -35,88 +35,91 @@
 
 class SyclEvent {
 private:
-    int index;
-
+  int index;
 public:
-    SyclEvent() : index(-1) {
-    };
+  SyclEvent() : index(-1) {
+  };
 
-    int getIndex() const {
-      return index;
-    }
+  int getIndex() const {
+    return index;
+  }
 
-    SyclEvent& operator=(int const& value) {
-      index = value;
-      return *this;
-    };
+  SyclEvent& operator=(int const& value) {
+    index = value;
+    return *this;
+  };
 };
 
 class EventManager {
 public:
-    static EventManager& getInstance()
-    {
-      static EventManager instance;
-      return instance;
-    }
+  static EventManager& getInstance()
+  {
+    static EventManager instance;
+    return instance;
+  }
 private:
-    EventManager() {}
-    std::vector<sycl::event> events{};
-    int recorders = 0;
+  EventManager() {}
+  std::vector<sycl::event> events{};
+  int recorders = 0;
 
 public:
-    EventManager(EventManager const&) = delete;
-    void operator=(EventManager const&) = delete;
+  EventManager(EventManager const&) = delete;
+  void operator=(EventManager const&) = delete;
 
-    void startRecording(SyclEvent &event) {
-      if (event.getIndex() != -1) {
-        throw std::runtime_error("Event is already being recorded.");
-      }
-      recorders++;
-      event = static_cast<int>(events.size());
+  void startRecording(SyclEvent &event) {
+    if (event.getIndex() != -1) {
+      throw std::runtime_error("Event is already being recorded.");
+    }
+    recorders++;
+    event = static_cast<int>(events.size());
+  }
+
+  void addEvent(const sycl::event &event) {
+    events.push_back(event);
+  }
+
+  void eventDestroy() {
+    recorders--;
+    if (!recorders) {
+      events.clear();
+    }
+  }
+
+  float getEventElapsedTimeMs(SyclEvent const& begin, SyclEvent const& end) const {
+    if (begin.getIndex() < 0 || begin.getIndex() > end.getIndex() || end.getIndex() > events.size()) {
+      throw std::runtime_error("Index out of bounds");
     }
 
-    void addEvent(const sycl::event &event) {
-      events.push_back(event);
+    auto time_event = 0.0f;
+#if defined(SYCLCOMPAT_PROFILING_ENABLED)
+    for (int i = begin.getIndex(); i < end.getIndex(); ++i) {
+      const auto start_time = events[i].template get_profiling_info<
+              sycl::info::event_profiling::command_start>();
+
+      const auto end_time = events[i].template get_profiling_info<
+              sycl::info::event_profiling::command_end>();
+
+      time_event += static_cast<float>(end_time - start_time);
+    }
+#else
+    CUTLASS_ASSERT(false && "Profiling information can not be collected. "
+                            "Define SYCLCOMPAT_PROFILING_ENABLED.");
+#endif
+    return time_event * 1e-6f;
+  }
+
+  void wait(SyclEvent const& begin, SyclEvent const& end) {
+    if (begin.getIndex() < 0 || begin.getIndex() > end.getIndex() || end.getIndex() > events.size()) {
+      throw std::runtime_error("Index out of bounds");
     }
 
-    void eventDestroy() {
-      recorders--;
-      if (!recorders) {
-        events.clear();
-      }
+    for (int i = begin.getIndex(); i < end.getIndex(); ++i) {
+      events[i].wait();
     }
-
-    float getEventElapsedTimeMs(SyclEvent const& begin, SyclEvent const& end) {
-      if (begin.getIndex() < 0 || begin.getIndex() > end.getIndex() || end.getIndex() > events.size()) {
-        throw std::runtime_error("Index out of bounds");
-      }
-
-      auto time_event = 0.0;
-      for (int i = begin.getIndex(); i < end.getIndex(); ++i) {
-        auto start_time = events[i].template get_profiling_info<
-                sycl::info::event_profiling::command_start>();
-
-        auto end_time = events[i].template get_profiling_info<
-                sycl::info::event_profiling::command_end>();
-
-        time_event += static_cast<float>(end_time - start_time);
-      }
-      return time_event * 1e-6;
-    }
-
-    void wait(SyclEvent const& begin, SyclEvent const& end) {
-      if (begin.getIndex() < 0 || begin.getIndex() > end.getIndex() || end.getIndex() > events.size()) {
-        throw std::runtime_error("Index out of bounds");
-      }
-
-      for (int i = begin.getIndex(); i < end.getIndex(); ++i) {
-        events[i].wait();
-      }
-    }
-
+  }
 };
 
-inline void syclEventDestroy(SyclEvent const& event) {
+inline void syclEventDestroy(SyclEvent const&) {
   EventManager::getInstance().eventDestroy();
 }
 
@@ -129,7 +132,5 @@ inline void syclEventSynchronize(SyclEvent const& begin, SyclEvent const& end) {
 }
 
 inline void syclEventElapsedTime(float* time, SyclEvent const& begin, SyclEvent const& end) {
-#if defined(CUTLASS_SYCLCOMPAT_PROFILING_ENABLED)
   *time = EventManager::getInstance().getEventElapsedTimeMs(begin, end);
-#endif
 }

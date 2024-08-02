@@ -26,26 +26,13 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-add_subdirectory(layout)
-
-if (CUTLASS_ENABLE_SYCL)
-  add_custom_target(
-    cutlass_test_unit_cute
-    DEPENDS
-    cutlass_test_unit_cute_layout
-  )
-
-  add_custom_target(
-    test_unit_cute
-    DEPENDS
-    test_unit_cute_layout
-  )
-else()
+if (NOT CUTLASS_ENABLE_SYCL)
   add_subdirectory(core)
   add_subdirectory(volta)
   add_subdirectory(turing)
   add_subdirectory(ampere)
   add_subdirectory(hopper)
+  add_subdirectory(layout)
   add_subdirectory(msvc_compilation)
 
   add_custom_target(
@@ -58,7 +45,7 @@ else()
     cutlass_test_unit_cute_ampere
     cutlass_test_unit_cute_hopper
     cutlass_test_unit_cute_msvc_compilation
-  )
+    )
 
   add_custom_target(
     test_unit_cute
@@ -70,5 +57,19 @@ else()
     test_unit_cute_turing
     test_unit_cute_hopper
     test_unit_cute_msvc_compilation
-  )
+    )
+else()
+  add_subdirectory(layout)
+
+  add_custom_target(
+    cutlass_test_unit_cute
+    DEPENDS
+    cutlass_test_unit_cute_layout
+    )
+
+  add_custom_target(
+    test_unit_cute
+    DEPENDS
+    test_unit_cute_layout
+    )
 endif()

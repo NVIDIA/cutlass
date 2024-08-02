@@ -29,7 +29,7 @@
  *
  **************************************************************************************************/
 
-#define CUTLASS_SYCLCOMPAT_PROFILING_ENABLED
+#define SYCLCOMPAT_PROFILING_ENABLED
 
 #include "cutlass/epilogue/collective/default_epilogue.hpp"
 #include "cutlass/epilogue/collective/intel_pvc_epilogue.hpp"

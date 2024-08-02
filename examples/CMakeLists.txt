@@ -48,10 +48,6 @@ function(cutlass_example_add_executable NAME)
 
   add_dependencies(cutlass_examples ${NAME})
 
-  if (${CUTLASS_ENABLE_DEBUG_PRINTS})
-    target_compile_definitions(${NAME} INTERFACE CUTLASS_ENABLE_DEBUG_PRINTS)
-  endif()
-
   if (NOT CUTLASS_ENABLE_SYCL)
     SET(ADD_CUDA ON)
   endif()
@@ -92,18 +88,7 @@ function(cutlass_example_add_executable NAME)
 
 endfunction()
 
-if (CUTLASS_ENABLE_SYCL)
-
-  foreach(EXAMPLE
-    14_ampere_tf32_tensorop_gemm
-    cute
-    sycl
-  )
-  add_subdirectory(${EXAMPLE})
-  endforeach()
-
-else()
-
+if (NOT CUTLASS_ENABLE_SYCL)
   foreach(EXAMPLE
     00_basic_gemm
     01_cutlass_utilities
@@ -164,9 +149,15 @@ else()
     57_hopper_grouped_gemm
     58_ada_fp8_gemm
     59_ampere_gather_scatter_conv
-  )
-
+    )
     add_subdirectory(${EXAMPLE})
-
-endforeach()
+  endforeach()
+else()
+  foreach(EXAMPLE
+    14_ampere_tf32_tensorop_gemm
+    cute
+    sycl
+    )
+    add_subdirectory(${EXAMPLE})
+  endforeach()
 endif()

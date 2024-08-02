@@ -60,7 +60,9 @@
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-#include <cutlass/fp16.h>
+#if !defined(CUTLASS_ENABLE_SYCL)
+#include <cuda_fp16.h>
+#endif
 
 #include "cutlass/cutlass.h"
 #include "cutlass/float8.h"
@@ -193,8 +195,10 @@ struct alignas(2) half_t {
     CUTLASS_HOST_DEVICE
   #endif  
   static half_t convert(float const& flt) {
-  #if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 530)) || (defined(__SYCL_CUDA_ARCH__) && (__SYCL_CUDA_ARCH__ >= 530))
-    return half_t(float2half_rn(flt));
+  #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 530)
+    return half_t(__float2half_rn(flt));
+  #elif defined(CUTLASS_ENABLE_SYCL)
+    return static_cast<half_t>(flt);
   #else
 
     #if !defined(__CUDA_ARCH__) && CUTLASS_ENABLE_F16C
@@ -274,8 +278,10 @@ struct alignas(2) half_t {
   /// FP32 -> FP16 conversion - rounds to nearest even
   CUTLASS_HOST_DEVICE
   static half_t convert(int const& n) {
-  #if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 530)) || (defined(__SYCL_CUDA_ARCH__) && (__SYCL_CUDA_ARCH__ >= 530))
-    return half_t(int2half_rn(n));
+  #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 530)
+    return half_t(__int2half_rn(n));
+  #elif defined(CUTLASS_ENABLE_SYCL)
+    return static_cast<half_t>(n);
   #else
     return convert(float(n));
   #endif
@@ -286,6 +292,8 @@ struct alignas(2) half_t {
   static half_t convert(unsigned const& n) {
   #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 530)
     return half_t(__uint2half_rn(n));
+  #elif defined(CUTLASS_ENABLE_SYCL)
+    return static_cast<half_t>(n);
   #else
     return convert(float(n));
   #endif
@@ -299,8 +307,10 @@ struct alignas(2) half_t {
     CUTLASS_HOST_DEVICE
   #endif
   static float convert(half_t const& x) {
-  #if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 530)) || (defined(__SYCL_CUDA_ARCH__) && (__SYCL_CUDA_ARCH__ >= 530))
-    return half2float(x.to_half());
+  #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 530)
+    return __half2float(x.to_half());
+  #elif defined(CUTLASS_ENABLE_SYCL)
+    return x.to_half();
   #else
 
     #if !defined(__CUDA_ARCH__) && CUTLASS_ENABLE_F16C
@@ -364,7 +374,7 @@ struct alignas(2) half_t {
     #if defined(__CUDA_ARCH__) || defined(CUTLASS_ENABLE_SYCL)
     storage = reinterpret_cast<uint16_t const &>(x);
     #else
-    half_raw raw(x);
+    __half_raw raw(x);
     std::memcpy(&storage, &raw.x, sizeof(storage));
     #endif
   }
@@ -411,7 +421,7 @@ struct alignas(2) half_t {
     #if defined(__CUDA_ARCH__) || defined(CUTLASS_ENABLE_SYCL)
     storage = reinterpret_cast<uint16_t const &>(x);
     #else
-    half_raw raw(x);
+    __half_raw raw(x);
     std::memcpy(&storage, &raw.x, sizeof(storage));
     #endif
     return *this;
@@ -447,7 +457,7 @@ struct alignas(2) half_t {
     #if defined(__CUDA_ARCH__) || defined(CUTLASS_ENABLE_SYCL)
     return reinterpret_cast<half const &>(storage);
     #else
-    half_raw raw;
+    __half_raw raw;
     std::memcpy(&raw.x, &storage, sizeof(raw.x));
     return half(raw);
     #endif

@@ -30,65 +30,72 @@
  **************************************************************************************************/
 #pragma once
 
-#if defined(CUTLASS_ENABLE_SYCL)
-#include <sycl/sycl.hpp>
-#else
-#include <cuda_fp16.h>
-#endif
+#include "cutlass/detail/helper_macros.hpp"
 
 // Add these definitions in the cutlass namespace, so they do not clash with the ones in cuda
 namespace cutlass {
+// We use this struct instead of sycl::int2 because the sycl type requires x() to access x,
+// while the struct does not need the (). This prevents us from having to modify the Cutlass
+// implementation in all the places where these vector types are used.
+using int2 = struct alignas(8) {
+  int x, y;
+};
 
-#if defined(CUTLASS_ENABLE_SYCL)
-    using half = sycl::half;
-    using half2 = sycl::half2;
-#else
-    using half_raw = __half_raw;
-    using half2 = __half2;
-#endif
+using int4 = struct alignas(16) {
+  int x, y, z, w;
+};
 
-    CUTLASS_HOST_DEVICE
-    float half2float (half const& flt) {
-#if defined(CUTLASS_ENABLE_SYCL)
-      return static_cast<float>(flt);
-#else
-      return __half2float(flt);
-#endif
-    }
+using uint2 = struct alignas(8) {
+  unsigned int x, y;
+};
 
-    CUTLASS_HOST_DEVICE
-    half float2half (float const& flt) {
-#if defined(CUTLASS_ENABLE_SYCL)
-      return static_cast<half>(flt);
-#else
-      return __float2half(flt);
-#endif
-    }
+using uint4 = struct alignas(16) {
+  unsigned int x, y, z, w;
+};
 
-    CUTLASS_HOST_DEVICE
-    half float2half_rn (float const& flt) {
-#if defined(CUTLASS_ENABLE_SYCL)
-      return static_cast<half>(flt);
-#else
-      return __float2half_rn(flt);
-#endif
-    }
+using float4 = struct alignas(16) {
+  float x, y, z, w;
+};
 
-    CUTLASS_HOST_DEVICE
-    int int2half_rn (half const& flt) {
-#if defined(CUTLASS_ENABLE_SYCL)
-      return static_cast<int>(flt);
-#else
-      return __int2half_rn(flt);
-#endif
-    }
+using long4 = struct alignas(16) {
+  long int x, y, z, w;
+};
 
-    CUTLASS_HOST_DEVICE
-    half2 hsub2(const half2 a, const half2 b) {
-#if defined(CUTLASS_ENABLE_SYCL)
-      return a - b;
-#else
-      return __hsub2(a, b);
-#endif
-    }
+using ulong4 = struct alignas(16) {
+  unsigned long int x, y, z, w;
+};
+
+using longlong2 = struct alignas(16) {
+  long long int x, y;
+};
+
+using ulonglong2 = struct alignas(16) {
+  unsigned long long int x, y;
+};
+
+using longlong4 = struct alignas(16) {
+  long long int x, y, z, w;
+};
+
+using ulonglong4 = struct alignas(16) {
+  unsigned long long int x, y, z, w;
+};
+
+using double2 = struct alignas(16) {
+  long long int x, y;
+};
+
+using double4 = struct alignas(16) {
+  long long int x, y, z, w;
+};
+
+CUTLASS_HOST_DEVICE
+int2 make_int2(int x, int y) {
+  return int2{x,y};
+}
+
+CUTLASS_HOST_DEVICE
+int4 make_int4(int x, int y, int z, int w) {
+  return int4 {x,y,z,w};
+}
 }

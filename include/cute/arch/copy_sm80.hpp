@@ -36,7 +36,7 @@
 
 // Config
 #if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)) || \
- (defined(__SYCL_CUDA_ARCH__) && (__SYCL_CUDA_ARCH__ >= 800))
+    (defined(__SYCL_CUDA_ARCH__) && (__SYCL_CUDA_ARCH__ >= 800))
 #  define CUTE_ARCH_CP_ASYNC_SM80_ENABLED
 #endif
 

@@ -32,46 +32,12 @@
 #pragma once
 
 #if defined(CUTLASS_ENABLE_SYCL)
-
-namespace cutlass {
-    // Add these definitions in the cutlass namespace, so they do not clash with the ones in cuda
-    using cuFloatComplex = std::complex<float>;
-    using cuDoubleComplex = std::complex<double>;
-
-    CUTLASS_HOST_DEVICE
-    float cuCrealf(cuFloatComplex x)
-    {
-      return x.real();
-    }
-
-    CUTLASS_HOST_DEVICE
-    float cuCimagf(cuFloatComplex x)
-    {
-      return x.imag();
-    }
-
-    CUTLASS_HOST_DEVICE double cuCreal(cuDoubleComplex x)
-    {
-      return x.real();
-    }
-
-    CUTLASS_HOST_DEVICE double cuCimag(cuDoubleComplex x)
-    {
-      return x.imag();
-    }
-
-    CUTLASS_HOST_DEVICE
-    cuFloatComplex make_cuFloatComplex(float r, float i)
-    {
-      return cuFloatComplex{r, i};
-    }
-}
-
+#include <cutlass/sycl_complex.h>
+#include <cutlass/sycl_fp16.h>
 #else
 #include <cuComplex.h>
+#include <cuda_fp16.h>
 #endif
-
-#include <cutlass/fp16.h>
 
 #if defined(__CUDACC_RTC__)
 #include <cuda/std/cstdint>

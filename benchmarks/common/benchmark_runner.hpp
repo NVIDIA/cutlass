@@ -30,10 +30,9 @@
  **************************************************************************************************/
 
 #if defined(CUTLASS_ENABLE_SYCL)
-#define CUTLASS_SYCLCOMPAT_PROFILING_ENABLED
+#define SYCLCOMPAT_PROFILING_ENABLED
 #endif
 
-#include "cutlass/gemm/device/gemm.h"
 #include "cutlass/epilogue/collective/default_epilogue.hpp"
 #include "cutlass/gemm/device/gemm_universal.h"
 #include "cutlass/gemm/device/gemm_universal_adapter.h"

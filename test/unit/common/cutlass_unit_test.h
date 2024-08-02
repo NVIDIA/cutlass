@@ -45,6 +45,7 @@
 #endif
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+
 #if !defined(CUTLASS_ENABLE_SYCL)
 /// Gets a CUDA device
 cudaDeviceProp GetCudaDevice();
@@ -52,6 +53,7 @@ cudaDeviceProp GetCudaDevice();
 /// Prints device properties
 std::ostream &operator<<(std::ostream &out, cudaDeviceProp const &device);
 #endif
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Sets flags for Unit test

@@ -112,7 +112,7 @@ struct alignas(16) uint128_t
   CUTLASS_HOST_DEVICE
   static void exception()
   {
-#if defined(__CUDA_ARCH__)
+#if defined(__CUDA_ARCH__) || defined(__SYCL_CUDA_ARCH__)
   asm volatile ("  brkpt;\n");
 #else
   // throw std::runtime_error("Not yet implemented.");

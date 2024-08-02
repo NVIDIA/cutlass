@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+* Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,50 +30,34 @@
  **************************************************************************************************/
 #pragma once
 
-#if defined(CUTLASS_ENABLE_SYCL)
-#include <cutlass/sycl_vector_types.h>
-#else
-#include <vector_types.h>
-#endif
-#include <cutlass/numeric_types.h>
-#include <cutlass/numeric_size.h>
+#include "cutlass/detail/helper_macros.hpp"
 
-#include <cute/numeric/int.hpp>
-#include <cute/numeric/real.hpp>
+namespace cutlass {
+// Add these definitions in the cutlass namespace, so they do not clash with the ones in cuda
+using cuFloatComplex = std::complex<float>;
+using cuDoubleComplex = std::complex<double>;
 
-namespace cute {
+CUTLASS_HOST_DEVICE
+float cuCrealf(cuFloatComplex x) {
+  return x.real();
+}
 
-template <typename T>
-struct sizeof_bits : public cutlass::sizeof_bits<T> {};
+CUTLASS_HOST_DEVICE
+float cuCimagf(cuFloatComplex x) {
+  return x.imag();
+}
 
-// DO NOT change auto to int, sizeof_bits<sparse_elem> use integral_ratio instead of int 
-template <class T>
-static constexpr auto sizeof_bits_v = sizeof_bits<T>::value;
+CUTLASS_HOST_DEVICE double cuCreal(cuDoubleComplex x) {
+  return x.real();
+}
 
-using cutlass::bits_to_bytes;
+CUTLASS_HOST_DEVICE double cuCimag(cuDoubleComplex x) {
+  return x.imag();
+}
 
-using cutlass::is_subbyte;
+CUTLASS_HOST_DEVICE
+cuFloatComplex make_cuFloatComplex(float r, float i) {
+  return cuFloatComplex{r, i};
+}
 
-template <class T>
-static constexpr auto is_subbyte_v = is_subbyte<T>::value;
-
-using cutlass::half_t;
-using cutlass::bfloat16_t;
-
-using cutlass::tfloat32_t;
-
-// Umbrella floating-point 8-bit data type : type_erased_dynamic_float8_t
-// This umbrella datatype can be enabled when a user provides a specific
-// datatype in runtime argument list.
-using cutlass::type_erased_dynamic_float8_t;
-using cutlass::float_e4m3_t;
-using cutlass::float_e5m2_t;
-
-using cutlass::uint1b_t;
-using cutlass::int2b_t;
-using cutlass::uint2b_t;
-using cutlass::int4b_t;
-using cutlass::uint4b_t;
-using cutlass::bin1_t;
-
-} // end namespace cute
+} // cutlass namespace

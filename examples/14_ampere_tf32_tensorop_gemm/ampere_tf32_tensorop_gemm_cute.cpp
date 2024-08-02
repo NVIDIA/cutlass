@@ -29,7 +29,7 @@
  *
  **************************************************************************************************/
 
-#define CUTLASS_SYCLCOMPAT_PROFILING_ENABLED
+#define SYCLCOMPAT_PROFILING_ENABLED
 
 #include <cstdlib>
 #include <cstdio>

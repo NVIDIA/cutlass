@@ -1,4 +1,5 @@
 /***************************************************************************************************
+ * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
@@ -28,12 +29,11 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
-
-#include "cutlass/util/print_error.hpp"
+#include <syclcompat.hpp>
 
 #include <cute/tensor.hpp>
-#include <sycl/sycl.hpp>
-#include <syclcompat.hpp>
+
+#include "cutlass/util/print_error.hpp"
 
 // This is a simple tutorial showing several ways to partition a tensor into tiles then
 // perform efficient, coalesced copies. This example also shows how to vectorize accesses
@@ -60,30 +60,30 @@
 // This example assumes the overall tensor shape is divisible by the tile size and
 // does not perform predication.
 
+
 /// Simple copy kernel.
 //
 // Uses local_partition() to partition a tile among threads arranged as (THR_M, THR_N).
 template <class TensorS, class TensorD, class ThreadLayout>
-void copy_kernel(TensorS S, TensorD D, ThreadLayout) {
+void copy_kernel(TensorS S, TensorD D, ThreadLayout)
+{
   using namespace cute;
 
   // Slice the tiled tensors
-  Tensor tile_S = S(make_coord(_, _), syclcompat::work_group_id::x(),
-                    syclcompat::work_group_id::y());  // (BlockShape_M, BlockShape_N)
-  Tensor tile_D = D(make_coord(_, _), syclcompat::work_group_id::x(),
-                    syclcompat::work_group_id::y());  // (BlockShape_M, BlockShape_N)
+  Tensor tile_S = S(make_coord(_,_), syclcompat::work_group_id::x(),
+                    syclcompat::work_group_id::y());            // (BlockShape_M, BlockShape_N)
+  Tensor tile_D = D(make_coord(_,_), syclcompat::work_group_id::x(),
+                    syclcompat::work_group_id::y());            // (BlockShape_M, BlockShape_N)
 
   // Construct a partitioning of the tile among threads with the given thread arrangement.
 
   // Concept:                         Tensor  ThrLayout       ThrIndex
-  Tensor thr_tile_S =
-      local_partition(tile_S, ThreadLayout{}, syclcompat::local_id::x());  // (ThrValM, ThrValN)
-  Tensor thr_tile_D =
-      local_partition(tile_D, ThreadLayout{}, syclcompat::local_id::x());  // (ThrValM, ThrValN)
+  Tensor thr_tile_S = local_partition(tile_S, ThreadLayout{}, syclcompat::local_id::x());  // (ThrValM, ThrValN)
+  Tensor thr_tile_D = local_partition(tile_D, ThreadLayout{}, syclcompat::local_id::x());  // (ThrValM, ThrValN)
 
   // Construct a register-backed Tensor with the same shape as each thread's partition
   // Use make_tensor to try to match the layout of thr_tile_S
-  Tensor fragment = make_tensor_like(thr_tile_S);  // (ThrValM, ThrValN)
+  Tensor fragment = make_tensor_like(thr_tile_S);               // (ThrValM, ThrValN)
 
   // Copy from GMEM to RMEM and from RMEM to GMEM
   copy(thr_tile_S, fragment);
@@ -96,7 +96,8 @@ void copy_kernel(TensorS S, TensorD D, ThreadLayout) {
 /// has the precondition that pointers are aligned to the vector size.
 ///
 template <class TensorS, class TensorD, class ThreadLayout, class VecLayout>
-void copy_kernel_vectorized(TensorS S, TensorD D, ThreadLayout, VecLayout) {
+void copy_kernel_vectorized(TensorS S, TensorD D, ThreadLayout, VecLayout)
+{
   using namespace cute;
 
   using Element = typename TensorS::value_type;
@@ -119,19 +120,21 @@ void copy_kernel_vectorized(TensorS S, TensorD D, ThreadLayout, VecLayout) {
   // in GMEM. Alternative thread layouts are possible but may result in uncoalesced
   // reads. Alternative vector layouts are also possible, though incompatible layouts
   // will result in compile time errors.
-  auto tiled_copy = make_tiled_copy(Atom{},          // access size
-                                    ThreadLayout{},  // thread layout
-                                    VecLayout{});    // vector layout (e.g. 4x1)
+  auto tiled_copy =
+    make_tiled_copy(
+      Atom{},                       // access size
+      ThreadLayout{},               // thread layout
+      VecLayout{});                 // vector layout (e.g. 4x1)
 
   // Construct a Tensor corresponding to each thread's slice.
   auto thr_copy = tiled_copy.get_thread_slice(syclcompat::local_id::x());
 
-  Tensor thr_tile_S = thr_copy.partition_S(tile_S);  // (CopyOp, CopyM, CopyN)
-  Tensor thr_tile_D = thr_copy.partition_D(tile_D);  // (CopyOp, CopyM, CopyN)
+  Tensor thr_tile_S = thr_copy.partition_S(tile_S);             // (CopyOp, CopyM, CopyN)
+  Tensor thr_tile_D = thr_copy.partition_D(tile_D);             // (CopyOp, CopyM, CopyN)
 
   // Construct a register-backed Tensor with the same shape as each thread's partition
   // Use make_fragment because the first mode is the instruction-local mode
-  Tensor fragment = make_fragment_like(thr_tile_D);  // (CopyOp, CopyM, CopyN)
+  Tensor fragment = make_fragment_like(thr_tile_D);             // (CopyOp, CopyM, CopyN)
 
   // Copy from GMEM to RMEM and from RMEM to GMEM
   copy(tiled_copy, thr_tile_S, fragment);
@@ -139,12 +142,14 @@ void copy_kernel_vectorized(TensorS S, TensorD D, ThreadLayout, VecLayout) {
 }
 
 /// Main function
-int main(int argc, char** argv) {
-  using namespace cute;
+int main(int argc, char** argv)
+{
   //
   // Given a 2D shape, perform an efficient copy
   //
-  using dtype = float;
+
+  using namespace cute;
+  using Element = float;
 
   // Define a tensor shape with dynamic extents (m, n)
   auto tensor_shape = make_shape(256, 512);
@@ -152,25 +157,25 @@ int main(int argc, char** argv) {
   //
   // Allocate and initialize
   //
-  std::vector<dtype> host_src(size(tensor_shape));
-  std::vector<dtype> host_output(size(tensor_shape));
+  std::vector<Element> h_S(size(tensor_shape));
+  std::vector<Element> h_D(size(tensor_shape));
 
-  dtype* device_src = syclcompat::malloc<dtype>(size(tensor_shape));
-  dtype* device_output = syclcompat::malloc<dtype>(size(tensor_shape));
+  auto d_S = syclcompat::malloc<Element>(size(tensor_shape));
+  auto d_D = syclcompat::malloc<Element>(size(tensor_shape));
 
-  for (size_t i = 0; i < host_src.size(); ++i) {
-    host_src[i] = static_cast<dtype>(i);
+  for (size_t i = 0; i < h_S.size(); ++i) {
+    h_S[i] = static_cast<Element>(i);
   }
 
-  syclcompat::memcpy<dtype>(device_src, host_src.data(), size(tensor_shape));
-  syclcompat::memcpy<dtype>(device_output, host_output.data(), size(tensor_shape));
+  syclcompat::memcpy<Element>(d_S, h_S.data(), size(tensor_shape));
+  syclcompat::memcpy<Element>(d_D, h_D.data(), size(tensor_shape));
 
   //
   // Make tensors
   //
 
-  Tensor tensor_S = make_tensor(make_gmem_ptr(device_src), make_layout(tensor_shape));
-  Tensor tensor_D = make_tensor(make_gmem_ptr(device_output), make_layout(tensor_shape));
+  Tensor tensor_S = make_tensor(d_S, make_layout(tensor_shape));
+  Tensor tensor_D = make_tensor(d_D, make_layout(tensor_shape));
 
   //
   // Tile tensors
@@ -180,8 +185,7 @@ int main(int argc, char** argv) {
   // Note, by convention, capital letters are used to represent static modes.
   auto block_shape = make_shape(Int<128>{}, Int<64>{});
 
-  if ((size<0>(tensor_shape) % size<0>(block_shape)) ||
-      (size<1>(tensor_shape) % size<1>(block_shape))) {
+  if ((size<0>(tensor_shape) % size<0>(block_shape)) || (size<1>(tensor_shape) % size<1>(block_shape))) {
     std::cerr << "The tensor shape must be divisible by the block shape." << std::endl;
     return -1;
   }
@@ -195,8 +199,8 @@ int main(int argc, char** argv) {
   // shape, and modes (m', n') correspond to the number of tiles.
   //
   // These will be used to determine the CUDA kernel grid dimensions.
-  Tensor tiled_tensor_S = tiled_divide(tensor_S, block_shape);  // ((M, N), m', n')
-  Tensor tiled_tensor_D = tiled_divide(tensor_D, block_shape);  // ((M, N), m', n')
+  Tensor tiled_tensor_S = tiled_divide(tensor_S, block_shape);      // ((M, N), m', n')
+  Tensor tiled_tensor_D = tiled_divide(tensor_D, block_shape);      // ((M, N), m', n')
 
   // Thread arrangement
   Layout thr_layout = make_layout(make_shape(Int<32>{}, Int<8>{}));
@@ -208,9 +212,7 @@ int main(int argc, char** argv) {
   // Determine grid and block dimensions
   //
 
-  auto gridDim =
-      syclcompat::dim3(size<1>(tiled_tensor_D),
-                       size<2>(tiled_tensor_D));  // Grid shape corresponds to modes m' and n'
+  auto gridDim  = syclcompat::dim3(size<1>(tiled_tensor_D), size<2>(tiled_tensor_D));  // Grid shape corresponds to modes m' and n'
   auto blockDim = syclcompat::dim3(size(thr_layout));
 
   //
@@ -225,15 +227,14 @@ int main(int argc, char** argv) {
   // Verify
   //
 
-  syclcompat::memcpy<dtype>(host_output.data(), device_output, size(tensor_shape));
+  syclcompat::memcpy<Element>(h_D.data(), d_D, size(tensor_shape));
 
   int32_t errors = 0;
   int32_t const kErrorLimit = 10;
 
-  for (size_t i = 0; i < host_output.size(); ++i) {
-    if (host_src[i] != host_output[i]) {
-      std::cerr << "Error. S[" << i << "]: " << host_src[i] << ",   D[" << i
-                << "]: " << host_output[i] << std::endl;
+  for (size_t i = 0; i < h_D.size(); ++i) {
+    if (h_S[i] != h_D[i]) {
+      std::cerr << "Error. S[" << i << "]: " << h_S[i] << ",   D[" << i << "]: " << h_D[i] << std::endl;
 
       if (++errors >= kErrorLimit) {
         std::cerr << "Aborting on " << kErrorLimit << "nth error." << std::endl;
