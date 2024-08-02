@@ -63,51 +63,79 @@
   }
 
 
-#if !defined(CUTLASS_ENABLE_SYCL)
 /**
  * GPU timer for recording the elapsed time across kernel(s) launched in GPU stream
  */
 struct GpuTimer
 {
-    cudaStream_t _stream_id;
+#if defined(CUTLASS_ENABLE_SYCL)
+    using cudaStream_t = int;
+    SyclEvent _start;
+    SyclEvent _stop;
+#else
     cudaEvent_t _start;
     cudaEvent_t _stop;
+#endif
+    cudaStream_t _stream_id;
 
     /// Constructor
     GpuTimer() : _stream_id(0)
     {
+#if defined(CUTLASS_ENABLE_SYCL)
+        _start = SyclEvent{};
+        _stop = SyclEvent{};
+#else
         CUDA_CHECK(cudaEventCreate(&_start));
         CUDA_CHECK(cudaEventCreate(&_stop));
+#endif
     }
 
     /// Destructor
     ~GpuTimer()
     {
+#if defined(CUTLASS_ENABLE_SYCL)
+        syclEventDestroy(_start);
+        syclEventDestroy(_stop);
+#else
         CUDA_CHECK(cudaEventDestroy(_start));
         CUDA_CHECK(cudaEventDestroy(_stop));
+#endif
     }
 
     /// Start the timer for a given stream (defaults to the default stream)
     void start(cudaStream_t stream_id = 0)
     {
         _stream_id = stream_id;
+#if defined(CUTLASS_ENABLE_SYCL)
+        syclEventRecord(_start);
+#else
         CUDA_CHECK(cudaEventRecord(_start, _stream_id));
+#endif
     }
 
     /// Stop the timer
     void stop()
     {
+#if defined(CUTLASS_ENABLE_SYCL)
+        syclEventRecord(_stop);
+#else
         CUDA_CHECK(cudaEventRecord(_stop, _stream_id));
+#endif
     }
 
     /// Return the elapsed time (in milliseconds)
     float elapsed_millis()
     {
+#if defined(CUTLASS_ENABLE_SYCL)
+        float elapsed = 0.0;
+        syclEventSynchronize(_start, _stop);
+        syclEventElapsedTime(&elapsed, _start, _stop);
+        return elapsed;
+#else
         float elapsed = 0.0;
         CUDA_CHECK(cudaEventSynchronize(_stop));
         CUDA_CHECK(cudaEventElapsedTime(&elapsed, _start, _stop));
         return elapsed;
+#endif
     }
 };
-
-#endif
