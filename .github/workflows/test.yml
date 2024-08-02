@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [ "sycl-develop" ]
   workflow_dispatch:
+    inputs:
+      DPCPP_VERSION:
+        description: "DPCPP version to use"
+        type: string
 
 permissions: {}
 
@@ -25,10 +29,10 @@ jobs:
           nvidia-smi
           mkdir ~/dpcpp
           pushd ~/dpcpp
-          echo "Will use DPCPP $DPCPP_VERSION."
-          if [[ "$DPCPP_VERSION" != "" ]]; then \
-            echo "Downloading DPCPP from https://github.com/intel/llvm/releases/download/$DPCPP_VERSION/sycl_linux.tar.gz"; \
-            wget -q https://github.com/intel/llvm/releases/download/$DPCPP_VERSION/sycl_linux.tar.gz; \
+          echo "Will use DPCPP ${{ inputs.DPCPP_VERSION }}."
+          if [[ "${{ inputs.DPCPP_VERSION }}" != "" ]]; then \
+            echo "Downloading DPCPP from https://github.com/intel/llvm/releases/download/${{ inputs.DPCPP_VERSION }}/sycl_linux.tar.gz"; \
+            wget -q https://github.com/intel/llvm/releases/download/${{ inputs.DPCPP_VERSION }}/sycl_linux.tar.gz; \
           else
             latest=$(curl -sS https://api.github.com/repos/intel/llvm/releases | jq -r '[.[].tag_name|select(match("nightly-[0-9]{4}-[0-9]{2}-[0-9]{2}"))][0]') && \
             echo "Downloading DPCPP from https://github.com/intel/llvm/releases/download/${latest}/sycl_linux.tar.gz"; \
