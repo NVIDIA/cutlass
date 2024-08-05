@@ -491,4 +491,80 @@ TEST(Functional, multiply_add_quaternion_f32) {
   Functional_multiply_add_QuaternionT<float>();
 }
 
+namespace cutlass_test {
+
+__global__ void
+test_cutlass_maximum(cutlass::half_t const* in1, cutlass::half_t const* in2, cutlass::half_t* out)
+{
+  {
+    constexpr bool propagate_NaN = true;
+    cutlass::maximum<cutlass::half_t, propagate_NaN> op;
+    if (threadIdx.x == 0 && threadIdx.y == 0 && threadIdx.z == 0
+        && blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0) {
+      *out = op(*in1, *in2);
+    }
+  }
+  {
+    constexpr bool propagate_NaN = false;
+    cutlass::maximum<cutlass::half_t, propagate_NaN> op;
+    if (threadIdx.x == 0 && threadIdx.y == 0 && threadIdx.z == 0
+        && blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0) {
+      *out = op(*in1, *in2);
+    }
+  }
+}
+
+} // cutlass_test
+
+// Test compilation on both host and device.
+TEST(Functional, maximum_half_host_propagate_NaN) {
+  constexpr bool propagate_NaN = true;
+  cutlass::maximum<cutlass::half_t, propagate_NaN> op;
+  cutlass::half_t x(1.0f);
+  cutlass::half_t y(2.0f);
+
+  auto result = op(x, y);
+  static_assert(std::is_same_v<decltype(result), cutlass::half_t>);
+  EXPECT_EQ(result, y);
+  result = op(y, x);
+  EXPECT_EQ(result, y);
+}
+
+TEST(Functional, maximum_half_host_dont_propagate_NaN) {
+  constexpr bool propagate_NaN = false;
+  cutlass::maximum<cutlass::half_t, propagate_NaN> op;
+  cutlass::half_t x(1.0f);
+  cutlass::half_t y(2.0f);
+
+  auto result = op(x, y);
+  static_assert(std::is_same_v<decltype(result), cutlass::half_t>);
+  EXPECT_EQ(result, y);
+  result = op(y, x);
+  EXPECT_EQ(result, y);
+}
+
+TEST(Function, maximum_half_device) {
+  using Tensor = cutlass::HostTensor<cutlass::half_t, cutlass::layout::RowMajor>;
+
+  Tensor in1({1, 1});
+  Tensor in2({1, 1});
+  Tensor out({1, 1});
+  in1.host_data()[0] = cutlass::half_t(1.0f);
+  in2.host_data()[0] = cutlass::half_t(2.0f);
+  out.host_data()[0] = cutlass::half_t(0.0f);
+
+  in1.sync_device();
+  in2.sync_device();
+  out.sync_device();
+
+  cutlass_test::test_cutlass_maximum<<< 1, 1 >>>(
+    in1.device_data(),
+    in2.device_data(),
+    out.device_data()
+  );
+  out.sync_host();
+
+  EXPECT_EQ(out.host_data()[0], 2.0f);
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////////////

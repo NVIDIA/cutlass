@@ -369,11 +369,14 @@ template <typename T>
 struct maximum<T, true> {
   CUTLASS_HOST_DEVICE
   T operator()(T const &lhs, T const &rhs) const {
-#if defined(__CUDA_ARCH__)
-    return lhs > rhs or ::isnan(lhs) ? lhs : rhs;
-#else
-    return lhs > rhs or std::isnan(lhs) ? lhs : rhs;
-#endif
+    using CUTLASS_CMATH_NAMESPACE :: isnan;
+
+    // Call isnan unqualified, so argument-dependent lookup (ADL)
+    // will find overloads such as cutlass::isnan(half_t).
+    // Calling ::isnan or std::isnan directly would force
+    // implicit conversions to float of custom number types
+    // in the cutlass namespace (e.g., cutlass::half_t).
+    return lhs > rhs || isnan(lhs) ? lhs : rhs;
   }
 };
 
@@ -389,15 +392,14 @@ template <>
 struct maximum<float, true> {
   CUTLASS_HOST_DEVICE
   float operator()(float const lhs, float const rhs) const {
-    float res;
 #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)
+    float res;
     asm volatile("max.NaN.f32 %0, %1, %2;\n" : "=f"(res) : "f"(lhs), "f"(rhs));
-#elif defined(__CUDA_ARCH__)
-    res = lhs > rhs or ::isnan(lhs) ? lhs : rhs;
-#else
-    res = lhs > rhs or std::isnan(lhs) ? lhs : rhs;
-#endif
     return res;
+#else
+    using CUTLASS_CMATH_NAMESPACE :: isnan;
+    return lhs > rhs || isnan(lhs) ? lhs : rhs;
+#endif
   }
 };
 
@@ -427,11 +429,9 @@ template <typename T>
 struct minimum<T, true> {
   CUTLASS_HOST_DEVICE
   T operator()(T const &lhs, T const &rhs) const {
-#if defined(__CUDA_ARCH__)
-    return lhs < rhs or ::isnan(lhs) ? lhs : rhs;
-#else
-    return lhs < rhs or std::isnan(lhs) ? lhs : rhs;
-#endif
+    using CUTLASS_CMATH_NAMESPACE :: isnan;
+
+    return lhs < rhs || isnan(lhs) ? lhs : rhs;
   }
 };
 
@@ -512,6 +512,8 @@ template <typename A, typename B = A, typename C = A>
 struct guarded_multiply_add {
   CUTLASS_HOST_DEVICE
   C operator()(A const &a, B const &b, C const &c) const {
+    using CUTLASS_CMATH_NAMESPACE :: isnan;
+
     if (isnan(a) || isnan(b)) {
       return C(0);
     }
@@ -531,7 +533,10 @@ struct guarded_multiply_add<half_t, half_t, half_t> {
       : "h"(*reinterpret_cast<uint16_t const*>(&a)), "h"(*reinterpret_cast<uint16_t const*>(&b)), "h"(*reinterpret_cast<uint16_t const*>(&c)));
     return result;
 #else
-    if (isnan(a) || isnan(b)) {
+    // Namespace-qualifying isnan as cutlass::isnan saves the compiler
+    // the trouble of argument-dependent lookup.  Calling std::isnan or
+    // ::isnan here would result in unwanted implicit conversion to float.
+    if (cutlass::isnan(a) || cutlass::isnan(b)) {
       return half_t(0);
     }
     return a * b + c;
@@ -544,13 +549,9 @@ template <typename A, typename B = A, typename C = A>
 struct guarded_multiply_add_relu0 {
   CUTLASS_HOST_DEVICE
   C operator()(A const &a, B const &b, C const &c) const {
-    if (
-#if defined(__CUDA_ARCH__)
-         ::isnan(a) ||    ::isnan(b)
-#else
-      std::isnan(a) || std::isnan(b)
-#endif
-    ) {
+    using CUTLASS_CMATH_NAMESPACE :: isnan;
+
+    if (isnan(a) || isnan(b)) {
       return C(0);
     }
     maximum<C> mx;
@@ -569,13 +570,7 @@ struct guarded_multiply_add_relu0<half_t, half_t, half_t> {
       : "h"(*reinterpret_cast<uint16_t const*>(&a)), "h"(*reinterpret_cast<uint16_t const*>(&b)), "h"(*reinterpret_cast<uint16_t const*>(&c)));
     return result;
 #else
-    if (
-#if defined(__CUDA_ARCH__)
-         ::isnan(a) ||    ::isnan(b)
-#else
-      std::isnan(a) || std::isnan(b)
-#endif
-    ) {
+    if (cutlass::isnan(a) || cutlass::isnan(b)) {
       return half_t(0);
     }
     maximum<half_t> mx;
@@ -782,6 +777,10 @@ struct atomic_add
   {
 #if defined(__CUDA_ARCH__)
     atomicAdd(ptr, data);
+#else
+    CUTLASS_UNUSED(ptr);
+    CUTLASS_UNUSED(data);
+    CUTLASS_NOT_IMPLEMENTED();
 #endif
   }
 };
@@ -793,8 +792,9 @@ struct atomic_add<double>
   void operator()(double *ptr, const double &data)
   {
 #if !defined(__CUDA_ARCH__)
-      CUTLASS_UNUSED(ptr);
-      CUTLASS_UNUSED(data);
+    CUTLASS_UNUSED(ptr);
+    CUTLASS_UNUSED(data);
+    CUTLASS_NOT_IMPLEMENTED();
 #elif (__CUDA_ARCH__ >= 600)
     atomicAdd(ptr, data);
 #else
@@ -819,8 +819,9 @@ struct atomic_add<half2>
   void operator()(half2 *ptr, const half2 &data)
   {
 #if !defined(__CUDA_ARCH__) || (defined(__CUDA_ARCH__)  && (__CUDA_ARCH__ < 600))
-      CUTLASS_UNUSED(ptr);
-      CUTLASS_UNUSED(data);
+    CUTLASS_UNUSED(ptr);
+    CUTLASS_UNUSED(data);
+    CUTLASS_NOT_IMPLEMENTED();
 #else
     // Vector-2 atomic reduction requires .target sm_60 or higher
     uint32_t word = reinterpret_cast<const uint32_t&>(data);
