@@ -37,7 +37,7 @@
 #ifdef __SYCL_DEVICE_ONLY__ 
 #define SYCL_DEVICE_OCL(x) SYCL_EXTERNAL x
 #else 
-#define SYCL_DEVICE_OCL(x) inline x { assert(false); }
+#define SYCL_DEVICE_OCL(x) inline x { CUTE_INVALID_CONTROL_PATH("Trying to use XE built-in on non-XE hardware"); }
 #endif
 
 SYCL_DEVICE_OCL(cute::intel::float8 intel_sub_group_bf16_bf16_matrix_mad_k16(cute::intel::short8 a, cute::intel::int8 b, cute::intel::float8 acc));

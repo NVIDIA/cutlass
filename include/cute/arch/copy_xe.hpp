@@ -41,7 +41,7 @@ namespace cute
 #define SYCL_DEVICE_BUILTIN(x) SYCL_EXTERNAL extern "C" x
 #else
 #define SYCL_DEVICE_BUILTIN(x)  \
-  inline x { assert(false); }
+  inline x { CUTE_INVALID_CONTROL_PATH("Trying to use XE built-in on non-XE hardware"); }
 #endif
 
 enum class CacheControl {
