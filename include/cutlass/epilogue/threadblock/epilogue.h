@@ -512,24 +512,24 @@ public:
           shared_load_iterator_.add_pointer_offset(kSmemPointerOffset);
           shared_load_iterator_.load(aligned_accum_fragment[i]);
           aligned_accum_fragment[0] = add_fragments(aligned_accum_fragment[0], aligned_accum_fragment[i]);
-          }
-
-          shared_load_iterator_.add_pointer_offset((1 - kPartitionsK) * kSmemPointerOffset);
         }
 
-        //
-        // Compute the output result
-        //
+        shared_load_iterator_.add_pointer_offset((1 - kPartitionsK) * kSmemPointerOffset);
+      }
 
-        typename OutputTileIterator::Fragment output_fragment;
-        source.apply_output_operator(output_fragment, output_op, aligned_accum_fragment[0]);
+      //
+      // Compute the output result
+      //
 
-        //
-        // Store the final result
-        //
+      typename OutputTileIterator::Fragment output_fragment;
+      source.apply_output_operator(output_fragment, output_op, aligned_accum_fragment[0]);
 
-        destination_iterator.store(output_fragment);
-        ++destination_iterator;
+      //
+      // Store the final result
+      //
+
+      destination_iterator.store(output_fragment);
+      ++destination_iterator;
     }
   }
 };
