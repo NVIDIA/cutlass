@@ -69,6 +69,7 @@ GeneratorTargetNames = {
 class DataType(enum.Enum):
   void = enum_auto()  # primarily used to disable C tensor for epilogues
   b1 = enum_auto()
+  u2 = enum_auto()
   u4 = enum_auto()
   u8 = enum_auto()
   u16 = enum_auto()
@@ -119,6 +120,7 @@ ShortDataTypeNames = {
 DataTypeNames = {
   DataType.void: "void",
   DataType.b1: "b1",
+  DataType.u2: "u2",
   DataType.u4: "u4",
   DataType.u8: "u8",
   DataType.u16: "u16",
@@ -156,6 +158,7 @@ DataTypeNames = {
 DataTypeTag = {
   DataType.void: "void",
   DataType.b1: "cutlass::uint1b_t",
+  DataType.u2: "cutlass::uint2b_t",
   DataType.u4: "cutlass::uint4b_t",
   DataType.u8: "uint8_t",
   DataType.u16: "uint16_t",
@@ -193,6 +196,7 @@ DataTypeTag = {
 DataTypeSize = {
   DataType.void: 0,
   DataType.b1: 1,
+  DataType.u2: 2,
   DataType.u4: 4,
   DataType.u8: 8,
   DataType.u16: 16,
