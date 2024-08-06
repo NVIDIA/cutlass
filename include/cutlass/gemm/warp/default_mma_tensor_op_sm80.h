@@ -229,7 +229,8 @@ struct DefaultMmaTensorOp<
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Partial Specialization - inputs are mixed types  - uses wider datatype internally.
-/// (e.g. F16 <= F16 x S8 + F16, F16 <= BF16 x S8 + F32)
+/// (e.g. F16 <= F16 x S8 + F16, F16 <= BF16 x S8 + F32,
+///    or F16 <= F16 x S4 + F16, F16 <= BF16 x S4 + F32)
 template <
     /// Shape of one matrix production operation (concept: GemmShape)
     typename WarpShape_,
