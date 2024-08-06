@@ -1147,7 +1147,7 @@ pipeline_init_wait(int cluster_size) {
     cute::cluster_wait();
   }
   else {
-    __syncthreads();
+    syncthreads();
   }
 }
 
@@ -1160,7 +1160,7 @@ pipeline_init_arrive_relaxed(int cluster_size) {
     cute::cluster_arrive_relaxed();
   }
   else {
-    __syncthreads();
+    syncthreads();
   }
 }
 

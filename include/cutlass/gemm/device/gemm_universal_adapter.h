@@ -356,6 +356,7 @@ public:
     Status launch_result{ Status::kSuccess };
     // Use extended launch API only for mainloops that use it
     if constexpr (GemmKernel::ArchTag::kMinComputeCapability >= 90) {
+#if !defined(CUTLASS_ENABLE_SYCL)
       constexpr bool is_static_1x1x1 = cute::is_static_v<typename GemmKernel::DispatchPolicy::ClusterShape> and
                                        cute::size(typename GemmKernel::DispatchPolicy::ClusterShape{}) == 1;
       dim3 cluster(cute::size<0>(typename GemmKernel::DispatchPolicy::ClusterShape{}),
@@ -400,6 +401,7 @@ public:
           }
         }
       }
+#endif
     }
     else {
       launch_result = Status::kSuccess;

@@ -103,6 +103,7 @@ public:
   /// Default constructor
   bfloat16_t() = default;
 
+#if !defined(CUTLASS_ENABLE_SYCL)
   /// Reinterpret cast from CUDA's __nv_bfloat16 type
   CUTLASS_HOST_DEVICE
   explicit bfloat16_t(__nv_bfloat16 const & x) {
@@ -113,6 +114,7 @@ public:
     std::memcpy(&storage, &raw.x, sizeof(storage));
     #endif
   }
+#endif
 
   /// Floating-point conversion - round toward nearest
   CUTLASS_HOST_DEVICE

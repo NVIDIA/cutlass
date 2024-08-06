@@ -285,13 +285,15 @@ public:
                       problem_shape_mnkl,
                       TileShapeMNK{},
                       tile_coord_mnkl,
-                      residue_mn,
-                      SubgroupTileShape{},
+                      tiled_mma,
+                      SubgroupTileShape{}, // Epilogue tile
                       params.xe_load_c,
+                      cD,
+                      residue_mn,
+                      cD,
+                      residue_mn,
+                      trC,
                       thread_idx,
-                      cD,
-                      cD,
-                      trC
                     };
     auto cst_callbacks = fusion_callbacks.template get_consumer_store_callbacks<RefSrc>(cst_args);
 

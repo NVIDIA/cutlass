@@ -541,7 +541,7 @@ struct CollectiveMma<
     Layout warp_group_thread_layout = make_layout(Int<MmaWarpGroups>{}, 
                                                   Int<NumThreadsPerWarpGroup>{});
 
-    int warp_group_idx = __shfl_sync(0xFFFFFFFF, thread_idx / NumThreadsPerWarpGroup, 0);
+    int warp_group_idx = shfl_sync(0xFFFFFFFF, thread_idx / NumThreadsPerWarpGroup, 0);
 
     TiledMma tiled_mma;
     auto mma_thread_slice = tiled_mma.get_thread_slice(thread_idx);
