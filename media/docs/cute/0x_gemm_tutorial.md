@@ -150,7 +150,7 @@ This `local_tile` is simply shorthand for
 1. apply the tiler via [`zipped_divide`](./02_layout_algebra.md#zipped-tiled-flat-divides)
 ```cpp
 // ((BLK_M,BLK_K),(m,k))
-Tensor gA_mk = zipped_divide(gA, select<0,2>(cta_tiler));
+Tensor gA_mk = zipped_divide(mA, select<0,2>(cta_tiler));
 ```
 2. apply the coord to the second mode, the "Rest" mode, to extract out the correct tiles for this CTA.
 ```cpp
