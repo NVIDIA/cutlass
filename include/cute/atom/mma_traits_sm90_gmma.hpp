@@ -422,6 +422,9 @@ using CLayout_64x176  = Layout<Shape <Shape <  _4,_8, _4>,Shape < _2,_2, Int<22>
 using CLayout_64x192 = Layout<Shape <Shape <  _4,_8, _4>,Shape < _2,_2, _24>>,
                               Stride<Stride<_128,_1,_16>,Stride<_64,_8,_512>>>;
 
+using CLayout_64x208  = Layout<Shape <Shape <  _4,_8, _4>,Shape < _2,_2, Int<26>>>,
+                              Stride<Stride<_128,_1,_16>,Stride<_64,_8,_512>>>;
+
 using CLayout_64x224  = Layout<Shape <Shape <  _4,_8, _4>,Shape < _2,_2, Int<28>>>,
                               Stride<Stride<_128,_1,_16>,Stride<_64,_8,_512>>>;
 
