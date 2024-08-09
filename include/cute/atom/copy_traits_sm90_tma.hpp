@@ -41,6 +41,7 @@
 #include <cute/algorithm/prefetch.hpp>
 
 #include <cute/numeric/integral_ratio.hpp>
+#include <cutlass/cuda_host_adapter.hpp>
 
 namespace cute
 {
@@ -983,7 +984,7 @@ make_tma_copy_desc(Tensor<GEngine,GLayout> const& gtensor,         // The origin
 
     // TMA smem swizzle type
     CUtensorMapSwizzle smem_swizzle = TMA::to_CUtensorMapSwizzle(get_tma_swizzle_bits(swizzle));
-    CUresult result = cuTensorMapEncodeTiled(
+    CUresult result = CUTLASS_CUDA_DRIVER_WRAPPER_CALL(cuTensorMapEncodeTiled)(
         &tma_desc,
         tma_format,
         tma_dim,
