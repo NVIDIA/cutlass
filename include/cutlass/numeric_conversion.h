@@ -2771,6 +2771,86 @@ struct NumericArrayConverter<uint4b_t, int, N, Round> {
   }
 };
 
+/// Partial specialization for Array<int8_t, 8> <= Array<int4b_t, 8>
+template <
+  FloatRoundStyle Round
+>
+struct NumericArrayConverter<int8_t, int4b_t, 8, Round> {
+
+  using result_type = Array<int8_t, 8>;
+  using source_type = Array<int4b_t, 8>;
+  static FloatRoundStyle const round_style = Round;
+
+  CUTLASS_HOST_DEVICE
+  static result_type convert(source_type const & source) {
+
+    unsigned const& storage = reinterpret_cast<unsigned const &>(source);
+    unsigned out[2];
+
+    asm volatile(
+        "{ .reg .u32 tmp0, tmp1, tmp2;"
+        "shl.b32 tmp0, %2, 4;"
+        "and.b32 tmp0, tmp0, 0xf0f0f0f0;"
+        "prmt.b32 tmp1, tmp0, tmp0, 0xba98;"
+        "and.b32 tmp1, tmp1, 0xf0f0f0f0;"
+        "shr.u32 tmp0, tmp0, 4;"
+        "or.b32 tmp2, tmp0, tmp1;"
+        "and.b32 tmp0, %2, 0xf0f0f0f0;"
+        "prmt.b32 tmp1, tmp0, tmp0, 0xba98;"
+        "and.b32 tmp1, tmp1, 0xf0f0f0f0;"
+        "shr.u32 tmp0, tmp0, 4;"
+        "or.b32 tmp0, tmp0, tmp1;"
+        "prmt.b32 %0, tmp2, tmp0, 0x5140;"
+        "prmt.b32 %1, tmp2, tmp0, 0x7362;"
+        "}"
+        : "=r"(out[0]), "=r"(out[1])
+        : "r"(storage));
+
+    return reinterpret_cast<result_type const &>(out);
+  }
+
+  CUTLASS_HOST_DEVICE
+  result_type operator()(source_type const &s) const {
+    return convert(s);
+  }
+};
+
+/// Partial specialization for Array<int8_t> <= Array<int4b_t>
+template <
+  int N,
+  FloatRoundStyle Round
+>
+struct NumericArrayConverter<int8_t, int4b_t, N, Round> {
+  static_assert(!(N % 8), "N must be multiple of 8.");
+
+  using result_type = Array<int8_t, N>;
+  using source_type = Array<int4b_t, N>;
+  static FloatRoundStyle const round_style = Round;
+
+  CUTLASS_HOST_DEVICE
+  static result_type convert(source_type const & source) {
+
+    NumericArrayConverter<int8_t, int4b_t, 8, Round> convert_vector_;
+
+    result_type result;
+
+    Array<int8_t, 8> *result_ptr = reinterpret_cast<Array<int8_t, 8> *>(&result);
+    Array<int4b_t, 8> const *source_ptr = reinterpret_cast<Array<int4b_t, 8> const *>(&source);
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N / 8; ++i) {
+      result_ptr[i] = convert_vector_(source_ptr[i]);
+    }
+
+    return result;
+  }
+
+  CUTLASS_HOST_DEVICE
+  result_type operator()(source_type const &s) const {
+    return convert(s);
+  }
+};
+
 #endif  // Conditional guards to enable partial specialization for packed integers
 
 namespace detail {
