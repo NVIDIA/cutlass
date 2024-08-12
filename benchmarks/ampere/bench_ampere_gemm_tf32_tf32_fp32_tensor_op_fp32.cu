@@ -145,7 +145,7 @@ int main(int argc, const char** argv)
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
 
-  BenchmarkRunner<Gemm> runner;
+  BenchmarkRunner<Gemm> runner("ampere_gemm_tf32_tf32_fp32_tensor_op_fp32");
 
   runner.run(options, hw_info);
 

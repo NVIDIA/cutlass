@@ -26,6 +26,15 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+
+include(FetchContent)
+FetchContent_Declare(
+    googlebenchmark
+    GIT_REPOSITORY https://github.com/google/benchmark.git
+    GIT_TAG main
+)
+FetchContent_MakeAvailable(googlebenchmark)
+
 set(CUTLASS_BENCHMARKS_COMMON_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/common)
 
 add_custom_target(cutlass_benchmarks)
@@ -54,6 +63,7 @@ function(cutlass_benchmark_add_executable NAME)
     cutlass_tools_util_includes
     $<$<BOOL:${CUTLASS_ENABLE_CUBLAS}>:nvidia::cublas>
     $<$<BOOL:${ADD_CUDA}>:cuda>
+    benchmark::benchmark
   )
 
   if (CUTLASS_ENABLE_SYCL)
@@ -65,6 +75,7 @@ function(cutlass_benchmark_add_executable NAME)
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
   )
 endfunction()
+
 
 if(SYCL_INTEL_TARGET)
   add_subdirectory(pvc)

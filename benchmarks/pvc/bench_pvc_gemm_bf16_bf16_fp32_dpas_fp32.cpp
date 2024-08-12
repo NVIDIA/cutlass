@@ -137,7 +137,7 @@ int main(int argc, const char** argv)
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
 
-  PvcBenchmarkRunner<Gemm> runner;
+  BenchmarkRunner<Gemm> runner("pvc_gemm_bf16_bf16_fp32_dpas_fp32");
 
   runner.run(options, hw_info);
 
