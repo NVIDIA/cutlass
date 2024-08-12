@@ -30,8 +30,10 @@
  **************************************************************************************************/
 #pragma once
 
-#if !defined(CUTLASS_ENABLE_SYCL)
-#include "cuda_runtime.h"
+#if defined(CUTLASS_ENABLE_SYCL)
+#include "cutlass/util/sycl_timer.hpp"
+#else
+#include <cuda_runtime.h>
 #endif
 #include <iostream>
 
@@ -66,12 +68,10 @@
 /**
  * GPU timer for recording the elapsed time across kernel(s) launched in GPU stream
  */
-struct GpuTimer
-{
+struct GpuTimer {
 #if defined(CUTLASS_ENABLE_SYCL)
     using cudaStream_t = int;
-    SyclEvent _start;
-    SyclEvent _stop;
+    SYCLTimer syclTimer;
 #else
     cudaEvent_t _start;
     cudaEvent_t _stop;
@@ -81,10 +81,7 @@ struct GpuTimer
     /// Constructor
     GpuTimer() : _stream_id(0)
     {
-#if defined(CUTLASS_ENABLE_SYCL)
-        _start = SyclEvent{};
-        _stop = SyclEvent{};
-#else
+#if !defined(CUTLASS_ENABLE_SYCL)
         CUDA_CHECK(cudaEventCreate(&_start));
         CUDA_CHECK(cudaEventCreate(&_stop));
 #endif
@@ -93,10 +90,7 @@ struct GpuTimer
     /// Destructor
     ~GpuTimer()
     {
-#if defined(CUTLASS_ENABLE_SYCL)
-        syclEventDestroy(_start);
-        syclEventDestroy(_stop);
-#else
+#if !defined(CUTLASS_ENABLE_SYCL)
         CUDA_CHECK(cudaEventDestroy(_start));
         CUDA_CHECK(cudaEventDestroy(_stop));
 #endif
@@ -107,7 +101,7 @@ struct GpuTimer
     {
         _stream_id = stream_id;
 #if defined(CUTLASS_ENABLE_SYCL)
-        syclEventRecord(_start);
+        syclTimer.start();
 #else
         CUDA_CHECK(cudaEventRecord(_start, _stream_id));
 #endif
@@ -117,7 +111,7 @@ struct GpuTimer
     void stop()
     {
 #if defined(CUTLASS_ENABLE_SYCL)
-        syclEventRecord(_stop);
+        syclTimer.stop();
 #else
         CUDA_CHECK(cudaEventRecord(_stop, _stream_id));
 #endif
@@ -127,10 +121,7 @@ struct GpuTimer
     float elapsed_millis()
     {
 #if defined(CUTLASS_ENABLE_SYCL)
-        float elapsed = 0.0;
-        syclEventSynchronize(_start, _stop);
-        syclEventElapsedTime(&elapsed, _start, _stop);
-        return elapsed;
+        return syclTimer.milliseconds();
 #else
         float elapsed = 0.0;
         CUDA_CHECK(cudaEventSynchronize(_stop));

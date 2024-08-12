@@ -30,14 +30,13 @@
  *
  **************************************************************************************************/
 
-#define SYCLCOMPAT_PROFILING_ENABLED
-
 #include <sycl.hpp>
 #include <syclcompat.hpp>
 
 #include <cute/tensor.hpp>
 
 #include "cutlass/util/print_error.hpp"
+#include "cutlass/util/sycl_event_manager.hpp"
 #include "cutlass/util/GPU_Clock.hpp"
 
 template <class ProblemShape, class CtaTiler,

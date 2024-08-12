@@ -91,7 +91,7 @@ public:
     }
 
     auto time_event = 0.0f;
-#if defined(SYCLCOMPAT_PROFILING_ENABLED)
+#if defined(CUTLASS_SYCL_PROFILING_ENABLED)
     for (int i = begin.getIndex(); i < end.getIndex(); ++i) {
       const auto start_time = events[i].template get_profiling_info<
               sycl::info::event_profiling::command_start>();
@@ -103,7 +103,7 @@ public:
     }
 #else
     CUTLASS_ASSERT(false && "Profiling information can not be collected. "
-                            "Define SYCLCOMPAT_PROFILING_ENABLED.");
+                            "Use CUTLASS_SYCL_PROFILING_ENABLED.");
 #endif
     return time_event * 1e-6f;
   }

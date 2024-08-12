@@ -29,8 +29,6 @@
  *
  **************************************************************************************************/
 
-#define SYCLCOMPAT_PROFILING_ENABLED
-
 #include "cutlass/epilogue/collective/default_epilogue.hpp"
 #include "cutlass/epilogue/collective/intel_pvc_epilogue.hpp"
 #include "cutlass/epilogue/fusion/intel_pvc_callbacks.hpp"

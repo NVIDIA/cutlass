@@ -55,10 +55,6 @@
 
 */
 
-#if defined(CUTLASS_ENABLE_SYCL)
-#define SYCLCOMPAT_PROFILING_ENABLED
-#endif
-
 #include <iostream>
 
 #include "cutlass/cutlass.h"

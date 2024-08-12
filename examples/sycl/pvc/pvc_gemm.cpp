@@ -29,8 +29,6 @@
  *
  **************************************************************************************************/
 
-#define SYCLCOMPAT_PROFILING_ENABLED
-
 #include "cutlass/epilogue/collective/default_epilogue.hpp"
 #include "cutlass/epilogue/collective/intel_pvc_epilogue.hpp"
 #include "cutlass/epilogue/fusion/intel_pvc_callbacks.hpp"
@@ -238,14 +236,6 @@ struct ExampleRunner {
     ProblemShapeType problem_size = ProblemShapeType{options.m, options.n, options.k, options.l};
 
     initialize(problem_size);
-
-    sycl::property_list prop = {
-      sycl::property::queue::in_order(),
-      sycl::property::queue::enable_profiling()
-    };
-
-    auto q = sycl::queue(syclcompat::get_default_context(), syclcompat::get_current_device(), prop);
-    syclcompat::set_default_queue(q);
 
     typename Gemm::GemmKernel::Arguments arguments{
       cutlass::gemm::GemmUniversalMode::kGemm,

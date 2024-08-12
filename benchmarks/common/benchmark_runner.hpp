@@ -29,10 +29,6 @@
  *
  **************************************************************************************************/
 
-#if defined(CUTLASS_ENABLE_SYCL)
-#define SYCLCOMPAT_PROFILING_ENABLED
-#endif
-
 #include "cutlass/epilogue/collective/default_epilogue.hpp"
 #include "cutlass/gemm/device/gemm_universal.h"
 #include "cutlass/gemm/device/gemm_universal_adapter.h"
@@ -228,16 +224,6 @@ struct BenchmarkRunner {
     virtual void initialize(const ProblemShapeType& problem_size) {
       auto problem_shape_MNKL = cute::append<4>(problem_size, 1);
       auto [M, N, K, L] = problem_shape_MNKL;
-
-#if defined(CUTLASS_SYCLCOMPAT_PROFILING_ENABLED)
-      sycl::property_list prop = {
-              sycl::property::queue::in_order(),
-              sycl::property::queue::enable_profiling()
-      };
-
-      auto q = sycl::queue(syclcompat::get_default_context(), syclcompat::get_current_device(), prop);
-      syclcompat::set_default_queue(q);
-#endif
 
       stride_A = cutlass::make_cute_packed_stride(StrideA{}, cute::make_shape(M, K, L));
       stride_B = cutlass::make_cute_packed_stride(StrideB{}, cute::make_shape(N, K, L));
