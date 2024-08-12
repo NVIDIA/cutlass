@@ -101,16 +101,15 @@ Starting from CUTLASS 3.0, CUTLASS removed support for the following:
 
 # Performance
 
-<p align="center"><img src=media/images/cutlass-3.1-gemm-peak-performance.png></p>
+<p align="center"><img src=media/images/cutlass-3.5.1-gemm-peak-performance.png></p>
+<p align="center"><img src=media/images/cutlass-3.5.1-gemm-peak-performance-fp8.png></p>
 
 CUTLASS primitives are very efficient.  When used to construct device-wide GEMM kernels,
 they exhibit peak performance comparable to cuBLAS for scalar GEMM
-computations. The above figure shows CUTLASS performance relative to cuBLAS
-for large matrix dimensions on an [NVIDIA H100](https://www.nvidia.com/en-us/data-center/h100/) (NVIDIA Hopper architecture), 
-an [NVIDIA L40](https://www.nvidia.com/en-us/data-center/l40/) (NVIDIA Ada architecture),
-an [NVIDIA A100](https://www.nvidia.com/en-us/data-center/a100/) (NVIDIA Ampere architecture),  
-and an [NVIDIA A40](https://www.nvidia.com/en-us/data-center/a40/)  (NVIDIA Ampere architecture).
-CUTLASS 3.0 was compiled with the [CUDA 12.0 Toolkit](https://developer.nvidia.com/cuda-downloads). 
+computations. The above figure shows the continual CUTLASS performance improvements 
+on an [NVIDIA H100](https://www.nvidia.com/en-us/data-center/h100/) (NVIDIA Hopper architecture) since
+CUTLASS 3.1.
+CUTLASS 3.5.1 was compiled with the [CUDA 12.5u1 Toolkit](https://developer.nvidia.com/cuda-downloads). 
 Tensor Core operations are implemented using CUDA's 
 [mma](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#warp-level-matrix-instructions-mma) and
 [wgmma](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#asynchronous-warpgroup-level-matrix-instructions) instructions.
