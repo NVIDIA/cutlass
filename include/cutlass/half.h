@@ -198,7 +198,7 @@ struct alignas(2) half_t {
   #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 530)
     return half_t(__float2half_rn(flt));
   #elif defined(CUTLASS_ENABLE_SYCL)
-    return static_cast<half_t>(flt);
+    return half_t(half(flt));
   #else
 
     #if !defined(__CUDA_ARCH__) && CUTLASS_ENABLE_F16C
@@ -281,7 +281,7 @@ struct alignas(2) half_t {
   #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 530)
     return half_t(__int2half_rn(n));
   #elif defined(CUTLASS_ENABLE_SYCL)
-    return static_cast<half_t>(n);
+    return half_t(half(n));
   #else
     return convert(float(n));
   #endif
@@ -293,7 +293,7 @@ struct alignas(2) half_t {
   #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 530)
     return half_t(__uint2half_rn(n));
   #elif defined(CUTLASS_ENABLE_SYCL)
-    return static_cast<half_t>(n);
+    return half_t(half(n));
   #else
     return convert(float(n));
   #endif
