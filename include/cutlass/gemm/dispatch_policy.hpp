@@ -89,7 +89,6 @@ static constexpr bool Has_SwapAB_v = Has_SwapAB<T>::value;
 //
 // Kernel schedule policies (the base class tags, one for each kernel layer file)
 //
-struct KernelSinglestage { };
 struct KernelMultistage { };
 struct KernelCpAsyncWarpSpecialized { };
 struct KernelCpAsyncWarpSpecializedPingpong { };
@@ -99,6 +98,8 @@ struct KernelTmaWarpSpecialized { };
 struct KernelTmaWarpSpecializedPingpong { };
 struct KernelTmaWarpSpecializedCooperative { };
 struct KernelPtrArrayTmaWarpSpecializedCooperative { };
+
+struct KernelPVC { };
 
 //////////////////////////////////////////////////////////////////////////////
 
@@ -293,15 +294,14 @@ struct MainloopSm90ArrayTmaGmmaWarpSpecialized {
 
 
 #if defined(SYCL_INTEL_TARGET)
-struct MainloopIntelPVCBase {
-  constexpr static int Stages = 1;
+template<int Stages_>
+struct MainloopIntelPVC {
+  constexpr static int Stages = Stages_;
+  constexpr static int SubgroupSize = 16;
   using ArchTag = arch::IntelPVC;
-  using Schedule = KernelSinglestage;
+  using Schedule = KernelPVC;
   using ClusterShape = Shape<_1,_1,_1>;
-  static constexpr int SubgroupSize = 16;
 };
-
-struct MainloopIntelPVCUnpredicated : MainloopIntelPVCBase{};
 #endif
 
 //////////////////////////////////////////////////////////////////////////////

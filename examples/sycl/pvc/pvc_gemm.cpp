@@ -316,7 +316,8 @@ int main(int argc, const char** argv)
           Layout<Shape<_1,_1,_1>>,
           Tile<_32,_64,_32>>; // Subgroup level-tile
 
-  using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelPVCUnpredicated;
+  constexpr int PipelineStages = 3;
+  using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelPVC<PipelineStages>;
   using EpilogueDispatchPolicy = cutlass::epilogue::IntelPVCEpilogue;
 
   using EpilogueOp = cutlass::epilogue::fusion::LinearCombination<ElementOutput, ElementComputeEpilogue,

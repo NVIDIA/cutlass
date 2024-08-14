@@ -52,7 +52,7 @@ class GemmUniversal<
   CollectiveMainloop_,
   CollectiveEpilogue_,
   TileScheduler_,
-  cute::enable_if_t<cute::is_base_of_v<KernelSinglestage, typename CollectiveMainloop_::DispatchPolicy::Schedule>>>
+  cute::enable_if_t<cute::is_base_of_v<KernelPVC, typename CollectiveMainloop_::DispatchPolicy::Schedule>>>
 {
 public:
   //

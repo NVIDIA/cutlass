@@ -95,7 +95,8 @@ int main(int argc, const char** argv)
   using GmemTiledCopyA = XE_2D_U16x8x16x4x2_LD_N;
   using GmemTiledCopyB = XE_2D_U16x16x16x2x2_V;
 
-  using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelPVCUnpredicated;
+  constexpr int PipelineStages = 3;
+  using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelPVC<PipelineStages>;
   using EpilogueDispatchPolicy = cutlass::epilogue::IntelPVCEpilogue;
 
   using EpilogueOp = cutlass::epilogue::fusion::LinearCombination<ElementOutput, ElementComputeEpilogue,
