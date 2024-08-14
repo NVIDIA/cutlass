@@ -70,7 +70,9 @@
 #include "cutlass/util/packed_stride.hpp"
 #include "cutlass/util/reference/device/gemm_complex.h"
 #include "cutlass/util/reference/device/tensor_compare.h"
-#if !defined(CUTLASS_ENABLE_SYCL)
+#if defined(CUTLASS_ENABLE_SYCL)
+#include "cutlass/util/reference/device/sycl_tensor_fill.h"
+#else
 #include "cutlass/util/reference/device/tensor_fill.h"
 #endif
 #include "helper.h"
@@ -185,46 +187,8 @@ bool initialize_block(
     scope_min = -8;
   }
 
-#if defined(CUTLASS_ENABLE_SYCL)
-  using FloatType = typename std::conditional<
-  (sizeof(Element) > 4),
-  double,
-  float>::type;
-
-  using IntType = typename std::conditional<
-    (sizeof(Element) > 4),
-    int64_t,
-    int>::type;
-
-  srand(seed);
-  Element range = static_cast<FloatType>(scope_max - scope_min);
-  Element max = static_cast<FloatType>(scope_max);
-  int int_scale = 0;
-
-  Element float_scale_up = FloatType(IntType(2) << int_scale); // scale up to clamp low order bits
-  Element float_scale_down = FloatType(1) / FloatType(IntType(2) << int_scale);
-
-  // Random values are cast to integer after scaling by a power of two to facilitate error
-  // testing
-  auto const size = block.size();
-  auto h_vector = std::vector<Element>(size);
-  for (int j = 0; j < size; ++j) {
-    FloatType rnd = rand() / double(RAND_MAX);
-    rnd = max - range * rnd;
-
-    if (int_scale >= 0) {
-      rnd = FloatType(IntType(std::llround(rnd * float_scale_up)));
-      h_vector[j] = Element(IntType(rnd * float_scale_down));
-    }
-    else {
-      h_vector[j] = Element(rnd);
-    }
-  }
-  syclcompat::memcpy<Element>(block.get(), h_vector.data(), size);
-#else
   cutlass::reference::device::BlockFillRandomUniform(
-          block.get(), block.size(), seed, scope_max, scope_min, 0);
-#endif
+        block.get(), block.size(), seed, scope_max, scope_min, 0);
   return true;
 }
 
