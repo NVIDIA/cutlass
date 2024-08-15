@@ -78,7 +78,7 @@ TEST(SM80_Device_Syrk_f32n_f32t_l_tensor_op_fast_f32, 128x256x32_64x64x32) {
       ElementAccumulator
     >,
     cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
-    4
+    3 
   >;
 
   EXPECT_TRUE(test::gemm::device::TestAllRankKUniversal<RankK>());
