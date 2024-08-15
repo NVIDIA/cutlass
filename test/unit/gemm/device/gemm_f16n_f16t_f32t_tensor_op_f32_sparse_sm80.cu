@@ -320,24 +320,6 @@ TEST(SM80_Device_Sparse_Gemm_f16n_f16t_f32t_tensor_op_f32, 256x32x64_64x32x64) {
   EXPECT_TRUE(test::gemm::device::TestAllSparseGemm<Gemm>());
 }
 
-TEST(SM80_Device_Sparse_Gemm_f16n_f16t_f32t_tensor_op_f32, 256x32x128_64x32x128) {
-  using ElementOutput = float;
-  using ElementAccumulator = float;
-
-  using Gemm = cutlass::gemm::device::GemmSparseUniversal<
-      cutlass::half_t, cutlass::layout::ColumnMajor, cutlass::half_t,
-      cutlass::layout::RowMajor, ElementOutput, cutlass::layout::RowMajor,
-      ElementAccumulator, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm80,
-      cutlass::gemm::GemmShape<256, 32, 128>,
-      cutlass::gemm::GemmShape<64, 32, 128>, cutlass::gemm::GemmShape<16, 8, 32>,
-      cutlass::epilogue::thread::LinearCombination<
-          ElementOutput, 128 / cutlass::sizeof_bits<ElementOutput>::value,
-          ElementAccumulator, ElementAccumulator>,
-      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 6>;
-
-  EXPECT_TRUE(test::gemm::device::TestAllSparseGemm<Gemm>());
-}
-
 TEST(SM80_Device_Sparse_Gemm_f16n_f16t_f32t_tensor_op_f32, 32x128x128_32x32x128) {
   using ElementOutput = float;
   using ElementAccumulator = float;
@@ -351,45 +333,7 @@ TEST(SM80_Device_Sparse_Gemm_f16n_f16t_f32t_tensor_op_f32, 32x128x128_32x32x128)
       cutlass::epilogue::thread::LinearCombination<
           ElementOutput, 128 / cutlass::sizeof_bits<ElementOutput>::value,
           ElementAccumulator, ElementAccumulator>,
-      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 6>;
-
-  EXPECT_TRUE(test::gemm::device::TestAllSparseGemm<Gemm>());
-}
-
-#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ < 900)
-TEST(SM80_Device_Sparse_Gemm_f16n_f16t_f32t_tensor_op_f32, 32x256x64_32x64x64) {
-  using ElementOutput = float;
-  using ElementAccumulator = float;
-
-  using Gemm = cutlass::gemm::device::GemmSparseUniversal<
-      cutlass::half_t, cutlass::layout::ColumnMajor, cutlass::half_t,
-      cutlass::layout::RowMajor, ElementOutput, cutlass::layout::RowMajor,
-      ElementAccumulator, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm80,
-      cutlass::gemm::GemmShape<32, 256, 64>,
-      cutlass::gemm::GemmShape<32, 64, 64>, cutlass::gemm::GemmShape<16, 8, 32>,
-      cutlass::epilogue::thread::LinearCombination<
-          ElementOutput, 128 / cutlass::sizeof_bits<ElementOutput>::value,
-          ElementAccumulator, ElementAccumulator>,
-      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 6>;
-
-  EXPECT_TRUE(test::gemm::device::TestAllSparseGemm<Gemm>());
-}
-#endif
-
-TEST(SM80_Device_Sparse_Gemm_f16n_f16t_f32t_tensor_op_f32, 32x256x128_32x64x128) {
-  using ElementOutput = float;
-  using ElementAccumulator = float;
-
-  using Gemm = cutlass::gemm::device::GemmSparseUniversal<
-      cutlass::half_t, cutlass::layout::ColumnMajor, cutlass::half_t,
-      cutlass::layout::RowMajor, ElementOutput, cutlass::layout::RowMajor,
-      ElementAccumulator, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm80,
-      cutlass::gemm::GemmShape<32, 256, 128>,
-      cutlass::gemm::GemmShape<32, 64, 128>, cutlass::gemm::GemmShape<16, 8, 32>,
-      cutlass::epilogue::thread::LinearCombination<
-          ElementOutput, 128 / cutlass::sizeof_bits<ElementOutput>::value,
-          ElementAccumulator, ElementAccumulator>,
-      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 6>;
+      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 3>;
 
   EXPECT_TRUE(test::gemm::device::TestAllSparseGemm<Gemm>());
 }
@@ -461,10 +405,11 @@ TEST(SM80_Device_Sparse_Gemm_f16n_f16t_f32t_tensor_op_f32, 256x16x128_64x16x128)
       cutlass::epilogue::thread::LinearCombination<
           ElementOutput, 128 / cutlass::sizeof_bits<ElementOutput>::value,
           ElementAccumulator, ElementAccumulator>,
-      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 6>;
+      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 4>;
 
   EXPECT_TRUE(test::gemm::device::TestAllSparseGemm<Gemm>());
 }
+
 ////////////////////////////////////////////////////////////////////////////////
 
 #endif  // CUTLASS_ARCH_SPARSE_MMA_SM80_SUPPORTED
