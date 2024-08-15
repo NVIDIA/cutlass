@@ -259,6 +259,7 @@ cutlass_test_unit_add_executable(
   gemm_universal_f16t_u8n_f16t_mixed_input_tensor_op_f16_sm80.cu
   gemm_universal_f16t_s8n_f16t_mixed_input_tensor_op_f16_sm80.cu
   gemm_universal_bf16t_s8n_bf16t_mixed_input_tensor_op_f32_sm80.cu
+  gemm_universal_f16t_s4n_f16t_mixed_input_tensor_op_f16_sm80.cu
 )
 
 cutlass_test_unit_add_executable(
