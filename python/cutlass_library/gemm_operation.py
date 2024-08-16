@@ -178,30 +178,16 @@ class GemmOperation:
     if self.is_complex():
       extended_name = "${core_name}"
     else:
-      # e.g. f16_f16_f32_void_f32 kernel
-      if self.C.element != self.tile_description.math_instruction.element_accumulator and \
-         self.A.element != self.tile_description.math_instruction.element_accumulator:
-        extended_name = "${element_c}_${core_name}_${element_a}"
-        if self.is_mixed_input():
-          extended_name += "_${element_b}"
-
-      # e.g. f32_f32_f32_void_f32 kernel
-      elif self.C.element != self.tile_description.math_instruction.element_accumulator and \
-           self.A.element == self.tile_description.math_instruction.element_accumulator:
-        extended_name = "${element_c}_${core_name}"
-        if self.is_mixed_input():
-          extended_name += "_${element_b}"
-
-      # e.g. f16_f16_f32_f32_f32 kernel
-      elif self.C.element == self.tile_description.math_instruction.element_accumulator and  \
-           self.A.element != self.tile_description.math_instruction.element_accumulator:
-        extended_name = "${core_name}_${element_a}"
-        if self.is_mixed_input():
-          extended_name += "_${element_b}"
-
-      # e.g. f32_f32_f32_f32_f32 kernel
+      if self.is_mixed_input():
+        extended_name = "${core_name}_${element_a}_${element_b}"
+        if self.C.element != self.tile_description.math_instruction.element_accumulator:
+          extended_name = "${element_c}_" + extended_name
       else:
         extended_name = "${core_name}"
+        if self.C.element != self.tile_description.math_instruction.element_accumulator:
+          extended_name = "${element_c}_" + extended_name
+        if self.A.element != self.tile_description.math_instruction.element_accumulator:
+          extended_name += "_${element_a}"
 
     extended_name = SubstituteTemplate(extended_name, {
       'element_a': DataTypeNames[self.A.element],

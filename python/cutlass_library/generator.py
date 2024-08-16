@@ -2575,11 +2575,6 @@ def GenerateSM80_TensorOp_16816_mixed_input_upcast_a(manifest, cuda_version):
   math_instructions = [
     MathInstruction(                                  \
       [16, 8, 16],                                    \
-      DataType.s8, DataType.f16, DataType.f16,        \
-      OpcodeClass.TensorOp,                           \
-      MathOperation.multiply_add_mixed_input_upcast),
-    MathInstruction(                                  \
-      [16, 8, 16],                                    \
       DataType.s8, DataType.f16, DataType.f32,        \
       OpcodeClass.TensorOp,                           \
       MathOperation.multiply_add_mixed_input_upcast),
@@ -2590,12 +2585,22 @@ def GenerateSM80_TensorOp_16816_mixed_input_upcast_a(manifest, cuda_version):
       MathOperation.multiply_add_mixed_input_upcast),
     MathInstruction(                                  \
       [16, 8, 16],                                    \
+      DataType.s8, DataType.bf16, DataType.f32,       \
+      OpcodeClass.TensorOp,                           \
+      MathOperation.multiply_add_mixed_input_upcast),
+    MathInstruction(                                  \
+      [16, 8, 16],                                    \
       DataType.u8, DataType.bf16, DataType.f32,       \
       OpcodeClass.TensorOp,                           \
       MathOperation.multiply_add_mixed_input_upcast),
     MathInstruction(                                  \
       [16, 8, 16],                                    \
-      DataType.s8, DataType.bf16, DataType.f32,       \
+      DataType.s8, DataType.f16, DataType.f16,        \
+      OpcodeClass.TensorOp,                           \
+      MathOperation.multiply_add_mixed_input_upcast),
+    MathInstruction(                                  \
+      [16, 8, 16],                                    \
+      DataType.u8, DataType.f16, DataType.f16,        \
       OpcodeClass.TensorOp,                           \
       MathOperation.multiply_add_mixed_input_upcast),
   ]
@@ -2637,7 +2642,7 @@ def GenerateSM80_TensorOp_16816_mixed_input_upcast_a(manifest, cuda_version):
       data_type, alignment_constraints, None, EpilogueFunctor.LinearCombination, SwizzlingFunctor.Identity8)
 
     # Avoid emitting two kernels if the accumulator type does not differ from the input type (e.g. F16 accumulation)
-    if math_inst.element_a != math_inst.element_accumulator:
+    if math_inst.element_b != math_inst.element_accumulator:
 
       data_type_mixed = [
         math_inst.element_a,
@@ -2649,10 +2654,10 @@ def GenerateSM80_TensorOp_16816_mixed_input_upcast_a(manifest, cuda_version):
       operations += CreateGemmOperator(manifest, layouts, tile_descriptions, \
         data_type_mixed, alignment_constraints, None, EpilogueFunctor.LinearCombination, SwizzlingFunctor.Identity8)
 
-      for op in operations:
-        if (DataTypeSize[op.C.element] == 16) and \
-           (op.tile_description.threadblock_shape[1] <= 32):
-          op.C.alignment = 4
+    for op in operations:
+      if (DataTypeSize[op.C.element] == 16) and \
+         (op.tile_description.threadblock_shape[1] <= 32):
+        op.C.alignment = 4
 
 #
 def GenerateSM80_TensorOp_16816_mixed_input_upcast_b(manifest, cuda_version):
@@ -2672,17 +2677,27 @@ def GenerateSM80_TensorOp_16816_mixed_input_upcast_b(manifest, cuda_version):
       MathOperation.multiply_add_mixed_input_upcast),
     MathInstruction(                                  \
       [16, 8, 16],                                    \
-      DataType.bf16, DataType.s8, DataType.f32,       \
-      OpcodeClass.TensorOp,                           \
-      MathOperation.multiply_add_mixed_input_upcast),
-    MathInstruction(                                  \
-      [16, 8, 16],                                    \
       DataType.f16, DataType.u8, DataType.f32,        \
       OpcodeClass.TensorOp,                           \
       MathOperation.multiply_add_mixed_input_upcast),
     MathInstruction(                                  \
       [16, 8, 16],                                    \
+      DataType.bf16, DataType.s8, DataType.f32,       \
+      OpcodeClass.TensorOp,                           \
+      MathOperation.multiply_add_mixed_input_upcast),
+    MathInstruction(                                  \
+      [16, 8, 16],                                    \
       DataType.bf16, DataType.u8, DataType.f32,       \
+      OpcodeClass.TensorOp,                           \
+      MathOperation.multiply_add_mixed_input_upcast),
+    MathInstruction(                                  \
+      [16, 8, 16],                                    \
+      DataType.f16, DataType.s8, DataType.f16,        \
+      OpcodeClass.TensorOp,                           \
+      MathOperation.multiply_add_mixed_input_upcast),
+    MathInstruction(                                  \
+      [16, 8, 16],                                    \
+      DataType.f16, DataType.u8, DataType.f16,        \
       OpcodeClass.TensorOp,                           \
       MathOperation.multiply_add_mixed_input_upcast),
   ]
@@ -2728,7 +2743,7 @@ def GenerateSM80_TensorOp_16816_mixed_input_upcast_b(manifest, cuda_version):
     ]
 
     # streamk uses more regs which can cause spill for the biggest warp tile size when the accumulators are 32bit.
-    CreateGemmOperator(manifest, layouts, tile_descriptions, \
+    operations = CreateGemmOperator(manifest, layouts, tile_descriptions, \
       data_type, alignment_constraints, None, EpilogueFunctor.LinearCombination, SwizzlingFunctor.Identity8)
 
     # Avoid emitting two kernels if the accumulator type does not differ from the input type (e.g. F16 accumulation)
@@ -2741,12 +2756,12 @@ def GenerateSM80_TensorOp_16816_mixed_input_upcast_b(manifest, cuda_version):
         math_inst.element_accumulator,
       ]
 
-      operations = CreateGemmOperator(manifest, layouts, tile_descriptions, \
+      operations += CreateGemmOperator(manifest, layouts, tile_descriptions, \
         data_type_mixed, alignment_constraints, None, EpilogueFunctor.LinearCombination, SwizzlingFunctor.Identity8)
 
-      for op in operations:
-        if op.tile_description.threadblock_shape[1] <= 32:
-          op.C.alignment = 4
+    for op in operations:
+      if op.tile_description.threadblock_shape[1] <= 32:
+        op.C.alignment = 4
 
 #
 def GenerateSM80_TensorOp_16832_TN(manifest, cuda_version):
