@@ -56,12 +56,12 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 
-TEST(SM80_Device_GemmUniversal_u8t_f16n_f16t_mixed_input_tensor_op_f16, 128x128x64_64x64x64) {
+TEST(SM80_Device_GemmUniversal_bf16t_u8n_bf16t_mixed_input_tensor_op_f32, 128x128x64_64x64x64) {
 
-  using ElementA = uint8_t;
-  using ElementB = cutlass::half_t;
-  using ElementOutput = cutlass::half_t;
-  using ElementAccumulator = cutlass::half_t;
+  using ElementA = cutlass::bfloat16_t;
+  using ElementB = uint8_t;
+  using ElementOutput = cutlass::bfloat16_t;
+  using ElementAccumulator = float;
 
   using Gemm = cutlass::gemm::device::GemmUniversal<
     ElementA, 
@@ -80,9 +80,9 @@ TEST(SM80_Device_GemmUniversal_u8t_f16n_f16t_mixed_input_tensor_op_f16, 128x128x
           ElementOutput, 128 / cutlass::sizeof_bits<ElementOutput>::value,
           ElementAccumulator, ElementAccumulator>,
     cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 
-    4,   // Stages
-    16,  // AlignmentA
-    8,   // AlignmentB
+    4,  // Stages
+    8,  // AlignmentA
+    16, // AlignmentB
     cutlass::arch::OpMultiplyAddMixedInputUpcast,
     cutlass::ComplexTransform::kNone,
     cutlass::ComplexTransform::kNone
