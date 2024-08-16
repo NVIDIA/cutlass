@@ -194,7 +194,7 @@ struct alignas(16) uint128_t
     uint64_t remainder{0};
 #if defined(CUTLASS_UINT128_NATIVE)
     remainder = uint64_t(native % divisor);
-#elif defined(CUTLASS_INT128_ARITHMETIC_DIV)
+#elif defined(CUTLASS_INT128_ARITHMETIC_DIV) && ! defined (__CUDA_ARCH__)
     // implemented using MSVC's arithmetic intrinsics
     (void)_udiv128(hilo_.hi, hilo_.lo, divisor, &remainder);
 #else
