@@ -54,6 +54,7 @@
 #include "cutlass/util/print_error.hpp"
 
 #include <benchmark/benchmark.h>
+#include <limits>
 
 using namespace cute;
 
@@ -303,22 +304,48 @@ struct BenchmarkRunner {
   ~BenchmarkRunner() {
     benchmark::Shutdown();
   }
-
+    
 private:
   static void run_benchmark(benchmark::State& state, const Options& options,  Gemm gemm_op) {
-    state.counters["runtime_ms"] = 0;
+    auto tflop = ((2.0 * options.m * options.n * options.k * options.l) * 1e-12);
+    auto giga_bytes_transferred = (((options.m * options.k) * sizeof(ElementA) +
+                                    (options.k * options.n) * sizeof(ElementB) +
+                                (options.beta != 0 ? 2 : 1) * (options.m * options.n) * sizeof(ElementC)) * 1e-9) * 
+                                options.l;
+    initialize_counters(state);
     for(auto _ : state) {
       GPU_Clock timer;
       timer.start();
       gemm_op.run();
       auto ms_elapsed = timer.milliseconds();
-      state.counters["runtime_ms"] +=  ms_elapsed;
+      update_counters(state, ms_elapsed, tflop, giga_bytes_transferred);
       state.SetIterationTime(ms_elapsed / 1000);
     }
-    state.counters["runtime_ms"] /= state.iterations();
-    state.counters["TFlops"] = ((2.0 * options.m * options.n * options.k * options.l) * 1e-12) /
-                                (state.counters["runtime_ms"] / 1000);
+    finalize_counters(state, tflop, giga_bytes_transferred);
   }
 
+  static void initialize_counters(benchmark::State& state) {
+    state.counters["avg_runtime_ms"] = 0;
+    state.counters["avg_tflops"] = 0;
+    state.counters["avg_throughput"] = 0;
+    state.counters["best_runtime_ms"] = std::numeric_limits<double>::max();
+  }
+
+  static void update_counters(benchmark::State& state, double ms_elapsed, double tflop, double giga_bytes_transferred) {
+    state.PauseTiming();
+    state.counters["avg_runtime_ms"] += ms_elapsed;
+    state.counters["avg_tflops"] += tflop / (ms_elapsed * 1000);
+    state.counters["avg_throughput"] += giga_bytes_transferred / (ms_elapsed / 1000);
+    state.counters["best_runtime_ms"] = std::min<double>(state.counters["best_runtime_ms"], ms_elapsed);
+    state.ResumeTiming();
+  }
+
+  static void finalize_counters(benchmark::State& state,  double tflop, double giga_bytes_transferred) {
+    state.counters["avg_runtime_ms"] /= state.iterations();
+    state.counters["avg_tflops"] /= state.iterations();
+    state.counters["avg_throughput"] /= state.iterations();
+    state.counters["best_tflop"] = tflop / (state.counters["best_runtime_ms"] / 1000);
+    state.counters["best_bandwidth"] = giga_bytes_transferred / (state.counters["best_runtime_ms"] / 1000);
+  }
   std::string test_name;
 };
