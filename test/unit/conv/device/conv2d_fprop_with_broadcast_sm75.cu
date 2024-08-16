@@ -103,7 +103,7 @@ template <
  template<typename T> class UnaryOp,
  bool TestSplitK = true
 >
-void TestResidaulBlock() {
+void Conv2dFpropSM75TestResidualBlock() {
   using ElementA = cutlass::half_t;
   using ElementB = cutlass::half_t;
   using ElementC = cutlass::half_t;
@@ -160,14 +160,14 @@ void TestResidaulBlock() {
 TEST(SM75_Device_Conv2d_Fprop_With_Residual_Block_Plus_Analytic_ImplicitGemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f32,
      128x128_32x2_64x64x32) {
   // Resnet
-  TestResidaulBlock<cutlass::half_t, cutlass::epilogue::thread::Identity, cutlass::plus, cutlass::epilogue::thread::ReLu>();
+  Conv2dFpropSM75TestResidualBlock<cutlass::half_t, cutlass::epilogue::thread::Identity, cutlass::plus, cutlass::epilogue::thread::ReLu>();
 }
 
 TEST(SM75_Device_Conv2d_Fprop_With_Residual_Block_Multiply_Analytic_ImplicitGemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f32,
      128x128_32x2_64x64x32) {
   // EfficientNet V2
   // Do not run split-K tests since the activation op is not Identity.
-  TestResidaulBlock<float, cutlass::epilogue::thread::Sigmoid, cutlass::multiplies, cutlass::epilogue::thread::Identity, false>();
+  Conv2dFpropSM75TestResidualBlock<float, cutlass::epilogue::thread::Sigmoid, cutlass::multiplies, cutlass::epilogue::thread::Identity, false>();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

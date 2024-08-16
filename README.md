@@ -1,8 +1,8 @@
 ![ALT](./media/images/gemm-hierarchy-with-epilogue-no-labels.png "Complete CUDA GEMM decomposition")
 
-# CUTLASS 3.5
+# CUTLASS 3.5.1
 
-_CUTLASS 3.5 - April 2024_
+_CUTLASS 3.5.1 - July 2024_
 
 CUTLASS is a collection of CUDA C++ template abstractions for implementing
 high-performance matrix-matrix multiplication (GEMM) and related computations at all levels 
@@ -41,9 +41,31 @@ and improves code composability and readability. More documentation specific to 
 
 In addition to GEMMs, CUTLASS implements high-performance convolution via the implicit GEMM algorithm. Implicit GEMM is the formulation of a convolution operation as a GEMM thereby taking advantage of CUTLASS's modular GEMM pipeline. This allows CUTLASS to build convolutions by reusing highly-optimized GEMM components.
 
+
 # What's New in CUTLASS 3.5
 
-CUTLASS 3.5 is an update to CUTLASS adding:
+CUTLASS 3.5.1 is an update to CUTLASS adding:
+
+- [Minimal SM90 WGMMA + TMA GEMM example in 100 lines of code](./examples/cute/tutorial/wgmma_sm90.cu).
+- [Exposure of L2 `cache_hint`s in TMA copy atoms](./include/cute/arch/copy_sm90_tma.hpp#L48)
+- Exposure of raster order and tile swizzle extent in [CUTLASS library profiler](./media/docs/profiler.md#GEMM), and
+[example 48](./examples/48_hopper_warp_specialized_gemm/48_hopper_warp_specialized_gemm.cu).
+- [TMA store based and EVT supported epilogues](./include/cutlass/epilogue/collective/sm90_epilogue_array_tma_warpspecialized.hpp) for [Hopper pointer array batched kernels](./test/unit/gemm/device/sm90_gemm_f16_f16_f16_tensor_op_f32_ptr_array.cu).
+- A new [`GemmSparseUniversal` API for CUTLASS 2.x Ampere kernels](./include/cutlass/gemm/device/gemm_sparse_universal.h) to enable serial and parallel split-k for sparse tensor cores and new tiny tile sizes to better support LLM inference.
+- [CUDA host adapter](./include/cutlass/cuda_host_adapter.hpp) extensions to support TMA descriptor construction driver APIs.
+- Inclusion of more [Hopper fprop, dgrad, and wgrad convolution kernels in CUTLASS library and profiler](./python/cutlass_library/generator.py).
+- Support for residual add (beta != 0) in convolution kernels.
+- A new convolution [epilogue](./examples/16_ampere_tensorop_conv2dfprop/ampere_tensorop_conv2dfprop.cu#L269) for CUTLASS 2.x to support non-packed NHWC output.
+- A refactor of [include files throughout CUTLASS core directories](./include/cutlass/gemm/collective/collective_mma_decl.hpp) to reduce circular dependencies and [tests to guard against them](./test/self_contained_includes/CMakeLists.txt).
+- [A guide for setting up VSCode to work well with CUTLASS](./media/docs/ide_setup.md) and [expanded code style guide](./media/docs/programming_guidelines.md).
+- Better support for MSVC as a host compiler.
+- Many performance optimizations, improvements, and bug fixes including fixes for FlashAttention-2.
+- Optimal code generation with CUDA toolkit versions 12.4 and 12.5u1.
+- NOTICE:
+  + Upcoming CUTLASS 3.6 release will include a breaking refactor to the CUTLASS 3.x convolution `kernel::ConvUniversal` API to bring it in line with `gemm::GemmUniversal`. After this, the 3.x convolution API will no longer be considered as a beta API.
+  + Upcoming CUTLASS 3.6 release will include a breaking refactor to the Hopper TMA pointer array batched epilogue in order to support grouped GEMMs.
+
+CUTLASS 3.5.0 is an update to CUTLASS adding:
 
 - Implicit GEMM Convolutions targeting Hopper SM90A via WGMMA + [TMA im2col](./include/cute/atom/copy_traits_sm90_im2col.hpp).
   + Native implementation in CUTLASS 3.x using CuTe, mirroring the [same design hierarchy as that of GEMMs](./media/docs/gemm_api_3x.md).
@@ -61,6 +83,7 @@ CUTLASS 3.5 is an update to CUTLASS adding:
 - Remove C++11 requirement on a few CUTLASS 2.x API header files. All CUTLASS files now require C++17.
 - Fixes to greatly reduce build warnings.
 - Updates and bugfixes from the community (thanks!)
+- CUTLASS 3.5.1 is a minor update to CUTLASS containing small bug fixes and improvements, including fixes for FlashAttention-2 builds.
 
 Minimum requirements:
 
@@ -79,16 +102,15 @@ Starting from CUTLASS 3.0, CUTLASS removed support for the following:
 
 # Performance
 
-<p align="center"><img src=media/images/cutlass-3.1-gemm-peak-performance.png></p>
+<p align="center"><img src=media/images/cutlass-3.5.1-gemm-peak-performance.png></p>
+<p align="center"><img src=media/images/cutlass-3.5.1-gemm-peak-performance-fp8.png></p>
 
 CUTLASS primitives are very efficient.  When used to construct device-wide GEMM kernels,
 they exhibit peak performance comparable to cuBLAS for scalar GEMM
-computations. The above figure shows CUTLASS performance relative to cuBLAS
-for large matrix dimensions on an [NVIDIA H100](https://www.nvidia.com/en-us/data-center/h100/) (NVIDIA Hopper architecture), 
-an [NVIDIA L40](https://www.nvidia.com/en-us/data-center/l40/) (NVIDIA Ada architecture),
-an [NVIDIA A100](https://www.nvidia.com/en-us/data-center/a100/) (NVIDIA Ampere architecture),  
-and an [NVIDIA A40](https://www.nvidia.com/en-us/data-center/a40/)  (NVIDIA Ampere architecture).
-CUTLASS 3.0 was compiled with the [CUDA 12.0 Toolkit](https://developer.nvidia.com/cuda-downloads). 
+computations. The above figure shows the continual CUTLASS performance improvements 
+on an [NVIDIA H100](https://www.nvidia.com/en-us/data-center/h100/) (NVIDIA Hopper architecture) since
+CUTLASS 3.1.
+CUTLASS 3.5.1 was compiled with the [CUDA 12.5u1 Toolkit](https://developer.nvidia.com/cuda-downloads). 
 Tensor Core operations are implemented using CUDA's 
 [mma](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#warp-level-matrix-instructions-mma) and
 [wgmma](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#asynchronous-warpgroup-level-matrix-instructions) instructions.

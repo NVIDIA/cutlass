@@ -31,6 +31,7 @@
 
 #pragma once
 
+#include "cutlass/relatively_equal.h"
 #include "cutlass_unit_test.h"
 #include "cutlass/util/reference/host/tensor_compare.h"
 
@@ -42,6 +43,16 @@
 #include <cute/tensor.hpp>
 
 using namespace cute;
+
+template<typename T>
+struct fp64_tester {
+  using value_type = double;
+};
+
+template<typename T>
+struct fp64_tester<complex<T>> {
+  using value_type = complex<double>;
+};
 
 template<class ALayout,
          class BLayout,
@@ -146,6 +157,11 @@ void test_cooperative_gemm(ALoadTransform  const& a_load_transform  = {},
   using smem_b_layout_t = SMemBLayout;
   using smem_c_layout_t = SMemCLayout;
 
+  static_assert(std::is_same_v<typename fp64_tester<TA>::value_type, typename fp64_tester<TB>::value_type>);
+  static_assert(std::is_same_v<typename fp64_tester<TB>::value_type, typename fp64_tester<TC>::value_type>);
+  using tester = fp64_tester<TA>;
+  using ABC_64 = typename tester::value_type;
+
   static_assert(size<0>(gmem_a_layout_t{}) == size<0>(gmem_c_layout_t{}));  // AM == CM
   static_assert(size<0>(gmem_b_layout_t{}) == size<1>(gmem_c_layout_t{}));  // BN == CN
   static_assert(size<1>(gmem_a_layout_t{}) == size<1>(gmem_b_layout_t{}));  // AK == BK
@@ -184,7 +200,7 @@ void test_cooperative_gemm(ALoadTransform  const& a_load_transform  = {},
       h_a_tensor(i) = static_cast<TA>(di / size(gmem_a_layout_t{}));
     }
     if(i < size(gmem_b_layout_t{})) {
-      h_b_tensor(i) = static_cast<TA>(di / size(gmem_a_layout_t{}));
+      h_b_tensor(i) = static_cast<TB>(di / size(gmem_a_layout_t{}));
     }
     if(i < size(gmem_c_layout_t{})) {
       h_c_tensor(i) = static_cast<TC>((di*di) / size(gmem_a_layout_t{}));
@@ -196,8 +212,10 @@ void test_cooperative_gemm(ALoadTransform  const& a_load_transform  = {},
   thrust::device_vector<TC> d_c(h_c);
   thrust::device_vector<TC> d_c_out(h_c_out.size(), TC(float(-1)));
 
-  const size_t shared_memory_size =
-    (sizeof(TA) * h_a.size()) + (sizeof(TB) * h_b.size()) + (sizeof(TC) * h_c.size());
+  constexpr uint32_t copy_max_vec_bytes = CopyMaxVecBits / 8;
+  const size_t shared_memory_size = round_up(sizeof(TA) * h_a.size(), copy_max_vec_bytes) 
+                                  + round_up(sizeof(TB) * h_b.size(), copy_max_vec_bytes)
+                                  +         (sizeof(TC) * h_c.size());
   auto kernel = cooperative_gemm_kernel<
     gmem_a_layout_t, gmem_b_layout_t, gmem_c_layout_t,
     smem_a_layout_t, smem_b_layout_t, smem_c_layout_t,
@@ -234,24 +252,24 @@ void test_cooperative_gemm(ALoadTransform  const& a_load_transform  = {},
       for (int n = 0; n < size<0>(h_b_tensor); n++) {
           const auto a_value      = a_load_transform(h_a_tensor(m, k));
           const auto b_value      = b_load_transform(h_b_tensor(n, k));
-          const auto a_value_fp64 = static_cast<double>(a_value);
-          const auto b_value_fp64 = static_cast<double>(b_value);
+          const auto a_value_fp64 = static_cast<ABC_64>(a_value);
+          const auto b_value_fp64 = static_cast<ABC_64>(b_value);
           h_c_ref_tensor(m, n) += static_cast<TC>(a_value_fp64 * b_value_fp64);
       }
     }
   }
   // C = A*B + C
   for (int i = 0; i < size(h_c_ref_tensor); i++) {
-    const auto ab_value_fp64 = static_cast<double>(h_c_ref_tensor(i));
-    const auto c_value_fp64  = static_cast<double>(c_load_transform(h_c_tensor(i)));
+    const auto ab_value_fp64 = static_cast<ABC_64>(h_c_ref_tensor(i));
+    const auto c_value_fp64  = static_cast<ABC_64>(c_load_transform(h_c_tensor(i)));
     h_c_ref_tensor(i)        = c_store_transform(static_cast<TC>(alpha * ab_value_fp64 + beta * c_value_fp64));
   }
 
   h_c_out = d_c_out;
   auto h_c_out_tensor = make_tensor(h_c_out.data(), gmem_c_layout_t{});
   for (int i = 0; i < size(h_c_ref_tensor); i++) {
-    double h_c_ref_i = h_c_ref_tensor(i);
-    double h_c_out_i = h_c_out_tensor(i);
+    ABC_64 h_c_ref_i = h_c_ref_tensor(i);
+    ABC_64 h_c_out_i = h_c_out_tensor(i);
     double epsilon(0.1f);
     double nonzero_floor(std::numeric_limits<double>::min());
     bool passed = cutlass::relatively_equal(h_c_out_i, h_c_ref_i, epsilon, nonzero_floor);

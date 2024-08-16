@@ -40,6 +40,7 @@
 #include "cutlass/kernel_hardware_info.hpp"
 #include "cutlass/conv/convolution.h"
 #include "cutlass/conv/convnd_problem_shape.hpp"
+#include "../test/unit/gemm/device/gemm_testbed_3x.hpp"
 
 #include "thrust/universal_vector.h"
 #include "cutlass/util/distribution.h"
@@ -64,6 +65,7 @@
 namespace test::conv::device {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+
 // Initializes a flat device buffer
 template <typename Element>
 static void
@@ -104,7 +106,39 @@ initialize_values(
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+// utils for sparse or dense conv parameters
+
 template <class Conv>
+struct DenseConvParams {
+  // Default Kernel data types
+  using ElementA = typename Conv::ConvKernel::ElementA;
+  using ElementB = typename Conv::ConvKernel::ElementB;
+  
+  static constexpr cutlass::conv::Operator ConvOp = Conv::DispatchPolicy::ConvOp;
+  static constexpr int NumSpatialDimensions = Conv::NumSpatialDimensions;
+  using ProblemShape = cutlass::conv::ConvProblemShape<ConvOp, NumSpatialDimensions>;
+
+  // get the default arguments without sparse data
+  auto get_mainloop_arguments(
+    ProblemShape const& problem_shape,  
+    thrust::universal_vector<ElementA>& tensor_A,
+    thrust::universal_vector<ElementB>& tensor_B
+  ) {
+    auto args = typename Conv::ConvKernel::MainloopArguments {
+      problem_shape, 
+      tensor_A.data().get(),
+      tensor_B.data().get(),
+    };
+    return args;
+  }
+};
+
+template <class Conv>
+struct SparseConvParams {
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+template <class Conv, bool isSparseEnabled_ = false>
 struct ConvTestbed {
   // Kernel data types
   using ElementA = typename Conv::ConvKernel::ElementA;
@@ -113,6 +147,11 @@ struct ConvTestbed {
       typename Conv::ConvKernel::ElementD, typename Conv::ConvKernel::ElementC>;
   using ElementD = typename Conv::ConvKernel::ElementD;
   using ElementAccumulator = typename Conv::ConvKernel::ElementAccumulator;
+
+  // ConvTest for sparse kernel
+  static constexpr bool isSparseEnabled = isSparseEnabled_;
+  using ConvParams = cute::conditional_t<isSparseEnabled, SparseConvParams<Conv>, DenseConvParams<Conv>>;
+  ConvParams params;
 
   //
   // FusionOperation derived types/queries
@@ -134,6 +173,8 @@ struct ConvTestbed {
 
   static constexpr bool IsBiasEnabled = cutlass::epilogue::collective::detail::IsThreadEpilogueOpWithBias<FusionOp>::value &&
                                         !cute::is_same_v<BiasType, void>;
+  static constexpr bool DisableSource = cute::is_void_v<typename FusionOp::ElementSource>;
+
   using StrideC  = typename Conv::ConvKernel::StrideC;
   using StrideD  = typename Conv::ConvKernel::StrideD;
   using ThreadEpilogueOp = typename Conv::ConvKernel::CollectiveEpilogue::ThreadEpilogueOp;
@@ -141,6 +182,10 @@ struct ConvTestbed {
   static constexpr cutlass::conv::Operator ConvOp = Conv::DispatchPolicy::ConvOp;
   static constexpr int NumSpatialDimensions = Conv::NumSpatialDimensions;
   using ProblemShape = cutlass::conv::ConvProblemShape<ConvOp, NumSpatialDimensions>;
+  using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90::RasterOrderOptions;
+  using DecompositionMode = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90StreamKParams::DecompositionMode;
+  using MaxSwizzleSize = typename gemm::device::detail::MaxSwizzleSize;
+  using Splits = typename gemm::device::detail::Splits;
 
   using Schedule = typename Conv::DispatchPolicy::Schedule;
   /// Initialization
@@ -148,6 +193,7 @@ struct ConvTestbed {
   cutlass::Distribution::Kind init_B = cutlass::Distribution::Uniform;
   cutlass::Distribution::Kind init_C = cutlass::Distribution::Uniform;
   cutlass::Distribution::Kind init_bias = cutlass::Distribution::Uniform;
+  cutlass::Distribution::Kind init_disable = cutlass::Distribution::Identity; // all zeros
   uint64_t seed = 6090;
   float epsilon = 0.0f;
   int split_p_slices = 1;
@@ -160,7 +206,8 @@ struct ConvTestbed {
   thrust::universal_vector<ElementScalar> tensor_alpha;
   thrust::universal_vector<ElementScalar> tensor_beta;
 
-  void initialize(ProblemShape const& problem_shape, uint64_t seed = 6090) {
+  // Return true on success, else false
+  bool initialize(ProblemShape const& problem_shape, uint64_t seed = 6090) {
     tensor_A.resize(sizeof(ElementA) * problem_shape.size_A());
     tensor_B.resize(sizeof(ElementB) * problem_shape.size_B());
     tensor_C.resize(sizeof(ElementC) * problem_shape.size_C());
@@ -171,6 +218,12 @@ struct ConvTestbed {
     initialize_values(tensor_B, init_B, seed * 11);
     initialize_values(tensor_C, init_C, seed * 17);
     initialize_values(tensor_bias, init_bias, seed * 19);
+    bool flag = true;
+    if constexpr (isSparseEnabled) {
+      flag &= params.initialize(problem_shape, tensor_B, static_cast<int>(seed + 2023));
+    }
+
+    return flag;
   }
 
   // Determine SMEM requirements and waive if not satisfied
@@ -190,11 +243,16 @@ struct ConvTestbed {
     return max_smem_size >= Conv::ConvKernel::SharedStorageSize;
   }
 
-  /// Executes one test
+  // Executes one test
   bool run(
     ProblemShape const& problem_shape,
     ElementScalar alpha = ElementScalar(1),
     ElementScalar beta = ElementScalar(0)
+    ,
+    RasterOrderOptions raster_order = RasterOrderOptions::Heuristic,
+    MaxSwizzleSize max_swizzle = MaxSwizzleSize{},
+    Splits splits = Splits{},
+    DecompositionMode decomposition_mode = DecompositionMode::Heuristic
   ) {
 
     // Waive test if insufficient CUDA device
@@ -205,7 +263,12 @@ struct ConvTestbed {
       return true;
     }
 
-    initialize(problem_shape);
+    bool ret = initialize(problem_shape);
+    
+    if (!ret) {
+      std::cerr << "initialize failed for the given problem_shape: \n";
+      return false;
+    }
 
     cutlass::KernelHardwareInfo hw_info;
     cudaGetDevice(&hw_info.device_id);
@@ -230,20 +293,27 @@ struct ConvTestbed {
         cute::get<0, i>(stride_D) = problem_shape.stride_C[ProblemShape::RankT-2-i];
       });
     }
+
+    using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90::RasterOrderOptions;
+   using DecompositionMode = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90StreamKParams::DecompositionMode;
+
     typename Conv::ConvKernel::TileScheduler::Arguments scheduler_args{};
+    if constexpr (cute::is_same_v<typename Conv::ConvKernel::TileScheduler::Arguments, cutlass::gemm::StreamKScheduler>) {
+      scheduler_args = { static_cast<int>(splits), static_cast<int>(max_swizzle), raster_order, decomposition_mode };
+    }
+
+    auto mainloop_args = params.get_mainloop_arguments(problem_shape, tensor_A, tensor_B);
+    auto epilogue_args = typename Conv::ConvKernel::EpilogueArguments {
+      {},
+      tensor_C.data().get(),
+      stride_C,
+      tensor_D_computed.data().get(),
+      stride_D,
+    };
+
     auto args = typename Conv::Arguments {
-      {
-        problem_shape,
-        tensor_A.data().get(),
-        tensor_B.data().get(),
-      }, // MainloopArguments
-      {
-        {},
-        tensor_C.data().get(),
-        stride_C,
-        tensor_D_computed.data().get(),
-        stride_D,
-      }, // EpilogueArguments
+      mainloop_args, // MainloopArguments
+      epilogue_args, // EpilogueArguments
       hw_info,
       scheduler_args
     };
@@ -462,6 +532,8 @@ struct ConvTestbed {
       for (size_t i = 0; i < size_t(size(reference)); ++i) {
         if (reference(i) != computed(i)) {
           passed = false;
+          printf("[%llu] %f, %f\n", static_cast<unsigned long long>(i),
+            float(reference(i)), float(computed(i)));
           break;
         }
       }
@@ -475,6 +547,8 @@ struct ConvTestbed {
         if (std::isnan(abs_error) || std::isnan(rel_error) ||
             std::min(abs_error, rel_error) > epsilon) {
           passed = false;
+          printf("[%llu] %f, %f\n", static_cast<unsigned long long>(i),
+            float(reference(i)), float(computed(i)));
           break;
         }
       }
@@ -488,18 +562,20 @@ struct ConvTestbed {
       cute::print("\n");
 
       for (size_t i = 0; i < size_t(size(A)); ++i) {
-        printf("[%ld]: A = %f\n", i, float(A(i)));
+        printf("[%llu]: A = %f\n", static_cast<unsigned long long>(i), float(A(i)));
       }
       for (size_t i = 0; i < size_t(size(B)); ++i) {
-        printf("[%ld]: B = %f\n", i, float(B(i)));
+        printf("[%llu]: B = %f\n", static_cast<unsigned long long>(i), float(B(i)));
       }
       if constexpr (IsBiasEnabled) {
         for (size_t i = 0; i < size_t(size(tensor_bias)); ++i) {
-          printf("[%ld]: bias = %f\n", i, float(tensor_bias(i)));
+          printf("[%llu]: bias = %f\n", static_cast<unsigned long long>(i),
+            float(tensor_bias(i)));
         }
       }
       for (size_t i = 0; i < size_t(size(reference)); ++i) {
-        printf("[%ld]: ref = %f, computed = %f\n", i, float(reference(i)), float(computed(i)));
+        printf("[%llu]: ref = %f, computed = %f\n", static_cast<unsigned long long>(i),
+          float(reference(i)), float(computed(i)));
       }
     }
     #endif
@@ -509,30 +585,56 @@ struct ConvTestbed {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename Conv>
-bool TestAllConv(double alpha = 1.0, double beta = 0.0, float epsilon = 0.0f) {
+template <typename Conv, bool SupportStrides = (Conv::DispatchPolicy::ConvOp != cutlass::conv::Operator::kDgrad)>
+bool TestAllConv(double alpha = 1.0, double beta = 0.0, float epsilon = 0.0f
+                 ) {
   using ElementScalar = typename Conv::EpilogueOutputOp::ElementScalar;
 
   bool passed = true;
   ConvTestbed<Conv> testbed;
   testbed.epsilon = epsilon;
   auto problem_vector = get_conv_problem_vector<
-      Conv::NumSpatialDimensions, Conv::DispatchPolicy::ConvOp>();
+      Conv::NumSpatialDimensions, Conv::DispatchPolicy::ConvOp, SupportStrides>();
+
+  using DecompositionMode = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90StreamKParams::DecompositionMode;
+  using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90::RasterOrderOptions;
+  using MaxSwizzleSize = typename gemm::device::detail::MaxSwizzleSize;
+  using Splits = typename gemm::device::detail::Splits;
+
+  std::vector<DecompositionMode> decomposition_modes = {DecompositionMode::Heuristic};
+  static constexpr bool UsesStreamKScheduler = cute::is_same_v<typename Conv::ConvKernel::TileSchedulerTag, cutlass::gemm::StreamKScheduler>;
+  if constexpr (UsesStreamKScheduler) {
+    decomposition_modes.push_back(DecompositionMode::DataParallel);
+    decomposition_modes.push_back(DecompositionMode::SplitK);
+    decomposition_modes.push_back(DecompositionMode::StreamK);
+  }
 
   for (auto conv_problem : problem_vector) {
     #if CUTLASS_DEBUG_TRACE_LEVEL > 0
-      print(conv_problem);
+    print(conv_problem);
     #endif
+    for (DecompositionMode decomp_mode : decomposition_modes) {
+      std::vector problem_splits = {Splits{1}};
+      if (decomp_mode == DecompositionMode::Heuristic || decomp_mode == DecompositionMode::SplitK) {
+        problem_splits.push_back(Splits{2});
+      }
+      for (auto splits : problem_splits) {
 
-    passed = testbed.run(
-      conv_problem,
-      cutlass::from_real<ElementScalar>(alpha),
-      cutlass::from_real<ElementScalar>(beta));
-
-    if (!passed) {
-      printf("Failed test for "); print(conv_problem);
-      return false;
-    }
+        passed = testbed.run(
+          conv_problem,
+          cutlass::from_real<ElementScalar>(alpha),
+          cutlass::from_real<ElementScalar>(beta)
+          ,RasterOrderOptions::Heuristic, // raster_order
+          MaxSwizzleSize(1),
+          splits,
+          decomp_mode
+          );
+        if (!passed) {
+          printf("Failed test for "); print(conv_problem);
+          return false;
+        }
+      } // splits
+    } // decomposition_mode
   }
 
   return passed;

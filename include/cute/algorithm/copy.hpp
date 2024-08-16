@@ -34,7 +34,7 @@
 
 #include <cute/container/alignment.hpp>
 
-#include <cute/tensor.hpp>
+#include <cute/tensor_impl.hpp>
 #include <cute/tensor_predicate.hpp>
 
 #include <cute/atom/copy_atom.hpp>
@@ -199,14 +199,14 @@ copy_vec(Tensor<SrcEngine, SrcLayout> const& src,
 {
   static_assert(sizeof_bits_v<VecType> >= 8 && sizeof_bits_v<VecType> % 8 == 0,
                 "Expected a vectorization type of at least a byte.");
-  using SrcType = typename SrcEngine::element_type;
-  using DstType = typename DstEngine::element_type;
-  if constexpr (sizeof_bits_v<SrcType> == sizeof_bits_v<DstType> &&
+  using SrcType = typename SrcEngine::value_type;
+  using DstType = typename DstEngine::value_type;
+  if constexpr (cute::is_same<SrcType, DstType>::value &&
                 sizeof_bits_v<VecType>  > sizeof_bits_v<DstType>)
   {
     // Preserve volatility of Src/Dst types.
-    using SrcVecType = conditional_t<is_volatile_v<SrcType>, VecType const volatile, VecType const>;
-    using DstVecType = conditional_t<is_volatile_v<DstType>, VecType       volatile, VecType      >;
+    using SrcVecType = conditional_t<is_volatile_v<typename SrcEngine::element_type>, VecType const volatile, VecType const>;
+    using DstVecType = conditional_t<is_volatile_v<typename DstEngine::element_type>, VecType       volatile, VecType      >;
     Tensor src_v = recast<SrcVecType>(src);
     Tensor dst_v = recast<DstVecType>(dst);
 
@@ -264,22 +264,22 @@ copy(AutoVectorizingCopyWithAssumedAlignment<MaxVecBits> const&,
 {
   constexpr int vec_elem = decltype(max_common_vector(src, dst))::value;
 
-  constexpr int src_bits = sizeof_bits<typename SrcEngine::value_type>::value;
-  // When layouts are static,  accept vec_bits up to 128
-  // When layouts are dynamic, accept vec_bits up to MaxVecBits
-  constexpr int vec_bits = (is_static<SrcLayout>::value && is_static<DstLayout>::value) ?
-                            cute::min(vec_elem * src_bits, 128) :
-                            cute::min(vec_elem * src_bits, MaxVecBits);
+  constexpr int max_align_src = decltype(max_alignment(src.layout()))::value;
+  constexpr int max_align_dst = decltype(max_alignment(dst.layout()))::value;
+  constexpr int max_align     = gcd(vec_elem, max_align_src, max_align_dst);
 
-#if 0
-  if (thread0()) {
-    print("copy -- found max_common_vector of %d elems and vectorization to %d bits\n", vec_elem, vec_bits);
-    print("   "); print(src); print("\n");
-    print("   "); print(dst); print("\n");
-  }
-#endif
+  constexpr int src_bits = sizeof_bits<typename SrcEngine::value_type>::value;
+  constexpr int vec_bits = gcd(src_bits * max_align, MaxVecBits);
 
   if constexpr (vec_elem > 1 && vec_bits >= 8) {
+    // If more than one element vectorizes to 8bits or more, then copy_vec
+#if 0
+    if (thread0()) {
+      print("copy -- found max_common_vector of %d elems and vectorization to %d bits\n", vec_elem, vec_bits);
+      print("   "); print(src); print("\n");
+      print("   "); print(dst); print("\n");
+    }
+#endif
     return copy_vec<uint_bit_t<vec_bits>>(src, dst);
   } else {
     return copy_if(TrivialPredTensor{}, src, dst);
@@ -294,10 +294,16 @@ void
 copy(Tensor<SrcEngine, SrcLayout> const& src,
      Tensor<DstEngine, DstLayout>      & dst)
 {
-  return copy(AutoVectorizingCopy{}, src, dst);
+  if constexpr (is_static<SrcLayout>::value && is_static<DstLayout>::value) {
+    // Assume Tensors with static layouts (e.g. registers) have pointers that are 128b aligned
+    return copy(AutoVectorizingCopyWithAssumedAlignment<128>{}, src, dst);
+  } else {
+    // Do not assume that dynamic layouts are aligned.
+    return copy(AutoVectorizingCopyWithAssumedAlignment<8>{}, src, dst);
+  }
 }
 
-// Auto-vectorizing copy with assumed alignment of dynamic layout strides up to 128bit.
+// Auto-vectorizing copy with assumed alignment up to 128bit.
 template <class SrcEngine, class SrcLayout,
           class DstEngine, class DstLayout>
 CUTE_HOST_DEVICE
@@ -306,19 +312,6 @@ copy_aligned(Tensor<SrcEngine, SrcLayout> const& src,
              Tensor<DstEngine, DstLayout>      & dst)
 {
   return copy(AutoVectorizingCopyWithAssumedAlignment<128>{}, src, dst);
-}
-
-// Specializaton for Atom AutoVectorizingCopy
-template <class... Args,
-          class SrcEngine, class SrcLayout,
-          class DstEngine, class DstLayout>
-CUTE_HOST_DEVICE
-void
-copy(Copy_Atom<AutoVectorizingCopy, Args...> const&,
-     Tensor<SrcEngine, SrcLayout>            const& src,
-     Tensor<DstEngine, DstLayout>                 & dst)
-{
-  return copy(AutoVectorizingCopy{}, src, dst);
 }
 
 // Specializaton for Atom AutoVectorizingCopyAssumedAlignment
@@ -346,7 +339,7 @@ copy(Copy_Traits<SM90_BULK_COPY_AUTO, CT_Args...> const& atom,  // Copy_Traits m
 {
   using SrcType = typename SrcEngine::value_type;
   using DstType = typename DstEngine::value_type;
-  static_assert(sizeof_bits<SrcType>::value == sizeof_bits<DstType>::value);
+  static_assert(cute::is_same<SrcType, DstType>::value);
   static_assert((is_gmem<SrcEngine>::value && is_smem<DstEngine>::value) ||
                 (is_smem<SrcEngine>::value && is_gmem<DstEngine>::value),
                 "Bulk Copy only supports gmem -> smem or smem -> gmem movement.");

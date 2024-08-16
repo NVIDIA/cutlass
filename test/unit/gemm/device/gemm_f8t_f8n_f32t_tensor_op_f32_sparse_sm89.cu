@@ -41,7 +41,7 @@
 
 #include "../../common/cutlass_unit_test.h"
 #include "cutlass/cutlass.h"
-#include "cutlass/gemm/device/gemm_sparse.h"
+#include "cutlass/gemm/device/gemm_sparse_universal.h"
 #include "cutlass/util/host_tensor.h"
 #include "cutlass/util/reference/host/gemm.h"
 #include "cutlass/util/reference/host/tensor_compare.h"
@@ -65,7 +65,7 @@ TEST(SM89_Device_Sparse_Gemm_fe4m3t_fe4m3n_f32t_tensor_op_f32, 128x128x128_64x64
   using LayoutC = cutlass::layout::RowMajor;
   static int const kStages = 3;
 
-  using Gemm = cutlass::gemm::device::SparseGemm<
+  using Gemm = cutlass::gemm::device::GemmSparseUniversal<
       ElementA, LayoutA, ElementB, LayoutB, ElementOutput, LayoutC,
       ElementAccumulator, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm89,
       cutlass::gemm::GemmShape<128, 128, 128>, cutlass::gemm::GemmShape<64, 64, 128>, cutlass::gemm::GemmShape<16, 8, 64>,
@@ -89,7 +89,7 @@ TEST(SM89_Device_Sparse_Gemm_fe4m3t_fe5m2n_f32t_tensor_op_f32, 128x128x128_64x64
   using LayoutC = cutlass::layout::RowMajor;
   static int const kStages = 3;
 
-  using Gemm = cutlass::gemm::device::SparseGemm<
+  using Gemm = cutlass::gemm::device::GemmSparseUniversal<
       ElementA, LayoutA, ElementB, LayoutB, ElementOutput, LayoutC,
       ElementAccumulator, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm89,
       cutlass::gemm::GemmShape<128, 128, 128>, cutlass::gemm::GemmShape<64, 64, 128>, cutlass::gemm::GemmShape<16, 8, 64>,
@@ -113,7 +113,7 @@ TEST(SM89_Device_Sparse_Gemm_fe5m2t_fe4m3n_f32t_tensor_op_f32, 128x128x128_64x64
   using LayoutC = cutlass::layout::RowMajor;
   static int const kStages = 3;
 
-  using Gemm = cutlass::gemm::device::SparseGemm<
+  using Gemm = cutlass::gemm::device::GemmSparseUniversal<
       ElementA, LayoutA, ElementB, LayoutB, ElementOutput, LayoutC,
       ElementAccumulator, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm89,
       cutlass::gemm::GemmShape<128, 128, 128>, cutlass::gemm::GemmShape<64, 64, 128>, cutlass::gemm::GemmShape<16, 8, 64>,
@@ -137,7 +137,7 @@ TEST(SM89_Device_Sparse_Gemm_fe5m2t_fe5m2n_f32t_tensor_op_f32, 128x128x128_64x64
   using LayoutC = cutlass::layout::RowMajor;
   static int const kStages = 3;
 
-  using Gemm = cutlass::gemm::device::SparseGemm<
+  using Gemm = cutlass::gemm::device::GemmSparseUniversal<
       ElementA, LayoutA, ElementB, LayoutB, ElementOutput, LayoutC,
       ElementAccumulator, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm89,
       cutlass::gemm::GemmShape<128, 128, 128>, cutlass::gemm::GemmShape<64, 64, 128>, cutlass::gemm::GemmShape<16, 8, 64>,

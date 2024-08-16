@@ -346,7 +346,7 @@ struct HostCollectiveMainloop {
 
     tensor_A.resize(a_coord, cutlass::layout::Affine2Layout_Factory<LayoutTagA>::layout_factory(a_coord, stride_factor_A));
     tensor_B.resize(b_coord, cutlass::layout::Affine2Layout_Factory<LayoutTagB>::layout_factory(b_coord, stride_factor_B));
- 
+
     EXPECT_TRUE(initialize_tensor(tensor_A.host_view(), init_A, seed + 2022));
     EXPECT_TRUE(initialize_tensor(tensor_B.host_view(), init_B, seed + 2021));
 
@@ -710,7 +710,7 @@ struct HostCollectiveEpilogue {
   using ActivationFunctor = non_void_t<typename FusionOp::ActivationFn,
                               cutlass::epilogue::thread::Identity<ElementCompute>>;
 
-  static constexpr bool IsBiasEnabled        = FusionOp::IsPerRowBiasSupported;
+  static constexpr bool IsRowBiasEnabled        = FusionOp::IsPerRowBiasSupported;
   static constexpr bool IsDeBiasEnabled      = FusionOp::IsDePerRowBiasSupported;
   static constexpr bool IsPerRowScaleEnabled = FusionOp::IsPerRowScaleSupported;
   static constexpr bool IsScaleFactorEnabled = FusionOp::IsScaleFactorSupported;
@@ -813,6 +813,7 @@ struct HostCollectiveEpilogue {
 
     auto scalar_coord = cutlass::make_Coord(1);
     auto col_vector_coord = cutlass::make_Coord(M);
+    auto row_vector_coord = cutlass::make_Coord(N);
     if constexpr (IsPerRowScaleEnabled) {
       alpha.resize(col_vector_coord);
       EXPECT_TRUE(initialize_tensor(alpha.host_view(), init_scale, seed + 2023));
@@ -849,8 +850,10 @@ struct HostCollectiveEpilogue {
       scale_D.sync_device();
     }
 
-    if constexpr (IsBiasEnabled) {
-      bias.resize(col_vector_coord);
+    if constexpr (
+      IsRowBiasEnabled
+    ) {
+      bias.resize(IsRowBiasEnabled ? col_vector_coord : row_vector_coord);
       EXPECT_TRUE(initialize_tensor(bias.host_view(), init_bias, seed + 2023));
       bias.sync_device();
     }
@@ -1029,10 +1032,9 @@ struct HostCollectiveEpilogue {
       file << "\n\n";
     }
 
-    if constexpr (IsBiasEnabled) {
+    if constexpr (IsRowBiasEnabled) {
       file << "\n\nBias = \n" << bias.host_view();
     }
-
     if constexpr (IsAuxInEnabled) {
       file << "\n\nAux Input = \n" << tensor_Aux.host_view();
     }
@@ -1090,7 +1092,9 @@ struct HostCollectiveEpilogue {
         fusion_args.scale_d_ptr = scale_D.device_data();
       }
 
-      if constexpr (IsBiasEnabled) {
+      if constexpr (
+        IsRowBiasEnabled
+      ) {
         fusion_args.bias_ptr = bias.device_data();
       }
 
@@ -1153,7 +1157,7 @@ struct HostCollectiveEpilogue {
     auto D = cute::make_tensor(detail::make_iterator(reference_D.host_data()),
         cute::make_layout(cute::make_shape(M, N, L), stride_d));
     auto Bias = cute::make_tensor(detail::make_iterator(IsDeBiasEnabled ? reference_dbias.host_data() : bias.host_data()),
-        cute::make_layout(cute::make_shape(M, cute::_1{})));
+        cute::make_layout(cute::make_shape(IsRowBiasEnabled ? M : N)));
     auto Aux = cute::make_tensor(detail::make_iterator(IsAuxInEnabled ? tensor_Aux.host_data() : reference_Aux.host_data()),
         cute::make_layout(cute::make_shape(M, N, L), stride_Aux));
     auto Valpha = cute::make_tensor(detail::make_iterator(alpha.host_data()),
@@ -1171,7 +1175,8 @@ struct HostCollectiveEpilogue {
       decltype(Aux),
       decltype(Valpha),
       decltype(Vbeta),
-      ActivationFunctor
+      ActivationFunctor,
+      cutlass::plus<ElementCompute>
     > epilogue_params{};
 
     epilogue_params.C = C;
@@ -1186,7 +1191,9 @@ struct HostCollectiveEpilogue {
       epilogue_params.scale_d = scale_D.at(coord_0);
     }
 
-    if constexpr (IsBiasEnabled or IsDeBiasEnabled) {
+    if constexpr (IsRowBiasEnabled 
+      or IsDeBiasEnabled) 
+    {
       epilogue_params.Bias = Bias;
     }
 

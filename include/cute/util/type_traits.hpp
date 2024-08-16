@@ -85,6 +85,8 @@ using CUTE_STL_NAMESPACE::is_volatile_v;
 using CUTE_STL_NAMESPACE::conditional;
 using CUTE_STL_NAMESPACE::conditional_t;
 
+using CUTE_STL_NAMESPACE::add_const_t;
+
 using CUTE_STL_NAMESPACE::remove_const_t;
 using CUTE_STL_NAMESPACE::remove_cv_t;
 using CUTE_STL_NAMESPACE::remove_reference_t;
@@ -106,6 +108,13 @@ using CUTE_STL_NAMESPACE::is_convertible_v;
 
 using CUTE_STL_NAMESPACE::is_same;
 using CUTE_STL_NAMESPACE::is_same_v;
+
+using CUTE_STL_NAMESPACE::is_constructible;
+using CUTE_STL_NAMESPACE::is_constructible_v;
+using CUTE_STL_NAMESPACE::is_default_constructible;
+using CUTE_STL_NAMESPACE::is_default_constructible_v;
+using CUTE_STL_NAMESPACE::is_standard_layout;
+using CUTE_STL_NAMESPACE::is_standard_layout_v;
 
 using CUTE_STL_NAMESPACE::is_arithmetic;
 using CUTE_STL_NAMESPACE::is_unsigned;
@@ -130,6 +139,9 @@ using CUTE_STL_NAMESPACE::common_type_t;
 
 using CUTE_STL_NAMESPACE::remove_pointer;
 using CUTE_STL_NAMESPACE::remove_pointer_t;
+
+using CUTE_STL_NAMESPACE::alignment_of;
+using CUTE_STL_NAMESPACE::alignment_of_v;
 
 // <utility>
 using CUTE_STL_NAMESPACE::declval;
@@ -261,4 +273,5 @@ struct conditional_template<false, True, False> {
   template <class... U>
   using type = False<U...>;
 };
+
 } // end namespace cute

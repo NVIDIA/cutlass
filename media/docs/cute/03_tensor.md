@@ -166,10 +166,10 @@ The `make_tensor_like` function makes an owning Tensor of register memory with t
 Calling `print` on each of the above tensors produces similar output
 
 ```
-rmem_4x8_col  : ptr[32b](0x7ff1c8fff820) o (_4,_8):(_1,_4)
-rmem_4x8_row  : ptr[32b](0x7ff1c8fff8a0) o (_4,_8):(_8,_1)
-rmem_4x8_pad  : ptr[32b](0x7ff1c8fff920) o (_4,_8):(_32,_2)
-rmem_4x8_like : ptr[32b](0x7f4158fffc60) o (_4,_8):(_8,_1)
+rmem_4x8_col  : ptr[32b](0x7fff48929460) o (_4,_8):(_1,_4)
+rmem_4x8_row  : ptr[32b](0x7fff489294e0) o (_4,_8):(_8,_1)
+rmem_4x8_pad  : ptr[32b](0x7fff489295e0) o (_4,_8):(_32,_2)
+rmem_4x8_like : ptr[32b](0x7fff48929560) o (_4,_8):(_8,_1)
 ```
 
 and we can see that each pointer address is unique indicating that each `Tensor` is a unique array-like allocation.
@@ -195,7 +195,7 @@ For example, we can read and write to `Tensor`s using natural coordinates, using
 
 ```c++
 Tensor A = make_tensor<float>(Shape <Shape < _4,_5>,Int<13>>{},
-                              Stride<Stride<_12,_1>,_64>{});
+                              Stride<Stride<_12,_1>,    _64>{});
 float* b_ptr = ...;
 Tensor B = make_tensor(b_ptr, make_shape(13, 20));
 
@@ -317,7 +317,7 @@ Another common partitioning strategy is called a thread-value partitioning. In t
 //   to 1D coordinates within a 4x8 tensor
 // (T8,V4) -> (M4,N8)
 auto tv_layout = Layout<Shape <Shape <_2,_4>,Shape <_2, _2>>,
-                        Stride<Stride<_8,_1>,Stride<_4,_16>>>{};  // (8,4)
+                        Stride<Stride<_8,_1>,Stride<_4,_16>>>{}; // (8,4)
 
 // Construct a 4x8 tensor with any layout
 Tensor A = make_tensor<float>(Shape<_4,_8>{}, LayoutRight{});    // (4,8)

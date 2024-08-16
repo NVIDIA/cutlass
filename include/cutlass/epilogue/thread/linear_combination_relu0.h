@@ -418,7 +418,7 @@ public:
     // Compute threshold optionally
     intermediate = relu(intermediate);
 
-    if (platform::numeric_limits<ElementOutput>::is_integer) {
+    if (cutlass::platform::numeric_limits<ElementOutput>::is_integer) {
       // Convert floats back to INT
       FragmentAccumulator scaled_accumulator;
 
@@ -463,7 +463,7 @@ public:
     // Compute threshold optionally
     intermediate = relu(intermediate);
 
-    if (platform::numeric_limits<ElementOutput>::is_integer) {
+    if (cutlass::platform::numeric_limits<ElementOutput>::is_integer) {
       // Convert floats back to INT
       FragmentAccumulator scaled_accumulator;
 
@@ -511,7 +511,7 @@ public:
     // Compute threshold optionally
     intermediate = relu(intermediate);
 
-    if (platform::numeric_limits<ElementOutput>::is_integer) {
+    if (cutlass::platform::numeric_limits<ElementOutput>::is_integer) {
       // Convert floats back to INT
       FragmentAccumulator scaled_accumulator;
 

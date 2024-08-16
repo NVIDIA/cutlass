@@ -69,8 +69,8 @@ using ${operation_name}_epilogue =
   typename cutlass::epilogue::collective::CollectiveBuilder<
     ${arch},
     ${opcode_class_epi},
-    ${tile_shape},        // tile shape
-    ${cluster_shape},     // cluster shape
+    ${output_cta_tile_shape},        // output cta tile shape
+    ${cluster_shape},                // cluster shape
     ${epi_tile_mn},
     ${element_accumulator},
     ${element_compute},
@@ -88,8 +88,8 @@ using ${operation_name}_mainloop =
     ${element_a}, ${layout_a}, 128 / cute::sizeof_bits_v<${element_a}>,
     ${element_b}, ${layout_b}, 128 / cute::sizeof_bits_v<${element_b}>,
     ${element_accumulator},
-    ${tile_shape},        // tile shape
-    ${cluster_shape},     // cluster shape
+    ${mma_tile_shape},        // mma tile shape
+    ${cluster_shape},         // cluster shape
     ${stages},
     ${kernel_schedule}
   >::CollectiveOp;
@@ -106,30 +106,54 @@ using ${operation_name}_base = cutlass::conv::kernel::ConvUniversal<
   def arch_number_to_type(self, arch: int) -> str:
     return f"cutlass::arch::Sm{arch}"
 
-  def tile_shape(self, operation) -> str:
+  def output_cta_tile_shape(self, operation, cta_m, cta_n, cta_k) -> str:
     # For all three kinds of convolutions, the tile shape's K mode
     # differs from GEMM in that needs to be wrapped in a Shape.
     # For Wgrad convolutions specifically,
     # the N tile shape also needs to be wrapped in a Shape.
-    m_template = 'cute::_${tile_shape_m}'
+    m_template = 'cute::_${cta_m}'
     if operation.conv_kind == ConvKind.Wgrad:
-      n_template = 'cute::Shape<cute::_${tile_shape_n}>'
+      n_template = 'cute::Shape<cute::_${cta_n}>'
     else:
-      n_template = 'cute::_${tile_shape_n}'
-    k_template = 'cute::Shape<cute::_${tile_shape_k}>'
+      n_template = 'cute::_${cta_n}'
+    k_template = 'cute::Shape<cute::_${cta_k}>'
 
-    tile_shape_template = f'cute::Shape<{m_template}, {n_template}, {k_template}>'
+    output_cta_tile_shape_template = f'cute::Shape<{m_template}, {n_template}, {k_template}>'
     values = {
-      'tile_shape_m': operation.tile_description.tile_shape[0],
-      'tile_shape_n': operation.tile_description.tile_shape[1],
-      'tile_shape_k': operation.tile_description.tile_shape[2]
+      'cta_m': cta_m,
+      'cta_n': cta_n,
+      'cta_k': cta_k
     }
-    return Template(tile_shape_template).substitute(values)
+    return Template(output_cta_tile_shape_template).substitute(values)
+
+  def mma_tile_shape(self, operation, cta_m, cta_n, cta_k) -> str:
+    mma_m = cta_m
+    mma_n = cta_n
+    mma_k = cta_k
+
+    # For all three kinds of convolutions, the tile shape's K mode
+    # differs from GEMM in that needs to be wrapped in a Shape.
+    # For Wgrad convolutions specifically,
+    # the N tile shape also needs to be wrapped in a Shape.
+    m_template = 'cute::_${mma_m}'
+    if operation.conv_kind == ConvKind.Wgrad:
+      n_template = 'cute::Shape<cute::_${mma_n}>'
+    else:
+      n_template = 'cute::_${mma_n}'
+    k_template = 'cute::Shape<cute::_${mma_k}>'
+
+    mma_tile_shape_template = f'cute::Shape<{m_template}, {n_template}, {k_template}>'
+    values = {
+      'mma_m': mma_m,
+      'mma_n': mma_n,
+      'mma_k': mma_k
+    }
+    return Template(mma_tile_shape_template).substitute(values)
 
   def cluster_shape(self, operation) -> str:
-    m_template = 'cute::_${cluster_shape_m}'
-    n_template = 'cute::_${cluster_shape_n}'
-    k_template = 'cute::_${cluster_shape_k}'
+    m_template = 'cute::_${cluster_shape_m}' if operation.tile_description.cluster_shape[0] > 0 else 'int(0)'
+    n_template = 'cute::_${cluster_shape_n}' if operation.tile_description.cluster_shape[1] > 0 else 'int(0)'
+    k_template = 'cute::_${cluster_shape_k}' if operation.tile_description.cluster_shape[2] > 0 else 'int(0)'
     cluster_shape_template = f'cute::Shape<{m_template}, {n_template}, {k_template}>'
     values = {
       'cluster_shape_m': operation.tile_description.cluster_shape[0],
@@ -159,6 +183,10 @@ using ${operation_name}_base = cutlass::conv::kernel::ConvUniversal<
     opcode_class_epi = opcode_class_main
 
     tile_shape = operation.tile_description.tile_shape
+    cluster_m = operation.tile_description.cluster_shape[0]
+    cluster_n = operation.tile_description.cluster_shape[1]
+
+    cta_m, cta_n, cta_k = tile_shape
     warp_count = operation.tile_description.warp_count
     epilogue_schedule = EpilogueScheduleTag[operation.epilogue_schedule]
 
@@ -189,19 +217,20 @@ using ${operation_name}_base = cutlass::conv::kernel::ConvUniversal<
       'element_d':      DataTypeTag[operation.D.element],
       'layout_d':       LayoutTag[operation.D.layout],
       'align_d':        int(operation.D.alignment),
-      'element_accumulator': DataTypeTag[operation.accumulator_type()],
-      'opcode_class':        opcode_class,
-      'arch':                self.arch_number_to_type(operation.arch),
-      'tile_shape':          self.tile_shape(operation),
-      'cluster_shape':       self.cluster_shape(operation),
-      'opcode_class_epi':    opcode_class_epi,
-      'opcode_class_main':   opcode_class_main,
-      'epi_tile_mn':         epi_tile_mn,
-      'stages':              self.stage_count(operation),
-      'kernel_schedule':     kernel_schedule,
-      'epilogue_schedule':   epilogue_schedule,
-      'tile_scheduler':      tile_scheduler,
-      'element_compute':     DataTypeTag[operation.element_compute]
+      'element_accumulator':   DataTypeTag[operation.accumulator_type()],
+      'opcode_class':          opcode_class,
+      'arch':                  self.arch_number_to_type(operation.arch),
+      'output_cta_tile_shape': self.output_cta_tile_shape(operation, cta_m, cta_n, cta_k),
+      'mma_tile_shape':        self.mma_tile_shape(operation, cta_m, cta_n, cta_k),
+      'cluster_shape':         self.cluster_shape(operation),
+      'opcode_class_epi':      opcode_class_epi,
+      'opcode_class_main':     opcode_class_main,
+      'epi_tile_mn':           epi_tile_mn,
+      'stages':                self.stage_count(operation),
+      'kernel_schedule':       kernel_schedule,
+      'epilogue_schedule':     epilogue_schedule,
+      'tile_scheduler':        tile_scheduler,
+      'element_compute':       DataTypeTag[operation.element_compute]
     }
     return Template(self.template).substitute(values)
 

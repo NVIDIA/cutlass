@@ -58,6 +58,39 @@ enum  {
       FP_NORMAL
 };
 
+CUTLASS_HOST_DEVICE
+int fpclassify(float const& f) {
+
+  uint32_t s;
+
+  #if defined(__CUDA_ARCH__)
+  s = reinterpret_cast<uint32_t const &>(f);
+  #else
+  std::memcpy(&s, &f, sizeof(s));
+  #endif
+
+  uint32_t exp      = s & 0x7f800000;
+  uint32_t mantissa = s & 0x007fffff;
+
+  if (exp == 0x7f800000) {
+    if (mantissa) {
+      return FP_NAN;
+    }
+    else {
+      return FP_INFINITE;
+    }
+  }
+  else if (!exp) {
+    if (mantissa) {
+      return FP_SUBNORMAL;
+    }
+    else {
+      return FP_ZERO;
+    }
+  }
+  return FP_NORMAL;
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace cutlass

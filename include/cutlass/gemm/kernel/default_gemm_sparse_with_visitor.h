@@ -167,7 +167,7 @@ struct DefaultSparseGemmWithVisitor<ElementA, LayoutA, kAlignmentA, ElementB, La
       ThreadblockShape, WarpShape, InstructionShape, Stages,
       Operator>::ThreadblockMma;
 
-  static constexpr int kAlignmentC = 128 / sizeof_bits<ElementC>::value;;
+  static constexpr int kAlignmentC = 128 / sizeof_bits<ElementC>::value;
   using ElementEpilogue = ElementAccumulator;
 
   static const int kPartitionsK = ThreadblockShape::kK / WarpShape::kK;

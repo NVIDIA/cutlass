@@ -36,7 +36,7 @@
 
 #include "../../common/cutlass_unit_test.h"
 #include "cutlass/cutlass.h"
-#include "cutlass/gemm/device/gemm_sparse.h"
+#include "cutlass/gemm/device/gemm_sparse_universal.h"
 #include "cutlass/util/host_tensor.h"
 #include "cutlass/util/reference/host/gemm.h"
 #include "cutlass/util/reference/host/tensor_compare.h"
@@ -54,7 +54,7 @@ TEST(SM80_Device_Sparse_Gemm_f16n_f16t_f16t_tensor_op_f16, 128x256x64_64x64x64) 
   using ElementOutput = cutlass::half_t;
   using ElementAccumulator = cutlass::half_t;
 
-  using Gemm = cutlass::gemm::device::SparseGemm<
+  using Gemm = cutlass::gemm::device::GemmSparseUniversal<
       cutlass::half_t, cutlass::layout::ColumnMajor, cutlass::half_t,
       cutlass::layout::RowMajor, ElementOutput, cutlass::layout::RowMajor,
       ElementAccumulator, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm80,
@@ -72,7 +72,7 @@ TEST(SM80_Device_Sparse_Gemm_f16n_f16t_f16t_tensor_op_f16, 256x128x64_64x64x64) 
   using ElementOutput = cutlass::half_t;
   using ElementAccumulator = cutlass::half_t;
 
-  using Gemm = cutlass::gemm::device::SparseGemm<
+  using Gemm = cutlass::gemm::device::GemmSparseUniversal<
       cutlass::half_t, cutlass::layout::ColumnMajor, cutlass::half_t,
       cutlass::layout::RowMajor, ElementOutput, cutlass::layout::RowMajor,
       ElementAccumulator, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm80,
@@ -90,7 +90,7 @@ TEST(SM80_Device_Sparse_Gemm_f16n_f16t_f16t_tensor_op_f16, 128x128x64_64x64x64) 
   using ElementOutput = cutlass::half_t;
   using ElementAccumulator = cutlass::half_t;
 
-  using Gemm = cutlass::gemm::device::SparseGemm<
+  using Gemm = cutlass::gemm::device::GemmSparseUniversal<
       cutlass::half_t, cutlass::layout::ColumnMajor, cutlass::half_t,
       cutlass::layout::RowMajor, ElementOutput, cutlass::layout::RowMajor,
       ElementAccumulator, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm80,
@@ -108,7 +108,7 @@ TEST(SM80_Device_Sparse_Gemm_f16n_f16t_f16t_tensor_op_f16, 256x64x64_64x64x64) {
   using ElementOutput = cutlass::half_t;
   using ElementAccumulator = cutlass::half_t;
 
-  using Gemm = cutlass::gemm::device::SparseGemm<
+  using Gemm = cutlass::gemm::device::GemmSparseUniversal<
       cutlass::half_t, cutlass::layout::ColumnMajor, cutlass::half_t,
       cutlass::layout::RowMajor, ElementOutput, cutlass::layout::RowMajor,
       ElementAccumulator, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm80,
@@ -126,7 +126,7 @@ TEST(SM80_Device_Sparse_Gemm_f16n_f16t_f16t_tensor_op_f16, 64x256x64_64x64x64) {
   using ElementOutput = cutlass::half_t;
   using ElementAccumulator = cutlass::half_t;
 
-  using Gemm = cutlass::gemm::device::SparseGemm<
+  using Gemm = cutlass::gemm::device::GemmSparseUniversal<
       cutlass::half_t, cutlass::layout::ColumnMajor, cutlass::half_t,
       cutlass::layout::RowMajor, ElementOutput, cutlass::layout::RowMajor,
       ElementAccumulator, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm80,
@@ -144,7 +144,7 @@ TEST(SM80_Device_Sparse_Gemm_f16n_f16t_f16t_tensor_op_f16, 64x128x64_32x64x64) {
   using ElementOutput = cutlass::half_t;
   using ElementAccumulator = cutlass::half_t;
 
-  using Gemm = cutlass::gemm::device::SparseGemm<
+  using Gemm = cutlass::gemm::device::GemmSparseUniversal<
       cutlass::half_t, cutlass::layout::ColumnMajor, cutlass::half_t,
       cutlass::layout::RowMajor, ElementOutput, cutlass::layout::RowMajor,
       ElementAccumulator, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm80,
@@ -163,7 +163,7 @@ TEST(SM80_Device_Sparse_Gemm_f16n_f16t_f16t_tensor_op_f16, 128x64x64_64x32x64) {
   using ElementOutput = cutlass::half_t;
   using ElementAccumulator = cutlass::half_t;
 
-  using Gemm = cutlass::gemm::device::SparseGemm<
+  using Gemm = cutlass::gemm::device::GemmSparseUniversal<
       cutlass::half_t, cutlass::layout::ColumnMajor, cutlass::half_t,
       cutlass::layout::RowMajor, ElementOutput, cutlass::layout::RowMajor,
       ElementAccumulator, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm80,
@@ -181,7 +181,7 @@ TEST(SM80_Device_Sparse_Gemm_f16n_f16t_f16t_tensor_op_f16, 64x64x64_32x32x64) {
   using ElementOutput = cutlass::half_t;
   using ElementAccumulator = cutlass::half_t;
 
-  using Gemm = cutlass::gemm::device::SparseGemm<
+  using Gemm = cutlass::gemm::device::GemmSparseUniversal<
       cutlass::half_t, cutlass::layout::ColumnMajor, cutlass::half_t,
       cutlass::layout::RowMajor, ElementOutput, cutlass::layout::RowMajor,
       ElementAccumulator, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm80,
@@ -199,7 +199,7 @@ TEST(SM80_Device_Sparse_Gemm_f16n_f16t_f16t_tensor_op_f16, 128x128x128_64x64x128
   using ElementOutput = cutlass::half_t;
   using ElementAccumulator = cutlass::half_t;
 
-  using Gemm = cutlass::gemm::device::SparseGemm<
+  using Gemm = cutlass::gemm::device::GemmSparseUniversal<
       cutlass::half_t, cutlass::layout::ColumnMajor, cutlass::half_t,
       cutlass::layout::RowMajor, ElementOutput, cutlass::layout::RowMajor,
       ElementAccumulator, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm80,
@@ -217,7 +217,7 @@ TEST(SM80_Device_Sparse_Gemm_f16n_f16t_f16t_tensor_op_f16, 256x64x128_64x64x128)
   using ElementOutput = cutlass::half_t;
   using ElementAccumulator = cutlass::half_t;
 
-  using Gemm = cutlass::gemm::device::SparseGemm<
+  using Gemm = cutlass::gemm::device::GemmSparseUniversal<
       cutlass::half_t, cutlass::layout::ColumnMajor, cutlass::half_t,
       cutlass::layout::RowMajor, ElementOutput, cutlass::layout::RowMajor,
       ElementAccumulator, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm80,
@@ -235,7 +235,7 @@ TEST(SM80_Device_Sparse_Gemm_f16n_f16t_f16t_tensor_op_f16, 128x64x128_64x32x128)
   using ElementOutput = cutlass::half_t;
   using ElementAccumulator = cutlass::half_t;
 
-  using Gemm = cutlass::gemm::device::SparseGemm<
+  using Gemm = cutlass::gemm::device::GemmSparseUniversal<
       cutlass::half_t, cutlass::layout::ColumnMajor, cutlass::half_t,
       cutlass::layout::RowMajor, ElementOutput, cutlass::layout::RowMajor,
       ElementAccumulator, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm80,
@@ -253,7 +253,7 @@ TEST(SM80_Device_Sparse_Gemm_f16n_f16t_f16t_tensor_op_f16, 64x64x128_32x32x128) 
   using ElementOutput = cutlass::half_t;
   using ElementAccumulator = cutlass::half_t;
 
-  using Gemm = cutlass::gemm::device::SparseGemm<
+  using Gemm = cutlass::gemm::device::GemmSparseUniversal<
       cutlass::half_t, cutlass::layout::ColumnMajor, cutlass::half_t,
       cutlass::layout::RowMajor, ElementOutput, cutlass::layout::RowMajor,
       ElementAccumulator, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm80,
@@ -266,6 +266,7 @@ TEST(SM80_Device_Sparse_Gemm_f16n_f16t_f16t_tensor_op_f16, 64x64x128_32x32x128) 
 
   EXPECT_TRUE(test::gemm::device::TestAllSparseGemm<Gemm>());
 }
+
 ////////////////////////////////////////////////////////////////////////////////
 
 #endif  // #if defined(CUTLASS_ARCH_SPARSE_MMA_SM80_SUPPORTED)

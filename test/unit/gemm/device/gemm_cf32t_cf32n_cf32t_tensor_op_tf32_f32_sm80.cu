@@ -161,7 +161,7 @@ TEST(SM80_Device_Gemm_cf32t_cf32n_cf32t_tensor_op_tf32_f32, 64x64x16_32x32x16) {
 
 TEST(SM80_Device_Gemm_cf32t_cf32n_cf32t_tensor_op_tf32_f32, 128x64x16_64x32x16) {
 
-  using Element = cutlass::complex<float>;;
+  using Element = cutlass::complex<float>;
 
   using Gemm = cutlass::gemm::device::GemmComplex<
     Element,
@@ -193,7 +193,7 @@ TEST(SM80_Device_Gemm_cf32t_cf32n_cf32t_tensor_op_tf32_f32, 128x64x16_64x32x16) 
 
 TEST(SM80_Device_Gemm_cf32t_cf32n_cf32t_tensor_op_tf32_f32, 64x128x16_32x64x16) {
 
-  using Element = cutlass::complex<float>;;
+  using Element = cutlass::complex<float>;
 
   using Gemm = cutlass::gemm::device::GemmComplex<
     Element,
@@ -225,7 +225,7 @@ TEST(SM80_Device_Gemm_cf32t_cf32n_cf32t_tensor_op_tf32_f32, 64x128x16_32x64x16) 
 
 TEST(SM80_Device_Gemm_cf32t_cf32n_cf32t_tensor_op_tf32_f32, 128x128x16_32x64x16) {
 
-  using Element = cutlass::complex<float>;;
+  using Element = cutlass::complex<float>;
 
   using Gemm = cutlass::gemm::device::GemmComplex<
     Element,

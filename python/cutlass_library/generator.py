@@ -36,13 +36,13 @@ Utilities for enumerating CUTLASS library kernels
 
 import argparse
 import enum
-from itertools import product
+from itertools import chain, product
 import logging
 import os.path
 import shutil
 import sys
 import copy
-from typing import Any, Optional, Sequence, Tuple
+from typing import Any, Dict, Optional, Sequence, Tuple
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -513,7 +513,7 @@ def CreateConv2dOperator(manifest, layout, tile_descriptions, data_type, alignme
           new_operations = [
             # None grouped kernel
             Conv2dOperation(ConvKind.Fprop, iterator_algorithm, tile.minimum_compute_capability, tile,\
-              A, B, C, element_epilogue, StrideSupport.Strided, epilogue_functor, swizzling_functor_),
+              A, B, C, element_epilogue, StrideSupport.Unity, epilogue_functor, swizzling_functor_),
           ]
 
           # Instance group conv kernel
@@ -521,12 +521,12 @@ def CreateConv2dOperator(manifest, layout, tile_descriptions, data_type, alignme
             tile.minimum_compute_capability >= 80:
             # SingleGroup kernel
             new_operations.append(Conv2dOperation(ConvKind.Fprop, iterator_algorithm, tile.minimum_compute_capability, tile,\
-              A, B, C, element_epilogue, StrideSupport.Strided, epilogue_functor, swizzling_functor_, group_mode=GroupMode.SingleGroup))
+              A, B, C, element_epilogue, StrideSupport.Unity, epilogue_functor, swizzling_functor_, group_mode=GroupMode.SingleGroup))
 
             # Analytic iterator supports MultipleGroup mode
             if iterator_algorithm == IteratorAlgorithm.Analytic:
               new_operations.append(Conv2dOperation(ConvKind.Fprop, iterator_algorithm, tile.minimum_compute_capability, tile,\
-                A, B, C, element_epilogue, StrideSupport.Strided, epilogue_functor, swizzling_functor_, group_mode=GroupMode.MultipleGroup))
+                A, B, C, element_epilogue, StrideSupport.Unity, epilogue_functor, swizzling_functor_, group_mode=GroupMode.MultipleGroup))
 
           for new_operation in new_operations:
             manifest.append(new_operation)
@@ -884,7 +884,7 @@ class ConvOperation3x:
     prefix = ''
     if self.tile_description.math_instruction.math_operation == MathOperation.multiply_add_complex_gaussian:
       prefix = 'g'
-    return prefix + ShortDataTypeNames[self.accumulator_type()]
+    return prefix + DataTypeNames[self.accumulator_type()]
 
   def is_tensor_op(self):
     tensor_ops = [
@@ -1054,8 +1054,11 @@ def CreateConvOperator3x(manifest: Manifest,
   log_debug_line(f'conv_kind: {conv_kind}', log_indent_level)
 
   for triple in dims_and_alignments:
-    spatial_dimensionality = None # to be determined by loop below
+    assert(isinstance(triple, tuple) or isinstance(triple, list))
     assert(len(triple) == 3)
+
+    spatial_dimensionality = None # to be determined by loop below
+
     for entry in triple: # [A, B, C]
       assert(len(entry) == 2)
       [dim, alignment] = entry
@@ -4972,36 +4975,68 @@ def GenerateSM90_TensorOp_16b_WGMMA_gemm(manifest, cuda_version):
       DataType.bf16, DataType.bf16, DataType.f32,
       OpcodeClass.TensorOp,
       MathOperation.multiply_add),
+    MathInstruction(
+      [64, 256, 16],
+      DataType.f16, DataType.f16, DataType.f16,
+      OpcodeClass.TensorOp,
+      MathOperation.multiply_add),
+    MathInstruction(
+      [64, 256, 16],
+      DataType.f16, DataType.f16, DataType.f32,
+      OpcodeClass.TensorOp,
+      MathOperation.multiply_add),
+    MathInstruction(
+      [64, 256, 16],
+      DataType.bf16, DataType.bf16, DataType.f32,
+      OpcodeClass.TensorOp,
+      MathOperation.multiply_add),
   ]
 
   min_cc = 90
   max_cc = 90
 
   for math_inst in math_instructions:
-    tile_descriptions_small = [
-      # Not compatible with TmaWarpSpecializedCooperative
-      TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-       0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
-      TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-       0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
-    ]
-    tile_descriptions_medium = [
-      TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-        0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
-      TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-        0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
-    ]
-    tile_descriptions_large = [
-      TileDescription([math_inst.instruction_shape[0]*4, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-        0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
-      TileDescription([math_inst.instruction_shape[0]*4, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-        0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
-      TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1]*2, math_inst.instruction_shape[2]*4],
-        0, [4, 2, 1], math_inst, min_cc, max_cc, [2,1,1]),
-      TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1]*2, math_inst.instruction_shape[2]*4],
-        0, [4, 2, 1], math_inst, min_cc, max_cc, [1,2,1]),
-    ]
-    tile_descriptions = tile_descriptions_medium + tile_descriptions_large
+    tile_descriptions = []
+    tile_descriptions_small = []
+    tile_descriptions_medium = []
+    tile_descriptions_large = []
+
+    if math_inst.instruction_shape[1] == 128:
+      tile_descriptions_small = [
+        # Not compatible with TmaWarpSpecializedCooperative
+        TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+         0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
+        TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+         0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
+        TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+         0, [4, 1, 1], math_inst, min_cc, max_cc, [1,1,1]),
+      ]
+      tile_descriptions_medium = [
+        TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+          0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
+        TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+          0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
+        TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+          0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
+      ]
+      tile_descriptions_large = [
+        TileDescription([math_inst.instruction_shape[0]*4, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+          0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
+        TileDescription([math_inst.instruction_shape[0]*4, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+          0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
+        TileDescription([math_inst.instruction_shape[0]*4, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+          0, [4, 1, 1], math_inst, min_cc, max_cc, [1,1,1]),
+      ]
+      tile_descriptions = tile_descriptions_medium + tile_descriptions_large
+    else:
+      tile_descriptions = [
+        TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+          0, [4, 2, 1], math_inst, min_cc, max_cc, [2,1,1]),
+        TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+          0, [4, 2, 1], math_inst, min_cc, max_cc, [1,2,1]),
+        TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+          0, [4, 2, 1], math_inst, min_cc, max_cc, [1,1,1]),
+      ]
 
     data_type = {
       "a_type"   : math_inst.element_a,
@@ -5044,7 +5079,7 @@ def GenerateSM90_TensorOp_16b_WGMMA_gemm(manifest, cuda_version):
     # persistent kernels with TMA epilogues
     if CudaToolkitVersionSatisfies(cuda_version, 12, 1):
       # not enough smem for 256x128 f32 out with C allocation
-      if data_type["d_type"] == DataType.f32:
+      if data_type["d_type"] == DataType.f32 and len(tile_descriptions_medium) > 0:
         CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions_medium, data_type,
           [[KernelScheduleType.TmaWarpSpecializedPingpong,    EpilogueScheduleType.TmaWarpSpecialized],
            [KernelScheduleType.TmaWarpSpecializedCooperative, EpilogueScheduleType.TmaWarpSpecializedCooperative]])
@@ -5491,20 +5526,30 @@ def GenerateSM90_TensorOp_int8_WGMMA_gemm(manifest, cuda_version):
       DataType.u8, DataType.u8, DataType.s32,
       OpcodeClass.TensorOp,
       MathOperation.multiply_add),
+    MathInstruction(
+      [64, 256, 32],
+      DataType.s8, DataType.s8, DataType.s32,
+      OpcodeClass.TensorOp,
+      MathOperation.multiply_add),
+    MathInstruction(
+      [64, 256, 32],
+      DataType.u8, DataType.u8, DataType.s32,
+      OpcodeClass.TensorOp,
+      MathOperation.multiply_add),
   ]
 
   min_cc = 90
   max_cc = 90
 
   for math_inst in math_instructions:
-    # 64x128x128
+    # 64x128x128 or 64x256x128
     tile_descriptions_small = [
       TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
         0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
       TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
         0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
     ]
-    # 128x128x128
+    # 128x128x128 or 128x256x128
     tile_descriptions_medium = [
       TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
         0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
@@ -5671,6 +5716,27 @@ def GenerateSM90_TensorOp_fp8_WGMMA_gemm(manifest, cuda_version):
       DataType.e5m2, DataType.e5m2, DataType.f32,
       OpcodeClass.TensorOp,
       MathOperation.multiply_add),
+    # inst 64x256x32
+    MathInstruction(
+      [64, 256, 32],
+      DataType.e4m3, DataType.e4m3, DataType.f32,
+      OpcodeClass.TensorOp,
+      MathOperation.multiply_add),
+    MathInstruction(
+      [64, 256, 32],
+      DataType.e4m3, DataType.e5m2, DataType.f32,
+      OpcodeClass.TensorOp,
+      MathOperation.multiply_add),
+    MathInstruction(
+      [64, 256, 32],
+      DataType.e5m2, DataType.e4m3, DataType.f32,
+      OpcodeClass.TensorOp,
+      MathOperation.multiply_add),
+    MathInstruction(
+      [64, 256, 32],
+      DataType.e5m2, DataType.e5m2, DataType.f32,
+      OpcodeClass.TensorOp,
+      MathOperation.multiply_add),
   ]
 
   min_cc = 90
@@ -5778,6 +5844,8 @@ def GenerateSM90_TensorOp_fp8_WGMMA_gemm(manifest, cuda_version):
           0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
         TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
           0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
+        TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+          0, [4, 1, 1], math_inst, min_cc, max_cc, [1,1,1]),
       ]
       tile_descriptions_large = [
         # 256x128x128
@@ -5785,6 +5853,8 @@ def GenerateSM90_TensorOp_fp8_WGMMA_gemm(manifest, cuda_version):
           0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
         TileDescription([math_inst.instruction_shape[0]*4, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
           0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
+        TileDescription([math_inst.instruction_shape[0]*4, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+          0, [4, 1, 1], math_inst, min_cc, max_cc, [1,1,1]),
       ]
       tile_descriptions = [
         # 128x128x128
@@ -5792,7 +5862,30 @@ def GenerateSM90_TensorOp_fp8_WGMMA_gemm(manifest, cuda_version):
           0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
         TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
           0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
+        TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+          0, [4, 1, 1], math_inst, min_cc, max_cc, [1,1,1]),
       ]
+    elif math_inst.instruction_shape[1] == 256:
+      tile_descriptions_small = [
+        # 64x256x128
+        TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+          0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
+        TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+          0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
+        TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+          0, [4, 1, 1], math_inst, min_cc, max_cc, [1,1,1]),
+      ] 
+      tile_descriptions_large = []
+      tile_descriptions = [
+        # 128x256x128
+        TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+          0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
+        TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+          0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
+        TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+          0, [4, 1, 1], math_inst, min_cc, max_cc, [1,1,1]),
+      ]
+      
 
     else:
       assert False, "math inst is not supported"
@@ -5834,9 +5927,10 @@ def GenerateSM90_TensorOp_fp8_WGMMA_gemm(manifest, cuda_version):
             [KernelScheduleType.TmaWarpSpecializedPingpongFP8FastAccum, EpilogueScheduleType.NoSmemWarpSpecialized]])
 
         # Large tiles
-        CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions_large, data_types_large_tile,
-          [[KernelScheduleType.TmaWarpSpecializedCooperative,             EpilogueScheduleType.TmaWarpSpecializedCooperative],
-           [KernelScheduleType.TmaWarpSpecializedCooperativeFP8FastAccum, EpilogueScheduleType.TmaWarpSpecializedCooperative]])
+        if len(tile_descriptions_large) > 0:
+          CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions_large, data_types_large_tile,
+            [[KernelScheduleType.TmaWarpSpecializedCooperative,             EpilogueScheduleType.TmaWarpSpecializedCooperative],
+             [KernelScheduleType.TmaWarpSpecializedCooperativeFP8FastAccum, EpilogueScheduleType.TmaWarpSpecializedCooperative]])
 
         # Add stream-K variants (with and without TMA epilogues)
         CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type, stream_k_schedules, tile_schedulers=[TileSchedulerType.StreamK])
@@ -6646,85 +6740,352 @@ def GenerateSM90_Conv3x(manifest, cuda_version,
   minimum_compute_capability = 90
   maximum_compute_capability = 90
 
-  spatial_dims = [2, 3]
+  spatial_dims = (2, 3)
 
-  def make_dims_and_alignments_triple(dim: int):
-    byte_alignment_required_by_tma = 16
-    return ((dim, byte_alignment_required_by_tma), # A
-            (dim, byte_alignment_required_by_tma), # B
-            (dim, byte_alignment_required_by_tma)) # C
-  dims_and_alignments = [make_dims_and_alignments_triple(dim) for dim in spatial_dims]
+  # This function only generates kernels that use TMA.
+  byte_alignment_required_by_tma = 16
+  tma_byte_alignments = {
+    'A': byte_alignment_required_by_tma,
+    'B': byte_alignment_required_by_tma,
+    'C': byte_alignment_required_by_tma,
+  }
 
-  def make_math_instruction(data_types: Tuple[DataType, DataType, DataType],
-                            instruction_shape: Tuple[int, int, int]) -> MathInstruction:
+  # For tuples of one element, the element needs to end with comma.
+  all_byte_alignments = (
+    tma_byte_alignments,
+  )
+
+  # MMA shapes (MMA_M, MMA_N, MMA_K):
+  #
+  # Different hardware MMA instructions may have different MMA shapes.
+  # This function may generate kernels with different MMA shapes for
+  # different data types, either because the hardware only supports
+  # certain shapes for certain types, or for performance reasons
+  # (CUTLASS doesn't need to generate all valid kernels for the
+  # profiler library, just the best-performing ones).
+  #
+  # The kernel names refer to tile shapes (TILE_M, TILE_N, TILE_K)
+  # instead of MMA shapes.  For SM >= 90 kernels, TILE_K = 4 * MMA_K,
+  # where 4, the "number of MMA instructions per tile," is determined
+  # through some combination of modeling and experiment.
+  #
+  # For performance on sm90, generally CUTLASS generates 64x128
+  # instead of 128x64.
+  mma_64x64x16  = ( 64,  64,  16)
+  mma_64x64x8   = ( 64,  64,   8)
+
+  num_mma_per_tile = 4
+
+  # Cluster shapes (1, 1, 1) and (2, 2, 1) are valid,
+  # but not included, because they tend not to perform as well.
+  cluster_shapes = (
+    (2, 1, 1),
+    (1, 2, 1),
+   )
+
+  fp16 = DataType.f16
+  bf16 = DataType.bf16
+  fp32 = DataType.f32
+  s8   = DataType.s8
+  s32  = DataType.s32
+
+  # When generating kernels, the usual way is to specify 4 types,
+  # (A, B, Acc, C/D).  Tests instead have 5 types,
+  # (ElementAct, ElementFlt, ElementOut, ElementAcc, ElementCompute),
+  # where ElementCompute is also called 'epi_type',
+  # and corresponds to the type of epilogue activations.
+  # This script maps tests' 5 types to 4 types
+  # by making ElementCompute the same as ElementOut.
+
+  fp16_fp32_fp16_fp32 = {
+    'a_type':   fp16, # ElementAct(ivation)
+    'b_type':   fp16, # ElementF(i)lt(er)
+    'c_type':   fp32, # ElementAcc
+    'd_type':   fp32, # ElementOut (used only by CollectiveEpilogue)
+    'acc_type': fp16, # ElementAcc
+    'epi_type': fp32, # ElementCompute (used only by CollectiveEpilogue)
+  }
+  fp16_fp32_fp32_fp32 = {
+    'a_type':   fp16,
+    'b_type':   fp16,
+    'c_type':   fp32,
+    'd_type':   fp32,
+    'acc_type': fp32,
+    'epi_type': fp32,
+  }
+  fp32_fp32_fp32_fp32 = {
+    'a_type':   fp32,
+    'b_type':   fp32,
+    'c_type':   fp32,
+    'd_type':   fp32,
+    'acc_type': fp32,
+    'epi_type': fp32,
+  }
+  s8_s32_s32_s32 = {
+    'a_type':     s8,
+    'b_type':     s8,
+    'c_type':    s32,
+    'd_type':    s32,
+    'acc_type':  s32,
+    'epi_type':  s32,
+  }
+
+  # Other NVIDIA libraries may have the habit of specifying data types like this.
+  bf16bf16_bf16f32_f32 = {
+    'a_type':   bf16,
+    'b_type':   bf16,
+    'c_type':   fp32,
+    'd_type':   fp32,
+    'acc_type': fp32,
+    'epi_type': fp32,
+  }
+  f16f16_f16f16_f16 = {
+    'a_type':   fp16,
+    'b_type':   fp16,
+    'c_type':   fp16,
+    'd_type':   fp16,
+    'acc_type': fp16,
+    'epi_type': fp16,
+  }
+  f16f16_f16f32_f32 = {
+    'a_type':   fp16,
+    'b_type':   fp16,
+    'c_type':   fp16,
+    'd_type':   fp16,
+    'acc_type': fp32,
+    'epi_type': fp32,
+  }
+  f32f32_tf32f32_f32 = fp32_fp32_fp32_fp32
+
+  i8i8_i8i32_f32 = {
+    'a_type':     s8,
+    'b_type':     s8,
+    'c_type':    s32,
+    'd_type':    s32,
+    'acc_type':  s32,
+    'epi_type':  s32,
+  }
+
+  # Each element in the outermost iterable is one combination of
+  #
+  # (ConvKind, spatial_dimension, data_types, byte_alignments, mma_sizes, cluster_sizes)
+  #
+  # for which to generate a kernel.  spatial_dimension is the spatial
+  # dimension of the convolution: either 1, 2, or 3.  byte_alignments
+  # is a triple of required minimum byte alignments for A, B, and C.
+  #
+  # Note that itertools functions produce a single-pass generator.
+  # The code doesn't need a multipass iterable, but if one did, one
+  # could call `tuple` or `list` on the generator.
+  #
+  # While this happens to use the same cluster sizes for each element,
+  # the code doesn't require that.  Different convolution kinds, data
+  # types, or mma sizes might have different optimal cluster sizes.
+  combinations_of_parameters = chain(
+    # The following are all the kernels exercised in the unit tests.
+    # Please try to keep in sync with the unit tests.
+    product(
+      (
+        ConvKind.Fprop,
+      ),
+      spatial_dims,
+      (
+        fp16_fp32_fp16_fp32,
+        fp16_fp32_fp32_fp32,
+        s8_s32_s32_s32,
+      ),
+      all_byte_alignments,
+      (
+        mma_64x64x16,
+      ),
+      cluster_shapes
+    ),
+    product(
+      (
+        ConvKind.Fprop,
+      ),
+      spatial_dims,
+      (
+        fp32_fp32_fp32_fp32,
+      ),
+      all_byte_alignments,
+      (
+        mma_64x64x8,
+      ),
+      cluster_shapes
+    ),
+    product(
+      (
+        ConvKind.Dgrad,
+      ),
+      spatial_dims,
+      (
+        fp16_fp32_fp16_fp32,
+        fp16_fp32_fp32_fp32,
+      ),
+      all_byte_alignments,
+      (
+        mma_64x64x16,
+      ),
+      cluster_shapes
+    ),
+    # Kernels not necessarily in the unit tests, but used elsewhere
+    # and thus useful to have generated for profiling.  They may
+    # duplicate kernels above.  All of them are 2-D.  In general,
+    # CUTLASS prefers 64 x 128 to 128 x 64 on sm90, even if the
+    # hardware permits 128 x 64.
+    (
+      # Fprop
+      #
+      # bf16bf16_bf16f32_f32
+      #
+      # cluster shape (2, 1, 1)
+      #
+      (ConvKind.Fprop, 2, bf16bf16_bf16f32_f32, tma_byte_alignments, (128, 256,  8), (2, 1, 1)),
+      (ConvKind.Fprop, 2, bf16bf16_bf16f32_f32, tma_byte_alignments, (128, 256, 16), (2, 1, 1)),
+      (ConvKind.Fprop, 2, bf16bf16_bf16f32_f32, tma_byte_alignments, (256, 128,  8), (2, 1, 1)),
+      (ConvKind.Fprop, 2, bf16bf16_bf16f32_f32, tma_byte_alignments, (256, 128, 16), (2, 1, 1)),
+      #
+      # f16f16_f16f16_f16
+      #
+      # cluster shape (1, 1, 1)
+      #
+      (ConvKind.Fprop, 2,    f16f16_f16f16_f16, tma_byte_alignments, ( 64,  64,  8), (1, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f16_f16, tma_byte_alignments, ( 64,  64, 16), (1, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f16_f16, tma_byte_alignments, ( 64, 128,  8), (1, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f16_f16, tma_byte_alignments, ( 64, 128, 16), (1, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f16_f16, tma_byte_alignments, ( 64, 256,  8), (1, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f16_f16, tma_byte_alignments, ( 64, 256, 16), (1, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f16_f16, tma_byte_alignments, (128, 128,  8), (1, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f16_f16, tma_byte_alignments, (128, 128, 16), (1, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f16_f16, tma_byte_alignments, (128, 256,  8), (1, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f16_f16, tma_byte_alignments, (128, 256, 16), (1, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f16_f16, tma_byte_alignments, (256,  64,  8), (1, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f16_f16, tma_byte_alignments, (256,  64, 16), (1, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f16_f16, tma_byte_alignments, (256, 128,  8), (1, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f16_f16, tma_byte_alignments, (256, 128, 16), (1, 1, 1)),
+      #
+      # f16f16_f16f32_f32
+      #
+      # cluster shape (2, 1, 1)
+      #
+      (ConvKind.Fprop, 2,    f16f16_f16f32_f32, tma_byte_alignments, (128, 192,  8), (2, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f32_f32, tma_byte_alignments, (128, 192, 16), (2, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f32_f32, tma_byte_alignments, (128, 256,  8), (2, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f32_f32, tma_byte_alignments, (128, 256, 16), (2, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f32_f32, tma_byte_alignments, (256,  96,  8), (2, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f32_f32, tma_byte_alignments, (256,  96, 16), (2, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f32_f32, tma_byte_alignments, (256, 128,  8), (2, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f32_f32, tma_byte_alignments, (256, 128, 16), (2, 1, 1)),
+      #
+      # f32f32_tf32f32_f32
+      #
+      # cluster shape (2, 1, 1)
+      #
+      (ConvKind.Fprop, 2,   f32f32_tf32f32_f32, tma_byte_alignments, (128, 192,  8), (2, 1, 1)),
+      (ConvKind.Fprop, 2,   f32f32_tf32f32_f32, tma_byte_alignments, (128, 256,  8), (2, 1, 1)),
+      (ConvKind.Fprop, 2,   f32f32_tf32f32_f32, tma_byte_alignments, (256, 128,  8), (2, 1, 1)),
+      (ConvKind.Fprop, 2,   f32f32_tf32f32_f32, tma_byte_alignments, (256,  96,  8), (2, 1, 1)),
+      #
+      # i8i8_i8i32_f32
+      #
+      # cluster shape (2, 1, 1)
+      #
+      (ConvKind.Fprop, 2,       i8i8_i8i32_f32, tma_byte_alignments, (128, 256, 16), (2, 1, 1)),
+      (ConvKind.Fprop, 2,       i8i8_i8i32_f32, tma_byte_alignments, (128, 256, 32), (2, 1, 1)),
+      (ConvKind.Fprop, 2,       i8i8_i8i32_f32, tma_byte_alignments, (256, 128, 16), (2, 1, 1)),
+      (ConvKind.Fprop, 2,       i8i8_i8i32_f32, tma_byte_alignments, (256, 128, 32), (2, 1, 1)),
+      #
+      # Dgrad
+      #
+      # bf16bf16_bf16f32_f32
+      #
+      # cluster shape (2, 1, 1)
+      #
+      (ConvKind.Dgrad, 2, bf16bf16_bf16f32_f32, tma_byte_alignments, (128, 256,  8), (2, 1, 1)),
+      (ConvKind.Dgrad, 2, bf16bf16_bf16f32_f32, tma_byte_alignments, (128, 256, 16), (2, 1, 1)),
+      (ConvKind.Dgrad, 2, bf16bf16_bf16f32_f32, tma_byte_alignments, (256, 128,  8), (2, 1, 1)),
+      (ConvKind.Dgrad, 2, bf16bf16_bf16f32_f32, tma_byte_alignments, (256, 128, 16), (2, 1, 1)),
+      #
+      # f16f16_f16f16_f16
+      #
+      # cluster shape (1, 1, 1)
+      #
+      (ConvKind.Dgrad, 2,    f16f16_f16f16_f16, tma_byte_alignments, ( 64,  64,  8), (1, 1, 1)),
+      (ConvKind.Dgrad, 2,    f16f16_f16f16_f16, tma_byte_alignments, ( 64,  64, 16), (1, 1, 1)),
+      (ConvKind.Dgrad, 2,    f16f16_f16f16_f16, tma_byte_alignments, ( 64, 128,  8), (1, 1, 1)),
+      (ConvKind.Dgrad, 2,    f16f16_f16f16_f16, tma_byte_alignments, ( 64, 128, 16), (1, 1, 1)),
+      (ConvKind.Dgrad, 2,    f16f16_f16f16_f16, tma_byte_alignments, ( 64, 256,  8), (1, 1, 1)),
+      (ConvKind.Dgrad, 2,    f16f16_f16f16_f16, tma_byte_alignments, ( 64, 256, 16), (1, 1, 1)),
+      (ConvKind.Dgrad, 2,    f16f16_f16f16_f16, tma_byte_alignments, (128, 128,  8), (1, 1, 1)),
+      (ConvKind.Dgrad, 2,    f16f16_f16f16_f16, tma_byte_alignments, (128, 128, 16), (1, 1, 1)),
+      (ConvKind.Dgrad, 2,    f16f16_f16f16_f16, tma_byte_alignments, (128, 256,  8), (1, 1, 1)),
+      (ConvKind.Dgrad, 2,    f16f16_f16f16_f16, tma_byte_alignments, (128, 256, 16), (1, 1, 1)),
+      (ConvKind.Dgrad, 2,    f16f16_f16f16_f16, tma_byte_alignments, (256,  64,  8), (1, 1, 1)),
+      (ConvKind.Dgrad, 2,    f16f16_f16f16_f16, tma_byte_alignments, (256,  64, 16), (1, 1, 1)),
+      (ConvKind.Dgrad, 2,    f16f16_f16f16_f16, tma_byte_alignments, (256, 128,  8), (1, 1, 1)),
+      (ConvKind.Dgrad, 2,    f16f16_f16f16_f16, tma_byte_alignments, (256, 128, 16), (1, 1, 1)),
+      #
+      # f16f16_f16f32_f32
+      #
+      # cluster shape (2, 1, 1)
+      #
+      (ConvKind.Dgrad, 2,    f16f16_f16f32_f32, tma_byte_alignments, (128, 256,  8), (2, 1, 1)),
+      (ConvKind.Dgrad, 2,    f16f16_f16f32_f32, tma_byte_alignments, (128, 256, 16), (2, 1, 1)),
+      (ConvKind.Dgrad, 2,    f16f16_f16f32_f32, tma_byte_alignments, (256, 128,  8), (2, 1, 1)),
+      (ConvKind.Dgrad, 2,    f16f16_f16f32_f32, tma_byte_alignments, (256, 128, 16), (2, 1, 1)),
+    ),
+  )
+
+  # SM >= 90 kernels don't actually use warp_count, but the
+  # TileDescription class needs it.  The 4 in the default
+  # warp_count has nothing to do with num_mma_per_tile.
+  warp_count = [4, 1, 1]
+
+  stages = 0 # zero means "deduce the number of stages automatically"
+
+  mainloop_schedule = KernelScheduleType.ImplicitTmaWarpSpecializedSm90
+  epilogue_schedule = EpilogueScheduleType.TmaWarpSpecialized
+  schedule_pairs = (
+    (mainloop_schedule, epilogue_schedule),
+  )
+  tile_schedulers = (
+    TileSchedulerType.Default, # -> void
+  )
+
+  def make_math_instruction(data_types: Dict[str, DataType],
+                            mma_shape: Tuple[int, int, int]) -> MathInstruction:
     default_opcode = OpcodeClass.TensorOp
     default_math_op = MathOperation.multiply_add
-    [A_data_type, B_data_type, C_data_type] = data_types
     return MathInstruction(
-      instruction_shape,
-      A_data_type, B_data_type, C_data_type,
+      mma_shape,
+      data_types['a_type'], data_types['b_type'], data_types['c_type'],
       default_opcode,
       default_math_op
     )
-  data_types_and_instruction_shapes = [
-    ((DataType.f16, DataType.f16, DataType.f16),   (64, 64, 16)),
-    ((DataType.f16, DataType.f16, DataType.f32),   (64, 64, 16)),
-    ((DataType.bf16, DataType.bf16, DataType.f32), (64, 64, 16)),
-  ]
-  math_instructions = map(lambda x: make_math_instruction(*x),
-                          data_types_and_instruction_shapes)
 
-  cluster_shapes = [
-    [2, 1, 1],
-    [1, 1, 1],
-  ]
-  conv_kinds = [
-    ConvKind.Fprop,
-    ConvKind.Dgrad
-  ]
-  mainloop_schedule = KernelScheduleType.ImplicitTmaWarpSpecializedSm90
-  stages = 0 # zero means "deduce the number of stages automatically"
-
-  # tile_descriptions is a 2-level list.
-  # Each inner list is for each cluster shape.
-  for math_inst in math_instructions:
-    tile_descriptions = []
-    for cluster_shape in cluster_shapes:
-      tile_shape = [
-        math_inst.instruction_shape[0],
-        math_inst.instruction_shape[1],
-        math_inst.instruction_shape[2] * 4
-      ]
-      warp_count = [4, 1, 1]
-      tile_description = TileDescription(
-        tile_shape, stages, warp_count, math_inst,
-        minimum_compute_capability, maximum_compute_capability,
-        cluster_shape)
-      tile_descriptions.append(tile_description)
-
-    # It's typical to get the data types from the math instruction.
-    data_type = {
-      "a_type"   : math_inst.element_a,
-      "b_type"   : math_inst.element_b,
-      "c_type"   : math_inst.element_accumulator,
-      "d_type"   : math_inst.element_accumulator,
-      "acc_type" : math_inst.element_accumulator,
-      "epi_type" : math_inst.element_accumulator
-    }
-
-    for conv_kind in conv_kinds:
-      epilogue_schedule = EpilogueScheduleType.TmaWarpSpecialized
-      schedule_pairs = [
-        (mainloop_schedule, epilogue_schedule)
-      ]
-      CreateConvOperator3x(manifest,
-                           dims_and_alignments = dims_and_alignments,
-                           tile_descriptions = tile_descriptions,
-                           data_types = data_type,
-                           schedule_pairs = schedule_pairs,
-                           tile_schedulers = [TileSchedulerType.Default], # -> void
-                           conv_kind = conv_kind,
-                           log_indent_level = log_indent_level)
+  for (conv_kind, spatial_dim, data_types, byte_alignments, mma_shape, cluster_shape) in combinations_of_parameters:
+    math_inst = make_math_instruction(data_types, mma_shape)
+    tile_shape = (mma_shape[0], mma_shape[1], num_mma_per_tile * mma_shape[2])
+    tile_description = TileDescription(tile_shape, stages, warp_count, math_inst,
+      minimum_compute_capability, maximum_compute_capability, cluster_shape)
+    assert(isinstance(spatial_dim, int))
+    assert(isinstance(byte_alignments, dict))
+    dims_and_alignments = (
+      (
+        (spatial_dim, byte_alignments['A']),
+        (spatial_dim, byte_alignments['B']),
+        (spatial_dim, byte_alignments['C']),
+      ),
+    )
+    CreateConvOperator3x(manifest,
+                         dims_and_alignments = dims_and_alignments,
+                         tile_descriptions = [tile_description],
+                         data_types = data_types,
+                         schedule_pairs = schedule_pairs,
+                         tile_schedulers = tile_schedulers,
+                         conv_kind = conv_kind,
+                         log_indent_level = log_indent_level)
 
 def GenerateSM90(manifest, cuda_version):
   GenerateSM90_TensorOp_16b_WGMMA_gemm(manifest, cuda_version)
@@ -6753,8 +7114,8 @@ def GenerateSM90(manifest, cuda_version):
 
 def numeric_log_level(log_level: str) -> int:
   """
-  Converts the string identifier of the log level into the numeric identifier used
-  in setting the log level
+  Converts the string identifier of the log level
+  into the numeric identifier used in setting the log level.
 
   :param x: string representation of log level (e.g., 'INFO', 'DEBUG')
   :type x: str
@@ -6777,8 +7138,18 @@ def define_parser():
   parser.add_argument("--curr-build-dir", default=".", help="CUTLASS current build directory. cmake files will be emitted in this directory")
   parser.add_argument("--generator-target", default='library', help="Target of CUTLASS Library Generator.")
   parser.add_argument("--architectures", default='53;60;61;70;75;80;90', help="Target compute architectures")
-  parser.add_argument("--kernels", default='', help='Comma delimited list to filter kernels by name.')
-  parser.add_argument("--ignore-kernels", default='', help='Comma delimited list of kernels to exclude from build.')
+  parser.add_argument("--kernels", default='', help='Comma-delimited list to filter kernels by name.  ' +
+                      'Specifying this as \"all\" includes ALL the kernels, ' +
+                      'while not specifying this includes only the default set of kernels.')
+  parser.add_argument("--ignore-kernels", default='', help='Comma-delimited list of kernels ' +
+                      'to exclude from build.  For backwards compatibility reasons, ' +
+                      'this option only takes effect if --kernels is set to a nonempty value.')
+  parser.add_argument("--exclude-kernels", default='', help='Comma-delimited list of kernels ' +
+                      'to exclude from build.  In contrast to --ignore-kernels, ' +
+                      'this option always takes effect, ' +
+                      'whether or not --kernels is set to a nonempty value.  ' +
+                      'It also can exclude kernels from the filter file ' +
+                      '(see --kernel-filter-file option below).')
   parser.add_argument("--filter-by-cc", default='True', type=str, help='If enabled, kernels whose compute capability range is not satisfied by the build target are excluded.')
   parser.add_argument("--cuda-version", default="11.0.0", help="Semantic version string of CUDA Toolkit")
   parser.add_argument('--kernel-filter-file',   type=str, default=None, required=False, help='Full path of filter file')

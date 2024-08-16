@@ -167,21 +167,24 @@ struct CollectiveMma<
   // Device side kernel params
   struct Params {
     // Assumption: StrideA is congruent with Problem_MK
-    using TMA_A = decltype(make_tma_copy(
+    using TMA_A = decltype(make_tma_copy_A_sm90(
         GmemTiledCopyA{},
         make_tensor(static_cast<ElementA const*>(nullptr), repeat_like(StrideA{}, int32_t(0)), StrideA{}),
         SmemLayoutA{}(_,_,0),
-        make_shape(shape<0>(TileShape{}), shape<2>(TileShape{})),
-        size<1>(ClusterShape{})));  // mcast along N mode for this M load, if any
+        TileShape{},
+        ClusterShape{}));
     // Assumption: StrideB is congruent with Problem_NK
-    using TMA_B = decltype(make_tma_copy(
+    using TMA_B = decltype(make_tma_copy_B_sm90(
         GmemTiledCopyB{},
         make_tensor(static_cast<ElementB const*>(nullptr), repeat_like(StrideB{}, int32_t(0)), StrideB{}),
         SmemLayoutB{}(_,_,0),
-        make_shape(shape<1>(TileShape{}), shape<2>(TileShape{})),
-        size<0>(ClusterShape{}))); // mcast along M mode for this N load, if any
+        TileShape{},
+        ClusterShape{}));
     TMA_A tma_load_a;
     TMA_B tma_load_b;
+    uint32_t tma_transaction_bytes = TmaTransactionBytes;
+    uint32_t tma_transaction_bytes_mk = TmaTransactionBytesMK;
+    uint32_t tma_transaction_bytes_nk = TmaTransactionBytesNK;
     uint32_t mma_promotion_interval = 4;
   };
 
@@ -203,27 +206,34 @@ struct CollectiveMma<
 
     Tensor tensor_a = make_tensor(ptr_A, make_layout(make_shape(M,K,L), args.dA));
     Tensor tensor_b = make_tensor(ptr_B, make_layout(make_shape(N,K,L), args.dB));
-    typename Params::TMA_A tma_load_a = make_tma_copy(
+    typename Params::TMA_A tma_load_a = make_tma_copy_A_sm90(
         GmemTiledCopyA{},
         tensor_a,
         SmemLayoutA{}(_,_,cute::Int<0>{}),
-        make_shape(shape<0>(TileShape{}), shape<2>(TileShape{})),
-        size<1>(ClusterShape{})); // mcast along N mode for this M load, if any
-    typename Params::TMA_B tma_load_b = make_tma_copy(
+        TileShape{},
+        ClusterShape{});
+    typename Params::TMA_B tma_load_b = make_tma_copy_B_sm90(
         GmemTiledCopyB{},
         tensor_b,
         SmemLayoutB{}(_,_,cute::Int<0>{}),
-        make_shape(shape<1>(TileShape{}), shape<2>(TileShape{})),
-        size<0>(ClusterShape{})); // mcast along M mode for this N load, if any
+        TileShape{},
+        ClusterShape{});
+    uint32_t transaction_bytes_mk = TmaTransactionBytesMK;
+    uint32_t transaction_bytes_nk = TmaTransactionBytesNK;
+    uint32_t transaction_bytes = transaction_bytes_mk + transaction_bytes_nk;
+
     return {
       tma_load_a,
       tma_load_b,
+      transaction_bytes,
+      transaction_bytes_mk,
+      transaction_bytes_nk,
       args.mma_promotion_interval
     };
   }
 
   template<class ProblemShape>
-  CUTLASS_HOST_DEVICE static bool
+  static bool
   can_implement(
       ProblemShape const& problem_shape,
       [[maybe_unused]] Arguments const& args) {
@@ -247,9 +257,11 @@ struct CollectiveMma<
 
   static constexpr int K_PIPE_MAX = DispatchPolicy::Stages;
   static constexpr int K_PIPE_MMAS = 1;
-  static constexpr uint32_t TmaTransactionBytes =
-        cutlass::bits_to_bytes(size<0>(SmemLayoutA{}) * size<1>(SmemLayoutA{}) * static_cast<uint32_t>(sizeof_bits<ElementA>::value))+
+  static constexpr uint32_t TmaTransactionBytesMK =
+        cutlass::bits_to_bytes(size<0>(SmemLayoutA{}) * size<1>(SmemLayoutA{}) * static_cast<uint32_t>(sizeof_bits<ElementA>::value));
+  static constexpr uint32_t TmaTransactionBytesNK =
         cutlass::bits_to_bytes(size<0>(SmemLayoutB{}) * size<1>(SmemLayoutB{}) * static_cast<uint32_t>(sizeof_bits<ElementB>::value));
+  static constexpr uint32_t TmaTransactionBytes = TmaTransactionBytesMK + TmaTransactionBytesNK;
 
   /// Issue Tma Descriptor Prefetch -- ideally from a single thread for best performance
   CUTLASS_DEVICE
@@ -321,8 +333,8 @@ struct CollectiveMma<
 
       // Partition the inputs based on the current block coordinates.
       auto [m_coord, n_coord, k_coord, l_coord] = blk_coord;
-      Tensor gA = gA_mkl(_,_,m_coord,_,l_coord);                                        // (BLK_M,BLK_K,k)
-      Tensor gB = gB_nkl(_,_,n_coord,_,l_coord);                                        // (BLK_N,BLK_K,k)
+      Tensor gA = gA_mkl(_,_,m_coord,_,l_coord);                                                     // (BLK_M,BLK_K,k)
+      Tensor gB = gB_nkl(_,_,n_coord,_,l_coord);                                                     // (BLK_N,BLK_K,k)
 
       // Applies the mapping from block_tma_a
       Tensor tAgA = block_tma_a.partition_S(gA);                                                 // (TMA,TMA_M,TMA_K,k)
@@ -352,8 +364,7 @@ struct CollectiveMma<
 
       // Mainloop
       CUTLASS_PRAGMA_NO_UNROLL
-      for ( ; k_tile_count > 0; --k_tile_count)
-      {
+      for ( ; k_tile_count > 0; --k_tile_count) {
         // LOCK smem_pipe_write for _writing_
         pipeline.producer_acquire(smem_pipe_write);
 
@@ -422,9 +433,23 @@ struct CollectiveMma<
     //
     // Define C accumulators and A/B partitioning
     //
+    
+    // Layout of warp group to thread mapping
+
+    static_assert(stride<0>(typename TiledMma::ALayout{}) == 0 and 
+                  stride<0>(typename TiledMma::BLayout{}) == 0 and
+                  size<0>(typename TiledMma::ALayout{}) == NumThreadsPerWarpGroup and
+                  size<0>(typename TiledMma::BLayout{}) == NumThreadsPerWarpGroup, 
+                  "Stride of the first mode must be 0 and the size of the mode must be NumThreadsPerWarpGroup");
+
+    constexpr int MmaWarpGroups = size(TiledMma{}) / NumThreadsPerWarpGroup;
+    Layout warp_group_thread_layout = make_layout(Int<MmaWarpGroups>{}, 
+                                                  Int<NumThreadsPerWarpGroup>{});
+
+    int warp_group_idx = __shfl_sync(0xFFFFFFFF, thread_idx / NumThreadsPerWarpGroup, 0);
 
     TiledMma tiled_mma;
-    auto thread_mma = tiled_mma.get_thread_slice(thread_idx);
+    auto thread_mma = tiled_mma.get_slice(warp_group_thread_layout(warp_group_idx));
 
     Tensor tCsA = thread_mma.partition_A(sA);                                                 // (MMA,MMA_M,MMA_K,PIPE)
     Tensor tCsB = thread_mma.partition_B(sB);                                                 // (MMA,MMA_N,MMA_K,PIPE)

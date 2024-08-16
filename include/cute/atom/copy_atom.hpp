@@ -39,7 +39,7 @@
 
 #include <cute/util/type_traits.hpp>
 
-#include <cute/tensor.hpp>
+#include <cute/tensor_impl.hpp>
 
 namespace cute
 {

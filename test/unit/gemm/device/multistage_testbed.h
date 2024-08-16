@@ -141,10 +141,10 @@ struct MultistageTestbed {
            ElementCompute alpha = ElementCompute(1),
            ElementCompute beta = ElementCompute(0)) {
 
-		// Waives test if CUDA device is insufficient
-		if (!sufficient()) {
-			return true;
-		}
+    // Waives test if CUDA device is insufficient
+    if (!sufficient()) {
+    	return true;
+    }
 
     //
     // Allocate the GEMM workspace

@@ -138,13 +138,13 @@ public:
     Params() { }
 
     CUTLASS_HOST_DEVICE
-    Params(Layout const &layout, conv::Conv2dProblemSize const &problem_size):
+    Params(Layout const &layout, cutlass::Tensor4DCoord const &tensor_extent):
       PredicatedTileIteratorParams(
         layout.stride()[0] * int(sizeof(AccessType)) / kElementsPerAccess,
         make_OutputTileThreadMapDesc<ThreadMap>()
       ) {
-      divmod[0] = FastDivmod(problem_size.Q);
-      divmod[1] = FastDivmod(problem_size.P);
+      divmod[0] = FastDivmod(tensor_extent[2] /* Q for Fprop & W for Deconv*/);
+      divmod[1] = FastDivmod(tensor_extent[1] /* P for Fprop & H for Deconv*/);
 
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < kStrideRank; ++i) {
@@ -153,14 +153,14 @@ public:
     }
 
     CUTLASS_HOST_DEVICE
-    Params(Layout const &layout, conv::Conv3dProblemSize const &problem_size):
+    Params(Layout const &layout, cutlass::Tensor5DCoord const &tensor_extent):
       PredicatedTileIteratorParams(
         layout.stride()[0] * int(sizeof(AccessType)) / kElementsPerAccess,
         make_OutputTileThreadMapDesc<ThreadMap>()
       ) {
-      divmod[0] = FastDivmod(problem_size.Q);
-      divmod[1] = FastDivmod(problem_size.P);
-      divmod[2] = FastDivmod(problem_size.Z);
+      divmod[0] = FastDivmod(tensor_extent[3] /* Q for Fprop & W for Deconv*/);
+      divmod[1] = FastDivmod(tensor_extent[2] /* P for Fprop & H for Deconv*/);
+      divmod[2] = FastDivmod(tensor_extent[1] /* Z for Fprop & D for Deconv*/);
 
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < kStrideRank; ++i) {

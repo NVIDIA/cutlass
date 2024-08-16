@@ -493,6 +493,7 @@ using is_weakly_congruent = decltype(weakly_congruent(declval<A>(), declval<B>()
 /** Test if Shape A is compatible with Shape B:
  *    the size of A and B are the same, and
  *    any coordinate into A can also be used as a coordinate into B
+ * Equivalently, the size of Shape B is the same as Shape A at each terminal of Shape A.
  * compatible is a partial order on A and B: A <= B
  */
 template <class IntTupleA, class IntTupleB>
@@ -523,6 +524,7 @@ using is_compatible = decltype(compatible(declval<A>(), declval<B>()));
 
 /** Test if Shape A is weakly compatible with Shape B:
  *    there exists a Shape C congruent to A such that compatible(elem_scale(A,C), B)
+ * Equivalently, the size of Shape B is a multiple of Shape A at each terminal of Shape A.
  * weakly_compatible is a partial order on A and B: A <= B
  */
 template <class IntTupleA, class IntTupleB>
@@ -550,6 +552,37 @@ weakly_compatible(IntTupleA const& a, IntTupleB const& b)
 
 template <class A, class B>
 using is_weakly_compatible = decltype(weakly_compatible(declval<A>(), declval<B>()));
+
+/** Test if Shape A is softly compatible with Shape B:
+ *    there exists a Shape C congruent to A such that compatible(shape_div(A,C), B)
+ * Equivalently, the size of Shape B divides Shape A at each terminal of Shape A.
+ * softly_compatible is a partial order on A and B: A <= B
+ */
+template <class IntTupleA, class IntTupleB>
+CUTE_HOST_DEVICE constexpr
+auto
+softly_compatible(IntTupleA const& a, IntTupleB const& b)
+{
+  if constexpr (is_tuple<IntTupleA>::value && is_tuple<IntTupleB>::value) {
+    if constexpr (tuple_size<IntTupleA>::value != tuple_size<IntTupleB>::value) {
+      return false_type{};
+    } else {
+      return transform_apply(a, b, [](auto const& x, auto const& y) { return softly_compatible(x,y); },
+                                   [](auto const&... z) { return (true_type{} && ... && z); });
+    }
+  } else if constexpr (is_integral<IntTupleA>::value) {
+    return a % size(b) == Int<0>{};
+  } else if constexpr (is_integral<IntTupleB>::value) {
+    return false_type{};
+  } else {
+    return softly_compatible(shape(a), shape(b));
+  }
+
+  CUTE_GCC_UNREACHABLE;
+}
+
+template <class A, class B>
+using is_softly_compatible = decltype(softly_compatible(declval<A>(), declval<B>()));
 
 /** Replace the elements of Tuple B that are paired with an Int<0> with an Int<1>
  */

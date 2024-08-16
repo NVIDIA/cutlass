@@ -35,14 +35,15 @@
 #pragma once
 
 #include "numeric_types.h"
+#include "complex.h"
 
 namespace cutlass {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename T>
+template <typename T, typename U = T>
 CUTLASS_HOST_DEVICE
-bool relatively_equal(T a, T b, T epsilon, T nonzero_floor);
+bool relatively_equal(T a, T b, U epsilon, U nonzero_floor);
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -218,6 +219,55 @@ template <>
 CUTLASS_HOST_DEVICE
 bool relatively_equal<double>(double a, double b, double epsilon, double nonzero_floor) {
   return detail::relatively_equal_float(a, b, epsilon, nonzero_floor);
+}
+
+template<typename T>
+CUTLASS_HOST_DEVICE
+bool relatively_equal(complex<T> a, complex<T> b, T epsilon, T nonzero_floor) {
+#if defined(__CUDACC_RTC__)
+  using cuda::std::abs;
+#else
+  using std::abs;
+#endif
+
+  T abs_A = abs(a);
+  T abs_B = abs(b);
+  T diff = abs(a - b);
+  complex<T> zero = complex<T>{T{}, T{}};
+
+  if (a == b) {
+    return true;
+  }
+  else if (a == zero || b == zero || diff < nonzero_floor) {
+    return diff < epsilon * nonzero_floor;
+  }
+
+  return diff < epsilon * (abs_A + abs_B);
+}
+
+template <typename T>
+CUTLASS_HOST_DEVICE 
+bool relatively_equal(complex<T> a,  complex<T> b, complex<T> epsilon, complex<T> nonzero_floor) {
+#if defined(__CUDACC_RTC__)
+  using cuda::std::abs;
+#else
+  using std::abs;
+#endif
+
+  T abs_A = abs(a);
+  T abs_B = abs(b);
+  complex<T> diff = a - b;
+  T abs_diff = abs(diff);
+  complex<T> zero = complex<T>{T{}, T{}};
+
+  if (a == b) {
+    return true;
+  }
+  else if (a == zero || b == zero || abs_diff < abs(nonzero_floor)) {
+    return abs_diff < abs(epsilon * nonzero_floor);
+  }
+
+  return abs_diff < abs(epsilon) * (abs_A + abs_B);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

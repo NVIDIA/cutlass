@@ -97,7 +97,7 @@ using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombinationGenericWith
     cutlass::epilogue::thread::ReLu,
     ElementOutput,
     ElementAuxOutput,
-    128 / cutlass::sizeof_bits<ElementOutput>::value,
+    8,
     ElementAccumulator,
     ElementAccumulator
     >;
@@ -106,7 +106,7 @@ template <typename MathOperator>
 using Gemm_ = cutlass::gemm::device::GemmUniversalWithAbsMax<
     ElementA, LayoutA, ElementB, LayoutB, ElementOutput, LayoutC,
     ElementAccumulator, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm89,
-    cutlass::gemm::GemmShape<128, 256, 64>, cutlass::gemm::GemmShape<64, 64, 64>, cutlass::gemm::GemmShape<16, 8, 32>,
+    cutlass::gemm::GemmShape<128, 64, 128>, cutlass::gemm::GemmShape<64, 32, 128>, cutlass::gemm::GemmShape<16, 8, 32>,
     EpilogueOutputOp, cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, kStages,
     kAlignmentA, kAlignmentB, MathOperator
   >;

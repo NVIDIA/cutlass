@@ -78,7 +78,7 @@ TEST(SM75_Epilogue_warp_FragmentIterator, mma_f32_64x64x8) {
 
   std::cout << "Native accumulators:\n";
 
-  for (int i = 0; i < MmaTensorOp::FragmentC::kElements; ++i) {
+  for (size_t i = 0; i < MmaTensorOp::FragmentC::kElements; ++i) {
     accum[i] = ElementC(i);
 
     std::cout << accum[i] << " ";
@@ -106,7 +106,7 @@ TEST(SM75_Epilogue_warp_FragmentIterator, mma_f32_64x64x8) {
 
     std::cout << "Iteration " << iter << ":\n";
 
-    for (int i = 0; i < FragmentIterator::Fragment::kElements; ++i) {
+    for (size_t i = 0; i < FragmentIterator::Fragment::kElements; ++i) {
       std::cout << frag[i] << " ";
     }
 
@@ -153,8 +153,8 @@ TEST(SM75_Epilogue_warp_FragmentIterator, mma_f16_64x64x8) {
 
   std::cout << "Native accumulators:\n";
 
-  for (int i = 0; i < MmaTensorOp::FragmentC::kElements; ++i) {
-    accum[i] = ElementC(i);
+  for (size_t i = 0; i < MmaTensorOp::FragmentC::kElements; ++i) {
+    accum[i] = ElementC((int)i);
 
     std::cout << (float)accum[i] << " ";
     if (i && !((i + 1) % 4)) { 
@@ -181,7 +181,7 @@ TEST(SM75_Epilogue_warp_FragmentIterator, mma_f16_64x64x8) {
 
     std::cout << "Iteration " << iter << ":\n";
 
-    for (int i = 0; i < FragmentIterator::Fragment::kElements; ++i) {
+    for (size_t i = 0; i < FragmentIterator::Fragment::kElements; ++i) {
       std::cout << (float)frag[i] << " ";
     }
 
@@ -191,4 +191,80 @@ TEST(SM75_Epilogue_warp_FragmentIterator, mma_f16_64x64x8) {
   }
   #endif
 }
+
+TEST(SM75_Epilogue_warp_FragmentIterator_column, mma_f32_64x64x8) {
+
+  using Shape = cutlass::gemm::GemmShape<64, 64, 8>;
+  using InstructionShape = cutlass::gemm::GemmShape<16, 8, 8>;
+  using Element = cutlass::half_t;
+  using ElementC = float;
+  using LayoutA = cutlass::layout::ColumnMajorTensorOpMultiplicandCongruous<
+      cutlass::sizeof_bits<Element>::value, 64>;
+  using LayoutB = cutlass::layout::RowMajorTensorOpMultiplicandCongruous<
+      cutlass::sizeof_bits<Element>::value, 64>;
+
+  using MmaTensorOp = typename cutlass::gemm::warp::DefaultMmaTensorOp<
+    Shape,
+    InstructionShape,
+    Element,
+    LayoutA,
+    Element,
+    LayoutB,
+    ElementC,
+    cutlass::layout::RowMajor
+  >::Type;
+
+  using FragmentIterator = cutlass::epilogue::warp::FragmentIteratorTensorOp<
+    Shape,
+    typename MmaTensorOp::Policy::Operator::Shape,
+    typename MmaTensorOp::Policy::Operator::ElementC,
+    typename MmaTensorOp::Policy::Operator::FragmentC,
+    cutlass::layout::ColumnMajor
+  >;
+
+  // This test just prints things.
+  #if 0
+  typename MmaTensorOp::FragmentC accum;
+
+  std::cout << "Native accumulators:\n";
+
+  for (size_t i = 0; i < MmaTensorOp::FragmentC::kElements; ++i) {
+    accum[i] = ElementC((int)i);
+
+    std::cout << (float)accum[i] << " ";
+    if (i && !((i + 1) % 4)) { 
+      std::cout << "\n";
+    }
+  }
+
+  std::cout << std::endl;
+
+  std::cout << "FragmentIterator::Policy = { \n"
+    << "  kAccessesPerInstruction:  " << FragmentIterator::Policy::kIterationsPerInstruction << "\n"
+    << "  kAccumulatorRowStride:    " << FragmentIterator::Policy::kAccumulatorRowStride << "\n"
+    << "  kAccumulatorColumnStride: " << FragmentIterator::Policy::kAccumulatorColumnStride << "\n"
+    << "  kIterations:              " << FragmentIterator::Policy::kIterations << "\n"
+    << " }" << std::endl;
+
+  FragmentIterator fragment_iterator(accum);
+
+  for (int iter = 0; iter < FragmentIterator::kIterations; ++iter) {
+
+    typename FragmentIterator::Fragment frag;
+
+    fragment_iterator.load(frag);
+
+    std::cout << "Iteration " << iter << ":\n";
+
+    for (size_t i = 0; i < FragmentIterator::Fragment::kElements; ++i) {
+      std::cout << (float)frag[i] << " ";
+    }
+
+    std::cout << std::endl;
+
+    ++fragment_iterator;
+  }
+  #endif
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////////////

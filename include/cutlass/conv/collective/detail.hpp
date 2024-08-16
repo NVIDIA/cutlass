@@ -246,6 +246,9 @@ compute_lower_srt(ConvProblemShape<ConvOp, NumSpatialDimensions> const& problem_
   return lower;
 }
 
+template <class CopyOp> struct is_im2col_load { static constexpr bool value = false; };
+template <> struct is_im2col_load<SM90_TMA_LOAD_IM2COL          > { static constexpr bool value = true; };
+template <> struct is_im2col_load<SM90_TMA_LOAD_IM2COL_MULTICAST> { static constexpr bool value = true; };
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace cutlass::conv::collective::detail

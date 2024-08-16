@@ -103,7 +103,7 @@ template <
  template<typename T> class UnaryOp,
  bool TestSplitK = true
 >
-static void Deconv3dSM80TestResidaulBlock() {
+static void Deconv3dSM80TestResidualBlock() {
   using ElementA = float;
   using ElementB = float;
   using ElementC = float;
@@ -162,7 +162,7 @@ static void Deconv3dSM80TestResidaulBlock() {
 TEST(SM80_Device_Deconv3d_With_Residual_Block_Plus_Analytic_ImplicitGemm_f32ndhwc_f32ndhwc_f32ndhwc_simt_f32,
      128x128_8x4_32x64x8) {
   // Resnet
-  Deconv3dSM80TestResidaulBlock<cutlass::epilogue::thread::Identity, cutlass::plus, cutlass::epilogue::thread::ReLu>();
+  Deconv3dSM80TestResidualBlock<cutlass::epilogue::thread::Identity, cutlass::plus, cutlass::epilogue::thread::ReLu>();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -219,10 +219,10 @@ public:
 
     /// Clamping constant value
     ElementCompute const kClampMax =
-        ElementCompute(platform::numeric_limits<ElementOutput>::max());
+        ElementCompute(cutlass::platform::numeric_limits<ElementOutput>::max());
 
     ElementCompute const kClampMin =
-        ElementCompute(platform::numeric_limits<ElementOutput>::lowest());
+        ElementCompute(cutlass::platform::numeric_limits<ElementOutput>::lowest());
 
     intermediate = max_accumulator(intermediate, kClampMin);
     intermediate = min_accumulator(intermediate, kClampMax);
@@ -260,10 +260,10 @@ public:
 
     /// Clamping constant value
     ElementCompute const kClampMax =
-        ElementCompute(platform::numeric_limits<ElementOutput>::max());
+        ElementCompute(cutlass::platform::numeric_limits<ElementOutput>::max());
 
     ElementCompute const kClampMin =
-        ElementCompute(platform::numeric_limits<ElementOutput>::lowest());
+        ElementCompute(cutlass::platform::numeric_limits<ElementOutput>::lowest());
 
     intermediate = max_accumulator(intermediate, kClampMin);
     intermediate = min_accumulator(intermediate, kClampMax);
@@ -299,7 +299,7 @@ public:
   using ElementCompute = float;
 
   static_assert(
-      platform::numeric_limits<ElementOutput>::is_integer,
+      cutlass::platform::numeric_limits<ElementOutput>::is_integer,
       "This elementwise op expects the output to be int.");
 
   static int const kCount = Count;
@@ -499,7 +499,7 @@ class FastLinearCombinationClamp {
   using ElementCompute = float;
 
   static_assert(
-      platform::numeric_limits<ElementOutput>::is_integer,
+      cutlass::platform::numeric_limits<ElementOutput>::is_integer,
       "This elementwise op expects the output to be int.");
 
   static int const kCount = Count;
