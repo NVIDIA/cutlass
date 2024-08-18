@@ -36,3 +36,8 @@ cutlass_example_add_executable(
   pvc_gemm_with_epilogue_relu
   pvc_gemm_with_epilogue_relu.cpp
 )
+
+cutlass_example_add_executable(
+  pvc_collective_builder
+  pvc_collective_builder.cpp
+)
