@@ -82,6 +82,78 @@ namespace cutlass {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+#if !defined(__CUDACC_RTC__)
+
+#include <cudaTypedefs.h>
+#include <driver_types.h>
+
+#define CUTLASS_CUDA_DRIVER_STRINGIFY(tok) #tok
+
+#if defined(CUTLASS_ENABLE_DIRECT_CUDA_DRIVER_CALL)
+
+#define CUTLASS_CUDA_DRIVER_WRAPPER_DECL(func, ver) \
+  template <typename... Args>                       \
+  CUresult call_##func(Args... args) {              \
+    return func(args...);                           \
+  }
+
+#else // defined(CUTLASS_ENABLE_DIRECT_CUDA_DRIVER_CALL)
+
+#if (__CUDACC_VER_MAJOR__ >= 12 && __CUDACC_VER_MINOR__ >= 5)
+
+#define CUTLASS_CUDA_DRIVER_WRAPPER_DECL(func, ver)             \
+  template <typename... Args>                                   \
+  CUresult call_##func(Args... args) {                          \
+    cudaDriverEntryPointQueryResult cuda_status;                \
+    void* pfn = nullptr;                                        \
+    cudaError_t cuda_err = cudaGetDriverEntryPointByVersion(    \
+        CUTLASS_CUDA_DRIVER_STRINGIFY(func),                    \
+        &pfn, ver,                                              \
+        cudaEnableDefault,                                      \
+        &cuda_status);                                          \
+    if (cuda_status != cudaDriverEntryPointSuccess ||           \
+        cuda_err != cudaSuccess) {                              \
+      return CUDA_ERROR_UNKNOWN;                                \
+    }                                                           \
+    return reinterpret_cast<PFN_##func##_v##ver>(pfn)(args...); \
+  }
+
+#else
+
+#define CUTLASS_CUDA_DRIVER_WRAPPER_DECL(func, ver)             \
+  template <typename... Args>                                   \
+  CUresult call_##func(Args... args) {                          \
+    cudaDriverEntryPointQueryResult cuda_status;                \
+    void* pfn = nullptr;                                        \
+    cudaError_t cuda_err = cudaGetDriverEntryPoint(             \
+        CUTLASS_CUDA_DRIVER_STRINGIFY(func),                    \
+        &pfn,                                                   \
+        cudaEnableDefault,                                      \
+        &cuda_status);                                          \
+    if (cuda_status != cudaDriverEntryPointSuccess ||           \
+        cuda_err != cudaSuccess) {                              \
+      return CUDA_ERROR_UNKNOWN;                                \
+    }                                                           \
+    return reinterpret_cast<PFN_##func>(pfn)(args...);          \
+  }
+
+#endif // (__CUDACC_VER_MAJOR__ >= 12 && __CUDACC_VER_MINOR__ >= 5)
+
+#endif // defined(CUTLASS_ENABLE_DIRECT_CUDA_DRIVER_CALL)
+
+#if (__CUDACC_VER_MAJOR__ >= 12)
+CUTLASS_CUDA_DRIVER_WRAPPER_DECL(cuTensorMapEncodeTiled, 12000);
+CUTLASS_CUDA_DRIVER_WRAPPER_DECL(cuTensorMapEncodeIm2col, 12000);
+#endif
+
+#undef CUTLASS_CUDA_DRIVER_STRINGIFY
+
+#define CUTLASS_CUDA_DRIVER_WRAPPER_CALL(func) cutlass::call_##func
+
+#endif // !defined(__CUDACC_RTC__)
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 /// This class manages runtime CUlaunchAttribute that can be supplied to CudaHostAdapter
 /// CudaHostLaunchAttributes will be an empty struct in earlier CTK where CUlaunchAttribute
 /// is not introduced.
