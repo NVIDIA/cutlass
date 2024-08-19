@@ -40,6 +40,8 @@
 
 #include "cute/algorithm/prefetch.hpp"
 #include "cutlass/fast_math.h"
+#include "cutlass/cuda_host_adapter.hpp"
+
 namespace cute
 {
 
@@ -450,7 +452,7 @@ make_im2col_tma_copy_desc(
   CUtensorMapFloatOOBfill tma_oob_fill    = to_CUtensorMapFloatOOBfill(aux_params.oobfill_);
   CUtensorMapSwizzle      tma_swizzle     = TMA::to_CUtensorMapSwizzle(detail::get_tma_swizzle_bits(smem_swizzle));
 
-  CUresult encode_result = cuTensorMapEncodeIm2col(
+  CUresult encode_result = CUTLASS_CUDA_DRIVER_WRAPPER_CALL(cuTensorMapEncodeIm2col)(
       &tma_desc,
       tma_format,
       num_total_modes,
