@@ -117,7 +117,7 @@ void run_test_integer_range_all() {
   // Verify conversion
   bool passed = true;
   for (int i = 0; i < kN; ++i) {
-    if(!(float(destination.host_view().at({0, i}) == float(source.host_view().at({0, i}))))) {
+    if(!(float(destination.host_view().at({0, i})) == float(source.host_view().at({0, i})))) {
       passed = false;
       break;
     }
