@@ -935,8 +935,8 @@ template <class LayoutC, class ThrIDC,
 CUTE_HOST_DEVICE
 void
 print_svg_mma(LayoutC const& C, ThrIDC const& TC,  // (m,n) -> (tid,vid)  and  tid -> thr_idx
-                LayoutA const& A, ThrIDA const& TA,  // (m,k) -> (tid,vid)  and  tid -> thr_idx
-                LayoutB const& B, ThrIDB const& TB)  // (n,k) -> (tid,vid)  and  tid -> thr_idx
+              LayoutA const& A, ThrIDA const& TA,  // (m,k) -> (tid,vid)  and  tid -> thr_idx
+              LayoutB const& B, ThrIDB const& TB)  // (n,k) -> (tid,vid)  and  tid -> thr_idx
 {
   char const *color_map[8] = {"175,175,255", "175,255,175", "255,255,175",
                               "255,175,175", "210,210,255", "210,255,210",
@@ -950,7 +950,7 @@ print_svg_mma(LayoutC const& C, ThrIDC const& TC,  // (m,n) -> (tid,vid)  and  t
 
   // header
   printf("<svg width=\"100%%\" height=\"100%%\" viewBox=\"0 0 %d %d\" "
-         "preserveAspectRatio=\"xMidYMid meet\"  "
+         "preserveAspectRatio=\"xMidYMid meet\" "
          "xmlns=\"http://www.w3.org/2000/svg\">\n",
          page_width, page_height);
 
@@ -1080,12 +1080,16 @@ print_svg_mma(LayoutC const& C, ThrIDC const& TC,  // (m,n) -> (tid,vid)  and  t
 }
 
 template <class... Args>
-CUTE_HOST_DEVICE void print_svg(MMA_Atom<Args...> const &mma_atom) {
+CUTE_HOST_DEVICE
+void
+print_svg(MMA_Atom<Args...> const &mma_atom) {
   print_svg(make_tiled_mma(mma_atom));
 }
 
 template <class... Args>
-CUTE_HOST_DEVICE void print_svg(TiledMMA<Args...> const &mma) {
+CUTE_HOST_DEVICE
+void
+print_svg(TiledMMA<Args...> const &mma) {
   auto layout_and_thrid_C = mma.get_layoutC_MN();
   auto layoutC_MN = get<0>(layout_and_thrid_C);
   auto thrID_C = get<1>(layout_and_thrid_C);
