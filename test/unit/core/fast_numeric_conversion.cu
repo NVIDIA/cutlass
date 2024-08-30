@@ -69,7 +69,7 @@ void run_test_integer_range_limited() {
   cutlass::HostTensor<Source, cutlass::layout::RowMajor> source({1, kN});
 
   for (int i = 0; i < kN; ++i) {
-    source.host_data()[i] = Source(i % 4);
+    source.host_view().at({0, i}) = Source(i % 4);
   }
 
   source.sync_device();
@@ -82,7 +82,7 @@ void run_test_integer_range_limited() {
   destination.sync_host();
 
   for (int i = 0; i < kN; ++i) {
-    EXPECT_TRUE(float(destination.host_data()[i]) == float(source.host_data()[i]));
+    EXPECT_TRUE(float(destination.host_view().at({0, i})) == float(source.host_view().at({0, i})));
   }
 }
 
@@ -97,13 +97,12 @@ void run_test_integer_range_all() {
   cutlass::HostTensor<Destination, cutlass::layout::RowMajor> destination({1, kN});
   cutlass::HostTensor<Source, cutlass::layout::RowMajor> source({1, kN});
 
-  int const kIntSourceMin = std::numeric_limits<Source>::min();
-  int const kIntSourceMax = std::numeric_limits<Source>::max();
+  int const kIntSourceMin = cutlass::platform::numeric_limits<Source>::lowest();
+  int const kIntSourceMax = cutlass::platform::numeric_limits<Source>::max();
   int const kIntRange = kIntSourceMax - kIntSourceMin + 1;
 
   for (int i = 0; i < kN; ++i) {
-    source.host_data()[i] = Source(kIntSourceMin + (i % kIntRange));
-
+    source.host_view().at({0, i}) = Source(kIntSourceMin + (i % kIntRange));
   }
 
   source.sync_device();
@@ -118,7 +117,7 @@ void run_test_integer_range_all() {
   // Verify conversion
   bool passed = true;
   for (int i = 0; i < kN; ++i) {
-    if(!(float(destination.host_data()[i]) == float(source.host_data()[i]))) {
+    if(!(float(destination.host_view().at({0, i})) == float(source.host_view().at({0, i})))) {
       passed = false;
       break;
     }
@@ -128,8 +127,8 @@ void run_test_integer_range_all() {
    // Print out results for the failed conversion.
    if (!passed) {
     for (int i = 0; i < kN; ++i) {
-        std::cout << "source(" << float(source.host_data()[i]) << ") -> "
-                  << "destination ("<< float(destination.host_data()[i]) << ")" << std::endl;
+        std::cout << "source(" << float(source.host_view().at({0, i})) << ") -> "
+                  << "destination ("<< float(destination.host_view().at({0, i})) << ")" << std::endl;
     }
    }
    std::flush(std::cout);
@@ -186,5 +185,12 @@ TEST(FastNumericConversion, s8_to_bf16_array) {
   int const kN = 256;
   using Source = int8_t;
   using Destination = cutlass::bfloat16_t;
+  test::core::kernel::run_test_integer_range_all<Destination, Source, kN>();
+}
+
+TEST(FastNumericConversion, s4_to_s8_array) {
+  int const kN = 16;
+  using Source = cutlass::int4b_t;
+  using Destination = int8_t;
   test::core::kernel::run_test_integer_range_all<Destination, Source, kN>();
 }
