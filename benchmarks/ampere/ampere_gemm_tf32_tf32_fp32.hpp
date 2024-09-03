@@ -29,60 +29,29 @@
  *
  **************************************************************************************************/
 
-#include "../common/benchmark_runner.hpp"
+#pragma once
+
 #include "gemm_configuration.hpp"
 
-int main(int argc, const char** argv)
-{
-  //
-  // Parse options
-  //
-
-  Options options;
-
-  options.parse(argc, argv);
-
-  if (options.help) {
-    options.print_usage(std::cout) << std::endl;
-    return 0;
-  }
-
-  if (options.error) {
-    std::cerr << "Aborting execution." << std::endl;
-    return -1;
-  }
-
-  //
-  // Run benchmarks
-  //
-
-  // The KernelHardwareInfo struct holds the number of EUs on the GPU with a given device ID. This
-  // information is used by the underlying kernel.
-  cutlass::KernelHardwareInfo hw_info;
-
-  // Change device_id to another value if you are running on a machine with multiple GPUs and wish
-  // to use a GPU other than that with device ID 0.
-  hw_info.sm_count = cutlass::KernelHardwareInfo::query_device_multiprocessor_count(hw_info.device_id);
-
-// The code section below describes datatype for input, output matrices and computation between
-// elements in input matrices.
-  using ElementAccumulator = float;                   // <- data type of accumulator
-  using ElementComputeEpilogue = float;  // <- data type of epilogue operations
-  using ElementInputA = tfloat32_t;                        // <- data type of elements in input matrix A
-  using ElementInputB = tfloat32_t;                        // <- data type of elements in input matrix B
-  using ElementOutput = float;                        // <- data type of elements in output matrix D
-
-  using LayoutA = cutlass::layout::ColumnMajor;
-  using LayoutB = cutlass::layout::RowMajor;
-  using LayoutC = cutlass::layout::ColumnMajor;
-  using LayoutD = cutlass::layout::ColumnMajor;
+template <
+    typename LayoutA,
+    typename LayoutB,
+    typename LayoutC,
+    typename LayoutD
+    >
+struct AmpereGemmTF32TF32FP32 {
+  using ElementAccumulator = float;
+  using ElementComputeEpilogue = float;
+  using ElementInputA = tfloat32_t;
+  using ElementInputB = tfloat32_t;
+  using ElementOutput = float;
 
   using TileShape = Shape<_128, _128, _32>;
 
   using TiledMma = TiledMMA<
-  MMA_Atom<SM80_16x8x8_F32TF32TF32F32_TN>,
-  Layout<Shape<_2,_2,_1>, Stride<_2, _1, _1>>, // 2x2x1 thread group
-  Tile<_32,_32,_8>>;                           // 32x32x8 MMA for LDSM, 1x2x1 value group
+      MMA_Atom<SM80_16x8x8_F32TF32TF32F32_TN>,
+      Layout<Shape<_2,_2,_1>, Stride<_2, _1, _1>>,
+      Tile<_32,_32,_8>>;
 
   static constexpr int kAlignmentA = 4;
   using DefaultOperandA = DefaultGemm_TensorOpSm80_OperandA<
@@ -102,13 +71,10 @@ int main(int argc, const char** argv)
 
   // This code section describes the epilogue part of the kernel
   using EpilogueOp = cutlass::epilogue::thread::LinearCombination<
-          ElementOutput,                                     // <- data type of output matrix
-          128 / cutlass::sizeof_bits<ElementOutput>::value,  // <- the number of elements per vectorized
-          // memory access. For a byte, it's 16
-          // elements. This becomes the vector width of
-          // math instructions in the epilogue too
-          ElementAccumulator,                                // <- data type of accumulator
-          ElementComputeEpilogue>;  // <- data type for alpha/beta in linear combination function
+          ElementOutput,
+          128 / cutlass::sizeof_bits<ElementOutput>::value,
+          ElementAccumulator,
+          ElementComputeEpilogue>;
 
   using DispatchPolicy = cutlass::gemm::MainloopSm80CpAsync<Stages{}>;
 
@@ -138,16 +104,16 @@ int main(int argc, const char** argv)
   >;
 
   using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
-  Shape<int, int, int, int>,
-  CollectiveMainloop,
-  CollectiveEpilogue
+      Shape<int, int, int, int>,
+      CollectiveMainloop,
+      CollectiveEpilogue
   >;
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+};
 
-  BenchmarkRunner<Gemm> runner("ampere_gemm_tf32_tf32_fp32_tensor_op_fp32");
-
-  runner.run(options, hw_info);
-
-  return 0;
-}
+using AmpereGemmTF32TF32FP32_CCCC = AmpereGemmTF32TF32FP32<
+    cutlass::layout::ColumnMajor,
+    cutlass::layout::ColumnMajor,
+    cutlass::layout::ColumnMajor,
+    cutlass::layout::ColumnMajor>;

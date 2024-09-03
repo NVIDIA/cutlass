@@ -1,0 +1,6 @@
+# BFloat16 benchmarks
+PvcGemmBF16BF16FP32_RRRR --bm_name=bf16_bf16_fp32 --l=1 --m=128 --k=128 --n=128
+PvcGemmBF16BF16FP32_RRRR --bm_name=bf16_bf16_fp32 --l=1 --m=1024 --k=1024 --n=1024
+PvcGemmBF16BF16FP32_RRRR --bm_name=bf16_bf16_fp32 --l=1 --m=4096 --k=4096 --n=4096
+PvcGemmBF16BF16FP32_RRRR --bm_name=bf16_bf16_fp32 --l=1 --m=8192 --k=8192 --n=8192
+PvcGemmBF16BF16FP32_RRRR --bm_name=bf16_bf16_fp32 --l=2 --m=2048 --k=96 --n=2048

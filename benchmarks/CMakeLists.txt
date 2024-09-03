@@ -76,11 +76,14 @@ function(cutlass_benchmark_add_executable NAME)
   )
 endfunction()
 
-
-if(SYCL_INTEL_TARGET)
-  add_subdirectory(pvc)
-endif()
-
-if(SYCL_NVIDIA_TARGET OR NOT CUTLASS_ENABLE_SYCL)
-  add_subdirectory(ampere)
+if (CUTLASS_ENABLE_SYCL)
+  cutlass_benchmark_add_executable(
+    benchmarks
+    main.cpp
+    )
+else()
+  cutlass_benchmark_add_executable(
+    benchmarks
+    main.cu
+    )
 endif()

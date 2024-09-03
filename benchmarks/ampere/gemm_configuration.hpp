@@ -29,6 +29,8 @@
  *
  **************************************************************************************************/
 
+#pragma once
+
 #include "cutlass/half.h"
 #include "cutlass/layout/layout.h"
 
