@@ -158,6 +158,23 @@ struct LinCombPerRowBiasEltAct
   static constexpr bool IsEltActSupported = true;
 };
 
+// D = alpha * acc + beta * C + per-column bias
+template<
+  class ElementOutput_,
+  class ElementCompute_,
+  class ElementBias_ = ElementOutput_,
+  class ElementSource_ = ElementOutput_,
+  class ElementScalar_ = ElementCompute_,
+  int AlignmentBias_ = 128 / sizeof_bits_v<ElementBias_>,
+  FloatRoundStyle RoundStyle_ = FloatRoundStyle::round_to_nearest
+>
+struct LinCombPerColBias
+    : LinearCombination<ElementOutput_, ElementCompute_, ElementSource_, ElementScalar_, RoundStyle_> {
+  using ElementBias = ElementBias_;
+  static constexpr int AlignmentBias = AlignmentBias_;
+  static constexpr bool IsPerColBiasSupported = true;
+};
+
 // D = activation(alpha * acc + beta * C + per-row bias)
 // aux = alpha * acc + beta * C + per-row bias
 template<
