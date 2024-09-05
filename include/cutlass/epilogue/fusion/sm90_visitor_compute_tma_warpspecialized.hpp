@@ -78,7 +78,7 @@ using namespace detail;
 // the template argument.
 //
 // template<class A>
-// struct FooHomogeneous : public Foo<A, B> {};
+// struct FooHomogeneous : public Foo<A, A> {};
 //
 template<
   template <class> class ComputeFn,
