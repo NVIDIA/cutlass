@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -29,7 +29,7 @@
  *
  **************************************************************************************************/
 /*! \file
-    \brief Tests for device-wide Ptr-Array GEMM interface
+    \brief Tests for device-wide Ptr-Array Ping-pong scheduler GEMM interface
 */
 
 #include <iostream>
@@ -57,7 +57,7 @@
 
 using namespace cute;
 
-TEST(SM90_Device_Gemm_f16t_f16t_f32n_tensor_op_gmma_f32_group_gemm, 128x128x64_2x2x1) {
+TEST(SM90_Device_Gemm_f16t_f16t_f32n_tensor_op_gmma_f32_group_gemm_pingpong, 128x128x64_2x2x1) {
 
 // A matrix configuration
 using         ElementA    = cutlass::half_t;                                // Element type for A matrix operand
@@ -81,8 +81,8 @@ using OperatorClass       = cutlass::arch::OpClassTensorOp;                  // 
 using TileShape           = Shape<_128,_128,_64>;                            // Threadblock-level tile size
 using ClusterShape        = Shape<_2,_2,_1>;                                 // Shape of the threadblocks in a cluster
 using StageCountType = cutlass::gemm::collective::StageCountAuto;            // Stage count maximized based on the tile size
-using KernelSchedule   = cutlass::gemm::KernelPtrArrayTmaWarpSpecializedCooperative;   // Kernel to launch
-using EpilogueSchedule = cutlass::epilogue::PtrArrayTmaWarpSpecializedCooperative;   // Epilogue to launch
+using KernelSchedule   = cutlass::gemm::KernelPtrArrayTmaWarpSpecializedPingpong;   // Kernel to launch
+using EpilogueSchedule = cutlass::epilogue::PtrArrayTmaWarpSpecializedPingpong;   // Epilogue to launch
 
 using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
     cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
@@ -119,7 +119,7 @@ using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
   EXPECT_TRUE(result);
 }
 
-TEST(SM90_Device_Gemm_f16t_f16t_f32n_tensor_op_gmma_f32_group_gemm, 128x128x64_2x2x1_direct_store) {
+TEST(SM90_Device_Gemm_f16t_f16t_f32n_tensor_op_gmma_f32_group_gemm_pingpong, 128x128x64_2x2x1_direct_store) {
 
 // A matrix configuration
 using         ElementA    = cutlass::half_t;                                // Element type for A matrix operand
@@ -143,7 +143,7 @@ using OperatorClass       = cutlass::arch::OpClassTensorOp;                  // 
 using TileShape           = Shape<_128,_128,_64>;                            // Threadblock-level tile size
 using ClusterShape        = Shape<_2,_2,_1>;                                 // Shape of the threadblocks in a cluster
 using StageCountType = cutlass::gemm::collective::StageCountAuto;            // Stage count maximized based on the tile size
-using KernelSchedule   = cutlass::gemm::KernelPtrArrayTmaWarpSpecializedCooperative;   // Kernel to launch
+using KernelSchedule   = cutlass::gemm::KernelPtrArrayTmaWarpSpecializedPingpong;   // Kernel to launch
 using EpilogueSchedule = cutlass::epilogue::PtrArrayNoSmemWarpSpecialized;             // Epilogue to launch
 
 using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<

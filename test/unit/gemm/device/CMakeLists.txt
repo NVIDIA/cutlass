@@ -338,12 +338,14 @@ cutlass_test_unit_add_executable(
 cutlass_test_unit_add_executable(
   cutlass_test_unit_gemm_device_tensorop_sm90_ptr_array
   sm90_gemm_f16_f16_f16_tensor_op_f32_ptr_array.cu
+  sm90_gemm_f16_f16_f16_tensor_op_f32_ptr_array_pingpong.cu
 )
 
 # Group Gemm test
 cutlass_test_unit_add_executable(
   cutlass_test_unit_gemm_device_tensorop_sm90_group_gemm
   sm90_gemm_f16_f16_f16_tensor_op_f32_group_gemm.cu
+  sm90_gemm_f16_f16_f16_tensor_op_f32_group_gemm_pingpong.cu
 )
 
 # Fused epilogue tests

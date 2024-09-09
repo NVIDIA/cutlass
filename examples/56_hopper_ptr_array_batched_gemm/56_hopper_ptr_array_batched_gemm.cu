@@ -95,40 +95,66 @@ constexpr int AlignmentC  = 128 / cutlass::sizeof_bits<ElementC>::value;    // M
 using ElementAccumulator  = float;                                          // Element type for internal accumulation
 using ArchTag             = cutlass::arch::Sm90;                            // Tag indicating the minimum SM that supports the intended feature
 using OperatorClass       = cutlass::arch::OpClassTensorOp;                 // Operator class tag
-using TileShape           = Shape<_256,_128,_64>;                           // Threadblock-level tile size
-using ClusterShape        = Shape<_1,_2,_1>;                                // Shape of the threadblocks in a cluster
 using StageCountType = cutlass::gemm::collective::StageCountAuto;           // Stage count maximized based on the tile size
-using KernelSchedule = cutlass::gemm::KernelPtrArrayTmaWarpSpecializedCooperative; // Kernel to launch
-using EpilogueSchedule = cutlass::epilogue::PtrArrayTmaWarpSpecializedCooperative; // Epilogue to launch
 
-using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
-    cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
-    TileShape, ClusterShape,
-    cutlass::epilogue::collective::EpilogueTileAuto,
-    ElementAccumulator, ElementAccumulator,
-    ElementC, LayoutC, AlignmentC,
-    ElementC, LayoutC, AlignmentC,
-    EpilogueSchedule
-  >::CollectiveOp;
+// Different configs for pingpong/cooperative
+struct CooperativeConfig {
+  using KernelSchedule = cutlass::gemm::KernelPtrArrayTmaWarpSpecializedCooperative;
+  using EpilogueSchedule = cutlass::epilogue::PtrArrayTmaWarpSpecializedCooperative;
+  using TileShape           = Shape<_256,_128,_64>;
+  using ClusterShape        = Shape<_1,_2,_1>;
+};
 
-using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
-    ArchTag, OperatorClass,
-    ElementA, LayoutA, AlignmentA,
-    ElementB, LayoutB, AlignmentB,
-    ElementAccumulator,
-    TileShape, ClusterShape,
-    cutlass::gemm::collective::StageCountAutoCarveout<
-      static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
-    KernelSchedule
-  >::CollectiveOp;
+struct PingpongConfig {
+  using KernelSchedule = cutlass::gemm::KernelPtrArrayTmaWarpSpecializedPingpong;
+  using EpilogueSchedule = cutlass::epilogue::PtrArrayTmaWarpSpecializedPingpong;
+  using TileShape           = Shape<_64,_128,_64>;
+  using ClusterShape        = Shape<_1,_1,_1>;
+};
 
-using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
-    cutlass::gemm::ArrayProblemShape<Shape<int,int,int,int>>,
-    CollectiveMainloop,
-    CollectiveEpilogue
->;
+template <typename ScheduleConfig>
+struct GemmGivenSchedule {
+  using TileShape           = typename ScheduleConfig::TileShape;                   // Threadblock-level tile size
+  using ClusterShape        = typename ScheduleConfig::ClusterShape;                // Shape of the threadblocks in a cluster
+  using KernelSchedule      = typename ScheduleConfig::KernelSchedule;              // Kernel to launch
+  using EpilogueSchedule    = typename ScheduleConfig::EpilogueSchedule;            // Epilogue to launch
 
-using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+      TileShape, ClusterShape,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      ElementAccumulator, ElementAccumulator,
+      ElementC, LayoutC, AlignmentC,
+      ElementC, LayoutC, AlignmentC,
+      EpilogueSchedule
+    >::CollectiveOp;
+
+  using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+      ArchTag, OperatorClass,
+      ElementA, LayoutA, AlignmentA,
+      ElementB, LayoutB, AlignmentB,
+      ElementAccumulator,
+      TileShape, ClusterShape,
+      cutlass::gemm::collective::StageCountAutoCarveout<
+        static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
+      KernelSchedule
+    >::CollectiveOp;
+
+  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+      cutlass::gemm::ArrayProblemShape<Shape<int,int,int,int>>,
+      CollectiveMainloop,
+      CollectiveEpilogue
+  >;
+
+  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+};
+
+using GemmKernel = GemmGivenSchedule<CooperativeConfig>::GemmKernel;
+using Gemm = GemmGivenSchedule<CooperativeConfig>::Gemm;
+
+using GemmKernelPingpong = GemmGivenSchedule<PingpongConfig>::GemmKernel;
+using GemmPingpong = GemmGivenSchedule<PingpongConfig>::Gemm;
+
 
 // Reference device GEMM implementation type
 using DeviceGemmReference = cutlass::reference::device::Gemm<
@@ -261,14 +287,14 @@ bool initialize_block(
   int bits_input = cutlass::sizeof_bits<Element>::value;
 
   if (bits_input == 1) {
-    scope_max = 2;
-    scope_min = 0;
+    scope_max = static_cast<Element>(2);
+    scope_min = static_cast<Element>(0);
   } else if (bits_input <= 8) {
-    scope_max = 2;
-    scope_min = -2;
+    scope_max = static_cast<Element>(2);
+    scope_min = static_cast<Element>(-2);
   } else {
-    scope_max = 8;
-    scope_min = -8;
+    scope_max = static_cast<Element>(8);
+    scope_min = static_cast<Element>(-8);
   }
 
   cutlass::reference::device::BlockFillRandomUniform(
@@ -351,7 +377,8 @@ void initialize(const Options &options) {
 }
 
 /// Populates a Gemm::Arguments structure from the given commandline options
-typename Gemm::Arguments args_from_options(const Options &options)
+template <typename GemmT>
+typename GemmT::Arguments args_from_options(const Options &options)
 {
   cutlass::KernelHardwareInfo hw_info;
   // Change device_id to another value if you are running on a machine with multiple GPUs and wish
@@ -359,7 +386,7 @@ typename Gemm::Arguments args_from_options(const Options &options)
   hw_info.device_id = 0;
   hw_info.sm_count = cutlass::KernelHardwareInfo::query_device_multiprocessor_count(hw_info.device_id);
 
-  typename Gemm::Arguments arguments{
+  typename GemmT::Arguments arguments{
     cutlass::gemm::GemmUniversalMode::kArray,
     {{options.m, options.n, options.k, options.l}},
     {ptr_A.get(), stride_A, ptr_B.get(), stride_B},
@@ -405,20 +432,20 @@ bool verify(const Options &options) {
 }
 
 /// Execute a given example GEMM computation
-template <typename Gemm>
+template <typename GemmT>
 int run(Options &options)
 {
   allocate(options);
   initialize(options);
 
   // Instantiate CUTLASS kernel depending on templates
-  Gemm gemm;
+  GemmT gemm;
 
   // Create a structure of gemm kernel arguments suitable for invoking an instance of Gemm
-  auto arguments = args_from_options(options);
+  auto arguments = args_from_options<GemmT>(options);
 
   // Using the arguments, query for extra workspace required for matrix multiplication computation
-  size_t workspace_size = Gemm::get_workspace_size(arguments);
+  size_t workspace_size = GemmT::get_workspace_size(arguments);
 
   // Allocate workspace memory
   cutlass::device_memory::allocation<uint8_t> workspace(workspace_size);
@@ -510,7 +537,10 @@ int main(int argc, char const **args) {
   //
 
 #if defined(CUTLASS_ARCH_MMA_MODIFIABLE_TMA_SM90_SUPPORTED)
+  std::cout << "\n*** Cooperative schedule ***" << std::endl;
   run<Gemm>(options);
+  std::cout << "\n*** Pingpong schedule ***" << std::endl;
+  run<GemmPingpong>(options);
 #endif
 
   return 0;
