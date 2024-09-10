@@ -58,18 +58,43 @@ if (NOT CUTLASS_ENABLE_SYCL)
     test_unit_cute_hopper
     test_unit_cute_msvc_compilation
     )
-else()
-  add_subdirectory(layout)
 
+else()
+  
+  add_subdirectory(core)
+  add_subdirectory(layout)
+  
+  if (SYCL_NVIDIA_TARGET)
+    # Enable Cute tests for the Nvidia backend as a part of #113
+    add_custom_target(
+      cutlass_test_unit_cute
+      DEPENDS
+      cutlass_test_unit_cute_layout
+      cutlass_test_unit_cute_core
+    )
+  
+    add_custom_target(
+      test_unit_cute
+      DEPENDS
+      test_unit_cute_layout
+      test_unit_cute_core
+    )
+  endif()
+  if (SYCL_INTEL_TARGET)
+  
   add_custom_target(
     cutlass_test_unit_cute
     DEPENDS
     cutlass_test_unit_cute_layout
-    )
+    cutlass_test_unit_cute_core
+  )
 
   add_custom_target(
     test_unit_cute
     DEPENDS
     test_unit_cute_layout
-    )
+    test_unit_cute_core
+  )
+
+  endif()
 endif()
