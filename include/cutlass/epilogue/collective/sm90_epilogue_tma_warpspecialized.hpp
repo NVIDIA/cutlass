@@ -640,7 +640,7 @@ public:
                       tRS_rC,
                       thread_idx
                     );
-    auto cst_callbacks = fusion_callbacks.get_consumer_store_callbacks<RefSrc>(cst_args);
+    auto cst_callbacks = fusion_callbacks.template get_consumer_store_callbacks<RefSrc>(cst_args);
     bool is_producer_load_needed = fusion_callbacks.is_producer_load_needed();
     bool is_C_load_needed = is_source_supported && fusion_callbacks.is_C_load_needed();
 
