@@ -179,6 +179,89 @@ struct FusionCallbacks<
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+// D = alpha * acc + beta * C, where beta and alpha can be vectors for each batch
+template<
+  class ElementOutput,
+  class ElementCompute,
+  class ElementSource = ElementOutput,
+  class ElementScalar = ElementCompute,
+  FloatRoundStyle RoundStyle = FloatRoundStyle::round_to_nearest
+>
+using Sm90LinearCombinationPtrArray =
+  Sm90EVT<Sm90Compute<homogeneous_multiply_add, ElementOutput, ElementCompute, RoundStyle>, // beta * C + (alpha * acc)
+    Sm90ScalarBroadcastPtrArray<ElementScalar, Stride<_0,_0,int>>, // beta
+    Sm90SrcFetch<ElementSource>, // C
+    Sm90EVT<Sm90Compute<multiplies, ElementCompute, ElementCompute, RoundStyle>, // alpha * acc
+      Sm90ScalarBroadcastPtrArray<ElementScalar, Stride<_0,_0,int>>, // alpha
+      Sm90AccFetch // acc
+    >
+  >;
+
+template <
+  int StagesC,
+  int StagesD,
+  int FragmentSize,
+  bool ReuseSmemC,
+  bool DelayTmaStore,
+  int NumEpilogueWarpGroups,
+  class ElementOutput,
+  class ElementCompute,
+  class ElementSource,
+  class ElementScalar,
+  FloatRoundStyle RoundStyle,
+  class CtaTileShapeMNK,
+  class EpilogueTile
+>
+struct FusionCallbacks<
+    epilogue::Sm90PtrArrayTmaWarpSpecialized<StagesC, 
+                                             StagesD, 
+                                             FragmentSize, 
+                                             ReuseSmemC, 
+                                             DelayTmaStore, 
+                                             NumEpilogueWarpGroups
+                                            >,
+    fusion::LinearCombination<ElementOutput, ElementCompute, ElementSource, ElementScalar, RoundStyle>,
+    CtaTileShapeMNK,
+    EpilogueTile
+> : Sm90LinearCombinationPtrArray<typename cutlass::detail::get_unpacked_element_type<ElementOutput>::type, ElementCompute, ElementSource, ElementScalar, RoundStyle> {
+
+  using Impl = Sm90LinearCombinationPtrArray<typename cutlass::detail::get_unpacked_element_type<ElementOutput>::type, ElementCompute, ElementSource, ElementScalar, RoundStyle>;
+  using Operation = fusion::LinearCombination<ElementOutput, ElementCompute, ElementSource, ElementScalar, RoundStyle>;
+
+  struct Arguments {
+    ElementScalar alpha = ElementScalar(1);
+    ElementScalar beta = ElementScalar(0);
+    ElementScalar const* alpha_ptr = nullptr;
+    ElementScalar const* beta_ptr = nullptr;
+    ElementScalar const* const* alpha_ptr_array = nullptr;
+    ElementScalar const* const* beta_ptr_array = nullptr;
+
+    using StrideAlpha = Stride<_0,_0,int>;
+    using StrideBeta  = Stride<_0,_0,int>;
+    StrideAlpha dAlpha = {_0{}, _0{}, 0};
+    StrideBeta  dBeta  = {_0{}, _0{}, 0};
+
+    operator typename Impl::Arguments() const {
+      return
+        {    // ternary op : beta * C + (alpha * acc)
+          {{beta}, {beta_ptr}, {beta_ptr_array}, {dBeta}}, // leaf args : beta
+          {},                   // leaf args : C
+          {                     // binary op : alpha * acc
+            {{alpha}, {alpha_ptr}, {alpha_ptr_array}, {dAlpha}}, // leaf args : alpha
+            {},                     // leaf args : acc
+            {}                  // binary args : multiplies
+          },                    // end binary op
+          {} // ternary args : multiply_add
+        };   // end ternary op
+    }
+  };
+
+  // Ctor inheritance
+  using Impl::Impl;
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 // D = activation(alpha * acc + beta * C)
 template<
   template <class> class ActivationFn,

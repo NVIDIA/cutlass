@@ -274,4 +274,18 @@ struct conditional_template<false, True, False> {
   using type = False<U...>;
 };
 
+//
+// is_any_of
+//
+
+/// Member `value` is true if and only if T is same as (is_same_v) at least one of the types in Us
+template <typename T, typename... Us>
+struct is_any_of {
+  constexpr static bool value = (... || CUTE_STL_NAMESPACE::is_same_v<T, Us>);
+};
+
+/// Is true if and only if T is same as (is_same_v) at least one of the types in Us
+template <typename T, typename... Us>
+inline constexpr bool is_any_of_v = is_any_of<T, Us...>::value;
+
 } // end namespace cute

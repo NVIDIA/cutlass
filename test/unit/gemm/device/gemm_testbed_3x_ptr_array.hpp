@@ -1005,7 +1005,7 @@ struct HostCollectiveEpilogue {
       stride_Aux = cutlass::make_cute_packed_stride(cutlass::gemm::TagToStrideC_t<LayoutTagAux>{}, cute::make_shape(M, N, 1));
     }
     
-    static_assert(!IsGroupGemm or (IsGroupGemm and IsAuxOutEnabled));
+    static_assert(!IsGroupGemm or (IsGroupGemm and !IsAuxOutEnabled));
 
     if constexpr (IsAuxOutEnabled) {
       for (int32_t i = 0; i < L; ++i) {
@@ -1323,8 +1323,16 @@ struct HostCollectiveEpilogue {
         cute::make_layout(cute::make_shape(M, N, 1), stride_d_host[batch]));
     auto Bias = cute::make_tensor(detail::make_iterator(IsDeBiasEnabled ? reference_dbias.host_data() : bias.host_data()),
         cute::make_layout(cute::make_shape(M, cute::_1{})));
-    auto Aux = cute::make_tensor(detail::make_iterator(IsAuxInEnabled ? tensors_Aux[batch].host_data() : references_Aux[batch].host_data()),
-        cute::make_layout(cute::make_shape(M, N, 1), stride_Aux));
+    auto Aux_layout = cute::make_layout(cute::make_shape(M, N, 1), stride_Aux);
+    auto Aux = [&]() {
+      auto ptr = recast_ptr<ElementAux>(nullptr);
+      if (IsAuxInEnabled) {
+        ptr = detail::make_iterator(tensors_Aux[batch].host_data());
+      } else if (IsAuxOutEnabled) {
+        ptr = detail::make_iterator(references_Aux[batch].host_data());
+      }
+      return cute::make_tensor(ptr, Aux_layout);
+    }();
     auto Valpha = cute::make_tensor(detail::make_iterator(alpha.host_data()),
         cute::make_layout(cute::make_shape(M, cute::_1{})));
     auto Vbeta = cute::make_tensor(detail::make_iterator(beta.host_data()),

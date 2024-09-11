@@ -51,7 +51,21 @@ struct PtrArrayNoSmemWarpSpecialized {};
 struct PtrArrayPlanarComplexNoSmemWarpSpecialized {};
 struct TmaWarpSpecialized {};
 struct TmaWarpSpecializedCooperative {};
-struct PtrArrayTmaWarpSpecializedCooperative {};
+
+struct PtrArrayTmaWarpSpecializedCooperative {
+  static constexpr int NumEpilogueWarpGroups = 2;
+};
+
+// Standard warp specialized epilogue
+struct PtrArrayTmaWarpSpecialized {
+  static constexpr int NumEpilogueWarpGroups = 1;
+};
+
+// Pingpong kernel epilogue
+struct PtrArrayTmaWarpSpecializedPingpong {
+  static constexpr int NumEpilogueWarpGroups = 2;
+};
+
 // DEPRECATED schedules, will be removed in next release
 struct TmaWarpSpecializedElementwiseBase : public TmaWarpSpecialized {};
 struct TmaWarpSpecializedCooperativeElementwiseBase : public TmaWarpSpecializedCooperative {};
@@ -151,7 +165,8 @@ template<
   int StagesD_,
   int FragmentSize_,
   bool ReuseSmemC_,
-  bool DelayTmaStore_
+  bool DelayTmaStore_,
+  int NumEpilogueWarpGroups_
 >
 struct Sm90PtrArrayTmaWarpSpecialized {
   constexpr static int StagesC = StagesC_;
@@ -159,6 +174,7 @@ struct Sm90PtrArrayTmaWarpSpecialized {
   constexpr static int FragmentSize = FragmentSize_;
   constexpr static bool ReuseSmemC = ReuseSmemC_;
   constexpr static bool DelayTmaStore = DelayTmaStore_;
+  constexpr static int NumEpilogueWarpGroups = NumEpilogueWarpGroups_;
 };
 
 // DEPRECATED policies, will be removed in next release

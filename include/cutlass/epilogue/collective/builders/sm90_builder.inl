@@ -71,14 +71,18 @@ sm90_get_tma_dispatch_policy() {
   // 8b residuals load fast and consume little smem, so the perf cost of waiting on stores to finish outweighs the cost of extra allocation
   constexpr bool ReuseSmem = (sizeof_bits_v<ElementC> == sizeof_bits_v<ElementD>) && (sizeof_bits_v<ElementD> > 8);
   // TMA store delay performs worse with residual loads and compilicates tensormap updates for Ptr-Array GEMMs
-  constexpr bool DelayTmaStore = is_void_v<ElementC> && !detail::sm90_is_tma_ptr_array_v<Schedule>;
+  constexpr bool DelayTmaStore = is_void_v<ElementC> && !detail::sm90_is_ptr_array_tma_v<Schedule>;
   constexpr int StagesD = cute::min(EpiTiles, 2);
   constexpr int StagesC = ReuseSmem ? cute::max(cute::min(EpiTiles, 4), StagesD+1)
                                     : cute::min(EpiTiles, 4);
 
-  return cute::conditional_t<detail::sm90_is_tma_ptr_array_v<Schedule>,
-                             Sm90PtrArrayTmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmem, DelayTmaStore>,
-                             Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmem, DelayTmaStore>>{};
+  if constexpr (detail::sm90_is_ptr_array_tma_v<Schedule>) {
+      return Sm90PtrArrayTmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmem, 
+                                            DelayTmaStore, Schedule::NumEpilogueWarpGroups>{};
+  } 
+  else {
+    return Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmem, DelayTmaStore>{};
+  }
 }
 
 // Returns the smem layout atom to be used for C or D matrix
@@ -255,6 +259,9 @@ struct Sm90TmaBuilderImpl {
   using GmemStrideTypeC = cutlass::detail::TagToStrideC_t<GmemLayoutTagC>;
   using GmemStrideTypeD = cutlass::detail::TagToStrideC_t<GmemLayoutTagD>;
 
+  using UnderlyingGmemStrideTypeC = cute::remove_pointer_t<GmemStrideTypeC>;
+  using UnderlyingGmemStrideTypeD = cute::remove_pointer_t<GmemStrideTypeD>;
+
   using CopyOpS2G = cute::conditional_t<detail::is_im2col_mode<GmemLayoutTagD>,
       SM90_TMA_STORE_IM2COL,
       SM90_TMA_STORE
@@ -267,17 +274,11 @@ struct Sm90TmaBuilderImpl {
   // Get the smallest tiled copy we can use to retile the accumulators
   using CopyAtomC = Copy_Atom<SM90_U32x4_STSM_N, cutlass::half_t>;
 
-  using FusionDispatchPolicy = Sm90TmaWarpSpecialized<DispatchPolicy::StagesC, 
-                                                      DispatchPolicy::StagesD, 
-                                                      DispatchPolicy::FragmentSize, 
-                                                      DispatchPolicy::ReuseSmemC, 
-                                                      DispatchPolicy::DelayTmaStore>;
-
   // TMA builder allows for passing callbacks directly, which is either a fusion::FusionCallbacks
   // instance or a direct visitor implementation, e.g. fusion::Sm90LinearCombination
   using FusionCallbacks = 
     typename CallbacksBuilder<
-      FusionDispatchPolicy,
+      DispatchPolicy,
       FusionOpOrCallbacks,
       TileShape_MNK,
       EpilogueTile_MN,
@@ -294,11 +295,11 @@ struct Sm90TmaBuilderImpl {
       GmemStrideTypeD,
       FusionCallbacks,
       CopyOpG2S,
-      decltype(detail::sm90_get_epilogue_smem_swizzle_layout_atom<GmemStrideTypeC, ElementC, EpilogueTile_MN>()),
-      decltype(detail::sm90_get_smem_load_op_for_source<GmemStrideTypeC, ElementC>()),
+      decltype(detail::sm90_get_epilogue_smem_swizzle_layout_atom<UnderlyingGmemStrideTypeC, ElementC, EpilogueTile_MN>()),
+      decltype(detail::sm90_get_smem_load_op_for_source<UnderlyingGmemStrideTypeC, ElementC>()),
       CopyOpS2G,
-      decltype(detail::sm90_get_epilogue_smem_swizzle_layout_atom<GmemStrideTypeD, ElementD, EpilogueTile_MN>()),
-      decltype(detail::sm90_get_smem_store_op_for_accumulator<GmemStrideTypeD, ElementD>()),
+      decltype(detail::sm90_get_epilogue_smem_swizzle_layout_atom<UnderlyingGmemStrideTypeD, ElementD, EpilogueTile_MN>()),
+      decltype(detail::sm90_get_smem_store_op_for_accumulator<UnderlyingGmemStrideTypeD, ElementD>()),
       CopyAtomC
     >;
 };
@@ -483,7 +484,7 @@ struct CollectiveBuilder<
     FusionOperation,
     cute::enable_if_t<cute::is_same_v<Schedule, TmaWarpSpecialized> ||
                       cute::is_same_v<Schedule, TmaWarpSpecializedCooperative> ||
-                      cute::is_same_v<Schedule, PtrArrayTmaWarpSpecializedCooperative> >> {
+                      detail::sm90_is_ptr_array_tma_v<Schedule>>> {
 private:
   using ElementD = cute::conditional_t<cute::is_void_v<ElementD_>,
                      fusion::get_element_aux_t<FusionOperation>, ElementD_>;
