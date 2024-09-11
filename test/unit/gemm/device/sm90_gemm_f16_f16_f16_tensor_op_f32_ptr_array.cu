@@ -115,9 +115,11 @@ using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
   bool result = TestAll<Gemm>(1.0, 1.0);
   EXPECT_TRUE(result);
+  result = TestAll<Gemm>(1.0, 0.0);
+  EXPECT_TRUE(result);
 }
 
-TEST(SM90_Device_Gemm_f16t_f16t_f32n_tensor_op_gmma_f32_ptr_array, 128x128x64_2x2x1_NoSmemEpi) {
+TEST(SM90_Device_Gemm_f16t_f16t_f32n_tensor_op_gmma_f32_ptr_array, 128x128x64_2x2x1_direct_store) {
 
 // A matrix configuration
 using         ElementA    = cutlass::half_t;                                // Element type for A matrix operand
@@ -173,6 +175,7 @@ using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
 
   using namespace test::gemm::device;
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  EXPECT_TRUE(TestAll<Gemm>(1.0, 1.0));
   EXPECT_TRUE(TestAll<Gemm>(1.0, 0.0));
 }
 

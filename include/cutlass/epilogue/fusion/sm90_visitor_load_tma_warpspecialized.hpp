@@ -37,6 +37,7 @@
 
 #include "cutlass/cutlass.h"
 #include "cutlass/arch/barrier.h"
+#include "cutlass/epilogue/collective/detail.hpp"
 
 #include "cute/tensor.hpp"
 #include "sm90_visitor_tma_warpspecialized.hpp"
@@ -514,7 +515,8 @@ private:
 
     if (params_ptr->scalar_ptrs[0] != nullptr) {
       scalar = params_ptr->scalar_ptrs[0][l_offset];
-    } else {
+    }
+    else {
       // batch stride is ignored for nullptr fallback
       scalar = params_ptr->scalars[0];
     }
@@ -538,6 +540,169 @@ private:
     // Only support multiple L-modes with fully-broadcast scalar
     static_assert(cute::is_same_v<StrideMNL, Stride<_0,_0, _0>>);
     scalar = params_ptr->scalars[0];
+  }
+};
+
+// Scalar broadcast
+// Supports reduction over multiple broadcasts to support fusions such as fp8 scaling factors
+template<
+  class Element,
+  class StrideMNL = Stride<_0,_0,_0>,
+  int BroadcastCount = 1,
+  template <class> class ReductionFn = multiplies
+>
+struct Sm90ScalarBroadcastPtrArray {
+  static_assert(is_static_v<decltype(take<0,2>(StrideMNL{}))>); // batch stride can be dynamic or static
+  static_assert(take<0,2>(StrideMNL{}) == Stride<_0,_0>{});
+
+  struct SharedStorage { };
+
+  struct Arguments {
+    Element scalars[BroadcastCount] = {};
+    Element const* scalar_ptrs[BroadcastCount] = {};
+    Element const* const* scalar_ptr_arrays[BroadcastCount] = {};
+    StrideMNL dScalar[BroadcastCount] = {};
+  };
+
+  using Params = Arguments;
+
+  template <class ProblemShape>
+  static constexpr Params
+  to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
+    return args;
+  }
+
+  template <class ProblemShape>
+  static bool
+  can_implement(ProblemShape const& problem_shape, Arguments const& args) {
+    return true;
+  }
+  
+  template <class ProblemShape>
+  static size_t
+  get_workspace_size(ProblemShape const& problem_shape, Arguments const& args) {
+    return 0;
+  }
+
+  template <class ProblemShape>
+  static cutlass::Status
+  initialize_workspace(ProblemShape const& problem_shape, Arguments const& args, void* workspace, cudaStream_t stream,
+    CudaHostAdapter *cuda_adapter = nullptr) {
+    return cutlass::Status::kSuccess;
+  }
+
+  CUTLASS_DEVICE bool
+  is_producer_load_needed() const {
+    // producer load is needed if Element is not void and we have multiple scalars
+    return !cute::is_void_v<Element> and size<2>(params_ptr->dScalar[0]) != 0;
+  }
+
+  CUTLASS_DEVICE bool
+  is_C_load_needed() const {
+    return false;
+  }
+
+  // This must be called after update_scalar is called
+  CUTLASS_DEVICE bool
+  is_zero() const {
+    return scalar == Element(0);
+  }
+
+  CUTLASS_HOST_DEVICE
+  Sm90ScalarBroadcastPtrArray() { }
+
+  CUTLASS_HOST_DEVICE
+  Sm90ScalarBroadcastPtrArray(Params const& params, SharedStorage const& shared_storage)
+      : params_ptr(&params) {
+    // Get the scalar for non-batched broadcast
+    if (size<2>(params_ptr->dScalar[0]) == 0) {
+      update_scalar();
+    }
+  }
+
+  Element scalar;
+  Params const* params_ptr;
+
+  template <class... Args>
+  CUTLASS_DEVICE auto
+  get_producer_load_callbacks(ProducerLoadArgs<Args...> const& args) {
+    // Get the scalar for batched broadcast
+    if (get<2>(params_ptr->dScalar[0]) != 0) {
+      auto [m_coord, n_coord, k_coord, l_coord] = args.tile_coord_mnkl;
+      update_scalar(l_coord);
+    }
+
+    return EmptyProducerLoadCallbacks{};
+  }
+
+  struct ConsumerStoreCallbacks : EmptyConsumerStoreCallbacks {
+    CUTLASS_DEVICE
+    ConsumerStoreCallbacks(Element scalar)
+      : scalar(scalar) {}
+
+    Element scalar;
+
+    template <typename ElementAccumulator, int FragmentSize>
+    CUTLASS_DEVICE Array<Element, FragmentSize>
+    visit(Array<ElementAccumulator, FragmentSize> const& frg_acc, int epi_v, int epi_m, int epi_n) {
+      Array<Element, FragmentSize> frg_scalar;
+      frg_scalar.fill(scalar);
+
+      return frg_scalar;
+    }
+
+  };
+
+  template <
+    bool ReferenceSrc, // do register tensors reference the src or dst layout of the tiled copy
+    class... Args
+  >
+  CUTLASS_DEVICE auto
+  get_consumer_store_callbacks(ConsumerStoreArgs<Args...> const& args) {
+
+    // Get the scalar for batched broadcast
+    if (get<2>(params_ptr->dScalar[0]) != 0) {
+      auto [m_coord, n_coord, k_coord, l_coord] = args.tile_coord_mnkl;
+      update_scalar(l_coord);
+    }
+
+    return ConsumerStoreCallbacks(scalar);
+  }
+
+private:
+  CUTLASS_DEVICE void
+  update_scalar(int l_coord = 0) {
+    int l_offset = l_coord * size<2>(params_ptr->dScalar[0]);
+
+    if (params_ptr->scalar_ptr_arrays[0] != nullptr) {
+      scalar = *(params_ptr->scalar_ptr_arrays[0][l_offset]);
+    }
+    else if (params_ptr->scalar_ptrs[0] != nullptr) {
+      scalar = params_ptr->scalar_ptrs[0][l_offset];
+    }
+    else {
+      // batch stride is ignored for nullptr fallback
+      scalar = params_ptr->scalars[0];
+    }
+
+    // Do reduction over multiple broadcasts if necessary
+    ReductionFn<Element> reduction_fn;
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 1; i < BroadcastCount; ++i) {
+
+      if (params_ptr->scalar_ptr_arrays[i] != nullptr) {
+        int rest_l_offset = l_coord * size<2>(params_ptr->dScalar[i]);
+        scalar = reduction_fn(scalar, *(params_ptr->scalar_ptr_arrays[i][rest_l_offset]));
+      }
+      if (params_ptr->scalar_ptrs[i] != nullptr) {
+        int rest_l_offset = l_coord * size<2>(params_ptr->dScalar[i]);
+        scalar = reduction_fn(scalar, params_ptr->scalar_ptrs[i][rest_l_offset]);
+      } 
+      else {
+        // batch stride is ignored for nullptr fallback
+        scalar = reduction_fn(scalar, params_ptr->scalars[i]);
+      }
+    }
   }
 };
 

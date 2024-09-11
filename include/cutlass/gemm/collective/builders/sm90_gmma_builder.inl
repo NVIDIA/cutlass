@@ -31,6 +31,10 @@
 #pragma once
 
 #include "cutlass/gemm/collective/builders/sm90_common.inl"
+#include "cutlass/gemm/dispatch_policy.hpp"
+#include "cutlass/pipeline/sm90_pipeline.hpp"
+#include "cutlass/gemm/collective/collective_mma_decl.hpp"
+#include "cutlass/gemm/collective/collective_builder_decl.hpp"
 
 // SM90 Collective Builders should be used only starting CUDA 12.0
 #if (__CUDACC_VER_MAJOR__ >= 12)
@@ -177,10 +181,12 @@ struct CollectiveBuilder<
     StageCountType,
     KernelScheduleType,
     cute::enable_if_t<
-      (cute::is_same_v<KernelScheduleType, KernelTmaWarpSpecialized> ||
-       cute::is_same_v<KernelScheduleType, KernelTmaWarpSpecializedPingpong> ||
-       cute::is_same_v<KernelScheduleType, KernelTmaWarpSpecializedCooperative> ||
-       cute::is_same_v<KernelScheduleType, KernelPtrArrayTmaWarpSpecializedCooperative>) &&
+      (cute::is_any_of_v<KernelScheduleType,
+                         KernelTmaWarpSpecialized,
+                         KernelTmaWarpSpecializedCooperative,
+                         KernelTmaWarpSpecializedPingpong,
+                         KernelPtrArrayTmaWarpSpecializedCooperative,
+                         KernelPtrArrayTmaWarpSpecializedPingpong>) &&
        not detail::is_use_rmem_A<ElementA, GmemLayoutATag, ElementB, GmemLayoutBTag>()>
 > {
   static_assert(is_static<TileShape_MNK>::value);
@@ -191,10 +197,12 @@ struct CollectiveBuilder<
   static_assert(detail::is_aligned<ElementA, AlignmentA, ElementB, AlignmentB, detail::tma_alignment_bytes>(),
                 "Should meet TMA alignment requirement\n");
 
-  static constexpr bool IsArrayOfPointersGemm = (cute::is_same_v<KernelScheduleType, KernelPtrArrayTmaWarpSpecializedCooperative>);
+  static constexpr bool IsArrayOfPointersGemm = (cute::is_any_of_v<KernelScheduleType,
+                                                                   KernelPtrArrayTmaWarpSpecializedCooperative,
+                                                                   KernelPtrArrayTmaWarpSpecializedPingpong>);
   static constexpr bool IsFP8Input = detail::is_input_fp8<ElementA, ElementB>();
   static_assert(!IsFP8Input || (IsFP8Input && !IsArrayOfPointersGemm),
-                "Kernel[Array/Group]TmaWarpSpecializedCooperative is only compatible with FP8 FastAccum version right now\n");
+                "KernelPtrArrayTmaWarpSpecialized[Cooperative|Pingpong] is only compatible with FP8 FastAccum version right now.");
 
   // For fp32 types, map to tf32 MMA value type
   using ElementAMma = cute::conditional_t<cute::is_same_v<ElementA, float>, tfloat32_t, ElementA>;
@@ -203,8 +211,10 @@ struct CollectiveBuilder<
   static constexpr cute::GMMA::Major GmmaMajorA = detail::gmma_ss_tag_to_major_A<ElementAMma, GmemLayoutATag>();
   static constexpr cute::GMMA::Major GmmaMajorB = detail::gmma_ss_tag_to_major_B<ElementBMma, GmemLayoutBTag>();
 
-  using AtomLayoutMNK = cute::conditional_t<
-      cute::is_same_v<KernelScheduleType, KernelTmaWarpSpecializedCooperative> || IsArrayOfPointersGemm,
+  static constexpr bool IsCooperative = cute::is_any_of_v<KernelScheduleType,
+                                                          KernelTmaWarpSpecializedCooperative,
+                                                          KernelPtrArrayTmaWarpSpecializedCooperative>;
+  using AtomLayoutMNK = cute::conditional_t<IsCooperative,
       Layout<Shape<_2,_1,_1>>, Layout<Shape<_1,_1,_1>>>;
 
   using TiledMma = decltype(cute::make_tiled_mma(cute::GMMA::ss_op_selector<
@@ -218,7 +228,10 @@ struct CollectiveBuilder<
   using SmemLayoutAtomB = decltype(detail::ss_smem_selector<
       GmmaMajorB, ElementBMma, decltype(cute::get<1>(TileShape_MNK{})), decltype(cute::get<2>(TileShape_MNK{}))>());
 
-  static constexpr int PipelineStages = detail::compute_stage_count_or_override<detail::sm90_smem_capacity_bytes,
+  static constexpr size_t TensorMapStorage = IsArrayOfPointersGemm ? sizeof(cute::TmaDescriptor) * 2 /* for A and B */ : 0;
+  static constexpr int KernelSmemCarveout = static_cast<int>(TensorMapStorage);
+
+  static constexpr int PipelineStages = detail::compute_stage_count_or_override<detail::sm90_smem_capacity_bytes - KernelSmemCarveout,
       ElementAMma, ElementBMma, TileShape_MNK>(StageCountType{});
   using DispatchPolicy = cute::conditional_t<IsArrayOfPointersGemm,
       MainloopSm90ArrayTmaGmmaWarpSpecialized<PipelineStages, ClusterShape_MNK, KernelScheduleType>,
@@ -505,10 +518,12 @@ struct CollectiveBuilder<
     StageCountType,
     KernelScheduleType,
     cute::enable_if_t<
-      cute::is_same_v<KernelScheduleType, KernelTmaWarpSpecializedFP8FastAccum> ||
-      cute::is_same_v<KernelScheduleType, KernelTmaWarpSpecializedPingpongFP8FastAccum> ||
-      cute::is_same_v<KernelScheduleType, KernelTmaWarpSpecializedCooperativeFP8FastAccum> ||
-       cute::is_same_v<KernelScheduleType, KernelPtrArrayTmaWarpSpecializedCooperativeFP8FastAccum>>
+      cute::is_any_of_v<KernelScheduleType,
+                        KernelTmaWarpSpecializedFP8FastAccum,
+                        KernelTmaWarpSpecializedPingpongFP8FastAccum,
+                        KernelTmaWarpSpecializedCooperativeFP8FastAccum,
+                        KernelPtrArrayTmaWarpSpecializedCooperativeFP8FastAccum,
+                        KernelPtrArrayTmaWarpSpecializedPingpongFP8FastAccum>>
 > {
   static_assert(is_static<TileShape_MNK>::value);
   static_assert(is_static<ClusterShape_MNK>::value);
@@ -526,10 +541,15 @@ struct CollectiveBuilder<
   static constexpr cute::GMMA::Major GmmaMajorA = detail::gmma_ss_tag_to_major_A<ElementA, GmemLayoutATag>();
   static constexpr cute::GMMA::Major GmmaMajorB = detail::gmma_ss_tag_to_major_B<ElementB, GmemLayoutBTag>();
 
-  static constexpr bool IsArrayOfPointersGemm = (cute::is_same_v<KernelScheduleType, KernelPtrArrayTmaWarpSpecializedCooperativeFP8FastAccum>);
-  using AtomLayoutMNK = cute::conditional_t<cute::is_same_v<KernelScheduleType, KernelTmaWarpSpecializedCooperativeFP8FastAccum> ||
-                                            IsArrayOfPointersGemm,
-      Layout<Shape<_2,_1,_1>>, Layout<Shape<_1,_1,_1>>>;
+  static constexpr bool IsArrayOfPointersGemm = cute::is_any_of_v<KernelScheduleType,
+                                                                   KernelPtrArrayTmaWarpSpecializedCooperativeFP8FastAccum,
+                                                                   KernelPtrArrayTmaWarpSpecializedPingpongFP8FastAccum>;
+
+  static constexpr bool IsCooperative = cute::is_any_of_v<KernelScheduleType,
+                                                          KernelTmaWarpSpecializedCooperativeFP8FastAccum,
+                                                          KernelPtrArrayTmaWarpSpecializedCooperativeFP8FastAccum>;
+
+  using AtomLayoutMNK = cute::conditional_t<IsCooperative, Layout<Shape<_2,_1,_1>>, Layout<Shape<_1,_1,_1>>>;
 
   using TiledMma = decltype(cute::make_tiled_mma(cute::GMMA::ss_op_selector<
       ElementA, ElementB, ElementAccumulator, TileShape_MNK, GmmaMajorA, GmmaMajorB>(), AtomLayoutMNK{}));
@@ -542,7 +562,11 @@ struct CollectiveBuilder<
   using SmemLayoutAtomB = decltype(detail::ss_smem_selector<
       GmmaMajorB, ElementB, decltype(cute::get<1>(TileShape_MNK{})), decltype(cute::get<2>(TileShape_MNK{}))>());
 
-  static constexpr int PipelineStages = detail::compute_stage_count_or_override<detail::sm90_smem_capacity_bytes,
+  static constexpr size_t TensorMapStorage = IsArrayOfPointersGemm ? sizeof(cute::TmaDescriptor) * 2 /* for A and B */ : 0;
+  static constexpr int KernelSmemCarveout = static_cast<int>(TensorMapStorage);
+  static constexpr int Sm90ReducedSmemCapacityBytes = detail::sm90_smem_capacity_bytes - KernelSmemCarveout;
+
+  static constexpr int PipelineStages = detail::compute_stage_count_or_override<Sm90ReducedSmemCapacityBytes,
       ElementA, ElementB, TileShape_MNK>(StageCountType{});
   using DispatchPolicy = cute::conditional_t<IsArrayOfPointersGemm,
       MainloopSm90ArrayTmaGmmaWarpSpecialized<PipelineStages, ClusterShape_MNK, KernelScheduleType>,
