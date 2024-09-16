@@ -354,9 +354,8 @@ int main(int argc, char const **args) {
     std::cout
       << "This example requires a GPU of NVIDIA's Hopper Architecture or "
       << "later (compute capability 90 or greater) and CUDA 12.0 or greater.\n";
-    return 0;
+      return 0;
   }
-
   //
   // Parse options
   //

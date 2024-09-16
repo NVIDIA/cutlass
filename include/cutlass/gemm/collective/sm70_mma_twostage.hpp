@@ -38,10 +38,11 @@
 #include "cute/algorithm/gemm.hpp"
 #include "cute/atom/mma_atom.hpp"
 #include "cute/tensor_predicate.hpp"
+#include "cutlass/gemm/collective/collective_mma_decl.hpp"
 
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
- 
+
 namespace cutlass::gemm::collective {
 using namespace cute;
 
@@ -163,7 +164,7 @@ struct CollectiveMma<
       KTileIterator k_tile_iter, int k_tile_count,
       ResidueMNK residue_mnk,
       int thread_idx,
-      char *smem_buf) 
+      char *smem_buf)
   {
     using namespace cute;
 
@@ -252,9 +253,9 @@ struct CollectiveMma<
     while (k_tile_count > -1)
     {
       // Pipeline the outer products with a static for loop
-      for_each(make_int_sequence<K_BLOCK_MAX>{}, [&] (auto k_block) 
+      for_each(make_int_sequence<K_BLOCK_MAX>{}, [&] (auto k_block)
       {
-        if (k_block == K_BLOCK_MAX - 1) 
+        if (k_block == K_BLOCK_MAX - 1)
         {
           __syncthreads();
 
@@ -268,7 +269,7 @@ struct CollectiveMma<
         int k_block_next = (k_block + Int<1>{}) % K_BLOCK_MAX;     // static
         copy(tCsA(_,_,k_block_next), tCrA_copy_view(_,_,k_block_next));
         copy(tCsB(_,_,k_block_next), tCrB_copy_view(_,_,k_block_next));
-        if (k_block == 0) 
+        if (k_block == 0)
         {
           // Copy gmem to rmem
           copy(gmem_tiled_copy_a, tAgA(_,_,_,*k_tile_iter), tArA);
@@ -406,7 +407,7 @@ struct CollectiveMma<
       KTileIterator k_tile_iter, int k_tile_count,
       ResidueMNK residue_mnk,
       int thread_idx,
-      char *smem_buf) 
+      char *smem_buf)
   {
     using namespace cute;
 
@@ -549,9 +550,9 @@ struct CollectiveMma<
     while (k_tile_count > -1)
     {
       // Pipeline the outer products with a static for loop
-      for_each(make_int_sequence<K_BLOCK_MAX>{}, [&] (auto k_block) 
+      for_each(make_int_sequence<K_BLOCK_MAX>{}, [&] (auto k_block)
       {
-        if (k_block == K_BLOCK_MAX - 1) 
+        if (k_block == K_BLOCK_MAX - 1)
         {
           __syncthreads();
 
@@ -565,7 +566,7 @@ struct CollectiveMma<
         int k_block_next = (k_block + Int<1>{}) % K_BLOCK_MAX;    // static
         copy(tCsA(_,_,k_block_next), tCrA_copy_view(_,_,k_block_next));
         copy(tCsB(_,_,k_block_next), tCrB_copy_view(_,_,k_block_next));
-        if (k_block == 0) 
+        if (k_block == 0)
         {
           if (k_tile_count <= 0) {
             clear(tApA);

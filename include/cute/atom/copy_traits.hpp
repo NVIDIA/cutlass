@@ -32,7 +32,7 @@
 
 #include <cute/arch/copy.hpp>
 
-#include <cute/tensor.hpp>
+#include <cute/tensor_impl.hpp>
 
 namespace cute
 {
@@ -144,5 +144,16 @@ copy_unpack(Copy_Traits<CopyOp,Args...> const& traits,
 {
   copy_unpack(traits, src, dst);
 }
+
+namespace detail {
+
+template <class CopyOp, class = void>
+constexpr bool is_prefetch = false;
+
+template <class CopyOp>
+constexpr bool is_prefetch<CopyOp, void_t<typename CopyOp::PREFETCH>> = is_same_v<CopyOp, typename CopyOp::PREFETCH>;
+
+} // end namespace detail
+
 
 } // end namespace cute

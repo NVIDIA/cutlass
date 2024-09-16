@@ -379,6 +379,9 @@ struct SiLu<Array<T, N>> {
   }
 };
 
+template <typename T>
+using ScaledSiLu = Scale<SiLu<T>>;
+
 // Hardswish operator introduced by Howard et al. in the following paper
 // "Searching for MobileNetV3" (2019)
 // https://arxiv.org/pdf/1905.02244.pdf

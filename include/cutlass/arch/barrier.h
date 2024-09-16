@@ -50,11 +50,11 @@ namespace arch {
 // Enumerates the reserved named barriers to avoid potential conflicts
 // This enum class specifies the NamedBarriers reserved by CUTLASS.
 enum class ReservedNamedBarriers { 
-  EpilogueBarrier = 0,
-  TransposeBarrier = 1,
-  TransformBarrier = 2,
-  StreamkBarrier0 = 3,
-  StreamkBarrier1 = 4
+  EpilogueBarrier = 1,
+  TransposeBarrier = 2,
+  TransformBarrier = 3,
+  StreamkBarrier0 = 4,
+  StreamkBarrier1 = 5
   , FirstUserBarrier = StreamkBarrier1 + 1
 };
 
@@ -204,12 +204,12 @@ public:
   }
 
   CUTLASS_DEVICE
-  uint32_t test_wait(uint32_t phase, uint32_t pred=true) const {
+  bool test_wait(uint32_t phase, uint32_t pred=true) const {
     return ClusterBarrier::test_wait(&this->barrier_, phase, pred);
   }
 
   CUTLASS_DEVICE
-  uint32_t try_wait(uint32_t phase) const {
+  bool try_wait(uint32_t phase) const {
     return ClusterBarrier::try_wait(&this->barrier_, phase);
   }
 
@@ -260,8 +260,8 @@ public:
         ".reg .pred       P1; \n\t"
         "LAB_WAIT: \n\t"
         "mbarrier.try_wait.parity.shared::cta.b64 P1, [%0], %1, %2; \n\t"
-        "@P1 bra.uni DONE; \n\t"
-        "bra.uni     LAB_WAIT; \n\t"
+        "@P1 bra DONE; \n\t"
+        "bra     LAB_WAIT; \n\t"
         "DONE: \n\t"
         "}"
         :
@@ -273,7 +273,7 @@ public:
   }
 
   CUTLASS_DEVICE
-  static uint32_t test_wait(ValueType const* smem_ptr, uint32_t phase, uint32_t pred) {
+  static bool test_wait(ValueType const* smem_ptr, uint32_t phase, uint32_t pred) {
 #if CUDA_BARRIER_ENABLED
     uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
     uint32_t waitComplete;
@@ -289,7 +289,7 @@ public:
         : "=r"(waitComplete)
         : "r"(smem_addr), "r"(phase), "r"(pred));
 
-    return waitComplete;
+    return static_cast<bool>(waitComplete);
 #elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
 #endif
@@ -297,7 +297,7 @@ public:
   }
 
   CUTLASS_DEVICE
-  static uint32_t try_wait(ValueType const* smem_ptr, uint32_t phase) {
+  static bool try_wait(ValueType const* smem_ptr, uint32_t phase) {
 #if CUDA_BARRIER_ENABLED
     uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
     uint32_t waitComplete;
@@ -311,7 +311,7 @@ public:
         : "=r"(waitComplete)
         : "r"(smem_addr), "r"(phase));
 
-    return waitComplete;
+    return static_cast<bool>(waitComplete);
 #elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
 #endif
@@ -323,16 +323,17 @@ public:
   static void arrive(ValueType const* smem_ptr, uint32_t cta_id, uint32_t pred) {
 #if CUDA_BARRIER_ENABLED
     uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
-    asm volatile(
-        "{\n\t"
-        ".reg .pred p;\n\t"
-        ".reg .b32 remAddr32;\n\t"
-        "setp.eq.u32 p, %2, 1;\n\t"
-        "@p mapa.shared::cluster.u32  remAddr32, %0, %1;\n\t"
-        "@p mbarrier.arrive.shared::cluster.b64  _, [remAddr32];\n\t"
-        "}"
-        :
-        : "r"(smem_addr), "r"(cta_id), "r"(pred));
+    if (pred) {
+      asm volatile(
+          "{\n\t"
+          ".reg .b32 remAddr32;\n\t"
+          "mapa.shared::cluster.u32  remAddr32, %0, %1;\n\t"
+          "mbarrier.arrive.shared::cluster.b64  _, [remAddr32];\n\t"
+          "}"
+          :
+          : "r"(smem_addr), "r"(cta_id));
+    }
+
 #elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
 #endif
@@ -360,7 +361,7 @@ public:
     uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
     asm volatile(
         "{\n\t"
-        "mbarrier.ival.shared::cta.b64 [%0]; \n\t"
+        "mbarrier.inval.shared::cta.b64 [%0]; \n\t"
         "}"
         :
         : "r"(smem_addr));

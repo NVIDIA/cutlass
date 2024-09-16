@@ -119,14 +119,14 @@ template<
   class ProblemShapeMNKL,
   class TileShapeMNK,
   class TileCoordMNKL,
-  class ResidueMN,
+  class TiledMma,
   class EpilogueTile
 >
 struct ProducerLoadArgs {
   ProblemShapeMNKL problem_shape_mnkl;
   TileShapeMNK tile_shape_mnk;
   TileCoordMNKL tile_coord_mnkl;
-  ResidueMN residue_mn;
+  TiledMma tiled_mma;
   EpilogueTile epi_tile;
   int thread_idx;
 
@@ -135,13 +135,13 @@ struct ProducerLoadArgs {
       ProblemShapeMNKL problem_shape_mnkl,
       TileShapeMNK tile_shape_mnk,
       TileCoordMNKL tile_coord_mnkl,
-      ResidueMN residue_mn,
+      TiledMma tiled_mma,
       EpilogueTile epi_tile,
       int thread_idx)
   : problem_shape_mnkl(problem_shape_mnkl),
     tile_shape_mnk(tile_shape_mnk),
     tile_coord_mnkl(tile_coord_mnkl),
-    residue_mn(residue_mn),
+    tiled_mma(tiled_mma),
     epi_tile(epi_tile),
     thread_idx(thread_idx) {}
 };
@@ -150,47 +150,55 @@ template<
   class ProblemShapeMNKL,
   class TileShapeMNK,
   class TileCoordMNKL,
-  class ResidueMN,
+  class TiledMma,
   class EpilogueTile,
   class TiledCopy,
   class CoordTensor,
+  class Residue,
   class ThrCoordTensor,
+  class ThrResidue,
   class ThrSrcTensor
 >
 struct ConsumerStoreArgs {
   ProblemShapeMNKL problem_shape_mnkl;
   TileShapeMNK tile_shape_mnk;
   TileCoordMNKL tile_coord_mnkl;
-  ResidueMN residue_mn;
+  TiledMma tiled_mma;
   EpilogueTile epi_tile;
   TiledCopy tiled_copy;
-  int thread_idx;
   CoordTensor cD;
+  Residue residue_cD;
   ThrCoordTensor tCcD;
+  ThrResidue residue_tCcD;
   ThrSrcTensor const& tCrC;
+  int thread_idx;
 
   CUTLASS_DEVICE
   ConsumerStoreArgs(
       ProblemShapeMNKL problem_shape_mnkl,
       TileShapeMNK tile_shape_mnk,
       TileCoordMNKL tile_coord_mnkl,
-      ResidueMN residue_mn,
+      TiledMma tiled_mma,
       EpilogueTile epi_tile,
       TiledCopy tiled_copy,
-      int thread_idx,
       CoordTensor cD,
+      Residue residue_cD,
       ThrCoordTensor tCcD,
-      ThrSrcTensor const& tCrC)
+      ThrResidue residue_tCcD,
+      ThrSrcTensor const& tCrC,
+      int thread_idx)
   : problem_shape_mnkl(problem_shape_mnkl),
     tile_shape_mnk(tile_shape_mnk),
     tile_coord_mnkl(tile_coord_mnkl),
-    residue_mn(residue_mn),
+    tiled_mma(tiled_mma),
     epi_tile(epi_tile),
     tiled_copy(tiled_copy),
-    thread_idx(thread_idx),
     cD(cD),
+    residue_cD(residue_cD),
     tCcD(tCcD),
-    tCrC(tCrC) {}
+    residue_tCcD(residue_tCcD),
+    tCrC(tCrC),
+    thread_idx(thread_idx) {}
 };
 
 template <class... Ops>
@@ -217,6 +225,20 @@ struct Sm90VisitorImplBase {
         return ret;
       },
       [] (auto&&... op_params) { return cute::make_tuple(op_params...); }
+    );
+  }
+
+  template <class ProblemShape>
+  static bool
+  can_implement(ProblemShape const& problem_shape, Arguments const& args) {
+    return transform_apply(tuple<Ops...>{}, args,
+      [&] (auto&& op, auto const& op_args) {
+        using Op = cute::remove_cvref_t<decltype(op)>;
+        return Op::can_implement(problem_shape, op_args);
+      },
+      [&] (auto&&... implementable) {
+        return (true && ... && implementable);
+      }
     );
   }
 
@@ -409,7 +431,17 @@ struct Sm90VisitorImpl : Sm90VisitorImplBase<Ops...> {
       );
     }
 
-    // Start of subtile store iteration. Smem broadcasts usually performed here.
+    // Start of subtile store iteration
+    CUTLASS_DEVICE void
+    begin_loop(int epi_m, int epi_n) {
+      for_each(callbacks_tuple,
+        [&] (auto& callbacks) {
+          callbacks.begin_loop(epi_m, epi_n);
+        }
+      );
+    }
+
+    // Before visit callback. Smem broadcasts usually performed here.
     // Upon entry, all producer loads for this subtile are completed and visible.
     CUTLASS_DEVICE void
     previsit(int epi_m, int epi_n, int load_iteration, bool is_producer_load_needed) {
@@ -432,12 +464,15 @@ struct Sm90VisitorImpl : Sm90VisitorImplBase<Ops...> {
     // It is each nodes reponsibility to assert that this buffer is sufficiently sized
     // and to ensure that this buffer is no longer needed upon callback exit
     // i.e. results are synchronized and no longer in the reduction buffer
-    template <class STensor, class SyncFn>
+    //
+    // visit_results is a rmem tensor that contains the results of visit() for an entire
+    // on the current epilogue subtile
+    template <class STensor, class SyncFn, class VTensor>
     CUTLASS_DEVICE void
-    reduce(STensor&& reduction_buffer, SyncFn const& sync_fn, int epi_m, int epi_n, bool is_last_iteration) {
+    reduce(STensor&& reduction_buffer, SyncFn const& sync_fn, int epi_m, int epi_n, bool is_last_iteration, VTensor visit_results) {
       for_each(callbacks_tuple,
         [&] (auto& callbacks) {
-          callbacks.reduce(reduction_buffer, sync_fn, epi_m, epi_n, is_last_iteration);
+          callbacks.reduce(reduction_buffer, sync_fn, epi_m, epi_n, is_last_iteration, visit_results);
         }
       );
     }
@@ -462,6 +497,16 @@ struct Sm90VisitorImpl : Sm90VisitorImplBase<Ops...> {
       for_each(callbacks_tuple,
         [&] (auto& callbacks) {
           callbacks.tma_store(epi_m, epi_n, store_iteration, issue_tma_store);
+        }
+      );
+    }
+
+    // End of subtile store iteration
+    CUTLASS_DEVICE void
+    end_loop(int epi_m, int epi_n) {
+      for_each(callbacks_tuple,
+        [&] (auto& callbacks) {
+          callbacks.end_loop(epi_m, epi_n);
         }
       );
     }
@@ -724,6 +769,12 @@ struct Sm90VisitorImplBase<Op0> {
   }
 
   template <class ProblemShape>
+  static bool
+  can_implement(ProblemShape const& problem_shape, Arguments const& args) {
+    return Op0::can_implement(problem_shape, args.op_0);
+  }
+
+  template <class ProblemShape>
   static size_t
   get_workspace_size(ProblemShape const& problem_shape, Arguments const& args) {
     size_t workspace_size = 0;
@@ -791,6 +842,13 @@ struct Sm90VisitorImplBase<Op0, Op1> {
       Op0::to_underlying_arguments(problem_shape, args.op_0, op_0_workspace),
       Op1::to_underlying_arguments(problem_shape, args.op_1, op_1_workspace)
     };
+  }
+
+  template <class ProblemShape>
+  static bool
+  can_implement(ProblemShape const& problem_shape, Arguments const& args) {
+    return Op0::can_implement(problem_shape, args.op_0) && 
+           Op1::can_implement(problem_shape, args.op_1);
   }
 
   template <class ProblemShape>
@@ -878,6 +936,14 @@ struct Sm90VisitorImplBase<Op0, Op1, Op2> {
       Op1::to_underlying_arguments(problem_shape, args.op_1, op_1_workspace),
       Op2::to_underlying_arguments(problem_shape, args.op_2, op_2_workspace)
     };
+  }
+
+  template <class ProblemShape>
+  static bool
+  can_implement(ProblemShape const& problem_shape, Arguments const& args) {
+    return Op0::can_implement(problem_shape, args.op_0) && 
+           Op1::can_implement(problem_shape, args.op_1) &&
+           Op2::can_implement(problem_shape, args.op_2);          
   }
 
   template <class ProblemShape>
@@ -982,6 +1048,15 @@ struct Sm90VisitorImplBase<Op0, Op1, Op2, Op3> {
       Op2::to_underlying_arguments(problem_shape, args.op_2, op_2_workspace),
       Op3::to_underlying_arguments(problem_shape, args.op_3, op_3_workspace)
     };
+  }
+  
+  template <class ProblemShape>
+  static bool
+  can_implement(ProblemShape const& problem_shape, Arguments const& args) {
+    return Op0::can_implement(problem_shape, args.op_0) && 
+           Op1::can_implement(problem_shape, args.op_1) &&
+           Op2::can_implement(problem_shape, args.op_2) &&
+           Op3::can_implement(problem_shape, args.op_3); 
   }
 
   template <class ProblemShape>

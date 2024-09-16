@@ -338,7 +338,8 @@ public:
   static Status
   run(Params& params,
       cudaStream_t stream = nullptr,
-      CudaHostAdapter *cuda_adapter = nullptr) {
+      CudaHostAdapter *cuda_adapter = nullptr,
+      bool launch_with_pdl = false) {
     CUTLASS_TRACE_HOST("GemmUniversal::run()");
     dim3 const block = GemmKernel::get_block_shape();
     dim3 const grid = get_grid_shape(params);
@@ -349,6 +350,8 @@ public:
     Status launch_result{ Status::kSuccess };
     // Use extended launch API only for mainloops that use it
     if constexpr (GemmKernel::ArchTag::kMinComputeCapability >= 90) {
+      constexpr bool is_static_1x1x1 = cute::is_static_v<typename GemmKernel::DispatchPolicy::ClusterShape> and
+                                       cute::size(typename GemmKernel::DispatchPolicy::ClusterShape{}) == 1;
       dim3 cluster(cute::size<0>(typename GemmKernel::DispatchPolicy::ClusterShape{}),
                    cute::size<1>(typename GemmKernel::DispatchPolicy::ClusterShape{}),
                    cute::size<2>(typename GemmKernel::DispatchPolicy::ClusterShape{}));
@@ -361,6 +364,11 @@ public:
         CUTLASS_ASSERT(cuda_adapter);
         if (cuda_adapter) {
 
+          if (launch_with_pdl) {
+            CUTLASS_TRACE_HOST(
+              "GemmUniversal::run() does not support launching with PDL and a custom cuda adapter.");
+            return Status::kErrorInternal;
+          }
           launch_result = cuda_adapter->launch(grid,
                                                cluster,
                                                block,
@@ -377,8 +385,13 @@ public:
         CUTLASS_ASSERT(cuda_adapter == nullptr);
         void const* kernel = (void const*) device_kernel<GemmKernel>;
         if constexpr (GemmKernel::ArchTag::kMinComputeCapability == 90) {
-          launch_result = ClusterLauncher::launch(
-            grid, cluster, block, smem_size, stream, kernel, kernel_params);
+          if (is_static_1x1x1 && not launch_with_pdl) {
+            device_kernel<GemmKernel><<<grid, block, smem_size, stream>>>(params);
+          }
+          else {
+            launch_result = ClusterLauncher::launch(
+              grid, cluster, block, smem_size, stream, kernel, kernel_params, launch_with_pdl);
+          }
         }
       }
     }
@@ -424,12 +437,13 @@ public:
     Arguments const& args,
     void* workspace = nullptr,
     cudaStream_t stream = nullptr,
-    CudaHostAdapter *cuda_adapter = nullptr
+    CudaHostAdapter *cuda_adapter = nullptr,
+    bool launch_with_pdl = false
   ) {
     Status status = initialize(args, workspace, stream, cuda_adapter);
 
     if (Status::kSuccess == status) {
-      status = run(params_, stream, cuda_adapter);
+      status = run(params_, stream, cuda_adapter, launch_with_pdl);
     }
     return status;
   }
@@ -440,20 +454,24 @@ public:
     Arguments const& args,
     void* workspace = nullptr,
     cudaStream_t stream = nullptr,
-    CudaHostAdapter *cuda_adapter = nullptr) {
-    return run(args, workspace, stream, cuda_adapter);
+    CudaHostAdapter *cuda_adapter = nullptr,
+    bool launch_with_pdl = false) {
+    return run(args, workspace, stream, cuda_adapter, launch_with_pdl);
   }
 
   /// Overload that allows a user to re-launch the same kernel without updating internal params struct.
   Status
-  run(cudaStream_t stream = nullptr, CudaHostAdapter *cuda_adapter = nullptr) {
-    return run(params_, stream, cuda_adapter);
+  run(
+    cudaStream_t stream = nullptr,
+    CudaHostAdapter *cuda_adapter = nullptr,
+    bool launch_with_pdl = false) {
+    return run(params_, stream, cuda_adapter, launch_with_pdl);
   }
 
   /// Overload that allows a user to re-launch the same kernel without updating internal params struct.
   Status
-  operator()(cudaStream_t stream = nullptr, CudaHostAdapter *cuda_adapter = nullptr) {
-    return run(params_, stream, cuda_adapter);
+  operator()(cudaStream_t stream = nullptr, CudaHostAdapter *cuda_adapter = nullptr, bool launch_with_pdl = false) {
+    return run(params_, stream, cuda_adapter, launch_with_pdl);
   }
 };
 

@@ -44,9 +44,28 @@
 #include <cstdio>
 #endif
 
-#if ((__CUDACC_VER_MAJOR__ >= 12) || ((__CUDACC_VER_MAJOR__ == 11) && (__CUDACC_VER_MINOR__ >= 8)))
-#  define CUTLASS_SM90_CLUSTER_LAUNCH_ENABLED
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+// NVRTC doesn't need definitions for these host classes
+
+#if ((__CUDACC_VER_MAJOR__ >= 12) ||                               \
+    ((__CUDACC_VER_MAJOR__ == 11) && (__CUDACC_VER_MINOR__ >= 8))) \
+    && !defined(__CUDACC_RTC__)
+#define CUDA_HOST_ADAPTER_LAUNCH_ATTRIBUTES_ENABLED
 #endif
+
+#if ((__CUDACC_VER_MAJOR__ >= 12) && !defined(__CUDACC_RTC__))
+#define CUDA_HOST_ADAPTER_TENSORMAP_ENABLED
+#endif
+
+// Include <cuda.h> for CUDA Driver API calls if any of these capabilities are enabled.
+#if defined(CUDA_HOST_ADAPTER_LAUNCH_ATTRIBUTES_ENABLED) ||        \
+    defined(CUDA_HOST_ADAPTER_TENSORMAP_ENABLED)
+
+#include <cuda.h>
+
+#endif // defined(CUDA_HOST_ADAPTER_LAUNCH_ATTRIBUTES_ENABLED) ||
+       // defined(CUDA_HOST_ADAPTER_TENSORMAP_ENABLED)
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -62,6 +81,117 @@
 namespace cutlass {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+
+#if !defined(__CUDACC_RTC__)
+
+#include <cudaTypedefs.h>
+#include <driver_types.h>
+
+#define CUTLASS_CUDA_DRIVER_STRINGIFY(tok) #tok
+
+#if defined(CUTLASS_ENABLE_DIRECT_CUDA_DRIVER_CALL)
+
+#define CUTLASS_CUDA_DRIVER_WRAPPER_DECL(func, ver) \
+  template <typename... Args>                       \
+  CUresult call_##func(Args... args) {              \
+    return func(args...);                           \
+  }
+
+#else // defined(CUTLASS_ENABLE_DIRECT_CUDA_DRIVER_CALL)
+
+#if (__CUDACC_VER_MAJOR__ >= 12 && __CUDACC_VER_MINOR__ >= 5)
+
+#define CUTLASS_CUDA_DRIVER_WRAPPER_DECL(func, ver)             \
+  template <typename... Args>                                   \
+  CUresult call_##func(Args... args) {                          \
+    cudaDriverEntryPointQueryResult cuda_status;                \
+    void* pfn = nullptr;                                        \
+    cudaError_t cuda_err = cudaGetDriverEntryPointByVersion(    \
+        CUTLASS_CUDA_DRIVER_STRINGIFY(func),                    \
+        &pfn, ver,                                              \
+        cudaEnableDefault,                                      \
+        &cuda_status);                                          \
+    if (cuda_status != cudaDriverEntryPointSuccess ||           \
+        cuda_err != cudaSuccess) {                              \
+      return CUDA_ERROR_UNKNOWN;                                \
+    }                                                           \
+    return reinterpret_cast<PFN_##func##_v##ver>(pfn)(args...); \
+  }
+
+#else
+
+#define CUTLASS_CUDA_DRIVER_WRAPPER_DECL(func, ver)             \
+  template <typename... Args>                                   \
+  CUresult call_##func(Args... args) {                          \
+    cudaDriverEntryPointQueryResult cuda_status;                \
+    void* pfn = nullptr;                                        \
+    cudaError_t cuda_err = cudaGetDriverEntryPoint(             \
+        CUTLASS_CUDA_DRIVER_STRINGIFY(func),                    \
+        &pfn,                                                   \
+        cudaEnableDefault,                                      \
+        &cuda_status);                                          \
+    if (cuda_status != cudaDriverEntryPointSuccess ||           \
+        cuda_err != cudaSuccess) {                              \
+      return CUDA_ERROR_UNKNOWN;                                \
+    }                                                           \
+    return reinterpret_cast<PFN_##func>(pfn)(args...);          \
+  }
+
+#endif // (__CUDACC_VER_MAJOR__ >= 12 && __CUDACC_VER_MINOR__ >= 5)
+
+#endif // defined(CUTLASS_ENABLE_DIRECT_CUDA_DRIVER_CALL)
+
+#if (__CUDACC_VER_MAJOR__ >= 12)
+CUTLASS_CUDA_DRIVER_WRAPPER_DECL(cuTensorMapEncodeTiled, 12000);
+CUTLASS_CUDA_DRIVER_WRAPPER_DECL(cuTensorMapEncodeIm2col, 12000);
+#endif
+
+#undef CUTLASS_CUDA_DRIVER_STRINGIFY
+
+#define CUTLASS_CUDA_DRIVER_WRAPPER_CALL(func) cutlass::call_##func
+
+#endif // !defined(__CUDACC_RTC__)
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// This class manages runtime CUlaunchAttribute that can be supplied to CudaHostAdapter
+/// CudaHostLaunchAttributes will be an empty struct in earlier CTK where CUlaunchAttribute
+/// is not introduced.
+struct CudaHostLaunchAttributes {
+
+#if defined(CUDA_HOST_ADAPTER_LAUNCH_ATTRIBUTES_ENABLED)
+
+  /// Reasonable maximum launch attributes that are commonly applied
+  static constexpr int32_t kMaximumAttributeCount = 5;
+
+  /// Launch attributes
+  CUlaunchAttribute launch_attributes[kMaximumAttributeCount];
+  int32_t      attribute_count = 0;
+
+  CUTLASS_HOST_DEVICE
+  CudaHostLaunchAttributes(CUlaunchAttribute *launch_attributes_ = nullptr,
+                           int32_t attribute_count_ = 0) {
+    CUTLASS_ASSERT(attribute_count_ >= 0 && attribute_count_ < kMaximumAttributeCount);
+    for (int32_t i = 0; i < attribute_count_ && i < kMaximumAttributeCount; ++i) {
+      launch_attributes[i] = launch_attributes_[i];
+    }
+    attribute_count = attribute_count_;
+  }
+
+  CUTLASS_HOST_DEVICE
+  CUlaunchAttribute const* data() const {
+    return launch_attributes;
+  }
+
+  CUTLASS_HOST_DEVICE
+  size_t size() const {
+    return attribute_count;
+  }
+  
+#endif // (CUDA_HOST_ADAPTER_LAUNCH_ATTRIBUTES_ENABLED)
+
+};
+
 
 /// This class defines an object which abstracts interactions between the CUTLASS device-wide GEMM and
 /// CUDA. The intention is to enable CUTLASS to be used with both the CUDA Runtime API and CUDA Driver API.
@@ -81,6 +211,8 @@ struct CudaHostAdapter {
   void        *kernel_handles[kMaximumKernelCount];
   int32_t      kernel_count = 0;
 
+  CudaHostLaunchAttributes launch_attributes;
+
   //
   // Methods
   //
@@ -89,70 +221,80 @@ struct CudaHostAdapter {
   CudaHostAdapter() = default;
 
   /// Dtor
-  virtual ~CudaHostAdapter() {}
+  virtual ~CudaHostAdapter() = default;
 
   /// Copy Ctor
-  inline CudaHostAdapter(const CudaHostAdapter & rhs):
-    kernel_count(rhs.kernel_count)
-  {
+  CUTLASS_HOST_DEVICE
+  CudaHostAdapter(const CudaHostAdapter & rhs)
+      : kernel_count(rhs.kernel_count),
+        launch_attributes(rhs.launch_attributes) {
     CUTLASS_ASSERT(rhs.kernel_count >= 0 && rhs.kernel_count < kMaximumKernelCount);
+
     for (int32_t i = 0; i < rhs.kernel_count && i < kMaximumKernelCount; ++i) {
       kernel_handles[i] = rhs.kernel_handles[i];
     }
   }
 
   /// Copy Assignment
-  inline CudaHostAdapter& operator=(const CudaHostAdapter & rhs) {
-
+  CUTLASS_HOST_DEVICE
+  CudaHostAdapter& operator=(const CudaHostAdapter & rhs) {
     CUTLASS_ASSERT(rhs.kernel_count >= 0 && rhs.kernel_count < kMaximumKernelCount);
     for (int32_t i = 0; i < rhs.kernel_count && i < kMaximumKernelCount; ++i) {
       kernel_handles[i] = rhs.kernel_handles[i];
     }
     kernel_count = rhs.kernel_count;
+
+    launch_attributes = rhs.launch_attributes;
+
     return *this;
   }
 
+
   /// Move ctor
-  inline CudaHostAdapter(CudaHostAdapter && rhs):
-    kernel_count(rhs.kernel_count)
-  {
+  CUTLASS_HOST_DEVICE
+  CudaHostAdapter(CudaHostAdapter && rhs)
+      : kernel_count(rhs.kernel_count),
+        launch_attributes(std::move(rhs.launch_attributes)) {
     CUTLASS_ASSERT(rhs.kernel_count >= 0 && rhs.kernel_count < kMaximumKernelCount);
+
     for (int32_t i = 0; i < rhs.kernel_count && i < kMaximumKernelCount; ++i) {
       kernel_handles[i] = rhs.kernel_handles[i];
     }
   }
 
-  /// Move assignment
-  inline CudaHostAdapter& operator=(CudaHostAdapter && rhs) {
-
+  // / Move assignment
+  CUTLASS_HOST_DEVICE 
+  CudaHostAdapter& operator=(CudaHostAdapter && rhs) {
     CUTLASS_ASSERT(rhs.kernel_count >= 0 && rhs.kernel_count < kMaximumKernelCount);
     for (int32_t i = 0; i < rhs.kernel_count && i < kMaximumKernelCount; ++i) {
       kernel_handles[i] = rhs.kernel_handles[i];
     }
-
     kernel_count = rhs.kernel_count;
-
+    launch_attributes = std::move(rhs.launch_attributes);
     return *this;
   }
 
   /// Ctor
-  inline CudaHostAdapter(
-    void **kernel_handles_, 
-    int32_t kernel_count_
-  ): 
-    kernel_count(kernel_count_)
-  {
-    CUTLASS_ASSERT(kernel_count >= 0);
+  CUTLASS_HOST_DEVICE
+  CudaHostAdapter(void **kernel_handles_, 
+                  int32_t kernel_count_,
+                  CudaHostLaunchAttributes const &launch_attributes_ = { })
+      : kernel_count(kernel_count_),
+        launch_attributes(launch_attributes_) {
+    CUTLASS_ASSERT(kernel_count >= 0 && kernel_count < kMaximumKernelCount);
+
     for (int32_t i = 0; i < kernel_count && i < kMaximumKernelCount; ++i) {
       kernel_handles[i] = kernel_handles_[i];
     }
   }
 
   /// Returns true if the CudaHostAdapter is empty (kernel_count == 0)
-  inline bool empty() const { return !kernel_count; }
+  CUTLASS_HOST_DEVICE 
+  bool empty() const { return !kernel_count; }
 
   /// Returns kernel_count
-  inline size_t size() const { return static_cast<size_t>(kernel_count); }
+  CUTLASS_HOST_DEVICE
+  size_t size() const { return static_cast<size_t>(kernel_count); }
 
   /// Queries the occupancy of a kernel
   virtual Status query_occupancy(
@@ -181,6 +323,48 @@ struct CudaHostAdapter {
     void** kernel_params,
     int32_t kernel_index) const = 0;
 
+#if defined(CUDA_HOST_ADAPTER_TENSORMAP_ENABLED)
+
+  /// Create a tensor map descriptor object representing im2col memory region.
+  virtual CUresult tensorMapEncodeIm2col (
+    CUtensorMap* tensorMap,
+    CUtensorMapDataType tensorDataType,
+    cuuint32_t tensorRank,
+    void* globalAddress,
+    const cuuint64_t* globalDim,
+    const cuuint64_t* globalStrides,
+    const int* pixelBoxLowerCorner,
+    const int* pixelBoxUpperCorner,
+    cuuint32_t channelsPerPixel,
+    cuuint32_t pixelsPerColumn,
+    const cuuint32_t* elementStrides,
+    CUtensorMapInterleave interleave,
+    CUtensorMapSwizzle swizzle,
+    CUtensorMapL2promotion l2Promotion,
+    CUtensorMapFloatOOBfill oobFill) const = 0;
+
+  /// Create a tensor map descriptor object representing tiled memory region.
+  virtual CUresult tensorMapEncodeTiled (
+    CUtensorMap* tensorMap,
+    CUtensorMapDataType tensorDataType,
+    cuuint32_t tensorRank,
+    void* globalAddress,
+    const cuuint64_t* globalDim,
+    const cuuint64_t* globalStrides,
+    const cuuint32_t* boxDim,
+    const cuuint32_t* elementStrides,
+    CUtensorMapInterleave interleave,
+    CUtensorMapSwizzle swizzle,
+    CUtensorMapL2promotion l2Promotion,
+    CUtensorMapFloatOOBfill oobFill) const = 0;
+
+  /// Modify an existing tensor map descriptor with an updated global address.
+  virtual CUresult tensorMapReplaceAddress(
+    CUtensorMap* tensorMap,
+    void* globalAddress)  const = 0;
+
+#endif // defined(CUDA_HOST_ADAPTER_TENSORMAP_ENABLED)
+
 protected:
 
   /**
@@ -198,12 +382,12 @@ public:
 
   /// Fills a buffer in Global Memory with a byte sequence copied from host memory
   template<class FillValueType>
+  CUTLASS_HOST_DEVICE
   Status memsetDevice(
-    void* destination,
-    FillValueType fill_value, 
-    size_t count,
-    cudaStream_t stream) const
-  {
+      void* destination,
+      FillValueType fill_value, 
+      size_t count,
+      cudaStream_t stream) const {
     return this->memsetDeviceImpl(
       destination,
       &fill_value,

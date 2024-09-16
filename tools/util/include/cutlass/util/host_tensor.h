@@ -104,23 +104,15 @@ public:
   /// Constant reference to element in tensor
   using ConstReference = typename ConstTensorRef::Reference;
 
-  /// Note: Below is used to handle packing of subbyte elements
-  /// kBitsStoredVec          : The bits of store vec that could be divisiable by the element
-  /// kElementsPerStoredVec   : The number of elements could be stored in per store vec
-  /// kNumStoragePerStoredVec : How much storage(i.e. sizeof(element storage)) the store vec needs to consume.
-  ///                           Usually the element storage of subbyte is uint8_t.
-  /// Example
-  ///  int2:  kBitsStoredVec = 8; kElementsPerStoredVec = 4; kNumStoragePerStoredVec = 1 uint8_t;
-  ///  int4:  kBitsStoredVec = 8; kElementsPerStoredVec = 2; kNumStoragePerStoredVec = 1 uint8_t;
-  static constexpr int kBitsStoredVec        = (sizeof_bits<Element>::value < 8) ? cutlass::lcm(sizeof_bits<Element>::value, 8) : sizeof_bits<Element>::value; 
-  static constexpr int kElementsPerStoredVec = kBitsStoredVec / sizeof_bits<Element>::value;
-  static constexpr int kNumStoragePerStoredVec = kBitsStoredVec / (sizeof(Element) * 8);
-
-  static_assert(kBitsStoredVec != 0, "kBitsStoredVec can not be zero");
-  static_assert(kElementsPerStoredVec != 0, "kElementsPerStoredVec can not be zero");
-  static_assert(kNumStoragePerStoredVec != 0, "kNumStoragePerStoredVec can not be zero");
-
- private:
+private:
+  using StorageUnit = typename platform::conditional_t<std::is_same_v<Element, bool>, uint8_t,            // Avoid the std::vector<bool> specialization
+                                  typename platform::conditional_t<sizeof_bits<Element>::value % 8 == 0,  // Handle subbyte types
+                                      Element, uint8_t>>;
+  using StorageContainerCalculator = cutlass::detail::StorageContainerCalculator<Element, StorageUnit>;
+  static constexpr int kContainerTypeNumBits = StorageContainerCalculator::kContainerTypeNumBits;
+  static constexpr int kContainerTypeNumLogicalElements = StorageContainerCalculator::kContainerTypeNumLogicalElements;
+  static constexpr int kContainerTypeNumBytes = StorageContainerCalculator::kContainerTypeNumBytes;
+  static constexpr int kContainerTypeNumStorageUnit = StorageContainerCalculator::kContainerTypeNumStorageUnit;
 
   //
   // Data members
@@ -133,13 +125,17 @@ public:
   Layout layout_;
 
   /// Host-side memory allocation
-  /// avoid the std::vector<bool> specialization
-  std::vector<std::conditional_t<std::is_same_v<Element,bool>, uint8_t, Element>> host_;
+  std::vector<StorageUnit> host_;
 
   /// Device-side memory
-  device_memory::allocation<Element> device_;
+  device_memory::allocation<StorageUnit> device_;
 
- public:
+  /// number of containers 
+  size_t count_to_container_storage_unit_count(size_t count) {
+    return (count + kContainerTypeNumLogicalElements - 1) / kContainerTypeNumLogicalElements * kContainerTypeNumStorageUnit;
+  }
+
+public:
   //
   // Device and Host Methods
   //
@@ -185,15 +181,15 @@ public:
     device_.reset();
     host_.clear();
 
-    count = (count + kElementsPerStoredVec - 1) / kElementsPerStoredVec * kNumStoragePerStoredVec;
-    host_.resize(count);
+    size_t count_container = count_to_container_storage_unit_count(count);
+    host_.resize(count_container);
 
     // Allocate memory
-    Element* device_memory = nullptr;
+    StorageUnit* device_memory = nullptr;
     if (device_backed_) {
-      device_memory = device_memory::allocate<Element>(count);
+      device_memory = device_memory::allocate<StorageUnit>(count_container);
     }
-    device_.reset(device_memory, device_backed_ ? count : 0);
+    device_.reset(device_memory, device_backed_ ? count_container : 0);
   }
 
   /// Updates the extent and layout of the HostTensor. Allocates memory according to the new
@@ -229,8 +225,9 @@ public:
     layout_ = layout;
 
     LongIndex new_size = size_t(layout_.capacity(extent_));
+    LongIndex new_size_container = count_to_container_storage_unit_count((layout_.capacity(extent_)));
 
-    if (static_cast<decltype(host_.size())>(new_size) > host_.size()) {
+    if (static_cast<decltype(host_.size())>(new_size_container) > host_.size()) {
       reserve(new_size, device_backed_);
     }
   }
@@ -244,14 +241,14 @@ public:
     resize(extent, Layout::packed(extent), device_backed_);
   }
 
-  /// Returns the number of elements stored in the host tensor
+  /// Returns the logical number of elements stored in the host tensor
   size_t size() const {
-    return host_.size() / kNumStoragePerStoredVec * kElementsPerStoredVec;
+    return layout_.capacity(extent_);
   }
 
-  /// Returns the logical capacity based on extent and layout. May differ from size().
+  /// Returns the logical capacity in terms of number of elements. May be larger than the size().
   LongIndex capacity() const {
-    return layout_.capacity(extent_);
+    return host_.size() / kContainerTypeNumStorageUnit * kContainerTypeNumLogicalElements;
   }
 
   /// Gets pointer to host data
@@ -277,10 +274,10 @@ public:
   }
 
   /// Gets pointer to device data
-  Element * device_data() { return device_.get(); }
+  Element * device_data() { return reinterpret_cast<Element *>(device_.get()); }
 
   /// Gets pointer to device data
-  Element const * device_data() const { return device_.get(); }
+  Element const * device_data() const { return reinterpret_cast<Element const *>(device_.get()); }
 
   /// Gets pointer to device data with a pointer offset
   Element * device_data_ptr_offset(LongIndex ptr_element_offset) { return &ReferenceFactory<Element>::get(device_data(), ptr_element_offset); }
@@ -389,7 +386,7 @@ public:
   void sync_host() {
     if (device_backed()) {
       device_memory::copy_to_host(
-          host_data(), device_data(), size());
+          host_.data(), device_.get(), device_.size());
     }
   }
 
@@ -397,7 +394,7 @@ public:
   void sync_device() {
     if (device_backed()) {
       device_memory::copy_to_device(
-          device_data(), host_data(), size());
+          device_.get(), host_.data(), host_.capacity());
     }
   }
 
@@ -412,8 +409,9 @@ public:
     else {
       count = __NV_STD_MIN(capacity(), count);
     }
+    size_t container_count = count_to_container_storage_unit_count(count);
     device_memory::copy_to_host(
-      host_data(), ptr_device, count);
+      host_.data(), reinterpret_cast<StorageUnit const *>(ptr_device), container_count);
   }
 
   /// Copy data from a caller-supplied device pointer into host memory.
@@ -427,8 +425,9 @@ public:
     else {
       count = __NV_STD_MIN(capacity(), count);
     }
+    size_t container_count = count_to_container_storage_unit_count(count);
     device_memory::copy_device_to_device(
-      device_data(), ptr_device, count);
+      device_.get(), reinterpret_cast<StorageUnit const *>(ptr_device), container_count);
   }
 
   /// Copy data from a caller-supplied device pointer into host memory.
@@ -442,8 +441,9 @@ public:
     else {
       count = __NV_STD_MIN(capacity(), count);
     }
+    size_t container_count = count_to_container_storage_unit_count(count);
     device_memory::copy_to_device(
-      device_data(), ptr_host, count);
+      device_.get(), reinterpret_cast<StorageUnit const *>(ptr_host), container_count);
   }
 
   /// Copy data from a caller-supplied device pointer into host memory.
@@ -457,8 +457,9 @@ public:
     else {
       count = __NV_STD_MIN(capacity(), count);
     }
+    size_t container_count = count_to_container_storage_unit_count(count);
     device_memory::copy_host_to_host(
-      host_data(), ptr_host, count);
+      host_.data(), reinterpret_cast<StorageUnit const *>(ptr_host), container_count);
   }
 
   /// Copy data from a caller-supplied device pointer into host memory.
@@ -472,8 +473,9 @@ public:
     else {
       count = __NV_STD_MIN(capacity(), count);
     }
+    size_t container_count = count_to_container_storage_unit_count(count);
     device_memory::copy_to_host(
-      ptr_host, device_data(), count);
+      reinterpret_cast<StorageUnit *>(ptr_host), device_.get(), container_count);
   }
 
   /// Copy data from a caller-supplied device pointer into host memory.
@@ -487,8 +489,9 @@ public:
     else {
       count = __NV_STD_MIN(capacity(), count);
     }
+    size_t container_count = count_to_container_storage_unit_count(count);
     device_memory::copy_device_to_device(
-      ptr_device, device_data(), count);
+      reinterpret_cast<StorageUnit *>(ptr_device), device_.get(), container_count);
   }
 
   /// Copy data from a caller-supplied device pointer into host memory.
@@ -502,8 +505,9 @@ public:
     else {
       count = __NV_STD_MIN(capacity(), count);
     }
+    size_t container_count = count_to_container_storage_unit_count(count);
     device_memory::copy_to_device(
-      ptr_device, host_data(), count);
+      reinterpret_cast<StorageUnit *>(ptr_device), host_.data(), container_count);
   }
 
   /// Copy data from a caller-supplied device pointer into host memory.
@@ -517,8 +521,9 @@ public:
     else {
       count = __NV_STD_MIN(capacity(), count);
     }
+    size_t container_count = count_to_container_storage_unit_count(count);
     device_memory::copy_host_to_host(
-      ptr_host, host_data(), count);
+      reinterpret_cast<StorageUnit *>(ptr_host), host_.data(), container_count);
   }
 };
 

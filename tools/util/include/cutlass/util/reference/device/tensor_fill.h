@@ -443,10 +443,10 @@ struct RandomUniformFunc {
       int int_scale_ = -1
     ):
       seed(seed_), 
-      range(static_cast<FloatType>(max_ - min)), 
+      range(static_cast<FloatType>(max_) - static_cast<FloatType>(min)), 
       max(static_cast<FloatType>(max_)),
       int_scale(int_scale_) {
-
+      
       float_scale_up = FloatType(IntType(2) << int_scale); // scale up to clamp low order bits
       float_scale_down = FloatType(1) / FloatType(IntType(2) << int_scale);
     }

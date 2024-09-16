@@ -31,9 +31,7 @@
 #pragma once
 
 #include <cute/config.hpp>
-
-#include <cute/tensor.hpp>
-
+#include <cute/tensor_impl.hpp>
 #include <cute/algorithm/fill.hpp>
 
 namespace cute

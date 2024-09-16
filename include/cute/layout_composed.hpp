@@ -577,6 +577,7 @@ coalesce(ComposedLayout<A,O,B> const& layout, Shape const& trg_profile)
   return composition(layout.layout_a(), layout.offset(), coalesce(layout.layout_b(), trg_profile));
 }
 
+
 //
 // Upcast and Downcast
 //
@@ -596,6 +597,7 @@ downcast(ComposedLayout<A,O,B> const& layout)
 {
   return composition(downcast<N>(layout.layout_a()), downcast<N>(layout.offset()), downcast<N>(layout.layout_b()));
 }
+
 
 template <class OldType, class NewType,
           class A, class O, class B>
@@ -617,6 +619,16 @@ recast_layout(ComposedLayout<A,O,B> const& layout)
     static_assert(dependent_false<scale>, "Recast not supported.");
   }
   CUTE_GCC_UNREACHABLE;
+}
+
+template <class A, class O, class B>
+CUTE_HOST_DEVICE constexpr
+auto
+max_alignment(ComposedLayout<A,O,B> const& layout)
+{
+  // Do not attempt for general ComposedLayouts
+  //return gcd(max_alignment(layout.layout_a()), max_alignment(layout.offset()), max_alignment(layout.layout_b()));
+  return Int<1>{};
 }
 
 //

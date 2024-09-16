@@ -95,6 +95,44 @@ CUTLASS_HOST_DEVICE void __CUTLASS_UNUSED(T const &)
   #endif
 #endif
 
+// CUTLASS_CMATH_NAMESPACE is the namespace where code can find
+// <cmath> functions like isnan and log.  Such functions are in
+// the std namespace in host code, but in the global namespace
+// in device code.
+//
+// The intended use case for this macro is in "using" declarations
+// for making argument-dependent lookup (ADL) work in generic code.
+// For example, if T is cutlass::half_t, the following code will
+// invoke cutlass::isnan(half_t).  If T is float, it will invoke
+// std::isnan on host and ::isnan on device.  (CUTLASS's support
+// for NVRTC prevents it from using things in the std namespace
+// in device code.)  Correct use of "using" declarations can help
+// avoid unexpected implicit conversions, like from half_t to float.
+//
+// template<class T>
+// bool foo(T x) {
+//   using CUTLASS_CMATH_NAMESPACE :: isnan;
+//   return isnan(x);
+// }
+//
+// Without this macro, one would need to write the following.
+//
+// template<class T>
+// bool foo(T x) {
+// #if defined(__CUDA_ARCH__)
+//   using ::isnan;
+// #else
+//   using std::isnan;
+// #endif
+//   return isnan(x);
+// }
+
+#if defined(__CUDA_ARCH__)
+#  define CUTLASS_CMATH_NAMESPACE
+#else
+#  define CUTLASS_CMATH_NAMESPACE std
+#endif
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
@@ -146,7 +184,13 @@ namespace cutlass {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-#if (201700L <= __cplusplus)
+#if defined(_MSVC_LANG)
+#  define CUTLASS_CPLUSPLUS _MSVC_LANG
+#else
+#  define CUTLASS_CPLUSPLUS __cplusplus
+#endif
+
+#if (201700L <= CUTLASS_CPLUSPLUS)
 #define CUTLASS_CONSTEXPR_IF_CXX17 constexpr
 #define CUTLASS_CXX17_OR_LATER 1
 #else

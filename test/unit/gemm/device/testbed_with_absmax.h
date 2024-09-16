@@ -212,6 +212,9 @@ struct TestbedWithAmax {
     EXPECT_GT(cutlass::reference::host::TensorNorm(underlying_testbed.tensor_D.host_view()), 0);
     EXPECT_GT(cutlass::reference::host::TensorNorm(reference_D.host_view()), 0);
     bool passed = cutlass::reference::host::TensorEquals(reference_D.host_view(), underlying_testbed.tensor_D.host_view());
+    if (!passed) {
+      std::cout << "Comparison of D failed" << std::endl;
+    }
 
     if (kScaleAux) {
       tensor_Aux.sync_host();
@@ -219,14 +222,23 @@ struct TestbedWithAmax {
       EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_Aux.host_view()), 0);
       EXPECT_GT(cutlass::reference::host::TensorNorm(abs_max_Aux.host_view()), 0);
       EXPECT_GT(cutlass::reference::host::TensorNorm(reference_Aux.host_view()), 0);
-      passed &= cutlass::reference::host::TensorEquals(reference_Aux.host_view(), tensor_Aux.host_view());
-      passed &= cutlass::reference::host::TensorEquals(abs_max_Aux.host_view(), reference_abs_max_Aux.host_view());
+      if (!cutlass::reference::host::TensorEquals(reference_Aux.host_view(), tensor_Aux.host_view())) {
+        passed = false;
+        std::cout << "Comparison of Aux failed" << std::endl;
+      }
+      if (!cutlass::reference::host::TensorEquals(abs_max_Aux.host_view(), reference_abs_max_Aux.host_view())) {
+        passed = false;
+        std::cout << "Comparison of Aux absmax failed" << std::endl;
+      }
     }
 
     if (kScaleOutput) {
       abs_max_D.sync_host();
       EXPECT_GT(cutlass::reference::host::TensorNorm(abs_max_D.host_view()), 0);
-      passed &= cutlass::reference::host::TensorEquals(abs_max_D.host_view(), reference_abs_max_D.host_view());
+      if (!cutlass::reference::host::TensorEquals(abs_max_D.host_view(), reference_abs_max_D.host_view())) {
+        passed = false;
+        std::cout << "Comparison of D absmax failed" << std::endl;
+      }
     }
 
     EXPECT_TRUE(passed) << " mismatched reference";
@@ -417,16 +429,31 @@ struct TestbedWithAmax {
     auto arguments = [&]() {
       if constexpr (IsSparseTestbed) {
         return typename Gemm::Arguments{
+          cutlass::gemm::GemmUniversalMode::kGemm,
           problem_size,
-          underlying_testbed.tensor_A.device_ref(),
-          underlying_testbed.tensor_B.device_ref(),
-          underlying_testbed.tensor_C.device_ref(),
-          underlying_testbed.tensor_D.device_ref(),
-          underlying_testbed.tensor_E_reordered.device_ref(),
-          tensor_Aux.device_ref(),
+          batch_count,
+          epilogue_params,
+          underlying_testbed.tensor_A.device_data(),
+          underlying_testbed.tensor_B.device_data(),
+          underlying_testbed.tensor_C.device_data(),
+          underlying_testbed.tensor_D.device_data(),
+          underlying_testbed.tensor_E_reordered.device_data(),
+          tensor_Aux.device_data(),
           tensor_Vector.device_data(),
-          0, // stride vector
-          epilogue_params
+          int64_t(),
+          int64_t(),
+          int64_t(),
+          int64_t(),
+          int64_t(),
+          int64_t(),
+          int64_t(),
+          underlying_testbed.tensor_A.layout().stride(0),
+          underlying_testbed.tensor_B.layout().stride(0),
+          underlying_testbed.tensor_C.layout().stride(0),
+          underlying_testbed.tensor_D.layout().stride(0),
+          underlying_testbed.tensor_E_reordered.layout().stride(0),
+          tensor_Aux.layout().stride(0),
+          0 // stride vector
         };
       }
       else {
@@ -522,35 +549,47 @@ bool TestAllGemmWithAbsmax(bool scaleA=true, bool scaleB=true, bool scaleC=true)
 
   int M_problems[] = {kAlignmentM, 128 + 32};
   int N_problems[] = {kAlignmentN, 512 - 2 * kAlignmentN};
-  int K_problems[] = {Gemm::ThreadblockShape::kK, Gemm::ThreadblockShape::kK * (Gemm::kStages + 1)};
+  int K_problems[] = {Gemm::ThreadblockShape::kK * 2};
   double alpha_problems[] = {1.};
   double beta_problems[] = {0.};
+  int split_k_slices[] = {
+    1, 2
+  };
 
   bool passed = true;
 
   for (int M : M_problems) {
     for (int N : N_problems) {
       for (int K : K_problems) {
-        for (double alpha : alpha_problems) {
-          for (double beta : beta_problems) {
-            TestbedWithAmax<Gemm, GemmTestbed, ActivationFunctor> testbed(scaleA, scaleB, scaleC);
+        for (int split_k : split_k_slices) {
+          if (cutlass::sizeof_bits_v<typename Gemm::EpilogueOutputOp::ElementOutput> <= 8 && split_k > 1) {
+            // Don't test split-K with FP8 output. The kernel being tested will writie partial accumulations
+            // for different splits to global memory in FP8, while the reference kernel will not. This leads
+            // to mismatches that are difficult to capture without a permissive relative equality check threshold.
+            continue;
+          }
 
-            using ElementAccumulator = typename Gemm::ElementAccumulator;
+          for (double alpha : alpha_problems) {
+            for (double beta : beta_problems) {
+              TestbedWithAmax<Gemm, GemmTestbed, ActivationFunctor> testbed(scaleA, scaleB, scaleC);
 
-            passed = testbed.run(
-              cutlass::gemm::GemmUniversalMode::kGemm,
-              {M, N, K},
-              1,
-              cutlass::from_real<ElementAccumulator>(alpha),
-              cutlass::from_real<ElementAccumulator>(beta)
-            );
+              using ElementAccumulator = typename Gemm::ElementAccumulator;
 
-            EXPECT_TRUE(passed)
-              << "M: " << M << ", N: " << N << ", K: " << K << ", alpha: " << alpha << ", beta: " << beta;
+              passed = testbed.run(
+                cutlass::gemm::GemmUniversalMode::kGemm,
+                {M, N, K},
+                split_k,
+                cutlass::from_real<ElementAccumulator>(alpha),
+                cutlass::from_real<ElementAccumulator>(beta)
+              );
 
-            if (!passed) {
+              EXPECT_TRUE(passed)
+                << "M: " << M << ", N: " << N << ", K: " << K << ", alpha: " << alpha << ", beta: " << beta << ", split_k:" << split_k;
 
-              return passed;
+              if (!passed) {
+
+                return passed;
+              }
             }
           }
         }

@@ -204,7 +204,6 @@ public:
     );
   }
 
-  CUTLASS_HOST_DEVICE
   static bool
   can_implement(Arguments const& args) {
     return true;
@@ -408,7 +407,7 @@ public:
   template <class ProblemShape, class ElementAccumulator>
   static cutlass::Status
   initialize_workspace(Arguments const&, void*, cudaStream_t, ProblemShape, KernelHardwareInfo const&,
-    uint32_t, const uint32_t = 1) {
+    uint32_t, const uint32_t = 1, CudaHostAdapter* cuda_adapter = nullptr) {
     return Status::kSuccess;
   }
 
@@ -480,6 +479,27 @@ public:
   requires_separate_reduction(Params const& params) {
     return false;
   }
+
+  // Kernel helper function to get next work tile
+  CUTLASS_DEVICE
+  auto
+  fetch_next_work(WorkTileInfo work_tile_info) {
+    if (continue_current_work(work_tile_info)) {
+      return work_tile_info;
+    }
+
+    advance_to_next_work();
+    return get_current_work();
+  }
+
+  // Returns the initial work tile info that will be computed over
+  template <class ClusterShape>
+  CUTLASS_DEVICE
+  WorkTileInfo
+  initial_work_tile_info(ClusterShape) {
+    return get_current_work();
+  }
+
 };
 
 } // namespace cutlass::gemm::kernel::detail

@@ -30,10 +30,10 @@
 set(TEST_SQUARE --m=2048 --n=2048 --k=2048 -l=10 --iterations=1)                   # Square problem sizes
 set(TEST_SQUARE_LARGE_BATCH --m=2048 --n=2048 --k=2048 -l=500 --iterations=1)      # Square problem sizes
 
-set(TEST_EPILOGUE --alpha=0.5 --beta=0.7 --iterations=1)                           # Default problem sizes
+set(TEST_EPILOGUE --alpha=0.5 --beta=0.5 --iterations=1)                           # Default problem sizes
 set(TEST_EPILOGUE_LARGE_BATCH --alpha=1.5 --beta=2.0 -l=500 --iterations=1)        # Default problem sizes
 
-set(TEST_EPILOGUE_OP --beta=0.7 --iterations=1)                                    # Default problem sizes w/ Epilogue Op test
+set(TEST_EPILOGUE_OP --beta=0.5 --iterations=1)                                    # Default problem sizes w/ Epilogue Op test
 set(TEST_EPILOGUE_OP_LARGE_BATCH --alpha=1.5 -l=500 --iterations=1)                # Default problem sizes w/ Epilogue Op test
 
 set(TEST_SMALLK --m=2048 --n=5120 --k=128 --l=5 --iterations=1)                    # Small-k problem sizes

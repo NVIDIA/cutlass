@@ -39,6 +39,8 @@
 #include "cute/tensor.hpp"
 
 #include "cute/algorithm/prefetch.hpp"
+#include "cutlass/fast_math.h"
+#include "cutlass/cuda_host_adapter.hpp"
 
 namespace cute
 {
@@ -388,18 +390,19 @@ template <class EngineA, class LayoutA,
 CUTE_HOST
 auto
 make_im2col_tma_copy_desc(
-    Tensor<EngineA, LayoutA> const& tensor_cwhdn,       // (C,W,H,D,N)
-    uint32_t                        range_c,            // TILE_C
-    uint32_t                        range_whdn,         // TILE_WHDN
-    SmemSwizzle              const& smem_swizzle,       // Swizzle
-    TMALayout                const& tma_layout_vt,      // TMA layout
-    LowerCornerStride        const& lower_corner_whd,   // WHD offset of the "base pointer"
-    UpperCornerStride        const& upper_corner_whd,   // WHD upper corner
-    LowerPaddingStride       const& lower_padding_whd,  // WHD lower padding
-    UpperPaddingStride       const& upper_padding_whd,  // WHD upper padding
-    TraversalStride          const& stride_whd,         // WHD traversal stride
-    LowerSRTStride           const& lower_srt,          // SRT offset of the "base pointer"
-    DilationStride           const& stride_srt)         // SRT stride - dilation
+    Tensor<EngineA, LayoutA>    const& tensor_cwhdn,       // (C,W,H,D,N)
+    uint32_t                           range_c,            // TILE_C
+    uint32_t                           range_whdn,         // TILE_WHDN
+    SmemSwizzle                 const& smem_swizzle,       // Swizzle
+    TMALayout                   const& tma_layout_vt,      // TMA layout
+    LowerCornerStride           const& lower_corner_whd,   // WHD offset of the "base pointer"
+    UpperCornerStride           const& upper_corner_whd,   // WHD upper corner
+    LowerPaddingStride          const& lower_padding_whd,  // WHD lower padding
+    UpperPaddingStride          const& upper_padding_whd,  // WHD upper padding
+    TraversalStride             const& stride_whd,         // WHD traversal stride
+    LowerSRTStride              const& lower_srt,          // SRT offset of the "base pointer"
+    DilationStride              const& stride_srt,          // SRT stride - dilation
+    TMA::DescriptorAuxParams    const& aux_params = {})
 {
   static_assert(is_gmem<EngineA>::value, "Tensor must point to GPU global memory.");
   using value_type = typename EngineA::value_type;
@@ -445,11 +448,11 @@ make_im2col_tma_copy_desc(
 
   CUtensorMapDataType     tma_format      = TMA::to_CUtensorMapDataType<value_type>();
   CUtensorMapInterleave   tma_interleave  = CU_TENSOR_MAP_INTERLEAVE_NONE;
-  CUtensorMapL2promotion  tma_l2Promotion = CU_TENSOR_MAP_L2_PROMOTION_NONE;
-  CUtensorMapFloatOOBfill tma_oob_fill    = CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE;
+  CUtensorMapL2promotion  tma_l2Promotion = to_CUtensorMapL2promotion(aux_params.l2promo_);
+  CUtensorMapFloatOOBfill tma_oob_fill    = to_CUtensorMapFloatOOBfill(aux_params.oobfill_);
   CUtensorMapSwizzle      tma_swizzle     = TMA::to_CUtensorMapSwizzle(detail::get_tma_swizzle_bits(smem_swizzle));
 
-  CUresult encode_result = cuTensorMapEncodeIm2col(
+  CUresult encode_result = CUTLASS_CUDA_DRIVER_WRAPPER_CALL(cuTensorMapEncodeIm2col)(
       &tma_desc,
       tma_format,
       num_total_modes,
@@ -498,7 +501,11 @@ make_im2col_tma_copy_desc(
 
   // For fprop/dgrad kernel, gemm_shapes is ((q, p, z, n), (c, s, r, t))
   // For wgrad kernel, gemm_shapes is ((c, s, r, t), (q, p, z, n))
-  auto gemm_shapes_common = make_shape(gemm_mn, gemm_k);
+  auto gemm_shapes_common = make_shape(
+      transform_leaf(gemm_mn, [](auto s) {
+        return conditional_return(cute::is_static<decltype(s)>{}, s, cutlass::FastDivmod(s));
+      }),
+      gemm_k);
   auto gemm_shapes = make_shape(
       basis_get(stride<0,1>(tma_layout_vt), gemm_shapes_common),
       basis_get(stride<0,0>(tma_layout_vt), gemm_shapes_common));
@@ -554,17 +561,18 @@ template <class CopyOp,
 CUTE_HOST_RTC
 auto
 make_tma_atom_im2col(CopyOp,
-                     Tensor<GEngine,GLayout> const& gtensor,           // Full GMEM Tensor: ((w, h, d, n), c)
-                     SLayout                 const& slayout,           // CTA Tile of SMEM, potentially swizzled
-                     int32_t                 const& num_multicast,     // The number of CTAs involved in multicasting
-                     Layout<VShape,VStride>  const& cta_v_map,         // V: CTA val idx -> gmem mode
-                     LowerCornerStride       const& lower_corner_whd,
-                     UpperCornerStride       const& upper_corner_whd,
-                     LowerPaddingStride      const& lower_padding_whd,
-                     UpperPaddingStride      const& upper_padding_whd,
-                     TraversalStride         const& stride_whd,        // traversal stride
-                     LowerSRTStride          const& lower_srt,
-                     DilationStride          const& stride_srt)        // dilation
+                     Tensor<GEngine,GLayout>      const& gtensor,           // Full GMEM Tensor: ((w, h, d, n), c)
+                     SLayout                      const& slayout,           // CTA Tile of SMEM, potentially swizzled
+                     int32_t                      const& num_multicast,     // The number of CTAs involved in multicasting
+                     Layout<VShape,VStride>       const& cta_v_map,         // V: CTA val idx -> gmem mode
+                     LowerCornerStride            const& lower_corner_whd,
+                     UpperCornerStride            const& upper_corner_whd,
+                     LowerPaddingStride           const& lower_padding_whd,
+                     UpperPaddingStride           const& upper_padding_whd,
+                     TraversalStride              const& stride_whd,        // traversal stride
+                     LowerSRTStride               const& lower_srt,
+                     DilationStride               const& stride_srt,        // dilation
+                     TMA::DescriptorAuxParams     const& aux_params = {})
 {
   //
   // TMA parameter checking
@@ -645,7 +653,8 @@ make_tma_atom_im2col(CopyOp,
       upper_padding_whd,
       stride_whd,
       lower_srt,
-      stride_srt);
+      stride_srt,
+      aux_params);
 
   //
   // Construct the Copy_Traits
@@ -697,18 +706,19 @@ template <class CopyOp,
           class DilationStride>
 CUTE_HOST_RTC
 auto
-make_tma_copy_im2col(CopyOp                  const& copy_op,
-                     Tensor<GEngine,GLayout> const& gtensor,
-                     SLayout                 const& slayout,
-                     Layout<TShape,TStride>  const& cta_t_map,          // CTA tid -> logical TMA tid
-                     Layout<VShape,VStride>  const& cta_v_map,          // CTA vid -> gmem coord
-                     LowerCornerStride       const& lower_corner_whd,
-                     UpperCornerStride       const& upper_corner_whd,
-                     LowerPaddingStride      const& lower_padding_whd,
-                     UpperPaddingStride      const& upper_padding_whd,
-                     TraversalStride         const& stride_whd,         // traversal stride
-                     LowerSRTStride          const& lower_srt,
-                     DilationStride          const& stride_srt)         // dilation
+make_tma_copy_im2col(CopyOp                       const& copy_op,
+                     Tensor<GEngine,GLayout>      const& gtensor,
+                     SLayout                      const& slayout,
+                     Layout<TShape,TStride>       const& cta_t_map,          // CTA tid -> logical TMA tid
+                     Layout<VShape,VStride>       const& cta_v_map,          // CTA vid -> gmem coord
+                     LowerCornerStride            const& lower_corner_whd,
+                     UpperCornerStride            const& upper_corner_whd,
+                     LowerPaddingStride           const& lower_padding_whd,
+                     UpperPaddingStride           const& upper_padding_whd,
+                     TraversalStride              const& stride_whd,         // traversal stride
+                     LowerSRTStride               const& lower_srt,
+                     DilationStride               const& stride_srt,         // dilation
+                     TMA::DescriptorAuxParams     const& aux_params = {})
 {
   //
   // TMA parameter checking
@@ -719,7 +729,7 @@ make_tma_copy_im2col(CopyOp                  const& copy_op,
 
   Copy_Atom atom = make_tma_atom_im2col(copy_op, gtensor, slayout, cosize(cta_t_map), cta_v_map,
                                         lower_corner_whd, upper_corner_whd, lower_padding_whd,
-                                        upper_padding_whd, stride_whd, lower_srt, stride_srt);
+                                        upper_padding_whd, stride_whd, lower_srt, stride_srt, aux_params);
 
   //
   // Construct the TiledCopy

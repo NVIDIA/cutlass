@@ -60,11 +60,12 @@ struct sizeof_bits<void> {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Returns the number of bytes required to hold a specified number of bits
+template <class R = int, class T>
 CUTLASS_HOST_DEVICE
-CUTLASS_CONSTEXPR_IF_CXX17
-int
-bits_to_bytes(int bits) {
-  return (bits + 7) / 8;
+constexpr
+R
+bits_to_bytes(T bits) {
+  return (R(bits) + R(7)) / R(8);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

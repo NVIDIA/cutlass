@@ -69,7 +69,7 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
   static_assert(is_static<CSmemLayout>::value);
 
   CUTE_STATIC_ASSERT_V(size<0>(ASmemLayout{}) == size<0>(cta_tiler));  // BLK_M
-  CUTE_STATIC_ASSERT_V(size<1>(CSmemLayout{}) == size<0>(cta_tiler));  // BLK_M
+  CUTE_STATIC_ASSERT_V(size<0>(CSmemLayout{}) == size<0>(cta_tiler));  // BLK_M
   CUTE_STATIC_ASSERT_V(size<0>(BSmemLayout{}) == size<1>(cta_tiler));  // BLK_N
   CUTE_STATIC_ASSERT_V(size<1>(CSmemLayout{}) == size<1>(cta_tiler));  // BLK_N
   CUTE_STATIC_ASSERT_V(size<1>(ASmemLayout{}) == size<2>(cta_tiler));  // BLK_K
@@ -153,12 +153,12 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
   // Allocate the accumulators -- same size as the projected data
   Tensor tCrC = thr_mma.make_fragment_C(tCgC);                         // (MMA,MMA_M,MMA_N)
 
-  CUTE_STATIC_ASSERT_V(  shape(tCrA) ==   shape(tCsA));                // (MMA,MMA_M,MMA_K)
-  CUTE_STATIC_ASSERT_V(  shape(tCrB) ==   shape(tCsB));                // (MMA,MMA_N,MMA_K)
-  CUTE_STATIC_ASSERT_V(  shape(tCrC) ==   shape(tCgC));                // (MMA,MMA_M,MMA_N)
-  CUTE_STATIC_ASSERT_V(size<1>(tCgC) == size<1>(tCsA));                // MMA_M
-  CUTE_STATIC_ASSERT_V(size<2>(tCgC) == size<1>(tCsB));                // MMA_N
-  CUTE_STATIC_ASSERT_V(size<2>(tCsA) == size<2>(tCsB));                // MMA_K
+  CUTE_STATIC_ASSERT_V((  shape(tCrA) == take<0,3>(shape(tCsA))));     // (MMA,MMA_M,MMA_K)
+  CUTE_STATIC_ASSERT_V((  shape(tCrB) == take<0,3>(shape(tCsB))));     // (MMA,MMA_N,MMA_K)
+  CUTE_STATIC_ASSERT_V((  shape(tCrC) == take<0,3>(shape(tCgC))));     // (MMA,MMA_M,MMA_N)
+  CUTE_STATIC_ASSERT_V((size<1>(tCgC) == size<1>(tCsA)));              // MMA_M
+  CUTE_STATIC_ASSERT_V((size<2>(tCgC) == size<1>(tCsB)));              // MMA_N
+  CUTE_STATIC_ASSERT_V((size<2>(tCsA) == size<2>(tCsB)));              // MMA_K
 
   // Clear the accumulators
   clear(tCrC);
@@ -358,7 +358,7 @@ gemm_nt(int m, int n, int k,
        alpha, beta);
 }
 
-// Setup params for a NT GEMM
+// Setup params for a TN GEMM
 template <class TA, class TB, class TC,
           class Alpha, class Beta>
 void
@@ -391,10 +391,10 @@ gemm_tn(int m, int n, int k,
   auto bP = Int<3>{};  // Pipeline
 
   // Define the smem layouts (static)
-  auto sA_atom = make_layout(make_shape (      bM,          bK),
-                             make_stride(Int<1>{}, bM+Int<1>{}));   // (m,k) -> smem_idx; padded m-major
-  auto sB_atom = make_layout(make_shape (      bN,          bK),
-                             make_stride(Int<1>{}, bN+Int<1>{}));   // (n,k) -> smem_idx; padded n-major
+  auto sA_atom                  = make_layout(make_shape (      bM,          bK),
+                                              make_stride(Int<1>{}, bM+Int<1>{})); // (m,k) -> smem_idx; padded m-major
+  [[maybe_unused]] auto sB_atom = make_layout(make_shape (      bN,          bK),
+                                              make_stride(Int<1>{}, bN+Int<1>{})); // (n,k) -> smem_idx; padded n-major
   auto sA = tile_to_shape(sA_atom, make_shape(bM, bK, bP));
   auto sB = tile_to_shape(sA_atom, make_shape(bN, bK, bP));
   auto sC = make_layout(make_shape(bM, bN));                        // (m,n) -> smem_idx

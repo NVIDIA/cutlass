@@ -79,7 +79,7 @@ TEST(SM90_device_conv1d_dgrad_implicitgemm_f16nwc_f16nwc_f32nwc_tensor_op_f16, 6
   using CollectiveMainloop = typename cutlass::conv::collective::CollectiveBuilder<
       cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
       cutlass::conv::Operator::kDgrad,
-      ElementAcc, cutlass::layout::TensorNWC, 8,
+      ElementAct, cutlass::layout::TensorNWC, 8,
       ElementFlt, cutlass::layout::TensorNWC, 8,
       ElementAcc,
       TileShapeMNK, ClusterShapeMNK,
@@ -122,7 +122,7 @@ TEST(SM90_device_conv1d_dgrad_implicitgemm_f16nwc_f16nwc_f32nwc_tensor_op_f16, 6
   using CollectiveMainloop = typename cutlass::conv::collective::CollectiveBuilder<
       cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
       cutlass::conv::Operator::kDgrad,
-      ElementAcc, cutlass::layout::TensorNWC, 8,
+      ElementAct, cutlass::layout::TensorNWC, 8,
       ElementFlt, cutlass::layout::TensorNWC, 8,
       ElementAcc,
       TileShapeMNK, ClusterShapeMNK,
@@ -165,7 +165,7 @@ TEST(SM90_device_conv1d_dgrad_implicitgemm_f16nwc_f16nwc_f32nwc_tensor_op_f16, 6
   using CollectiveMainloop = typename cutlass::conv::collective::CollectiveBuilder<
       cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
       cutlass::conv::Operator::kDgrad,
-      ElementAcc, cutlass::layout::TensorNWC, 8,
+      ElementAct, cutlass::layout::TensorNWC, 8,
       ElementFlt, cutlass::layout::TensorNWC, 8,
       ElementAcc,
       TileShapeMNK, ClusterShapeMNK,
@@ -208,7 +208,7 @@ TEST(SM90_device_conv1d_dgrad_implicitgemm_f16nwc_f16nwc_f32nwc_tensor_op_f16, 6
   using CollectiveMainloop = typename cutlass::conv::collective::CollectiveBuilder<
       cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
       cutlass::conv::Operator::kDgrad,
-      ElementAcc, cutlass::layout::TensorNWC, 8,
+      ElementAct, cutlass::layout::TensorNWC, 8,
       ElementFlt, cutlass::layout::TensorNWC, 8,
       ElementAcc,
       TileShapeMNK, ClusterShapeMNK,
@@ -256,7 +256,7 @@ TEST(SM90_device_conv1d_dgrad_implicitgemm_f16nwc_f16nwc_f32nwc_tensor_op_f16, 1
   using CollectiveMainloop = typename cutlass::conv::collective::CollectiveBuilder<
       cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
       cutlass::conv::Operator::kDgrad,
-      ElementAcc, cutlass::layout::TensorNWC, 8,
+      ElementAct, cutlass::layout::TensorNWC, 8,
       ElementFlt, cutlass::layout::TensorNWC, 8,
       ElementAcc,
       TileShapeMNK, ClusterShapeMNK,
@@ -299,7 +299,7 @@ TEST(SM90_device_conv1d_dgrad_implicitgemm_f16nwc_f16nwc_f32nwc_tensor_op_f16, 1
   using CollectiveMainloop = typename cutlass::conv::collective::CollectiveBuilder<
       cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
       cutlass::conv::Operator::kDgrad,
-      ElementAcc, cutlass::layout::TensorNWC, 8,
+      ElementAct, cutlass::layout::TensorNWC, 8,
       ElementFlt, cutlass::layout::TensorNWC, 8,
       ElementAcc,
       TileShapeMNK, ClusterShapeMNK,
@@ -342,7 +342,7 @@ TEST(SM90_device_conv1d_dgrad_implicitgemm_f16nwc_f16nwc_f32nwc_tensor_op_f16, 1
   using CollectiveMainloop = typename cutlass::conv::collective::CollectiveBuilder<
       cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
       cutlass::conv::Operator::kDgrad,
-      ElementAcc, cutlass::layout::TensorNWC, 8,
+      ElementAct, cutlass::layout::TensorNWC, 8,
       ElementFlt, cutlass::layout::TensorNWC, 8,
       ElementAcc,
       TileShapeMNK, ClusterShapeMNK,
@@ -385,7 +385,7 @@ TEST(SM90_device_conv1d_dgrad_implicitgemm_f16nwc_f16nwc_f32nwc_tensor_op_f16, 1
   using CollectiveMainloop = typename cutlass::conv::collective::CollectiveBuilder<
       cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
       cutlass::conv::Operator::kDgrad,
-      ElementAcc, cutlass::layout::TensorNWC, 8,
+      ElementAct, cutlass::layout::TensorNWC, 8,
       ElementFlt, cutlass::layout::TensorNWC, 8,
       ElementAcc,
       TileShapeMNK, ClusterShapeMNK,

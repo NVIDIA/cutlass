@@ -33,8 +33,7 @@
 #pragma once
 
 #include <cute/config.hpp>
-
-#include <cute/tensor.hpp>
+#include <cute/tensor_impl.hpp>
 
 namespace cute
 {
@@ -100,13 +99,13 @@ transform(Tensor<Engine,Layout>&& tensor, UnaryOp&& op)
 }
 
 // Similar to std::transform transforms one tensors and assigns it to another
-template <class EngineIn, class LayoutIn, 
-          class EngineOut, class LayoutOut, 
+template <class EngineIn, class LayoutIn,
+          class EngineOut, class LayoutOut,
           class UnaryOp>
 CUTE_HOST_DEVICE constexpr
 void
-transform(Tensor<EngineIn, LayoutIn > const& tensor_in, 
-          Tensor<EngineOut,LayoutOut>      & tensor_out, 
+transform(Tensor<EngineIn, LayoutIn > const& tensor_in,
+          Tensor<EngineOut,LayoutOut>      & tensor_out,
           UnaryOp&& op)
 {
   CUTE_UNROLL
@@ -117,30 +116,30 @@ transform(Tensor<EngineIn, LayoutIn > const& tensor_in,
 
 // Accept mutable temporaries
 template <class EngineIn, class LayoutIn,
-          class EngineOut, class LayoutOut, 
+          class EngineOut, class LayoutOut,
           class UnaryOp>
 CUTE_HOST_DEVICE constexpr
 void
-transform(Tensor<EngineIn, LayoutIn > const& tensor_in, 
-          Tensor<EngineOut,LayoutOut>     && tensor_out, 
+transform(Tensor<EngineIn, LayoutIn > const& tensor_in,
+          Tensor<EngineOut,LayoutOut>     && tensor_out,
           UnaryOp&& op)
 {
   return transform(tensor_in, tensor_out, op);
 }
 
 // Similar to std::transform with a binary operation
-// Takes two tensors as input and one tensor as output. 
+// Takes two tensors as input and one tensor as output.
 // Applies the binary_op to tensor_in1 and tensor_in2 and
 // assigns it to tensor_out
 template <class EngineIn1, class LayoutIn1,
           class EngineIn2, class LayoutIn2,
-          class EngineOut, class LayoutOut, 
+          class EngineOut, class LayoutOut,
           class BinaryOp>
 CUTE_HOST_DEVICE constexpr
 void
 transform(Tensor<EngineIn1,LayoutIn1> const& tensor_in1,
           Tensor<EngineIn2,LayoutIn2> const& tensor_in2,
-          Tensor<EngineOut,LayoutOut>      & tensor_out, 
+          Tensor<EngineOut,LayoutOut>      & tensor_out,
           BinaryOp&& op)
 {
   CUTE_UNROLL
@@ -152,11 +151,11 @@ transform(Tensor<EngineIn1,LayoutIn1> const& tensor_in1,
 // Accept mutable temporaries
 template <class EngineIn1, class LayoutIn1,
           class EngineIn2, class LayoutIn2,
-          class EngineOut, class LayoutOut, 
+          class EngineOut, class LayoutOut,
           class BinaryOp>
 CUTE_HOST_DEVICE constexpr
 void
-transform(Tensor<EngineIn1,LayoutIn1> const& tensor_in1, 
+transform(Tensor<EngineIn1,LayoutIn1> const& tensor_in1,
           Tensor<EngineIn2,LayoutIn2> const& tensor_in2,
           Tensor<EngineOut,LayoutOut>     && tensor_out,
           BinaryOp&& op)

@@ -150,7 +150,7 @@ class Conv2dOperation:
     else:
       group_conv_name = ""
 
-    if self.stride_support == StrideSupport.Unity:
+    if self.stride_support == StrideSupport.Unity and self.conv_kind == ConvKind.Dgrad:
       configuration_name = "cutlass_${opcode_class}_${extended_name}_${threadblock}_${layout}_unity_stride_${group_conv_name}align${alignment}"
     else:
       configuration_name = "cutlass_${opcode_class}_${extended_name}_${threadblock}_${layout}_${group_conv_name}align${alignment}"

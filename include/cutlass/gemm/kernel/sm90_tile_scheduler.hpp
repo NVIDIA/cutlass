@@ -128,8 +128,20 @@ public:
   template <class ProblemShape, class ElementAccumulator>
   static cutlass::Status
   initialize_workspace(Arguments const&, void*, cudaStream_t, ProblemShape, KernelHardwareInfo const&,
-    uint32_t, const uint32_t = 1) {
+    uint32_t, const uint32_t = 1, CudaHostAdapter* cuda_adapter = nullptr) {
     return Status::kSuccess;
+  }
+
+  // Kernel helper function to get next work tile
+  CUTLASS_DEVICE
+  auto
+  fetch_next_work(WorkTileInfo work_tile_info) {
+    if (continue_current_work(work_tile_info)) {
+      return work_tile_info;
+    }
+
+    advance_to_next_work();
+    return get_current_work();
   }
 
 };

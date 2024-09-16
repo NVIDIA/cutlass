@@ -726,11 +726,13 @@ Options::Options(cutlass::CommandLine const &cmdline):
   else if (cmdline.check_cmd_line_flag("kernels")) {
     cmdline.get_cmd_line_arguments("kernels", operation_names);
     profiling.error_on_no_match = cmdline.check_cmd_line_flag("error-on-no-match");
+    profiling.error_if_nothing_is_profiled = cmdline.check_cmd_line_flag("error-if-nothing-is-profiled");
   }
 
   if (cmdline.check_cmd_line_flag("ignore-kernels")) {
     cmdline.get_cmd_line_arguments("ignore-kernels", excluded_operation_names);
     profiling.error_on_no_match = cmdline.check_cmd_line_flag("error-on-no-match");
+    profiling.error_if_nothing_is_profiled = cmdline.check_cmd_line_flag("error-if-nothing-is-profiled");
   }
 
   // Prevent launches on the device for anything other than CUTLASS operation

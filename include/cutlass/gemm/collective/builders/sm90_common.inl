@@ -138,7 +138,7 @@ make_cp_async_gmem_tiled_copy() {
 
   if constexpr (cutlass::gemm::detail::is_k_major<StrideType>()) {
     // K major thread layout for K major gmem
-    constexpr int threads_major = TileSizeK   / Alignment;
+    constexpr int threads_major = (ThreadCount >= TileSizeK / Alignment) ? (TileSizeK  / Alignment) : ThreadCount;
     constexpr int threads_minor = ThreadCount / threads_major;
     static_assert(threads_major > 0);
     static_assert(ThreadCount % threads_major == 0);
@@ -151,7 +151,7 @@ make_cp_async_gmem_tiled_copy() {
   }
   else if constexpr (cutlass::gemm::detail::is_mn_major<StrideType>()) {
     // MN major thread layout for MN major gmem
-    constexpr int threads_major = TileSizeMN  / Alignment;
+    constexpr int threads_major = (ThreadCount >= TileSizeMN / Alignment) ? (TileSizeMN  / Alignment) : ThreadCount;
     constexpr int threads_minor = ThreadCount / threads_major;
     static_assert(threads_major > 0);
     static_assert(ThreadCount % threads_major == 0);

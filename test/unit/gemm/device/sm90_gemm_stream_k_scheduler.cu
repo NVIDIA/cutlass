@@ -114,13 +114,14 @@ test_scheduler(
       << size<3>(problem_shape_mnkl)
       << " and grid size " << grid.x << "x"
       << grid.y << "x" << grid.z
-      << " splits=" << params.splits_
+      << " splits=" << params.divmod_splits_.divisor
       << " k_iter=" << params.divmod_tiles_per_output_tile_.divisor
       << " big_units_=" << params.big_units_
       << " big_groups_=" << params.big_groups_
       << " sk_tiles=" << params.sk_tiles_
       << " sk_units=" << params.sk_units_
-      << " k_tiles_per_sk_unit=" << params.k_tiles_per_sk_unit_
+      << " k_tiles_per_sk_unit=" << params.divmod_k_tiles_per_sk_unit_.divisor
+      << " k_tiles_per_sk_big_unit=" << params.divmod_k_tiles_per_sk_big_unit_.divisor
       << " units_per_problem=" << params.units_per_problem_
       << " groups=" << params.divmod_sk_groups_.divisor << std::endl;
   };

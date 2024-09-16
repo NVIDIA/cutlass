@@ -360,7 +360,7 @@ shiftr(MixedBits<S0,F0> const& m, C<S1> s)
 }
 
 //
-// upcast and downcast
+// Upcast and Downcast
 //
 
 template <uint32_t S0, uint32_t F0, auto S1>
@@ -408,6 +408,22 @@ auto
 downcast(T const& m)
 {
   return m * C<N>{};
+}
+
+template <uint32_t S0, uint32_t F0>
+CUTE_HOST_DEVICE constexpr
+auto
+max_alignment(MixedBits<S0,F0> const&)
+{
+  return C<uint32_t(1) << countr_zero(S0 | F0)>{};
+}
+
+template <auto v>
+CUTE_HOST_DEVICE constexpr
+C<v>
+max_alignment(C<v> const& c)
+{
+  return c;
 }
 
 //

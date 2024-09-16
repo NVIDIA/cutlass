@@ -188,14 +188,14 @@ As is evident, these smem layouts can be almost anything. Inside the kernel, the
   static_assert(is_static<CSmemLayout>::value);
 
   CUTE_STATIC_ASSERT_V(size<0>(ASmemLayout{}) == size<0>(cta_tiler));  // BLK_M
-  CUTE_STATIC_ASSERT_V(size<1>(CSmemLayout{}) == size<0>(cta_tiler));  // BLK_M
+  CUTE_STATIC_ASSERT_V(size<0>(CSmemLayout{}) == size<0>(cta_tiler));  // BLK_M
   CUTE_STATIC_ASSERT_V(size<0>(BSmemLayout{}) == size<1>(cta_tiler));  // BLK_N
   CUTE_STATIC_ASSERT_V(size<1>(CSmemLayout{}) == size<1>(cta_tiler));  // BLK_N
   CUTE_STATIC_ASSERT_V(size<1>(ASmemLayout{}) == size<2>(cta_tiler));  // BLK_K
   CUTE_STATIC_ASSERT_V(size<1>(BSmemLayout{}) == size<2>(cta_tiler));  // BLK_K
 ```
 
-Use of static layouts has a few advantages. 
+Use of static layouts has a few advantages.
 * Static layouts let us statically allocate shared memory as shown below.
 * Static layouts are often more efficient and allow CuTe to dispatch to optimized implementations.
 * Static layouts makes it easier to prove correctness of the algorithm and provide checks like the above -- the smem layout sizes are the same as the CTA tile sizes.
@@ -227,7 +227,7 @@ if (thread0()) {
 ```
 This would work, but we have lots of threads to use inside this CTA, so let's use them!
 
-If we partition the two tiles of data across the threads in the CTA, then each thread can copy its own subtensor of data. There are lots of ways this partitioning could occur, however. 
+If we partition the two tiles of data across the threads in the CTA, then each thread can copy its own subtensor of data. There are lots of ways this partitioning could occur, however.
 
 The `gemm_nt` function defines two layouts of *threads* as
 ```c++
@@ -295,7 +295,7 @@ if (thread0()) {
 ```
 This would work, but we have lots of threads to use inside this CTA, so let's use them!
 
-If we partition the output tile `gC` across the threads in the CTA, then each thread can compute its own subtensor. There are lots of ways this partitioning could occur, however. 
+If we partition the output tile `gC` across the threads in the CTA, then each thread can compute its own subtensor. There are lots of ways this partitioning could occur, however.
 
 The `gemm_nt` and `gemm_tn` functions define one more layout of *threads*:
 ```cpp
@@ -332,7 +332,7 @@ These thread layouts are then used to partition the tiles of data in global memo
   CUTE_STATIC_ASSERT_V(size<1>(tCrC) == size<0>(tCsB));                // THR_N
   CUTE_STATIC_ASSERT_V(size<1>(tCsA) == size<1>(tCsB));                // BLK_K
 ```
-where we've used the same projection-style interface to avoid applying the `N`-mode of `tC` to the `(BLK_M,BLK_K)` shape of `sA` and avoid applying the `M`-mode of `tC` to the `(BLK_N,BLK_K)` shape of `sB`. 
+where we've used the same projection-style interface to avoid applying the `N`-mode of `tC` to the `(BLK_M,BLK_K)` shape of `sA` and avoid applying the `M`-mode of `tC` to the `(BLK_N,BLK_K)` shape of `sB`.
 
 <p align="center">
   <img src="../../images/cute/tC_partitioning.png" alt="tC_partitioning.png" height="300"/>

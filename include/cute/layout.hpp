@@ -329,34 +329,23 @@ struct is_layout<Layout<Shape,Stride>> : true_type {};
 // Layout construction
 //
 
-template <class Shape, class Stride,
-          __CUTE_REQUIRES((is_tuple<Shape >::value || is_integral<Shape >::value) &&
-                          (is_tuple<Stride>::value || is_integral<Stride>::value))>
+template <class Shape, class Stride>
 CUTE_HOST_DEVICE constexpr
 auto
 make_layout(Shape const& shape, Stride const& stride)
 {
+  static_assert(is_tuple<Shape >::value || is_integral<Shape >::value);
+  static_assert(is_tuple<Stride>::value || is_integral<Stride>::value);
   return Layout<Shape,Stride>(shape, stride);
 }
 
-template <class Shape,
-          __CUTE_REQUIRES(is_tuple<Shape>::value || is_integral<Shape>::value)>
+template <class Shape>
 CUTE_HOST_DEVICE constexpr
 auto
 make_layout(Shape const& shape)
 {
-  return make_layout(shape, compact_col_major(shape));
-}
-
-// Construct a layout from multiple layouts by
-//   concatenating each layout as an independent mode
-template <class... Shapes, class... Strides>
-CUTE_HOST_DEVICE constexpr
-auto
-make_layout(Layout<Shapes,Strides> const&... layouts)
-{
-  return make_layout(make_shape (layouts.shape()...),
-                     make_stride(layouts.stride()...));
+  static_assert(is_tuple<Shape >::value || is_integral<Shape >::value);
+  return make_layout(shape, compact_major<LayoutLeft>(shape));
 }
 
 //
@@ -366,17 +355,57 @@ make_layout(Layout<Shapes,Strides> const&... layouts)
 template <class Shape>
 CUTE_HOST_DEVICE constexpr
 auto
-make_layout(Shape const& shape, GenColMajor)
+make_layout(Shape const& shape, LayoutLeft)
 {
-  return make_layout(shape, compact_col_major(shape));
+  return make_layout(shape, compact_major<LayoutLeft>(shape));
 }
 
 template <class Shape>
 CUTE_HOST_DEVICE constexpr
 auto
-make_layout(Shape const& shape, GenRowMajor)
+make_layout(Shape const& shape, LayoutRight)
 {
-  return make_layout(shape, compact_row_major(shape));
+  return make_layout(shape, compact_major<LayoutRight>(shape));
+}
+
+//
+// Construct a layout from multiple layouts by concatenation
+//
+
+// One argument overload
+template <class Shape0, class Stride0>
+CUTE_HOST_DEVICE constexpr
+auto
+make_layout(Layout<Shape0,Stride0> const& layout0)
+{
+  return make_layout(make_shape (layout0.shape() ),
+                     make_stride(layout0.stride()));
+}
+
+// Two argument overload
+template <class Shape0, class Stride0,
+          class Shape1, class Stride1>
+CUTE_HOST_DEVICE constexpr
+auto
+make_layout(Layout<Shape0,Stride0> const& layout0,
+            Layout<Shape1,Stride1> const& layout1)
+{
+  return make_layout(make_shape (layout0.shape() , layout1.shape() ),
+                     make_stride(layout0.stride(), layout1.stride()));
+}
+
+// Var argument overload
+template <class Shape0, class Stride0,
+          class Shape1, class Stride1,
+          class... Shapes, class... Strides>
+CUTE_HOST_DEVICE constexpr
+auto
+make_layout(Layout<Shape0,Stride0> const& layout0,
+            Layout<Shape1,Stride1> const& layout1,
+            Layout<Shapes,Strides> const&... layouts)
+{
+  return make_layout(make_shape (layout0.shape() , layout1.shape() , layouts.shape()... ),
+                     make_stride(layout0.stride(), layout1.stride(), layouts.stride()...));
 }
 
 //
@@ -428,7 +457,7 @@ make_fragment_like(Layout<Shape,Stride> const& layout)
   constexpr int R = Layout<Shape,Stride>::rank;
   if constexpr (R > 1 && is_static<Shape>::value) {
     return tiled_product(make_layout(get<0>(layout.shape()),
-                                     compact_col_major(filter_zeros(get<0>(layout.stride()), get<0>(layout.shape())))),
+                                     compact_major<LayoutLeft>(filter_zeros(get<0>(layout.stride()), get<0>(layout.shape())))),
                          make_ordered_layout(take<1,R>(layout.shape()), take<1,R>(layout.stride())));
   } else {
     return make_layout(layout.shape());
@@ -1131,7 +1160,7 @@ complement(Shape const& shape, Stride const& stride, CoTarget const& cotarget)
     // Compute the rest_shape and rest_stride
     auto new_stride  = get<0>(stride_) * get<0>(shape_);                   // new stride = min_stride * curr_shape
     auto rest_shape  = coalesce(ceil_div(cotarget, new_stride));
-    auto rest_stride = compact_col_major(rest_shape, new_stride);
+    auto rest_stride = compact_major<LayoutLeft>(rest_shape, new_stride);
 
     // Coalesce and append (rest_shape, rest_stride)
     return coalesce(make_layout(make_shape (result_shape , rest_shape ),
@@ -1220,7 +1249,7 @@ right_inverse(Layout<Shape,Stride> const& layout)
     return Layout<_1,_0>{};     // Empty case, nothing found
   } else {
     // Generate the corresponding new strides and construct
-    auto rstride = compact_col_major(flat_layout.shape());
+    auto rstride = compact_major<LayoutLeft>(flat_layout.shape());
     return make_layout(unwrap(transform(iseq, [&](auto i) { return shape<i>(flat_layout); })),
                        unwrap(transform(iseq, [&](auto i) { return signum(stride<i>(flat_layout)) * get<i>(rstride); })));
   }
@@ -1318,6 +1347,50 @@ max_common_vector(Layout<ShapeA,StrideA> const& a,
   CUTE_GCC_UNREACHABLE;
 }
 
+/* Return a layout that distributes ShapeB over ShapeA.
+ *
+ * @returns Layout result
+ * @post softly_compatible(@a b, @a result)
+ * @post For all i,j in [0,size(@a result)) with i < j, @a result(i) < @a result(j). Surjective and Ordered.
+ * @post composition(make_layout(shape(@a a)), @a result) is admissible
+ * \code
+ *   // Note that 6 does not divide this shape
+ *   Layout layoutA = Layout<Shape<Int<15>,Int<14>>>{};
+ *
+ *   // Want to tile any 6 elements and don't care where they come from
+ *   Layout dist = domain_distribute(layoutA, Int<6>{});   // (_3,_2):(_1,_15)
+ *
+ *   // Not guaranteed to find all 6 though...
+ *   CUTE_STATIC_ASSERT_V(Int<6>{} == size(dist));
+ *
+ *   Layout result = zipped_divide(layoutA, dist);         // (_6,Rest)
+ * \endcode
+ */
+template <class ShapeA, class ShapeB>
+CUTE_HOST_DEVICE constexpr
+auto
+domain_distribute(ShapeA const& a, ShapeB const& b)
+{
+  static_assert(is_integral<ShapeB>::value);
+  static_assert(is_static<ShapeB>::value);
+
+  auto flat_shape_a = flatten(shape(a));
+
+  static_assert(is_static<decltype(flat_shape_a)>::value);
+
+  // Compute the shape of the result
+  auto [result_shape, b_rest] = cute::fold(flat_shape_a, cute::make_tuple(cute::tuple<>{}, size(b)), [](auto init, auto a_) {
+    auto [result, b_] = init;
+    auto gcd_ = gcd(a_, b_);
+    return cute::make_tuple(append(result, gcd_), b_ / gcd_);
+  });
+
+  // Compute the stride of the result
+  auto result_stride = compact_major<LayoutLeft>(flat_shape_a);
+
+  return coalesce(make_layout(result_shape, result_stride));
+}
+
 //
 // Kernel (Nullspace) of a Layout
 //
@@ -1363,7 +1436,7 @@ nullspace(Layout<Shape,Stride> const& layout)
     return Layout<_1,_0>{};     // Empty case, nothing found
   } else {
     // Generate the corresponding new strides and construct
-    auto rstride = compact_col_major(flat_layout.shape());
+    auto rstride = compact_major<LayoutLeft>(flat_layout.shape());
     return make_layout(unwrap(transform(iseq, [&](auto i) { return shape<i>(flat_layout); })),
                        unwrap(transform(iseq, [&](auto i) { return get<i>(rstride); })));
   }
@@ -1458,7 +1531,7 @@ auto
 ceil_div(Target                 const& target,
          Layout<TShape,TStride> const& tiler)
 {
-  return complement(tiler, size(target));
+  return shape(complement(tiler, shape(target)));
 }
 
 //
@@ -1751,6 +1824,26 @@ recast_layout(Layout<Shape,Stride> const& layout)
   }
 
   CUTE_GCC_UNREACHABLE;
+}
+
+// Determine the maximum alignment of a Layout.
+// The maximum alignment is the largest N for which upcast<N>(layout) will compile.
+//   upcast<N>(layout) compiles when the static shapes and strides pass divisibility checks.
+//   Therefore, upcast<M>(layout) will also compile for all divisors M of N.
+// Note that this only considers the static shapes and strides of the Layout
+//   in symmetry with upcast<N> only checking against static shapes and strides and assuming all
+//   dynamic shapes and strides are large and multiples of N.
+template <class Shape, class Stride>
+CUTE_HOST_DEVICE constexpr
+auto
+max_alignment(Layout<Shape,Stride> const& layout)
+{
+  auto flat_layout   = coalesce(layout);
+  auto static_shape  = transform( shape(flat_layout), [](auto s){ return conditional_return<is_static<decltype(s)>::value>(s, Int<1>{}); });
+  auto static_stride = transform(stride(flat_layout), [](auto d){ return conditional_return<is_static<decltype(d)>::value>(d, Int<0>{}); });
+  auto filter_layout = make_layout(static_shape, static_stride);
+  auto permuted = logical_divide(filter_layout, right_inverse(filter_layout));
+  return gcd(size<0>(permuted), stride<1>(permuted));
 }
 
 //

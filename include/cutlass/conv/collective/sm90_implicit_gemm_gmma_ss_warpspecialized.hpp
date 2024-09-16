@@ -131,6 +131,9 @@ struct CollectiveConv<
              && (cute::is_same_v<GmemTiledCopyB, SM90_TMA_LOAD> || cute::is_same_v<GmemTiledCopyB, SM90_TMA_LOAD_MULTICAST>)),
       "GmemTiledCopyB - invalid SM90 TMA copy atom specified.");
 
+  static constexpr bool is_im2col_A = detail::is_im2col_load<GmemTiledCopyA>::value;
+  static constexpr bool is_im2col_B = detail::is_im2col_load<GmemTiledCopyB>::value;
+
   // TMA converts f32 input to tf32 when copying from GMEM to SMEM
   // For all other types, cast to size equivalent uint type to avoid any rounding by TMA.
   static constexpr bool ConvertF32toTF32A = cute::is_same_v<float, ElementA>;
@@ -169,12 +172,11 @@ private:
   // Note that for fprop and dgrad kernel, the tma load mode is im2col for tensor A and tiled for
   // tensor B while for wgrad kernel, the tma load mode is tiled for tensor A and im2col for tensor
   // B since operand A, B is swapped.
-
   // Get tma_load_a instantce.
   template <class TensorA>
   static constexpr auto
   get_tma_load_a_instance(TensorA const& tensor_a, typename Arguments::ProblemShape const& problem_shape) {
-    if constexpr (ConvOp == conv::Operator::kFprop || ConvOp == conv::Operator::kDgrad) {
+    if constexpr (is_im2col_A) {
       // compute the upper and lower corners based on the conv padding
       auto lower_corner_whd = detail::compute_lower_corner_whd(problem_shape);
       auto upper_corner_whd = detail::compute_upper_corner_whd(problem_shape);
@@ -203,7 +205,7 @@ private:
           shape(stride_srt));
     }
     // TMA tiled mode for tensor A in wgrad kernel.
-    else if constexpr (ConvOp == conv::Operator::kWgrad) {
+    else {
       return make_tma_copy(
           GmemTiledCopyA{},
           tensor_a,
@@ -217,16 +219,8 @@ private:
   template <class TensorB>
   static constexpr auto
   get_tma_load_b_instance(TensorB const& tensor_b, typename Arguments::ProblemShape const& problem_shape) {
-    if constexpr (ConvOp == conv::Operator::kFprop || ConvOp == conv::Operator::kDgrad) {
-      return make_tma_copy(
-          GmemTiledCopyB{},
-          tensor_b,
-          SmemLayoutB{}(_,_,_0{}),
-          make_shape(shape<1>(TileShape{}), shape<2>(TileShape{})),
-          size<0>(ClusterShape{}));
-    }
     // TMA im2col mode for tensor B in wgrad kernel.
-    else if constexpr (ConvOp == conv::Operator::kWgrad) {
+    if constexpr (is_im2col_B) {
       // compute the upper and lower corners based on the conv padding
       auto lower_corner_whd = detail::compute_lower_corner_whd(problem_shape);
       auto upper_corner_whd = detail::compute_upper_corner_whd(problem_shape);
@@ -246,6 +240,26 @@ private:
           shape(lower_srt),
           cute::reverse(shape(problem_shape.dilation)));
     }
+    else {
+      return make_tma_copy(
+          GmemTiledCopyB{},
+          tensor_b,
+          SmemLayoutB{}(_,_,_0{}),
+          make_shape(shape<1>(TileShape{}), shape<2>(TileShape{})),
+          size<0>(ClusterShape{}));
+    }
+  }
+
+  static constexpr auto
+  get_problem_shape_MNKL(typename Arguments::ProblemShape const& problem_shape) {
+    if constexpr (is_im2col_A || is_im2col_B) {
+      // transformation + im2col linearization
+      return problem_shape.get_linearized_problem_shape_MNKL();
+    }
+    else {
+      // transformation
+      return problem_shape.get_transformed_problem_shape_MNKL();
+    }
   }
 
 public:
@@ -253,9 +267,7 @@ public:
   // Device side kernel params
   struct Params {
     using _Submode = decltype(take<0,NumTensorDimensions-1>(typename Arguments::ProblemShape::TensorExtent{}));
-    using ProblemShape = cute::conditional_t<DispatchPolicy::ConvOp == conv::Operator::kWgrad,
-        Shape<int,  _Submode, _Submode>,
-        Shape<_Submode, int, _Submode>>;
+    using ProblemShape = decltype(get_problem_shape_MNKL(typename Arguments::ProblemShape{}));
 
     // Assumption: StrideA is congruent with Problem_MK
     // Select TMA load type according to convolution operator.
@@ -283,6 +295,7 @@ public:
     TMA_A tma_load_a;
     TMA_B tma_load_b;
     ProblemShape problem_shape;
+    uint32_t tma_transaction_bytes = TmaTransactionBytes;
   };
 
   //
@@ -314,17 +327,18 @@ public:
     auto tma_load_a = get_tma_load_a_instance(tensor_a, args.problem_shape);
     auto tma_load_b = get_tma_load_b_instance(tensor_b, args.problem_shape);
 
-    auto problem_shape_mnk = args.problem_shape.get_transformed_problem_shape_MNK();
+    auto problem_shape_mnkl = get_problem_shape_MNKL(args.problem_shape);
 
     return {
       tma_load_a,
       tma_load_b,
-      problem_shape_mnk
+      problem_shape_mnkl,
+      TmaTransactionBytes
     };
   }
 
   template<class ProblemShape>
-  CUTLASS_HOST_DEVICE static bool
+  static bool
   can_implement(
       ProblemShape const& problem_shape,
       Arguments const& args) {
@@ -389,13 +403,12 @@ public:
        TensorA const& gA, TMA_LOAD_A& tma_load_a,
        TensorB const& gB, TMA_LOAD_B& tma_load_b,
        KTileIterator k_tile_iter, int k_tile_count,
-       int thad_idx,
+       int thread_idx,
+       uint32_t block_rank_in_cluster,
        TensorStorage& shared_tensors) {
-    int warp_idx = canonical_warp_idx_sync();
-    int warp_idx_in_warp_group  = warp_idx % 4;
     int lane_predicate = cute::elect_one_sync();
 
-    if (warp_idx_in_warp_group == 0 and lane_predicate) {
+    if (lane_predicate) {
       Tensor sA = make_tensor(make_smem_ptr(shared_tensors.smem_A.data()), SmemLayoutA{});        // (BLK_M,BLK_K,PIPE)
       Tensor sB = make_tensor(make_smem_ptr(shared_tensors.smem_B.data()), SmemLayoutB{});        // (BLK_N,BLK_K,PIPE)
 
@@ -403,7 +416,8 @@ public:
       // Prepare the TMA loads for A and B
       //
 
-      dim3 cluster_local_block_id = cute::block_id_in_cluster();
+      constexpr uint32_t cluster_shape_x = get<0>(ClusterShape());
+      uint2 cluster_local_block_id = {block_rank_in_cluster % cluster_shape_x, block_rank_in_cluster / cluster_shape_x};
       auto block_tma_a = tma_load_a.get_slice(cluster_local_block_id.y);
       auto block_tma_b = tma_load_b.get_slice(cluster_local_block_id.x);
 
@@ -462,12 +476,10 @@ public:
   /// Perform a Producer Epilogue to prevent early exit of blocks in a Cluster
   CUTLASS_DEVICE void
   load_tail(MainloopPipeline pipeline, PipelineState smem_pipe_producer_state) {
-    int warp_idx = canonical_warp_idx_sync();
-    int warp_idx_in_warp_group = warp_idx % 4;
     int lane_predicate = cute::elect_one_sync();
 
     // Issue the epilogue waits
-    if (warp_idx_in_warp_group == 0 and lane_predicate) {
+    if (lane_predicate) {
       /* This helps avoid early exit of blocks in Cluster
        * Waits for all stages to either be released (all 
        * Consumer UNLOCKs), or if the stage was never used

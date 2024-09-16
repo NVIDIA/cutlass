@@ -9,7 +9,7 @@ Clang as both host and device compiler ("CUDA Clang").
 
 # Software prerequisites
 
-1. Clang (regularly tested with Clang 14;
+1. Clang (regularly tested with Clang 17;
    occasionally tested with Clang 10 and greater)
 
 2. CUDA Toolkit (tested with 12.2; other versions likely work)

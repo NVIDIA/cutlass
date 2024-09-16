@@ -231,7 +231,7 @@ struct B2bFusedGroupedGemmRun
       host_tensor_ref_D1.at(i).sync_device();
 
       ref_A0.at(i) = (host_tensor_A0.at(i).device_ref());
-      ref_B0.at(i) = (host_tensor_B0.at(i).device_ref());;
+      ref_B0.at(i) = (host_tensor_B0.at(i).device_ref());
       ref_C0.at(i) = (host_tensor_C0.at(i).device_ref());
       if (alpha0 == ElementCompute(0)) //per-channel scale
         ref_Scale0.at(i) = (host_tensor_Scale0.at(i).device_ref());
@@ -340,7 +340,7 @@ struct B2bFusedGroupedGemmRun
     std::cout << "Fusion time " << gemmTime / (float)runs << " ms\n";
 
     for (int i = 0; i < problem_count; ++i) {
-      host_tensor_D1.at(i).sync_host();;
+      host_tensor_D1.at(i).sync_host();
 
       //
       // Verify
