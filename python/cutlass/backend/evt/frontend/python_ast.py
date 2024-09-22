@@ -70,6 +70,8 @@ class PythonASTFrontend(EVTFrontendBase, ast.NodeVisitor):
             ast.Sub: FunctionalOp.Minus,
             ast.Mult: FunctionalOp.Multiplies,
             ast.Div: FunctionalOp.Divides,
+            "maximum": FunctionalOp.Maximum,
+            "minimum": FunctionalOp.Minimum,
             "relu": relu.binding_type,
             "multiply_add": FunctionalOp.MultiplyAdd,
             "sum": (FunctionalOp.Plus, FunctionalOp.AtomicAdd),
