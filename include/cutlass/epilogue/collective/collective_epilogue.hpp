@@ -61,6 +61,6 @@ class CollectiveEpilogue {
 #include "sm90_epilogue_tma_warpspecialized_bias_elementwise.hpp"
 #include "sm90_epilogue_array_tma_warpspecialized.hpp"
 #if defined (SYCL_INTEL_TARGET)
-#include "intel_pvc_epilogue.hpp"
+#include "xe_epilogue.hpp"
 #endif
 /////////////////////////////////////////////////////////////////////////////////////////////////

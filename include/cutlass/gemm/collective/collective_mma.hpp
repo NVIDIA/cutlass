@@ -47,6 +47,6 @@
 #include "cutlass/gemm/collective/sm90_mma_tma_gmma_ss_warpspecialized_fp8.hpp"
 
 #if defined(SYCL_INTEL_TARGET)
-#include "cutlass/gemm/collective/intel_pvc_mma.hpp"
+#include "cutlass/gemm/collective/xe_mma.hpp"
 #endif
 /////////////////////////////////////////////////////////////////////////////////////////////////

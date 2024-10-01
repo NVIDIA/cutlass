@@ -116,6 +116,6 @@ struct CallbacksBuilder<
 #include "builders/sm90_builder.inl"
 
 #if defined(SYCL_INTEL_TARGET)
-#include "builders/pvc_builder.inl"
+#include "builders/xe_builder.inl"
 #endif
 /////////////////////////////////////////////////////////////////////////////////////////////////
