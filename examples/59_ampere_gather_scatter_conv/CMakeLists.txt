@@ -26,6 +26,8 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+if (NOT MSVC)
+
 cutlass_example_add_executable(
   59_ampere_gather_scatter_conv
   ampere_gather_scatter_conv.cu
@@ -33,4 +35,6 @@ cutlass_example_add_executable(
 
 if (CUTLASS_ENABLE_OPENMP_TESTS AND OpenMP_CXX_FOUND)
   target_link_libraries(59_ampere_gather_scatter_conv PRIVATE OpenMP::OpenMP_CXX)
+endif()
+
 endif()

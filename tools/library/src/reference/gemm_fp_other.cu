@@ -55,6 +55,14 @@ void initialize_gemm_reference_operations_fp_other(Manifest &manifest) {
   >(manifest);
 
   make_gemm_real_canonical_layouts<
+    half_t,
+    half_t,
+    float,
+    half_t,
+    half_t
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
     double,
     double,
     double,

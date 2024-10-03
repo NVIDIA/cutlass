@@ -43,6 +43,7 @@
 #include <initializer_list>
 #endif
 
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass::conv {
@@ -54,15 +55,17 @@ namespace cutlass::conv {
 // Supports asymmetric padding, traversal strides, dilations, and all conv algorithm types.
 template <
   conv::Operator ConvOp_,
-  int NumSpatialDimensions
+  int NumSpatialDimensions_
 >
 struct ConvProblemShape {
   //
   // Alias types for members
   //
-  static constexpr int RankS = NumSpatialDimensions;
-  static constexpr int RankT = NumSpatialDimensions + 2;
+
+  static constexpr int RankS = NumSpatialDimensions_;
+  static constexpr int RankT = NumSpatialDimensions_ + 2;
   static constexpr conv::Operator ConvOp = ConvOp_;
+  static constexpr int NumSpatialDimensions = NumSpatialDimensions_;
   using SpatialExtent = cute::array<int, RankS>;
   using TensorExtent  = cute::array<int, RankT>;
   using TensorStride  = cute::array<int64_t, RankT>;
@@ -352,71 +355,6 @@ struct ConvProblemShape {
     }
   }
 
-  // Get problem shape MNKL according to following table:
-  // |               |   Fprop   |   Dgrad         |   Wgrad   |
-  // |   ----        | --------- | --------        | --------  |
-  // |   Shape_M     | (Q,P,Z,N) | (W/V,H/U,D/O,N) | (K)       |
-  // |   Shape_N     | (K)       | (C)             | (C,S,R,T) |
-  // |   Shape_K     | (C,S,R,T) | (K,S,R,T)       | (Q,P,Z,N) |
-  // |   Shape_L     | _1        | (V,U,O)         | _1        |
-  CUTLASS_HOST_DEVICE
-  constexpr auto
-  get_transformed_problem_shape_MNKL() const {
-    using cute::insert;
-    using cute::make_shape;
-    using cute::reverse;
-    using cute::take;
-
-    if constexpr (ConvOp == conv::Operator::kWgrad) {
-      auto M_xformed = shape_C[0];
-      auto N_xformed = reverse(take<1, RankT>(shape_C));
-      auto K_xformed = reverse(take<0, RankT - 1>(shape_A));
-      auto L_xformed = cute::Int<1>{};
-
-      return make_shape(M_xformed, N_xformed, K_xformed, L_xformed);
-    }
-    else if constexpr (ConvOp == conv::Operator::kFprop){
-      auto M_xformed = reverse(take<0, RankT - 1>(shape_C));
-      auto N_xformed = shape_C[RankT - 1];
-      auto K_xformed = reverse(take<1, RankT>(shape_B));
-      auto L_xformed = cute::Int<1>{};
-
-      return make_shape(M_xformed, N_xformed, K_xformed, L_xformed);
-    }
-    else if constexpr (ConvOp == conv::Operator::kDgrad) {
-      auto L_xformed = reverse(traversal_stride); // (V,U,O)
-      auto M_xformed = ceil_div(reverse(take<0,RankT - 1>(shape_C)), L_xformed);
-      auto N_xformed = shape_C[RankT - 1];
-      // shape_B: [K,T,R,S,C], K_xformed: [K,S,R,T]
-      auto K_xformed = insert<0>(
-                  (reverse(take<1,RankT - 1>(shape_B))),
-                  shape_B[0]);
-
-      return make_shape(M_xformed, N_xformed, K_xformed, L_xformed);
-    }
-  }
-
-  // Assuming im2col linearization
-  // Get problem shape MNKL according to following table:
-  // |               |   Fprop   |   Dgrad               |   Wgrad   |
-  // |   ----        | --------- | --------              | --------  |
-  // |   Shape_M     | (Q*P*Z*N) | ([W/V]*[H/U]*[D/O]*N) | (K)       |
-  // |   Shape_N     | (K)       | (C)                   | (C,S,R,T) |
-  // |   Shape_K     | (C,S,R,T) | (K,S,R,T)             | (Q*P*Z*N) |
-  // |   Shape_L     | _1        | (V*U*O)               | _1        |
-  CUTLASS_HOST_DEVICE
-  constexpr auto
-  get_linearized_problem_shape_MNKL() const {
-    auto [M, N, K, L] = get_transformed_problem_shape_MNKL();
-
-    if constexpr (ConvOp == conv::Operator::kFprop || ConvOp == conv::Operator::kDgrad) {
-      return cute::make_shape(cute::product(M), N, K, cute::product(L));
-    }
-    else if constexpr (ConvOp == conv::Operator::kWgrad) {
-      return cute::make_shape(M, N, cute::product(K), L);
-    }
-  }
-
   // Get A extents.
   // fprop: A extents array contains [N,D,H,W,C]. Turn that into ((W,H,D,N), (C))
   // dgrad: A extents array contains [N,Z,P,Q,K]. Turn that into ((Q,P,Z,N), (K))
@@ -578,9 +516,7 @@ private:
     // calculate n,z,p,q,k.
     // a helper lambda to compute a single spatial extent of the nzpqk tensor
     auto nzpqk_extent = [](int act_ext, int filter_ext, int pad_total, int dilation, int tstride) {
-      auto tmp = act_ext + pad_total - ((filter_ext -1) * dilation + 1);
-      CUTLASS_ASSERT(tmp % tstride == 0);
-      return 1 + tmp / tstride;
+      return 1 + (act_ext + pad_total - ((filter_ext -1) * dilation + 1)) / tstride;
     };
 
     shape_xformed_act[0] = shape_act[0]; // Activation N extent

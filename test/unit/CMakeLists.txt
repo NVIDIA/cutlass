@@ -84,7 +84,7 @@ function(cutlass_test_unit_add_executable NAME)
     target_link_libraries(
       ${NAME}
       PUBLIC
-      GTest::gtest
+      GTest::gtest 
     )
   else()
     target_link_libraries(

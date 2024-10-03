@@ -42,6 +42,7 @@
 #include <thrust/device_vector.h>
 
 #include <cute/tensor.hpp>
+#include <cute/swizzle.hpp> // cute::Swizzle
 
 #include "tiled_cp_async_testbed.hpp"
 

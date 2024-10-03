@@ -104,7 +104,7 @@ test_scheduler(
   typename Scheduler::Arguments args{};
 
   // Set up the grid for the problem
-  dim3 grid = Scheduler::get_grid_shape(problem_shape_mnkl, tile_shape, cluster_shape, hw_info, args);
+  dim3 grid = Scheduler::get_grid_shape(params, problem_shape_mnkl, tile_shape, cluster_shape, hw_info, args);
 
   auto print_info = [&]() {
     std::cout << "Failed with problem size "

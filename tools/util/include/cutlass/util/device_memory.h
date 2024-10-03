@@ -37,9 +37,11 @@
  */
 
 #include <memory>
+#include <sstream>
 
 #include "cutlass/platform/platform.h"
 #include "cutlass/numeric_types.h"
+#include "cutlass/trace.h"
 #include "exceptions.h"
 
 namespace cutlass {
@@ -61,8 +63,20 @@ T* allocate(size_t count = 1) {
   cudaError_t cuda_error = cudaMalloc((void**)&ptr, bytes);
 
   if (cuda_error != cudaSuccess) {
+#if (CUTLASS_DEBUG_TRACE_LEVEL > 0)
+    std::ostringstream os;
+    os << "cutlass::device_memory::allocate: cudaMalloc failed: bytes=" << bytes;
+    CUTLASS_TRACE_HOST(os.str());
+#endif
     throw cuda_exception("Failed to allocate memory", cuda_error);
   }
+#if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
+  else {
+    std::ostringstream os;
+    os << "cutlass::device_memory::allocate: Successful cudaMalloc: bytes=" << bytes;
+    CUTLASS_TRACE_HOST(os.str());
+  }
+#endif
 
   return ptr;
 }
@@ -85,11 +99,36 @@ void free(T* ptr) {
 template <typename T>
 void copy(T* dst, T const* src, size_t count, cudaMemcpyKind kind) {
   size_t bytes = count * sizeof_bits<T>::value / 8;
-  if (bytes == 0 && count > 0)
+  if (bytes == 0 && count > 0) {
     bytes = 1;
+  }
   cudaError_t cuda_error = (cudaMemcpy(dst, src, bytes, kind));
   if (cuda_error != cudaSuccess) {
-    throw cuda_exception("cudaMemcpy() failed", cuda_error);
+    std::ostringstream os;
+    os << "cutlass::device_memory::copy: cudaMemcpy() failed: "
+       << "dst=" << dst << ", src=" << src
+       << ", bytes=" << bytes << ", count=" << count;
+    if (kind == cudaMemcpyHostToDevice) {
+      os << ", kind=cudaMemcpyHostToDevice";
+    }
+    else if (kind == cudaMemcpyDeviceToHost) {
+      os << ", kind=cudaMemcpyDeviceToHost";
+    }
+    else if (kind == cudaMemcpyDeviceToDevice) {
+      os << ", kind=cudaMemcpyDeviceToDevice";
+    }
+    else if (kind == cudaMemcpyHostToHost) {
+      os << ", kind=cudaMemcpyHostToHost";
+    }
+    else if (kind == cudaMemcpyDefault) {
+      os << ", kind=cudaMemcpyDefault";
+    }
+    else {
+      os << ", kind=Unknown";
+    }
+    os << ", error: " << cudaGetErrorString(cuda_error);
+
+    throw cuda_exception(os.str().c_str(), cuda_error);
   }
 }
 

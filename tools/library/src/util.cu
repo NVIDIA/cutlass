@@ -756,6 +756,7 @@ OpcodeClassID_enumerants[] = {
   {"tensorop", "<tensorop>", OpcodeClassID::kTensorOp},
   {"wmmatensorop", "<wmmatensorop>", OpcodeClassID::kWmmaTensorOp},
   {"wmma", "<wmma>", OpcodeClassID::kWmmaTensorOp},
+  {"sptensorop", "<sptensorop>", OpcodeClassID::kSparseTensorOp}
 };
 
 /// Converts a OpcodeClassID enumerant to a string

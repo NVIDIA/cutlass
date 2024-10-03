@@ -33,10 +33,10 @@
 
 #include <cute/layout.hpp>
 
+using namespace cute;
+
 TEST(CuTe_core, WeaklyCongruent)
 {
-  using namespace cute;
-
   auto a = _1{};
   auto b = _2{};
   EXPECT_TRUE (weakly_congruent(a, a));
@@ -83,96 +83,116 @@ TEST(CuTe_core, WeaklyCongruent)
   EXPECT_TRUE (weakly_congruent(a2, b3));
 }
 
-TEST(CuTe_core, WeaklyCompatible)
+template <class A, class B>
+auto test_evenly_divides(A const& a, B const& b)
 {
-  using namespace cute;
+  auto result = evenly_divides(a, b);
+  // If A and B are static, then result should be as well
+  if constexpr (is_static<A>::value && is_static<B>::value) {
+    static_assert(is_static<decltype(result)>::value);
+  }
+  // If result is true_type, then confirm divisibillity
+  if constexpr (is_constant<true, decltype(result)>::value) {
+    CUTE_STATIC_ASSERT_V(size(a) == size(logical_divide(make_layout(shape(a)), b)));
+  }
 
-  auto a = _16{};
-  auto b = _12{};
-  auto c = _8{};
-  EXPECT_TRUE (weakly_compatible(a, a));
-  EXPECT_TRUE (weakly_compatible(b, b));
-  EXPECT_TRUE (weakly_compatible(c, c));
-  EXPECT_FALSE(weakly_compatible(a, b));
-  EXPECT_FALSE(weakly_compatible(a, c));
-  EXPECT_TRUE (weakly_compatible(c, a));
-
-  auto a0 = Shape<_16>{};
-  EXPECT_TRUE (weakly_compatible(a0, a0));
-  EXPECT_TRUE (weakly_compatible(a , a0));
-  EXPECT_FALSE(weakly_compatible(a0, a ));
-  EXPECT_TRUE (weakly_compatible(c , a0));
-  EXPECT_FALSE(weakly_compatible(a0, c ));
-  EXPECT_FALSE(weakly_compatible(b , a0));
-  EXPECT_FALSE(weakly_compatible(a0, b ));
-
-  auto a1 = Shape<_2,_8>{};
-  EXPECT_TRUE (weakly_compatible(a1, a1));
-  EXPECT_TRUE (weakly_compatible(a , a1));
-  EXPECT_FALSE(weakly_compatible(a0, a1));
-  EXPECT_FALSE(weakly_compatible(a1, a0));
-  EXPECT_TRUE (weakly_compatible(a1, Shape<_2,Shape<_2,_4>>{}));
-
-  auto a2 = Shape<Shape<_2,_8>>{};
-  EXPECT_TRUE (weakly_compatible(a2, a2));
-  EXPECT_TRUE (weakly_compatible(a , a2));
-  EXPECT_TRUE (weakly_compatible(c , a2));
-  EXPECT_TRUE (weakly_compatible(a0, a2));
-  EXPECT_FALSE(weakly_compatible(a2, a0));
-
-  auto a3 = Shape<Shape<_2,Shape<_4,_2>>>{};
-  EXPECT_TRUE (weakly_compatible(a3, a3));
-  EXPECT_TRUE (weakly_compatible(a , a3));
-  EXPECT_TRUE (weakly_compatible(c , a3));
-  EXPECT_TRUE (weakly_compatible(a0, a3));
-  EXPECT_FALSE(weakly_compatible(a3, a0));
-  EXPECT_TRUE (weakly_compatible(a2, a3));
-  EXPECT_FALSE(weakly_compatible(a3, a2));
+  return result;
 }
 
-TEST(CuTe_core, SoftlyCompatible)
+TEST(CuTe_core, Divides)
 {
-  using namespace cute;
-
+  {
   auto a = _16{};
   auto b = _12{};
   auto c = _8{};
-  EXPECT_TRUE (softly_compatible(a, a));
-  EXPECT_TRUE (softly_compatible(b, b));
-  EXPECT_TRUE (softly_compatible(c, c));
-  EXPECT_FALSE(softly_compatible(a, b));
-  EXPECT_TRUE (softly_compatible(a, c));
-  EXPECT_FALSE(softly_compatible(c, a));
+  EXPECT_TRUE (test_evenly_divides(a, a));
+  EXPECT_TRUE (test_evenly_divides(b, b));
+  EXPECT_TRUE (test_evenly_divides(c, c));
+  EXPECT_FALSE(test_evenly_divides(a, b));
+  EXPECT_TRUE (test_evenly_divides(a, c));
+  EXPECT_FALSE(test_evenly_divides(c, a));
 
   auto a0 = Shape<_16>{};
-  EXPECT_TRUE (softly_compatible(a0, a0));
-  EXPECT_TRUE (softly_compatible(a , a0));
-  EXPECT_FALSE(softly_compatible(a0, a ));
-  EXPECT_FALSE(softly_compatible(c , a0));
-  EXPECT_FALSE(softly_compatible(a0, c ));
-  EXPECT_FALSE(softly_compatible(b , a0));
-  EXPECT_FALSE(softly_compatible(a0, b ));
+  EXPECT_TRUE (test_evenly_divides(a0, a0));
+  EXPECT_TRUE (test_evenly_divides(a , a0));
+  EXPECT_TRUE (test_evenly_divides(a0, a ));
+  EXPECT_FALSE(test_evenly_divides(c , a0));
+  EXPECT_TRUE (test_evenly_divides(a0, c ));
+  EXPECT_FALSE(test_evenly_divides(b , a0));
+  EXPECT_FALSE(test_evenly_divides(a0, b ));
 
   auto a1 = Shape<_2,_8>{};
-  EXPECT_TRUE (softly_compatible(a1, a1));
-  EXPECT_TRUE (softly_compatible(a , a1));
-  EXPECT_FALSE(softly_compatible(a0, a1));
-  EXPECT_FALSE(softly_compatible(a1, a0));
-  EXPECT_TRUE (softly_compatible(a1, Shape<_2,Shape<_2,_4>>{}));
+  EXPECT_TRUE (test_evenly_divides(a1, a1));
+  EXPECT_FALSE(test_evenly_divides(a , a1));
+  EXPECT_FALSE(test_evenly_divides(a0, a1));
+  EXPECT_FALSE(test_evenly_divides(a1, a0));
+  EXPECT_FALSE(test_evenly_divides(a1, Shape<_2,Shape<_2,_4>>{}));
 
   auto a2 = Shape<Shape<_2,_8>>{};
-  EXPECT_TRUE (softly_compatible(a2, a2));
-  EXPECT_TRUE (softly_compatible(a , a2));
-  EXPECT_FALSE(softly_compatible(c , a2));
-  EXPECT_TRUE (softly_compatible(a0, a2));
-  EXPECT_FALSE(softly_compatible(a2, a0));
+  EXPECT_TRUE (test_evenly_divides(a2, a2));
+  EXPECT_FALSE(test_evenly_divides(a , a2));
+  EXPECT_FALSE(test_evenly_divides(c , a2));
+  EXPECT_FALSE(test_evenly_divides(a0, a2));
+  EXPECT_TRUE (test_evenly_divides(a2, a0));
 
   auto a3 = Shape<Shape<_2,Shape<_4,_2>>>{};
-  EXPECT_TRUE (softly_compatible(a3, a3));
-  EXPECT_TRUE (softly_compatible(a , a3));
-  EXPECT_FALSE(softly_compatible(c , a3));
-  EXPECT_TRUE (softly_compatible(a0, a3));
-  EXPECT_FALSE(softly_compatible(a3, a0));
-  EXPECT_TRUE (softly_compatible(a2, a3));
-  EXPECT_FALSE(softly_compatible(a3, a2));
+  EXPECT_TRUE (test_evenly_divides(a3, a3));
+  EXPECT_FALSE(test_evenly_divides(a , a3));
+  EXPECT_FALSE(test_evenly_divides(c , a3));
+  EXPECT_FALSE(test_evenly_divides(a0, a3));
+  EXPECT_TRUE (test_evenly_divides(a3, a0));
+  EXPECT_FALSE(test_evenly_divides(a2, a3));
+  EXPECT_TRUE (test_evenly_divides(a3, a2));
+  }
+
+  {
+  auto a = 16;
+  auto b = 12;
+  auto c =  8;
+  EXPECT_TRUE (test_evenly_divides(a, a));
+  EXPECT_TRUE (test_evenly_divides(b, b));
+  EXPECT_TRUE (test_evenly_divides(c, c));
+  EXPECT_FALSE(test_evenly_divides(a, b));
+  EXPECT_TRUE (test_evenly_divides(a, c));
+  EXPECT_FALSE(test_evenly_divides(c, a));
+
+  auto a0 = make_shape(16);
+  EXPECT_TRUE (test_evenly_divides(a0, a0));
+  EXPECT_TRUE (test_evenly_divides(a , a0));
+  EXPECT_TRUE (test_evenly_divides(a0, a ));
+  EXPECT_FALSE(test_evenly_divides(c , a0));
+  EXPECT_TRUE (test_evenly_divides(a0, c ));
+  EXPECT_FALSE(test_evenly_divides(b , a0));
+  EXPECT_FALSE(test_evenly_divides(a0, b ));
+
+  auto a1 = make_shape(2, 8);
+  EXPECT_TRUE (test_evenly_divides(a1, a1));
+  EXPECT_FALSE(test_evenly_divides(a , a1));
+  EXPECT_FALSE(test_evenly_divides(a0, a1));
+  EXPECT_FALSE(test_evenly_divides(a1, a0));
+  EXPECT_FALSE(test_evenly_divides(a1, make_shape(2,make_shape(2,4))));
+
+  auto a2 = make_shape(make_shape(2,8));
+  EXPECT_TRUE (test_evenly_divides(a2, a2));
+  EXPECT_FALSE(test_evenly_divides(a , a2));
+  EXPECT_FALSE(test_evenly_divides(c , a2));
+  EXPECT_FALSE(test_evenly_divides(a0, a2));
+  EXPECT_TRUE (test_evenly_divides(a2, a0));
+
+  auto a3 = make_shape(make_shape(2,make_shape(4,2)));
+  EXPECT_TRUE (test_evenly_divides(a3, a3));
+  EXPECT_FALSE(test_evenly_divides(a , a3));
+  EXPECT_FALSE(test_evenly_divides(c , a3));
+  EXPECT_FALSE(test_evenly_divides(a0, a3));
+  EXPECT_TRUE (test_evenly_divides(a3, a0));
+  EXPECT_FALSE(test_evenly_divides(a2, a3));
+  EXPECT_TRUE (test_evenly_divides(a3, a2));
+  }
+
+  {
+  auto a = Shape<_32,_64>{};
+  EXPECT_TRUE (test_evenly_divides(a, Int<128>{}));
+  EXPECT_TRUE (test_evenly_divides(a, Tile<Layout<_8,_2>, _32>{}));
+  EXPECT_FALSE(test_evenly_divides(a, Tile<Layout<_8,_3>, _32>{}));
+  }
 }

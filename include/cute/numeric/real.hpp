@@ -35,6 +35,24 @@
 namespace cute
 {
 
+/// Generic add
+template <class C, class A, class B>
+CUTE_HOST_DEVICE constexpr
+void
+add(C& c, A const& a, B const& b)
+{
+  c = a + b;
+}
+
+/// Generic multiply
+template <class C, class A, class B>
+CUTE_HOST_DEVICE constexpr
+void
+mul(C& c, A const& a, B const& b)
+{
+  c = a * b;
+}
+
 /// Generic fused multiply-add
 template <class D, class A, class B, class C>
 CUTE_HOST_DEVICE constexpr

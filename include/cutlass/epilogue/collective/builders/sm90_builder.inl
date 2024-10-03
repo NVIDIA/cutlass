@@ -258,7 +258,7 @@ struct Sm90TmaBuilderImpl {
 
   using GmemStrideTypeC = cutlass::detail::TagToStrideC_t<GmemLayoutTagC>;
   using GmemStrideTypeD = cutlass::detail::TagToStrideC_t<GmemLayoutTagD>;
-
+  
   using UnderlyingGmemStrideTypeC = cute::remove_pointer_t<GmemStrideTypeC>;
   using UnderlyingGmemStrideTypeD = cute::remove_pointer_t<GmemStrideTypeD>;
 
@@ -273,6 +273,9 @@ struct Sm90TmaBuilderImpl {
 
   // Get the smallest tiled copy we can use to retile the accumulators
   using CopyAtomC = Copy_Atom<SM90_U32x4_STSM_N, cutlass::half_t>;
+  // Get register to register tiled copy that happen before shared memory store.
+  // Apply void as no register transform op needed currently.
+  using CopyOpR2R = void;
 
   // TMA builder allows for passing callbacks directly, which is either a fusion::FusionCallbacks
   // instance or a direct visitor implementation, e.g. fusion::Sm90LinearCombination
@@ -300,7 +303,8 @@ struct Sm90TmaBuilderImpl {
       CopyOpS2G,
       decltype(detail::sm90_get_epilogue_smem_swizzle_layout_atom<UnderlyingGmemStrideTypeD, ElementD, EpilogueTile_MN>()),
       decltype(detail::sm90_get_smem_store_op_for_accumulator<UnderlyingGmemStrideTypeD, ElementD>()),
-      CopyAtomC
+      CopyAtomC,
+      CopyOpR2R
     >;
 };
 
@@ -386,6 +390,7 @@ struct AuxStoreDescriptor {
 
 // No-smem builder
 template <
+  class OpClass,
   class TileShape_MNK,
   class ClusterShape_MNK,
   class EpilogueTileType,
@@ -402,7 +407,7 @@ template <
 >
 struct CollectiveBuilder<
     arch::Sm90,
-    arch::OpClassTensorOp,
+    OpClass,
     TileShape_MNK,
     ClusterShape_MNK,
     EpilogueTileType,
@@ -452,6 +457,7 @@ struct CollectiveBuilder<
 
 // Tma warp-specialized builder
 template <
+  class OpClass,
   class TileShape_MNK,
   class ClusterShape_MNK,
   class EpilogueTileType,
@@ -468,7 +474,7 @@ template <
 >
 struct CollectiveBuilder<
     arch::Sm90,
-    arch::OpClassTensorOp,
+    OpClass,
     TileShape_MNK,
     ClusterShape_MNK,
     EpilogueTileType,
@@ -513,6 +519,7 @@ public:
 
 // Auto builder
 template <
+  class OpClass,
   class TileShape_MNK,
   class ClusterShape_MNK,
   class EpilogueTileType,
@@ -528,7 +535,7 @@ template <
 >
 struct CollectiveBuilder<
     arch::Sm90,
-    arch::OpClassTensorOp,
+    OpClass,
     TileShape_MNK,
     ClusterShape_MNK,
     EpilogueTileType,
@@ -552,7 +559,7 @@ private:
   using EpilogueSchedule = NoSmemWarpSpecialized;
   using _CollectiveBuilder = CollectiveBuilder<
     arch::Sm90,
-    arch::OpClassTensorOp,
+    OpClass,
     TileShape_MNK,
     ClusterShape_MNK,
     EpilogueTileType,
@@ -574,6 +581,7 @@ public:
 
 // DEPRECATED Tma warp-specialized builder for elementwise fusion
 template <
+  class OpClass,
   class TileShape_MNK,
   class ClusterShape_MNK,
   class EpilogueTileType,
@@ -591,7 +599,7 @@ template <
 struct [[deprecated("Use TmaWarpSpecialized with fusion::LinCombEltAct instead")]]
 CollectiveBuilder<
     arch::Sm90,
-    arch::OpClassTensorOp,
+    OpClass,
     TileShape_MNK,
     ClusterShape_MNK,
     EpilogueTileType,
@@ -618,7 +626,7 @@ public:
   using CollectiveOp =
     typename CollectiveBuilder<
       arch::Sm90,
-      arch::OpClassTensorOp,
+      OpClass,
       TileShape_MNK,
       ClusterShape_MNK,
       EpilogueTileType,
@@ -637,6 +645,7 @@ public:
 
 // DEPRECATED Tma warp-specialized builder for bias + elementwise fusion
 template <
+  class OpClass,
   class TileShape_MNK,
   class ClusterShape_MNK,
   class EpilogueTileType,
@@ -654,7 +663,7 @@ template <
 struct [[deprecated("Use TmaWarpSpecialized with fusion::LinCombPerRowBiasEltAct or fusion::LinCombPerRowBiasEltActAux instead")]]
 CollectiveBuilder<
     arch::Sm90,
-    arch::OpClassTensorOp,
+    OpClass,
     TileShape_MNK,
     ClusterShape_MNK,
     EpilogueTileType,
@@ -714,6 +723,9 @@ private:
 
   // Get the smallest tiled copy we can use to retile the accumulators
   using CopyAtomC = Copy_Atom<SM90_U32x4_STSM_N, cutlass::half_t>;
+  // Get register to register tiled copy that happen before shared memory store.
+  // Apply void as no register transform op needed.
+  using CopyOpR2R = void;
 
 public:
   using CollectiveOp = cutlass::epilogue::collective::Sm90EpilogueTmaWarpSpecializedBiasElementwise<
@@ -733,7 +745,8 @@ public:
       SM90_TMA_STORE,
       decltype(detail::sm90_get_epilogue_smem_swizzle_layout_atom<GmemStrideTypeD, ElementD, EpilogueTile_MN>()),
       decltype(detail::sm90_get_smem_store_op_for_accumulator<GmemStrideTypeD, ElementD>()),
-      CopyAtomC
+      CopyAtomC,
+      CopyOpR2R
     >;
 };
 
@@ -741,6 +754,7 @@ public:
 // since swapping NNN kernels input matrix and transposing its output at the same time then
 // we can get TTN kernel.
 template <
+  class OpClass,
   class TileShape_MNK,
   class ClusterShape_MNK,
   class EpilogueTileType,
@@ -756,7 +770,7 @@ template <
 >
 struct CollectiveBuilder<
     arch::Sm90,
-    arch::OpClassTensorOp,
+    OpClass,
     TileShape_MNK,
     ClusterShape_MNK,
     EpilogueTileType,

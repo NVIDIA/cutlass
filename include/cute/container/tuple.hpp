@@ -634,14 +634,23 @@ template <class Tuple, size_t... Is>
 CUTE_HOST_DEVICE void print_tuple(Tuple const& t, index_sequence<Is...>, char s = '(', char e = ')')
 {
   using cute::print;
-  print(s); ((void(print(Is == 0 ? '\0' : ',')), void(print(get<Is>(t)))), ...); print(e);
+  if (sizeof...(Is) == 0) {
+    print(s);
+  } else {
+    ((void(print(Is == 0 ? s : ',')), void(print(get<Is>(t)))), ...);
+  }
+  print(e);
 }
 
 #if !defined(__CUDACC_RTC__)
 template <class Tuple, std::size_t... Is>
 CUTE_HOST std::ostream& print_tuple_os(std::ostream& os, Tuple const& t, index_sequence<Is...>, char s = '(', char e = ')')
 {
-  os << s; (void(os << (Is == 0 ? '\0' : ',') << get<Is>(t)), ...);
+  if (sizeof...(Is) == 0) {
+    os << s;
+  } else {
+    (void(os << (Is == 0 ? s : ',') << get<Is>(t)), ...);
+  }
   return os << e;
 }
 #endif // !defined(__CUDACC_RTC__)

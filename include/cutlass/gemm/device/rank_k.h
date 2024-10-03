@@ -296,6 +296,7 @@ public:
 
     int smem_size = int(sizeof(typename RankKkernel::SharedStorage));
 
+    cutlass::arch::synclog_setup();
     cutlass::Kernel<RankKkernel><<<grid, block, smem_size, stream>>>(params_);
 
     cudaError_t result = cudaGetLastError();

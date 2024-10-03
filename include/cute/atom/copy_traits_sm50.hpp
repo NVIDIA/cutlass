@@ -39,7 +39,7 @@ namespace cute
 {
 
 template <>
-struct Copy_Traits<SM50_Shuffle_U32_2x2Trans>
+struct Copy_Traits<SM50_Shuffle_U32_2x2Trans_XOR1>
 {
   // Logical thread id to thread idx (one-thread)
   using ThrID = Layout<_32>;
@@ -50,6 +50,23 @@ struct Copy_Traits<SM50_Shuffle_U32_2x2Trans>
   // Map from (dst-thr,dst-val) to bit
   using DstLayout = Layout<Shape <Shape < _2,  _16>,Shape <_32,  _2>>,
                            Stride<Stride<_32, _128>,Stride< _1, _64>>>;
+
+  // Reference map from (thr,val) to bit
+  using RefLayout = SrcLayout;
+};
+
+template <>
+struct Copy_Traits<SM50_Shuffle_U32_2x2Trans_XOR4>
+{
+  // Logical thread id to thread idx (one-thread)
+  using ThrID = Layout<_32>;
+ 
+  // Map from (src-thr,src-val) to bit
+  using SrcLayout = Layout<Shape <_32,_64>,
+                           Stride<_64, _1>>;
+  // Map from (dst-thr,dst-val) to bit
+  using DstLayout = Layout<Shape <Shape < _4,  _2,   _4>, Shape<_32,   _2>>,
+                           Stride<Stride<_64, _32, _512>,Stride< _1, _256>>>;
 
   // Reference map from (thr,val) to bit
   using RefLayout = SrcLayout;

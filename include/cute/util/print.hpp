@@ -30,9 +30,8 @@
  **************************************************************************************************/
 #pragma once
 
-#include <cute/config.hpp>
-
-#include <cute/util/type_traits.hpp>
+#include <cute/config.hpp>           // CUTE_HOST_DEVICE
+#include <cute/util/type_traits.hpp> // cute::is_valid
 
 //
 // CUDA compatible print and printf
@@ -156,50 +155,45 @@ print(char const* format) {
 // pretty printing
 //
 
-template <class T>
 CUTE_HOST_DEVICE void
-pretty_print(T const& v) {
-  printf("  "); print(v);
-}
-
-CUTE_HOST_DEVICE void
-pretty_print(bool const& v) {
+pretty_print(bool v) {
   printf("%*d", 3, int(v));
 }
 
 CUTE_HOST_DEVICE void
-pretty_print(int32_t const& v) {
+pretty_print(int32_t v) {
   printf("%*d", 5, v);
 }
 
 CUTE_HOST_DEVICE void
-pretty_print(uint32_t const& v) {
+pretty_print(uint32_t v) {
   printf("%*d", 5, v);
 }
 
 CUTE_HOST_DEVICE void
-pretty_print(int64_t const& v) {
+pretty_print(int64_t v) {
   printf("%*lld", 5, static_cast<long long>(v));
 }
 
 CUTE_HOST_DEVICE void
-pretty_print(uint64_t const& v) {
+pretty_print(uint64_t v) {
   printf("%*llu", 5, static_cast<unsigned long long>(v));
 }
 
 CUTE_HOST_DEVICE void
-pretty_print(half_t const& v) {
-  printf("%*.2f", 8, float(v));
-}
-
-CUTE_HOST_DEVICE void
-pretty_print(float const& v) {
+pretty_print(float v) {
   printf("%*.2e", 10, v);
 }
 
 CUTE_HOST_DEVICE void
-pretty_print(double const& v) {
+pretty_print(double v) {
   printf("%*.3e", 11, v);
+}
+
+template <class T>
+CUTE_HOST_DEVICE void
+pretty_print(T t) {
+  printf("  "); print(t);
 }
 
 } // end namespace cute

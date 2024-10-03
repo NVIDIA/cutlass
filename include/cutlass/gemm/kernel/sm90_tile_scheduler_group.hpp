@@ -96,6 +96,8 @@ public:
   using Params = PersistentTileSchedulerSm90GroupParams<ProblemShape>;
   using RasterOrder = typename Params::RasterOrder;
   using RasterOrderOptions = typename Params::RasterOrderOptions;
+  static constexpr bool IsDynamicPersistent = false;
+
   struct Arguments {
     int max_swizzle_size = 1;
     // Not applying Heuristics for Grouped problems, since largest dimension can change per group
@@ -118,7 +120,9 @@ public:
     KernelHardwareInfo const& hw_info,
     Arguments const& arguments,
     [[maybe_unused]] void* workspace=nullptr,
-    [[maybe_unused]] const uint32_t epilogue_subtile = 1) {
+    [[maybe_unused]] const uint32_t epilogue_subtile = 1,
+    [[maybe_unused]] uint32_t ktile_start_alignment_count = 1u
+    ) {
 
     // We only need the tile and cluster shape during scheduler setup, so let FTAD do the magic
     static_assert(cute::is_static<TileShape>::value);
@@ -151,6 +155,7 @@ public:
   CUTLASS_HOST_DEVICE static
   dim3
   get_grid_shape(
+    [[maybe_unused]] Params const& params,
     GroupProblemShape problem_shapes,
     TileShape tile_shape,
     ClusterShape cluster_shape,
@@ -400,14 +405,14 @@ public:
   // The basic tile scheduler does not require any additional workspace
   template <class ProblemShape, class ElementAccumulator>
   static size_t
-  get_workspace_size(Arguments const&, ProblemShape, KernelHardwareInfo const&, uint32_t, const uint32_t = 1) {
+  get_workspace_size(Arguments const&, ProblemShape, KernelHardwareInfo const&, uint32_t, const uint32_t = 1, uint32_t = 1) {
     return 0;
   }
 
   template <class ProblemShape, class ElementAccumulator>
   static cutlass::Status
   initialize_workspace(Arguments const&, void*, cudaStream_t, ProblemShape, KernelHardwareInfo const&,
-    uint32_t, const uint32_t = 1, CudaHostAdapter* cuda_adapter = nullptr) {
+    uint32_t, const uint32_t = 1, uint32_t = 1, CudaHostAdapter* cuda_adapter = nullptr) {
     return Status::kSuccess;
   }
 
@@ -485,13 +490,13 @@ public:
   auto
   fetch_next_work(WorkTileInfo work_tile_info) {
     if (continue_current_work(work_tile_info)) {
-      return work_tile_info;
+      return cute::make_tuple(work_tile_info, true);
     }
 
     advance_to_next_work();
-    return get_current_work();
+    return cute::make_tuple(get_current_work(), true);
   }
-
+  
   // Returns the initial work tile info that will be computed over
   template <class ClusterShape>
   CUTLASS_DEVICE

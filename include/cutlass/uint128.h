@@ -49,12 +49,15 @@
 /// Optionally enable GCC's built-in type
 #if (defined(__x86_64) || defined (__aarch64__)) && !(defined(__CUDA_ARCH__) && ((__CUDACC_VER_MAJOR__ <= 10) || ((__CUDACC_VER_MAJOR__ == 11) && (__CUDACC_VER_MINOR__ <= 4)))) && defined(__GNUC__)
 #define CUTLASS_UINT128_NATIVE
-#elif defined(_MSC_VER) && defined(_M_AMD64) && !(defined(__CUDA_ARCH__) && ((__CUDACC_VER_MAJOR__ <= 10) || ((__CUDACC_VER_MAJOR__ == 11) && (__CUDACC_VER_MINOR__ <= 4))))
+#elif !defined(__CUDA_ARCH__)
+// No custom support for 128b arithmetic on device
+#if defined(_MSC_VER) && defined(_M_AMD64)
 #define CUTLASS_INT128_ARITHMETIC
 #include <intrin.h>
 #if _MSC_VER >= 1920 && !defined(__CUDA_ARCH__)
 #define CUTLASS_INT128_ARITHMETIC_DIV
 #include <immintrin.h>
+#endif
 #endif
 #endif
 
@@ -194,7 +197,7 @@ struct alignas(16) uint128_t
     uint64_t remainder{0};
 #if defined(CUTLASS_UINT128_NATIVE)
     remainder = uint64_t(native % divisor);
-#elif defined(CUTLASS_INT128_ARITHMETIC_DIV) && ! defined (__CUDA_ARCH__)
+#elif defined(CUTLASS_INT128_ARITHMETIC_DIV)
     // implemented using MSVC's arithmetic intrinsics
     (void)_udiv128(hilo_.hi, hilo_.lo, divisor, &remainder);
 #else

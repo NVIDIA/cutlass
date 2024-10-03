@@ -384,6 +384,54 @@ int main() {
 }
 ```
 
+## Debugging Asynchronous Kernels with CUTLASS's Built-in `synclog` Tool
+
+CUTLASS provides a built-in tool called `synclog` that enables printing runtime information useful for debugging asynchronous CUTLASS kernels. With the introduction of Warp Specialization in CUTLASS 3.0 for Hopper GPUs, kernel designs now incorporate synchronization among warps. The `synclog` tool simplifies debugging efforts for these asynchronous programs by recording and displaying timing information for synchronization events.
+
+### Enabling `synclog`
+To enable `synclog`, add the -DCUTLASS_ENABLE_SYNCLOG=1 flag during compilation. From the CUTLASS root directory:
+
+```
+$ mkdir build && cd build && 
+$ cmake .. -DCUTLASS_NVCC_ARCHS=90a -DCUTLASS_ENABLE_SYNCLOG=1
+```
+
+### Building and Running with `synclog`
+After enabling `synclog`, build your CUTLASS example. For instance, to build example 54:
+
+```
+$ cd examples/54_hopper_fp8_warp_specialized_gemm
+$ make
+```
+
+Run the example, setting the profiling iteration count to 0 to ensure `synclog` information is printed only for the reference run:
+
+```
+$ ./54_hopper_fp8_warp_specialized_gemm --iterations=0 &> synclog.txt
+```
+
+### Interpreting `synclog` output
+The synclog.txt file will contain runtime information about synchronization events. Here's a sample output snippet:
+
+```
+synclog start
+synclog at 1: cluster_barrier_init line=281 time=1725400116233388736 thread=0,0,0 block=0,0,0 smem_addr=197632 arrive_count=1
+synclog at 13: fence_barrier_init line=583 time=1725400116233388768 thread=32,0,0 block=0,0,0 
+...
+```
+
+Each line in the main body follows this format:
+```
+synclog at [synclog_at]: [header] line=[line] thread=[threadIdx.xyz] block=[blockIdx.xyz] 
+```
+* `synclog at`: Address in the `synclog` output buffer (in bytes). Output exceeding 2^26 bytes is discarded.
+* `header`: Name of the synchronization event.
+* `line`: Code line number of the synchronization operation calling into `synclog`.
+
+Additional information may appear at the end of each line, such as shared memory address, phase bit, and arrive count. For more detailed information on `synclog` output, refer to [synclog.hpp](../../include/cutlass/arch/synclog.hpp) in the CUTLASS source code. 
+
+Please note that `synclog` is an experimental feature, and its functionality is not always guaranteed. We encourage its use in custom kernels and CUTLASS examples, though it is known to be incompatible with profiler kernels.
+
 # Copyright
 
 Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.

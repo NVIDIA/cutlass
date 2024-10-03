@@ -378,6 +378,174 @@ struct Sm90AuxLoad {
   }
 };
 
+template <
+  class Element,
+  class EpilogueTile,   // Unused
+  class LayoutOrStrideMNL,
+  class SmemLayoutAtom, // Unused
+  class CopyOpS2R,      // Unused
+  int Alignment,
+  bool EnableNullptr
+>
+struct Sm90AuxLoad<
+  0, EpilogueTile, Element, LayoutOrStrideMNL, 
+  SmemLayoutAtom, CopyOpS2R, Alignment, EnableNullptr
+> {
+  using ElementAux = Element;
+  using StrideMNL = cutlass::gemm::TagToStrideC_t<LayoutOrStrideMNL>;
+
+  struct SharedStorage { };
+
+  struct Arguments {
+    Element const* ptr_aux = nullptr;
+    Element null_default = Element(0);
+    StrideMNL dAux = {};
+  };
+
+  using Params = Arguments;
+
+  template <class ProblemShape>
+  static constexpr Params
+  to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
+    return args;
+  }
+
+  template <class ProblemShape>
+  static bool
+  can_implement(ProblemShape const& problem_shape, Arguments const& args) {
+    return true;
+  }
+
+  template <class ProblemShape>
+  static size_t
+  get_workspace_size(ProblemShape const& problem_shape, Arguments const& args) {
+    return 0;
+  }
+
+  template <class ProblemShape>
+  static cutlass::Status
+  initialize_workspace(ProblemShape const& problem_shape, Arguments const& args, void* workspace, cudaStream_t stream,
+    CudaHostAdapter* cuda_adapter = nullptr) {
+    return cutlass::Status::kSuccess;
+  }
+
+  CUTLASS_HOST_DEVICE
+  Sm90AuxLoad() { }
+
+  CUTLASS_HOST_DEVICE
+  Sm90AuxLoad(Params const& params, SharedStorage const& shared_storage)
+    : params_ptr(&params) { }
+  
+  Params const* params_ptr;
+
+  CUTLASS_DEVICE bool
+  is_producer_load_needed() const {
+    return false;
+  }
+
+  CUTLASS_DEVICE bool
+  is_C_load_needed() const {
+    return false;
+  }
+
+  template <class... Args>
+  CUTLASS_DEVICE auto
+  get_producer_load_callbacks(ProducerLoadArgs<Args...> const& args) {
+    return EmptyProducerLoadCallbacks{};
+  }
+
+  template<
+    class GTensorG2R,
+    class RTensor,
+    class CTensorG2R,
+    class ProblemShapeMNL
+  >
+  struct ConsumerStoreCallbacks : EmptyConsumerStoreCallbacks {
+    CUTLASS_DEVICE
+    ConsumerStoreCallbacks(GTensorG2R&& tC_gAux,
+        RTensor&& tC_rAux,
+        CTensorG2R&& tC_cAux,
+        ProblemShapeMNL problem_shape_mnl,
+        Params const* params_ptr)
+      : tC_gAux(cute::forward<GTensorG2R>(tC_gAux)),
+        tC_rAux(cute::forward<RTensor>(tC_rAux)),
+        tC_cAux(cute::forward<CTensorG2R>(tC_cAux)),
+        problem_shape_mnl(problem_shape_mnl),
+        params_ptr(params_ptr) {}
+    
+    GTensorG2R tC_gAux;
+    RTensor tC_rAux;
+    CTensorG2R tC_cAux;
+    ProblemShapeMNL problem_shape_mnl;
+    Params const* params_ptr;
+
+    CUTLASS_DEVICE void
+    begin_loop(int epi_m, int epi_n) {
+      if constexpr (EnableNullptr) {
+        if (params_ptr->ptr_aux == nullptr) {
+          fill(tC_rAux, params_ptr->null_default);
+          return;
+        }
+      }
+      constexpr auto MCL = decltype(max_common_layout(tC_gAux(_,_,_,_0{},_0{}), tC_rAux)){};
+      constexpr int V = cute::min(Alignment, size(MCL));
+
+      Tensor tC_cAux_mn = tC_cAux(_,_,_,epi_m,epi_n);
+      Tensor tC_cAux_vec = tensor<1>(zipped_divide(coalesce(tC_cAux_mn), MCL.compose(Int<V>{})));
+      
+      Tensor tC_gAux_vec = recast<Array<Element, V>>(coalesce(tC_gAux(_,_,_,epi_m,epi_n)));
+      Tensor tC_rAux_vec = recast<Array<Element, V>>(coalesce(tC_rAux));
+
+      auto pred_fn = [&] (auto const&... coords) {
+        return elem_less(tC_cAux_vec(coords...), problem_shape_mnl);
+      };
+
+      copy_if(pred_fn, tC_gAux_vec, tC_rAux_vec);
+    }
+
+    template <typename ElementAccumulator, int FragmentSize>
+    CUTLASS_DEVICE Array<Element, FragmentSize>
+    visit(Array<ElementAccumulator, FragmentSize> const& frg_acc, int epi_v, int epi_m, int epi_n) {
+      return recast<Array<Element, FragmentSize>>(tC_rAux)(epi_v);
+    }
+  };
+
+  template <
+    bool ReferenceSrc,
+    class... Args
+  >
+  CUTLASS_DEVICE auto
+  get_consumer_store_callbacks(ConsumerStoreArgs<Args...> const& args) {
+    auto [M, N, K, L] = args.problem_shape_mnkl;
+    auto [m, n, k, l] = args.tile_coord_mnkl;
+
+    auto problem_shape_mnl = make_shape(M,N,L);
+
+    // Gmem Tensor
+    Tensor mAux = make_tensor(
+      make_gmem_ptr(params_ptr->ptr_aux), make_shape(M,N,L), params_ptr->dAux
+    );
+    Tensor tC_gAux = sm90_partition_for_epilogue<ReferenceSrc>(
+      mAux, args.tile_shape_mnk, args.tile_coord_mnkl, args.epi_tile, args.tiled_copy, args.thread_idx);
+
+    // Register Tensor
+    Tensor tC_rAux = make_tensor<Element>(take<0,3>(shape(tC_gAux)));
+
+    // Predication support
+    Tensor coordAux = make_identity_tensor(shape(mAux));
+    Tensor tC_cAux = sm90_partition_for_epilogue<ReferenceSrc>(
+      coordAux, args.tile_shape_mnk, args.tile_coord_mnkl, args.epi_tile, args.tiled_copy, args.thread_idx);
+
+    return ConsumerStoreCallbacks<decltype(tC_gAux), decltype(tC_rAux), decltype(tC_cAux), decltype(problem_shape_mnl)>(
+      cute::move(tC_gAux),
+      cute::move(tC_rAux),
+      cute::move(tC_cAux),
+      problem_shape_mnl,
+      params_ptr
+    );
+  }
+};
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 //
 // Broadcast Load Operations
@@ -388,11 +556,12 @@ struct Sm90AuxLoad {
 // Supports reduction over multiple broadcasts to support fusions such as fp8 scaling factors
 template<
   class Element,
-  class StrideMNL = Stride<_0,_0,_0>,
+  class StrideMNL_ = Stride<_0,_0,_0>,
   int BroadcastCount = 1,
   template <class> class ReductionFn = multiplies
 >
 struct Sm90ScalarBroadcast {
+  using StrideMNL = StrideMNL_;
   static_assert(is_static_v<decltype(take<0,2>(StrideMNL{}))>); // batch stride can be dynamic or static
   static_assert(take<0,2>(StrideMNL{}) == Stride<_0,_0>{});
 
@@ -401,7 +570,7 @@ struct Sm90ScalarBroadcast {
   struct Arguments {
     Element scalars[BroadcastCount] = {};
     Element const* scalar_ptrs[BroadcastCount] = {};
-    StrideMNL dScalar = {};
+    StrideMNL dScalar[BroadcastCount] = {};
   };
 
   using Params = Arguments;
@@ -444,7 +613,21 @@ struct Sm90ScalarBroadcast {
   // This must be called after update_scalar is called
   CUTLASS_DEVICE bool
   is_zero() const {
-    return scalar == Element(0);
+    if (get<2>(params_ptr->dScalar[0]) == 0) { 
+      // Only 1 batch
+      return scalar == Element(0);
+    }
+    else { 
+      // multiple batch
+      if (valid_scalar == false) {
+        // for stridedBatch kernel, if ptr has a valid address, we need to enable the epi_load warps.
+        return params_ptr->scalar_ptrs[0] == nullptr;
+      }
+      else {
+        // Check whether each batch is ZERO or not.
+        return scalar == Element(0);
+      }
+    }
   }
 
   CUTLASS_HOST_DEVICE
@@ -454,19 +637,20 @@ struct Sm90ScalarBroadcast {
   Sm90ScalarBroadcast(Params const& params, SharedStorage const& shared_storage)
       : params_ptr(&params) {
     // Get the scalar for non-batched broadcast
-    if (get<2>(params_ptr->dScalar) == 0) {
+    if (size<2>(params_ptr->dScalar[0]) == 0) {
       update_scalar();
     }
   }
 
   Element scalar;
+  bool valid_scalar = false;
   Params const* params_ptr;
 
   template <class... Args>
   CUTLASS_DEVICE auto
   get_producer_load_callbacks(ProducerLoadArgs<Args...> const& args) {
     // Get the scalar for batched broadcast
-    if (get<2>(params_ptr->dScalar) != 0) {
+    if (size<2>(params_ptr->dScalar[0]) != 0) {
       auto [m_coord, n_coord, k_coord, l_coord] = args.tile_coord_mnkl;
       update_scalar(l_coord);
     }
@@ -500,7 +684,7 @@ struct Sm90ScalarBroadcast {
   get_consumer_store_callbacks(ConsumerStoreArgs<Args...> const& args) {
 
     // Get the scalar for batched broadcast
-    if (get<2>(params_ptr->dScalar) != 0) {
+    if (get<2>(params_ptr->dScalar[0]) != 0) {
       auto [m_coord, n_coord, k_coord, l_coord] = args.tile_coord_mnkl;
       update_scalar(l_coord);
     }
@@ -511,11 +695,12 @@ struct Sm90ScalarBroadcast {
 private:
   CUTLASS_DEVICE void
   update_scalar(int l_coord = 0) {
-    int l_offset = l_coord * size<2>(params_ptr->dScalar);
+    valid_scalar = true;
+    int l_offset = l_coord * size<2>(params_ptr->dScalar[0]);
 
     if (params_ptr->scalar_ptrs[0] != nullptr) {
       scalar = params_ptr->scalar_ptrs[0][l_offset];
-    }
+    } 
     else {
       // batch stride is ignored for nullptr fallback
       scalar = params_ptr->scalars[0];
@@ -526,8 +711,10 @@ private:
     CUTLASS_PRAGMA_UNROLL
     for (int i = 1; i < BroadcastCount; ++i) {
       if (params_ptr->scalar_ptrs[i] != nullptr) {
-        scalar = reduction_fn(scalar, params_ptr->scalar_ptrs[i][l_offset]);
-      } else {
+        int rest_l_offset = l_coord * size<2>(params_ptr->dScalar[i]);
+        scalar = reduction_fn(scalar, params_ptr->scalar_ptrs[i][rest_l_offset]);
+      } 
+      else {
         // batch stride is ignored for nullptr fallback
         scalar = reduction_fn(scalar, params_ptr->scalars[i]);
       }
@@ -538,8 +725,8 @@ private:
   CUTLASS_DEVICE void
   update_scalar(cute::tuple<Xs...>) {
     // Only support multiple L-modes with fully-broadcast scalar
-    static_assert(cute::is_same_v<StrideMNL, Stride<_0,_0, _0>>);
     scalar = params_ptr->scalars[0];
+    valid_scalar = true;
   }
 };
 
@@ -706,6 +893,7 @@ private:
   }
 };
 
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace detail {
@@ -722,32 +910,40 @@ compute_row_broadcast_stages() {
 template<
   int Stages,
   class CtaTileShapeMNK,
-  class Element,
-  class StrideMNL = Stride<_0,_1,_0>,
-  int Alignment = 128 / sizeof_bits_v<Element>,
+  class ElementInput,
+  class ElementCompute = ElementInput,
+  class StrideMNL_ = Stride<_0,_1,_0>,
+  int Alignment = 128 / sizeof_bits_v<ElementInput>,
   bool EnableNullptr = true // Fallback scalar broadcast for nullptr params
 >
 struct Sm90RowBroadcast {
-  static_assert(Stages == 0, "Row broadcast doesn't support smem usage");
-  static_assert(is_static_v<decltype(take<0,2>(StrideMNL{}))>); // batch stride can be dynamic or static
-  static_assert(take<0,2>(StrideMNL{}) == Stride<_0,_1>{});
+  using StrideMNL = StrideMNL_;
+  static_assert(Stages == 0, "Row broadcast doesn't support smem pipelining");
+
+  static constexpr bool IsDynamicBroadcast = is_same_v<remove_cvref_t<decltype(get<1>(StrideMNL{}))>, bool>; // row vector or scalar broadcast
+  static_assert(is_static_v<decltype(take<0,2>(StrideMNL{}))> || IsDynamicBroadcast); // batch stride can be dynamic or static
+  static_assert(take<0,2>(StrideMNL{}) == Stride<_0,_1>{} || IsDynamicBroadcast);
 
   struct SharedStorage { 
-    array_aligned<Element, size<1>(CtaTileShapeMNK{})> smem;
+    array_aligned<ElementInput, size<1>(CtaTileShapeMNK{})> smem;
   };
 
   struct Arguments {
-    Element const* ptr_row = nullptr;
-    Element null_default = Element(0);
+    ElementInput const* ptr_row = nullptr;
+    ElementInput null_default = ElementInput(0);
     StrideMNL dRow = {};
   };
 
-  using Params = Arguments;
+  struct Params {
+    ElementInput const* ptr_row = nullptr;
+    ElementCompute null_default = ElementCompute(0);
+    StrideMNL dRow = {};
+  };
 
   template <class ProblemShape>
   static constexpr Params
   to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
-    return args;
+    return {args.ptr_row, ElementCompute(args.null_default), args.dRow};
   }
 
   template <class ProblemShape>
@@ -774,11 +970,22 @@ struct Sm90RowBroadcast {
 
   CUTLASS_HOST_DEVICE
   Sm90RowBroadcast(Params const& params, SharedStorage const& shared_storage)
-      : params(params)
-      , smem(const_cast<Element*>(shared_storage.smem.data())) { }
+      : params(params), is_zero_(false),
+        smem(const_cast<ElementInput*>(shared_storage.smem.data())) {
+    auto const& [stride_M, stride_N, stride_L] = params.dRow;
+    // Nullptr default
+    if (EnableNullptr && params.ptr_row == nullptr) {
+      is_zero_ = params.null_default == ElementCompute(0);
+    }
+    // Dynamic non-batched scalar broadcast
+    else if (IsDynamicBroadcast && stride_N == bool(0) && stride_L == repeat_like(stride_L, 0)) {
+      is_zero_ = params.ptr_row[0] == ElementInput(0);
+    }
+  }
 
   Params params;
-  Element *smem = nullptr;
+  bool is_zero_ = false;
+  ElementInput *smem = nullptr;
 
   CUTLASS_DEVICE bool
   is_producer_load_needed() const {
@@ -792,7 +999,7 @@ struct Sm90RowBroadcast {
 
   CUTLASS_DEVICE bool
   is_zero() const {
-    return (params.ptr_row == nullptr && params.null_default == Element(0));
+    return is_zero_;
   }
 
   template <class... Args>
@@ -801,24 +1008,27 @@ struct Sm90RowBroadcast {
     return EmptyProducerLoadCallbacks{};
   }
 
-  template <class GS_GTensor, class GS_STensor, class GS_CTensor, class Tiled_G2S, class SR_STensor, class SR_RTensor, class CTensor, class ThrResidue, class ThrNum>
+  template <class GS_GTensor, class GS_STensor, class GS_CTensor, class Tiled_G2S, class SR_STensor, class SR_RTensor, class Residue, class ThrNum>
   struct ConsumerStoreCallbacks : EmptyConsumerStoreCallbacks {
     CUTLASS_DEVICE
     ConsumerStoreCallbacks(
         GS_GTensor tGS_gRow_, GS_STensor tGS_sRow_, 
         GS_CTensor tGS_cRow_, Tiled_G2S tiled_g2s_, 
         SR_STensor tSR_sRow_, SR_RTensor tSR_rRow_,
-        CTensor tCcRow_, ThrResidue residue_tCcRow_, ThrNum thr_num_, Params const& params_)
+        Residue residue_cRow_, ThrNum thr_num_, Params const& params_)
       : tGS_gRow(tGS_gRow_)
       , tGS_sRow(tGS_sRow_)
       , tGS_cRow(tGS_cRow_)
       , tiled_G2S(tiled_g2s_)
       , tSR_sRow(tSR_sRow_)
       , tSR_rRow(tSR_rRow_)
-      , tCcRow(tCcRow_)
-      , residue_tCcRow(residue_tCcRow_)
+      , residue_cRow(residue_cRow_)
       , params(params_)
-      , is_nullptr(EnableNullptr && params_.ptr_row == nullptr) {}
+      , is_nullptr(EnableNullptr && params_.ptr_row == nullptr) {
+      if (is_nullptr) {
+        fill(tSR_rRow, params.null_default);
+      }
+    }
 
     GS_GTensor tGS_gRow;                                                         // (CPY,CPY_M,CPY_N)
     GS_STensor tGS_sRow;                                                         // (CPY,CPY_M,CPY_N)
@@ -828,35 +1038,31 @@ struct Sm90RowBroadcast {
     SR_STensor tSR_sRow;                                                         // (CPY,CPY_M,CPY_N,EPI_M,EPI_N)
     SR_RTensor tSR_rRow;                                                         // (CPY,CPY_M,CPY_N,EPI_M,EPI_N) 
   
-    CTensor tCcRow;                                                              // (CPY,CPY_M,CPY_N,EPI_M,EPI_N)
-    ThrResidue residue_tCcRow;                                                   // (m, n)
+    Residue residue_cRow;                                                        // (m, n)
     ThrNum thr_num;
     Params const& params;
     bool is_nullptr;
 
     CUTLASS_DEVICE void
     begin() {
-      if constexpr (EnableNullptr) {
-        if (params.ptr_row == nullptr) {
-          fill(tSR_rRow, params.null_default);
-          return;
-        }
+      if (is_nullptr) {
+        return;
       }
 
       auto synchronize = [&] () { cutlass::arch::NamedBarrier::sync(thr_num, cutlass::arch::ReservedNamedBarriers::EpilogueBarrier); };
       Tensor tGS_gRow_flt = filter_zeros(tGS_gRow);
       Tensor tGS_sRow_flt = filter_zeros(tGS_sRow);
-      Tensor tGS_cRow_flt = make_tensor(tGS_cRow.data(), make_layout(tGS_gRow_flt.shape(), tGS_cRow.stride()));
+      Tensor tGS_cRow_flt = filter_zeros(tGS_cRow, tGS_gRow.stride());
 
       for (int i = 0; i < size(tGS_gRow_flt); ++i) {
         if (get<1>(tGS_cRow_flt(i)) >= size<1>(CtaTileShapeMNK{})) {
           continue; // OOB of SMEM, 
         }
-        if (elem_less(tGS_cRow_flt(i), make_coord(get<0>(residue_tCcRow), get<1>(residue_tCcRow)))) {
+        if (elem_less(tGS_cRow_flt(i), residue_cRow)) {
           tGS_sRow_flt(i) = tGS_gRow_flt(i);
         }
         else {
-          tGS_sRow_flt(i) = Element(0); // Set to Zero when OOB so LDS could be issue without any preds.
+          tGS_sRow_flt(i) = ElementInput(0); // Set to Zero when OOB so LDS can be issued without any preds.
         }
       }
       synchronize();
@@ -864,18 +1070,28 @@ struct Sm90RowBroadcast {
 
     CUTLASS_DEVICE void
     begin_loop(int epi_m, int epi_n) {
-      if (epi_m == 0) { // Assumes M-major subtile loop
-        if (is_nullptr) return; // Do not issue LDS when bias is nullptr
+      if (epi_m == 0 and not is_nullptr) { // Assumes M-major subtile loop
         Tensor tSR_sRow_flt = filter_zeros(tSR_sRow(_,_,_,epi_m,epi_n));
-        Tensor tSR_rRow_flt = filter_zeros(tSR_rRow);
-        copy(tSR_sRow_flt, tSR_rRow_flt);
+        Tensor tSR_rRow_flt = make_tensor_like<ElementInput>(tSR_sRow_flt);
+        copy_aligned(tSR_sRow_flt, tSR_rRow_flt);
+
+        constexpr int FrgSize = size(tSR_rRow_flt);
+        using FrgInput = Array<ElementInput, FrgSize>;
+        using FrgCompute = Array<ElementCompute, FrgSize>;
+        using ConvertInput = NumericArrayConverter<ElementCompute, ElementInput, FrgSize>;
+
+        Tensor tSR_rRow_input_frg = recast<FrgInput>(coalesce(tSR_rRow_flt));
+        Tensor tSR_rRow_compute_frg = recast<FrgCompute>(filter(tSR_rRow));
+        ConvertInput convert_input{};
+
+        tSR_rRow_compute_frg(_0{}) = convert_input(tSR_rRow_input_frg(_0{}));
       }
     }
 
     template <typename ElementAccumulator, int FragmentSize>
-    CUTLASS_DEVICE Array<Element, FragmentSize>
+    CUTLASS_DEVICE Array<ElementCompute, FragmentSize>
     visit(Array<ElementAccumulator, FragmentSize> const& frg_acc, int epi_v, int epi_m, int epi_n) {
-      Array<Element, FragmentSize> frg_row;
+      Array<ElementCompute, FragmentSize> frg_row;
 
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < FragmentSize; ++i) {
@@ -896,12 +1112,30 @@ struct Sm90RowBroadcast {
     auto [m, n, k, l] = args.tile_coord_mnkl;
     using ThreadCount = decltype(size(args.tiled_copy));
 
-    Tensor mRow = make_tensor(make_gmem_ptr(params.ptr_row), make_shape(M,N,L), params.dRow);
+    auto layout_N = [&] () {
+      auto shape_N = get<1>(args.problem_shape_mnkl);
+      if constexpr (IsDynamicBroadcast) {
+        auto stride_N = repeat_like(shape_N, int(0));
+        if (get<1>(params.dRow) == bool(1)) {
+          stride_N = transform_leaf(compact_major<LayoutLeft>(shape_N),
+            [] (auto const& stride) { return static_cast<int>(stride); }
+          );
+        }
+        return make_layout(shape_N, stride_N);
+      }
+      else {
+        return make_layout(shape_N);
+      }
+    }();
+
+    auto layout_M = make_layout(M, repeat_like(M, _0{}));
+    auto layout_L = make_layout(L, get<2>(params.dRow));
+    Tensor mRow = make_tensor(make_gmem_ptr(params.ptr_row), make_layout(layout_M,layout_N,layout_L));
     Tensor gRow = local_tile(mRow(_,_,l), take<0,2>(args.tile_shape_mnk), make_coord(m, n));          // (CTA_M, CTA_N)
     Tensor sRow = make_tensor(make_smem_ptr(smem), 
         make_shape(size<0>(CtaTileShapeMNK{}), size<1>(CtaTileShapeMNK{})), make_shape(_0{}, _1{}));  // (CTA_M, CTA_N)
     //// G2S: Gmem to Smem
-    auto tiled_g2s = make_tiled_copy(Copy_Atom<DefaultCopy, Element>{},
+    auto tiled_g2s = make_tiled_copy(Copy_Atom<DefaultCopy, ElementInput>{},
                                      Layout< Shape<_1, ThreadCount>, 
                                             Stride<_0,          _1>>{}, 
                                      Layout<_1>{});   
@@ -910,20 +1144,18 @@ struct Sm90RowBroadcast {
     Tensor tGS_sRow = thr_g2s.partition_D(sRow);
 
     //// G2S: Coord 
-    auto cRow = make_identity_tensor(make_shape(size<0>(CtaTileShapeMNK{}), size<1>(CtaTileShapeMNK{})));
-    Tensor tGS_cRow = thr_g2s.partition_S(cRow);
+    Tensor tGS_cRow = thr_g2s.partition_S(args.cD);
 
     //// S2R: Smem to Reg
     Tensor tSR_sRow = sm90_partition_for_epilogue<ReferenceSrc>(sRow, args.epi_tile, args.tiled_copy, args.thread_idx);
-    Tensor tSR_rRow = make_tensor_like(take<0,3>(tSR_sRow));                                           // (CPY,CPY_M,CPY_N)
+    Tensor tSR_rRow = make_tensor_like<ElementCompute>(take<0,3>(tSR_sRow));                        // (CPY,CPY_M,CPY_N)
 
-    return ConsumerStoreCallbacks<decltype(tGS_gRow), decltype(tGS_sRow), decltype(tGS_cRow), decltype(tiled_g2s), decltype(tSR_sRow), decltype(tSR_rRow), decltype(args.tCcD), decltype(args.residue_cD), ThreadCount>(
+    return ConsumerStoreCallbacks(
       tGS_gRow, 
       tGS_sRow, 
       tGS_cRow, tiled_g2s, 
       tSR_sRow, 
       tSR_rRow, 
-      args.tCcD, 
       args.residue_cD,
       ThreadCount{}, 
       params);
@@ -936,31 +1168,39 @@ struct Sm90RowBroadcast {
 template<
   int Stages,
   class CtaTileShapeMNK,
-  class Element,
-  class StrideMNL = Stride<_1,_0,_0>,
-  int Alignment = 128 / sizeof_bits_v<Element>,
+  class ElementInput,
+  class ElementCompute = ElementInput,
+  class StrideMNL_ = Stride<_1,_0,_0>,
+  int Alignment = 128 / sizeof_bits_v<ElementInput>,
   bool EnableNullptr = true // Fallback scalar broadcast for nullptr params
 >
 struct Sm90ColBroadcast {
-  static_assert(Stages == 0, "Column broadcast doesn't support smem usage");
-  static_assert(is_static_v<decltype(take<0,2>(StrideMNL{}))>); // batch stride can be dynamic or static
-  static_assert(take<0,2>(StrideMNL{}) == Stride<_1,_0>{});
+  using StrideMNL = StrideMNL_;
+  static_assert(Stages == 0, "Column broadcast doesn't support smem pipelining");
+
+  static constexpr bool IsDynamicBroadcast = is_same_v<remove_cvref_t<decltype(get<0>(StrideMNL{}))>, bool>; // Column vector or scalar broadcast
+  static_assert(is_static_v<decltype(take<0,2>(StrideMNL{}))> || IsDynamicBroadcast); // batch stride can be dynamic or static
+  static_assert(take<0,2>(StrideMNL{}) == Stride<_1,_0>{} || IsDynamicBroadcast);
 
   // Accumulator distributes col elements evenly amongst threads so we can just directly load from gmem
   struct SharedStorage { };
 
   struct Arguments {
-    Element const* ptr_col = nullptr;
-    Element null_default = Element(0);
+    ElementInput const* ptr_col = nullptr;
+    ElementInput null_default = ElementInput(0);
     StrideMNL dCol = {};
   };
 
-  using Params = Arguments;
+  struct Params {
+    ElementInput const* ptr_col = nullptr;
+    ElementCompute null_default = ElementCompute(0);
+    StrideMNL dCol = {};
+  };
 
   template <class ProblemShape>
   static constexpr Params
   to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
-    return args;
+    return {args.ptr_col, ElementCompute(args.null_default), args.dCol};
   }
 
   template <class ProblemShape>
@@ -994,7 +1234,7 @@ struct Sm90ColBroadcast {
 
   CUTLASS_DEVICE bool
   is_zero() const {
-    return (params.ptr_col == nullptr && params.null_default == Element(0));
+    return is_zero_;
   }
 
   CUTLASS_HOST_DEVICE
@@ -1002,9 +1242,20 @@ struct Sm90ColBroadcast {
 
   CUTLASS_HOST_DEVICE
   Sm90ColBroadcast(Params const& params, SharedStorage const& shared_storage)
-      : params(params) { }
+      : params(params), is_zero_(false) {
+    auto const& [stride_M, stride_N, stride_L] = params.dCol;
+    // Nullptr default
+    if (EnableNullptr && params.ptr_col == nullptr) {
+      is_zero_ = params.null_default == ElementCompute(0);
+    }
+    // Dynamic non-batched scalar broadcast
+    else if (IsDynamicBroadcast && stride_M == bool(0) && stride_L == repeat_like(stride_L, 0)) {
+      is_zero_ = params.ptr_col[0] == ElementInput(0);
+    }
+  }
 
   Params params;
+  bool is_zero_;
 
   template <class... Args>
   CUTLASS_DEVICE auto
@@ -1015,12 +1266,16 @@ struct Sm90ColBroadcast {
   template<class GTensor, class RTensor, class CTensor, class ThrResidue>
   struct ConsumerStoreCallbacks : EmptyConsumerStoreCallbacks {
     CUTLASS_DEVICE
-    ConsumerStoreCallbacks(GTensor&& tCgCol, RTensor&& tCrCol, CTensor tCcCol, ThrResidue residue_tCcCol, Params const& params)
-      : tCgCol(cute::forward<GTensor>(tCgCol)),
-        tCrCol(cute::forward<RTensor>(tCrCol)),
-        tCcCol(tCcCol),
-        residue_tCcCol(residue_tCcCol),
-        params(params) {}
+    ConsumerStoreCallbacks(GTensor tCgCol_, RTensor tCrCol_, CTensor tCcCol_, ThrResidue residue_tCcCol_, Params const& params_)
+      : tCgCol(tCgCol_),
+        tCrCol(tCrCol_),
+        tCcCol(tCcCol_),
+        residue_tCcCol(residue_tCcCol_),
+        params(params_) {
+      if (EnableNullptr && params.ptr_col == nullptr) {
+        fill(tCrCol, params.null_default);
+      }
+    }
 
     GTensor tCgCol;                                                                    // (CPY,CPY_M,CPY_N,EPI_M,EPI_N)
     RTensor tCrCol;                                                                    // (CPY,CPY_M,CPY_N,EPI_M,EPI_N)
@@ -1030,23 +1285,20 @@ struct Sm90ColBroadcast {
 
     CUTLASS_DEVICE void
     begin() {
-      if constexpr (EnableNullptr) {
-        if (params.ptr_col == nullptr) {
-          fill(tCrCol, params.null_default);
-          return;
-        }
+      if (EnableNullptr && params.ptr_col == nullptr) {
+        return;
       }
 
       // Filter so we don't issue redundant copies over stride-0 modes
       // (only works if 0-strides are in same location, which is by construction)
       Tensor tCgCol_flt = filter_zeros(tCgCol);
-      Tensor tCrCol_flt = filter_zeros(tCrCol);
-      Tensor tCcCol_flt = make_tensor(tCcCol.data(), make_layout(tCrCol_flt.shape(), tCcCol.stride()));
+      Tensor tCrCol_flt = make_tensor_like<ElementInput>(filter_zeros(tCrCol));
+      Tensor tCcCol_flt = filter_zeros(tCcCol, tCgCol.stride());
 
       constexpr auto MCL = decltype(max_common_layout(tCgCol_flt, tCrCol_flt)){};
       constexpr int V = cute::min(Alignment, size(MCL));
       if constexpr (V > 1) {
-        using VecType = uint_bit_t<V * sizeof_bits_v<Element>>;
+        using VecType = uint_bit_t<V * sizeof_bits_v<ElementInput>>;
         Tensor tCgCol_vec = recast<VecType>(coalesce(tCgCol_flt));
         Tensor tCrCol_vec = recast<VecType>(coalesce(tCrCol_flt));
         Tensor tCcCol_vec = tensor<1>(zipped_divide(tCcCol_flt, MCL.compose(Int<V>{})));
@@ -1057,12 +1309,23 @@ struct Sm90ColBroadcast {
         auto pred_fn = [&] (auto const&... coords) { return elem_less(tCcCol_flt(coords...), residue_tCcCol); };
         copy_if(pred_fn, tCgCol_flt, tCrCol_flt);
       }
+
+      constexpr int FrgSize = size(tCrCol_flt);
+      using FrgInput = Array<ElementInput, FrgSize>;
+      using FrgCompute = Array<ElementCompute, FrgSize>;
+      using ConvertInput = NumericArrayConverter<ElementCompute, ElementInput, FrgSize>;
+
+      Tensor tCrCol_input_frg = recast<FrgInput>(coalesce(tCrCol_flt));
+      Tensor tCrCol_compute_frg = recast<FrgCompute>(filter(tCrCol));
+      ConvertInput convert_input{};
+
+      tCrCol_compute_frg(_0{}) = convert_input(tCrCol_input_frg(_0{}));
     }
 
     template <typename ElementAccumulator, int FragmentSize>
-    CUTLASS_DEVICE Array<Element, FragmentSize>
+    CUTLASS_DEVICE Array<ElementCompute, FragmentSize>
     visit(Array<ElementAccumulator, FragmentSize> const& frg_acc, int epi_v, int epi_m, int epi_n) {
-      Array<Element, FragmentSize> frg_col;
+      Array<ElementCompute, FragmentSize> frg_col;
       Tensor tCrCol_mn = tCrCol(_,_,_,epi_m,epi_n);
 
       CUTLASS_PRAGMA_UNROLL
@@ -1083,13 +1346,34 @@ struct Sm90ColBroadcast {
   get_consumer_store_callbacks(ConsumerStoreArgs<Args...> const& args) {
 
     auto [M, N, K, L] = args.problem_shape_mnkl;
-    Tensor mCol = make_tensor(make_gmem_ptr(params.ptr_col), make_shape(M,N,L), params.dCol);
+    auto layout_M = [&] () {
+      auto shape_M = get<0>(args.problem_shape_mnkl);
+      if constexpr (IsDynamicBroadcast) {
+        auto stride_M = repeat_like(shape_M, int(0));
+        if (get<0>(params.dCol) == bool(1)) {
+          stride_M = transform_leaf(compact_major<LayoutLeft>(shape_M),
+            [] (auto const& stride) { return static_cast<int>(stride); }
+          );
+        }
+        return make_layout(shape_M, stride_M);
+      }
+      else {
+        return make_layout(shape_M);
+      }
+    }();
+
+    auto layout_N = make_layout(N, repeat_like(N, _0{}));
+    auto layout_L = make_layout(L, get<2>(params.dCol));
+    Tensor mCol = make_tensor(make_gmem_ptr(params.ptr_col), make_layout(layout_M,layout_N,layout_L));
     Tensor tCgCol = sm90_partition_for_epilogue<ReferenceSrc>(                         // (CPY,CPY_M,CPY_N,EPI_M,EPI_N)
       mCol, args.tile_shape_mnk, args.tile_coord_mnkl, args.epi_tile, args.tiled_copy, args.thread_idx);
-    Tensor tCrCol = make_tensor_like(tCgCol);                                          // (CPY,CPY_M,CPY_N,EPI_M,EPI_N)
 
-    return ConsumerStoreCallbacks<decltype(tCgCol), decltype(tCrCol), decltype(args.tCcD), decltype(args.residue_tCcD)>(
-      cute::move(tCgCol), cute::move(tCrCol), args.tCcD, args.residue_tCcD, params);
+    Tensor mCol_static = make_tensor(make_gmem_ptr(params.ptr_col), make_layout(make_layout(M),layout_N,layout_L));
+    Tensor tCgCol_static = sm90_partition_for_epilogue<ReferenceSrc>(                  // (CPY,CPY_M,CPY_N,EPI_M,EPI_N)
+      mCol_static, args.tile_shape_mnk, args.tile_coord_mnkl, args.epi_tile, args.tiled_copy, args.thread_idx);
+    Tensor tCrCol = make_tensor_like<ElementCompute>(tCgCol_static);                   // (CPY,CPY_M,CPY_N,EPI_M,EPI_N)
+
+    return ConsumerStoreCallbacks(tCgCol, tCrCol, args.tCcD, args.residue_tCcD, params);
   }
 };
 
@@ -1109,6 +1393,20 @@ template <
 >
 using Sm90MatrixBroadcast
   = Sm90AuxLoad<Stages, EpilogueTile, Element, StrideMNL, SmemLayoutAtom, CopyOpS2R, EnableNullptr>;
+
+namespace detail {
+
+template <typename Operation, typename = void>
+struct IsScalarBroadcast {
+  static constexpr bool value = false;
+};
+
+template <typename Operation>
+struct IsScalarBroadcast<Operation, cute::enable_if_t<is_same_v<decltype(take<0,2>(typename Operation::StrideMNL{})), Stride<_0,_0>>>> {
+  static constexpr bool value = true;
+};
+
+}
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

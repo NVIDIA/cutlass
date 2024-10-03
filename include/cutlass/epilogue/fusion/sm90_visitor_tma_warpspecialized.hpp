@@ -170,7 +170,7 @@ struct ConsumerStoreArgs {
   Residue residue_cD;
   ThrCoordTensor tCcD;
   ThrResidue residue_tCcD;
-  ThrSrcTensor const& tCrC;
+  ThrSrcTensor & tCrC;
   int thread_idx;
 
   CUTLASS_DEVICE
@@ -185,7 +185,7 @@ struct ConsumerStoreArgs {
       Residue residue_cD,
       ThrCoordTensor tCcD,
       ThrResidue residue_tCcD,
-      ThrSrcTensor const& tCrC,
+      ThrSrcTensor & tCrC,
       int thread_idx)
   : problem_shape_mnkl(problem_shape_mnkl),
     tile_shape_mnk(tile_shape_mnk),
@@ -361,14 +361,12 @@ struct Sm90VisitorImpl : Sm90VisitorImplBase<Ops...> {
     // Callbacks can store non-persistent variables (e.g. tensors) or copies of persistent variables
     CallbacksTuple callbacks_tuple;
 
-    // Before entry of the subtile load loop. Bulk copies usually performed here.
-    // Upon entry the producer_acquire of the first subtile lock has completed.
-    // full_mbarrier_ptr is the corresponding barrier for the subsequent producer_commit arrival
+    // Before entry of the subtile load loop
     CUTLASS_DEVICE void
-    begin(uint64_t* full_mbarrier_ptr, int load_iteration, bool issue_tma_load) {
+    begin() {
       for_each(callbacks_tuple,
         [&] (auto& callbacks) {
-          callbacks.begin(full_mbarrier_ptr, load_iteration, issue_tma_load);
+          callbacks.begin();
         }
       );
     }

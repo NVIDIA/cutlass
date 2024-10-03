@@ -217,6 +217,15 @@ TEST(NumericConversion, f32_to_fe4m3_rn) {
   test::core::kernel::run_test<Destination, Source, kN>(dest_name, source_name);
 }
 
+TEST(NumericConversion, f32_to_fe4m3_rn_2_elements) {
+  int const kN = 2;
+  using Source = float;
+  const char source_name[] = "float";
+  using Destination = cutlass::float_e4m3_t;
+  const char dest_name[] = "float_e4m3_t";
+  test::core::kernel::run_test<Destination, Source, kN>(dest_name, source_name);
+}
+
 TEST(NumericConversion, f32_to_fe4m3_rn_array) {
   int const kN = 27;
   using Source = float;
@@ -228,6 +237,15 @@ TEST(NumericConversion, f32_to_fe4m3_rn_array) {
 
 TEST(NumericConversion, f32_to_fe5m2_rn) {
   int const kN = 1;
+  using Source = float;
+  const char source_name[] = "float";
+  using Destination = cutlass::float_e5m2_t;
+  const char dest_name[] = "float_e5m2_t";
+  test::core::kernel::run_test<Destination, Source, kN>(dest_name, source_name);
+}
+
+TEST(NumericConversion, f32_to_fe5m2_rn_2_elements) {
+  int const kN = 2;
   using Source = float;
   const char source_name[] = "float";
   using Destination = cutlass::float_e5m2_t;
@@ -253,6 +271,15 @@ TEST(NumericConversion, f16_to_fe4m3_rn) {
   test::core::kernel::run_test<Destination, Source, kN>(dest_name, source_name);
 }
 
+TEST(NumericConversion, f16_to_fe4m3_rn_2_elements) {
+  int const kN = 2;
+  using Source = cutlass::half_t;
+  const char source_name[] = "half_t";
+  using Destination = cutlass::float_e4m3_t;
+  const char dest_name[] = "float_e4m3_t";
+  test::core::kernel::run_test<Destination, Source, kN>(dest_name, source_name);
+}
+
 TEST(NumericConversion, f16_to_fe4m3_rn_array) {
   int const kN = 27;
   using Source = cutlass::half_t;
@@ -264,6 +291,15 @@ TEST(NumericConversion, f16_to_fe4m3_rn_array) {
 
 TEST(NumericConversion, f16_to_fe5m2_rn) {
   int const kN = 1;
+  using Source = cutlass::half_t;
+  const char source_name[] = "half_t";
+  using Destination = cutlass::float_e5m2_t;
+  const char dest_name[] = "float_e5m2_t";
+  test::core::kernel::run_test<Destination, Source, kN>(dest_name, source_name);
+}
+
+TEST(NumericConversion, f16_to_fe5m2_rn_2_elements) {
+  int const kN = 27;
   using Source = cutlass::half_t;
   const char source_name[] = "half_t";
   using Destination = cutlass::float_e5m2_t;
@@ -289,6 +325,15 @@ TEST(NumericConversion, bf16_to_fe4m3_rn) {
   test::core::kernel::run_test<Destination, Source, kN>(dest_name, source_name);
 }
 
+TEST(NumericConversion, bf16_to_fe4m3_rn_2_elements) {
+  int const kN = 27;
+  using Source = cutlass::bfloat16_t;
+  const char source_name[] = "bfloat16_t";
+  using Destination = cutlass::float_e4m3_t;
+  const char dest_name[] = "float_e4m3_t";
+  test::core::kernel::run_test<Destination, Source, kN>(dest_name, source_name);
+}
+
 TEST(NumericConversion, bf16_to_fe4m3_rn_array) {
   int const kN = 27;
   using Source = cutlass::bfloat16_t;
@@ -300,6 +345,15 @@ TEST(NumericConversion, bf16_to_fe4m3_rn_array) {
 
 TEST(NumericConversion, bf16_to_fe5m2_rn) {
   int const kN = 1;
+  using Source = cutlass::bfloat16_t;
+  const char source_name[] = "bfloat16_t";
+  using Destination = cutlass::float_e5m2_t;
+  const char dest_name[] = "float_e5m2_t";
+  test::core::kernel::run_test<Destination, Source, kN>(dest_name, source_name);
+}
+
+TEST(NumericConversion, bf16_to_fe5m2_rn_2_elements) {
+  int const kN = 27;
   using Source = cutlass::bfloat16_t;
   const char source_name[] = "bfloat16_t";
   using Destination = cutlass::float_e5m2_t;
@@ -327,6 +381,15 @@ TEST(NumericConversion, fe4m3_to_fe5m2_rn) {
   test::core::kernel::run_test<Destination, Source, kN>(dest_name, source_name);
 }
 
+TEST(NumericConversion, fe4m3_to_fe5m2_2_elements) {
+  int const kN = 27;
+  using Source = cutlass::float_e4m3_t;
+  const char source_name[] = "float_e4m3_t";
+  using Destination = cutlass::float_e5m2_t;
+  const char dest_name[] = "float_e5m2_t";
+  test::core::kernel::run_test<Destination, Source, kN>(dest_name, source_name);
+}
+
 TEST(NumericConversion, fe4m3_to_fe5m2_array) {
   int const kN = 27;
   using Source = cutlass::float_e4m3_t;
@@ -338,6 +401,15 @@ TEST(NumericConversion, fe4m3_to_fe5m2_array) {
 
 TEST(NumericConversion, fe5m2_to_fe4m3_rn) {
   int const kN = 1;
+  using Source = cutlass::float_e5m2_t;
+  const char source_name[] = "float_e5m2_t";
+  using Destination = cutlass::float_e4m3_t;
+  const char dest_name[] = "float_e4m3_t";
+  test::core::kernel::run_test<Destination, Source, kN>(dest_name, source_name);
+}
+
+TEST(NumericConversion, fe5m2_to_fe4m3_2_elements) {
+  int const kN = 27;
   using Source = cutlass::float_e5m2_t;
   const char source_name[] = "float_e5m2_t";
   using Destination = cutlass::float_e4m3_t;
@@ -375,10 +447,28 @@ TEST(NumericConversion, f32x8_to_s8x8_rn) {
   test::core::kernel::run_test<Destination, Source, kN>(dest_name, source_name);
 }
 
+TEST(NumericConversion, fe4m3_to_f32_2_elements) {
+  int const kN = 2;
+  using Source = cutlass::float_e4m3_t;
+  const char source_name[] = "float_e4m3_t";
+  using Destination = float;
+  const char dest_name[] = "float";
+  test::core::kernel::run_test<Destination, Source, kN>(dest_name, source_name);
+}
+
 TEST(NumericConversion, fe4m3_to_f32_array) {
   int const kN = 27;
   using Source = cutlass::float_e4m3_t;
   const char source_name[] = "float_e4m3_t";
+  using Destination = float;
+  const char dest_name[] = "float";
+  test::core::kernel::run_test<Destination, Source, kN>(dest_name, source_name);
+}
+
+TEST(NumericConversion, fe5m2_to_f32_2_elements) {
+  int const kN = 2;
+  using Source = cutlass::float_e5m2_t;
+  const char source_name[] = "float_e5m2_t";
   using Destination = float;
   const char dest_name[] = "float";
   test::core::kernel::run_test<Destination, Source, kN>(dest_name, source_name);
@@ -395,6 +485,15 @@ TEST(NumericConversion, fe5m2_to_f32_array) {
 
 TEST(NumericConversion, fe4m3_to_f16_rn) {
   int const kN = 1;
+  using Source = cutlass::float_e4m3_t;
+  const char source_name[] = "float_e4m3_t";
+  using Destination = cutlass::half_t;
+  const char dest_name[] = "half_t";
+  test::core::kernel::run_test<Destination, Source, kN>(dest_name, source_name);
+}
+
+TEST(NumericConversion, fe4m3_to_f16_2_elements) {
+  int const kN = 2;
   using Source = cutlass::float_e4m3_t;
   const char source_name[] = "float_e4m3_t";
   using Destination = cutlass::half_t;
@@ -420,6 +519,15 @@ TEST(NumericConversion, fe5m2_to_f16_rn) {
   test::core::kernel::run_test<Destination, Source, kN>(dest_name, source_name);
 }
 
+TEST(NumericConversion, fe5m2_to_f16_2_elements) {
+  int const kN = 2;
+  using Source = cutlass::float_e5m2_t;
+  const char source_name[] = "float_e5m2_t";
+  using Destination = cutlass::half_t;
+  const char dest_name[] = "half_t";
+  test::core::kernel::run_test<Destination, Source, kN>(dest_name, source_name);
+}
+
 TEST(NumericConversion, fe5m2_to_f16_array) {
   int const kN = 27;
   using Source = cutlass::float_e5m2_t;
@@ -438,6 +546,15 @@ TEST(NumericConversion, fe4m3_to_bf16_rn) {
   test::core::kernel::run_test<Destination, Source, kN>(dest_name, source_name);
 }
 
+TEST(NumericConversion, fe4m3_to_bf16_2_elements) {
+  int const kN = 2;
+  using Source = cutlass::float_e4m3_t;
+  const char source_name[] = "float_e4m3_t";
+  using Destination = cutlass::bfloat16_t;
+  const char dest_name[] = "bfloat16_t";
+  test::core::kernel::run_test<Destination, Source, kN>(dest_name, source_name);
+}
+
 TEST(NumericConversion, fe4m3_to_bf16_array) {
   int const kN = 27;
   using Source = cutlass::float_e4m3_t;
@@ -449,6 +566,15 @@ TEST(NumericConversion, fe4m3_to_bf16_array) {
 
 TEST(NumericConversion, fe5m2_to_bf16_rn) {
   int const kN = 1;
+  using Source = cutlass::float_e5m2_t;
+  const char source_name[] = "float_e5m2_t";
+  using Destination = cutlass::bfloat16_t;
+  const char dest_name[] = "bfloat16_t";
+  test::core::kernel::run_test<Destination, Source, kN>(dest_name, source_name);
+}
+
+TEST(NumericConversion, fe5m2_to_bf16_2_elements) {
+  int const kN = 2;
   using Source = cutlass::float_e5m2_t;
   const char source_name[] = "float_e5m2_t";
   using Destination = cutlass::bfloat16_t;

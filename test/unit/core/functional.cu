@@ -497,20 +497,18 @@ __global__ void
 test_cutlass_maximum(cutlass::half_t const* in1, cutlass::half_t const* in2, cutlass::half_t* out)
 {
   {
-    constexpr bool propagate_NaN = true;
-    cutlass::maximum<cutlass::half_t, propagate_NaN> op;
-    if (threadIdx.x == 0 && threadIdx.y == 0 && threadIdx.z == 0
-        && blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0) {
-      *out = op(*in1, *in2);
-    }
+  constexpr bool propagate_NaN = true;
+  cutlass::maximum<cutlass::half_t, propagate_NaN> op;
+  if (threadIdx.x == 0 && threadIdx.y == 0 && threadIdx.z == 0
+    && blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0) {
+    *out = op(*in1, *in2);
   }
-  {
-    constexpr bool propagate_NaN = false;
-    cutlass::maximum<cutlass::half_t, propagate_NaN> op;
-    if (threadIdx.x == 0 && threadIdx.y == 0 && threadIdx.z == 0
-        && blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0) {
-      *out = op(*in1, *in2);
-    }
+  }
+  constexpr bool propagate_NaN = false;
+  cutlass::maximum<cutlass::half_t, propagate_NaN> op;
+  if (threadIdx.x == 0 && threadIdx.y == 0 && threadIdx.z == 0
+    && blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0) {
+    *out = op(*in1, *in2);
   }
 }
 
@@ -543,7 +541,7 @@ TEST(Functional, maximum_half_host_dont_propagate_NaN) {
   EXPECT_EQ(result, y);
 }
 
-TEST(Function, maximum_half_device) {
+TEST(FUnction, maximum_half_device) {
   using Tensor = cutlass::HostTensor<cutlass::half_t, cutlass::layout::RowMajor>;
 
   Tensor in1({1, 1});

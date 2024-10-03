@@ -55,6 +55,7 @@ using namespace cute;
 // Cluster 1x1x1
 //
 TEST(SM90_device_conv1d_fprop_implicitgemm_s8nwc_s8nwc_s32nwc_tensor_op_s32, 64x64x64_1x1x1) {
+
   using ElementAct     = int8_t;
   using ElementFlt     = int8_t;
   using ElementOut     = int32_t;
@@ -84,10 +85,13 @@ TEST(SM90_device_conv1d_fprop_implicitgemm_s8nwc_s8nwc_s32nwc_tensor_op_s32, 64x
       cutlass::conv::collective::KernelScheduleAuto
     >::CollectiveOp;
 
+  using ProblemShape = cutlass::conv::ConvProblemShape<CollectiveMainloop::DispatchPolicy::ConvOp, CollectiveMainloop::NumSpatialDimensions>;
+
   using ConvKernel = cutlass::conv::kernel::ConvUniversal<
+      ProblemShape,
       CollectiveMainloop,
       CollectiveEpilogue
-    >;
+  >;
 
   using Conv = cutlass::conv::device::ConvUniversalAdapter<ConvKernel>;
 
@@ -128,7 +132,10 @@ TEST(SM90_device_conv1d_fprop_implicitgemm_s8nwc_s8nwc_s32nwc_tensor_op_s32, 64x
       cutlass::conv::collective::KernelScheduleAuto
     >::CollectiveOp;
 
+  using ProblemShape = cutlass::conv::ConvProblemShape<CollectiveMainloop::DispatchPolicy::ConvOp, CollectiveMainloop::DispatchPolicy::NumSpatialDimensions>;
+
   using ConvKernel = cutlass::conv::kernel::ConvUniversal<
+      ProblemShape,
       CollectiveMainloop,
       CollectiveEpilogue
     >;
@@ -171,7 +178,9 @@ TEST(SM90_device_conv1d_fprop_implicitgemm_s8nwc_s8nwc_s32nwc_tensor_op_s32, 64x
       cutlass::conv::collective::KernelScheduleAuto
     >::CollectiveOp;
 
+  using ProblemShape = cutlass::conv::ConvProblemShape<CollectiveMainloop::DispatchPolicy::ConvOp, CollectiveMainloop::DispatchPolicy::NumSpatialDimensions>;
   using ConvKernel = cutlass::conv::kernel::ConvUniversal<
+      ProblemShape,
       CollectiveMainloop,
       CollectiveEpilogue
     >;
@@ -214,7 +223,10 @@ TEST(SM90_device_conv1d_fprop_implicitgemm_s8nwc_s8nwc_s32nwc_tensor_op_s32, 64x
       cutlass::conv::collective::KernelScheduleAuto
     >::CollectiveOp;
 
+  using ProblemShape = cutlass::conv::ConvProblemShape<CollectiveMainloop::DispatchPolicy::ConvOp, CollectiveMainloop::DispatchPolicy::NumSpatialDimensions>;
+
   using ConvKernel = cutlass::conv::kernel::ConvUniversal<
+      ProblemShape,
       CollectiveMainloop,
       CollectiveEpilogue
     >;
@@ -261,7 +273,9 @@ TEST(SM90_device_conv1d_fprop_implicitgemm_s8nwc_s8nwc_s32nwc_tensor_op_s32, 128
       cutlass::conv::collective::KernelScheduleAuto
     >::CollectiveOp;
 
+  using ProblemShape = cutlass::conv::ConvProblemShape<CollectiveMainloop::DispatchPolicy::ConvOp, CollectiveMainloop::DispatchPolicy::NumSpatialDimensions>;
   using ConvKernel = cutlass::conv::kernel::ConvUniversal<
+      ProblemShape,
       CollectiveMainloop,
       CollectiveEpilogue
     >;
@@ -304,7 +318,9 @@ TEST(SM90_device_conv1d_fprop_implicitgemm_s8nwc_s8nwc_s32nwc_tensor_op_s32, 128
       cutlass::conv::collective::KernelScheduleAuto
     >::CollectiveOp;
 
+  using ProblemShape = cutlass::conv::ConvProblemShape<CollectiveMainloop::DispatchPolicy::ConvOp, CollectiveMainloop::DispatchPolicy::NumSpatialDimensions>;
   using ConvKernel = cutlass::conv::kernel::ConvUniversal<
+      ProblemShape,
       CollectiveMainloop,
       CollectiveEpilogue
     >;
@@ -347,7 +363,9 @@ TEST(SM90_device_conv1d_fprop_implicitgemm_s8nwc_s8nwc_s32nwc_tensor_op_s32, 128
       cutlass::conv::collective::KernelScheduleAuto
     >::CollectiveOp;
 
+  using ProblemShape = cutlass::conv::ConvProblemShape<CollectiveMainloop::DispatchPolicy::ConvOp, CollectiveMainloop::DispatchPolicy::NumSpatialDimensions>;
   using ConvKernel = cutlass::conv::kernel::ConvUniversal<
+      ProblemShape,
       CollectiveMainloop,
       CollectiveEpilogue
     >;
@@ -390,7 +408,9 @@ TEST(SM90_device_conv1d_fprop_implicitgemm_s8nwc_s8nwc_s32nwc_tensor_op_s32, 128
       cutlass::conv::collective::KernelScheduleAuto
     >::CollectiveOp;
 
+  using ProblemShape = cutlass::conv::ConvProblemShape<CollectiveMainloop::DispatchPolicy::ConvOp, CollectiveMainloop::DispatchPolicy::NumSpatialDimensions>;
   using ConvKernel = cutlass::conv::kernel::ConvUniversal<
+      ProblemShape,
       CollectiveMainloop,
       CollectiveEpilogue
     >;

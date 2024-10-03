@@ -186,8 +186,8 @@ int main(int argc, char** argv)
     return -1;
   }
   // Equivalent check to the above
-  if (not weakly_compatible(block_shape, tensor_shape)) {
-    std::cerr << "Expected the tensors to be weakly compatible with the block_shape." << std::endl;
+  if (not evenly_divides(tensor_shape, block_shape)) {
+    std::cerr << "Expected the block_shape to evenly divide the tensor shape." << std::endl;
     return -1;
   }
 

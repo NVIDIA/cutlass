@@ -308,8 +308,8 @@ get_conv_problem_vector<2, cutlass::conv::Operator::kFprop>() {
   // 2x5 filter, asymmetric padding 1,0/1,0, w/ dilation
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
-    {2,  16, 16, 64},
-    {256, 2, 5, 64},
+    {2,   16, 16, 64},
+    {256, 2,  5,  64},
     {1, 1},
     {0, 0},
     {1, 1},
@@ -319,8 +319,8 @@ get_conv_problem_vector<2, cutlass::conv::Operator::kFprop>() {
   // 2x5 filter, asymmetric padding 1,0/1,0, w/ stride, w/ dilation
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
-    {2,  16, 15, 64},
-    {256, 2, 5, 64},
+    {2,   16, 15, 64},
+    {256, 2,  5,  64},
     {1, 1},
     {0, 0},
     {2, 3},
@@ -441,7 +441,7 @@ get_conv_problem_vector<3, cutlass::conv::Operator::kFprop>() {
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
     {2,  16, 10, 16, 64},
-    {96, 3, 4, 5, 64},
+    {96, 3,  4,  5,  64},
     {1, 0, 1},
     {0, 2, 0},
     {1, 1, 1},
@@ -452,7 +452,7 @@ get_conv_problem_vector<3, cutlass::conv::Operator::kFprop>() {
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
     {2,  16, 10, 16, 64},
-    {96, 3, 4, 5, 64},
+    {96, 3,  4,  5,  64},
     {1, 0, 1},
     {0, 2, 0},
     {2, 2, 3},
@@ -461,6 +461,7 @@ get_conv_problem_vector<3, cutlass::conv::Operator::kFprop>() {
   });
   return problem_shapes;
 }
+
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 // Wgrad
@@ -570,6 +571,28 @@ get_conv_problem_vector<1, cutlass::conv::Operator::kWgrad>() {
     {2},
     1
   });
+  // To test streamk, equals to gemm-MxNxK size 128x640x2048
+  problem_shapes.push_back({
+    cutlass::conv::Mode::kCrossCorrelation,
+    {2,   1024, 128},
+    {640, 1,    128},
+    {0},
+    {0},
+    {1},
+    {1},
+    1
+  });
+  // To test streamk, equals to gemm-MxNxK size 128x640x2080
+  problem_shapes.push_back({
+    cutlass::conv::Mode::kCrossCorrelation,
+    {2,   1040, 128},
+    {640, 1,    128},
+    {0},
+    {0},
+    {1},
+    {1},
+    1
+  });
   return problem_shapes;
 }
 
@@ -659,7 +682,7 @@ get_conv_problem_vector<2, cutlass::conv::Operator::kWgrad>() {
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
     {2,   15, 16, 32},
-    {256, 2, 5, 32},
+    {256, 2,  5,  32},
     {1, 1},
     {0, 0},
     {2, 3},
@@ -670,7 +693,7 @@ get_conv_problem_vector<2, cutlass::conv::Operator::kWgrad>() {
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
     {2,   16, 16, 32},
-    {256, 2, 5, 32},
+    {256, 2,  5,  32},
     {1, 1},
     {0, 0},
     {1, 1},
@@ -681,7 +704,7 @@ get_conv_problem_vector<2, cutlass::conv::Operator::kWgrad>() {
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
     {2,   16, 15, 32},
-    {256, 2, 5, 32},
+    {256, 2,  5,  32},
     {1, 1},
     {0, 0},
     {2, 3},
@@ -690,26 +713,26 @@ get_conv_problem_vector<2, cutlass::conv::Operator::kWgrad>() {
   });
   // To test streamk, equals to gemm-MxNxK size 128x640x2048
   problem_shapes.push_back({
-     cutlass::conv::Mode::kCrossCorrelation,
-     {2, 64, 16, 128},  // nhwc
-     {640, 1, 1, 128},  // krsc
-     {0, 0},            // padding lower (pad_h, pad_w)
-     {0, 0},            // padding upper (pad_h, pad_w)
-     {1, 1},            // stride (stride_h, stride_w)
-     {1, 1},            // dilation (dilation_h, dilation_w)
-     1                  // group
-   });
+    cutlass::conv::Mode::kCrossCorrelation,
+    {2,   64, 16, 128},
+    {640, 1,  1,  128},
+    {0, 0},
+    {0, 0},
+    {1, 1},
+    {1, 1},
+    1
+  });
   // To test streamk, equals to gemm-MxNxK size 128x640x2080
   problem_shapes.push_back({
-     cutlass::conv::Mode::kCrossCorrelation,
-     {2, 65, 16, 128},  // nhwc
-     {640, 1, 1, 128},  // krsc
-     {0, 0},            // padding lower (pad_h, pad_w)
-     {0, 0},            // padding upper (pad_h, pad_w)
-     {1, 1},            // stride (stride_h, stride_w)
-     {1, 1},            // dilation (dilation_h, dilation_w)
-     1                  // group
-   });
+    cutlass::conv::Mode::kCrossCorrelation,
+    {2,   65, 16, 128},
+    {640, 1,  1,  128},
+    {0, 0},
+    {0, 0},
+    {1, 1},
+    {1, 1},
+    1
+  });
   return problem_shapes;
 }
 
@@ -755,7 +778,7 @@ get_conv_problem_vector<3, cutlass::conv::Operator::kWgrad>() {
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
     {2,  16, 10, 16, 32},
-    {96, 3, 4, 5, 32},
+    {96, 3,  4,  5,  32},
     {1, 0, 1},
     {0, 2, 0},
     {2, 2, 3},
@@ -766,7 +789,7 @@ get_conv_problem_vector<3, cutlass::conv::Operator::kWgrad>() {
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
     {2,  16, 10, 16, 32},
-    {96, 3, 4, 5, 32},
+    {96, 3,  4,  5,  32},
     {1, 0, 1},
     {0, 2, 0},
     {1, 1, 1},
@@ -775,26 +798,26 @@ get_conv_problem_vector<3, cutlass::conv::Operator::kWgrad>() {
   });
   // To test streamk, equals to gemm-MxNxK size 128x640x2048
   problem_shapes.push_back({
-     cutlass::conv::Mode::kCrossCorrelation,
-     {2,  1, 64, 16, 128},  // ndhwc
-     {640, 1, 1, 1, 128},  // ktrsc
-     {0, 0, 0},          // padding lower (pad_d, pad_h, pad_w)
-     {0, 0, 0},          // padding upper (pad_d, pad_h, pad_w)
-     {1, 1, 1},          // stride (stride_d, stride_h, stride_w)
-     {1, 1, 1},          // dilation (dilation_d, dilation_h, dilation_w)
-     1                   // group
-   });
+    cutlass::conv::Mode::kCrossCorrelation,
+    {2,   1, 64, 16, 128},
+    {640, 1, 1,  1,  128},
+    {0, 0, 0},
+    {0, 0, 0},
+    {1, 1, 1},
+    {1, 1, 1},
+    1
+  });
   // To test streamk, equals to gemm-MxNxK size 128x640x2080
   problem_shapes.push_back({
-     cutlass::conv::Mode::kCrossCorrelation,
-     {2,  1, 65, 16, 128},  // ndhwc
-     {640, 1, 1, 1, 128},  // ktrsc
-     {0, 0, 0},          // padding lower (pad_d, pad_h, pad_w)
-     {0, 0, 0},          // padding upper (pad_d, pad_h, pad_w)
-     {1, 1, 1},          // stride (stride_d, stride_h, stride_w)
-     {1, 1, 1},          // dilation (dilation_d, dilation_h, dilation_w)
-     1                   // group
-   });
+    cutlass::conv::Mode::kCrossCorrelation,
+    {2,   1, 65, 16, 128},
+    {640, 1, 1,  1,  128},
+    {0, 0, 0},
+    {0, 0, 0},
+    {1, 1, 1},
+    {1, 1, 1},
+    1
+  });
   return problem_shapes;
 }
 
@@ -848,8 +871,8 @@ get_conv_problem_vector<1, cutlass::conv::Operator::kDgrad, false>() {
   // Filter-K = 16 for predication
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
-    {1, 8, 16},
-    {64,1, 16},
+    {1,  8, 16},
+    {64, 1, 16},
     {0},
     {0},
     {1},
@@ -870,7 +893,7 @@ get_conv_problem_vector<1, cutlass::conv::Operator::kDgrad, false>() {
   // N = 7 and K = 256 for a even larger grid
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
-    {7,   8, 256},
+    {7,  8, 256},
     {64, 1, 256},
     {0},
     {0},
@@ -881,7 +904,7 @@ get_conv_problem_vector<1, cutlass::conv::Operator::kDgrad, false>() {
   // 3 filter, no padding
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
-    {2,   8, 256},
+    {2,  8, 256},
     {64, 3, 256},
     {0},
     {0},
@@ -892,7 +915,7 @@ get_conv_problem_vector<1, cutlass::conv::Operator::kDgrad, false>() {
   // 3 filter, symmetric padding with k % cta_k !=0
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
-    {2,   8, 256},
+    {2,  8, 256},
     {32, 3, 256},
     {1},
     {1},
@@ -903,7 +926,7 @@ get_conv_problem_vector<1, cutlass::conv::Operator::kDgrad, false>() {
   // 4 filter, asymmetric padding
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
-    {2,   8, 256},
+    {2,  8, 256},
     {64, 4, 256},
     {0},
     {1},
@@ -915,7 +938,7 @@ get_conv_problem_vector<1, cutlass::conv::Operator::kDgrad, false>() {
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
     {2,   16, 64},
-    {256, 3, 64},
+    {256, 3,  64},
     {0},
     {1},
     {1},
@@ -993,7 +1016,7 @@ get_conv_problem_vector<2, cutlass::conv::Operator::kDgrad, false>() {
   // N = 7 and K = 256 for a even larger grid
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
-    {7,   8, 8, 256},
+    {7,  8, 8, 256},
     {64, 1, 1, 256},
     {0, 0},
     {0, 0},
@@ -1004,7 +1027,7 @@ get_conv_problem_vector<2, cutlass::conv::Operator::kDgrad, false>() {
   // 3x3 filter, no padding
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
-    {2,   8, 8, 256},
+    {2,  8, 8, 256},
     {64, 3, 3, 256},
     {0, 0},
     {0, 0},
@@ -1015,7 +1038,7 @@ get_conv_problem_vector<2, cutlass::conv::Operator::kDgrad, false>() {
   // 3x3 filter, symmetric padding with k % cta_k !=0
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
-    {2,   8, 8, 256},
+    {2,  8, 8, 256},
     {32, 3, 3, 256},
     {1, 1},
     {1, 1},
@@ -1026,7 +1049,7 @@ get_conv_problem_vector<2, cutlass::conv::Operator::kDgrad, false>() {
   // 2x5 filter, asymmetric padding 1,0/1,0
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
-    {2,   8, 8, 256},
+    {2,  8, 8, 256},
     {64, 2, 5, 256},
     {1, 1},
     {0, 0},
@@ -1038,7 +1061,7 @@ get_conv_problem_vector<2, cutlass::conv::Operator::kDgrad, false>() {
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
     {2,   16, 16, 64},
-    {256, 2, 5, 64},
+    {256, 2,  5,  64},
     {1, 1},
     {0, 0},
     {1, 1},
@@ -1116,7 +1139,7 @@ get_conv_problem_vector<3, cutlass::conv::Operator::kDgrad, false>() {
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
     {2,  16, 10, 16, 64},
-    {64, 3, 4, 5, 96},
+    {64, 3,  4,  5,  96},
     {1, 0, 1},
     {0, 2, 0},
     {1, 1, 1},
@@ -1247,7 +1270,7 @@ get_conv_problem_vector<3, cutlass::conv::Operator::kDgrad, true>() {
     {64, 3, 4, 5, 96},
     {1, 0, 1},
     {0, 2, 0},
-    {2, 4, 2},
+    {2, 1, 2},
     {4, 2, 3},
     1
   });

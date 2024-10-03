@@ -588,12 +588,14 @@ OpcodeClassNames = {
   OpcodeClass.Simt: 'simt',
   OpcodeClass.TensorOp: 'tensorop',
   OpcodeClass.WmmaTensorOp: 'wmma_tensorop',
+  OpcodeClass.SparseTensorOp: 'sptensorop',
 }
 
 OpcodeClassTag = {
   OpcodeClass.Simt: 'cutlass::arch::OpClassSimt',
   OpcodeClass.TensorOp: 'cutlass::arch::OpClassTensorOp',
   OpcodeClass.WmmaTensorOp: 'cutlass::arch::OpClassWmmaTensorOp',
+  OpcodeClass.SparseTensorOp: 'cutlass::arch::OpClassSparseTensorOp',
 }
 
 ###################################################################################################

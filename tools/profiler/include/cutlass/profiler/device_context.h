@@ -29,7 +29,7 @@
  *
  **************************************************************************************************/
 /* \file
-   \brief 
+   \brief
 */
 
 #pragma once
@@ -68,46 +68,52 @@ private:
 
   /// Non-owning set of named allocations
   AllocationMap allocations_;
-  
+
 public:
 
   /// Allocates memory of a given type, capacity (elements), and name
   DeviceAllocation *allocate_block(
+    Options const &options,
     std::string const &name,
-    library::NumericTypeID type, 
-    size_t capacity);
-
-  /// Allocates memory of a given type, capacity (elements), and name
-  DeviceAllocation *allocate_tensor(
-    std::string const &name,
-    library::NumericTypeID type, 
-    library::LayoutTypeID layout_id, 
-    std::vector<int> const &extent, 
-    std::vector<int64_t> const &stride = std::vector<int64_t>(),
-    int batch_count = 1);
+    library::NumericTypeID type,
+    size_t capacity,
+    size_t device_index);
 
   /// Allocates memory of a given type, capacity (elements), and name
   DeviceAllocation *allocate_tensor(
     Options const &options,
     std::string const &name,
-    library::NumericTypeID type, 
-    library::LayoutTypeID layout_id, 
-    std::vector<int> const &extent, 
+    library::NumericTypeID type,
+    library::LayoutTypeID layout_id,
+    std::vector<int> const &extent,
     std::vector<int64_t> const &stride,
     int batch_count,
-    int seed_shift = 0);
+    size_t device_index);
 
-  /// Allocates memory for sparse meta data 
-  DeviceAllocation *allocate_sparsemeta_tensor(
+  /// Allocates memory of a given type, capacity (elements), and name
+  DeviceAllocation *allocate_and_initialize_tensor(
     Options const &options,
     std::string const &name,
-    library::NumericTypeID type, 
-    library::LayoutTypeID layout_id, 
+    library::NumericTypeID type,
+    library::LayoutTypeID layout_id,
+    std::vector<int> const &extent,
+    std::vector<int64_t> const &stride,
+    int batch_count,
+    int seed_shift,
+    size_t device_index);
+
+  /// Allocates memory for sparse meta data
+  DeviceAllocation *allocate_and_initialize_sparsemeta_tensor(
+    Options const &options,
+    std::string const &name,
+    library::NumericTypeID type,
+    library::LayoutTypeID layout_id,
     library::NumericTypeID type_a,
-    std::vector<int> const &extent, 
+    std::vector<int> const &extent,
     std::vector<int64_t> const &stride,
     int batch_count,
-    int seed_shift = 0);
+    int seed_shift,
+    size_t device_index);
 
   /// Clears named allocations (but does not necessarily free memory)
   void clear();

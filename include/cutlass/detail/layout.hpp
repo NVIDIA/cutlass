@@ -30,13 +30,17 @@
  **************************************************************************************************/
 #pragma once
 
+#include "cute/layout.hpp"
+#include "cute/pointer_sparse.hpp"       // cute::is_sparse
+#include "cute/swizzle.hpp"              // cute::Swizzle
+#include "cute/swizzle_layout.hpp"       // cute::detail::get_swizzle_portion
+#include "cute/util/type_traits.hpp"
+#include "cute/arch/copy_sm90_tma.hpp"
 #include "cutlass/layout/matrix.h"
 #include "cutlass/layout/tensor.h"
 #include "cutlass/numeric_types.h"
+#include "cutlass/detail/collective.hpp"
 
-#include "cute/layout.hpp"
-#include "cute/util/type_traits.hpp"
-#include "cute/arch/copy_sm90_tma.hpp"
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass::detail {
@@ -199,7 +203,14 @@ template<class StrideA>
 constexpr
 auto
 stride_to_layout_tag_A() {
+  using InternalStrideA = cute::remove_pointer_t<StrideA>;
   if constexpr (is_major<0, StrideA>()) { // M major
+    return layout::ColumnMajor{};
+  }
+  // Specialize for sparse layout
+  else if constexpr (cute::get<0>(InternalStrideA{}) == cute::_2{} && 
+                     cute::rank(cute::get<1>(InternalStrideA{})) == 2 && 
+                     cute::is_same_v<cute::_1, cute::remove_cvref_t<decltype(cute::get<1,0>(InternalStrideA{}))>>) {
     return layout::ColumnMajor{};
   }
   else { // K major
@@ -309,6 +320,10 @@ get_alignment_count_from_gmem_tiled_copy() {
   else {
     // For TMA tiled copies, we know the alignment has to be 128 bits
     if constexpr (is_tma_copy_engine<GmemTiledCopy>()) {
+      // For sparse MMA, alignment in logical elements is increased by sparsity factor
+      if constexpr (cute::is_sparse_v<ElementMma>) {
+        return 128 / sizeof_bits<Element>::value * ElementMma::sparsity;
+      }
       return 128 / sizeof_bits<Element>::value;
     }
     else {

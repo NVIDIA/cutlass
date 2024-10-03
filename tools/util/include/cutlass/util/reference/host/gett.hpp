@@ -342,7 +342,8 @@ void gett_epilogue(
         ElementCompute converted_acc = accumulator_converter(acc[m_b][n_b]);
         // per-row alpha
         if (raw_pointer_cast(epilogue_params.Valpha.data())) {
-          converted_alpha = scale_converter(epilogue_params.Valpha(m + m_b));
+          converted_alpha = scale_converter(epilogue_params.Valpha(m + m_b, n + n_b, l));
+          converted_alpha = mul(converted_alpha, mul(converted_scale_a, converted_scale_b));
         }
         ElementCompute output = mul(converted_alpha, converted_acc);
 
@@ -355,7 +356,8 @@ void gett_epilogue(
           ElementCompute converted_src = source_converter(epilogue_params.C(m + m_b, n + n_b, l));
           // per-row beta
           if (epilogue_params.Vbeta.data()) {
-            converted_beta = scale_converter(epilogue_params.Vbeta(m + m_b));
+            converted_beta = scale_converter(epilogue_params.Vbeta(m + m_b, n + n_b, l));
+            converted_beta = mul(converted_beta, converted_scale_c);
           }
           output = epilogue_fma(converted_beta, converted_src, output);
         }

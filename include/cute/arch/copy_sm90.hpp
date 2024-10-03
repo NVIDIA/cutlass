@@ -30,20 +30,9 @@
  **************************************************************************************************/
 #pragma once
 
-#include <cute/config.hpp>
-
+#include <cute/config.hpp>      // CUTE_HOST_DEVICE
+#include <cute/arch/config.hpp> // CUTE_ARCH_TMA_SMxx_ENABLED
 #include <cute/arch/copy.hpp>
-
-// Config
-#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900) && (__CUDACC_VER_MAJOR__ >= 12))
-#  define CUTE_ARCH_STSM_SM90_ENABLED
-#  define CUTE_ARCH_TMA_SM90_ENABLED
-#endif
-
-#if defined(CUTE_ARCH_TMA_SM90_ENABLED) && \
-  ((__CUDACC_VER_MAJOR__ > 12) || ((__CUDACC_VER_MAJOR__ == 12) && (__CUDACC_VER_MINOR__ >= 3)))
-#  define CUTE_ARCH_DEVICE_MODIFIABLE_TMA_SM90_ENABLED
-#endif
 
 namespace cute
 {

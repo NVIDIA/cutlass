@@ -30,9 +30,8 @@
  **************************************************************************************************/
 #pragma once
 
-#include <cute/config.hpp>
-
-#include <cute/numeric/integral_constant.hpp>
+#include <cute/config.hpp>                    // CUTE_HOST_DEVICE
+#include <cute/numeric/integral_constant.hpp> // cute::true_type
 
 namespace cute
 {

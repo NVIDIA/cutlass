@@ -30,7 +30,7 @@
  **************************************************************************************************/
 /*! \file
     \brief Tests for device-wide GEMM interface
-    
+
 */
 
 #include <iostream>
@@ -64,14 +64,14 @@ TEST(SM80_Device_GemmUniversal_bf16t_u8n_bf16t_mixed_input_tensor_op_f32, 128x12
   using ElementAccumulator = float;
 
   using Gemm = cutlass::gemm::device::GemmUniversal<
-    ElementA, 
-    cutlass::layout::RowMajor, 
-    ElementB,
-    cutlass::layout::ColumnMajor, 
-    ElementOutput, 
+    ElementA,
     cutlass::layout::RowMajor,
-    ElementAccumulator, 
-    cutlass::arch::OpClassTensorOp, 
+    ElementB,
+    cutlass::layout::ColumnMajor,
+    ElementOutput,
+    cutlass::layout::RowMajor,
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
     cutlass::arch::Sm80,
     cutlass::gemm::GemmShape<128, 128, 64>,
     cutlass::gemm::GemmShape<64, 64, 64>,
@@ -79,7 +79,7 @@ TEST(SM80_Device_GemmUniversal_bf16t_u8n_bf16t_mixed_input_tensor_op_f32, 128x12
       cutlass::epilogue::thread::LinearCombination<
           ElementOutput, 128 / cutlass::sizeof_bits<ElementOutput>::value,
           ElementAccumulator, ElementAccumulator>,
-    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
     4,  // Stages
     8,  // AlignmentA
     16, // AlignmentB

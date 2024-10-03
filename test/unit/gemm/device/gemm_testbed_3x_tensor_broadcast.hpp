@@ -101,7 +101,7 @@ struct Testbed3xTensorBroadcast {
     cutlass::Distribution::Kind init_C_ = cutlass::Distribution::Uniform,
     uint64_t seed_ = TestBedImpl::kDefaultSeed
   ) :
-    impl_(CheckEquality::EXACT, ScalarLoc::ON_DEVICE, VectorBeta::ENABLED,
+    impl_(CheckEquality::EXACT, ScalarLoc::ON_DEVICE, VectorScale::ENABLED,
           init_A_, init_B_, init_C_, cutlass::Distribution::Uniform, cutlass::Distribution::Uniform, seed_) { }
 
   Testbed3xTensorBroadcast(
@@ -118,7 +118,7 @@ struct Testbed3xTensorBroadcast {
           stride_factor_B_,
           stride_factor_C_,
           stride_factor_D_,
-          CheckEquality::EXACT, ScalarLoc::ON_HOST, VectorBeta::ENABLED,
+          CheckEquality::EXACT, ScalarLoc::ON_HOST, VectorScale::ENABLED,
           init_A_,
           init_B_,
           init_C_,
@@ -255,9 +255,9 @@ struct Testbed3xTensorBroadcast {
     auto dummy_Aux = cute::make_tensor(static_cast<ElementD*>(nullptr),
         cute::make_layout(cute::make_shape(M, N, L), impl_.collective_epilogue.stride_d));
     auto dummy_Valpha = cute::make_tensor(static_cast<ElementCompute*>(nullptr),
-        cute::make_layout(cute::make_shape(M, 1)));
+        cute::make_layout(cute::make_shape(M, N, 1), cute::make_stride(cute::_1{}, cute::_0{}, M)));
     auto dummy_Vbeta = cute::make_tensor(static_cast<ElementCompute*>(nullptr),
-        cute::make_layout(cute::make_shape(M, 1)));
+        cute::make_layout(cute::make_shape(M, N, 1), cute::make_stride(cute::_1{}, cute::_0{}, M)));
     cutlass::reference::host::GettEpilogueParams<
         ElementScalar,
         ElementScalar,

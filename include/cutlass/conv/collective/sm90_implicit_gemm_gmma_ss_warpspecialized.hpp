@@ -41,8 +41,8 @@
 #include "cute/algorithm/functional.hpp"
 #include "cute/algorithm/gemm.hpp"
 
+#include "cutlass/conv/detail.hpp"
 #include "cutlass/conv/convolution.h"
-#include "cutlass/conv/convnd_problem_shape.hpp"
 #include "cutlass/conv/dispatch_policy.hpp"
 #include "cutlass/pipeline/pipeline.hpp"
 #include "cutlass/util/packed_stride.hpp"
@@ -103,6 +103,8 @@ struct CollectiveConv<
 
   using PipelineParams = typename MainloopPipeline::Params;
   using PipelineState  = typename cutlass::PipelineState<DispatchPolicy::Stages>;
+  
+  using ProblemShape = ConvProblemShape<ConvOp, NumSpatialDimensions>;
 
   // TODO: move pipeline mode tiling into the collective setup phase instead
   static_assert(rank(SmemLayoutA{}) == 3, "SmemLayout must be rank 3 (M/N, K, PIPE)");
@@ -143,7 +145,7 @@ struct CollectiveConv<
 
   struct SharedStorage
   {
-    struct TensorStorage : cute::aligned_struct<128> {
+    struct TensorStorage : cute::aligned_struct<128, _0> {
       cute::array_aligned<typename TiledMma::ValTypeA, cute::cosize_v<SmemLayoutA>> smem_A;
       cute::array_aligned<typename TiledMma::ValTypeB, cute::cosize_v<SmemLayoutB>> smem_B;
     } tensors;
@@ -162,8 +164,6 @@ struct CollectiveConv<
 
   // Host side kernel arguments
   struct Arguments {
-    using ProblemShape = ConvProblemShape<ConvOp, NumSpatialDimensions>;
-    ProblemShape problem_shape{};
     ElementA const* ptr_A{nullptr};
     ElementB const* ptr_B{nullptr};
   };
@@ -175,7 +175,7 @@ private:
   // Get tma_load_a instantce.
   template <class TensorA>
   static constexpr auto
-  get_tma_load_a_instance(TensorA const& tensor_a, typename Arguments::ProblemShape const& problem_shape) {
+  get_tma_load_a_instance(TensorA const& tensor_a, ProblemShape const& problem_shape) {
     if constexpr (is_im2col_A) {
       // compute the upper and lower corners based on the conv padding
       auto lower_corner_whd = detail::compute_lower_corner_whd(problem_shape);
@@ -218,7 +218,7 @@ private:
   // Get tma_load_b instantce.
   template <class TensorB>
   static constexpr auto
-  get_tma_load_b_instance(TensorB const& tensor_b, typename Arguments::ProblemShape const& problem_shape) {
+  get_tma_load_b_instance(TensorB const& tensor_b, ProblemShape const& problem_shape) {
     // TMA im2col mode for tensor B in wgrad kernel.
     if constexpr (is_im2col_B) {
       // compute the upper and lower corners based on the conv padding
@@ -250,24 +250,25 @@ private:
     }
   }
 
+public:
+
+  // Performs im2col transformations on the input of type ConvProblemShape
   static constexpr auto
-  get_problem_shape_MNKL(typename Arguments::ProblemShape const& problem_shape) {
+  get_problem_shape_MNKL(ProblemShape const& problem_shape) {
+
     if constexpr (is_im2col_A || is_im2col_B) {
       // transformation + im2col linearization
-      return problem_shape.get_linearized_problem_shape_MNKL();
+      return cutlass::conv::detail::get_linearized_problem_shape_MNKL(problem_shape);
     }
     else {
       // transformation
-      return problem_shape.get_transformed_problem_shape_MNKL();
+      return cutlass::conv::detail::get_transformed_problem_shape_MNKL(problem_shape);
     }
   }
 
-public:
-
   // Device side kernel params
   struct Params {
-    using _Submode = decltype(take<0,NumTensorDimensions-1>(typename Arguments::ProblemShape::TensorExtent{}));
-    using ProblemShape = decltype(get_problem_shape_MNKL(typename Arguments::ProblemShape{}));
+    using _Submode = decltype(take<0,NumTensorDimensions-1>(typename ProblemShape::TensorExtent{}));
 
     // Assumption: StrideA is congruent with Problem_MK
     // Select TMA load type according to convolution operator.
@@ -294,7 +295,6 @@ public:
     // Members
     TMA_A tma_load_a;
     TMA_B tma_load_b;
-    ProblemShape problem_shape;
     uint32_t tma_transaction_bytes = TmaTransactionBytes;
   };
 
@@ -304,19 +304,19 @@ public:
 
   // Lowers the host side user facing arguments to the kernel facing lauch params
   static constexpr Params
-  to_underlying_arguments(Arguments const& args, void* workspace) {
+  to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
     (void) workspace;
     // from the flat problem shape arrays of ConvProblemShape<ConvOp, N>, create a rank-3 MNK problem shape tuple
     // tma desc creation depends on the original untransformed domain.
 
     // A extents.
-    auto shape_A_orig = args.problem_shape.get_shape_A();
+    auto shape_A_orig = problem_shape.get_shape_A();
     // B extents.
-    auto shape_B_orig = args.problem_shape.get_shape_B();
+    auto shape_B_orig = problem_shape.get_shape_B();
 
     // Fill inferred cute strides from flat stride arrays
-    auto dA = make_cute_packed_stride(StrideA{}, args.problem_shape.stride_A, ConvOp);
-    auto dB = make_cute_packed_stride(StrideB{}, args.problem_shape.stride_B, ConvOp);
+    auto dA = make_cute_packed_stride(StrideA{}, problem_shape.stride_A, ConvOp);
+    auto dB = make_cute_packed_stride(StrideB{}, problem_shape.stride_B, ConvOp);
 
     auto ptr_A = reinterpret_cast<InternalElementA const*>(args.ptr_A);
     auto ptr_B = reinterpret_cast<InternalElementB const*>(args.ptr_B);
@@ -324,20 +324,17 @@ public:
     Tensor tensor_a = make_tensor(make_gmem_ptr(ptr_A), make_layout(shape_A_orig, dA));
     Tensor tensor_b = make_tensor(make_gmem_ptr(ptr_B), make_layout(shape_B_orig, dB));
 
-    auto tma_load_a = get_tma_load_a_instance(tensor_a, args.problem_shape);
-    auto tma_load_b = get_tma_load_b_instance(tensor_b, args.problem_shape);
-
-    auto problem_shape_mnkl = get_problem_shape_MNKL(args.problem_shape);
+    auto tma_load_a = get_tma_load_a_instance(tensor_a, problem_shape);
+    auto tma_load_b = get_tma_load_b_instance(tensor_b, problem_shape);
 
     return {
       tma_load_a,
       tma_load_b,
-      problem_shape_mnkl,
       TmaTransactionBytes
     };
   }
-
-  template<class ProblemShape>
+  
+  template <class ProblemShape>
   static bool
   can_implement(
       ProblemShape const& problem_shape,
@@ -345,14 +342,14 @@ public:
     // Activation and Filter channel mode extents much match
     bool implementable = true;
     // channel mode is major
-    implementable &= args.problem_shape.stride_A[NumTensorDimensions-1] == 1;
-    implementable &= args.problem_shape.stride_B[NumTensorDimensions-1] == 1;
+    implementable &= problem_shape.stride_A[NumTensorDimensions-1] == 1;
+    implementable &= problem_shape.stride_B[NumTensorDimensions-1] == 1;
 
     constexpr int tma_alignment_bits = 128;
     // A extents.
-    auto shape_A_orig = args.problem_shape.get_shape_A();
+    auto shape_A_orig = problem_shape.get_shape_A();
     // B extents.
-    auto shape_B_orig = args.problem_shape.get_shape_B();
+    auto shape_B_orig = problem_shape.get_shape_B();
     constexpr int min_tma_aligned_elements_A = tma_alignment_bits / cutlass::sizeof_bits<ElementA>::value;
     implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_A>(shape_A_orig, StrideA{});
     constexpr int min_tma_aligned_elements_B = tma_alignment_bits / cutlass::sizeof_bits<ElementB>::value;
@@ -375,61 +372,6 @@ public:
       return false;
     }
 
-    if (is_im2col_A || is_im2col_B) {
-      // Check valid corner values for TMA_LOAD_IM2COL, signed int ranging from [-corner_limit, corner_limit - 1]
-      constexpr int32_t corner_limit = 1 << (16 / NumSpatialDimensions - 1);
-      auto lower_corner_whd = detail::compute_lower_corner_whd(problem_shape);
-      for (int i = 0; i < problem_shape.RankS; ++i) {
-        implementable = implementable && lower_corner_whd[i] >= -corner_limit && lower_corner_whd[i] <= (corner_limit - 1);
-      }
-      auto upper_corner_whd = detail::compute_upper_corner_whd(problem_shape);
-      for (int i = 0; i < problem_shape.RankS; ++i) {
-        implementable = implementable && upper_corner_whd[i] >= -corner_limit && upper_corner_whd[i] <= (corner_limit - 1);
-      }
-
-      if (!implementable) {
-        CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Padding values don't meet requirements for TMA LOAD IM2COL.\n");
-        return false;
-      }
-    }
-
-    // Wgrad kernels don't support non-packed output strides, non-packed tensor A stride (linearized)
-    if constexpr (ConvOp == conv::Operator::kWgrad) {
-
-      const auto & input_shape  = problem_shape.shape_A;
-      const auto & input_stride  = problem_shape.stride_A;
-
-      implementable &= input_stride[ProblemShape::RankT - 1] == 1;
-      int input_shape_size = 1;
-      for (int i = ProblemShape::RankT - 2; i >= 0; --i) {
-        input_shape_size *= input_shape[i + 1];
-        implementable &= input_stride[i] == input_shape_size;
-      }
-
-      const auto & output_shape  = problem_shape.shape_C;
-      const auto & output_stride  = problem_shape.stride_C;
-
-      implementable &= output_stride[ProblemShape::RankT - 1] == 1;
-      int output_shape_size = 1;
-      for (int i = ProblemShape::RankT - 2; i >= 0; --i) {
-        output_shape_size *= output_shape[i + 1];
-        implementable &= output_stride[i] == output_shape_size;
-      }
-
-      if (!implementable) {
-        CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Wgrad kernels don't support non-packed output strides.\n");
-        return false;
-      }
-    }
-
-    // Conv kernels only support cross correlation mode currently.
-    implementable &= problem_shape.mode == cutlass::conv::Mode::kCrossCorrelation;
-
-    if (!implementable) {
-      CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Conv kernels only support cross correlation mode currently.\n");
-      return false;
-    }
-
     if (problem_shape.groups > 1) {
       CUTLASS_TRACE_HOST("  CAN IMPLEMENT: This kernel does not support conv groups > 1.\n");
       return false;
@@ -445,24 +387,53 @@ public:
     cute::prefetch_tma_descriptor(mainloop_params.tma_load_b.get_tma_descriptor());
   }
 
+  /// Set up the data needed by this collective for load and mma.
+  /// Returns a tuple of tensors. The collective and the kernel layer have the contract
+  /// Returned tuple must contain at least two elements, with the first two elements being:
+  /// gA_mk - The tma tensor, A after a local tile so it has shape  (BLK_M,BLK_K,m,k)
+  /// gB_nk - The tma tensor, B after a local tile so it has shape  (BLK_N,BLK_K,n,k)
+  /// The rest of the tensors can be specified as needed by this collective.
+  /// The dimensions of gA_mk and gA_nk do not contain L to maintain consistency with 
+  /// StrideA and StrideB set up for TMA 
+  template <class ProblemShapeMNKL>
+  CUTLASS_DEVICE auto
+  load_init(ProblemShapeMNKL const& problem_shape_MNKL, Params const& mainloop_params){
+  //load_init(ProblemShapeMNKL const& problem_shape_MNKL, Params const& mainloop_params) const {
+    using X = Underscore;
+    // Separate out problem shape for convenience
+    auto [M, N, K, L] = problem_shape_MNKL;
+
+    // TMA requires special handling of strides to deal with coord codomain mapping
+    // Represent the full tensors -- get these from TMA
+    Tensor mA_mk = mainloop_params.tma_load_a.get_tma_tensor(make_shape(M,K));                            // (m,k)
+    Tensor mB_nk = mainloop_params.tma_load_b.get_tma_tensor(make_shape(N,K));                            // (n,k)
+
+    // Make tiled views, defer the slice
+    Tensor gA_mk = local_tile(mA_mk, TileShape{}, make_coord(_,_,_), Step<_1, X,_1>{});        // (BLK_M,BLK_K,m,k)
+    Tensor gB_nk = local_tile(mB_nk, TileShape{}, make_coord(_,_,_), Step< X,_1,_1>{});        // (BLK_N,BLK_K,n,k)
+
+    return cute::make_tuple(gA_mk, gB_nk);
+  }
+
   /// Perform a collective-scoped matrix multiply-accumulate
   /// Producer Perspective
   template <
-    class TensorA, class TMA_LOAD_A,
-    class TensorB, class TMA_LOAD_B,
-    class KTileIterator
+    class TensorA, class TensorB,
+    class KTileIterator, class BlockCoord
   >
   CUTLASS_DEVICE void
-  load(MainloopPipeline pipeline, 
-       PipelineState smem_pipe_producer_state,
-       TensorA const& gA, TMA_LOAD_A& tma_load_a,
-       TensorB const& gB, TMA_LOAD_B& tma_load_b,
-       KTileIterator k_tile_iter, int k_tile_count,
-       int thread_idx,
-       uint32_t block_rank_in_cluster,
-       TensorStorage& shared_tensors) {
-    int lane_predicate = cute::elect_one_sync();
+  load(
+      Params const& mainloop_params,
+      MainloopPipeline pipeline,
+      PipelineState smem_pipe_producer_state,
+      cute::tuple<TensorA, TensorB> const& load_inputs,
+      BlockCoord const& blk_coord,
+      KTileIterator k_tile_iter, int k_tile_count,
+      int thread_idx,
+      uint32_t block_rank_in_cluster,
+      TensorStorage& shared_tensors) {
 
+    int lane_predicate = cute::elect_one_sync();
     if (lane_predicate) {
       Tensor sA = make_tensor(make_smem_ptr(shared_tensors.smem_A.data()), SmemLayoutA{});        // (BLK_M,BLK_K,PIPE)
       Tensor sB = make_tensor(make_smem_ptr(shared_tensors.smem_B.data()), SmemLayoutB{});        // (BLK_N,BLK_K,PIPE)
@@ -470,11 +441,19 @@ public:
       //
       // Prepare the TMA loads for A and B
       //
-
       constexpr uint32_t cluster_shape_x = get<0>(ClusterShape());
+
       uint2 cluster_local_block_id = {block_rank_in_cluster % cluster_shape_x, block_rank_in_cluster / cluster_shape_x};
-      auto block_tma_a = tma_load_a.get_slice(cluster_local_block_id.y);
-      auto block_tma_b = tma_load_b.get_slice(cluster_local_block_id.x);
+      auto block_tma_a = mainloop_params.tma_load_a.get_slice(cluster_local_block_id.y);
+      auto block_tma_b = mainloop_params.tma_load_b.get_slice(cluster_local_block_id.x);
+
+      auto [gA_mk, gB_nk] = load_inputs;
+
+      // Partition the inputs based on the current block coordinates.
+      auto [m_coord, n_coord, k_coord, l_coord] = blk_coord;
+
+      Tensor gA = gA_mk(_,_,m_coord,_);                                                     // (BLK_M,BLK_K,k)
+      Tensor gB = gB_nk(_,_,n_coord,_);                                                     // (BLK_N,BLK_K,k)
 
       // Applies the mapping from block_tma_a
       Tensor tAgA = block_tma_a.partition_S(gA);                                                 // (TMA,TMA_M,TMA_K,k)
@@ -518,8 +497,9 @@ public:
         BarrierType* tma_barrier = pipeline.producer_get_barrier(smem_pipe_producer_state);
 
         int write_stage = smem_pipe_producer_state.index();
-        copy(tma_load_a.with(*tma_barrier, mcast_mask_a), tAgA(_,_,_,*k_tile_iter), tAsA(_,_,_,write_stage));
-        copy(tma_load_b.with(*tma_barrier, mcast_mask_b), tBgB(_,_,_,*k_tile_iter), tBsB(_,_,_,write_stage));
+
+        copy(mainloop_params.tma_load_a.with(*tma_barrier, mcast_mask_a), tAgA(_,_,_,*k_tile_iter), tAsA(_,_,_,write_stage));
+        copy(mainloop_params.tma_load_b.with(*tma_barrier, mcast_mask_b), tBgB(_,_,_,*k_tile_iter), tBsB(_,_,_,write_stage));
         ++k_tile_iter;
 
         // Advance smem_pipe_producer_state

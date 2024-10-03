@@ -48,8 +48,7 @@ namespace cute {
 // GMMA Descriptor and utilities
 
 // GMMA enums and utilities
-namespace GMMA
-{
+namespace SM90::GMMA {
 
 enum class LayoutType : uint8_t {
   INTERLEAVE = 0,
@@ -81,7 +80,7 @@ CUTE_HOST std::ostream& operator<<(std::ostream& os, LayoutType const& t) {
 }
 #endif // !defined(__CUDACC_RTC__)
 
-} // end namespace GMMA
+} // end namespace SM90::GMMA
 
 union GmmaDescriptor
 {
@@ -146,7 +145,7 @@ print(GmmaDescriptor const& t)
   printf("  leading_off:  0x%04x (%d)\n", t.bitfield.leading_byte_offset_, t.bitfield.leading_byte_offset_);
   printf("  stride_off :  0x%04x (%d)\n", t.bitfield.stride_byte_offset_, t.bitfield.stride_byte_offset_);
   printf("  base_offset:  0x%01x\n",      t.bitfield.base_offset_);
-  printf("  layout_type:  0x%01x (%s)\n", t.bitfield.layout_type_, to_string(static_cast<GMMA::LayoutType>(t.bitfield.layout_type_)));
+  printf("  layout_type:  0x%01x (%s)\n", t.bitfield.layout_type_, to_string(static_cast<SM90::GMMA::LayoutType>(t.bitfield.layout_type_)));
 #endif // !defined(__CUDACC_RTC__)
 }
 

@@ -30,9 +30,9 @@
  **************************************************************************************************/
 #pragma once
 
-#include <cute/config.hpp>
-
-#include <cute/layout.hpp>
+#include <cute/config.hpp>                     // CUTE_HOST_DEVICE, CUTE_GCC_UNREACHABLE
+#include <cute/layout.hpp>                     // cute::tuple
+#include <cute/numeric/integral_constant.hpp>  // cute::true_type, cute::false_type, cute::Int
 
 /* This implements a ComposedLayout of the form
  *   LayoutA o Offset o LayoutB
