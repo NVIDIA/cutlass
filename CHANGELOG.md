@@ -1,6 +1,6 @@
 # NVIDIA CUTLASS Changelog
 
-## [3.6.0](https://github.com/NVIDIA/cutlass/releases/tag/v3.6.0) (2024-09-30)
+## [3.6.0](https://github.com/NVIDIA/cutlass/releases/tag/v3.6.0) (2024-10-03)
 
 - [Hopper structured sparse GEMM](./examples/62_hopper_sparse_gemm/62_hopper_sparse_gemm.cu).
   + [FP16](./test/unit/gemm/device/sm90_sparse_gemm_f16_f16_f32_tensor_op_f32.cu)
@@ -19,6 +19,8 @@
 - A new hardware support for comparisons and computations of [`cutlass::bfloat16_t`](./include/cutlass/bfloat16.h)
 - Fixed use of isnan on Windows for [`half_t`](./test/unit/core/functional.cu).
   Various improvements and fixed from the community and CUTLASS team. Thanks to everyone who submitted PRs!
+
+## [3.5.1](https://github.com/NVIDIA/cutlass/releases/tag/v3.5.1) (2024-07-25)
 
 - [Minimal SM90 WGMMA + TMA GEMM example in 100 lines of code](./examples/cute/tutorial/wgmma_sm90.cu)
 - [Exposure of L2 `cache_hint`s in TMA copy atoms](./include/cute/arch/copy_sm90_tma.hpp#L48)
