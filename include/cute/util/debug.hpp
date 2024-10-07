@@ -36,7 +36,7 @@
  */
 
 #if defined(CUTLASS_ENABLE_SYCL)
-#include <sycl.hpp>
+#include <sycl/sycl.hpp>
 #include <syclcompat.hpp>
 #else
 #include <cuda_runtime_api.h>

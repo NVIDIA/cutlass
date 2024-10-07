@@ -31,7 +31,7 @@
 #pragma once
 
 // fwd declare OCL function and OCL types
-#include <sycl.hpp> //for sycl::vec
+#include <sycl/sycl.hpp> //for sycl::vec
 
 namespace cute
 {

@@ -30,7 +30,7 @@
  *
  **************************************************************************************************/
 
-#include <sycl.hpp>
+#include <sycl/sycl.hpp>
 #include <syclcompat.hpp>
 
 #include <cute/tensor.hpp>
