@@ -744,7 +744,7 @@ print_latex(MMA_Atom<Args...> const& mma_atom)
 template <class... Args>
 CUTE_HOST_DEVICE
 void
-print_latex(TiledMMA<Args...> const& mma)
+print_latex(TiledMMA<Args...> const& mma, int thr_idx)
 {
   auto layout_and_thrid_C = mma.get_layoutC_MN();
   auto layoutC_MN = get<0>(layout_and_thrid_C);
@@ -760,7 +760,24 @@ print_latex(TiledMMA<Args...> const& mma)
 
   print_latex_mma(layoutC_MN, thrID_C,
                   layoutA_MK, thrID_A,
-                  layoutB_NK, thrID_B);
+                  layoutB_NK, thrID_B,
+                  thr_idx);
+}
+
+template <class... Args>
+CUTE_HOST_DEVICE
+void
+print_latex(TiledMMA<Args...> const& mma)
+{
+  print_latex(mma, -1);
+}
+
+template <class TiledMMA, class ThrVMNK>
+CUTE_HOST_DEVICE
+void
+print_latex(ThrMMA<TiledMMA, ThrVMNK> const& thr_mma)
+{
+  print_latex(static_cast<TiledMMA const&>(thr_mma), get<0>(thr_mma.thr_vmnk_));
 }
 
 // MNK MMA Layout to console printer
@@ -827,7 +844,8 @@ CUTE_HOST_DEVICE
 void
 print_latex_mma(LayoutC const& C, ThrIDC const& TC,  // (m,n) -> (tid,vid)  and  tid -> thr_idx
                 LayoutA const& A, ThrIDA const& TA,  // (m,k) -> (tid,vid)  and  tid -> thr_idx
-                LayoutB const& B, ThrIDB const& TB)  // (n,k) -> (tid,vid)  and  tid -> thr_idx
+                LayoutB const& B, ThrIDB const& TB,  // (n,k) -> (tid,vid)  and  tid -> thr_idx
+                int slice_thr_idx = -1)
 {
   CUTE_STATIC_ASSERT_V(rank(C) == Int<2>{});
   CUTE_STATIC_ASSERT_V(rank(A) == Int<2>{});
@@ -874,10 +892,16 @@ print_latex_mma(LayoutC const& C, ThrIDC const& TC,  // (m,n) -> (tid,vid)  and 
       int val_idx = C(m,n) / size(TC);
       int thr_idx = TC(thrid);
 
-      printf("\\node[box,fill=%s] at (%d,%d) {\\shortstack{T%d \\\\ V%d}};\n",
-             color_map[thr_idx % 8],
-             m, n,
-             thr_idx, val_idx);
+      if (slice_thr_idx < 0 || slice_thr_idx == thr_idx) {
+        printf("\\node[box,fill=%s] at (%d,%d) {\\shortstack{T%d \\\\ V%d}};\n",
+              color_map[thr_idx % 8],
+              m, n,
+              thr_idx, val_idx);
+      } else {
+        printf("\\node[box] at (%d,%d) {\\shortstack{T%d \\\\ V%d}};\n",
+              m, n,
+              thr_idx, val_idx);
+      }
     }
   }
 
@@ -888,10 +912,16 @@ print_latex_mma(LayoutC const& C, ThrIDC const& TC,  // (m,n) -> (tid,vid)  and 
       int val_idx = A(m,k) / size(TA);
       int thr_idx = TA(thrid);
 
-      printf("\\node[box,fill=%s] at (%d,%d) {\\shortstack{T%d \\\\ V%d}};\n",
-             color_map[thr_idx % 8],
-             m, k-1-size<1>(A),
-             thr_idx, val_idx);
+      if (slice_thr_idx < 0 || slice_thr_idx == thr_idx) {
+        printf("\\node[box,fill=%s] at (%d,%d) {\\shortstack{T%d \\\\ V%d}};\n",
+              color_map[thr_idx % 8],
+              m, k-1-size<1>(A),
+              thr_idx, val_idx);
+      } else {
+        printf("\\node[box] at (%d,%d) {\\shortstack{T%d \\\\ V%d}};\n",
+              m, k-1-size<1>(A),
+              thr_idx, val_idx);
+      }
     }
   }
 
@@ -902,10 +932,16 @@ print_latex_mma(LayoutC const& C, ThrIDC const& TC,  // (m,n) -> (tid,vid)  and 
       int val_idx = B(n,k) / size(TB);
       int thr_idx = TB(thrid);
 
-      printf("\\node[box,fill=%s] at (%d,%d) {\\shortstack{T%d \\\\ V%d}};\n",
-             color_map[thr_idx % 8],
-             k-1-size<1>(B), n,
-             thr_idx, val_idx);
+      if (slice_thr_idx < 0 || slice_thr_idx == thr_idx) {
+        printf("\\node[box,fill=%s] at (%d,%d) {\\shortstack{T%d \\\\ V%d}};\n",
+              color_map[thr_idx % 8],
+              k-1-size<1>(B), n,
+              thr_idx, val_idx);
+      } else {
+        printf("\\node[box] at (%d,%d) {\\shortstack{T%d \\\\ V%d}};\n",
+              k-1-size<1>(B), n,
+              thr_idx, val_idx);
+      }
     }
   }
 
