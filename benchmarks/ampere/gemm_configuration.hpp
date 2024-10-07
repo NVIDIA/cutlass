@@ -31,242 +31,508 @@
 
 #pragma once
 
-#include "cutlass/half.h"
-#include "cutlass/layout/layout.h"
-
-#include "cute/swizzle.hpp"
-#include "cute/layout.hpp"
-#include "cute/arch/copy_sm75.hpp"
-#include "cute/arch/copy_sm80.hpp"
+#include "cute/atom/mma_atom.hpp"
 #include "cute/atom/copy_atom.hpp"
+
+#include "cutlass/cutlass.h"
+#include "cutlass/gemm/gemm.h"
+#include "cutlass/arch/arch.h"
+#include "cutlass/arch/mma.h"
+#include "cutlass/layout/layout.h"
+#include "cutlass/gemm/dispatch_policy.hpp"
+#include "cutlass/gemm/collective/collective_mma.hpp"
+#include "cutlass/epilogue/collective/collective_builder.hpp"
+
+#include "cutlass/epilogue/collective/default_epilogue.hpp"
+#include "cutlass/epilogue/thread/linear_combination.h"
 
 using namespace cute;
 
-template <typename Element, typename Layout, int Alignment, int SizeK>
-struct DefaultGemm_TensorOpSm80_OperandA;
+namespace cutlass {
+namespace gemm {
+namespace device {
 
-template <typename Element, typename Layout, int Alignment, int SizeK>
-struct DefaultGemm_TensorOpSm80_OperandB;
+template<
+  class ArchTag,
+  class ElementA, class LayoutA, int kAlignmentA,
+  class ElementB, class LayoutB, int kAlignmentB,
+  class ElementC, class LayoutC,
+  class ElementAccumulator>
+struct GemmConfiguration {
+  static_assert(sizeof(ElementA) == 0, "No valid GemmConfiguration configuration exists.");
+};
 
 /////////////////////////////////////////////////////////////////////////
 
 // half
 
-/// Operand A - Row-major (K-Major)
-template <>
-struct DefaultGemm_TensorOpSm80_OperandA<cutlass::half_t, cutlass::layout::RowMajor, 8, 64>
-{
-    // Smem
-    using SmemLayoutAtom = decltype(
-    composition(Swizzle<3,3,3>{},
-                Layout<Shape < _8,_64>,
-                        Stride<_64, _1>>{}));
-    using SmemCopyAtom = Copy_Atom<SM75_U32x4_LDSM_N, half_t>;
+namespace detail {
+template<typename Element, typename Layout, int Alignment, int SizeK>
+struct Gemm_OperandA;
 
-    // Gmem
-    using GmemTiledCopy = decltype(
-    make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEGLOBAL<cute::uint128_t>, half_t>{},
-                    Layout<Shape <_16,_8>,
-                            Stride< _8,_1>>{},
-                    Layout<Shape < _1,_8>>{}));
-};
+template<typename Element, typename Layout, int Alignment, int SizeK>
+struct Gemm_OperandB;
 
 /// Operand A - Column-major (M-major)
-template <int SizeK>
-struct DefaultGemm_TensorOpSm80_OperandA<half_t, cutlass::layout::ColumnMajor, 8, SizeK>
-{
-    // Smem
-    using SmemLayoutAtom = decltype(
-    composition(Swizzle<3,3,3>{},
-                Layout<Shape <_64, _8>,
-                        Stride< _1,_64>>{}));
-    using SmemCopyAtom = Copy_Atom<SM75_U16x8_LDSM_T, half_t>;
+template<int SizeK>
+struct Gemm_OperandA<half_t, layout::ColumnMajor, 8, SizeK> {
+  // Smem
+  using SmemLayoutAtom = decltype(
+    composition(Swizzle<3, 3, 3>{},
+                Layout<Shape<_64, _8>,
+                  Stride<_1, _64> >{}));
+  using SmemCopyAtom = Copy_Atom<SM75_U16x8_LDSM_T, half_t>;
 
-    // Gmem
-    using GmemTiledCopy = decltype(
-    make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEGLOBAL<cute::uint128_t>, half_t>{},
-                    Layout<Shape <_16, _8>,
-                            Stride< _1,_16>>{},
-                    Layout<Shape < _8, _1>>{}));
+  // Gmem
+  using GmemTiledCopy = decltype(
+    make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEGLOBAL<uint128_t>, half_t>{},
+                    Layout<Shape<_16, _8>,
+                      Stride<_1, _16> >{},
+                    Layout<Shape<_8, _1> >{}));
+};
+
+template<int SizeK>
+struct Gemm_OperandA<half_t, layout::ColumnMajor, 4, SizeK> {
+  // Smem
+  using SmemLayoutAtom = decltype(
+    composition(Swizzle<3, 3, 3>{},
+                Layout<Shape<_64, _8>,
+                  Stride<_1, _64> >{}));
+  using SmemCopyAtom = Copy_Atom<SM75_U16x8_LDSM_T, half_t>;
+
+  // Gmem
+  using GmemTiledCopy = decltype(
+    make_tiled_copy(Copy_Atom<UniversalCopy<uint64_t>, half_t>{},
+                    Layout<Shape<_16, _8>,
+                      Stride<_1, _16> >{},
+                    Layout<Shape<_8, _1> >{}));
+};
+
+template<int SizeK>
+struct Gemm_OperandA<half_t, layout::ColumnMajor, 1, SizeK> {
+  // Smem
+  using SmemLayoutAtom = decltype(
+    composition(Swizzle<3, 3, 3>{},
+                Layout<Shape<_64, _8>,
+                  Stride<_1, _64> >{}));
+  using SmemCopyAtom = Copy_Atom<SM75_U16x8_LDSM_T, half_t>;
+
+  // Gmem
+  using GmemTiledCopy = decltype(
+    make_tiled_copy(Copy_Atom<UniversalCopy<uint16_t>, half_t>{},
+                    Layout<Shape<_16, _8>,
+                      Stride<_1, _16> >{},
+                    Layout<Shape<_8, _1> >{}));
 };
 
 /// Operand A - Row-major (K-Major)
-template <>
-struct DefaultGemm_TensorOpSm80_OperandA<half_t, cutlass::layout::RowMajor, 8, 32>
-{
-    // Smem
-    using SmemLayoutAtom = decltype(
-    composition(Swizzle<2,3,3>{},
-                Layout<Shape < _8,_32>,
-                        Stride<_32, _1>>{}));
-    using SmemCopyAtom = Copy_Atom<SM75_U32x4_LDSM_N, half_t>;
+template<>
+struct Gemm_OperandA<half_t, layout::RowMajor, 8, 32> {
+  // Smem
+  using SmemLayoutAtom = decltype(
+    composition(Swizzle<2, 3, 3>{},
+                Layout<Shape<_8, _32>,
+                  Stride<_32, _1> >{}));
+  using SmemCopyAtom = Copy_Atom<SM75_U32x4_LDSM_N, half_t>;
 
-    // Gmem
-    using GmemTiledCopy = decltype(
-    make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEGLOBAL<cute::uint128_t>, half_t>{},
-                    Layout<Shape <_32,_4>,
-                            Stride< _4,_1>>{},
-                    Layout<Shape < _1,_8>>{}));
+  // Gmem
+  using GmemTiledCopy = decltype(
+    make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEGLOBAL<uint128_t>, half_t>{},
+                    Layout<Shape<_32, _4>,
+                      Stride<_4, _1> >{},
+                    Layout<Shape<_1, _8> >{}));
 };
 
-// Because the F32F16 TiledMMA is A-B symmetric, we can reuse the DefaultOperands
+template<>
+struct Gemm_OperandA<half_t, layout::RowMajor, 1, 32> {
+  // Smem
+  using SmemLayoutAtom = decltype(
+    composition(Swizzle<2, 3, 3>{},
+                Layout<Shape<_8, _32>,
+                  Stride<_32, _1> >{}));
+  using SmemCopyAtom = Copy_Atom<SM75_U32x4_LDSM_N, half_t>;
+
+  // Gmem
+  using GmemTiledCopy = decltype(
+    make_tiled_copy(Copy_Atom<UniversalCopy<uint16_t>, half_t>{},
+                    Layout<Shape<_32, _4>,
+                      Stride<_4, _1> >{},
+                    Layout<Shape<_1, _8> >{}));
+};
+
+// Because the F32F16 TiledMMA is A-B symmetric, we can reuse the Operands
 
 // Operand B - Column-Major (K-major)
-template <int Alignment, int SizeK>
-struct DefaultGemm_TensorOpSm80_OperandB<half_t, cutlass::layout::ColumnMajor, Alignment, SizeK>
-        : DefaultGemm_TensorOpSm80_OperandA<half_t, cutlass::layout::RowMajor, Alignment, SizeK>
-{};
+template<int Alignment, int SizeK>
+struct Gemm_OperandB<half_t, layout::ColumnMajor, Alignment, SizeK>
+    : Gemm_OperandA<half_t, layout::RowMajor, Alignment, SizeK> {
+};
 
 // Operand B - Row-Major (N-major)
-template <int Alignment, int SizeK>
-struct DefaultGemm_TensorOpSm80_OperandB<half_t, cutlass::layout::RowMajor, Alignment, SizeK>
-        : DefaultGemm_TensorOpSm80_OperandA<half_t, cutlass::layout::ColumnMajor, Alignment, SizeK>
-{};
+template<int Alignment, int SizeK>
+struct Gemm_OperandB<half_t, layout::RowMajor, Alignment, SizeK>
+    : Gemm_OperandA<half_t, layout::ColumnMajor, Alignment, SizeK> {
+};
+} // namespace details
+
+template<typename LayoutA, int kAlignmentA, typename LayoutB, int kAlignmentB, typename LayoutC>
+struct GemmConfiguration<
+      arch::Sm80,
+      half_t, LayoutA, kAlignmentA,
+      half_t, LayoutB, kAlignmentB,
+      float, LayoutC,
+      float> {
+  using TileShape = Shape<_128, _128, _32>;
+  using DispatchPolicy = MainloopSm80CpAsync<3>;
+  using TiledMma = TiledMMA<
+    MMA_Atom<SM80_16x8x16_F32F16F16F32_TN>,
+    Layout<Shape<_2, _2, _1> >,
+    Tile<_32, _32, _16> >;
+
+  // A
+  using OperandA = detail::Gemm_OperandA<
+    half_t, LayoutA, kAlignmentA, 32>;
+  using SmemLayoutAtomA = typename OperandA::SmemLayoutAtom; // M, K
+  using SmemCopyAtomA = typename OperandA::SmemCopyAtom;
+  using GmemTiledCopyA = typename OperandA::GmemTiledCopy;
+
+  // B
+  using OperandB = detail::Gemm_OperandB<
+    half_t, LayoutB, kAlignmentB, 32>;
+  using SmemLayoutAtomB = typename OperandB::SmemLayoutAtom; // N, K
+  using SmemCopyAtomB = typename OperandB::SmemCopyAtom;
+  using GmemTiledCopyB = typename OperandB::GmemTiledCopy;
+
+  // Mainloop
+  using CollectiveMainloop = collective::CollectiveMma<
+    DispatchPolicy, TileShape,
+    half_t, TagToStrideA_t<LayoutA>,
+    half_t, TagToStrideB_t<LayoutB>,
+    TiledMma,
+    GmemTiledCopyA, SmemLayoutAtomA, SmemCopyAtomA, identity, // A
+    GmemTiledCopyB, SmemLayoutAtomB, SmemCopyAtomB, identity // B
+  >;
+
+  // Epilogue
+  using CollectiveEpilogue = epilogue::collective::DefaultEpilogue<
+    TagToStrideC_t<LayoutC>,
+    TagToStrideC_t<LayoutC>,
+    epilogue::thread::LinearCombination<float, 1>,
+    EpilogueDefault>;
+
+  using GemmKernel = kernel::GemmUniversal<
+    Shape<int, int, int, int>,
+    CollectiveMainloop,
+    CollectiveEpilogue
+  >;
+
+  using Gemm = GemmUniversalAdapter<GemmKernel>;
+};
 
 /////////////////////////////////////////////////////////////////////////
 
 // Bfloat
 
-/// Operand A - Row-major (K-Major)
-template <>
-struct DefaultGemm_TensorOpSm80_OperandA<cutlass::bfloat16_t, cutlass::layout::RowMajor, 8, 64>
-{
-    // Smem
-    using SmemLayoutAtom = decltype(
-    composition(Swizzle<3,3,3>{},
-                Layout<Shape < _8,_64>,
-                        Stride<_64, _1>>{}));
-    using SmemCopyAtom = Copy_Atom<SM75_U32x4_LDSM_N, bfloat16_t>;
-
-    // Gmem
-    using GmemTiledCopy = decltype(
-    make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEGLOBAL<cute::uint128_t>, bfloat16_t>{},
-                    Layout<Shape <_16,_8>,
-                            Stride< _8,_1>>{},
-                    Layout<Shape < _1,_8>>{}));
-};
-
+namespace detail {
 /// Operand A - Column-major (M-major)
-template <int SizeK>
-struct DefaultGemm_TensorOpSm80_OperandA<bfloat16_t, cutlass::layout::ColumnMajor, 8, SizeK>
-{
-    // Smem
-    using SmemLayoutAtom = decltype(
-    composition(Swizzle<3,3,3>{},
-                Layout<Shape <_64, _8>,
-                        Stride< _1,_64>>{}));
-    using SmemCopyAtom = Copy_Atom<SM75_U16x8_LDSM_T, bfloat16_t>;
+template<int SizeK>
+struct Gemm_OperandA<bfloat16_t, layout::ColumnMajor, 8, SizeK> {
+  // Smem
+  using SmemLayoutAtom = decltype(
+    composition(Swizzle<3, 3, 3>{},
+                Layout<Shape<_64, _8>,
+                  Stride<_1, _64> >{}));
+  using SmemCopyAtom = Copy_Atom<SM75_U16x8_LDSM_T, bfloat16_t>;
 
-    // Gmem
-    using GmemTiledCopy = decltype(
-    make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEGLOBAL<cute::uint128_t>, bfloat16_t>{},
-                    Layout<Shape <_16, _8>,
-                            Stride< _1,_16>>{},
-                    Layout<Shape < _8, _1>>{}));
+  // Gmem
+  using GmemTiledCopy = decltype(
+    make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEGLOBAL<uint128_t>, bfloat16_t>{},
+                    Layout<Shape<_16, _8>,
+                      Stride<_1, _16> >{},
+                    Layout<Shape<_8, _1> >{}));
+};
+
+template<int SizeK>
+struct Gemm_OperandA<bfloat16_t, layout::ColumnMajor, 4, SizeK> {
+  // Smem
+  using SmemLayoutAtom = decltype(
+    composition(Swizzle<3, 3, 3>{},
+                Layout<Shape<_64, _8>,
+                  Stride<_1, _64> >{}));
+  using SmemCopyAtom = Copy_Atom<SM75_U16x8_LDSM_T, bfloat16_t>;
+
+  // Gmem
+  using GmemTiledCopy = decltype(
+    make_tiled_copy(Copy_Atom<UniversalCopy<uint64_t>, bfloat16_t>{},
+                    Layout<Shape<_16, _8>,
+                      Stride<_1, _16> >{},
+                    Layout<Shape<_4, _1> >{}));
+};
+
+template<int SizeK>
+struct Gemm_OperandA<bfloat16_t, layout::ColumnMajor, 1, SizeK> {
+  // Smem
+  using SmemLayoutAtom = decltype(
+    composition(Swizzle<3, 3, 3>{},
+                Layout<Shape<_64, _4>,
+                  Stride<_1, _64> >{}));
+  using SmemCopyAtom = Copy_Atom<SM75_U16x8_LDSM_T, bfloat16_t>;
+
+  // Gmem
+  using GmemTiledCopy = decltype(
+    make_tiled_copy(Copy_Atom<UniversalCopy<uint16_t>, bfloat16_t>{},
+                    Layout<Shape<_16, _8>,
+                      Stride<_1, _16> >{},
+                    Layout<Shape<_4, _1> >{}));
 };
 
 /// Operand A - Row-major (K-Major)
-template <>
-struct DefaultGemm_TensorOpSm80_OperandA<bfloat16_t, cutlass::layout::RowMajor, 8, 32>
-{
-    // Smem
-    using SmemLayoutAtom = decltype(
-    composition(Swizzle<2,3,3>{},
-                Layout<Shape < _8,_32>,
-                        Stride<_32, _1>>{}));
-    using SmemCopyAtom = Copy_Atom<SM75_U32x4_LDSM_N, bfloat16_t>;
+template<>
+struct Gemm_OperandA<bfloat16_t, layout::RowMajor, 8, 32> {
+  // Smem
+  using SmemLayoutAtom = decltype(
+    composition(Swizzle<2, 3, 3>{},
+                Layout<Shape<_8, _32>,
+                  Stride<_32, _1> >{}));
+  using SmemCopyAtom = Copy_Atom<SM75_U32x4_LDSM_N, bfloat16_t>;
 
-    // Gmem
-    using GmemTiledCopy = decltype(
-    make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEGLOBAL<cute::uint128_t>, bfloat16_t>{},
-                    Layout<Shape <_32,_4>,
-                            Stride< _4,_1>>{},
-                    Layout<Shape < _1,_8>>{}));
+  // Gmem
+  using GmemTiledCopy = decltype(
+    make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEGLOBAL<uint128_t>, bfloat16_t>{},
+                    Layout<Shape<_32, _4>,
+                      Stride<_4, _1> >{},
+                    Layout<Shape<_1, _8> >{}));
 };
 
-// Because the F32F16 TiledMMA is A-B symmetric, we can reuse the DefaultOperands
+template<>
+struct Gemm_OperandA<bfloat16_t, layout::RowMajor, 1, 32> {
+  // Smem
+  using SmemLayoutAtom = decltype(
+    composition(Swizzle<2, 3, 3>{},
+                Layout<Shape<_8, _32>,
+                  Stride<_32, _1> >{}));
+  using SmemCopyAtom = Copy_Atom<SM75_U32x4_LDSM_N, bfloat16_t>;
+
+  // Gmem
+  using GmemTiledCopy = decltype(
+    make_tiled_copy(Copy_Atom<UniversalCopy<uint16_t>, bfloat16_t>{},
+                    Layout<Shape<_32, _4>,
+                      Stride<_4, _1> >{},
+                    Layout<Shape<_1, _8> >{}));
+};
+
+// Because the F32F16 TiledMMA is A-B symmetric, we can reuse the Operands
 
 // Operand B - Column-Major (K-major)
-template <int Alignment, int SizeK>
-struct DefaultGemm_TensorOpSm80_OperandB<bfloat16_t, cutlass::layout::ColumnMajor, Alignment, SizeK>
-        : DefaultGemm_TensorOpSm80_OperandA<bfloat16_t, cutlass::layout::RowMajor, Alignment, SizeK>
-{};
+template<int Alignment, int SizeK>
+struct Gemm_OperandB<bfloat16_t, layout::ColumnMajor, Alignment, SizeK>
+    : Gemm_OperandA<bfloat16_t, layout::RowMajor, Alignment, SizeK> {
+};
 
 // Operand B - Row-Major (N-major)
-template <int Alignment, int SizeK>
-struct DefaultGemm_TensorOpSm80_OperandB<bfloat16_t, cutlass::layout::RowMajor, Alignment, SizeK>
-        : DefaultGemm_TensorOpSm80_OperandA<bfloat16_t, cutlass::layout::ColumnMajor, Alignment, SizeK>
-{};
+template<int Alignment, int SizeK>
+struct Gemm_OperandB<bfloat16_t, layout::RowMajor, Alignment, SizeK>
+    : Gemm_OperandA<bfloat16_t, layout::ColumnMajor, Alignment, SizeK> {
+};
+
+} // namespace detail
+
+template<typename LayoutA, int kAlignmentA, typename LayoutB, int kAlignmentB, typename LayoutC>
+struct GemmConfiguration<
+      arch::Sm80,
+      bfloat16_t, LayoutA, kAlignmentA,
+      bfloat16_t, LayoutB, kAlignmentB,
+      float, LayoutC,
+      float> {
+  using TileShape = Shape<_128, _128, _32>;
+  using DispatchPolicy = MainloopSm80CpAsync<3>;
+  using TiledMma = TiledMMA<
+    MMA_Atom<SM80_16x8x16_F32BF16BF16F32_TN>,
+    Layout<Shape<_2, _2, _1> >,
+    Tile<_32, _32, _16> >;
+
+  // A
+  using OperandA = detail::Gemm_OperandA<
+    bfloat16_t, LayoutA, kAlignmentA, 32>;
+  using SmemLayoutAtomA = typename OperandA::SmemLayoutAtom; // M, K
+  using SmemCopyAtomA = typename OperandA::SmemCopyAtom;
+  using GmemTiledCopyA = typename OperandA::GmemTiledCopy;
+
+  // B
+  using OperandB = detail::Gemm_OperandB<
+    bfloat16_t, LayoutB, kAlignmentB, 32>;
+  using SmemLayoutAtomB = typename OperandB::SmemLayoutAtom; // N, K
+  using SmemCopyAtomB = typename OperandB::SmemCopyAtom;
+  using GmemTiledCopyB = typename OperandB::GmemTiledCopy;
+
+  // Mainloop
+  using CollectiveMainloop = collective::CollectiveMma<
+    DispatchPolicy, TileShape,
+    bfloat16_t, TagToStrideA_t<LayoutA>,
+    bfloat16_t, TagToStrideB_t<LayoutB>,
+    TiledMma,
+    GmemTiledCopyA, SmemLayoutAtomA, SmemCopyAtomA, identity, // A
+    GmemTiledCopyB, SmemLayoutAtomB, SmemCopyAtomB, identity // B
+  >;
+
+  // Epilogue
+  using CollectiveEpilogue = epilogue::collective::DefaultEpilogue<
+    TagToStrideC_t<LayoutC>,
+    TagToStrideC_t<LayoutC>,
+    epilogue::thread::LinearCombination<float, 1>,
+    EpilogueDefault>;
+
+  using GemmKernel = kernel::GemmUniversal<
+    Shape<int, int, int, int>,
+    CollectiveMainloop,
+    CollectiveEpilogue
+  >;
+
+  using Gemm = GemmUniversalAdapter<GemmKernel>;
+};
 
 /////////////////////////////////////////////////////////////////////////
 
 // TFloat32
 
+namespace detail {
 /// Operand A - Row-major  (K-major) (kBlock = 32)
-template <>
-struct DefaultGemm_TensorOpSm80_OperandA<tfloat32_t, cutlass::layout::RowMajor, 4, 32>
-{
-    // Smem
-    using SmemLayoutAtom = decltype(
-    composition(Swizzle<3,2,3>{},
-                Layout<Shape < _8,_32>,
-                        Stride<_32, _1>>{}));
-    using SmemCopyAtom = Copy_Atom<SM75_U32x4_LDSM_N, tfloat32_t>;
+template<>
+struct Gemm_OperandA<tfloat32_t, layout::RowMajor, 4, 32> {
+  // Smem
+  using SmemLayoutAtom = decltype(
+    composition(Swizzle<3, 2, 3>{},
+                Layout<Shape<_8, _32>,
+                  Stride<_32, _1> >{}));
+  using SmemCopyAtom = Copy_Atom<SM75_U32x4_LDSM_N, tfloat32_t>;
 
-    // Gmem
-    using GmemTiledCopy = decltype(
-    make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEGLOBAL<cute::uint128_t>, tfloat32_t>{},
-                    Layout<Shape <_16,_8>,
-                            Stride< _8,_1>>{},
-                    Layout<Shape < _1,_4>>{}));
+  // Gmem
+  using GmemTiledCopy = decltype(
+    make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEGLOBAL<uint128_t>, tfloat32_t>{},
+                    Layout<Shape<_16, _8>,
+                      Stride<_8, _1> >{},
+                    Layout<Shape<_1, _4> >{}));
 };
 
-/// Operand A - Row-major  (K-major) (kBlock = 16)
-template <>
-struct DefaultGemm_TensorOpSm80_OperandA<tfloat32_t, cutlass::layout::RowMajor, 4, 16>
-{
-    // Smem
-    using SmemLayoutAtom = decltype(
-    composition(Swizzle<2,2,3>{},
-                Layout<Shape < _8,_16>,
-                        Stride<_16, _1>>{}));
-    using SmemCopyAtom = Copy_Atom<SM75_U32x4_LDSM_N, tfloat32_t>;
-    // Gmem
-    using GmemTiledCopy = decltype(
-    make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEGLOBAL<cute::uint128_t>, tfloat32_t>{},
-                    Layout<Shape <_32,_4>,
-                            Stride< _4,_1>>{},
-                    Layout<Shape < _1,_4>>{}));
+template<>
+struct Gemm_OperandA<tfloat32_t, layout::RowMajor, 1, 32> {
+  // Smem
+  using SmemLayoutAtom = decltype(
+    composition(Swizzle<3, 2, 3>{},
+                Layout<Shape<_8, _32>,
+                  Stride<_32, _1> >{}));
+  using SmemCopyAtom = Copy_Atom<SM75_U32x4_LDSM_N, tfloat32_t>;
+
+  // Gmem
+  using GmemTiledCopy = decltype(
+    make_tiled_copy(Copy_Atom<UniversalCopy<uint32_t>, tfloat32_t>{},
+                    Layout<Shape<_16, _8>,
+                      Stride<_8, _1> >{},
+                    Layout<Shape<_1, _4> >{}));
 };
 
 /// Operand A - Column-major  (M-major)
-template <int SizeK>
-struct DefaultGemm_TensorOpSm80_OperandA<tfloat32_t, cutlass::layout::ColumnMajor, 4, SizeK>
-{
-    // Smem
-    using SmemLayoutAtom = decltype(
-    composition(Swizzle<2,3,2>{},
-                Layout<Shape <_32, _8>,
-                        Stride< _1,_32>>{}));
-    using SmemCopyAtom = Copy_Atom<UniversalCopy<tfloat32_t>, tfloat32_t>;
-    // Gmem
-    using GmemTiledCopy = decltype(
-    make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEGLOBAL<cute::uint128_t>, tfloat32_t>{},
-                    Layout<Shape <_16, _8>,
-                            Stride< _1,_16>>{},
-                    Layout<Shape < _4, _1>>{}));
+template<int SizeK>
+struct Gemm_OperandA<tfloat32_t, layout::ColumnMajor, 4, SizeK> {
+  // Smem
+  using SmemLayoutAtom = decltype(
+    composition(Swizzle<2, 3, 2>{},
+                Layout<Shape<_32, _8>,
+                  Stride<_1, _32> >{}));
+  using SmemCopyAtom = Copy_Atom<UniversalCopy<tfloat32_t>, tfloat32_t>;
+  // Gmem
+  using GmemTiledCopy = decltype(
+    make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEGLOBAL<uint128_t>, tfloat32_t>{},
+                    Layout<Shape<_16, _8>,
+                      Stride<_1, _16> >{},
+                    Layout<Shape<_4, _1> >{}));
 };
 
-// Because the TF32 TiledMMA is A-B symmetric, we can reuse the DefaultOperands
+template<int SizeK>
+struct Gemm_OperandA<tfloat32_t, layout::ColumnMajor, 1, SizeK> {
+  // Smem
+  using SmemLayoutAtom = decltype(
+    composition(Swizzle<2, 3, 2>{},
+                Layout<Shape<_32, _8>,
+                  Stride<_1, _32> >{}));
+  using SmemCopyAtom = Copy_Atom<UniversalCopy<tfloat32_t>, tfloat32_t>;
+  // Gmem
+  using GmemTiledCopy = decltype(
+    make_tiled_copy(Copy_Atom<UniversalCopy<uint32_t>, tfloat32_t>{},
+                    Layout<Shape<_16, _8>,
+                      Stride<_1, _16> >{},
+                    Layout<Shape<_4, _1> >{}));
+};
+
+// Because the TF32 TiledMMA is A-B symmetric, we can reuse the Operands
 
 // Operand B - Column-Major  (K-major)
-template <int Alignment, int SizeK>
-struct DefaultGemm_TensorOpSm80_OperandB<tfloat32_t, cutlass::layout::ColumnMajor, Alignment, SizeK>
-        : DefaultGemm_TensorOpSm80_OperandA<tfloat32_t, cutlass::layout::RowMajor,    Alignment, SizeK>
-{};
+template<int Alignment, int SizeK>
+struct Gemm_OperandB<tfloat32_t, layout::ColumnMajor, Alignment, SizeK>
+    : Gemm_OperandA<tfloat32_t, layout::RowMajor, Alignment, SizeK> {
+};
 
 // Operand B - Row-Major  (N-major)
-template <int Alignment, int SizeK>
-struct DefaultGemm_TensorOpSm80_OperandB<tfloat32_t, cutlass::layout::RowMajor,    Alignment, SizeK>
-        : DefaultGemm_TensorOpSm80_OperandA<tfloat32_t, cutlass::layout::ColumnMajor, Alignment, SizeK>
-{};
+template<int Alignment, int SizeK>
+struct Gemm_OperandB<tfloat32_t, layout::RowMajor, Alignment, SizeK>
+    : Gemm_OperandA<tfloat32_t, layout::ColumnMajor, Alignment, SizeK> {
+};
+} // namespace details
+
+template<typename LayoutA, int kAlignmentA, typename LayoutB, int kAlignmentB, typename LayoutC>
+struct GemmConfiguration<
+      arch::Sm80,
+      float, LayoutA, kAlignmentA,
+      float, LayoutB, kAlignmentB,
+      float, LayoutC,
+      float> {
+  using TileShape = Shape<_128, _128, _32>;
+  using DispatchPolicy = MainloopSm80CpAsync<3>;
+  using TiledMma = TiledMMA<
+    MMA_Atom<SM80_16x8x8_F32TF32TF32F32_TN>,
+    Layout<Shape<_2,_2,_1>, Stride<_2, _1, _1>>,
+    Tile<_32,_32,_8> >;
+
+  // A
+  using OperandA = detail::Gemm_OperandA<
+    tfloat32_t, LayoutA, kAlignmentA, 32>;
+  using SmemLayoutAtomA = typename OperandA::SmemLayoutAtom; // M, K
+  using SmemCopyAtomA = typename OperandA::SmemCopyAtom;
+  using GmemTiledCopyA = typename OperandA::GmemTiledCopy;
+
+  // B
+  using OperandB = detail::Gemm_OperandB<
+    tfloat32_t, LayoutB, kAlignmentB, 32>;
+  using SmemLayoutAtomB = typename OperandB::SmemLayoutAtom; // N, K
+  using SmemCopyAtomB = typename OperandB::SmemCopyAtom;
+  using GmemTiledCopyB = typename OperandB::GmemTiledCopy;
+
+  // Mainloop
+  using CollectiveMainloop = collective::CollectiveMma<
+    DispatchPolicy, TileShape,
+    tfloat32_t, TagToStrideA_t<LayoutA>,
+    tfloat32_t, TagToStrideB_t<LayoutB>,
+    TiledMma,
+    GmemTiledCopyA, SmemLayoutAtomA, SmemCopyAtomA, identity, // A
+    GmemTiledCopyB, SmemLayoutAtomB, SmemCopyAtomB, identity // B
+  >;
+
+  // Epilogue
+  using CollectiveEpilogue = epilogue::collective::DefaultEpilogue<
+    TagToStrideC_t<LayoutC>,
+    TagToStrideC_t<LayoutC>,
+    epilogue::thread::LinearCombination<float, 1>,
+    EpilogueDefault>;
+
+  using GemmKernel = kernel::GemmUniversal<
+    Shape<int, int, int, int>,
+    CollectiveMainloop,
+    CollectiveEpilogue
+  >;
+
+  using Gemm = GemmUniversalAdapter<GemmKernel>;
+};
+
+} // namespace device
+} // namespace gemm
+} // namespace cutlass

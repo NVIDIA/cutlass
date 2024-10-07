@@ -31,11 +31,18 @@
 
 #pragma once
 
-#include "../common/benchmark_runner.hpp"
-#include "pvc_gemm_bf16_bf16_fp32.cpp"
+#include "../benchmark_runner.hpp"
+#include "gemm_configuration.hpp"
 
-CUTLASS_CREATE_GEMM_BENCHMARK(PvcGemmBF16BF16FP32_RRRR);
+using PvcGemmBF16BF16FP32_RRR = cutlass::gemm::device::GemmConfiguration<
+        cutlass::arch::IntelPVC,
+        cutlass::bfloat16_t, cutlass::layout::RowMajor,
+        cutlass::bfloat16_t, cutlass::layout::RowMajor,
+        float, cutlass::layout::RowMajor,
+        float>;
+
+CUTLASS_CREATE_GEMM_BENCHMARK(PvcGemmBF16BF16FP32_RRR);
 
 static void register_benchmarks() {
-  CUTLASS_BENCHMARK(PvcGemmBF16BF16FP32_RRRR);
+  CUTLASS_BENCHMARK(PvcGemmBF16BF16FP32_RRR);
 }

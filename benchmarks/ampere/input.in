@@ -1,20 +1,67 @@
 # BFloat16 benchmarks
-AmpereGemmBF16BF16FP32_CCCC --bm_name=bf16_bf16_fp32 --l=1 --m=128 --k=128 --n=128
-AmpereGemmBF16BF16FP32_CCCC --bm_name=bf16_bf16_fp32 --l=1 --m=1024 --k=1024 --n=1024
-AmpereGemmBF16BF16FP32_CCCC --bm_name=bf16_bf16_fp32 --l=1 --m=4096 --k=4096 --n=4096
-AmpereGemmBF16BF16FP32_CCCC --bm_name=bf16_bf16_fp32 --l=1 --m=8192 --k=8192 --n=8192
-AmpereGemmBF16BF16FP32_CCCC --bm_name=bf16_bf16_fp32 --l=2 --m=2048 --k=96 --n=2048
+AmpereGemmBF16BF16FP32_CCC --bm_name=bf16_bf16_fp32 --l=1 --m=128 --k=128 --n=128
+AmpereGemmBF16BF16FP32_CCC --bm_name=bf16_bf16_fp32 --l=1 --m=1024 --k=1024 --n=1024
+AmpereGemmBF16BF16FP32_CCC --bm_name=bf16_bf16_fp32 --l=1 --m=4096 --k=4096 --n=4096
+AmpereGemmBF16BF16FP32_CCC --bm_name=bf16_bf16_fp32 --l=1 --m=8192 --k=8192 --n=8192
+AmpereGemmBF16BF16FP32_CCC --bm_name=bf16_bf16_fp32 --l=256 --m=2048 --k=96 --n=2048
+AmpereGemmBF16BF16FP32_CCC_kAlignment1 --bm_name=bf16_bf16_fp32 --l=1 --m=512 --k=379 --n=687
+AmpereGemmBF16BF16FP32_CCC_kAlignmentA1 --bm_name=bf16_bf16_fp32 --l=1 --m=1 --k=5120 --n=5120
+AmpereGemmBF16BF16FP32_CCC_kAlignmentA1 --bm_name=bf16_bf16_fp32 --l=1 --m=1 --k=13824 --n=5120
+AmpereGemmBF16BF16FP32_CCC_kAlignmentA1 --bm_name=bf16_bf16_fp32 --l=1 --m=1 --k=5120 --n=13824
+AmpereGemmBF16BF16FP32_CCC_kAlignmentA4 --bm_name=bf16_bf16_fp32 --l=1 --m=4 --k=4096 --n=250880
+AmpereGemmBF16BF16FP32_CCC_kAlignmentA4 --bm_name=bf16_bf16_fp32 --l=1 --m=4 --k=16384 --n=4096
+AmpereGemmBF16BF16FP32_CCC --bm_name=bf16_bf16_fp32 --l=1 --m=256 --k=4096 --n=4096
+AmpereGemmBF16BF16FP32_CCC --bm_name=bf16_bf16_fp32 --l=1 --m=512 --k=4096 --n=32000
+AmpereGemmBF16BF16FP32_CCC --bm_name=bf16_bf16_fp32 --l=1 --m=1024 --k=28672 --n=8192
+AmpereGemmBF16BF16FP32_CCC --bm_name=bf16_bf16_fp32 --l=1 --m=16000 --k=12544 --n=1024
+AmpereGemmBF16BF16FP32_CCC --bm_name=bf16_bf16_fp32 --l=1 --m=1024 --k=1024 --n=1024
+AmpereGemmBF16BF16FP32_CCC --bm_name=bf16_bf16_fp32 --l=1 --m=3072 --k=4096 --n=3072
+AmpereGemmBF16BF16FP32_CCC_kAlignmentA4 --bm_name=bf16_bf16_fp32 --l=1 --m=4 --k=4096 --n=12288
+AmpereGemmBF16BF16FP32_CCC_kAlignmentA4 --bm_name=bf16_bf16_fp32 --l=1 --m=4 --k=14336 --n=5376
+AmpereGemmBF16BF16FP32_CCC_kAlignmentA4 --bm_name=bf16_bf16_fp32 --l=1 --m=4 --k=8192 --n=2048
+
 
 # FP16 benchmarks
-AmpereGemmFP16FP16FP32_CCCC --bm_name=fp16_fp16_fp32 --l=1 --m=128 --k=128 --n=128
-AmpereGemmFP16FP16FP32_CCCC --bm_name=fp16_fp16_fp32 --l=1 --m=1024 --k=1024 --n=1024
-AmpereGemmFP16FP16FP32_CCCC --bm_name=fp16_fp16_fp32 --l=1 --m=4096 --k=4096 --n=4096
-AmpereGemmFP16FP16FP32_CCCC --bm_name=fp16_fp16_fp32 --l=1 --m=8192 --k=8192 --n=8192
-AmpereGemmFP16FP16FP32_CCCC --bm_name=fp16_fp16_fp32 --l=2 --m=2048 --k=96 --n=2048
+AmpereGemmFP16FP16FP32_CCC --bm_name=fp16_fp16_fp32 --l=1 --m=128 --k=128 --n=128
+AmpereGemmFP16FP16FP32_CCC --bm_name=fp16_fp16_fp32 --l=1 --m=1024 --k=1024 --n=1024
+AmpereGemmFP16FP16FP32_CCC --bm_name=fp16_fp16_fp32 --l=1 --m=4096 --k=4096 --n=4096
+AmpereGemmFP16FP16FP32_CCC --bm_name=fp16_fp16_fp32 --l=1 --m=8192 --k=8192 --n=8192
+AmpereGemmFP16FP16FP32_CCC --bm_name=fp16_fp16_fp32 --l=256 --m=2048 --k=96 --n=2048
+AmpereGemmFP16FP16FP32_CCC_kAlignment1 --bm_name=fp16_fp16_fp32 --l=1 --m=512 --k=379 --n=687
+AmpereGemmFP16FP16FP32_CCC_kAlignmentA1 --bm_name=fp16_fp16_fp32 --l=1 --m=1 --k=5120 --n=5120
+AmpereGemmFP16FP16FP32_CCC_kAlignmentA1 --bm_name=fp16_fp16_fp32 --l=1 --m=1 --k=13824 --n=5120
+AmpereGemmFP16FP16FP32_CCC_kAlignmentA1 --bm_name=fp16_fp16_fp32 --l=1 --m=1 --k=5120 --n=13824
+AmpereGemmFP16FP16FP32_CCC_kAlignmentA4 --bm_name=fp16_fp16_fp32 --l=1 --m=4 --k=4096 --n=250880
+AmpereGemmFP16FP16FP32_CCC_kAlignmentA4 --bm_name=fp16_fp16_fp32 --l=1 --m=4 --k=16384 --n=4096
+AmpereGemmFP16FP16FP32_CCC --bm_name=fp16_fp16_fp32 --l=1 --m=256 --k=4096 --n=4096
+AmpereGemmFP16FP16FP32_CCC --bm_name=fp16_fp16_fp32 --l=1 --m=512 --k=4096 --n=32000
+AmpereGemmFP16FP16FP32_CCC --bm_name=fp16_fp16_fp32 --l=1 --m=1024 --k=28672 --n=8192
+AmpereGemmFP16FP16FP32_CCC --bm_name=fp16_fp16_fp32 --l=1 --m=16000 --k=12544 --n=1024
+AmpereGemmFP16FP16FP32_CCC --bm_name=fp16_fp16_fp32 --l=1 --m=1024 --k=1024 --n=1024
+AmpereGemmFP16FP16FP32_CCC --bm_name=fp16_fp16_fp32 --l=1 --m=3072 --k=4096 --n=3072
+AmpereGemmFP16FP16FP32_CCC_kAlignmentA4 --bm_name=fp16_fp16_fp32 --l=1 --m=4 --k=4096 --n=12288
+AmpereGemmFP16FP16FP32_CCC_kAlignmentA4 --bm_name=fp16_fp16_fp32 --l=1 --m=4 --k=14336 --n=5376
+AmpereGemmFP16FP16FP32_CCC_kAlignmentA4 --bm_name=fp16_fp16_fp32 --l=1 --m=4 --k=8192 --n=2048
+
 
 # TF32 benchmarks
-AmpereGemmTF32TF32FP32_CCCC --bm_name=tf32_tf32_fp32 --l=1 --m=128 --k=128 --n=128
-AmpereGemmTF32TF32FP32_CCCC --bm_name=tf32_tf32_fp32 --l=1 --m=1024 --k=1024 --n=1024
-AmpereGemmTF32TF32FP32_CCCC --bm_name=tf32_tf32_fp32 --l=1 --m=4096 --k=4096 --n=4096
-AmpereGemmTF32TF32FP32_CCCC --bm_name=tf32_tf32_fp32 --l=1 --m=8192 --k=8192 --n=8192
-AmpereGemmTF32TF32FP32_CCCC --bm_name=tf32_tf32_fp32 --l=2 --m=2048 --k=96 --n=2048
+AmpereGemmTF32TF32FP32_CCC --bm_name=tf32_tf32_fp32 --l=1 --m=128 --k=128 --n=128
+AmpereGemmTF32TF32FP32_CCC --bm_name=tf32_tf32_fp32 --l=1 --m=1024 --k=1024 --n=1024
+AmpereGemmTF32TF32FP32_CCC --bm_name=tf32_tf32_fp32 --l=1 --m=4096 --k=4096 --n=4096
+AmpereGemmTF32TF32FP32_CCC --bm_name=tf32_tf32_fp32 --l=1 --m=8192 --k=8192 --n=8192
+AmpereGemmTF32TF32FP32_CCC --bm_name=tf32_tf32_fp32 --l=256 --m=2048 --k=96 --n=2048
+AmpereGemmTF32TF32FP32_CCC_kAlignment1 --bm_name=tf32_tf32_fp32 --l=1 --m=512 --k=379 --n=687
+AmpereGemmTF32TF32FP32_CCC_kAlignmentA1 --bm_name=tf32_tf32_fp32 --l=1 --m=1 --k=5120 --n=5120
+AmpereGemmTF32TF32FP32_CCC_kAlignmentA1 --bm_name=tf32_tf32_fp32 --l=1 --m=1 --k=13824 --n=5120
+AmpereGemmTF32TF32FP32_CCC_kAlignmentA1 --bm_name=tf32_tf32_fp32 --l=1 --m=1 --k=5120 --n=13824
+AmpereGemmTF32TF32FP32_CCC --bm_name=tf32_tf32_fp32 --l=1 --m=4 --k=4096 --n=250880
+AmpereGemmTF32TF32FP32_CCC --bm_name=tf32_tf32_fp32 --l=1 --m=4 --k=16384 --n=4096
+AmpereGemmTF32TF32FP32_CCC --bm_name=tf32_tf32_fp32 --l=1 --m=256 --k=4096 --n=4096
+AmpereGemmTF32TF32FP32_CCC --bm_name=tf32_tf32_fp32 --l=1 --m=512 --k=4096 --n=32000
+AmpereGemmTF32TF32FP32_CCC --bm_name=tf32_tf32_fp32 --l=1 --m=1024 --k=28672 --n=8192
+AmpereGemmTF32TF32FP32_CCC --bm_name=tf32_tf32_fp32 --l=1 --m=16000 --k=12544 --n=1024
+AmpereGemmTF32TF32FP32_CCC --bm_name=tf32_tf32_fp32 --l=1 --m=1024 --k=1024 --n=1024
+AmpereGemmTF32TF32FP32_CCC --bm_name=tf32_tf32_fp32 --l=1 --m=3072 --k=4096 --n=3072
+AmpereGemmTF32TF32FP32_CCC --bm_name=tf32_tf32_fp32 --l=1 --m=4 --k=4096 --n=12288
+AmpereGemmTF32TF32FP32_CCC --bm_name=tf32_tf32_fp32 --l=1 --m=4 --k=14336 --n=5376
+AmpereGemmTF32TF32FP32_CCC --bm_name=tf32_tf32_fp32 --l=1 --m=4 --k=8192 --n=2048

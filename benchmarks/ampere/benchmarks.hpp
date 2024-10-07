@@ -31,17 +31,112 @@
 
 #pragma once
 
-#include "../common/benchmark_runner.hpp"
-#include "ampere_gemm_bf16_bf16_fp32.hpp"
-#include "ampere_gemm_fp16_fp16_fp32.hpp"
-#include "ampere_gemm_tf32_tf32_fp32.hpp"
+#include "../benchmark_runner.hpp"
+#include "gemm_configuration.hpp"
 
-CUTLASS_CREATE_GEMM_BENCHMARK(AmpereGemmBF16BF16FP32_CCCC);
-CUTLASS_CREATE_GEMM_BENCHMARK(AmpereGemmFP16FP16FP32_CCCC);
-CUTLASS_CREATE_GEMM_BENCHMARK(AmpereGemmTF32TF32FP32_CCCC);
+using AmpereGemmBF16BF16FP32_CCC = cutlass::gemm::device::GemmConfiguration<
+        cutlass::arch::Sm80,
+        cutlass::bfloat16_t, cutlass::layout::ColumnMajor, 8,
+        cutlass::bfloat16_t, cutlass::layout::ColumnMajor, 8,
+        float, cutlass::layout::ColumnMajor,
+        float>;
+
+using AmpereGemmBF16BF16FP32_CCC_kAlignmentA4 = cutlass::gemm::device::GemmConfiguration<
+        cutlass::arch::Sm80,
+        cutlass::bfloat16_t, cutlass::layout::ColumnMajor, 4,
+        cutlass::bfloat16_t, cutlass::layout::ColumnMajor, 8,
+        float, cutlass::layout::ColumnMajor,
+        float>;
+
+using AmpereGemmBF16BF16FP32_CCC_kAlignmentA1 = cutlass::gemm::device::GemmConfiguration<
+        cutlass::arch::Sm80,
+        cutlass::bfloat16_t, cutlass::layout::ColumnMajor, 1,
+        cutlass::bfloat16_t, cutlass::layout::ColumnMajor, 8,
+        float, cutlass::layout::ColumnMajor,
+        float>;
+
+using AmpereGemmBF16BF16FP32_CCC_kAlignment1 = cutlass::gemm::device::GemmConfiguration<
+        cutlass::arch::Sm80,
+        cutlass::bfloat16_t, cutlass::layout::ColumnMajor, 1,
+        cutlass::bfloat16_t, cutlass::layout::ColumnMajor, 1,
+        float, cutlass::layout::ColumnMajor,
+        float>;
+
+using AmpereGemmFP16FP16FP32_CCC = cutlass::gemm::device::GemmConfiguration<
+        cutlass::arch::Sm80,
+        cutlass::half_t, cutlass::layout::ColumnMajor, 8,
+        cutlass::half_t, cutlass::layout::ColumnMajor, 8,
+        float, cutlass::layout::ColumnMajor,
+        float>;
+
+using AmpereGemmFP16FP16FP32_CCC_kAlignmentA4 = cutlass::gemm::device::GemmConfiguration<
+        cutlass::arch::Sm80,
+        cutlass::half_t, cutlass::layout::ColumnMajor, 4,
+        cutlass::half_t, cutlass::layout::ColumnMajor, 8,
+        float, cutlass::layout::ColumnMajor,
+        float>;
+
+using AmpereGemmFP16FP16FP32_CCC_kAlignmentA1 = cutlass::gemm::device::GemmConfiguration<
+        cutlass::arch::Sm80,
+        cutlass::half_t, cutlass::layout::ColumnMajor, 1,
+        cutlass::half_t, cutlass::layout::ColumnMajor, 8,
+        float, cutlass::layout::ColumnMajor,
+        float>;
+
+using AmpereGemmFP16FP16FP32_CCC_kAlignment1 = cutlass::gemm::device::GemmConfiguration<
+        cutlass::arch::Sm80,
+        cutlass::half_t, cutlass::layout::ColumnMajor, 1,
+        cutlass::half_t, cutlass::layout::ColumnMajor, 1,
+        float, cutlass::layout::ColumnMajor,
+        float>;
+
+using AmpereGemmTF32TF32FP32_CCC = cutlass::gemm::device::GemmConfiguration<
+        cutlass::arch::Sm80,
+        float, cutlass::layout::ColumnMajor, 4,
+        float, cutlass::layout::ColumnMajor, 4,
+        float, cutlass::layout::ColumnMajor,
+        float>;
+
+using AmpereGemmTF32TF32FP32_CCC_kAlignmentA1 = cutlass::gemm::device::GemmConfiguration<
+        cutlass::arch::Sm80,
+        float, cutlass::layout::ColumnMajor, 1,
+        float, cutlass::layout::ColumnMajor, 4,
+        float, cutlass::layout::ColumnMajor,
+        float>;
+
+using AmpereGemmTF32TF32FP32_CCC_kAlignment1 = cutlass::gemm::device::GemmConfiguration<
+        cutlass::arch::Sm80,
+        float, cutlass::layout::ColumnMajor, 1,
+        float, cutlass::layout::ColumnMajor, 1,
+        float, cutlass::layout::ColumnMajor,
+        float>;
+
+CUTLASS_CREATE_GEMM_BENCHMARK(AmpereGemmBF16BF16FP32_CCC);
+CUTLASS_CREATE_GEMM_BENCHMARK(AmpereGemmBF16BF16FP32_CCC_kAlignment1);
+CUTLASS_CREATE_GEMM_BENCHMARK(AmpereGemmBF16BF16FP32_CCC_kAlignmentA1);
+CUTLASS_CREATE_GEMM_BENCHMARK(AmpereGemmBF16BF16FP32_CCC_kAlignmentA4);
+
+CUTLASS_CREATE_GEMM_BENCHMARK(AmpereGemmFP16FP16FP32_CCC);
+CUTLASS_CREATE_GEMM_BENCHMARK(AmpereGemmFP16FP16FP32_CCC_kAlignment1);
+CUTLASS_CREATE_GEMM_BENCHMARK(AmpereGemmFP16FP16FP32_CCC_kAlignmentA1);
+CUTLASS_CREATE_GEMM_BENCHMARK(AmpereGemmFP16FP16FP32_CCC_kAlignmentA4);
+
+CUTLASS_CREATE_GEMM_BENCHMARK(AmpereGemmTF32TF32FP32_CCC);
+CUTLASS_CREATE_GEMM_BENCHMARK(AmpereGemmTF32TF32FP32_CCC_kAlignment1);
+CUTLASS_CREATE_GEMM_BENCHMARK(AmpereGemmTF32TF32FP32_CCC_kAlignmentA1);
 
 static void register_benchmarks() {
-  CUTLASS_BENCHMARK(AmpereGemmBF16BF16FP32_CCCC);
-  CUTLASS_BENCHMARK(AmpereGemmFP16FP16FP32_CCCC);
-  CUTLASS_BENCHMARK(AmpereGemmTF32TF32FP32_CCCC);
+  CUTLASS_BENCHMARK(AmpereGemmBF16BF16FP32_CCC);
+  CUTLASS_BENCHMARK(AmpereGemmBF16BF16FP32_CCC_kAlignment1);
+  CUTLASS_BENCHMARK(AmpereGemmBF16BF16FP32_CCC_kAlignmentA1);
+  CUTLASS_BENCHMARK(AmpereGemmBF16BF16FP32_CCC_kAlignmentA4);
+
+  CUTLASS_BENCHMARK(AmpereGemmFP16FP16FP32_CCC);
+  CUTLASS_BENCHMARK(AmpereGemmFP16FP16FP32_CCC_kAlignment1);
+  CUTLASS_BENCHMARK(AmpereGemmFP16FP16FP32_CCC_kAlignmentA1);
+  CUTLASS_BENCHMARK(AmpereGemmFP16FP16FP32_CCC_kAlignmentA4);
+
+  CUTLASS_BENCHMARK(AmpereGemmTF32TF32FP32_CCC);
+  CUTLASS_BENCHMARK(AmpereGemmTF32TF32FP32_CCC_kAlignment1);
+  CUTLASS_BENCHMARK(AmpereGemmTF32TF32FP32_CCC_kAlignmentA1);
 }

@@ -35,8 +35,6 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(googlebenchmark)
 
-set(CUTLASS_BENCHMARKS_COMMON_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/common)
-
 add_custom_target(cutlass_benchmarks)
 
 function(cutlass_benchmark_add_executable NAME)

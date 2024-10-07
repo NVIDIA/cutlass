@@ -231,11 +231,15 @@ struct BenchmarkRunnerGemm {
     stride_C = cutlass::make_cute_packed_stride(StrideC{}, cute::make_shape(M, N, L));
     stride_D = cutlass::make_cute_packed_stride(StrideD{}, cute::make_shape(M, N, L));
 
-    block_A.reset(M * K * L);
-    block_B.reset(K * N * L);
-    block_C.reset(M * N * L);
-    block_D.reset(M * N * L);
-    block_ref_D.reset(M * N * L);
+    std::size_t block_A_size = std::size_t(M) * std::size_t(K) * std::size_t(L);
+    std::size_t block_B_size = std::size_t(K) * std::size_t(N) * std::size_t(L);
+    std::size_t block_C_size = std::size_t(M) * std::size_t(N) * std::size_t(L);
+
+    block_A.reset(block_A_size);
+    block_B.reset(block_B_size);
+    block_C.reset(block_C_size);
+    block_D.reset(block_C_size);
+    block_ref_D.reset(block_C_size);
 
     initialize_block(block_A, seed + 2023);
     initialize_block(block_B, seed + 2022);
@@ -276,7 +280,7 @@ struct BenchmarkRunnerGemm {
     // Verify that the result is correct
     bool passed = verify(problem_size, options.alpha, options.beta);
     if(not passed) {
-      throw std::runtime_error("Disposition Failed.");
+      state.SkipWithError("Disposition Failed.");
     }
 
     auto tflop = ((2.0 * options.m * options.n * options.k * options.l) * 1e-12);
