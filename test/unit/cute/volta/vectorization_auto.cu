@@ -109,7 +109,7 @@ template <class T, class GmemLayout, class RmemTiler>
 void
 test_copy_vectorization(GmemLayout gmem_layout, RmemTiler rmem_tiler)
 {
-  test_copy_vectorization<T>(DefaultCopy{}, gmem_layout, rmem_tiler);
+  test_copy_vectorization<T>(AutoVectorizingCopyWithAssumedAlignment<128>{}, gmem_layout, rmem_tiler);
 }
 
 TEST(SM70_CuTe_Volta, SimpleVec)
