@@ -106,10 +106,10 @@ How do we translate this into the BLAS user's experience?
 
 | BLAS | A Majorness | A Layout        | B Majorness | B Layout        |
 | ---  | ---         | ---             | ---         | ---             |
-| NT   | M-major     | `(M,K):(1,ldA)` | N-major     | `(N,K):(1,ldA)` |
+| NT   | M-major     | `(M,K):(1,ldA)` | N-major     | `(N,K):(1,ldB)` |
 | TN   | K-major     | `(M,K):(ldA,1)` | K-major     | `(N,K):(ldB,1)` |
 | NN   | M-major     | `(M,K):(1,ldA)` | K-major     | `(N,K):(ldB,1)` |
-| TT   | K-major     | `(M,K):(ldA,1)` | N-major     | `(N,K):(1,ldA)` |
+| TT   | K-major     | `(M,K):(ldA,1)` | N-major     | `(N,K):(1,ldB)` |
 
 Regardless, we'll still use the BLAS "NT" and "TN" notations for high-level descriptions of kernels when it's appropriate.
 
