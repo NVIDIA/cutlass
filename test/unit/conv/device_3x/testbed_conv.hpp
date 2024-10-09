@@ -120,12 +120,11 @@ struct DenseConvParams {
 
   // get the default arguments without sparse data
   auto get_mainloop_arguments(
-    ProblemShape const& problem_shape,  
+    [[maybe_unused]] ProblemShape const& problem_shape,  
     thrust::universal_vector<ElementA>& tensor_A,
     thrust::universal_vector<ElementB>& tensor_B
   ) {
     auto args = typename Conv::ConvKernel::MainloopArguments {
-      problem_shape, 
       tensor_A.data().get(),
       tensor_B.data().get(),
     };
@@ -298,11 +297,12 @@ struct ConvTestbed {
    using DecompositionMode = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90StreamKParams::DecompositionMode;
 
     typename Conv::ConvKernel::TileScheduler::Arguments scheduler_args{};
-    if constexpr (cute::is_same_v<typename Conv::ConvKernel::TileScheduler::Arguments, cutlass::gemm::StreamKScheduler>) {
+    if constexpr (cute::is_same_v<typename Conv::ConvKernel::TileSchedulerTag, cutlass::gemm::StreamKScheduler>) {
       scheduler_args = { static_cast<int>(splits), static_cast<int>(max_swizzle), raster_order, decomposition_mode };
     }
 
-    auto mainloop_args = params.get_mainloop_arguments(problem_shape, tensor_A, tensor_B);
+    auto mainloop_args = params.get_mainloop_arguments(problem_shape, tensor_A, tensor_B); 
+
     auto epilogue_args = typename Conv::ConvKernel::EpilogueArguments {
       {},
       tensor_C.data().get(),
@@ -312,6 +312,7 @@ struct ConvTestbed {
     };
 
     auto args = typename Conv::Arguments {
+      problem_shape,
       mainloop_args, // MainloopArguments
       epilogue_args, // EpilogueArguments
       hw_info,
@@ -615,8 +616,10 @@ bool TestAllConv(double alpha = 1.0, double beta = 0.0, float epsilon = 0.0f
     #endif
     for (DecompositionMode decomp_mode : decomposition_modes) {
       std::vector problem_splits = {Splits{1}};
-      if (decomp_mode == DecompositionMode::Heuristic || decomp_mode == DecompositionMode::SplitK) {
-        problem_splits.push_back(Splits{2});
+      if constexpr (UsesStreamKScheduler) {
+        if (decomp_mode == DecompositionMode::Heuristic || decomp_mode == DecompositionMode::SplitK) {
+          problem_splits.push_back(Splits{2});
+        }
       }
       for (auto splits : problem_splits) {
 

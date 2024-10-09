@@ -609,7 +609,7 @@ inline CachedTestKey CreateCachedGemmTestKey(
   ElementCompute alpha,
   ElementCompute beta,
   cutlass::TensorView<ElementA, LayoutA> A,
-  cutlass::TensorView<ElementA, LayoutB> B,
+  cutlass::TensorView<ElementB, LayoutB> B,
   cutlass::TensorView<ElementC, LayoutC> C
 ) {
 

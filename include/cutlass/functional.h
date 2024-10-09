@@ -38,7 +38,6 @@
 #include "cutlass/cutlass.h"
 #include "cutlass/numeric_types.h"
 #include "cutlass/platform/platform.h"
-
 #if defined(__CUDACC_RTC__)
 #include "cutlass/floating_point_nvrtc.h"
 #endif
@@ -234,7 +233,7 @@ template <>
 struct inverse_square_root<half_t> {
   CUTLASS_HOST_DEVICE
   half_t operator()(half_t const &lhs) const {
-#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ > 520
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ > 520)
     auto result = hrsqrt(reinterpret_cast<__half const &>(lhs));
     return reinterpret_cast<half_t const &>(result);
 #else
@@ -350,7 +349,19 @@ template <typename T, bool PropagateNaN = false>
 struct maximum {
   CUTLASS_HOST_DEVICE
   T operator()(T const &lhs, T const &rhs) const {
-    return (lhs < rhs ? rhs : lhs);
+    if constexpr (PropagateNaN && cutlass::platform::is_floating_point<T>::value) {
+      using CUTLASS_CMATH_NAMESPACE :: isnan;
+
+      // Call isnan unqualified, so argument-dependent lookup (ADL)
+      // will find overloads such as cutlass::isnan(half_t).
+      // Calling ::isnan or std::isnan directly would force
+      // implicit conversions to float of custom number types
+      // in the cutlass namespace (e.g., cutlass::half_t).
+      return lhs > rhs || isnan(lhs) ? lhs : rhs;
+    }
+    else {
+      return (lhs < rhs ? rhs : lhs);
+    }
   }
 };
 
@@ -363,23 +374,6 @@ template<typename T>
 struct maximum_with_default_nan_propagation : public maximum<T>
 {};
 
-// Maximum with nan propagation
-// To propagate NANs, the "max" of a two element that contains NaNs should also return a NaN
-template <typename T>
-struct maximum<T, true> {
-  CUTLASS_HOST_DEVICE
-  T operator()(T const &lhs, T const &rhs) const {
-    using CUTLASS_CMATH_NAMESPACE :: isnan;
-
-    // Call isnan unqualified, so argument-dependent lookup (ADL)
-    // will find overloads such as cutlass::isnan(half_t).
-    // Calling ::isnan or std::isnan directly would force
-    // implicit conversions to float of custom number types
-    // in the cutlass namespace (e.g., cutlass::half_t).
-    return lhs > rhs || isnan(lhs) ? lhs : rhs;
-  }
-};
-
 template <>
 struct maximum<float, false> {
   CUTLASS_HOST_DEVICE
@@ -391,13 +385,14 @@ struct maximum<float, false> {
 template <>
 struct maximum<float, true> {
   CUTLASS_HOST_DEVICE
-  float operator()(float const lhs, float const rhs) const {
+  float operator()(float lhs, float rhs) const {
 #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)
     float res;
     asm volatile("max.NaN.f32 %0, %1, %2;\n" : "=f"(res) : "f"(lhs), "f"(rhs));
     return res;
 #else
     using CUTLASS_CMATH_NAMESPACE :: isnan;
+
     return lhs > rhs || isnan(lhs) ? lhs : rhs;
 #endif
   }
@@ -418,20 +413,17 @@ template <typename T>
 using maximum_with_nan_propogation = maximum_with_nan_propagation<T>;
 
 template <typename T, bool PropagateNaN = false>
-struct minimum{
+struct minimum {
   CUTLASS_HOST_DEVICE
   T operator()(T const &lhs, T const &rhs) const {
-    return (rhs < lhs ? rhs : lhs);
-  }
-};
+    if constexpr (PropagateNaN && cutlass::platform::is_floating_point<T>::value) {
+      using CUTLASS_CMATH_NAMESPACE :: isnan;
 
-template <typename T>
-struct minimum<T, true> {
-  CUTLASS_HOST_DEVICE
-  T operator()(T const &lhs, T const &rhs) const {
-    using CUTLASS_CMATH_NAMESPACE :: isnan;
-
-    return lhs < rhs || isnan(lhs) ? lhs : rhs;
+      return lhs < rhs || isnan(lhs) ? lhs : rhs;
+    }
+    else {
+      return (rhs < lhs ? rhs : lhs);
+    }
   }
 };
 
@@ -440,6 +432,21 @@ struct minimum<float, false> {
   CUTLASS_HOST_DEVICE
   float operator()(float const &lhs, float const &rhs) const {
     return fminf(lhs, rhs);
+  }
+};
+
+template <>
+struct minimum<float, true> {
+  CUTLASS_HOST_DEVICE
+  float operator()(float lhs, float rhs) const {
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)
+    float res;
+    asm volatile("min.NaN.f32 %0, %1, %2;\n" : "=f"(res) : "f"(lhs), "f"(rhs));
+    return res;
+#else
+    // No need for ADL; call std::isnan(float) on host and ::isnan(float) on device.
+    return lhs < rhs || (CUTLASS_CMATH_NAMESPACE :: isnan(lhs)) ? lhs : rhs;
+#endif
   }
 };
 
@@ -819,9 +826,9 @@ struct atomic_add<half2>
   void operator()(half2 *ptr, const half2 &data)
   {
 #if !defined(__CUDA_ARCH__) || (defined(__CUDA_ARCH__)  && (__CUDA_ARCH__ < 600))
-    CUTLASS_UNUSED(ptr);
-    CUTLASS_UNUSED(data);
-    CUTLASS_NOT_IMPLEMENTED();
+      CUTLASS_UNUSED(ptr);
+      CUTLASS_UNUSED(data);
+      CUTLASS_NOT_IMPLEMENTED();
 #else
     // Vector-2 atomic reduction requires .target sm_60 or higher
     uint32_t word = reinterpret_cast<const uint32_t&>(data);
@@ -878,7 +885,6 @@ template <class T>
 struct is_atomic<atomic_add<T>> : platform::true_type {};
 template <class T>
 struct is_atomic<atomic_maximum<T>> : platform::true_type {};
-
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 //

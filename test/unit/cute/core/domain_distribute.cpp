@@ -29,7 +29,7 @@
  *
  **************************************************************************************************/
 
-#define CUTLASS_DEBUG_TRACE_LEVEL 1
+//#define CUTLASS_DEBUG_TRACE_LEVEL 1
 
 #include "cutlass_unit_test.h"
 
@@ -40,7 +40,6 @@
 #include <cute/tensor.hpp>
 
 using namespace cute;
-
 
 template <class LayoutA, class LayoutB>
 void
@@ -54,8 +53,8 @@ test_distribute(LayoutA const& layoutA,
   CUTLASS_TRACE_HOST("  =>  ");
   CUTLASS_TRACE_HOST(layoutR);
 
-  // Test that layout B is softly compatible with layout R
-  EXPECT_TRUE(softly_compatible(layoutB, layoutR));
+  EXPECT_TRUE(evenly_divides(layoutB, size(layoutR)));
+  EXPECT_TRUE(evenly_divides(layoutA, layoutR));
 
   // Post-condition on the codomain of the distribute
   for (int i = 0; i < size(layoutR); ++i) {

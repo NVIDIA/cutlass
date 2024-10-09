@@ -30,8 +30,10 @@
  **************************************************************************************************/
 #pragma once
 
-#include <cute/config.hpp>
-#include <cute/arch/mma.hpp>
+#include <cute/config.hpp>                 // CUTE_HOST_DEVICE
+
+#include "cutlass/arch/synclog.hpp"
+
 // Config
 #if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900) && defined(__CUDA_ARCH_FEAT_SM90_ALL))
 #  define CUTE_ARCH_MMA_SM90A_ENABLED
@@ -47,6 +49,7 @@ void
 warpgroup_arrive()
 {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+  cutlass::arch::synclog_emit_warpgroup_arrive(__LINE__);
   asm volatile ("wgmma.fence.sync.aligned;\n" ::: "memory");
 #else
   CUTE_INVALID_CONTROL_PATH("Attempting to use wgmma.fence without CUTE_ARCH_MMA_SM90A_ENABLED");
@@ -60,6 +63,7 @@ warpgroup_wait()
 {
   static_assert(N >= 0 && N <= 7, "WGMMA wait: N must be in range [0, 7]");
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+  cutlass::arch::synclog_emit_warpgroup_wait(__LINE__, N);
   asm volatile("wgmma.wait_group.sync.aligned %0;\n" :: "n"(N) : "memory");
 #else
   CUTE_INVALID_CONTROL_PATH("Attempting to use wgmma.wait_group<N> without CUTE_ARCH_MMA_SM90A_ENABLED");
@@ -72,6 +76,7 @@ void
 warpgroup_commit_batch()
 {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+  cutlass::arch::synclog_emit_warpgroup_commit_batch(__LINE__);
   asm volatile("wgmma.commit_group.sync.aligned;\n" ::: "memory");
 #else
   CUTE_INVALID_CONTROL_PATH("Attempting to use wgmma.commit_group without CUTE_ARCH_MMA_SM90A_ENABLED");
@@ -97,7 +102,7 @@ warpgroup_fence_operand(float& reg) {
 #endif
 }
 
-namespace GMMA {
+namespace SM90::GMMA {
 
 enum class Major {
   K  = 0,
@@ -114,7 +119,11 @@ enum class ScaleIn {
   One =  1
 };
 
-} // namespace GMMA
+enum class SparseSel {
+  Zero = 0,
+  One  = 1
+};
+
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // GMMA PTX definitions:  C = (scaleA * A) * (scaleB * B) + (scaleD * C)
@@ -127,7 +136,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x8x16_F16F16F16_SS
+struct MMA_64x8x16_F16F16F16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -141,6 +150,7 @@ struct SM90_64x8x16_F16F16F16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -156,7 +166,7 @@ struct SM90_64x8x16_F16F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -170,7 +180,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x8x16_F16F16F16_RS
+struct MMA_64x8x16_F16F16F16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -187,6 +197,7 @@ struct SM90_64x8x16_F16F16F16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -202,7 +213,7 @@ struct SM90_64x8x16_F16F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -216,7 +227,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x16x16_F16F16F16_SS
+struct MMA_64x16x16_F16F16F16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -230,6 +241,7 @@ struct SM90_64x16x16_F16F16F16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -245,7 +257,7 @@ struct SM90_64x16x16_F16F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -259,7 +271,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x16x16_F16F16F16_RS
+struct MMA_64x16x16_F16F16F16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -276,6 +288,7 @@ struct SM90_64x16x16_F16F16F16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -291,7 +304,7 @@ struct SM90_64x16x16_F16F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -305,7 +318,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x32x16_F16F16F16_SS
+struct MMA_64x32x16_F16F16F16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -320,6 +333,7 @@ struct SM90_64x32x16_F16F16F16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -336,7 +350,7 @@ struct SM90_64x32x16_F16F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -350,7 +364,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x32x16_F16F16F16_RS
+struct MMA_64x32x16_F16F16F16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -368,6 +382,7 @@ struct SM90_64x32x16_F16F16F16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -384,7 +399,7 @@ struct SM90_64x32x16_F16F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -399,7 +414,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x48x16_F16F16F16_SS
+struct MMA_64x48x16_F16F16F16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -415,6 +430,7 @@ struct SM90_64x48x16_F16F16F16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -433,7 +449,7 @@ struct SM90_64x48x16_F16F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -449,7 +465,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x48x16_F16F16F16_RS
+struct MMA_64x48x16_F16F16F16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -468,6 +484,7 @@ struct SM90_64x48x16_F16F16F16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -486,7 +503,7 @@ struct SM90_64x48x16_F16F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -501,7 +518,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x64x16_F16F16F16_SS
+struct MMA_64x64x16_F16F16F16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -518,6 +535,7 @@ struct SM90_64x64x16_F16F16F16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -537,7 +555,7 @@ struct SM90_64x64x16_F16F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -551,7 +569,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x64x16_F16F16F16_RS
+struct MMA_64x64x16_F16F16F16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -571,6 +589,7 @@ struct SM90_64x64x16_F16F16F16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -590,7 +609,7 @@ struct SM90_64x64x16_F16F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -605,7 +624,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x80x16_F16F16F16_SS
+struct MMA_64x80x16_F16F16F16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -623,6 +642,7 @@ struct SM90_64x80x16_F16F16F16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -644,7 +664,7 @@ struct SM90_64x80x16_F16F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -660,7 +680,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x80x16_F16F16F16_RS
+struct MMA_64x80x16_F16F16F16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -681,6 +701,7 @@ struct SM90_64x80x16_F16F16F16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -702,7 +723,7 @@ struct SM90_64x80x16_F16F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -717,7 +738,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x96x16_F16F16F16_SS
+struct MMA_64x96x16_F16F16F16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -736,6 +757,7 @@ struct SM90_64x96x16_F16F16F16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -758,7 +780,7 @@ struct SM90_64x96x16_F16F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -772,7 +794,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x96x16_F16F16F16_RS
+struct MMA_64x96x16_F16F16F16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -794,6 +816,7 @@ struct SM90_64x96x16_F16F16F16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -816,7 +839,7 @@ struct SM90_64x96x16_F16F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -831,7 +854,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x112x16_F16F16F16_SS
+struct MMA_64x112x16_F16F16F16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -851,6 +874,7 @@ struct SM90_64x112x16_F16F16F16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -875,7 +899,7 @@ struct SM90_64x112x16_F16F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -891,7 +915,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x112x16_F16F16F16_RS
+struct MMA_64x112x16_F16F16F16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -914,6 +938,7 @@ struct SM90_64x112x16_F16F16F16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -938,7 +963,7 @@ struct SM90_64x112x16_F16F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -953,7 +978,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x128x16_F16F16F16_SS
+struct MMA_64x128x16_F16F16F16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -974,6 +999,7 @@ struct SM90_64x128x16_F16F16F16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -999,7 +1025,7 @@ struct SM90_64x128x16_F16F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1013,7 +1039,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x128x16_F16F16F16_RS
+struct MMA_64x128x16_F16F16F16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -1037,6 +1063,7 @@ struct SM90_64x128x16_F16F16F16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -1062,7 +1089,7 @@ struct SM90_64x128x16_F16F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1077,7 +1104,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x144x16_F16F16F16_SS
+struct MMA_64x144x16_F16F16F16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -1099,6 +1126,7 @@ struct SM90_64x144x16_F16F16F16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -1126,7 +1154,7 @@ struct SM90_64x144x16_F16F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1142,7 +1170,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x144x16_F16F16F16_RS
+struct MMA_64x144x16_F16F16F16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -1167,6 +1195,7 @@ struct SM90_64x144x16_F16F16F16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -1194,7 +1223,7 @@ struct SM90_64x144x16_F16F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1210,7 +1239,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x160x16_F16F16F16_SS
+struct MMA_64x160x16_F16F16F16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -1233,6 +1262,7 @@ struct SM90_64x160x16_F16F16F16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -1261,7 +1291,7 @@ struct SM90_64x160x16_F16F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1277,7 +1307,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x160x16_F16F16F16_RS
+struct MMA_64x160x16_F16F16F16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -1303,6 +1333,7 @@ struct SM90_64x160x16_F16F16F16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -1331,7 +1362,7 @@ struct SM90_64x160x16_F16F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1347,7 +1378,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x176x16_F16F16F16_SS
+struct MMA_64x176x16_F16F16F16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -1371,6 +1402,7 @@ struct SM90_64x176x16_F16F16F16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -1401,7 +1433,7 @@ struct SM90_64x176x16_F16F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1417,7 +1449,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x176x16_F16F16F16_RS
+struct MMA_64x176x16_F16F16F16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -1444,6 +1476,7 @@ struct SM90_64x176x16_F16F16F16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -1474,7 +1507,7 @@ struct SM90_64x176x16_F16F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1489,7 +1522,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x192x16_F16F16F16_SS
+struct MMA_64x192x16_F16F16F16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -1514,6 +1547,7 @@ struct SM90_64x192x16_F16F16F16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -1545,7 +1579,7 @@ struct SM90_64x192x16_F16F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1559,7 +1593,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x192x16_F16F16F16_RS
+struct MMA_64x192x16_F16F16F16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -1587,6 +1621,7 @@ struct SM90_64x192x16_F16F16F16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -1618,7 +1653,7 @@ struct SM90_64x192x16_F16F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1633,7 +1668,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x208x16_F16F16F16_SS
+struct MMA_64x208x16_F16F16F16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -1659,6 +1694,7 @@ struct SM90_64x208x16_F16F16F16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -1692,7 +1728,7 @@ struct SM90_64x208x16_F16F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1708,7 +1744,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x208x16_F16F16F16_RS
+struct MMA_64x208x16_F16F16F16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -1737,6 +1773,7 @@ struct SM90_64x208x16_F16F16F16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -1770,7 +1807,7 @@ struct SM90_64x208x16_F16F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1786,7 +1823,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x224x16_F16F16F16_SS
+struct MMA_64x224x16_F16F16F16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -1813,6 +1850,7 @@ struct SM90_64x224x16_F16F16F16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -1847,7 +1885,7 @@ struct SM90_64x224x16_F16F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1863,7 +1901,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x224x16_F16F16F16_RS
+struct MMA_64x224x16_F16F16F16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -1893,6 +1931,7 @@ struct SM90_64x224x16_F16F16F16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -1927,7 +1966,7 @@ struct SM90_64x224x16_F16F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1943,7 +1982,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x240x16_F16F16F16_SS
+struct MMA_64x240x16_F16F16F16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -1971,6 +2010,7 @@ struct SM90_64x240x16_F16F16F16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -2007,7 +2047,7 @@ struct SM90_64x240x16_F16F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2023,7 +2063,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x240x16_F16F16F16_RS
+struct MMA_64x240x16_F16F16F16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -2054,6 +2094,7 @@ struct SM90_64x240x16_F16F16F16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -2090,7 +2131,7 @@ struct SM90_64x240x16_F16F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2105,7 +2146,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x256x16_F16F16F16_SS
+struct MMA_64x256x16_F16F16F16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -2134,6 +2175,7 @@ struct SM90_64x256x16_F16F16F16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -2171,7 +2213,7 @@ struct SM90_64x256x16_F16F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2185,7 +2227,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x256x16_F16F16F16_RS
+struct MMA_64x256x16_F16F16F16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -2217,6 +2259,7 @@ struct SM90_64x256x16_F16F16F16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -2254,7 +2297,7 @@ struct SM90_64x256x16_F16F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2268,7 +2311,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x8x16_F32F16F16_SS
+struct MMA_64x8x16_F32F16F16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -2282,6 +2325,7 @@ struct SM90_64x8x16_F32F16F16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -2297,7 +2341,7 @@ struct SM90_64x8x16_F32F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2311,7 +2355,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x8x16_F32F16F16_RS
+struct MMA_64x8x16_F32F16F16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -2328,6 +2372,7 @@ struct SM90_64x8x16_F32F16F16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -2343,7 +2388,7 @@ struct SM90_64x8x16_F32F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2357,7 +2402,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x16x16_F32F16F16_SS
+struct MMA_64x16x16_F32F16F16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -2372,6 +2417,7 @@ struct SM90_64x16x16_F32F16F16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -2388,7 +2434,7 @@ struct SM90_64x16x16_F32F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2402,7 +2448,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x16x16_F32F16F16_RS
+struct MMA_64x16x16_F32F16F16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -2420,6 +2466,7 @@ struct SM90_64x16x16_F32F16F16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -2436,7 +2483,7 @@ struct SM90_64x16x16_F32F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2450,7 +2497,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x32x16_F32F16F16_SS
+struct MMA_64x32x16_F32F16F16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -2467,6 +2514,7 @@ struct SM90_64x32x16_F32F16F16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -2486,7 +2534,7 @@ struct SM90_64x32x16_F32F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2500,7 +2548,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x32x16_F32F16F16_RS
+struct MMA_64x32x16_F32F16F16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -2520,6 +2568,7 @@ struct SM90_64x32x16_F32F16F16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -2539,7 +2588,7 @@ struct SM90_64x32x16_F32F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2554,7 +2603,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x48x16_F32F16F16_SS
+struct MMA_64x48x16_F32F16F16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -2573,6 +2622,7 @@ struct SM90_64x48x16_F32F16F16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -2595,7 +2645,7 @@ struct SM90_64x48x16_F32F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2611,7 +2661,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x48x16_F32F16F16_RS
+struct MMA_64x48x16_F32F16F16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -2633,6 +2683,7 @@ struct SM90_64x48x16_F32F16F16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -2655,7 +2706,7 @@ struct SM90_64x48x16_F32F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2670,7 +2721,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x64x16_F32F16F16_SS
+struct MMA_64x64x16_F32F16F16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -2691,6 +2742,7 @@ struct SM90_64x64x16_F32F16F16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -2716,7 +2768,7 @@ struct SM90_64x64x16_F32F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2730,7 +2782,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x64x16_F32F16F16_RS
+struct MMA_64x64x16_F32F16F16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -2754,6 +2806,7 @@ struct SM90_64x64x16_F32F16F16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -2779,7 +2832,7 @@ struct SM90_64x64x16_F32F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2794,7 +2847,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x80x16_F32F16F16_SS
+struct MMA_64x80x16_F32F16F16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -2817,6 +2870,7 @@ struct SM90_64x80x16_F32F16F16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -2845,7 +2899,7 @@ struct SM90_64x80x16_F32F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2861,7 +2915,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x80x16_F32F16F16_RS
+struct MMA_64x80x16_F32F16F16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -2887,6 +2941,7 @@ struct SM90_64x80x16_F32F16F16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -2915,7 +2970,7 @@ struct SM90_64x80x16_F32F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2930,7 +2985,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x96x16_F32F16F16_SS
+struct MMA_64x96x16_F32F16F16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -2955,6 +3010,7 @@ struct SM90_64x96x16_F32F16F16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -2986,7 +3042,7 @@ struct SM90_64x96x16_F32F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3000,7 +3056,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x96x16_F32F16F16_RS
+struct MMA_64x96x16_F32F16F16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -3028,6 +3084,7 @@ struct SM90_64x96x16_F32F16F16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -3059,7 +3116,7 @@ struct SM90_64x96x16_F32F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3074,7 +3131,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x112x16_F32F16F16_SS
+struct MMA_64x112x16_F32F16F16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -3101,6 +3158,7 @@ struct SM90_64x112x16_F32F16F16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -3135,7 +3193,7 @@ struct SM90_64x112x16_F32F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3151,7 +3209,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x112x16_F32F16F16_RS
+struct MMA_64x112x16_F32F16F16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -3181,6 +3239,7 @@ struct SM90_64x112x16_F32F16F16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -3215,7 +3274,7 @@ struct SM90_64x112x16_F32F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3230,7 +3289,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x128x16_F32F16F16_SS
+struct MMA_64x128x16_F32F16F16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -3259,6 +3318,7 @@ struct SM90_64x128x16_F32F16F16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -3296,7 +3356,7 @@ struct SM90_64x128x16_F32F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3310,7 +3370,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x128x16_F32F16F16_RS
+struct MMA_64x128x16_F32F16F16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -3342,6 +3402,7 @@ struct SM90_64x128x16_F32F16F16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -3379,7 +3440,7 @@ struct SM90_64x128x16_F32F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3394,7 +3455,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x144x16_F32F16F16_SS
+struct MMA_64x144x16_F32F16F16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -3425,6 +3486,7 @@ struct SM90_64x144x16_F32F16F16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -3465,7 +3527,7 @@ struct SM90_64x144x16_F32F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3481,7 +3543,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x144x16_F32F16F16_RS
+struct MMA_64x144x16_F32F16F16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -3515,6 +3577,7 @@ struct SM90_64x144x16_F32F16F16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -3555,7 +3618,7 @@ struct SM90_64x144x16_F32F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3571,7 +3634,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x160x16_F32F16F16_SS
+struct MMA_64x160x16_F32F16F16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -3604,6 +3667,7 @@ struct SM90_64x160x16_F32F16F16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -3647,7 +3711,7 @@ struct SM90_64x160x16_F32F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3663,7 +3727,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x160x16_F32F16F16_RS
+struct MMA_64x160x16_F32F16F16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -3699,6 +3763,7 @@ struct SM90_64x160x16_F32F16F16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -3742,7 +3807,7 @@ struct SM90_64x160x16_F32F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3758,7 +3823,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x176x16_F32F16F16_SS
+struct MMA_64x176x16_F32F16F16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -3793,6 +3858,7 @@ struct SM90_64x176x16_F32F16F16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -3839,7 +3905,7 @@ struct SM90_64x176x16_F32F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3855,7 +3921,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x176x16_F32F16F16_RS
+struct MMA_64x176x16_F32F16F16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -3893,6 +3959,7 @@ struct SM90_64x176x16_F32F16F16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -3939,7 +4006,7 @@ struct SM90_64x176x16_F32F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3954,7 +4021,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x192x16_F32F16F16_SS
+struct MMA_64x192x16_F32F16F16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -3991,6 +4058,7 @@ struct SM90_64x192x16_F32F16F16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -4040,7 +4108,7 @@ struct SM90_64x192x16_F32F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -4054,7 +4122,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x192x16_F32F16F16_RS
+struct MMA_64x192x16_F32F16F16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -4094,6 +4162,7 @@ struct SM90_64x192x16_F32F16F16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -4143,7 +4212,7 @@ struct SM90_64x192x16_F32F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -4158,7 +4227,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x208x16_F32F16F16_SS
+struct MMA_64x208x16_F32F16F16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -4197,6 +4266,7 @@ struct SM90_64x208x16_F32F16F16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -4249,7 +4319,7 @@ struct SM90_64x208x16_F32F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -4265,7 +4335,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x208x16_F32F16F16_RS
+struct MMA_64x208x16_F32F16F16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -4307,6 +4377,7 @@ struct SM90_64x208x16_F32F16F16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -4359,7 +4430,7 @@ struct SM90_64x208x16_F32F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -4375,7 +4446,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x224x16_F32F16F16_SS
+struct MMA_64x224x16_F32F16F16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -4416,6 +4487,7 @@ struct SM90_64x224x16_F32F16F16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -4471,7 +4543,7 @@ struct SM90_64x224x16_F32F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -4487,7 +4559,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x224x16_F32F16F16_RS
+struct MMA_64x224x16_F32F16F16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -4531,6 +4603,7 @@ struct SM90_64x224x16_F32F16F16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -4586,7 +4659,7 @@ struct SM90_64x224x16_F32F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -4602,7 +4675,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x240x16_F32F16F16_SS
+struct MMA_64x240x16_F32F16F16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -4645,6 +4718,7 @@ struct SM90_64x240x16_F32F16F16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -4703,7 +4777,7 @@ struct SM90_64x240x16_F32F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -4719,7 +4793,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x240x16_F32F16F16_RS
+struct MMA_64x240x16_F32F16F16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -4765,6 +4839,7 @@ struct SM90_64x240x16_F32F16F16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -4823,7 +4898,7 @@ struct SM90_64x240x16_F32F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -4838,7 +4913,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x256x16_F32F16F16_SS
+struct MMA_64x256x16_F32F16F16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -4883,6 +4958,7 @@ struct SM90_64x256x16_F32F16F16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -4944,7 +5020,7 @@ struct SM90_64x256x16_F32F16F16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -4958,7 +5034,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x256x16_F32F16F16_RS
+struct MMA_64x256x16_F32F16F16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -5006,6 +5082,7 @@ struct SM90_64x256x16_F32F16F16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -5067,7 +5144,7 @@ struct SM90_64x256x16_F32F16F16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -5081,7 +5158,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x8x16_F32BF16BF16_SS
+struct MMA_64x8x16_F32BF16BF16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -5095,6 +5172,7 @@ struct SM90_64x8x16_F32BF16BF16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -5110,7 +5188,7 @@ struct SM90_64x8x16_F32BF16BF16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -5124,7 +5202,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x8x16_F32BF16BF16_RS
+struct MMA_64x8x16_F32BF16BF16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -5141,6 +5219,7 @@ struct SM90_64x8x16_F32BF16BF16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -5156,7 +5235,7 @@ struct SM90_64x8x16_F32BF16BF16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -5170,7 +5249,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x16x16_F32BF16BF16_SS
+struct MMA_64x16x16_F32BF16BF16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -5185,6 +5264,7 @@ struct SM90_64x16x16_F32BF16BF16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -5201,7 +5281,7 @@ struct SM90_64x16x16_F32BF16BF16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -5215,7 +5295,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x16x16_F32BF16BF16_RS
+struct MMA_64x16x16_F32BF16BF16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -5233,6 +5313,7 @@ struct SM90_64x16x16_F32BF16BF16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -5249,7 +5330,7 @@ struct SM90_64x16x16_F32BF16BF16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -5263,7 +5344,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x32x16_F32BF16BF16_SS
+struct MMA_64x32x16_F32BF16BF16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -5280,6 +5361,7 @@ struct SM90_64x32x16_F32BF16BF16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -5299,7 +5381,7 @@ struct SM90_64x32x16_F32BF16BF16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -5313,7 +5395,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x32x16_F32BF16BF16_RS
+struct MMA_64x32x16_F32BF16BF16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -5333,6 +5415,7 @@ struct SM90_64x32x16_F32BF16BF16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -5352,7 +5435,7 @@ struct SM90_64x32x16_F32BF16BF16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -5367,7 +5450,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x48x16_F32BF16BF16_SS
+struct MMA_64x48x16_F32BF16BF16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -5386,6 +5469,7 @@ struct SM90_64x48x16_F32BF16BF16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -5408,7 +5492,7 @@ struct SM90_64x48x16_F32BF16BF16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -5424,7 +5508,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x48x16_F32BF16BF16_RS
+struct MMA_64x48x16_F32BF16BF16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -5446,6 +5530,7 @@ struct SM90_64x48x16_F32BF16BF16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -5468,7 +5553,7 @@ struct SM90_64x48x16_F32BF16BF16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -5483,7 +5568,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x64x16_F32BF16BF16_SS
+struct MMA_64x64x16_F32BF16BF16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -5504,6 +5589,7 @@ struct SM90_64x64x16_F32BF16BF16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -5529,7 +5615,7 @@ struct SM90_64x64x16_F32BF16BF16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -5543,7 +5629,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x64x16_F32BF16BF16_RS
+struct MMA_64x64x16_F32BF16BF16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -5567,6 +5653,7 @@ struct SM90_64x64x16_F32BF16BF16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -5592,7 +5679,7 @@ struct SM90_64x64x16_F32BF16BF16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -5607,7 +5694,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x80x16_F32BF16BF16_SS
+struct MMA_64x80x16_F32BF16BF16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -5630,6 +5717,7 @@ struct SM90_64x80x16_F32BF16BF16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -5658,7 +5746,7 @@ struct SM90_64x80x16_F32BF16BF16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -5674,7 +5762,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x80x16_F32BF16BF16_RS
+struct MMA_64x80x16_F32BF16BF16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -5700,6 +5788,7 @@ struct SM90_64x80x16_F32BF16BF16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -5728,7 +5817,7 @@ struct SM90_64x80x16_F32BF16BF16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -5743,7 +5832,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x96x16_F32BF16BF16_SS
+struct MMA_64x96x16_F32BF16BF16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -5768,6 +5857,7 @@ struct SM90_64x96x16_F32BF16BF16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -5799,7 +5889,7 @@ struct SM90_64x96x16_F32BF16BF16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -5813,7 +5903,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x96x16_F32BF16BF16_RS
+struct MMA_64x96x16_F32BF16BF16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -5841,6 +5931,7 @@ struct SM90_64x96x16_F32BF16BF16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -5872,7 +5963,7 @@ struct SM90_64x96x16_F32BF16BF16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -5887,7 +5978,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x112x16_F32BF16BF16_SS
+struct MMA_64x112x16_F32BF16BF16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -5914,6 +6005,7 @@ struct SM90_64x112x16_F32BF16BF16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -5948,7 +6040,7 @@ struct SM90_64x112x16_F32BF16BF16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -5964,7 +6056,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x112x16_F32BF16BF16_RS
+struct MMA_64x112x16_F32BF16BF16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -5994,6 +6086,7 @@ struct SM90_64x112x16_F32BF16BF16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -6028,7 +6121,7 @@ struct SM90_64x112x16_F32BF16BF16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -6043,7 +6136,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x128x16_F32BF16BF16_SS
+struct MMA_64x128x16_F32BF16BF16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -6072,6 +6165,7 @@ struct SM90_64x128x16_F32BF16BF16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -6109,7 +6203,7 @@ struct SM90_64x128x16_F32BF16BF16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -6123,7 +6217,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x128x16_F32BF16BF16_RS
+struct MMA_64x128x16_F32BF16BF16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -6155,6 +6249,7 @@ struct SM90_64x128x16_F32BF16BF16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -6192,7 +6287,7 @@ struct SM90_64x128x16_F32BF16BF16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -6207,7 +6302,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x144x16_F32BF16BF16_SS
+struct MMA_64x144x16_F32BF16BF16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -6238,6 +6333,7 @@ struct SM90_64x144x16_F32BF16BF16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -6278,7 +6374,7 @@ struct SM90_64x144x16_F32BF16BF16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -6294,7 +6390,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x144x16_F32BF16BF16_RS
+struct MMA_64x144x16_F32BF16BF16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -6328,6 +6424,7 @@ struct SM90_64x144x16_F32BF16BF16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -6368,7 +6465,7 @@ struct SM90_64x144x16_F32BF16BF16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -6384,7 +6481,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x160x16_F32BF16BF16_SS
+struct MMA_64x160x16_F32BF16BF16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -6417,6 +6514,7 @@ struct SM90_64x160x16_F32BF16BF16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -6460,7 +6558,7 @@ struct SM90_64x160x16_F32BF16BF16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -6476,7 +6574,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x160x16_F32BF16BF16_RS
+struct MMA_64x160x16_F32BF16BF16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -6512,6 +6610,7 @@ struct SM90_64x160x16_F32BF16BF16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -6555,7 +6654,7 @@ struct SM90_64x160x16_F32BF16BF16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -6571,7 +6670,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x176x16_F32BF16BF16_SS
+struct MMA_64x176x16_F32BF16BF16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -6606,6 +6705,7 @@ struct SM90_64x176x16_F32BF16BF16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -6652,7 +6752,7 @@ struct SM90_64x176x16_F32BF16BF16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -6668,7 +6768,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x176x16_F32BF16BF16_RS
+struct MMA_64x176x16_F32BF16BF16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -6706,6 +6806,7 @@ struct SM90_64x176x16_F32BF16BF16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -6752,7 +6853,7 @@ struct SM90_64x176x16_F32BF16BF16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -6767,7 +6868,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x192x16_F32BF16BF16_SS
+struct MMA_64x192x16_F32BF16BF16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -6804,6 +6905,7 @@ struct SM90_64x192x16_F32BF16BF16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -6853,7 +6955,7 @@ struct SM90_64x192x16_F32BF16BF16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -6867,7 +6969,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x192x16_F32BF16BF16_RS
+struct MMA_64x192x16_F32BF16BF16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -6907,6 +7009,7 @@ struct SM90_64x192x16_F32BF16BF16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -6956,7 +7059,7 @@ struct SM90_64x192x16_F32BF16BF16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -6971,7 +7074,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x208x16_F32BF16BF16_SS
+struct MMA_64x208x16_F32BF16BF16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -7010,6 +7113,7 @@ struct SM90_64x208x16_F32BF16BF16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -7062,7 +7166,7 @@ struct SM90_64x208x16_F32BF16BF16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -7078,7 +7182,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x208x16_F32BF16BF16_RS
+struct MMA_64x208x16_F32BF16BF16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -7120,6 +7224,7 @@ struct SM90_64x208x16_F32BF16BF16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -7172,7 +7277,7 @@ struct SM90_64x208x16_F32BF16BF16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -7188,7 +7293,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x224x16_F32BF16BF16_SS
+struct MMA_64x224x16_F32BF16BF16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -7229,6 +7334,7 @@ struct SM90_64x224x16_F32BF16BF16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -7284,7 +7390,7 @@ struct SM90_64x224x16_F32BF16BF16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -7300,7 +7406,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x224x16_F32BF16BF16_RS
+struct MMA_64x224x16_F32BF16BF16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -7344,6 +7450,7 @@ struct SM90_64x224x16_F32BF16BF16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -7399,7 +7506,7 @@ struct SM90_64x224x16_F32BF16BF16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -7415,7 +7522,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x240x16_F32BF16BF16_SS
+struct MMA_64x240x16_F32BF16BF16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -7458,6 +7565,7 @@ struct SM90_64x240x16_F32BF16BF16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -7516,7 +7624,7 @@ struct SM90_64x240x16_F32BF16BF16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -7532,7 +7640,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x240x16_F32BF16BF16_RS
+struct MMA_64x240x16_F32BF16BF16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -7578,6 +7686,7 @@ struct SM90_64x240x16_F32BF16BF16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -7636,7 +7745,7 @@ struct SM90_64x240x16_F32BF16BF16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -7651,7 +7760,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x256x16_F32BF16BF16_SS
+struct MMA_64x256x16_F32BF16BF16_SS
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -7696,6 +7805,7 @@ struct SM90_64x256x16_F32BF16BF16_SS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -7757,7 +7867,7 @@ struct SM90_64x256x16_F32BF16BF16_SS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -7771,7 +7881,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x256x16_F32BF16BF16_RS
+struct MMA_64x256x16_F32BF16BF16_RS
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -7819,6 +7929,7 @@ struct SM90_64x256x16_F32BF16BF16_RS
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -7880,7 +7991,7 @@ struct SM90_64x256x16_F32BF16BF16_RS
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -7892,7 +8003,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x8x8_F32TF32TF32_SS_TN
+struct MMA_64x8x8_F32TF32TF32_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -7906,6 +8017,7 @@ struct SM90_64x8x8_F32TF32TF32_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -7921,7 +8033,7 @@ struct SM90_64x8x8_F32TF32TF32_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -7933,7 +8045,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x8x8_F32TF32TF32_RS_TN
+struct MMA_64x8x8_F32TF32TF32_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -7947,6 +8059,7 @@ struct SM90_64x8x8_F32TF32TF32_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -7962,7 +8075,7 @@ struct SM90_64x8x8_F32TF32TF32_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -7974,7 +8087,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x16x8_F32TF32TF32_SS_TN
+struct MMA_64x16x8_F32TF32TF32_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -7989,6 +8102,7 @@ struct SM90_64x16x8_F32TF32TF32_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -8005,7 +8119,7 @@ struct SM90_64x16x8_F32TF32TF32_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -8017,7 +8131,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x16x8_F32TF32TF32_RS_TN
+struct MMA_64x16x8_F32TF32TF32_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -8032,6 +8146,7 @@ struct SM90_64x16x8_F32TF32TF32_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -8048,7 +8163,7 @@ struct SM90_64x16x8_F32TF32TF32_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -8060,7 +8175,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x32x8_F32TF32TF32_SS_TN
+struct MMA_64x32x8_F32TF32TF32_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -8077,6 +8192,7 @@ struct SM90_64x32x8_F32TF32TF32_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -8096,7 +8212,7 @@ struct SM90_64x32x8_F32TF32TF32_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -8108,7 +8224,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x32x8_F32TF32TF32_RS_TN
+struct MMA_64x32x8_F32TF32TF32_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -8125,6 +8241,7 @@ struct SM90_64x32x8_F32TF32TF32_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -8144,7 +8261,7 @@ struct SM90_64x32x8_F32TF32TF32_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -8157,7 +8274,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x48x8_F32TF32TF32_SS_TN
+struct MMA_64x48x8_F32TF32TF32_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -8176,6 +8293,7 @@ struct SM90_64x48x8_F32TF32TF32_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -8198,7 +8316,7 @@ struct SM90_64x48x8_F32TF32TF32_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -8212,7 +8330,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x48x8_F32TF32TF32_RS_TN
+struct MMA_64x48x8_F32TF32TF32_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -8231,6 +8349,7 @@ struct SM90_64x48x8_F32TF32TF32_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -8253,7 +8372,7 @@ struct SM90_64x48x8_F32TF32TF32_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -8266,7 +8385,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x64x8_F32TF32TF32_SS_TN
+struct MMA_64x64x8_F32TF32TF32_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -8287,6 +8406,7 @@ struct SM90_64x64x8_F32TF32TF32_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -8312,7 +8432,7 @@ struct SM90_64x64x8_F32TF32TF32_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -8324,7 +8444,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x64x8_F32TF32TF32_RS_TN
+struct MMA_64x64x8_F32TF32TF32_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -8345,6 +8465,7 @@ struct SM90_64x64x8_F32TF32TF32_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -8370,7 +8491,7 @@ struct SM90_64x64x8_F32TF32TF32_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -8383,7 +8504,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x80x8_F32TF32TF32_SS_TN
+struct MMA_64x80x8_F32TF32TF32_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -8406,6 +8527,7 @@ struct SM90_64x80x8_F32TF32TF32_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -8434,7 +8556,7 @@ struct SM90_64x80x8_F32TF32TF32_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -8448,7 +8570,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x80x8_F32TF32TF32_RS_TN
+struct MMA_64x80x8_F32TF32TF32_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -8471,6 +8593,7 @@ struct SM90_64x80x8_F32TF32TF32_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -8499,7 +8622,7 @@ struct SM90_64x80x8_F32TF32TF32_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -8512,7 +8635,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x96x8_F32TF32TF32_SS_TN
+struct MMA_64x96x8_F32TF32TF32_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -8537,6 +8660,7 @@ struct SM90_64x96x8_F32TF32TF32_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -8568,7 +8692,7 @@ struct SM90_64x96x8_F32TF32TF32_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -8580,7 +8704,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x96x8_F32TF32TF32_RS_TN
+struct MMA_64x96x8_F32TF32TF32_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -8605,6 +8729,7 @@ struct SM90_64x96x8_F32TF32TF32_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -8636,7 +8761,7 @@ struct SM90_64x96x8_F32TF32TF32_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -8649,7 +8774,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x112x8_F32TF32TF32_SS_TN
+struct MMA_64x112x8_F32TF32TF32_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -8676,6 +8801,7 @@ struct SM90_64x112x8_F32TF32TF32_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -8710,7 +8836,7 @@ struct SM90_64x112x8_F32TF32TF32_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -8724,7 +8850,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x112x8_F32TF32TF32_RS_TN
+struct MMA_64x112x8_F32TF32TF32_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -8751,6 +8877,7 @@ struct SM90_64x112x8_F32TF32TF32_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -8785,7 +8912,7 @@ struct SM90_64x112x8_F32TF32TF32_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -8798,7 +8925,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x128x8_F32TF32TF32_SS_TN
+struct MMA_64x128x8_F32TF32TF32_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -8827,6 +8954,7 @@ struct SM90_64x128x8_F32TF32TF32_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -8864,7 +8992,7 @@ struct SM90_64x128x8_F32TF32TF32_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -8876,7 +9004,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x128x8_F32TF32TF32_RS_TN
+struct MMA_64x128x8_F32TF32TF32_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -8905,6 +9033,7 @@ struct SM90_64x128x8_F32TF32TF32_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -8942,7 +9071,7 @@ struct SM90_64x128x8_F32TF32TF32_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -8955,7 +9084,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x144x8_F32TF32TF32_SS_TN
+struct MMA_64x144x8_F32TF32TF32_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -8986,6 +9115,7 @@ struct SM90_64x144x8_F32TF32TF32_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -9026,7 +9156,7 @@ struct SM90_64x144x8_F32TF32TF32_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -9040,7 +9170,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x144x8_F32TF32TF32_RS_TN
+struct MMA_64x144x8_F32TF32TF32_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -9071,6 +9201,7 @@ struct SM90_64x144x8_F32TF32TF32_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -9111,7 +9242,7 @@ struct SM90_64x144x8_F32TF32TF32_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -9125,7 +9256,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x160x8_F32TF32TF32_SS_TN
+struct MMA_64x160x8_F32TF32TF32_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -9158,6 +9289,7 @@ struct SM90_64x160x8_F32TF32TF32_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -9201,7 +9333,7 @@ struct SM90_64x160x8_F32TF32TF32_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -9215,7 +9347,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x160x8_F32TF32TF32_RS_TN
+struct MMA_64x160x8_F32TF32TF32_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -9248,6 +9380,7 @@ struct SM90_64x160x8_F32TF32TF32_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -9291,7 +9424,7 @@ struct SM90_64x160x8_F32TF32TF32_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -9305,7 +9438,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x176x8_F32TF32TF32_SS_TN
+struct MMA_64x176x8_F32TF32TF32_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -9340,6 +9473,7 @@ struct SM90_64x176x8_F32TF32TF32_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -9386,7 +9520,7 @@ struct SM90_64x176x8_F32TF32TF32_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -9400,7 +9534,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x176x8_F32TF32TF32_RS_TN
+struct MMA_64x176x8_F32TF32TF32_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -9435,6 +9569,7 @@ struct SM90_64x176x8_F32TF32TF32_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -9481,7 +9616,7 @@ struct SM90_64x176x8_F32TF32TF32_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -9494,7 +9629,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x192x8_F32TF32TF32_SS_TN
+struct MMA_64x192x8_F32TF32TF32_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -9531,6 +9666,7 @@ struct SM90_64x192x8_F32TF32TF32_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -9580,7 +9716,7 @@ struct SM90_64x192x8_F32TF32TF32_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -9592,7 +9728,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x192x8_F32TF32TF32_RS_TN
+struct MMA_64x192x8_F32TF32TF32_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -9629,6 +9765,7 @@ struct SM90_64x192x8_F32TF32TF32_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -9678,7 +9815,7 @@ struct SM90_64x192x8_F32TF32TF32_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -9691,7 +9828,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x208x8_F32TF32TF32_SS_TN
+struct MMA_64x208x8_F32TF32TF32_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -9730,6 +9867,7 @@ struct SM90_64x208x8_F32TF32TF32_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -9782,7 +9920,7 @@ struct SM90_64x208x8_F32TF32TF32_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -9796,7 +9934,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x208x8_F32TF32TF32_RS_TN
+struct MMA_64x208x8_F32TF32TF32_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -9835,6 +9973,7 @@ struct SM90_64x208x8_F32TF32TF32_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -9887,7 +10026,7 @@ struct SM90_64x208x8_F32TF32TF32_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -9901,7 +10040,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x224x8_F32TF32TF32_SS_TN
+struct MMA_64x224x8_F32TF32TF32_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -9942,6 +10081,7 @@ struct SM90_64x224x8_F32TF32TF32_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -9997,7 +10137,7 @@ struct SM90_64x224x8_F32TF32TF32_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -10011,7 +10151,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x224x8_F32TF32TF32_RS_TN
+struct MMA_64x224x8_F32TF32TF32_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -10052,6 +10192,7 @@ struct SM90_64x224x8_F32TF32TF32_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -10107,7 +10248,7 @@ struct SM90_64x224x8_F32TF32TF32_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -10121,7 +10262,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x240x8_F32TF32TF32_SS_TN
+struct MMA_64x240x8_F32TF32TF32_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -10164,6 +10305,7 @@ struct SM90_64x240x8_F32TF32TF32_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -10222,7 +10364,7 @@ struct SM90_64x240x8_F32TF32TF32_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -10236,7 +10378,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x240x8_F32TF32TF32_RS_TN
+struct MMA_64x240x8_F32TF32TF32_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -10279,6 +10421,7 @@ struct SM90_64x240x8_F32TF32TF32_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -10337,7 +10480,7 @@ struct SM90_64x240x8_F32TF32TF32_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -10350,7 +10493,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x256x8_F32TF32TF32_SS_TN
+struct MMA_64x256x8_F32TF32TF32_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -10395,6 +10538,7 @@ struct SM90_64x256x8_F32TF32TF32_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -10456,7 +10600,7 @@ struct SM90_64x256x8_F32TF32TF32_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -10468,7 +10612,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x256x8_F32TF32TF32_RS_TN
+struct MMA_64x256x8_F32TF32TF32_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -10513,6 +10657,7 @@ struct SM90_64x256x8_F32TF32TF32_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -10574,7 +10719,7 @@ struct SM90_64x256x8_F32TF32TF32_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -10582,7 +10727,7 @@ struct SM90_64x256x8_F32TF32TF32_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x8x32 TN S32+=S8*S8
-struct SM90_64x8x32_S32S8S8_SS_TN
+struct MMA_64x8x32_S32S8S8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -10596,6 +10741,7 @@ struct SM90_64x8x32_S32S8S8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -10611,7 +10757,7 @@ struct SM90_64x8x32_S32S8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -10619,7 +10765,7 @@ struct SM90_64x8x32_S32S8S8_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x8x32 TN S32+=S8*S8
-struct SM90_64x8x32_S32S8S8_SS_TN_SATURATE
+struct MMA_64x8x32_S32S8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -10633,6 +10779,7 @@ struct SM90_64x8x32_S32S8S8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -10648,7 +10795,7 @@ struct SM90_64x8x32_S32S8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -10656,7 +10803,7 @@ struct SM90_64x8x32_S32S8S8_SS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x16x32 TN S32+=S8*S8
-struct SM90_64x16x32_S32S8S8_SS_TN
+struct MMA_64x16x32_S32S8S8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -10671,6 +10818,7 @@ struct SM90_64x16x32_S32S8S8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -10687,7 +10835,7 @@ struct SM90_64x16x32_S32S8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -10695,7 +10843,7 @@ struct SM90_64x16x32_S32S8S8_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x16x32 TN S32+=S8*S8
-struct SM90_64x16x32_S32S8S8_SS_TN_SATURATE
+struct MMA_64x16x32_S32S8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -10710,6 +10858,7 @@ struct SM90_64x16x32_S32S8S8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -10726,7 +10875,7 @@ struct SM90_64x16x32_S32S8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -10734,7 +10883,7 @@ struct SM90_64x16x32_S32S8S8_SS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x32x32 TN S32+=S8*S8
-struct SM90_64x32x32_S32S8S8_SS_TN
+struct MMA_64x32x32_S32S8S8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -10751,6 +10900,7 @@ struct SM90_64x32x32_S32S8S8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -10770,7 +10920,7 @@ struct SM90_64x32x32_S32S8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -10778,7 +10928,7 @@ struct SM90_64x32x32_S32S8S8_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x32x32 TN S32+=S8*S8
-struct SM90_64x32x32_S32S8S8_SS_TN_SATURATE
+struct MMA_64x32x32_S32S8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -10795,6 +10945,7 @@ struct SM90_64x32x32_S32S8S8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -10814,7 +10965,7 @@ struct SM90_64x32x32_S32S8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -10823,7 +10974,7 @@ struct SM90_64x32x32_S32S8S8_SS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x48x32 TN S32+=S8*S8
-struct SM90_64x48x32_S32S8S8_SS_TN
+struct MMA_64x48x32_S32S8S8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -10842,6 +10993,7 @@ struct SM90_64x48x32_S32S8S8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -10864,7 +11016,7 @@ struct SM90_64x48x32_S32S8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -10874,7 +11026,7 @@ struct SM90_64x48x32_S32S8S8_SS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x48x32 TN S32+=S8*S8
-struct SM90_64x48x32_S32S8S8_SS_TN_SATURATE
+struct MMA_64x48x32_S32S8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -10893,6 +11045,7 @@ struct SM90_64x48x32_S32S8S8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -10915,7 +11068,7 @@ struct SM90_64x48x32_S32S8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -10924,7 +11077,7 @@ struct SM90_64x48x32_S32S8S8_SS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x64x32 TN S32+=S8*S8
-struct SM90_64x64x32_S32S8S8_SS_TN
+struct MMA_64x64x32_S32S8S8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -10945,6 +11098,7 @@ struct SM90_64x64x32_S32S8S8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -10970,7 +11124,7 @@ struct SM90_64x64x32_S32S8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -10978,7 +11132,7 @@ struct SM90_64x64x32_S32S8S8_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x64x32 TN S32+=S8*S8
-struct SM90_64x64x32_S32S8S8_SS_TN_SATURATE
+struct MMA_64x64x32_S32S8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -10999,6 +11153,7 @@ struct SM90_64x64x32_S32S8S8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -11024,7 +11179,7 @@ struct SM90_64x64x32_S32S8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -11033,7 +11188,7 @@ struct SM90_64x64x32_S32S8S8_SS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x80x32 TN S32+=S8*S8
-struct SM90_64x80x32_S32S8S8_SS_TN
+struct MMA_64x80x32_S32S8S8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -11056,6 +11211,7 @@ struct SM90_64x80x32_S32S8S8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -11084,7 +11240,7 @@ struct SM90_64x80x32_S32S8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -11094,7 +11250,7 @@ struct SM90_64x80x32_S32S8S8_SS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x80x32 TN S32+=S8*S8
-struct SM90_64x80x32_S32S8S8_SS_TN_SATURATE
+struct MMA_64x80x32_S32S8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -11117,6 +11273,7 @@ struct SM90_64x80x32_S32S8S8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -11145,7 +11302,7 @@ struct SM90_64x80x32_S32S8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -11154,7 +11311,7 @@ struct SM90_64x80x32_S32S8S8_SS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x96x32 TN S32+=S8*S8
-struct SM90_64x96x32_S32S8S8_SS_TN
+struct MMA_64x96x32_S32S8S8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -11179,6 +11336,7 @@ struct SM90_64x96x32_S32S8S8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -11210,7 +11368,7 @@ struct SM90_64x96x32_S32S8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -11218,7 +11376,7 @@ struct SM90_64x96x32_S32S8S8_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x96x32 TN S32+=S8*S8
-struct SM90_64x96x32_S32S8S8_SS_TN_SATURATE
+struct MMA_64x96x32_S32S8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -11243,6 +11401,7 @@ struct SM90_64x96x32_S32S8S8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -11274,7 +11433,7 @@ struct SM90_64x96x32_S32S8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -11283,7 +11442,7 @@ struct SM90_64x96x32_S32S8S8_SS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x112x32 TN S32+=S8*S8
-struct SM90_64x112x32_S32S8S8_SS_TN
+struct MMA_64x112x32_S32S8S8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -11310,6 +11469,7 @@ struct SM90_64x112x32_S32S8S8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -11344,7 +11504,7 @@ struct SM90_64x112x32_S32S8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -11354,7 +11514,7 @@ struct SM90_64x112x32_S32S8S8_SS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x112x32 TN S32+=S8*S8
-struct SM90_64x112x32_S32S8S8_SS_TN_SATURATE
+struct MMA_64x112x32_S32S8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -11381,6 +11541,7 @@ struct SM90_64x112x32_S32S8S8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -11415,7 +11576,7 @@ struct SM90_64x112x32_S32S8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -11424,7 +11585,7 @@ struct SM90_64x112x32_S32S8S8_SS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x128x32 TN S32+=S8*S8
-struct SM90_64x128x32_S32S8S8_SS_TN
+struct MMA_64x128x32_S32S8S8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -11453,6 +11614,7 @@ struct SM90_64x128x32_S32S8S8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -11490,7 +11652,7 @@ struct SM90_64x128x32_S32S8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -11498,7 +11660,7 @@ struct SM90_64x128x32_S32S8S8_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x128x32 TN S32+=S8*S8
-struct SM90_64x128x32_S32S8S8_SS_TN_SATURATE
+struct MMA_64x128x32_S32S8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -11527,6 +11689,7 @@ struct SM90_64x128x32_S32S8S8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -11564,7 +11727,7 @@ struct SM90_64x128x32_S32S8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -11573,7 +11736,7 @@ struct SM90_64x128x32_S32S8S8_SS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x144x32 TN S32+=S8*S8
-struct SM90_64x144x32_S32S8S8_SS_TN
+struct MMA_64x144x32_S32S8S8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -11604,6 +11767,7 @@ struct SM90_64x144x32_S32S8S8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -11644,7 +11808,7 @@ struct SM90_64x144x32_S32S8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -11654,7 +11818,7 @@ struct SM90_64x144x32_S32S8S8_SS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x144x32 TN S32+=S8*S8
-struct SM90_64x144x32_S32S8S8_SS_TN_SATURATE
+struct MMA_64x144x32_S32S8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -11685,6 +11849,7 @@ struct SM90_64x144x32_S32S8S8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -11725,7 +11890,7 @@ struct SM90_64x144x32_S32S8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -11735,7 +11900,7 @@ struct SM90_64x144x32_S32S8S8_SS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x160x32 TN S32+=S8*S8
-struct SM90_64x160x32_S32S8S8_SS_TN
+struct MMA_64x160x32_S32S8S8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -11768,6 +11933,7 @@ struct SM90_64x160x32_S32S8S8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -11811,7 +11977,7 @@ struct SM90_64x160x32_S32S8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -11821,7 +11987,7 @@ struct SM90_64x160x32_S32S8S8_SS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x160x32 TN S32+=S8*S8
-struct SM90_64x160x32_S32S8S8_SS_TN_SATURATE
+struct MMA_64x160x32_S32S8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -11854,6 +12020,7 @@ struct SM90_64x160x32_S32S8S8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -11897,7 +12064,7 @@ struct SM90_64x160x32_S32S8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -11907,7 +12074,7 @@ struct SM90_64x160x32_S32S8S8_SS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x176x32 TN S32+=S8*S8
-struct SM90_64x176x32_S32S8S8_SS_TN
+struct MMA_64x176x32_S32S8S8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -11942,6 +12109,7 @@ struct SM90_64x176x32_S32S8S8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -11988,7 +12156,7 @@ struct SM90_64x176x32_S32S8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -11998,7 +12166,7 @@ struct SM90_64x176x32_S32S8S8_SS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x176x32 TN S32+=S8*S8
-struct SM90_64x176x32_S32S8S8_SS_TN_SATURATE
+struct MMA_64x176x32_S32S8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -12033,6 +12201,7 @@ struct SM90_64x176x32_S32S8S8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -12079,7 +12248,7 @@ struct SM90_64x176x32_S32S8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -12088,7 +12257,7 @@ struct SM90_64x176x32_S32S8S8_SS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x192x32 TN S32+=S8*S8
-struct SM90_64x192x32_S32S8S8_SS_TN
+struct MMA_64x192x32_S32S8S8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -12125,6 +12294,7 @@ struct SM90_64x192x32_S32S8S8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -12174,7 +12344,7 @@ struct SM90_64x192x32_S32S8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -12182,7 +12352,7 @@ struct SM90_64x192x32_S32S8S8_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x192x32 TN S32+=S8*S8
-struct SM90_64x192x32_S32S8S8_SS_TN_SATURATE
+struct MMA_64x192x32_S32S8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -12219,6 +12389,7 @@ struct SM90_64x192x32_S32S8S8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -12268,7 +12439,7 @@ struct SM90_64x192x32_S32S8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -12277,7 +12448,7 @@ struct SM90_64x192x32_S32S8S8_SS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x208x32 TN S32+=S8*S8
-struct SM90_64x208x32_S32S8S8_SS_TN
+struct MMA_64x208x32_S32S8S8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -12316,6 +12487,7 @@ struct SM90_64x208x32_S32S8S8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -12368,7 +12540,7 @@ struct SM90_64x208x32_S32S8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -12378,7 +12550,7 @@ struct SM90_64x208x32_S32S8S8_SS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x208x32 TN S32+=S8*S8
-struct SM90_64x208x32_S32S8S8_SS_TN_SATURATE
+struct MMA_64x208x32_S32S8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -12417,6 +12589,7 @@ struct SM90_64x208x32_S32S8S8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -12469,7 +12642,7 @@ struct SM90_64x208x32_S32S8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -12479,7 +12652,7 @@ struct SM90_64x208x32_S32S8S8_SS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x224x32 TN S32+=S8*S8
-struct SM90_64x224x32_S32S8S8_SS_TN
+struct MMA_64x224x32_S32S8S8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -12520,6 +12693,7 @@ struct SM90_64x224x32_S32S8S8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -12575,7 +12749,7 @@ struct SM90_64x224x32_S32S8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -12585,7 +12759,7 @@ struct SM90_64x224x32_S32S8S8_SS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x224x32 TN S32+=S8*S8
-struct SM90_64x224x32_S32S8S8_SS_TN_SATURATE
+struct MMA_64x224x32_S32S8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -12626,6 +12800,7 @@ struct SM90_64x224x32_S32S8S8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -12681,7 +12856,7 @@ struct SM90_64x224x32_S32S8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -12691,7 +12866,7 @@ struct SM90_64x224x32_S32S8S8_SS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x240x32 TN S32+=S8*S8
-struct SM90_64x240x32_S32S8S8_SS_TN
+struct MMA_64x240x32_S32S8S8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -12734,6 +12909,7 @@ struct SM90_64x240x32_S32S8S8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -12792,7 +12968,7 @@ struct SM90_64x240x32_S32S8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -12802,7 +12978,7 @@ struct SM90_64x240x32_S32S8S8_SS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x240x32 TN S32+=S8*S8
-struct SM90_64x240x32_S32S8S8_SS_TN_SATURATE
+struct MMA_64x240x32_S32S8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -12845,6 +13021,7 @@ struct SM90_64x240x32_S32S8S8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -12903,7 +13080,7 @@ struct SM90_64x240x32_S32S8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -12912,7 +13089,7 @@ struct SM90_64x240x32_S32S8S8_SS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x256x32 TN S32+=S8*S8
-struct SM90_64x256x32_S32S8S8_SS_TN
+struct MMA_64x256x32_S32S8S8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -12957,6 +13134,7 @@ struct SM90_64x256x32_S32S8S8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -13018,7 +13196,7 @@ struct SM90_64x256x32_S32S8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -13026,7 +13204,7 @@ struct SM90_64x256x32_S32S8S8_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x256x32 TN S32+=S8*S8
-struct SM90_64x256x32_S32S8S8_SS_TN_SATURATE
+struct MMA_64x256x32_S32S8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -13071,6 +13249,7 @@ struct SM90_64x256x32_S32S8S8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -13132,7 +13311,7 @@ struct SM90_64x256x32_S32S8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -13140,7 +13319,7 @@ struct SM90_64x256x32_S32S8S8_SS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x8x32 TN S32+=S8*S8
-struct SM90_64x8x32_S32S8S8_RS_TN
+struct MMA_64x8x32_S32S8S8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -13154,6 +13333,7 @@ struct SM90_64x8x32_S32S8S8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -13169,7 +13349,7 @@ struct SM90_64x8x32_S32S8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -13177,7 +13357,7 @@ struct SM90_64x8x32_S32S8S8_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x8x32 TN S32+=S8*S8
-struct SM90_64x8x32_S32S8S8_RS_TN_SATURATE
+struct MMA_64x8x32_S32S8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -13191,6 +13371,7 @@ struct SM90_64x8x32_S32S8S8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -13206,7 +13387,7 @@ struct SM90_64x8x32_S32S8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -13214,7 +13395,7 @@ struct SM90_64x8x32_S32S8S8_RS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x16x32 TN S32+=S8*S8
-struct SM90_64x16x32_S32S8S8_RS_TN
+struct MMA_64x16x32_S32S8S8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -13229,6 +13410,7 @@ struct SM90_64x16x32_S32S8S8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -13245,7 +13427,7 @@ struct SM90_64x16x32_S32S8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -13253,7 +13435,7 @@ struct SM90_64x16x32_S32S8S8_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x16x32 TN S32+=S8*S8
-struct SM90_64x16x32_S32S8S8_RS_TN_SATURATE
+struct MMA_64x16x32_S32S8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -13268,6 +13450,7 @@ struct SM90_64x16x32_S32S8S8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -13284,7 +13467,7 @@ struct SM90_64x16x32_S32S8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -13292,7 +13475,7 @@ struct SM90_64x16x32_S32S8S8_RS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x32x32 TN S32+=S8*S8
-struct SM90_64x32x32_S32S8S8_RS_TN
+struct MMA_64x32x32_S32S8S8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -13309,6 +13492,7 @@ struct SM90_64x32x32_S32S8S8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -13328,7 +13512,7 @@ struct SM90_64x32x32_S32S8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -13336,7 +13520,7 @@ struct SM90_64x32x32_S32S8S8_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x32x32 TN S32+=S8*S8
-struct SM90_64x32x32_S32S8S8_RS_TN_SATURATE
+struct MMA_64x32x32_S32S8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -13353,6 +13537,7 @@ struct SM90_64x32x32_S32S8S8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -13372,7 +13557,7 @@ struct SM90_64x32x32_S32S8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -13381,7 +13566,7 @@ struct SM90_64x32x32_S32S8S8_RS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x48x32 TN S32+=S8*S8
-struct SM90_64x48x32_S32S8S8_RS_TN
+struct MMA_64x48x32_S32S8S8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -13400,6 +13585,7 @@ struct SM90_64x48x32_S32S8S8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -13422,7 +13608,7 @@ struct SM90_64x48x32_S32S8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -13432,7 +13618,7 @@ struct SM90_64x48x32_S32S8S8_RS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x48x32 TN S32+=S8*S8
-struct SM90_64x48x32_S32S8S8_RS_TN_SATURATE
+struct MMA_64x48x32_S32S8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -13451,6 +13637,7 @@ struct SM90_64x48x32_S32S8S8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -13473,7 +13660,7 @@ struct SM90_64x48x32_S32S8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -13482,7 +13669,7 @@ struct SM90_64x48x32_S32S8S8_RS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x64x32 TN S32+=S8*S8
-struct SM90_64x64x32_S32S8S8_RS_TN
+struct MMA_64x64x32_S32S8S8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -13503,6 +13690,7 @@ struct SM90_64x64x32_S32S8S8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -13528,7 +13716,7 @@ struct SM90_64x64x32_S32S8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -13536,7 +13724,7 @@ struct SM90_64x64x32_S32S8S8_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x64x32 TN S32+=S8*S8
-struct SM90_64x64x32_S32S8S8_RS_TN_SATURATE
+struct MMA_64x64x32_S32S8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -13557,6 +13745,7 @@ struct SM90_64x64x32_S32S8S8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -13582,7 +13771,7 @@ struct SM90_64x64x32_S32S8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -13591,7 +13780,7 @@ struct SM90_64x64x32_S32S8S8_RS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x80x32 TN S32+=S8*S8
-struct SM90_64x80x32_S32S8S8_RS_TN
+struct MMA_64x80x32_S32S8S8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -13614,6 +13803,7 @@ struct SM90_64x80x32_S32S8S8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -13642,7 +13832,7 @@ struct SM90_64x80x32_S32S8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -13652,7 +13842,7 @@ struct SM90_64x80x32_S32S8S8_RS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x80x32 TN S32+=S8*S8
-struct SM90_64x80x32_S32S8S8_RS_TN_SATURATE
+struct MMA_64x80x32_S32S8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -13675,6 +13865,7 @@ struct SM90_64x80x32_S32S8S8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -13703,7 +13894,7 @@ struct SM90_64x80x32_S32S8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -13712,7 +13903,7 @@ struct SM90_64x80x32_S32S8S8_RS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x96x32 TN S32+=S8*S8
-struct SM90_64x96x32_S32S8S8_RS_TN
+struct MMA_64x96x32_S32S8S8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -13737,6 +13928,7 @@ struct SM90_64x96x32_S32S8S8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -13768,7 +13960,7 @@ struct SM90_64x96x32_S32S8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -13776,7 +13968,7 @@ struct SM90_64x96x32_S32S8S8_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x96x32 TN S32+=S8*S8
-struct SM90_64x96x32_S32S8S8_RS_TN_SATURATE
+struct MMA_64x96x32_S32S8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -13801,6 +13993,7 @@ struct SM90_64x96x32_S32S8S8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -13832,7 +14025,7 @@ struct SM90_64x96x32_S32S8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -13841,7 +14034,7 @@ struct SM90_64x96x32_S32S8S8_RS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x112x32 TN S32+=S8*S8
-struct SM90_64x112x32_S32S8S8_RS_TN
+struct MMA_64x112x32_S32S8S8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -13868,6 +14061,7 @@ struct SM90_64x112x32_S32S8S8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -13902,7 +14096,7 @@ struct SM90_64x112x32_S32S8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -13912,7 +14106,7 @@ struct SM90_64x112x32_S32S8S8_RS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x112x32 TN S32+=S8*S8
-struct SM90_64x112x32_S32S8S8_RS_TN_SATURATE
+struct MMA_64x112x32_S32S8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -13939,6 +14133,7 @@ struct SM90_64x112x32_S32S8S8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -13973,7 +14168,7 @@ struct SM90_64x112x32_S32S8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -13982,7 +14177,7 @@ struct SM90_64x112x32_S32S8S8_RS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x128x32 TN S32+=S8*S8
-struct SM90_64x128x32_S32S8S8_RS_TN
+struct MMA_64x128x32_S32S8S8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -14011,6 +14206,7 @@ struct SM90_64x128x32_S32S8S8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -14048,7 +14244,7 @@ struct SM90_64x128x32_S32S8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -14056,7 +14252,7 @@ struct SM90_64x128x32_S32S8S8_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x128x32 TN S32+=S8*S8
-struct SM90_64x128x32_S32S8S8_RS_TN_SATURATE
+struct MMA_64x128x32_S32S8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -14085,6 +14281,7 @@ struct SM90_64x128x32_S32S8S8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -14122,7 +14319,7 @@ struct SM90_64x128x32_S32S8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -14131,7 +14328,7 @@ struct SM90_64x128x32_S32S8S8_RS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x144x32 TN S32+=S8*S8
-struct SM90_64x144x32_S32S8S8_RS_TN
+struct MMA_64x144x32_S32S8S8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -14162,6 +14359,7 @@ struct SM90_64x144x32_S32S8S8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -14202,7 +14400,7 @@ struct SM90_64x144x32_S32S8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -14212,7 +14410,7 @@ struct SM90_64x144x32_S32S8S8_RS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x144x32 TN S32+=S8*S8
-struct SM90_64x144x32_S32S8S8_RS_TN_SATURATE
+struct MMA_64x144x32_S32S8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -14243,6 +14441,7 @@ struct SM90_64x144x32_S32S8S8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -14283,7 +14482,7 @@ struct SM90_64x144x32_S32S8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -14293,7 +14492,7 @@ struct SM90_64x144x32_S32S8S8_RS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x160x32 TN S32+=S8*S8
-struct SM90_64x160x32_S32S8S8_RS_TN
+struct MMA_64x160x32_S32S8S8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -14326,6 +14525,7 @@ struct SM90_64x160x32_S32S8S8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -14369,7 +14569,7 @@ struct SM90_64x160x32_S32S8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -14379,7 +14579,7 @@ struct SM90_64x160x32_S32S8S8_RS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x160x32 TN S32+=S8*S8
-struct SM90_64x160x32_S32S8S8_RS_TN_SATURATE
+struct MMA_64x160x32_S32S8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -14412,6 +14612,7 @@ struct SM90_64x160x32_S32S8S8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -14455,7 +14656,7 @@ struct SM90_64x160x32_S32S8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -14465,7 +14666,7 @@ struct SM90_64x160x32_S32S8S8_RS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x176x32 TN S32+=S8*S8
-struct SM90_64x176x32_S32S8S8_RS_TN
+struct MMA_64x176x32_S32S8S8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -14500,6 +14701,7 @@ struct SM90_64x176x32_S32S8S8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -14546,7 +14748,7 @@ struct SM90_64x176x32_S32S8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -14556,7 +14758,7 @@ struct SM90_64x176x32_S32S8S8_RS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x176x32 TN S32+=S8*S8
-struct SM90_64x176x32_S32S8S8_RS_TN_SATURATE
+struct MMA_64x176x32_S32S8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -14591,6 +14793,7 @@ struct SM90_64x176x32_S32S8S8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -14637,7 +14840,7 @@ struct SM90_64x176x32_S32S8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -14646,7 +14849,7 @@ struct SM90_64x176x32_S32S8S8_RS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x192x32 TN S32+=S8*S8
-struct SM90_64x192x32_S32S8S8_RS_TN
+struct MMA_64x192x32_S32S8S8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -14683,6 +14886,7 @@ struct SM90_64x192x32_S32S8S8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -14732,7 +14936,7 @@ struct SM90_64x192x32_S32S8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -14740,7 +14944,7 @@ struct SM90_64x192x32_S32S8S8_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x192x32 TN S32+=S8*S8
-struct SM90_64x192x32_S32S8S8_RS_TN_SATURATE
+struct MMA_64x192x32_S32S8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -14777,6 +14981,7 @@ struct SM90_64x192x32_S32S8S8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -14826,7 +15031,7 @@ struct SM90_64x192x32_S32S8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -14835,7 +15040,7 @@ struct SM90_64x192x32_S32S8S8_RS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x208x32 TN S32+=S8*S8
-struct SM90_64x208x32_S32S8S8_RS_TN
+struct MMA_64x208x32_S32S8S8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -14874,6 +15079,7 @@ struct SM90_64x208x32_S32S8S8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -14926,7 +15132,7 @@ struct SM90_64x208x32_S32S8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -14936,7 +15142,7 @@ struct SM90_64x208x32_S32S8S8_RS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x208x32 TN S32+=S8*S8
-struct SM90_64x208x32_S32S8S8_RS_TN_SATURATE
+struct MMA_64x208x32_S32S8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -14975,6 +15181,7 @@ struct SM90_64x208x32_S32S8S8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -15027,7 +15234,7 @@ struct SM90_64x208x32_S32S8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -15037,7 +15244,7 @@ struct SM90_64x208x32_S32S8S8_RS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x224x32 TN S32+=S8*S8
-struct SM90_64x224x32_S32S8S8_RS_TN
+struct MMA_64x224x32_S32S8S8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -15078,6 +15285,7 @@ struct SM90_64x224x32_S32S8S8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -15133,7 +15341,7 @@ struct SM90_64x224x32_S32S8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -15143,7 +15351,7 @@ struct SM90_64x224x32_S32S8S8_RS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x224x32 TN S32+=S8*S8
-struct SM90_64x224x32_S32S8S8_RS_TN_SATURATE
+struct MMA_64x224x32_S32S8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -15184,6 +15392,7 @@ struct SM90_64x224x32_S32S8S8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -15239,7 +15448,7 @@ struct SM90_64x224x32_S32S8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -15249,7 +15458,7 @@ struct SM90_64x224x32_S32S8S8_RS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x240x32 TN S32+=S8*S8
-struct SM90_64x240x32_S32S8S8_RS_TN
+struct MMA_64x240x32_S32S8S8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -15292,6 +15501,7 @@ struct SM90_64x240x32_S32S8S8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -15350,7 +15560,7 @@ struct SM90_64x240x32_S32S8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -15360,7 +15570,7 @@ struct SM90_64x240x32_S32S8S8_RS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x240x32 TN S32+=S8*S8
-struct SM90_64x240x32_S32S8S8_RS_TN_SATURATE
+struct MMA_64x240x32_S32S8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -15403,6 +15613,7 @@ struct SM90_64x240x32_S32S8S8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -15461,7 +15672,7 @@ struct SM90_64x240x32_S32S8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -15470,7 +15681,7 @@ struct SM90_64x240x32_S32S8S8_RS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x256x32 TN S32+=S8*S8
-struct SM90_64x256x32_S32S8S8_RS_TN
+struct MMA_64x256x32_S32S8S8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -15515,6 +15726,7 @@ struct SM90_64x256x32_S32S8S8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -15576,7 +15788,7 @@ struct SM90_64x256x32_S32S8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -15584,7 +15796,7 @@ struct SM90_64x256x32_S32S8S8_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x256x32 TN S32+=S8*S8
-struct SM90_64x256x32_S32S8S8_RS_TN_SATURATE
+struct MMA_64x256x32_S32S8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -15629,6 +15841,7 @@ struct SM90_64x256x32_S32S8S8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -15690,7 +15903,7 @@ struct SM90_64x256x32_S32S8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -15698,7 +15911,7 @@ struct SM90_64x256x32_S32S8S8_RS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x8x32 TN S32+=S8*U8
-struct SM90_64x8x32_S32S8U8_SS_TN
+struct MMA_64x8x32_S32S8U8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -15712,6 +15925,7 @@ struct SM90_64x8x32_S32S8U8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -15727,7 +15941,7 @@ struct SM90_64x8x32_S32S8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -15735,7 +15949,7 @@ struct SM90_64x8x32_S32S8U8_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x8x32 TN S32+=S8*U8
-struct SM90_64x8x32_S32S8U8_SS_TN_SATURATE
+struct MMA_64x8x32_S32S8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -15749,6 +15963,7 @@ struct SM90_64x8x32_S32S8U8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -15764,7 +15979,7 @@ struct SM90_64x8x32_S32S8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -15772,7 +15987,7 @@ struct SM90_64x8x32_S32S8U8_SS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x16x32 TN S32+=S8*U8
-struct SM90_64x16x32_S32S8U8_SS_TN
+struct MMA_64x16x32_S32S8U8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -15787,6 +16002,7 @@ struct SM90_64x16x32_S32S8U8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -15803,7 +16019,7 @@ struct SM90_64x16x32_S32S8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -15811,7 +16027,7 @@ struct SM90_64x16x32_S32S8U8_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x16x32 TN S32+=S8*U8
-struct SM90_64x16x32_S32S8U8_SS_TN_SATURATE
+struct MMA_64x16x32_S32S8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -15826,6 +16042,7 @@ struct SM90_64x16x32_S32S8U8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -15842,7 +16059,7 @@ struct SM90_64x16x32_S32S8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -15850,7 +16067,7 @@ struct SM90_64x16x32_S32S8U8_SS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x32x32 TN S32+=S8*U8
-struct SM90_64x32x32_S32S8U8_SS_TN
+struct MMA_64x32x32_S32S8U8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -15867,6 +16084,7 @@ struct SM90_64x32x32_S32S8U8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -15886,7 +16104,7 @@ struct SM90_64x32x32_S32S8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -15894,7 +16112,7 @@ struct SM90_64x32x32_S32S8U8_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x32x32 TN S32+=S8*U8
-struct SM90_64x32x32_S32S8U8_SS_TN_SATURATE
+struct MMA_64x32x32_S32S8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -15911,6 +16129,7 @@ struct SM90_64x32x32_S32S8U8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -15930,7 +16149,7 @@ struct SM90_64x32x32_S32S8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -15939,7 +16158,7 @@ struct SM90_64x32x32_S32S8U8_SS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x48x32 TN S32+=S8*U8
-struct SM90_64x48x32_S32S8U8_SS_TN
+struct MMA_64x48x32_S32S8U8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -15958,6 +16177,7 @@ struct SM90_64x48x32_S32S8U8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -15980,7 +16200,7 @@ struct SM90_64x48x32_S32S8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -15990,7 +16210,7 @@ struct SM90_64x48x32_S32S8U8_SS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x48x32 TN S32+=S8*U8
-struct SM90_64x48x32_S32S8U8_SS_TN_SATURATE
+struct MMA_64x48x32_S32S8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -16009,6 +16229,7 @@ struct SM90_64x48x32_S32S8U8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -16031,7 +16252,7 @@ struct SM90_64x48x32_S32S8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -16040,7 +16261,7 @@ struct SM90_64x48x32_S32S8U8_SS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x64x32 TN S32+=S8*U8
-struct SM90_64x64x32_S32S8U8_SS_TN
+struct MMA_64x64x32_S32S8U8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -16061,6 +16282,7 @@ struct SM90_64x64x32_S32S8U8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -16086,7 +16308,7 @@ struct SM90_64x64x32_S32S8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -16094,7 +16316,7 @@ struct SM90_64x64x32_S32S8U8_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x64x32 TN S32+=S8*U8
-struct SM90_64x64x32_S32S8U8_SS_TN_SATURATE
+struct MMA_64x64x32_S32S8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -16115,6 +16337,7 @@ struct SM90_64x64x32_S32S8U8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -16140,7 +16363,7 @@ struct SM90_64x64x32_S32S8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -16149,7 +16372,7 @@ struct SM90_64x64x32_S32S8U8_SS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x80x32 TN S32+=S8*U8
-struct SM90_64x80x32_S32S8U8_SS_TN
+struct MMA_64x80x32_S32S8U8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -16172,6 +16395,7 @@ struct SM90_64x80x32_S32S8U8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -16200,7 +16424,7 @@ struct SM90_64x80x32_S32S8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -16210,7 +16434,7 @@ struct SM90_64x80x32_S32S8U8_SS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x80x32 TN S32+=S8*U8
-struct SM90_64x80x32_S32S8U8_SS_TN_SATURATE
+struct MMA_64x80x32_S32S8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -16233,6 +16457,7 @@ struct SM90_64x80x32_S32S8U8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -16261,7 +16486,7 @@ struct SM90_64x80x32_S32S8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -16270,7 +16495,7 @@ struct SM90_64x80x32_S32S8U8_SS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x96x32 TN S32+=S8*U8
-struct SM90_64x96x32_S32S8U8_SS_TN
+struct MMA_64x96x32_S32S8U8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -16295,6 +16520,7 @@ struct SM90_64x96x32_S32S8U8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -16326,7 +16552,7 @@ struct SM90_64x96x32_S32S8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -16334,7 +16560,7 @@ struct SM90_64x96x32_S32S8U8_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x96x32 TN S32+=S8*U8
-struct SM90_64x96x32_S32S8U8_SS_TN_SATURATE
+struct MMA_64x96x32_S32S8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -16359,6 +16585,7 @@ struct SM90_64x96x32_S32S8U8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -16390,7 +16617,7 @@ struct SM90_64x96x32_S32S8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -16399,7 +16626,7 @@ struct SM90_64x96x32_S32S8U8_SS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x112x32 TN S32+=S8*U8
-struct SM90_64x112x32_S32S8U8_SS_TN
+struct MMA_64x112x32_S32S8U8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -16426,6 +16653,7 @@ struct SM90_64x112x32_S32S8U8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -16460,7 +16688,7 @@ struct SM90_64x112x32_S32S8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -16470,7 +16698,7 @@ struct SM90_64x112x32_S32S8U8_SS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x112x32 TN S32+=S8*U8
-struct SM90_64x112x32_S32S8U8_SS_TN_SATURATE
+struct MMA_64x112x32_S32S8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -16497,6 +16725,7 @@ struct SM90_64x112x32_S32S8U8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -16531,7 +16760,7 @@ struct SM90_64x112x32_S32S8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -16540,7 +16769,7 @@ struct SM90_64x112x32_S32S8U8_SS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x128x32 TN S32+=S8*U8
-struct SM90_64x128x32_S32S8U8_SS_TN
+struct MMA_64x128x32_S32S8U8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -16569,6 +16798,7 @@ struct SM90_64x128x32_S32S8U8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -16606,7 +16836,7 @@ struct SM90_64x128x32_S32S8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -16614,7 +16844,7 @@ struct SM90_64x128x32_S32S8U8_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x128x32 TN S32+=S8*U8
-struct SM90_64x128x32_S32S8U8_SS_TN_SATURATE
+struct MMA_64x128x32_S32S8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -16643,6 +16873,7 @@ struct SM90_64x128x32_S32S8U8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -16680,7 +16911,7 @@ struct SM90_64x128x32_S32S8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -16689,7 +16920,7 @@ struct SM90_64x128x32_S32S8U8_SS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x144x32 TN S32+=S8*U8
-struct SM90_64x144x32_S32S8U8_SS_TN
+struct MMA_64x144x32_S32S8U8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -16720,6 +16951,7 @@ struct SM90_64x144x32_S32S8U8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -16760,7 +16992,7 @@ struct SM90_64x144x32_S32S8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -16770,7 +17002,7 @@ struct SM90_64x144x32_S32S8U8_SS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x144x32 TN S32+=S8*U8
-struct SM90_64x144x32_S32S8U8_SS_TN_SATURATE
+struct MMA_64x144x32_S32S8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -16801,6 +17033,7 @@ struct SM90_64x144x32_S32S8U8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -16841,7 +17074,7 @@ struct SM90_64x144x32_S32S8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -16851,7 +17084,7 @@ struct SM90_64x144x32_S32S8U8_SS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x160x32 TN S32+=S8*U8
-struct SM90_64x160x32_S32S8U8_SS_TN
+struct MMA_64x160x32_S32S8U8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -16884,6 +17117,7 @@ struct SM90_64x160x32_S32S8U8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -16927,7 +17161,7 @@ struct SM90_64x160x32_S32S8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -16937,7 +17171,7 @@ struct SM90_64x160x32_S32S8U8_SS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x160x32 TN S32+=S8*U8
-struct SM90_64x160x32_S32S8U8_SS_TN_SATURATE
+struct MMA_64x160x32_S32S8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -16970,6 +17204,7 @@ struct SM90_64x160x32_S32S8U8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -17013,7 +17248,7 @@ struct SM90_64x160x32_S32S8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -17023,7 +17258,7 @@ struct SM90_64x160x32_S32S8U8_SS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x176x32 TN S32+=S8*U8
-struct SM90_64x176x32_S32S8U8_SS_TN
+struct MMA_64x176x32_S32S8U8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -17058,6 +17293,7 @@ struct SM90_64x176x32_S32S8U8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -17104,7 +17340,7 @@ struct SM90_64x176x32_S32S8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -17114,7 +17350,7 @@ struct SM90_64x176x32_S32S8U8_SS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x176x32 TN S32+=S8*U8
-struct SM90_64x176x32_S32S8U8_SS_TN_SATURATE
+struct MMA_64x176x32_S32S8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -17149,6 +17385,7 @@ struct SM90_64x176x32_S32S8U8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -17195,7 +17432,7 @@ struct SM90_64x176x32_S32S8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -17204,7 +17441,7 @@ struct SM90_64x176x32_S32S8U8_SS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x192x32 TN S32+=S8*U8
-struct SM90_64x192x32_S32S8U8_SS_TN
+struct MMA_64x192x32_S32S8U8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -17241,6 +17478,7 @@ struct SM90_64x192x32_S32S8U8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -17290,7 +17528,7 @@ struct SM90_64x192x32_S32S8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -17298,7 +17536,7 @@ struct SM90_64x192x32_S32S8U8_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x192x32 TN S32+=S8*U8
-struct SM90_64x192x32_S32S8U8_SS_TN_SATURATE
+struct MMA_64x192x32_S32S8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -17335,6 +17573,7 @@ struct SM90_64x192x32_S32S8U8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -17384,7 +17623,7 @@ struct SM90_64x192x32_S32S8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -17393,7 +17632,7 @@ struct SM90_64x192x32_S32S8U8_SS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x208x32 TN S32+=S8*U8
-struct SM90_64x208x32_S32S8U8_SS_TN
+struct MMA_64x208x32_S32S8U8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -17432,6 +17671,7 @@ struct SM90_64x208x32_S32S8U8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -17484,7 +17724,7 @@ struct SM90_64x208x32_S32S8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -17494,7 +17734,7 @@ struct SM90_64x208x32_S32S8U8_SS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x208x32 TN S32+=S8*U8
-struct SM90_64x208x32_S32S8U8_SS_TN_SATURATE
+struct MMA_64x208x32_S32S8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -17533,6 +17773,7 @@ struct SM90_64x208x32_S32S8U8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -17585,7 +17826,7 @@ struct SM90_64x208x32_S32S8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -17595,7 +17836,7 @@ struct SM90_64x208x32_S32S8U8_SS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x224x32 TN S32+=S8*U8
-struct SM90_64x224x32_S32S8U8_SS_TN
+struct MMA_64x224x32_S32S8U8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -17636,6 +17877,7 @@ struct SM90_64x224x32_S32S8U8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -17691,7 +17933,7 @@ struct SM90_64x224x32_S32S8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -17701,7 +17943,7 @@ struct SM90_64x224x32_S32S8U8_SS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x224x32 TN S32+=S8*U8
-struct SM90_64x224x32_S32S8U8_SS_TN_SATURATE
+struct MMA_64x224x32_S32S8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -17742,6 +17984,7 @@ struct SM90_64x224x32_S32S8U8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -17797,7 +18040,7 @@ struct SM90_64x224x32_S32S8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -17807,7 +18050,7 @@ struct SM90_64x224x32_S32S8U8_SS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x240x32 TN S32+=S8*U8
-struct SM90_64x240x32_S32S8U8_SS_TN
+struct MMA_64x240x32_S32S8U8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -17850,6 +18093,7 @@ struct SM90_64x240x32_S32S8U8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -17908,7 +18152,7 @@ struct SM90_64x240x32_S32S8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -17918,7 +18162,7 @@ struct SM90_64x240x32_S32S8U8_SS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x240x32 TN S32+=S8*U8
-struct SM90_64x240x32_S32S8U8_SS_TN_SATURATE
+struct MMA_64x240x32_S32S8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -17961,6 +18205,7 @@ struct SM90_64x240x32_S32S8U8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -18019,7 +18264,7 @@ struct SM90_64x240x32_S32S8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -18028,7 +18273,7 @@ struct SM90_64x240x32_S32S8U8_SS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x256x32 TN S32+=S8*U8
-struct SM90_64x256x32_S32S8U8_SS_TN
+struct MMA_64x256x32_S32S8U8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -18073,6 +18318,7 @@ struct SM90_64x256x32_S32S8U8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -18134,7 +18380,7 @@ struct SM90_64x256x32_S32S8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -18142,7 +18388,7 @@ struct SM90_64x256x32_S32S8U8_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x256x32 TN S32+=S8*U8
-struct SM90_64x256x32_S32S8U8_SS_TN_SATURATE
+struct MMA_64x256x32_S32S8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -18187,6 +18433,7 @@ struct SM90_64x256x32_S32S8U8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -18248,7 +18495,7 @@ struct SM90_64x256x32_S32S8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -18256,7 +18503,7 @@ struct SM90_64x256x32_S32S8U8_SS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x8x32 TN S32+=S8*U8
-struct SM90_64x8x32_S32S8U8_RS_TN
+struct MMA_64x8x32_S32S8U8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -18270,6 +18517,7 @@ struct SM90_64x8x32_S32S8U8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -18285,7 +18533,7 @@ struct SM90_64x8x32_S32S8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -18293,7 +18541,7 @@ struct SM90_64x8x32_S32S8U8_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x8x32 TN S32+=S8*U8
-struct SM90_64x8x32_S32S8U8_RS_TN_SATURATE
+struct MMA_64x8x32_S32S8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -18307,6 +18555,7 @@ struct SM90_64x8x32_S32S8U8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -18322,7 +18571,7 @@ struct SM90_64x8x32_S32S8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -18330,7 +18579,7 @@ struct SM90_64x8x32_S32S8U8_RS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x16x32 TN S32+=S8*U8
-struct SM90_64x16x32_S32S8U8_RS_TN
+struct MMA_64x16x32_S32S8U8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -18345,6 +18594,7 @@ struct SM90_64x16x32_S32S8U8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -18361,7 +18611,7 @@ struct SM90_64x16x32_S32S8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -18369,7 +18619,7 @@ struct SM90_64x16x32_S32S8U8_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x16x32 TN S32+=S8*U8
-struct SM90_64x16x32_S32S8U8_RS_TN_SATURATE
+struct MMA_64x16x32_S32S8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -18384,6 +18634,7 @@ struct SM90_64x16x32_S32S8U8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -18400,7 +18651,7 @@ struct SM90_64x16x32_S32S8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -18408,7 +18659,7 @@ struct SM90_64x16x32_S32S8U8_RS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x32x32 TN S32+=S8*U8
-struct SM90_64x32x32_S32S8U8_RS_TN
+struct MMA_64x32x32_S32S8U8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -18425,6 +18676,7 @@ struct SM90_64x32x32_S32S8U8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -18444,7 +18696,7 @@ struct SM90_64x32x32_S32S8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -18452,7 +18704,7 @@ struct SM90_64x32x32_S32S8U8_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x32x32 TN S32+=S8*U8
-struct SM90_64x32x32_S32S8U8_RS_TN_SATURATE
+struct MMA_64x32x32_S32S8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -18469,6 +18721,7 @@ struct SM90_64x32x32_S32S8U8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -18488,7 +18741,7 @@ struct SM90_64x32x32_S32S8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -18497,7 +18750,7 @@ struct SM90_64x32x32_S32S8U8_RS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x48x32 TN S32+=S8*U8
-struct SM90_64x48x32_S32S8U8_RS_TN
+struct MMA_64x48x32_S32S8U8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -18516,6 +18769,7 @@ struct SM90_64x48x32_S32S8U8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -18538,7 +18792,7 @@ struct SM90_64x48x32_S32S8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -18548,7 +18802,7 @@ struct SM90_64x48x32_S32S8U8_RS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x48x32 TN S32+=S8*U8
-struct SM90_64x48x32_S32S8U8_RS_TN_SATURATE
+struct MMA_64x48x32_S32S8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -18567,6 +18821,7 @@ struct SM90_64x48x32_S32S8U8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -18589,7 +18844,7 @@ struct SM90_64x48x32_S32S8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -18598,7 +18853,7 @@ struct SM90_64x48x32_S32S8U8_RS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x64x32 TN S32+=S8*U8
-struct SM90_64x64x32_S32S8U8_RS_TN
+struct MMA_64x64x32_S32S8U8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -18619,6 +18874,7 @@ struct SM90_64x64x32_S32S8U8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -18644,7 +18900,7 @@ struct SM90_64x64x32_S32S8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -18652,7 +18908,7 @@ struct SM90_64x64x32_S32S8U8_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x64x32 TN S32+=S8*U8
-struct SM90_64x64x32_S32S8U8_RS_TN_SATURATE
+struct MMA_64x64x32_S32S8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -18673,6 +18929,7 @@ struct SM90_64x64x32_S32S8U8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -18698,7 +18955,7 @@ struct SM90_64x64x32_S32S8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -18707,7 +18964,7 @@ struct SM90_64x64x32_S32S8U8_RS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x80x32 TN S32+=S8*U8
-struct SM90_64x80x32_S32S8U8_RS_TN
+struct MMA_64x80x32_S32S8U8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -18730,6 +18987,7 @@ struct SM90_64x80x32_S32S8U8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -18758,7 +19016,7 @@ struct SM90_64x80x32_S32S8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -18768,7 +19026,7 @@ struct SM90_64x80x32_S32S8U8_RS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x80x32 TN S32+=S8*U8
-struct SM90_64x80x32_S32S8U8_RS_TN_SATURATE
+struct MMA_64x80x32_S32S8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -18791,6 +19049,7 @@ struct SM90_64x80x32_S32S8U8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -18819,7 +19078,7 @@ struct SM90_64x80x32_S32S8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -18828,7 +19087,7 @@ struct SM90_64x80x32_S32S8U8_RS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x96x32 TN S32+=S8*U8
-struct SM90_64x96x32_S32S8U8_RS_TN
+struct MMA_64x96x32_S32S8U8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -18853,6 +19112,7 @@ struct SM90_64x96x32_S32S8U8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -18884,7 +19144,7 @@ struct SM90_64x96x32_S32S8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -18892,7 +19152,7 @@ struct SM90_64x96x32_S32S8U8_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x96x32 TN S32+=S8*U8
-struct SM90_64x96x32_S32S8U8_RS_TN_SATURATE
+struct MMA_64x96x32_S32S8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -18917,6 +19177,7 @@ struct SM90_64x96x32_S32S8U8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -18948,7 +19209,7 @@ struct SM90_64x96x32_S32S8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -18957,7 +19218,7 @@ struct SM90_64x96x32_S32S8U8_RS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x112x32 TN S32+=S8*U8
-struct SM90_64x112x32_S32S8U8_RS_TN
+struct MMA_64x112x32_S32S8U8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -18984,6 +19245,7 @@ struct SM90_64x112x32_S32S8U8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -19018,7 +19280,7 @@ struct SM90_64x112x32_S32S8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -19028,7 +19290,7 @@ struct SM90_64x112x32_S32S8U8_RS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x112x32 TN S32+=S8*U8
-struct SM90_64x112x32_S32S8U8_RS_TN_SATURATE
+struct MMA_64x112x32_S32S8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -19055,6 +19317,7 @@ struct SM90_64x112x32_S32S8U8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -19089,7 +19352,7 @@ struct SM90_64x112x32_S32S8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -19098,7 +19361,7 @@ struct SM90_64x112x32_S32S8U8_RS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x128x32 TN S32+=S8*U8
-struct SM90_64x128x32_S32S8U8_RS_TN
+struct MMA_64x128x32_S32S8U8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -19127,6 +19390,7 @@ struct SM90_64x128x32_S32S8U8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -19164,7 +19428,7 @@ struct SM90_64x128x32_S32S8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -19172,7 +19436,7 @@ struct SM90_64x128x32_S32S8U8_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x128x32 TN S32+=S8*U8
-struct SM90_64x128x32_S32S8U8_RS_TN_SATURATE
+struct MMA_64x128x32_S32S8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -19201,6 +19465,7 @@ struct SM90_64x128x32_S32S8U8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -19238,7 +19503,7 @@ struct SM90_64x128x32_S32S8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -19247,7 +19512,7 @@ struct SM90_64x128x32_S32S8U8_RS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x144x32 TN S32+=S8*U8
-struct SM90_64x144x32_S32S8U8_RS_TN
+struct MMA_64x144x32_S32S8U8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -19278,6 +19543,7 @@ struct SM90_64x144x32_S32S8U8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -19318,7 +19584,7 @@ struct SM90_64x144x32_S32S8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -19328,7 +19594,7 @@ struct SM90_64x144x32_S32S8U8_RS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x144x32 TN S32+=S8*U8
-struct SM90_64x144x32_S32S8U8_RS_TN_SATURATE
+struct MMA_64x144x32_S32S8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -19359,6 +19625,7 @@ struct SM90_64x144x32_S32S8U8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -19399,7 +19666,7 @@ struct SM90_64x144x32_S32S8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -19409,7 +19676,7 @@ struct SM90_64x144x32_S32S8U8_RS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x160x32 TN S32+=S8*U8
-struct SM90_64x160x32_S32S8U8_RS_TN
+struct MMA_64x160x32_S32S8U8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -19442,6 +19709,7 @@ struct SM90_64x160x32_S32S8U8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -19485,7 +19753,7 @@ struct SM90_64x160x32_S32S8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -19495,7 +19763,7 @@ struct SM90_64x160x32_S32S8U8_RS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x160x32 TN S32+=S8*U8
-struct SM90_64x160x32_S32S8U8_RS_TN_SATURATE
+struct MMA_64x160x32_S32S8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -19528,6 +19796,7 @@ struct SM90_64x160x32_S32S8U8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -19571,7 +19840,7 @@ struct SM90_64x160x32_S32S8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -19581,7 +19850,7 @@ struct SM90_64x160x32_S32S8U8_RS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x176x32 TN S32+=S8*U8
-struct SM90_64x176x32_S32S8U8_RS_TN
+struct MMA_64x176x32_S32S8U8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -19616,6 +19885,7 @@ struct SM90_64x176x32_S32S8U8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -19662,7 +19932,7 @@ struct SM90_64x176x32_S32S8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -19672,7 +19942,7 @@ struct SM90_64x176x32_S32S8U8_RS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x176x32 TN S32+=S8*U8
-struct SM90_64x176x32_S32S8U8_RS_TN_SATURATE
+struct MMA_64x176x32_S32S8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -19707,6 +19977,7 @@ struct SM90_64x176x32_S32S8U8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -19753,7 +20024,7 @@ struct SM90_64x176x32_S32S8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -19762,7 +20033,7 @@ struct SM90_64x176x32_S32S8U8_RS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x192x32 TN S32+=S8*U8
-struct SM90_64x192x32_S32S8U8_RS_TN
+struct MMA_64x192x32_S32S8U8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -19799,6 +20070,7 @@ struct SM90_64x192x32_S32S8U8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -19848,7 +20120,7 @@ struct SM90_64x192x32_S32S8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -19856,7 +20128,7 @@ struct SM90_64x192x32_S32S8U8_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x192x32 TN S32+=S8*U8
-struct SM90_64x192x32_S32S8U8_RS_TN_SATURATE
+struct MMA_64x192x32_S32S8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -19893,6 +20165,7 @@ struct SM90_64x192x32_S32S8U8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -19942,7 +20215,7 @@ struct SM90_64x192x32_S32S8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -19951,7 +20224,7 @@ struct SM90_64x192x32_S32S8U8_RS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x208x32 TN S32+=S8*U8
-struct SM90_64x208x32_S32S8U8_RS_TN
+struct MMA_64x208x32_S32S8U8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -19990,6 +20263,7 @@ struct SM90_64x208x32_S32S8U8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -20042,7 +20316,7 @@ struct SM90_64x208x32_S32S8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -20052,7 +20326,7 @@ struct SM90_64x208x32_S32S8U8_RS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x208x32 TN S32+=S8*U8
-struct SM90_64x208x32_S32S8U8_RS_TN_SATURATE
+struct MMA_64x208x32_S32S8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -20091,6 +20365,7 @@ struct SM90_64x208x32_S32S8U8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -20143,7 +20418,7 @@ struct SM90_64x208x32_S32S8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -20153,7 +20428,7 @@ struct SM90_64x208x32_S32S8U8_RS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x224x32 TN S32+=S8*U8
-struct SM90_64x224x32_S32S8U8_RS_TN
+struct MMA_64x224x32_S32S8U8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -20194,6 +20469,7 @@ struct SM90_64x224x32_S32S8U8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -20249,7 +20525,7 @@ struct SM90_64x224x32_S32S8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -20259,7 +20535,7 @@ struct SM90_64x224x32_S32S8U8_RS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x224x32 TN S32+=S8*U8
-struct SM90_64x224x32_S32S8U8_RS_TN_SATURATE
+struct MMA_64x224x32_S32S8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -20300,6 +20576,7 @@ struct SM90_64x224x32_S32S8U8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -20355,7 +20632,7 @@ struct SM90_64x224x32_S32S8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -20365,7 +20642,7 @@ struct SM90_64x224x32_S32S8U8_RS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x240x32 TN S32+=S8*U8
-struct SM90_64x240x32_S32S8U8_RS_TN
+struct MMA_64x240x32_S32S8U8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -20408,6 +20685,7 @@ struct SM90_64x240x32_S32S8U8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -20466,7 +20744,7 @@ struct SM90_64x240x32_S32S8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -20476,7 +20754,7 @@ struct SM90_64x240x32_S32S8U8_RS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x240x32 TN S32+=S8*U8
-struct SM90_64x240x32_S32S8U8_RS_TN_SATURATE
+struct MMA_64x240x32_S32S8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -20519,6 +20797,7 @@ struct SM90_64x240x32_S32S8U8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -20577,7 +20856,7 @@ struct SM90_64x240x32_S32S8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -20586,7 +20865,7 @@ struct SM90_64x240x32_S32S8U8_RS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x256x32 TN S32+=S8*U8
-struct SM90_64x256x32_S32S8U8_RS_TN
+struct MMA_64x256x32_S32S8U8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -20631,6 +20910,7 @@ struct SM90_64x256x32_S32S8U8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -20692,7 +20972,7 @@ struct SM90_64x256x32_S32S8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -20700,7 +20980,7 @@ struct SM90_64x256x32_S32S8U8_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x256x32 TN S32+=S8*U8
-struct SM90_64x256x32_S32S8U8_RS_TN_SATURATE
+struct MMA_64x256x32_S32S8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -20745,6 +21025,7 @@ struct SM90_64x256x32_S32S8U8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -20806,7 +21087,7 @@ struct SM90_64x256x32_S32S8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -20814,7 +21095,7 @@ struct SM90_64x256x32_S32S8U8_RS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x8x32 TN S32+=U8*S8
-struct SM90_64x8x32_S32U8S8_SS_TN
+struct MMA_64x8x32_S32U8S8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -20828,6 +21109,7 @@ struct SM90_64x8x32_S32U8S8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -20843,7 +21125,7 @@ struct SM90_64x8x32_S32U8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -20851,7 +21133,7 @@ struct SM90_64x8x32_S32U8S8_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x8x32 TN S32+=U8*S8
-struct SM90_64x8x32_S32U8S8_SS_TN_SATURATE
+struct MMA_64x8x32_S32U8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -20865,6 +21147,7 @@ struct SM90_64x8x32_S32U8S8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -20880,7 +21163,7 @@ struct SM90_64x8x32_S32U8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -20888,7 +21171,7 @@ struct SM90_64x8x32_S32U8S8_SS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x16x32 TN S32+=U8*S8
-struct SM90_64x16x32_S32U8S8_SS_TN
+struct MMA_64x16x32_S32U8S8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -20903,6 +21186,7 @@ struct SM90_64x16x32_S32U8S8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -20919,7 +21203,7 @@ struct SM90_64x16x32_S32U8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -20927,7 +21211,7 @@ struct SM90_64x16x32_S32U8S8_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x16x32 TN S32+=U8*S8
-struct SM90_64x16x32_S32U8S8_SS_TN_SATURATE
+struct MMA_64x16x32_S32U8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -20942,6 +21226,7 @@ struct SM90_64x16x32_S32U8S8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -20958,7 +21243,7 @@ struct SM90_64x16x32_S32U8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -20966,7 +21251,7 @@ struct SM90_64x16x32_S32U8S8_SS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x32x32 TN S32+=U8*S8
-struct SM90_64x32x32_S32U8S8_SS_TN
+struct MMA_64x32x32_S32U8S8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -20983,6 +21268,7 @@ struct SM90_64x32x32_S32U8S8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -21002,7 +21288,7 @@ struct SM90_64x32x32_S32U8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -21010,7 +21296,7 @@ struct SM90_64x32x32_S32U8S8_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x32x32 TN S32+=U8*S8
-struct SM90_64x32x32_S32U8S8_SS_TN_SATURATE
+struct MMA_64x32x32_S32U8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -21027,6 +21313,7 @@ struct SM90_64x32x32_S32U8S8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -21046,7 +21333,7 @@ struct SM90_64x32x32_S32U8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -21055,7 +21342,7 @@ struct SM90_64x32x32_S32U8S8_SS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x48x32 TN S32+=U8*S8
-struct SM90_64x48x32_S32U8S8_SS_TN
+struct MMA_64x48x32_S32U8S8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -21074,6 +21361,7 @@ struct SM90_64x48x32_S32U8S8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -21096,7 +21384,7 @@ struct SM90_64x48x32_S32U8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -21106,7 +21394,7 @@ struct SM90_64x48x32_S32U8S8_SS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x48x32 TN S32+=U8*S8
-struct SM90_64x48x32_S32U8S8_SS_TN_SATURATE
+struct MMA_64x48x32_S32U8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -21125,6 +21413,7 @@ struct SM90_64x48x32_S32U8S8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -21147,7 +21436,7 @@ struct SM90_64x48x32_S32U8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -21156,7 +21445,7 @@ struct SM90_64x48x32_S32U8S8_SS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x64x32 TN S32+=U8*S8
-struct SM90_64x64x32_S32U8S8_SS_TN
+struct MMA_64x64x32_S32U8S8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -21177,6 +21466,7 @@ struct SM90_64x64x32_S32U8S8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -21202,7 +21492,7 @@ struct SM90_64x64x32_S32U8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -21210,7 +21500,7 @@ struct SM90_64x64x32_S32U8S8_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x64x32 TN S32+=U8*S8
-struct SM90_64x64x32_S32U8S8_SS_TN_SATURATE
+struct MMA_64x64x32_S32U8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -21231,6 +21521,7 @@ struct SM90_64x64x32_S32U8S8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -21256,7 +21547,7 @@ struct SM90_64x64x32_S32U8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -21265,7 +21556,7 @@ struct SM90_64x64x32_S32U8S8_SS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x80x32 TN S32+=U8*S8
-struct SM90_64x80x32_S32U8S8_SS_TN
+struct MMA_64x80x32_S32U8S8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -21288,6 +21579,7 @@ struct SM90_64x80x32_S32U8S8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -21316,7 +21608,7 @@ struct SM90_64x80x32_S32U8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -21326,7 +21618,7 @@ struct SM90_64x80x32_S32U8S8_SS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x80x32 TN S32+=U8*S8
-struct SM90_64x80x32_S32U8S8_SS_TN_SATURATE
+struct MMA_64x80x32_S32U8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -21349,6 +21641,7 @@ struct SM90_64x80x32_S32U8S8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -21377,7 +21670,7 @@ struct SM90_64x80x32_S32U8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -21386,7 +21679,7 @@ struct SM90_64x80x32_S32U8S8_SS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x96x32 TN S32+=U8*S8
-struct SM90_64x96x32_S32U8S8_SS_TN
+struct MMA_64x96x32_S32U8S8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -21411,6 +21704,7 @@ struct SM90_64x96x32_S32U8S8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -21442,7 +21736,7 @@ struct SM90_64x96x32_S32U8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -21450,7 +21744,7 @@ struct SM90_64x96x32_S32U8S8_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x96x32 TN S32+=U8*S8
-struct SM90_64x96x32_S32U8S8_SS_TN_SATURATE
+struct MMA_64x96x32_S32U8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -21475,6 +21769,7 @@ struct SM90_64x96x32_S32U8S8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -21506,7 +21801,7 @@ struct SM90_64x96x32_S32U8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -21515,7 +21810,7 @@ struct SM90_64x96x32_S32U8S8_SS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x112x32 TN S32+=U8*S8
-struct SM90_64x112x32_S32U8S8_SS_TN
+struct MMA_64x112x32_S32U8S8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -21542,6 +21837,7 @@ struct SM90_64x112x32_S32U8S8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -21576,7 +21872,7 @@ struct SM90_64x112x32_S32U8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -21586,7 +21882,7 @@ struct SM90_64x112x32_S32U8S8_SS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x112x32 TN S32+=U8*S8
-struct SM90_64x112x32_S32U8S8_SS_TN_SATURATE
+struct MMA_64x112x32_S32U8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -21613,6 +21909,7 @@ struct SM90_64x112x32_S32U8S8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -21647,7 +21944,7 @@ struct SM90_64x112x32_S32U8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -21656,7 +21953,7 @@ struct SM90_64x112x32_S32U8S8_SS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x128x32 TN S32+=U8*S8
-struct SM90_64x128x32_S32U8S8_SS_TN
+struct MMA_64x128x32_S32U8S8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -21685,6 +21982,7 @@ struct SM90_64x128x32_S32U8S8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -21722,7 +22020,7 @@ struct SM90_64x128x32_S32U8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -21730,7 +22028,7 @@ struct SM90_64x128x32_S32U8S8_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x128x32 TN S32+=U8*S8
-struct SM90_64x128x32_S32U8S8_SS_TN_SATURATE
+struct MMA_64x128x32_S32U8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -21759,6 +22057,7 @@ struct SM90_64x128x32_S32U8S8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -21796,7 +22095,7 @@ struct SM90_64x128x32_S32U8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -21805,7 +22104,7 @@ struct SM90_64x128x32_S32U8S8_SS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x144x32 TN S32+=U8*S8
-struct SM90_64x144x32_S32U8S8_SS_TN
+struct MMA_64x144x32_S32U8S8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -21836,6 +22135,7 @@ struct SM90_64x144x32_S32U8S8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -21876,7 +22176,7 @@ struct SM90_64x144x32_S32U8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -21886,7 +22186,7 @@ struct SM90_64x144x32_S32U8S8_SS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x144x32 TN S32+=U8*S8
-struct SM90_64x144x32_S32U8S8_SS_TN_SATURATE
+struct MMA_64x144x32_S32U8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -21917,6 +22217,7 @@ struct SM90_64x144x32_S32U8S8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -21957,7 +22258,7 @@ struct SM90_64x144x32_S32U8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -21967,7 +22268,7 @@ struct SM90_64x144x32_S32U8S8_SS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x160x32 TN S32+=U8*S8
-struct SM90_64x160x32_S32U8S8_SS_TN
+struct MMA_64x160x32_S32U8S8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -22000,6 +22301,7 @@ struct SM90_64x160x32_S32U8S8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -22043,7 +22345,7 @@ struct SM90_64x160x32_S32U8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -22053,7 +22355,7 @@ struct SM90_64x160x32_S32U8S8_SS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x160x32 TN S32+=U8*S8
-struct SM90_64x160x32_S32U8S8_SS_TN_SATURATE
+struct MMA_64x160x32_S32U8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -22086,6 +22388,7 @@ struct SM90_64x160x32_S32U8S8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -22129,7 +22432,7 @@ struct SM90_64x160x32_S32U8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -22139,7 +22442,7 @@ struct SM90_64x160x32_S32U8S8_SS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x176x32 TN S32+=U8*S8
-struct SM90_64x176x32_S32U8S8_SS_TN
+struct MMA_64x176x32_S32U8S8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -22174,6 +22477,7 @@ struct SM90_64x176x32_S32U8S8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -22220,7 +22524,7 @@ struct SM90_64x176x32_S32U8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -22230,7 +22534,7 @@ struct SM90_64x176x32_S32U8S8_SS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x176x32 TN S32+=U8*S8
-struct SM90_64x176x32_S32U8S8_SS_TN_SATURATE
+struct MMA_64x176x32_S32U8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -22265,6 +22569,7 @@ struct SM90_64x176x32_S32U8S8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -22311,7 +22616,7 @@ struct SM90_64x176x32_S32U8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -22320,7 +22625,7 @@ struct SM90_64x176x32_S32U8S8_SS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x192x32 TN S32+=U8*S8
-struct SM90_64x192x32_S32U8S8_SS_TN
+struct MMA_64x192x32_S32U8S8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -22357,6 +22662,7 @@ struct SM90_64x192x32_S32U8S8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -22406,7 +22712,7 @@ struct SM90_64x192x32_S32U8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -22414,7 +22720,7 @@ struct SM90_64x192x32_S32U8S8_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x192x32 TN S32+=U8*S8
-struct SM90_64x192x32_S32U8S8_SS_TN_SATURATE
+struct MMA_64x192x32_S32U8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -22451,6 +22757,7 @@ struct SM90_64x192x32_S32U8S8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -22500,7 +22807,7 @@ struct SM90_64x192x32_S32U8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -22509,7 +22816,7 @@ struct SM90_64x192x32_S32U8S8_SS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x208x32 TN S32+=U8*S8
-struct SM90_64x208x32_S32U8S8_SS_TN
+struct MMA_64x208x32_S32U8S8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -22548,6 +22855,7 @@ struct SM90_64x208x32_S32U8S8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -22600,7 +22908,7 @@ struct SM90_64x208x32_S32U8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -22610,7 +22918,7 @@ struct SM90_64x208x32_S32U8S8_SS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x208x32 TN S32+=U8*S8
-struct SM90_64x208x32_S32U8S8_SS_TN_SATURATE
+struct MMA_64x208x32_S32U8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -22649,6 +22957,7 @@ struct SM90_64x208x32_S32U8S8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -22701,7 +23010,7 @@ struct SM90_64x208x32_S32U8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -22711,7 +23020,7 @@ struct SM90_64x208x32_S32U8S8_SS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x224x32 TN S32+=U8*S8
-struct SM90_64x224x32_S32U8S8_SS_TN
+struct MMA_64x224x32_S32U8S8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -22752,6 +23061,7 @@ struct SM90_64x224x32_S32U8S8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -22807,7 +23117,7 @@ struct SM90_64x224x32_S32U8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -22817,7 +23127,7 @@ struct SM90_64x224x32_S32U8S8_SS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x224x32 TN S32+=U8*S8
-struct SM90_64x224x32_S32U8S8_SS_TN_SATURATE
+struct MMA_64x224x32_S32U8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -22858,6 +23168,7 @@ struct SM90_64x224x32_S32U8S8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -22913,7 +23224,7 @@ struct SM90_64x224x32_S32U8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -22923,7 +23234,7 @@ struct SM90_64x224x32_S32U8S8_SS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x240x32 TN S32+=U8*S8
-struct SM90_64x240x32_S32U8S8_SS_TN
+struct MMA_64x240x32_S32U8S8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -22966,6 +23277,7 @@ struct SM90_64x240x32_S32U8S8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -23024,7 +23336,7 @@ struct SM90_64x240x32_S32U8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -23034,7 +23346,7 @@ struct SM90_64x240x32_S32U8S8_SS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x240x32 TN S32+=U8*S8
-struct SM90_64x240x32_S32U8S8_SS_TN_SATURATE
+struct MMA_64x240x32_S32U8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -23077,6 +23389,7 @@ struct SM90_64x240x32_S32U8S8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -23135,7 +23448,7 @@ struct SM90_64x240x32_S32U8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -23144,7 +23457,7 @@ struct SM90_64x240x32_S32U8S8_SS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x256x32 TN S32+=U8*S8
-struct SM90_64x256x32_S32U8S8_SS_TN
+struct MMA_64x256x32_S32U8S8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -23189,6 +23502,7 @@ struct SM90_64x256x32_S32U8S8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -23250,7 +23564,7 @@ struct SM90_64x256x32_S32U8S8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -23258,7 +23572,7 @@ struct SM90_64x256x32_S32U8S8_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x256x32 TN S32+=U8*S8
-struct SM90_64x256x32_S32U8S8_SS_TN_SATURATE
+struct MMA_64x256x32_S32U8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -23303,6 +23617,7 @@ struct SM90_64x256x32_S32U8S8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -23364,7 +23679,7 @@ struct SM90_64x256x32_S32U8S8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -23372,7 +23687,7 @@ struct SM90_64x256x32_S32U8S8_SS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x8x32 TN S32+=U8*S8
-struct SM90_64x8x32_S32U8S8_RS_TN
+struct MMA_64x8x32_S32U8S8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -23386,6 +23701,7 @@ struct SM90_64x8x32_S32U8S8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -23401,7 +23717,7 @@ struct SM90_64x8x32_S32U8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -23409,7 +23725,7 @@ struct SM90_64x8x32_S32U8S8_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x8x32 TN S32+=U8*S8
-struct SM90_64x8x32_S32U8S8_RS_TN_SATURATE
+struct MMA_64x8x32_S32U8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -23423,6 +23739,7 @@ struct SM90_64x8x32_S32U8S8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -23438,7 +23755,7 @@ struct SM90_64x8x32_S32U8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -23446,7 +23763,7 @@ struct SM90_64x8x32_S32U8S8_RS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x16x32 TN S32+=U8*S8
-struct SM90_64x16x32_S32U8S8_RS_TN
+struct MMA_64x16x32_S32U8S8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -23461,6 +23778,7 @@ struct SM90_64x16x32_S32U8S8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -23477,7 +23795,7 @@ struct SM90_64x16x32_S32U8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -23485,7 +23803,7 @@ struct SM90_64x16x32_S32U8S8_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x16x32 TN S32+=U8*S8
-struct SM90_64x16x32_S32U8S8_RS_TN_SATURATE
+struct MMA_64x16x32_S32U8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -23500,6 +23818,7 @@ struct SM90_64x16x32_S32U8S8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -23516,7 +23835,7 @@ struct SM90_64x16x32_S32U8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -23524,7 +23843,7 @@ struct SM90_64x16x32_S32U8S8_RS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x32x32 TN S32+=U8*S8
-struct SM90_64x32x32_S32U8S8_RS_TN
+struct MMA_64x32x32_S32U8S8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -23541,6 +23860,7 @@ struct SM90_64x32x32_S32U8S8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -23560,7 +23880,7 @@ struct SM90_64x32x32_S32U8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -23568,7 +23888,7 @@ struct SM90_64x32x32_S32U8S8_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x32x32 TN S32+=U8*S8
-struct SM90_64x32x32_S32U8S8_RS_TN_SATURATE
+struct MMA_64x32x32_S32U8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -23585,6 +23905,7 @@ struct SM90_64x32x32_S32U8S8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -23604,7 +23925,7 @@ struct SM90_64x32x32_S32U8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -23613,7 +23934,7 @@ struct SM90_64x32x32_S32U8S8_RS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x48x32 TN S32+=U8*S8
-struct SM90_64x48x32_S32U8S8_RS_TN
+struct MMA_64x48x32_S32U8S8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -23632,6 +23953,7 @@ struct SM90_64x48x32_S32U8S8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -23654,7 +23976,7 @@ struct SM90_64x48x32_S32U8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -23664,7 +23986,7 @@ struct SM90_64x48x32_S32U8S8_RS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x48x32 TN S32+=U8*S8
-struct SM90_64x48x32_S32U8S8_RS_TN_SATURATE
+struct MMA_64x48x32_S32U8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -23683,6 +24005,7 @@ struct SM90_64x48x32_S32U8S8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -23705,7 +24028,7 @@ struct SM90_64x48x32_S32U8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -23714,7 +24037,7 @@ struct SM90_64x48x32_S32U8S8_RS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x64x32 TN S32+=U8*S8
-struct SM90_64x64x32_S32U8S8_RS_TN
+struct MMA_64x64x32_S32U8S8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -23735,6 +24058,7 @@ struct SM90_64x64x32_S32U8S8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -23760,7 +24084,7 @@ struct SM90_64x64x32_S32U8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -23768,7 +24092,7 @@ struct SM90_64x64x32_S32U8S8_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x64x32 TN S32+=U8*S8
-struct SM90_64x64x32_S32U8S8_RS_TN_SATURATE
+struct MMA_64x64x32_S32U8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -23789,6 +24113,7 @@ struct SM90_64x64x32_S32U8S8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -23814,7 +24139,7 @@ struct SM90_64x64x32_S32U8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -23823,7 +24148,7 @@ struct SM90_64x64x32_S32U8S8_RS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x80x32 TN S32+=U8*S8
-struct SM90_64x80x32_S32U8S8_RS_TN
+struct MMA_64x80x32_S32U8S8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -23846,6 +24171,7 @@ struct SM90_64x80x32_S32U8S8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -23874,7 +24200,7 @@ struct SM90_64x80x32_S32U8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -23884,7 +24210,7 @@ struct SM90_64x80x32_S32U8S8_RS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x80x32 TN S32+=U8*S8
-struct SM90_64x80x32_S32U8S8_RS_TN_SATURATE
+struct MMA_64x80x32_S32U8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -23907,6 +24233,7 @@ struct SM90_64x80x32_S32U8S8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -23935,7 +24262,7 @@ struct SM90_64x80x32_S32U8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -23944,7 +24271,7 @@ struct SM90_64x80x32_S32U8S8_RS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x96x32 TN S32+=U8*S8
-struct SM90_64x96x32_S32U8S8_RS_TN
+struct MMA_64x96x32_S32U8S8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -23969,6 +24296,7 @@ struct SM90_64x96x32_S32U8S8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -24000,7 +24328,7 @@ struct SM90_64x96x32_S32U8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -24008,7 +24336,7 @@ struct SM90_64x96x32_S32U8S8_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x96x32 TN S32+=U8*S8
-struct SM90_64x96x32_S32U8S8_RS_TN_SATURATE
+struct MMA_64x96x32_S32U8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -24033,6 +24361,7 @@ struct SM90_64x96x32_S32U8S8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -24064,7 +24393,7 @@ struct SM90_64x96x32_S32U8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -24073,7 +24402,7 @@ struct SM90_64x96x32_S32U8S8_RS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x112x32 TN S32+=U8*S8
-struct SM90_64x112x32_S32U8S8_RS_TN
+struct MMA_64x112x32_S32U8S8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -24100,6 +24429,7 @@ struct SM90_64x112x32_S32U8S8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -24134,7 +24464,7 @@ struct SM90_64x112x32_S32U8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -24144,7 +24474,7 @@ struct SM90_64x112x32_S32U8S8_RS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x112x32 TN S32+=U8*S8
-struct SM90_64x112x32_S32U8S8_RS_TN_SATURATE
+struct MMA_64x112x32_S32U8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -24171,6 +24501,7 @@ struct SM90_64x112x32_S32U8S8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -24205,7 +24536,7 @@ struct SM90_64x112x32_S32U8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -24214,7 +24545,7 @@ struct SM90_64x112x32_S32U8S8_RS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x128x32 TN S32+=U8*S8
-struct SM90_64x128x32_S32U8S8_RS_TN
+struct MMA_64x128x32_S32U8S8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -24243,6 +24574,7 @@ struct SM90_64x128x32_S32U8S8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -24280,7 +24612,7 @@ struct SM90_64x128x32_S32U8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -24288,7 +24620,7 @@ struct SM90_64x128x32_S32U8S8_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x128x32 TN S32+=U8*S8
-struct SM90_64x128x32_S32U8S8_RS_TN_SATURATE
+struct MMA_64x128x32_S32U8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -24317,6 +24649,7 @@ struct SM90_64x128x32_S32U8S8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -24354,7 +24687,7 @@ struct SM90_64x128x32_S32U8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -24363,7 +24696,7 @@ struct SM90_64x128x32_S32U8S8_RS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x144x32 TN S32+=U8*S8
-struct SM90_64x144x32_S32U8S8_RS_TN
+struct MMA_64x144x32_S32U8S8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -24394,6 +24727,7 @@ struct SM90_64x144x32_S32U8S8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -24434,7 +24768,7 @@ struct SM90_64x144x32_S32U8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -24444,7 +24778,7 @@ struct SM90_64x144x32_S32U8S8_RS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x144x32 TN S32+=U8*S8
-struct SM90_64x144x32_S32U8S8_RS_TN_SATURATE
+struct MMA_64x144x32_S32U8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -24475,6 +24809,7 @@ struct SM90_64x144x32_S32U8S8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -24515,7 +24850,7 @@ struct SM90_64x144x32_S32U8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -24525,7 +24860,7 @@ struct SM90_64x144x32_S32U8S8_RS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x160x32 TN S32+=U8*S8
-struct SM90_64x160x32_S32U8S8_RS_TN
+struct MMA_64x160x32_S32U8S8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -24558,6 +24893,7 @@ struct SM90_64x160x32_S32U8S8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -24601,7 +24937,7 @@ struct SM90_64x160x32_S32U8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -24611,7 +24947,7 @@ struct SM90_64x160x32_S32U8S8_RS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x160x32 TN S32+=U8*S8
-struct SM90_64x160x32_S32U8S8_RS_TN_SATURATE
+struct MMA_64x160x32_S32U8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -24644,6 +24980,7 @@ struct SM90_64x160x32_S32U8S8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -24687,7 +25024,7 @@ struct SM90_64x160x32_S32U8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -24697,7 +25034,7 @@ struct SM90_64x160x32_S32U8S8_RS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x176x32 TN S32+=U8*S8
-struct SM90_64x176x32_S32U8S8_RS_TN
+struct MMA_64x176x32_S32U8S8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -24732,6 +25069,7 @@ struct SM90_64x176x32_S32U8S8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -24778,7 +25116,7 @@ struct SM90_64x176x32_S32U8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -24788,7 +25126,7 @@ struct SM90_64x176x32_S32U8S8_RS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x176x32 TN S32+=U8*S8
-struct SM90_64x176x32_S32U8S8_RS_TN_SATURATE
+struct MMA_64x176x32_S32U8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -24823,6 +25161,7 @@ struct SM90_64x176x32_S32U8S8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -24869,7 +25208,7 @@ struct SM90_64x176x32_S32U8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -24878,7 +25217,7 @@ struct SM90_64x176x32_S32U8S8_RS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x192x32 TN S32+=U8*S8
-struct SM90_64x192x32_S32U8S8_RS_TN
+struct MMA_64x192x32_S32U8S8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -24915,6 +25254,7 @@ struct SM90_64x192x32_S32U8S8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -24964,7 +25304,7 @@ struct SM90_64x192x32_S32U8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -24972,7 +25312,7 @@ struct SM90_64x192x32_S32U8S8_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x192x32 TN S32+=U8*S8
-struct SM90_64x192x32_S32U8S8_RS_TN_SATURATE
+struct MMA_64x192x32_S32U8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -25009,6 +25349,7 @@ struct SM90_64x192x32_S32U8S8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -25058,7 +25399,7 @@ struct SM90_64x192x32_S32U8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -25067,7 +25408,7 @@ struct SM90_64x192x32_S32U8S8_RS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x208x32 TN S32+=U8*S8
-struct SM90_64x208x32_S32U8S8_RS_TN
+struct MMA_64x208x32_S32U8S8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -25106,6 +25447,7 @@ struct SM90_64x208x32_S32U8S8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -25158,7 +25500,7 @@ struct SM90_64x208x32_S32U8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -25168,7 +25510,7 @@ struct SM90_64x208x32_S32U8S8_RS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x208x32 TN S32+=U8*S8
-struct SM90_64x208x32_S32U8S8_RS_TN_SATURATE
+struct MMA_64x208x32_S32U8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -25207,6 +25549,7 @@ struct SM90_64x208x32_S32U8S8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -25259,7 +25602,7 @@ struct SM90_64x208x32_S32U8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -25269,7 +25612,7 @@ struct SM90_64x208x32_S32U8S8_RS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x224x32 TN S32+=U8*S8
-struct SM90_64x224x32_S32U8S8_RS_TN
+struct MMA_64x224x32_S32U8S8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -25310,6 +25653,7 @@ struct SM90_64x224x32_S32U8S8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -25365,7 +25709,7 @@ struct SM90_64x224x32_S32U8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -25375,7 +25719,7 @@ struct SM90_64x224x32_S32U8S8_RS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x224x32 TN S32+=U8*S8
-struct SM90_64x224x32_S32U8S8_RS_TN_SATURATE
+struct MMA_64x224x32_S32U8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -25416,6 +25760,7 @@ struct SM90_64x224x32_S32U8S8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -25471,7 +25816,7 @@ struct SM90_64x224x32_S32U8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -25481,7 +25826,7 @@ struct SM90_64x224x32_S32U8S8_RS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x240x32 TN S32+=U8*S8
-struct SM90_64x240x32_S32U8S8_RS_TN
+struct MMA_64x240x32_S32U8S8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -25524,6 +25869,7 @@ struct SM90_64x240x32_S32U8S8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -25582,7 +25928,7 @@ struct SM90_64x240x32_S32U8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -25592,7 +25938,7 @@ struct SM90_64x240x32_S32U8S8_RS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x240x32 TN S32+=U8*S8
-struct SM90_64x240x32_S32U8S8_RS_TN_SATURATE
+struct MMA_64x240x32_S32U8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -25635,6 +25981,7 @@ struct SM90_64x240x32_S32U8S8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -25693,7 +26040,7 @@ struct SM90_64x240x32_S32U8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -25702,7 +26049,7 @@ struct SM90_64x240x32_S32U8S8_RS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x256x32 TN S32+=U8*S8
-struct SM90_64x256x32_S32U8S8_RS_TN
+struct MMA_64x256x32_S32U8S8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -25747,6 +26094,7 @@ struct SM90_64x256x32_S32U8S8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -25808,7 +26156,7 @@ struct SM90_64x256x32_S32U8S8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -25816,7 +26164,7 @@ struct SM90_64x256x32_S32U8S8_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x256x32 TN S32+=U8*S8
-struct SM90_64x256x32_S32U8S8_RS_TN_SATURATE
+struct MMA_64x256x32_S32U8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -25861,6 +26209,7 @@ struct SM90_64x256x32_S32U8S8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -25922,7 +26271,7 @@ struct SM90_64x256x32_S32U8S8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -25930,7 +26279,7 @@ struct SM90_64x256x32_S32U8S8_RS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x8x32 TN S32+=U8*U8
-struct SM90_64x8x32_S32U8U8_SS_TN
+struct MMA_64x8x32_S32U8U8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -25944,6 +26293,7 @@ struct SM90_64x8x32_S32U8U8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -25959,7 +26309,7 @@ struct SM90_64x8x32_S32U8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -25967,7 +26317,7 @@ struct SM90_64x8x32_S32U8U8_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x8x32 TN S32+=U8*U8
-struct SM90_64x8x32_S32U8U8_SS_TN_SATURATE
+struct MMA_64x8x32_S32U8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -25981,6 +26331,7 @@ struct SM90_64x8x32_S32U8U8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -25996,7 +26347,7 @@ struct SM90_64x8x32_S32U8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -26004,7 +26355,7 @@ struct SM90_64x8x32_S32U8U8_SS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x16x32 TN S32+=U8*U8
-struct SM90_64x16x32_S32U8U8_SS_TN
+struct MMA_64x16x32_S32U8U8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -26019,6 +26370,7 @@ struct SM90_64x16x32_S32U8U8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -26035,7 +26387,7 @@ struct SM90_64x16x32_S32U8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -26043,7 +26395,7 @@ struct SM90_64x16x32_S32U8U8_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x16x32 TN S32+=U8*U8
-struct SM90_64x16x32_S32U8U8_SS_TN_SATURATE
+struct MMA_64x16x32_S32U8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -26058,6 +26410,7 @@ struct SM90_64x16x32_S32U8U8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -26074,7 +26427,7 @@ struct SM90_64x16x32_S32U8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -26082,7 +26435,7 @@ struct SM90_64x16x32_S32U8U8_SS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x32x32 TN S32+=U8*U8
-struct SM90_64x32x32_S32U8U8_SS_TN
+struct MMA_64x32x32_S32U8U8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -26099,6 +26452,7 @@ struct SM90_64x32x32_S32U8U8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -26118,7 +26472,7 @@ struct SM90_64x32x32_S32U8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -26126,7 +26480,7 @@ struct SM90_64x32x32_S32U8U8_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x32x32 TN S32+=U8*U8
-struct SM90_64x32x32_S32U8U8_SS_TN_SATURATE
+struct MMA_64x32x32_S32U8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -26143,6 +26497,7 @@ struct SM90_64x32x32_S32U8U8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -26162,7 +26517,7 @@ struct SM90_64x32x32_S32U8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -26171,7 +26526,7 @@ struct SM90_64x32x32_S32U8U8_SS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x48x32 TN S32+=U8*U8
-struct SM90_64x48x32_S32U8U8_SS_TN
+struct MMA_64x48x32_S32U8U8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -26190,6 +26545,7 @@ struct SM90_64x48x32_S32U8U8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -26212,7 +26568,7 @@ struct SM90_64x48x32_S32U8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -26222,7 +26578,7 @@ struct SM90_64x48x32_S32U8U8_SS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x48x32 TN S32+=U8*U8
-struct SM90_64x48x32_S32U8U8_SS_TN_SATURATE
+struct MMA_64x48x32_S32U8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -26241,6 +26597,7 @@ struct SM90_64x48x32_S32U8U8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -26263,7 +26620,7 @@ struct SM90_64x48x32_S32U8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -26272,7 +26629,7 @@ struct SM90_64x48x32_S32U8U8_SS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x64x32 TN S32+=U8*U8
-struct SM90_64x64x32_S32U8U8_SS_TN
+struct MMA_64x64x32_S32U8U8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -26293,6 +26650,7 @@ struct SM90_64x64x32_S32U8U8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -26318,7 +26676,7 @@ struct SM90_64x64x32_S32U8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -26326,7 +26684,7 @@ struct SM90_64x64x32_S32U8U8_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x64x32 TN S32+=U8*U8
-struct SM90_64x64x32_S32U8U8_SS_TN_SATURATE
+struct MMA_64x64x32_S32U8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -26347,6 +26705,7 @@ struct SM90_64x64x32_S32U8U8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -26372,7 +26731,7 @@ struct SM90_64x64x32_S32U8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -26381,7 +26740,7 @@ struct SM90_64x64x32_S32U8U8_SS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x80x32 TN S32+=U8*U8
-struct SM90_64x80x32_S32U8U8_SS_TN
+struct MMA_64x80x32_S32U8U8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -26404,6 +26763,7 @@ struct SM90_64x80x32_S32U8U8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -26432,7 +26792,7 @@ struct SM90_64x80x32_S32U8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -26442,7 +26802,7 @@ struct SM90_64x80x32_S32U8U8_SS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x80x32 TN S32+=U8*U8
-struct SM90_64x80x32_S32U8U8_SS_TN_SATURATE
+struct MMA_64x80x32_S32U8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -26465,6 +26825,7 @@ struct SM90_64x80x32_S32U8U8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -26493,7 +26854,7 @@ struct SM90_64x80x32_S32U8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -26502,7 +26863,7 @@ struct SM90_64x80x32_S32U8U8_SS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x96x32 TN S32+=U8*U8
-struct SM90_64x96x32_S32U8U8_SS_TN
+struct MMA_64x96x32_S32U8U8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -26527,6 +26888,7 @@ struct SM90_64x96x32_S32U8U8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -26558,7 +26920,7 @@ struct SM90_64x96x32_S32U8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -26566,7 +26928,7 @@ struct SM90_64x96x32_S32U8U8_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x96x32 TN S32+=U8*U8
-struct SM90_64x96x32_S32U8U8_SS_TN_SATURATE
+struct MMA_64x96x32_S32U8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -26591,6 +26953,7 @@ struct SM90_64x96x32_S32U8U8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -26622,7 +26985,7 @@ struct SM90_64x96x32_S32U8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -26631,7 +26994,7 @@ struct SM90_64x96x32_S32U8U8_SS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x112x32 TN S32+=U8*U8
-struct SM90_64x112x32_S32U8U8_SS_TN
+struct MMA_64x112x32_S32U8U8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -26658,6 +27021,7 @@ struct SM90_64x112x32_S32U8U8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -26692,7 +27056,7 @@ struct SM90_64x112x32_S32U8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -26702,7 +27066,7 @@ struct SM90_64x112x32_S32U8U8_SS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x112x32 TN S32+=U8*U8
-struct SM90_64x112x32_S32U8U8_SS_TN_SATURATE
+struct MMA_64x112x32_S32U8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -26729,6 +27093,7 @@ struct SM90_64x112x32_S32U8U8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -26763,7 +27128,7 @@ struct SM90_64x112x32_S32U8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -26772,7 +27137,7 @@ struct SM90_64x112x32_S32U8U8_SS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x128x32 TN S32+=U8*U8
-struct SM90_64x128x32_S32U8U8_SS_TN
+struct MMA_64x128x32_S32U8U8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -26801,6 +27166,7 @@ struct SM90_64x128x32_S32U8U8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -26838,7 +27204,7 @@ struct SM90_64x128x32_S32U8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -26846,7 +27212,7 @@ struct SM90_64x128x32_S32U8U8_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x128x32 TN S32+=U8*U8
-struct SM90_64x128x32_S32U8U8_SS_TN_SATURATE
+struct MMA_64x128x32_S32U8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -26875,6 +27241,7 @@ struct SM90_64x128x32_S32U8U8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -26912,7 +27279,7 @@ struct SM90_64x128x32_S32U8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -26921,7 +27288,7 @@ struct SM90_64x128x32_S32U8U8_SS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x144x32 TN S32+=U8*U8
-struct SM90_64x144x32_S32U8U8_SS_TN
+struct MMA_64x144x32_S32U8U8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -26952,6 +27319,7 @@ struct SM90_64x144x32_S32U8U8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -26992,7 +27360,7 @@ struct SM90_64x144x32_S32U8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -27002,7 +27370,7 @@ struct SM90_64x144x32_S32U8U8_SS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x144x32 TN S32+=U8*U8
-struct SM90_64x144x32_S32U8U8_SS_TN_SATURATE
+struct MMA_64x144x32_S32U8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -27033,6 +27401,7 @@ struct SM90_64x144x32_S32U8U8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -27073,7 +27442,7 @@ struct SM90_64x144x32_S32U8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -27083,7 +27452,7 @@ struct SM90_64x144x32_S32U8U8_SS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x160x32 TN S32+=U8*U8
-struct SM90_64x160x32_S32U8U8_SS_TN
+struct MMA_64x160x32_S32U8U8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -27116,6 +27485,7 @@ struct SM90_64x160x32_S32U8U8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -27159,7 +27529,7 @@ struct SM90_64x160x32_S32U8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -27169,7 +27539,7 @@ struct SM90_64x160x32_S32U8U8_SS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x160x32 TN S32+=U8*U8
-struct SM90_64x160x32_S32U8U8_SS_TN_SATURATE
+struct MMA_64x160x32_S32U8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -27202,6 +27572,7 @@ struct SM90_64x160x32_S32U8U8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -27245,7 +27616,7 @@ struct SM90_64x160x32_S32U8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -27255,7 +27626,7 @@ struct SM90_64x160x32_S32U8U8_SS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x176x32 TN S32+=U8*U8
-struct SM90_64x176x32_S32U8U8_SS_TN
+struct MMA_64x176x32_S32U8U8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -27290,6 +27661,7 @@ struct SM90_64x176x32_S32U8U8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -27336,7 +27708,7 @@ struct SM90_64x176x32_S32U8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -27346,7 +27718,7 @@ struct SM90_64x176x32_S32U8U8_SS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x176x32 TN S32+=U8*U8
-struct SM90_64x176x32_S32U8U8_SS_TN_SATURATE
+struct MMA_64x176x32_S32U8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -27381,6 +27753,7 @@ struct SM90_64x176x32_S32U8U8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -27427,7 +27800,7 @@ struct SM90_64x176x32_S32U8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -27436,7 +27809,7 @@ struct SM90_64x176x32_S32U8U8_SS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x192x32 TN S32+=U8*U8
-struct SM90_64x192x32_S32U8U8_SS_TN
+struct MMA_64x192x32_S32U8U8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -27473,6 +27846,7 @@ struct SM90_64x192x32_S32U8U8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -27522,7 +27896,7 @@ struct SM90_64x192x32_S32U8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -27530,7 +27904,7 @@ struct SM90_64x192x32_S32U8U8_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x192x32 TN S32+=U8*U8
-struct SM90_64x192x32_S32U8U8_SS_TN_SATURATE
+struct MMA_64x192x32_S32U8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -27567,6 +27941,7 @@ struct SM90_64x192x32_S32U8U8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -27616,7 +27991,7 @@ struct SM90_64x192x32_S32U8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -27625,7 +28000,7 @@ struct SM90_64x192x32_S32U8U8_SS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x208x32 TN S32+=U8*U8
-struct SM90_64x208x32_S32U8U8_SS_TN
+struct MMA_64x208x32_S32U8U8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -27664,6 +28039,7 @@ struct SM90_64x208x32_S32U8U8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -27716,7 +28092,7 @@ struct SM90_64x208x32_S32U8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -27726,7 +28102,7 @@ struct SM90_64x208x32_S32U8U8_SS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x208x32 TN S32+=U8*U8
-struct SM90_64x208x32_S32U8U8_SS_TN_SATURATE
+struct MMA_64x208x32_S32U8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -27765,6 +28141,7 @@ struct SM90_64x208x32_S32U8U8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -27817,7 +28194,7 @@ struct SM90_64x208x32_S32U8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -27827,7 +28204,7 @@ struct SM90_64x208x32_S32U8U8_SS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x224x32 TN S32+=U8*U8
-struct SM90_64x224x32_S32U8U8_SS_TN
+struct MMA_64x224x32_S32U8U8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -27868,6 +28245,7 @@ struct SM90_64x224x32_S32U8U8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -27923,7 +28301,7 @@ struct SM90_64x224x32_S32U8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -27933,7 +28311,7 @@ struct SM90_64x224x32_S32U8U8_SS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x224x32 TN S32+=U8*U8
-struct SM90_64x224x32_S32U8U8_SS_TN_SATURATE
+struct MMA_64x224x32_S32U8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -27974,6 +28352,7 @@ struct SM90_64x224x32_S32U8U8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -28029,7 +28408,7 @@ struct SM90_64x224x32_S32U8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -28039,7 +28418,7 @@ struct SM90_64x224x32_S32U8U8_SS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x240x32 TN S32+=U8*U8
-struct SM90_64x240x32_S32U8U8_SS_TN
+struct MMA_64x240x32_S32U8U8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -28082,6 +28461,7 @@ struct SM90_64x240x32_S32U8U8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -28140,7 +28520,7 @@ struct SM90_64x240x32_S32U8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -28150,7 +28530,7 @@ struct SM90_64x240x32_S32U8U8_SS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x240x32 TN S32+=U8*U8
-struct SM90_64x240x32_S32U8U8_SS_TN_SATURATE
+struct MMA_64x240x32_S32U8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -28193,6 +28573,7 @@ struct SM90_64x240x32_S32U8U8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -28251,7 +28632,7 @@ struct SM90_64x240x32_S32U8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -28260,7 +28641,7 @@ struct SM90_64x240x32_S32U8U8_SS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x256x32 TN S32+=U8*U8
-struct SM90_64x256x32_S32U8U8_SS_TN
+struct MMA_64x256x32_S32U8U8_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -28305,6 +28686,7 @@ struct SM90_64x256x32_S32U8U8_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -28366,7 +28748,7 @@ struct SM90_64x256x32_S32U8U8_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -28374,7 +28756,7 @@ struct SM90_64x256x32_S32U8U8_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x256x32 TN S32+=U8*U8
-struct SM90_64x256x32_S32U8U8_SS_TN_SATURATE
+struct MMA_64x256x32_S32U8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -28419,6 +28801,7 @@ struct SM90_64x256x32_S32U8U8_SS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -28480,7 +28863,7 @@ struct SM90_64x256x32_S32U8U8_SS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -28488,7 +28871,7 @@ struct SM90_64x256x32_S32U8U8_SS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x8x32 TN S32+=U8*U8
-struct SM90_64x8x32_S32U8U8_RS_TN
+struct MMA_64x8x32_S32U8U8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -28502,6 +28885,7 @@ struct SM90_64x8x32_S32U8U8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -28517,7 +28901,7 @@ struct SM90_64x8x32_S32U8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -28525,7 +28909,7 @@ struct SM90_64x8x32_S32U8U8_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x8x32 TN S32+=U8*U8
-struct SM90_64x8x32_S32U8U8_RS_TN_SATURATE
+struct MMA_64x8x32_S32U8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -28539,6 +28923,7 @@ struct SM90_64x8x32_S32U8U8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -28554,7 +28939,7 @@ struct SM90_64x8x32_S32U8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -28562,7 +28947,7 @@ struct SM90_64x8x32_S32U8U8_RS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x16x32 TN S32+=U8*U8
-struct SM90_64x16x32_S32U8U8_RS_TN
+struct MMA_64x16x32_S32U8U8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -28577,6 +28962,7 @@ struct SM90_64x16x32_S32U8U8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -28593,7 +28979,7 @@ struct SM90_64x16x32_S32U8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -28601,7 +28987,7 @@ struct SM90_64x16x32_S32U8U8_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x16x32 TN S32+=U8*U8
-struct SM90_64x16x32_S32U8U8_RS_TN_SATURATE
+struct MMA_64x16x32_S32U8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -28616,6 +29002,7 @@ struct SM90_64x16x32_S32U8U8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -28632,7 +29019,7 @@ struct SM90_64x16x32_S32U8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -28640,7 +29027,7 @@ struct SM90_64x16x32_S32U8U8_RS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x32x32 TN S32+=U8*U8
-struct SM90_64x32x32_S32U8U8_RS_TN
+struct MMA_64x32x32_S32U8U8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -28657,6 +29044,7 @@ struct SM90_64x32x32_S32U8U8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -28676,7 +29064,7 @@ struct SM90_64x32x32_S32U8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -28684,7 +29072,7 @@ struct SM90_64x32x32_S32U8U8_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x32x32 TN S32+=U8*U8
-struct SM90_64x32x32_S32U8U8_RS_TN_SATURATE
+struct MMA_64x32x32_S32U8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -28701,6 +29089,7 @@ struct SM90_64x32x32_S32U8U8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -28720,7 +29109,7 @@ struct SM90_64x32x32_S32U8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -28729,7 +29118,7 @@ struct SM90_64x32x32_S32U8U8_RS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x48x32 TN S32+=U8*U8
-struct SM90_64x48x32_S32U8U8_RS_TN
+struct MMA_64x48x32_S32U8U8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -28748,6 +29137,7 @@ struct SM90_64x48x32_S32U8U8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -28770,7 +29160,7 @@ struct SM90_64x48x32_S32U8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -28780,7 +29170,7 @@ struct SM90_64x48x32_S32U8U8_RS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x48x32 TN S32+=U8*U8
-struct SM90_64x48x32_S32U8U8_RS_TN_SATURATE
+struct MMA_64x48x32_S32U8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -28799,6 +29189,7 @@ struct SM90_64x48x32_S32U8U8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -28821,7 +29212,7 @@ struct SM90_64x48x32_S32U8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -28830,7 +29221,7 @@ struct SM90_64x48x32_S32U8U8_RS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x64x32 TN S32+=U8*U8
-struct SM90_64x64x32_S32U8U8_RS_TN
+struct MMA_64x64x32_S32U8U8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -28851,6 +29242,7 @@ struct SM90_64x64x32_S32U8U8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -28876,7 +29268,7 @@ struct SM90_64x64x32_S32U8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -28884,7 +29276,7 @@ struct SM90_64x64x32_S32U8U8_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x64x32 TN S32+=U8*U8
-struct SM90_64x64x32_S32U8U8_RS_TN_SATURATE
+struct MMA_64x64x32_S32U8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -28905,6 +29297,7 @@ struct SM90_64x64x32_S32U8U8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -28930,7 +29323,7 @@ struct SM90_64x64x32_S32U8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -28939,7 +29332,7 @@ struct SM90_64x64x32_S32U8U8_RS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x80x32 TN S32+=U8*U8
-struct SM90_64x80x32_S32U8U8_RS_TN
+struct MMA_64x80x32_S32U8U8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -28962,6 +29355,7 @@ struct SM90_64x80x32_S32U8U8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -28990,7 +29384,7 @@ struct SM90_64x80x32_S32U8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -29000,7 +29394,7 @@ struct SM90_64x80x32_S32U8U8_RS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x80x32 TN S32+=U8*U8
-struct SM90_64x80x32_S32U8U8_RS_TN_SATURATE
+struct MMA_64x80x32_S32U8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -29023,6 +29417,7 @@ struct SM90_64x80x32_S32U8U8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -29051,7 +29446,7 @@ struct SM90_64x80x32_S32U8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -29060,7 +29455,7 @@ struct SM90_64x80x32_S32U8U8_RS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x96x32 TN S32+=U8*U8
-struct SM90_64x96x32_S32U8U8_RS_TN
+struct MMA_64x96x32_S32U8U8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -29085,6 +29480,7 @@ struct SM90_64x96x32_S32U8U8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -29116,7 +29512,7 @@ struct SM90_64x96x32_S32U8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -29124,7 +29520,7 @@ struct SM90_64x96x32_S32U8U8_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x96x32 TN S32+=U8*U8
-struct SM90_64x96x32_S32U8U8_RS_TN_SATURATE
+struct MMA_64x96x32_S32U8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -29149,6 +29545,7 @@ struct SM90_64x96x32_S32U8U8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -29180,7 +29577,7 @@ struct SM90_64x96x32_S32U8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -29189,7 +29586,7 @@ struct SM90_64x96x32_S32U8U8_RS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x112x32 TN S32+=U8*U8
-struct SM90_64x112x32_S32U8U8_RS_TN
+struct MMA_64x112x32_S32U8U8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -29216,6 +29613,7 @@ struct SM90_64x112x32_S32U8U8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -29250,7 +29648,7 @@ struct SM90_64x112x32_S32U8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -29260,7 +29658,7 @@ struct SM90_64x112x32_S32U8U8_RS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x112x32 TN S32+=U8*U8
-struct SM90_64x112x32_S32U8U8_RS_TN_SATURATE
+struct MMA_64x112x32_S32U8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -29287,6 +29685,7 @@ struct SM90_64x112x32_S32U8U8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -29321,7 +29720,7 @@ struct SM90_64x112x32_S32U8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -29330,7 +29729,7 @@ struct SM90_64x112x32_S32U8U8_RS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x128x32 TN S32+=U8*U8
-struct SM90_64x128x32_S32U8U8_RS_TN
+struct MMA_64x128x32_S32U8U8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -29359,6 +29758,7 @@ struct SM90_64x128x32_S32U8U8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -29396,7 +29796,7 @@ struct SM90_64x128x32_S32U8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -29404,7 +29804,7 @@ struct SM90_64x128x32_S32U8U8_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x128x32 TN S32+=U8*U8
-struct SM90_64x128x32_S32U8U8_RS_TN_SATURATE
+struct MMA_64x128x32_S32U8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -29433,6 +29833,7 @@ struct SM90_64x128x32_S32U8U8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -29470,7 +29871,7 @@ struct SM90_64x128x32_S32U8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -29479,7 +29880,7 @@ struct SM90_64x128x32_S32U8U8_RS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x144x32 TN S32+=U8*U8
-struct SM90_64x144x32_S32U8U8_RS_TN
+struct MMA_64x144x32_S32U8U8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -29510,6 +29911,7 @@ struct SM90_64x144x32_S32U8U8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -29550,7 +29952,7 @@ struct SM90_64x144x32_S32U8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -29560,7 +29962,7 @@ struct SM90_64x144x32_S32U8U8_RS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x144x32 TN S32+=U8*U8
-struct SM90_64x144x32_S32U8U8_RS_TN_SATURATE
+struct MMA_64x144x32_S32U8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -29591,6 +29993,7 @@ struct SM90_64x144x32_S32U8U8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -29631,7 +30034,7 @@ struct SM90_64x144x32_S32U8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -29641,7 +30044,7 @@ struct SM90_64x144x32_S32U8U8_RS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x160x32 TN S32+=U8*U8
-struct SM90_64x160x32_S32U8U8_RS_TN
+struct MMA_64x160x32_S32U8U8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -29674,6 +30077,7 @@ struct SM90_64x160x32_S32U8U8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -29717,7 +30121,7 @@ struct SM90_64x160x32_S32U8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -29727,7 +30131,7 @@ struct SM90_64x160x32_S32U8U8_RS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x160x32 TN S32+=U8*U8
-struct SM90_64x160x32_S32U8U8_RS_TN_SATURATE
+struct MMA_64x160x32_S32U8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -29760,6 +30164,7 @@ struct SM90_64x160x32_S32U8U8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -29803,7 +30208,7 @@ struct SM90_64x160x32_S32U8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -29813,7 +30218,7 @@ struct SM90_64x160x32_S32U8U8_RS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x176x32 TN S32+=U8*U8
-struct SM90_64x176x32_S32U8U8_RS_TN
+struct MMA_64x176x32_S32U8U8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -29848,6 +30253,7 @@ struct SM90_64x176x32_S32U8U8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -29894,7 +30300,7 @@ struct SM90_64x176x32_S32U8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -29904,7 +30310,7 @@ struct SM90_64x176x32_S32U8U8_RS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x176x32 TN S32+=U8*U8
-struct SM90_64x176x32_S32U8U8_RS_TN_SATURATE
+struct MMA_64x176x32_S32U8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -29939,6 +30345,7 @@ struct SM90_64x176x32_S32U8U8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -29985,7 +30392,7 @@ struct SM90_64x176x32_S32U8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -29994,7 +30401,7 @@ struct SM90_64x176x32_S32U8U8_RS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x192x32 TN S32+=U8*U8
-struct SM90_64x192x32_S32U8U8_RS_TN
+struct MMA_64x192x32_S32U8U8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -30031,6 +30438,7 @@ struct SM90_64x192x32_S32U8U8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -30080,7 +30488,7 @@ struct SM90_64x192x32_S32U8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -30088,7 +30496,7 @@ struct SM90_64x192x32_S32U8U8_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x192x32 TN S32+=U8*U8
-struct SM90_64x192x32_S32U8U8_RS_TN_SATURATE
+struct MMA_64x192x32_S32U8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -30125,6 +30533,7 @@ struct SM90_64x192x32_S32U8U8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -30174,7 +30583,7 @@ struct SM90_64x192x32_S32U8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -30183,7 +30592,7 @@ struct SM90_64x192x32_S32U8U8_RS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x208x32 TN S32+=U8*U8
-struct SM90_64x208x32_S32U8U8_RS_TN
+struct MMA_64x208x32_S32U8U8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -30222,6 +30631,7 @@ struct SM90_64x208x32_S32U8U8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -30274,7 +30684,7 @@ struct SM90_64x208x32_S32U8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -30284,7 +30694,7 @@ struct SM90_64x208x32_S32U8U8_RS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x208x32 TN S32+=U8*U8
-struct SM90_64x208x32_S32U8U8_RS_TN_SATURATE
+struct MMA_64x208x32_S32U8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -30323,6 +30733,7 @@ struct SM90_64x208x32_S32U8U8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -30375,7 +30786,7 @@ struct SM90_64x208x32_S32U8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -30385,7 +30796,7 @@ struct SM90_64x208x32_S32U8U8_RS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x224x32 TN S32+=U8*U8
-struct SM90_64x224x32_S32U8U8_RS_TN
+struct MMA_64x224x32_S32U8U8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -30426,6 +30837,7 @@ struct SM90_64x224x32_S32U8U8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -30481,7 +30893,7 @@ struct SM90_64x224x32_S32U8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -30491,7 +30903,7 @@ struct SM90_64x224x32_S32U8U8_RS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x224x32 TN S32+=U8*U8
-struct SM90_64x224x32_S32U8U8_RS_TN_SATURATE
+struct MMA_64x224x32_S32U8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -30532,6 +30944,7 @@ struct SM90_64x224x32_S32U8U8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -30587,7 +31000,7 @@ struct SM90_64x224x32_S32U8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -30597,7 +31010,7 @@ struct SM90_64x224x32_S32U8U8_RS_TN_SATURATE
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x240x32 TN S32+=U8*U8
-struct SM90_64x240x32_S32U8U8_RS_TN
+struct MMA_64x240x32_S32U8U8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -30640,6 +31053,7 @@ struct SM90_64x240x32_S32U8U8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -30698,7 +31112,7 @@ struct SM90_64x240x32_S32U8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -30708,7 +31122,7 @@ struct SM90_64x240x32_S32U8U8_RS_TN
 
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 // GMMA 64x240x32 TN S32+=U8*U8
-struct SM90_64x240x32_S32U8U8_RS_TN_SATURATE
+struct MMA_64x240x32_S32U8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -30751,6 +31165,7 @@ struct SM90_64x240x32_S32U8U8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -30809,7 +31224,7 @@ struct SM90_64x240x32_S32U8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -30818,7 +31233,7 @@ struct SM90_64x240x32_S32U8U8_RS_TN_SATURATE
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x256x32 TN S32+=U8*U8
-struct SM90_64x256x32_S32U8U8_RS_TN
+struct MMA_64x256x32_S32U8U8_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -30863,6 +31278,7 @@ struct SM90_64x256x32_S32U8U8_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -30924,7 +31340,7 @@ struct SM90_64x256x32_S32U8U8_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -30932,7 +31348,7 @@ struct SM90_64x256x32_S32U8U8_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x256x32 TN S32+=U8*U8
-struct SM90_64x256x32_S32U8U8_RS_TN_SATURATE
+struct MMA_64x256x32_S32U8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -30977,6 +31393,7 @@ struct SM90_64x256x32_S32U8U8_RS_TN_SATURATE
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -31038,7 +31455,7 @@ struct SM90_64x256x32_S32U8U8_RS_TN_SATURATE
          "l"(desc_b),
          "r"(int32_t(scale_D)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -31050,7 +31467,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x8x32_F16E4M3E4M3_SS_TN
+struct MMA_64x8x32_F16E4M3E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -31064,6 +31481,7 @@ struct SM90_64x8x32_F16E4M3E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -31079,7 +31497,7 @@ struct SM90_64x8x32_F16E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -31091,7 +31509,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x8x32_F16E4M3E4M3_RS_TN
+struct MMA_64x8x32_F16E4M3E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -31105,6 +31523,7 @@ struct SM90_64x8x32_F16E4M3E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -31120,7 +31539,7 @@ struct SM90_64x8x32_F16E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -31132,7 +31551,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x8x32_F32E4M3E4M3_SS_TN
+struct MMA_64x8x32_F32E4M3E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -31146,6 +31565,7 @@ struct SM90_64x8x32_F32E4M3E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -31161,7 +31581,7 @@ struct SM90_64x8x32_F32E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -31173,7 +31593,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x8x32_F32E4M3E4M3_RS_TN
+struct MMA_64x8x32_F32E4M3E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -31187,6 +31607,7 @@ struct SM90_64x8x32_F32E4M3E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -31202,7 +31623,7 @@ struct SM90_64x8x32_F32E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -31214,7 +31635,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x16x32_F16E4M3E4M3_SS_TN
+struct MMA_64x16x32_F16E4M3E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -31228,6 +31649,7 @@ struct SM90_64x16x32_F16E4M3E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -31243,7 +31665,7 @@ struct SM90_64x16x32_F16E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -31255,7 +31677,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x16x32_F16E4M3E4M3_RS_TN
+struct MMA_64x16x32_F16E4M3E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -31269,6 +31691,7 @@ struct SM90_64x16x32_F16E4M3E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -31284,7 +31707,7 @@ struct SM90_64x16x32_F16E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -31296,7 +31719,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x16x32_F32E4M3E4M3_SS_TN
+struct MMA_64x16x32_F32E4M3E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -31311,6 +31734,7 @@ struct SM90_64x16x32_F32E4M3E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -31327,7 +31751,7 @@ struct SM90_64x16x32_F32E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -31339,7 +31763,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x16x32_F32E4M3E4M3_RS_TN
+struct MMA_64x16x32_F32E4M3E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -31354,6 +31778,7 @@ struct SM90_64x16x32_F32E4M3E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -31370,7 +31795,7 @@ struct SM90_64x16x32_F32E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -31382,7 +31807,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x32x32_F16E4M3E4M3_SS_TN
+struct MMA_64x32x32_F16E4M3E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -31397,6 +31822,7 @@ struct SM90_64x32x32_F16E4M3E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -31413,7 +31839,7 @@ struct SM90_64x32x32_F16E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -31425,7 +31851,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x32x32_F16E4M3E4M3_RS_TN
+struct MMA_64x32x32_F16E4M3E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -31440,6 +31866,7 @@ struct SM90_64x32x32_F16E4M3E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -31456,7 +31883,7 @@ struct SM90_64x32x32_F16E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -31468,7 +31895,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x32x32_F32E4M3E4M3_SS_TN
+struct MMA_64x32x32_F32E4M3E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -31485,6 +31912,7 @@ struct SM90_64x32x32_F32E4M3E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -31504,7 +31932,7 @@ struct SM90_64x32x32_F32E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -31516,7 +31944,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x32x32_F32E4M3E4M3_RS_TN
+struct MMA_64x32x32_F32E4M3E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -31533,6 +31961,7 @@ struct SM90_64x32x32_F32E4M3E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -31552,7 +31981,7 @@ struct SM90_64x32x32_F32E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -31565,7 +31994,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x48x32_F16E4M3E4M3_SS_TN
+struct MMA_64x48x32_F16E4M3E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -31581,6 +32010,7 @@ struct SM90_64x48x32_F16E4M3E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -31599,7 +32029,7 @@ struct SM90_64x48x32_F16E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -31613,7 +32043,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x48x32_F16E4M3E4M3_RS_TN
+struct MMA_64x48x32_F16E4M3E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -31629,6 +32059,7 @@ struct SM90_64x48x32_F16E4M3E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -31647,7 +32078,7 @@ struct SM90_64x48x32_F16E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -31661,7 +32092,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x48x32_F32E4M3E4M3_SS_TN
+struct MMA_64x48x32_F32E4M3E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -31680,6 +32111,7 @@ struct SM90_64x48x32_F32E4M3E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -31702,7 +32134,7 @@ struct SM90_64x48x32_F32E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -31716,7 +32148,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x48x32_F32E4M3E4M3_RS_TN
+struct MMA_64x48x32_F32E4M3E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -31735,6 +32167,7 @@ struct SM90_64x48x32_F32E4M3E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -31757,7 +32190,7 @@ struct SM90_64x48x32_F32E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -31770,7 +32203,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x64x32_F16E4M3E4M3_SS_TN
+struct MMA_64x64x32_F16E4M3E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -31787,6 +32220,7 @@ struct SM90_64x64x32_F16E4M3E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -31806,7 +32240,7 @@ struct SM90_64x64x32_F16E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -31818,7 +32252,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x64x32_F16E4M3E4M3_RS_TN
+struct MMA_64x64x32_F16E4M3E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -31835,6 +32269,7 @@ struct SM90_64x64x32_F16E4M3E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -31854,7 +32289,7 @@ struct SM90_64x64x32_F16E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -31866,7 +32301,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x64x32_F32E4M3E4M3_SS_TN
+struct MMA_64x64x32_F32E4M3E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -31887,6 +32322,7 @@ struct SM90_64x64x32_F32E4M3E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -31912,7 +32348,7 @@ struct SM90_64x64x32_F32E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -31924,7 +32360,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x64x32_F32E4M3E4M3_RS_TN
+struct MMA_64x64x32_F32E4M3E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -31945,6 +32381,7 @@ struct SM90_64x64x32_F32E4M3E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -31970,7 +32407,7 @@ struct SM90_64x64x32_F32E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -31983,7 +32420,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x80x32_F16E4M3E4M3_SS_TN
+struct MMA_64x80x32_F16E4M3E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -32001,6 +32438,7 @@ struct SM90_64x80x32_F16E4M3E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -32022,7 +32460,7 @@ struct SM90_64x80x32_F16E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -32036,7 +32474,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x80x32_F16E4M3E4M3_RS_TN
+struct MMA_64x80x32_F16E4M3E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -32054,6 +32492,7 @@ struct SM90_64x80x32_F16E4M3E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -32075,7 +32514,7 @@ struct SM90_64x80x32_F16E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -32089,7 +32528,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x80x32_F32E4M3E4M3_SS_TN
+struct MMA_64x80x32_F32E4M3E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -32112,6 +32551,7 @@ struct SM90_64x80x32_F32E4M3E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -32140,7 +32580,7 @@ struct SM90_64x80x32_F32E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -32154,7 +32594,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x80x32_F32E4M3E4M3_RS_TN
+struct MMA_64x80x32_F32E4M3E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -32177,6 +32617,7 @@ struct SM90_64x80x32_F32E4M3E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -32205,7 +32646,7 @@ struct SM90_64x80x32_F32E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -32218,7 +32659,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x96x32_F16E4M3E4M3_SS_TN
+struct MMA_64x96x32_F16E4M3E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -32237,6 +32678,7 @@ struct SM90_64x96x32_F16E4M3E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -32259,7 +32701,7 @@ struct SM90_64x96x32_F16E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -32271,7 +32713,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x96x32_F16E4M3E4M3_RS_TN
+struct MMA_64x96x32_F16E4M3E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -32290,6 +32732,7 @@ struct SM90_64x96x32_F16E4M3E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -32312,7 +32755,7 @@ struct SM90_64x96x32_F16E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -32324,7 +32767,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x96x32_F32E4M3E4M3_SS_TN
+struct MMA_64x96x32_F32E4M3E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -32349,6 +32792,7 @@ struct SM90_64x96x32_F32E4M3E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -32380,7 +32824,7 @@ struct SM90_64x96x32_F32E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -32392,7 +32836,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x96x32_F32E4M3E4M3_RS_TN
+struct MMA_64x96x32_F32E4M3E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -32417,6 +32861,7 @@ struct SM90_64x96x32_F32E4M3E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -32448,7 +32893,7 @@ struct SM90_64x96x32_F32E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -32461,7 +32906,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x112x32_F16E4M3E4M3_SS_TN
+struct MMA_64x112x32_F16E4M3E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -32481,6 +32926,7 @@ struct SM90_64x112x32_F16E4M3E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -32505,7 +32951,7 @@ struct SM90_64x112x32_F16E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -32519,7 +32965,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x112x32_F16E4M3E4M3_RS_TN
+struct MMA_64x112x32_F16E4M3E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -32539,6 +32985,7 @@ struct SM90_64x112x32_F16E4M3E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -32563,7 +33010,7 @@ struct SM90_64x112x32_F16E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -32577,7 +33024,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x112x32_F32E4M3E4M3_SS_TN
+struct MMA_64x112x32_F32E4M3E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -32604,6 +33051,7 @@ struct SM90_64x112x32_F32E4M3E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -32638,7 +33086,7 @@ struct SM90_64x112x32_F32E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -32652,7 +33100,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x112x32_F32E4M3E4M3_RS_TN
+struct MMA_64x112x32_F32E4M3E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -32679,6 +33127,7 @@ struct SM90_64x112x32_F32E4M3E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -32713,7 +33162,7 @@ struct SM90_64x112x32_F32E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -32726,7 +33175,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x128x32_F16E4M3E4M3_SS_TN
+struct MMA_64x128x32_F16E4M3E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -32747,6 +33196,7 @@ struct SM90_64x128x32_F16E4M3E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -32772,7 +33222,7 @@ struct SM90_64x128x32_F16E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -32784,7 +33234,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x128x32_F16E4M3E4M3_RS_TN
+struct MMA_64x128x32_F16E4M3E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -32805,6 +33255,7 @@ struct SM90_64x128x32_F16E4M3E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -32830,7 +33281,7 @@ struct SM90_64x128x32_F16E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -32842,7 +33293,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x128x32_F32E4M3E4M3_SS_TN
+struct MMA_64x128x32_F32E4M3E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -32871,6 +33322,7 @@ struct SM90_64x128x32_F32E4M3E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -32908,7 +33360,7 @@ struct SM90_64x128x32_F32E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -32920,7 +33372,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x128x32_F32E4M3E4M3_RS_TN
+struct MMA_64x128x32_F32E4M3E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -32949,6 +33401,7 @@ struct SM90_64x128x32_F32E4M3E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -32986,7 +33439,7 @@ struct SM90_64x128x32_F32E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -32999,7 +33452,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x144x32_F16E4M3E4M3_SS_TN
+struct MMA_64x144x32_F16E4M3E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -33021,6 +33474,7 @@ struct SM90_64x144x32_F16E4M3E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -33048,7 +33502,7 @@ struct SM90_64x144x32_F16E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -33062,7 +33516,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x144x32_F16E4M3E4M3_RS_TN
+struct MMA_64x144x32_F16E4M3E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -33084,6 +33538,7 @@ struct SM90_64x144x32_F16E4M3E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -33111,7 +33566,7 @@ struct SM90_64x144x32_F16E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -33125,7 +33580,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x144x32_F32E4M3E4M3_SS_TN
+struct MMA_64x144x32_F32E4M3E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -33156,6 +33611,7 @@ struct SM90_64x144x32_F32E4M3E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -33196,7 +33652,7 @@ struct SM90_64x144x32_F32E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -33210,7 +33666,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x144x32_F32E4M3E4M3_RS_TN
+struct MMA_64x144x32_F32E4M3E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -33241,6 +33697,7 @@ struct SM90_64x144x32_F32E4M3E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -33281,7 +33738,7 @@ struct SM90_64x144x32_F32E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -33295,7 +33752,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x160x32_F16E4M3E4M3_SS_TN
+struct MMA_64x160x32_F16E4M3E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -33318,6 +33775,7 @@ struct SM90_64x160x32_F16E4M3E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -33346,7 +33804,7 @@ struct SM90_64x160x32_F16E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -33360,7 +33818,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x160x32_F16E4M3E4M3_RS_TN
+struct MMA_64x160x32_F16E4M3E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -33383,6 +33841,7 @@ struct SM90_64x160x32_F16E4M3E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -33411,7 +33870,7 @@ struct SM90_64x160x32_F16E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -33425,7 +33884,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x160x32_F32E4M3E4M3_SS_TN
+struct MMA_64x160x32_F32E4M3E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -33458,6 +33917,7 @@ struct SM90_64x160x32_F32E4M3E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -33501,7 +33961,7 @@ struct SM90_64x160x32_F32E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -33515,7 +33975,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x160x32_F32E4M3E4M3_RS_TN
+struct MMA_64x160x32_F32E4M3E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -33548,6 +34008,7 @@ struct SM90_64x160x32_F32E4M3E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -33591,7 +34052,7 @@ struct SM90_64x160x32_F32E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -33605,7 +34066,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x176x32_F16E4M3E4M3_SS_TN
+struct MMA_64x176x32_F16E4M3E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -33629,6 +34090,7 @@ struct SM90_64x176x32_F16E4M3E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -33659,7 +34121,7 @@ struct SM90_64x176x32_F16E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -33673,7 +34135,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x176x32_F16E4M3E4M3_RS_TN
+struct MMA_64x176x32_F16E4M3E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -33697,6 +34159,7 @@ struct SM90_64x176x32_F16E4M3E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -33727,7 +34190,7 @@ struct SM90_64x176x32_F16E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -33741,7 +34204,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x176x32_F32E4M3E4M3_SS_TN
+struct MMA_64x176x32_F32E4M3E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -33776,6 +34239,7 @@ struct SM90_64x176x32_F32E4M3E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -33822,7 +34286,7 @@ struct SM90_64x176x32_F32E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -33836,7 +34300,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x176x32_F32E4M3E4M3_RS_TN
+struct MMA_64x176x32_F32E4M3E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -33871,6 +34335,7 @@ struct SM90_64x176x32_F32E4M3E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -33917,7 +34382,7 @@ struct SM90_64x176x32_F32E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -33930,7 +34395,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x192x32_F16E4M3E4M3_SS_TN
+struct MMA_64x192x32_F16E4M3E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -33955,6 +34420,7 @@ struct SM90_64x192x32_F16E4M3E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -33986,7 +34452,7 @@ struct SM90_64x192x32_F16E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -33998,7 +34464,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x192x32_F16E4M3E4M3_RS_TN
+struct MMA_64x192x32_F16E4M3E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -34023,6 +34489,7 @@ struct SM90_64x192x32_F16E4M3E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -34054,7 +34521,7 @@ struct SM90_64x192x32_F16E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -34066,7 +34533,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x192x32_F32E4M3E4M3_SS_TN
+struct MMA_64x192x32_F32E4M3E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -34103,6 +34570,7 @@ struct SM90_64x192x32_F32E4M3E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -34152,7 +34620,7 @@ struct SM90_64x192x32_F32E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -34164,7 +34632,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x192x32_F32E4M3E4M3_RS_TN
+struct MMA_64x192x32_F32E4M3E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -34201,6 +34669,7 @@ struct SM90_64x192x32_F32E4M3E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -34250,7 +34719,7 @@ struct SM90_64x192x32_F32E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -34263,7 +34732,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x208x32_F16E4M3E4M3_SS_TN
+struct MMA_64x208x32_F16E4M3E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -34289,6 +34758,7 @@ struct SM90_64x208x32_F16E4M3E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -34322,7 +34792,7 @@ struct SM90_64x208x32_F16E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -34336,7 +34806,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x208x32_F16E4M3E4M3_RS_TN
+struct MMA_64x208x32_F16E4M3E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -34362,6 +34832,7 @@ struct SM90_64x208x32_F16E4M3E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -34395,7 +34866,7 @@ struct SM90_64x208x32_F16E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -34409,7 +34880,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x208x32_F32E4M3E4M3_SS_TN
+struct MMA_64x208x32_F32E4M3E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -34448,6 +34919,7 @@ struct SM90_64x208x32_F32E4M3E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -34500,7 +34972,7 @@ struct SM90_64x208x32_F32E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -34514,7 +34986,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x208x32_F32E4M3E4M3_RS_TN
+struct MMA_64x208x32_F32E4M3E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -34553,6 +35025,7 @@ struct SM90_64x208x32_F32E4M3E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -34605,7 +35078,7 @@ struct SM90_64x208x32_F32E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -34619,7 +35092,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x224x32_F16E4M3E4M3_SS_TN
+struct MMA_64x224x32_F16E4M3E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -34646,6 +35119,7 @@ struct SM90_64x224x32_F16E4M3E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -34680,7 +35154,7 @@ struct SM90_64x224x32_F16E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -34694,7 +35168,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x224x32_F16E4M3E4M3_RS_TN
+struct MMA_64x224x32_F16E4M3E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -34721,6 +35195,7 @@ struct SM90_64x224x32_F16E4M3E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -34755,7 +35230,7 @@ struct SM90_64x224x32_F16E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -34769,7 +35244,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x224x32_F32E4M3E4M3_SS_TN
+struct MMA_64x224x32_F32E4M3E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -34810,6 +35285,7 @@ struct SM90_64x224x32_F32E4M3E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -34865,7 +35341,7 @@ struct SM90_64x224x32_F32E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -34879,7 +35355,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x224x32_F32E4M3E4M3_RS_TN
+struct MMA_64x224x32_F32E4M3E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -34920,6 +35396,7 @@ struct SM90_64x224x32_F32E4M3E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -34975,7 +35452,7 @@ struct SM90_64x224x32_F32E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -34989,7 +35466,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x240x32_F16E4M3E4M3_SS_TN
+struct MMA_64x240x32_F16E4M3E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -35017,6 +35494,7 @@ struct SM90_64x240x32_F16E4M3E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -35053,7 +35531,7 @@ struct SM90_64x240x32_F16E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -35067,7 +35545,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x240x32_F16E4M3E4M3_RS_TN
+struct MMA_64x240x32_F16E4M3E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -35095,6 +35573,7 @@ struct SM90_64x240x32_F16E4M3E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -35131,7 +35610,7 @@ struct SM90_64x240x32_F16E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -35145,7 +35624,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x240x32_F32E4M3E4M3_SS_TN
+struct MMA_64x240x32_F32E4M3E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -35188,6 +35667,7 @@ struct SM90_64x240x32_F32E4M3E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -35246,7 +35726,7 @@ struct SM90_64x240x32_F32E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -35260,7 +35740,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x240x32_F32E4M3E4M3_RS_TN
+struct MMA_64x240x32_F32E4M3E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -35303,6 +35783,7 @@ struct SM90_64x240x32_F32E4M3E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -35361,7 +35842,7 @@ struct SM90_64x240x32_F32E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -35374,7 +35855,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x256x32_F16E4M3E4M3_SS_TN
+struct MMA_64x256x32_F16E4M3E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -35403,6 +35884,7 @@ struct SM90_64x256x32_F16E4M3E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -35440,7 +35922,7 @@ struct SM90_64x256x32_F16E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x32_F16E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -35452,7 +35934,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x256x32_F16E4M3E4M3_RS_TN
+struct MMA_64x256x32_F16E4M3E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -35481,6 +35963,7 @@ struct SM90_64x256x32_F16E4M3E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -35518,7 +36001,7 @@ struct SM90_64x256x32_F16E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x32_F16E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -35530,7 +36013,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x256x32_F32E4M3E4M3_SS_TN
+struct MMA_64x256x32_F32E4M3E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -35575,6 +36058,7 @@ struct SM90_64x256x32_F32E4M3E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -35636,7 +36120,7 @@ struct SM90_64x256x32_F32E4M3E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x32_F32E4M3E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -35648,7 +36132,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x256x32_F32E4M3E4M3_RS_TN
+struct MMA_64x256x32_F32E4M3E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -35693,6 +36177,7 @@ struct SM90_64x256x32_F32E4M3E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -35754,7 +36239,7 @@ struct SM90_64x256x32_F32E4M3E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x32_F32E4M3E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -35766,7 +36251,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x8x32_F16E4M3E5M2_SS_TN
+struct MMA_64x8x32_F16E4M3E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -35780,6 +36265,7 @@ struct SM90_64x8x32_F16E4M3E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -35795,7 +36281,7 @@ struct SM90_64x8x32_F16E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -35807,7 +36293,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x8x32_F16E4M3E5M2_RS_TN
+struct MMA_64x8x32_F16E4M3E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -35821,6 +36307,7 @@ struct SM90_64x8x32_F16E4M3E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -35836,7 +36323,7 @@ struct SM90_64x8x32_F16E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -35848,7 +36335,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x8x32_F32E4M3E5M2_SS_TN
+struct MMA_64x8x32_F32E4M3E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -35862,6 +36349,7 @@ struct SM90_64x8x32_F32E4M3E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -35877,7 +36365,7 @@ struct SM90_64x8x32_F32E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -35889,7 +36377,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x8x32_F32E4M3E5M2_RS_TN
+struct MMA_64x8x32_F32E4M3E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -35903,6 +36391,7 @@ struct SM90_64x8x32_F32E4M3E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -35918,7 +36407,7 @@ struct SM90_64x8x32_F32E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -35930,7 +36419,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x16x32_F16E4M3E5M2_SS_TN
+struct MMA_64x16x32_F16E4M3E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -35944,6 +36433,7 @@ struct SM90_64x16x32_F16E4M3E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -35959,7 +36449,7 @@ struct SM90_64x16x32_F16E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -35971,7 +36461,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x16x32_F16E4M3E5M2_RS_TN
+struct MMA_64x16x32_F16E4M3E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -35985,6 +36475,7 @@ struct SM90_64x16x32_F16E4M3E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -36000,7 +36491,7 @@ struct SM90_64x16x32_F16E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -36012,7 +36503,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x16x32_F32E4M3E5M2_SS_TN
+struct MMA_64x16x32_F32E4M3E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -36027,6 +36518,7 @@ struct SM90_64x16x32_F32E4M3E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -36043,7 +36535,7 @@ struct SM90_64x16x32_F32E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -36055,7 +36547,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x16x32_F32E4M3E5M2_RS_TN
+struct MMA_64x16x32_F32E4M3E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -36070,6 +36562,7 @@ struct SM90_64x16x32_F32E4M3E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -36086,7 +36579,7 @@ struct SM90_64x16x32_F32E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -36098,7 +36591,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x32x32_F16E4M3E5M2_SS_TN
+struct MMA_64x32x32_F16E4M3E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -36113,6 +36606,7 @@ struct SM90_64x32x32_F16E4M3E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -36129,7 +36623,7 @@ struct SM90_64x32x32_F16E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -36141,7 +36635,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x32x32_F16E4M3E5M2_RS_TN
+struct MMA_64x32x32_F16E4M3E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -36156,6 +36650,7 @@ struct SM90_64x32x32_F16E4M3E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -36172,7 +36667,7 @@ struct SM90_64x32x32_F16E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -36184,7 +36679,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x32x32_F32E4M3E5M2_SS_TN
+struct MMA_64x32x32_F32E4M3E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -36201,6 +36696,7 @@ struct SM90_64x32x32_F32E4M3E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -36220,7 +36716,7 @@ struct SM90_64x32x32_F32E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -36232,7 +36728,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x32x32_F32E4M3E5M2_RS_TN
+struct MMA_64x32x32_F32E4M3E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -36249,6 +36745,7 @@ struct SM90_64x32x32_F32E4M3E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -36268,7 +36765,7 @@ struct SM90_64x32x32_F32E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -36281,7 +36778,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x48x32_F16E4M3E5M2_SS_TN
+struct MMA_64x48x32_F16E4M3E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -36297,6 +36794,7 @@ struct SM90_64x48x32_F16E4M3E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -36315,7 +36813,7 @@ struct SM90_64x48x32_F16E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -36329,7 +36827,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x48x32_F16E4M3E5M2_RS_TN
+struct MMA_64x48x32_F16E4M3E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -36345,6 +36843,7 @@ struct SM90_64x48x32_F16E4M3E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -36363,7 +36862,7 @@ struct SM90_64x48x32_F16E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -36377,7 +36876,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x48x32_F32E4M3E5M2_SS_TN
+struct MMA_64x48x32_F32E4M3E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -36396,6 +36895,7 @@ struct SM90_64x48x32_F32E4M3E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -36418,7 +36918,7 @@ struct SM90_64x48x32_F32E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -36432,7 +36932,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x48x32_F32E4M3E5M2_RS_TN
+struct MMA_64x48x32_F32E4M3E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -36451,6 +36951,7 @@ struct SM90_64x48x32_F32E4M3E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -36473,7 +36974,7 @@ struct SM90_64x48x32_F32E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -36486,7 +36987,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x64x32_F16E4M3E5M2_SS_TN
+struct MMA_64x64x32_F16E4M3E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -36503,6 +37004,7 @@ struct SM90_64x64x32_F16E4M3E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -36522,7 +37024,7 @@ struct SM90_64x64x32_F16E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -36534,7 +37036,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x64x32_F16E4M3E5M2_RS_TN
+struct MMA_64x64x32_F16E4M3E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -36551,6 +37053,7 @@ struct SM90_64x64x32_F16E4M3E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -36570,7 +37073,7 @@ struct SM90_64x64x32_F16E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -36582,7 +37085,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x64x32_F32E4M3E5M2_SS_TN
+struct MMA_64x64x32_F32E4M3E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -36603,6 +37106,7 @@ struct SM90_64x64x32_F32E4M3E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -36628,7 +37132,7 @@ struct SM90_64x64x32_F32E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -36640,7 +37144,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x64x32_F32E4M3E5M2_RS_TN
+struct MMA_64x64x32_F32E4M3E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -36661,6 +37165,7 @@ struct SM90_64x64x32_F32E4M3E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -36686,7 +37191,7 @@ struct SM90_64x64x32_F32E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -36699,7 +37204,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x80x32_F16E4M3E5M2_SS_TN
+struct MMA_64x80x32_F16E4M3E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -36717,6 +37222,7 @@ struct SM90_64x80x32_F16E4M3E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -36738,7 +37244,7 @@ struct SM90_64x80x32_F16E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -36752,7 +37258,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x80x32_F16E4M3E5M2_RS_TN
+struct MMA_64x80x32_F16E4M3E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -36770,6 +37276,7 @@ struct SM90_64x80x32_F16E4M3E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -36791,7 +37298,7 @@ struct SM90_64x80x32_F16E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -36805,7 +37312,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x80x32_F32E4M3E5M2_SS_TN
+struct MMA_64x80x32_F32E4M3E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -36828,6 +37335,7 @@ struct SM90_64x80x32_F32E4M3E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -36856,7 +37364,7 @@ struct SM90_64x80x32_F32E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -36870,7 +37378,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x80x32_F32E4M3E5M2_RS_TN
+struct MMA_64x80x32_F32E4M3E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -36893,6 +37401,7 @@ struct SM90_64x80x32_F32E4M3E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -36921,7 +37430,7 @@ struct SM90_64x80x32_F32E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -36934,7 +37443,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x96x32_F16E4M3E5M2_SS_TN
+struct MMA_64x96x32_F16E4M3E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -36953,6 +37462,7 @@ struct SM90_64x96x32_F16E4M3E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -36975,7 +37485,7 @@ struct SM90_64x96x32_F16E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -36987,7 +37497,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x96x32_F16E4M3E5M2_RS_TN
+struct MMA_64x96x32_F16E4M3E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -37006,6 +37516,7 @@ struct SM90_64x96x32_F16E4M3E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -37028,7 +37539,7 @@ struct SM90_64x96x32_F16E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -37040,7 +37551,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x96x32_F32E4M3E5M2_SS_TN
+struct MMA_64x96x32_F32E4M3E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -37065,6 +37576,7 @@ struct SM90_64x96x32_F32E4M3E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -37096,7 +37608,7 @@ struct SM90_64x96x32_F32E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -37108,7 +37620,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x96x32_F32E4M3E5M2_RS_TN
+struct MMA_64x96x32_F32E4M3E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -37133,6 +37645,7 @@ struct SM90_64x96x32_F32E4M3E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -37164,7 +37677,7 @@ struct SM90_64x96x32_F32E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -37177,7 +37690,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x112x32_F16E4M3E5M2_SS_TN
+struct MMA_64x112x32_F16E4M3E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -37197,6 +37710,7 @@ struct SM90_64x112x32_F16E4M3E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -37221,7 +37735,7 @@ struct SM90_64x112x32_F16E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -37235,7 +37749,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x112x32_F16E4M3E5M2_RS_TN
+struct MMA_64x112x32_F16E4M3E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -37255,6 +37769,7 @@ struct SM90_64x112x32_F16E4M3E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -37279,7 +37794,7 @@ struct SM90_64x112x32_F16E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -37293,7 +37808,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x112x32_F32E4M3E5M2_SS_TN
+struct MMA_64x112x32_F32E4M3E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -37320,6 +37835,7 @@ struct SM90_64x112x32_F32E4M3E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -37354,7 +37870,7 @@ struct SM90_64x112x32_F32E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -37368,7 +37884,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x112x32_F32E4M3E5M2_RS_TN
+struct MMA_64x112x32_F32E4M3E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -37395,6 +37911,7 @@ struct SM90_64x112x32_F32E4M3E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -37429,7 +37946,7 @@ struct SM90_64x112x32_F32E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -37442,7 +37959,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x128x32_F16E4M3E5M2_SS_TN
+struct MMA_64x128x32_F16E4M3E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -37463,6 +37980,7 @@ struct SM90_64x128x32_F16E4M3E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -37488,7 +38006,7 @@ struct SM90_64x128x32_F16E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -37500,7 +38018,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x128x32_F16E4M3E5M2_RS_TN
+struct MMA_64x128x32_F16E4M3E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -37521,6 +38039,7 @@ struct SM90_64x128x32_F16E4M3E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -37546,7 +38065,7 @@ struct SM90_64x128x32_F16E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -37558,7 +38077,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x128x32_F32E4M3E5M2_SS_TN
+struct MMA_64x128x32_F32E4M3E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -37587,6 +38106,7 @@ struct SM90_64x128x32_F32E4M3E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -37624,7 +38144,7 @@ struct SM90_64x128x32_F32E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -37636,7 +38156,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x128x32_F32E4M3E5M2_RS_TN
+struct MMA_64x128x32_F32E4M3E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -37665,6 +38185,7 @@ struct SM90_64x128x32_F32E4M3E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -37702,7 +38223,7 @@ struct SM90_64x128x32_F32E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -37715,7 +38236,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x144x32_F16E4M3E5M2_SS_TN
+struct MMA_64x144x32_F16E4M3E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -37737,6 +38258,7 @@ struct SM90_64x144x32_F16E4M3E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -37764,7 +38286,7 @@ struct SM90_64x144x32_F16E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -37778,7 +38300,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x144x32_F16E4M3E5M2_RS_TN
+struct MMA_64x144x32_F16E4M3E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -37800,6 +38322,7 @@ struct SM90_64x144x32_F16E4M3E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -37827,7 +38350,7 @@ struct SM90_64x144x32_F16E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -37841,7 +38364,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x144x32_F32E4M3E5M2_SS_TN
+struct MMA_64x144x32_F32E4M3E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -37872,6 +38395,7 @@ struct SM90_64x144x32_F32E4M3E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -37912,7 +38436,7 @@ struct SM90_64x144x32_F32E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -37926,7 +38450,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x144x32_F32E4M3E5M2_RS_TN
+struct MMA_64x144x32_F32E4M3E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -37957,6 +38481,7 @@ struct SM90_64x144x32_F32E4M3E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -37997,7 +38522,7 @@ struct SM90_64x144x32_F32E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -38011,7 +38536,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x160x32_F16E4M3E5M2_SS_TN
+struct MMA_64x160x32_F16E4M3E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -38034,6 +38559,7 @@ struct SM90_64x160x32_F16E4M3E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -38062,7 +38588,7 @@ struct SM90_64x160x32_F16E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -38076,7 +38602,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x160x32_F16E4M3E5M2_RS_TN
+struct MMA_64x160x32_F16E4M3E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -38099,6 +38625,7 @@ struct SM90_64x160x32_F16E4M3E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -38127,7 +38654,7 @@ struct SM90_64x160x32_F16E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -38141,7 +38668,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x160x32_F32E4M3E5M2_SS_TN
+struct MMA_64x160x32_F32E4M3E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -38174,6 +38701,7 @@ struct SM90_64x160x32_F32E4M3E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -38217,7 +38745,7 @@ struct SM90_64x160x32_F32E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -38231,7 +38759,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x160x32_F32E4M3E5M2_RS_TN
+struct MMA_64x160x32_F32E4M3E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -38264,6 +38792,7 @@ struct SM90_64x160x32_F32E4M3E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -38307,7 +38836,7 @@ struct SM90_64x160x32_F32E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -38321,7 +38850,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x176x32_F16E4M3E5M2_SS_TN
+struct MMA_64x176x32_F16E4M3E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -38345,6 +38874,7 @@ struct SM90_64x176x32_F16E4M3E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -38375,7 +38905,7 @@ struct SM90_64x176x32_F16E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -38389,7 +38919,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x176x32_F16E4M3E5M2_RS_TN
+struct MMA_64x176x32_F16E4M3E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -38413,6 +38943,7 @@ struct SM90_64x176x32_F16E4M3E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -38443,7 +38974,7 @@ struct SM90_64x176x32_F16E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -38457,7 +38988,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x176x32_F32E4M3E5M2_SS_TN
+struct MMA_64x176x32_F32E4M3E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -38492,6 +39023,7 @@ struct SM90_64x176x32_F32E4M3E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -38538,7 +39070,7 @@ struct SM90_64x176x32_F32E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -38552,7 +39084,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x176x32_F32E4M3E5M2_RS_TN
+struct MMA_64x176x32_F32E4M3E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -38587,6 +39119,7 @@ struct SM90_64x176x32_F32E4M3E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -38633,7 +39166,7 @@ struct SM90_64x176x32_F32E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -38646,7 +39179,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x192x32_F16E4M3E5M2_SS_TN
+struct MMA_64x192x32_F16E4M3E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -38671,6 +39204,7 @@ struct SM90_64x192x32_F16E4M3E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -38702,7 +39236,7 @@ struct SM90_64x192x32_F16E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -38714,7 +39248,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x192x32_F16E4M3E5M2_RS_TN
+struct MMA_64x192x32_F16E4M3E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -38739,6 +39273,7 @@ struct SM90_64x192x32_F16E4M3E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -38770,7 +39305,7 @@ struct SM90_64x192x32_F16E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -38782,7 +39317,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x192x32_F32E4M3E5M2_SS_TN
+struct MMA_64x192x32_F32E4M3E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -38819,6 +39354,7 @@ struct SM90_64x192x32_F32E4M3E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -38868,7 +39404,7 @@ struct SM90_64x192x32_F32E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -38880,7 +39416,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x192x32_F32E4M3E5M2_RS_TN
+struct MMA_64x192x32_F32E4M3E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -38917,6 +39453,7 @@ struct SM90_64x192x32_F32E4M3E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -38966,7 +39503,7 @@ struct SM90_64x192x32_F32E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -38979,7 +39516,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x208x32_F16E4M3E5M2_SS_TN
+struct MMA_64x208x32_F16E4M3E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -39005,6 +39542,7 @@ struct SM90_64x208x32_F16E4M3E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -39038,7 +39576,7 @@ struct SM90_64x208x32_F16E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -39052,7 +39590,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x208x32_F16E4M3E5M2_RS_TN
+struct MMA_64x208x32_F16E4M3E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -39078,6 +39616,7 @@ struct SM90_64x208x32_F16E4M3E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -39111,7 +39650,7 @@ struct SM90_64x208x32_F16E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -39125,7 +39664,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x208x32_F32E4M3E5M2_SS_TN
+struct MMA_64x208x32_F32E4M3E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -39164,6 +39703,7 @@ struct SM90_64x208x32_F32E4M3E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -39216,7 +39756,7 @@ struct SM90_64x208x32_F32E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -39230,7 +39770,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x208x32_F32E4M3E5M2_RS_TN
+struct MMA_64x208x32_F32E4M3E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -39269,6 +39809,7 @@ struct SM90_64x208x32_F32E4M3E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -39321,7 +39862,7 @@ struct SM90_64x208x32_F32E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -39335,7 +39876,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x224x32_F16E4M3E5M2_SS_TN
+struct MMA_64x224x32_F16E4M3E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -39362,6 +39903,7 @@ struct SM90_64x224x32_F16E4M3E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -39396,7 +39938,7 @@ struct SM90_64x224x32_F16E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -39410,7 +39952,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x224x32_F16E4M3E5M2_RS_TN
+struct MMA_64x224x32_F16E4M3E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -39437,6 +39979,7 @@ struct SM90_64x224x32_F16E4M3E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -39471,7 +40014,7 @@ struct SM90_64x224x32_F16E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -39485,7 +40028,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x224x32_F32E4M3E5M2_SS_TN
+struct MMA_64x224x32_F32E4M3E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -39526,6 +40069,7 @@ struct SM90_64x224x32_F32E4M3E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -39581,7 +40125,7 @@ struct SM90_64x224x32_F32E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -39595,7 +40139,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x224x32_F32E4M3E5M2_RS_TN
+struct MMA_64x224x32_F32E4M3E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -39636,6 +40180,7 @@ struct SM90_64x224x32_F32E4M3E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -39691,7 +40236,7 @@ struct SM90_64x224x32_F32E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -39705,7 +40250,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x240x32_F16E4M3E5M2_SS_TN
+struct MMA_64x240x32_F16E4M3E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -39733,6 +40278,7 @@ struct SM90_64x240x32_F16E4M3E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -39769,7 +40315,7 @@ struct SM90_64x240x32_F16E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -39783,7 +40329,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x240x32_F16E4M3E5M2_RS_TN
+struct MMA_64x240x32_F16E4M3E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -39811,6 +40357,7 @@ struct SM90_64x240x32_F16E4M3E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -39847,7 +40394,7 @@ struct SM90_64x240x32_F16E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -39861,7 +40408,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x240x32_F32E4M3E5M2_SS_TN
+struct MMA_64x240x32_F32E4M3E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -39904,6 +40451,7 @@ struct SM90_64x240x32_F32E4M3E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -39962,7 +40510,7 @@ struct SM90_64x240x32_F32E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -39976,7 +40524,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x240x32_F32E4M3E5M2_RS_TN
+struct MMA_64x240x32_F32E4M3E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -40019,6 +40567,7 @@ struct SM90_64x240x32_F32E4M3E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -40077,7 +40626,7 @@ struct SM90_64x240x32_F32E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -40090,7 +40639,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x256x32_F16E4M3E5M2_SS_TN
+struct MMA_64x256x32_F16E4M3E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -40119,6 +40668,7 @@ struct SM90_64x256x32_F16E4M3E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -40156,7 +40706,7 @@ struct SM90_64x256x32_F16E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x32_F16E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -40168,7 +40718,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x256x32_F16E4M3E5M2_RS_TN
+struct MMA_64x256x32_F16E4M3E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -40197,6 +40747,7 @@ struct SM90_64x256x32_F16E4M3E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -40234,7 +40785,7 @@ struct SM90_64x256x32_F16E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x32_F16E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -40246,7 +40797,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x256x32_F32E4M3E5M2_SS_TN
+struct MMA_64x256x32_F32E4M3E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -40291,6 +40842,7 @@ struct SM90_64x256x32_F32E4M3E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -40352,7 +40904,7 @@ struct SM90_64x256x32_F32E4M3E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x32_F32E4M3E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -40364,7 +40916,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x256x32_F32E4M3E5M2_RS_TN
+struct MMA_64x256x32_F32E4M3E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -40409,6 +40961,7 @@ struct SM90_64x256x32_F32E4M3E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -40470,7 +41023,7 @@ struct SM90_64x256x32_F32E4M3E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x32_F32E4M3E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -40482,7 +41035,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x8x32_F16E5M2E4M3_SS_TN
+struct MMA_64x8x32_F16E5M2E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -40496,6 +41049,7 @@ struct SM90_64x8x32_F16E5M2E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -40511,7 +41065,7 @@ struct SM90_64x8x32_F16E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -40523,7 +41077,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x8x32_F16E5M2E4M3_RS_TN
+struct MMA_64x8x32_F16E5M2E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -40537,6 +41091,7 @@ struct SM90_64x8x32_F16E5M2E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -40552,7 +41107,7 @@ struct SM90_64x8x32_F16E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -40564,7 +41119,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x8x32_F32E5M2E4M3_SS_TN
+struct MMA_64x8x32_F32E5M2E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -40578,6 +41133,7 @@ struct SM90_64x8x32_F32E5M2E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -40593,7 +41149,7 @@ struct SM90_64x8x32_F32E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -40605,7 +41161,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x8x32_F32E5M2E4M3_RS_TN
+struct MMA_64x8x32_F32E5M2E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -40619,6 +41175,7 @@ struct SM90_64x8x32_F32E5M2E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -40634,7 +41191,7 @@ struct SM90_64x8x32_F32E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -40646,7 +41203,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x16x32_F16E5M2E4M3_SS_TN
+struct MMA_64x16x32_F16E5M2E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -40660,6 +41217,7 @@ struct SM90_64x16x32_F16E5M2E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -40675,7 +41233,7 @@ struct SM90_64x16x32_F16E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -40687,7 +41245,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x16x32_F16E5M2E4M3_RS_TN
+struct MMA_64x16x32_F16E5M2E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -40701,6 +41259,7 @@ struct SM90_64x16x32_F16E5M2E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -40716,7 +41275,7 @@ struct SM90_64x16x32_F16E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -40728,7 +41287,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x16x32_F32E5M2E4M3_SS_TN
+struct MMA_64x16x32_F32E5M2E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -40743,6 +41302,7 @@ struct SM90_64x16x32_F32E5M2E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -40759,7 +41319,7 @@ struct SM90_64x16x32_F32E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -40771,7 +41331,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x16x32_F32E5M2E4M3_RS_TN
+struct MMA_64x16x32_F32E5M2E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -40786,6 +41346,7 @@ struct SM90_64x16x32_F32E5M2E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -40802,7 +41363,7 @@ struct SM90_64x16x32_F32E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -40814,7 +41375,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x32x32_F16E5M2E4M3_SS_TN
+struct MMA_64x32x32_F16E5M2E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -40829,6 +41390,7 @@ struct SM90_64x32x32_F16E5M2E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -40845,7 +41407,7 @@ struct SM90_64x32x32_F16E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -40857,7 +41419,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x32x32_F16E5M2E4M3_RS_TN
+struct MMA_64x32x32_F16E5M2E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -40872,6 +41434,7 @@ struct SM90_64x32x32_F16E5M2E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -40888,7 +41451,7 @@ struct SM90_64x32x32_F16E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -40900,7 +41463,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x32x32_F32E5M2E4M3_SS_TN
+struct MMA_64x32x32_F32E5M2E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -40917,6 +41480,7 @@ struct SM90_64x32x32_F32E5M2E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -40936,7 +41500,7 @@ struct SM90_64x32x32_F32E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -40948,7 +41512,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x32x32_F32E5M2E4M3_RS_TN
+struct MMA_64x32x32_F32E5M2E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -40965,6 +41529,7 @@ struct SM90_64x32x32_F32E5M2E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -40984,7 +41549,7 @@ struct SM90_64x32x32_F32E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -40997,7 +41562,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x48x32_F16E5M2E4M3_SS_TN
+struct MMA_64x48x32_F16E5M2E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -41013,6 +41578,7 @@ struct SM90_64x48x32_F16E5M2E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -41031,7 +41597,7 @@ struct SM90_64x48x32_F16E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -41045,7 +41611,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x48x32_F16E5M2E4M3_RS_TN
+struct MMA_64x48x32_F16E5M2E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -41061,6 +41627,7 @@ struct SM90_64x48x32_F16E5M2E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -41079,7 +41646,7 @@ struct SM90_64x48x32_F16E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -41093,7 +41660,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x48x32_F32E5M2E4M3_SS_TN
+struct MMA_64x48x32_F32E5M2E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -41112,6 +41679,7 @@ struct SM90_64x48x32_F32E5M2E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -41134,7 +41702,7 @@ struct SM90_64x48x32_F32E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -41148,7 +41716,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x48x32_F32E5M2E4M3_RS_TN
+struct MMA_64x48x32_F32E5M2E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -41167,6 +41735,7 @@ struct SM90_64x48x32_F32E5M2E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -41189,7 +41758,7 @@ struct SM90_64x48x32_F32E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -41202,7 +41771,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x64x32_F16E5M2E4M3_SS_TN
+struct MMA_64x64x32_F16E5M2E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -41219,6 +41788,7 @@ struct SM90_64x64x32_F16E5M2E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -41238,7 +41808,7 @@ struct SM90_64x64x32_F16E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -41250,7 +41820,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x64x32_F16E5M2E4M3_RS_TN
+struct MMA_64x64x32_F16E5M2E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -41267,6 +41837,7 @@ struct SM90_64x64x32_F16E5M2E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -41286,7 +41857,7 @@ struct SM90_64x64x32_F16E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -41298,7 +41869,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x64x32_F32E5M2E4M3_SS_TN
+struct MMA_64x64x32_F32E5M2E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -41319,6 +41890,7 @@ struct SM90_64x64x32_F32E5M2E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -41344,7 +41916,7 @@ struct SM90_64x64x32_F32E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -41356,7 +41928,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x64x32_F32E5M2E4M3_RS_TN
+struct MMA_64x64x32_F32E5M2E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -41377,6 +41949,7 @@ struct SM90_64x64x32_F32E5M2E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -41402,7 +41975,7 @@ struct SM90_64x64x32_F32E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -41415,7 +41988,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x80x32_F16E5M2E4M3_SS_TN
+struct MMA_64x80x32_F16E5M2E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -41433,6 +42006,7 @@ struct SM90_64x80x32_F16E5M2E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -41454,7 +42028,7 @@ struct SM90_64x80x32_F16E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -41468,7 +42042,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x80x32_F16E5M2E4M3_RS_TN
+struct MMA_64x80x32_F16E5M2E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -41486,6 +42060,7 @@ struct SM90_64x80x32_F16E5M2E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -41507,7 +42082,7 @@ struct SM90_64x80x32_F16E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -41521,7 +42096,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x80x32_F32E5M2E4M3_SS_TN
+struct MMA_64x80x32_F32E5M2E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -41544,6 +42119,7 @@ struct SM90_64x80x32_F32E5M2E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -41572,7 +42148,7 @@ struct SM90_64x80x32_F32E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -41586,7 +42162,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x80x32_F32E5M2E4M3_RS_TN
+struct MMA_64x80x32_F32E5M2E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -41609,6 +42185,7 @@ struct SM90_64x80x32_F32E5M2E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -41637,7 +42214,7 @@ struct SM90_64x80x32_F32E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -41650,7 +42227,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x96x32_F16E5M2E4M3_SS_TN
+struct MMA_64x96x32_F16E5M2E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -41669,6 +42246,7 @@ struct SM90_64x96x32_F16E5M2E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -41691,7 +42269,7 @@ struct SM90_64x96x32_F16E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -41703,7 +42281,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x96x32_F16E5M2E4M3_RS_TN
+struct MMA_64x96x32_F16E5M2E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -41722,6 +42300,7 @@ struct SM90_64x96x32_F16E5M2E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -41744,7 +42323,7 @@ struct SM90_64x96x32_F16E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -41756,7 +42335,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x96x32_F32E5M2E4M3_SS_TN
+struct MMA_64x96x32_F32E5M2E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -41781,6 +42360,7 @@ struct SM90_64x96x32_F32E5M2E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -41812,7 +42392,7 @@ struct SM90_64x96x32_F32E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -41824,7 +42404,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x96x32_F32E5M2E4M3_RS_TN
+struct MMA_64x96x32_F32E5M2E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -41849,6 +42429,7 @@ struct SM90_64x96x32_F32E5M2E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -41880,7 +42461,7 @@ struct SM90_64x96x32_F32E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -41893,7 +42474,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x112x32_F16E5M2E4M3_SS_TN
+struct MMA_64x112x32_F16E5M2E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -41913,6 +42494,7 @@ struct SM90_64x112x32_F16E5M2E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -41937,7 +42519,7 @@ struct SM90_64x112x32_F16E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -41951,7 +42533,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x112x32_F16E5M2E4M3_RS_TN
+struct MMA_64x112x32_F16E5M2E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -41971,6 +42553,7 @@ struct SM90_64x112x32_F16E5M2E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -41995,7 +42578,7 @@ struct SM90_64x112x32_F16E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -42009,7 +42592,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x112x32_F32E5M2E4M3_SS_TN
+struct MMA_64x112x32_F32E5M2E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -42036,6 +42619,7 @@ struct SM90_64x112x32_F32E5M2E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -42070,7 +42654,7 @@ struct SM90_64x112x32_F32E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -42084,7 +42668,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x112x32_F32E5M2E4M3_RS_TN
+struct MMA_64x112x32_F32E5M2E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -42111,6 +42695,7 @@ struct SM90_64x112x32_F32E5M2E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -42145,7 +42730,7 @@ struct SM90_64x112x32_F32E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -42158,7 +42743,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x128x32_F16E5M2E4M3_SS_TN
+struct MMA_64x128x32_F16E5M2E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -42179,6 +42764,7 @@ struct SM90_64x128x32_F16E5M2E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -42204,7 +42790,7 @@ struct SM90_64x128x32_F16E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -42216,7 +42802,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x128x32_F16E5M2E4M3_RS_TN
+struct MMA_64x128x32_F16E5M2E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -42237,6 +42823,7 @@ struct SM90_64x128x32_F16E5M2E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -42262,7 +42849,7 @@ struct SM90_64x128x32_F16E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -42274,7 +42861,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x128x32_F32E5M2E4M3_SS_TN
+struct MMA_64x128x32_F32E5M2E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -42303,6 +42890,7 @@ struct SM90_64x128x32_F32E5M2E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -42340,7 +42928,7 @@ struct SM90_64x128x32_F32E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -42352,7 +42940,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x128x32_F32E5M2E4M3_RS_TN
+struct MMA_64x128x32_F32E5M2E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -42381,6 +42969,7 @@ struct SM90_64x128x32_F32E5M2E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -42418,7 +43007,7 @@ struct SM90_64x128x32_F32E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -42431,7 +43020,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x144x32_F16E5M2E4M3_SS_TN
+struct MMA_64x144x32_F16E5M2E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -42453,6 +43042,7 @@ struct SM90_64x144x32_F16E5M2E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -42480,7 +43070,7 @@ struct SM90_64x144x32_F16E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -42494,7 +43084,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x144x32_F16E5M2E4M3_RS_TN
+struct MMA_64x144x32_F16E5M2E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -42516,6 +43106,7 @@ struct SM90_64x144x32_F16E5M2E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -42543,7 +43134,7 @@ struct SM90_64x144x32_F16E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -42557,7 +43148,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x144x32_F32E5M2E4M3_SS_TN
+struct MMA_64x144x32_F32E5M2E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -42588,6 +43179,7 @@ struct SM90_64x144x32_F32E5M2E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -42628,7 +43220,7 @@ struct SM90_64x144x32_F32E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -42642,7 +43234,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x144x32_F32E5M2E4M3_RS_TN
+struct MMA_64x144x32_F32E5M2E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -42673,6 +43265,7 @@ struct SM90_64x144x32_F32E5M2E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -42713,7 +43306,7 @@ struct SM90_64x144x32_F32E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -42727,7 +43320,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x160x32_F16E5M2E4M3_SS_TN
+struct MMA_64x160x32_F16E5M2E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -42750,6 +43343,7 @@ struct SM90_64x160x32_F16E5M2E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -42778,7 +43372,7 @@ struct SM90_64x160x32_F16E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -42792,7 +43386,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x160x32_F16E5M2E4M3_RS_TN
+struct MMA_64x160x32_F16E5M2E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -42815,6 +43409,7 @@ struct SM90_64x160x32_F16E5M2E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -42843,7 +43438,7 @@ struct SM90_64x160x32_F16E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -42857,7 +43452,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x160x32_F32E5M2E4M3_SS_TN
+struct MMA_64x160x32_F32E5M2E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -42890,6 +43485,7 @@ struct SM90_64x160x32_F32E5M2E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -42933,7 +43529,7 @@ struct SM90_64x160x32_F32E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -42947,7 +43543,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x160x32_F32E5M2E4M3_RS_TN
+struct MMA_64x160x32_F32E5M2E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -42980,6 +43576,7 @@ struct SM90_64x160x32_F32E5M2E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -43023,7 +43620,7 @@ struct SM90_64x160x32_F32E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -43037,7 +43634,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x176x32_F16E5M2E4M3_SS_TN
+struct MMA_64x176x32_F16E5M2E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -43061,6 +43658,7 @@ struct SM90_64x176x32_F16E5M2E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -43091,7 +43689,7 @@ struct SM90_64x176x32_F16E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -43105,7 +43703,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x176x32_F16E5M2E4M3_RS_TN
+struct MMA_64x176x32_F16E5M2E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -43129,6 +43727,7 @@ struct SM90_64x176x32_F16E5M2E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -43159,7 +43758,7 @@ struct SM90_64x176x32_F16E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -43173,7 +43772,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x176x32_F32E5M2E4M3_SS_TN
+struct MMA_64x176x32_F32E5M2E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -43208,6 +43807,7 @@ struct SM90_64x176x32_F32E5M2E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -43254,7 +43854,7 @@ struct SM90_64x176x32_F32E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -43268,7 +43868,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x176x32_F32E5M2E4M3_RS_TN
+struct MMA_64x176x32_F32E5M2E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -43303,6 +43903,7 @@ struct SM90_64x176x32_F32E5M2E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -43349,7 +43950,7 @@ struct SM90_64x176x32_F32E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -43362,7 +43963,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x192x32_F16E5M2E4M3_SS_TN
+struct MMA_64x192x32_F16E5M2E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -43387,6 +43988,7 @@ struct SM90_64x192x32_F16E5M2E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -43418,7 +44020,7 @@ struct SM90_64x192x32_F16E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -43430,7 +44032,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x192x32_F16E5M2E4M3_RS_TN
+struct MMA_64x192x32_F16E5M2E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -43455,6 +44057,7 @@ struct SM90_64x192x32_F16E5M2E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -43486,7 +44089,7 @@ struct SM90_64x192x32_F16E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -43498,7 +44101,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x192x32_F32E5M2E4M3_SS_TN
+struct MMA_64x192x32_F32E5M2E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -43535,6 +44138,7 @@ struct SM90_64x192x32_F32E5M2E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -43584,7 +44188,7 @@ struct SM90_64x192x32_F32E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -43596,7 +44200,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x192x32_F32E5M2E4M3_RS_TN
+struct MMA_64x192x32_F32E5M2E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -43633,6 +44237,7 @@ struct SM90_64x192x32_F32E5M2E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -43682,7 +44287,7 @@ struct SM90_64x192x32_F32E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -43695,7 +44300,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x208x32_F16E5M2E4M3_SS_TN
+struct MMA_64x208x32_F16E5M2E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -43721,6 +44326,7 @@ struct SM90_64x208x32_F16E5M2E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -43754,7 +44360,7 @@ struct SM90_64x208x32_F16E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -43768,7 +44374,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x208x32_F16E5M2E4M3_RS_TN
+struct MMA_64x208x32_F16E5M2E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -43794,6 +44400,7 @@ struct SM90_64x208x32_F16E5M2E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -43827,7 +44434,7 @@ struct SM90_64x208x32_F16E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -43841,7 +44448,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x208x32_F32E5M2E4M3_SS_TN
+struct MMA_64x208x32_F32E5M2E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -43880,6 +44487,7 @@ struct SM90_64x208x32_F32E5M2E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -43932,7 +44540,7 @@ struct SM90_64x208x32_F32E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -43946,7 +44554,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x208x32_F32E5M2E4M3_RS_TN
+struct MMA_64x208x32_F32E5M2E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -43985,6 +44593,7 @@ struct SM90_64x208x32_F32E5M2E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -44037,7 +44646,7 @@ struct SM90_64x208x32_F32E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -44051,7 +44660,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x224x32_F16E5M2E4M3_SS_TN
+struct MMA_64x224x32_F16E5M2E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -44078,6 +44687,7 @@ struct SM90_64x224x32_F16E5M2E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -44112,7 +44722,7 @@ struct SM90_64x224x32_F16E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -44126,7 +44736,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x224x32_F16E5M2E4M3_RS_TN
+struct MMA_64x224x32_F16E5M2E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -44153,6 +44763,7 @@ struct SM90_64x224x32_F16E5M2E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -44187,7 +44798,7 @@ struct SM90_64x224x32_F16E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -44201,7 +44812,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x224x32_F32E5M2E4M3_SS_TN
+struct MMA_64x224x32_F32E5M2E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -44242,6 +44853,7 @@ struct SM90_64x224x32_F32E5M2E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -44297,7 +44909,7 @@ struct SM90_64x224x32_F32E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -44311,7 +44923,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x224x32_F32E5M2E4M3_RS_TN
+struct MMA_64x224x32_F32E5M2E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -44352,6 +44964,7 @@ struct SM90_64x224x32_F32E5M2E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -44407,7 +45020,7 @@ struct SM90_64x224x32_F32E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -44421,7 +45034,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x240x32_F16E5M2E4M3_SS_TN
+struct MMA_64x240x32_F16E5M2E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -44449,6 +45062,7 @@ struct SM90_64x240x32_F16E5M2E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -44485,7 +45099,7 @@ struct SM90_64x240x32_F16E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -44499,7 +45113,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x240x32_F16E5M2E4M3_RS_TN
+struct MMA_64x240x32_F16E5M2E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -44527,6 +45141,7 @@ struct SM90_64x240x32_F16E5M2E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -44563,7 +45178,7 @@ struct SM90_64x240x32_F16E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -44577,7 +45192,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x240x32_F32E5M2E4M3_SS_TN
+struct MMA_64x240x32_F32E5M2E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -44620,6 +45235,7 @@ struct SM90_64x240x32_F32E5M2E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -44678,7 +45294,7 @@ struct SM90_64x240x32_F32E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -44692,7 +45308,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x240x32_F32E5M2E4M3_RS_TN
+struct MMA_64x240x32_F32E5M2E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -44735,6 +45351,7 @@ struct SM90_64x240x32_F32E5M2E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -44793,7 +45410,7 @@ struct SM90_64x240x32_F32E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -44806,7 +45423,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x256x32_F16E5M2E4M3_SS_TN
+struct MMA_64x256x32_F16E5M2E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -44835,6 +45452,7 @@ struct SM90_64x256x32_F16E5M2E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -44872,7 +45490,7 @@ struct SM90_64x256x32_F16E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x32_F16E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -44884,7 +45502,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x256x32_F16E5M2E4M3_RS_TN
+struct MMA_64x256x32_F16E5M2E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -44913,6 +45531,7 @@ struct SM90_64x256x32_F16E5M2E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -44950,7 +45569,7 @@ struct SM90_64x256x32_F16E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x32_F16E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -44962,7 +45581,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x256x32_F32E5M2E4M3_SS_TN
+struct MMA_64x256x32_F32E5M2E4M3_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -45007,6 +45626,7 @@ struct SM90_64x256x32_F32E5M2E4M3_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -45068,7 +45688,7 @@ struct SM90_64x256x32_F32E5M2E4M3_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x32_F32E5M2E4M3_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -45080,7 +45700,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x256x32_F32E5M2E4M3_RS_TN
+struct MMA_64x256x32_F32E5M2E4M3_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -45125,6 +45745,7 @@ struct SM90_64x256x32_F32E5M2E4M3_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -45186,7 +45807,7 @@ struct SM90_64x256x32_F32E5M2E4M3_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x32_F32E5M2E4M3_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -45198,7 +45819,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x8x32_F16E5M2E5M2_SS_TN
+struct MMA_64x8x32_F16E5M2E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -45212,6 +45833,7 @@ struct SM90_64x8x32_F16E5M2E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -45227,7 +45849,7 @@ struct SM90_64x8x32_F16E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -45239,7 +45861,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x8x32_F16E5M2E5M2_RS_TN
+struct MMA_64x8x32_F16E5M2E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -45253,6 +45875,7 @@ struct SM90_64x8x32_F16E5M2E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -45268,7 +45891,7 @@ struct SM90_64x8x32_F16E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -45280,7 +45903,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x8x32_F32E5M2E5M2_SS_TN
+struct MMA_64x8x32_F32E5M2E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -45294,6 +45917,7 @@ struct SM90_64x8x32_F32E5M2E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -45309,7 +45933,7 @@ struct SM90_64x8x32_F32E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -45321,7 +45945,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x8x32_F32E5M2E5M2_RS_TN
+struct MMA_64x8x32_F32E5M2E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -45335,6 +45959,7 @@ struct SM90_64x8x32_F32E5M2E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -45350,7 +45975,7 @@ struct SM90_64x8x32_F32E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x8x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x8x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -45362,7 +45987,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x16x32_F16E5M2E5M2_SS_TN
+struct MMA_64x16x32_F16E5M2E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -45376,6 +46001,7 @@ struct SM90_64x16x32_F16E5M2E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -45391,7 +46017,7 @@ struct SM90_64x16x32_F16E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -45403,7 +46029,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x16x32_F16E5M2E5M2_RS_TN
+struct MMA_64x16x32_F16E5M2E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -45417,6 +46043,7 @@ struct SM90_64x16x32_F16E5M2E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -45432,7 +46059,7 @@ struct SM90_64x16x32_F16E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -45444,7 +46071,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x16x32_F32E5M2E5M2_SS_TN
+struct MMA_64x16x32_F32E5M2E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -45459,6 +46086,7 @@ struct SM90_64x16x32_F32E5M2E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -45475,7 +46103,7 @@ struct SM90_64x16x32_F32E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -45487,7 +46115,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x16x32_F32E5M2E5M2_RS_TN
+struct MMA_64x16x32_F32E5M2E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -45502,6 +46130,7 @@ struct SM90_64x16x32_F32E5M2E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -45518,7 +46147,7 @@ struct SM90_64x16x32_F32E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x16x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x16x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -45530,7 +46159,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x32x32_F16E5M2E5M2_SS_TN
+struct MMA_64x32x32_F16E5M2E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -45545,6 +46174,7 @@ struct SM90_64x32x32_F16E5M2E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -45561,7 +46191,7 @@ struct SM90_64x32x32_F16E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -45573,7 +46203,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x32x32_F16E5M2E5M2_RS_TN
+struct MMA_64x32x32_F16E5M2E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -45588,6 +46218,7 @@ struct SM90_64x32x32_F16E5M2E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -45604,7 +46235,7 @@ struct SM90_64x32x32_F16E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -45616,7 +46247,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x32x32_F32E5M2E5M2_SS_TN
+struct MMA_64x32x32_F32E5M2E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -45633,6 +46264,7 @@ struct SM90_64x32x32_F32E5M2E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -45652,7 +46284,7 @@ struct SM90_64x32x32_F32E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -45664,7 +46296,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x32x32_F32E5M2E5M2_RS_TN
+struct MMA_64x32x32_F32E5M2E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -45681,6 +46313,7 @@ struct SM90_64x32x32_F32E5M2E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -45700,7 +46333,7 @@ struct SM90_64x32x32_F32E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x32x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x32x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -45713,7 +46346,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x48x32_F16E5M2E5M2_SS_TN
+struct MMA_64x48x32_F16E5M2E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -45729,6 +46362,7 @@ struct SM90_64x48x32_F16E5M2E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -45747,7 +46381,7 @@ struct SM90_64x48x32_F16E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -45761,7 +46395,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x48x32_F16E5M2E5M2_RS_TN
+struct MMA_64x48x32_F16E5M2E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -45777,6 +46411,7 @@ struct SM90_64x48x32_F16E5M2E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -45795,7 +46430,7 @@ struct SM90_64x48x32_F16E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -45809,7 +46444,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x48x32_F32E5M2E5M2_SS_TN
+struct MMA_64x48x32_F32E5M2E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -45828,6 +46463,7 @@ struct SM90_64x48x32_F32E5M2E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -45850,7 +46486,7 @@ struct SM90_64x48x32_F32E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -45864,7 +46500,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x48x32_F32E5M2E5M2_RS_TN
+struct MMA_64x48x32_F32E5M2E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -45883,6 +46519,7 @@ struct SM90_64x48x32_F32E5M2E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -45905,7 +46542,7 @@ struct SM90_64x48x32_F32E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x48x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x48x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -45918,7 +46555,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x64x32_F16E5M2E5M2_SS_TN
+struct MMA_64x64x32_F16E5M2E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -45935,6 +46572,7 @@ struct SM90_64x64x32_F16E5M2E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -45954,7 +46592,7 @@ struct SM90_64x64x32_F16E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -45966,7 +46604,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x64x32_F16E5M2E5M2_RS_TN
+struct MMA_64x64x32_F16E5M2E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -45983,6 +46621,7 @@ struct SM90_64x64x32_F16E5M2E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -46002,7 +46641,7 @@ struct SM90_64x64x32_F16E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -46014,7 +46653,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x64x32_F32E5M2E5M2_SS_TN
+struct MMA_64x64x32_F32E5M2E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -46035,6 +46674,7 @@ struct SM90_64x64x32_F32E5M2E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -46060,7 +46700,7 @@ struct SM90_64x64x32_F32E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -46072,7 +46712,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x64x32_F32E5M2E5M2_RS_TN
+struct MMA_64x64x32_F32E5M2E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -46093,6 +46733,7 @@ struct SM90_64x64x32_F32E5M2E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -46118,7 +46759,7 @@ struct SM90_64x64x32_F32E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x64x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -46131,7 +46772,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x80x32_F16E5M2E5M2_SS_TN
+struct MMA_64x80x32_F16E5M2E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -46149,6 +46790,7 @@ struct SM90_64x80x32_F16E5M2E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -46170,7 +46812,7 @@ struct SM90_64x80x32_F16E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -46184,7 +46826,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x80x32_F16E5M2E5M2_RS_TN
+struct MMA_64x80x32_F16E5M2E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -46202,6 +46844,7 @@ struct SM90_64x80x32_F16E5M2E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -46223,7 +46866,7 @@ struct SM90_64x80x32_F16E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -46237,7 +46880,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x80x32_F32E5M2E5M2_SS_TN
+struct MMA_64x80x32_F32E5M2E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -46260,6 +46903,7 @@ struct SM90_64x80x32_F32E5M2E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -46288,7 +46932,7 @@ struct SM90_64x80x32_F32E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -46302,7 +46946,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x80x32_F32E5M2E5M2_RS_TN
+struct MMA_64x80x32_F32E5M2E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -46325,6 +46969,7 @@ struct SM90_64x80x32_F32E5M2E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -46353,7 +46998,7 @@ struct SM90_64x80x32_F32E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x80x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x80x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -46366,7 +47011,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x96x32_F16E5M2E5M2_SS_TN
+struct MMA_64x96x32_F16E5M2E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -46385,6 +47030,7 @@ struct SM90_64x96x32_F16E5M2E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -46407,7 +47053,7 @@ struct SM90_64x96x32_F16E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -46419,7 +47065,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x96x32_F16E5M2E5M2_RS_TN
+struct MMA_64x96x32_F16E5M2E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -46438,6 +47084,7 @@ struct SM90_64x96x32_F16E5M2E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -46460,7 +47107,7 @@ struct SM90_64x96x32_F16E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -46472,7 +47119,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x96x32_F32E5M2E5M2_SS_TN
+struct MMA_64x96x32_F32E5M2E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -46497,6 +47144,7 @@ struct SM90_64x96x32_F32E5M2E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -46528,7 +47176,7 @@ struct SM90_64x96x32_F32E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -46540,7 +47188,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x96x32_F32E5M2E5M2_RS_TN
+struct MMA_64x96x32_F32E5M2E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -46565,6 +47213,7 @@ struct SM90_64x96x32_F32E5M2E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -46596,7 +47245,7 @@ struct SM90_64x96x32_F32E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x96x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x96x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -46609,7 +47258,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x112x32_F16E5M2E5M2_SS_TN
+struct MMA_64x112x32_F16E5M2E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -46629,6 +47278,7 @@ struct SM90_64x112x32_F16E5M2E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -46653,7 +47303,7 @@ struct SM90_64x112x32_F16E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -46667,7 +47317,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x112x32_F16E5M2E5M2_RS_TN
+struct MMA_64x112x32_F16E5M2E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -46687,6 +47337,7 @@ struct SM90_64x112x32_F16E5M2E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -46711,7 +47362,7 @@ struct SM90_64x112x32_F16E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -46725,7 +47376,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x112x32_F32E5M2E5M2_SS_TN
+struct MMA_64x112x32_F32E5M2E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -46752,6 +47403,7 @@ struct SM90_64x112x32_F32E5M2E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -46786,7 +47438,7 @@ struct SM90_64x112x32_F32E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -46800,7 +47452,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x112x32_F32E5M2E5M2_RS_TN
+struct MMA_64x112x32_F32E5M2E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -46827,6 +47479,7 @@ struct SM90_64x112x32_F32E5M2E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -46861,7 +47514,7 @@ struct SM90_64x112x32_F32E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x112x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x112x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -46874,7 +47527,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x128x32_F16E5M2E5M2_SS_TN
+struct MMA_64x128x32_F16E5M2E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -46895,6 +47548,7 @@ struct SM90_64x128x32_F16E5M2E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -46920,7 +47574,7 @@ struct SM90_64x128x32_F16E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -46932,7 +47586,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x128x32_F16E5M2E5M2_RS_TN
+struct MMA_64x128x32_F16E5M2E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -46953,6 +47607,7 @@ struct SM90_64x128x32_F16E5M2E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -46978,7 +47633,7 @@ struct SM90_64x128x32_F16E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -46990,7 +47645,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x128x32_F32E5M2E5M2_SS_TN
+struct MMA_64x128x32_F32E5M2E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -47019,6 +47674,7 @@ struct SM90_64x128x32_F32E5M2E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -47056,7 +47712,7 @@ struct SM90_64x128x32_F32E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -47068,7 +47724,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x128x32_F32E5M2E5M2_RS_TN
+struct MMA_64x128x32_F32E5M2E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -47097,6 +47753,7 @@ struct SM90_64x128x32_F32E5M2E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -47134,7 +47791,7 @@ struct SM90_64x128x32_F32E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x128x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x128x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -47147,7 +47804,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x144x32_F16E5M2E5M2_SS_TN
+struct MMA_64x144x32_F16E5M2E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -47169,6 +47826,7 @@ struct SM90_64x144x32_F16E5M2E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -47196,7 +47854,7 @@ struct SM90_64x144x32_F16E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -47210,7 +47868,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x144x32_F16E5M2E5M2_RS_TN
+struct MMA_64x144x32_F16E5M2E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -47232,6 +47890,7 @@ struct SM90_64x144x32_F16E5M2E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -47259,7 +47918,7 @@ struct SM90_64x144x32_F16E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -47273,7 +47932,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x144x32_F32E5M2E5M2_SS_TN
+struct MMA_64x144x32_F32E5M2E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -47304,6 +47963,7 @@ struct SM90_64x144x32_F32E5M2E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -47344,7 +48004,7 @@ struct SM90_64x144x32_F32E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -47358,7 +48018,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x144x32_F32E5M2E5M2_RS_TN
+struct MMA_64x144x32_F32E5M2E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -47389,6 +48049,7 @@ struct SM90_64x144x32_F32E5M2E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -47429,7 +48090,7 @@ struct SM90_64x144x32_F32E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x144x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x144x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -47443,7 +48104,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x160x32_F16E5M2E5M2_SS_TN
+struct MMA_64x160x32_F16E5M2E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -47466,6 +48127,7 @@ struct SM90_64x160x32_F16E5M2E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -47494,7 +48156,7 @@ struct SM90_64x160x32_F16E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -47508,7 +48170,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x160x32_F16E5M2E5M2_RS_TN
+struct MMA_64x160x32_F16E5M2E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -47531,6 +48193,7 @@ struct SM90_64x160x32_F16E5M2E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -47559,7 +48222,7 @@ struct SM90_64x160x32_F16E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -47573,7 +48236,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x160x32_F32E5M2E5M2_SS_TN
+struct MMA_64x160x32_F32E5M2E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -47606,6 +48269,7 @@ struct SM90_64x160x32_F32E5M2E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -47649,7 +48313,7 @@ struct SM90_64x160x32_F32E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -47663,7 +48327,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x160x32_F32E5M2E5M2_RS_TN
+struct MMA_64x160x32_F32E5M2E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -47696,6 +48360,7 @@ struct SM90_64x160x32_F32E5M2E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -47739,7 +48404,7 @@ struct SM90_64x160x32_F32E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x160x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x160x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -47753,7 +48418,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x176x32_F16E5M2E5M2_SS_TN
+struct MMA_64x176x32_F16E5M2E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -47777,6 +48442,7 @@ struct SM90_64x176x32_F16E5M2E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -47807,7 +48473,7 @@ struct SM90_64x176x32_F16E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -47821,7 +48487,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x176x32_F16E5M2E5M2_RS_TN
+struct MMA_64x176x32_F16E5M2E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -47845,6 +48511,7 @@ struct SM90_64x176x32_F16E5M2E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -47875,7 +48542,7 @@ struct SM90_64x176x32_F16E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -47889,7 +48556,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x176x32_F32E5M2E5M2_SS_TN
+struct MMA_64x176x32_F32E5M2E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -47924,6 +48591,7 @@ struct SM90_64x176x32_F32E5M2E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -47970,7 +48638,7 @@ struct SM90_64x176x32_F32E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -47984,7 +48652,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x176x32_F32E5M2E5M2_RS_TN
+struct MMA_64x176x32_F32E5M2E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -48019,6 +48687,7 @@ struct SM90_64x176x32_F32E5M2E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -48065,7 +48734,7 @@ struct SM90_64x176x32_F32E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x176x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x176x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -48078,7 +48747,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x192x32_F16E5M2E5M2_SS_TN
+struct MMA_64x192x32_F16E5M2E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -48103,6 +48772,7 @@ struct SM90_64x192x32_F16E5M2E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -48134,7 +48804,7 @@ struct SM90_64x192x32_F16E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -48146,7 +48816,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x192x32_F16E5M2E5M2_RS_TN
+struct MMA_64x192x32_F16E5M2E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -48171,6 +48841,7 @@ struct SM90_64x192x32_F16E5M2E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -48202,7 +48873,7 @@ struct SM90_64x192x32_F16E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -48214,7 +48885,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x192x32_F32E5M2E5M2_SS_TN
+struct MMA_64x192x32_F32E5M2E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -48251,6 +48922,7 @@ struct SM90_64x192x32_F32E5M2E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -48300,7 +48972,7 @@ struct SM90_64x192x32_F32E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -48312,7 +48984,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x192x32_F32E5M2E5M2_RS_TN
+struct MMA_64x192x32_F32E5M2E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -48349,6 +49021,7 @@ struct SM90_64x192x32_F32E5M2E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -48398,7 +49071,7 @@ struct SM90_64x192x32_F32E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x192x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x192x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -48411,7 +49084,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x208x32_F16E5M2E5M2_SS_TN
+struct MMA_64x208x32_F16E5M2E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -48437,6 +49110,7 @@ struct SM90_64x208x32_F16E5M2E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -48470,7 +49144,7 @@ struct SM90_64x208x32_F16E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -48484,7 +49158,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x208x32_F16E5M2E5M2_RS_TN
+struct MMA_64x208x32_F16E5M2E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -48510,6 +49184,7 @@ struct SM90_64x208x32_F16E5M2E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -48543,7 +49218,7 @@ struct SM90_64x208x32_F16E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -48557,7 +49232,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x208x32_F32E5M2E5M2_SS_TN
+struct MMA_64x208x32_F32E5M2E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -48596,6 +49271,7 @@ struct SM90_64x208x32_F32E5M2E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -48648,7 +49324,7 @@ struct SM90_64x208x32_F32E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -48662,7 +49338,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x208x32_F32E5M2E5M2_RS_TN
+struct MMA_64x208x32_F32E5M2E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -48701,6 +49377,7 @@ struct SM90_64x208x32_F32E5M2E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -48753,7 +49430,7 @@ struct SM90_64x208x32_F32E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x208x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x208x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -48767,7 +49444,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x224x32_F16E5M2E5M2_SS_TN
+struct MMA_64x224x32_F16E5M2E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -48794,6 +49471,7 @@ struct SM90_64x224x32_F16E5M2E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -48828,7 +49506,7 @@ struct SM90_64x224x32_F16E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -48842,7 +49520,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x224x32_F16E5M2E5M2_RS_TN
+struct MMA_64x224x32_F16E5M2E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -48869,6 +49547,7 @@ struct SM90_64x224x32_F16E5M2E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -48903,7 +49582,7 @@ struct SM90_64x224x32_F16E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -48917,7 +49596,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x224x32_F32E5M2E5M2_SS_TN
+struct MMA_64x224x32_F32E5M2E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -48958,6 +49637,7 @@ struct SM90_64x224x32_F32E5M2E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -49013,7 +49693,7 @@ struct SM90_64x224x32_F32E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -49027,7 +49707,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x224x32_F32E5M2E5M2_RS_TN
+struct MMA_64x224x32_F32E5M2E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -49068,6 +49748,7 @@ struct SM90_64x224x32_F32E5M2E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -49123,7 +49804,7 @@ struct SM90_64x224x32_F32E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x224x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x224x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -49137,7 +49818,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x240x32_F16E5M2E5M2_SS_TN
+struct MMA_64x240x32_F16E5M2E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -49165,6 +49846,7 @@ struct SM90_64x240x32_F16E5M2E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -49201,7 +49883,7 @@ struct SM90_64x240x32_F16E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -49215,7 +49897,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x240x32_F16E5M2E5M2_RS_TN
+struct MMA_64x240x32_F16E5M2E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -49243,6 +49925,7 @@ struct SM90_64x240x32_F16E5M2E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -49279,7 +49962,7 @@ struct SM90_64x240x32_F16E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -49293,7 +49976,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x240x32_F32E5M2E5M2_SS_TN
+struct MMA_64x240x32_F32E5M2E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -49336,6 +50019,7 @@ struct SM90_64x240x32_F32E5M2E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -49394,7 +50078,7 @@ struct SM90_64x240x32_F32E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -49408,7 +50092,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x240x32_F32E5M2E5M2_RS_TN
+struct MMA_64x240x32_F32E5M2E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -49451,6 +50135,7 @@ struct SM90_64x240x32_F32E5M2E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -49509,7 +50194,7 @@ struct SM90_64x240x32_F32E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x240x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x240x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -49522,7 +50207,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x256x32_F16E5M2E5M2_SS_TN
+struct MMA_64x256x32_F16E5M2E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -49551,6 +50236,7 @@ struct SM90_64x256x32_F16E5M2E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -49588,7 +50274,7 @@ struct SM90_64x256x32_F16E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x32_F16E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -49600,7 +50286,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x256x32_F16E5M2E5M2_RS_TN
+struct MMA_64x256x32_F16E5M2E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -49629,6 +50315,7 @@ struct SM90_64x256x32_F16E5M2E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -49666,7 +50353,7 @@ struct SM90_64x256x32_F16E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x32_F16E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -49678,7 +50365,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x256x32_F32E5M2E5M2_SS_TN
+struct MMA_64x256x32_F32E5M2E5M2_SS_TN
 {
   using DRegisters = void;
   using ARegisters = uint64_t[1];
@@ -49723,6 +50410,7 @@ struct SM90_64x256x32_F32E5M2E5M2_SS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -49784,7 +50472,7 @@ struct SM90_64x256x32_F32E5M2E5M2_SS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x32_F32E5M2E5M2_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -49796,7 +50484,7 @@ template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
-struct SM90_64x256x32_F32E5M2E5M2_RS_TN
+struct MMA_64x256x32_F32E5M2E5M2_RS_TN
 {
   using DRegisters = void;
   using ARegisters = uint32_t[4];
@@ -49841,6 +50529,7 @@ struct SM90_64x256x32_F32E5M2E5M2_RS_TN
       GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
 #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
+    cutlass::arch::synclog_emit_wgmma_reg_smem(__LINE__, desc_b);
     asm volatile(
     "{\n"
       ".reg .pred p;\n"
@@ -49902,11 +50591,14 @@ struct SM90_64x256x32_F32E5M2E5M2_RS_TN
          "l"(desc_b),
          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_INVALID_CONTROL_PATH("Attempting to use SM90_64x256x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
+    CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x256x32_F32E5M2E5M2_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+} // namespace SM90::GMMA
 
 } // namespace cute

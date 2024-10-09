@@ -102,7 +102,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
 
   // Host reference
-  using HostReference = test::gemm::device::HostReduce<Gemm, test::gemm::device::HostRowReduce>;
+  using HostReference = test::gemm::device::HostReduce<Gemm, test::gemm::device::HostRowReduce<cutlass::plus, float>>;
   bool passed = test::gemm::device::TestAllEVT<Gemm, HostReference>(true);
   EXPECT_TRUE(passed);
 }
@@ -148,7 +148,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
 
   // Host reference
-  using HostReference = test::gemm::device::HostReduce<Gemm, test::gemm::device::HostColumnReduce>;
+  using HostReference = test::gemm::device::HostReduce<Gemm, test::gemm::device::HostColumnReduce<cutlass::plus, float>>;
   bool passed = test::gemm::device::TestAllEVT<Gemm, HostReference>(true);
   EXPECT_TRUE(passed);
 }
@@ -194,7 +194,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
 
   // Host reference
-  using HostReference = test::gemm::device::HostReduce<Gemm, test::gemm::device::HostScalarReduce>;
+  using HostReference = test::gemm::device::HostReduce<Gemm, test::gemm::device::HostScalarReduce<cutlass::plus, float>>;
   bool passed = test::gemm::device::TestAllEVT<Gemm, HostReference>(true);
   EXPECT_TRUE(passed);
 }

@@ -50,7 +50,7 @@ struct PermuteTraits {};
 using X = Underscore;
 
 // Reshape a rank-2 shape into a multidimensional shape.
-// Input: 
+// Input:
 //   shape = (A, B, ...)
 //   target_shape = ((A1, ..., X, ..., Am), (B1, ..., X, ..., Bn), ...)
 // Output:
@@ -76,12 +76,12 @@ reshape(Shape const& shape, TargetShape const& target_shape)
 // - sub-modes corresponding to the implied multidimensional shape of the source tensor
 // - strides accounting for the permutation operation being performed
 template<class Permute, bool Transpose, class Shape, class Stride>
-constexpr auto 
+constexpr auto
 make_permute_layout(Layout<Shape,Stride> const& layout) {
   static_assert(cute::rank(Shape{}) == 3, "Only rank-3 layouts are supported");
   if constexpr (Transpose) {
     // Deal with tensor B by transposing appropriately before and after computing the permute layout.
-    // Its CuTe-canonical mode order is [N,K,L], while permute operations expect [row,col,batch]. 
+    // Its CuTe-canonical mode order is [N,K,L], while permute operations expect [row,col,batch].
     return select<1,0,2>(make_permute_layout<Permute, false>(select<1,0,2>(layout)));
   }
   else {
@@ -129,23 +129,24 @@ inverse(Permutation const & perm) {
 template<class T>
 using inverse_t = decltype(inverse(T{}));
 
-// Given a rank-2 layout of tensor that is assumed to have been permuted, 
+// Given a rank-2 layout of tensor that is assumed to have been permuted,
 // compute the original rank-2 layout of the tensor prior to the permutation.
-// This is needed to form the correct input to the standalone permutation kernel. 
+// This is needed to form the correct input to the standalone permutation kernel.
 template<class Permute, bool Transpose, class Shape, class Stride>
-constexpr auto 
+constexpr auto
 make_original_layout(Layout<Shape,Stride> const& layout) {
   static_assert(cute::rank(Shape{}) == 3, "Only rank-3 layouts are supported");
   if constexpr (Transpose) {
     // Deal with tensor B by transposing appropriately before and after computing the permute layout.
-    // Its CuTe-canonical mode order is [N,K,L], while permute operations expect [row,col,batch]. 
+    // Its CuTe-canonical mode order is [N,K,L], while permute operations expect [row,col,batch].
     return select<1,0,2>(make_original_layout<Permute, false>(select<1,0,2>(layout)));
   }
   else {
     using ShapeProfile = typename PermuteTraits<Permute>::ShapeProfile;
+    auto re_shape   = flatten(reshape(layout.shape(), ShapeProfile{}));
     using IndexOrder   = typename PermuteTraits<Permute>::IndexOrder;
+    auto orig_shape = transform_leaf(IndexOrder{}, [&](auto i){ return get<i>(re_shape); });
     using OrigOrder    = conditional_t<cutlass::gemm::detail::is_major<0,Stride>(), seq<0,1,2>, seq<1,0,2>>;
-    auto orig_shape = select(flatten(reshape(layout.shape(), ShapeProfile{})), IndexOrder{});
     // print("Permuted shape: "); print(reshape(layout.shape(), ShapeProfile{})); print("\n");
     // print("Original shape: "); print(orig_shape); print("\n");
     return make_ordered_layout(product_each(orig_shape), OrigOrder{});
@@ -202,7 +203,7 @@ struct PermuteTraits<cutlass::layout::Tensor4DPermuteBMM0321ColumnMajor<D>>
 };
 
 template<int D>
-struct PermuteTraits<cutlass::layout::Tensor4DPermuteBMM0321ColumnMajorInverse<D>> 
+struct PermuteTraits<cutlass::layout::Tensor4DPermuteBMM0321ColumnMajorInverse<D>>
 {
   static constexpr bool kBatched = true;
   using ShapeProfile = Shape<Shape<X,Int<D>>, Shape<X>, Shape<X>>;
@@ -222,7 +223,7 @@ struct PermuteTraits<cutlass::layout::Tensor4DPermuteBMM0213RowMajor<D>>
 };
 
 template<int D>
-struct PermuteTraits<cutlass::layout::Tensor4DPermuteBMM0213RowMajorInverse<D>> 
+struct PermuteTraits<cutlass::layout::Tensor4DPermuteBMM0213RowMajorInverse<D>>
 {
   static constexpr bool kBatched = true;
   using ShapeProfile = Shape<Shape<X>, Shape<X,Int<D>>, Shape<X>>;

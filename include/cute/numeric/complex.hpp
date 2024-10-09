@@ -30,9 +30,9 @@
  **************************************************************************************************/
 #pragma once
 
-#include <cutlass/complex.h>
-#include <cute/util/type_traits.hpp>
-#include <cute/numeric/numeric_types.hpp>
+#include <cute/config.hpp>    // CUTE_HOST_DEVICE
+
+#include <cutlass/complex.h>  // cutlass::complexm, cutlass::real, cutlass::imag, cutlass::is_complex
 
 namespace cute
 {

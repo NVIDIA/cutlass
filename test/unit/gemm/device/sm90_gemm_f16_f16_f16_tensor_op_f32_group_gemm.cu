@@ -119,6 +119,132 @@ using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
   EXPECT_TRUE(result);
 }
 
+TEST(SM90_Device_Gemm_f16t_f16t_f32n_tensor_op_gmma_f32_group_gemm, 128x128x64_2x2x1_ReLu) {
+
+// A matrix configuration
+using         ElementA    = cutlass::half_t;                                // Element type for A matrix operand
+using         LayoutA     = cutlass::layout::RowMajor;                      // Layout type for A matrix operand
+constexpr int AlignmentA  = 128 / cutlass::sizeof_bits<ElementA>::value;    // Memory access granularity/alignment of A matrix in units of elements (up to 16 bytes)
+
+// B matrix configuration
+using         ElementB    = cutlass::half_t;                                // Element type for B matrix operand
+using         LayoutB     = cutlass::layout::ColumnMajor;                   // Layout type for B matrix operand
+constexpr int AlignmentB  = 128 / cutlass::sizeof_bits<ElementB>::value;    // Memory access granularity/alignment of B matrix in units of elements (up to 16 bytes)
+
+// C/D matrix configuration
+using         ElementC    = cutlass::half_t;                                // Element type for C and D matrix operands
+using         LayoutC     = cutlass::layout::ColumnMajor;                   // Layout type for C and D matrix operands
+constexpr int AlignmentC  = 128 / cutlass::sizeof_bits<ElementC>::value;    // Memory access granularity/alignment of C matrix in units of elements (up to 16 bytes)
+
+// Core kernel configurations
+using ElementAccumulator  = float;                                           // Element type for internal accumulation
+using ArchTag             = cutlass::arch::Sm90;                             // Tag indicating the minimum SM that supports the intended feature
+using OperatorClass       = cutlass::arch::OpClassTensorOp;                  // Operator class tag
+using TileShape           = Shape<_128,_128,_64>;                            // Threadblock-level tile size
+using ClusterShape        = Shape<_2,_2,_1>;                                 // Shape of the threadblocks in a cluster
+using StageCountType = cutlass::gemm::collective::StageCountAuto;            // Stage count maximized based on the tile size
+using KernelSchedule   = cutlass::gemm::KernelPtrArrayTmaWarpSpecializedCooperative;   // Kernel to launch
+using EpilogueSchedule = cutlass::epilogue::PtrArrayTmaWarpSpecializedCooperative;   // Epilogue to launch
+
+using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+    cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+    TileShape, ClusterShape,
+    cutlass::epilogue::collective::EpilogueTileAuto,
+    ElementAccumulator, ElementAccumulator,
+    ElementC, LayoutC *, AlignmentC,
+    ElementC, LayoutC *, AlignmentC,
+    EpilogueSchedule,
+    cutlass::epilogue::fusion::LinCombEltAct<cutlass::epilogue::thread::ReLu, ElementC, ElementAccumulator>
+  >::CollectiveOp;
+
+using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+    ArchTag, OperatorClass,
+    ElementA, LayoutA *, AlignmentA,
+    ElementB, LayoutB *, AlignmentB,
+    ElementAccumulator,
+    TileShape, ClusterShape,
+    cutlass::gemm::collective::StageCountAutoCarveout<
+      static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
+    KernelSchedule
+  >::CollectiveOp;
+
+using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+    cutlass::gemm::GroupProblemShape<Shape<int,int,int>>,
+    CollectiveMainloop,
+    CollectiveEpilogue
+>;
+
+  using namespace test::gemm::device;
+  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  bool result = TestAll<Gemm>(1.0, 1.0);
+  EXPECT_TRUE(result);
+  result = TestAll<Gemm>(1.0, 0.0);
+  EXPECT_TRUE(result);
+}
+
+TEST(SM90_Device_Gemm_f16t_f16t_f32n_tensor_op_gmma_f32_group_gemm, 128x128x64_2x2x1_silu) {
+
+// A matrix configuration
+using         ElementA    = cutlass::half_t;                                // Element type for A matrix operand
+using         LayoutA     = cutlass::layout::RowMajor;                      // Layout type for A matrix operand
+constexpr int AlignmentA  = 128 / cutlass::sizeof_bits<ElementA>::value;    // Memory access granularity/alignment of A matrix in units of elements (up to 16 bytes)
+
+// B matrix configuration
+using         ElementB    = cutlass::half_t;                                // Element type for B matrix operand
+using         LayoutB     = cutlass::layout::ColumnMajor;                   // Layout type for B matrix operand
+constexpr int AlignmentB  = 128 / cutlass::sizeof_bits<ElementB>::value;    // Memory access granularity/alignment of B matrix in units of elements (up to 16 bytes)
+
+// C/D matrix configuration
+using         ElementC    = cutlass::half_t;                                // Element type for C and D matrix operands
+using         LayoutC     = cutlass::layout::ColumnMajor;                   // Layout type for C and D matrix operands
+constexpr int AlignmentC  = 128 / cutlass::sizeof_bits<ElementC>::value;    // Memory access granularity/alignment of C matrix in units of elements (up to 16 bytes)
+
+// Core kernel configurations
+using ElementAccumulator  = float;                                           // Element type for internal accumulation
+using ArchTag             = cutlass::arch::Sm90;                             // Tag indicating the minimum SM that supports the intended feature
+using OperatorClass       = cutlass::arch::OpClassTensorOp;                  // Operator class tag
+using TileShape           = Shape<_128,_128,_64>;                            // Threadblock-level tile size
+using ClusterShape        = Shape<_2,_2,_1>;                                 // Shape of the threadblocks in a cluster
+using StageCountType = cutlass::gemm::collective::StageCountAuto;            // Stage count maximized based on the tile size
+using KernelSchedule   = cutlass::gemm::KernelPtrArrayTmaWarpSpecializedCooperative;   // Kernel to launch
+using EpilogueSchedule = cutlass::epilogue::PtrArrayTmaWarpSpecializedCooperative;   // Epilogue to launch
+
+using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+    cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+    TileShape, ClusterShape,
+    cutlass::epilogue::collective::EpilogueTileAuto,
+    ElementAccumulator, ElementAccumulator,
+    ElementC, LayoutC *, AlignmentC,
+    ElementC, LayoutC *, AlignmentC,
+    EpilogueSchedule,
+    cutlass::epilogue::fusion::LinCombEltAct<cutlass::epilogue::thread::SiLu, ElementC, ElementAccumulator>
+  >::CollectiveOp;
+
+using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+    ArchTag, OperatorClass,
+    ElementA, LayoutA *, AlignmentA,
+    ElementB, LayoutB *, AlignmentB,
+    ElementAccumulator,
+    TileShape, ClusterShape,
+    cutlass::gemm::collective::StageCountAutoCarveout<
+      static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
+    KernelSchedule
+  >::CollectiveOp;
+
+using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+    cutlass::gemm::GroupProblemShape<Shape<int,int,int>>,
+    CollectiveMainloop,
+    CollectiveEpilogue
+>;
+
+  using namespace test::gemm::device;
+  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  bool result = TestAll<Gemm>(1.0, 1.0);
+  EXPECT_TRUE(result);
+  result = TestAll<Gemm>(1.0, 0.0);
+  EXPECT_TRUE(result);
+}
+
 TEST(SM90_Device_Gemm_f16t_f16t_f32n_tensor_op_gmma_f32_group_gemm, 128x128x64_2x2x1_direct_store) {
 
 // A matrix configuration

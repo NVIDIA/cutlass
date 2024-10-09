@@ -30,9 +30,9 @@
  **************************************************************************************************/
 #pragma once
 
-#include <cute/config.hpp>
-#include <cute/tensor_impl.hpp>
-#include <cute/algorithm/fill.hpp>
+#include <cute/config.hpp>          // CUTE_HOST_DEVICE
+#include <cute/tensor_impl.hpp>     // cute::Tensor
+#include <cute/algorithm/fill.hpp>  // cute::fill
 
 namespace cute
 {

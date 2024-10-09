@@ -48,6 +48,8 @@ public:
   using RasterOrderOptions = typename Params::RasterOrderOptions;
   using Arguments = BaseScheduler::Arguments;
 
+  static constexpr bool IsDynamicPersistent = false;
+
   // get work_idx_m, work_idx_n from blk_per_grid_dim while applying swizzle
   static CUTLASS_DEVICE
   cute::tuple<int32_t, int32_t>
@@ -121,27 +123,15 @@ public:
   // The basic tile scheduler does not require any additional workspace
   template <class ProblemShape, class ElementAccumulator>
   static size_t
-  get_workspace_size(Arguments const&, ProblemShape, KernelHardwareInfo const&, uint32_t, const uint32_t = 1) {
+  get_workspace_size(Arguments const&, ProblemShape, KernelHardwareInfo const&, uint32_t, const uint32_t = 1, uint32_t = 1) {
     return 0;
   }
 
   template <class ProblemShape, class ElementAccumulator>
   static cutlass::Status
   initialize_workspace(Arguments const&, void*, cudaStream_t, ProblemShape, KernelHardwareInfo const&,
-    uint32_t, const uint32_t = 1, CudaHostAdapter* cuda_adapter = nullptr) {
+    uint32_t, const uint32_t = 1, uint32_t = 1, CudaHostAdapter* cuda_adapter = nullptr) {
     return Status::kSuccess;
-  }
-
-  // Kernel helper function to get next work tile
-  CUTLASS_DEVICE
-  auto
-  fetch_next_work(WorkTileInfo work_tile_info) {
-    if (continue_current_work(work_tile_info)) {
-      return work_tile_info;
-    }
-
-    advance_to_next_work();
-    return get_current_work();
   }
 
 };

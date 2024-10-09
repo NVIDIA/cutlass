@@ -251,10 +251,10 @@ template <
     /// when output layout is interleaved.
     bool AccumulatorsInRowMajor>
 struct DefaultMmaTensorOp<
-  WarpShape_, 
+  WarpShape_,
   GemmShape<16, 8, 16>,                 // InstructionShape
   ElementA,                             // Element type of A matrix in Global Memory
-  LayoutA,                              // Layout of A matrix in Global Memory 
+  LayoutA,                              // Layout of A matrix in Global Memory
   ElementB,                             // Element type of B matrix in Global Memory
   LayoutB,                              // Layout of B matrix in Global Memory
   ElementC,                             // Element type of C matrix in Global Memory
@@ -264,7 +264,7 @@ struct DefaultMmaTensorOp<
 
 
   // Check if the ElementA and ElementB are of different data types
-  static_assert(!platform::is_same<ElementA, ElementB>::value, 
+  static_assert(!platform::is_same<ElementA, ElementB>::value,
     "DefaultMmaTensorOp with arch::OpMultiplyAddMixedInputUpcast ElementA and ElementB cannot be of the same data type");
 
   // Data type used for internal computation - use the wider of the two data types for mma.sync operands
@@ -276,14 +276,14 @@ struct DefaultMmaTensorOp<
   using ElementBMma = ElementOperand;
   using MmaElementC = ElementC;
 
-  // Uses 
+  // Uses
   using Policy = cutlass::gemm::warp::MmaTensorOpPolicy<
       cutlass::arch::Mma<
-        GemmShape<16, 8, 16>, 
-        32, 
-        ElementAMma, cutlass::layout::RowMajor, 
+        GemmShape<16, 8, 16>,
+        32,
+        ElementAMma, cutlass::layout::RowMajor,
         ElementBMma, cutlass::layout::ColumnMajor,
-        MmaElementC, cutlass::layout::RowMajor, 
+        MmaElementC, cutlass::layout::RowMajor,
         arch::OpMultiplyAdd
       >,
       cutlass::MatrixShape<1, 1> >;
@@ -293,7 +293,6 @@ struct DefaultMmaTensorOp<
       WarpShape_, ElementA, LayoutA, ElementB, LayoutB, ElementC, LayoutC,
       Policy, PartitionsK, AccumulatorsInRowMajor>;
 };
-
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -320,10 +319,10 @@ template <
     /// when output layout is interleaved.
     bool AccumulatorsInRowMajor>
 struct DefaultMmaTensorOp<
-  WarpShape_, 
+  WarpShape_,
   GemmShape<16, 8, 32>,                 // InstructionShape
   ElementA,                             // Element type of A matrix in Global Memory
-  LayoutA,                              // Layout of A matrix in Global Memory 
+  LayoutA,                              // Layout of A matrix in Global Memory
   ElementB,                             // Element type of B matrix in Global Memory
   LayoutB,                              // Layout of B matrix in Global Memory
   ElementC,                             // Element type of C matrix in Global Memory
@@ -333,11 +332,11 @@ struct DefaultMmaTensorOp<
 
 
   // Check if the ElementA and ElementB are of different data types
-  static_assert(!platform::is_same<ElementA, ElementB>::value, 
+  static_assert(!platform::is_same<ElementA, ElementB>::value,
     "DefaultMmaTensorOp with arch::OpMultiplyAddMixedInputUpcast ElementA and ElementB cannot be of the same data type");
 
   // Data type used for internal computation - use the wider of the two data types for mma.sync operands
-  using ElementOperand = typename platform::conditional<(sizeof_bits<ElementA>::value > sizeof_bits<ElementB>::value), 
+  using ElementOperand = typename platform::conditional<(sizeof_bits<ElementA>::value > sizeof_bits<ElementB>::value),
                                                     ElementA, ElementB>::type;
 
   // Operand datatypes in the internal MMA instruction - use the wider of the two data types
@@ -345,14 +344,14 @@ struct DefaultMmaTensorOp<
   using MmaElementB = ElementOperand;
   using MmaElementC = ElementC;
 
-  // Uses 
+  // Uses
   using Policy = cutlass::gemm::warp::MmaTensorOpPolicy<
       cutlass::arch::Mma<
-        GemmShape<16, 8, 32>, 
-        32, 
-        MmaElementA, cutlass::layout::RowMajor, 
+        GemmShape<16, 8, 32>,
+        32,
+        MmaElementA, cutlass::layout::RowMajor,
         MmaElementB, cutlass::layout::ColumnMajor,
-        MmaElementC, cutlass::layout::RowMajor, 
+        MmaElementC, cutlass::layout::RowMajor,
         arch::OpMultiplyAddSaturate
       >,
       cutlass::MatrixShape<1, 1> >;

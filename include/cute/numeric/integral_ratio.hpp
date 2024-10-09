@@ -30,11 +30,10 @@
  **************************************************************************************************/
 #pragma once
 
-#include <cute/config.hpp>
-
-#include <cute/util/type_traits.hpp>
-#include <cute/numeric/math.hpp>
-#include <cute/numeric/integral_constant.hpp>
+#include <cute/config.hpp>                     // CUTE_HOST_DEVICE
+#include <cute/numeric/integral_constant.hpp>  // cute::false_type, cute::true_type
+#include <cute/numeric/math.hpp>               // cute::signum
+#include <cute/util/type_traits.hpp>           // __CUTE_REQUIRES
 
 namespace cute
 {

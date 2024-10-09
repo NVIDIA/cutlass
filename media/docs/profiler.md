@@ -5,7 +5,7 @@
 # CUTLASS Profiler
 
 The CUTLASS Profiler is a command-line driven test and profiling environment for CUTLASS computations
-defined in the CUTLASS Instance Library. The CUTLASS Profiler is capable of executing each GEMM, Sparse Gemm, 
+defined in the CUTLASS Instance Library. The CUTLASS Profiler is capable of executing each GEMM, Sparse Gemm,
 Conv2d, and Conv3d kernel.
 
 The CUTLASS Profiler may be compiled with:
@@ -13,8 +13,8 @@ The CUTLASS Profiler may be compiled with:
 $ make cutlass_profiler -j
 ```
 
-To limit compilation time, only one tile size (typically 128x128) and threadblock cluster size (typically 2x1x1) is instantiated for each data type, 
-math instruction, and layout. To instantiate all sizes, set the following environment variable when running CMake from an 
+To limit compilation time, only one tile size (typically 128x128) and threadblock cluster size (typically 2x1x1) is instantiated for each data type,
+math instruction, and layout. To instantiate all sizes, set the following environment variable when running CMake from an
 empty `build/` directory.
 ```bash
 $ cmake .. -DCUTLASS_NVCC_ARCHS="70;75;80" -DCUTLASS_LIBRARY_KERNELS=all  -DCUTLASS_UNITY_BUILD_ENABLED=ON
@@ -24,7 +24,68 @@ $ make cutlass_profiler -j
 Enabling the unity build places multiple kernel instances in one compilation unit, thereby reducing size of the compiled
 binary and avoiding linker limitations on some platforms.
 
-The CUTLASS Profiler sources are stored in 
+### Instantiating more kernels with Hopper
+With Hopper (SM90), you will need to use an additional flag,
+`CUTLASS_LIBRARY_INSTANTIATION_LEVEL`, in order to instantiate all possible combinations,
+which unlike previous architectures, will be in the order of millions of kernels.
+Due to this, `CUTLASS_LIBRARY_KERNELS` must be non-empty, since generating and filtering these
+kernels alone can take hours.
+You must also exercise caution, because not all of these configs are tested, and some may fail to
+compile or fail to launch at runtime.
+
+```bash
+$ cmake .. \
+  -DCUTLASS_NVCC_ARCHS="90a" \
+  -DCUTLASS_LIBRARY_KERNELS="cutlass3x_sm90_tensorop_s64x64x16gemm_f16_f16_f32_void_f32_*" \
+  -DCUTLASS_LIBRARY_INSTANTIATION_LEVEL="max" \
+  -DCUTLASS_UNITY_BUILD_ENABLED=ON
+```
+
+The CUTLASS profiler employs a four-digit integer level (global instantiation level) mechanism to manage the generation of kernel configurations. This global instantiation level decides the behavior of multiple "generators" by defining how many and which combinations of configurations are produced. If a global instantiation level contains fewer than four digits, it can be padded with leading zeros to ensure it is four digits long. Each of the four digits in the global level corresponds to a specific category that influences kernel generation, from right to left:
+
+0. **Instruction Shape**
+1. **MMA Shape Multiplier**
+2. **Cluster Shape**
+3. **Schedule Pruning**
+
+Cluster shape levels define the number of CTAs (Cooperative Thread Arrays) included in the kernel generation:
+
+- **Level 0**: Only `(1, 2, 1)` cluster shape.
+- **Level 1**: Clusters with 2 CTAs.
+- **Level 2**: Clusters with 1 or 2 CTAs.
+- **Level 3**: Clusters with 1, 2, or 4 CTAs.
+- **Level 4**: Clusters with 1, 2, 4, or 8 CTAs.
+- **Level 5**: Clusters with 1, 2, 4, 8, or 16 CTAs.
+
+The MMA multipliers are combined with MMA instruction shapes (WGMMA shapes) to form CTA shapes. The levels for MMA multipliers determine the configurations generated for different data types.
+- **Levels [0, 3]**: Control the specific configurations generated for various data types.
+- **Level 9**: Activates exhaustive mode, generating all possible configurations.
+
+Higher levels encompass a broader range of CTA configurations, resulting in more comprehensive kernel generation.
+
+Instruction shape levels control the selection of WGMMA shapes used in kernel generation:
+
+- **Level 0**: Generates the "default" shape only.
+- **Level 1**: Includes additional shapes for unpruned cases, specifically for TF32 data type.
+- **Level 2**: Includes shapes that are powers of 2.
+- **Level 3**: Includes all other shapes.
+
+The detailed defination of the three instantiation levels controlling cluster shape, MMA shape multiplier, and instruction shape can be found in [sm90_shapes.py](../../python/cutlass_library/sm90_shapes.py).
+
+Schedule pruning levels decide the epilogue schedule and mainloop schedule to stamp out a kernel instance. As defined in `get_valid_schedules` in [sm90_utils.py](../../python/cutlass_library/sm90_utils.py),
+
+- **Level >= 1**: Indicates that no pruning is being applied.
+- **Level 0**: Indicates pruning according to existing [generator.py](../../python/cutlass_library/generator.py) behavior.
+
+An instantiation level `500`, which is padded to `0500`, thus indicates:
+
+- **Instruction Shapes**: At level 0, generating only the "default" shape.
+- **MMA Multipliers**: At level 0, generating only one multiplier, `(2, 1, 4)`.
+- **Cluster Sizes**: At level 5, allowing for clusters with 1, 2, 4, 8, or 16 CTAs.
+- **Schedule Pruning**: At level 0, where pruning is applied according to the existing `generator.py` behavior.
+
+The CUTLASS Profiler sources are stored in:
+
 ```bash
 tools/
   profiler/
@@ -65,6 +126,9 @@ Device:
                                                    profiling phases cycle through different input tensors to induce
                                                    capacity misses in the L2.
 
+  --allocations=<name>:<device>,<name>:<device>    Pairs of allocation names to devices. If <device> is negative,
+                                                   the execution device is used
+
 
 Initialization:
   --initialization=<bool>                          Enables initialization (default: true). If false, device memory is
@@ -90,8 +154,8 @@ Library:
 
 
 Profiling:
-  --workspace-count=<workspace count>              Number of discrete workspaces maintained to avoid cache-resident 
-                                                 If zero (default), the amount is chosen for each workload based on 
+  --workspace-count=<workspace count>              Number of discrete workspaces maintained to avoid cache-resident
+                                                 If zero (default), the amount is chosen for each workload based on
                                                  capacity of the last-level cache.
 
   --profiling-iterations=<iterations>              Number of iterations to profile each kernel. If zero, kernels
@@ -123,7 +187,7 @@ Verification:
 
 
 Report:
-  --append=<bool>                                  If true, result is appended to possibly existing file. Otherwise, 
+  --append=<bool>                                  If true, result is appended to possibly existing file. Otherwise,
                                                    any existing file is overwritten.
 
   --output=<path>                                  Path to output file for machine readable results. Operation kind and '.csv' is appended.
@@ -244,6 +308,9 @@ Test your changes to gemm kernels with a quick functional test and save results 
    --k=8,16,32,64,128,256,288,384,504,512,520 \
    --beta=0,1,2 --profiling-iterations=1 \
    --providers=cutlass --output=functional-test.csv
+
+Profile when execution is performed on device 0 and the C tensor is located on a device 1 and D on device 2:
+  $ cutlass_profiler --device=0 --allocations=C:1,D:2 --operation=Gemm --m=1024 --n=1024 --k=128
 ```
 
 The format of tensor argument is followed by `<type>:<layout>`. The type could be `f32` as 32-bit floating point, `s8` as 8-bit signed integer, etc. The available types can be referred to the `NumericTypeID_enumerants` in [util.cu](tools/library/src/util.cu). The layout could be `row` or `column`.
@@ -322,7 +389,7 @@ $ ./tools/profiler/cutlass_profiler --op_class=tensorop --m=3456 --n=4096 --k=81
 ## Covering the problem space
 
 All arguments may have single values or comma-delimited set of values. Integers may also be specified
-as an inclusive range with the following syntax `start:end:increment` or simply `start:end`. 
+as an inclusive range with the following syntax `start:end:increment` or simply `start:end`.
 
 For example, the following sweeps over the range of the GEMM K dimension from 8 to 4096 in increments
 of 8 elements.
@@ -402,7 +469,7 @@ cutlass3x_sm90_tensorop_h64x128x16gemm_f16_f16_f16_void_f16_128x128x64_1x1x1_0_n
 ```
 
 * `warpspecialized_cooperative`: Mainloop employs a persistent warp-specialized mainloop and kernel schedule.
-* `epi_tma`: Kernel epilogue employs TMA based vectorization. 
+* `epi_tma`: Kernel epilogue employs TMA based vectorization.
 * `f16_f16_f16_void_f16`: In this case, C type is set to `void`, indicating that residual matrix support
 is disabled.
 
@@ -413,7 +480,7 @@ operator variants.
 
 The CUTLASS Profiler can be built with cuDNN enabled to use as a reference implementation. If CMake detects
 the cuDNN library available in the system, it is included as a dependency. This may be explicitly overridden
-with CMake flag `CUTLASS_ENABLE_CUDNN`. 
+with CMake flag `CUTLASS_ENABLE_CUDNN`.
 
 ```bash
 $ cmake .. -DCUTLASS_LIBRARY_OPERATIONS=conv2d -DCUTLASS_ENABLE_CUDNN=OFF
@@ -521,7 +588,7 @@ reference_device: Passed
 
 Example command line for profiling forward propagation convolution kernels runing on Tensor Cores is as follows:
 ```bash
-$ ./tools/profiler/cutlass_profiler --kernels=tensorop*fprop  --verification-providers=device --n=8 --h=224 --w=224 --c=128 --k=128 --r=3 --s=3 
+$ ./tools/profiler/cutlass_profiler --kernels=tensorop*fprop  --verification-providers=device --n=8 --h=224 --w=224 --c=128 --k=128 --r=3 --s=3
 
 
 

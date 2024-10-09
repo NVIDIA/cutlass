@@ -30,11 +30,9 @@
  **************************************************************************************************/
 #pragma once
 
-#include <cute/config.hpp>
-
-#include <cute/tensor_impl.hpp>
-
-#include <cute/atom/copy_atom.hpp>
+#include <cute/config.hpp>          // CUTE_HOST_DEVICE
+#include <cute/tensor_impl.hpp>     // cute::Tensor
+#include <cute/atom/copy_atom.hpp>  // cute::Copy_Atom
 
 namespace cute
 {

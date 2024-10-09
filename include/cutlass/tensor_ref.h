@@ -332,7 +332,8 @@ class TensorRef {
   /// Adds an offset to each pointer
   CUTLASS_HOST_DEVICE
   TensorRef & add_pointer_offset(LongIndex offset_) {
-    ptr_ += offset_;
+    ptr_ = ReferenceFactory<typename platform::remove_const<Element>::type,
+           (sizeof_bits<Element>::value < 8)>::add_pointer_offset(ptr_, offset_);
     return *this;
   }
 

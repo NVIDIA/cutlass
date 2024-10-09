@@ -35,9 +35,9 @@
 
 #pragma once
 
-#include <cute/config.hpp>
-
+#include <cute/config.hpp>                  // CUTE_HOST_DEVICE
 #include <cute/numeric/numeric_types.hpp>   // uint_bit_t
+#include <cute/util/type_traits.hpp>        // cute::is_same
 
 namespace cute
 {

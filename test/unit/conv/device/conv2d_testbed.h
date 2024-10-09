@@ -718,7 +718,7 @@ bool TestAllConv2d(
   }
 
   // CUTLASS DGRAD's *strided* specialization does not support split-k mode 
-    if ((ImplicitGemm::kConvolutionalOperator == cutlass::conv::Operator::kDgrad ||
+  if ((ImplicitGemm::kConvolutionalOperator == cutlass::conv::Operator::kDgrad ||
           ImplicitGemm::kConvolutionalOperator == cutlass::conv::Operator::kDeconv) &&
       (ImplicitGemm::UnderlyingKernel::Mma::IteratorA::kStrideSupport == 
         cutlass::conv::StrideSupport::kStrided)) {
@@ -730,6 +730,18 @@ bool TestAllConv2d(
       {0, 0, 0, 0},     // padding (pad_h, _, pad_w, _)
       {2, 2},           // stride (stride_h, stride_w)
       {1, 1}),          // dilation (dilation_h, dilation_w)
+      cutlass::conv::SplitKMode::kSerial,
+      cutlass::from_real<typename ImplicitGemm::ElementCompute>(2.0), 
+      cutlass::from_real<typename ImplicitGemm::ElementCompute>(2.0));
+
+    passed = testbed.run(
+      cutlass::conv::Conv2dProblemSize(
+      {1, 56, 56, 8},   // input size (NHWC)
+      {8, 1, 1, 8},     // filter size (KRSC)
+      {0, 0, 0, 0},     // padding (pad_h, _, pad_w, _)
+      {1, 1},           // stride (stride_h, stride_w)
+      {1, 1})           // dilation (dilation_h, dilation_w)
+      .reset_split_k_slices(2),
       cutlass::conv::SplitKMode::kSerial,
       cutlass::from_real<typename ImplicitGemm::ElementCompute>(2.0), 
       cutlass::from_real<typename ImplicitGemm::ElementCompute>(2.0));

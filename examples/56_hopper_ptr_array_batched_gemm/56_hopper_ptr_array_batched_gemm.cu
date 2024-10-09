@@ -32,7 +32,7 @@
 /*! \file
     \brief Hopper Ptr-Array Batched GEMM example using CUTLASS 3 APIs for NVIDIA Hopper architecture.
 
-    This example demonstrates an implementation of Ptr-Array Batched GEMM using a TMA + GMMA 
+    This example demonstrates an implementation of Ptr-Array Batched GEMM using a TMA + GMMA
     warp-specialized cooperative kernel.
     The new feature showcased in this example is on-the-fly modification of TMA descriptors
     to move between batches (represented by l).
@@ -547,3 +547,4 @@ int main(int argc, char const **args) {
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+

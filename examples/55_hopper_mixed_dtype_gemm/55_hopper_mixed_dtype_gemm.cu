@@ -53,14 +53,18 @@
     equal to the gemm problem K.
 
     Limitations:
-      1) Only supported combinations are 16-bit x {8-bit, 4-bit, 2-bit} and {8-bit} x {4-bit, 2-bit}.
-      2) The narrow type must always be in K-major format.
-      3) The scales and zeros must be MN major. That means if A is scaled, it must be column major, but if B is scaled it must be row major.
-      4) The scales and the zeros must have the same layout and groupsize.
+      1) The narrow type must always be in K-major format.
+      2) The scales and zeros must be MN major. That means if A is scaled, it must be column major, but if B is scaled it must be row major.
+      3) The scales and the zeros must have the same layout and groupsize.
+      4) The groupsize must be greater or equal to tile shape k.
       5) When dealing with 8-bit x {4-bit, 2-bit}, both inputs must be in K-major format.
       6) Currently, TMA epilogues cannot be used when the narrow type is the B operand. This limitation arises because the implementation always swaps the 
          operands to ensure that the narrow type passes through the register file, and TMA epilogues do not currently support implicit swap + transpose operations. 
          We plan to address this limitation in the future. However, we address this in the example by explicitly swapping and transposing the operands.
+    
+    Optimizing suggestions:
+      1) Use a small tile size, since the register pressure for this GEMM (and RS GEMM in general) is high (it uses a lot of register space).
+      2) Try avoid using scale or zero mode cause the computations will be the bottleneck.
 
     Examples:
       
@@ -94,11 +98,8 @@
 #include "cutlass/util/host_tensor.h"
 #include "cutlass/util/packed_stride.hpp"
 #include "cutlass/util/tensor_view_io.h"
-#include "cutlass/util/reference/host/tensor_fill.h"
-#include "cutlass/util/reference/host/tensor_copy.h"
-#include "cutlass/util/reference/host/tensor_compare.h"
-#include "cutlass/util/reference/host/tensor_norm.h"
-#include "cutlass/util/reference/host/gett.hpp"
+#include "cutlass/util/reference/device/tensor_fill.h"
+#include "cutlass/util/reference/device/tensor_compare.h"
 
 #include "helper.h"
 #include "unfused_weight_dequantize.hpp"
@@ -117,8 +118,8 @@ enum GemmMode {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /// GEMM kernel configurations
 /////////////////////////////////////////////////////////////////////////////////////////////////
-using MmaType = cutlass::float_e4m3_t;
-using QuantType = cutlass::int4b_t;
+using MmaType = cutlass::half_t;
+using QuantType = cutlass::float_e4m3_t;
 constexpr int TileShapeK = 128 * 8 / sizeof_bits<MmaType>::value;
 
 // A matrix configuration
@@ -154,8 +155,8 @@ using ElementAccumulator  = float;                                          // E
 using ElementCompute      = float;                                          // Element type for epilogue computation
 using ArchTag             = cutlass::arch::Sm90;                            // Tag indicating the minimum SM that supports the intended feature
 using OperatorClass       = cutlass::arch::OpClassTensorOp;                 // Operator class tag
-using TileShape           = Shape<_128,_256,cute::Int<TileShapeK>>;         // Threadblock-level tile size
-using ClusterShape        = Shape<_2,_1,_1>;                                // Shape of the threadblocks in a cluster
+using TileShape           = Shape<_128,_128,cute::Int<TileShapeK>>;         // Threadblock-level tile size
+using ClusterShape        = Shape<_1,_1,_1>;                                // Shape of the threadblocks in a cluster
 using KernelSchedule      = cutlass::gemm::KernelTmaWarpSpecializedCooperativeMixedInput;  // Kernel to launch based on the default setting in the Collective Builder 
 using EpilogueSchedule    = cutlass::epilogue::TmaWarpSpecializedCooperative;
 using EpilogueTileType    = cutlass::epilogue::collective::EpilogueTileAuto;
@@ -268,14 +269,14 @@ using StrideS_ref = cutlass::detail::TagToStrideB_t<LayoutScale>;
 StrideS stride_S;
 StrideS_ref stride_S_ref;
 
-cutlass::HostTensor<MmaType, LayoutA> tensor_A;
-cutlass::HostTensor<QuantType, LayoutB> tensor_B;
-cutlass::HostTensor<MmaType, LayoutB> tensor_B_dq;
-cutlass::HostTensor<ElementScale, LayoutScale> tensor_scale;
-cutlass::HostTensor<ElementZero, LayoutScale> tensor_zero;
-cutlass::HostTensor<ElementC, LayoutC> tensor_C;
-cutlass::HostTensor<typename GemmScaleWithZeroPoint::EpilogueOutputOp::ElementOutput, LayoutD> tensor_D;
-cutlass::HostTensor<typename GemmScaleWithZeroPoint::EpilogueOutputOp::ElementOutput, LayoutD> tensor_ref_D;
+cutlass::DeviceAllocation<ElementA> block_A;
+cutlass::DeviceAllocation<ElementB> block_B;
+cutlass::DeviceAllocation<ElementA> block_B_dq;
+cutlass::DeviceAllocation<ElementScale> block_scale;
+cutlass::DeviceAllocation<ElementZero> block_zero;
+cutlass::DeviceAllocation<ElementC> block_C;
+cutlass::DeviceAllocation<typename GemmScaleWithZeroPoint::EpilogueOutputOp::ElementOutput> block_D;
+cutlass::DeviceAllocation<typename GemmScaleWithZeroPoint::EpilogueOutputOp::ElementOutput> block_ref_D;
 
 #endif // defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
 
@@ -290,7 +291,7 @@ struct Options {
 
   float alpha = 1.0f;
   float beta = 0.0f;
-  int iterations = 1000;
+  int iterations = 10;
   int mode = 2;
   int m = 5120, n = 4096, k = 4096;
   int g = 128;
@@ -368,9 +369,9 @@ struct Result
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Helper to initialize a block of device data
-template <class Element, class Layout>
+template <class Element>
 bool initialize_tensor(
-  cutlass::TensorView<Element, Layout> view,
+  cutlass::DeviceAllocation<Element>& block,
   uint64_t seed=2023) {
 
   double scope_max, scope_min;
@@ -393,34 +394,35 @@ bool initialize_tensor(
     scope_max = 8;
     scope_min = -8;
   }
-  cutlass::reference::host::TensorFillRandomUniform(
-    view, seed, scope_max, scope_min);
+  cutlass::reference::device::BlockFillRandomUniform(
+      block.get(), block.size(), seed, Element(scope_max), Element(scope_min));
 
   return true;
 }
 
-template <typename Element, typename Layout>
+template <typename Element>
 bool initialize_quant_tensor(
-  cutlass::TensorView<Element, Layout> view,
+  cutlass::DeviceAllocation<Element>& block,
   uint64_t seed=2023) {
   
   float scope_min = float(cutlass::platform::numeric_limits<Element>::lowest());
   float scope_max = float(cutlass::platform::numeric_limits<Element>::max());
 
-  cutlass::reference::host::TensorFillRandomUniform(
-    view, seed, scope_max, scope_min);
+  cutlass::reference::device::BlockFillRandomUniform(
+    block.get(), block.size(), seed, Element(scope_max), Element(scope_min));
 
   return true;
 }
 
-template <class Element, class Layout>
+template <class Element>
 bool initialize_scale(
-  cutlass::TensorView<Element, Layout> view, 
-  const Options &options) {
+  cutlass::DeviceAllocation<Element>& block, 
+  Options const& options) {
   
   if (options.mode == GemmMode::ConvertOnly) {
     // No scales, so just initialize with 1 so we can use the same kernel to dequantize the data.
-    cutlass::reference::host::TensorFill(view, Element(1.0f));
+    std::vector<Element> stage(block.size(), Element(1.0f));
+    block.copy_from_host(stage.data());
   } 
   else {
     float elt_max_f = float(cutlass::platform::numeric_limits<QuantType>::max());
@@ -430,32 +432,33 @@ bool initialize_scale(
     float scope_max(max_dequant_val / elt_max_f);
     float scope_min(min_dequant_val / elt_max_f);
 
-    cutlass::reference::host::TensorFillRandomUniform(
-      view, seed, scope_max, scope_min);
+    cutlass::reference::device::BlockFillRandomUniform(
+      block.get(), block.size(), seed, Element(scope_max), Element(scope_min));
   }
   return true;
 }
 
-template <class Element, class Layout>
+template <class Element>
 bool initialize_zero(
-  cutlass::TensorView<Element, Layout> view,
-  const Options &options) {
+  cutlass::DeviceAllocation<Element>& block,
+  Options const& options) {
   
   if (options.mode == GemmMode::ScaleWithZeroPoint) {
-    cutlass::reference::host::TensorFillRandomUniform(
-      view, seed, 2.0f, -2.0f);
+    cutlass::reference::device::BlockFillRandomUniform(
+      block.get(), block.size(), seed, Element(2.0f), Element(-2.0f));
   } else {
     // No bias, so just initialize with 1 so we can use the same kernel to dequantize the data.
-    cutlass::reference::host::TensorFill(view, Element(0.0f));
+    std::vector<Element> stage(block.size(), Element(0.0f));
+    block.copy_from_host(stage.data());
   }
   return true;
 }
 
 /// Initialize operands to be used in the GEMM and reference GEMM
-void initialize(const Options &options) {
+void initialize(Options const& options) {
 
   auto shape_b = cute::make_shape(options.n, options.k, options.l);
-  const int scale_k = (options.k + options.g - 1) / options.g;
+  int const scale_k = (options.k + options.g - 1) / options.g;
   stride_A = cutlass::make_cute_packed_stride(StrideA{}, cute::make_shape(options.m, options.k, options.l));
   stride_B = cutlass::make_cute_packed_stride(StrideB{}, shape_b);
   // Reverse stride here due to swap and transpose
@@ -469,27 +472,21 @@ void initialize(const Options &options) {
   auto b_coord = cutlass::make_Coord(options.k, options.n * options.l);
   auto c_coord = cutlass::make_Coord(options.m * options.l, options.n);
 
-  tensor_A.resize(a_coord);
-  tensor_B.resize(b_coord);
-  tensor_B_dq.resize(b_coord);
-  tensor_C.resize(c_coord);
-  tensor_D.resize(c_coord);
-  tensor_ref_D.resize(c_coord);
+  block_A.reset(a_coord.product());
+  block_B.reset(b_coord.product());
+  block_B_dq.reset(b_coord.product());
+  block_C.reset(c_coord.product());
+  block_D.reset(c_coord.product());
+  block_ref_D.reset(c_coord.product());
 
-  tensor_scale.resize({scale_k * options.l, options.n});
-  tensor_zero.resize({scale_k * options.l, options.n});
+  block_scale.reset(scale_k * options.l * options.n);
+  block_zero.reset(scale_k * options.l * options.n);
 
-  initialize_tensor(tensor_A.host_view(), seed + 2022);
-  initialize_quant_tensor(tensor_B.host_view(), seed + 2021);
-  initialize_tensor(tensor_C.host_view(), seed + 2020);
-  initialize_scale(tensor_scale.host_view(), options);
-  initialize_zero(tensor_zero.host_view(), options);
-
-  tensor_A.sync_device();
-  tensor_B.sync_device();
-  tensor_C.sync_device();
-  tensor_scale.sync_device();
-  tensor_zero.sync_device();
+  initialize_tensor(block_A, seed + 2022);
+  initialize_quant_tensor(block_B, seed + 2021);
+  initialize_tensor(block_C, seed + 2020);
+  initialize_scale(block_scale, options);
+  initialize_zero(block_zero, options);
 
   auto layout_B = make_layout(shape_b, stride_B);
 
@@ -498,37 +495,36 @@ void initialize(const Options &options) {
   stride_S_ref = cutlass::make_cute_packed_stride(StrideS_ref{}, cute::make_shape(options.n, scale_k, options.l));
   auto layout_scale_zero = make_layout(shape_scale_zero, stride_S_ref);
 
-  dequantize_weight(tensor_B_dq.device_data(), tensor_B.device_data(), layout_B, tensor_scale.device_data(), tensor_zero.device_data(), layout_scale_zero, options.g);
-  tensor_B_dq.sync_host();
+  dequantize_weight(block_B_dq.get(), block_B.get(), layout_B, block_scale.get(), block_zero.get(), layout_scale_zero, options.g);
 }
 
 /// Populates a Gemm::Arguments structure from the given commandline options
 template <typename Args>
-Args args_from_options(const Options &options)
+Args args_from_options(Options const& options)
 {
 // Swap the A and B tensors, as well as problem shapes here.
   if (options.mode == GemmMode::ConvertOnly) {
     return Args {
       cutlass::gemm::GemmUniversalMode::kGemm,
       {options.n, options.m, options.k, options.l},
-      {tensor_B.device_data(), stride_B, tensor_A.device_data(), stride_A},
-      {{options.alpha, options.beta}, tensor_C.device_data(), stride_C, tensor_D.device_data(), stride_D}
+      {block_B.get(), stride_B, block_A.get(), stride_A},
+      {{options.alpha, options.beta}, block_C.get(), stride_C, block_D.get(), stride_D}
     };
   } 
   else if (options.mode == GemmMode::ScaleOnly) {
     return Args {
       cutlass::gemm::GemmUniversalMode::kGemm,
       {options.n, options.m, options.k, options.l},
-      {tensor_B.device_data(), stride_B, tensor_A.device_data(), stride_A, tensor_scale.device_data(), stride_S, options.g},
-      {{options.alpha, options.beta}, tensor_C.device_data(), stride_C, tensor_D.device_data(), stride_D}
+      {block_B.get(), stride_B, block_A.get(), stride_A, block_scale.get(), stride_S, options.g},
+      {{options.alpha, options.beta}, block_C.get(), stride_C, block_D.get(), stride_D}
     };
   } 
   else if (options.mode == GemmMode::ScaleWithZeroPoint) {
     return Args {
       cutlass::gemm::GemmUniversalMode::kGemm,
       {options.n, options.m, options.k, options.l},
-      {tensor_B.device_data(), stride_B, tensor_A.device_data(), stride_A, tensor_scale.device_data(), stride_S, options.g, tensor_zero.device_data()},
-      {{options.alpha, options.beta}, tensor_C.device_data(), stride_C, tensor_D.device_data(), stride_D}
+      {block_B.get(), stride_B, block_A.get(), stride_A, block_scale.get(), stride_S, options.g, block_zero.get()},
+      {{options.alpha, options.beta}, block_C.get(), stride_C, block_D.get(), stride_D}
     };
   } else {
     std::cerr << "Invalid mode " << options.mode << ". Must be 0, 1 or 2." << std::endl;
@@ -542,7 +538,7 @@ bool verify(const Options &options) {
   //
 
   // In this example, we use the GPU default kernels as a reference (unfused scale)
-  // This is to avoid numerical differences from different accumulation order.
+  // This avoids numerical differences due to different accumulation order.
 
   // Again, due to numerical differences, we must use fast acc here when the mma type is
   // FP8 as the fused implementation only supports fast acc at the moment.
@@ -581,8 +577,8 @@ bool verify(const Options &options) {
   typename GemmRef::Arguments arguments{
     cutlass::gemm::GemmUniversalMode::kGemm,
     {options.m, options.n, options.k, options.l},
-    {tensor_A.device_data(), stride_A, tensor_B_dq.device_data(), stride_B},
-    {{options.alpha, options.beta}, tensor_C.device_data(), stride_C_ref, tensor_ref_D.device_data(), stride_D_ref}
+    {block_A.get(), stride_A, block_B_dq.get(), stride_B},
+    {{options.alpha, options.beta}, block_C.get(), stride_C_ref, block_ref_D.get(), stride_D_ref}
   };
 
   // Run the gemm where the scaling is performed outside of the kernel.
@@ -594,11 +590,9 @@ bool verify(const Options &options) {
   CUTLASS_CHECK(gemm_ref.run());
 
   // compare_reference
-  tensor_D.sync_host();
-  tensor_ref_D.sync_host();
-  const ElementD epsilon(1e-2f);
-  const ElementD non_zero_floor(1e-4f);
-  bool passed = cutlass::reference::host::TensorRelativelyEquals(tensor_ref_D.host_view(), tensor_D.host_view(), epsilon, non_zero_floor);
+  ElementD const epsilon(1e-2f);
+  ElementD const non_zero_floor(1e-4f);
+  bool passed = cutlass::reference::device::BlockCompareRelativelyEqual(block_ref_D.get(), block_D.get(), block_D.size(), epsilon, non_zero_floor);
   return passed;
 }
 

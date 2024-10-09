@@ -44,7 +44,7 @@
 #include <limits>       // numeric_limits
 #endif
 
-#include <cute/config.hpp>
+#include <cute/config.hpp> // CUTE_STL_NAMESPACE
 
 namespace cute
 {
@@ -79,6 +79,7 @@ using CUTE_STL_NAMESPACE::is_const_v;
 using CUTE_STL_NAMESPACE::is_volatile;
 using CUTE_STL_NAMESPACE::is_volatile_v;
 
+// Defined in cute/numeric/integral_constant.hpp
 // using CUTE_STL_NAMESPACE::true_type;
 // using CUTE_STL_NAMESPACE::false_type;
 
@@ -278,14 +279,14 @@ struct conditional_template<false, True, False> {
 // is_any_of
 //
 
-/// Member `value` is true if and only if T is same as (is_same_v) at least one of the types in Us
-template <typename T, typename... Us>
+// Member `value` is true if and only if T is same as (is_same_v) at least one of the types in Us
+template <class T, class... Us>
 struct is_any_of {
   constexpr static bool value = (... || CUTE_STL_NAMESPACE::is_same_v<T, Us>);
 };
 
-/// Is true if and only if T is same as (is_same_v) at least one of the types in Us
-template <typename T, typename... Us>
+// Is true if and only if T is same as (is_same_v) at least one of the types in Us
+template <class T, class... Us>
 inline constexpr bool is_any_of_v = is_any_of<T, Us...>::value;
 
 } // end namespace cute

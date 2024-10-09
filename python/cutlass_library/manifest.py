@@ -520,7 +520,9 @@ class Manifest:
         raise RuntimeError("The list of architectures (CMake option CUTLASS_NVCC_ARCHS) must be semicolon-delimited.\nDon't use commas to separate the architectures; use semicolons.\nYou specified the list as: " + args.architectures)
       architectures = args.architectures.split(';') if len(args.architectures) else ['50',]
 
-      arch_conditional_cc = ['90a']
+      arch_conditional_cc = [
+        '90a', 
+      ]
       architectures = [x if x not in arch_conditional_cc else x.split('a')[0] for x in architectures]
 
       self.compute_capabilities = [int(x) for x in architectures]
@@ -560,6 +562,18 @@ class Manifest:
     self.operation_count = 0
     self.operations_by_name = {}
     self.disable_full_archs_compilation = args.disable_full_archs_compilation
+    self.is_kernel_filter_set_to_all = args.instantiation_level == "max" and args.kernels != ''
+
+  def get_sm90_instantiation_level(self, pruned_level=0, default_level=111, exhaustive_level=9999):
+    # Non-negative integer which determines how many kernels are instantiated.
+    # 0 = 0000 generates the fewest kernels, 9999 generates all possible combinations.
+    # increasing first digit reduces schedule / mixed type pruning,
+    # increasing second digit generates more cluster sizes,
+    # increasing third digit generates more MMA shapes,
+    # increasing fourth digit generates more instruction shapes.
+    return exhaustive_level if self.is_kernel_filter_set_to_all else (
+      pruned_level if self.kernel_filter == '' else default_level
+    )
 
 
   def get_kernel_filters (self, kernelListFile):
@@ -601,6 +615,7 @@ class Manifest:
     enabled = not (self.filter_by_cc)
 
     for cc in self.compute_capabilities:
+
       if cc >= operation.tile_description.minimum_compute_capability and \
          cc <= operation.tile_description.maximum_compute_capability and \
          (cc not in SharedMemPerCC or SharedMemPerCC[cc] >= CalculateSmemUsage(operation)):

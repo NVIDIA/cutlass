@@ -46,12 +46,13 @@ namespace cutlass::epilogue {
 //////////////////////////////////////////////////////////////////////////////
 
 struct PtrArrayDefault {};
+struct EpilogueSimtVectorized {};
+struct EpiloguePtrArraySimtVectorized {};
 struct NoSmemWarpSpecialized {};
 struct PtrArrayNoSmemWarpSpecialized {};
 struct PtrArrayPlanarComplexNoSmemWarpSpecialized {};
 struct TmaWarpSpecialized {};
 struct TmaWarpSpecializedCooperative {};
-
 struct PtrArrayTmaWarpSpecializedCooperative {
   static constexpr int NumEpilogueWarpGroups = 2;
 };

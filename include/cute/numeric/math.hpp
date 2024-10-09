@@ -30,9 +30,9 @@
  **************************************************************************************************/
 #pragma once
 
-#include <cute/config.hpp>
+#include <cute/config.hpp>            // CUTE_HOST_DEVICE
+#include <cute/util/type_traits.hpp>  // __CUTE_REQUIRES
 
-#include <cute/util/type_traits.hpp>
 #include <cutlass/fast_math.h>
 
 namespace cute
@@ -143,7 +143,7 @@ has_single_bit(T x) {
 // bit_width( 0b0111 ) = 3
 template <class T>
 CUTE_HOST_DEVICE constexpr
-T
+int
 bit_width(T x) {
   static_assert(is_unsigned<T>::value, "Only to be used for unsigned types.");
   constexpr int N = (numeric_limits<T>::digits == 64 ? 6 :
@@ -224,7 +224,7 @@ rotr(T x, int s) {
 // countl_zero( 0b00011100 ) = 3
 template <class T>
 CUTE_HOST_DEVICE constexpr
-T
+int
 countl_zero(T x) {
   return numeric_limits<T>::digits - bit_width(x);
 }
@@ -235,7 +235,7 @@ countl_zero(T x) {
 // countl_one( 0b11100011 ) = 3
 template <class T>
 CUTE_HOST_DEVICE constexpr
-T
+int
 countl_one(T x) {
   return countl_zero(~x);
 }
@@ -246,7 +246,7 @@ countl_one(T x) {
 // countr_zero( 0b00011100 ) = 2
 template <class T>
 CUTE_HOST_DEVICE constexpr
-T
+int
 countr_zero(T x) {
   return x == 0 ? numeric_limits<T>::digits : bit_width(T(x & T(-x))) - 1;  // bit_width of the LSB
 }
@@ -257,7 +257,7 @@ countr_zero(T x) {
 // countr_one( 0b11100011 ) = 2
 template <class T>
 CUTE_HOST_DEVICE constexpr
-T
+int
 countr_one(T x) {
   return countr_zero(~x);
 }
@@ -285,7 +285,7 @@ popcount(T x) {
 // Computes the result of bitwise left-shift
 template <class T>
 CUTE_HOST_DEVICE constexpr
-T
+auto
 shiftl(T x, int s) {
   return s >= 0 ? (x << s) : (x >> -s);
 }
@@ -293,7 +293,7 @@ shiftl(T x, int s) {
 // Computes the result of bitwise right-shift
 template <class T>
 CUTE_HOST_DEVICE constexpr
-T
+auto
 shiftr(T x, int s) {
   return s >= 0 ? (x >> s) : (x << -s);
 }

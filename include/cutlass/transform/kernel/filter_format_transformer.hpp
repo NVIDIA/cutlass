@@ -61,13 +61,15 @@ template <
   FilterFormat SrcFormat,
   FilterFormat DstFormat,
   int NumDimensions,
-  class Element,
+  class Element_,
   int AlignmentBytes = 16
 >
 struct ConvFilterFormatTransformer {
+  
+  using Element = Element_;
   static_assert(SrcFormat == FilterFormat::CKTRS, "Currently only source format of CKTRS is supported");
   static_assert(DstFormat == FilterFormat::CTRSK || DstFormat == FilterFormat::KTRSC, "Currently only destination format of CTRSK/KTRSC is supported");
-  static_assert(AlignmentBytes % static_cast<int>(sizeof(Element)) == 0, "Invalid alignment setting");
+  static_assert(AlignmentBytes > 0 && AlignmentBytes % static_cast<int>(sizeof(Element)) == 0, "Invalid alignment setting");
 
   // In ktrsc order.
   using FilterExtent = array<int, NumDimensions>;
@@ -108,6 +110,20 @@ struct ConvFilterFormatTransformer {
 
   static Status
   can_implement(Arguments const& args) {
+    bool implementable = true;
+    // alignment rule
+    {
+      int contiguous_dim = DstFormat == FilterFormat::CTRSK ? args.filter_extent[0] : args.filter_extent[NumDimensions - 1];
+      int align_element = AlignmentBytes / static_cast<int>(sizeof(Element));
+
+      implementable &= (contiguous_dim % align_element == 0);
+
+      if (!implementable) {
+        CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Alignment setting is invalid.\n");
+        return Status::kInvalid;
+      }
+    }
+
     return Status::kSuccess;
   }
 
@@ -136,7 +152,7 @@ struct ConvFilterFormatTransformer {
   }
 
   static Params
-  to_underlying_arguments(Arguments & args, void* workspace) {
+  to_underlying_arguments(Arguments const& args, void* workspace) {
     auto k = args.filter_extent[0];
     auto c = args.filter_extent[NumDimensions - 1];
     auto srt = reverse(take<1,NumDimensions - 1>(args.filter_extent));
@@ -192,9 +208,11 @@ struct ConvFilterFormatTransformer {
       auto kc_coord = DstFormat == FilterFormat::CTRSK ?
           make_coord(n_idx+i, get<NumDimensions - 2>(srtc_coord)) :
           make_coord(get<NumDimensions - 2>(srtc_coord), n_idx+i);
-      auto coord = flatten(make_coord(srt_coord, kc_coord));
-      frag(i) = params.src(coord);
+      auto coord = flatten(make_coord(srt_coord, kc_coord)); 
       thr_tile_P(i) = elem_less(coord, shape(params.src));
+      if (thr_tile_P(i)) {
+        frag(i) = params.src(coord);
+      }
     }
 
     // Copy from RMEM to GMEM
