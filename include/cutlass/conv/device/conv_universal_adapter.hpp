@@ -61,7 +61,7 @@ template <class ConvKernel_>
 class ConvUniversalAdapter
 {
 public:
-  using ConvKernel = ConvKernel_;
+  using ConvKernel = GetUnderlyingKernel_t<ConvKernel_>;
   using TileShape = typename ConvKernel::TileShape;
   using ElementA = typename ConvKernel::ElementA;
   using ElementB = typename ConvKernel::ElementB;
@@ -76,7 +76,7 @@ public:
 
   // Tease out meta-information about the conv algorithm
   static constexpr conv::Operator kConvolutionalOperator = DispatchPolicy::ConvOp;
-  static constexpr int NumSpatialDimensions = ConvKernel::NumSpatialDimensions;
+  static constexpr int NumSpatialDimensions = CollectiveMainloop::NumSpatialDimensions;
 
   // If our TiledMMA's instruction thread layout size is larger than 1, we know its a tensorop!
   using OperatorClass = cute::conditional_t<
@@ -121,13 +121,13 @@ public:
   static int constexpr kStages = CollectiveMainloop::DispatchPolicy::Stages;
 
   // Inspect TiledCopy for A and B to compute the alignment size
-  static int constexpr kAlignmentA = detail::get_alignment_count_from_gmem_tiled_copy<
+  static int constexpr kAlignmentA = cutlass::detail::get_alignment_count_from_gmem_tiled_copy<
       typename CollectiveMainloop::GmemTiledCopyA, ElementA>();
-  static int constexpr kAlignmentB = detail::get_alignment_count_from_gmem_tiled_copy<
+  static int constexpr kAlignmentB = cutlass::detail::get_alignment_count_from_gmem_tiled_copy<
       typename CollectiveMainloop::GmemTiledCopyB, ElementB>();
-  static int constexpr kAlignmentC = detail::get_alignment_count_from_gmem_tiled_copy<
+  static int constexpr kAlignmentC = cutlass::detail::get_alignment_count_from_gmem_tiled_copy<
       typename CollectiveEpilogue::GmemTiledCopyC, ElementC>();
-  static int constexpr kAlignmentD = detail::get_alignment_count_from_gmem_tiled_copy<
+  static int constexpr kAlignmentD = cutlass::detail::get_alignment_count_from_gmem_tiled_copy<
       typename CollectiveEpilogue::GmemTiledCopyD, ElementD>();
 
   using EpilogueOutputOp = typename CollectiveEpilogue::ThreadEpilogueOp;
@@ -297,8 +297,9 @@ public:
     Status launch_result;
     // Use extended launch API only for mainloops that use it
     if constexpr (ConvKernel::ArchTag::kMinComputeCapability >= 90) {
-      constexpr bool is_static_1x1x1 = cute::is_static_v<typename ConvKernel::DispatchPolicy::ClusterShape> and
-                                       cute::size(typename ConvKernel::DispatchPolicy::ClusterShape{}) == 1;
+      [[maybe_unused]] constexpr bool is_static_1x1x1 =
+        cute::is_static_v<typename ConvKernel::DispatchPolicy::ClusterShape> and
+        cute::size(typename ConvKernel::DispatchPolicy::ClusterShape{}) == 1;
       dim3 cluster(cute::size<0>(typename ConvKernel::DispatchPolicy::ClusterShape{}),
                    cute::size<1>(typename ConvKernel::DispatchPolicy::ClusterShape{}),
                    cute::size<2>(typename ConvKernel::DispatchPolicy::ClusterShape{}));

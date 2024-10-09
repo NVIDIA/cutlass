@@ -82,6 +82,7 @@ namespace cutlass {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+
 #if !defined(__CUDACC_RTC__)
 
 #include <cudaTypedefs.h>
@@ -151,6 +152,7 @@ CUTLASS_CUDA_DRIVER_WRAPPER_DECL(cuTensorMapEncodeIm2col, 12000);
 #define CUTLASS_CUDA_DRIVER_WRAPPER_CALL(func) cutlass::call_##func
 
 #endif // !defined(__CUDACC_RTC__)
+
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

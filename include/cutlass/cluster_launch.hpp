@@ -172,6 +172,7 @@ struct ClusterLauncher {
         "And ClusterDims = "
         "(" << cluster_dims.x << ", " << cluster_dims.y << ", " << cluster_dims.z << ")\n");
 
+    cutlass::arch::synclog_setup();
     cudaError_t status = cudaLaunchKernelExC(&launch_config, kernel, kernel_params);
     Return_Status(status);
 #else

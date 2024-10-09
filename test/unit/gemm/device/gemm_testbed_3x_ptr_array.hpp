@@ -76,7 +76,7 @@ enum class ScalarLoc {
   ON_DEVICE = 1
 };
 
-enum class VectorBeta {
+enum class VectorScale {
   DISABLED = 0,
   ENABLED = 1
 };
@@ -556,8 +556,8 @@ struct HostCollectiveDefaultEpilogue {
   CheckEquality check_relative_equality = CheckEquality::EXACT;
   // Are scalars copied to device memory before kernel launch
   ScalarLoc use_device_scalars = ScalarLoc::ON_HOST;
-  // If per-row scale is enabled and this is true, beta is passed as a host scalar instead of device vector
-  VectorBeta disable_vector_beta = VectorBeta::DISABLED;
+  // If per-row scale is enabled and this is disabled, alpha/beta are passed as a host or device scalar instead of device vector
+  VectorScale vector_scale_mode = VectorScale::DISABLED;
 
   cutlass::Distribution::Kind init_C;
   uint64_t seed;
@@ -566,7 +566,7 @@ struct HostCollectiveDefaultEpilogue {
   HostCollectiveDefaultEpilogue(
     CheckEquality check_relative_equality_ = CheckEquality::EXACT,
     ScalarLoc use_device_scalars_ = ScalarLoc::ON_HOST,
-    VectorBeta disable_vector_beta_ = VectorBeta::DISABLED,
+    VectorScale vector_scale_mode_ = VectorScale::DISABLED,
     cutlass::Distribution::Kind init_C_ = cutlass::Distribution::Uniform,
     cutlass::Distribution::Kind init_scale_ = cutlass::Distribution::Uniform,
     cutlass::Distribution::Kind init_bias_ = cutlass::Distribution::Uniform,
@@ -850,7 +850,7 @@ struct HostCollectiveEpilogue {
   std::vector<cutlass::HostTensor<ElementC, LayoutTagC>> tensors_C;
   cutlass::DeviceAllocation<const ElementC *> device_tensors_C;
   cutlass::HostTensor<ElementCompute, LayoutTagScalar> norm_constant;
-
+  
   // Outputs
   cutlass::HostTensor<ElementAmax, LayoutTagScalar> abs_max_Aux;
   cutlass::HostTensor<ElementAmax, LayoutTagScalar> abs_max_D;
@@ -871,8 +871,8 @@ struct HostCollectiveEpilogue {
   CheckEquality check_relative_equality = CheckEquality::EXACT;
   // Are scalars copied to device memory before kernel launch
   ScalarLoc use_device_scalars = ScalarLoc::ON_HOST;
-  // If per-row scale is enabled and this is true, beta is passed as a host scalar instead of device vector
-  VectorBeta disable_vector_beta = VectorBeta::DISABLED;
+  // If per-row scale is enabled and this is disabled, alpha/beta are passed as a host or device scalar instead of device vector
+  VectorScale vector_scale_mode = VectorScale::DISABLED;
 
   // Random distribution with which to initialize the A/B/C/D/Aux scaling factors
   cutlass::Distribution::Kind init_scale = cutlass::Distribution::Uniform;
@@ -885,7 +885,7 @@ struct HostCollectiveEpilogue {
   HostCollectiveEpilogue(
     CheckEquality check_relative_equality_ = CheckEquality::EXACT,
     ScalarLoc use_device_scalars_ = ScalarLoc::ON_HOST,
-    VectorBeta disable_vector_beta_ = VectorBeta::DISABLED,
+    VectorScale vector_scale_mode_ = VectorScale::DISABLED,
     cutlass::Distribution::Kind init_C_ = cutlass::Distribution::Uniform,
     cutlass::Distribution::Kind init_scale_ = cutlass::Distribution::Uniform,
     cutlass::Distribution::Kind init_bias_ = cutlass::Distribution::Uniform,
@@ -932,7 +932,7 @@ struct HostCollectiveEpilogue {
     if constexpr (IsPerRowScaleEnabled) {
       alpha.resize(col_vector_coord);
       EXPECT_TRUE(initialize_tensor(alpha.host_view(), init_scale, seed + 2023));
-      if (disable_vector_beta == VectorBeta::DISABLED) {
+      if (vector_scale_mode == VectorScale::DISABLED) {
         beta.resize(scalar_coord, false);
         cutlass::reference::host::TensorFill(beta.host_view(), beta_);
       }
@@ -1004,7 +1004,7 @@ struct HostCollectiveEpilogue {
       }
       stride_Aux = cutlass::make_cute_packed_stride(cutlass::gemm::TagToStrideC_t<LayoutTagAux>{}, cute::make_shape(M, N, 1));
     }
-    
+
     static_assert(!IsGroupGemm or (IsGroupGemm and !IsAuxOutEnabled));
 
     if constexpr (IsAuxOutEnabled) {
@@ -1250,9 +1250,10 @@ struct HostCollectiveEpilogue {
     else {
       fusion_args.alpha = alpha.at(coord_0);
       fusion_args.beta = beta.at(coord_0);
-      fusion_args.alpha_ptr = alpha.device_data();
-      fusion_args.beta_ptr = beta.device_data(); // if disable_vector_beta is true this is nullptr
 
+      fusion_args.alpha_ptr = alpha.device_data();
+      fusion_args.beta_ptr = beta.device_data();
+      
       if constexpr (IsScaleFactorEnabled) {
         fusion_args.scale_a = scale_A.at(coord_0);
         fusion_args.scale_b = scale_B.at(coord_0);
@@ -1334,9 +1335,9 @@ struct HostCollectiveEpilogue {
       return cute::make_tensor(ptr, Aux_layout);
     }();
     auto Valpha = cute::make_tensor(detail::make_iterator(alpha.host_data()),
-        cute::make_layout(cute::make_shape(M, cute::_1{})));
+        cute::make_layout(cute::make_shape(M, N, cute::_1{}), cute::make_stride(cute::_1{}, cute::_0{}, M)));
     auto Vbeta = cute::make_tensor(detail::make_iterator(beta.host_data()),
-        cute::make_layout(cute::make_shape(M, cute::_1{})));
+        cute::make_layout(cute::make_shape(M, N, cute::_1{}), cute::make_stride(cute::_1{}, cute::_0{}, N)));
 
     cutlass::reference::host::GettEpilogueParams<
       ElementScalar,
@@ -1388,7 +1389,7 @@ struct HostCollectiveEpilogue {
 
     if constexpr (IsPerRowScaleEnabled) {
       epilogue_params.Valpha = Valpha;
-      if (disable_vector_beta == VectorBeta::ENABLED) {
+      if (vector_scale_mode == VectorScale::ENABLED) {
         epilogue_params.Vbeta = Vbeta;
       }
     }
@@ -1442,7 +1443,7 @@ struct TestbedImpl {
   TestbedImpl(
     CheckEquality check_relative_equality_ = CheckEquality::EXACT,
     ScalarLoc use_device_scalars_ = ScalarLoc::ON_HOST,
-    VectorBeta disable_vector_beta_ = VectorBeta::DISABLED,
+    VectorScale vector_scale_mode_ = VectorScale::DISABLED,
     cutlass::Distribution::Kind init_A_ = cutlass::Distribution::Uniform,
     cutlass::Distribution::Kind init_B_ = cutlass::Distribution::Uniform,
     cutlass::Distribution::Kind init_C_ = cutlass::Distribution::Uniform,
@@ -1450,7 +1451,7 @@ struct TestbedImpl {
     cutlass::Distribution::Kind init_bias_ = cutlass::Distribution::Uniform,
     uint64_t seed_ = kDefaultSeed
   ): collective_mma_inputs(HostCollectiveMainloopType(check_relative_equality_, init_A_, init_B_, seed_)), 
-     collective_epilogue(CollectiveEpilogue(check_relative_equality_, use_device_scalars_, disable_vector_beta_, init_C_, init_scale_, init_bias_, seed_)) { }
+     collective_epilogue(CollectiveEpilogue(check_relative_equality_, use_device_scalars_, vector_scale_mode_, init_C_, init_scale_, init_bias_, seed_)) { }
 
   TestbedImpl(
     typename LayoutTagA::Stride stride_factor_A_,
@@ -1459,7 +1460,7 @@ struct TestbedImpl {
     typename LayoutTagD::Stride stride_factor_D_,
     CheckEquality check_relative_equality_ = CheckEquality::EXACT,
     ScalarLoc use_device_scalars_ = ScalarLoc::ON_HOST,
-    VectorBeta disable_vector_beta_ = VectorBeta::DISABLED,
+    VectorScale vector_scale_mode_ = VectorScale::DISABLED,
     cutlass::Distribution::Kind init_A_ = cutlass::Distribution::Uniform,
     cutlass::Distribution::Kind init_B_ = cutlass::Distribution::Uniform,
     cutlass::Distribution::Kind init_C_ = cutlass::Distribution::Uniform,
@@ -1467,7 +1468,7 @@ struct TestbedImpl {
     cutlass::Distribution::Kind init_bias_ = cutlass::Distribution::Uniform,
     uint64_t seed_ = kDefaultSeed
   ): collective_mma_inputs(HostCollectiveMainloopType(check_relative_equality_, stride_factor_A_, stride_factor_B_, init_A_, init_B_, seed_)),
-     collective_epilogue(CollectiveEpilogue(check_relative_equality_, use_device_scalars_, disable_vector_beta_, init_C_, init_scale_, init_bias_, seed_)) { }
+     collective_epilogue(CollectiveEpilogue(check_relative_equality_, use_device_scalars_, vector_scale_mode_, init_C_, init_scale_, init_bias_, seed_)) { }
 
   /// Initializes data structures
   bool initialize(ProblemShapeType problem_shapes, ElementScalar alpha_=1.f, ElementScalar beta_=0.f) {
@@ -1501,7 +1502,7 @@ struct TestbedImpl {
       file
         << "problem: " << ' ' << M << "x" << N << "x" << K << ", Batch count = " << batch
         << ", alpha: " << alpha << ", beta: " << beta << "\n\n";
-      
+
       collective_mma_inputs.print_tensors(file, batch);
       collective_epilogue.print_tensors(file, batch);
     }
@@ -1523,7 +1524,7 @@ struct TestbedImpl {
     for (int32_t i = 0; i < L; ++i) {
       auto mainloop_params = collective_mma_inputs.to_host_args(problem_shapes, i);
       auto epilogue_params = collective_epilogue.to_host_args(problem_shapes, i);
-      
+
       cutlass::reference::host::Gemm3x(mainloop_params, epilogue_params);
 
       passed &= compare_reference(problem_shapes, alpha, beta, i);
@@ -1531,7 +1532,7 @@ struct TestbedImpl {
     return passed;
   }
 
-	/// Determine if the CUDA device is sufficient to run the kernel
+  /// Determine if the CUDA device is sufficient to run the kernel
   bool sufficient() {
     //
     // Determine SMEM requirements and waive if not satisfied
@@ -1704,14 +1705,14 @@ struct Testbed3x {
   Testbed3x(
       CheckEquality check_relative_equality_ = CheckEquality::EXACT,
       ScalarLoc use_device_scalars_ = ScalarLoc::ON_DEVICE,
-      VectorBeta disable_vector_beta_ = VectorBeta::DISABLED,
+      VectorScale vector_scale_mode_ = VectorScale::DISABLED,
       cutlass::Distribution::Kind init_A_ = cutlass::Distribution::Uniform,
       cutlass::Distribution::Kind init_B_ = cutlass::Distribution::Uniform,
       cutlass::Distribution::Kind init_C_ = cutlass::Distribution::Uniform,
       cutlass::Distribution::Kind init_scale_ = cutlass::Distribution::Uniform,
       cutlass::Distribution::Kind init_bias_ = cutlass::Distribution::Uniform,
       uint64_t seed_ = TestBedImpl::kDefaultSeed)
-      : impl_(check_relative_equality_, use_device_scalars_, disable_vector_beta_, init_A_, init_B_, init_C_, init_scale_, init_bias_, seed_) {}
+      : impl_(check_relative_equality_, use_device_scalars_, vector_scale_mode_, init_A_, init_B_, init_C_, init_scale_, init_bias_, seed_) {}
 
   /// Executes one test
   bool run(
@@ -1734,7 +1735,7 @@ bool TestAll(double alpha = 1.0, double beta = 0.0, CheckEquality check_relative
   using ElementScalar = typename Gemm::EpilogueOutputOp::ElementScalar;
   using ProblemShapeType = typename Gemm::GemmKernel::ProblemShape;
 
-  Testbed3x<Gemm, ActivationFunctor> testbed(check_relative_equality, ScalarLoc::ON_DEVICE, VectorBeta::DISABLED);
+  Testbed3x<Gemm, ActivationFunctor> testbed(check_relative_equality, ScalarLoc::ON_DEVICE, VectorScale::DISABLED);
 
   int max_alignment = std::max(Gemm::kAlignmentA, Gemm::kAlignmentB);
   std::vector<int> problem_size_m = {max_alignment, 512 - 3 * max_alignment};

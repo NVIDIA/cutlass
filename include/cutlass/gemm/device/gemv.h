@@ -141,6 +141,7 @@ public:
     int smem_size = int(sizeof(typename GemvKernel::SharedStorage));
     
     // Launch
+    cutlass::arch::synclog_setup();
     cutlass::Kernel<GemvKernel><<<grid, block, smem_size, stream>>>(params_);
 
     //

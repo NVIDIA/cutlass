@@ -36,7 +36,7 @@ from setuptools import setup
 def perform_setup():
     setup(
         name='pycute',
-        version='3.5.1',
+        version='3.6.0',
         description='Python implementation of CuTe',
         packages=['pycute'],
     )

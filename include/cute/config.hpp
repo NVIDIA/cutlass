@@ -143,20 +143,7 @@
 #endif
 
 //
-// Support
-//
-
-#include <cute/util/type_traits.hpp>
-
-//
-// Basic types
-//
-
-#include <cute/numeric/numeric_types.hpp>
-
-//
 // Debugging utilities
 //
 
-#include <cute/util/print.hpp>
 #include <cute/util/debug.hpp>

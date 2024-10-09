@@ -31,13 +31,13 @@
 #pragma once
 
 #include <cute/config.hpp>
-
-#include <cute/underscore.hpp>
 #include <cute/int_tuple.hpp>
 #include <cute/stride.hpp>
+#include <cute/underscore.hpp>
 #include <cute/numeric/arithmetic_tuple.hpp>
-#include <cute/numeric/integral_ratio.hpp>
 #include <cute/numeric/integral_constant.hpp>
+#include <cute/numeric/integral_ratio.hpp>
+#include <cute/numeric/numeric_types.hpp>  // cute::sizeof_bits
 
 namespace cute
 {
@@ -660,7 +660,7 @@ template <class Layout>
 using cosize_t = decltype(cosize(declval<Layout>()));
 
 template <class Layout>
-static constexpr int cosize_v = cosize_t<Layout>::value;
+static constexpr auto cosize_v = cosize_t<Layout>::value;
 
 // With crd2idx(coord, shape), makes sense to have crd2idx(coord, Layout) as well
 template <class Coord, class Shape, class Stride>
@@ -903,6 +903,15 @@ auto
 filter_zeros(Layout<Shape,Stride> const& layout)
 {
   return make_layout(filter_zeros(layout.stride(), layout.shape()), layout.stride());
+}
+
+// Replace the modes in layout that correspond to a 0 at the terminals of trg_profile with a 1-size
+template <class Shape, class Stride, class IntTuple>
+CUTE_HOST_DEVICE constexpr
+auto
+filter_zeros(Layout<Shape,Stride> const& layout, IntTuple const& trg_profile)
+{
+  return make_layout(filter_zeros(trg_profile, layout.shape()), layout.stride());
 }
 
 // Remove all of the 0-strides and 1-sizes
@@ -1350,7 +1359,8 @@ max_common_vector(Layout<ShapeA,StrideA> const& a,
 /* Return a layout that distributes ShapeB over ShapeA.
  *
  * @returns Layout result
- * @post softly_compatible(@a b, @a result)
+ * @post evenly_divides(@a b, size(@a result))
+ * @post evenly_divides(@a a, @a result)
  * @post For all i,j in [0,size(@a result)) with i < j, @a result(i) < @a result(j). Surjective and Ordered.
  * @post composition(make_layout(shape(@a a)), @a result) is admissible
  * \code
@@ -1726,8 +1736,8 @@ tile_to_shape(Layout<Shape,Stride> const& block,
 
   // Assert proper division
   if constexpr (is_static<decltype(target_shape)>::value) {
-    CUTE_STATIC_ASSERT_V(weakly_compatible(block_shape, target_shape),
-                        "tile_to_shape: block shape does not divide the target shape.");
+    CUTE_STATIC_ASSERT_V(evenly_divides(target_shape, block_shape),
+                         "tile_to_shape: block shape does not divide the target shape.");
   }
 
   auto product_shape = ceil_div(target_shape, block_shape);
@@ -1924,92 +1934,97 @@ print_layout(Layout const& layout, ThrID const& thrid)  // (m,n) -> (tid,vid)  a
   printf("+\n");
 }
 
-// Generic 2D Layout to Latex printer -- B&W 8-value color coding
-template <class LayoutA>
+struct TikzColor_White {
+  CUTE_HOST_DEVICE char const*
+  operator()(int idx) const {
+    return "white";
+  }
+};
+
+struct TikzColor_BWx8 {
+  CUTE_HOST_DEVICE char const*
+  operator()(int idx) const {
+    static char const* color_map[8] = {"black!00", "black!40", "black!20", "black!60",
+                                       "black!10", "black!50", "black!30", "black!70"};
+    return color_map[idx % 8];
+  }
+};
+
+struct TikzColor_TV {
+  CUTE_HOST_DEVICE char const*
+  operator()(int tid, int vid) const {
+    static char const* color_map[8] = {"{rgb,255:red,175;green,175;blue,255}",
+                                       "{rgb,255:red,175;green,255;blue,175}",
+                                       "{rgb,255:red,255;green,255;blue,175}",
+                                       "{rgb,255:red,255;green,175;blue,175}",
+                                       "{rgb,255:red,210;green,210;blue,255}",
+                                       "{rgb,255:red,210;green,255;blue,210}",
+                                       "{rgb,255:red,255;green,255;blue,210}",
+                                       "{rgb,255:red,255;green,210;blue,210}"};
+    return color_map[tid % 8];
+  }
+};
+
+// Generic 2D Layout to LaTeX printer
+template <class LayoutA, class TikzColorFn = TikzColor_BWx8>
 CUTE_HOST_DEVICE
 void
-print_latex(LayoutA const& layout_a)
+print_latex(LayoutA const& layout_a,   // (m,n) -> idx
+            TikzColorFn color = {})    // lambda(idx) -> tikz color string
 {
   CUTE_STATIC_ASSERT_V(rank(layout_a) <= Int<2>{});
   auto layout = append<2>(layout_a, Layout<_1,_0>{});
 
-  char const* latex_header =
-      "\\documentclass[convert]{standalone}\n"
-      "\\usepackage{tikz}\n\n"
-      "\\begin{document}\n"
-      "\\begin{tikzpicture}[x={(0cm,-1cm)},y={(1cm,0cm)},box/.style={rectangle,draw=black,thick,minimum size=1cm,anchor=center,font=\\Large}]\n\n";
-  char const* latex_footer =
-      "\\end{tikzpicture}\n"
-      "\\end{document}\n";
-
-  char const* color_map[8] = {"black!00",
-                              "black!40",
-                              "black!20",
-                              "black!60",
-                              "black!10",
-                              "black!50",
-                              "black!30",
-                              "black!70"};
-
-  // Header
+  // Commented print(layout)
   printf("%% Layout: "); print(layout); printf("\n");
-
-  printf(latex_header);
+  // Header
+  printf("\\documentclass[convert]{standalone}\n"
+         "\\usepackage{tikz}\n\n"
+         "\\begin{document}\n"
+         "\\begin{tikzpicture}[x={(0cm,-1cm)},y={(1cm,0cm)},every node/.style={minimum size=1cm, outer sep=0pt}]\n\n");
 
   // Layout
   for (int i = 0; i < size<0>(layout); ++i) {
     for (int j = 0; j < size<1>(layout); ++j) {
       int idx = layout(i,j);
-      printf("\\node[box,fill=%s] at (%d,%d) {%d};\n",
-             color_map[idx % 8],
-             i, j,
-             idx);
+      printf("\\node[fill=%s] at (%d,%d) {%d};\n",
+             color(idx), i, j, idx);
     }
   }
-
+  // Grid
+  printf("\\draw[color=black,thick,shift={(-0.5,-0.5)}] (0,0) grid (%d,%d);\n\n",
+         int(size<0>(layout)), int(size<1>(layout)));
   // Labels
-  for (int i = 0, j = -1; i < size<0>(layout); ++i) {
+  for (int i =  0, j = -1; i < size<0>(layout); ++i) {
     printf("\\node at (%d,%d) {\\Large{\\texttt{%d}}};\n", i, j, i);
   }
-  for (int j = 0, i = -1; j < size<1>(layout); ++j) {
+  for (int i = -1, j =  0; j < size<1>(layout); ++j) {
     printf("\\node at (%d,%d) {\\Large{\\texttt{%d}}};\n", i, j, j);
   }
 
   // Footer
-  printf(latex_footer);
+  printf("\\end{tikzpicture}\n"
+         "\\end{document}\n");
 }
 
-// Generic ThrVal 2D Layout to Latex TIKZ -- 8-value color coded by thread
-template <class Layout, class ThrID>
+// Generic ThrVal 2D Layout to LaTeX TikZ
+template <class Layout, class ThrID, class TikzColorFn = TikzColor_TV>
 CUTE_HOST_DEVICE
 void
-print_latex(Layout const& layout, ThrID const& thr)  // (m,n) -> (tid,vid)  and  tid -> thr_idx
+print_latex(Layout const& layout,    // (m,n) -> (tid,vid)
+            ThrID  const& thr,       // tid -> thr_idx
+            TikzColorFn color = {})  // lambda(thr_idx,val_idx) -> tikz color string
 {
   CUTE_STATIC_ASSERT_V(rank(layout) == Int<2>{});
 
-  char const* latex_header =
-      "\\documentclass[convert]{standalone}\n"
-      "\\usepackage{tikz}\n\n"
-      "\\begin{document}\n"
-      "\\begin{tikzpicture}[x={(0cm,-1cm)},y={(1cm,0cm)},box/.style={rectangle,draw=black,thick,minimum size=1cm,anchor=center}]\n\n";
-  char const* latex_footer =
-      "\\end{tikzpicture}\n"
-      "\\end{document}\n";
-
-  char const* color_map[8] = {"{rgb,255:red,175;green,175;blue,255}",
-                              "{rgb,255:red,175;green,255;blue,175}",
-                              "{rgb,255:red,255;green,255;blue,175}",
-                              "{rgb,255:red,255;green,175;blue,175}",
-                              "{rgb,255:red,210;green,210;blue,255}",
-                              "{rgb,255:red,210;green,255;blue,210}",
-                              "{rgb,255:red,255;green,255;blue,210}",
-                              "{rgb,255:red,255;green,210;blue,210}"};
-
+  // Commented prints
+  printf("%% Layout: "); print(layout); printf("\n");
+  printf("%% ThrID : "); print(thr);  printf("\n");
   // Header
-  printf("%% layout: "); print(layout); printf("\n");
-  printf("%% thrid:  "); print(thr);    printf("\n\n");
-
-  printf(latex_header);
+  printf("\\documentclass[convert]{standalone}\n"
+         "\\usepackage{tikz}\n\n"
+         "\\begin{document}\n"
+         "\\begin{tikzpicture}[x={(0cm,-1cm)},y={(1cm,0cm)},every node/.style={minimum size=1cm, outer sep=0pt}]\n\n");
 
   // Layout
   for (int i = 0; i < size<0>(layout); ++i) {
@@ -2018,13 +2033,15 @@ print_latex(Layout const& layout, ThrID const& thr)  // (m,n) -> (tid,vid)  and 
       int val_idx = layout(i,j) / size(thr);
       int thr_idx = thr(thrid);
 
-      printf("\\node[box,fill=%s] at (%d,%d) {\\shortstack{T%d \\\\ V%d}};\n",
-             color_map[thr_idx % 8],
+      printf("\\node[fill=%s] at (%d,%d) {\\shortstack{T%d \\\\ V%d}};\n",
+             color(thr_idx, val_idx),
              i, j,
              thr_idx, val_idx);
     }
   }
-
+  // Grid
+  printf("\\draw[color=black,thick,shift={(-0.5,-0.5)}] (0,0) grid (%d,%d);\n\n",
+         int(size<0>(layout)), int(size<1>(layout)));
   // Labels
   for (int i = 0, j = -1; i < size<0>(layout); ++i) {
     printf("\\node at (%d,%d) {\\Large{\\texttt{%d}}};\n", i, j, i);
@@ -2034,13 +2051,8 @@ print_latex(Layout const& layout, ThrID const& thr)  // (m,n) -> (tid,vid)  and 
   }
 
   // Footer
-  printf(latex_footer);
+  printf("\\end{tikzpicture}\n"
+         "\\end{document}\n");
 }
 
 } // end namespace cute
-
-//
-// Extended Layouts
-//
-
-#include <cute/swizzle_layout.hpp>

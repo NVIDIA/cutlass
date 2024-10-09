@@ -211,6 +211,7 @@ public:
       dim3 grid = ReorderKernel::get_grid_shape(params_);
       dim3 block = ReorderKernel::get_block_shape();
 
+      cutlass::arch::synclog_setup();
       cutlass::Kernel<ReorderKernel><<<grid, block, 0, stream>>>(params_);
     }
 
@@ -229,6 +230,7 @@ public:
     if (status != cudaSuccess)
       return Status::kErrorInternal;
 
+    cutlass::arch::synclog_setup();
     cutlass::Kernel<UnderlyingKernel><<<grid, block, smem_size, stream>>>(params_);
 
     cudaError_t result = cudaGetLastError();

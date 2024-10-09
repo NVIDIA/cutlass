@@ -30,12 +30,8 @@
  **************************************************************************************************/
 #pragma once
 
-#include <vector_types.h>
-
-#include <cute/config.hpp>
-
-#include <cute/util/type_traits.hpp>
-#include <cute/numeric/integral_constant.hpp>
+#include <cute/config.hpp>                     // CUTE_HOST_DEVICE, CUTE_GCC_UNREACHABLE
+#include <cute/numeric/integral_constant.hpp>  // cute::integral_constant
 
 namespace cute
 {

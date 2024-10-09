@@ -46,7 +46,8 @@ namespace library {
 void initialize_gemm_reference_operations_int4(Manifest &manifest);
 void initialize_gemm_reference_operations_int8_interleaved_32(Manifest &manifest);
 void initialize_gemm_reference_operations_int8_interleaved_64(Manifest &manifest);
-void initialize_gemm_reference_operations_int8_canonical(Manifest &manifest);
+void initialize_gemm_reference_operations_s8_s8_s32(Manifest &manifest);
+void initialize_gemm_reference_operations_u8_u8_s32(Manifest &manifest);
 void initialize_gemm_reference_operations_e4m3a_e4m3out(Manifest &manifest);
 void initialize_gemm_reference_operations_e5m2a_e4m3out(Manifest &manifest);
 void initialize_gemm_reference_operations_e4m3a_e5m2out(Manifest &manifest);
@@ -72,7 +73,8 @@ void initialize_reference_operations(Manifest &manifest) {
 
   initialize_gemm_reference_operations_int8_interleaved_32(manifest);
   initialize_gemm_reference_operations_int8_interleaved_64(manifest);
-  initialize_gemm_reference_operations_int8_canonical(manifest);
+  initialize_gemm_reference_operations_s8_s8_s32(manifest);
+  initialize_gemm_reference_operations_u8_u8_s32(manifest);
 
   initialize_gemm_reference_operations_e4m3a_e4m3out(manifest);
   initialize_gemm_reference_operations_e5m2a_e4m3out(manifest);
@@ -85,7 +87,6 @@ void initialize_reference_operations(Manifest &manifest) {
   initialize_gemm_reference_operations_fp32out(manifest);
   initialize_gemm_reference_operations_fp_other(manifest);
   initialize_gemm_reference_operations_fp_mixed_input(manifest);
-
   initialize_gemm_reference_operations_int_mixed_input(manifest);
 
 }

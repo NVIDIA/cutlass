@@ -174,7 +174,7 @@ public:
 
   using SmemCopyAtomA = SmemCopyAtomA_;
   using SmemCopyAtomB = SmemCopyAtomB_;
-  using SmemCopyAtomScale = Copy_Atom<cute::DefaultCopy, NonVoidElementScale>;
+  using SmemCopyAtomScale = Copy_Atom<cute::AutoVectorizingCopy, NonVoidElementScale>;
 
   // We must ensure the type to be scaled goes to RF
   static constexpr bool SwapAB = !IsATransformed;
@@ -202,6 +202,7 @@ public:
 
   static constexpr int IsSubbyteA = cute::sizeof_bits_v<InternalElementA> < 8;
   using TmaElementA = cute::conditional_t<IsSubbyteA, uint8_t, InternalElementA>;
+  using TmaElementScale = uint_bit_t<sizeof_bits_v<NonVoidElementScale> >; // in case we have array. translating to uint to satisfy tma descriptor's specialization
 
   using ArchTag = typename DispatchPolicy::ArchTag;
 
@@ -273,6 +274,8 @@ private:
   static constexpr ConversionMode KernelConversionMode = get_conversion_mode();
   static constexpr bool ModeHasScales = KernelConversionMode == ConversionMode::ConvertAndScale ||
                                         KernelConversionMode == ConversionMode::ConvertAndScaleWithZero;
+  static constexpr bool UseScaleLookupTable = KernelConversionMode == ConversionMode::ConvertAndScale &&
+                                              cutlass::detail::is_Array_v<ElementScale>;
 
   static constexpr auto
   elements_per_smem_scale() {
@@ -304,22 +307,30 @@ private:
   // These methods use some the public members of the class. For that reason, we define them after the public section.
   static constexpr uint32_t
   compute_tma_transaction_bytes_mk() {
-    constexpr uint32_t baseline_bytes = cutlass::bits_to_bytes(size<0>(SmemLayoutA{}) * size<1>(SmemLayoutA{}) * static_cast<uint32_t>(cute::sizeof_bits_v<InternalElementA>));
+    return cutlass::bits_to_bytes(size<0>(SmemLayoutA{}) * size<1>(SmemLayoutA{}) * static_cast<uint32_t>(cute::sizeof_bits_v<InternalElementA>));
+  }
 
+  static constexpr uint32_t
+  compute_tma_transaction_bytes_nk() {
+    return cutlass::bits_to_bytes(size<0>(SmemLayoutB{}) * size<1>(SmemLayoutB{}) * static_cast<uint32_t>(cute::sizeof_bits_v<InternalElementB>));
+  }
+
+  static constexpr uint32_t
+  compute_tma_transaction_bytes_extra() {
     if constexpr (KernelConversionMode == ConversionMode::DirectConvert) {
-      return baseline_bytes;
+      return 0;
     }
     else if constexpr (ModeHasScales) {
       constexpr uint32_t scale_tx_bytes = cutlass::bits_to_bytes(size<0>(SmemLayoutScale{}) * size<1>(SmemLayoutScale{}) * static_cast<uint32_t>(cute::sizeof_bits_v<ElementScale>));
       static_assert(scale_tx_bytes % 128 == 0, "Each scale stage must be 128B aligned."); // required by TMA
       if constexpr (KernelConversionMode == ConversionMode::ConvertAndScale) {
-        return baseline_bytes + scale_tx_bytes;
+        return scale_tx_bytes;
       }
       else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
         // Scale and zero share smem layout
         constexpr uint32_t zero_tx_bytes = cutlass::bits_to_bytes(size<0>(SmemLayoutScale{}) * size<1>(SmemLayoutScale{}) * static_cast<uint32_t>(cute::sizeof_bits_v<ElementZero>));
         static_assert(zero_tx_bytes % 128 == 0, "Each zero stage must be 128B aligned."); // required by TMA
-        return baseline_bytes + scale_tx_bytes + zero_tx_bytes;
+        return scale_tx_bytes + zero_tx_bytes;
       }
       else {
         static_assert(cutlass::detail::dependent_false<KernelSchedule>, "Type not handled in tma transaction bytes computation.");
@@ -328,11 +339,6 @@ private:
     else {
       static_assert(cutlass::detail::dependent_false<KernelSchedule>, "Type not handled in tma transaction bytes computation.");
     }
-  }
-
-  static constexpr uint32_t
-  compute_tma_transaction_bytes_nk() {
-    return cutlass::bits_to_bytes(size<0>(SmemLayoutB{}) * size<1>(SmemLayoutB{}) * static_cast<uint32_t>(cute::sizeof_bits_v<InternalElementB>));
   }
 
 public:
@@ -349,7 +355,7 @@ public:
   {
     static constexpr int scale_elements = elements_per_smem_scale();
     static constexpr int zero_elements = elements_per_smem_zero();
-    struct TensorStorage : cute::aligned_struct<cute::max(SmemAlignmentA, SmemAlignmentB)> {
+    struct TensorStorage : cute::aligned_struct<cute::max(SmemAlignmentA, SmemAlignmentB), _0> {
       cute::ArrayEngine<RealInternalElementA, cute::cosize_v<SmemLayoutA>> smem_A;
       cute::ArrayEngine<typename TiledMma::ValTypeB, cute::cosize_v<SmemLayoutB>> smem_B;
       cute::ArrayEngine<NonVoidElementScale, scale_elements> smem_scale;
@@ -389,14 +395,14 @@ public:
 
   public:
     // Assumption: StrideA is congruent with Problem_MK
-    using TMA_A = decltype(make_tma_copy<TmaElementA>(
+    using TMA_A = decltype(make_tma_copy_A_sm90<TmaElementA>(
         GmemTiledCopyA{},
         make_tensor(Outer::get_logical_ptr(static_cast<InternalElementA const*>(nullptr)), repeat_like(InternalStrideA{}, int32_t(0)), InternalStrideA{}),
         SmemLayoutA{}(_,_,cute::Int<0>{}),
-        make_shape(shape<0>(TileShape{}), shape<2>(TileShape{})),
-        size<1>(ClusterShape{})));  // mcast along N mode for this M load, if any
+        TileShape{},
+        ClusterShape{}));  // mcast along N mode for this M load, if any
 
-   using TMA_Scale = decltype(make_tma_copy(
+   using TMA_Scale = decltype(make_tma_copy<TmaElementScale>(
         GmemTiledCopyScale{},
         make_tensor(Outer::get_logical_ptr(static_cast<NonVoidElementScale const*>(nullptr)), repeat_like(NonVoidStrideScale{}, int32_t(0)), NonVoidStrideScale{}),
         SmemLayoutScale{}(_,_,cute::Int<0>{}),
@@ -411,12 +417,12 @@ public:
         _1{}));  // mcast along N mode for this M load, if any. Scale is ALWAYS loaded with A for RF kernel
 
     // Assumption: StrideB is congruent with Problem_NK
-    using TMA_B = decltype(make_tma_copy(
+    using TMA_B = decltype(make_tma_copy_B_sm90(
         GmemTiledCopyB{},
         make_tensor(Outer::get_logical_ptr(static_cast<InternalElementB const*>(nullptr)), repeat_like(InternalStrideB{}, int32_t(0)), InternalStrideB{}),
         SmemLayoutB{}(_,_,cute::Int<0>{}),
-        make_shape(shape<1>(TileShape{}), shape<2>(TileShape{})),
-        size<0>(ClusterShape{}))); // mcast along M mode for this N load, if any
+        TileShape{},
+        ClusterShape{})); // mcast along M mode for this N load, if any
     TMA_A tma_load_a;
     TMA_B tma_load_b;
     TMA_Scale tma_load_scale;
@@ -424,8 +430,7 @@ public:
     int64_t scale_k;
     int group_size;
     uint32_t tma_transaction_bytes = TmaTransactionBytes;
-    uint32_t tma_transaction_bytes_mk = TmaTransactionBytesMK;
-    uint32_t tma_transaction_bytes_nk = TmaTransactionBytesNK;
+    int reload_factor = (group_size + size<2>(TileShape{}) - 1) / size<2>(TileShape{});
   };
 
   //
@@ -466,31 +471,33 @@ public:
 
     Tensor tensor_a = make_tensor(get_logical_ptr(ptr_A), make_layout(make_shape(M,K,L), dA));
     Tensor tensor_b = make_tensor(get_logical_ptr(ptr_B), make_layout(make_shape(N,K,L), dB));
-    typename Params::TMA_A tma_load_a = make_tma_copy<TmaElementA>(
+    typename Params::TMA_A tma_load_a = make_tma_copy_A_sm90<TmaElementA>(
         GmemTiledCopyA{},
         tensor_a,
         SmemLayoutA{}(_,_,cute::Int<0>{}),
-        make_shape(shape<0>(TileShape{}), shape<2>(TileShape{})),
-        size<1>(ClusterShape{})); // mcast along N mode for this M load, if any
+        TileShape{},
+        ClusterShape{}); // mcast along N mode for this M load, if any
 
-    typename Params::TMA_B tma_load_b = make_tma_copy(
+    typename Params::TMA_B tma_load_b = make_tma_copy_B_sm90(
         GmemTiledCopyB{},
         tensor_b,
         SmemLayoutB{}(_,_,cute::Int<0>{}),
-        make_shape(shape<1>(TileShape{}), shape<2>(TileShape{})),
-        size<0>(ClusterShape{})); // mcast along M mode for this N load, if any
+        TileShape{},
+        ClusterShape{}); // mcast along M mode for this N load, if any
 
-    typename Params::TMA_Scale tma_load_scale;
-    typename Params::TMA_Zero tma_load_zero;
+    typename Params::TMA_Scale tma_load_scale{};
+    typename Params::TMA_Zero tma_load_zero{};
+
+    uint32_t tma_transaction_bytes = TmaTransactionBytesMK + TmaTransactionBytesNK;
     if constexpr (KernelConversionMode == ConversionMode::DirectConvert) {
-      return { tma_load_a, tma_load_b, tma_load_scale, tma_load_zero, 0, 0, TmaTransactionBytes, TmaTransactionBytesMK, TmaTransactionBytesNK };
+      return { tma_load_a, tma_load_b, tma_load_scale, tma_load_zero, 0, 0, tma_transaction_bytes, 1 };
     } 
     else if constexpr (ModeHasScales) {
       auto scale_k = (K + args.group_size - 1) / args.group_size;
       ElementScale const* ptr_S = args.ptr_S;
       StrideScale dS = args.dS;
       Tensor tensor_scale = make_tensor(get_logical_ptr(ptr_S), make_layout(make_shape(M,scale_k,L), dS));
-      tma_load_scale = make_tma_copy(
+      tma_load_scale = make_tma_copy<TmaElementScale>(
           GmemTiledCopyScale{},
           tensor_scale,
           SmemLayoutScale{}(_,_,cute::Int<0>{}),
@@ -498,7 +505,7 @@ public:
           _1{}); // mcast along N mode for this M load, if any
 
       if constexpr(KernelConversionMode == ConversionMode::ConvertAndScale) {
-        return { tma_load_a, tma_load_b, tma_load_scale, tma_load_zero, scale_k, args.group_size, TmaTransactionBytes, TmaTransactionBytesMK, TmaTransactionBytesNK };
+        return { tma_load_a, tma_load_b, tma_load_scale, tma_load_zero, scale_k, args.group_size, tma_transaction_bytes + TmaTransactionBytesExtra, (args.group_size + size<2>(TileShape{}) - 1) / size<2>(TileShape{}) };
       }
       else if constexpr(KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
         Tensor tensor_zero = make_tensor(get_logical_ptr(args.ptr_Z), make_layout(make_shape(M,scale_k,L), dS));
@@ -508,7 +515,7 @@ public:
             SmemLayoutScale{}(_,_,cute::Int<0>{}),
             ScaleTileShape{},
             _1{}); // mcast along N mode for this M load, if any
-        return { tma_load_a, tma_load_b, tma_load_scale, tma_load_zero, scale_k, args.group_size, TmaTransactionBytes, TmaTransactionBytesMK, TmaTransactionBytesNK };
+        return { tma_load_a, tma_load_b, tma_load_scale, tma_load_zero, scale_k, args.group_size, tma_transaction_bytes + TmaTransactionBytesExtra, (args.group_size + size<2>(TileShape{}) - 1) / size<2>(TileShape{}) };
       } else {
         static_assert(cutlass::detail::dependent_false<KernelSchedule>, "Conversion mode not handled in to_underlying_arguments.");
       }
@@ -571,7 +578,8 @@ public:
   static constexpr int K_PIPE_MAX = DispatchPolicy::Stages;
   static constexpr uint32_t TmaTransactionBytesMK = compute_tma_transaction_bytes_mk();
   static constexpr uint32_t TmaTransactionBytesNK = compute_tma_transaction_bytes_nk();
-  static constexpr uint32_t TmaTransactionBytes = TmaTransactionBytesMK + TmaTransactionBytesNK;
+  static constexpr uint32_t TmaTransactionBytesExtra = compute_tma_transaction_bytes_extra();
+  static constexpr uint32_t TmaTransactionBytes = TmaTransactionBytesMK + TmaTransactionBytesNK + TmaTransactionBytesExtra;
 
   /// Issue Tma Descriptor Prefetch -- ideally from a single thread for best performance
   CUTLASS_DEVICE
@@ -674,122 +682,117 @@ public:
 
     int lane_predicate = cute::elect_one_sync();
 
-    if (lane_predicate) {
-      Tensor sA_ = make_tensor(make_smem_ptr(shared_tensors.smem_A.begin()), SmemLayoutA{});      // (BLK_M,BLK_K,PIPE)
-      Tensor sB_ = make_tensor(make_smem_ptr(shared_tensors.smem_B.begin()), SmemLayoutB{});      // (BLK_N,BLK_K,PIPE)
-      Tensor sA  = as_position_independent_swizzle_tensor(sA_);                                   // (BLK_M,BLK_K,PIPE)
-      Tensor sB  = as_position_independent_swizzle_tensor(sB_);                                   // (BLK_N,BLK_K,PIPE)
+    Tensor sA_ = make_tensor(make_smem_ptr(shared_tensors.smem_A.begin()), SmemLayoutA{});      // (BLK_M,BLK_K,PIPE)
+    Tensor sB_ = make_tensor(make_smem_ptr(shared_tensors.smem_B.begin()), SmemLayoutB{});      // (BLK_N,BLK_K,PIPE)
+    Tensor sA  = as_position_independent_swizzle_tensor(sA_);                                   // (BLK_M,BLK_K,PIPE)
+    Tensor sB  = as_position_independent_swizzle_tensor(sB_);                                   // (BLK_N,BLK_K,PIPE)
+
+    //
+    // Prepare the TMA loads for A, B and Scales
+    //
+    
+    constexpr uint32_t cluster_shape_x = get<0>(ClusterShape());
+    uint2 cluster_local_block_id = {block_rank_in_cluster % cluster_shape_x, block_rank_in_cluster / cluster_shape_x};
+
+    Tensor gA_mkl = get<0>(load_inputs);
+    Tensor gB_nkl = get<1>(load_inputs);
+
+    auto block_tma_a = mainloop_params.tma_load_a.get_slice(cluster_local_block_id.y);
+    auto block_tma_b = mainloop_params.tma_load_b.get_slice(cluster_local_block_id.x);
+
+    // Partition the inputs based on the current block coordinates.
+    auto [m_coord, n_coord, k_coord, l_coord] = blk_coord;
+    Tensor gA = gA_mkl(_,_,m_coord,_,l_coord);                                                     // (BLK_M,BLK_K,k)
+    Tensor gB = gB_nkl(_,_,n_coord,_,l_coord);                                                     // (BLK_N,BLK_K,k)
+
+    // Applies the mapping from block_tma_a
+    Tensor tAgA = block_tma_a.partition_S(gA);                                                 // (TMA,TMA_M,TMA_K,k)
+    Tensor tAsA = block_tma_a.partition_D(sA);                                              // (TMA,TMA_M,TMA_K,PIPE)
+
+    Tensor tBgB = block_tma_b.partition_S(gB);                                                 // (TMA,TMA_N,TMA_K,k)
+    Tensor tBsB = block_tma_b.partition_D(sB);                                              // (TMA,TMA_N,TMA_K,PIPE)
+
+    uint16_t mcast_mask_a = 0;
+    uint16_t mcast_mask_b = 0;
+    uint16_t mcast_mask_s = 0;
+
+    // Issue TmaLoads
+    // Maps the tile -> block, value
+    if constexpr (cute::is_same_v<GmemTiledCopyA, SM90_TMA_LOAD_MULTICAST>) {
+      auto block_layout = Layout<typename DispatchPolicy::ClusterShape>{};                       // (m,n) -> block_id
+      for (int n = 0; n < size<1>(block_layout); ++n) {
+        mcast_mask_a |= (uint16_t(1) << block_layout(cluster_local_block_id.x,n,Int<0>{}));
+      }
+    }
+
+    if constexpr (cute::is_same_v<GmemTiledCopyB, SM90_TMA_LOAD_MULTICAST>) {
+      auto block_layout = Layout<typename DispatchPolicy::ClusterShape>{};                       // (m,n) -> block_id
+      for (int m = 0; m < size<0>(block_layout); ++m) {
+        mcast_mask_b |= (uint16_t(1) << block_layout(m,cluster_local_block_id.y,Int<0>{}));
+      }
+    }
+
+    auto extra_input_partitions = partition_extra_tma_inputs(mainloop_params, load_inputs, shared_tensors, cluster_local_block_id, m_coord, l_coord);
+
+    // Mainloop
+    CUTLASS_PRAGMA_NO_UNROLL
+    for ( ; k_tile_count > 0; --k_tile_count) {
+      // LOCK smem_pipe_write for _writing_
+      pipeline.producer_acquire(smem_pipe_write);
 
       //
-      // Prepare the TMA loads for A, B and Scales
+      // Copy gmem to smem for *k_tile_iter
       //
-      
-      constexpr uint32_t cluster_shape_x = get<0>(ClusterShape());
-      uint2 cluster_local_block_id = {block_rank_in_cluster % cluster_shape_x, block_rank_in_cluster / cluster_shape_x};
 
-      Tensor gA_mkl = get<0>(load_inputs);
-      Tensor gB_nkl = get<1>(load_inputs);
+      using BarrierType = typename MainloopPipeline::ProducerBarrierType;
+      BarrierType* tma_barrier = pipeline.producer_get_barrier(smem_pipe_write);
 
-      auto block_tma_a = mainloop_params.tma_load_a.get_slice(cluster_local_block_id.y);
-      auto block_tma_b = mainloop_params.tma_load_b.get_slice(cluster_local_block_id.x);
+      int write_stage = smem_pipe_write.index();
+      if (cute::elect_one_sync()) copy(mainloop_params.tma_load_a.with(*tma_barrier, mcast_mask_a), tAgA(_,_,_,*k_tile_iter), tAsA(_,_,_,write_stage));
+      if (cute::elect_one_sync()) copy(mainloop_params.tma_load_b.with(*tma_barrier, mcast_mask_b), tBgB(_,_,_,*k_tile_iter), tBsB(_,_,_,write_stage));
 
-      // Partition the inputs based on the current block coordinates.
-      auto [m_coord, n_coord, k_coord, l_coord] = blk_coord;
-      Tensor gA = gA_mkl(_,_,m_coord,_,l_coord);                                                     // (BLK_M,BLK_K,k)
-      Tensor gB = gB_nkl(_,_,n_coord,_,l_coord);                                                     // (BLK_N,BLK_K,k)
-
-      // Applies the mapping from block_tma_a
-      Tensor tAgA = block_tma_a.partition_S(gA);                                                 // (TMA,TMA_M,TMA_K,k)
-      Tensor tAsA = block_tma_a.partition_D(sA);                                              // (TMA,TMA_M,TMA_K,PIPE)
-
-      Tensor tBgB = block_tma_b.partition_S(gB);                                                 // (TMA,TMA_N,TMA_K,k)
-      Tensor tBsB = block_tma_b.partition_D(sB);                                              // (TMA,TMA_N,TMA_K,PIPE)
-
-      uint16_t mcast_mask_a = 0;
-      uint16_t mcast_mask_b = 0;
-      uint16_t mcast_mask_s = 0;
-
-      // Issue TmaLoads
-      // Maps the tile -> block, value
-      if constexpr (cute::is_same_v<GmemTiledCopyA, SM90_TMA_LOAD_MULTICAST>) {
-        auto block_layout = Layout<typename DispatchPolicy::ClusterShape>{};                       // (m,n) -> block_id
-        for (int n = 0; n < size<1>(block_layout); ++n) {
-          mcast_mask_a |= (uint16_t(1) << block_layout(cluster_local_block_id.x,n,Int<0>{}));
-        }
+      if constexpr (KernelConversionMode == ConversionMode::DirectConvert) {
+        // Nothing extra to do.
       }
+      else if constexpr (ModeHasScales) {
+        auto tSgS = get<0>(extra_input_partitions);
+        auto tSsS = get<1>(extra_input_partitions);
 
-      if constexpr (cute::is_same_v<GmemTiledCopyB, SM90_TMA_LOAD_MULTICAST>) {
-        auto block_layout = Layout<typename DispatchPolicy::ClusterShape>{};                       // (m,n) -> block_id
-        for (int m = 0; m < size<0>(block_layout); ++m) {
-          mcast_mask_b |= (uint16_t(1) << block_layout(m,cluster_local_block_id.y,Int<0>{}));
-        }
-      }
+        // Temporary factor which will determine which k tile to reload from gmem. Needed so we don't modify tma transaction bytes
+        // on the fly.
+        // We must do a ceiling divide here to correctly handle with group_size == K. In that case, we don't require that K
+        // is a multiple of the threadblock tile K
+        int const scale_load_k = *k_tile_iter / mainloop_params.reload_factor; // This will always be 0 when group_size == K.
+        if (cute::elect_one_sync()) copy(mainloop_params.tma_load_scale.with(*tma_barrier, mcast_mask_s), tSgS(_,_,_,scale_load_k), tSsS(_,_,_,write_stage));
 
-      auto extra_input_partitions = partition_extra_tma_inputs(mainloop_params, load_inputs, shared_tensors, cluster_local_block_id, m_coord, l_coord);
-
-      // Mainloop
-      CUTLASS_PRAGMA_NO_UNROLL
-      for ( ; k_tile_count > 0; --k_tile_count) {
-        // LOCK smem_pipe_write for _writing_
-        pipeline.producer_acquire(smem_pipe_write);
-
-        //
-        // Copy gmem to smem for *k_tile_iter
-        //
-
-        using BarrierType = typename MainloopPipeline::ProducerBarrierType;
-        BarrierType* tma_barrier = pipeline.producer_get_barrier(smem_pipe_write);
-
-        int write_stage = smem_pipe_write.index();
-        copy(mainloop_params.tma_load_a.with(*tma_barrier, mcast_mask_a), tAgA(_,_,_,*k_tile_iter), tAsA(_,_,_,write_stage));
-        copy(mainloop_params.tma_load_b.with(*tma_barrier, mcast_mask_b), tBgB(_,_,_,*k_tile_iter), tBsB(_,_,_,write_stage));
-
-        if constexpr (KernelConversionMode == ConversionMode::DirectConvert) {
-          // Nothing extra to do.
-        }
-        else if constexpr (ModeHasScales) {
-          auto tSgS = get<0>(extra_input_partitions);
-          auto tSsS = get<1>(extra_input_partitions);
-
-          // Temporary factor which will determine which k tile to reload from gmem. Needed so we don't modify tma transaction bytes
-          // on the fly.
-          // We must do a ceiling divide here to correctly handle with group_size == K. In that case, we don't require that K
-          // is a multiple of the threadblock tile K
-          const int ReloadFactor = (mainloop_params.group_size + size<2>(TileShape{}) - 1) / size<2>(TileShape{});
-          const int scale_load_k = *k_tile_iter / ReloadFactor; // This will always be 0 when group_size == K.
-          copy(mainloop_params.tma_load_scale.with(*tma_barrier, mcast_mask_s), tSgS(_,_,_,scale_load_k), tSsS(_,_,_,write_stage));
-
-          if constexpr (KernelConversionMode == ConversionMode::ConvertAndScale) {
-            // Nothing extra to do
-          } 
-          else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
-            auto tZgZ = get<2>(extra_input_partitions);
-            auto tZsZ = get<3>(extra_input_partitions);
-            copy(mainloop_params.tma_load_zero.with(*tma_barrier, mcast_mask_s), tZgZ(_,_,_,scale_load_k), tZsZ(_,_,_,write_stage));
-          }
-          else {
-            static_assert(cutlass::detail::dependent_false<KernelSchedule>, "Conversion mode not handled for TMA copy op.");
-          } 
+        if constexpr (KernelConversionMode == ConversionMode::ConvertAndScale) {
+          // Nothing extra to do
         } 
+        else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
+          auto tZgZ = get<2>(extra_input_partitions);
+          auto tZsZ = get<3>(extra_input_partitions);
+          if (cute::elect_one_sync()) copy(mainloop_params.tma_load_zero.with(*tma_barrier, mcast_mask_s), tZgZ(_,_,_,scale_load_k), tZsZ(_,_,_,write_stage));
+        }
         else {
           static_assert(cutlass::detail::dependent_false<KernelSchedule>, "Conversion mode not handled for TMA copy op.");
-        }
-
-        ++k_tile_iter;
-
-        // Advance smem_pipe_write
-        ++smem_pipe_write;
+        } 
+      } 
+      else {
+        static_assert(cutlass::detail::dependent_false<KernelSchedule>, "Conversion mode not handled for TMA copy op.");
       }
+
+      ++k_tile_iter;
+
+      // Advance smem_pipe_write
+      ++smem_pipe_write;
     }
   }
 
   /// Perform a Producer Epilogue to prevent early exit of blocks in a Cluster
   CUTLASS_DEVICE void
   load_tail(MainloopPipeline pipeline, PipelineState smem_pipe_write) {
-    int lane_predicate = cute::elect_one_sync();
-
     // Issue the epilogue waits
-    if (lane_predicate) {
+    if (cute::elect_one_sync()) {
       /* This helps avoid early exit of blocks in Cluster
        * Waits for all stages to either be released (all 
        * Consumer UNLOCKs), or if the stage was never used
@@ -868,13 +871,6 @@ public:
 
     Tensor tCrA_copy_view  = smem_thr_copy_A.retile_D(tCrA_load);                                  // (CPY,CPY_M,CPY_K)
 
-    // Compute the max vector length that can be used to copy A. This will match the vector width of the 
-    // conversions used. It helps by allowing the compiler to convert using the same register that was used
-    // to load the data from smem. This significantly reduces the need to move data among registers.
-    // Note that this is correct even if copy fails to vectorize, since the granularity at which we perform
-    // the conversion does not impact correctness.
-    using A_CPY_VEC = decltype(max_common_vector(tCsA, tCrA_copy_view));
-
     // Partition of thread -> shared and thread -> RF
     auto partitioned_extra_info = partition_extra_mma_info(mma_thread_slice, shared_tensors);
     auto copy_partitions_extra_info = retile_extra_mma_info(tiled_mma, partitioned_extra_info, warp_group_thread_idx);
@@ -915,16 +911,21 @@ public:
       // copy smem->rmem for A operand
       copy_A_and_extra_info(smem_tiled_copy_A, tCsA, tCrA_copy_view, 
         partitioned_extra_info, copy_partitions_extra_info, 0, read_stage);
-
-      transform_A_kblock(tCrA_load, A_CPY_VEC{}, tCrA_mma, partitioned_extra_info, 0);
+      if (K_BLOCK_MAX > 1) { // prefetch next block
+        copy_A_and_extra_info(smem_tiled_copy_A, tCsA, tCrA_copy_view, 
+          partitioned_extra_info, copy_partitions_extra_info, 1, read_stage);
+      }
+      transform_A_kblock(tCrA_load, tCrA_mma, partitioned_extra_info, 0);
       
       // Unroll the K mode manually to set scale D to 1
       CUTLASS_PRAGMA_UNROLL
       for (int k_block = 0; k_block < K_BLOCK_MAX; ++k_block) {
-        if (k_block < K_BLOCK_MAX - 1) {
+        if (k_block < K_BLOCK_MAX - 2) { // prefetch next block
           copy_A_and_extra_info(smem_tiled_copy_A, tCsA, tCrA_copy_view, 
-            partitioned_extra_info, copy_partitions_extra_info, k_block + 1, read_stage);
-          transform_A_kblock(tCrA_load, A_CPY_VEC{}, tCrA_mma, partitioned_extra_info, k_block + 1);
+            partitioned_extra_info, copy_partitions_extra_info, k_block + 2, read_stage);
+        }
+        if (k_block < K_BLOCK_MAX - 1) {
+          transform_A_kblock(tCrA_load, tCrA_mma, partitioned_extra_info, k_block + 1);
         }
         warpgroup_arrive();
         // (V,M) x (V,N) => (V,M,N)
@@ -936,11 +937,15 @@ public:
       --k_tile_count;
       if (k_tile_count > 0) {
         // Wait for K_BLOCK_MAX - 1 to be in flight to ensure that it is safe to overwrite the A registers for the first mma.
-        warpgroup_wait<K_BLOCK_MAX - 1>(); 
         pipeline.consumer_wait(smem_pipe_read, barrier_token);
         copy_A_and_extra_info(smem_tiled_copy_A, tCsA, tCrA_copy_view, 
           partitioned_extra_info, copy_partitions_extra_info, 0, smem_pipe_read.index());
-        transform_A_kblock(tCrA_load, A_CPY_VEC{}, tCrA_mma, partitioned_extra_info, 0);
+        if (K_BLOCK_MAX > 1) { // prefetch next block
+          copy_A_and_extra_info(smem_tiled_copy_A, tCsA, tCrA_copy_view, 
+            partitioned_extra_info, copy_partitions_extra_info, 1, smem_pipe_read.index());
+        }
+        warpgroup_wait<K_BLOCK_MAX - 1>(); 
+        transform_A_kblock(tCrA_load, tCrA_mma, partitioned_extra_info, 0);
       }
     }
 
@@ -971,9 +976,8 @@ public:
         tiled_mma.accumulate_ = GMMA::ScaleOut::One;
         warpgroup_commit_batch();
 
-        warpgroup_wait<K_BLOCK_MAX - 1>();
         if (k_block == K_BLOCK_MAX - 1) {
-          // We have K_BLOCK_MAX - 1 GMMA instructions pending for this stage, so we can release prior barrier
+          warpgroup_wait<K_BLOCK_MAX - 1>(); // We have K_BLOCK_MAX - 1 GMMA instructions pending for this stage, so we can release prior barrier
           pipeline.consumer_release(smem_pipe_release);             // UNLOCK smem_pipe_release, done _computing_ on it
           ++smem_pipe_release;
         }
@@ -986,12 +990,18 @@ public:
           pipeline.consumer_wait(smem_pipe_read, barrier_token);
           copy_A_and_extra_info(smem_tiled_copy_A, tCsA, tCrA_copy_view, 
             partitioned_extra_info, copy_partitions_extra_info, 0, smem_pipe_read.index());
-          transform_A_kblock(tCrA_load, A_CPY_VEC{}, tCrA_mma, partitioned_extra_info, 0);
+          if (K_BLOCK_MAX > 1) { // prefetch next block
+            copy_A_and_extra_info(smem_tiled_copy_A, tCsA, tCrA_copy_view, 
+              partitioned_extra_info, copy_partitions_extra_info, 1, smem_pipe_read.index());
+          }
+          transform_A_kblock(tCrA_load, tCrA_mma, partitioned_extra_info, 0);
         } 
         else {
-          copy_A_and_extra_info(smem_tiled_copy_A, tCsA, tCrA_copy_view, 
-            partitioned_extra_info, copy_partitions_extra_info, k_block + 1, read_stage);
-          transform_A_kblock(tCrA_load, A_CPY_VEC{}, tCrA_mma, partitioned_extra_info, k_block + 1);
+          if (k_block < K_BLOCK_MAX - 2) { // prefetch next block
+            copy_A_and_extra_info(smem_tiled_copy_A, tCsA, tCrA_copy_view, 
+              partitioned_extra_info, copy_partitions_extra_info, k_block + 2, read_stage);
+          }
+          transform_A_kblock(tCrA_load, tCrA_mma, partitioned_extra_info, k_block + 1);
         }
       }
       warpgroup_fence_operand(accum);
@@ -1018,17 +1028,20 @@ public:
         cute::gemm(tiled_mma, tCrA_mma(_,_,k_block), tCrB(_,_,k_block,read_stage), accum);
         tiled_mma.accumulate_ = GMMA::ScaleOut::One;
         warpgroup_commit_batch();
-        warpgroup_wait<K_BLOCK_MAX - 1>();
-        if (k_block == K_BLOCK_MAX - 1) {
-          // release prior barrier
+        if (k_block == K_BLOCK_MAX - 1) { // release prior barrier
+          warpgroup_wait<K_BLOCK_MAX - 1>();
           pipeline.consumer_release(smem_pipe_release);             // UNLOCK smem_pipe_release, done _computing_ on it
           ++smem_pipe_release;
         }
 
+        if (k_block < K_BLOCK_MAX - 2) { // prefetch next block
+          copy_A_and_extra_info(smem_tiled_copy_A, tCsA, tCrA_copy_view, 
+            partitioned_extra_info, copy_partitions_extra_info, k_block + 2, read_stage);
+        }
         if (k_block < K_BLOCK_MAX - 1) {
           copy_A_and_extra_info(smem_tiled_copy_A, tCsA, tCrA_copy_view, 
             partitioned_extra_info, copy_partitions_extra_info, k_block + 1, read_stage);
-          transform_A_kblock(tCrA_load, A_CPY_VEC{}, tCrA_mma, partitioned_extra_info, k_block + 1);
+          transform_A_kblock(tCrA_load, tCrA_mma, partitioned_extra_info, k_block + 1);
         }
       }
     }
@@ -1110,10 +1123,20 @@ private:
       // nothing to do
       return cute::make_tuple();
     }
+    else if constexpr (UseScaleLookupTable) {
+      Tensor sS = make_tensor(make_smem_ptr(shared_tensors.smem_scale.begin()), SmemLayoutScale{});// (BLK_M,BLK_SCALE_K,PIPE)
+      Tensor tCsS = mma_thread_slice.partition_A(sS);
+      Tensor tCrS_neg = make_tensor<ElementScale>(mma_thread_slice.partition_fragment_A(sS(_,_,Int<0>{})).layout()); 
+      Tensor tCrS_pos = make_tensor<ElementScale>(mma_thread_slice.partition_fragment_A(sS(_,_,Int<0>{})).layout()); 
+
+      if constexpr (KernelConversionMode == ConversionMode::ConvertAndScale) {
+        return cute::make_tuple(tCsS, tCrS_neg, tCrS_pos);
+      }
+    }
     else if constexpr (ModeHasScales) {
       Tensor sS = make_tensor(make_smem_ptr(shared_tensors.smem_scale.begin()), SmemLayoutScale{});// (BLK_M,BLK_SCALE_K,PIPE)
       Tensor tCsS = mma_thread_slice.partition_A(sS);
-      Tensor tCrS = make_tensor<ElementScale>(mma_thread_slice.partition_fragment_A(sS(_,_,Int<0>{})).shape()); 
+      Tensor tCrS = make_tensor<ElementScale>(mma_thread_slice.partition_fragment_A(sS(_,_,Int<0>{})).layout()); 
 
       if constexpr (KernelConversionMode == ConversionMode::ConvertAndScale) {
         return cute::make_tuple(tCsS, tCrS);
@@ -1121,7 +1144,7 @@ private:
       else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
         Tensor sZ = make_tensor(make_smem_ptr(shared_tensors.smem_zero.begin()), SmemLayoutScale{});// (BLK_M,BLK_SCALE_K,PIPE)
         Tensor tCsZ = mma_thread_slice.partition_A(sZ);
-        Tensor tCrZ = make_tensor<ElementZero>(mma_thread_slice.partition_fragment_A(sZ(_,_,Int<0>{})).shape()); 
+        Tensor tCrZ = make_tensor<ElementZero>(mma_thread_slice.partition_fragment_A(sZ(_,_,Int<0>{})).layout()); 
         return cute::make_tuple(tCsS, tCrS, tCsZ, tCrZ);
       }
       else {
@@ -1210,159 +1233,293 @@ private:
       }
     }
   }
+  
+  // Helper functions to select packing for conversion
+  template <class SrcType,
+            class DstType,
+            int Cosize>
+  struct select_packing { // Naive packing policy
+    static constexpr auto value() {
+      return Int<cute::gcd(Cosize, 32 / cute::min(sizeof_bits_v<SrcType>, sizeof_bits_v<DstType>))>{};
+    }
+  };
+  template <int Cosize> struct select_packing<cutlass::float_e4m3_t, cutlass::bfloat16_t, Cosize> {
+    static constexpr auto value() { return Int<cute::gcd(Cosize, 2)>{}; }
+  };
+  template <int Cosize> struct select_packing<cutlass::float_e5m2_t, cutlass::bfloat16_t, Cosize> {
+    static constexpr auto value() { return Int<cute::gcd(Cosize, 2)>{}; }
+  };
+  template <int Cosize> struct select_packing<cutlass::float_e4m3_t, cutlass::half_t, Cosize> {
+    static constexpr auto value() { return Int<cute::gcd(Cosize, 2)>{}; }
+  };
+  template <int Cosize> struct select_packing<cutlass::float_e5m2_t, cutlass::half_t, Cosize> {
+    static constexpr auto value() { return Int<cute::gcd(Cosize, 2)>{}; }
+  };
+  template <int Cosize> struct select_packing<cutlass::int4b_t, cutlass::bfloat16_t, Cosize> {
+    static constexpr auto value() { return Int<cute::gcd(Cosize, 4)>{}; }
+  };
+  template <int Cosize> struct select_packing<cutlass::int4b_t, cutlass::half_t, Cosize> {
+    static constexpr auto value() { return Int<cute::gcd(Cosize, 4)>{}; }
+  };
+
+  CUTLASS_DEVICE
+  static uint32_t to_reg(Array<cutlass::int4b_t, 4> const& source) {
+    return static_cast<uint32_t>(
+      reinterpret_cast<uint16_t const&>(source));
+  }
+  CUTLASS_DEVICE
+  static uint32_t to_reg(Array<cutlass::int4b_t, 8> const& source) {
+    return reinterpret_cast<uint32_t const&>(source);
+  }
+  // The core converter uses a lookup table to converts i4 -> 8 bit value.
+  template <class TensorPos,
+            class TensorNeg,
+            int N>
+  CUTLASS_DEVICE
+  static Array<RealInternalElementB, N> lookup_table_convert(
+    cute::Int<N> _,
+    Array<cutlass::int4b_t, N> const& source,
+    TensorPos const& scale_neg, 
+    TensorNeg const& scale_pos, 
+    int scale_idx) {
+
+    static_assert(N == 4 || N == 8);
+    uint32_t res[N / 4];
+
+    // View the input as reg
+    uint32_t reg = to_reg(source);
+
+    // Determines if to get from the signed or unsigned candidates
+    static constexpr uint32_t immLut = (0xf0 & 0xcc) | 0xaa;
+    uint32_t sign; // ((reg & 0x88888888) | 0x64206420) >> 1 
+    asm volatile(
+      "{\n"
+      "  lop3.b32 %0, %1, %2, %3, %4;\n" \
+      "}\n"
+      : "=r"(sign)
+      : "r"(reg), "n"(0x88888888), "n"(0x64206420), "n"(immLut)
+    );
+    sign = sign >> 1;
+
+    // Ignore sign bit when indexing into LUT
+    uint32_t lut_idx = reg & 0x77777777;
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N / 4; ++i, lut_idx >>=16, sign >>=16) {
+      Array<uint32_t, 2> const& _scale_neg = reinterpret_cast<Array<uint32_t, 2> const&>(scale_neg[scale_idx + i * 4]);
+      Array<uint32_t, 2> const& _scale_pos = reinterpret_cast<Array<uint32_t, 2> const&>(scale_pos[scale_idx + i * 4]);
+      asm volatile(
+        "{\n"
+        "  .reg .b32 pos, neg                    ;\n" \
+        "  prmt .b32 neg, %3, %4, %1             ;\n" \
+        "  prmt .b32 pos, %5, %6, %1             ;\n" \
+        "  prmt .b32 %0, pos, neg, %2            ;\n" \
+        "}\n"
+        : "=r"(res[i])
+        : "r"(lut_idx), "r"(sign), "r"(_scale_neg[0]), "r"(_scale_neg[1]), "r"(_scale_pos[0]), "r"(_scale_pos[1])
+      );
+    }
+    return reinterpret_cast<Array<RealInternalElementB, N>&>(res);
+  }
+
+  template <class Layout>
+  CUTLASS_DEVICE
+  static void static_check_scale(Layout const& tensor) {
+    static_assert(shape<0>(Layout{}) >= 4 && stride<0>(Layout{}) == 0, "At least 4 adjacent weights in a thread must share the same scale.");
+  }
+  template <class Engine,
+            class Layout>
+  CUTLASS_DEVICE
+  static void static_check_scale(Tensor<Engine, Layout> const& tensor) {
+    static_check_scale(flatten(Layout{}));
+  }
 
   /// Utilities to transform A.
-  template <class TCrA_load,
-            int VectorWidthA, 
-            class TCrA_mma,
+  template <class EngineIn,
+            class EngineOut, 
+            class LayoutIn,
+            class LayoutOut,
             class... Ts>
   CUTLASS_DEVICE
   void transform_A_kblock(
-    TCrA_load const& tCrA_load, 
-    cute::Int<VectorWidthA> vec_A,
-    TCrA_mma& tCrA_mma,
+    Tensor<EngineIn, LayoutIn> const& tCrA_load, 
+    Tensor<EngineOut, LayoutOut>& tCrA_mma,
     cute::tuple<Ts...> const& partitioned_extra_info,
     int const k_block) {
 
+    static_assert(is_rmem<EngineIn>::value, "Input tensor for A conversion must come from registers");
+    static_assert(is_rmem<EngineOut>::value, "Output tensor for A conversion must come from registers");
+    static_assert(cosize_v<LayoutIn> == cosize_v<LayoutOut>);
+    static_assert(size_v<LayoutIn> == cosize_v<LayoutIn>);
+    static_assert(size_v<LayoutOut> == cosize_v<LayoutOut>);
+    using SrcType = typename EngineIn::value_type;
+    using DstType = typename EngineOut::value_type;
+
+    auto const& src = tCrA_load(_, _, k_block);
+    auto const& dst = tCrA_mma(_, _, k_block);
+    auto pSrc = raw_pointer_cast(src.data());
+    auto pDst = const_cast<DstType*>(raw_pointer_cast(dst.data()));
+    constexpr int num_elements = decltype(size(src))::value;
+
     if constexpr (KernelConversionMode == ConversionMode::DirectConvert) {
-      transform_internal_A(tCrA_load(_, _, k_block), vec_A, tCrA_mma(_, _, k_block));
+      constexpr int pack = decltype(select_packing<SrcType, DstType, num_elements>::value())::value;
+      using Converter = cutlass::NumericArrayConverter<DstType, SrcType, pack, cutlass::FloatRoundStyle::round_to_nearest>;
+      using SrcArray = cutlass::Array<SrcType, pack>;
+      using DstArray = cutlass::Array<DstType, pack>;
+      constexpr int iters = num_elements / pack;
+
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 0; i < iters; ++i) {
+        SrcArray const* pSrcArr = reinterpret_cast<SrcArray const*>(pSrc) + i;
+        DstArray* pDstArr = reinterpret_cast<DstArray*>(pDst) + i;
+        *pDstArr = Converter::convert(*pSrcArr);
+      }
     } 
+    else if constexpr (UseScaleLookupTable) {
+      static_assert(is_same_v<RealInternalElementA, cutlass::int4b_t>, "Lookup table only supports int4 being the quant type now.");
+      static_assert(sizeof_bits_v<ElementScale> == 64, "Lookup table only supports 8 8bit scale values now.");
+      static_assert(num_elements % 4 == 0 && num_elements >= 4, "Lookup table requires a vector size of 4x when converting.");
+      constexpr int pack = num_elements % 8 == 0? 8 : 4;
+      constexpr int iters = num_elements / pack;
+      using SrcArray = cutlass::Array<SrcType, pack>;
+      using DstArray = cutlass::Array<DstType, pack>;
+
+      auto const& tCrS_neg = cute::get<1>(partitioned_extra_info);
+      auto const& tCrS_pos = cute::get<2>(partitioned_extra_info);
+      auto const& scale_neg = tCrS_neg(_, _, k_block);
+      auto const& scale_pos = tCrS_pos(_, _, k_block);
+      CUTE_STATIC_ASSERT_V(size(src) == size(scale_neg));
+
+      static_check_scale(scale_neg);
+      static_check_scale(scale_pos);
+      if (k_block == 0) {
+        auto pNeg = raw_pointer_cast(tCrS_neg.data());
+        auto pPos = const_cast<ElementScale*>(raw_pointer_cast(tCrS_pos.data()));
+        CUTLASS_PRAGMA_UNROLL
+        for (int i = 0; i < cosize(tCrS_neg.layout()); ++i)
+        {
+          // pPos[i] = pNeg[i] & 0x7F7F7F7F7F7F7F00;
+          cutlass::Array<uint32_t, 2> const& _scale_neg = reinterpret_cast<cutlass::Array<uint32_t, 2> const&>(pNeg[i]);
+          cutlass::Array<uint32_t, 2> & _scale_pos = reinterpret_cast<cutlass::Array<uint32_t, 2> &>(pPos[i]);
+          asm volatile(
+              "{\n"
+              "  and  .b32 %0, %2, %4             ;\n" \
+              "  and  .b32 %1, %3, %5             ;\n" \
+              "}\n"
+              : "=r"(_scale_pos[0]), "=r"(_scale_pos[1])
+              : "r"(_scale_neg[0]), "r"(_scale_neg[1]), "n"(0x7F7F7F00), "n"(0x7F7F7F7F)
+              );
+        }
+      }
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 0; i < iters; i ++) {
+        SrcArray const* pSrcArr = reinterpret_cast<SrcArray const*>(raw_pointer_cast(src.data())) + i;
+        DstArray* pDstArr = reinterpret_cast<DstArray*>(raw_pointer_cast(dst.data())) + i;
+        
+        *pDstArr = lookup_table_convert(Int<pack>{}, *pSrcArr, scale_neg, scale_pos, i * pack);
+      }
+    }
     else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScale) {
-      auto tCrS = cute::get<1>(partitioned_extra_info);
-      transform_internal_A(tCrA_load(_, _, k_block), vec_A, make_fragment_like<ElementScale>(tCrA_mma)(_, _, k_block), tCrS(_, _, 0), tCrA_mma(_, _, k_block));
+      auto const& scales = cute::get<1>(partitioned_extra_info)(_, _, k_block);
+      CUTE_STATIC_ASSERT_V(size(src) == size(scales));
+
+      if constexpr (is_same_v<DstType, ElementScale>) {
+        constexpr int pack = decltype(select_packing<SrcType, DstType, num_elements>::value())::value;
+        using Converter = cutlass::NumericArrayConverter<DstType, SrcType, pack, cutlass::FloatRoundStyle::round_to_nearest>;
+        using SrcArray = cutlass::Array<SrcType, pack>;
+        using DstArray = cutlass::Array<DstType, pack>;
+        constexpr int iters = num_elements / pack;
+
+        CUTLASS_PRAGMA_UNROLL
+        for (int i = 0; i < iters; ++i) {
+          SrcArray const* pSrcArr = reinterpret_cast<SrcArray const*>(pSrc) + i;
+          DstArray* pDstArr = reinterpret_cast<DstArray*>(pDst) + i;
+          *pDstArr = Converter::convert(*pSrcArr);
+          CUTLASS_PRAGMA_UNROLL
+          for (int j = 0; j < pack; ++j) {
+            (*pDstArr)[j] = (*pDstArr)[j] * scales[i*pack + j];
+          }
+        }
+      }
+      else {
+        constexpr int pack1 = decltype(select_packing<SrcType, ElementScale, num_elements>::value())::value;
+        constexpr int pack2 = decltype(select_packing<ElementScale, DstType, num_elements>::value())::value;
+        constexpr int pack = cute::gcd(pack1, pack2);
+        using Converter1 = cutlass::NumericArrayConverter<ElementScale, SrcType, pack, cutlass::FloatRoundStyle::round_to_nearest>;
+        using Converter2 = cutlass::NumericArrayConverter<DstType, ElementScale, pack, cutlass::FloatRoundStyle::round_to_nearest>;
+        using SrcArray = cutlass::Array<SrcType, pack>;
+        using DstArray = cutlass::Array<DstType, pack>;
+        using StageArray = cutlass::Array<ElementScale, pack>;
+        constexpr int iters = num_elements / pack;
+
+        CUTLASS_PRAGMA_UNROLL
+        for (int i = 0; i < iters; ++i) {
+          SrcArray const* pSrcArr = reinterpret_cast<SrcArray const*>(pSrc) + i;
+          DstArray* pDstArr = reinterpret_cast<DstArray*>(pDst) + i;
+          StageArray stageArr;
+          stageArr = Converter1::convert(*pSrcArr);
+          CUTLASS_PRAGMA_UNROLL
+          for (int j = 0; j < pack; ++j) {
+            stageArr[j] = stageArr[j] *  scales[i*pack + j];
+          }
+          *pDstArr = Converter2::convert(stageArr);
+        }
+      }
     } 
     else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
-      auto tCrS = cute::get<1>(partitioned_extra_info);
-      auto tCrZ = cute::get<3>(partitioned_extra_info);
-      transform_internal_A(tCrA_load(_, _, k_block), 
-                           vec_A, 
-                           make_fragment_like<ElementScale>(tCrA_mma)(_, _, k_block), 
-                           tCrS(_, _, 0),
-                           tCrZ(_, _, 0),
-                           make_fragment_like<ElementScale>(tCrZ)(_, _, 0), 
-                           tCrA_mma(_, _, k_block));        
+      static_assert(is_same_v<ElementScale, ElementZero>, "ElementScale and ElementZero must be the same.");
+      auto const& scales = cute::get<1>(partitioned_extra_info)(_, _, k_block);
+      auto const& zeros = cute::get<3>(partitioned_extra_info)(_, _, k_block);
+      CUTE_STATIC_ASSERT_V(size(src) == size(scales));
+      CUTE_STATIC_ASSERT_V(size(src) == size(zeros));
+      
+      if constexpr (is_same_v<DstType, ElementScale>) {
+        constexpr int pack = decltype(select_packing<SrcType, DstType, num_elements>::value())::value;
+        using Converter = cutlass::NumericArrayConverter<DstType, SrcType, pack, cutlass::FloatRoundStyle::round_to_nearest>;
+        using SrcArray = cutlass::Array<SrcType, pack>;
+        using DstArray = cutlass::Array<DstType, pack>;
+        constexpr int iters = num_elements / pack;
+
+        CUTLASS_PRAGMA_UNROLL
+        for (int i = 0; i < iters; ++i) {
+          SrcArray const* pSrcArr = reinterpret_cast<SrcArray const*>(pSrc) + i;
+          DstArray* pDstArr = reinterpret_cast<DstArray*>(pDst) + i;
+          *pDstArr = Converter::convert(*pSrcArr);
+          CUTLASS_PRAGMA_UNROLL
+          for (int j = 0; j < pack; ++j) {
+            (*pDstArr)[j] = (*pDstArr)[j] * scales[i*pack + j] + zeros[i*pack + j];
+          }
+        }
+      }
+      else {
+        constexpr int pack1 = decltype(select_packing<SrcType, ElementScale, num_elements>::value())::value;
+        constexpr int pack2 = decltype(select_packing<ElementScale, DstType, num_elements>::value())::value;
+        constexpr int pack = cute::gcd(pack1, pack2);
+        using Converter1 = cutlass::NumericArrayConverter<ElementScale, SrcType, pack, cutlass::FloatRoundStyle::round_to_nearest>;
+        using Converter2 = cutlass::NumericArrayConverter<DstType, ElementScale, pack, cutlass::FloatRoundStyle::round_to_nearest>;
+        using SrcArray = cutlass::Array<SrcType, pack>;
+        using DstArray = cutlass::Array<DstType, pack>;
+        using StageArray = cutlass::Array<ElementScale, pack>;
+        constexpr int iters = num_elements / pack;
+
+        CUTLASS_PRAGMA_UNROLL
+        for (int i = 0; i < iters; ++i) {
+          SrcArray const* pSrcArr = reinterpret_cast<SrcArray const*>(pSrc) + i;
+          DstArray* pDstArr = reinterpret_cast<DstArray*>(pDst) + i;
+          StageArray stageArr;
+          stageArr = Converter1::convert(*pSrcArr);
+          CUTLASS_PRAGMA_UNROLL
+          for (int j = 0; j < pack; ++j) {
+            stageArr[j] = stageArr[j] *  scales[i*pack + j] + zeros[i*pack + j];
+          }
+          *pDstArr = Converter2::convert(stageArr);
+        }
+      }
+      return;
     }
     else {
       static_assert(cutlass::detail::dependent_false<KernelSchedule>, "No A data is loaded.");
     }
   }
-
-  /// Utilities for transforming the A operand prior to issuing tensorcore math.
-  template <class EngineIn, 
-            class EngineOut, 
-            class TensorLayout,
-            int ConversionVectorWidth = cosize_v<TensorLayout>>
-  CUTLASS_DEVICE void
-  convert_tensor(
-    Tensor<EngineIn,TensorLayout> const& in, 
-    Tensor<EngineOut,TensorLayout>& out, 
-    cute::Int<ConversionVectorWidth> width = {}) {
-
-    /// This is an element-wise conversion where we expect both tensors to have the same layout.
-    /// As a result, we can cast as a cutlass array to use the fast numeric converters without 
-    /// worrying about indexing into the layout.
-    constexpr int N = cosize_v<TensorLayout>; 
-
-    /// The inputs must be backed by registers & be statically sized.
-    static_assert(is_rmem<EngineIn>::value, "Input tensor for A conversion must come from registers");
-    static_assert(is_rmem<EngineOut>::value, "Output tensor for A conversion must come from registers");
-    static_assert(is_static_v<TensorLayout>, "Tensor layout for the conversion must be static");
-    static_assert(cosize_v<TensorLayout> == size(TensorLayout{}), "Cosize and size of the layout must be equal.");
-    static_assert(N % ConversionVectorWidth == 0, "Conversion vector width must divide cosize of the tensor layout.");
-
-    using SrcType = typename EngineIn::value_type;
-    using DstType = typename EngineOut::value_type;
-  
-    using SrcArray = cutlass::Array<SrcType, ConversionVectorWidth>;
-    using DstArray = cutlass::Array<DstType, ConversionVectorWidth>;
-
-    constexpr cutlass::FloatRoundStyle RoundStyle = cutlass::FloatRoundStyle::round_to_nearest;
-    using Converter = cutlass::NumericArrayConverter<DstType, SrcType, ConversionVectorWidth, RoundStyle>;
-
-    constexpr int NumIterations = N / ConversionVectorWidth;
-
-    for (int ii = 0; ii < NumIterations; ++ii) {
-      SrcArray const* src_array_ptr = reinterpret_cast<SrcArray const*>(raw_pointer_cast(in.data())) + ii;
-      DstArray* dst_array_ptr = reinterpret_cast<DstArray*>(raw_pointer_cast(out.data())) + ii;
-      *dst_array_ptr = Converter::convert(*src_array_ptr);
-    }
-  }
-
-  template <class EngineIn, 
-            class EngineOut, 
-            class TensorLayout,
-            int A_VectorConversionWidth>
-  CUTLASS_DEVICE void
-  transform_internal_A(
-    Tensor<EngineIn,TensorLayout>&& in,
-    cute::Int<A_VectorConversionWidth> a_vec_width,
-    Tensor<EngineOut,TensorLayout>&& out) {
-
-    convert_tensor(in, out, a_vec_width);
-  }
-
-  template <class EngineIn, 
-            class EngineInputBuffer, 
-            class EngineScale, 
-            class EngineOut, 
-            class TensorLayout,
-            int A_VectorConversionWidth>
-  CUTLASS_DEVICE void
-  transform_internal_A(
-    Tensor<EngineIn,TensorLayout>&& in,
-    cute::Int<A_VectorConversionWidth> a_vec_width,
-    Tensor<EngineInputBuffer,TensorLayout>&& converted_inputs,
-    Tensor<EngineScale,TensorLayout>&& scales,
-    Tensor<EngineOut,TensorLayout>&& out) {
-
-    static_assert(cute::is_same_v<typename EngineInputBuffer::value_type, typename EngineScale::value_type>,  
-      "Type of the engine input buffer must equal the scale buffer");
-    
-    // First, we upcast the inputs to the scale type
-    convert_tensor(in, converted_inputs, a_vec_width);
-
-    // Apply scales and broadcast across inputs, store in converted_inputs
-    cute::transform(converted_inputs, scales, converted_inputs, cute::multiplies{});
-
-    // Finally, we convert the scaled inputs to the mma type.
-    convert_tensor(converted_inputs, out);
-  }
-
-  template <class EngineIn, 
-            class EngineInputBuffer, 
-            class EngineScale,
-            class EngineZero,
-            class EngineZeroBuffer,
-            class EngineOut, 
-            class TensorLayout,
-            int A_VectorConversionWidth>
-  CUTLASS_DEVICE void
-  transform_internal_A(
-    Tensor<EngineIn,TensorLayout>&& in,
-    cute::Int<A_VectorConversionWidth> a_vec_width,
-    Tensor<EngineInputBuffer,TensorLayout>&& converted_inputs,
-    Tensor<EngineScale,TensorLayout>&& scales,
-    Tensor<EngineZero,TensorLayout>&& zeros,
-    Tensor<EngineZeroBuffer,TensorLayout>&& converted_zeros,
-    Tensor<EngineOut,TensorLayout>&& out) {
-
-    static_assert(cute::is_same_v<typename EngineInputBuffer::value_type, typename EngineScale::value_type>,  
-      "Type of the engine input buffer must equal the scale buffer");
-
-    static_assert(cute::is_same_v<typename EngineZeroBuffer::value_type, typename EngineScale::value_type>,  
-      "Type of the engine zero buffer must equal the scale buffer");
-    
-    // First, we upcast the inputs to the scale type
-    convert_tensor(in, converted_inputs, a_vec_width);
-    convert_tensor(zeros, converted_zeros);
-
-    // Apply scales and broadcast across inputs, store in converted_inputs
-    cute::transform(converted_inputs, scales, converted_inputs, cute::multiplies{});
-    cute::transform(converted_inputs, converted_zeros, converted_inputs, cute::plus{});
-
-    // Finally, we convert the scaled inputs to the mma type.
-    convert_tensor(converted_inputs, out);
-  } 
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

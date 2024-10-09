@@ -30,14 +30,10 @@
  **************************************************************************************************/
 #pragma once
 
-#include <cute/config.hpp>
-
-#include <cute/container/alignment.hpp>
-
-#include <cute/tensor_impl.hpp>
-#include <cute/tensor_predicate.hpp>
-
-#include <cute/atom/copy_atom.hpp>
+#include <cute/config.hpp>            // CUTE_HOST_DEVICE
+#include <cute/tensor_impl.hpp>       // cute::Tensor
+#include <cute/tensor_predicate.hpp>  // cute::TrivialPredTensor
+#include <cute/atom/copy_atom.hpp>    // cute::Copy_Atom
 
 namespace cute
 {

@@ -45,72 +45,48 @@ namespace library {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-void initialize_gemm_reference_operations_int8_canonical(Manifest &manifest) {
+// A/B: u8
+// Acc : s32
+// C/D: some variance
+
+// 1. u8_u8_s32_s32_s32 (s32 epi scalar)
+// 2. u8_u8_s32_s32_s32 (f32 epi scalar)
+// 3. u8_8_s32_s8_s8 (f32 epi scalar)
+// 3. u8_8_s32_s8_s8 (s epi scalar)
+
+void initialize_gemm_reference_operations_u8_u8_s32(Manifest &manifest) {
+  // 1.
   make_gemm_real_canonical_layouts<
-    int8_t,
-    int8_t,
-    int32_t,
-    int32_t,
-    int32_t
+    uint8_t,                          // ElementA
+    uint8_t,                          // ElementB
+    int32_t,                          // ElementC
+    int32_t,                          // ElementScalar / ElementCompute
+    int32_t,                          // ElementAccumulator
+    int32_t                           // ElementD
   >(manifest);
 
+  // 2.
   make_gemm_real_canonical_layouts<
-    int8_t,
-    int8_t,
-    int8_t,
-    float,
-    int32_t,
-    int8_t,
-    NumericConverterClamp<int8_t, float>
+    uint8_t,                          // ElementA
+    uint8_t,                          // ElementB
+    int32_t,                          // ElementC
+    float,                            // ElementScalar / ElementCompute
+    int32_t,                          // ElementAccumulator
+    int32_t,                          // ElementD
+    NumericConverterClamp<int32_t, float> // From Scalar to D
   >(manifest);
 
+  // 3.
   make_gemm_real_canonical_layouts<
-    int8_t,
-    int8_t,
-    int32_t,
-    float,
-    int32_t,
-    int32_t,
-    NumericConverterClamp<int32_t, float>
+    uint8_t,                          // ElementA
+    uint8_t,                          // ElementB
+    int8_t,                           // ElementC
+    float,                            // ElementScalar / ElementCompute
+    int32_t,                          // ElementAccumulator
+    int8_t,                           // ElementD
+    NumericConverterClamp<int8_t, float> // From Scalar to D
   >(manifest);
 
-  make_gemm_real_canonical_layouts<
-    uint8_t,
-    uint8_t,
-    int32_t,
-    int32_t,
-    int32_t
-  >(manifest);
-
-  make_gemm_real_canonical_layouts<
-    uint8_t,
-    uint8_t,
-    int8_t,
-    float,
-    int32_t,
-    int8_t,
-    NumericConverterClamp<int8_t, float>
-  >(manifest);
-
-  make_gemm_real_canonical_layouts<
-    uint8_t,
-    uint8_t,
-    int32_t,
-    float,
-    int32_t,
-    int32_t,
-    NumericConverterClamp<int32_t, float>
-  >(manifest);
-
-  make_gemm_real_canonical_layouts<
-    int8_t,
-    int8_t,
-    int8_t,   
-    int32_t,
-    int32_t,
-    int8_t,
-    NumericConverterClamp<int8_t, int32_t>
-  >(manifest);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

@@ -31,7 +31,7 @@
 /* \file
    \brief Execution environment
 
-  
+
 */
 
 #include <iostream>
@@ -54,7 +54,7 @@ namespace profiler {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Ctor
-RankKOperationProfiler::RankKOperationProfiler(Options const &options): 
+RankKOperationProfiler::RankKOperationProfiler(Options const &options):
   OperationProfiler(
     options,
     library::OperationKind::kRankK,
@@ -94,7 +94,7 @@ void RankKOperationProfiler::print_examples(std::ostream &out) const {
   out << "\nExamples:\n\n"
     << "Profile a particular problem size Syrk kernel:\n"
     << "  $ cutlass_profiler --operation=rank_k --blas_mode=symmetric --n=1024 --k=128\n\n"
-    
+
     << "Profile a particular problem size Herk kernel:\n"
     << "  $ cutlass_profiler --operation=rank_k --blas_mode=hermitian --n=1024 --k=128\n\n"
 
@@ -117,7 +117,7 @@ void RankKOperationProfiler::print_examples(std::ostream &out) const {
 
     << "Run a kernel with cta tile size of 256x128x32 and save workspace if results are incorrect (note that --cta-tile::k=32 is default cta-tile size):\n"
     << " $ cutlass_profiler --operation=rank_k --cta_m=256 --cta_n=128  --cta_k=32 --save-workspace=incorrect\n\n"
-    
+
     << "Test your changes to rank_k kernels with a quick functional test and save results in functional-test.csv:\n"
     << " $ cutlass_profiler  --operation=rank_k \\ \n"
     << "   --n=8,56,120,136,256,264,512,520,1024,1032,4096,8192,16384 \\ \n"
@@ -147,22 +147,22 @@ Status RankKOperationProfiler::RankKProblem::parse(
   library::RankKDescription const &operation_desc,
   ProblemSpace const &problem_space,
   ProblemSpace::Problem const &problem) {
-  
+
   if (!arg_as_int(this->n, "n", problem_space, problem)) {
     // default value
     this->n = 1024;
   }
-  
+
   if (!arg_as_int(this->k, "k", problem_space, problem)) {
     // default value
     this->k = 1024;
   }
-  
+
   if (!arg_as_int(this->split_k_slices, "split_k_slices", problem_space, problem)) {
     // default value
     this->split_k_slices = 1;
   }
-  
+
   if (!arg_as_int(this->batch_count, "batch_count", problem_space, problem)) {
     // default value
     this->batch_count = 1;
@@ -182,29 +182,29 @@ Status RankKOperationProfiler::RankKProblem::parse(
   }
 
   if (!arg_as_scalar(
-    this->alpha, 
-    operation_desc.element_epilogue, 
-    "alpha", 
-    problem_space, 
+    this->alpha,
+    operation_desc.element_epilogue,
+    "alpha",
+    problem_space,
     problem)) {
 
     if (!cast_from_double(this->alpha, operation_desc.element_epilogue, 1)) {
       return Status::kErrorInternal;
     }
   }
-  
+
   if (!arg_as_scalar(
-    this->beta, 
-    operation_desc.element_epilogue, 
-    "beta", 
-    problem_space, 
+    this->beta,
+    operation_desc.element_epilogue,
+    "beta",
+    problem_space,
     problem)) {
-    
+
     if (!cast_from_double(this->beta, operation_desc.element_epilogue, 0)) {
       return Status::kErrorInternal;
     }
   }
-  
+
   this->lda = DeviceAllocation::get_packed_layout(
     operation_desc.A.layout, {int(this->n), int(this->k)}).front();
 
@@ -252,7 +252,7 @@ int64_t RankKOperationProfiler::RankKProblem::flops(library::RankKDescription co
   case library::MathOperationID::kMultiplyAddComplexFastF32:
     flops_ *= 4;
     break;
-    
+
   case library::MathOperationID::kMultiplyAddGaussianComplex:
     flops_ *= 3;
     break;
@@ -300,14 +300,14 @@ void RankKOperationProfiler::RankKProblem::initialize_result(
 
 /// Extracts the problem dimensions
 Status RankKOperationProfiler::initialize_configuration(
-  Options const &options,  
+  Options const &options,
   PerformanceReport &report,
   DeviceContext &device_context,
   library::Operation const *operation,
   ProblemSpace const &problem_space,
   ProblemSpace::Problem const &problem) {
 
-  library::RankKDescription const &operation_desc = 
+  library::RankKDescription const &operation_desc =
     static_cast<library::RankKDescription const &>(operation->description());
 
   if (operation_desc.rank_k_kind != library::RankKKind::kUniversal) {
@@ -315,7 +315,7 @@ Status RankKOperationProfiler::initialize_configuration(
   }
 
   Status status = problem_.parse(operation_desc, problem_space, problem);
-  
+
   if (status != Status::kSuccess) {
     return status;
   }
@@ -337,14 +337,14 @@ Status RankKOperationProfiler::initialize_configuration(
   rank_k_workspace_.arguments.pointer_mode = library::ScalarPointerMode::kHost;
 
   initialize_result_(this->model_result_, options, operation_desc, problem_space);
-  
+
   return operation->can_implement(&rank_k_workspace_.configuration, &rank_k_workspace_.arguments);
 }
 
 /// Initializes the performance result
 void RankKOperationProfiler::initialize_result_(
   PerformanceResult &result,
-  Options const &options,  
+  Options const &options,
   library::RankKDescription const &operation_desc,
   ProblemSpace const &problem_space) {
 
@@ -352,7 +352,7 @@ void RankKOperationProfiler::initialize_result_(
   result.disposition = Disposition::kNotRun;
   result.status = Status::kSuccess;
   result.operation_name = operation_desc.name;
-  
+
   problem_.initialize_result(result, operation_desc, problem_space);
 
   OperationProfiler::initialize_result_(result, operation_desc, problem_space);
@@ -368,7 +368,7 @@ void RankKOperationProfiler::initialize_result_(
   case library::MathOperationID::kMultiplyAddComplex:
     result.flops *= 4;
     break;
-     
+
   case library::MathOperationID::kMultiplyAddComplexFastF32:
     result.flops *= 4;
     break;
@@ -380,19 +380,30 @@ void RankKOperationProfiler::initialize_result_(
 
 /// Initializes workspace
 Status RankKOperationProfiler::initialize_workspace(
-  Options const &options,  
+  Options const &options,
   PerformanceReport &report,
   DeviceContext &device_context,
   library::Operation const *operation,
   ProblemSpace const &problem_space,
   ProblemSpace::Problem const &problem) {
-  
-  library::RankKDescription const &operation_desc = 
+
+  if (options.device.devices.size() != 1) {
+    throw std::runtime_error("This operation profiler only supports a single "
+                             "device.");
+  }
+
+  cudaError_t result;
+  result = cudaSetDevice(options.device.device_id(0));
+  if (result != cudaSuccess) {
+    throw std::runtime_error("cudaSetDevice() failed.");
+  }
+
+  library::RankKDescription const &operation_desc =
     static_cast<library::RankKDescription const &>(operation->description());
 
   if (options.execution_mode != ExecutionMode::kDryRun) {
     int seed_shift = 0;
-    rank_k_workspace_.A = device_context.allocate_tensor(
+    rank_k_workspace_.A = device_context.allocate_and_initialize_tensor(
       options,
       "A",
       operation_desc.A.element,
@@ -400,10 +411,11 @@ Status RankKOperationProfiler::initialize_workspace(
       {int(problem_.n), int(problem_.k)},
       {int(problem_.lda)},
       1, // batch_count
-      seed_shift++
+      seed_shift++,
+      0 // device_index
     );
 
-    rank_k_workspace_.C = device_context.allocate_tensor(
+    rank_k_workspace_.C = device_context.allocate_and_initialize_tensor(
       options,
       "C",
       operation_desc.C.element,
@@ -411,23 +423,30 @@ Status RankKOperationProfiler::initialize_workspace(
       {int(problem_.n), int(problem_.n)},
       {int(problem_.ldc)},
       1, // batch_count
-      seed_shift++
+      seed_shift++,
+      0 // device_index
     );
 
     rank_k_workspace_.Computed = device_context.allocate_tensor(
+      options,
       "D",
       operation_desc.C.element,
       operation_desc.C.layout,
       {int(problem_.n), int(problem_.n)},
-      {int(problem_.ldc)}
+      {int(problem_.ldc)},
+      1, //batch_count
+      0 // device_index
     );
 
     rank_k_workspace_.Reference = device_context.allocate_tensor(
+      options,
       "Reference",
       operation_desc.C.element,
       operation_desc.C.layout,
       {int(problem_.n), int(problem_.n)},
-      {int(problem_.ldc)}
+      {int(problem_.ldc)},
+      1, //batch_count
+      0 // device_index
     );
 
     rank_k_workspace_.Computed->copy_from_device(rank_k_workspace_.C->data());
@@ -476,7 +495,7 @@ Status RankKOperationProfiler::initialize_workspace(
 
 /// Verifies CUTLASS against references
 bool RankKOperationProfiler::verify_cutlass(
-  Options const &options,  
+  Options const &options,
   PerformanceReport &report,
   DeviceContext &device_context,
   library::Operation const *operation,
@@ -504,7 +523,7 @@ bool RankKOperationProfiler::verify_cutlass(
   //
 
   results_.back().status = operation->run(
-    &rank_k_workspace_.arguments, 
+    &rank_k_workspace_.arguments,
     rank_k_workspace_.host_workspace.data(),
     rank_k_workspace_.device_workspace.data());
 
@@ -552,8 +571,8 @@ bool RankKOperationProfiler::verify_cutlass(
       }
     }
 #endif // #if CUTLASS_ENABLE_CUBLAS
-    
-    // Update disposition to worst case verification outcome among all 
+
+    // Update disposition to worst case verification outcome among all
     // verification providers which are supported
     bool is_any_verification_run_passed = false;
     for(auto &m : results_.back().verification_map) {
@@ -579,7 +598,7 @@ bool RankKOperationProfiler::verify_cutlass(
 
 /// Verifies CUTLASS against references
 bool RankKOperationProfiler::verify_with_cublas_(
-  Options const &options,  
+  Options const &options,
   PerformanceReport &report,
   DeviceContext &device_context,
   library::Operation const *operation,
@@ -589,13 +608,13 @@ bool RankKOperationProfiler::verify_with_cublas_(
 
 #if CUTLASS_ENABLE_CUBLAS
 
-  library::RankKDescription const &rank_k_desc = 
+  library::RankKDescription const &rank_k_desc =
     static_cast<library::RankKDescription const &>(operation->description());
 
   //
   // Construct cuBLAS operators
   //
-    
+
   CublasCreate handle;
   cublasStatus_t status = handle.get_cublas_create_status();
 
@@ -623,8 +642,8 @@ bool RankKOperationProfiler::verify_with_cublas_(
     rank_k_workspace_.arguments.beta = problem_.beta.data();
     rank_k_workspace_.arguments.pointer_mode = library::ScalarPointerMode::kHost;
 
-    detail::cublasRankKDispatcher rank_k_op( 
-      rank_k_desc, 
+    detail::cublasRankKDispatcher rank_k_op(
+      rank_k_desc,
       rank_k_workspace_.configuration,
       rank_k_workspace_.arguments
     );
@@ -656,7 +675,7 @@ bool RankKOperationProfiler::verify_with_cublas_(
     );
 
     // Save workspace if incorrect
-    if (options.verification.save_workspace == SaveWorkspace::kIncorrect && 
+    if (options.verification.save_workspace == SaveWorkspace::kIncorrect &&
       results_.back().verification_map[library::Provider::kCUBLAS] == Disposition::kIncorrect) {
 
       save_workspace(
@@ -681,7 +700,7 @@ bool RankKOperationProfiler::verify_with_cublas_(
 
 /// Measures performance results
 bool RankKOperationProfiler::profile(
-  Options const &options,  
+  Options const &options,
   PerformanceReport &report,
   DeviceContext &device_context,
   library::Operation const *operation,

@@ -166,12 +166,12 @@ struct CollectiveMma<
       size<0>(ClusterShape{}))); // mcast along M mode for this N load, if any
 
   struct SharedStorage {
-    struct TensorStorage : cute::aligned_struct<128> {
+    struct TensorStorage : cute::aligned_struct<128, _0> {
       cute::array_aligned<typename TiledMma::ValTypeA, cute::cosize_v<SmemLayoutA>> smem_A;
       cute::array_aligned<typename TiledMma::ValTypeB, cute::cosize_v<SmemLayoutB>> smem_B;
     } tensors;
 
-    struct TensorMapStorage : cute::aligned_struct<128> {
+    struct TensorMapStorage : cute::aligned_struct<128, _0> {
       cute::TmaDescriptor smem_tensormap_A;
       cute::TmaDescriptor smem_tensormap_B;
     } tensormaps;
@@ -720,7 +720,6 @@ struct CollectiveMma<
       ProblemShape_MNKL problem_shape_mnkl,
       int32_t next_batch) {
     if (cute::elect_one_sync()) {
-
       // Replacing global_address for the next batch
       tensormaps_replace_global_address(shared_tensormaps, mainloop_params, next_batch);
 

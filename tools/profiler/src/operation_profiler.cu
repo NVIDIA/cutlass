@@ -376,14 +376,14 @@ int OperationProfiler::profile_all(
         std::cerr << "    @ provider " << operation->description().provider
                   << " != library::Provider::kCUTLASS\n";
       }
-      if (options.device.compute_capability() < min_cc) {
+      if (options.device.compute_capability(0) < min_cc) {
         std::cerr << "    @ compute_capability "
-                  << options.device.compute_capability()
+                  << options.device.compute_capability(0)
                   << " < min_cc " << min_cc << "\n";
       }
-      if (options.device.compute_capability() > max_cc) {
+      if (options.device.compute_capability(0) > max_cc) {
         std::cerr << "    @ compute_capability "
-                  << options.device.compute_capability()
+                  << options.device.compute_capability(0)
                   << " > max_cc " << max_cc << "\n";
       }
 #endif
@@ -391,8 +391,8 @@ int OperationProfiler::profile_all(
       // Execute compatible cutlass operations if they satisfy the current device's compute capability
       if (operation->description().kind == kind_ &&
           operation->description().provider == library::Provider::kCUTLASS &&
-          options.device.compute_capability() >= min_cc &&
-          options.device.compute_capability() <= max_cc) {
+          options.device.compute_capability(0) >= min_cc &&
+          options.device.compute_capability(0) <= max_cc) {
 
         std::string operation_name(operation->description().name);
         // Filter kernels by name

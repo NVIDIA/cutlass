@@ -43,30 +43,7 @@
 #include "mma.h"
 #include "cutlass/layout/matrix.h"
 #include "cutlass/numeric_types.h"
-
-////////////////////////////////////////////////////////////////////////////////
-
-#if ((__CUDACC_VER_MAJOR__ > 11) || (__CUDACC_VER_MAJOR__ == 11 && __CUDACC_VER_MINOR__ >= 8))
-  #define CUTLASS_ARCH_MMA_SM90_F64_MMA_SUPPORTED
-  #if (!defined(CUTLASS_ARCH_MMA_SM90_F64_MMA_ENABLED))
-    #if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900))
-      #define CUTLASS_ARCH_MMA_SM90_F64_MMA_ENABLED
-    #endif
-  #endif
-#endif
-
-#if (__CUDACC_VER_MAJOR__ >= 12)
-  #define CUTLASS_ARCH_MMA_SM90_SUPPORTED
-  #if (!defined(CUTLASS_ARCH_MMA_SM90_ENABLED))
-    #if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900))
-      #define CUTLASS_ARCH_MMA_SM90_ENABLED
-    #endif
-  #endif
-#endif
-
-#if ((__CUDACC_VER_MAJOR__ > 12) || ((__CUDACC_VER_MAJOR__ == 12) && (__CUDACC_VER_MINOR__ >= 3)))
-  #define CUTLASS_ARCH_MMA_MODIFIABLE_TMA_SM90_SUPPORTED
-#endif
+#include "cutlass/arch/config.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 

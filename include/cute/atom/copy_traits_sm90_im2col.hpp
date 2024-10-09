@@ -450,7 +450,9 @@ make_im2col_tma_copy_desc(
   CUtensorMapInterleave   tma_interleave  = CU_TENSOR_MAP_INTERLEAVE_NONE;
   CUtensorMapL2promotion  tma_l2Promotion = to_CUtensorMapL2promotion(aux_params.l2promo_);
   CUtensorMapFloatOOBfill tma_oob_fill    = to_CUtensorMapFloatOOBfill(aux_params.oobfill_);
-  CUtensorMapSwizzle      tma_swizzle     = TMA::to_CUtensorMapSwizzle(detail::get_tma_swizzle_bits(smem_swizzle));
+  TMA::SmemSwizzleBits    swizzle_bits    = detail::get_tma_swizzle_bits(smem_swizzle);
+  TMA::SmemSwizzleBase    swizzle_base    = detail::get_tma_swizzle_base(smem_swizzle);
+  CUtensorMapSwizzle      tma_swizzle     = TMA::to_CUtensorMapSwizzle(swizzle_bits, swizzle_base);
 
   CUresult encode_result = CUTLASS_CUDA_DRIVER_WRAPPER_CALL(cuTensorMapEncodeIm2col)(
       &tma_desc,
@@ -636,11 +638,11 @@ make_tma_atom_im2col(CopyOp,
 
   auto range_c    = size<0,0>(tma_layout_vt);
   auto range_whdn = size<0,1>(tma_layout_vt);
-
   Tensor gtensor_cwhdn = make_tensor(gtensor.data(),
-                                     flatten(make_layout(basis_get(stride<0,0>(tma_layout_vt), gtensor.layout()),
-                                                         basis_get(stride<0,1>(tma_layout_vt), gtensor.layout()))));
-
+                                     flatten(make_layout(make_layout(basis_get(stride<0,0>(tma_layout_vt), gtensor.shape()),
+                                                                     basis_get(stride<0,0>(tma_layout_vt), gtensor.stride())),
+                                                         make_layout(basis_get(stride<0,1>(tma_layout_vt), gtensor.shape()),
+                                                                     basis_get(stride<0,1>(tma_layout_vt), gtensor.stride())))));
   auto [tma_desc, tma_tensor] = make_im2col_tma_copy_desc(
       gtensor_cwhdn,
       range_c,

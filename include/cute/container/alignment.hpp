@@ -54,17 +54,17 @@ is_byte_aligned(void const* const ptr)
 #  define CUTE_ALIGNAS(n) alignas(n)
 #endif
 
-template <size_t Alignment>
+template <size_t Alignment, class Child = void>
 struct aligned_struct {};
 
-template <> struct CUTE_ALIGNAS(  1) aligned_struct<  1> {};
-template <> struct CUTE_ALIGNAS(  2) aligned_struct<  2> {};
-template <> struct CUTE_ALIGNAS(  4) aligned_struct<  4> {};
-template <> struct CUTE_ALIGNAS(  8) aligned_struct<  8> {};
-template <> struct CUTE_ALIGNAS( 16) aligned_struct< 16> {};
-template <> struct CUTE_ALIGNAS( 32) aligned_struct< 32> {};
-template <> struct CUTE_ALIGNAS( 64) aligned_struct< 64> {};
-template <> struct CUTE_ALIGNAS(128) aligned_struct<128> {};
-template <> struct CUTE_ALIGNAS(256) aligned_struct<256> {};
+template <class Child> struct CUTE_ALIGNAS(  1) aligned_struct<  1, Child> {};
+template <class Child> struct CUTE_ALIGNAS(  2) aligned_struct<  2, Child> {};
+template <class Child> struct CUTE_ALIGNAS(  4) aligned_struct<  4, Child> {};
+template <class Child> struct CUTE_ALIGNAS(  8) aligned_struct<  8, Child> {};
+template <class Child> struct CUTE_ALIGNAS( 16) aligned_struct< 16, Child> {};
+template <class Child> struct CUTE_ALIGNAS( 32) aligned_struct< 32, Child> {};
+template <class Child> struct CUTE_ALIGNAS( 64) aligned_struct< 64, Child> {};
+template <class Child> struct CUTE_ALIGNAS(128) aligned_struct<128, Child> {};
+template <class Child> struct CUTE_ALIGNAS(256) aligned_struct<256, Child> {};
 
 } // end namespace cute

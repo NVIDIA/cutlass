@@ -37,6 +37,8 @@
 #include "cute/layout.hpp"
 #include "cute/numeric/integral_constant.hpp"
 
+#include "cutlass/gemm/dispatch_policy.hpp"
+
 //////////////////////////////////////////////////////////////////////////////
 
 //////////////////////////////////////////////////////////////////////////////
@@ -48,7 +50,7 @@ namespace cutlass::conv {
 //
 // Policies for categorical dispatch of mainloop against kernel grid schedules
 //
-struct KernelImplicitTmaWarpSpecializedSm90 { };
+struct KernelImplicitTmaWarpSpecializedSm90 : cutlass::gemm::KernelTmaWarpSpecialized { };
 struct KernelImplicitTmaWarpSpecializedSm90Cooperative { };
 struct KernelImplicitTmaWarpSpecializedSm90Pingpong { };
 
@@ -84,3 +86,5 @@ struct MainloopSm90TmaGmmaWarpSpecializedImplicitGemm {
 //////////////////////////////////////////////////////////////////////////////
 
 } // namespace cutlass::conv 
+
+//////////////////////////////////////////////////////////////////////////////

@@ -30,10 +30,9 @@
  **************************************************************************************************/
 #pragma once
 
-#include "cute/util/print.hpp"
-#include "cute/util/type_traits.hpp"
-#include "cute/numeric/math.hpp"
-#include "cutlass/fast_math.h"
+#include <cute/numeric/math.hpp>      // cute::max, etc
+#include <cute/util/print.hpp>        // cute::print
+#include <cute/util/type_traits.hpp>  // __CUTE_REQUIRES, cute::is_std_integral
 
 namespace cute
 {
@@ -65,7 +64,7 @@ struct integral_constant : C<v> {
   static constexpr T value = v;
   using value_type = T;
   // Disambiguate C<v>::operator value_type()
-  //CUTE_HOST_DEVICE constexpr operator   value_type() const noexcept { return value; }  
+  //CUTE_HOST_DEVICE constexpr operator   value_type() const noexcept { return value; }
   CUTE_HOST_DEVICE constexpr value_type operator()() const noexcept { return value; }
 };
 
@@ -406,6 +405,20 @@ conditional_return(false_type, TrueType&&, FalseType&& f) {
   return static_cast<FalseType&&>(f);
 }
 
+template <auto v>
+CUTE_HOST_DEVICE constexpr
+auto
+conditional_return(bool b, C<v> const&, C<v> const&) {
+  return C<v>{};
+}
+
+template <auto v, auto u>
+CUTE_HOST_DEVICE constexpr
+auto
+conditional_return(bool b, C<v> const&, C<u> const&) {
+  return b ? v : u;
+}
+
 // TrueType and FalseType must have a common type
 template <class TrueType, class FalseType>
 CUTE_HOST_DEVICE constexpr
@@ -435,7 +448,7 @@ static_value()
     return Int<Trait::value>{};
   } else {
     return Trait::value;
-  } 
+  }
   CUTE_GCC_UNREACHABLE;
 }
 

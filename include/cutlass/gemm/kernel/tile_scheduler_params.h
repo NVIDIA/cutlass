@@ -1046,12 +1046,9 @@ struct PersistentTileSchedulerSm90StreamKParams {
   // Returns whether the kernel is configured in a manner for which separate reduction should be used
   CUTLASS_HOST_DEVICE
   static bool
-  should_perform_separate_reduction(uint32_t epilogue_subtile, uint64_t sk_units, uint64_t sk_tiles, uint64_t dp_tiles, uint64_t ctas_per_wave) {
-    // We perform separate reduction if we have fewer than one wave of output tiles
-    // and each output tile is covered by at least to stream-K units. When sk_units is
-    // multiple of sk_tiles, will choose basic split-k path instead of separate reduction for now.
-    return (epilogue_subtile != 1) && (dp_tiles == 0) && (sk_units > 2u * sk_tiles) &&
-           (sk_units + sk_tiles * epilogue_subtile <= ctas_per_wave);
+  should_perform_separate_reduction(uint32_t, uint64_t, uint64_t, uint64_t, uint64_t) {
+    // Separate reduction is temporarily disabled, pending fixes
+    return false;
   }
 
   // Get the amount of scratch workspace needed for the kernel. This variant of the method should only be used when

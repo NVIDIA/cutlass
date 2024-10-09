@@ -181,6 +181,20 @@ public:
   }
 };
 
+template <class T>
+CUTE_HOST_DEVICE
+void
+print(subbyte_reference<T> ref) {
+  cute::print(ref.get());
+}
+
+template <class T>
+CUTE_HOST_DEVICE
+void
+pretty_print(subbyte_reference<T> ref) {
+  cute::pretty_print(ref.get());
+}
+
 //
 // subbyte_iterator
 //   Random-access iterator over subbyte references

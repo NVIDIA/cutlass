@@ -177,16 +177,25 @@ public:
   void reserve(
     size_t count,                                        ///< size of tensor in elements
     bool device_backed_ = true) {                        ///< if true, device memory is also allocated
+#if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
+    CUTLASS_TRACE_HOST("cutlass::HostTensor::reserve(count=" << count << ", device_backed_=" << (device_backed_ ? "true" : "false") << ")");
+#endif
 
     device_.reset();
     host_.clear();
 
     size_t count_container = count_to_container_storage_unit_count(count);
+#if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
+    CUTLASS_TRACE_HOST("cutlass::HostTensor::reserve: host_.resize(" << count_container << ")");
+#endif    
     host_.resize(count_container);
 
     // Allocate memory
     StorageUnit* device_memory = nullptr;
     if (device_backed_) {
+#if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
+      CUTLASS_TRACE_HOST("cutlass::HostTensor::reserve: device_memory::allocate(" << count_container << ")");
+#endif
       device_memory = device_memory::allocate<StorageUnit>(count_container);
     }
     device_.reset(device_memory, device_backed_ ? count_container : 0);
@@ -394,7 +403,7 @@ public:
   void sync_device() {
     if (device_backed()) {
       device_memory::copy_to_device(
-          device_.get(), host_.data(), host_.capacity());
+          device_.get(), host_.data(), host_.size());
     }
   }
 

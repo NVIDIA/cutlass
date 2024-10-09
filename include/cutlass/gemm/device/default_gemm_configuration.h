@@ -764,6 +764,58 @@ struct DefaultGemmConfiguration<
 
 ////////////////////////////////////////////////////////////////////////////////
 
+template <
+  typename ElementC>
+struct DefaultGemmConfiguration<
+  arch::OpClassTensorOp,
+  arch::Sm80,
+  int4b_t,
+  int8_t,
+  ElementC,
+  int32_t> {
+
+  static int const kAlignmentA = 128 / sizeof_bits<int4b_t>::value;
+  static int const kAlignmentB = 128 / sizeof_bits<int8_t>::value;
+
+  using ThreadblockShape = GemmShape<128, 256, 64>;
+  using WarpShape = GemmShape<64, 64, 64>;
+  using InstructionShape = GemmShape<16, 8, 32>;
+  static int const kStages = 3;
+
+  using EpilogueOutputOp = epilogue::thread::LinearCombinationClamp<
+      ElementC, 128 / sizeof_bits<ElementC>::value, int32_t, float>;
+
+  using Operator = arch::OpMultiplyAddSaturate;
+};
+
+////////////////////////////////////////////////////////////////////////////////
+
+template <
+  typename ElementC>
+struct DefaultGemmConfiguration<
+  arch::OpClassTensorOp,
+  arch::Sm80,
+  int8_t,
+  int4b_t,
+  ElementC,
+  int32_t> {
+
+  static int const kAlignmentA = 128 / sizeof_bits<int8_t>::value;
+  static int const kAlignmentB = 128 / sizeof_bits<int4b_t>::value;
+
+  using ThreadblockShape = GemmShape<128, 256, 64>;
+  using WarpShape = GemmShape<64, 64, 64>;
+  using InstructionShape = GemmShape<16, 8, 32>;
+  static int const kStages = 3;
+
+  using EpilogueOutputOp = epilogue::thread::LinearCombinationClamp<
+      ElementC, 128 / sizeof_bits<ElementC>::value, int32_t, float>;
+
+  using Operator = arch::OpMultiplyAddSaturate;
+};
+
+////////////////////////////////////////////////////////////////////////////////
+
 /// Base configuration for all {fe4m3, fe5m2} x {fe4m3, fe5m2} combinations on SM89
 template <
   typename ElementA,
@@ -792,60 +844,6 @@ struct DefaultGemmConfigurationSm89F8 {
 
   using Operator = arch::OpMultiplyAdd;
 };
-
-////////////////////////////////////////////////////////////////////////////////
-
-template < 
-  typename ElementC>
-struct DefaultGemmConfiguration<
-  arch::OpClassTensorOp, 
-  arch::Sm80, 
-  int4b_t, 
-  int8_t, 
-  ElementC, 
-  int32_t> {
-     
-  static int const kAlignmentA = 128 / sizeof_bits<int4b_t>::value;
-  static int const kAlignmentB = 128 / sizeof_bits<int8_t>::value;
- 
-  using ThreadblockShape = GemmShape<128, 256, 64>;
-  using WarpShape = GemmShape<64, 64, 64>;
-  using InstructionShape = GemmShape<16, 8, 32>;
-  static int const kStages = 3;
-
-  using EpilogueOutputOp = epilogue::thread::LinearCombinationClamp<
-      ElementC, 128 / sizeof_bits<ElementC>::value, int32_t, float>;
-
-  using Operator = arch::OpMultiplyAddSaturate;
-};
-
-////////////////////////////////////////////////////////////////////////////////
-
-template < 
-  typename ElementC>
-struct DefaultGemmConfiguration<
-  arch::OpClassTensorOp, 
-  arch::Sm80, 
-  int8_t, 
-  int4b_t, 
-  ElementC, 
-  int32_t> {
-     
-  static int const kAlignmentA = 128 / sizeof_bits<int8_t>::value;
-  static int const kAlignmentB = 128 / sizeof_bits<int4b_t>::value;
- 
-  using ThreadblockShape = GemmShape<128, 256, 64>;
-  using WarpShape = GemmShape<64, 64, 64>;
-  using InstructionShape = GemmShape<16, 8, 32>;
-  static int const kStages = 3;
-
-  using EpilogueOutputOp = epilogue::thread::LinearCombinationClamp<
-      ElementC, 128 / sizeof_bits<ElementC>::value, int32_t, float>;
-
-  using Operator = arch::OpMultiplyAddSaturate;
-};
-
-////////////////////////////////////////////////////////////////////////////////
 
 /// Partial specialization for SM89 fe4m3 x fe4m3
 template <typename ElementC, typename ElementAccumulator>

@@ -30,6 +30,7 @@
  **************************************************************************************************/
 #pragma once
 
+#include "cutlass/conv/convnd_problem_shape.hpp"
 #include "cutlass/detail/dependent_false.hpp"
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -43,6 +44,7 @@ namespace cutlass::conv::kernel {
  * a composition of a collective mainloop and a collective epilogue.
 **/
 template <
+  class ProblemShape_,
   class CollectiveMainloop_,
   class CollectiveEpilogue_,
   class TileSchedulerTag_ = void,

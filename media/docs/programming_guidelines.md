@@ -69,6 +69,9 @@ of child objects are known to be non-overlapping, `union`s may be used to alias 
 shared memory region and reduce overall shared memory capacity.  Developers should carefully note that C++ `union` rules
 require that they only access the most recently written ("active") member of the `union`; this differs from C rules.
 
+For host to device ABI compatibility, inheritance from a class is only permitted if the superclass is unique to the
+child class. This is most easily achieved by templating the parent class by the child class (CRTP).
+
 ### Loop Unrolling
 
 CUTLASS requires tiles of data to be stored in registers for high-bandwidth access. Simultaneously, high-throughput math instructions
@@ -1060,7 +1063,7 @@ constexpr auto second_form(T t) {
 
 In this form, the `else` branch had a `static_assert` that was meant always to fail if the `else` branch were taken, such as `static_assert(sizeof(T) < 0)`.  (Note that we cannot use `static_assert(false)` here, because it will ALWAYS fail at compile time, even if the `else` branch is not taken.  C++23 fixes this behavior, but CUTLASS currently requires that its code be compatible with C++17.  As a result, CUTLASS includes a `dependent_false<T>` library function that you can use in place of the always-`false` test `sizeof(T) < 0`.)
 
-One can suppress "missing return statement" warnings for both forms by invoking CUTLASS' function-like macro `CUTE_GCC_UNREACHABLE()`.  When building with GCC, this invokes the GCC-specific built-in function `__builtin_unreachable()`.  Actually calling this function is undefined behavior, so using this lets the programmer declare that the code path calling that function will never be taken.  (C++23 introduces the `std::unreachable()` function, which achieves the same goal.  Again, though, CUTLASS cannot currently use C++23 library functions.)  Here is an example of how to use `CUTE_GCC_UNREACHABLE()`.
+One can suppress "missing return statement" warnings for both forms by invoking CUTLASS' function-like macro `CUTE_GCC_UNREACHABLE`.  When building with GCC, this invokes the GCC-specific built-in function `__builtin_unreachable()`.  Actually calling this function is undefined behavior, so using this lets the programmer declare that the code path calling that function will never be taken.  (C++23 introduces the `std::unreachable()` function, which achieves the same goal.  Again, though, CUTLASS cannot currently use C++23 library functions.)  Here is an example of how to use `CUTE_GCC_UNREACHABLE`.
 
 ```c++
 template<class T>
@@ -1074,7 +1077,7 @@ constexpr auto second_form(T t) {
   else {
     static_assert(sizeof(T) < 0, "This branch always fails");
   }
-  CUTE_GCC_UNREACHABLE();
+  CUTE_GCC_UNREACHABLE;
 }
 ```
 

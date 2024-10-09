@@ -30,13 +30,18 @@
  **************************************************************************************************/
 #pragma once
 
-#include "cutlass/cutlass.h"
-#include "cutlass/detail/dependent_false.hpp"
-#include "cute/numeric/integral_constant.hpp"
-#include "cute/arch/cluster_sm90.hpp"
-#include "cutlass/arch/barrier.h"
+#include "cute/layout.hpp"
+#include "cute/layout_composed.hpp"  // cute::composition
+#include "cute/swizzle.hpp"             // cute::Swizzle
+#include "cute/swizzle_layout.hpp"      // cute::composition
 #include "cute/util/type_traits.hpp"
+#include "cute/arch/cluster_sm90.hpp"
 #include "cute/container/array.hpp"
+#include "cute/numeric/integral_constant.hpp"
+
+#include "cutlass/cutlass.h"
+#include "cutlass/arch/barrier.h"
+#include "cutlass/detail/dependent_false.hpp"
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -233,7 +238,7 @@ public :
   };
 
   // Constructor
-  template<typename ClusterShape>
+  template<class ClusterShape>
   CUTLASS_DEVICE
   PipelineTmaAsync(SharedStorage& storage, Params params, ClusterShape cluster_shape)
       : params_(params)
@@ -294,7 +299,7 @@ public :
     is_signalling_thread_ &= is_same_row_or_col(dst_blockid_, block_id, cluster_shape);
   }
 
-  template <typename ClusterShape>
+  template <class ClusterShape>
   CUTLASS_DEVICE
   bool is_same_row_or_col(int dst_block_id, dim3 block_id, ClusterShape cluster_shape) {
     return (((dst_block_id % cute::size<0>(cluster_shape)) == block_id.x) ||
@@ -654,13 +659,12 @@ public :
     : params_(params)
     , full_barrier_ptr_(storage.full_barrier_.data())
     , empty_barrier_ptr_(storage.empty_barrier_.data()) {
-
     int warp_idx = canonical_warp_idx_sync();
     int lane_predicate = cute::elect_one_sync();
 
     // Barrier FULL, EMPTY init
     // Init is done only by thread 0 of the block
-    if (warp_idx == 0 && lane_predicate == 1) {
+    if (warp_idx == 0 && lane_predicate) {
       for (int i = 0; i < Stages; ++i) {
         full_barrier_ptr_[i].init(params.producer_arv_count);
         empty_barrier_ptr_[i].init(params.consumer_arv_count);
@@ -1099,7 +1103,7 @@ public:
 
     // Barrier FULL, EMPTY init
     // Init is done only by the one elected thread of the block
-    if (warp_idx == 0 && lane_predicate == 1) {
+    if (warp_idx == 0 && lane_predicate) {
       for (int d = 0; d < Depth; ++d) {
         for (int l = 0; l < Length; ++l) {
           barrier_ptr_[d * Length + l].init(params.group_size);

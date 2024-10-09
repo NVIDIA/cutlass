@@ -94,9 +94,12 @@ using ${operation_name}_mainloop =
     ${kernel_schedule}
   >::CollectiveOp;
 
+using ${operation_name}_problem_shape = cutlass::conv::ConvProblemShape<${conv_kind}, ${operation_name}_mainloop::NumSpatialDimensions>;
+
 // Unit tests call this "ConvKernel".
 // Conv operator ${operation_name}
 using ${operation_name}_base = cutlass::conv::kernel::ConvUniversal<
+    ${operation_name}_problem_shape,
     ${operation_name}_mainloop,
     ${operation_name}_epilogue,
     ${tile_scheduler}

@@ -94,9 +94,21 @@ class NamedBarrier {
   }
 
   CUTLASS_DEVICE
+  void arrive_and_wait_unaligned() const {
+    // Note: The value of id_ is already the final barrier id (set correctly in the constructor).
+    NamedBarrier::arrive_and_wait_internal_unaligned(num_threads_, id_);
+  }
+
+  CUTLASS_DEVICE
   void arrive() const {
     // Note: The value of id_ is already the final barrier id (set correctly in the constructor).
     NamedBarrier::arrive_internal(num_threads_, id_);
+  }
+
+  CUTLASS_DEVICE
+  void arrive_unaligned() const {
+    // Note: The value of id_ is already the final barrier id (set correctly in the constructor).
+    NamedBarrier::arrive_internal_unaligned(num_threads_, id_);
   }
 
   CUTLASS_DEVICE
@@ -148,11 +160,23 @@ class NamedBarrier {
     sync_internal(num_threads, static_cast<int>(reserved_named_barriers));
   }
 
+
  private:
   CUTLASS_DEVICE
   static void arrive_and_wait_internal(uint32_t num_threads, uint32_t barrier_id) {
 #if CUDA_BARRIER_ENABLED
     asm volatile("bar.sync %0, %1;" : : "r"(barrier_id), "r"(num_threads));
+    cutlass::arch::synclog_emit_named_barrier_arrive_and_wait(__LINE__, num_threads, barrier_id);
+#elif defined(__CUDA_ARCH__)
+    asm volatile ("brkpt;\n" ::);
+#endif
+  }
+
+  CUTLASS_DEVICE
+  static void arrive_and_wait_internal_unaligned(uint32_t num_threads, uint32_t barrier_id) {
+#if CUDA_BARRIER_ENABLED
+    asm volatile("barrier.sync %0, %1;" : : "r"(barrier_id), "r"(num_threads));
+    cutlass::arch::synclog_emit_named_barrier_arrive_and_wait(__LINE__, num_threads, barrier_id);
 #elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
 #endif
@@ -161,7 +185,18 @@ class NamedBarrier {
   CUTLASS_DEVICE
   static void arrive_internal(uint32_t num_threads, uint32_t barrier_id) {
 #if CUDA_BARRIER_ENABLED
+    cutlass::arch::synclog_emit_named_barrier_arrive(__LINE__, num_threads, barrier_id);
     asm volatile("bar.arrive %0, %1;" : : "r"(barrier_id), "r"(num_threads));
+#elif defined(__CUDA_ARCH__)
+    asm volatile ("brkpt;\n" ::);
+#endif
+  }
+
+  CUTLASS_DEVICE
+  static void arrive_internal_unaligned(uint32_t num_threads, uint32_t barrier_id) {
+#if CUDA_BARRIER_ENABLED
+    cutlass::arch::synclog_emit_named_barrier_arrive(__LINE__, num_threads, barrier_id);
+    asm volatile("barrier.arrive %0, %1;" : : "r"(barrier_id), "r"(num_threads));
 #elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
 #endif
@@ -243,6 +278,7 @@ public:
         "}"
         :
         : "r"(arrive_count), "r"(smem_addr));
+    cutlass::arch::synclog_emit_cluster_barrier_init(__LINE__, smem_addr, arrive_count);
 #elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
 #endif
@@ -253,6 +289,7 @@ public:
   static void wait(ValueType const* smem_ptr, uint32_t phase) {
 #if CUDA_BARRIER_ENABLED
     uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
+    cutlass::arch::synclog_emit_cluster_barrier_wait(__LINE__, smem_addr, phase);
     // Arbitrarily large timer value after which try-wait expires and re-tries.
     uint32_t ticks = 0x989680;
     asm volatile(
@@ -276,6 +313,7 @@ public:
   static bool test_wait(ValueType const* smem_ptr, uint32_t phase, uint32_t pred) {
 #if CUDA_BARRIER_ENABLED
     uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
+    cutlass::arch::synclog_emit_cluster_barrier_test_wait(__LINE__, smem_addr, phase, pred);
     uint32_t waitComplete;
 
     asm volatile(
@@ -300,6 +338,7 @@ public:
   static bool try_wait(ValueType const* smem_ptr, uint32_t phase) {
 #if CUDA_BARRIER_ENABLED
     uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
+    cutlass::arch::synclog_emit_cluster_barrier_try_wait(__LINE__, smem_addr, phase);
     uint32_t waitComplete;
 
     asm volatile(
@@ -334,6 +373,7 @@ public:
           : "r"(smem_addr), "r"(cta_id));
     }
 
+    cutlass::arch::synclog_emit_cluster_barrier_arrive_cluster(__LINE__, smem_addr, cta_id, pred);
 #elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
 #endif
@@ -350,6 +390,7 @@ public:
         "}"
         :
         : "r"(smem_addr));
+    cutlass::arch::synclog_emit_cluster_barrier_arrive(__LINE__, smem_addr);
 #elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
 #endif
@@ -426,6 +467,7 @@ struct ClusterTransactionBarrier : public ClusterBarrier {
         "}"
         :
         : "r"(transaction_bytes), "r"(smem_addr));
+    cutlass::arch::synclog_emit_cluster_transaction_barrier_arrive_and_expect_tx(__LINE__, smem_addr, transaction_bytes);
 #elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
 #endif
@@ -463,6 +505,7 @@ struct ClusterTransactionBarrier : public ClusterBarrier {
         "}"
         :
         : "r"(transaction_bytes), "r"(smem_addr));
+    cutlass::arch::synclog_emit_cluster_transaction_barrier_expect_transaction(__LINE__, smem_addr, transaction_bytes);
 #elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
 #endif
@@ -483,6 +526,7 @@ struct ClusterTransactionBarrier : public ClusterBarrier {
         "}"
         :
         : "r"(transaction_bytes), "r"(smem_addr), "r"(pred));
+    cutlass::arch::synclog_emit_cluster_transaction_barrier_complete_transaction(__LINE__, smem_addr, dst_cta_id, transaction_bytes, pred);
 #elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
 #endif
@@ -536,6 +580,7 @@ struct ClusterTransactionBarrier : public ClusterBarrier {
 CUTLASS_DEVICE
 void fence_barrier_init() {
 #if CUDA_BARRIER_ENABLED
+  cutlass::arch::synclog_emit_fence_barrier_init(__LINE__);
   asm volatile(
       "{\n\t"
       "fence.mbarrier_init.release.cluster; \n"
@@ -550,6 +595,7 @@ void fence_barrier_init() {
 CUTLASS_DEVICE
 void fence_view_async_shared() {
 #if CUDA_BARRIER_ENABLED
+    cutlass::arch::synclog_emit_fence_view_async_shared(__LINE__);
     asm volatile (
         "{\n\t"
         "fence.proxy.async.shared::cta; \n"
@@ -571,6 +617,7 @@ void cpasync_barrier_arrive(uint64_t const* smem_ptr) {
     "}"
     :
     : "r"(smem_addr));
+  cutlass::arch::synclog_emit_cpasync_barrier_arrive(__LINE__, smem_addr);
 #elif defined(__CUDA_ARCH__)
   asm volatile ("brkpt;\n" ::);
 #endif

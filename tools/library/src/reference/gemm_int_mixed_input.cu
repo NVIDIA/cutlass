@@ -73,7 +73,7 @@ void initialize_gemm_reference_operations_int_mixed_input(Manifest &manifest) {
     int32_t,
     NumericConverterClamp<int32_t, float>
   >(manifest);
-  
+
   make_gemm_real_canonical_layouts<
     int4b_t,
     int8_t,
@@ -110,7 +110,7 @@ void initialize_gemm_reference_operations_int_mixed_input(Manifest &manifest) {
     int32_t,
     NumericConverterClamp<int32_t, float>
   >(manifest);
-  
+
   make_gemm_real_canonical_layouts<
     int8_t,
     int4b_t,

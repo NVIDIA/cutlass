@@ -91,9 +91,9 @@
 
 using namespace cute;
 using ProblemShape = cutlass::gemm::GroupProblemShape<Shape<int,int,int>>; // <M,N,K> per group
-using ElementA = cutlass::float_e4m3_t;                          // Element type for A matrix operand
-using ElementB = cutlass::float_e5m2_t;                          // Element type for B matrix operand
-using ElementC = cutlass::half_t;                                // Element type for C and D matrix operands
+using ElementA = cutlass::float_e4m3_t;                                    // Element type for A matrix operand
+using ElementB = cutlass::float_e5m2_t;                                    // Element type for B matrix operand
+using ElementC = cutlass::half_t;                                          // Element type for C and D matrix operands
 
 #if defined(CUTLASS_ARCH_MMA_MODIFIABLE_TMA_SM90_SUPPORTED)
 

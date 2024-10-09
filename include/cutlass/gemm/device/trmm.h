@@ -495,6 +495,7 @@ public:
       }
     }
 
+    cutlass::arch::synclog_setup();
     cutlass::Kernel<TrmmKernel><<<grid, block, smem_size, stream>>>(params_);
 
     cudaError_t result = cudaGetLastError();

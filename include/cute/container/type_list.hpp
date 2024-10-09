@@ -30,8 +30,7 @@
  **************************************************************************************************/
 #pragma once
 
-#include <cute/config.hpp>
-#include <cute/util/type_traits.hpp>
+#include <cute/config.hpp>            // CUTE_HOST_DEVICE, CUTE_STL_NAMESPACE
 
 namespace cute
 {

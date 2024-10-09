@@ -30,12 +30,11 @@
  **************************************************************************************************/
 #pragma once
 
-#include <cute/config.hpp>
-
-#include <cute/container/tuple.hpp>
-#include <cute/container/array.hpp>
-#include <cute/algorithm/tuple_algorithms.hpp>
-#include <cute/numeric/integral_constant.hpp>
+#include <cute/config.hpp>                      // CUTE_HOST_DEVICE
+#include <cute/container/array.hpp>             // cute::array
+#include <cute/container/tuple.hpp>             // cute::is_tuple
+#include <cute/numeric/integral_constant.hpp>   // cute::Int
+#include <cute/algorithm/tuple_algorithms.hpp>  // cute::transform
 
 /** IntTuple is an integer or a tuple of IntTuples.
  * This file holds utilities for working with IntTuples,
@@ -92,7 +91,7 @@ template <class IntTuple>
 using rank_t = decltype(rank(declval<IntTuple>()));
 
 template <class IntTuple>
-static constexpr int rank_v = rank_t<IntTuple>::value;
+static constexpr auto rank_v = rank_t<IntTuple>::value;
 
 //
 // shape
@@ -212,7 +211,7 @@ template <class Tuple>
 using depth_t = decltype(depth(declval<Tuple>()));
 
 template <class Tuple>
-static constexpr int depth_v = depth_t<Tuple>::value;
+static constexpr auto depth_v = depth_t<Tuple>::value;
 
 //
 // product
@@ -276,7 +275,7 @@ size(IntTuple const& a)
 }
 
 template <class IntTuple>
-static constexpr int size_v = decltype(size(declval<IntTuple>()))::value;
+static constexpr auto size_v = decltype(size(declval<IntTuple>()))::value;
 
 //
 // sum
@@ -522,67 +521,30 @@ compatible(IntTupleA const& a, IntTupleB const& b)
 template <class A, class B>
 using is_compatible = decltype(compatible(declval<A>(), declval<B>()));
 
-/** Test if Shape A is weakly compatible with Shape B:
- *    there exists a Shape C congruent to A such that compatible(elem_scale(A,C), B)
- * Equivalently, the size of Shape B is a multiple of Shape A at each terminal of Shape A.
- * weakly_compatible is a partial order on A and B: A <= B
+/** Test if Shape A is evenly divided by Tiler B
+ * @returns Static or dynamic boolean
+ * @post if result is true_type, then
+ *       size(a) == logical_divide(make_layout(shape(a)),b) will always compile
+ *       and result in true_type.
  */
-template <class IntTupleA, class IntTupleB>
+template <class Shape, class Tiler>
 CUTE_HOST_DEVICE constexpr
 auto
-weakly_compatible(IntTupleA const& a, IntTupleB const& b)
+evenly_divides(Shape const& a, Tiler const& b)
 {
-  if constexpr (is_tuple<IntTupleA>::value && is_tuple<IntTupleB>::value) {
-    if constexpr (tuple_size<IntTupleA>::value != tuple_size<IntTupleB>::value) {
+  if constexpr (is_tuple<Tiler>::value) {
+    if constexpr (rank_v<Tiler> > rank_v<Shape>) {
       return false_type{};
     } else {
-      return transform_apply(a, b, [](auto const& x, auto const& y) { return weakly_compatible(x,y); },
+      return transform_apply(b, a, [](auto const& x, auto const& y) { return evenly_divides(y,x); },
                                    [](auto const&... z) { return (true_type{} && ... && z); });
     }
-  } else if constexpr (is_integral<IntTupleA>::value) {
-    return size(b) % a == Int<0>{};
-  } else if constexpr (is_integral<IntTupleB>::value) {
-    return false_type{};
   } else {
-    return weakly_compatible(shape(a), shape(b));
+    return size(a) == size(b) * size(ceil_div(shape(a), b));
   }
 
   CUTE_GCC_UNREACHABLE;
 }
-
-template <class A, class B>
-using is_weakly_compatible = decltype(weakly_compatible(declval<A>(), declval<B>()));
-
-/** Test if Shape A is softly compatible with Shape B:
- *    there exists a Shape C congruent to A such that compatible(shape_div(A,C), B)
- * Equivalently, the size of Shape B divides Shape A at each terminal of Shape A.
- * softly_compatible is a partial order on A and B: A <= B
- */
-template <class IntTupleA, class IntTupleB>
-CUTE_HOST_DEVICE constexpr
-auto
-softly_compatible(IntTupleA const& a, IntTupleB const& b)
-{
-  if constexpr (is_tuple<IntTupleA>::value && is_tuple<IntTupleB>::value) {
-    if constexpr (tuple_size<IntTupleA>::value != tuple_size<IntTupleB>::value) {
-      return false_type{};
-    } else {
-      return transform_apply(a, b, [](auto const& x, auto const& y) { return softly_compatible(x,y); },
-                                   [](auto const&... z) { return (true_type{} && ... && z); });
-    }
-  } else if constexpr (is_integral<IntTupleA>::value) {
-    return a % size(b) == Int<0>{};
-  } else if constexpr (is_integral<IntTupleB>::value) {
-    return false_type{};
-  } else {
-    return softly_compatible(shape(a), shape(b));
-  }
-
-  CUTE_GCC_UNREACHABLE;
-}
-
-template <class A, class B>
-using is_softly_compatible = decltype(softly_compatible(declval<A>(), declval<B>()));
 
 /** Replace the elements of Tuple B that are paired with an Int<0> with an Int<1>
  */
@@ -594,7 +556,7 @@ filter_zeros(IntTupleA const& a, IntTupleB const& b)
   if constexpr (is_tuple<IntTupleA>::value) {
     return transform(a, b, [](auto const& x, auto const& y) { return filter_zeros(x,y); });
   } else if constexpr (is_constant<0, IntTupleA>::value) {
-    return Int<1>{};
+    return repeat_like(b, Int<1>{});
   } else {
     return b;
   }
@@ -897,94 +859,6 @@ CUTE_HOST_DEVICE constexpr
 auto
 elem_geq(T const& t, U const& u) {
   return !elem_less(t, u);
-}
-
-namespace detail {
-
-/** Increment a (dynamic) coord lexicographically within a shape
- * @pre is_congruent<Coord,Shape>::value
- * \code
- *    auto shape = make_shape(1,2,make_shape(2,3),3);
- *
- *   int i = 0;
- *   for (auto coord = repeat_like(shape, 0); back(coord) != back(shape); increment(coord, shape)) {
- *      std::cout << i++ << ": " << coord << std::endl;
- *   }
- *   assert(i == size(shape));
- * \endcode
- */
-template <int I = 0, class Coord, class Shape>
-CUTE_HOST_DEVICE constexpr
-void
-increment(Coord& coord, Shape const& shape)
-{
-  if constexpr (is_integral<Coord>::value) {
-    ++coord;
-  } else {
-    increment(get<I>(coord), get<I>(shape));
-    if constexpr (I+1 < tuple_size<Coord>::value) {
-      if (back(get<I>(coord)) == back(get<I>(shape))) {
-        back(get<I>(coord)) = 0;
-        increment<I+1>(coord, shape);
-      }
-    }
-  }
-}
-
-} // end namespace detail
-
-struct ForwardCoordIteratorSentinal
-{};
-
-// A forward iterator for a starting coordinate in a shape's domain, and a shape.
-// The starting coordinate may be zero but need not necessarily be.
-template <class Coord, class Shape>
-struct ForwardCoordIterator
-{
-  static_assert(is_congruent<Coord, Shape>::value);
-
-  CUTE_HOST_DEVICE constexpr
-  Coord const& operator*() const { return coord; }
-
-  CUTE_HOST_DEVICE constexpr
-  ForwardCoordIterator& operator++() { detail::increment(coord, shape); return *this; }
-
-  // Sentinel for the end of the implied range
-  CUTE_HOST_DEVICE constexpr
-  bool operator< (ForwardCoordIteratorSentinal const&) const { return back(coord) <  back(shape); }
-  CUTE_HOST_DEVICE constexpr
-  bool operator==(ForwardCoordIteratorSentinal const&) const { return back(coord) == back(shape); }
-  CUTE_HOST_DEVICE constexpr
-  bool operator!=(ForwardCoordIteratorSentinal const&) const { return back(coord) != back(shape); }
-  // NOTE: These are expensive, avoid use
-  CUTE_HOST_DEVICE constexpr
-  bool operator< (ForwardCoordIterator const& other) const { return colex_less(coord, other.coord); }
-  CUTE_HOST_DEVICE constexpr
-  bool operator==(ForwardCoordIterator const& other) const { return coord == other.coord; }
-  CUTE_HOST_DEVICE constexpr
-  bool operator!=(ForwardCoordIterator const& other) const { return coord != other.coord; }
-
-  Coord coord;
-  Shape const& shape;
-};
-
-// A forward iterator for a coordinate that starts from a provided coordinate
-template <class Shape, class Coord>
-CUTE_HOST_DEVICE constexpr
-auto
-make_coord_iterator(Coord const& coord, Shape const& shape)
-{
-  return ForwardCoordIterator<Coord,Shape>{coord,shape};
-}
-
-// A forward iterator for a coordinate that starts from zero
-template <class Shape>
-CUTE_HOST_DEVICE constexpr
-auto
-make_coord_iterator(Shape const& shape)
-{
-  auto coord = repeat_like(shape, int(0));
-  return make_coord_iterator(coord, shape);
 }
 
 } // end namespace cute

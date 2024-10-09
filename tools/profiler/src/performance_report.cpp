@@ -94,7 +94,7 @@ PerformanceReport::PerformanceReport(
     if (options_.report.append) {
 
       std::ifstream test_output_file(op_file_name_);
-      
+
       if (test_output_file.is_open()) {
         print_header = false;
         test_output_file.close();
@@ -145,7 +145,7 @@ void PerformanceReport::append_result(PerformanceResult result) {
 
   if (options_.report.verbose) {
     std::cout << "\n";
-    print_result_pretty_(std::cout, result) << std::flush; 
+    print_result_pretty_(std::cout, result) << std::flush;
   }
 
   if (junit_output_file_.is_open()) {
@@ -237,7 +237,7 @@ static const char *disposition_status_color(Disposition disposition) {
 
 /// Prints the result in human readable form
 std::ostream & PerformanceReport::print_result_pretty_(
-  std::ostream &out, 
+  std::ostream &out,
   PerformanceResult const &result,
   bool use_shell_coloring) {
 
@@ -251,14 +251,14 @@ std::ostream & PerformanceReport::print_result_pretty_(
     int column_idx = 0;
     for (auto const & tag : options_.report.pivot_tags) {
       out << (column_idx++ ? "," : "") << tag.first << ":" << tag.second;
-    } 
+    }
 
     out << "\n";
   }
 
   std::string shell_color_bright = use_shell_coloring ? SHELL_COLOR_BRIGHT() : "";
   std::string shell_color_end = use_shell_coloring ? SHELL_COLOR_END() : "";
-  auto _disposition_status_color = [&](Disposition d) -> const char * { 
+  auto _disposition_status_color = [&](Disposition d) -> const char * {
     return use_shell_coloring ? disposition_status_color(d) : "";
   };
 
@@ -277,7 +277,7 @@ std::ostream & PerformanceReport::print_result_pretty_(
     static int const indent_spaces = 16;
 
     for(auto & m : result.verification_map) {
-      out  << std::right << std::setw(indent_spaces) << library::to_string(m.first, true) << ": " << to_string(m.second, true) << "\n";  
+      out  << std::right << std::setw(indent_spaces) << library::to_string(m.first, true) << ": " << to_string(m.second, true) << "\n";
     }
   }
 
@@ -287,7 +287,7 @@ std::ostream & PerformanceReport::print_result_pretty_(
   int column_idx = 0;
   for (auto const &arg : result.arguments) {
     if (!arg.second.empty()) {
-      out << " --" << arg.first << "=" << arg.second; 
+      out << " --" << arg.first << "=" << arg.second;
       column_idx += int(4 + arg.first.size() + arg.second.size());
       if (column_idx > 98) {
         out << "  \\\n                 ";
@@ -297,7 +297,7 @@ std::ostream & PerformanceReport::print_result_pretty_(
   }
   out << "\n\n";
 
-  out 
+  out
     << "           Bytes: " << result.bytes << "  bytes\n"
     << "           FLOPs: " << result.flops << "  flops\n"
     << "           FLOPs/Byte: " << (result.flops / result.bytes) << "\n\n";
@@ -325,7 +325,7 @@ std::ostream & PerformanceReport::print_csv_header_(
     out << (column_idx++ ? "," : "") << tag.first;
   }
 
-  out 
+  out
     << (column_idx ? "," : "") << "Problem,Provider"
     << ",OperationKind,Operation,Disposition,Status";
 
@@ -333,7 +333,7 @@ std::ostream & PerformanceReport::print_csv_header_(
     out << "," << arg_name;
   }
 
-  out 
+  out
     << ",Bytes"
     << ",Flops"
     << ",Flops/Byte"
@@ -347,7 +347,7 @@ std::ostream & PerformanceReport::print_csv_header_(
 
 /// Print the result in CSV output
 std::ostream & PerformanceReport::print_result_csv_(
-  std::ostream &out, 
+  std::ostream &out,
   PerformanceResult const &result) {
 
   int column_idx = 0;
@@ -357,8 +357,8 @@ std::ostream & PerformanceReport::print_result_csv_(
     out << (column_idx++ ? "," : "") << tag.second;
   }
 
-  out 
-    << (column_idx ? "," : "") 
+  out
+    << (column_idx ? "," : "")
     << result.problem_index
     << "," << to_string(result.provider, true)
     << "," << to_string(result.op_kind)
@@ -370,7 +370,7 @@ std::ostream & PerformanceReport::print_result_csv_(
     out << "," << arg.second;
   }
 
-  out 
+  out
     << "," << result.bytes
     << "," << result.flops
     << "," << result.flops / result.bytes
@@ -387,7 +387,7 @@ std::ostream & PerformanceReport::print_result_csv_(
   else {
     out << std::string(2
       , ','
-    ); 
+    );
   }
 
   return out;
@@ -451,25 +451,25 @@ std::ostream & PerformanceReport::print_junit_result_(std::ostream &out, Perform
   case Disposition::kNotSupported:
     skipped = true;
     break;
-  case Disposition::kPassed: 
+  case Disposition::kPassed:
   case Disposition::kNotVerified:
     break;
-  case Disposition::kFailed: 
+  case Disposition::kFailed:
   case Disposition::kIncorrect:
-    failed = true; 
+    failed = true;
     break;
   case Disposition::kInvalidProblem:
   case Disposition::kInvalid:
     error = true;
     break;
   };
-  
+
   if (skipped) {
     out << "status=\"notrun\"";
   } else {
     out << "status=\"run\"";
   }
-    
+
   out << ">" << std::endl;
 
   if (failed) {
@@ -488,7 +488,7 @@ std::ostream & PerformanceReport::print_junit_result_(std::ostream &out, Perform
 
   out << "  </testcase>" << std::endl;
 
-  return out;  
+  return out;
 
 }
 

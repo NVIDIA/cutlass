@@ -443,6 +443,8 @@ public:
       "block: (" << block << "), "
       "SMEM: (" << kSharedStorageSize << ")");
 
+    cutlass::arch::synclog_setup();
+
     if constexpr (kEnableCudaHostAdapter) {
       CUTLASS_ASSERT(cuda_adapter);
       if (cuda_adapter) {
