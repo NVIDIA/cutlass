@@ -147,8 +147,8 @@ public:
       using MainloopTensorStorage = typename CollectiveMainloop::TensorStorage;
       using EpilogueTensorStorage = typename CollectiveEpilogue::TensorStorage;
 
-      EpilogueTensorStorage epilogue;
       MainloopTensorStorage mainloop;
+      EpilogueTensorStorage epilogue;
     } tensors;
   };
 
