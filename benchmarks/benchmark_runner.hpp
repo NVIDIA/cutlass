@@ -56,6 +56,21 @@
 
 using namespace cute;
 
+namespace cutlass {
+    std::size_t get_llc_size() {
+      #if defined(CUTLASS_ENABLE_SYCL)
+        return syclcompat::get_default_queue().get_device().get_info<sycl::info::device::global_mem_cache_size>();   
+      #else
+        cudaDeviceProp prop_struct;
+        auto result = cudaGetDeviceProperties(&prop_struct, 0);
+        if (result != cudaSuccess) {
+          throw std::runtime_error(cudaGetErrorString(result));
+        }
+        return static_cast<std::size_t>(prop_struct.l2CacheSize);
+      #endif
+    }
+}
+
 namespace cutlass::benchmark {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -158,6 +173,8 @@ struct BenchmarkRunnerGemm {
 
   using ProblemShapeType = typename Gemm::GemmKernel::ProblemShape;
 
+  int32_t count;
+
   //
   // Data members
   //
@@ -170,9 +187,9 @@ struct BenchmarkRunnerGemm {
 
   uint64_t seed;
 
-  DeviceAllocation<ElementA> block_A;
-  DeviceAllocation<ElementB> block_B;
-  DeviceAllocation<ElementC> block_C;
+  std::vector<DeviceAllocation<ElementA>> block_A;
+  std::vector<DeviceAllocation<ElementB>> block_B;
+  std::vector<DeviceAllocation<ElementC>> block_C;
   DeviceAllocation<ElementOutput> block_D;
   DeviceAllocation<ElementOutput> block_ref_D;
 
@@ -185,9 +202,9 @@ struct BenchmarkRunnerGemm {
   bool verify(const ProblemShapeType& problem_size, ElementCompute alpha, ElementCompute beta) {
     auto [M, N, K, L] = problem_size;
 
-    TensorRef ref_A(block_A.get(), LayoutA::packed({M, K}));
-    TensorRef ref_B(block_B.get(), LayoutB::packed({K, N}));
-    TensorRef ref_C(block_C.get(), LayoutC::packed({M, N}));
+    TensorRef ref_A(block_A[0].get(), LayoutA::packed({M, K}));
+    TensorRef ref_B(block_B[0].get(), LayoutB::packed({K, N}));
+    TensorRef ref_C(block_C[0].get(), LayoutC::packed({M, N}));
     TensorRef ref_D(block_ref_D.get(), LayoutD::packed({M, N}));
 
     reference::device::GemmComplex(
@@ -231,19 +248,28 @@ struct BenchmarkRunnerGemm {
     stride_C = cutlass::make_cute_packed_stride(StrideC{}, cute::make_shape(M, N, L));
     stride_D = cutlass::make_cute_packed_stride(StrideD{}, cute::make_shape(M, N, L));
 
-    std::size_t block_A_size = std::size_t(M) * std::size_t(K) * std::size_t(L);
-    std::size_t block_B_size = std::size_t(K) * std::size_t(N) * std::size_t(L);
-    std::size_t block_C_size = std::size_t(M) * std::size_t(N) * std::size_t(L);
+    std::size_t mem_occupied_ABC = (M * K * L * sizeof(ElementA)) + (K * N * L * sizeof(ElementB)) + 
+                                   (M * N * L * sizeof(ElementC));
+    count = std::ceil(static_cast<float>(cutlass::get_llc_size()) / static_cast<float>(mem_occupied_ABC)) + 1;
 
-    block_A.reset(block_A_size);
-    block_B.reset(block_B_size);
-    block_C.reset(block_C_size);
-    block_D.reset(block_C_size);
-    block_ref_D.reset(block_C_size);
+    for(int i=0; i < count; i++) {
+      block_A.emplace_back();
+      block_B.emplace_back();
+      block_C.emplace_back();
+    }
 
-    initialize_block(block_A, seed + 2023);
-    initialize_block(block_B, seed + 2022);
-    initialize_block(block_C, seed + 2021);
+    for (int i=0; i < count; i++) {
+      block_A[i].reset(M * K * L);
+      block_B[i].reset(K * N * L);
+      block_C[i].reset(M * N * L);
+      initialize_block(block_A[i], seed + i);
+      initialize_block(block_B[i], seed + i);
+      initialize_block(block_C[i], seed + i);
+    }
+
+    block_D.reset(M * N * L);
+    block_ref_D.reset(M * N * L);
+
   }
 
   void run(::benchmark::State& state, const Options& options, const KernelHardwareInfo& hw_info) {
@@ -254,8 +280,8 @@ struct BenchmarkRunnerGemm {
     typename Gemm::GemmKernel::Arguments arguments{
        gemm::GemmUniversalMode::kGemm,
       problem_size,
-      {block_A.get(), stride_A, block_B.get(), stride_B},
-      {{options.alpha, options.beta}, block_C.get(), stride_C, block_D.get(), stride_D},
+      {block_A[0].get(), stride_A, block_B[0].get(), stride_B},
+      {{options.alpha, options.beta}, block_C[0].get(), stride_C, block_D.get(), stride_D},
       hw_info
     };
 
@@ -316,13 +342,27 @@ struct BenchmarkRunnerGemm {
       ) * 1e-6 * options.l;
 
     initialize_counters(state);
+    int32_t counter = 1;
     for(auto _ : state) {
+      state.PauseTiming();
+      int input_num = std::max(int(0), counter % count);
+      typename Gemm::GemmKernel::Arguments arguments{
+        gemm::GemmUniversalMode::kGemm,
+        problem_size,
+        {block_A[input_num].get(), stride_A, block_B[input_num].get(), stride_B},
+        {{options.alpha, options.beta}, block_C[input_num].get(), stride_C, block_D.get(), stride_D},
+        hw_info
+      };
+      gemm_op.initialize(arguments, workspace.get());
+      state.ResumeTiming();
+
       GPU_Clock timer;
       timer.start();
       gemm_op.run();
       auto ms_elapsed = timer.milliseconds();
       update_counters(state, ms_elapsed);
       state.SetIterationTime(ms_elapsed / 1000);
+      counter++;
     }
     finalize_counters(state, gflop, mega_bytes_transferred);
   }
