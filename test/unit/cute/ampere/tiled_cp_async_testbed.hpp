@@ -37,10 +37,6 @@
 #include <type_traits>
 #include <vector>
 #include <numeric>
-
-#include <thrust/host_vector.h>
-#include <thrust/device_vector.h>
-
 #include <cute/tensor.hpp>
 
 using namespace cute;
@@ -51,24 +47,28 @@ struct SharedStorage
   cute::ArrayEngine<ElementType, cute::cosize_v<SmemLayout>> smem;
 };
 
+#if defined(CUTLASS_ENABLE_SYCL)
+namespace sc = syclcompat;
+namespace sc_exp = syclcompat::experimental;
+namespace sycl_ext = sycl::ext::oneapi::experimental;
+
 template <class T, class TiledCopy, class GmemLayout, class SmemLayout>
-__global__ void
+CUTLASS_GLOBAL void
 test_tiled_cp_async_device_cute(T const* g_in, T* g_out,
                      TiledCopy const tiled_copy,
-                     GmemLayout gmem_layout, SmemLayout smem_layout)
+                     GmemLayout gmem_layout, SmemLayout smem_layout,
+                     sycl::local_ptr<char> shared_memory)
 {
   using namespace cute;
-
-  extern __shared__ char shared_memory[];
   using SharedStorage = SharedStorage<T, SmemLayout>;
-  SharedStorage& shared_storage = *reinterpret_cast<SharedStorage*>(shared_memory);
+  SharedStorage& shared_storage = *reinterpret_cast<SharedStorage*>((char*)shared_memory);
 
-  auto thr_copy = tiled_copy.get_slice(threadIdx.x);
+  auto thr_copy = tiled_copy.get_slice(ThreadIdxX());
   Tensor gA = make_tensor(make_gmem_ptr(g_in), gmem_layout);
   Tensor gB = make_tensor(make_gmem_ptr(g_out), gmem_layout);
 
   // Construct SMEM tensor
-  Tensor sA = make_tensor(make_smem_ptr(shared_storage.smem.begin()), smem_layout);  
+  Tensor sA = make_tensor(make_smem_ptr(shared_storage.smem.begin()), smem_layout);
 
   auto tAgA = thr_copy.partition_S(gA);
   auto tAsA = thr_copy.partition_D(sA);
@@ -86,7 +86,7 @@ test_tiled_cp_async_device_cute(T const* g_in, T* g_out,
 
   cp_async_fence();
   cp_async_wait<0>();
-  __syncthreads();
+  syncthreads();
 
   // Store trivially smem -> gmem
 
@@ -95,6 +95,55 @@ test_tiled_cp_async_device_cute(T const* g_in, T* g_out,
   }
 
 }
+
+#else
+
+template <class T, class TiledCopy, class GmemLayout, class SmemLayout>
+CUTLASS_GLOBAL void
+test_tiled_cp_async_device_cute(T const* g_in, T* g_out,
+                     TiledCopy const tiled_copy,
+                     GmemLayout gmem_layout, SmemLayout smem_layout)
+{
+  using namespace cute;
+  extern CUTLASS_SHARED char shared_memory[];
+  using SharedStorage = SharedStorage<T, SmemLayout>;
+  SharedStorage& shared_storage = *reinterpret_cast<SharedStorage*>(shared_memory);
+
+  auto thr_copy = tiled_copy.get_slice(ThreadIdxX());
+  Tensor gA = make_tensor(make_gmem_ptr(g_in), gmem_layout);
+  Tensor gB = make_tensor(make_gmem_ptr(g_out), gmem_layout);
+
+  // Construct SMEM tensor
+  Tensor sA = make_tensor(make_smem_ptr(shared_storage.smem.begin()), smem_layout);
+
+  auto tAgA = thr_copy.partition_S(gA);
+  auto tAsA = thr_copy.partition_D(sA);
+
+#if 0
+  if (thread0()) {
+    print("gA  : "); print(gA.layout());   print("\n");
+    print("sA  : "); print(sA.layout());   print("\n");
+    print("tAgA: "); print(tAgA.layout()); print("\n");
+    print("tAsA: "); print(tAsA.layout()); print("\n");
+  }
+#endif
+
+  copy(tiled_copy, tAgA, tAsA);
+
+  cp_async_fence();
+  cp_async_wait<0>();
+  syncthreads();
+
+  // Store trivially smem -> gmem
+
+  if (thread0()) {
+    copy(sA, gB);
+  }
+
+}
+
+#endif
+
 
 template <class T, class TiledCopy, class GMEM_Layout, class SMEM_Layout>
 void
@@ -107,25 +156,32 @@ test_tiled_cp_async(
 
   // Allocate and initialize host test data
   size_t N = ceil_div(cosize(gmem_layout) * sizeof_bits<T>::value, 8);
-  thrust::host_vector<T> h_in(N);
+  host_vector<T> h_in(N);
   Tensor hA_in  = make_tensor(recast_ptr<T>(h_in.data()), gmem_layout);
   for (int i = 0; i < size(hA_in); ++i) { hA_in(i) = static_cast<T>(i % 13); }
 
   // Allocate and initialize device test data
-  thrust::device_vector<T> d_in = h_in;
-  thrust::device_vector<T> d_out(h_in.size(), T(-1));
+  device_vector<T> d_in = h_in;
+  device_vector<T> d_out(h_in.size(), T(-1));
 
   // Launch
   int smem_size = int(sizeof(SharedStorage<T, decltype(smem_layout)>));
+  #if defined(CUTLASS_ENABLE_SYCL)
+    sc_exp::launch<test_tiled_cp_async_device_cute<T, TiledCopy, GMEM_Layout, SMEM_Layout>>
+    ( sc_exp::launch_policy{sc::dim3(1), sc::dim3(128), 
+      sc_exp::local_mem_size{static_cast<size_t>(smem_size)}},
+      d_in.data(), d_out.data(), tiled_copy, gmem_layout, smem_layout);
+    sc::wait_and_throw();
+  #else
   test_tiled_cp_async_device_cute<<<1, 128, smem_size>>>(
     reinterpret_cast<T const*>(raw_pointer_cast(d_in.data())),
     reinterpret_cast<T*>      (raw_pointer_cast(d_out.data())),
     tiled_copy,
     gmem_layout,
     smem_layout);
-
+  #endif
   // Copy results back to host
-  thrust::host_vector<T> h_out = d_out;
+  host_vector<T> h_out = d_out;
   Tensor hA_out = make_tensor(recast_ptr<T>(h_out.data()), gmem_layout);
 
   // Validate the results. Print only the first 3 errors.

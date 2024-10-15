@@ -103,4 +103,5 @@ int CutlassUnitTestProblemCount();
 #include <cutlass/numeric_types.h>
 #include <cutlass/trace.h>
 
+#include "util.hpp"
 /////////////////////////////////////////////////////////////////////////////////////////////////

@@ -60,41 +60,61 @@ if (NOT CUTLASS_ENABLE_SYCL)
     )
 
 else()
-  
+
   add_subdirectory(core)
   add_subdirectory(layout)
-  
-  if (SYCL_NVIDIA_TARGET)
-    # Enable Cute tests for the Nvidia backend as a part of #113
+  add_subdirectory(msvc_compilation)
+
+  if(SYCL_NVIDIA_TARGET)
+
+    add_subdirectory(volta)
+    add_subdirectory(turing)
+    add_subdirectory(ampere)
+    # add_subdirectory(hopper) // Hopper test support to come later once complete support in DPCPP
+
+  endif()
+
+  if(SYCL_NVIDIA_TARGET)
     add_custom_target(
       cutlass_test_unit_cute
       DEPENDS
       cutlass_test_unit_cute_layout
       cutlass_test_unit_cute_core
-    )
-  
+      cutlass_test_unit_cute_volta
+      cutlass_test_unit_cute_turing
+      cutlass_test_unit_cute_ampere
+      #cutlass_test_unit_cute_hopper
+      cutlass_test_unit_cute_msvc_compilation
+      )
+
     add_custom_target(
       test_unit_cute
       DEPENDS
       test_unit_cute_layout
       test_unit_cute_core
-    )
-  endif()
-  if (SYCL_INTEL_TARGET)
-  
+      test_unit_cute_volta
+      test_unit_cute_ampere
+      test_unit_cute_turing
+      #test_unit_cute_hopper
+      test_unit_cute_msvc_compilation
+      )
+  else()
   add_custom_target(
     cutlass_test_unit_cute
     DEPENDS
     cutlass_test_unit_cute_layout
     cutlass_test_unit_cute_core
-  )
+    cutlass_test_unit_cute_msvc_compilation
+    )
 
   add_custom_target(
     test_unit_cute
     DEPENDS
     test_unit_cute_layout
     test_unit_cute_core
-  )
+    test_unit_cute_msvc_compilation
+    #Intel Tests
+    )
 
   endif()
 endif()

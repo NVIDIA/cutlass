@@ -36,9 +36,6 @@
 #include <iostream>
 #include <cstdint>
 
-#include <thrust/host_vector.h>
-#include <thrust/device_vector.h>
-
 #include <cute/tensor.hpp>
 #include <cute/arch/cluster_sm90.hpp>
 #include <cutlass/cluster_launch.hpp>
@@ -56,7 +53,7 @@ struct SharedStorage
 
 template <class T, class GmemLayout, class SmemLayout,
           class CopyAtom, class CTA_Tiler, class Cluster_Size>
-__global__ void
+CUTLASS_GLOBAL void
 tma_test_device_cute(T const* g_in, T* g_out, GmemLayout gmem_layout, SmemLayout smem_layout,
                      CUTE_GRID_CONSTANT CopyAtom const tma, CTA_Tiler cta_tiler, Cluster_Size cluster_size)
 {
@@ -64,7 +61,15 @@ tma_test_device_cute(T const* g_in, T* g_out, GmemLayout gmem_layout, SmemLayout
   CUTE_STATIC_ASSERT_V(product_each(shape(cta_tiler)) == product_each(shape(smem_layout)));
 
   // Use Shared Storage structure to allocate and distribute aligned SMEM addresses
-  extern __shared__ char shared_memory[];
+  #if defined(CUTLASS_ENABLE_SYCL)
+    auto smem = sycl_ext::get_dynamic_work_group_memory<char>().get();
+  #endif
+  #if defined(CUTLASS_ENABLE_SYCL) && !defined(__SYCL_DEVICE_ONLY__)
+    char* smem; // dummy declaration to avoid compilation errors during the host compilation phase
+  #endif
+  #if !defined(CUTLASS_ENABLE_SYCL)
+    extern CUTLASS_SHARED char shared_memory[];
+  #endif
   using SharedStorage = SharedStorage<T, SmemLayout>;
   SharedStorage& shared_storage = *reinterpret_cast<SharedStorage*>(shared_memory);
 
@@ -90,7 +95,7 @@ tma_test_device_cute(T const* g_in, T* g_out, GmemLayout gmem_layout, SmemLayout
     print("  gA  :  "); print(  gA);   print("\n");
     print("  gB  :  "); print(  gB);   print("\n");
     print("  sA  :  "); print(  sA);   print("\n");
-  } __syncthreads(); cute::cluster_sync();
+  } syncthreads(); cute::cluster_sync();
 #endif
 
   //
@@ -109,7 +114,7 @@ tma_test_device_cute(T const* g_in, T* g_out, GmemLayout gmem_layout, SmemLayout
     print("tBgB  :  "); print(tBgB); print("\n");
     print("tAgA  :  "); print(tAgA); print("\n");
     print("tAsA  :  "); print(tAsA); print("\n");
-  } __syncthreads(); cute::cluster_sync();
+  } syncthreads(); cute::cluster_sync();
 #endif
 
   //
@@ -126,7 +131,7 @@ tma_test_device_cute(T const* g_in, T* g_out, GmemLayout gmem_layout, SmemLayout
 #if 1
   if (thread0()) {
     print("tma_mcast_mask :  "); print(tma_mcast_mask); print("\n");
-  } __syncthreads(); cute::cluster_sync();
+  } syncthreads(); cute::cluster_sync();
 #endif
 
   //
@@ -139,7 +144,7 @@ tma_test_device_cute(T const* g_in, T* g_out, GmemLayout gmem_layout, SmemLayout
   }
   int tma_phase_bit = 0;
   // Ensures all CTAs in the Cluster have initialized
-  __syncthreads();
+  syncthreads();
   cute::cluster_sync();
 
   // Loop over the TMA stages, using smem as our buffer
@@ -154,7 +159,7 @@ tma_test_device_cute(T const* g_in, T* g_out, GmemLayout gmem_layout, SmemLayout
 
       copy(tma.with(tma_load_mbar[0], tma_mcast_mask), tAgA(_,stage), tAsA(_,0));
     }
-    __syncthreads();
+    syncthreads();
 
     /// Wait on the shared memory barrier until the phase bit flips from tma_phase_bit value
     cute::wait_barrier(tma_load_mbar[0], tma_phase_bit);
@@ -169,7 +174,7 @@ tma_test_device_cute(T const* g_in, T* g_out, GmemLayout gmem_layout, SmemLayout
       copy(sA, tBgB(_,stage));
     }
 
-    __syncthreads();
+    syncthreads();
     cute::cluster_sync();
   }
 }
@@ -188,15 +193,15 @@ test_tma_load(CopyOp       const& copy_op,
 
   // Allocate and initialize host test data
   size_t N = ceil_div(cosize(gmem_layout) * sizeof_bits<T>::value, 8);
-  thrust::host_vector<uint8_t> h_in(N);
+  host_vector<uint8_t> h_in(N);
   for (size_t i = 0; i < h_in.size(); ++i) {
     h_in[i] = uint8_t(i % 13);
   }
   Tensor hA_in  = make_tensor(recast_ptr<T>(h_in.data()), gmem_layout);
 
   // Allocate and initialize device test data
-  thrust::device_vector<uint8_t> d_in = h_in;
-  thrust::device_vector<uint8_t> d_out(h_in.size(), uint8_t(-1)); // overflow uint
+  device_vector<uint8_t> d_in = h_in;
+  device_vector<uint8_t> d_out(h_in.size(), uint8_t(-1)); // overflow uint
 
   // Create TMA for this device Tensor
   Tensor gA = make_tensor(make_gmem_ptr<T>(raw_pointer_cast(d_in.data())), gmem_layout);
@@ -204,7 +209,19 @@ test_tma_load(CopyOp       const& copy_op,
   //print(tma);
 
   // Launch
-
+  #if defined(CUTLASS_ENABLE_SYCL)
+  auto kernel = tma_test_device_cute<T, GMEM_Layout, 
+                                    SMEM_Layout, decltype(tma), CTA_Tiler, Cluster_Size>;
+  sc_exp::launch<kernel>
+  ( sc_exp::launch_policy::{sc::dim3(1), sc::dim3(32), 
+    sc_exp::launch_properties{sycl_ext::work_group_static_size(smem_size),
+                            sycl_ext::cuda::cluster_size(sycl::range<1>(sc::dim3(size(cluster_size))))}},
+    d_in.data(), d_out.data(), 
+    gmem_layout,
+    smem_layout,
+    tma, cta_tiler, cluster_size);
+  sc::wait_and_throw();
+  #else
   dim3 dimBlock(32);
   dim3 dimCluster(size(cluster_size));
   dim3 dimGrid = dimCluster;
@@ -220,9 +237,9 @@ test_tma_load(CopyOp       const& copy_op,
                                     gmem_layout,
                                     smem_layout,
                                     tma, cta_tiler, cluster_size);
-
+  #endif
   // Copy results back to host
-  thrust::host_vector<uint8_t> h_out = d_out;
+  host_vector<uint8_t> h_out = d_out;
   Tensor hA_out = make_tensor(recast_ptr<T>(h_out.data()), gmem_layout);
 
   // Validate the results. Print only the first 3 errors.
