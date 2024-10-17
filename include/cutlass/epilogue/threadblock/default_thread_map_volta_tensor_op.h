@@ -35,7 +35,7 @@
 
 #pragma once
 
-#include "predicated_tile_iterator.h"
+#include "cutlass/epilogue/threadblock/predicated_tile_iterator.h"
 #include "cutlass/gemm/gemm.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

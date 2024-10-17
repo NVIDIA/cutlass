@@ -45,7 +45,7 @@
 #include "cutlass/layout/matrix.h"
 #include "cutlass/layout/pitch_linear.h"
 
-#include "regular_tile_iterator.h"
+#include "cutlass/transform/threadblock/regular_tile_iterator.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
