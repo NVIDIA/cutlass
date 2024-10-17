@@ -128,6 +128,12 @@ print(unsigned long long a) {
 
 CUTE_HOST_DEVICE
 void
+print(half a) {
+  printf("%f", float(a));
+}
+
+CUTE_HOST_DEVICE
+void
 print(float a) {
   printf("%f", a);
 }
@@ -178,6 +184,11 @@ pretty_print(int64_t v) {
 CUTE_HOST_DEVICE void
 pretty_print(uint64_t v) {
   printf("%*llu", 5, static_cast<unsigned long long>(v));
+}
+
+CUTE_HOST_DEVICE void
+pretty_print(half v) {
+  printf("%*.2e", 10, float(v));
 }
 
 CUTE_HOST_DEVICE void
