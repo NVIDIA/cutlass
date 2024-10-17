@@ -327,13 +327,23 @@ public:
     if constexpr (is_destination_supported) {
       constexpr int tma_alignment_bits_D = cutlass::detail::get_output_alignment_bits<ElementD>();
       constexpr int min_tma_aligned_elements_D = tma_alignment_bits_D / cutlass::sizeof_bits<ElementD>::value;
-      implementable = cutlass::detail::check_alignment<min_tma_aligned_elements_D>(shape, StrideD{});
+      if constexpr (cute::is_same_v<CopyOpS2G, SM90_TMA_STORE_IM2COL>) { // ignore L stride for implicit gemm
+        implementable = cutlass::detail::check_alignment<min_tma_aligned_elements_D>(take<0,2>(shape), take<0,2>(StrideD{}));
+      }
+      else {
+        implementable = cutlass::detail::check_alignment<min_tma_aligned_elements_D>(shape, StrideD{});
+      }
     }
 
     if constexpr (not cute::is_void_v<ElementC>) {
       constexpr int tma_alignment_bits_C = cutlass::detail::get_input_alignment_bits<ElementC>();
       constexpr int min_tma_aligned_elements_C = tma_alignment_bits_C / cutlass::sizeof_bits<ElementC>::value;
-      implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_C>(shape, StrideC{});
+      if constexpr (cute::is_same_v<CopyOpG2S, SM90_TMA_LOAD_IM2COL>) { // ignore L stride for implicit gemm
+        implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_C>(take<0,2>(shape), take<0,2>(StrideC{}));
+      }
+      else {
+        implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_C>(shape, StrideC{});
+      }
     }
 
     if (!implementable) {

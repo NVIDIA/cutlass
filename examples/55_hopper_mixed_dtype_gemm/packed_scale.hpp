@@ -31,7 +31,6 @@
 
 #pragma once
 
-#include <iostream>
 #include <cstdint>
 
 #include "cutlass/float8.h"
