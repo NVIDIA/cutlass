@@ -193,6 +193,16 @@ public:
     current_work_linear_idx_ += total_grid_size_ * uint64_t(advance_count);
   }
 
+  CUTLASS_DEVICE
+  bool is_last_tile(WorkTileInfo& work_tile_info, uint32_t advance_count = 1) const {
+    if (continue_current_work(work_tile_info)) {
+      return false;
+    }
+    return not get_current_work_for_linear_idx(
+        current_work_linear_idx_ + (total_grid_size_ * uint64_t(advance_count))
+    ).is_valid();
+  }
+
   // Computes the linear index within a batch given M and N tile offsets within the batch.
   // This essentially inverts the mapping performed in get_work_idx_m_and_n
   static CUTLASS_DEVICE
