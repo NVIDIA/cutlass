@@ -308,6 +308,21 @@ public:
     current_work_linear_idx_ += uint64_t(gridDim.x) * uint64_t(gridDim.y) * uint64_t(gridDim.z) * uint64_t(advance_count);
   }
 
+  CUTLASS_DEVICE
+  bool is_last_tile(WorkTileInfo work_tile_info, uint32_t advance_count = 1) const {
+     // Never pass this by reference; it needs a copy,
+    // because continue_current_work will modify it.
+    if (continue_current_work(work_tile_info)) {
+      return false;
+    }
+    return not get_current_work_for_linear_idx(
+        current_work_linear_idx_ + (
+          uint64_t(gridDim.x) * uint64_t(gridDim.y) * uint64_t(gridDim.z) * uint64_t(advance_count)
+          ),
+        scheduler_params
+    ).is_valid();
+  }
+
   // Given the inputs, computes the total number of output blocks this problem will compute over
   // Note that this is only the logical size of our grid, not the physical grid we will actually launch.
   template <class ProblemShape>
