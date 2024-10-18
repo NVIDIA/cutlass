@@ -32,6 +32,7 @@
 
 #include <cute/config.hpp>           // CUTE_HOST_DEVICE
 #include <cute/util/type_traits.hpp> // cute::is_valid
+#include <cute/numeric/numeric_types.hpp> 
 
 //
 // CUDA compatible print and printf
@@ -98,6 +99,42 @@ print(int a) {
 
 CUTE_HOST_DEVICE
 void
+print(uint1b_t a) {
+  printf("%d", int(a));
+}
+
+CUTE_HOST_DEVICE
+void
+print(int2b_t a) {
+  printf("%d", int(a));
+}
+
+CUTE_HOST_DEVICE
+void
+print(uint2b_t a) {
+  printf("%d", int(a));
+}
+
+CUTE_HOST_DEVICE
+void
+print(int4b_t a) {
+  printf("%d", int(a));
+}
+
+CUTE_HOST_DEVICE
+void
+print(uint4b_t a) {
+  printf("%d", int(a));
+}
+
+CUTE_HOST_DEVICE
+void
+print(bin1_t a) {
+  printf("%d", int(a));
+}
+
+CUTE_HOST_DEVICE
+void
 print(unsigned int a) {
   printf("%u", a);
 }
@@ -154,6 +191,31 @@ print(char const* format) {
 //
 // pretty printing
 //
+
+CUTE_HOST_DEVICE void
+pretty_print(uint1b_t a) {
+  printf("%*d", 3, int(a));
+}
+
+CUTE_HOST_DEVICE void
+pretty_print(int2b_t a) {
+  printf("%*d", 5, int(a));
+}
+
+CUTE_HOST_DEVICE void
+pretty_print(uint2b_t a) {
+  printf("%*d", 5, int(a));
+}
+
+CUTE_HOST_DEVICE void
+pretty_print(int4b_t a) {
+  printf("%*d", 5, int(a));
+}
+
+CUTE_HOST_DEVICE void
+pretty_print(uint4b_t a) {
+  printf("%*d", 5, int(a));
+}
 
 CUTE_HOST_DEVICE void
 pretty_print(bool v) {
