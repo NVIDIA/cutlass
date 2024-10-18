@@ -409,8 +409,18 @@ public:
 
   static constexpr bool IsANarrow = sizeof_bits<ElementA>::value < sizeof_bits<ElementB>::value;
 
-  using GmemLayoutATag = GmemLayoutATag_;
-  using GmemLayoutBTag = GmemLayoutBTag_;
+  template<class T>
+  static auto get_stride(T const& t) {
+    if constexpr (not cute::is_layout<T>::value) {
+      return t;
+    }
+    else {
+      return cute::stride(t);
+    }
+  }
+
+  using GmemLayoutATag = decltype(get_stride(GmemLayoutATag_{}));
+  using GmemLayoutBTag = decltype(get_stride(GmemLayoutBTag_{}));
 
   using ElementPairA = cute::conditional_t<IsANarrow && NeitherIsTuple, cute::tuple<ElementA>, ElementPairA_>;
   using ElementPairB = cute::conditional_t<!IsANarrow && NeitherIsTuple, cute::tuple<ElementB>, ElementPairB_>;
@@ -464,8 +474,8 @@ public:
   using DispatchPolicy = MainloopSm90TmaGmmaRmemAWarpSpecializedMixedInput<PipelineStages, ClusterShape_MNK, KernelScheduleType>;
 
   // We pack the scale data with the operand that will be optionally scaled and converted before MMA.
-  using StrideA = TagToStrideA_t<GmemLayoutATag>;
-  using StrideB = TagToStrideB_t<GmemLayoutBTag>;
+  using StrideA = cute::conditional_t<cute::is_layout<GmemLayoutATag_>::value, GmemLayoutATag_, TagToStrideA_t<GmemLayoutATag>>;
+  using StrideB = cute::conditional_t<cute::is_layout<GmemLayoutBTag_>::value, GmemLayoutBTag_, TagToStrideB_t<GmemLayoutBTag>>;
 
   using CollectiveOp = CollectiveMma<
       DispatchPolicy,

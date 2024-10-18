@@ -32,14 +32,7 @@
 /*! \file
     \brief Hopper GEMM example with different data types using CUTLASS 3.0 APIs for NVIDIA Hopper architecture
 
-    This example shows how to perform INT4 x FP8 GEMM and scale up the INT4 weight during dequantization. It uses a look-up table to avoid the multiplications
-    between INT4 and FP8. To trigger this method, use cutlass::Array<ElementScale, 8> as the scale type in the collective's arguments.
-    
-    However, this algorithm requires changes to the encoding of INT4 weights and scale factors. These changes must happen before launching the GEMM. See the helper functions
-    `unify_quant_encoding`, `initialize_packed_scale`, and header `fp8_packed_scale.hpp` for details.
-
-    In a nutshell, the positive values of INT4 weights need to be encoded in the same way as negative values except for the sign bit. For each scale factor,
-    8 negative results (-8 x scale, -7 x scale, ... -1 x scale) are packed together, forming a cutlass::Array<ElementScale, 8> value.
+    This example shows how to perform INT4 x BF16 GEMM and scale up the INT4 weight during dequantization.
 
     The narrower type always passes through the register file. Therefore, in cases where the narrower type is operand B, the collective will implicitly swap 
     A and B in the main loop. However, as a result of this collective performing implicit swaps, it does not support TMA epilogues. Consequently, it is essential to consider this when constructing the epilogue, 
@@ -49,8 +42,8 @@
 
     As an additional optimization, we can reorder the narrow data type tensor such that elements read into register file by the same thread are contiguous in global and shared memory.
     This promotes vectorization of shared memory loads and removes additional instructions on the critical path. For example, when MMA is performed in FP8 data type, each thread reads
-    4 groups of 4 elements that are logically contiguous in the same row (refer to https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#wgmma-64n32-a for thread-value layout).
-    If the narrow type is INT4 and tensor is major in K dim, only 16 bits can be read at a time, leading to extra load instructions and suboptimal utilization of shared memory throughput.
+    4 groups of 2 elements that are logically contiguous in the same row (refer to https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#wgmma-64n16-a for thread-value layout).
+    If the narrow type is INT4 and tensor is major in K dim, only 8 bits can be read at a time, leading to extra load instructions and suboptimal utilization of shared memory throughput.
     If we reorder the data offline to place all 16 elements read by a thread contiguously in memory, a single 64-bit load is sufficient. This reordering is often feasible when the quantized
     tensor is static (e.g. weight tensor of a NN layer at inference time). This example demonstrates how such a reordering can be performed and communicated to the kernel when the macro
     OPTIMIZE_WEIGHT_LAYOUT is set to 1.
@@ -65,8 +58,8 @@
     equal to the gemm problem K.
 
     Limitations:
-      1) Only supports INT4 x { FP8, INT8, UINT8 }. The scales must be the same as mma Type. Scale with zero-point mode is not supported.
-      2) The INT4 weights and scale factors have additional encoding requirements.
+      1) Only supports INT4 x { FP16, BF16 }. The scales must be the same as mma Type. Scale with zero-point mode is not supported.
+      2) The INT4 weights have additional encoding requirements.
       3) The scales must be MN major. That means if A is scaled, it must be column major, but if B is scaled it must be row major.
       4) The scales must have the same layout and groupsize.
       5) The groupsize must be greater or equal to the tile shape k.
@@ -80,11 +73,11 @@
     Examples:
       
       Runs the mixed input batched gemm (with batch size 2), converting B to the type of A (mode 0)
-      $ ./examples/55_hopper_mixed_dtype_gemm/55_hopper_int4_fp8_gemm --m=2048 --n=2048 --k=2048 --l=2 --mode=0
+      $ ./examples/55_hopper_mixed_dtype_gemm/55_hopper_int4_bf16_gemm --m=2048 --n=2048 --k=2048 --l=2 --mode=0
 
       Runs the mixed input gemm, and applies a scaling factor to B before mma (mode 1). Applies a vector of scales to the entire
       matrix (group size is the same as the gemm k dimension).
-      $ ./examples/55_hopper_mixed_dtype_gemm/55_hopper_int4_fp8_gemm --m=4096 --n=5120 --k=8192 --g=8192 --mode=1
+      $ ./examples/55_hopper_mixed_dtype_gemm/55_hopper_int4_bf16_gemm --m=4096 --n=5120 --k=8192 --g=8192 --mode=1
 */
 
 #include <iostream>
@@ -123,7 +116,7 @@ using namespace cute;
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /// GEMM kernel configurations
 /////////////////////////////////////////////////////////////////////////////////////////////////
-using MmaType = cutlass::float_e4m3_t;
+using MmaType = cutlass::bfloat16_t;
 using QuantType = cutlass::int4b_t;
 constexpr int TileShapeK = 128 * 8 / sizeof_bits<MmaType>::value;
 
@@ -195,9 +188,9 @@ using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBui
 using CollectiveMainloopScaleOnly = typename cutlass::gemm::collective::CollectiveBuilder<
     ArchTag, OperatorClass,
 #if OPTIMIZE_WEIGHT_LAYOUT
-    cute::tuple<ElementB, cutlass::Array<ElementScale, 8>>, LayoutB_Reordered, AlignmentB,
+    cute::tuple<ElementB, ElementScale>, LayoutB_Reordered, AlignmentB,
 #else
-    cute::tuple<ElementB, cutlass::Array<ElementScale, 8>>, LayoutB_Transpose, AlignmentB,
+    cute::tuple<ElementB, ElementScale>, LayoutB_Transpose, AlignmentB,
 #endif
     ElementA, LayoutA_Transpose, AlignmentA,
     ElementAccumulator,
@@ -246,10 +239,8 @@ StrideS_ref stride_S_ref;
 
 cutlass::DeviceAllocation<ElementA> block_A;
 cutlass::DeviceAllocation<ElementB> block_B;
-cutlass::DeviceAllocation<ElementB> block_B_modified;
 cutlass::DeviceAllocation<ElementA> block_B_dq;
 cutlass::DeviceAllocation<ElementScale> block_scale;
-cutlass::DeviceAllocation<cutlass::Array<ElementScale, 8>> block_scale_packed;
 cutlass::DeviceAllocation<ElementZero> block_zero;
 cutlass::DeviceAllocation<ElementC> block_C;
 cutlass::DeviceAllocation<typename GemmScaleOnly::EpilogueOutputOp::ElementOutput> block_D;
@@ -388,49 +379,6 @@ bool initialize_quant_tensor(
   return true;
 }
 
-// In the mainloop, PRMT selects 1 byte from only 8 bytes so the sign bit is handled in an extra PRMT.
-// Here the encodings of positive values and negative values are unified (except for the sign bit). 
-// For instance, 1 becomes 0b0111, which is the same encoding as -1 (0b1111).
-bool unify_quant_encoding(
-  cutlass::DeviceAllocation<cutlass::int4b_t> const& block_in,
-  cutlass::DeviceAllocation<cutlass::int4b_t>& block_out) {
-
-  using StorageType = cutlass::int4b_t::Storage;
-
-  if (block_in.size() != block_out.size()) {
-    std::cerr << "block_in and block_out must have same size.\n";
-    return false;
-  }
-  constexpr int pack = sizeof_bits_v<StorageType> / 4;
-  std::vector<StorageType> data(block_in.size() / pack);
-  cutlass::device_memory::copy_to_host(data.data(), (StorageType*)block_in.get(), block_in.size() / pack);
-
-  for (auto&& d : data) {
-    StorageType out = 0;
-    StorageType mask = 0x0f;
-    for (int i = 0; i < pack; ++i) {
-      cutlass::int4b_t curr;
-      curr.storage = (d >> (i * 4)) & 0x0f;
-      switch (curr) {
-        case 1: curr.storage = StorageType(0b0111); break; // 2's complement
-        case 2: curr.storage = StorageType(0b0110); break; // 2's complement
-        case 3: curr.storage = StorageType(0b0101); break; // 2's complement
-        case 4: curr.storage = StorageType(0b0100); break; // 2's complement
-        case 5: curr.storage = StorageType(0b0011); break; // 2's complement
-        case 6: curr.storage = StorageType(0b0010); break; // 2's complement
-        case 7: curr.storage = StorageType(0b0001); break; // 2's complement
-        default: break;
-      }
-      out |= (curr.storage << (4 * i)) & mask;
-      mask <<= 4;
-    }
-    d = out;
-  }
-
-  cutlass::device_memory::copy_to_device((StorageType*)block_out.get(), data.data(), block_out.size() / pack);
-  return true;
-}
-
 template <class Element>
 bool initialize_scale(
   cutlass::DeviceAllocation<Element>& block, 
@@ -445,35 +393,6 @@ bool initialize_scale(
 
   cutlass::reference::device::BlockFillRandomUniform(
     block.get(), block.size(), seed, Element(scope_max), Element(scope_min));
-  return true;
-}
-
-bool initialize_packed_scale(
-  cutlass::DeviceAllocation<ElementScale> const& block_in, 
-  cutlass::DeviceAllocation<cutlass::Array<ElementScale, 8> > & block_out) {
-  
-  std::vector<ElementScale> data_in(block_in.size());
-  std::vector<cutlass::Array<ElementScale, 8> > data_out(block_in.size());
-  try {
-    block_in.copy_to_host(data_in.data());
-  } catch (cutlass::cuda_exception const& e)
-  {
-    std::cerr << "CUDA Error: " << cudaGetErrorString(e.cudaError()) << std::endl;
-    return false;
-  }
-  for (size_t i = 0; i < block_in.size(); ++i)
-  {
-    cutlass::packed_scale_t<ElementScale> tmp(data_in[i]);
-    data_out[i] = reinterpret_cast<cutlass::Array<ElementScale, 8> const&>(tmp);
-    // std::cout << data_in[i] << ":" << std::hex << static_cast<uint16_t>(data_in[i].storage) << ",\t" << -data_in[i] << ":" << std::hex << static_cast<uint16_t>((-data_in[i]).storage) << std::endl;
-  }
-  try {
-    block_out.copy_from_host(data_out.data());
-  } catch (cutlass::cuda_exception const& e)
-  {
-    std::cerr << "CUDA Error: " << cudaGetErrorString(e.cudaError()) << std::endl;
-    return false;
-  }
   return true;
 }
 
@@ -508,22 +427,18 @@ void initialize(Options const& options) {
 
   block_A.reset(a_coord.product());
   block_B.reset(b_coord.product());
-  block_B_modified.reset(b_coord.product());
   block_B_dq.reset(b_coord.product());
   block_C.reset(c_coord.product());
   block_D.reset(c_coord.product());
   block_ref_D.reset(c_coord.product());
 
   block_scale.reset(scale_k * options.l * options.n);
-  block_scale_packed.reset(scale_k * options.l * options.n);
   block_zero.reset(scale_k * options.l * options.n);
 
   initialize_tensor(block_A, seed + 2022);
   initialize_quant_tensor(block_B, seed + 2021);
-  unify_quant_encoding(block_B, block_B_modified);
   initialize_tensor(block_C, seed + 2020);
   initialize_scale(block_scale, options);
-  initialize_packed_scale(block_scale, block_scale_packed);
   initialize_zero(block_zero, options);
 
   auto shape_scale_zero = cute::make_shape(options.n, scale_k, options.l);
@@ -533,10 +448,10 @@ void initialize(Options const& options) {
 
   dequantize_weight(block_B_dq.get(), block_B.get(), layout_B, block_scale.get(), block_zero.get(), layout_scale_zero, options.g);
 
-  #if OPTIMIZE_WEIGHT_LAYOUT
+#if OPTIMIZE_WEIGHT_LAYOUT
   // Repeat the reorder layout atom to tile the whole tensor shape 
   layout_B_reordered = tile_to_shape(LayoutAtomQuant{}, shape_B);
-  reorder_tensor(block_B_modified.get(), layout_B, layout_B_reordered);
+  reorder_tensor(block_B.get(), layout_B, layout_B_reordered);
 
   print("Quantized tensor layout: ");
   print(layout_B_reordered);
@@ -554,9 +469,9 @@ Args args_from_options(Options const& options)
     cutlass::gemm::GemmUniversalMode::kGemm,
     {options.n, options.m, options.k, options.l},
 #if OPTIMIZE_WEIGHT_LAYOUT
-    {block_B_modified.get(), layout_B_reordered, block_A.get(), stride_A, block_scale_packed.get(), stride_S, options.g},
+    {block_B.get(), layout_B_reordered, block_A.get(), stride_A, block_scale.get(), stride_S, options.g},
 #else
-    {block_B_modified.get(), stride_B,           block_A.get(), stride_A, block_scale_packed.get(), stride_S, options.g},
+    {block_B.get(), stride_B,           block_A.get(), stride_A, block_scale.get(), stride_S, options.g},
 #endif
     {{options.alpha, options.beta}, block_C.get(), stride_C, block_D.get(), stride_D}
   };
@@ -567,15 +482,6 @@ bool verify(Options const& options) {
   // Compute reference output
   //
 
-  // In this example, we use the GPU default kernels as a reference (unfused scale).
-  // This avoids numerical differences due to different accumulation order.
-
-  // Again, due to numerical differences, we must use fast acc here when the mma type is
-  // FP8 as the fused implementation only supports fast acc at the moment.
-  constexpr bool IsFP8Input = cute::is_same_v<MmaType, cutlass::float_e4m3_t> || cute::is_same_v<MmaType, cutlass::float_e5m2_t>;
-  using FP8Sched = cute::conditional_t<size<0>(TileShape{}) == 64, cutlass::gemm::KernelTmaWarpSpecializedPingpongFP8FastAccum, cutlass::gemm::KernelTmaWarpSpecializedCooperativeFP8FastAccum>;
-  using ScheduleRef = cute::conditional_t<IsFP8Input, FP8Sched, cutlass::gemm::collective::KernelScheduleAuto>;
-
   using CollectiveMainloopRef = typename cutlass::gemm::collective::CollectiveBuilder<
       ArchTag, OperatorClass,
       MmaType, LayoutA, AlignmentA,
@@ -583,7 +489,7 @@ bool verify(Options const& options) {
       ElementAccumulator,
       TileShape, ClusterShape,
       cutlass::gemm::collective::StageCountAuto,
-      ScheduleRef
+      cutlass::gemm::collective::KernelScheduleAuto
     >::CollectiveOp;
 
   using CollectiveEpilogueRef = typename cutlass::epilogue::collective::CollectiveBuilder<
@@ -712,6 +618,13 @@ int main(int argc, char const **args) {
       << "later (compute capability 90 or greater).\n";
     return 0;
   }
+  // {$nv-internal-release begin}
+  else if (props.major != 9 || props.minor != 0) {
+    std::cerr << "This example requires a GPU of NVIDIA's Hopper Architecture (compute capability 90).\n";
+    return 0;
+  }
+  // {$nv-internal-release end}
+
   //
   // Parse options
   //

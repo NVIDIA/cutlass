@@ -70,7 +70,7 @@ using cutlass::detail::StrideToLayoutTagC_t;
 template<int ModeIndex, class Stride>
 constexpr bool
 is_major(Stride = {}) {
-  return ::cutlass::detail::is_major<ModeIndex, Stride>();
+  return ::cutlass::detail::is_major<ModeIndex>(Stride{});
 }
 
 template<class Stride>
