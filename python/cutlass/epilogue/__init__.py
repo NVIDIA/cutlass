@@ -49,5 +49,7 @@ from cutlass.epilogue.evt_ops import (
     multiply_add,
     sum,
     permute,
-    reshape
+    reshape,
+    maximum,
+    minimum,
 )
