@@ -843,6 +843,11 @@ ss_op_selector()
         return SM90::GMMA::MMA_64x48x16_F32F16F16_SS<MajorA, MajorB, Args...>{};
       }
 #endif
+#if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
+      else if constexpr (Tile_N % 40 == 0) {
+        return SM90::GMMA::MMA_64x40x16_F32F16F16_SS<MajorA, MajorB, Args...>{};
+      }
+#endif
       else if constexpr (Tile_N % 32 == 0) {
         return SM90::GMMA::MMA_64x32x16_F32F16F16_SS<MajorA, MajorB, Args...>{};
       }
@@ -919,6 +924,11 @@ ss_op_selector()
 #if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
       else if constexpr (Tile_N % 48 == 0) {
         return SM90::GMMA::MMA_64x48x16_F32BF16BF16_SS<MajorA, MajorB, Args...>{};
+      }
+#endif
+#if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
+      else if constexpr (Tile_N % 40 == 0) {
+        return SM90::GMMA::MMA_64x40x16_F32BF16BF16_SS<MajorA, MajorB, Args...>{};
       }
 #endif
       else if constexpr (Tile_N % 32 == 0) {
