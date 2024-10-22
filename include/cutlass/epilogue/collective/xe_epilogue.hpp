@@ -118,6 +118,18 @@ public:
   static_assert(std::is_same_v<SmemLayoutAtomC, void>, "Copy operation to shared memory is not supported");
   static_assert(std::is_same_v<SmemLayoutAtomD, void>, "Copy operation to shared memory is not supported");
 
+  using Trait_C = Copy_Traits<GmemTiledCopyC>;
+  using XE_Copy_C = decltype(make_tiled_copy(Copy_Atom<Trait_C, ElementC>{}
+                                             .with(static_cast<ElementC const*>(nullptr), int32_t(0), int32_t(0), int32_t(0)),
+                                             Layout<Shape<_1, Int<SubgroupSize>>>{},
+                                             make_layout(make_shape(get<0>(typename Trait_C::Shape_MN{}),
+                                                                    get<1>(typename Trait_C::Shape_MN{}) / Int<SubgroupSize>{}))));
+  using Trait_D = Copy_Traits<GmemTiledCopyD>;
+  using XE_Copy_D = decltype(make_tiled_copy(Copy_Atom<Trait_D, ElementD>{}
+                                             .with(static_cast<ElementD const*>(nullptr),int32_t(0), int32_t(0), int32_t(0)),
+                                             Layout<Shape<_1, Int<SubgroupSize>>>{},
+                                             make_layout(make_shape(get<0>(typename Trait_D::Shape_MN{}),
+                                                                    get<1>(typename Trait_D::Shape_MN{}) / Int<SubgroupSize>{}))));
 private:
   constexpr static bool is_source_supported = not cute::is_void_v<ElementC>;
   constexpr static bool is_destination_supported = not cute::is_void_v<ElementD>;
@@ -154,13 +166,6 @@ public:
 
   // Device side epilogue params
   struct Params {
-    using XE_Copy_C = decltype(make_xe_2d_copy<CopyOpG2R>(
-        make_tensor(static_cast<ElementC const*>(nullptr),
-            repeat_like(StrideC{}, int32_t(0)), StrideC{})));
-    using XE_Copy_D = decltype(make_xe_2d_copy<CopyOpR2G>(
-        make_tensor(static_cast<ElementD const*>(nullptr),
-            repeat_like(StrideD{}, int32_t(0)), StrideD{})));
-
     typename FusionCallbacks::Params thread{};
     XE_Copy_C xe_load_c;
     XE_Copy_D xe_store_d;
@@ -180,16 +185,22 @@ public:
     auto problem_shape_MNKL = append<4>(problem_shape, 1);
     auto [M, N, K, L] = problem_shape_MNKL;
 
-    typename Params::XE_Copy_C xe_load_c = {};
+    XE_Copy_C xe_load_c = {};
     if constexpr (is_source_supported) {
-      Tensor tensor_c = make_tensor(args.ptr_C, make_layout(make_shape(M,N,L), args.dC));
-      xe_load_c = make_xe_2d_copy<CopyOpG2R>(tensor_c);
+      xe_load_c = make_tiled_copy(Copy_Atom<Copy_Traits<CopyOpG2R>, ElementC>{}.with(
+                                  args.ptr_C, N, M, N),
+                                  Layout<Shape<_1, Int<SubgroupSize>>>{},
+                                  make_layout(make_shape(get<0>(typename Trait_C::Shape_MN{}),
+                                                         get<1>(typename Trait_C::Shape_MN{}) / Int<SubgroupSize>{})));
     }
 
-    typename Params::XE_Copy_D xe_store_d = {};
+    XE_Copy_D xe_store_d = {};
     if constexpr (is_destination_supported) {
-      Tensor tensor_d = make_tensor(args.ptr_D, make_layout(make_shape(M,N,L), args.dD));
-      xe_store_d = make_xe_2d_copy<CopyOpR2G>(tensor_d);
+      xe_store_d = make_tiled_copy(Copy_Atom<Copy_Traits<CopyOpR2G>, ElementD>{}.with(
+                                   args.ptr_D, N, M, N),
+                                   Layout<Shape<_1, Int<SubgroupSize>>>{},
+                                   make_layout(make_shape(get<0>(typename Trait_D::Shape_MN{}),
+                                                          get<1>(typename Trait_D::Shape_MN{}) / Int<SubgroupSize>{})));
     }
 
     return {
@@ -255,7 +266,18 @@ public:
     using namespace cute;
 
     using MmaAtomShape = typename TiledMma::AtomShape_MNK;
-    using SubgroupTileShape = decltype(tile_shape(TiledMma()));
+    static constexpr auto BLK_M = get<0>(CtaTileMNK{});
+    static constexpr auto BLK_N = get<1>(CtaTileMNK{});
+    static constexpr auto BLK_K = get<2>(CtaTileMNK{});
+    // static_assert(is_same_v<typename TiledMma::ThrLayoutVMNK, int>, "assertation fail");
+    static constexpr auto ATOM_M = get<1>(typename TiledMma::ThrLayoutVMNK{}.shape());
+    static constexpr auto ATOM_N = get<2>(typename TiledMma::ThrLayoutVMNK{}.shape());
+    static constexpr auto ATOM_K = get<3>(typename TiledMma::ThrLayoutVMNK{}.shape());
+    
+    static constexpr auto SG_M = ceil_div(BLK_M, ATOM_M);
+    static constexpr auto SG_N = ceil_div(BLK_N, ATOM_N);
+    static constexpr auto SG_K = ceil_div(BLK_K, ATOM_K);
+    using SubgroupTileShape = Shape<decltype(SG_M), decltype(SG_N), decltype(SG_K)>;
 
     static constexpr int FragsM = get<0>(SubgroupTileShape{}) / get<0>(MmaAtomShape()); // A frags per sub_group
     static constexpr int FragsN = get<1>(SubgroupTileShape{}) / get<1>(MmaAtomShape()); // B frags per sub_group
@@ -265,15 +287,18 @@ public:
     // Indexing variables
     auto [M, N, K, L] = problem_shape_mnkl;
     auto [m_coord, n_coord, k_coord, l_coord] = tile_coord_mnkl;
+    auto m_offset = m_coord * BLK_M + (get_sub_group_id() / ATOM_N) * SG_M;
+    auto n_offset = n_coord * BLK_N + (get_sub_group_id() % ATOM_N) * SG_N;
+    auto l_offset = l_coord;
 
     bool is_C_load_needed = is_source_supported && fusion_callbacks.is_C_load_needed();
 
     Tensor trC = make_tensor<typename TiledMma::ValTypeC>(Shape<Int<FragmentSize>>{});
     Tensor trD = make_tensor<typename TiledMma::ValTypeD>(Shape<Int<FragmentSize>>{});
     Tensor tOuti = params.xe_store_d.get_pvc_tensor(
-            make_coord(m_coord, n_coord, 0),
-            make_shape(Int<FragsM>{}, Int<FragsN>{}, L),
-            make_stride(Int<get<0>(MmaAtomShape{})>{}, Int<get<1>(MmaAtomShape{})>{}));
+            make_coord(m_offset, n_offset, l_offset),
+            make_shape(_, Int<FragsM>{}, Int<FragsN>{}, L),
+            make_stride(Int<get<0>(MmaAtomShape{})>{}, Int<get<1>(MmaAtomShape{})>{}, _1{}));
 
     Tensor rw_coord = tOuti(_,_,_,l_coord);
     Tensor mD_crd = make_identity_tensor(make_shape(M,N));
@@ -324,7 +349,6 @@ public:
     }
 
     cst_callbacks.end();
-
   }
 
 private:

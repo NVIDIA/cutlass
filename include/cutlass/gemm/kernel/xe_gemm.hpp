@@ -105,11 +105,6 @@ public:
   using MmaAtomShape = typename CollectiveMainloop::MmaAtomShape;
   using SubgroupTileShape = typename CollectiveMainloop::SubgroupTileShape;
 
-  static constexpr int FragsM = CollectiveMainloop::FragsM;
-  static constexpr int FragsN = CollectiveMainloop::FragsN;
-
-  static constexpr int VecC = CollectiveMainloop::VecC;
-
   // Kernel level shared memory storage
   struct SharedStorage {
     using EpilogueTensorStorage = typename CollectiveEpilogue::TensorStorage;
@@ -211,28 +206,22 @@ public:
 
     // Get the appropriate blocks for this sub_group -- potential for sub_group locality
     int thread_idx = int(ThreadIdxX());
+    auto blk_shape = TileShape{};
+    auto m_coord = BlockIdxY();
+    auto n_coord = BlockIdxX();
+    auto l_coord = BlockIdxZ();
+    auto blk_coord_mnkl = make_coord(m_coord, n_coord, _, l_coord);  
     int sub_group_id = thread_idx / SubgroupSize;
     constexpr auto workgroup_shape = WorkgroupTileShape{};                                                  // (SUB_M,SUB_N,SUB_K)
-    constexpr auto subgroup_shape = SubgroupTileShape{};                                                  // (SUB_M,SUB_N,SUB_K)
-    const int m_coord = BlockIdxY() * get<0>(workgroup_shape) + sub_group_id / CollectiveMainloop::sg_per_wg_n * get<0>(subgroup_shape);
-    const int n_coord = BlockIdxX() * get<1>(workgroup_shape) + sub_group_id % CollectiveMainloop::sg_per_wg_n * get<1>(subgroup_shape);
-    const int l_coord = BlockIdxZ();
-    const auto tile_coord = make_coord(m_coord, n_coord, _, l_coord);
+    constexpr auto subgroup_shape = SubgroupTileShape{};                   
+    
+    Tensor mA_mkl = make_tensor(make_gmem_ptr(static_cast<ElementA const*>(nullptr)), make_shape(M,K,L), StrideA{});   //(m,k,l)
+    Tensor mB_nkl = make_tensor(make_gmem_ptr(static_cast<ElementB const*>(nullptr)), make_shape(N,K,L), StrideB{});   //(n,k,l)
+    Tensor mA_mk = mA_mkl(_,_,l_coord);                                                                        // (m,k)
+    Tensor mB_nk = mB_nkl(_,_,l_coord);                                                                        // (n,k)
 
-    Tensor tAi = params.mainloop.gmem_tiled_copy_a.get_pvc_tensor(
-            make_coord(m_coord, 0, 0),
-            make_shape(_1{}, K, L),
-            make_stride(Int<FragsM>{} * get<0>(MmaAtomShape()),_1{}));
-    constexpr int version =
-        is_same_v<typename CollectiveMainloop::GmemTiledCopyB,
-                  XE_2D_U16x16x16x2x1_V>
-            ? 1
-            : 2;
-
-    Tensor tBi = params.mainloop.gmem_tiled_copy_b.get_pvc_tensor(
-            make_coord(n_coord, 0, 0),
-            make_shape(Int<FragsN / version>{}, K, L),
-            make_stride(Int<version * get<1>(MmaAtomShape())>{}, _1{}));
+    auto gA = local_tile(mA_mk, blk_shape, take<0, 3>(blk_coord_mnkl), Step<_1,  X, _1>{});
+    auto gB = local_tile(mB_nk, blk_shape, take<0, 3>(blk_coord_mnkl), Step< X, _1, _1>{});
 
     // Compute tile residues for predication
     auto m_max_coord = M - get<0>(subgroup_shape) * m_coord;                             // M - SUB_M * m_coord
@@ -243,18 +232,18 @@ public:
     // Allocate the tiled_mma and the accumulators for the (M,N) subgroup_shape
     TiledMma tiled_mma;
 
-    Tensor accumulators = make_tensor<ElementAccumulator>(Shape<Int<VecC>, Int<FragsM>, Int<FragsN>>{});
+    Tensor accumulators = partition_fragment_C(tiled_mma, take<0,2>(blk_shape)); 
     clear(accumulators);
 
-    auto k_tile_iter  = cute::make_coord_iterator(make_shape(K / get<2>(subgroup_shape)));
-    int  k_tile_count = K / get<2>(subgroup_shape);
+    auto k_tile_iter  = cute::make_coord_iterator(make_shape(K / get<2>(workgroup_shape)));
+    int  k_tile_count = K / get<2>(workgroup_shape);
 
     // Perform the collective scoped MMA
     CollectiveMainloop collective_mma;
     collective_mma(
       accumulators,
-      tAi(_,_,_,l_coord),
-      tBi(_,_,_,l_coord),
+      gA,
+      gB,
       accumulators,
       k_tile_iter, k_tile_count,
       residue_mnk,
@@ -267,7 +256,7 @@ public:
     epilogue(
       problem_shape_MNKL,
       subgroup_shape,
-      tile_coord,
+      blk_coord_mnkl,
       accumulators,
       tiled_mma,
       residue_mnk,

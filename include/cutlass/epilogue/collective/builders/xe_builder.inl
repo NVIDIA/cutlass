@@ -94,8 +94,8 @@ template <
               Tile<_32,_64,_32>>;  // Subgroup level-tile
       
       using DispatchPolicy = cutlass::epilogue::IntelPVCEpilogue;
-      using CopyOpG2R = XE_2D_U32x8x16x1x1_LD_N;
-      using CopyOpR2G = XE_2D_U32x8x16x1x1_ST_N;
+      using CopyOpG2R = XE_2D_U32x8x16_LD_N;
+      using CopyOpR2G = XE_2D_U32x8x16_ST_N;
 
       // Intel Epilogue with Linear Combination does not use shared memory
       using SmemLayoutAtomC_ = void;
