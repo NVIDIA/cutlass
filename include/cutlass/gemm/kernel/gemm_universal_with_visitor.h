@@ -52,12 +52,12 @@ template <
   typename Epilogue,             ///! Epilogue
   typename ThreadblockSwizzle_   ///! Threadblock swizzling function
 >
-class GemmWithEpilogueVisitor: GemmUniversal<Mma,Epilogue, ThreadblockSwizzle_> {
+class GemmWithEpilogueVisitor: public GemmUniversal<Mma, Epilogue, ThreadblockSwizzle_> {
 public:
 
   using ThreadblockSwizzle = ThreadblockSwizzle_;
 
-  using Base = GemmUniversal<Mma,Epilogue, ThreadblockSwizzle>;
+  using Base = GemmUniversal<Mma, Epilogue, ThreadblockSwizzle>;
   using Base::Base;
 
   using FusionCallbacks = typename Epilogue::FusionCallbacks;
