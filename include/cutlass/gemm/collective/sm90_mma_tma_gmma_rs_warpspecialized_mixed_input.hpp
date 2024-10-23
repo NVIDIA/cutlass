@@ -1291,24 +1291,6 @@ private:
       return Int<cute::gcd(Cosize, 32 / cute::min(sizeof_bits_v<SrcType>, sizeof_bits_v<DstType>))>{};
     }
   };
-  template <int Cosize> struct select_packing<cutlass::float_e4m3_t, cutlass::bfloat16_t, Cosize> {
-    static constexpr auto value() { return Int<cute::gcd(Cosize, 2)>{}; }
-  };
-  template <int Cosize> struct select_packing<cutlass::float_e5m2_t, cutlass::bfloat16_t, Cosize> {
-    static constexpr auto value() { return Int<cute::gcd(Cosize, 2)>{}; }
-  };
-  template <int Cosize> struct select_packing<cutlass::float_e4m3_t, cutlass::half_t, Cosize> {
-    static constexpr auto value() { return Int<cute::gcd(Cosize, 2)>{}; }
-  };
-  template <int Cosize> struct select_packing<cutlass::float_e5m2_t, cutlass::half_t, Cosize> {
-    static constexpr auto value() { return Int<cute::gcd(Cosize, 2)>{}; }
-  };
-  template <int Cosize> struct select_packing<cutlass::int4b_t, cutlass::bfloat16_t, Cosize> {
-    static constexpr auto value() { return Int<cute::gcd(Cosize, 4)>{}; }
-  };
-  template <int Cosize> struct select_packing<cutlass::int4b_t, cutlass::half_t, Cosize> {
-    static constexpr auto value() { return Int<cute::gcd(Cosize, 4)>{}; }
-  };
 
   CUTLASS_DEVICE
   static uint32_t to_reg(Array<cutlass::int4b_t, 4> const& source) {
