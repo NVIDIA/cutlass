@@ -42,6 +42,11 @@ namespace cutlass::detail {
 template <class TiledMma, class = void>
 struct IsSparseTensorOp : cute::false_type { };
 
+// TiledMma for sparse must have ValTypeE
+template <class TiledMma>
+struct IsSparseTensorOp<TiledMma, cute::void_t<typename TiledMma::ValTypeE>>
+    : cute::true_type { };
+
 // The following metafunction is used to extract the OperatorClass from a cutlass 3.x kernel.
 template <class TiledMma>
 struct get_operator_class {

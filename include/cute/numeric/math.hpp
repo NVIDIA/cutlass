@@ -30,9 +30,10 @@
  **************************************************************************************************/
 #pragma once
 
-#include <cute/config.hpp>
+#include <cute/config.hpp>            // CUTE_HOST_DEVICE
+#include <cute/util/type_traits.hpp>  // __CUTE_REQUIRES
 
-#include <cute/util/type_traits.hpp>
+#include <cutlass/fast_math.h>
 
 namespace cute
 {
@@ -142,7 +143,7 @@ has_single_bit(T x) {
 // bit_width( 0b0111 ) = 3
 template <class T>
 CUTE_HOST_DEVICE constexpr
-T
+int
 bit_width(T x) {
   static_assert(is_unsigned<T>::value, "Only to be used for unsigned types.");
   constexpr int N = (numeric_limits<T>::digits == 64 ? 6 :
@@ -223,7 +224,7 @@ rotr(T x, int s) {
 // countl_zero( 0b00011100 ) = 3
 template <class T>
 CUTE_HOST_DEVICE constexpr
-T
+int
 countl_zero(T x) {
   return numeric_limits<T>::digits - bit_width(x);
 }
@@ -234,7 +235,7 @@ countl_zero(T x) {
 // countl_one( 0b11100011 ) = 3
 template <class T>
 CUTE_HOST_DEVICE constexpr
-T
+int
 countl_one(T x) {
   return countl_zero(~x);
 }
@@ -245,7 +246,7 @@ countl_one(T x) {
 // countr_zero( 0b00011100 ) = 2
 template <class T>
 CUTE_HOST_DEVICE constexpr
-T
+int
 countr_zero(T x) {
   return x == 0 ? numeric_limits<T>::digits : bit_width(T(x & T(-x))) - 1;  // bit_width of the LSB
 }
@@ -256,7 +257,7 @@ countr_zero(T x) {
 // countr_one( 0b11100011 ) = 2
 template <class T>
 CUTE_HOST_DEVICE constexpr
-T
+int
 countr_one(T x) {
   return countr_zero(~x);
 }
@@ -284,7 +285,7 @@ popcount(T x) {
 // Computes the result of bitwise left-shift
 template <class T>
 CUTE_HOST_DEVICE constexpr
-T
+auto
 shiftl(T x, int s) {
   return s >= 0 ? (x << s) : (x >> -s);
 }
@@ -292,7 +293,7 @@ shiftl(T x, int s) {
 // Computes the result of bitwise right-shift
 template <class T>
 CUTE_HOST_DEVICE constexpr
-T
+auto
 shiftr(T x, int s) {
   return s >= 0 ? (x >> s) : (x << -s);
 }
@@ -321,6 +322,35 @@ log_2(T x) {
   assert(x > 0);
   static_assert(is_unsigned<T>::value, "Only to be used for unsigned integral types.");
   return static_cast<int32_t>(bit_width(x)) - 1;
+}
+
+template <class IntDiv, class IntMod>
+struct DivModReturnType {
+  IntDiv div_;
+  IntMod mod_;
+  CUTE_HOST_DEVICE constexpr
+  DivModReturnType(IntDiv const& div, IntMod const& mod) : div_(div), mod_(mod) {}
+};
+
+// General divmod
+template <class CInt0, class CInt1>
+CUTE_HOST_DEVICE constexpr
+auto
+divmod(CInt0 const& a, CInt1 const& b) {
+  return DivModReturnType{a / b, a % b};
+}
+
+// Specialized function with fastDivmod input
+template <class CInt>
+CUTE_HOST_DEVICE constexpr
+auto
+divmod(CInt const& a, cutlass::FastDivmod const& b) {
+  using val_div_type = typename cutlass::FastDivmod::value_div_type;
+  using val_mod_type = typename cutlass::FastDivmod::value_mod_type;
+  val_div_type div = 0;
+  val_mod_type mod = 0;
+  b(div, mod, a);
+  return DivModReturnType{div, mod};
 }
 
 } // namespace cute

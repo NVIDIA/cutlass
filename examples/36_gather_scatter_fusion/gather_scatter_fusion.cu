@@ -215,7 +215,7 @@ using ShapeMMAOp = cutlass::gemm::GemmShape<16, 8, 16>;  // <- MMA Op tile M = 8
 // 16, 8, 16 -> Ampere
 
 // This code section describes how threadblocks are scheduled on GPU
-using SwizzleThreadBlock = cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>;  // <- ??
+using SwizzleThreadBlock = cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>;
 
 // Define the epilogue operation as LinearCombination. This is approximately equal to
 //

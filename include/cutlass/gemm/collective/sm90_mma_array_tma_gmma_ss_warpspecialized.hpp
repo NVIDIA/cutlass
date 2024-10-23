@@ -35,6 +35,7 @@
 #include "cutlass/numeric_types.h"
 #include "cutlass/pipeline/pipeline.hpp"
 #include "cutlass/trace.h"
+#include "cutlass/cuda_host_adapter.hpp"
 
 #include "cute/arch/cluster_sm90.hpp"
 #include "cute/arch/copy_sm90.hpp"
@@ -94,10 +95,10 @@ struct CollectiveMma<
   using TileShape = TileShape_;
   using ElementA = ElementA_;
   using StrideA = StrideA_;
-  using UnderlyingStrideA = cute::remove_pointer_t<StrideA>;
+  using InternalStrideA = cute::remove_pointer_t<StrideA>;
   using ElementB = ElementB_;
   using StrideB = StrideB_;
-  using UnderlyingStrideB = cute::remove_pointer_t<StrideB>;
+  using InternalStrideB = cute::remove_pointer_t<StrideB>;
   using TiledMma = TiledMma_;
   using ElementAccumulator = typename TiledMma::ValTypeC;
   using GmemTiledCopyA = GmemTiledCopyA_;
@@ -152,25 +153,25 @@ struct CollectiveMma<
   // Assumption: StrideA is congruent with Problem_MK
   using TMA_A = decltype(make_tma_copy(
       GmemTiledCopyA{},
-      make_tensor(static_cast<InternalElementA const*>(nullptr), repeat_like(UnderlyingStrideA{}, int32_t(0)), UnderlyingStrideA{}),
+      make_tensor(static_cast<InternalElementA const*>(nullptr), repeat_like(InternalStrideA{}, int32_t(0)), InternalStrideA{}),
       SmemLayoutA{}(_,_,cute::Int<0>{}),
       make_shape(shape<0>(TileShape{}), shape<2>(TileShape{})),
       size<1>(ClusterShape{})));  // mcast along N mode for this M load, if any
   // Assumption: StrideB is congruent with Problem_NK
   using TMA_B = decltype(make_tma_copy(
       GmemTiledCopyB{},
-      make_tensor(static_cast<InternalElementB const*>(nullptr), repeat_like(UnderlyingStrideB{}, int32_t(0)), UnderlyingStrideB{}),
+      make_tensor(static_cast<InternalElementB const*>(nullptr), repeat_like(InternalStrideB{}, int32_t(0)), InternalStrideB{}),
       SmemLayoutB{}(_,_,cute::Int<0>{}),
       make_shape(shape<1>(TileShape{}), shape<2>(TileShape{})),
       size<0>(ClusterShape{}))); // mcast along M mode for this N load, if any
 
   struct SharedStorage {
-    struct TensorStorage : cute::aligned_struct<128> {
+    struct TensorStorage : cute::aligned_struct<128, _0> {
       cute::array_aligned<typename TiledMma::ValTypeA, cute::cosize_v<SmemLayoutA>> smem_A;
       cute::array_aligned<typename TiledMma::ValTypeB, cute::cosize_v<SmemLayoutB>> smem_B;
     } tensors;
 
-    struct TensorMapStorage : cute::aligned_struct<128> {
+    struct TensorMapStorage : cute::aligned_struct<128, _0> {
       cute::TmaDescriptor smem_tensormap_A;
       cute::TmaDescriptor smem_tensormap_B;
     } tensormaps;
@@ -182,7 +183,7 @@ struct CollectiveMma<
   using TensorMapStorage = typename SharedStorage::TensorMapStorage;
   using PipelineStorage = typename SharedStorage::PipelineStorage;
 
-  static constexpr bool IsGroupedGemmKernel = !cute::is_same_v<UnderlyingStrideA, StrideA>;
+  static constexpr bool IsGroupedGemmKernel = !cute::is_same_v<InternalStrideA, StrideA>;
 
   // Host side kernel arguments
   struct Arguments {
@@ -196,6 +197,7 @@ struct CollectiveMma<
   struct Params {
     TMA_A tma_load_a;
     TMA_B tma_load_b;
+    uint32_t tma_transaction_bytes = TmaTransactionBytes;
     void* tensormaps;
     InternalElementA const** ptr_A;
     StrideA dA;
@@ -222,14 +224,14 @@ struct CollectiveMma<
     // Batches/Groups are managed by using appropriate pointers to input matrices
     const uint32_t mock_L = 1;
     InternalElementA const* ptr_A_first_batch = reinterpret_cast<InternalElementA const*>(args.ptr_A);
-    InternalElementB const* ptr_B_first_batch = reinterpret_cast<InternalElementA const*>(args.ptr_B);
+    InternalElementB const* ptr_B_first_batch = reinterpret_cast<InternalElementB const*>(args.ptr_B);
 
-    UnderlyingStrideA stride_a;
-    UnderlyingStrideB stride_b;
+    InternalStrideA stride_a;
+    InternalStrideB stride_b;
     if constexpr (IsGroupedGemmKernel) {
       // Strides for Grouped Gemm will be replaced prior to the first access regardless.
-      stride_a = UnderlyingStrideA{};
-      stride_b = UnderlyingStrideB{};
+      stride_a = InternalStrideA{};
+      stride_b = InternalStrideB{};
     }
     else {
       // Tensor shapes for Ptr-Array are initialized correctly only here.
@@ -261,6 +263,7 @@ struct CollectiveMma<
     return {
       tma_load_a,
       tma_load_b,
+      TmaTransactionBytes,
       tensormaps,
       reinterpret_cast<InternalElementA const**>(args.ptr_A),
       args.dA,
@@ -280,12 +283,12 @@ struct CollectiveMma<
 
   template <class ProblemShape>
   static cutlass::Status
-  initialize_workspace(ProblemShape const& problem_shape, Arguments const& args, void* workspace, cudaStream_t stream) {
+  initialize_workspace(ProblemShape const& problem_shape, Arguments const& args, void* workspace, cudaStream_t stream, CudaHostAdapter* cuda_adapter = nullptr) {
     return cutlass::Status::kSuccess;
   }
 
   template<class ProblemShape>
-  CUTLASS_HOST_DEVICE static bool
+  static bool
   can_implement(
       ProblemShape problem_shapes,
       Arguments const& args) {
@@ -299,8 +302,8 @@ struct CollectiveMma<
       for (int i = 0; i < problem_shapes.groups(); i++) {
         auto problem_shape_MNKL = append<4>(problem_shapes.get_host_problem_shape(i), 1);
         auto [M,N,K,L] = problem_shape_MNKL;
-        implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_A>(cute::make_shape(M,K,L), UnderlyingStrideA{});
-        implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_B>(cute::make_shape(N,K,L), UnderlyingStrideB{});
+        implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_A>(cute::make_shape(M,K,L), InternalStrideA{});
+        implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_B>(cute::make_shape(N,K,L), InternalStrideB{});
       }
     }
 
@@ -480,8 +483,22 @@ struct CollectiveMma<
     // Define C accumulators and A/B partitioning
     //
 
+    // Layout of warp group to thread mapping
+
+    static_assert(stride<0>(typename TiledMma::ALayout{}) == 0 and 
+                  stride<0>(typename TiledMma::BLayout{}) == 0 and
+                  size<0>(typename TiledMma::ALayout{}) == NumThreadsPerWarpGroup and
+                  size<0>(typename TiledMma::BLayout{}) == NumThreadsPerWarpGroup, 
+                  "Stride of the first mode must be 0 and the size of the mode must be NumThreadsPerWarpGroup");
+
+    constexpr int MmaWarpGroups = size(TiledMma{}) / NumThreadsPerWarpGroup;
+    Layout warp_group_thread_layout = make_layout(Int<MmaWarpGroups>{},
+                                                  Int<NumThreadsPerWarpGroup>{});
+
+    int warp_group_idx = __shfl_sync(0xFFFFFFFF, thread_idx / NumThreadsPerWarpGroup, 0);
+
     TiledMma tiled_mma;
-    auto thread_mma = tiled_mma.get_thread_slice(thread_idx);
+    auto thread_mma = tiled_mma.get_slice(warp_group_thread_layout(warp_group_idx));
 
     Tensor tCsA = thread_mma.partition_A(sA);                                                 // (MMA,MMA_M,MMA_K,PIPE)
     Tensor tCsB = thread_mma.partition_B(sB);                                                 // (MMA,MMA_N,MMA_K,PIPE)
@@ -508,12 +525,9 @@ struct CollectiveMma<
 
     // Prologue GMMAs
     int prologue_mma_count = min(K_PIPE_MMAS, k_tile_count);
-
+    assert(k_tile_count >= 1);
     tiled_mma.accumulate_ = GMMA::ScaleOut::Zero;
-
     warpgroup_fence_operand(accum);
-    CUTLASS_PRAGMA_UNROLL
-    for (int k_tile_prologue = prologue_mma_count; k_tile_prologue > 0; --k_tile_prologue)
     {
       // WAIT on smem_pipe_read until its data are available (phase bit flips from rdPhaseBit value)
       auto barrier_token = pipeline.consumer_try_wait(smem_pipe_read);
@@ -529,6 +543,22 @@ struct CollectiveMma<
         tiled_mma.accumulate_ = GMMA::ScaleOut::One;
       }
 
+      warpgroup_commit_batch();
+
+      ++smem_pipe_read;
+    }
+
+    warpgroup_fence_operand(accum);
+    CUTLASS_PRAGMA_UNROLL
+    for (int k_tile_prologue = prologue_mma_count - 1; k_tile_prologue > 0; --k_tile_prologue)
+    {
+      // WAIT on smem_pipe_read until its data are available (phase bit flips from rdPhaseBit value)
+      auto barrier_token = pipeline.consumer_try_wait(smem_pipe_read);
+      pipeline.consumer_wait(smem_pipe_read, barrier_token);
+
+      int read_stage = smem_pipe_read.index();
+      warpgroup_arrive();
+      cute::gemm(tiled_mma, tCrA(_,_,_,read_stage), tCrB(_,_,_,read_stage), accum); // (V,M,K) x (V,N,K) => (V,M,N)
       warpgroup_commit_batch();
 
       ++smem_pipe_read;
@@ -552,13 +582,7 @@ struct CollectiveMma<
       int read_stage = smem_pipe_read.index();
       warpgroup_fence_operand(accum);
       warpgroup_arrive();
-      // Unroll the K mode manually to set scale D to 1
-      CUTLASS_PRAGMA_UNROLL
-      for (int k_block = 0; k_block < size<2>(tCrA); ++k_block) {
-        // (V,M,K) x (V,N,K) => (V,M,N)
-        cute::gemm(tiled_mma, tCrA(_,_,k_block,read_stage), tCrB(_,_,k_block,read_stage), accum);
-        tiled_mma.accumulate_ = GMMA::ScaleOut::One;
-      }
+      cute::gemm(tiled_mma, tCrA(_,_,_,read_stage), tCrB(_,_,_,read_stage), accum); // (V,M,K) x (V,N,K) => (V,M,N)
       warpgroup_commit_batch();
 
       /// Wait on the GMMA barrier for K_PIPE_MMAS (or fewer) outstanding to ensure smem_pipe_write is consumed
@@ -599,56 +623,42 @@ struct CollectiveMma<
   //
 
   CUTLASS_DEVICE auto
-  tensormaps_init(Params const& mainloop_params, int32_t const sm_count, int32_t const sm_idx) const {
+  tensormaps_init(
+      Params const& mainloop_params,
+      TensorMapStorage& shared_tensormaps,
+      int32_t sm_count,
+      int32_t sm_idx) {
     cute::TmaDescriptor* gmem_tensormap = reinterpret_cast<cute::TmaDescriptor*>(mainloop_params.tensormaps);
 
     cute::TmaDescriptor* tma_desc_a = &gmem_tensormap[sm_idx];
     cute::TmaDescriptor* tma_desc_b = &gmem_tensormap[sm_idx + sm_count];
 
     if (cute::elect_one_sync()) {
-      // Bringing tensormaps from params to gmem for modification later
+      // Bringing tensormaps from params to smem for modification later
       Tensor pA_tensormap = make_tensor(mainloop_params.tma_load_a.get_tma_descriptor(), Int<1>{}, Int<1>{});
-      Tensor gA_tensormap = make_tensor(tma_desc_a, Int<1>{}, Int<1>{});
+      Tensor sA_tensormap = make_tensor(make_smem_ptr(&shared_tensormaps.smem_tensormap_A), Int<1>{}, Int<1>{});
       Tensor pB_tensormap = make_tensor(mainloop_params.tma_load_b.get_tma_descriptor(), Int<1>{}, Int<1>{});
-      Tensor gB_tensormap = make_tensor(tma_desc_b, Int<1>{}, Int<1>{});
+      Tensor sB_tensormap = make_tensor(make_smem_ptr(&shared_tensormaps.smem_tensormap_B), Int<1>{}, Int<1>{});
 
-      copy(recast<uint128_t>(pA_tensormap), recast<uint128_t>(gA_tensormap));
-      copy(recast<uint128_t>(pB_tensormap), recast<uint128_t>(gB_tensormap));
+      copy(recast<uint128_t>(pA_tensormap), recast<uint128_t>(sA_tensormap));
+      copy(recast<uint128_t>(pB_tensormap), recast<uint128_t>(sB_tensormap));
     }
+    __syncwarp();
 
     return cute::make_tuple(tma_desc_a, tma_desc_b);
-  }
-
-  // Bringing tensormaps to smem (to be done by single thread)
-  template <class TensorMapA, class TensorMapB>
-  CUTLASS_DEVICE
-  void
-  tensormaps_fetch_to_smem(
-      TensorMapStorage& shared_tensormap,
-      cute::tuple<TensorMapA, TensorMapB> const& input_tensormaps) const {
-    Tensor gA_tensormap = make_tensor(make_gmem_ptr(get<0>(input_tensormaps)), Int<1>{}, Int<1>{});
-    Tensor sA_tensormap = make_tensor(make_smem_ptr(&shared_tensormap.smem_tensormap_A), Int<1>{}, Int<1>{});
-    Tensor gB_tensormap = make_tensor(make_gmem_ptr(get<1>(input_tensormaps)), Int<1>{}, Int<1>{});
-    Tensor sB_tensormap = make_tensor(make_smem_ptr(&shared_tensormap.smem_tensormap_B), Int<1>{}, Int<1>{});
-
-    copy(recast<uint128_t>(gA_tensormap), recast<uint128_t>(sA_tensormap));
-    copy(recast<uint128_t>(gB_tensormap), recast<uint128_t>(sB_tensormap));
-
-    cp_async_fence();
-    cp_async_wait<0>();
   }
 
   // Replace address for the global tensor (to be done by single thread)
   CUTLASS_DEVICE
   void
   tensormaps_replace_global_address(
-      TensorMapStorage& shared_tensormap,
+      TensorMapStorage& shared_tensormaps,
       Params const& mainloop_params,
       int32_t next_batch) {
     // Replacing global_address for the next batch
-    cute::tma_descriptor_replace_addr_in_shared_mem(shared_tensormap.smem_tensormap_A,
+    cute::tma_descriptor_replace_addr_in_shared_mem(shared_tensormaps.smem_tensormap_A,
                                                     mainloop_params.ptr_A[next_batch]);
-    cute::tma_descriptor_replace_addr_in_shared_mem(shared_tensormap.smem_tensormap_B,
+    cute::tma_descriptor_replace_addr_in_shared_mem(shared_tensormaps.smem_tensormap_B,
                                                     mainloop_params.ptr_B[next_batch]);
   }
 
@@ -657,7 +667,7 @@ struct CollectiveMma<
   CUTLASS_DEVICE
   void
   tensormaps_replace_global_tensor_properties(
-      TensorMapStorage& shared_tensormap,
+      TensorMapStorage& shared_tensormaps,
       Params const& mainloop_params,
       int32_t next_group,
       ProblemShape_MNKL problem_shape_mnkl) {
@@ -692,10 +702,10 @@ struct CollectiveMma<
       stride = (stride * sizeof_bits_v<InternalElementB>) / 8;
     }
 
-    cute::tma_descriptor_replace_dims_strides_in_shared_mem(shared_tensormap.smem_tensormap_A,
+    cute::tma_descriptor_replace_dims_strides_in_shared_mem(shared_tensormaps.smem_tensormap_A,
                                                             prob_shape_A,
                                                             prob_stride_A);
-    cute::tma_descriptor_replace_dims_strides_in_shared_mem(shared_tensormap.smem_tensormap_B,
+    cute::tma_descriptor_replace_dims_strides_in_shared_mem(shared_tensormaps.smem_tensormap_B,
                                                             prob_shape_B,
                                                             prob_stride_B);
   }
@@ -704,21 +714,18 @@ struct CollectiveMma<
   CUTLASS_DEVICE
   void
   tensormaps_perform_update(
-      TensorMapStorage& shared_tensormap,
+      TensorMapStorage& shared_tensormaps,
       Params const& mainloop_params,
       cute::tuple<TensorMapA, TensorMapB> const& input_tensormaps,
       ProblemShape_MNKL problem_shape_mnkl,
       int32_t next_batch) {
     if (cute::elect_one_sync()) {
-      // Bringing tensormaps to smem
-      tensormaps_fetch_to_smem(shared_tensormap, input_tensormaps);
-
       // Replacing global_address for the next batch
-      tensormaps_replace_global_address(shared_tensormap, mainloop_params, next_batch);
+      tensormaps_replace_global_address(shared_tensormaps, mainloop_params, next_batch);
 
       if constexpr (IsGroupedGemmKernel) {
         // Replacing global dims and strides for the next batch
-        tensormaps_replace_global_tensor_properties(shared_tensormap,
+        tensormaps_replace_global_tensor_properties(shared_tensormaps,
           mainloop_params, next_batch, problem_shape_mnkl);
       }
     }
@@ -728,13 +735,14 @@ struct CollectiveMma<
   CUTLASS_DEVICE
   void
   tensormaps_cp_fence_release (
-      TensorMapStorage& shared_tensormap,
+      TensorMapStorage& shared_tensormaps,
       cute::tuple<TensorMapA, TensorMapB> const& input_tensormaps) {
-    // Entire warp must do this (ie its aligned)
-    tma_descriptor_cp_fence_release(get<0>(input_tensormaps), shared_tensormap.smem_tensormap_A);
-    tma_descriptor_cp_fence_release(get<1>(input_tensormaps), shared_tensormap.smem_tensormap_B);
+    // Entire warp must do this (i.e. it's aligned)
+    tma_descriptor_cp_fence_release(get<0>(input_tensormaps), shared_tensormaps.smem_tensormap_A);
+    tma_descriptor_cp_fence_release(get<1>(input_tensormaps), shared_tensormaps.smem_tensormap_B);
   }
 
+  // The entire warp must call this function collectively (that is, the instructions are aligned)
   template <class TensorMapA, class TensorMapB>
   CUTLASS_DEVICE
   void

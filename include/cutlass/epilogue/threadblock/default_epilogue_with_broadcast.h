@@ -69,9 +69,16 @@ template <
   typename OutputOp,
   int ElementsPerAccess,
   bool ScatterD = false,
-  typename PermuteDLayout = layout::NoPermute
+  typename PermuteDLayout = layout::NoPermute,
+  conv::StrideSupport StrideSupport = conv::StrideSupport::kUnity,
+  int Rank = 4
 >
 struct DefaultEpilogueWithBroadcastSimt {
+
+  static conv::StrideSupport const kStrideSupport = StrideSupport;
+  static int const kRank = Rank;
+
+  static bool const UseCUDAStore = platform::is_same<ElementOutput, double>::value;
 
   /// Use defaults related to the existing epilogue
   using Base = DefaultEpilogueSimt<
@@ -81,15 +88,29 @@ struct DefaultEpilogueWithBroadcastSimt {
     ElementsPerAccess
   >;
 
-  //
-  // Stores the result z = (y = GEMM(A, B, C), broadcast)
-  //
-  using OutputTileIterator = cutlass::epilogue::threadblock::PredicatedTileIterator<
+  using PackedOutputTileIterator = cutlass::epilogue::threadblock::PredicatedTileIterator<
     typename Base::OutputTileThreadMap,
     ElementOutput,
     ScatterD,
-    PermuteDLayout
+    PermuteDLayout,
+    UseCUDAStore
   >;
+
+  using StridedOutputTileIterator = cutlass::epilogue::threadblock::PredicatedTileIteratorConv<
+    typename Base::OutputTileThreadMap,
+    ElementOutput,
+    ScatterD,
+    PermuteDLayout,
+    UseCUDAStore,
+    kRank
+  >;
+
+  //
+  // Stores the result z = (y = GEMM(A, B, C), broadcast)
+  //
+  using OutputTileIterator = typename platform::conditional<StrideSupport == cutlass::conv::StrideSupport::kUnity,
+                                                            PackedOutputTileIterator,
+                                                            StridedOutputTileIterator>::type;
 
   //
   // Additional tensor tile iterator - stores t = Elementwise(z)
@@ -98,7 +119,6 @@ struct DefaultEpilogueWithBroadcastSimt {
     typename Base::OutputTileThreadMap,
     ElementTensor
   >;
-
   /// Define the epilogue
   using Epilogue = EpilogueWithBroadcast<
     Shape,

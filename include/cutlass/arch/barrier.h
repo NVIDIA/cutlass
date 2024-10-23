@@ -50,11 +50,11 @@ namespace arch {
 // Enumerates the reserved named barriers to avoid potential conflicts
 // This enum class specifies the NamedBarriers reserved by CUTLASS.
 enum class ReservedNamedBarriers { 
-  EpilogueBarrier = 0,
-  TransposeBarrier = 1,
-  TransformBarrier = 2,
-  StreamkBarrier0 = 3,
-  StreamkBarrier1 = 4
+  EpilogueBarrier = 1,
+  TransposeBarrier = 2,
+  TransformBarrier = 3,
+  StreamkBarrier0 = 4,
+  StreamkBarrier1 = 5
   , FirstUserBarrier = StreamkBarrier1 + 1
 };
 
@@ -94,9 +94,21 @@ class NamedBarrier {
   }
 
   CUTLASS_DEVICE
+  void arrive_and_wait_unaligned() const {
+    // Note: The value of id_ is already the final barrier id (set correctly in the constructor).
+    NamedBarrier::arrive_and_wait_internal_unaligned(num_threads_, id_);
+  }
+
+  CUTLASS_DEVICE
   void arrive() const {
     // Note: The value of id_ is already the final barrier id (set correctly in the constructor).
     NamedBarrier::arrive_internal(num_threads_, id_);
+  }
+
+  CUTLASS_DEVICE
+  void arrive_unaligned() const {
+    // Note: The value of id_ is already the final barrier id (set correctly in the constructor).
+    NamedBarrier::arrive_internal_unaligned(num_threads_, id_);
   }
 
   CUTLASS_DEVICE
@@ -148,11 +160,23 @@ class NamedBarrier {
     sync_internal(num_threads, static_cast<int>(reserved_named_barriers));
   }
 
+
  private:
   CUTLASS_DEVICE
   static void arrive_and_wait_internal(uint32_t num_threads, uint32_t barrier_id) {
 #if CUDA_BARRIER_ENABLED
     asm volatile("bar.sync %0, %1;" : : "r"(barrier_id), "r"(num_threads));
+    cutlass::arch::synclog_emit_named_barrier_arrive_and_wait(__LINE__, num_threads, barrier_id);
+#elif defined(__CUDA_ARCH__)
+    asm volatile ("brkpt;\n" ::);
+#endif
+  }
+
+  CUTLASS_DEVICE
+  static void arrive_and_wait_internal_unaligned(uint32_t num_threads, uint32_t barrier_id) {
+#if CUDA_BARRIER_ENABLED
+    asm volatile("barrier.sync %0, %1;" : : "r"(barrier_id), "r"(num_threads));
+    cutlass::arch::synclog_emit_named_barrier_arrive_and_wait(__LINE__, num_threads, barrier_id);
 #elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
 #endif
@@ -161,7 +185,18 @@ class NamedBarrier {
   CUTLASS_DEVICE
   static void arrive_internal(uint32_t num_threads, uint32_t barrier_id) {
 #if CUDA_BARRIER_ENABLED
+    cutlass::arch::synclog_emit_named_barrier_arrive(__LINE__, num_threads, barrier_id);
     asm volatile("bar.arrive %0, %1;" : : "r"(barrier_id), "r"(num_threads));
+#elif defined(__CUDA_ARCH__)
+    asm volatile ("brkpt;\n" ::);
+#endif
+  }
+
+  CUTLASS_DEVICE
+  static void arrive_internal_unaligned(uint32_t num_threads, uint32_t barrier_id) {
+#if CUDA_BARRIER_ENABLED
+    cutlass::arch::synclog_emit_named_barrier_arrive(__LINE__, num_threads, barrier_id);
+    asm volatile("barrier.arrive %0, %1;" : : "r"(barrier_id), "r"(num_threads));
 #elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
 #endif
@@ -204,12 +239,12 @@ public:
   }
 
   CUTLASS_DEVICE
-  uint32_t test_wait(uint32_t phase, uint32_t pred=true) const {
+  bool test_wait(uint32_t phase, uint32_t pred=true) const {
     return ClusterBarrier::test_wait(&this->barrier_, phase, pred);
   }
 
   CUTLASS_DEVICE
-  uint32_t try_wait(uint32_t phase) const {
+  bool try_wait(uint32_t phase) const {
     return ClusterBarrier::try_wait(&this->barrier_, phase);
   }
 
@@ -243,6 +278,7 @@ public:
         "}"
         :
         : "r"(arrive_count), "r"(smem_addr));
+    cutlass::arch::synclog_emit_cluster_barrier_init(__LINE__, smem_addr, arrive_count);
 #elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
 #endif
@@ -253,6 +289,7 @@ public:
   static void wait(ValueType const* smem_ptr, uint32_t phase) {
 #if CUDA_BARRIER_ENABLED
     uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
+    cutlass::arch::synclog_emit_cluster_barrier_wait(__LINE__, smem_addr, phase);
     // Arbitrarily large timer value after which try-wait expires and re-tries.
     uint32_t ticks = 0x989680;
     asm volatile(
@@ -260,8 +297,8 @@ public:
         ".reg .pred       P1; \n\t"
         "LAB_WAIT: \n\t"
         "mbarrier.try_wait.parity.shared::cta.b64 P1, [%0], %1, %2; \n\t"
-        "@P1 bra.uni DONE; \n\t"
-        "bra.uni     LAB_WAIT; \n\t"
+        "@P1 bra DONE; \n\t"
+        "bra     LAB_WAIT; \n\t"
         "DONE: \n\t"
         "}"
         :
@@ -273,9 +310,10 @@ public:
   }
 
   CUTLASS_DEVICE
-  static uint32_t test_wait(ValueType const* smem_ptr, uint32_t phase, uint32_t pred) {
+  static bool test_wait(ValueType const* smem_ptr, uint32_t phase, uint32_t pred) {
 #if CUDA_BARRIER_ENABLED
     uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
+    cutlass::arch::synclog_emit_cluster_barrier_test_wait(__LINE__, smem_addr, phase, pred);
     uint32_t waitComplete;
 
     asm volatile(
@@ -289,7 +327,7 @@ public:
         : "=r"(waitComplete)
         : "r"(smem_addr), "r"(phase), "r"(pred));
 
-    return waitComplete;
+    return static_cast<bool>(waitComplete);
 #elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
 #endif
@@ -297,9 +335,10 @@ public:
   }
 
   CUTLASS_DEVICE
-  static uint32_t try_wait(ValueType const* smem_ptr, uint32_t phase) {
+  static bool try_wait(ValueType const* smem_ptr, uint32_t phase) {
 #if CUDA_BARRIER_ENABLED
     uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
+    cutlass::arch::synclog_emit_cluster_barrier_try_wait(__LINE__, smem_addr, phase);
     uint32_t waitComplete;
 
     asm volatile(
@@ -311,7 +350,7 @@ public:
         : "=r"(waitComplete)
         : "r"(smem_addr), "r"(phase));
 
-    return waitComplete;
+    return static_cast<bool>(waitComplete);
 #elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
 #endif
@@ -323,16 +362,18 @@ public:
   static void arrive(ValueType const* smem_ptr, uint32_t cta_id, uint32_t pred) {
 #if CUDA_BARRIER_ENABLED
     uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
-    asm volatile(
-        "{\n\t"
-        ".reg .pred p;\n\t"
-        ".reg .b32 remAddr32;\n\t"
-        "setp.eq.u32 p, %2, 1;\n\t"
-        "@p mapa.shared::cluster.u32  remAddr32, %0, %1;\n\t"
-        "@p mbarrier.arrive.shared::cluster.b64  _, [remAddr32];\n\t"
-        "}"
-        :
-        : "r"(smem_addr), "r"(cta_id), "r"(pred));
+    if (pred) {
+      asm volatile(
+          "{\n\t"
+          ".reg .b32 remAddr32;\n\t"
+          "mapa.shared::cluster.u32  remAddr32, %0, %1;\n\t"
+          "mbarrier.arrive.shared::cluster.b64  _, [remAddr32];\n\t"
+          "}"
+          :
+          : "r"(smem_addr), "r"(cta_id));
+    }
+
+    cutlass::arch::synclog_emit_cluster_barrier_arrive_cluster(__LINE__, smem_addr, cta_id, pred);
 #elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
 #endif
@@ -349,6 +390,7 @@ public:
         "}"
         :
         : "r"(smem_addr));
+    cutlass::arch::synclog_emit_cluster_barrier_arrive(__LINE__, smem_addr);
 #elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
 #endif
@@ -425,6 +467,7 @@ struct ClusterTransactionBarrier : public ClusterBarrier {
         "}"
         :
         : "r"(transaction_bytes), "r"(smem_addr));
+    cutlass::arch::synclog_emit_cluster_transaction_barrier_arrive_and_expect_tx(__LINE__, smem_addr, transaction_bytes);
 #elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
 #endif
@@ -462,6 +505,7 @@ struct ClusterTransactionBarrier : public ClusterBarrier {
         "}"
         :
         : "r"(transaction_bytes), "r"(smem_addr));
+    cutlass::arch::synclog_emit_cluster_transaction_barrier_expect_transaction(__LINE__, smem_addr, transaction_bytes);
 #elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
 #endif
@@ -482,6 +526,7 @@ struct ClusterTransactionBarrier : public ClusterBarrier {
         "}"
         :
         : "r"(transaction_bytes), "r"(smem_addr), "r"(pred));
+    cutlass::arch::synclog_emit_cluster_transaction_barrier_complete_transaction(__LINE__, smem_addr, dst_cta_id, transaction_bytes, pred);
 #elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
 #endif
@@ -535,6 +580,7 @@ struct ClusterTransactionBarrier : public ClusterBarrier {
 CUTLASS_DEVICE
 void fence_barrier_init() {
 #if CUDA_BARRIER_ENABLED
+  cutlass::arch::synclog_emit_fence_barrier_init(__LINE__);
   asm volatile(
       "{\n\t"
       "fence.mbarrier_init.release.cluster; \n"
@@ -549,6 +595,7 @@ void fence_barrier_init() {
 CUTLASS_DEVICE
 void fence_view_async_shared() {
 #if CUDA_BARRIER_ENABLED
+    cutlass::arch::synclog_emit_fence_view_async_shared(__LINE__);
     asm volatile (
         "{\n\t"
         "fence.proxy.async.shared::cta; \n"
@@ -570,6 +617,7 @@ void cpasync_barrier_arrive(uint64_t const* smem_ptr) {
     "}"
     :
     : "r"(smem_addr));
+  cutlass::arch::synclog_emit_cpasync_barrier_arrive(__LINE__, smem_addr);
 #elif defined(__CUDA_ARCH__)
   asm volatile ("brkpt;\n" ::);
 #endif

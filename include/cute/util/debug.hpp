@@ -120,7 +120,7 @@ print_type(T&&...) {
 
 CUTE_HOST_DEVICE
 bool
-block(int bid)
+block([[maybe_unused]] int bid)
 {
 #if defined(__CUDA_ARCH__)
   return blockIdx.x + blockIdx.y*gridDim.x + blockIdx.z*gridDim.x*gridDim.y == bid;
@@ -131,7 +131,7 @@ block(int bid)
 
 CUTE_HOST_DEVICE
 bool
-thread(int tid, int bid)
+thread([[maybe_unused]] int tid, [[maybe_unused]] int bid)
 {
 #if defined(__CUDA_ARCH__)
   return (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y == tid) && block(bid);

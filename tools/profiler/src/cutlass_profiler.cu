@@ -143,16 +143,19 @@ void CutlassProfiler::enumerate_() {
 /// Profiles all operations
 int CutlassProfiler::profile_() {
 
-  int result = 0;
+  // Keep track of all device memory tensor in map
   DeviceContext device_context;
-  // For all profilers
+
+  int result = 0;
+  // For all profilers (e.g. gemm/sparse_gemm/conv2d...)
   for (auto & profiler : operation_profilers_) {
 
     if (options_.operation_kind == library::OperationKind::kInvalid ||
-      options_.operation_kind == profiler->kind()) {
+        options_.operation_kind == profiler->kind()) {
 
       result = profiler->profile_all(options_, library::Singleton::get().manifest, device_context);
 
+      // If some profile failed, terminate immediately
       if (result) {
         return result;
       }
@@ -201,19 +204,6 @@ void CutlassProfiler::print_usage_(std::ostream &out) {
 /// Prints usage
 void CutlassProfiler::print_options_(std::ostream &out) {
   options_.print_options(out);
-}
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
-/// Initializes the CUDA device
-void CutlassProfiler::initialize_device_() {
-
-  cudaError_t result = cudaSetDevice(options_.device.device);
-
-  if (result != cudaSuccess) {
-    std::cerr << "Failed to set device.";
-    throw std::runtime_error("Failed to set device");
-  }
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

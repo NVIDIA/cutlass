@@ -65,13 +65,13 @@ CUTLASS_HOST_DEVICE void swap(T &lhs, T &rhs) {
  * Static math utilities
  ******************************************************************************/
 
-/// Mixed precision dot product 
+/// Mixed precision dot product
 template <typename Index, typename LongIndex, int N>
 CUTLASS_HOST_DEVICE LongIndex dot(
-  Coord<N, Index> const &coord, 
-  Coord<N, LongIndex> const &stride, 
+  Coord<N, Index> const &coord,
+  Coord<N, LongIndex> const &stride,
   LongIndex acc = LongIndex()) {
-  
+
   CUTLASS_PRAGMA_UNROLL
   for (int n = 0; n < N; ++n) {
     acc += LongIndex(coord[n]) * stride[n];
@@ -312,18 +312,19 @@ void fast_divmod(int& quo, int64_t& rem, int64_t src, int div, unsigned int mul,
 ///
 ///   FastDivmod divmod(divisor);
 ///
-///   divmod(quotient, remainder, dividend);  
+///   divmod(quotient, remainder, dividend);
 ///
 ///   // quotient = (dividend / divisor)
 ///   // remainder = (dividend % divisor)
 ///
 struct FastDivmod {
+  using value_div_type = int;
+  using value_mod_type = int64_t;
+  int32_t divisor = 1;
+  uint32_t multiplier = 0u;
+  uint32_t shift_right = 0u;
 
-  int divisor;
-  unsigned int multiplier;
-  unsigned int shift_right;
-
-  /// Find quotient and remainder using device-side intrinsics
+  // Find quotient and remainder using device-side intrinsics
   CUTLASS_HOST_DEVICE
   void fast_divmod(int& quotient, int& remainder, int dividend) const {
 
@@ -357,21 +358,17 @@ struct FastDivmod {
   ///
   /// This precomputes some values based on the divisor and is computationally expensive.
 
-  CUTLASS_HOST_DEVICE
-  FastDivmod(): divisor(0), multiplier(0), shift_right(0) { }
+  constexpr FastDivmod() = default;
 
   CUTLASS_HOST_DEVICE
-  FastDivmod(int divisor): divisor(divisor) {
-
+  FastDivmod(int divisor_): divisor(divisor_) {
+    assert(divisor_ >= 0);
     if (divisor != 1) {
       unsigned int p = 31 + find_log2(divisor);
       unsigned m = unsigned(((1ull << p) + unsigned(divisor) - 1) / unsigned(divisor));
 
       multiplier = m;
       shift_right = p - 32;
-    } else {
-      multiplier = 0;
-      shift_right = 0;
     }
   }
 
@@ -429,7 +426,6 @@ struct FastDivmod {
   operator int() const { return divisor; }
 
 };
-
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Object to encapsulate the fast division+modulus operation for 64b integer division.
@@ -445,7 +441,7 @@ struct FastDivmod {
 ///
 ///   FastDivmodU64 divmod(divisor);
 ///
-///   divmod(quotient, remainder, dividend);  
+///   divmod(quotient, remainder, dividend);
 ///
 ///   // quotient = (dividend / divisor)
 ///   // remainder = (dividend % divisor)
@@ -517,7 +513,7 @@ struct FastDivmodU64 {
   /// Computes the remainder given a computed quotient and dividend
   CUTLASS_HOST_DEVICE
   uint64_t modulus(uint64_t quotient, uint64_t dividend) const {
-    return uint32_t(dividend - quotient * divisor);
+    return dividend - quotient * divisor;
   }
 
   /// Returns the quotient of floor(dividend / divisor) and computes the remainder
@@ -697,8 +693,8 @@ template <typename Element>
 CUTLASS_HOST_DEVICE int64_t OffsetBytes(int64_t index) {
 
   static_assert(
-    (sizeof_bits<Element>::value >= 8 && !(sizeof_bits<Element>::value % 8)) || 
-    (sizeof_bits<Element>::value <  8 && !(8 % sizeof_bits<Element>::value)), 
+    (sizeof_bits<Element>::value >= 8 && !(sizeof_bits<Element>::value % 8)) ||
+    (sizeof_bits<Element>::value <  8 && !(8 % sizeof_bits<Element>::value)),
     "Size of numeric type in bits must either be divisible by 8 bits, or 8 bits must be divisible by the size.");
 
   if (sizeof_bits<Element>::value >= 8) {
@@ -931,7 +927,7 @@ double fast_tanh(double x) {
 CUTLASS_HOST_DEVICE
 half_t fast_tanh(half_t x) {
   #if defined(__CUDA_ARCH__) && (__CUDACC_VER_MAJOR__ >= 11) && (__CUDA_ARCH__ >= 750)
-  
+
   asm volatile ( "tanh.approx.f16 %0, %1;" : "=h"(x.raw()) : "h"(x.raw()));
   return x;
 
@@ -1010,13 +1006,13 @@ template <int N>
 struct fast_tanh_op<Array<half_t, N>> {
   CUTLASS_DEVICE
   Array<half_t, N> operator()(Array<half_t, N> const &rhs) const {
-    
+
     Array<half_t, N> result;
 
     // use x2 specialization
     uint32_t const *in  = reinterpret_cast<uint32_t const *>(&rhs);
     uint32_t *out = reinterpret_cast<uint32_t *>(&result);
-    
+
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < N / 2; ++i) {
       asm volatile ("tanh.approx.f16x2 %0, %1;" : "=r"(out[i]) : "r"(in[i]));
@@ -1026,7 +1022,7 @@ struct fast_tanh_op<Array<half_t, N>> {
     if (N % 2) {
       uint16_t const *in = reinterpret_cast<uint16_t const *>(&rhs);
       uint16_t *out = reinterpret_cast<uint16_t *>(&result);
-      asm volatile ("tanh.approx.f16 %0, %1;" : "=h"(out[N - 1]) : "h"(in[N - 1])); 
+      asm volatile ("tanh.approx.f16 %0, %1;" : "=h"(out[N - 1]) : "h"(in[N - 1]));
     }
 
     return result;
@@ -1038,7 +1034,7 @@ template <typename T, int N>
 struct fast_tanh_op<Array<T, N>> {
   CUTLASS_HOST_DEVICE
   Array<T, N> operator()(Array<T, N> const &rhs) const {
-    
+
     fast_tanh_op<T> fast_op;
     Array<T, N> y;
 

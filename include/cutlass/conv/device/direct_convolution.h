@@ -197,7 +197,7 @@ public:
     params_.ptr_C = args.ref_C.data();
     params_.ptr_D = args.ref_D.data();
     params_.output_op = args.output_op;
-    params_.ptr_reordered_B = args.ref_reordered_B.data();;
+    params_.ptr_reordered_B = args.ref_reordered_B.data();
     params_.semaphore = static_cast<int *>(workspace);
 
     return Status::kSuccess;
@@ -211,6 +211,7 @@ public:
       dim3 grid = ReorderKernel::get_grid_shape(params_);
       dim3 block = ReorderKernel::get_block_shape();
 
+      cutlass::arch::synclog_setup();
       cutlass::Kernel<ReorderKernel><<<grid, block, 0, stream>>>(params_);
     }
 
@@ -229,6 +230,7 @@ public:
     if (status != cudaSuccess)
       return Status::kErrorInternal;
 
+    cutlass::arch::synclog_setup();
     cutlass::Kernel<UnderlyingKernel><<<grid, block, smem_size, stream>>>(params_);
 
     cudaError_t result = cudaGetLastError();

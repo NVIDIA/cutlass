@@ -357,6 +357,7 @@ public:
       }
     }
 
+    cutlass::arch::synclog_setup();
     Kernel<GemmKernel><<<grid, block, smem_size, stream>>>(gemm_params_);
 
     result = cudaGetLastError();

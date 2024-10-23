@@ -83,12 +83,12 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32n_tensor_op_gmma_f32_cooperative, 128x192x64_
 
   using KernelScheduleType = cutlass::gemm::KernelTmaWarpSpecializedCooperative;
   using AtomLayoutMNK = Layout<Shape<_2,_1,_1>>;
-  using TiledMma = decltype(cute::make_tiled_mma(cute::GMMA::rs_op_selector<
+  using TiledMma = decltype(cute::make_tiled_mma(GMMA::rs_op_selector<
       ElementA, ElementB, ElementAccumulator, TileShape_MNK, GMMA::Major::K, GMMA::Major::K>(), AtomLayoutMNK{}));
   using GmemTiledCopyA = decltype(cutlass::gemm::collective::detail::sm90_cluster_shape_to_tma_atom(shape<1>(ClusterShape_MNK{})));
   using GmemTiledCopyB = decltype(cutlass::gemm::collective::detail::sm90_cluster_shape_to_tma_atom(shape<0>(ClusterShape_MNK{})));
-  static constexpr cute::GMMA::Major GmmaMajorA = cutlass::gemm::collective::detail::gmma_rs_tag_to_major_A<LayoutA>();
-  static constexpr cute::GMMA::Major GmmaMajorB = cutlass::gemm::collective::detail::gmma_rs_tag_to_major_B<LayoutB>();
+  static constexpr GMMA::Major GmmaMajorA = cutlass::gemm::collective::detail::gmma_rs_tag_to_major_A<LayoutA>();
+  static constexpr GMMA::Major GmmaMajorB = cutlass::gemm::collective::detail::gmma_rs_tag_to_major_B<LayoutB>();
   using SmemLayoutAtomA = decltype(cutlass::gemm::collective::detail::rs_smem_selector<GmmaMajorA, ElementA,
       decltype(cute::get<0>(TileShape_MNK{})), decltype(cute::get<2>(TileShape_MNK{})), false>());
   using SmemLayoutAtomB = decltype(cutlass::gemm::collective::detail::rs_smem_selector<GmmaMajorB, ElementB,
@@ -159,12 +159,12 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32n_tensor_op_gmma_f32_cooperative, 128x192x64_
 
   using KernelScheduleType = cutlass::gemm::KernelTmaWarpSpecializedCooperative;
   using AtomLayoutMNK = Layout<Shape<_2,_1,_1>>;
-  using TiledMma = decltype(cute::make_tiled_mma(cute::GMMA::rs_op_selector<
+  using TiledMma = decltype(cute::make_tiled_mma(GMMA::rs_op_selector<
       ElementA, ElementB, ElementAccumulator, TileShape_MNK, GMMA::Major::K, GMMA::Major::K>(), AtomLayoutMNK{}));
   using GmemTiledCopyA = decltype(cutlass::gemm::collective::detail::sm90_cluster_shape_to_tma_atom(shape<1>(ClusterShape_MNK{})));
   using GmemTiledCopyB = decltype(cutlass::gemm::collective::detail::sm90_cluster_shape_to_tma_atom(shape<0>(ClusterShape_MNK{})));
-  static constexpr cute::GMMA::Major GmmaMajorA = cutlass::gemm::collective::detail::gmma_rs_tag_to_major_A<LayoutA>();
-  static constexpr cute::GMMA::Major GmmaMajorB = cutlass::gemm::collective::detail::gmma_rs_tag_to_major_B<LayoutB>();
+  static constexpr GMMA::Major GmmaMajorA = cutlass::gemm::collective::detail::gmma_rs_tag_to_major_A<LayoutA>();
+  static constexpr GMMA::Major GmmaMajorB = cutlass::gemm::collective::detail::gmma_rs_tag_to_major_B<LayoutB>();
   using SmemLayoutAtomA = decltype(cutlass::gemm::collective::detail::rs_smem_selector<GmmaMajorA, ElementA,
       decltype(cute::get<0>(TileShape_MNK{})), decltype(cute::get<2>(TileShape_MNK{})), false>());
   using SmemLayoutAtomB = decltype(cutlass::gemm::collective::detail::rs_smem_selector<GmmaMajorB, ElementB,

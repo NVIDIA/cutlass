@@ -40,6 +40,7 @@
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/gemm/dispatch_policy.hpp"
 #include "cutlass/gemm/kernel/tile_scheduler.hpp"
+#include "cutlass/gemm/kernel/gemm_universal_decl.h"
 #include "cutlass/pipeline/pipeline.hpp"
 #include "cutlass/trace.h"
 
@@ -70,6 +71,7 @@ public:
   using ProblemShape = ProblemShape_;
   static_assert(cute::rank(ProblemShape{}) == 3 or cute::rank(ProblemShape{}) == 4,
     "ProblemShape{} should be <M,N,K> or <M,N,K,L>");
+  static constexpr bool IsGdcEnabled = false;
   // Mainloop derived types
   using CollectiveMainloop = CollectiveMainloop_;
   using TileShape = typename CollectiveMainloop::TileShape;
@@ -122,7 +124,7 @@ public:
 
   // Kernel level shared memory storage
   struct SharedStorage {
-    struct TensorStorage : cute::aligned_struct<128> {
+    struct TensorStorage : cute::aligned_struct<128, _1> {
       using MainloopTensorStorage = typename CollectiveMainloop::TensorStorage;
       using EpilogueTensorStorage = typename CollectiveEpilogue::TensorStorage;
 
@@ -130,7 +132,7 @@ public:
       EpilogueTensorStorage epilogue;
     } tensors;
 
-    struct PipelineStorage : cute::aligned_struct<16> {
+    struct PipelineStorage : cute::aligned_struct<16, _1> {
       using MainloopPipelineStorage = typename CollectiveMainloop::PipelineStorage;
       using EpiLoadPipelineStorage = typename CollectiveEpilogue::PipelineStorage;
       using MathWarpGroupOrderBarrierStorage = typename MathWarpGroupOrderBarrier::SharedStorage;
@@ -175,7 +177,7 @@ public:
 
     (void) workspace;
     auto problem_shape = args.problem_shape;
-    if constexpr (detail::IF_SWAP_AB<CollectiveMainloop>::value) {
+    if constexpr (detail::Has_SwapAB_v<CollectiveMainloop>) {
       // swap M/N
       get<0>(problem_shape) = get<1>(args.problem_shape);
       get<1>(problem_shape) = get<0>(args.problem_shape);
@@ -206,8 +208,7 @@ public:
     };
   }
 
-  CUTLASS_HOST_DEVICE static
-  bool
+  static bool
   can_implement(Arguments const& args) {
     bool implementable = (args.mode == GemmUniversalMode::kGemm) or
         (args.mode == GemmUniversalMode::kBatched && cute::rank(ProblemShape{}) == 4);
@@ -243,7 +244,7 @@ public:
     if constexpr (!std::is_const_v<decltype(args.max_swizzle_size)>) {
       args.max_swizzle_size = 1 << params.scheduler.log_swizzle_size_;
     }
-    return TileScheduler::get_grid_shape(params.problem_shape, TileShape{}, ClusterShape{}, params.hw_info, args);
+    return TileScheduler::get_grid_shape(params.scheduler, params.problem_shape, TileShape{}, ClusterShape{}, params.hw_info, args);
   }
 
   static dim3
@@ -367,7 +368,7 @@ public:
       epi_load_pipe_consumer_state.advance(c_tile_count);
       epi_store_pipe_producer_state.advance(d_tile_count);
     }
-    auto work_tile_info = scheduler.get_current_work();
+    auto work_tile_info = scheduler.initial_work_tile_info(ClusterShape{});
 
     // In a warp specialized kernel, collectives expose data movement and compute operations separately
     CollectiveMainloop collective_mainloop;

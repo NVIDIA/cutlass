@@ -113,6 +113,12 @@ template <> struct ArchMap<arch::Sm90, arch::OpClassTensorOp> {
   static int const kMax = 90;
 };
 
+// Arch conditional sparse WGMMA
+template <> struct ArchMap<arch::Sm90, arch::OpClassSparseTensorOp> {
+  static int const kMin = 90;
+  static int const kMax = 90;
+};
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace library

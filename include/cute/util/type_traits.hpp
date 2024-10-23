@@ -44,7 +44,7 @@
 #include <limits>       // numeric_limits
 #endif
 
-#include <cute/config.hpp>
+#include <cute/config.hpp> // CUTE_STL_NAMESPACE
 
 namespace cute
 {
@@ -79,11 +79,14 @@ using CUTE_STL_NAMESPACE::is_const_v;
 using CUTE_STL_NAMESPACE::is_volatile;
 using CUTE_STL_NAMESPACE::is_volatile_v;
 
+// Defined in cute/numeric/integral_constant.hpp
 // using CUTE_STL_NAMESPACE::true_type;
 // using CUTE_STL_NAMESPACE::false_type;
 
 using CUTE_STL_NAMESPACE::conditional;
 using CUTE_STL_NAMESPACE::conditional_t;
+
+using CUTE_STL_NAMESPACE::add_const_t;
 
 using CUTE_STL_NAMESPACE::remove_const_t;
 using CUTE_STL_NAMESPACE::remove_cv_t;
@@ -106,6 +109,13 @@ using CUTE_STL_NAMESPACE::is_convertible_v;
 
 using CUTE_STL_NAMESPACE::is_same;
 using CUTE_STL_NAMESPACE::is_same_v;
+
+using CUTE_STL_NAMESPACE::is_constructible;
+using CUTE_STL_NAMESPACE::is_constructible_v;
+using CUTE_STL_NAMESPACE::is_default_constructible;
+using CUTE_STL_NAMESPACE::is_default_constructible_v;
+using CUTE_STL_NAMESPACE::is_standard_layout;
+using CUTE_STL_NAMESPACE::is_standard_layout_v;
 
 using CUTE_STL_NAMESPACE::is_arithmetic;
 using CUTE_STL_NAMESPACE::is_unsigned;
@@ -130,6 +140,9 @@ using CUTE_STL_NAMESPACE::common_type_t;
 
 using CUTE_STL_NAMESPACE::remove_pointer;
 using CUTE_STL_NAMESPACE::remove_pointer_t;
+
+using CUTE_STL_NAMESPACE::alignment_of;
+using CUTE_STL_NAMESPACE::alignment_of_v;
 
 // <utility>
 using CUTE_STL_NAMESPACE::declval;
@@ -261,4 +274,19 @@ struct conditional_template<false, True, False> {
   template <class... U>
   using type = False<U...>;
 };
+
+//
+// is_any_of
+//
+
+// Member `value` is true if and only if T is same as (is_same_v) at least one of the types in Us
+template <class T, class... Us>
+struct is_any_of {
+  constexpr static bool value = (... || CUTE_STL_NAMESPACE::is_same_v<T, Us>);
+};
+
+// Is true if and only if T is same as (is_same_v) at least one of the types in Us
+template <class T, class... Us>
+inline constexpr bool is_any_of_v = is_any_of<T, Us...>::value;
+
 } // end namespace cute

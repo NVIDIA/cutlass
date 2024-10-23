@@ -30,10 +30,15 @@
  **************************************************************************************************/
 #pragma once
 
-#include <cute/arch/mma_sm90.hpp>
-#include <cute/atom/mma_traits.hpp>
-
-#include <cute/tensor.hpp>
+#include <cute/pointer_flagged.hpp>            // cute::smem_ptr_flag
+#include <cute/pointer_sparse.hpp>             // cute::smem_sparse_ptr_flag
+#include <cute/swizzle.hpp>                    // cute::Swizzle
+#include <cute/tensor_impl.hpp>                // cute::Tensor
+#include <cute/arch/mma_sm90_desc.hpp>         // cute::LayoutType
+#include <cute/arch/mma_sm90_gmma.hpp>         // cute::SM90_64x8x16_F16F16F16_SS, etc
+#include <cute/atom/mma_traits.hpp>            // cute::MMA_Traits
+#include <cute/layout_composed.hpp>            // cute::ComposedLayout
+#include <cute/numeric/integral_constant.hpp>  // cute::is_static
 
 namespace cute {
 
@@ -60,7 +65,7 @@ warpgroup_fence_operand(Tensor<Engine, Layout>& frg) {
   }
 }
 
-namespace GMMA {
+namespace SM90::GMMA {
 
 ///////////////////////////////////////////
 // Common layouts for GMMA Shared Memory //
@@ -99,20 +104,20 @@ template <class Type>
 using Layout_K_SW128_Atom = decltype(upcast<sizeof_bits<Type>::value>(Layout_K_SW128_Atom_Bits{}));
 
 // With GMMA::Major param
-template <class Type, GMMA::Major tnsp>
-using Layout_INTER_Atom = typename conditional<tnsp == GMMA::Major::MN,
+template <class Type, Major tnsp>
+using Layout_INTER_Atom = typename conditional<tnsp == Major::MN,
                                                Layout_MN_INTER_Atom<Type>,
                                                Layout_K_INTER_Atom<Type>>::type;
-template <class Type, GMMA::Major tnsp>
-using Layout_SW32_Atom = typename conditional<tnsp == GMMA::Major::MN,
+template <class Type, Major tnsp>
+using Layout_SW32_Atom = typename conditional<tnsp == Major::MN,
                                               Layout_MN_SW32_Atom<Type>,
                                               Layout_K_SW32_Atom<Type>>::type;
-template <class Type, GMMA::Major tnsp>
-using Layout_SW64_Atom = typename conditional<tnsp == GMMA::Major::MN,
+template <class Type, Major tnsp>
+using Layout_SW64_Atom = typename conditional<tnsp == Major::MN,
                                               Layout_MN_SW64_Atom<Type>,
                                               Layout_K_SW64_Atom<Type>>::type;
-template <class Type, GMMA::Major tnsp>
-using Layout_SW128_Atom = typename conditional<tnsp == GMMA::Major::MN,
+template <class Type, Major tnsp>
+using Layout_SW128_Atom = typename conditional<tnsp == Major::MN,
                                                Layout_MN_SW128_Atom<Type>,
                                                Layout_K_SW128_Atom<Type>>::type;
 
@@ -188,7 +193,7 @@ layout_type(Tensor<Engine, Layout<Shape,Stride>> const&)
 *   auto smem_layout = tile_to_shape(Layout_K_SW128_Atom<value_type>{}, Shape<_128,_64>{});
 * is guaranteed to be accepted by make_gmma_desc<Major::K> for appropriate value_type.
 */
-template <GMMA::Major MajorMode, class TEngine, class TLayout>
+template <Major MajorMode, class TEngine, class TLayout>
 CUTE_HOST_DEVICE constexpr
 GmmaDescriptor
 make_gmma_desc(Tensor<TEngine,TLayout> const& tensor)
@@ -203,7 +208,7 @@ make_gmma_desc(Tensor<TEngine,TLayout> const& tensor)
   GmmaDescriptor desc;
 
   // Layout type
-  constexpr GMMA::LayoutType LAYOUT_TYPE = GMMA::layout_type(u128_tensor);
+  constexpr LayoutType LAYOUT_TYPE = layout_type(u128_tensor);
   desc.bitfield.layout_type_ = uint8_t(LAYOUT_TYPE);
 
   // Start address (4LSB not included)
@@ -214,12 +219,12 @@ make_gmma_desc(Tensor<TEngine,TLayout> const& tensor)
   desc.bitfield.base_offset_ = base_offset;
 
   // LayoutType meta
-  constexpr int W = LAYOUT_TYPE == GMMA::LayoutType::INTERLEAVE ? 1 :
-                    LAYOUT_TYPE == GMMA::LayoutType::B32        ? 2 :
-                    LAYOUT_TYPE == GMMA::LayoutType::B64        ? 4 :
-                    LAYOUT_TYPE == GMMA::LayoutType::B128       ? 8 : -1;
+  constexpr int W = LAYOUT_TYPE == LayoutType::INTERLEAVE ? 1 :
+                    LAYOUT_TYPE == LayoutType::B32        ? 2 :
+                    LAYOUT_TYPE == LayoutType::B64        ? 4 :
+                    LAYOUT_TYPE == LayoutType::B128       ? 8 : -1;
 
-  if constexpr (MajorMode == GMMA::Major::MN)
+  if constexpr (MajorMode == Major::MN)
   {
     /* In units of uint128_t, each GmmaDescriptor Major-MN describes a canonical layout of the form
      *
@@ -228,8 +233,10 @@ make_gmma_desc(Tensor<TEngine,TLayout> const& tensor)
      * LayoutType::B64                : Swizzle<2,4,3> o smem_ptr o ((4,n),(8,k)):((1,LBO),(4,SBO))
      * LayoutType::B128               : Swizzle<3,4,3> o smem_ptr o ((8,n),(8,k)):((1,LBO),(8,SBO))
      */
-    static_assert(size<1>(u128_tensor) == Int<(256 / cute::sizeof_bits<value_type>::value)>{},      // K size
-                         "Not a canonical GMMA_MN Layout: Expected K-size 256/sizeof_bits<T>.");
+    static_assert(size<1>(u128_tensor) == Int<(256 / cute::sizeof_bits<value_type>::value)>{} || // A and B in dense MMA
+                  size<1>(u128_tensor) == Int<(128 / cute::sizeof_bits<value_type>::value)>{} || // A in sparse MMA
+                  size<1>(u128_tensor) == Int<(512 / cute::sizeof_bits<value_type>::value)>{},   // B in sparse MMA
+                         "Not a canonical GMMA_MN Layout: Expected K-size 256/sizeof_bits<T> for dense or (128|512)/sizeof_bits<T> for sparse.");
 
     // Construct the canonical GMMA T Layout with shape ((W,n),(8,2))
     Layout canonical_layout = logical_divide(layout(u128_tensor), make_tile(Layout<Int<W>,_1>{}, Layout<Int<8>,_1>{}));
@@ -239,7 +246,7 @@ make_gmma_desc(Tensor<TEngine,TLayout> const& tensor)
     CUTE_STATIC_ASSERT_V(rank<1>(canonical_layout) == Int<2>{}, "Not a canonical GMMA_MN Layout: No flat offset mode");
     // Check canonical mode strides
     constexpr uint32_t stride_00 = stride<0,0>(canonical_layout);
-    constexpr uint32_t expected_stride_00 = LAYOUT_TYPE == GMMA::LayoutType::INTERLEAVE ? stride<0,0>(canonical_layout) : 1;
+    constexpr uint32_t expected_stride_00 = LAYOUT_TYPE == LayoutType::INTERLEAVE ? stride<0,0>(canonical_layout) : 1;
     static_assert(stride_00 == expected_stride_00, "Not a canonical GMMA_MN Layout: Expected stride failure.");
     constexpr uint32_t stride_10 = stride<1,0>(canonical_layout);
     constexpr uint32_t expected_stride_10 = W;
@@ -249,10 +256,10 @@ make_gmma_desc(Tensor<TEngine,TLayout> const& tensor)
     constexpr uint32_t stride_01 = stride<0,1>(canonical_layout);
     constexpr uint32_t stride_11 = stride<1,1>(canonical_layout);
 
-    desc.bitfield.stride_byte_offset_  = (LAYOUT_TYPE == GMMA::LayoutType::INTERLEAVE) ? stride_01 : stride_11;
-    desc.bitfield.leading_byte_offset_ = (LAYOUT_TYPE == GMMA::LayoutType::INTERLEAVE) ? stride_11 : stride_01;
+    desc.bitfield.stride_byte_offset_  = (LAYOUT_TYPE == LayoutType::INTERLEAVE) ? stride_01 : stride_11;
+    desc.bitfield.leading_byte_offset_ = (LAYOUT_TYPE == LayoutType::INTERLEAVE) ? stride_11 : stride_01;
   }
-  else if constexpr (MajorMode == GMMA::Major::K)
+  else if constexpr (MajorMode == Major::K)
   {
     /* In units of uint128_t, each GmmaDescriptor Major-K describes a canonical layout of the form
      *
@@ -263,8 +270,8 @@ make_gmma_desc(Tensor<TEngine,TLayout> const& tensor)
      */
     CUTE_STATIC_ASSERT_V(size<0>(u128_tensor) % Int<8>{} == Int<0>{},          // N|M size
                          "Not a canonical GMMA_K Layout: Expected MN-size multiple of 8.");
-    CUTE_STATIC_ASSERT_V(size<1>(u128_tensor) == Int<2>{},                     // K   size
-                         "Not a canonical GMMA_K Layout: Expected K-size 2 (in units of uint128_t).");
+    CUTE_STATIC_ASSERT_V(size<1>(u128_tensor) == Int<2>{} || size<1>(u128_tensor) == Int<4>{},      // K   size
+                         "Not a canonical GMMA_K Layout: Expected K-size 2 for dense or 4 for sparse (in units of uint128_t).");
 
     // Construct the canonical GMMA N Layout with shape ((8,n),(2,1))
     Layout canonical_layout = logical_divide(layout(u128_tensor), make_tile(Layout<_8,_1>{}, Layout<_2,_1>{}));
@@ -277,7 +284,7 @@ make_gmma_desc(Tensor<TEngine,TLayout> const& tensor)
     constexpr uint32_t expected_stride_00 = W;
     static_assert(stride_00 == expected_stride_00, "Not a canonical GMMA_K Layout: Expected stride failure.");
     constexpr uint32_t stride_10 = stride<1,0>(canonical_layout);
-    constexpr uint32_t expected_stride_10 = (LAYOUT_TYPE == GMMA::LayoutType::INTERLEAVE) ? stride<1,0>(canonical_layout) : 1;
+    constexpr uint32_t expected_stride_10 = (LAYOUT_TYPE == LayoutType::INTERLEAVE) ? stride<1,0>(canonical_layout) : 1;
     static_assert(stride_10 == expected_stride_10, "Not a canonical GMMA_K Layout: Expected stride failure.");
 
     // stride dimension byte offset and leading dimension byte offset (4LSB not included == uint128_t units)
@@ -286,7 +293,7 @@ make_gmma_desc(Tensor<TEngine,TLayout> const& tensor)
     desc.bitfield.stride_byte_offset_  = stride_01;
     desc.bitfield.leading_byte_offset_ = stride_10;
   } else {
-    static_assert(MajorMode != GMMA::Major::MN && MajorMode != GMMA::Major::K, "Unrecognized MajorMode!");
+    static_assert(MajorMode != Major::MN && MajorMode != Major::K, "Unrecognized MajorMode!");
   }
 
 #if 0
@@ -332,9 +339,6 @@ struct DescriptorIterator
   {
     return { GmmaDescriptor{desc_ + uint64_t(offset)} };
   }
-
-  CUTE_HOST_DEVICE friend void
-  print(DescriptorIterator) { printf("GMMA::DescriptorIterator"); }
 };
 
 template <class T>
@@ -353,23 +357,28 @@ recast_ptr(DescriptorIterator const& iter) {
   return iter;  // Do nothing, it will still dereference to GmmaDescriptor and decay to uint64_t
 }
 
+CUTE_HOST_DEVICE void
+print(DescriptorIterator) {
+  printf("GMMA::DescriptorIterator");
+}
+
 // The GMMA Traits below have custom fragment type flags for their smem desc tensors.
 // These flags specialize a MakeTensor customization point to correctly make the fragment that is desired.
-template <GMMA::Major>
+template <Major>
 struct smem_desc : DescriptorIterator {};
 
-} // end namespace GMMA
+} // end namespace SM90::GMMA
 
 // Customization point for creating a GMMA::smem_desc Tensor
-template <GMMA::Major MajorMode>
-struct MakeTensor<GMMA::smem_desc<MajorMode>>
+template <SM90::GMMA::Major MajorMode>
+struct MakeTensor<SM90::GMMA::smem_desc<MajorMode>>
 {
   template <class TEngine, class TLayout>
   CUTE_HOST_DEVICE constexpr auto
   operator()(Tensor<TEngine,TLayout> const& smem_tensor)
   {
     static_assert(is_smem<TEngine>::value, "Expected SMEM Tensor to construct a GMMA Desc Tensor");
-    return make_tensor(GMMA::DescriptorIterator{GMMA::make_gmma_desc<MajorMode>(tensor<0>(smem_tensor))},
+    return make_tensor(SM90::GMMA::DescriptorIterator{SM90::GMMA::make_gmma_desc<MajorMode>(tensor<0>(smem_tensor))},
                        replace<0>(recast<uint128_t const>(smem_tensor).layout(), Layout<_1,_0>{}));
   }
 };
@@ -378,50 +387,105 @@ struct MakeTensor<GMMA::smem_desc<MajorMode>>
 //////////////////////////// MMA_TRAITS ///////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-namespace GMMA {
+namespace SM90::GMMA {
+
+//
+// Specialized mma_unpack implementation for SM90 GMMA instructions
+//
+
+template <class MMA_Op, class... MMA_Args,
+          class TD, class DLayout,
+          class TA, class ALayout,
+          class TB, class BLayout,
+          class TC, class CLayout>
+CUTE_HOST_DEVICE constexpr
+void
+mma_unpack(MMA_Traits<MMA_Op, MMA_Args...> const& traits,
+           Tensor<TD, DLayout>      & D,
+           Tensor<TA, ALayout> const& A,
+           Tensor<TB, BLayout> const& B,
+           Tensor<TC, CLayout> const& C)
+{
+  static_assert(is_rmem<TD>::value, "Expected registers in MMA_Atom::call");
+  static_assert(is_rmem<TA>::value, "Expected registers in MMA_Atom::call");
+  static_assert(is_rmem<TB>::value, "Expected registers in MMA_Atom::call");
+  static_assert(is_rmem<TC>::value, "Expected registers in MMA_Atom::call");
+
+  // Register value types from the MMA_Operation register arrays
+  using RegTypeA = typename remove_extent<typename MMA_Op::ARegisters>::type;
+  using RegTypeB = typename remove_extent<typename MMA_Op::BRegisters>::type;
+  using RegTypeC = typename remove_extent<typename MMA_Op::CRegisters>::type;
+
+  // SM90 GMMA take three arguments rather than four, try to assert C and D are aliased
+  static_assert(is_same<typename TD::value_type, typename TC::value_type>::value, "GMMA C and D value_type must match.");
+  static_assert(is_same<DLayout, CLayout>::value, "GMMA C and D layouts must match.");
+  // assert((void*)&C == (void*)&D);
+
+  Tensor rA = recast<RegTypeA>(A);
+  Tensor rB = recast<RegTypeB>(B);
+  Tensor rC = recast<RegTypeC>(D);  // NOTE: D and C are same, so use mutable D
+
+  constexpr int RegNumA = extent<typename MMA_Op::ARegisters>::value;
+  constexpr int RegNumB = extent<typename MMA_Op::BRegisters>::value;
+  constexpr int RegNumC = extent<typename MMA_Op::CRegisters>::value;
+
+  CUTE_STATIC_ASSERT_V(size(rA) == Int<RegNumA>{});
+  CUTE_STATIC_ASSERT_V(size(rB) == Int<RegNumB>{});
+  CUTE_STATIC_ASSERT_V(size(rC) == Int<RegNumC>{});
+
+  detail::explode(MMA_Op::fma,
+                  rA, make_int_sequence<RegNumA>{},
+                  rB, make_int_sequence<RegNumB>{},
+                  rC, make_int_sequence<RegNumC>{},
+                  &(traits.accumulate_), seq<0>{});
+}
 
 // Accumulator layouts
-using CLayout_64x8   = Layout<Shape <Shape <  _4,_8, _4>,Shape < _2,_2>>,
-                              Stride<Stride<_128,_1,_16>,Stride<_64,_8>>>;
+template<int N>
+using CLayout_64xN   = Layout<Shape <Shape <  _4,_8, _4>,Shape < _2,_2,Int<N/8>>>,
+                              Stride<Stride<_128,_1,_16>,Stride<_64,_8,   _512>>>;
 
-using CLayout_64x16  = Layout<Shape <Shape <  _4,_8, _4>,Shape < _2,_2,  _2>>,
-                              Stride<Stride<_128,_1,_16>,Stride<_64,_8,_512>>>;
-
-using CLayout_64x32  = Layout<Shape <Shape <  _4,_8, _4>,Shape < _2,_2,  _4>>,
-                              Stride<Stride<_128,_1,_16>,Stride<_64,_8,_512>>>;
-
-using CLayout_64x64  = Layout<Shape <Shape <  _4,_8, _4>,Shape < _2,_2,  _8>>,
-                              Stride<Stride<_128,_1,_16>,Stride<_64,_8,_512>>>;
-
-using CLayout_64x96  = Layout<Shape <Shape <  _4,_8, _4>,Shape < _2,_2, _12>>,
-                              Stride<Stride<_128,_1,_16>,Stride<_64,_8,_512>>>;
-
-using CLayout_64x128 = Layout<Shape <Shape <  _4,_8, _4>,Shape < _2,_2, _16>>,
-                              Stride<Stride<_128,_1,_16>,Stride<_64,_8,_512>>>;
-
-using CLayout_64x192 = Layout<Shape <Shape <  _4,_8, _4>,Shape < _2,_2, _24>>,
-                              Stride<Stride<_128,_1,_16>,Stride<_64,_8,_512>>>;
-
-using CLayout_64x256 = Layout<Shape <Shape <  _4,_8, _4>,Shape < _2,_2, _32>>,
-                              Stride<Stride<_128,_1,_16>,Stride<_64,_8,_512>>>;
+using CLayout_64x8   = CLayout_64xN<  8>;
+using CLayout_64x16  = CLayout_64xN< 16>;
+using CLayout_64x32  = CLayout_64xN< 32>;
+using CLayout_64x64  = CLayout_64xN< 64>;
+using CLayout_64x96  = CLayout_64xN< 96>;
+using CLayout_64x128 = CLayout_64xN<128>;
+using CLayout_64x192 = CLayout_64xN<192>;
+using CLayout_64x256 = CLayout_64xN<256>;
 
 // Register source layout for 32-bit value types
 using ALayout_64x8   = Layout<Shape <Shape <  _4,_8, _4>,Shape <    _2,  _2>>,
                               Stride<Stride< _64,_1,_16>,Stride<    _8,_256>>>;
 
-// Register source layout for 16-bit value types
-using ALayout_64x16 = CLayout_64x16;
+// Register source layout for 16-bit (sparse 32-bit) value types
+using ALayout_64x16  = Layout<Shape <Shape <  _4,_8, _4>,Shape < _2,_2,  _2>>,
+                              Stride<Stride<_128,_1,_16>,Stride<_64,_8,_512>>>;
 
-// Register source layout for 8-bit value types
-using ALayout_64x32 = Layout<Shape <Shape <  _4,_8, _4>,Shape < _4,_2,   _2>>,
-                             Stride<Stride<_256,_1,_16>,Stride<_64,_8,_1024>>>;
+// Register source layout for 8-bit (sparse 16-bit) value types
+using ALayout_64x32  = Layout<Shape <Shape <  _4,_8, _4>,Shape < _4,_2,   _2>>,
+                              Stride<Stride<_256,_1,_16>,Stride<_64,_8,_1024>>>;
+
+// Register source layout for sparse 8-bit value types
+using ALayout_64x64  = Layout<Shape <Shape <  _4,_8, _4>,Shape < _8,_2,   _2>>,
+                              Stride<Stride<_512,_1,_16>,Stride<_64,_8,_2048>>>;
 
 // Shared memory source layouts for any value type
 template <int M, int K>
 using ABLayout       = Layout<Shape <_128,Shape <Int<M>,Int<K>>>,
                               Stride<  _0,Stride<    _1,Int<M>>>>;
 
-} // namespace GMMA
+} // end namespace SM90::GMMA
+
+using namespace SM90;
+
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x8x16_F16F16F16_SS = SM90::GMMA::MMA_64x8x16_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>;
 
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x8x16_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
@@ -445,6 +509,14 @@ struct MMA_Traits<SM90_64x8x16_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x8x16_F16F16F16_RS = SM90::GMMA::MMA_64x8x16_F16F16F16_RS<tnspA, tnspB, scaleA, scaleB>;
+
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x8x16_F16F16F16_RS<tnspA, tnspB, scaleA, scaleB>>
 {
@@ -465,6 +537,14 @@ struct MMA_Traits<SM90_64x8x16_F16F16F16_RS<tnspA, tnspB, scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x16x16_F16F16F16_SS = SM90::GMMA::MMA_64x16x16_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>;
 
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x16x16_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
@@ -488,6 +568,14 @@ struct MMA_Traits<SM90_64x16x16_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x16x16_F16F16F16_RS = SM90::GMMA::MMA_64x16x16_F16F16F16_RS<tnspA, tnspB, scaleA, scaleB>;
+
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x16x16_F16F16F16_RS<tnspA, tnspB, scaleA, scaleB>>
 {
@@ -508,6 +596,14 @@ struct MMA_Traits<SM90_64x16x16_F16F16F16_RS<tnspA, tnspB, scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x32x16_F16F16F16_SS = SM90::GMMA::MMA_64x32x16_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>;
 
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x32x16_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
@@ -531,6 +627,14 @@ struct MMA_Traits<SM90_64x32x16_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x32x16_F16F16F16_RS = SM90::GMMA::MMA_64x32x16_F16F16F16_RS<tnspA, tnspB, scaleA, scaleB>;
+
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x32x16_F16F16F16_RS<tnspA, tnspB, scaleA, scaleB>>
 {
@@ -551,6 +655,14 @@ struct MMA_Traits<SM90_64x32x16_F16F16F16_RS<tnspA, tnspB, scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x64x16_F16F16F16_SS = SM90::GMMA::MMA_64x64x16_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>;
 
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x64x16_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
@@ -574,6 +686,14 @@ struct MMA_Traits<SM90_64x64x16_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x64x16_F16F16F16_RS = SM90::GMMA::MMA_64x64x16_F16F16F16_RS<tnspA, tnspB, scaleA, scaleB>;
+
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x64x16_F16F16F16_RS<tnspA, tnspB, scaleA, scaleB>>
 {
@@ -594,6 +714,14 @@ struct MMA_Traits<SM90_64x64x16_F16F16F16_RS<tnspA, tnspB, scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x96x16_F16F16F16_SS = SM90::GMMA::MMA_64x96x16_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>;
 
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x96x16_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
@@ -617,6 +745,14 @@ struct MMA_Traits<SM90_64x96x16_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x96x16_F16F16F16_RS = SM90::GMMA::MMA_64x96x16_F16F16F16_RS<tnspA, tnspB, scaleA, scaleB>;
+
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x96x16_F16F16F16_RS<tnspA, tnspB, scaleA, scaleB>>
 {
@@ -637,6 +773,14 @@ struct MMA_Traits<SM90_64x96x16_F16F16F16_RS<tnspA, tnspB, scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x128x16_F16F16F16_SS = SM90::GMMA::MMA_64x128x16_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>;
 
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x128x16_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
@@ -660,6 +804,14 @@ struct MMA_Traits<SM90_64x128x16_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x128x16_F16F16F16_RS = SM90::GMMA::MMA_64x128x16_F16F16F16_RS<tnspA, tnspB, scaleA, scaleB>;
+
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x128x16_F16F16F16_RS<tnspA, tnspB, scaleA, scaleB>>
 {
@@ -680,6 +832,14 @@ struct MMA_Traits<SM90_64x128x16_F16F16F16_RS<tnspA, tnspB, scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x192x16_F16F16F16_SS = SM90::GMMA::MMA_64x192x16_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>;
 
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x192x16_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
@@ -703,6 +863,14 @@ struct MMA_Traits<SM90_64x192x16_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x192x16_F16F16F16_RS = SM90::GMMA::MMA_64x192x16_F16F16F16_RS<tnspA, tnspB, scaleA, scaleB>;
+
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x192x16_F16F16F16_RS<tnspA, tnspB, scaleA, scaleB>>
 {
@@ -723,6 +891,14 @@ struct MMA_Traits<SM90_64x192x16_F16F16F16_RS<tnspA, tnspB, scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x256x16_F16F16F16_SS = SM90::GMMA::MMA_64x256x16_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>;
 
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x256x16_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
@@ -746,6 +922,14 @@ struct MMA_Traits<SM90_64x256x16_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x256x16_F16F16F16_RS = SM90::GMMA::MMA_64x256x16_F16F16F16_RS<tnspA, tnspB, scaleA, scaleB>;
+
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x256x16_F16F16F16_RS<tnspA, tnspB, scaleA, scaleB>>
 {
@@ -766,6 +950,14 @@ struct MMA_Traits<SM90_64x256x16_F16F16F16_RS<tnspA, tnspB, scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x8x16_F32F16F16_SS = SM90::GMMA::MMA_64x8x16_F32F16F16_SS<tnspA, tnspB, scaleA, scaleB>;
 
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x8x16_F32F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
@@ -789,6 +981,14 @@ struct MMA_Traits<SM90_64x8x16_F32F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x8x16_F32F16F16_RS = SM90::GMMA::MMA_64x8x16_F32F16F16_RS<tnspA, tnspB, scaleA, scaleB>;
+
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x8x16_F32F16F16_RS<tnspA, tnspB, scaleA, scaleB>>
 {
@@ -809,6 +1009,14 @@ struct MMA_Traits<SM90_64x8x16_F32F16F16_RS<tnspA, tnspB, scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x16x16_F32F16F16_SS = SM90::GMMA::MMA_64x16x16_F32F16F16_SS<tnspA, tnspB, scaleA, scaleB>;
 
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x16x16_F32F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
@@ -832,6 +1040,14 @@ struct MMA_Traits<SM90_64x16x16_F32F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x16x16_F32F16F16_RS = SM90::GMMA::MMA_64x16x16_F32F16F16_RS<tnspA, tnspB, scaleA, scaleB>;
+
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x16x16_F32F16F16_RS<tnspA, tnspB, scaleA, scaleB>>
 {
@@ -852,6 +1068,14 @@ struct MMA_Traits<SM90_64x16x16_F32F16F16_RS<tnspA, tnspB, scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x32x16_F32F16F16_SS = SM90::GMMA::MMA_64x32x16_F32F16F16_SS<tnspA, tnspB, scaleA, scaleB>;
 
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x32x16_F32F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
@@ -875,6 +1099,14 @@ struct MMA_Traits<SM90_64x32x16_F32F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x32x16_F32F16F16_RS = SM90::GMMA::MMA_64x32x16_F32F16F16_RS<tnspA, tnspB, scaleA, scaleB>;
+
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x32x16_F32F16F16_RS<tnspA, tnspB, scaleA, scaleB>>
 {
@@ -895,6 +1127,15 @@ struct MMA_Traits<SM90_64x32x16_F32F16F16_RS<tnspA, tnspB, scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x64x16_F32F16F16_SS = SM90::GMMA::MMA_64x64x16_F32F16F16_SS<tnspA, tnspB, scaleA, scaleB>;
 
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x64x16_F32F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
@@ -918,6 +1159,14 @@ struct MMA_Traits<SM90_64x64x16_F32F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x64x16_F32F16F16_RS = SM90::GMMA::MMA_64x64x16_F32F16F16_RS<tnspA, tnspB, scaleA, scaleB>;
+
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x64x16_F32F16F16_RS<tnspA, tnspB, scaleA, scaleB>>
 {
@@ -938,6 +1187,14 @@ struct MMA_Traits<SM90_64x64x16_F32F16F16_RS<tnspA, tnspB, scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x96x16_F32F16F16_SS = SM90::GMMA::MMA_64x96x16_F32F16F16_SS<tnspA, tnspB, scaleA, scaleB>;
 
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x96x16_F32F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
@@ -961,6 +1218,14 @@ struct MMA_Traits<SM90_64x96x16_F32F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x96x16_F32F16F16_RS = SM90::GMMA::MMA_64x96x16_F32F16F16_RS<tnspA, tnspB, scaleA, scaleB>;
+
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x96x16_F32F16F16_RS<tnspA, tnspB, scaleA, scaleB>>
 {
@@ -981,6 +1246,14 @@ struct MMA_Traits<SM90_64x96x16_F32F16F16_RS<tnspA, tnspB, scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x128x16_F32F16F16_SS = SM90::GMMA::MMA_64x128x16_F32F16F16_SS<tnspA, tnspB, scaleA, scaleB>;
 
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x128x16_F32F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
@@ -1004,6 +1277,14 @@ struct MMA_Traits<SM90_64x128x16_F32F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x128x16_F32F16F16_RS = SM90::GMMA::MMA_64x128x16_F32F16F16_RS<tnspA, tnspB, scaleA, scaleB>;
+
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x128x16_F32F16F16_RS<tnspA, tnspB, scaleA, scaleB>>
 {
@@ -1024,6 +1305,14 @@ struct MMA_Traits<SM90_64x128x16_F32F16F16_RS<tnspA, tnspB, scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x192x16_F32F16F16_SS = SM90::GMMA::MMA_64x192x16_F32F16F16_SS<tnspA, tnspB, scaleA, scaleB>;
 
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x192x16_F32F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
@@ -1047,6 +1336,14 @@ struct MMA_Traits<SM90_64x192x16_F32F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x192x16_F32F16F16_RS = SM90::GMMA::MMA_64x192x16_F32F16F16_RS<tnspA, tnspB, scaleA, scaleB>;
+
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x192x16_F32F16F16_RS<tnspA, tnspB, scaleA, scaleB>>
 {
@@ -1067,6 +1364,14 @@ struct MMA_Traits<SM90_64x192x16_F32F16F16_RS<tnspA, tnspB, scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x256x16_F32F16F16_SS = SM90::GMMA::MMA_64x256x16_F32F16F16_SS<tnspA, tnspB, scaleA, scaleB>;
 
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x256x16_F32F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
@@ -1090,6 +1395,14 @@ struct MMA_Traits<SM90_64x256x16_F32F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x256x16_F32F16F16_RS = SM90::GMMA::MMA_64x256x16_F32F16F16_RS<tnspA, tnspB, scaleA, scaleB>;
+
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x256x16_F32F16F16_RS<tnspA, tnspB, scaleA, scaleB>>
 {
@@ -1110,6 +1423,14 @@ struct MMA_Traits<SM90_64x256x16_F32F16F16_RS<tnspA, tnspB, scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x8x16_F32BF16BF16_SS = SM90::GMMA::MMA_64x8x16_F32BF16BF16_SS<tnspA, tnspB, scaleA, scaleB>;
 
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x8x16_F32BF16BF16_SS<tnspA, tnspB, scaleA, scaleB>>
@@ -1133,6 +1454,14 @@ struct MMA_Traits<SM90_64x8x16_F32BF16BF16_SS<tnspA, tnspB, scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x8x16_F32BF16BF16_RS = SM90::GMMA::MMA_64x8x16_F32BF16BF16_RS<tnspA, tnspB, scaleA, scaleB>;
+
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x8x16_F32BF16BF16_RS<tnspA, tnspB, scaleA, scaleB>>
 {
@@ -1153,6 +1482,14 @@ struct MMA_Traits<SM90_64x8x16_F32BF16BF16_RS<tnspA, tnspB, scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x16x16_F32BF16BF16_SS = SM90::GMMA::MMA_64x16x16_F32BF16BF16_SS<tnspA, tnspB, scaleA, scaleB>;
 
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x16x16_F32BF16BF16_SS<tnspA, tnspB, scaleA, scaleB>>
@@ -1176,6 +1513,14 @@ struct MMA_Traits<SM90_64x16x16_F32BF16BF16_SS<tnspA, tnspB, scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x16x16_F32BF16BF16_RS = SM90::GMMA::MMA_64x16x16_F32BF16BF16_RS<tnspA, tnspB, scaleA, scaleB>;
+
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x16x16_F32BF16BF16_RS<tnspA, tnspB, scaleA, scaleB>>
 {
@@ -1196,6 +1541,14 @@ struct MMA_Traits<SM90_64x16x16_F32BF16BF16_RS<tnspA, tnspB, scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x32x16_F32BF16BF16_SS = SM90::GMMA::MMA_64x32x16_F32BF16BF16_SS<tnspA, tnspB, scaleA, scaleB>;
 
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x32x16_F32BF16BF16_SS<tnspA, tnspB, scaleA, scaleB>>
@@ -1219,6 +1572,14 @@ struct MMA_Traits<SM90_64x32x16_F32BF16BF16_SS<tnspA, tnspB, scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x32x16_F32BF16BF16_RS = SM90::GMMA::MMA_64x32x16_F32BF16BF16_RS<tnspA, tnspB, scaleA, scaleB>;
+
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x32x16_F32BF16BF16_RS<tnspA, tnspB, scaleA, scaleB>>
 {
@@ -1239,6 +1600,14 @@ struct MMA_Traits<SM90_64x32x16_F32BF16BF16_RS<tnspA, tnspB, scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x64x16_F32BF16BF16_SS = SM90::GMMA::MMA_64x64x16_F32BF16BF16_SS<tnspA, tnspB, scaleA, scaleB>;
 
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x64x16_F32BF16BF16_SS<tnspA, tnspB, scaleA, scaleB>>
@@ -1262,6 +1631,14 @@ struct MMA_Traits<SM90_64x64x16_F32BF16BF16_SS<tnspA, tnspB, scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x64x16_F32BF16BF16_RS = SM90::GMMA::MMA_64x64x16_F32BF16BF16_RS<tnspA, tnspB, scaleA, scaleB>;
+
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x64x16_F32BF16BF16_RS<tnspA, tnspB, scaleA, scaleB>>
 {
@@ -1282,6 +1659,14 @@ struct MMA_Traits<SM90_64x64x16_F32BF16BF16_RS<tnspA, tnspB, scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x96x16_F32BF16BF16_SS = SM90::GMMA::MMA_64x96x16_F32BF16BF16_SS<tnspA, tnspB, scaleA, scaleB>;
 
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x96x16_F32BF16BF16_SS<tnspA, tnspB, scaleA, scaleB>>
@@ -1305,6 +1690,14 @@ struct MMA_Traits<SM90_64x96x16_F32BF16BF16_SS<tnspA, tnspB, scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x96x16_F32BF16BF16_RS = SM90::GMMA::MMA_64x96x16_F32BF16BF16_RS<tnspA, tnspB, scaleA, scaleB>;
+
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x96x16_F32BF16BF16_RS<tnspA, tnspB, scaleA, scaleB>>
 {
@@ -1325,6 +1718,14 @@ struct MMA_Traits<SM90_64x96x16_F32BF16BF16_RS<tnspA, tnspB, scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x128x16_F32BF16BF16_SS = SM90::GMMA::MMA_64x128x16_F32BF16BF16_SS<tnspA, tnspB, scaleA, scaleB>;
 
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x128x16_F32BF16BF16_SS<tnspA, tnspB, scaleA, scaleB>>
@@ -1348,6 +1749,14 @@ struct MMA_Traits<SM90_64x128x16_F32BF16BF16_SS<tnspA, tnspB, scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x128x16_F32BF16BF16_RS = SM90::GMMA::MMA_64x128x16_F32BF16BF16_RS<tnspA, tnspB, scaleA, scaleB>;
+
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x128x16_F32BF16BF16_RS<tnspA, tnspB, scaleA, scaleB>>
 {
@@ -1368,6 +1777,14 @@ struct MMA_Traits<SM90_64x128x16_F32BF16BF16_RS<tnspA, tnspB, scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x192x16_F32BF16BF16_SS = SM90::GMMA::MMA_64x192x16_F32BF16BF16_SS<tnspA, tnspB, scaleA, scaleB>;
 
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x192x16_F32BF16BF16_SS<tnspA, tnspB, scaleA, scaleB>>
@@ -1391,6 +1808,14 @@ struct MMA_Traits<SM90_64x192x16_F32BF16BF16_SS<tnspA, tnspB, scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x192x16_F32BF16BF16_RS = SM90::GMMA::MMA_64x192x16_F32BF16BF16_RS<tnspA, tnspB, scaleA, scaleB>;
+
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x192x16_F32BF16BF16_RS<tnspA, tnspB, scaleA, scaleB>>
 {
@@ -1411,6 +1836,14 @@ struct MMA_Traits<SM90_64x192x16_F32BF16BF16_RS<tnspA, tnspB, scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x256x16_F32BF16BF16_SS = SM90::GMMA::MMA_64x256x16_F32BF16BF16_SS<tnspA, tnspB, scaleA, scaleB>;
 
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x256x16_F32BF16BF16_SS<tnspA, tnspB, scaleA, scaleB>>
@@ -1434,6 +1867,14 @@ struct MMA_Traits<SM90_64x256x16_F32BF16BF16_SS<tnspA, tnspB, scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x256x16_F32BF16BF16_RS = SM90::GMMA::MMA_64x256x16_F32BF16BF16_RS<tnspA, tnspB, scaleA, scaleB>;
+
 template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x256x16_F32BF16BF16_RS<tnspA, tnspB, scaleA, scaleB>>
 {
@@ -1454,6 +1895,12 @@ struct MMA_Traits<SM90_64x256x16_F32BF16BF16_RS<tnspA, tnspB, scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x8x8_F32TF32TF32_SS_TN = SM90::GMMA::MMA_64x8x8_F32TF32TF32_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x8x8_F32TF32TF32_SS_TN<scaleA, scaleB>>
@@ -1477,6 +1924,12 @@ struct MMA_Traits<SM90_64x8x8_F32TF32TF32_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x8x8_F32TF32TF32_RS_TN = SM90::GMMA::MMA_64x8x8_F32TF32TF32_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x8x8_F32TF32TF32_RS_TN<scaleA, scaleB>>
 {
@@ -1497,6 +1950,12 @@ struct MMA_Traits<SM90_64x8x8_F32TF32TF32_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x16x8_F32TF32TF32_SS_TN = SM90::GMMA::MMA_64x16x8_F32TF32TF32_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x16x8_F32TF32TF32_SS_TN<scaleA, scaleB>>
@@ -1520,6 +1979,12 @@ struct MMA_Traits<SM90_64x16x8_F32TF32TF32_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x16x8_F32TF32TF32_RS_TN = SM90::GMMA::MMA_64x16x8_F32TF32TF32_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x16x8_F32TF32TF32_RS_TN<scaleA, scaleB>>
 {
@@ -1540,6 +2005,12 @@ struct MMA_Traits<SM90_64x16x8_F32TF32TF32_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x32x8_F32TF32TF32_SS_TN = SM90::GMMA::MMA_64x32x8_F32TF32TF32_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x32x8_F32TF32TF32_SS_TN<scaleA, scaleB>>
@@ -1563,6 +2034,12 @@ struct MMA_Traits<SM90_64x32x8_F32TF32TF32_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x32x8_F32TF32TF32_RS_TN = SM90::GMMA::MMA_64x32x8_F32TF32TF32_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x32x8_F32TF32TF32_RS_TN<scaleA, scaleB>>
 {
@@ -1583,6 +2060,12 @@ struct MMA_Traits<SM90_64x32x8_F32TF32TF32_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x64x8_F32TF32TF32_SS_TN = SM90::GMMA::MMA_64x64x8_F32TF32TF32_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x64x8_F32TF32TF32_SS_TN<scaleA, scaleB>>
@@ -1606,6 +2089,12 @@ struct MMA_Traits<SM90_64x64x8_F32TF32TF32_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x64x8_F32TF32TF32_RS_TN = SM90::GMMA::MMA_64x64x8_F32TF32TF32_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x64x8_F32TF32TF32_RS_TN<scaleA, scaleB>>
 {
@@ -1626,6 +2115,12 @@ struct MMA_Traits<SM90_64x64x8_F32TF32TF32_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x96x8_F32TF32TF32_SS_TN = SM90::GMMA::MMA_64x96x8_F32TF32TF32_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x96x8_F32TF32TF32_SS_TN<scaleA, scaleB>>
@@ -1649,6 +2144,12 @@ struct MMA_Traits<SM90_64x96x8_F32TF32TF32_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x96x8_F32TF32TF32_RS_TN = SM90::GMMA::MMA_64x96x8_F32TF32TF32_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x96x8_F32TF32TF32_RS_TN<scaleA, scaleB>>
 {
@@ -1669,6 +2170,12 @@ struct MMA_Traits<SM90_64x96x8_F32TF32TF32_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x128x8_F32TF32TF32_SS_TN = SM90::GMMA::MMA_64x128x8_F32TF32TF32_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x128x8_F32TF32TF32_SS_TN<scaleA, scaleB>>
@@ -1692,6 +2199,12 @@ struct MMA_Traits<SM90_64x128x8_F32TF32TF32_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x128x8_F32TF32TF32_RS_TN = SM90::GMMA::MMA_64x128x8_F32TF32TF32_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x128x8_F32TF32TF32_RS_TN<scaleA, scaleB>>
 {
@@ -1712,6 +2225,12 @@ struct MMA_Traits<SM90_64x128x8_F32TF32TF32_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x192x8_F32TF32TF32_SS_TN = SM90::GMMA::MMA_64x192x8_F32TF32TF32_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x192x8_F32TF32TF32_SS_TN<scaleA, scaleB>>
@@ -1735,6 +2254,12 @@ struct MMA_Traits<SM90_64x192x8_F32TF32TF32_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x192x8_F32TF32TF32_RS_TN = SM90::GMMA::MMA_64x192x8_F32TF32TF32_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x192x8_F32TF32TF32_RS_TN<scaleA, scaleB>>
 {
@@ -1755,6 +2280,12 @@ struct MMA_Traits<SM90_64x192x8_F32TF32TF32_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x256x8_F32TF32TF32_SS_TN = SM90::GMMA::MMA_64x256x8_F32TF32TF32_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x256x8_F32TF32TF32_SS_TN<scaleA, scaleB>>
@@ -1778,6 +2309,12 @@ struct MMA_Traits<SM90_64x256x8_F32TF32TF32_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x256x8_F32TF32TF32_RS_TN = SM90::GMMA::MMA_64x256x8_F32TF32TF32_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x256x8_F32TF32TF32_RS_TN<scaleA, scaleB>>
 {
@@ -1798,6 +2335,9 @@ struct MMA_Traits<SM90_64x256x8_F32TF32TF32_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x8x32_S32S8S8_SS_TN = SM90::GMMA::MMA_64x8x32_S32S8S8_SS_TN;
 
 template <>
 struct MMA_Traits<SM90_64x8x32_S32S8S8_SS_TN>
@@ -1821,6 +2361,34 @@ struct MMA_Traits<SM90_64x8x32_S32S8S8_SS_TN>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+using SM90_64x8x32_S32S8S8_SS_TN_SATURATE = SM90::GMMA::MMA_64x8x32_S32S8S8_SS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x8x32_S32S8S8_SS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = int8_t;
+  using ValTypeB = int8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeA = GMMA::smem_desc<GMMA::Major::K>;
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_8,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 32>;
+  using BLayout = GMMA::ABLayout<  8, 32>;
+  using CLayout = GMMA::CLayout_64x8;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x16x32_S32S8S8_SS_TN = SM90::GMMA::MMA_64x16x32_S32S8S8_SS_TN;
+
 template <>
 struct MMA_Traits<SM90_64x16x32_S32S8S8_SS_TN>
 {
@@ -1842,6 +2410,34 @@ struct MMA_Traits<SM90_64x16x32_S32S8S8_SS_TN>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x16x32_S32S8S8_SS_TN_SATURATE = SM90::GMMA::MMA_64x16x32_S32S8S8_SS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x16x32_S32S8S8_SS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = int8_t;
+  using ValTypeB = int8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeA = GMMA::smem_desc<GMMA::Major::K>;
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_16,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 32>;
+  using BLayout = GMMA::ABLayout< 16, 32>;
+  using CLayout = GMMA::CLayout_64x16;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x32x32_S32S8S8_SS_TN = SM90::GMMA::MMA_64x32x32_S32S8S8_SS_TN;
 
 template <>
 struct MMA_Traits<SM90_64x32x32_S32S8S8_SS_TN>
@@ -1865,6 +2461,34 @@ struct MMA_Traits<SM90_64x32x32_S32S8S8_SS_TN>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+using SM90_64x32x32_S32S8S8_SS_TN_SATURATE = SM90::GMMA::MMA_64x32x32_S32S8S8_SS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x32x32_S32S8S8_SS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = int8_t;
+  using ValTypeB = int8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeA = GMMA::smem_desc<GMMA::Major::K>;
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_32,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 32>;
+  using BLayout = GMMA::ABLayout< 32, 32>;
+  using CLayout = GMMA::CLayout_64x32;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x64x32_S32S8S8_SS_TN = SM90::GMMA::MMA_64x64x32_S32S8S8_SS_TN;
+
 template <>
 struct MMA_Traits<SM90_64x64x32_S32S8S8_SS_TN>
 {
@@ -1886,6 +2510,34 @@ struct MMA_Traits<SM90_64x64x32_S32S8S8_SS_TN>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x64x32_S32S8S8_SS_TN_SATURATE = SM90::GMMA::MMA_64x64x32_S32S8S8_SS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x64x32_S32S8S8_SS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = int8_t;
+  using ValTypeB = int8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeA = GMMA::smem_desc<GMMA::Major::K>;
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_64,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 32>;
+  using BLayout = GMMA::ABLayout< 64, 32>;
+  using CLayout = GMMA::CLayout_64x64;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x96x32_S32S8S8_SS_TN = SM90::GMMA::MMA_64x96x32_S32S8S8_SS_TN;
 
 template <>
 struct MMA_Traits<SM90_64x96x32_S32S8S8_SS_TN>
@@ -1909,6 +2561,34 @@ struct MMA_Traits<SM90_64x96x32_S32S8S8_SS_TN>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+using SM90_64x96x32_S32S8S8_SS_TN_SATURATE = SM90::GMMA::MMA_64x96x32_S32S8S8_SS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x96x32_S32S8S8_SS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = int8_t;
+  using ValTypeB = int8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeA = GMMA::smem_desc<GMMA::Major::K>;
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_96,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 32>;
+  using BLayout = GMMA::ABLayout< 96, 32>;
+  using CLayout = GMMA::CLayout_64x96;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x128x32_S32S8S8_SS_TN = SM90::GMMA::MMA_64x128x32_S32S8S8_SS_TN;
+
 template <>
 struct MMA_Traits<SM90_64x128x32_S32S8S8_SS_TN>
 {
@@ -1930,6 +2610,34 @@ struct MMA_Traits<SM90_64x128x32_S32S8S8_SS_TN>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x128x32_S32S8S8_SS_TN_SATURATE = SM90::GMMA::MMA_64x128x32_S32S8S8_SS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x128x32_S32S8S8_SS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = int8_t;
+  using ValTypeB = int8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeA = GMMA::smem_desc<GMMA::Major::K>;
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_128,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 32>;
+  using BLayout = GMMA::ABLayout<128, 32>;
+  using CLayout = GMMA::CLayout_64x128;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x192x32_S32S8S8_SS_TN = SM90::GMMA::MMA_64x192x32_S32S8S8_SS_TN;
 
 template <>
 struct MMA_Traits<SM90_64x192x32_S32S8S8_SS_TN>
@@ -1953,6 +2661,34 @@ struct MMA_Traits<SM90_64x192x32_S32S8S8_SS_TN>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+using SM90_64x192x32_S32S8S8_SS_TN_SATURATE = SM90::GMMA::MMA_64x192x32_S32S8S8_SS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x192x32_S32S8S8_SS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = int8_t;
+  using ValTypeB = int8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeA = GMMA::smem_desc<GMMA::Major::K>;
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_192,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 32>;
+  using BLayout = GMMA::ABLayout<192, 32>;
+  using CLayout = GMMA::CLayout_64x192;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x256x32_S32S8S8_SS_TN = SM90::GMMA::MMA_64x256x32_S32S8S8_SS_TN;
+
 template <>
 struct MMA_Traits<SM90_64x256x32_S32S8S8_SS_TN>
 {
@@ -1975,6 +2711,34 @@ struct MMA_Traits<SM90_64x256x32_S32S8S8_SS_TN>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+using SM90_64x256x32_S32S8S8_SS_TN_SATURATE = SM90::GMMA::MMA_64x256x32_S32S8S8_SS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x256x32_S32S8S8_SS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = int8_t;
+  using ValTypeB = int8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeA = GMMA::smem_desc<GMMA::Major::K>;
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_256,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 32>;
+  using BLayout = GMMA::ABLayout<256, 32>;
+  using CLayout = GMMA::CLayout_64x256;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x8x32_S32S8S8_RS_TN = SM90::GMMA::MMA_64x8x32_S32S8S8_RS_TN;
+
 template <>
 struct MMA_Traits<SM90_64x8x32_S32S8S8_RS_TN>
 {
@@ -1995,6 +2759,33 @@ struct MMA_Traits<SM90_64x8x32_S32S8S8_RS_TN>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x8x32_S32S8S8_RS_TN_SATURATE = SM90::GMMA::MMA_64x8x32_S32S8S8_RS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x8x32_S32S8S8_RS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = int8_t;
+  using ValTypeB = int8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_8,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x32;
+  using BLayout = GMMA::ABLayout<  8, 32>;
+  using CLayout = GMMA::CLayout_64x8;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x16x32_S32S8S8_RS_TN = SM90::GMMA::MMA_64x16x32_S32S8S8_RS_TN;
 
 template <>
 struct MMA_Traits<SM90_64x16x32_S32S8S8_RS_TN>
@@ -2017,6 +2808,33 @@ struct MMA_Traits<SM90_64x16x32_S32S8S8_RS_TN>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+using SM90_64x16x32_S32S8S8_RS_TN_SATURATE = SM90::GMMA::MMA_64x16x32_S32S8S8_RS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x16x32_S32S8S8_RS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = int8_t;
+  using ValTypeB = int8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_16,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x32;
+  using BLayout = GMMA::ABLayout< 16, 32>;
+  using CLayout = GMMA::CLayout_64x16;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x32x32_S32S8S8_RS_TN = SM90::GMMA::MMA_64x32x32_S32S8S8_RS_TN;
+
 template <>
 struct MMA_Traits<SM90_64x32x32_S32S8S8_RS_TN>
 {
@@ -2037,6 +2855,33 @@ struct MMA_Traits<SM90_64x32x32_S32S8S8_RS_TN>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x32x32_S32S8S8_RS_TN_SATURATE = SM90::GMMA::MMA_64x32x32_S32S8S8_RS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x32x32_S32S8S8_RS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = int8_t;
+  using ValTypeB = int8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_32,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x32;
+  using BLayout = GMMA::ABLayout< 32, 32>;
+  using CLayout = GMMA::CLayout_64x32;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x64x32_S32S8S8_RS_TN = SM90::GMMA::MMA_64x64x32_S32S8S8_RS_TN;
 
 template <>
 struct MMA_Traits<SM90_64x64x32_S32S8S8_RS_TN>
@@ -2059,6 +2904,33 @@ struct MMA_Traits<SM90_64x64x32_S32S8S8_RS_TN>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+using SM90_64x64x32_S32S8S8_RS_TN_SATURATE = SM90::GMMA::MMA_64x64x32_S32S8S8_RS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x64x32_S32S8S8_RS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = int8_t;
+  using ValTypeB = int8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_64,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x32;
+  using BLayout = GMMA::ABLayout< 64, 32>;
+  using CLayout = GMMA::CLayout_64x64;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x96x32_S32S8S8_RS_TN = SM90::GMMA::MMA_64x96x32_S32S8S8_RS_TN;
+
 template <>
 struct MMA_Traits<SM90_64x96x32_S32S8S8_RS_TN>
 {
@@ -2079,6 +2951,33 @@ struct MMA_Traits<SM90_64x96x32_S32S8S8_RS_TN>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x96x32_S32S8S8_RS_TN_SATURATE = SM90::GMMA::MMA_64x96x32_S32S8S8_RS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x96x32_S32S8S8_RS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = int8_t;
+  using ValTypeB = int8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_96,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x32;
+  using BLayout = GMMA::ABLayout< 96, 32>;
+  using CLayout = GMMA::CLayout_64x96;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x128x32_S32S8S8_RS_TN = SM90::GMMA::MMA_64x128x32_S32S8S8_RS_TN;
 
 template <>
 struct MMA_Traits<SM90_64x128x32_S32S8S8_RS_TN>
@@ -2101,6 +3000,33 @@ struct MMA_Traits<SM90_64x128x32_S32S8S8_RS_TN>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+using SM90_64x128x32_S32S8S8_RS_TN_SATURATE = SM90::GMMA::MMA_64x128x32_S32S8S8_RS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x128x32_S32S8S8_RS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = int8_t;
+  using ValTypeB = int8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_128,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x32;
+  using BLayout = GMMA::ABLayout<128, 32>;
+  using CLayout = GMMA::CLayout_64x128;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x192x32_S32S8S8_RS_TN = SM90::GMMA::MMA_64x192x32_S32S8S8_RS_TN;
+
 template <>
 struct MMA_Traits<SM90_64x192x32_S32S8S8_RS_TN>
 {
@@ -2122,6 +3048,33 @@ struct MMA_Traits<SM90_64x192x32_S32S8S8_RS_TN>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+using SM90_64x192x32_S32S8S8_RS_TN_SATURATE = SM90::GMMA::MMA_64x192x32_S32S8S8_RS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x192x32_S32S8S8_RS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = int8_t;
+  using ValTypeB = int8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_192,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x32;
+  using BLayout = GMMA::ABLayout<192, 32>;
+  using CLayout = GMMA::CLayout_64x192;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x256x32_S32S8S8_RS_TN = SM90::GMMA::MMA_64x256x32_S32S8S8_RS_TN;
+
 template <>
 struct MMA_Traits<SM90_64x256x32_S32S8S8_RS_TN>
 {
@@ -2142,6 +3095,33 @@ struct MMA_Traits<SM90_64x256x32_S32S8S8_RS_TN>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x256x32_S32S8S8_RS_TN_SATURATE = SM90::GMMA::MMA_64x256x32_S32S8S8_RS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x256x32_S32S8S8_RS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = int8_t;
+  using ValTypeB = int8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_256,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x32;
+  using BLayout = GMMA::ABLayout<256, 32>;
+  using CLayout = GMMA::CLayout_64x256;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x8x32_S32S8U8_SS_TN = SM90::GMMA::MMA_64x8x32_S32S8U8_SS_TN;
 
 template <>
 struct MMA_Traits<SM90_64x8x32_S32S8U8_SS_TN>
@@ -2165,6 +3145,34 @@ struct MMA_Traits<SM90_64x8x32_S32S8U8_SS_TN>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+using SM90_64x8x32_S32S8U8_SS_TN_SATURATE = SM90::GMMA::MMA_64x8x32_S32S8U8_SS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x8x32_S32S8U8_SS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = int8_t;
+  using ValTypeB = uint8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeA = GMMA::smem_desc<GMMA::Major::K>;
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_8,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 32>;
+  using BLayout = GMMA::ABLayout<  8, 32>;
+  using CLayout = GMMA::CLayout_64x8;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x16x32_S32S8U8_SS_TN = SM90::GMMA::MMA_64x16x32_S32S8U8_SS_TN;
+
 template <>
 struct MMA_Traits<SM90_64x16x32_S32S8U8_SS_TN>
 {
@@ -2186,6 +3194,34 @@ struct MMA_Traits<SM90_64x16x32_S32S8U8_SS_TN>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x16x32_S32S8U8_SS_TN_SATURATE = SM90::GMMA::MMA_64x16x32_S32S8U8_SS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x16x32_S32S8U8_SS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = int8_t;
+  using ValTypeB = uint8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeA = GMMA::smem_desc<GMMA::Major::K>;
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_16,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 32>;
+  using BLayout = GMMA::ABLayout< 16, 32>;
+  using CLayout = GMMA::CLayout_64x16;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x32x32_S32S8U8_SS_TN = SM90::GMMA::MMA_64x32x32_S32S8U8_SS_TN;
 
 template <>
 struct MMA_Traits<SM90_64x32x32_S32S8U8_SS_TN>
@@ -2209,6 +3245,34 @@ struct MMA_Traits<SM90_64x32x32_S32S8U8_SS_TN>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+using SM90_64x32x32_S32S8U8_SS_TN_SATURATE = SM90::GMMA::MMA_64x32x32_S32S8U8_SS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x32x32_S32S8U8_SS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = int8_t;
+  using ValTypeB = uint8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeA = GMMA::smem_desc<GMMA::Major::K>;
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_32,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 32>;
+  using BLayout = GMMA::ABLayout< 32, 32>;
+  using CLayout = GMMA::CLayout_64x32;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x64x32_S32S8U8_SS_TN = SM90::GMMA::MMA_64x64x32_S32S8U8_SS_TN;
+
 template <>
 struct MMA_Traits<SM90_64x64x32_S32S8U8_SS_TN>
 {
@@ -2230,6 +3294,34 @@ struct MMA_Traits<SM90_64x64x32_S32S8U8_SS_TN>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x64x32_S32S8U8_SS_TN_SATURATE = SM90::GMMA::MMA_64x64x32_S32S8U8_SS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x64x32_S32S8U8_SS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = int8_t;
+  using ValTypeB = uint8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeA = GMMA::smem_desc<GMMA::Major::K>;
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_64,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 32>;
+  using BLayout = GMMA::ABLayout< 64, 32>;
+  using CLayout = GMMA::CLayout_64x64;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x96x32_S32S8U8_SS_TN = SM90::GMMA::MMA_64x96x32_S32S8U8_SS_TN;
 
 template <>
 struct MMA_Traits<SM90_64x96x32_S32S8U8_SS_TN>
@@ -2253,6 +3345,34 @@ struct MMA_Traits<SM90_64x96x32_S32S8U8_SS_TN>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+using SM90_64x96x32_S32S8U8_SS_TN_SATURATE = SM90::GMMA::MMA_64x96x32_S32S8U8_SS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x96x32_S32S8U8_SS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = int8_t;
+  using ValTypeB = uint8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeA = GMMA::smem_desc<GMMA::Major::K>;
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_96,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 32>;
+  using BLayout = GMMA::ABLayout< 96, 32>;
+  using CLayout = GMMA::CLayout_64x96;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x128x32_S32S8U8_SS_TN = SM90::GMMA::MMA_64x128x32_S32S8U8_SS_TN;
+
 template <>
 struct MMA_Traits<SM90_64x128x32_S32S8U8_SS_TN>
 {
@@ -2274,6 +3394,34 @@ struct MMA_Traits<SM90_64x128x32_S32S8U8_SS_TN>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x128x32_S32S8U8_SS_TN_SATURATE = SM90::GMMA::MMA_64x128x32_S32S8U8_SS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x128x32_S32S8U8_SS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = int8_t;
+  using ValTypeB = uint8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeA = GMMA::smem_desc<GMMA::Major::K>;
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_128,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 32>;
+  using BLayout = GMMA::ABLayout<128, 32>;
+  using CLayout = GMMA::CLayout_64x128;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x192x32_S32S8U8_SS_TN = SM90::GMMA::MMA_64x192x32_S32S8U8_SS_TN;
 
 template <>
 struct MMA_Traits<SM90_64x192x32_S32S8U8_SS_TN>
@@ -2297,6 +3445,34 @@ struct MMA_Traits<SM90_64x192x32_S32S8U8_SS_TN>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+using SM90_64x192x32_S32S8U8_SS_TN_SATURATE = SM90::GMMA::MMA_64x192x32_S32S8U8_SS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x192x32_S32S8U8_SS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = int8_t;
+  using ValTypeB = uint8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeA = GMMA::smem_desc<GMMA::Major::K>;
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_192,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 32>;
+  using BLayout = GMMA::ABLayout<192, 32>;
+  using CLayout = GMMA::CLayout_64x192;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x256x32_S32S8U8_SS_TN = SM90::GMMA::MMA_64x256x32_S32S8U8_SS_TN;
+
 template <>
 struct MMA_Traits<SM90_64x256x32_S32S8U8_SS_TN>
 {
@@ -2319,6 +3495,34 @@ struct MMA_Traits<SM90_64x256x32_S32S8U8_SS_TN>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+using SM90_64x256x32_S32S8U8_SS_TN_SATURATE = SM90::GMMA::MMA_64x256x32_S32S8U8_SS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x256x32_S32S8U8_SS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = int8_t;
+  using ValTypeB = uint8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeA = GMMA::smem_desc<GMMA::Major::K>;
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_256,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 32>;
+  using BLayout = GMMA::ABLayout<256, 32>;
+  using CLayout = GMMA::CLayout_64x256;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x8x32_S32S8U8_RS_TN = SM90::GMMA::MMA_64x8x32_S32S8U8_RS_TN;
+
 template <>
 struct MMA_Traits<SM90_64x8x32_S32S8U8_RS_TN>
 {
@@ -2339,6 +3543,33 @@ struct MMA_Traits<SM90_64x8x32_S32S8U8_RS_TN>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x8x32_S32S8U8_RS_TN_SATURATE = SM90::GMMA::MMA_64x8x32_S32S8U8_RS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x8x32_S32S8U8_RS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = int8_t;
+  using ValTypeB = uint8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_8,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x32;
+  using BLayout = GMMA::ABLayout<  8, 32>;
+  using CLayout = GMMA::CLayout_64x8;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x16x32_S32S8U8_RS_TN = SM90::GMMA::MMA_64x16x32_S32S8U8_RS_TN;
 
 template <>
 struct MMA_Traits<SM90_64x16x32_S32S8U8_RS_TN>
@@ -2361,6 +3592,33 @@ struct MMA_Traits<SM90_64x16x32_S32S8U8_RS_TN>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+using SM90_64x16x32_S32S8U8_RS_TN_SATURATE = SM90::GMMA::MMA_64x16x32_S32S8U8_RS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x16x32_S32S8U8_RS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = int8_t;
+  using ValTypeB = uint8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_16,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x32;
+  using BLayout = GMMA::ABLayout< 16, 32>;
+  using CLayout = GMMA::CLayout_64x16;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x32x32_S32S8U8_RS_TN = SM90::GMMA::MMA_64x32x32_S32S8U8_RS_TN;
+
 template <>
 struct MMA_Traits<SM90_64x32x32_S32S8U8_RS_TN>
 {
@@ -2381,6 +3639,33 @@ struct MMA_Traits<SM90_64x32x32_S32S8U8_RS_TN>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x32x32_S32S8U8_RS_TN_SATURATE = SM90::GMMA::MMA_64x32x32_S32S8U8_RS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x32x32_S32S8U8_RS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = int8_t;
+  using ValTypeB = uint8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_32,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x32;
+  using BLayout = GMMA::ABLayout< 32, 32>;
+  using CLayout = GMMA::CLayout_64x32;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x64x32_S32S8U8_RS_TN = SM90::GMMA::MMA_64x64x32_S32S8U8_RS_TN;
 
 template <>
 struct MMA_Traits<SM90_64x64x32_S32S8U8_RS_TN>
@@ -2403,6 +3688,33 @@ struct MMA_Traits<SM90_64x64x32_S32S8U8_RS_TN>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+using SM90_64x64x32_S32S8U8_RS_TN_SATURATE = SM90::GMMA::MMA_64x64x32_S32S8U8_RS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x64x32_S32S8U8_RS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = int8_t;
+  using ValTypeB = uint8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_64,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x32;
+  using BLayout = GMMA::ABLayout< 64, 32>;
+  using CLayout = GMMA::CLayout_64x64;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x96x32_S32S8U8_RS_TN = SM90::GMMA::MMA_64x96x32_S32S8U8_RS_TN;
+
 template <>
 struct MMA_Traits<SM90_64x96x32_S32S8U8_RS_TN>
 {
@@ -2423,6 +3735,33 @@ struct MMA_Traits<SM90_64x96x32_S32S8U8_RS_TN>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x96x32_S32S8U8_RS_TN_SATURATE = SM90::GMMA::MMA_64x96x32_S32S8U8_RS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x96x32_S32S8U8_RS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = int8_t;
+  using ValTypeB = uint8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_96,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x32;
+  using BLayout = GMMA::ABLayout< 96, 32>;
+  using CLayout = GMMA::CLayout_64x96;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x128x32_S32S8U8_RS_TN = SM90::GMMA::MMA_64x128x32_S32S8U8_RS_TN;
 
 template <>
 struct MMA_Traits<SM90_64x128x32_S32S8U8_RS_TN>
@@ -2445,6 +3784,33 @@ struct MMA_Traits<SM90_64x128x32_S32S8U8_RS_TN>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+using SM90_64x128x32_S32S8U8_RS_TN_SATURATE = SM90::GMMA::MMA_64x128x32_S32S8U8_RS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x128x32_S32S8U8_RS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = int8_t;
+  using ValTypeB = uint8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_128,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x32;
+  using BLayout = GMMA::ABLayout<128, 32>;
+  using CLayout = GMMA::CLayout_64x128;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x192x32_S32S8U8_RS_TN = SM90::GMMA::MMA_64x192x32_S32S8U8_RS_TN;
+
 template <>
 struct MMA_Traits<SM90_64x192x32_S32S8U8_RS_TN>
 {
@@ -2466,6 +3832,33 @@ struct MMA_Traits<SM90_64x192x32_S32S8U8_RS_TN>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+using SM90_64x192x32_S32S8U8_RS_TN_SATURATE = SM90::GMMA::MMA_64x192x32_S32S8U8_RS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x192x32_S32S8U8_RS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = int8_t;
+  using ValTypeB = uint8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_192,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x32;
+  using BLayout = GMMA::ABLayout<192, 32>;
+  using CLayout = GMMA::CLayout_64x192;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x256x32_S32S8U8_RS_TN = SM90::GMMA::MMA_64x256x32_S32S8U8_RS_TN;
+
 template <>
 struct MMA_Traits<SM90_64x256x32_S32S8U8_RS_TN>
 {
@@ -2486,6 +3879,33 @@ struct MMA_Traits<SM90_64x256x32_S32S8U8_RS_TN>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x256x32_S32S8U8_RS_TN_SATURATE = SM90::GMMA::MMA_64x256x32_S32S8U8_RS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x256x32_S32S8U8_RS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = int8_t;
+  using ValTypeB = uint8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_256,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x32;
+  using BLayout = GMMA::ABLayout<256, 32>;
+  using CLayout = GMMA::CLayout_64x256;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x8x32_S32U8S8_SS_TN = SM90::GMMA::MMA_64x8x32_S32U8S8_SS_TN;
 
 template <>
 struct MMA_Traits<SM90_64x8x32_S32U8S8_SS_TN>
@@ -2509,6 +3929,34 @@ struct MMA_Traits<SM90_64x8x32_S32U8S8_SS_TN>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+using SM90_64x8x32_S32U8S8_SS_TN_SATURATE = SM90::GMMA::MMA_64x8x32_S32U8S8_SS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x8x32_S32U8S8_SS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = uint8_t;
+  using ValTypeB = int8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeA = GMMA::smem_desc<GMMA::Major::K>;
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_8,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 32>;
+  using BLayout = GMMA::ABLayout<  8, 32>;
+  using CLayout = GMMA::CLayout_64x8;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x16x32_S32U8S8_SS_TN = SM90::GMMA::MMA_64x16x32_S32U8S8_SS_TN;
+
 template <>
 struct MMA_Traits<SM90_64x16x32_S32U8S8_SS_TN>
 {
@@ -2530,6 +3978,34 @@ struct MMA_Traits<SM90_64x16x32_S32U8S8_SS_TN>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x16x32_S32U8S8_SS_TN_SATURATE = SM90::GMMA::MMA_64x16x32_S32U8S8_SS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x16x32_S32U8S8_SS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = uint8_t;
+  using ValTypeB = int8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeA = GMMA::smem_desc<GMMA::Major::K>;
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_16,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 32>;
+  using BLayout = GMMA::ABLayout< 16, 32>;
+  using CLayout = GMMA::CLayout_64x16;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x32x32_S32U8S8_SS_TN = SM90::GMMA::MMA_64x32x32_S32U8S8_SS_TN;
 
 template <>
 struct MMA_Traits<SM90_64x32x32_S32U8S8_SS_TN>
@@ -2553,6 +4029,34 @@ struct MMA_Traits<SM90_64x32x32_S32U8S8_SS_TN>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+using SM90_64x32x32_S32U8S8_SS_TN_SATURATE = SM90::GMMA::MMA_64x32x32_S32U8S8_SS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x32x32_S32U8S8_SS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = uint8_t;
+  using ValTypeB = int8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeA = GMMA::smem_desc<GMMA::Major::K>;
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_32,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 32>;
+  using BLayout = GMMA::ABLayout< 32, 32>;
+  using CLayout = GMMA::CLayout_64x32;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x64x32_S32U8S8_SS_TN = SM90::GMMA::MMA_64x64x32_S32U8S8_SS_TN;
+
 template <>
 struct MMA_Traits<SM90_64x64x32_S32U8S8_SS_TN>
 {
@@ -2574,6 +4078,34 @@ struct MMA_Traits<SM90_64x64x32_S32U8S8_SS_TN>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x64x32_S32U8S8_SS_TN_SATURATE = SM90::GMMA::MMA_64x64x32_S32U8S8_SS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x64x32_S32U8S8_SS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = uint8_t;
+  using ValTypeB = int8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeA = GMMA::smem_desc<GMMA::Major::K>;
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_64,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 32>;
+  using BLayout = GMMA::ABLayout< 64, 32>;
+  using CLayout = GMMA::CLayout_64x64;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x96x32_S32U8S8_SS_TN = SM90::GMMA::MMA_64x96x32_S32U8S8_SS_TN;
 
 template <>
 struct MMA_Traits<SM90_64x96x32_S32U8S8_SS_TN>
@@ -2597,6 +4129,34 @@ struct MMA_Traits<SM90_64x96x32_S32U8S8_SS_TN>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+using SM90_64x96x32_S32U8S8_SS_TN_SATURATE = SM90::GMMA::MMA_64x96x32_S32U8S8_SS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x96x32_S32U8S8_SS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = uint8_t;
+  using ValTypeB = int8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeA = GMMA::smem_desc<GMMA::Major::K>;
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_96,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 32>;
+  using BLayout = GMMA::ABLayout< 96, 32>;
+  using CLayout = GMMA::CLayout_64x96;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x128x32_S32U8S8_SS_TN = SM90::GMMA::MMA_64x128x32_S32U8S8_SS_TN;
+
 template <>
 struct MMA_Traits<SM90_64x128x32_S32U8S8_SS_TN>
 {
@@ -2618,6 +4178,34 @@ struct MMA_Traits<SM90_64x128x32_S32U8S8_SS_TN>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x128x32_S32U8S8_SS_TN_SATURATE = SM90::GMMA::MMA_64x128x32_S32U8S8_SS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x128x32_S32U8S8_SS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = uint8_t;
+  using ValTypeB = int8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeA = GMMA::smem_desc<GMMA::Major::K>;
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_128,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 32>;
+  using BLayout = GMMA::ABLayout<128, 32>;
+  using CLayout = GMMA::CLayout_64x128;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x192x32_S32U8S8_SS_TN = SM90::GMMA::MMA_64x192x32_S32U8S8_SS_TN;
 
 template <>
 struct MMA_Traits<SM90_64x192x32_S32U8S8_SS_TN>
@@ -2641,6 +4229,34 @@ struct MMA_Traits<SM90_64x192x32_S32U8S8_SS_TN>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+using SM90_64x192x32_S32U8S8_SS_TN_SATURATE = SM90::GMMA::MMA_64x192x32_S32U8S8_SS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x192x32_S32U8S8_SS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = uint8_t;
+  using ValTypeB = int8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeA = GMMA::smem_desc<GMMA::Major::K>;
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_192,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 32>;
+  using BLayout = GMMA::ABLayout<192, 32>;
+  using CLayout = GMMA::CLayout_64x192;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x256x32_S32U8S8_SS_TN = SM90::GMMA::MMA_64x256x32_S32U8S8_SS_TN;
+
 template <>
 struct MMA_Traits<SM90_64x256x32_S32U8S8_SS_TN>
 {
@@ -2663,6 +4279,34 @@ struct MMA_Traits<SM90_64x256x32_S32U8S8_SS_TN>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+using SM90_64x256x32_S32U8S8_SS_TN_SATURATE = SM90::GMMA::MMA_64x256x32_S32U8S8_SS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x256x32_S32U8S8_SS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = uint8_t;
+  using ValTypeB = int8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeA = GMMA::smem_desc<GMMA::Major::K>;
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_256,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 32>;
+  using BLayout = GMMA::ABLayout<256, 32>;
+  using CLayout = GMMA::CLayout_64x256;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x8x32_S32U8S8_RS_TN = SM90::GMMA::MMA_64x8x32_S32U8S8_RS_TN;
+
 template <>
 struct MMA_Traits<SM90_64x8x32_S32U8S8_RS_TN>
 {
@@ -2683,6 +4327,33 @@ struct MMA_Traits<SM90_64x8x32_S32U8S8_RS_TN>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x8x32_S32U8S8_RS_TN_SATURATE = SM90::GMMA::MMA_64x8x32_S32U8S8_RS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x8x32_S32U8S8_RS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = uint8_t;
+  using ValTypeB = int8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_8,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x32;
+  using BLayout = GMMA::ABLayout<  8, 32>;
+  using CLayout = GMMA::CLayout_64x8;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x16x32_S32U8S8_RS_TN = SM90::GMMA::MMA_64x16x32_S32U8S8_RS_TN;
 
 template <>
 struct MMA_Traits<SM90_64x16x32_S32U8S8_RS_TN>
@@ -2705,6 +4376,33 @@ struct MMA_Traits<SM90_64x16x32_S32U8S8_RS_TN>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+using SM90_64x16x32_S32U8S8_RS_TN_SATURATE = SM90::GMMA::MMA_64x16x32_S32U8S8_RS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x16x32_S32U8S8_RS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = uint8_t;
+  using ValTypeB = int8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_16,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x32;
+  using BLayout = GMMA::ABLayout< 16, 32>;
+  using CLayout = GMMA::CLayout_64x16;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x32x32_S32U8S8_RS_TN = SM90::GMMA::MMA_64x32x32_S32U8S8_RS_TN;
+
 template <>
 struct MMA_Traits<SM90_64x32x32_S32U8S8_RS_TN>
 {
@@ -2725,6 +4423,33 @@ struct MMA_Traits<SM90_64x32x32_S32U8S8_RS_TN>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x32x32_S32U8S8_RS_TN_SATURATE = SM90::GMMA::MMA_64x32x32_S32U8S8_RS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x32x32_S32U8S8_RS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = uint8_t;
+  using ValTypeB = int8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_32,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x32;
+  using BLayout = GMMA::ABLayout< 32, 32>;
+  using CLayout = GMMA::CLayout_64x32;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x64x32_S32U8S8_RS_TN = SM90::GMMA::MMA_64x64x32_S32U8S8_RS_TN;
 
 template <>
 struct MMA_Traits<SM90_64x64x32_S32U8S8_RS_TN>
@@ -2747,6 +4472,33 @@ struct MMA_Traits<SM90_64x64x32_S32U8S8_RS_TN>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+using SM90_64x64x32_S32U8S8_RS_TN_SATURATE = SM90::GMMA::MMA_64x64x32_S32U8S8_RS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x64x32_S32U8S8_RS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = uint8_t;
+  using ValTypeB = int8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_64,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x32;
+  using BLayout = GMMA::ABLayout< 64, 32>;
+  using CLayout = GMMA::CLayout_64x64;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x96x32_S32U8S8_RS_TN = SM90::GMMA::MMA_64x96x32_S32U8S8_RS_TN;
+
 template <>
 struct MMA_Traits<SM90_64x96x32_S32U8S8_RS_TN>
 {
@@ -2767,6 +4519,33 @@ struct MMA_Traits<SM90_64x96x32_S32U8S8_RS_TN>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x96x32_S32U8S8_RS_TN_SATURATE = SM90::GMMA::MMA_64x96x32_S32U8S8_RS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x96x32_S32U8S8_RS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = uint8_t;
+  using ValTypeB = int8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_96,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x32;
+  using BLayout = GMMA::ABLayout< 96, 32>;
+  using CLayout = GMMA::CLayout_64x96;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x128x32_S32U8S8_RS_TN = SM90::GMMA::MMA_64x128x32_S32U8S8_RS_TN;
 
 template <>
 struct MMA_Traits<SM90_64x128x32_S32U8S8_RS_TN>
@@ -2789,6 +4568,33 @@ struct MMA_Traits<SM90_64x128x32_S32U8S8_RS_TN>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+using SM90_64x128x32_S32U8S8_RS_TN_SATURATE = SM90::GMMA::MMA_64x128x32_S32U8S8_RS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x128x32_S32U8S8_RS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = uint8_t;
+  using ValTypeB = int8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_128,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x32;
+  using BLayout = GMMA::ABLayout<128, 32>;
+  using CLayout = GMMA::CLayout_64x128;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x192x32_S32U8S8_RS_TN = SM90::GMMA::MMA_64x192x32_S32U8S8_RS_TN;
+
 template <>
 struct MMA_Traits<SM90_64x192x32_S32U8S8_RS_TN>
 {
@@ -2810,6 +4616,33 @@ struct MMA_Traits<SM90_64x192x32_S32U8S8_RS_TN>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+using SM90_64x192x32_S32U8S8_RS_TN_SATURATE = SM90::GMMA::MMA_64x192x32_S32U8S8_RS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x192x32_S32U8S8_RS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = uint8_t;
+  using ValTypeB = int8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_192,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x32;
+  using BLayout = GMMA::ABLayout<192, 32>;
+  using CLayout = GMMA::CLayout_64x192;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x256x32_S32U8S8_RS_TN = SM90::GMMA::MMA_64x256x32_S32U8S8_RS_TN;
+
 template <>
 struct MMA_Traits<SM90_64x256x32_S32U8S8_RS_TN>
 {
@@ -2830,6 +4663,33 @@ struct MMA_Traits<SM90_64x256x32_S32U8S8_RS_TN>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x256x32_S32U8S8_RS_TN_SATURATE = SM90::GMMA::MMA_64x256x32_S32U8S8_RS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x256x32_S32U8S8_RS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = uint8_t;
+  using ValTypeB = int8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_256,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x32;
+  using BLayout = GMMA::ABLayout<256, 32>;
+  using CLayout = GMMA::CLayout_64x256;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x8x32_S32U8U8_SS_TN = SM90::GMMA::MMA_64x8x32_S32U8U8_SS_TN;
 
 template <>
 struct MMA_Traits<SM90_64x8x32_S32U8U8_SS_TN>
@@ -2853,6 +4713,34 @@ struct MMA_Traits<SM90_64x8x32_S32U8U8_SS_TN>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+using SM90_64x8x32_S32U8U8_SS_TN_SATURATE = SM90::GMMA::MMA_64x8x32_S32U8U8_SS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x8x32_S32U8U8_SS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = uint8_t;
+  using ValTypeB = uint8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeA = GMMA::smem_desc<GMMA::Major::K>;
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_8,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 32>;
+  using BLayout = GMMA::ABLayout<  8, 32>;
+  using CLayout = GMMA::CLayout_64x8;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x16x32_S32U8U8_SS_TN = SM90::GMMA::MMA_64x16x32_S32U8U8_SS_TN;
+
 template <>
 struct MMA_Traits<SM90_64x16x32_S32U8U8_SS_TN>
 {
@@ -2874,6 +4762,34 @@ struct MMA_Traits<SM90_64x16x32_S32U8U8_SS_TN>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x16x32_S32U8U8_SS_TN_SATURATE = SM90::GMMA::MMA_64x16x32_S32U8U8_SS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x16x32_S32U8U8_SS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = uint8_t;
+  using ValTypeB = uint8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeA = GMMA::smem_desc<GMMA::Major::K>;
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_16,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 32>;
+  using BLayout = GMMA::ABLayout< 16, 32>;
+  using CLayout = GMMA::CLayout_64x16;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x32x32_S32U8U8_SS_TN = SM90::GMMA::MMA_64x32x32_S32U8U8_SS_TN;
 
 template <>
 struct MMA_Traits<SM90_64x32x32_S32U8U8_SS_TN>
@@ -2897,6 +4813,34 @@ struct MMA_Traits<SM90_64x32x32_S32U8U8_SS_TN>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+using SM90_64x32x32_S32U8U8_SS_TN_SATURATE = SM90::GMMA::MMA_64x32x32_S32U8U8_SS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x32x32_S32U8U8_SS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = uint8_t;
+  using ValTypeB = uint8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeA = GMMA::smem_desc<GMMA::Major::K>;
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_32,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 32>;
+  using BLayout = GMMA::ABLayout< 32, 32>;
+  using CLayout = GMMA::CLayout_64x32;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x64x32_S32U8U8_SS_TN = SM90::GMMA::MMA_64x64x32_S32U8U8_SS_TN;
+
 template <>
 struct MMA_Traits<SM90_64x64x32_S32U8U8_SS_TN>
 {
@@ -2918,6 +4862,34 @@ struct MMA_Traits<SM90_64x64x32_S32U8U8_SS_TN>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x64x32_S32U8U8_SS_TN_SATURATE = SM90::GMMA::MMA_64x64x32_S32U8U8_SS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x64x32_S32U8U8_SS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = uint8_t;
+  using ValTypeB = uint8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeA = GMMA::smem_desc<GMMA::Major::K>;
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_64,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 32>;
+  using BLayout = GMMA::ABLayout< 64, 32>;
+  using CLayout = GMMA::CLayout_64x64;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x96x32_S32U8U8_SS_TN = SM90::GMMA::MMA_64x96x32_S32U8U8_SS_TN;
 
 template <>
 struct MMA_Traits<SM90_64x96x32_S32U8U8_SS_TN>
@@ -2941,6 +4913,34 @@ struct MMA_Traits<SM90_64x96x32_S32U8U8_SS_TN>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+using SM90_64x96x32_S32U8U8_SS_TN_SATURATE = SM90::GMMA::MMA_64x96x32_S32U8U8_SS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x96x32_S32U8U8_SS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = uint8_t;
+  using ValTypeB = uint8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeA = GMMA::smem_desc<GMMA::Major::K>;
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_96,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 32>;
+  using BLayout = GMMA::ABLayout< 96, 32>;
+  using CLayout = GMMA::CLayout_64x96;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x128x32_S32U8U8_SS_TN = SM90::GMMA::MMA_64x128x32_S32U8U8_SS_TN;
+
 template <>
 struct MMA_Traits<SM90_64x128x32_S32U8U8_SS_TN>
 {
@@ -2962,6 +4962,34 @@ struct MMA_Traits<SM90_64x128x32_S32U8U8_SS_TN>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x128x32_S32U8U8_SS_TN_SATURATE = SM90::GMMA::MMA_64x128x32_S32U8U8_SS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x128x32_S32U8U8_SS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = uint8_t;
+  using ValTypeB = uint8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeA = GMMA::smem_desc<GMMA::Major::K>;
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_128,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 32>;
+  using BLayout = GMMA::ABLayout<128, 32>;
+  using CLayout = GMMA::CLayout_64x128;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x192x32_S32U8U8_SS_TN = SM90::GMMA::MMA_64x192x32_S32U8U8_SS_TN;
 
 template <>
 struct MMA_Traits<SM90_64x192x32_S32U8U8_SS_TN>
@@ -2985,6 +5013,34 @@ struct MMA_Traits<SM90_64x192x32_S32U8U8_SS_TN>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+using SM90_64x192x32_S32U8U8_SS_TN_SATURATE = SM90::GMMA::MMA_64x192x32_S32U8U8_SS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x192x32_S32U8U8_SS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = uint8_t;
+  using ValTypeB = uint8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeA = GMMA::smem_desc<GMMA::Major::K>;
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_192,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 32>;
+  using BLayout = GMMA::ABLayout<192, 32>;
+  using CLayout = GMMA::CLayout_64x192;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x256x32_S32U8U8_SS_TN = SM90::GMMA::MMA_64x256x32_S32U8U8_SS_TN;
+
 template <>
 struct MMA_Traits<SM90_64x256x32_S32U8U8_SS_TN>
 {
@@ -3007,6 +5063,34 @@ struct MMA_Traits<SM90_64x256x32_S32U8U8_SS_TN>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+using SM90_64x256x32_S32U8U8_SS_TN_SATURATE = SM90::GMMA::MMA_64x256x32_S32U8U8_SS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x256x32_S32U8U8_SS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = uint8_t;
+  using ValTypeB = uint8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeA = GMMA::smem_desc<GMMA::Major::K>;
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_256,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 32>;
+  using BLayout = GMMA::ABLayout<256, 32>;
+  using CLayout = GMMA::CLayout_64x256;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x8x32_S32U8U8_RS_TN = SM90::GMMA::MMA_64x8x32_S32U8U8_RS_TN;
+
 template <>
 struct MMA_Traits<SM90_64x8x32_S32U8U8_RS_TN>
 {
@@ -3027,6 +5111,33 @@ struct MMA_Traits<SM90_64x8x32_S32U8U8_RS_TN>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x8x32_S32U8U8_RS_TN_SATURATE = SM90::GMMA::MMA_64x8x32_S32U8U8_RS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x8x32_S32U8U8_RS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = uint8_t;
+  using ValTypeB = uint8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_8,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x32;
+  using BLayout = GMMA::ABLayout<  8, 32>;
+  using CLayout = GMMA::CLayout_64x8;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x16x32_S32U8U8_RS_TN = SM90::GMMA::MMA_64x16x32_S32U8U8_RS_TN;
 
 template <>
 struct MMA_Traits<SM90_64x16x32_S32U8U8_RS_TN>
@@ -3049,6 +5160,33 @@ struct MMA_Traits<SM90_64x16x32_S32U8U8_RS_TN>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+using SM90_64x16x32_S32U8U8_RS_TN_SATURATE = SM90::GMMA::MMA_64x16x32_S32U8U8_RS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x16x32_S32U8U8_RS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = uint8_t;
+  using ValTypeB = uint8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_16,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x32;
+  using BLayout = GMMA::ABLayout< 16, 32>;
+  using CLayout = GMMA::CLayout_64x16;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x32x32_S32U8U8_RS_TN = SM90::GMMA::MMA_64x32x32_S32U8U8_RS_TN;
+
 template <>
 struct MMA_Traits<SM90_64x32x32_S32U8U8_RS_TN>
 {
@@ -3069,6 +5207,33 @@ struct MMA_Traits<SM90_64x32x32_S32U8U8_RS_TN>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x32x32_S32U8U8_RS_TN_SATURATE = SM90::GMMA::MMA_64x32x32_S32U8U8_RS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x32x32_S32U8U8_RS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = uint8_t;
+  using ValTypeB = uint8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_32,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x32;
+  using BLayout = GMMA::ABLayout< 32, 32>;
+  using CLayout = GMMA::CLayout_64x32;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x64x32_S32U8U8_RS_TN = SM90::GMMA::MMA_64x64x32_S32U8U8_RS_TN;
 
 template <>
 struct MMA_Traits<SM90_64x64x32_S32U8U8_RS_TN>
@@ -3091,6 +5256,33 @@ struct MMA_Traits<SM90_64x64x32_S32U8U8_RS_TN>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+using SM90_64x64x32_S32U8U8_RS_TN_SATURATE = SM90::GMMA::MMA_64x64x32_S32U8U8_RS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x64x32_S32U8U8_RS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = uint8_t;
+  using ValTypeB = uint8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_64,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x32;
+  using BLayout = GMMA::ABLayout< 64, 32>;
+  using CLayout = GMMA::CLayout_64x64;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x96x32_S32U8U8_RS_TN = SM90::GMMA::MMA_64x96x32_S32U8U8_RS_TN;
+
 template <>
 struct MMA_Traits<SM90_64x96x32_S32U8U8_RS_TN>
 {
@@ -3111,6 +5303,33 @@ struct MMA_Traits<SM90_64x96x32_S32U8U8_RS_TN>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x96x32_S32U8U8_RS_TN_SATURATE = SM90::GMMA::MMA_64x96x32_S32U8U8_RS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x96x32_S32U8U8_RS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = uint8_t;
+  using ValTypeB = uint8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_96,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x32;
+  using BLayout = GMMA::ABLayout< 96, 32>;
+  using CLayout = GMMA::CLayout_64x96;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x128x32_S32U8U8_RS_TN = SM90::GMMA::MMA_64x128x32_S32U8U8_RS_TN;
 
 template <>
 struct MMA_Traits<SM90_64x128x32_S32U8U8_RS_TN>
@@ -3133,6 +5352,33 @@ struct MMA_Traits<SM90_64x128x32_S32U8U8_RS_TN>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+using SM90_64x128x32_S32U8U8_RS_TN_SATURATE = SM90::GMMA::MMA_64x128x32_S32U8U8_RS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x128x32_S32U8U8_RS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = uint8_t;
+  using ValTypeB = uint8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_128,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x32;
+  using BLayout = GMMA::ABLayout<128, 32>;
+  using CLayout = GMMA::CLayout_64x128;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x192x32_S32U8U8_RS_TN = SM90::GMMA::MMA_64x192x32_S32U8U8_RS_TN;
+
 template <>
 struct MMA_Traits<SM90_64x192x32_S32U8U8_RS_TN>
 {
@@ -3154,6 +5400,33 @@ struct MMA_Traits<SM90_64x192x32_S32U8U8_RS_TN>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+using SM90_64x192x32_S32U8U8_RS_TN_SATURATE = SM90::GMMA::MMA_64x192x32_S32U8U8_RS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x192x32_S32U8U8_RS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = uint8_t;
+  using ValTypeB = uint8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_192,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x32;
+  using BLayout = GMMA::ABLayout<192, 32>;
+  using CLayout = GMMA::CLayout_64x192;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x256x32_S32U8U8_RS_TN = SM90::GMMA::MMA_64x256x32_S32U8U8_RS_TN;
+
 template <>
 struct MMA_Traits<SM90_64x256x32_S32U8U8_RS_TN>
 {
@@ -3174,6 +5447,36 @@ struct MMA_Traits<SM90_64x256x32_S32U8U8_RS_TN>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+using SM90_64x256x32_S32U8U8_RS_TN_SATURATE = SM90::GMMA::MMA_64x256x32_S32U8U8_RS_TN_SATURATE;
+
+template <>
+struct MMA_Traits<SM90_64x256x32_S32U8U8_RS_TN_SATURATE>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = uint8_t;
+  using ValTypeB = uint8_t;
+  using ValTypeC = int32_t;
+
+  using FrgTypeB = GMMA::smem_desc<GMMA::Major::K>;
+
+  using Shape_MNK = Shape<_64,_256,_32>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ALayout_64x32;
+  using BLayout = GMMA::ABLayout<256, 32>;
+  using CLayout = GMMA::CLayout_64x256;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x8x32_F16E4M3E4M3_SS_TN = SM90::GMMA::MMA_64x8x32_F16E4M3E4M3_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x8x32_F16E4M3E4M3_SS_TN<scaleA, scaleB>>
@@ -3197,6 +5500,12 @@ struct MMA_Traits<SM90_64x8x32_F16E4M3E4M3_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x8x32_F16E4M3E4M3_RS_TN = SM90::GMMA::MMA_64x8x32_F16E4M3E4M3_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x8x32_F16E4M3E4M3_RS_TN<scaleA, scaleB>>
 {
@@ -3217,6 +5526,12 @@ struct MMA_Traits<SM90_64x8x32_F16E4M3E4M3_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x8x32_F32E4M3E4M3_SS_TN = SM90::GMMA::MMA_64x8x32_F32E4M3E4M3_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x8x32_F32E4M3E4M3_SS_TN<scaleA, scaleB>>
@@ -3240,6 +5555,12 @@ struct MMA_Traits<SM90_64x8x32_F32E4M3E4M3_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x8x32_F32E4M3E4M3_RS_TN = SM90::GMMA::MMA_64x8x32_F32E4M3E4M3_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x8x32_F32E4M3E4M3_RS_TN<scaleA, scaleB>>
 {
@@ -3260,6 +5581,12 @@ struct MMA_Traits<SM90_64x8x32_F32E4M3E4M3_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x16x32_F16E4M3E4M3_SS_TN = SM90::GMMA::MMA_64x16x32_F16E4M3E4M3_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x16x32_F16E4M3E4M3_SS_TN<scaleA, scaleB>>
@@ -3283,6 +5610,12 @@ struct MMA_Traits<SM90_64x16x32_F16E4M3E4M3_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x16x32_F16E4M3E4M3_RS_TN = SM90::GMMA::MMA_64x16x32_F16E4M3E4M3_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x16x32_F16E4M3E4M3_RS_TN<scaleA, scaleB>>
 {
@@ -3303,6 +5636,12 @@ struct MMA_Traits<SM90_64x16x32_F16E4M3E4M3_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x16x32_F32E4M3E4M3_SS_TN = SM90::GMMA::MMA_64x16x32_F32E4M3E4M3_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x16x32_F32E4M3E4M3_SS_TN<scaleA, scaleB>>
@@ -3326,6 +5665,12 @@ struct MMA_Traits<SM90_64x16x32_F32E4M3E4M3_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x16x32_F32E4M3E4M3_RS_TN = SM90::GMMA::MMA_64x16x32_F32E4M3E4M3_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x16x32_F32E4M3E4M3_RS_TN<scaleA, scaleB>>
 {
@@ -3346,6 +5691,12 @@ struct MMA_Traits<SM90_64x16x32_F32E4M3E4M3_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x32x32_F16E4M3E4M3_SS_TN = SM90::GMMA::MMA_64x32x32_F16E4M3E4M3_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x32x32_F16E4M3E4M3_SS_TN<scaleA, scaleB>>
@@ -3369,6 +5720,12 @@ struct MMA_Traits<SM90_64x32x32_F16E4M3E4M3_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x32x32_F16E4M3E4M3_RS_TN = SM90::GMMA::MMA_64x32x32_F16E4M3E4M3_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x32x32_F16E4M3E4M3_RS_TN<scaleA, scaleB>>
 {
@@ -3389,6 +5746,12 @@ struct MMA_Traits<SM90_64x32x32_F16E4M3E4M3_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x32x32_F32E4M3E4M3_SS_TN = SM90::GMMA::MMA_64x32x32_F32E4M3E4M3_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x32x32_F32E4M3E4M3_SS_TN<scaleA, scaleB>>
@@ -3412,6 +5775,12 @@ struct MMA_Traits<SM90_64x32x32_F32E4M3E4M3_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x32x32_F32E4M3E4M3_RS_TN = SM90::GMMA::MMA_64x32x32_F32E4M3E4M3_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x32x32_F32E4M3E4M3_RS_TN<scaleA, scaleB>>
 {
@@ -3432,6 +5801,12 @@ struct MMA_Traits<SM90_64x32x32_F32E4M3E4M3_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x64x32_F16E4M3E4M3_SS_TN = SM90::GMMA::MMA_64x64x32_F16E4M3E4M3_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x64x32_F16E4M3E4M3_SS_TN<scaleA, scaleB>>
@@ -3455,6 +5830,12 @@ struct MMA_Traits<SM90_64x64x32_F16E4M3E4M3_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x64x32_F16E4M3E4M3_RS_TN = SM90::GMMA::MMA_64x64x32_F16E4M3E4M3_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x64x32_F16E4M3E4M3_RS_TN<scaleA, scaleB>>
 {
@@ -3475,6 +5856,12 @@ struct MMA_Traits<SM90_64x64x32_F16E4M3E4M3_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x64x32_F32E4M3E4M3_SS_TN = SM90::GMMA::MMA_64x64x32_F32E4M3E4M3_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x64x32_F32E4M3E4M3_SS_TN<scaleA, scaleB>>
@@ -3498,6 +5885,12 @@ struct MMA_Traits<SM90_64x64x32_F32E4M3E4M3_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x64x32_F32E4M3E4M3_RS_TN = SM90::GMMA::MMA_64x64x32_F32E4M3E4M3_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x64x32_F32E4M3E4M3_RS_TN<scaleA, scaleB>>
 {
@@ -3518,6 +5911,12 @@ struct MMA_Traits<SM90_64x64x32_F32E4M3E4M3_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x96x32_F16E4M3E4M3_SS_TN = SM90::GMMA::MMA_64x96x32_F16E4M3E4M3_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x96x32_F16E4M3E4M3_SS_TN<scaleA, scaleB>>
@@ -3541,6 +5940,12 @@ struct MMA_Traits<SM90_64x96x32_F16E4M3E4M3_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x96x32_F16E4M3E4M3_RS_TN = SM90::GMMA::MMA_64x96x32_F16E4M3E4M3_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x96x32_F16E4M3E4M3_RS_TN<scaleA, scaleB>>
 {
@@ -3561,6 +5966,12 @@ struct MMA_Traits<SM90_64x96x32_F16E4M3E4M3_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x96x32_F32E4M3E4M3_SS_TN = SM90::GMMA::MMA_64x96x32_F32E4M3E4M3_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x96x32_F32E4M3E4M3_SS_TN<scaleA, scaleB>>
@@ -3584,6 +5995,12 @@ struct MMA_Traits<SM90_64x96x32_F32E4M3E4M3_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x96x32_F32E4M3E4M3_RS_TN = SM90::GMMA::MMA_64x96x32_F32E4M3E4M3_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x96x32_F32E4M3E4M3_RS_TN<scaleA, scaleB>>
 {
@@ -3604,6 +6021,12 @@ struct MMA_Traits<SM90_64x96x32_F32E4M3E4M3_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x128x32_F16E4M3E4M3_SS_TN = SM90::GMMA::MMA_64x128x32_F16E4M3E4M3_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x128x32_F16E4M3E4M3_SS_TN<scaleA, scaleB>>
@@ -3627,6 +6050,12 @@ struct MMA_Traits<SM90_64x128x32_F16E4M3E4M3_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x128x32_F16E4M3E4M3_RS_TN = SM90::GMMA::MMA_64x128x32_F16E4M3E4M3_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x128x32_F16E4M3E4M3_RS_TN<scaleA, scaleB>>
 {
@@ -3647,6 +6076,12 @@ struct MMA_Traits<SM90_64x128x32_F16E4M3E4M3_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x128x32_F32E4M3E4M3_SS_TN = SM90::GMMA::MMA_64x128x32_F32E4M3E4M3_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x128x32_F32E4M3E4M3_SS_TN<scaleA, scaleB>>
@@ -3670,6 +6105,12 @@ struct MMA_Traits<SM90_64x128x32_F32E4M3E4M3_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x128x32_F32E4M3E4M3_RS_TN = SM90::GMMA::MMA_64x128x32_F32E4M3E4M3_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x128x32_F32E4M3E4M3_RS_TN<scaleA, scaleB>>
 {
@@ -3690,6 +6131,12 @@ struct MMA_Traits<SM90_64x128x32_F32E4M3E4M3_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x192x32_F16E4M3E4M3_SS_TN = SM90::GMMA::MMA_64x192x32_F16E4M3E4M3_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x192x32_F16E4M3E4M3_SS_TN<scaleA, scaleB>>
@@ -3713,6 +6160,12 @@ struct MMA_Traits<SM90_64x192x32_F16E4M3E4M3_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x192x32_F16E4M3E4M3_RS_TN = SM90::GMMA::MMA_64x192x32_F16E4M3E4M3_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x192x32_F16E4M3E4M3_RS_TN<scaleA, scaleB>>
 {
@@ -3733,6 +6186,12 @@ struct MMA_Traits<SM90_64x192x32_F16E4M3E4M3_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x192x32_F32E4M3E4M3_SS_TN = SM90::GMMA::MMA_64x192x32_F32E4M3E4M3_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x192x32_F32E4M3E4M3_SS_TN<scaleA, scaleB>>
@@ -3756,6 +6215,12 @@ struct MMA_Traits<SM90_64x192x32_F32E4M3E4M3_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x192x32_F32E4M3E4M3_RS_TN = SM90::GMMA::MMA_64x192x32_F32E4M3E4M3_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x192x32_F32E4M3E4M3_RS_TN<scaleA, scaleB>>
 {
@@ -3776,6 +6241,12 @@ struct MMA_Traits<SM90_64x192x32_F32E4M3E4M3_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x256x32_F16E4M3E4M3_SS_TN = SM90::GMMA::MMA_64x256x32_F16E4M3E4M3_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x256x32_F16E4M3E4M3_SS_TN<scaleA, scaleB>>
@@ -3799,6 +6270,12 @@ struct MMA_Traits<SM90_64x256x32_F16E4M3E4M3_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x256x32_F16E4M3E4M3_RS_TN = SM90::GMMA::MMA_64x256x32_F16E4M3E4M3_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x256x32_F16E4M3E4M3_RS_TN<scaleA, scaleB>>
 {
@@ -3819,6 +6296,12 @@ struct MMA_Traits<SM90_64x256x32_F16E4M3E4M3_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x256x32_F32E4M3E4M3_SS_TN = SM90::GMMA::MMA_64x256x32_F32E4M3E4M3_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x256x32_F32E4M3E4M3_SS_TN<scaleA, scaleB>>
@@ -3842,6 +6325,12 @@ struct MMA_Traits<SM90_64x256x32_F32E4M3E4M3_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x256x32_F32E4M3E4M3_RS_TN = SM90::GMMA::MMA_64x256x32_F32E4M3E4M3_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x256x32_F32E4M3E4M3_RS_TN<scaleA, scaleB>>
 {
@@ -3862,6 +6351,12 @@ struct MMA_Traits<SM90_64x256x32_F32E4M3E4M3_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x8x32_F16E4M3E5M2_SS_TN = SM90::GMMA::MMA_64x8x32_F16E4M3E5M2_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x8x32_F16E4M3E5M2_SS_TN<scaleA, scaleB>>
@@ -3885,6 +6380,12 @@ struct MMA_Traits<SM90_64x8x32_F16E4M3E5M2_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x8x32_F16E4M3E5M2_RS_TN = SM90::GMMA::MMA_64x8x32_F16E4M3E5M2_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x8x32_F16E4M3E5M2_RS_TN<scaleA, scaleB>>
 {
@@ -3905,6 +6406,12 @@ struct MMA_Traits<SM90_64x8x32_F16E4M3E5M2_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x8x32_F32E4M3E5M2_SS_TN = SM90::GMMA::MMA_64x8x32_F32E4M3E5M2_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x8x32_F32E4M3E5M2_SS_TN<scaleA, scaleB>>
@@ -3928,6 +6435,12 @@ struct MMA_Traits<SM90_64x8x32_F32E4M3E5M2_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x8x32_F32E4M3E5M2_RS_TN = SM90::GMMA::MMA_64x8x32_F32E4M3E5M2_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x8x32_F32E4M3E5M2_RS_TN<scaleA, scaleB>>
 {
@@ -3948,6 +6461,12 @@ struct MMA_Traits<SM90_64x8x32_F32E4M3E5M2_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x16x32_F16E4M3E5M2_SS_TN = SM90::GMMA::MMA_64x16x32_F16E4M3E5M2_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x16x32_F16E4M3E5M2_SS_TN<scaleA, scaleB>>
@@ -3971,6 +6490,12 @@ struct MMA_Traits<SM90_64x16x32_F16E4M3E5M2_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x16x32_F16E4M3E5M2_RS_TN = SM90::GMMA::MMA_64x16x32_F16E4M3E5M2_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x16x32_F16E4M3E5M2_RS_TN<scaleA, scaleB>>
 {
@@ -3991,6 +6516,12 @@ struct MMA_Traits<SM90_64x16x32_F16E4M3E5M2_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x16x32_F32E4M3E5M2_SS_TN = SM90::GMMA::MMA_64x16x32_F32E4M3E5M2_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x16x32_F32E4M3E5M2_SS_TN<scaleA, scaleB>>
@@ -4014,6 +6545,12 @@ struct MMA_Traits<SM90_64x16x32_F32E4M3E5M2_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x16x32_F32E4M3E5M2_RS_TN = SM90::GMMA::MMA_64x16x32_F32E4M3E5M2_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x16x32_F32E4M3E5M2_RS_TN<scaleA, scaleB>>
 {
@@ -4034,6 +6571,12 @@ struct MMA_Traits<SM90_64x16x32_F32E4M3E5M2_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x32x32_F16E4M3E5M2_SS_TN = SM90::GMMA::MMA_64x32x32_F16E4M3E5M2_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x32x32_F16E4M3E5M2_SS_TN<scaleA, scaleB>>
@@ -4057,6 +6600,12 @@ struct MMA_Traits<SM90_64x32x32_F16E4M3E5M2_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x32x32_F16E4M3E5M2_RS_TN = SM90::GMMA::MMA_64x32x32_F16E4M3E5M2_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x32x32_F16E4M3E5M2_RS_TN<scaleA, scaleB>>
 {
@@ -4077,6 +6626,12 @@ struct MMA_Traits<SM90_64x32x32_F16E4M3E5M2_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x32x32_F32E4M3E5M2_SS_TN = SM90::GMMA::MMA_64x32x32_F32E4M3E5M2_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x32x32_F32E4M3E5M2_SS_TN<scaleA, scaleB>>
@@ -4100,6 +6655,12 @@ struct MMA_Traits<SM90_64x32x32_F32E4M3E5M2_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x32x32_F32E4M3E5M2_RS_TN = SM90::GMMA::MMA_64x32x32_F32E4M3E5M2_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x32x32_F32E4M3E5M2_RS_TN<scaleA, scaleB>>
 {
@@ -4120,6 +6681,12 @@ struct MMA_Traits<SM90_64x32x32_F32E4M3E5M2_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x64x32_F16E4M3E5M2_SS_TN = SM90::GMMA::MMA_64x64x32_F16E4M3E5M2_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x64x32_F16E4M3E5M2_SS_TN<scaleA, scaleB>>
@@ -4143,6 +6710,12 @@ struct MMA_Traits<SM90_64x64x32_F16E4M3E5M2_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x64x32_F16E4M3E5M2_RS_TN = SM90::GMMA::MMA_64x64x32_F16E4M3E5M2_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x64x32_F16E4M3E5M2_RS_TN<scaleA, scaleB>>
 {
@@ -4163,6 +6736,12 @@ struct MMA_Traits<SM90_64x64x32_F16E4M3E5M2_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x64x32_F32E4M3E5M2_SS_TN = SM90::GMMA::MMA_64x64x32_F32E4M3E5M2_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x64x32_F32E4M3E5M2_SS_TN<scaleA, scaleB>>
@@ -4186,6 +6765,12 @@ struct MMA_Traits<SM90_64x64x32_F32E4M3E5M2_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x64x32_F32E4M3E5M2_RS_TN = SM90::GMMA::MMA_64x64x32_F32E4M3E5M2_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x64x32_F32E4M3E5M2_RS_TN<scaleA, scaleB>>
 {
@@ -4206,6 +6791,12 @@ struct MMA_Traits<SM90_64x64x32_F32E4M3E5M2_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x96x32_F16E4M3E5M2_SS_TN = SM90::GMMA::MMA_64x96x32_F16E4M3E5M2_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x96x32_F16E4M3E5M2_SS_TN<scaleA, scaleB>>
@@ -4229,6 +6820,12 @@ struct MMA_Traits<SM90_64x96x32_F16E4M3E5M2_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x96x32_F16E4M3E5M2_RS_TN = SM90::GMMA::MMA_64x96x32_F16E4M3E5M2_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x96x32_F16E4M3E5M2_RS_TN<scaleA, scaleB>>
 {
@@ -4249,6 +6846,12 @@ struct MMA_Traits<SM90_64x96x32_F16E4M3E5M2_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x96x32_F32E4M3E5M2_SS_TN = SM90::GMMA::MMA_64x96x32_F32E4M3E5M2_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x96x32_F32E4M3E5M2_SS_TN<scaleA, scaleB>>
@@ -4272,6 +6875,12 @@ struct MMA_Traits<SM90_64x96x32_F32E4M3E5M2_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x96x32_F32E4M3E5M2_RS_TN = SM90::GMMA::MMA_64x96x32_F32E4M3E5M2_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x96x32_F32E4M3E5M2_RS_TN<scaleA, scaleB>>
 {
@@ -4292,6 +6901,12 @@ struct MMA_Traits<SM90_64x96x32_F32E4M3E5M2_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x128x32_F16E4M3E5M2_SS_TN = SM90::GMMA::MMA_64x128x32_F16E4M3E5M2_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x128x32_F16E4M3E5M2_SS_TN<scaleA, scaleB>>
@@ -4315,6 +6930,12 @@ struct MMA_Traits<SM90_64x128x32_F16E4M3E5M2_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x128x32_F16E4M3E5M2_RS_TN = SM90::GMMA::MMA_64x128x32_F16E4M3E5M2_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x128x32_F16E4M3E5M2_RS_TN<scaleA, scaleB>>
 {
@@ -4335,6 +6956,12 @@ struct MMA_Traits<SM90_64x128x32_F16E4M3E5M2_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x128x32_F32E4M3E5M2_SS_TN = SM90::GMMA::MMA_64x128x32_F32E4M3E5M2_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x128x32_F32E4M3E5M2_SS_TN<scaleA, scaleB>>
@@ -4358,6 +6985,12 @@ struct MMA_Traits<SM90_64x128x32_F32E4M3E5M2_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x128x32_F32E4M3E5M2_RS_TN = SM90::GMMA::MMA_64x128x32_F32E4M3E5M2_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x128x32_F32E4M3E5M2_RS_TN<scaleA, scaleB>>
 {
@@ -4378,6 +7011,12 @@ struct MMA_Traits<SM90_64x128x32_F32E4M3E5M2_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x192x32_F16E4M3E5M2_SS_TN = SM90::GMMA::MMA_64x192x32_F16E4M3E5M2_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x192x32_F16E4M3E5M2_SS_TN<scaleA, scaleB>>
@@ -4401,6 +7040,12 @@ struct MMA_Traits<SM90_64x192x32_F16E4M3E5M2_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x192x32_F16E4M3E5M2_RS_TN = SM90::GMMA::MMA_64x192x32_F16E4M3E5M2_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x192x32_F16E4M3E5M2_RS_TN<scaleA, scaleB>>
 {
@@ -4421,6 +7066,12 @@ struct MMA_Traits<SM90_64x192x32_F16E4M3E5M2_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x192x32_F32E4M3E5M2_SS_TN = SM90::GMMA::MMA_64x192x32_F32E4M3E5M2_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x192x32_F32E4M3E5M2_SS_TN<scaleA, scaleB>>
@@ -4444,6 +7095,12 @@ struct MMA_Traits<SM90_64x192x32_F32E4M3E5M2_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x192x32_F32E4M3E5M2_RS_TN = SM90::GMMA::MMA_64x192x32_F32E4M3E5M2_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x192x32_F32E4M3E5M2_RS_TN<scaleA, scaleB>>
 {
@@ -4464,6 +7121,12 @@ struct MMA_Traits<SM90_64x192x32_F32E4M3E5M2_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x256x32_F16E4M3E5M2_SS_TN = SM90::GMMA::MMA_64x256x32_F16E4M3E5M2_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x256x32_F16E4M3E5M2_SS_TN<scaleA, scaleB>>
@@ -4487,6 +7150,12 @@ struct MMA_Traits<SM90_64x256x32_F16E4M3E5M2_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x256x32_F16E4M3E5M2_RS_TN = SM90::GMMA::MMA_64x256x32_F16E4M3E5M2_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x256x32_F16E4M3E5M2_RS_TN<scaleA, scaleB>>
 {
@@ -4507,6 +7176,12 @@ struct MMA_Traits<SM90_64x256x32_F16E4M3E5M2_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x256x32_F32E4M3E5M2_SS_TN = SM90::GMMA::MMA_64x256x32_F32E4M3E5M2_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x256x32_F32E4M3E5M2_SS_TN<scaleA, scaleB>>
@@ -4530,6 +7205,12 @@ struct MMA_Traits<SM90_64x256x32_F32E4M3E5M2_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x256x32_F32E4M3E5M2_RS_TN = SM90::GMMA::MMA_64x256x32_F32E4M3E5M2_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x256x32_F32E4M3E5M2_RS_TN<scaleA, scaleB>>
 {
@@ -4550,6 +7231,12 @@ struct MMA_Traits<SM90_64x256x32_F32E4M3E5M2_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x8x32_F16E5M2E4M3_SS_TN = SM90::GMMA::MMA_64x8x32_F16E5M2E4M3_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x8x32_F16E5M2E4M3_SS_TN<scaleA, scaleB>>
@@ -4573,6 +7260,12 @@ struct MMA_Traits<SM90_64x8x32_F16E5M2E4M3_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x8x32_F16E5M2E4M3_RS_TN = SM90::GMMA::MMA_64x8x32_F16E5M2E4M3_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x8x32_F16E5M2E4M3_RS_TN<scaleA, scaleB>>
 {
@@ -4593,6 +7286,12 @@ struct MMA_Traits<SM90_64x8x32_F16E5M2E4M3_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x8x32_F32E5M2E4M3_SS_TN = SM90::GMMA::MMA_64x8x32_F32E5M2E4M3_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x8x32_F32E5M2E4M3_SS_TN<scaleA, scaleB>>
@@ -4616,6 +7315,12 @@ struct MMA_Traits<SM90_64x8x32_F32E5M2E4M3_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x8x32_F32E5M2E4M3_RS_TN = SM90::GMMA::MMA_64x8x32_F32E5M2E4M3_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x8x32_F32E5M2E4M3_RS_TN<scaleA, scaleB>>
 {
@@ -4636,6 +7341,12 @@ struct MMA_Traits<SM90_64x8x32_F32E5M2E4M3_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x16x32_F16E5M2E4M3_SS_TN = SM90::GMMA::MMA_64x16x32_F16E5M2E4M3_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x16x32_F16E5M2E4M3_SS_TN<scaleA, scaleB>>
@@ -4659,6 +7370,12 @@ struct MMA_Traits<SM90_64x16x32_F16E5M2E4M3_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x16x32_F16E5M2E4M3_RS_TN = SM90::GMMA::MMA_64x16x32_F16E5M2E4M3_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x16x32_F16E5M2E4M3_RS_TN<scaleA, scaleB>>
 {
@@ -4679,6 +7396,12 @@ struct MMA_Traits<SM90_64x16x32_F16E5M2E4M3_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x16x32_F32E5M2E4M3_SS_TN = SM90::GMMA::MMA_64x16x32_F32E5M2E4M3_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x16x32_F32E5M2E4M3_SS_TN<scaleA, scaleB>>
@@ -4702,6 +7425,12 @@ struct MMA_Traits<SM90_64x16x32_F32E5M2E4M3_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x16x32_F32E5M2E4M3_RS_TN = SM90::GMMA::MMA_64x16x32_F32E5M2E4M3_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x16x32_F32E5M2E4M3_RS_TN<scaleA, scaleB>>
 {
@@ -4722,6 +7451,12 @@ struct MMA_Traits<SM90_64x16x32_F32E5M2E4M3_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x32x32_F16E5M2E4M3_SS_TN = SM90::GMMA::MMA_64x32x32_F16E5M2E4M3_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x32x32_F16E5M2E4M3_SS_TN<scaleA, scaleB>>
@@ -4745,6 +7480,12 @@ struct MMA_Traits<SM90_64x32x32_F16E5M2E4M3_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x32x32_F16E5M2E4M3_RS_TN = SM90::GMMA::MMA_64x32x32_F16E5M2E4M3_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x32x32_F16E5M2E4M3_RS_TN<scaleA, scaleB>>
 {
@@ -4765,6 +7506,12 @@ struct MMA_Traits<SM90_64x32x32_F16E5M2E4M3_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x32x32_F32E5M2E4M3_SS_TN = SM90::GMMA::MMA_64x32x32_F32E5M2E4M3_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x32x32_F32E5M2E4M3_SS_TN<scaleA, scaleB>>
@@ -4788,6 +7535,12 @@ struct MMA_Traits<SM90_64x32x32_F32E5M2E4M3_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x32x32_F32E5M2E4M3_RS_TN = SM90::GMMA::MMA_64x32x32_F32E5M2E4M3_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x32x32_F32E5M2E4M3_RS_TN<scaleA, scaleB>>
 {
@@ -4808,6 +7561,12 @@ struct MMA_Traits<SM90_64x32x32_F32E5M2E4M3_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x64x32_F16E5M2E4M3_SS_TN = SM90::GMMA::MMA_64x64x32_F16E5M2E4M3_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x64x32_F16E5M2E4M3_SS_TN<scaleA, scaleB>>
@@ -4831,6 +7590,12 @@ struct MMA_Traits<SM90_64x64x32_F16E5M2E4M3_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x64x32_F16E5M2E4M3_RS_TN = SM90::GMMA::MMA_64x64x32_F16E5M2E4M3_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x64x32_F16E5M2E4M3_RS_TN<scaleA, scaleB>>
 {
@@ -4851,6 +7616,12 @@ struct MMA_Traits<SM90_64x64x32_F16E5M2E4M3_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x64x32_F32E5M2E4M3_SS_TN = SM90::GMMA::MMA_64x64x32_F32E5M2E4M3_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x64x32_F32E5M2E4M3_SS_TN<scaleA, scaleB>>
@@ -4874,6 +7645,12 @@ struct MMA_Traits<SM90_64x64x32_F32E5M2E4M3_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x64x32_F32E5M2E4M3_RS_TN = SM90::GMMA::MMA_64x64x32_F32E5M2E4M3_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x64x32_F32E5M2E4M3_RS_TN<scaleA, scaleB>>
 {
@@ -4894,6 +7671,12 @@ struct MMA_Traits<SM90_64x64x32_F32E5M2E4M3_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x96x32_F16E5M2E4M3_SS_TN = SM90::GMMA::MMA_64x96x32_F16E5M2E4M3_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x96x32_F16E5M2E4M3_SS_TN<scaleA, scaleB>>
@@ -4917,6 +7700,12 @@ struct MMA_Traits<SM90_64x96x32_F16E5M2E4M3_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x96x32_F16E5M2E4M3_RS_TN = SM90::GMMA::MMA_64x96x32_F16E5M2E4M3_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x96x32_F16E5M2E4M3_RS_TN<scaleA, scaleB>>
 {
@@ -4937,6 +7726,12 @@ struct MMA_Traits<SM90_64x96x32_F16E5M2E4M3_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x96x32_F32E5M2E4M3_SS_TN = SM90::GMMA::MMA_64x96x32_F32E5M2E4M3_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x96x32_F32E5M2E4M3_SS_TN<scaleA, scaleB>>
@@ -4960,6 +7755,12 @@ struct MMA_Traits<SM90_64x96x32_F32E5M2E4M3_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x96x32_F32E5M2E4M3_RS_TN = SM90::GMMA::MMA_64x96x32_F32E5M2E4M3_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x96x32_F32E5M2E4M3_RS_TN<scaleA, scaleB>>
 {
@@ -4980,6 +7781,12 @@ struct MMA_Traits<SM90_64x96x32_F32E5M2E4M3_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x128x32_F16E5M2E4M3_SS_TN = SM90::GMMA::MMA_64x128x32_F16E5M2E4M3_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x128x32_F16E5M2E4M3_SS_TN<scaleA, scaleB>>
@@ -5003,6 +7810,12 @@ struct MMA_Traits<SM90_64x128x32_F16E5M2E4M3_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x128x32_F16E5M2E4M3_RS_TN = SM90::GMMA::MMA_64x128x32_F16E5M2E4M3_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x128x32_F16E5M2E4M3_RS_TN<scaleA, scaleB>>
 {
@@ -5023,6 +7836,12 @@ struct MMA_Traits<SM90_64x128x32_F16E5M2E4M3_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x128x32_F32E5M2E4M3_SS_TN = SM90::GMMA::MMA_64x128x32_F32E5M2E4M3_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x128x32_F32E5M2E4M3_SS_TN<scaleA, scaleB>>
@@ -5046,6 +7865,12 @@ struct MMA_Traits<SM90_64x128x32_F32E5M2E4M3_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x128x32_F32E5M2E4M3_RS_TN = SM90::GMMA::MMA_64x128x32_F32E5M2E4M3_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x128x32_F32E5M2E4M3_RS_TN<scaleA, scaleB>>
 {
@@ -5066,6 +7891,12 @@ struct MMA_Traits<SM90_64x128x32_F32E5M2E4M3_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x192x32_F16E5M2E4M3_SS_TN = SM90::GMMA::MMA_64x192x32_F16E5M2E4M3_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x192x32_F16E5M2E4M3_SS_TN<scaleA, scaleB>>
@@ -5089,6 +7920,12 @@ struct MMA_Traits<SM90_64x192x32_F16E5M2E4M3_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x192x32_F16E5M2E4M3_RS_TN = SM90::GMMA::MMA_64x192x32_F16E5M2E4M3_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x192x32_F16E5M2E4M3_RS_TN<scaleA, scaleB>>
 {
@@ -5109,6 +7946,12 @@ struct MMA_Traits<SM90_64x192x32_F16E5M2E4M3_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x192x32_F32E5M2E4M3_SS_TN = SM90::GMMA::MMA_64x192x32_F32E5M2E4M3_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x192x32_F32E5M2E4M3_SS_TN<scaleA, scaleB>>
@@ -5132,6 +7975,12 @@ struct MMA_Traits<SM90_64x192x32_F32E5M2E4M3_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x192x32_F32E5M2E4M3_RS_TN = SM90::GMMA::MMA_64x192x32_F32E5M2E4M3_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x192x32_F32E5M2E4M3_RS_TN<scaleA, scaleB>>
 {
@@ -5152,6 +8001,12 @@ struct MMA_Traits<SM90_64x192x32_F32E5M2E4M3_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x256x32_F16E5M2E4M3_SS_TN = SM90::GMMA::MMA_64x256x32_F16E5M2E4M3_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x256x32_F16E5M2E4M3_SS_TN<scaleA, scaleB>>
@@ -5175,6 +8030,12 @@ struct MMA_Traits<SM90_64x256x32_F16E5M2E4M3_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x256x32_F16E5M2E4M3_RS_TN = SM90::GMMA::MMA_64x256x32_F16E5M2E4M3_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x256x32_F16E5M2E4M3_RS_TN<scaleA, scaleB>>
 {
@@ -5195,6 +8056,12 @@ struct MMA_Traits<SM90_64x256x32_F16E5M2E4M3_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x256x32_F32E5M2E4M3_SS_TN = SM90::GMMA::MMA_64x256x32_F32E5M2E4M3_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x256x32_F32E5M2E4M3_SS_TN<scaleA, scaleB>>
@@ -5218,6 +8085,12 @@ struct MMA_Traits<SM90_64x256x32_F32E5M2E4M3_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x256x32_F32E5M2E4M3_RS_TN = SM90::GMMA::MMA_64x256x32_F32E5M2E4M3_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x256x32_F32E5M2E4M3_RS_TN<scaleA, scaleB>>
 {
@@ -5238,6 +8111,12 @@ struct MMA_Traits<SM90_64x256x32_F32E5M2E4M3_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x8x32_F16E5M2E5M2_SS_TN = SM90::GMMA::MMA_64x8x32_F16E5M2E5M2_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x8x32_F16E5M2E5M2_SS_TN<scaleA, scaleB>>
@@ -5261,6 +8140,12 @@ struct MMA_Traits<SM90_64x8x32_F16E5M2E5M2_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x8x32_F16E5M2E5M2_RS_TN = SM90::GMMA::MMA_64x8x32_F16E5M2E5M2_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x8x32_F16E5M2E5M2_RS_TN<scaleA, scaleB>>
 {
@@ -5281,6 +8166,12 @@ struct MMA_Traits<SM90_64x8x32_F16E5M2E5M2_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x8x32_F32E5M2E5M2_SS_TN = SM90::GMMA::MMA_64x8x32_F32E5M2E5M2_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x8x32_F32E5M2E5M2_SS_TN<scaleA, scaleB>>
@@ -5304,6 +8195,12 @@ struct MMA_Traits<SM90_64x8x32_F32E5M2E5M2_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x8x32_F32E5M2E5M2_RS_TN = SM90::GMMA::MMA_64x8x32_F32E5M2E5M2_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x8x32_F32E5M2E5M2_RS_TN<scaleA, scaleB>>
 {
@@ -5324,6 +8221,12 @@ struct MMA_Traits<SM90_64x8x32_F32E5M2E5M2_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x16x32_F16E5M2E5M2_SS_TN = SM90::GMMA::MMA_64x16x32_F16E5M2E5M2_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x16x32_F16E5M2E5M2_SS_TN<scaleA, scaleB>>
@@ -5347,6 +8250,12 @@ struct MMA_Traits<SM90_64x16x32_F16E5M2E5M2_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x16x32_F16E5M2E5M2_RS_TN = SM90::GMMA::MMA_64x16x32_F16E5M2E5M2_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x16x32_F16E5M2E5M2_RS_TN<scaleA, scaleB>>
 {
@@ -5367,6 +8276,12 @@ struct MMA_Traits<SM90_64x16x32_F16E5M2E5M2_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x16x32_F32E5M2E5M2_SS_TN = SM90::GMMA::MMA_64x16x32_F32E5M2E5M2_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x16x32_F32E5M2E5M2_SS_TN<scaleA, scaleB>>
@@ -5390,6 +8305,12 @@ struct MMA_Traits<SM90_64x16x32_F32E5M2E5M2_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x16x32_F32E5M2E5M2_RS_TN = SM90::GMMA::MMA_64x16x32_F32E5M2E5M2_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x16x32_F32E5M2E5M2_RS_TN<scaleA, scaleB>>
 {
@@ -5410,6 +8331,12 @@ struct MMA_Traits<SM90_64x16x32_F32E5M2E5M2_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x32x32_F16E5M2E5M2_SS_TN = SM90::GMMA::MMA_64x32x32_F16E5M2E5M2_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x32x32_F16E5M2E5M2_SS_TN<scaleA, scaleB>>
@@ -5433,6 +8360,12 @@ struct MMA_Traits<SM90_64x32x32_F16E5M2E5M2_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x32x32_F16E5M2E5M2_RS_TN = SM90::GMMA::MMA_64x32x32_F16E5M2E5M2_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x32x32_F16E5M2E5M2_RS_TN<scaleA, scaleB>>
 {
@@ -5453,6 +8386,12 @@ struct MMA_Traits<SM90_64x32x32_F16E5M2E5M2_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x32x32_F32E5M2E5M2_SS_TN = SM90::GMMA::MMA_64x32x32_F32E5M2E5M2_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x32x32_F32E5M2E5M2_SS_TN<scaleA, scaleB>>
@@ -5476,6 +8415,12 @@ struct MMA_Traits<SM90_64x32x32_F32E5M2E5M2_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x32x32_F32E5M2E5M2_RS_TN = SM90::GMMA::MMA_64x32x32_F32E5M2E5M2_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x32x32_F32E5M2E5M2_RS_TN<scaleA, scaleB>>
 {
@@ -5496,6 +8441,12 @@ struct MMA_Traits<SM90_64x32x32_F32E5M2E5M2_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x64x32_F16E5M2E5M2_SS_TN = SM90::GMMA::MMA_64x64x32_F16E5M2E5M2_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x64x32_F16E5M2E5M2_SS_TN<scaleA, scaleB>>
@@ -5519,6 +8470,12 @@ struct MMA_Traits<SM90_64x64x32_F16E5M2E5M2_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x64x32_F16E5M2E5M2_RS_TN = SM90::GMMA::MMA_64x64x32_F16E5M2E5M2_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x64x32_F16E5M2E5M2_RS_TN<scaleA, scaleB>>
 {
@@ -5539,6 +8496,12 @@ struct MMA_Traits<SM90_64x64x32_F16E5M2E5M2_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x64x32_F32E5M2E5M2_SS_TN = SM90::GMMA::MMA_64x64x32_F32E5M2E5M2_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x64x32_F32E5M2E5M2_SS_TN<scaleA, scaleB>>
@@ -5562,6 +8525,12 @@ struct MMA_Traits<SM90_64x64x32_F32E5M2E5M2_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x64x32_F32E5M2E5M2_RS_TN = SM90::GMMA::MMA_64x64x32_F32E5M2E5M2_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x64x32_F32E5M2E5M2_RS_TN<scaleA, scaleB>>
 {
@@ -5582,6 +8551,12 @@ struct MMA_Traits<SM90_64x64x32_F32E5M2E5M2_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x96x32_F16E5M2E5M2_SS_TN = SM90::GMMA::MMA_64x96x32_F16E5M2E5M2_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x96x32_F16E5M2E5M2_SS_TN<scaleA, scaleB>>
@@ -5605,6 +8580,12 @@ struct MMA_Traits<SM90_64x96x32_F16E5M2E5M2_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x96x32_F16E5M2E5M2_RS_TN = SM90::GMMA::MMA_64x96x32_F16E5M2E5M2_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x96x32_F16E5M2E5M2_RS_TN<scaleA, scaleB>>
 {
@@ -5625,6 +8606,12 @@ struct MMA_Traits<SM90_64x96x32_F16E5M2E5M2_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x96x32_F32E5M2E5M2_SS_TN = SM90::GMMA::MMA_64x96x32_F32E5M2E5M2_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x96x32_F32E5M2E5M2_SS_TN<scaleA, scaleB>>
@@ -5648,6 +8635,12 @@ struct MMA_Traits<SM90_64x96x32_F32E5M2E5M2_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x96x32_F32E5M2E5M2_RS_TN = SM90::GMMA::MMA_64x96x32_F32E5M2E5M2_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x96x32_F32E5M2E5M2_RS_TN<scaleA, scaleB>>
 {
@@ -5668,6 +8661,12 @@ struct MMA_Traits<SM90_64x96x32_F32E5M2E5M2_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x128x32_F16E5M2E5M2_SS_TN = SM90::GMMA::MMA_64x128x32_F16E5M2E5M2_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x128x32_F16E5M2E5M2_SS_TN<scaleA, scaleB>>
@@ -5691,6 +8690,12 @@ struct MMA_Traits<SM90_64x128x32_F16E5M2E5M2_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x128x32_F16E5M2E5M2_RS_TN = SM90::GMMA::MMA_64x128x32_F16E5M2E5M2_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x128x32_F16E5M2E5M2_RS_TN<scaleA, scaleB>>
 {
@@ -5711,6 +8716,12 @@ struct MMA_Traits<SM90_64x128x32_F16E5M2E5M2_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x128x32_F32E5M2E5M2_SS_TN = SM90::GMMA::MMA_64x128x32_F32E5M2E5M2_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x128x32_F32E5M2E5M2_SS_TN<scaleA, scaleB>>
@@ -5734,6 +8745,12 @@ struct MMA_Traits<SM90_64x128x32_F32E5M2E5M2_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x128x32_F32E5M2E5M2_RS_TN = SM90::GMMA::MMA_64x128x32_F32E5M2E5M2_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x128x32_F32E5M2E5M2_RS_TN<scaleA, scaleB>>
 {
@@ -5754,6 +8771,12 @@ struct MMA_Traits<SM90_64x128x32_F32E5M2E5M2_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x192x32_F16E5M2E5M2_SS_TN = SM90::GMMA::MMA_64x192x32_F16E5M2E5M2_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x192x32_F16E5M2E5M2_SS_TN<scaleA, scaleB>>
@@ -5777,6 +8800,12 @@ struct MMA_Traits<SM90_64x192x32_F16E5M2E5M2_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x192x32_F16E5M2E5M2_RS_TN = SM90::GMMA::MMA_64x192x32_F16E5M2E5M2_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x192x32_F16E5M2E5M2_RS_TN<scaleA, scaleB>>
 {
@@ -5797,6 +8826,12 @@ struct MMA_Traits<SM90_64x192x32_F16E5M2E5M2_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x192x32_F32E5M2E5M2_SS_TN = SM90::GMMA::MMA_64x192x32_F32E5M2E5M2_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x192x32_F32E5M2E5M2_SS_TN<scaleA, scaleB>>
@@ -5820,6 +8855,12 @@ struct MMA_Traits<SM90_64x192x32_F32E5M2E5M2_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x192x32_F32E5M2E5M2_RS_TN = SM90::GMMA::MMA_64x192x32_F32E5M2E5M2_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x192x32_F32E5M2E5M2_RS_TN<scaleA, scaleB>>
 {
@@ -5840,6 +8881,12 @@ struct MMA_Traits<SM90_64x192x32_F32E5M2E5M2_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x256x32_F16E5M2E5M2_SS_TN = SM90::GMMA::MMA_64x256x32_F16E5M2E5M2_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x256x32_F16E5M2E5M2_SS_TN<scaleA, scaleB>>
@@ -5863,6 +8910,12 @@ struct MMA_Traits<SM90_64x256x32_F16E5M2E5M2_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x256x32_F16E5M2E5M2_RS_TN = SM90::GMMA::MMA_64x256x32_F16E5M2E5M2_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x256x32_F16E5M2E5M2_RS_TN<scaleA, scaleB>>
 {
@@ -5883,6 +8936,12 @@ struct MMA_Traits<SM90_64x256x32_F16E5M2E5M2_RS_TN<scaleA, scaleB>>
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x256x32_F32E5M2E5M2_SS_TN = SM90::GMMA::MMA_64x256x32_F32E5M2E5M2_SS_TN<scaleA, scaleB>;
 
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x256x32_F32E5M2E5M2_SS_TN<scaleA, scaleB>>
@@ -5906,6 +8965,12 @@ struct MMA_Traits<SM90_64x256x32_F32E5M2E5M2_SS_TN<scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using SM90_64x256x32_F32E5M2E5M2_RS_TN = SM90::GMMA::MMA_64x256x32_F32E5M2E5M2_RS_TN<scaleA, scaleB>;
+
 template <GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
 struct MMA_Traits<SM90_64x256x32_F32E5M2E5M2_RS_TN<scaleA, scaleB>>
 {
@@ -5924,6 +8989,11 @@ struct MMA_Traits<SM90_64x256x32_F32E5M2E5M2_RS_TN<scaleA, scaleB>>
 
   GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
 };
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // end namespace cute
+
+#if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
+#include "mma_traits_sm90_gmma_ext.hpp"
+#endif

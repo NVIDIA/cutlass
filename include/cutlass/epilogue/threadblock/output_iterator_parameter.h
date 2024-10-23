@@ -111,6 +111,32 @@ template<
   typename TensorRef_,                                ///! Input tensor to epilogue output iterator
   typename ConvProblemSize_                          ///! Convolutional operator on 2D or 3D problem
 >
+struct ConvOutputIteratorParameter<layout::TensorNHWC, layout::TensorNHWC, TensorRef_, conv::Operator::kDeconv, ConvProblemSize_> {
+
+  using TensorLayout = layout::TensorNHWC;
+  using OutputIteratorLayout = layout::TensorNHWC;
+  using MappedLayout = layout::RowMajor;
+  using OutputTensorCoord = typename OutputIteratorLayout::TensorCoord;
+  using MappedTensorCoord = typename MappedLayout::TensorCoord;
+  using TensorRef = TensorRef_;
+  static conv::Operator const kConvolutionalOperator = conv::Operator::kDeconv;
+  using ConvProblemSize = ConvProblemSize_;
+
+  CUTLASS_HOST_DEVICE
+  static OutputIteratorLayout layout(const TensorRef & ref) {
+    return ref.stride();
+  }
+
+  CUTLASS_HOST_DEVICE
+  static MappedTensorCoord extent(ConvProblemSize problem_size) {
+    return conv::implicit_gemm_problem_size(kConvolutionalOperator, problem_size).mn();
+  }
+};
+
+template<
+  typename TensorRef_,                                ///! Input tensor to epilogue output iterator
+  typename ConvProblemSize_                          ///! Convolutional operator on 2D or 3D problem
+>
 struct ConvOutputIteratorParameter<layout::TensorNDHWC, layout::TensorNDHWC, TensorRef_, conv::Operator::kFprop, ConvProblemSize_> {
 
   using TensorLayout = layout::TensorNDHWC;
@@ -120,6 +146,32 @@ struct ConvOutputIteratorParameter<layout::TensorNDHWC, layout::TensorNDHWC, Ten
   using MappedTensorCoord = typename MappedLayout::TensorCoord;
   using TensorRef = TensorRef_;
   static conv::Operator const kConvolutionalOperator = conv::Operator::kFprop;
+  using ConvProblemSize = ConvProblemSize_;
+
+  CUTLASS_HOST_DEVICE
+  static OutputIteratorLayout layout(const TensorRef & ref) {
+    return ref.stride();
+  }
+
+  CUTLASS_HOST_DEVICE
+  static MappedTensorCoord extent(ConvProblemSize problem_size) {
+    return conv::implicit_gemm_problem_size(kConvolutionalOperator, problem_size).mn();
+  }
+};
+
+template<
+  typename TensorRef_,                                ///! Input tensor to epilogue output iterator
+  typename ConvProblemSize_                          ///! Convolutional operator on 2D or 3D problem
+>
+struct ConvOutputIteratorParameter<layout::TensorNDHWC, layout::TensorNDHWC, TensorRef_, conv::Operator::kDeconv, ConvProblemSize_> {
+
+  using TensorLayout = layout::TensorNDHWC;
+  using OutputIteratorLayout = layout::TensorNDHWC;
+  using MappedLayout = layout::RowMajor;
+  using OutputTensorCoord = typename OutputIteratorLayout::TensorCoord;
+  using MappedTensorCoord = typename MappedLayout::TensorCoord;
+  using TensorRef = TensorRef_;
+  static conv::Operator const kConvolutionalOperator = conv::Operator::kDeconv;
   using ConvProblemSize = ConvProblemSize_;
 
   CUTLASS_HOST_DEVICE

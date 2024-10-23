@@ -53,6 +53,8 @@ private:
 template<class Integral, Integral Value>
 using IC = std::integral_constant<Integral, Value>;
 
+#if ! defined(CUTLASS_USE_PACKED_TUPLE)
+
 TEST(CuTe_core_msvc_compilation, TupleAssignment)
 {
   CUTLASS_TRACE_HOST("-------------------------------");
@@ -89,29 +91,22 @@ TEST(CuTe_core_msvc_compilation, TupleAssignment)
 
   using tuple_0d_type = cute::tuple<>;
   using tuple_1d_d_type = cute::tuple<int>;
-  using tuple_1d_s_type = cute::tuple<forty_two_type>;
   using tuple_2d_dd_type = cute::tuple<int, size_t>;
-  using tuple_2d_ss_type = cute::tuple<forty_two_type, forty_three_type>;
 
   [[maybe_unused]] tuple_0d_type t0;
 
   // Symptom: "illegal member initialization: 'TupleBase<int>' is not a base or member"
   [[maybe_unused]] tuple_1d_d_type t1{ 42 };
-
-  [[maybe_unused]] tuple_1d_s_type t2;
-
   [[maybe_unused]] tuple_1d_d_type t1a{ 43 };
   t1 = t1a;
 
   [[maybe_unused]] tuple_2d_dd_type t3{ 42, size_t(43u) };
-  [[maybe_unused]] tuple_2d_ss_type t4;
-  t3 = t4;
-
   [[maybe_unused]] tuple_2d_dd_type t3a{ 44, size_t(45u) };
   // Symptom: "illegal member initialization:
   // 'TupleBase<int, unsigned __int64>' is not a base or member"
   t3 = t3a;
 }
+#endif // CUTLASS_USE_PACKED_TUPLE
 
 TEST(CuTe_core_msvc_compilation, TupleGetSingleInteger)
 {

@@ -1040,6 +1040,15 @@ public:
         partition_contiguous_idx = (lane_id % Layout::kFactor);
         access_contiguous_idx = (quad_quad + i * 2) ^ (lane_in_quad_pair / Layout::kFactor);
         access_strided_idx = (lane_in_quad_quad / Layout::kFactor);
+      } else if (Policy::LdsmShape::kContiguous == 1) {
+        // Matrix multiply 16832.SP B
+        // Q0
+        // Q1
+        // Q2
+        // Q3
+        partition_contiguous_idx = (lane_id % Layout::kFactor);
+        access_contiguous_idx = (lane_in_quad_pair / Layout::kFactor) ^ i;
+        access_strided_idx = lane_id / Layout::kFactor;
       }
 
       int access_contiguous =
@@ -1432,7 +1441,21 @@ public:
         access_contiguous_idx =
             ((lane_in_pair * 2 + quad_quad) ^
              access_strided_idx);
-      }
+      } else if (Policy::LdsmShape::kContiguous == 1) {
+        // Matrix multiply 16832.SP B
+        // Q0
+        // Q1
+        // Q2
+        // Q3
+        int factor_in_partition =
+            (Layout::PartitionShape::kContiguous * Layout::kFactor /
+             Layout::TileShape::kContiguous);
+
+        partition_contiguous_idx = lane_in_quad / factor_in_partition;
+        access_contiguous_idx = ((lane_in_pair * factor_in_partition) ^
+                                 (lane_in_quad_quad / Layout::kFactor) ^ i);
+        access_strided_idx = lane_id / Layout::kFactor;
+      } 
 
       int access_contiguous =
           partition_contiguous_idx * Layout::PartitionShape::kContiguous +

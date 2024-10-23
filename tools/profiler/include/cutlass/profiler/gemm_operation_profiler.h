@@ -84,6 +84,8 @@ public:
     int batch_count{1};
 
     cutlass::library::RasterOrder raster_order{cutlass::library::RasterOrder::kHeuristic};
+    int swizzle_size{1};
+
     // gemm with parallel interleaved reduction
     // gemm epilogue (alpha, beta) = (1.0, 0.0)
     // reduction epilogue (alpha, beta) = (GemmProblem::alpha, GemmProblem::beta)

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -28,95 +28,61 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
-/* \file
-   \brief Instantiates GEMM reference implementations.
-*/
+#pragma once
 
-#include "cutlass/cutlass.h"
-#include "cutlass/library/library.h"
-#include "cutlass/library/manifest.h"
+#include <cute/numeric/integral_constant.hpp>
+#include <cutlass/detail/dependent_false.hpp>
 
-#include "gemm_reference_operation.h"
+namespace cutlass::gemm::collective {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-namespace cutlass {
-namespace library {
+// Used to specify stage counts or dispatch to automatic computation of stage count
+template<int num_stages>
+struct StageCount {
+  static constexpr int value = num_stages;
 
-///////////////////////////////////////////////////////////////////////////////////////////////////
+  StageCount() = default;
+  explicit StageCount(cute::Int<num_stages>) {}
+};
 
-void initialize_gemm_reference_operations_int8_canonical(Manifest &manifest) {
-  make_gemm_real_canonical_layouts<
-    int8_t,
-    int8_t,
-    int32_t,
-    int32_t,
-    int32_t
-  >(manifest);
+template<int carveout_bytes>
+struct StageCountAutoCarveout {
+  static constexpr int bytes = carveout_bytes;
 
-  make_gemm_real_canonical_layouts<
-    int8_t,
-    int8_t,
-    int8_t,
-    float,
-    int32_t,
-    int8_t,
-    NumericConverterClamp<int8_t, float>
-  >(manifest);
+  StageCountAutoCarveout() = default;
+  explicit StageCountAutoCarveout(cute::Int<carveout_bytes>) {}
+};
 
-  make_gemm_real_canonical_layouts<
-    int8_t,
-    int8_t,
-    int32_t,
-    float,
-    int32_t,
-    int32_t,
-    NumericConverterClamp<int32_t, float>
-  >(manifest);
+using StageCountAuto = StageCountAutoCarveout<0>;
 
-  make_gemm_real_canonical_layouts<
-    uint8_t,
-    uint8_t,
-    int32_t,
-    int32_t,
-    int32_t
-  >(manifest);
+// Used to automatically let the builder pick the kernel schedule.
+// Can be overridden with kernel schedule tags in cutlass/gemm/dispatch_policy.hpp
+struct KernelScheduleAuto final {};
 
-  make_gemm_real_canonical_layouts<
-    uint8_t,
-    uint8_t,
-    int8_t,
-    float,
-    int32_t,
-    int8_t,
-    NumericConverterClamp<int8_t, float>
-  >(manifest);
+/////////////////////////////////////////////////////////////////////////////////////////////////
 
-  make_gemm_real_canonical_layouts<
-    uint8_t,
-    uint8_t,
-    int32_t,
-    float,
-    int32_t,
-    int32_t,
-    NumericConverterClamp<int32_t, float>
-  >(manifest);
+template <
+  class ArchTag,
+  class OpClass,
+  class ElementA,
+  class GmemLayoutA,
+  int AlignmentA,
+  class ElementB,
+  class GmemLayoutB,
+  int AlignmentB,
+  class ElementAccumulator,
+  class TileShape_MNK,
+  class ClusterShape_MNK,
+  class StageCountType,
+  class KernelScheduleType,
+  class Enable = void
+>
+struct CollectiveBuilder {
+  static_assert(sizeof(ElementA) == 0, "Could not build a collective for given parameters.");
+};
 
-  make_gemm_real_canonical_layouts<
-    int8_t,
-    int8_t,
-    int8_t,   
-    int32_t,
-    int32_t,
-    int8_t,
-    NumericConverterClamp<int8_t, int32_t>
-  >(manifest);
-}
+/////////////////////////////////////////////////////////////////////////////////////////////////
 
-///////////////////////////////////////////////////////////////////////////////////////////////////
-
-} // namespace library
-} // namespace cutlass
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
+} // namespace cutlass::gemm::collective
 

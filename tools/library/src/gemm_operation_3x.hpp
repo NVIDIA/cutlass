@@ -249,6 +249,9 @@ protected:
 
     /* Query device SM count to pass onto the kernel as an argument, where needed */
     operator_args.hw_info.sm_count = arguments->sm_count;
+    if constexpr (!std::is_const_v<decltype(operator_args.scheduler.max_swizzle_size)>) {
+      operator_args.scheduler.max_swizzle_size = arguments->swizzle_size;
+    }
 
     if constexpr (!std::is_const_v<decltype(operator_args.scheduler.raster_order)>) {
       using Enum_t = decltype(operator_args.scheduler.raster_order);
@@ -278,17 +281,18 @@ public:
       static_cast<GemmUniversalArguments const *>(arguments_ptr);
 
     OperatorArguments args;
-    auto status = update_arguments_(args, arguments);
-    if (status != Status::kSuccess) {
-      return status;
-    }
-
     // can_implement rules may need access to problem shape
     args.problem_shape = cute::make_shape(
       configuration->problem_size.m(),
       configuration->problem_size.n(),
       configuration->problem_size.k(),
       configuration->batch_count);
+
+    auto status = update_arguments_(args, arguments);
+    if (status != Status::kSuccess) {
+      return status;
+    }
+
     return Operator::can_implement(args);
   }
 

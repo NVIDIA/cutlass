@@ -81,6 +81,8 @@ public:
     TileScheduler_, ArchTag, TileShape,
     cute::Shape<cute::Int<1>, cute::Int<1>, cute::Int<1>>>::Scheduler;
   using TileSchedulerArguments = typename TileScheduler::Arguments;
+  static constexpr bool IsGdcEnabled = false;
+
   static constexpr bool is_valid_tile_scheduler =
   cute::is_void_v<TileScheduler_> or cute::is_same_v<TileScheduler_, PersistentScheduler>;
 static_assert(is_valid_tile_scheduler, "SM70 kernel does not support specializing the tile scheduler.");
@@ -196,10 +198,7 @@ static_assert(is_valid_tile_scheduler, "SM70 kernel does not support specializin
     // Separate out problem shape for convenience
     // Optionally append 1s until problem shape is rank-4 in case its is only rank-3 (MNK)
     auto problem_shape_MNKL = append<4>(params.problem_shape, Int<1>{});
-    auto M = get<0>(problem_shape_MNKL);
-    auto N = get<1>(problem_shape_MNKL);
-    auto K = get<2>(problem_shape_MNKL);
-    auto L = get<3>(problem_shape_MNKL);
+    auto [M,N,K,L] = problem_shape_MNKL;
 
     // Preconditions
     static_assert(cute::rank(StrideA{}) == 3, "StrideA must be rank-3: [M, K, L]. If batch mode is not needed, set L stride to Int<0>.");

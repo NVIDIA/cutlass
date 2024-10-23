@@ -85,7 +85,9 @@ TEST(SM90_device_conv2d_fprop_implicitgemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f16
       cutlass::conv::collective::KernelScheduleAuto
     >::CollectiveOp;
 
+  using ProblemShape=cutlass::conv::ConvProblemShape<CollectiveMainloop::DispatchPolicy::ConvOp, CollectiveMainloop::DispatchPolicy::NumSpatialDimensions>;
   using ConvKernel = cutlass::conv::kernel::ConvUniversal<
+      ProblemShape,
       CollectiveMainloop,
       CollectiveEpilogue
     >;
@@ -93,6 +95,7 @@ TEST(SM90_device_conv2d_fprop_implicitgemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f16
   using Conv = cutlass::conv::device::ConvUniversalAdapter<ConvKernel>;
 
   EXPECT_TRUE(test::conv::device::TestAllConv<Conv>());
+  EXPECT_TRUE(test::conv::device::TestAllConv<Conv>(/*alpha=*/1.0, /*beta=*/1.0));
 }
 
 //
@@ -129,7 +132,9 @@ TEST(SM90_device_conv2d_fprop_implicitgemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f16
       cutlass::conv::collective::KernelScheduleAuto
     >::CollectiveOp;
 
+  using ProblemShape=cutlass::conv::ConvProblemShape<CollectiveMainloop::DispatchPolicy::ConvOp, CollectiveMainloop::DispatchPolicy::NumSpatialDimensions>;
   using ConvKernel = cutlass::conv::kernel::ConvUniversal<
+      ProblemShape,
       CollectiveMainloop,
       CollectiveEpilogue
     >;
@@ -137,6 +142,7 @@ TEST(SM90_device_conv2d_fprop_implicitgemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f16
   using Conv = cutlass::conv::device::ConvUniversalAdapter<ConvKernel>;
 
   EXPECT_TRUE(test::conv::device::TestAllConv<Conv>());
+  EXPECT_TRUE(test::conv::device::TestAllConv<Conv>(/*alpha=*/1.0, /*beta=*/1.0));
 }
 
 //
@@ -173,7 +179,9 @@ TEST(SM90_device_conv2d_fprop_implicitgemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f16
       cutlass::conv::collective::KernelScheduleAuto
     >::CollectiveOp;
 
+  using ProblemShape=cutlass::conv::ConvProblemShape<CollectiveMainloop::DispatchPolicy::ConvOp, CollectiveMainloop::DispatchPolicy::NumSpatialDimensions>;
   using ConvKernel = cutlass::conv::kernel::ConvUniversal<
+      ProblemShape,
       CollectiveMainloop,
       CollectiveEpilogue
     >;
@@ -181,6 +189,7 @@ TEST(SM90_device_conv2d_fprop_implicitgemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f16
   using Conv = cutlass::conv::device::ConvUniversalAdapter<ConvKernel>;
 
   EXPECT_TRUE(test::conv::device::TestAllConv<Conv>());
+  EXPECT_TRUE(test::conv::device::TestAllConv<Conv>(/*alpha=*/1.0, /*beta=*/1.0));
 }
 
 //
@@ -217,7 +226,9 @@ TEST(SM90_device_conv2d_fprop_implicitgemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f16
       cutlass::conv::collective::KernelScheduleAuto
     >::CollectiveOp;
 
+  using ProblemShape=cutlass::conv::ConvProblemShape<CollectiveMainloop::DispatchPolicy::ConvOp, CollectiveMainloop::DispatchPolicy::NumSpatialDimensions>;
   using ConvKernel = cutlass::conv::kernel::ConvUniversal<
+      ProblemShape,
       CollectiveMainloop,
       CollectiveEpilogue
     >;
@@ -225,6 +236,7 @@ TEST(SM90_device_conv2d_fprop_implicitgemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f16
   using Conv = cutlass::conv::device::ConvUniversalAdapter<ConvKernel>;
 
   EXPECT_TRUE(test::conv::device::TestAllConv<Conv>());
+  EXPECT_TRUE(test::conv::device::TestAllConv<Conv>(/*alpha=*/1.0, /*beta=*/1.0));
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -265,7 +277,10 @@ TEST(SM90_device_conv2d_fprop_implicitgemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f16
       cutlass::conv::collective::KernelScheduleAuto
     >::CollectiveOp;
 
+
+  using ProblemShape=cutlass::conv::ConvProblemShape<CollectiveMainloop::DispatchPolicy::ConvOp, CollectiveMainloop::DispatchPolicy::NumSpatialDimensions>;
   using ConvKernel = cutlass::conv::kernel::ConvUniversal<
+      ProblemShape,
       CollectiveMainloop,
       CollectiveEpilogue
     >;
@@ -273,6 +288,7 @@ TEST(SM90_device_conv2d_fprop_implicitgemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f16
   using Conv = cutlass::conv::device::ConvUniversalAdapter<ConvKernel>;
 
   EXPECT_TRUE(test::conv::device::TestAllConv<Conv>());
+  EXPECT_TRUE(test::conv::device::TestAllConv<Conv>(/*alpha=*/1.0, /*beta=*/1.0));
 }
 
 //
@@ -309,7 +325,9 @@ TEST(SM90_device_conv2d_fprop_implicitgemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f16
       cutlass::conv::collective::KernelScheduleAuto
     >::CollectiveOp;
 
+  using ProblemShape=cutlass::conv::ConvProblemShape<CollectiveMainloop::DispatchPolicy::ConvOp, CollectiveMainloop::DispatchPolicy::NumSpatialDimensions>;
   using ConvKernel = cutlass::conv::kernel::ConvUniversal<
+      ProblemShape,
       CollectiveMainloop,
       CollectiveEpilogue
     >;
@@ -317,6 +335,7 @@ TEST(SM90_device_conv2d_fprop_implicitgemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f16
   using Conv = cutlass::conv::device::ConvUniversalAdapter<ConvKernel>;
 
   EXPECT_TRUE(test::conv::device::TestAllConv<Conv>());
+  EXPECT_TRUE(test::conv::device::TestAllConv<Conv>(/*alpha=*/1.0, /*beta=*/1.0));
 }
 
 //
@@ -353,7 +372,9 @@ TEST(SM90_device_conv2d_fprop_implicitgemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f16
       cutlass::conv::collective::KernelScheduleAuto
     >::CollectiveOp;
 
+  using ProblemShape=cutlass::conv::ConvProblemShape<CollectiveMainloop::DispatchPolicy::ConvOp, CollectiveMainloop::DispatchPolicy::NumSpatialDimensions>;
   using ConvKernel = cutlass::conv::kernel::ConvUniversal<
+      ProblemShape,
       CollectiveMainloop,
       CollectiveEpilogue
     >;
@@ -361,6 +382,7 @@ TEST(SM90_device_conv2d_fprop_implicitgemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f16
   using Conv = cutlass::conv::device::ConvUniversalAdapter<ConvKernel>;
 
   EXPECT_TRUE(test::conv::device::TestAllConv<Conv>());
+  EXPECT_TRUE(test::conv::device::TestAllConv<Conv>(/*alpha=*/1.0, /*beta=*/1.0));
 }
 
 //
@@ -397,7 +419,9 @@ TEST(SM90_device_conv2d_fprop_implicitgemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f16
       cutlass::conv::collective::KernelScheduleAuto
     >::CollectiveOp;
 
+  using ProblemShape=cutlass::conv::ConvProblemShape<CollectiveMainloop::DispatchPolicy::ConvOp, CollectiveMainloop::DispatchPolicy::NumSpatialDimensions>;
   using ConvKernel = cutlass::conv::kernel::ConvUniversal<
+      ProblemShape,
       CollectiveMainloop,
       CollectiveEpilogue
     >;
@@ -405,6 +429,7 @@ TEST(SM90_device_conv2d_fprop_implicitgemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f16
   using Conv = cutlass::conv::device::ConvUniversalAdapter<ConvKernel>;
 
   EXPECT_TRUE(test::conv::device::TestAllConv<Conv>());
+  EXPECT_TRUE(test::conv::device::TestAllConv<Conv>(/*alpha=*/1.0, /*beta=*/1.0));
 }
 
 #endif // defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)

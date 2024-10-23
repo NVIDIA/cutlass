@@ -104,7 +104,7 @@ template <
  template<typename T> class UnaryOp,
  bool TestSplitK = true
 >
-static void Conv2dFpropSM80TestResidaulBlock() {
+static void Conv2dFpropSM80TestResidualBlock() {
   using ElementA = float;
   using ElementB = float;
   using ElementC = float;
@@ -162,7 +162,7 @@ static void Conv2dFpropSM80TestResidaulBlock() {
 TEST(SM80_Device_Conv2d_Fprop_With_Residual_Block_Plus_Analytic_ImplicitGemm_f32nhwc_f32nhwc_f32nhwc_simt_f32,
      128x128_8x4_32x64x8) {
   // Resnet
-  Conv2dFpropSM80TestResidaulBlock<cutlass::epilogue::thread::Identity, cutlass::plus, cutlass::epilogue::thread::ReLu>();
+  Conv2dFpropSM80TestResidualBlock<cutlass::epilogue::thread::Identity, cutlass::plus, cutlass::epilogue::thread::ReLu>();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

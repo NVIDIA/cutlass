@@ -35,19 +35,23 @@
     This example demonstrate a simple way to instantiate and run a TF32 GEMM using the new CUTLASS 3.0
     APIs on NVIDIA Hopper architecture. New features that will be showcased in this example are as follows:
 
-    1. NVIDIA Hopper architecture introduces a new series of tensor core instructions (GMMA) 
+    1. NVIDIA Hopper architecture introduces a new series of tensor core instructions (GMMA)
     which are more efficient than the Ampere tensor core instructions.
 
-    2. NVIDIA Hopper architecture includes new Tensor Memory Accelerator (TMA) unit to transfer large 
+    2. NVIDIA Hopper architecture includes new Tensor Memory Accelerator (TMA) unit to transfer large
     blocks of data efficiently between global memory and shared memory. TMA also supports asynchronous
     copies between thread blocks in a cluster. Another advantage is that TMA can load in FP32 data and
     convert them implicitly to TF32.
 
     3. This example uses the Warp Specialized kernel design (see /media/docs/efficient_gemm.md for details).
 
+    4. A simple way to tune the CTA rasterization direction and swizzle pattern of Hopper kernels. Both the 
+    CTA rasterization direction and swizzle pattern impact cross-CTA locality of accesses. By tuning we can 
+    improve performance.
+
     Examples:
 
-      $ ./examples/48_hopper_warp_specialized_gemm/48_hopper_warp_specialized_gemm --m=2048 --n=2048 --k=2048
+      $ ./examples/48_hopper_warp_specialized_gemm/48_hopper_warp_specialized_gemm --m=2048 --n=2048 --k=2048 --rasterization=N --swizzle=2
 */
 
 #include <iostream>
@@ -63,6 +67,7 @@
 #include "cutlass/epilogue/collective/collective_builder.hpp"
 #include "cutlass/gemm/device/gemm_universal_adapter.h"
 #include "cutlass/gemm/kernel/gemm_universal.hpp"
+#include "cutlass/gemm/kernel/tile_scheduler_params.h"
 
 #include "cutlass/util/command_line.h"
 #include "cutlass/util/distribution.h"
@@ -105,7 +110,7 @@ using OperatorClass       = cutlass::arch::OpClassTensorOp;                 // O
 using TileShape           = Shape<_128,_128,_32>;                           // Threadblock-level tile size
 using ClusterShape        = Shape<_1,_2,_1>;                                // Shape of the threadblocks in a cluster
 using StageCountType = cutlass::gemm::collective::StageCountAuto;           // Stage count maximized based on the tile size
-using KernelSchedule = cutlass::gemm::collective::KernelScheduleAuto;       // Kernel to launch based on the default setting in the Collective Builder 
+using KernelSchedule = cutlass::gemm::collective::KernelScheduleAuto;       // Kernel to launch based on the default setting in the Collective Builder
 
 using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
     cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
@@ -175,6 +180,8 @@ cutlass::DeviceAllocation<typename Gemm::EpilogueOutputOp::ElementOutput> block_
 /// Testbed utility types
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90Params::RasterOrderOptions;
+
 // Command line options parsing
 struct Options {
 
@@ -183,12 +190,16 @@ struct Options {
   float alpha, beta;
   int iterations;
   int m, n, k;
+  RasterOrderOptions raster;
+  int swizzle;
 
   Options():
     help(false),
     m(5120), n(4096), k(4096),
     alpha(1.f), beta(0.f),
-    iterations(1000)
+    iterations(1000),
+    raster(RasterOrderOptions::Heuristic),
+    swizzle(1)
   { }
 
   // Parses the command line
@@ -206,6 +217,21 @@ struct Options {
     cmd.get_cmd_line_argument("alpha", alpha, 1.f);
     cmd.get_cmd_line_argument("beta", beta, 0.f);
     cmd.get_cmd_line_argument("iterations", iterations);
+
+    char raster_char;
+    cmd.get_cmd_line_argument("raster", raster_char);
+
+    if (raster_char == 'N' || raster_char == 'n') {
+      raster = RasterOrderOptions::AlongN;
+    }
+    else if (raster_char == 'M' || raster_char == 'm') {
+      raster = RasterOrderOptions::AlongM;
+    }
+    else if (raster_char == 'H' || raster_char == 'h') {
+      raster = RasterOrderOptions::Heuristic;
+    }
+
+    cmd.get_cmd_line_argument("swizzle", swizzle, 1);
   }
 
   /// Prints the usage statement.
@@ -220,6 +246,8 @@ struct Options {
       << "  --k=<int>                   Sets the K extent of the GEMM\n"
       << "  --alpha=<f32>               Epilogue scalar alpha\n"
       << "  --beta=<f32>                Epilogue scalar beta\n\n"
+      << "  --raster=<char>             CTA Rasterization direction (N for along N, M for along M, and H for heuristic)\n\n"
+      << "  --swizzle=<int>             CTA Rasterization swizzle\n\n"
       << "  --iterations=<int>          Number of profiling iterations to perform.\n\n";
 
     out
@@ -275,14 +303,14 @@ bool initialize_block(
   int bits_input = cutlass::sizeof_bits<Element>::value;
 
   if (bits_input == 1) {
-    scope_max = 2;
-    scope_min = 0;
+    scope_max = Element(2);
+    scope_min = Element(0);
   } else if (bits_input <= 8) {
-    scope_max = 2;
-    scope_min = -2;
+    scope_max = Element(2);
+    scope_min = Element(-2);
   } else {
-    scope_max = 8;
-    scope_min = -8;
+    scope_max = Element(8);
+    scope_min = Element(-8);
   }
 
   cutlass::reference::device::BlockFillRandomUniform(
@@ -294,10 +322,10 @@ bool initialize_block(
 /// Initialize operands to be used in the GEMM and reference GEMM
 void initialize(const Options &options) {
 
-  stride_A = cutlass::make_cute_packed_stride(StrideA{}, cute::make_shape(options.m, options.k, Int<1>{}));
-  stride_B = cutlass::make_cute_packed_stride(StrideB{}, cute::make_shape(options.n, options.k, Int<1>{}));
-  stride_C = cutlass::make_cute_packed_stride(StrideC{}, cute::make_shape(options.m, options.n, Int<1>{}));
-  stride_D = cutlass::make_cute_packed_stride(StrideD{}, cute::make_shape(options.m, options.n, Int<1>{}));
+  stride_A = cutlass::make_cute_packed_stride(StrideA{}, {options.m, options.k, 1});
+  stride_B = cutlass::make_cute_packed_stride(StrideB{}, {options.n, options.k, 1});
+  stride_C = cutlass::make_cute_packed_stride(StrideC{}, {options.m, options.n, 1});
+  stride_D = cutlass::make_cute_packed_stride(StrideD{}, {options.m, options.n, 1});
 
   block_A.reset(options.m * options.k);
   block_B.reset(options.k * options.n);
@@ -319,6 +347,10 @@ typename Gemm::Arguments args_from_options(const Options &options)
     {block_A.get(), stride_A, block_B.get(), stride_B},
     {{options.alpha, options.beta}, block_C.get(), stride_C, block_D.get(), stride_D}
   };
+
+  arguments.scheduler.raster_order = options.raster;
+  // The tile scheduler will swizzle up to 8 and with the nearest multiple of 2 (i.e., 1, 2, 4, and 8) 
+  arguments.scheduler.max_swizzle_size = options.swizzle;
 
   return arguments;
 }
@@ -408,7 +440,17 @@ int run(Options &options)
     result.avg_runtime_ms = double(elapsed_ms) / double(options.iterations);
     result.gflops = options.gflops(result.avg_runtime_ms / 1000.0);
 
+    std::string raster = "Heuristic";
+
+    if (options.raster == RasterOrderOptions::AlongN) {
+      raster = "Along N";
+    }
+    else if (options.raster == RasterOrderOptions::AlongM) {
+      raster = "Along M";
+    }
+
     std::cout << "  Problem Size: " << options.m << 'x' << options.n << 'x' << options.k << std::endl;
+    std::cout << "  Rasterization: " << raster << " with a maximum CTA swizzle of " << options.swizzle << std::endl;
     std::cout << "  Avg runtime: " << result.avg_runtime_ms << " ms" << std::endl;
     std::cout << "  GFLOPS: " << result.gflops << std::endl;
   }
@@ -441,7 +483,6 @@ int main(int argc, char const **args) {
       << "later (compute capability 90 or greater).\n";
     return 0;
   }
-
   //
   // Parse options
   //

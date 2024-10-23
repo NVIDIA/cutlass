@@ -43,6 +43,7 @@
 #include <initializer_list>
 #endif
 
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass::conv {
@@ -54,15 +55,17 @@ namespace cutlass::conv {
 // Supports asymmetric padding, traversal strides, dilations, and all conv algorithm types.
 template <
   conv::Operator ConvOp_,
-  int NumSpatialDimensions
+  int NumSpatialDimensions_
 >
 struct ConvProblemShape {
   //
   // Alias types for members
   //
-  static constexpr int RankS = NumSpatialDimensions;
-  static constexpr int RankT = NumSpatialDimensions + 2;
+
+  static constexpr int RankS = NumSpatialDimensions_;
+  static constexpr int RankT = NumSpatialDimensions_ + 2;
   static constexpr conv::Operator ConvOp = ConvOp_;
+  static constexpr int NumSpatialDimensions = NumSpatialDimensions_;
   using SpatialExtent = cute::array<int, RankS>;
   using TensorExtent  = cute::array<int, RankT>;
   using TensorStride  = cute::array<int64_t, RankT>;
@@ -352,50 +355,10 @@ struct ConvProblemShape {
     }
   }
 
-  // Get problem shape MNK according to following table:
-  // |               |   Fprop   |   Dgrad   |   Wgrad   |
-  // |   ----        | --------- | --------  | --------  |
-  // |   Shape_M     | (Q,P,Z,N) | (W,H,D,N) | (K)       |
-  // |   Shape_N     | (K)       | (C)       | (C,S,R,T) |
-  // |   Shape_K     | (C,S,R,T) | (K,S,R,T) | (Q,P,Z,N) |
-  CUTLASS_HOST_DEVICE
-  constexpr auto
-  get_transformed_problem_shape_MNK() const {
-    using cute::insert;
-    using cute::make_shape;
-    using cute::reverse;
-    using cute::take;
-
-    if constexpr (ConvOp == conv::Operator::kWgrad) {
-      auto M_xformed = shape_C[0];
-      auto N_xformed = reverse(take<1, RankT>(shape_C));
-      auto K_xformed = reverse(take<0, RankT - 1>(shape_A));
-
-      return make_shape(M_xformed, N_xformed, K_xformed);
-    }
-    else if constexpr (ConvOp == conv::Operator::kFprop){
-      auto M_xformed = reverse(take<0, RankT - 1>(shape_C));
-      auto N_xformed = shape_C[RankT - 1];
-      auto K_xformed = reverse(take<1, RankT>(shape_B));
-
-      return make_shape(M_xformed, N_xformed, K_xformed);
-    }
-    else if constexpr (ConvOp == conv::Operator::kDgrad) {
-      auto M_xformed = reverse(take<0,RankT - 1>(shape_C));
-      auto N_xformed = shape_C[RankT - 1];
-      // shape_B: [K,T,R,S,C], K_xformed: [K,S,R,T]
-      auto K_xformed = insert<0>(
-                  (reverse(take<1,RankT - 1>(shape_B))),
-                  shape_B[0]);
-      return make_shape(M_xformed, N_xformed, K_xformed);
-    }
-  }
-
-
   // Get A extents.
   // fprop: A extents array contains [N,D,H,W,C]. Turn that into ((W,H,D,N), (C))
-  // wgrad: A extents array contains [N,Z,P,Q,K]. Turn that into ((K), (Q,P,Z,N))
   // dgrad: A extents array contains [N,Z,P,Q,K]. Turn that into ((Q,P,Z,N), (K))
+  // wgrad: A extents array contains [N,Z,P,Q,K]. Turn that into ((K), (Q,P,Z,N))
   CUTLASS_HOST_DEVICE
   constexpr auto
   get_shape_A() const {
@@ -418,8 +381,8 @@ struct ConvProblemShape {
 
   // Get B extents.
   // fprop: B extents array contains [K,T,R,S,C]. Turn that into ((K), (C,S,R,T))
-  // wgrad: B extents array contains [N,D,H,W,C]. Turn that into ((C), (W,H,D,N))
   // dgrad: B extents array contains [K,T,R,S,C]. Turn that into ((C), (K,S,R,T))
+  // wgrad: B extents array contains [N,D,H,W,C]. Turn that into ((C), (W,H,D,N))
   CUTLASS_HOST_DEVICE
   constexpr auto
   get_shape_B() const {
@@ -444,6 +407,30 @@ struct ConvProblemShape {
         cute::insert<0>(
           reverse(take<1, RankT - 1>(shape_B)),
           shape_B[0]));
+    }
+  }
+
+  // Get C extents.
+  // fprop: C extents array contains [N,Z,P,Q,K]. Turn that into ((Q,P,Z,N), (K))
+  // dgrad: C extents array contains [N,D,H,W,C]. Turn that into ((W,H,D,N), (C))
+  // wgrad: C extents array contains [K,T,R,S,C]. Turn that into ((K), (C,S,R,T))
+  CUTLASS_HOST_DEVICE
+  constexpr auto
+  get_shape_C() const {
+    using cute::make_shape;
+    using cute::reverse;
+    using cute::take;
+
+    if constexpr (ConvOp == conv::Operator::kFprop ||
+                  ConvOp == conv::Operator::kDgrad) {
+      return make_shape(
+        reverse(take<0, RankT - 1>(shape_C)),
+        shape_C[RankT - 1]);
+    }
+    else if constexpr (ConvOp == conv::Operator::kWgrad) {
+      return make_shape(
+        shape_C[0],
+        reverse(take<1, RankT>(shape_C)));
     }
   }
 

@@ -88,16 +88,16 @@ static std::vector<int64_t> get_packed_layout_stride(std::vector<int> const &ext
 
 /// Returns the stride of a packed layout
 std::vector<int64_t> DeviceAllocation::get_packed_layout(
-  library::LayoutTypeID layout_id, 
+  library::LayoutTypeID layout_id,
   std::vector<int> const &extent) {
 
   std::vector<int64_t> stride;
 
   switch (layout_id) {
-    case library::LayoutTypeID::kColumnMajor: 
+    case library::LayoutTypeID::kColumnMajor:
       stride = get_packed_layout_stride<cutlass::layout::ColumnMajor>(extent);
       break;
-    case library::LayoutTypeID::kRowMajor: 
+    case library::LayoutTypeID::kRowMajor:
       stride = get_packed_layout_stride<cutlass::layout::RowMajor>(extent);
       break;
     case library::LayoutTypeID::kColumnMajorInterleavedK2:
@@ -159,7 +159,7 @@ std::vector<int64_t> DeviceAllocation::get_packed_layout(
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Template to use CUTLASS Layout functions to 
+/// Template to use CUTLASS Layout functions to
 template <typename Layout>
 static size_t construct_layout_(
   void *bytes,
@@ -177,8 +177,8 @@ static size_t construct_layout_(
     stride = get_packed_layout_stride<Layout>(extent);
 
     return construct_layout_<Layout>(
-      bytes, 
-      layout_id, 
+      bytes,
+      layout_id,
       extent,
       stride);
   }
@@ -202,7 +202,7 @@ static size_t construct_layout_(
 
   // Pack it into bytes
   if (bytes) {
-    *reinterpret_cast<Layout *>(bytes) = layout; 
+    *reinterpret_cast<Layout *>(bytes) = layout;
   }
 
   // Return capacity
@@ -219,10 +219,10 @@ size_t DeviceAllocation::construct_layout(
   std::vector<int64_t> &stride) {
 
   switch (layout_id) {
-    case library::LayoutTypeID::kColumnMajor: 
+    case library::LayoutTypeID::kColumnMajor:
       return construct_layout_<cutlass::layout::ColumnMajor>(bytes, layout_id, extent, stride);
-      
-    case library::LayoutTypeID::kRowMajor: 
+
+    case library::LayoutTypeID::kRowMajor:
       return construct_layout_<cutlass::layout::RowMajor>(bytes, layout_id, extent, stride);
 
     case library::LayoutTypeID::kColumnMajorInterleavedK2:
@@ -284,24 +284,26 @@ size_t DeviceAllocation::construct_layout(
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-DeviceAllocation::DeviceAllocation(): 
-  type_(library::NumericTypeID::kInvalid), 
+DeviceAllocation::DeviceAllocation():
+  type_(library::NumericTypeID::kInvalid),
   batch_stride_(0),
-  capacity_(0), 
+  capacity_(0),
   pointer_(nullptr),
   layout_(library::LayoutTypeID::kUnknown),
-  batch_count_(1) {
+  batch_count_(1),
+  device_(-1) {
 
 }
 
 DeviceAllocation::DeviceAllocation(
-  library::NumericTypeID type, 
-  size_t capacity
+  library::NumericTypeID type,
+  size_t capacity,
+  int device
 ):
-  type_(type), batch_stride_(capacity), capacity_(capacity), pointer_(nullptr), 
-  layout_(library::LayoutTypeID::kUnknown), batch_count_(1) {
+  type_(type), batch_stride_(capacity), capacity_(capacity), pointer_(nullptr),
+  layout_(library::LayoutTypeID::kUnknown), batch_count_(1), device_(device) {
 
-  cudaError_t result = cudaMalloc((void **)&pointer_, bytes(type, capacity));
+  cudaError_t result = this->malloc((void **)&pointer_, bytes(type, capacity));
 
   if (result != cudaSuccess) {
     type_ = library::NumericTypeID::kInvalid;
@@ -312,13 +314,15 @@ DeviceAllocation::DeviceAllocation(
 }
 
 DeviceAllocation::DeviceAllocation(
-  library::NumericTypeID type, 
-  library::LayoutTypeID layout_id, 
-  std::vector<int> const &extent, 
+  library::NumericTypeID type,
+  library::LayoutTypeID layout_id,
+  std::vector<int> const &extent,
   std::vector<int64_t> const &stride,
-  int batch_count
+  int batch_count,
+  int device
 ):
-  type_(type), batch_stride_(size_t(0)), capacity_(size_t(0)), pointer_(nullptr), batch_count_(1) {
+  type_(type), batch_stride_(size_t(0)), capacity_(size_t(0)),
+  pointer_(nullptr), batch_count_(1), device_(device) {
 
   reset(type, layout_id, extent, stride, batch_count);
 }
@@ -355,7 +359,7 @@ DeviceAllocation &DeviceAllocation::reset(library::NumericTypeID type, size_t ca
   batch_stride_ = capacity;
   capacity_ = capacity;
 
-  cudaError_t result = cudaMalloc((void **)&pointer_, bytes(type_, capacity_));
+  cudaError_t result = this->malloc((void **)&pointer_, bytes(type_, capacity_));
   if (result != cudaSuccess) {
     throw std::bad_alloc();
   }
@@ -373,9 +377,9 @@ DeviceAllocation &DeviceAllocation::reset(library::NumericTypeID type, size_t ca
 
 /// Allocates memory for a given layout and tensor
 DeviceAllocation &DeviceAllocation::reset(
-  library::NumericTypeID type, 
-  library::LayoutTypeID layout_id, 
-  std::vector<int> const &extent, 
+  library::NumericTypeID type,
+  library::LayoutTypeID layout_id,
+  std::vector<int> const &extent,
   std::vector<int64_t> const &stride,
   int batch_count) {
 
@@ -391,14 +395,14 @@ DeviceAllocation &DeviceAllocation::reset(
   batch_count_ = batch_count;
 
   batch_stride_ = construct_layout(
-    tensor_ref_buffer_.data() + sizeof(pointer_), 
-    layout_id, 
-    extent, 
+    tensor_ref_buffer_.data() + sizeof(pointer_),
+    layout_id,
+    extent,
     stride_);
 
   capacity_ = batch_stride_ * batch_count_;
 
-  cudaError_t result = cudaMalloc((void **)&pointer_, bytes(type, capacity_));
+  cudaError_t result = this->malloc((void **)&pointer_, bytes(type, capacity_));
   if (result != cudaSuccess) {
     throw std::bad_alloc();
   }
@@ -421,7 +425,7 @@ void *DeviceAllocation::data() const {
 }
 
 void *DeviceAllocation::batch_data(int batch_idx) const {
-    return static_cast<char *>(data()) + batch_stride_bytes() * batch_idx; 
+    return static_cast<char *>(data()) + batch_stride_bytes() * batch_idx;
 }
 
 library::LayoutTypeID DeviceAllocation::layout() const {
@@ -1476,159 +1480,159 @@ void DeviceAllocation::initialize_random_sparsemeta_host(int seed, int MetaSizeI
 
 /// Returns true if two blocks have exactly the same value
 bool DeviceAllocation::block_compare_equal(
-  library::NumericTypeID numeric_type, 
-  void const *ptr_A, 
-  void const *ptr_B, 
+  library::NumericTypeID numeric_type,
+  void const *ptr_A,
+  void const *ptr_B,
   size_t capacity) {
 
   switch (numeric_type) {
   case library::NumericTypeID::kFE4M3:
     return reference::device::BlockCompareEqual<float_e4m3_t>(
-      reinterpret_cast<float_e4m3_t const *>(ptr_A), 
-      reinterpret_cast<float_e4m3_t const *>(ptr_B), 
+      reinterpret_cast<float_e4m3_t const *>(ptr_A),
+      reinterpret_cast<float_e4m3_t const *>(ptr_B),
       capacity);
-    
+
   case library::NumericTypeID::kFE5M2:
     return reference::device::BlockCompareEqual<float_e5m2_t>(
       reinterpret_cast<float_e5m2_t const *>(ptr_A),
-      reinterpret_cast<float_e5m2_t const *>(ptr_B), 
+      reinterpret_cast<float_e5m2_t const *>(ptr_B),
       capacity);
   case library::NumericTypeID::kF16:
     return reference::device::BlockCompareEqual<half_t>(
-      reinterpret_cast<half_t const *>(ptr_A), 
-      reinterpret_cast<half_t const *>(ptr_B), 
+      reinterpret_cast<half_t const *>(ptr_A),
+      reinterpret_cast<half_t const *>(ptr_B),
       capacity);
-    
+
   case library::NumericTypeID::kBF16:
     return reference::device::BlockCompareEqual<bfloat16_t>(
-      reinterpret_cast<bfloat16_t const *>(ptr_A), 
-      reinterpret_cast<bfloat16_t const *>(ptr_B), 
+      reinterpret_cast<bfloat16_t const *>(ptr_A),
+      reinterpret_cast<bfloat16_t const *>(ptr_B),
       capacity);
 
   case library::NumericTypeID::kTF32:
     return reference::device::BlockCompareEqual<tfloat32_t>(
-      reinterpret_cast<tfloat32_t const *>(ptr_A), 
-      reinterpret_cast<tfloat32_t const *>(ptr_B), 
+      reinterpret_cast<tfloat32_t const *>(ptr_A),
+      reinterpret_cast<tfloat32_t const *>(ptr_B),
       capacity);
 
   case library::NumericTypeID::kF32:
     return reference::device::BlockCompareEqual<float>(
-      reinterpret_cast<float const *>(ptr_A), 
-      reinterpret_cast<float const *>(ptr_B), 
+      reinterpret_cast<float const *>(ptr_A),
+      reinterpret_cast<float const *>(ptr_B),
       capacity);
 
   case library::NumericTypeID::kCF32:
     return reference::device::BlockCompareEqual<cutlass::complex<float> >(
-      reinterpret_cast<complex<float> const *>(ptr_A), 
-      reinterpret_cast<complex<float> const *>(ptr_B), 
+      reinterpret_cast<complex<float> const *>(ptr_A),
+      reinterpret_cast<complex<float> const *>(ptr_B),
       capacity);
-  
+
   case library::NumericTypeID::kCF16:
     return reference::device::BlockCompareEqual<complex<half_t>>(
-      reinterpret_cast<complex<half_t> const *>(ptr_A), 
-      reinterpret_cast<complex<half_t> const *>(ptr_B), 
+      reinterpret_cast<complex<half_t> const *>(ptr_A),
+      reinterpret_cast<complex<half_t> const *>(ptr_B),
       capacity);
-    
+
   case library::NumericTypeID::kCBF16:
     return reference::device::BlockCompareEqual<complex<bfloat16_t>>(
-      reinterpret_cast<complex<bfloat16_t> const *>(ptr_A), 
-      reinterpret_cast<complex<bfloat16_t> const *>(ptr_B), 
+      reinterpret_cast<complex<bfloat16_t> const *>(ptr_A),
+      reinterpret_cast<complex<bfloat16_t> const *>(ptr_B),
       capacity);
 
   case library::NumericTypeID::kCTF32:
     return reference::device::BlockCompareEqual<complex<tfloat32_t>>(
-      reinterpret_cast<complex<tfloat32_t> const *>(ptr_A), 
-      reinterpret_cast<complex<tfloat32_t> const *>(ptr_B), 
+      reinterpret_cast<complex<tfloat32_t> const *>(ptr_A),
+      reinterpret_cast<complex<tfloat32_t> const *>(ptr_B),
       capacity);
-  
+
   case library::NumericTypeID::kF64:
     return reference::device::BlockCompareEqual<double>(
-      reinterpret_cast<double const *>(ptr_A), 
-      reinterpret_cast<double const *>(ptr_B), 
+      reinterpret_cast<double const *>(ptr_A),
+      reinterpret_cast<double const *>(ptr_B),
       capacity);
 
   case library::NumericTypeID::kCF64:
     return reference::device::BlockCompareEqual<complex<double>>(
-      reinterpret_cast<complex<double> const *>(ptr_A), 
-      reinterpret_cast<complex<double> const *>(ptr_B), 
+      reinterpret_cast<complex<double> const *>(ptr_A),
+      reinterpret_cast<complex<double> const *>(ptr_B),
       capacity);
-  
+
   case library::NumericTypeID::kS2:
     return reference::device::BlockCompareEqual<int2b_t>(
-      reinterpret_cast<int2b_t const *>(ptr_A), 
-      reinterpret_cast<int2b_t const *>(ptr_B), 
+      reinterpret_cast<int2b_t const *>(ptr_A),
+      reinterpret_cast<int2b_t const *>(ptr_B),
       capacity);
 
   case library::NumericTypeID::kS4:
     return reference::device::BlockCompareEqual<int4b_t>(
-      reinterpret_cast<int4b_t const *>(ptr_A), 
-      reinterpret_cast<int4b_t const *>(ptr_B), 
+      reinterpret_cast<int4b_t const *>(ptr_A),
+      reinterpret_cast<int4b_t const *>(ptr_B),
       capacity);
 
   case library::NumericTypeID::kS8:
     return reference::device::BlockCompareEqual<int8_t>(
-      reinterpret_cast<int8_t const *>(ptr_A), 
-      reinterpret_cast<int8_t const *>(ptr_B), 
+      reinterpret_cast<int8_t const *>(ptr_A),
+      reinterpret_cast<int8_t const *>(ptr_B),
       capacity);
 
   case library::NumericTypeID::kS16:
     return reference::device::BlockCompareEqual<int16_t>(
-      reinterpret_cast<int16_t const *>(ptr_A), 
-      reinterpret_cast<int16_t const *>(ptr_B), 
+      reinterpret_cast<int16_t const *>(ptr_A),
+      reinterpret_cast<int16_t const *>(ptr_B),
       capacity);
 
   case library::NumericTypeID::kS32:
     return reference::device::BlockCompareEqual<int32_t>(
-      reinterpret_cast<int32_t const *>(ptr_A), 
-      reinterpret_cast<int32_t const *>(ptr_B), 
+      reinterpret_cast<int32_t const *>(ptr_A),
+      reinterpret_cast<int32_t const *>(ptr_B),
       capacity);
 
   case library::NumericTypeID::kS64:
     return reference::device::BlockCompareEqual<int64_t>(
-      reinterpret_cast<int64_t const *>(ptr_A), 
-      reinterpret_cast<int64_t const *>(ptr_B), 
+      reinterpret_cast<int64_t const *>(ptr_A),
+      reinterpret_cast<int64_t const *>(ptr_B),
       capacity);
-  
+
   case library::NumericTypeID::kB1:
     return reference::device::BlockCompareEqual<uint1b_t>(
-      reinterpret_cast<uint1b_t const *>(ptr_A), 
-      reinterpret_cast<uint1b_t const *>(ptr_B), 
+      reinterpret_cast<uint1b_t const *>(ptr_A),
+      reinterpret_cast<uint1b_t const *>(ptr_B),
       capacity);
-  
+
   case library::NumericTypeID::kU2:
     return reference::device::BlockCompareEqual<uint2b_t>(
-      reinterpret_cast<uint2b_t const *>(ptr_A), 
-      reinterpret_cast<uint2b_t const *>(ptr_B), 
+      reinterpret_cast<uint2b_t const *>(ptr_A),
+      reinterpret_cast<uint2b_t const *>(ptr_B),
       capacity);
-  
+
   case library::NumericTypeID::kU4:
     return reference::device::BlockCompareEqual<uint4b_t>(
-      reinterpret_cast<uint4b_t const *>(ptr_A), 
-      reinterpret_cast<uint4b_t const *>(ptr_B), 
+      reinterpret_cast<uint4b_t const *>(ptr_A),
+      reinterpret_cast<uint4b_t const *>(ptr_B),
       capacity);
 
   case library::NumericTypeID::kU8:
     return reference::device::BlockCompareEqual<uint8_t>(
-      reinterpret_cast<uint8_t const *>(ptr_A), 
-      reinterpret_cast<uint8_t const *>(ptr_B), 
+      reinterpret_cast<uint8_t const *>(ptr_A),
+      reinterpret_cast<uint8_t const *>(ptr_B),
       capacity);
 
   case library::NumericTypeID::kU16:
     return reference::device::BlockCompareEqual<uint16_t>(
-      reinterpret_cast<uint16_t const *>(ptr_A), 
-      reinterpret_cast<uint16_t const *>(ptr_B), 
+      reinterpret_cast<uint16_t const *>(ptr_A),
+      reinterpret_cast<uint16_t const *>(ptr_B),
       capacity);
 
   case library::NumericTypeID::kU32:
     return reference::device::BlockCompareEqual<uint32_t>(
-      reinterpret_cast<uint32_t const *>(ptr_A), 
-      reinterpret_cast<uint32_t const *>(ptr_B), 
+      reinterpret_cast<uint32_t const *>(ptr_A),
+      reinterpret_cast<uint32_t const *>(ptr_B),
       capacity);
 
   case library::NumericTypeID::kU64:
     return reference::device::BlockCompareEqual<uint64_t>(
-      reinterpret_cast<uint64_t const *>(ptr_A), 
-      reinterpret_cast<uint64_t const *>(ptr_B), 
+      reinterpret_cast<uint64_t const *>(ptr_A),
+      reinterpret_cast<uint64_t const *>(ptr_B),
       capacity);
 
   default:
@@ -1638,9 +1642,9 @@ bool DeviceAllocation::block_compare_equal(
 
 /// Returns true if two blocks have approximately the same value
 bool DeviceAllocation::block_compare_relatively_equal(
-  library::NumericTypeID numeric_type, 
-  void const *ptr_A, 
-  void const *ptr_B, 
+  library::NumericTypeID numeric_type,
+  void const *ptr_A,
+  void const *ptr_B,
   size_t capacity,
   double epsilon,
   double nonzero_floor) {
@@ -1648,161 +1652,161 @@ bool DeviceAllocation::block_compare_relatively_equal(
   switch (numeric_type) {
   case library::NumericTypeID::kFE4M3:
     return reference::device::BlockCompareRelativelyEqual<float_e4m3_t>(
-      reinterpret_cast<float_e4m3_t const *>(ptr_A), 
+      reinterpret_cast<float_e4m3_t const *>(ptr_A),
       reinterpret_cast<float_e4m3_t const *>(ptr_B),
-      capacity, 
-      static_cast<float_e4m3_t>(epsilon), 
+      capacity,
+      static_cast<float_e4m3_t>(epsilon),
       static_cast<float_e4m3_t>(nonzero_floor));
-    
+
   case library::NumericTypeID::kFE5M2:
     return reference::device::BlockCompareRelativelyEqual<float_e5m2_t>(
-      reinterpret_cast<float_e5m2_t const *>(ptr_A), 
+      reinterpret_cast<float_e5m2_t const *>(ptr_A),
       reinterpret_cast<float_e5m2_t const *>(ptr_B),
-      capacity, 
-      static_cast<float_e5m2_t>(epsilon), 
+      capacity,
+      static_cast<float_e5m2_t>(epsilon),
       static_cast<float_e5m2_t>(nonzero_floor));
   case library::NumericTypeID::kF16:
     return reference::device::BlockCompareRelativelyEqual<half_t>(
-      reinterpret_cast<half_t const *>(ptr_A), 
+      reinterpret_cast<half_t const *>(ptr_A),
       reinterpret_cast<half_t const *>(ptr_B),
-      capacity, 
-      static_cast<half_t>(epsilon), 
+      capacity,
+      static_cast<half_t>(epsilon),
       static_cast<half_t>(nonzero_floor));
-    
+
   case library::NumericTypeID::kBF16:
     return reference::device::BlockCompareRelativelyEqual<bfloat16_t>(
-      reinterpret_cast<bfloat16_t const *>(ptr_A), 
+      reinterpret_cast<bfloat16_t const *>(ptr_A),
       reinterpret_cast<bfloat16_t const *>(ptr_B),
-      capacity, 
-      static_cast<bfloat16_t>(epsilon), 
+      capacity,
+      static_cast<bfloat16_t>(epsilon),
       static_cast<bfloat16_t>(nonzero_floor));
 
   case library::NumericTypeID::kTF32:
     return reference::device::BlockCompareRelativelyEqual<tfloat32_t>(
-      reinterpret_cast<tfloat32_t const *>(ptr_A), 
+      reinterpret_cast<tfloat32_t const *>(ptr_A),
       reinterpret_cast<tfloat32_t const *>(ptr_B),
-      capacity, 
-      static_cast<tfloat32_t>(epsilon), 
+      capacity,
+      static_cast<tfloat32_t>(epsilon),
       static_cast<tfloat32_t>(nonzero_floor));
 
   case library::NumericTypeID::kF32:
     return reference::device::BlockCompareRelativelyEqual<float>(
-      reinterpret_cast<float const *>(ptr_A), 
+      reinterpret_cast<float const *>(ptr_A),
       reinterpret_cast<float const *>(ptr_B),
-      capacity, 
-      static_cast<float>(epsilon), 
+      capacity,
+      static_cast<float>(epsilon),
       static_cast<float>(nonzero_floor));
 
   case library::NumericTypeID::kF64:
     return reference::device::BlockCompareRelativelyEqual<double>(
-      reinterpret_cast<double const *>(ptr_A), 
+      reinterpret_cast<double const *>(ptr_A),
       reinterpret_cast<double const *>(ptr_B),
-      capacity, 
-      static_cast<double>(epsilon), 
+      capacity,
+      static_cast<double>(epsilon),
       static_cast<double>(nonzero_floor));
-  
+
   case library::NumericTypeID::kS2:
     return reference::device::BlockCompareRelativelyEqual<int2b_t>(
-      reinterpret_cast<int2b_t const *>(ptr_A), 
+      reinterpret_cast<int2b_t const *>(ptr_A),
       reinterpret_cast<int2b_t const *>(ptr_B),
-      capacity, 
-      static_cast<int2b_t>(epsilon), 
+      capacity,
+      static_cast<int2b_t>(epsilon),
       static_cast<int2b_t>(nonzero_floor));
-  
+
   case library::NumericTypeID::kS4:
     return reference::device::BlockCompareRelativelyEqual<int4b_t>(
-      reinterpret_cast<int4b_t const *>(ptr_A), 
+      reinterpret_cast<int4b_t const *>(ptr_A),
       reinterpret_cast<int4b_t const *>(ptr_B),
-      capacity, 
-      static_cast<int4b_t>(epsilon), 
+      capacity,
+      static_cast<int4b_t>(epsilon),
       static_cast<int4b_t>(nonzero_floor));
 
   case library::NumericTypeID::kS8:
     return reference::device::BlockCompareRelativelyEqual<int8_t>(
-      reinterpret_cast<int8_t const *>(ptr_A), 
+      reinterpret_cast<int8_t const *>(ptr_A),
       reinterpret_cast<int8_t const *>(ptr_B),
-      capacity, 
-      static_cast<int8_t>(epsilon), 
+      capacity,
+      static_cast<int8_t>(epsilon),
       static_cast<int8_t>(nonzero_floor));
 
   case library::NumericTypeID::kS16:
     return reference::device::BlockCompareRelativelyEqual<int16_t>(
-      reinterpret_cast<int16_t const *>(ptr_A), 
+      reinterpret_cast<int16_t const *>(ptr_A),
       reinterpret_cast<int16_t const *>(ptr_B),
-      capacity, 
-      static_cast<int16_t>(epsilon), 
+      capacity,
+      static_cast<int16_t>(epsilon),
       static_cast<int16_t>(nonzero_floor));
 
   case library::NumericTypeID::kS32:
     return reference::device::BlockCompareRelativelyEqual<int32_t>(
-      reinterpret_cast<int32_t const *>(ptr_A), 
+      reinterpret_cast<int32_t const *>(ptr_A),
       reinterpret_cast<int32_t const *>(ptr_B),
-      capacity, 
-      static_cast<int32_t>(epsilon), 
+      capacity,
+      static_cast<int32_t>(epsilon),
       static_cast<int32_t>(nonzero_floor));
 
   case library::NumericTypeID::kS64:
     return reference::device::BlockCompareRelativelyEqual<int64_t>(
-      reinterpret_cast<int64_t const *>(ptr_A), 
+      reinterpret_cast<int64_t const *>(ptr_A),
       reinterpret_cast<int64_t const *>(ptr_B),
-      capacity, 
-      static_cast<int64_t>(epsilon), 
+      capacity,
+      static_cast<int64_t>(epsilon),
       static_cast<int64_t>(nonzero_floor));
-  
+
   case library::NumericTypeID::kB1:
     return reference::device::BlockCompareRelativelyEqual<uint1b_t>(
-      reinterpret_cast<uint1b_t const *>(ptr_A), 
+      reinterpret_cast<uint1b_t const *>(ptr_A),
       reinterpret_cast<uint1b_t const *>(ptr_B),
-      capacity, 
-      static_cast<uint1b_t>(epsilon), 
+      capacity,
+      static_cast<uint1b_t>(epsilon),
       static_cast<uint1b_t>(nonzero_floor));
 
   case library::NumericTypeID::kU2:
     return reference::device::BlockCompareRelativelyEqual<uint2b_t>(
-      reinterpret_cast<uint2b_t const *>(ptr_A), 
+      reinterpret_cast<uint2b_t const *>(ptr_A),
       reinterpret_cast<uint2b_t const *>(ptr_B),
-      capacity, 
-      static_cast<uint2b_t>(epsilon), 
+      capacity,
+      static_cast<uint2b_t>(epsilon),
       static_cast<uint2b_t>(nonzero_floor));
 
   case library::NumericTypeID::kU4:
     return reference::device::BlockCompareRelativelyEqual<uint4b_t>(
-      reinterpret_cast<uint4b_t const *>(ptr_A), 
+      reinterpret_cast<uint4b_t const *>(ptr_A),
       reinterpret_cast<uint4b_t const *>(ptr_B),
-      capacity, 
-      static_cast<uint4b_t>(epsilon), 
+      capacity,
+      static_cast<uint4b_t>(epsilon),
       static_cast<uint4b_t>(nonzero_floor));
 
   case library::NumericTypeID::kU8:
     return reference::device::BlockCompareRelativelyEqual<uint8_t>(
-      reinterpret_cast<uint8_t const *>(ptr_A), 
+      reinterpret_cast<uint8_t const *>(ptr_A),
       reinterpret_cast<uint8_t const *>(ptr_B),
-      capacity, 
-      static_cast<uint8_t>(epsilon), 
+      capacity,
+      static_cast<uint8_t>(epsilon),
       static_cast<uint8_t>(nonzero_floor));
 
   case library::NumericTypeID::kU16:
     return reference::device::BlockCompareRelativelyEqual<uint16_t>(
-      reinterpret_cast<uint16_t const *>(ptr_A), 
+      reinterpret_cast<uint16_t const *>(ptr_A),
       reinterpret_cast<uint16_t const *>(ptr_B),
-      capacity, 
-      static_cast<uint16_t>(epsilon), 
+      capacity,
+      static_cast<uint16_t>(epsilon),
       static_cast<uint16_t>(nonzero_floor));
 
   case library::NumericTypeID::kU32:
     return reference::device::BlockCompareRelativelyEqual<uint32_t>(
-      reinterpret_cast<uint32_t const *>(ptr_A), 
+      reinterpret_cast<uint32_t const *>(ptr_A),
       reinterpret_cast<uint32_t const *>(ptr_B),
-      capacity, 
-      static_cast<uint32_t>(epsilon), 
+      capacity,
+      static_cast<uint32_t>(epsilon),
       static_cast<uint32_t>(nonzero_floor));
 
   case library::NumericTypeID::kU64:
     return reference::device::BlockCompareRelativelyEqual<uint64_t>(
-      reinterpret_cast<uint64_t const *>(ptr_A), 
+      reinterpret_cast<uint64_t const *>(ptr_A),
       reinterpret_cast<uint64_t const *>(ptr_B),
-      capacity, 
-      static_cast<uint64_t>(epsilon), 
+      capacity,
+      static_cast<uint64_t>(epsilon),
       static_cast<uint64_t>(nonzero_floor));
 
   // No relatively equal comparison for complex numbers.
@@ -1821,7 +1825,7 @@ bool DeviceAllocation::block_compare_relatively_equal(
       reinterpret_cast<complex<float> const *>(ptr_A),
       reinterpret_cast<complex<float> const *>(ptr_B),
       capacity);
-  
+
   case library::NumericTypeID::kCF64:
     return reference::device::BlockCompareEqual<cutlass::complex<double> >(
       reinterpret_cast<complex<double> const *>(ptr_A),
@@ -1837,14 +1841,14 @@ bool DeviceAllocation::block_compare_relatively_equal(
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Permits copying dynamic vectors into static-length vectors 
+/// Permits copying dynamic vectors into static-length vectors
 template <typename TensorCoord, int Rank>
 struct vector_to_coord {
-  
+
   vector_to_coord(TensorCoord &coord, std::vector<int> const &vec) {
 
     coord[Rank - 1] = vec.at(Rank - 1);
-    
+
     if (Rank > 1) {
       vector_to_coord<TensorCoord, Rank - 1>(coord, vec);
     }
@@ -1853,17 +1857,17 @@ struct vector_to_coord {
   vector_to_coord(TensorCoord &coord, std::vector<int64_t> const &vec) {
 
     coord[Rank - 1] = (int)vec.at(Rank - 1);
-    
+
     if (Rank > 1) {
       vector_to_coord<TensorCoord, Rank - 1>(coord, vec);
     }
   }
 };
 
-/// Permits copying dynamic vectors into static-length vectors 
+/// Permits copying dynamic vectors into static-length vectors
 template <typename TensorCoord>
 struct vector_to_coord<TensorCoord, 1> {
-  
+
   vector_to_coord(TensorCoord &coord, std::vector<int> const &vec) {
 
     coord[0] = vec.at(0);
@@ -1875,10 +1879,10 @@ struct vector_to_coord<TensorCoord, 1> {
   }
 };
 
-/// Permits copying dynamic vectors into static-length vectors 
+/// Permits copying dynamic vectors into static-length vectors
 template <typename TensorCoord>
 struct vector_to_coord<TensorCoord, 0> {
-  
+
   vector_to_coord(TensorCoord &coord, std::vector<int> const &vec) {
 
   }
@@ -1888,7 +1892,7 @@ struct vector_to_coord<TensorCoord, 0> {
 
 template <typename Element, typename Layout>
 static void write_tensor_csv_static_tensor_view(
-  std::ostream &out, 
+  std::ostream &out,
   DeviceAllocation &allocation) {
 
   Coord<Layout::kRank> extent;
@@ -1903,7 +1907,7 @@ static void write_tensor_csv_static_tensor_view(
   }
 
   vector_to_coord<Coord<Layout::kRank>, Layout::kRank>(extent, allocation.extent());
-  vector_to_coord<Coord<Layout::kStrideRank, typename Layout::Stride::Index>, 
+  vector_to_coord<Coord<Layout::kStrideRank, typename Layout::Stride::Index>,
                         Layout::kStrideRank>(stride, allocation.stride());
 
   Layout layout(stride);
@@ -1914,7 +1918,7 @@ static void write_tensor_csv_static_tensor_view(
   }
 
   host_tensor.copy_in_device_to_host(
-    static_cast<Element const *>(allocation.data()), 
+    static_cast<Element const *>(allocation.data()),
     allocation.batch_stride());
 
   TensorViewWrite(out, host_tensor.host_view());
@@ -1926,7 +1930,7 @@ static void write_tensor_csv_static_tensor_view(
 
 template <typename T>
 static void write_tensor_csv_static_type(
-  std::ostream &out, 
+  std::ostream &out,
   DeviceAllocation &allocation) {
 
   switch (allocation.layout()) {
@@ -1991,7 +1995,7 @@ static void write_tensor_csv_static_type(
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Writes a tensor to csv 
+/// Writes a tensor to csv
 void DeviceAllocation::write_tensor_csv(
   std::ostream &out) {
 
@@ -1999,14 +2003,14 @@ void DeviceAllocation::write_tensor_csv(
   case library::NumericTypeID::kFE4M3:
     write_tensor_csv_static_type<float_e4m3_t>(out, *this);
     break;
-  
+
   case library::NumericTypeID::kFE5M2:
     write_tensor_csv_static_type<float_e5m2_t>(out, *this);
     break;
   case library::NumericTypeID::kF16:
     write_tensor_csv_static_type<half_t>(out, *this);
     break;
-    
+
   case library::NumericTypeID::kBF16:
     write_tensor_csv_static_type<bfloat16_t>(out, *this);
     break;
@@ -2022,7 +2026,7 @@ void DeviceAllocation::write_tensor_csv(
   case library::NumericTypeID::kF64:
     write_tensor_csv_static_type<double>(out, *this);
     break;
-  
+
   case library::NumericTypeID::kS2:
     write_tensor_csv_static_type<int2b_t>(out, *this);
     break;
@@ -2046,7 +2050,7 @@ void DeviceAllocation::write_tensor_csv(
   case library::NumericTypeID::kS64:
     write_tensor_csv_static_type<int64_t>(out, *this);
     break;
-  
+
   case library::NumericTypeID::kB1:
     write_tensor_csv_static_type<uint1b_t>(out, *this);
     break;
@@ -2074,7 +2078,7 @@ void DeviceAllocation::write_tensor_csv(
   case library::NumericTypeID::kU64:
     write_tensor_csv_static_type<uint64_t>(out, *this);
     break;
-  
+
   case library::NumericTypeID::kCF16:
     write_tensor_csv_static_type<cutlass::complex<half_t> >(out, *this);
     break;
@@ -2110,7 +2114,7 @@ static void tensor_fill_tensor_view(DeviceAllocation &allocation, Element val = 
   }
 
   vector_to_coord<Coord<Layout::kRank>, Layout::kRank>(extent, allocation.extent());
-  vector_to_coord<Coord<Layout::kStrideRank, typename Layout::LongIndex>, 
+  vector_to_coord<Coord<Layout::kStrideRank, typename Layout::LongIndex>,
                         Layout::kStrideRank>(stride, allocation.stride());
 
   TensorView<Element, Layout> view(
@@ -2432,6 +2436,46 @@ void DeviceAllocation::fill_host(double val = 0.0) {
   copy_from_host(host_data.data());
 }
 
+cudaError_t DeviceAllocation::malloc(void** ptr, size_t size) {
+  cudaError_t result;
+  int set_device_back_to = -1;
+
+  /// When needed this sets the device to the allocation's device remembering
+  /// the current device so that it can be set back after the cudaMalloc is
+  /// performed.
+  if (device_ >= 0) {
+    int current_device;
+    result = cudaGetDevice(&current_device);
+    if (result != cudaSuccess) {
+      return result;
+    }
+
+    if (current_device != device_) {
+      set_device_back_to = current_device;
+      result = cudaSetDevice(device_);
+      if (result != cudaSuccess) {
+        return result;
+      }
+    }
+  }
+
+  // This performs the cudaMalloc
+  result = cudaMalloc(ptr, size);
+  if (result != cudaSuccess) {
+    return result;
+  }
+
+  /// When needed this sets the device back to what it was when the function was
+  /// called.
+  if (set_device_back_to != -1) {
+    result = cudaSetDevice(set_device_back_to);
+    if (result != cudaSuccess) {
+      return result;
+    }
+  }
+
+  return cudaSuccess;
+}
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

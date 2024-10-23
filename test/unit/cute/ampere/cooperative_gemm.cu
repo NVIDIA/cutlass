@@ -32,6 +32,8 @@
 #include "cutlass_unit_test.h"
 
 #include <cute/tensor.hpp>
+#include <cute/swizzle.hpp> // cute::Swizzle
+#include <cute/swizzle_layout.hpp> // cute::compose(cute::Swizzle)
 
 #include "../cooperative_gemm_common.hpp"
 
@@ -297,4 +299,147 @@ TEST(SM80_CuTe_Ampere, CooperativeGemm8_MixedPrecisionTF32FP32_MMA) {
       >;
 
   test_cooperative_gemm_col_major_layout<m, n, k, thread_block_size, tiled_mma_t, 128, TA, TB, TC>();
+}
+
+TEST(SM80_CuTe_Ampere, CooperativeGemm9_C64C64C64_MMA) {
+
+  using TA = cutlass::complex<double>;
+  using TB = cutlass::complex<double>;
+  using TC = cutlass::complex<double>;
+
+  constexpr uint32_t thread_block_size = 256;
+  constexpr int MaxVecBits = 128;
+
+  using tiled_mma_t =
+      TiledMMA<
+        MMA_Atom<SM80_8x8x4_C64C64C64C64_TN>,
+        Layout<Shape<_4, _4, _1>, Stride<_1, _4, _0>>,
+        Tile<Underscore, Underscore, Underscore>
+      >;
+
+  using ALayout = Layout<Shape<Int<13>,Int<35>>, Stride<Int<44>, Int<1> >>;
+  using BLayout = Layout<Shape< Int<7>, Int<35>>, Stride<Int<44>, Int<1> >>;
+  using CLayout = Layout<Shape<Int<13>,  Int<7>>, Stride< Int<1>, Int<30>>>;
+
+
+  test_cooperative_gemm<ALayout,
+                        BLayout,
+                        CLayout,
+                        ALayout,
+                        BLayout,
+                        CLayout,
+                        AutoVectorizingCopyWithAssumedAlignment<MaxVecBits>, // A
+                        AutoVectorizingCopyWithAssumedAlignment<MaxVecBits>, // B
+                        AutoVectorizingCopyWithAssumedAlignment<MaxVecBits>, // C
+                        thread_block_size,
+                        tiled_mma_t,
+                        MaxVecBits,
+                        TA,
+                        TB,
+                        TC>();
+
+}
+
+TEST(SM80_CuTe_Ampere, CooperativeGemm10_F16F64F16_FMA) {
+
+  using TA = cutlass::half_t;
+  using TB = double;
+  using TC = cutlass::half_t;
+
+  constexpr uint32_t thread_block_size = 256;
+  constexpr int MaxVecBits = 128;
+
+  using tiled_mma_t =
+      TiledMMA<
+        MMA_Atom<UniversalFMA<half_t, half_t, double, half_t>>,
+        Layout<Shape<_16, _16, _1>, Stride<_1, _16, _0>>,
+        Tile<Underscore, Underscore, Underscore>
+      >;
+
+  using ALayout = Layout<Shape<Int<64>,Int<64>>, Stride<Int<64>, Int< 1>>>;
+  using BLayout = Layout<Shape<Int<64>,Int<64>>, Stride<Int< 1>, Int<64>>>;
+  using CLayout = Layout<Shape<Int<64>,Int<64>>, Stride<Int< 1>, Int<64>>>;
+
+
+  test_cooperative_gemm<ALayout,
+                        BLayout,
+                        CLayout,
+                        ALayout,
+                        BLayout,
+                        CLayout,
+                        AutoVectorizingCopyWithAssumedAlignment<MaxVecBits>, // A
+                        AutoVectorizingCopyWithAssumedAlignment<MaxVecBits>, // B
+                        AutoVectorizingCopyWithAssumedAlignment<MaxVecBits>, // C
+                        thread_block_size,
+                        tiled_mma_t,
+                        MaxVecBits,
+                        TA,
+                        TB,
+                        TC>();
+}
+
+TEST(SM80_CuTe_Ampere, CooperativeGemmComposedStride) {
+
+  using T = cute::half_t;
+
+  constexpr uint32_t thread_block_size = 128;
+  constexpr int MaxVecBits = 16;
+
+  using tiled_mma_t =
+      TiledMMA<
+        MMA_Atom<SM80_16x8x16_F16F16F16F16_TN>,
+        Layout<Shape<_2, _2, _1>, Stride<_1, _2, _0>>,
+        Tile<Underscore, Underscore, Underscore>
+      >;
+
+  using swizzle = cute::Swizzle<3, 3, 3>;
+  using offset = cute::_0;
+  using atom_tile_right = decltype(cute::make_layout(cute::Shape<cute::_8, cute::_64>{}, cute::LayoutRight{}));
+  using FP16AtomLayoutRight = decltype(cute::composition(swizzle{}, offset{}, atom_tile_right{}));
+
+  using shape = cute::Shape<cute::Int<128>, cute::Int<128>>;
+  using global_a_layout = decltype(cute::make_layout(shape{}, cute::LayoutRight{}));
+  using global_b_layout = decltype(cute::make_layout(shape{}, cute::LayoutLeft{}));
+  using global_c_layout = decltype(cute::make_layout(shape{}, cute::LayoutRight{}));
+
+  // This is for A row major, B col major according to CUTLASS default configs
+  using ALayout = decltype(cute::tile_to_shape(FP16AtomLayoutRight{}, global_a_layout{}));
+  using BLayout = decltype(cute::tile_to_shape(FP16AtomLayoutRight{}, global_b_layout{}));
+  using CLayout = global_c_layout;
+
+  test_cooperative_gemm<ALayout,
+                        BLayout,
+                        CLayout,
+                        ALayout,
+                        BLayout,
+                        CLayout,
+                        AutoVectorizingCopyWithAssumedAlignment<MaxVecBits>, // A
+                        AutoVectorizingCopyWithAssumedAlignment<MaxVecBits>, // B
+                        AutoVectorizingCopyWithAssumedAlignment<MaxVecBits>, // C
+                        thread_block_size,
+                        tiled_mma_t,
+                        MaxVecBits,
+                        T,
+                        T,
+                        T>();
+}
+
+TEST(SM89_CuTe_Ampere, CooperativeGemm8_MixedPrecisionTF32FP32_Transform) {
+  using TA = cutlass::tfloat32_t;
+  using TB = cutlass::tfloat32_t;
+  using TC = float;
+
+  constexpr uint32_t m = 9;
+  constexpr uint32_t n = 9;
+  constexpr uint32_t k = 9;
+
+  constexpr uint32_t thread_block_size = 64;
+
+  using tiled_mma_t =
+      TiledMMA<
+        MMA_Atom<SM80_16x8x8_F32TF32TF32F32_TN>,
+        Layout<Shape<_1, _2, _1>>
+      >;
+
+  test_cooperative_gemm_col_major_layout<m, n, k, thread_block_size, tiled_mma_t, 16, TA, TB, TC>(cute::negate{}, cute::negate{}, cute::negate{}, cute::negate{});
 }

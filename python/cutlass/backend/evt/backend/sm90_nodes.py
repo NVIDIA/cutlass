@@ -154,20 +154,6 @@ using {self.name_camel} = cutlass::epilogue::fusion::Sm90ScalarBroadcast<
 
 
 class Sm90RowBroadcastImpl(RowBroadcastImpl):
-
-    @property
-    def descriptor(self) -> str:
-        """
-        Descriptor for Aux Load
-        """
-        return f"{self.name_camel}Descriptor"
-
-    def decl_descriptor(self) -> str:
-        """
-        Declare the descriptor type
-        """
-        return f"\nusing {self.descriptor} = cutlass::epilogue::collective::detail::RowBroadcastDescriptor<EpilogueDescriptor, {DataTypeTag[self.element]}>;\n"
-
     @property
     def type_decl(self):
         """
@@ -176,21 +162,13 @@ class Sm90RowBroadcastImpl(RowBroadcastImpl):
         if self._type_decl is not None:
             return self._type_decl
 
-        self._type_decl = self.decl_descriptor()
-        self._type_decl += f"""
+        self._type_decl = f"""
 using {self.name_camel} = cutlass::epilogue::fusion::Sm90RowBroadcast<
-    {self.descriptor}::Stages, typename EpilogueDescriptor::TileShape,
-    typename {self.descriptor}::Element, {self.stride_mnl}
+    0 /*Stages*/, typename EpilogueDescriptor::TileShape, {DataTypeTag[self.element]}, {DataTypeTag[self.element_output]},
+    {self.stride_mnl}
 >;
 """
         return self._type_decl
-
-    def get_smem_size(self, cta_tile_mnk, epilogue_tile_mn, stages_c, stages_d, epi_tiles):
-        """
-        Get the shared memory size based on epilogue_tile_mn, stages_c, and stages_d
-        """
-        stages = (stages_c + epi_tiles - 1) // epi_tiles + 1
-        return (DataTypeSize[self.element] * cta_tile_mnk[1] * stages // 8, 16)
 
 
 class Sm90ColumnBroadcastImpl(ColumnBroadcastImpl):
@@ -205,7 +183,7 @@ class Sm90ColumnBroadcastImpl(ColumnBroadcastImpl):
 
         self._type_decl = f"""
 using {self.name_camel} = cutlass::epilogue::fusion::Sm90ColBroadcast<
-    0 /*Stages*/, typename EpilogueDescriptor::TileShape, {DataTypeTag[self.element]},
+    0 /*Stages*/, typename EpilogueDescriptor::TileShape, {DataTypeTag[self.element]}, {DataTypeTag[self.element_output]},
     {self.stride_mnl}
 >;
 """

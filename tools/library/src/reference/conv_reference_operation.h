@@ -489,7 +489,7 @@ template <
   typename InnerProductOp_ = multiply_add<ElementAccumulator_>
 >
 void make_conv_fprop(Manifest &manifest) {
-  
+#if !defined(CUTLASS_PROFILER_DISABLE_REFERENCE)
   manifest.append(new ConvReferenceOperation<
     Provider::kReferenceHost,
     cutlass::conv::Operator::kFprop,
@@ -515,6 +515,7 @@ void make_conv_fprop(Manifest &manifest) {
     ConvertOp_,
     InnerProductOp_
   >);
+#endif // !defined(CUTLASS_PROFILER_DISABLE_REFERENCE)
 }
 
 /// Constructs Dgrad and Wgrad reference operators.
@@ -532,7 +533,7 @@ template <
   typename InnerProductOp_ = multiply_add<ElementAccumulator_>
 >
 void make_conv_backwards(Manifest &manifest) {
-  
+#if !defined(CUTLASS_PROFILER_DISABLE_REFERENCE)
   manifest.append(new ConvReferenceOperation<
     Provider::kReferenceHost,
     cutlass::conv::Operator::kDgrad,
@@ -584,6 +585,7 @@ void make_conv_backwards(Manifest &manifest) {
     ConvertOp_,
     InnerProductOp_
   >);
+#endif // !defined(CUTLASS_PROFILER_DISABLE_REFERENCE)
 }
 
 /// Six operators for the price of one.

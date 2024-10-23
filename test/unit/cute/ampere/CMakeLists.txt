@@ -31,6 +31,7 @@ cutlass_test_unit_add_executable(
   cp_async.cu
   ldsm.cu
   cooperative_gemm.cu
+  cooperative_copy.cu
 )
 
 cutlass_test_unit_add_executable(

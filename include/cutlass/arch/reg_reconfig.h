@@ -37,12 +37,11 @@
 
 #include "cutlass/cutlass.h"
 
-#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900) && (__CUDACC_VER_MAJOR__ >= 12))
-  #if (defined(__CUDA_ARCH_FEAT_SM90_ALL))
+#ifndef CUDA_CTA_RECONFIG_ACTIVATED
+  #if (__CUDACC_VER_MAJOR__ >= 12 && \
+    defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 900 && defined(__CUDA_ARCH_FEAT_SM90_ALL))
     #define CUDA_CTA_RECONFIG_ACTIVATED 1
   #endif
-#else
-  #define CUDA_CTA_RECONFIG_ACTIVATED 0
 #endif
 
 namespace cutlass {
@@ -55,6 +54,7 @@ void warpgroup_reg_alloc(){
   asm volatile( "setmaxnreg.inc.sync.aligned.u32 %0;\n" : : "n"(RegCount) );
 #endif
 }
+
 template<uint32_t RegCount>
 CUTLASS_DEVICE
 void warpgroup_reg_dealloc(){

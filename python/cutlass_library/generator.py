@@ -36,13 +36,13 @@ Utilities for enumerating CUTLASS library kernels
 
 import argparse
 import enum
-from itertools import product
+from itertools import chain, product
 import logging
 import os.path
 import shutil
 import sys
 import copy
-from typing import Any, Optional, Sequence, Tuple
+from typing import Any, Dict, Optional, Sequence, Tuple
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -213,6 +213,54 @@ def CreateGemmUniversal3xOperator(
         gemm_kind, tile_description.minimum_compute_capability,
         tile_description, A, B, C, element_compute, epilogue_functor, swizzling_functor, D,
         kernel_schedule, epilogue_schedule, tile_scheduler, **gemm_op_extra_args)
+
+    manifest.append(operation)
+    operations.append(operation)
+
+  return operations
+
+# Generates 3.0 API based GemmUniversal API kernels. Alignment constraints are folded in with layouts
+def CreateSparseGemmUniversal3xOperator(
+    manifest, layouts, tile_descriptions, data_types,
+    schedules = [[KernelScheduleType.ScheduleAuto, EpilogueScheduleType.ScheduleAuto]],
+    complex_transforms=None,
+    epilogue_functor=EpilogueFunctor.LinearCombination,
+    swizzling_functor=SwizzlingFunctor.Identity1,
+    tile_schedulers=[TileSchedulerType.Persistent]):
+
+  if type(data_types) is dict:
+    data_types = [data_types]
+
+  for s in schedules:
+    assert(len(s) == 2)
+
+  if complex_transforms is None:
+    complex_transforms = [(ComplexTransform.none, ComplexTransform.none), ]
+
+  operations = []
+
+  # by default, only generate the largest tile and largest alignment
+  if manifest.kernel_filter == '':
+    tile_descriptions = [tile_descriptions[0]]
+
+  combinations = product(layouts, tile_descriptions, data_types, complex_transforms, schedules, tile_schedulers)
+  for layout, tile_description, data_type, complex_transform, schedules, tile_scheduler in combinations:
+    kernel_schedule, epilogue_schedule = schedules
+    A = TensorDescription(
+        data_type["a_type"], layout[0][0], layout[0][1], complex_transform[0])
+    B = TensorDescription(
+        data_type["b_type"], layout[1][0], layout[1][1], complex_transform[1])
+
+    # Currently assume tensor C/D have same layout requirement.
+    C = TensorDescription(data_type["c_type"], layout[2][0], layout[2][1])
+    D = TensorDescription(data_type["d_type"], layout[2][0], layout[2][1])
+
+    element_compute = data_type.get("epi_type", data_type["acc_type"])
+
+    operation = GemmOperation(
+        GemmKind.SparseUniversal3x, tile_description.minimum_compute_capability,
+        tile_description, A, B, C, element_compute, epilogue_functor, swizzling_functor, D,
+        kernel_schedule, epilogue_schedule, tile_scheduler)
 
     manifest.append(operation)
     operations.append(operation)
@@ -513,7 +561,7 @@ def CreateConv2dOperator(manifest, layout, tile_descriptions, data_type, alignme
           new_operations = [
             # None grouped kernel
             Conv2dOperation(ConvKind.Fprop, iterator_algorithm, tile.minimum_compute_capability, tile,\
-              A, B, C, element_epilogue, StrideSupport.Strided, epilogue_functor, swizzling_functor_),
+              A, B, C, element_epilogue, StrideSupport.Unity, epilogue_functor, swizzling_functor_),
           ]
 
           # Instance group conv kernel
@@ -521,12 +569,12 @@ def CreateConv2dOperator(manifest, layout, tile_descriptions, data_type, alignme
             tile.minimum_compute_capability >= 80:
             # SingleGroup kernel
             new_operations.append(Conv2dOperation(ConvKind.Fprop, iterator_algorithm, tile.minimum_compute_capability, tile,\
-              A, B, C, element_epilogue, StrideSupport.Strided, epilogue_functor, swizzling_functor_, group_mode=GroupMode.SingleGroup))
+              A, B, C, element_epilogue, StrideSupport.Unity, epilogue_functor, swizzling_functor_, group_mode=GroupMode.SingleGroup))
 
             # Analytic iterator supports MultipleGroup mode
             if iterator_algorithm == IteratorAlgorithm.Analytic:
               new_operations.append(Conv2dOperation(ConvKind.Fprop, iterator_algorithm, tile.minimum_compute_capability, tile,\
-                A, B, C, element_epilogue, StrideSupport.Strided, epilogue_functor, swizzling_functor_, group_mode=GroupMode.MultipleGroup))
+                A, B, C, element_epilogue, StrideSupport.Unity, epilogue_functor, swizzling_functor_, group_mode=GroupMode.MultipleGroup))
 
           for new_operation in new_operations:
             manifest.append(new_operation)
@@ -884,7 +932,7 @@ class ConvOperation3x:
     prefix = ''
     if self.tile_description.math_instruction.math_operation == MathOperation.multiply_add_complex_gaussian:
       prefix = 'g'
-    return prefix + ShortDataTypeNames[self.accumulator_type()]
+    return prefix + DataTypeNames[self.accumulator_type()]
 
   def is_tensor_op(self):
     tensor_ops = [
@@ -1054,8 +1102,11 @@ def CreateConvOperator3x(manifest: Manifest,
   log_debug_line(f'conv_kind: {conv_kind}', log_indent_level)
 
   for triple in dims_and_alignments:
-    spatial_dimensionality = None # to be determined by loop below
+    assert(isinstance(triple, tuple) or isinstance(triple, list))
     assert(len(triple) == 3)
+
+    spatial_dimensionality = None # to be determined by loop below
+
     for entry in triple: # [A, B, C]
       assert(len(entry) == 2)
       [dim, alignment] = entry
@@ -2572,11 +2623,6 @@ def GenerateSM80_TensorOp_16816_mixed_input_upcast_a(manifest, cuda_version):
   math_instructions = [
     MathInstruction(                                  \
       [16, 8, 16],                                    \
-      DataType.s8, DataType.f16, DataType.f16,        \
-      OpcodeClass.TensorOp,                           \
-      MathOperation.multiply_add_mixed_input_upcast),
-    MathInstruction(                                  \
-      [16, 8, 16],                                    \
       DataType.s8, DataType.f16, DataType.f32,        \
       OpcodeClass.TensorOp,                           \
       MathOperation.multiply_add_mixed_input_upcast),
@@ -2587,12 +2633,22 @@ def GenerateSM80_TensorOp_16816_mixed_input_upcast_a(manifest, cuda_version):
       MathOperation.multiply_add_mixed_input_upcast),
     MathInstruction(                                  \
       [16, 8, 16],                                    \
+      DataType.s8, DataType.bf16, DataType.f32,       \
+      OpcodeClass.TensorOp,                           \
+      MathOperation.multiply_add_mixed_input_upcast),
+    MathInstruction(                                  \
+      [16, 8, 16],                                    \
       DataType.u8, DataType.bf16, DataType.f32,       \
       OpcodeClass.TensorOp,                           \
       MathOperation.multiply_add_mixed_input_upcast),
     MathInstruction(                                  \
       [16, 8, 16],                                    \
-      DataType.s8, DataType.bf16, DataType.f32,       \
+      DataType.s8, DataType.f16, DataType.f16,        \
+      OpcodeClass.TensorOp,                           \
+      MathOperation.multiply_add_mixed_input_upcast),
+    MathInstruction(                                  \
+      [16, 8, 16],                                    \
+      DataType.u8, DataType.f16, DataType.f16,        \
       OpcodeClass.TensorOp,                           \
       MathOperation.multiply_add_mixed_input_upcast),
   ]
@@ -2634,7 +2690,7 @@ def GenerateSM80_TensorOp_16816_mixed_input_upcast_a(manifest, cuda_version):
       data_type, alignment_constraints, None, EpilogueFunctor.LinearCombination, SwizzlingFunctor.Identity8)
 
     # Avoid emitting two kernels if the accumulator type does not differ from the input type (e.g. F16 accumulation)
-    if math_inst.element_a != math_inst.element_accumulator:
+    if math_inst.element_b != math_inst.element_accumulator:
 
       data_type_mixed = [
         math_inst.element_a,
@@ -2646,10 +2702,10 @@ def GenerateSM80_TensorOp_16816_mixed_input_upcast_a(manifest, cuda_version):
       operations += CreateGemmOperator(manifest, layouts, tile_descriptions, \
         data_type_mixed, alignment_constraints, None, EpilogueFunctor.LinearCombination, SwizzlingFunctor.Identity8)
 
-      for op in operations:
-        if (DataTypeSize[op.C.element] == 16) and \
-           (op.tile_description.threadblock_shape[1] <= 32):
-          op.C.alignment = 4
+    for op in operations:
+      if (DataTypeSize[op.C.element] == 16) and \
+         (op.tile_description.threadblock_shape[1] <= 32):
+        op.C.alignment = 4
 
 #
 def GenerateSM80_TensorOp_16816_mixed_input_upcast_b(manifest, cuda_version):
@@ -2669,17 +2725,27 @@ def GenerateSM80_TensorOp_16816_mixed_input_upcast_b(manifest, cuda_version):
       MathOperation.multiply_add_mixed_input_upcast),
     MathInstruction(                                  \
       [16, 8, 16],                                    \
-      DataType.bf16, DataType.s8, DataType.f32,       \
-      OpcodeClass.TensorOp,                           \
-      MathOperation.multiply_add_mixed_input_upcast),
-    MathInstruction(                                  \
-      [16, 8, 16],                                    \
       DataType.f16, DataType.u8, DataType.f32,        \
       OpcodeClass.TensorOp,                           \
       MathOperation.multiply_add_mixed_input_upcast),
     MathInstruction(                                  \
       [16, 8, 16],                                    \
+      DataType.bf16, DataType.s8, DataType.f32,       \
+      OpcodeClass.TensorOp,                           \
+      MathOperation.multiply_add_mixed_input_upcast),
+    MathInstruction(                                  \
+      [16, 8, 16],                                    \
       DataType.bf16, DataType.u8, DataType.f32,       \
+      OpcodeClass.TensorOp,                           \
+      MathOperation.multiply_add_mixed_input_upcast),
+    MathInstruction(                                  \
+      [16, 8, 16],                                    \
+      DataType.f16, DataType.s8, DataType.f16,        \
+      OpcodeClass.TensorOp,                           \
+      MathOperation.multiply_add_mixed_input_upcast),
+    MathInstruction(                                  \
+      [16, 8, 16],                                    \
+      DataType.f16, DataType.u8, DataType.f16,        \
       OpcodeClass.TensorOp,                           \
       MathOperation.multiply_add_mixed_input_upcast),
   ]
@@ -2725,7 +2791,7 @@ def GenerateSM80_TensorOp_16816_mixed_input_upcast_b(manifest, cuda_version):
     ]
 
     # streamk uses more regs which can cause spill for the biggest warp tile size when the accumulators are 32bit.
-    CreateGemmOperator(manifest, layouts, tile_descriptions, \
+    operations = CreateGemmOperator(manifest, layouts, tile_descriptions, \
       data_type, alignment_constraints, None, EpilogueFunctor.LinearCombination, SwizzlingFunctor.Identity8)
 
     # Avoid emitting two kernels if the accumulator type does not differ from the input type (e.g. F16 accumulation)
@@ -2738,12 +2804,12 @@ def GenerateSM80_TensorOp_16816_mixed_input_upcast_b(manifest, cuda_version):
         math_inst.element_accumulator,
       ]
 
-      operations = CreateGemmOperator(manifest, layouts, tile_descriptions, \
+      operations += CreateGemmOperator(manifest, layouts, tile_descriptions, \
         data_type_mixed, alignment_constraints, None, EpilogueFunctor.LinearCombination, SwizzlingFunctor.Identity8)
 
-      for op in operations:
-        if op.tile_description.threadblock_shape[1] <= 32:
-          op.C.alignment = 4
+    for op in operations:
+      if op.tile_description.threadblock_shape[1] <= 32:
+        op.C.alignment = 4
 
 #
 def GenerateSM80_TensorOp_16832_TN(manifest, cuda_version):
@@ -2836,6 +2902,170 @@ def GenerateSM80_TensorOp_16832_TN(manifest, cuda_version):
       else:
         op.C.alignment = 8
 
+#
+
+def GenerateSM80_TensorOp_16832_TN_mixed_input_upcast_a(manifest, cuda_version):
+
+  if not CudaToolkitVersionSatisfies(cuda_version, 11, 0):
+    return
+
+  layouts = [
+    (LayoutType.RowMajor, LayoutType.ColumnMajor, LayoutType.ColumnMajor),
+  ]
+
+  # Upcast on Operand A
+  math_instructions = [
+    MathInstruction(                                  \
+      [16, 8, 32],                                    \
+      DataType.s4, DataType.s8, DataType.s32,         \
+      OpcodeClass.TensorOp,                           \
+      MathOperation.multiply_add_mixed_input_upcast),
+  ]
+
+  min_cc = 80
+  max_cc = 1024
+
+  # For mixed-input alignment constraints are a list of lists, where the 
+  # inner list contains the alignment constraints for operands/matrices 
+  # [[alignA, alignB, alignC],..]
+  alignment_constraints = [[32, 16, 4],]
+
+  for math_inst in math_instructions:
+    tile_descriptions = [
+      TileDescription([256, 128,  64],  3, [4, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 256,  64],  3, [2, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([256,  64,  64],  4, [4, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64, 256,  64],  4, [1, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 32, 256,  64],  4, [1, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 128,  64],  5, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64, 128,  64],  6, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([256, 128, 128],  3, [4, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 256, 128],  3, [2, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([256,  64, 128],  4, [4, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64, 256, 128],  4, [1, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([256,  32, 128],  4, [4, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 32, 256, 128],  4, [1, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 128, 128],  4, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64, 128, 128],  3, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128,  32, 128],  4, [4, 1, 1], math_inst, min_cc, max_cc),
+    ]
+
+    data_type = [
+      math_inst.element_a,
+      math_inst.element_b,
+      math_inst.element_accumulator,
+      math_inst.element_accumulator,
+    ]
+
+    # streamk uses more regs which can cause spill for the biggest warp tile size when the accumulators are 32bit.
+    operations = CreateGemmOperator(manifest, layouts, tile_descriptions, \
+      data_type, alignment_constraints, None, EpilogueFunctor.LinearCombination, SwizzlingFunctor.Identity8)
+
+    # Avoid emitting two kernels if the accumulator type does not differ from the input type (e.g. S8 accumulation)
+    if math_inst.element_a != math_inst.element_accumulator:
+      alignment_constraints = [[32, 16, 16],]
+
+      data_type_mixed = [
+        math_inst.element_a,
+        math_inst.element_b,
+        math_inst.element_b,
+        DataType.f32
+      ]
+
+      operations += CreateGemmOperator(manifest, layouts, tile_descriptions, \
+        data_type_mixed, alignment_constraints, None, EpilogueFunctor.LinearCombinationClamp, SwizzlingFunctor.Identity8)
+
+    for op in operations:
+      if op.tile_description.threadblock_shape[1] >= 128:
+        if op.tile_description.threadblock_shape[0] == 32:
+          op.C.alignment = 8
+        else:
+          op.C.alignment = 16
+      else:
+        op.C.alignment = 8
+#
+
+#
+def GenerateSM80_TensorOp_16832_TN_mixed_input_upcast_b(manifest, cuda_version):
+
+  if not CudaToolkitVersionSatisfies(cuda_version, 11, 0):
+    return
+
+  layouts = [
+    (LayoutType.RowMajor, LayoutType.ColumnMajor, LayoutType.ColumnMajor),
+  ]
+
+  # Upcast on Operand B
+  math_instructions = [
+    MathInstruction(                                  \
+      [16, 8, 32],                                    \
+      DataType.s8, DataType.s4, DataType.s32,         \
+      OpcodeClass.TensorOp,                           \
+      MathOperation.multiply_add_mixed_input_upcast),
+  ]
+
+  min_cc = 80
+  max_cc = 1024
+
+  # For mixed-input alignment constraints are a list of lists, where the 
+  # inner list contains the alignment constraints for operands/matrices 
+  # [[alignA, alignB, alignC],..]
+  alignment_constraints = [[16, 32, 4],]
+
+  for math_inst in math_instructions:
+    tile_descriptions = [
+      TileDescription([256, 128,  64],  3, [4, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 256,  64],  3, [2, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([256,  64,  64],  4, [4, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64, 256,  64],  4, [1, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([256,  32,  64],  4, [4, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 128,  64],  5, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64, 128,  64],  6, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128,  32,  64],  6, [4, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([256, 128, 128],  3, [4, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 256, 128],  3, [2, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([256,  64, 128],  4, [4, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64, 256, 128],  4, [1, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([256,  32, 128],  4, [4, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 32, 256, 128],  4, [1, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 128, 128],  4, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64, 128, 128],  3, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128,  32, 128],  4, [4, 1, 1], math_inst, min_cc, max_cc),
+    ]
+
+    data_type = [
+      math_inst.element_a,
+      math_inst.element_b,
+      math_inst.element_accumulator,
+      math_inst.element_accumulator,
+    ]
+
+    # streamk uses more regs which can cause spill for the biggest warp tile size when the accumulators are 32bit.
+    operations = CreateGemmOperator(manifest, layouts, tile_descriptions, \
+      data_type, alignment_constraints, None, EpilogueFunctor.LinearCombination, SwizzlingFunctor.Identity8)
+
+    # Avoid emitting two kernels if the accumulator type does not differ from the input type (e.g. S8 accumulation)
+    if math_inst.element_a != math_inst.element_accumulator:
+      alignment_constraints = [[16, 32, 16],]
+
+      data_type_mixed = [
+        math_inst.element_a,
+        math_inst.element_b,
+        math_inst.element_a,
+        DataType.f32,
+      ]
+
+      operations += CreateGemmOperator(manifest, layouts, tile_descriptions, \
+        data_type_mixed, alignment_constraints, None, EpilogueFunctor.LinearCombinationClamp, SwizzlingFunctor.Identity8)
+
+    for op in operations:
+      if op.tile_description.threadblock_shape[1] >= 128:
+        if op.tile_description.threadblock_shape[0] == 32:
+          op.C.alignment = 8
+        else:
+          op.C.alignment = 16
+      else:
+        op.C.alignment = 8
 #
 
 #
@@ -4681,6 +4911,8 @@ def GenerateSM80(manifest, cuda_version):
   GenerateSM80_TensorOp_16816_mixed_input_upcast_a(manifest, cuda_version)
   GenerateSM80_TensorOp_16816_mixed_input_upcast_b(manifest, cuda_version)
   GenerateSM80_TensorOp_16832_TN(manifest, cuda_version)
+  GenerateSM80_TensorOp_16832_TN_mixed_input_upcast_a(manifest, cuda_version)
+  GenerateSM80_TensorOp_16832_TN_mixed_input_upcast_b(manifest, cuda_version)
   GenerateSM80_SparseTensorOp_16864_TN(manifest, cuda_version)
   GenerateSM80_TensorOp_16832_Interleaved(manifest, cuda_version)
   GenerateSM80_TensorOp_16864_TN(manifest, cuda_version)
@@ -4700,7 +4932,8 @@ def GenerateSM89_TensorOp_16832_fp8(manifest, cuda_version):
     return
 
   layouts = [
-    (LayoutType.RowMajor, LayoutType.ColumnMajor, LayoutType.ColumnMajor)
+    (LayoutType.RowMajor, LayoutType.ColumnMajor, LayoutType.ColumnMajor),
+    (LayoutType.RowMajor, LayoutType.ColumnMajor, LayoutType.RowMajor)
   ]
 
   math_instructions = [
@@ -4754,43 +4987,49 @@ def GenerateSM89_TensorOp_16832_fp8(manifest, cuda_version):
 
   for math_inst in math_instructions:
     tile_descriptions = [
+      TileDescription([256, 128, 128],  3, [4, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([256, 128,  64],  3, [4, 2, 1], math_inst, min_cc, max_cc),
-      TileDescription([128, 256,  64],  3, [2, 4, 1], math_inst, min_cc, max_cc),
       TileDescription([256, 128,  64],  6, [4, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 256, 128],  3, [2, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 256,  64],  3, [2, 4, 1], math_inst, min_cc, max_cc),
       TileDescription([128, 256,  64],  6, [2, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([256,  64, 128],  4, [4, 1, 1], math_inst, min_cc, max_cc),
       TileDescription([256,  64,  64],  3, [4, 1, 1], math_inst, min_cc, max_cc),
-      TileDescription([ 64, 256,  64],  3, [1, 4, 1], math_inst, min_cc, max_cc),
       TileDescription([256,  64,  64],  4, [4, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64, 256, 128],  4, [1, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64, 256,  64],  3, [1, 4, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64, 256,  64],  4, [1, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([256,  32, 128],  4, [4, 1, 1], math_inst, min_cc, max_cc),
       TileDescription([256,  32,  64],  4, [4, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 32, 256, 128],  4, [1, 4, 1], math_inst, min_cc, max_cc),
       TileDescription([ 32, 256,  64],  4, [1, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 128, 128],  3, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 128, 128],  4, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 128, 128],  5, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([128, 128,  64],  3, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([128, 128,  64],  4, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([128, 128,  64],  5, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([128, 128,  64],  6, [2, 2, 1], math_inst, min_cc, max_cc),
-      TileDescription([128,  64,  64],  6, [2, 2, 1], math_inst, min_cc, max_cc),
-      TileDescription([ 64, 128,  64],  6, [2, 2, 1], math_inst, min_cc, max_cc),
-      TileDescription([128,  32,  64],  6, [4, 1, 1], math_inst, min_cc, max_cc),
-      TileDescription([ 32, 128,  64],  6, [1, 4, 1], math_inst, min_cc, max_cc),
-      TileDescription([ 64,  64,  64],  6, [2, 2, 1], math_inst, min_cc, max_cc),
-      TileDescription([ 64,  64,  64], 10, [2, 2, 1], math_inst, min_cc, max_cc),
-      TileDescription([256, 128, 128],  3, [4, 2, 1], math_inst, min_cc, max_cc),
-      TileDescription([128, 256, 128],  3, [2, 4, 1], math_inst, min_cc, max_cc),
-      TileDescription([256,  64, 128],  4, [4, 1, 1], math_inst, min_cc, max_cc),
-      TileDescription([ 64, 256, 128],  4, [1, 4, 1], math_inst, min_cc, max_cc),
-      TileDescription([256,  32, 128],  4, [4, 1, 1], math_inst, min_cc, max_cc),
-      TileDescription([ 32, 256, 128],  4, [1, 4, 1], math_inst, min_cc, max_cc),
-      TileDescription([128, 128, 128],  3, [2, 2, 1], math_inst, min_cc, max_cc),
-      TileDescription([128, 128, 128],  4, [2, 2, 1], math_inst, min_cc, max_cc),
-      TileDescription([128, 128, 128],  5, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([128,  64, 128],  3, [2, 2, 1], math_inst, min_cc, max_cc),
-      TileDescription([ 64, 128, 128],  3, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([128,  64, 128],  4, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64, 128, 128],  3, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64, 128, 128],  4, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128,  64,  64],  3, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128,  64,  64],  4, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128,  64,  64],  5, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128,  64,  64],  6, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64, 128,  64],  3, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64, 128,  64],  4, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64, 128,  64],  5, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64, 128,  64],  6, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([128,  32, 128],  4, [4, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([128,  32,  64],  6, [4, 1, 1], math_inst, min_cc, max_cc),
       TileDescription([ 32, 128, 128],  4, [1, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 32, 128,  64],  6, [1, 4, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64,  64, 128],  5, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64,  64, 128],  6, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64,  64,  64],  6, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64,  64,  64], 10, [2, 2, 1], math_inst, min_cc, max_cc),
     ]
 
     data_types = [
@@ -4798,6 +5037,12 @@ def GenerateSM89_TensorOp_16832_fp8(manifest, cuda_version):
         math_inst.element_a,
         math_inst.element_b,
         DataType.f32,
+        math_inst.element_accumulator
+      ],
+      [
+        math_inst.element_a,
+        math_inst.element_b,
+        DataType.bf16,
         math_inst.element_accumulator
       ],
     ]
@@ -4928,10 +5173,38 @@ def GenerateSM89(manifest, cuda_version):
 
 ###################################################################################################
 
-#
+
+try:
+    from .sm90_utils import (
+        generate_fp16_bf16_math_instructions_sm90,
+        generate_tf32_math_instructions_sm90,
+        generate_int8_math_instructions_sm90,
+        generate_fp8_math_instructions_sm90,
+        make_sparse_math_instructions,
+        generate_tile_descriptions_sm90,
+        get_valid_schedules,
+        generate_data_types_from_math_instruction,
+        fix_alignments,
+    )
+except ImportError:
+    from sm90_utils import (
+        generate_fp16_bf16_math_instructions_sm90,
+        generate_tf32_math_instructions_sm90,
+        generate_int8_math_instructions_sm90,
+        generate_fp8_math_instructions_sm90,
+        make_sparse_math_instructions,
+        generate_tile_descriptions_sm90,
+        get_valid_schedules,
+        generate_data_types_from_math_instruction,
+        fix_alignments,
+    )
+
 def GenerateSM90_TensorOp_16b_WGMMA_gemm(manifest, cuda_version):
   if not CudaToolkitVersionSatisfies(cuda_version, 12, 0):
     return
+
+  instantiation_level = manifest.get_sm90_instantiation_level(pruned_level=100, default_level=131, exhaustive_level=9999)
+  is_aligned = True
 
   # layouts for ABC and their alignments.
   layouts = [
@@ -4941,167 +5214,62 @@ def GenerateSM90_TensorOp_16b_WGMMA_gemm(manifest, cuda_version):
     [[LayoutType.RowMajor,    8], [LayoutType.RowMajor,    8], [LayoutType.ColumnMajor, 1]],
   ]
 
-  math_instructions = [
-    MathInstruction(
-      [64, 128, 16],
-      DataType.f16, DataType.f16, DataType.f16,
-      OpcodeClass.TensorOp,
-      MathOperation.multiply_add),
-    MathInstruction(
-      [64, 128, 16],
-      DataType.f16, DataType.f16, DataType.f32,
-      OpcodeClass.TensorOp,
-      MathOperation.multiply_add),
-    MathInstruction(
-      [64, 128, 16],
-      DataType.bf16, DataType.bf16, DataType.f32,
-      OpcodeClass.TensorOp,
-      MathOperation.multiply_add),
-  ]
+  math_instructions = generate_fp16_bf16_math_instructions_sm90(instantiation_level)
+  tile_descriptions = generate_tile_descriptions_sm90(
+      math_instructions=math_instructions,
+      is_aligned=is_aligned,
+      level=instantiation_level)
 
-  min_cc = 90
-  max_cc = 90
-
-  for math_inst in math_instructions:
-    tile_descriptions_small = [
-      # Not compatible with TmaWarpSpecializedCooperative
-      TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-       0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
-      TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-       0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
-    ]
-    tile_descriptions_medium = [
-      TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-        0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
-      TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-        0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
-    ]
-    tile_descriptions_large = [
-      TileDescription([math_inst.instruction_shape[0]*4, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-        0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
-      TileDescription([math_inst.instruction_shape[0]*4, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-        0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
-      TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1]*2, math_inst.instruction_shape[2]*4],
-        0, [4, 2, 1], math_inst, min_cc, max_cc, [2,1,1]),
-      TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1]*2, math_inst.instruction_shape[2]*4],
-        0, [4, 2, 1], math_inst, min_cc, max_cc, [1,2,1]),
-    ]
-    tile_descriptions = tile_descriptions_medium + tile_descriptions_large
-
-    data_type = {
-      "a_type"   : math_inst.element_a,
-      "b_type"   : math_inst.element_b,
-      "c_type"   : math_inst.element_accumulator,
-      "d_type"   : math_inst.element_accumulator,
-      "acc_type" : math_inst.element_accumulator,
-      "epi_type" : math_inst.element_accumulator
-    }
-
-    # Set alignment c based on Destination format.
-    for layout in layouts:
-      if data_type["c_type"] in [DataType.s32, DataType.f32]:
-        layout[2][1] = 4
-      elif data_type["c_type"] in [DataType.f16, DataType.bf16]:
-        layout[2][1] = 8
-
-    if CudaToolkitVersionSatisfies(cuda_version, 12, 1):
-      schedules = [
-        [KernelScheduleType.ScheduleAuto, EpilogueScheduleType.ScheduleAuto],
-        [KernelScheduleType.TmaWarpSpecializedCooperative, EpilogueScheduleType.NoSmemWarpSpecialized],
-        [KernelScheduleType.TmaWarpSpecializedPingpong, EpilogueScheduleType.NoSmemWarpSpecialized],
-        [KernelScheduleType.TmaWarpSpecialized, EpilogueScheduleType.NoSmemWarpSpecialized]
-      ]
-      stream_k_schedules = [[KernelScheduleType.TmaWarpSpecializedCooperative, EpilogueScheduleType.NoSmemWarpSpecialized]]
-    else:
-      schedules = [
-        [KernelScheduleType.ScheduleAuto, EpilogueScheduleType.ScheduleAuto],
-        [KernelScheduleType.TmaWarpSpecialized, EpilogueScheduleType.NoSmemWarpSpecialized]
-        # TmaWarpSpecializedCooperative and TmaWarpSpecializedPingpong require CUDA version >= 12.1 for optimal performance.
-      ]
-      stream_k_schedules = []
-
-    CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type, schedules)
-
-    if CudaToolkitVersionSatisfies(cuda_version, 12, 1):
-      # Add stream-K variants
-      CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type, stream_k_schedules, tile_schedulers=[TileSchedulerType.StreamK])
-
-    # persistent kernels with TMA epilogues
-    if CudaToolkitVersionSatisfies(cuda_version, 12, 1):
-      # not enough smem for 256x128 f32 out with C allocation
-      if data_type["d_type"] == DataType.f32:
-        CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions_medium, data_type,
-          [[KernelScheduleType.TmaWarpSpecializedPingpong,    EpilogueScheduleType.TmaWarpSpecialized],
-           [KernelScheduleType.TmaWarpSpecializedCooperative, EpilogueScheduleType.TmaWarpSpecializedCooperative]])
-
-        CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions_medium, data_type,
-          [[KernelScheduleType.TmaWarpSpecializedCooperative, EpilogueScheduleType.TmaWarpSpecializedCooperative]],
-          tile_schedulers=[TileSchedulerType.StreamK])
-      else:
-        CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type,
-          [[KernelScheduleType.TmaWarpSpecializedPingpong,    EpilogueScheduleType.TmaWarpSpecialized],
-           [KernelScheduleType.TmaWarpSpecializedCooperative, EpilogueScheduleType.TmaWarpSpecializedCooperative]])
-
-        CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type,
-          [[KernelScheduleType.TmaWarpSpecializedCooperative, EpilogueScheduleType.TmaWarpSpecializedCooperative]],
-          tile_schedulers=[TileSchedulerType.StreamK])
-
-      # Emit instance without C allocation + load
-      data_type["c_type"] = DataType.void
-      CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type,
-        [[KernelScheduleType.TmaWarpSpecializedPingpong,    EpilogueScheduleType.TmaWarpSpecialized],
-         [KernelScheduleType.TmaWarpSpecializedCooperative, EpilogueScheduleType.TmaWarpSpecializedCooperative]])
-
-      CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type,
-        [[KernelScheduleType.TmaWarpSpecializedCooperative, EpilogueScheduleType.TmaWarpSpecializedCooperative]],
-        tile_schedulers=[TileSchedulerType.StreamK])
+  for tile_desc in tile_descriptions:
+    math_inst = tile_desc.math_instruction
+    data_type_w_source = generate_data_types_from_math_instruction(math_inst)
+    data_type_wo_source = generate_data_types_from_math_instruction(math_inst, element_source=DataType.void)
+    data_types = [data_type_w_source, data_type_wo_source]
 
     # for mixed precision kernels, also generate kernels that write output matrix in the A/B format
     # Avoid emitting two kernels if the accumulator type does not differ from the input type (e.g. F16 accumulation)
     if math_inst.element_a != math_inst.element_accumulator:
-      data_type_mixed = {
-        "a_type"   : math_inst.element_a,
-        "b_type"   : math_inst.element_b,
-        "c_type"   : math_inst.element_a,
-        "d_type"   : math_inst.element_a,
-        "acc_type" : math_inst.element_accumulator,
-        "epi_type" : math_inst.element_accumulator
-      }
+        data_type_mixed_w_source = generate_data_types_from_math_instruction(
+            math_inst,
+            element_source=math_inst.element_a,
+            element_dest=math_inst.element_a
+        )
+        data_type_mixed_wo_source = generate_data_types_from_math_instruction(
+            math_inst,
+            element_source=DataType.void,
+            element_dest=math_inst.element_a
+        )
+        data_types.append(data_type_mixed_w_source)
+        data_types.append(data_type_mixed_wo_source)
 
-      # Set alignment c based on Destination format.
-      for layout in layouts:
-        if data_type_mixed["c_type"] in [DataType.s32, DataType.f32]:
-          layout[2][1] = 4
-        elif data_type_mixed["c_type"] in [DataType.f16, DataType.bf16]:
-          layout[2][1] = 8
+    for layout in layouts:
+        for data_type in data_types:
+            layout = fix_alignments(data_type, layout, alignment_bits=128)
 
-      CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type_mixed, schedules)
-      CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type_mixed, stream_k_schedules, tile_schedulers=[TileSchedulerType.StreamK])
+            schedules, stream_k_schedules = get_valid_schedules(
+              tile_description=tile_desc,
+              cuda_version=cuda_version,
+              is_aligned=is_aligned,
+              data_types=data_type,
+              instantiation_level=instantiation_level,
+              layout=layout,
+            )
 
-      # persistent kernels with TMA epilogues
-      if CudaToolkitVersionSatisfies(cuda_version, 12, 1):
-        CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type_mixed,
-          [[KernelScheduleType.TmaWarpSpecializedPingpong,    EpilogueScheduleType.TmaWarpSpecialized],
-           [KernelScheduleType.TmaWarpSpecializedCooperative, EpilogueScheduleType.TmaWarpSpecializedCooperative]])
+            if len(schedules):
+              CreateGemmUniversal3xOperator(manifest, [layout], [tile_desc], data_type, schedules)
+              if len(stream_k_schedules):
+                assert CudaToolkitVersionSatisfies(cuda_version, 12, 1)
+                CreateGemmUniversal3xOperator(manifest, [layout], [tile_desc], data_type,
+                                              stream_k_schedules,
+                                              tile_schedulers=[TileSchedulerType.StreamK])
 
-        CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type_mixed,
-          [[KernelScheduleType.TmaWarpSpecializedCooperative, EpilogueScheduleType.TmaWarpSpecializedCooperative]],
-          tile_schedulers=[TileSchedulerType.StreamK])
 
-        # Emit instance without C allocation+load
-        data_type_mixed["c_type"] = DataType.void
-        CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type_mixed,
-          [[KernelScheduleType.TmaWarpSpecializedPingpong,    EpilogueScheduleType.TmaWarpSpecialized],
-           [KernelScheduleType.TmaWarpSpecializedCooperative, EpilogueScheduleType.TmaWarpSpecializedCooperative]])
-
-        CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type_mixed,
-          [[KernelScheduleType.TmaWarpSpecializedCooperative, EpilogueScheduleType.TmaWarpSpecializedCooperative]],
-          tile_schedulers=[TileSchedulerType.StreamK])
-
-#
 def GenerateSM90_TensorOp_16b_WGMMA_alignx_gemm(manifest, cuda_version):
   if not CudaToolkitVersionSatisfies(cuda_version, 12, 0):
     return
+
+  instantiation_level = manifest.get_sm90_instantiation_level(pruned_level=100, default_level=101, exhaustive_level=9999)
+  is_aligned = False
 
   # layouts for ABC and their alignments.
   layouts = [
@@ -5115,265 +5283,177 @@ def GenerateSM90_TensorOp_16b_WGMMA_alignx_gemm(manifest, cuda_version):
     [[LayoutType.ColumnMajor, 2], [LayoutType.RowMajor,    2], [LayoutType.ColumnMajor, 1]],
   ]
 
-  math_instructions = [
-    MathInstruction(
-      [64, 128, 16],
-      DataType.f16, DataType.f16, DataType.f16,
-      OpcodeClass.TensorOp,
-      MathOperation.multiply_add),
-    MathInstruction(
-      [64, 128, 16],
-      DataType.f16, DataType.f16, DataType.f32,
-      OpcodeClass.TensorOp,
-      MathOperation.multiply_add),
-    MathInstruction(
-      [64, 128, 16],
-      DataType.bf16, DataType.bf16, DataType.f32,
-      OpcodeClass.TensorOp,
-      MathOperation.multiply_add),
-  ]
+  math_instructions = generate_fp16_bf16_math_instructions_sm90(instantiation_level)
+  tile_descriptions = generate_tile_descriptions_sm90(
+      math_instructions=math_instructions,
+      is_aligned=is_aligned,
+      level=instantiation_level)
 
-  min_cc = 90
-  max_cc = 90
-
-  for math_inst in math_instructions:
-    tile_descriptions_small = [
-      # TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-      #   0, [4, 1, 1], math_inst, min_cc, max_cc, [1,1,1]),
-    ]
-    tile_descriptions_medium = [
-      TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-        0, [4, 1, 1], math_inst, min_cc, max_cc, [1,1,1]),
-      # TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1]*2, math_inst.instruction_shape[2]*4],
-      #   0, [4, 1, 1], math_inst, min_cc, max_cc, [1,1,1]),
-    ]
-    tile_descriptions = tile_descriptions_small + tile_descriptions_medium
-
-    data_type = {
-      "a_type"   : math_inst.element_a,
-      "b_type"   : math_inst.element_b,
-      "c_type"   : math_inst.element_accumulator,
-      "d_type"   : math_inst.element_accumulator,
-      "acc_type" : math_inst.element_accumulator,
-      "epi_type" : math_inst.element_accumulator
-    }
-
-    # Set alignment c based on Destination format.
-    for layout in layouts:
-      if data_type["c_type"] in [DataType.s32, DataType.f32]:
-        layout[2][1] = 4
-      elif data_type["c_type"] in [DataType.f16, DataType.bf16]:
-        layout[2][1] = 8
-
-    schedules = [
-      # [KernelScheduleType.ScheduleAuto, EpilogueScheduleType.ScheduleAuto],
-      [KernelScheduleType.CpAsyncWarpSpecialized, EpilogueScheduleType.NoSmemWarpSpecialized]
-    ]
-    stream_k_schedules = []
-
-    if CudaToolkitVersionSatisfies(cuda_version, 12, 1):
-      schedules += [
-        [KernelScheduleType.CpAsyncWarpSpecializedCooperative, EpilogueScheduleType.NoSmemWarpSpecialized],
-        # [KernelScheduleType.CpAsyncWarpSpecializedPingpong, EpilogueScheduleType.NoSmemWarpSpecialized]
-      ]
-      stream_k_schedules += [[KernelScheduleType.CpAsyncWarpSpecializedCooperative, EpilogueScheduleType.NoSmemWarpSpecialized]]
-
-    CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type, schedules)
-
-    if CudaToolkitVersionSatisfies(cuda_version, 12, 1):
-      # Add stream-K variants
-      CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type, stream_k_schedules, tile_schedulers=[TileSchedulerType.StreamK])
-
-    # persistent kernels with TMA epilogues
-    # if CudaToolkitVersionSatisfies(cuda_version, 12, 1):
-    #   CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type,
-    #     [[KernelScheduleType.CpAsyncWarpSpecializedPingpong,    EpilogueScheduleType.TmaWarpSpecialized],
-    #      [KernelScheduleType.CpAsyncWarpSpecializedCooperative, EpilogueScheduleType.TmaWarpSpecializedCooperative]])
-
-    #   CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type,
-    #     [[KernelScheduleType.CpAsyncWarpSpecializedCooperative, EpilogueScheduleType.TmaWarpSpecializedCooperative]],
-    #     tile_schedulers=[TileSchedulerType.StreamK])
-
-    #   # Emit instance without C allocation + load
-    #   data_type["c_type"] = DataType.void
-    #   CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type,
-    #     [[KernelScheduleType.CpAsyncWarpSpecializedPingpong,    EpilogueScheduleType.TmaWarpSpecialized],
-    #      [KernelScheduleType.CpAsyncWarpSpecializedCooperative, EpilogueScheduleType.TmaWarpSpecializedCooperative]])
-
-    #   CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type,
-    #     [[KernelScheduleType.CpAsyncWarpSpecializedCooperative, EpilogueScheduleType.TmaWarpSpecializedCooperative]],
-    #     tile_schedulers=[TileSchedulerType.StreamK])
+  for tile_desc in tile_descriptions:
+    math_inst = tile_desc.math_instruction
+    data_type_w_source = generate_data_types_from_math_instruction(math_inst)
+    data_types = [data_type_w_source]
 
     # for mixed precision kernels, also generate kernels that write output matrix in the A/B format
     # Avoid emitting two kernels if the accumulator type does not differ from the input type (e.g. F16 accumulation)
     if math_inst.element_a != math_inst.element_accumulator:
-      data_type_mixed = {
-        "a_type"   : math_inst.element_a,
-        "b_type"   : math_inst.element_b,
-        "c_type"   : math_inst.element_a,
-        "d_type"   : math_inst.element_a,
-        "acc_type" : math_inst.element_accumulator,
-        "epi_type" : math_inst.element_accumulator
-      }
+        data_type_mixed_w_source = generate_data_types_from_math_instruction(
+            math_inst,
+            element_source=math_inst.element_a,
+            element_dest=math_inst.element_a
+        )
+        data_types.append(data_type_mixed_w_source)
 
-      # Set alignment c based on Destination format.
-      for layout in layouts:
-        if data_type_mixed["c_type"] in [DataType.s32, DataType.f32]:
-          layout[2][1] = 4
-        elif data_type_mixed["c_type"] in [DataType.f16, DataType.bf16]:
-          layout[2][1] = 8
+    for layout in layouts:
+        for data_type in data_types:
+            layout = fix_alignments(data_type, layout, alignment_bits=128)
 
-      CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type_mixed, schedules)
-      CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type_mixed, stream_k_schedules, tile_schedulers=[TileSchedulerType.StreamK])
+            schedules, stream_k_schedules = get_valid_schedules(
+              tile_description=tile_desc,
+              cuda_version=cuda_version,
+              is_aligned=is_aligned,
+              data_types=data_type,
+              instantiation_level=instantiation_level,
+              layout=layout,
+            )
 
-      # persistent kernels with TMA epilogues
-      # if CudaToolkitVersionSatisfies(cuda_version, 12, 1):
-      #   CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type_mixed,
-      #     [[KernelScheduleType.CpAsyncWarpSpecializedPingpong,    EpilogueScheduleType.TmaWarpSpecialized],
-      #      [KernelScheduleType.CpAsyncWarpSpecializedCooperative, EpilogueScheduleType.TmaWarpSpecializedCooperative]])
+            if len(schedules):
+              CreateGemmUniversal3xOperator(manifest, [layout], [tile_desc], data_type, schedules)
+              if len(stream_k_schedules):
+                assert CudaToolkitVersionSatisfies(cuda_version, 12, 1)
+                CreateGemmUniversal3xOperator(manifest, [layout], [tile_desc], data_type,
+                                              stream_k_schedules,
+                                              tile_schedulers=[TileSchedulerType.StreamK])
 
-      #   CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type_mixed,
-      #     [[KernelScheduleType.CpAsyncWarpSpecializedCooperative, EpilogueScheduleType.TmaWarpSpecializedCooperative]],
-      #     tile_schedulers=[TileSchedulerType.StreamK])
+def GenerateSM90_SparseTensorOp_16b_WGMMA_gemm(manifest, cuda_version):
+  if not CudaToolkitVersionSatisfies(cuda_version, 12, 2):
+    return
 
-      #   # Emit instance without C allocation+load
-      #   data_type_mixed["c_type"] = DataType.void
-      #   CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type_mixed,
-      #     [[KernelScheduleType.CpAsyncWarpSpecializedPingpong,    EpilogueScheduleType.TmaWarpSpecialized],
-      #      [KernelScheduleType.CpAsyncWarpSpecializedCooperative, EpilogueScheduleType.TmaWarpSpecializedCooperative]])
+  instantiation_level = manifest.get_sm90_instantiation_level(pruned_level=100, default_level=131, exhaustive_level=9999)
+  is_aligned = True
 
-      #   CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type_mixed,
-      #     [[KernelScheduleType.CpAsyncWarpSpecializedCooperative, EpilogueScheduleType.TmaWarpSpecializedCooperative]],
-      #     tile_schedulers=[TileSchedulerType.StreamK])
+  # layouts for ABC and their alignments.
+  layouts = [
+    [[LayoutType.ColumnMajor, 8], [LayoutType.ColumnMajor, 8], [LayoutType.ColumnMajor, 1]],
+    [[LayoutType.ColumnMajor, 8], [LayoutType.RowMajor,    8], [LayoutType.ColumnMajor, 1]],
+    [[LayoutType.RowMajor,   16], [LayoutType.ColumnMajor, 8], [LayoutType.ColumnMajor, 1]],
+    [[LayoutType.RowMajor,   16], [LayoutType.RowMajor,    8], [LayoutType.ColumnMajor, 1]],
+  ]
 
-#
+  math_instructions = make_sparse_math_instructions(generate_fp16_bf16_math_instructions_sm90(instantiation_level))
+  tile_descriptions = generate_tile_descriptions_sm90(
+      math_instructions=math_instructions,
+      is_aligned=is_aligned,
+      level=instantiation_level)
+
+  for tile_desc in tile_descriptions:
+    math_inst = tile_desc.math_instruction
+    data_type_w_source = generate_data_types_from_math_instruction(math_inst)
+    data_type_wo_source = generate_data_types_from_math_instruction(math_inst, element_source=DataType.void)
+    data_types = [data_type_w_source, data_type_wo_source]
+
+    # for mixed precision kernels, also generate kernels that write output matrix in the A/B format
+    # Avoid emitting two kernels if the accumulator type does not differ from the input type (e.g. F16 accumulation)
+    if math_inst.element_a != math_inst.element_accumulator:
+        data_type_mixed_w_source = generate_data_types_from_math_instruction(
+            math_inst,
+            element_source=math_inst.element_a,
+            element_dest=math_inst.element_a
+        )
+        data_type_mixed_wo_source = generate_data_types_from_math_instruction(
+            math_inst,
+            element_source=DataType.void,
+            element_dest=math_inst.element_a
+        )
+        data_types.append(data_type_mixed_w_source)
+        data_types.append(data_type_mixed_wo_source)
+
+    for layout in layouts:
+        for data_type in data_types:
+            layout = fix_alignments(data_type, layout, alignment_bits=128)
+
+            schedules, stream_k_schedules = get_valid_schedules(
+              tile_description=tile_desc,
+              cuda_version=cuda_version,
+              is_aligned=is_aligned,
+              data_types=data_type,
+              instantiation_level=instantiation_level,
+              layout=layout,
+            )
+
+            if len(schedules):
+              CreateSparseGemmUniversal3xOperator(manifest, [layout], [tile_desc], data_type, schedules)
+              if len(stream_k_schedules):
+                assert CudaToolkitVersionSatisfies(cuda_version, 12, 1)
+                CreateSparseGemmUniversal3xOperator(manifest, [layout], [tile_desc], data_type,
+                                                    stream_k_schedules,
+                                                    tile_schedulers=[TileSchedulerType.StreamK])
+
+
 def GenerateSM90_TensorOp_tf32_WGMMA_gemm(manifest, cuda_version):
   if not CudaToolkitVersionSatisfies(cuda_version, 12, 0):
     return
 
+  instantiation_level = manifest.get_sm90_instantiation_level(pruned_level=120, default_level=121, exhaustive_level=9999)
+  is_aligned = True
+
   # layouts for ABC and their alignments
-  layouts_tf32 = [
+  layouts = [
     [[LayoutType.RowMajor,    4], [LayoutType.ColumnMajor, 4], [LayoutType.ColumnMajor, 4]],
     [[LayoutType.RowMajor,    4], [LayoutType.RowMajor,    4], [LayoutType.ColumnMajor, 4]],
     [[LayoutType.ColumnMajor, 4], [LayoutType.ColumnMajor, 4], [LayoutType.ColumnMajor, 4]],
     [[LayoutType.ColumnMajor, 4], [LayoutType.RowMajor,    4], [LayoutType.ColumnMajor, 4]],
   ]
 
-  math_inst = MathInstruction(
-      [64, 128, 8],
-      DataType.tf32, DataType.tf32, DataType.f32,
-      OpcodeClass.TensorOp,
-      MathOperation.multiply_add)
+  math_instructions = generate_tf32_math_instructions_sm90(instantiation_level)
+  tile_descriptions = generate_tile_descriptions_sm90(
+      math_instructions=math_instructions,
+      is_aligned=is_aligned,
+      level=instantiation_level)
 
-  math_inst_largeN = MathInstruction(
-      [64, 256, 8],
-      DataType.tf32, DataType.tf32, DataType.f32,
-      OpcodeClass.TensorOp,
-      MathOperation.multiply_add)
+  for tile_desc in tile_descriptions:
+    math_inst = tile_desc.math_instruction
 
-  min_cc = 90
-  max_cc = 90
+    for layout in layouts:
+        data_type_tf32 = generate_data_types_from_math_instruction(math_inst)
+        data_type_tf32_wo_source = generate_data_types_from_math_instruction(math_inst, element_source=DataType.void)
+        data_type_f32 = copy.deepcopy(data_type_tf32)
+        data_type_f32_wo_source = copy.deepcopy(data_type_tf32_wo_source)
+        data_type_f32["a_type"] = DataType.f32
+        data_type_f32["b_type"] = DataType.f32
+        data_type_f32["epi_type"] = DataType.f32
+        data_type_f32_wo_source["a_type"] = DataType.f32
+        data_type_f32_wo_source["b_type"] = DataType.f32
+        data_type_f32_wo_source["epi_type"] = DataType.f32
+        data_types = [data_type_tf32, data_type_f32, data_type_tf32_wo_source, data_type_f32_wo_source]
 
-  tile_descriptions_large = [
-    TileDescription([math_inst.instruction_shape[0]*4, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-      0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
-    TileDescription([math_inst.instruction_shape[0]*4, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-      0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
-    TileDescription([math_inst_largeN.instruction_shape[0]*2, math_inst_largeN.instruction_shape[1], math_inst_largeN.instruction_shape[2]*4],
-      0, [4, 1, 1], math_inst_largeN, min_cc, max_cc, [2,1,1]),
-    TileDescription([math_inst_largeN.instruction_shape[0]*2, math_inst_largeN.instruction_shape[1], math_inst_largeN.instruction_shape[2]*4],
-      0, [4, 1, 1], math_inst_largeN, min_cc, max_cc, [1,2,1]),
-  ]
+        for data_type in data_types:
+            layout = fix_alignments(data_type, layout, alignment_bits=128)
 
-  tile_descriptions_medium = [
-    TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-      0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
-    TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-      0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
-  ]
+            schedules, stream_k_schedules = get_valid_schedules(
+              tile_description=tile_desc,
+              cuda_version=cuda_version,
+              is_aligned=is_aligned,
+              data_types=data_type,
+              instantiation_level=instantiation_level,
+              layout=layout,
+            )
 
-  tile_descriptions_small = [
-    TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-      0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
-    TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-      0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
-  ]
-  tile_descriptions = tile_descriptions_medium + tile_descriptions_small
+            if len(schedules):
+              CreateGemmUniversal3xOperator(manifest, [layout], [tile_desc], data_type, schedules)
+              if len(stream_k_schedules):
+                assert CudaToolkitVersionSatisfies(cuda_version, 12, 1)
+                CreateGemmUniversal3xOperator(manifest, [layout], [tile_desc], data_type,
+                                              stream_k_schedules,
+                                              tile_schedulers=[TileSchedulerType.StreamK])
 
-  data_types = [
-    {
-      "a_type"   : math_inst.element_a,
-      "b_type"   : math_inst.element_b,
-      "c_type"   : math_inst.element_accumulator,
-      "d_type"   : math_inst.element_accumulator,
-      "acc_type" : math_inst.element_accumulator,
-      "epi_type" : math_inst.element_accumulator
-    },
-    {
-      "a_type"   : DataType.f32,
-      "b_type"   : DataType.f32,
-      "c_type"   : math_inst.element_accumulator,
-      "d_type"   : math_inst.element_accumulator,
-      "acc_type" : math_inst.element_accumulator,
-      "epi_type" : DataType.f32
-    }
-  ]
 
-  schedules_default = [
-    [KernelScheduleType.ScheduleAuto, EpilogueScheduleType.ScheduleAuto],
-    [KernelScheduleType.TmaWarpSpecialized, EpilogueScheduleType.NoSmemWarpSpecialized],
-  ]
-
-  # TMA kernels with TT layout use EpilogueTransposed (NoSmemWarpSpecialized with swapped strides),
-  # because they use NN kernels underneath and transposing its epilogue will get the correct output
-  schedules_transposed_epilogue = [
-    [KernelScheduleType.ScheduleAuto, EpilogueScheduleType.EpilogueTransposed],
-    [KernelScheduleType.TmaWarpSpecialized, EpilogueScheduleType.EpilogueTransposed]
-  ]
-
-  # TMA kernels with TN, NN, or NT layout
-  layouts_tf32_tn_nn_nt = [layouts_tf32[0], layouts_tf32[2], layouts_tf32[3]]
-  # TMA kernels with TT layout
-  layouts_tf32_tt = [layouts_tf32[1]]
-
-  if CudaToolkitVersionSatisfies(cuda_version, 12, 1):
-    CreateGemmUniversal3xOperator(manifest, layouts_tf32_tn_nn_nt, tile_descriptions_small, data_types, [
-      [KernelScheduleType.TmaWarpSpecializedPingpong, EpilogueScheduleType.TmaWarpSpecialized],
-      [KernelScheduleType.TmaWarpSpecializedPingpong, EpilogueScheduleType.NoSmemWarpSpecialized]
-    ])
-
-    CreateGemmUniversal3xOperator(manifest, layouts_tf32_tn_nn_nt, tile_descriptions_medium, data_types, [
-      [KernelScheduleType.TmaWarpSpecializedPingpong, EpilogueScheduleType.TmaWarpSpecialized],
-      [KernelScheduleType.TmaWarpSpecializedPingpong, EpilogueScheduleType.NoSmemWarpSpecialized],
-      [KernelScheduleType.TmaWarpSpecializedCooperative, EpilogueScheduleType.TmaWarpSpecializedCooperative],
-      [KernelScheduleType.TmaWarpSpecializedCooperative, EpilogueScheduleType.NoSmemWarpSpecialized]
-    ])
-
-    CreateGemmUniversal3xOperator(manifest, layouts_tf32_tn_nn_nt, tile_descriptions_large, data_types, [
-      [KernelScheduleType.TmaWarpSpecializedCooperative, EpilogueScheduleType.NoSmemWarpSpecialized],
-    ])
-
-    CreateGemmUniversal3xOperator(manifest, layouts_tf32_tt, tile_descriptions_small, data_types, [
-      [KernelScheduleType.TmaWarpSpecializedPingpong, EpilogueScheduleType.EpilogueTransposed]
-    ])
-
-    CreateGemmUniversal3xOperator(manifest, layouts_tf32_tt, tile_descriptions_medium, data_types, [
-      [KernelScheduleType.TmaWarpSpecializedCooperative, EpilogueScheduleType.EpilogueTransposed],
-      [KernelScheduleType.TmaWarpSpecializedPingpong, EpilogueScheduleType.EpilogueTransposed]
-    ])
-
-    CreateGemmUniversal3xOperator(manifest, layouts_tf32_tt, tile_descriptions_large, data_types, [
-      [KernelScheduleType.TmaWarpSpecializedCooperative, EpilogueScheduleType.EpilogueTransposed],
-    ])
-
-  else:
-    CreateGemmUniversal3xOperator(manifest, layouts_tf32_tn_nn_nt, tile_descriptions, data_types, schedules_default)
-    CreateGemmUniversal3xOperator(manifest, layouts_tf32_tt, tile_descriptions, data_types, schedules_transposed_epilogue)
-
-#
 def GenerateSM90_TensorOp_tf32_WGMMA_alignx_gemm(manifest, cuda_version):
   if not CudaToolkitVersionSatisfies(cuda_version, 12, 0):
     return
+
+  instantiation_level = manifest.get_sm90_instantiation_level(pruned_level=100, default_level=101, exhaustive_level=9999)
+  is_aligned = False
 
   # layouts for ABC and their alignments.
   layouts = [
@@ -5387,173 +5467,157 @@ def GenerateSM90_TensorOp_tf32_WGMMA_alignx_gemm(manifest, cuda_version):
     [[LayoutType.ColumnMajor, 1], [LayoutType.RowMajor,    1], [LayoutType.ColumnMajor, 1]],
   ]
 
-  math_inst = MathInstruction(
-      [64, 128, 8],
-      DataType.tf32, DataType.tf32, DataType.f32,
-      OpcodeClass.TensorOp,
-      MathOperation.multiply_add)
+  math_instructions = generate_tf32_math_instructions_sm90(instantiation_level)
+  tile_descriptions = generate_tile_descriptions_sm90(
+      math_instructions=math_instructions,
+      is_aligned=is_aligned,
+      level=instantiation_level)
 
-  min_cc = 90
-  max_cc = 90
+  for tile_desc in tile_descriptions:
+    math_inst = tile_desc.math_instruction
 
-  tile_descriptions_medium = [
-    TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-      0, [4, 1, 1], math_inst, min_cc, max_cc, [1,1,1])
+    for layout in layouts:
+        # Inconsistency: TF32 does not stamp out void-C
+        data_type_tf32 = generate_data_types_from_math_instruction(math_inst)
+        data_type_f32 = copy.deepcopy(data_type_tf32)
+        data_type_f32["a_type"] = DataType.f32
+        data_type_f32["b_type"] = DataType.f32
+        data_type_f32["epi_type"] = DataType.f32
+        for data_type in [data_type_tf32, data_type_f32]:
+            # Inconsistency: alignments aren't fixed in TF32 / alignx
+            # layout = fix_alignments(data_type, layout, alignment_bits=128)
+
+            schedules, stream_k_schedules = get_valid_schedules(
+              tile_description=tile_desc,
+              cuda_version=cuda_version,
+              is_aligned=is_aligned,
+              data_types=data_type,
+              instantiation_level=instantiation_level,
+              layout=layout,
+            )
+
+            if len(schedules):
+              CreateGemmUniversal3xOperator(manifest, [layout], [tile_desc], data_type, schedules)
+              if len(stream_k_schedules):
+                assert CudaToolkitVersionSatisfies(cuda_version, 12, 1)
+                CreateGemmUniversal3xOperator(manifest, [layout], [tile_desc], data_type,
+                                              stream_k_schedules,
+                                              tile_schedulers=[TileSchedulerType.StreamK])
+
+
+def GenerateSM90_SparseTensorOp_tf32_WGMMA_gemm(manifest, cuda_version):
+  if not CudaToolkitVersionSatisfies(cuda_version, 12, 2):
+    return
+
+  instantiation_level = manifest.get_sm90_instantiation_level(pruned_level=120, default_level=121, exhaustive_level=9999)
+  is_aligned = True
+
+  # layouts for ABC and their alignments
+  layouts = [
+    [[LayoutType.RowMajor,    8], [LayoutType.ColumnMajor, 4], [LayoutType.ColumnMajor, 4]],
   ]
 
-  tile_descriptions_small = [
-    # TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-    #   0, [4, 1, 1], math_inst, min_cc, max_cc, [1,1,1])
-  ]
+  math_instructions = make_sparse_math_instructions(generate_tf32_math_instructions_sm90(instantiation_level))
+  tile_descriptions = generate_tile_descriptions_sm90(
+      math_instructions=math_instructions,
+      is_aligned=is_aligned,
+      level=instantiation_level)
 
-  tile_descriptions = tile_descriptions_medium + tile_descriptions_small
+  for tile_desc in tile_descriptions:
+    math_inst = tile_desc.math_instruction
 
-  data_types = [
-    {
-      "a_type"   : math_inst.element_a,
-      "b_type"   : math_inst.element_b,
-      "c_type"   : math_inst.element_accumulator,
-      "d_type"   : math_inst.element_accumulator,
-      "acc_type" : math_inst.element_accumulator,
-      "epi_type" : math_inst.element_accumulator
-    },
-    {
-      "a_type"   : DataType.f32,
-      "b_type"   : DataType.f32,
-      "c_type"   : math_inst.element_accumulator,
-      "d_type"   : math_inst.element_accumulator,
-      "acc_type" : math_inst.element_accumulator,
-      "epi_type" : DataType.f32
-    }
-  ]
+    for layout in layouts:
+        data_type_tf32 = generate_data_types_from_math_instruction(math_inst)
+        data_type_tf32_wo_source = generate_data_types_from_math_instruction(math_inst, element_source=DataType.void)
+        data_type_f32 = copy.deepcopy(data_type_tf32)
+        data_type_f32_wo_source = copy.deepcopy(data_type_tf32_wo_source)
+        data_type_f32["a_type"] = DataType.f32
+        data_type_f32["b_type"] = DataType.f32
+        data_type_f32["epi_type"] = DataType.f32
+        data_type_f32_wo_source["a_type"] = DataType.f32
+        data_type_f32_wo_source["b_type"] = DataType.f32
+        data_type_f32_wo_source["epi_type"] = DataType.f32
+        data_types = [data_type_tf32, data_type_f32, data_type_tf32_wo_source, data_type_f32_wo_source]
 
-  is_tt_layout = lambda v: v[0][0] == LayoutType.RowMajor and v[1][0] == LayoutType.RowMajor
-  # Split kernels into TN/NT, NN or TT layouts
-  layouts_tn_nn_nt = filter(lambda v: not is_tt_layout(v), layouts)
-  layouts_tt = filter(is_tt_layout, layouts)
+        for data_type in data_types:
+            layout = fix_alignments(data_type, layout, alignment_bits=128)
 
-  CreateGemmUniversal3xOperator(manifest, layouts_tn_nn_nt, tile_descriptions, data_types, [
-    # [KernelScheduleType.ScheduleAuto, EpilogueScheduleType.ScheduleAuto],
-    [KernelScheduleType.CpAsyncWarpSpecialized, EpilogueScheduleType.NoSmemWarpSpecialized],
-  ])
+            schedules, stream_k_schedules = get_valid_schedules(
+              tile_description=tile_desc,
+              cuda_version=cuda_version,
+              is_aligned=is_aligned,
+              data_types=data_type,
+              instantiation_level=instantiation_level,
+              layout=layout,
+            )
 
-  # Kernels with TT layout use EpilogueTransposed (NoSmemWarpSpecialized with swapped strides),
-  # because they use NN kernels underneath and transposing its epilogue will get the correct output
-  CreateGemmUniversal3xOperator(manifest, layouts_tt, tile_descriptions, data_types, [
-    # [KernelScheduleType.ScheduleAuto, EpilogueScheduleType.EpilogueTransposed],
-    [KernelScheduleType.CpAsyncWarpSpecialized, EpilogueScheduleType.EpilogueTransposed]
-  ])
+            if len(schedules):
+              CreateSparseGemmUniversal3xOperator(manifest, [layout], [tile_desc], data_type, schedules)
+              if len(stream_k_schedules):
+                assert CudaToolkitVersionSatisfies(cuda_version, 12, 1)
+                CreateSparseGemmUniversal3xOperator(manifest, [layout], [tile_desc], data_type,
+                                                    stream_k_schedules,
+                                                    tile_schedulers=[TileSchedulerType.StreamK])
 
-  if CudaToolkitVersionSatisfies(cuda_version, 12, 1):
-    CreateGemmUniversal3xOperator(manifest, layouts_tn_nn_nt, tile_descriptions, data_types, [
-      # [KernelScheduleType.CpAsyncWarpSpecializedPingpong, EpilogueScheduleType.NoSmemWarpSpecialized],
-      [KernelScheduleType.CpAsyncWarpSpecializedCooperative, EpilogueScheduleType.NoSmemWarpSpecialized]
-    ])
 
-    # Stream-K schedules
-    CreateGemmUniversal3xOperator(manifest, layouts_tn_nn_nt, tile_descriptions, data_types, [
-      [KernelScheduleType.CpAsyncWarpSpecializedCooperative, EpilogueScheduleType.NoSmemWarpSpecialized]
-    ], tile_schedulers=[TileSchedulerType.StreamK])
-
-#
 def GenerateSM90_TensorOp_int8_WGMMA_gemm(manifest, cuda_version):
   if not CudaToolkitVersionSatisfies(cuda_version, 12, 0):
     return
+
+  instantiation_level = manifest.get_sm90_instantiation_level(pruned_level=100, default_level=111, exhaustive_level=9999)
+  is_aligned = True
 
   # layouts for ABC and their alignments
   layouts = [
     [[LayoutType.RowMajor, 16], [LayoutType.ColumnMajor, 16], [LayoutType.ColumnMajor, 16]],
   ]
 
-  math_instructions = [
-    MathInstruction(
-      [64, 128, 32],
-      DataType.s8, DataType.s8, DataType.s32,
-      OpcodeClass.TensorOp,
-      MathOperation.multiply_add),
-    MathInstruction(
-      [64, 128, 32],
-      DataType.u8, DataType.u8, DataType.s32,
-      OpcodeClass.TensorOp,
-      MathOperation.multiply_add),
-  ]
+  math_instructions = generate_int8_math_instructions_sm90(instantiation_level)
+  tile_descriptions = generate_tile_descriptions_sm90(
+      math_instructions=math_instructions,
+      is_aligned=is_aligned,
+      level=instantiation_level)
 
-  min_cc = 90
-  max_cc = 90
+  for tile_desc in tile_descriptions:
+    math_inst = tile_desc.math_instruction
+    data_type_w_source = generate_data_types_from_math_instruction(math_inst)
+    data_type_wo_source = generate_data_types_from_math_instruction(math_inst, element_source=DataType.void)
+    data_type_int8_output = generate_data_types_from_math_instruction(
+        math_inst,
+        element_source=DataType.s8,
+        element_dest=math_inst.element_a,
+        element_epilogue=DataType.f32
+    )
+    data_types = [data_type_w_source, data_type_wo_source, data_type_int8_output]
 
-  for math_inst in math_instructions:
-    # 64x128x128
-    tile_descriptions_small = [
-      TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-        0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
-      TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-        0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
-    ]
-    # 128x128x128
-    tile_descriptions_medium = [
-      TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-        0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
-      TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-        0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
-    ]
-    tile_descriptions = tile_descriptions_medium + tile_descriptions_small
+    for layout in layouts:
+        for data_type in data_types:
+            layout = fix_alignments(data_type, layout, alignment_bits=128)
 
-    data_types = [
-      {
-        "a_type"   : math_inst.element_a,
-        "b_type"   : math_inst.element_b,
-        "c_type"   : math_inst.element_accumulator,
-        "d_type"   : math_inst.element_accumulator,
-        "acc_type" : math_inst.element_accumulator,
-        "epi_type" : math_inst.element_accumulator
-      },
-      {
-        "a_type"   : math_inst.element_a,
-        "b_type"   : math_inst.element_b,
-        "c_type"   : DataType.s8,
-        "d_type"   : math_inst.element_a,
-        "acc_type" : math_inst.element_accumulator,
-        "epi_type" : DataType.f32
-      }
-    ]
+            schedules, stream_k_schedules = get_valid_schedules(
+              tile_description=tile_desc,
+              cuda_version=cuda_version,
+              is_aligned=is_aligned,
+              data_types=data_type,
+              instantiation_level=instantiation_level,
+              layout=layout,
+            )
 
-    for data_type in data_types:
-      for layout in layouts:
-        layout[2][1] = 128 // DataTypeSize[data_type["d_type"]]
-      CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type)
+            if len(schedules):
+              CreateGemmUniversal3xOperator(manifest, [layout], [tile_desc], data_type, schedules)
+              if len(stream_k_schedules):
+                assert CudaToolkitVersionSatisfies(cuda_version, 12, 1)
+                CreateGemmUniversal3xOperator(manifest, [layout], [tile_desc], data_type,
+                                              stream_k_schedules,
+                                              tile_schedulers=[TileSchedulerType.StreamK])
 
-    # persistent kernels with TMA epilogues
-    if CudaToolkitVersionSatisfies(cuda_version, 12, 1):
-      # Emit instance without C allocation+load
-      data_types += [
-        {
-          "a_type"   : math_inst.element_a,
-          "b_type"   : math_inst.element_b,
-          "c_type"   : DataType.void,
-          "d_type"   : math_inst.element_accumulator,
-          "acc_type" : math_inst.element_accumulator,
-          "epi_type" : math_inst.element_accumulator
-        }
-      ]
-      for data_type in data_types:
-        # Set output alignment based on destination format first
-        for layout in layouts:
-          layout[2][1] = 128 // DataTypeSize[data_type["d_type"]]
-        # Pingpong persistent
-        CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type,
-          [[KernelScheduleType.TmaWarpSpecializedPingpong,    EpilogueScheduleType.TmaWarpSpecialized],
-           [KernelScheduleType.TmaWarpSpecializedPingpong,    EpilogueScheduleType.NoSmemWarpSpecialized]])
-        # Cooperative persistent
-        CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions_medium, data_type,
-          [[KernelScheduleType.TmaWarpSpecializedCooperative, EpilogueScheduleType.TmaWarpSpecializedCooperative],
-           [KernelScheduleType.TmaWarpSpecializedCooperative, EpilogueScheduleType.NoSmemWarpSpecialized]],
-           tile_schedulers=[TileSchedulerType.Persistent, TileSchedulerType.StreamK]
-           )
 
-#
 def GenerateSM90_TensorOp_int8_WGMMA_alignx_gemm(manifest, cuda_version):
   if not CudaToolkitVersionSatisfies(cuda_version, 12, 0):
     return
+
+  instantiation_level = manifest.get_sm90_instantiation_level(pruned_level=100, default_level=111, exhaustive_level=9999)
+  is_aligned = False
 
   # layouts for ABC and their alignments
   layouts = [
@@ -5561,279 +5625,172 @@ def GenerateSM90_TensorOp_int8_WGMMA_alignx_gemm(manifest, cuda_version):
     [[LayoutType.RowMajor,  4], [LayoutType.ColumnMajor,  4], [LayoutType.ColumnMajor, 1]],
   ]
 
-  math_instructions = [
-    MathInstruction(
-      [64, 128, 32],
-      DataType.s8, DataType.s8, DataType.s32,
-      OpcodeClass.TensorOp,
-      MathOperation.multiply_add),
-    MathInstruction(
-      [64, 128, 32],
-      DataType.u8, DataType.u8, DataType.s32,
-      OpcodeClass.TensorOp,
-      MathOperation.multiply_add),
+  math_instructions = generate_int8_math_instructions_sm90(instantiation_level)
+  tile_descriptions = generate_tile_descriptions_sm90(
+      math_instructions=math_instructions,
+      is_aligned=is_aligned,
+      level=instantiation_level)
+
+  for tile_desc in tile_descriptions:
+    math_inst = tile_desc.math_instruction
+    data_type_w_source = generate_data_types_from_math_instruction(math_inst)
+    data_type_int8_output = generate_data_types_from_math_instruction(
+        math_inst,
+        element_source=DataType.s8,
+        element_dest=math_inst.element_a,
+        element_epilogue=DataType.f32
+    )
+    data_types = [data_type_w_source, data_type_int8_output]
+
+    for layout in layouts:
+        for data_type in data_types:
+            layout = fix_alignments(data_type, layout, alignment_bits=128)
+
+            schedules, stream_k_schedules = get_valid_schedules(
+              tile_description=tile_desc,
+              cuda_version=cuda_version,
+              is_aligned=is_aligned,
+              data_types=data_type,
+              instantiation_level=instantiation_level,
+              layout=layout,
+            )
+
+            if len(schedules):
+              CreateGemmUniversal3xOperator(manifest, [layout], [tile_desc], data_type, schedules)
+              if len(stream_k_schedules):
+                assert CudaToolkitVersionSatisfies(cuda_version, 12, 1)
+                CreateGemmUniversal3xOperator(manifest, [layout], [tile_desc], data_type,
+                                              stream_k_schedules,
+                                              tile_schedulers=[TileSchedulerType.StreamK])
+
+
+def GenerateSM90_SparseTensorOp_int8_WGMMA_gemm(manifest, cuda_version):
+  if not CudaToolkitVersionSatisfies(cuda_version, 12, 2):
+    return
+
+  instantiation_level = manifest.get_sm90_instantiation_level(pruned_level=100, default_level=111, exhaustive_level=9999)
+  is_aligned = True
+
+  # layouts for ABC and their alignments
+  layouts = [
+    [[LayoutType.RowMajor, 32], [LayoutType.ColumnMajor, 16], [LayoutType.ColumnMajor, 16]],
   ]
 
-  min_cc = 90
-  max_cc = 90
+  math_instructions = make_sparse_math_instructions(generate_int8_math_instructions_sm90(instantiation_level))
+  tile_descriptions = generate_tile_descriptions_sm90(
+      math_instructions=math_instructions,
+      is_aligned=is_aligned,
+      level=instantiation_level)
 
-  for math_inst in math_instructions:
-    tile_descriptions_small = [
-      # TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-      #   0, [4, 1, 1], math_inst, min_cc, max_cc, [1,1,1]),
-    ]
-    tile_descriptions_medium = [
-      TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-        0, [4, 1, 1], math_inst, min_cc, max_cc, [1,1,1]),
-    ]
-    tile_descriptions = tile_descriptions_medium + tile_descriptions_small
+  for tile_desc in tile_descriptions:
+    math_inst = tile_desc.math_instruction
+    # s8.u8 and u8.s8 wgmma variants require PTX 8.4
+    if math_inst.element_a != math_inst.element_b and not CudaToolkitVersionSatisfies(cuda_version, 12, 4):
+      continue
+    data_type_w_source = generate_data_types_from_math_instruction(math_inst)
+    data_type_wo_source = generate_data_types_from_math_instruction(math_inst, element_source=DataType.void)
+    data_type_int8_output = generate_data_types_from_math_instruction(
+        math_inst,
+        element_source=DataType.s8,
+        element_dest=math_inst.element_a,
+        element_epilogue=DataType.f32
+    )
+    data_types = [data_type_w_source, data_type_wo_source, data_type_int8_output]
 
-    data_types = [
-      {
-        "a_type"   : math_inst.element_a,
-        "b_type"   : math_inst.element_b,
-        "c_type"   : math_inst.element_accumulator,
-        "d_type"   : math_inst.element_accumulator,
-        "acc_type" : math_inst.element_accumulator,
-        "epi_type" : math_inst.element_accumulator
-      },
-      {
-        "a_type"   : math_inst.element_a,
-        "b_type"   : math_inst.element_b,
-        "c_type"   : DataType.s8,
-        "d_type"   : math_inst.element_a,
-        "acc_type" : math_inst.element_accumulator,
-        "epi_type" : DataType.f32
-      }
-    ]
+    for layout in layouts:
+        for data_type in data_types:
+            layout = fix_alignments(data_type, layout, alignment_bits=128)
 
-    for data_type in data_types:
-      for layout in layouts:
-        layout[2][1] = 128 // DataTypeSize[data_type["d_type"]]
-      CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type, [
-        # [KernelScheduleType.ScheduleAuto, EpilogueScheduleType.NoSmemWarpSpecialized],
-        [KernelScheduleType.CpAsyncWarpSpecialized, EpilogueScheduleType.NoSmemWarpSpecialized]
-      ])
+            schedules, stream_k_schedules = get_valid_schedules(
+              tile_description=tile_desc,
+              cuda_version=cuda_version,
+              is_aligned=is_aligned,
+              data_types=data_type,
+              instantiation_level=instantiation_level,
+              layout=layout,
+            )
 
-      if CudaToolkitVersionSatisfies(cuda_version, 12, 1):
-        CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type, [
-          # [KernelScheduleType.CpAsyncWarpSpecializedPingpong,    EpilogueScheduleType.NoSmemWarpSpecialized],
-          [KernelScheduleType.CpAsyncWarpSpecializedCooperative, EpilogueScheduleType.NoSmemWarpSpecialized]
-        ])
-        CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type,
-          [[KernelScheduleType.CpAsyncWarpSpecializedCooperative, EpilogueScheduleType.NoSmemWarpSpecialized]],
-          tile_schedulers=[TileSchedulerType.StreamK])
+            if len(schedules):
+              CreateSparseGemmUniversal3xOperator(manifest, [layout], [tile_desc], data_type, schedules)
+              if len(stream_k_schedules):
+                assert CudaToolkitVersionSatisfies(cuda_version, 12, 1)
+                CreateSparseGemmUniversal3xOperator(manifest, [layout], [tile_desc], data_type,
+                                                    stream_k_schedules,
+                                                    tile_schedulers=[TileSchedulerType.StreamK])
 
-#
+
 def GenerateSM90_TensorOp_fp8_WGMMA_gemm(manifest, cuda_version):
   if not CudaToolkitVersionSatisfies(cuda_version, 12, 0):
     return
+
+  instantiation_level = manifest.get_sm90_instantiation_level(pruned_level=20, default_level=121, exhaustive_level=9999)
+  is_aligned = True
 
   # layouts for ABC and their alignments
   layouts = [
     [[LayoutType.RowMajor, 16], [LayoutType.ColumnMajor, 16], [LayoutType.ColumnMajor, 1]],  # TN Layout
   ]
 
-  math_instructions = [
-    # inst 64x128x32
-    MathInstruction(
-      [64, 128, 32],
-      DataType.e4m3, DataType.e4m3, DataType.f32,
-      OpcodeClass.TensorOp,
-      MathOperation.multiply_add),
-    MathInstruction(
-      [64, 128, 32],
-      DataType.e4m3, DataType.e5m2, DataType.f32,
-      OpcodeClass.TensorOp,
-      MathOperation.multiply_add),
-    MathInstruction(
-      [64, 128, 32],
-      DataType.e5m2, DataType.e4m3, DataType.f32,
-      OpcodeClass.TensorOp,
-      MathOperation.multiply_add),
-    MathInstruction(
-      [64, 128, 32],
-      DataType.e5m2, DataType.e5m2, DataType.f32,
-      OpcodeClass.TensorOp,
-      MathOperation.multiply_add),
-  ]
+  math_instructions = generate_fp8_math_instructions_sm90(instantiation_level)
+  tile_descriptions = generate_tile_descriptions_sm90(
+      math_instructions=math_instructions,
+      is_aligned=is_aligned,
+      level=instantiation_level)
 
-  min_cc = 90
-  max_cc = 90
-
-  for math_inst in math_instructions:
-    data_types = [
-      {
-        "a_type"   : math_inst.element_a,
-        "b_type"   : math_inst.element_b,
-        "c_type"   : DataType.f32,
-        "d_type"   : DataType.f32,
-        "acc_type" : math_inst.element_accumulator,
-        "epi_type" : math_inst.element_accumulator
-      },
-      {
-        "a_type"   : math_inst.element_a,
-        "b_type"   : math_inst.element_b,
-        "c_type"   : DataType.f32,
-        "d_type"   : DataType.e4m3,
-        "acc_type" : math_inst.element_accumulator,
-        "epi_type" : math_inst.element_accumulator
-      },
-      {
-        "a_type"   : math_inst.element_a,
-        "b_type"   : math_inst.element_b,
-        "c_type"   : DataType.f32,
-        "d_type"   : DataType.e5m2,
-        "acc_type" : math_inst.element_accumulator,
-        "epi_type" : math_inst.element_accumulator
-      },
-      {
-        "a_type"   : math_inst.element_a,
-        "b_type"   : math_inst.element_b,
-        "c_type"   : DataType.bf16,
-        "d_type"   : DataType.bf16,
-        "acc_type" : math_inst.element_accumulator,
-        "epi_type" : math_inst.element_accumulator
-      },
-      {
-        "a_type"   : math_inst.element_a,
-        "b_type"   : math_inst.element_b,
-        "c_type"   : DataType.bf16,
-        "d_type"   : DataType.e4m3,
-        "acc_type" : math_inst.element_accumulator,
-        "epi_type" : math_inst.element_accumulator
-      },
-      {
-        "a_type"   : math_inst.element_a,
-        "b_type"   : math_inst.element_b,
-        "c_type"   : DataType.bf16,
-        "d_type"   : DataType.e5m2,
-        "acc_type" : math_inst.element_accumulator,
-        "epi_type" : math_inst.element_accumulator
-      },
-      {
-        "a_type"   : math_inst.element_a,
-        "b_type"   : math_inst.element_b,
-        "c_type"   : DataType.f16,
-        "d_type"   : DataType.f16,
-        "acc_type" : math_inst.element_accumulator,
-        "epi_type" : math_inst.element_accumulator
-      },
-      {
-        "a_type"   : math_inst.element_a,
-        "b_type"   : math_inst.element_b,
-        "c_type"   : DataType.f16,
-        "d_type"   : DataType.e4m3,
-        "acc_type" : math_inst.element_accumulator,
-        "epi_type" : math_inst.element_accumulator
-      },
-      {
-        "a_type"   : math_inst.element_a,
-        "b_type"   : math_inst.element_b,
-        "c_type"   : DataType.f16,
-        "d_type"   : DataType.e5m2,
-        "acc_type" : math_inst.element_accumulator,
-        "epi_type" : math_inst.element_accumulator
-      },
-    ]
-
-    data_types_large_tile = [
-      {
-        "a_type"   : math_inst.element_a,
-        "b_type"   : math_inst.element_b,
-        "c_type"   : DataType.void,
-        "d_type"   : DataType.e5m2,
-        "acc_type" : math_inst.element_accumulator,
-        "epi_type" : math_inst.element_accumulator
-      },
-      {
-        "a_type"   : math_inst.element_a,
-        "b_type"   : math_inst.element_b,
-        "c_type"   : DataType.void,
-        "d_type"   : DataType.e4m3,
-        "acc_type" : math_inst.element_accumulator,
-        "epi_type" : math_inst.element_accumulator
-      }
-    ]
-
-    if math_inst.instruction_shape[1] == 128:
-      tile_descriptions_small = [
-        # 64x128x128
-        TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-          0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
-        TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-          0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
-      ]
-      tile_descriptions_large = [
-        # 256x128x128
-        TileDescription([math_inst.instruction_shape[0]*4, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-          0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
-        TileDescription([math_inst.instruction_shape[0]*4, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-          0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
-      ]
-      tile_descriptions = [
-        # 128x128x128
-        TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-          0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
-        TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-          0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
-      ]
-
+  for tile_desc in tile_descriptions:
+    math_inst = tile_desc.math_instruction
+    data_types = []
+    fp8_types = [DataType.e4m3, DataType.e5m2]
+    valid_types_for_d = [DataType.f32, DataType.bf16, DataType.f16, DataType.e4m3, DataType.e5m2]
+    valid_types_for_c = copy.deepcopy(valid_types_for_d)
+    valid_types_for_c.append(DataType.void)
+    for c_type, d_type in product(valid_types_for_c, valid_types_for_d):
+        data_types.append(
+            generate_data_types_from_math_instruction(
+                math_inst,
+                element_source=c_type,
+                element_dest=d_type,
+            )
+        )
     else:
-      assert False, "math inst is not supported"
+        for d_type in valid_types_for_d:
+            data_types.append(
+                generate_data_types_from_math_instruction(
+                    math_inst,
+                    element_source=DataType.void,
+                    element_dest=d_type,
+                )
+            )
 
-    # some schedules disabled to save on library size
-    if CudaToolkitVersionSatisfies(cuda_version, 12, 1):
-      schedules = [
-        #[KernelScheduleType.ScheduleAuto,                             EpilogueScheduleType.ScheduleAuto],
-        [KernelScheduleType.TmaWarpSpecializedCooperative,             EpilogueScheduleType.NoSmemWarpSpecialized],
-        [KernelScheduleType.TmaWarpSpecialized,                        EpilogueScheduleType.NoSmemWarpSpecialized],
-        [KernelScheduleType.TmaWarpSpecializedPingpongFP8FastAccum,    EpilogueScheduleType.NoSmemWarpSpecialized],
-        [KernelScheduleType.TmaWarpSpecializedCooperativeFP8FastAccum, EpilogueScheduleType.NoSmemWarpSpecialized],
-        [KernelScheduleType.TmaWarpSpecializedFP8FastAccum,            EpilogueScheduleType.NoSmemWarpSpecialized]
-      ]
-      stream_k_schedules = [[KernelScheduleType.TmaWarpSpecializedCooperative,             EpilogueScheduleType.NoSmemWarpSpecialized],
-                            [KernelScheduleType.TmaWarpSpecializedCooperativeFP8FastAccum, EpilogueScheduleType.NoSmemWarpSpecialized]]
-    else:
-      schedules = [
-        # [KernelScheduleType.ScheduleAuto, EpilogueScheduleType.ScheduleAuto],
-        [KernelScheduleType.TmaWarpSpecialized, EpilogueScheduleType.NoSmemWarpSpecialized]
-        # TmaWarpSpecializedCooperative require CUDA version >= 12.1 for optimal performance.
-      ]
-      stream_k_schedules = []
+    for layout in layouts:
+        for data_type in data_types:
+            # Inconsistency: alignments aren't fixed in FP8
+            # layout = fix_alignments(data_type, layout, alignment_bits=128)
 
-    for data_type in data_types:
-      # With No-SMEM epilogues
-      CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type, schedules)
+            schedules, stream_k_schedules = get_valid_schedules(
+              tile_description=tile_desc,
+              cuda_version=cuda_version,
+              is_aligned=is_aligned,
+              data_types=data_type,
+              instantiation_level=instantiation_level,
+              layout=layout,
+            )
 
-      if CudaToolkitVersionSatisfies(cuda_version, 12, 1):
-        # Persistent kernels with TMA epilogues
-        CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type,
-          [[KernelScheduleType.TmaWarpSpecializedCooperative,             EpilogueScheduleType.TmaWarpSpecializedCooperative],
-           [KernelScheduleType.TmaWarpSpecializedPingpongFP8FastAccum,    EpilogueScheduleType.TmaWarpSpecialized],
-           [KernelScheduleType.TmaWarpSpecializedCooperativeFP8FastAccum, EpilogueScheduleType.TmaWarpSpecializedCooperative]])
+            if len(schedules):
+              CreateGemmUniversal3xOperator(manifest, [layout], [tile_desc], data_type, schedules)
+              if len(stream_k_schedules):
+                assert CudaToolkitVersionSatisfies(cuda_version, 12, 1)
+                CreateGemmUniversal3xOperator(manifest, [layout], [tile_desc], data_type,
+                                              stream_k_schedules,
+                                              tile_schedulers=[TileSchedulerType.StreamK])
 
-        # Small tiles
-        CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions_small, data_type,
-           [[KernelScheduleType.TmaWarpSpecializedPingpongFP8FastAccum, EpilogueScheduleType.TmaWarpSpecialized],
-            [KernelScheduleType.TmaWarpSpecializedPingpongFP8FastAccum, EpilogueScheduleType.NoSmemWarpSpecialized]])
 
-        # Large tiles
-        CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions_large, data_types_large_tile,
-          [[KernelScheduleType.TmaWarpSpecializedCooperative,             EpilogueScheduleType.TmaWarpSpecializedCooperative],
-           [KernelScheduleType.TmaWarpSpecializedCooperativeFP8FastAccum, EpilogueScheduleType.TmaWarpSpecializedCooperative]])
-
-        # Add stream-K variants (with and without TMA epilogues)
-        CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type, stream_k_schedules, tile_schedulers=[TileSchedulerType.StreamK])
-        CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type,
-          [[KernelScheduleType.TmaWarpSpecializedCooperative,             EpilogueScheduleType.TmaWarpSpecializedCooperative],
-           [KernelScheduleType.TmaWarpSpecializedCooperativeFP8FastAccum, EpilogueScheduleType.TmaWarpSpecializedCooperative]],
-          tile_schedulers=[TileSchedulerType.StreamK])
-
-#
 def GenerateSM90_TensorOp_fp8_WGMMA_alignx_gemm(manifest, cuda_version):
   if not CudaToolkitVersionSatisfies(cuda_version, 12, 0):
     return
+
+  instantiation_level = manifest.get_sm90_instantiation_level(pruned_level=0, default_level=101, exhaustive_level=9999)
+  is_aligned = False
 
   # layouts for ABC and their alignments
   layouts = [
@@ -5841,179 +5798,117 @@ def GenerateSM90_TensorOp_fp8_WGMMA_alignx_gemm(manifest, cuda_version):
     [[LayoutType.RowMajor, 4], [LayoutType.ColumnMajor, 4], [LayoutType.ColumnMajor, 1]],  # TN Layout
   ]
 
-  math_instructions = [
-    # inst 64x128x32
-    MathInstruction(
-      [64, 128, 32],
-      DataType.e4m3, DataType.e4m3, DataType.f32,
-      OpcodeClass.TensorOp,
-      MathOperation.multiply_add),
-    MathInstruction(
-      [64, 128, 32],
-      DataType.e4m3, DataType.e5m2, DataType.f32,
-      OpcodeClass.TensorOp,
-      MathOperation.multiply_add),
-    MathInstruction(
-      [64, 128, 32],
-      DataType.e5m2, DataType.e4m3, DataType.f32,
-      OpcodeClass.TensorOp,
-      MathOperation.multiply_add),
-    MathInstruction(
-      [64, 128, 32],
-      DataType.e5m2, DataType.e5m2, DataType.f32,
-      OpcodeClass.TensorOp,
-      MathOperation.multiply_add),
-    # inst 64x64x32
-    # MathInstruction(
-    #   [64, 64, 32],
-    #   DataType.e4m3, DataType.e4m3, DataType.f32,
-    #   OpcodeClass.TensorOp,
-    #   MathOperation.multiply_add),
-    # MathInstruction(
-    #   [64, 64, 32],
-    #   DataType.e4m3, DataType.e5m2, DataType.f32,
-    #   OpcodeClass.TensorOp,
-    #   MathOperation.multiply_add),
-    # MathInstruction(
-    #   [64, 64, 32],
-    #   DataType.e5m2, DataType.e4m3, DataType.f32,
-    #   OpcodeClass.TensorOp,
-    #   MathOperation.multiply_add),
-    # MathInstruction(
-    #   [64, 64, 32],
-    #   DataType.e5m2, DataType.e5m2, DataType.f32,
-    #   OpcodeClass.TensorOp,
-    #   MathOperation.multiply_add),
+  math_instructions = generate_fp8_math_instructions_sm90(instantiation_level)
+  tile_descriptions = generate_tile_descriptions_sm90(
+      math_instructions=math_instructions,
+      is_aligned=is_aligned,
+      level=instantiation_level)
+
+  for tile_desc in tile_descriptions:
+    math_inst = tile_desc.math_instruction
+    data_types = [generate_data_types_from_math_instruction(math_inst)]
+    fp8_types = [DataType.e4m3, DataType.e5m2]
+    valid_types_for_d = [DataType.f32, DataType.bf16, DataType.f16, DataType.e4m3, DataType.e5m2]
+    valid_types_for_c = copy.deepcopy(valid_types_for_d)
+    valid_types_for_c.append(DataType.void)
+    for c_type, d_type in product(valid_types_for_c, valid_types_for_d):
+        data_types.append(
+            generate_data_types_from_math_instruction(
+                math_inst,
+                element_source=c_type,
+                element_dest=d_type,
+            )
+        )
+
+    for layout in layouts:
+        for data_type in data_types:
+            # Inconsistency: alignments aren't fixed in FP8
+            # layout = fix_alignments(data_type, layout, alignment_bits=128)
+
+            schedules, stream_k_schedules = get_valid_schedules(
+              tile_description=tile_desc,
+              cuda_version=cuda_version,
+              is_aligned=is_aligned,
+              data_types=data_type,
+              instantiation_level=instantiation_level,
+              layout=layout,
+            )
+
+            if len(schedules):
+              CreateGemmUniversal3xOperator(manifest, [layout], [tile_desc], data_type, schedules)
+              if len(stream_k_schedules):
+                assert CudaToolkitVersionSatisfies(cuda_version, 12, 1)
+                CreateGemmUniversal3xOperator(manifest, [layout], [tile_desc], data_type,
+                                              stream_k_schedules,
+                                              tile_schedulers=[TileSchedulerType.StreamK])
+
+
+def GenerateSM90_SparseTensorOp_fp8_WGMMA_gemm(manifest, cuda_version):
+  if not CudaToolkitVersionSatisfies(cuda_version, 12, 2):
+    return
+
+  instantiation_level = manifest.get_sm90_instantiation_level(pruned_level=20, default_level=121, exhaustive_level=9999)
+  is_aligned = True
+
+  # layouts for ABC and their alignments
+  layouts = [
+    [[LayoutType.RowMajor, 32], [LayoutType.ColumnMajor, 16], [LayoutType.ColumnMajor, 1]],  # TN Layout
   ]
 
-  min_cc = 90
-  max_cc = 90
+  math_instructions = make_sparse_math_instructions(generate_fp8_math_instructions_sm90(instantiation_level))
+  tile_descriptions = generate_tile_descriptions_sm90(
+      math_instructions=math_instructions,
+      is_aligned=is_aligned,
+      level=instantiation_level)
 
-  for math_inst in math_instructions:
-    data_types = [
-      {
-        "a_type"   : math_inst.element_a,
-        "b_type"   : math_inst.element_b,
-        "c_type"   : DataType.f32,
-        "d_type"   : DataType.f32,
-        "acc_type" : math_inst.element_accumulator,
-        "epi_type" : math_inst.element_accumulator
-      },
-      {
-        "a_type"   : math_inst.element_a,
-        "b_type"   : math_inst.element_b,
-        "c_type"   : DataType.f32,
-        "d_type"   : DataType.e4m3,
-        "acc_type" : math_inst.element_accumulator,
-        "epi_type" : math_inst.element_accumulator
-      },
-      {
-        "a_type"   : math_inst.element_a,
-        "b_type"   : math_inst.element_b,
-        "c_type"   : DataType.f32,
-        "d_type"   : DataType.e5m2,
-        "acc_type" : math_inst.element_accumulator,
-        "epi_type" : math_inst.element_accumulator
-      },
-      {
-        "a_type"   : math_inst.element_a,
-        "b_type"   : math_inst.element_b,
-        "c_type"   : DataType.bf16,
-        "d_type"   : DataType.bf16,
-        "acc_type" : math_inst.element_accumulator,
-        "epi_type" : math_inst.element_accumulator
-      },
-      {
-        "a_type"   : math_inst.element_a,
-        "b_type"   : math_inst.element_b,
-        "c_type"   : DataType.bf16,
-        "d_type"   : DataType.e4m3,
-        "acc_type" : math_inst.element_accumulator,
-        "epi_type" : math_inst.element_accumulator
-      },
-      {
-        "a_type"   : math_inst.element_a,
-        "b_type"   : math_inst.element_b,
-        "c_type"   : DataType.bf16,
-        "d_type"   : DataType.e5m2,
-        "acc_type" : math_inst.element_accumulator,
-        "epi_type" : math_inst.element_accumulator
-      },
-      {
-        "a_type"   : math_inst.element_a,
-        "b_type"   : math_inst.element_b,
-        "c_type"   : DataType.f16,
-        "d_type"   : DataType.f16,
-        "acc_type" : math_inst.element_accumulator,
-        "epi_type" : math_inst.element_accumulator
-      },
-      {
-        "a_type"   : math_inst.element_a,
-        "b_type"   : math_inst.element_b,
-        "c_type"   : DataType.f16,
-        "d_type"   : DataType.e4m3,
-        "acc_type" : math_inst.element_accumulator,
-        "epi_type" : math_inst.element_accumulator
-      },
-      {
-        "a_type"   : math_inst.element_a,
-        "b_type"   : math_inst.element_b,
-        "c_type"   : DataType.f16,
-        "d_type"   : DataType.e5m2,
-        "acc_type" : math_inst.element_accumulator,
-        "epi_type" : math_inst.element_accumulator
-      },
-    ]
-
-    if math_inst.instruction_shape[1] == 128:
-      tile_descriptions = [
-        # 128x128x128
-        TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-          0, [4, 1, 1], math_inst, min_cc, max_cc, [1,1,1]),
-      ]
-
-    # elif math_inst.instruction_shape[1] == 64:
-    #   tile_descriptions = [
-    #     # 256x64x128
-    #     TileDescription([math_inst.instruction_shape[0]*4, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-    #       0, [4, 1, 1], math_inst, min_cc, max_cc, [1,1,1]),
-    #   ]
-
+  for tile_desc in tile_descriptions:
+    math_inst = tile_desc.math_instruction
+    data_types = []
+    fp8_types = [DataType.e4m3, DataType.e5m2]
+    valid_types_for_d = [DataType.f32, DataType.bf16, DataType.f16, DataType.e4m3, DataType.e5m2]
+    valid_types_for_c = copy.deepcopy(valid_types_for_d)
+    valid_types_for_c.append(DataType.void)
+    for c_type, d_type in product(valid_types_for_c, valid_types_for_d):
+        data_types.append(
+            generate_data_types_from_math_instruction(
+                math_inst,
+                element_source=c_type,
+                element_dest=d_type,
+            )
+        )
     else:
-      assert False, "math inst is not supported"
+        for d_type in valid_types_for_d:
+            data_types.append(
+                generate_data_types_from_math_instruction(
+                    math_inst,
+                    element_source=DataType.void,
+                    element_dest=d_type,
+                )
+            )
 
-    if CudaToolkitVersionSatisfies(cuda_version, 12, 1):
-      schedules = [
-        # [KernelScheduleType.ScheduleAuto, EpilogueScheduleType.ScheduleAuto],
-        [KernelScheduleType.CpAsyncWarpSpecializedCooperative, EpilogueScheduleType.NoSmemWarpSpecialized],
-        # [KernelScheduleType.CpAsyncWarpSpecializedPingpong, EpilogueScheduleType.NoSmemWarpSpecialized],
-        [KernelScheduleType.CpAsyncWarpSpecialized, EpilogueScheduleType.NoSmemWarpSpecialized],
-      ]
-      stream_k_schedules = [[KernelScheduleType.CpAsyncWarpSpecializedCooperative, EpilogueScheduleType.NoSmemWarpSpecialized]]
-    else:
-      schedules = [
-        # [KernelScheduleType.ScheduleAuto, EpilogueScheduleType.ScheduleAuto],
-        [KernelScheduleType.CpAsyncWarpSpecialized, EpilogueScheduleType.NoSmemWarpSpecialized]
-      ]
-      stream_k_schedules = []
+    for layout in layouts:
+        for data_type in data_types:
+            # Inconsistency: alignments aren't fixed in FP8
+            # layout = fix_alignments(data_type, layout, alignment_bits=128)
+
+            schedules, stream_k_schedules = get_valid_schedules(
+              tile_description=tile_desc,
+              cuda_version=cuda_version,
+              is_aligned=is_aligned,
+              data_types=data_type,
+              instantiation_level=instantiation_level,
+              layout=layout,
+            )
+
+            if len(schedules):
+              CreateSparseGemmUniversal3xOperator(manifest, [layout], [tile_desc], data_type, schedules)
+              if len(stream_k_schedules):
+                assert CudaToolkitVersionSatisfies(cuda_version, 12, 1)
+                CreateSparseGemmUniversal3xOperator(manifest, [layout], [tile_desc], data_type,
+                                                    stream_k_schedules,
+                                                    tile_schedulers=[TileSchedulerType.StreamK])
 
 
-    for data_type in data_types:
-      # With No-SMEM epilogues
-      CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type, schedules)
-
-      if CudaToolkitVersionSatisfies(cuda_version, 12, 1):
-        # Persistent kernels with TMA epilogues
-        # CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type,
-        #   [[KernelScheduleType.CpAsyncWarpSpecializedCooperative,    EpilogueScheduleType.TmaWarpSpecializedCooperative]])
-
-        # Add stream-K variants (with and without TMA epilogues)
-        CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type, stream_k_schedules, tile_schedulers=[TileSchedulerType.StreamK])
-        # CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type,
-        #   [[KernelScheduleType.CpAsyncWarpSpecializedCooperative,    EpilogueScheduleType.TmaWarpSpecializedCooperative]],
-        #   tile_schedulers=[TileSchedulerType.StreamK])
-
-#
 def GenerateSM90_TensorOp_1684(manifest, cuda_version):
 
   if not CudaToolkitVersionSatisfies(cuda_version, 11, 8):
@@ -6631,85 +6526,352 @@ def GenerateSM90_Conv3x(manifest, cuda_version,
   minimum_compute_capability = 90
   maximum_compute_capability = 90
 
-  spatial_dims = [2, 3]
+  spatial_dims = (2, 3)
 
-  def make_dims_and_alignments_triple(dim: int):
-    byte_alignment_required_by_tma = 16
-    return ((dim, byte_alignment_required_by_tma), # A
-            (dim, byte_alignment_required_by_tma), # B
-            (dim, byte_alignment_required_by_tma)) # C
-  dims_and_alignments = [make_dims_and_alignments_triple(dim) for dim in spatial_dims]
+  # This function only generates kernels that use TMA.
+  byte_alignment_required_by_tma = 16
+  tma_byte_alignments = {
+    'A': byte_alignment_required_by_tma,
+    'B': byte_alignment_required_by_tma,
+    'C': byte_alignment_required_by_tma,
+  }
 
-  def make_math_instruction(data_types: Tuple[DataType, DataType, DataType],
-                            instruction_shape: Tuple[int, int, int]) -> MathInstruction:
+  # For tuples of one element, the element needs to end with comma.
+  all_byte_alignments = (
+    tma_byte_alignments,
+  )
+
+  # MMA shapes (MMA_M, MMA_N, MMA_K):
+  #
+  # Different hardware MMA instructions may have different MMA shapes.
+  # This function may generate kernels with different MMA shapes for
+  # different data types, either because the hardware only supports
+  # certain shapes for certain types, or for performance reasons
+  # (CUTLASS doesn't need to generate all valid kernels for the
+  # profiler library, just the best-performing ones).
+  #
+  # The kernel names refer to tile shapes (TILE_M, TILE_N, TILE_K)
+  # instead of MMA shapes.  For SM >= 90 kernels, TILE_K = 4 * MMA_K,
+  # where 4, the "number of MMA instructions per tile," is determined
+  # through some combination of modeling and experiment.
+  #
+  # For performance on sm90, generally CUTLASS generates 64x128
+  # instead of 128x64.
+  mma_64x64x16  = ( 64,  64,  16)
+  mma_64x64x8   = ( 64,  64,   8)
+
+  num_mma_per_tile = 4
+
+  # Cluster shapes (1, 1, 1) and (2, 2, 1) are valid,
+  # but not included, because they tend not to perform as well.
+  cluster_shapes = (
+    (2, 1, 1),
+    (1, 2, 1),
+   )
+
+  fp16 = DataType.f16
+  bf16 = DataType.bf16
+  fp32 = DataType.f32
+  s8   = DataType.s8
+  s32  = DataType.s32
+
+  # When generating kernels, the usual way is to specify 4 types,
+  # (A, B, Acc, C/D).  Tests instead have 5 types,
+  # (ElementAct, ElementFlt, ElementOut, ElementAcc, ElementCompute),
+  # where ElementCompute is also called 'epi_type',
+  # and corresponds to the type of epilogue activations.
+  # This script maps tests' 5 types to 4 types
+  # by making ElementCompute the same as ElementOut.
+
+  fp16_fp32_fp16_fp32 = {
+    'a_type':   fp16, # ElementAct(ivation)
+    'b_type':   fp16, # ElementF(i)lt(er)
+    'c_type':   fp32, # ElementAcc
+    'd_type':   fp32, # ElementOut (used only by CollectiveEpilogue)
+    'acc_type': fp16, # ElementAcc
+    'epi_type': fp32, # ElementCompute (used only by CollectiveEpilogue)
+  }
+  fp16_fp32_fp32_fp32 = {
+    'a_type':   fp16,
+    'b_type':   fp16,
+    'c_type':   fp32,
+    'd_type':   fp32,
+    'acc_type': fp32,
+    'epi_type': fp32,
+  }
+  fp32_fp32_fp32_fp32 = {
+    'a_type':   fp32,
+    'b_type':   fp32,
+    'c_type':   fp32,
+    'd_type':   fp32,
+    'acc_type': fp32,
+    'epi_type': fp32,
+  }
+  s8_s32_s32_s32 = {
+    'a_type':     s8,
+    'b_type':     s8,
+    'c_type':    s32,
+    'd_type':    s32,
+    'acc_type':  s32,
+    'epi_type':  s32,
+  }
+
+  # Other NVIDIA libraries may have the habit of specifying data types like this.
+  bf16bf16_bf16f32_f32 = {
+    'a_type':   bf16,
+    'b_type':   bf16,
+    'c_type':   fp32,
+    'd_type':   fp32,
+    'acc_type': fp32,
+    'epi_type': fp32,
+  }
+  f16f16_f16f16_f16 = {
+    'a_type':   fp16,
+    'b_type':   fp16,
+    'c_type':   fp16,
+    'd_type':   fp16,
+    'acc_type': fp16,
+    'epi_type': fp16,
+  }
+  f16f16_f16f32_f32 = {
+    'a_type':   fp16,
+    'b_type':   fp16,
+    'c_type':   fp16,
+    'd_type':   fp16,
+    'acc_type': fp32,
+    'epi_type': fp32,
+  }
+  f32f32_tf32f32_f32 = fp32_fp32_fp32_fp32
+
+  i8i8_i8i32_f32 = {
+    'a_type':     s8,
+    'b_type':     s8,
+    'c_type':    s32,
+    'd_type':    s32,
+    'acc_type':  s32,
+    'epi_type':  s32,
+  }
+
+  # Each element in the outermost iterable is one combination of
+  #
+  # (ConvKind, spatial_dimension, data_types, byte_alignments, mma_sizes, cluster_sizes)
+  #
+  # for which to generate a kernel.  spatial_dimension is the spatial
+  # dimension of the convolution: either 1, 2, or 3.  byte_alignments
+  # is a triple of required minimum byte alignments for A, B, and C.
+  #
+  # Note that itertools functions produce a single-pass generator.
+  # The code doesn't need a multipass iterable, but if one did, one
+  # could call `tuple` or `list` on the generator.
+  #
+  # While this happens to use the same cluster sizes for each element,
+  # the code doesn't require that.  Different convolution kinds, data
+  # types, or mma sizes might have different optimal cluster sizes.
+  combinations_of_parameters = chain(
+    # The following are all the kernels exercised in the unit tests.
+    # Please try to keep in sync with the unit tests.
+    product(
+      (
+        ConvKind.Fprop,
+      ),
+      spatial_dims,
+      (
+        fp16_fp32_fp16_fp32,
+        fp16_fp32_fp32_fp32,
+        s8_s32_s32_s32,
+      ),
+      all_byte_alignments,
+      (
+        mma_64x64x16,
+      ),
+      cluster_shapes
+    ),
+    product(
+      (
+        ConvKind.Fprop,
+      ),
+      spatial_dims,
+      (
+        fp32_fp32_fp32_fp32,
+      ),
+      all_byte_alignments,
+      (
+        mma_64x64x8,
+      ),
+      cluster_shapes
+    ),
+    product(
+      (
+        ConvKind.Dgrad,
+      ),
+      spatial_dims,
+      (
+        fp16_fp32_fp16_fp32,
+        fp16_fp32_fp32_fp32,
+      ),
+      all_byte_alignments,
+      (
+        mma_64x64x16,
+      ),
+      cluster_shapes
+    ),
+    # Kernels not necessarily in the unit tests, but used elsewhere
+    # and thus useful to have generated for profiling.  They may
+    # duplicate kernels above.  All of them are 2-D.  In general,
+    # CUTLASS prefers 64 x 128 to 128 x 64 on sm90, even if the
+    # hardware permits 128 x 64.
+    (
+      # Fprop
+      #
+      # bf16bf16_bf16f32_f32
+      #
+      # cluster shape (2, 1, 1)
+      #
+      (ConvKind.Fprop, 2, bf16bf16_bf16f32_f32, tma_byte_alignments, (128, 256,  8), (2, 1, 1)),
+      (ConvKind.Fprop, 2, bf16bf16_bf16f32_f32, tma_byte_alignments, (128, 256, 16), (2, 1, 1)),
+      (ConvKind.Fprop, 2, bf16bf16_bf16f32_f32, tma_byte_alignments, (256, 128,  8), (2, 1, 1)),
+      (ConvKind.Fprop, 2, bf16bf16_bf16f32_f32, tma_byte_alignments, (256, 128, 16), (2, 1, 1)),
+      #
+      # f16f16_f16f16_f16
+      #
+      # cluster shape (1, 1, 1)
+      #
+      (ConvKind.Fprop, 2,    f16f16_f16f16_f16, tma_byte_alignments, ( 64,  64,  8), (1, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f16_f16, tma_byte_alignments, ( 64,  64, 16), (1, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f16_f16, tma_byte_alignments, ( 64, 128,  8), (1, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f16_f16, tma_byte_alignments, ( 64, 128, 16), (1, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f16_f16, tma_byte_alignments, ( 64, 256,  8), (1, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f16_f16, tma_byte_alignments, ( 64, 256, 16), (1, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f16_f16, tma_byte_alignments, (128, 128,  8), (1, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f16_f16, tma_byte_alignments, (128, 128, 16), (1, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f16_f16, tma_byte_alignments, (128, 256,  8), (1, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f16_f16, tma_byte_alignments, (128, 256, 16), (1, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f16_f16, tma_byte_alignments, (256,  64,  8), (1, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f16_f16, tma_byte_alignments, (256,  64, 16), (1, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f16_f16, tma_byte_alignments, (256, 128,  8), (1, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f16_f16, tma_byte_alignments, (256, 128, 16), (1, 1, 1)),
+      #
+      # f16f16_f16f32_f32
+      #
+      # cluster shape (2, 1, 1)
+      #
+      (ConvKind.Fprop, 2,    f16f16_f16f32_f32, tma_byte_alignments, (128, 192,  8), (2, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f32_f32, tma_byte_alignments, (128, 192, 16), (2, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f32_f32, tma_byte_alignments, (128, 256,  8), (2, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f32_f32, tma_byte_alignments, (128, 256, 16), (2, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f32_f32, tma_byte_alignments, (256,  96,  8), (2, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f32_f32, tma_byte_alignments, (256,  96, 16), (2, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f32_f32, tma_byte_alignments, (256, 128,  8), (2, 1, 1)),
+      (ConvKind.Fprop, 2,    f16f16_f16f32_f32, tma_byte_alignments, (256, 128, 16), (2, 1, 1)),
+      #
+      # f32f32_tf32f32_f32
+      #
+      # cluster shape (2, 1, 1)
+      #
+      (ConvKind.Fprop, 2,   f32f32_tf32f32_f32, tma_byte_alignments, (128, 192,  8), (2, 1, 1)),
+      (ConvKind.Fprop, 2,   f32f32_tf32f32_f32, tma_byte_alignments, (128, 256,  8), (2, 1, 1)),
+      (ConvKind.Fprop, 2,   f32f32_tf32f32_f32, tma_byte_alignments, (256, 128,  8), (2, 1, 1)),
+      (ConvKind.Fprop, 2,   f32f32_tf32f32_f32, tma_byte_alignments, (256,  96,  8), (2, 1, 1)),
+      #
+      # i8i8_i8i32_f32
+      #
+      # cluster shape (2, 1, 1)
+      #
+      (ConvKind.Fprop, 2,       i8i8_i8i32_f32, tma_byte_alignments, (128, 256, 16), (2, 1, 1)),
+      (ConvKind.Fprop, 2,       i8i8_i8i32_f32, tma_byte_alignments, (128, 256, 32), (2, 1, 1)),
+      (ConvKind.Fprop, 2,       i8i8_i8i32_f32, tma_byte_alignments, (256, 128, 16), (2, 1, 1)),
+      (ConvKind.Fprop, 2,       i8i8_i8i32_f32, tma_byte_alignments, (256, 128, 32), (2, 1, 1)),
+      #
+      # Dgrad
+      #
+      # bf16bf16_bf16f32_f32
+      #
+      # cluster shape (2, 1, 1)
+      #
+      (ConvKind.Dgrad, 2, bf16bf16_bf16f32_f32, tma_byte_alignments, (128, 256,  8), (2, 1, 1)),
+      (ConvKind.Dgrad, 2, bf16bf16_bf16f32_f32, tma_byte_alignments, (128, 256, 16), (2, 1, 1)),
+      (ConvKind.Dgrad, 2, bf16bf16_bf16f32_f32, tma_byte_alignments, (256, 128,  8), (2, 1, 1)),
+      (ConvKind.Dgrad, 2, bf16bf16_bf16f32_f32, tma_byte_alignments, (256, 128, 16), (2, 1, 1)),
+      #
+      # f16f16_f16f16_f16
+      #
+      # cluster shape (1, 1, 1)
+      #
+      (ConvKind.Dgrad, 2,    f16f16_f16f16_f16, tma_byte_alignments, ( 64,  64,  8), (1, 1, 1)),
+      (ConvKind.Dgrad, 2,    f16f16_f16f16_f16, tma_byte_alignments, ( 64,  64, 16), (1, 1, 1)),
+      (ConvKind.Dgrad, 2,    f16f16_f16f16_f16, tma_byte_alignments, ( 64, 128,  8), (1, 1, 1)),
+      (ConvKind.Dgrad, 2,    f16f16_f16f16_f16, tma_byte_alignments, ( 64, 128, 16), (1, 1, 1)),
+      (ConvKind.Dgrad, 2,    f16f16_f16f16_f16, tma_byte_alignments, ( 64, 256,  8), (1, 1, 1)),
+      (ConvKind.Dgrad, 2,    f16f16_f16f16_f16, tma_byte_alignments, ( 64, 256, 16), (1, 1, 1)),
+      (ConvKind.Dgrad, 2,    f16f16_f16f16_f16, tma_byte_alignments, (128, 128,  8), (1, 1, 1)),
+      (ConvKind.Dgrad, 2,    f16f16_f16f16_f16, tma_byte_alignments, (128, 128, 16), (1, 1, 1)),
+      (ConvKind.Dgrad, 2,    f16f16_f16f16_f16, tma_byte_alignments, (128, 256,  8), (1, 1, 1)),
+      (ConvKind.Dgrad, 2,    f16f16_f16f16_f16, tma_byte_alignments, (128, 256, 16), (1, 1, 1)),
+      (ConvKind.Dgrad, 2,    f16f16_f16f16_f16, tma_byte_alignments, (256,  64,  8), (1, 1, 1)),
+      (ConvKind.Dgrad, 2,    f16f16_f16f16_f16, tma_byte_alignments, (256,  64, 16), (1, 1, 1)),
+      (ConvKind.Dgrad, 2,    f16f16_f16f16_f16, tma_byte_alignments, (256, 128,  8), (1, 1, 1)),
+      (ConvKind.Dgrad, 2,    f16f16_f16f16_f16, tma_byte_alignments, (256, 128, 16), (1, 1, 1)),
+      #
+      # f16f16_f16f32_f32
+      #
+      # cluster shape (2, 1, 1)
+      #
+      (ConvKind.Dgrad, 2,    f16f16_f16f32_f32, tma_byte_alignments, (128, 256,  8), (2, 1, 1)),
+      (ConvKind.Dgrad, 2,    f16f16_f16f32_f32, tma_byte_alignments, (128, 256, 16), (2, 1, 1)),
+      (ConvKind.Dgrad, 2,    f16f16_f16f32_f32, tma_byte_alignments, (256, 128,  8), (2, 1, 1)),
+      (ConvKind.Dgrad, 2,    f16f16_f16f32_f32, tma_byte_alignments, (256, 128, 16), (2, 1, 1)),
+    ),
+  )
+
+  # SM >= 90 kernels don't actually use warp_count, but the
+  # TileDescription class needs it.  The 4 in the default
+  # warp_count has nothing to do with num_mma_per_tile.
+  warp_count = [4, 1, 1]
+
+  stages = 0 # zero means "deduce the number of stages automatically"
+
+  mainloop_schedule = KernelScheduleType.ImplicitTmaWarpSpecializedSm90
+  epilogue_schedule = EpilogueScheduleType.TmaWarpSpecialized
+  schedule_pairs = (
+    (mainloop_schedule, epilogue_schedule),
+  )
+  tile_schedulers = (
+    TileSchedulerType.Default, # -> void
+  )
+
+  def make_math_instruction(data_types: Dict[str, DataType],
+                            mma_shape: Tuple[int, int, int]) -> MathInstruction:
     default_opcode = OpcodeClass.TensorOp
     default_math_op = MathOperation.multiply_add
-    [A_data_type, B_data_type, C_data_type] = data_types
     return MathInstruction(
-      instruction_shape,
-      A_data_type, B_data_type, C_data_type,
+      mma_shape,
+      data_types['a_type'], data_types['b_type'], data_types['c_type'],
       default_opcode,
       default_math_op
     )
-  data_types_and_instruction_shapes = [
-    ((DataType.f16, DataType.f16, DataType.f16),   (64, 64, 16)),
-    ((DataType.f16, DataType.f16, DataType.f32),   (64, 64, 16)),
-    ((DataType.bf16, DataType.bf16, DataType.f32), (64, 64, 16)),
-  ]
-  math_instructions = map(lambda x: make_math_instruction(*x),
-                          data_types_and_instruction_shapes)
 
-  cluster_shapes = [
-    [2, 1, 1],
-    [1, 1, 1],
-  ]
-  conv_kinds = [
-    ConvKind.Fprop,
-    ConvKind.Dgrad
-  ]
-  mainloop_schedule = KernelScheduleType.ImplicitTmaWarpSpecializedSm90
-  stages = 0 # zero means "deduce the number of stages automatically"
-
-  # tile_descriptions is a 2-level list.
-  # Each inner list is for each cluster shape.
-  for math_inst in math_instructions:
-    tile_descriptions = []
-    for cluster_shape in cluster_shapes:
-      tile_shape = [
-        math_inst.instruction_shape[0],
-        math_inst.instruction_shape[1],
-        math_inst.instruction_shape[2] * 4
-      ]
-      warp_count = [4, 1, 1]
-      tile_description = TileDescription(
-        tile_shape, stages, warp_count, math_inst,
-        minimum_compute_capability, maximum_compute_capability,
-        cluster_shape)
-      tile_descriptions.append(tile_description)
-
-    # It's typical to get the data types from the math instruction.
-    data_type = {
-      "a_type"   : math_inst.element_a,
-      "b_type"   : math_inst.element_b,
-      "c_type"   : math_inst.element_accumulator,
-      "d_type"   : math_inst.element_accumulator,
-      "acc_type" : math_inst.element_accumulator,
-      "epi_type" : math_inst.element_accumulator
-    }
-
-    for conv_kind in conv_kinds:
-      epilogue_schedule = EpilogueScheduleType.TmaWarpSpecialized
-      schedule_pairs = [
-        (mainloop_schedule, epilogue_schedule)
-      ]
-      CreateConvOperator3x(manifest,
-                           dims_and_alignments = dims_and_alignments,
-                           tile_descriptions = tile_descriptions,
-                           data_types = data_type,
-                           schedule_pairs = schedule_pairs,
-                           tile_schedulers = [TileSchedulerType.Default], # -> void
-                           conv_kind = conv_kind,
-                           log_indent_level = log_indent_level)
+  for (conv_kind, spatial_dim, data_types, byte_alignments, mma_shape, cluster_shape) in combinations_of_parameters:
+    math_inst = make_math_instruction(data_types, mma_shape)
+    tile_shape = (mma_shape[0], mma_shape[1], num_mma_per_tile * mma_shape[2])
+    tile_description = TileDescription(tile_shape, stages, warp_count, math_inst,
+      minimum_compute_capability, maximum_compute_capability, cluster_shape)
+    assert(isinstance(spatial_dim, int))
+    assert(isinstance(byte_alignments, dict))
+    dims_and_alignments = (
+      (
+        (spatial_dim, byte_alignments['A']),
+        (spatial_dim, byte_alignments['B']),
+        (spatial_dim, byte_alignments['C']),
+      ),
+    )
+    CreateConvOperator3x(manifest,
+                         dims_and_alignments = dims_and_alignments,
+                         tile_descriptions = [tile_description],
+                         data_types = data_types,
+                         schedule_pairs = schedule_pairs,
+                         tile_schedulers = tile_schedulers,
+                         conv_kind = conv_kind,
+                         log_indent_level = log_indent_level)
 
 def GenerateSM90(manifest, cuda_version):
   GenerateSM90_TensorOp_16b_WGMMA_gemm(manifest, cuda_version)
@@ -6733,13 +6895,17 @@ def GenerateSM90(manifest, cuda_version):
   GenerateSM90_TensorOp_1684_symm_complex(manifest, cuda_version)
   GenerateSM90_TensorOp_1684_symm_complex_gaussian(manifest, cuda_version)
   GenerateSM90_Conv3x(manifest, cuda_version)
+  GenerateSM90_SparseTensorOp_16b_WGMMA_gemm(manifest, cuda_version)
+  GenerateSM90_SparseTensorOp_tf32_WGMMA_gemm(manifest, cuda_version)
+  GenerateSM90_SparseTensorOp_int8_WGMMA_gemm(manifest, cuda_version)
+  GenerateSM90_SparseTensorOp_fp8_WGMMA_gemm(manifest, cuda_version)
 
 ###################################################################################################
 
 def numeric_log_level(log_level: str) -> int:
   """
-  Converts the string identifier of the log level into the numeric identifier used
-  in setting the log level
+  Converts the string identifier of the log level
+  into the numeric identifier used in setting the log level.
 
   :param x: string representation of log level (e.g., 'INFO', 'DEBUG')
   :type x: str
@@ -6762,8 +6928,18 @@ def define_parser():
   parser.add_argument("--curr-build-dir", default=".", help="CUTLASS current build directory. cmake files will be emitted in this directory")
   parser.add_argument("--generator-target", default='library', help="Target of CUTLASS Library Generator.")
   parser.add_argument("--architectures", default='53;60;61;70;75;80;90', help="Target compute architectures")
-  parser.add_argument("--kernels", default='', help='Comma delimited list to filter kernels by name.')
-  parser.add_argument("--ignore-kernels", default='', help='Comma delimited list of kernels to exclude from build.')
+  parser.add_argument("--kernels", default='', help='Comma-delimited list to filter kernels by name.  ' +
+                      'Specifying this as \"all\" includes ALL the kernels, ' +
+                      'while not specifying this includes only the default set of kernels.')
+  parser.add_argument("--ignore-kernels", default='', help='Comma-delimited list of kernels ' +
+                      'to exclude from build.  For backwards compatibility reasons, ' +
+                      'this option only takes effect if --kernels is set to a nonempty value.')
+  parser.add_argument("--exclude-kernels", default='', help='Comma-delimited list of kernels ' +
+                      'to exclude from build.  In contrast to --ignore-kernels, ' +
+                      'this option always takes effect, ' +
+                      'whether or not --kernels is set to a nonempty value.  ' +
+                      'It also can exclude kernels from the filter file ' +
+                      '(see --kernel-filter-file option below).')
   parser.add_argument("--filter-by-cc", default='True', type=str, help='If enabled, kernels whose compute capability range is not satisfied by the build target are excluded.')
   parser.add_argument("--cuda-version", default="11.0.0", help="Semantic version string of CUDA Toolkit")
   parser.add_argument('--kernel-filter-file',   type=str, default=None, required=False, help='Full path of filter file')
@@ -6773,6 +6949,7 @@ def define_parser():
   parser.add_argument("--disable-full-archs-compilation", action="store_true", required=False, help="Disable compilation for every archs in --architectures")
   parser.add_argument("--log-level", default='info', type=numeric_log_level, required=False,
                       help='Logging level to be used by the generator script')
+  parser.add_argument('--instantiation-level', type=str, default="", required=False, help="Instantiation level for SM90 kernels. Set to `max` and make sure `--kernels` is not empty to generate all possible configurations.")
   _add_package_disablement_flag(parser)
   return parser
 

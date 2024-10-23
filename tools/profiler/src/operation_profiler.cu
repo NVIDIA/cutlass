@@ -345,6 +345,7 @@ int OperationProfiler::profile_all(
 
     // For each operation in manifest
     int matched_operation_count = 0;
+    int profiled_operation_count = 0;
     for (auto const& operation_ptr : manifest) {
 
       library::Operation const *operation = operation_ptr.get();
@@ -375,14 +376,14 @@ int OperationProfiler::profile_all(
         std::cerr << "    @ provider " << operation->description().provider
                   << " != library::Provider::kCUTLASS\n";
       }
-      if (options.device.compute_capability() < min_cc) {
+      if (options.device.compute_capability(0) < min_cc) {
         std::cerr << "    @ compute_capability "
-                  << options.device.compute_capability()
+                  << options.device.compute_capability(0)
                   << " < min_cc " << min_cc << "\n";
       }
-      if (options.device.compute_capability() > max_cc) {
+      if (options.device.compute_capability(0) > max_cc) {
         std::cerr << "    @ compute_capability "
-                  << options.device.compute_capability()
+                  << options.device.compute_capability(0)
                   << " > max_cc " << max_cc << "\n";
       }
 #endif
@@ -390,8 +391,8 @@ int OperationProfiler::profile_all(
       // Execute compatible cutlass operations if they satisfy the current device's compute capability
       if (operation->description().kind == kind_ &&
           operation->description().provider == library::Provider::kCUTLASS &&
-          options.device.compute_capability() >= min_cc &&
-          options.device.compute_capability() <= max_cc) {
+          options.device.compute_capability(0) >= min_cc &&
+          options.device.compute_capability(0) <= max_cc) {
 
         std::string operation_name(operation->description().name);
         // Filter kernels by name
@@ -434,7 +435,7 @@ int OperationProfiler::profile_all(
           // If there was an internal error, consume the CUDA error and move to the next operation.
           (void)cudaGetLastError();
 
-          report.append_results(results_);
+          report.append_result(model_result_);
           continue;
         }
         else if (status != Status::kSuccess) {
@@ -522,25 +523,42 @@ int OperationProfiler::profile_all(
             operation,
             problem_space,
             problem);
+
+          // Count op as profiled, even it failed to profile
+          profiled_operation_count++;
         }
 
         report.append_results(results_);
         results_.clear();
-      }
+      } // if op satisfied compute capacity
 
       if (!continue_profiling) {
+        // break out of `for op in manifest` loop and move to next problem
+        // `for each problem in problem space` conditional check on not continue profiling
         break;
       }
-    }
+    } // for op in manifest
 
     // If we did not find any kernels that match our filters and error_on_no_match was set, report an error
     if (options.profiling.error_on_no_match && matched_operation_count <= 0) {
       #if !NDEBUG
-      std::cout << "Error: No matching kernels found with kernel selection filters [--error_on_no_match]" << std::endl;
+      std::cerr << "Error: No matching kernels found with kernel selection filters [--error_on_no_match]" << std::endl;
       #endif
-      retval = 1;
+      retval |= 1;
+      // Stop profiling on error no match
+      continue_profiling = false;
     }
-  }
+
+    if (options.profiling.error_if_nothing_is_profiled && options.profiling.enabled && profiled_operation_count <= 0) {
+      #if !NDEBUG
+      std::cerr << "Error: No kernels profiled found with kernel selection filters [--error_if_nothing_is_profiled]" << std::endl;
+      #endif
+      retval |= 1;
+      // Stop profiling on error no match
+      continue_profiling = false;
+    }
+
+  } // for each problem in problem space
 
   return retval;
 }

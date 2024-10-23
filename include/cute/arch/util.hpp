@@ -31,7 +31,6 @@
 #pragma once
 
 #include <cute/config.hpp>
-
 #include <cute/numeric/integer_sequence.hpp>
 
 #if defined(__clang__) && defined(__CUDA__)
@@ -235,24 +234,47 @@ explode(Fn fn,
 }
 
 template <class Fn,
-          class PtrD,   int... Id,
-          class PtrA,   int... Ia,
-          class PtrB,   int... Ib,
-          class PtrC,   int... Ic,
-          class PtrSFA, int... Isfa,
-          class PtrSFB, int... Isfb>
+          class PtrD, int... Id,
+          class PtrA, int... Ia,
+          class PtrB, int... Ib,
+          class PtrC, int... Ic,
+          class PtrE, int... Ie,
+          class PtrF, int... If>
 CUTE_HOST_DEVICE constexpr
 void
 explode(Fn fn,
-        PtrD&& d,     int_sequence<Id...>,
-        PtrA&& a,     int_sequence<Ia...>,
-        PtrB&& b,     int_sequence<Ib...>,
-        PtrC&& c,     int_sequence<Ic...>,
-        PtrSFA&& sfa, int_sequence<Isfa...>,
-        PtrSFB&& sfb, int_sequence<Isfb...>)
+        PtrD&& d, int_sequence<Id...>,
+        PtrA&& a, int_sequence<Ia...>,
+        PtrB&& b, int_sequence<Ib...>,
+        PtrC&& c, int_sequence<Ic...>,
+        PtrE&& e, int_sequence<Ie...>,
+        PtrF&& f, int_sequence<If...>)
 {
-  return fn(d[Id]..., a[Ia]..., b[Ib]..., c[Ic]..., sfa[Isfa]..., sfb[Isfb]...);
+  return fn(d[Id]..., a[Ia]..., b[Ib]..., c[Ic]..., e[Ie]..., f[If]...);
 }
+
+template <class Fn,
+          class PtrD, int... Id,
+          class PtrA, int... Ia,
+          class PtrB, int... Ib,
+          class PtrC, int... Ic,
+          class PtrE, int... Ie,
+          class PtrF, int... If,
+          class PtrG, int... Ig>
+CUTE_HOST_DEVICE constexpr
+void
+explode(Fn fn,
+        PtrD&& d, int_sequence<Id...>,
+        PtrA&& a, int_sequence<Ia...>,
+        PtrB&& b, int_sequence<Ib...>,
+        PtrC&& c, int_sequence<Ic...>,
+        PtrE&& e, int_sequence<Ie...>,
+        PtrF&& f, int_sequence<If...>,
+        PtrG&& g, int_sequence<Ig...>)
+{
+  return fn(d[Id]..., a[Ia]..., b[Ib]..., c[Ic]..., e[Ie]..., f[If]..., g[Ig]...);
+}
+
 //
 // Utility for exploding tuples into functions
 //

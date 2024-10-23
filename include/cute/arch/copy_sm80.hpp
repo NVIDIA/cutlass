@@ -77,7 +77,7 @@ struct SM80_CP_ASYNC_CACHEGLOBAL
   using DRegisters = TD[1];
 
   static_assert(sizeof(TS) == sizeof(TD), "cp.async requires sizeof(src_value_type) == sizeof(dst_value_type)");
-  static_assert(sizeof(TS) == 4 || sizeof(TS) == 8 || sizeof(TS) == 16, "cp.async sizeof(TS) is not supported");
+  static_assert(sizeof(TS) == 16, "cp.async sizeof(TS) is not supported");
 
   CUTE_HOST_DEVICE static void
   copy(TS const& gmem_src,
@@ -134,7 +134,7 @@ struct SM80_CP_ASYNC_CACHEGLOBAL_ZFILL
   using DRegisters = TD[1];
 
   static_assert(sizeof(TS) == sizeof(TD), "cp.async requires sizeof(src_value_type) == sizeof(dst_value_type)");
-  static_assert(sizeof(TS) == 4 || sizeof(TS) == 8 || sizeof(TS) == 16, "cp.async sizeof(TS) is not supported");
+  static_assert(sizeof(TS) == 16, "cp.async sizeof(TS) is not supported");
 
   CUTE_HOST_DEVICE static void
   copy(TS const& gmem_src,

@@ -31,13 +31,13 @@
 #pragma once
 
 #include <cute/config.hpp>
-
-#include <cute/underscore.hpp>
 #include <cute/int_tuple.hpp>
 #include <cute/stride.hpp>
+#include <cute/underscore.hpp>
 #include <cute/numeric/arithmetic_tuple.hpp>
-#include <cute/numeric/integral_ratio.hpp>
 #include <cute/numeric/integral_constant.hpp>
+#include <cute/numeric/integral_ratio.hpp>
+#include <cute/numeric/numeric_types.hpp>  // cute::sizeof_bits
 
 namespace cute
 {
@@ -329,34 +329,23 @@ struct is_layout<Layout<Shape,Stride>> : true_type {};
 // Layout construction
 //
 
-template <class Shape, class Stride,
-          __CUTE_REQUIRES((is_tuple<Shape >::value || is_integral<Shape >::value) &&
-                          (is_tuple<Stride>::value || is_integral<Stride>::value))>
+template <class Shape, class Stride>
 CUTE_HOST_DEVICE constexpr
 auto
 make_layout(Shape const& shape, Stride const& stride)
 {
+  static_assert(is_tuple<Shape >::value || is_integral<Shape >::value);
+  static_assert(is_tuple<Stride>::value || is_integral<Stride>::value);
   return Layout<Shape,Stride>(shape, stride);
 }
 
-template <class Shape,
-          __CUTE_REQUIRES(is_tuple<Shape>::value || is_integral<Shape>::value)>
+template <class Shape>
 CUTE_HOST_DEVICE constexpr
 auto
 make_layout(Shape const& shape)
 {
-  return make_layout(shape, compact_col_major(shape));
-}
-
-// Construct a layout from multiple layouts by
-//   concatenating each layout as an independent mode
-template <class... Shapes, class... Strides>
-CUTE_HOST_DEVICE constexpr
-auto
-make_layout(Layout<Shapes,Strides> const&... layouts)
-{
-  return make_layout(make_shape (layouts.shape()...),
-                     make_stride(layouts.stride()...));
+  static_assert(is_tuple<Shape >::value || is_integral<Shape >::value);
+  return make_layout(shape, compact_major<LayoutLeft>(shape));
 }
 
 //
@@ -366,17 +355,57 @@ make_layout(Layout<Shapes,Strides> const&... layouts)
 template <class Shape>
 CUTE_HOST_DEVICE constexpr
 auto
-make_layout(Shape const& shape, GenColMajor)
+make_layout(Shape const& shape, LayoutLeft)
 {
-  return make_layout(shape, compact_col_major(shape));
+  return make_layout(shape, compact_major<LayoutLeft>(shape));
 }
 
 template <class Shape>
 CUTE_HOST_DEVICE constexpr
 auto
-make_layout(Shape const& shape, GenRowMajor)
+make_layout(Shape const& shape, LayoutRight)
 {
-  return make_layout(shape, compact_row_major(shape));
+  return make_layout(shape, compact_major<LayoutRight>(shape));
+}
+
+//
+// Construct a layout from multiple layouts by concatenation
+//
+
+// One argument overload
+template <class Shape0, class Stride0>
+CUTE_HOST_DEVICE constexpr
+auto
+make_layout(Layout<Shape0,Stride0> const& layout0)
+{
+  return make_layout(make_shape (layout0.shape() ),
+                     make_stride(layout0.stride()));
+}
+
+// Two argument overload
+template <class Shape0, class Stride0,
+          class Shape1, class Stride1>
+CUTE_HOST_DEVICE constexpr
+auto
+make_layout(Layout<Shape0,Stride0> const& layout0,
+            Layout<Shape1,Stride1> const& layout1)
+{
+  return make_layout(make_shape (layout0.shape() , layout1.shape() ),
+                     make_stride(layout0.stride(), layout1.stride()));
+}
+
+// Var argument overload
+template <class Shape0, class Stride0,
+          class Shape1, class Stride1,
+          class... Shapes, class... Strides>
+CUTE_HOST_DEVICE constexpr
+auto
+make_layout(Layout<Shape0,Stride0> const& layout0,
+            Layout<Shape1,Stride1> const& layout1,
+            Layout<Shapes,Strides> const&... layouts)
+{
+  return make_layout(make_shape (layout0.shape() , layout1.shape() , layouts.shape()... ),
+                     make_stride(layout0.stride(), layout1.stride(), layouts.stride()...));
 }
 
 //
@@ -428,7 +457,7 @@ make_fragment_like(Layout<Shape,Stride> const& layout)
   constexpr int R = Layout<Shape,Stride>::rank;
   if constexpr (R > 1 && is_static<Shape>::value) {
     return tiled_product(make_layout(get<0>(layout.shape()),
-                                     compact_col_major(filter_zeros(get<0>(layout.stride()), get<0>(layout.shape())))),
+                                     compact_major<LayoutLeft>(filter_zeros(get<0>(layout.stride()), get<0>(layout.shape())))),
                          make_ordered_layout(take<1,R>(layout.shape()), take<1,R>(layout.stride())));
   } else {
     return make_layout(layout.shape());
@@ -631,7 +660,7 @@ template <class Layout>
 using cosize_t = decltype(cosize(declval<Layout>()));
 
 template <class Layout>
-static constexpr int cosize_v = cosize_t<Layout>::value;
+static constexpr auto cosize_v = cosize_t<Layout>::value;
 
 // With crd2idx(coord, shape), makes sense to have crd2idx(coord, Layout) as well
 template <class Coord, class Shape, class Stride>
@@ -874,6 +903,15 @@ auto
 filter_zeros(Layout<Shape,Stride> const& layout)
 {
   return make_layout(filter_zeros(layout.stride(), layout.shape()), layout.stride());
+}
+
+// Replace the modes in layout that correspond to a 0 at the terminals of trg_profile with a 1-size
+template <class Shape, class Stride, class IntTuple>
+CUTE_HOST_DEVICE constexpr
+auto
+filter_zeros(Layout<Shape,Stride> const& layout, IntTuple const& trg_profile)
+{
+  return make_layout(filter_zeros(trg_profile, layout.shape()), layout.stride());
 }
 
 // Remove all of the 0-strides and 1-sizes
@@ -1131,7 +1169,7 @@ complement(Shape const& shape, Stride const& stride, CoTarget const& cotarget)
     // Compute the rest_shape and rest_stride
     auto new_stride  = get<0>(stride_) * get<0>(shape_);                   // new stride = min_stride * curr_shape
     auto rest_shape  = coalesce(ceil_div(cotarget, new_stride));
-    auto rest_stride = compact_col_major(rest_shape, new_stride);
+    auto rest_stride = compact_major<LayoutLeft>(rest_shape, new_stride);
 
     // Coalesce and append (rest_shape, rest_stride)
     return coalesce(make_layout(make_shape (result_shape , rest_shape ),
@@ -1220,7 +1258,7 @@ right_inverse(Layout<Shape,Stride> const& layout)
     return Layout<_1,_0>{};     // Empty case, nothing found
   } else {
     // Generate the corresponding new strides and construct
-    auto rstride = compact_col_major(flat_layout.shape());
+    auto rstride = compact_major<LayoutLeft>(flat_layout.shape());
     return make_layout(unwrap(transform(iseq, [&](auto i) { return shape<i>(flat_layout); })),
                        unwrap(transform(iseq, [&](auto i) { return signum(stride<i>(flat_layout)) * get<i>(rstride); })));
   }
@@ -1318,6 +1356,51 @@ max_common_vector(Layout<ShapeA,StrideA> const& a,
   CUTE_GCC_UNREACHABLE;
 }
 
+/* Return a layout that distributes ShapeB over ShapeA.
+ *
+ * @returns Layout result
+ * @post evenly_divides(@a b, size(@a result))
+ * @post evenly_divides(@a a, @a result)
+ * @post For all i,j in [0,size(@a result)) with i < j, @a result(i) < @a result(j). Surjective and Ordered.
+ * @post composition(make_layout(shape(@a a)), @a result) is admissible
+ * \code
+ *   // Note that 6 does not divide this shape
+ *   Layout layoutA = Layout<Shape<Int<15>,Int<14>>>{};
+ *
+ *   // Want to tile any 6 elements and don't care where they come from
+ *   Layout dist = domain_distribute(layoutA, Int<6>{});   // (_3,_2):(_1,_15)
+ *
+ *   // Not guaranteed to find all 6 though...
+ *   CUTE_STATIC_ASSERT_V(Int<6>{} == size(dist));
+ *
+ *   Layout result = zipped_divide(layoutA, dist);         // (_6,Rest)
+ * \endcode
+ */
+template <class ShapeA, class ShapeB>
+CUTE_HOST_DEVICE constexpr
+auto
+domain_distribute(ShapeA const& a, ShapeB const& b)
+{
+  static_assert(is_integral<ShapeB>::value);
+  static_assert(is_static<ShapeB>::value);
+
+  auto flat_shape_a = flatten(shape(a));
+
+  static_assert(is_static<decltype(flat_shape_a)>::value);
+
+  // Compute the shape of the result
+  auto [result_shape, b_rest] = cute::fold(flat_shape_a, cute::make_tuple(cute::tuple<>{}, size(b)), [](auto init, auto a_) {
+    auto [result, b_] = init;
+    auto gcd_ = gcd(a_, b_);
+    return cute::make_tuple(append(result, gcd_), b_ / gcd_);
+  });
+
+  // Compute the stride of the result
+  auto result_stride = compact_major<LayoutLeft>(flat_shape_a);
+
+  return coalesce(make_layout(result_shape, result_stride));
+}
+
 //
 // Kernel (Nullspace) of a Layout
 //
@@ -1363,7 +1446,7 @@ nullspace(Layout<Shape,Stride> const& layout)
     return Layout<_1,_0>{};     // Empty case, nothing found
   } else {
     // Generate the corresponding new strides and construct
-    auto rstride = compact_col_major(flat_layout.shape());
+    auto rstride = compact_major<LayoutLeft>(flat_layout.shape());
     return make_layout(unwrap(transform(iseq, [&](auto i) { return shape<i>(flat_layout); })),
                        unwrap(transform(iseq, [&](auto i) { return get<i>(rstride); })));
   }
@@ -1458,7 +1541,7 @@ auto
 ceil_div(Target                 const& target,
          Layout<TShape,TStride> const& tiler)
 {
-  return complement(tiler, size(target));
+  return shape(complement(tiler, shape(target)));
 }
 
 //
@@ -1653,8 +1736,8 @@ tile_to_shape(Layout<Shape,Stride> const& block,
 
   // Assert proper division
   if constexpr (is_static<decltype(target_shape)>::value) {
-    CUTE_STATIC_ASSERT_V(weakly_compatible(block_shape, target_shape),
-                        "tile_to_shape: block shape does not divide the target shape.");
+    CUTE_STATIC_ASSERT_V(evenly_divides(target_shape, block_shape),
+                         "tile_to_shape: block shape does not divide the target shape.");
   }
 
   auto product_shape = ceil_div(target_shape, block_shape);
@@ -1753,6 +1836,26 @@ recast_layout(Layout<Shape,Stride> const& layout)
   CUTE_GCC_UNREACHABLE;
 }
 
+// Determine the maximum alignment of a Layout.
+// The maximum alignment is the largest N for which upcast<N>(layout) will compile.
+//   upcast<N>(layout) compiles when the static shapes and strides pass divisibility checks.
+//   Therefore, upcast<M>(layout) will also compile for all divisors M of N.
+// Note that this only considers the static shapes and strides of the Layout
+//   in symmetry with upcast<N> only checking against static shapes and strides and assuming all
+//   dynamic shapes and strides are large and multiples of N.
+template <class Shape, class Stride>
+CUTE_HOST_DEVICE constexpr
+auto
+max_alignment(Layout<Shape,Stride> const& layout)
+{
+  auto flat_layout   = coalesce(layout);
+  auto static_shape  = transform( shape(flat_layout), [](auto s){ return conditional_return<is_static<decltype(s)>::value>(s, Int<1>{}); });
+  auto static_stride = transform(stride(flat_layout), [](auto d){ return conditional_return<is_static<decltype(d)>::value>(d, Int<0>{}); });
+  auto filter_layout = make_layout(static_shape, static_stride);
+  auto permuted = logical_divide(filter_layout, right_inverse(filter_layout));
+  return gcd(size<0>(permuted), stride<1>(permuted));
+}
+
 //
 // Display utilities
 //
@@ -1831,92 +1934,97 @@ print_layout(Layout const& layout, ThrID const& thrid)  // (m,n) -> (tid,vid)  a
   printf("+\n");
 }
 
-// Generic 2D Layout to Latex printer -- B&W 8-value color coding
-template <class LayoutA>
+struct TikzColor_White {
+  CUTE_HOST_DEVICE char const*
+  operator()(int idx) const {
+    return "white";
+  }
+};
+
+struct TikzColor_BWx8 {
+  CUTE_HOST_DEVICE char const*
+  operator()(int idx) const {
+    static char const* color_map[8] = {"black!00", "black!40", "black!20", "black!60",
+                                       "black!10", "black!50", "black!30", "black!70"};
+    return color_map[idx % 8];
+  }
+};
+
+struct TikzColor_TV {
+  CUTE_HOST_DEVICE char const*
+  operator()(int tid, int vid) const {
+    static char const* color_map[8] = {"{rgb,255:red,175;green,175;blue,255}",
+                                       "{rgb,255:red,175;green,255;blue,175}",
+                                       "{rgb,255:red,255;green,255;blue,175}",
+                                       "{rgb,255:red,255;green,175;blue,175}",
+                                       "{rgb,255:red,210;green,210;blue,255}",
+                                       "{rgb,255:red,210;green,255;blue,210}",
+                                       "{rgb,255:red,255;green,255;blue,210}",
+                                       "{rgb,255:red,255;green,210;blue,210}"};
+    return color_map[tid % 8];
+  }
+};
+
+// Generic 2D Layout to LaTeX printer
+template <class LayoutA, class TikzColorFn = TikzColor_BWx8>
 CUTE_HOST_DEVICE
 void
-print_latex(LayoutA const& layout_a)
+print_latex(LayoutA const& layout_a,   // (m,n) -> idx
+            TikzColorFn color = {})    // lambda(idx) -> tikz color string
 {
   CUTE_STATIC_ASSERT_V(rank(layout_a) <= Int<2>{});
   auto layout = append<2>(layout_a, Layout<_1,_0>{});
 
-  char const* latex_header =
-      "\\documentclass[convert]{standalone}\n"
-      "\\usepackage{tikz}\n\n"
-      "\\begin{document}\n"
-      "\\begin{tikzpicture}[x={(0cm,-1cm)},y={(1cm,0cm)},box/.style={rectangle,draw=black,thick,minimum size=1cm,anchor=center,font=\\Large}]\n\n";
-  char const* latex_footer =
-      "\\end{tikzpicture}\n"
-      "\\end{document}\n";
-
-  char const* color_map[8] = {"black!00",
-                              "black!40",
-                              "black!20",
-                              "black!60",
-                              "black!10",
-                              "black!50",
-                              "black!30",
-                              "black!70"};
-
-  // Header
+  // Commented print(layout)
   printf("%% Layout: "); print(layout); printf("\n");
-
-  printf(latex_header);
+  // Header
+  printf("\\documentclass[convert]{standalone}\n"
+         "\\usepackage{tikz}\n\n"
+         "\\begin{document}\n"
+         "\\begin{tikzpicture}[x={(0cm,-1cm)},y={(1cm,0cm)},every node/.style={minimum size=1cm, outer sep=0pt}]\n\n");
 
   // Layout
   for (int i = 0; i < size<0>(layout); ++i) {
     for (int j = 0; j < size<1>(layout); ++j) {
       int idx = layout(i,j);
-      printf("\\node[box,fill=%s] at (%d,%d) {%d};\n",
-             color_map[idx % 8],
-             i, j,
-             idx);
+      printf("\\node[fill=%s] at (%d,%d) {%d};\n",
+             color(idx), i, j, idx);
     }
   }
-
+  // Grid
+  printf("\\draw[color=black,thick,shift={(-0.5,-0.5)}] (0,0) grid (%d,%d);\n\n",
+         int(size<0>(layout)), int(size<1>(layout)));
   // Labels
-  for (int i = 0, j = -1; i < size<0>(layout); ++i) {
+  for (int i =  0, j = -1; i < size<0>(layout); ++i) {
     printf("\\node at (%d,%d) {\\Large{\\texttt{%d}}};\n", i, j, i);
   }
-  for (int j = 0, i = -1; j < size<1>(layout); ++j) {
+  for (int i = -1, j =  0; j < size<1>(layout); ++j) {
     printf("\\node at (%d,%d) {\\Large{\\texttt{%d}}};\n", i, j, j);
   }
 
   // Footer
-  printf(latex_footer);
+  printf("\\end{tikzpicture}\n"
+         "\\end{document}\n");
 }
 
-// Generic ThrVal 2D Layout to Latex TIKZ -- 8-value color coded by thread
-template <class Layout, class ThrID>
+// Generic ThrVal 2D Layout to LaTeX TikZ
+template <class Layout, class ThrID, class TikzColorFn = TikzColor_TV>
 CUTE_HOST_DEVICE
 void
-print_latex(Layout const& layout, ThrID const& thr)  // (m,n) -> (tid,vid)  and  tid -> thr_idx
+print_latex(Layout const& layout,    // (m,n) -> (tid,vid)
+            ThrID  const& thr,       // tid -> thr_idx
+            TikzColorFn color = {})  // lambda(thr_idx,val_idx) -> tikz color string
 {
   CUTE_STATIC_ASSERT_V(rank(layout) == Int<2>{});
 
-  char const* latex_header =
-      "\\documentclass[convert]{standalone}\n"
-      "\\usepackage{tikz}\n\n"
-      "\\begin{document}\n"
-      "\\begin{tikzpicture}[x={(0cm,-1cm)},y={(1cm,0cm)},box/.style={rectangle,draw=black,thick,minimum size=1cm,anchor=center}]\n\n";
-  char const* latex_footer =
-      "\\end{tikzpicture}\n"
-      "\\end{document}\n";
-
-  char const* color_map[8] = {"{rgb,255:red,175;green,175;blue,255}",
-                              "{rgb,255:red,175;green,255;blue,175}",
-                              "{rgb,255:red,255;green,255;blue,175}",
-                              "{rgb,255:red,255;green,175;blue,175}",
-                              "{rgb,255:red,210;green,210;blue,255}",
-                              "{rgb,255:red,210;green,255;blue,210}",
-                              "{rgb,255:red,255;green,255;blue,210}",
-                              "{rgb,255:red,255;green,210;blue,210}"};
-
+  // Commented prints
+  printf("%% Layout: "); print(layout); printf("\n");
+  printf("%% ThrID : "); print(thr);  printf("\n");
   // Header
-  printf("%% layout: "); print(layout); printf("\n");
-  printf("%% thrid:  "); print(thr);    printf("\n\n");
-
-  printf(latex_header);
+  printf("\\documentclass[convert]{standalone}\n"
+         "\\usepackage{tikz}\n\n"
+         "\\begin{document}\n"
+         "\\begin{tikzpicture}[x={(0cm,-1cm)},y={(1cm,0cm)},every node/.style={minimum size=1cm, outer sep=0pt}]\n\n");
 
   // Layout
   for (int i = 0; i < size<0>(layout); ++i) {
@@ -1925,13 +2033,15 @@ print_latex(Layout const& layout, ThrID const& thr)  // (m,n) -> (tid,vid)  and 
       int val_idx = layout(i,j) / size(thr);
       int thr_idx = thr(thrid);
 
-      printf("\\node[box,fill=%s] at (%d,%d) {\\shortstack{T%d \\\\ V%d}};\n",
-             color_map[thr_idx % 8],
+      printf("\\node[fill=%s] at (%d,%d) {\\shortstack{T%d \\\\ V%d}};\n",
+             color(thr_idx, val_idx),
              i, j,
              thr_idx, val_idx);
     }
   }
-
+  // Grid
+  printf("\\draw[color=black,thick,shift={(-0.5,-0.5)}] (0,0) grid (%d,%d);\n\n",
+         int(size<0>(layout)), int(size<1>(layout)));
   // Labels
   for (int i = 0, j = -1; i < size<0>(layout); ++i) {
     printf("\\node at (%d,%d) {\\Large{\\texttt{%d}}};\n", i, j, i);
@@ -1941,13 +2051,8 @@ print_latex(Layout const& layout, ThrID const& thr)  // (m,n) -> (tid,vid)  and 
   }
 
   // Footer
-  printf(latex_footer);
+  printf("\\end{tikzpicture}\n"
+         "\\end{document}\n");
 }
 
 } // end namespace cute
-
-//
-// Extended Layouts
-//
-
-#include <cute/swizzle_layout.hpp>

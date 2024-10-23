@@ -30,10 +30,10 @@
  **************************************************************************************************/
 
 /*! \file
-    \brief 
+    \brief
       Default kernel-level GEMM definitions combine threadblock-scoped matrix multiply-add with
       the appropriate threadblock-scoped epilogue.
-  
+
       Note, CUTLASS epilogues universally target row-major outputs. Column-major outputs are
       accommodated by exchanging A and B operands and assuming transposed layouts. Partial
       specializations here choose 'device::GemmTransposed' to implement this functionality.

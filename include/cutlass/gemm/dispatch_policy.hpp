@@ -34,7 +34,7 @@
 #include "cutlass/gemm/gemm.h"
 
 #include "cute/layout.hpp"
-#include "cute/numeric/integral_constant.hpp"
+#include "cute/numeric/integral_constant.hpp" // cute::false_type
 //////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass::detail {
@@ -47,6 +47,16 @@ struct is_kernel_tag_of<U<Args...>, U> : cute::true_type {};
 
 template <class T, template <int...> class U>
 constexpr bool is_kernel_tag_of_v = is_kernel_tag_of<T, U>::value;
+
+template <class T, template <int,bool> class U>
+struct is_asymmetric_dma_kernel_tag_of : cute::false_type {};
+
+template <template <int, bool> class U, int I0, bool B0>
+struct is_asymmetric_dma_kernel_tag_of<U<I0, B0>, U> : cute::true_type {};
+
+template <class T, template <int, bool> class U>
+constexpr bool is_asymmetric_dma_kernel_tag_of_v = \
+                              is_asymmetric_dma_kernel_tag_of<T, U>::value;
 
 }
 
@@ -68,6 +78,24 @@ enum class KernelInputTransformType {
 
 //////////////////////////////////////////////////////////////////////////////
 
+namespace kernel::detail {
+
+// Has_SwapAB<T>::value will be true only if:
+//   class T has member SwapAB and T::SwapAB is true
+template <typename T, typename = void>
+struct Has_SwapAB { static constexpr bool value = false; };
+
+template <typename T>
+struct Has_SwapAB <T, CUTE_STL_NAMESPACE::void_t<decltype(T::SwapAB)>>
+{ static constexpr bool value = T::SwapAB; };
+
+template <typename T>
+static constexpr bool Has_SwapAB_v = Has_SwapAB<T>::value;
+
+} // namespace kernel::detail
+
+//////////////////////////////////////////////////////////////////////////////
+
 //
 // Kernel schedule policies (the base class tags, one for each kernel layer file)
 //
@@ -78,8 +106,11 @@ struct KernelCpAsyncWarpSpecializedCooperative { };
 struct KernelTma { };
 struct KernelTmaWarpSpecialized { };
 struct KernelTmaWarpSpecializedPingpong { };
-struct KernelTmaWarpSpecializedCooperative { };
+struct KernelTmaWarpSpecializedCooperative { 
+};
+
 struct KernelPtrArrayTmaWarpSpecializedCooperative { };
+struct KernelPtrArrayTmaWarpSpecializedPingpong { };
 
 //////////////////////////////////////////////////////////////////////////////
 
@@ -93,6 +124,7 @@ struct KernelTmaWarpSpecializedFP8FastAccum : KernelTmaWarpSpecialized { };
 struct KernelTmaWarpSpecializedPingpongFP8FastAccum : KernelTmaWarpSpecializedPingpong { };
 struct KernelTmaWarpSpecializedCooperativeFP8FastAccum: KernelTmaWarpSpecializedCooperative { };
 struct KernelPtrArrayTmaWarpSpecializedCooperativeFP8FastAccum : KernelPtrArrayTmaWarpSpecializedCooperative { };
+struct KernelPtrArrayTmaWarpSpecializedPingpongFP8FastAccum : KernelPtrArrayTmaWarpSpecializedPingpong { };
 
 // Policies to opt into mixed type GEMMs
 struct KernelTmaWarpSpecializedMixedInput : KernelTmaWarpSpecialized { };
@@ -137,12 +169,15 @@ struct MainloopSm80CpAsyncUnpredicated {
 };
 
 // n-buffer in smem (cp.async), pipelined with registers, with predicated gmem loads
-template<int Stages_>
+template<
+  int Stages_,
+  class ClusterShape_ = Shape<_1,_1,_1>
+>
 struct MainloopSm80CpAsync {
   constexpr static int Stages = Stages_;
-  using ArchTag = arch::Sm80;
+  using ArchTag = cute::conditional_t<(size(ClusterShape_{}) > 1), arch::Sm90, arch::Sm80>;
   using Schedule = KernelMultistage;
-  using ClusterShape = Shape<_1,_1,_1>;
+  using ClusterShape = ClusterShape_;
 };
 
 // n-buffer in smem (cp.async), pipelined with Hopper GMMA, with predicated gmem loads, warp specialized dynamic schedule
@@ -265,10 +300,25 @@ struct MainloopSm90ArrayTmaGmmaWarpSpecialized {
   using ArchTag = arch::Sm90;
   using Schedule = KernelSchedule;
   static_assert(
-    cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedCooperative, KernelSchedule>,
-    "KernelSchedule must be one of the Ptr-Array or Grouped Gemm TMA Warp Specialized Cooperative policies");
+    cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedCooperative, KernelSchedule> ||
+    cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedPingpong, KernelSchedule>,
+    "KernelSchedule must be one of the Ptr-Array or Grouped Gemm TMA Warp Specialized Cooperative or Pingpong policies");
+};
+
+// n-buffer in smem (Hopper TMA), pipelined with Hopper sparse GMMA and TMA, Warp specialized dynamic schedule
+template<
+  int Stages_,
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class KernelSchedule = KernelTmaWarpSpecializedCooperative
+>
+struct MainloopSm90TmaGmmaWarpSpecializedSparse {
+  constexpr static int Stages = Stages_;
+  using ClusterShape = ClusterShape_;
+  using ArchTag = arch::Sm90;
+  using Schedule = KernelSchedule;
 };
 
 //////////////////////////////////////////////////////////////////////////////
 
 } // namespace cutlass::gemm
+

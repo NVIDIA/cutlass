@@ -30,12 +30,11 @@
  **************************************************************************************************/
 #pragma once
 
-#include <vector_types.h>
-#include <cutlass/numeric_types.h>
-#include <cutlass/numeric_size.h>
+#include <cute/config.hpp>          // CUTE_HOST_DEVICE
+#include <cute/numeric/int.hpp>     // cute::int2_t, cute::int4_t, etc
 
-#include <cute/numeric/int.hpp>
-#include <cute/numeric/real.hpp>
+#include <cutlass/numeric_size.h>   // cutlass::sizeof_bits
+#include <cutlass/numeric_types.h>  // cutlass::float_e4m3_t, cutlass::float_e5m2_t, etc
 
 namespace cute {
 
@@ -72,4 +71,65 @@ using cutlass::int4b_t;
 using cutlass::uint4b_t;
 using cutlass::bin1_t;
 
-} // end namespace cute
+
+//
+// Print utility
+//
+
+CUTE_HOST_DEVICE
+void
+print(half_t a) {
+  printf("%f", static_cast<float>(a));
+}
+
+CUTE_HOST_DEVICE
+void
+print(bfloat16_t a) {
+  printf("%f", static_cast<float>(a));
+}
+
+
+CUTE_HOST_DEVICE
+void
+print(tfloat32_t a) {
+  printf("%f", static_cast<float>(a));
+}
+
+CUTE_HOST_DEVICE
+void
+print(float_e4m3_t a) {
+  printf("%f", static_cast<float>(a));
+}
+
+CUTE_HOST_DEVICE
+void
+print(float_e5m2_t a) {
+  printf("%f", static_cast<float>(a));
+}
+
+CUTE_HOST_DEVICE void
+pretty_print(bfloat16_t v) {
+  printf("%*.2f", 8, float(v));
+}
+
+CUTE_HOST_DEVICE void
+pretty_print(half_t v) {
+  printf("%*.2f", 8, float(v));
+}
+
+CUTE_HOST_DEVICE void
+pretty_print(tfloat32_t v) {
+  printf("%*.2e", 10, static_cast<float>(v));
+}
+
+CUTE_HOST_DEVICE void
+pretty_print(float_e4m3_t t) {
+  printf("%*.2f", 8, static_cast<float>(t));
+}
+
+CUTE_HOST_DEVICE void
+pretty_print(float_e5m2_t t) {
+  printf("%*.2f", 8, static_cast<float>(t));
+}
+
+} // namespace cute

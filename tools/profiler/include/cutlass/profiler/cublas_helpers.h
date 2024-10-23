@@ -36,6 +36,7 @@
 
 #if CUTLASS_ENABLE_CUBLAS
 #include <cublas_v2.h>
+#include <cublasLt.h>
 
 #include "cutlass/cutlass.h"
 #include "cutlass/library/library.h"
@@ -90,25 +91,48 @@ Status cublas_satisfies(library::SymmDescription const &desc);
 /// Additionally, it provides implicit cast from CublasCreate's object to cublasHandle_t's object
 class CublasCreate {
 private:
-	cublasHandle_t handle;
-	cublasStatus_t status;
+  cublasHandle_t handle;
+  cublasStatus_t status;
 
 public:
-	CublasCreate() {
-		status = cublasCreate(&handle);
-	}
+  CublasCreate() {
+    status = cublasCreate(&handle);
+  }
 
-	~CublasCreate() {
-		cublasDestroy(handle);
-	}
+  ~CublasCreate() {
+    cublasDestroy(handle);
+  }
 
-    /// Implicit cast CublasCreate object to cublasHandle_t
-    operator cublasHandle_t() const { return handle; }
+  /// Implicit cast CublasCreate object to cublasHandle_t
+  operator cublasHandle_t() const { return handle; }
 
-    /// returns cublasStatus_t for handle creation
-    cublasStatus_t get_cublas_create_status() { return status; }
+  /// returns cublasStatus_t for handle creation
+  cublasStatus_t get_cublas_create_status() { return status; }
 };
 
+/// This is a helper class to create cublasLtHandle_t automatically on CublasLtCreate object creation and 
+/// to destroy cublasLtHandle_t on CublasLtCreate object destruction. 
+/// Additionally, it provides implicit cast from CublasLtCreate's object to cublasLtHandle_t's object
+class CublasLtCreate {
+private:
+  cublasLtHandle_t handle;
+  cublasStatus_t status;
+
+public:
+  CublasLtCreate() {
+    status = cublasLtCreate(&handle);
+  }
+
+  ~CublasLtCreate() {
+    cublasLtDestroy(handle);
+  }
+
+  /// Implicit cast CublasLtCreate object to cublasLtHandle_t
+  operator cublasLtHandle_t() const { return handle; }
+
+  /// returns cublasLtStatus_t for handle creation
+  cublasStatus_t get_cublaslt_create_status() { return status; }
+};
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace detail {
@@ -224,6 +248,80 @@ struct cublasGemmExDispatcher {
 
   /// Executes GEMM using these arguments
   cublasStatus_t operator()(cublasHandle_t handle);
+};
+
+/// Dispatcher to cublaslt kernels 
+//
+struct cublasLtGemmExDispatcher {
+
+  //
+  // Data members
+  //
+  library::GemmDescription const &op_desc;
+  library::GemmUniversalConfiguration configuration;
+  library::GemmUniversalArguments arguments;
+
+  // cublas-specific data structures to fill cublas API call arguments
+  cublasOperation_t trans_A;
+  cublasOperation_t trans_B;
+  cudaDataType_t data_type_A;
+  cudaDataType_t data_type_B;
+  cudaDataType_t data_type_C;
+  cudaDataType_t compute_data_type = CUDA_R_32F;
+
+  //cublasLt-specific data structures
+  cublasLtMatmulDesc_t operationDesc = NULL;
+  cublasLtMatrixLayout_t Adesc = NULL, Bdesc = NULL, Cdesc = NULL, Ddesc = NULL;
+  cublasLtMatmulPreference_t preference = NULL;
+  
+  //is set by call to get_cublaslt_algo()
+  cublasLtMatmulHeuristicResult_t heuristicResult_;
+  void *workspace = nullptr;
+
+  Status status;
+
+#if (__CUDACC_VER_MAJOR__ >= 11)
+  cublasComputeType_t compute_type;
+#endif
+
+  //
+  // Methods
+  //
+
+  cublasLtGemmExDispatcher( 
+    library::GemmDescription const &op_desc,
+    library::GemmUniversalConfiguration configuration_,
+    library::GemmUniversalArguments arguments_
+  );
+
+  /// Initialize the cublasLt variables
+  void initialize_cublaslt();
+  
+
+  /// Runs auto-tuning for the cublas heuristics
+  bool get_cublaslt_algo(cublasLtHandle_t handle,
+    AlgorithmMode algorithm_mode 
+    ); 
+
+  /// Executes GEMM using these arguments
+  cublasStatus_t operator()(cublasLtHandle_t handle);
+
+  ~cublasLtGemmExDispatcher(){
+
+    // descriptors are no longer needed as all GPU work was already enqueued
+    if (preference) cublasLtMatmulPreferenceDestroy(preference);
+    if (Ddesc) cublasLtMatrixLayoutDestroy(Ddesc);
+    if (Cdesc) cublasLtMatrixLayoutDestroy(Cdesc);
+    if (Bdesc) cublasLtMatrixLayoutDestroy(Bdesc);
+    if (Adesc) cublasLtMatrixLayoutDestroy(Adesc);
+    if (operationDesc) cublasLtMatmulDescDestroy(operationDesc);
+
+    if (workspace) {
+      cudaFree(workspace);
+    }
+
+  } 
+
 };
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

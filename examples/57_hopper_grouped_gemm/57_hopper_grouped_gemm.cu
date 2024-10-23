@@ -32,7 +32,7 @@
 /*! \file
     \brief Hopper Grouped GEMM example using CUTLASS 3 APIs for NVIDIA Hopper architecture.
 
-    This example demonstrates an implementation of Grouped GEMM using a TMA + GMMA 
+    This example demonstrates an implementation of Grouped GEMM using a TMA + GMMA
     warp-specialized cooperative kernel.
     For this example all scheduling work is performed on the device.
     The new feature showcased in this example is on-the-fly modification of TMA descriptors
@@ -42,7 +42,7 @@
 
       $ ./examples/57_hopper_grouped_gemm/57_hopper_grouped_gemm --m=2048 --n=2048 --k=2048 --groups=10
 
-      The above example command makes all 10 groups to be sized at the given m, n, k sizes. 
+      The above example command makes all 10 groups to be sized at the given m, n, k sizes.
       Skipping any of the problem dimensions randomizes it across the different groups.
       Same applies for alpha and beta values that are randomized across the different groups.
 
@@ -91,9 +91,9 @@
 
 using namespace cute;
 using ProblemShape = cutlass::gemm::GroupProblemShape<Shape<int,int,int>>; // <M,N,K> per group
-using ElementA = cutlass::float_e4m3_t;                          // Element type for A matrix operand
-using ElementB = cutlass::float_e5m2_t;                          // Element type for B matrix operand
-using ElementC = cutlass::half_t;                                // Element type for C and D matrix operands
+using ElementA = cutlass::float_e4m3_t;                                    // Element type for A matrix operand
+using ElementB = cutlass::float_e5m2_t;                                    // Element type for B matrix operand
+using ElementC = cutlass::half_t;                                          // Element type for C and D matrix operands
 
 #if defined(CUTLASS_ARCH_MMA_MODIFIABLE_TMA_SM90_SUPPORTED)
 
@@ -117,20 +117,39 @@ constexpr int AlignmentC  = 128 / cutlass::sizeof_bits<ElementC>::value;    // A
 using ElementAccumulator  = float;                                          // Element type for internal accumulation
 using ArchTag             = cutlass::arch::Sm90;                            // Tag indicating the minimum SM that supports the intended feature
 using OperatorClass       = cutlass::arch::OpClassTensorOp;                 // Operator class tag
-using TileShape           = Shape<_256,_128,_64>;                           // Threadblock-level tile size
-using ClusterShape        = Shape<_2,_2,_1>;                                // Shape of the threadblocks in a cluster
 using StageCountType = cutlass::gemm::collective::StageCountAuto;           // Stage count maximized based on the tile size
-using KernelSchedule = cutlass::gemm::KernelPtrArrayTmaWarpSpecializedCooperativeFP8FastAccum; // Kernel to launch
-using EpilogueSchedule = cutlass::epilogue::PtrArrayNoSmemWarpSpecialized;                     // Epilogue to launch
 
-using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+// Different configs for pingpong/cooperative
+struct CooperativeConfig {
+  using KernelSchedule = cutlass::gemm::KernelPtrArrayTmaWarpSpecializedCooperativeFP8FastAccum;
+  using EpilogueSchedule = cutlass::epilogue::PtrArrayTmaWarpSpecializedCooperative;
+  using TileShape           = Shape<_256,_128,_128>;
+  using ClusterShape        = Shape<_2,_2,_1>;
+};
+
+struct PingpongConfig {
+  using KernelSchedule = cutlass::gemm::KernelPtrArrayTmaWarpSpecializedPingpongFP8FastAccum;
+  using EpilogueSchedule = cutlass::epilogue::PtrArrayTmaWarpSpecializedPingpong;
+  using TileShape           = Shape<_128,_128,_128>;
+  using ClusterShape        = Shape<_2,_1,_1>;
+};
+
+template <typename ScheduleConfig>
+struct GemmGivenSchedule {
+  using TileShape           = typename ScheduleConfig::TileShape;                   // Threadblock-level tile size
+  using ClusterShape        = typename ScheduleConfig::ClusterShape;                // Shape of the threadblocks in a cluster
+  using KernelSchedule      = typename ScheduleConfig::KernelSchedule;              // Kernel to launch
+  using EpilogueSchedule    = typename ScheduleConfig::EpilogueSchedule;            // Epilogue to launch
+
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
     cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
     TileShape, ClusterShape,
     cutlass::epilogue::collective::EpilogueTileAuto,
     ElementAccumulator, ElementAccumulator,
     ElementC, LayoutC *, AlignmentC,
     ElementC, LayoutC *, AlignmentC,
-    EpilogueSchedule
+    EpilogueSchedule,
+    cutlass::epilogue::fusion::LinearCombination<ElementC, ElementAccumulator>
   >::CollectiveOp;
 
 using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
@@ -144,13 +163,20 @@ using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder
     KernelSchedule
   >::CollectiveOp;
 
-using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
-    ProblemShape,
-    CollectiveMainloop,
-    CollectiveEpilogue
->;
+  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+      ProblemShape,
+      CollectiveMainloop,
+      CollectiveEpilogue
+  >;
 
-using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+};
+
+using GemmKernel = GemmGivenSchedule<CooperativeConfig>::GemmKernel;
+using Gemm = GemmGivenSchedule<CooperativeConfig>::Gemm;
+
+using GemmKernelPingpong = GemmGivenSchedule<PingpongConfig>::GemmKernel;
+using GemmPingpong = GemmGivenSchedule<PingpongConfig>::Gemm;
 
 // Reference device GEMM implementation type
 using DeviceGemmReference = cutlass::reference::device::Gemm<
@@ -163,10 +189,10 @@ using DeviceGemmReference = cutlass::reference::device::Gemm<
   ElementAccumulator,
   ElementAccumulator>;
 
-using StrideA = typename Gemm::GemmKernel::UnderlyingStrideA;
-using StrideB = typename Gemm::GemmKernel::UnderlyingStrideB;
-using StrideC = typename Gemm::GemmKernel::UnderlyingStrideC;
-using StrideD = typename Gemm::GemmKernel::UnderlyingStrideD;
+using StrideA = typename Gemm::GemmKernel::InternalStrideA;
+using StrideB = typename Gemm::GemmKernel::InternalStrideB;
+using StrideC = typename Gemm::GemmKernel::InternalStrideC;
+using StrideD = typename Gemm::GemmKernel::InternalStrideD;
 
 // Host-side allocations
 std::vector<int64_t> offset_A;
@@ -226,7 +252,7 @@ struct Options {
   std::string benchmark_path;
   std::vector<typename ProblemShape::UnderlyingProblemShape> problem_sizes_host;
   int const tma_alignment_bits = 128;
-  int const alignment = tma_alignment_bits / cutlass::sizeof_bits<ElementA>::value; 
+  int const alignment = tma_alignment_bits / cutlass::sizeof_bits<ElementA>::value;
 
   // Parses the command line
   void parse(int argc, char const **args) {
@@ -271,10 +297,10 @@ struct Options {
       int n = cmd_line_n;
       int k = cmd_line_k;
       if (m < 1) {
-        m = ((rand() % 512) + 1);
+        m = alignment * ((rand() % 64) + 1);
       }
       if (n < 1) {
-        n = ((rand() % 512) + 1);
+        n = alignment * ((rand() % 64) + 1);
       }
       if (k < 1) {
         k = alignment * ((rand() % 64) + 1);
@@ -438,10 +464,10 @@ void allocate(const Options &options) {
     total_elements_C += elements_C;
     total_elements_D += elements_D;
 
-    stride_A_host.push_back(cutlass::make_cute_packed_stride(StrideA{}, cute::make_shape(M, K, Int<1>{})));
-    stride_B_host.push_back(cutlass::make_cute_packed_stride(StrideB{}, cute::make_shape(N, K, Int<1>{})));
-    stride_C_host.push_back(cutlass::make_cute_packed_stride(StrideC{}, cute::make_shape(M, N, Int<1>{})));
-    stride_D_host.push_back(cutlass::make_cute_packed_stride(StrideD{}, cute::make_shape(M, N, Int<1>{})));
+    stride_A_host.push_back(cutlass::make_cute_packed_stride(StrideA{}, {M, K, 1}));
+    stride_B_host.push_back(cutlass::make_cute_packed_stride(StrideB{}, {N, K, 1}));
+    stride_C_host.push_back(cutlass::make_cute_packed_stride(StrideC{}, {M, N, 1}));
+    stride_D_host.push_back(cutlass::make_cute_packed_stride(StrideD{}, {M, N, 1}));
 
   }
 
@@ -456,7 +482,7 @@ void allocate(const Options &options) {
 
 /// Initialize operands to be used in the GEMM and reference GEMM
 void initialize(const Options &options) {
-  
+
   uint64_t seed = 2020;
 
   problem_sizes.reset(options.groups);
@@ -521,7 +547,8 @@ void initialize(const Options &options) {
 }
 
 /// Populates a Gemm::Arguments structure from the given commandline options
-typename Gemm::Arguments args_from_options(const Options &options, bool host_problem_shapes_available = true)
+template <typename GemmT>
+typename GemmT::Arguments args_from_options(const Options &options, bool host_problem_shapes_available = true)
 {
   cutlass::KernelHardwareInfo hw_info;
   // Change device_id to another value if you are running on a machine with multiple GPUs and wish
@@ -529,33 +556,49 @@ typename Gemm::Arguments args_from_options(const Options &options, bool host_pro
   hw_info.device_id = 0;
   hw_info.sm_count = cutlass::KernelHardwareInfo::query_device_multiprocessor_count(hw_info.device_id);
 
-  typename Gemm::EpilogueOutputOp::Params params;
+  typename GemmT::Arguments arguments;
+  decltype(arguments.epilogue.thread) fusion_args;
+
   if (options.alpha != FLT_MAX && options.beta != FLT_MAX) {
     // If both alpha/beta are provided (via cmd line args) and are scalar, i.e., same alpha/beta applies to all batches.
-    params = typename Gemm::EpilogueOutputOp::Params(
-      ElementAccumulator(options.alpha), ElementAccumulator(options.beta));
+    fusion_args.alpha = options.alpha;
+    fusion_args.beta = options.beta;
+    fusion_args.alpha_ptr = nullptr;
+    fusion_args.beta_ptr = nullptr;
+    fusion_args.alpha_ptr_array = nullptr;
+    fusion_args.beta_ptr_array = nullptr;
+    // Single alpha and beta for all groups
+    fusion_args.dAlpha = {cute::_0{}, cute::_0{}, 0};
+    fusion_args.dBeta = {cute::_0{}, cute::_0{}, 0};
   }
   else {
     // If pointers to alpha/beta are provided, i.e., alpha/beta can differ between batches/groups.
-    params = typename Gemm::EpilogueOutputOp::Params(alpha_device.get(), beta_device.get());
+    fusion_args.alpha = 0;
+    fusion_args.beta = 0;
+    fusion_args.alpha_ptr = nullptr;
+    fusion_args.beta_ptr = nullptr;
+    fusion_args.alpha_ptr_array = alpha_device.get();
+    fusion_args.beta_ptr_array = beta_device.get();
+    // One alpha and beta per each group
+    fusion_args.dAlpha = {cute::_0{}, cute::_0{}, 1};
+    fusion_args.dBeta = {cute::_0{}, cute::_0{}, 1};
   }
 
-  typename Gemm::Arguments arguments;
   if (host_problem_shapes_available) {
-    arguments = typename Gemm::Arguments {
+    arguments = typename GemmT::Arguments {
       cutlass::gemm::GemmUniversalMode::kGrouped,
       {options.groups, problem_sizes.get(), options.problem_sizes_host.data()},
       {ptr_A.get(), stride_A.get(), ptr_B.get(), stride_B.get()},
-      {params, ptr_C.get(), stride_C.get(), ptr_D.get(), stride_D.get()},
+      {fusion_args, ptr_C.get(), stride_C.get(), ptr_D.get(), stride_D.get()},
       hw_info
     };
   }
   else {
-    arguments = typename Gemm::Arguments {
+    arguments = typename GemmT::Arguments {
       cutlass::gemm::GemmUniversalMode::kGrouped,
       {options.groups, problem_sizes.get(), nullptr},
       {ptr_A.get(), stride_A.get(), ptr_B.get(), stride_B.get()},
-      {params, ptr_C.get(), stride_C.get(), ptr_D.get(), stride_D.get()},
+      {fusion_args, ptr_C.get(), stride_C.get(), ptr_D.get(), stride_D.get()},
       hw_info
     };
   }
@@ -605,20 +648,20 @@ bool verify(const Options &options) {
 }
 
 /// Execute a given example GEMM computation
-template <typename Gemm>
+template <typename GemmT>
 int run(Options &options, bool host_problem_shapes_available = true)
 {
   allocate(options);
   initialize(options);
 
   // Instantiate CUTLASS kernel depending on templates
-  Gemm gemm;
+  GemmT gemm;
 
   // Create a structure of gemm kernel arguments suitable for invoking an instance of Gemm
-  auto arguments = args_from_options(options, host_problem_shapes_available);
+  auto arguments = args_from_options<GemmT>(options, host_problem_shapes_available);
 
   // Using the arguments, query for extra workspace required for matrix multiplication computation
-  size_t workspace_size = Gemm::get_workspace_size(arguments);
+  size_t workspace_size = GemmT::get_workspace_size(arguments);
 
   // Allocate workspace memory
   cutlass::device_memory::allocation<uint8_t> workspace(workspace_size);
@@ -695,7 +738,6 @@ int main(int argc, char const **args) {
       << "later (compute capability 90 or greater).\n";
     return 0;
   }
-
   //
   // Parse options
   //
@@ -714,8 +756,14 @@ int main(int argc, char const **args) {
   //
 
 #if defined(CUTLASS_ARCH_MMA_MODIFIABLE_TMA_SM90_SUPPORTED)
+  std::cout << "\n*** Cooperative schedule ***" << std::endl;
   run<Gemm>(options);
+  std::cout << "\n*** Cooperative schedule (host problem shapes unavailable) ***" << std::endl;
   run<Gemm>(options, false /*host_problem_shapes_available*/);
+  std::cout << "\n*** Pingpong schedule ***" << std::endl;
+  run<GemmPingpong>(options);
+  std::cout << "\n*** Pingpong schedule (host problem shapes unavailable) ***" << std::endl;
+  run<GemmPingpong>(options, false /*host_problem_shapes_available*/);
 #endif
 
   return 0;

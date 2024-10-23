@@ -30,13 +30,17 @@
  **************************************************************************************************/
 #pragma once
 
+#include "cute/layout.hpp"
+#include "cute/pointer_sparse.hpp"       // cute::is_sparse
+#include "cute/swizzle.hpp"              // cute::Swizzle
+#include "cute/swizzle_layout.hpp"       // cute::detail::get_swizzle_portion
+#include "cute/util/type_traits.hpp"
+#include "cute/arch/copy_sm90_tma.hpp"
 #include "cutlass/layout/matrix.h"
 #include "cutlass/layout/tensor.h"
 #include "cutlass/numeric_types.h"
+#include "cutlass/detail/collective.hpp"
 
-#include "cute/layout.hpp"
-#include "cute/util/type_traits.hpp"
-#include "cute/arch/copy_sm90_tma.hpp"
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass::detail {
@@ -126,34 +130,16 @@ struct TagToStrideC<cutlass::layout::TensorNWC> {
   using type = cute::Stride<cute::Stride<int64_t, int64_t>, cute::Int<1>, cute::Int<0>>;
 };
 
-// Conv: Maps to modes (PN, C, _0) for compatiblity with GEMM epilogues expecting a batch mode stride
-template <>
-struct TagToStrideC<cutlass::layout::TensorLinearizedNWC> {
-  using type = cute::Stride<int64_t, cute::Int<1>, cute::Int<0>>;
-};
-
 // Conv: Maps to modes ((P,Q,N), C, _0) for compatiblity with GEMM epilogues expecting a batch mode stride
 template <>
 struct TagToStrideC<cutlass::layout::TensorNHWC> {
   using type = cute::Stride<cute::Stride<int64_t, int64_t, int64_t>, cute::Int<1>, cute::Int<0>>;
 };
 
-// Conv: Maps to modes (PQN, C, _0) for compatiblity with GEMM epilogues expecting a batch mode stride
-template <>
-struct TagToStrideC<cutlass::layout::TensorLinearizedNHWC> {
-  using type = cute::Stride<int64_t, cute::Int<1>, cute::Int<0>>;
-};
-
 // Conv: Maps to modes ((P,Q,Z,N), C, _0) for compatiblity with GEMM epilogues expecting a batch mode stride
 template <>
 struct TagToStrideC<cutlass::layout::TensorNDHWC> {
   using type = cute::Stride<cute::Stride<int64_t, int64_t, int64_t, int64_t>, cute::Int<1>, cute::Int<0>>;
-};
-
-// Conv: Maps to modes (PQZN, C, _0) for compatiblity with GEMM epilogues expecting a batch mode stride
-template <>
-struct TagToStrideC<cutlass::layout::TensorLinearizedNDHWC> {
-  using type = cute::Stride<int64_t, cute::Int<1>, cute::Int<0>>;
 };
 
 // Conv: Maps to modes (K, (C,S), _0) for compatiblity with GEMM epilogues expecting a batch mode stride
@@ -172,6 +158,24 @@ struct TagToStrideC<cutlass::layout::TensorKCSR> {
 template <>
 struct TagToStrideC<cutlass::layout::TensorKCSRT> {
   using type = cute::Stride<int64_t, cute::Stride<cute::Int<1>, int64_t, int64_t, int64_t>, cute::Int<0>>;
+};
+
+// Conv: Maps to modes ((C,S), K, _0) for compatiblity with GEMM epilogues expecting a batch mode stride
+template <>
+struct TagToStrideC<cutlass::layout::TensorCSK> {
+  using type = cute::Stride<cute::Stride<cute::Int<1>, int64_t>, int64_t, cute::Int<0>>;
+};
+
+// Conv: Maps to modes ((C,S,R), K, _0) for compatiblity with GEMM epilogues expecting a batch mode stride
+template <>
+struct TagToStrideC<cutlass::layout::TensorCSRK> {
+  using type = cute::Stride<cute::Stride<cute::Int<1>, int64_t, int64_t>, int64_t, cute::Int<0>>;
+};
+
+// Conv: Maps to modes ((C,S,R,T), K, _0) for compatiblity with GEMM epilogues expecting a batch mode stride
+template <>
+struct TagToStrideC<cutlass::layout::TensorCSRTK> {
+  using type = cute::Stride<cute::Stride<cute::Int<1>, int64_t, int64_t, int64_t>, int64_t, cute::Int<0>>;
 };
 
 // Convenience aliases
@@ -194,12 +198,28 @@ is_major(Stride = {}) {
   return cute::is_constant<1, decltype(cute::front(cute::get<ModeIndex>(cute::remove_pointer_t<Stride>{})))>::value;
 }
 
+template<int ModeIndex, class Shape, class Stride>
+constexpr bool
+is_major(cute::Layout<Shape,Stride> = {}) {
+  return is_major<ModeIndex>(Stride{});
+}
+
 // Note : This method can be used for deducing the Layout Tag of A, C, D Matrices
 template<class StrideA>
 constexpr
 auto
 stride_to_layout_tag_A() {
-  if constexpr (is_major<0, StrideA>()) { // M major
+  using InternalStrideA = cute::remove_pointer_t<StrideA>;
+  if constexpr (cute::is_layout<InternalStrideA>::value) {
+    return stride_to_layout_tag_A<decltype(cute::stride(InternalStrideA{}))>();
+  }
+  else if constexpr (is_major<0, StrideA>()) { // M major
+    return layout::ColumnMajor{};
+  }
+  // Specialize for sparse layout
+  else if constexpr (cute::get<0>(InternalStrideA{}) == cute::_2{} && 
+                     cute::rank(cute::get<1>(InternalStrideA{})) == 2 && 
+                     cute::is_same_v<cute::_1, cute::remove_cvref_t<decltype(cute::get<1,0>(InternalStrideA{}))>>) {
     return layout::ColumnMajor{};
   }
   else { // K major
@@ -213,7 +233,11 @@ template<class StrideB>
 constexpr
 auto
 stride_to_layout_tag_B() {
-  if constexpr (is_major<0, StrideB>()) { // N major
+  using InternalStrideB = cute::remove_pointer_t<StrideB>;
+  if constexpr (cute::is_layout<InternalStrideB>::value) {
+    return stride_to_layout_tag_B<decltype(cute::stride(InternalStrideB{}))>();
+  }
+  else if constexpr (is_major<0, StrideB>()) { // N major
     return layout::RowMajor{};
   }
   else { // K major
@@ -227,7 +251,11 @@ template<class StrideC>
 constexpr
 auto
 stride_to_layout_tag_C() {
-  if constexpr (is_major<0, StrideC>()) { // M major
+  using InternalStrideC = cute::remove_pointer_t<StrideC>;
+  if constexpr (cute::is_layout<InternalStrideC>::value) {
+    return stride_to_layout_tag_C<decltype(cute::stride(InternalStrideC{}))>();
+  }
+  else if constexpr (is_major<0, StrideC>()) { // M major
     return layout::ColumnMajor{};
   }
   else { // N major
@@ -309,6 +337,10 @@ get_alignment_count_from_gmem_tiled_copy() {
   else {
     // For TMA tiled copies, we know the alignment has to be 128 bits
     if constexpr (is_tma_copy_engine<GmemTiledCopy>()) {
+      // For sparse MMA, alignment in logical elements is increased by sparsity factor
+      if constexpr (cute::is_sparse_v<ElementMma>) {
+        return 128 / sizeof_bits<Element>::value * ElementMma::sparsity;
+      }
       return 128 / sizeof_bits<Element>::value;
     }
     else {
@@ -318,27 +350,41 @@ get_alignment_count_from_gmem_tiled_copy() {
   }
 }
 
-// Return the shape that is associated with stride-1 mode, or 1 if not found
-template<typename Shape, typename Stride>
-CUTLASS_HOST_DEVICE constexpr
-auto
-get_contiguous_shape(Shape const & shape, Stride const & stride) {
-  using namespace cute;
-  auto idx = find_if(append(flatten(stride), _1{}), [](auto s){ return is_constant<1,decltype(s)>{}; });
-  return get<decltype(idx)::value>(append(flatten(shape), _1{}));
+// Return alignment bit requirements for the GEMM inputs.
+template <
+  class ElementType
+>
+constexpr int
+get_input_alignment_bits() {
+  return 128;
 }
 
-// Check if tensor shape satisfies a given major alignment
+// Return alignment bit requirements for the GEMM outputs.
+template <class ElementType>
+constexpr int
+get_output_alignment_bits() {
+  return 128;
+}
+
+// Check if tensor layout satisfies a given major alignment
 template<int Alignment, class Shape, class Stride>
 CUTLASS_HOST_DEVICE constexpr
 bool
-check_alignment(Shape const & shape, Stride const & stride) {
-  return is_major<0>(stride)
-    ? get_contiguous_shape(cute::get<0>(shape), cute::get<0>(stride)) % Alignment == 0
-    : get_contiguous_shape(cute::get<1>(shape), cute::get<1>(stride)) % Alignment == 0;
+check_alignment(cute::Layout<Shape,Stride> const& layout) {
+  // Condition: shape must divide by Alignment without rounding
+  bool shape_check = cute::size(layout.shape()) == Alignment * cute::size(cute::upcast<Alignment>(layout));
+  // Condition: every dynamic stride must be a multiple of Alignment
+  bool stride_check = cute::all_of(cute::flatten(layout.stride()), [](auto s){ return cute::is_static<decltype(s)>::value || (s % Alignment == 0); });
+  return shape_check && stride_check;
 }
 
-// Check if tensor shape satisfies a given major alignment
+// Check if tensor layout satisfies a given major alignment
+template<int Alignment, class Shape, class Stride>
+CUTLASS_HOST_DEVICE constexpr
+bool
+check_alignment(Shape const& shape, Stride const& stride) {
+  return check_alignment<Alignment>(cute::make_layout(shape, stride));
+}
 
 template<int B, int M, int S>
 CUTLASS_HOST_DEVICE constexpr

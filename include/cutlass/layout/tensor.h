@@ -60,13 +60,18 @@ namespace layout {
 //
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Tag used for 3-D NWC tensors for 1D conv, only used in 3.x API
+/// Tag used for 3-D NWC tensors for 1-D convolutions; only used in 3.x API
 class TensorNWC {};
 
-/// Tag used for n-D KCSRT tensors for nD conv, only used in 3.x API for wgrad output layouts
+/// Tag used for n-D KCSRT tensors for n-D convolutions; only used in 3.x API for wgrad output layouts
 class TensorKCS {};
 class TensorKCSR {};
 class TensorKCSRT {};
+
+/// Tag used for n-D CSRTK tensors for n-D convolutions; only used in 3.x API for wgrad output layouts
+class TensorCSK {};
+class TensorCSRK {};
+class TensorCSRTK {};
 
 /// Mapping function for 4-D NHWC tensors.
 class TensorNHWC {
@@ -636,15 +641,6 @@ public:
     return extent.n() * stride_[3];
   }
 };
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
-/// Tag used for linearized tensors with shape (NW, C) for 1D conv, only used in 3.x API
-class TensorLinearizedNWC {};
-/// Tag used for linearized tensors with shape (NHW, C) for 2D conv, only used in 3.x API
-class TensorLinearizedNHWC : public TensorNHWC {};
-/// Tag used for linearized tensors with shape (NDHW, C) for 3D conv, only used in 3.x API
-class TensorLinearizedNDHWC : public TensorNDHWC {};
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

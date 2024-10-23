@@ -30,13 +30,11 @@
  **************************************************************************************************/
 #pragma once
 
-#include <cute/config.hpp>
-
-#include <cute/container/tuple.hpp>
-#include <cute/algorithm/tuple_algorithms.hpp>
-#include <cute/numeric/integer_sequence.hpp>
-#include <cute/numeric/integral_constant.hpp>
-#include <cute/numeric/math.hpp>
+#include <cute/config.hpp>                      // CUTE_HOST_DEVICE
+#include <cute/container/tuple.hpp>             // cute::is_tuple
+#include <cute/numeric/integral_constant.hpp>   // cute::constant
+#include <cute/numeric/math.hpp>                // cute::max, cute::min
+#include <cute/algorithm/tuple_algorithms.hpp>  // cute::transform_apply
 
 namespace cute
 {
@@ -360,7 +358,7 @@ shiftr(MixedBits<S0,F0> const& m, C<S1> s)
 }
 
 //
-// upcast and downcast
+// Upcast and Downcast
 //
 
 template <uint32_t S0, uint32_t F0, auto S1>
@@ -408,6 +406,22 @@ auto
 downcast(T const& m)
 {
   return m * C<N>{};
+}
+
+template <uint32_t S0, uint32_t F0>
+CUTE_HOST_DEVICE constexpr
+auto
+max_alignment(MixedBits<S0,F0> const&)
+{
+  return C<uint32_t(1) << countr_zero(S0 | F0)>{};
+}
+
+template <auto v>
+CUTE_HOST_DEVICE constexpr
+C<v>
+max_alignment(C<v> const& c)
+{
+  return c;
 }
 
 //
@@ -471,5 +485,14 @@ CUTE_HOST std::ostream& operator<<(std::ostream& os, MixedBits<S,F> const& m)
   return os << "M_" << S << "|(" << m.dynamic_int_ << "&" << F << ")=" << uint32_t(m);
 }
 #endif // !defined(__CUDACC_RTC__)
+
+//
+// Helper Function
+//
+template <class T, class = void>                      // Default No-Swizzle
+struct get_swizzle { using type = Swizzle<0,4,3>; };
+
+template <class T>
+using get_swizzle_t = typename get_swizzle<T>::type;
 
 } // end namespace cute

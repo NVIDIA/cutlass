@@ -41,6 +41,9 @@
 // Cute includes
 #include <cute/layout.hpp>
 #include <cute/int_tuple.hpp>
+#include <cute/swizzle.hpp>
+#include <cute/layout_composed.hpp>
+#include <cute/swizzle_layout.hpp>
 
 using namespace cutlass;
 using namespace cute;

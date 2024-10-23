@@ -135,14 +135,14 @@ public:
     CUTLASS_HOST_DEVICE
     Params(Layout const &layout,
            // Not needed.  Added to be compatible with strided conv epilogue.
-           conv::Conv2dProblemSize const &problem_size):
+           cutlass::Tensor4DCoord const &tensor_extent):
       Params(layout)
     { }
 
     CUTLASS_HOST_DEVICE
     Params(Layout const &layout,
            // Not needed.  Added to be compatible with strided conv epilogue.
-           conv::Conv3dProblemSize const &problem_size):
+           cutlass::Tensor5DCoord const &tensor_extent):
       Params(layout)
     { }
 
@@ -1141,7 +1141,7 @@ public:
     CUTLASS_HOST_DEVICE
     Params(Layout const &layout,
            // Not needed.  Added to be compatible with strided conv epilogue.
-           conv::Conv2dProblemSize const &problem_size):
+           cutlass::Tensor4DCoord const &tensor_extent):
       Params(layout)
     { }
 

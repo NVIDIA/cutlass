@@ -69,6 +69,7 @@ public:
   using ProblemShape = ProblemShape_;
   static_assert(cute::rank(ProblemShape{}) == 3 or cute::rank(ProblemShape{}) == 4,
     "ProblemShape{} should be <M,N,K> or <M,N,K,L>");
+  static constexpr bool IsGdcEnabled = false;
   // Mainloop derived types
   using CollectiveMainloop = CollectiveMainloop_;
   using TileShape = typename CollectiveMainloop::TileShape;
@@ -114,7 +115,7 @@ public:
 
   // Kernel level shared memory storage
   struct SharedStorage {
-    struct TensorStorage : cute::aligned_struct<128> {
+    struct TensorStorage : cute::aligned_struct<128, _1> {
       using MainloopTensorStorage = typename CollectiveMainloop::TensorStorage;
       using EpilogueTensorStorage = typename CollectiveEpilogue::TensorStorage;
 
@@ -122,7 +123,7 @@ public:
       EpilogueTensorStorage epilogue;
     } tensors;
 
-    struct PipelineStorage : cute::aligned_struct<16> {
+    struct PipelineStorage : cute::aligned_struct<16, _1> {
       using MainloopPipelineStorage = typename CollectiveMainloop::PipelineStorage;
       using EpiLoadPipelineStorage = typename CollectiveEpilogue::PipelineStorage;
 
@@ -164,7 +165,7 @@ public:
     CUTLASS_TRACE_HOST("to_underlying_arguments():");
 
     auto problem_shape = args.problem_shape;
-    if constexpr (detail::IF_SWAP_AB<CollectiveMainloop>::value) {
+    if constexpr (detail::Has_SwapAB_v<CollectiveMainloop>) {
       // swap M/N
       get<0>(problem_shape) = get<1>(args.problem_shape);
       get<1>(problem_shape) = get<0>(args.problem_shape);
@@ -195,8 +196,7 @@ public:
     };
   }
 
-  CUTLASS_HOST_DEVICE static
-  bool
+  static bool
   can_implement(Arguments const& args) {
     bool implementable = (args.mode == GemmUniversalMode::kGemm) or
         (args.mode == GemmUniversalMode::kBatched && cute::rank(ProblemShape{}) == 4);
@@ -224,8 +224,10 @@ public:
   initialize_workspace(Arguments const& args, void* workspace = nullptr, cudaStream_t stream = nullptr,
     CudaHostAdapter* cuda_adapter = nullptr) {
     TileScheduler t;
+    static constexpr uint32_t NumEpilogueSubTiles = 1;
+    static constexpr uint32_t NumAccumulatorMtxs = 1;
     return t.template initialize_workspace<ProblemShape, ElementAccumulator>(
-      args.scheduler, workspace, stream, args.problem_shape, args.hw_info, NumMmaWarpGroups);
+      args.scheduler, workspace, stream, args.problem_shape, args.hw_info, NumMmaWarpGroups, NumEpilogueSubTiles, NumAccumulatorMtxs, cuda_adapter);
   }
 
   // Computes the kernel launch grid shape based on runtime parameters
@@ -236,7 +238,7 @@ public:
     if constexpr (!std::is_const_v<decltype(args.max_swizzle_size)>) {
       args.max_swizzle_size = 1 << params.scheduler.log_swizzle_size_;
     }
-    return TileScheduler::get_grid_shape(params.problem_shape, TileShape{}, ClusterShape{}, params.hw_info, args);
+    return TileScheduler::get_grid_shape(params.scheduler, params.problem_shape, TileShape{}, ClusterShape{}, params.hw_info, args);
   }
 
   static dim3
@@ -340,7 +342,7 @@ public:
     Tensor gB_nkl = local_tile(mB_nkl, blk_shape, make_coord(_,_,_), Step< X,_1,_1>{});          // (BLK_N,BLK_K,n,k,l)
 
     TileScheduler scheduler{params.scheduler};
-    auto work_tile_info = scheduler.get_current_work();
+    auto work_tile_info = scheduler.initial_work_tile_info(ClusterShape{});
 
     // In a warp specialized kernel, collectives expose data movement and compute operations separately
     CollectiveMainloop collective_mainloop;
@@ -402,7 +404,8 @@ public:
       }
 
         // Get next work tile
-        work_tile_info = fetch_next_work(work_tile_info, scheduler);
+        auto [next_work_tile_info, increment_pipe] = scheduler.fetch_next_work(work_tile_info);
+        work_tile_info = next_work_tile_info;
       } // Scheduler work fetch loop
 
       // Make sure all Consumer Warp Groups have been waited upon
@@ -478,7 +481,8 @@ public:
         }
 
         // Get next work tile
-        work_tile_info = fetch_next_work(work_tile_info, scheduler);
+        auto [next_work_tile_info, increment_pipe] = scheduler.fetch_next_work(work_tile_info);
+        work_tile_info = next_work_tile_info;
       } // Scheduler work fetch loop
 
       if (do_store_tail) {
@@ -493,24 +497,6 @@ public:
 #endif
   }
 
-private:
-  // Kernel helper function to get next work unit
-  CUTLASS_DEVICE
-  typename TileScheduler::WorkTileInfo
-  fetch_next_work(
-    typename TileScheduler::WorkTileInfo& work_tile_info,
-    TileScheduler& scheduler) const {
-    // Check whether we should continue on with the current work unit. If this is the case,
-    // the work unit will have been updated in continue_current_work to reflect the new
-    // tile to be computed.
-    if (scheduler.continue_current_work(work_tile_info)) {
-      return work_tile_info;
-    }
-
-    // Get next work tile
-    scheduler.advance_to_next_work();
-    return scheduler.get_current_work();
-  }
 };
 
 ///////////////////////////////////////////////////////////////////////////////

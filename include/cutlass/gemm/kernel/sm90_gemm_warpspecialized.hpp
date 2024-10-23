@@ -68,6 +68,8 @@ public:
   using ProblemShape = ProblemShape_;
   static_assert(cute::rank(ProblemShape{}) == 3 or cute::rank(ProblemShape{}) == 4,
     "ProblemShape{} should be <M,N,K> or <M,N,K,L>");
+  static constexpr bool IsGdcEnabled = false;
+
   // Mainloop derived types
   using CollectiveMainloop = CollectiveMainloop_;
   using TileShape = typename CollectiveMainloop::TileShape;
@@ -110,7 +112,7 @@ public:
       EpilogueTensorStorage epilogue;
     } tensors;
 
-    struct PipelineStorage : cute::aligned_struct<16> {
+    struct PipelineStorage : cute::aligned_struct<16, _1> {
       using MainloopPipelineStorage = typename CollectiveMainloop::PipelineStorage;
       using EpiLoadPipelineStorage = typename CollectiveEpilogue::PipelineStorage;
 
@@ -161,7 +163,7 @@ public:
   to_underlying_arguments(Arguments const& args, void* workspace) {
     (void) workspace;
     auto problem_shape = args.problem_shape;
-    if constexpr (detail::IF_SWAP_AB<CollectiveMainloop>::value) {
+    if constexpr (detail::Has_SwapAB_v<CollectiveMainloop>) {
       // swap M/N
       get<0>(problem_shape) = get<1>(args.problem_shape);
       get<1>(problem_shape) = get<0>(args.problem_shape);
@@ -174,8 +176,7 @@ public:
     };
   }
 
-  CUTLASS_HOST_DEVICE static
-  bool
+  static bool
   can_implement(Arguments const& args) {
     bool implementable = (args.mode == GemmUniversalMode::kGemm) or
         (args.mode == GemmUniversalMode::kBatched && cute::rank(ProblemShape{}) == 4);

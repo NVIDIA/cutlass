@@ -94,7 +94,7 @@ using ShapeMMAOp = cutlass::gemm::GemmShape<16, 8, 64>;  // <- MMA Op tile M = 1
 // This code section describes how threadblocks are scheduled on GPU
 using SwizzleThreadBlock = cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>;
 
-using Operator = cutlass::arch::OpMultiplyAdd;
+using Operator = cutlass::arch::OpMultiplyAddSaturate;
 
 // Number of pipelines you want to use
 constexpr int NumStages = 3;

@@ -32,7 +32,7 @@
 
 #include <cute/config.hpp>
 
-#include <cute/tensor.hpp>
+#include <cute/tensor_impl.hpp>
 #include <cute/tensor_predicate.hpp>
 
 namespace cute

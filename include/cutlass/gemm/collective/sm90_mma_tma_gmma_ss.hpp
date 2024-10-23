@@ -223,7 +223,7 @@ struct CollectiveMma<
   }
 
   template<class ProblemShape>
-  CUTLASS_HOST_DEVICE static bool
+  static bool
   can_implement(
       ProblemShape const& problem_shape,
       [[maybe_unused]] Arguments const& args) {
@@ -399,8 +399,22 @@ struct CollectiveMma<
     // Define C accumulators and A/B partitioning
     //
 
+    // Layout of warp group to thread mapping
+
+    static_assert(stride<0>(typename TiledMma::ALayout{}) == 0 and 
+                  stride<0>(typename TiledMma::BLayout{}) == 0 and
+                  size<0>(typename TiledMma::ALayout{}) == NumThreadsPerWarpGroup and
+                  size<0>(typename TiledMma::BLayout{}) == NumThreadsPerWarpGroup, 
+                  "Stride of the first mode must be 0 and the size of the mode must be NumThreadsPerWarpGroup");
+
+    constexpr int MmaWarpGroups = size(TiledMma{}) / NumThreadsPerWarpGroup;
+    Layout warp_group_thread_layout = make_layout(Int<MmaWarpGroups>{}, 
+                                                  Int<NumThreadsPerWarpGroup>{});
+
+    int warp_group_idx = __shfl_sync(0xFFFFFFFF, thread_idx / NumThreadsPerWarpGroup, 0);
+
     TiledMma tiled_mma;
-    auto thread_mma = tiled_mma.get_thread_slice(thread_idx);
+    auto thread_mma = tiled_mma.get_slice(warp_group_thread_layout(warp_group_idx));
 
     Tensor tCsA = thread_mma.partition_A(sA);                                  // (MMA,MMA_M,MMA_K,PIPE)
     Tensor tCsB = thread_mma.partition_B(sB);                                  // (MMA,MMA_N,MMA_K,PIPE)
@@ -424,9 +438,7 @@ struct CollectiveMma<
 
     warpgroup_fence_operand(accum);
     // Prologue MMAs
-    CUTLASS_PRAGMA_UNROLL
-    for (int prologue_mma_count = min(K_PIPE_MMAS, k_tile_count); 
-        prologue_mma_count > 0; --prologue_mma_count)
+    assert(k_tile_count >= 1);
     {
       // WAIT on smem_pipe_read until it's data is available
       pipeline.consumer_wait(smem_pipe_read);
@@ -439,6 +451,20 @@ struct CollectiveMma<
         tiled_mma.accumulate_ = GMMA::ScaleOut::One;
       }
 
+      warpgroup_commit_batch();
+      ++smem_pipe_read;
+      --k_tile_count;
+    }
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int prologue_mma_count = min(K_PIPE_MMAS, k_tile_count) - 1; 
+        prologue_mma_count > 0; --prologue_mma_count)
+    {
+      // WAIT on smem_pipe_read until it's data is available
+      pipeline.consumer_wait(smem_pipe_read);
+      warpgroup_arrive();
+      // (V,M,K) x (V,N,K) => (V,M,N)
+      cute::gemm(tiled_mma, tCrA(_,_,_,smem_pipe_read.index()), tCrB(_,_,_,smem_pipe_read.index()), accum);
       warpgroup_commit_batch();
       ++smem_pipe_read;
       --k_tile_count;
@@ -461,13 +487,8 @@ struct CollectiveMma<
 
       warpgroup_fence_operand(accum);
       warpgroup_arrive();
-      // Unroll the K mode manually to set scale D to 1
-      CUTLASS_PRAGMA_UNROLL
-      for (int k_block = 0; k_block < size<2>(tCrA); ++k_block) {
-        // (V,M,K) x (V,N,K) => (V,M,N)
-        cute::gemm(tiled_mma, tCrA(_,_,k_block,smem_pipe_read.index()), tCrB(_,_,k_block,smem_pipe_read.index()), accum);
-        tiled_mma.accumulate_ = GMMA::ScaleOut::One;
-      }
+      // (V,M,K) x (V,N,K) => (V,M,N)
+      cute::gemm(tiled_mma, tCrA(_,_,_,smem_pipe_read.index()), tCrB(_,_,_,smem_pipe_read.index()), accum);
       warpgroup_commit_batch();
 
       /// Wait on the GMMA barrier for K_PIPE_MMAS (or fewer) outstanding to ensure smem_pipe_write is consumed

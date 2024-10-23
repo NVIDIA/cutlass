@@ -186,13 +186,13 @@ TEST(SM90_Device_Gemm_f32t_f32t_f32n_tensor_op_gmma_f32, 128x128x32_1x1x1_cooper
       cutlass::detail::TagToStrideA_t<LayoutA>,
       float,
       cutlass::detail::TagToStrideB_t<LayoutB>,
-      decltype(cute::make_tiled_mma(cute::SM90_64x64x8_F32TF32TF32_SS_TN{}, Layout<Shape<_2,_1,_1>>{})),
+      decltype(cute::make_tiled_mma(cute::SM90_64x64x8_F32TF32TF32_SS_TN<>{}, Layout<Shape<_2,_1,_1>>{})),
       cute::SM90_TMA_LOAD,
-      cute::GMMA::Layout_K_SW128_Atom<tfloat32_t>,
+      GMMA::Layout_K_SW128_Atom<tfloat32_t>,
       void,
       cute::identity,
       cute::SM90_TMA_LOAD,
-      cute::GMMA::Layout_K_SW128_Atom<tfloat32_t>,
+      GMMA::Layout_K_SW128_Atom<tfloat32_t>,
       void,
       cute::identity
     >;

@@ -506,6 +506,7 @@ class Manifest:
     self.operations_enabled = []
     self.selected_kernels = []
     self.ignore_kernel_names = []
+    self.exclude_kernel_names = []
     self.compute_capabilities = [50,]
     self.curr_build_dir = '.'
     self.filter_by_cc = True
@@ -519,7 +520,9 @@ class Manifest:
         raise RuntimeError("The list of architectures (CMake option CUTLASS_NVCC_ARCHS) must be semicolon-delimited.\nDon't use commas to separate the architectures; use semicolons.\nYou specified the list as: " + args.architectures)
       architectures = args.architectures.split(';') if len(args.architectures) else ['50',]
 
-      arch_conditional_cc = ['90a']
+      arch_conditional_cc = [
+        '90a', 
+      ]
       architectures = [x if x not in arch_conditional_cc else x.split('a')[0] for x in architectures]
 
       self.compute_capabilities = [int(x) for x in architectures]
@@ -546,6 +549,7 @@ class Manifest:
       self.kernel_names = [x for x in args.kernels.split(',') if x != '']
 
     self.ignore_kernel_names = [x for x in args.ignore_kernels.split(',') if x != '']
+    self.exclude_kernel_names = [x for x in args.exclude_kernels.split(',') if x != '']
 
     if args.kernel_filter_file is None:
         self.kernel_filter_list = []
@@ -558,6 +562,18 @@ class Manifest:
     self.operation_count = 0
     self.operations_by_name = {}
     self.disable_full_archs_compilation = args.disable_full_archs_compilation
+    self.is_kernel_filter_set_to_all = args.instantiation_level == "max" and args.kernels != ''
+
+  def get_sm90_instantiation_level(self, pruned_level=0, default_level=111, exhaustive_level=9999):
+    # Non-negative integer which determines how many kernels are instantiated.
+    # 0 = 0000 generates the fewest kernels, 9999 generates all possible combinations.
+    # increasing first digit reduces schedule / mixed type pruning,
+    # increasing second digit generates more cluster sizes,
+    # increasing third digit generates more MMA shapes,
+    # increasing fourth digit generates more instruction shapes.
+    return exhaustive_level if self.is_kernel_filter_set_to_all else (
+      pruned_level if self.kernel_filter == '' else default_level
+    )
 
 
   def get_kernel_filters (self, kernelListFile):
@@ -599,6 +615,7 @@ class Manifest:
     enabled = not (self.filter_by_cc)
 
     for cc in self.compute_capabilities:
+
       if cc >= operation.tile_description.minimum_compute_capability and \
          cc <= operation.tile_description.maximum_compute_capability and \
          (cc not in SharedMemPerCC or SharedMemPerCC[cc] >= CalculateSmemUsage(operation)):
@@ -612,41 +629,54 @@ class Manifest:
     if len(self.operations_enabled) and not operation.operation_kind in self.operations_enabled:
       return False
 
+    name = operation.procedural_name()
+
     # eliminate duplicates
-    if operation.procedural_name() in self.operations_by_name.keys():
+    if name in self.operations_by_name.keys():
       return False
 
     # Filter based on list of valid substrings
     if len(self.kernel_names):
-      name = operation.procedural_name()
       enabled = False
 
       # compare against the include list
       for name_substr in self.kernel_names:
         if self._filter_string_matches(name_substr, name):
-          _LOGGER.debug("Kernel {kernel} included due to filter string '{filt}'.".format(
-            kernel = operation.procedural_name(),
-            filt = name_substr))
+          _LOGGER.debug(f"Kernel {name} included due to filter string '{name_substr}'.")
           enabled = True
           break
+        else:
+          _LOGGER.debug(f"Kernel {name} NOT included due to not matching '{name_substr}'.")
 
       # compare against the exclude list
       for name_substr in self.ignore_kernel_names:
         if self._filter_string_matches(name_substr, name):
-          _LOGGER.debug("Kernel {kernel} ignored due to filter string '{filt}'.".format(
-            kernel = operation.procedural_name(),
-            filt = name_substr))
+          _LOGGER.debug(f"Kernel {name} ignored due to filter string '{name_substr}'.")
           enabled = False
           break
+        else:
+          _LOGGER.debug(f"Kernel {name} NOT ignored due to not matching '{name_substr}'.")
 
     if len(self.kernel_filter_list) > 0:
-        if self.filter_out_kernels(operation.procedural_name(), self.kernel_filter_list):
-          _LOGGER.debug("Kernel {kernel} matched via kernel filter file.".format(kernel = operation.procedural_name()))
-          enabled = True
-        else:
-          _LOGGER.debug("Kernel {kernel} culled due to no match in kernel filter file.".format(kernel = operation.procedural_name()))
-          enabled = False
+      if self.filter_out_kernels(name, self.kernel_filter_list):
+        _LOGGER.debug(f"Kernel {name} matched via kernel filter file.")
+        enabled = True
+      else:
+        _LOGGER.debug(f"Kernel {name} culled due to no match in kernel filter file.")
+        enabled = False
 
+    # CUTLASS_LIBRARY_IGNORE_KERNELS ("ignore" list) only takes effect
+    # if CUTLASS_LIBRARY_KERNELS was specified.
+    # Changing that would break backwards compatibility.
+    # Thus, CUTLASS has introduced the new CMake option CUTLASS_LIBRARY_EXCLUDE_KERNELS,
+    # that always takes effect, whether or not CUTLASS_LIBRARY_KERNELS was specified.
+    for name_substr in self.exclude_kernel_names:
+      if self._filter_string_matches(name_substr, name):
+        _LOGGER.debug(f"Kernel {name} excluded due to filter string '{name_substr}'.")
+        enabled = False
+        break
+      else:
+        _LOGGER.debug(f"Kernel {name} NOT excluded due to not matching '{name_substr}'.")
 
     # TODO: filter based on compute data type
     return enabled

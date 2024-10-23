@@ -114,7 +114,10 @@ template <
   typename ElementTensor,
   typename ElementVector,
   typename OutputOp,
-  int ElementsPerAccess
+  int ElementsPerAccess,
+  typename PermuteDLayout = layout::NoPermute,
+  conv::StrideSupport StrideSupport = conv::StrideSupport::kUnity,
+  int Rank = 4
 >
 struct DefaultConvEpilogueWithBroadcastSimt {
   using Epilogue = typename epilogue::threadblock::DefaultEpilogueWithBroadcastSimt<
@@ -124,7 +127,11 @@ struct DefaultConvEpilogueWithBroadcastSimt {
     ElementTensor,
     ElementVector,
     OutputOp,
-    ElementsPerAccess
+    ElementsPerAccess,
+    false,
+    PermuteDLayout,
+    StrideSupport,
+    Rank
   >::Epilogue;
 };
 

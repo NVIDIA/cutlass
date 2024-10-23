@@ -30,11 +30,9 @@
  **************************************************************************************************/
 #pragma once
 
-#include <cute/config.hpp>
-
-#include <cute/tensor.hpp>
-
-#include <cute/atom/copy_atom.hpp>
+#include <cute/config.hpp>          // CUTE_HOST_DEVICE
+#include <cute/tensor_impl.hpp>     // cute::Tensor
+#include <cute/atom/copy_atom.hpp>  // cute::Copy_Atom
 
 namespace cute
 {
@@ -89,12 +87,6 @@ constexpr bool has_prefetch = false;
 
 template <class CopyOp>
 constexpr bool has_prefetch<CopyOp, void_t<typename CopyOp::PREFETCH>> = true;
-
-template <class CopyOp, class = void>
-constexpr bool is_prefetch = false;
-
-template <class CopyOp>
-constexpr bool is_prefetch<CopyOp, void_t<typename CopyOp::PREFETCH>> = is_same_v<CopyOp, typename CopyOp::PREFETCH>;
 
 } // end namespace detail
 

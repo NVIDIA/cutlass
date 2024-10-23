@@ -42,7 +42,7 @@ namespace test::conv::device {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<int SpatialDim, cutlass::conv::Operator ConvOp>
+template<int SpatialDim, cutlass::conv::Operator ConvOp, bool SupportStrides = (ConvOp != cutlass::conv::Operator::kDgrad)>
 std::vector<cutlass::conv::ConvProblemShape<ConvOp, SpatialDim>>
 inline
 get_conv_problem_vector();
@@ -297,7 +297,7 @@ get_conv_problem_vector<2, cutlass::conv::Operator::kFprop>() {
   // 2x5 filter, asymmetric padding 1,0/1,0, w/ stride
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
-    {2,   8, 8, 64},
+    {2,   7, 7, 64},
     {256, 2, 5, 64},
     {1, 1},
     {0, 0},
@@ -308,8 +308,8 @@ get_conv_problem_vector<2, cutlass::conv::Operator::kFprop>() {
   // 2x5 filter, asymmetric padding 1,0/1,0, w/ dilation
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
-    {2,  16, 16, 64},
-    {256, 2, 5, 64},
+    {2,   16, 16, 64},
+    {256, 2,  5,  64},
     {1, 1},
     {0, 0},
     {1, 1},
@@ -319,8 +319,8 @@ get_conv_problem_vector<2, cutlass::conv::Operator::kFprop>() {
   // 2x5 filter, asymmetric padding 1,0/1,0, w/ stride, w/ dilation
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
-    {2,  16, 16, 64},
-    {256, 2, 5, 64},
+    {2,   16, 15, 64},
+    {256, 2,  5,  64},
     {1, 1},
     {0, 0},
     {2, 3},
@@ -441,7 +441,7 @@ get_conv_problem_vector<3, cutlass::conv::Operator::kFprop>() {
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
     {2,  16, 10, 16, 64},
-    {96, 3, 4, 5, 64},
+    {96, 3,  4,  5,  64},
     {1, 0, 1},
     {0, 2, 0},
     {1, 1, 1},
@@ -452,7 +452,7 @@ get_conv_problem_vector<3, cutlass::conv::Operator::kFprop>() {
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
     {2,  16, 10, 16, 64},
-    {96, 3, 4, 5, 64},
+    {96, 3,  4,  5,  64},
     {1, 0, 1},
     {0, 2, 0},
     {2, 2, 3},
@@ -461,6 +461,7 @@ get_conv_problem_vector<3, cutlass::conv::Operator::kFprop>() {
   });
   return problem_shapes;
 }
+
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 // Wgrad
@@ -570,6 +571,28 @@ get_conv_problem_vector<1, cutlass::conv::Operator::kWgrad>() {
     {2},
     1
   });
+  // To test streamk, equals to gemm-MxNxK size 128x640x2048
+  problem_shapes.push_back({
+    cutlass::conv::Mode::kCrossCorrelation,
+    {2,   1024, 128},
+    {640, 1,    128},
+    {0},
+    {0},
+    {1},
+    {1},
+    1
+  });
+  // To test streamk, equals to gemm-MxNxK size 128x640x2080
+  problem_shapes.push_back({
+    cutlass::conv::Mode::kCrossCorrelation,
+    {2,   1040, 128},
+    {640, 1,    128},
+    {0},
+    {0},
+    {1},
+    {1},
+    1
+  });
   return problem_shapes;
 }
 
@@ -658,8 +681,8 @@ get_conv_problem_vector<2, cutlass::conv::Operator::kWgrad>() {
   // 2x5 filter, asymmetric padding 1,0/1,0, w/ stride
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
-    {2,   16, 16, 32},
-    {256, 2, 5, 32},
+    {2,   15, 16, 32},
+    {256, 2,  5,  32},
     {1, 1},
     {0, 0},
     {2, 3},
@@ -670,7 +693,7 @@ get_conv_problem_vector<2, cutlass::conv::Operator::kWgrad>() {
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
     {2,   16, 16, 32},
-    {256, 2, 5, 32},
+    {256, 2,  5,  32},
     {1, 1},
     {0, 0},
     {1, 1},
@@ -680,12 +703,34 @@ get_conv_problem_vector<2, cutlass::conv::Operator::kWgrad>() {
   // 2x5 filter, asymmetric padding 1,0/1,0, w/ stride, w/ dilation
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
-    {2,   16, 16, 32},
-    {256, 2, 5, 32},
+    {2,   16, 15, 32},
+    {256, 2,  5,  32},
     {1, 1},
     {0, 0},
     {2, 3},
     {2, 3},
+    1
+  });
+  // To test streamk, equals to gemm-MxNxK size 128x640x2048
+  problem_shapes.push_back({
+    cutlass::conv::Mode::kCrossCorrelation,
+    {2,   64, 16, 128},
+    {640, 1,  1,  128},
+    {0, 0},
+    {0, 0},
+    {1, 1},
+    {1, 1},
+    1
+  });
+  // To test streamk, equals to gemm-MxNxK size 128x640x2080
+  problem_shapes.push_back({
+    cutlass::conv::Mode::kCrossCorrelation,
+    {2,   65, 16, 128},
+    {640, 1,  1,  128},
+    {0, 0},
+    {0, 0},
+    {1, 1},
+    {1, 1},
     1
   });
   return problem_shapes;
@@ -733,7 +778,7 @@ get_conv_problem_vector<3, cutlass::conv::Operator::kWgrad>() {
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
     {2,  16, 10, 16, 32},
-    {96, 3, 4, 5, 32},
+    {96, 3,  4,  5,  32},
     {1, 0, 1},
     {0, 2, 0},
     {2, 2, 3},
@@ -744,24 +789,46 @@ get_conv_problem_vector<3, cutlass::conv::Operator::kWgrad>() {
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
     {2,  16, 10, 16, 32},
-    {96, 3, 4, 5, 32},
+    {96, 3,  4,  5,  32},
     {1, 0, 1},
     {0, 2, 0},
     {1, 1, 1},
     {2, 2, 3},
     1
   });
+  // To test streamk, equals to gemm-MxNxK size 128x640x2048
+  problem_shapes.push_back({
+    cutlass::conv::Mode::kCrossCorrelation,
+    {2,   1, 64, 16, 128},
+    {640, 1, 1,  1,  128},
+    {0, 0, 0},
+    {0, 0, 0},
+    {1, 1, 1},
+    {1, 1, 1},
+    1
+  });
+  // To test streamk, equals to gemm-MxNxK size 128x640x2080
+  problem_shapes.push_back({
+    cutlass::conv::Mode::kCrossCorrelation,
+    {2,   1, 65, 16, 128},
+    {640, 1, 1,  1,  128},
+    {0, 0, 0},
+    {0, 0, 0},
+    {1, 1, 1},
+    {1, 1, 1},
+    1
+  });
   return problem_shapes;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-// Dgrad
+// Unit Stride Dgrad
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 // Specialization for 1D dgrad problems
 template<>
 std::vector<cutlass::conv::ConvProblemShape<cutlass::conv::Operator::kDgrad, 1>> inline
-get_conv_problem_vector<1, cutlass::conv::Operator::kDgrad>() {
+get_conv_problem_vector<1, cutlass::conv::Operator::kDgrad, false>() {
   using ProblemShape = cutlass::conv::ConvProblemShape<cutlass::conv::Operator::kDgrad, 1>;
   std::vector<ProblemShape> problem_shapes;
   problem_shapes.push_back({
@@ -804,8 +871,8 @@ get_conv_problem_vector<1, cutlass::conv::Operator::kDgrad>() {
   // Filter-K = 16 for predication
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
-    {1, 8, 16},
-    {64,1, 16},
+    {1,  8, 16},
+    {64, 1, 16},
     {0},
     {0},
     {1},
@@ -826,7 +893,7 @@ get_conv_problem_vector<1, cutlass::conv::Operator::kDgrad>() {
   // N = 7 and K = 256 for a even larger grid
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
-    {7,   8, 256},
+    {7,  8, 256},
     {64, 1, 256},
     {0},
     {0},
@@ -837,7 +904,7 @@ get_conv_problem_vector<1, cutlass::conv::Operator::kDgrad>() {
   // 3 filter, no padding
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
-    {2,   8, 256},
+    {2,  8, 256},
     {64, 3, 256},
     {0},
     {0},
@@ -848,7 +915,7 @@ get_conv_problem_vector<1, cutlass::conv::Operator::kDgrad>() {
   // 3 filter, symmetric padding with k % cta_k !=0
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
-    {2,   8, 256},
+    {2,  8, 256},
     {32, 3, 256},
     {1},
     {1},
@@ -859,7 +926,7 @@ get_conv_problem_vector<1, cutlass::conv::Operator::kDgrad>() {
   // 4 filter, asymmetric padding
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
-    {2,   8, 256},
+    {2,  8, 256},
     {64, 4, 256},
     {0},
     {1},
@@ -871,7 +938,7 @@ get_conv_problem_vector<1, cutlass::conv::Operator::kDgrad>() {
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
     {2,   16, 64},
-    {256, 3, 64},
+    {256, 3,  64},
     {0},
     {1},
     {1},
@@ -884,7 +951,7 @@ get_conv_problem_vector<1, cutlass::conv::Operator::kDgrad>() {
 // Specialization for 2D dgrad problems
 template<>
 std::vector<cutlass::conv::ConvProblemShape<cutlass::conv::Operator::kDgrad, 2>> inline
-get_conv_problem_vector<2, cutlass::conv::Operator::kDgrad>() {
+get_conv_problem_vector<2, cutlass::conv::Operator::kDgrad, false>() {
   using ProblemShape = cutlass::conv::ConvProblemShape<cutlass::conv::Operator::kDgrad, 2>;
   std::vector<ProblemShape> problem_shapes;
   problem_shapes.push_back({
@@ -949,7 +1016,7 @@ get_conv_problem_vector<2, cutlass::conv::Operator::kDgrad>() {
   // N = 7 and K = 256 for a even larger grid
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
-    {7,   8, 8, 256},
+    {7,  8, 8, 256},
     {64, 1, 1, 256},
     {0, 0},
     {0, 0},
@@ -960,7 +1027,7 @@ get_conv_problem_vector<2, cutlass::conv::Operator::kDgrad>() {
   // 3x3 filter, no padding
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
-    {2,   8, 8, 256},
+    {2,  8, 8, 256},
     {64, 3, 3, 256},
     {0, 0},
     {0, 0},
@@ -971,7 +1038,7 @@ get_conv_problem_vector<2, cutlass::conv::Operator::kDgrad>() {
   // 3x3 filter, symmetric padding with k % cta_k !=0
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
-    {2,   8, 8, 256},
+    {2,  8, 8, 256},
     {32, 3, 3, 256},
     {1, 1},
     {1, 1},
@@ -982,7 +1049,7 @@ get_conv_problem_vector<2, cutlass::conv::Operator::kDgrad>() {
   // 2x5 filter, asymmetric padding 1,0/1,0
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
-    {2,   8, 8, 256},
+    {2,  8, 8, 256},
     {64, 2, 5, 256},
     {1, 1},
     {0, 0},
@@ -994,7 +1061,7 @@ get_conv_problem_vector<2, cutlass::conv::Operator::kDgrad>() {
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
     {2,   16, 16, 64},
-    {256, 2, 5, 64},
+    {256, 2,  5,  64},
     {1, 1},
     {0, 0},
     {1, 1},
@@ -1007,7 +1074,7 @@ get_conv_problem_vector<2, cutlass::conv::Operator::kDgrad>() {
 // Specialization for 3D dgrad problems
 template<>
 std::vector<cutlass::conv::ConvProblemShape<cutlass::conv::Operator::kDgrad, 3>> inline
-get_conv_problem_vector<3, cutlass::conv::Operator::kDgrad>() {
+get_conv_problem_vector<3, cutlass::conv::Operator::kDgrad, false>() {
   using ProblemShape = cutlass::conv::ConvProblemShape<cutlass::conv::Operator::kDgrad, 3>;
   std::vector<ProblemShape> problem_shapes;
   // Filter-K = 16 for predication
@@ -1072,11 +1139,139 @@ get_conv_problem_vector<3, cutlass::conv::Operator::kDgrad>() {
   problem_shapes.push_back({
     cutlass::conv::Mode::kCrossCorrelation,
     {2,  16, 10, 16, 64},
-    {64, 3, 4, 5, 96},
+    {64, 3,  4,  5,  96},
     {1, 0, 1},
     {0, 2, 0},
     {1, 1, 1},
     {2, 2, 3},
+    1
+  });
+  return problem_shapes;
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+// Strided Dgrad
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Specialization for 1D dgrad problems
+template<>
+std::vector<cutlass::conv::ConvProblemShape<cutlass::conv::Operator::kDgrad, 1>> inline
+get_conv_problem_vector<1, cutlass::conv::Operator::kDgrad, true>() {
+  using ProblemShape = cutlass::conv::ConvProblemShape<cutlass::conv::Operator::kDgrad, 1>;
+  std::vector<ProblemShape> problem_shapes;
+  // non-packed input/output strides.
+  // stride divides dilation
+  // asymmetric padding
+  problem_shapes.push_back({
+    cutlass::conv::Mode::kCrossCorrelation,
+    {3,   8,  64},  // nqk
+    {800, 80, 1},   // stride (nqk)
+    {64,  3,  64},  // ksc
+    {64,  64, 1},   // stride (ksc)
+    {800, 80, 1},   // stride (nwc)
+    {0},            // padding lower (pad_w)
+    {1},            // padding upper (pad_w)
+    {2},            // stride (stride_w)
+    {4},            // dilation (dilation_w)
+    1               // group
+  });
+  // non-packed input/output strides.
+  // dilation divides stride
+  // asymmetric padding
+  problem_shapes.push_back({
+    cutlass::conv::Mode::kCrossCorrelation,
+    {3,   8,  64},  // nqk
+    {800, 80, 1},   // stride (nqk)
+    {64,  3,  64},  // ksc
+    {64,  64, 1},   // stride (ksc)
+    {800, 80, 1},   // stride (nwc)
+    {1},            // padding lower (pad_w)
+    {0},            // padding upper (pad_w)
+    {4},            // stride (stride_w)
+    {2},            // dilation (dilation_w)
+    1               // group
+  });
+  // non-packed input/output strides.
+  // stride dilation dont divide
+  // asymmetric padding
+  problem_shapes.push_back({
+    cutlass::conv::Mode::kCrossCorrelation,
+    {3,   8,  64},  // nqk
+    {800, 80, 1},   // stride (nqk)
+    {64,  3,  64},  // ksc
+    {64,  64, 1},   // stride (ksc)
+    {800, 80, 1},   // stride (nwc)
+    {1},            // padding lower (pad_w)
+    {2},            // padding upper (pad_w)
+    {2},            // stride (stride_w)
+    {3},            // dilation (dilation_w)
+    1               // group
+  });
+  return problem_shapes;
+}
+
+// Specialization for 2D dgrad problems
+template<>
+std::vector<cutlass::conv::ConvProblemShape<cutlass::conv::Operator::kDgrad, 2>> inline
+get_conv_problem_vector<2, cutlass::conv::Operator::kDgrad, true>() {
+  using ProblemShape = cutlass::conv::ConvProblemShape<cutlass::conv::Operator::kDgrad, 2>;
+  std::vector<ProblemShape> problem_shapes;
+  // 2x5 filter, asymmetric padding 1,0/1,0, w/ dilation
+  // mode 0 stride divides dilation
+  // mode 1 dilation divides stride
+  problem_shapes.push_back({
+    cutlass::conv::Mode::kCrossCorrelation,
+    {3,   16, 16, 64},
+    {256, 2, 5, 64},
+    {1, 0},
+    {0, 1},
+    {2, 4},
+    {4, 2},
+    1
+  });
+  // 2x5 filter, asymmetric padding 1,0/1,0, w/ dilation
+  // mode 0 dilation divides stride
+  // mode 1 stride divides dilation
+  problem_shapes.push_back({
+    cutlass::conv::Mode::kCrossCorrelation,
+    {3,   16, 16, 64},
+    {256, 2, 5, 64},
+    {1, 0},
+    {0, 1},
+    {4, 2},
+    {2, 4},
+    1
+  });
+  // 2x5 filter, asymmetric padding 1,0/1,0, w/ dilation
+  // stride dilation dont divide
+  problem_shapes.push_back({
+    cutlass::conv::Mode::kCrossCorrelation,
+    {3,   16, 16, 64},
+    {256, 2, 5, 64},
+    {1, 0},
+    {0, 1},
+    {3, 2},
+    {2, 3},
+    1
+  });
+  return problem_shapes;
+}
+
+// Specialization for 3D dgrad problems
+template<>
+std::vector<cutlass::conv::ConvProblemShape<cutlass::conv::Operator::kDgrad, 3>> inline
+get_conv_problem_vector<3, cutlass::conv::Operator::kDgrad, true>() {
+  using ProblemShape = cutlass::conv::ConvProblemShape<cutlass::conv::Operator::kDgrad, 3>;
+  std::vector<ProblemShape> problem_shapes;
+  // Filter 3x4x5 + asymmetric padding 102/010, w/ dilation
+  problem_shapes.push_back({
+    cutlass::conv::Mode::kCrossCorrelation,
+    {2,  16, 10, 16, 64},
+    {64, 3, 4, 5, 96},
+    {1, 0, 1},
+    {0, 2, 0},
+    {2, 1, 2},
+    {4, 2, 3},
     1
   });
   return problem_shapes;

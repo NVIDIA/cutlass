@@ -112,8 +112,13 @@ struct TestbedUniversal {
         scope_max = is_unsigned_int ? 2 : 1;
         scope_min = is_unsigned_int ? 0 : -1;
       } else if (bits_output == 16) {
-        scope_max = is_unsigned_int ? 10 : 5;
-        scope_min = is_unsigned_int ? 0 : -5;
+        constexpr auto u8_bf16 =
+          (cutlass::platform::is_same<ElementA, uint8_t>::value &&
+           cutlass::platform::is_same<ElementB, cutlass::bfloat16_t>::value) ||
+          (cutlass::platform::is_same<ElementA, cutlass::bfloat16_t>::value &&
+           cutlass::platform::is_same<ElementB, uint8_t>::value);
+        scope_max = is_unsigned_int ? 10 : (u8_bf16 ? 3 : 5);
+        scope_min = is_unsigned_int ? 0 : (u8_bf16 ? -3 : -5);
       } else {
         scope_max = 8;
         scope_min = -8;
@@ -196,6 +201,7 @@ struct TestbedUniversal {
     if (!passed) {
 
       /*
+
       std::stringstream fname;
 
       fname << "error_Gemm_device_"

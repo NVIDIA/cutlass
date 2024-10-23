@@ -118,7 +118,7 @@ operation = Conv2dOperation(
     conv_kind=cutlass_bindings.conv.Operator.fprop,
     iterator_algorithm=cutlass_bindings.conv.IteratorAlgorithm.optimized,
     arch=cc, tile_description=tile_description,
-    A=A, B=B, C=C, stride_support=StrideSupport.Strided,
+    A=A, B=B, C=C, stride_support=StrideSupport.Unity,
     epilogue_functor=epilogue_functor
 )
 

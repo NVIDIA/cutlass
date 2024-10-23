@@ -246,12 +246,18 @@ public:
       split_k_mode
     );
 
+    cutlass::Status status = conv3d_op.can_implement(conv3d_args);
+    if (status != cutlass::Status::kSuccess) {
+      std::cerr << "can_implement failed for the given problem_size: \n";
+      return false;
+    }
+
     // find workspace requirement for parallel split-k reduction
     size_t workspace_size = Conv3d::get_workspace_size(conv3d_args);
 
     cutlass::device_memory::allocation<uint8_t> workspace(workspace_size);
 
-    cutlass::Status status = conv3d_op.initialize(conv3d_args, workspace.get());
+    status = conv3d_op.initialize(conv3d_args, workspace.get());
 
     if (status != cutlass::Status::kSuccess) {
       cudaError_t error = cudaGetLastError();

@@ -38,16 +38,20 @@ cutlass_test_unit_add_executable(
   composition.cpp
   constants.cpp
   core_unit.cpp
+  domain_distribute.cpp
+  int_tuple.cpp
   inverse_left.cpp
   inverse_right.cpp
   logical_divide.cpp
   logical_product.cpp
-  math.cpp  
+  math.cpp
   mixedbits.cpp
   nullspace.cpp
+  packed_tuple.cpp
   pointer.cpp
   reverse.cpp
+  swizzle_layout.cpp
   transform.cpp
   tuple.cpp
-  int_tuple.cpp
+  tuple_find.cpp
 )

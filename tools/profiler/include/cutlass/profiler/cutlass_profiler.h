@@ -48,7 +48,7 @@ namespace profiler {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// CUTLASS Profiler application 
+/// CUTLASS Profiler application
 class CutlassProfiler {
 private:
 
@@ -66,12 +66,9 @@ private:
 
   /// Prints usage
   void print_usage_(std::ostream &);
-  
+
   /// Prints usage
   void print_options_(std::ostream &);
-
-  /// Initializes the device
-  void initialize_device_();
 
   /// Enumerates all operations
   void enumerate_();

@@ -82,7 +82,6 @@ struct GettMainloopParams {
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-
 template<
   class ElementScalar_,
   class ElementScalingFactor_,
@@ -117,7 +116,6 @@ struct GettEpilogueParams {
   using EngineD =  typename TensorD::engine_type;
   using LayoutD = typename TensorD::layout_type;
   static constexpr bool PerColumnBias = PerColumnBias_;
-
   ElementScalar alpha = ElementScalar(1);
   ElementScalar beta = ElementScalar(0);
 
@@ -184,6 +182,8 @@ void gett_mainloop(
 
   static_assert(cute::rank(typename MainloopParams::LayoutA{}) == 3, "M, K, B");
   static_assert(cute::rank(typename MainloopParams::LayoutB{}) == 3, "N, K, B");
+  
+  using cute::raw_pointer_cast;
 
   using ElementA = typename ElementTraits<typename MainloopParams::EngineA::value_type>::type;
   using ElementB = typename ElementTraits<typename MainloopParams::EngineB::value_type>::type;
@@ -254,6 +254,8 @@ void gett_epilogue(
   static_assert(cute::rank(typename EpilogueParams::LayoutC{}) == 3, "M, K, B");
   static_assert(cute::rank(typename EpilogueParams::LayoutD{}) == 3, "N, K, B");
 
+  using cute::raw_pointer_cast;
+
   using ElementCompute = typename EpilogueParams::ElementCompute;
   using ElementC = typename EpilogueParams::TensorC::value_type;
   using ElementD = typename EpilogueParams::TensorD::value_type;
@@ -265,7 +267,6 @@ void gett_epilogue(
   using BiasBinaryOp = typename EpilogueParams::BiasBinaryOp;
 
   constexpr bool PerColBias = EpilogueParams::PerColumnBias;
-
   constexpr bool IsScalingAndAmaxOutputNeeded = 
       cute::is_same_v<ElementD, cutlass::float_e4m3_t> or
       cute::is_same_v<ElementD, cutlass::float_e5m2_t>;
@@ -300,7 +301,7 @@ void gett_epilogue(
 
   // Output related converter
   NumericConverter<ElementD, ElementCompute> destination_converter;
-  NumericConverter<ElementAux, ElementCompute> aux_destination_converter;
+  [[maybe_unused]] NumericConverter<ElementAux, ElementCompute> aux_destination_converter;
   NumericConverter<ElementBias, ElementCompute> dBias_converter;
 
   // Epilogue operations
@@ -341,7 +342,8 @@ void gett_epilogue(
         ElementCompute converted_acc = accumulator_converter(acc[m_b][n_b]);
         // per-row alpha
         if (raw_pointer_cast(epilogue_params.Valpha.data())) {
-          converted_alpha = scale_converter(epilogue_params.Valpha(m + m_b));
+          converted_alpha = scale_converter(epilogue_params.Valpha(m + m_b, n + n_b, l));
+          converted_alpha = mul(converted_alpha, mul(converted_scale_a, converted_scale_b));
         }
         ElementCompute output = mul(converted_alpha, converted_acc);
 
@@ -354,7 +356,8 @@ void gett_epilogue(
           ElementCompute converted_src = source_converter(epilogue_params.C(m + m_b, n + n_b, l));
           // per-row beta
           if (epilogue_params.Vbeta.data()) {
-            converted_beta = scale_converter(epilogue_params.Vbeta(m + m_b));
+            converted_beta = scale_converter(epilogue_params.Vbeta(m + m_b, n + n_b, l));
+            converted_beta = mul(converted_beta, converted_scale_c);
           }
           output = epilogue_fma(converted_beta, converted_src, output);
         }
@@ -417,6 +420,7 @@ void gett_epilogue(
       }
     }
   }
+
 #if defined(_OPENMP)
   #pragma omp critical(Abs_Max_Data_Update)
 #endif
