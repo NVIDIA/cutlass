@@ -51,6 +51,8 @@ struct Distribution {
     struct {
       double min;
       double max;
+      // Percent elements set to NaN
+      double pnan;
     } uniform;
 
     /// Gaussian distribution
@@ -82,17 +84,18 @@ struct Distribution {
 
   Distribution() : kind(Invalid), int_scale(0) {}
 
-  /// Configures distribution as uniform random
-  Distribution &set_uniform(double _min, double _max, int _int_scale = 0) {
+/// Configures distribution as uniform random
+  Distribution &set_uniform(double _min, double _max, int _int_scale = 0, double _pnan = 0) {
     kind = Uniform;
     uniform.min = _min;
     uniform.max = _max;
     int_scale = _int_scale;
+    uniform.pnan = _pnan;
     return *this;
   }
 
   /// Configures distribution as Gaussian distribution
-  Distribution &set_gaussian(double _mean, double _stddev, int _int_scale = 0, double _pnz = 100.0) {
+  Distribution &set_gaussian(double _mean, double _stddev, int _int_scale = 0, double _pnz = 1.0) {
     kind = Gaussian;
     gaussian.mean = _mean;
     gaussian.stddev = _stddev;
@@ -125,7 +128,8 @@ struct Distribution {
 inline std::ostream &operator<<(std::ostream &out, cutlass::Distribution const &dist) {
   switch (dist.kind) {
     case cutlass::Distribution::Uniform:
-      out << "uniform, min: " << dist.uniform.min << ", max: " << dist.uniform.max;
+      out << "uniform, min: " << dist.uniform.min << ", max: " << dist.uniform.max
+          << ", pnan: " << dist.uniform.pnan;
       break;
     case cutlass::Distribution::Gaussian:
       out << "gaussian, mean: " << dist.gaussian.mean << ", stddev: " << dist.gaussian.stddev

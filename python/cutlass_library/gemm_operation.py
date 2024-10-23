@@ -710,14 +710,14 @@ class EmitGemmUniversal3xInstance:
       "cutlass/gemm/collective/collective_builder.hpp",
       "cutlass/epilogue/collective/collective_builder.hpp",
     ]
-    self.builtin_epilogue_functor_template = """
-    ${epilogue_functor}<
+    self.builtin_epilogue_functor_template = \
+"""${epilogue_functor}<
       ${element_d},
       ${element_epilogue},
       ${element_c},
       ${element_epilogue}
-    >
-"""
+    >"""
+
     self.gemm_template = """
 
 using ${operation_name}_epilogue =
@@ -778,7 +778,6 @@ ${compile_guard_end}
 
     opcode_class_main = operation.tile_description.math_instruction.opcode_class
     opcode_class_epi = opcode_class_main
-
     tile_shape = operation.tile_description.tile_shape
     instruction_shape = operation.tile_description.math_instruction.instruction_shape
     cluster_m = operation.tile_description.cluster_shape[0]
@@ -1057,14 +1056,14 @@ class EmitGemmGroupedInstance:
       "cutlass/gemm/kernel/default_gemm_grouped.h",
       "cutlass/gemm/device/gemm_grouped.h"
     ]
-    self.builtin_epilogue_functor_template = """
-    ${epilogue_functor}<
+    self.builtin_epilogue_functor_template = \
+"""${epilogue_functor}<
       ${element_c},
       ${epilogue_vector_length},
       ${element_accumulator},
       ${element_epilogue}
-    >
-"""
+    >"""
+
     self.gemm_template = """
 // Gemm operator ${operation_name}
 using ${operation_name}_base =
@@ -1183,6 +1182,7 @@ class EmitGemmConfigurationLibrary:
       GemmKind.Sparse: EmitSparseGemmInstance,
       GemmKind.Universal: EmitGemmUniversalInstance,
       GemmKind.Universal3x: EmitGemmUniversal3xInstance,
+      GemmKind.SparseUniversal3x: EmitGemmUniversal3xInstance,
       GemmKind.PlanarComplex: EmitGemmPlanarComplexInstance,
       GemmKind.PlanarComplexArray: EmitGemmPlanarComplexArrayInstance,
       GemmKind.Grouped: EmitGemmGroupedInstance
@@ -1193,6 +1193,7 @@ class EmitGemmConfigurationLibrary:
       GemmKind.Sparse: 'GemmSparseOperation',
       GemmKind.Universal: 'GemmUniversalOperation',
       GemmKind.Universal3x: 'GemmUniversal3xOperation',
+      GemmKind.SparseUniversal3x: 'SparseGemmUniversal3xOperation',
       GemmKind.PlanarComplex: 'GemmPlanarComplexOperation',
       GemmKind.PlanarComplexArray: 'GemmPlanarComplexArrayOperation',
       GemmKind.Grouped: 'GemmGroupedOperation'
@@ -1252,6 +1253,7 @@ void initialize_${configuration_name}(Manifest &manifest) {
       ("library_internal.h", None),
       ("gemm_operation.h", None),
       ("gemm_operation_3x.hpp", None),
+      ("sparse_gemm_operation_3x.hpp", None),
       ("cutlass/arch/wmma.h", None),
       ("cutlass/numeric_types.h", None)
     ])

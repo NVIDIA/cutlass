@@ -127,14 +127,19 @@ class LinearCombinationBiasElementwise {
 public:
 
   using ElementOutput = ElementC_;
+  using ElementD = ElementOutput;
   using ElementC = ElementC_;
   using ElementAccumulator = ElementAccumulator_;
   using ElementCompute = ElementCompute_;
+  using ElementScalar = ElementCompute;
   using ElementZ = ElementZ_;
   using ElementT = ElementT_;
   using ElementVector = ElementVector_;
   static int const kElementsPerAccess = ElementsPerAccess;
   static int const kCount = kElementsPerAccess;
+
+  /// Follow cutlass3x EVT aliases
+  static bool const IsEltActSupported = true;
 
   using ElementwiseOp = ElementwiseOp_;
   using BinaryOp = BinaryOp_;
@@ -157,7 +162,7 @@ public:
   using FragmentOutput = FragmentZ;
   using ElementBias = ElementVector;
   using FragmentBias = Array<ElementBias, kElementsPerAccess>;
-  using ActivationFunctor = ElementwiseOp;
+  using ActivationFn = ElementwiseOp;
   static const ScaleType::Kind kScale = ScaleType::Default;
 
   static bool const kIsHeavy = kIsHeavy_member_or_false<ElementwiseOp>::value;
@@ -394,6 +399,118 @@ public:
     if constexpr (kStoreT) {
       NumericArrayConverter<ElementT, ElementCompute, kElementsPerAccess> convert_t;
       frag_T = convert_t(result_T);
+    }
+  }
+
+  /// Applies the operation when elementwise_op require arguments and is_source_needed() is true
+  template <typename ElementwiseArgs>
+  CUTLASS_HOST_DEVICE
+  void operator()(
+    ElementZ &Z,
+    ElementT &T,
+    ElementAccumulator const &AB,
+    ElementC const &C,
+    ElementCompute const &V,
+    ElementwiseArgs const &elementwise_args) const {
+
+    ElementwiseOp elementwise_op;
+    BinaryOp binary_op;
+
+    ElementCompute tmp_Accum = NumericConverter<ElementCompute, ElementAccumulator>()(AB);
+    ElementCompute tmp_C = NumericConverter<ElementCompute, ElementC>()(C);
+
+    ElementCompute z = binary_op(alpha_ * tmp_Accum + beta_ * tmp_C, V);
+    ElementCompute result_Z = skip_elementwise_ ? z : elementwise_op(z, elementwise_args);
+
+    NumericConverter<ElementZ, ElementCompute> convert_z;
+    Z = convert_z(result_Z);
+
+    if constexpr (kStoreT) {
+      ElementCompute result_T = z;
+      NumericConverter<ElementT, ElementCompute> convert_t;
+      T = convert_t(result_T);
+    }
+  }
+
+  /// Applies the operation when elementwise_op require arguments and is_source_needed() is false
+  template <typename ElementwiseArgs>
+  CUTLASS_HOST_DEVICE
+  void operator()(
+    ElementZ &Z,
+    ElementT &T,
+    ElementAccumulator const &AB,
+    ElementCompute const &V,
+    ElementwiseArgs const &elementwise_args) const {
+
+    ElementwiseOp elementwise_op;
+    BinaryOp binary_op;
+
+    ElementCompute tmp_Accum = NumericConverter<ElementCompute, ElementAccumulator>()(AB);
+
+    ElementCompute z = binary_op(alpha_ * tmp_Accum, V);
+    ElementCompute result_Z = skip_elementwise_ ? z : elementwise_op(z, elementwise_args);
+
+    NumericConverter<ElementZ, ElementCompute> convert_z;
+    Z = convert_z(result_Z);
+
+    if constexpr (kStoreT) {
+      ElementCompute result_T = z;
+      NumericConverter<ElementT, ElementCompute> convert_t;
+      T = convert_t(result_T);
+    }
+  }
+
+  /// Applies the operation when is_source_needed() is true
+  CUTLASS_HOST_DEVICE
+  void operator()(
+    ElementZ &Z,
+    ElementT &T,
+    ElementAccumulator const &AB,
+    ElementC const &C,
+    ElementCompute const &V) const {
+
+    ElementwiseOpDispatcher elementwise_op(elementwise_);
+    BinaryOp binary_op;
+
+    ElementCompute tmp_Accum = NumericConverter<ElementCompute, ElementAccumulator>()(AB);
+    ElementCompute tmp_C = NumericConverter<ElementCompute, ElementC>()(C);
+
+    ElementCompute z = binary_op(alpha_ * tmp_Accum + beta_ * tmp_C, V);
+    ElementCompute result_Z = skip_elementwise_ ? z : elementwise_op(z);
+
+    NumericConverter<ElementZ, ElementCompute> convert_z;
+    Z = convert_z(result_Z);
+
+    if constexpr (kStoreT) {
+      ElementCompute result_T = z;
+      NumericConverter<ElementT, ElementCompute> convert_t;
+      T = convert_t(result_T);
+    }
+  }
+
+  /// Applies the operation when is_source_needed() is false
+  CUTLASS_HOST_DEVICE
+  void operator()(
+    ElementZ &Z,
+    ElementT &T,
+    ElementAccumulator const &AB,
+    ElementCompute const &V) const {
+
+    ElementwiseOpDispatcher elementwise_op(elementwise_);
+    BinaryOp binary_op;
+
+    ElementCompute tmp_Accum = NumericConverter<ElementCompute, ElementAccumulator>()(AB);
+
+    ElementCompute z = binary_op(alpha_ * tmp_Accum, V);
+    ElementCompute result_Z = skip_elementwise_ ? z : elementwise_op(z);
+
+    NumericConverter<ElementZ, ElementCompute> convert_z;
+    Z = convert_z(result_Z);
+
+    if constexpr (kStoreT) {
+      ElementCompute result_T = z;
+      NumericConverter<ElementT, ElementCompute> convert_t;
+      T = convert_t(result_T);
     }
   }
 };

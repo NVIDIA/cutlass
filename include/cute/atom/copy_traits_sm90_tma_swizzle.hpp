@@ -68,4 +68,26 @@ get_tma_swizzle_bits(Layout const& layout)
   return get_tma_swizzle_bits(get_swizzle_portion(layout));
 }
 
+template <int B, int M, int S>
+CUTE_HOST_DEVICE constexpr
+TMA::SmemSwizzleBase
+get_tma_swizzle_base(Swizzle<B,M,S>)
+{
+  if constexpr (M == 4) {
+    static_assert(0 <= B && B <= 3, "Expected B = 0,1,2, or 3 when M == 4. Unsupported layout swizzle.");
+    static_assert(S == 3, "Expected S = 3 when M == 4. Unsupported layout swizzle.");
+    return TMA::SmemSwizzleBase::SWIZZLE_BASE_16B;
+  } 
+  else {
+    static_assert(M == 4, "Expected 128b=16B=(2^4)B base swizzle.");
+  }
+}
+
+template <class Layout>
+TMA::SmemSwizzleBase
+get_tma_swizzle_base(Layout const& layout)
+{
+  return get_tma_swizzle_base(get_swizzle_portion(layout));
+}
+
 } // namespace cute::detail

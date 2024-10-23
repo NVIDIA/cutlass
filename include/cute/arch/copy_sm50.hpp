@@ -40,8 +40,8 @@
 
 namespace cute
 {
-
-struct SM50_Shuffle_U32_2x2Trans
+// Shuffle data between thread pair (0, 1), (2, 3), etc.
+struct SM50_Shuffle_U32_2x2Trans_XOR1
 {
   using SRegisters = uint32_t[2];
   using DRegisters = uint32_t[2];
@@ -61,6 +61,32 @@ struct SM50_Shuffle_U32_2x2Trans
     } 
     else {
       dst0 = y1;
+    }
+#else 
+    CUTE_INVALID_CONTROL_PATH("Trying to use __shfl_xor_sync without CUTE_ARCH_WARP_SHUFFLE_ENABLED.");
+#endif
+  }
+};
+
+// Shuffle data between thread pair (0, 4), (1, 5), etc.
+struct SM50_Shuffle_U32_2x2Trans_XOR4
+{
+  using SRegisters = uint32_t[2];
+  using DRegisters = uint32_t[2];
+
+  CUTE_HOST_DEVICE static void
+  copy(uint32_t const& src0, uint32_t const& src1, uint32_t& dst0, uint32_t& dst1)
+  {
+#if defined(CUTE_ARCH_WARP_SHUFFLE_ENABLED)
+    uint32_t x0 = threadIdx.x & 4  ? src0 : src1;
+    uint32_t y0 = __shfl_xor_sync(0xffffffff, x0, 4);
+
+    // Replace detination register with shuffle result.
+    if (threadIdx.x & 0x4) {
+      dst0 = y0;
+    } 
+    else {
+      dst1 = y0;
     }
 #else 
     CUTE_INVALID_CONTROL_PATH("Trying to use __shfl_xor_sync without CUTE_ARCH_WARP_SHUFFLE_ENABLED.");

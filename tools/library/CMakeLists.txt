@@ -221,7 +221,8 @@ cutlass_add_cutlass_library(
 
   # files split for parallel compilation
   src/reference/gemm_int4.cu
-  src/reference/gemm_int8_canonical.cu
+  src/reference/gemm_s8_s8_s32.cu
+  src/reference/gemm_u8_u8_s32.cu
   src/reference/gemm_int8_interleaved_32.cu
   src/reference/gemm_int8_interleaved_64.cu
   src/reference/gemm_e4m3a_e4m3out.cu
@@ -278,6 +279,7 @@ execute_process(
     --generator-target library
     --architectures "${CUTLASS_NVCC_ARCHS_ENABLED}"
     --kernels "${CUTLASS_LIBRARY_KERNELS}"
+    --instantiation-level "${CUTLASS_LIBRARY_INSTANTIATION_LEVEL}"
     --ignore-kernels "${CUTLASS_LIBRARY_IGNORE_KERNELS}"
     --exclude-kernels "${CUTLASS_LIBRARY_EXCLUDE_KERNELS}"
     --kernel-filter-file "${KERNEL_FILTER_FILE}"

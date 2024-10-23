@@ -303,14 +303,14 @@ bool initialize_block(
   int bits_input = cutlass::sizeof_bits<Element>::value;
 
   if (bits_input == 1) {
-    scope_max = 2;
-    scope_min = 0;
+    scope_max = Element(2);
+    scope_min = Element(0);
   } else if (bits_input <= 8) {
-    scope_max = 2;
-    scope_min = -2;
+    scope_max = Element(2);
+    scope_min = Element(-2);
   } else {
-    scope_max = 8;
-    scope_min = -8;
+    scope_max = Element(8);
+    scope_min = Element(-8);
   }
 
   cutlass::reference::device::BlockFillRandomUniform(

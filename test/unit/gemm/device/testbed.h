@@ -208,15 +208,17 @@ struct Testbed {
     EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_B.host_view()), 0);
     EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_C.host_view()), 0);
 
-    if (tensor_D.size() > 1)
-      EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_D.host_view()), 0);
-
-    if (reference_D.size() > 1)
-      EXPECT_GT(cutlass::reference::host::TensorNorm(reference_D.host_view()), 0);
-
+    if (tensor_D.size() > 1) {
+      EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_D.host_view()), 0)
+        << "tensor_D (size " << tensor_D.size() << ") has nonpositive norm";
+    }
+    if (reference_D.size() > 1) {
+      EXPECT_GT(cutlass::reference::host::TensorNorm(reference_D.host_view()), 0)
+        << "reference_D (size " << reference_D.size() << ") has nonpositive norm";
+    }
     bool passed = cutlass::reference::host::TensorEquals(reference_D.host_view(), tensor_D.host_view());
 
-    EXPECT_TRUE(passed);
+    EXPECT_TRUE(passed) << "reference_D does not equal tensor_D";
 
     if (!passed) {
 
@@ -369,9 +371,11 @@ struct Testbed {
 
     cutlass::Status status = gemm_op.initialize(arguments, workspace.get());
 
+    EXPECT_TRUE(status == cutlass::Status::kSuccess)
+      << "gemm_op.initialize returned with error " << to_string(status)
+      << ", indicating that this test is not supported.  Last CUDA error: "
+      << cudaGetErrorString(cudaGetLastError());
     if (status != cutlass::Status::kSuccess) {
-      cudaError_t error = cudaGetLastError();
-      std::cerr << "This test is not supported: " << cudaGetErrorString(error) << "\n";
       return true;
     }
 
@@ -379,19 +383,27 @@ struct Testbed {
     // Run the GEMM
     //
 
-    status = gemm_op();
-
-    EXPECT_TRUE(status == cutlass::Status::kSuccess) << to_string(status);
+    try {
+      status = gemm_op();
+    }
+    catch (std::exception const& e) {
+      EXPECT_TRUE(false) << "gemm_op() threw a std::exception: " << e.what();
+      throw;
+    }
+    catch (...) {
+      EXPECT_TRUE(false) << "gemm_op() threw an exception of unknown type";
+      throw;
+    }
+    EXPECT_TRUE(status == cutlass::Status::kSuccess)
+      << "gemm_op failed with error " << to_string(status);
 
     //
     // Verify
     //
 
     bool passed = this->verify(problem_size, alpha, beta);
-
-    if (!passed) {
-      std::cout << "Error with split_k_slices = " << split_k_slices << ", alpha: " << alpha << std::endl;
-    }
+    EXPECT_TRUE(passed) << "Error: split_k_slices = " << split_k_slices
+      << ", alpha: " << alpha;
 
     return passed;
   }
@@ -470,12 +482,26 @@ bool TestAllGemmBasic(
             for (auto beta : problem_beta) {
 
               cutlass::gemm::GemmCoord problem_size(m, n, k);
-              passed = testbed.run(
-                problem_size, 
-                split_k,
-                cutlass::from_real<ElementCompute>(alpha), 
-                cutlass::from_real<ElementCompute>(beta)
-              );
+              try {
+                passed = testbed.run(
+                  problem_size, 
+                  split_k,
+                  cutlass::from_real<ElementCompute>(alpha), 
+                  cutlass::from_real<ElementCompute>(beta)
+                );
+              }
+              catch (std::exception const& e) {
+                EXPECT_TRUE(false) << "TestAllGemmBasic: testbed.run threw an "
+                  "exception {alpha: " << alpha << ", beta: " << beta << ", m: "
+                  << m << ", n: " << n << ", k: " << k << "}: " << e.what();
+                throw;
+              }
+              catch (...) {
+                EXPECT_TRUE(false) << "TestAllGemmBasic: testbed.run threw an "
+                  "exception {alpha: " << alpha << ", beta: " << beta << ", m: "
+                  << m << ", n: " << n << ", k: " << k << "}: (unknown)";
+                throw;
+              }
 
               if (!passed) {
                 return false;
@@ -570,12 +596,26 @@ bool TestGemmPerf(int iterations = 1) {
               cutlass::gemm::GemmCoord problem_size(m, n, k);
 
               for (int i = 0; i < iterations; i++){
-                passed = testbed.run(
-                  problem_size, 
-                  split_k,
-                  cutlass::from_real<ElementCompute>(alpha), 
-                  cutlass::from_real<ElementCompute>(beta)
-                );
+                try {
+                  passed = testbed.run(
+                    problem_size, 
+                    split_k,
+                    cutlass::from_real<ElementCompute>(alpha), 
+                    cutlass::from_real<ElementCompute>(beta)
+                  );
+                }
+                catch (std::exception const& e) {
+                  EXPECT_TRUE(false) << "TestGemmPerf: testbed.run threw an "
+                    "exception {alpha: " << alpha << ", beta: " << beta << ", m: "
+                    << m << ", n: " << n << ", k: " << k << "}: " << e.what();
+                  throw;
+                }
+                catch (...) {
+                  EXPECT_TRUE(false) << "TestGemmPerf: testbed.run threw an "
+                    "exception {alpha: " << alpha << ", beta: " << beta << ", m: "
+                    << m << ", n: " << n << ", k: " << k << "}: (unknown)";
+                  throw;
+                }
               }
 
               if (!passed) {

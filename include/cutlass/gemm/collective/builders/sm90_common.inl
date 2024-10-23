@@ -38,6 +38,7 @@
 #include "cutlass/detail/dependent_false.hpp"
 
 #include "cute/atom/mma_traits_sm90_gmma.hpp"
+#include "cute/atom/mma_traits_sm90_gmma_sparse.hpp"
 #include "cute/atom/copy_traits_sm90_tma.hpp"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -123,13 +124,12 @@ sm90_cluster_shape_to_tma_atom(UnimodalClusterShape) {
   }
 }
 
-// Generates the most efficient possible TiledCopy with cp.async copy atom given a set of parameters.
-template<int ThreadCount, class Element, int Alignment, class StrideType, class TileMN, class TileK>
+// Generates the most efficient possible TiledCopy with simt copy atom(e.g. cp.async) given a set of parameters.
+template<class CopyAtom, int ThreadCount, int Alignment, class StrideType, class TileMN, class TileK>
 constexpr auto
-make_cp_async_gmem_tiled_copy() {
+make_simt_gmem_tiled_copy() {
   using namespace cute;
 
-  using AlignmentType = cute::uint_byte_t<static_cast<int>(sizeof(Element)) * Alignment>;
   constexpr int TileSizeMN  = cute::size(TileMN{});
   constexpr int TileSizeK   = cute::size(TileK{});
 
@@ -144,7 +144,7 @@ make_cp_async_gmem_tiled_copy() {
     static_assert(ThreadCount % threads_major == 0);
     static_assert(threads_minor == 0 || (TileSizeMN % threads_minor == 0));
     return make_tiled_copy(
-      Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<AlignmentType>, Element>{},
+      CopyAtom{},
       Layout<Shape <Int<threads_minor>,Int<threads_major>>,
              Stride<Int<threads_major>,                _1>>{},
       Layout<Shape<_1,Int<Alignment>>>{});
@@ -157,13 +157,12 @@ make_cp_async_gmem_tiled_copy() {
     static_assert(ThreadCount % threads_major == 0);
     static_assert(threads_minor == 0 || (TileSizeK % threads_minor == 0));
     return make_tiled_copy(
-      Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<AlignmentType>, Element>{},
+      CopyAtom{},
       Layout<Shape <Int<threads_major>,Int<threads_minor>>,
              Stride<                _1,Int<threads_major>>>{},
       Layout<Shape<Int<Alignment>,_1>>{});
-  }
-  else {
-    static_assert(cute::is_void_v<Element>, "Unsupported gmem layout for automatic gmem tiled copy builder.");
+  } else {
+    static_assert(cute::is_void_v<CopyAtom>, "Unsupported gmem layout for automatic gmem tiled copy builder.");
   }
 }
 
@@ -314,6 +313,62 @@ ss_smem_selector()
     }
     else {
       static_assert(BLK_K0 % size<1>(GMMA::Layout_K_INTER_Atom<ElementType>{}) == 0,
+                    "BLK_K0 must be a multiple of size<1>(GMMA::Layout_K_INTER_Atom<ElementType>{})");
+    }
+  }
+}
+
+// Helper for SS GMMA smem selection that considers a tensor TileShape:
+//   (BLK_MN, BLK_K)
+//   or hierarchically
+//   ((BLK_MN0,BLK_MN1,...),(BLK_K0,BLK_K1,...))
+//   and returns the largest GMMA::Layout that fits BLK_MN0 and BLK_K0
+template <cute::GMMA::Major major, class ElementType, class BLK_MN, class BLK_K, class Sparsity>
+CUTE_HOST_DEVICE constexpr
+auto
+ss_smem_selector_sparse()
+{
+  using namespace cute;
+
+  auto BLK_MN0 = size<0>(BLK_MN{});
+  auto BLK_K0  = size<0>(BLK_K{});
+
+  static_assert(BLK_MN0 % 8 == 0, "BLK_MN0 must be a multiple of 8.");
+  static_assert(BLK_K0 % 8 == 0,  "BLK_K0 must be a multiple of 8.");
+
+  if constexpr (major == GMMA::Major::MN) {
+    if constexpr (BLK_MN0 % size<0>(GMMA::Layout_MN_SW128_SpAtom<ElementType, Sparsity{}>{}) == 0) {
+      return GMMA::Layout_MN_SW128_SpAtom<ElementType, Sparsity{}>{};
+    }
+    else if constexpr (BLK_MN0 % size<0>(GMMA::Layout_MN_SW64_SpAtom<ElementType, Sparsity{}>{}) == 0) {
+      return GMMA::Layout_MN_SW64_SpAtom<ElementType, Sparsity{}>{};
+    }
+    else if constexpr (BLK_MN0 % size<0>(GMMA::Layout_MN_SW32_SpAtom<ElementType, Sparsity{}>{}) == 0) {
+      return GMMA::Layout_MN_SW32_SpAtom<ElementType, Sparsity{}>{};
+    }
+    else if constexpr (BLK_MN0 % size<0>(GMMA::Layout_MN_INTER_SpAtom<ElementType, Sparsity{}>{}) == 0) {
+      return GMMA::Layout_MN_INTER_SpAtom<ElementType, Sparsity{}>{};
+    }
+    else {
+      static_assert(BLK_MN0 % size<0>(GMMA::Layout_MN_INTER_SpAtom<ElementType, Sparsity{}>{}) == 0,
+                    "BLK_MN0 must be a multiple of size<0>(GMMA::Layout_MN_INTER_Atom<ElementType>{})");
+    }
+  }
+  else if constexpr (major == GMMA::Major::K) {
+    if constexpr (BLK_K0 % size<1>(GMMA::Layout_K_SW128_SpAtom<ElementType, Sparsity{}>{}) == 0) {
+      return GMMA::Layout_K_SW128_SpAtom<ElementType, Sparsity{}>{};
+    }
+    else if constexpr (BLK_K0 % size<1>(GMMA::Layout_K_SW64_SpAtom<ElementType, Sparsity{}>{}) == 0) {
+      return GMMA::Layout_K_SW64_SpAtom<ElementType, Sparsity{}>{};
+    }
+    else if constexpr (BLK_K0 % size<1>(GMMA::Layout_K_SW32_SpAtom<ElementType, Sparsity{}>{}) == 0) {
+      return GMMA::Layout_K_SW32_SpAtom<ElementType, Sparsity{}>{};
+    }
+    else if constexpr (BLK_K0 % size<1>(GMMA::Layout_K_INTER_SpAtom<ElementType, Sparsity{}>{}) == 0) {
+      return GMMA::Layout_K_INTER_SpAtom<ElementType, Sparsity{}>{};
+    }
+    else {
+      static_assert(BLK_K0 % size<1>(GMMA::Layout_K_INTER_SpAtom<ElementType, Sparsity{}>{}) == 0,
                     "BLK_K0 must be a multiple of size<1>(GMMA::Layout_K_INTER_Atom<ElementType>{})");
     }
   }

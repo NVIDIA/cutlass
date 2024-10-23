@@ -84,7 +84,9 @@ TEST(SM90_device_conv1d_fprop_implicitgemm_f16nwc_f16nwc_f32nwc_tensor_op_f32, 6
       cutlass::conv::collective::KernelScheduleAuto
     >::CollectiveOp;
 
+  using ProblemShape=cutlass::conv::ConvProblemShape<CollectiveMainloop::DispatchPolicy::ConvOp, CollectiveMainloop::DispatchPolicy::NumSpatialDimensions>;
   using ConvKernel = cutlass::conv::kernel::ConvUniversal<
+      ProblemShape,
       CollectiveMainloop,
       CollectiveEpilogue
     >;
@@ -127,7 +129,9 @@ TEST(SM90_device_conv1d_fprop_implicitgemm_f16nwc_f16nwc_f32nwc_tensor_op_f32, 6
       cutlass::conv::collective::KernelScheduleAuto
     >::CollectiveOp;
 
+  using ProblemShape=cutlass::conv::ConvProblemShape<CollectiveMainloop::DispatchPolicy::ConvOp, CollectiveMainloop::DispatchPolicy::NumSpatialDimensions>;
   using ConvKernel = cutlass::conv::kernel::ConvUniversal<
+      ProblemShape,
       CollectiveMainloop,
       CollectiveEpilogue
     >;
@@ -170,7 +174,9 @@ TEST(SM90_device_conv1d_fprop_implicitgemm_f16nwc_f16nwc_f32nwc_tensor_op_f32, 6
       cutlass::conv::collective::KernelScheduleAuto
     >::CollectiveOp;
 
+  using ProblemShape=cutlass::conv::ConvProblemShape<CollectiveMainloop::DispatchPolicy::ConvOp, CollectiveMainloop::DispatchPolicy::NumSpatialDimensions>;
   using ConvKernel = cutlass::conv::kernel::ConvUniversal<
+      ProblemShape,
       CollectiveMainloop,
       CollectiveEpilogue
     >;
@@ -213,7 +219,9 @@ TEST(SM90_device_conv1d_fprop_implicitgemm_f16nwc_f16nwc_f32nwc_tensor_op_f32, 6
       cutlass::conv::collective::KernelScheduleAuto
     >::CollectiveOp;
 
+  using ProblemShape=cutlass::conv::ConvProblemShape<CollectiveMainloop::DispatchPolicy::ConvOp, CollectiveMainloop::DispatchPolicy::NumSpatialDimensions>;
   using ConvKernel = cutlass::conv::kernel::ConvUniversal<
+      ProblemShape,
       CollectiveMainloop,
       CollectiveEpilogue
     >;
@@ -260,7 +268,10 @@ TEST(SM90_device_conv1d_fprop_implicitgemm_f16nwc_f16nwc_f32nwc_tensor_op_f32, 1
       cutlass::conv::collective::KernelScheduleAuto
     >::CollectiveOp;
 
+
+  using ProblemShape=cutlass::conv::ConvProblemShape<CollectiveMainloop::DispatchPolicy::ConvOp, CollectiveMainloop::DispatchPolicy::NumSpatialDimensions>;
   using ConvKernel = cutlass::conv::kernel::ConvUniversal<
+      ProblemShape,
       CollectiveMainloop,
       CollectiveEpilogue
     >;
@@ -303,7 +314,10 @@ TEST(SM90_device_conv1d_fprop_implicitgemm_f16nwc_f16nwc_f32nwc_tensor_op_f32, 1
       cutlass::conv::collective::KernelScheduleAuto
     >::CollectiveOp;
 
+
+  using ProblemShape=cutlass::conv::ConvProblemShape<CollectiveMainloop::DispatchPolicy::ConvOp, CollectiveMainloop::DispatchPolicy::NumSpatialDimensions>;
   using ConvKernel = cutlass::conv::kernel::ConvUniversal<
+      ProblemShape,
       CollectiveMainloop,
       CollectiveEpilogue
     >;
@@ -346,7 +360,10 @@ TEST(SM90_device_conv1d_fprop_implicitgemm_f16nwc_f16nwc_f32nwc_tensor_op_f32, 1
       cutlass::conv::collective::KernelScheduleAuto
     >::CollectiveOp;
 
+
+  using ProblemShape=cutlass::conv::ConvProblemShape<CollectiveMainloop::DispatchPolicy::ConvOp, CollectiveMainloop::DispatchPolicy::NumSpatialDimensions>;
   using ConvKernel = cutlass::conv::kernel::ConvUniversal<
+      ProblemShape,
       CollectiveMainloop,
       CollectiveEpilogue
     >;
@@ -389,7 +406,9 @@ TEST(SM90_device_conv1d_fprop_implicitgemm_f16nwc_f16nwc_f32nwc_tensor_op_f32, 1
       cutlass::conv::collective::KernelScheduleAuto
     >::CollectiveOp;
 
+  using ProblemShape=cutlass::conv::ConvProblemShape<CollectiveMainloop::DispatchPolicy::ConvOp, CollectiveMainloop::DispatchPolicy::NumSpatialDimensions>;
   using ConvKernel = cutlass::conv::kernel::ConvUniversal<
+      ProblemShape,
       CollectiveMainloop,
       CollectiveEpilogue
     >;

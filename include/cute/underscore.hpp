@@ -30,12 +30,9 @@
  **************************************************************************************************/
 #pragma once
 
-#include <cute/config.hpp>
-
-#include <cute/container/tuple.hpp>
-#include <cute/algorithm/tuple_algorithms.hpp>
-#include <cute/numeric/integral_constant.hpp>
-#include <cute/numeric/integer_sequence.hpp>
+#include <cute/config.hpp>                     // CUTE_INLINE_CONSTANT, CUTE_HOST_DEVICE
+#include <cute/container/tuple.hpp>            // cute::is_tuple
+#include <cute/numeric/integral_constant.hpp>  // cute::false_type, cute::true_type
 
 namespace cute
 {

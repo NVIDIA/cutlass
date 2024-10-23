@@ -34,7 +34,7 @@
 #include "cutlass/gemm/gemm.h"
 
 #include "cute/layout.hpp"
-#include "cute/numeric/integral_constant.hpp"
+#include "cute/numeric/integral_constant.hpp" // cute::false_type
 //////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass::detail {
@@ -47,6 +47,16 @@ struct is_kernel_tag_of<U<Args...>, U> : cute::true_type {};
 
 template <class T, template <int...> class U>
 constexpr bool is_kernel_tag_of_v = is_kernel_tag_of<T, U>::value;
+
+template <class T, template <int,bool> class U>
+struct is_asymmetric_dma_kernel_tag_of : cute::false_type {};
+
+template <template <int, bool> class U, int I0, bool B0>
+struct is_asymmetric_dma_kernel_tag_of<U<I0, B0>, U> : cute::true_type {};
+
+template <class T, template <int, bool> class U>
+constexpr bool is_asymmetric_dma_kernel_tag_of_v = \
+                              is_asymmetric_dma_kernel_tag_of<T, U>::value;
 
 }
 
@@ -96,7 +106,9 @@ struct KernelCpAsyncWarpSpecializedCooperative { };
 struct KernelTma { };
 struct KernelTmaWarpSpecialized { };
 struct KernelTmaWarpSpecializedPingpong { };
-struct KernelTmaWarpSpecializedCooperative { };
+struct KernelTmaWarpSpecializedCooperative { 
+};
+
 struct KernelPtrArrayTmaWarpSpecializedCooperative { };
 struct KernelPtrArrayTmaWarpSpecializedPingpong { };
 
@@ -293,6 +305,20 @@ struct MainloopSm90ArrayTmaGmmaWarpSpecialized {
     "KernelSchedule must be one of the Ptr-Array or Grouped Gemm TMA Warp Specialized Cooperative or Pingpong policies");
 };
 
+// n-buffer in smem (Hopper TMA), pipelined with Hopper sparse GMMA and TMA, Warp specialized dynamic schedule
+template<
+  int Stages_,
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class KernelSchedule = KernelTmaWarpSpecializedCooperative
+>
+struct MainloopSm90TmaGmmaWarpSpecializedSparse {
+  constexpr static int Stages = Stages_;
+  using ClusterShape = ClusterShape_;
+  using ArchTag = arch::Sm90;
+  using Schedule = KernelSchedule;
+};
+
 //////////////////////////////////////////////////////////////////////////////
 
 } // namespace cutlass::gemm
+

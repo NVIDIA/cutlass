@@ -69,6 +69,7 @@ public:
   using ProblemShape = ProblemShape_;
   static_assert(cute::rank(ProblemShape{}) == 3 or cute::rank(ProblemShape{}) == 4,
     "ProblemShape{} should be <M,N,K> or <M,N,K,L>");
+  static constexpr bool IsGdcEnabled = false;
   // Mainloop derived types
   using CollectiveMainloop = CollectiveMainloop_;
   using TileShape = typename CollectiveMainloop::TileShape;
@@ -114,7 +115,7 @@ public:
 
   // Kernel level shared memory storage
   struct SharedStorage {
-    struct TensorStorage : cute::aligned_struct<128> {
+    struct TensorStorage : cute::aligned_struct<128, _1> {
       using MainloopTensorStorage = typename CollectiveMainloop::TensorStorage;
       using EpilogueTensorStorage = typename CollectiveEpilogue::TensorStorage;
 
@@ -122,7 +123,7 @@ public:
       EpilogueTensorStorage epilogue;
     } tensors;
 
-    struct PipelineStorage : cute::aligned_struct<16> {
+    struct PipelineStorage : cute::aligned_struct<16, _1> {
       using MainloopPipelineStorage = typename CollectiveMainloop::PipelineStorage;
       using EpiLoadPipelineStorage = typename CollectiveEpilogue::PipelineStorage;
 
@@ -223,8 +224,10 @@ public:
   initialize_workspace(Arguments const& args, void* workspace = nullptr, cudaStream_t stream = nullptr,
     CudaHostAdapter* cuda_adapter = nullptr) {
     TileScheduler t;
+    static constexpr uint32_t NumEpilogueSubTiles = 1;
+    static constexpr uint32_t NumAccumulatorMtxs = 1;
     return t.template initialize_workspace<ProblemShape, ElementAccumulator>(
-      args.scheduler, workspace, stream, args.problem_shape, args.hw_info, NumMmaWarpGroups, 1, cuda_adapter);
+      args.scheduler, workspace, stream, args.problem_shape, args.hw_info, NumMmaWarpGroups, NumEpilogueSubTiles, NumAccumulatorMtxs, cuda_adapter);
   }
 
   // Computes the kernel launch grid shape based on runtime parameters
@@ -235,7 +238,7 @@ public:
     if constexpr (!std::is_const_v<decltype(args.max_swizzle_size)>) {
       args.max_swizzle_size = 1 << params.scheduler.log_swizzle_size_;
     }
-    return TileScheduler::get_grid_shape(params.problem_shape, TileShape{}, ClusterShape{}, params.hw_info, args);
+    return TileScheduler::get_grid_shape(params.scheduler, params.problem_shape, TileShape{}, ClusterShape{}, params.hw_info, args);
   }
 
   static dim3
@@ -401,7 +404,8 @@ public:
       }
 
         // Get next work tile
-        work_tile_info = scheduler.fetch_next_work(work_tile_info);
+        auto [next_work_tile_info, increment_pipe] = scheduler.fetch_next_work(work_tile_info);
+        work_tile_info = next_work_tile_info;
       } // Scheduler work fetch loop
 
       // Make sure all Consumer Warp Groups have been waited upon
@@ -477,7 +481,8 @@ public:
         }
 
         // Get next work tile
-        work_tile_info = scheduler.fetch_next_work(work_tile_info);
+        auto [next_work_tile_info, increment_pipe] = scheduler.fetch_next_work(work_tile_info);
+        work_tile_info = next_work_tile_info;
       } // Scheduler work fetch loop
 
       if (do_store_tail) {

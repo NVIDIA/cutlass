@@ -47,6 +47,8 @@
 #include "cutlass/trace.h"
 
 #include "cute/tensor.hpp"
+#include "cutlass/arch/grid_dependency_control.h"
+
 ///////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass::gemm::kernel {
@@ -73,6 +75,8 @@ public:
   using ProblemShape = ProblemShape_;
   static_assert(cute::rank(ProblemShape{}) == 3 or cute::rank(ProblemShape{}) == 4,
     "ProblemShape{} should be <M,N,K> or <M,N,K,L>");
+  static constexpr bool IsGdcEnabled = cutlass::arch::IsGdcGloballyEnabled;
+
   // Mainloop derived types
   using CollectiveMainloop = CollectiveMainloop_;
   using TileShape = typename CollectiveMainloop::TileShape;
@@ -128,7 +132,7 @@ public:
 
   // Kernel level shared memory storage
   struct SharedStorage {
-    struct PipelineStorage : cute::aligned_struct<16> {
+    struct PipelineStorage : cute::aligned_struct<16, _1> {
       using MainloopPipelineStorage = typename CollectiveMainloop::PipelineStorage;
       using EpiLoadPipelineStorage = typename CollectiveEpilogue::PipelineStorage;
       using MathWarpGroupOrderBarrierStorage = MathWarpGroupOrderBarrierSharedStorage;
@@ -139,7 +143,7 @@ public:
       alignas(16) typename LoadWarpOrderBarrier::SharedStorage load_order;
     } pipelines;
 
-    struct TensorStorage : cute::aligned_struct<128> {
+    struct TensorStorage : cute::aligned_struct<128, _1> {
       using MainloopTensorStorage = typename CollectiveMainloop::TensorStorage;
       using EpilogueTensorStorage = typename CollectiveEpilogue::TensorStorage;
 
@@ -259,9 +263,11 @@ public:
     Status status = Status::kSuccess;
     uint8_t* workspace_ptr = reinterpret_cast<uint8_t*>(workspace);
     size_t workspace_offset = 0;
+    static constexpr uint32_t NumEpilogueSubTiles = 1;
+    static constexpr uint32_t NumAccumulatorMtxs = 1;
 
     status = TileScheduler::template initialize_workspace<ProblemShape, ElementAccumulator>(
-      args.scheduler, workspace_ptr + workspace_offset, stream, args.problem_shape, args.hw_info, NumMmaWarpGroups, 1, cuda_adapter);
+      args.scheduler, workspace_ptr + workspace_offset, stream, args.problem_shape, args.hw_info, NumMmaWarpGroups, NumEpilogueSubTiles, NumAccumulatorMtxs, cuda_adapter);
     workspace_offset += TileScheduler::template get_workspace_size<ProblemShape, ElementAccumulator>(
       args.scheduler, args.problem_shape, args.hw_info, NumMmaWarpGroups);
     workspace_offset = round_nearest(workspace_offset,  MinWorkspaceAlignment);
@@ -288,7 +294,7 @@ public:
       args.max_swizzle_size = 1 << params.scheduler.log_swizzle_size_;
     }
     args.raster_order = params.scheduler.raster_order_ == TileScheduler::RasterOrder::AlongN ? TileScheduler::RasterOrderOptions::AlongN : TileScheduler::RasterOrderOptions::AlongM;
-    return TileScheduler::get_grid_shape(params.problem_shape, TileShape{}, ClusterShape{}, params.hw_info, args);
+    return TileScheduler::get_grid_shape(params.scheduler, params.problem_shape, TileShape{}, ClusterShape{}, params.hw_info, args);
   }
 
   static dim3
@@ -463,6 +469,9 @@ public:
 
       // Mainloop Producer Warp
       if (producer_warp_role == ProducerWarpRole::Mainloop) {
+        // Ensure that the prefetched kernel does not touch
+        // unflushed global memory prior to this instruction
+        cutlass::arch::wait_on_dependent_grids();
         bool do_load_order_arrive = true;
         while (work_tile_info.is_valid()) {
           // Compute m_coord, n_coord, l_coord with the post-tiled m-shape and n-shape
@@ -506,6 +515,10 @@ public:
       // Epilogue Producer Warp
       else if (producer_warp_role == ProducerWarpRole::Epilogue && collective_epilogue.is_producer_load_needed()) {
 
+        // Ensure that the prefetched kernel does not touch
+        // unflushed global memory prior to this instruction
+        cutlass::arch::wait_on_dependent_grids();
+
         load_order_barrier.wait();
         while (work_tile_info.is_valid()) {
           // Compute m_coord, n_coord, l_coord with the post-tiled m-shape and n-shape
@@ -538,6 +551,19 @@ public:
 
     else if (warp_group_role == WarpGroupRole::Consumer0 || warp_group_role == WarpGroupRole::Consumer1) {
       cutlass::arch::warpgroup_reg_alloc<MmaRegisterRequirement>();
+
+      #ifdef CUTLASS_ENABLE_GDC_FOR_SM90
+      // It is possible to have work tiles start off invalid,
+      // so we have to check that first.
+      if (not work_tile_info.is_valid()) {
+        // Hint on an early release of global memory resources.
+        // The timing of calling this function only influences performance,
+        // not functional correctness.
+        cutlass::arch::launch_dependent_grids();
+
+        return;
+      }
+      #endif
 
       while (work_tile_info.is_valid()) {
         // Compute m_coord, n_coord, l_coord with the post-tiled m-shape and n-shape
@@ -573,6 +599,16 @@ public:
         );
         // Update starting mainloop pipeline state for the next tile
         mainloop_pipe_consumer_state.advance(k_tile_count * NumMmaWarpGroups);
+
+        #ifdef CUTLASS_ENABLE_GDC_FOR_SM90
+        if (scheduler.is_last_tile(work_tile_info, NumMmaWarpGroups)) {
+          // Hint on an early release of global memory resources.
+          // The timing of calling this function only influences performance,
+          // not functional correctness.
+          cutlass::arch::launch_dependent_grids();
+
+        }
+        #endif
 
         // Order two Math WG's Epilogue one after the other
         math_wg_order_barrier.wait();

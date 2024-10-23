@@ -75,7 +75,8 @@ template <
   class CopyOpS2G_,
   class SmemLayoutAtomD_,
   class CopyOpR2S_,
-  class CopyAtomC_
+  class CopyAtomC_,
+  class CopyOpR2R_
 >
 class CollectiveEpilogue<
     Sm90TmaWarpSpecialized<StagesC_,StagesD_,FragmentSize_,ReuseSmemC_,DelayTmaStore_>,
@@ -92,7 +93,8 @@ class CollectiveEpilogue<
     CopyOpS2G_,
     SmemLayoutAtomD_,
     CopyOpR2S_,
-    CopyAtomC_
+    CopyAtomC_,
+    CopyOpR2R_,
 > {
 public:
   //
@@ -113,6 +115,7 @@ public:
   using SmemLayoutAtomD = SmemLayoutAtomD_;
   using CopyOpR2S = CopyOpR2S_;
   using CopyAtomC = CopyAtomC_;
+  using CopyOpR2R = CopyOpR2R_;
 
   using ThreadEpilogueOp = typename epilogue::fusion::FusionCallbacksTraits<FusionCallbacks>::Operation;
   using GmemTiledCopyC = CopyOpG2S;
@@ -146,6 +149,9 @@ private:
 
   constexpr static bool is_im2col_C = cute::is_same_v<CopyOpG2S, SM90_TMA_LOAD_IM2COL>;
   constexpr static bool is_im2col_D = cute::is_same_v<CopyOpS2G, SM90_TMA_STORE_IM2COL>;
+
+  // Check if register transformation is needed before copying register to shared memory.
+  constexpr static bool IsUseR2R = !cute::is_void_v<CopyOpR2R>;
 
   using SmemLayoutC = decltype(tile_to_shape(
       SmemLayoutAtomC{},
@@ -321,13 +327,23 @@ public:
     if constexpr (is_destination_supported) {
       constexpr int tma_alignment_bits_D = cutlass::detail::get_output_alignment_bits<ElementD>();
       constexpr int min_tma_aligned_elements_D = tma_alignment_bits_D / cutlass::sizeof_bits<ElementD>::value;
-      implementable = cutlass::detail::check_alignment<min_tma_aligned_elements_D>(shape, StrideD{});
+      if constexpr (cute::is_same_v<CopyOpS2G, SM90_TMA_STORE_IM2COL>) { // ignore L stride for implicit gemm
+        implementable = cutlass::detail::check_alignment<min_tma_aligned_elements_D>(take<0,2>(shape), take<0,2>(StrideD{}));
+      }
+      else {
+        implementable = cutlass::detail::check_alignment<min_tma_aligned_elements_D>(shape, StrideD{});
+      }
     }
 
     if constexpr (not cute::is_void_v<ElementC>) {
       constexpr int tma_alignment_bits_C = cutlass::detail::get_input_alignment_bits<ElementC>();
       constexpr int min_tma_aligned_elements_C = tma_alignment_bits_C / cutlass::sizeof_bits<ElementC>::value;
-      implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_C>(shape, StrideC{});
+      if constexpr (cute::is_same_v<CopyOpG2S, SM90_TMA_LOAD_IM2COL>) { // ignore L stride for implicit gemm
+        implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_C>(take<0,2>(shape), take<0,2>(StrideC{}));
+      }
+      else {
+        implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_C>(shape, StrideC{});
+      }
     }
 
     if (!implementable) {
@@ -454,12 +470,8 @@ public:
     // Predication for TMA load (one thread issues TMA load)
     bool issue_tma_load = cute::elect_one_sync();
 
-    // Acquire the lock for the first stage
-    uint64_t* tma_barrier = load_pipeline.producer_get_barrier(load_pipe_producer_state);
-    load_pipeline.producer_acquire(load_pipe_producer_state);
-
     // Pre-loop fusion callback entry point
-    pld_callbacks.begin(tma_barrier, load_pipe_producer_state.count(), issue_tma_load);
+    pld_callbacks.begin();
 
     CUTLASS_PRAGMA_UNROLL
     for (int epi_n = 0; epi_n < size<3>(gC_epi); ++epi_n) {
@@ -568,8 +580,27 @@ public:
 
     TiledCopy tiled_copy_C_atom = make_tiled_copy_C_atom(CopyAtomC{}, tiled_mma);
 
+    // (t)hread-partition for (r)egister to (r)egister copy (tRR_)
+    TiledCopy tiled_r2r = [&]() {
+      if constexpr (IsUseR2R) {
+        return make_tiled_copy_S(Copy_Atom<CopyOpR2R, ElementCompute>{}, tiled_copy_C_atom);
+      }
+      else {
+        return make_tiled_copy_S(Copy_Atom<AutoVectorizingCopyWithAssumedAlignment<128>,
+          ElementCompute>{}, tiled_copy_C_atom);
+      }
+    }();
+    ThrCopy thread_r2r = tiled_r2r.get_slice(thread_idx);
+
     // (t)hread-partition for (r)egister to (s)mem copy (tRS_)
-    TiledCopy tiled_r2s = make_tiled_copy_S(Copy_Atom<CopyOpR2S,SmemElementD>{}, tiled_copy_C_atom);
+    TiledCopy tiled_r2s = [&]() {
+      if constexpr (IsUseR2R) {
+        return make_tiled_copy_D(Copy_Atom<CopyOpR2S,SmemElementD>{}, tiled_r2r);
+      }
+      else {
+        return make_tiled_copy_S(Copy_Atom<CopyOpR2S,SmemElementD>{}, tiled_copy_C_atom);
+      }
+    }();
     ThrCopy thread_r2s = tiled_r2s.get_slice(thread_idx);
     Tensor tRS_rAcc = thread_r2s.retile_S(accumulators);                                   // ((R2S,R2S_V),MMA_M,MMA_N)
     Tensor tRS_sD   = thread_r2s.partition_D(sD_epi);                                       // (R2S,R2S_M,R2S_N,PIPE_D)
@@ -581,7 +612,7 @@ public:
 
     // Allocate D registers
     Layout tRS_rD_layout = make_layout(take<0,3>(shape(thread_r2s.partition_S(sD_epi))));
-    Tensor tRS_rD = make_tensor<SmemElementD>(tRS_rD_layout);                                          // (R2S,R2S_M,R2S_N)
+    Tensor tRS_rD = make_tensor<SmemElementD>(tRS_rD_layout);                                      // (R2S,R2S_M,R2S_N)
 
     // Vectorized fragment view
     constexpr int FragmentSize = DispatchPolicy::FragmentSize;
@@ -624,15 +655,17 @@ public:
     CUTE_STATIC_ASSERT(epi_tile_m % mma_tile_m == 0, "MMA_TILE_M must divide EPI_TILE_M");
 
     CUTE_STATIC_ASSERT(mma_tile_n % epi_tile_n == 0, "EPI_TILE_N must divide MMA_TILE_N");
+    // Get TiledCopy for partition reference when consumer store.
+    TiledCopy tiled_copy_partition_ref = make_tiled_copy_S(Copy_Atom<CopyOpR2S,SmemElementD>{}, tiled_copy_C_atom);
     // Get the fusion callbacks for the consumer store warps
-    constexpr bool RefSrc = true; // Register tensors reference R2S copy src layout
+    constexpr bool RefSrc = true; // Register tensors reference tiled copy src layout
     auto cst_args = cutlass::epilogue::fusion::detail::ConsumerStoreArgs(
                       problem_shape_mnkl,
                       CtaTileMNK{},
                       tile_coord_mnkl,
                       tiled_mma,
                       EpilogueTile{},
-                      tiled_r2s,
+                      tiled_copy_partition_ref,
                       cD,
                       residue_cD,
                       tRS_cD,
@@ -647,7 +680,7 @@ public:
     using FragmentVisit = decltype(cst_callbacks.visit(tRS_rAcc_frg(0), 0, 0, 0));
     constexpr bool IsDirectR2S = cute::is_same_v<FragmentVisit, Array<SmemElementD, FragmentSize>>;
     using RegisterElementD = cute::conditional_t<!IsDirectR2S, ElementCompute, SmemElementD>;
-    Tensor tRS_rCompute = make_tensor<RegisterElementD>(tRS_rD_layout);                         // (R2S,R2S_M,R2S_N)
+    Tensor tRS_rCompute = make_tensor<RegisterElementD>(tRS_rD_layout);                            // (R2S,R2S_M,R2S_N)
     Tensor tRS_rCompute_frg = recast<Array<RegisterElementD, FragmentSize>>(tRS_rCompute);
 
     // Thread synchronizer for previously issued waits or fences
@@ -672,7 +705,7 @@ public:
     // Delayed stores cause delayed stage releases which causes deadlock when StagesC == StagesD
     [[maybe_unused]] int epi_m_prev = 0;
     [[maybe_unused]] int epi_n_prev = 0;
-    static_assert(not (DelayTmaStore and ReuseSmemC and StagesC == StagesD), "This TMA epilogue configuration will deadlock");
+    static_assert(not (DelayTmaStore and ReuseSmemC and StagesC <= StagesD), "This TMA epilogue configuration will deadlock");
 
     // The TMA store sequence for one subtile iteration
     auto tma_store_fn = [&] (int epi_m, int epi_n) {
@@ -783,6 +816,16 @@ public:
         // Smem reduction callback entry point using current store buffer for workspace
         cst_callbacks.reduce(sD_epi(_,_,store_pipe_producer_state.index()),
                               synchronize, epi_m, epi_n, is_last_iteration, tRS_rCompute_frg);
+
+        // Copy tile from register to regiser if needed
+        if constexpr (IsUseR2R) {
+          // retile source and destination for tiled_r2r
+          Tensor tRR_rD_src = thread_r2r.retile_S(tRS_rCompute);                             // (R2R,R2R_M,R2R_N,EPI_M,EPI_N)
+          Tensor tRR_rD_dst = thread_r2r.retile_D(tRS_rCompute);                             // (R2R,R2R_M,R2R_N,EPI_M,EPI_N)
+
+          // Output register transformation before copying to shared memory.
+          copy(tiled_r2r, tRR_rD_src, tRR_rD_dst);
+        }
 
         CUTLASS_PRAGMA_UNROLL
         for (int i = 0; i < size(tRS_rD_frg); ++i) {

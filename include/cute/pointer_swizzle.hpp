@@ -30,13 +30,11 @@
  **************************************************************************************************/
 #pragma once
 
-#include <cute/config.hpp>
-
-#include <cute/util/type_traits.hpp>  // iterator_traits
-#include <cute/container/array_subbyte.hpp>
-
-#include <cute/pointer_base.hpp>
-#include <cute/swizzle.hpp>
+#include <cute/config.hpp>                   // CUTE_HOST_DEVICE
+#include <cute/pointer_base.hpp>             // cute::iter_adaptor
+#include <cute/swizzle.hpp>                  // cute::Swizzle, cute::get_swizzle primary template
+#include <cute/util/type_traits.hpp>         // cute::iterator_traits
+#include <cute/container/array_subbyte.hpp>  // cute::subbyte_iterator
 
 /* This implements a swizzle pointer of the form
  *   InvolutionFn o PtrAdd
@@ -107,15 +105,13 @@ struct swizzle_ptr : iter_adaptor<Iterator,swizzle_ptr<SwizzleFn,Iterator>>
   }
 };
 
-template <class T, class = void>                      // Default No-Swizzle
-struct get_swizzle { using type = Swizzle<0,4,3>; };
+//
+// Helper Function
+//
 template <class SwizzleFn, class P>                   // Found the SwizzleFn
 struct get_swizzle<swizzle_ptr<SwizzleFn,P>> { using type = SwizzleFn; };
 template <class T>                                    // Recurse into anything with a ::iterator
 struct get_swizzle<T, void_t<typename T::iterator>> : get_swizzle<typename T::iterator> {};
-
-template <class Iter>
-using get_swizzle_t = typename get_swizzle<Iter>::type;
 
 template <class Iterator, class SwizzleFn>
 CUTE_HOST_DEVICE constexpr

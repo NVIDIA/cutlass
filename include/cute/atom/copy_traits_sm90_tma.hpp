@@ -41,6 +41,7 @@
 #include <cute/algorithm/prefetch.hpp>
 
 #include <cute/numeric/integral_ratio.hpp>
+
 #include <cutlass/cuda_host_adapter.hpp>
 
 namespace cute
@@ -241,15 +242,22 @@ struct Copy_Traits<SM90_TMA_LOAD_MULTICAST, NumBitsPerTMA, AuxParams_>
   // Construct an executable SM90_TMA_LOAD_MULTICAST with tma_mbar
   CUTE_HOST_DEVICE constexpr
   Copy_Traits<SM90_TMA_LOAD_MULTICAST_OP, NumBitsPerTMA>
-  with(uint64_t& tma_load_mbar, uint16_t const& multicast_mask) const {
-    return {{}, {&tma_desc_, &tma_load_mbar, multicast_mask}};
+  with(
+    uint64_t& tma_load_mbar,
+    uint16_t const& multicast_mask,
+    TMA::CacheHintSm90 const& cache_hint = TMA::CacheHintSm90::EVICT_NORMAL) const {
+    return {{}, {&tma_desc_, &tma_load_mbar, multicast_mask, static_cast<uint64_t>(cache_hint)}};
   }
 
   // Construct an executable SM90_TMA_LOAD_MULTICAST_OP with tma_mbar (temp. overloaded for grouped gemm/ptr array gemm)
   CUTE_HOST_DEVICE constexpr
   Copy_Traits<SM90_TMA_LOAD_MULTICAST_OP, NumBitsPerTMA>
-  with(TmaDescriptor const* new_tma_desc, uint64_t& tma_load_mbar, uint16_t const& multicast_mask) const {
-    return {{}, {new_tma_desc, &tma_load_mbar, multicast_mask}};
+  with(
+    TmaDescriptor const* new_tma_desc,
+    uint64_t& tma_load_mbar,
+    uint16_t const& multicast_mask,
+    TMA::CacheHintSm90 const& cache_hint = TMA::CacheHintSm90::EVICT_NORMAL) const {
+    return {{}, {new_tma_desc, &tma_load_mbar, multicast_mask, static_cast<uint64_t>(cache_hint)}};
   }
 
   // Generate the TMA coord tensor
@@ -287,7 +295,8 @@ struct Copy_Traits<SM90_TMA_LOAD_MULTICAST_OP, NumBitsPerTMA>
   tuple<
   TmaDescriptor const*,
   uint64_t*, // smem mbarrier
-  uint16_t   // multicast mask
+  uint16_t,  // multicast mask
+  uint64_t   // cache hint
   > const opargs_;
 };
 
@@ -684,8 +693,10 @@ construct_tma_gbasis(Tensor<GEngine,GLayout> const& gtensor,       // The origin
   // TMA parameter checking
   //
 
-  CUTE_STATIC_ASSERT_V(product_each(shape(slayout)) == product_each(shape(cta_v_map)),
-                       "TMA requires CTA_Tile and SLayout top-level shape equivalence.");
+  // CUTE_STATIC_ASSERT_V(product_each(shape(slayout)) == product_each(shape(cta_v_map)),
+  //                      "TMA requires CTA_Tile and SLayout top-level shape equivalence.");
+  CUTE_STATIC_ASSERT_V(size(slayout) == size(cta_v_map),
+                       "TMA requires CTA_Tile and SLayout top-level size equivalence.");
 
 #if 0
   print("gtensor         : "); print(gtensor); print("\n");
@@ -983,7 +994,9 @@ make_tma_copy_desc(Tensor<GEngine,GLayout> const& gtensor,         // The origin
     CUtensorMapFloatOOBfill tma_oobFill     = CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE;
 
     // TMA smem swizzle type
-    CUtensorMapSwizzle smem_swizzle = TMA::to_CUtensorMapSwizzle(get_tma_swizzle_bits(swizzle));
+    TMA::SmemSwizzleBits swizzle_bits = get_tma_swizzle_bits(swizzle);
+    TMA::SmemSwizzleBase swizzle_base = get_tma_swizzle_base(swizzle);
+    CUtensorMapSwizzle smem_swizzle = TMA::to_CUtensorMapSwizzle(swizzle_bits, swizzle_base);
     CUresult result = CUTLASS_CUDA_DRIVER_WRAPPER_CALL(cuTensorMapEncodeTiled)(
         &tma_desc,
         tma_format,

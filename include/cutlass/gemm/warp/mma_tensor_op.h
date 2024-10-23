@@ -138,7 +138,7 @@ struct ConvertAndPack<half_t, float, N, Round> {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Structure to compute the matrix product targeting CUDA cores and SIMT math instructions.
+/// Structure to compute the matrix product targeting Tensor Cores.
 template <
   /// Size of the Gemm problem - concept: gemm::GemmShape<>
   typename Shape_,

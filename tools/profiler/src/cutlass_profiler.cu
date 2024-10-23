@@ -208,19 +208,6 @@ void CutlassProfiler::print_options_(std::ostream &out) {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Initializes the CUDA device
-void CutlassProfiler::initialize_device_() {
-
-  cudaError_t result = cudaSetDevice(options_.device.device);
-
-  if (result != cudaSuccess) {
-    std::cerr << "Failed to set device.";
-    throw std::runtime_error("Failed to set device");
-  }
-}
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
 } // namespace profiler
 } // namespace cutlass
 

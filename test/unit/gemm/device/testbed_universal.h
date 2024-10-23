@@ -201,6 +201,7 @@ struct TestbedUniversal {
     if (!passed) {
 
       /*
+
       std::stringstream fname;
 
       fname << "error_Gemm_device_"

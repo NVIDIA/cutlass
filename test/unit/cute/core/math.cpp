@@ -34,6 +34,8 @@
 #include <cutlass/trace.h>
 #include <cute/numeric/integral_constant.hpp>
 #include <cute/numeric/math.hpp>
+#include <cute/swizzle.hpp>
+#include <cute/swizzle_layout.hpp>
 #include <cute/util/type_traits.hpp>
 
 // If cute::gcd returns auto instead of common_type_t<T, U>,
@@ -121,5 +123,13 @@ TEST(CuTe_core, lcm_returns_common_type)
   {
     constexpr auto result = cute::lcm(one, one);
     static_assert(int(result) == 1);
+  }
+}
+
+TEST(CuTe_core, max_alignment)
+{
+  {
+    constexpr auto swizzle = cute::Swizzle<3,4,3>{};
+    static_assert(cute::max_alignment(swizzle) == 1 << 4);
   }
 }

@@ -78,7 +78,7 @@ using namespace detail;
 // the template argument.
 //
 // template<class A>
-// struct FooHomogeneous : public Foo<A, B> {};
+// struct FooHomogeneous : public Foo<A, A> {};
 //
 template<
   template <class> class ComputeFn,
@@ -263,8 +263,16 @@ struct Sm90TreeVisitor<
 
   CUTLASS_DEVICE bool
   is_producer_load_needed() const {
+    auto const& scale_op = get<0>(Impl::ops);
     auto const& added_op = get<2>(Impl::ops);
-    return is_C_load_needed() || added_op.is_producer_load_needed();
+    if constexpr (detail::IsScalarBroadcast<InputScaleOp>::value && not is_void_v<ElementSource>) {
+      return (get<2>(scale_op.params_ptr->dScalar[0]) != 0 && scale_op.params_ptr->scalar_ptrs[0] != nullptr) || 
+              is_C_load_needed() || 
+              added_op.is_producer_load_needed();
+    }
+    else {
+      return is_C_load_needed() || added_op.is_producer_load_needed();
+    }
   }
 
   CUTLASS_DEVICE bool
@@ -296,7 +304,7 @@ struct Sm90TreeVisitor<
 
       Array frg_I = convert_Z(frg_added);
 
-      if (is_C_load_needed) {
+      if constexpr (!is_void_v<ElementSource>) {
         Array frg_scalar = get<0>(CallbacksImpl::callbacks_tuple).visit(frg_acc, epi_v, epi_m, epi_n);
         Array frg_source = get<1>(CallbacksImpl::callbacks_tuple).visit(frg_acc, epi_v, epi_m, epi_n);
 
@@ -323,8 +331,12 @@ struct Sm90TreeVisitor<
   CUTLASS_DEVICE auto
   get_consumer_store_callbacks(ConsumerStoreArgs<Args...> const& args) {
     auto callbacks_tuple = Impl::template get_consumer_store_callbacks<ReferenceSrc>(args);
+    bool is_C_load_needed = this->is_C_load_needed();
+    if (not is_C_load_needed) {
+      cute::clear(args.tCrC);
+    }
     return ConsumerStoreCallbacks<decltype(callbacks_tuple)>(
-        is_C_load_needed(), std::move(callbacks_tuple));
+        is_C_load_needed, std::move(callbacks_tuple));
   }
 };
 
@@ -497,7 +509,18 @@ struct Sm90TreeVisitor<
         else {
           frg_compute[i] = relu(frg_compute[i]);
         }
-        frg_aux[i] = frg_compute[i] == pre_relu;
+        if constexpr (cute::is_same_v<ElementCompute, float>) {
+          uint32_t aux;
+          asm volatile("set.equ.u32.f32 %0, %1, %2;\n" : "=r"(aux) : "f"(frg_compute[i]), "f"(pre_relu)); // NaN outputs 1 in Aux
+          frg_aux[i] = static_cast<bool>(aux);
+        } else if constexpr (cute::is_same_v<ElementCompute, cutlass::half_t>) {
+          uint32_t aux;
+          cutlass::half_t compute = frg_compute[i];
+          asm volatile("set.equ.u32.f16 %0, %1, %2;\n" : "=r"(aux) : "h"(compute.raw()), "h"(pre_relu.raw())); // NaN outputs 1 in Aux
+          frg_aux[i] = static_cast<bool>(aux);
+        } else {
+          frg_aux[i] = frg_compute[i] == pre_relu;
+        }
       }
 
       static_assert(FragmentSize % 8 == 0, "Predicate vector must be byte-aligned");

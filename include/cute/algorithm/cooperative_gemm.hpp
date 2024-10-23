@@ -434,8 +434,8 @@ cooperative_gemm(uint32_t thread_idx,
   static_assert(is_convertible_v<decay_t<invoke_result_t<CStoreTransformOp, TypeC>>, TypeC>,
     "CStoreTransformOp functor must accept value of type TC::value_type and return value convertible to type TC::value_type");
 
-  static constexpr bool compat = weakly_compatible(tile_shape(TiledMMA<Args...>{}),
-                                                   make_shape(size<0>(sA), size<0>(sB), size<1>(sA)));
+  static constexpr bool compat = evenly_divides(make_shape(size<0>(sA), size<0>(sB), size<1>(sA)),
+                                                tile_shape(TiledMMA<Args...>{}));
   if constexpr (compat) {
     detail::cooperative_gemm_no_predication<SmemCopyOpA, SmemCopyOpB, SmemCopyOpC>(
         thread_idx, tiled_mma, alpha, sA, sB, beta, sC,

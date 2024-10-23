@@ -128,7 +128,8 @@ template<
   class EpilogueFusionParams
 >
 struct ConvReferenceImpl {
-  using ElementAcc = typename EpilogueFusionParams::ElementAcc;
+  // Hard code accumlulator type to float to avoid data lost in accumulating add.
+  using ElementAcc = cutlass::platform::conditional_t<cutlass::platform::is_same_v<typename EpilogueFusionParams::ElementAcc, double>, double, float>;
   using ElementC = typename EpilogueFusionParams::ElementC;
   using ElementOut = typename EpilogueFusionParams::ElementOut;
   using ElementScalar = typename EpilogueFusionParams::ElementScalar;

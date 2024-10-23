@@ -194,4 +194,62 @@ TEST(SM90_Device_Gemm_f8t_f8n_f8t_tensor_op_gmma_f32_persistent_epilogue, 64x128
   bool passed = test::gemm::device::TestAllEVT<Gemm, HostReference>(true);
   EXPECT_TRUE(passed);
 }
+
+// Z = scale_a * scale_b * alpha * acc + beta * scale_c * C + per-row bias
+// if D is fp8 
+//   D = scale_d * filter_negative_zeros(Z)
+// else
+//   D = filter_negative_zeros(Z)
+TEST(SM90_Device_Gemm_f8t_f8n_f8t_tensor_op_gmma_f32_persistent_epilogue, 64x128x128_1x1x1_ScaledLinCombPerRowBiasEltFilter) {
+  using LayoutA = cutlass::layout::RowMajor;
+  using LayoutB = cutlass::layout::ColumnMajor;
+  using LayoutC = cutlass::layout::RowMajor;
+  using TileShape_MNK = Shape<_64,_128,_128>;
+  using ClusterShape_MNK = Shape<_1,_1,_1>;
+
+  using EpilogueSchedule = cutlass::epilogue::TmaWarpSpecialized;
+  using FusionCallbacks = cutlass::epilogue::fusion::Sm90ScaledLinCombPerRowBiasEltAct<
+    TileShape_MNK,                                   // CtaTileShapeMNK
+    cutlass::epilogue::thread::ElementwiseFilter,    // ActivationFn
+    cutlass::float_e4m3_t,                           // ElementOutput
+    float,                                           // ElementCompute
+    cutlass::float_e4m3_t                            // ElementBias
+  >;
+
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+      TileShape_MNK, ClusterShape_MNK,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      float, float,
+      cutlass::float_e4m3_t, LayoutC, 16,
+      cutlass::float_e4m3_t, LayoutC, 16,
+      EpilogueSchedule,
+      FusionCallbacks
+    >::CollectiveOp;
+
+  using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+      cutlass::float_e4m3_t, LayoutA, 16,
+      cutlass::float_e4m3_t, LayoutB, 16,
+      float,
+      TileShape_MNK, ClusterShape_MNK,
+      cutlass::gemm::collective::StageCountAutoCarveout<static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
+      cutlass::gemm::KernelTmaWarpSpecialized
+    >::CollectiveOp;
+
+  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+      Shape<int,int,int,int>,
+      CollectiveMainloop,
+      CollectiveEpilogue
+  >;
+
+  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+
+  // Host reference
+  using HostReference = test::gemm::device::HostScaledLinCombPerRowBiasEltAct<
+    Gemm, cutlass::epilogue::thread::ElementwiseFilter, cutlass::float_e4m3_t
+  >;
+  bool passed = test::gemm::device::TestAllEVT<Gemm, HostReference>(true);
+  EXPECT_TRUE(passed);
+}
 #endif // defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)

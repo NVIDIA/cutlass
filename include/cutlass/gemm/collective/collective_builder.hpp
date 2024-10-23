@@ -38,4 +38,5 @@
 
 #include "cutlass/gemm/collective/collective_builder_decl.hpp"
 #include "cutlass/gemm/collective/builders/sm90_gmma_builder.inl"
+#include "cutlass/gemm/collective/builders/sm90_sparse_gmma_builder.inl"
 /////////////////////////////////////////////////////////////////////////////////////////////////

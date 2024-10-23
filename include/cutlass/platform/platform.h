@@ -123,7 +123,6 @@
 #include <type_traits>  // For integral constants, conditional metaprogramming, and type traits
 #endif
 
-#include <vector_types.h>
 #include <cutlass/cutlass.h>
 
 #endif
