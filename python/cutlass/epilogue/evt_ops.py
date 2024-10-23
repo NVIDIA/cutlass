@@ -59,6 +59,17 @@ def max(x, dim):
     elif is_torch_tensor(x):
         return torch.amax(x, dim)
 
+def maximum(x, y):
+    if is_numpy_tensor(x):
+        return np.maximum(x, y)
+    elif is_torch_tensor(x):
+        return torch.maximum(x, torch.tensor(y))
+    
+def minimum(x, y):
+    if is_numpy_tensor(x):
+        return np.minimum(x, y)
+    elif is_torch_tensor(x):
+        return torch.minimum(x, torch.tensor(y))
 
 ##############################################################################
 # Layout manipulate nodes
