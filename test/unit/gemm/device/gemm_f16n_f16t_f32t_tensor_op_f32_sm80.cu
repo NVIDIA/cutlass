@@ -37,6 +37,7 @@
 #include "../../common/cutlass_unit_test.h"
 #include "cutlass/cutlass.h"
 #include "cutlass/gemm/device/gemm.h"
+#include "cutlass/gemm/device/gemm_universal.h"
 #include "cutlass/util/host_tensor.h"
 #include "cutlass/util/reference/host/gemm.h"
 #include "cutlass/util/reference/host/tensor_compare.h"
