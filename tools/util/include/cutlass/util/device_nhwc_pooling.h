@@ -361,9 +361,6 @@ void pooling_nhwc(cutlass::Tensor4DCoord input_tensor_size,
   assert(input_tensor_size.n() == output_tensor_size.n() &&
          input_tensor_size.c() == output_tensor_size.c());
 
-  assert(filter_tensor_size.h() == stride.row() &&
-         filter_tensor_size.w() == stride.column());
-
   const int N = input_tensor_size.n();
   const int H = input_tensor_size.h();
   const int W = input_tensor_size.w();
