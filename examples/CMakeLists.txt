@@ -144,9 +144,9 @@ foreach(EXAMPLE
   62_hopper_sparse_gemm
   63_hopper_gemm_with_weight_prefetch
   64_ada_fp8_gemm_grouped
+  65_hopper_fp8_warp_specialized_gemm_with_blockwise_scaling
   )
 
   add_subdirectory(${EXAMPLE})
 
 endforeach()
-
