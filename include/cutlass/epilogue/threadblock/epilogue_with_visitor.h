@@ -161,7 +161,7 @@ template <
   typename SharedLoadIterator_,             ///< Threadblock-scoped tile iterator loading from SMEM
   typename Padding_,                        ///< Padding added to SMEM allocation to avoid bank conflicts (concept: MatrixShape)
   int FragmentsPerPartition = 1,            ///< Used to coarsten the epilogue granularity
-  int IterationsUnroll =                    ///< Used to reduce binary size when epilogue op is large
+  bool IterationsUnroll =                    ///< Used to reduce binary size when epilogue op is large
     (true || !IsEpilogueFunctorHeavy<Visitor_>::value)
 >
 class EpilogueWithVisitor :

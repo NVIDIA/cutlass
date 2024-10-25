@@ -87,7 +87,7 @@ template <
   bool StoreD0 = true,
   bool StoreD1 = true,
   int FragmentsPerPartition = 1,            ///< Used to coarsten the epilogue granularity
-  int IterationsUnroll =                    ///< Used to reduce binary size when epilogue op is large
+  bool IterationsUnroll =                    ///< Used to reduce binary size when epilogue op is large
     (!IsEpilogueFunctorHeavy<OutputOp0_>::value)
 >
 class DualEpilogue {
