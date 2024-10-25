@@ -456,7 +456,6 @@ public:
   tensormaps_cp_fence_release(
       [[maybe_unused]] TensorMapStorage& shared_tensormaps,
       [[maybe_unused]] cute::TmaDescriptor const* tensormap,
-      [[maybe_unused]] uint32_t lane_predicate,
       [[maybe_unused]] int32_t warp_group_idx) { }
 
   template <bool IsLoad>
