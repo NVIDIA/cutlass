@@ -514,7 +514,7 @@ public:
     }
 
     // Optionally append 1s until problem shape is rank-4 in case it is only rank-3 (MNK)
-    auto problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(work_tile_info.L_idx), work_tile_info.L_idx);
+    auto problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(work_tile_info.L_idx), 1);
 
     if (warp_group_role == WarpGroupRole::Consumer1) {
       // Advance 2nd Math WG to the next work tile for the startup
@@ -531,7 +531,7 @@ public:
       epi_load_pipe_consumer_state.advance(c_tile_count);
       epi_store_pipe_producer_state.advance(d_tile_count);
 
-      problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(work_tile_info.L_idx), work_tile_info.L_idx);
+      problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(work_tile_info.L_idx), 1);
     }
 
     // Prepare and partition the input tensors. Expects a tuple of tensors where:
@@ -628,7 +628,7 @@ public:
           if (work_tile_info.is_valid() && did_batch_change) {
             curr_batch = next_batch;
             if constexpr (IsGroupedGemmKernel) {
-              problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(curr_batch), curr_batch);
+              problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(curr_batch), 1);
             }
             // Purpose of this pipeline state is to make sure TMA loads have finished before doing descriptor updates
             // Since this state is waiting for loads to finish, it must start in the inverted phase.
@@ -677,7 +677,7 @@ public:
 
           // Converge before issuing tensormap fence release since fence is aligned
           __syncwarp();
-          collective_epilogue.tensormaps_cp_fence_release<IsEpiLoad>(shared_storage.tensormaps.epilogue, epi_load_tensormap, lane_predicate, 0);
+          collective_epilogue.tensormaps_cp_fence_release<IsEpiLoad>(shared_storage.tensormaps.epilogue, epi_load_tensormap, 0);
         }
 
         load_order_barrier.wait();
@@ -690,7 +690,7 @@ public:
 
           if (TileScheduler::compute_epilogue(work_tile_info, params.scheduler)) {
             if constexpr (IsGroupedGemmKernel) {
-              problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(work_tile_info.L_idx), work_tile_info.L_idx);
+              problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(work_tile_info.L_idx), 1);
             }
 
             // Compute m_coord, n_coord, l_coord with the post-tiled m-shape and n-shape
@@ -725,7 +725,7 @@ public:
 
           if (work_tile_info.is_valid() && did_batch_change) {
             if constexpr (IsGroupedGemmKernel) {
-              problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(work_tile_info.L_idx), work_tile_info.L_idx);
+              problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(work_tile_info.L_idx), 1);
             }
 
             // tensormap update
@@ -741,7 +741,7 @@ public:
 
               // Converge before issuing tensormap fence release since fence is aligned
               __syncwarp();
-              collective_epilogue.tensormaps_cp_fence_release<IsEpiLoad>(shared_storage.tensormaps.epilogue, epi_load_tensormap, lane_predicate, 0);
+              collective_epilogue.tensormaps_cp_fence_release<IsEpiLoad>(shared_storage.tensormaps.epilogue, epi_load_tensormap, 0);
             }
           }
 
@@ -784,14 +784,13 @@ public:
           __syncwarp();
           collective_epilogue.tensormaps_cp_fence_release<IsEpiLoad>(shared_storage.tensormaps.epilogue,
                                                                      epi_store_tensormap,
-                                                                     lane_predicate,
                                                                      consumer_warp_group_idx);
         }
       }
 
       while (work_tile_info.is_valid()) {
         if constexpr (IsGroupedGemmKernel) {
-          problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(work_tile_info.L_idx), work_tile_info.L_idx);
+          problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(work_tile_info.L_idx), 1);
         }
 
         int32_t curr_batch = work_tile_info.L_idx;
@@ -880,7 +879,7 @@ public:
         // Skip a tile for pingpong
         if (work_tile_info.is_valid()) {
           if constexpr (IsGroupedGemmKernel) {
-            problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(work_tile_info.L_idx), work_tile_info.L_idx);
+            problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(work_tile_info.L_idx), 1);
           }
           work_k_tile_count = TileScheduler::get_work_k_tile_count(work_tile_info, problem_shape_MNKL, blk_shape);
           mainloop_pipe_consumer_state.advance(work_k_tile_count);
@@ -895,7 +894,7 @@ public:
         did_batch_change = curr_batch != work_tile_info.L_idx;
         if (work_tile_info.is_valid() && did_batch_change) {
           if constexpr (IsGroupedGemmKernel) {
-            problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(work_tile_info.L_idx), work_tile_info.L_idx);
+            problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(work_tile_info.L_idx), 1);
           }
           if (warp_idx_in_warp_group == 0) {
             collective_epilogue.tensormaps_perform_update<IsEpiLoad>(
@@ -911,7 +910,6 @@ public:
             __syncwarp();
             collective_epilogue.tensormaps_cp_fence_release<IsEpiLoad>(shared_storage.tensormaps.epilogue,
                                                                        epi_store_tensormap,
-                                                                       lane_predicate,
                                                                        consumer_warp_group_idx);
           }
         }

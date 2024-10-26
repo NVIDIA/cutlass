@@ -1080,13 +1080,10 @@ public:
       int32_t warp_group_idx) {
     const uint32_t M = get<0>(problem_shape_mnkl);
     const uint32_t N = get<1>(problem_shape_mnkl);
-    // Only consider dimensions and strides that we need to recalculate and replace for each group
-    constexpr int TensorRank = rank(ProblemShape_MNKL{}) - 1; // excluding either M or N
-    static_assert(TensorRank == Int<3>{},
-      "Descriptor modification for global dims & strides expects rank as 3.");
-
-    cute::array<uint32_t, TensorRank> prob_shape  = {1,1,1};
-    cute::array<uint64_t, TensorRank> prob_stride = {0,0,0};
+    // Replace all dims for consistency
+    constexpr int MaxTensorRank = 5;
+    cute::array<uint32_t, MaxTensorRank> prob_shape  = {1,1,1,1,1};
+    cute::array<uint64_t, MaxTensorRank> prob_stride = {0,0,0,0,0};
 
     if constexpr (IsLoad) {
       if constexpr (is_source_supported) {
@@ -1106,9 +1103,6 @@ public:
     }
     else if constexpr (is_destination_supported) {
       ElementD const* ptr_D = nullptr;
-
-      // tma_store_c should be a gmem_tensor, second argument should be a stride
-
       Tensor tensor_d = make_tensor(ptr_D, make_layout(make_shape(M,N,Int<1>{}), params.dD[next_group]));
 
       cute::detail::fill_tma_gmem_shape_stride(params.tma_store_d, tensor_d, 
@@ -1154,8 +1148,7 @@ public:
   tensormaps_cp_fence_release(
       TensorMapStorage& shared_tensormaps,
       cute::TmaDescriptor const* tensormap,
-      [[maybe_unused]] uint32_t lane_predicate,
-      int32_t warp_group_idx = 0) {
+      const int32_t warp_group_idx = 0) {
 
     // Entire warp must do this (ie its aligned)
     if constexpr (IsLoad) {
