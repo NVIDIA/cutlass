@@ -674,14 +674,12 @@ struct CollectiveMma<
     const uint32_t M = get<0>(problem_shape_mnkl);
     const uint32_t N = get<1>(problem_shape_mnkl);
     const uint32_t K = get<2>(problem_shape_mnkl);
-    // Only consider dimensions and strides that we need to recalculate and replace for each group
-    constexpr int TensorRank = rank(ProblemShape_MNKL{}) - 1; // excluding either M or N
-    static_assert(TensorRank == Int<3>{},
-      "Descriptor modification for global dims & strides expects rank as 3.");
-    cute::array<uint32_t, TensorRank> prob_shape_A  = {1,1,1};
-    cute::array<uint64_t, TensorRank> prob_stride_A = {0,0,0};
-    cute::array<uint32_t, TensorRank> prob_shape_B  = {1,1,1};
-    cute::array<uint64_t, TensorRank> prob_stride_B = {0,0,0};
+    // Replace all dims for consistency
+    constexpr int MaxTensorRank = 5;
+    cute::array<uint32_t, MaxTensorRank> prob_shape_A  = {1,1,1,1,1};
+    cute::array<uint64_t, MaxTensorRank> prob_stride_A = {0,0,0,0,0};
+    cute::array<uint32_t, MaxTensorRank> prob_shape_B  = {1,1,1,1,1};
+    cute::array<uint64_t, MaxTensorRank> prob_stride_B = {0,0,0,0,0};
 
     InternalElementA const* ptr_A = nullptr;
     Tensor tensor_a = make_tensor(ptr_A, make_shape(M,K,Int<1>{}), mainloop_params.dA[next_group]);

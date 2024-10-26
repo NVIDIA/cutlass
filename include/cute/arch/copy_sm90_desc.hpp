@@ -323,8 +323,8 @@ tma_descriptor_replace_addr_in_shared_mem(TmaDescriptor& smem_desc,
 CUTE_HOST_DEVICE
 void
 tma_descriptor_replace_dims_strides_in_shared_mem(TmaDescriptor                 & smem_desc,
-                                                  cute::array<uint32_t, 3> const& prob_shape,
-                                                  cute::array<uint64_t, 3> const& prob_stride)
+                                                  cute::array<uint32_t, 5> const& prob_shape,
+                                                  cute::array<uint64_t, 5> const& prob_stride)
 {
 #if defined(CUTE_ARCH_DEVICE_MODIFIABLE_TMA_SM90_ENABLED)
   uint32_t smem_int_desc = cast_smem_ptr_to_uint(&smem_desc);
@@ -341,6 +341,12 @@ tma_descriptor_replace_dims_strides_in_shared_mem(TmaDescriptor                 
   asm volatile (
     "tensormap.replace.tile.global_dim.shared::cta.b1024.b32 [%0], 2, %1;"
     :: "l"(smem_int64_desc), "r"(prob_shape[2]));
+  asm volatile (
+    "tensormap.replace.tile.global_dim.shared::cta.b1024.b32 [%0], 3, %1;"
+    :: "l"(smem_int64_desc), "r"(prob_shape[3]));
+  asm volatile (
+    "tensormap.replace.tile.global_dim.shared::cta.b1024.b32 [%0], 4, %1;"
+    :: "l"(smem_int64_desc), "r"(prob_shape[4]));
   // Strides must be a multiple of 16. Also, stride for the intermost dimension is implicitly 1
   #if ((__CUDACC_VER_MAJOR__ > 12) || ((__CUDACC_VER_MAJOR__ == 12) && (__CUDACC_VER_MINOR__ >= 5)))
   asm volatile (
@@ -349,6 +355,12 @@ tma_descriptor_replace_dims_strides_in_shared_mem(TmaDescriptor                 
   asm volatile (
     "tensormap.replace.tile.global_stride.shared::cta.b1024.b64 [%0], 1, %1;"
     :: "l"(smem_int64_desc), "l"(prob_stride[2]));
+  asm volatile (
+    "tensormap.replace.tile.global_stride.shared::cta.b1024.b64 [%0], 2, %1;"
+    :: "l"(smem_int64_desc), "l"(prob_stride[3]));
+  asm volatile (
+    "tensormap.replace.tile.global_stride.shared::cta.b1024.b64 [%0], 3, %1;"
+    :: "l"(smem_int64_desc), "l"(prob_stride[4]));
   #else
   // 4 LSBs are not included
   asm volatile (
@@ -357,6 +369,12 @@ tma_descriptor_replace_dims_strides_in_shared_mem(TmaDescriptor                 
   asm volatile (
     "tensormap.replace.tile.global_stride.shared::cta.b1024.b64 [%0], 1, %1;"
     :: "l"(smem_int64_desc), "l"(prob_stride[2] >> 4));
+  asm volatile (
+    "tensormap.replace.tile.global_stride.shared::cta.b1024.b64 [%0], 2, %1;"
+    :: "l"(smem_int64_desc), "l"(prob_stride[3] >> 4));
+  asm volatile (
+    "tensormap.replace.tile.global_stride.shared::cta.b1024.b64 [%0], 3, %1;"
+    :: "l"(smem_int64_desc), "l"(prob_stride[4] >> 4));
   #endif
 #else
   CUTE_INVALID_CONTROL_PATH("Using TMA Descriptor modification without CUTE_ARCH_DEVICE_MODIFIABLE_TMA_SM90_ENABLED and CUDA 12.3");
