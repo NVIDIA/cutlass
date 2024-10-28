@@ -113,7 +113,7 @@ struct XE_1D_LDSM {
   copy(const S_ &src, D_ &dst) {
     #if defined(SYCL_INTEL_TARGET)
       CUTE_STATIC_ASSERT(sizeof(S_) == sizeof(S));
-      auto sg = sycl::ext::oneapi::experimental::this_nd_item<3>().get_sub_group();
+      auto sg = sycl::ext::oneapi::this_work_item::get_nd_item<3>().get_sub_group();
       *(sycl::vec<S_, N>*)(&dst)
         = sg.load<N>(sycl::address_space_cast<sycl::access::address_space::local_space,
                   sycl::access::decorated::yes>(&*&src));
@@ -183,7 +183,7 @@ struct XE_1D_LOAD_GLOBAL {
     #if defined(SYCL_INTEL_TARGET)
       CUTE_STATIC_ASSERT(sizeof(S_) == sizeof(S));
       CUTE_STATIC_ASSERT(sizeof(D_) == sizeof(D));
-      auto sg = sycl::ext::oneapi::experimental::this_nd_item<3>().get_sub_group();
+      auto sg = sycl::ext::oneapi::this_work_item::get_nd_item<3>().get_sub_group();
       *(sycl::vec<S_, N>*)(&dst) 
         = sg.load<N>(sycl::address_space_cast<sycl::access::address_space::global_space,
                   sycl::access::decorated::yes>(&*&src));
@@ -211,7 +211,7 @@ struct XE_1D_STSM {
   CUTE_HOST_DEVICE static void
   copy(S_ const& src, D_ & dst) {
     #if defined(SYCL_INTEL_TARGET)
-      auto sg = sycl::ext::oneapi::experimental::this_nd_item<3>().get_sub_group(); 
+      auto sg = sycl::ext::oneapi::this_work_item::get_nd_item<3>().get_sub_group();
       sg.store<N>(sycl::address_space_cast<sycl::access::address_space::local_space,
             sycl::access::decorated::yes>(&*&dst), *(sycl::vec<D_, N>*)(&src));
     #else
@@ -235,7 +235,7 @@ struct XE_1D_STORE_GLOBAL {
   CUTE_HOST_DEVICE static void
   copy(S_ const& src, D_ &dst) {
     #if defined(SYCL_INTEL_TARGET)
-      auto sg = sycl::ext::oneapi::experimental::this_nd_item<3>().get_sub_group(); 
+      auto sg = sycl::ext::oneapi::this_work_item::get_nd_item<3>().get_sub_group();
       sg.store<N>(sycl::address_space_cast<sycl::access::address_space::global_space,
             sycl::access::decorated::yes>(&*&dst), *(sycl::vec<D_, N>*)(&src));
     #else
