@@ -106,3 +106,63 @@ TEST(XE_Device_Gemm_bf16t_bf16t_f32t_tensor_op_gmma_f32_epilogue, 256x256x32_Lin
   EXPECT_TRUE(passed);
 }
 
+TEST(Xe_Gemm_bf16t_bf16t_f32_tensor_op_gmma_f32_epilogue_drelu, 64x128x64) {
+  using LayoutA = cutlass::layout::RowMajor;
+  using LayoutB = cutlass::layout::RowMajor;
+  using LayoutC = cutlass::layout::RowMajor;
+  using LayoutD = cutlass::layout::RowMajor;
+  using LayoutAux = cutlass::layout::RowMajor;
+
+  using TileShape_MNK = Shape<_256, _256, _32>;
+  using ClusterShape_MNK = Shape<_1,_1,_1>;
+  using EpilogueSchedule = cutlass::epilogue::collective::EpilogueScheduleAuto;
+  using ElementAccumulator = float;
+  using ElementComputeEpilogue = float;
+  using ElementInputA = bfloat16_t;
+  using ElementInputB = bfloat16_t;
+  using ElementOutput = float;
+
+  constexpr int AlignmentA = sizeof(ElementInputA);
+  constexpr int AlignmentB = sizeof(ElementInputB);
+  constexpr int AlignmentC = sizeof(ElementAccumulator);
+  constexpr int AlignmentD = sizeof(ElementOutput);
+
+  using FusionCallbacks = cutlass::epilogue::fusion::LinCombDeEltAct<
+    LayoutC,
+    cutlass::epilogue::thread::dReLU,
+    ElementOutput,
+    ElementComputeEpilogue>;
+
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::IntelPVC, cutlass::arch::OpClassTensorOp,
+      TileShape_MNK, ClusterShape_MNK,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      ElementComputeEpilogue, ElementAccumulator,
+      ElementAccumulator, LayoutC, AlignmentC,
+      ElementOutput, LayoutD, AlignmentD,
+      EpilogueSchedule,
+      FusionCallbacks
+    >::CollectiveOp;
+
+  using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+      cutlass::arch::IntelPVC, cutlass::arch::OpClassTensorOp,
+      ElementInputA, LayoutA, AlignmentA,
+      ElementInputB, LayoutB, AlignmentB,
+      ElementAccumulator,
+      TileShape_MNK, ClusterShape_MNK,
+      cutlass::gemm::collective::StageCountAuto,
+      cutlass::gemm::collective::KernelScheduleAuto
+    >::CollectiveOp;
+
+  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+      Shape<int,int,int,int>,
+      CollectiveMainloop,
+      CollectiveEpilogue
+  >;
+
+  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+
+  bool passed = test::gemm::device::TestXe<Gemm, cutlass::epilogue::thread::dReLU>(1.0, 1.0);
+  EXPECT_TRUE(passed);
+}
+

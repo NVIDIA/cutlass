@@ -107,6 +107,25 @@ __global__ void
   }
 }
 
+template <template <class> class BinaryOp, typename Element>
+#if defined (CUTLASS_ENABLE_SYCL)
+void
+#else
+__global__ void
+#endif
+BlockElementwiseOp(Element *ptr_dst, Element const *ptr_A, Element const *ptr_B, size_t capacity) {
+  BinaryOp<Element> bin_op{};
+
+  const size_t start = ThreadIdxX() + BlockDimX() * BlockIdxX();
+  const size_t step = GridDimX() * BlockDimX();
+  for (size_t idx = start; idx < capacity; idx += step) {
+    Element a = cutlass::ReferenceFactory<Element>::get(ptr_A, idx);
+    Element b = cutlass::ReferenceFactory<Element>::get(ptr_B, idx);
+
+    cutlass::ReferenceFactory<Element>::get(ptr_dst, idx) = bin_op(a, b);
+  }
+}
+
 } // namespace kernel
 
 
@@ -295,6 +314,53 @@ bool BlockCompareRelativelyEqual(
 #endif
 
   return equal_flag;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Performs an elementwise function of two blocks
+template <template <class> class BinaryOp, typename Element>
+void BlockElementwiseOp(
+  Element *ptr_dst,
+  Element const *ptr_A,
+  Element const *ptr_B,
+  size_t capacity,
+  int grid_size = 0,
+  int block_size = 0) {
+
+
+  if (!grid_size || !block_size) {
+#if defined (CUTLASS_ENABLE_SYCL)
+    block_size = 128;
+    grid_size = (capacity + block_size - 1) / block_size;
+    grid_size = (grid_size < 64 ? grid_size : 64); // limit grid size to avoid out_of_resources runtime error.
+#else
+    // if grid_size or block_size are zero, query occupancy using the CUDA Occupancy API
+    cudaError_t result = cudaOccupancyMaxPotentialBlockSize(
+      &grid_size,
+      &block_size,
+      reinterpret_cast<void const *>(kernel::BlockElementwiseOp<BinaryOp, Element>));
+
+    if (result != cudaSuccess) {
+      throw std::runtime_error("Failed to query occupancy.");
+    }
+
+    // Limit block size. This has the effect of increasing the number of items processed by a
+    // single thread and reduces the impact of initialization overhead.
+    block_size = (block_size < 128 ? block_size : 128);
+#endif
+  }
+
+#if defined(CUTLASS_ENABLE_SYCL)
+  const auto sycl_block = syclcompat::dim3(block_size, 1, 1);
+  const auto sycl_grid = syclcompat::dim3(grid_size, 1, 1);
+  syclcompat::launch<kernel::BlockElementwiseOp<BinaryOp, Element>>(
+      sycl_grid, sycl_block, ptr_dst, ptr_A, ptr_B, capacity);
+#else
+  dim3 grid(grid_size, 1, 1);
+  dim3 block(block_size, 1, 1);
+  kernel::BlockElementwiseOp<BinaryOp, Element><<< grid, block >>>(ptr_dst, ptr_A, ptr_B, capacity);
+#endif
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

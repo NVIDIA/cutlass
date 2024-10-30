@@ -265,6 +265,10 @@ public:
     (void) smem;
     using namespace cute;
 
+    static_assert(cute::rank(CtaTileMNK{}) == 3, "CtaTileMNK must be rank-3: [CTA_M, CTA_N, CTA_K]");
+    static_assert(cute::rank(StrideC{}) == 3, "StrideC must be rank-3: [M, N, L]");
+    static_assert(cute::rank(StrideD{}) == 3, "StrideD must be rank-3: [M, N, L]");
+
     using MmaAtomShape = typename TiledMma::AtomShape_MNK;
     static constexpr auto BLK_M = get<0>(CtaTileMNK{});
     static constexpr auto BLK_N = get<1>(CtaTileMNK{});
@@ -313,7 +317,7 @@ public:
                       tiled_mma,
                       SubgroupTileShape{}, // Epilogue tile
                       params.xe_load_c,
-                      cD,
+                      rw_coord,
                       residue_mn,
                       cD,
                       residue_mn,
@@ -326,6 +330,10 @@ public:
 
     auto acc_frag = recast<Array<ElementOutput, FragmentSize>>(accumulators);
     auto trD_frag = recast<Array<ElementOutput, FragmentSize>>(trD);
+
+    constexpr int values_loaded = FragsM*FragsN*FragmentSize*SubgroupSize*ATOM_M*ATOM_N*ATOM_K;
+    constexpr int MN = get<0>(CtaTileMNK{}) * get<1>(CtaTileMNK{});
+    static_assert(values_loaded == MN, "the total elements loaded by all threads should be the same as MxN" );
 
     CUTLASS_PRAGMA_UNROLL
     for (int epi_n = 0; epi_n < FragsN; epi_n++) {
@@ -341,7 +349,7 @@ public:
         auto acc_frag_mn = acc_frag(_, epi_m, epi_n);
 
         CUTLASS_PRAGMA_UNROLL
-        for (int epi_v = 0; epi_v < FragmentSize; ++epi_v) {
+        for (int epi_v = 0; epi_v < size(trD_frag); ++epi_v) {
           trD_frag(epi_v) = cst_callbacks.visit(acc_frag_mn(epi_v), epi_v, epi_m, epi_n);
         }
         copy(params.xe_store_d, trD, rw_coord(_, epi_m, epi_n));
