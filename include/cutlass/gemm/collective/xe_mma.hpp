@@ -200,8 +200,14 @@ struct CollectiveMma<
     // Instantiate the MMA object
     TiledMma tiled_mma;
     auto thread_mma = tiled_mma.get_slice(thread_idx);
-    Tensor tCrA = thread_mma.partition_fragment_A(gA(_, _, 0));
-    Tensor tCrB = thread_mma.partition_fragment_B(gB(_, _, 0));
+    Tensor tCrA_partition = thread_mma.partition_fragment_A(gA(_, _, 0));
+    Tensor tCrA = make_tensor(static_cast<decltype(tCrA_partition) &&>(tCrA_partition).data(),
+                              tCrA_partition.shape());
+    Tensor tCrB_partition = thread_mma.partition_fragment_B(gB(_, _, 0));
+    Tensor tCrB = make_tensor(static_cast<decltype(tCrB_partition) &&>(tCrB_partition).data(),
+                              make_shape(size<0>(tCrB_partition.shape()),
+                                         size<2>(tCrB_partition.shape()),
+                                         size<1>(tCrB_partition.shape())));
     // Partition the copying of A and B tiles across the threads
     auto gmem_thr_copy_A = mainloop.gmem_tiled_copy_a.get_slice(thread_idx);
     auto gmem_thr_copy_B = mainloop.gmem_tiled_copy_b.get_slice(thread_idx);
@@ -234,10 +240,10 @@ struct CollectiveMma<
     const int n_coord = BlockIdxX() * BLK_N + (get_sub_group_id() % ATOM_N) * SG_N;
     const int l_coord = BlockIdxZ();
     Tensor iter_a = mainloop.gmem_tiled_copy_a.get_pvc_tensor(
-      make_coord(m_coord, 0, l_coord), make_shape(_, size<1>(tCrA_copy_view.shape()), size<2>(tCrA_copy_view.shape()), k_tile_count),
+      make_coord(m_coord, 0, l_coord), append<4>(tCrA_copy_view.shape(), k_tile_count),
       append<3>(typename XE_Copy_A::Shape_MN{}, BLK_K), seq<0,1,1>{});
     Tensor iter_b = mainloop.gmem_tiled_copy_b.get_pvc_tensor(
-      make_coord(0, n_coord, l_coord), make_shape(_, size<2>(tCrB_copy_view.shape()), size<1>(tCrB_copy_view.shape()), k_tile_count),
+      make_coord(0, n_coord, l_coord), append<4>(tCrB_copy_view.shape(), k_tile_count),
       append<3>(typename XE_Copy_B::Shape_MN{}, BLK_K), seq<0,1,0>{});
 #pragma unroll
     for (int i = 0; i < DispatchPolicy::Stages; i++) {
@@ -261,7 +267,9 @@ struct CollectiveMma<
         prefetch(mainloop.gmem_tiled_copy_b, iter_b(_,_,_,k_tile + DispatchPolicy::Stages));  
       }
     }
-    cute::gemm(tiled_mma, accum, tCrA, tCrB, src_accum);
+    for (int i = 0; i < SG_K / SubgroupSize; i++) {
+      cute::gemm(tiled_mma, accum, tCrA(_, _, i), tCrB(_, i, _), src_accum);
+    }
     }
   }
 };

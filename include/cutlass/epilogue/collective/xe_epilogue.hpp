@@ -296,7 +296,7 @@ public:
     Tensor trC = make_tensor<typename TiledMma::ValTypeC>(Shape<Int<FragmentSize>>{});
     Tensor trD = make_tensor<typename TiledMma::ValTypeD>(Shape<Int<FragmentSize>>{});
     Tensor tOuti = params.xe_store_d.get_pvc_tensor(
-            make_coord(m_offset, n_offset, l_offset),
+            make_coord(m_offset, n_offset, 0),
             make_shape(_, Int<FragsM>{}, Int<FragsN>{}, L),
             make_stride(Int<get<0>(MmaAtomShape{})>{}, Int<get<1>(MmaAtomShape{})>{}, _1{}));
 
