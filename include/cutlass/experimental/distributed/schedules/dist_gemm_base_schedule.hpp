@@ -46,23 +46,6 @@
 
 namespace cutlass::distributed::schedules {
 
-
-namespace detail {
-
-template <typename ProblemShape>
-constexpr auto check_problem_shape(const ProblemShape & problem_shape) {
-  static_assert(cute::rank(ProblemShape{}) == 3 || cute::rank(ProblemShape{}) == 4,
-      "Expected rank-3 or rank-4 GEMM problem shape.");
-  if constexpr (cute::rank(ProblemShape{}) == 3) {
-    return append<4>(problem_shape, 1);
-  } else {
-    return problem_shape;
-  }
-}
-
-} // namespace detail
-
-
 /*
  * Distributed GEMM schedules define exactly how operand tensors are tiled and sliced across 
  * processors (GPUs) and stages/iterations.
@@ -164,7 +147,7 @@ struct BaseSchedule {
   template <typename ProblemShape>
   static bool
   can_implement_global(ProblemShape const& global_problem_shape) {
-    auto [M, N, K, L] = detail::check_problem_shape(global_problem_shape);
+    auto [M, N, K, L] = append<4>(global_problem_shape, 1);
 
     auto [ptileM, ptileN, ptileK, ptileL] = ProcessorTiler{};
     auto [itileM, itileN, itileK, itileL] = IterationTiler{};
@@ -181,7 +164,7 @@ struct BaseSchedule {
   CUTLASS_HOST_DEVICE
   static auto
   get_local_gemm_shape(ProblemShape const& global_problem_shape) {
-    auto problem_shape_MNKL = detail::check_problem_shape(global_problem_shape);
+    auto problem_shape_MNKL = append<4>(global_problem_shape, 1);
 
     return shape_div(
         shape_div(
@@ -464,7 +447,7 @@ struct BaseSchedule {
   CUTLASS_HOST_DEVICE
   static auto
   get_local_a_shape(ProblemShape problem_shape) {
-    auto problem_shape_MNKL = detail::check_problem_shape(problem_shape);
+    auto problem_shape_MNKL = append<4>(problem_shape, 1);
     if constexpr (NumBuffersA == 0) {
       return shape_div(
             select<0,2,3>(problem_shape_MNKL),
@@ -482,7 +465,7 @@ struct BaseSchedule {
   CUTLASS_HOST_DEVICE
   static auto
   get_local_b_shape(ProblemShape problem_shape) {
-    auto problem_shape_MNKL = detail::check_problem_shape(problem_shape);
+    auto problem_shape_MNKL = append<4>(problem_shape, 1);
     if constexpr (NumBuffersB == 0) {
       return shape_div(
             select<1,2,3>(problem_shape_MNKL),
@@ -500,7 +483,7 @@ struct BaseSchedule {
   CUTLASS_HOST_DEVICE
   static auto
   get_local_c_shape(ProblemShape problem_shape) {
-    auto problem_shape_MNKL = detail::check_problem_shape(problem_shape);
+    auto problem_shape_MNKL = append<4>(problem_shape, 1);
     if constexpr (not BufferedOutput) {
       return shape_div(
             select<0,1,3>(problem_shape_MNKL),
@@ -518,7 +501,7 @@ struct BaseSchedule {
   CUTLASS_HOST_DEVICE
   static auto
   get_local_d_shape(ProblemShape problem_shape) {
-    auto problem_shape_MNKL = detail::check_problem_shape(problem_shape);
+    auto problem_shape_MNKL = append<4>(problem_shape, 1);
     if constexpr (not BufferedOutput) {
       return shape_div(
             select<0,1,3>(problem_shape_MNKL),
