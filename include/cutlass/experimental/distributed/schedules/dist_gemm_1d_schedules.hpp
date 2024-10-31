@@ -60,14 +60,10 @@ struct ReduceScatter1D_TilingA_RotatingC: BaseSchedule<
     /* ProcessorTiler_ = */ cute::Shape<_1, _1, TP_, _1>,
     /* IterationTiler_ = */ cute::Shape<TP_, _1, _1, _1>,
     /* PeerDeviceMapping_ = */ cute::Layout<cute::Shape<TP_, TP_, _1>, cute::Stride<_1, _0, cute::C<-1>>>,                  // (left neighbor) = device_idx - 1
-    /* ProcessorMappingA_ = */ cute::Layout<cute::Shape<TP_, _1>, cute::Stride<_1, _0>>,                                    // (identity) = device_idx
-    /* ProcessorMappingB_ = */ cute::Layout<cute::Shape<TP_, _1>, cute::Stride<_1, _0>>,                                    // (identity) = device_idx
-    /* ProcessorMappingC_ = */ cute::Layout<cute::Shape<TP_, _1>, cute::Stride<_1, _0>>,                                    // (identity) = device_idx
-    /* ProcessorMappingD_ = */ cute::Layout<cute::Shape<TP_, _1>, cute::Stride<_1, _0>>,                                    // (identity) = device_idx
-    /* IterationMappingA_ = */ cute::Layout<cute::Shape<TP_, TP_, _1>, cute::Stride<_1, cute::C<-1>, cute::C<TP_{} - 1>>>,  // = device_idx - iter + TP - 1
-    /* IterationMappingB_ = */ cute::Layout<cute::Shape<TP_, TP_, _1>, cute::Stride<_0, _0, _0>>,                           // (broadcast) = 0
-    /* IterationMappingC_ = */ cute::Layout<cute::Shape<_1, _1, _1>, cute::Stride<_0, _0, _0>>,                             // (unreachable) = 0
-    /* IterationMappingD_ = */ cute::Layout<cute::Shape<_1, _1, _1>, cute::Stride<_0, _0, _0>>,                             // (unreachable) = 0
+    /* IterationMappingM_ = */ cute::Layout<cute::Shape<TP_, TP_, _1>, cute::Stride<_1, cute::C<-1>, cute::C<TP_{} - 1>>>,  // = device_idx - iter + TP - 1
+    /* IterationMappingN_ = */ cute::Layout<cute::Shape<TP_, TP_, _1>, cute::Stride<_0, _0, _0>>,                           // (IterationTiler::N == 1) = 0
+    /* IterationMappingK_ = */ cute::Layout<cute::Shape<TP_, TP_, _1>, cute::Stride<_0, _0, _0>>,                           // (IterationTiler::K == 1) = 0
+    /* IterationMappingL_ = */ cute::Layout<cute::Shape<TP_, TP_, _1>, cute::Stride<_0, _0, _0>>,                           // (IterationTiler::L == 1) = 0
     /* MemcpyA_ = */ false,
     /* MemcpyB_ = */ false,
     /* KernelWritesArrivalFlag_ = */ true,
@@ -82,14 +78,10 @@ struct ReduceScatter1D_TilingB_RotatingC: BaseSchedule<
     /* ProcessorTiler_ = */ cute::Shape<_1, _1, TP_, _1>,
     /* IterationTiler_ = */ cute::Shape<_1, TP_, _1, _1>,
     /* PeerDeviceMapping_ = */ cute::Layout<cute::Shape<TP_, TP_, _1>, cute::Stride<_1, _0, cute::C<-1>>>,                  // (left neighbor) = device_idx - 1
-    /* ProcessorMappingA_ = */ cute::Layout<cute::Shape<TP_, _1>, cute::Stride<_1, _0>>,                                    // (identity) = device_idx
-    /* ProcessorMappingB_ = */ cute::Layout<cute::Shape<TP_, _1>, cute::Stride<_1, _0>>,                                    // (identity) = device_idx
-    /* ProcessorMappingC_ = */ cute::Layout<cute::Shape<TP_, _1>, cute::Stride<_1, _0>>,                                    // (identity) = device_idx
-    /* ProcessorMappingD_ = */ cute::Layout<cute::Shape<TP_, _1>, cute::Stride<_1, _0>>,                                    // (identity) = device_idx
-    /* IterationMappingA_ = */ cute::Layout<cute::Shape<TP_, TP_, _1>, cute::Stride<_0, _0, _0>>,                           // (broadcast) = 0
-    /* IterationMappingB_ = */ cute::Layout<cute::Shape<TP_, TP_, _1>, cute::Stride<_1, cute::C<-1>, cute::C<TP_{} - 1>>>,  // = device_idx - iter + TP - 1
-    /* IterationMappingC_ = */ cute::Layout<cute::Shape<_1, _1, _1>, cute::Stride<_0, _0, _0>>,                             // (unreachable) = 0
-    /* IterationMappingD_ = */ cute::Layout<cute::Shape<_1, _1, _1>, cute::Stride<_0, _0, _0>>,                             // (unreachable) = 0
+    /* IterationMappingM_ = */ cute::Layout<cute::Shape<TP_, TP_, _1>, cute::Stride<_0, _0, _0>>,                           // (IterationTiler::N == 1) = 0
+    /* IterationMappingN_ = */ cute::Layout<cute::Shape<TP_, TP_, _1>, cute::Stride<_1, cute::C<-1>, cute::C<TP_{} - 1>>>,  // = device_idx - iter + TP - 1
+    /* IterationMappingK_ = */ cute::Layout<cute::Shape<TP_, TP_, _1>, cute::Stride<_0, _0, _0>>,                           // (IterationTiler::K == 1) = 0
+    /* IterationMappingL_ = */ cute::Layout<cute::Shape<TP_, TP_, _1>, cute::Stride<_0, _0, _0>>,                           // (IterationTiler::L == 1) = 0
     /* MemcpyA_ = */ false,
     /* MemcpyB_ = */ false,
     /* KernelWritesArrivalFlag_ = */ true,
@@ -104,14 +96,10 @@ struct AllGather1D_TilingCD_RotatingA: BaseSchedule<
     /* ProcessorTiler_ = */ cute::Shape<_1, TP_, _1, _1>,
     /* IterationTiler_ = */ cute::Shape<TP_, _1, _1, _1>,
     /* PeerDeviceMapping_ = */ cute::Layout<cute::Shape<TP_, TP_, _1>, cute::Stride<_1, _1, _0>>,                           // = device + iter
-    /* ProcessorMappingA_ = */ cute::Layout<cute::Shape<TP_, _1>, cute::Stride<_1, _0>>,                                    // (identity) = device_idx
-    /* ProcessorMappingB_ = */ cute::Layout<cute::Shape<TP_, _1>, cute::Stride<_1, _0>>,                                    // (identity) = device_idx
-    /* ProcessorMappingC_ = */ cute::Layout<cute::Shape<TP_, _1>, cute::Stride<_1, _0>>,                                    // (identity) = device_idx
-    /* ProcessorMappingD_ = */ cute::Layout<cute::Shape<TP_, _1>, cute::Stride<_1, _0>>,                                    // (identity) = device_idx
-    /* IterationMappingA_ = */ cute::Layout<cute::Shape<_1, _1, _1>, cute::Stride<_0, _0, _0>>,                             // (unreachable) = 0
-    /* IterationMappingB_ = */ cute::Layout<cute::Shape<TP_, TP_, _1>, cute::Stride<_0, _0, _0>>,                           // (broadcast) = 0
-    /* IterationMappingC_ = */ cute::Layout<cute::Shape<TP_, TP_, _1>, cute::Stride<_1, _1, _0>>,                           // = device + iter
-    /* IterationMappingD_ = */ cute::Layout<cute::Shape<TP_, TP_, _1>, cute::Stride<_1, _1, _0>>,                           // = device + iter
+    /* IterationMappingM_ = */ cute::Layout<cute::Shape<TP_, TP_, _1>, cute::Stride<_1, _1, _0>>,                           // = device + iter
+    /* IterationMappingN_ = */ cute::Layout<cute::Shape<TP_, TP_, _1>, cute::Stride<_0, _0, _0>>,                           // (IterationTiler::N == 1) = 0
+    /* IterationMappingK_ = */ cute::Layout<cute::Shape<TP_, TP_, _1>, cute::Stride<_0, _0, _0>>,                           // (IterationTiler::K == 1) = 0
+    /* IterationMappingL_ = */ cute::Layout<cute::Shape<TP_, TP_, _1>, cute::Stride<_0, _0, _0>>,                           // (IterationTiler::L == 1) = 0
     /* MemcpyA_ = */ true,
     /* MemcpyB_ = */ false,
     /* KernelWritesArrivalFlag_ = */ false,
@@ -126,14 +114,10 @@ struct AllGather1D_TilingCD_RotatingB: BaseSchedule<
     /* ProcessorTiler_ = */ cute::Shape<TP_, _1, _1, _1>,
     /* IterationTiler_ = */ cute::Shape<_1, TP_, _1, _1>,
     /* PeerDeviceMapping_ = */ cute::Layout<cute::Shape<TP_, TP_, _1>, cute::Stride<_1, _1, _0>>,                           // = device + iter
-    /* ProcessorMappingA_ = */ cute::Layout<cute::Shape<TP_, _1>, cute::Stride<_1, _0>>,                                    // (identity) = device_idx
-    /* ProcessorMappingB_ = */ cute::Layout<cute::Shape<TP_, _1>, cute::Stride<_1, _0>>,                                    // (identity) = device_idx
-    /* ProcessorMappingC_ = */ cute::Layout<cute::Shape<TP_, _1>, cute::Stride<_1, _0>>,                                    // (identity) = device_idx
-    /* ProcessorMappingD_ = */ cute::Layout<cute::Shape<TP_, _1>, cute::Stride<_1, _0>>,                                    // (identity) = device_idx
-    /* IterationMappingA_ = */ cute::Layout<cute::Shape<TP_, TP_, _1>, cute::Stride<_0, _0, _0>>,                           // (broadcast) = 0
-    /* IterationMappingB_ = */ cute::Layout<cute::Shape<_1, _1, _1>, cute::Stride<_0, _0, _0>>,                             // (unreachable) = 0
-    /* IterationMappingC_ = */ cute::Layout<cute::Shape<TP_, TP_, _1>, cute::Stride<_1, _1, _0>>,                           // = device + iter
-    /* IterationMappingD_ = */ cute::Layout<cute::Shape<TP_, TP_, _1>, cute::Stride<_1, _1, _0>>,                           // = device + iter
+    /* IterationMappingM_ = */ cute::Layout<cute::Shape<TP_, TP_, _1>, cute::Stride<_0, _0, _0>>,                           // (IterationTiler::M == 1) = 0
+    /* IterationMappingN_ = */ cute::Layout<cute::Shape<TP_, TP_, _1>, cute::Stride<_1, _1, _0>>,                           // = device + iter
+    /* IterationMappingK_ = */ cute::Layout<cute::Shape<TP_, TP_, _1>, cute::Stride<_0, _0, _0>>,                           // (IterationTiler::K == 1) = 0
+    /* IterationMappingL_ = */ cute::Layout<cute::Shape<TP_, TP_, _1>, cute::Stride<_0, _0, _0>>,                           // (IterationTiler::L == 1) = 0
     /* MemcpyA_ = */ false,
     /* MemcpyB_ = */ true,
     /* KernelWritesArrivalFlag_ = */ false,
