@@ -176,6 +176,7 @@ public:
   }
 
   // Address
+  CUTE_HOST_DEVICE
   subbyte_iterator<T> operator&() const {
     return {ptr_, idx_};
   }
