@@ -489,6 +489,24 @@ struct Copy_Traits<XE_2D_U8x16x64_LD_N, args_t...>
                            Stride<_16,Stride< _1,_256,_512>>>;
   // Reference map from (thr,val) to bit
   using RefLayout = DstLayout;
+  template <class... ArgT>
+  Copy_Traits(ArgT... args)
+      : XE_2D_LD_Unpack<XE_2D_U8x16x64_LD_N, args_t...>(args...) {}
+};
+
+template <class... args_t>
+struct Copy_Traits<XE_2D_U8x16x64_LD_N::PREFETCH, args_t...>
+    : XE_2D_LD_Unpack<XE_2D_U8x16x64_LD_N::PREFETCH, args_t...> {
+  using Shape_MN = Shape<_16, _64>;
+  using ThrID = Layout<_16>;
+  // Map from (src-thr,src-val) to bit
+  using SrcLayout = Layout<Shape <_16,Shape <_16,  _2, _16>>,
+                           Stride<_16,Stride< _1,_256,_512>>>;
+  // Map from (dst-thr,dst-val) to bit
+  using DstLayout = Layout<Shape <_16,Shape <_16,  _2, _16>>,
+                           Stride<_16,Stride< _1,_256,_512>>>;
+  // Reference map from (thr,val) to bit
+  using RefLayout = DstLayout;
 };
 
 template <class... args_t>
@@ -499,6 +517,24 @@ struct Copy_Traits<XE_2D_U8x32x64_LD_N, args_t...>
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,_8>,
                            Stride< _0,_1>>;
+  // Map from (dst-thr,dst-val) to bit
+  using DstLayout = Layout<Shape <_16,Shape <_16,  _2, _32>>,
+                           Stride<_16,Stride< _1,_256,_512>>>;
+  // Reference map from (thr,val) to bit
+  using RefLayout = DstLayout;
+  template <class... ArgT>
+  Copy_Traits(ArgT... args)
+      : XE_2D_LD_Unpack<XE_2D_U8x32x64_LD_N, args_t...>(args...) {}
+};
+
+template <class... args_t>
+struct Copy_Traits<XE_2D_U8x32x64_LD_N::PREFETCH, args_t...>
+    : XE_2D_LD_Unpack<XE_2D_U8x32x64_LD_N::PREFETCH, args_t...> {
+  using Shape_MN = Shape<_32, _64>;
+  using ThrID = Layout<_16>;
+  // Map from (src-thr,src-val) to bit
+  using SrcLayout = Layout<Shape <_16,Shape <_16,  _2, _32>>,
+                           Stride<_16,Stride< _1,_256,_512>>>;
   // Map from (dst-thr,dst-val) to bit
   using DstLayout = Layout<Shape <_16,Shape <_16,  _2, _32>>,
                            Stride<_16,Stride< _1,_256,_512>>>;
@@ -1932,5 +1968,55 @@ struct Copy_Traits<XE_1D_STORE_GLOBAL<S, D>> {
     // Reference map from (thr,val) to bit
     using RefLayout = SrcLayout;
 };
+
+namespace detail
+{
+  template<class PrefetchTileSize, class dtype>
+  auto prefetch_selector(void* ptr = nullptr, int32_t width = 0, int32_t height = 0, int32_t pitch = 0) {
+    if constexpr (get<0>(PrefetchTileSize{}) == 1) {
+      using prefetch_trait = Copy_Traits<XE_2D_U8x1x64_LD_N>;
+      using prefetch_atom = Copy_Atom<prefetch_trait, dtype>;
+      return make_tiled_copy(prefetch_atom{}.with(static_cast<dtype const*>(ptr), width, height, pitch),
+                                           Layout<Shape<_1, _16>>{},
+                                           Layout<Shape<_2, _2>>{});
+    }
+    if constexpr (get<0>(PrefetchTileSize{}) == 2) {
+      using prefetch_trait = Copy_Traits<XE_2D_U8x2x64_LD_N>;
+      using prefetch_atom = Copy_Atom<prefetch_trait, dtype>;
+      return make_tiled_copy(prefetch_atom{}.with(static_cast<dtype const*>(ptr), width, height, pitch),
+                                           Layout<Shape<_1, _16>>{},
+                                           Layout<Shape<_2, _2, _2>>{});
+    }
+    if constexpr (get<0>(PrefetchTileSize{}) == 4) {
+      using prefetch_trait = Copy_Traits<XE_2D_U8x4x64_LD_N>;
+      using prefetch_atom = Copy_Atom<prefetch_trait, dtype>;
+      return make_tiled_copy(prefetch_atom{}.with(static_cast<dtype const*>(ptr), width, height, pitch),
+                                           Layout<Shape<_1, _16>>{},
+                                           Layout<Shape<_2, _2, _4>>{});
+    }
+    if constexpr (get<0>(PrefetchTileSize{}) == 8) {
+      using prefetch_trait = Copy_Traits<XE_2D_U8x8x64_LD_N>;
+      using prefetch_atom = Copy_Atom<prefetch_trait, dtype>;
+      return make_tiled_copy(prefetch_atom{}.with(static_cast<dtype const*>(ptr), width, height, pitch),
+                                           Layout<Shape<_1, _16>>{},
+                                           Layout<Shape<_2, _2, _8>>{});
+    }
+    if constexpr (get<0>(PrefetchTileSize{}) == 16) {
+      // static_assert(false);
+      using prefetch_trait = Copy_Traits<XE_2D_U8x16x64_LD_N>;
+      using prefetch_atom = Copy_Atom<prefetch_trait, dtype>;
+      return make_tiled_copy(prefetch_atom{}.with(static_cast<dtype const*>(ptr), width, height, pitch),
+                                           Layout<Shape<_1, _16>>{},
+                                           Layout<Shape<_2, _2, _16>>{});
+    }
+    if constexpr (get<0>(PrefetchTileSize{}) == 32) {
+      using prefetch_trait = Copy_Traits<XE_2D_U8x32x64_LD_N>;
+      using prefetch_atom = Copy_Atom<prefetch_trait, dtype>;
+      return make_tiled_copy(prefetch_atom{}.with(static_cast<dtype const*>(ptr), width, height, pitch),
+                                           Layout<Shape<_1, _16>>{},
+                                           Layout<Shape<_2, _2, _32>>{});
+    }
+  }
+} // end namespace detail
 
 } // end namespace cute
