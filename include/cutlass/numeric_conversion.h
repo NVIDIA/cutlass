@@ -4203,16 +4203,6 @@ private:
 
     CUTLASS_PRAGMA_UNROLL
     for (int ii = 0; ii < RegArray::kElements; ++ii) {
-      // Handle sign extension
-      //uint32_t signs = r[ii] & sign_mask;
-      //r[ii] &= and_mask;  You can uncomment this line if you did it for a reason, but the and with the mask is done in the lop3 
-      
-      // If sign bit is set (negative number):
-      // Check memory layout, I'm assuming two's signed complements
-      // For -2 (10 -> 2): Keep as is
-      // For -1 (11 -> 3): Keep as is
-      // The subtraction of bias will handle the negative conversion
-      
       asm volatile(
           "{\n"
           "  lop3.b32 %0, %0, %1, %2, %3;\n"
