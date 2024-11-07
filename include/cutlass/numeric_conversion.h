@@ -698,7 +698,7 @@ struct NumericConverter<cutlass::tfloat32_t, float, FloatRoundStyle::round_to_ne
   CUTLASS_HOST_DEVICE
   static result_type convert(source_type const & s) {
 
-   unsigned storage = reinterpret_cast<unsigned const &>(s);
+    unsigned storage = reinterpret_cast<unsigned const &>(s);
 
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 900
     asm volatile("cvt.rn.tf32.f32 %0, %1;" : "=r"(storage) : "r"(storage));
@@ -1831,6 +1831,7 @@ struct NumericArrayConverter<float_e5m2_t, cutlass::half_t, 2, Round> {
     return convert(s);
   }
 };
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 //
 // Partial specializations for Array<bfloat16_t, N> <=> Array<float_e4m3_t, N>
@@ -4313,9 +4314,7 @@ private:
     uint32_t src_reg_shifted = src_reg >> 4;
 
     // Below constructs the following temporary:
-    uint32_t const prmt_indices[4] = {0xF4F0, 0xF5F1, 0xF6F2, 0xF7F3};   //bytes 7:0 src_reg{3, 2, 1, 0} src_reg_shifted{3, 2, 1, 0}
-									 //0xF4F0 : F4 (sign extend | byte 0 from src_reg)            F0 (sign extend | byte 0 from src_reg_shifted)
-									 //Would get value 0 and 1 in the first 32 bit section
+    uint32_t const prmt_indices[4] = {0xF4F0, 0xF5F1, 0xF6F2, 0xF7F3};
     static_assert(RegArray::kElements <= 4, "Too many inputs for BF16 -> I4 vector converter");
     CUTLASS_PRAGMA_UNROLL
     for (int ii = 0; ii < RegArray::kElements; ++ii) {
