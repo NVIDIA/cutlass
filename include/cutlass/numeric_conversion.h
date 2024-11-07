@@ -698,7 +698,7 @@ struct NumericConverter<cutlass::tfloat32_t, float, FloatRoundStyle::round_to_ne
   CUTLASS_HOST_DEVICE
   static result_type convert(source_type const & s) {
 
-    unsigned storage = reinterpret_cast<unsigned const &>(s);
+   unsigned storage = reinterpret_cast<unsigned const &>(s);
 
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 900
     asm volatile("cvt.rn.tf32.f32 %0, %1;" : "=r"(storage) : "r"(storage));
@@ -1831,7 +1831,6 @@ struct NumericArrayConverter<float_e5m2_t, cutlass::half_t, 2, Round> {
     return convert(s);
   }
 };
-
 /////////////////////////////////////////////////////////////////////////////////////////////////
 //
 // Partial specializations for Array<bfloat16_t, N> <=> Array<float_e4m3_t, N>
@@ -4108,6 +4107,154 @@ public:
 
 #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)
 /////////////////////////////////////////////////////////////////////////////////////////////////
+/// Partial specialization for Array<cutlass::bfloat16_t, N> <= Array<cutlass::signed_int2b_t, N>
+template <FloatRoundStyle Round, int N>
+struct NumericArrayConverter<cutlass::bfloat16_t, cutlass::int2b_t, N, Round> {
+  using result_type = Array<cutlass::bfloat16_t, N>;
+  using source_type = Array<cutlass::int2b_t, N>;
+
+  static FloatRoundStyle const round_style = Round;
+
+private:
+  using result_type_packed_16 = Array<cutlass::bfloat16_t, 16>;
+  using result_type_packed_8 = Array<cutlass::bfloat16_t, 8>;
+  using result_type_packed_4 = Array<cutlass::bfloat16_t, 4>;
+  using source_type_packed_16 = Array<cutlass::int2b_t, 16>;
+  using source_type_packed_8 = Array<cutlass::int2b_t, 8>;
+  using source_type_packed_4 = Array<cutlass::int2b_t, 4>;
+
+  using ScalarConverter = NumericConverter<cutlass::bfloat16_t, cutlass::int2b_t, Round>;
+
+  CUTLASS_DEVICE
+  static uint32_t to_reg(source_type_packed_4 const& source) {
+    return static_cast<uint32_t>(
+      reinterpret_cast<const uint8_t&>(source));
+  }
+
+  CUTLASS_DEVICE
+  static uint32_t to_reg(source_type_packed_8 const& source) {
+    return static_cast<uint32_t>(
+      reinterpret_cast<const uint16_t&>(source));
+  }
+
+  CUTLASS_DEVICE
+  static uint32_t to_reg(source_type_packed_16 const& source) {
+    return reinterpret_cast<const uint32_t&>(source);
+  }
+
+  template <typename PackedResultType, typename PackedSrcType>
+  CUTLASS_DEVICE
+  static PackedResultType packed_convert(PackedSrcType const &source) {
+
+    static_assert((platform::is_same<PackedSrcType, source_type_packed_4>::value &&
+                   platform::is_same<PackedResultType, result_type_packed_4>::value) ||
+                  (platform::is_same<PackedSrcType, source_type_packed_8>::value &&
+                   platform::is_same<PackedResultType, result_type_packed_8>::value) ||
+                  (platform::is_same<PackedSrcType, source_type_packed_16>::value &&
+                   platform::is_same<PackedResultType, result_type_packed_16>::value),
+                  "Invalid PackedSrcType/PackedResultType must be 4, 8 or 16 to use private convert dispatch.");
+
+    using RegArray = cutlass::AlignedArray<uint32_t, PackedResultType::kElements / 2, sizeof(PackedResultType)>;
+    RegArray r;
+
+    // View the input as reg
+    uint32_t src_reg = to_reg(source);
+    uint32_t src_reg_shifted_two = src_reg >> 2;
+    uint32_t src_reg_shifted_four = src_reg >> 4;
+    uint32_t src_reg_shifted_six = src_reg >> 6;
+
+    // Modified prmt indices for signed 2-bit values 
+    uint32_t const prmt_indices[4] = {0xF4F0, 0xF5F1, 0xF6F2, 0xF7F3};
+
+    static_assert(RegArray::kElements <= 8, "Too many inputs for BF16 -> SI2 vector converter");
+    
+    // First pass: extract and sign extend the 2-bit values
+    CUTLASS_PRAGMA_UNROLL
+    for (int ii = 0; ii < RegArray::kElements; ii += 2) {
+      asm volatile(
+          "{\n"
+          "  prmt.b32 %0, %1, %2, %3;\n"
+          "}\n"
+          : "=r"(r[ii])
+          : "r"(src_reg), "r"(src_reg_shifted_two), "r"(prmt_indices[ii / 2]));
+
+      asm volatile(
+           "{\n"
+           "  prmt.b32 %0, %1, %2, %3;\n"
+           "}\n"
+           : "=r"(r[ii + 1])
+           : "r"(src_reg_shifted_four), "r"(src_reg_shifted_six), "r"(prmt_indices[ii / 2]));
+    }
+
+    // For signed 2-bit integers:
+    // 00 ->  0     (0)
+    // 01 ->  1     (1)
+    // 10 -> -2     (2 with sign extension)
+    // 11 -> -1     (3 with sign extension)
+    //static constexpr uint32_t sign_mask = 0x00020002;  // Mask to check sign bit
+    static constexpr uint32_t and_mask = 0x00030003;   // Mask for 2 bits
+    
+    // Modified for signed range (-2 to 1)
+    // We'll construct numbers in the form 128 + (x + 2) and then subtract 130
+    // to get back to our original range
+    static constexpr uint32_t xor_mask = 0x43024302;
+    static constexpr uint32_t immLut = (0xf0 & 0xcc) ^ 0xaa;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int ii = 0; ii < RegArray::kElements; ++ii) {
+      // Handle sign extension
+      //uint32_t signs = r[ii] & sign_mask;
+      //r[ii] &= and_mask;  You can uncomment this line if you did it for a reason, but the and with the mask is done in the lop3 
+      
+      // If sign bit is set (negative number):
+      // Check memory layout, I'm assuming two's signed complements
+      // For -2 (10 -> 2): Keep as is
+      // For -1 (11 -> 3): Keep as is
+      // The subtraction of bias will handle the negative conversion
+      
+      asm volatile(
+          "{\n"
+          "  lop3.b32 %0, %0, %1, %2, %3;\n"
+          "}\n"
+          : "+r"(r[ii])
+          : "n"(and_mask), "n"(xor_mask), "n"(immLut));
+    }
+
+    // Bias represents 130 in bfloat16 format
+    // Subtracting 130 brings us back to our signed range (-2 to 1)
+    static constexpr uint32_t bias_rep = 0x43024302;  // {130, 130} in bfloat16
+    const __nv_bfloat162& bias = reinterpret_cast<const __nv_bfloat162&>(bias_rep);
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int ii = 0; ii < RegArray::kElements; ++ii) {
+      __nv_bfloat162& bf16x2_val = reinterpret_cast<__nv_bfloat162&>(r[ii]);
+      bf16x2_val = __hsub2(bf16x2_val, bias);
+    }
+
+    return reinterpret_cast<PackedResultType&>(r);
+  }
+
+  friend class detail::VectorizedConverter;
+
+public:
+  CUTLASS_DEVICE
+  static result_type convert(source_type const &source) {
+    result_type result;
+    using ConverterType = NumericArrayConverter<typename result_type::Element, typename source_type::Element, N, Round>;
+    detail::VectorizedConverter::convert<ConverterType,
+                                         result_type_packed_16, source_type_packed_16,
+                                         result_type_packed_8, source_type_packed_8,
+                                         result_type_packed_4, source_type_packed_4>(result, source);
+
+    return result;
+  }
+
+  CUTLASS_DEVICE
+  result_type operator()(source_type const &s) const {
+    return convert(s);
+  }
+};
+
 /// Partial specialization for Array<cutlass::bfloat16_t, N> <= Array<cutlass::int4b_t, N>
 template <FloatRoundStyle Round, int N>
 struct NumericArrayConverter<cutlass::bfloat16_t, cutlass::int4b_t, N, Round> {
@@ -4166,7 +4313,9 @@ private:
     uint32_t src_reg_shifted = src_reg >> 4;
 
     // Below constructs the following temporary:
-    uint32_t const prmt_indices[4] = {0xF4F0, 0xF5F1, 0xF6F2, 0xF7F3};
+    uint32_t const prmt_indices[4] = {0xF4F0, 0xF5F1, 0xF6F2, 0xF7F3};   //bytes 7:0 src_reg{3, 2, 1, 0} src_reg_shifted{3, 2, 1, 0}
+									 //0xF4F0 : F4 (sign extend | byte 0 from src_reg)            F0 (sign extend | byte 0 from src_reg_shifted)
+									 //Would get value 0 and 1 in the first 32 bit section
     static_assert(RegArray::kElements <= 4, "Too many inputs for BF16 -> I4 vector converter");
     CUTLASS_PRAGMA_UNROLL
     for (int ii = 0; ii < RegArray::kElements; ++ii) {
