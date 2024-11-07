@@ -4107,7 +4107,7 @@ public:
 
 #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)
 /////////////////////////////////////////////////////////////////////////////////////////////////
-/// Partial specialization for Array<cutlass::bfloat16_t, N> <= Array<cutlass::signed_int2b_t, N>
+/// Partial specialization for Array<cutlass::bfloat16_t, N> <= Array<cutlass::int2b_t, N>
 template <FloatRoundStyle Round, int N>
 struct NumericArrayConverter<cutlass::bfloat16_t, cutlass::int2b_t, N, Round> {
   using result_type = Array<cutlass::bfloat16_t, N>;
