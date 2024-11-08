@@ -196,11 +196,7 @@ struct ExampleRunner {
 
     syclcompat::wait();
 
-    // using TensorView = cutlass::TensorView<ElementOutput, LayoutD>;
-    // cutlass::reference::device::TensorReLu(TensorView(block_ref_D.get(), LayoutD::packed({M, N}),
-    //                                                   cutlass::make_Coord(M, N)));
-    //
-    // syclcompat::wait();
+    // TODO(joe): Add the right epilogue here (PerRowBias) for testing
 
     // Check if output from CUTLASS kernel and reference kernel are equal or not
     bool passed = cutlass::reference::device::BlockCompareEqual(
@@ -250,7 +246,6 @@ struct ExampleRunner {
 
       hw_info
     };
-    // arguments.epilogue.thread.bias_ptr = bias.get(); //TODO: put this in the leaf structure above
 
     Gemm gemm_op;
 
