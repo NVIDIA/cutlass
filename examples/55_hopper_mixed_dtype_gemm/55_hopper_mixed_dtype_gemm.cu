@@ -662,6 +662,13 @@ int run(Options &options)
 
 int main(int argc, char const **args) {
 
+  for (uint8_t i = 0; i <= uint8_t((0x1 << 8)-1); ++i) {
+    auto const& fp8 = reinterpret_cast<cutlass::float_e5m2_t const&>(i);
+    auto ii = static_cast<uint16_t>(i);
+    auto const& fp16 = reinterpret_cast<cutlass::half_t const&>(ii);
+    std::cout << fp8 << ": " << fp16 << std::endl;
+  }
+
   // CUTLASS must be compiled with CUDA 12.0 Toolkit to run this example
   // and must have compute capability at least 90.
   if (__CUDACC_VER_MAJOR__ < 12) {
