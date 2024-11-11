@@ -55,6 +55,7 @@ namespace collective {
 template <
   class StrideC_,
   class StrideD_,
+  class StrideTmp_,
   class ThreadEpilogueOp_,
   class EpilogueSchedule_
 >
@@ -76,6 +77,7 @@ public:
   using StrideC = StrideC_;
   using ElementD = typename ThreadEpilogueOp::ElementD;
   using StrideD = StrideD_;
+  using StrideTmp = StrideTmp_;
 
   using GmemTiledCopyC = void;
   using GmemTiledCopyD = void;
@@ -97,6 +99,9 @@ public:
     StrideC dC{};
     ElementD* ptr_D = nullptr;
     StrideD dD{};
+    ElementAccumulator* ptr_max;
+    ElementAccumulator* ptr_sum;
+    StrideTmp dTmp{};
   };
 
   // Device side epilogue params
@@ -148,9 +153,6 @@ public:
 
   template <
   bool zero_init,
-  int SizeA,
-  int SizeB,
-  int SizeC,
   class FragSrc,
   class FragDst,
   class Op
@@ -158,12 +160,12 @@ public:
   CUTLASS_DEVICE static void reduceSg(FragSrc const &src, FragDst &dst, Op op) {
     // reduce across all the N tiles in shape <VecC, FragsM, FragsN>
     CUTLASS_PRAGMA_UNROLL
-    for(int x = 0; x < SizeA; x++) {
+    for(int x = 0; x < size<0>(src); x++) {
       CUTLASS_PRAGMA_UNROLL
-      for(int y = 0; y < SizeB; y++) {
-        dst(x, y) = zero_init ? src(x, y, 0) : op(dst(x, y), src(x, y, 0));
+      for(int y = 0; y < size<1>(src); y++) {
+        dst(0, 0) = zero_init ? src(x, y, 0) : op(dst(x, y), src(x, y, 0));
         CUTLASS_PRAGMA_UNROLL
-        for(int z = 1; z < SizeC; z++) {
+        for(int z = 1; z < size<2>(src); z++) {
           dst(x, y) = op(dst(x, y), src(x, y, z));
         }
       }
@@ -172,9 +174,9 @@ public:
     // reduce across the sub_group to get the final output
     auto sg = syclcompat::get_nd_item<1>().get_sub_group();
     CUTLASS_PRAGMA_UNROLL
-    for(int x = 0; x < SizeA; x++) {
+    for(int x = 0; x < size<0>(src); x++) {
       CUTLASS_PRAGMA_UNROLL
-      for(int y = 0; y < SizeB; y++) {
+      for(int y = 0; y < size<1>(src); y++) {
         CUTLASS_PRAGMA_UNROLL
         for(uint laneMask = 8; laneMask >= 1; laneMask /= 2) {
           dst(x,y) = op(dst(x, y), syclcompat::permute_sub_group_by_xor(sg, dst(x, y), laneMask, 16));
@@ -185,42 +187,45 @@ public:
   
   template <
   bool zero_init,
-  int SizeA,
-  int SizeB,
-  int SizeC,
   class FragSrc,
   class FragDst,
   class Op
   >
   CUTLASS_DEVICE static void reduceWg(FragSrc const &src, FragDst &dst, char* smem_buf, Op op, SharedStorage const& shared_storage) {
-    reduceSg<zero_init, SizeA, SizeB, SizeC>(src, dst, op);
+    reduceSg<zero_init>(src, dst, op);
     for(int i=ThreadIdxX() % NumThreadsPerWarp; i<size(dst); i+=NumThreadsPerWarp){
       // TODO 
     }
   }
 
+  /*struct MaxOp {
+      CUTLASS_DEVICE ElementAccumulator
+      operator()(ElementAccumulator const & x, ElementAccumulator const & y) { return x > y ? x : y; }
+  };*/
+
   template <
   bool zero_init,
-  int SizeA,
-  int SizeB,
-  int SizeC,
   class FragSrc,
   class FragMax
   >
   CUTLASS_DEVICE static void reduce_max(FragSrc const &src, FragMax& max) {
-      reduceSg<zero_init, SizeA, SizeB, SizeC>(src, max, [](ElementAccumulator const & x, ElementAccumulator const & y) { return x > y ? x : y; });
+      reduceSg<zero_init>(src, max, [](ElementAccumulator const & x, ElementAccumulator const & y) { return x > y ? x : y; });
+      //reduceSg<zero_init>(src, max, MaxOp());
   }
+
+  /*struct SumOp {
+      CUTLASS_DEVICE ElementAccumulator
+      operator()(ElementAccumulator const & x, ElementAccumulator const & y) { return x + y; }
+  };*/
 
   template <
   bool zero_init,
-  int SizeA,
-  int SizeB,
-  int SizeC,
   class FragSrc,
   class FragSum
   >
   CUTLASS_DEVICE static void reduce_sum(FragSrc const &src, FragSum& sum) {
-      reduceSg<zero_init, SizeA, SizeB, SizeC>(src, sum, [](ElementAccumulator const & x, ElementAccumulator const & y) { return x + y; });
+      reduceSg<zero_init>(src, sum, [](ElementAccumulator const & x, ElementAccumulator const & y) { return x + y; });
+      //reduceSg<zero_init>(src, sum, SumOp());
   }
 
   template<
@@ -236,7 +241,7 @@ public:
       ProblemShapeMNKL problem_shape_mnkl,
       BlockShapeMNK blk_shape_MNK,
       BlockCoordMNKL blk_coord_mnkl,
-      cute::Tensor<FrgEngine, FrgLayout> const& accumulators,
+      cute::Tensor<FrgEngine, FrgLayout> & accumulators,
       TiledMma tiled_mma,
       ResidueMNK residue_mnk,
       int thread_idx,
@@ -255,28 +260,28 @@ public:
     auto N = get<1>(problem_shape_mnkl);
     auto L = get<3>(problem_shape_mnkl);
 
-    //auto stride_c = detail::get_epilogue_stride<EpilogueSchedule>(params.dC);
+    auto stride_c = detail::get_epilogue_stride<EpilogueSchedule>(params.dC);
     auto stride_d = detail::get_epilogue_stride<EpilogueSchedule>(params.dD);
 
     // Represent the full output tensor
-    //Tensor mC_mnl = make_tensor(make_gmem_ptr(params.ptr_C), make_shape(M,N,L), stride_c);                 // (m,n,l)
+    Tensor mC_mnl = make_tensor(make_gmem_ptr(params.ptr_C), make_shape(M,N,L), stride_c);                 // (m,n,l)
     Tensor mD_mnl = make_tensor(make_gmem_ptr(params.ptr_D), make_shape(M,N,L), stride_d);                 // (m,n,l)
-    //Tensor gC_mnl = local_tile(mC_mnl, blk_shape_MNK, make_coord(_,_,_), Step<_1,_1, X>{});    // (BLK_M,BLK_N,m,n,l)
+    Tensor gC_mnl = local_tile(mC_mnl, blk_shape_MNK, make_coord(_,_,_), Step<_1,_1, X>{});    // (BLK_M,BLK_N,m,n,l)
     Tensor gD_mnl = local_tile(mD_mnl, blk_shape_MNK, make_coord(_,_,_), Step<_1,_1, X>{});    // (BLK_M,BLK_N,m,n,l)
 
     // Slice to get the tile this CTA is responsible for
     auto [m_coord, n_coord, k_coord, l_coord] = blk_coord_mnkl;
-    //Tensor gC = gC_mnl(_,_,m_coord,n_coord,l_coord);                                                 // (BLK_M,BLK_N)
+    Tensor gC = gC_mnl(_,_,m_coord,n_coord,l_coord);                                                 // (BLK_M,BLK_N)
     Tensor gD = gD_mnl(_,_,m_coord,n_coord,l_coord);                                                 // (BLK_M,BLK_N)
 
     // Partition source and destination tiles to match the accumulator partitioning
     auto thr_mma = tiled_mma.get_thread_slice(thread_idx);
     Tensor tCgD = thr_mma.partition_C(gD);                                       // (VEC,THR_M,THR_N)
-    //Tensor tCgC = thr_mma.partition_C(gC);                                       // (VEC,THR_M,THR_N)
+    Tensor tCgC = thr_mma.partition_C(gC);                                       // (VEC,THR_M,THR_N)
 
     static_assert(is_static<FrgLayout>::value, "Accumulator layout must be static");
-    //CUTE_STATIC_ASSERT_V(size(tCgC) == size(tCgD),
-    //    "Source and destination must have the same number of elements.");
+    CUTE_STATIC_ASSERT_V(size(tCgC) == size(tCgD),
+        "Source and destination must have the same number of elements.");
     CUTE_STATIC_ASSERT_V(size(tCgD) == size(accumulators),
         "Accumulator count must have the same destination element count.");
 
@@ -284,25 +289,89 @@ public:
     auto cD = make_identity_tensor(make_shape(unwrap(shape<0>(gD)), unwrap(shape<1>(gD))));
     Tensor tCcD = thr_mma.partition_C(cD);
 
+    //Tensor acc_max = make_tensor<ElementAccumulator>(Shape<Int<size<0>(accumulators)>, Int<size<1>(accumulators)>>{});
+    //Tensor acc_max = make_tensor<ElementAccumulator>(size<0>(accumulators));
+    Tensor acc_max = make_tensor_like(take<0,2>(accumulators));
+    Tensor acc_sum = make_tensor_like(take<0,2>(accumulators)); //TODO can reuse prev?
+
     if(ThreadIdxX()==0 && BlockIdxX()==0 && BlockIdxY()==0 && BlockIdxZ()==0){
-      print("thr_mma: "); print(thr_mma); print("\n");
-      print("tiled_mma: "); print(tiled_mma); print("\n");
-      //print("tiled_mma L: "); print_latex(tiled_mma); print("\n");
-      print("acc: "); print(accumulators); print("\n");
-      print("tCgD: "); print(tCgD); print("\n");
-      print("gD: "); print(gD); print("\n");
+      //print("thr_mma: "); print(thr_mma); print("\n");
+      //print("tiled_mma: "); print(tiled_mma); print("\n");
+      //print("acc: "); print(accumulators); print("\n");
+      //print("tCgD: "); print(tCgD); print("\n");
+      //print("acc_max: "); print(acc_max); print("\n");
+      //print("take<0,2>(accumulators): "); print(take<0,2>(accumulators)); print("\n");
+      //print("gD: "); print(gD); print("\n");
     }
 
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < size<0>(accumulators); ++i) {
-      for (int j = 0; j < size<1>(accumulators); ++j) {
-        for (int k = 0; k < size<2>(accumulators); ++k) {
-          if (elem_less(tCcD(i,j,k), make_coord(get<0>(residue_mnk), get<1>(residue_mnk)))) {
-            tCgD(i,j,k) = epilogue_op(accumulators(i,j,k));
+    if(is_source_needed()){
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 0; i < size<0>(accumulators); ++i) {
+        CUTLASS_PRAGMA_UNROLL
+        for (int j = 0; j < size<1>(accumulators); ++j) {
+          CUTLASS_PRAGMA_UNROLL
+          for (int k = 0; k < size<2>(accumulators); ++k) {
+            if (elem_less(tCcD(i,j,k), make_coord(get<0>(residue_mnk), get<1>(residue_mnk)))) {
+              accumulators(i,j,k) = epilogue_op(accumulators(i,j,k), tCgC(i,j,k));
+              tCgD(i,j,k) = accumulators(i,j,k);
+            }
+          }
+        }
+      }
+    } else{
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 0; i < size<0>(accumulators); ++i) {
+        CUTLASS_PRAGMA_UNROLL
+        for (int j = 0; j < size<1>(accumulators); ++j) {
+          CUTLASS_PRAGMA_UNROLL
+          for (int k = 0; k < size<2>(accumulators); ++k) {
+            if (elem_less(tCcD(i,j,k), make_coord(get<0>(residue_mnk), get<1>(residue_mnk)))) {
+              accumulators(i,j,k) = epilogue_op(accumulators(i,j,k));
+              tCgD(i,j,k) = accumulators(i,j,k);
+            }
           }
         }
       }
     }
+
+    reduce_max<true>(accumulators, acc_max);
+    //reduceSg<true>(accumulators, acc_max, MaxOp());
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < size<0>(accumulators); ++i) {
+      CUTLASS_PRAGMA_UNROLL
+      for (int j = 0; j < size<1>(accumulators); ++j) {
+        CUTLASS_PRAGMA_UNROLL
+        for (int k = 0; k < size<2>(accumulators); ++k) {
+          if (elem_less(tCcD(i,j,k), make_coord(get<0>(residue_mnk), get<1>(residue_mnk)))) {
+            accumulators(i,j,k) = expf(accumulators(i,j,k) - acc_max(i,j));
+          }
+        }
+      }
+    }
+
+    reduce_sum<true>(accumulators, acc_sum);
+
+    //TODO write out reductions
+
+    //second kernel: 
+    // - finalize max reduction: mN = sum(mj)
+    // - finalize sum reduction: sN = sum(sj * exp(mj-mN))
+    // - finalize softmax: yi = exp(xi-mN)/sN
+
+    /*CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < size<0>(accumulators); ++i) {
+      CUTLASS_PRAGMA_UNROLL
+      for (int j = 0; j < size<1>(accumulators); ++j) {
+        CUTLASS_PRAGMA_UNROLL
+        for (int k = 0; k < size<2>(accumulators); ++k) {
+          if (elem_less(tCcD(i,j,k), make_coord(get<0>(residue_mnk), get<1>(residue_mnk)))) {
+            tCgD(i,j,k) = accumulators(i,j,k);
+          }
+        }
+      }
+    }*/
+
   }
 
 private:

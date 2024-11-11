@@ -77,6 +77,7 @@
 #endif
 #include "helper.h"
 #include "softmax_epilogue.hpp"
+#include "gemm_softmax_adapter.hpp"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -116,7 +117,7 @@ struct Options {
     help(false),
     m(5120), n(4096), k(4096), l(1),
     alpha(1), beta(0),
-    iterations(0)
+    iterations(100)
   { }
 
   // Parses the command line
@@ -205,6 +206,7 @@ struct ExampleRunner {
   using StrideB = typename Gemm::GemmKernel::StrideB;
   using StrideC = typename Gemm::GemmKernel::StrideC;
   using StrideD = typename Gemm::GemmKernel::StrideD;
+  using StrideTmp = typename Gemm::CollectiveEpilogue::StrideD;
 
   using LayoutA = typename Gemm::LayoutA;
   using LayoutB = typename Gemm::LayoutB;
@@ -232,11 +234,14 @@ struct ExampleRunner {
   StrideB stride_B;
   StrideC stride_C;
   StrideD stride_D;
+  StrideTmp stride_tmp;
   uint64_t seed = 0;
 
   cutlass::DeviceAllocation<ElementA> block_A;
   cutlass::DeviceAllocation<ElementB> block_B;
   cutlass::DeviceAllocation<ElementC> block_C;
+  cutlass::DeviceAllocation<ElementA> block_max;
+  cutlass::DeviceAllocation<ElementA> block_sum;
   cutlass::DeviceAllocation<ElementOutput> block_D;
   cutlass::DeviceAllocation<ElementOutput> block_ref_D;
 
@@ -292,16 +297,24 @@ struct ExampleRunner {
     auto problem_shape_MNKL = cute::append<4>(problem_size, 1);
     auto [M, N, K, L] = problem_shape_MNKL;
 
+    // 1 element per warp.
+    auto tmp_size = cute::ceil_div(M * K * L, cute::shape<0>(typename Gemm::TileShape{}) * cute::shape<1>(typename Gemm::TileShape{})) * NumWarpsPerWarpGroup;
+
     stride_A = cutlass::make_cute_packed_stride(StrideA{}, cute::make_shape(M, K, L));
     stride_B = cutlass::make_cute_packed_stride(StrideB{}, cute::make_shape(N, K, L));
     stride_C = cutlass::make_cute_packed_stride(StrideC{}, cute::make_shape(M, N, L));
     stride_D = cutlass::make_cute_packed_stride(StrideD{}, cute::make_shape(M, N, L));
+    stride_tmp = cutlass::make_cute_packed_stride(StrideTmp{}, cute::make_shape(cute::ceil_div(M, cute::shape<0>(typename Gemm::TileShape{})), 
+                                                                                cute::ceil_div(N, cute::shape<1>(typename Gemm::TileShape{})), 
+                                                                                L));
 
     block_A.reset(M * K * L);
     block_B.reset(K * N * L);
     block_C.reset(M * N * L);
     block_D.reset(M * N * L);
     block_ref_D.reset(M * N * L);
+    block_sum.reset(tmp_size);
+    block_max.reset(tmp_size);
 
     initialize_block(block_A, seed + 2023);
     initialize_block(block_B, seed + 2022);
@@ -317,7 +330,7 @@ struct ExampleRunner {
             cutlass::gemm::GemmUniversalMode::kGemm,
             problem_size,
             {block_A.get(), stride_A, block_B.get(), stride_B},
-            {{options.alpha, options.beta}, block_C.get(), stride_C, block_D.get(), stride_D},
+            {{options.alpha, options.beta}, block_C.get(), stride_C, block_D.get(), stride_D, block_max.get(), block_sum.get(), stride_tmp},
             hw_info
     };
 
@@ -431,6 +444,7 @@ int main(int argc, char const **args) {
   using LayoutB = cutlass::layout::ColumnMajor;
   using LayoutC = cutlass::layout::ColumnMajor;
   using LayoutD = cutlass::layout::ColumnMajor;
+  using LayoutTmp = cutlass::layout::ColumnMajor;
 
   // Tiling configuration selection
   using TileShape = Shape<_128,_128,_32>;
@@ -497,6 +511,7 @@ int main(int argc, char const **args) {
   using CollectiveEpilogue = cutlass::epilogue::collective::SoftmaxEpilogue<
           cutlass::detail::TagToStrideC_t<LayoutC>,
           cutlass::detail::TagToStrideC_t<LayoutD>,
+          cutlass::detail::TagToStrideC_t<LayoutTmp>,
           EpilogueOp,
           cutlass::gemm::EpilogueDefault>;
 
@@ -510,7 +525,7 @@ int main(int argc, char const **args) {
           CollectiveEpilogue
   >;
 
-  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  using Gemm = cutlass::gemm::device::GemmSoftmaxAdapter<GemmKernel>;
 
   ExampleRunner<Gemm> runner;
   runner.run(options, hw_info);
