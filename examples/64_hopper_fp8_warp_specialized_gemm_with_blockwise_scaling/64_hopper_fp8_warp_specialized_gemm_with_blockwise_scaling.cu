@@ -30,9 +30,9 @@
  **************************************************************************************************/
 
 /*! \file
-    \brief Simple Hopper FP8 GEMM example using CUTLASS 3.0 APIs for NVIDIA Hopper architecture
+    \brief Blocked scale Hopper FP8 GEMM example using CUTLASS 3.0 APIs for NVIDIA Hopper architecture
 
-    This example demonstrate a simple way to instantiate and run a FP8 GEMM using the new CUTLASS 3.0
+    This example demonstrate a blocked scaled FP8 GEMM using the new CUTLASS 3.0.
     APIs on NVIDIA Hopper architecture. New features that will be showcased in this example are as follows:
 
     1. NVIDIA Hopper architecture introduces a new series of tensor core instructions (GMMA)
@@ -44,8 +44,8 @@
 
     3. This example uses the Warp Specialized kernel design (see /media/docs/efficient_gemm.md for details).
 
-    4. This example shows all important fusions used by FP8 gemm kernels,
-    i.e., scale factor for A, B, C, D tensor, the abs_max value of D tensor.
+    4. This example shows all important fusions used by FP8 gemm kernels, i.e., blocked scale factor for
+    A, B tensor, the abs_max value of D tensor.
 
     5. A simple way to tune the CTA rasterization direction and swizzle pattern of Hopper kernels. Both the
     CTA rasterization direction and swizzle pattern impact cross-CTA locality of accesses. By tuning we can
@@ -53,7 +53,10 @@
 
     Examples:
 
-      $ ./examples/54_hopper_fp8_warp_specialized_gemm/54_hopper_fp8_warp_specialized_gemm --m=2048 --n=2048 --k=2048 --rasterization=N --swizzle=2
+      $ ./examples/64_hopper_fp8_warp_specialized_gemm_with_blockwise_scaling/64_hopper_fp8_warp_specialized_gemm_with_blockwise_scaling  \
+        --m=2816 --n=3072 --k=16384 \
+        --save_aux=false --save_amax=false \
+        --device_scale=false --raster=h --swizzle=2
 */
 
 #include <iostream>
@@ -185,6 +188,9 @@ constexpr bool IsDFp8 =
 constexpr bool IsAuxFp8 =
     cute::is_same_v<ElementAux, cutlass::float_e4m3_t> or
     cute::is_same_v<ElementAux, cutlass::float_e5m2_t>;
+
+static_assert(cute::is_same_v<ElementAccumulator, ElementBlockScale>,
+             "ElementAccumulator and ElementBlockScale should be same datatype");
 
 /// Initialization
 StrideA stride_A;

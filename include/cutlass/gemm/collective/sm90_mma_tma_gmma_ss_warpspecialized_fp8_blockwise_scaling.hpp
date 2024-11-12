@@ -151,6 +151,8 @@ struct CollectiveMma<
       "GmemTiledCopy - invalid SM90 TMA copy atom specified.");
   static_assert(cute::is_same_v<GmemTiledCopyB, SM90_TMA_LOAD> || cute::is_same_v<GmemTiledCopyB, SM90_TMA_LOAD_MULTICAST>,
       "GmemTiledCopy - invalid SM90 TMA copy atom specified.");
+  static_assert(cute::is_same_v<ElementAccumulator, ElementBlockScale>,
+             "ElementAccumulator and ElementBlockScale should be same datatype");
 
   struct SharedStorage
   {
