@@ -103,7 +103,7 @@ def CudaToolkitVersionSatisfies(semantic_ver_string, major, minor, patch = 0):
 
   # Update cuda_version based on parsed string
   if semantic_ver_string != '':
-    for i, x in enumerate([int(x) for x in semantic_ver_string.split('.')]):
+    for i, x in enumerate([int(x) for x in semantic_ver_string.split('.')[:3]):
       if i < len(cuda_version):
         cuda_version[i] = x
       else:
