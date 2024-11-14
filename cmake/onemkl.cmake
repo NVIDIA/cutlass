@@ -26,65 +26,37 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+include_guard()
 
-include(FetchContent)
-FetchContent_Declare(
-    googlebenchmark
-    GIT_REPOSITORY https://github.com/google/benchmark.git
-    GIT_TAG v1.9.0
+include(ExternalProject)
+
+set(ONEMKL_INSTALL_DIR ${CMAKE_BINARY_DIR}/deps/oneMKL)
+set(ONEMKL_INCLUDE_DIR ${ONEMKL_INSTALL_DIR}/include)
+set(ONEMKL_LIB_DIR ${ONEMKL_INSTALL_DIR}/lib)
+set(ONEMKL_LIB ${ONEMKL_LIB_DIR}/libonemkl.so)
+
+ExternalProject_Add(
+    onemkl_project
+
+    PREFIX                  ${ONEMKL_INSTALL_DIR}
+    GIT_REPOSITORY          "https://github.com/oneapi-src/oneMKL.git"
+    GIT_TAG                 "v0.5"
+
+    CMAKE_ARGS
+    -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
+    -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
+    -DCMAKE_GENERATOR=${CMAKE_GENERATOR}
+    -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+    -DCMAKE_INSTALL_PREFIX=${ONEMKL_INSTALL_DIR}
+    -DCMAKE_SHARED_LINKER_FLAGS="-Wl,-rpath=${ONEMKL_LIB_DIR}"
+    -DENABLE_MKLCPU_BACKEND=OFF
+    -DENABLE_MKLGPU_BACKEND=OFF
+    -DBUILD_FUNCTIONAL_TESTS=OFF
+    -DBUILD_EXAMPLES=OFF
+    -DBUILD_DOC=OFF
+    -DTARGET_DOMAINS=rng
+    INSTALL_DIR ${ONEMKL_INSTALL_DIR}
+    BUILD_BYPRODUCTS ${ONEMKL_LIB}
 )
-FetchContent_MakeAvailable(googlebenchmark)
 
-add_custom_target(cutlass_benchmarks)
-
-function(cutlass_benchmark_add_executable NAME)
-
-  set(options)
-  set(oneValueArgs DISABLE_TESTS)
-  set(multiValueArgs DEPENDS DEPENDEES TEST_COMMAND_OPTIONS)
-  cmake_parse_arguments(_ "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
-
-  set(__DISABLE_TESTS ON)
-
-  cutlass_add_executable(${NAME} ${__UNPARSED_ARGUMENTS} BATCH_SOURCES OFF)
-
-  add_dependencies(cutlass_benchmarks ${NAME})
-
-  if (NOT CUTLASS_ENABLE_SYCL)
-    SET(ADD_CUDA ON)
-  endif()
-
-  target_link_libraries(
-    ${NAME}
-    PRIVATE
-    CUTLASS
-    cutlass_tools_util_includes
-    $<$<BOOL:${CUTLASS_ENABLE_CUBLAS}>:nvidia::cublas>
-    $<$<BOOL:${ADD_CUDA}>:cuda>
-    benchmark::benchmark
-  )
-
-  if (CUTLASS_ENABLE_SYCL)
-    add_dependencies(${NAME} onemkl_project)
-    target_include_directories(${NAME} PRIVATE ${ONEMKL_INCLUDE_DIR})
-    target_link_libraries(${NAME} PUBLIC ${ONEMKL_LIB})
-    add_sycl_to_target(TARGET ${NAME})
-  endif()
-
-  install(
-    TARGETS ${NAME}
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-  )
-endfunction()
-
-if (CUTLASS_ENABLE_SYCL)
-  cutlass_benchmark_add_executable(
-    benchmarks
-    main.cpp
-    )
-else()
-  cutlass_benchmark_add_executable(
-    benchmarks
-    main.cu
-    )
-endif()
+add_library(oneMKL SHARED IMPORTED)

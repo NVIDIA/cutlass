@@ -113,6 +113,8 @@ if (CUTLASS_ENABLE_SYCL)
     add_compile_definitions(CUTLASS_SYCL_PROFILING_ENABLED)
     add_compile_definitions(SYCLCOMPAT_PROFILING_ENABLED)
   endif()
+
+  include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/onemkl.cmake)
 endif()
 find_package(Doxygen QUIET)
 
