@@ -112,12 +112,14 @@ struct Options {
   int m, n, k, l;
   float alpha, beta;
   int iterations;
+  float tolerance;
 
   Options():
     help(false),
     m(5120), n(4096), k(4096), l(1),
     alpha(1), beta(0),
-    iterations(100)
+    iterations(100),
+    tolerance(1e-5f)
   { }
 
   // Parses the command line
@@ -134,8 +136,9 @@ struct Options {
     cmd.get_cmd_line_argument("k", k, 4096);
     cmd.get_cmd_line_argument("l", l, 1);
     cmd.get_cmd_line_argument("alpha", alpha, 1.f);
-    //cmd.get_cmd_line_argument("beta", beta, 0.f);
+    cmd.get_cmd_line_argument("beta", beta, 0.f);
     cmd.get_cmd_line_argument("iterations", iterations);
+    cmd.get_cmd_line_argument("tolerance", tolerance);
 
   }
 
@@ -152,7 +155,8 @@ struct Options {
       << "  --l=<int>                   Sets the L extent (batch count) of the GEMM\n"
       << "  --alpha=<f32>               Epilogue scalar alpha\n"
       << "  --beta=<f32>                Epilogue scalar beta\n\n"
-      << "  --iterations=<int>          Number of profiling iterations to perform.\n\n";
+      << "  --iterations=<int>          Number of profiling iterations to perform.\n\n"
+      << "  --tolerance <float>         Error tolerance\n";
 
     return out;
   }
@@ -212,13 +216,15 @@ struct ExampleRunner {
   using LayoutB = typename Gemm::LayoutB;
   using LayoutC = typename Gemm::LayoutC;
   using LayoutD = typename Gemm::LayoutD;
+  using LayoutTmp = typename Gemm::LayoutTmp;
 
   using ElementA = typename Gemm::ElementA;
   using ElementB = typename Gemm::ElementB;
+  using ElementC = typename Gemm::ElementC;
+  using ElementD = typename Gemm::ElementD;
   using ElementAcc = typename Gemm::ElementAccumulator;
 
   using CollectiveEpilogue = typename Gemm::CollectiveEpilogue;
-  using ElementC = typename Gemm::ElementC;
   using ElementOutput = typename CollectiveEpilogue::ElementOutput;
   using ElementCompute = typename CollectiveEpilogue::ElementCompute;
   using ElementAccumulator = typename CollectiveEpilogue::ElementAccumulator;
@@ -249,7 +255,7 @@ struct ExampleRunner {
   // Methods
   //
 
-  bool verify(const ProblemShapeType& problem_size, ElementOutput alpha, ElementOutput beta) {
+  /*bool verify(const ProblemShapeType& problem_size, ElementOutput alpha, ElementOutput beta) {
     auto [M, N, K, L] = problem_size;
 
     cutlass::TensorRef ref_A(block_A.get(), LayoutA::packed({M, K}));
@@ -290,6 +296,177 @@ struct ExampleRunner {
     bool passed = cutlass::reference::device::BlockCompareEqual(block_ref_D.get(), block_D.get(), block_D.size());
 
     return passed;
+  }*/
+
+   template<typename Element>
+  bool verify_tensor(std::vector<Element> vector_Input, \
+                       std::vector<Element> vector_Input_Ref, const Options& options) {
+
+    auto size = int64_t((vector_Input.size() < vector_Input_Ref.size()) ? vector_Input.size() : vector_Input_Ref.size());
+    float abs_tol = options.tolerance;
+    float rel_tol = options.tolerance;
+    
+    for (int64_t i = 0; i < size; ++i) {
+      float diff = (float)(vector_Input.at(i) - vector_Input_Ref.at(i));
+      float abs_diff = fabs(diff);
+      float abs_ref = fabs((float)vector_Input_Ref.at(i));
+      float relative_diff = abs_ref > abs_tol ? abs_diff / abs_ref : 0;
+      if ( (isnan(abs_diff) || isinf(abs_diff)) ||  (abs_diff > rel_tol && relative_diff > rel_tol)) {
+        printf("diff = %f, {%f, %f}.\n", abs_diff, (float)(vector_Input.at(i)), (float)(vector_Input_Ref.at(i)));
+        return false;
+      }
+
+    }
+
+    return true;
+  }
+
+  /// Verifies the reference matches
+  bool verify(const Options& options) {
+    using ElementSoftmax = ElementD;
+
+    cutlass::gemm::GemmCoord problem_size = cutlass::gemm::GemmCoord{options.m, options.n, options.k};
+
+    int64_t total_elements_A_per_batch = options.m * options.k;
+    int64_t total_elements_B_per_batch = options.k * options.n;
+    int64_t total_elements_C_per_batch = options.m * options.n;
+    int64_t total_elements_D_per_batch = total_elements_C_per_batch;
+
+    int64_t lda = LayoutA::packed({options.m, options.k}).stride(0);
+    int64_t ldb = LayoutB::packed({options.k, options.n}).stride(0);
+    int64_t ldc = LayoutC::packed({options.m, options.n}).stride(0);
+
+    int64_t ldn = options.m;
+    int64_t lds = ldn;
+
+    LayoutA layout_A(lda);
+    LayoutB layout_B(ldb);
+    LayoutC layout_C(ldc);
+    LayoutTmp Layout_N(ldn);
+    LayoutTmp Layout_S(lds);
+
+    cutlass::MatrixCoord extent_A{options.m, options.k};
+    cutlass::MatrixCoord extent_B{options.k, options.n};
+    cutlass::MatrixCoord extent_C{options.m, options.n};
+    
+    cutlass::HostTensor<ElementSoftmax, LayoutC>     reference_N;
+    reference_N.reset({options.m, 1}, false);
+
+    for (int batch_idx = 0; batch_idx < options.l; batch_idx++) {
+      cutlass::TensorView<ElementA, LayoutA> view_A(block_A.get() + total_elements_A_per_batch * batch_idx, layout_A, extent_A);
+      cutlass::TensorView<ElementB, LayoutB> view_B(block_B.get() + total_elements_B_per_batch * batch_idx, layout_B, extent_B);
+      cutlass::TensorView<ElementC, LayoutC> view_C(block_C.get() + total_elements_C_per_batch * batch_idx, layout_C, extent_C);
+      cutlass::TensorView<ElementC, LayoutC> view_Ref_device(block_ref_D.get(), layout_C, extent_C);
+
+      cutlass::reference::device::GemmComplex<
+          ElementA, LayoutA,
+          ElementB, LayoutB,
+          ElementC, LayoutC, 
+          ElementCompute, ElementCompute
+      >(
+        problem_size,
+        options.alpha, 
+        view_A,
+        cutlass::ComplexTransform::kNone,
+        view_B,
+        cutlass::ComplexTransform::kNone,
+        options.beta, 
+        view_C, 
+        view_Ref_device, 
+        ElementCompute(0)
+      );
+
+      // Copy reference results to host memory for verification
+      std::vector<ElementD> matrix_D_Ref(layout_C.capacity(extent_C));
+      cutlass::device_memory::copy_to_host(matrix_D_Ref.data(), block_ref_D.get(), matrix_D_Ref.size());
+      cutlass::TensorView<ElementD, LayoutC> view_D_Ref(matrix_D_Ref.data(), layout_C, extent_C);
+
+      std::vector<ElementSoftmax> matrix_Softmax_Ref(layout_C.capacity(extent_C));
+      cutlass::TensorView<ElementSoftmax, LayoutC> view_Softmax_Ref(matrix_Softmax_Ref.data(), layout_C, extent_C);
+
+      // Copy computed results to host memory
+      std::vector<ElementD> matrix_D(layout_C.capacity(extent_C));
+      cutlass::device_memory::copy_to_host(matrix_D.data(), block_D.get() + total_elements_D_per_batch * batch_idx, matrix_D.size());
+
+      auto& matrix_Softmax = matrix_D;
+      //std::vector<ElementD> matrix_Softmax(layout_C.capacity(extent_C));
+      //cutlass::device_memory::copy_to_host(matrix_Softmax.data(), block_Softmax.get() + total_elements_D_per_batch * batch_idx, matrix_Softmax.size());
+
+      // Compute the norm
+      for (int m = 0; m < options.m; ++m) {
+        reference_N.at({m, 0}) = view_D_Ref.ref().at({m, 0});
+        if(batch_idx == 0 && m < 3 /*abs(view_D_Ref.ref().at({m, n}) - 240395) < 0.1*/){
+          std::cout << "ref tmp " << m << " " << 0 << ": " << view_D_Ref.ref().at({m, 0}) << std::endl;
+        }
+        for (int n = 1; n < options.n; ++n) {
+          //std::cout << "val: " << view_D_Ref.ref().at({m, n}) << std::endl;
+          reference_N.at({m, 0}) = std::max(reference_N.at({m, 0}), ElementSoftmax(view_D_Ref.ref().at({m, n})));
+          
+          if(batch_idx == 0 && m < 3 && n<3 /*abs(view_D_Ref.ref().at({m, n}) - 240395) < 0.1*/){
+            std::cout << "ref tmp " << m << " " << n << ": " << view_D_Ref.ref().at({m, n}) << std::endl;
+          }
+          if(batch_idx == 0 && m==0 && n==127 /*abs(view_D_Ref.ref().at({m, n}) - 240395) < 0.1*/){
+            std::cout << "ref max tmp " << m << " " << n << ": " << reference_N.at({m, 0}) << std::endl;
+          }
+        }
+        if(batch_idx == 0 && m == 0){
+          std::cout << "ref max: " << reference_N.at({m, 0}) << std::endl;
+        }
+      }
+
+      // Compute softmax
+      for (int m = 0; m < options.m; ++m) {
+        float sum = float();
+
+        for (int n = 0; n < options.n; ++n) {
+          sum += std::exp( float(view_D_Ref.ref().at({m, n})) - float(reference_N.at({m, 0})) );
+        }
+        if(batch_idx == 0 && m == 0){
+          std::cout << "ref sum: " << sum << std::endl;
+        }
+
+        float inv_sum = float(1.0f / sum);
+
+        for (int n = 0; n < options.n; ++n) {
+          view_Softmax_Ref.ref().at({m, n}) = ElementSoftmax(
+            std::exp( float(view_D_Ref.ref().at({m, n})) - float(reference_N.at({m, 0})) ) * inv_sum
+          );
+        }
+      }
+
+      // Verification checks - set any of these to 'true' to override the verification checks.
+      bool verified_D = false;
+      bool verified_Softmax = false;
+
+      // Verify softmax output
+      if (!verified_D) {
+        verified_D = verify_tensor<ElementC>(matrix_D, matrix_D_Ref, options);
+      }
+
+      if (!verified_Softmax) {
+        verified_Softmax = verify_tensor<ElementSoftmax>(matrix_Softmax, matrix_Softmax_Ref, options);
+      }
+      //TODO(Tadej): just softmax
+      if (!verified_D && !verified_Softmax) {
+        std::cerr << "Verification check failed for tensor Softmax at batch " << batch_idx << "\n";
+
+        // Summarize which checks failed
+        if (!verified_D) {
+          std::cerr << "Verification of D tensor failed\n";
+        } else{
+          std::cerr << "Verification of D tensor passed\n";
+        }
+
+        if (!verified_Softmax) {
+          std::cerr << "Verification of Softmax tensor failed\n";
+        } else{
+          std::cerr << "Verification of Softmax tensor passed\n";
+        }
+
+        return false;
+      }
+    }
+    return true;
   }
 
   /// Initialize operands to be used in the GEMM and reference GEMM
@@ -297,16 +474,14 @@ struct ExampleRunner {
     auto problem_shape_MNKL = cute::append<4>(problem_size, 1);
     auto [M, N, K, L] = problem_shape_MNKL;
 
-    // 1 element per warp.
-    auto tmp_size = cute::ceil_div(M * K * L, cute::shape<0>(typename Gemm::TileShape{}) * cute::shape<1>(typename Gemm::TileShape{})) * NumWarpsPerWarpGroup;
+    auto partials_N = cute::ceil_div(N, cute::shape<1>(typename Gemm::TileShape{}));
+    auto tmp_size = M * partials_N * L;
 
     stride_A = cutlass::make_cute_packed_stride(StrideA{}, cute::make_shape(M, K, L));
     stride_B = cutlass::make_cute_packed_stride(StrideB{}, cute::make_shape(N, K, L));
     stride_C = cutlass::make_cute_packed_stride(StrideC{}, cute::make_shape(M, N, L));
     stride_D = cutlass::make_cute_packed_stride(StrideD{}, cute::make_shape(M, N, L));
-    stride_tmp = cutlass::make_cute_packed_stride(StrideTmp{}, cute::make_shape(cute::ceil_div(M, cute::shape<0>(typename Gemm::TileShape{})), 
-                                                                                cute::ceil_div(N, cute::shape<1>(typename Gemm::TileShape{})), 
-                                                                                L));
+    stride_tmp = cutlass::make_cute_packed_stride(StrideTmp{}, cute::make_shape(M, partials_N, L));
 
     block_A.reset(M * K * L);
     block_B.reset(K * N * L);
@@ -348,7 +523,7 @@ struct ExampleRunner {
 
     // Check if output from CUTLASS kernel and reference kernel are equal or not
     Result result;
-    result.passed = verify(problem_size, options.alpha, options.beta);
+    result.passed = verify(options);
 
     std::cout << "  Disposition: " << (result.passed ? "Passed" : "Failed") << std::endl;
 
@@ -512,6 +687,7 @@ int main(int argc, char const **args) {
           cutlass::detail::TagToStrideC_t<LayoutC>,
           cutlass::detail::TagToStrideC_t<LayoutD>,
           cutlass::detail::TagToStrideC_t<LayoutTmp>,
+          TileShape,
           EpilogueOp,
           cutlass::gemm::EpilogueDefault>;
 

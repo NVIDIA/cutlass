@@ -43,7 +43,7 @@
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-static const int NumThreadsPerWarp = 32;
+static constexpr int NumThreadsPerWarp = 32;
 static const int NumThreadsPerWarpGroup = 128;
 static const int NumWarpsPerWarpGroup = NumThreadsPerWarpGroup / NumThreadsPerWarp;
 static const int NumThreadsPerHalfWarp = NumThreadsPerWarp / 2;
