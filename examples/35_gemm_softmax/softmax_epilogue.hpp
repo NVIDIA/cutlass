@@ -298,7 +298,6 @@ public:
 
   template<
     class ProblemShapeMNKL,
-    //class BlockShapeMNK,
     class BlockCoordMNKL,
     class FrgEngine, class FrgLayout,
     class TiledMma,
@@ -391,18 +390,18 @@ public:
 
     bool is_first = ThreadIdxX()==0 && BlockIdxX()==0 && BlockIdxY()==0 && BlockIdxZ()==0;
     if(is_first){
-      print("blk_coord_mnkl: "); print(blk_coord_mnkl); print("\n");
+      //print("blk_coord_mnkl: "); print(blk_coord_mnkl); print("\n");
       //print("blk_shape_MNK: "); print(blk_shape_MNK); print("\n");
       //print("partial_block: "); print(partial_block); print("\n");
       //print("thr_mma: "); print(thr_mma); print("\n");
       //print("tiled_mma: "); print(tiled_mma); print("\n");
       //print("acc: "); print(accumulators); print("\n");
       //print("mD_mnl: "); print(mD_mnl); print("\n");
-      print("mMax_mnl: "); print(mMax_mnl); print("\n");
+      //print("mMax_mnl: "); print(mMax_mnl); print("\n");
       //print("gD_mnl: "); print(gD_mnl); print("\n");
-      print("gMax_mnl: "); print(gMax_mnl); print("\n");
+      //print("gMax_mnl: "); print(gMax_mnl); print("\n");
       //print("gD: "); print(gD); print("\n");
-      print("gMax: "); print(gMax); print("\n");
+      //print("gMax: "); print(gMax); print("\n");
       //print("tCgD: "); print(tCgD); print("\n");
       //print("sC: "); print(sC); print("\n");
       //print("tCsC: "); print(tCsC); print("\n");
@@ -493,55 +492,9 @@ public:
       }
     }
     if(is_first){
-      print("sum epilogue val:"); print(sum); print("\n");
+      //print("sum epilogue val:"); print(sum); print("\n");
     }
-
     gSum(thread_idx,0) = sum;
-
-
-    /*//reduce_max<true>(accumulators, acc_max);
-    reduce_max_wg(accumulators, acc_max, tCsC, sC, tCcD, residue_mnk, thread_idx);
-
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < size<0>(accumulators); ++i) {
-      CUTLASS_PRAGMA_UNROLL
-      for (int j = 0; j < size<1>(accumulators); ++j) {
-        CUTLASS_PRAGMA_UNROLL
-        for (int k = 0; k < size<2>(accumulators); ++k) {
-          if (elem_less(tCcD(i,j,k), make_coord(get<0>(residue_mnk), get<1>(residue_mnk)))) {
-            accumulators(i,j,k) = expf(accumulators(i,j,k) - acc_max(k));
-          }
-        }
-      }
-    }
-
-    reduce_sum<true>(accumulators, acc_sum);
-    if(wlid == 0){
-      for (int k = 0; k < size<2>(accumulators); ++k) {
-        gSum(wid,k) = acc_sum(k);
-      }
-    }*/
-
-    //TODO write out reductions
-
-    //second kernel: 
-    // - finalize max reduction: mN = sum(mj)
-    // - finalize sum reduction: sN = sum(sj * exp(mj-mN))
-    // - finalize softmax: yi = exp(xi-mN)/sN
-
-    /*CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < size<0>(accumulators); ++i) {
-      CUTLASS_PRAGMA_UNROLL
-      for (int j = 0; j < size<1>(accumulators); ++j) {
-        CUTLASS_PRAGMA_UNROLL
-        for (int k = 0; k < size<2>(accumulators); ++k) {
-          if (elem_less(tCcD(i,j,k), make_coord(get<0>(residue_mnk), get<1>(residue_mnk)))) {
-            tCgD(i,j,k) = accumulators(i,j,k);
-          }
-        }
-      }
-    }*/
-
   }
 
 private:

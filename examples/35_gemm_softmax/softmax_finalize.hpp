@@ -197,7 +197,7 @@ private:
     Tensor mIn = make_tensor(make_gmem_ptr(params.args.ptr_in), IOTensorShape, params.args.dInput);                   // (m,n,l)
 
     if(m==0 && batch_id==0){
-      print("PartialTensorShape: "); print(PartialTensorShape); print("\n");
+      //print("PartialTensorShape: "); print(PartialTensorShape); print("\n");
     }
 
     ElementPartial max_val = std::numeric_limits<ElementPartial>::min();
@@ -221,8 +221,8 @@ private:
     //sum_val = reduce_sum(sum_val);
 
     if(m==0 && batch_id==0){
-      print("max_val: "); print(max_val); print("\n");
-      print("sum_val: "); print(sum_val); print("\n");
+      //print("max_val: "); print(max_val); print("\n");
+      //print("sum_val: "); print(sum_val); print("\n");
     }
 
     ElementPartial norm = 1 / sum_val;
@@ -231,71 +231,6 @@ private:
       mOut(m, n, batch_id) = cutlass::fast_exp(mIn(m, n, batch_id) - max_val) * norm;
     }
   }
-    /*
-    // defining three vars for a general reduction module
-    cutlass::gemm::GemmCoord problem_size = isGroupedProblem ? params.args.problem_sizes[bid] : params.args.problem_size;
-    int m_dim_in_loop = isGroupedProblem ? problem_size.m() : tid + bdim;
-    int access_offset = isGroupedProblem ? 0 : bid * bdim;
-
-    if (!isGroupedProblem && access_offset + tid >= problem_size.m()) return;
-
-    ElementNorm *curr_ptr_Max = isGroupedProblem ? \
-              params.args.block_Norm + params.args.offset_Norm_Device[bid] : \
-              params.args.block_Norm + block_batch * params.args.batch_stride_Max;
-    ElementSum *curr_ptr_Sum = isGroupedProblem ? \
-              params.args.block_Sum + params.args.offset_Sum_Device[bid] : \
-              params.args.block_Sum + block_batch * params.args.batch_stride_Sum;
-
-    int threadblock_num = (problem_size.n() + ThreadblockShape::kN - 1) / ThreadblockShape::kN;
-
-    ConvertSum   convert_sum;
-    ConvertNorm  convert_norm;
-
-    ConvertSumOutput   convert_sum_output;
-    ConvertNormOutput  convert_norm_output;
-
-    uint32_t float_max_bits = 0xff7fffff;
-    float min_float = reinterpret_cast<float const &>(float_max_bits);
-
-    CUTLASS_PRAGMA_UNROLL
-    for (int idx_m = tid; idx_m < m_dim_in_loop; idx_m += bdim) {
-      ElementNorm *access_n = curr_ptr_Max + idx_m + access_offset;
-      ElementSum *access_s = curr_ptr_Sum + idx_m + access_offset;
-      ElementNorm *access_n_bak = access_n;
-      ElementSum *access_s_bak = access_s;
-      ElementSoftmaxCompute max_val = ElementSoftmaxCompute(min_float);
-      ElementSoftmaxCompute sum_val = ElementSoftmaxCompute(0);
-      ElementNorm fetch_n;
-      ElementSum fetch_s;
-
-      CUTLASS_PRAGMA_UNROLL
-      for (int idx_n = 0; idx_n < threadblock_num; idx_n++) {
-        cutlass::arch::global_load<ElementNorm, sizeof(ElementNorm)>(fetch_n, access_n, true);
-        max_val = cutlass::fast_max(max_val, convert_norm(fetch_n));
-        access_n += problem_size.m();
-      }
-
-      access_n = access_n_bak;
-
-      CUTLASS_PRAGMA_UNROLL
-      for (int idx_n = 0; idx_n < threadblock_num; idx_n++) {
-        cutlass::arch::global_load<ElementNorm, sizeof(ElementNorm)>(fetch_n, access_n, true);
-        cutlass::arch::global_load<ElementSum, sizeof(ElementSum)>(fetch_s, access_s, true);
-        sum_val += convert_sum(fetch_s) * cutlass::fast_exp(convert_norm(fetch_n) - max_val);
-        access_n += problem_size.m();
-        access_s += problem_size.m();
-      }
-
-      ElementSoftmaxCompute inv_sum = cutlass::constants::one<ElementSoftmaxCompute>() / sum_val;
-
-      access_n = access_n_bak;
-      access_s = access_s_bak;
-
-      access_n[0] = convert_norm_output(max_val);
-      access_s[0] = convert_sum_output(inv_sum);
-    }
-
-  }*/
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

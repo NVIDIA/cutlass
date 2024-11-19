@@ -31,28 +31,11 @@
  **************************************************************************************************/
 
 /*! \file
-    \brief Simple GEMM example using Cute and CUTLASS 3.x APIs for NVIDIA Ampere architecture
+    \brief GEMM + Softmax example using Cute and CUTLASS 3.x APIs for NVIDIA Ampere architecture
 
     This example demonstrate how to instantiate and run a TF32 GEMM using the Cute and
     CUTLASS 3.x APIs on NVIDIA Ampere architecture. Please check example 07 and 08 for
-    the basics of tensor op gemm kernels. On NVIDIA Ampere architecture, most concept
-    still holds. The two main differences are:
-
-      (1) NVIDIA Ampere architecture introduces a new series of tensor core instructions
-          (see include/cute/arch/mma_sm80.hpp) which are more efficient on Ampere.
-      (2) NVIDIA Ampere architecture uses CP_ASYNC (see include/cute/arch/copy_sm80.hpp)
-          to build a multistage software pipeline to better hide latency (see
-          include/cutlass/gemm/collective/sm80_mma_multistage.hpp).
-
-    Moreover, NVIDIA Ampere architecture starts supporting tfloat32 (see include/cutlass/tfloat32.h)
-    data types in tensor cores.  One big advantage is that we can load in fp32 data and convert
-    them implicitly to tf32 inside the GEMM kernel which means no change is needed to accelerate
-    traditional fp32 data by using NVIDIA Ampere architecture.
-
-    Examples:
-
-      $ ./examples/14_ampere_tf32_tensorop_gemm/14_ampere_tf32_tensorop_gemm_cute
-
+    the basics of tensor op gemm kernels.
 */
 
 #include <iostream>
@@ -246,59 +229,15 @@ struct ExampleRunner {
   cutlass::DeviceAllocation<ElementA> block_A;
   cutlass::DeviceAllocation<ElementB> block_B;
   cutlass::DeviceAllocation<ElementC> block_C;
-  cutlass::DeviceAllocation<ElementA> block_max;
-  cutlass::DeviceAllocation<ElementA> block_sum;
+  cutlass::DeviceAllocation<ElementAcc> block_max;
+  cutlass::DeviceAllocation<ElementAcc> block_sum;
   cutlass::DeviceAllocation<ElementOutput> block_D;
   cutlass::DeviceAllocation<ElementOutput> block_ref_D;
 
   //
   // Methods
   //
-
-  /*bool verify(const ProblemShapeType& problem_size, ElementOutput alpha, ElementOutput beta) {
-    auto [M, N, K, L] = problem_size;
-
-    cutlass::TensorRef ref_A(block_A.get(), LayoutA::packed({M, K}));
-    cutlass::TensorRef ref_B(block_B.get(), LayoutB::packed({K, N}));
-    cutlass::TensorRef ref_C(block_C.get(), LayoutC::packed({M, N}));
-    cutlass::TensorRef ref_D(block_ref_D.get(), LayoutD::packed({M, N}));
-
-    cutlass::reference::device::GemmComplex(
-            {M, N, K},
-            ElementCompute(alpha),
-            ref_A,
-            cutlass::ComplexTransform::kNone,
-            ref_B,
-            cutlass::ComplexTransform::kNone,
-            ElementCompute(beta),
-            ref_C,
-            ref_D,
-            ElementAccumulator(0),
-            L,     // batch_count
-            M * K, // batch_stride_A
-            K * N, // batch_stride_B
-            M * N, // batch_stride_C
-            M * N  // batch_stride_D
-    );
-
-#if defined(CUTLASS_ENABLE_SYCL)
-    syclcompat::wait_and_throw();
-#else
-    cudaError_t result = cudaDeviceSynchronize();
-    if (result != cudaSuccess) {
-      std::cerr << "Reference kernel failed. Last CUDA error: "
-                << cudaGetErrorString(result) << std::endl;
-      return false;
-    }
-#endif
-
-    // Check if output from CUTLASS kernel and reference kernel are equal or not
-    bool passed = cutlass::reference::device::BlockCompareEqual(block_ref_D.get(), block_D.get(), block_D.size());
-
-    return passed;
-  }*/
-
-   template<typename Element>
+  template<typename Element>
   bool verify_tensor(std::vector<Element> vector_Input, \
                        std::vector<Element> vector_Input_Ref, const Options& options) {
 
@@ -362,7 +301,7 @@ struct ExampleRunner {
           ElementA, LayoutA,
           ElementB, LayoutB,
           ElementC, LayoutC, 
-          ElementCompute, ElementCompute
+          ElementCompute, ElementCompute, ElementD
       >(
         problem_size,
         options.alpha, 
@@ -388,41 +327,19 @@ struct ExampleRunner {
       std::vector<ElementD> matrix_D(layout_C.capacity(extent_C));
       cutlass::device_memory::copy_to_host(matrix_D.data(), block_D.get() + total_elements_D_per_batch * batch_idx, matrix_D.size());
 
-      auto& matrix_Softmax = matrix_D;
-      //std::vector<ElementD> matrix_Softmax(layout_C.capacity(extent_C));
-      //cutlass::device_memory::copy_to_host(matrix_Softmax.data(), block_Softmax.get() + total_elements_D_per_batch * batch_idx, matrix_Softmax.size());
-
       // Compute the norm
       for (int m = 0; m < options.m; ++m) {
         reference_N.at({m, 0}) = view_D_Ref.ref().at({m, 0});
-        if(batch_idx == 0 && m < 3 /*abs(view_D_Ref.ref().at({m, n}) - 240395) < 0.1*/){
-          std::cout << "ref tmp " << m << " " << 0 << ": " << view_D_Ref.ref().at({m, 0}) << std::endl;
-        }
         for (int n = 1; n < options.n; ++n) {
-          //std::cout << "val: " << view_D_Ref.ref().at({m, n}) << std::endl;
           reference_N.at({m, 0}) = std::max(reference_N.at({m, 0}), ElementSoftmax(view_D_Ref.ref().at({m, n})));
-          
-          if(batch_idx == 0 && m < 3 && n<3 /*abs(view_D_Ref.ref().at({m, n}) - 240395) < 0.1*/){
-            std::cout << "ref tmp " << m << " " << n << ": " << view_D_Ref.ref().at({m, n}) << std::endl;
-          }
-          if(batch_idx == 0 && m==0 && n==127 /*abs(view_D_Ref.ref().at({m, n}) - 240395) < 0.1*/){
-            std::cout << "ref max tmp " << m << " " << n << ": " << reference_N.at({m, 0}) << std::endl;
-          }
-        }
-        if(batch_idx == 0 && m == 0){
-          std::cout << "ref max: " << reference_N.at({m, 0}) << std::endl;
         }
       }
 
       // Compute softmax
       for (int m = 0; m < options.m; ++m) {
-        float sum = float();
-
+        float sum = 0;
         for (int n = 0; n < options.n; ++n) {
           sum += std::exp( float(view_D_Ref.ref().at({m, n})) - float(reference_N.at({m, 0})) );
-        }
-        if(batch_idx == 0 && m == 0){
-          std::cout << "ref sum: " << sum << std::endl;
         }
 
         float inv_sum = float(1.0f / sum);
@@ -434,35 +351,9 @@ struct ExampleRunner {
         }
       }
 
-      // Verification checks - set any of these to 'true' to override the verification checks.
-      bool verified_D = false;
-      bool verified_Softmax = false;
-
-      // Verify softmax output
-      if (!verified_D) {
-        verified_D = verify_tensor<ElementC>(matrix_D, matrix_D_Ref, options);
-      }
-
+      bool verified_Softmax = verify_tensor<ElementSoftmax>(matrix_D, matrix_Softmax_Ref, options);
       if (!verified_Softmax) {
-        verified_Softmax = verify_tensor<ElementSoftmax>(matrix_Softmax, matrix_Softmax_Ref, options);
-      }
-      //TODO(Tadej): just softmax
-      if (!verified_D && !verified_Softmax) {
-        std::cerr << "Verification check failed for tensor Softmax at batch " << batch_idx << "\n";
-
-        // Summarize which checks failed
-        if (!verified_D) {
-          std::cerr << "Verification of D tensor failed\n";
-        } else{
-          std::cerr << "Verification of D tensor passed\n";
-        }
-
-        if (!verified_Softmax) {
-          std::cerr << "Verification of Softmax tensor failed\n";
-        } else{
-          std::cerr << "Verification of Softmax tensor passed\n";
-        }
-
+        std::cerr << "Verification of Softmax tensor failed\n";
         return false;
       }
     }
@@ -505,7 +396,11 @@ struct ExampleRunner {
             cutlass::gemm::GemmUniversalMode::kGemm,
             problem_size,
             {block_A.get(), stride_A, block_B.get(), stride_B},
-            {{options.alpha, options.beta}, block_C.get(), stride_C, block_D.get(), stride_D, block_max.get(), block_sum.get(), stride_tmp},
+            {{options.alpha,//static_cast<ElementOutput>(options.alpha), 
+             options.beta},//static_cast<ElementOutput>(options.beta)}, 
+             block_C.get(), stride_C, 
+             block_D.get(), stride_D, 
+             block_max.get(), block_sum.get(), stride_tmp},
             hw_info
     };
 
@@ -610,6 +505,10 @@ int main(int argc, char const **args) {
   hw_info.sm_count = cutlass::KernelHardwareInfo::query_device_multiprocessor_count(hw_info.device_id);
 
   // Problem configuration
+  /*using ElementA = cutlass::half_t;
+  using ElementB = cutlass::half_t;
+  using ElementAcc = float;
+  using ElementOutput = cutlass::half_t;*/
   using ElementA = float;
   using ElementB = float;
   using ElementAcc = float;
@@ -681,7 +580,7 @@ int main(int argc, char const **args) {
                                                              // elements. This becomes the vector width of
                                                              // math instructions in the epilogue too
           ElementAcc,                                        // <- data type of accumulator
-          ElementOutput>;  // <- data type for alpha/beta in linear combination function
+          ElementAcc>;  // <- data type for alpha/beta in linear combination function
 
   using CollectiveEpilogue = cutlass::epilogue::collective::SoftmaxEpilogue<
           cutlass::detail::TagToStrideC_t<LayoutC>,

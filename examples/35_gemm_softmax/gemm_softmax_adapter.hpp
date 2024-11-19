@@ -91,7 +91,7 @@ public:
 
   using SoftmaxFinalizeKernel = reduction::kernel::SoftmaxFinalize<
                                           ElementD, typename GemmKernel::StrideD,
-                                          ElementD, typename GemmKernel::StrideD,
+                                          ElementAccumulator, typename GemmKernel::CollectiveEpilogue::StrideTmp,
                                           ElementD, typename GemmKernel::StrideD>;
 
   // Map back to 2.x type as best as possible
