@@ -70,7 +70,7 @@ SYCL_DEVICE_OCL(float  intel_sub_group_tf32_tf32_matrix_mad_k8_f32(float a, cute
 #undef SYCL_DEVICE_OCL
 
 namespace cute {
-//MxNxK_A,B,C,D
+//MxNxK_D,A,B,C
 //# of vector component of a x subgroup-size x function name
 //float8 intel_sub_group_bf16_bf16_matrix_mad_k16(short8 a, int8 b, float8 acc);
 //TODO: Is A really not transposed? Maybe better a macro than separate define for 1,2,4,8

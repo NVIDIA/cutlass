@@ -1980,28 +1980,28 @@ namespace detail
                                            Layout<Shape<_1, _16>>{},
                                            Layout<Shape<_2, _2>>{});
     }
-    if constexpr (get<0>(PrefetchTileSize{}) == 2) {
+    else if constexpr (get<0>(PrefetchTileSize{}) == 2) {
       using prefetch_trait = Copy_Traits<XE_2D_U8x2x64_LD_N>;
       using prefetch_atom = Copy_Atom<prefetch_trait, dtype>;
       return make_tiled_copy(prefetch_atom{}.with(static_cast<dtype const*>(ptr), width, height, pitch),
                                            Layout<Shape<_1, _16>>{},
                                            Layout<Shape<_2, _2, _2>>{});
     }
-    if constexpr (get<0>(PrefetchTileSize{}) == 4) {
+    else if constexpr (get<0>(PrefetchTileSize{}) == 4) {
       using prefetch_trait = Copy_Traits<XE_2D_U8x4x64_LD_N>;
       using prefetch_atom = Copy_Atom<prefetch_trait, dtype>;
       return make_tiled_copy(prefetch_atom{}.with(static_cast<dtype const*>(ptr), width, height, pitch),
                                            Layout<Shape<_1, _16>>{},
                                            Layout<Shape<_2, _2, _4>>{});
     }
-    if constexpr (get<0>(PrefetchTileSize{}) == 8) {
+    else if constexpr (get<0>(PrefetchTileSize{}) == 8) {
       using prefetch_trait = Copy_Traits<XE_2D_U8x8x64_LD_N>;
       using prefetch_atom = Copy_Atom<prefetch_trait, dtype>;
       return make_tiled_copy(prefetch_atom{}.with(static_cast<dtype const*>(ptr), width, height, pitch),
                                            Layout<Shape<_1, _16>>{},
                                            Layout<Shape<_2, _2, _8>>{});
     }
-    if constexpr (get<0>(PrefetchTileSize{}) == 16) {
+    else if constexpr (get<0>(PrefetchTileSize{}) == 16) {
       // static_assert(false);
       using prefetch_trait = Copy_Traits<XE_2D_U8x16x64_LD_N>;
       using prefetch_atom = Copy_Atom<prefetch_trait, dtype>;
@@ -2009,12 +2009,15 @@ namespace detail
                                            Layout<Shape<_1, _16>>{},
                                            Layout<Shape<_2, _2, _16>>{});
     }
-    if constexpr (get<0>(PrefetchTileSize{}) == 32) {
+    else if constexpr (get<0>(PrefetchTileSize{}) == 32) {
       using prefetch_trait = Copy_Traits<XE_2D_U8x32x64_LD_N>;
       using prefetch_atom = Copy_Atom<prefetch_trait, dtype>;
       return make_tiled_copy(prefetch_atom{}.with(static_cast<dtype const*>(ptr), width, height, pitch),
                                            Layout<Shape<_1, _16>>{},
                                            Layout<Shape<_2, _2, _32>>{});
+    }
+    else{
+      static_assert(dependent_false<PrefetchTileSize> && "Invalid PrefetchTileSize[0]");
     }
   }
 } // end namespace detail
