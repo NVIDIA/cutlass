@@ -57,6 +57,10 @@ if(NOT "${DPCPP_SYCL_ARCH}" STREQUAL "")
   endif()
 endif()
 
+if("${DPCPP_SYCL_TARGET}" STREQUAL "intel_gpu_pvc")
+  list(APPEND DPCPP_FLAGS "-Xspirv-translator;--spirv-ext=+SPV_INTEL_split_barrier")
+endif()
+
 if(UNIX)
   set_target_properties(DPCPP::DPCPP PROPERTIES
     INTERFACE_COMPILE_OPTIONS "${DPCPP_FLAGS};${DPCPP_COMPILE_ONLY_FLAGS}"

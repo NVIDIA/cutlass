@@ -52,7 +52,8 @@ class GemmUniversal<
   CollectiveMainloop_,
   CollectiveEpilogue_,
   TileScheduler_,
-  cute::enable_if_t<cute::is_base_of_v<KernelPVC, typename CollectiveMainloop_::DispatchPolicy::Schedule>>>
+  cute::enable_if_t<cute::is_base_of_v<KernelPVC, typename CollectiveMainloop_::DispatchPolicy::Schedule> 
+                    && !cute::is_same_v<TileScheduler_, cutlass::gemm::StreamKScheduler>>>
 {
 public:
   //
@@ -104,6 +105,10 @@ public:
   static constexpr uint32_t MaxThreadsPerBlock = CollectiveMainloop::MaxThreadsPerBlock;
   using MmaAtomShape = typename CollectiveMainloop::MmaAtomShape;
   using SubgroupTileShape = typename CollectiveMainloop::SubgroupTileShape;
+  using PrefetchATileSize = typename CollectiveMainloop::PrefetchATileSize;
+  using PrefetchBTileSize = typename CollectiveMainloop::PrefetchBTileSize;
+  static constexpr int PrefetchStrideA = static_cast<int>(get<1>(PrefetchATileSize{}));
+  static constexpr int PrefetchStrideB = static_cast<int>(get<0>(PrefetchBTileSize{}));
 
   // Kernel level shared memory storage
   struct SharedStorage {
@@ -235,18 +240,20 @@ public:
     Tensor accumulators = partition_fragment_C(tiled_mma, take<0,2>(blk_shape)); 
     clear(accumulators);
 
-    auto k_tile_iter  = cute::make_coord_iterator(make_shape(K / get<2>(workgroup_shape)));
+    auto k_tile_iter  = cute::make_coord_iterator(idx2crd(0, make_shape(K)), make_shape(K));
     int  k_tile_count = K / get<2>(workgroup_shape);
 
     // Perform the collective scoped MMA
     CollectiveMainloop collective_mma;
-    collective_mma(
+    collective_mma.template operator()<PrefetchStrideA, PrefetchStrideB>(
       accumulators,
       gA,
       gB,
       accumulators,
       k_tile_iter, k_tile_count,
       residue_mnk,
+      blk_coord_mnkl,
+      K,
       thread_idx,
       smem_buf,
       params.mainloop

@@ -40,6 +40,9 @@
 #include "cutlass/gemm/kernel/sm90_tile_scheduler.hpp"
 #include "cutlass/gemm/kernel/sm90_tile_scheduler_stream_k.hpp"
 #include "cutlass/gemm/kernel/sm90_tile_scheduler_group.hpp"
+#if defined (SYCL_INTEL_TARGET)
+#include "cutlass/gemm/kernel/xe_tile_scheduler_streamk.hpp"
+#endif
 ////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass::gemm {
@@ -126,6 +129,21 @@ struct TileSchedulerSelector<
   > {
   using Scheduler = PersistentTileSchedulerSm90StreamK<TileShape, ClusterShape>;
 };
+
+#if defined (SYCL_INTEL_TARGET)
+template <
+  class TileShape,
+  class ClusterShape
+>
+struct TileSchedulerSelector<
+  StreamKScheduler,
+  arch::IntelPVC,
+  TileShape,
+  ClusterShape
+  > {
+  using Scheduler = PersistentTileSchedulerXeStreamK<TileShape>;
+};
+#endif
 
 template <
   class TileShape,

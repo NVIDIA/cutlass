@@ -782,7 +782,7 @@ struct atomic_add
   CUTLASS_DEVICE
   void operator()(T *ptr, const T &data)
   {
-#if defined(__CUDA_ARCH__)
+#if defined(__CUDA_ARCH__) || defined(__SYCL_DEVICE_ONLY__)
     atomicAdd(ptr, data);
 #endif
   }

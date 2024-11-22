@@ -61,7 +61,9 @@ zero_workspace(void* workspace, size_t workspace_size, cudaStream_t stream = nul
 
     CUTLASS_TRACE_HOST("  clearing workspace");
 
-#if defined(CUTLASS_ENABLE_CUDA_HOST_ADAPTER) && CUTLASS_ENABLE_CUDA_HOST_ADAPTER
+#if defined (CUTLASS_ENABLE_SYCL)
+    syclcompat::memset_async(workspace, 0, workspace_size);
+#elif defined(CUTLASS_ENABLE_CUDA_HOST_ADAPTER) && CUTLASS_ENABLE_CUDA_HOST_ADAPTER
     //
     // Use the cuda host adapter
     //
