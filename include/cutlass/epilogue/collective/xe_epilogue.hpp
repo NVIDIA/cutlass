@@ -300,12 +300,8 @@ public:
     auto n_offset = n_coord * BLK_N + (get_sub_group_id() % ATOM_N) * SG_N;
     auto l_offset = l_coord;
 
-    // TODO(joe): Need to make this a template argument, and/or work out what it needs to be
-    // for consistency with the MMA configuration. In other words: Each thread in our work-group
-    // has accumulators for certain elements of C. We need to be applying the epilogue for *those*
-    // elements specifically. For some epilogues this probably makes no difference, but e.g.
-    // PerRowBias, it's presumably important. 
-    using EpilogueTile = Shape<_64, _16>;
+    // TODO(joe): We likely need to set EpilogueTile equal to the MN shape of the TiledMMA. 
+    using EpilogueTile = Shape<_64, _64>;
     bool is_C_load_needed = is_source_supported && fusion_callbacks.is_C_load_needed();
 
     Tensor trC = make_tensor<typename TiledMma::ValTypeC>(Shape<Int<FragmentSize>>{});
