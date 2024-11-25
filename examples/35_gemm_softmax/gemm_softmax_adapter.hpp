@@ -448,12 +448,12 @@ public:
 #endif
         //EventManager::getInstance().addEvent(event);
 
-        const auto sycl_block2 = syclcompat::dim3(128, 1, 1);
+        const auto sycl_block2 = syclcompat::dim3(32, std::min(32, params.softmax_params.args.IOSize[0]), 1);
         const auto sycl_grid2 = syclcompat::dim3(cute::ceil_div(params.softmax_params.args.IOSize[0], sycl_block2.x), 
                                                  params.softmax_params.args.batch_count, 
                                                  1);
         auto event2 = launch<device_kernel<SoftmaxFinalizeKernel>>(launch_policy{
-          sycl_grid2, sycl_block2, local_mem_size{0}},
+          sycl_grid2, sycl_block2, local_mem_size{SoftmaxFinalizeKernel::SharedStorageSize}},
           params.softmax_params);
         EventManager::getInstance().addEvent(event2);
 #else

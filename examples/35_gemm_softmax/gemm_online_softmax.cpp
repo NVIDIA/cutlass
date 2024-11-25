@@ -250,8 +250,8 @@ struct ExampleRunner {
       float abs_diff = fabs(diff);
       float abs_ref = fabs((float)vector_Input_Ref.at(i));
       float relative_diff = abs_ref > abs_tol ? abs_diff / abs_ref : 0;
-      if ( (isnan(abs_diff) || isinf(abs_diff)) ||  (abs_diff > rel_tol && relative_diff > rel_tol)) {
-        printf("diff = %f, {%f, %f}.\n", abs_diff, (float)(vector_Input.at(i)), (float)(vector_Input_Ref.at(i)));
+      if ( (isnan(abs_diff) || isinf(abs_diff)) ||  (abs_diff > abs_tol && relative_diff > rel_tol)) {
+        printf("i = %d diff = %f, {%f, %f}.\n", i, abs_diff, (float)(vector_Input.at(i)), (float)(vector_Input_Ref.at(i)));
         return false;
       }
 
@@ -333,6 +333,9 @@ struct ExampleRunner {
         for (int n = 1; n < options.n; ++n) {
           reference_N.at({m, 0}) = std::max(reference_N.at({m, 0}), ElementSoftmax(view_D_Ref.ref().at({m, n})));
         }
+        /*if(m == 3516 && batch_idx == 0){
+          std:: cout << "max0: " << reference_N.at({m, 0}) << std::endl;
+        }*/
       }
 
       // Compute softmax
@@ -341,6 +344,10 @@ struct ExampleRunner {
         for (int n = 0; n < options.n; ++n) {
           sum += std::exp( float(view_D_Ref.ref().at({m, n})) - float(reference_N.at({m, 0})) );
         }
+        
+        /*if(m == 3516 && batch_idx == 0){
+          std:: cout << "sum0: " << sum << std::endl;
+        }*/
 
         float inv_sum = float(1.0f / sum);
 

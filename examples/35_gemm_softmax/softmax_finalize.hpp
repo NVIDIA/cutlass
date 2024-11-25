@@ -109,9 +109,10 @@ public:
   };
 
   struct SharedStorage {
-
-
+    cute::array_aligned<ElementPartial, 32 * 32 * 2> s_mem;
   };
+
+  static constexpr int SharedStorageSize = sizeof(SharedStorage);
 
   //
   // Params struct
@@ -180,7 +181,10 @@ private:
     int batch_id = m_batch_id / params.args.IOSize[1];
     int m = m_batch_id % params.args.IOSize[1];*/
 
-    int m = ThreadIdxX() + BlockDimX() * BlockIdxX();
+    int x = ThreadIdxX();
+    int m = x + BlockDimX() * BlockIdxX();
+    int y = ThreadIdxY();
+    int y_size = BlockDimY();
     int batch_id = BlockIdxY();
 
     if(m>=params.args.IOSize[0]){
@@ -196,28 +200,54 @@ private:
     Tensor mOut = make_tensor(make_gmem_ptr(params.args.ptr_out), IOTensorShape, params.args.dOutput);                 // (m,n,l)
     Tensor mIn = make_tensor(make_gmem_ptr(params.args.ptr_in), IOTensorShape, params.args.dInput);                   // (m,n,l)
 
+    //Represent the shared tensor
+    Tensor sPartial = make_tensor(make_smem_ptr(reinterpret_cast<ElementPartial*>(shared_storage)), make_layout(make_shape(32, 32, 2)));
+
     if(m==0 && batch_id==0){
       //print("PartialTensorShape: "); print(PartialTensorShape); print("\n");
     }
 
     ElementPartial max_val = std::numeric_limits<ElementPartial>::min();
-    for(int partial_n = 0; partial_n < params.args.partialSize[1]; partial_n += 1){
+    for(int partial_n = y; partial_n < params.args.partialSize[1]; partial_n += y_size){
         ElementPartial partial_max = mPartialMax(m, partial_n, batch_id);
         /*if(m==0 && batch_id==0){
           print("partial_max: "); print(partial_max); print("\n");
         }*/
         max_val = max_val > partial_max ? max_val : partial_max;
     }
+    sPartial(x,y,0) = max_val;
+    syncthreads();
+    //TODO(Tadej): improve reduction
+    for(int y2 = 0; y2 < y_size; y2++){
+        ElementPartial partial_max = sPartial(x,y2,0);
+        max_val = max_val > partial_max ? max_val : partial_max;
+    }
+    /*if(m == 3516 && y == 0){
+      print("kernel max"); print(max_val); print("\n");
+    }*/
     //max_val = reduce_max(max_val);
 
     //mOut(0,0,0) = max_val; return;
     
     ElementPartial sum_val = 0;
-    for(int partial_n = 0; partial_n < params.args.partialSize[1]; partial_n += 1){
+    for(int partial_n = y; partial_n < params.args.partialSize[1]; partial_n += y_size){
         ElementPartial partial_max = mPartialMax(m, partial_n, batch_id);
         ElementPartial partial_sum = mPartialSum(m, partial_n, batch_id);
         sum_val = sum_val + partial_sum * cutlass::fast_exp(partial_max - max_val);
     }
+    syncthreads();
+    sPartial(x,y,1) = sum_val;
+    syncthreads();
+    sum_val = 0;
+    //TODO(Tadej): improve reduction
+    for(int y2 = 0; y2 < y_size; y2++){
+        ElementPartial partial_max = sPartial(x,y2,0);
+        ElementPartial partial_sum = sPartial(x,y2,1);
+        sum_val = sum_val + partial_sum /** cutlass::fast_exp(partial_max - max_val)*/;
+    }
+    /*if(m == 3516 && y == 0){
+      print("kernel sum"); print(sum_val); print("\n");
+    }*/
     //sum_val = reduce_sum(sum_val);
 
     if(m==0 && batch_id==0){
@@ -227,7 +257,7 @@ private:
 
     ElementPartial norm = 1 / sum_val;
 
-    for(int n = 0; n < params.args.IOSize[1]; n += 1){
+    for(int n = y; n < params.args.IOSize[1]; n += y_size){
       mOut(m, n, batch_id) = cutlass::fast_exp(mIn(m, n, batch_id) - max_val) * norm;
     }
   }
