@@ -93,7 +93,7 @@ struct integer_subbyte {
       [[maybe_unused]] constexpr int lower_bound = -(1 << (Bits - 1));
       [[maybe_unused]] constexpr int upper_bound = (1 << (Bits - 1)) - 1;
       assert(value >= lower_bound);
-      assert(value < upper_bound);
+      assert(value <= upper_bound);
     }
     else {
       [[maybe_unused]] constexpr unsigned upper_bound = 1u << Bits;
@@ -112,7 +112,7 @@ struct integer_subbyte {
       [[maybe_unused]] constexpr int lower_bound = -(1 << (Bits - 1));
       [[maybe_unused]] constexpr int upper_bound = (1 << (Bits - 1)) - 1;
       assert(value >= lower_bound);
-      assert(value < upper_bound);
+      assert(value <= upper_bound);
     }
     else {
       [[maybe_unused]] constexpr unsigned upper_bound = 1u << Bits;
