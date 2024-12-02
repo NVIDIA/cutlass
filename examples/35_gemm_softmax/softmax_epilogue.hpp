@@ -322,9 +322,6 @@ public:
     static_assert(cute::rank(BlockShapeMNK{}) == 3, "BlockShapeMNK must be rank 3");
     static_assert(cute::rank(BlockCoordMNKL{}) == 4, "BlockCoordMNKL must be rank 3");
 
-    //auto wlid = thread_idx % NumWarpsPerWarpGroup; // warp local id
-    //auto wid = thread_idx / NumWarpsPerWarpGroup; // warp id in tile
-
     // Separate out problem and tile shape for convenience
     auto M = get<0>(problem_shape_mnkl);
     auto N = get<1>(problem_shape_mnkl);
@@ -365,10 +362,7 @@ public:
     auto thr_mma = tiled_mma.get_thread_slice(thread_idx);
     Tensor tCgD = thr_mma.partition_C(gD);                                       // (VEC,THR_M,THR_N)
     Tensor tCgC = thr_mma.partition_C(gC);                                       // (VEC,THR_M,THR_N)
-    //Tensor tCgMax = thr_mma.partition_C(gMax);                                   // (VEC,THR_M,THR_N)
-    //Tensor tCgSum = thr_mma.partition_C(gSum);                                   // (VEC,THR_M,THR_N)
     Tensor tCsC = thr_mma.partition_C(sC);                                       // (VEC,THR_M,THR_N)
-
 
     static_assert(is_static<FrgLayout>::value, "Accumulator layout must be static");
     CUTE_STATIC_ASSERT_V(size(tCgC) == size(tCgD),
@@ -379,39 +373,6 @@ public:
     // Make an identity coordinate tensor for predicating our output MN tile
     auto cD = make_identity_tensor(make_shape(unwrap(shape<0>(gD)), unwrap(shape<1>(gD))));
     Tensor tCcD = thr_mma.partition_C(cD);
-
-    //Tensor acc_max = make_tensor<ElementAccumulator>(Shape<Int<size<0>(accumulators)>, Int<size<1>(accumulators)>>{});
-    //Tensor acc_max = make_tensor<ElementAccumulator>(size<0>(accumulators));
-    //Tensor acc_max = make_tensor_like(take<2,3>(accumulators));
-    //Tensor acc_sum = make_tensor_like(acc_max); //TODO can reuse prev?
-    
-    //Tensor acc_max = make_tensor<ElementAccumulator>(shape<2>(accumulators), LayoutLeft{});
-    //Tensor acc_sum = make_tensor<ElementAccumulator>(shape<2>(accumulators), LayoutLeft{}); //TODO can reuse prev?
-
-    bool is_first = ThreadIdxX()==0 && BlockIdxX()==0 && BlockIdxY()==0 && BlockIdxZ()==0;
-    if(is_first){
-      //print("blk_coord_mnkl: "); print(blk_coord_mnkl); print("\n");
-      //print("blk_shape_MNK: "); print(blk_shape_MNK); print("\n");
-      //print("partial_block: "); print(partial_block); print("\n");
-      //print("thr_mma: "); print(thr_mma); print("\n");
-      //print("tiled_mma: "); print(tiled_mma); print("\n");
-      //print("acc: "); print(accumulators); print("\n");
-      //print("mD_mnl: "); print(mD_mnl); print("\n");
-      //print("mMax_mnl: "); print(mMax_mnl); print("\n");
-      //print("gD_mnl: "); print(gD_mnl); print("\n");
-      //print("gMax_mnl: "); print(gMax_mnl); print("\n");
-      //print("gD: "); print(gD); print("\n");
-      //print("gMax: "); print(gMax); print("\n");
-      //print("tCgD: "); print(tCgD); print("\n");
-      //print("sC: "); print(sC); print("\n");
-      //print("tCsC: "); print(tCsC); print("\n");
-      //print("sC.data: "); print(&sC(0)); print("\n");
-      //print("tCsC.data: "); print(&tCsC(0)); print("\n");
-      //decltype(tCsC(0)) a = "asd";
-      //print("tCgMax: "); print(tCgMax); print("\n");
-      //print("acc_max: "); print(acc_max); print("\n");
-      //print("accumulators: "); print(accumulators); print("\n");
-    }
 
     if(is_source_needed()){
       CUTLASS_PRAGMA_UNROLL
@@ -447,7 +408,7 @@ public:
 
     syncthreads();
 
-    // assumption size<0>(sC) == wg size
+    // assumption: size<0>(sC) == wg size
     ElementAccumulator max = std::numeric_limits<ElementAccumulator>::min();
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < size<0>(sC); ++i) {
@@ -456,7 +417,6 @@ public:
         max = cutlass::fast_max(max, accumulators(i));
       }
     }
-
     gMax(thread_idx,0) = max;
     
     ElementAccumulator sum = 0;
@@ -464,18 +424,7 @@ public:
     for (int i = 0; i < size<0>(sC); ++i) {
       if (elem_less(cD(thread_idx, i), make_coord(get<0>(residue_mnk), get<1>(residue_mnk)))) {
         sum += cutlass::fast_exp(accumulators(i) - max);
-        //sum += sycl::native::exp(accumulators(i) - max);
-        if(is_first){
-          //print("acc3 :"); print(accumulators(i)); print("\n");
-          //print("diff :"); print(accumulators(i) - max); print("\n");
-          //print("add :"); print(cutlass::fast_exp(accumulators(i) - max)); print("\n");
-          //print("sum :"); print(sum); print("\n");
-          //print("idx:"); print(sC.layout()(thread_idx, i)); print(".\n");
-        } 
       }
-    }
-    if(is_first){
-      //print("sum epilogue val:"); print(sum); print("\n");
     }
     gSum(thread_idx,0) = sum;
   }

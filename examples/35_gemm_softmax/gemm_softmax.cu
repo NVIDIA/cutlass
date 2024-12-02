@@ -200,11 +200,6 @@ struct Testbed {
   // Type definitions
   //
 
-
-  /*using ElementA = cutlass::half_t;
-  using ElementB = cutlass::half_t;
-  using ElementC = cutlass::half_t;
-  using ElementCompute = float;*/
   using ElementA = float;
   using ElementB = float;
   using ElementC = float;

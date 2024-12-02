@@ -333,9 +333,6 @@ struct ExampleRunner {
         for (int n = 1; n < options.n; ++n) {
           reference_N.at({m, 0}) = std::max(reference_N.at({m, 0}), ElementSoftmax(view_D_Ref.ref().at({m, n})));
         }
-        /*if(m == 3516 && batch_idx == 0){
-          std:: cout << "max0: " << reference_N.at({m, 0}) << std::endl;
-        }*/
       }
 
       // Compute softmax
@@ -344,11 +341,6 @@ struct ExampleRunner {
         for (int n = 0; n < options.n; ++n) {
           sum += std::exp( float(view_D_Ref.ref().at({m, n})) - float(reference_N.at({m, 0})) );
         }
-        
-        /*if(m == 3516 && batch_idx == 0){
-          std:: cout << "sum0: " << sum << std::endl;
-        }*/
-
         float inv_sum = float(1.0f / sum);
 
         for (int n = 0; n < options.n; ++n) {
@@ -403,8 +395,8 @@ struct ExampleRunner {
             cutlass::gemm::GemmUniversalMode::kGemm,
             problem_size,
             {block_A.get(), stride_A, block_B.get(), stride_B},
-            {{options.alpha,//static_cast<ElementOutput>(options.alpha), 
-             options.beta},//static_cast<ElementOutput>(options.beta)}, 
+            {{options.alpha,
+             options.beta},
              block_C.get(), stride_C, 
              block_D.get(), stride_D, 
              block_max.get(), block_sum.get(), stride_tmp},
@@ -430,7 +422,7 @@ struct ExampleRunner {
     std::cout << "  Disposition: " << (result.passed ? "Passed" : "Failed") << std::endl;
 
     if (!result.passed) {
-      //exit(-1);
+      exit(-1);
     }
 
     // Run profiling loop
@@ -512,10 +504,6 @@ int main(int argc, char const **args) {
   hw_info.sm_count = cutlass::KernelHardwareInfo::query_device_multiprocessor_count(hw_info.device_id);
 
   // Problem configuration
-  /*using ElementA = cutlass::half_t;
-  using ElementB = cutlass::half_t;
-  using ElementAcc = float;
-  using ElementOutput = cutlass::half_t;*/
   using ElementA = float;
   using ElementB = float;
   using ElementAcc = float;

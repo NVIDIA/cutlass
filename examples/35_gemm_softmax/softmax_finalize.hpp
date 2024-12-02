@@ -83,29 +83,6 @@ public:
     ElementPartial*  ptr_partial_max;
     ElementPartial*  ptr_partial_sum;
     ElementOutput*           ptr_out;
-
-/*
-    //
-    // Methods
-    //
-    Arguments() { }
-
-    Arguments(
-      cutlass::gemm::GemmCoord  problem_size,
-      ElementNorm*              block_Norm,
-      ElementSum*               block_Sum
-    ):
-      problem_size(problem_size),
-      block_Norm(block_Norm),
-      block_Sum(block_Sum),
-      problem_sizes(nullptr),
-      offset_Norm_Device(nullptr),
-      offset_Sum_Device(nullptr),
-      batch_stride_Max(0),
-      batch_stride_Sum(0)
-    {
-
-    }*/
   };
 
   struct SharedStorage {
@@ -168,19 +145,6 @@ private:
     using ConvertInput = cutlass::NumericConverter<ElementInput, ElementPartial>;
     using ConvertNormOutput = cutlass::NumericConverter<ElementPartial, ElementOutput>;
 
-    /*int tid = ThreadIdxX();
-    //int bid = BlockIdxX();
-    int bdim = BlockDimX();
-
-    int warps_in_block = bdim / NumThreadsPerWarp;
-    
-    int wlid = tid % warps_in_block; // local id of thread in warp
-    int gid = tid;// + bid * GridDimX();
-    int bsize = GridDimX();
-    int m_batch_id = BlockIdxY();
-    int batch_id = m_batch_id / params.args.IOSize[1];
-    int m = m_batch_id % params.args.IOSize[1];*/
-
     int x = ThreadIdxX();
     int m = x + BlockDimX() * BlockIdxX();
     int y = ThreadIdxY();
@@ -203,16 +167,9 @@ private:
     //Represent the shared tensor
     Tensor sPartial = make_tensor(make_smem_ptr(reinterpret_cast<ElementPartial*>(shared_storage)), make_layout(make_shape(32, 32, 2)));
 
-    if(m==0 && batch_id==0){
-      //print("PartialTensorShape: "); print(PartialTensorShape); print("\n");
-    }
-
     ElementPartial max_val = std::numeric_limits<ElementPartial>::min();
     for(int partial_n = y; partial_n < params.args.partialSize[1]; partial_n += y_size){
         ElementPartial partial_max = mPartialMax(m, partial_n, batch_id);
-        /*if(m==0 && batch_id==0){
-          print("partial_max: "); print(partial_max); print("\n");
-        }*/
         max_val = max_val > partial_max ? max_val : partial_max;
     }
     sPartial(x,y,0) = max_val;
@@ -222,12 +179,6 @@ private:
         ElementPartial partial_max = sPartial(x,y2,0);
         max_val = max_val > partial_max ? max_val : partial_max;
     }
-    /*if(m == 3516 && y == 0){
-      print("kernel max"); print(max_val); print("\n");
-    }*/
-    //max_val = reduce_max(max_val);
-
-    //mOut(0,0,0) = max_val; return;
     
     ElementPartial sum_val = 0;
     for(int partial_n = y; partial_n < params.args.partialSize[1]; partial_n += y_size){
@@ -243,32 +194,16 @@ private:
     for(int y2 = 0; y2 < y_size; y2++){
         ElementPartial partial_max = sPartial(x,y2,0);
         ElementPartial partial_sum = sPartial(x,y2,1);
-        sum_val = sum_val + partial_sum /** cutlass::fast_exp(partial_max - max_val)*/;
-    }
-    /*if(m == 3516 && y == 0){
-      print("kernel sum"); print(sum_val); print("\n");
-    }*/
-    //sum_val = reduce_sum(sum_val);
-
-    if(m==0 && batch_id==0){
-      //print("max_val: "); print(max_val); print("\n");
-      //print("sum_val: "); print(sum_val); print("\n");
+        sum_val = sum_val + partial_sum;
     }
 
     ElementPartial norm = 1 / sum_val;
 
-    int unroll = 2;
-    //_Pragma("unroll 2")
-    //for(int n = y; n < params.args.IOSize[1]; n += y_size){
-    for(int n = y * unroll; n < params.args.IOSize[1]; n += y_size * unroll){
+    for(int n = y * 2; n < params.args.IOSize[1]; n += y_size * 2){
       auto inVal = mIn(m, n, batch_id);
       auto inVal2 = mIn(m, n+1, batch_id);
-      //auto inVal3 = mIn(m, n+2, batch_id);
-      //auto inVal4 = mIn(m, n+3, batch_id);
       mOut(m, n, batch_id) = cutlass::fast_exp(inVal - max_val) * norm;
       mOut(m, n+1, batch_id) = cutlass::fast_exp(inVal2 - max_val) * norm;
-      //mOut(m, n+2, batch_id) = cutlass::fast_exp(inVal3 - max_val) * norm;
-      //mOut(m, n+3, batch_id) = cutlass::fast_exp(inVal4 - max_val) * norm;
     }
     if(params.args.IOSize[1]%2==1){
       int n = params.args.IOSize[1] - 1;

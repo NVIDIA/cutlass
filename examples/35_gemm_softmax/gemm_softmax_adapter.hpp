@@ -446,8 +446,6 @@ public:
           sycl_grid, sycl_block, local_mem_size{static_cast<std::size_t>(smem_size)}},
           params.gemm_params);
 #endif
-        //EventManager::getInstance().addEvent(event);
-
         const auto sycl_block2 = syclcompat::dim3(32, std::min(32, params.softmax_params.args.IOSize[0]), 1);
         const auto sycl_grid2 = syclcompat::dim3(cute::ceil_div(params.softmax_params.args.IOSize[0], sycl_block2.x), 
                                                  params.softmax_params.args.batch_count, 
