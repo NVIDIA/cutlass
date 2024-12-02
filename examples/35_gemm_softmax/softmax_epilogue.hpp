@@ -424,9 +424,6 @@ public:
               accumulators(i,j,k) = epilogue_op(accumulators(i,j,k), tCgC(i,j,k));
               tCgD(i,j,k) = accumulators(i,j,k);
               tCsC(i,j,k) = accumulators(i,j,k);
-              /*if(is_first){
-                print("acc1.1:"); print(tCsC(i,j,k)); print("\n");
-              }*/
             }
           }
         }
@@ -442,10 +439,6 @@ public:
               accumulators(i,j,k) = epilogue_op(accumulators(i,j,k));
               tCgD(i,j,k) = accumulators(i,j,k);
               tCsC(i,j,k) = accumulators(i,j,k);
-              /*if(is_first){
-                print("acc1.2:"); print(accumulators(i,j,k)); print(".\n");
-                print("idx:"); print(tCsC.layout()(i,j,k)); print(".\n");
-              }*/
             } 
           }
         }
@@ -461,19 +454,8 @@ public:
       if (elem_less(cD(thread_idx, i), make_coord(get<0>(residue_mnk), get<1>(residue_mnk)))) {
         accumulators(i) = sC(thread_idx, i);
         max = cutlass::fast_max(max, accumulators(i));
-        /*if(is_first && i < 3){
-          print("acc2 :"); print(accumulators(i)); print("\n");
-          //print("idx:"); print(sC.layout()(thread_idx, i)); print(".\n");
-          for (int j = 0; j < 3; ++j) {
-            print("shared :"); print(j); print(" "); print(i); print(": "); print(sC(j, i)); print("\n");
-          }
-        }*/
       }
     }
-    /*if(m_coord == 0 && n_coord == 1 && ThreadIdxX()==0){
-      print("max epilogue val:"); print(max); print("\n");
-      print("idx:"); print(n_coord); print("\n");
-    }*/
 
     gMax(thread_idx,0) = max;
     
@@ -482,6 +464,7 @@ public:
     for (int i = 0; i < size<0>(sC); ++i) {
       if (elem_less(cD(thread_idx, i), make_coord(get<0>(residue_mnk), get<1>(residue_mnk)))) {
         sum += cutlass::fast_exp(accumulators(i) - max);
+        //sum += sycl::native::exp(accumulators(i) - max);
         if(is_first){
           //print("acc3 :"); print(accumulators(i)); print("\n");
           //print("diff :"); print(accumulators(i) - max); print("\n");

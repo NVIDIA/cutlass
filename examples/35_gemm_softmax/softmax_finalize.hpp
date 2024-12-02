@@ -257,8 +257,23 @@ private:
 
     ElementPartial norm = 1 / sum_val;
 
-    for(int n = y; n < params.args.IOSize[1]; n += y_size){
-      mOut(m, n, batch_id) = cutlass::fast_exp(mIn(m, n, batch_id) - max_val) * norm;
+    int unroll = 2;
+    //_Pragma("unroll 2")
+    //for(int n = y; n < params.args.IOSize[1]; n += y_size){
+    for(int n = y * unroll; n < params.args.IOSize[1]; n += y_size * unroll){
+      auto inVal = mIn(m, n, batch_id);
+      auto inVal2 = mIn(m, n+1, batch_id);
+      //auto inVal3 = mIn(m, n+2, batch_id);
+      //auto inVal4 = mIn(m, n+3, batch_id);
+      mOut(m, n, batch_id) = cutlass::fast_exp(inVal - max_val) * norm;
+      mOut(m, n+1, batch_id) = cutlass::fast_exp(inVal2 - max_val) * norm;
+      //mOut(m, n+2, batch_id) = cutlass::fast_exp(inVal3 - max_val) * norm;
+      //mOut(m, n+3, batch_id) = cutlass::fast_exp(inVal4 - max_val) * norm;
+    }
+    if(params.args.IOSize[1]%2==1){
+      int n = params.args.IOSize[1] - 1;
+      auto inVal = mIn(m, n, batch_id);
+      mOut(m, n, batch_id) = cutlass::fast_exp(inVal - max_val) * norm;
     }
   }
 };
