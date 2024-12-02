@@ -300,8 +300,15 @@ public:
     auto n_offset = n_coord * BLK_N + (get_sub_group_id() % ATOM_N) * SG_N;
     auto l_offset = l_coord;
 
-    // TODO(joe): We likely need to set EpilogueTile equal to the MN shape of the TiledMMA. 
-    using EpilogueTile = Shape<_64, _64>;
+    using EpilogueTile = decltype(get<0>(params.xe_store_d.get_layoutS_MN()).shape());
+
+    auto sg_local_m_coord = get_sub_group_id() / ATOM_N;
+    auto sg_local_n_coord = get_sub_group_id() % ATOM_N;
+
+    auto sg_m_coord = m_coord * ATOM_M + sg_local_m_coord;
+    auto sg_n_coord = n_coord * ATOM_N + sg_local_n_coord;
+    auto sg_coord = make_coord(sg_m_coord, sg_n_coord, k_coord, l_coord);
+
     bool is_C_load_needed = is_source_supported && fusion_callbacks.is_C_load_needed();
 
     Tensor trC = make_tensor<typename TiledMma::ValTypeC>(Shape<Int<FragmentSize>>{});
@@ -340,11 +347,11 @@ public:
     auto residue_mn = make_coord(M, N);
     auto cst_args = cutlass::epilogue::fusion::detail::ConsumerStoreArgs{
                       problem_shape_mnkl,
-                      TileShapeMNK{},
-                      tile_coord_mnkl,
+                      SubgroupTileShape{},
+                      sg_coord,
                       tiled_mma,
                       EpilogueTile{},
-                      params.xe_load_c,
+                      params.xe_store_d,
                       cD,
                       residue_cD,
                       tRS_cD,

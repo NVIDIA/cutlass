@@ -281,7 +281,7 @@ public:
     CollectiveEpilogue epilogue{params.epilogue, shared_storage.epilogue};
     epilogue(
       problem_shape_MNKL,
-      subgroup_shape,
+      subgroup_shape, // TODO(joe): Inconsistency here w/ blk_coord_mnkl
       blk_coord_mnkl,
       accumulators,
       tiled_mma,
