@@ -76,12 +76,12 @@ struct Gemm_OperandB;
 
 template<>
 struct Gemm_OperandA<bfloat16_t, layout::RowMajor> {
-  using GmemTiledCopy = XE_2D_U16x8x16x4x2_LD_N;
+  using GmemTiledCopy = XE_2D_U16x32x32_LD_N;
 };
 
 template<>
 struct Gemm_OperandB<bfloat16_t, layout::RowMajor> {
-  using GmemTiledCopy = XE_2D_U16x16x16x2x2_V;
+  using GmemTiledCopy = XE_2D_U16x32x32_LD_V;
 };
 
 } // namespace details
@@ -97,8 +97,8 @@ struct GemmConfiguration<
   using DispatchPolicy = MainloopIntelPVC<3>;;
   using TiledMma = TiledMMA<
     MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
-    Layout<Shape<_1,_1,_1>>,
-    Tile<_32,_64,_32>>;
+    Layout<Shape<_8,_4,_1>>,
+    Tile<_64,_64,_32>>;
 
   // A
   using OperandA = detail::Gemm_OperandA<bfloat16_t, LayoutA>;
@@ -132,9 +132,9 @@ struct GemmConfiguration<
         float,
         TagToStrideC_t<LayoutC>,
         FusionCallBacks,
-        XE_2D_U32x8x16x1x1_LD_N,
+        XE_2D_U32x8x16_LD_N,
         void, void,
-        XE_2D_U32x8x16x1x1_ST_N,
+        XE_2D_U32x8x16_ST_N,
         void, void>;
 
   using GemmKernel = kernel::GemmUniversal<

@@ -86,14 +86,14 @@ struct CollectiveBuilder<
       //Prepare Template arguments required of CollectiveMainLoop
       
       using TiledMma = TiledMMA<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
-              Layout<Shape<_1,_1,_1>>,
-              Tile<_32,_64,_32>>; // Subgroup level-tile
+          Layout<Shape<_8,_4,_1>>,
+          Tile<_64,_64,_32>>;
       
       static constexpr int PipelineStages = 3;
       using DispatchPolicy = cutlass::gemm::MainloopIntelPVC<PipelineStages>;
 
-      using GmemTiledCopyA = XE_2D_U16x8x16x4x2_LD_N;
-      using GmemTiledCopyB = XE_2D_U16x16x16x2x2_V;
+      using GmemTiledCopyA = XE_2D_U16x32x32_LD_N;
+      using GmemTiledCopyB = XE_2D_U16x32x32_LD_V;
 
       //PVC pipeline does not use shared memory
       using SmemLayoutAtomA = void; 

@@ -314,19 +314,20 @@ using cudaStream_t = void *;
 using dim3 = syclcompat::dim3;
 
 // Atomic
-
-CUTLASS_DEVICE int atomicAdd(int *address, int val) {
+template <typename T>
+CUTLASS_DEVICE T atomicAdd(T *address, T val) {
 #if defined(__SYCL_DEVICE_ONLY__)
-  return syclcompat::atomic_fetch_add(address, val);
+  return syclcompat::atomic_fetch_add<sycl::access::address_space::global_space>(address, val);
 #endif
   return 0;
 }
 
 CUTLASS_DEVICE int atomicCAS(int *address, int compare, int val) {
+  int result = 0;
 #if defined(__SYCL_DEVICE_ONLY__)
-  syclcompat::atomic_compare_exchange_strong(address, compare, val);
+  result = syclcompat::atomic_compare_exchange_strong(address, compare, val);
 #endif
-  return 0;
+  return result;
 }
 
 // Error

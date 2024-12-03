@@ -29,450 +29,218 @@
  *
  **************************************************************************************************/
 #pragma once
-
-#include <cute/arch/copy.hpp>
-#include <cute/config.hpp>
-#include <cute/util/sycl_vec.hpp>
-
-namespace cute
-{
-
+#include <cute/arch/xe_copy_1B.hpp>
+#include <cute/arch/xe_copy_2B.hpp>
+#include <cute/arch/xe_copy_4B.hpp>
+#include <cute/arch/xe_copy_8B.hpp>
 #ifdef __SYCL_DEVICE_ONLY__
 #define SYCL_DEVICE_BUILTIN(x) SYCL_EXTERNAL extern "C" x
 #else
-#define SYCL_DEVICE_BUILTIN(x)  \
-  inline x { CUTE_INVALID_CONTROL_PATH("Trying to use XE built-in on non-XE hardware"); }
+#define SYCL_DEVICE_BUILTIN(x) inline x { assert(false); }
 #endif
 
-enum class CacheControl {
-    kDefault   = 0,
-    kL1UC_L3UC = 1, // Override to L1 uncached and L3 uncached
-    kL1UC_L3C  = 2, // Override to L1 uncached and L3 cached
-    kL1C_L3UC  = 3, // Override to L1 cached and L3 uncached
-    kL1C_L3C   = 4, // Override to L1 cached and L3 cached
-    kL1S_L3UC  = 5, // Override to L1 streaming load and L3 uncached
-    kL1S_L3C   = 6, // Override to L1 streaming load and L3 cached
-    kL1IAR_L3C = 7, // Override to L1 invalidate-after-read, and L3 cached
-};
+using namespace cute;
 
-SYCL_DEVICE_BUILTIN(void __builtin_IB_subgroup_block_write_flat_u32_m8k16v1(
-    long baseoffset, int width_minus_one, int height_minus_one,
-    int pitch_minus_one, intel::coord_t coord, intel::uint8 data));
-SYCL_DEVICE_BUILTIN(intel::ushort8 __builtin_IB_subgroup_block_read_flat_u16_m8k16v1(
-    long baseoffset, int width_minus_one, int height_minus_one,
-    int pitch_minus_one, intel::coord_t coord));
-SYCL_DEVICE_BUILTIN(intel::ushort16 __builtin_IB_subgroup_block_read_flat_u16_m16k16v1(
-    long baseoffset, int width_minus_one, int height_minus_one,
-    int pitch_minus_one, intel::coord_t coord));
-SYCL_DEVICE_BUILTIN(intel::uint8 __builtin_IB_subgroup_block_read_flat_u32_m8k16v1(
-    long baseoffset, int width_minus_one, int height_minus_one,
-    int pitch_minus_one, intel::coord_t coord));
-SYCL_DEVICE_BUILTIN(intel::ushort64 __builtin_IB_subgroup_block_read_flat_u16_m32k16v2(
-    long baseoffset, int width_minus_one, int height_minus_one,
-    int pitch_minus_one, intel::coord_t coord));
-SYCL_DEVICE_BUILTIN(intel::ushort32 __builtin_IB_subgroup_block_read_flat_u16_m16k16v2(
-    long baseoffset, int width_minus_one, int height_minus_one,
-    int pitch_minus_one, intel::coord_t coord));
-SYCL_DEVICE_BUILTIN(intel::ushort16 intel_subgroup_block_read_u16_m8k16v2(
-    long baseoffset, int width_minus_one, int height_minus_one,
-    int pitch_minus_one, intel::coord_t coord));
-SYCL_DEVICE_BUILTIN(intel::ushort32 __builtin_IB_subgroup_block_read_flat_u16_m32k16v1(
-    long baseoffset, int width_minus_one, int height_minus_one,
-    int pitch_minus_one, intel::coord_t coord));
-SYCL_DEVICE_BUILTIN(intel::uint16 __builtin_IB_subgroup_block_read_flat_u32_m16k16v1(
-    long baseoffset, int width_minus_one, int height_minus_one,
-    int pitch_minus_one, intel::coord_t coord));
-SYCL_DEVICE_BUILTIN(intel::uint32 __builtin_IB_subgroup_block_read_flat_transform_u16_k32v2(
-    long baseoffset, int width_minus_one, int height_minus_one,
-    int pitch_minus_one, intel::coord_t coord));
-SYCL_DEVICE_BUILTIN(intel::int16 __builtin_IB_subgroup_block_read_flat_transform_u16_k16v2(
-    long baseoffset, int width_minus_one, int height_minus_one,
-    int pitch_minus_one, intel::coord_t coord));
-SYCL_DEVICE_BUILTIN(intel::int16 __builtin_IB_subgroup_block_read_flat_transform_u16_k32(
-    long baseoffset, int width_minus_one, int height_minus_one,
-    int pitch_minus_one, intel::coord_t coord));
-SYCL_DEVICE_BUILTIN(intel::int8 intel_subgroup_block_read_transform_u16_k16(
-    long baseoffset, int width_minus_one, int height_minus_one,
-    int pitch_minus_one, intel::coord_t coord));
-SYCL_DEVICE_BUILTIN(void __builtin_IB_subgroup_block_read_prefetch_u16_m8k16v1(
-    long baseoffset, int width_minus_one, int height_minus_one,
-    int pitch_minus_one, intel::coord_t coord, enum CacheControl cache_control));
-SYCL_DEVICE_BUILTIN(void __builtin_IB_subgroup_block_read_prefetch_u16_m8k16v2(
-    long baseoffset, int width_minus_one, int height_minus_one,
-    int pitch_minus_one, intel::coord_t coord, enum CacheControl cache_control));
-SYCL_DEVICE_BUILTIN(void __builtin_IB_subgroup_block_read_prefetch_u16_m16k16v1(
-    long baseoffset, int width_minus_one, int height_minus_one,
-    int pitch_minus_one, intel::coord_t coord, enum CacheControl cache_control));
-SYCL_DEVICE_BUILTIN(void __builtin_IB_subgroup_block_read_prefetch_u16_m32k16v1(
-    long baseoffset, int width_minus_one, int height_minus_one,
-    int pitch_minus_one, intel::coord_t coord, enum CacheControl cache_control));
-SYCL_DEVICE_BUILTIN(void __builtin_IB_subgroup_block_read_prefetch_u16_m16k16v2(
-    long baseoffset, int width_minus_one, int height_minus_one,
-    int pitch_minus_one, intel::coord_t coord, enum CacheControl cache_control));
-SYCL_DEVICE_BUILTIN(void __builtin_IB_subgroup_block_read_prefetch_u16_m32k16v2(
-    long baseoffset, int width_minus_one, int height_minus_one,
-    int pitch_minus_one, intel::coord_t coord, enum CacheControl cache_control));
-
+// prefetch
+SYCL_DEVICE_BUILTIN(void __builtin_IB_lsc_prefetch_global_uchar(
+    const __attribute__((opencl_global)) uint8_t *base, int immElemOff,
+    enum CacheControl cacheOpt));
+SYCL_DEVICE_BUILTIN(void __builtin_IB_lsc_prefetch_global_ushort(
+    const __attribute__((opencl_global)) uint16_t *base, int immElemOff,
+    enum CacheControl cacheOpt));
+SYCL_DEVICE_BUILTIN(void __builtin_IB_lsc_prefetch_global_uint(
+    const __attribute__((opencl_global)) uint32_t *base, int immElemOff,
+    enum CacheControl cacheOpt));
+SYCL_DEVICE_BUILTIN(void __builtin_IB_lsc_prefetch_global_uint2(
+    const __attribute__((opencl_global)) uint32_t *base, int immElemOff,
+    enum CacheControl cacheOpt));
+SYCL_DEVICE_BUILTIN(void __builtin_IB_lsc_prefetch_global_uint4(
+    const __attribute__((opencl_global)) uint32_t *base, int immElemOff,
+    enum CacheControl cacheOpt));
+SYCL_DEVICE_BUILTIN(void __builtin_IB_lsc_prefetch_global_uint8(
+    const __attribute__((opencl_global)) uint32_t *base, int immElemOff,
+    enum CacheControl cacheOpt));
+SYCL_DEVICE_BUILTIN(void __builtin_IB_lsc_prefetch_global_ulong(
+    const __attribute__((opencl_global)) uint64_t *base, int immElemOff,
+    enum CacheControl cacheOpt));
+SYCL_DEVICE_BUILTIN(void __builtin_IB_lsc_prefetch_global_ulong2(
+    const __attribute__((opencl_global)) uint64_t *base, int immElemOff,
+    enum CacheControl cacheOpt));
+SYCL_DEVICE_BUILTIN(void __builtin_IB_lsc_prefetch_global_ulong4(
+    const __attribute__((opencl_global)) uint64_t *base, int immElemOff,
+    enum CacheControl cacheOpt));
+SYCL_DEVICE_BUILTIN(void __builtin_IB_lsc_prefetch_global_ulong8(
+    const __attribute__((opencl_global)) uint64_t *base, int immElemOff,
+    enum CacheControl cacheOpt));
 #undef SYCL_DEVICE_BUILTIN
 
-/// @brief This function loads data from 2D memory surface.
-/// Loads an array of rectangular regions coord(X,Y)..coord(X+W,Y+H) from global memory into registers.
-/// The loading block size is 16bitsx8x16, with a total of 1x1 blocks.
-struct XE_2D_U16x8x16x1x1_LD_N
+namespace cute
 {
-  template <class T>
-  CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
-                                    int height, int pitch, intel::coord_t coord,
-                                    T *dst) {
+template<class S, class D = S>
+struct XE_ATOMIC {
+  using SRegisters = S[1];
+  using DRegisters = D[1];
+
+  CUTE_STATIC_ASSERT(is_same_v<S, float> || is_same_v<S, double> || is_same_v<S, int>);
+
+  template<class S_, class D_>
+  CUTE_HOST_DEVICE static void
+  copy(S_ const& src, D_ & dst) {
     #if defined(SYCL_INTEL_TARGET)
-      static_assert(sizeof(T) == 2, "Expected T to have size 2");
-      *(intel::ushort8 *)dst = __builtin_IB_subgroup_block_read_flat_u16_m8k16v1(
-          (long)baseoffset, width - 1, height - 1, pitch - 1, coord);
+      auto v = sycl::atomic_ref<D_, sycl::memory_order::relaxed,
+                                  sycl::memory_scope::device,
+                                  sycl::access::address_space::global_space>(*&dst);
+      v += static_cast<D_>(*&src);
     #else
       CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
     #endif
   }
+};
 
-  struct PREFETCH {
-      template <class T>
-      CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
-              int height, int pitch, intel::coord_t coord) {
+template <class S, class D = S>
+struct XE_1D_LDSM {
+  using SRegisters = S[1];
+  using DRegisters = D[1];
+
+  CUTE_STATIC_ASSERT(sizeof(D) % sizeof(S) == 0,
+    "dst failed to vectorize into registers");
+  static constexpr size_t N = sizeof(D) / sizeof(S);
+  CUTE_STATIC_ASSERT(N == 1 || N == 2 || N == 4 || N == 8,
+    "register vector only supports 1, 2, 4, 8");
+
+  template<class S_, class D_>
+  CUTE_HOST_DEVICE static void
+  copy(const S_ &src, D_ &dst) {
+    #if defined(SYCL_INTEL_TARGET)
+      CUTE_STATIC_ASSERT(sizeof(S_) == sizeof(S));
+      auto sg = sycl::ext::oneapi::this_work_item::get_nd_item<3>().get_sub_group();
+      *(sycl::vec<S_, N>*)(&dst)
+        = sg.load<N>(sycl::address_space_cast<sycl::access::address_space::local_space,
+                  sycl::access::decorated::yes>(&*&src));
+    #else
+      CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
+    #endif 
+  }
+};
+
+template <class S, class D = S>
+struct PREFETCH {
+  using SRegisters = S[1];
+  using DRegisters = D[1];
+
+  template <class S_, class D_>
+  CUTE_HOST_DEVICE static void copy(const S_ &src, D_ &dst) {
 #if defined(SYCL_INTEL_TARGET)
-      static_assert(sizeof(T) == 2, "Expected T to have size 2");
-      __builtin_IB_subgroup_block_read_prefetch_u16_m8k16v1(
-              (long)baseoffset, width - 1, height - 1, pitch - 1, coord,
-              CacheControl::kL1C_L3C);
+    if constexpr(sizeof(D) == 1) {
+      __builtin_IB_lsc_prefetch_global_uchar(
+          (const __attribute__((opencl_global)) uint8_t *)(&*&src), 0, CacheControl::kL1C_L3C);
+    }
+    else if constexpr(sizeof(D) == 2) {
+      __builtin_IB_lsc_prefetch_global_ushort(
+          (const __attribute__((opencl_global)) uint16_t *)(&*&src), 0, CacheControl::kL1C_L3C);
+    }
+    else if constexpr(sizeof(D) == 4) {
+      __builtin_IB_lsc_prefetch_global_uint(
+          (const __attribute__((opencl_global)) uint32_t *)(&*&src), 0, CacheControl::kL1C_L3C);
+    }
+    else if constexpr(sizeof(D) == 8) {
+      __builtin_IB_lsc_prefetch_global_uint2(
+          (const __attribute__((opencl_global)) uint32_t *)(&*&src), 0, CacheControl::kL1C_L3C);
+    }
+    else if constexpr(sizeof(D) == 16) {
+      __builtin_IB_lsc_prefetch_global_uint4(
+          (const __attribute__((opencl_global)) uint32_t *)(&*&src), 0, CacheControl::kL1C_L3C);
+    }
+    else if constexpr(sizeof(D) == 32) {
+      __builtin_IB_lsc_prefetch_global_uint8(
+          (const __attribute__((opencl_global)) uint32_t *)(&*&src), 0, CacheControl::kL1C_L3C);
+    }
+    else if constexpr(sizeof(D) == 64) {
+      __builtin_IB_lsc_prefetch_global_ulong8(
+          (const __attribute__((opencl_global)) uint64_t *)(&*&src), 0, CacheControl::kL1C_L3C);
+    }
 #else
       CUTE_INVALID_CONTROL_PATH(
-              "Trying to use block prefetch on non-PVC hardware");
+          "Trying to use block prefetch on non-PVC hardware");
 #endif
-        }
-    };
+    }
 };
 
-/// @brief This function loads data from 2D memory surface.
-/// Loads an array of rectangular regions coord(X,Y)..coord(X+W,Y+H) from global memory into registers.
-/// The loading block size is 32bitsx8x16, with a total of 1x1 blocks.
-struct XE_2D_U32x8x16x1x1_LD_N
-{
-  template <class T>
-  CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
-                                    int height, int pitch, intel::coord_t coord,
-                                    T *dst) {
+template <class S, class D = S>
+struct XE_1D_LOAD_GLOBAL {
+  using SRegisters = S[1];
+  using DRegisters = D[1];
+
+  CUTE_STATIC_ASSERT(sizeof(D) % sizeof(S) == 0,
+    "dst failed to vectorize into registers");
+  static constexpr size_t N = sizeof(D) / sizeof(S);
+  CUTE_STATIC_ASSERT(N == 1 || N == 2 || N == 4 || N == 8,
+    "register vector only supports 1, 2, 4, 8");
+
+  template<class S_, class D_>
+  CUTE_HOST_DEVICE static void
+  copy(const S_ &src, D_ &dst) {
     #if defined(SYCL_INTEL_TARGET)
-      static_assert(sizeof(T) == 4, "Expected T to have size 4");
-      *(intel::uint8 *)dst = __builtin_IB_subgroup_block_read_flat_u32_m8k16v1(
-            (long)baseoffset, width - 1, height - 1, pitch - 1, coord); 
+      CUTE_STATIC_ASSERT(sizeof(S_) == sizeof(S));
+      CUTE_STATIC_ASSERT(sizeof(D_) == sizeof(D));
+      auto sg = sycl::ext::oneapi::this_work_item::get_nd_item<3>().get_sub_group();
+      *(sycl::vec<S_, N>*)(&dst) 
+        = sg.load<N>(sycl::address_space_cast<sycl::access::address_space::global_space,
+                  sycl::access::decorated::yes>(&*&src));
     #else
       CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
-    #endif                                     
-  }
-};
-
-/// @brief This function loads data from 2D memory surface.
-/// Loads an array of rectangular regions coord(X,Y)..coord(X+W,Y+H) from global memory into registers.
-/// The loading block size is 16bitsx8x16, with a total of 2x1 blocks.
-struct XE_2D_U16x8x16x2x1_LD_N
-{
-  template <class T>
-  CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
-                                    int height, int pitch, intel::coord_t coord,
-                                    T *dst) {
-    #if defined(SYCL_INTEL_TARGET)
-      static_assert(sizeof(T) == 2, "Expected T to have size 2");
-      *(intel::ushort16 *)dst = __builtin_IB_subgroup_block_read_flat_u16_m16k16v1(
-            (long)baseoffset, width - 1, height - 1, pitch - 1, coord);
-    #else
-      CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
-    #endif                                      
-  }
-    struct PREFETCH {
-        template <class T>
-        CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
-                int height, int pitch, intel::coord_t coord) {
-#if defined(SYCL_INTEL_TARGET)
-            static_assert(sizeof(T) == 2, "Expected T to have size 2");
-            __builtin_IB_subgroup_block_read_prefetch_u16_m16k16v1(
-                    (long)baseoffset, width - 1, height - 1, pitch - 1, coord,
-                    CacheControl::kL1C_L3C);
-#else
-            CUTE_INVALID_CONTROL_PATH(
-                    "Trying to use block prefetch on non-PVC hardware");
-#endif
-        }
-    };
-};
-
-/// @brief This function loads data from 2D memory surface.
-/// Loads an array of rectangular regions coord(X,Y)..coord(X+W,Y+H) from global memory into registers.
-/// The loading block size is 16bitsx8x16, with a total of 4x2 blocks.
-struct XE_2D_U16x8x16x4x2_LD_N
-{
-  template <class T>
-  CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
-                                    int height, int pitch, intel::coord_t coord,
-                                    T *dst) {
-    #if defined(SYCL_INTEL_TARGET)
-      static_assert(sizeof(T) == 2, "Expected T to have size 2");
-      *(intel::ushort64 *)dst = __builtin_IB_subgroup_block_read_flat_u16_m32k16v2(
-          long(baseoffset), width - 1, height - 1, pitch - 1, coord);
-    #else
-      CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
-    #endif
+    #endif 
   }
 
-    struct PREFETCH {
-        template <class T>
-        CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
-                int height, int pitch, intel::coord_t coord) {
-#if defined(SYCL_INTEL_TARGET)
-            static_assert(sizeof(T) == 2, "Expected T to have size 2");
-            __builtin_IB_subgroup_block_read_prefetch_u16_m8k16v2(  
-                    (long)baseoffset, width - 1, height - 1, pitch - 1, coord,
-                    CacheControl::kL1C_L3C);
-#else
-            CUTE_INVALID_CONTROL_PATH(
-                    "Trying to use block prefetch on non-PVC hardware");
-#endif
-        }
-    };
+  using PREFETCH = PREFETCH<S, D>;
+
 };
 
-/// @brief This function loads data from 2D memory surface.
-/// Loads an array of rectangular regions coord(X,Y)..coord(X+W,Y+H) from global memory into registers.
-/// The loading block size is 16bitsx8x16, with a total of 2x2 blocks.
-struct XE_2D_U16x8x16x2x2_LD_N
-{
-  template <class T>
-  CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
-                                    int height, int pitch, intel::coord_t coord,
-                                    T *dst) {
+template<class S, class D = S>
+struct XE_1D_STSM {
+  using SRegisters = S[1];
+  using DRegisters = D[1];
+
+  CUTE_STATIC_ASSERT(sizeof(S) % sizeof(D) == 0,
+      "src failed to vectorize into registers");
+  static constexpr size_t N = sizeof(S) / sizeof(D);
+  CUTE_STATIC_ASSERT(N == 1 || N == 2 || N == 4 || N == 8,
+      "register vector only supports 1, 2, 4, 8");
+
+  template<class S_, class D_>
+  CUTE_HOST_DEVICE static void
+  copy(S_ const& src, D_ & dst) {
     #if defined(SYCL_INTEL_TARGET)
-      static_assert(sizeof(T) == 2, "Expected T to have size 2");
-      *(intel::ushort32*) dst = __builtin_IB_subgroup_block_read_flat_u16_m16k16v2(
-          long(baseoffset), width - 1, height - 1, pitch - 1, coord);
-    #else
-      CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
-    #endif
-  }
-
-    struct PREFETCH {
-        template <class T>
-        CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
-                int height, int pitch, intel::coord_t coord) {
-#if defined(SYCL_INTEL_TARGET)
-            static_assert(sizeof(T) == 2, "Expected T to have size 2");
-            __builtin_IB_subgroup_block_read_prefetch_u16_m16k16v2(
-                    (long)baseoffset, width - 1, height - 1, pitch - 1, coord,
-                    CacheControl::kL1C_L3C);
-#else
-            CUTE_INVALID_CONTROL_PATH(
-                    "Trying to use block prefetch on non-PVC hardware");
-#endif
-        }
-    };
-};
-
-/// @brief This function loads data from 2D memory surface.
-/// Loads an array of rectangular regions coord(X,Y)..coord(X+W,Y+H) from global memory into registers.
-/// The loading block size is 16bitsx8x16, with a total of 1x2 blocks.
-struct XE_2D_U16x8x16x1x2_LD_N
-{
-  template <class T>
-  CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
-                                    int height, int pitch, intel::coord_t coord,
-                                    T *dst) {
-    #if defined(SYCL_INTEL_TARGET)
-      static_assert(sizeof(T) == 2, "Expected T to have size 2");
-      intel::ushort16 tmp = (intel_subgroup_block_read_u16_m8k16v2(
-          (long)baseoffset, width, height, pitch, coord));
-      *(intel::ushort16 *)dst = *reinterpret_cast<intel::ushort16 *>(&tmp);
-    #else
-      CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
-    #endif
-  }
-
-    struct PREFETCH {
-        template <class T>
-        CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
-                int height, int pitch, intel::coord_t coord) {
-#if defined(SYCL_INTEL_TARGET)
-            static_assert(sizeof(T) == 2, "Expected T to have size 2");
-            __builtin_IB_subgroup_block_read_prefetch_u16_m8k16v2(
-                    (long)baseoffset, width - 1, height - 1, pitch - 1, coord,
-                    CacheControl::kL1C_L3C);
-#else
-            CUTE_INVALID_CONTROL_PATH(
-                    "Trying to use block prefetch on non-PVC hardware");
-#endif
-        }
-    };
-};
-
-/// @brief This function loads data from 2D memory surface.
-/// Loads an array of rectangular regions coord(X,Y)..coord(X+W,Y+H) from global memory into registers.
-/// The loading block size is 16bitsx8x16, with a total of 4x1 blocks.
-struct XE_2D_U16x8x16x4x1_LD_N
-{
-  template <class T>
-  CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
-                                    int height, int pitch, intel::coord_t coord,
-                                    T *dst) {
-    #if defined(SYCL_INTEL_TARGET)
-      static_assert(sizeof(T) == 2, "Expected T to have size 2");
-        *(intel::ushort32*) dst = __builtin_IB_subgroup_block_read_flat_u16_m32k16v1(
-            long(baseoffset), width - 1, height - 1, pitch - 1, coord);
-    #else
-      CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
-    #endif
-  }
-
-    struct PREFETCH {
-        template <class T>
-        CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
-                int height, int pitch, intel::coord_t coord) {
-#if defined(SYCL_INTEL_TARGET)
-            static_assert(sizeof(T) == 2, "Expected T to have size 2");
-            __builtin_IB_subgroup_block_read_prefetch_u16_m32k16v1(
-                    (long)baseoffset, width - 1, height - 1, pitch - 1, coord,
-                    CacheControl::kL1C_L3C);
-#else
-            CUTE_INVALID_CONTROL_PATH(
-                    "Trying to use block prefetch on non-PVC hardware");
-#endif
-        }
-    };
-};
-
-/// @brief This function loads data from 2D memory surface.
-/// Loads an array of rectangular regions coord(X,Y)..coord(X+W,Y+H) from global memory into registers.
-/// The loading block size is 32bitsx8x16, with a total of 2x1 blocks.
-struct XE_2D_U32x8x16x2x1_LD_N
-{
-  template <class T>
-  CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
-                                    int height, int pitch, intel::coord_t coord,
-                                    T *dst) {
-    #if defined(SYCL_INTEL_TARGET)
-      static_assert(sizeof(T) == 4, "Expected T to have size 4");
-      intel::uint16 tmp = __builtin_IB_subgroup_block_read_flat_u32_m16k16v1(
-          long(baseoffset), width - 1, height - 1, pitch - 1, coord);
-      *(intel::uint16 *)dst = *reinterpret_cast<intel::uint16 *>(&tmp);
+      auto sg = sycl::ext::oneapi::this_work_item::get_nd_item<3>().get_sub_group();
+      sg.store<N>(sycl::address_space_cast<sycl::access::address_space::local_space,
+            sycl::access::decorated::yes>(&*&dst), *(sycl::vec<D_, N>*)(&src));
     #else
       CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
     #endif
   }
 };
 
-/// @brief This function loads data from 2D memory surface.
-/// Loads an array of rectangular regions coord(X,Y)..coord(X+W,Y+H) from global memory into registers.
-/// From flat format in memory transform to VNNI format in registers.
-/// The loading block size is 16bitsx16x16, with a total of 2x2 blocks
-struct XE_2D_U16x16x16x2x2_V
-{
-  template <class T>
-  CUTE_HOST_DEVICE static void copy(const void *base_address, int width, int height, int pitch, intel::coord_t coord, T* dst) {
+template<class S, class D = S>
+struct XE_1D_STORE_GLOBAL {
+  using SRegisters = S[1];
+  using DRegisters = D[1];
+
+  CUTE_STATIC_ASSERT(sizeof(S) % sizeof(D) == 0,
+      "src failed to vectorize into registers");
+  static constexpr size_t N = sizeof(S) / sizeof(D);
+  CUTE_STATIC_ASSERT(N == 1 || N == 2 || N == 4 || N == 8,
+      "register vector only supports 1, 2, 4, 8");
+
+  template<class S_, class D_>
+  CUTE_HOST_DEVICE static void
+  copy(S_ const& src, D_ &dst) {
     #if defined(SYCL_INTEL_TARGET)
-      static_assert(sizeof(T) == 2, "Expected T to have size 2");
-      *(intel::uint32*) dst = __builtin_IB_subgroup_block_read_flat_transform_u16_k32v2(long(base_address), width - 1, height - 1, pitch - 1, coord);
-    #else
-      CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
-    #endif
-  }
-
-    // using PREFETCH = typename XE_2D_U16x8x16x4x2_LD_N::PREFETCH;
-    using PREFETCH = typename XE_2D_U16x8x16x2x2_LD_N::PREFETCH;
-};
-
-/// @brief This function loads data from 2D memory surface.
-/// Loads an array of rectangular regions coord(X,Y)..coord(X+W,Y+H) from global memory into registers.
-/// From flat format in memory transform to VNNI format in registers.
-/// The loading block size is 16bitsx16x16, with a total of 1x2 blocks
-struct XE_2D_U16x16x16x1x2_V
-{
-  template <class T>
-  CUTE_HOST_DEVICE static void copy(const void *base_address, int width, int height, int pitch, intel::coord_t coord, T* dst) {
-    #if defined(SYCL_INTEL_TARGET)
-      static_assert(sizeof(T) == 2, "Expected T to have size 2");
-      *(intel::int16*) dst = __builtin_IB_subgroup_block_read_flat_transform_u16_k16v2(long(base_address), width - 1, height - 1, pitch - 1, coord);
-    #else
-      CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
-    #endif
-  }
-
-    using PREFETCH = typename XE_2D_U16x8x16x2x2_LD_N::PREFETCH;
-};
-
-/// @brief This function loads data from 2D memory surface.
-/// Loads an array of rectangular regions coord(X,Y)..coord(X+W,Y+H) from global memory into registers.
-/// From flat format in memory transform to VNNI format in registers.
-/// The loading block size is 16bitsx16x16, with a total of 2x1 blocks
-struct XE_2D_U16x16x16x2x1_V
-{
-  template <class T>
-  CUTE_HOST_DEVICE static void copy(const void *base_address, int width, int height, int pitch, intel::coord_t coord, T* dst) {
-    #if defined(SYCL_INTEL_TARGET)
-      static_assert(sizeof(T) == 2, "Expected T to have size 2");
-      *(intel::int16*) dst = __builtin_IB_subgroup_block_read_flat_transform_u16_k32(long(base_address), width - 1, height - 1, pitch - 1, coord);
-    #else
-      CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
-    #endif
-  }
-
-      using PREFETCH = typename XE_2D_U16x8x16x4x1_LD_N::PREFETCH;
-};
-
-/// @brief This function loads data from 2D memory surface.
-/// Loads an array of rectangular regions coord(X,Y)..coord(X+W,Y+H) from global memory into registers.
-/// From flat format in memory transform to VNNI format in registers.
-/// The loading block size is 16bitsx16x16, with a total of 1x1 blocks
-struct XE_2D_U16x16x16x1x1_V
-{
-  template <class T>
-  CUTE_HOST_DEVICE static void copy(const void *base_address, int width, int height, int pitch, intel::coord_t coord, T* dst) {
-    #if defined(SYCL_INTEL_TARGET)
-      static_assert(sizeof(T) == 2, "Expected T to have size 2");
-      // Note: this function is in the headers, but is named confusingly and returns unsigned integers rather than signed integers:
-      *(intel::int8*) dst = intel_subgroup_block_read_transform_u16_k16((long)base_address, width, height, pitch, coord);
-    #else
-      CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
-    #endif
-  }
-
-  struct PREFETCH {
-    template <class T>
-    CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
-            int height, int pitch, intel::coord_t coord) {
-#if defined(SYCL_INTEL_TARGET)
-          static_assert(sizeof(T) == 2, "Expected T to have size 2");
-          __builtin_IB_subgroup_block_read_prefetch_u16_m8k16v1(
-                  (long)baseoffset, width - 1, height - 1, pitch - 1, coord,
-                  CacheControl::kL1C_L3C);
-#else
-          CUTE_INVALID_CONTROL_PATH(
-                  "Trying to use block prefetch on non-PVC hardware");
-#endif
-        }
-    };
-};
-
-/// @brief This function loads data from 2D memory surface.
-/// Stores an array of rectangular regions coord(X,Y)..coord(X+W,Y+H) from global memory into registers.
-/// The storing block size is 32bitsx8x16, with a total of 1x1 blocks
-struct XE_2D_U32x8x16x1x1_ST_N
-{
-  template <class T>
-  CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width, int height,
-                                    int pitch, intel::coord_t coord, const T *src) {
-    #if defined(SYCL_INTEL_TARGET)
-      static_assert(sizeof(T) == 4, "Expected T to have size 4");
-      __builtin_IB_subgroup_block_write_flat_u32_m8k16v1(
-          (long)baseoffset, width - 1, height - 1, pitch - 1, coord,
-          *(intel::uint8 *)src);
+      auto sg = sycl::ext::oneapi::this_work_item::get_nd_item<3>().get_sub_group();
+      sg.store<N>(sycl::address_space_cast<sycl::access::address_space::global_space,
+            sycl::access::decorated::yes>(&*&dst), *(sycl::vec<D_, N>*)(&src));
     #else
       CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
     #endif
   }
 };
-
-} // end namespace 
+} // end namespace cute

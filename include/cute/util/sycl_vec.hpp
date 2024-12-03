@@ -43,18 +43,41 @@ template <class T, int N> using vector_t = T __attribute__((ext_vector_type(N)))
 template <class T, int N> using vector_t = sycl::marray<T, N>;
 #endif
 
+typedef unsigned long ulong;
+typedef unsigned char uchar;
+
+using uchar2 = vector_t<uchar, 2>;
+using uchar4 = vector_t<uchar, 4>;
+using uchar8 = vector_t<uchar, 8>;
+
+using float2 = vector_t<float, 2>;
+using float4 = vector_t<float, 4>;
 using float8 = vector_t<float, 8>;
+
+using short2 = vector_t<short, 2>;
+using short4 = vector_t<short, 4>;
 using short8 = vector_t<short, 8>;
+
+using int2 = vector_t<int, 2>;
+using int4 = vector_t<int, 4>;
 using int8 = vector_t<int, 8>;
 using int16 = vector_t<int, 16>;
+
+using uint2 = vector_t<uint, 2>;
+using uint4 = vector_t<uint, 4>;
 using uint8 = vector_t<uint, 8>;
 using uint16 = vector_t<uint, 16>;
+using uint32 = vector_t<uint, 32>;
 
+using ushort2 = vector_t<ushort, 2>;
+using ushort4 = vector_t<ushort, 4>;
 using ushort8 = vector_t<ushort, 8>;
 using ushort16 = vector_t<ushort, 16>;
 using ushort32 = vector_t<ushort, 32>;
 using ushort64 = vector_t<ushort, 64>;
-using uint32 = vector_t<uint, 32>;
+
+using ulong2 = vector_t<ulong, 2>;
+using ulong4 = vector_t<ulong, 4>;
 
 using coord_t = vector_t<int, 2>;
 } // namespace intel end

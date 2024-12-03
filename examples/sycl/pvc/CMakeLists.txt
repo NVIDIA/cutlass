@@ -41,3 +41,8 @@ cutlass_example_add_executable(
   pvc_collective_builder
   pvc_collective_builder.cpp
 )
+
+cutlass_example_add_executable(
+  pvc_gemm_streamk
+  pvc_gemm_streamk.cpp
+)

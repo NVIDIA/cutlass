@@ -26,65 +26,23 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-
-include(FetchContent)
-FetchContent_Declare(
-    googlebenchmark
-    GIT_REPOSITORY https://github.com/google/benchmark.git
-    GIT_TAG v1.9.0
+if(SYCL_INTEL_TARGET)
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_cute_intel_xe
+  copy_1d.cpp
+  copy_subgroup_block.cpp
+  copy_block.cpp
+  copy_scatter.cpp
+  mma.cpp
+  gemm_partition_src_dst.cpp
+  gemm_partition_fragment_abc.cpp
+  gemm_tiled_copy_abc.cpp
+  gemm_row_col.cpp
+  gemm_col_row.cpp
+  gemm_col_col.cpp
 )
-FetchContent_MakeAvailable(googlebenchmark)
-
-add_custom_target(cutlass_benchmarks)
-
-function(cutlass_benchmark_add_executable NAME)
-
-  set(options)
-  set(oneValueArgs DISABLE_TESTS)
-  set(multiValueArgs DEPENDS DEPENDEES TEST_COMMAND_OPTIONS)
-  cmake_parse_arguments(_ "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
-
-  set(__DISABLE_TESTS ON)
-
-  cutlass_add_executable(${NAME} ${__UNPARSED_ARGUMENTS} BATCH_SOURCES OFF)
-
-  add_dependencies(cutlass_benchmarks ${NAME})
-
-  if (NOT CUTLASS_ENABLE_SYCL)
-    SET(ADD_CUDA ON)
-  endif()
-
-  target_link_libraries(
-    ${NAME}
-    PRIVATE
-    CUTLASS
-    cutlass_tools_util_includes
-    $<$<BOOL:${CUTLASS_ENABLE_CUBLAS}>:nvidia::cublas>
-    $<$<BOOL:${ADD_CUDA}>:cuda>
-    benchmark::benchmark
-  )
-
-  if (CUTLASS_ENABLE_SYCL)
-    add_dependencies(${NAME} onemkl_project)
-    target_include_directories(${NAME} PRIVATE ${ONEMKL_INCLUDE_DIR})
-    target_link_libraries(${NAME} PUBLIC ${ONEMKL_LIB})
-    add_sycl_to_target(TARGET ${NAME})
-  endif()
-
-  install(
-    TARGETS ${NAME}
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-  )
-endfunction()
-
-if (CUTLASS_ENABLE_SYCL)
-  cutlass_benchmark_add_executable(
-    benchmarks
-    main.cpp
-    )
 else()
-  cutlass_benchmark_add_executable(
-    benchmarks
-    main.cu
-    )
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_cute_intel_xe
+)
 endif()

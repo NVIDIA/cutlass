@@ -31,12 +31,13 @@
 #pragma once
 
 // Standard Library includes
-#include <random>
 #include <cstdlib>
 #include <cmath>
 #include <type_traits>
 #include <cstdint>
 #include <vector>
+
+#include <oneapi/mkl/rng/device.hpp>
 
 // Cutlass includes
 #include "cutlass/cutlass.h"
@@ -111,8 +112,8 @@ struct RandomUniformFunc {
 
   /// Parameters object
   Params params;
-  std::default_random_engine generator;
-  std::normal_distribution<FloatType> distribution;
+  oneapi::mkl::rng::device::philox4x32x10<> generator;
+  oneapi::mkl::rng::device::uniform<FloatType> distribution;
 
   //
   // Methods
@@ -120,21 +121,20 @@ struct RandomUniformFunc {
 
   explicit RandomUniformFunc(Params const &params):
       params(params),
-      generator(params.seed),
-      distribution(static_cast<FloatType>(params.min), static_cast<FloatType>(params.max)) {
-  }
+      generator(params.seed, ThreadIdxX() + BlockIdxX() * BlockDimX()),
+      distribution(static_cast<FloatType>(params.min), static_cast<FloatType>(params.max)){}
 
   /// Compute random value and update RNG state
-  CUTLASS_HOST
+  CUTLASS_HOST_DEVICE
   Element operator()() {
-    FloatType rnd = distribution(generator);
-
+    FloatType rnd = oneapi::mkl::rng::device::generate(distribution, generator);
+    
     // Random values are cast to integer after scaling by a power of two to facilitate error
     // testing
     Element result;
 
     if (params.int_scale >= 0) {
-      rnd = FloatType(IntType(std::llround(rnd * params.float_scale_up)));
+      rnd = FloatType(IntType(sycl::round(rnd * params.float_scale_up)));
       result = Element(IntType(rnd * params.float_scale_down));
     }
     else {
@@ -163,13 +163,7 @@ void BlockFillRandomUniform(
   using RandomFunc = detail::RandomUniformFunc<Element>;
 
   typename RandomFunc::Params params(seed, max, min, bits);
-
-  auto rand = RandomFunc(params);
-  auto h_vector = std::vector<Element>(capacity);
-  for (int j = 0; j < capacity; ++j) {
-    h_vector[j] = rand();
-  }
-  syclcompat::memcpy<Element>(ptr, h_vector.data(), capacity);
+  BlockForEach<Element, RandomFunc>(ptr, capacity, params);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
