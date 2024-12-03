@@ -1,5 +1,6 @@
 /***************************************************************************************************
  * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -28,9 +29,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
-/*! \file
-  \brief Functor performing elementwise operations used by epilogues.
-*/
 
 #pragma once
 
@@ -90,7 +88,6 @@ public:
   static_assert(cute::rank(StrideD{}) == 3, "StrideCD must be rank-3: [M, N, L]");
 
   struct SharedStorage { 
-    //cute::array_aligned<ElementAccumulator, cute::cosize_v<Layout<Shape<C<get<0>(BlockShapeMNK{})>,C<get<1>(BlockShapeMNK{})>>>>> smem_c;
     cute::array_aligned<ElementAccumulator, get<0>(BlockShapeMNK{}) * get<1>(BlockShapeMNK{})> smem_c;
   };
 
@@ -155,147 +152,6 @@ public:
     return epilogue_op.is_source_needed();
   }
 
-  template <
-  bool zero_init,
-  class FragSrc,
-  class FragDst,
-  class Op
-  >
-  CUTLASS_DEVICE static void reduceSg(FragSrc const &src, FragDst &dst, Op op) {
-    // reduce across all the -N- M tiles in shape <VecC, FragsM, FragsN>
-    CUTLASS_PRAGMA_UNROLL
-    for(int z = 1; z < size<2>(src); z++) {
-      dst(z) = zero_init ? src(0, 0, z) : op(dst(z), src(0, 0, z));
-      CUTLASS_PRAGMA_UNROLL
-      for(int x = 0; x < size<0>(src); x++) {
-        CUTLASS_PRAGMA_UNROLL
-        for(int y = 0; y < size<1>(src); y++) {
-          dst(z) = op(dst(z), src(x, y, z));
-        }
-      }
-    }
-
-    // reduce across the sub_group to get the final output
-    auto sg = syclcompat::get_nd_item<1>().get_sub_group();
-    CUTLASS_PRAGMA_UNROLL
-    for(int z = 1; z < size<2>(src); z++) {
-      CUTLASS_PRAGMA_UNROLL
-      for(uint laneMask = 8; laneMask >= 1; laneMask /= 2) {
-        dst(z) = op(dst(z), syclcompat::permute_sub_group_by_xor(sg, dst(z), laneMask, 16));
-      }
-    }
-  }
-  
-  template <
-  class FragSrc,
-  class FragDst,
-  class SharedThreadTens,
-  class SharedTens,
-  class ResidueMap,
-  class Residue,
-  class Op
-  >
-  CUTLASS_DEVICE static ElementAccumulator reduceWg(FragSrc const &src, FragDst &dst,
-                                      SharedThreadTens& tCsC, SharedTens& sC, 
-                                      ResidueMap tCcD, Residue residue_mnk, int thread_idx,
-                                      ElementAccumulator init, Op op) {
-      //TODO(Tadej): single loop over all dims  
-      CUTLASS_PRAGMA_UNROLL
-      for (int i = 0; i < size<0>(src); ++i) {
-        CUTLASS_PRAGMA_UNROLL
-        for (int j = 0; j < size<1>(src); ++j) {
-          CUTLASS_PRAGMA_UNROLL
-          for (int k = 0; k < size<2>(src); ++k) {
-            if (elem_less(tCcD(i,j,k), make_coord(get<0>(residue_mnk), get<1>(residue_mnk)))) {
-              tCsC(i,j,k) = src(i,j,k);
-            } else{
-              tCsC(i,j,k) = init;
-            }
-          }
-        }
-      }
-
-      syncthreads();
-
-      ElementAccumulator acc = sC(0, thread_idx);
-      for (int i = 1; i < size(src); ++i) {
-        acc = op(acc, sC(i, thread_idx));
-      }
-
-      syncthreads();
-
-      //broadcast it back to threads
-      //TODO(Tadej): optimize
-      for (int i = 0; i < size(src); ++i) {
-        sC(i, thread_idx) = acc;
-      }
-      
-      syncthreads();
-      
-      CUTLASS_PRAGMA_UNROLL
-      for(int k = 1; k < size<2>(src); k++) {
-        dst(k) = tCsC(0,0,k);
-      }
-
-      return acc;
-
-    /*reduceSg<zero_init>(src, dst, op);
-    for(int i=ThreadIdxX() % NumThreadsPerWarp; i<size(dst); i+=NumThreadsPerWarp){
-      // TODO 
-    }*/
-  }
-
-  template <
-  bool zero_init,
-  class FragSrc,
-  class FragMax
-  >
-  CUTLASS_DEVICE static void reduce_max(FragSrc const &src, FragMax& max) {
-      reduceSg<zero_init>(src, max, [](ElementAccumulator const & x, ElementAccumulator const & y) { return x > y ? x : y; });
-  }
-
-  template <
-  class FragSrc,
-  class FragDst,
-  class SharedThreadTens,
-  class SharedTens,
-  class ResidueMap,
-  class Residue
-  >
-  CUTLASS_DEVICE static ElementAccumulator reduce_max_wg(FragSrc const &src, FragDst &dst,
-                                          SharedThreadTens& tCsC, SharedTens& sC, 
-                                          ResidueMap tCcD, Residue residue_mnk, int thread_idx) {
-      
-      return reduceWg(src, dst, tCsC, sC, tCcD, residue_mnk, thread_idx, 
-                      std::numeric_limits<ElementAccumulator>::min(), 
-                      [](ElementAccumulator const & x, ElementAccumulator const & y) { return x > y ? x : y; });
-  }
-
-  template <
-  bool zero_init,
-  class FragSrc,
-  class FragSum
-  >
-  CUTLASS_DEVICE static void reduce_sum(FragSrc const &src, FragSum& sum) {
-      reduceSg<zero_init>(src, sum, [](ElementAccumulator const & x, ElementAccumulator const & y) { return x + y; });
-  }
-    
-  template <
-  class FragSrc,
-  class FragDst,
-  class SharedThreadTens,
-  class SharedTens,
-  class Residue,
-  class ResidueMap
-  >
-  CUTLASS_DEVICE static ElementAccumulator reduce_sum_wg(FragSrc const &src, FragDst &dst,
-                                          SharedThreadTens& tCsC, SharedTens& sC, 
-                                          ResidueMap tCcD, Residue residue_mnk, int thread_idx) {
-      
-      return reduceWg(src, dst, tCsC, sC, tCcD, residue_mnk, thread_idx, 
-                      0, [](ElementAccumulator const & x, ElementAccumulator const & y) { return x+y; });
-  }
-
   template<
     class ProblemShapeMNKL,
     class BlockCoordMNKL,
@@ -333,7 +189,7 @@ public:
 
     auto N_tmp = cute::ceil_div(N, N_tile);
 
-    cute::packed_tuple partial_block(M_tile, C<1>(), K_tile);
+    cute::packed_tuple partial_block(M_tile, K_tile);
 
     auto stride_c = detail::get_epilogue_stride<EpilogueSchedule>(params.dC);
     auto stride_d = detail::get_epilogue_stride<EpilogueSchedule>(params.dD);
@@ -341,19 +197,19 @@ public:
     // Represent the full output tensors
     Tensor mC_mnl = make_tensor(make_gmem_ptr(params.ptr_C), make_shape(M,N,L), stride_c);                 // (m,n,l)
     Tensor mD_mnl = make_tensor(make_gmem_ptr(params.ptr_D), make_shape(M,N,L), stride_d);                 // (m,n,l)
-    Tensor mMax_mnl = make_tensor(make_gmem_ptr(params.ptr_max), make_shape(M,N_tmp,L), params.dTmp);                 // (m,n,l)
-    Tensor mSum_mnl = make_tensor(make_gmem_ptr(params.ptr_sum), make_shape(M,N_tmp,L), params.dTmp);                 // (m,n,l)
+    Tensor mMax_mnl = make_tensor(make_gmem_ptr(params.ptr_max), make_shape(M,N_tmp,L), params.dTmp);
+    Tensor mSum_mnl = make_tensor(make_gmem_ptr(params.ptr_sum), make_shape(M,N_tmp,L), params.dTmp);
     Tensor gC_mnl = local_tile(mC_mnl, blk_shape_MNK, make_coord(_,_,_), Step<_1,_1, X>{});    // (BLK_M,BLK_N,m,n,l)
     Tensor gD_mnl = local_tile(mD_mnl, blk_shape_MNK, make_coord(_,_,_), Step<_1,_1, X>{});    // (BLK_M,BLK_N,m,n,l)
-    Tensor gMax_mnl = local_tile(mMax_mnl, partial_block, make_coord(_,_,_), Step<_1,_1, X>{});    // (BLK_M,BLK_N,m,n,l)
-    Tensor gSum_mnl = local_tile(mSum_mnl, partial_block, make_coord(_,_,_), Step<_1,_1, X>{});    // (BLK_M,BLK_N,m,n,l)
+    Tensor gMax_mnl = local_tile(mMax_mnl, partial_block, make_coord(_,_), Step<_1, X>{});
+    Tensor gSum_mnl = local_tile(mSum_mnl, partial_block, make_coord(_,_), Step<_1, X>{});
 
     // Slice to get the tile this CTA is responsible for
     auto [m_coord, n_coord, k_coord, l_coord] = blk_coord_mnkl;
     Tensor gC = gC_mnl(_,_,m_coord,n_coord,l_coord);                                                 // (BLK_M,BLK_N)
     Tensor gD = gD_mnl(_,_,m_coord,n_coord,l_coord);                                                 // (BLK_M,BLK_N)
-    Tensor gMax = gMax_mnl(_,_,m_coord,n_coord,l_coord);                                                 // (BLK_M,BLK_N)
-    Tensor gSum = gSum_mnl(_,_,m_coord,n_coord,l_coord);                                                 // (BLK_M,BLK_N)
+    Tensor gMax = gMax_mnl(_,m_coord,n_coord,l_coord);
+    Tensor gSum = gSum_mnl(_,m_coord,n_coord,l_coord);
 
     //Represent the shared tensor
     Tensor sC = make_tensor(make_smem_ptr(reinterpret_cast<ElementAccumulator*>(smem_buf)), make_layout(make_shape(M_tile, N_tile)));
@@ -417,7 +273,7 @@ public:
         max = cutlass::fast_max(max, accumulators(i));
       }
     }
-    gMax(thread_idx,0) = max;
+    gMax(thread_idx) = max;
     
     ElementAccumulator sum = 0;
     CUTLASS_PRAGMA_UNROLL
@@ -426,7 +282,7 @@ public:
         sum += cutlass::fast_exp(accumulators(i) - max);
       }
     }
-    gSum(thread_idx,0) = sum;
+    gSum(thread_idx) = sum;
   }
 
 private:

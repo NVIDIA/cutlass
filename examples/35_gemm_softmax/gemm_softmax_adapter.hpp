@@ -1,5 +1,6 @@
 /***************************************************************************************************
  * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -48,12 +49,6 @@
 #include "cutlass/cluster_launch.hpp"
 #include "cutlass/trace.h"
 #endif // !defined(__CUDACC_RTC__)
-
-// 2.x
-//#include "cutlass/gemm/device/gemm_universal_base.h"
-//#include "cutlass/gemm/kernel/gemm_transpose_operands.h"
-//#include "cutlass/gemm/threadblock/threadblock_swizzle.h"
-//#include "cutlass/epilogue/threadblock/epilogue_with_visitor_callbacks.h"
 
 // 3.x
 #include "cutlass/gemm/kernel/gemm_universal.hpp"
@@ -171,8 +166,6 @@ public:
 
   /// Argument structure: User API
   using Arguments = typename GemmKernel::Arguments;
-  /// Argument structure: Kernel API
-  //using Params = typename GemmKernel::Params;
 
   struct Params{
     typename GemmKernel::Params gemm_params;
@@ -271,6 +264,20 @@ public:
     return max_active_blocks;
   }
 
+  void initialize_softmax_params(Arguments const& args, typename SoftmaxFinalizeKernel::Arguments& softmax_args){
+    softmax_args.M = get<0>(args.problem_shape);
+    softmax_args.dataN = get<1>(args.problem_shape);
+    softmax_args.partialN = cute::ceil_div(get<1>(args.problem_shape), cute::shape<1>(TileShape{}));
+    softmax_args.batch_count = get<3>(args.problem_shape);
+    softmax_args.dInput = args.epilogue.dD;
+    softmax_args.dPartial = args.epilogue.dTmp;
+    softmax_args.dOutput = args.epilogue.dD;
+    softmax_args.ptr_in = args.epilogue.ptr_D;
+    softmax_args.ptr_partial_max = args.epilogue.ptr_max;
+    softmax_args.ptr_partial_sum = args.epilogue.ptr_sum;
+    softmax_args.ptr_out = args.epilogue.ptr_D;
+  }
+
   /// Initializes GEMM state from arguments.
   Status
   initialize(
@@ -289,19 +296,7 @@ public:
     }
     // Initialize the Params structure
     params_.gemm_params = GemmKernel::to_underlying_arguments(args, workspace);
-    //TODO(Tadej) move to finalize kernel class?
-    auto& softmax_args = params_.softmax_params.args;
-    softmax_args.IOSize = {get<0>(args.problem_shape), get<1>(args.problem_shape)};
-    softmax_args.partialSize = {get<0>(args.problem_shape), 
-                                cute::ceil_div(get<1>(args.problem_shape), cute::shape<1>(TileShape{}))};
-    softmax_args.batch_count = get<3>(args.problem_shape);
-    softmax_args.dInput = args.epilogue.dD;
-    softmax_args.dPartial = args.epilogue.dTmp;
-    softmax_args.dOutput = args.epilogue.dD;
-    softmax_args.ptr_in = args.epilogue.ptr_D;
-    softmax_args.ptr_partial_max = args.epilogue.ptr_max;
-    softmax_args.ptr_partial_sum = args.epilogue.ptr_sum;
-    softmax_args.ptr_out = args.epilogue.ptr_D;
+    initialize_softmax_params(args, params_.softmax_params.args);
 
     // Don't set the function attributes - require the CudaHostAdapter to set it.
     if constexpr (kEnableCudaHostAdapter) {
@@ -345,7 +340,7 @@ public:
     }
 
     params_.gemm_params = GemmKernel::to_underlying_arguments(args, workspace);
-    //TODO(Tadej) update softmax args
+    initialize_softmax_params(args, params_.softmax_params.args);
     return Status::kSuccess;
   }
 
@@ -446,8 +441,8 @@ public:
           sycl_grid, sycl_block, local_mem_size{static_cast<std::size_t>(smem_size)}},
           params.gemm_params);
 #endif
-        const auto sycl_block2 = syclcompat::dim3(32, std::min(32, params.softmax_params.args.IOSize[0]), 1);
-        const auto sycl_grid2 = syclcompat::dim3(cute::ceil_div(params.softmax_params.args.IOSize[0], sycl_block2.x), 
+        const auto sycl_block2 = syclcompat::dim3(32, std::min(32, params.softmax_params.args.M), 1);
+        const auto sycl_grid2 = syclcompat::dim3(cute::ceil_div(params.softmax_params.args.M, sycl_block2.x), 
                                                  params.softmax_params.args.batch_count, 
                                                  1);
         auto event2 = launch<device_kernel<SoftmaxFinalizeKernel>>(launch_policy{

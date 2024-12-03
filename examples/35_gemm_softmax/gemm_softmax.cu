@@ -200,19 +200,20 @@ struct Testbed {
   // Type definitions
   //
 
-  using ElementA = float;
-  using ElementB = float;
-  using ElementC = float;
+
+  using ElementA = cutlass::half_t;
+  using ElementB = cutlass::half_t;
+  using ElementC = cutlass::half_t;
   using ElementCompute = float;
   using ElementD = ElementC;
   using ElementSoftmax = ElementC;
 
-  using LayoutA = cutlass::layout::ColumnMajor;
+  using LayoutA = cutlass::layout::RowMajor;
   using LayoutB = cutlass::layout::ColumnMajor;
 
   using ThreadblockShape = cutlass::gemm::GemmShape<128, 128, 32>;
   using WarpShape        = cutlass::gemm::GemmShape<64, 64, 32>;
-  using InstructionShape = cutlass::gemm::GemmShape<16, 8, 8>;
+  using InstructionShape = cutlass::gemm::GemmShape<16, 8, 16>;
 
   using OperatorClass = cutlass::arch::OpClassTensorOp;
   using ArchTag = cutlass::arch::Sm80;

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -72,9 +72,9 @@ public:
   //
 
   struct Arguments {
-    //TODO(Tadej): duplicated part of sizes
-    cutlass::MatrixCoord      IOSize;    ///< Extent of input and output matrices
-    cutlass::MatrixCoord partialSize;    ///< Extent of partial max and sum matrices
+    int                            M;
+    int                        dataN;
+    int                     partialN;
     int                  batch_count;    ///< Batch count
     StrideInput               dInput;
     StridePartial           dPartial;
@@ -106,8 +106,6 @@ public:
     Params(Arguments const &args_): args(args_) { }
   };
 
-private:
-
 public:
 
   CUTLASS_DEVICE
@@ -115,31 +113,11 @@ public:
 
   CUTLASS_DEVICE
   void operator()(Params const &params, char* shared_storage) {
-
     apply(params, shared_storage);
   }
 
 private:
 
-  template <class Op>
-  CUTLASS_DEVICE static ElementPartial reduceSg(ElementPartial val, Op op) {
-    auto sg = syclcompat::get_nd_item<1>().get_sub_group();
-    CUTLASS_PRAGMA_UNROLL
-    for(uint laneMask = 8; laneMask >= 1; laneMask /= 2) {
-      val = op(val, syclcompat::permute_sub_group_by_xor(sg, val, laneMask, 16));
-    }
-    return val;
-  }
-
-  CUTLASS_DEVICE static ElementPartial reduce_max(ElementPartial val) {
-      return reduceSg(val, [](ElementPartial const & x, ElementPartial const & y) { return x > y ? x : y; });
-  }
-
-  CUTLASS_DEVICE static ElementPartial reduce_sum(ElementPartial val) {
-      return reduceSg(val, [](ElementPartial const & x, ElementPartial const & y) { return x + y; });
-  }
-
-  /// Full reduction
   CUTLASS_DEVICE
   void apply(Params const &params, char* shared_storage) {
     using ConvertInput = cutlass::NumericConverter<ElementInput, ElementPartial>;
@@ -151,62 +129,60 @@ private:
     int y_size = BlockDimY();
     int batch_id = BlockIdxY();
 
-    if(m>=params.args.IOSize[0]){
+    if(m>=params.args.M){
       return;
     }
 
-    
     // Represent the full tensors
-    auto IOTensorShape = make_shape(params.args.IOSize[0], params.args.IOSize[1], params.args.batch_count);
-    auto PartialTensorShape = make_shape(params.args.partialSize[0], params.args.partialSize[1], params.args.batch_count);
-    Tensor mPartialMax = make_tensor(make_gmem_ptr(params.args.ptr_partial_max), PartialTensorShape, params.args.dPartial);                 // (m,n,l)
-    Tensor mPartialSum = make_tensor(make_gmem_ptr(params.args.ptr_partial_sum), PartialTensorShape, params.args.dPartial);                 // (m,n,l)
-    Tensor mOut = make_tensor(make_gmem_ptr(params.args.ptr_out), IOTensorShape, params.args.dOutput);                 // (m,n,l)
-    Tensor mIn = make_tensor(make_gmem_ptr(params.args.ptr_in), IOTensorShape, params.args.dInput);                   // (m,n,l)
+    auto IOTensorShape = make_shape(params.args.M, params.args.dataN, params.args.batch_count);
+    auto PartialTensorShape = make_shape(params.args.M, params.args.partialN, params.args.batch_count);
+    Tensor mMax = make_tensor(make_gmem_ptr(params.args.ptr_partial_max), PartialTensorShape, params.args.dPartial);
+    Tensor mPartialSum = make_tensor(make_gmem_ptr(params.args.ptr_partial_sum), PartialTensorShape, params.args.dPartial);
+    Tensor mOut = make_tensor(make_gmem_ptr(params.args.ptr_out), IOTensorShape, params.args.dOutput);
+    Tensor mIn = make_tensor(make_gmem_ptr(params.args.ptr_in), IOTensorShape, params.args.dInput);
 
     //Represent the shared tensor
-    Tensor sPartial = make_tensor(make_smem_ptr(reinterpret_cast<ElementPartial*>(shared_storage)), make_layout(make_shape(32, 32, 2)));
+    Tensor sPartial = make_tensor(make_smem_ptr(reinterpret_cast<ElementPartial*>(shared_storage)), make_layout(make_shape(32, 32)));
 
     ElementPartial max_val = std::numeric_limits<ElementPartial>::min();
-    for(int partial_n = y; partial_n < params.args.partialSize[1]; partial_n += y_size){
-        ElementPartial partial_max = mPartialMax(m, partial_n, batch_id);
-        max_val = max_val > partial_max ? max_val : partial_max;
+    for(int partial_n = y; partial_n < params.args.partialN; partial_n += y_size){
+        ElementPartial partial_max = mMax(m, partial_n, batch_id);
+        max_val = cutlass::fast_max(max_val, partial_max);
     }
-    sPartial(x,y,0) = max_val;
+    sPartial(x,y) = max_val;
     syncthreads();
-    //TODO(Tadej): improve reduction
+    //TODO(Tadej): tree-reduction could be better, although it does not seem to be a bottleneck
     for(int y2 = 0; y2 < y_size; y2++){
-        ElementPartial partial_max = sPartial(x,y2,0);
-        max_val = max_val > partial_max ? max_val : partial_max;
+        ElementPartial partial_max = sPartial(x,y2);
+        max_val = cutlass::fast_max(max_val, partial_max);
     }
     
     ElementPartial sum_val = 0;
-    for(int partial_n = y; partial_n < params.args.partialSize[1]; partial_n += y_size){
-        ElementPartial partial_max = mPartialMax(m, partial_n, batch_id);
+    for(int partial_n = y; partial_n < params.args.partialN; partial_n += y_size){
+        ElementPartial partial_max = mMax(m, partial_n, batch_id);
         ElementPartial partial_sum = mPartialSum(m, partial_n, batch_id);
-        sum_val = sum_val + partial_sum * cutlass::fast_exp(partial_max - max_val);
+        sum_val += partial_sum * cutlass::fast_exp(partial_max - max_val);
     }
     syncthreads();
-    sPartial(x,y,1) = sum_val;
+    sPartial(x,y) = sum_val;
     syncthreads();
     sum_val = 0;
-    //TODO(Tadej): improve reduction
+    //TODO(Tadej): tree-reduction could be better, although it does not seem to be a bottleneck
     for(int y2 = 0; y2 < y_size; y2++){
-        ElementPartial partial_max = sPartial(x,y2,0);
-        ElementPartial partial_sum = sPartial(x,y2,1);
-        sum_val = sum_val + partial_sum;
+        ElementPartial partial_sum = sPartial(x,y2);
+        sum_val += partial_sum;
     }
 
     ElementPartial norm = 1 / sum_val;
 
-    for(int n = y * 2; n < params.args.IOSize[1]; n += y_size * 2){
+    for(int n = y * 2; n < params.args.dataN; n += y_size * 2){
       auto inVal = mIn(m, n, batch_id);
       auto inVal2 = mIn(m, n+1, batch_id);
       mOut(m, n, batch_id) = cutlass::fast_exp(inVal - max_val) * norm;
       mOut(m, n+1, batch_id) = cutlass::fast_exp(inVal2 - max_val) * norm;
     }
-    if(params.args.IOSize[1]%2==1){
-      int n = params.args.IOSize[1] - 1;
+    if(params.args.dataN % 2 == 1){
+      int n = params.args.dataN - 1;
       auto inVal = mIn(m, n, batch_id);
       mOut(m, n, batch_id) = cutlass::fast_exp(inVal - max_val) * norm;
     }
