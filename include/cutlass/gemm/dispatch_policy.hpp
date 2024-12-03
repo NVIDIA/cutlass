@@ -126,11 +126,6 @@ struct KernelTmaWarpSpecializedCooperativeFP8FastAccum: KernelTmaWarpSpecialized
 struct KernelPtrArrayTmaWarpSpecializedCooperativeFP8FastAccum : KernelPtrArrayTmaWarpSpecializedCooperative { };
 struct KernelPtrArrayTmaWarpSpecializedPingpongFP8FastAccum : KernelPtrArrayTmaWarpSpecializedPingpong { };
 
-// Policies to opt into mixed type GEMMs
-struct KernelTmaWarpSpecializedMixedInput : KernelTmaWarpSpecialized { };
-struct KernelTmaWarpSpecializedPingpongMixedInput : KernelTmaWarpSpecializedPingpong { };
-struct KernelTmaWarpSpecializedCooperativeMixedInput: KernelTmaWarpSpecializedCooperative { };
-
 //////////////////////////////////////////////////////////////////////////////
 
 // Policies for dispatch of epilogue
@@ -264,11 +259,8 @@ struct MainloopSm90TmaGmmaRmemAWarpSpecializedMixedInput {
   using Schedule = KernelSchedule;
   static_assert(
     cute::is_same_v<Schedule, KernelTmaWarpSpecialized> ||
-    cute::is_same_v<Schedule, KernelTmaWarpSpecializedMixedInput> ||
     cute::is_same_v<Schedule, KernelTmaWarpSpecializedPingpong> ||
-    cute::is_same_v<Schedule, KernelTmaWarpSpecializedPingpongMixedInput> ||
     cute::is_same_v<Schedule, KernelTmaWarpSpecializedCooperative> ||
-    cute::is_same_v<Schedule, KernelTmaWarpSpecializedCooperativeMixedInput>,
     "KernelSchedule must be one of the warp specialized policies");
 };
 

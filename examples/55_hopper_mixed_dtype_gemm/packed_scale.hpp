@@ -34,6 +34,10 @@
 #include <cstdint>
 
 #include "cutlass/float8.h"
+#include "cutlass/util/reference/device/tensor_fill.h"
+
+#include "cute/tensor.hpp"
+#include "cute/util/type_traits.hpp"
 
 namespace cutlass
 {
@@ -128,4 +132,79 @@ private:
     #endif
   }
 };
+}
+
+/// Helpers to initialize scale lookup table
+
+// In the mainloop, PRMT selects 1 byte from only 8 bytes so the sign bit is handled in an extra PRMT.
+// Here the encodings of positive values and negative values are unified (except for the sign bit). 
+// For instance, 1 becomes 0b0111, which is the same encoding as -1 (0b1111).
+bool unify_quant_encoding(
+  cutlass::DeviceAllocation<cutlass::int4b_t> const& block_in,
+  cutlass::DeviceAllocation<cutlass::int4b_t>& block_out) {
+
+  using StorageType = cutlass::int4b_t::Storage;
+
+  if (block_in.size() != block_out.size()) {
+    std::cerr << "block_in and block_out must have same size.\n";
+    return false;
+  }
+  constexpr int pack = cute::sizeof_bits_v<StorageType> / 4;
+  std::vector<StorageType> data(block_in.size() / pack);
+  cutlass::device_memory::copy_to_host(data.data(), (StorageType*)block_in.get(), block_in.size() / pack);
+
+  for (auto&& d : data) {
+    StorageType out = 0;
+    StorageType mask = 0x0f;
+    for (int i = 0; i < pack; ++i) {
+      cutlass::int4b_t curr;
+      curr.storage = (d >> (i * 4)) & 0x0f;
+      switch (curr) {
+        case 1: curr.storage = StorageType(0b0111); break; // 2's complement
+        case 2: curr.storage = StorageType(0b0110); break; // 2's complement
+        case 3: curr.storage = StorageType(0b0101); break; // 2's complement
+        case 4: curr.storage = StorageType(0b0100); break; // 2's complement
+        case 5: curr.storage = StorageType(0b0011); break; // 2's complement
+        case 6: curr.storage = StorageType(0b0010); break; // 2's complement
+        case 7: curr.storage = StorageType(0b0001); break; // 2's complement
+        default: break;
+      }
+      out |= (curr.storage << (4 * i)) & mask;
+      mask <<= 4;
+    }
+    d = out;
+  }
+
+  cutlass::device_memory::copy_to_device((StorageType*)block_out.get(), data.data(), block_out.size() / pack);
+  return true;
+}
+
+template <class ElementScale>
+bool initialize_packed_scale(
+  cutlass::DeviceAllocation<ElementScale> const& block_in, 
+  cutlass::DeviceAllocation<cutlass::Array<ElementScale, 8> > & block_out) {
+  
+  std::vector<ElementScale> data_in(block_in.size());
+  std::vector<cutlass::Array<ElementScale, 8> > data_out(block_in.size());
+  try {
+    block_in.copy_to_host(data_in.data());
+  } catch (cutlass::cuda_exception const& e)
+  {
+    std::cerr << "CUDA Error: " << cudaGetErrorString(e.cudaError()) << std::endl;
+    return false;
+  }
+  for (size_t i = 0; i < block_in.size(); ++i)
+  {
+    cutlass::packed_scale_t<ElementScale> tmp(data_in[i]);
+    data_out[i] = reinterpret_cast<cutlass::Array<ElementScale, 8> const&>(tmp);
+    // std::cout << data_in[i] << ":" << std::hex << static_cast<uint16_t>(data_in[i].storage) << ",\t" << -data_in[i] << ":" << std::hex << static_cast<uint16_t>((-data_in[i]).storage) << std::endl;
+  }
+  try {
+    block_out.copy_from_host(data_out.data());
+  } catch (cutlass::cuda_exception const& e)
+  {
+    std::cerr << "CUDA Error: " << cudaGetErrorString(e.cudaError()) << std::endl;
+    return false;
+  }
+  return true;
 }
