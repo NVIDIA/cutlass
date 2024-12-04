@@ -260,7 +260,7 @@ struct MainloopSm90TmaGmmaRmemAWarpSpecializedMixedInput {
   static_assert(
     cute::is_same_v<Schedule, KernelTmaWarpSpecialized> ||
     cute::is_same_v<Schedule, KernelTmaWarpSpecializedPingpong> ||
-    cute::is_same_v<Schedule, KernelTmaWarpSpecializedCooperative> ||
+    cute::is_same_v<Schedule, KernelTmaWarpSpecializedCooperative>,
     "KernelSchedule must be one of the warp specialized policies");
 };
 
