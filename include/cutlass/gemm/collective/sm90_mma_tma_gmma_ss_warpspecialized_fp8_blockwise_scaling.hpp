@@ -33,17 +33,16 @@
 
 #include "cutlass/cutlass.h"
 #include "cutlass/gemm/dispatch_policy.hpp"
-#include "cutlass/gemm/collective/fp8_accumulation.hpp"
 #include "cutlass/trace.h"
 #include "cutlass/numeric_types.h"
 
 #include "cute/arch/cluster_sm90.hpp"
+#include "cute/arch/copy_sm80.hpp"
 #include "cute/arch/copy_sm90.hpp"
 #include "cute/algorithm/functional.hpp"
 #include "cute/atom/mma_atom.hpp"
 #include "cute/algorithm/gemm.hpp"
 #include "cute/tensor_predicate.hpp"
-#include "cute/tensor.hpp"
 #include "cute/numeric/arithmetic_tuple.hpp"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -73,7 +72,7 @@ template <
   class SmemCopyAtomB_,
   class TransformB_>
 struct CollectiveMma<
-    MainloopSm90TmaGmmaWarpSpecializedFP8<Stages, ClusterShape, KernelSchedule>,
+    MainloopSm90TmaGmmaWarpSpecializedBlockScalingFP8<Stages, ClusterShape, KernelSchedule>,
     TileShape_,
     ElementA_,
     StrideA_,
@@ -92,7 +91,7 @@ struct CollectiveMma<
   //
   // Type Aliases
   //
-  using DispatchPolicy = MainloopSm90TmaGmmaWarpSpecializedFP8<Stages, ClusterShape, KernelSchedule>;
+  using DispatchPolicy = MainloopSm90TmaGmmaWarpSpecializedBlockScalingFP8<Stages, ClusterShape, KernelSchedule>;
   using TileShape = TileShape_;
   using ElementA = ElementA_;
   using StrideA = StrideA_;
@@ -100,6 +99,7 @@ struct CollectiveMma<
   using StrideB = StrideB_;
   using TiledMma = TiledMma_;
   using ElementAccumulator = typename TiledMma::ValTypeC;
+  using ElementBlockScale = ElementAccumulator;
   using GmemTiledCopyA = GmemTiledCopyA_;
   using GmemTiledCopyB = GmemTiledCopyB_;
   using SmemLayoutAtomA = SmemLayoutAtomA_;
@@ -115,8 +115,8 @@ struct CollectiveMma<
   using PipelineState = cutlass::PipelineState<DispatchPolicy::Stages>;
   using PipelineParams = typename MainloopPipeline::Params;
 
-  // One threads per CTA are producers (1 for operand tile)
-  static constexpr int NumProducerThreadEvents = 1; 
+  // Two threads per CTA are producers (1 for operand tile and 1 for scales)
+  static constexpr int NumProducerThreadEvents = 2; 
 
   static_assert(cute::rank(SmemLayoutAtomA{}) == 2, "SmemLayoutAtom must be rank 2 (M/N, K)");
   static_assert((size<0>(TileShape{}) % size<0>(SmemLayoutAtomA{})) == 0, "SmemLayoutAtom must evenly divide tile shape.");
@@ -135,6 +135,13 @@ struct CollectiveMma<
       SmemLayoutAtomB{},
       make_shape(shape<1>(TileShape{}), shape<2>(TileShape{}), Int<DispatchPolicy::Stages>{}),
       cute::conditional_t< ::cutlass::gemm::detail::is_major<0,StrideB>(), Step<_2,_1,_3>, Step<_1,_2,_3>>{}));
+  
+  // Block scaling gmem-to-smem copy atom 
+  using SmemBlockScalingCopyAtom = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<ElementBlockScale>, ElementBlockScale>;
+  
+  // Block scaling smem layout
+  using SmemLayoutScaleA = Layout<Shape<Int<DispatchPolicy::Stages>>, Stride<_1>>;
+  using SmemLayoutScaleB = Layout<Shape<Int<DispatchPolicy::Stages>>, Stride<_1>>;
 
   static_assert(DispatchPolicy::Stages >= 2, "Specialization requires Stages set to value 1 or more.");
   static_assert(cute::is_base_of<cute::GMMA::DescriptorIterator, typename TiledMma::FrgTypeA>::value &&
@@ -144,12 +151,16 @@ struct CollectiveMma<
       "GmemTiledCopy - invalid SM90 TMA copy atom specified.");
   static_assert(cute::is_same_v<GmemTiledCopyB, SM90_TMA_LOAD> || cute::is_same_v<GmemTiledCopyB, SM90_TMA_LOAD_MULTICAST>,
       "GmemTiledCopy - invalid SM90 TMA copy atom specified.");
+  static_assert(cute::is_same_v<ElementAccumulator, ElementBlockScale>,
+             "ElementAccumulator and ElementBlockScale should be same datatype");
 
   struct SharedStorage
   {
-    struct TensorStorage : cute::aligned_struct<128, _0> {
-      cute::array_aligned<typename TiledMma::ValTypeA, cute::cosize_v<SmemLayoutA>> smem_A;
-      cute::array_aligned<typename TiledMma::ValTypeB, cute::cosize_v<SmemLayoutB>> smem_B;
+    struct TensorStorage : cute::aligned_struct<128> {
+      cute::array_aligned<typename TiledMma::ValTypeA, cute::cosize_v<SmemLayoutA>> smem_A;  // mxk
+      cute::array_aligned<typename TiledMma::ValTypeB, cute::cosize_v<SmemLayoutB>> smem_B;  // nxk
+      cute::array_aligned<ElementBlockScale, cute::cosize_v<SmemLayoutScaleA>> smem_scale_A; // 1xk
+      cute::array_aligned<ElementBlockScale, cute::cosize_v<SmemLayoutScaleB>> smem_scale_B; // 1xk
     } tensors;
 
     using PipelineStorage = typename MainloopPipeline::SharedStorage;
@@ -165,6 +176,8 @@ struct CollectiveMma<
     ElementB const* ptr_B;
     StrideB dB;
     uint32_t mma_promotion_interval = 4;
+    ElementBlockScale const* ptr_scale_A; 
+    ElementBlockScale const* ptr_scale_B;
   };
 
   // Device side kernel params
@@ -189,6 +202,9 @@ struct CollectiveMma<
     uint32_t tma_transaction_bytes_mk = TmaTransactionBytesMK;
     uint32_t tma_transaction_bytes_nk = TmaTransactionBytesNK;
     uint32_t mma_promotion_interval = 4;
+    // Block scaling factors for A and B
+    ElementBlockScale const* ptr_scale_A; 
+    ElementBlockScale const* ptr_scale_B;
   };
 
   //
@@ -231,7 +247,9 @@ struct CollectiveMma<
       transaction_bytes,
       transaction_bytes_mk,
       transaction_bytes_nk,
-      args.mma_promotion_interval
+      args.mma_promotion_interval,
+      args.ptr_scale_A,
+      args.ptr_scale_B
     };
   }
 
@@ -249,8 +267,8 @@ struct CollectiveMma<
     implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_A>(cute::make_shape(M,K,L), StrideA{});
     constexpr int min_tma_aligned_elements_B = tma_alignment_bits / cutlass::sizeof_bits<ElementB>::value;
     implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_B>(cute::make_shape(N,K,L), StrideB{});
-    /* MMA promotion interval should be a multiple of the number of MMA instructions issued by each mainloop iteration. */
-    implementable = implementable && (args.mma_promotion_interval % (size<2>(TileShape{})() / TiledMma().template tile_size_mnk<2>()()) == 0);
+    /* MMA promotion interval should be a multiple of 4, since each mainloop iteration would issue 4 MMA instructions. */
+    implementable = implementable && (args.mma_promotion_interval % 4 == 0);
 
     if (!implementable) {
       CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Problem Size doesn't meet the minimum alignment requirements for TMA.\n");
@@ -295,13 +313,27 @@ struct CollectiveMma<
     Tensor gA_mkl = local_tile(mA_mkl, TileShape{}, make_coord(_,_,_), Step<_1, X,_1>{});        // (BLK_M,BLK_K,m,k,l)
     Tensor gB_nkl = local_tile(mB_nkl, TileShape{}, make_coord(_,_,_), Step< X,_1,_1>{});        // (BLK_N,BLK_K,n,k,l)
 
-    return cute::make_tuple(gA_mkl, gB_nkl);
+    // Make the tiled views of scale tensors
+    auto scaleA_shape = make_shape(get<2>(gA_mkl.shape()), get<3>(gA_mkl.shape()), get<4>(gA_mkl.shape())); // (m,k,l)
+    auto scale_dA = make_stride(get<3>(gA_mkl.shape()), Int<1>{}, get<2>(gA_mkl.shape()) * get<3>(gA_mkl.shape())); 
+    auto scaleA_layout = make_layout(scaleA_shape, scale_dA);
+    auto scaleB_shape = make_shape(get<2>(gB_nkl.shape()), get<3>(gB_nkl.shape()), get<4>(gB_nkl.shape())); // (n,k,l)
+    auto scale_dB = make_stride(get<3>(gB_nkl.shape()), Int<1>{}, get<2>(gB_nkl.shape()) * get<3>(gB_nkl.shape())); 
+    auto scaleB_layout = make_layout(scaleB_shape, scale_dB);
+
+    // Note that mScaleA_mkl and mScaleB_nkl are already blocked tiled in the `m` host and 
+    // gScaleA_mkl and gScaleB_nkl in `g` global memory are same as mScaleA_mkl and mScaleB_nkl.
+    Tensor mScaleA_mkl = make_tensor(make_gmem_ptr(mainloop_params.ptr_scale_A), scaleA_layout); // (m,k,l)
+    Tensor mScaleB_nkl = make_tensor(make_gmem_ptr(mainloop_params.ptr_scale_B), scaleB_layout); // (n,k,l)
+
+    return cute::make_tuple(gA_mkl, gB_nkl, mScaleA_mkl, mScaleB_nkl);
   }
 
   /// Perform a collective-scoped matrix multiply-accumulate
   /// Producer Perspective
   template <
     class TensorA, class TensorB,
+    class TensorScaleA, class TensorScaleB,
     class KTileIterator, class BlockCoord
   >
   CUTLASS_DEVICE void
@@ -309,7 +341,7 @@ struct CollectiveMma<
       Params const& mainloop_params,
       MainloopPipeline pipeline,
       PipelineState smem_pipe_write,
-      cute::tuple<TensorA, TensorB> const& load_inputs,
+      cute::tuple<TensorA, TensorB, TensorScaleA, TensorScaleB> const& load_inputs,
       BlockCoord const& blk_coord,
       KTileIterator k_tile_iter, int k_tile_count,
       int thread_idx,
@@ -317,9 +349,12 @@ struct CollectiveMma<
       TensorStorage& shared_tensors) {
     int lane_predicate = cute::elect_one_sync();
 
+    // Blockscaling: Tma loads for load_input and CpAsync for load_scale
     if (lane_predicate) {
       Tensor sA = make_tensor(make_smem_ptr(shared_tensors.smem_A.data()), SmemLayoutA{});        // (BLK_M,BLK_K,PIPE)
       Tensor sB = make_tensor(make_smem_ptr(shared_tensors.smem_B.data()), SmemLayoutB{});        // (BLK_N,BLK_K,PIPE)
+      Tensor sScaleA = make_tensor(cute::make_smem_ptr(shared_tensors.smem_scale_A.data()), SmemLayoutScaleA{}); // (k)
+      Tensor sScaleB = make_tensor(cute::make_smem_ptr(shared_tensors.smem_scale_B.data()), SmemLayoutScaleB{}); // (k)
 
       //
       // Prepare the TMA loads for A and B
@@ -339,17 +374,34 @@ struct CollectiveMma<
       Tensor gA = gA_mkl(_,_,m_coord,_,l_coord);                                                     // (BLK_M,BLK_K,k)
       Tensor gB = gB_nkl(_,_,n_coord,_,l_coord);                                                     // (BLK_N,BLK_K,k)
 
+
+      // Block scaling: load_scale has scaling tensors in global memory which are not tiled
+      Tensor mScaleA_mkl = get<2>(load_inputs);
+      Tensor mScaleB_nkl = get<3>(load_inputs);
+
+      Tensor gScaleA = mScaleA_mkl(m_coord,_,l_coord);                                           // (1,k,1)
+      Tensor gScaleB = mScaleB_nkl(n_coord,_,l_coord);                                           // (1,k,1)
+      
+      TiledCopy scale_copy = make_tiled_copy(SmemBlockScalingCopyAtom{}, Layout<Shape<_1>>{}, Layout<Shape<_1>>{}); // (1,1,1)
+      ThrCopy thr_scale_copy = scale_copy.get_slice(threadIdx.x);
+      
+      Tensor tAgA_ScaleA = thr_scale_copy.partition_S(gScaleA);
+      Tensor tAsA_ScaleA = thr_scale_copy.partition_D(sScaleA);
+      
+      Tensor tBgB_ScaleB = thr_scale_copy.partition_S(gScaleB);
+      Tensor tBsB_ScaleB = thr_scale_copy.partition_D(sScaleB);
+
       // Applies the mapping from block_tma_a
-      Tensor tAgA = block_tma_a.partition_S(gA);                                                 // (TMA,TMA_M,TMA_K,k)
+      Tensor tAgA = block_tma_a.partition_S(gA);                                              // (TMA,TMA_M,TMA_K,k)
       Tensor tAsA = block_tma_a.partition_D(sA);                                              // (TMA,TMA_M,TMA_K,PIPE)
 
-      Tensor tBgB = block_tma_b.partition_S(gB);                                                 // (TMA,TMA_N,TMA_K,k)
+      Tensor tBgB = block_tma_b.partition_S(gB);                                              // (TMA,TMA_N,TMA_K,k)
       Tensor tBsB = block_tma_b.partition_D(sB);                                              // (TMA,TMA_N,TMA_K,PIPE)
 
       uint16_t mcast_mask_a = 0;
       uint16_t mcast_mask_b = 0;
 
-      // Issue TmaLoads
+      // Issue TmaLoads for GEMM operands A/B and CpAsync for scale tensors
       // Maps the tile -> block, value
       if constexpr (cute::is_same_v<GmemTiledCopyA, SM90_TMA_LOAD_MULTICAST>) {
         auto block_layout = Layout<typename DispatchPolicy::ClusterShape>{};                       // (m,n) -> block_id
@@ -374,13 +426,19 @@ struct CollectiveMma<
         //
         // Copy gmem to smem for *k_tile_iter
         //
-
+        int write_stage = smem_pipe_write.index();
         using BarrierType = typename MainloopPipeline::ProducerBarrierType;
         BarrierType* tma_barrier = pipeline.producer_get_barrier(smem_pipe_write);
 
-        int write_stage = smem_pipe_write.index();
+        // Copy operands A and B from global memory to shared memory
         copy(mainloop_params.tma_load_a.with(*tma_barrier, mcast_mask_a), tAgA(_,_,_,*k_tile_iter), tAsA(_,_,_,write_stage));
         copy(mainloop_params.tma_load_b.with(*tma_barrier, mcast_mask_b), tBgB(_,_,_,*k_tile_iter), tBsB(_,_,_,write_stage));
+
+        // Copy scale tensors from global memory to shared memory
+        copy(scale_copy, tAgA_ScaleA(_,*k_tile_iter), tAsA_ScaleA(_,write_stage));
+        copy(scale_copy, tBgB_ScaleB(_,*k_tile_iter), tBsB_ScaleB(_,write_stage));
+        pipeline.producer_commit(smem_pipe_write, cutlass::arch::cpasync_barrier_arrive_noinc);
+
         ++k_tile_iter;
 
         // Advance smem_pipe_write
@@ -422,6 +480,7 @@ struct CollectiveMma<
       TensorStorage& shared_tensors,
       Params const& mainloop_params) {
 
+
     static_assert(is_rmem<FrgTensorC>::value, "C tensor must be rmem resident.");
     static_assert(cute::rank(SmemLayoutA{}) == 3, "Smem layout must be rank 3.");
     static_assert(cute::rank(SmemLayoutB{}) == 3, "Smem layout must be rank 3.");
@@ -432,6 +491,10 @@ struct CollectiveMma<
 
     Tensor sA = make_tensor(make_smem_ptr(shared_tensors.smem_A.data()), SmemLayoutA{});          // (BLK_M,BLK_K,PIPE)
     Tensor sB = make_tensor(make_smem_ptr(shared_tensors.smem_B.data()), SmemLayoutB{});          // (BLK_N,BLK_K,PIPE)
+    
+    // Block scaling
+    Tensor sScaleA = make_tensor(cute::make_smem_ptr(shared_tensors.smem_scale_A.data()), SmemLayoutScaleA{}); // (k)
+    Tensor sScaleB = make_tensor(cute::make_smem_ptr(shared_tensors.smem_scale_B.data()), SmemLayoutScaleB{}); // (k)
 
     //
     // Define C accumulators and A/B partitioning
@@ -476,6 +539,11 @@ struct CollectiveMma<
 
     // We release buffers to producer warps(dma load) with some mmas in flight
     PipelineState smem_pipe_release = smem_pipe_read;
+    
+    // Per block scale values for operand A and B
+    ElementBlockScale scale_a;
+    ElementBlockScale scale_b;
+    ElementBlockScale scale;
 
     // Prologue GMMAs
     int prologue_mma_count = min(K_PIPE_MMAS, k_tile_count);
@@ -496,6 +564,12 @@ struct CollectiveMma<
       }
 
       int read_stage = smem_pipe_read.index();
+      
+      // Load per block scale values from shared memory to registers.
+      scale_a = sScaleA[read_stage];
+      scale_b = sScaleB[read_stage];
+      scale = __shfl_sync(0xffffffff, scale_a * scale_b, 0);
+
       warpgroup_arrive();
       // Unroll the K mode manually to set scale D to 1
       CUTLASS_PRAGMA_UNROLL
@@ -506,7 +580,8 @@ struct CollectiveMma<
       }
       warpgroup_commit_batch();
 
-      accumulation.promote_if_needed();
+      // Block scale the accumulators with `scale` value
+      accumulation.scale_if_needed(scale);
 
       ++smem_pipe_read;
     }
@@ -528,6 +603,11 @@ struct CollectiveMma<
 
       int read_stage = smem_pipe_read.index();
 
+      // Load per block scale values from shared memory to registers (once per block) 
+      scale_a = sScaleA[read_stage];
+      scale_b = sScaleB[read_stage];
+      scale = __shfl_sync(0xffffffff, scale_a * scale_b, 0);
+
       if (accumulation.prepare_if_needed()) {
         tiled_mma.accumulate_ = GMMA::ScaleOut::Zero;
       }
@@ -547,7 +627,8 @@ struct CollectiveMma<
       warpgroup_wait<K_PIPE_MMAS>();
       warpgroup_fence_operand(accumulation());
 
-      accumulation.promote_if_needed();
+      // Block scale the accumulators with `scale` value
+      accumulation.scale_if_needed(scale);
 
       pipeline.consumer_release(smem_pipe_release);                 // UNLOCK smem_pipe_release, done _computing_ on it
 
@@ -555,8 +636,8 @@ struct CollectiveMma<
       ++smem_pipe_read;
       ++smem_pipe_release;
     }
-
-    accumulation.promote_residue_if_needed();
+    
+    accumulation.scale_residue_if_needed(scale);
 
     warpgroup_fence_operand(accumulation());
   }

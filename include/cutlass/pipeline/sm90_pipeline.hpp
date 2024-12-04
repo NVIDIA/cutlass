@@ -234,7 +234,8 @@ public :
     uint32_t transaction_bytes = 0;
     ThreadCategory role = ThreadCategory::NonParticipant;
     uint32_t is_leader = 0;
-    uint32_t num_consumers = 0;
+    uint32_t num_consumers = 0; // Number of consumer threads
+    uint32_t num_producers = 1; // Number of producer threads
   };
 
   // Constructor
@@ -251,7 +252,7 @@ public :
     if (warp_idx == 0 && lane_predicate == 1) {
       // Barrier FULL init
       for (int i = 0; i < Stages; ++i) {
-        full_barrier_ptr_[i].init(1);
+        full_barrier_ptr_[i].init(params_.num_producers);
       }
       uint32_t const num_consumer_warpgroups_per_cluster = params_.num_consumers / NumThreadsPerWarpGroup;
       uint32_t const multicast_consumer_arrival_count = (cute::size<0>(cluster_shape) + cute::size<1>(cluster_shape) - 1) *
@@ -341,6 +342,12 @@ public :
   CUTLASS_DEVICE
   void producer_commit(PipelineState state, uint32_t bytes) {
     producer_commit(state.index(), bytes);
+  }
+
+  template<class UserDefinedArriveOp>
+  CUTLASS_DEVICE
+  void producer_commit(PipelineState state, UserDefinedArriveOp&& user_defined_arrive_op) {
+    cute::forward<UserDefinedArriveOp>(user_defined_arrive_op)(producer_get_barrier(state.index()));;
   }
 
   // Prevents early exit of producer blocks in Cluster.
