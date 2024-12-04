@@ -354,9 +354,17 @@ public:
     CUTLASS_TRACE_HOST("GemmUniversal::run()");
     dim3 const block = GemmKernel::get_block_shape();
     dim3 const grid = get_grid_shape(params);
+    dim3 const block_finalize = syclcompat::dim3(NumThreadsPerWarp, 
+                                                 std::min(MaxNumThreadsPerBlock / NumThreadsPerWarp, 
+                                                          params.softmax_params.args.M), 
+                                                 1);
+    dim3 const grid_finalize = syclcompat::dim3(cute::ceil_div(params.softmax_params.args.M, block_finalize.x), 
+                                                params.softmax_params.args.batch_count, 
+                                                1);
 
     // configure smem size and carveout
     int smem_size = GemmKernel::SharedStorageSize;
+    int smem_size_finalize = SoftmaxFinalizeKernel::SharedStorageSize;
 
     Status launch_result{ Status::kSuccess };
     // Use extended launch API only for mainloops that use it
@@ -367,7 +375,9 @@ public:
       dim3 cluster(cute::size<0>(typename GemmKernel::DispatchPolicy::ClusterShape{}),
                    cute::size<1>(typename GemmKernel::DispatchPolicy::ClusterShape{}),
                    cute::size<2>(typename GemmKernel::DispatchPolicy::ClusterShape{}));
-      void* kernel_params[] = {&params};
+      dim3 cluster_finalize(1,1,1);
+      void* kernel_params[] = {&params.gemm_params};
+      void* kernel_params_finalize[] = {&params.softmax_params};
 
       if constexpr (kEnableCudaHostAdapter) {
         //
@@ -388,6 +398,13 @@ public:
                                                stream,
                                                kernel_params,
                                                0);
+          launch_result = cuda_adapter->launch(grid_finalize,
+                                               cluster_finalize,
+                                               block_finalize,
+                                               smem_size_finalize,
+                                               stream,
+                                               kernel_params_finalize,
+                                               0);
         }
         else {
           return Status::kErrorInternal;
@@ -396,13 +413,17 @@ public:
       else {
         CUTLASS_ASSERT(cuda_adapter == nullptr);
         void const* kernel = (void const*) device_kernel<GemmKernel>;
+        void const* kernel_finalize = (void const*) device_kernel<SoftmaxFinalizeKernel>;
         if constexpr (GemmKernel::ArchTag::kMinComputeCapability == 90) {
           if (is_static_1x1x1 && not launch_with_pdl) {
-            device_kernel<GemmKernel><<<grid, block, smem_size, stream>>>(params);
+            device_kernel<GemmKernel><<<grid, block, smem_size, stream>>>(params.gemm_params);
+            device_kernel<SoftmaxFinalizeKernel><<<grid_finalize, block_finalize, smem_size_finalize, stream>>>(params.softmax_params);
           }
           else {
             launch_result = ClusterLauncher::launch(
               grid, cluster, block, smem_size, stream, kernel, kernel_params, launch_with_pdl);
+            launch_result = ClusterLauncher::launch(
+              grid_finalize, cluster_finalize, block_finalize, smem_size_finalize, stream, kernel_finalize, kernel_params, launch_with_pdl);
           }
         }
       }
@@ -414,9 +435,13 @@ public:
         CUTLASS_ASSERT(cuda_adapter);
         if (cuda_adapter) {
           void* kernel_params[] = {&params.gemm_params};
+          void* kernel_params_finalize[] = {&params.softmax_params};
 
           launch_result = cuda_adapter->launch(
             grid, block, smem_size, stream, kernel_params, 0
+          );
+          launch_result = cuda_adapter->launch(
+            grid_finalize, block_finalize, smem_size_finalize, stream, kernel_params_finalize, 0
           );
 
         }
@@ -441,19 +466,15 @@ public:
           sycl_grid, sycl_block, local_mem_size{static_cast<std::size_t>(smem_size)}},
           params.gemm_params);
 #endif
-        const auto sycl_block2 = syclcompat::dim3(NumThreadsPerWarp, 
-                                                  std::min(MaxNumThreadsPerBlock / NumThreadsPerWarp, 
-                                                           params.softmax_params.args.M), 
-                                                  1);
-        const auto sycl_grid2 = syclcompat::dim3(cute::ceil_div(params.softmax_params.args.M, sycl_block2.x), 
-                                                 params.softmax_params.args.batch_count, 
-                                                 1);
+        const auto sycl_block_finalize = syclcompat::dim3(block_finalize.x, block_finalize.y, block_finalize.z);
+        const auto sycl_grid_finalize = syclcompat::dim3(grid_finalize.x, grid_finalize.y, grid_finalize.z);
         auto event2 = launch<device_kernel<SoftmaxFinalizeKernel>>(launch_policy{
-          sycl_grid2, sycl_block2, local_mem_size{SoftmaxFinalizeKernel::SharedStorageSize}},
+          sycl_grid_finalize, sycl_block_finalize, local_mem_size{static_cast<std::size_t>(smem_size_finalize)}},
           params.softmax_params);
         EventManager::getInstance().addEvent(event2);
 #else
         device_kernel<GemmKernel><<<grid, block, smem_size, stream>>>(params.gemm_params);
+        device_kernel<SoftmaxFinalizeKernel><<<grid_finalize, block_finalize, smem_size_finalize, stream>>>(params.softmax_params);
 #endif
       }
     }
