@@ -135,6 +135,7 @@ add_custom_target(test_unit)
 if (CUTLASS_ENABLE_SYCL)
   set(SUBDIRS
     cute
+    gemm
   )
 else()
   set(SUBDIRS
