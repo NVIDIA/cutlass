@@ -72,21 +72,21 @@ public:
   //
 
   struct Arguments {
-    int                            M;
-    int                        dataN;
-    int                     partialN;
-    int                  batch_count;    ///< Batch count
-    StrideInput               dInput;
-    StridePartial           dPartial;
-    StrideOutput             dOutput;
-    ElementInput*             ptr_in;
-    ElementPartial*  ptr_partial_max;
-    ElementPartial*  ptr_partial_sum;
-    ElementOutput*           ptr_out;
+    int                            M; // dimension M of input, output and partially reduced tensors
+    int                        dataN; // dimension N of the input and output
+    int                     partialN; // dimension N of the partially reduced tensors
+    int                  batch_count; // batch count
+    StrideInput               dInput; // stride of the input
+    StridePartial           dPartial; // stride of the partially reduced tensors
+    StrideOutput             dOutput; // stride of the output
+    ElementInput*             ptr_in; // pointer to start of input data
+    ElementPartial*  ptr_partial_max; // pointer to start of partially reduced max data
+    ElementPartial*  ptr_partial_sum; // pointer to start of partially reduced sum data
+    ElementOutput*           ptr_out; // pointer to start of output data
   };
 
   struct SharedStorage {
-    cute::array_aligned<ElementPartial, 32 * 32 * 2> s_mem;
+    cute::array_aligned<ElementPartial, MaxNumThreadsPerBlock> s_mem;
   };
 
   static constexpr int SharedStorageSize = sizeof(SharedStorage);
@@ -123,11 +123,11 @@ private:
     using ConvertInput = cutlass::NumericConverter<ElementInput, ElementPartial>;
     using ConvertNormOutput = cutlass::NumericConverter<ElementPartial, ElementOutput>;
 
-    int x = ThreadIdxX();
-    int m = x + BlockDimX() * BlockIdxX();
-    int y = ThreadIdxY();
-    int y_size = BlockDimY();
-    int batch_id = BlockIdxY();
+    const int idx_x = ThreadIdxX();
+    const int m = idx_x + BlockDimX() * BlockIdxX();
+    const int idx_y = ThreadIdxY();
+    const int y_size = BlockDimY();
+    const int batch_id = BlockIdxY();
 
     if(m>=params.args.M){
       return;
@@ -136,46 +136,47 @@ private:
     // Represent the full tensors
     auto IOTensorShape = make_shape(params.args.M, params.args.dataN, params.args.batch_count);
     auto PartialTensorShape = make_shape(params.args.M, params.args.partialN, params.args.batch_count);
-    Tensor mMax = make_tensor(make_gmem_ptr(params.args.ptr_partial_max), PartialTensorShape, params.args.dPartial);
+    Tensor mPartialMax = make_tensor(make_gmem_ptr(params.args.ptr_partial_max), PartialTensorShape, params.args.dPartial);
     Tensor mPartialSum = make_tensor(make_gmem_ptr(params.args.ptr_partial_sum), PartialTensorShape, params.args.dPartial);
     Tensor mOut = make_tensor(make_gmem_ptr(params.args.ptr_out), IOTensorShape, params.args.dOutput);
     Tensor mIn = make_tensor(make_gmem_ptr(params.args.ptr_in), IOTensorShape, params.args.dInput);
 
     //Represent the shared tensor
-    Tensor sPartial = make_tensor(make_smem_ptr(reinterpret_cast<ElementPartial*>(shared_storage)), make_layout(make_shape(32, 32)));
+    Tensor sPartial = make_tensor(make_smem_ptr(reinterpret_cast<ElementPartial*>(shared_storage)), 
+                                  make_layout(make_shape(NumThreadsPerWarp, MaxNumThreadsPerBlock / NumThreadsPerWarp)));
 
-    ElementPartial max_val = std::numeric_limits<ElementPartial>::min();
-    for(int partial_n = y; partial_n < params.args.partialN; partial_n += y_size){
-        ElementPartial partial_max = mMax(m, partial_n, batch_id);
+    ElementPartial max_val = std::numeric_limits<ElementPartial>::lowest();
+    for(int partial_n = idx_y; partial_n < params.args.partialN; partial_n += y_size){
+        ElementPartial partial_max = mPartialMax(m, partial_n, batch_id);
         max_val = cutlass::fast_max(max_val, partial_max);
     }
-    sPartial(x,y) = max_val;
+    sPartial(idx_x,idx_y) = max_val;
     syncthreads();
-    //TODO(Tadej): tree-reduction could be better, although it does not seem to be a bottleneck
-    for(int y2 = 0; y2 < y_size; y2++){
-        ElementPartial partial_max = sPartial(x,y2);
+    // tree-reduction could be better, although it does not seem to be a bottleneck
+    for(int idx_y2 = 0; idx_y2 < y_size; idx_y2++){
+        ElementPartial partial_max = sPartial(idx_x,idx_y2);
         max_val = cutlass::fast_max(max_val, partial_max);
     }
     
     ElementPartial sum_val = 0;
-    for(int partial_n = y; partial_n < params.args.partialN; partial_n += y_size){
-        ElementPartial partial_max = mMax(m, partial_n, batch_id);
+    for(int partial_n = idx_y; partial_n < params.args.partialN; partial_n += y_size){
+        ElementPartial partial_max = mPartialMax(m, partial_n, batch_id);
         ElementPartial partial_sum = mPartialSum(m, partial_n, batch_id);
         sum_val += partial_sum * cutlass::fast_exp(partial_max - max_val);
     }
     syncthreads();
-    sPartial(x,y) = sum_val;
+    sPartial(idx_x,idx_y) = sum_val;
     syncthreads();
     sum_val = 0;
-    //TODO(Tadej): tree-reduction could be better, although it does not seem to be a bottleneck
-    for(int y2 = 0; y2 < y_size; y2++){
-        ElementPartial partial_sum = sPartial(x,y2);
+    // tree-reduction could be better, although it does not seem to be a bottleneck
+    for(int idx_y2 = 0; idx_y2 < y_size; idx_y2++){
+        ElementPartial partial_sum = sPartial(idx_x,idx_y2);
         sum_val += partial_sum;
     }
 
     ElementPartial norm = 1 / sum_val;
 
-    for(int n = y * 2; n < params.args.dataN; n += y_size * 2){
+    for(int n = idx_y * 2; n < params.args.dataN; n += y_size * 2){
       auto inVal = mIn(m, n, batch_id);
       auto inVal2 = mIn(m, n+1, batch_id);
       mOut(m, n, batch_id) = cutlass::fast_exp(inVal - max_val) * norm;

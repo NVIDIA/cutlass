@@ -168,7 +168,7 @@ public:
       TiledMma tiled_mma,
       ResidueMNK residue_mnk,
       int thread_idx,
-      [[maybe_unused]] char* smem_buf)
+      char* smem_buf)
   {
     using namespace cute;
     using X = Underscore;
@@ -265,7 +265,7 @@ public:
     syncthreads();
 
     // assumption: size<0>(sC) == wg size
-    ElementAccumulator max = std::numeric_limits<ElementAccumulator>::min();
+    ElementAccumulator max = std::numeric_limits<ElementAccumulator>::lowest();
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < size<0>(sC); ++i) {
       if (elem_less(cD(thread_idx, i), make_coord(get<0>(residue_mnk), get<1>(residue_mnk)))) {
