@@ -55,7 +55,7 @@ endfunction()
 
 function(cutlass_add_executable NAME)
   set(options)
-  set(oneValueArgs BATCH_SOURCES)
+  set(oneValueArgs BATCH_SOURCES BATCH_SIZE) #Important to define these so they aren't passed to add_executable
   set(multiValueArgs)
   cmake_parse_arguments(_ "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
