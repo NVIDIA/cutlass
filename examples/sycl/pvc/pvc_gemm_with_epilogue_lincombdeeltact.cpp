@@ -89,16 +89,6 @@ struct Options {
     cmd.get_cmd_line_argument("alpha", alpha, 1.f);
     cmd.get_cmd_line_argument("beta", beta, 0.f);
     cmd.get_cmd_line_argument("iterations", iterations, 100);
-
-    // validate the arguments
-    bool m_valid = m > 0 and m % 8 == 0;
-    bool n_valid = n > 0 and n % 16 == 0;
-    bool k_valid = k > 0 and k % 16 == 0;
-    bool l_valid = l > 0;
-    if (!(m_valid and n_valid and k_valid and l_valid)) {
-      std::cout << "invalid arguments. Must be a multiple of (8, 16, 16)\n";
-      std::exit(1);
-    }
   }
 
   /// Prints the usage statement.
