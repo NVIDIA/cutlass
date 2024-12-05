@@ -34,7 +34,9 @@
 
 #pragma once
 
+#if !defined(CUTLASS_ENABLE_SYCL)
 #include <cuda_runtime_api.h>
+#endif
 #include "cutlass/cutlass.h"
 #include "cutlass/trace.h"
 
@@ -87,7 +89,9 @@ Status kernel_launch(
 #if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
     CUTLASS_TRACE_HOST("cutlass::kernel_launch: No PDL");
 #endif
+#if !defined(CUTLASS_ENABLE_SYCL)
     device_kernel<GemmKernel><<<grid_dims, block_dims, smem_size, cuda_stream>>>(kernel_params);
+#endif
   }
   else {
 #if ((__CUDACC_VER_MAJOR__ >= 12) || ((__CUDACC_VER_MAJOR__ == 11) && (__CUDACC_VER_MINOR__ >= 8)))

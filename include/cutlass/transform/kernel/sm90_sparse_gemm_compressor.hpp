@@ -297,10 +297,10 @@ private:
     auto [ptr_A, dA, ptr_ACompress, ptr_E] = params.transform;
     SharedStorage& shared_storage = *reinterpret_cast<SharedStorage*>(smem_buf);
 
-    [[maybe_unused]] const int gridDim_X = gridDim.x;
-    [[maybe_unused]] const int gridDim_Y = gridDim.y;
-    [[maybe_unused]] const int gridDim_Z = gridDim.z;
-    [[maybe_unused]] const int blockDim_X = blockDim.x;
+    [[maybe_unused]] const int gridDim_X = GridDimX();
+    [[maybe_unused]] const int gridDim_Y = GridDimY();
+    [[maybe_unused]] const int gridDim_Z = GridDimZ();
+    [[maybe_unused]] const int blockDim_X = BlockDimX();
 
     // * Global Tensor Layout
     const cute::Layout layout_gA = make_layout(make_shape(GemmM, GemmK, GemmL), dA);
@@ -326,10 +326,10 @@ private:
     CUTE_STATIC_ASSERT(cute::is_static_v<cACsAC_layout>, "cACsAC_layout needs to be static");
     CUTE_STATIC_ASSERT(cute::is_static_v<cEsE_layout>, "cEsE_layout needs to be static");
 
-    const int blockIdx_X = blockIdx.x;
-    const int blockIdx_Y = blockIdx.y;
-    const int blockIdx_Z = blockIdx.z;
-    const int threadIdx_X = threadIdx.x;
+    const int blockIdx_X = BlockIdxX();
+    const int blockIdx_Y = BlockIdxY();;
+    const int blockIdx_Z = BlockIdxZ();;
+    const int threadIdx_X = ThreadIdxX();;
 
     // * Construct CTA Tensor
     const auto cta_coord = make_coord(blockIdx_X, blockIdx_Y, blockIdx_Z);
@@ -440,7 +440,7 @@ private:
     }
 
     // * Sync after Compress
-    __syncthreads();
+    syncthreads();
 
     // * Output Cta Tensor S to G
     if (GemmM_within_Cta > 0 && GemmK_within_Cta > 0) {
@@ -469,7 +469,7 @@ private:
     cute::clear(dSrctSrc);
 
     // Sync all thread data access
-    __syncthreads();
+    syncthreads();
   }
 
   template <bool pred,
@@ -570,7 +570,7 @@ private:
     }
   
     // Sync all thread data access
-    __syncthreads();
+    syncthreads();
   } // end of copy_vec_pred()
   
 };

@@ -194,19 +194,11 @@ struct IsDefaultEpilogue<cutlass::epilogue::collective::detail::Sm90TmaWarpSpeci
   static constexpr bool value = true;
 };
 
-template <typename Epilogue, typename = void>
-struct IsLegacyEpiloguePolicy {
-  static constexpr bool value = false;
-};
+template <typename T>
+struct IsLegacyEpiloguePolicy : std::false_type{};
 
-template <typename Epilogue>
-struct IsLegacyEpiloguePolicy<Epilogue, cute::void_t<typename Epilogue::DispatchPolicy>> {
-  using EpiloguePolicy = typename Epilogue::DispatchPolicy;
-  static constexpr bool value = cute::is_same_v<
-                                      EpiloguePolicy,
-                                      cutlass::epilogue::Sm90TmaWarpSpecializedBiasElementwise<
-                                        EpiloguePolicy::StagesC, EpiloguePolicy::StagesD, EpiloguePolicy::FragmentSize>>;
-};
+template <auto ...Ts>
+struct IsLegacyEpiloguePolicy<cutlass::epilogue::Sm90TmaWarpSpecializedBiasElementwise<Ts...>> : std::true_type{};
 
 // The number of splits to test.
 //
@@ -321,7 +313,7 @@ template<
   class Gemm, 
   class ElementA_ = typename Gemm::GemmKernel::ElementA,
   class ElementB_ = typename Gemm::GemmKernel::ElementB,
-  class Enable = void> 
+  class Enable = void>
 struct HostCollectiveMainloop {
   // Kernel data types
   using ElementA = ElementA_;
@@ -571,7 +563,7 @@ template<
   class ElementB_>
 struct HostCollectiveMainloopSparse
 {
-  
+
   // Kernel data types
   using ElementA = ElementA_;
   // CuTe layout A for the kernel's sparse tensorA.
@@ -755,12 +747,20 @@ struct HostCollectiveMainloopSparse
 
     status = compressor_op.run();
 
+#if defined(CUTLASS_ENABLE_SYCL)
+    try {
+      syclcompat::wait_and_throw();
+    } catch (std::exception const &e) {
+      ADD_FAILURE() << "Error at Kernel Sync.";
+      return false;
+    }
+#else
     auto result = cudaDeviceSynchronize();
     if (result != cudaSuccess) {
       EXPECT_EQ(result, cudaSuccess) << "Error at Kernel Sync.";
       return false;
     }
-
+#endif
     layout_a = SparseConfig::fill_layoutA(problem_shape_MNKL);
     layout_e = SparseConfig::fill_layoutE(problem_shape_MNKL);
 
@@ -815,15 +815,15 @@ struct HostCollectiveMainloopSparse
 };
 
 template<
-  class ScheduleType_, 
-  class Gemm, 
+  class ScheduleType_,
+  class Gemm,
   class ElementA_,
   class ElementB_
 >
 struct HostCollectiveMainloop<ScheduleType_, Gemm, ElementA_, ElementB_,
     cute::enable_if_t<
       cute::is_same_v<
-        typename Gemm::CollectiveMainloop::DispatchPolicy, 
+        typename Gemm::CollectiveMainloop::DispatchPolicy,
         cutlass::gemm::MainloopSm90TmaGmmaWarpSpecializedSparse<Gemm::CollectiveMainloop::DispatchPolicy::Stages,
                                                                 typename Gemm::CollectiveMainloop::DispatchPolicy::ClusterShape,
                                                                 ScheduleType_>>>>
@@ -1110,7 +1110,8 @@ struct HostCollectiveEpilogue {
   //
   // FusionOperation derived types/queries
   //
-  static constexpr bool IsLegacy = detail::IsLegacyEpiloguePolicy<Epilogue>::value;
+  using EpiloguePolicy = typename Epilogue::DispatchPolicy;
+  static constexpr bool IsLegacy = detail::IsLegacyEpiloguePolicy<EpiloguePolicy>::value;
 
   // FFMA2 SGEMM uses ThreadEpilogueOp for bias and relu support instead of FusionOp, so we compose LinCombPerRowBiasEltAct FusionOp by hand to test the functionality.
   static constexpr bool IsFfma2Kernel = cute::is_same_v<ScheduleType, cutlass::gemm::KernelMultistage>;
@@ -1503,7 +1504,7 @@ struct HostCollectiveEpilogue {
       file << "\n\nvbeta = \n" << beta.host_view();
     } else {
       file
-        << "\n\nalpha= \n" << alpha.host_view() 
+        << "\n\nalpha= \n" << alpha.host_view()
         << "\n\nbeta= \n " << beta.host_view();
     }
     file << "\n\n";
@@ -1556,7 +1557,7 @@ struct HostCollectiveEpilogue {
     auto coord_0 = cutlass::make_Coord(0);
     auto problem_shape_MNKL = cute::append<4>(problem_size, 1);
     auto [M, N, K, L] = problem_shape_MNKL;
-    Arguments arguments = 
+    Arguments arguments =
       {
         {},
         tensor_C.device_data(), stride_c, tensor_D.device_data(), stride_d
@@ -1904,6 +1905,12 @@ struct TestbedImpl {
     //
 
     size_t smem_size = static_cast<size_t>(Gemm::GemmKernel::SharedStorageSize);
+    size_t device_smem_size;
+#if defined(CUTLASS_ENABLE_SYCL)
+    syclcompat::device_info info = syclcompat::get_current_device().get_device_info();
+    this->sm_count = info.get_max_compute_units();
+    device_smem_size = info.get_local_mem_size();
+#else
 
     int device_idx;
     cudaError_t result = cudaGetDevice(&device_idx);
@@ -1919,13 +1926,13 @@ struct TestbedImpl {
     if (result != cudaSuccess) {
       throw std::runtime_error("cudaGetDeviceProperties() failed");
     }
-
-    if (properties.sharedMemPerBlockOptin < smem_size) {
+    device_smem_size = properties.sharedMemPerBlockOptin;
+#endif
+    if (device_smem_size < smem_size) {
       printf("failed due to smem_size\n");
-      printf("hardware smem_size: %d, required smem_size: %d\n\n", int(properties.sharedMemPerBlockOptin), int(smem_size));
+      printf("hardware smem_size: %d, required smem_size: %d\n\n", int(device_smem_size), int(smem_size));
       return false;
     }
-
     return true;
   }
 
@@ -1948,7 +1955,6 @@ struct TestbedImpl {
     //
     // Run the GEMM
     //
-    cudaError_t result;
 
     for (int iter = 0; iter < iterations; ++iter) {
       status = gemm_op(arguments, workspace.get());
@@ -1958,12 +1964,21 @@ struct TestbedImpl {
       }
     }
 
+#if defined(CUTLASS_ENABLE_SYCL)
+    try {
+      syclcompat::wait_and_throw();
+    } catch (std::exception const &e) {
+      ADD_FAILURE() << "Error at Kernel Sync.";
+      return false;
+    }
+#else
+    cudaError_t result;
     result = cudaDeviceSynchronize();
     if (result != cudaSuccess) {
       EXPECT_EQ(result, cudaSuccess) << "Error at Kernel Sync.";
       return false;
     }
-
+#endif
     return true;
   }
 
@@ -1981,7 +1996,7 @@ struct TestbedImpl {
     )
   {
 #if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
-    CUTLASS_TRACE_HOST("TestbedImpl::run"); 
+    CUTLASS_TRACE_HOST("TestbedImpl::run");
 #endif
 
     // Fail test if insufficient CUDA device
@@ -2074,10 +2089,14 @@ struct TestbedImpl {
     cutlass::Status status = gemm_op.can_implement(arguments);
 
     if (status != cutlass::Status::kSuccess) {
+#if defined(CUTLASS_ENABLE_SYCL)
+      std::cerr << "This test is not supported." << "\n";
+#else
       cudaError_t error = cudaGetLastError();
       const auto error_str = cudaGetErrorString(error);
       CUTLASS_TRACE_HOST("TestbedImpl::run: cudaGetLastError() is " << error_str);
-      std::cerr << "This test is not supported: " << error_str << "\n";
+      std::cerr << "This test is not supported: " << cudaGetErrorString(error) << "\n";
+#endif
       return true;
     }
 
@@ -2092,20 +2111,31 @@ struct TestbedImpl {
       return profile(problem_size, static_cast<int>(iterations), gemm_op, arguments, workspace);
     }
     else {
-      cudaError_t result;
 #if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
       CUTLASS_TRACE_HOST("TestbedImpl::run: Calling gemm_op.initialize");
 #endif
       status = gemm_op.initialize(arguments, workspace.get());
       if (status != cutlass::Status::kSuccess) {
+#if defined(CUTLASS_ENABLE_SYCL)
+      std::cerr << "This test is not supported." << "\n";
+#else
         cudaError_t error = cudaGetLastError();
         const auto error_str = cudaGetErrorString(error);
         CUTLASS_TRACE_HOST("TestbedImpl::run: cudaGetLastError() is " << error_str);
+#endif
       }
 #if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
       CUTLASS_TRACE_HOST("TestbedImpl::run: Calling gemm_op.run");
 #endif
       status = gemm_op.run();
+#if defined(CUTLASS_ENABLE_SYCL)
+      try {
+        syclcompat::wait_and_throw();
+      } catch (std::exception const &e) {
+        ADD_FAILURE() << "Error at Kernel Sync.";
+        return false;
+      }
+#else
       if (status != cutlass::Status::kSuccess) {
         cudaError_t error = cudaGetLastError();
         const auto error_str = cudaGetErrorString(error);
@@ -2114,13 +2144,14 @@ struct TestbedImpl {
 #if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
       CUTLASS_TRACE_HOST("TestbedImpl::run: Calling cudaDeviceSynchronize");
 #endif
+      cudaError_t result;
       result = cudaDeviceSynchronize();
       if (result != cudaSuccess) {
         CUTLASS_TRACE_HOST("TestbedImpl::run: cudaDeviceSynchronize reports non-success");
         EXPECT_EQ(result, cudaSuccess) << "Error at Kernel Sync.";
         return false;
       }
-
+#endif
       EXPECT_TRUE(status == cutlass::Status::kSuccess) << to_string(status);
 
       //
@@ -2132,9 +2163,11 @@ struct TestbedImpl {
       bool passed = this->verify(problem_size, alpha, beta);
       if (!passed) {
         CUTLASS_TRACE_HOST("TestbedImpl::run: this->verify FAILED");
+#if !defined(CUTLASS_ENABLE_SYCL)
         cudaError_t error = cudaGetLastError();
         const auto error_str = cudaGetErrorString(error);
         CUTLASS_TRACE_HOST("TestbedImpl::run: cudaGetLastError() is " << error_str);
+#endif
 
         std::cout << "Error : Failed : with alpha: " << alpha << ", beta: " << beta
                   << "\n";
@@ -2362,7 +2395,7 @@ bool TestAll(double alpha = 1.0, double beta = 0.0, CheckEquality check_relative
                 }
                 catch (std::exception const& e) {
                   EXPECT_TRUE(false) << "TestAll: testbed.run {"
-                    << "m: " << m << ", n: " << n << ", k: " << k 
+                    << "m: " << m << ", n: " << n << ", k: " << k
                     << ", alpha: " << alpha << ", beta: " << beta
                     << ", raster_order: ???"
                     << ", max_swizzle_size: " << static_cast<int>(max_swizzle_size)
@@ -2373,7 +2406,7 @@ bool TestAll(double alpha = 1.0, double beta = 0.0, CheckEquality check_relative
                 }
                 catch (...) {
                   EXPECT_TRUE(false) << "TestAll: testbed.run {"
-                    << "m: " << m << ", n: " << n << ", k: " << k 
+                    << "m: " << m << ", n: " << n << ", k: " << k
                     << ", alpha: " << alpha << ", beta: " << beta
                     << ", raster_order: ???"
                     << ", max_swizzle_size: " << static_cast<int>(max_swizzle_size)
@@ -2384,7 +2417,7 @@ bool TestAll(double alpha = 1.0, double beta = 0.0, CheckEquality check_relative
                 }
 
                 EXPECT_TRUE(passed) << "TestAll: testbed.run {"
-                  << "m: " << m << ", n: " << n << ", k: " << k 
+                  << "m: " << m << ", n: " << n << ", k: " << k
                   << ", alpha: " << alpha << ", beta: " << beta
                   << ", raster_order: ???"
                   << ", max_swizzle_size: " << static_cast<int>(max_swizzle_size)
@@ -2418,6 +2451,48 @@ bool TestAll(double alpha = 1.0, double beta = 0.0, CheckEquality check_relative
     }
   }
 
+  return passed;
+}
+
+template <typename Gemm, template <class T> class ActivationFunctor =
+                             cutlass::epilogue::thread::Identity>
+bool TestXe(
+    double alpha = 1.0, double beta = 0.0,
+    CheckEquality check_relative_equality = CheckEquality::RELATIVE) {
+  using ElementScalar = typename Gemm::EpilogueOutputOp::ElementScalar;
+  using ProblemShapeType = typename Gemm::GemmKernel::ProblemShape;
+
+  Testbed3x<Gemm, ActivationFunctor> testbed(
+    check_relative_equality, ScalarLoc::ON_HOST, VectorScale::DISABLED);
+
+  // For M & N we test a small and a big size
+  // For K, we currently only support K = TileShapeK
+  // We set L = 1 throughout
+  // TODO(codeplay): unhardcode max_alignment
+  int max_alignment = 4;
+  std::vector<int> problem_size_m{max_alignment, 512 - 3 * max_alignment};
+  std::vector<int> problem_size_n{max_alignment, 512 - 2 * max_alignment};
+
+  constexpr int TileShapeK = cute::size<2>(typename Gemm::GemmKernel::TileShape{});
+  std::vector<int> problem_size_k{TileShapeK};
+
+  bool passed = true;
+
+  for (int m : problem_size_m) {
+    for (int n : problem_size_n) {
+      for (int k : problem_size_k) {
+        ProblemShapeType problem_size{m, n, k, 1};
+        passed =
+            testbed.run(problem_size, cutlass::from_real<ElementScalar>(alpha),
+                        cutlass::from_real<ElementScalar>(beta));
+        if (!passed) {
+          std::cout << __FILE__ << ':' << __LINE__ << " : GEMM MNK " << m << " "
+                    << n << " " << k << " FAILED.\n";
+          return false;
+        }
+      }
+    }
+  }
   return passed;
 }
 

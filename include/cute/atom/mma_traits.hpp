@@ -143,11 +143,18 @@ mma_unpack(AnyMMATraits        const& traits,
   CUTE_STATIC_ASSERT_V(size(rD) == Int<RegNumD>{});
   CUTE_STATIC_ASSERT_V(size(rC) == Int<RegNumC>{});
 
+#if defined(CUTLASS_ENABLE_SYCL)
+  detail::explode_mma<MMA_Op>(rD, make_int_sequence<RegNumD>{},
+                          rA, make_int_sequence<RegNumA>{},
+                          rB, make_int_sequence<RegNumB>{},
+                          rC, make_int_sequence<RegNumC>{});
+#else
   detail::explode(MMA_Op::fma,
                   rD, make_int_sequence<RegNumD>{},
                   rA, make_int_sequence<RegNumA>{},
                   rB, make_int_sequence<RegNumB>{},
                   rC, make_int_sequence<RegNumC>{});
+#endif
 }
 
 // Accept mutable temporaries

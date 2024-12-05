@@ -60,6 +60,15 @@ T* allocate(size_t count = 1) {
 
   bytes = count * sizeof(T);
 
+#if defined(CUTLASS_ENABLE_SYCL)
+  if (count > 0) {
+    ptr = reinterpret_cast<T*>(syclcompat::malloc(bytes));
+    if ((void*)ptr == nullptr) {
+      throw std::runtime_error("Failed to allocate memory");
+    }
+  }
+#else
+
   cudaError_t cuda_error = cudaMalloc((void**)&ptr, bytes);
 
   if (cuda_error != cudaSuccess) {
@@ -77,7 +86,7 @@ T* allocate(size_t count = 1) {
     CUTLASS_TRACE_HOST(os.str());
   }
 #endif
-
+#endif
   return ptr;
 }
 
@@ -85,10 +94,17 @@ T* allocate(size_t count = 1) {
 template <typename T>
 void free(T* ptr) {
   if (ptr) {
+#if defined(CUTLASS_ENABLE_SYCL)
+    syclcompat::free(ptr);
+    if (ptr != nullptr) {
+      throw std::runtime_error("Failed to free device memory");
+    }
+#else
     cudaError_t cuda_error = (cudaFree(ptr));
     if (cuda_error != cudaSuccess) {
       throw cuda_exception("Failed to free device memory", cuda_error);
     }
+#endif
   }
 }
 
@@ -102,6 +118,9 @@ void copy(T* dst, T const* src, size_t count, cudaMemcpyKind kind) {
   if (bytes == 0 && count > 0) {
     bytes = 1;
   }
+#if defined(CUTLASS_ENABLE_SYCL)
+  syclcompat::memcpy(dst, src, bytes);
+#else
   cudaError_t cuda_error = (cudaMemcpy(dst, src, bytes, kind));
   if (cuda_error != cudaSuccess) {
     std::ostringstream os;
@@ -130,6 +149,7 @@ void copy(T* dst, T const* src, size_t count, cudaMemcpyKind kind) {
 
     throw cuda_exception(os.str().c_str(), cuda_error);
   }
+#endif
 }
 
 template <typename T>
@@ -179,12 +199,16 @@ public:
   /// Delete functor for CUDA device memory
   struct deleter {
     void operator()(T* ptr) {
+#if defined(CUTLASS_ENABLE_SYCL)
+      syclcompat::free(ptr);
+#else
       cudaError_t cuda_error = (cudaFree(ptr));
       if (cuda_error != cudaSuccess) {
         // noexcept
         //                throw cuda_exception("cudaFree() failed", cuda_error);
         return;
       }
+#endif
     }
   };
 

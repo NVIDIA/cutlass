@@ -32,7 +32,7 @@
 
 #include "cutlass/numeric_types.h"
 
-#if !defined(__CUDACC_RTC__)
+#if !defined(__CUDACC_RTC__) && !defined(CUTLASS_ENABLE_SYCL)
 #include <cuda.h>
 #include <cinttypes>
 #endif
@@ -212,7 +212,7 @@ inline CUtensorMapSwizzle
 to_CUtensorMapSwizzle(SmemSwizzleBits const& t, SmemSwizzleBase const& b) {
   switch (t) {
     default: assert(false && "Unsupported pair of SmemSwizzleBits and SmemSwizzleBase!");
-    case SmemSwizzleBits::DISABLE: 
+    case SmemSwizzleBits::DISABLE:
       assert((b == SmemSwizzleBase::SWIZZLE_BASE_16B) && "Expected 16B swizzle base for 0B swizzle bits.");
       return CU_TENSOR_MAP_SWIZZLE_NONE;
     case SmemSwizzleBits::B32:

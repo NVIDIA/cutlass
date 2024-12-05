@@ -3638,7 +3638,8 @@ private:
                   "Invalid PackedSrcType/PackedResultType must be 2 or 4 to use private convert dispatch.");
 
     PackedResultType r;
-  #if defined __CUDA_ARCH__ && __CUDA_ARCH__ <= 800
+  #if (defined __CUDA_ARCH__ && __CUDA_ARCH__ <= 800) || \
+       (defined __SYCL_CUDA_ARCH__ && __SYCL_CUDA_ARCH__ <= 800)
     // View the input as reg
     uint32_t src_reg = to_reg(source);
     static constexpr int fp32_base = 0x4B400000;
@@ -3663,7 +3664,11 @@ private:
 
     CUTLASS_PRAGMA_UNROLL
     for (int ii = 0; ii < PackedResultType::kElements; ++ii) {
+#if defined(CUTLASS_ENABLE_SYCL)
+      t[ii] = syclcompat::dp4a(x, mask[ii], 0);
+#else
       t[ii] = __dp4a(x, mask[ii], 0);
+#endif
       r[ii] = static_cast<float>(t[ii]);
     }
   #endif
@@ -3737,7 +3742,7 @@ private:
     uint32_t const prmt_indices[4] = {0x7650, 0x7651, 0x7652, 0x7653};
     uint32_t* result_as_int = reinterpret_cast<uint32_t*>(&r);
     for (int ii = 0; ii < PackedResultType::kElements; ++ii) {
-      result_as_int[ii] = __byte_perm(src_reg, 0x4B000000, prmt_indices[ii]);
+      result_as_int[ii] = byte_perm(src_reg, 0x4B000000, prmt_indices[ii]);
       // Subtract the magic number 0x4B000000 from tmp in floating-point arithmetic to obtain final result
       r[ii] -= 8388608.f;
     }
@@ -3885,8 +3890,13 @@ private:
     // Scale and subtract the FP16s to get the original int4 number as FP16.
     CUTLASS_PRAGMA_UNROLL
     for (int ii = 0; ii < RegArray::kElements; ++ii) {
+#if defined(CUTLASS_ENABLE_SYCL)
+      half2& fp16x2_val = reinterpret_cast<half2&>(r[ii]);
+      fp16x2_val = sycl::fma(hfma_scale, fp16x2_val, hfma_bias);
+#else
       half2& fp16x2_val = reinterpret_cast<__half2&>(r[ii]);
       fp16x2_val = __hfma2(hfma_scale, fp16x2_val, hfma_bias);
+#endif
     }
     return reinterpret_cast<PackedResultType&>(r);
   }
@@ -3999,8 +4009,13 @@ private:
     const half2& bias = reinterpret_cast<const half2&>(bias_rep);
     CUTLASS_PRAGMA_UNROLL
     for (int ii = 0; ii < RegArray::kElements; ++ii) {
+#if defined(CUTLASS_ENABLE_SYCL)
+      half2& fp16x2_val = reinterpret_cast<half2&>(r[ii]);
+      fp16x2_val = fp16x2_val - bias;
+#else
       half2& fp16x2_val = reinterpret_cast<__half2&>(r[ii]);
       fp16x2_val = __hsub2(fp16x2_val, bias);
+#endif
     }
     return reinterpret_cast<PackedResultType&>(r);
   }
@@ -4078,8 +4093,13 @@ private:
     const half2& bias = reinterpret_cast<const half2&>(bias_rep);
     CUTLASS_PRAGMA_UNROLL
     for (int ii = 0; ii < RegArray::kElements; ++ii) {
+#if defined(CUTLASS_ENABLE_SYCL)
+      half2& fp16x2_val = reinterpret_cast<half2&>(r[ii]);
+      fp16x2_val = fp16x2_val - bias;
+#else
       half2& fp16x2_val = reinterpret_cast<__half2&>(r[ii]);
       fp16x2_val = __hsub2(fp16x2_val, bias);
+#endif
     }
 
     return reinterpret_cast<PackedResultType&>(r);
@@ -4427,9 +4447,9 @@ struct FastNumericArrayConverter<int8_t, float, 4, Round> {
       result[i] = reinterpret_cast<int32_t const &>(tmp);
     }
 
-    result[0] = __byte_perm(result[0], result[1], 0x40);
-    result[2] = __byte_perm(result[2], result[3], 0x40);
-    result[0] = __byte_perm(result[0], result[2], 0x5410);
+    result[0] = byte_perm(result[0], result[1], 0x40);
+    result[2] = byte_perm(result[2], result[3], 0x40);
+    result[0] = byte_perm(result[0], result[2], 0x5410);
 
     return reinterpret_cast<result_type const &>(result[0]);
   }

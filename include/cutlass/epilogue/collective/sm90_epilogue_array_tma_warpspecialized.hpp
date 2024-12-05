@@ -1026,7 +1026,7 @@ public:
           // Bringing tensormaps from params to smem for modification later
           copy(recast<uint128_t>(pC_tensormap), recast<uint128_t>(sC_tensormap));
         }
-        __syncwarp();
+        syncwarp();
         return cute::make_tuple(&gmem_tensormap(sm_idx, C_tensormap_index));
 
       }
@@ -1041,7 +1041,7 @@ public:
         // Bringing tensormaps from params to smem for modification later
         copy(recast<uint128_t>(pD_tensormap), recast<uint128_t>(sD_tensormap));
       }
-      __syncwarp();
+      syncwarp();
       return cute::make_tuple(&gmem_tensormap(sm_idx, warp_group_idx));
     }
   }

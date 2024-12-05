@@ -69,6 +69,7 @@ namespace detail {
 CUTLASS_DEVICE
 Array<float, 2> top_2_reduce_scalar(Array<float, 2> a, float scalar) {
   Array<float, 2> out;
+#if defined(__CUDA_ARCH__) || defined(__SYCL_CUDA_ARCH__)
   asm volatile(
       "{\n"
       "  .reg .f32 mx;\n"
@@ -78,12 +79,14 @@ Array<float, 2> top_2_reduce_scalar(Array<float, 2> a, float scalar) {
       "  selp.f32 %1, mx, %2, p;\n"
       "  selp.f32 %0, %2, %4, p;\n"
       "}\n" : "=f"(out[0]), "=f"(out[1]) : "f"(a[0]), "f"(a[1]), "f"(scalar));
+#endif
   return out;
 }
 
 CUTLASS_DEVICE
 Array<float, 2> top_2_reduce(Array<float, 2> a, Array<float, 2> b) {
   Array<float, 2> out;
+#if defined(__CUDA_ARCH__) || defined(__SYCL_CUDA_ARCH__)
   asm volatile(
       "{\n"
       "  .reg .v2 .f32 mx;\n"
@@ -95,12 +98,14 @@ Array<float, 2> top_2_reduce(Array<float, 2> a, Array<float, 2> b) {
       "  selp.f32 %0, %2, %4, p;\n"         // a0 > b0 ? a0 : b0
       "}\n" : "=f"(out[0]), "=f"(out[1]) : 
       "f"(a[0]), "f"(a[1]), "f"(b[0]), "f"(b[1]));
+#endif
   return out;
 }
 
 CUTLASS_DEVICE
 Array<float, 4> top_4_reduce_scalar(Array<float, 4> a, float scalar) {
   Array<float, 4> out;
+#if defined(__CUDA_ARCH__) || defined(__SYCL_CUDA_ARCH__)
   asm volatile(
       "{\n"
       "  .reg .f32 mx;\n"                   // max(a3, b)
@@ -120,12 +125,14 @@ Array<float, 4> top_4_reduce_scalar(Array<float, 4> a, float scalar) {
       "}\n" : 
       "=f"(out[0]), "=f"(out[1]), "=f"(out[2]), "=f"(out[3]) : 
       "f"(a[0]), "f"(a[1]), "f"(a[2]), "f"(a[3]), "f"(scalar));
+#endif
   return out;
 }
 
 CUTLASS_DEVICE
 Array<float, 4> top_4_reduce(Array<float, 4> a, Array<float, 4> b) {
   Array<float, 4> out;
+#if defined(__CUDA_ARCH__) || defined(__SYCL_CUDA_ARCH__)
   asm volatile(
       "{\n"
       "  .reg .f32 mxa0b1;\n"                          // max(a0, b1)
@@ -191,6 +198,7 @@ Array<float, 4> top_4_reduce(Array<float, 4> a, Array<float, 4> b) {
       "=f"(out[0]), "=f"(out[1]), "=f"(out[2]), "=f"(out[3]) : 
       "f"(a[0]), "f"(a[1]), "f"(a[2]), "f"(a[3]),
       "f"(b[0]), "f"(b[1]), "f"(b[2]), "f"(b[3]));
+#endif
   return out;
 }
 
@@ -270,6 +278,7 @@ Element topk_logsumexp(cutlass::Array<Element, N> a) {
 CUTLASS_DEVICE
 float fast_masked_softmax(float value, float minimum, float logsumexp) {
   float new_value;
+#if defined(__CUDA_ARCH__) || defined(__SYCL_CUDA_ARCH__)
   asm volatile(
       "{\n"
       "  .reg .pred p0;\n"
@@ -302,6 +311,7 @@ float fast_masked_softmax(float value, float minimum, float logsumexp) {
       // Mask or softmax
       "  selp.f32 %0, %%f10, 0f00000000, p0;\n"
       "}\n" : "=f"(new_value) : "f"(value), "f"(minimum), "f"(logsumexp));
+#endif
   return new_value;
 }
 
@@ -375,7 +385,7 @@ private:
     void shuffle_up_sync(uint32_t delta, int lane_id) {
       static_assert(sizeof(ReductionResult) == sizeof(uint64_t));
       uint64_t r = reinterpret_cast<uint64_t&>(*this);
-      r = __shfl_up_sync(0xFFFFFFFF, r, delta);
+      r = shfl_up_sync(0xFFFFFFFF, r, delta);
       *this = (lane_id - static_cast<int>(delta) >= 0) ? reinterpret_cast<ReductionResult&>(r) : *this;
     }
   };
@@ -402,7 +412,7 @@ private:
       if constexpr (TopK == 2) {
         static_assert(sizeof(TopKResult) == sizeof(uint64_t));
         uint64_t top_k = reinterpret_cast<uint64_t&>(*this);
-        top_k = __shfl_xor_sync(0xFFFFFFFF, top_k, laneMask);
+        top_k = shfl_xor_sync(0xFFFFFFFF, top_k, laneMask);
         auto synced_v = reinterpret_cast<TopKResult&>(top_k);
         detail::merge_desc_sorted_arrays(top_k_, synced_v.top_k_);
       }
@@ -412,8 +422,8 @@ private:
         uint64_t top_k_arr[2];
         top_k_arr[0] = top_k_ptr[0];
         top_k_arr[1] = top_k_ptr[1];
-        top_k_arr[0] = __shfl_xor_sync(0xFFFFFFFF, top_k_arr[0], laneMask);
-        top_k_arr[1] = __shfl_xor_sync(0xFFFFFFFF, top_k_arr[1], laneMask);
+        top_k_arr[0] = shfl_xor_sync(0xFFFFFFFF, top_k_arr[0], laneMask);
+        top_k_arr[1] = shfl_xor_sync(0xFFFFFFFF, top_k_arr[1], laneMask);
         auto synced_v = reinterpret_cast<TopKResult&>(top_k_arr);
         detail::merge_desc_sorted_arrays(top_k_, synced_v.top_k_);
       }
@@ -421,7 +431,7 @@ private:
         TopKResult synced_v;
         CUTLASS_PRAGMA_UNROLL
         for (int i = 0; i < TopK; ++i) {
-          synced_v.top_k_[i] = __shfl_xor_sync(0xFFFFFFFF, top_k_[i], laneMask);
+          synced_v.top_k_[i] = shfl_xor_sync(0xFFFFFFFF, top_k_[i], laneMask);
         }
         detail::merge_desc_sorted_arrays(top_k_, synced_v.top_k_);
       }
@@ -433,7 +443,7 @@ private:
       if constexpr (TopK == 2) {
         static_assert(sizeof(TopKResult) == sizeof(uint64_t));
         uint64_t top_k = reinterpret_cast<uint64_t&>(*this);
-        top_k = __shfl_down_sync(0xFFFFFFFF, top_k, delta);
+        top_k = shfl_down_sync(0xFFFFFFFF, top_k, delta);
         auto synced_v = reinterpret_cast<TopKResult&>(top_k);
         detail::merge_desc_sorted_arrays(top_k_, synced_v.top_k_);
       }
@@ -443,8 +453,8 @@ private:
         uint64_t top_k_arr[2];
         top_k_arr[0] = top_k_ptr[0];
         top_k_arr[1] = top_k_ptr[1];
-        top_k_arr[0] = __shfl_down_sync(0xFFFFFFFF, top_k_arr[0], delta);
-        top_k_arr[1] = __shfl_down_sync(0xFFFFFFFF, top_k_arr[1], delta);
+        top_k_arr[0] = shfl_down_sync(0xFFFFFFFF, top_k_arr[0], delta);
+        top_k_arr[1] = shfl_down_sync(0xFFFFFFFF, top_k_arr[1], delta);
         auto synced_v = reinterpret_cast<TopKResult&>(top_k_arr);
         detail::merge_desc_sorted_arrays(top_k_, synced_v.top_k_);
       }
@@ -452,7 +462,7 @@ private:
         TopKResult synced_v;
         CUTLASS_PRAGMA_UNROLL
         for (int i = 0; i < TopK; ++i) {
-          synced_v.top_k_[i] = __shfl_down_sync(0xFFFFFFFF, top_k_[i], delta);
+          synced_v.top_k_[i] = shfl_down_sync(0xFFFFFFFF, top_k_[i], delta);
         }
         detail::merge_desc_sorted_arrays(top_k_, synced_v.top_k_);
       }

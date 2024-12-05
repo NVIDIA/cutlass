@@ -112,6 +112,8 @@ struct KernelTmaWarpSpecializedCooperative {
 struct KernelPtrArrayTmaWarpSpecializedCooperative { };
 struct KernelPtrArrayTmaWarpSpecializedPingpong { };
 
+struct KernelPVC { };
+
 //////////////////////////////////////////////////////////////////////////////
 
 //
@@ -317,6 +319,18 @@ struct MainloopSm90TmaGmmaWarpSpecializedSparse {
   using ArchTag = arch::Sm90;
   using Schedule = KernelSchedule;
 };
+
+
+#if defined(SYCL_INTEL_TARGET)
+template<int Stages_>
+struct MainloopIntelPVC {
+  constexpr static int Stages = Stages_;
+  constexpr static int SubgroupSize = 16;
+  using ArchTag = arch::IntelPVC;
+  using Schedule = KernelPVC;
+  using ClusterShape = Shape<_1,_1,_1>;
+};
+#endif
 
 //////////////////////////////////////////////////////////////////////////////
 

@@ -397,7 +397,7 @@ public:
     // Kernel level shared memory storage
     SharedStorage& shared_storage = *reinterpret_cast<SharedStorage*>(smem_buf);
 
-    int thread_idx = int(threadIdx.x);
+    int thread_idx = int(ThreadIdxX());
     int lane_idx = canonical_lane_idx();
     int warp_idx = canonical_warp_idx_sync();
     int warp_idx_in_warp_group = warp_idx % NumWarpsPerWarpGroup;
@@ -472,7 +472,7 @@ public:
         return [] () { cute::cluster_wait(); };
       }
       else {
-        __syncthreads();
+        syncthreads();
         return [] () {}; // do nothing
       }
     } ();
@@ -521,7 +521,7 @@ public:
       if (producer_warp_role == ProducerWarpRole::Mainloop) {
         int32_t curr_batch = idx2crd(work_tile_info.L_idx, shape<4>(gB_nkl)); // Usually just returns work_tile_info.L_idx;
         int32_t const mock_l_coord = 0;
-        int32_t const sm_idx = blockIdx.x + (blockIdx.y * gridDim.x);
+        int32_t const sm_idx = BlockIdxX() + (BlockIdxY() * GridDimX());
         int32_t const sm_count = params.hw_info.sm_count;
 
         // Fetch a copy of tensormaps for the CTA
@@ -537,7 +537,7 @@ public:
             curr_batch
           );
           // Ensure warp is converged before issuing tensormap fence release
-          __syncwarp();
+          syncwarp();
           // Entire warp must do this (i.e. it's aligned)
           collective_mainloop.tensormaps_cp_fence_release(shared_storage.tensormaps.mainloop, input_tensormaps);
         }
@@ -610,7 +610,7 @@ public:
               curr_batch
             );
             // Ensure warp is converged before issuing tensor replace
-            __syncwarp();
+            syncwarp();
             // Entire warp must do this (i.e. it's aligned)
             collective_mainloop.tensormaps_cp_fence_release(shared_storage.tensormaps.mainloop, input_tensormaps);
           }
@@ -749,7 +749,7 @@ public:
 
           // Converge before issuing tensormap fence release since fence is aligned
           __syncwarp();
-          collective_epilogue.tensormaps_cp_fence_release<IsEpiLoad>(shared_storage.tensormaps.epilogue, 
+          collective_epilogue.tensormaps_cp_fence_release<IsEpiLoad>(shared_storage.tensormaps.epilogue,
                                                                      epi_store_tensormap,
                                                                      consumer_warp_group_idx);
         }

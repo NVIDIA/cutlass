@@ -33,6 +33,10 @@
 #include <cute/config.hpp>          // CUTE_HOST_DEVICE
 #include <cute/numeric/int.hpp>     // cute::int2_t, cute::int4_t, etc
 
+#if defined(CUTLASS_ENABLE_SYCL)
+#include <cutlass/sycl_vector_types.h>
+#endif
+
 #include <cutlass/numeric_size.h>   // cutlass::sizeof_bits
 #include <cutlass/numeric_types.h>  // cutlass::float_e4m3_t, cutlass::float_e5m2_t, etc
 

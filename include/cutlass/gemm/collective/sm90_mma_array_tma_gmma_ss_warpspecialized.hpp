@@ -495,7 +495,7 @@ struct CollectiveMma<
     Layout warp_group_thread_layout = make_layout(Int<MmaWarpGroups>{},
                                                   Int<NumThreadsPerWarpGroup>{});
 
-    int warp_group_idx = __shfl_sync(0xFFFFFFFF, thread_idx / NumThreadsPerWarpGroup, 0);
+    int warp_group_idx = shfl_sync(0xFFFFFFFF, thread_idx / NumThreadsPerWarpGroup, 0);
 
     TiledMma tiled_mma;
     auto thread_mma = tiled_mma.get_slice(warp_group_thread_layout(warp_group_idx));
@@ -643,7 +643,7 @@ struct CollectiveMma<
       copy(recast<uint128_t>(pA_tensormap), recast<uint128_t>(sA_tensormap));
       copy(recast<uint128_t>(pB_tensormap), recast<uint128_t>(sB_tensormap));
     }
-    __syncwarp();
+    syncwarp();
 
     return cute::make_tuple(tma_desc_a, tma_desc_b);
   }

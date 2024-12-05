@@ -59,6 +59,10 @@
 // 3.x
 #include "cutlass/gemm/kernel/gemm_universal.hpp"
 
+#if defined(CUTLASS_ENABLE_SYCL)
+#include "cutlass/util/sycl_event_manager.hpp"
+#endif
+
 ////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass::gemm::device {
@@ -305,6 +309,7 @@ public:
 
       CUTLASS_ASSERT(cuda_adapter == nullptr);
 
+#if !defined(CUTLASS_ENABLE_SYCL)
       if (smem_size >= (48 << 10)) {
         CUTLASS_TRACE_HOST("  Setting smem size to " << smem_size);
         cudaError_t result = cudaFuncSetAttribute(
@@ -317,6 +322,7 @@ public:
           return Status::kErrorInternal;
         }
       }
+#endif
     }
     return Status::kSuccess;
   }
@@ -355,6 +361,7 @@ public:
 #if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
       CUTLASS_TRACE_HOST("GemmUniversal::run: Use extended launch API");
 #endif
+#if !defined(CUTLASS_ENABLE_SYCL)
       [[maybe_unused]] constexpr bool is_static_1x1x1 =
         cute::is_static_v<typename GemmKernel::DispatchPolicy::ClusterShape> and
         cute::size(typename GemmKernel::DispatchPolicy::ClusterShape{}) == 1;
@@ -418,6 +425,7 @@ public:
           }
         }
       }
+#endif
     }
     else {
       launch_result = Status::kSuccess;
@@ -442,6 +450,23 @@ public:
       }
       else {
         CUTLASS_ASSERT(cuda_adapter == nullptr);
+#if defined(CUTLASS_ENABLE_SYCL)
+        const auto sycl_block = syclcompat::dim3(block.x, block.y, block.z);
+        const auto sycl_grid = syclcompat::dim3(grid.x, grid.y, grid.z);
+
+        using namespace syclcompat::experimental;
+#if defined (SYCL_INTEL_TARGET)
+        auto event = launch<device_kernel<GemmKernel>>(launch_policy{
+          sycl_grid, sycl_block, local_mem_size{static_cast<std::size_t>(smem_size)},
+          kernel_properties{sycl_exp::sub_group_size<DispatchPolicy::SubgroupSize>}
+        }, params);
+#else
+        auto event = launch<device_kernel<GemmKernel>>(launch_policy{
+          sycl_grid, sycl_block, local_mem_size{static_cast<std::size_t>(smem_size)}},
+          params);
+#endif
+        EventManager::getInstance().addEvent(event);
+#else
 #if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
         CUTLASS_TRACE_HOST("GemmUniversal::run: Launching kernel with cutlass::kernel_launch");
 #endif
@@ -454,6 +479,7 @@ public:
         else {
           CUTLASS_TRACE_HOST("GemmUniversal::run: cutlass::kernel_launch reports success");
         }
+#endif
 #endif
       }
     }

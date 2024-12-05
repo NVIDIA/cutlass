@@ -511,12 +511,16 @@ struct Sm90TreeVisitor<
         }
         if constexpr (cute::is_same_v<ElementCompute, float>) {
           uint32_t aux;
+#if defined(__SYCL_CUDA_ARCH__) || defined(__CUDA_ARCH__)
           asm volatile("set.equ.u32.f32 %0, %1, %2;\n" : "=r"(aux) : "f"(frg_compute[i]), "f"(pre_relu)); // NaN outputs 1 in Aux
+#endif
           frg_aux[i] = static_cast<bool>(aux);
         } else if constexpr (cute::is_same_v<ElementCompute, cutlass::half_t>) {
           uint32_t aux;
           cutlass::half_t compute = frg_compute[i];
+#if defined(__SYCL_CUDA_ARCH__) || defined(__CUDA_ARCH__)
           asm volatile("set.equ.u32.f16 %0, %1, %2;\n" : "=r"(aux) : "h"(compute.raw()), "h"(pre_relu.raw())); // NaN outputs 1 in Aux
+#endif
           frg_aux[i] = static_cast<bool>(aux);
         } else {
           frg_aux[i] = frg_compute[i] == pre_relu;
@@ -570,7 +574,7 @@ struct Sm90TreeVisitor<
           if (lane_idx == i) {
             copy_if(predicate_fn, tC_rAux, tC_gAux);
           }
-          __syncwarp();
+          syncwarp();
         }
       }
     }

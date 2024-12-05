@@ -154,7 +154,7 @@ public:
     // Default constructor
     Arguments() = default;
 
-    // Constructor with specified mode 
+    // Constructor with specified mode
     // It is used for Gemm
     Arguments(
         cutlass::gemm::GemmUniversalMode mode_,
@@ -292,7 +292,7 @@ public:
     // Kernel level shared memory storage
     SharedStorage& shared_storage = *reinterpret_cast<SharedStorage*>(smem_buf);
 
-    int thread_idx = int(threadIdx.x);
+    int thread_idx = int(ThreadIdxX());
     int lane_idx = canonical_lane_idx();
     int warp_idx = canonical_warp_idx_sync();
     int warp_idx_in_warp_group = warp_idx % NumWarpsPerWarpGroup;
@@ -365,11 +365,11 @@ public:
         return [] () { cute::cluster_wait(); };
       }
       else {
-        __syncthreads();
+        syncthreads();
         return [] () {}; // do nothing
       }
     } ();
-  
+
     // Preconditions only valid for Gemm
     static_assert(IsConvProblemShape || cute::rank(StrideA{}) == 3, "StrideA must be rank-3: [M, K, L]. If batch mode is not needed, set L stride to Int<0>.");
     static_assert(IsConvProblemShape || cute::rank(StrideB{}) == 3, "StrideB must be rank-3: [N, K, L]. If batch mode is not needed, set L stride to Int<0>.");
@@ -383,26 +383,26 @@ public:
     // Optionally append 1s until problem shape is rank-4 in case it is only rank-3 (MNK)
     // Using constexpr if (C++17 and later)
     auto problem_shape_MNKL = append<4>(params.problem_shape, cute::Int<1>{});
-    
+
     // In a warp specialized kernel, collectives expose data movement and compute operations separately
     CollectiveMainloop collective_mainloop;
     CollectiveEpilogue collective_epilogue(params.epilogue, shared_storage.tensors.epilogue);
 
-    // Prepare and partition the input tensors. 
+    // Prepare and partition the input tensors.
     // Expects a tuple of tensors for conv where:
     // get<0>(load_inputs) is the tma tensor A after local tiling so that it has shape (BLK_M,BLK_K,m,k)
     // get<1>(load_inputs) is the tma tensor B after local tiling so that it has shape (BLK_N,BLK_K,n,k)
     auto load_inputs = collective_mainloop.load_init(problem_shape_MNKL, params.mainloop);
     static_assert(cute::tuple_size_v<decltype(load_inputs)> >= 2, "Output of load_init must have at least two elements (A, B)");
-    
+
     // Extract out partitioned A and B.
     Tensor gA_mkl = get<0>(load_inputs);
     Tensor gB_nkl = get<1>(load_inputs);
 
     // Compute m_coord, n_coord, and l_coord with their post-tiled shapes
-    auto m_coord = idx2crd(int(blockIdx.x), shape<2>(gA_mkl));
+    auto m_coord = idx2crd(int(BlockIdxX()), shape<2>(gA_mkl));
 
-    auto n_coord = idx2crd(int(blockIdx.y), shape<2>(gB_nkl), compact_col_major(shape<2>(gB_nkl)));
+    auto n_coord = idx2crd(int(BlockIdxY()), shape<2>(gB_nkl), compact_col_major(shape<2>(gB_nkl)));
 
     // handles the difference between the rank of Tensor returned by load_input in case they do not have a batch mode
     auto l_coord = [&] (auto const& gB_nkl_) {
@@ -450,7 +450,7 @@ public:
 
         if (collective_epilogue.is_producer_load_needed()) {
           // Ensure warp is converged before issuing epilogue loads
-          __syncwarp();
+          syncwarp();
           epi_load_pipe_producer_state = collective_epilogue.load(
             epi_load_pipeline,
             epi_load_pipe_producer_state,

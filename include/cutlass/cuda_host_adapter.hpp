@@ -35,7 +35,9 @@
 
 #pragma once
 
+#if !defined(CUTLASS_ENABLE_SYCL)
 #include <cuda_runtime_api.h>
+#endif
 #include "cutlass/cutlass.h"
 #include "cutlass/trace.h"
 
@@ -83,7 +85,7 @@ namespace cutlass {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 
-#if !defined(__CUDACC_RTC__)
+#if !defined(__CUDACC_RTC__) && !defined(CUTLASS_ENABLE_SYCL)
 
 #include <cudaTypedefs.h>
 #include <driver_types.h>

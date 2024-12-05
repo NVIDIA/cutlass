@@ -466,12 +466,12 @@ tfloat32_t operator--(tfloat32_t & lhs, int) {
 //
 
 CUTLASS_HOST_DEVICE
-cutlass::tfloat32_t operator "" _tf32(long double x) {
+cutlass::tfloat32_t operator ""_tf32(long double x) {
   return cutlass::tfloat32_t(float(x));
 }
 
 CUTLASS_HOST_DEVICE
-cutlass::tfloat32_t operator "" _tf32(unsigned long long int x) {
+cutlass::tfloat32_t operator ""_tf32(unsigned long long int x) {
   return cutlass::tfloat32_t(int(x));
 }
 

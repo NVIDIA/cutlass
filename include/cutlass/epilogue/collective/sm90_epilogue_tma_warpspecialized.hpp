@@ -94,7 +94,7 @@ class CollectiveEpilogue<
     SmemLayoutAtomD_,
     CopyOpR2S_,
     CopyAtomC_,
-    CopyOpR2R_,
+    CopyOpR2R_
 > {
 public:
   //

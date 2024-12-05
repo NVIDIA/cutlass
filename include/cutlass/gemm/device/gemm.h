@@ -491,8 +491,15 @@ public:
       }
     }
 
+#if defined(CUTLASS_ENABLE_SYCL)
+    const auto sycl_block = syclcompat::dim3(block.x, block.y, block.z);
+    const auto sycl_grid = syclcompat::dim3(grid.x, grid.y, grid.z);
+
+    syclcompat::launch<cutlass::Kernel<GemmKernel>>(sycl_grid, sycl_block, smem_size, params_);
+#else
     cutlass::arch::synclog_setup();
     cutlass::Kernel<GemmKernel><<<grid, block, smem_size, stream>>>(params_);
+#endif
 
     result = cudaGetLastError();
 

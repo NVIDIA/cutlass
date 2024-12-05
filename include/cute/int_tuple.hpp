@@ -34,16 +34,13 @@
 #include <cute/container/array.hpp>             // cute::array
 #include <cute/container/tuple.hpp>             // cute::is_tuple
 #include <cute/numeric/integral_constant.hpp>   // cute::Int
-#include <cute/algorithm/tuple_algorithms.hpp>  // cute::transform
 
 /** IntTuple is an integer or a tuple of IntTuples.
  * This file holds utilities for working with IntTuples,
  * but does not hold a concrete concept or class of IntTuple.
  */
 
-namespace cute
-{
-
+namespace cute {
 // Implementation of get<0>(Integral).
 //   Even though is_tuple<Integral> is false and tuple_size<Integral> doesn't compile,
 //   CuTe defines rank(Integral) as 1, so it's useful for get<0>(Integral) to return its input
@@ -64,6 +61,12 @@ get(T&& t) noexcept
 {
   return get<I1, Is...>(get<I0>(static_cast<T&&>(t)));
 }
+
+}
+
+#include <cute/algorithm/tuple_algorithms.hpp>  // cute::transform
+
+namespace cute {
 
 //
 // rank

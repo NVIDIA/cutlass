@@ -45,7 +45,10 @@
 #include <cstring>
 #endif
 
+#if !defined(CUTLASS_ENABLE_SYCL)
 #include <cuda_bf16.h>
+#endif
+
 #include "cutlass/cutlass.h"
 #include "cutlass/platform/platform.h"
 
@@ -100,6 +103,7 @@ public:
   /// Default constructor
   bfloat16_t() = default;
 
+#if !defined(CUTLASS_ENABLE_SYCL)
   /// Reinterpret cast from CUDA's __nv_bfloat16 type
   CUTLASS_HOST_DEVICE
   explicit bfloat16_t(__nv_bfloat16 const & x) {
@@ -110,6 +114,7 @@ public:
     std::memcpy(&storage, &raw.x, sizeof(storage));
     #endif
   }
+#endif
 
   /// Floating-point conversion - round toward nearest
   CUTLASS_HOST_DEVICE
@@ -118,6 +123,10 @@ public:
     #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800) && (__CUDACC_VER_MAJOR__ >= 11)
 
     asm("cvt.rn.bf16.f32 %0, %1;\n" : "=h"(storage) : "f"(x));
+
+    #elif defined(CUTLASS_ENABLE_SYCL)
+
+    storage = sycl::ext::oneapi::detail::bfloat16ToBits(sycl::ext::oneapi::bfloat16(x));
 
     #else
     uint32_t bits;
@@ -190,11 +199,13 @@ public:
     return (float(*this) != 0.0f);
   }
 
+#if !defined(CUTLASS_ENABLE_SYCL)
   /// Bitcasts to CUDA's bf16 type
   CUTLASS_DEVICE
   __nv_bfloat16 to_nv_bfloat16() const {
     return reinterpret_cast<__nv_bfloat16 const &>(storage);
   }
+#endif
 
   /// Obtains raw bits
   CUTLASS_HOST_DEVICE
@@ -667,12 +678,12 @@ bfloat16_t operator--(bfloat16_t & lhs, int) {
 //
 
 CUTLASS_HOST_DEVICE
-cutlass::bfloat16_t operator "" _bf16(long double x) {
+cutlass::bfloat16_t operator ""_bf16(long double x) {
   return cutlass::bfloat16_t(float(x));
 }
 
 CUTLASS_HOST_DEVICE
-cutlass::bfloat16_t operator "" _bf16(unsigned long long int x) {
+cutlass::bfloat16_t operator ""_bf16(unsigned long long int x) {
   return cutlass::bfloat16_t(int(x));
 }
 
