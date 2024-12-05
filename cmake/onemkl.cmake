@@ -30,6 +30,8 @@ include_guard()
 
 include(ExternalProject)
 
+option(CUTLASS_SYCL_DISCONNECT_ONEMKL_UPDATE "Stop onemkl from updating when the git tag is not changed" YES)
+
 set(ONEMKL_INSTALL_DIR ${CMAKE_BINARY_DIR}/deps/oneMKL)
 set(ONEMKL_INCLUDE_DIR ${ONEMKL_INSTALL_DIR}/include)
 set(ONEMKL_LIB_DIR ${ONEMKL_INSTALL_DIR}/lib)
@@ -40,7 +42,7 @@ ExternalProject_Add(
 
     PREFIX                  ${ONEMKL_INSTALL_DIR}
     GIT_REPOSITORY          "https://github.com/oneapi-src/oneMKL.git"
-    GIT_TAG                 "v0.5"
+    GIT_TAG                 "v0.6"
 
     CMAKE_ARGS
     -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
@@ -57,6 +59,7 @@ ExternalProject_Add(
     -DTARGET_DOMAINS=rng
     INSTALL_DIR ${ONEMKL_INSTALL_DIR}
     BUILD_BYPRODUCTS ${ONEMKL_LIB}
+    UPDATE_DISCONNECTED ${CUTLASS_SYCL_DISCONNECT_ONEMKL_UPDATE}
 )
 
 add_library(oneMKL SHARED IMPORTED)
