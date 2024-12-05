@@ -129,7 +129,7 @@ private:
     const int y_size = BlockDimY();
     const int batch_id = BlockIdxY();
 
-    if(m>=params.args.M){
+    if (m >= params.args.M) {
       return;
     }
 
@@ -146,43 +146,43 @@ private:
                                   make_layout(make_shape(NumThreadsPerWarp, MaxNumThreadsPerBlock / NumThreadsPerWarp)));
 
     ElementPartial max_val = std::numeric_limits<ElementPartial>::lowest();
-    for(int partial_n = idx_y; partial_n < params.args.partialN; partial_n += y_size){
+    for (int partial_n = idx_y; partial_n < params.args.partialN; partial_n += y_size){
         ElementPartial partial_max = mPartialMax(m, partial_n, batch_id);
         max_val = cutlass::fast_max(max_val, partial_max);
     }
-    sPartial(idx_x,idx_y) = max_val;
+    sPartial(idx_x, idx_y) = max_val;
     syncthreads();
     // tree-reduction could be better, although it does not seem to be a bottleneck
-    for(int idx_y2 = 0; idx_y2 < y_size; idx_y2++){
-        ElementPartial partial_max = sPartial(idx_x,idx_y2);
+    for (int idx_y2 = 0; idx_y2 < y_size; idx_y2++){
+        ElementPartial partial_max = sPartial(idx_x, idx_y2);
         max_val = cutlass::fast_max(max_val, partial_max);
     }
     
     ElementPartial sum_val = 0;
-    for(int partial_n = idx_y; partial_n < params.args.partialN; partial_n += y_size){
+    for (int partial_n = idx_y; partial_n < params.args.partialN; partial_n += y_size){
         ElementPartial partial_max = mPartialMax(m, partial_n, batch_id);
         ElementPartial partial_sum = mPartialSum(m, partial_n, batch_id);
         sum_val += partial_sum * cutlass::fast_exp(partial_max - max_val);
     }
     syncthreads();
-    sPartial(idx_x,idx_y) = sum_val;
+    sPartial(idx_x, idx_y) = sum_val;
     syncthreads();
     sum_val = 0;
     // tree-reduction could be better, although it does not seem to be a bottleneck
     for(int idx_y2 = 0; idx_y2 < y_size; idx_y2++){
-        ElementPartial partial_sum = sPartial(idx_x,idx_y2);
+        ElementPartial partial_sum = sPartial(idx_x, idx_y2);
         sum_val += partial_sum;
     }
 
     ElementPartial norm = 1 / sum_val;
 
-    for(int n = idx_y * 2; n < params.args.dataN; n += y_size * 2){
+    for (int n = idx_y * 2; n < params.args.dataN; n += y_size * 2){
       auto inVal = mIn(m, n, batch_id);
       auto inVal2 = mIn(m, n+1, batch_id);
       mOut(m, n, batch_id) = cutlass::fast_exp(inVal - max_val) * norm;
       mOut(m, n+1, batch_id) = cutlass::fast_exp(inVal2 - max_val) * norm;
     }
-    if(params.args.dataN % 2 == 1){
+    if (params.args.dataN % 2 == 1){
       int n = params.args.dataN - 1;
       auto inVal = mIn(m, n, batch_id);
       mOut(m, n, batch_id) = cutlass::fast_exp(inVal - max_val) * norm;

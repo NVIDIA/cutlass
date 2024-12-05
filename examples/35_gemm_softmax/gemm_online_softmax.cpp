@@ -128,7 +128,7 @@ struct Options {
   /// Prints the usage statement.
   std::ostream & print_usage(std::ostream &out) const {
 
-    out << "14_ampere_tf32_tensorop_gemm_cute example\n\n"
+    out << "35_gemm_softmax example\n\n"
       << "  This example uses the CUTLASS Library to execute TF32 tensorop GEMM computations.\n\n"
       << "Options:\n\n"
       << "  --help                      If specified, displays this usage statement.\n\n"
@@ -238,7 +238,7 @@ struct ExampleRunner {
   // Methods
   //
   template<typename Element>
-  bool verify_tensor(std::vector<Element> vector_Input, \
+  bool verify_tensor(std::vector<Element> vector_Input,
                        std::vector<Element> vector_Input_Ref, const Options& options) {
 
     auto size = int64_t((vector_Input.size() < vector_Input_Ref.size()) ? vector_Input.size() : vector_Input_Ref.size());
