@@ -198,7 +198,7 @@ public:
     // Store fragment to shared memory
     this->warp_tile_iterator_.store(accum_fragment);
 
-    __syncthreads();
+    syncthreads();
 
     callbacks.begin_step(reduce_fragment_idx);
 
@@ -284,7 +284,7 @@ public:
     //
 
     if constexpr(Pipelined){
-      __syncthreads();
+      syncthreads();
 
       //
       // Pipeline Prologue
@@ -306,7 +306,7 @@ public:
       #pragma unroll(IterationsUnroll ? kIterations : 1)
       for (int iter_idx = 1; iter_idx < kIterations + 1; ++iter_idx) {
 
-        __syncthreads();
+        syncthreads();
 
         // Skip the load for epilogue
         if (iter_idx < kIterations) {
@@ -392,12 +392,12 @@ public:
         // Convert and store fragment
         //
 
-        __syncthreads();
+        syncthreads();
 
         acc2smem_source_needed<cutlass::make_index_sequence<kIterations>>::push(
             iter_idx, accum_fragment_iterator, this->warp_tile_iterator_);
 
-        __syncthreads();
+        syncthreads();
 
         //
         // Load fragments from shared memory

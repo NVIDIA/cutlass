@@ -238,7 +238,7 @@ public:
     // Kernel level shared memory storage
     SharedStorage& shared_storage = *reinterpret_cast<SharedStorage*>(smem_buf);
 
-    int thread_idx = int(threadIdx.x);
+    int thread_idx = int(ThreadIdxX());
     int warp_group_thread_idx = thread_idx % NumThreadsPerWarpGroup;
     int warp_group_idx = canonical_warp_group_idx();
     CUTLASS_ASSERT(warp_group_idx < NumWarpGroups);
@@ -314,9 +314,9 @@ public:
     Tensor gB_nkl = local_tile(mB_nkl, blk_shape, make_coord(_,_,_), Step< X,_1,_1>{});          // (BLK_N,BLK_K,n,k,l)
 
     // Compute m_coord, n_coord, and l_coord with their post-tiled shapes
-    auto m_coord = idx2crd(int(blockIdx.x), shape<2>(gA_mkl));
-    auto n_coord = idx2crd(int(blockIdx.y), shape<2>(gB_nkl));
-    auto l_coord = idx2crd(int(blockIdx.z), shape<4>(gB_nkl));
+    auto m_coord = idx2crd(int(BlockIdxX()), shape<2>(gA_mkl));
+    auto n_coord = idx2crd(int(BlockIdxY()), shape<2>(gB_nkl));
+    auto l_coord = idx2crd(int(BlockIdxZ()), shape<4>(gB_nkl));
     auto blk_coord = make_coord(m_coord, n_coord, _, l_coord);
 
     // Slice with m_coord and n_coord
@@ -330,7 +330,7 @@ public:
     auto d_tile_count = CollectiveEpilogue::get_store_pipe_increment(blk_shape);
 
     // Wait for all threads in the thread block
-    __syncthreads();
+    syncthreads();
 
     // In a warp specialized kernel, collectives expose data movement and compute operations separately
     CollectiveMainloop collective_mainloop;

@@ -122,8 +122,9 @@ def trace(fn, example_tensors, **kwargs):
     :param example_tensors: example inputs for fn
     :type example_tensors: dict
 
-    .. hightlight:: python
+    .. highlight:: python
     .. code-block:: python
+
         import cutlass.backend.evt
 
         # Define epilogue function as Python callable

@@ -50,14 +50,14 @@ namespace detail {
 struct SyncthreadsSync {
   CUTLASS_DEVICE
   static void sync() {
-    __syncthreads();
+    syncthreads();
   }
 };
 
 struct SyncwarpSync {
   CUTLASS_DEVICE
   static void sync() {
-    __syncwarp();
+    syncwarp();
   }
 };
 
@@ -97,7 +97,12 @@ protected:
   {
     int state = 0;
 
-#if (__CUDA_ARCH__ >= 700)
+#if defined (SYCL_INTEL_TARGET)
+    auto atm = sycl::atomic_ref<int, sycl::memory_order::acq_rel, 
+                                     sycl::memory_scope::device, 
+                                     sycl::access::address_space::global_space>(*ptr);
+    return atm.load(sycl::memory_order::acquire);
+#elif (__CUDA_ARCH__ >= 700)
     /// SM70 and newer use memory consistency qualifiers
 
     // Acquire pattern using acquire modifier
@@ -115,16 +120,15 @@ protected:
   CUTLASS_DEVICE
   static void red_release(int *ptr, int val)
   {
-#if (__CUDA_ARCH__ >= 700)
+#if (__CUDA_ARCH__ >= 700) || (__SYCL_CUDA_ARCH__ >= 700)
     /// SM70 and newer use memory consistency qualifiers
 
     // Release pattern using acq_rel fence + relaxed modifier.  (The fence also releases data
     // that was weakly-written by other threads prior to the last syncthreads)
     asm volatile ("fence.acq_rel.gpu;\n");
     asm volatile ("red.relaxed.gpu.global.add.s32 [%0], %1;\n" : : "l"(ptr), "r"(val));
-
 #else
-    __threadfence();
+    threadfence();
     atomicAdd(ptr, val);
 #endif // (__CUDA_ARCH__ >= 700)
   }

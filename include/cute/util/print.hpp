@@ -38,6 +38,10 @@
 #define printf sycl::ext::oneapi::experimental::printf
 #endif
 
+#if defined(CUTLASS_ENABLE_SYCL)
+#define printf sycl::ext::oneapi::experimental::printf
+#endif
+
 //
 // CUDA compatible print and printf
 //

@@ -342,7 +342,7 @@ public:
     if (!output_op.is_source_needed())
     {
       source_iterator.clear_mask();
-      __syncthreads();  // Dummy (CUDA 11.0)
+      syncthreads();  // Dummy (CUDA 11.0)
     }
 
     operator()(output_op, destination_iterator, accumulators, SourceAspectNeeded(source_iterator));

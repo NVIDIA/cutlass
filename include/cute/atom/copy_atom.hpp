@@ -761,4 +761,8 @@ print_latex_copy(LayoutS const& S, ThrIDS const& TS,  // (m,n) -> (tid,vid)  and
 #include <cute/atom/copy_traits_sm90_tma.hpp>
 #endif
 
+#if defined(SYCL_INTEL_TARGET)
+#include <cute/atom/copy_traits_xe.hpp>
+#endif
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////

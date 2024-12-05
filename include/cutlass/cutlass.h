@@ -37,6 +37,7 @@
 
 #include "cutlass/arch/synclog.hpp"
 #include "cutlass/detail/helper_macros.hpp"
+#include <cutlass/gpu_generics.h>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -92,19 +93,12 @@ static char const* cutlassGetStatusString(cutlass::Status status) {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-static const int NumThreadsPerWarp = 32;
-static const int NumThreadsPerWarpGroup = 128;
-static const int NumWarpsPerWarpGroup = NumThreadsPerWarpGroup / NumThreadsPerWarp;
-static const int NumThreadsPerHalfWarp = NumThreadsPerWarp / 2;
-static const int NumThreadsPerQuad = 4;
-static const int NumThreadsPerQuadPair = NumThreadsPerQuad * 2;
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
 /// Helper function to return true when called by thread 0 of threadblock 0.
 CUTLASS_HOST_DEVICE bool thread0() {
   #if defined(__CUDA_ARCH__)
     return (!threadIdx.x && !threadIdx.y && !threadIdx.z) && (!blockIdx.x && !blockIdx.y && !blockIdx.z);
+  #elif defined(__SYCL_DEVICE_ONLY__)
+    return (!syclcompat::global_id::x() && !syclcompat::global_id::y() && !syclcompat::global_id::z());
   #else
     return false;
   #endif
@@ -153,6 +147,21 @@ int canonical_warp_group_idx() {
   #endif
 }
 
+#if defined(SYCL_INTEL_TARGET)
+CUTLASS_DEVICE
+auto get_sub_group_id() {
+  return sycl::ext::oneapi::this_work_item::get_nd_item<3>()
+                    .get_sub_group()
+                    .get_group_id()[0];
+}
+
+CUTLASS_DEVICE
+auto get_sub_group_local_id() {
+  return sycl::ext::oneapi::this_work_item::get_nd_item<3>()
+                    .get_sub_group()
+                    .get_local_id()[0];
+}
+#endif
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 }  // namespace cutlass

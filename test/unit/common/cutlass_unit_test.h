@@ -40,15 +40,19 @@
 #include <cstdlib>
 #include <string>
 
+#if !defined(CUTLASS_ENABLE_SYCL)
 #include <cuda_runtime_api.h>
+#endif
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+#if !defined(CUTLASS_ENABLE_SYCL)
 /// Gets a CUDA device
 cudaDeviceProp GetCudaDevice();
 
 /// Prints device properties
 std::ostream &operator<<(std::ostream &out, cudaDeviceProp const &device);
+#endif
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -99,4 +103,5 @@ int CutlassUnitTestProblemCount();
 #include <cutlass/numeric_types.h>
 #include <cutlass/trace.h>
 
+#include "util.hpp"
 /////////////////////////////////////////////////////////////////////////////////////////////////

@@ -36,6 +36,10 @@ cutlass_add_library(
   common/filter_architecture.cpp
   )
 
+if (NOT CUTLASS_ENABLE_SYCL)
+  SET(ADD_CUDA ON)
+endif()
+
 target_link_libraries(
   cutlass_test_unit_infra
   PUBLIC
@@ -43,9 +47,13 @@ target_link_libraries(
   cutlass_tools_util_includes
   $<$<BOOL:${CUTLASS_ENABLE_CUBLAS}>:nvidia::cublas>
   GTest::gtest
-  cudart
-  cuda_driver
+  $<$<BOOL:${ADD_CUDA}>:nvidia::cudart>
+  $<$<BOOL:${ADD_CUDA}>:nvidia::cuda_driver>
   )
+
+if(CUTLASS_ENABLE_SYCL)
+  add_sycl_include_directories_to_target(cutlass_test_unit_infra)
+endif()
 
 cutlass_add_library(
   cutlass_test_unit_infra_lib
@@ -99,6 +107,10 @@ function(cutlass_test_unit_add_executable NAME)
     target_link_libraries(${NAME} PRIVATE OpenMP::OpenMP_CXX)
   endif()
 
+  if(CUTLASS_ENABLE_SYCL)
+    add_sycl_to_target(TARGET ${NAME})
+  endif()
+
   string(REGEX REPLACE cutlass_ "" NAME_STEM ${NAME})
 
   set(RESULT_CACHE_FILE "${CUTLASS_TEST_UNIT_RESULTS_CACHE_DIR}/cached_results_${NAME}.txt")
@@ -120,21 +132,27 @@ endfunction()
 add_custom_target(cutlass_test_unit)
 add_custom_target(test_unit)
 
-set(SUBDIRS
-  core
-  cute
-  gemm
-  conv
-  layout
-  transform
-  epilogue
-  reduction
-  util
-  pipeline
-  substrate
-  cluster_launch
+if (CUTLASS_ENABLE_SYCL)
+  set(SUBDIRS
+    cute
+    gemm
   )
-
+else()
+  set(SUBDIRS
+    core
+    cute
+    gemm
+    conv
+    layout
+    transform
+    epilogue
+    reduction
+    util
+    pipeline
+    substrate
+    cluster_launch
+    )
+endif()
 if(TARGET nvidia::nvrtc AND TARGET nvidia::cuda_driver)
   set(CUTLASS_NVRTC_ENABLE_INIT ON)
 else()
@@ -143,7 +161,7 @@ endif()
 
 set(CUTLASS_NVRTC_ENABLE ${CUTLASS_NVRTC_ENABLE_INIT} CACHE BOOL "Enable NVRTC support")
 
-if (CUTLASS_NVRTC_ENABLE)
+if (CUTLASS_NVRTC_ENABLE AND NOT CUTLASS_ENABLE_SYCL)
   list(APPEND SUBDIRS nvrtc)
 endif()
 

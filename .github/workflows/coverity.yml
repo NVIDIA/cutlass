@@ -1,0 +1,53 @@
+name: Coverity Scan
+
+# We only want to test official release code, not every pull request.
+on:
+  push:
+    branches:
+    - sycl-develop
+  pull_request:
+
+permissions: read-all
+
+jobs:
+  coverity:
+    runs-on: ubuntu-latest
+    container: nvidia/cuda:12.4.1-devel-ubuntu22.04
+    steps:
+      - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+      - name: Configure image
+        run: >
+          apt update && apt install -y cmake curl git jq libstdc++-12-dev \
+            ninja-build python3 wget
+      - name: Download DPCPP
+        shell: bash
+        run: |
+          cd /usr/local
+          echo "Will use DPCPP ${DPCPP_VERSION:-latest}."
+          if [[ "${DPCPP_VERSION}" != "" ]]; then
+            echo "Downloading DPCPP from https://github.com/intel/llvm/releases/download/$DPCPP_VERSION/sycl_linux.tar.gz"
+            wget -q https://github.com/intel/llvm/releases/download/$DPCPP_VERSION/sycl_linux.tar.gz
+          else
+            latest=$(curl -sS https://api.github.com/repos/intel/llvm/releases | jq -r '[.[].tag_name|select(match("nightly-[0-9]{4}-[0-9]{2}-[0-9]{2}"))][0]')
+            echo "Downloading DPCPP from https://github.com/intel/llvm/releases/download/${latest}/sycl_linux.tar.gz"
+            wget -q https://github.com/intel/llvm/releases/download/${latest}/sycl_linux.tar.gz
+          fi
+          tar -xf sycl_linux.tar.gz
+      - name: Configure CMake
+        run: |
+          export PATH=/usr/local/bin/:$PATH
+          export C_INCLUDE_PATH=/usr/local/include/:$C_INCLUDE_PATH
+          export LD_LIBRARY_PATH=/usr/local/lib/:$LD_LIBRARY_PATH
+          export CC=clang
+          export CXX=clang++
+          cmake -G Ninja  \
+            -DCMAKE_CUDA_HOST_COMPILER=clang++  \
+            -DCUTLASS_ENABLE_SYCL=ON  \
+            -DDPCPP_SYCL_TARGET=nvptx64-nvidia-cuda  \
+            -DDPCPP_SYCL_ARCH=sm_80
+      - uses: vapier/coverity-scan-action@2068473c7bdf8c2fb984a6a40ae76ee7facd7a85 # v1.8.0
+        with:
+          email: ${{ secrets.COVERITY_SCAN_EMAIL }}
+          token: ${{ secrets.COVERITY_SCAN_TOKEN }}
+          command: cmake --build .
+          working-directory: ''

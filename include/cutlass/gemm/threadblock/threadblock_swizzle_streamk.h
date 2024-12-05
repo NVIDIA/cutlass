@@ -638,7 +638,7 @@ struct ThreadblockSwizzleStreamK {
   CUTLASS_DEVICE
   int device_num_blocks() const
   {
-    return gridDim.x;
+    return GridDimX();
   }
 
   /// Obtains tile index for the given sk iteration

@@ -26,7 +26,32 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-add_custom_target(
+if(CUTLASS_ENABLE_SYCL)
+  if(SYCL_INTEL_TARGET)
+    cutlass_test_unit_add_executable(
+      cutlass_test_unit_gemm_device_tensorop_epilogue_fusion_xe
+      xe_gemm_bf16_bf16_fp32_tensor_op_fp32_evt.cpp
+    )
+
+    add_custom_target(
+      cutlass_test_unit_gemm_device
+      DEPENDS
+      cutlass_test_unit_gemm_device_tensorop_epilogue_fusion_xe
+    )
+
+    add_custom_target(
+      test_unit_gemm_device
+      DEPENDS
+      test_unit_gemm_device_tensorop_epilogue_fusion_xe
+    )
+  else()
+    # Dummy targets if not building for Intel
+    add_custom_target(cutlass_test_unit_gemm_device)
+    add_custom_target(test_unit_gemm_device)
+  endif()
+else()
+
+  add_custom_target(
   cutlass_test_unit_gemm_device
   DEPENDS
   cutlass_test_unit_gemm_device_simt
@@ -400,7 +425,8 @@ cutlass_test_unit_add_executable(
   sm90_gemm_f8_f8_bf16_tensor_op_fp32_evt.cu
   sm90_gemm_f8_f8_f32_tensor_op_f32_cluster_warpspecialized_cooperative_evt.cu
 )
-cutlass_test_unit_add_executable(
+
+  cutlass_test_unit_add_executable(
   cutlass_test_unit_gemm_device_tensorop_cluster_multicast_sm90
 
   BATCH_SOURCES ON
@@ -867,4 +893,4 @@ cutlass_test_unit_add_executable(
 )
 
 endif()
-
+endif()

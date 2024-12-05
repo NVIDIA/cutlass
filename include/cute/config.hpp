@@ -34,6 +34,10 @@
 #  define CUTE_HOST_DEVICE __forceinline__ __host__ __device__
 #  define CUTE_DEVICE      __forceinline__          __device__
 #  define CUTE_HOST        __forceinline__ __host__
+#elif defined(__SYCL_DEVICE_ONLY__)
+#  define CUTE_HOST_DEVICE __attribute__((always_inline)) inline
+#  define CUTE_DEVICE      __attribute__((always_inline)) inline
+#  define CUTE_HOST        inline
 #else
 #  define CUTE_HOST_DEVICE inline
 #  define CUTE_DEVICE      inline
@@ -128,6 +132,8 @@
 // Fail and print a message. Typically used for notification of a compiler misconfiguration.
 #if defined(__CUDA_ARCH__)
 #  define CUTE_INVALID_CONTROL_PATH(x) assert(0 && x); printf(x); __brkpt()
+#elif defined(__has_builtin) && __has_builtin(__builtin_unreachable)
+#  define CUTE_INVALID_CONTROL_PATH(x) assert(0 && x); printf(x); __builtin_unreachable()
 #else
 #  define CUTE_INVALID_CONTROL_PATH(x) assert(0 && x); printf(x)
 #endif

@@ -74,10 +74,14 @@
 #include <cstring>
 #endif
 
+#if !defined(CUTLASS_ENABLE_SYCL)
 #ifdef CUDA_FP8_ENABLED
 #include <cuda_fp8.h>
 #endif
 #include <cuda_fp16.h>
+#else
+#include <cutlass/sycl_fp16.h>
+#endif
 
 #include "cutlass/cutlass.h"
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -412,6 +416,8 @@ struct alignas(1) float_e4m3_t : float8_base<FloatEncoding::E4M3> {
         asm volatile("cvt.rn.satfinite.e4m3x2.f16x2 %0, %1;" : "=h"(tmp) : "r"(bits));
 
         return *reinterpret_cast<float_e4m3_t *>(&tmp);
+    #elif defined(CUTLASS_ENABLE_SYCL)
+        return bitcast(Base::convert_float_to_fp8(flt));
     #else
         return bitcast(Base::convert_float_to_fp8(__half2float(flt)));
     #endif
@@ -426,6 +432,8 @@ struct alignas(1) float_e4m3_t : float8_base<FloatEncoding::E4M3> {
         asm volatile("cvt.rn.f16x2.e4m3x2 %0, %1;\n" : "=r"(packed) : "h"(bits));
 
         return reinterpret_cast<half2 const &>(packed).x;
+    #elif defined(CUTLASS_ENABLE_SYCL)
+        return Base::convert_fp8_to_float(x.storage);
     #else
         return __float2half(Base::convert_fp8_to_float(x.storage));
     #endif
@@ -627,6 +635,8 @@ struct alignas(1) float_e5m2_t : float8_base<FloatEncoding::E5M2> {
         asm volatile("cvt.rn.satfinite.e5m2x2.f16x2 %0, %1;" : "=h"(tmp) : "r"(bits));
 
         return *reinterpret_cast<float_e5m2_t *>(&tmp);
+    #elif defined(CUTLASS_ENABLE_SYCL)
+        return bitcast(Base::convert_float_to_fp8(flt));
     #else
         return bitcast(Base::convert_float_to_fp8(__half2float(flt)));
     #endif
@@ -641,6 +651,8 @@ struct alignas(1) float_e5m2_t : float8_base<FloatEncoding::E5M2> {
         asm volatile("cvt.rn.f16x2.e5m2x2 %0, %1;\n" : "=r"(packed) : "h"(bits));
 
         return reinterpret_cast<half2 const &>(packed).x;
+    #elif defined(CUTLASS_ENABLE_SYCL)
+        return Base::convert_fp8_to_float(x.storage);
     #else
         return __float2half(Base::convert_fp8_to_float(x.storage));
     #endif

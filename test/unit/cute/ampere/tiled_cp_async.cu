@@ -37,10 +37,6 @@
 #include <type_traits>
 #include <vector>
 #include <numeric>
-
-#include <thrust/host_vector.h>
-#include <thrust/device_vector.h>
-
 #include <cute/tensor.hpp>
 #include <cute/swizzle.hpp> // cute::Swizzle
 

@@ -295,7 +295,7 @@ public:
 #if CUDA_BARRIER_ENABLED
     auto synchronize = [] () { cutlass::arch::NamedBarrier::sync(typename TiledCopyS2R::TiledNumThr{}, cutlass::arch::ReservedNamedBarriers::EpilogueBarrier); };
 #else
-    auto synchronize = [] () { __syncthreads(); };
+    auto synchronize = [] () { syncthreads(); };
 #endif
 
     // Separate out problem shape for convenience

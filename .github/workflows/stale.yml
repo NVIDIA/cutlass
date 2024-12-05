@@ -4,12 +4,14 @@ on:
   schedule:
     - cron: "0 * * * *"
 
+permissions: {}
+
 jobs:
   mark-inactive-30d:
     runs-on: ubuntu-latest
     steps:
       - name: Mark 30 day inactive issues and pull requests
-        uses: actions/stale@v3
+        uses: actions/stale@28ca1036281a5e5922ead5184a1bbf96e5fc984e # v9.0.0
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           stale-issue-message: >
@@ -35,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Mark 90 day inactive issues and pull requests
-        uses: actions/stale@v3
+        uses: actions/stale@28ca1036281a5e5922ead5184a1bbf96e5fc984e # v9.0.0
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           stale-issue-message: >

@@ -78,21 +78,21 @@ struct Transpose<ElementCount_, layout::PitchLinearShape<4,4> , int8_t> {
       int a3 = src_int[i3];
 
       int b0, b1, b2, b3, c0;
-      b0 = __byte_perm(a0, a1, 0x0040);
-      c0 = __byte_perm(a2, a3, 0x0040);
-      b0 = __byte_perm(b0, c0, 0x5410);
+      b0 = byte_perm(a0, a1, 0x0040);
+      c0 = byte_perm(a2, a3, 0x0040);
+      b0 = byte_perm(b0, c0, 0x5410);
 
-      b1 = __byte_perm(a0, a1, 0x0051);
-      c0 = __byte_perm(a2, a3, 0x0051);
-      b1 = __byte_perm(b1, c0, 0x5410);
+      b1 = byte_perm(a0, a1, 0x0051);
+      c0 = byte_perm(a2, a3, 0x0051);
+      b1 = byte_perm(b1, c0, 0x5410);
 
-      b2 = __byte_perm(a0, a1, 0x0062);
-      c0 = __byte_perm(a2, a3, 0x0062);
-      b2 = __byte_perm(b2, c0, 0x5410);
+      b2 = byte_perm(a0, a1, 0x0062);
+      c0 = byte_perm(a2, a3, 0x0062);
+      b2 = byte_perm(b2, c0, 0x5410);
 
-      b3 = __byte_perm(a0, a1, 0x0073);
-      c0 = __byte_perm(a2, a3, 0x0073);
-      b3 = __byte_perm(b3, c0, 0x5410);
+      b3 = byte_perm(a0, a1, 0x0073);
+      c0 = byte_perm(a2, a3, 0x0073);
+      b3 = byte_perm(b3, c0, 0x5410);
 
       dst_int[i0] = b0;
       dst_int[i1] = b1;

@@ -102,7 +102,7 @@ public:
   CUTLASS_DEVICE
   void promote_if_needed() {
     mma_count_ += mma_count_per_mainloop_iteration_;
-    reset_accum_flag_ = __shfl_sync(0xffffffff, mma_count_ == accum_promotion_interval_, 0);
+    reset_accum_flag_ = shfl_sync(0xffffffff, mma_count_ == accum_promotion_interval_, 0);
     if (reset_accum_flag_) {
       promote_core();
       mma_count_ = 0;
@@ -112,7 +112,7 @@ public:
   /// promote (add) the residue results from the MMA accumulators to main accumulator if needed.
   CUTLASS_DEVICE
   void promote_residue_if_needed() {
-    if (__shfl_sync(0xffffffff, mma_count_ > 0, 0)) {
+    if (shfl_sync(0xffffffff, mma_count_ > 0, 0)) {
       promote_core();
     }
   }

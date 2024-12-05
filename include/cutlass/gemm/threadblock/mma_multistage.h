@@ -487,7 +487,7 @@ public:
   {
     // Wait until we have at least one committed global fetch stage. (#uncommitted = Base::kStages - 1 - #committed)
     cutlass::arch::cp_async_wait<Base::kStages - 2>();
-    __syncthreads();
+    syncthreads();
   }
 
 
@@ -663,7 +663,7 @@ public:
     // Commit and drain all pending and predicated cp.async pnz from the GEMM mainloop
     cutlass::arch::cp_async_fence();
     cutlass::arch::cp_async_wait<0>();
-    __syncthreads();
+    syncthreads();
 
   }
 

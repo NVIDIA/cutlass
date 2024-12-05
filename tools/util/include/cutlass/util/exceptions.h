@@ -36,7 +36,9 @@
  * \brief C++ exception semantics for CUDA error codes
  */
 
+#if !defined(CUTLASS_ENABLE_SYCL)
 #include <cuda_runtime.h>
+#endif
 #include <iosfwd>
 #include <stdexcept>
 
@@ -63,7 +65,11 @@ class cuda_exception : public std::exception {
 
 /// Writes a cuda_exception instance to an output stream
 inline std::ostream& operator<<(std::ostream& out, cuda_exception const& e) {
+#if (CUTLASS_ENABLE_SYCL)
+  return out << e.what();
+#else
   return out << e.what() << ": " << cudaGetErrorString(e.cudaError());
+#endif
 }
 
 }  // namespace cutlass

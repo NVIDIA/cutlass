@@ -42,7 +42,9 @@
 #include <string>
 #include <vector>
 
+#if !defined(CUTLASS_ENABLE_SYCL)
 #include <cuda_runtime.h>
+#endif
 
 #include "cutlass/cutlass.h"
 

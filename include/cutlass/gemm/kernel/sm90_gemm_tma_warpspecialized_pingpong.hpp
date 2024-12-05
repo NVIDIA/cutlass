@@ -334,7 +334,7 @@ public:
     // Kernel level shared memory storage
     SharedStorage& shared_storage = *reinterpret_cast<SharedStorage*>(smem_buf);
 
-    int thread_idx = int(threadIdx.x);
+    int thread_idx = int(ThreadIdxX());
     int lane_idx = canonical_lane_idx();
     int warp_idx = canonical_warp_idx_sync();
     int warp_idx_in_warp_group = warp_idx % NumWarpsPerWarpGroup;
@@ -417,7 +417,7 @@ public:
         return [] () { cute::cluster_wait(); };
       }
       else {
-        __syncthreads();
+        syncthreads();
         return [] () {}; // do nothing
       }
     } ();

@@ -35,7 +35,12 @@
  * \brief Debugging and logging functionality
  */
 
+#if defined(CUTLASS_ENABLE_SYCL)
+#include <sycl/sycl.hpp>
+#include <syclcompat.hpp>
+#else
 #include <cuda_runtime_api.h>
+#endif
 
 #include <cute/config.hpp>
 
@@ -124,6 +129,11 @@ block([[maybe_unused]] int bid)
 {
 #if defined(__CUDA_ARCH__)
   return blockIdx.x + blockIdx.y*gridDim.x + blockIdx.z*gridDim.x*gridDim.y == bid;
+#elif defined(__SYCL_DEVICE_ONLY__)
+  using namespace syclcompat;
+  return (work_group_id::x() + work_group_id::y() * work_group_range::x() +
+          work_group_id::z() * work_group_range::y() * work_group_range::x() == bid);
+
 #else
   return true;
 #endif
@@ -135,6 +145,11 @@ thread([[maybe_unused]] int tid, [[maybe_unused]] int bid)
 {
 #if defined(__CUDA_ARCH__)
   return (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y == tid) && block(bid);
+#elif defined(__SYCL_DEVICE_ONLY__)
+  using namespace syclcompat;
+  return (local_id::x() + local_id::y() * local_range::x() +
+          local_id::z() * local_range::x() * local_range::y() == tid) && block(bid);
+
 #else
   return true;
 #endif

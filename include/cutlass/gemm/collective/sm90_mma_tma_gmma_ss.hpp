@@ -351,7 +351,7 @@ struct CollectiveMma<
       cute::cluster_wait();
     }
     else {
-      __syncthreads();
+      syncthreads();
     }
 
     // Set predicate for the lowest lane_id in the warp
@@ -411,7 +411,7 @@ struct CollectiveMma<
     Layout warp_group_thread_layout = make_layout(Int<MmaWarpGroups>{}, 
                                                   Int<NumThreadsPerWarpGroup>{});
 
-    int warp_group_idx = __shfl_sync(0xFFFFFFFF, thread_idx / NumThreadsPerWarpGroup, 0);
+    int warp_group_idx = shfl_sync(0xFFFFFFFF, thread_idx / NumThreadsPerWarpGroup, 0);
 
     TiledMma tiled_mma;
     auto thread_mma = tiled_mma.get_slice(warp_group_thread_layout(warp_group_idx));
@@ -432,7 +432,7 @@ struct CollectiveMma<
     CUTE_STATIC_ASSERT_V(Int<DispatchPolicy::Stages>{} == size<2>(sA));        // PIPE
     CUTE_STATIC_ASSERT_V(Int<DispatchPolicy::Stages>{} == size<2>(sB));        // PIPE
 
-    __syncthreads();
+    syncthreads();
 
     tiled_mma.accumulate_ = GMMA::ScaleOut::Zero;
 

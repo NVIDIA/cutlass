@@ -37,7 +37,8 @@
 // Config
 #if ((__CUDACC_VER_MAJOR__ > 10) || (__CUDACC_VER_MAJOR__ == 10 && __CUDACC_VER_MINOR__ >= 1))
 #  define CUTE_ARCH_MMA_SM70_SUPPORTED
-#  if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 700))
+#  if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 700)) || \
+      (defined(__SYCL_CUDA_ARCH__) && (__SYCL_CUDA_ARCH__ >= 700))
 #    define CUTE_ARCH_MMA_SM70_ENABLED
 #  endif
 #endif

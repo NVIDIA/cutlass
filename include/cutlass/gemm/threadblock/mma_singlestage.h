@@ -214,7 +214,7 @@ public:
       this->smem_iterator_A_.store(tb_frag_A);
       this->smem_iterator_B_.store(tb_frag_B);
 
-      __syncthreads();
+      syncthreads();
 
       //
       // Loop over GEMM K dimension
@@ -242,7 +242,7 @@ public:
       this->warp_tile_iterator_A_.add_tile_offset({0, -Policy::kPartitionsK * Base::kWarpGemmIterations});
       this->warp_tile_iterator_B_.add_tile_offset({-Policy::kPartitionsK * Base::kWarpGemmIterations, 0});
 
-      __syncthreads();
+      syncthreads();
 
       iterator_A.load(tb_frag_A);
       iterator_B.load(tb_frag_B);

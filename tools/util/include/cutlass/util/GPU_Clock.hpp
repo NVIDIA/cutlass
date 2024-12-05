@@ -31,31 +31,48 @@
 
 #pragma once
 
+#if defined(CUTLASS_ENABLE_SYCL)
+#include "cutlass/util/sycl_timer.hpp"
+#else
 #include <cuda_runtime.h>
+#endif
 
 struct GPU_Clock
 {
   GPU_Clock() {
+#if !defined(CUTLASS_ENABLE_SYCL)
     cudaEventCreate(&start_);
     cudaEventCreate(&stop_);
     cudaEventRecord(start_);
+#endif
   }
 
   ~GPU_Clock() {
+#if !defined(CUTLASS_ENABLE_SYCL)
     cudaEventDestroy(start_);
     cudaEventDestroy(stop_);
+#endif
   }
 
   void start() {
+#if defined(CUTLASS_ENABLE_SYCL)
+    syclTimer.start();
+#else
     cudaEventRecord(start_);
+#endif
   }
 
   float milliseconds() {
+#if defined(CUTLASS_ENABLE_SYCL)
+    syclTimer.stop();
+    return syclTimer.milliseconds();
+#else
     cudaEventRecord(stop_);
     cudaEventSynchronize(stop_);
     float time;
     cudaEventElapsedTime(&time, start_, stop_);
     return time;
+#endif
   }
 
   float seconds() {
@@ -63,5 +80,9 @@ struct GPU_Clock
   }
 
  private:
-  cudaEvent_t start_, stop_;
+#if defined(CUTLASS_ENABLE_SYCL)
+    SYCLTimer syclTimer;
+#else
+    cudaEvent_t start_, stop_;
+#endif
 };

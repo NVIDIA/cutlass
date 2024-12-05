@@ -37,10 +37,13 @@
 
 #include <iostream>
 
-#include <thrust/host_vector.h>
-#include <thrust/device_vector.h>
-
 #include <cute/tensor.hpp>
+
+#if defined(CUTLASS_ENABLE_SYCL)
+namespace sc = syclcompat;
+namespace sc_exp = syclcompat::experimental;
+namespace sycl_ext = sycl::ext::oneapi::experimental;
+#endif
 
 using namespace cute;
 
@@ -52,14 +55,22 @@ struct SharedStorage {
 
 #if CUDA_12_0_SM90_FEATURES_SUPPORTED
 template <class T, class GmemLayout, class SmemLayout>
-__global__ void
+CUTLASS_GLOBAL void
 bulk_copy_test_device_cute(T const* g_in,
                            T      * g_out,
                            GmemLayout gmem_layout,
                            SmemLayout smem_layout)
 {
   // Use Shared Storage structure to allocate and distribute aligned SMEM addresses
-  extern __shared__ char shared_memory[];
+  #if defined(__SYCL_DEVICE_ONLY__)
+  auto smem = sycl_ext::get_dynamic_work_group_memory<char>().get();
+  #endif
+  #if defined(CUTLASS_ENABLE_SYCL) && !defined(__SYCL_DEVICE_ONLY__)
+    char* smem; // dummy declaration to avoid compilation errors during the host compilation phase
+  #endif
+  #if !defined(CUTLASS_ENABLE_SYCL)
+    extern CUTLASS_SHARED char shared_memory[];
+  #endif
   using SharedStorage = SharedStorage<T, SmemLayout>;
   SharedStorage& shared_storage = *reinterpret_cast<SharedStorage*>(shared_memory);
 
@@ -87,7 +98,7 @@ bulk_copy_test_device_cute(T const* g_in,
   // Set the bytes transferred in this transaction (may involve multiple issues)
   constexpr int transaction_bytes = size(sA) * sizeof(T);
 
-  if (threadIdx.x == 0) {
+  if (ThreadIdxX() == 0) {
     /// Initialize shared memory barrier
     bulk_copy_mbar[0] = 0;
     initialize_barrier(bulk_copy_mbar[0], 1 /*numThreads*/);
@@ -95,7 +106,7 @@ bulk_copy_test_device_cute(T const* g_in,
 
     copy(blkcp.with(bulk_copy_mbar[0]), gA, sA);
   }
-  __syncthreads();
+  syncthreads();
 
   /// Wait on the shared memory barrier until the phase bit flips from kPhaseBit value
   constexpr int kPhaseBit = 0;
@@ -114,7 +125,7 @@ bulk_copy_test_device_cute(T const* g_in,
   Tensor gA_out = make_tensor(make_gmem_ptr(g_out), gmem_layout);
 
   // Output smem -> gmem
-  for (int i = threadIdx.x; i < size(sA); i += blockDim.x) {
+  for (int i = ThreadIdxX(); i < size(sA); i += BlockDimX()) {
     gA_out(i) = sA(i);
   }
 }
@@ -123,21 +134,29 @@ template <class T, class GLayout, class SLayout>
 void run_and_validate(GLayout gmem_layout,
                       SLayout smem_layout)
 {
-  thrust::host_vector<T> h_in(cosize(gmem_layout));
+  host_vector<T> h_in(cosize(gmem_layout));
   for (size_t i = 0; i < h_in.size(); ++i) {
     h_in[i] = static_cast<T>(int(i));
   }
 
-  thrust::device_vector<T> d_in = h_in;
-  thrust::device_vector<T> d_out(d_in.size(), T(-1));
+  device_vector<T> d_in = h_in;
+  device_vector<T> d_out(d_in.size(), T(-1));
 
   int32_t smem_size = static_cast<int32_t>(sizeof(SharedStorage<T, decltype(smem_layout)>));
+  #if defined(CUTLASS_ENABLE_SYCL)
+    sc_exp::launch<bulk_copy_test_device_cute<T, GLayout, SLayout>>
+    ( sc_exp::launch_policy{sc::dim3(1), sc::dim3(128), 
+      sc_exp::launch_properties{sycl_ext::work_group_static_size(smem_size)}},
+      d_in.data(), d_out.data(), gmem_layout, smem_layout);
+    sc::wait_and_throw();
+  #else
   bulk_copy_test_device_cute<<<1, 128, smem_size>>>(thrust::raw_pointer_cast(d_in.data()),
                                                     thrust::raw_pointer_cast(d_out.data()),
                                                     gmem_layout,
                                                     smem_layout);
+  #endif
   // Transfering results back to host
-  thrust::host_vector<T> h_out = d_out;
+  host_vector<T> h_out = d_out;
 
   // Validate the results
   for (int i = 0; i < cute::size(gmem_layout); ++i) {

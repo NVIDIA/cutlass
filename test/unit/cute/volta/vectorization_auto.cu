@@ -39,15 +39,12 @@
 #include <vector>
 #include <numeric>
 
-#include <thrust/host_vector.h>
-#include <thrust/device_vector.h>
-
 #include <cute/tensor.hpp>
 
 using namespace cute;
 
 template <class GmemTensor, class RmemTiler, class CopyPolicy>
-__global__
+CUTLASS_GLOBAL
 void
 kernel(GmemTensor gC, RmemTiler tiler, CopyPolicy policy)
 {
@@ -75,17 +72,23 @@ template <class T, class CopyPolicy, class GmemLayout, class RmemTiler>
 void
 test_copy_vectorization(CopyPolicy policy, GmemLayout gmem_layout, RmemTiler rmem_tiler)
 {
-  thrust::host_vector<T> h_in(cosize(gmem_layout), T(0));
+  host_vector<T> h_in(cosize(gmem_layout), T(0));
 
-  thrust::device_vector<T> d_in = h_in;
+  device_vector<T> d_in = h_in;
   Tensor m_in = make_tensor(make_gmem_ptr(raw_pointer_cast(d_in.data())), gmem_layout);
-
+  #if defined(CUTLASS_ENABLE_SYCL)
+  syclcompat::launch<kernel<decltype(m_in),decltype(rmem_tiler),  decltype(policy)>>(
+    syclcompat::dim3(1), syclcompat::dim3(1),
+    m_in, rmem_tiler, policy
+  );
+  #else
   kernel<<<1,1>>>(m_in, rmem_tiler, policy);
+  #endif
 
-  thrust::host_vector<T> h_out = d_in;
+  host_vector<T> h_out = d_in;
   Tensor result = make_tensor(h_out.data(), gmem_layout);
 
-  thrust::host_vector<T> h_true = h_in;
+  host_vector<T> h_true = h_in;
   Tensor ref = make_tensor(h_true.data(), gmem_layout);
 
   // Set the values directly in the reference tensor, no copy

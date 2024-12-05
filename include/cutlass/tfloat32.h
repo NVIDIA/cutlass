@@ -64,7 +64,7 @@ struct alignas(4) tfloat32_t {
   private:
     CUTLASS_HOST_DEVICE
     static uint32_t float_to_storage(float s) {
-  #if defined(__CUDA_ARCH__)
+  #if defined(__CUDA_ARCH__) || defined(__SYCL_DEVICE_ONLY__)
       uint32_t result = reinterpret_cast<uint32_t const &>(s);
   #else
       uint32_t result;
@@ -114,7 +114,7 @@ struct alignas(4) tfloat32_t {
   CUTLASS_HOST_DEVICE
   explicit tfloat32_t(int x) {
     float flt = static_cast<float>(x);
-    #if defined(__CUDA_ARCH__)
+    #if defined(__CUDA_ARCH__) || defined(__SYCL_DEVICE_ONLY__)
     storage = reinterpret_cast<uint32_t const &>(flt);
     #else
     std::memcpy(&storage, &flt, sizeof(storage));
@@ -129,7 +129,7 @@ struct alignas(4) tfloat32_t {
     // of the mantissa.
     unsigned bits = (storage & ~0x1fffu);
 
-    #if defined(__CUDA_ARCH__)
+    #if defined(__CUDA_ARCH__) || defined(__SYCL_DEVICE_ONLY__)
     return reinterpret_cast<float const &>(bits);
     #else
     float flt;

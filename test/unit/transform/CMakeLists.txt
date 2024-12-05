@@ -40,5 +40,5 @@ add_custom_target(
   test_unit_transform
   DEPENDS
   test_unit_transform_threadblock
-  test_unit_transform_kernel
+  test_unit_transform_filter_format
 )

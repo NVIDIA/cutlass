@@ -37,9 +37,6 @@
 
 #include <iostream>
 
-#include <thrust/host_vector.h>
-#include <thrust/device_vector.h>
-
 #include <cute/tensor.hpp>
 
 using namespace cute;
@@ -53,6 +50,15 @@ template<typename T>
 struct fp64_tester<complex<T>> {
   using value_type = complex<double>;
 };
+
+#if defined(CUTLASS_ENABLE_SYCL)
+#include <sycl/sycl.hpp>
+#include <syclcompat/syclcompat.hpp>
+#include <cutlass/sycl_vector_types.h>
+
+namespace sc = syclcompat;
+namespace sc_exp = syclcompat::experimental;
+namespace sycl_ext = sycl::ext::oneapi::experimental;
 
 template<class ALayout,
          class BLayout,
@@ -75,7 +81,84 @@ template<class ALayout,
          class BLoadTransform,
          class CLoadTransform,
          class CStoreTransform>
-__launch_bounds__(ThreadBlockSize) __global__ void
+void
+cooperative_gemm_kernel(TA const*   a,
+                        TB const*   b,
+                        TC*         c,
+                        TC*         c_out,
+                        Alpha const alpha,
+                        Beta  const beta,
+                        ALoadTransform  a_load_transform,
+                        BLoadTransform  b_load_transform,
+                        CLoadTransform  c_load_transform,
+                        CStoreTransform c_store_transform,
+                        sycl::local_ptr<char> base_smem)
+{
+  using namespace cute;
+  using float4 = cutlass::float4;
+
+  Tensor g_a_tensor     = make_tensor(make_gmem_ptr(a), ALayout{});
+  Tensor g_b_tensor     = make_tensor(make_gmem_ptr(b), BLayout{});
+  Tensor g_c_tensor     = make_tensor(make_gmem_ptr(c), CLayout{});
+  Tensor g_c_out_tensor = make_tensor(make_gmem_ptr(c_out), CLayout{});
+
+  constexpr uint32_t copy_max_vec_bytes = CopyMaxVecBits / 8;
+
+  auto smem_buf = reinterpret_cast<float4*>((char*)base_smem);
+
+  auto* smem_ptr = reinterpret_cast<unsigned char*>(smem_buf);
+  auto* smem_ptr_a = smem_ptr;
+  auto* smem_ptr_b = smem_ptr_a + round_up((sizeof(TA) * cosize(SMemALayout {})), copy_max_vec_bytes);
+  auto* smem_ptr_c = smem_ptr_b + round_up((sizeof(TB) * cosize(SMemBLayout {})), copy_max_vec_bytes);
+
+  Tensor s_a_tensor = make_tensor(make_smem_ptr<TA>(smem_ptr_a), SMemALayout{});
+  Tensor s_b_tensor = make_tensor(make_smem_ptr<TB>(smem_ptr_b), SMemBLayout{});
+  Tensor s_c_tensor = make_tensor(make_smem_ptr<TC>(smem_ptr_c), SMemCLayout{});
+
+  cooperative_copy<ThreadBlockSize, CopyMaxVecBits>(ThreadIdxX(), g_a_tensor, s_a_tensor);
+  cooperative_copy<ThreadBlockSize, CopyMaxVecBits>(ThreadIdxX(), g_b_tensor, s_b_tensor);
+  cooperative_copy<ThreadBlockSize, CopyMaxVecBits>(ThreadIdxX(), g_c_tensor, s_c_tensor);
+
+  cp_async_fence();
+  cp_async_wait<0>();
+  syncthreads();
+
+  TiledMma tiled_mma;
+  cooperative_gemm<SmemCopyOpA, SmemCopyOpB, SmemCopyOpC>(
+    ThreadIdxX(), tiled_mma,
+    alpha, s_a_tensor, s_b_tensor, beta, s_c_tensor,
+    a_load_transform, b_load_transform, c_load_transform, c_store_transform
+  );
+  syncthreads();
+
+  cooperative_copy<ThreadBlockSize, CopyMaxVecBits>(ThreadIdxX(), s_c_tensor, g_c_out_tensor);
+}
+
+#else
+
+template<class ALayout,
+         class BLayout,
+         class CLayout,
+         class SMemALayout,
+         class SMemBLayout,
+         class SMemCLayout,
+         class SmemCopyOpA,
+         class SmemCopyOpB,
+         class SmemCopyOpC,
+         uint32_t ThreadBlockSize,
+         class TiledMma,
+         uint32_t CopyMaxVecBits,
+         class TA,
+         class TB,
+         class TC,
+         class Alpha,
+         class Beta,
+         class ALoadTransform,
+         class BLoadTransform,
+         class CLoadTransform,
+         class CStoreTransform>
+__launch_bounds__(ThreadBlockSize) __global__
+void
 cooperative_gemm_kernel(TA const*   a,
                         TB const*   b,
                         TC*         c,
@@ -96,7 +179,7 @@ cooperative_gemm_kernel(TA const*   a,
 
     constexpr uint32_t copy_max_vec_bytes = CopyMaxVecBits / 8;
 
-    extern __shared__ float4 smem_buf[];
+    extern CUTLASS_SHARED float4 smem_buf[];
     auto* smem_ptr = reinterpret_cast<unsigned char*>(smem_buf);
     auto* smem_ptr_a = smem_ptr;
     auto* smem_ptr_b = smem_ptr_a + round_up((sizeof(TA) * cosize(SMemALayout {})), copy_max_vec_bytes);
@@ -106,24 +189,26 @@ cooperative_gemm_kernel(TA const*   a,
     Tensor s_b_tensor = make_tensor(make_smem_ptr<TB>(smem_ptr_b), SMemBLayout{});
     Tensor s_c_tensor = make_tensor(make_smem_ptr<TC>(smem_ptr_c), SMemCLayout{});
 
-    cooperative_copy<ThreadBlockSize, CopyMaxVecBits>(threadIdx.x, g_a_tensor, s_a_tensor);
-    cooperative_copy<ThreadBlockSize, CopyMaxVecBits>(threadIdx.x, g_b_tensor, s_b_tensor);
-    cooperative_copy<ThreadBlockSize, CopyMaxVecBits>(threadIdx.x, g_c_tensor, s_c_tensor);
+    cooperative_copy<ThreadBlockSize, CopyMaxVecBits>(ThreadIdxX(), g_a_tensor, s_a_tensor);
+    cooperative_copy<ThreadBlockSize, CopyMaxVecBits>(ThreadIdxX(), g_b_tensor, s_b_tensor);
+    cooperative_copy<ThreadBlockSize, CopyMaxVecBits>(ThreadIdxX(), g_c_tensor, s_c_tensor);
 
     cp_async_fence();
     cp_async_wait<0>();
-    __syncthreads();
+    syncthreads();
 
     TiledMma tiled_mma;
     cooperative_gemm<SmemCopyOpA, SmemCopyOpB, SmemCopyOpC>(
-      threadIdx.x, tiled_mma,
+      ThreadIdxX(), tiled_mma,
       alpha, s_a_tensor, s_b_tensor, beta, s_c_tensor,
       a_load_transform, b_load_transform, c_load_transform, c_store_transform
     );
-    __syncthreads();
+    syncthreads();
 
-    cooperative_copy<ThreadBlockSize, CopyMaxVecBits>(threadIdx.x, s_c_tensor, g_c_out_tensor);
+    cooperative_copy<ThreadBlockSize, CopyMaxVecBits>(ThreadIdxX(), s_c_tensor, g_c_out_tensor);
 }
+
+#endif
 
 template<class ALayout, // logical shape (M, K)
          class BLayout, // logical shape (N, K)
@@ -183,10 +268,10 @@ void test_cooperative_gemm(ALoadTransform  const& a_load_transform  = {},
   const auto alpha = static_cast<TC>(1.1);
   const auto beta  = static_cast<TC>(1.2);
 
-  thrust::host_vector<TA> h_a(cosize(gmem_a_layout_t{}));
-  thrust::host_vector<TB> h_b(cosize(gmem_b_layout_t{}));
-  thrust::host_vector<TC> h_c(cosize(gmem_c_layout_t{}));
-  thrust::host_vector<TC> h_c_out(cosize(gmem_c_layout_t{}));
+  host_vector<TA> h_a(cosize(gmem_a_layout_t{}));
+  host_vector<TB> h_b(cosize(gmem_b_layout_t{}));
+  host_vector<TC> h_c(cosize(gmem_c_layout_t{}));
+  host_vector<TC> h_c_out(cosize(gmem_c_layout_t{}));
 
   auto h_a_tensor = make_tensor(h_a.data(), gmem_a_layout_t{});
   auto h_b_tensor = make_tensor(h_b.data(), gmem_b_layout_t{});
@@ -207,25 +292,38 @@ void test_cooperative_gemm(ALoadTransform  const& a_load_transform  = {},
     }
   }
 
-  thrust::device_vector<TA> d_a(h_a);
-  thrust::device_vector<TB> d_b(h_b);
-  thrust::device_vector<TC> d_c(h_c);
-  thrust::device_vector<TC> d_c_out(h_c_out.size(), TC(float(-1)));
+  device_vector<TA> d_a(h_a);
+  device_vector<TB> d_b(h_b);
+  device_vector<TC> d_c(h_c);
+  device_vector<TC> d_c_out(h_c_out.size(), TC(float(-1)));
 
   constexpr uint32_t copy_max_vec_bytes = CopyMaxVecBits / 8;
   const size_t shared_memory_size = round_up(sizeof(TA) * h_a.size(), copy_max_vec_bytes) 
                                   + round_up(sizeof(TB) * h_b.size(), copy_max_vec_bytes)
                                   +         (sizeof(TC) * h_c.size());
-  auto kernel = cooperative_gemm_kernel<
+  #if defined(CUTLASS_ENABLE_SYCL)
+  sc_exp::launch< cooperative_gemm_kernel<
     gmem_a_layout_t, gmem_b_layout_t, gmem_c_layout_t,
     smem_a_layout_t, smem_b_layout_t, smem_c_layout_t,
     SmemCopyOpA, SmemCopyOpB, SmemCopyOpC,
     ThreadBlockSize, TiledMma, CopyMaxVecBits,
     TA, TB, TC, decltype(alpha), decltype(beta),
     ALoadTransform, BLoadTransform, CLoadTransform, CStoreTransform
-  >;
+  >>
+  ( sc_exp::launch_policy{sc::dim3(1), sc::dim3(ThreadBlockSize), sc_exp::local_mem_size{shared_memory_size}},
+    d_a.data(), d_b.data(), d_c.data(), d_c_out.data(),
+    alpha, beta, a_load_transform, b_load_transform,
+    c_load_transform, c_store_transform);
+  #else
+  auto kernel = cooperative_gemm_kernel<
+                  gmem_a_layout_t, gmem_b_layout_t, gmem_c_layout_t,
+                  smem_a_layout_t, smem_b_layout_t, smem_c_layout_t,
+                  SmemCopyOpA, SmemCopyOpB, SmemCopyOpC,
+                  ThreadBlockSize, TiledMma, CopyMaxVecBits,
+                  TA, TB, TC, decltype(alpha), decltype(beta),
+                  ALoadTransform, BLoadTransform, CLoadTransform, CStoreTransform
+                >;
   ASSERT_EQ(cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, static_cast<int>(shared_memory_size)), 0);
-
   kernel<<<1, ThreadBlockSize, shared_memory_size>>>(
     thrust::raw_pointer_cast(d_a.data()),
     thrust::raw_pointer_cast(d_b.data()),
@@ -243,8 +341,8 @@ void test_cooperative_gemm(ALoadTransform  const& a_load_transform  = {},
     cudaError_t error = cudaGetLastError();
     FAIL() << "Error at kernel sync: " << cudaGetErrorString(error) << "\n";
   }
-
-  thrust::host_vector<TC> h_c_ref(h_c.size(), static_cast<TC>(0.0));
+  #endif
+  host_vector<TC> h_c_ref(h_c.size(), static_cast<TC>(0.0));
   auto h_c_ref_tensor = make_tensor(h_c_ref.data(), gmem_c_layout_t{});
   // A * B
   for (int k = 0; k < size<1>(h_a_tensor); k++) {

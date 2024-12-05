@@ -49,6 +49,9 @@
 #if defined(__NVCC__) || (defined(__clang__) && defined(__CUDA__))
 #define CUTLASS_HOST_DEVICE __forceinline__ __device__ __host__
 #define CUTLASS_DEVICE __forceinline__ __device__
+#elif defined(CUTLASS_ENABLE_SYCL)
+#define CUTLASS_HOST_DEVICE __attribute__((always_inline)) inline 
+#define CUTLASS_DEVICE __attribute__((always_inline)) inline 
 #elif defined(__CUDACC_RTC__)
 #define CUTLASS_HOST_DEVICE __forceinline__ __device__
 #define CUTLASS_DEVICE __forceinline__ __device__
@@ -57,9 +60,15 @@
 #define CUTLASS_DEVICE inline
 #endif
 
+#if defined(CUTLASS_ENABLE_SYCL)
+#define CUTLASS_HOST
+#define CUTLASS_GLOBAL
+#define CUTLASS_SHARED
+#else
 #define CUTLASS_HOST __host__
 #define CUTLASS_GLOBAL __global__ static
-
+#define CUTLASS_SHARED __shared__
+#endif
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<typename T>
@@ -155,8 +164,8 @@ namespace cutlass {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // CUTLASS_PRAGMA_(UNROLL|NO_UNROLL) optimization directives for the CUDA compiler.
-#if defined(__CUDA_ARCH__) && !defined(__INTELLISENSE__)
-  #if defined(__CUDACC_RTC__) || (defined(__clang__) && defined(__CUDA__))
+#if (defined(__CUDA_ARCH__) || defined(CUTLASS_ENABLE_SYCL)) && !defined(__INTELLISENSE__)
+  #if defined(__CUDACC_RTC__) || (defined(__clang__) && defined(__CUDA__)) || defined(CUTLASS_ENABLE_SYCL)
     #define CUTLASS_PRAGMA_UNROLL _Pragma("unroll")
     #define CUTLASS_PRAGMA_NO_UNROLL _Pragma("unroll 1")
   #else

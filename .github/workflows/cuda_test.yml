@@ -1,0 +1,33 @@
+name: "Cuda Test"
+
+on:
+  push:
+    branches: [ "sycl-develop" ]
+  pull_request:
+    branches: [ "sycl-develop" ]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  run-tests:
+    name: Run cuda tests
+    runs-on: cp-nvidia-gpu
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+
+      - name: Build
+        shell: bash
+        run: |
+          nvidia-smi
+          export CUDACXX=/usr/local/cuda/bin/nvcc
+          cmake -G Ninja -DCUTLASS_NVCC_ARCHS="90a"
+          cmake --build .
+
+      - name: Unit test
+        shell: bash
+        run: |
+          cmake --build . --target test_unit -j

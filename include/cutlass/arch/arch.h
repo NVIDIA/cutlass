@@ -41,13 +41,15 @@
 namespace cutlass {
 namespace arch {
 
-#if defined(__NVCC__) || defined(__CUDACC_RTC__) || (defined(__clang__) && defined(__CUDA__))
+#if defined(__NVCC__) || defined(__CUDACC_RTC__) || (defined(__clang__) && (defined(__CUDA__) || defined(CUTLASS_ENABLE_SYCL)))
 
 /// Computes laneId within a warp
 CUTLASS_DEVICE
 int LaneId() {
   int ret;
+#if !defined(CUTLASS_ENABLE_SYCL) || defined(__SYCL_CUDA_ARCH__)
   asm ("mov.u32 %0, %%laneid;" : "=r"(ret) : );
+#endif
   return ret;
 }
 
@@ -55,7 +57,9 @@ int LaneId() {
 CUTLASS_DEVICE
 int SmId() {
   int ret;
+#if !defined(CUTLASS_ENABLE_SYCL) || defined(__SYCL_CUDA_ARCH__)
   asm ("mov.u32 %0, %%smid;" : "=r"(ret) : );
+#endif
   return ret;
 }
 
@@ -93,10 +97,17 @@ struct Sm90 {
   static int const kMinComputeCapability = 90; 
 };
 
+#if defined(CUTLASS_ENABLE_SYCL)
+struct IntelPVC {
+  static int const kMinComputeCapability = 0;
+};
+
+#endif
+
 /// Triggers a breakpoint on the device
 CUTLASS_DEVICE
 void device_breakpoint() {
-#if defined(__CUDA_ARCH__)
+#if defined(__CUDA_ARCH__) || defined(__SYCL_CUDA_ARCH__)
   asm volatile ("  brkpt;\n");
 #endif
 }

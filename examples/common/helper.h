@@ -30,7 +30,11 @@
  **************************************************************************************************/
 #pragma once
 
-#include "cuda_runtime.h"
+#if defined(CUTLASS_ENABLE_SYCL)
+#include "cutlass/util/sycl_timer.hpp"
+#else
+#include <cuda_runtime.h>
+#endif
 #include <iostream>
 
 /**
@@ -64,45 +68,65 @@
 /**
  * GPU timer for recording the elapsed time across kernel(s) launched in GPU stream
  */
-struct GpuTimer
-{
-    cudaStream_t _stream_id;
+struct GpuTimer {
+#if defined(CUTLASS_ENABLE_SYCL)
+    using cudaStream_t = int;
+    SYCLTimer syclTimer;
+#else
     cudaEvent_t _start;
     cudaEvent_t _stop;
+#endif
+    cudaStream_t _stream_id;
 
     /// Constructor
     GpuTimer() : _stream_id(0)
     {
+#if !defined(CUTLASS_ENABLE_SYCL)
         CUDA_CHECK(cudaEventCreate(&_start));
         CUDA_CHECK(cudaEventCreate(&_stop));
+#endif
     }
 
     /// Destructor
     ~GpuTimer()
     {
+#if !defined(CUTLASS_ENABLE_SYCL)
         CUDA_CHECK(cudaEventDestroy(_start));
         CUDA_CHECK(cudaEventDestroy(_stop));
+#endif
     }
 
     /// Start the timer for a given stream (defaults to the default stream)
     void start(cudaStream_t stream_id = 0)
     {
         _stream_id = stream_id;
+#if defined(CUTLASS_ENABLE_SYCL)
+        syclTimer.start();
+#else
         CUDA_CHECK(cudaEventRecord(_start, _stream_id));
+#endif
     }
 
     /// Stop the timer
     void stop()
     {
+#if defined(CUTLASS_ENABLE_SYCL)
+        syclTimer.stop();
+#else
         CUDA_CHECK(cudaEventRecord(_stop, _stream_id));
+#endif
     }
 
     /// Return the elapsed time (in milliseconds)
     float elapsed_millis()
     {
+#if defined(CUTLASS_ENABLE_SYCL)
+        return syclTimer.milliseconds();
+#else
         float elapsed = 0.0;
         CUDA_CHECK(cudaEventSynchronize(_stop));
         CUDA_CHECK(cudaEventElapsedTime(&elapsed, _start, _stop));
         return elapsed;
+#endif
     }
 };

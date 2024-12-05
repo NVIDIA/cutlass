@@ -277,7 +277,7 @@ public:
     // Kernel level shared memory storage
     SharedStorage& shared_storage = *reinterpret_cast<SharedStorage*>(smem_buf);
 
-    int thread_idx = int(threadIdx.x);
+    int thread_idx = int(ThreadIdxX());
     int warp_group_thread_idx = thread_idx % NumThreadsPerWarpGroup;
     int warp_group_idx = canonical_warp_group_idx();
     CUTLASS_ASSERT(warp_group_idx < NumWarpGroups);
@@ -375,7 +375,7 @@ public:
     CollectiveEpilogue collective_epilogue{params.epilogue, shared_storage.tensors.epilogue};
 
     // Wait for all threads in the thread block
-    __syncthreads();
+    syncthreads();
 
     if (warp_group_role == WarpGroupRole::Producer) {
 

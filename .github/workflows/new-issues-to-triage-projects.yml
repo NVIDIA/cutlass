@@ -7,27 +7,30 @@ on:
 env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+permissions:
+  issues: read
+
 jobs:
   assign_one_project:
     runs-on: ubuntu-latest
     name: Assign to New Issues to Triage Project
     steps:
     - name: Process bug issues
-      uses: docker://takanabe/github-actions-automate-projects:v0.0.1
+      uses: takanabe/github-actions-automate-projects@5d004c140c65fa8b4ef3b18a38219ce680bce816 # v2.0.0
       if: contains(github.event.issue.labels.*.name, 'bug') && contains(github.event.issue.labels.*.name, '? - Needs Triage')
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         GITHUB_PROJECT_URL: https://github.com/NVIDIA/cutlass
         GITHUB_PROJECT_COLUMN_NAME: 'Needs prioritizing'
     - name: Process feature issues
-      uses: docker://takanabe/github-actions-automate-projects:v0.0.1
+      uses: takanabe/github-actions-automate-projects@5d004c140c65fa8b4ef3b18a38219ce680bce816 # v2.0.0
       if: contains(github.event.issue.labels.*.name, 'feature request') && contains(github.event.issue.labels.*.name, '? - Needs Triage')
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         GITHUB_PROJECT_URL: https://github.com/NVIDIA/cutlass
         GITHUB_PROJECT_COLUMN_NAME: 'Needs prioritizing'
     - name: Process other issues
-      uses: docker://takanabe/github-actions-automate-projects:v0.0.1
+      uses: takanabe/github-actions-automate-projects@5d004c140c65fa8b4ef3b18a38219ce680bce816 # v2.0.0
       if: contains(github.event.issue.labels.*.name, '? - Needs Triage') && (!contains(github.event.issue.labels.*.name, 'bug') && !contains(github.event.issue.labels.*.name, 'feature request'))
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
