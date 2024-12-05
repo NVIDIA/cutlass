@@ -82,9 +82,8 @@ struct XeAuxLoad {
     // Optionally append 1s until problem shape is rank-4 in case its is only rank-3 (MNK)
     auto problem_shape_mnkl = append<4>(problem_shape, 1);
     auto [M, N, K, L] = problem_shape_mnkl;
-    // TODO(codeplay): This assumes a packed aux matrix
-    auto dAux = append<3>(args.dAux, 0);
-    auto N_AUX = get<0>(dAux); // dAux is a stride and N_AUX is a size
+    // TODO(codeplay): This assumes a packed 2D (+ a batch dim) aux matrix
+    auto N_AUX = get<0>(args.dAux); // dAux is a stride and N_AUX is a size
     auto M_AUX = size(M);
     XE_Copy_Aux xe_load_aux = make_tiled_copy(Copy_Atom<Trait_Aux, Element>{}.with(
                                   args.ptr_aux, N_AUX, M_AUX, N_AUX),

@@ -42,7 +42,8 @@ namespace cutlass::epilogue::collective {
 namespace detail {
   template <class FusionOp>
   struct FusionOpInfo {
-  static_assert(cutlass::detail::dependent_false<FusionOp>, "Could not find a builder specialization.");
+    static_assert(cutlass::detail::dependent_false<FusionOp>,
+      "Could not find a builder specialization.");
   };
 
   template <

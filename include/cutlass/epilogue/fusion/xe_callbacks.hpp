@@ -171,7 +171,6 @@ struct FusionCallbacks<
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<
-  class CtaTileShapeMNK,
   class StrideAux,
   class CopyOpG2R,
   template <class> class ActivationFn,
@@ -180,7 +179,6 @@ template<
   class ElementAux = ElementOutput,
   class ElementSource = ElementOutput,
   class ElementScalar = ElementCompute,
-  int AlignmentAux = 128 / sizeof_bits_v<ElementAux>,
   FloatRoundStyle RoundStyle = FloatRoundStyle::round_to_nearest
 >
 using XeLinCombDeEltAct =
@@ -217,8 +215,8 @@ struct FusionCallbacks<
     EpilogueTile,
     CopyOpG2R
 > : XeLinCombDeEltAct<
-      CtaTileShapeMNK, cutlass::gemm::TagToStrideC_t<GmemLayoutTagAux>, CopyOpG2R, ActivationFn,
-      ElementOutput_, ElementCompute_, ElementAux, ElementSource, ElementScalar, AlignmentAux, RoundStyle
+      cutlass::gemm::TagToStrideC_t<GmemLayoutTagAux>, CopyOpG2R, ActivationFn, ElementOutput_,
+      ElementCompute_, ElementAux, ElementSource, ElementScalar, RoundStyle
     > {
 
   using ElementOutput = ElementOutput_;
@@ -226,8 +224,8 @@ struct FusionCallbacks<
 
   using Impl =
     XeLinCombDeEltAct<
-      CtaTileShapeMNK, cutlass::gemm::TagToStrideC_t<GmemLayoutTagAux>, CopyOpG2R, ActivationFn,
-      ElementOutput, ElementCompute, ElementAux, ElementSource, ElementScalar, AlignmentAux, RoundStyle
+      cutlass::gemm::TagToStrideC_t<GmemLayoutTagAux>, CopyOpG2R, ActivationFn, ElementOutput,
+      ElementCompute, ElementAux, ElementSource, ElementScalar, RoundStyle
     >;
   using Operation =
     fusion::LinCombDeEltAct<

@@ -113,7 +113,12 @@ void
 #else
 __global__ void
 #endif
-BlockElementwiseOp(Element *ptr_dst, Element const *ptr_A, Element const *ptr_B, size_t capacity) {
+BlockElementwiseOp(
+  Element *ptr_dst,
+  Element const *ptr_A,
+  Element const *ptr_B,
+  size_t capacity) {
+
   BinaryOp<Element> bin_op{};
 
   const size_t start = ThreadIdxX() + BlockDimX() * BlockIdxX();

@@ -137,20 +137,6 @@ struct diff_vals {
   }
 };
 
-template <typename Element>
-void print_device_tensor(DeviceAllocation<Element> device_alloc, std::size_t M, std::size_t N, std::size_t L, const char * message){
-    syclcompat::wait();
-    std::vector<Element> host_data(M*N*L);
-    device_alloc.copy_to_host(host_data.data());
-    auto tensor_aux_host = make_tensor(host_data.data(), cute::make_shape(M,N,L));
-    print(message);
-    print('\n');
-    print_tensor(tensor_aux_host);
-    print('\n');
-}
-
-
-
 template <
   class Gemm
 >
@@ -236,14 +222,6 @@ struct ExampleRunner {
     bool passed = cutlass::reference::device::BlockCompareEqual(
       block_ref_D.get(), block_D.get(), block_D.size());
 
-    if (0 and !passed){
-      print_device_tensor(block_D, M, N, L, "Actual");
-      print_device_tensor(block_ref_D, M, N, L, "Reference");
-      cutlass::reference::device::BlockElementwiseOp<diff_vals>(block_ref_D.get(), block_ref_D.get(), block_D.get(), block_D.size());
-      syclcompat::wait();
-      print_device_tensor(block_ref_D, M, N, L, "difference");
-    }
-
     return passed;
   }
 
@@ -276,7 +254,6 @@ struct ExampleRunner {
     initialize(problem_size);
 
     using EpilogueArguments = typename Gemm::GemmKernel::EpilogueArguments;
-    // TODO need to inject the aux argument here
     EpilogueArguments epilogue_arguments{
       {options.alpha, options.beta}, block_C.get(), stride_C, block_D.get(), stride_D};
     epilogue_arguments.thread.aux_ptr = block_Aux.get();
@@ -296,7 +273,10 @@ struct ExampleRunner {
     size_t workspace_size = Gemm::get_workspace_size(arguments);
     cutlass::device_memory::allocation<uint8_t> workspace(workspace_size);
 
-    gemm_op.can_implement(arguments);
+    if (gemm_op.can_implement(arguments) != cutlass::Status::kSuccess){
+      std::cout << "Invalid Problem Size: " << options.m << 'x' << options.n << 'x' << options.k << 'x' << options.l << std::endl;
+      std::exit(1);
+    }
 
     gemm_op.initialize(arguments, workspace.get());
 
@@ -400,7 +380,6 @@ int main(int argc, const char** argv)
 
   using EpilogueTile = decltype(take<0,2>(TileShape{}));
 
-  // issue is that this isn't specializing
   using FusionCallBacks = cutlass::epilogue::fusion::FusionCallbacks<
           EpilogueDispatchPolicy,
           EpilogueOp,

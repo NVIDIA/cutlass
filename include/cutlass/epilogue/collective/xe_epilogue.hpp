@@ -278,9 +278,14 @@ public:
     static constexpr auto ATOM_N = get<2>(typename TiledMma::ThrLayoutVMNK{}.shape());
     static constexpr auto ATOM_K = get<3>(typename TiledMma::ThrLayoutVMNK{}.shape());
     
-    static constexpr auto SG_M = ceil_div(BLK_M, ATOM_M);
-    static constexpr auto SG_N = ceil_div(BLK_N, ATOM_N);
-    static constexpr auto SG_K = ceil_div(BLK_K, ATOM_K);
+    static_assert(
+      BLK_M % ATOM_M == 0 &&
+      BLK_N % ATOM_N == 0 &&
+      BLK_K % ATOM_K == 0,
+      "expected CTATileMNK to be evenly divided by TiledMma::ThrLayoutVMNK");
+    static constexpr auto SG_M = BLK_M / ATOM_M;
+    static constexpr auto SG_N = BLK_N / ATOM_N;
+    static constexpr auto SG_K = BLK_K / ATOM_K;
     using SubgroupTileShape = Shape<decltype(SG_M), decltype(SG_N), decltype(SG_K)>;
 
     static constexpr int FragsM = get<0>(SubgroupTileShape{}) / get<0>(MmaAtomShape()); // A frags per sub_group
@@ -331,9 +336,10 @@ public:
     auto acc_frag = recast<Array<ElementOutput, FragmentSize>>(accumulators);
     auto trD_frag = recast<Array<ElementOutput, FragmentSize>>(trD);
 
-    constexpr int values_loaded = FragsM*FragsN*FragmentSize*SubgroupSize*ATOM_M*ATOM_N*ATOM_K;
+    constexpr int ValuesLoaded =
+      FragsM * FragsN * FragmentSize * SubgroupSize * ATOM_M * ATOM_N * ATOM_K;
     constexpr int MN = get<0>(CtaTileMNK{}) * get<1>(CtaTileMNK{});
-    static_assert(values_loaded == MN, "the total elements loaded by all threads should be the same as MxN" );
+    static_assert(ValuesLoaded == MN, "the total elements loaded by all threads should be the same as MxN" );
 
     CUTLASS_PRAGMA_UNROLL
     for (int epi_n = 0; epi_n < FragsN; epi_n++) {
