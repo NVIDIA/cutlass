@@ -264,10 +264,12 @@ public:
 
     syncthreads();
 
-    // assumption: size<0>(sC) == wg size
+    // assumption for reductions: size<0>(sC) == block size
+    assert(size<0>(sC) == BlockDimX() * BlockDimy() * BlockDimZ());
+    
     ElementAccumulator max = std::numeric_limits<ElementAccumulator>::lowest();
     CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < size<0>(sC); ++i) {
+    for (int i = 0; i < size<1>(sC); ++i) {
       if (elem_less(cD(thread_idx, i), make_coord(get<0>(residue_mnk), get<1>(residue_mnk)))) {
         accumulators(i) = sC(thread_idx, i);
         max = cutlass::fast_max(max, accumulators(i));
@@ -277,7 +279,7 @@ public:
     
     ElementAccumulator sum = 0;
     CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < size<0>(sC); ++i) {
+    for (int i = 0; i < size<1>(sC); ++i) {
       if (elem_less(cD(thread_idx, i), make_coord(get<0>(residue_mnk), get<1>(residue_mnk)))) {
         sum += cutlass::fast_exp(accumulators(i) - max);
       }

@@ -404,7 +404,7 @@ public:
                                                smem_size_finalize,
                                                stream,
                                                kernel_params_finalize,
-                                               0);
+                                               1);
         }
         else {
           return Status::kErrorInternal;
