@@ -81,6 +81,8 @@ public:
     TileScheduler_, ArchTag, TileShape,
     cute::Shape<cute::Int<1>, cute::Int<1>, cute::Int<1>>>::Scheduler;
   using TileSchedulerArguments = typename TileScheduler::Arguments;
+  static constexpr bool IsGdcEnabled = false;
+
   static constexpr bool is_valid_tile_scheduler =
   cute::is_void_v<TileScheduler_> or cute::is_same_v<TileScheduler_, PersistentScheduler>;
 static_assert(is_valid_tile_scheduler, "SM70 kernel does not support specializing the tile scheduler.");

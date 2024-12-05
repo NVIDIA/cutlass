@@ -1372,16 +1372,14 @@ struct ReferenceFactory<Element, true> {
   /// by the vector size.
   CUTLASS_HOST_DEVICE
   static Element *add_pointer_offset(Element *ptr, int64_t offset_in_elements) {
-
-    return ptr + offset_in_elements * sizeof_bits<Element>::value / sizeof(Element) / 8;
+    return &SubbyteReference<Element>(ptr, offset_in_elements);
   }
 
   /// Helper to add an offset in number of elements, assuming this offset is divisible
   /// by the vector size.
   CUTLASS_HOST_DEVICE
   static Element const *add_pointer_offset(Element const *ptr, int64_t offset_in_elements) {
-
-    return ptr + offset_in_elements * sizeof_bits<Element>::value / sizeof(Element) / 8;
+    return &ConstSubbyteReference<Element>(ptr, offset_in_elements);
   }
 };
 

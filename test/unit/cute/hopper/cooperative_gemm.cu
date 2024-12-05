@@ -32,6 +32,8 @@
 #include "cutlass_unit_test.h"
 
 #include <cute/tensor.hpp>
+#include <cute/swizzle.hpp> // cute::Swizzle
+#include <cute/swizzle_layout.hpp> // cute::compose(cute::Swizzle)
 
 #include "../cooperative_gemm_common.hpp"
 

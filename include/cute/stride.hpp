@@ -30,10 +30,16 @@
  **************************************************************************************************/
 #pragma once
 
-#include <cute/config.hpp>
-#include <cute/int_tuple.hpp>
-#include <cute/numeric/int.hpp>
-#include <cute/numeric/math.hpp>
+#include <cute/config.hpp>                     // CUTE_HOST_DEVICE
+#include <cute/util/type_traits.hpp>           // cute::__CUTE_REQUIRES
+#include <cute/container/tuple.hpp>            // cute::is_tuple
+#include <cute/numeric/integral_constant.hpp>  // cute::is_integral
+#include <cute/numeric/integer_sequence.hpp>   // cute::seq
+#include <cute/numeric/math.hpp>               // cute::divmod
+#include <cute/numeric/arithmetic_tuple.hpp>   // cute::basis_get
+#include <cute/algorithm/functional.hpp>       // cute::identity
+#include <cute/algorithm/tuple_algorithms.hpp> // cute::fold
+#include <cute/int_tuple.hpp>                  // cute::is_congruent
 
 namespace cute
 {
@@ -433,7 +439,7 @@ compact_order(Shape const& shape, Order const& order)
   auto flat_order = flatten_to_tuple(order);
   // Find the largest static element of order
   auto max_order = cute::fold(flat_order, Int<0>{}, [](auto v, auto order) {
-    if constexpr (is_constant<true, decltype(v < order)>::value) {  
+    if constexpr (is_constant<true, decltype(v < order)>::value) {
       return order;
     } else {
       return v;
@@ -472,6 +478,121 @@ auto
 compact_order(Shape const& shape, GenRowMajor const& major)
 {
   return compact_major<LayoutRight>(shape);
+}
+
+//
+// Coordinate iterator
+//
+
+namespace detail {
+
+template <class Coord, class Shape, class Order>
+CUTE_HOST_DEVICE constexpr
+void
+increment(Coord& coord, Shape const& shape, Order const& order)
+{
+  ++basis_get(get<0>(order), coord);
+  cute::for_each(make_range<1, tuple_size<Order>::value>{}, [&](auto i){
+    if (basis_get(get<i-1>(order), coord) == basis_get(get<i-1>(order), shape)) {
+      basis_get(get<i-1>(order), coord) = 0;
+      ++basis_get(get<i>(order), coord);
+    }
+  });
+}
+
+/** Increment a (dynamic) coord colexicographically within a shape
+ * @pre is_congruent<Coord,Shape>::value
+ * \code
+ *   auto shape = make_shape(1,2,make_shape(2,3),3);
+ *   auto coord = repeat_like(shape, 0);
+ *
+ *   for (int i = 0; i < size(shape); ++i) {
+ *     std::cout << i << ": " << coord << std::endl;
+ *     increment(coord, shape);
+ *   }
+ * \endcode
+ */
+template <class Coord, class Shape>
+CUTE_HOST_DEVICE constexpr
+void
+increment(Coord& coord, Shape const& shape)
+{
+  increment(coord, shape, flatten_to_tuple(make_basis_like(shape)));
+}
+
+} // end namespace detail
+
+struct ForwardCoordIteratorSentinel
+{};
+
+// A forward iterator for a starting coordinate in a shape's domain, and a shape.
+// The starting coordinate may be zero but need not necessarily be.
+template <class Coord, class Shape, class Order>
+struct ForwardCoordIterator
+{
+  static_assert(is_congruent<Coord, Shape>::value);
+
+  CUTE_HOST_DEVICE constexpr
+  Coord const& operator*() const { return coord; }
+  CUTE_HOST_DEVICE constexpr
+  ForwardCoordIterator& operator++() { detail::increment(coord, shape, Order{}); return *this; }
+  // Sentinel for the end of the implied range
+  CUTE_HOST_DEVICE constexpr
+  bool operator==(ForwardCoordIteratorSentinel const&) const { return basis_get(back(Order{}), coord) == basis_get(back(Order{}), shape); }
+  CUTE_HOST_DEVICE constexpr
+  bool operator!=(ForwardCoordIteratorSentinel const&) const { return basis_get(back(Order{}), coord) != basis_get(back(Order{}), shape); }
+  // NOTE: These are expensive, avoid use
+  CUTE_HOST_DEVICE constexpr
+  bool operator==(ForwardCoordIterator const& other) const { return coord == other.coord; }
+  CUTE_HOST_DEVICE constexpr
+  bool operator!=(ForwardCoordIterator const& other) const { return coord != other.coord; }
+
+  Coord coord;
+  Shape const& shape;
+};
+
+// A forward iterator for a coordinate that starts from a provided coordinate and increments in a prescribed order
+template <class Order, class Shape, class Coord>
+CUTE_HOST_DEVICE constexpr
+auto
+make_coord_iterator(Coord const& coord, Shape const& shape)
+{
+  static_assert(is_congruent<Coord, Shape>::value);
+  static_assert(is_congruent<Order, Coord>::value);
+  static_assert(is_congruent<Order, Shape>::value);
+  auto flat_order  = flatten_to_tuple(Order{});
+  auto inv_order   = transform(make_seq<rank(flat_order)>{}, [&](auto i){ return find(flat_order, i); });
+  auto basis_order = transform_leaf(inv_order, [&](auto i) { return get<i>(flatten_to_tuple(make_basis_like(shape))); });
+  return ForwardCoordIterator<Coord,Shape,decltype(basis_order)>{coord,shape};
+}
+
+// A forward iterator for a coordinate that starts from a provided coordinate and increments colex
+template <class Shape, class Coord>
+CUTE_HOST_DEVICE constexpr
+auto
+make_coord_iterator(Coord const& coord, Shape const& shape)
+{
+  static_assert(is_congruent<Coord, Shape>::value);
+  auto basis_order = flatten_to_tuple(make_basis_like(shape));
+  return ForwardCoordIterator<Coord,Shape,decltype(basis_order)>{coord,shape};
+}
+
+// A forward iterator for a coordinate that starts from zero and increments in a prescribed order
+template <class Order, class Shape>
+CUTE_HOST_DEVICE constexpr
+auto
+make_coord_iterator(Shape const& shape)
+{
+  return make_coord_iterator<Order>(repeat_like(shape, int(0)), shape);
+}
+
+// A forward iterator for a coordinate that starts from zero and increments colex
+template <class Shape>
+CUTE_HOST_DEVICE constexpr
+auto
+make_coord_iterator(Shape const& shape)
+{
+  return make_coord_iterator(repeat_like(shape, int(0)), shape);
 }
 
 } // end namespace cute

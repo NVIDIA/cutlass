@@ -178,8 +178,9 @@ struct Clamp {
 
   CUTLASS_HOST_DEVICE
   T operator()(T const& value, T const& lower_bound, T const& upper_bound) const {
-    maximum<T> mx;
-    minimum<T> mn;
+    constexpr bool PropagateNaN = true;
+    maximum<T, PropagateNaN> mx;
+    minimum<T, PropagateNaN> mn;
 
     return mn(mx(value, lower_bound), upper_bound);
   }
@@ -196,8 +197,9 @@ struct Clamp<Array<T,N>> {
 
   CUTLASS_HOST_DEVICE
   Array<T,N> operator()(Array<T,N> const& values, T const& lower_bound, T const& upper_bound) const {
-    maximum<Array<T,N>> mx;
-    minimum<Array<T,N>> mn;
+    constexpr bool PropagateNaN = true;
+    maximum<Array<T,N>, PropagateNaN> mx;
+    minimum<Array<T,N>, PropagateNaN> mn;
 
     return mn(mx(values, lower_bound), upper_bound);
   }
@@ -226,7 +228,7 @@ struct LeakyReLU {
 
   CUTLASS_HOST_DEVICE
   T operator()(T const& value, Arguments const& args = Arguments()) const {
-    this->operator()(value, args.leaky_alpha);
+    return this->operator()(value, args.leaky_alpha);
   }
 };
 
@@ -693,6 +695,57 @@ struct dReLU_Z<Array<T, N>> {
     }
 
     return y;
+  }
+};
+
+// ElementwiseFilter operator
+// Filters by a specific value and maps it to 0.0
+// Used in GEMM + comm
+template <typename T>
+struct ElementwiseFilter {
+
+  static const bool kIsHeavy = false;
+
+  struct Arguments {
+    T value_to_filter = T(-0.0);
+    T filtered_value = T(0.0);
+  };
+
+  CUTLASS_HOST_DEVICE
+  T operator()(T const& value, T const& value_to_filter, T const& filtered_value) const {
+    T res = value == value_to_filter ? filtered_value : value;
+    return res;
+  }
+
+  CUTLASS_HOST_DEVICE
+  T operator()(T const& value, Arguments const& args = Arguments()) const {
+    return this->operator()(value, args.value_to_filter, args.filtered_value);
+  }
+};
+
+template <typename T, int N>
+struct ElementwiseFilter<Array<T, N> > {
+
+  static const bool kIsHeavy = false;
+
+  using Arguments = typename ElementwiseFilter<T>::Arguments;
+
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const& values, T const& value_to_filter, T const& filtered_value) const {
+    Array<T, N> y;
+    ElementwiseFilter<T> filter_op;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < int(values.size()); ++i) {
+      y[i] = filter_op(values[i], value_to_filter, filtered_value);
+    }
+
+    return y;
+  }
+
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const& values, Arguments const& args = Arguments()) const {
+    return this->operator()(values, args.value_to_filter, args.filtered_value);
   }
 };
 

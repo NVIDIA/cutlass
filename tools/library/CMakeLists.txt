@@ -221,22 +221,24 @@ if (NOT CUTLASS_ENABLE_SYCL)
     src/singleton.cu
     src/util.cu
 
-    # files split for parallel compilation
-    src/reference/gemm_int4.cu
-    src/reference/gemm_int8_canonical.cu
-    src/reference/gemm_int8_interleaved_32.cu
-    src/reference/gemm_int8_interleaved_64.cu
-    src/reference/gemm_e4m3a_e4m3out.cu
-    src/reference/gemm_e5m2a_e4m3out.cu
-    src/reference/gemm_e4m3a_e5m2out.cu
-    src/reference/gemm_e5m2a_e5m2out.cu
-    src/reference/gemm_fp8in_fp16out.cu
-    src/reference/gemm_fp8in_bf16out.cu
-    src/reference/gemm_fp8in_fp32out.cu
-    src/reference/gemm_fp32out.cu
-    src/reference/gemm_fp_other.cu
-    src/reference/gemm_fp_mixed_input.cu
-    src/reference/initialize_reference_operations.cu
+  # files split for parallel compilation
+  src/reference/gemm_int4.cu
+  src/reference/gemm_s8_s8_s32.cu
+  src/reference/gemm_u8_u8_s32.cu
+  src/reference/gemm_int8_interleaved_32.cu
+  src/reference/gemm_int8_interleaved_64.cu
+  src/reference/gemm_e4m3a_e4m3out.cu
+  src/reference/gemm_e5m2a_e4m3out.cu
+  src/reference/gemm_e4m3a_e5m2out.cu
+  src/reference/gemm_e5m2a_e5m2out.cu
+  src/reference/gemm_fp8in_fp16out.cu
+  src/reference/gemm_fp8in_bf16out.cu
+  src/reference/gemm_fp8in_fp32out.cu
+  src/reference/gemm_fp32out.cu
+  src/reference/gemm_fp_other.cu
+  src/reference/gemm_fp_mixed_input.cu
+  src/reference/gemm_int_mixed_input.cu
+  src/reference/initialize_reference_operations.cu
 
     # cutlass reduction instances in cutlass library
 
@@ -279,6 +281,7 @@ execute_process(
     --generator-target library
     --architectures "${CUTLASS_NVCC_ARCHS_ENABLED}"
     --kernels "${CUTLASS_LIBRARY_KERNELS}"
+    --instantiation-level "${CUTLASS_LIBRARY_INSTANTIATION_LEVEL}"
     --ignore-kernels "${CUTLASS_LIBRARY_IGNORE_KERNELS}"
     --exclude-kernels "${CUTLASS_LIBRARY_EXCLUDE_KERNELS}"
     --kernel-filter-file "${KERNEL_FILTER_FILE}"

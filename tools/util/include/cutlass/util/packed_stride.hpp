@@ -35,6 +35,8 @@
 #pragma once
 
 #include "cute/layout.hpp"
+#include "cute/container/array.hpp"   // cute::array
+#include "cutlass/conv/convolution.h" // cutlass::conv::Operator
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

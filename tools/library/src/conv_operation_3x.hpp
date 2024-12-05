@@ -616,7 +616,7 @@ private:
         /* traversal_stride = */ {traversal_stride_h, traversal_stride_w},
         /* dilation         = */ {dilation_h, dilation_w},
                                  num_groups);
-      out_args.mainloop.problem_shape = problem_shape;
+      out_args.problem_shape = problem_shape;
 
       // ConvProblemShape's constructor sets its shape_C member.
 #if defined(CUTLASS_DEBUG_TRACE_LEVEL) && (CUTLASS_DEBUG_TRACE_LEVEL > 1)
@@ -788,7 +788,7 @@ private:
         /* traversal_stride = */ {traversal_stride_d, traversal_stride_h, traversal_stride_w},
         /* dilation         = */ {dilation_d, dilation_h, dilation_w},
                                  num_groups);
-      out_args.mainloop.problem_shape = problem_shape;
+      out_args.problem_shape = problem_shape;
 
       // ConvProblemShape's constructor sets its shape_C member.
 #if defined(CUTLASS_DEBUG_TRACE_LEVEL) && (CUTLASS_DEBUG_TRACE_LEVEL > 1)

@@ -35,6 +35,7 @@
 
 #pragma once
 
+#include "cutlass/arch/synclog.hpp"
 #include "cutlass/detail/helper_macros.hpp"
 #include <cutlass/gpu_generics.h>
 

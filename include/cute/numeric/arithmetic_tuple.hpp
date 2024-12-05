@@ -197,7 +197,7 @@ struct ArithmeticTupleIterator
   ArithmeticTupleIterator(ArithTuple const& coord = {}) : coord_(coord) {}
 
   CUTE_HOST_DEVICE constexpr
-  ArithTuple const& operator*() const { return coord_; }
+  ArithTuple operator*() const { return coord_; }
 
   template <class Coord>
   CUTE_HOST_DEVICE constexpr
@@ -206,7 +206,7 @@ struct ArithmeticTupleIterator
   template <class Coord>
   CUTE_HOST_DEVICE constexpr
   auto operator+(Coord const& c) const {
-    return ArithmeticTupleIterator<decltype(coord_ + c)>(coord_ + c);
+    return ArithmeticTupleIterator<remove_cvref_t<decltype(coord_ + c)>>(coord_ + c);
   }
 };
 
@@ -268,13 +268,13 @@ basis_value(SB const& e)
 
 // Apply the N... pack to another Tuple
 template <class SB, class Tuple>
-CUTE_HOST_DEVICE constexpr auto
-basis_get(SB const& e, Tuple const& t)
+CUTE_HOST_DEVICE decltype(auto)
+basis_get(SB const& e, Tuple&& t)
 {
   if constexpr (is_scaled_basis<SB>::value) {
-    return basis_get(e.value(), get<SB::mode()>(t));
+    return basis_get(e.value(), get<SB::mode()>(static_cast<Tuple&&>(t)));
   } else {
-    return t;
+    return static_cast<Tuple&&>(t);
   }
   CUTE_GCC_UNREACHABLE;
 }

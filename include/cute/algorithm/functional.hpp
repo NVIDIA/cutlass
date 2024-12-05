@@ -30,10 +30,9 @@
  **************************************************************************************************/
 #pragma once
 
-#include <cute/config.hpp>
-
-#include <cute/util/type_traits.hpp>
-#include <cute/numeric/complex.hpp>
+#include <cute/config.hpp>          // CUTE_HOST_DEVICE
+#include <cute/numeric/math.hpp>    // cute::max, cute::min
+#include <cute/numeric/complex.hpp> // cute::conj
 
 /** C++14 <functional> extensions */
 

@@ -38,6 +38,7 @@
 #include <vector>
 #include <numeric>
 #include <cute/tensor.hpp>
+#include <cute/swizzle.hpp> // cute::Swizzle
 
 #include "tiled_cp_async_testbed.hpp"
 

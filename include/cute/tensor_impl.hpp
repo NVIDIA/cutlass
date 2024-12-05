@@ -41,18 +41,16 @@
 
 #pragma once
 
-#include <cute/config.hpp>
-
-#include <cute/util/type_traits.hpp>
-#include <cute/numeric/integral_constant.hpp>
-#include <cute/numeric/integer_sequence.hpp>
-
-#include <cute/container/tuple.hpp>
-#include <cute/container/array_aligned.hpp>
-#include <cute/container/array_subbyte.hpp>
-
-#include <cute/pointer.hpp>
-#include <cute/layout.hpp>
+#include <cute/config.hpp>                     // CUTE_HOST_DEVICE
+#include <cute/layout.hpp>                     // cute::Shape
+#include <cute/layout_composed.hpp>            // cute::is_composed_layout
+#include <cute/pointer.hpp>                    // cute::recast_ptr
+#include <cute/pointer_base.hpp>               // cute::iterator_traits
+#include <cute/container/array_aligned.hpp>    // cute::array_aligned
+#include <cute/container/array_subbyte.hpp>    // cute::array_subbyte
+#include <cute/container/tuple.hpp>            // cute::tuple
+#include <cute/numeric/integral_constant.hpp>  // cute::is_integral
+#include <cute/util/type_traits.hpp>           // __CUTE_REQUIRES
 
 namespace cute
 {
@@ -69,7 +67,7 @@ namespace cute
 //   iterator begin();
 // };
 
-template <class T, int N>
+template <class T, size_t N>
 struct ArrayEngine
 {
   using Storage = typename conditional<(sizeof_bits<T>::value % 8 == 0),
@@ -83,6 +81,24 @@ struct ArrayEngine
 
   CUTE_HOST_DEVICE constexpr auto begin() const { return storage_.begin(); }
   CUTE_HOST_DEVICE constexpr auto begin()       { return storage_.begin(); }
+};
+
+// Specialization for sparse_elem<S,T> tensor allocation/iteration
+template <int S, class T, size_t N>
+struct ArrayEngine<sparse_elem<S,T>, N>
+{
+  static_assert(N % S == 0, "Expected a multiple of the sparsity.");
+  using value_type   = sparse_elem<S,T>;
+  using Storage      = typename conditional<(sizeof_bits<T>::value % 8 == 0),
+                                            array_aligned<T,N/S>,
+                                            array_subbyte<T,N/S>>::type;
+  using iterator     = sparse_ptr<S,sparse_elem<S,T>*>;
+  using reference    = typename iterator_traits<iterator>::reference;
+  using element_type = typename iterator_traits<iterator>::element_type;
+  Storage storage_;
+
+  CUTE_HOST_DEVICE constexpr auto begin() const { return recast_ptr<value_type>(storage_.begin()); }
+  CUTE_HOST_DEVICE constexpr auto begin()       { return recast_ptr<value_type>(storage_.begin()); }
 };
 
 template <class Iterator>
@@ -622,6 +638,30 @@ filter_zeros(Tensor<Engine,Layout>&& tensor) {
   return make_tensor(tensor.data(), filter_zeros(tensor.layout()));
 }
 
+template <class Engine, class Layout, class Profile>
+CUTE_HOST_DEVICE constexpr
+auto
+filter_zeros(Tensor<Engine,Layout> const& tensor, Profile const& profile)
+{
+  return make_tensor(tensor.data(), filter_zeros(tensor.layout(), profile));
+}
+
+template <class Engine, class Layout, class Profile>
+CUTE_HOST_DEVICE constexpr
+auto
+filter_zeros(Tensor<Engine,Layout>& tensor, Profile const& profile)
+{
+  return make_tensor(tensor.data(), filter_zeros(tensor.layout(), profile));
+}
+
+template <class Engine, class Layout, class Profile>
+CUTE_HOST_DEVICE constexpr
+auto
+filter_zeros(Tensor<Engine,Layout>&& tensor, Profile const& profile)
+{
+  return make_tensor(tensor.data(), filter_zeros(tensor.layout(), profile));
+}
+
 // Remove all of the 0-strides and 1-sizes
 template <class Engine, class Layout>
 CUTE_HOST_DEVICE constexpr
@@ -755,10 +795,10 @@ auto
 max_common_vector(Tensor<SrcEngine,SrcLayout> const& a,
                   Tensor<DstEngine,DstLayout> const& b)
 {
-  using SrcType = typename Tensor<SrcEngine,SrcLayout>::value_type;
-  using DstType = typename Tensor<DstEngine,DstLayout>::value_type;
-  using SrcRef  = typename Tensor<SrcEngine,SrcLayout>::reference;
-  using DstRef  = typename Tensor<SrcEngine,SrcLayout>::reference;
+  using SrcType = typename SrcEngine::value_type;
+  using SrcRef  = typename SrcEngine::reference;
+  using DstType = typename DstEngine::value_type;
+  using DstRef  = typename DstEngine::reference;
 
   // Determine if vectorization candidates at all
   if constexpr (// Should be the same value_types, else the copy is also performing a cast
@@ -795,10 +835,10 @@ auto
 max_common_layout(Tensor<SrcEngine,SrcLayout> const& a,
                   Tensor<DstEngine,DstLayout> const& b)
 {
-  using SrcType = typename Tensor<SrcEngine,SrcLayout>::value_type;
-  using DstType = typename Tensor<DstEngine,DstLayout>::value_type;
-  using SrcRef  = typename Tensor<SrcEngine,SrcLayout>::reference;
-  using DstRef  = typename Tensor<SrcEngine,SrcLayout>::reference;
+  using SrcType = typename SrcEngine::value_type;
+  using SrcRef  = typename SrcEngine::reference;
+  using DstType = typename DstEngine::value_type;
+  using DstRef  = typename DstEngine::reference;
 
   // Determine if vectorization candidates at all
   if constexpr (// Should be the same value_types, else the copy is also performing a cast

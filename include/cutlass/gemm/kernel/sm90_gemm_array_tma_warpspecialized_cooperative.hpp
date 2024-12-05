@@ -46,6 +46,9 @@
 #include "cutlass/pipeline/pipeline.hpp"
 #include "cute/tensor.hpp"
 #include "cutlass/trace.h"
+#include "cutlass/gemm/kernel/sm90_tile_scheduler.hpp"
+#include "cutlass/gemm/kernel/sm90_tile_scheduler_group.hpp"
+
 ///////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass::gemm::kernel {
@@ -73,6 +76,11 @@ public:
   using ProblemShape = ProblemShape_;
   static_assert(rank(typename ProblemShape::UnderlyingProblemShape{}) == 3 or rank(typename ProblemShape::UnderlyingProblemShape{}) == 4,
     "ProblemShape{} should be <M,N,K> or <M,N,K,L>");
+
+  static_assert(cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedCooperative, typename CollectiveMainloop_::DispatchPolicy::Schedule>);
+
+  static constexpr bool IsGdcEnabled = false;
+
   // Mainloop derived types
   using CollectiveMainloop = CollectiveMainloop_;
   using TileShape = typename CollectiveMainloop::TileShape;
@@ -119,8 +127,9 @@ public:
   using TileSchedulerParams = typename TileScheduler::Params;
 
   static constexpr uint32_t NumLoadWarpGroups = 1;
-  static constexpr uint32_t NumMmaWarpGroups = CUTE_STATIC_V(size(TiledMma{})) / NumThreadsPerWarpGroup;
-  static constexpr uint32_t MaxThreadsPerBlock = CUTE_STATIC_V(size(TiledMma{})) + (NumLoadWarpGroups * NumThreadsPerWarpGroup);
+  static constexpr uint32_t NumMmaThreads = CUTE_STATIC_V(size(TiledMma{}));
+  static constexpr uint32_t NumMmaWarpGroups = NumMmaThreads / NumThreadsPerWarpGroup;
+  static constexpr uint32_t MaxThreadsPerBlock = NumMmaThreads + (NumLoadWarpGroups * NumThreadsPerWarpGroup);
   static constexpr uint32_t MinBlocksPerMultiprocessor = 1;
 
   /// Register requirement for Load and Math WGs
@@ -132,7 +141,7 @@ public:
 
   // Kernel level shared memory storage
   struct SharedStorage {
-    struct TensorStorage : cute::aligned_struct<128> {
+    struct TensorStorage : cute::aligned_struct<128, _1> {
       using MainloopTensorStorage = typename CollectiveMainloop::TensorStorage;
       using EpilogueTensorStorage = typename CollectiveEpilogue::TensorStorage;
 
@@ -140,7 +149,7 @@ public:
       EpilogueTensorStorage epilogue;
     } tensors;
 
-    struct PipelineStorage : cute::aligned_struct<16> {
+    struct PipelineStorage : cute::aligned_struct<16, _1> {
       using MainloopPipelineStorage = typename CollectiveMainloop::PipelineStorage;
       using EpiLoadPipelineStorage = typename CollectiveEpilogue::PipelineStorage;
 
@@ -149,7 +158,7 @@ public:
       alignas(16) typename LoadWarpOrderBarrier::SharedStorage load_order;
     } pipelines;
 
-    struct TensorMapStorage : cute::aligned_struct<128> {
+    struct TensorMapStorage : cute::aligned_struct<128, _1> {
       using MainloopTensorMapStorage = typename CollectiveMainloop::TensorMapStorage;
       using EpilogueTensorMapStorage = typename CollectiveEpilogue::TensorMapStorage;
 
@@ -215,25 +224,21 @@ public:
     workspace_offset = round_nearest(workspace_offset,  MinWorkspaceAlignment);
 
     void* epilogue_workspace = workspace_ptr + workspace_offset;
-    workspace_offset += CollectiveEpilogue::get_workspace_size(problem_shapes, args.epilogue, args.hw_info.sm_count);
+    workspace_offset += CollectiveEpilogue::get_workspace_size(problem_shapes, args.epilogue, sm_count);
     workspace_offset = round_nearest(workspace_offset,  MinWorkspaceAlignment);
 
     void* mainloop_workspace = workspace_ptr + workspace_offset;
-    workspace_offset += CollectiveMainloop::get_workspace_size(problem_shapes, args.mainloop, args.hw_info.sm_count);
+    workspace_offset += CollectiveMainloop::get_workspace_size(problem_shapes, args.mainloop, sm_count);
     workspace_offset = round_nearest(workspace_offset,  MinWorkspaceAlignment);
 
-    // Precompute the sub tiles numbers in epilogue, pass into tile scheduler.  Therefore it will be used
-    // in separate reduction scheme for streamk case, NumEpilogueSubTiles default value is 1, which means
-    // subtile will not be used, therefore separate reduction will not be enabled.
-    constexpr uint32_t NumEpilogueSubTiles = CollectiveEpilogue::get_store_pipe_increment(TileShape{});
     TileSchedulerParams scheduler;
     if constexpr (IsGroupedGemmKernel) {
       scheduler = TileScheduler::to_underlying_arguments(
-      problem_shapes, TileShape{}, ClusterShape{}, hw_info, args.scheduler, scheduler_workspace, NumEpilogueSubTiles);
+      problem_shapes, TileShape{}, ClusterShape{}, hw_info, args.scheduler, scheduler_workspace);
     }
     else {
       scheduler = TileScheduler::to_underlying_arguments(
-      problem_shapes.get_host_problem_shape(), TileShape{}, ClusterShape{}, hw_info, args.scheduler, scheduler_workspace, NumEpilogueSubTiles);
+      problem_shapes.get_host_problem_shape(), TileShape{}, ClusterShape{}, hw_info, args.scheduler, scheduler_workspace);
     }
 
     return {
@@ -275,9 +280,6 @@ public:
       args.scheduler, typename ProblemShape::UnderlyingProblemShape{}, args.hw_info, NumMmaWarpGroups, NumEpilogueSubTiles);
     workspace_size = round_nearest(workspace_size,  MinWorkspaceAlignment);
 
-    workspace_size += CollectiveEpilogue::get_workspace_size(args.problem_shape, args.epilogue, args.hw_info.sm_count);
-    workspace_size = round_nearest(workspace_size,  MinWorkspaceAlignment);
-
     // Get SM count if needed, otherwise use user supplied SM count
     int sm_count = args.hw_info.sm_count;
     if (sm_count <= 0) {
@@ -285,6 +287,9 @@ public:
           "  For optimal performance, populate the arguments KernelHardwareInfo struct with the SM count.");
       sm_count = KernelHardwareInfo::query_device_multiprocessor_count(args.hw_info.device_id);
     }
+
+    workspace_size += CollectiveEpilogue::get_workspace_size(args.problem_shape, args.epilogue, sm_count);
+    workspace_size = round_nearest(workspace_size,  MinWorkspaceAlignment);
 
     workspace_size += CollectiveMainloop::get_workspace_size(args.problem_shape, args.mainloop, sm_count);
     workspace_size = round_nearest(workspace_size,  MinWorkspaceAlignment);
@@ -299,9 +304,10 @@ public:
     uint8_t* workspace_ptr = reinterpret_cast<uint8_t*>(workspace);
     size_t workspace_offset = 0;
     constexpr uint32_t NumEpilogueSubTiles = CollectiveEpilogue::get_store_pipe_increment(TileShape{});
+    static constexpr uint32_t NumAccumulatorMtxs = 1;
 
     status = TileScheduler::template initialize_workspace<typename ProblemShape::UnderlyingProblemShape, ElementAccumulator>(
-      args.scheduler, workspace_ptr + workspace_offset, stream, typename ProblemShape::UnderlyingProblemShape{}, args.hw_info, NumMmaWarpGroups, NumEpilogueSubTiles, cuda_adapter);
+      args.scheduler, workspace_ptr + workspace_offset, stream, typename ProblemShape::UnderlyingProblemShape{}, args.hw_info, NumMmaWarpGroups, NumEpilogueSubTiles, NumAccumulatorMtxs, cuda_adapter);
     workspace_offset += TileScheduler::template get_workspace_size<typename ProblemShape::UnderlyingProblemShape, ElementAccumulator>(
       args.scheduler, typename ProblemShape::UnderlyingProblemShape{}, args.hw_info, NumMmaWarpGroups, NumEpilogueSubTiles);
     workspace_offset = round_nearest(workspace_offset,  MinWorkspaceAlignment);
@@ -335,10 +341,10 @@ public:
     args.raster_order = params.scheduler.raster_order_ == TileScheduler::RasterOrder::AlongN ? TileScheduler::RasterOrderOptions::AlongN : TileScheduler::RasterOrderOptions::AlongM;
     dim3 grid_shape;
     if constexpr (IsGroupedGemmKernel) {
-      grid_shape = TileScheduler::get_grid_shape(params.problem_shape, TileShape{}, ClusterShape{}, params.hw_info, args);
+      grid_shape = TileScheduler::get_grid_shape(params.scheduler, params.problem_shape, TileShape{}, ClusterShape{}, params.hw_info, args);
     }
     else {
-      grid_shape = TileScheduler::get_grid_shape(params.problem_shape.get_host_problem_shape(), TileShape{}, ClusterShape{}, params.hw_info, args);
+      grid_shape = TileScheduler::get_grid_shape(params.scheduler, params.problem_shape.get_host_problem_shape(), TileShape{}, ClusterShape{}, params.hw_info, args);
     }
     return grid_shape;
   }
@@ -363,6 +369,12 @@ public:
     static_assert(size(TiledMma{}) == 256, "Cooperative kernel must have TiledMMA operating using 256 threads.");
     static_assert(size<0>(TileShape{}) >= 128,
         "Cooperative kernel requires Tile Size to be greater than or equal to 128 along the M-dimension.");
+    static_assert(NumMmaWarpGroups == 2, "Cooperative kernels currently only support NumMmaWarpGroups == 2");
+
+    if constexpr (cutlass::epilogue::collective::detail::sm90_is_ptr_array_tma_dispatch_policy_v<typename CollectiveEpilogue::DispatchPolicy>) {
+      static_assert(NumMmaWarpGroups == CollectiveEpilogue::NumEpilogueWarpGroups,
+                    "Tiled MmA does not match expected warp groups performing the epilogue");
+    }
 
     static_assert(cute::rank(InternalStrideA{}) == 3, "StrideA must be rank-3: [M, K, L]. If batch mode is not needed, set L stride to Int<0>.");
     static_assert(cute::rank(InternalStrideB{}) == 3, "StrideB must be rank-3: [N, K, L]. If batch mode is not needed, set L stride to Int<0>.");
@@ -391,7 +403,8 @@ public:
     int warp_idx_in_warp_group = warp_idx % NumWarpsPerWarpGroup;
     int warp_group_thread_idx = thread_idx % NumThreadsPerWarpGroup;
     int mma_thread_idx = thread_idx % size(TiledMma{});
-    auto warp_group_role = WarpGroupRole(canonical_warp_group_idx());
+    auto warp_group_idx = canonical_warp_group_idx();
+    auto warp_group_role = WarpGroupRole(warp_group_idx);
     auto producer_warp_role = ProducerWarpRole(warp_idx_in_warp_group);
     int lane_predicate = cute::elect_one_sync();
     uint32_t block_rank_in_cluster = cute::block_rank_in_cluster();
@@ -466,7 +479,9 @@ public:
 
     // Get the appropriate blocks for this thread block -- potential for thread block locality
     TiledMma tiled_mma;
-    auto blk_shape = TileShape{};                                                                // (BLK_M,BLK_N,BLK_K)
+    const auto blk_shape = TileShape{};                                                                // (BLK_M,BLK_N,BLK_K)
+    const auto c_tile_count = CollectiveEpilogue::get_load_pipe_increment(blk_shape);
+    const auto d_tile_count = CollectiveEpilogue::get_store_pipe_increment(blk_shape);
 
     TileScheduler scheduler{params.scheduler};
 
@@ -484,7 +499,7 @@ public:
     }
 
     // Optionally append 1s until problem shape is rank-4 in case it is only rank-3 (MNK)
-    auto problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(work_tile_info.L_idx), Int<1>{});
+    auto problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(work_tile_info.L_idx), 1);
 
     // Prepare and partition the input tensors. Expects a tuple of tensors where:
     // get<0>(load_inputs) is the tma tensor A after local tiling so that it has shape (BLK_M,BLK_K,m,k,l)
@@ -510,7 +525,7 @@ public:
         int32_t const sm_count = params.hw_info.sm_count;
 
         // Fetch a copy of tensormaps for the CTA
-        auto input_tensormaps = collective_mainloop.tensormaps_init(params.mainloop, sm_count, sm_idx);
+        auto input_tensormaps = collective_mainloop.tensormaps_init(params.mainloop, shared_storage.tensormaps.mainloop, sm_count, sm_idx);
 
         // Update tensormap for the initial batch for the CTA
         if (work_tile_info.is_valid()) {
@@ -531,7 +546,8 @@ public:
         bool did_batch_change = true;
         while (work_tile_info.is_valid()) {
           if (!TileScheduler::valid_warpgroup_in_work_tile(work_tile_info)) {
-            work_tile_info = scheduler.fetch_next_work(work_tile_info);
+            auto [next_work_tile_info, increment_pipe] = scheduler.fetch_next_work(work_tile_info);
+            work_tile_info = next_work_tile_info;
             continue;
           }
 
@@ -572,13 +588,14 @@ public:
           }
 
           // Get next work tile
-          work_tile_info = scheduler.fetch_next_work(work_tile_info);
+          auto [next_work_tile_info, increment_pipe] = scheduler.fetch_next_work(work_tile_info);
+          work_tile_info = next_work_tile_info;
           auto next_batch = idx2crd(work_tile_info.L_idx, shape<4>(gB_nkl)); // Usually just returns work_tile_info.L_idx
           did_batch_change = next_batch != curr_batch;
           if (work_tile_info.is_valid() && did_batch_change) {
             curr_batch = next_batch;
             if constexpr (IsGroupedGemmKernel) {
-              problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(curr_batch), Int<1>{});
+              problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(curr_batch), 1);
             }
             // Purpose of this pipeline state is to make sure TMA loads have finished before doing descriptor updates
             // Since this state is waiting for loads to finish, it must start in the inverted phase.
@@ -610,7 +627,7 @@ public:
         int32_t const sm_idx = blockIdx.x + (blockIdx.y * gridDim.x);
         int32_t const sm_count = params.hw_info.sm_count;
 
-        auto epi_load_tensormap = get<0>(collective_epilogue.load_init(params.epilogue, sm_count, sm_idx));
+        auto epi_load_tensormap = get<0>(collective_epilogue.load_init(params.epilogue, shared_storage.tensormaps.epilogue, sm_count, sm_idx));
 
         bool did_batch_change = true;
         constexpr bool IsEpiLoad = true;
@@ -620,23 +637,27 @@ public:
             shared_storage.tensormaps.epilogue,
             params.epilogue,
             epi_load_tensormap,
-            work_tile_info.L_idx
+            problem_shape_MNKL,
+            work_tile_info.L_idx,
+            0
           );
 
           // Converge before issuing tensormap fence release since fence is aligned
           __syncwarp();
-          collective_epilogue.tensormaps_cp_fence_release<IsEpiLoad>(shared_storage.tensormaps.epilogue, epi_load_tensormap, lane_predicate);
+          collective_epilogue.tensormaps_cp_fence_release<IsEpiLoad>(shared_storage.tensormaps.epilogue, epi_load_tensormap, 0);
         }
 
         load_order_barrier.wait();
+
         while (work_tile_info.is_valid()) {
           int32_t curr_batch = work_tile_info.L_idx;
 
-          bool compute_epilogue = TileScheduler::compute_epilogue(work_tile_info, params.scheduler);
+          // Get next work tile
+          auto [next_work_tile_info, increment_pipe] = scheduler.fetch_next_work(work_tile_info);
 
-          if (compute_epilogue) {
+          if (TileScheduler::compute_epilogue(work_tile_info, params.scheduler)) {
             if constexpr (IsGroupedGemmKernel) {
-              problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(work_tile_info.L_idx), Int<1>{});
+              problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(work_tile_info.L_idx), 1);
             }
 
             // Compute m_coord, n_coord, l_coord with the post-tiled m-shape and n-shape
@@ -649,6 +670,8 @@ public:
               collective_epilogue.tensormaps_fence_acquire<IsEpiLoad>(epi_load_tensormap);
             }
 
+            bool wait = work_tile_info.is_valid() && curr_batch != next_work_tile_info.L_idx;
+
             epi_load_pipe_producer_state = collective_epilogue.load(
               epi_load_pipeline,
               epi_load_pipe_producer_state,
@@ -660,36 +683,33 @@ public:
               shared_storage.tensors.epilogue,
               epi_load_tensormap,
               work_tile_info.reduction_subtile_idx(),
-              true // return state prior to last advance
+              wait
             );
-
           }
 
-          // Get next work tile
-          work_tile_info = scheduler.fetch_next_work(work_tile_info);
+          work_tile_info = next_work_tile_info;
           did_batch_change = curr_batch != work_tile_info.L_idx;
 
           if (work_tile_info.is_valid() && did_batch_change) {
-            // Wait for TMA load to finish before updating
-            typename CollectiveEpilogue::LoadPipelineState epi_load_pipe_tma_consumer_state =
-              {epi_load_pipe_producer_state.index(), !epi_load_pipe_producer_state.phase(), epi_load_pipe_producer_state.count()};
+            if constexpr (IsGroupedGemmKernel) {
+              problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(work_tile_info.L_idx), 1);
+            }
 
-            epi_load_pipeline.consumer_wait(epi_load_pipe_tma_consumer_state);
+            // tensormap update
+            {
+              collective_epilogue.tensormaps_perform_update<IsEpiLoad>(
+                shared_storage.tensormaps.epilogue,
+                params.epilogue,
+                epi_load_tensormap,
+                problem_shape_MNKL,
+                work_tile_info.L_idx,
+                0
+              );
 
-            collective_epilogue.tensormaps_perform_update<IsEpiLoad>(
-              shared_storage.tensormaps.epilogue,
-              params.epilogue,
-              epi_load_tensormap,
-              work_tile_info.L_idx
-            );
-
-            // Converge before issuing tensormap fence release since fence is aligned
-            __syncwarp();
-            collective_epilogue.tensormaps_cp_fence_release<IsEpiLoad>(shared_storage.tensormaps.epilogue, epi_load_tensormap, lane_predicate);
-          }
-
-          if(compute_epilogue) {
-            epi_load_pipe_producer_state.advance(1);
+              // Converge before issuing tensormap fence release since fence is aligned
+              __syncwarp();
+              collective_epilogue.tensormaps_cp_fence_release<IsEpiLoad>(shared_storage.tensormaps.epilogue, epi_load_tensormap, 0);
+            }
           }
 
         } // Scheduler work fetch loop
@@ -702,32 +722,42 @@ public:
     else if (warp_group_role == WarpGroupRole::Consumer0 || warp_group_role == WarpGroupRole::Consumer1) {
       cutlass::arch::warpgroup_reg_alloc<MmaRegisterRequirement>();
 
+      // Index of warp group within consumer warp groups
+      int consumer_warp_group_idx = warp_group_role == WarpGroupRole::Consumer0 ? 0 : 1;
+
       int32_t const sm_idx = blockIdx.x + (blockIdx.y * gridDim.x);
       int32_t const sm_count = params.hw_info.sm_count;
       // Do we potentially issue tail arrives for TMA stores, if epilogue load is waiting for it
       bool do_store_tail = false;
       // Get a copy of tensormaps
-      auto epi_store_tensormap = get<0>(collective_epilogue.store_init(params.epilogue, sm_count, sm_idx));
+      auto epi_store_tensormap = get<0>(collective_epilogue.store_init(params.epilogue, shared_storage.tensormaps.epilogue, sm_count, sm_idx, consumer_warp_group_idx));
 
       bool did_batch_change = true;
       constexpr bool IsEpiLoad = false;
 
       if (work_tile_info.is_valid()) {
-        collective_epilogue.tensormaps_perform_update<IsEpiLoad>(
-          shared_storage.tensormaps.epilogue,
-          params.epilogue,
-          epi_store_tensormap,
-          work_tile_info.L_idx
-        );
 
-        // Converge before issuing tensormap fence release since fence is aligned
-        __syncwarp();
-        collective_epilogue.tensormaps_cp_fence_release<IsEpiLoad>(shared_storage.tensormaps.epilogue, epi_store_tensormap, lane_predicate);
+        if (warp_idx_in_warp_group == 0) {
+          collective_epilogue.tensormaps_perform_update<IsEpiLoad>(
+            shared_storage.tensormaps.epilogue,
+            params.epilogue,
+            epi_store_tensormap,
+            problem_shape_MNKL,
+            work_tile_info.L_idx,
+            consumer_warp_group_idx
+          );
+
+          // Converge before issuing tensormap fence release since fence is aligned
+          __syncwarp();
+          collective_epilogue.tensormaps_cp_fence_release<IsEpiLoad>(shared_storage.tensormaps.epilogue,
+                                                                     epi_store_tensormap,
+                                                                     consumer_warp_group_idx);
+        }
       }
 
       while (work_tile_info.is_valid()) {
         if constexpr (IsGroupedGemmKernel) {
-          problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(work_tile_info.L_idx), Int<1>{});
+          problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(work_tile_info.L_idx), 1);
         }
 
         int32_t curr_batch = work_tile_info.L_idx;
@@ -743,7 +773,12 @@ public:
         //
         // MSVC CTAD breaks if we say "Tensor" here, so we use "auto" instead.
         auto accumulators = partition_fragment_C(tiled_mma, take<0,2>(blk_shape));               // (MMA,MMA_M,MMA_N)
-        if(TileScheduler::valid_warpgroup_in_work_tile(work_tile_info)) {
+
+        static_assert(cute::is_any_of_v<TileScheduler,
+            detail::PersistentTileSchedulerSm90Group<ProblemShape>,
+            detail::PersistentTileSchedulerSm90>);
+        if (TileScheduler::valid_warpgroup_in_work_tile(work_tile_info)) {
+
           collective_mainloop.mma(
             mainloop_pipeline,
             mainloop_pipe_consumer_state,
@@ -764,18 +799,16 @@ public:
           // Update starting mainloop pipeline state for the next tile
           mainloop_pipe_consumer_state.advance(work_k_tile_count);
         }
-        // Index of warp group within consumer warp groups
-        int consumer_warp_group_idx = canonical_warp_group_idx() - NumLoadWarpGroups;
 
         // Perform reduction across splits, if needed
         TileScheduler::fixup(
           params.scheduler, work_tile_info, accumulators, NumMmaWarpGroups, consumer_warp_group_idx);
 
-        if (TileScheduler::compute_epilogue(work_tile_info, params.scheduler)) {
+        if (did_batch_change) {
+          collective_epilogue.tensormaps_fence_acquire<IsEpiLoad>(epi_store_tensormap);
+        }
 
-          if (did_batch_change) {
-            collective_epilogue.tensormaps_fence_acquire<IsEpiLoad>(epi_store_tensormap);
-          }
+        if (TileScheduler::compute_epilogue(work_tile_info, params.scheduler)) {
 
           // Epilogue and write to gD
           auto [epi_load_pipe_consumer_state_next, epi_store_pipe_producer_state_next] =
@@ -794,30 +827,42 @@ public:
             epi_store_tensormap,
             work_tile_info.reduction_subtile_idx()
           );
+
           epi_load_pipe_consumer_state = epi_load_pipe_consumer_state_next;
           epi_store_pipe_producer_state = epi_store_pipe_producer_state_next;
           do_store_tail = true;
         }
 
         // Get next work tile
-        work_tile_info = scheduler.fetch_next_work(work_tile_info);
+        auto [next_work_tile_info, increment_pipe] = scheduler.fetch_next_work(work_tile_info);
+        work_tile_info = next_work_tile_info;
 
         did_batch_change = curr_batch != work_tile_info.L_idx;
         if (work_tile_info.is_valid() && did_batch_change) {
-          collective_epilogue.tensormaps_perform_update<IsEpiLoad>(
-            shared_storage.tensormaps.epilogue,
-            params.epilogue,
-            epi_store_tensormap,
-            work_tile_info.L_idx
-          );
+          if constexpr (IsGroupedGemmKernel) {
+            problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(work_tile_info.L_idx), 1);
+          }
+          if (warp_idx_in_warp_group == 0) {
+            collective_epilogue.tensormaps_perform_update<IsEpiLoad>(
+              shared_storage.tensormaps.epilogue,
+              params.epilogue,
+              epi_store_tensormap,
+              problem_shape_MNKL,
+              work_tile_info.L_idx,
+              consumer_warp_group_idx
+            );
 
-          // Converge before issuing tensormap fence release since fence is aligned
-          __syncwarp();
-          collective_epilogue.tensormaps_cp_fence_release<IsEpiLoad>(shared_storage.tensormaps.epilogue, epi_store_tensormap, lane_predicate);
+            // Converge before issuing tensormap fence release since fence is aligned
+            __syncwarp();
+            collective_epilogue.tensormaps_cp_fence_release<IsEpiLoad>(shared_storage.tensormaps.epilogue,
+                                                                       epi_store_tensormap,
+                                                                       consumer_warp_group_idx);
+          }
         }
 
       } // Scheduler work fetch loop
 
+      // Cooperative only needs TMA to complete at the very end of the kernel
       if (do_store_tail) {
         collective_epilogue.store_tail(
           epi_load_pipeline,
@@ -829,7 +874,6 @@ public:
     } // Consumer Warp Groups End
 #endif
   }
-
 };
 
 ///////////////////////////////////////////////////////////////////////////////

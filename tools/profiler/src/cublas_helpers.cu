@@ -259,6 +259,25 @@ Status cublas_satisfies(library::GemmDescription const &desc) {
     return Status::kErrorNotSupported;
   }
 
+ // Refer to https://docs.nvidia.com/cuda/cublas/#id105
+ // input type A and B FE5M2 not supported in cuBLASLt
+  if(desc.A.element == library::NumericTypeID::kFE5M2 &&
+    desc.B.element == library::NumericTypeID::kFE5M2){
+
+    return Status::kErrorNotSupported;
+  }
+
+ // Refer to https://docs.nvidia.com/cuda/cublas/#id105
+ // input type A and B are FE5M2 and FE4M3 then D type should be F32
+  if (desc.A.element == library::NumericTypeID::kFE5M2 &&
+    desc.B.element == library::NumericTypeID::kFE4M3 &&
+    desc.C.element == library::NumericTypeID::kF32 &&
+    desc.D.element != library::NumericTypeID::kF32 ){
+
+    return Status::kErrorNotSupported;
+  }
+
+
   // output type S4 and S8 not supported in cuBLAS
   if (desc.C.element == library::NumericTypeID::kS4 || 
     desc.C.element == library::NumericTypeID::kS8) {
@@ -405,7 +424,261 @@ cublasStatus_t cublasGemmExDispatcher::operator()(cublasHandle_t handle) {
   }
 }
 
-} // namespace detail
+
+cublasLtGemmExDispatcher::cublasLtGemmExDispatcher(
+  library::GemmDescription const &op_desc,
+  library::GemmUniversalConfiguration configuration_,
+  library::GemmUniversalArguments arguments_
+):
+  op_desc(op_desc), configuration(configuration_), arguments(arguments_), status(Status::kSuccess) {
+
+  bool good = true;
+
+  good = (good && get_cublas_transpose_operation(trans_A, op_desc.A.layout, op_desc.transform_A));
+  good = (good && get_cublas_transpose_operation(trans_B, op_desc.B.layout, op_desc.transform_B));
+  good = (good && get_cublas_datatype(data_type_A, op_desc.A.element));
+  good = (good && get_cublas_datatype(data_type_B, op_desc.B.element));
+  good = (good && get_cublas_datatype(data_type_C, op_desc.C.element));
+
+  good = (good && get_cublas_datatype(
+    compute_data_type,
+    op_desc.tile_description.math_instruction.element_accumulator));
+
+  // cuBLAS introduces a separate cublasComputeType enumerant to more precisely describe
+  // internal numerical data types used in the computation.
+#if (__CUDACC_VER_MAJOR__ >= 11)
+  library::OpcodeClassID const & opcode_class =
+    op_desc.tile_description.math_instruction.opcode_class;
+
+  if (good &&
+    op_desc.A.element == library::NumericTypeID::kF32 &&
+    op_desc.B.element == library::NumericTypeID::kF32 &&
+    opcode_class == library::OpcodeClassID::kTensorOp) {
+
+    compute_type = CUBLAS_COMPUTE_32F_FAST_TF32;
+  }
+  else if (good) {
+    bool const isPedantic = false;
+    switch (compute_data_type) {
+      case CUDA_R_32F:
+      case CUDA_C_32F:
+        compute_type = isPedantic ? CUBLAS_COMPUTE_32F_PEDANTIC : CUBLAS_COMPUTE_32F;
+        break;
+      case CUDA_R_64F:
+      case CUDA_C_64F:
+        compute_type = isPedantic ? CUBLAS_COMPUTE_64F_PEDANTIC : CUBLAS_COMPUTE_64F;
+        break;
+      case CUDA_R_16F:
+        compute_type = isPedantic ? CUBLAS_COMPUTE_16F_PEDANTIC : CUBLAS_COMPUTE_16F;
+        break;
+      case CUDA_R_32I:
+        compute_type = isPedantic ? CUBLAS_COMPUTE_32I_PEDANTIC : CUBLAS_COMPUTE_32I;
+        break;
+      default:
+        good = false;
+        break;
+    }
+  }
+#endif // __CUDACC_VER_MAJOR__ >= 11
+
+  if (!good) {
+    status = Status::kErrorNotSupported;
+  }
+}
+
+void cublasLtGemmExDispatcher::initialize_cublaslt(){
+
+  // create operation desciriptor; see cublasLtMatmulDescAttributes_t for details about defaults; here we just need to
+  // set the transforms for A and B
+  cublasLtMatmulDescCreate(&operationDesc, compute_type, compute_data_type);
+  cublasLtMatmulDescSetAttribute(operationDesc, CUBLASLT_MATMUL_DESC_TRANSA, &trans_A, sizeof(trans_A));
+  cublasLtMatmulDescSetAttribute(operationDesc, CUBLASLT_MATMUL_DESC_TRANSB, &trans_B, sizeof(trans_B));
+
+  uint64_t contiguous_A = (trans_A == CUBLAS_OP_N ? configuration.problem_size.m() : configuration.problem_size.k());
+  uint64_t strided_A = (trans_A == CUBLAS_OP_N ? configuration.problem_size.k() :  configuration.problem_size.m());
+  uint64_t contiguous_B = (trans_B == CUBLAS_OP_N ? configuration.problem_size.k() :  configuration.problem_size.n());
+  uint64_t strided_B = (trans_B == CUBLAS_OP_N ? configuration.problem_size.n() :  configuration.problem_size.k());
+
+  // create matrix descriptors, we are good with the details here so no need to set any extra attributes
+  // table of supported type combinations can be found in the documentation: https://docs.nvidia.com/cuda/cublas/index.html#cublasltmatmul
+  cublasLtMatrixLayoutCreate(&Adesc, data_type_A, contiguous_A, strided_A,  configuration.lda);
+  cublasLtMatrixLayoutCreate(&Bdesc, data_type_B, contiguous_B, strided_B,  configuration.ldb);
+  cublasLtMatrixLayoutCreate(&Cdesc, data_type_C, configuration.problem_size.m(), configuration.problem_size.n(), configuration.ldc);
+  cublasLtMatrixLayoutCreate(&Ddesc, data_type_C, configuration.problem_size.m(), configuration.problem_size.n(), configuration.ldd);
+
+}
+
+bool cublasLtGemmExDispatcher::get_cublaslt_algo(cublasLtHandle_t handle,
+                                 AlgorithmMode algorithm_mode
+                                 ){
+  const int requestedAlgoCount = 8; //By default gets 8 algorithms from GetHeuristic Call. CublasLt heuristics provide at max 8 algorithms. 
+  int returnedResults = 0;
+  cublasLtMatmulHeuristicResult_t heuristicResult[requestedAlgoCount] = {};
+
+#if (__CUDACC_VER_MAJOR__ >= 12)
+  //Decide based upon the unique operation identifier whether to turn on fast accum for cublas kernel or not.
+  std::string operation_name(op_desc.name);
+  if(operation_name.find("fastaccum") != std::string::npos){
+    const int8_t fastAccuMode = 1;
+    cublasLtMatmulDescSetAttribute(operationDesc,
+        CUBLASLT_MATMUL_DESC_FAST_ACCUM,
+        &fastAccuMode,
+        sizeof(fastAccuMode));
+  }
+#endif // __CUDACC_VER_MAJOR__ >= 12
+
+  //Using 32MB for hopper kernel. This is the max workspace size for the call to cublasLtMatmulAlgoGetHeuristic()
+  size_t workspaceSizeForHeuristics = 32ULL * 1024 * 1024;
+  void* workspaceHeuristic = nullptr;
+
+  cudaError_t result = cudaMalloc((void **)&workspaceHeuristic, workspaceSizeForHeuristics);
+  if (result != cudaSuccess) {
+    throw std::bad_alloc();
+  }
+
+  // create preference handle; here we could use extra attributes to disable tensor ops or to make sure algo selected
+  // will work with badly aligned A, B, C; here for simplicity we just assume A,B,C are always well aligned (e.g.
+  // directly come from cudaMalloc)
+  cublasLtMatmulPreferenceCreate(&preference);
+  cublasLtMatmulPreferenceSetAttribute(preference, CUBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES, &workspaceSizeForHeuristics, sizeof(workspaceSizeForHeuristics));
+
+  cublasLtMatmulAlgoGetHeuristic(handle, operationDesc, Adesc, Bdesc, Cdesc, Ddesc, preference, requestedAlgoCount, heuristicResult, &returnedResults);
+
+  if (returnedResults == 0) {
+    return false;
+  }
+
+  int bestAlgoIdx = 0;
+  //
+  //Auto Tuning to get the best kernel for the given problem
+  //
+  if (algorithm_mode == AlgorithmMode::kBest) {
+    float time = 0;
+    float bestAlgoTime = 0;
+    cudaStream_t stream;
+    cudaEvent_t startEvent, stopEvent;
+    
+    cudaStreamCreate(&stream);
+    cudaEventCreate(&startEvent);
+    cudaEventCreate(&stopEvent);
+      
+    constexpr int repeatAlgoCheck = 5;
+    std::vector<float> algoTimes(repeatAlgoCheck);
+    
+    for (int algoIdx = 0; algoIdx < returnedResults; algoIdx++) {
+      for (int checkIdx = 0; checkIdx < repeatAlgoCheck; checkIdx++) {
+        cudaEventRecord(startEvent, stream);
+  
+        cublasStatus_t status = cublasLtMatmul(handle,
+                 operationDesc,
+                 arguments.alpha,
+                 arguments.A,
+                 Adesc,
+                 arguments.B,
+                 Bdesc,
+                 arguments.beta,
+                 arguments.C,
+                 Cdesc,
+                 arguments.D,
+                 Ddesc,
+                 &heuristicResult[algoIdx].algo,
+                 workspaceHeuristic,
+                 heuristicResult[algoIdx].workspaceSize,
+                 stream);
+  
+        // Handle errors
+        if (status != CUBLAS_STATUS_SUCCESS) {
+          std::cerr << "cublasLtMatmul AutoTuning failed with status: " << cublasLtGetStatusName(status) << std::endl;
+          return false;
+        }
+  
+        cudaEventRecord(stopEvent, stream);
+        cudaEventSynchronize(stopEvent);
+        cudaEventElapsedTime(&time, startEvent, stopEvent);
+        algoTimes[checkIdx] = time;
+  
+      }
+  
+      const size_t size = algoTimes.size();
+      if (size == 0) {
+        time = 0;
+      }
+    
+      std::sort(algoTimes.begin(), algoTimes.end());
+    
+      const size_t mid = size / 2;
+      if (size % 2 == 0) {
+        time = (algoTimes[mid] + algoTimes[mid - 1]) / 2;
+      }
+      else {
+        time = algoTimes[mid];
+      }
+    
+      if (algoIdx == 0 || time < bestAlgoTime) {
+        bestAlgoTime = time;
+        bestAlgoIdx = algoIdx;
+      }
+    }
+  
+
+#if defined(CUTLASS_DEBUG_TRACE_LEVEL) && (CUTLASS_DEBUG_TRACE_LEVEL > 1)
+    std::cout << "\n";
+    std::cout << "# Algorithms checked: " << returnedResults << "\n";
+    std::cout << "WorkspaceSize Allocated: " << heuristicResult[bestAlgoIdx].workspaceSize << "\n";
+    std::cout << "Algorithm selected after auto-tuning is:" << "\n";
+    
+    int algoId, tile, swizzle, customOption, numSplitsK, reductionScheme;
+  
+    cublasLtMatmulAlgoConfigGetAttribute(&heuristicResult[bestAlgoIdx].algo, CUBLASLT_ALGO_CONFIG_ID, &algoId, sizeof(algoId), NULL);
+    cublasLtMatmulAlgoConfigGetAttribute(&heuristicResult[bestAlgoIdx].algo, CUBLASLT_ALGO_CONFIG_TILE_ID, &tile, sizeof(tile), NULL);
+    cublasLtMatmulAlgoConfigGetAttribute(&heuristicResult[bestAlgoIdx].algo, CUBLASLT_ALGO_CONFIG_SPLITK_NUM, &numSplitsK, sizeof(numSplitsK), NULL);
+    cublasLtMatmulAlgoConfigGetAttribute(&heuristicResult[bestAlgoIdx].algo, CUBLASLT_ALGO_CONFIG_REDUCTION_SCHEME, &reductionScheme, sizeof(reductionScheme), NULL);
+    cublasLtMatmulAlgoConfigGetAttribute(&heuristicResult[bestAlgoIdx].algo, CUBLASLT_ALGO_CONFIG_CTA_SWIZZLING, &swizzle, sizeof(swizzle), NULL);
+    cublasLtMatmulAlgoConfigGetAttribute(&heuristicResult[bestAlgoIdx].algo, CUBLASLT_ALGO_CONFIG_CUSTOM_OPTION, &customOption, sizeof(customOption), NULL);
+  
+    printf("algo={ Id=%d, tileIdx=%d splitK=%d reduc=%d swizzle=%d custom=%d }\n",
+        algoId, tile, numSplitsK, reductionScheme, swizzle, customOption);
+#endif
+
+    if (stream) cudaStreamDestroy(stream);
+    if (startEvent) cudaEventDestroy(startEvent);
+    if (stopEvent) cudaEventDestroy(stopEvent);
+
+  }
+
+  //setting algorithm for the dispatcher
+  heuristicResult_ = heuristicResult[bestAlgoIdx];
+  result = cudaMalloc((void **)&workspace, heuristicResult_.workspaceSize);
+  if (result != cudaSuccess) {
+    throw std::bad_alloc();
+  }
+  
+  return true;
+}
+
+cublasStatus_t cublasLtGemmExDispatcher::operator()(cublasLtHandle_t handle) 
+{
+  return cublasLtMatmul(handle,
+    operationDesc,
+    arguments.alpha,
+    arguments.A,
+    Adesc,
+    arguments.B,
+    Bdesc,
+    arguments.beta,
+    arguments.C,
+    Cdesc,
+    arguments.D,
+    Ddesc,
+    &heuristicResult_.algo,
+    workspace,
+    heuristicResult_.workspaceSize,
+    0); //number of streams is set to 0
+  
+}
+
+}
+// namespace detail
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

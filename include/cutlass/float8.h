@@ -582,6 +582,12 @@ struct alignas(1) float_e4m3_t : float8_base<FloatEncoding::E4M3> {
     int mantissa() const {
         return int(storage & Base::FP8_MANTISSA_MASK);
     }
+
+    CUTLASS_HOST_DEVICE
+    friend bool isnan(float_e4m3_t const& x) {
+      return x.storage == uint8_t(0x7f);
+    }
+
 };
 ///////////////////////////////////////////////////////////////
 ///
@@ -795,6 +801,12 @@ struct alignas(1) float_e5m2_t : float8_base<FloatEncoding::E5M2> {
     int mantissa() const {
         return int(storage & Base::FP8_MANTISSA_MASK);
     }
+    
+    CUTLASS_HOST_DEVICE
+    friend bool isnan(float_e5m2_t const& x) {
+      return x.storage == uint8_t(0x7f);
+    }
+
 };
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 //
@@ -1262,22 +1274,22 @@ struct numeric_limits<cutlass::float_e5m2_t>  :
 //
 
 CUTLASS_HOST_DEVICE
-cutlass::float_e4m3_t operator "" _fe4m3(long double x) {
+cutlass::float_e4m3_t operator ""_fe4m3(long double x) {
   return cutlass::float_e4m3_t(float(x));
 }
 
 CUTLASS_HOST_DEVICE
-cutlass::float_e4m3_t operator "" _fe4m3(unsigned long long int x) {
+cutlass::float_e4m3_t operator ""_fe4m3(unsigned long long int x) {
   return cutlass::float_e4m3_t(int(x));
 }
 
 CUTLASS_HOST_DEVICE
-cutlass::float_e5m2_t operator "" _fe5m2(long double x) {
+cutlass::float_e5m2_t operator ""_fe5m2(long double x) {
   return cutlass::float_e5m2_t(float(x));
 }
 
 CUTLASS_HOST_DEVICE
-cutlass::float_e5m2_t operator "" _fe5m2(unsigned long long int x) {
+cutlass::float_e5m2_t operator ""_fe5m2(unsigned long long int x) {
   return cutlass::float_e5m2_t(int(x));
 }
 

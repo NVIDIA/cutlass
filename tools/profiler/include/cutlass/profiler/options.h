@@ -82,12 +82,16 @@ public:
   struct Device {
 
     /// Device ID
-    int device;
+    std::vector<int> devices;
+
+    /// Number of total devices
+    /// This is not set by the user, it is set by automatically
+    int num_devices;
 
     /// CUDA Device properties
-    cudaDeviceProp properties;
+    std::vector<cudaDeviceProp> properties;
 
-    /// Total memory allocation on device
+    /// Total memory allocation on each device
     size_t maximum_capacity;
 
     //
@@ -100,8 +104,11 @@ public:
     void print_options(std::ostream &out, int indent = 0) const;
     void print_device_info(std::ostream &out) const;
 
-    /// Returns the compute capability of the listed device (e.g. 61, 60, 70, 75)
-    int compute_capability() const;
+    /// Returns the device ID from a device index
+    int device_id(size_t device_index) const;
+
+    /// Returns the compute capability of the listed devices (e.g. 61, 60, 70, 75)
+    int compute_capability(int device_index) const;
   };
 
   /// Options related to initializing input tensors
@@ -129,7 +136,7 @@ public:
     //
 
     explicit Initialization(CommandLine const &cmdline);
-    
+
     void print_usage(std::ostream &out) const;
     void print_options(std::ostream &out, int indent = 0) const;
 
@@ -171,13 +178,13 @@ public:
     //
 
     explicit Verification(CommandLine const &cmdline);
-  
+
     void print_usage(std::ostream &out) const;
     void print_options(std::ostream &out, int indent = 0) const;
 
     /// Returns true if a provider is enabled
     bool provider_enabled(library::Provider provider) const;
-    
+
     /// Returns the index of a provider if its enabled
     size_t index(library::Provider provider) const;
   };
@@ -225,7 +232,7 @@ public:
     /// Returns the index of a provider if its enabled
     size_t index(library::Provider provider) const;
   };
-  
+
   /// Options related to reporting
   struct Report {
 
@@ -260,7 +267,7 @@ public:
     //
 
     explicit Report(CommandLine const &cmdline);
-    
+
     void print_usage(std::ostream &out) const;
     void print_options(std::ostream &out, int indent = 0) const;
   };
@@ -282,7 +289,7 @@ public:
     //
 
     explicit About(CommandLine const &cmdline);
-    
+
     void print_usage(std::ostream &out) const;
     void print_options(std::ostream &out, int indent = 0) const;
 
@@ -303,7 +310,7 @@ public:
 
   /// Vector of operation name substrings
   std::vector<std::string> operation_names;
-  
+
   /// Vector of operation name substrings
   std::vector<std::string> excluded_operation_names;
 

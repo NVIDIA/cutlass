@@ -182,7 +182,7 @@ TEST(SM80_Device_Gemm_f16n_f16t_f16t_tensor_op_f32, 32x256x64_32x64x64) {
       cutlass::epilogue::thread::LinearCombination<
           ElementOutput, 128 / cutlass::sizeof_bits<ElementOutput>::value,
           ElementAccumulator, ElementAccumulator>,
-      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 5>;
+      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 4>;
 
   EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
 }
@@ -220,7 +220,7 @@ TEST(SM80_Device_Gemm_f16n_f16t_f16t_tensor_op_f32, 256x32x64_64x32x64) {
       cutlass::epilogue::thread::LinearCombination<
           ElementOutput, 128 / cutlass::sizeof_bits<ElementOutput>::value,
           ElementAccumulator, ElementAccumulator>,
-      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 5>;
+      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 4>;
 
   EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
 }
@@ -257,7 +257,7 @@ TEST(SM80_Device_Gemm_f16n_f16t_f16t_tensor_op_f32, 16x256x64_16x64x64) {
       cutlass::epilogue::thread::LinearCombination<
           ElementOutput, 128 / cutlass::sizeof_bits<ElementOutput>::value,
           ElementAccumulator, ElementAccumulator>,
-      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 5>;
+      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 4>;
 
   EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
 }
@@ -295,7 +295,7 @@ TEST(SM80_Device_Gemm_f16n_f16t_f16t_tensor_op_f32, 256x16x64_64x16x64) {
       cutlass::epilogue::thread::LinearCombination<
           ElementOutput, 64 / cutlass::sizeof_bits<ElementOutput>::value,
           ElementAccumulator, ElementAccumulator>,
-      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 5>;
+      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 4>;
 
   EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
 }

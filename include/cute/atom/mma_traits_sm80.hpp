@@ -433,10 +433,57 @@ struct MMA_Traits<SM80_16x8x256_S32U1U1S32_TN_XORPOPC>
 
   using Shape_MNK = Shape<_16,_8,_256>;
   using ThrID   = Layout<_32>;
-  using ALayout = Layout<Shape <_32,Shape < _8, _4,_2,   _2>>,
-                         Stride<_64,Stride<_64,_16,_8,_2048>>>;
-  using BLayout = Layout<Shape <_32,Shape <_32,   _2>>,
-                         Stride<_32,Stride< _1,_1024>>>;
+  using ALayout = Layout<Shape<Shape<_4,_8>,Shape<_32,_2,_2>>,
+                       Stride<Stride<_512,_1>,Stride<_16,_8,_2048>>>;
+  using BLayout = Layout<Shape<Shape <_4,_8>,Shape<_32,_2>>,
+                         Stride<Stride<_256,_1>,Stride< _8,_1024>>>;
   using CLayout = SM80_16x8_Row;
 };
+
+template <>
+struct MMA_Traits<SM80_16x8x256_S32U1U1S32_TN_ANDPOPC>
+      :MMA_Traits<SM80_16x8x256_S32U1U1S32_TN_XORPOPC> {};
+
+template<>
+struct MMA_Traits<SM80_8x8x128_S32U1U1S32_TN_XORPOPC>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = cute::uint1b_t;
+  using ValTypeB = cute::uint1b_t;
+  using ValTypeC = int32_t;
+
+  using Shape_MNK = Shape<_8,_8,_128>;
+  using ThrID   = Layout<_32>;
+  using ALayout = Layout<Shape<Shape<_4,_8>,_32>,
+                       Stride<Stride<_256,_1>,_8>>;
+  using BLayout = Layout<Shape<Shape<_4,_8>,_32>,
+                         Stride<Stride<_256,_1>,_8>>;
+  using CLayout = SM80_8x8_Row;
+};
+
+template <>
+struct MMA_Traits<SM80_8x8x128_S32U1U1S32_TN_ANDPOPC>
+      :MMA_Traits<SM80_8x8x128_S32U1U1S32_TN_XORPOPC> {};
+
+template<>
+struct MMA_Traits<SM80_16x8x128_S32U1U1S32_TN_XORPOPC>
+{
+  using ValTypeD = int32_t;
+  using ValTypeA = cute::uint1b_t;
+  using ValTypeB = cute::uint1b_t;
+  using ValTypeC = int32_t;
+  
+  using Shape_MNK = Shape<_16,_8,_128>;
+  using ThrID   = Layout<_32>;
+  using ALayout = Layout<Shape<Shape<_4,_8>,Shape<_32,_2>>,
+                       Stride<Stride<_512,_1>,Stride<Stride<_16,_8>>>>;
+  using BLayout = Layout<Shape <Shape<_4,_8>,_32>,
+                         Stride<Stride<_256,_1>,_8>>;
+  using CLayout = SM80_16x8_Row;
+};
+
+template <>
+struct MMA_Traits<SM80_16x8x128_S32U1U1S32_TN_ANDPOPC>
+      :MMA_Traits<SM80_16x8x128_S32U1U1S32_TN_XORPOPC> {};
+
 } // end namespace cute

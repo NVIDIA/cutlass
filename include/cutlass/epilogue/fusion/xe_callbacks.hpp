@@ -82,13 +82,18 @@ struct FusionCallbacks<
     ElementScalar const* alpha_ptr = nullptr;
     ElementScalar const* beta_ptr = nullptr;
 
+    using StrideAlpha = Stride<_0,_0,int64_t>;
+    using StrideBeta  = Stride<_0,_0,int64_t>;
+    StrideAlpha dAlpha = {_0{}, _0{}, 0};
+    StrideBeta  dBeta  = {_0{}, _0{}, 0};
+
     operator typename Impl::Arguments() const {
       return
         {    // ternary op : beta * C + (alpha * acc)
-          {{beta}, {beta_ptr}}, // leaf args : beta
+          {{beta}, {beta_ptr}, {dBeta}}, // leaf args : beta
           {},                   // leaf args : C
           {                     // binary op : alpha * acc
-            {{alpha}, {alpha_ptr}}, // leaf args : alpha
+            {{alpha}, {alpha_ptr}, {dAlpha}}, // leaf args : alpha
             {},                     // leaf args : acc
             {}                  // binary args : multiplies
           },                    // end binary op
@@ -132,6 +137,11 @@ struct FusionCallbacks<
     ElementScalar_ const* alpha_ptr = nullptr;
     ElementScalar_ const* beta_ptr = nullptr;
 
+    using StrideAlpha = Stride<_0,_0,int64_t>;
+    using StrideBeta  = Stride<_0,_0,int64_t>;
+    StrideAlpha dAlpha = {_0{}, _0{}, 0};
+    StrideBeta  dBeta  = {_0{}, _0{}, 0};
+
     using ActivationArguments = typename Sm90Compute<ActivationFn_, ElementOutput_, ElementCompute_, RoundStyle_>::Arguments;
     ActivationArguments activation = ActivationArguments();
 
@@ -139,10 +149,10 @@ struct FusionCallbacks<
       return
               {    // unary op: activation(beta * C + (alpha * acc))
                         {    // ternary op : beta * C + (alpha * acc)
-                          {{beta}, {beta_ptr}}, // leaf args : beta
+                          {{beta}, {beta_ptr}, {dBeta}}, // leaf args : beta
                           {},                   // leaf args : C
                           {                     // binary op : alpha * acc
-                                        {{alpha}, {alpha_ptr}}, // leaf args : alpha
+                                        {{alpha}, {alpha_ptr}, {dAlpha}}, // leaf args : alpha
                                         {},                     // leaf args : acc
                                         {}                  // binary args : multiplies
                           },                    // end binary op

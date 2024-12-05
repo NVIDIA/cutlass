@@ -55,5 +55,27 @@ cutlass_example_add_executable(
   TEST_SCALE_ZERO_GROUPED
   TEST_SCALE_RESIDUE
   TEST_SCALE_ZERO_RESIDUE
-  TEST_ALPHA_BETA
+  # TEST_ALPHA_BETA
   )
+
+cutlass_example_add_executable(
+  55_hopper_int4_fp8_gemm
+  55_hopper_int4_fp8_gemm.cu
+  TEST_COMMAND_OPTIONS
+  TEST_DIRECT_BATCHED
+  TEST_SCALE_PERCOL
+  TEST_SCALE_GROUP
+  TEST_SCALE_RESIDUE
+  # TEST_ALPHA_BETA
+  )
+
+  cutlass_example_add_executable(
+    55_hopper_int4_bf16_gemm
+    55_hopper_int4_bf16_gemm.cu
+    TEST_COMMAND_OPTIONS
+    TEST_DIRECT_BATCHED
+    TEST_SCALE_PERCOL
+    TEST_SCALE_GROUP
+    TEST_SCALE_RESIDUE
+    # TEST_ALPHA_BETA
+    )

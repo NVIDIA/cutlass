@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -45,71 +45,80 @@ namespace library {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-void initialize_gemm_reference_operations_int8_canonical(Manifest &manifest) {
+void initialize_gemm_reference_operations_int_mixed_input(Manifest &manifest) {
+  // 4-bit integer mixed with 8-bit integer input
   make_gemm_real_canonical_layouts<
+    int4b_t,
     int8_t,
-    int8_t,
-    int32_t,
     int32_t,
     int32_t
   >(manifest);
 
   make_gemm_real_canonical_layouts<
+    int4b_t,
     int8_t,
     int8_t,
-    int8_t,
-    float,
-    int32_t,
-    int8_t,
-    NumericConverterClamp<int8_t, float>
-  >(manifest);
-
-  make_gemm_real_canonical_layouts<
-    int8_t,
-    int8_t,
-    int32_t,
-    float,
-    int32_t,
-    int32_t,
-    NumericConverterClamp<int32_t, float>
-  >(manifest);
-
-  make_gemm_real_canonical_layouts<
-    uint8_t,
-    uint8_t,
-    int32_t,
-    int32_t,
-    int32_t
-  >(manifest);
-
-  make_gemm_real_canonical_layouts<
-    uint8_t,
-    uint8_t,
-    int8_t,
-    float,
-    int32_t,
-    int8_t,
-    NumericConverterClamp<int8_t, float>
-  >(manifest);
-
-  make_gemm_real_canonical_layouts<
-    uint8_t,
-    uint8_t,
-    int32_t,
-    float,
-    int32_t,
-    int32_t,
-    NumericConverterClamp<int32_t, float>
-  >(manifest);
-
-  make_gemm_real_canonical_layouts<
-    int8_t,
-    int8_t,
-    int8_t,   
     int32_t,
     int32_t,
     int8_t,
     NumericConverterClamp<int8_t, int32_t>
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    int4b_t,
+    int8_t,
+    int32_t,
+    float,
+    int32_t,
+    int32_t,
+    NumericConverterClamp<int32_t, float>
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    int4b_t,
+    int8_t,
+    int8_t,
+    float,
+    int32_t,
+    int8_t,
+    NumericConverterClamp<int8_t, float>
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    int8_t,
+    int4b_t,
+    int32_t,
+    int32_t
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    int8_t,
+    int4b_t,
+    int8_t,
+    int32_t,
+    int32_t,
+    int8_t,
+    NumericConverterClamp<int8_t, int32_t>
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    int8_t,
+    int4b_t,
+    int32_t,
+    float,
+    int32_t,
+    int32_t,
+    NumericConverterClamp<int32_t, float>
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    int8_t,
+    int4b_t,
+    int8_t,
+    float,
+    int32_t,
+    int8_t,
+    NumericConverterClamp<int8_t, float>
   >(manifest);
 }
 
@@ -119,4 +128,3 @@ void initialize_gemm_reference_operations_int8_canonical(Manifest &manifest) {
 } // namespace cutlass
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-

@@ -40,6 +40,8 @@
 #include <tuple>
 
 #include <cute/tensor.hpp>
+#include <cute/swizzle.hpp> // cute::Swizzle
+#include <cute/swizzle_layout.hpp> // cute::compose(cute::Swizzle)
 #include <cute/numeric/numeric_types.hpp>
 
 using namespace cute;

@@ -497,6 +497,7 @@ public:
 
     syclcompat::launch<cutlass::Kernel<GemmKernel>>(sycl_grid, sycl_block, smem_size, params_);
 #else
+    cutlass::arch::synclog_setup();
     cutlass::Kernel<GemmKernel><<<grid, block, smem_size, stream>>>(params_);
 #endif
 

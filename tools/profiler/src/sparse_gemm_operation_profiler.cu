@@ -51,23 +51,23 @@ namespace profiler {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Ctor
-SparseGemmOperationProfiler::SparseGemmOperationProfiler(Options const &options): 
+SparseGemmOperationProfiler::SparseGemmOperationProfiler(Options const &options):
   OperationProfiler(
     options,
     library::OperationKind::kSparseGemm,
     {
-  	  {ArgumentTypeID::kEnumerated, {"gemm_kind"}, "Variant of GEMM (e.g. sparse, ...)"},
-  	  {ArgumentTypeID::kInteger, {"m", "problem-size::m"}, "M dimension of the GEMM problem space"},
-    	{ArgumentTypeID::kInteger, {"n", "problem-size::n"}, "N dimension of the GEMM problem space"},
-	    {ArgumentTypeID::kInteger, {"k", "problem-size::k"}, "K dimension of the GEMM problem space"},
-    	{ArgumentTypeID::kTensor, {"A"}, "Tensor storing the A operand"},
-	    {ArgumentTypeID::kTensor, {"B"}, "Tensor storing the B operand"},
-  	  {ArgumentTypeID::kTensor, {"C"}, "Tensor storing the C operand"},
-  	  {ArgumentTypeID::kTensor, {"E"}, "Tensor storing the E operand"},
-  	  {ArgumentTypeID::kScalar, {"alpha", "epilogue::alpha"}, "Epilogue scalar alpha"},
-    	{ArgumentTypeID::kScalar, {"beta", "epilogue::beta"}, "Epilogue scalar beta"},
-	    {ArgumentTypeID::kInteger, {"split_k_slices"}, "Number of partitions of K dimension"},
-    	{ArgumentTypeID::kInteger, {"batch_count"}, "Number of GEMMs computed in one batch"},
+      {ArgumentTypeID::kEnumerated, {"gemm_kind"}, "Variant of GEMM (e.g. sparse, ...)"},
+      {ArgumentTypeID::kInteger, {"m", "problem-size::m"}, "M dimension of the GEMM problem space"},
+      {ArgumentTypeID::kInteger, {"n", "problem-size::n"}, "N dimension of the GEMM problem space"},
+      {ArgumentTypeID::kInteger, {"k", "problem-size::k"}, "K dimension of the GEMM problem space"},
+      {ArgumentTypeID::kTensor, {"A"}, "Tensor storing the A operand"},
+      {ArgumentTypeID::kTensor, {"B"}, "Tensor storing the B operand"},
+      {ArgumentTypeID::kTensor, {"C"}, "Tensor storing the C operand"},
+      {ArgumentTypeID::kTensor, {"E"}, "Tensor storing the E operand"},
+      {ArgumentTypeID::kScalar, {"alpha", "epilogue::alpha"}, "Epilogue scalar alpha"},
+      {ArgumentTypeID::kScalar, {"beta", "epilogue::beta"}, "Epilogue scalar beta"},
+      {ArgumentTypeID::kInteger, {"split_k_slices"}, "Number of partitions of K dimension"},
+      {ArgumentTypeID::kInteger, {"batch_count"}, "Number of GEMMs computed in one batch"},
     }
   ) {
 
@@ -109,7 +109,7 @@ void SparseGemmOperationProfiler::print_examples(std::ostream &out) const {
 
     << "Run a kernel with cta tile size of 256x128x32 and save workspace if results are incorrect (note that --cta-tile::k=32 is default cta-tile size):\n"
     << " $ cutlass_profiler --operation=SparseGemm --cta_m=256 --cta_n=128  --cta_k=32 --save-workspace=incorrect\n\n"
-    
+
     << "Test your changes to gemm kernels with a quick functional test and save results in functional-test.csv:\n"
     << " $ cutlass_profiler  --operation=SparseGemm \\ \n"
     << "   --m=8,56,120,136,256,264,512,520,1024,1032,4096,8192,16384 \\ \n"
@@ -125,7 +125,7 @@ Status SparseGemmOperationProfiler::SparseGemmProblem::parse(
   library::SparseGemmDescription const &operation_desc,
   ProblemSpace const &problem_space,
   ProblemSpace::Problem const &problem) {
-  
+
   if (!arg_as_int(this->m, "m", problem_space, problem)) {
     // default value
     this->m = 1024;
@@ -135,17 +135,17 @@ Status SparseGemmOperationProfiler::SparseGemmProblem::parse(
     // default value
     this->n = 1024;
   }
-  
+
   if (!arg_as_int(this->k, "k", problem_space, problem)) {
     // default value
     this->k = 1024;
   }
-  
+
   if (!arg_as_int(this->split_k_slices, "split_k_slices", problem_space, problem)) {
     // default value
     this->split_k_slices = 1;
   }
-  
+
   if (!arg_as_int(this->batch_count, "batch_count", problem_space, problem)) {
     // default value
     this->batch_count = 1;
@@ -168,24 +168,24 @@ Status SparseGemmOperationProfiler::SparseGemmProblem::parse(
   }
 
   if (!arg_as_scalar(
-    this->alpha, 
-    operation_desc.element_epilogue, 
-    "alpha", 
-    problem_space, 
+    this->alpha,
+    operation_desc.element_epilogue,
+    "alpha",
+    problem_space,
     problem)) {
 
     if (!cast_from_double(this->alpha, operation_desc.element_epilogue, 1)) {
       return Status::kErrorInternal;
     }
   }
-  
+
   if (!arg_as_scalar(
-    this->beta, 
-    operation_desc.element_epilogue, 
-    "beta", 
-    problem_space, 
+    this->beta,
+    operation_desc.element_epilogue,
+    "beta",
+    problem_space,
     problem)) {
-    
+
     if (!cast_from_double(this->beta, operation_desc.element_epilogue, 0)) {
       return Status::kErrorInternal;
     }
@@ -252,14 +252,14 @@ void SparseGemmOperationProfiler::SparseGemmProblem::initialize_result(
 
 /// Extracts the problem dimensions
 Status SparseGemmOperationProfiler::initialize_configuration(
-  Options const &options,  
+  Options const &options,
   PerformanceReport &report,
   DeviceContext &device_context,
   library::Operation const *operation,
   ProblemSpace const &problem_space,
   ProblemSpace::Problem const &problem) {
 
-  library::SparseGemmDescription const &operation_desc = 
+  library::SparseGemmDescription const &operation_desc =
     static_cast<library::SparseGemmDescription const &>(operation->description());
 
   if (operation_desc.gemm_kind != library::GemmKind::kSparse) {
@@ -291,14 +291,14 @@ Status SparseGemmOperationProfiler::initialize_configuration(
   gemm_workspace_.arguments.pointer_mode = library::ScalarPointerMode::kHost;
 
   initialize_result_(this->model_result_, options, operation_desc, problem_space);
-  
+
   return operation->can_implement(&gemm_workspace_.configuration, &gemm_workspace_.arguments);
 }
 
 /// Initializes the performance result
 void SparseGemmOperationProfiler::initialize_result_(
   PerformanceResult &result,
-  Options const &options,  
+  Options const &options,
   library::SparseGemmDescription const &operation_desc,
   ProblemSpace const &problem_space) {
 
@@ -308,7 +308,7 @@ void SparseGemmOperationProfiler::initialize_result_(
   result.operation_name = operation_desc.name;
 
   problem_.initialize_result(result, operation_desc, problem_space);
-  
+
   OperationProfiler::initialize_result_(result, operation_desc, problem_space);
 
   // Input bytes read and Output bytes written for the gemm problem
@@ -337,19 +337,30 @@ void SparseGemmOperationProfiler::initialize_result_(
 
 /// Initializes workspace
 Status SparseGemmOperationProfiler::initialize_workspace(
-  Options const &options,  
+  Options const &options,
   PerformanceReport &report,
   DeviceContext &device_context,
   library::Operation const *operation,
   ProblemSpace const &problem_space,
   ProblemSpace::Problem const &problem) {
-  
-  library::SparseGemmDescription const &operation_desc = 
+
+  if (options.device.devices.size() != 1) {
+    throw std::runtime_error("This operation profiler only supports a single "
+                             "device.");
+  }
+
+  cudaError_t result;
+  result = cudaSetDevice(options.device.device_id(0));
+  if (result != cudaSuccess) {
+    throw std::runtime_error("cudaSetDevice() failed.");
+  }
+
+  library::SparseGemmDescription const &operation_desc =
     static_cast<library::SparseGemmDescription const &>(operation->description());
 
   if (options.execution_mode != ExecutionMode::kDryRun) {
     int seed_shift = 0;
-    gemm_workspace_.A = device_context.allocate_tensor(
+    gemm_workspace_.A = device_context.allocate_and_initialize_tensor(
       options,
       "A",
       operation_desc.A.element,
@@ -357,10 +368,11 @@ Status SparseGemmOperationProfiler::initialize_workspace(
       {int(problem_.m), int(problem_.k) / int(problem_.sparse)},
       {int(problem_.lda)},
       1, // batch_count
-      seed_shift++
+      seed_shift++,
+      0 // device_index
     );
 
-    gemm_workspace_.B = device_context.allocate_tensor(
+    gemm_workspace_.B = device_context.allocate_and_initialize_tensor(
       options,
       "B",
       operation_desc.B.element,
@@ -368,10 +380,11 @@ Status SparseGemmOperationProfiler::initialize_workspace(
       {int(problem_.k), int(problem_.n)},
       {int(problem_.ldb)},
       1, // batch_count
-      seed_shift++
+      seed_shift++,
+      0 // device_index
     );
 
-    gemm_workspace_.C = device_context.allocate_tensor(
+    gemm_workspace_.C = device_context.allocate_and_initialize_tensor(
       options,
       "C",
       operation_desc.C.element,
@@ -379,18 +392,22 @@ Status SparseGemmOperationProfiler::initialize_workspace(
       {int(problem_.m), int(problem_.n)},
       {int(problem_.ldc)},
       1, // batch_count
-      seed_shift++
+      seed_shift++,
+      0 // device_index
     );
 
     gemm_workspace_.Computed = device_context.allocate_tensor(
+      options,
       "D",
       operation_desc.C.element,
       operation_desc.C.layout,
       {int(problem_.m), int(problem_.n)},
-      {int(problem_.ldc)}
+      {int(problem_.ldc)},
+      1, // batch_count
+      0 // device_index
     );
 
-    gemm_workspace_.E = device_context.allocate_sparsemeta_tensor(
+    gemm_workspace_.E = device_context.allocate_and_initialize_sparsemeta_tensor(
       options,
       "E",
       operation_desc.E.element,
@@ -399,15 +416,19 @@ Status SparseGemmOperationProfiler::initialize_workspace(
       {int(problem_.m), int(problem_.k) / int(problem_.sparse) / int(problem_.elements_per_128b)},
       {int(problem_.lde)},
       1, // batch_count
-      seed_shift++
+      seed_shift++,
+      0 // device_index
     );
 
     gemm_workspace_.Reference = device_context.allocate_tensor(
+      options,
       "Reference",
       operation_desc.C.element,
       operation_desc.C.layout,
       {int(problem_.m), int(problem_.n)},
-      {int(problem_.ldc)}
+      {int(problem_.ldc)},
+      1, // batch_count
+      0 // device_index
     );
 
     gemm_workspace_.Reference->copy_from_device(gemm_workspace_.C->data());
@@ -456,7 +477,7 @@ Status SparseGemmOperationProfiler::initialize_workspace(
 
 /// Verifies CUTLASS against references
 bool SparseGemmOperationProfiler::verify_cutlass(
-  Options const &options,  
+  Options const &options,
   PerformanceReport &report,
   DeviceContext &device_context,
   library::Operation const *operation,
@@ -486,7 +507,7 @@ bool SparseGemmOperationProfiler::verify_cutlass(
   //
 
   results_.back().status = operation->run(
-    &gemm_workspace_.arguments, 
+    &gemm_workspace_.arguments,
     gemm_workspace_.host_workspace.data(),
     gemm_workspace_.device_workspace.data());
 
@@ -510,7 +531,7 @@ bool SparseGemmOperationProfiler::verify_cutlass(
 
   if (options.verification.enabled) {
 
-    // Update disposition to worst case verification outcome among all 
+    // Update disposition to worst case verification outcome among all
     // verification providers which are supported
     bool is_any_verification_run_passed = false;
 
@@ -537,7 +558,7 @@ bool SparseGemmOperationProfiler::verify_cutlass(
 
 /// Measures performance results
 bool SparseGemmOperationProfiler::profile(
-  Options const &options,  
+  Options const &options,
   PerformanceReport &report,
   DeviceContext &device_context,
   library::Operation const *operation,
@@ -565,7 +586,7 @@ bool SparseGemmOperationProfiler::profile(
       gemm_workspace_.device_workspace.data()
     );
   }
-  
+
   return true;
 }
 

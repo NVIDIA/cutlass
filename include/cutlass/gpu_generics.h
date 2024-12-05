@@ -295,6 +295,22 @@ unsigned int shfl_sync(
 #endif
 }
 
+CUTLASS_DEVICE
+unsigned int shfl_xor_sync(
+  unsigned int const mask,
+  unsigned int const var,
+  int const laneMask,
+  int const width = NumThreadsPerWarp) {
+#if defined(__CUDA_ARCH__)
+  return __shfl_xor_sync(mask, var, laneMask, width);
+#elif defined(__SYCL_DEVICE_ONLY__)
+  auto g = syclcompat::get_nd_item<1>().get_sub_group();
+  return syclcompat::permute_sub_group_by_xor(g, var, laneMask);
+#else
+  return 0;
+#endif
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /*

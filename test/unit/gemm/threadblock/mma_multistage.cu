@@ -3006,7 +3006,6 @@ TEST(SM80_gemm_threadblock_crosswise,
                                             problem_size.k(), alpha, beta)
       .run(grid, block);
 }
-
 ////////////////////////////////////////////////////////////////////////////////
 
 TEST(SM80_gemm_threadblock_crosswise,
@@ -3041,7 +3040,6 @@ TEST(SM80_gemm_threadblock_crosswise,
                                             problem_size.k(), alpha, beta)
       .run(grid, block);
 }
-
 ////////////////////////////////////////////////////////////////////////////////
 
 TEST(SM80_gemm_threadblock_crosswise,
@@ -3076,7 +3074,6 @@ TEST(SM80_gemm_threadblock_crosswise,
                                             problem_size.k(), alpha, beta)
       .run(grid, block);
 }
-
 ////////////////////////////////////////////////////////////////////////////////
 
 TEST(SM80_gemm_threadblock_crosswise,
@@ -3111,7 +3108,6 @@ TEST(SM80_gemm_threadblock_crosswise,
                                             problem_size.k(), alpha, beta)
       .run(grid, block);
 }
-
 ////////////////////////////////////////////////////////////////////////////////
 
 TEST(SM80_gemm_threadblock_crosswise,
@@ -3146,7 +3142,6 @@ TEST(SM80_gemm_threadblock_crosswise,
                                             problem_size.k(), alpha, beta)
       .run(grid, block);
 }
-
 ////////////////////////////////////////////////////////////////////////////////
 
 TEST(SM80_gemm_threadblock_crosswise,
@@ -3181,7 +3176,6 @@ TEST(SM80_gemm_threadblock_crosswise,
                                             problem_size.k(), alpha, beta)
       .run(grid, block);
 }
-
 ////////////////////////////////////////////////////////////////////////////////
 
 TEST(SM80_gemm_threadblock_crosswise,
@@ -3216,7 +3210,6 @@ TEST(SM80_gemm_threadblock_crosswise,
                                             problem_size.k(), alpha, beta)
       .run(grid, block);
 }
-
 ////////////////////////////////////////////////////////////////////////////////
 
 TEST(SM80_gemm_threadblock_crosswise,
@@ -3251,7 +3244,6 @@ TEST(SM80_gemm_threadblock_crosswise,
                                             problem_size.k(), alpha, beta)
       .run(grid, block);
 }
-
 ////////////////////////////////////////////////////////////////////////////////
 
 TEST(SM80_gemm_threadblock_crosswise,
@@ -3286,7 +3278,6 @@ TEST(SM80_gemm_threadblock_crosswise,
                                             problem_size.k(), alpha, beta)
       .run(grid, block);
 }
-
 ////////////////////////////////////////////////////////////////////////////////
 
 TEST(SM80_gemm_threadblock_crosswise,
@@ -3321,7 +3312,6 @@ TEST(SM80_gemm_threadblock_crosswise,
                                             problem_size.k(), alpha, beta)
       .run(grid, block);
 }
-
 ////////////////////////////////////////////////////////////////////////////////
 
 TEST(SM80_gemm_threadblock_crosswise,
@@ -3356,7 +3346,6 @@ TEST(SM80_gemm_threadblock_crosswise,
                                             problem_size.k(), alpha, beta)
       .run(grid, block);
 }
-
 ////////////////////////////////////////////////////////////////////////////////
 
 TEST(SM80_gemm_threadblock_crosswise,
@@ -3391,7 +3380,6 @@ TEST(SM80_gemm_threadblock_crosswise,
                                             problem_size.k(), alpha, beta)
       .run(grid, block);
 }
-
 ////////////////////////////////////////////////////////////////////////////////
 
 TEST(SM80_gemm_threadblock_crosswise,
@@ -3426,7 +3414,6 @@ TEST(SM80_gemm_threadblock_crosswise,
                                             problem_size.k(), alpha, beta)
       .run(grid, block);
 }
-
 ////////////////////////////////////////////////////////////////////////////////
 
 TEST(SM80_gemm_threadblock_crosswise,
@@ -3461,7 +3448,6 @@ TEST(SM80_gemm_threadblock_crosswise,
                                             problem_size.k(), alpha, beta)
       .run(grid, block);
 }
-
 ////////////////////////////////////////////////////////////////////////////////
 TEST(SM80_gemm_threadblock_congruous,
      tensor_op_64x64x16_32x64x16_8x8x4_3stage) {

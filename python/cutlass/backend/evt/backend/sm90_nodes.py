@@ -164,7 +164,7 @@ class Sm90RowBroadcastImpl(RowBroadcastImpl):
 
         self._type_decl = f"""
 using {self.name_camel} = cutlass::epilogue::fusion::Sm90RowBroadcast<
-    0 /*Stages*/, typename EpilogueDescriptor::TileShape, {DataTypeTag[self.element]},
+    0 /*Stages*/, typename EpilogueDescriptor::TileShape, {DataTypeTag[self.element]}, {DataTypeTag[self.element_output]},
     {self.stride_mnl}
 >;
 """
@@ -183,7 +183,7 @@ class Sm90ColumnBroadcastImpl(ColumnBroadcastImpl):
 
         self._type_decl = f"""
 using {self.name_camel} = cutlass::epilogue::fusion::Sm90ColBroadcast<
-    0 /*Stages*/, typename EpilogueDescriptor::TileShape, {DataTypeTag[self.element]},
+    0 /*Stages*/, typename EpilogueDescriptor::TileShape, {DataTypeTag[self.element]}, {DataTypeTag[self.element_output]},
     {self.stride_mnl}
 >;
 """
