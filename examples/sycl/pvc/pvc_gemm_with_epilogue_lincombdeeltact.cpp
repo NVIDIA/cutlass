@@ -29,6 +29,22 @@
  *
  **************************************************************************************************/
 
+/*! \file
+    \brief GEMM + Binary Activation Function using CUTLASS 3 APIs for Intel PVC architecture.
+
+    This example demonstates an implementation of GEMM + element-wise binary activation function,
+    with an auxillary tensor. This examples makes use of PVCs subgroup cooperative 2d-block copy
+    operations and DPAS instructions. All copy are using the cooperative 2d-block copy operations,
+    so input sizes must be divisible by the global copy atom, CopyOpG2R.
+
+    To run this example:
+      $ ./examples/sylc/pvc/pvc_gemm_with_epilogue_lincombdeeltact --m=5120 --n=4096 --k=4096 --l=20
+
+    This will launch a batch of 20 gemms of size 5120x4096x4096. The auxillary vector is created as
+    a 2-D tensor of size MxN. 1-D auxillary tensors are not yet supported. The input values are
+    randomized and the results are verified against a reference implementation.
+*/
+
 #include "cutlass/epilogue/collective/default_epilogue.hpp"
 #include "cutlass/epilogue/collective/xe_epilogue.hpp"
 #include "cutlass/epilogue/fusion/xe_callbacks.hpp"
@@ -250,12 +266,12 @@ struct ExampleRunner {
     epilogue_arguments.thread.dAux = cutlass::make_cute_packed_stride(StrideD{}, cute::make_shape(options.m, options.n, options.l));
 
     typename Gemm::GemmKernel::Arguments arguments{
-      cutlass::gemm::GemmUniversalMode::kGemm, // mode
-      problem_size, // problem_shape
+      cutlass::gemm::GemmUniversalMode::kGemm,            // mode
+      problem_size,                                       // problem_shape
       {block_A.get(), stride_A, block_B.get(), stride_B}, // mainloop
-      epilogue_arguments, // epilogue
-      hw_info // hw_info
-              // scheduler
+      epilogue_arguments,                                 // epilogue
+      hw_info                                             // hw_info
+                                                          // scheduler
     };
 
     Gemm gemm_op;
@@ -334,12 +350,12 @@ int main(int argc, const char** argv)
 
   // The code section below describes datatype for input, output matrices and computation between
   // elements in input matrices.
-  using ElementAccumulator = float;                   // <- data type of accumulator
-  using ElementComputeEpilogue = float;  // <- data type of epilogue operations
-  using ElementAux = float;  // <- data type of epilogue operations
-  using ElementInputA = bfloat16_t;                        // <- data type of elements in input matrix A
-  using ElementInputB = bfloat16_t;                        // <- data type of elements in input matrix B
-  using ElementOutput = float;                        // <- data type of elements in output matrix D
+  using ElementAccumulator = float;     // <- data type of accumulator
+  using ElementComputeEpilogue = float; // <- data type of epilogue operations
+  using ElementAux = float;             // <- data type of epilogue operations
+  using ElementInputA = bfloat16_t;     // <- data type of elements in input matrix A
+  using ElementInputB = bfloat16_t;     // <- data type of elements in input matrix B
+  using ElementOutput = float;          // <- data type of elements in output matrix D
 
   using LayoutA = cutlass::layout::RowMajor;
   using LayoutB = cutlass::layout::RowMajor;
@@ -378,19 +394,19 @@ int main(int argc, const char** argv)
           CopyOpG2R
           >;
   using CollectiveEpilogue = cutlass::epilogue::collective::CollectiveEpilogue<
-          EpilogueDispatchPolicy, // IntelPVCEpilogue
-          TileShape, // CtaTileMNK
-          ElementAccumulator, // ElementC
+          EpilogueDispatchPolicy,                 // IntelPVCEpilogue
+          TileShape,                              // CtaTileMNK
+          ElementAccumulator,                     // ElementC
           cutlass::gemm::TagToStrideC_t<LayoutC>, // StrideC
-          ElementOutput, // ElementD
+          ElementOutput,                          // ElementD
           cutlass::gemm::TagToStrideC_t<LayoutD>, // StrideD
-          FusionCallBacks, // FusionCallBacks
-          CopyOpG2R, // CopyOpG2R
-          void,// SmemLayoutAtomC
-          void, // CopyOpS2R
-          XE_2D_U32x8x16_ST_N, // CopyOpR2G
-          void, // SmemLayoutAtomD
-          void>; // CopyOpR2S
+          FusionCallBacks,                        // FusionCallBacks
+          CopyOpG2R,                              // CopyOpG2R
+          void,                                   // SmemLayoutAtomC
+          void,                                   // CopyOpS2R
+          XE_2D_U32x8x16_ST_N,                    // CopyOpR2G
+          void,                                   // SmemLayoutAtomD
+          void>;                                  // CopyOpR2S
 
 // Mainloop
   using CollectiveMainloop = cutlass::gemm::collective::CollectiveMma<
