@@ -41,12 +41,15 @@
     Note that in this example, we explicitly swap A and B in order to use TMA epilogues. We do this since TMA epilogues are more performant on problem sizes of interest.
 
     As an additional optimization, we can reorder the narrow data type tensor such that elements read into register file by the same thread are contiguous in global and shared memory.
-    This promotes vectorization of shared memory loads and removes additional instructions on the critical path. For example, when MMA is performed in FP8 data type, each thread reads
+    This promotes vectorization of shared memory loads and removes additional instructions on the critical path. For example, when MMA is performed in 16-bit data type, each thread reads
     4 groups of 2 elements that are logically contiguous in the same row (refer to https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#wgmma-64n16-a for thread-value layout).
     If the narrow type is INT4 and tensor is major in K dim, only 8 bits can be read at a time, leading to extra load instructions and suboptimal utilization of shared memory throughput.
     If we reorder the data offline to place all 16 elements read by a thread contiguously in memory, a single 64-bit load is sufficient. This reordering is often feasible when the quantized
-    tensor is static (e.g. weight tensor of a NN layer at inference time). This example demonstrates how such a reordering can be performed and communicated to the kernel when the macro
-    OPTIMIZE_WEIGHT_LAYOUT is set to 1.
+    tensor is static (e.g. weight tensor of a NN layer at inference time). This example demonstrates how such a reordering can be performed and communicated to the kernel when the options.shuffle is set to true.
+
+    Furthermore, the conversion from {INT4, UINT4} to {FP16, BF16} can benefit from pre-shuffling the weights in the order [0,2,4,6,1,3,5,7]. This allows multiple nibbles to be efficiently extracted and up-converted
+    in parallel. The reordering is enabled by defining the layout type `ValueShuffle`. Refer to the partial specializations of `NumericArrayShuffleConverter` in "include/cutlass/detail/collective/mixed_input_utils.hpp"
+    for more details.
 
     It is expected that the scale's K dimension be scale_k = ceil_div(problem_k, group_size). 
     
@@ -58,12 +61,11 @@
     equal to the gemm problem K.
 
     Limitations:
-      1) Only supports INT4 x { FP16, BF16 }. The scales must be the same as mma Type. Scale with zero-point mode is not supported.
-      2) The INT4 weights have additional encoding requirements.
-      3) The scales must be MN major. That means if A is scaled, it must be column major, but if B is scaled it must be row major.
-      4) The scales must have the same layout and groupsize.
-      5) The groupsize must be greater or equal to the tile shape k.
-      6) Currently, TMA epilogues cannot be used when the narrow type is the B operand. This limitation arises because the implementation always swaps the 
+      1) The INT4 weights have additional encoding requirements.
+      2) The scales must be MN major. That means if A is scaled, it must be column major, but if B is scaled it must be row major.
+      3) The scales must have the same layout and groupsize.
+      4) The groupsize must be greater or equal to the tile shape k.
+      5) Currently, TMA epilogues cannot be used when the narrow type is the B operand. This limitation arises because the implementation always swaps the 
          operands to ensure that the narrow type passes through the register file, and TMA epilogues do not currently support implicit swap + transpose operations. 
          We plan to address this limitation in the future. However, we address this in the example by explicitly swapping and transposing the operands.
     
@@ -103,13 +105,11 @@
 #include "cutlass/util/reference/device/tensor_compare.h"
 
 #include "helper.h"
-#include "unfused_weight_dequantize.hpp"
+#include "mixed_dtype_utils.hpp"
 #include "packed_scale.hpp"
 #include "reorder_utils.hpp"
 
 using namespace cute;
-
-#define OPTIMIZE_WEIGHT_LAYOUT 1
 
 #if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
 
@@ -137,16 +137,18 @@ using LayoutB_Transpose = typename cutlass::layout::LayoutTranspose<LayoutB>::ty
 using StrideA = cutlass::detail::TagToStrideA_t<LayoutA>;
 using StrideB = cutlass::detail::TagToStrideB_t<LayoutB>;
 
-#if OPTIMIZE_WEIGHT_LAYOUT
 // Define the CuTe layout for reoredered quantized tensor B
 // LayoutAtomQuant places values that will be read by the same thread in contiguous locations in global memory.
 // It specifies the reordering within a single warp's fragment
-using LayoutAtomQuant = decltype(compute_memory_reordering_atom<MmaType>());
+//using ValueShuffle = Layout<_1>;                          // no value reordering
+using ValueShuffle = Layout<Shape<_2,_4>, Stride<_4,_1>>; // order [0,2,4,6,1,3,5,7]
+int constexpr NumShuffleAtoms = 1;
+using MmaAtomShape = Layout<Shape<_1,Int<NumShuffleAtoms>>>;
+using LayoutAtomQuant = decltype(compute_memory_reordering_atom<MmaType, MmaAtomShape, ValueShuffle>());
 using LayoutB_Reordered = decltype(tile_to_shape(LayoutAtomQuant{}, Layout<Shape<int,int,int>, StrideB>{}));
-#endif
 
 using ElementScale = MmaType;
-using ElementZero = ElementScale; // only for verify
+using ElementZero = ElementScale;
 using LayoutScale = cutlass::layout::RowMajor;
 
 // C/D matrix configuration
@@ -166,7 +168,7 @@ using ArchTag             = cutlass::arch::Sm90;                            // T
 using OperatorClass       = cutlass::arch::OpClassTensorOp;                 // Operator class tag
 using TileShape           = Shape<_128,_128,cute::Int<TileShapeK>>;         // Threadblock-level tile size
 using ClusterShape        = Shape<_1,_1,_1>;                                // Shape of the threadblocks in a cluster
-using KernelSchedule      = cutlass::gemm::KernelTmaWarpSpecializedCooperativeMixedInput;  // Kernel to launch based on the default setting in the Collective Builder 
+using KernelSchedule      = cutlass::gemm::KernelTmaWarpSpecializedCooperative;  // Kernel to launch based on the default setting in the Collective Builder 
 using EpilogueSchedule    = cutlass::epilogue::TmaWarpSpecializedCooperative;
 using EpilogueTileType    = cutlass::epilogue::collective::EpilogueTileAuto;
 
@@ -183,15 +185,54 @@ using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBui
     EpilogueSchedule // This is the only epi supporting the required swap + transpose.
   >::CollectiveOp;
 
+// ============================================================ MIXED INPUT NO SCALES ============================================================================
+// The collective will infer that the narrow type should be upcasted to the wide type.
+// We swap A and B operands to the builder here
+using CollectiveMainloopConvertOnly = typename cutlass::gemm::collective::CollectiveBuilder<
+    ArchTag, OperatorClass,
+    ElementB, LayoutB_Transpose, AlignmentB,
+    ElementA, LayoutA_Transpose, AlignmentA,
+    ElementAccumulator,
+    TileShape, ClusterShape,
+    cutlass::gemm::collective::StageCountAutoCarveout<
+      static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))
+    >,
+    KernelSchedule
+  >::CollectiveOp;
+
+using GemmKernelConvertOnly = cutlass::gemm::kernel::GemmUniversal<
+    Shape<int,int,int,int>, // Indicates ProblemShape
+    CollectiveMainloopConvertOnly,
+    CollectiveEpilogue
+>;
+
+using GemmConvertOnly = cutlass::gemm::device::GemmUniversalAdapter<GemmKernelConvertOnly>;
+
+using CollectiveMainloopConvertOnlyShuffled = typename cutlass::gemm::collective::CollectiveBuilder<
+    ArchTag, OperatorClass,
+    ElementB, LayoutB_Reordered, AlignmentB,
+    ElementA, LayoutA_Transpose, AlignmentA,
+    ElementAccumulator,
+    TileShape, ClusterShape,
+    cutlass::gemm::collective::StageCountAutoCarveout<
+      static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))
+    >,
+    KernelSchedule
+  >::CollectiveOp;
+
+using GemmKernelConvertOnlyShuffled = cutlass::gemm::kernel::GemmUniversal<
+    Shape<int,int,int,int>, // Indicates ProblemShape
+    CollectiveMainloopConvertOnlyShuffled,
+    CollectiveEpilogue
+>;
+
+using GemmConvertOnlyShuffled = cutlass::gemm::device::GemmUniversalAdapter<GemmKernelConvertOnlyShuffled>;
+
 // =========================================================== MIXED INPUT WITH SCALES ===========================================================================
 // The Scale information must get paired with the operand that will be scaled. In this example, B is scaled so we make a tuple of B's information and the scale information.
 using CollectiveMainloopScaleOnly = typename cutlass::gemm::collective::CollectiveBuilder<
     ArchTag, OperatorClass,
-#if OPTIMIZE_WEIGHT_LAYOUT
-    cute::tuple<ElementB, ElementScale>, LayoutB_Reordered, AlignmentB,
-#else
     cute::tuple<ElementB, ElementScale>, LayoutB_Transpose, AlignmentB,
-#endif
     ElementA, LayoutA_Transpose, AlignmentA,
     ElementAccumulator,
     TileShape, ClusterShape,
@@ -208,6 +249,69 @@ using GemmKernelScaleOnly = cutlass::gemm::kernel::GemmUniversal<
 >;
 
 using GemmScaleOnly = cutlass::gemm::device::GemmUniversalAdapter<GemmKernelScaleOnly>;
+
+using CollectiveMainloopScaleOnlyShuffled = typename cutlass::gemm::collective::CollectiveBuilder<
+    ArchTag, OperatorClass,
+    cute::tuple<ElementB, ElementScale>, LayoutB_Reordered, AlignmentB,
+    ElementA, LayoutA_Transpose, AlignmentA,
+    ElementAccumulator,
+    TileShape, ClusterShape,
+    cutlass::gemm::collective::StageCountAutoCarveout<
+      static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))
+    >,
+    KernelSchedule
+  >::CollectiveOp;
+
+using GemmKernelScaleOnlyShuffled = cutlass::gemm::kernel::GemmUniversal<
+    Shape<int,int,int,int>, // Indicates ProblemShape
+    CollectiveMainloopScaleOnlyShuffled,
+    CollectiveEpilogue
+>;
+
+using GemmScaleOnlyShuffled = cutlass::gemm::device::GemmUniversalAdapter<GemmKernelScaleOnlyShuffled>;
+
+// =========================================================== MIXED INPUT WITH SCALES AND ZEROS ==================================================================
+// We specify scale + zero elements to indicate that we require both. Scales and biases have the same format.
+using CollectiveMainloopScaleWithZeroPoint = typename cutlass::gemm::collective::CollectiveBuilder<
+    ArchTag, OperatorClass,
+    cute::tuple<ElementB, ElementScale, ElementZero>, LayoutB_Transpose, AlignmentB,
+    ElementA, LayoutA_Transpose, AlignmentA,
+    ElementAccumulator,
+    TileShape, ClusterShape,
+    cutlass::gemm::collective::StageCountAutoCarveout<
+      static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))
+    >,
+    KernelSchedule
+  >::CollectiveOp;
+
+using GemmKernelScaleWithZeroPoint = cutlass::gemm::kernel::GemmUniversal<
+    Shape<int,int,int,int>, // Indicates ProblemShape
+    CollectiveMainloopScaleWithZeroPoint,
+    CollectiveEpilogue
+>;
+
+using GemmScaleWithZeroPoint = cutlass::gemm::device::GemmUniversalAdapter<GemmKernelScaleWithZeroPoint>;
+
+using CollectiveMainloopScaleWithZeroPointShuffled = typename cutlass::gemm::collective::CollectiveBuilder<
+    ArchTag, OperatorClass,
+    cute::tuple<ElementB, ElementScale, ElementZero>, LayoutB_Reordered, AlignmentB,
+    ElementA, LayoutA_Transpose, AlignmentA,
+    ElementAccumulator,
+    TileShape, ClusterShape,
+    cutlass::gemm::collective::StageCountAutoCarveout<
+      static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))
+    >,
+    KernelSchedule
+  >::CollectiveOp;
+
+using GemmKernelScaleWithZeroPointShuffled = cutlass::gemm::kernel::GemmUniversal<
+    Shape<int,int,int,int>, // Indicates ProblemShape
+    CollectiveMainloopScaleWithZeroPointShuffled,
+    CollectiveEpilogue
+>;
+
+using GemmScaleWithZeroPointShuffled = cutlass::gemm::device::GemmUniversalAdapter<GemmKernelScaleWithZeroPointShuffled>;
+// =================================================================================================================================================================
 
 using StrideC = typename GemmKernelScaleOnly::StrideC;
 using StrideD = typename GemmKernelScaleOnly::StrideD;
@@ -228,9 +332,7 @@ StrideD stride_D;
 StrideD_ref stride_D_ref;
 uint64_t seed;
 
-#if OPTIMIZE_WEIGHT_LAYOUT
 LayoutB_Reordered layout_B_reordered;
-#endif
 
 using StrideS = typename CollectiveMainloopScaleOnly::StrideScale;
 using StrideS_ref = cutlass::detail::TagToStrideB_t<LayoutScale>;
@@ -253,41 +355,22 @@ cutlass::DeviceAllocation<typename GemmScaleOnly::EpilogueOutputOp::ElementOutpu
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 // Command line options parsing
-struct Options {
-
-  bool help = false;
-
-  float alpha = 1.0f;
-  float beta = 0.0f;
-  int iterations = 10;
-  int m = 5120, n = 4096, k = 4096;
-  int g = 128;
-  int l = 1;
+struct Options : MixedDtypeOptions{
+  bool shuffle = true;
 
   // Parses the command line
   void parse(int argc, char const **args) {
     cutlass::CommandLine cmd(argc, args);
+    cmd.get_cmd_line_argument("shuffle", shuffle);
 
-    if (cmd.check_cmd_line_flag("help")) {
-      help = true;
-      return;
-    }
-
-    cmd.get_cmd_line_argument("m", m);
-    cmd.get_cmd_line_argument("n", n);
-    cmd.get_cmd_line_argument("k", k);
-    cmd.get_cmd_line_argument("l", l);
-    cmd.get_cmd_line_argument("g", g);
-    cmd.get_cmd_line_argument("alpha", alpha, 1.f);
-    cmd.get_cmd_line_argument("beta", beta, 0.f);
-    cmd.get_cmd_line_argument("iterations", iterations);
+    this->MixedDtypeOptions::parse(argc, args);
   }
 
   /// Prints the usage statement.
   std::ostream & print_usage(std::ostream &out) const {
 
-    out << "55_hopper_warp_specialized_gemm\n\n"
-      << "  Hopper FP32 GEMM using a Warp Specialized kernel.\n\n"
+    out << "55_hopper_int4_bf16_gemm\n\n"
+      << "  Hopper Mixed Data Type GEMM using a Warp Specialized kernel.\n\n"
       << "Options:\n\n"
       << "  --help                      If specified, displays this usage statement\n\n"
       << "  --m=<int>                   Sets the M extent of the GEMM\n"
@@ -295,36 +378,19 @@ struct Options {
       << "  --k=<int>                   Sets the K extent of the GEMM\n"
       << "  --l=<int>                   The number of independent gemm problems with mnk shape\n"
       << "  --g=<int>                   The size of each group for the scales. To broadcast a vector of scales or zeros, set the group size to K.\n"
+      << "  --mode=<int>                The mode to run the gemm. 0 does (A @ B), 1 means A @ (scale * B), 2 means A @ (scale * B + zero-point).\n"
       << "  --alpha=<f32>               Epilogue scalar alpha\n"
       << "  --beta=<f32>                Epilogue scalar beta\n\n"
-      << "  --iterations=<int>          Number of profiling iterations to perform.\n\n";
+      << "  --iterations=<int>          Number of profiling iterations to perform.\n\n"
+      << "  --warmup=<int>              Number of warmup iterations to perform.\n\n"
+      << "  --shuffle=<boolean>         Enable the offline layout swizzling.\n\n";
 
     out
       << "\n\nExamples:\n\n"
-      << "$ " << "55_hopper_warp_specialized_gemm" << " --m=1024 --n=512 --k=1024 -g 0 --l=10 --alpha=2 --mode=2 --beta=0.707 \n\n";
+      << "$ " << "55_hopper_int4_bf16_gemm" << " --m=1024 --n=512 --k=1024 -g=1024 --l=10 --alpha=2 --mode=2 --beta=0.707 \n\n";
 
     return out;
   }
-
-  /// Compute performance in GFLOP/s
-  double gflops(double runtime_s) const
-  {
-    // Two flops per multiply-add
-    uint64_t flop = uint64_t(2) * m * n * k * l;
-    double gflop = double(flop) / double(1.0e9);
-    return gflop / runtime_s;
-  }
-};
-
-/// Result structure
-struct Result
-{
-  double avg_runtime_ms = 0.0;
-  double gflops = 0.0;
-  cutlass::Status status = cutlass::Status::kSuccess;
-  cudaError_t error = cudaSuccess;
-  bool passed = false;
-
 };
 
 #if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
@@ -332,78 +398,6 @@ struct Result
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /// GEMM setup and evaluation
 /////////////////////////////////////////////////////////////////////////////////////////////////
-
-/// Helper to initialize a block of device data
-template <class Element>
-bool initialize_tensor(
-  cutlass::DeviceAllocation<Element>& block,
-  uint64_t seed=2023) {
-
-  double scope_max, scope_min;
-  int bits_input = cutlass::sizeof_bits<Element>::value;
-  int bits_output = cutlass::sizeof_bits<Element>::value;
-
-  if (bits_input == 1) {
-    scope_max = 2;
-    scope_min = 0;
-  }
-  else if (bits_input <= 8) {
-    scope_max = 2;
-    scope_min = -2;
-  }
-  else if (bits_output == 16) {
-    scope_max = 5;
-    scope_min = -5;
-  }
-  else {
-    scope_max = 8;
-    scope_min = -8;
-  }
-  cutlass::reference::device::BlockFillRandomUniform(
-      block.get(), block.size(), seed, Element(scope_max), Element(scope_min));
-
-  return true;
-}
-
-template <typename Element>
-bool initialize_quant_tensor(
-  cutlass::DeviceAllocation<Element>& block,
-  uint64_t seed=2023) {
-  
-  float scope_min = float(cutlass::platform::numeric_limits<Element>::lowest());
-  float scope_max = float(cutlass::platform::numeric_limits<Element>::max());
-
-  cutlass::reference::device::BlockFillRandomUniform(
-    block.get(), block.size(), seed, Element(scope_max), Element(scope_min));
-
-  return true;
-}
-
-template <class Element>
-bool initialize_scale(
-  cutlass::DeviceAllocation<Element>& block, 
-  Options const& options) {
-  
-  float elt_max_f = float(cutlass::platform::numeric_limits<QuantType>::max());
-  float const max_dequant_val = 4.f;
-  float const min_dequant_val = 0.5f;
-
-  float scope_max(max_dequant_val / elt_max_f);
-  float scope_min(min_dequant_val / elt_max_f);
-
-  cutlass::reference::device::BlockFillRandomUniform(
-    block.get(), block.size(), seed, Element(scope_max), Element(scope_min));
-  return true;
-}
-
-template <class Element>
-bool initialize_zero(
-  cutlass::DeviceAllocation<Element>& block,
-  Options const& options) {
-  std::vector<Element> stage(block.size(), Element(0.0f));
-  block.copy_from_host(stage.data());
-  return true;
-}
 
 /// Initialize operands to be used in the GEMM and reference GEMM
 void initialize(Options const& options) {
@@ -448,33 +442,61 @@ void initialize(Options const& options) {
 
   dequantize_weight(block_B_dq.get(), block_B.get(), layout_B, block_scale.get(), block_zero.get(), layout_scale_zero, options.g);
 
-#if OPTIMIZE_WEIGHT_LAYOUT
-  // Repeat the reorder layout atom to tile the whole tensor shape 
-  layout_B_reordered = tile_to_shape(LayoutAtomQuant{}, shape_B);
-  reorder_tensor(block_B.get(), layout_B, layout_B_reordered);
+  if (options.shuffle) {
+    // Repeat the reorder layout atom to tile the whole tensor shape 
+    layout_B_reordered = tile_to_shape(LayoutAtomQuant{}, shape_B);
+    reorder_tensor(block_B.get(), layout_B, layout_B_reordered);
 
-  print("Quantized tensor layout: ");
-  print(layout_B_reordered);
-  print("\n");
-#endif
+    print("Quantized tensor layout: ");
+    print(layout_B_reordered);
+    print("\n");
+  }
 }
 
 /// Populates a Gemm::Arguments structure from the given commandline options
-template <typename Args>
-Args args_from_options(Options const& options)
+/// Swap the A and B tensors, as well as problem shapes here.
+template <typename Gemm>
+typename Gemm::Arguments args_from_options(Options const& options)
 {
-// Swap the A and B tensors, as well as problem shapes here.
-  
-  return Args {
-    cutlass::gemm::GemmUniversalMode::kGemm,
-    {options.n, options.m, options.k, options.l},
-#if OPTIMIZE_WEIGHT_LAYOUT
-    {block_B.get(), layout_B_reordered, block_A.get(), stride_A, block_scale.get(), stride_S, options.g},
-#else
-    {block_B.get(), stride_B,           block_A.get(), stride_A, block_scale.get(), stride_S, options.g},
-#endif
-    {{options.alpha, options.beta}, block_C.get(), stride_C, block_D.get(), stride_D}
-  };
+  using Args = typename Gemm::Arguments;
+  auto&& dB = [&]() {
+    if constexpr (cute::is_same_v<Gemm, GemmConvertOnlyShuffled> ||
+                  cute::is_same_v<Gemm, GemmScaleOnlyShuffled> ||
+                  cute::is_same_v<Gemm, GemmScaleWithZeroPointShuffled>) {
+      // offline swizzling is enabled.
+      return layout_B_reordered;
+    }
+    else {
+      return stride_B;
+    }
+  }();
+  if (options.mode == MixedDtypeGemmMode::ConvertOnly) {
+    return Args {
+      cutlass::gemm::GemmUniversalMode::kGemm,
+      {options.n, options.m, options.k, options.l},
+      {block_B.get(), dB, block_A.get(), stride_A},
+      {{options.alpha, options.beta}, block_C.get(), stride_C, block_D.get(), stride_D}
+    };
+  } 
+  else if (options.mode == MixedDtypeGemmMode::ScaleOnly) {
+    return Args {
+      cutlass::gemm::GemmUniversalMode::kGemm,
+      {options.n, options.m, options.k, options.l},
+      {block_B.get(), dB, block_A.get(), stride_A, block_scale.get(), stride_S, options.g},
+      {{options.alpha, options.beta}, block_C.get(), stride_C, block_D.get(), stride_D}
+    };
+  } 
+  else if (options.mode == MixedDtypeGemmMode::ScaleWithZeroPoint) {
+    return Args {
+      cutlass::gemm::GemmUniversalMode::kGemm,
+      {options.n, options.m, options.k, options.l},
+      {block_B.get(), dB, block_A.get(), stride_A, block_scale.get(), stride_S, options.g, block_zero.get()},
+      {{options.alpha, options.beta}, block_C.get(), stride_C, block_D.get(), stride_D}
+    };
+  } else {
+    std::cerr << "Invalid mode " << options.mode << ". Must be 0, 1 or 2." << std::endl;
+    exit(-1);
+  }
 }
 
 bool verify(Options const& options) {
@@ -543,7 +565,7 @@ int run(Options &options)
   Gemm gemm;
 
   // Create a structure of gemm kernel arguments suitable for invoking an instance of Gemm
-  auto arguments = args_from_options<typename Gemm::Arguments>(options);
+  auto arguments = args_from_options<Gemm>(options);
 
   // Using the arguments, query for extra workspace required for matrix multiplication computation
   size_t workspace_size = Gemm::get_workspace_size(arguments);
@@ -561,33 +583,12 @@ int run(Options &options)
   CUTLASS_CHECK(gemm.run());
 
   // Check if output from CUTLASS kernel and reference kernel are equal or not
-  Result result;
+  MixedDtypeResult result;
   result.passed = verify(options);
-
+  mixed_dtype_profiling(gemm, options, result);
   std::cout << "  Disposition: " << (result.passed ? "Passed" : "Failed") << std::endl;
-
   if (!result.passed) {
     exit(-1);
-  }
-
-  // Run profiling loop
-  if (options.iterations > 0)
-  {
-    GpuTimer timer;
-    timer.start();
-    for (int iter = 0; iter < options.iterations; ++iter) {
-      CUTLASS_CHECK(gemm.run());
-    }
-    timer.stop();
-
-    // Compute average runtime and GFLOPs.
-    float elapsed_ms = timer.elapsed_millis();
-    result.avg_runtime_ms = double(elapsed_ms) / double(options.iterations);
-    result.gflops = options.gflops(result.avg_runtime_ms / 1000.0);
-
-    std::cout << "  Problem Size: " << options.m << 'x' << options.n << 'x' << options.k << 'x' << options.l << std::endl;
-    std::cout << "  Avg runtime: " << result.avg_runtime_ms << " ms" << std::endl;
-    std::cout << "  GFLOPS: " << result.gflops << std::endl;
   }
 
   return 0;
@@ -618,12 +619,6 @@ int main(int argc, char const **args) {
       << "later (compute capability 90 or greater).\n";
     return 0;
   }
-  // {$nv-internal-release begin}
-  else if (props.major != 9 || props.minor != 0) {
-    std::cerr << "This example requires a GPU of NVIDIA's Hopper Architecture (compute capability 90).\n";
-    return 0;
-  }
-  // {$nv-internal-release end}
 
   //
   // Parse options
@@ -643,12 +638,44 @@ int main(int argc, char const **args) {
   //
 
 #if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
-  if (options.g == options.k) {
-    std::cout << "Running in per-column scale mode." << std::endl;
-  } else {
-    std::cout << "Running in group scale mode." << std::endl;
+  if (options.mode == MixedDtypeGemmMode::ConvertOnly) {
+    std::cout << "Running in no scale mode." << std::endl;
+    if (options.shuffle) {
+      std::cout << "Offline shuffle enabled." << std::endl;
+      run<GemmConvertOnlyShuffled>(options);
+    } else {
+      std::cout << "Offline shuffle disabled." << std::endl;
+      run<GemmConvertOnly>(options);
+    }
   }
-  run<GemmScaleOnly>(options);
+  else if (options.mode == MixedDtypeGemmMode::ScaleOnly) {
+    if (options.g == options.k) {
+      std::cout << "Running in per-column scale mode." << std::endl;
+    } else {
+      std::cout << "Running in group scale mode." << std::endl;
+    }
+    if (options.shuffle) {
+      std::cout << "Offline shuffle enabled." << std::endl;
+      run<GemmScaleOnlyShuffled>(options);
+    } else {
+      std::cout << "Offline shuffle disabled." << std::endl;
+      run<GemmScaleOnly>(options);
+    }
+  }
+  else if (options.mode == MixedDtypeGemmMode::ScaleWithZeroPoint) {
+    if (options.g == options.k) {
+      std::cout << "Running in per-column scale and zero mode." << std::endl;
+    } else {
+      std::cout << "Running in group scale and zero mode." << std::endl;
+    }
+    if (options.shuffle) {
+      std::cout << "Offline shuffle enabled." << std::endl;
+      run<GemmScaleWithZeroPointShuffled>(options);
+    } else {
+      std::cout << "Offline shuffle disabled." << std::endl;
+      run<GemmScaleWithZeroPoint>(options);
+    }
+  }
 #endif
 
   return 0;
