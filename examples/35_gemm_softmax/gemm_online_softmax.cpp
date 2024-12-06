@@ -128,7 +128,7 @@ struct Options {
   /// Prints the usage statement.
   std::ostream & print_usage(std::ostream &out) const {
 
-    out << "35_gemm_softmax example\n\n"
+    out << "35_gemm_online_softmax example\n\n"
       << "  This example uses the CUTLASS Library to execute TF32 tensorop GEMM computations.\n\n"
       << "Options:\n\n"
       << "  --help                      If specified, displays this usage statement.\n\n"
@@ -193,13 +193,13 @@ struct ExampleRunner {
   using StrideB = typename Gemm::GemmKernel::StrideB;
   using StrideC = typename Gemm::GemmKernel::StrideC;
   using StrideD = typename Gemm::GemmKernel::StrideD;
-  using StrideTmp = typename Gemm::CollectiveEpilogue::StrideD;
+  using StridePartials = typename Gemm::CollectiveEpilogue::StrideD;
 
   using LayoutA = typename Gemm::LayoutA;
   using LayoutB = typename Gemm::LayoutB;
   using LayoutC = typename Gemm::LayoutC;
   using LayoutD = typename Gemm::LayoutD;
-  using LayoutTmp = typename Gemm::LayoutTmp;
+  using LayoutPartials = typename Gemm::LayoutPartials;
 
   using ElementA = typename Gemm::ElementA;
   using ElementB = typename Gemm::ElementB;
@@ -223,7 +223,7 @@ struct ExampleRunner {
   StrideB stride_B;
   StrideC stride_C;
   StrideD stride_D;
-  StrideTmp stride_tmp;
+  StridePartials stride_partials;
   uint64_t seed = 0;
 
   cutlass::DeviceAllocation<ElementA> block_A;
@@ -281,8 +281,8 @@ struct ExampleRunner {
     LayoutA layout_A(lda);
     LayoutB layout_B(ldb);
     LayoutC layout_C(ldc);
-    LayoutTmp Layout_N(ldn);
-    LayoutTmp Layout_S(lds);
+    LayoutPartials Layout_N(ldn);
+    LayoutPartials Layout_S(lds);
 
     cutlass::MatrixCoord extent_A{options.m, options.k};
     cutlass::MatrixCoord extent_B{options.k, options.n};
@@ -365,21 +365,21 @@ struct ExampleRunner {
     auto [M, N, K, L] = problem_shape_MNKL;
 
     auto partials_N = cute::ceil_div(N, cute::shape<1>(typename Gemm::TileShape{}));
-    auto tmp_size = M * partials_N * L;
+    auto partials_size = M * partials_N * L;
 
     stride_A = cutlass::make_cute_packed_stride(StrideA{}, cute::make_shape(M, K, L));
     stride_B = cutlass::make_cute_packed_stride(StrideB{}, cute::make_shape(N, K, L));
     stride_C = cutlass::make_cute_packed_stride(StrideC{}, cute::make_shape(M, N, L));
     stride_D = cutlass::make_cute_packed_stride(StrideD{}, cute::make_shape(M, N, L));
-    stride_tmp = cutlass::make_cute_packed_stride(StrideTmp{}, cute::make_shape(M, partials_N, L));
+    stride_partials = cutlass::make_cute_packed_stride(StridePartials{}, cute::make_shape(M, partials_N, L));
 
     block_A.reset(M * K * L);
     block_B.reset(K * N * L);
     block_C.reset(M * N * L);
     block_D.reset(M * N * L);
     block_ref_D.reset(M * N * L);
-    block_sum.reset(tmp_size);
-    block_max.reset(tmp_size);
+    block_sum.reset(partials_size);
+    block_max.reset(partials_size);
 
     initialize_block(block_A, seed + 2023);
     initialize_block(block_B, seed + 2022);
@@ -399,7 +399,7 @@ struct ExampleRunner {
              options.beta},
              block_C.get(), stride_C, 
              block_D.get(), stride_D, 
-             block_max.get(), block_sum.get(), stride_tmp},
+             block_max.get(), block_sum.get(), stride_partials},
             hw_info
     };
 
@@ -513,7 +513,7 @@ int main(int argc, char const **args) {
   using LayoutB = cutlass::layout::ColumnMajor;
   using LayoutC = cutlass::layout::ColumnMajor;
   using LayoutD = cutlass::layout::ColumnMajor;
-  using LayoutTmp = cutlass::layout::ColumnMajor;
+  using LayoutPartials = cutlass::layout::ColumnMajor;
 
   // Tiling configuration selection
   using TileShape = Shape<_128,_128,_32>;
@@ -580,7 +580,7 @@ int main(int argc, char const **args) {
   using CollectiveEpilogue = cutlass::epilogue::collective::SoftmaxEpilogue<
           cutlass::detail::TagToStrideC_t<LayoutC>,
           cutlass::detail::TagToStrideC_t<LayoutD>,
-          cutlass::detail::TagToStrideC_t<LayoutTmp>,
+          cutlass::detail::TagToStrideC_t<LayoutPartials>,
           TileShape,
           EpilogueOp,
           cutlass::gemm::EpilogueDefault>;

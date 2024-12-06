@@ -1,5 +1,4 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
@@ -86,7 +85,7 @@ public:
 
   using SoftmaxFinalizeKernel = reduction::kernel::SoftmaxFinalize<
                                           ElementD, typename GemmKernel::StrideD,
-                                          ElementAccumulator, typename GemmKernel::CollectiveEpilogue::StrideTmp,
+                                          ElementAccumulator, typename GemmKernel::CollectiveEpilogue::StridePartials,
                                           ElementD, typename GemmKernel::StrideD>;
 
   // Map back to 2.x type as best as possible
@@ -94,7 +93,7 @@ public:
   using LayoutB = gemm::detail::StrideToLayoutTagB_t<typename GemmKernel::StrideB>;
   using LayoutC = gemm::detail::StrideToLayoutTagC_t<typename GemmKernel::StrideC>;
   using LayoutD = gemm::detail::StrideToLayoutTagC_t<typename GemmKernel::StrideD>;
-  using LayoutTmp = gemm::detail::StrideToLayoutTagC_t<typename GemmKernel::StrideD>;
+  using LayoutPartials = gemm::detail::StrideToLayoutTagC_t<typename GemmKernel::StrideD>;
 
   static bool const kEnableCudaHostAdapter = CUTLASS_ENABLE_CUDA_HOST_ADAPTER;
 
@@ -270,7 +269,7 @@ public:
     softmax_args.partialN = cute::ceil_div(get<1>(args.problem_shape), cute::shape<1>(TileShape{}));
     softmax_args.batch_count = get<3>(args.problem_shape);
     softmax_args.dInput = args.epilogue.dD;
-    softmax_args.dPartial = args.epilogue.dTmp;
+    softmax_args.dPartial = args.epilogue.dPartials;
     softmax_args.dOutput = args.epilogue.dD;
     softmax_args.ptr_in = args.epilogue.ptr_D;
     softmax_args.ptr_partial_max = args.epilogue.ptr_max;

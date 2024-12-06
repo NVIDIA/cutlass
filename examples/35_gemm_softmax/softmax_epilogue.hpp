@@ -1,5 +1,4 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
@@ -53,7 +52,7 @@ namespace collective {
 template <
   class StrideC_,
   class StrideD_,
-  class StrideTmp_,
+  class StridePartials_,
   class BlockShapeMNK,
   class ThreadEpilogueOp_,
   class EpilogueSchedule_
@@ -76,7 +75,7 @@ public:
   using StrideC = StrideC_;
   using ElementD = typename ThreadEpilogueOp::ElementD;
   using StrideD = StrideD_;
-  using StrideTmp = StrideTmp_;
+  using StridePartials = StridePartials_;
 
   using GmemTiledCopyC = void;
   using GmemTiledCopyD = void;
@@ -102,7 +101,7 @@ public:
     StrideD dD{};
     ElementAccumulator* ptr_max;
     ElementAccumulator* ptr_sum;
-    StrideTmp dTmp{};
+    StridePartials dPartials{};
   };
 
   // Device side epilogue params
@@ -187,7 +186,7 @@ public:
     auto N_tile = get<1>(blk_shape_MNK);
     auto K_tile = get<2>(blk_shape_MNK);
 
-    auto N_tmp = cute::ceil_div(N, N_tile);
+    auto N_partials = cute::ceil_div(N, N_tile);
 
     cute::packed_tuple partial_block(M_tile, K_tile);
 
@@ -197,8 +196,8 @@ public:
     // Represent the full output tensors
     Tensor mC_mnl = make_tensor(make_gmem_ptr(params.ptr_C), make_shape(M,N,L), stride_c);                 // (m,n,l)
     Tensor mD_mnl = make_tensor(make_gmem_ptr(params.ptr_D), make_shape(M,N,L), stride_d);                 // (m,n,l)
-    Tensor mMax_mnl = make_tensor(make_gmem_ptr(params.ptr_max), make_shape(M,N_tmp,L), params.dTmp);
-    Tensor mSum_mnl = make_tensor(make_gmem_ptr(params.ptr_sum), make_shape(M,N_tmp,L), params.dTmp);
+    Tensor mMax_mnl = make_tensor(make_gmem_ptr(params.ptr_max), make_shape(M,N_partials,L), params.dPartials);
+    Tensor mSum_mnl = make_tensor(make_gmem_ptr(params.ptr_sum), make_shape(M,N_partials,L), params.dPartials);
     Tensor gC_mnl = local_tile(mC_mnl, blk_shape_MNK, make_coord(_,_,_), Step<_1,_1, X>{});    // (BLK_M,BLK_N,m,n,l)
     Tensor gD_mnl = local_tile(mD_mnl, blk_shape_MNK, make_coord(_,_,_), Step<_1,_1, X>{});    // (BLK_M,BLK_N,m,n,l)
     Tensor gMax_mnl = local_tile(mMax_mnl, partial_block, make_coord(_,_), Step<_1, X>{});
