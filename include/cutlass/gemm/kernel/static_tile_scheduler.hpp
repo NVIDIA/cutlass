@@ -46,9 +46,6 @@ namespace cutlass::gemm::kernel::detail {
 // This is a CRTP base class for the actual tile schedulers.
 template<class Subclass>
 class StaticPersistentTileScheduler {
-  //
-  // Data members
-  //
 
 private:
   uint64_t current_work_linear_idx_;
@@ -89,6 +86,8 @@ public:
   using Params = PersistentTileSchedulerSm90Params;
   using RasterOrder = typename Params::RasterOrder;
   using RasterOrderOptions = typename Params::RasterOrderOptions;
+  static constexpr bool IsDynamicPersistent = false;
+
 public:
   struct Arguments {
     int max_swizzle_size = 1;
@@ -98,13 +97,14 @@ public:
   template <class ProblemShapeMNKL, class TileShape, class ClusterShape>
   static Params
   to_underlying_arguments(
-    ProblemShapeMNKL problem_shape_mnkl,
-    TileShape tile_shape,
-    ClusterShape cluster_shape,
-    [[maybe_unused]] KernelHardwareInfo const& hw_info,
-    Arguments const& arguments,
-    [[maybe_unused]] void* workspace=nullptr,
-    [[maybe_unused]] const uint32_t epilogue_subtile = 1) {
+      ProblemShapeMNKL problem_shape_mnkl,
+      TileShape tile_shape,
+      ClusterShape cluster_shape,
+      [[maybe_unused]] KernelHardwareInfo const& hw_info,
+      Arguments const& arguments,
+      [[maybe_unused]] void* workspace=nullptr,
+      [[maybe_unused]] const uint32_t epilogue_subtile = 1,
+      [[maybe_unused]] uint32_t ktile_start_alignment_count = 1u) {
 
     // We only need the tile and cluster shape during scheduler setup, so let FTAD do the magic
     static_assert(cute::is_static<TileShape>::value);
@@ -193,6 +193,16 @@ public:
     current_work_linear_idx_ += total_grid_size_ * uint64_t(advance_count);
   }
 
+  CUTLASS_DEVICE
+  bool is_last_tile(WorkTileInfo& work_tile_info, uint32_t advance_count = 1) const {
+    if (continue_current_work(work_tile_info)) {
+      return false;
+    }
+    return not get_current_work_for_linear_idx(
+        current_work_linear_idx_ + (total_grid_size_ * uint64_t(advance_count))
+    ).is_valid();
+  }
+
   // Computes the linear index within a batch given M and N tile offsets within the batch.
   // This essentially inverts the mapping performed in get_work_idx_m_and_n
   static CUTLASS_DEVICE
@@ -249,6 +259,39 @@ public:
     );
   }
 
+  // Reloaded interface that receives WorkTileInfo to deduce next work.
+  // Kernel helper function to get next work tile
+  CUTLASS_DEVICE
+  auto
+  fetch_next_work(WorkTileInfo work_tile_info) {
+    if (continue_current_work(work_tile_info)) {
+      return cute::make_tuple(work_tile_info, true);
+    }
+
+    advance_to_next_work();
+    return cute::make_tuple(get_current_work(), true);
+  }
+  
+  // Given the inputs, computes the total number of output blocks over which this problem will compute.
+  // Note that this is only the logical size of our grid, not the physical grid we will actually launch.
+  template<class ProblemShapeMNKL, class TileShape, class AtomThrShape, class ClusterShape>
+  CUTLASS_HOST_DEVICE static
+  dim3
+  get_tiled_cta_shape_mnl(ProblemShapeMNKL problem_shape_mnkl,
+                          TileShape tile_shape_mnk,
+                          AtomThrShape atom_thr_shape_mnk,
+                          ClusterShape cluster_shape_mnk) {
+    auto [tiles_m, tiles_n, tiles_l] = product_each(ceil_div(select<0,1,3>(problem_shape_mnkl), take<0,2>(tile_shape_mnk)));
+    auto cta_m = round_nearest(tiles_m * size<0>(atom_thr_shape_mnk), size<0>(cluster_shape_mnk));
+    auto cta_n = round_nearest(tiles_n * size<1>(atom_thr_shape_mnk), size<1>(cluster_shape_mnk));
+
+    return Params::get_tiled_cta_shape_mnl(
+      to_gemm_coord(problem_shape_mnkl),
+      to_gemm_coord(cluster_shape_mnk),
+      cta_m, cta_n
+    );
+  }
+
   CUTLASS_DEVICE
   static auto
   work_tile_to_cta_coord(WorkTileInfo work_tile_info) {
@@ -262,17 +305,31 @@ public:
     );
   }
 
+  CUTLASS_DEVICE
+  static auto
+  work_tile_to_cta_coord(WorkTileInfo work_tile_info, dim3 block_id_in_cluster) {
+    // Get every cta coord in three dimensions of the cluster
+    auto [cta_m_in_cluster, cta_n_in_cluster, cta_l_in_cluster] = block_id_in_cluster;
+    return make_coord(
+      work_tile_info.M_idx + static_cast<int32_t>(cta_m_in_cluster),
+      work_tile_info.N_idx + static_cast<int32_t>(cta_n_in_cluster),
+      _,
+      work_tile_info.L_idx + static_cast<int32_t>(cta_l_in_cluster)
+    );
+  }
+
   // Given the inputs, computes the physical grid we should launch.
   template<class ProblemShapeMNKL, class BlockShape, class ClusterShape>
   CUTLASS_HOST_DEVICE static
   dim3
   get_grid_shape(
-    ProblemShapeMNKL problem_shape_mnk,
-    BlockShape cta_shape,
-    ClusterShape cluster_shape,
-    KernelHardwareInfo hw_info,
-    Arguments arguments,
-    bool truncate_by_problem_size=true) {
+      [[maybe_unused]] Params const& params,
+      ProblemShapeMNKL problem_shape_mnk,
+      BlockShape cta_shape,
+      ClusterShape cluster_shape,
+      KernelHardwareInfo hw_info,
+      Arguments arguments = Arguments{},
+      bool truncate_by_problem_size=true) {
 
     auto problem_shape_mnkl = cute::append<4>(problem_shape_mnk, cute::Int<1>{});
     dim3 problem_blocks = get_tiled_cta_shape_mnl(problem_shape_mnkl, cta_shape, cluster_shape);
@@ -288,19 +345,17 @@ public:
   }
 
   // Given the inputs, computes the physical grid we should launch.
-  template<class ProblemShapeMNKL, class BlockShape, class ClusterShape>
-  CUTLASS_HOST_DEVICE static
-  dim3
+  template<class ProblemShapeMNKL, class TileShape, class AtomThrShape, class ClusterShape>
+  static dim3
   get_grid_shape(
-    Params const& params,
-    ProblemShapeMNKL problem_shape_mnk,
-    BlockShape cta_shape,
-    ClusterShape cluster_shape,
-    KernelHardwareInfo hw_info) {
+      Params const& params,
+      ProblemShapeMNKL problem_shape_mnkl,
+      TileShape tile_shape_mnk,
+      AtomThrShape atom_thr_shape_mnk,
+      ClusterShape cluster_shape_mnk,
+      KernelHardwareInfo hw_info) {
 
-    auto problem_shape_mnkl = cute::append<4>(problem_shape_mnk, cute::Int<1>{});
-    dim3 problem_blocks = get_tiled_cta_shape_mnl(problem_shape_mnkl, cta_shape, cluster_shape);
-
+    dim3 problem_blocks = get_tiled_cta_shape_mnl(problem_shape_mnkl, tile_shape_mnk, atom_thr_shape_mnk, cluster_shape_mnk);
     Arguments args{};
     if constexpr (!std::is_const_v<decltype(args.max_swizzle_size)>) {
       args.max_swizzle_size = 1 << params.log_swizzle_size_;
@@ -309,7 +364,7 @@ public:
 
     return Params::get_grid_shape(
       problem_blocks,
-      to_gemm_coord(cluster_shape),
+      to_gemm_coord(cluster_shape_mnk),
       hw_info,
       args.max_swizzle_size,
       args.raster_order,
@@ -366,6 +421,14 @@ public:
   static bool
   continue_current_work(WorkTileInfo&) {
     return false;
+  }
+
+  template <class ProblemShapeMNKL, class TileShape, class Shape>
+  CUTLASS_DEVICE
+  auto
+  get_k_tile_iterator(WorkTileInfo const& work_tile_info, ProblemShapeMNKL problem_shape_MNKL, TileShape tile_shape, Shape) {
+    auto k_tiles = cute::ceil_div(cute::get<2>(problem_shape_MNKL), cute::get<2>(tile_shape));
+    return cute::make_coord_iterator(k_tiles);
   }
 
   template <class ProblemShape, class TileShape>
@@ -430,6 +493,7 @@ public:
   requires_separate_reduction(Params const& params) {
     return false;
   }
+
 public:
   // Sink scheduler params as a member
   Params scheduler_params;

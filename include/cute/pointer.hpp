@@ -30,17 +30,13 @@
  **************************************************************************************************/
 #pragma once
 
-#include <cute/config.hpp>
+#include <cute/config.hpp>                     // CUTE_HOST_DEVICE
+#include <cute/pointer_base.hpp>               // cute::iter_adaptor
+#include <cute/pointer_sparse.hpp>
+#include <cute/container/array_subbyte.hpp>    // cute::subbyte_iterator
+#include <cute/numeric/integral_constant.hpp>  // cute::true_type, cute::false_type
+#include <cute/numeric/numeric_types.hpp>      // sizeof_bits
 
-#include <cute/util/type_traits.hpp>
-#include <cute/numeric/numeric_types.hpp>        // sizeof_bits
-#include <cute/numeric/math.hpp>
-#include <cute/numeric/integral_constant.hpp>
-
-#include <cute/container/array_subbyte.hpp>
-
-#include <cute/pointer_base.hpp>
-#include <cute/pointer_swizzle.hpp>
 namespace cute
 {
 
@@ -50,6 +46,9 @@ namespace cute
 // Subbyte Types: uint2_t, uint4_t, etc
 //   Requires construction of a subbyte_iterator<T> in order to properly
 //   resolve each element in byte-addressed memory.
+// Sparse Types: sparse_elem<int S, class T>
+//   A type that holds one physical element meant to represent S number of logical elements.
+//   Requires construction of a sparse_ptr that emulates access to the S logical elements.
 //
 
 template <class NewT>
@@ -57,6 +56,11 @@ CUTE_HOST_DEVICE constexpr
 auto
 recast_ptr(void* ptr)
 {
+  if constexpr (is_sparse<NewT>::value) {
+    constexpr int sparsity = NewT::sparsity;
+    NewT* p = reinterpret_cast<NewT*>(ptr);
+    return make_sparse_ptr<sparsity>(p);
+  } else
   if constexpr (cute::is_subbyte_v<NewT>) {
     return subbyte_iterator<NewT>(ptr);
   } else {
@@ -70,6 +74,11 @@ CUTE_HOST_DEVICE constexpr
 auto
 recast_ptr(void const* ptr)
 {
+  if constexpr (is_sparse<NewT>::value) {
+    constexpr int sparsity = NewT::sparsity;
+    NewT const* p = reinterpret_cast<NewT const*>(ptr);
+    return make_sparse_ptr<sparsity>(p);
+  } else
   if constexpr (cute::is_subbyte_v<NewT>) {
     return subbyte_iterator<NewT const>(ptr);
   } else {

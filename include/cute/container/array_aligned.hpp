@@ -30,8 +30,8 @@
  **************************************************************************************************/
 #pragma once
 
-#include <cute/container/array.hpp>
-#include <cute/container/alignment.hpp>
+#include <cute/container/alignment.hpp>  // CUTE_ALIGNAS
+#include <cute/container/array.hpp>      // cute::array
 
 namespace cute
 {

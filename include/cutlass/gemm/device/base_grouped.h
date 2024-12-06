@@ -432,6 +432,7 @@ public:
     //
 
     // Launch
+    cutlass::arch::synclog_setup();
     cutlass::Kernel<BaseKernel><<<grid, block, smem_size, stream>>>(params_);
 
     //

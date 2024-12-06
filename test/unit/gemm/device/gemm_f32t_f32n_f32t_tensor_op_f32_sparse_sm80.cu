@@ -449,71 +449,7 @@ TEST(SM80_Device_Sparse_Gemm_f32t_f32n_f32t_tensor_op_f32, 32x128x64_32x32x64) {
       ElementAccumulator
     >,
     cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
-    6 
-  >;
-
-  EXPECT_TRUE(test::gemm::device::TestAllSparseGemm<Gemm>());
-}
-
-#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ < 900)
-TEST(SM80_Device_Sparse_Gemm_f32t_f32n_f32t_tensor_op_f32, 32x256x32_32x64x32) {
-
-  using ElementOutput = float;
-  using ElementAccumulator = float;
-
-  using Gemm = cutlass::gemm::device::GemmSparseUniversal<
-    float,
-    cutlass::layout::RowMajor,
-    float,
-    cutlass::layout::ColumnMajor,
-    float,
-    cutlass::layout::RowMajor,
-    float,
-    cutlass::arch::OpClassTensorOp,
-    cutlass::arch::Sm80,
-    cutlass::gemm::GemmShape<32, 256, 32>,
-    cutlass::gemm::GemmShape<32, 64, 32>,
-    cutlass::gemm::GemmShape<16, 8, 16>,
-    cutlass::epilogue::thread::LinearCombination<
-      ElementOutput,
-      128 / cutlass::sizeof_bits<ElementOutput>::value,
-      ElementAccumulator,
-      ElementAccumulator
-    >,
-    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
-    6 
-  >;
-
-  EXPECT_TRUE(test::gemm::device::TestAllSparseGemm<Gemm>());
-}
-#endif
-
-TEST(SM80_Device_Sparse_Gemm_f32t_f32n_f32t_tensor_op_f32, 32x256x64_32x64x64) {
-
-  using ElementOutput = float;
-  using ElementAccumulator = float;
-
-  using Gemm = cutlass::gemm::device::GemmSparseUniversal<
-    float,
-    cutlass::layout::RowMajor,
-    float,
-    cutlass::layout::ColumnMajor,
-    float,
-    cutlass::layout::RowMajor,
-    float,
-    cutlass::arch::OpClassTensorOp,
-    cutlass::arch::Sm80,
-    cutlass::gemm::GemmShape<32, 256, 64>,
-    cutlass::gemm::GemmShape<32, 64, 64>,
-    cutlass::gemm::GemmShape<16, 8, 16>,
-    cutlass::epilogue::thread::LinearCombination<
-      ElementOutput,
-      128 / cutlass::sizeof_bits<ElementOutput>::value,
-      ElementAccumulator,
-      ElementAccumulator
-    >,
-    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
-    6 
+    3 
   >;
 
   EXPECT_TRUE(test::gemm::device::TestAllSparseGemm<Gemm>());
@@ -612,37 +548,6 @@ TEST(SM80_Device_Sparse_Gemm_f32t_f32n_f32t_tensor_op_f32, 256x32x32_64x32x32) {
   EXPECT_TRUE(test::gemm::device::TestAllSparseGemm<Gemm>());
 }
 
-TEST(SM80_Device_Sparse_Gemm_f32t_f32n_f32t_tensor_op_f32, 256x32x64_64x32x64) {
-
-  using ElementOutput = float;
-  using ElementAccumulator = float;
-
-  using Gemm = cutlass::gemm::device::GemmSparseUniversal<
-    float,
-    cutlass::layout::RowMajor,
-    float,
-    cutlass::layout::ColumnMajor,
-    float,
-    cutlass::layout::RowMajor,
-    float,
-    cutlass::arch::OpClassTensorOp,
-    cutlass::arch::Sm80,
-    cutlass::gemm::GemmShape<256, 32, 64>,
-    cutlass::gemm::GemmShape<64, 32, 64>,
-    cutlass::gemm::GemmShape<16, 8, 16>,
-    cutlass::epilogue::thread::LinearCombination<
-      ElementOutput,
-      128 / cutlass::sizeof_bits<ElementOutput>::value,
-      ElementAccumulator,
-      ElementAccumulator
-    >,
-    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
-    6 
-  >;
-
-  EXPECT_TRUE(test::gemm::device::TestAllSparseGemm<Gemm>());
-}
-
 TEST(SM80_Device_Sparse_Gemm_f32t_f32n_f32t_tensor_op_f32, 128x16x32_32x16x32) {
 
   using ElementOutput = float;
@@ -722,37 +627,6 @@ TEST(SM80_Device_Sparse_Gemm_f32t_f32n_f32t_tensor_op_f32, 256x16x32_64x16x32) {
     cutlass::arch::Sm80,
     cutlass::gemm::GemmShape<256, 16, 32>,
     cutlass::gemm::GemmShape<64, 16, 32>,
-    cutlass::gemm::GemmShape<16, 8, 16>,
-    cutlass::epilogue::thread::LinearCombination<
-      ElementOutput,
-      128 / cutlass::sizeof_bits<ElementOutput>::value,
-      ElementAccumulator,
-      ElementAccumulator
-    >,
-    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
-    6 
-  >;
-
-  EXPECT_TRUE(test::gemm::device::TestAllSparseGemm<Gemm>());
-}
-
-TEST(SM80_Device_Sparse_Gemm_f32t_f32n_f32t_tensor_op_f32, 256x16x64_64x16x64) {
-
-  using ElementOutput = float;
-  using ElementAccumulator = float;
-
-  using Gemm = cutlass::gemm::device::GemmSparseUniversal<
-    float,
-    cutlass::layout::RowMajor,
-    float,
-    cutlass::layout::ColumnMajor,
-    float,
-    cutlass::layout::RowMajor,
-    float,
-    cutlass::arch::OpClassTensorOp,
-    cutlass::arch::Sm80,
-    cutlass::gemm::GemmShape<256, 16, 64>,
-    cutlass::gemm::GemmShape<64, 16, 64>,
     cutlass::gemm::GemmShape<16, 8, 16>,
     cutlass::epilogue::thread::LinearCombination<
       ElementOutput,

@@ -36,6 +36,7 @@
 
 #include "cutlass/device_kernel.h"
 #include "cutlass/reduction/kernel/reduce_split_k.h"
+#include "cutlass/cuda_host_adapter.hpp"
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
@@ -63,6 +64,8 @@ public:
   using OutputTensorRef = typename ReductionKernel::OutputTensorRef;
 
   using StrideIndex = typename ReductionKernel::StrideIndex;
+
+  static bool const kEnableCudaHostAdapter = CUTLASS_ENABLE_CUDA_HOST_ADAPTER;
 
   /// Argument structure
   struct Arguments {
@@ -174,7 +177,7 @@ public:
   }
 
   /// Runs the kernel using initialized state.
-  Status run(cudaStream_t stream = nullptr) {
+  Status run(cudaStream_t stream = nullptr, CudaHostAdapter *cuda_adapter = nullptr, int32_t kernel_index = 0) {
 
     //
     // Launch reduction kernel
@@ -182,29 +185,39 @@ public:
     dim3 block = ReductionKernel::block_shape();
     dim3 grid = ReductionKernel::grid_shape(params_.problem_size);
 
-    Kernel<ReductionKernel><<< grid, block, 0, stream >>>(params_);
+    if constexpr (kEnableCudaHostAdapter) {
+        CUTLASS_ASSERT(cuda_adapter);
+        if (cuda_adapter) {
+          void* kernel_params[] = {&params_};
+          cuda_adapter->launch(
+              grid, dim3(1,1,1), block, 0, stream, kernel_params, kernel_index);
+        }
+    }
+    else {
+      cutlass::arch::synclog_setup();
+      Kernel<ReductionKernel><<< grid, block, 0, stream >>>(params_);
+    }
 
     cudaError_t result = cudaGetLastError();
-
     return result == cudaSuccess ? Status::kSuccess : Status::kErrorInternal;
   }
 
 
   /// Runs the kernel using initialized state.
-  Status operator()(cudaStream_t stream = nullptr) {
-    return run(stream);
+  Status operator()(cudaStream_t stream = nullptr, CudaHostAdapter *cuda_adapter = nullptr, int32_t kernel_index = 0) {
+    return run(stream, cuda_adapter, kernel_index);
   }
 
   /// Runs the kernel using initialized state.
   Status operator()(
     Arguments const &args, 
     void *workspace = nullptr, 
-    cudaStream_t stream = nullptr) {
+    cudaStream_t stream = nullptr, CudaHostAdapter *cuda_adapter = nullptr, int32_t kernel_index = 0) {
     
     Status status = initialize(args, workspace, stream);
     
     if (status == Status::kSuccess) {
-      status = run(stream);
+      status = run(stream,cuda_adapter, kernel_index);
     }
 
     return status;

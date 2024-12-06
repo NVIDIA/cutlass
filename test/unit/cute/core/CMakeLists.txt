@@ -39,6 +39,7 @@ cutlass_test_unit_add_executable(
   constants.cpp
   core_unit.cpp
   domain_distribute.cpp
+  int_tuple.cpp
   inverse_left.cpp
   inverse_right.cpp
   logical_divide.cpp
@@ -49,8 +50,8 @@ cutlass_test_unit_add_executable(
   packed_tuple.cpp
   pointer.cpp
   reverse.cpp
+  swizzle_layout.cpp
   transform.cpp
   tuple.cpp
   tuple_find.cpp
-  int_tuple.cpp
 )

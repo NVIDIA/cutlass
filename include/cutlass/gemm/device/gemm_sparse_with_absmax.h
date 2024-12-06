@@ -324,6 +324,7 @@ public:
 
     int smem_size = int(sizeof(typename GemmKernel::SharedStorage));
 
+    cutlass::arch::synclog_setup();
     cutlass::Kernel<GemmKernel><<<grid, block, smem_size, stream>>>(params_);
 
     cudaError_t result = cudaGetLastError();

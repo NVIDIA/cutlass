@@ -32,10 +32,10 @@
 set(TEST_RANDOM --iterations=0)                                                     # Random problem sizes
 set(TEST_RANDOM_LARGE_GROUP --groups=500 --iterations=0)                            # Random problem sizes
 
-set(TEST_EPILOGUE --alpha=0.5 --beta=0.7 --iterations=0)                            # Random problem sizes
+set(TEST_EPILOGUE --alpha=0.5 --beta=0.5 --iterations=0)                            # Random problem sizes
 set(TEST_EPILOGUE_LARGE_GROUP --alpha=1.5 --beta=2.0 --groups=500 --iterations=0)   # Random problem sizes
 
-set(TEST_EPILOGUE_OP --beta=0.7 --iterations=1)                                     # Random problem sizes
+set(TEST_EPILOGUE_OP --beta=0.5 --iterations=1)                                     # Random problem sizes
 set(TEST_EPILOGUE_OP_LARGE_GROUP --alpha=1.5 --iterations=1)                        # Random problem sizes
 
 set(TEST_FIXED --m=2048 --n=5120 --k=8192 --groups=50 --iterations=0)               # Fixed problem sizes

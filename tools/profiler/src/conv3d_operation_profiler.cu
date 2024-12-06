@@ -52,10 +52,10 @@ namespace profiler {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Ctor
-Conv3dOperationProfiler::Conv3dOperationProfiler(Options const &options): 
+Conv3dOperationProfiler::Conv3dOperationProfiler(Options const &options):
   OperationProfiler(
     options,
-    library::OperationKind::kConv3d, 
+    library::OperationKind::kConv3d,
     {
       {ArgumentTypeID::kEnumerated, {"conv_kind"}, "Convolutional operator (fprop, dgrad, wgrad)"},
       {ArgumentTypeID::kInteger, {"n", "input_n"}, "Input N dimension of the Conv3d problem space"},
@@ -170,7 +170,7 @@ int64_t Conv3dOperationProfiler::Conv3dProblem::flops(
 
   int64_t flops_mainloop_ = int64_t(mnk.m()) * mnk.n() * mnk.k() * 2;
   int64_t flops_epilogue_ = int64_t(mnk.m()) * int64_t(mnk.n()) * 2;
-  
+
   // Adjust mainloop flop for dgrad strided
   if (operation_desc.conv_kind == library::ConvKind::kDgrad) {
     flops_mainloop_ = flops_mainloop_ / ( stride_d * stride_h * stride_w);
@@ -183,14 +183,14 @@ int64_t Conv3dOperationProfiler::Conv3dProblem::flops(
 
 /// Extracts the problem dimensions
 Status Conv3dOperationProfiler::initialize_configuration(
-  Options const &options,  
+  Options const &options,
   PerformanceReport &report,
   DeviceContext &device_context,
   library::Operation const *operation,
   ProblemSpace const &problem_space,
   ProblemSpace::Problem const &problem) {
 
-  library::ConvDescription const &operation_desc = 
+  library::ConvDescription const &operation_desc =
     static_cast<library::ConvDescription const &>(operation->description());
 
   if (!arg_as_int(problem_.n, "n", problem_space, problem)) {
@@ -207,7 +207,7 @@ Status Conv3dOperationProfiler::initialize_configuration(
     // default value
     problem_.h = 14;
   }
-  
+
   if (!arg_as_int(problem_.w, "w", problem_space, problem)) {
     // default value
     problem_.w = 14;
@@ -232,7 +232,7 @@ Status Conv3dOperationProfiler::initialize_configuration(
     // default value
     problem_.r = 3;
   }
-  
+
   if (!arg_as_int(problem_.s, "s", problem_space, problem)) {
     // default value
     problem_.s = 3;
@@ -294,25 +294,25 @@ Status Conv3dOperationProfiler::initialize_configuration(
   // cutlass profiler sets p and q which are cuDNN compliant.                           //
   //                                                                                    //
   ////////////////////////////////////////////////////////////////////////////////////////
-  // set convolution output z 
+  // set convolution output z
   if (!arg_as_int(problem_.z, "z", problem_space, problem)) {
     // default value (set using cudnn formula for output height, when p is not provided)
     problem_.z = (
-                    problem_.d + 
-                    2 * problem_.pad_d - 
+                    problem_.d +
+                    2 * problem_.pad_d -
                     ((problem_.t - 1) * problem_.dilation_d + 1)
-                 ) / (problem_.stride_d) 
+                 ) / (problem_.stride_d)
                 + 1;
   }
 
-  // set convolution output p 
+  // set convolution output p
   if (!arg_as_int(problem_.p, "p", problem_space, problem)) {
     // default value (set using cudnn formula for output height, when p is not provided)
     problem_.p = (
-                    problem_.h + 
-                    2 * problem_.pad_h - 
+                    problem_.h +
+                    2 * problem_.pad_h -
                     ((problem_.r - 1) * problem_.dilation_h + 1)
-                 ) / (problem_.stride_h) 
+                 ) / (problem_.stride_h)
                 + 1;
   }
 
@@ -320,10 +320,10 @@ Status Conv3dOperationProfiler::initialize_configuration(
   if (!arg_as_int(problem_.q, "q", problem_space, problem)) {
     // default value (set using cudnn formula for output width, when q is not provided)
     problem_.q = (
-                    problem_.w + 
-                    2 * problem_.pad_w - 
+                    problem_.w +
+                    2 * problem_.pad_w -
                     ((problem_.s - 1) * problem_.dilation_w + 1)
-                 ) / (problem_.stride_w) 
+                 ) / (problem_.stride_w)
                 + 1;
   }
   /////////////////////////////////////////////////////////////////////////////////////////
@@ -338,7 +338,7 @@ Status Conv3dOperationProfiler::initialize_configuration(
     // default value
     problem_.split_k_slices = 1;
   }
-  
+
   if (!arg_as_ConvModeID(problem_.conv_mode, "conv_mode", problem_space, problem)) {
     // default value
     problem_.conv_mode = library::ConvModeID::kCrossCorrelation;
@@ -370,24 +370,24 @@ Status Conv3dOperationProfiler::initialize_configuration(
   }
 
   if (!arg_as_scalar(
-    problem_.alpha, 
-    operation_desc.element_epilogue, 
-    "alpha", 
-    problem_space, 
+    problem_.alpha,
+    operation_desc.element_epilogue,
+    "alpha",
+    problem_space,
     problem)) {
 
     if (!cast_from_double(problem_.alpha, operation_desc.element_epilogue, 1)) {
       return Status::kErrorInternal;
     }
   }
-  
+
   if (!arg_as_scalar(
-    problem_.beta, 
-    operation_desc.element_epilogue, 
-    "beta", 
-    problem_space, 
+    problem_.beta,
+    operation_desc.element_epilogue,
+    "beta",
+    problem_space,
     problem)) {
-    
+
     if (!cast_from_double(problem_.beta, operation_desc.element_epilogue, 0)) {
       return Status::kErrorInternal;
     }
@@ -420,25 +420,25 @@ Status Conv3dOperationProfiler::initialize_configuration(
                                                 int(problem_.split_k_slices),
                                                 1 // groups
                                               );
-  
+
   conv_workspace_.configuration.split_k_mode = static_cast<conv::SplitKMode>(static_cast<int>(problem_.split_k_mode));
 
   conv_workspace_.configuration.layout_activations.stride() = make_Coord(
-    int(problem_.c), 
+    int(problem_.c),
     int(problem_.w) * int(problem_.c),
     int(problem_.h) * int(problem_.w) * int(problem_.c),
     int(problem_.d) * int(problem_.h) * int(problem_.w) * int(problem_.c)
   );
 
   conv_workspace_.configuration.layout_filters.stride() = make_Coord(
-    int(problem_.c), 
+    int(problem_.c),
     int(problem_.s) * int(problem_.c),
     int(problem_.r) * int(problem_.s) * int(problem_.c),
     int(problem_.t) * int(problem_.r) * int(problem_.s) * int(problem_.c)
   );
 
   conv_workspace_.configuration.layout_output.stride() = make_Coord(
-    int(problem_.k), 
+    int(problem_.k),
     int(problem_.q) * int(problem_.k),
     int(problem_.q) * int(problem_.p) * int(problem_.k),
     int(problem_.z) * int(problem_.q) * int(problem_.p) * int(problem_.k)
@@ -469,7 +469,7 @@ Status Conv3dOperationProfiler::initialize_configuration(
 /// Initializes the performance result
 void Conv3dOperationProfiler::initialize_result_(
   PerformanceResult &result,
-  Options const &options,  
+  Options const &options,
   library::ConvDescription const &operation_desc,
   ProblemSpace const &problem_space) {
 
@@ -481,15 +481,15 @@ void Conv3dOperationProfiler::initialize_result_(
   result.arguments.resize(problem_space.rank());
 
   set_argument(result, "Activation", problem_space,
-    std::string(library::to_string(operation_desc.activation().element)) 
+    std::string(library::to_string(operation_desc.activation().element))
     + ":" + library::to_string(operation_desc.activation().layout));
 
   set_argument(result, "Filter", problem_space,
-    std::string(library::to_string(operation_desc.filter().element)) 
+    std::string(library::to_string(operation_desc.filter().element))
     + ":" + library::to_string(operation_desc.filter().layout));
 
   set_argument(result, "Output", problem_space,
-    std::string(library::to_string(operation_desc.output().element)) 
+    std::string(library::to_string(operation_desc.output().element))
     + ":" + library::to_string(operation_desc.output().layout));
 
   set_argument(result, "conv_kind", problem_space, library::to_string(operation_desc.conv_kind));
@@ -506,7 +506,7 @@ void Conv3dOperationProfiler::initialize_result_(
   set_argument(result, "t", problem_space, problem_.t);
   set_argument(result, "r", problem_space, problem_.r);
   set_argument(result, "s", problem_space, problem_.s);
-  
+
   set_argument(result, "z", problem_space, problem_.z);
   set_argument(result, "p", problem_space, problem_.p);
   set_argument(result, "q", problem_space, problem_.q);
@@ -523,11 +523,11 @@ void Conv3dOperationProfiler::initialize_result_(
   set_argument(result, "dilation_h", problem_space, problem_.dilation_h);
   set_argument(result, "dilation_w", problem_space, problem_.dilation_w);
 
-  set_argument(result, "split_k_mode", problem_space, 
+  set_argument(result, "split_k_mode", problem_space,
     std::string(library::to_string(problem_.split_k_mode)));
   set_argument(result, "split_k_slices", problem_space, problem_.split_k_slices);
 
-  set_argument(result, "conv_mode", problem_space, 
+  set_argument(result, "conv_mode", problem_space,
     std::string(library::to_string(problem_.conv_mode)));
 
   set_argument(result, "alpha", problem_space,
@@ -536,7 +536,7 @@ void Conv3dOperationProfiler::initialize_result_(
   set_argument(result, "beta", problem_space,
     library::lexical_cast(problem_.beta, operation_desc.element_epilogue));
 
-  set_argument(result, "eq_gemm_provider", problem_space, 
+  set_argument(result, "eq_gemm_provider", problem_space,
     std::string(library::to_string(problem_.eq_gemm_provider)));
 
   OperationProfiler::initialize_result_(result, operation_desc, problem_space);
@@ -554,14 +554,14 @@ void Conv3dOperationProfiler::initialize_result_(
 
 /// Initialize reduction problem dimensions and library::Operation
 bool Conv3dOperationProfiler::initialize_reduction_configuration_(
-  Options const &options,  
+  Options const &options,
   PerformanceReport &report,
   DeviceContext &device_context,
   library::Operation const *operation,
   ProblemSpace const &problem_space,
   ProblemSpace::Problem const &problem) {
 
-  library::ConvDescription const &conv_desc = 
+  library::ConvDescription const &conv_desc =
     static_cast<library::ConvDescription const &>(operation->description());
 
   library::ConvKind const &conv_kind = conv_desc.conv_kind;
@@ -585,14 +585,14 @@ bool Conv3dOperationProfiler::initialize_reduction_configuration_(
   conv_workspace_.reduction_configuration.lds              = conv_workspace_.configuration.layout_c(conv_kind).stride()[tensor_c_stride_idx];
   conv_workspace_.reduction_configuration.ldd              = conv_workspace_.configuration.layout_c(conv_kind).stride()[tensor_c_stride_idx];
 
-  // find reduction operation 
+  // find reduction operation
   library::ReductionFunctionalKey reduction_key(
     library::Provider::kCUTLASS,
-    conv_desc.tile_description.math_instruction.element_accumulator,  // element workspace 
+    conv_desc.tile_description.math_instruction.element_accumulator,  // element workspace
     conv_desc.tile_description.math_instruction.element_accumulator,  // element accumulator
     conv_desc.C.element,                                              // element output
     conv_desc.element_epilogue                                        // element compute
-  ); 
+  );
 
 #if 0// debug print to check which reduction instance is selected
     std::cout << reduction_key << "\n";
@@ -602,7 +602,7 @@ bool Conv3dOperationProfiler::initialize_reduction_configuration_(
   if(reduction_it == Singleton::get().operation_table.reduction_operations.end()) {
 
     return false;
-  }    
+  }
 
   // initialize reduction operation required for parallel split-k conv2d operator
   reduction_op_ = reduction_it->second;
@@ -614,12 +614,23 @@ bool Conv3dOperationProfiler::initialize_reduction_configuration_(
 
 /// Initializes workspace
 Status Conv3dOperationProfiler::initialize_workspace(
-  Options const &options,  
+  Options const &options,
   PerformanceReport &report,
   DeviceContext &device_context,
   library::Operation const *operation,
   ProblemSpace const &problem_space,
   ProblemSpace::Problem const &problem) {
+
+  if (options.device.devices.size() != 1) {
+    throw std::runtime_error("This operation profiler only supports a single "
+                             "device.");
+  }
+
+  cudaError_t result;
+  result = cudaSetDevice(options.device.device_id(0));
+  if (result != cudaSuccess) {
+    throw std::runtime_error("cudaSetDevice() failed.");
+  }
 
   // initialize conv2d underlying operation to handle parallel reduction
   library::Operation const* underlying_operation = operation;
@@ -630,15 +641,15 @@ Status Conv3dOperationProfiler::initialize_workspace(
     }
   }
 
-  library::ConvDescription const &operation_desc = 
+  library::ConvDescription const &operation_desc =
     static_cast<library::ConvDescription const &>(underlying_operation->description());
 
   // Compute the number of copies of the problem to avoid L2 camping.
   if (!options.profiling.workspace_count) {
     int64_t bytes = problem_.bytes(operation_desc);
-    if (bytes < 3 * int64_t(options.device.properties.l2CacheSize)) {
+    if (bytes < 3 * int64_t(options.device.properties[0].l2CacheSize)) {
       conv_workspace_.problem_count =
-        1 + int((3 * int64_t(options.device.properties.l2CacheSize)) / bytes);
+        1 + int((3 * int64_t(options.device.properties[0].l2CacheSize)) / bytes);
     }
     else {
       conv_workspace_.problem_count = 1;
@@ -651,7 +662,7 @@ Status Conv3dOperationProfiler::initialize_workspace(
 
   if (options.execution_mode != ExecutionMode::kDryRun) {
     int seed_shift = 0;
-    conv_workspace_.A = device_context.allocate_tensor(
+    conv_workspace_.A = device_context.allocate_and_initialize_tensor(
       options,
       "A",
       operation_desc.A.element,
@@ -659,10 +670,11 @@ Status Conv3dOperationProfiler::initialize_workspace(
       problem_.extent_a(operation_desc.conv_kind),
       conv_workspace_.stride_a(operation_desc.conv_kind),
       conv_workspace_.problem_count,
-      seed_shift++
+      seed_shift++,
+      0 // device_index
     );
 
-    conv_workspace_.B = device_context.allocate_tensor(
+    conv_workspace_.B = device_context.allocate_and_initialize_tensor(
       options,
       "B",
       operation_desc.B.element,
@@ -670,10 +682,11 @@ Status Conv3dOperationProfiler::initialize_workspace(
       problem_.extent_b(operation_desc.conv_kind),
       conv_workspace_.stride_b(operation_desc.conv_kind),
       conv_workspace_.problem_count,
-      seed_shift++
+      seed_shift++,
+      0 // device_index
     );
 
-    conv_workspace_.C = device_context.allocate_tensor(
+    conv_workspace_.C = device_context.allocate_and_initialize_tensor(
       options,
       "C",
       operation_desc.C.element,
@@ -681,27 +694,32 @@ Status Conv3dOperationProfiler::initialize_workspace(
       problem_.extent_c(operation_desc.conv_kind),
       conv_workspace_.stride_c(operation_desc.conv_kind),
       conv_workspace_.problem_count,
-      seed_shift++
+      seed_shift++,
+      0 // device_index
     );
 
     conv_workspace_.Computed = device_context.allocate_tensor(
+      options,
       "D",
       operation_desc.C.element,
       operation_desc.C.layout,
       problem_.extent_c(operation_desc.conv_kind),
       conv_workspace_.stride_c(operation_desc.conv_kind),
-      conv_workspace_.problem_count
+      conv_workspace_.problem_count,
+      0 // device_index
     );
 
     conv_workspace_.Reference = device_context.allocate_tensor(
+      options,
       "Reference",
       operation_desc.C.element,
       operation_desc.C.layout,
       problem_.extent_c(operation_desc.conv_kind),
       conv_workspace_.stride_c(operation_desc.conv_kind),
-      conv_workspace_.problem_count
+      conv_workspace_.problem_count,
+      0 // device_index
     );
-    
+
   }
 
   //
@@ -733,10 +751,10 @@ Status Conv3dOperationProfiler::initialize_workspace(
         conv_workspace_.reduction_host_workspace.resize(workspace_size, 0);
 
         status = reduction_op_->initialize(
-          &conv_workspace_.reduction_configuration, 
-          conv_workspace_.reduction_host_workspace.data(), 
+          &conv_workspace_.reduction_configuration,
+          conv_workspace_.reduction_host_workspace.data(),
           nullptr);
-        
+
         if (status != Status::kSuccess) {
           return status;
         }
@@ -763,7 +781,7 @@ Status Conv3dOperationProfiler::initialize_workspace(
 
 /// Verifies CUTLASS against references
 bool Conv3dOperationProfiler::verify_cutlass(
-  Options const &options,  
+  Options const &options,
   PerformanceReport &report,
   DeviceContext &device_context,
   library::Operation const *operation,
@@ -784,7 +802,7 @@ bool Conv3dOperationProfiler::verify_cutlass(
   set_cutlass_operator_arguments_();
 
   conv_workspace_.Computed->copy_from_device(conv_workspace_.C->data());
-  
+
   //
   // Run the CUTLASS operation
   //
@@ -799,9 +817,9 @@ bool Conv3dOperationProfiler::verify_cutlass(
   }
 
 #if 0
-  std::cout << "profiling         : " << std::endl 
-            << "conv2d            : " << operation->description().name << std::endl 
-            << "underlying conv2d : " << underlying_operation->description().name << std::endl 
+  std::cout << "profiling         : " << std::endl
+            << "conv2d            : " << operation->description().name << std::endl
+            << "underlying conv2d : " << underlying_operation->description().name << std::endl
             << "reduction         : " << reduction_op_->description().name << std::endl;
 #endif
 
@@ -818,7 +836,7 @@ bool Conv3dOperationProfiler::verify_cutlass(
 
   // Run parallel reduction kernel for parallel split_k_mode
   if (conv_workspace_.configuration.split_k_mode == conv::SplitKMode::kParallel) {
-    
+
     results_.back().status = reduction_op_->run(
       &conv_workspace_.reduction_arguments,
       conv_workspace_.reduction_host_workspace.data(),
@@ -840,7 +858,7 @@ bool Conv3dOperationProfiler::verify_cutlass(
 
   // CUTLASS op ran the but not yet verified against any verification provider
   results_.back().disposition = Disposition::kNotVerified;
-  
+
   //
   // Run verification providers
   //
@@ -856,7 +874,7 @@ bool Conv3dOperationProfiler::verify_cutlass(
 
       Status status = cudnn_satisfies(conv_desc, conv_workspace_.configuration);
 
-      // Initialize reference data to the source data 
+      // Initialize reference data to the source data
       conv_workspace_.Reference->copy_from_device(conv_workspace_.C->data());
 
       if (status == Status::kSuccess) {
@@ -883,8 +901,8 @@ bool Conv3dOperationProfiler::verify_cutlass(
 
     // Run verification host reference
     if (options.verification.provider_enabled(library::Provider::kReferenceHost)) {
-      
-      // Restore reference data back to initial source data 
+
+      // Restore reference data back to initial source data
       conv_workspace_.Reference->copy_from_device(conv_workspace_.C->data());
 
       verify_with_host_reference_(
@@ -893,10 +911,10 @@ bool Conv3dOperationProfiler::verify_cutlass(
         device_context,
         operation,
         problem_space,
-        problem);      
+        problem);
     }
 
-    // Update disposition to worst case verification outcome among all 
+    // Update disposition to worst case verification outcome among all
     // verification providers which are supported
     bool is_any_verification_run_passed = false;
     for(auto &m : results_.back().verification_map) {
@@ -921,7 +939,7 @@ bool Conv3dOperationProfiler::verify_cutlass(
 
 /// Verifies CUTLASS against host reference
 bool Conv3dOperationProfiler::verify_with_host_reference_(
-  Options const &options,  
+  Options const &options,
   PerformanceReport &report,
   DeviceContext &device_context,
   library::Operation const *operation,
@@ -939,14 +957,14 @@ bool Conv3dOperationProfiler::verify_with_host_reference_(
 
   library::ConvFunctionalKey conv_key(
     library::Provider::kReferenceHost,
-    conv_desc.conv_kind,        
+    conv_desc.conv_kind,
     conv_desc.A.element,
     conv_desc.A.layout,
     conv_desc.B.element,
     conv_desc.B.layout,
     conv_desc.C.element,
     conv_desc.C.layout,
-    conv_desc.tile_description.math_instruction.element_accumulator, 
+    conv_desc.tile_description.math_instruction.element_accumulator,
     conv_desc.element_epilogue);
 
 #if 0 // debug print to check which host reference instance is selected
@@ -959,12 +977,12 @@ bool Conv3dOperationProfiler::verify_with_host_reference_(
 
     results_.back().verification_map[library::Provider::kReferenceHost] = Disposition::kNotRun;
     return true;
-  }    
+  }
 
   // conv3d host reference minimum cc is 0 (CPU) and no iterator algorithm
   library::ConvPreferenceKey preference_key(0, library::IteratorAlgorithmID::kNone);
   auto cc_it = operators_it->second.find(preference_key);
-  
+
   if(cc_it == operators_it->second.end()) {
     results_.back().verification_map[library::Provider::kReferenceHost] = Disposition::kNotRun;
     return true;
@@ -1035,9 +1053,9 @@ bool Conv3dOperationProfiler::verify_with_host_reference_(
   );
 
   // Save workspace if incorrect
-  if (options.verification.save_workspace == SaveWorkspace::kIncorrect && 
+  if (options.verification.save_workspace == SaveWorkspace::kIncorrect &&
     results_.back().verification_map[library::Provider::kReferenceHost] == Disposition::kIncorrect) {
-  
+
     save_workspace(
       device_context,
       options,
@@ -1053,7 +1071,7 @@ bool Conv3dOperationProfiler::verify_with_host_reference_(
 
 /// Verifies CUTLASS against host reference
 bool Conv3dOperationProfiler::verify_with_device_reference_(
-  Options const &options,  
+  Options const &options,
   PerformanceReport &report,
   DeviceContext &device_context,
   library::Operation const *operation,
@@ -1068,14 +1086,14 @@ bool Conv3dOperationProfiler::verify_with_device_reference_(
 
 /// Measures performance results
 bool Conv3dOperationProfiler::profile(
-  Options const &options,  
+  Options const &options,
   PerformanceReport &report,
   DeviceContext &device_context,
   library::Operation const *operation,
   ProblemSpace const &problem_space,
   ProblemSpace::Problem const &problem) {
 
-  
+
   if (options.profiling.provider_enabled(library::Provider::kCUTLASS)) {
 
     set_cutlass_operator_arguments_();
@@ -1180,7 +1198,7 @@ Status Conv3dOperationProfiler::profile_cutlass_(
       return status;
     }
   }
-  
+
   //
   // Initialize GPU timer
   //
@@ -1198,9 +1216,9 @@ Status Conv3dOperationProfiler::profile_cutlass_(
 
     // Setup rotating workspace
     int problem_idx = (iteration % conv_workspace_.problem_count);
- 
+
     set_cutlass_operator_arguments_(problem_idx);
- 
+
     // Run underlying conv2d operation
     status = underlying_operation->run(
       arguments,
@@ -1208,7 +1226,7 @@ Status Conv3dOperationProfiler::profile_cutlass_(
       device_workspace);
 
     // Run parallel reduction kernel for parallel split_k_mode
-    if (conv_workspace_.configuration.split_k_mode == conv::SplitKMode::kParallel) {      
+    if (conv_workspace_.configuration.split_k_mode == conv::SplitKMode::kParallel) {
       status = reduction_op_->run(
         &conv_workspace_.reduction_arguments,
         conv_workspace_.reduction_host_workspace.data(),
@@ -1229,7 +1247,7 @@ Status Conv3dOperationProfiler::profile_cutlass_(
   //
   // Update performance result
   //
-  
+
   runtime = timer.duration(iteration);
 
   return status;
@@ -1240,7 +1258,7 @@ Status Conv3dOperationProfiler::profile_cutlass_(
 
 /// Verifies CUTLASS against cudnn reference
 bool Conv3dOperationProfiler::verify_with_cudnn_(
-  Options const &options,  
+  Options const &options,
   PerformanceReport &report,
   DeviceContext &device_context,
   library::Operation const *operation,
@@ -1257,7 +1275,7 @@ bool Conv3dOperationProfiler::verify_with_cudnn_(
   cudnnStatus_t status = handle.get_cudnn_create_status();
 
   if (status != CUDNN_STATUS_SUCCESS) {
-    
+
     results_.back().verification_map[library::Provider::kCUDNN] = get_cutlass_disposition(status);
     return true;
   }
@@ -1285,8 +1303,8 @@ bool Conv3dOperationProfiler::verify_with_cudnn_(
     // Construct dispatcher to cudnn operator
     //
 
-    detail::cudnnConvDispatcher conv_op( 
-      conv_desc, 
+    detail::cudnnConvDispatcher conv_op(
+      conv_desc,
       conv_workspace_.configuration,
       conv_workspace_.arguments,
       handle
@@ -1323,7 +1341,7 @@ bool Conv3dOperationProfiler::verify_with_cudnn_(
     );
 
     // Save workspace if incorrect
-    if (options.verification.save_workspace == SaveWorkspace::kIncorrect && 
+    if (options.verification.save_workspace == SaveWorkspace::kIncorrect &&
       results_.back().verification_map[library::Provider::kCUDNN] == Disposition::kIncorrect) {
 
       save_workspace(

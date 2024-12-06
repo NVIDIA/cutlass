@@ -187,7 +187,7 @@ struct CollectiveMma<
 
   struct SharedStorage
   {
-    struct TensorStorage : cute::aligned_struct<256> { 
+    struct TensorStorage : cute::aligned_struct<256, _0> { 
       cute::array_aligned<typename TiledMma::ValTypeA, cute::cosize_v<SmemLayoutA>, 256> smem_A;
       cute::array_aligned<typename TiledMma::ValTypeB, cute::cosize_v<SmemLayoutB>, 256> smem_B;
     } tensors;

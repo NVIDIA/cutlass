@@ -71,6 +71,62 @@ is_im2col() {
       || cute::is_same_v<Stride, cutlass::detail::TagToStrideC_t<cutlass::layout::TensorNDHWC>>;
 }
 
+template<class Schedule>
+struct sm90_is_ptr_array_tma : cute::false_type {};
+
+template<>
+struct sm90_is_ptr_array_tma<PtrArrayTmaWarpSpecializedCooperative> : cute::true_type {};
+
+template<>
+struct sm90_is_ptr_array_tma<PtrArrayTmaWarpSpecializedPingpong> : cute::true_type {};
+
+template<>
+struct sm90_is_ptr_array_tma<PtrArrayTmaWarpSpecialized> : cute::true_type {};
+
+template<class Schedule>
+static constexpr bool sm90_is_ptr_array_tma_v = sm90_is_ptr_array_tma<Schedule>::value;
+
+template<class Schedule>
+struct sm90_is_ptr_array_tma_cooperative : cute::false_type {};
+
+template<>
+struct sm90_is_ptr_array_tma_cooperative<PtrArrayTmaWarpSpecializedCooperative> : cute::true_type {};
+
+template<class Schedule>
+static constexpr bool sm90_is_ptr_array_tma_cooperative_v = sm90_is_ptr_array_tma_cooperative<Schedule>::value;
+
+template<class Schedule>
+struct sm90_is_ptr_array_tma_pingpong : cute::false_type {};
+
+template<>
+struct sm90_is_ptr_array_tma_pingpong<PtrArrayTmaWarpSpecializedPingpong> : cute::true_type {};
+
+template<class Schedule>
+static constexpr bool sm90_is_ptr_array_tma_pingpong_v = sm90_is_ptr_array_tma_pingpong<Schedule>::value;
+
+template<class DispatchPolicy>
+struct sm90_is_ptr_array_tma_dispatch_policy : cute::false_type {};
+
+template<
+  int StagesC,
+  int StagesD,
+  int FragmentSize,
+  bool ReuseSmemC,
+  bool DelayTmaStore,
+  int NumEpilogueWarpGroups
+>
+struct sm90_is_ptr_array_tma_dispatch_policy<
+    Sm90PtrArrayTmaWarpSpecialized<StagesC, 
+                                   StagesD, 
+                                   FragmentSize,
+                                   ReuseSmemC, 
+                                   DelayTmaStore, 
+                                   NumEpilogueWarpGroups>> 
+    : cute::true_type {};
+
+template<class DispatchPolicy>
+static constexpr bool sm90_is_ptr_array_tma_dispatch_policy_v = sm90_is_ptr_array_tma_dispatch_policy<DispatchPolicy>::value;
+
 using cutlass::atomic_maximum;
 
 template <class T>
@@ -79,14 +135,11 @@ static constexpr int elements_per_access_v = cutlass::sizeof_bits<uint32_t>::val
 template <class EpilogueSchedule>
 static constexpr bool sm90_is_cooperative_v =
   cute::is_base_of_v<cutlass::epilogue::TmaWarpSpecializedCooperative, EpilogueSchedule> ||
-  cute::is_base_of_v<cutlass::epilogue::PtrArrayTmaWarpSpecializedCooperative, EpilogueSchedule>;
-
-template <class EpilogueSchedule>
-static constexpr bool sm90_is_tma_ptr_array_v =
-  cute::is_base_of_v<cutlass::epilogue::PtrArrayTmaWarpSpecializedCooperative, EpilogueSchedule>;
+  sm90_is_ptr_array_tma_cooperative_v<EpilogueSchedule>;
 
 template <class EpilogueSchedule>
 static constexpr bool sm90_is_warp_specialized_v =
+  (!sm90_is_ptr_array_tma_cooperative_v<EpilogueSchedule> && sm90_is_ptr_array_tma_v<EpilogueSchedule>) ||
   cute::is_base_of_v<cutlass::epilogue::TmaWarpSpecialized, EpilogueSchedule>;
 
 template <class GmemLayoutTag>
@@ -146,6 +199,14 @@ struct IsThreadEpilogueOpWithActivation <ThreadEpilogueOp, cute::enable_if_t<Thr
   using type = typename ThreadEpilogueOp::ActivationFn;
 };
 
+template <typename ThreadEpilogueOp, typename = void>
+struct IsThreadEpilogueOpWithElementwiseArguments : cute::false_type {};
+
+template <typename ThreadEpilogueOp>
+struct IsThreadEpilogueOpWithElementwiseArguments<
+        ThreadEpilogueOp,
+        cute::void_t<typename ThreadEpilogueOp::ElementwiseOp::Arguments>> : cute::true_type {};
+
 // Wrapper class to use operator-style epilogues in sm90 TMA warp-specialized kernels
 template <class EpilogueOp>
 class Sm90TmaWarpSpecializedAdapter : public EpilogueOp {
@@ -199,7 +260,11 @@ public:
   }
 
   CUTLASS_DEVICE auto
-  load_init([[maybe_unused]] typename EpilogueOp::Params const& params, [[maybe_unused]] int32_t const sm_count, [[maybe_unused]] int32_t const sm_idx) const {
+  load_init(
+    [[maybe_unused]] typename EpilogueOp::Params const& params,
+    [[maybe_unused]] TensorMapStorage& shared_tensormaps,
+    [[maybe_unused]] int32_t sm_count,
+    [[maybe_unused]] int32_t sm_idx) {
     return cute::make_tuple(nullptr);
   }
 
@@ -243,7 +308,7 @@ public:
       [[maybe_unused]] TensorStorage& shared_tensors,
       [[maybe_unused]] TensorMapC const& load_tensormap,
       [[maybe_unused]] int subtile_idx=-1,
-      [[maybe_unused]] bool return_prior_state = false)
+      [[maybe_unused]] bool wait = false)
   {
     return load_pipe_producer_state;
   }
@@ -257,8 +322,12 @@ public:
   }
 
   CUTLASS_DEVICE auto
-  store_init([[maybe_unused]] typename EpilogueOp::Params const& params, [[maybe_unused]] int32_t const sm_count,
-      [[maybe_unused]] int32_t const sm_idx) const {
+  store_init(
+    [[maybe_unused]] typename EpilogueOp::Params const& params,
+    [[maybe_unused]] TensorMapStorage& shared_tensormaps,
+    [[maybe_unused]] int32_t sm_count,
+    [[maybe_unused]] int32_t sm_idx,
+    [[maybe_unused]] int32_t warp_group_idx) {
     return cute::make_tuple(nullptr);
   }
 
@@ -369,22 +438,25 @@ public:
 
   // Dummy methods to perform different parts of TMA/Tensormap modifications
 
-  template <bool IsLoad>
+  template <bool IsLoad,
+            class ProblemShapeMNKL>
   CUTLASS_DEVICE
   void
   tensormaps_perform_update(
-      [[maybe_unused]] TensorMapStorage& shared_tensormap,
+      [[maybe_unused]] TensorMapStorage& shared_tensormaps,
       [[maybe_unused]] typename EpilogueOp::Params const& params,
       [[maybe_unused]] cute::TmaDescriptor const* tensormap,
-      [[maybe_unused]] int32_t next_batch) { }
+      [[maybe_unused]] ProblemShapeMNKL problem_shape,
+      [[maybe_unused]] int32_t next_batch,
+      [[maybe_unused]] int32_t warp_group_idx) { }
 
   template <bool IsLoad>
   CUTLASS_DEVICE
   void
   tensormaps_cp_fence_release(
-      [[maybe_unused]] TensorMapStorage& shared_tensormap,
+      [[maybe_unused]] TensorMapStorage& shared_tensormaps,
       [[maybe_unused]] cute::TmaDescriptor const* tensormap,
-      [[maybe_unused]] uint32_t lane_predicate) { }
+      [[maybe_unused]] int32_t warp_group_idx) { }
 
   template <bool IsLoad>
   CUTLASS_DEVICE

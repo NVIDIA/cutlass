@@ -104,6 +104,7 @@ struct FragmentShuffler {
 ////////////////////////////////////////////////////////////////////////////////
 
 /// Partial specialization for `mma.sync` on 16b (F16/BF16) and `ldmatrix` on 8b (S8/U8)
+/// or for `mma.sync` on 8b (S8/U8) and `ldmatrix` on 4b (S4/U4)
 /// for operand A multiplicand going through upcasting. 
 template <
   /// Element type for the operand in registers for the mma.sync
@@ -122,8 +123,8 @@ struct FragmentShuffler <ElementMma_, ElementLoad_,
                          NumElementsInWarpFragment, 
                          NumElementsInMmaFragment,
                          Operand::kA,
-                         typename platform::enable_if<(sizeof_bits<ElementMma_>::value == 16) &&
-                                                 (sizeof_bits<ElementLoad_>::value == 8)>::type> {
+                         typename platform::enable_if<(sizeof_bits<ElementMma_>::value /
+                                                 sizeof_bits<ElementLoad_>::value == 2)>::type> {
 public:
   using ElementMma = ElementMma_;
   using ElementLoad = ElementLoad_;
@@ -187,6 +188,7 @@ public:
 ////////////////////////////////////////////////////////////////////////////////
 
 /// Partial specialization for `mma.sync` on 16b (F16/BF16) and `ldmatrix` on 8b (S8/U8)
+/// or for `mma.sync` on 8b (S8/U8) and `ldmatrix` on 4b (S4/U4)
 /// for operand B multiplicand going through upcasting. 
 template <
   /// Element type for the operand in registers for the mma.sync
@@ -205,8 +207,8 @@ struct FragmentShuffler <ElementMma_, ElementLoad_,
                          NumElementsInWarpFragment, 
                          NumElementsInMmaFragment,
                          Operand::kB,
-                         typename platform::enable_if<(sizeof_bits<ElementMma_>::value == 16) &&
-                                                 (sizeof_bits<ElementLoad_>::value == 8)>::type> {
+                         typename platform::enable_if<(sizeof_bits<ElementMma_>::value /
+                                                 sizeof_bits<ElementLoad_>::value == 2)>::type> {
 public:
   using ElementMma = ElementMma_;
   using ElementLoad = ElementLoad_;

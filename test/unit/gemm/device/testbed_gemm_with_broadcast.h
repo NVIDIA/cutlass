@@ -161,7 +161,7 @@ struct TestbedGemmWithBroadcast {
       int bits_output = cutlass::sizeof_bits<typename Gemm::ElementC>::value;
 
       if (bits_input == 1) {
-        scope_max = 2;
+        scope_max = 1;
         scope_min = 0;
       } else if (bits_input <= 8) {
         scope_max = 2;

@@ -609,7 +609,7 @@ inline CachedTestKey CreateCachedGemmTestKey(
   ElementCompute alpha,
   ElementCompute beta,
   cutlass::TensorView<ElementA, LayoutA> A,
-  cutlass::TensorView<ElementA, LayoutB> B,
+  cutlass::TensorView<ElementB, LayoutB> B,
   cutlass::TensorView<ElementC, LayoutC> C
 ) {
 
@@ -659,7 +659,7 @@ inline CachedTestKey CreateCachedConv2dTestKey(
   ElementCompute alpha,
   ElementCompute beta,
   cutlass::TensorView<ElementA, LayoutA> A,
-  cutlass::TensorView<ElementA, LayoutB> B,
+  cutlass::TensorView<ElementB, LayoutB> B,
   cutlass::TensorView<ElementC, LayoutC> C
 ) {
 
@@ -711,7 +711,7 @@ inline CachedTestKey CreateCachedConv2dWithBroadcastTestKey(
   ElementCompute alpha,
   ElementCompute beta,
   cutlass::TensorView<ElementA, LayoutA> A,
-  cutlass::TensorView<ElementA, LayoutB> B,
+  cutlass::TensorView<ElementB, LayoutB> B,
   cutlass::TensorView<ElementC, LayoutC> C
 ) {
 
@@ -763,7 +763,7 @@ inline CachedTestKey CreateCachedConv2dWithReductionTestKey(
   ElementCompute alpha,
   ElementCompute beta,
   cutlass::TensorView<ElementA, LayoutA> A,
-  cutlass::TensorView<ElementA, LayoutB> B,
+  cutlass::TensorView<ElementB, LayoutB> B,
   cutlass::TensorView<ElementC, LayoutC> C
 ) {
 
@@ -814,7 +814,7 @@ inline CachedTestKey CreateCachedConv3dTestKey(
   ElementCompute alpha,
   ElementCompute beta,
   cutlass::TensorView<ElementA, LayoutA> A,
-  cutlass::TensorView<ElementA, LayoutB> B,
+  cutlass::TensorView<ElementB, LayoutB> B,
   cutlass::TensorView<ElementC, LayoutC> C
 ) {
 

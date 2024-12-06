@@ -103,6 +103,17 @@ public:
     void *device_workspace = nullptr,
     cudaStream_t stream = nullptr) const = 0;
 
+  // Originally designed for metadata, but should be useful for FP8/6/4 too.
+  virtual Status initialize_with_profiler_workspace(
+    void const *configuration,
+    void *host_workspace,
+    void *device_workspace,
+    uint8_t **profiler_workspace_ptrs,
+    int problem_count,
+    cudaStream_t stream = nullptr) {
+    return Status::kErrorNotSupported;
+  }
+
   virtual Status run(
     void const *arguments,
     void *host_workspace,
@@ -290,7 +301,6 @@ struct GemmUniversalArguments {
 
   // Needed for some 3.x kernels
   int sm_count{0};
-
   library::RasterOrder raster_order{};
   int swizzle_size{1};
 };

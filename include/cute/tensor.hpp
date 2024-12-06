@@ -37,7 +37,10 @@
 //
 
 #include <cute/pointer_swizzle.hpp>
+#include <cute/pointer_sparse.hpp>
 #include <cute/pointer_flagged.hpp>
+#include <cute/tensor_zip.hpp>
+
 //
 // Tensor Algorithms
 //

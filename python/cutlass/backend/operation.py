@@ -36,7 +36,7 @@ from cuda import __version__, cuda
 
 from cutlass.backend.utils.device import device_cc
 
-_version_splits = [int(x) for x in __version__.split("rc")[0].split(".")]
+_version_splits = [int(x) for x in __version__.split("rc")[0].split(".post")[0].split(".")]
 _supports_cluster_launch = None
 
 

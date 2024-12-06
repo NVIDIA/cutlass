@@ -31,12 +31,14 @@
 #pragma once
 
 #include <cute/config.hpp>
-
-#include <cute/atom/copy_atom.hpp>
-#include <cute/algorithm/copy.hpp>
-
-#include <cute/tensor_impl.hpp>
+#include <cute/layout.hpp>
+#include <cute/layout_composed.hpp> // cute::logical_divide
+#include <cute/swizzle.hpp>         // cute::Swizzle
+#include <cute/swizzle_layout.hpp>  // cute::get_nonswizzle_portion
+#include <cute/tensor_impl.hpp>     // cute::Tensor
 #include <cute/tensor_predicate.hpp>
+#include <cute/algorithm/copy.hpp>
+#include <cute/atom/copy_atom.hpp>
 
 namespace cute
 {

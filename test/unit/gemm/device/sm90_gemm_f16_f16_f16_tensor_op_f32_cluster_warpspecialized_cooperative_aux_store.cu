@@ -329,6 +329,70 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_cooperative_epilogue, 25
   EXPECT_TRUE(passed);
 }
 
+TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_cooperative_epilogue, 256x128x64_2x2x1_VoidC_VoidD_AuxStoreNoSmemF16_RowMajor) {
+  using LayoutA = cutlass::layout::RowMajor;
+  using LayoutB = cutlass::layout::ColumnMajor;
+  using LayoutC = cutlass::layout::RowMajor;
+  using TileShape_MNK = Shape<_256,_128,_64>;
+  using ClusterShape_MNK = Shape<_2,_2,_1>;
+
+  using EpilogueSchedule = cutlass::epilogue::TmaWarpSpecializedCooperative;
+  using EpilogueTileType = cutlass::epilogue::collective::EpilogueTileAuto;
+
+  using EpilogueDescriptor = cutlass::epilogue::collective::detail::EpilogueDescriptor<
+    TileShape_MNK, EpilogueTileType, cutlass::half_t, cutlass::half_t, EpilogueSchedule
+  >;
+
+  using namespace cutlass::epilogue::fusion;
+
+  constexpr auto RoundStyle = cutlass::FloatRoundStyle::round_to_nearest;
+  constexpr bool has_c = false;
+
+  using EVT_D = decltype(test::gemm::device::select_evt_d<cutlass::half_t, float, has_c>());
+  using AuxStore = Sm90AuxStore<0, void, cutlass::half_t, RoundStyle, cutlass::layout::RowMajor, void, void>;
+
+  constexpr auto select_kernel = [](auto has_c, auto has_d) {
+    using FusionCallbacks =
+        cute::conditional_t<decltype(has_d){}, EVT_D, Sm90EVT<AuxStore, EVT_D>>;
+    using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+        cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+        TileShape_MNK, ClusterShape_MNK,
+        EpilogueTileType,
+        float, float,
+        cute::conditional_t<decltype(has_c){}, cutlass::half_t, void>, LayoutC, 8,
+        cute::conditional_t<decltype(has_d){}, cutlass::half_t, void>, LayoutC, 8,
+        EpilogueSchedule,
+        FusionCallbacks
+      >::CollectiveOp;
+    using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+        cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+        cutlass::half_t, LayoutA, 8,
+        cutlass::half_t, LayoutB, 8,
+        float,
+        TileShape_MNK, ClusterShape_MNK,
+        cutlass::gemm::collective::StageCountAutoCarveout<static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
+        cutlass::gemm::KernelTmaWarpSpecializedCooperative
+      >::CollectiveOp;
+
+    using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+        Shape<int,int,int,int>,
+        CollectiveMainloop,
+        CollectiveEpilogue>;
+
+    return GemmKernel{};
+  };
+
+  using GemmKernel = decltype(select_kernel(cute::C<has_c>{}, cute::C<true>{}));
+  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+
+  using GemmKernelWithoutD = decltype(select_kernel(cute::C<has_c>{}, cute::C<false>{}));
+  using GemmWithoutD = cutlass::gemm::device::GemmUniversalAdapter<GemmKernelWithoutD>;
+
+  bool passed = test::gemm::device::testEVTAuxStoreWithoutD<Gemm, GemmWithoutD>();
+
+  EXPECT_TRUE(passed);
+}
+
 TEST(SM90_Device_Gemm_f16t_f16n_f32n_tensor_op_gmma_f32_cooperative_epilogue, 256x128x64_2x2x1_VoidC_VoidD_AuxStoreF16_ColumnMajor) {
   using LayoutA = cutlass::layout::RowMajor;
   using LayoutB = cutlass::layout::ColumnMajor;

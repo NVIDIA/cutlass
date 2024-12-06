@@ -166,12 +166,12 @@ struct CollectiveMma<
       size<0>(ClusterShape{}))); // mcast along M mode for this N load, if any
 
   struct SharedStorage {
-    struct TensorStorage : cute::aligned_struct<128> {
+    struct TensorStorage : cute::aligned_struct<128, _0> {
       cute::array_aligned<typename TiledMma::ValTypeA, cute::cosize_v<SmemLayoutA>> smem_A;
       cute::array_aligned<typename TiledMma::ValTypeB, cute::cosize_v<SmemLayoutB>> smem_B;
     } tensors;
 
-    struct TensorMapStorage : cute::aligned_struct<128> {
+    struct TensorMapStorage : cute::aligned_struct<128, _0> {
       cute::TmaDescriptor smem_tensormap_A;
       cute::TmaDescriptor smem_tensormap_B;
     } tensormaps;
@@ -623,56 +623,42 @@ struct CollectiveMma<
   //
 
   CUTLASS_DEVICE auto
-  tensormaps_init(Params const& mainloop_params, int32_t const sm_count, int32_t const sm_idx) const {
+  tensormaps_init(
+      Params const& mainloop_params,
+      TensorMapStorage& shared_tensormaps,
+      int32_t sm_count,
+      int32_t sm_idx) {
     cute::TmaDescriptor* gmem_tensormap = reinterpret_cast<cute::TmaDescriptor*>(mainloop_params.tensormaps);
 
     cute::TmaDescriptor* tma_desc_a = &gmem_tensormap[sm_idx];
     cute::TmaDescriptor* tma_desc_b = &gmem_tensormap[sm_idx + sm_count];
 
     if (cute::elect_one_sync()) {
-      // Bringing tensormaps from params to gmem for modification later
+      // Bringing tensormaps from params to smem for modification later
       Tensor pA_tensormap = make_tensor(mainloop_params.tma_load_a.get_tma_descriptor(), Int<1>{}, Int<1>{});
-      Tensor gA_tensormap = make_tensor(tma_desc_a, Int<1>{}, Int<1>{});
+      Tensor sA_tensormap = make_tensor(make_smem_ptr(&shared_tensormaps.smem_tensormap_A), Int<1>{}, Int<1>{});
       Tensor pB_tensormap = make_tensor(mainloop_params.tma_load_b.get_tma_descriptor(), Int<1>{}, Int<1>{});
-      Tensor gB_tensormap = make_tensor(tma_desc_b, Int<1>{}, Int<1>{});
+      Tensor sB_tensormap = make_tensor(make_smem_ptr(&shared_tensormaps.smem_tensormap_B), Int<1>{}, Int<1>{});
 
-      copy(recast<uint128_t>(pA_tensormap), recast<uint128_t>(gA_tensormap));
-      copy(recast<uint128_t>(pB_tensormap), recast<uint128_t>(gB_tensormap));
+      copy(recast<uint128_t>(pA_tensormap), recast<uint128_t>(sA_tensormap));
+      copy(recast<uint128_t>(pB_tensormap), recast<uint128_t>(sB_tensormap));
     }
+    syncwarp();
 
     return cute::make_tuple(tma_desc_a, tma_desc_b);
-  }
-
-  // Bringing tensormaps to smem (to be done by single thread)
-  template <class TensorMapA, class TensorMapB>
-  CUTLASS_DEVICE
-  void
-  tensormaps_fetch_to_smem(
-      TensorMapStorage& shared_tensormap,
-      cute::tuple<TensorMapA, TensorMapB> const& input_tensormaps) const {
-    Tensor gA_tensormap = make_tensor(make_gmem_ptr(get<0>(input_tensormaps)), Int<1>{}, Int<1>{});
-    Tensor sA_tensormap = make_tensor(make_smem_ptr(&shared_tensormap.smem_tensormap_A), Int<1>{}, Int<1>{});
-    Tensor gB_tensormap = make_tensor(make_gmem_ptr(get<1>(input_tensormaps)), Int<1>{}, Int<1>{});
-    Tensor sB_tensormap = make_tensor(make_smem_ptr(&shared_tensormap.smem_tensormap_B), Int<1>{}, Int<1>{});
-
-    copy(recast<uint128_t>(gA_tensormap), recast<uint128_t>(sA_tensormap));
-    copy(recast<uint128_t>(gB_tensormap), recast<uint128_t>(sB_tensormap));
-
-    cp_async_fence();
-    cp_async_wait<0>();
   }
 
   // Replace address for the global tensor (to be done by single thread)
   CUTLASS_DEVICE
   void
   tensormaps_replace_global_address(
-      TensorMapStorage& shared_tensormap,
+      TensorMapStorage& shared_tensormaps,
       Params const& mainloop_params,
       int32_t next_batch) {
     // Replacing global_address for the next batch
-    cute::tma_descriptor_replace_addr_in_shared_mem(shared_tensormap.smem_tensormap_A,
+    cute::tma_descriptor_replace_addr_in_shared_mem(shared_tensormaps.smem_tensormap_A,
                                                     mainloop_params.ptr_A[next_batch]);
-    cute::tma_descriptor_replace_addr_in_shared_mem(shared_tensormap.smem_tensormap_B,
+    cute::tma_descriptor_replace_addr_in_shared_mem(shared_tensormaps.smem_tensormap_B,
                                                     mainloop_params.ptr_B[next_batch]);
   }
 
@@ -681,21 +667,19 @@ struct CollectiveMma<
   CUTLASS_DEVICE
   void
   tensormaps_replace_global_tensor_properties(
-      TensorMapStorage& shared_tensormap,
+      TensorMapStorage& shared_tensormaps,
       Params const& mainloop_params,
       int32_t next_group,
       ProblemShape_MNKL problem_shape_mnkl) {
     const uint32_t M = get<0>(problem_shape_mnkl);
     const uint32_t N = get<1>(problem_shape_mnkl);
     const uint32_t K = get<2>(problem_shape_mnkl);
-    // Only consider dimensions and strides that we need to recalculate and replace for each group
-    constexpr int TensorRank = rank(ProblemShape_MNKL{}) - 1; // excluding either M or N
-    static_assert(TensorRank == Int<3>{},
-      "Descriptor modification for global dims & strides expects rank as 3.");
-    cute::array<uint32_t, TensorRank> prob_shape_A  = {1,1,1};
-    cute::array<uint64_t, TensorRank> prob_stride_A = {0,0,0};
-    cute::array<uint32_t, TensorRank> prob_shape_B  = {1,1,1};
-    cute::array<uint64_t, TensorRank> prob_stride_B = {0,0,0};
+    // Replace all dims for consistency
+    constexpr int MaxTensorRank = 5;
+    cute::array<uint32_t, MaxTensorRank> prob_shape_A  = {1,1,1,1,1};
+    cute::array<uint64_t, MaxTensorRank> prob_stride_A = {0,0,0,0,0};
+    cute::array<uint32_t, MaxTensorRank> prob_shape_B  = {1,1,1,1,1};
+    cute::array<uint64_t, MaxTensorRank> prob_stride_B = {0,0,0,0,0};
 
     InternalElementA const* ptr_A = nullptr;
     Tensor tensor_a = make_tensor(ptr_A, make_shape(M,K,Int<1>{}), mainloop_params.dA[next_group]);
@@ -716,10 +700,10 @@ struct CollectiveMma<
       stride = (stride * sizeof_bits_v<InternalElementB>) / 8;
     }
 
-    cute::tma_descriptor_replace_dims_strides_in_shared_mem(shared_tensormap.smem_tensormap_A,
+    cute::tma_descriptor_replace_dims_strides_in_shared_mem(shared_tensormaps.smem_tensormap_A,
                                                             prob_shape_A,
                                                             prob_stride_A);
-    cute::tma_descriptor_replace_dims_strides_in_shared_mem(shared_tensormap.smem_tensormap_B,
+    cute::tma_descriptor_replace_dims_strides_in_shared_mem(shared_tensormaps.smem_tensormap_B,
                                                             prob_shape_B,
                                                             prob_stride_B);
   }
@@ -728,21 +712,18 @@ struct CollectiveMma<
   CUTLASS_DEVICE
   void
   tensormaps_perform_update(
-      TensorMapStorage& shared_tensormap,
+      TensorMapStorage& shared_tensormaps,
       Params const& mainloop_params,
       cute::tuple<TensorMapA, TensorMapB> const& input_tensormaps,
       ProblemShape_MNKL problem_shape_mnkl,
       int32_t next_batch) {
     if (cute::elect_one_sync()) {
-      // Bringing tensormaps to smem
-      tensormaps_fetch_to_smem(shared_tensormap, input_tensormaps);
-
       // Replacing global_address for the next batch
-      tensormaps_replace_global_address(shared_tensormap, mainloop_params, next_batch);
+      tensormaps_replace_global_address(shared_tensormaps, mainloop_params, next_batch);
 
       if constexpr (IsGroupedGemmKernel) {
         // Replacing global dims and strides for the next batch
-        tensormaps_replace_global_tensor_properties(shared_tensormap,
+        tensormaps_replace_global_tensor_properties(shared_tensormaps,
           mainloop_params, next_batch, problem_shape_mnkl);
       }
     }
@@ -752,11 +733,11 @@ struct CollectiveMma<
   CUTLASS_DEVICE
   void
   tensormaps_cp_fence_release (
-      TensorMapStorage& shared_tensormap,
+      TensorMapStorage& shared_tensormaps,
       cute::tuple<TensorMapA, TensorMapB> const& input_tensormaps) {
     // Entire warp must do this (i.e. it's aligned)
-    tma_descriptor_cp_fence_release(get<0>(input_tensormaps), shared_tensormap.smem_tensormap_A);
-    tma_descriptor_cp_fence_release(get<1>(input_tensormaps), shared_tensormap.smem_tensormap_B);
+    tma_descriptor_cp_fence_release(get<0>(input_tensormaps), shared_tensormaps.smem_tensormap_A);
+    tma_descriptor_cp_fence_release(get<1>(input_tensormaps), shared_tensormaps.smem_tensormap_B);
   }
 
   // The entire warp must call this function collectively (that is, the instructions are aligned)

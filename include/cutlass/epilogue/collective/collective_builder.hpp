@@ -30,6 +30,9 @@
  **************************************************************************************************/
 #pragma once
 
+#include <cute/arch/copy.hpp>         // cute::DefaultCopy
+#include <cute/util/type_traits.hpp>  // cute::is_base_of_v
+
 #include "cutlass/detail/dependent_false.hpp"
 #include "cutlass/epilogue/fusion/callbacks.hpp"
 
@@ -100,7 +103,7 @@ struct CallbacksBuilder<
   TileShape_MNK,
   EpilogueTile_MN,
   ElementAccumulator,
-  cute::enable_if_t<not is_base_of_v<fusion::FusionOperation, FusionCallbacks>>
+  cute::enable_if_t<not cute::is_base_of_v<fusion::FusionOperation, FusionCallbacks>>
 > {
   using Callbacks = FusionCallbacks;
 };
