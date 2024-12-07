@@ -216,6 +216,8 @@ struct TestbedGrouped {
     problem_sizes_host.resize(problem_count);
 
     for (int32_t i = 0; i < problem_count; ++i) {
+      // Make the last problem a special case where the inner dimension is zero.
+      bool zero_k = i == problem_count - 1;
 
       cutlass::gemm::GemmCoord problem(
         8 * (rand() % 64) + 24,
@@ -224,6 +226,8 @@ struct TestbedGrouped {
 
       if (!i) {
         problem = cutlass::gemm::GemmCoord(48, 16, 8);
+      } else if (zero_k) {
+        problem.k() = 0;
       }
 
       problem_sizes_host.at(i) = problem;
@@ -281,8 +285,16 @@ struct TestbedGrouped {
     std::vector<ElementC *> ptr_D_host(problem_count);
 
     for (int32_t i = 0; i < problem_count; ++i) {
-      ptr_A_host.at(i) = block_A.get() + offset_A.at(i);
-      ptr_B_host.at(i) = block_B.get() + offset_B.at(i);
+      bool zero_k = i == problem_count - 1;
+      if (zero_k) {
+        // For k=0, the input matrices have no elements and should not be accessed.
+        // Set the input pointers to nullptr to catch any unintended accesses.
+        ptr_A_host.at(i) = nullptr;
+        ptr_B_host.at(i) = nullptr;
+      } else {
+        ptr_A_host.at(i) = block_A.get() + offset_A.at(i);
+        ptr_B_host.at(i) = block_B.get() + offset_B.at(i);
+      }
       ptr_C_host.at(i) = block_C.get() + offset_C.at(i);
       ptr_D_host.at(i) = block_D.get() + offset_D.at(i);
     }
@@ -386,12 +398,15 @@ struct TestbedGrouped {
         ElementAccumulator(0)
       );
 
-      // Ensure that no input or output is entirely zero
-      EXPECT_GT(cutlass::reference::host::TensorNorm(view_A), 0);
-      EXPECT_GT(cutlass::reference::host::TensorNorm(view_B), 0);
-      EXPECT_GT(cutlass::reference::host::TensorNorm(view_C), 0);
-      EXPECT_GT(cutlass::reference::host::TensorNorm(view_D), 0);
-      EXPECT_GT(cutlass::reference::host::TensorNorm(view_Ref), 0);
+      // Ensure that no input or output is entirely zero, except for the last problem with k=0,
+      // which should produce an all-zero output.
+      if (i != problem_count - 1) {
+        EXPECT_GT(cutlass::reference::host::TensorNorm(view_A), 0);
+        EXPECT_GT(cutlass::reference::host::TensorNorm(view_B), 0);
+        EXPECT_GT(cutlass::reference::host::TensorNorm(view_C), 0);
+        EXPECT_GT(cutlass::reference::host::TensorNorm(view_D), 0);
+        EXPECT_GT(cutlass::reference::host::TensorNorm(view_Ref), 0);
+      }
 
       // Compare against reference
       passed = cutlass::reference::host::TensorEquals(view_D, view_Ref);
