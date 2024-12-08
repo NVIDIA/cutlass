@@ -1031,8 +1031,8 @@ local_tile(Tensor    && tensor,
 //   auto cta_tiler = Shape<_32, _64, _4>{};
 //   auto cta_coord = make_coord(blockIdx.x, blockIdx.y, _);
 //   Tensor ctaA = local_tile(dataA, cta_tiler, cta_coord, Step<_1, X,_1>{});  // (_32,_4,k)
-//   Tensor ctaB = local_tile(dataA, cta_tiler, cta_coord, Step< X,_1,_1>{});  // (_64,_4,k)
-//   Tensor ctaC = local_tile(dataA, cta_tiler, cta_coord, Step<_1,_1, X>{});  // (_32,_64)
+//   Tensor ctaB = local_tile(dataB, cta_tiler, cta_coord, Step< X,_1,_1>{});  // (_64,_4,k)
+//   Tensor ctaC = local_tile(dataC, cta_tiler, cta_coord, Step<_1,_1, X>{});  // (_32,_64)
 template <class Tensor, class Tiler, class Coord, class Proj,
           __CUTE_REQUIRES(is_tensor<remove_cvref_t<Tensor>>::value)>
 CUTE_HOST_DEVICE
