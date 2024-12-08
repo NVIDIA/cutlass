@@ -166,7 +166,7 @@ and the `(...)` to the right of the `=>` describes C.
 
 1. `(V) x (V) => (V)`. The element-wise product of vectors: C<sub>v</sub> += A<sub>v</sub> B<sub>v</sub>. Dispatches to FMA or MMA.
 
-2. `(M) x (N) => (M,N)`. The outer product of vectors: C<sub>mn</sub> += A<sub>m</sub> B_<sub>n</sub>. Dispatches to (4) with V=1.
+2. `(M) x (N) => (M,N)`. The outer product of vectors: C<sub>mn</sub> += A<sub>m</sub> B<sub>n</sub>. Dispatches to (4) with V=1.
 
 3. `(M,K) x (N,K) => (M,N)`. The product of matrices: C<sub>mn</sub> += A<sub>mk</sub> B<sub>nk</sub>. Dispatches to (2) for each K.
 
