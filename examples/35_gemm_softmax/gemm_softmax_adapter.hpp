@@ -440,7 +440,7 @@ public:
             grid, block, smem_size, stream, kernel_params, 0
           );
           launch_result = cuda_adapter->launch(
-            grid_finalize, block_finalize, smem_size_finalize, stream, kernel_params_finalize, 0
+            grid_finalize, block_finalize, smem_size_finalize, stream, kernel_params_finalize, 1
           );
 
         }
