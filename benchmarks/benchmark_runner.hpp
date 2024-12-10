@@ -277,13 +277,12 @@ struct BenchmarkRunnerGemm {
 
     initialize(problem_size);
 
-    typename Gemm::GemmKernel::Arguments arguments{
-       gemm::GemmUniversalMode::kGemm,
-      problem_size,
-      {block_A[0].get(), stride_A, block_B[0].get(), stride_B},
-      {{options.alpha, options.beta}, block_C[0].get(), stride_C, block_D.get(), stride_D},
-      hw_info
-    };
+    typename Gemm::GemmKernel::Arguments arguments = GemmConfiguration::defaultArguments();
+    arguments.mode = gemm::GemmUniversalMode::kGemm;
+    arguments.problem_shape = problem_size;
+    arguments.mainloop = {block_A[0].get(), stride_A, block_B[0].get(), stride_B};
+    arguments.epilogue = {{options.alpha, options.beta}, block_C[0].get(), stride_C, block_D.get(), stride_D};
+    arguments.hw_info = hw_info;
 
     Gemm gemm_op;
 

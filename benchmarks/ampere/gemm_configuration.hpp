@@ -227,6 +227,8 @@ struct GemmConfiguration<
   >;
 
   using Gemm = GemmUniversalAdapter<GemmKernel>;
+
+  constexpr static typename GemmKernel::Arguments defaultArguments() { return {}; };
 };
 
 /////////////////////////////////////////////////////////////////////////
@@ -389,6 +391,8 @@ struct GemmConfiguration<
   >;
 
   using Gemm = GemmUniversalAdapter<GemmKernel>;
+
+  constexpr static typename GemmKernel::Arguments defaultArguments() { return {}; };
 };
 
 /////////////////////////////////////////////////////////////////////////
@@ -531,6 +535,8 @@ struct GemmConfiguration<
   >;
 
   using Gemm = GemmUniversalAdapter<GemmKernel>;
+
+  constexpr static typename GemmKernel::Arguments defaultArguments() { return {}; };
 };
 
 } // namespace device

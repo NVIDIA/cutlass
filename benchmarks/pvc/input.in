@@ -38,3 +38,20 @@ PvcGemmBF16BF16FP32_StreamK_RRR_1 --bm_name=bf16_bf16_fp32 --l=1 --m=8192 --k=16
 PvcGemmBF16BF16FP32_StreamK_RRR_1 --bm_name=bf16_bf16_fp32 --l=4 --m=32768 --k=128 --n=4096
 PvcGemmBF16BF16FP32_StreamK_RRR_1 --bm_name=bf16_bf16_fp32 --l=4 --m=32768 --k=4096 --n=128
 PvcGemmBF16BF16FP32_StreamK_RRR_1 --bm_name=bf16_bf16_fp32 --l=32 --m=4096 --k=4096 --n=128
+
+PvcGemmBF16BF16FP32_SplitK_RRR_1 --bm_name=bf16_bf16_fp32 --l=1 --m=512 --k=8192 --n=8192
+PvcGemmBF16BF16FP32_SplitK_RRR_1 --bm_name=bf16_bf16_fp32 --l=1 --m=512 --k=8192 --n=32768
+PvcGemmBF16BF16FP32_SplitK_RRR_1 --bm_name=bf16_bf16_fp32 --l=1 --m=512 --k=32768 --n=8192
+PvcGemmBF16BF16FP32_SplitK_RRR_1 --bm_name=bf16_bf16_fp32 --l=1 --m=16384 --k=8192 --n=1024
+PvcGemmBF16BF16FP32_SplitK_RRR_1 --bm_name=bf16_bf16_fp32 --l=1 --m=16384 --k=1024 --n=8192
+PvcGemmBF16BF16FP32_SplitK_RRR_1 --bm_name=bf16_bf16_fp32 --l=1 --m=16384 --k=8192 --n=4096
+PvcGemmBF16BF16FP32_SplitK_RRR_1 --bm_name=bf16_bf16_fp32 --l=1 --m=16384 --k=4096 --n=8192
+PvcGemmBF16BF16FP32_SplitK_RRR_1 --bm_name=bf16_bf16_fp32 --l=1 --m=4096 --k=16384 --n=8192
+PvcGemmBF16BF16FP32_SplitK_RRR_1 --bm_name=bf16_bf16_fp32 --l=1 --m=8192 --k=16384 --n=4096
+PvcGemmBF16BF16FP32_SplitK_RRR_1 --bm_name=bf16_bf16_fp32 --l=1 --m=1024 --k=16384 --n=8192
+PvcGemmBF16BF16FP32_SplitK_RRR_1 --bm_name=bf16_bf16_fp32 --l=1 --m=8192 --k=16384 --n=1024
+# PvcGemmBF16BF16FP32_SplitK_RRR_1 --bm_name=bf16_bf16_fp32 --l=4096 --m=8 --k=128 --n=16384
+# PvcGemmBF16BF16FP32_SplitK_RRR_1 --bm_name=bf16_bf16_fp32 --l=4096 --m=8 --k=16384 --n=128
+PvcGemmBF16BF16FP32_SplitK_RRR_1 --bm_name=bf16_bf16_fp32 --l=4 --m=32768 --k=128 --n=4096
+PvcGemmBF16BF16FP32_SplitK_RRR_1 --bm_name=bf16_bf16_fp32 --l=4 --m=32768 --k=4096 --n=128
+PvcGemmBF16BF16FP32_SplitK_RRR_1 --bm_name=bf16_bf16_fp32 --l=32 --m=4096 --k=4096 --n=128
