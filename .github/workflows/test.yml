@@ -71,13 +71,4 @@ jobs:
         shell: bash
         run: |
           export LD_LIBRARY_PATH=~/dpcpp/lib/:$LD_LIBRARY_PATH
-          echo Run sgemm_1
-          ./examples/cute/tutorial/sgemm_1
-          echo Run sgemm_2
-          ./examples/cute/tutorial/sgemm_2
-          echo Run sgemm_sm70
-          ./examples/cute/tutorial/sgemm_sm70
-          echo Run sgemm_sm80
-          ./examples/cute/tutorial/sgemm_sm80
-          echo Run tiled_copy
-          ./examples/cute/tutorial/tiled_copy
+          cmake --build . --target test_examples -j 24
