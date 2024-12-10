@@ -59,7 +59,8 @@ template<
   class ElementC, class LayoutC,
   class ElementAccumulator,
   class TileShape, class TiledMma,
-  class GmemTiledCopyA, class GmemTiledCopyB>
+  class GmemTiledCopyA, class GmemTiledCopyB,
+  class TileScheduler>
 struct GemmConfiguration {
   static_assert(sizeof(ElementA) == 0, "No valid GemmConfiguration configuration exists.");
 };
@@ -69,14 +70,14 @@ struct GemmConfiguration {
 // bfloat16
 
 template<typename LayoutA, typename LayoutB, typename LayoutC,
-  class TileShape, class TiledMma, class GmemTiledCopyA, class GmemTiledCopyB>
+  class TileShape, class TiledMma, class GmemTiledCopyA, class GmemTiledCopyB, class TileScheduler>
 struct GemmConfiguration<
       arch::IntelPVC,
       bfloat16_t, LayoutA,
       bfloat16_t, LayoutB,
       float, LayoutC,
       float, TileShape, TiledMma,
-      GmemTiledCopyA, GmemTiledCopyB> {
+      GmemTiledCopyA, GmemTiledCopyB, TileScheduler> {
   using DispatchPolicy = MainloopIntelPVC<3>;
 
   // Mainloop
@@ -111,7 +112,8 @@ struct GemmConfiguration<
   using GemmKernel = kernel::GemmUniversal<
     Shape<int, int, int, int>,
     CollectiveMainloop,
-    CollectiveEpilogue
+    CollectiveEpilogue,
+    TileScheduler
   >;
 
   using Gemm = GemmUniversalAdapter<GemmKernel>;
