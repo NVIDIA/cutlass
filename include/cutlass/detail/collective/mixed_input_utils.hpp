@@ -836,7 +836,7 @@ public:
         }
       }
       else {
-        auto stage = make_tensor_like<ElementScale>(src_vm);
+        auto stage = make_tensor_like<ElementScale>(src_vm(_, 0));
         CUTLASS_PRAGMA_UNROLL
         for (int i = 0; i < size<1>(dst_vm); ++i) {
           LayoutAwareConvert(src_vm(_, i), stage);
@@ -868,7 +868,7 @@ public:
         }
       }
       else {
-        auto stage = make_tensor_like<ElementScale>(src_vm);
+        auto stage = make_tensor_like<ElementScale>(src_vm(_, 0));
         CUTLASS_PRAGMA_UNROLL
         for (int i = 0; i < size<1>(dst_vm); ++i) {
           LayoutAwareConvert(src_vm(_, i), stage);
