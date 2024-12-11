@@ -52,12 +52,7 @@ struct Copy_Traits<SM80_CP_ASYNC_CACHEALWAYS<S,D>>
   // Reference map from (thr,val) to bit
   using RefLayout = SrcLayout;
 
-  // Construct a zfill variant with a given predicate value
-  CUTE_HOST_DEVICE constexpr
-  Copy_Traits<SM80_CP_ASYNC_CACHEALWAYS_ZFILL<S,D>>
-  with(bool pred) const {
-    return {pred};
-  }
+
 };
 
 template <class S, class D>
@@ -74,12 +69,7 @@ struct Copy_Traits<SM80_CP_ASYNC_CACHEGLOBAL<S,D>>
   // Reference map from (thr,val) to bit
   using RefLayout = SrcLayout;
 
-  // Construct a zfill variant with a given predicate value
-  CUTE_HOST_DEVICE constexpr
-  Copy_Traits<SM80_CP_ASYNC_CACHEGLOBAL_ZFILL<S,D>>
-  with(bool pred) const {
-    return {pred};
-  }
+
 };
 
 template <class S, class D>
@@ -98,7 +88,13 @@ struct Copy_Traits<SM80_CP_ASYNC_CACHEALWAYS_ZFILL<S,D>>
 
   // Predicate value that determines whether to load or zfill
   bool pred = false;
-
+  
+  // Construct a zfill variant with a given predicate value
+  CUTE_HOST_DEVICE constexpr
+  Copy_Traits<SM80_CP_ASYNC_CACHEALWAYS_ZFILL<S,D>>
+  with(bool pred) const {
+    return {pred};
+  }
   // Overload copy_unpack for zfill variant to pass the predicate into the op
   template <class TS, class SLayout,
             class TD, class DLayout>
@@ -139,7 +135,13 @@ struct Copy_Traits<SM80_CP_ASYNC_CACHEGLOBAL_ZFILL<S,D>>
 
   // Predicate value that determines whether to load or zfill
   bool pred = false;
-
+  
+  // Construct a zfill variant with a given predicate value
+  CUTE_HOST_DEVICE constexpr
+  Copy_Traits<SM80_CP_ASYNC_CACHEGLOBAL_ZFILL<S,D>>
+  with(bool pred) const {
+    return {pred};
+  }
   // Overload copy_unpack for zfill variant to pass the predicate into the op
   template <class TS, class SLayout,
             class TD, class DLayout>
