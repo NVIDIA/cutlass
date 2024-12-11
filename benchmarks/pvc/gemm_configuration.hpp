@@ -57,7 +57,9 @@ template<
   class ElementA, class LayoutA,
   class ElementB, class LayoutB,
   class ElementC, class LayoutC,
-  class ElementAccumulator>
+  class ElementAccumulator,
+  class TileShape, class TiledMma,
+  class GmemTiledCopyA, class GmemTiledCopyB>
 struct GemmConfiguration {
   static_assert(sizeof(ElementA) == 0, "No valid GemmConfiguration configuration exists.");
 };
@@ -66,47 +68,16 @@ struct GemmConfiguration {
 
 // bfloat16
 
-namespace detail {
-
-template<typename Element, typename Layout>
-struct Gemm_OperandA;
-
-template<typename Element, typename Layout>
-struct Gemm_OperandB;
-
-template<>
-struct Gemm_OperandA<bfloat16_t, layout::RowMajor> {
-  using GmemTiledCopy = XE_2D_U16x32x32_LD_N;
-};
-
-template<>
-struct Gemm_OperandB<bfloat16_t, layout::RowMajor> {
-  using GmemTiledCopy = XE_2D_U16x32x32_LD_V;
-};
-
-} // namespace details
-
-template<typename LayoutA, typename LayoutB, typename LayoutC>
+template<typename LayoutA, typename LayoutB, typename LayoutC,
+  class TileShape, class TiledMma, class GmemTiledCopyA, class GmemTiledCopyB>
 struct GemmConfiguration<
       arch::IntelPVC,
       bfloat16_t, LayoutA,
       bfloat16_t, LayoutB,
       float, LayoutC,
-      float> {
-  using TileShape = Shape<_256, _256, _32>;
-  using DispatchPolicy = MainloopIntelPVC<3>;;
-  using TiledMma = TiledMMA<
-    MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
-    Layout<Shape<_8,_4,_1>>,
-    Tile<_64,_64,_32>>;
-
-  // A
-  using OperandA = detail::Gemm_OperandA<bfloat16_t, LayoutA>;
-  using GmemTiledCopyA = typename OperandA::GmemTiledCopy;
-
-  // B
-  using OperandB = detail::Gemm_OperandB<bfloat16_t, LayoutB>;
-  using GmemTiledCopyB = typename OperandB::GmemTiledCopy;
+      float, TileShape, TiledMma,
+      GmemTiledCopyA, GmemTiledCopyB> {
+  using DispatchPolicy = MainloopIntelPVC<3>;
 
   // Mainloop
   using CollectiveMainloop = collective::CollectiveMma<

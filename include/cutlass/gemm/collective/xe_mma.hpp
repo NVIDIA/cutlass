@@ -263,11 +263,14 @@ struct CollectiveMma<
     // Mainloop
     //
     auto [m_idx, n_idx, k_idx, l_idx] = blk_coord;
+  #ifdef CUTLASS_SYCL_SWITCH_WG
+    const int m_coord = n_idx * BLK_M + (get_sub_group_id() / ATOM_N) * SG_M;
+    const int n_coord = m_idx * BLK_N + (get_sub_group_id() % ATOM_N) * SG_N;
+  #else
     const int m_coord = m_idx * BLK_M + (get_sub_group_id() / ATOM_N) * SG_M;
     const int n_coord = n_idx * BLK_N + (get_sub_group_id() % ATOM_N) * SG_N;
+  #endif
     const int l_coord = l_idx;
-
-    int sub_group_id = get_sub_group_id();
     Tensor iter_a = mainloop.gmem_tiled_copy_a.get_pvc_tensor(
       make_coord(m_coord, 0, l_coord), append<4>(tCrA_copy_view.shape(), k_tile_count),
       append<3>(typename XE_Copy_A::Shape_MN{}, BLK_K), seq<0,1,1>{});
@@ -279,13 +282,13 @@ struct CollectiveMma<
     int prefetch_k = 0;
 
     Tensor prefetch_iter_a = mainloop.gmem_prefetch_a.get_pvc_tensor(
-      make_coord(m_coord + (sub_group_id % ATOM_N) / get<1>(PrefetchAThrShape{}) * get<0>(PrefetchATileSize{}),
-               (k_start_idx + (sub_group_id % ATOM_N) % get<1>(PrefetchAThrShape{})) * PrefetchStrideA, l_coord),
+      make_coord(m_coord + (get_sub_group_id() % ATOM_N) / get<1>(PrefetchAThrShape{}) * get<0>(PrefetchATileSize{}),
+               (k_start_idx + (get_sub_group_id() % ATOM_N) % get<1>(PrefetchAThrShape{})) * PrefetchStrideA, l_coord),
       append<4>(make_shape(_1{}, _1{}, _1{}), k_tile_count),
       append<3>(make_shape(SG_M, SG_K), BLK_K), seq<0, 1, 1>{});
     Tensor prefetch_iter_b = mainloop.gmem_prefetch_b.get_pvc_tensor(
-      make_coord(((sub_group_id / ATOM_N) / get<1>(PrefetchBThrShape{}) + k_start_idx) * PrefetchStrideB,
-                n_coord + (sub_group_id / ATOM_N) % get<1>(PrefetchBThrShape{}) * get<1>(PrefetchBTileSize{}), l_coord),
+      make_coord(((get_sub_group_id() / ATOM_N) / get<1>(PrefetchBThrShape{}) + k_start_idx) * PrefetchStrideB,
+                n_coord + (get_sub_group_id() / ATOM_N) % get<1>(PrefetchBThrShape{}) * get<1>(PrefetchBTileSize{}), l_coord),
       append<4>(make_shape(_1{}, _1{}, _1{}), k_tile_count),
       append<3>(make_shape(SG_K, SG_N), BLK_K), seq<0,1,0>{});
 
