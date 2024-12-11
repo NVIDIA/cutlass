@@ -220,7 +220,7 @@ struct ExampleRunner {
     block_C.reset(M * N * L);
     block_D.reset(M * N * L);
     block_ref_D.reset(M * N * L);
-    bias.reset(N * L); //TODO(joe) or N?
+    bias.reset(N * L);
 
     initialize_block(block_A, seed + 2023);
     initialize_block(block_B, seed + 2022);
@@ -252,7 +252,10 @@ struct ExampleRunner {
     size_t workspace_size = Gemm::get_workspace_size(arguments);
     cutlass::device_memory::allocation<uint8_t> workspace(workspace_size);
 
-    gemm_op.can_implement(arguments);
+    if (gemm_op.can_implement(arguments) != cutlass::Status::kSuccess){
+      std::cout << "Invalid Problem Size: " << options.m << 'x' << options.n << 'x' << options.k << 'x' << options.l << std::endl;
+      std::exit(1);
+    }
 
     gemm_op.initialize(arguments, workspace.get());
 
@@ -317,12 +320,12 @@ int main(int argc, const char** argv)
 
   // The code section below describes datatype for input, output matrices and computation between
   // elements in input matrices.
-  using ElementAccumulator = float;                   // <- data type of accumulator
-  using ElementComputeEpilogue = float;  // <- data type of epilogue operations
-  using ElementBias = float; // <- data type of bias
-  using ElementInputA = bfloat16_t;                        // <- data type of elements in input matrix A
-  using ElementInputB = bfloat16_t;                        // <- data type of elements in input matrix B
-  using ElementOutput = float;                        // <- data type of elements in output matrix D
+  using ElementAccumulator = float;         // <- data type of accumulator
+  using ElementComputeEpilogue = float;     // <- data type of epilogue operations
+  using ElementBias = float;                // <- data type of bias
+  using ElementInputA = bfloat16_t;         // <- data type of elements in input matrix A
+  using ElementInputB = bfloat16_t;         // <- data type of elements in input matrix B
+  using ElementOutput = float;              // <- data type of elements in output matrix D
 
   using LayoutA = cutlass::layout::RowMajor;
   using LayoutB = cutlass::layout::RowMajor;

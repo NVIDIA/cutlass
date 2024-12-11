@@ -293,7 +293,11 @@ struct FusionCallbacks<
     EpilogueTile_
 > : Sm90LinCombPerRowBias<CtaTileShapeMNK_, ElementOutput_, ElementCompute_, ElementBias_, ElementSource_, ElementScalar_, AlignmentBias_, RoundStyle_> {
 
-  using Impl = Sm90LinCombPerRowBias<CtaTileShapeMNK_, typename cutlass::detail::get_unpacked_element_type<ElementOutput_>::type, ElementCompute_, ElementBias_, ElementSource_, ElementScalar_, AlignmentBias_, RoundStyle_>;
+  using Impl = Sm90LinCombPerRowBias<
+      CtaTileShapeMNK_,
+      typename cutlass::detail::get_unpacked_element_type<ElementOutput_>::type,
+      ElementCompute_, ElementBias_, ElementSource_, ElementScalar_,
+      AlignmentBias_, RoundStyle_>;
   using ElementOutput = ElementOutput_;
   using ElementCompute = ElementCompute_;
   using ElementBias = ElementBias_;
