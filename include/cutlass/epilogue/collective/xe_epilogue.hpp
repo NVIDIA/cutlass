@@ -318,7 +318,7 @@ public:
             make_shape(_, Int<FragsM>{}, Int<FragsN>{}, L),
             make_stride(Int<get<0>(MmaAtomShape{})>{}, Int<get<1>(MmaAtomShape{})>{}, _1{}));
 
-    // Because Nvidia uses shared memory, they are not tied to using the same accumulator values
+    // Because Sm90 uses shared memory, they are not tied to using the same accumulator values
     // for MMA and Epilogue. But because we are operating directly in the accumulators, we need to be
     // sure that we are operating on the same values.
     ThrCopy thread_g2r = params.xe_load_c.get_slice(thread_idx);

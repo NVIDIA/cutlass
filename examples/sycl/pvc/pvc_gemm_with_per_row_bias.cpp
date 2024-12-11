@@ -233,7 +233,7 @@ struct ExampleRunner {
 
     initialize(problem_size);
 
-    using StrideBias = Stride<_1,_0,int>;
+    using StrideBias = Stride<_1, _0, int>;
     StrideBias dBias = {};
 
     typename Gemm::GemmKernel::Arguments arguments{
@@ -242,8 +242,8 @@ struct ExampleRunner {
       {block_A.get(), stride_A, block_B.get(), stride_B},
       {
         {options.alpha, options.beta, bias.get()}, 
-        block_C.get(), stride_C, block_D.get(), stride_D},
-
+        block_C.get(), stride_C, block_D.get(), stride_D
+      },
       hw_info
     };
 
@@ -278,10 +278,7 @@ struct ExampleRunner {
       std::cout << "Problem Size: " << options.m << 'x' << options.n << 'x' << options.k << 'x' << options.l << std::endl;
       printf("Cutlass GEMM Performance:     [%4.3f]TFlop/s  (%6.4f)ms\n", tflops / cute_time, cute_time*1000);
     }
-
-    return;
   }
-
 };
 
 int main(int argc, const char** argv)
@@ -322,7 +319,7 @@ int main(int argc, const char** argv)
   // elements in input matrices.
   using ElementAccumulator = float;                   // <- data type of accumulator
   using ElementComputeEpilogue = float;  // <- data type of epilogue operations
-  using ElementBias = float; //float; // <- data type of bias
+  using ElementBias = float; // <- data type of bias
   using ElementInputA = bfloat16_t;                        // <- data type of elements in input matrix A
   using ElementInputB = bfloat16_t;                        // <- data type of elements in input matrix B
   using ElementOutput = float;                        // <- data type of elements in output matrix D

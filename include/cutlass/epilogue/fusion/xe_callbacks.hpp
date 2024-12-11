@@ -308,7 +308,7 @@ struct FusionCallbacks<
     ElementScalar_ const* alpha_ptr = nullptr;
     ElementScalar_ const* beta_ptr = nullptr;
 
-    using StrideBias = Stride<_1,_0,int>;
+    using StrideBias = Stride<_1, _0, int>;
     ElementBias const* bias_ptr = nullptr;
     StrideBias dBias = {};
 

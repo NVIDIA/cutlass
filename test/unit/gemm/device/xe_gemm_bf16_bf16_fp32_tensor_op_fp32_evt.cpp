@@ -173,12 +173,12 @@ TEST(XE_Device_Gemm_bf16t_bf16t_f32_tensor_op_gmma_f32_epilogue, 256x256x32_LinC
   using LayoutD = cutlass::layout::RowMajor;
 
   using TileShape_MNK = Shape<_256, _256, _32>;
-  using ClusterShape_MNK = Shape<_1,_1,_1>;
+  using ClusterShape_MNK = Shape<_1, _1, _1>;
 
   using EpilogueSchedule = cutlass::epilogue::collective::EpilogueScheduleAuto;
   using ElementAccumulator = float;
   using ElementComputeEpilogue = float;
-  using ElementBias = float; //float; // <- data type of bias
+  using ElementBias = float;
   using ElementInputA = bfloat16_t;
   using ElementInputB = bfloat16_t;
   using ElementOutput = float;
@@ -221,7 +221,7 @@ TEST(XE_Device_Gemm_bf16t_bf16t_f32_tensor_op_gmma_f32_epilogue, 256x256x32_LinC
           void, void>;
 
   using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
-      Shape<int,int,int,int>,
+      Shape<int, int, int, int>,
       CollectiveMainloop,
       CollectiveEpilogue
   >;
