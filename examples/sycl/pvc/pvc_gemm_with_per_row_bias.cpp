@@ -91,7 +91,7 @@ struct Options {
   /// Prints the usage statement.
   std::ostream & print_usage(std::ostream &out) const {
 
-    out << "PVC GEMM Example\n\n"
+    out << "PVC GEMM with Per Row Bias Example\n\n"
       << "Options:\n\n"
       << "  --help                      If specified, displays this usage statement\n\n"
       << "  --m=<int>                   Sets the M extent of the GEMM\n"
@@ -132,7 +132,7 @@ struct ExampleRunner {
   using ElementOutput = typename CollectiveEpilogue::ElementOutput;
   using ElementCompute = typename CollectiveEpilogue::ElementCompute;
   using ElementAccumulator = typename CollectiveEpilogue::ElementAccumulator;
-  using ElementBias = typename CollectiveEpilogue::ThreadEpilogueOp::ElementBias; //TODO(joe) Is this right?
+  using ElementBias = typename CollectiveEpilogue::ThreadEpilogueOp::ElementBias;
   using ProblemShapeType = typename Gemm::GemmKernel::ProblemShape;
 
   //
@@ -346,24 +346,21 @@ int main(int argc, const char** argv)
   using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelPVC<PipelineStages>;
   using EpilogueDispatchPolicy = cutlass::epilogue::IntelPVCEpilogue;
 
-  using EpilogueOp = cutlass::epilogue::fusion::LinCombPerRowBias<ElementOutput,
-          ElementComputeEpilogue, ElementBias, ElementAccumulator, ElementAccumulator, 128 / sizeof_bits_v<ElementBias>, cutlass::FloatRoundStyle::round_to_nearest>;
+  using EpilogueOp = cutlass::epilogue::fusion::LinCombPerRowBias<
+      ElementOutput, ElementComputeEpilogue, ElementBias, ElementAccumulator,
+      ElementAccumulator, 128 / sizeof_bits_v<ElementBias>,
+      cutlass::FloatRoundStyle::round_to_nearest>;
 
-  using FusionCallBacks = cutlass::epilogue::fusion::FusionCallbacks<EpilogueDispatchPolicy, EpilogueOp, TileShape, decltype(tile_shape(TiledMma()))>;
+  using FusionCallBacks = cutlass::epilogue::fusion::FusionCallbacks<
+      EpilogueDispatchPolicy, EpilogueOp, TileShape,
+      decltype(tile_shape(TiledMma()))>;
   using CollectiveEpilogue = cutlass::epilogue::collective::CollectiveEpilogue<
-          EpilogueDispatchPolicy,
-          TileShape,
-          ElementAccumulator,
-          cutlass::gemm::TagToStrideC_t<LayoutC>,
-          ElementOutput,
-          cutlass::gemm::TagToStrideC_t<LayoutD>,
-          FusionCallBacks,
-          XE_2D_U32x8x16_LD_N,
-          void, void,
-          XE_2D_U32x8x16_ST_N,
-          void, void>;
+      EpilogueDispatchPolicy, TileShape, ElementAccumulator,
+      cutlass::gemm::TagToStrideC_t<LayoutC>, ElementOutput,
+      cutlass::gemm::TagToStrideC_t<LayoutD>, FusionCallBacks,
+      XE_2D_U32x8x16_LD_N, void, void, XE_2D_U32x8x16_ST_N, void, void>;
 
-// Mainloop
+  // Mainloop
   using CollectiveMainloop = cutlass::gemm::collective::CollectiveMma<
           GEMMDispatchPolicy,
           TileShape,
