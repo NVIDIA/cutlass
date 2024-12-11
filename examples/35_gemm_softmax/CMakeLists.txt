@@ -29,8 +29,14 @@
 
 
 
+if (NOT CUTLASS_ENABLE_SYCL)
 cutlass_example_add_executable(
   35_gemm_softmax
   gemm_softmax.cu
   )
-
+else()
+cutlass_example_add_executable(
+  35_gemm_online_softmax
+  gemm_online_softmax.cpp
+  )
+endif()

@@ -49,6 +49,7 @@ static const int NumWarpsPerWarpGroup = NumThreadsPerWarpGroup / NumThreadsPerWa
 static const int NumThreadsPerHalfWarp = NumThreadsPerWarp / 2;
 static const int NumThreadsPerQuad = 4;
 static const int NumThreadsPerQuadPair = NumThreadsPerQuad * 2;
+static constexpr int MaxNumThreadsPerBlock = 1024;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
