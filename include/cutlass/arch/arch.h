@@ -102,6 +102,10 @@ struct IntelPVC {
   static int const kMinComputeCapability = 0;
 };
 
+struct Agnostic {
+  static int const kMinComputeCapability = 1;
+};
+
 #endif
 
 /// Triggers a breakpoint on the device

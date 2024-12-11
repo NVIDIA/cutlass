@@ -29,27 +29,24 @@
  *
  **************************************************************************************************/
 
-#include "cutlass/epilogue/collective/default_epilogue.hpp"
-#include "cutlass/epilogue/collective/xe_epilogue.hpp"
-#include "cutlass/epilogue/fusion/xe_callbacks.hpp"
+
 #include "cutlass/gemm/device/gemm_universal.h"
 #include "cutlass/gemm/device/gemm_universal_adapter.h"
-#include "cutlass/gemm/collective/collective_mma.hpp"
-#include "cutlass/util/GPU_Clock.hpp"
 
-#include <cute/tensor.hpp>
-#include <random>
+#include "cutlass/gemm/collective/collective_builder.hpp"
+#include "cutlass/epilogue/collective/collective_builder.hpp"
+#include "cutlass/kernel_hardware_info.h"
 
 #include "cutlass/util/command_line.h"
 #include "cutlass/util/device_memory.h"
 #include "cutlass/util/packed_stride.hpp"
 #include "cutlass/util/reference/device/gemm_complex.h"
 #include "cutlass/util/reference/device/tensor_compare.h"
-#include "cutlass/util/reference/device/tensor_relu.h"
+#include "cutlass/util/GPU_Clock.hpp"
+
+#include "cutlass/util/reference/device/sycl_tensor_fill.h"
 #include "cutlass/tensor_view.h"
 #include "cutlass/coord.h"
-
-#include "common.hpp"
 
 using namespace cute;
 
@@ -67,7 +64,7 @@ struct Options {
   Options():
     help(false),
     error(false),
-    m(5120), n(4096), k(4096), l(1), iterations(100),
+    m(128), n(128), k(128), l(1), iterations(100),
     alpha(1.f), beta(0.f)
   { }
 
@@ -80,9 +77,9 @@ struct Options {
       return;
     }
 
-    cmd.get_cmd_line_argument("m", m, 5120);
-    cmd.get_cmd_line_argument("n", n, 4096);
-    cmd.get_cmd_line_argument("k", k, 4096);
+    cmd.get_cmd_line_argument("m", m, 128);
+    cmd.get_cmd_line_argument("n", n, 128);
+    cmd.get_cmd_line_argument("k", k, 128);
     cmd.get_cmd_line_argument("l", l, 1);
     cmd.get_cmd_line_argument("alpha", alpha, 1.f);
     cmd.get_cmd_line_argument("beta", beta, 0.f);
@@ -92,7 +89,7 @@ struct Options {
   /// Prints the usage statement.
   std::ostream & print_usage(std::ostream &out) const {
 
-    out << "PVC GEMM Example\n\n"
+    out << "Device Agnostic GEMM Example\n\n"
       << "Options:\n\n"
       << "  --help                      If specified, displays this usage statement\n\n"
       << "  --m=<int>                   Sets the M extent of the GEMM\n"
@@ -186,16 +183,26 @@ struct ExampleRunner {
     syclcompat::wait();
 
     using TensorView = cutlass::TensorView<ElementOutput, LayoutD>;
-    cutlass::reference::device::TensorReLu(TensorView(block_ref_D.get(), LayoutD::packed({M, N}),
-                                                      cutlass::make_Coord(M, N)));
-
-    syclcompat::wait();
 
     // Check if output from CUTLASS kernel and reference kernel are equal or not
     bool passed = cutlass::reference::device::BlockCompareEqual(
       block_ref_D.get(), block_D.get(), block_D.size());
 
     return passed;
+  }
+
+  template <typename T>
+  void initialize_block(cutlass::DeviceAllocation<T> block_device, uint64_t seed) {
+    std::mt19937 rng(std::random_device{}());
+    std::uniform_real_distribution<> dist(0.0f, 1.0f);
+    rng.seed(seed);
+
+    auto block_host = std::vector<ElementA>(block_device.size());
+    for (auto& element : block_host) {
+      element = static_cast<T>(dist(rng));
+    }
+
+    block_device.copy_from_host(block_host.data());
   }
 
   /// Initialize operands to be used in the GEMM and reference GEMM
@@ -293,7 +300,7 @@ int main(int argc, const char** argv)
   // Run examples
   //
 
-  // The KernelHardwareInfo struct holds the number of EUs on the GPU with a given device ID. This
+  // The KernelHardwareInfo struct holds the number of CUs on the GPU with a given device ID. This
   // information is used by the underlying kernel.
   cutlass::KernelHardwareInfo hw_info;
 
@@ -307,60 +314,48 @@ int main(int argc, const char** argv)
   // elements in input matrices.
   using ElementAccumulator = float;                   // <- data type of accumulator
   using ElementComputeEpilogue = float;  // <- data type of epilogue operations
-  using ElementInputA = bfloat16_t;                        // <- data type of elements in input matrix A
-  using ElementInputB = bfloat16_t;                        // <- data type of elements in input matrix B
+  using ElementInputA = float;                        // <- data type of elements in input matrix A
+  using ElementInputB = float;                        // <- data type of elements in input matrix B
   using ElementOutput = float;                        // <- data type of elements in output matrix D
 
-  using LayoutA = cutlass::layout::RowMajor;
-  using LayoutB = cutlass::layout::RowMajor;
-  using LayoutC = cutlass::layout::RowMajor;
-  using LayoutD = cutlass::layout::RowMajor;
-
-  using GmemTiledCopyA = XE_2D_U16x8x16_LD_N;
-  using GmemTiledCopyB = XE_2D_U16x16x16_LD_V;
+  constexpr int AlignmentA = sizeof(ElementInputA);
+  constexpr int AlignmentB = sizeof(ElementInputB);
+  constexpr int AlignmentC = sizeof(ElementAccumulator);
+  constexpr int AlignmentD = sizeof(ElementOutput);
+  
+  using LayoutA = cutlass::layout::ColumnMajor;
+  using LayoutB = cutlass::layout::ColumnMajor;
+  using LayoutC = cutlass::layout::ColumnMajor;
+  using LayoutD = cutlass::layout::ColumnMajor;
 
   // Workgroup-level tile
-  using TileShape = Shape<_256, _128, _16>;
+  using TileShape = Shape<_16, _16, _8>;
+  
+  using CollectiveMainloop = cutlass::gemm::collective::CollectiveBuilder<
+    cutlass::arch::Agnostic, cutlass::arch::OpMultiplyAdd,
+    ElementInputA, LayoutA, AlignmentA,
+    ElementInputB, LayoutB, AlignmentB,
+    ElementAccumulator,
+    TileShape, Shape<_1, _1, _1>,
+    cutlass::gemm::collective::StageCountAuto,
+    cutlass::gemm::collective::KernelScheduleAuto
+  >::CollectiveOp;
 
-  using TiledMma = TiledMMA<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
-          Layout<Shape<_8,_2,_1>>,
-          Tile<_64,_32,_16>>; // Subgroup level-tile
+  using EpilogueOp = cutlass::epilogue::fusion::LinearCombination<
+          ElementOutput, ElementComputeEpilogue, ElementAccumulator, 
+          ElementAccumulator>;
 
-  constexpr int PipelineStages = 3;
-  using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelPVC<PipelineStages>;
-  using EpilogueDispatchPolicy = cutlass::epilogue::IntelPVCEpilogue;
-
-  using EpilogueOp = cutlass::epilogue::fusion::LinCombEltAct<cutlass::epilogue::thread::ReLu, ElementOutput,
-          ElementComputeEpilogue, ElementAccumulator, ElementAccumulator, cutlass::FloatRoundStyle::round_to_nearest>;
-
-  using FusionCallBacks = cutlass::epilogue::fusion::FusionCallbacks<EpilogueDispatchPolicy, EpilogueOp, TileShape,
-          decltype(tile_shape(TiledMma()))>;
-  using CollectiveEpilogue = cutlass::epilogue::collective::CollectiveEpilogue<
-          EpilogueDispatchPolicy,
-          TileShape,
-          ElementAccumulator,
-          cutlass::gemm::TagToStrideC_t<LayoutC>,
-          ElementOutput,
-          cutlass::gemm::TagToStrideC_t<LayoutD>,
-          FusionCallBacks,
-          XE_2D_U32x8x16_LD_N,
-          void, void,
-          XE_2D_U32x8x16_ST_N,
-          void, void>;
-
-// Mainloop
-  using CollectiveMainloop = cutlass::gemm::collective::CollectiveMma<
-          GEMMDispatchPolicy,
-          TileShape,
-          ElementInputA,
-          cutlass::gemm::TagToStrideA_t<LayoutA>,
-          ElementInputB,
-          cutlass::gemm::TagToStrideB_t<LayoutB>,
-          TiledMma,
-          GmemTiledCopyA, void, void, cute::identity,  // A
-          GmemTiledCopyB, void, void, cute::identity   // B
-  >;
-
+  using CollectiveEpilogue = cutlass::epilogue::collective::CollectiveBuilder<
+    cutlass::arch::Agnostic, cutlass::arch::OpMultiplyAdd,
+    TileShape, Shape<_1, _1, _1>,
+    cutlass::epilogue::collective::EpilogueTileAuto, ElementComputeEpilogue,
+    ElementAccumulator, 
+    ElementAccumulator, LayoutC, AlignmentC,
+    ElementOutput,      LayoutD, AlignmentD,
+    cutlass::epilogue::collective::EpilogueScheduleAuto,
+    EpilogueOp
+  >::CollectiveOp;
+  
   using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
   Shape<int, int, int, int>,
   CollectiveMainloop,

@@ -456,16 +456,24 @@ public:
 
         using namespace syclcompat::experimental;
 #if defined (SYCL_INTEL_TARGET)
-        auto event = launch<device_kernel<GemmKernel>>(launch_policy{
-          sycl_grid, sycl_block, local_mem_size{static_cast<std::size_t>(smem_size)},
-          kernel_properties{sycl_exp::sub_group_size<DispatchPolicy::SubgroupSize>}
-        }, params);
+        if constexpr (cute::is_same_v<DispatchPolicy, MainloopDeviceAgnostic>) {
+          auto event = launch<device_kernel<GemmKernel>>(launch_policy{
+            sycl_grid, sycl_block, local_mem_size{static_cast<std::size_t>(smem_size)}
+          }, params);
+          EventManager::getInstance().addEvent(event);
+        } else {
+          auto event = launch<device_kernel<GemmKernel>>(launch_policy{
+            sycl_grid, sycl_block, local_mem_size{static_cast<std::size_t>(smem_size)},
+            kernel_properties{sycl_exp::sub_group_size<DispatchPolicy::SubgroupSize>}
+          }, params);
+          EventManager::getInstance().addEvent(event);
+        }
 #else
         auto event = launch<device_kernel<GemmKernel>>(launch_policy{
           sycl_grid, sycl_block, local_mem_size{static_cast<std::size_t>(smem_size)}},
           params);
-#endif
         EventManager::getInstance().addEvent(event);
+#endif
 #else
 #if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
         CUTLASS_TRACE_HOST("GemmUniversal::run: Launching kernel with cutlass::kernel_launch");

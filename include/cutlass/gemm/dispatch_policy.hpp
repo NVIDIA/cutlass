@@ -332,6 +332,14 @@ struct MainloopIntelPVC {
 };
 #endif
 
+#if defined(CUTLASS_ENABLE_SYCL)
+struct MainloopDeviceAgnostic {
+  using ArchTag = arch::Agnostic;
+  using ClusterShape = Shape<_1,_1,_1>;
+  using Schedule = KernelMultistage;
+};
+#endif
+
 //////////////////////////////////////////////////////////////////////////////
 
 } // namespace cutlass::gemm

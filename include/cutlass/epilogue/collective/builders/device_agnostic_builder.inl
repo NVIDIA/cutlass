@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -28,31 +28,64 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
+
 #pragma once
 
-#include "cutlass/gemm/collective/collective_mma_decl.hpp"
+#include <cutlass/arch/arch.h>
+#include <cute/arch/copy.hpp>
+
+#include "cutlass/epilogue/collective/default_epilogue.hpp"
 
 
-/////////////////////////////////////////////////////////////////////////////////////////////////
+namespace cutlass::epilogue::collective {
 
-#include "cutlass/gemm/collective/sm70_mma_twostage.hpp"
-#include "cutlass/gemm/collective/sm80_mma_multistage.hpp"
-#include "cutlass/gemm/collective/sm90_mma_multistage_gmma_ss_warpspecialized.hpp"
-#include "cutlass/gemm/collective/sm90_mma_multistage_gmma_rs_warpspecialized.hpp"
-#include "cutlass/gemm/collective/sm90_mma_tma_gmma_ss.hpp"
-#include "cutlass/gemm/collective/sm90_mma_tma_gmma_rs_warpspecialized.hpp"
-#include "cutlass/gemm/collective/sm90_mma_tma_gmma_rs_warpspecialized_mixed_input.hpp"
-#include "cutlass/gemm/collective/sm90_mma_tma_gmma_ss_warpspecialized.hpp"
-#include "cutlass/gemm/collective/sm90_sparse_mma_tma_gmma_ss_warpspecialized.hpp"
-#include "cutlass/gemm/collective/sm90_mma_array_tma_gmma_ss_warpspecialized.hpp"
-#include "cutlass/gemm/collective/sm90_mma_tma_gmma_ss_warpspecialized_fp8.hpp"
+template<
+  class TileShape_MNK,
+  class ElementAccumulator_,
+  class ElementCompute_,
+  class ElementC_,
+  class GmemLayoutTagC_,
+  int AlignmentC_,
+  class ElementD_,
+  class GmemLayoutTagD_,
+  int AlignmentD_,
+  class FusionOpOrCallbacks
+>
+struct CollectiveBuilder<
+  arch::Agnostic,
+  arch::OpMultiplyAdd,
+  TileShape_MNK,
+  Shape<_1, _1, _1>,
+  EpilogueTileAuto,
+  ElementAccumulator_,
+  ElementCompute_,
+  ElementC_,
+  GmemLayoutTagC_,
+  AlignmentC_,
+  ElementD_,
+  GmemLayoutTagD_,
+  AlignmentD_,
+  EpilogueScheduleAuto,
+  FusionOpOrCallbacks,
+  cute::enable_if_t<
+    (cute::is_same_v<FusionOpOrCallbacks,
+       cutlass::epilogue::fusion::LinearCombination<ElementD_, ElementCompute_, ElementC_, ElementCompute_>>)
+  >
+> {
+  using ElementD = ElementD_;
+  using ElementOutput = ElementD_;
+  using ElementCompute = ElementCompute_;
+  using ElementAccumulator = ElementAccumulator_;
 
-#if defined(SYCL_INTEL_TARGET)
-#include "cutlass/gemm/collective/xe_mma.hpp"
-#endif
+  static constexpr int FragmentSize = 1;
+  using ThreadOp = thread::LinearCombination<
+    ElementD, FragmentSize, ElementAccumulator, ElementCompute>;
 
-#if defined(CUTLASS_ENABLE_SYCL)
-#include "cutlass/gemm/collective/device_agnostic_mma.hpp"
-#endif
+  using CollectiveOp = cutlass::epilogue::collective::DefaultEpilogue<
+          cutlass::detail::TagToStrideC_t<GmemLayoutTagC_>,
+          cutlass::detail::TagToStrideC_t<GmemLayoutTagD_>,
+          ThreadOp,
+          cutlass::gemm::EpilogueDefault>;
+};
 
-/////////////////////////////////////////////////////////////////////////////////////////////////
+} // namespace cutlass::epilogue::collective
