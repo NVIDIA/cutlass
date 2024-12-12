@@ -34,7 +34,9 @@ if (NOT CUTLASS_ENABLE_SYCL)
     )
 endif()
 
-cutlass_example_add_executable(
-  14_ampere_tf32_tensorop_gemm_cute
-  ampere_tf32_tensorop_gemm_cute.cu
-)
+if (NOT SYCL_INTEL_TARGET)
+  cutlass_example_add_executable(
+    14_ampere_tf32_tensorop_gemm_cute
+    ampere_tf32_tensorop_gemm_cute.cu
+  )
+endif()
