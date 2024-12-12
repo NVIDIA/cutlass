@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,22 +30,30 @@
  **************************************************************************************************/
 
 /*! \file
-    \brief Blocked scale Hopper FP8 GEMM example using CUTLASS 3.0 APIs for NVIDIA Hopper architecture
-    This example demonstrate a blocked scaled FP8 GEMM using the new CUTLASS 3.0.
+    \brief Grouped scale Hopper FP8 GEMM example using CUTLASS 3.0 APIs for NVIDIA Hopper architecture
+
+    This example demonstrate a grouped scaled FP8 GEMM using the new CUTLASS 3.0.
     APIs on NVIDIA Hopper architecture. New features that will be showcased in this example are as follows:
+
     1. NVIDIA Hopper architecture introduces a new series of tensor core instructions (GMMA)
     which are more efficient than the Ampere tensor core instructions.
+
     2. NVIDIA Hopper architecture includes new Tensor Memory Accelerator (TMA) unit to transfer large
     blocks of data efficiently between global memory and shared memory. TMA also supports asynchronous
     copies between thread blocks in a cluster.
+
     3. This example uses the Warp Specialized kernel design (see /media/docs/efficient_gemm.md for details).
-    4. This example shows all important fusions used by FP8 gemm kernels, i.e., blocked scale factor for
-    A, B tensor, the abs_max value of D tensor.
+
+    4. This example shows all important fusions used by FP8 gemm kernels, i.e., grouped scale factor along M for
+    A, blocked scale factor along K for A tensor, blocked scale factor for B tensor, the abs_max value of D tensor.
+
     5. A simple way to tune the CTA rasterization direction and swizzle pattern of Hopper kernels. Both the
     CTA rasterization direction and swizzle pattern impact cross-CTA locality of accesses. By tuning we can
     improve performance.
+
     Examples:
-      $ ./examples/67_hopper_fp8_warp_specialized_gemm_with_blockwise_scaling/67_hopper_fp8_warp_specialized_gemm_with_blockwise_scaling  \
+
+      $ ./examples/64_hopper_fp8_warp_specialized_gemm_with_groupwise_scaling/64_hopper_fp8_warp_specialized_gemm_with_groupwise_scaling  \
         --m=2816 --n=3072 --k=16384 \
         --save_aux=false --save_amax=false \
         --device_scale=false --raster=h --swizzle=2
@@ -79,7 +87,7 @@
 // Includes from examples directory
 #include "helper.h"
 #include "hopper_fp8_commandline.hpp"
-#include "reference/host/gemm_with_blockwise_scaling.h"
+#include "reference/host/gemm_with_groupwise_scaling.h"
 
 using namespace cute;
 
@@ -123,7 +131,11 @@ using ArchTag             = cutlass::arch::Sm90;                            // T
 using OperatorClass       = cutlass::arch::OpClassTensorOp;                 // Operator class tag
 using TileShape           = Shape<_128,_128,_128>;                           // Threadblock-level tile size
 using ClusterShape        = Shape<_1,_2,_1>;                                // Shape of the threadblocks in a cluster
-using KernelSchedule      = cutlass::gemm::KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum<>;
+
+constexpr int ScaleMsPerTile = 2;
+constexpr int ScaleGranularityM = size<0>(TileShape{}) / ScaleMsPerTile;
+
+using KernelSchedule      = cutlass::gemm::KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum<ScaleGranularityM>;
 using EpilogueSchedule    = cutlass::epilogue::TmaWarpSpecializedCooperative;
 
 using EpilogueTileType    = cutlass::epilogue::collective::EpilogueTileAuto;
@@ -180,6 +192,9 @@ constexpr bool IsDFp8 =
 constexpr bool IsAuxFp8 =
     cute::is_same_v<ElementAux, cutlass::float_e4m3_t> or
     cute::is_same_v<ElementAux, cutlass::float_e5m2_t>;
+
+static_assert(size<0>(TileShape{}) == ScaleGranularityM * ScaleMsPerTile,
+             "FP8 scaling granularity must evenly divide tile shape along M.");
 
 static_assert(cute::is_same_v<ElementAccumulator, ElementBlockScale>,
              "ElementAccumulator and ElementBlockScale should be same datatype");
@@ -342,10 +357,10 @@ struct Result
 /// Initialize operands to be used in the GEMM and reference GEMM
 void initialize(const Options<RasterOrderOptions> &options) {
 
-  // Find Block Scaling tensor shapes based on problem shape and TileShape
+  // Find Group Scaling tensor shapes based on `ScaleGranularityM`, problem shape, and TileShape
   auto gemm_problem_shape = cute::make_shape(options.m, options.n, options.k);
   auto blockscale_shape = shape(get<1>(cute::zipped_divide(cute::make_layout(gemm_problem_shape), TileShape{})));
-  auto blockscale_m = cute::get<0>(blockscale_shape);
+  auto groupscale_m = cute::get<0>(blockscale_shape) * ScaleMsPerTile; // We need to pad along M in scale tensor of A to prevent illegal memory access.
   auto blockscale_n = cute::get<1>(blockscale_shape);
   auto blockscale_k = cute::get<2>(blockscale_shape);
 
@@ -360,11 +375,11 @@ void initialize(const Options<RasterOrderOptions> &options) {
   auto a_coord = cutlass::make_Coord(options.m * options.l, options.k);
   auto c_coord = cutlass::make_Coord(options.m * options.l, options.n);
   auto b_coord = cutlass::make_Coord(options.k, options.n * options.l);
-  auto blockscale_a_coord = cutlass::make_Coord(blockscale_m * options.l, blockscale_k);
+  auto groupscale_a_coord = cutlass::make_Coord(groupscale_m * options.l, blockscale_k);
   auto blockscale_b_coord = cutlass::make_Coord(blockscale_k, blockscale_n * options.l);
 
   tensor_A.resize(a_coord);
-  blockscale_tensor_A.resize(blockscale_a_coord);
+  blockscale_tensor_A.resize(groupscale_a_coord);
   tensor_B.resize(b_coord);
   blockscale_tensor_B.resize(blockscale_b_coord);
   tensor_C.resize(c_coord);
@@ -384,13 +399,13 @@ void initialize(const Options<RasterOrderOptions> &options) {
   initialize_scale_tensor(blockscale_tensor_B.host_view(), dist_scaleB, seed + 2026);
 
 #if 0 // Dump blockscaled tensors
-  std::cout << "blockscale_tensor_A: " << blockscale_a_coord << std::endl;
+  std::cout << "blockscale_tensor_A: " << groupscale_a_coord << std::endl;
   std::cout << blockscale_tensor_A.host_view() << "\n";
   std::cout << "blockscale_tensor_B: " << blockscale_b_coord << std::endl;
   std::cout << blockscale_tensor_B.host_view() << "\n";
 #endif
 
-  // Print block scaling tensors on the host side.
+  // Print group scaling tensors on the host side.
   tensor_A.sync_device();
   tensor_B.sync_device();
   tensor_C.sync_device();
@@ -511,7 +526,7 @@ bool verify(const Options<RasterOrderOptions> &options) {
   // Compute reference output
   //
 
-  // Block scaling tensors shapes based CTA Block (TileShape) and GEMM Problem shape
+  // Group scaling tensors shapes based `ScaleGranularityM`, CTA Block (TileShape) and GEMM Problem shape
   auto gemm_problem_shape = cute::make_shape(options.m, options.n, options.k);
   auto blockscale_shape = shape(get<1>(cute::zipped_divide(cute::make_layout(gemm_problem_shape), TileShape{})));
   auto blockscale_m = cute::get<0>(blockscale_shape);
@@ -552,8 +567,8 @@ bool verify(const Options<RasterOrderOptions> &options) {
 
   auto blockscale_A = cute::make_tensor(blockscale_tensor_A.host_data(),
                                         cute::make_layout(
-                                          cute::make_shape(blockscale_m, blockscale_k, options.l),
-                                          cute::make_stride(blockscale_k, 1, blockscale_m * blockscale_k)
+                                          cute::make_shape(blockscale_m, ScaleMsPerTile, blockscale_k, options.l),
+                                          cute::make_stride(blockscale_k * ScaleMsPerTile, 1, ScaleMsPerTile, blockscale_m * blockscale_k * ScaleMsPerTile)
                                         )
                                       );
   auto blockscale_B = cute::make_tensor(blockscale_tensor_B.host_data(),
@@ -570,7 +585,7 @@ bool verify(const Options<RasterOrderOptions> &options) {
                                                decltype(blockscale_A), decltype(blockscale_B),
                                                TileShape> mainloop_params{
                                                A, B,                         // Operand Tensors
-                                               blockscale_A, blockscale_B    // Blockwise scaling Tensors
+                                               blockscale_A, blockscale_B    // Groupwise scaling Tensors
                                               };
 
   cutlass::reference::host::GettEpilogueParams<
@@ -722,7 +737,7 @@ int main(int argc, char const **args) {
   CUDA_CHECK(cudaGetDevice(&current_device_id));
   CUDA_CHECK(cudaGetDeviceProperties(&props, current_device_id));
   cudaError_t error = cudaGetDeviceProperties(&props, 0);
-  if (props.major != 9) {
+  if (props.major < 9) {
     std::cerr
       << "This example requires a GPU of NVIDIA's Hopper Architecture or "
       << "later (compute capability 90 or greater).\n";

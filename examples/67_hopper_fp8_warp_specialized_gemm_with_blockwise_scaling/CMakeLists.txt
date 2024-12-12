@@ -30,3 +30,8 @@ cutlass_example_add_executable(
   67_hopper_fp8_warp_specialized_gemm_with_blockwise_scaling
   67_hopper_fp8_warp_specialized_gemm_with_blockwise_scaling.cu
   )
+
+cutlass_example_add_executable(
+  67_hopper_fp8_warp_specialized_gemm_with_groupwise_scaling
+  67_hopper_fp8_warp_specialized_gemm_with_groupwise_scaling.cu
+  )
