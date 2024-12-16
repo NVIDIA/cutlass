@@ -37,8 +37,8 @@
 
     Those assumptions are as:
       1. Fusion is over the N dimension.
-      2. Top-K is either 2 or 4 elements, and the value is static (meaning two kernels have to be
-         compiled to support both.)
+      2. Top-K value is static (meaning multiple kernels have to be compiled to support 
+         different values.)
       3. The GEMM tile shape along N is greater than or equal to problem size
          along N.
 
