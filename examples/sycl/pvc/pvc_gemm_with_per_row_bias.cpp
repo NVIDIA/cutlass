@@ -45,6 +45,7 @@
 #include "cutlass/util/packed_stride.hpp"
 #include "cutlass/util/reference/device/gemm_complex.h"
 #include "cutlass/util/reference/device/tensor_compare.h"
+#include "cutlass/util/reference/device/tensor_epilogue.h"
 #include "cutlass/tensor_view.h"
 #include "cutlass/coord.h"
 
@@ -122,6 +123,7 @@ struct ExampleRunner {
   using LayoutB = typename Gemm::LayoutB;
   using LayoutC = typename Gemm::LayoutC;
   using LayoutD = typename Gemm::LayoutD;
+  using LayoutBias = cutlass::layout::ColumnMajor;
 
   using ElementA = typename Gemm::ElementA;
   using ElementB = typename Gemm::ElementB;
@@ -151,7 +153,7 @@ struct ExampleRunner {
   cutlass::DeviceAllocation<ElementC> block_C;
   cutlass::DeviceAllocation<ElementOutput> block_D;
   cutlass::DeviceAllocation<ElementOutput> block_ref_D;
-  cutlass::DeviceAllocation<ElementBias> bias;
+  cutlass::DeviceAllocation<ElementBias> block_bias;
   //
   // Methods
   //
@@ -163,18 +165,6 @@ struct ExampleRunner {
     cutlass::TensorRef ref_B(block_B.get(), LayoutB::packed({K, N}));
     cutlass::TensorRef ref_C(block_C.get(), LayoutC::packed({M, N}));
     cutlass::TensorRef ref_D(block_ref_D.get(), LayoutD::packed({M, N}));
-
-    // cutlass::reference::device::TensorScaleBiasGemm<
-    //   ElementAccumulator, typename B2bGemm::ElementC, typename B2bGemm::LayoutC,
-    //   ElementCompute, typename B2bGemm::LayoutC
-    // > (
-    //   {M, N, K},
-    //   ref_Z.at(i),
-    //   ref_ref_D0.at(i),
-    //   alpha0,
-    //   ref_Scale0.at(i),
-    //   ref_Bias0.at(i)
-    // );
 
     cutlass::reference::device::GemmComplex(
           {M, N, K},
@@ -196,11 +186,21 @@ struct ExampleRunner {
 
     syclcompat::wait();
 
-    // TODO(joe): Add the right epilogue here (PerRowBias) for testing
+    auto D_view = 
+        cutlass::TensorView(
+        block_ref_D.get(), LayoutD::packed({M, N}), cutlass::make_Coord(M, N));
+
+    auto bias_view =
+        cutlass::TensorView(
+        block_bias.get(), LayoutBias::packed({0, N}), {M, N});
+
+    cutlass::reference::device::TensorPerRowBias(D_view, bias_view);
+
+    syclcompat::wait();
 
     // Check if output from CUTLASS kernel and reference kernel are equal or not
     bool passed = cutlass::reference::device::BlockCompareEqual(
-      block_ref_D.get(), block_D.get(), block_D.size());
+        block_ref_D.get(), block_D.get(), block_D.size());
 
     return passed;
   }
@@ -220,12 +220,12 @@ struct ExampleRunner {
     block_C.reset(M * N * L);
     block_D.reset(M * N * L);
     block_ref_D.reset(M * N * L);
-    bias.reset(N * L);
+    block_bias.reset(M * L);
 
     initialize_block(block_A, seed + 2023);
     initialize_block(block_B, seed + 2022);
     initialize_block(block_C, seed + 2021);
-    initialize_block(bias, seed + 2020);
+    initialize_block(block_bias, seed + 2020);
   }
 
   void run(const Options& options, const cutlass::KernelHardwareInfo& hw_info) {
@@ -236,14 +236,17 @@ struct ExampleRunner {
     using StrideBias = Stride<_1, _0, int>;
     StrideBias dBias = {};
 
+    using EpilogueArguments = typename Gemm::GemmKernel::EpilogueArguments;
+    EpilogueArguments epilogue_arguments{
+      {options.alpha, options.beta}, block_C.get(), stride_C, block_D.get(), stride_D};
+    epilogue_arguments.thread.bias_ptr = block_bias.get();
+    epilogue_arguments.thread.dBias = dBias; 
+
     typename Gemm::GemmKernel::Arguments arguments{
       cutlass::gemm::GemmUniversalMode::kGemm,
       problem_size,
       {block_A.get(), stride_A, block_B.get(), stride_B},
-      {
-        {options.alpha, options.beta, bias.get()}, 
-        block_C.get(), stride_C, block_D.get(), stride_D
-      },
+      epilogue_arguments,
       hw_info
     };
 
