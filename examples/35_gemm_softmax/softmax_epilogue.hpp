@@ -264,7 +264,7 @@ public:
     syncthreads();
 
     // assumption for reductions: size<0>(sC) == block size
-    assert(size<0>(sC) == BlockDimX() * BlockDimy() * BlockDimZ());
+    assert(size<0>(sC) == BlockDimX() * BlockDimY() * BlockDimZ());
     
     ElementAccumulator max = std::numeric_limits<ElementAccumulator>::lowest();
     CUTLASS_PRAGMA_UNROLL
