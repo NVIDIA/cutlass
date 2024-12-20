@@ -39,11 +39,7 @@
 
 #pragma once
 
-#if defined(__CUDACC_RTC__)
 #include <cuda/std/cassert>
-#else
-#include <assert.h>
-#endif
 
 #include "cutlass/cutlass.h"
 #include "cutlass/numeric_types.h"
@@ -478,6 +474,12 @@ public:
     // Iterate over accumulator tile
     //
 
+    #ifdef __clang__
+    #pragma clang diagnostic push
+    #pragma clang diagnostic ignored "-Wcuda-compat"
+    // Turn off clangs warning about loop unroll argument using parens.
+    #endif
+
     #pragma unroll(IterationsUnroll ? OutputTileIterator::kIterations : 1)
     for (int iter = 0; iter < OutputTileIterator::kIterations; ++iter)
     {
@@ -531,6 +533,10 @@ public:
       destination_iterator.store(output_fragment);
       ++destination_iterator;
     }
+    
+    #ifdef __clang__
+    #pragma clang diagnostic pop
+    #endif
   }
 };
 

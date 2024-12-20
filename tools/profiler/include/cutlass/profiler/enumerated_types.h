@@ -90,9 +90,9 @@ AlgorithmMode from_string<AlgorithmMode>(std::string const &str);
 /// Outcome of a performance test
 enum class Disposition {
   kPassed,
-  kFailed,
+  kFailed,    // kernel itself reported an error
   kNotRun,
-  kIncorrect,
+  kIncorrect, // kernel finished without a detected error, but result does not equal expected result
   kNotVerified,
   kInvalidProblem,
   kNotSupported,

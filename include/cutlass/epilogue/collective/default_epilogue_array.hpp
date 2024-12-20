@@ -86,7 +86,7 @@ public:
   static const int kOutputAlignment = ThreadEpilogueOp::kCount;
   using AlignmentType = typename cute::uint_bit<sizeof_bits<ElementOutput>::value * kOutputAlignment>::type;
 
-  static_assert(cute::is_same_v<EpilogueSchedule, PtrArrayNoSmemWarpSpecialized> || cute::is_same_v<EpilogueSchedule, PtrArrayDefault>, "Incompatible epilogue schedule.");
+  static_assert(cute::is_same_v<EpilogueSchedule, PtrArrayNoSmemWarpSpecialized> || cute::is_same_v<EpilogueSchedule, PtrArrayDefault> || cute::is_same_v<EpilogueSchedule, PtrArrayNoSmemWarpSpecializedTransposed>, "Incompatible epilogue schedule.");
   static_assert(rank(InternalStrideC{}) == 3, "StrideCD must be rank-3: [M, N, L]");
   static_assert(rank(InternalStrideD{}) == 3, "StrideCD must be rank-3: [M, N, L]");
 
@@ -198,20 +198,30 @@ public:
       assert(0);
     }
 
-    InternalStrideC stride_c;
-    InternalStrideD stride_d;
-    if constexpr (!cute::is_same_v<InternalStrideC, StrideC>) {
-      // If grouped gemm
-      if (epilogue_op.is_source_needed()) {
-        stride_c = detail::get_epilogue_stride<EpilogueSchedule>(params.dC[l_coord]);
+    auto [stride_c, stride_d] = [&, l = l_coord]() {
+      if constexpr (!cute::is_same_v<InternalStrideC, StrideC>) {
+        // If grouped gemm
+        if (epilogue_op.is_source_needed()) {
+            return make_tuple(
+                detail::get_epilogue_stride<EpilogueSchedule>(params.dC[l]),
+                detail::get_epilogue_stride<EpilogueSchedule>(params.dD[l])
+            );
+        } 
+        else {
+          return make_tuple(
+              InternalStrideC{}, 
+              detail::get_epilogue_stride<EpilogueSchedule>(params.dD[l])
+          );
+        }
+      } 
+      else {
+        return make_tuple(
+            detail::get_epilogue_stride<EpilogueSchedule>(params.dC),
+            detail::get_epilogue_stride<EpilogueSchedule>(params.dD)
+        );
       }
-      stride_d = detail::get_epilogue_stride<EpilogueSchedule>(params.dD[l_coord]);
-    }
-    else {
-      stride_c = detail::get_epilogue_stride<EpilogueSchedule>(params.dC);
-      stride_d = detail::get_epilogue_stride<EpilogueSchedule>(params.dD);
-    }
-
+    }();
+    
     // Represent the full output tensor
     ElementC const* ptr_C_l = nullptr;
     if (epilogue_op.is_source_needed()) {

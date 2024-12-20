@@ -337,7 +337,15 @@ std::ostream & PerformanceReport::print_csv_header_(
     << ",Bytes"
     << ",Flops"
     << ",Flops/Byte"
-    << ",Runtime"
+    << ",Runtime";
+
+  if (options_.device.devices.size() > 1) {
+    for (size_t i = 0; i < options_.device.devices.size(); i++) {
+      out << ",Runtime_" << i;
+    }
+  }
+
+  out
     << ",GB/s"
     << ",GFLOPs"
     ;
@@ -375,6 +383,16 @@ std::ostream & PerformanceReport::print_result_csv_(
     << "," << result.flops
     << "," << result.flops / result.bytes
     << "," << result.runtime;
+
+  if (options_.device.devices.size() > 1) {
+    if (result.runtime_vector.size() != options_.device.devices.size()) {
+      throw std::runtime_error("Runtime vector size mismatch");
+    }
+
+    for (const auto runtime : result.runtime_vector) {
+      out << "," << runtime;
+    }
+  }
 
   if (result.good()) {
 

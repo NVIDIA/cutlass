@@ -422,7 +422,8 @@ struct CollectiveBuilder<
     Schedule,
     fusion::LinearCombination<ElementD,ElementCompute,ElementC_,ElementCompute,RoundStyle>,
     cute::enable_if_t<cute::is_same_v<Schedule, NoSmemWarpSpecialized> ||
-                      cute::is_same_v<Schedule, PtrArrayNoSmemWarpSpecialized> >> {
+                      cute::is_same_v<Schedule, PtrArrayNoSmemWarpSpecialized> ||
+                      cute::is_same_v<Schedule, PtrArrayNoSmemWarpSpecializedTransposed> >> {
 
   // Passing void C disables source load
   using ElementC = cute::conditional_t<cute::is_void_v<ElementC_>,

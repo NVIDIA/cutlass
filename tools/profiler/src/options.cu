@@ -307,12 +307,6 @@ void Options::Initialization::get_distribution(
     {0, 0}
   };
 
-  // Initalize pnz values to a default value of 100%
-  dist.gaussian.pnz = 1.0;
-  dist.gaussian.pnzA = 1.0;
-  dist.gaussian.pnzB = 1.0;
-  dist.gaussian.pnzC = 1.0;
-
   using KeyValueVector = std::vector<std::pair<std::string, std::string> >;
 
   KeyValueVector values;
@@ -328,6 +322,25 @@ void Options::Initialization::get_distribution(
       }
     }
     ++it;
+  }
+
+  // Default initialization
+  switch (dist.kind) {
+    case cutlass::Distribution::Uniform:
+      dist.set_uniform(-4/*min*/, 4/*max*/);
+      break;
+    case cutlass::Distribution::Gaussian:
+      dist.set_gaussian(0/*mean*/, 4/*stddev*/);
+      break;
+    case cutlass::Distribution::Identity:
+      dist.set_identity();
+      break;
+    case cutlass::Distribution::Sequential:
+      dist.set_sequential(0/*start*/, 4/*delta*/);
+      break;
+    default:
+      dist.set_uniform(-4/*min*/, 4/*max*/);
+      return;
   }
 
   // Subsequent key-value pairs update the named field of the distribution struct.

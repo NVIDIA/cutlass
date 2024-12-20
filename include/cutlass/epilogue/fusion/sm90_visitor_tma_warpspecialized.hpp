@@ -300,7 +300,6 @@ struct Sm90VisitorImplBase {
   tuple<Ops...> ops;
 };
 
-
 template <class... Ops>
 struct Sm90VisitorImpl : Sm90VisitorImplBase<Ops...> {
 
@@ -658,7 +657,6 @@ struct Sm90SplitTreeVisitor : Sm90VisitorImpl<InputTree, AuxOutTrees..., OutputT
     return ConsumerStoreCallbacks<decltype(callbacks_tuple)>(std::move(callbacks_tuple));
   }
 };
-
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<

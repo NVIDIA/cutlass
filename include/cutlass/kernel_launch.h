@@ -37,6 +37,7 @@
 #include <cuda_runtime_api.h>
 #include "cutlass/cutlass.h"
 #include "cutlass/trace.h"
+#include "cutlass/device_kernel.h" // cutlass::device_kernel
 
 namespace cutlass {
 

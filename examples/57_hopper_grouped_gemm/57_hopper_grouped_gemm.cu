@@ -63,7 +63,7 @@
 #include <fstream>
 #include <sstream>
 #include <vector>
-#include <float.h>
+#include <cfloat>
 
 #include "cutlass/cutlass.h"
 

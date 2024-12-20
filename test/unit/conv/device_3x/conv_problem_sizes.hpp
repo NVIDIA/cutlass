@@ -1159,6 +1159,37 @@ std::vector<cutlass::conv::ConvProblemShape<cutlass::conv::Operator::kDgrad, 1>>
 get_conv_problem_vector<1, cutlass::conv::Operator::kDgrad, true>() {
   using ProblemShape = cutlass::conv::ConvProblemShape<cutlass::conv::Operator::kDgrad, 1>;
   std::vector<ProblemShape> problem_shapes;
+  // Test TMA truncation
+  problem_shapes.push_back({
+    cutlass::conv::Mode::kCrossCorrelation,
+    {1,  512, 64},  // nqk
+    {64, 1, 64},  // ksc
+    {0},          // padding lower (pad_w)
+    {0},          // padding upper (pad_w)
+    {2},          // stride (stride_w)
+    {1},          // dilation (dilation_w)
+    1             // group
+  });
+  problem_shapes.push_back({
+    cutlass::conv::Mode::kCrossCorrelation,
+    {1,  1024, 64},  // nqk
+    {64, 1, 64},  // ksc
+    {0},          // padding lower (pad_w)
+    {0},          // padding upper (pad_w)
+    {4},          // stride (stride_w)
+    {1},          // dilation (dilation_w)
+    1             // group
+  });
+  problem_shapes.push_back({
+    cutlass::conv::Mode::kCrossCorrelation,
+    {1,  2048, 64},  // nqk
+    {64, 1, 64},  // ksc
+    {0},          // padding lower (pad_w)
+    {0},          // padding upper (pad_w)
+    {8},          // stride (stride_w)
+    {1},          // dilation (dilation_w)
+    1             // group
+  });
   // non-packed input/output strides.
   // stride divides dilation
   // asymmetric padding

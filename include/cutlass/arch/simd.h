@@ -34,8 +34,8 @@
 
 #pragma once
 
-#include "../array.h"
-#include "../numeric_types.h"
+#include "cutlass/arch/array.h"
+#include "cutlass/arch/numeric_types.h"
 
 namespace cutlass {
 namespace arch {

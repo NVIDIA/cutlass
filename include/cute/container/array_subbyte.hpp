@@ -100,20 +100,30 @@ public:
 
   // Copy Ctor
   CUTE_HOST_DEVICE constexpr
-  subbyte_reference(subbyte_reference const& other) {
-    *this = element_type(other);
+  subbyte_reference(subbyte_reference<value_type> const& other) {
+    *this = other.get();
+  }
+
+  CUTE_HOST_DEVICE constexpr
+  subbyte_reference(subbyte_reference<value_type const> const& other) {
+    *this = other.get();
   }
 
   // Copy Assignment
   CUTE_HOST_DEVICE constexpr
-  subbyte_reference& operator=(subbyte_reference const& other) {
-    return *this = element_type(other);
+  subbyte_reference& operator=(subbyte_reference<value_type> const& other) {
+    return *this = other.get();
+  }
+
+  CUTE_HOST_DEVICE constexpr
+  subbyte_reference& operator=(subbyte_reference<value_type const> const& other) {
+    return *this = other.get();
   }
 
   // Assignment
   template <class T_ = element_type>
   CUTE_HOST_DEVICE constexpr
-  enable_if_t<!is_const_v<T_>, subbyte_reference&> operator=(element_type x)
+  enable_if_t<!is_const_v<T_>, subbyte_reference&> operator=(value_type x)
   {
     static_assert(is_same_v<T_, element_type>, "Do not specify template arguments!");
     storage_type item = (reinterpret_cast<storage_type const&>(x) & BitMask);
@@ -149,11 +159,11 @@ public:
 
   // Value
   CUTE_HOST_DEVICE
-  element_type get() const
+  value_type get() const
   {
     if constexpr (is_same_v<bool, value_type>) {      // Extract to bool -- potentially faster impl
       return bool((*ptr_) & (BitMask << idx_));
-    } else {                                          // Extract to element_type
+    } else {                                          // Extract to value_type
       // Extract from the current storage element
       auto item = storage_type((ptr_[0] >> idx_) & BitMask);
 
@@ -165,13 +175,13 @@ public:
         item |= storage_type((ptr_[1] & bit_mask_1) << straddle_bits);
       }
 
-      return reinterpret_cast<element_type&>(item);
+      return reinterpret_cast<value_type&>(item);
     }
   }
 
-  // Extract to type element_type
+  // Extract to type value_type
   CUTE_HOST_DEVICE constexpr
-  operator element_type() const {
+  operator value_type() const {
     return get();
   }
 
@@ -341,6 +351,14 @@ recast_ptr(subbyte_iterator<T> const& x) {
   CUTE_GCC_UNREACHABLE;
 }
 
+// Dynamic pointers have unknown static alignment
+template <class T>
+CUTE_HOST_DEVICE constexpr
+Int<0>
+max_alignment(subbyte_iterator<T> const& x) {
+  return {};
+}
+
 template <class T>
 CUTE_HOST_DEVICE void
 print(subbyte_iterator<T> const& x) {
@@ -352,6 +370,7 @@ CUTE_HOST_DEVICE void
 print(subbyte_reference<T> const& x) {
   print(x.get());
 }
+
 //
 // array_subbyte
 //   Statically sized array for non-byte-aligned data types

@@ -139,7 +139,7 @@ def get_tile_scheduler_arguments_3x(
     splits: int = 1):
     max_swizzle_size = 1
     raster_order_option = 0 # Heuristic
-    if tile_scheduler == TileSchedulerType.Persistent:
+    if tile_scheduler in [TileSchedulerType.Default, TileSchedulerType.Persistent]:
         return _PersistentTileSchedulerArguments(
             max_swizzle_size,
             raster_order_option,

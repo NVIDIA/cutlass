@@ -86,6 +86,9 @@ struct PerformanceResult {
   /// Average runtime in ms
   double runtime;
 
+  /// Average runtime in ms per device
+  std::vector<double> runtime_vector;
+
   //
   // Members
   //

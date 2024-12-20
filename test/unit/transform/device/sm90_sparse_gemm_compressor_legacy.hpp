@@ -45,6 +45,7 @@
 #include "cute/tensor.hpp"                 // cute::Tensor, cute::make_tensor, cute::print_tensor
 #include "cutlass/arch/arch.h"             // cutlass::arch::Sm90
 #include "cutlass/cutlass.h"               // cutlass::Status
+#include "cutlass/detail/collective.hpp"
 #include "cutlass/detail/layout.hpp"       // cutlass::TagToStrideA_t
 #include "cutlass/fast_math.h"             // cutlass::ceil_div, cutlass::round_up
 #include "cutlass/kernel_hardware_info.h"  // cutlass::KernelHardwareInfo
@@ -219,9 +220,7 @@ public:
   // * EltA
   using ElementA = ElementA_;
   using ElementAUint = cute::uint_bit_t<cute::sizeof_bits_v<ElementA>>;
-  static constexpr bool IsRuntimeDataTypeA = cute::is_same_v<ElementA, cutlass::type_erased_dynamic_float8_t> ||
-                                             cute::is_same_v<ElementA, cutlass::type_erased_dynamic_float6_t> ||
-                                             cute::is_same_v<ElementA, cutlass::type_erased_dynamic_float4_t>;
+  static constexpr bool IsRuntimeDataTypeA = cutlass::gemm::collective::detail::is_sm10x_runtime_f8f6f4<ElementA>();
   using ArrayElementA = cute::conditional_t<IsRuntimeDataTypeA,
                                             cute::uint_bit_t<cute::sizeof_bits_v<ElementA>>,
                                             ElementA>;

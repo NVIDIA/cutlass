@@ -185,7 +185,6 @@ $ cmake .. -DCUTLASS_NVCC_ARCHS=90a              # compiles for NVIDIA Hopper GP
 ```
 
 **NVIDIA Ampere Architecture.**
-
 ```bash
 $ cmake .. -DCUTLASS_NVCC_ARCHS=80               # compiles for NVIDIA Ampere GPU architecture
 ```

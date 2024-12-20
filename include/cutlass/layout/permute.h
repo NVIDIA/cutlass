@@ -38,11 +38,8 @@
     computation lies in operator() with private member variables  {col_permute_, row_permute_ and stride_} as new addresses after permute op.
 */
 #pragma once
-#if defined(__CUDACC_RTC__)
+
 #include <cuda/std/cassert>
-#else
-#include "assert.h"
-#endif
 #include "cutlass/cutlass.h"
 #include "cutlass/fast_math.h"
 #include "cutlass/layout/pitch_linear.h"

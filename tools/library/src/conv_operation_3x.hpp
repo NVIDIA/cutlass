@@ -236,12 +236,14 @@ public:
     typename Operator::Arguments out_args{};
     status = update_operator_arguments_from_configuration_2d_or_3d(out_args, configuration);
     if (status != Status::kSuccess) {
+      CUTLASS_TRACE_HOST("*** can_implement: update_operator_arguments_from_configuration_2d_or_3d failed");
       return status;
     }
 
     auto* in_args_ptr = reinterpret_cast<ConvArguments const*>(arguments);
     status = update_operator_arguments_from_arguments(out_args, *in_args_ptr);
     if (status != Status::kSuccess) {
+      CUTLASS_TRACE_HOST("*** can_implement: update_operator_arguments_from_arguments failed");
       return status;
     }
 
@@ -332,7 +334,8 @@ public:
     void const* arguments,
     void* host_workspace,
     void* device_workspace = nullptr,
-    cudaStream_t stream = nullptr) const override
+    cudaStream_t stream = nullptr,
+    bool launch_with_pdl = false) const override
   {
     auto status = Status::kInvalid;
 
@@ -358,7 +361,7 @@ public:
     }
 
     auto* op = reinterpret_cast<Operator*>(host_workspace);
-    return op->run(out_args, device_workspace, stream);
+    return op->run(out_args, device_workspace, stream, nullptr, launch_with_pdl);
   }
 
 private:
@@ -482,6 +485,11 @@ private:
     typename Operator::Arguments& out_args,
     Conv2dConfiguration const& config)
   {
+#if defined(CUTLASS_DEBUG_TRACE_LEVEL) && (CUTLASS_DEBUG_TRACE_LEVEL > 1)
+    CUTLASS_TRACE_HOST("ConvOperator3x::"
+      "update_operator_arguments_from_configuration"
+      "(Conv2dConfiguration)\n");
+#endif    
     using detail::vector_to_array_strides;
 
     constexpr int num_spatial_dims = Operator::NumSpatialDimensions;
@@ -595,6 +603,7 @@ private:
 
       const TensorStride stride_A = vector_to_array_strides(config.stride_a, the_stride_size);
       const TensorStride stride_B = vector_to_array_strides(config.stride_b, the_stride_size);
+      const TensorStride stride_C = vector_to_array_strides(config.stride_c, the_stride_size);
 
       // cutlass::library::Conv2dConfiguration has no member stride_d.
       // The code below imitates the testbed,
@@ -605,12 +614,57 @@ private:
         CUTLASS_TRACE_HOST("CUTLASS 3 kernels currently only support groups = 1.");
         return Status::kInvalid;
       }
+      // ConvProblemShape is how CUTLASS 3 kernels represent
+      // convolution problems.  ConvProblemShape's constructors take
+      // shape_act, stride_act, shape_flt, and stride_flt, and set
+      // shape_A, stride_A, shape_B, stride_B, shape_C, and stride_C
+      // according to Fprop / Dgrad / Wgrad.
+      //
+      // This means that stride_act isn't always config.stride_A,
+      // depending on Fprop / Dgrad / Wgrad.  The code here "undoes"
+      // the logic in Conv2dWorkspace::set_stride_vector so that we
+      // can recover the strides of the activation and filter tensors.
+      // It doesn't need to worry about the so-called "output" tensor
+      // (which might not be C), as ConvProblemShape's constructor
+      // figures out its shapes and strides.
+      using TensorExtent = typename problem_shape_type::TensorExtent;
+      TensorExtent shape_act{N, H, W, C};
+      auto stride_act = [&] () {
+        // Some compilers consider conv_op (defined above), as
+        // captured by this lambda, as "not a constant expression."
+        constexpr auto conv_kind = Operator::DispatchPolicy::ConvOp;
+        if constexpr (conv_kind == cutlass::conv::Operator::kFprop) {
+          return stride_A;
+        }
+        else if constexpr (conv_kind == cutlass::conv::Operator::kDgrad) {
+          return stride_C;
+        }
+        else { // conv_kind == cutlass::conv::Operator::kWgrad
+          return stride_B;
+        }
+      } ();
+      TensorExtent shape_flt{K, R, S, C};
+      auto stride_flt = [&] () {
+        // Some compilers consider conv_op (defined above), as
+        // captured by this lambda, as "not a constant expression."
+        constexpr auto conv_kind = Operator::DispatchPolicy::ConvOp;
+        if constexpr (conv_kind == cutlass::conv::Operator::kFprop) {
+          return stride_B;
+        }
+        else if constexpr (conv_kind == cutlass::conv::Operator::kDgrad) {
+          return stride_B;
+        }
+        else { // conv_kind == cutlass::conv::Operator::kWgrad
+          return stride_C;
+        }
+      } ();
+      
       problem_shape_type problem_shape(
         /* mode             = */ mode,
-        /* shape_act        = */ {N, H, W, C},
-        /* stride_act       = */ stride_A,
-        /* shape_flt        = */ {K, R, S, C},
-        /* stride_flt       = */ stride_B,
+        /* shape_act        = */ shape_act,
+        /* stride_act       = */ stride_act,
+        /* shape_flt        = */ shape_flt,
+        /* stride_flt       = */ stride_flt,
         /* lower_padding    = */ {pad_h, pad_w},
         /* upper_padding    = */ {pad_h, pad_w},
         /* traversal_stride = */ {traversal_stride_h, traversal_stride_w},
@@ -620,9 +674,11 @@ private:
 
       // ConvProblemShape's constructor sets its shape_C member.
 #if defined(CUTLASS_DEBUG_TRACE_LEVEL) && (CUTLASS_DEBUG_TRACE_LEVEL > 1)
-      std::cerr << "  problem_shape:\n"
-                << "    shape_C: " << problem_shape.shape_C << "\n";
-      std::cerr << "    stride_C: " << problem_shape.stride_C << "\n";
+      printf("\n  problem_shape.shape_C: ");
+      print(problem_shape.shape_C);
+      printf("\n  problem_shape.stride_C: ");
+      print(problem_shape.stride_C);
+      printf("\n");
 #endif
       // Initialization of C's and D's strides follows the CUTLASS 3
       // convolutions testbed (test/unit/conv/device_3x/testbed_conv.hpp).
@@ -670,6 +726,11 @@ private:
     typename Operator::Arguments& out_args,
     Conv3dConfiguration const& config)
   {
+#if defined(CUTLASS_DEBUG_TRACE_LEVEL) && (CUTLASS_DEBUG_TRACE_LEVEL > 1)
+    CUTLASS_TRACE_HOST("ConvOperator3x::"
+      "update_operator_arguments_from_configuration"
+      "(Conv3dConfiguration)\n");
+#endif    
     using detail::coord_to_array_strides;
 
     constexpr int num_spatial_dims = Operator::NumSpatialDimensions;
@@ -762,6 +823,10 @@ private:
       print_stride(input_stride_b, "input_stride_b");
       print_stride(input_stride_c, "input_stride_c");
 #endif
+      // Conv3dConfiguration stores the strides as Coord (with
+      // compile-time size), so there's no need to check sizes here
+      // (unlike Conv2dConfiguration, which stores strides as
+      // std::vector).
 
       constexpr cutlass::conv::Operator conv_op = Operator::DispatchPolicy::ConvOp;
       using problem_shape_type =
@@ -771,18 +836,68 @@ private:
 
       const TensorStride stride_A = coord_to_array_strides(input_stride_a);
       const TensorStride stride_B = coord_to_array_strides(input_stride_b);
+      const TensorStride stride_C = coord_to_array_strides(input_stride_c);
 
       const int num_groups = config.problem_size.groups;
       if (num_groups != 1) {
         CUTLASS_TRACE_HOST("CUTLASS 3 kernels currently only support groups = 1.");
         return Status::kInvalid;
       }
+      // ConvProblemShape is how CUTLASS 3 kernels represent
+      // convolution problems.  ConvProblemShape's constructors take
+      // shape_act, stride_act, shape_flt, and stride_flt, and set
+      // shape_A, stride_A, shape_B, stride_B, shape_C, and stride_C
+      // according to Fprop / Dgrad / Wgrad.
+      //
+      // Conv3dConfiguration differs a bit from Conv2dConfiguration,
+      // but the idea is the same: the "input_stride_a" from config
+      // depends on conv_kind (Fprop, Dgrad, or Wgrad), so stride_act
+      // isn't always input_stride_a.  Analogously, stride_flt isn't
+      // always input_stride_b.  The code here "undoes" the logic in
+      // config.layout_a(conv_kind) and config.layout_b(conv_kind)
+      // (analogous to Conv2dWorkspace::set_stride_vector) so that we
+      // can recover the strides of the activation and filter tensors.
+      // It doesn't need to worry about the so-called "output" tensor
+      // (which might not be C), as ConvProblemShape's constructor
+      // figures out its shapes and strides.
+      using TensorExtent = typename problem_shape_type::TensorExtent;
+      TensorExtent shape_act{N, D, H, W, C};
+      auto stride_act = [&] () {
+        // Some compilers consider conv_op (defined above), as
+        // captured by this lambda, as "not a constant expression."
+        constexpr auto conv_kind = Operator::DispatchPolicy::ConvOp;
+        if constexpr (conv_kind == cutlass::conv::Operator::kFprop) {
+          return stride_A;
+        }
+        else if constexpr (conv_kind == cutlass::conv::Operator::kDgrad) {
+          return stride_C;
+        }
+        else { // conv_kind == cutlass::conv::Operator::kWgrad
+          return stride_B;
+        }
+      } ();
+      TensorExtent shape_flt{K, T, R, S, C};
+      auto stride_flt = [&] () {
+        // Some compilers consider conv_op (defined above), as
+        // captured by this lambda, as "not a constant expression."
+        constexpr auto conv_kind = Operator::DispatchPolicy::ConvOp;
+        if constexpr (conv_kind == cutlass::conv::Operator::kFprop) {
+          return stride_B;
+        }
+        else if constexpr (conv_kind == cutlass::conv::Operator::kDgrad) {
+          return stride_B;
+        }
+        else { // conv_kind == cutlass::conv::Operator::kWgrad
+          return stride_C;
+        }
+      } ();
+
       problem_shape_type problem_shape(
         /* mode             = */ mode,
-        /* shape_act        = */ {N, D, H, W, C},
-        /* stride_act       = */ stride_A,
-        /* shape_flt        = */ {K, T, R, S, C},
-        /* stride_flt       = */ stride_B,
+        /* shape_act        = */ shape_act,
+        /* stride_act       = */ stride_act,
+        /* shape_flt        = */ shape_flt,
+        /* stride_flt       = */ stride_flt,
         /* lower_padding    = */ {pad_d, pad_h, pad_w},
         /* upper_padding    = */ {pad_d, pad_h, pad_w},
         /* traversal_stride = */ {traversal_stride_d, traversal_stride_h, traversal_stride_w},
@@ -792,15 +907,15 @@ private:
 
       // ConvProblemShape's constructor sets its shape_C member.
 #if defined(CUTLASS_DEBUG_TRACE_LEVEL) && (CUTLASS_DEBUG_TRACE_LEVEL > 1)
-      std::cerr << "  problem_shape:\n"
-                << "    shape_C: " << problem_shape.shape_C << "\n";
-      std::cerr << "    stride_C: " << problem_shape.stride_C << "\n";
+      printf("\n  problem_shape.shape_C: ");
+      print(problem_shape.shape_C);
+      printf("\n  problem_shape.stride_C: ");
+      print(problem_shape.stride_C);
+      printf("\n");
 #endif
-
+      // Initialization of C's and D's strides follows the CUTLASS 3
+      // convolutions testbed (test/unit/conv/device_3x/testbed_conv.hpp).
       {
-#if defined(CUTLASS_DEBUG_TRACE_LEVEL) && (CUTLASS_DEBUG_TRACE_LEVEL > 1)
-        std::cerr << "  Compute stride_C and stride_D\n";
-#endif
         using StrideC = typename Operator::ConvKernel::StrideC;
         using StrideD = typename Operator::ConvKernel::StrideD;
         auto stride_C = StrideC{};
@@ -845,9 +960,8 @@ private:
     ConvArguments const& in_args) const
   {
 #if defined(CUTLASS_DEBUG_TRACE_LEVEL) && (CUTLASS_DEBUG_TRACE_LEVEL > 1)
-    std::cerr << "ConvOperation3x::update_operator_arguments_from_arguments\n";
+    CUTLASS_TRACE_HOST("ConvOperation3x::update_operator_arguments_from_arguments\n");
 #endif
-
     auto status = UpdateFusionArgs<decltype(out_args.epilogue.thread)>::update_(
       out_args.epilogue.thread, in_args);
     if (status != Status::kSuccess) {

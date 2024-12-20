@@ -48,6 +48,7 @@
 
 #include "cutlass/cutlass.h"
 #include "cutlass/tensor_ref_planar_complex.h"
+#include "cutlass/tensor_view.h" // cutlass::TensorView
 
 namespace cutlass {
 

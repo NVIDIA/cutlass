@@ -36,7 +36,7 @@
 #pragma once
 
 #include <cuda_fp16.h>
-#include <float.h>
+#include <cfloat>
 #define FINAL_MASK 0xffffffff
 
 struct half4 {

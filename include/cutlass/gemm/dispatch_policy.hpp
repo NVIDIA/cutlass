@@ -105,7 +105,8 @@ struct KernelCpAsyncWarpSpecializedPingpong { };
 struct KernelCpAsyncWarpSpecializedCooperative { };
 struct KernelTma { };
 struct KernelTmaWarpSpecialized { };
-struct KernelTmaWarpSpecializedPingpong { };
+struct KernelTmaWarpSpecializedPingpong { 
+};
 struct KernelTmaWarpSpecializedCooperative { 
 };
 
@@ -247,6 +248,7 @@ struct MainloopSm90TmaGmmaRmemAWarpSpecialized {
     "KernelSchedule must be one of the warp specialized policies");
 };
 
+
 template<
   int Stages_,
   class ClusterShape_ = Shape<_1,_1,_1>,
@@ -309,6 +311,7 @@ struct MainloopSm90TmaGmmaWarpSpecializedSparse {
   using ArchTag = arch::Sm90;
   using Schedule = KernelSchedule;
 };
+
 
 //////////////////////////////////////////////////////////////////////////////
 

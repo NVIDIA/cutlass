@@ -29,8 +29,8 @@
  *
  **************************************************************************************************/
 #pragma once
-#include "cutlass/gemm/kernel/static_tile_scheduler.hpp"
 
+#include "cutlass/gemm/kernel/static_tile_scheduler.hpp"
 
 namespace cutlass::gemm::kernel::detail {
 

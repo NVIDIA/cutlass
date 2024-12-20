@@ -157,7 +157,8 @@ struct EmptyStorage {
 template<class EpilogueSchedule, class Stride>
 CUTLASS_HOST_DEVICE
 auto get_epilogue_stride(Stride stride){
-  if constexpr (cute::is_base_of_v<cutlass::gemm::EpilogueTransposed, EpilogueSchedule>) {
+  if constexpr (cute::is_base_of_v<cutlass::gemm::EpilogueTransposed, EpilogueSchedule>||
+                cute::is_base_of_v<cutlass::epilogue::PtrArrayNoSmemWarpSpecializedTransposed, EpilogueSchedule>) {
     return cute::make_stride(cute::get<1>(stride), cute::get<0>(stride), cute::get<2>(stride));
   }
   else {
@@ -464,7 +465,7 @@ public:
   tensormaps_fence_acquire([[maybe_unused]] cute::TmaDescriptor const* tensormap) { }
 };
 
-// SFINAE helpers for detecting beta/beta_ptr in EVT arguments.
+// SFINAE helpers for detecting beta/beta_ptr/beta_ptr_array in EVT arguments.
 template <class Arguments, class = void>
 struct has_beta {
   static constexpr bool value = false;
@@ -482,6 +483,16 @@ struct has_beta_ptr {
 
 template <class Arguments>
 struct has_beta_ptr<Arguments, cute::void_t<decltype(Arguments{}.thread.beta_ptr)>> {
+  static constexpr bool value = true;
+};
+
+template <class Arguments, class = void>
+struct has_beta_ptr_array {
+  static constexpr bool value = false;
+};
+
+template <class Arguments>
+struct has_beta_ptr_array<Arguments, cute::void_t<decltype(Arguments{}.thread.beta_ptr_array)>> {
   static constexpr bool value = true;
 };
 

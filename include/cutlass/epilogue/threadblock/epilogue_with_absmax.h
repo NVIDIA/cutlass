@@ -50,11 +50,11 @@
 
 #pragma once
 
-#if defined(__CUDACC_RTC__)
 #include <cuda/std/cassert>
+
+#if defined(__CUDACC_RTC__)
 #include <cuda/std/utility>
 #else
-#include <assert.h>
 #include <utility>
 #endif
 

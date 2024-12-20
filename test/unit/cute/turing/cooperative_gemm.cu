@@ -38,21 +38,19 @@
 using namespace cute;
 
 TEST(SM75_CuTe_Turing, CooperativeGemm1_MixedPrecisionFP16FP32_MMA) {
+
+  constexpr uint32_t thread_block_size = 128;
+  constexpr uint32_t max_vec_bits = 128;
   using TA = cutlass::half_t;
   using TB = cutlass::half_t;
   using TC = float;
 
-  constexpr uint32_t m = 64;
-  constexpr uint32_t n = 64;
-  constexpr uint32_t k = 64;
-
-  constexpr uint32_t thread_block_size = 128;
-
-  using tiled_mma_t =
+  auto shape_mnk = make_shape(_64{}, _64{}, _64{});
+  auto tiled_mma =
       TiledMMA<
         MMA_Atom<SM75_16x8x8_F32F16F16F32_TN>,
         Layout<Shape<_2, _2, _1>>
-      >;
+      >{};
 
-  test_cooperative_gemm_col_major_layout<m, n, k, thread_block_size, tiled_mma_t, 128, TA, TB, TC>();
+  test_cooperative_gemm_col_major_layout<thread_block_size, max_vec_bits, TA, TB, TC>(shape_mnk, tiled_mma);
 }
