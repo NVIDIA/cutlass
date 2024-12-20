@@ -754,7 +754,6 @@ public:
     cute::tuple<Ts...>& partitioned_extra_info,
     int const k_block) {
 
-    
     static_assert(is_rmem<EngineIn>::value, "Input tensor for A conversion must come from registers");
     static_assert(is_rmem<EngineOut>::value, "Output tensor for A conversion must come from registers");
     static_assert(cosize_v<LayoutIn> == cosize_v<LayoutOut>);

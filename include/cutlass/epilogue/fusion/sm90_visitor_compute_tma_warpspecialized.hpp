@@ -266,8 +266,8 @@ struct Sm90TreeVisitor<
     auto const& scale_op = get<0>(Impl::ops);
     auto const& added_op = get<2>(Impl::ops);
     if constexpr (detail::IsScalarBroadcast<InputScaleOp>::value && not is_void_v<ElementSource>) {
-      return (get<2>(scale_op.params_ptr->dScalar[0]) != 0 && scale_op.params_ptr->scalar_ptrs[0] != nullptr) || 
-              is_C_load_needed() || 
+      return (get<2>(scale_op.params_ptr->dScalar[0]) != 0 && scale_op.params_ptr->scalar_ptrs[0] != nullptr) ||
+              is_C_load_needed() ||
               added_op.is_producer_load_needed();
     }
     else {
@@ -408,8 +408,9 @@ template <
 >
 struct Sm90TreeVisitor<
   Sm90Compute<Activation, ElementOutput, ElementCompute, RoundStyle,
-              cute::enable_if_t<cute::is_same_v<Activation<ElementCompute>, cutlass::epilogue::thread::ReLu<ElementCompute>> ||
-                                cute::is_same_v<Activation<ElementCompute>, cutlass::epilogue::thread::Clamp<ElementCompute>>  >>,
+              cute::enable_if_t<cute::is_same_v<Activation<ElementCompute>, cutlass::epilogue::thread::ReLu<ElementCompute>>  ||
+                                cute::is_same_v<Activation<ElementCompute>, cutlass::epilogue::thread::Clamp<ElementCompute>> ||
+                                cute::is_same_v<Activation<ElementCompute>, cutlass::epilogue::thread::ThresholdReLU<ElementCompute>> >>,
   Sm90TreeVisitor<
     Sm90AuxStore<
       Stages,
@@ -503,7 +504,8 @@ struct Sm90TreeVisitor<
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < FragmentSize; ++i) {
         ElementCompute pre_relu = frg_compute[i];
-        if constexpr (cute::is_same_v<Activation<ElementCompute>, cutlass::epilogue::thread::Clamp<ElementCompute>>) {
+        if constexpr (cute::is_same_v<Activation<ElementCompute>, cutlass::epilogue::thread::Clamp<ElementCompute>> ||
+                      cute::is_same_v<Activation<ElementCompute>, cutlass::epilogue::thread::ThresholdReLU<ElementCompute>>) {
           frg_compute[i] = relu(frg_compute[i], params_compute);
         }
         else {

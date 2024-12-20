@@ -492,6 +492,21 @@ def get_valid_schedules(tile_description, cuda_version, is_aligned, data_types, 
         if not (is_fp8 and is_sparse):
             schedules.append([KernelScheduleType.TmaWarpSpecialized, default_epilogue])
     stream_k_schedules = []
+    
+    if CudaToolkitVersionSatisfies(cuda_version, 12, 0):
+        if can_do_tma_epilogue:
+            assert not requires_transposed_epilogue
+            # Inconsistency: fp8 pingpong only gets stamped out with fast accum
+            if not is_fp8 or level >= 1:
+                schedules.append([
+                    KernelScheduleType.TmaWarpSpecializedPingpong,
+                    EpilogueScheduleType.TmaWarpSpecialized
+                ])
+            if can_do_fp8_fast_accum:
+                schedules.append([
+                    KernelScheduleType.TmaWarpSpecializedPingpongFP8FastAccum,
+                    EpilogueScheduleType.TmaWarpSpecialized
+                ])
 
     if CudaToolkitVersionSatisfies(cuda_version, 12, 1):
         # Pruning: don't stamp out fp8 ping-ponging kernel with non-tma epilogue
@@ -526,17 +541,6 @@ def get_valid_schedules(tile_description, cuda_version, is_aligned, data_types, 
         # persistent kernels with TMA epilogues
         if can_do_tma_epilogue:
             assert not requires_transposed_epilogue
-            # Inconsistency: fp8 pingpong only gets stamped out with fast accum
-            if not is_fp8 or level >= 1:
-                schedules.append([
-                    KernelScheduleType.TmaWarpSpecializedPingpong,
-                    EpilogueScheduleType.TmaWarpSpecialized
-                ])
-            if can_do_fp8_fast_accum:
-                schedules.append([
-                    KernelScheduleType.TmaWarpSpecializedPingpongFP8FastAccum,
-                    EpilogueScheduleType.TmaWarpSpecialized
-                ])
             if can_do_cooperative:
                 # Sparse kernels only support FastAccum FP8 mainloop
                 if not (is_fp8 and is_sparse):

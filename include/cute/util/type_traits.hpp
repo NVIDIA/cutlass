@@ -141,8 +141,14 @@ using CUTE_STL_NAMESPACE::common_type_t;
 using CUTE_STL_NAMESPACE::remove_pointer;
 using CUTE_STL_NAMESPACE::remove_pointer_t;
 
+using CUTE_STL_NAMESPACE::add_pointer;
+using CUTE_STL_NAMESPACE::add_pointer_t;
+
 using CUTE_STL_NAMESPACE::alignment_of;
 using CUTE_STL_NAMESPACE::alignment_of_v;
+
+using CUTE_STL_NAMESPACE::is_pointer;
+using CUTE_STL_NAMESPACE::is_pointer_v;
 
 // <utility>
 using CUTE_STL_NAMESPACE::declval;

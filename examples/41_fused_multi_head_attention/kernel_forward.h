@@ -38,6 +38,7 @@
 
 #include <curand_kernel.h>
 #include <cmath>
+#include <cinttypes>
 #include <vector>
 
 #include "cutlass/fast_math.h"
@@ -70,8 +71,6 @@
 #include "gemm/mma_from_smem.h"
 #include "gemm_kernel_utils.h"
 #include "transform/tile_smem_loader.h"
-
-#include <inttypes.h>
 
 using namespace gemm_kernel_utils;
 
@@ -1036,15 +1035,15 @@ struct AttentionKernel {
                       using EpilogueOutputOp = typename cutlass::epilogue::
                           thread::MemoryEfficientAttentionNormalize<
                               typename cutlass::platform::conditional<
-                                  kIsLast,
+                                  kIsLast::value,
                                   output_t,
                                   output_accum_t>::type,
                               output_accum_t,
                               DefaultOp::kCount,
                               typename DefaultOp::ElementAccumulator,
                               ElementCompute,
-                              kIsFirst,
-                              kIsLast,
+                              kIsFirst::value,
+                              kIsLast::value,
                               cutlass::Array<ElementCompute, kQueriesPerBlock>>;
                       using Epilogue = typename cutlass::epilogue::threadblock::
                           EpiloguePipelined<
@@ -1052,7 +1051,7 @@ struct AttentionKernel {
                               typename MM1::Mma::Operator,
                               DefaultEpilogue::kPartitionsK,
                               typename cutlass::platform::conditional<
-                                  kIsLast,
+                                  kIsLast::value,
                                   typename MM1::OutputTileIterator,
                                   typename MM1::OutputTileIteratorAccum>::type,
                               typename DefaultEpilogue::
@@ -1070,7 +1069,7 @@ struct AttentionKernel {
                       int col = blockN * MM1::Mma::Shape::kN;
                       auto source_iter = createOutputAccumIter(col);
                       auto dest_iter = call_conditional<
-                          kIsLast,
+                          kIsLast::value,
                           decltype(createOutputIter),
                           decltype(createOutputAccumIter)>::
                           apply(createOutputIter, createOutputAccumIter, col);

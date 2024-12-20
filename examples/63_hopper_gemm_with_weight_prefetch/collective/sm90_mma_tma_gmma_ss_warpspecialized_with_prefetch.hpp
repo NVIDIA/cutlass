@@ -57,6 +57,19 @@ using namespace cute;
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+namespace detail {
+
+constexpr int PrefetchStages = 4;
+constexpr int PrefetchInitialStages = 1;
+// This determines how much shmem we set aside for prefetch.
+// We don't reuse anything loaded by prefetcher, so we can keep
+// loading into the same place -- there will be a conflict when
+// writing, but it doesn't affect performance as much as the doors
+// that this opens.
+constexpr int PrefetchStagesActual = 1;
+
+} // namespace detail
+
 // WarpSpecialized Mainloop
 template <
   int Stages,
@@ -117,15 +130,7 @@ struct CollectiveMma<
   static_assert(size<1>(ClusterShape{}) == 1, "Cluster shape N must be 1");
   using CtaShape_MNK = decltype(shape_div(TileShape{}, ClusterShape{}));
 
-  static constexpr int PrefetchStages = 4;
-  static constexpr int PrefetchInitialStages = 1;
-  // This determines how much shmem we set aside for prefetch.
-  // We don't reuse anything loaded by prefetcher, so we can keep
-  // loading into the same place -- there will be a conflict when
-  // writing, but it doesn't affect performance as much as the doors
-  // that this opens.
-  static constexpr int PrefetchStagesActual = 1;
-  using PrefetcherPipeline = cutlass::PrefetchPipeline<PrefetchStages>;
+  using PrefetcherPipeline = cutlass::PrefetchPipeline<detail::PrefetchStages>;
 
   using MainloopPipeline = cutlass::PipelineTmaAsync<DispatchPolicy::Stages>;
   using PipelineState = cutlass::PipelineState<DispatchPolicy::Stages>;
@@ -155,7 +160,7 @@ struct CollectiveMma<
   using PrefetchSmemLayoutA = decltype(make_layout(make_shape(
     cute::Int<size<0>(SmemLayoutA{})>{},
     cute::Int<size<1>(SmemLayoutA{})>{},
-    cute::Int<PrefetchStagesActual>{})));
+    cute::Int<detail::PrefetchStagesActual>{})));
 
   static constexpr auto prefetch_smem_size = cute::cosize_v<PrefetchSmemLayoutA>;
 
@@ -176,7 +181,7 @@ struct CollectiveMma<
   using InternalElementB = cute::conditional_t<ConvertF32toTF32B, tfloat32_t, uint_bit_t<sizeof_bits_v<ElementB>>>;
 
   // Defined outside the class where it's used, to work around MSVC issues
-  using PrefetcherPipelineStorage = ::cutlass::detail::PrefetcherPipelineSharedStorage<PrefetchStages>;
+  using PrefetcherPipelineStorage = ::cutlass::detail::PrefetcherPipelineSharedStorage<detail::PrefetchStages>;
 
   struct SharedStorage {
     struct TensorStorage : cute::aligned_struct<128, _0> {
@@ -660,7 +665,7 @@ struct CollectiveMma<
       bool do_best_effort_prefetch = mainloop_params.prefetch_ratio < 0;
       float prefetch_ratio = do_best_effort_prefetch ? 1.0 : mainloop_params.prefetch_ratio;
       int prefetch_iters = static_cast<int>(static_cast<float>(k_tile_count) * 0.5 * prefetch_ratio);
-      prefetch_iters = min(k_tile_count, ((prefetch_iters + PrefetchStages - 1) / PrefetchStages) * PrefetchStages);
+      prefetch_iters = min(k_tile_count, ((prefetch_iters + detail::PrefetchStages - 1) / detail::PrefetchStages) * detail::PrefetchStages);
 
       Tensor sA = make_tensor(
           make_smem_ptr(shared_tensors.smem_prefetch.data()), PrefetchSmemLayoutA{});             // (BLK_M,BLK_K,PIPE)
@@ -702,7 +707,7 @@ struct CollectiveMma<
           break;
         }
 
-        prefetcher_pipeline.prefetcher_acquire(prefetcher_stage, prefetcher_phase, cnt >= PrefetchStages);
+        prefetcher_pipeline.prefetcher_acquire(prefetcher_stage, prefetcher_phase, cnt >= detail::PrefetchStages);
         using BarrierType = typename PrefetcherPipeline::PrefetcherBarrierType;
         BarrierType* tma_barrier = prefetcher_pipeline.prefetcher_get_barrier(prefetcher_stage);
 

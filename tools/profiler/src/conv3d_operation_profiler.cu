@@ -1099,7 +1099,7 @@ bool Conv3dOperationProfiler::profile(
     set_cutlass_operator_arguments_();
 
     results_.back().status = profile_cutlass_(
-      results_.back().runtime,
+      results_.back(),
       options,
       operation,
       &conv_workspace_.arguments,
@@ -1141,7 +1141,7 @@ void Conv3dOperationProfiler::set_cutlass_operator_arguments_(int problem_idx) {
 
 /// Method to profile a CUTLASS Operation
 Status Conv3dOperationProfiler::profile_cutlass_(
-  double &runtime,
+  PerformanceResult &result,
   Options const &options,
   library::Operation const *operation,
   void *arguments,
@@ -1248,7 +1248,7 @@ Status Conv3dOperationProfiler::profile_cutlass_(
   // Update performance result
   //
 
-  runtime = timer.duration(iteration);
+  result.runtime = timer.duration(iteration);
 
   return status;
 }

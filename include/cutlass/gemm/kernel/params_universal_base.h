@@ -182,7 +182,7 @@ struct UniversalParamsBase
       CUTLASS_TRACE_HOST("  Initialize " << workspace_bytes << " workspace bytes");
 
       cudaError_t result = cudaMemsetAsync(
-        semaphore,
+        static_cast<int *>(workspace),
         0,
         workspace_bytes,
         stream);

@@ -189,7 +189,7 @@ private:
             -problem_shape.dilation[NumSpatialDimensions-1-i] :
             problem_shape.dilation[NumSpatialDimensions-1-i];
       }
-  
+
       return make_im2col_tma_copy(
           GmemTiledCopyA{},
           tensor_a,
@@ -225,7 +225,7 @@ private:
       auto lower_corner_whd = detail::compute_lower_corner_whd(problem_shape);
       auto upper_corner_whd = detail::compute_upper_corner_whd(problem_shape);
       auto lower_srt = detail::compute_lower_srt(problem_shape);
-  
+
       return make_im2col_tma_copy(
           GmemTiledCopyB{},
           tensor_b,
@@ -369,6 +369,96 @@ public:
 
     if (!implementable) {
       CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Padding values don't meet requirements for TMA LOAD IM2COL.\n");
+      return false;
+    }
+
+    if (is_im2col_A || is_im2col_B) {
+      // Check valid corner values for TMA_LOAD_IM2COL, signed int ranging from [-corner_limit, corner_limit - 1]
+      constexpr int32_t corner_limit = 1 << (16 / NumSpatialDimensions - 1);
+      auto lower_corner_whd = detail::compute_lower_corner_whd(problem_shape);
+      for (int i = 0; i < problem_shape.RankS; ++i) {
+        implementable = implementable && lower_corner_whd[i] >= -corner_limit && lower_corner_whd[i] <= (corner_limit - 1);
+      }
+      auto upper_corner_whd = detail::compute_upper_corner_whd(problem_shape);
+      for (int i = 0; i < problem_shape.RankS; ++i) {
+        implementable = implementable && upper_corner_whd[i] >= -corner_limit && upper_corner_whd[i] <= (corner_limit - 1);
+      }
+
+      if (!implementable) {
+        CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Padding values don't meet requirements for TMA LOAD IM2COL.\n");
+        return false;
+      }
+    }
+
+    // Wgrad kernels don't support non-packed output strides, non-packed tensor A stride (linearized)
+    if constexpr (ConvOp == conv::Operator::kWgrad) {
+#if defined(CUTLASS_DEBUG_TRACE_LEVEL) && (CUTLASS_DEBUG_TRACE_LEVEL > 1)
+      std::ostringstream os;
+#endif        
+      const auto & input_shape  = problem_shape.shape_A;
+      const auto & input_stride  = problem_shape.stride_A;
+
+      implementable &= input_stride[ProblemShape::RankT - 1] == 1;
+      int input_shape_size = 1;
+      for (int i = ProblemShape::RankT - 2; i >= 0; --i) {
+        input_shape_size *= input_shape[i + 1];
+        implementable &= input_stride[i] == input_shape_size;
+#if defined(CUTLASS_DEBUG_TRACE_LEVEL) && (CUTLASS_DEBUG_TRACE_LEVEL > 1)
+        if (input_stride[i] != input_shape_size) {
+          os << "\n    *** input_stride[" << i << "] = " << input_stride[i] << " != input_shape_size = " << input_shape_size << " ***";
+        }
+#endif
+      }
+
+      if (!implementable) {
+#if defined(CUTLASS_DEBUG_TRACE_LEVEL) && (CUTLASS_DEBUG_TRACE_LEVEL > 1)
+        os << "\n    input_shape_size: " << input_shape_size
+           << "\n    input_shape: " << input_shape
+           << "\n    input_stride: " << input_stride
+           << "\n";
+#endif        
+        CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Wgrad kernels don't support non-packed input strides.\n");
+#if defined(CUTLASS_DEBUG_TRACE_LEVEL) && (CUTLASS_DEBUG_TRACE_LEVEL > 1)
+        CUTLASS_TRACE_HOST(os.str());
+#endif        
+        return false;
+      }
+
+      const auto & output_shape  = problem_shape.shape_C;
+      const auto & output_stride  = problem_shape.stride_C;
+
+      implementable &= output_stride[ProblemShape::RankT - 1] == 1;
+      int output_shape_size = 1;
+      for (int i = ProblemShape::RankT - 2; i >= 0; --i) {
+        output_shape_size *= output_shape[i + 1];
+        implementable &= output_stride[i] == output_shape_size;
+#if defined(CUTLASS_DEBUG_TRACE_LEVEL) && (CUTLASS_DEBUG_TRACE_LEVEL > 1)
+        if (output_stride[i] != output_shape_size) {
+          os << "\n    *** output_stride[" << i << "] = " << output_stride[i] << " != output_shape_size = " << output_shape_size << " ***";
+        }
+#endif
+      }
+
+      if (!implementable) {
+#if defined(CUTLASS_DEBUG_TRACE_LEVEL) && (CUTLASS_DEBUG_TRACE_LEVEL > 1)
+        os << "\n    output_shape_size: " << input_shape_size
+           << "\n    output_shape: " << input_shape
+           << "\n    output_stride: " << input_stride
+           << "\n";
+#endif
+        CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Wgrad kernels don't support non-packed output strides.\n");
+#if defined(CUTLASS_DEBUG_TRACE_LEVEL) && (CUTLASS_DEBUG_TRACE_LEVEL > 1)
+        CUTLASS_TRACE_HOST(os.str());
+#endif        
+        return false;
+      }
+    }
+
+    // Conv kernels only support cross correlation mode currently.
+    implementable &= problem_shape.mode == cutlass::conv::Mode::kCrossCorrelation;
+
+    if (!implementable) {
+      CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Conv kernels only support cross correlation mode currently.\n");
       return false;
     }
 
@@ -516,9 +606,9 @@ public:
     // Issue the epilogue waits
     if (lane_predicate) {
       /* This helps avoid early exit of blocks in Cluster
-       * Waits for all stages to either be released (all 
+       * Waits for all stages to either be released (all
        * Consumer UNLOCKs), or if the stage was never used
-       * then would just be acquired since the phase was 
+       * then would just be acquired since the phase was
        * still inverted from make_producer_start_state
        */
       pipeline.producer_tail(smem_pipe_producer_state);
@@ -645,7 +735,7 @@ public:
     k_tile_count -= prologue_mma_count;
 
     smem_pipe_release.advance(k_tile_count);
-    
+
     // Wait on all GMMAs to complete
     warpgroup_wait<0>();
 

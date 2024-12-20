@@ -80,4 +80,3 @@ foreach(FUSION_GEMM_EXAMPLE
   add_dependencies(13_fused_two_gemms 13_${FUSION_GEMM_EXAMPLE})
 
 endforeach()
-

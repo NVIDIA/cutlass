@@ -250,12 +250,12 @@ struct TiledMMA : MMA_Atom
     auto t_tensor = logical_divide(ctensor, t_tile);                 // (PermM,PermN)
 
     // Tile the tensor for the Atom
-    auto a_tile = make_tile(make_layout(size<0>(AtomShape_MNK{})),
+    auto c_tile = make_tile(make_layout(size<0>(AtomShape_MNK{})),
                             make_layout(size<1>(AtomShape_MNK{})));
-    auto a_tensor = zipped_divide(t_tensor, a_tile);                 // ((AtomM,AtomN),(RestM,RestN))
+    auto c_tensor = zipped_divide(t_tensor, c_tile);                 // ((AtomM,AtomN),(RestM,RestN))
 
     // Transform the Atom mode from (M,K) to (Thr,Val)
-    auto tv_tensor = a_tensor.compose(AtomLayoutC_TV{},_);           // ((ThrV,FrgV),(RestM,RestN))
+    auto tv_tensor = c_tensor.compose(AtomLayoutC_TV{},_);           // ((ThrV,FrgV),(RestM,RestN))
 
     // Tile the tensor for the C-threads
     auto thr_tile = make_tile(_,
@@ -604,15 +604,14 @@ CUTE_HOST_DEVICE constexpr
 auto
 partition_shape_C(TiledMMA<Args...> const& mma, Shape_MN const& shape_MN)
 {
-  constexpr int R = rank_v<Shape_MN>;
-  static_assert(R >= 2, "Must have at least rank-2");
-  auto atomMNK = typename TiledMMA<Args...>::AtomShape_MNK{};
-  auto thrVMNK = typename TiledMMA<Args...>::ThrLayoutVMNK{};
-  auto V = shape<1>(typename TiledMMA<Args...>::AtomLayoutC_TV{});
-  auto M = shape_div(size<0>(shape_MN), size<0>(atomMNK) * size<1>(thrVMNK));
-  auto N = shape_div(size<1>(shape_MN), size<1>(atomMNK) * size<2>(thrVMNK));
-  return cute::tuple_cat(make_shape(V,M,N), take<2,R>(shape_MN));
+  auto dummy    = make_layout(shape(shape_MN));
+  auto dummy_tv = mma.thrfrg_C(dummy);
+  // Slice+rearrange like partition_C
+  auto dummy_v  = dummy_tv(Int<0>{}, make_coord(_, repeat<rank(dummy)>(_)));
+  return shape(dummy_v);
+
 }
+
 
 template <class... Args, class Shape_MN>
 CUTE_HOST_DEVICE constexpr
@@ -632,14 +631,12 @@ CUTE_HOST_DEVICE constexpr
 auto
 partition_shape_A(TiledMMA<Args...> const& mma, Shape_MK const& shape_MK)
 {
-  constexpr int R = rank_v<Shape_MK>;
-  static_assert(R >= 2, "Must have at least rank-2");
-  auto atomMNK = typename TiledMMA<Args...>::AtomShape_MNK{};
-  auto thrVMNK = typename TiledMMA<Args...>::ThrLayoutVMNK{};
-  auto V = shape<1>(typename TiledMMA<Args...>::AtomLayoutA_TV{});
-  auto M = shape_div(size<0>(shape_MK), size<0>(atomMNK) * size<1>(thrVMNK));
-  auto K = shape_div(size<1>(shape_MK), size<2>(atomMNK) * size<3>(thrVMNK));
-  return cute::tuple_cat(make_shape(V,M,K), take<2,R>(shape_MK));
+  auto dummy    = make_layout(shape(shape_MK));
+  auto dummy_tv = mma.thrfrg_A(dummy);
+  // Slice+rearrange like partition_A
+  auto dummy_v  = dummy_tv(Int<0>{}, make_coord(_, repeat<rank(dummy)>(_)));
+  return shape(dummy_v);
+
 }
 
 template <class... Args, class Shape_NK>
@@ -647,14 +644,12 @@ CUTE_HOST_DEVICE constexpr
 auto
 partition_shape_B(TiledMMA<Args...> const& mma, Shape_NK const& shape_NK)
 {
-  constexpr int R = rank_v<Shape_NK>;
-  static_assert(R >= 2, "Must have at least rank-2");
-  auto atomMNK = typename TiledMMA<Args...>::AtomShape_MNK{};
-  auto thrVMNK = typename TiledMMA<Args...>::ThrLayoutVMNK{};
-  auto V = shape<1>(typename TiledMMA<Args...>::AtomLayoutB_TV{});
-  auto N = shape_div(size<0>(shape_NK), size<1>(atomMNK) * size<2>(thrVMNK));
-  auto K = shape_div(size<1>(shape_NK), size<2>(atomMNK) * size<3>(thrVMNK));
-  return cute::tuple_cat(make_shape(V,N,K), take<2,R>(shape_NK));
+  auto dummy    = make_layout(shape(shape_NK));
+  auto dummy_tv = mma.thrfrg_B(dummy);
+  // Slice+rearrange like partition_B
+  auto dummy_v  = dummy_tv(Int<0>{}, make_coord(_, repeat<rank(dummy)>(_)));
+  return shape(dummy_v);
+
 }
 
 //

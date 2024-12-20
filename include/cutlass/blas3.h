@@ -132,7 +132,7 @@ struct MantissaInBits<double> {
 template <>
 struct MantissaInBits<cutlass::complex<double>> {
   static int constexpr bits = 30;
-  static double constexpr error = 1.0e-15;
+  static double constexpr error = 1.0e-14;
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

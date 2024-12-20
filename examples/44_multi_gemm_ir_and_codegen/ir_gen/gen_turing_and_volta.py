@@ -380,7 +380,7 @@ class gen_one_API:
     def gen_CUTLASS_irrelevant_API(self):
         code = ""
         code += "#include <cuda_runtime.h>\n"
-        code += "#include <assert.h>\n"
+        code += "#include <cassert>\n"
 
         param_name = "Fused" + str(self.b2b_num) + "xGemm_"
         for i in range(self.b2b_num):

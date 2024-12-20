@@ -232,7 +232,7 @@ protected:
 
   /// Method to profile an initialized CUTLASS operation
   virtual Status profile_cutlass_(
-    double &runtime,
+    PerformanceResult &result,
     Options const &options,
     library::Operation const *operation,
     void *arguments,

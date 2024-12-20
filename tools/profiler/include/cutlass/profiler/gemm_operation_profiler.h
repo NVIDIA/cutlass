@@ -143,6 +143,8 @@ public:
 
     /// Buffer used for the cutlass reduction operations' host workspace
     std::vector<uint8_t> reduction_host_workspace;
+
+    cudaStream_t stream;
   };
 
 protected:
@@ -155,7 +157,7 @@ protected:
   GemmProblem problem_;
 
   /// Device memory allocations
-  GemmWorkspace gemm_workspace_;
+  std::vector<GemmWorkspace> gemm_workspace_;
 
   /// CUTLASS parallel reduction operation to follow this* gemm operation
   library::Operation const *reduction_op_;
@@ -231,7 +233,8 @@ protected:
     DeviceContext &device_context,
     library::Operation const *operation,
     ProblemSpace const &problem_space,
-    ProblemSpace::Problem const &problem);
+    ProblemSpace::Problem const &problem,
+    GemmWorkspace &gemm_workspace);
 
   /// Verifies CUTLASS against host and device references
   bool verify_with_reference_(
@@ -246,7 +249,7 @@ protected:
 
   /// Method to profile a CUTLASS Operation
   Status profile_cutlass_(
-    double &runtime,
+    PerformanceResult &result,
     Options const &options,
     library::Operation const *operation,
     void *arguments,

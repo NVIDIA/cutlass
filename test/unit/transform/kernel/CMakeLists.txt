@@ -27,6 +27,6 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 cutlass_test_unit_add_executable(
-  cutlass_test_unit_transform_filter_format
+  cutlass_test_unit_transform_kernel
   filter_format_transformer.cu
 )

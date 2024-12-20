@@ -37,6 +37,7 @@
 #include "cutlass/cutlass.h"
 #include "cutlass/coord.h"
 #include "cutlass/layout/pitch_linear.h"
+#include "cutlass/matrix_coord.h" // cutlass::MatrixCoord
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

@@ -45,17 +45,17 @@
   and BEFORE scatter operations are applied.
 */
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <time.h>
-#include <math.h>
-#include <assert.h>
-#include <cuda_runtime.h>
-
+#include <cstdlib>
+#include <cstdio>
+#include <ctime>
+#include <cmath>
+#include <cassert>
 #include <algorithm>
 #include <iostream>
 #include <random>
 #include <numeric>
+
+#include <cuda_runtime.h>
 
 #include "cutlass/cutlass.h"
 #include "cutlass/gemm/device/gemm_universal.h"
@@ -64,7 +64,6 @@
 #include "cutlass/epilogue/thread/linear_combination.h"
 #include "cutlass/epilogue/collective/collective_builder.hpp"
 #include "cutlass/epilogue/collective/default_epilogue.hpp"
-
 #include "cutlass/util/command_line.h"
 #include "cutlass/util/device_memory.h"
 #include "cutlass/util/packed_stride.hpp"

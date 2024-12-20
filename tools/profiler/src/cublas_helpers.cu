@@ -656,7 +656,7 @@ bool cublasLtGemmExDispatcher::get_cublaslt_algo(cublasLtHandle_t handle,
   return true;
 }
 
-cublasStatus_t cublasLtGemmExDispatcher::operator()(cublasLtHandle_t handle) 
+cublasStatus_t cublasLtGemmExDispatcher::operator()(cublasLtHandle_t handle, cudaStream_t stream)
 {
   return cublasLtMatmul(handle,
     operationDesc,
@@ -673,7 +673,7 @@ cublasStatus_t cublasLtGemmExDispatcher::operator()(cublasLtHandle_t handle)
     &heuristicResult_.algo,
     workspace,
     heuristicResult_.workspaceSize,
-    0); //number of streams is set to 0
+    stream); //number of streams is set to 0
   
 }
 

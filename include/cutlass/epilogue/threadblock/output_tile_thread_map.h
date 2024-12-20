@@ -391,7 +391,7 @@ struct OutputTileOptimalThreadMap {
     1>;
 
   /// Initial offset function
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   static MatrixCoord initial_offset(int thread_idx) {
 
 //    int warp_idx = __shfl_sync(0xffffffff, thread_idx / kWarpSize, 0);
@@ -462,7 +462,7 @@ struct OutputTileOptimalThreadMap {
     static int const kThreads = Threads;
 
     /// Function to compute each thread's initial offset
-    CUTLASS_DEVICE
+    CUTLASS_HOST_DEVICE
     static MatrixCoord initial_offset(int thread_idx) {
 
 //      int warp_idx = __shfl_sync(0xffffffff, thread_idx / kWarpSize, 0);

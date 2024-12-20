@@ -50,7 +50,7 @@
 
 #ifdef _MSC_VER
 // Provides support for alternate operators such as 'and', 'or', ...
-#include <iso646.h>
+#include <ciso646>
 #endif // _MSC_VER
 
 namespace cutlass {

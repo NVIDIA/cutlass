@@ -258,6 +258,54 @@ struct LeakyReLU<Array<T, N> > {
   }
 };
 
+// Y = min((X <= threshold ? 0 : X), upper_bound)
+template <typename T>
+struct ThresholdReLU {
+  static constexpr bool kIsHeavy = false;
+
+  struct Arguments {
+    T threshold = T(0);
+    T upper_bound = CUTLASS_STL_NAMESPACE::numeric_limits<T>::max();
+  };
+
+  CUTLASS_HOST_DEVICE
+  T operator()(T value, T threshold, T upper_bound) const {
+    minimum_with_nan_propagation<T> mn;
+    
+    return mn((value <= threshold ? T(0) : value), upper_bound);
+  }
+
+  CUTLASS_HOST_DEVICE
+  T operator()(T value, Arguments const& args = Arguments()) const {
+    return operator()(value, args.threshold, args.upper_bound);
+  }
+};
+
+template <typename T, int N>
+struct ThresholdReLU<Array<T,N>> {
+  static constexpr bool kIsHeavy = false;
+
+  using Arguments = typename ThresholdReLU<T>::Arguments;
+
+  CUTLASS_HOST_DEVICE
+  Array<T,N> operator()(Array<T,N> const& values, T threshold, T upper_bound) const {
+    ThresholdReLU<T> relu;
+
+    Array<T,N> retvals;
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      retvals[i] = relu(values[i], threshold, upper_bound);    
+    }
+
+    return retvals;
+  }
+
+  CUTLASS_HOST_DEVICE
+  Array<T,N> operator()(Array<T,N> const& values, Arguments const& args = Arguments()) const {
+    return operator()(values, args.threshold, args.upper_bound);
+  }
+};
+
 // Tanh operator
 template <typename T>
 struct Tanh {
@@ -311,26 +359,7 @@ struct Sigmoid {
 };
 
 template <typename T, int N>
-struct Sigmoid<Array<T, N> > {
-  static const bool kIsHeavy = true;
-
-  CUTLASS_HOST_DEVICE
-  Array<T, N> operator()(Array<T, N> const &value) const {
-    Array<T, N> y;
-    Sigmoid<T> sigmoid_op;
-
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < N; ++i) {
-      y[i] = sigmoid_op(value[i]);
-    }
-
-    return y;
-  }
-};
-
-template <int N>
-struct Sigmoid<Array<half_t, N>> {
-  using T = half_t;
+struct Sigmoid<Array<T, N>> {
   static const bool kIsHeavy = true;
 
   CUTLASS_HOST_DEVICE
@@ -449,6 +478,9 @@ struct HardSwish<Array<half_t, N> > {
     return mul(mul(mn(mx(add(value, T(3)), T(0)), T(6)), value), T(0.16666667f));
   }
 };
+
+template <typename T>
+using ScaledHardSwish = Scale<HardSwish<T>>;
 
 //
 // GELU function definitions implemented as described by

@@ -337,12 +337,16 @@ public:
     uint64_t blk_per_grid_dim = divmod_cluster_shape_minor.divide(linear_idx - group_info.start_linear_idx);
     divmod_cluster_shape_major(cluster_id, cluster_major_offset, blk_per_grid_dim);
 
-    auto [cta_m_in_cluster, cta_n_in_cluster, _] = cute::block_id_in_cluster();
+    // With static schedulers, we launch grid such that all cluster are linear (1-D) order, i.e., 
+    // there can only be one cluster in the minor dimension. get_grid_shape() in scheduler params
+    // put cluster_shape.m/n() as the minor dimension based on raster order AlongN/M resp.
+    // Therefore, the offset of a CTA (inside a cluster) in the minor dimension can be directly be 
+    // inferred by the blockIdx along the minor dimension.
     if (raster_order == RasterOrder::AlongN) {
-      cluster_minor_offset = cta_m_in_cluster;
+      cluster_minor_offset = blockIdx.x;
     }
     else {
-      cluster_minor_offset = cta_n_in_cluster;
+      cluster_minor_offset = blockIdx.y;
     }
 
     uint64_t cluster_idx_minor, cluster_idx_major;

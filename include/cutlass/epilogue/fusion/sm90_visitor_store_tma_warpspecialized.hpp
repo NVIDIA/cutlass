@@ -293,11 +293,11 @@ template <
   class LayoutOrStrideMNL,
   class SmemLayoutAtom, // Unused
   class CopyOpR2S,      // Unused
-  int Alignment, 
+  int Alignment,
   bool EnableNullptr
 >
 struct Sm90AuxStore<
-  0, EpilogueTile, Element, RoundStyle, LayoutOrStrideMNL, 
+  0, EpilogueTile, Element, RoundStyle, LayoutOrStrideMNL,
   SmemLayoutAtom, CopyOpR2S, Alignment, EnableNullptr
 > {
   using ElementAux = Element;
@@ -343,7 +343,7 @@ struct Sm90AuxStore<
   CUTLASS_HOST_DEVICE
   Sm90AuxStore(Params const& params, SharedStorage const& shared_storage)
     : params_ptr(&params) { }
-  
+
   Params const* params_ptr;
 
   CUTLASS_DEVICE bool
@@ -381,7 +381,7 @@ struct Sm90AuxStore<
         tC_cAux(cute::forward<CTensorR2G>(tC_cAux)),
         problem_shape_mnl(problem_shape_mnl),
         params_ptr(params_ptr) {}
-    
+
     GTensorR2G tC_gAux;
     RTensor tC_rAux;
     CTensorR2G tC_cAux;
@@ -414,7 +414,7 @@ struct Sm90AuxStore<
 
       Tensor tC_cAux_mn = tC_cAux(_,_,_,epi_m,epi_n);
       Tensor tC_cAux_vec = tensor<1>(zipped_divide(coalesce(tC_cAux_mn), MCL.compose(Int<V>{})));
-      
+
       Tensor tC_gAux_vec = recast<Array<Element, V>>(coalesce(tC_gAux(_,_,_,epi_m,epi_n)));
       Tensor tC_rAux_vec = recast<Array<Element, V>>(coalesce(tC_rAux));
 
@@ -451,7 +451,7 @@ struct Sm90AuxStore<
     // Predication support
     Tensor coordAux = make_identity_tensor(shape(mAux));
     Tensor tC_cAux = sm90_partition_for_epilogue<ReferenceSrc>(
-                      coordAux, args.tile_shape_mnk, args.tile_coord_mnkl, args.epi_tile, args.tiled_copy, args.thread_idx);   
+                      coordAux, args.tile_shape_mnk, args.tile_coord_mnkl, args.epi_tile, args.tiled_copy, args.thread_idx);
 
     return ConsumerStoreCallbacks<decltype(tC_gAux), decltype(tC_rAux), decltype(tC_cAux), decltype(problem_shape_mnl)>(
       cute::move(tC_gAux),
@@ -703,7 +703,6 @@ public:
     else if constexpr (FinalReduction) {
       auto problem_shape_mnkl = append<4>(problem_shape, 1);
       auto [M, N, K, L] = problem_shape_mnkl;
-
       auto [tile_M, tile_N, tile_K] = CtaTileShapeMNK{};
       size_t tile_counters_offset = product(ceil_div(make_shape(size<>(M), size<>(N), L), make_shape(tile_M, tile_N))) * tile_N * sizeof(ElementCompute);
       tile_counters_offset = round_nearest(tile_counters_offset, MinWorkspaceAlignment);
@@ -753,19 +752,18 @@ public:
   static cutlass::Status
   initialize_workspace(ProblemShape const& problem_shape, Arguments const& args, void* workspace, cudaStream_t stream,
     CudaHostAdapter* cuda_adapter = nullptr) {
-#if !defined(CUTLASS_SKIP_REDUCTION_INIT)
-    auto problem_shape_mnkl = append<4>(problem_shape, 1);
-    auto [M, N, K, L] = problem_shape_mnkl;
     if constexpr (IsAtomic) {
+      auto problem_shape_mnkl = append<4>(problem_shape, 1);
+      auto [M, N, K, L] = problem_shape_mnkl;
       Layout mRow_layout = make_layout(make_shape(size<>(M),size<>(N),size<>(L)), args.dRow);
       if (args.ptr_row != nullptr) {
         return fill_workspace(args.ptr_row, ElementOutput(args.reduction_identity), cosize(mRow_layout), stream, cuda_adapter);
       }
       return Status::kSuccess;
     }
-    else
-#endif 
-    if constexpr (FinalReduction) {
+    else if constexpr (FinalReduction) {
+      auto problem_shape_mnkl = append<4>(problem_shape, 1);
+      auto [M, N, K, L] = problem_shape_mnkl;
       auto [tile_M, tile_N, tile_K] = CtaTileShapeMNK{};
       size_t tile_counters_offset = product(ceil_div(make_shape(size<>(M),size<>(N),L), make_shape(tile_M, tile_N))) * tile_N * sizeof(ElementCompute);
       tile_counters_offset = round_nearest(tile_counters_offset, MinWorkspaceAlignment);
@@ -1023,9 +1021,7 @@ public:
         }
         else {
           if (is_reduced_lane) {
-            // Filter so we don't issue redundant copies over stride-0 modes
-            // (only works if 0-strides are in same location, which is by construction)
-            copy_aligned(filter(tCrRow), recast<ElementGmem>(filter(tCgBuf)));
+            copy_aligned(tCrRow, recast<ElementGmem>(tCgBuf));
           }
         }
         sync_fn();
@@ -1054,9 +1050,7 @@ public:
         }
         else {
           if (is_reduced_lane) {
-            // Filter so we don't issue redunant copies over stride-0 modes
-            // (only works if 0-strides are in same location, which is by construction)
-            copy_aligned(filter(tCrRow), filter(tCsBuf));
+            copy_aligned(tCrRow, tCsBuf);
           }
         }
         sync_fn();
@@ -1296,7 +1290,6 @@ public:
     else if constexpr (FinalReduction) {
       auto problem_shape_mnkl = append<4>(problem_shape, 1);
       auto [M, N, K, L] = problem_shape_mnkl;
-
       auto [tile_M, tile_N, tile_K] = CtaTileShapeMNK{};
       size_t tile_counters_offset = product(ceil_div(make_shape(M,N,L), make_shape(tile_M, tile_N))) * tile_M * sizeof(ElementCompute);
       tile_counters_offset = round_nearest(tile_counters_offset, MinWorkspaceAlignment);
@@ -1348,19 +1341,18 @@ public:
   static cutlass::Status
   initialize_workspace(ProblemShape const& problem_shape, Arguments const& args, void* workspace, cudaStream_t stream,
     CudaHostAdapter* cuda_adapter = nullptr) {
-#if !defined(CUTLASS_SKIP_REDUCTION_INIT)
-    auto problem_shape_mnkl = append<4>(problem_shape, 1);
-    auto [M, N, K, L] = problem_shape_mnkl;
     if constexpr (IsAtomic) {
+      auto problem_shape_mnkl = append<4>(problem_shape, 1);
+      auto [M, N, K, L] = problem_shape_mnkl;
       Layout mCol_layout = make_layout(make_shape(size<>(M),size<>(N),size<>(L)), args.dCol);
       if (args.ptr_col != nullptr) {
         return fill_workspace(args.ptr_col, ElementOutput(args.reduction_identity), cosize(mCol_layout), stream, cuda_adapter);
       }
       return Status::kSuccess;
     }
-    else
-#endif 
-    if constexpr (FinalReduction) {
+    else if constexpr (FinalReduction) {
+      auto problem_shape_mnkl = append<4>(problem_shape, 1);
+      auto [M, N, K, L] = problem_shape_mnkl;
       auto [tile_M, tile_N, tile_K] = CtaTileShapeMNK{};
       size_t tile_counters_offset = product(ceil_div(make_shape(M,N,L), make_shape(tile_M, tile_N))) * tile_M * sizeof(ElementCompute);
       tile_counters_offset = round_nearest(tile_counters_offset, MinWorkspaceAlignment);
@@ -1522,9 +1514,7 @@ public:
         using ElementGmem = cute::conditional_t<FinalReduction, ElementCompute volatile, ElementCompute>;
         Tensor tCgBuf = sm90_partition_for_epilogue<ReferenceSrc>(gBuf_nl(_,_,n,l), epi_tile, tiled_copy, thread_idx);
         if (is_reduced_lane) {
-          // Filter so we don't issue redundant copies over stride-0 modes
-          // (only works if 0-strides are in same location, which is by construction)
-          copy_aligned(filter(tCrCol), recast<ElementGmem>(filter(tCgBuf)));
+          copy_aligned(tCrCol, recast<ElementGmem>(tCgBuf));
         }
         sync_fn();
       }
@@ -1542,9 +1532,7 @@ public:
         // Dump warp reduction to smem workspace
         Tensor tCsBuf = sm90_partition_for_epilogue<ReferenceSrc>(sBuf(_,_,get<1>(warp_mn)), epi_tile, tiled_copy, thread_idx);
         if (is_reduced_lane) {
-          // Filter so we don't issue redunant copies over stride-0 modes
-          // (only works if 0-strides are in same location, which is by construction)
-          copy_aligned(filter(tCrCol), filter(tCsBuf));
+          copy_aligned(tCrCol, tCsBuf);
         }
         sync_fn();
 

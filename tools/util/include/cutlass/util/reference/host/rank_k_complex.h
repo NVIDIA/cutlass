@@ -41,7 +41,7 @@
 #include "cutlass/numeric_conversion.h"
 #include "cutlass/tensor_view.h"
 #include "cutlass/gemm/gemm.h"
-#include <assert.h>
+#include <cassert>
 
 namespace cutlass {
 namespace reference {

@@ -118,6 +118,5 @@ class TestEVTCompute(EVTTestCaseBase):
             result_keys = ["D"]
             launcher.verify((m, n, k), input_keys, result_keys, l)
 
-
 if __name__ == '__main__':
     unittest.main()

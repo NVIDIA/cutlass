@@ -1128,7 +1128,6 @@ struct MMA_Traits<SM90_64x32x16_F32F16F16_RS<tnspA, tnspB, scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-
 template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,

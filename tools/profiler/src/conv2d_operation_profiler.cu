@@ -396,6 +396,29 @@ Status Conv2dOperationProfiler::initialize_configuration(
       problem_, operation_desc.conv_kind, operation_desc.A.layout,
       operation_desc.B.layout, operation_desc.C.layout);
 
+#if defined(CUTLASS_DEBUG_TRACE_LEVEL) && (CUTLASS_DEBUG_TRACE_LEVEL > 1)
+  {
+    auto print_vector = [] (const auto& vec) {
+      printf("[");
+      for (size_t k = 0; k < vec.size(); ++k) {
+        cute::print(vec[k]);
+        if (k + 1 < vec.size()) {
+          printf(",");
+        }
+      }
+      printf("]");
+    };
+  
+    printf("\n    conv_workspace_.configuration.stride_a: ");
+    print_vector(conv_workspace_.configuration.stride_a);
+    printf("\n    conv_workspace_.configuration.stride_b: ");
+    print_vector(conv_workspace_.configuration.stride_b);
+    printf("\n    conv_workspace_.configuration.stride_c: ");
+    print_vector(conv_workspace_.configuration.stride_c);
+    printf("\n");
+  }
+#endif
+
   // initialize library::ConvArguments
   conv_workspace_.arguments.A            = nullptr;
   conv_workspace_.arguments.B            = nullptr;
@@ -1237,7 +1260,7 @@ bool Conv2dOperationProfiler::profile(
     }
 
     results_.back().status = profile_cutlass_(
-      results_.back().runtime,
+      results_.back(),
       options,
       operation,
       &conv_workspace_.arguments,
@@ -1251,7 +1274,7 @@ bool Conv2dOperationProfiler::profile(
 
 /// Method to profile a CUTLASS Operation
 Status Conv2dOperationProfiler::profile_cutlass_(
-  double &runtime,
+  PerformanceResult &result,
   Options const &options,
   library::Operation const *operation,
   void *arguments,
@@ -1387,7 +1410,7 @@ Status Conv2dOperationProfiler::profile_cutlass_(
   // Update performance result
   //
 
-  runtime = timer.duration(iteration);
+  result.runtime = timer.duration(iteration);
 
   return status;
 }

@@ -34,11 +34,7 @@
 
 #pragma once
 
-#if defined(__CUDACC_RTC__)
 #include <cuda/std/cassert>
-#else
-#include <assert.h>
-#endif
 #include "cutlass/layout/matrix.h"
 
 ////////////////////////////////////////////////////////////////////////////////

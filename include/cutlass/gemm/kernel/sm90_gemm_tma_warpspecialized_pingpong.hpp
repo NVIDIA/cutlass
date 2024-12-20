@@ -105,14 +105,24 @@ public:
   static_assert(!cute::is_same_v<TileScheduler_, StreamKScheduler>, "Ping-pong kernel does not currently support stream-K scheduler.");
   using TileSchedulerTag = TileScheduler_;
   using TileScheduler = typename detail::TileSchedulerSelector<
-    TileScheduler_, ArchTag, TileShape, ClusterShape>::Scheduler;
+                                          TileSchedulerTag, 
+                                          ArchTag, 
+                                          TileShape,
+                                          ClusterShape
+                                          >::Scheduler;
   using TileSchedulerArguments = typename TileScheduler::Arguments;
   using TileSchedulerParams = typename TileScheduler::Params;
-
+  // Warp specialization thread count per threadblock
+  static constexpr uint32_t NumMainloopLoadThreads = NumThreadsPerWarp;      // 1 warp
+  static constexpr uint32_t NumEpilogueLoadThreads = NumThreadsPerWarp;      // 1 warp for C
   static constexpr uint32_t NumLoadWarpGroups = 1;
   static constexpr uint32_t NumMmaWarpGroups = 2;
-  static constexpr uint32_t MaxThreadsPerBlock = CUTE_STATIC_V(size(TiledMma{})) + (NumMmaWarpGroups * NumThreadsPerWarpGroup);
+  static constexpr uint32_t NumMMAThreads = size(TiledMma{});                 // 4 warp 
+  static constexpr uint32_t MaxThreadsPerBlock = NumMMAThreads * NumMmaWarpGroups + (NumLoadWarpGroups * NumThreadsPerWarpGroup);
   static constexpr uint32_t MinBlocksPerMultiprocessor = 1;
+  
+  static_assert(NumMMAThreads == 128, "Pingpong kernel must have TiledMMA operating using 128 threads.");
+  static_assert(MaxThreadsPerBlock == 384, "Pingpong kernel must have 384 threads in total.");
 
   /// Register requirement for Load and Math WGs
   static constexpr uint32_t LoadRegisterRequirement = 40;
@@ -142,7 +152,7 @@ public:
       alignas(16) MathWarpGroupOrderBarrierStorage math_wg_order;
       alignas(16) typename LoadWarpOrderBarrier::SharedStorage load_order;
     } pipelines;
-
+    
     struct TensorStorage : cute::aligned_struct<128, _1> {
       using MainloopTensorStorage = typename CollectiveMainloop::TensorStorage;
       using EpilogueTensorStorage = typename CollectiveEpilogue::TensorStorage;
@@ -208,16 +218,17 @@ public:
     uint8_t* workspace_ptr = reinterpret_cast<uint8_t*>(workspace);
     size_t workspace_offset = 0;
 
-    void* scheduler_workspace = workspace_ptr;
-    workspace_offset += TileScheduler::template get_workspace_size<ProblemShape, ElementAccumulator>(
-      args.scheduler, args.problem_shape, args.hw_info, NumMmaWarpGroups);
-    workspace_offset = round_nearest(workspace_offset,  MinWorkspaceAlignment);
-
     void* epilogue_workspace = workspace_ptr + workspace_offset;
     workspace_offset += CollectiveEpilogue::get_workspace_size(args.problem_shape, args.epilogue);
     workspace_offset = round_nearest(workspace_offset,  MinWorkspaceAlignment);
 
+    void* scheduler_workspace = workspace_ptr + workspace_offset;
+    workspace_offset += TileScheduler::template get_workspace_size<ProblemShape, ElementAccumulator>(
+      args.scheduler, args.problem_shape, args.hw_info, NumMmaWarpGroups);
+    workspace_offset = round_nearest(workspace_offset,  MinWorkspaceAlignment);
+
     void* mainloop_workspace = nullptr;
+    constexpr uint32_t NumEpilogueSubTiles = CollectiveEpilogue::get_store_pipe_increment(TileShape{});
 
     return {
       args.mode,
@@ -225,7 +236,9 @@ public:
       CollectiveMainloop::to_underlying_arguments(args.problem_shape, args.mainloop, mainloop_workspace),
       CollectiveEpilogue::to_underlying_arguments(args.problem_shape, args.epilogue, epilogue_workspace),
       hw_info,
-      TileScheduler::to_underlying_arguments(problem_shape_MNKL, TileShape{}, ClusterShape{}, hw_info, args.scheduler, scheduler_workspace)
+      TileScheduler::to_underlying_arguments(
+        problem_shape_MNKL, TileShape{}, ClusterShape{}, hw_info, args.scheduler, scheduler_workspace, NumEpilogueSubTiles
+      )
     };
   }
 
@@ -247,11 +260,12 @@ public:
   static size_t
   get_workspace_size(Arguments const& args) {
     size_t workspace_size = 0;
-    workspace_size += TileScheduler::template get_workspace_size<ProblemShape, ElementAccumulator>(
-      args.scheduler, args.problem_shape, args.hw_info, NumMmaWarpGroups);
-    workspace_size = round_nearest(workspace_size,  MinWorkspaceAlignment);
 
     workspace_size += CollectiveEpilogue::get_workspace_size(args.problem_shape, args.epilogue);
+    workspace_size = round_nearest(workspace_size,  MinWorkspaceAlignment);
+
+    workspace_size += TileScheduler::template get_workspace_size<ProblemShape, ElementAccumulator>(
+      args.scheduler, args.problem_shape, args.hw_info, NumMmaWarpGroups);
     workspace_size = round_nearest(workspace_size,  MinWorkspaceAlignment);
 
     return workspace_size;
@@ -266,17 +280,17 @@ public:
     static constexpr uint32_t NumEpilogueSubTiles = 1;
     static constexpr uint32_t NumAccumulatorMtxs = 1;
 
-    status = TileScheduler::template initialize_workspace<ProblemShape, ElementAccumulator>(
-      args.scheduler, workspace_ptr + workspace_offset, stream, args.problem_shape, args.hw_info, NumMmaWarpGroups, NumEpilogueSubTiles, NumAccumulatorMtxs, cuda_adapter);
-    workspace_offset += TileScheduler::template get_workspace_size<ProblemShape, ElementAccumulator>(
-      args.scheduler, args.problem_shape, args.hw_info, NumMmaWarpGroups);
+    status = CollectiveEpilogue::initialize_workspace(args.problem_shape, args.epilogue, workspace_ptr + workspace_offset, stream, cuda_adapter);
+    workspace_offset += CollectiveEpilogue::get_workspace_size(args.problem_shape, args.epilogue);
     workspace_offset = round_nearest(workspace_offset,  MinWorkspaceAlignment);
     if (status != Status::kSuccess) {
       return status;
     }
 
-    status = CollectiveEpilogue::initialize_workspace(args.problem_shape, args.epilogue, workspace_ptr + workspace_offset, stream, cuda_adapter);
-    workspace_offset += CollectiveEpilogue::get_workspace_size(args.problem_shape, args.epilogue);
+    status = TileScheduler::template initialize_workspace<ProblemShape, ElementAccumulator>(
+      args.scheduler, workspace_ptr + workspace_offset, stream, args.problem_shape, args.hw_info, NumMmaWarpGroups, NumEpilogueSubTiles, NumAccumulatorMtxs, cuda_adapter);
+    workspace_offset += TileScheduler::template get_workspace_size<ProblemShape, ElementAccumulator>(
+      args.scheduler, args.problem_shape, args.hw_info, NumMmaWarpGroups);
     workspace_offset = round_nearest(workspace_offset,  MinWorkspaceAlignment);
     if (status != Status::kSuccess) {
       return status;
@@ -308,9 +322,12 @@ public:
     using namespace cute;
     using X = Underscore;
 
+#if defined(__CUDA_ARCH_FEAT_SM90_ALL)
+#  define ENABLE_SM90_KERNEL_LEVEL 1
+#endif
 // Any Tensor Op MMA Atom in the WGMMA ISA is arch conditional to sm90a.
-#if ! defined(__CUDA_ARCH_FEAT_SM90_ALL)
-    printf("ERROR : Arch conditional MMA instruction used without targeting sm90a compute capability. Aborting.\n");
+#if ! defined(ENABLE_SM90_KERNEL_LEVEL)
+    printf("ERROR : Arch conditional MMA instruction used without targeting appropriate compute capability. Aborting.\n");
 #else
 
     // Preconditions
@@ -349,6 +366,7 @@ public:
       CollectiveMainloop::prefetch_tma_descriptors(params.mainloop);
       CollectiveEpilogue::prefetch_tma_descriptors(params.epilogue);
     }
+
 
     // Mainloop Load pipeline
     using MainloopPipeline = typename CollectiveMainloop::MainloopPipeline;
@@ -450,8 +468,8 @@ public:
     auto d_tile_count = CollectiveEpilogue::get_store_pipe_increment(blk_shape);
 
     TileScheduler scheduler{params.scheduler};
-
     if (warp_group_role == WarpGroupRole::Consumer1) {
+
       // Advance 2nd Math WG to the next work tile for the startup
       scheduler.advance_to_next_work();
       // Advance 2nd Math WG pipeline states to the end of 1st Math WG
@@ -466,7 +484,7 @@ public:
 
     if (warp_group_role == WarpGroupRole::Producer) {
       cutlass::arch::warpgroup_reg_dealloc<LoadRegisterRequirement>();
-
+    
       // Mainloop Producer Warp
       if (producer_warp_role == ProducerWarpRole::Mainloop) {
         // Ensure that the prefetched kernel does not touch
@@ -546,6 +564,7 @@ public:
 
         // Make sure all Consumer Warp Groups have been waited upon
         collective_epilogue.load_tail(epi_load_pipeline, epi_load_pipe_producer_state);
+
       } // Epilogue Producer Warp End
     } // Producer Warp Group End
 
@@ -564,7 +583,7 @@ public:
         return;
       }
       #endif
-
+      
       while (work_tile_info.is_valid()) {
         // Compute m_coord, n_coord, l_coord with the post-tiled m-shape and n-shape
         auto m_coord = idx2crd(work_tile_info.M_idx, shape<2>(gA_mkl));

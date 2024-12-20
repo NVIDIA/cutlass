@@ -146,7 +146,7 @@ tma_test_device_cute(T const* g_in, T* g_out, GmemLayout gmem_layout, SmemLayout
   for (int stage = 0; stage < size<1>(tAgA); ++stage)
   {
     // Set the bytes transferred in this TMA transaction (may involve multiple issues)
-    constexpr int kTmaTransactionBytes = sizeof(ArrayEngine<T, size(sA)>);
+    constexpr int kTmaTransactionBytes = sizeof(ArrayEngine<T, CUTE_STATIC_V(size(filter_zeros(sA)))>);
 
     if (elect_one_thr)
     {

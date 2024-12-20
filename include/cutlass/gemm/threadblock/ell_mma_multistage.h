@@ -243,12 +243,12 @@ public:
             if (is_offset_constant){
               auto ell_offset = ell_iter.get_offset_fast();
               is_valid = is_valid && (ell_offset >= 0);
-              gmem_ptr +=  ell_offset * sizeof(IteratorA::Element) / kSrcBytes;
+              gmem_ptr +=  ell_offset * sizeof(typename IteratorA::Element) / kSrcBytes;
             } else {
               int k_offset = iterator_A.get_k();
               auto ell_offset = ell_iter.get_offset(k_offset);
               is_valid = is_valid && (ell_offset >= 0);
-              gmem_ptr += (ell_offset * sizeof(IteratorA::Element)) / kSrcBytes;
+              gmem_ptr += (ell_offset * sizeof(typename IteratorA::Element)) / kSrcBytes;
             }
           }
 
@@ -287,12 +287,12 @@ public:
             if (is_offset_constant){
               auto ell_offset = ell_iter.get_offset_fast();
               is_valid = is_valid && (ell_offset >= 0);
-              gmem_ptr += ell_offset * sizeof(IteratorB::Element) / kSrcBytes;
+              gmem_ptr += ell_offset * sizeof(typename IteratorB::Element) / kSrcBytes;
             } else {
               int k_offset = iterator_B.get_k();
               auto ell_offset = ell_iter.get_offset(k_offset);
               is_valid = is_valid && (ell_offset >= 0);
-              gmem_ptr += ( ell_offset * sizeof(IteratorB::Element)) / kSrcBytes;
+              gmem_ptr += ( ell_offset * sizeof(typename IteratorB::Element)) / kSrcBytes;
             }
           }
 
@@ -359,12 +359,12 @@ public:
             if (is_offset_constant){
               auto ell_offset = ell_iterator.get_offset_fast();
               is_valid = is_valid && (ell_offset >= 0);
-              gmem_ptr +=  ell_offset * sizeof(IteratorA::Element) / kSrcBytes;
+              gmem_ptr +=  ell_offset * sizeof(typename IteratorA::Element) / kSrcBytes;
             } else {
               int k_offset = iterator_A.get_k();
               auto ell_offset = ell_iterator.get_offset(k_offset);
               is_valid = is_valid && (ell_offset >= 0);
-              gmem_ptr += (ell_offset * sizeof(IteratorA::Element)) / kSrcBytes;
+              gmem_ptr += (ell_offset * sizeof(typename IteratorA::Element)) / kSrcBytes;
             }
           }
 
@@ -401,12 +401,12 @@ public:
             if (is_offset_constant){
               auto ell_offset = ell_iterator.get_offset_fast();
               is_valid = is_valid && (ell_offset >= 0);
-              gmem_ptr += ell_offset * sizeof(IteratorB::Element) / kSrcBytes;
+              gmem_ptr += ell_offset * sizeof(typename IteratorB::Element) / kSrcBytes;
             } else {
               int k_offset = iterator_B.get_k();
               auto ell_offset = ell_iterator.get_offset(k_offset);
               is_valid = is_valid && (ell_offset >= 0);
-              gmem_ptr += ( ell_offset * sizeof(IteratorB::Element)) / kSrcBytes;
+              gmem_ptr += ( ell_offset * sizeof(typename IteratorB::Element)) / kSrcBytes;
             }
           }
 

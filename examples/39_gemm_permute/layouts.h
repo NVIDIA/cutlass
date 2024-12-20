@@ -33,11 +33,7 @@
     computing reference permutations of 4/5D tensors when source data is column-major.
 */
 #pragma once
-#if defined(__CUDACC_RTC__)
 #include <cuda/std/cassert>
-#else
-#include "assert.h"
-#endif
 #include "cutlass/cutlass.h"
 #include "cutlass/layout/pitch_linear.h"
 #include "cutlass/layout/matrix.h"

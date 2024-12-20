@@ -346,7 +346,7 @@ struct HostCollectiveMainloop {
     stride_b_host.clear();
 
     auto [M, N, K, L] = cute::append<4>(problem_shapes.get_host_problem_shape(0), 1);
-    L = max(problem_shapes.groups(), L);
+    L = cutlass::platform::max(problem_shapes.groups(), L);
 
     for(int32_t i = 0; i < L; ++i) {
       auto [M, N, K, mock_L] = cute::append<4>(problem_shapes.get_host_problem_shape(i), 1);
@@ -380,7 +380,7 @@ struct HostCollectiveMainloop {
 
   Arguments to_args(ProblemShapeType problem_shapes) {
     auto [M, N, K, L] = cute::append<4>(problem_shapes.get_host_problem_shape(0), 1);
-    L = max(problem_shapes.groups(), L);
+    L = cutlass::platform::max(problem_shapes.groups(), L);
 
     std::vector<ElementA *> ptr_A_host(L);
     std::vector<ElementB *> ptr_B_host(L);
@@ -587,7 +587,7 @@ struct HostCollectiveDefaultEpilogue {
     stride_d_host.clear();
 
     auto [M, N, K, L] = cute::append<4>(problem_shapes.get_host_problem_shape(0), 1);
-    L = max(problem_shapes.groups(), L);
+    L = cutlass::platform::max(problem_shapes.groups(), L);
 
     for (int32_t i = 0; i < L; ++i) {
       auto [M, N, K, mock_L] = cute::append<4>(problem_shapes.get_host_problem_shape(i), 1);
@@ -649,7 +649,7 @@ struct HostCollectiveDefaultEpilogue {
       ElementScalar beta,
       int batch) {
     auto [M, N, K, L] = cute::append<4>(problem_shapes.get_host_problem_shape(0), 1);
-    L = max(problem_shapes.groups(), L);
+    L = cutlass::platform::max(problem_shapes.groups(), L);
 
     tensors_D[batch].sync_host();
     EXPECT_GT(cutlass::reference::host::TensorNorm(tensors_C[batch].host_view()), 0);
@@ -678,7 +678,7 @@ struct HostCollectiveDefaultEpilogue {
 
   Arguments to_args(ProblemShapeType problem_shapes) {
     auto [M, N, K, L] = cute::append<4>(problem_shapes.get_host_problem_shape(0), 1);
-    L = max(problem_shapes.groups(), L);
+    L = cutlass::platform::max(problem_shapes.groups(), L);
 
     std::vector<ElementC *> ptr_C_host(L);
     std::vector<ElementD *> ptr_D_host(L);
@@ -724,8 +724,8 @@ struct HostCollectiveDefaultEpilogue {
     //
     // Allocate the GEMM workspace
     //
-    auto [M, N, K, L] = cute::append<4>(problem_shapes.get_host_problem_shape(0), 1);
-    L = max(problem_shapes.groups(), L);
+    auto [M, N, K, L] = cute::append<4>(problem_shapes.get_host_problem_shape(batch), 1);
+    L = std::max(problem_shapes.groups(), L);
 
     auto coord_0 = cutlass::make_Coord(0);
     auto C = cute::make_tensor(detail::make_iterator(tensors_C[batch].host_data()),
@@ -905,9 +905,8 @@ struct HostCollectiveEpilogue {
     references_D.clear();
     stride_c_host.clear();
     stride_d_host.clear();
-
     auto [M, N, K, L] = cute::append<4>(problem_shapes.get_host_problem_shape(0), 1);
-    L = max(problem_shapes.groups(), L);
+    L = std::max(problem_shapes.groups(), L);
 
     for (int32_t i = 0; i < L; ++i) {
       auto [M, N, K, mock_L] = cute::append<4>(problem_shapes.get_host_problem_shape(i), 1);
@@ -1118,7 +1117,6 @@ struct HostCollectiveEpilogue {
         passed &= tmp;
       }
     }
-
     return passed;
   }
 
@@ -1189,7 +1187,7 @@ struct HostCollectiveEpilogue {
   Arguments to_args(ProblemShapeType problem_shapes) {
     auto coord_0 = cutlass::make_Coord(0);
     auto [M, N, K, L] = cute::append<4>(problem_shapes.get_host_problem_shape(0), 1);
-    L = max(problem_shapes.groups(), L);
+    L = std::max(problem_shapes.groups(), L);
 
     std::vector<ElementC *> ptr_C_host(L);
     std::vector<ElementD *> ptr_D_host(L);
@@ -1220,19 +1218,22 @@ struct HostCollectiveEpilogue {
       device_tensors_Aux.copy_from_host(ptr_Aux_host.data());
     }
 
+    auto device_tensors_C_ptr = cute::is_void_v<typename kernel::ElementC> ? nullptr :
+                                  reinterpret_cast<typename kernel::ElementC const**>(device_tensors_C.get());
+
     Arguments arguments;
     if constexpr (IsGroupGemm) {
       arguments = 
       {
         {},
-        device_tensors_C.get(), stride_c_device.get(), device_tensors_D.get(), stride_d_device.get()
+        device_tensors_C_ptr, stride_c_device.get(), device_tensors_D.get(), stride_d_device.get()
       };
     }
     else {
       arguments = 
       {
         {},
-        device_tensors_C.get(), stride_c_host[0], device_tensors_D.get(), stride_d_host[0]
+        device_tensors_C_ptr, stride_c_host[0], device_tensors_D.get(), stride_d_host[0]
       };
     }
 
@@ -1252,7 +1253,9 @@ struct HostCollectiveEpilogue {
       fusion_args.beta = beta.at(coord_0);
 
       fusion_args.alpha_ptr = alpha.device_data();
-      fusion_args.beta_ptr = beta.device_data();
+      // can_implement requires beta_ptr to not be set if its voidC 
+      fusion_args.beta_ptr = cute::is_void_v<typename kernel::ElementC> ? nullptr :
+                               beta.device_data();
       
       if constexpr (IsScaleFactorEnabled) {
         fusion_args.scale_a = scale_A.at(coord_0);
@@ -1316,7 +1319,8 @@ struct HostCollectiveEpilogue {
     //
     // Allocate the GEMM workspace
     //
-    auto [M, N, K, L] = cute::append<4>(problem_shapes.get_host_problem_shape(batch), 1);
+    auto problem_shape_MNKL = cute::append<4>(problem_shapes.get_host_problem_shape(batch), 1);
+    auto [M, N, K, L] = problem_shape_MNKL;
     auto coord_0 = cutlass::make_Coord(0);
     auto C = cute::make_tensor(detail::make_iterator(tensors_C[batch].host_data()),
         cute::make_layout(cute::make_shape(M, N, 1), stride_c_host[batch]));
@@ -1338,7 +1342,6 @@ struct HostCollectiveEpilogue {
         cute::make_layout(cute::make_shape(M, N, cute::_1{}), cute::make_stride(cute::_1{}, cute::_0{}, M)));
     auto Vbeta = cute::make_tensor(detail::make_iterator(beta.host_data()),
         cute::make_layout(cute::make_shape(M, N, cute::_1{}), cute::make_stride(cute::_1{}, cute::_0{}, N)));
-
     cutlass::reference::host::GettEpilogueParams<
       ElementScalar,
       ElementScalar,
@@ -1518,7 +1521,7 @@ struct TestbedImpl {
   {
     using namespace cute;
     auto [M, N, K, L] = cute::append<4>(problem_shapes.get_host_problem_shape(0), 1);
-    L = max(problem_shapes.groups(), L);
+    L = std::max(problem_shapes.groups(), L);
 
     bool passed = true;
     for (int32_t i = 0; i < L; ++i) {
@@ -1760,7 +1763,7 @@ bool TestAll(double alpha = 1.0, double beta = 0.0, CheckEquality check_relative
             cutlass::DeviceAllocation<typename ProblemShapeType::UnderlyingProblemShape> problem_sizes_device;
 
             for (int i = 0; i < batch; ++i) {
-              problem_sizes_host.push_back({m, n, k});
+              problem_sizes_host.push_back({m * ((i % 3) + 1), n * ((i % 4) + 1), k * ((i % 5) + 1)});
             }
 
             problem_sizes_device.reset(problem_sizes_host.size());

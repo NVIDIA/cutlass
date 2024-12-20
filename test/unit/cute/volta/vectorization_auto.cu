@@ -67,7 +67,6 @@ kernel(GmemTensor gC, RmemTiler tiler, CopyPolicy policy)
 
   // NOTE: only 1 thread, this thread produce a block of 8x8 output. The fringe will not be touched.
   //copy(rC, tCgC);           // Enable auto-vectorization if static
-  //copy_vec<T>(rC, tCgC);    // Disable auto-vectorization always
   copy(policy, rC, tCgC);     // Use a policy to establish vectorization assumptions
 }
 

@@ -35,6 +35,12 @@
 
 #pragma once
 
+#include <cutlass/detail/helper_macros.hpp> // CUTLASS_HOST_DEVICE
+#include <cutlass/platform/platform.h> // uint32_t
+#if !defined(__CUDACC_RTC__)
+#include <cstring> // std::memcpy
+#endif
+
 namespace cutlass {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

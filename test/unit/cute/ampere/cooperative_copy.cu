@@ -46,6 +46,7 @@
 #include <cute/swizzle.hpp> // cute::Swizzle
 #include <cute/swizzle_layout.hpp> // cute::compose(cute::Swizzle)
 #include <cute/numeric/numeric_types.hpp>
+#include <cute/atom/copy_traits_sm80.hpp>
 
 using namespace cute;
 
@@ -71,7 +72,7 @@ cooperative_copy_default_gs(T const* g_in, T* g_out, GMemLayout const& gmem_layo
   Tensor g_out_tensor = make_tensor(make_gmem_ptr(g_out), gmem_layout);
   Tensor s_tensor     = make_tensor(make_smem_ptr(smem),  smem_layout);
 
-  cooperative_copy<ThreadBlockSize, MaxVecBits>(threadIdx.x, g_in_tensor, s_tensor);
+  cooperative_copy<ThreadBlockSize, MaxVecBits>(threadIdx.x, g_in_tensor, s_tensor, AutoCopyAsync{});
 
   cp_async_fence();
   cp_async_wait<0>();
@@ -84,7 +85,7 @@ cooperative_copy_default_gs(T const* g_in, T* g_out, GMemLayout const& gmem_layo
   }
   __syncthreads();
 
-  cooperative_copy<ThreadBlockSize, MaxVecBits>(threadIdx.x, s_tensor, g_out_tensor);
+  cooperative_copy<ThreadBlockSize, MaxVecBits>(threadIdx.x, s_tensor, g_out_tensor, AutoCopyAsync{});
 }
 
 // ss --> shared to shared
@@ -106,7 +107,7 @@ cooperative_copy_default_ss(T const* g_in, T* g_out, Layout1 const& layout1, Lay
   Tensor s1_tensor    = make_tensor(make_smem_ptr(smem1), layout2);
   Tensor s2_tensor    = make_tensor(make_smem_ptr(smem2), layout1);
 
-  cooperative_copy<ThreadBlockSize,  cute::sizeof_bits_v<T>>(threadIdx.x, g_in_tensor, s1_tensor);
+  cooperative_copy<ThreadBlockSize,  cute::sizeof_bits_v<T>>(threadIdx.x, g_in_tensor, s1_tensor, AutoCopyAsync{});
 
   cp_async_fence();
   cp_async_wait<0>();
@@ -119,10 +120,10 @@ cooperative_copy_default_ss(T const* g_in, T* g_out, Layout1 const& layout1, Lay
   }
   __syncthreads();
 
-  cooperative_copy<ThreadBlockSize, MaxVecBits>(threadIdx.x, s1_tensor, s2_tensor);
+  cooperative_copy<ThreadBlockSize, MaxVecBits>(threadIdx.x, s1_tensor, s2_tensor, AutoCopyAsync{});
   __syncthreads();
 
-  cooperative_copy<ThreadBlockSize,  cute::sizeof_bits_v<T>>(threadIdx.x, s2_tensor, g_out_tensor);
+  cooperative_copy<ThreadBlockSize,  cute::sizeof_bits_v<T>>(threadIdx.x, s2_tensor, g_out_tensor, AutoCopyAsync{});
 }
 
 // gg --> global to global
@@ -135,7 +136,7 @@ cooperative_copy_default_gg(T const* g_in, T* g_out, Layout1 const& layout1, Lay
   Tensor g_in_tensor  = make_tensor(make_gmem_ptr(g_in),  layout1);
   Tensor g_out_tensor = make_tensor(make_gmem_ptr(g_out), layout2);
 
-  cooperative_copy<ThreadBlockSize, MaxVecBits>(threadIdx.x, g_in_tensor, g_out_tensor);
+  cooperative_copy<ThreadBlockSize, MaxVecBits>(threadIdx.x, g_in_tensor, g_out_tensor, AutoCopyAsync{});
 }
 
 template <class Mode, int MaxVecBits, uint32_t ThreadBlockSize, class T, class Layout1, class Layout2>
@@ -252,7 +253,7 @@ typedef testing::Types<
   std::tuple<cooperative_copy_mode::shared_shared, cute::Int<128>>,
   std::tuple<cooperative_copy_mode::shared_shared, cute::Int<64>>,
   std::tuple<cooperative_copy_mode::shared_shared, cute::Int<32>>,
-  std::tuple<cooperative_copy_mode::shared_shared, cute::Int<16>>,
+  std::tuple<cooperative_copy_mode::shared_shared, cute::Int<16>>
 > CooperativeCopyModeMaxVecBitsList;
 
 TYPED_TEST_SUITE(SM80_CuTe_Ampere, CooperativeCopyModeMaxVecBitsList);

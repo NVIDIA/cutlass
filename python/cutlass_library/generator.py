@@ -177,7 +177,7 @@ def CreateGemmUniversal3xOperator(
     complex_transforms=None,
     epilogue_functor=EpilogueFunctor.LinearCombination,
     swizzling_functor=SwizzlingFunctor.Identity1,
-    tile_schedulers=[TileSchedulerType.Persistent]):
+    tile_schedulers=[TileSchedulerType.Default]):
 
   if type(data_types) is dict:
     data_types = [data_types]
@@ -226,7 +226,7 @@ def CreateSparseGemmUniversal3xOperator(
     complex_transforms=None,
     epilogue_functor=EpilogueFunctor.LinearCombination,
     swizzling_functor=SwizzlingFunctor.Identity1,
-    tile_schedulers=[TileSchedulerType.Persistent]):
+    tile_schedulers=[TileSchedulerType.Default]):
 
   if type(data_types) is dict:
     data_types = [data_types]
@@ -1048,7 +1048,7 @@ def CreateConvOperator3x(manifest: Manifest,
                          schedule_pairs: Sequence[Tuple[KernelScheduleType, KernelScheduleType]] = \
                            [(KernelScheduleType.ScheduleAuto, EpilogueScheduleType.ScheduleAuto)],
                          complex_transforms: Optional[Sequence[ComplexTransform]] = None,
-                         tile_schedulers: Sequence[TileSchedulerType] = [TileSchedulerType.Persistent],
+                         tile_schedulers: Sequence[TileSchedulerType] = [TileSchedulerType.Default],
                          conv_kind: ConvKind = ConvKind.Fprop,
                          log_indent_level: int = 1):
   """
@@ -6508,6 +6508,7 @@ def GenerateSM90_TensorOp_1684_symm_complex_gaussian(manifest, cuda_version):
     data_type, alignment_constraints, BlasMode.hermitian)
 #
 
+
 ###################################################################################################
 
 def GenerateSM90_Conv3x(manifest, cuda_version,
@@ -6703,6 +6704,7 @@ def GenerateSM90_Conv3x(manifest, cuda_version,
     product(
       (
         ConvKind.Dgrad,
+        ConvKind.Wgrad
       ),
       spatial_dims,
       (

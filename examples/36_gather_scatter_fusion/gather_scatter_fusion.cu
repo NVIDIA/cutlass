@@ -59,11 +59,11 @@
 // Also, we don't check the index value is legal and index array point is valid
 // for the sake of the performance.
  
-#include <stdlib.h>
-#include <stdio.h>
-#include <time.h>
-#include <math.h>
-#include <assert.h>
+#include <cstdlib>
+#include <cstdio>
+#include <ctime>
+#include <cmath>
+#include <cassert>
 #include <cuda_runtime.h>
 
 #include <algorithm>

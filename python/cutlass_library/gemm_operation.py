@@ -818,6 +818,7 @@ ${compile_guard_end}
     element_a = DataTypeTag[operation.A.element] if not operation.is_complex() else f"cute::tuple<{str(DataTypeTag[operation.A.element])},{str(ComplexTransformTag3x[operation.A.complex_transform])}>"
     element_b = DataTypeTag[operation.B.element] if not operation.is_complex() else f"cute::tuple<{str(DataTypeTag[operation.B.element])},{str(ComplexTransformTag3x[operation.B.complex_transform])}>"
     epilogue_schedule_type = EpilogueScheduleTag[operation.epilogue_schedule]
+    is_no_smem_epilogue = operation.epilogue_schedule == EpilogueScheduleType.NoSmemWarpSpecialized
     values = {
       'operation_name': operation.procedural_name(),
       'operation_suffix': self.operation_suffix,

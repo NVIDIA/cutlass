@@ -51,8 +51,6 @@
 
 namespace cutlass::gemm::kernel {
 
-///////////////////////////////////////////////////////////////////////////////
-
 template <
   class ProblemShape_,
   class CollectiveMainloop_,
@@ -107,7 +105,6 @@ public:
                                           TileShape,
                                           ClusterShape
                                           >::Scheduler;
-
   using TileSchedulerArguments = typename TileScheduler::Arguments;
   using TileSchedulerParams = typename TileScheduler::Params;
   
@@ -122,7 +119,8 @@ public:
   static constexpr uint32_t NumMmaWarpGroups = NumMMAThreads / NumThreadsPerWarpGroup;
   static constexpr uint32_t MaxThreadsPerBlock = NumMMAThreads + (NumLoadWarpGroups * NumThreadsPerWarpGroup);
   static constexpr uint32_t MinBlocksPerMultiprocessor = 1;
-
+  static constexpr uint32_t NumFixupBarriers = NumMmaWarpGroups;
+  
   /// Register requirement for Load and Math WGs
   static constexpr uint32_t LoadRegisterRequirement = 40;
   static constexpr uint32_t MmaRegisterRequirement = 232;
@@ -207,13 +205,13 @@ public:
     uint8_t* workspace_ptr = reinterpret_cast<uint8_t*>(workspace);
     size_t workspace_offset = 0;
 
-    void* scheduler_workspace = workspace_ptr;
-    workspace_offset += TileScheduler::template get_workspace_size<ProblemShape, ElementAccumulator>(
-      args.scheduler, args.problem_shape, args.hw_info, NumMmaWarpGroups);
-    workspace_offset = round_nearest(workspace_offset,  MinWorkspaceAlignment);
-
     void* epilogue_workspace = workspace_ptr + workspace_offset;
     workspace_offset += CollectiveEpilogue::get_workspace_size(args.problem_shape, args.epilogue);
+    workspace_offset = round_nearest(workspace_offset,  MinWorkspaceAlignment);
+
+    void* scheduler_workspace = workspace_ptr + workspace_offset;
+    workspace_offset += TileScheduler::template get_workspace_size<ProblemShape, ElementAccumulator>(
+      args.scheduler, args.problem_shape, args.hw_info, NumMmaWarpGroups);
     workspace_offset = round_nearest(workspace_offset,  MinWorkspaceAlignment);
 
     void* mainloop_workspace = nullptr;
@@ -222,7 +220,8 @@ public:
     // subtile will not be used, therefore separate reduction will not be enabled.
     constexpr uint32_t NumEpilogueSubTiles = CollectiveEpilogue::get_store_pipe_increment(TileShape{});
     TileSchedulerParams scheduler = TileScheduler::to_underlying_arguments(
-      problem_shape_MNKL, TileShape{}, ClusterShape{}, hw_info, args.scheduler, scheduler_workspace, NumEpilogueSubTiles);
+      problem_shape_MNKL, TileShape{}, ClusterShape{}, hw_info, args.scheduler, scheduler_workspace, NumEpilogueSubTiles
+      );
 
     return {
       args.mode,
@@ -254,13 +253,12 @@ public:
     size_t workspace_size = 0;
     constexpr uint32_t NumEpilogueSubTiles = CollectiveEpilogue::get_store_pipe_increment(TileShape{});
 
-    workspace_size += TileScheduler::template get_workspace_size<ProblemShape, ElementAccumulator>(
-      args.scheduler, args.problem_shape, args.hw_info, NumMmaWarpGroups, NumEpilogueSubTiles);
-    workspace_size = round_nearest(workspace_size,  MinWorkspaceAlignment);
-
     workspace_size += CollectiveEpilogue::get_workspace_size(args.problem_shape, args.epilogue);
     workspace_size = round_nearest(workspace_size,  MinWorkspaceAlignment);
 
+    workspace_size += TileScheduler::template get_workspace_size<ProblemShape, ElementAccumulator>(
+      args.scheduler, args.problem_shape, args.hw_info, NumMmaWarpGroups, NumEpilogueSubTiles);
+    workspace_size = round_nearest(workspace_size,  MinWorkspaceAlignment);
     return workspace_size;
   }
 
@@ -273,17 +271,17 @@ public:
     constexpr uint32_t NumEpilogueSubTiles = CollectiveEpilogue::get_store_pipe_increment(TileShape{});
     static constexpr uint32_t NumAccumulatorMtxs = 1;
 
-    status = TileScheduler::template initialize_workspace<ProblemShape, ElementAccumulator>(
-      args.scheduler, workspace_ptr + workspace_offset, stream, args.problem_shape, args.hw_info, NumMmaWarpGroups, NumEpilogueSubTiles, NumAccumulatorMtxs, cuda_adapter);
-    workspace_offset += TileScheduler::template get_workspace_size<ProblemShape, ElementAccumulator>(
-      args.scheduler, args.problem_shape, args.hw_info, NumMmaWarpGroups, NumEpilogueSubTiles);
+    status = CollectiveEpilogue::initialize_workspace(args.problem_shape, args.epilogue, workspace_ptr + workspace_offset, stream, cuda_adapter);
+    workspace_offset += CollectiveEpilogue::get_workspace_size(args.problem_shape, args.epilogue);
     workspace_offset = round_nearest(workspace_offset,  MinWorkspaceAlignment);
     if (status != Status::kSuccess) {
       return status;
     }
 
-    status = CollectiveEpilogue::initialize_workspace(args.problem_shape, args.epilogue, workspace_ptr + workspace_offset, stream, cuda_adapter);
-    workspace_offset += CollectiveEpilogue::get_workspace_size(args.problem_shape, args.epilogue);
+    status = TileScheduler::template initialize_workspace<ProblemShape, ElementAccumulator>(
+      args.scheduler, workspace_ptr + workspace_offset, stream, args.problem_shape, args.hw_info, NumMmaWarpGroups, NumEpilogueSubTiles, NumAccumulatorMtxs, cuda_adapter);
+    workspace_offset += TileScheduler::template get_workspace_size<ProblemShape, ElementAccumulator>(
+      args.scheduler, args.problem_shape, args.hw_info, NumMmaWarpGroups, NumEpilogueSubTiles);
     workspace_offset = round_nearest(workspace_offset,  MinWorkspaceAlignment);
     if (status != Status::kSuccess) {
       return status;
@@ -314,6 +312,7 @@ public:
   operator()(Params const& params, char* smem_buf) {
     using namespace cute;
     using X = Underscore;
+
 #if defined(__CUDA_ARCH_FEAT_SM90_ALL)
 #  define ENABLE_SM90_KERNEL_LEVEL 1
 #endif
@@ -487,7 +486,6 @@ public:
           // Get the number of K tiles to compute for this work as well as the starting K tile offset of the work.
           auto work_k_tile_count = TileScheduler::get_work_k_tile_count(work_tile_info, problem_shape_MNKL, blk_shape);
           auto work_k_tile_start = TileScheduler::get_work_k_tile_start(work_tile_info);
-
           auto k_tile_iter = cute::make_coord_iterator(idx2crd(work_k_tile_start, shape<3>(gA_mkl)), shape<3>(gA_mkl));
 
           collective_mainloop.load(
@@ -581,11 +579,10 @@ public:
         auto l_coord = idx2crd(work_tile_info.L_idx, shape<4>(gB_nkl));
         auto blk_coord = make_coord(m_coord, n_coord, _, l_coord);
         auto work_k_tile_count = TileScheduler::get_work_k_tile_count(work_tile_info, problem_shape_MNKL, blk_shape);
-
         // Allocate the accumulators for the (M,N) blk_shape
         //
         // MSVC CTAD breaks if we say "Tensor" here, so we use "auto" instead.
-        auto accumulators = partition_fragment_C(tiled_mma, take<0,2>(blk_shape));               // (MMA,MMA_M,MMA_N)
+        auto accumulators = partition_fragment_C(tiled_mma, take<0,2>(blk_shape));                 // (MMA,MMA_M,MMA_N)
         if (TileScheduler::valid_warpgroup_in_work_tile(work_tile_info)) {
           collective_mainloop.mma(
             mainloop_pipeline,

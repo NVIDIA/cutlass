@@ -35,6 +35,7 @@
 #pragma once
 
 #include "cutlass/cutlass.h"
+#include "cutlass/detail/collective.hpp"
 #include "cutlass/library/library.h"
 #include "library_internal.h"
 #include "cutlass/gemm/dispatch_policy.hpp"
@@ -331,7 +332,8 @@ public:
       void const *arguments_ptr,
       void *host_workspace,
       void *device_workspace = nullptr,
-      cudaStream_t stream = nullptr) const override {
+      cudaStream_t stream = nullptr,
+      bool launch_with_pdl = false) const override {
 
     OperatorArguments args;
     Status status = update_arguments_(args, static_cast<GemmUniversalArguments const *>(arguments_ptr));
@@ -341,7 +343,7 @@ public:
 
     Operator *op = static_cast<Operator *>(host_workspace);
     // We need to call initialize() since we have to rebuild TMA desc for every new set of args
-    status = op->run(args, device_workspace, stream);
+    status = op->run(args, device_workspace, stream, nullptr, launch_with_pdl);
     return status;
   }
 };

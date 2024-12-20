@@ -41,6 +41,7 @@ and improves code composability and readability. More documentation specific to 
 
 In addition to GEMMs, CUTLASS implements high-performance convolution via the implicit GEMM algorithm. Implicit GEMM is the formulation of a convolution operation as a GEMM thereby taking advantage of CUTLASS's modular GEMM pipeline. This allows CUTLASS to build convolutions by reusing highly-optimized GEMM components.
 
+
 # What's New in CUTLASS 3.6
 
 CUTLASS 3.6.0 is an update to CUTLASS adding:

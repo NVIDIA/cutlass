@@ -26,49 +26,46 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-if(CUDA_COMPILER MATCHES "[Cc]lang")
-  set(CUTLASS_NATIVE_CUDA_INIT ON)
-elseif(CMAKE_VERSION VERSION_LESS 3.12.4)
-  set(CUTLASS_NATIVE_CUDA_INIT OFF)
-else()
-  set(CUTLASS_NATIVE_CUDA_INIT ON)
+if (CUDA_COMPILER MATCHES "[Cc]lang")
+  message(WARNING "CUDA_COMPILER flag is deprecated, set CMAKE_CUDA_COMPILER to desired compiler executable.")
+  set(__CLANG_DEVICE_COMPILATION_REQUESTED ON)
+elseif(CUDA_COMPILER)
+  message(WARNING "Deprecated flag CUDA_COMPILER used with unknown argument ${CUDA_COMPILER}, ignoring.")
 endif()
 
-set(CUTLASS_NATIVE_CUDA ${CUTLASS_NATIVE_CUDA_INIT} CACHE BOOL "Utilize the CMake native CUDA flow")
-
-if(NOT DEFINED ENV{CUDACXX} AND NOT DEFINED ENV{CUDA_BIN_PATH} AND DEFINED ENV{CUDA_PATH})
-  # For backward compatibility, allow use of CUDA_PATH.
-  set(ENV{CUDACXX} $ENV{CUDA_PATH}/bin/nvcc)
+if (__CLANG_DEVICE_COMPILATION_REQUESTED AND NOT DEFINED CMAKE_CUDA_COMPILER)
+  set(CMAKE_CUDA_COMPILER clang++) # We will let the system find Clang or error out
 endif()
 
-if(CUTLASS_NATIVE_CUDA)
+enable_language(CUDA)
+find_package(CUDAToolkit REQUIRED)
 
-  enable_language(CUDA)
+if(NOT CUDA_VERSION)
+  # For backward compatibility with older CMake code.
+  set(CUDA_VERSION ${CUDAToolkit_VERSION})
+  set(CUDA_VERSION_MAJOR ${CUDAToolkit_VERSION_MAJOR})
+  set(CUDA_VERSION_MINOR ${CUDAToolkit_VERSION_MINOR})
+endif()
+if(NOT CUDA_TOOLKIT_ROOT_DIR)
+  # In some scenarios, such as clang device compilation, the toolkit root may not be set, so we 
+  # force it here to the nvcc we found via the CUDAToolkit package.
+  get_filename_component(CUDA_TOOLKIT_ROOT_DIR "${CUDAToolkit_NVCC_EXECUTABLE}/../.." ABSOLUTE)
+endif()
 
-  if(NOT CUDA_VERSION)
-    set(CUDA_VERSION ${CMAKE_CUDA_COMPILER_VERSION})
-  endif()
-  if(NOT CUDA_TOOLKIT_ROOT_DIR)
-    get_filename_component(CUDA_TOOLKIT_ROOT_DIR "${CMAKE_CUDA_COMPILER}/../.." ABSOLUTE)
-  endif()
-
+if (CMAKE_CUDA_COMPILER_ID MATCHES "(nvcc|[Nn][Vv][Ii][Dd][Ii][Aa])")
+  set(CUTLASS_NVCC_DEVICE_COMPILE ON CACHE BOOL "Using nvcc tools for device compilation")
+elseif (CMAKE_CUDA_COMPILER_ID MATCHES "[Cc]lang")
+  set(CUTLASS_CLANG_DEVICE_COMPILE ON CACHE BOOL "Using Clang tools for device compilation")
 else()
+  message(FATAL_ERROR "Uknown device-side compiler ${CMAKE_CUDA_COMPILER_ID} found. Set CMAKE_CUDA_COMPILER to either nvcc or clang++.")
+endif()
 
-  find_package(CUDA REQUIRED)
-  # We workaround missing variables with the native flow by also finding the CUDA toolkit the old way.
-
-  if(NOT CMAKE_CUDA_COMPILER_VERSION)
-    set(CMAKE_CUDA_COMPILER_VERSION ${CUDA_VERSION})
-  endif()
-
+if (CUTLASS_CLANG_DEVICE_COMPILE AND CMAKE_VERSION VERSION_LESS_EQUAL "3.30")
+  message(FATAL_ERROR "Clang device compilation for CUTLASS requires CMake 3.30 or higher.")
 endif()
 
 if (CUDA_VERSION VERSION_LESS 9.2)
-  message(FATAL_ERROR "CUDA 9.2+ Required, Found ${CUDA_VERSION}.")
-endif()
-if(NOT CUTLASS_NATIVE_CUDA OR CUDA_COMPILER MATCHES "[Cc]lang")
-  set(CMAKE_CUDA_COMPILER ${CUDA_TOOLKIT_ROOT_DIR}/bin/nvcc)
-  message(STATUS "CUDA Compiler: ${CMAKE_CUDA_COMPILER}")
+  message(FATAL_ERROR "CUDA 9.2+ required, found ${CUDA_VERSION}.")
 endif()
 
 find_library(
@@ -211,16 +208,6 @@ include_directories(SYSTEM ${CUDA_INCLUDE_DIRS})
 # Some platforms (e.g. Visual Studio) don't add the CUDA include directories to the system include
 # paths by default, so we add it explicitly here.
 
-function(cutlass_correct_source_file_language_property)
-  if(CUDA_COMPILER MATCHES "[Cc]lang")
-    foreach(File ${ARGN})
-      if(File MATCHES ".*\.cu$")
-        set_source_files_properties(${File} PROPERTIES LANGUAGE CXX)
-      endif()
-    endforeach()
-  endif()
-endfunction()
-
 if (MSVC OR CUTLASS_LIBRARY_KERNELS MATCHES "all")
   set(CUTLASS_UNITY_BUILD_ENABLED_INIT ON)
 else()
@@ -306,18 +293,13 @@ function(cutlass_add_library NAME)
   cmake_parse_arguments(_ "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
   cutlass_unify_source_files(TARGET_SOURCE_ARGS ${__UNPARSED_ARGUMENTS})
-
-  if(CUTLASS_NATIVE_CUDA OR CUDA_COMPILER MATCHES "clang")
-    cutlass_correct_source_file_language_property(${TARGET_SOURCE_ARGS})
-    add_library(${NAME} ${TARGET_SOURCE_ARGS} "")
-  else()
-    set(CUDA_LINK_LIBRARIES_KEYWORD PRIVATE)
-    cuda_add_library(${NAME} ${TARGET_SOURCE_ARGS} "")
-  endif()
+  
+  add_library(${NAME} ${TARGET_SOURCE_ARGS} "")
 
   cutlass_apply_standard_compile_options(${NAME})
+
   if (NOT __SKIP_GENCODE_FLAGS)
-  cutlass_apply_cuda_gencode_flags(${NAME})
+    cutlass_apply_cuda_gencode_flags(${NAME})
   endif()
 
   target_compile_features(
@@ -359,13 +341,7 @@ function(cutlass_add_executable NAME)
 
   cutlass_unify_source_files(TARGET_SOURCE_ARGS ${__UNPARSED_ARGUMENTS})
 
-  if(CUTLASS_NATIVE_CUDA OR CUDA_COMPILER MATCHES "clang")
-    cutlass_correct_source_file_language_property(${TARGET_SOURCE_ARGS})
-    add_executable(${NAME} ${TARGET_SOURCE_ARGS})
-  else()
-    set(CUDA_LINK_LIBRARIES_KEYWORD PRIVATE)
-    cuda_add_executable(${NAME} ${TARGET_SOURCE_ARGS})
-  endif()
+  add_executable(${NAME} ${TARGET_SOURCE_ARGS})
 
   cutlass_apply_standard_compile_options(${NAME})
   cutlass_apply_cuda_gencode_flags(${NAME})
@@ -388,7 +364,6 @@ function(cutlass_target_sources NAME)
   cmake_parse_arguments(_ "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
   cutlass_unify_source_files(TARGET_SOURCE_ARGS ${__UNPARSED_ARGUMENTS})
-  cutlass_correct_source_file_language_property(${TARGET_SOURCE_ARGS})
   target_sources(${NAME} ${TARGET_SOURCE_ARGS})
 
 endfunction()

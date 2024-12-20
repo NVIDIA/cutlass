@@ -658,7 +658,7 @@ void OperationProfiler::save_workspace(
 
 /// Method to profile a CUTLASS Operation
 Status OperationProfiler::profile_cutlass_(
-  double &runtime,
+  PerformanceResult &result,
   Options const &options,
   library::Operation const *operation,
   void *arguments,
@@ -726,7 +726,7 @@ Status OperationProfiler::profile_cutlass_(
   // Update performance result
   //
 
-  runtime = timer.duration(iteration);
+  result.runtime = timer.duration(iteration);
 
   return status;
 }

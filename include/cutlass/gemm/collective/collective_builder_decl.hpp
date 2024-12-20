@@ -54,6 +54,18 @@ struct StageCountAutoCarveout {
   explicit StageCountAutoCarveout(cute::Int<carveout_bytes>) {}
 };
 
+namespace detail {
+
+// Forward Declaration
+template<class CollectiveEpilogue>
+constexpr int
+compute_carveout_from_epi();
+
+} // namespace detail
+
+template<class CollectiveEpilogue>
+struct StageCountAutoCarveoutEpi : StageCountAutoCarveout<detail::compute_carveout_from_epi<CollectiveEpilogue>()> {};
+
 using StageCountAuto = StageCountAutoCarveout<0>;
 
 // Used to automatically let the builder pick the kernel schedule.

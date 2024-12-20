@@ -1830,7 +1830,7 @@ recast_layout(Layout<Shape,Stride> const& layout)
     return upcast<scale::num>(layout);
   }
   else {
-    static_assert(dependent_false<scale>, "Recast not supported.");
+    return downcast<scale::den>(upcast<scale::num>(layout));
   }
 
   CUTE_GCC_UNREACHABLE;

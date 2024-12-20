@@ -447,7 +447,7 @@ recast_layout(Swizzle<B,M,S> const& swizzle)
     return upcast<scale::num>(swizzle);
   }
   else {
-    static_assert(dependent_false<scale>, "Recast not supported.");
+    return downcast<scale::den>(upcast<scale::num>(layout));
   }
   CUTE_GCC_UNREACHABLE;
 }
@@ -457,7 +457,7 @@ CUTE_HOST_DEVICE constexpr
 auto
 max_alignment(Swizzle<B,M,S> const&)
 {
-  return Int<1 << M>{};
+  return Int<(1 << M)>{};
 }
 
 template <int B, int M, int S, class Offset, class LayoutB>

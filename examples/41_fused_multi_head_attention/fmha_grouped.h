@@ -550,7 +550,7 @@ public:
 
         auto prologueV = [&](int blockN) {
           typename MM1::Mma::IteratorB iterator_V(
-              typename MM1::IteratorB::Params{MM1::LayoutB(params.ldv[problem_idx])},
+              typename MM1::IteratorB::Params{typename MM1::LayoutB(params.ldv[problem_idx])},
               params.ptr_V[problem_idx] + iter_key_start * params.ldv[problem_idx],
               {problem_size_1_k, problem_size_1_n},
               thread_id(),
@@ -719,7 +719,7 @@ public:
           }
 
           typename MM1::Mma::IteratorB iterator_V(
-            typename MM1::IteratorB::Params{MM1::LayoutB(params.ldv[problem_idx])},
+            typename MM1::IteratorB::Params{typename MM1::LayoutB(params.ldv[problem_idx])},
             params.ptr_V[problem_idx] + iter_key_start * params.ldv[problem_idx],
             {problem_size_1_k, problem_size_1_n},
             thread_id(),
@@ -761,15 +761,15 @@ public:
                         using EpilogueOutputOp = typename cutlass::epilogue::
                             thread::MemoryEfficientAttentionNormalize<
                                 typename cutlass::platform::conditional<
-                                    kIsLast,
+                                    kIsLast::value,
                                     output_t,
                                     output_accum_t>::type,
                                 output_accum_t,
                                 DefaultOp::kCount,
                                 typename DefaultOp::ElementAccumulator,
                                 output_accum_t,
-                                kIsFirst,
-                                kIsLast,
+                                kIsFirst::value,
+                                kIsLast::value,
                                 cutlass::Array<ElementCompute, kQueriesPerBlock>>;
                         using Epilogue = typename cutlass::epilogue::threadblock::
                             EpiloguePipelined<
@@ -777,7 +777,7 @@ public:
                                 typename MM1::Mma::Operator,
                                 DefaultEpilogue::kPartitionsK,
                                 typename cutlass::platform::conditional<
-                                    kIsLast,
+                                    kIsLast::value,
                                     typename MM1::OutputTileIterator,
                                     typename MM1::OutputTileIteratorAccum>::type,
                                 typename DefaultEpilogue::
@@ -795,7 +795,7 @@ public:
                         int col = blockN * MM1::Mma::Shape::kN;
                         auto source_iter = createOutputAccumIter(col);
                         auto dest_iter = gemm_kernel_utils::call_conditional<
-                            kIsLast,
+                            kIsLast::value,
                             decltype(createOutputIter),
                             decltype(createOutputAccumIter)>::
                             apply(createOutputIter, createOutputAccumIter, col);
@@ -817,8 +817,8 @@ public:
       }
 
       if (kKeepOutputInRF) {
-        const bool kIsFirst = true;
-        const bool kIsLast = true;
+        constexpr bool kIsFirst = true;
+        constexpr bool kIsLast = true;
         using DefaultEpilogue = typename MM1::DefaultEpilogue;
         using DefaultOp = typename MM1::DefaultConfig::EpilogueOutputOp;
         using ElementCompute = typename DefaultOp::ElementCompute;

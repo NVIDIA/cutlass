@@ -336,8 +336,15 @@ struct ConvTestbed {
 
     // Scale
     if constexpr (cute::is_same_v<ActivationFunctor, cutlass::epilogue::thread::ScaledGELU_taylor<ElementCompute>> ||
-                  cute::is_same_v<ActivationFunctor, cutlass::epilogue::thread::ScaledGELU<ElementCompute>>) {
+                  cute::is_same_v<ActivationFunctor, cutlass::epilogue::thread::ScaledGELU<ElementCompute>> ||
+                  cute::is_same_v<ActivationFunctor, cutlass::epilogue::thread::ScaledSiLu<ElementCompute>> ||
+                  cute::is_same_v<ActivationFunctor, cutlass::epilogue::thread::ScaledHardSwish<ElementCompute>> ) {
       fusion_args.activation.scale = ElementCompute{1};
+    }
+
+    // LeakyRelu
+    if constexpr (cute::is_same_v<ActivationFunctor, cutlass::epilogue::thread::LeakyReLU<ElementCompute>> ) {
+      fusion_args.activation.leaky_alpha = ElementCompute{0};
     }
 
     cutlass::Status status = cutlass::Status::kInvalid;
@@ -617,8 +624,9 @@ bool TestAllConv(double alpha = 1.0, double beta = 0.0, float epsilon = 0.0f
     for (DecompositionMode decomp_mode : decomposition_modes) {
       std::vector problem_splits = {Splits{1}};
       if constexpr (UsesStreamKScheduler) {
-        if (decomp_mode == DecompositionMode::Heuristic || decomp_mode == DecompositionMode::SplitK) {
+        if (decomp_mode == DecompositionMode::SplitK) {
           problem_splits.push_back(Splits{2});
+          problem_splits.push_back(Splits{4});
         }
       }
       for (auto splits : problem_splits) {

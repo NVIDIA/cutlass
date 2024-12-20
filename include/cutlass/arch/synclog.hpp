@@ -59,7 +59,7 @@ constexpr uint32_t synclog_cap = 1 << 26;
 inline std::mutex synclog_mutex;
 inline std::vector<uint32_t*> synclog_buf_list;
 #if defined(__NVCC__) || (defined(__clang__) && defined(__CUDA__))
-inline __device__ uint32_t* synclog_buf;
+CUTLASS_DEVICE uint32_t* synclog_buf;
 #endif
 
 CUTLASS_DEVICE

@@ -94,7 +94,7 @@ class CollectiveEpilogue<
     SmemLayoutAtomD_,
     CopyOpR2S_,
     CopyAtomC_,
-    CopyOpR2R_,
+    CopyOpR2R_
 > {
 public:
   //
@@ -135,6 +135,9 @@ private:
   using NonVoidElementD = cute::conditional_t<not is_destination_supported,fusion::get_element_aux_t<FusionCallbacks>, ElementD>;
   static_assert(not cute::is_void_v<NonVoidElementD>, "SmemElementD is void");
   using NonVoidElementC = cute::conditional_t<not is_source_supported,NonVoidElementD,ElementC>; // prevents void ref breakages
+
+  using TmaElementD = cute::conditional_t<cute::is_same_v<NonVoidElementD, cutlass::complex<float>>, uint64_t, NonVoidElementD>;
+  using TmaElementC = cute::conditional_t<cute::is_same_v<NonVoidElementC, cutlass::complex<float>>, uint64_t, NonVoidElementC>;
 
   using SmemElementC = typename cutlass::detail::get_unpacked_element_type<NonVoidElementC>::type;
   using SmemElementD = typename cutlass::detail::get_unpacked_element_type<NonVoidElementD>::type;
@@ -239,14 +242,14 @@ public:
   struct Params {
     using TMA_C = decltype(make_tma_copy(
         CopyOpG2S{},
-        make_tensor(make_gmem_ptr(static_cast<NonVoidElementC const*>(nullptr)),
+        make_tensor(make_gmem_ptr<TmaElementC const>(nullptr),
             repeat_like(StrideC{}, int32_t(0)), StrideC{}),
         take<0,2>(SmemLayoutC{}),
         EpilogueTile{},
         _1{}));
     using TMA_D = decltype(make_tma_copy(
         CopyOpS2G{},
-        make_tensor(make_gmem_ptr(static_cast<NonVoidElementD const*>(nullptr)),
+        make_tensor(make_gmem_ptr<TmaElementD>(nullptr),
             repeat_like(StrideD{}, int32_t(0)), StrideD{}),
         take<0,2>(SmemLayoutD{}),
         EpilogueTile{},
@@ -273,9 +276,9 @@ public:
     auto [M, N, K, L] = problem_shape_MNKL;
 
     uint32_t transaction_bytes = TmaTransactionBytes;
-    typename Params::TMA_C tma_load_c = {};
+    typename Params::TMA_C tma_load_c{};
     if constexpr (is_source_supported) {
-      Tensor tensor_c = make_tensor(make_gmem_ptr(args.ptr_C), make_layout(make_shape(M,N,L), args.dC));
+      Tensor tensor_c = make_tensor(make_gmem_ptr<TmaElementC const>(args.ptr_C), make_layout(make_shape(M,N,L), args.dC));
       tma_load_c = make_tma_copy_C_sm90(
           CopyOpG2S{},
           tensor_c,
@@ -285,7 +288,7 @@ public:
 
     typename Params::TMA_D tma_store_d;
     if constexpr (is_destination_supported) {
-      Tensor tensor_d = make_tensor(make_gmem_ptr(args.ptr_D), make_layout(make_shape(M,N,L), args.dD));
+      Tensor tensor_d = make_tensor(make_gmem_ptr<TmaElementD>(args.ptr_D), make_layout(make_shape(M,N,L), args.dD));
       tma_store_d = make_tma_copy_C_sm90(
           CopyOpS2G{},
           tensor_d,
@@ -644,7 +647,18 @@ public:
     // Absolute coordinate tensors (dynamic)
     Tensor mD_crd = make_identity_tensor(make_shape(M,N));                                                     // (M,N)
     Tensor cD_mn = local_tile(mD_crd, take<0,2>(CtaTileMNK{}), make_coord(m_coord, n_coord));          // (CTA_M,CTA_N)
-    Tensor tRS_cD_mn = thread_r2s.partition_S(flat_divide(cD_mn, EpilogueTile{}));     // (R2S,R2S_M,R2S_N,EPI_M,EPI_N)
+    Tensor tRS_cD_mn = [&]() {
+      if constexpr (IsUseR2R) {
+        // (t)hread-partition for ConsumerStoreCallbacks. 
+        TiledCopy tiled_cst = make_tiled_copy_S(Copy_Atom<CopyOpR2S,SmemElementC>{}, tiled_copy_C_atom);
+        ThrCopy thread_cst = tiled_cst.get_slice(thread_idx);
+
+        return thread_cst.partition_S(flat_divide(cD_mn, EpilogueTile{}));             // (R2S,R2S_M,R2S_N,EPI_M,EPI_N)
+      }
+      else {
+        return thread_r2s.partition_S(flat_divide(cD_mn, EpilogueTile{}));             // (R2S,R2S_M,R2S_N,EPI_M,EPI_N)
+      }
+    }();
     // Relative coordinate tensors (static)
     Tensor cD = make_counting_tensor(cD_mn.layout());                                                  // (CTA_M,CTA_N)
     Tensor tRS_cD = make_counting_tensor(tRS_cD_mn.layout());                          // (R2S,R2S_M,R2S_N,EPI_M,EPI_N)

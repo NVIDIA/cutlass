@@ -35,6 +35,7 @@
 #pragma once
 
 #include "cutlass/cutlass.h"
+#include "cutlass/detail/collective.hpp"
 #include "cutlass/library/library.h"
 #include "cutlass/transform/kernel/sparse_gemm_compressor.hpp" // StructuredSparseCompressor
 #include "cutlass/transform/device/transform_universal_adapter.hpp" // TransformUniversalAdapter
@@ -56,7 +57,7 @@ namespace cutlass::library {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-// Limitation & Assumptions: 
+// Limitation & Assumptions:
 // 1. The tensor must be densely packed.  That is, lda is k if the tensor is k-major,
 //    and lda is m if the tensor is m-major.
 // 2. Circular buffer for tensorA and tensorE may have a less count compared to tensorB and others.
@@ -169,7 +170,6 @@ protected:
       return status;
     }
 
-    // TODO: type erase Arguments structure in 3.0 GEMM
     operator_args.problem_shape = cute::make_shape(
       arguments->problem_size.m(),
       arguments->problem_size.n(),
@@ -302,12 +302,14 @@ public:
   }
 
   Status initialize_with_profiler_workspace(
-      void const *configuration, 
-      void *host_workspace, 
-      void *device_workspace, 
+      void const *configuration,
+      void *host_workspace,
+      void *device_workspace,
       uint8_t **profiler_workspaces,
       int problem_count_from_profiler,
       cudaStream_t stream = nullptr) {
+
+    iter_idx.resize(static_cast<GemmUniversalConfiguration const*>(configuration)->device_count, 0);
 
     // Set problem_count.
     problem_count = problem_count_from_profiler;
@@ -319,13 +321,10 @@ public:
     // * Construct Op
     Operator *op = new (host_op_workspace_ptr) Operator;
 
-    // * Device Full Ptr
-    device_full_ptr = reinterpret_cast<uint8_t*>(device_workspace);
-
     // * Device Ptr (1st iteration)
     // Device workspace : | iter1 | iter2 | iter3 | .. | iterx |
     //            iteri : op_workspace | tensor_ac | tensor_e
-    auto* device_ptr_iter1                = device_full_ptr;
+    auto* device_ptr_iter1                = static_cast<uint8_t*>(device_workspace);
     auto* device_op_workspace_ptr_iter1         = device_ptr_iter1;
     auto* device_compressor_workspace_ptr_iter1 = device_op_workspace_ptr_iter1 + device_op_workspace_size;
     auto* device_a_compressed_ptr_iter1         = device_compressor_workspace_ptr_iter1 + device_compress_workspace_size;
@@ -335,15 +334,15 @@ public:
     auto* device_a_raw_ptr = profiler_workspaces[0];
 
     // * Random fill 50% of TensorA w/ zero following the structured sparse requirement
-    cudaMemcpy(host_a_raw_ptr, device_a_raw_ptr, tensor_a_size, cudaMemcpyDeviceToHost);
+    CUDA_CHECK(cudaMemcpyAsync(host_a_raw_ptr, device_a_raw_ptr, tensor_a_size, cudaMemcpyDeviceToHost, stream));
     compressor_utility.structure_sparse_zero_mask_fill(host_a_raw_ptr, 2000);
-    cudaMemcpy(device_a_raw_ptr, host_a_raw_ptr, tensor_a_size, cudaMemcpyHostToDevice);
+    CUDA_CHECK(cudaMemcpyAsync(device_a_raw_ptr, host_a_raw_ptr, tensor_a_size, cudaMemcpyHostToDevice, stream));
 
     CUDA_CHECK(cudaGetLastError());
 
     // * Compress DTensorA and get DTensorAC & DTensorE
     cutlass::KernelHardwareInfo hw_info;
-    hw_info.device_id = 0;
+    CUDA_CHECK(cudaGetDevice(&hw_info.device_id));
     hw_info.sm_count = cutlass::KernelHardwareInfo::query_device_multiprocessor_count(hw_info.device_id);
     typename Compressor::Arguments arguments{
         {compressor_utility.M, 0, compressor_utility.K, compressor_utility.L},
@@ -372,22 +371,22 @@ public:
        return status;
     }
 
-    CUDA_CHECK(cudaStreamSynchronize(stream));
-
     // * Copy Iter1's DTensorAC DTensorE to each iteration's DTensorAC DTensorE
     for (int iter_i = 1; iter_i < problem_count; iter_i++) {
       // * Device AC E Ptr per iteration
       // Device workspace : | iter1 | iter2 | iter3 | .. | iterx |
       //            iteri : op_workspace | tensor_ac | tensor_e
-      auto* device_ptr_iteri                = device_full_ptr         + device_per_iter_workspace_size * iter_i;
+      auto* device_ptr_iteri                = static_cast<uint8_t*>(device_workspace) + device_per_iter_workspace_size * iter_i;
       auto* device_op_workspace_ptr         = device_ptr_iteri;
       auto* device_compressor_workspace_ptr = device_op_workspace_ptr + device_op_workspace_size;
       auto* device_a_compressed_ptr         = device_compressor_workspace_ptr + device_compress_workspace_size;
       auto* device_e_ptr                    = device_a_compressed_ptr + tensor_ac_size;
 
-      cudaMemcpy(device_a_compressed_ptr, device_a_compressed_ptr_iter1, tensor_ac_size, cudaMemcpyDeviceToDevice);
-      cudaMemcpy(device_e_ptr, device_e_ptr_iter1, tensor_e_size, cudaMemcpyDeviceToDevice);
+      CUDA_CHECK(cudaMemcpyAsync(device_a_compressed_ptr, device_a_compressed_ptr_iter1, tensor_ac_size, cudaMemcpyDeviceToDevice, stream));
+      CUDA_CHECK(cudaMemcpyAsync(device_e_ptr, device_e_ptr_iter1, tensor_e_size, cudaMemcpyDeviceToDevice, stream));
     }
+
+    CUDA_CHECK(cudaStreamSynchronize(stream));
 
     CUDA_CHECK(cudaGetLastError());
 
@@ -398,17 +397,21 @@ public:
   Status run(
       void const *arguments_ptr,
       void *host_workspace,
-      void *device_workspace = nullptr,
-      cudaStream_t stream = nullptr) const override {
+      void *device_workspace,
+      cudaStream_t stream = nullptr,
+      bool launch_with_pdl = false) const override {
 
     OperatorArguments operator_args;
 
-    auto* device_ptr_iteri                = device_full_ptr         + device_per_iter_workspace_size * iter_idx;
+
+    const auto device_index = static_cast<GemmUniversalArguments const *>(arguments_ptr)->device_index;
+
+    auto* device_ptr_iteri                = static_cast<uint8_t*>(device_workspace) + device_per_iter_workspace_size * iter_idx[device_index];
     auto* device_op_workspace_ptr         = device_ptr_iteri;
     auto* device_compressor_workspace_ptr = device_op_workspace_ptr + device_op_workspace_size;
     auto* device_a_compressed_ptr         = device_compressor_workspace_ptr + device_compress_workspace_size;
     auto* device_e_ptr                    = device_a_compressed_ptr + tensor_ac_size;
-    iter_idx = (iter_idx + 1) % problem_count;
+    iter_idx[device_index] = (iter_idx[device_index] + 1) % problem_count;
 
     Status status = update_arguments_(operator_args, static_cast<GemmUniversalArguments const *>(arguments_ptr), compressor_utility, device_a_compressed_ptr, device_e_ptr );
 
@@ -418,7 +421,7 @@ public:
 
     Operator *op = static_cast<Operator *>(host_workspace);
     // We need to call initialize() since we have to rebuild TMA desc for every new set of args
-    status = op->run(operator_args, device_op_workspace_ptr, stream);
+    status = op->run(operator_args, device_op_workspace_ptr, stream, nullptr, launch_with_pdl);
     return status;
   }
 
@@ -426,9 +429,7 @@ private:
   // Variables that must change in the const functions.
   mutable CompressorUtility compressor_utility;
   mutable int problem_count = 1;
-  mutable int iter_idx = 0;
-
-  uint8_t* device_full_ptr = nullptr;
+  mutable std::vector<int> iter_idx;
 
   mutable uint64_t tensor_ac_size = 0;
   mutable uint64_t tensor_e_size = 0;

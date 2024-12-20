@@ -95,7 +95,6 @@ struct NumericConverter {
 //
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-#if defined(__CUDA_ARCH__)
 template <>
 struct NumericConverter<int32_t, float, FloatRoundStyle::round_to_nearest> {
 
@@ -103,50 +102,17 @@ struct NumericConverter<int32_t, float, FloatRoundStyle::round_to_nearest> {
   using source_type = float;
   static FloatRoundStyle const round_style = FloatRoundStyle::round_to_nearest;
 
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   static result_type convert(source_type const & s) {
+    #if __CUDA_ARCH__
     return __float2int_rn(s);
-  }
-
-  CUTLASS_DEVICE
-  result_type operator()(source_type const &s) const {
-    return convert(s);
-  }
-};
-
-template <>
-struct NumericConverter<int32_t, float, FloatRoundStyle::round_toward_zero> {
-
-  using result_type = int32_t;
-  using source_type = float;
-  static FloatRoundStyle const round_style = FloatRoundStyle::round_toward_zero;
-
-  CUTLASS_DEVICE
-  static result_type convert(source_type const & s) {
-
-    return __float2int_rz(s);
-  }
-
-  CUTLASS_DEVICE
-  result_type operator()(source_type const &s) const {
-    return convert(s);
-  }
-};
-
-#elif !defined(__CUDACC_RTC__)
-
-template <>
-struct NumericConverter<int32_t, float, FloatRoundStyle::round_to_nearest> {
-
-  using result_type = int32_t;
-  using source_type = float;
-  static FloatRoundStyle const round_style = FloatRoundStyle::round_to_nearest;
-
-  static result_type convert(source_type const & s) {
+    #elif !defined(__CUDACC_RTC__)
     std::fesetround(FE_TONEAREST);
-    return (result_type)std::nearbyint(s);
+    return static_cast<result_type>(std::nearbyint(s));
+    #endif
   }
 
+  CUTLASS_HOST_DEVICE
   result_type operator()(source_type const &s) const {
     return convert(s);
   }
@@ -159,16 +125,21 @@ struct NumericConverter<int32_t, float, FloatRoundStyle::round_toward_zero> {
   using source_type = float;
   static FloatRoundStyle const round_style = FloatRoundStyle::round_toward_zero;
 
+  CUTLASS_HOST_DEVICE
   static result_type convert(source_type const & s) {
+    #if __CUDA_ARCH__
+    return __float2int_rz(s);
+    #elif !defined(__CUDACC_RTC__)
     std::fesetround(FE_TOWARDZERO);
     return (result_type)std::nearbyint(s);
+    #endif
   }
 
+  CUTLASS_HOST_DEVICE
   result_type operator()(source_type const &s) const {
     return convert(s);
   }
 };
-#endif
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 //
@@ -176,7 +147,6 @@ struct NumericConverter<int32_t, float, FloatRoundStyle::round_toward_zero> {
 //
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-#if defined(__CUDA_ARCH__)
 template <>
 struct NumericConverter<int8_t, float, FloatRoundStyle::round_to_nearest> {
 
@@ -184,13 +154,21 @@ struct NumericConverter<int8_t, float, FloatRoundStyle::round_to_nearest> {
   using source_type = float;
   static FloatRoundStyle const round_style = FloatRoundStyle::round_to_nearest;
 
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   static result_type convert(source_type const & s) {
-
+    #if defined(__CUDA_ARCH__)
     int32_t intermediate;
     asm volatile("cvt.rni.sat.s8.f32 %0, %1;" : "=r"(intermediate) : "f"(s));
-
     return static_cast<result_type>(intermediate);
+    #elif !defined(__CUDACC_RTC__)
+    std::fesetround(FE_TONEAREST);
+    int32_t intermediate = (int32_t)std::nearbyint(s);
+    // Low-end saturation
+    intermediate = std::max(intermediate, (int32_t)std::numeric_limits<int8_t>::lowest());
+    // High-end saturation
+    intermediate = std::min(intermediate, (int32_t)std::numeric_limits<int8_t>::max());
+    return static_cast<result_type>(intermediate);
+    #endif
   }
 
   CUTLASS_HOST_DEVICE
@@ -206,16 +184,24 @@ struct NumericConverter<int8_t, float, FloatRoundStyle::round_toward_zero> {
   using source_type = float;
   static FloatRoundStyle const round_style =  FloatRoundStyle::round_toward_zero;
 
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   static result_type convert(source_type const & s) {
-
+    #if defined(__CUDA_ARCH__)
     int32_t intermediate;
     asm volatile("cvt.rzi.sat.s8.f32 %0, %1;" : "=r"(intermediate) : "f"(s));
-
     return static_cast<result_type>(intermediate);
+    #elif !defined(__CUDACC_RTC__)
+    std::fesetround(FE_TOWARDZERO);
+    int32_t intermediate = (int32_t)std::nearbyint(s);
+    // Low-end saturation
+    intermediate = std::max(intermediate, (int32_t)std::numeric_limits<int8_t>::lowest());
+    // High-end saturation
+    intermediate = std::min(intermediate, (int32_t)std::numeric_limits<int8_t>::max());
+    return static_cast<result_type>(intermediate);
+    #endif 
   }
 
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   result_type operator()(source_type const &s) const {
     return convert(s);
   }
@@ -228,13 +214,21 @@ struct NumericConverter<uint8_t, float, FloatRoundStyle::round_to_nearest> {
   using source_type = float;
   static FloatRoundStyle const round_style = FloatRoundStyle::round_to_nearest;
 
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   static result_type convert(source_type const & s) {
-
+    #if defined(__CUDA_ARCH__)
     int32_t intermediate;
     asm volatile("cvt.rni.sat.u8.f32 %0, %1;" : "=r"(intermediate) : "f"(s));
-
     return static_cast<result_type>(intermediate);
+    #elif !defined(__CUDACC_RTC__)
+    std::fesetround(FE_TONEAREST);
+    int32_t intermediate = (int32_t)std::nearbyint(s);
+    // Low-end saturation
+    intermediate = std::max(intermediate, (int32_t)std::numeric_limits<uint8_t>::lowest());
+    // High-end saturation
+    intermediate = std::min(intermediate, (int32_t)std::numeric_limits<uint8_t>::max());
+    return static_cast<result_type>(intermediate);
+    #endif
   }
 
   CUTLASS_HOST_DEVICE
@@ -250,124 +244,28 @@ struct NumericConverter<uint8_t, float, FloatRoundStyle::round_toward_zero> {
   using source_type = float;
   static FloatRoundStyle const round_style =  FloatRoundStyle::round_toward_zero;
 
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   static result_type convert(source_type const & s) {
-
+    #if __CUDA_ARCH__
     int32_t intermediate;
     asm volatile("cvt.rzi.sat.u8.f32 %0, %1;" : "=r"(intermediate) : "f"(s));
-
     return static_cast<result_type>(intermediate);
-  }
-
-  CUTLASS_DEVICE
-  result_type operator()(source_type const &s) const {
-    return convert(s);
-  }
-};
-
-#elif !defined(__CUDACC_RTC__)
-
-template <>
-struct NumericConverter<int8_t, float, FloatRoundStyle::round_to_nearest> {
-
-  using result_type = int8_t;
-  using source_type = float;
-  static FloatRoundStyle const round_style = FloatRoundStyle::round_to_nearest;
-
-  static result_type convert(source_type const & s) {
-    std::fesetround(FE_TONEAREST);
-    int32_t intermediate = (int32_t)std::nearbyint(s);
-
-    // Low-end saturation
-    intermediate = std::max(intermediate, (int32_t)std::numeric_limits<int8_t>::lowest());
-
-    // High-end saturation
-    intermediate = std::min(intermediate, (int32_t)std::numeric_limits<int8_t>::max());
-
-    return static_cast<result_type>(intermediate);
-  }
-
-  result_type operator()(source_type const &s) const {
-    return convert(s);
-  }
-};
-
-template <>
-struct NumericConverter<int8_t, float, FloatRoundStyle::round_toward_zero> {
-
-  using result_type = int8_t;
-  using source_type = float;
-  static FloatRoundStyle const round_style =  FloatRoundStyle::round_toward_zero;
-
-  static result_type convert(source_type const & s) {
+    #elif !defined(__CUDACC_RTC__)
     std::fesetround(FE_TOWARDZERO);
     int32_t intermediate = (int32_t)std::nearbyint(s);
-
-    // Low-end saturation
-    intermediate = std::max(intermediate, (int32_t)std::numeric_limits<int8_t>::lowest());
-
-    // High-end saturation
-    intermediate = std::min(intermediate, (int32_t)std::numeric_limits<int8_t>::max());
-
-    return static_cast<result_type>(intermediate);
-  }
-
-  result_type operator()(source_type const &s) const {
-    return convert(s);
-  }
-};
-
-template <>
-struct NumericConverter<uint8_t, float, FloatRoundStyle::round_to_nearest> {
-
-  using result_type = uint8_t;
-  using source_type = float;
-  static FloatRoundStyle const round_style = FloatRoundStyle::round_to_nearest;
-
-  static result_type convert(source_type const & s) {
-    std::fesetround(FE_TONEAREST);
-    int32_t intermediate = (int32_t)std::nearbyint(s);
-
     // Low-end saturation
     intermediate = std::max(intermediate, (int32_t)std::numeric_limits<uint8_t>::lowest());
-
     // High-end saturation
     intermediate = std::min(intermediate, (int32_t)std::numeric_limits<uint8_t>::max());
-
     return static_cast<result_type>(intermediate);
+    #endif
   }
 
+  CUTLASS_HOST_DEVICE
   result_type operator()(source_type const &s) const {
     return convert(s);
   }
 };
-
-template <>
-struct NumericConverter<uint8_t, float, FloatRoundStyle::round_toward_zero> {
-
-  using result_type = uint8_t;
-  using source_type = float;
-  static FloatRoundStyle const round_style =  FloatRoundStyle::round_toward_zero;
-
-  static result_type convert(source_type const & s) {
-    std::fesetround(FE_TOWARDZERO);
-    int32_t intermediate = (int32_t)std::nearbyint(s);
-
-    // Low-end saturation
-    intermediate = std::max(intermediate, (int32_t)std::numeric_limits<uint8_t>::lowest());
-
-    // High-end saturation
-    intermediate = std::min(intermediate, (int32_t)std::numeric_limits<uint8_t>::max());
-
-    return static_cast<result_type>(intermediate);
-  }
-
-  result_type operator()(source_type const &s) const {
-    return convert(s);
-  }
-};
-
-#endif
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 //
@@ -3281,88 +3179,88 @@ namespace detail {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-#if defined(__CUDA_ARCH__)
-/// Partial specialization for Array<int8_t, 8> <= Array<int4b_t, 8>
-template <
-  FloatRoundStyle Round
->
-struct NumericArrayConverter<int8_t, int4b_t, 8, Round> {
-
-  using result_type = Array<int8_t, 8>;
-  using source_type = Array<int4b_t, 8>;
-  static FloatRoundStyle const round_style = Round;
-
-  CUTLASS_DEVICE
-  static result_type convert(source_type const & source) {
-
-    unsigned const& storage = reinterpret_cast<unsigned const &>(source);
-    unsigned out[2];
-
-    asm volatile(
-        "{\n"
-        "  .reg .u32 tmp0, tmp1, tmp2;\n"
-        "  shl.b32 tmp0, %2, 4;\n"                // tmp0 = x1x2x3x4x5x6x7__
-        "  and.b32 tmp0, tmp0, 0xf0f0f0f0;\n"     // tmp0 = x1__x3__x5__x7__
-        "  prmt.b32 tmp1, tmp0, tmp0, 0xba98;\n"  // tmp1 = s1s3s5s7
-        "  and.b32 tmp1, tmp1, 0xf0f0f0f0;\n"     // tmp1 = s1__s3__s5__s7__
-        "  shr.u32 tmp0, tmp0, 4;\n"              // tmp0 = __x1__x3__x5__x7
-        "  or.b32 tmp2, tmp0, tmp1;\n"            // tmp2 = y1y3y5y7
-        "  and.b32 tmp0, %2, 0xf0f0f0f0;\n"       // tmp0 = x0__x2__x4__x6__
-        "  prmt.b32 tmp1, tmp0, tmp0, 0xba98;\n"  // tmp1 = s0s2s4s6
-        "  and.b32 tmp1, tmp1, 0xf0f0f0f0;\n"     // tmp1 = s0__s2__s4__s6__
-        "  shr.u32 tmp0, tmp0, 4;\n"              // tmp0 = __x0__x2__x4__x6
-        "  or.b32 tmp0, tmp0, tmp1;\n"            // tmp0 = y0y2y4y6
-        "  prmt.b32 %0, tmp2, tmp0, 0x5140;\n"    // %0 = y0y1y2y3
-        "  prmt.b32 %1, tmp2, tmp0, 0x7362;\n"    // %1 = y4y5y6y7
-        "}\n"
-        : "=r"(out[0]), "=r"(out[1])
-        : "r"(storage));
-
-    return reinterpret_cast<result_type const &>(out);
-  }
-
-  CUTLASS_DEVICE
-  result_type operator()(source_type const &s) const {
-    return convert(s);
-  }
-};
-
 /// Partial specialization for Array<int8_t> <= Array<int4b_t>
 template <
   int N,
   FloatRoundStyle Round
 >
 struct NumericArrayConverter<int8_t, int4b_t, N, Round> {
-  static_assert(!(N % 8), "N must be multiple of 8.");
+
+  static_assert(N % 8 == 0, "N must be a multiple of 8");
 
   using result_type = Array<int8_t, N>;
   using source_type = Array<int4b_t, N>;
   static FloatRoundStyle const round_style = Round;
 
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   static result_type convert(source_type const & source) {
+   
+    #if defined(__CUDA_ARCH__)
 
-    NumericArrayConverter<int8_t, int4b_t, 8, Round> convert_vector_;
+    if constexpr ( N == 8 ) {
+      
+      unsigned const& storage = reinterpret_cast<unsigned const &>(source);
+      unsigned out[2];
 
-    result_type result;
+      asm volatile(
+          "{\n"
+          "  .reg .u32 tmp0, tmp1, tmp2;\n"
+          "  shl.b32 tmp0, %2, 4;\n"                // tmp0 = x1x2x3x4x5x6x7__
+          "  and.b32 tmp0, tmp0, 0xf0f0f0f0;\n"     // tmp0 = x1__x3__x5__x7__
+          "  prmt.b32 tmp1, tmp0, tmp0, 0xba98;\n"  // tmp1 = s1s3s5s7
+          "  and.b32 tmp1, tmp1, 0xf0f0f0f0;\n"     // tmp1 = s1__s3__s5__s7__
+          "  shr.u32 tmp0, tmp0, 4;\n"              // tmp0 = __x1__x3__x5__x7
+          "  or.b32 tmp2, tmp0, tmp1;\n"            // tmp2 = y1y3y5y7
+          "  and.b32 tmp0, %2, 0xf0f0f0f0;\n"       // tmp0 = x0__x2__x4__x6__
+          "  prmt.b32 tmp1, tmp0, tmp0, 0xba98;\n"  // tmp1 = s0s2s4s6
+          "  and.b32 tmp1, tmp1, 0xf0f0f0f0;\n"     // tmp1 = s0__s2__s4__s6__
+          "  shr.u32 tmp0, tmp0, 4;\n"              // tmp0 = __x0__x2__x4__x6
+          "  or.b32 tmp0, tmp0, tmp1;\n"            // tmp0 = y0y2y4y6
+          "  prmt.b32 %0, tmp2, tmp0, 0x5140;\n"    // %0 = y0y1y2y3
+          "  prmt.b32 %1, tmp2, tmp0, 0x7362;\n"    // %1 = y4y5y6y7
+          "}\n"
+          : "=r"(out[0]), "=r"(out[1])
+          : "r"(storage));
 
-    Array<int8_t, 8> *result_ptr = reinterpret_cast<Array<int8_t, 8> *>(&result);
-    Array<int4b_t, 8> const *source_ptr = reinterpret_cast<Array<int4b_t, 8> const *>(&source);
-
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < N / 8; ++i) {
-      result_ptr[i] = convert_vector_(source_ptr[i]);
+      return reinterpret_cast<result_type const &>(out);
+      
+    } else {
+      
+      NumericArrayConverter<int8_t, int4b_t, 8, Round> convert_vector_;
+      
+      result_type result;
+      
+      Array<int8_t, 8> *result_ptr = reinterpret_cast<Array<int8_t, 8> *>(&result);
+      Array<int4b_t, 8> const *source_ptr = reinterpret_cast<Array<int4b_t, 8> const *>(&source);
+      
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 0; i < N / 8; ++i) {
+        result_ptr[i] = convert_vector_(source_ptr[i]);
+      }
+      
+      return result;
     }
-
+    
+    #else
+    
+    result_type result;
+    NumericConverter<int8_t, int4b_t, Round> convert_;
+    
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = convert_(source[i]);
+    }
+    
     return result;
+    
+    #endif // __CUDA_ARCH__
   }
 
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   result_type operator()(source_type const &s) const {
     return convert(s);
   }
 };
-#endif // defined(__CUDA_ARCH__)
 
 /// Partial specialization for Array<cutlass::float_e4m3_t, N> <= Array<cutlass::int4b_t, N>
 template <FloatRoundStyle Round, int N>

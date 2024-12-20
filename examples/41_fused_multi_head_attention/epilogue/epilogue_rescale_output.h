@@ -43,11 +43,7 @@
 
 #pragma once
 
-#if defined(__CUDACC_RTC__)
 #include <cuda/std/cassert>
-#else
-#include <assert.h>
-#endif
 
 #include "cutlass/aligned_buffer.h"
 #include "cutlass/array.h"
@@ -57,16 +53,12 @@
 #include "cutlass/layout/vector.h"
 #include "cutlass/numeric_types.h"
 #include "cutlass/tensor_coord.h"
-
 #include "cutlass/gemm/gemm.h"
-
 #include "cutlass/transform/pitch_linear_thread_map.h"
 #include "cutlass/transform/threadblock/regular_tile_iterator.h"
-
 #include "cutlass/epilogue/threadblock/epilogue_base.h"
 #include "cutlass/epilogue/threadblock/predicated_tile_iterator.h"
 #include "cutlass/numeric_types.h"
-
 #include "cutlass/array.h"
 #include "cutlass/cutlass.h"
 #include "cutlass/epilogue/thread/scale_type.h"

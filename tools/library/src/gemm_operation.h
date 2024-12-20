@@ -296,7 +296,12 @@ public:
     void const *arguments_ptr,
     void *host_workspace, 
     void *device_workspace = nullptr, 
-    cudaStream_t stream = nullptr) const {
+    cudaStream_t stream = nullptr,
+    bool launch_with_pdl = false) const {
+
+    if (launch_with_pdl) {
+      return Status::kErrorNotSupported;
+    }
 
     OperatorArguments args;
 
@@ -500,7 +505,12 @@ public:
     void const *arguments_ptr,
     void *host_workspace, 
     void *device_workspace = nullptr, 
-    cudaStream_t stream = nullptr) const {
+    cudaStream_t stream = nullptr,
+    bool launch_with_pdl = false) const {
+
+    if (launch_with_pdl) {
+      return Status::kErrorNotSupported;
+    }
 
     OperatorArguments args;
 
@@ -721,7 +731,12 @@ public:
     void const *arguments_ptr,
     void *host_workspace, 
     void *device_workspace = nullptr, 
-    cudaStream_t stream = nullptr) const {
+    cudaStream_t stream = nullptr,
+    bool launch_with_pdl = false) const {
+
+    if (launch_with_pdl) {
+      return Status::kErrorNotSupported;
+    }
 
     OperatorArguments args;
     
@@ -930,7 +945,12 @@ public:
     void const *arguments_ptr,
     void *host_workspace,
     void *device_workspace = nullptr,
-    cudaStream_t stream = nullptr) const {
+    cudaStream_t stream = nullptr,
+    bool launch_with_pdl = false) const {
+    
+    if (launch_with_pdl) {
+      return Status::kErrorNotSupported;
+    }
 
     OperatorArguments args;
 
@@ -1133,7 +1153,12 @@ public:
     void const *arguments_ptr,
     void *host_workspace, 
     void *device_workspace = nullptr, 
-    cudaStream_t stream = nullptr) const {
+    cudaStream_t stream = nullptr,
+    bool launch_with_pdl = false) const {
+    
+    if (launch_with_pdl) {
+      return Status::kErrorNotSupported;
+    }
 
     OperatorArguments args;
     
@@ -1337,7 +1362,12 @@ public:
     void const *arguments_ptr,
     void *host_workspace,
     void *device_workspace = nullptr,
-    cudaStream_t stream = nullptr) const {
+    cudaStream_t stream = nullptr,
+    bool launch_with_pdl = false) const {
+
+    if (launch_with_pdl) {
+      return Status::kErrorNotSupported;
+    }
 
     OperatorArguments args;
 

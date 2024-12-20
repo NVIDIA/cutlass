@@ -214,6 +214,14 @@ make_smem_ptr(void const* ptr) {
   return make_smem_ptr(recast_ptr<T const>(ptr));
 }
 
+// nullptr_t overload for make_smem_ptr<float>(nullptr) disambiguation
+template <class T>
+CUTE_HOST_DEVICE constexpr
+auto
+make_smem_ptr(decltype(nullptr)) { // nullptr_t
+  return make_smem_ptr(recast_ptr<T>(nullptr));
+}
+
 // The smem tag is invariant over type-recast
 template <class NewT, class P>
 CUTE_HOST_DEVICE constexpr

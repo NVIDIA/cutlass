@@ -51,19 +51,14 @@ naive_cooperative_copy(uint32_t                     const& tid,
                        Tensor<SrcEngine, SrcLayout> const& src,
                        Tensor<DstEngine, DstLayout>      & dst)
 {
-  auto N = size(src);
-  if (tid < N) {
-    uint32_t upper_bound = (N / NumThreads) * NumThreads;
-    CUTE_UNROLL
-    for (uint32_t i = 0; i < upper_bound; i += NumThreads) {   // All in-bounds
-      dst[tid + i] = src[tid + i];
-    }
-    if (N % NumThreads != 0) {                                 // Likely static condition
-      uint32_t final_idx = tid + upper_bound;
-      if (final_idx < N) {                                     // Final in-bounds
-        dst[final_idx] = src[final_idx];
-      }
-    }
+  auto N = size(dst);
+  auto R = N % Int<NumThreads>{};
+  if (R > 0 && tid < R) {                                             // Likely static condition && Residue in-bounds
+    dst[tid] = src[tid];
+  }
+  CUTE_UNROLL
+  for (uint32_t i = uint32_t(R); i < uint32_t(N); i += NumThreads) {  // All in-bounds
+    dst[tid + i] = src[tid + i];
   }
 }
 
@@ -117,12 +112,14 @@ heuristic_permutation(Tensor<AEngine, ALayout> const& a,
 //
 template <uint32_t NumThreads, uint32_t MaxVecBits,
           class SrcEngine, class SrcLayout,
-          class DstEngine, class DstLayout>
+          class DstEngine, class DstLayout,
+          class CopyPolicy = DefaultCopy>
 CUTE_HOST_DEVICE
 void
 cooperative_copy(uint32_t                     const& tid,
                  Tensor<SrcEngine, SrcLayout> const& src,
-                 Tensor<DstEngine, DstLayout>      & dst)
+                 Tensor<DstEngine, DstLayout>      & dst,
+                 CopyPolicy                   const& cpy = {})
 {
   // Assumes the shapes are static, can generalize/fallback
   CUTE_STATIC_ASSERT_V(is_static<decltype(shape(src))>{} && is_static<decltype(shape(dst))>{});
@@ -283,23 +280,28 @@ cooperative_copy(uint32_t                     const& tid,
 
     // If we're using all threads (static) or the tid is in-range (dynamic)
     if (vec_thrs == NumThreads or tid < vec_thrs) {
-      return copy_if(TrivialPredTensor{}, recast<VecType const>(src_v), recast<VecType>(dst_v));
+      auto src_c = recast<VecType const>(src_v);
+      auto dst_c = recast<VecType>(dst_v);
+      return copy(cpy, src_c, dst_c);
     }
   }
 }
 
+
 // Default max-vectorization size to value_type size
 template <uint32_t NumThreads,
           class SrcEngine, class SrcLayout,
-          class DstEngine, class DstLayout>
+          class DstEngine, class DstLayout,
+          class CopyPolicy = DefaultCopy>
 CUTE_HOST_DEVICE
 void
 cooperative_copy(uint32_t                     const& tid,
                  Tensor<SrcEngine, SrcLayout> const& src,
-                 Tensor<DstEngine, DstLayout>      & dst)
+                 Tensor<DstEngine, DstLayout>      & dst,
+                 CopyPolicy                   const& cpy = {})
 {
   constexpr uint32_t MaxVecBits = sizeof_bits_v<typename SrcEngine::value_type>;
-  return cooperative_copy<NumThreads, MaxVecBits>(tid, src, dst);
+  return cooperative_copy<NumThreads, MaxVecBits>(tid, src, dst, cpy);
 }
 
 //
@@ -308,26 +310,30 @@ cooperative_copy(uint32_t                     const& tid,
 
 template <uint32_t NumThreads,
           class SrcEngine, class SrcLayout,
-          class DstEngine, class DstLayout>
+          class DstEngine, class DstLayout,
+          class CopyPolicy = DefaultCopy>
 CUTE_HOST_DEVICE
 void
 cooperative_copy(uint32_t                     const& tid,
                  Tensor<SrcEngine, SrcLayout> const& src,
-                 Tensor<DstEngine, DstLayout>     && dst)
+                 Tensor<DstEngine, DstLayout>     && dst,
+                 CopyPolicy                   const& cpy = {})
 {
-  return cooperative_copy<NumThreads>(tid, src, dst);
+  return cooperative_copy<NumThreads>(tid, src, dst, cpy);
 }
 
 template <uint32_t NumThreads, uint32_t MaxVecBits,
           class SrcEngine, class SrcLayout,
-          class DstEngine, class DstLayout>
+          class DstEngine, class DstLayout,
+          class CopyPolicy = DefaultCopy>
 CUTE_HOST_DEVICE
 void
 cooperative_copy(uint32_t                     const& tid,
                  Tensor<SrcEngine, SrcLayout> const& src,
-                 Tensor<DstEngine, DstLayout>     && dst)
+                 Tensor<DstEngine, DstLayout>     && dst,
+                 CopyPolicy                   const& cpy = {})
 {
-  return cooperative_copy<NumThreads, MaxVecBits>(tid, src, dst);
+  return cooperative_copy<NumThreads, MaxVecBits>(tid, src, dst, cpy);
 }
 
 } // end namespace cute

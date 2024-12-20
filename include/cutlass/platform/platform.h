@@ -106,7 +106,11 @@
 #include <cuda/std/cstdint>
 #include <cuda/std/limits>
 #else
-#include <stdint.h>
+#include <type_traits>
+#include <utility>
+#include <cstddef>
+#include <cstdint>
+#include <limits>
 #endif
 
 #if !defined(__CUDACC_RTC__)
@@ -132,6 +136,10 @@
 //-----------------------------------------------------------------------------
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32) && !defined(__CYGWIN__)
 #define CUTLASS_OS_WINDOWS
+#endif
+
+#if defined(__clang__) && defined(__CUDA__)
+#define CUTLASS_CLANG_CUDA 1
 #endif
 
 /******************************************************************************
@@ -298,30 +306,13 @@ namespace platform {
 
 #if defined(__CUDACC_RTC__) || (!defined(_MSC_VER) && (__cplusplus < 201103L)) || (defined(_MSC_VER) && (_MSC_VER < 1500))
 
-/// std::integral_constant
-template <typename value_t, value_t V>
-struct integral_constant;
-
-/// std::integral_constant
-template <typename value_t, value_t V>
-struct integral_constant {
-  static const value_t value = V;
-
-  typedef value_t value_type;
-  typedef integral_constant<value_t, V> type;
-
-  CUTLASS_HOST_DEVICE operator value_type() const { return value; }
-
-  CUTLASS_HOST_DEVICE const value_type operator()() const { return value; }
-};
-
 #else
 
-using std::integral_constant;
 using std::pair;
 
 #endif
 
+using CUTLASS_STL_NAMESPACE::integral_constant;
 using CUTLASS_STL_NAMESPACE::bool_constant;
 using CUTLASS_STL_NAMESPACE::true_type;
 using CUTLASS_STL_NAMESPACE::false_type;

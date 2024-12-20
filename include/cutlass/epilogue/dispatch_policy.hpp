@@ -50,6 +50,7 @@ struct EpilogueSimtVectorized {};
 struct EpiloguePtrArraySimtVectorized {};
 struct NoSmemWarpSpecialized {};
 struct PtrArrayNoSmemWarpSpecialized {};
+struct PtrArrayNoSmemWarpSpecializedTransposed {};
 struct PtrArrayPlanarComplexNoSmemWarpSpecialized {};
 struct TmaWarpSpecialized {};
 struct TmaWarpSpecializedCooperative {};

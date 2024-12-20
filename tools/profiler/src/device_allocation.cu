@@ -290,9 +290,8 @@ DeviceAllocation::DeviceAllocation():
   capacity_(0),
   pointer_(nullptr),
   layout_(library::LayoutTypeID::kUnknown),
-  batch_count_(1),
-  device_(-1) {
-
+  batch_count_(1) {
+  cudaGetDevice(&device_);
 }
 
 DeviceAllocation::DeviceAllocation(
@@ -329,13 +328,33 @@ DeviceAllocation::DeviceAllocation(
 
 DeviceAllocation::~DeviceAllocation() {
   if (pointer_) {
+    int current_device;
+    cudaGetDevice(&current_device);
+
+    if (current_device != device_) {
+      cudaSetDevice(device_);
+    }
     cudaFree(pointer_);
+
+    if (current_device != device_) {
+      cudaSetDevice(current_device);
+    }
   }
 }
 
 DeviceAllocation &DeviceAllocation::reset() {
   if (pointer_) {
+    int current_device;
+    cudaGetDevice(&current_device);
+
+    if (current_device != device_) {
+      cudaSetDevice(device_);
+    }
     cudaFree(pointer_);
+
+    if (current_device != device_) {
+      cudaSetDevice(current_device);
+    }
   }
 
   type_ = library::NumericTypeID::kInvalid;
@@ -2438,25 +2457,11 @@ void DeviceAllocation::fill_host(double val = 0.0) {
 
 cudaError_t DeviceAllocation::malloc(void** ptr, size_t size) {
   cudaError_t result;
-  int set_device_back_to = -1;
+  int current_device;
+  cudaGetDevice(&current_device);
 
-  /// When needed this sets the device to the allocation's device remembering
-  /// the current device so that it can be set back after the cudaMalloc is
-  /// performed.
-  if (device_ >= 0) {
-    int current_device;
-    result = cudaGetDevice(&current_device);
-    if (result != cudaSuccess) {
-      return result;
-    }
-
-    if (current_device != device_) {
-      set_device_back_to = current_device;
-      result = cudaSetDevice(device_);
-      if (result != cudaSuccess) {
-        return result;
-      }
-    }
+  if (current_device != device_) {
+    cudaSetDevice(device_);
   }
 
   // This performs the cudaMalloc
@@ -2465,13 +2470,8 @@ cudaError_t DeviceAllocation::malloc(void** ptr, size_t size) {
     return result;
   }
 
-  /// When needed this sets the device back to what it was when the function was
-  /// called.
-  if (set_device_back_to != -1) {
-    result = cudaSetDevice(set_device_back_to);
-    if (result != cudaSuccess) {
-      return result;
-    }
+  if (current_device != device_) {
+    cudaSetDevice(current_device);
   }
 
   return cudaSuccess;

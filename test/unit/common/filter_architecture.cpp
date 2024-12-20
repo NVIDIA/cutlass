@@ -87,7 +87,6 @@ void FilterArchitecture() {
               << " [" << cudaGetErrorString(err) << "]" << std::endl;
     exit(1);
   }
-
   cudaDeviceProp deviceProperties;
   err = cudaGetDeviceProperties(&deviceProperties, cudaDeviceId);
   if (cudaSuccess != err) {

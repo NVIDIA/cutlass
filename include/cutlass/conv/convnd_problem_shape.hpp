@@ -319,6 +319,7 @@ struct ConvProblemShape {
   // |   ShapeB     | KTRSC  | KTRSC  | NDHWC |
   // |   ShapeC     | NZPQK  | NDHWC  | KTRSC |
   //
+  // Input comes from calculate_xformed_act, which does NOT depend on ConvOp.
   CUTLASS_HOST_DEVICE
   constexpr void
   set_shape_stride_ABC(
@@ -328,6 +329,31 @@ struct ConvProblemShape {
     TensorStride stride_flt,
     TensorExtent shape_xformed_act,
     TensorStride stride_xformed_act) {
+#if defined(CUTLASS_DEBUG_TRACE_LEVEL) && (CUTLASS_DEBUG_TRACE_LEVEL > 1)
+    printf("*** set_shape_stride_ABC ***");
+    printf("\n  shape_act: ");
+    print(shape_act);
+    printf("\n  stride_act: ");
+    print(stride_act);
+    printf("\n  shape_flt: ");
+    print(shape_flt);
+    printf("\n  stride_flt: ");
+    print(stride_flt);
+    printf("\n  shape_xformed_act: ");
+    print(shape_xformed_act);
+    printf("\n  stride_xformed_act: ");
+    print(stride_xformed_act);
+    if constexpr (ConvOp == cutlass::conv::Operator::kFprop) {
+      printf("\n  ConvOp: Fprop");
+    }
+    if constexpr (ConvOp == cutlass::conv::Operator::kDgrad) {
+      printf("\n  ConvOp: Dgrad");
+    }
+    if constexpr (ConvOp == cutlass::conv::Operator::kWgrad) {
+      printf("\n  ConvOp: Wgrad");
+    }
+    printf("\n");
+#endif
 
     if constexpr (ConvOp == cutlass::conv::Operator::kFprop) {
       shape_A = shape_act;
@@ -353,6 +379,20 @@ struct ConvProblemShape {
       shape_C = shape_flt;
       stride_C = stride_flt;
     }
+#if defined(CUTLASS_DEBUG_TRACE_LEVEL) && (CUTLASS_DEBUG_TRACE_LEVEL > 1)
+    printf("\n  shape_A: ");
+    print(shape_A);
+    printf("\n  stride_A: ");
+    print(stride_A);
+    printf("\n  shape_B: ");
+    print(shape_B);
+    printf("\n  stride_B: ");
+    print(stride_B);
+    printf("\n  shape_C: ");
+    print(shape_C);
+    printf("\n  stride_C: ");
+    print(stride_C);
+#endif
   }
 
   // Get A extents.

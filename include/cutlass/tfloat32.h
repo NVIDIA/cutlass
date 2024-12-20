@@ -40,6 +40,7 @@
 #include <cmath>
 #include <limits>
 #include <cstdint>
+#include <cstring> // std::memcpy
 #endif
 
 #include "cutlass/cutlass.h"

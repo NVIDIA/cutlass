@@ -72,6 +72,10 @@ template <> struct NumericTypeMap<cutlass::uint1b_t> {
   static NumericTypeID const kId = NumericTypeID::kB1;
 };
 
+template <> struct NumericTypeMap<cutlass::int2b_t> {
+  static NumericTypeID const kId = NumericTypeID::kS2;
+};
+
 template <> struct NumericTypeMap<cutlass::int4b_t> {
   static NumericTypeID const kId = NumericTypeID::kS4;
 };
@@ -90,6 +94,10 @@ template <> struct NumericTypeMap<int32_t> {
 
 template <> struct NumericTypeMap<int64_t> {
   static NumericTypeID const kId = NumericTypeID::kS64;
+};
+
+template <> struct NumericTypeMap<cutlass::uint2b_t> {
+  static NumericTypeID const kId = NumericTypeID::kU2;
 };
 
 template <> struct NumericTypeMap<cutlass::uint4b_t> {

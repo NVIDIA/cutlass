@@ -60,6 +60,7 @@
 #include "cutlass/util/packed_stride.hpp"                            // cutlass::make_cute_packed_stride
 #include "cutlass/util/reference/host/tensor_compare.h"              // cutlass::reference::host::TensorEquals
 #include "cutlass/util/reference/host/tensor_fill.h"  // cutlass::reference::host::TensorFillRandomUniform, TensorFillIdentity, TensorFillRandomGaussian, BlockFillSequential, TensorFill
+#include "cutlass/detail/collective.hpp"
 
 #include "sm90_sparse_gemm_compressor_legacy.hpp"     // Legacy host compressor
 #include "../../common/cutlass_unit_test.h"           // CUTLASS UT, EXPECT_TRUE

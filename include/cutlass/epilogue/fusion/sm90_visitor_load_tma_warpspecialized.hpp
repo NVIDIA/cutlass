@@ -734,11 +734,12 @@ private:
 // Supports reduction over multiple broadcasts to support fusions such as fp8 scaling factors
 template<
   class Element,
-  class StrideMNL = Stride<_0,_0,_0>,
+  class StrideMNL_ = Stride<_0,_0,_0>,
   int BroadcastCount = 1,
   template <class> class ReductionFn = multiplies
 >
 struct Sm90ScalarBroadcastPtrArray {
+  using StrideMNL = StrideMNL_;
   static_assert(is_static_v<decltype(take<0,2>(StrideMNL{}))>); // batch stride can be dynamic or static
   static_assert(take<0,2>(StrideMNL{}) == Stride<_0,_0>{});
 
@@ -780,8 +781,8 @@ struct Sm90ScalarBroadcastPtrArray {
 
   CUTLASS_DEVICE bool
   is_producer_load_needed() const {
-    // producer load is needed if Element is not void and we have multiple scalars
-    return !cute::is_void_v<Element> and size<2>(params_ptr->dScalar[0]) != 0;
+    // producer load is needed if Element is not void
+    return !cute::is_void_v<Element>;
   }
 
   CUTLASS_DEVICE bool
@@ -814,7 +815,7 @@ struct Sm90ScalarBroadcastPtrArray {
   CUTLASS_DEVICE auto
   get_producer_load_callbacks(ProducerLoadArgs<Args...> const& args) {
     // Get the scalar for batched broadcast
-    if (get<2>(params_ptr->dScalar[0]) != 0) {
+    if (size<2>(params_ptr->dScalar[0]) != 0) {
       auto [m_coord, n_coord, k_coord, l_coord] = args.tile_coord_mnkl;
       update_scalar(l_coord);
     }
@@ -1375,6 +1376,171 @@ struct Sm90ColBroadcast {
 
     return ConsumerStoreCallbacks(tCgCol, tCrCol, args.tCcD, args.residue_tCcD, params);
   }
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// Do outer product from the column and row loaded
+//
+template<
+  int Stages,
+  class CtaTileShapeMNK,
+  class ElementScalar,
+  class StrideColMNL_ = Stride<_1,_0,int64_t>, /// NOTE: Batched scaling untested for now
+  class StrideRowMNL_ = Stride<_0,_1,int64_t>,
+  int Alignment = 128 / sizeof_bits_v<ElementScalar>,
+  bool EnableNullptr = false // Fallback scalar broadcast for nullptr params
+>
+struct Sm90OuterProduct {
+  using StrideColMNL = StrideColMNL_;
+  using StrideRowMNL = StrideRowMNL_;
+  static_assert(Stages == 0, "OuterProduct doesn't support smem usage");
+  static_assert(Alignment * sizeof_bits_v<ElementScalar> % 128 == 0, "sub-16B alignment not supported yet");
+  static_assert(!EnableNullptr, "Nullptr fallback not implemented");
+  static_assert(is_static_v<decltype(take<0,2>(StrideColMNL{}))> &&
+                is_static_v<decltype(take<0,2>(StrideRowMNL{}))>, "Only batch stride can be dynamic");
+  static_assert(take<0,2>(StrideColMNL{}) == Stride<_1,_0>{} &&
+                take<0,2>(StrideRowMNL{}) == Stride<_0,_1>{}, "Row and column incorrectly formatted");
+
+  // Accumulator distributes col/row elements evenly amongst threads so we can just directly load from gmem
+  struct SharedStorage { };
+
+  struct Arguments {
+    ElementScalar const* ptr_col = nullptr;
+    ElementScalar const* ptr_row = nullptr;
+    StrideColMNL dCol = {};
+    StrideRowMNL dRow = {};
+  };
+
+  using Params = Arguments;
+
+  template <class ProblemShape>
+  static constexpr Params
+  to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
+    return args;
+  }
+
+  template <class ProblemShape>
+  static bool
+  can_implement(ProblemShape const& problem_shape, Arguments const& args) {
+    return true;
+  }
+
+  template <class ProblemShape>
+  static size_t
+  get_workspace_size(ProblemShape const& problem_shape, Arguments const& args) {
+    return 0;
+  }
+
+  template <class ProblemShape>
+  static cutlass::Status
+  initialize_workspace(ProblemShape const& problem_shape, Arguments const& args, void* workspace, cudaStream_t stream,
+    CudaHostAdapter* cuda_adapter = nullptr) {
+    return cutlass::Status::kSuccess;
+  }
+
+  CUTLASS_DEVICE bool
+  is_producer_load_needed() const {
+    return false;
+  }
+
+  CUTLASS_DEVICE bool
+  is_C_load_needed() const {
+    return false;
+  }
+
+  CUTLASS_DEVICE bool
+  is_zero() const {
+    return false;
+  }
+
+  CUTLASS_HOST_DEVICE
+  Sm90OuterProduct() { }
+
+  CUTLASS_HOST_DEVICE
+  Sm90OuterProduct(Params const& params, SharedStorage const& shared_storage)
+  : params(params) { }
+
+  Params params;
+
+  template <class... Args>
+  CUTLASS_DEVICE auto
+  get_producer_load_callbacks(ProducerLoadArgs<Args...> const& args) {
+    return EmptyProducerLoadCallbacks{};
+  }
+
+  template<
+    class GTensorCol, class RTensorCol,
+    class GTensorRow, class RTensorRow
+  >
+  struct ConsumerStoreCallbacks : EmptyConsumerStoreCallbacks {
+    CUTLASS_DEVICE
+    ConsumerStoreCallbacks(GTensorCol&& tCgCol, RTensorCol&& tCrCol,
+                           GTensorRow&& tCgRow, RTensorRow&& tCrRow,
+                           Params const& params)
+      : tCgCol(cute::forward<GTensorCol>(tCgCol))
+      , tCrCol(cute::forward<RTensorCol>(tCrCol))
+      , tCgRow(cute::forward<GTensorRow>(tCgRow))
+      , tCrRow(cute::forward<RTensorRow>(tCrRow))
+      , params(params) {}
+
+    GTensorCol tCgCol;                                                                 // (CPY,CPY_M,CPY_N,EPI_M,EPI_N)
+    RTensorCol tCrCol;                                                                 // (CPY,CPY_M,CPY_N,EPI_M,EPI_N)
+    GTensorRow tCgRow;                                                                 // (CPY,CPY_M,CPY_N,EPI_M,EPI_N)
+    RTensorRow tCrRow;                                                                 // (CPY,CPY_M,CPY_N,EPI_M,EPI_N)
+    Params const& params;
+
+    CUTLASS_DEVICE void
+    begin() {
+
+      // Filter so we don't issue redundant copies over stride-0 modes
+      copy(filter(tCgCol), filter(tCrCol));
+      copy(filter(tCgRow), filter(tCrRow));
+    }
+
+    template <typename ElementAccumulator, int FragmentSize>
+    CUTLASS_DEVICE Array<ElementScalar, FragmentSize>
+    visit(Array<ElementAccumulator, FragmentSize> const& frg_acc, int epi_v, int epi_m, int epi_n) {
+      Array<ElementScalar, FragmentSize> frg_colrow;
+      Tensor tCrCol_mn = tCrCol(_,_,_,epi_m,epi_n);
+      Tensor tCrRow_mn = tCrRow(_,_,_,epi_m,epi_n);
+
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 0; i < FragmentSize; ++i) {
+        frg_colrow[i] = static_cast<ElementScalar>(tCrCol_mn(epi_v * FragmentSize + i) * tCrRow_mn(epi_v * FragmentSize + i));
+      }
+      return frg_colrow;
+    }
+
+  };
+
+  template <
+    bool ReferenceSrc, // do register tensors reference the src or dst layout of the tiled copy
+    class... Args
+  >
+  CUTLASS_DEVICE auto
+  get_consumer_store_callbacks(ConsumerStoreArgs<Args...> const& args) {
+
+    auto [M, N, K, L] = args.problem_shape_mnkl;
+    Tensor mCol = make_tensor(make_gmem_ptr(params.ptr_col), make_shape(M,N,L), params.dCol);
+    Tensor mRow = make_tensor(make_gmem_ptr(params.ptr_row), make_shape(M,N,L), params.dRow);
+    Tensor tCgCol = sm90_partition_for_epilogue<ReferenceSrc>(                         // (CPY,CPY_M,CPY_N,EPI_M,EPI_N)
+      mCol, args.tile_shape_mnk, args.tile_coord_mnkl, args.epi_tile, args.tiled_copy, args.thread_idx);
+    Tensor tCgRow = sm90_partition_for_epilogue<ReferenceSrc>(                         // (CPY,CPY_M,CPY_N,EPI_M,EPI_N)
+      mRow, args.tile_shape_mnk, args.tile_coord_mnkl, args.epi_tile, args.tiled_copy, args.thread_idx);
+    Tensor tCrCol = make_tensor_like(tCgCol);                                          // (CPY,CPY_M,CPY_N,EPI_M,EPI_N)
+    Tensor tCrRow = make_tensor_like(tCgRow);                                          // (CPY,CPY_M,CPY_N,EPI_M,EPI_N)
+
+    return ConsumerStoreCallbacks<
+      decltype(tCgCol), decltype(tCrCol),
+      decltype(tCgRow), decltype(tCrRow)
+    >(
+      cute::move(tCgCol), cute::move(tCrCol),
+      cute::move(tCgRow), cute::move(tCrRow),
+      params
+    );
+  }
+
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

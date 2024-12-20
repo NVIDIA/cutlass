@@ -619,7 +619,6 @@ int main(int argc, char const **args) {
       << "later (compute capability 90 or greater).\n";
     return 0;
   }
-
   //
   // Parse options
   //
