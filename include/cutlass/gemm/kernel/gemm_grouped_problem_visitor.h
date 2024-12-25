@@ -68,7 +68,7 @@ struct GemmGroupedProblemSizeHelper {
   CUTLASS_HOST_DEVICE
   static void possibly_transpose_problem(cutlass::gemm::GemmCoord& problem) {
     if (kTransposed) {
-      swap(problem.m(), problem.n());
+      cutlass::swap(problem.m(), problem.n());
     }
   }
 

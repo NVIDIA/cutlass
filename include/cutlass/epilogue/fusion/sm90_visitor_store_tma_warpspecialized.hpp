@@ -937,7 +937,7 @@ public:
             for (int v = 0; v < size(frg_A); ++v) {
               // Step1: swap
               if (not (lane_m & m)) { // the first half of threads swap fragments from the first half of data to the second
-                swap(frg_A(v), frg_B(v));
+                cutlass::swap(frg_A(v), frg_B(v));
               }
 
               // Step2: shuffle

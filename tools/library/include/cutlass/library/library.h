@@ -103,7 +103,6 @@ public:
     void *device_workspace = nullptr,
     cudaStream_t stream = nullptr) const = 0;
 
-  // Originally designed for metadata, but should be useful for FP8/6/4 too.
   virtual Status initialize_with_profiler_workspace(
     void const *configuration,
     void *host_workspace,
