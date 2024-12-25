@@ -154,13 +154,6 @@ operator*(C<c>, R<a,b>) {
   return {};
 }
 
-template <auto c, auto a, auto b>
-CUTE_HOST_DEVICE constexpr
-typename R<c*b,a>::type
-operator/(C<c>, R<a,b>) {
-  return {};
-}
-
 // Product with dynamic type needs to produce an integer...
 template <class C, auto a, auto b,
           __CUTE_REQUIRES(cute::is_std_integral<C>::value)>
@@ -177,6 +170,13 @@ CUTE_HOST_DEVICE constexpr
 auto
 operator*(R<a,b>, C const& c) {
   return c * R<a,b>::num / R<a,b>::den;
+}
+
+template <class C, auto a, auto b>
+CUTE_HOST_DEVICE constexpr
+auto
+operator/(C const& c, R<a,b>) {
+  return c * R<b,a>{};
 }
 
 template <auto a, auto b, auto x, auto y>
@@ -200,6 +200,10 @@ operator+(C<c>, R<a,b>) {
   return {};
 }
 
+/////////////////
+// Comparisons //
+/////////////////
+
 template <auto a, auto b, auto x, auto y>
 CUTE_HOST_DEVICE constexpr
 bool_constant<R<a,b>::num == R<x,y>::num && R<a,b>::den == R<x,y>::den>
@@ -218,6 +222,31 @@ template <auto c, auto a, auto b>
 CUTE_HOST_DEVICE constexpr
 bool_constant<R<a,b>::num == c && R<a,b>::den == 1>
 operator==(C<c>, R<a,b>) {
+  return {};
+}
+
+///////////////////////
+// Special functions //
+///////////////////////
+
+template <auto a, auto b, auto x, auto y>
+CUTE_HOST_DEVICE constexpr
+typename R<gcd(a*y,b*x),b*x>::type
+gcd(R<a,b>, R<x,y>) {
+  return {};
+}
+
+template <auto a, auto b, auto c>
+CUTE_HOST_DEVICE constexpr
+typename R<gcd(a,b*c),b*c>::type
+gcd(R<a,b>, C<c>) {
+  return {};
+}
+
+template <auto c, auto a, auto b>
+CUTE_HOST_DEVICE constexpr
+typename R<gcd(a,b*c),b*c>::type
+gcd(C<c>, R<a,b>) {
   return {};
 }
 

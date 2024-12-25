@@ -43,7 +43,7 @@ class gen_test:
 
     def gen_cpp_sample(self):
         code = "/* Auto Generated code - Do not edit.*/\n"
-        code +=  "#include <stdio.h> \n"
+        code +=  "#include <cstdio> \n"
 
         code += "#include \"cutlass/gemm/device/gemm_batched.h\" \n"
         code += "#include \"cutlass/cutlass.h\" \n"

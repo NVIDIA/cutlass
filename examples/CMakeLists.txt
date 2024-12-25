@@ -143,8 +143,10 @@ foreach(EXAMPLE
   61_hopper_gemm_with_topk_and_softmax
   62_hopper_sparse_gemm
   63_hopper_gemm_with_weight_prefetch
+  64_ada_fp8_gemm_grouped
   )
 
   add_subdirectory(${EXAMPLE})
 
 endforeach()
+

@@ -90,7 +90,7 @@ class CompilationOptions:
             opts.append(f"--include-path={incl}")
 
         arch_flag = f"-arch=sm_{self.arch}"
-        if self.arch == 90:
+        if self.arch == 90 and int(cutlass.nvcc_version().split('.')[0]) >= 12:
             arch_flag += "a"
         opts.append(arch_flag)
 
@@ -237,7 +237,7 @@ class ArtifactManager:
                 if incl not in includes:
                     includes.append(incl)
 
-        includes_host = ["builtin_types.h", "device_launch_parameters.h", "stddef.h"] + includes
+        includes_host = ["builtin_types.h", "device_launch_parameters.h", "cstddef"] + includes
         for incl in includes:
             source_buffer_device += SubstituteTemplate(
                 IncludeTemplate,

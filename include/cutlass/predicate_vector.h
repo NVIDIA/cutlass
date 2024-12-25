@@ -35,15 +35,14 @@
 #pragma once
 
 #if defined(__CUDACC_RTC__)
-#include <cuda/std/cassert>
 #include <cuda/std/cstdint>
 #else
-#include <assert.h>
-#include <stdint.h>
+#include <cstdint>
 #endif
 
-#include "cutlass/cutlass.h"
+#include <cuda/std/cassert>
 
+#include "cutlass/cutlass.h"
 #include "cutlass/platform/platform.h"
 
 namespace cutlass {

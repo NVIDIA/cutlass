@@ -237,7 +237,7 @@ struct LayoutAwareConvertImpl<
   }
 };
 
-// Specialization for UINT4 -> FPF16 with [02461357] value order
+// Specialization for UINT4 -> FP16 with [02461357] value order
 template <>
 struct LayoutAwareConvertImpl<
   cutlass::uint4b_t,
@@ -754,7 +754,6 @@ public:
     cute::tuple<Ts...>& partitioned_extra_info,
     int const k_block) {
 
-    
     static_assert(is_rmem<EngineIn>::value, "Input tensor for A conversion must come from registers");
     static_assert(is_rmem<EngineOut>::value, "Output tensor for A conversion must come from registers");
     static_assert(cosize_v<LayoutIn> == cosize_v<LayoutOut>);
@@ -805,14 +804,15 @@ public:
         {
           auto&& scale_neg_ = reinterpret_cast<cutlass::Array<uint32_t, 2> const&>(scales_neg_vm_(i));
           auto&& scale_pos_ = reinterpret_cast<cutlass::Array<uint32_t, 2>      &>(scales_pos_vm_(i));
+          constexpr uint32_t immLut = (0xf0 & 0xcc) ^ 0xaa;
           asm volatile(
               "{\n"
-              "  and  .b32 %0, %2, %4             ;\n" \
-              "  and  .b32 %1, %3, %5             ;\n" \
+              "  lop3 .b32 %0, %2, %4, %5, %6;\n" \
+              "  xor  .b32 %1, %3, %5;        \n" \
               "}\n"
               : "=r"(scale_pos_[0]), "=r"(scale_pos_[1])
-              : "r"(scale_neg_[0]), "r"(scale_neg_[1]), "n"(0x7F7F7F00), "n"(0x7F7F7F7F)
-              );
+              : "r"(scale_neg_[0]), "r"(scale_neg_[1]), "n"(0xFFFFFF00), "n"(0x80808080), "n"(immLut)
+            );
         }
       }
       CUTLASS_PRAGMA_UNROLL

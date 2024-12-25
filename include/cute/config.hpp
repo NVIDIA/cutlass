@@ -100,7 +100,7 @@
 
 #if defined(_MSC_VER)
 // Provides support for alternative operators 'and', 'or', and 'not'
-#  include <iso646.h>
+#  include <ciso646>
 #endif // _MSC_VER
 
 #if defined(__CUDACC_RTC__)

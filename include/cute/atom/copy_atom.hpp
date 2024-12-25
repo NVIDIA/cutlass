@@ -100,16 +100,16 @@ struct Copy_Atom<Copy_Traits<Args...>, CopyInternalType>
     if constexpr (is_constant<NumValSrc, decltype(size(src))>::value ||
                   is_constant<NumValDst, decltype(size(dst))>::value) {
       // Dispatch to unpack to execute instruction
-      return copy_unpack(*this, src, dst);
-    } else
-    if constexpr (is_tuple<decltype(shape(src))>::value &&
-                  is_tuple<decltype(shape(dst))>::value) {
+      return copy_unpack(static_cast<Traits const&>(*this), src, dst);
+    } else if constexpr (is_tuple<decltype(shape(src))>::value &&
+                         is_tuple<decltype(shape(dst))>::value) {
       // If the size of the src/dst doesn't match the instruction,
       //   recurse this rank-1 layout by peeling off the mode
       //   ((A,B,C,...)) -> (A,B,C,...)
       return copy(*this, tensor<0>(src), tensor<0>(dst));
     } else {
-      static_assert(dependent_false<SEngine>, "No instruction match and no recursion possible.");
+      static_assert(dependent_false<SEngine>,
+                    "CopyAtom: Src/Dst partitioning does not match the instruction requirement.");
     }
   }
 

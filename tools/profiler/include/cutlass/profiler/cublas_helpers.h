@@ -304,7 +304,7 @@ struct cublasLtGemmExDispatcher {
     ); 
 
   /// Executes GEMM using these arguments
-  cublasStatus_t operator()(cublasLtHandle_t handle);
+  cublasStatus_t operator()(cublasLtHandle_t handle, cudaStream_t stream = nullptr);
 
   ~cublasLtGemmExDispatcher(){
 

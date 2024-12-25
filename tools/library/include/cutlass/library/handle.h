@@ -72,6 +72,8 @@ private:
   /// Pointer to the most recently executed operation
   Operation const *last_operation_;
 
+  int device_idx_;
+
 public:
 
   /// Constructor

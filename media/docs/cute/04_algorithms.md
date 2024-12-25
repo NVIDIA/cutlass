@@ -100,7 +100,7 @@ void
 copy(Tensor<TA, ALayout> const& src,  // Any logical shape
      Tensor<TB, BLayout>      & dst)  // Any logical shape
 {
-  for (int i = 0; i < size(src); ++i) {
+  for (int i = 0; i < size(dst); ++i) {
     dst(i) = src(i);
   }
 }

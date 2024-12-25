@@ -771,7 +771,7 @@ bool SymmOperationProfiler::profile(
     symm_workspace_.arguments.pointer_mode = library::ScalarPointerMode::kHost;
 
     results_.back().status = profile_cutlass_(
-      results_.back().runtime,
+      results_.back(),
       options,
       operation,
       &symm_workspace_.arguments,

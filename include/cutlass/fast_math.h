@@ -38,7 +38,7 @@
 #include <cmath>
 #include <type_traits>
 #endif
-
+#include <cuda/std/utility>
 #include "cutlass/cutlass.h"
 #include "cutlass/array.h"
 #include "cutlass/uint128.h"
@@ -54,12 +54,7 @@ namespace cutlass {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename T>
-CUTLASS_HOST_DEVICE void swap(T &lhs, T &rhs) {
-  T tmp = lhs;
-  lhs = rhs;
-  rhs = tmp;
-}
+using ::cuda::std::swap;
 
 /******************************************************************************
  * Static math utilities

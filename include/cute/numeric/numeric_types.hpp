@@ -46,6 +46,7 @@ template <class T>
 static constexpr auto sizeof_bits_v = sizeof_bits<T>::value;
 
 using cutlass::bits_to_bytes;
+using cutlass::bytes_to_bits;
 
 using cutlass::is_subbyte;
 

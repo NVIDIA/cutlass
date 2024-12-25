@@ -35,6 +35,8 @@
 
 #pragma once
 
+#include <cutlass/detail/helper_macros.hpp> // CUTLASS_DEVICE
+
 namespace cutlass {
 
 /// Used to determine the real-valued underlying type of a numeric type T.

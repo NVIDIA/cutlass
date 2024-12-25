@@ -1053,8 +1053,8 @@ float_e5m2_t::float_e5m2_t(float_e4m3_t x) {
 /// datatype in runtime argument list.
 ///
 /// Currently supported runtime datatypes compatible with type_erased_dynamic_float8_t:
-///   QMMAFormat::E5M2
-///   QMMAFormat::E4M3
+///   MXF8F6F4Format::E5M2
+///   MXF8F6F4Format::E4M3
 ///
 ///////////////////////////////////////////////////////////////
 

@@ -192,7 +192,12 @@ public:
     void const *arguments,
     void *host_workspace,
     void *device_workspace = nullptr,
-    cudaStream_t stream = nullptr) const {
+    cudaStream_t stream = nullptr,
+    bool launch_with_pdl = false) const {
+
+    if (launch_with_pdl) {
+      return Status::kErrorNotSupported;
+    }
 
     GemmUniversalConfiguration const &config = *static_cast<GemmUniversalConfiguration const *>(host_workspace);
     GemmUniversalArguments const &args = *static_cast<GemmUniversalArguments const *>(arguments);

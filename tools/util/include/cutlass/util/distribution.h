@@ -100,6 +100,9 @@ struct Distribution {
     gaussian.mean = _mean;
     gaussian.stddev = _stddev;
     gaussian.pnz = _pnz;
+    gaussian.pnzA = _pnz;
+    gaussian.pnzB = _pnz;
+    gaussian.pnzC = _pnz;
     int_scale = _int_scale;
     return *this;
   }
