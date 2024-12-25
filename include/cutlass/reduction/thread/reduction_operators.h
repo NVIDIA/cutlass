@@ -172,7 +172,7 @@ struct ReduceArrayOperation<logical_and<uint1b_t>, uint1b_t, N> {
       item = (item || !bits);
     }
 
-    return uint1b_t(!item);
+    return uint1b_t{!item};
   }
 };
 
@@ -195,7 +195,7 @@ struct ReduceArrayOperation<logical_or<uint1b_t>, uint1b_t, N> {
       item = (item || bits);
     }
 
-    return uint1b_t(item);
+    return uint1b_t{item};
   }
 };
 

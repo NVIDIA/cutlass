@@ -104,7 +104,7 @@ TEST(CuTe_core, Inverse_left)
   auto layout = Layout<Shape <_8, _4>,
                        Stride<_4, _1>>{};
 
-  test_left_inverse(filter(layout));
+  test_left_inverse(layout);
   }
 
   {

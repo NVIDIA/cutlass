@@ -57,14 +57,12 @@ Handle::Handle(
   scalar_pointer_mode_(ScalarPointerMode::kHost),
   last_operation_(nullptr) {
 
-  int device_idx = -1;
-
-  cudaError_t error = cudaGetDevice(&device_idx);
+  cudaError_t error = cudaGetDevice(&device_idx_);
   if (error != cudaSuccess) {
     throw std::runtime_error("cudaGetDevice() failed");
   }
 
-  error = cudaGetDeviceProperties(&device_, device_idx);
+  error = cudaGetDeviceProperties(&device_, device_idx_);
   if (error != cudaSuccess) {
     throw std::runtime_error("cudaGetDeviceProperties() failed");
   }
@@ -78,8 +76,14 @@ Handle::Handle(
 Handle::~Handle() {
   if (workspace_) {
 
-    if (workspace_) {
-      cudaFree(workspace_);
+    int device_before;
+    cudaGetDevice(&device_before);
+    if (device_before != device_idx_) {
+      cudaSetDevice(device_idx_);
+    }
+    cudaFree(workspace_);
+    if (device_before != device_idx_) {
+      cudaSetDevice(device_before);
     }
 
     workspace_ = nullptr;
@@ -89,6 +93,10 @@ Handle::~Handle() {
 
 /// Move constructor
 Handle::Handle(Handle && handle) {
+  cudaError_t error = cudaGetDevice(&device_idx_);
+  if (error != cudaSuccess) {
+    throw std::runtime_error("cudaGetDevice() failed");
+  }
   device_ = handle.device_;
   workspace_size_ = handle.workspace_size_;
   workspace_ = handle.workspace_;
@@ -111,6 +119,8 @@ Handle & Handle::operator=(Handle && handle) {
 
   handle.workspace_ = nullptr;
   handle.workspace_size_ = 0;
+
+  device_idx_ = handle.device_idx_;
 
   return *this;
 }
@@ -151,6 +161,12 @@ void *Handle::get_workspace() const {
 
 /// Sets the size of device workspace, invalidating previous calls to get_device_workspace()
 void Handle::set_workspace_size(size_t bytes) {
+  int device_before;
+  cudaGetDevice(&device_before);
+  if (device_before != device_idx_) {
+    cudaSetDevice(device_idx_);
+  }
+
   if (bytes != workspace_size_) {
 
     if (workspace_) {
@@ -176,6 +192,9 @@ void Handle::set_workspace_size(size_t bytes) {
     if (error != cudaSuccess) {
       throw std::runtime_error("Failed to clear workspace");
     }
+  }
+  if (device_before != device_idx_) {
+    cudaSetDevice(device_before);
   }
 }
 

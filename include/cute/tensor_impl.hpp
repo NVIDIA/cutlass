@@ -84,6 +84,8 @@ struct ArrayEngine
 };
 
 // Specialization for sparse_elem<S,T> tensor allocation/iteration
+// NOTE: This can and should be used for allocation of SMEM as well!
+//       Fuse these two ArrayEngines?
 template <int S, class T, size_t N>
 struct ArrayEngine<sparse_elem<S,T>, N>
 {
@@ -856,6 +858,17 @@ max_common_layout(Tensor<SrcEngine,SrcLayout> const& a,
   }
 
   CUTE_GCC_UNREACHABLE;
+}
+
+/* Return the maximum (statically known) alignment of a Tensor in the number of bits
+ */
+template <class Engine, class Layout>
+CUTE_HOST_DEVICE constexpr
+auto
+max_alignment(Tensor<Engine,Layout> const& t)
+{
+  return gcd(max_alignment(t.data()),
+             max_alignment(t.layout()) * static_value<sizeof_bits<typename Engine::value_type>>());
 }
 
 //

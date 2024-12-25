@@ -69,14 +69,12 @@ test2(double const* g_in, double* g_out)
 
   copy(g_tensor, s_tensor);
 
-  cp_async_fence();
-  cp_async_wait<0>();
   __syncthreads();
 
   g_out[threadIdx.x] = 2 * smem[threadIdx.x];
 }
 
-TEST(SM80_CuTe_Ampere, CpAsync)
+TEST(SM80_CuTe_Ampere, CpSync)
 {
   constexpr int count = 32;
   thrust::host_vector<double> h_in(count);

@@ -40,6 +40,7 @@
 
 #include "cutlass/core_io.h"
 #include <cuda_runtime_api.h>
+#include <cuda/atomic>
 
 #include "cutlass/profiler/cublas_helpers.h"
 #include "cutlass/profiler/gemm_operation_profiler.h"
@@ -195,9 +196,6 @@ Status GemmOperationProfiler::GemmProblem::parse(
   if (!arg_as_int(this->swizzle_size, "swizzle_size", problem_space, problem)) {
     // default value
     this->swizzle_size = 1;
-    if (this->swizzle_size <= 0) {
-      return Status::kErrorInvalidProblem;
-    }
   }
 
   if (!arg_as_RasterOrder(this->raster_order, "raster_order", problem_space, problem)) {
@@ -371,31 +369,49 @@ Status GemmOperationProfiler::initialize_configuration(
     return status;
   }
 
-  gemm_workspace_.configuration.mode = problem_.mode;
-  gemm_workspace_.configuration.problem_size.m() = int(problem_.m);
-  gemm_workspace_.configuration.problem_size.n() = int(problem_.n);
-  gemm_workspace_.configuration.problem_size.k() = int(problem_.k);
-  gemm_workspace_.configuration.lda = problem_.lda;
-  gemm_workspace_.configuration.ldb = problem_.ldb;
-  gemm_workspace_.configuration.ldc = problem_.ldc;
-  gemm_workspace_.configuration.ldd = problem_.ldc;
+  const auto device_count = options.device.devices.size();
 
-  if (problem_.mode == library::GemmUniversalMode::kBatched) {
-    gemm_workspace_.configuration.batch_count = problem_.batch_count;
-  }
-  else {
-    gemm_workspace_.configuration.batch_count = problem_.split_k_slices;
+  gemm_workspace_.clear();
+
+  for (size_t i = 0; i < device_count; ++i) {
+    cudaSetDevice(options.device.device_id(i));
+    gemm_workspace_.emplace_back();
+    cudaStreamCreateWithFlags(&gemm_workspace_[i].stream, cudaStreamNonBlocking);
+    gemm_workspace_[i].configuration.mode = problem_.mode;
+    gemm_workspace_[i].configuration.problem_size.m() = int(problem_.m);
+    gemm_workspace_[i].configuration.problem_size.n() = int(problem_.n);
+    gemm_workspace_[i].configuration.problem_size.k() = int(problem_.k);
+    gemm_workspace_[i].configuration.lda = problem_.lda;
+    gemm_workspace_[i].configuration.ldb = problem_.ldb;
+    gemm_workspace_[i].configuration.ldc = problem_.ldc;
+    gemm_workspace_[i].configuration.ldd = problem_.ldc;
+
+    gemm_workspace_[i].configuration.device_count = static_cast<int>(device_count);
+    gemm_workspace_[i].arguments.device_index = static_cast<int>(i);
+
+    if (problem_.mode == library::GemmUniversalMode::kBatched) {
+      gemm_workspace_[i].configuration.batch_count = problem_.batch_count;
+    }
+    else {
+      gemm_workspace_[i].configuration.batch_count = problem_.split_k_slices;
+    }
+
+    gemm_workspace_[i].arguments.A = nullptr;
+    gemm_workspace_[i].arguments.B = nullptr;
+    gemm_workspace_[i].arguments.C = nullptr;
+    gemm_workspace_[i].arguments.D = nullptr;
+    gemm_workspace_[i].arguments.alpha = problem_.alpha.data();
+    gemm_workspace_[i].arguments.beta = problem_.beta.data();
+    gemm_workspace_[i].arguments.pointer_mode = library::ScalarPointerMode::kHost;
+    gemm_workspace_[i].arguments.swizzle_size = problem_.swizzle_size;
+    gemm_workspace_[i].arguments.raster_order = problem_.raster_order;
+    initialize_result_(this->model_result_, options, operation_desc, problem_space);
+
+    if (const auto can_implement = operation->can_implement(&gemm_workspace_[i].configuration, &gemm_workspace_[i].arguments); can_implement != Status::kSuccess) {
+      return can_implement;
+    }
   }
 
-  gemm_workspace_.arguments.A = nullptr;
-  gemm_workspace_.arguments.B = nullptr;
-  gemm_workspace_.arguments.C = nullptr;
-  gemm_workspace_.arguments.D = nullptr;
-  gemm_workspace_.arguments.alpha = problem_.alpha.data();
-  gemm_workspace_.arguments.beta = problem_.beta.data();
-  gemm_workspace_.arguments.pointer_mode = library::ScalarPointerMode::kHost;
-  gemm_workspace_.arguments.swizzle_size = problem_.swizzle_size;
-  gemm_workspace_.arguments.raster_order = problem_.raster_order;
   // initialize reduction operation for parallel splitKMode
   if (problem_.split_k_mode == library::SplitKMode::kParallel) {
     if (!initialize_reduction_configuration_(operation, problem)) {
@@ -403,9 +419,7 @@ Status GemmOperationProfiler::initialize_configuration(
     }
   }
 
-  initialize_result_(this->model_result_, options, operation_desc, problem_space);
-
-  return operation->can_implement(&gemm_workspace_.configuration, &gemm_workspace_.arguments);
+  return status;
 }
 
 /// Initializes the performance result
@@ -427,6 +441,7 @@ void GemmOperationProfiler::initialize_result_(
   result.bytes = problem_.bytes(operation_desc);
   result.flops = problem_.flops(operation_desc);
   result.runtime = 0;
+  result.runtime_vector.resize(options.device.devices.size(), 0);
 
 }
 
@@ -447,12 +462,14 @@ bool GemmOperationProfiler::initialize_reduction_configuration_(
   }
 
   /// initialize library::ReductionConfiguration
-  gemm_workspace_.reduction_configuration.problem_size      = gemm::GemmCoord(int(problem_.n), int(problem_.m), int(problem_.k)).mn();
-  gemm_workspace_.reduction_configuration.partitions        = int(problem_.split_k_slices);
-  gemm_workspace_.reduction_configuration.partition_stride  = gemm::GemmCoord(int(problem_.n), int(problem_.m), int(problem_.k)).mn().product();
-  gemm_workspace_.reduction_configuration.ldw               = problem_.ldc;
-  gemm_workspace_.reduction_configuration.lds               = problem_.ldc;
-  gemm_workspace_.reduction_configuration.ldd               = problem_.ldc;
+  for (auto &gemm_workspace : gemm_workspace_) {
+    gemm_workspace.reduction_configuration.problem_size      = gemm::GemmCoord(int(problem_.n), int(problem_.m), int(problem_.k)).mn();
+    gemm_workspace.reduction_configuration.partitions        = int(problem_.split_k_slices);
+    gemm_workspace.reduction_configuration.partition_stride  = gemm::GemmCoord(int(problem_.n), int(problem_.m), int(problem_.k)).mn().product();
+    gemm_workspace.reduction_configuration.ldw               = problem_.ldc;
+    gemm_workspace.reduction_configuration.lds               = problem_.ldc;
+    gemm_workspace.reduction_configuration.ldd               = problem_.ldc;
+  }
 
   // find reduction operation
   library::ReductionFunctionalKey reduction_key(
@@ -485,11 +502,6 @@ Status GemmOperationProfiler::initialize_workspace(
   ProblemSpace const &problem_space,
   ProblemSpace::Problem const &problem) {
 
-  if (options.device.devices.size() != 1) {
-    throw std::runtime_error("This operation profiler only supports a single "
-                             "device.");
-  }
-
   cudaError_t result;
   result = cudaSetDevice(options.device.device_id(0));
   if (result != cudaSuccess) {
@@ -509,98 +521,103 @@ Status GemmOperationProfiler::initialize_workspace(
 
   bool is_sparse = operation_desc.tile_description.math_instruction.opcode_class == cutlass::library::OpcodeClassID::kSparseTensorOp;
 
-  // Compute the number of copies of the problem to avoid L2 camping.
-  if (!options.profiling.workspace_count) {
-    int64_t bytes = problem_.bytes(operation_desc);
-    if (bytes < 3 * int64_t(options.device.properties[0].l2CacheSize)) {
-      gemm_workspace_.problem_count =
-        1 + int((3 * int64_t(options.device.properties[0].l2CacheSize)) / bytes);
+  for (size_t i = 0; i < gemm_workspace_.size(); ++i) {
+    cudaSetDevice(options.device.device_id(i));
+
+    // Compute the number of copies of the problem to avoid L2 camping.
+    if (!options.profiling.workspace_count) {
+      int64_t bytes = problem_.bytes(operation_desc);
+      if (bytes < 3 * int64_t(options.device.properties[0].l2CacheSize)) {
+        gemm_workspace_[i].problem_count =
+          1 + int((3 * int64_t(options.device.properties[0].l2CacheSize)) / bytes);
+      }
+      else {
+        gemm_workspace_[i].problem_count = 1;
+      }
     }
     else {
-      gemm_workspace_.problem_count = 1;
+      gemm_workspace_[i].problem_count = options.profiling.workspace_count;
     }
-  }
-  else {
-    gemm_workspace_.problem_count = options.profiling.workspace_count;
-  }
 
-  bool allocate_device_tensors = options.execution_mode != ExecutionMode::kDryRun;
-  if (allocate_device_tensors) {
-    int seed_shift = 0;
-    gemm_workspace_.A = device_context.allocate_and_initialize_tensor(
-      options,
-      "A",
-      operation_desc.A.element,
-      operation_desc.A.layout,
-      {int(problem_.m), int(problem_.k)},
-      {int(problem_.lda)},
-      problem_.batch_count * gemm_workspace_.problem_count,
-      seed_shift++,
-      0 // device_index
-    );
+    bool allocate_device_tensors = options.execution_mode != ExecutionMode::kDryRun;
+    if (allocate_device_tensors) {
+      int seed_shift = 0;
+      gemm_workspace_[i].A = device_context.allocate_and_initialize_tensor(
+        options,
+        "A",
+        operation_desc.A.element,
+        operation_desc.A.layout,
+        {int(problem_.m), int(problem_.k)},
+        {int(problem_.lda)},
+        problem_.batch_count * gemm_workspace_[i].problem_count,
+        seed_shift++,
+        i // device_index
+      );
 
-    gemm_workspace_.B = device_context.allocate_and_initialize_tensor(
-      options,
-      "B",
-      operation_desc.B.element,
-      operation_desc.B.layout,
-      {int(problem_.k), int(problem_.n)},
-      {int(problem_.ldb)},
-      problem_.batch_count * gemm_workspace_.problem_count,
-      seed_shift++,
-      0 // device_index
-    );
+      gemm_workspace_[i].B = device_context.allocate_and_initialize_tensor(
+        options,
+        "B",
+        operation_desc.B.element,
+        operation_desc.B.layout,
+        {int(problem_.k), int(problem_.n)},
+        {int(problem_.ldb)},
+        problem_.batch_count * gemm_workspace_[i].problem_count,
+        seed_shift++,
+        i // device_index
+      );
 
-    gemm_workspace_.C = device_context.allocate_and_initialize_tensor(
-      options,
-      "C",
-      operation_desc.C.element,
-      operation_desc.C.layout,
-      {int(problem_.m), int(problem_.n)},
-      {int(problem_.ldc)},
-      problem_.batch_count * gemm_workspace_.problem_count,
-      seed_shift++,
-      0 // device_index
-    );
+      gemm_workspace_[i].C = device_context.allocate_and_initialize_tensor(
+        options,
+        "C",
+        operation_desc.C.element,
+        operation_desc.C.layout,
+        {int(problem_.m), int(problem_.n)},
+        {int(problem_.ldc)},
+        problem_.batch_count * gemm_workspace_[i].problem_count,
+        seed_shift++,
+        i // device_index
+      );
 
-    gemm_workspace_.Computed = device_context.allocate_tensor(
-      options,
-      "D",
-      operation_desc.D.element,
-      operation_desc.D.layout,
-      {int(problem_.m), int(problem_.n)},
-      {int(problem_.ldc)},
-      problem_.batch_count * gemm_workspace_.problem_count,
-      0 // device_index
-    );
+      gemm_workspace_[i].Computed = device_context.allocate_tensor(
+        options,
+        "D",
+        operation_desc.D.element,
+        operation_desc.D.layout,
+        {int(problem_.m), int(problem_.n)},
+        {int(problem_.ldc)},
+        problem_.batch_count * gemm_workspace_[i].problem_count,
+        i // device_index
+      );
 
-    gemm_workspace_.Reference = device_context.allocate_tensor(
-      options,
-      "Reference",
-      operation_desc.D.element,
-      operation_desc.D.layout,
-      {int(problem_.m), int(problem_.n)},
-      {int(problem_.ldc)},
-      problem_.batch_count * gemm_workspace_.problem_count,
-      0 // device_index
-    );
-  }
+      gemm_workspace_[i].Reference = device_context.allocate_tensor(
+        options,
+        "Reference",
+        operation_desc.D.element,
+        operation_desc.D.layout,
+        {int(problem_.m), int(problem_.n)},
+        {int(problem_.ldc)},
+        problem_.batch_count * gemm_workspace_[i].problem_count,
+        i // device_index
+      );
+    }
 
-  if (options.execution_mode != ExecutionMode::kDryRun) {
-    // NOTE: the leading non-batch strides are duplicated here for 3.0 API kernels
-    gemm_workspace_.arguments.problem_size = {int(problem_.m), int(problem_.n), int(problem_.k)};
-    gemm_workspace_.arguments.batch_count = problem_.batch_count;
-    gemm_workspace_.arguments.lda = problem_.lda;
-    gemm_workspace_.arguments.ldb = problem_.ldb;
-    gemm_workspace_.arguments.ldc = problem_.ldc;
-    gemm_workspace_.arguments.ldd = problem_.ldc;
-    gemm_workspace_.arguments.batch_stride_A = gemm_workspace_.A->batch_stride();
-    gemm_workspace_.arguments.batch_stride_B = gemm_workspace_.B->batch_stride();
-    gemm_workspace_.arguments.batch_stride_C = gemm_workspace_.C->batch_stride();
-    gemm_workspace_.arguments.batch_stride_D = gemm_workspace_.Computed->batch_stride();
+    if (options.execution_mode != ExecutionMode::kDryRun) {
+      // NOTE: the leading non-batch strides are duplicated here for 3.0 API kernels
+      gemm_workspace_[i].arguments.problem_size = {int(problem_.m), int(problem_.n), int(problem_.k)};
+      gemm_workspace_[i].arguments.batch_count = problem_.batch_count;
+      gemm_workspace_[i].arguments.lda = problem_.lda;
+      gemm_workspace_[i].arguments.ldb = problem_.ldb;
+      gemm_workspace_[i].arguments.ldc = problem_.ldc;
+      gemm_workspace_[i].arguments.ldd = problem_.ldc;
+      gemm_workspace_[i].arguments.batch_stride_A = gemm_workspace_[i].A->batch_stride();
+      gemm_workspace_[i].arguments.batch_stride_B = gemm_workspace_[i].B->batch_stride();
+      gemm_workspace_[i].arguments.batch_stride_C = gemm_workspace_[i].C->batch_stride();
+      gemm_workspace_[i].arguments.batch_stride_D = gemm_workspace_[i].Computed->batch_stride();
 
-    /* Query device SM count to pass onto the kernel as an argument, where needed */
-    gemm_workspace_.arguments.sm_count = options.device.properties[0].multiProcessorCount;
+      /* Query device SM count to pass onto the kernel as an argument, where needed */
+      gemm_workspace_[i].arguments.sm_count = options.device.properties[0].multiProcessorCount;
+      gemm_workspace_[i].arguments.device_index = static_cast<int>(i);
+    }
   }
 
   //
@@ -611,56 +628,67 @@ Status GemmOperationProfiler::initialize_workspace(
   if (options.profiling.provider_enabled(library::Provider::kCUTLASS)) {
 
     if (options.execution_mode != ExecutionMode::kDryRun) {
-      uint64_t workspace_size = underlying_operation->get_host_workspace_size(&gemm_workspace_.configuration);
-      gemm_workspace_.host_workspace.resize(workspace_size, 0);
+      for (size_t i = 0; i < gemm_workspace_.size(); ++i) {
+        cudaSetDevice(options.device.device_id(i));
+        uint64_t workspace_size = underlying_operation->get_host_workspace_size(&gemm_workspace_[i].configuration);
+        gemm_workspace_[i].host_workspace.resize(workspace_size, 0);
 
-      workspace_size = underlying_operation->get_device_workspace_size(&gemm_workspace_.configuration,
-                                                            &gemm_workspace_.arguments);
-      if (is_sparse) {
-        // sparse gemm get_device_workspace_size() only return device workspace size per iteration
-        // Needs to multiply it w/ number of iteration
-        workspace_size *= gemm_workspace_.problem_count;
-      }
-      gemm_workspace_.device_workspace.reset(library::NumericTypeID::kU8, workspace_size);
+        workspace_size = underlying_operation->get_device_workspace_size(&gemm_workspace_[i].configuration,
+                                                              &gemm_workspace_[i].arguments);
+        if (is_sparse) {
+          // sparse gemm get_device_workspace_size() only return device workspace size per iteration
+          // Needs to multiply it w/ number of iteration
+          workspace_size *= gemm_workspace_[i].problem_count;
+        }
+        gemm_workspace_[i].device_workspace.reset(library::NumericTypeID::kU8, workspace_size);
 
-      // Convert to structure sparse contents here.
-      if (is_sparse) {
-        uint8_t* profiler_workspaces[1];
-        profiler_workspaces[0] = reinterpret_cast<uint8_t*>(gemm_workspace_.A->data());
-        // Sparse operations have a different initialize interface.
-        // initialize_with_profiler_workspace converts mxk tensorA to compressed mxk/sp tensorA and the tensorE
-        auto modifiable_underlying_op = const_cast<library::Operation*>(underlying_operation);
-        status = modifiable_underlying_op->initialize_with_profiler_workspace(
-          &gemm_workspace_.configuration,
-          gemm_workspace_.host_workspace.data(),
-          gemm_workspace_.device_workspace.data(),
-          profiler_workspaces,
-          gemm_workspace_.problem_count);
-      }
-      else {
-        status = underlying_operation->initialize(
-          &gemm_workspace_.configuration,
-          gemm_workspace_.host_workspace.data(),
-          gemm_workspace_.device_workspace.data());
-      }
-
-      if (status != Status::kSuccess) {
-        return status;
-      }
-
-      if (problem_.split_k_mode == library::SplitKMode::kParallel) {
-        workspace_size = reduction_op_->get_host_workspace_size(&gemm_workspace_.reduction_configuration);
-        gemm_workspace_.reduction_host_workspace.resize(workspace_size, 0);
-
-        status = reduction_op_->initialize(
-          &gemm_workspace_.reduction_configuration,
-          gemm_workspace_.reduction_host_workspace.data(),
-          nullptr);
+        // Convert to structure sparse contents here.
+        if (is_sparse) {
+          uint8_t* profiler_workspaces[1];
+          profiler_workspaces[0] = reinterpret_cast<uint8_t*>(gemm_workspace_[i].A->data());
+          // Sparse operations have a different initialize interface.
+          // initialize_with_profiler_workspace converts mxk tensorA to compressed mxk/sp tensorA and the tensorE
+          auto modifiable_underlying_op = const_cast<library::Operation*>(underlying_operation);
+          status = modifiable_underlying_op->initialize_with_profiler_workspace(
+            &gemm_workspace_[i].configuration,
+            gemm_workspace_[i].host_workspace.data(),
+            gemm_workspace_[i].device_workspace.data(),
+            profiler_workspaces,
+            gemm_workspace_[i].problem_count,
+            gemm_workspace_[i].stream);
+        }
+        else {
+          status = underlying_operation->initialize(
+            &gemm_workspace_[i].configuration,
+            gemm_workspace_[i].host_workspace.data(),
+            gemm_workspace_[i].device_workspace.data(),
+            gemm_workspace_[i].stream);
+        }
 
         if (status != Status::kSuccess) {
           return status;
         }
+
+        if (problem_.split_k_mode == library::SplitKMode::kParallel) {
+          workspace_size = reduction_op_->get_host_workspace_size(&gemm_workspace_[i].reduction_configuration);
+          gemm_workspace_[i].reduction_host_workspace.resize(workspace_size, 0);
+
+          status = reduction_op_->initialize(
+            &gemm_workspace_[i].reduction_configuration,
+            gemm_workspace_[i].reduction_host_workspace.data(),
+            nullptr,
+            gemm_workspace_[i].stream);
+
+          if (status != Status::kSuccess) {
+            return status;
+          }
+        }
       }
+    }
+
+    for (size_t i = 0; i < gemm_workspace_.size(); ++i) {
+      cudaSetDevice(options.device.device_id(i));
+      cudaDeviceSynchronize();
     }
 
     //
@@ -698,29 +726,31 @@ bool GemmOperationProfiler::verify_cutlass(
   }
 
   // Initialize structure containing GEMM arguments
-  gemm_workspace_.arguments.A = gemm_workspace_.A->data();
-  gemm_workspace_.arguments.B = gemm_workspace_.B->data();
-  gemm_workspace_.arguments.C = gemm_workspace_.C->data();
-  gemm_workspace_.arguments.D = gemm_workspace_.Computed->data();
-  gemm_workspace_.arguments.alpha = problem_.alpha.data();
-  gemm_workspace_.arguments.beta = problem_.beta.data();
-  gemm_workspace_.arguments.pointer_mode = library::ScalarPointerMode::kHost;
-  gemm_workspace_.arguments.batch_stride_A = gemm_workspace_.A->batch_stride();
-  gemm_workspace_.arguments.batch_stride_B = gemm_workspace_.B->batch_stride();
-  gemm_workspace_.arguments.batch_stride_C = gemm_workspace_.C->batch_stride();
-  gemm_workspace_.arguments.batch_stride_D = gemm_workspace_.Computed->batch_stride();
+  for (size_t i = 0; i < gemm_workspace_.size(); ++i) {
+    gemm_workspace_[i].arguments.A = gemm_workspace_[i].A->data();
+    gemm_workspace_[i].arguments.B = gemm_workspace_[i].B->data();
+    gemm_workspace_[i].arguments.C = gemm_workspace_[i].C->data();
+    gemm_workspace_[i].arguments.D = gemm_workspace_[i].Computed->data();
+    gemm_workspace_[i].arguments.alpha = problem_.alpha.data();
+    gemm_workspace_[i].arguments.beta = problem_.beta.data();
+    gemm_workspace_[i].arguments.pointer_mode = library::ScalarPointerMode::kHost;
+    gemm_workspace_[i].arguments.batch_stride_A = gemm_workspace_[i].A->batch_stride();
+    gemm_workspace_[i].arguments.batch_stride_B = gemm_workspace_[i].B->batch_stride();
+    gemm_workspace_[i].arguments.batch_stride_C = gemm_workspace_[i].C->batch_stride();
+    gemm_workspace_[i].arguments.batch_stride_D = gemm_workspace_[i].Computed->batch_stride();
 
-  if (problem_.split_k_mode == library::SplitKMode::kParallel) {
-    gemm_workspace_.arguments.D                       = gemm_workspace_.device_workspace.data();
-    gemm_workspace_.arguments.alpha                   = problem_.alpha_one.data();
-    gemm_workspace_.arguments.beta                    = problem_.beta_zero.data();
+    if (problem_.split_k_mode == library::SplitKMode::kParallel) {
+      gemm_workspace_[i].arguments.D                       = gemm_workspace_[i].device_workspace.data();
+      gemm_workspace_[i].arguments.alpha                   = problem_.alpha_one.data();
+      gemm_workspace_[i].arguments.beta                    = problem_.beta_zero.data();
 
-    gemm_workspace_.reduction_arguments.workspace     = gemm_workspace_.device_workspace.data();
-    gemm_workspace_.reduction_arguments.source        = gemm_workspace_.C->data();
-    gemm_workspace_.reduction_arguments.destination   = gemm_workspace_.Computed->data();
-    gemm_workspace_.reduction_arguments.alpha         = problem_.alpha.data();
-    gemm_workspace_.reduction_arguments.beta          = problem_.beta.data();
-    gemm_workspace_.reduction_arguments.pointer_mode  = library::ScalarPointerMode::kHost;
+      gemm_workspace_[i].reduction_arguments.workspace     = gemm_workspace_[i].device_workspace.data();
+      gemm_workspace_[i].reduction_arguments.source        = gemm_workspace_[i].C->data();
+      gemm_workspace_[i].reduction_arguments.destination   = gemm_workspace_[i].Computed->data();
+      gemm_workspace_[i].reduction_arguments.alpha         = problem_.alpha.data();
+      gemm_workspace_[i].reduction_arguments.beta          = problem_.beta.data();
+      gemm_workspace_[i].reduction_arguments.pointer_mode  = library::ScalarPointerMode::kHost;
+    }
   }
 
   //
@@ -737,26 +767,32 @@ bool GemmOperationProfiler::verify_cutlass(
     }
   }
 
-  results_.back().status = underlying_operation->run(
-    &gemm_workspace_.arguments,
-    gemm_workspace_.host_workspace.data(),
-    gemm_workspace_.device_workspace.data());
+  for (size_t i = 0; i < gemm_workspace_.size(); ++i) {
+    cudaSetDevice(options.device.device_id(i));
 
-  if (results_.back().status != Status::kSuccess) {
-    results_.back().disposition = Disposition::kFailed;
-    return false;
-  }
-
-  // Run parallel reduction kernel for parallel split_k_mode
-  if (problem_.split_k_mode == library::SplitKMode::kParallel) {
-    results_.back().status = reduction_op_->run(
-      &gemm_workspace_.reduction_arguments,
-      gemm_workspace_.reduction_host_workspace.data(),
-      nullptr);
+    results_.back().status = underlying_operation->run(
+     &gemm_workspace_[i].arguments,
+     gemm_workspace_[i].host_workspace.data(),
+     gemm_workspace_[i].device_workspace.data(),
+     gemm_workspace_[i].stream);
 
     if (results_.back().status != Status::kSuccess) {
       results_.back().disposition = Disposition::kFailed;
       return false;
+    }
+
+    // Run parallel reduction kernel for parallel split_k_mode
+    if (problem_.split_k_mode == library::SplitKMode::kParallel) {
+      results_.back().status = reduction_op_->run(
+        &gemm_workspace_[i].reduction_arguments,
+        gemm_workspace_[i].reduction_host_workspace.data(),
+        nullptr,
+        gemm_workspace_[i].stream);
+
+      if (results_.back().status != Status::kSuccess) {
+        results_.back().disposition = Disposition::kFailed;
+        return false;
+      }
     }
   }
 
@@ -784,13 +820,17 @@ bool GemmOperationProfiler::verify_cutlass(
       if (cublas_satisfies(gemm_desc) == Status::kSuccess) {
 
         // call cublas verification if supported
-        verify_with_cublas_(
-          options,
-          report,
-          device_context,
-          operation,
-          problem_space,
-          problem);
+        for (size_t i = 0; i < gemm_workspace_.size(); ++i) {
+          cudaSetDevice(options.device.device_id(i));
+          verify_with_cublas_(
+           options,
+           report,
+           device_context,
+           operation,
+           problem_space,
+           problem,
+           gemm_workspace_[i]);
+        }
         }
 
       else {
@@ -852,7 +892,8 @@ bool GemmOperationProfiler::verify_with_cublas_(
   DeviceContext &device_context,
   library::Operation const *operation,
   ProblemSpace const &problem_space,
-  ProblemSpace::Problem const &problem) {
+  ProblemSpace::Problem const &problem,
+  GemmWorkspace &gemm_workspace_) {
 
 #if CUTLASS_ENABLE_CUBLAS
 
@@ -983,115 +1024,119 @@ bool GemmOperationProfiler::verify_with_reference_(
       continue;
     }
 
-    void *ptr_A = gemm_workspace_.A->data();
-    void *ptr_B = gemm_workspace_.B->data();
-    void *ptr_C = gemm_workspace_.C->data();
-    void *ptr_D = gemm_workspace_.Reference->data();
+    for (size_t i = 0; i < gemm_workspace_.size(); ++i) {
+      cudaSetDevice(options.device.device_id(i));
 
-    // To support the host-side reference, conditionally allocate and
-    // copy tensors to host memory.
-    std::vector<uint8_t> host_data_A;
-    std::vector<uint8_t> host_data_B;
-    std::vector<uint8_t> host_data_C;
-    std::vector<uint8_t> host_data_D;
+      void *ptr_A = gemm_workspace_[i].A->data();
+      void *ptr_B = gemm_workspace_[i].B->data();
+      void *ptr_C = gemm_workspace_[i].C->data();
+      void *ptr_D = gemm_workspace_[i].Reference->data();
 
-    if (provider == library::Provider::kReferenceHost) {
+      // To support the host-side reference, conditionally allocate and
+      // copy tensors to host memory.
+      std::vector<uint8_t> host_data_A;
+      std::vector<uint8_t> host_data_B;
+      std::vector<uint8_t> host_data_C;
+      std::vector<uint8_t> host_data_D;
 
-      host_data_A.resize(gemm_workspace_.A->bytes());
-      ptr_A = host_data_A.data();
-      gemm_workspace_.A->copy_to_host(ptr_A);
+      if (provider == library::Provider::kReferenceHost) {
 
-      host_data_B.resize(gemm_workspace_.B->bytes());
-      ptr_B = host_data_B.data();
-      gemm_workspace_.B->copy_to_host(ptr_B);
+        host_data_A.resize(gemm_workspace_[i].A->bytes());
+        ptr_A = host_data_A.data();
+        gemm_workspace_[i].A->copy_to_host(ptr_A);
 
-      host_data_C.resize(gemm_workspace_.C->bytes());
-      ptr_C = host_data_C.data();
-      gemm_workspace_.C->copy_to_host(ptr_C);
+        host_data_B.resize(gemm_workspace_[i].B->bytes());
+        ptr_B = host_data_B.data();
+        gemm_workspace_[i].B->copy_to_host(ptr_B);
 
-      host_data_D.resize(gemm_workspace_.Reference->bytes());
-      ptr_D = host_data_D.data();
-    }
+        host_data_C.resize(gemm_workspace_[i].C->bytes());
+        ptr_C = host_data_C.data();
+        gemm_workspace_[i].C->copy_to_host(ptr_C);
 
-    //
-    // Launch
-    //
+        host_data_D.resize(gemm_workspace_[i].Reference->bytes());
+        ptr_D = host_data_D.data();
+      }
 
-    library::Handle handle;
+      //
+      // Launch
+      //
 
-    handle.set_provider(provider);
+      library::Handle handle;
 
-    Status status = handle.gemm_universal(
-      problem_.mode,
-      gemm_workspace_.configuration.problem_size.m(),
-      gemm_workspace_.configuration.problem_size.n(),
-      gemm_workspace_.configuration.problem_size.k(),
-      gemm_desc.tile_description.math_instruction.element_accumulator,
-      gemm_desc.element_epilogue,
+      handle.set_provider(provider);
 
-      problem_.alpha.data(),
+      Status status = handle.gemm_universal(
+        problem_.mode,
+        gemm_workspace_[i].configuration.problem_size.m(),
+        gemm_workspace_[i].configuration.problem_size.n(),
+        gemm_workspace_[i].configuration.problem_size.k(),
+        gemm_desc.tile_description.math_instruction.element_accumulator,
+        gemm_desc.element_epilogue,
 
-      element_A,
-      gemm_desc.A.layout,
-      gemm_desc.transform_A,
-      ptr_A,
-      int(gemm_workspace_.configuration.lda),
+        problem_.alpha.data(),
 
-      element_B,
-      gemm_desc.B.layout,
-      gemm_desc.transform_B,
-      ptr_B,
-      int(gemm_workspace_.configuration.ldb),
+        element_A,
+        gemm_desc.A.layout,
+        gemm_desc.transform_A,
+        ptr_A,
+        int(gemm_workspace_[i].configuration.lda),
 
-      problem_.beta.data(),
+        element_B,
+        gemm_desc.B.layout,
+        gemm_desc.transform_B,
+        ptr_B,
+        int(gemm_workspace_[i].configuration.ldb),
 
-      gemm_desc.C.element,
-      gemm_desc.C.layout,
-      ptr_C,
-      int(gemm_workspace_.configuration.ldc),
+        problem_.beta.data(),
 
-      gemm_desc.D.element,
-      gemm_desc.D.layout,
-      ptr_D,
-      int(gemm_workspace_.configuration.ldd),
+        gemm_desc.C.element,
+        gemm_desc.C.layout,
+        ptr_C,
+        int(gemm_workspace_[i].configuration.ldc),
 
-      gemm_workspace_.configuration.batch_count,
-      gemm_workspace_.A->batch_stride(),
-      gemm_workspace_.B->batch_stride(),
-      gemm_workspace_.C->batch_stride(),
-      gemm_workspace_.Reference->batch_stride());
+        gemm_desc.D.element,
+        gemm_desc.D.layout,
+        ptr_D,
+        int(gemm_workspace_[i].configuration.ldd),
 
-    if (status != Status::kSuccess) {
-      results_.back().verification_map[provider] = Disposition::kNotRun;
-      continue;
-    }
-    results_.back().status = status;
+        gemm_workspace_[i].configuration.batch_count,
+        gemm_workspace_[i].A->batch_stride(),
+        gemm_workspace_[i].B->batch_stride(),
+        gemm_workspace_[i].C->batch_stride(),
+        gemm_workspace_[i].Reference->batch_stride());
 
-    if (provider == library::Provider::kReferenceHost) {
-      gemm_workspace_.Reference->copy_from_host(ptr_D);
-    }
+      if (status != Status::kSuccess) {
+        results_.back().verification_map[provider] = Disposition::kNotRun;
+        continue;
+      }
+      results_.back().status = status;
 
-    //
-    // Verify results
-    //
+      if (provider == library::Provider::kReferenceHost) {
+        gemm_workspace_[i].Reference->copy_from_host(ptr_D);
+      }
 
-    results_.back().verification_map[provider] = compare_tensors(
-      options,
-      *gemm_workspace_.Computed,
-      *gemm_workspace_.Reference,
-      gemm_workspace_.Computed->batch_stride()
-    );
+      //
+      // Verify results
+      //
 
-    // Save workspace if incorrect
-    if (options.verification.save_workspace == SaveWorkspace::kIncorrect &&
-      results_.back().verification_map[provider] == Disposition::kIncorrect) {
-
-      save_workspace(
-        device_context,
+      results_.back().verification_map[provider] = compare_tensors(
         options,
-        gemm_desc,
-        library::Provider::kCUTLASS,
-        provider);
+        *gemm_workspace_[i].Computed,
+        *gemm_workspace_[i].Reference,
+        gemm_workspace_[i].Computed->batch_stride()
+      );
+
+      // Save workspace if incorrect
+      if (options.verification.save_workspace == SaveWorkspace::kIncorrect &&
+        results_.back().verification_map[provider] == Disposition::kIncorrect) {
+
+        save_workspace(
+          device_context,
+          options,
+          gemm_desc,
+          library::Provider::kCUTLASS,
+          provider);
+        }
     }
   }
 
@@ -1099,6 +1144,18 @@ bool GemmOperationProfiler::verify_with_reference_(
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+
+namespace {
+extern "C" {
+  __global__ void delay(cuda::atomic<bool> const* release) {
+    while (release->load(cuda::memory_order_acquire) != true) {
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 700)
+      __nanosleep(100);
+#endif
+    }
+  }
+}
+}
 
 /// Measures performance results
 bool GemmOperationProfiler::profile(
@@ -1111,39 +1168,41 @@ bool GemmOperationProfiler::profile(
 
   if (options.profiling.provider_enabled(library::Provider::kCUTLASS)) {
 
-    // Initialize structure containing GEMM arguments
-    gemm_workspace_.arguments.A = gemm_workspace_.A->data();
-    gemm_workspace_.arguments.B = gemm_workspace_.B->data();
-    gemm_workspace_.arguments.C = gemm_workspace_.C->data();
-    gemm_workspace_.arguments.D = gemm_workspace_.Computed->data();
-    gemm_workspace_.arguments.alpha = problem_.alpha.data();
-    gemm_workspace_.arguments.beta = problem_.beta.data();
-    gemm_workspace_.arguments.pointer_mode = library::ScalarPointerMode::kHost;
-    gemm_workspace_.arguments.batch_stride_A = gemm_workspace_.A->batch_stride();
-    gemm_workspace_.arguments.batch_stride_B = gemm_workspace_.B->batch_stride();
-    gemm_workspace_.arguments.batch_stride_C = gemm_workspace_.C->batch_stride();
-    gemm_workspace_.arguments.batch_stride_D = gemm_workspace_.Computed->batch_stride();
+    for (size_t i = 0; i < gemm_workspace_.size(); ++i) {
+      // Initialize structure containing GEMM arguments
+      gemm_workspace_[i].arguments.A = gemm_workspace_[i].A->data();
+      gemm_workspace_[i].arguments.B = gemm_workspace_[i].B->data();
+      gemm_workspace_[i].arguments.C = gemm_workspace_[i].C->data();
+      gemm_workspace_[i].arguments.D = gemm_workspace_[i].Computed->data();
+      gemm_workspace_[i].arguments.alpha = problem_.alpha.data();
+      gemm_workspace_[i].arguments.beta = problem_.beta.data();
+      gemm_workspace_[i].arguments.pointer_mode = library::ScalarPointerMode::kHost;
+      gemm_workspace_[i].arguments.batch_stride_A = gemm_workspace_[i].A->batch_stride();
+      gemm_workspace_[i].arguments.batch_stride_B = gemm_workspace_[i].B->batch_stride();
+      gemm_workspace_[i].arguments.batch_stride_C = gemm_workspace_[i].C->batch_stride();
+      gemm_workspace_[i].arguments.batch_stride_D = gemm_workspace_[i].Computed->batch_stride();
 
-    if (problem_.split_k_mode == library::SplitKMode::kParallel) {
-      gemm_workspace_.arguments.D                       = gemm_workspace_.device_workspace.data();
-      gemm_workspace_.arguments.alpha                   = problem_.alpha_one.data();
-      gemm_workspace_.arguments.beta                    = problem_.beta_zero.data();
+      if (problem_.split_k_mode == library::SplitKMode::kParallel) {
+        gemm_workspace_[i].arguments.D                       = gemm_workspace_[i].device_workspace.data();
+        gemm_workspace_[i].arguments.alpha                   = problem_.alpha_one.data();
+        gemm_workspace_[i].arguments.beta                    = problem_.beta_zero.data();
 
-      gemm_workspace_.reduction_arguments.workspace     = gemm_workspace_.device_workspace.data();
-      gemm_workspace_.reduction_arguments.source        = gemm_workspace_.C->data();
-      gemm_workspace_.reduction_arguments.destination   = gemm_workspace_.Computed->data();
-      gemm_workspace_.reduction_arguments.alpha         = problem_.alpha.data();
-      gemm_workspace_.reduction_arguments.beta          = problem_.beta.data();
-      gemm_workspace_.reduction_arguments.pointer_mode  = library::ScalarPointerMode::kHost;
+        gemm_workspace_[i].reduction_arguments.workspace     = gemm_workspace_[i].device_workspace.data();
+        gemm_workspace_[i].reduction_arguments.source        = gemm_workspace_[i].C->data();
+        gemm_workspace_[i].reduction_arguments.destination   = gemm_workspace_[i].Computed->data();
+        gemm_workspace_[i].reduction_arguments.alpha         = problem_.alpha.data();
+        gemm_workspace_[i].reduction_arguments.beta          = problem_.beta.data();
+        gemm_workspace_[i].reduction_arguments.pointer_mode  = library::ScalarPointerMode::kHost;
+      }
     }
 
     results_.back().status = profile_cutlass_(
-      results_.back().runtime,
+      results_.back(),
       options,
       operation,
-      &gemm_workspace_.arguments,
-      gemm_workspace_.host_workspace.data(),
-      gemm_workspace_.device_workspace.data()
+      nullptr,
+      nullptr,
+      nullptr
     );
   }
   return true;
@@ -1153,14 +1212,22 @@ bool GemmOperationProfiler::profile(
 
 /// Method to profile a CUTLASS Operation
 Status GemmOperationProfiler::profile_cutlass_(
-  double &runtime,
+  PerformanceResult &result,
   Options const &options,
   library::Operation const *operation,
-  void *arguments,
-  void *host_workspace,
-  void *device_workspace) {
+  void *,
+  void *,
+  void *) {
 
-  GpuTimer timer;
+  cuda::atomic<bool> *release;
+  cudaHostAlloc(&release, sizeof(*release), cudaHostAllocPortable);
+  release->store(false, cuda::memory_order_release);
+
+  std::vector<GpuTimer> timer;
+  for (size_t i = 0; i < gemm_workspace_.size(); ++i) {
+    cudaSetDevice(options.device.device_id(i));
+    timer.emplace_back();
+  }
   // initialize gemm underlying operation to handle parallel reduction
   library::Operation const * underlying_operation = operation;
 
@@ -1182,110 +1249,158 @@ Status GemmOperationProfiler::profile_cutlass_(
 
   Status status;
 
-  for (int iteration = 0; iteration < options.profiling.warmup_iterations; ++iteration) {
+  std::vector<cudaGraph_t> graphs;
+  graphs.resize(gemm_workspace_.size());
+  std::vector<cudaGraphExec_t> graphExecs;
+  graphExecs.resize(gemm_workspace_.size());
 
-    int problem_idx = (iteration % gemm_workspace_.problem_count) * problem_.batch_count;
+  for (size_t i = 0; i < gemm_workspace_.size(); ++i) {
+    cudaSetDevice(options.device.device_id(i));
+    cudaStreamBeginCapture(gemm_workspace_[i].stream, cudaStreamCaptureModeGlobal);
+    // Halt execution until all GPUs are ready to precede.
+    // It allows the CPU to trigger the GPUs all start at the same time.
+    delay<<<1, 1, 0, gemm_workspace_[i].stream>>>(release);
+    for (int iteration = 0; iteration < options.profiling.warmup_iterations; ++iteration) {
+      int problem_idx = (iteration % gemm_workspace_[i].problem_count) * problem_.batch_count;
 
-    gemm_workspace_.arguments.A = gemm_workspace_.A->batch_data(problem_idx);
-    gemm_workspace_.arguments.B = gemm_workspace_.B->batch_data(problem_idx);
-    gemm_workspace_.arguments.C = gemm_workspace_.C->batch_data(problem_idx);
-    gemm_workspace_.arguments.D = gemm_workspace_.Computed->batch_data(problem_idx);
+      gemm_workspace_[i].arguments.A = gemm_workspace_[i].A->batch_data(problem_idx);
+      gemm_workspace_[i].arguments.B = gemm_workspace_[i].B->batch_data(problem_idx);
+      gemm_workspace_[i].arguments.C = gemm_workspace_[i].C->batch_data(problem_idx);
+      gemm_workspace_[i].arguments.D = gemm_workspace_[i].Computed->batch_data(problem_idx);
 
-    if (problem_.split_k_mode == library::SplitKMode::kParallel) {
-      gemm_workspace_.arguments.D                     = gemm_workspace_.device_workspace.data();
+      if (problem_.split_k_mode == library::SplitKMode::kParallel) {
+        gemm_workspace_[i].arguments.D                     = gemm_workspace_[i].device_workspace.data();
 
-      gemm_workspace_.reduction_arguments.workspace   = gemm_workspace_.device_workspace.data();
-      gemm_workspace_.reduction_arguments.source      = gemm_workspace_.C->batch_data(problem_idx);
-      gemm_workspace_.reduction_arguments.destination = gemm_workspace_.Computed->batch_data(problem_idx);
-    }
+        gemm_workspace_[i].reduction_arguments.workspace   = gemm_workspace_[i].device_workspace.data();
+        gemm_workspace_[i].reduction_arguments.source      = gemm_workspace_[i].C->batch_data(problem_idx);
+        gemm_workspace_[i].reduction_arguments.destination = gemm_workspace_[i].Computed->batch_data(problem_idx);
+      }
 
-    // Execute the CUTLASS operation
-    status = underlying_operation->run(
-      &gemm_workspace_.arguments,
-      host_workspace,
-      device_workspace);
-
-    if (status != Status::kSuccess) {
-      return status;
-    }
-
-    // Run parallel reduction kernel for parallel split_k_mode
-    if (problem_.split_k_mode == library::SplitKMode::kParallel) {
-      status = reduction_op_->run(
-        &gemm_workspace_.reduction_arguments,
-        gemm_workspace_.reduction_host_workspace.data(),
-        nullptr);
+      // Execute the CUTLASS operation
+      status = underlying_operation->run(
+        &gemm_workspace_[i].arguments,
+        gemm_workspace_[i].host_workspace.data(),
+        gemm_workspace_[i].device_workspace.data(),
+        gemm_workspace_[i].stream);
 
       if (status != Status::kSuccess) {
         return status;
       }
+
+      // Run parallel reduction kernel for parallel split_k_mode
+      if (problem_.split_k_mode == library::SplitKMode::kParallel) {
+        status = reduction_op_->run(
+          &gemm_workspace_[i].reduction_arguments,
+          gemm_workspace_[i].reduction_host_workspace.data(),
+          nullptr,
+          gemm_workspace_[i].stream);
+
+        if (status != Status::kSuccess) {
+          return status;
+        }
+      }
     }
+
+    //
+    // Initialize GPU timer
+    //
+
+    timer[i].start(gemm_workspace_[i].stream, cudaEventRecordExternal);
+
+    //
+    // Profiling loop
+    //
+
+    int Iterations = options.profiling.iterations;
+
+    int iteration = 0;
+
+    for (; iteration < Iterations; ++iteration) {
+      // Iterate over copies of the problem in memory
+      int workspace_idx = options.profiling.warmup_iterations + iteration;
+      int problem_idx = (workspace_idx % gemm_workspace_[i].problem_count) * problem_.batch_count;
+
+      gemm_workspace_[i].arguments.A = gemm_workspace_[i].A->batch_data(problem_idx);
+      gemm_workspace_[i].arguments.B = gemm_workspace_[i].B->batch_data(problem_idx);
+      gemm_workspace_[i].arguments.C = gemm_workspace_[i].C->batch_data(problem_idx);
+      gemm_workspace_[i].arguments.D = gemm_workspace_[i].Computed->batch_data(problem_idx);
+
+      if (problem_.split_k_mode == library::SplitKMode::kParallel) {
+        gemm_workspace_[i].arguments.D                     = gemm_workspace_[i].device_workspace.data();
+
+        gemm_workspace_[i].reduction_arguments.workspace   = gemm_workspace_[i].device_workspace.data();
+        gemm_workspace_[i].reduction_arguments.source      = gemm_workspace_[i].C->batch_data(problem_idx);
+        gemm_workspace_[i].reduction_arguments.destination = gemm_workspace_[i].Computed->batch_data(problem_idx);
+      }
+
+      status = underlying_operation->run(
+        &gemm_workspace_[i].arguments,
+        gemm_workspace_[i].host_workspace.data(),
+        gemm_workspace_[i].device_workspace.data(),
+        gemm_workspace_[i].stream);
+
+      if (status != Status::kSuccess) {
+        return status;
+      }
+
+      // Run parallel reduction kernel for parallel split_k_mode
+      if (problem_.split_k_mode == library::SplitKMode::kParallel) {
+        status = reduction_op_->run(
+          &gemm_workspace_[i].reduction_arguments,
+          gemm_workspace_[i].reduction_host_workspace.data(),
+          nullptr,
+          gemm_workspace_[i].stream);
+
+        if (status != Status::kSuccess) {
+          return status;
+        }
+      }
+    }
+    timer[i].stop(gemm_workspace_[i].stream, cudaEventRecordExternal);
+    cudaStreamEndCapture(gemm_workspace_[i].stream, &graphs[i]);
+    cudaGraphInstantiate(&graphExecs[i], graphs[i], nullptr, nullptr, 0);
   }
 
-  //
-  // Initialize GPU timer
-  //
-
-  timer.start();
-
-  //
-  // Profiling loop
-  //
-
-  int Iterations = options.profiling.iterations;
-
-  int iteration = 0;
-  for (; iteration < Iterations; ++iteration) {
-
-    // Iterate over copies of the problem in memory
-    int workspace_idx = options.profiling.warmup_iterations + iteration;
-    int problem_idx = (workspace_idx % gemm_workspace_.problem_count) * problem_.batch_count;
-
-    gemm_workspace_.arguments.A = gemm_workspace_.A->batch_data(problem_idx);
-    gemm_workspace_.arguments.B = gemm_workspace_.B->batch_data(problem_idx);
-    gemm_workspace_.arguments.C = gemm_workspace_.C->batch_data(problem_idx);
-    gemm_workspace_.arguments.D = gemm_workspace_.Computed->batch_data(problem_idx);
-
-    if (problem_.split_k_mode == library::SplitKMode::kParallel) {
-      gemm_workspace_.arguments.D                     = gemm_workspace_.device_workspace.data();
-
-      gemm_workspace_.reduction_arguments.workspace   = gemm_workspace_.device_workspace.data();
-      gemm_workspace_.reduction_arguments.source      = gemm_workspace_.C->batch_data(problem_idx);
-      gemm_workspace_.reduction_arguments.destination = gemm_workspace_.Computed->batch_data(problem_idx);
-    }
-
-    status = underlying_operation->run(
-      arguments,
-      host_workspace,
-      device_workspace);
-
-    if (status != Status::kSuccess) {
-      return status;
-    }
-
-    // Run parallel reduction kernel for parallel split_k_mode
-    if (problem_.split_k_mode == library::SplitKMode::kParallel) {
-      status = reduction_op_->run(
-        &gemm_workspace_.reduction_arguments,
-        gemm_workspace_.reduction_host_workspace.data(),
-        nullptr);
-
-      if (status != Status::kSuccess) {
-        return status;
-      }
-    }
+  for (size_t i = 0; i < gemm_workspace_.size(); ++i) {
+    cudaSetDevice(options.device.device_id(i));
+    cudaGraphLaunch(graphExecs[i], gemm_workspace_[i].stream);
   }
 
   //
   // Wait for completion
   //
 
-  timer.stop_and_wait();
+  release->store(true, cuda::memory_order_release);
+
+  for (size_t i = 0; i < gemm_workspace_.size(); ++i) {
+    cudaSetDevice(options.device.device_id(i));
+    cudaStreamSynchronize(gemm_workspace_[i].stream);
+  }
   //
   // Update performance result
   //
 
-  runtime = timer.duration(iteration);
+
+  result.runtime = 0;
+  for (size_t i = 0; i < gemm_workspace_.size(); ++i) {
+    cudaSetDevice(options.device.device_id(i));
+    result.runtime_vector[i] = timer[i].duration(options.profiling.iterations);
+    result.runtime += result.runtime_vector[i];
+  }
+  result.runtime /= static_cast<double>(gemm_workspace_.size());
+
+  cudaFreeHost(release);
+
+  for (size_t i = 0; i < gemm_workspace_.size(); ++i) {
+    cudaSetDevice(options.device.device_id(i));
+    cudaGraphExecDestroy(graphExecs[i]);
+    cudaGraphDestroy(graphs[i]);
+  }
+
+  for (size_t i = 0; i < gemm_workspace_.size(); ++i) {
+    cudaSetDevice(options.device.device_id(gemm_workspace_.size() - i - 1));
+    timer.pop_back();
+  }
 
   return status;
 }

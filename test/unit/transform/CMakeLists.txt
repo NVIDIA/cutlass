@@ -33,7 +33,7 @@ add_custom_target(
   cutlass_test_unit_transform
   DEPENDS
   cutlass_test_unit_transform_threadblock
-  cutlass_test_unit_transform_filter_format
+  cutlass_test_unit_transform_kernel
 )
 
 add_custom_target(

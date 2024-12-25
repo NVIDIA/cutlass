@@ -281,7 +281,6 @@ void gett_epilogue(
       cute::is_same_v<ElementAux, cutlass::uint1b_t>;
   constexpr bool IsClamp =
       cute::is_same_v<ActivationFunctor, cutlass::epilogue::thread::Clamp<ElementCompute>>;
-
   constexpr bool IsBackpropFusion =
       cute::is_same_v<ActivationFunctor, cutlass::epilogue::thread::dGELU<ElementCompute>> or
       cute::is_same_v<ActivationFunctor, cutlass::epilogue::thread::dReLU<ElementCompute>>;

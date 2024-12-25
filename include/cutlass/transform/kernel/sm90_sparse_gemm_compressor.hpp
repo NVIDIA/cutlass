@@ -267,7 +267,9 @@ private:
           case 3:
             return 0b11;
           default:
+            CUTLASS_ASSERT(false);
             CUTE_GCC_UNREACHABLE;
+            return 0b00;
         }
       };
 

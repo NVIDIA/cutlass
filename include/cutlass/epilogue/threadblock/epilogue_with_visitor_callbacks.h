@@ -303,6 +303,12 @@ public:
       // Pipeline Loop
       //
 
+      #ifdef __clang__
+      #pragma clang diagnostic push
+      #pragma clang diagnostic ignored "-Wcuda-compat"
+      // Turn off clang warning about loop unroll argument using parens.
+      #endif
+
       #pragma unroll(IterationsUnroll ? kIterations : 1)
       for (int iter_idx = 1; iter_idx < kIterations + 1; ++iter_idx) {
 
@@ -377,7 +383,18 @@ public:
 
         callbacks.end_step(iter_idx-1);
       }
+
+      #ifdef __clang__
+      #pragma clang diagnostic pop
+      #endif
+
     } else {
+
+      #ifdef __clang__
+      #pragma clang diagnostic push
+      #pragma clang diagnostic ignored "-Wcuda-compat"
+      // Turn off clang warning about loop unroll argument using parens.
+      #endif
 
       #pragma unroll(IterationsUnroll ? kIterations : 1)
       for (int iter_idx = 0; iter_idx < kIterations; ++iter_idx) {
@@ -459,6 +476,11 @@ public:
 
         callbacks.end_step(iter_idx);
       }
+
+      #ifdef __clang__
+      #pragma clang diagnostic pop
+      #endif
+
     }
 
     callbacks.end_epilogue();

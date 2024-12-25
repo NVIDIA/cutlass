@@ -42,7 +42,7 @@
 #include "cutlass/tensor_coord.h"
 #include "cutlass/tensor_ref.h"
 #include "device_utils.h"
-#include <float.h>
+#include <cfloat>
 
 namespace cutlass {
 

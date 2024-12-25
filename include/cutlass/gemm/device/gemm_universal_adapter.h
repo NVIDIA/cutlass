@@ -85,13 +85,40 @@ class GemmUniversalAdapter;
 ////////////////////////////// CUTLASS 3.x API /////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
+namespace detail {
+
+// Work-around for some DispatchPolicy types not having a Stages member.
+// In that case, the Stages value is 0.  Most code should static_assert
+// that the number of stages is valid.
+
+// Whether DispatchPolicy::Stages is valid.
+// It should also be convertible to int, but if not, that will show up
+// as a build error when GemmUniversalAdapter attempts to assign it to kStages.
+template <class DispatchPolicy, class Enable = void>
+struct has_Stages : cute::false_type {};
+
+template <class DispatchPolicy>
+struct has_Stages<DispatchPolicy, cute::void_t<decltype(DispatchPolicy::Stages)>> : cute::true_type {};
+
+template<class DispatchPolicy>
+constexpr int stages_member(DispatchPolicy) {
+  if constexpr (has_Stages<DispatchPolicy>::value) {
+    return DispatchPolicy::Stages;
+  }
+  else {
+    return 0;
+  }
+}
+
+} // namespace detail
+
 template <class GemmKernel_>
 class GemmUniversalAdapter<
   GemmKernel_,
-  cute::enable_if_t<gemm::detail::IsCutlass3GemmKernel<GemmKernel_>::value>>
+  cute::enable_if_t<gemm::detail::IsCutlass3GemmKernel<GetUnderlyingKernel_t<GemmKernel_>>::value>>
 {
 public:
-  using GemmKernel = GemmKernel_;
+  using GemmKernel = GetUnderlyingKernel_t<GemmKernel_>;
   using TileShape = typename GemmKernel::TileShape;
   using ElementA = typename GemmKernel::ElementA;
   using ElementB = typename GemmKernel::ElementB;
@@ -158,7 +185,7 @@ public:
       CUTE_STATIC_V(cute::tile_size<1>(typename CollectiveMainloop::TiledMma{})) / WarpsInMmaN,
       CUTE_STATIC_V(cute::tile_size<2>(typename CollectiveMainloop::TiledMma{}))>;
 
-  static int constexpr kStages = CollectiveMainloop::DispatchPolicy::Stages;
+  static int constexpr kStages = detail::stages_member(typename CollectiveMainloop::DispatchPolicy{});
 
   // Inspect TiledCopy for A and B to compute the alignment size
   static int constexpr kAlignmentA = cutlass::detail::get_alignment_count_from_gmem_tiled_copy<
@@ -336,7 +363,7 @@ public:
   }
 
   /// Primary run() entry point API that is static allowing users to create and manage their own params.
-  /// Supplied params struct must be construct by calling GemmKernel::to_underling_arguments()
+  /// Supplied params struct must be construct by calling GemmKernel::to_underlying_arguments()
   static Status
   run(Params& params,
       cudaStream_t stream = nullptr,
@@ -358,10 +385,10 @@ public:
       [[maybe_unused]] constexpr bool is_static_1x1x1 =
         cute::is_static_v<typename GemmKernel::DispatchPolicy::ClusterShape> and
         cute::size(typename GemmKernel::DispatchPolicy::ClusterShape{}) == 1;
-      dim3 cluster(cute::size<0>(typename GemmKernel::DispatchPolicy::ClusterShape{}),
-                   cute::size<1>(typename GemmKernel::DispatchPolicy::ClusterShape{}),
-                   cute::size<2>(typename GemmKernel::DispatchPolicy::ClusterShape{}));
-      void* kernel_params[] = {&params};
+      [[maybe_unused]] dim3 cluster(cute::size<0>(typename GemmKernel::DispatchPolicy::ClusterShape{}),
+        cute::size<1>(typename GemmKernel::DispatchPolicy::ClusterShape{}),
+        cute::size<2>(typename GemmKernel::DispatchPolicy::ClusterShape{}));
+      [[maybe_unused]] void* kernel_params[] = {&params};
 
       if constexpr (kEnableCudaHostAdapter) {
         //
@@ -377,13 +404,23 @@ public:
 #if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
           CUTLASS_TRACE_HOST("GemmUniversal::run: Launching kernel with CUDA host adapter");
 #endif
-          launch_result = cuda_adapter->launch(grid,
-                                               cluster,
-                                               block,
-                                               smem_size,
-                                               stream,
-                                               kernel_params,
-                                               0);
+          if constexpr (is_static_1x1x1) {
+            launch_result = cuda_adapter->launch(grid,
+                                                block,
+                                                smem_size,
+                                                stream,
+                                                kernel_params,
+                                                0);
+          }
+          else {
+            launch_result = cuda_adapter->launch(grid,
+                                                cluster,
+                                                block,
+                                                smem_size,
+                                                stream,
+                                                kernel_params,
+                                                0);
+          }
         }
         else {
           CUTLASS_TRACE_HOST("GemmUniversal::run: kEnableCudaHostAdapter is true, but CUDA host adapter is null");
@@ -392,8 +429,10 @@ public:
       }
       else {
         CUTLASS_ASSERT(cuda_adapter == nullptr);
-        void const* kernel = (void const*) device_kernel<GemmKernel>;
-        if constexpr (GemmKernel::ArchTag::kMinComputeCapability == 90) {
+        [[maybe_unused]] void const* kernel = (void const*) device_kernel<GemmKernel>;
+        static constexpr bool kClusterLaunch = GemmKernel::ArchTag::kMinComputeCapability == 90
+                                        ;
+        if constexpr (kClusterLaunch) {
           if constexpr (is_static_1x1x1) {
 #if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
             CUTLASS_TRACE_HOST("GemmUniversal::run: Launching static 1x1x1 kernel");
@@ -526,11 +565,11 @@ public:
 template <class GemmKernel_>
 class GemmUniversalAdapter<
   GemmKernel_,
-  cute::enable_if_t<not gemm::detail::IsCutlass3GemmKernel<GemmKernel_>::value>>
+  cute::enable_if_t<not gemm::detail::IsCutlass3GemmKernel<GetUnderlyingKernel_t<GemmKernel_>>::value>>
 {
 public:
 
-  using GemmKernel = GemmKernel_;
+  using GemmKernel = GetUnderlyingKernel_t<GemmKernel_>;
 
   static bool const kInternalTranspose =
     !cutlass::epilogue::threadblock::detail::is_2x_evt_v<typename GemmKernel::Epilogue> &&  // 2.x EVT does not require internal transpose

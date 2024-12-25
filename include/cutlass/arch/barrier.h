@@ -47,6 +47,99 @@ namespace cutlass {
 namespace arch {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+CUTLASS_DEVICE void fence_view_async_shared();
+
+namespace detail { // namespace detail begin
+
+// Single threaded versions that need to be called in an elect_one region
+template<typename T, uint32_t Stages>
+CUTLASS_DEVICE
+void initialize_barrier_array(T ptr, int arv_cnt) {
+  CUTLASS_PRAGMA_UNROLL
+  for (int i = 0; i < Stages; i++) {
+    ptr[i].init(arv_cnt);
+  }
+}
+
+template<typename T, uint32_t Stages>
+CUTLASS_DEVICE
+void initialize_barrier_array(uint64_t *ptr, int arv_cnt) {
+  CUTLASS_PRAGMA_UNROLL
+  for (int i = 0; i < Stages; i++) {
+    T::init(&ptr[i], arv_cnt);
+  }
+}
+
+template<typename FullBarrier, typename EmptyBarrier, uint32_t Stages>
+CUTLASS_DEVICE
+void initialize_barrier_array_pair(FullBarrier full_barriers, EmptyBarrier empty_barriers, int full_barrier_arv_cnt, int empty_barrier_arv_cnt) {
+  CUTLASS_PRAGMA_UNROLL
+  for (int i = 0; i < Stages; i++) {
+    full_barriers[i].init(full_barrier_arv_cnt);
+    empty_barriers[i].init(empty_barrier_arv_cnt);
+  }
+}
+
+template<typename FullBarrier, typename EmptyBarrier, uint32_t Stages>
+CUTLASS_DEVICE
+void initialize_barrier_array_pair(uint64_t *full_barriers_ptr, uint64_t *empty_barriers_ptr, int full_barrier_arv_cnt, int empty_barrier_arv_cnt) {
+  CUTLASS_PRAGMA_UNROLL
+  for (int i = 0; i < Stages; i++) {
+    FullBarrier::init(&full_barriers_ptr[i], full_barrier_arv_cnt);
+    EmptyBarrier::init(&empty_barriers_ptr[i], empty_barrier_arv_cnt);
+  }
+}
+
+// Aligned versions that need to be call warp wide
+template<typename T, uint32_t Stages>
+CUTLASS_DEVICE
+void initialize_barrier_array_aligned(T ptr, int arv_cnt) {
+  if(cute::elect_one_sync()) {
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < Stages; i++) {
+      ptr[i].init(arv_cnt);
+    }
+  }
+}
+
+template<typename T, uint32_t Stages>
+CUTLASS_DEVICE
+void initialize_barrier_array_aligned(uint64_t *ptr, int arv_cnt) {
+  if(cute::elect_one_sync()) {
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < Stages; i++) {
+      T::init(&ptr[i], arv_cnt);
+    }
+  }
+}
+
+template<typename FullBarrier, typename EmptyBarrier, uint32_t Stages>
+CUTLASS_DEVICE
+void initialize_barrier_array_pair_aligned(FullBarrier full_barriers, EmptyBarrier empty_barriers, int full_barrier_arv_cnt, int empty_barrier_arv_cnt) {
+  if(cute::elect_one_sync()) {
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < Stages; i++) {
+      full_barriers[i].init(full_barrier_arv_cnt);
+      empty_barriers[i].init(empty_barrier_arv_cnt);
+    }
+  }
+}
+
+template<typename FullBarrier, typename EmptyBarrier, uint32_t Stages>
+CUTLASS_DEVICE
+void initialize_barrier_array_pair_aligned(uint64_t *full_barriers_ptr, uint64_t *empty_barriers_ptr, int full_barrier_arv_cnt, int empty_barrier_arv_cnt) {
+  if(cute::elect_one_sync()) {
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < Stages; i++) {
+      FullBarrier::init(&full_barriers_ptr[i], full_barrier_arv_cnt);
+      EmptyBarrier::init(&empty_barriers_ptr[i], empty_barrier_arv_cnt);
+    }
+  }
+}
+
+} // namespace detail end
+
+
 // Enumerates the reserved named barriers to avoid potential conflicts
 // This enum class specifies the NamedBarriers reserved by CUTLASS.
 enum class ReservedNamedBarriers { 

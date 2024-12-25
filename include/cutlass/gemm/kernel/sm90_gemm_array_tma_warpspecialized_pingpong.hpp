@@ -226,17 +226,17 @@ public:
     uint8_t* workspace_ptr = reinterpret_cast<uint8_t*>(workspace);
     size_t workspace_offset = 0;
 
-    void* scheduler_workspace = workspace_ptr;
-    workspace_offset += TileScheduler::template get_workspace_size<typename ProblemShape::UnderlyingProblemShape, ElementAccumulator>(
-      args.scheduler, typename ProblemShape::UnderlyingProblemShape{}, args.hw_info, NumMmaWarpGroups);
-    workspace_offset = round_nearest(workspace_offset,  MinWorkspaceAlignment);
-
     void* epilogue_workspace = workspace_ptr + workspace_offset;
     workspace_offset += CollectiveEpilogue::get_workspace_size(problem_shapes, args.epilogue, sm_count);
     workspace_offset = round_nearest(workspace_offset,  MinWorkspaceAlignment);
 
     void* mainloop_workspace = workspace_ptr + workspace_offset;
     workspace_offset += CollectiveMainloop::get_workspace_size(problem_shapes, args.mainloop, sm_count);
+    workspace_offset = round_nearest(workspace_offset,  MinWorkspaceAlignment);
+
+    void* scheduler_workspace = workspace_ptr + workspace_offset;
+    workspace_offset += TileScheduler::template get_workspace_size<typename ProblemShape::UnderlyingProblemShape, ElementAccumulator>(
+      args.scheduler, typename ProblemShape::UnderlyingProblemShape{}, args.hw_info, NumMmaWarpGroups);
     workspace_offset = round_nearest(workspace_offset,  MinWorkspaceAlignment);
 
     // Precompute the sub tiles numbers in epilogue, pass into tile scheduler.  Therefore it will be used
@@ -288,10 +288,6 @@ public:
     size_t workspace_size = 0;
     constexpr uint32_t NumEpilogueSubTiles = CollectiveEpilogue::get_store_pipe_increment(TileShape{});
 
-    workspace_size += TileScheduler::template get_workspace_size<typename ProblemShape::UnderlyingProblemShape, ElementAccumulator>(
-      args.scheduler, typename ProblemShape::UnderlyingProblemShape{}, args.hw_info, NumMmaWarpGroups, NumEpilogueSubTiles);
-    workspace_size = round_nearest(workspace_size,  MinWorkspaceAlignment);
-
     // Get SM count if needed, otherwise use user supplied SM count
     int sm_count = args.hw_info.sm_count;
     if (sm_count <= 0) {
@@ -306,6 +302,10 @@ public:
     workspace_size += CollectiveMainloop::get_workspace_size(args.problem_shape, args.mainloop, sm_count);
     workspace_size = round_nearest(workspace_size,  MinWorkspaceAlignment);
 
+    workspace_size += TileScheduler::template get_workspace_size<typename ProblemShape::UnderlyingProblemShape, ElementAccumulator>(
+      args.scheduler, typename ProblemShape::UnderlyingProblemShape{}, args.hw_info, NumMmaWarpGroups, NumEpilogueSubTiles);
+    workspace_size = round_nearest(workspace_size,  MinWorkspaceAlignment);
+
     return workspace_size;
   }
 
@@ -318,6 +318,20 @@ public:
     constexpr uint32_t NumEpilogueSubTiles = CollectiveEpilogue::get_store_pipe_increment(TileShape{});
     static constexpr uint32_t NumAccumulatorMtxs = 1;
 
+    status = CollectiveEpilogue::initialize_workspace(args.problem_shape, args.epilogue, workspace_ptr + workspace_offset, stream, cuda_adapter);
+    workspace_offset += CollectiveEpilogue::get_workspace_size(args.problem_shape, args.epilogue, args.hw_info.sm_count);
+    workspace_offset = round_nearest(workspace_offset,  MinWorkspaceAlignment);
+    if (status != Status::kSuccess) {
+      return status;
+    }
+
+    status = CollectiveMainloop::initialize_workspace(args.problem_shape, args.mainloop, workspace_ptr + workspace_offset, stream, cuda_adapter);
+    workspace_offset += CollectiveMainloop::get_workspace_size(args.problem_shape, args.mainloop, args.hw_info.sm_count);
+    workspace_offset = round_nearest(workspace_offset,  MinWorkspaceAlignment);
+    if (status != Status::kSuccess) {
+      return status;
+    }
+
     status = TileScheduler::template initialize_workspace<typename ProblemShape::UnderlyingProblemShape, ElementAccumulator>(
       args.scheduler, workspace_ptr + workspace_offset, stream, typename ProblemShape::UnderlyingProblemShape{}, args.hw_info, NumMmaWarpGroups, NumEpilogueSubTiles, NumAccumulatorMtxs, cuda_adapter);
     workspace_offset += TileScheduler::template get_workspace_size<typename ProblemShape::UnderlyingProblemShape, ElementAccumulator>(
@@ -326,19 +340,6 @@ public:
     if (status != Status::kSuccess) {
       return status;
     }
-
-    status = CollectiveEpilogue::initialize_workspace(args.problem_shape, args.epilogue, workspace_ptr + workspace_offset, stream, cuda_adapter);
-    workspace_offset += CollectiveEpilogue::get_workspace_size(args.problem_shape, args.epilogue, args.hw_info.sm_count);
-    workspace_offset = round_nearest(workspace_offset,  MinWorkspaceAlignment);
-
-    status = CollectiveMainloop::initialize_workspace(args.problem_shape, args.mainloop, workspace_ptr + workspace_offset, stream, cuda_adapter);
-    workspace_offset += CollectiveMainloop::get_workspace_size(args.problem_shape, args.mainloop, args.hw_info.sm_count);
-    workspace_offset = round_nearest(workspace_offset,  MinWorkspaceAlignment);
-
-    if (status != Status::kSuccess) {
-      return status;
-    }
-
     return status;
   }
 
@@ -666,7 +667,7 @@ public:
         constexpr bool IsEpiLoad = true;
 
         if (work_tile_info.is_valid()) {
-          collective_epilogue.tensormaps_perform_update<IsEpiLoad>(
+          collective_epilogue.template tensormaps_perform_update<IsEpiLoad>(
             shared_storage.tensormaps.epilogue,
             params.epilogue,
             epi_load_tensormap,
@@ -677,7 +678,7 @@ public:
 
           // Converge before issuing tensormap fence release since fence is aligned
           __syncwarp();
-          collective_epilogue.tensormaps_cp_fence_release<IsEpiLoad>(shared_storage.tensormaps.epilogue, epi_load_tensormap, 0);
+          collective_epilogue.template tensormaps_cp_fence_release<IsEpiLoad>(shared_storage.tensormaps.epilogue, epi_load_tensormap, 0);
         }
 
         load_order_barrier.wait();
@@ -700,7 +701,7 @@ public:
             auto blk_coord = make_coord(m_coord, n_coord, _, l_coord);
 
             if (did_batch_change) {
-              collective_epilogue.tensormaps_fence_acquire<IsEpiLoad>(epi_load_tensormap);
+              collective_epilogue.template tensormaps_fence_acquire<IsEpiLoad>(epi_load_tensormap);
             }
 
             bool wait = work_tile_info.is_valid() && curr_batch != next_work_tile_info.L_idx;
@@ -730,7 +731,7 @@ public:
 
             // tensormap update
             {
-              collective_epilogue.tensormaps_perform_update<IsEpiLoad>(
+              collective_epilogue.template tensormaps_perform_update<IsEpiLoad>(
                 shared_storage.tensormaps.epilogue,
                 params.epilogue,
                 epi_load_tensormap,
@@ -741,7 +742,7 @@ public:
 
               // Converge before issuing tensormap fence release since fence is aligned
               __syncwarp();
-              collective_epilogue.tensormaps_cp_fence_release<IsEpiLoad>(shared_storage.tensormaps.epilogue, epi_load_tensormap, 0);
+              collective_epilogue.template tensormaps_cp_fence_release<IsEpiLoad>(shared_storage.tensormaps.epilogue, epi_load_tensormap, 0);
             }
           }
 
@@ -771,7 +772,7 @@ public:
       if (work_tile_info.is_valid()) {
 
         if (warp_idx_in_warp_group == 0) {
-          collective_epilogue.tensormaps_perform_update<IsEpiLoad>(
+          collective_epilogue.template tensormaps_perform_update<IsEpiLoad>(
             shared_storage.tensormaps.epilogue,
             params.epilogue,
             epi_store_tensormap,
@@ -782,7 +783,7 @@ public:
 
           // Converge before issuing tensormap fence release since fence is aligned
           __syncwarp();
-          collective_epilogue.tensormaps_cp_fence_release<IsEpiLoad>(shared_storage.tensormaps.epilogue,
+          collective_epilogue.template tensormaps_cp_fence_release<IsEpiLoad>(shared_storage.tensormaps.epilogue,
                                                                      epi_store_tensormap,
                                                                      consumer_warp_group_idx);
         }
@@ -844,7 +845,7 @@ public:
           params.scheduler, work_tile_info, accumulators, NumMmaWarpGroups, consumer_warp_group_idx);
 
         if (did_batch_change) {
-          collective_epilogue.tensormaps_fence_acquire<IsEpiLoad>(epi_store_tensormap);
+          collective_epilogue.template tensormaps_fence_acquire<IsEpiLoad>(epi_store_tensormap);
         }
 
         if (TileScheduler::compute_epilogue(work_tile_info, params.scheduler)) {
@@ -897,7 +898,7 @@ public:
             problem_shape_MNKL = append<4>(params.problem_shape.get_problem_shape(work_tile_info.L_idx), 1);
           }
           if (warp_idx_in_warp_group == 0) {
-            collective_epilogue.tensormaps_perform_update<IsEpiLoad>(
+            collective_epilogue.template tensormaps_perform_update<IsEpiLoad>(
               shared_storage.tensormaps.epilogue,
               params.epilogue,
               epi_store_tensormap,
@@ -908,7 +909,7 @@ public:
 
             // Converge before issuing tensormap fence release since fence is aligned
             __syncwarp();
-            collective_epilogue.tensormaps_cp_fence_release<IsEpiLoad>(shared_storage.tensormaps.epilogue,
+            collective_epilogue.template tensormaps_cp_fence_release<IsEpiLoad>(shared_storage.tensormaps.epilogue,
                                                                        epi_store_tensormap,
                                                                        consumer_warp_group_idx);
           }

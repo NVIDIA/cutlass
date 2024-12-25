@@ -39,6 +39,7 @@
 #include <sstream>
 #include <algorithm>
 #include <random>
+#include <numeric> // std::lcm
 
 #include "../../common/cutlass_unit_test.h"
 #include "cutlass/util/host_tensor.h"
@@ -55,6 +56,7 @@
 #include "cutlass/complex.h"
 #include "cutlass/transform/device/transform_universal_adapter.hpp"
 #include "cutlass/transform/kernel/sparse_gemm_compressor.hpp"
+#include "cutlass/detail/collective.hpp"
 
 #include "testbed_utils.h"
 
@@ -150,6 +152,12 @@ template <typename Gemm, typename Default>
 struct ElementScalarType<Gemm, Default, std::void_t<typename Gemm::EpilogueOutputOp::ElementScalar>> {
   using Type = typename Gemm::EpilogueOutputOp::ElementScalar;
 };
+
+template<class CollectiveEpilogue, class = void>
+struct IsSfdEpi : cute::false_type {};
+
+template<class CollectiveEpilogue>
+struct IsSfdEpi<CollectiveEpilogue, cute::void_t<typename CollectiveEpilogue::FusionCallbacks::Operation::GmemLayoutTagScalefactor>> : cute::true_type {};
 
 // The maximum swizzle size to use
 //
@@ -1140,7 +1148,6 @@ struct HostCollectiveEpilogue {
   static constexpr bool IsAbsMaxEnabledAux   = IsAuxOutEnabled && FusionOp::IsAbsMaxSupported &&
                                                 (cute::is_same_v<ElementAux, cutlass::float_e4m3_t> ||
                                                  cute::is_same_v<ElementAux, cutlass::float_e5m2_t>);
-
   using Arguments = typename Gemm::GemmKernel::EpilogueArguments;
 
   /// Initialization
@@ -1454,6 +1461,22 @@ struct HostCollectiveEpilogue {
 
     bool passed = equality_check(reference_D.host_view(), tensor_D.host_view());
     if(!passed) {
+      #if 0
+      auto [M, N, K, L] = problem_shape_MNKL;
+      auto ref = cute::make_tensor(detail::make_iterator(reference_D.host_data()),
+        cute::make_layout(cute::make_shape(M, N, L), stride_d));
+      auto comp = cute::make_tensor(detail::make_iterator(tensor_D.host_data()),
+        cute::make_layout(cute::make_shape(M, N, L), stride_d));
+      for(int i=0; i<M; i++) {
+        for(int j=0; j<N; j++) {
+          for(int l=0; l<L; l++) {
+            if(static_cast<float>(ElementD(ref(i, j, l))) != static_cast<float>((ElementD(comp(i, j, l))))) {
+              printf("<m %d, n %d, l %d> ref: %f comp: %f\n", i, j, l, static_cast<float>(ElementD(ref(i, j, l))), static_cast<float>((ElementD(comp(i, j, l)))));
+            }
+          }
+        }
+      }
+      #endif
       std::cout<<"D is incorrect"<<std::endl;  
     }
 
@@ -1575,9 +1598,12 @@ struct HostCollectiveEpilogue {
     }
     else {
       fusion_args.alpha = alpha.at(coord_0);
-      fusion_args.beta = beta.at(coord_0);
       fusion_args.alpha_ptr = alpha.device_data();
-      fusion_args.beta_ptr = beta.device_data(); // if vector_scale_mode is true this is nullptr
+      // Only initializing beta/beta_ptr for non-void source
+      if constexpr (not cute::is_void_v<typename kernel::ElementC>) {
+        fusion_args.beta = beta.at(coord_0);
+        fusion_args.beta_ptr = beta.device_data(); // if vector_scale_mode is true this is nullptr
+      }
 
       if constexpr (IsPerRowScaleEnabled) {
         int32_t m_stride = vector_scale_mode == VectorScale::ENABLED ? 1 : 0;
@@ -1620,6 +1646,7 @@ struct HostCollectiveEpilogue {
       // example of how to set kernel activation arguments
       // see ActivationFunctor::Arguments in activation.h for definition
       // if Arguments doesn't exist then fusion_args.activation is empty
+
       if constexpr (cute::is_same_v<ActivationFunctor, cutlass::epilogue::thread::ScaledGELU_taylor<ElementCompute>>) {
         fusion_args.activation.scale = ElementCompute(1);
       }
@@ -1713,6 +1740,7 @@ struct HostCollectiveEpilogue {
       decltype(Vbeta),
       ActivationFunctor,
       cutlass::plus<ElementCompute>
+      , false /*PerColumnBias_*/
     > epilogue_params{};
 
     epilogue_params.C = C;
@@ -1779,6 +1807,7 @@ struct TestbedImpl {
   using ScheduleType = typename Gemm::GemmKernel::CollectiveMainloop::DispatchPolicy::Schedule;
   // All Collective MMA operands are defined by HostCollectiveMainloopType based on the schedule type
   using HostCollectiveMainloopType = HostCollectiveMainloop<ScheduleType, Gemm, ElementA, ElementB>;
+  
   using CollectiveEpilogue = cute::conditional_t<IsDefaultEpilogue<typename Gemm::GemmKernel::CollectiveEpilogue>::value || force_legacy_epilogue, 
                                                 HostCollectiveDefaultEpilogue<Gemm>, 
                                                 HostCollectiveEpilogue<Gemm>>;
@@ -2004,7 +2033,7 @@ struct TestbedImpl {
         return false;
       }
     }
-    catch (std::exception const& e) {
+    catch ([[maybe_unused]] std::exception const& e) {
       CUTLASS_TRACE_HOST("TestbedImpl::run: this->initialize threw an exception: " << e.what());
       throw;
     }
