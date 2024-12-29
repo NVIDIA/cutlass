@@ -228,7 +228,7 @@ struct Mma<
     __half2 const *C = reinterpret_cast<__half2 const *>(&c);
 
     __half2 Dlo = __hfma2(Alo, B, C[0]);
-    __half2 Dhi = __hfma2(Ahi, B, C[0]);
+    __half2 Dhi = __hfma2(Ahi, B, C[1]);
 
     Array<half_t, 2> * D = reinterpret_cast<Array<half_t, 2> *>(&d);
 
