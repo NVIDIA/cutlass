@@ -154,7 +154,7 @@ Tensor gA_mk = zipped_divide(mA, select<0,2>(cta_tiler));
 ```
 2. apply the coord to the second mode, the "Rest" mode, to extract out the correct tiles for this CTA.
 ```cpp
-// (BLK_M,BLK_N,k)
+// (BLK_M,BLK_K,k)
 Tensor gA = gA_mk(make_coord(_,_), select<0,2>(cta_coord));
 ```
 Because the projections of the tiler and coord are symmetric and the two steps (apply a tiler and then slice into the rest-mode to produce a partition) are so common, they are wrapped together into the projective `local_tile` interface.
