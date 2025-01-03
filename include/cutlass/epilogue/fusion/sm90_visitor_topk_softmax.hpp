@@ -209,13 +209,14 @@ void add_element_to_desc_sorted_array(cutlass::Array<Element, N>& a, Element b) 
     // slower generic path with branching, slower, and can cause register spill
     CUTLASS_PRAGMA_UNROLL
     for (int k = 0; k < N; ++k) {
-      if (a[k] <= b) {
+      if (a[k] < b) {
         // Shift down
         CUTLASS_PRAGMA_UNROLL
         for (int l = N - 1; l > k; --l) {
           a[l] = a[l-1];
         }
         a[k] = b;
+        break;
       }
     }
   }
@@ -237,7 +238,7 @@ void merge_desc_sorted_arrays(cutlass::Array<Element, N>& a, const cutlass::Arra
     int j = 0;
     CUTLASS_PRAGMA_UNROLL
     for (int k = 0; k < N; ++k) {
-      if (a[k] <= b[j]) {
+      if (a[k] < b[j]) {
         // Shift down
         CUTLASS_PRAGMA_UNROLL
         for (int l = N - 1; l > k; --l) {
@@ -334,7 +335,9 @@ template <
 struct Sm90TopKSoftmaxColReduction {
 private:
   static_assert(is_same_v<ElementCompute, float>, "Fused Top-K + Softmax reduction requires FP32 accumulation.");
-  static_assert(TopK == 2 || TopK == 4, "Fused Top-K + Softmax reduction only supports K=2 and K=4.");
+  static_assert(TopK == 2 || TopK == 4,
+  "Fused Top-K + Softmax reduction only allows K=2 and K=4, because those cases have been performance-optimized. Other values of K can be enabled by removing this assertion, but they may come with serious performance implications."
+  );
   static_assert(Alignment * sizeof_bits_v<ElementOutput> % 128 == 0, "sub-16B alignment not supported yet");
 
   // Reduction tensors

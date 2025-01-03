@@ -37,8 +37,11 @@
 
     Those assumptions are as:
       1. Fusion is over the N dimension.
-      2. Top-K is either 2 or 4 elements, and the value is static (meaning two kernels have to be
-         compiled to support both.)
+      2. Top-K value is static (meaning multiple kernels have to be compiled to support 
+         different values.)
+         * NOTE: Only K=2 and K=4 cases are performance-optimized and enabled by default.
+           There is also a generic sort that supports all K values greater than 1, but it can lead to serious performance implications to the underlying kernel.
+           If necessary, users can simply remove the K==2 || K ==4 assertion under cutlass/epilogue/fusion/sm90_visitor_topk_softmax.hpp, and the generic sort will automatically be used for all other Ks.
       3. The GEMM tile shape along N is greater than or equal to problem size
          along N.
 
