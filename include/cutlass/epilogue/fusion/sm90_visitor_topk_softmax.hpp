@@ -335,6 +335,9 @@ template <
 struct Sm90TopKSoftmaxColReduction {
 private:
   static_assert(is_same_v<ElementCompute, float>, "Fused Top-K + Softmax reduction requires FP32 accumulation.");
+  static_assert(TopK == 2 || TopK == 4,
+  "Fused Top-K + Softmax reduction only allows K=2 and K=4, because those cases have been performance-optimized. Other values of K can be enabled by removing this assertion, but they may come with serious performance implications."
+  );
   static_assert(Alignment * sizeof_bits_v<ElementOutput> % 128 == 0, "sub-16B alignment not supported yet");
 
   // Reduction tensors
