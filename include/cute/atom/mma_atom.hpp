@@ -1070,7 +1070,7 @@ print_svg_mma(LayoutC const& C, ThrIDC const& TC,  // (m,n) -> (tid,vid)  and  t
   }
 
   // footer
-  printf("</svg>");
+  printf("</svg>\n");
 }
 
 template <class... Args>
