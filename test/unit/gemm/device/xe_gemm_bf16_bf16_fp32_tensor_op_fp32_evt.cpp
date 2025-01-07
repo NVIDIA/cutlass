@@ -55,7 +55,7 @@ TEST(XE_Device_Gemm_bf16t_bf16t_f32t_tensor_op_gmma_f32_epilogue, 256x256x32_Lin
   using LayoutD = cutlass::layout::RowMajor;
 
   using TileShape_MNK = Shape<_256, _256, _32>;
-  using ClusterShape_MNK = Shape<_1,_1,_1>;
+  using ClusterShape_MNK = Shape<_1, _1, _1>;
 
   using EpilogueSchedule = cutlass::epilogue::collective::EpilogueScheduleAuto;
   using ElementAccumulator = float;
@@ -95,7 +95,7 @@ TEST(XE_Device_Gemm_bf16t_bf16t_f32t_tensor_op_gmma_f32_epilogue, 256x256x32_Lin
     >::CollectiveOp;
 
   using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
-      Shape<int,int,int,int>,
+      Shape<int, int, int, int>,
       CollectiveMainloop,
       CollectiveEpilogue
   >;
