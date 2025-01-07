@@ -316,6 +316,7 @@ public:
       cutlass::arch::detail::initialize_barrier_array_pair_aligned<decltype(storage.full_barrier_), decltype(storage.empty_barrier_), Stages>(
           storage.full_barrier_, storage.empty_barrier_, producer_arv_cnt, multicast_consumer_arrival_count);
     }
+    cutlass::arch::fence_barrier_init();
   }
 
   template<class ClusterShape, class InitBarriers, class InitMasks>
@@ -757,6 +758,7 @@ public:
       cutlass::arch::detail::initialize_barrier_array_pair_aligned<decltype(full_barrier_ptr), decltype(empty_barrier_ptr), Stages>(
           full_barrier_ptr, empty_barrier_ptr, params.producer_arv_count, params.consumer_arv_count);
     }
+    cutlass::arch::fence_barrier_init();
   }
 
   // Constructor
@@ -993,6 +995,7 @@ public:
       cutlass::arch::detail::initialize_barrier_array_pair_aligned<decltype(storage.full_barrier_), decltype(storage.empty_barrier_), Stages>(
           storage.full_barrier_, storage.empty_barrier_, params.producer_arv_count, params.consumer_arv_count);
     }
+    cutlass::arch::fence_barrier_init();
   }
 
   template<class InitBarriers>
@@ -1249,6 +1252,7 @@ public:
         }
       }
     }
+    cutlass::arch::fence_barrier_init();
   }
 
   // Wait on a stage to be unlocked
