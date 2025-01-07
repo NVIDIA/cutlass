@@ -125,13 +125,12 @@ struct GemmConfiguration<
       cutlass::gemm::kernel::detail::PersistentTileSchedulerXeStreamKParams::DecompositionMode;
     if constexpr (TileScheduler == Scheduler::Parallel) {
       return {};
-    }
-    else if constexpr (TileScheduler == Scheduler::StreamK) {
+    } else if constexpr (TileScheduler == Scheduler::StreamK) {
       typename GemmKernel::Arguments arguments{};
       arguments.scheduler = {1, StreamKMode::StreamK};
       return arguments;
-    }
-    else if constexpr (TileScheduler == Scheduler::SplitK) {
+    } else {
+      static_assert(TileScheduler == Scheduler::SplitK);
       typename GemmKernel::Arguments arguments{};
       arguments.scheduler = {1, StreamKMode::SplitK};
       return arguments;
