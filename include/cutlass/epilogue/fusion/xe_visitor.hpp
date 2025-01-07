@@ -84,6 +84,7 @@ struct XeAuxLoad {
     auto [M, N, K, L] = problem_shape_mnkl;
     // TODO(codeplay): This assumes a packed 2D (+ a batch dim) aux matrix
     static_assert(rank(decltype(args.dAux){}) == 3);
+    assert(!find(args.dAux, 0) && "auxillary matrix should have no strides with values 0");
     auto N_AUX = get<0>(args.dAux); // dAux is a stride and N_AUX is a size
     auto M_AUX = size(M);
     XE_Copy_Aux xe_load_aux = make_tiled_copy(Copy_Atom<Trait_Aux, Element>{}.with(
