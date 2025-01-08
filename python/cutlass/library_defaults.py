@@ -54,7 +54,7 @@ _cuda_version = __version__.split("rc")[0]
 # Check that Python CUDA version exceeds NVCC version
 _nvcc_version = cutlass.nvcc_version()
 _cuda_list = _cuda_version.split('.')
-_nvcc_list = _cuda_version.split('.')
+_nvcc_list = _nvcc_version.split('.')
 for val_cuda, val_nvcc in zip(_cuda_list, _nvcc_list):
     if int(val_cuda) < int(val_nvcc):
         raise Exception(f"Python CUDA version of {_cuda_version} must be greater than or equal to NVCC version of {_nvcc_version}")
