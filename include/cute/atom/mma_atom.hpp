@@ -34,6 +34,7 @@
 #include <cute/arch/mma.hpp>
 #include <cute/atom/mma_traits.hpp>
 #include <cute/tensor_impl.hpp>
+#include <cute/swizzle_layout.hpp>
 #include <cute/util/type_traits.hpp>
 
 namespace cute {
@@ -508,7 +509,8 @@ struct ThrMMA : TiledMMA
   auto
   partition_C(CTensor&& ctensor) const
   {
-    auto thr_tensor = make_tensor(static_cast<CTensor&&>(ctensor).data(), this->thrfrg_C(ctensor.layout()));
+    auto layout_c = get_nonswizzle_portion(ctensor.layout());
+    auto thr_tensor = make_tensor(static_cast<CTensor&&>(ctensor).data(), this->thrfrg_C(layout_c));
 
     auto thr_vmn = make_coord(get<0>(thr_vmnk_), make_coord(get<1>(thr_vmnk_), get<2>(thr_vmnk_)));
     return thr_tensor(thr_vmn, make_coord(_, repeat<rank<1,1>(thr_tensor)>(_)));
@@ -519,7 +521,8 @@ struct ThrMMA : TiledMMA
   auto
   partition_A(ATensor&& atensor) const
   {
-    auto thr_tensor = make_tensor(static_cast<ATensor&&>(atensor).data(), this->thrfrg_A(atensor.layout()));
+    auto layout_a = get_nonswizzle_portion(atensor.layout());
+    auto thr_tensor = make_tensor(static_cast<ATensor&&>(atensor).data(), this->thrfrg_A(layout_a));
 
     auto thr_vmk = make_coord(get<0>(thr_vmnk_), make_coord(get<1>(thr_vmnk_), get<3>(thr_vmnk_)));
     return thr_tensor(thr_vmk, make_coord(_, repeat<rank<1,1>(thr_tensor)>(_)));
@@ -530,7 +533,8 @@ struct ThrMMA : TiledMMA
   auto
   partition_B(BTensor&& btensor) const
   {
-    auto thr_tensor = make_tensor(static_cast<BTensor&&>(btensor).data(), this->thrfrg_B(btensor.layout()));
+    auto layout_b = get_nonswizzle_portion(btensor.layout());
+    auto thr_tensor = make_tensor(static_cast<BTensor&&>(btensor).data(), this->thrfrg_B(layout_b));
 
     auto thr_vnk = make_coord(get<0>(thr_vmnk_), make_coord(get<2>(thr_vmnk_), get<3>(thr_vmnk_)));
     return thr_tensor(thr_vnk, make_coord(_, repeat<rank<1,1>(thr_tensor)>(_)));
