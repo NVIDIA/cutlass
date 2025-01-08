@@ -43,6 +43,7 @@
 #include "cutlass/epilogue/fusion/callbacks.hpp"
 #include "cutlass/epilogue/fusion/sm90_callbacks_tma_warpspecialized.hpp"
 #include "cutlass/epilogue/fusion/sm90_visitor_tma_warpspecialized.hpp"
+#include "cutlass/epilogue/fusion/xe_visitor.hpp"
 #include "cutlass/epilogue/fusion/sm90_visitor_load_tma_warpspecialized.hpp"
 #include "cutlass/epilogue/fusion/sm90_visitor_store_tma_warpspecialized.hpp"
 #include "cutlass/epilogue/fusion/sm90_visitor_compute_tma_warpspecialized.hpp"
@@ -166,6 +167,113 @@ struct FusionCallbacks<
   // Ctor inheritance
   using Impl::Impl;
 };
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+template<
+  class StrideAux,
+  class CopyOpG2R,
+  template <class> class ActivationFn,
+  class ElementOutput,
+  class ElementCompute,
+  class ElementAux = ElementOutput,
+  class ElementSource = ElementOutput,
+  class ElementScalar = ElementCompute,
+  FloatRoundStyle RoundStyle = FloatRoundStyle::round_to_nearest
+>
+using XeLinCombDeEltAct =
+  Sm90EVT<Sm90Compute<ActivationFn, ElementOutput, ElementCompute, RoundStyle>, // activation(beta * C + (alpha * acc), aux)
+    Sm90LinearCombination<ElementCompute, ElementCompute, ElementSource, ElementScalar, RoundStyle>, // beta * C + (alpha * acc)
+    XeAuxLoad<ElementAux, StrideAux, CopyOpG2R> // aux
+  >;
+
+// Z = Aux
+// dY = alpha * acc + beta * C
+// D = activation(dY, Z)
+//
+template <
+  class GmemLayoutTagAux,
+  template <class> class ActivationFn,
+  class ElementOutput_,
+  class ElementCompute_,
+  class ElementAux,
+  class ElementSource,
+  class ElementScalar,
+  int AlignmentAux,
+  FloatRoundStyle RoundStyle,
+  class CtaTileShapeMNK,
+  class EpilogueTile,
+  class CopyOpG2R
+>
+struct FusionCallbacks<
+    epilogue::IntelPVCEpilogue,
+    fusion::LinCombDeEltAct<
+      GmemLayoutTagAux, ActivationFn, ElementOutput_, ElementCompute_,
+      ElementAux, ElementSource, ElementScalar, AlignmentAux, RoundStyle
+    >,
+    CtaTileShapeMNK,
+    EpilogueTile,
+    CopyOpG2R
+> : XeLinCombDeEltAct<
+      cutlass::gemm::TagToStrideC_t<GmemLayoutTagAux>, CopyOpG2R, ActivationFn, ElementOutput_,
+      ElementCompute_, ElementAux, ElementSource, ElementScalar, RoundStyle
+    > {
+
+  using ElementOutput = ElementOutput_;
+  using ElementCompute = ElementCompute_;
+
+  using Impl =
+    XeLinCombDeEltAct<
+      cutlass::gemm::TagToStrideC_t<GmemLayoutTagAux>, CopyOpG2R, ActivationFn, ElementOutput,
+      ElementCompute, ElementAux, ElementSource, ElementScalar, RoundStyle
+    >;
+  using Operation =
+    fusion::LinCombDeEltAct<
+      GmemLayoutTagAux, ActivationFn, ElementOutput, ElementCompute,
+      ElementAux, ElementSource, ElementScalar, AlignmentAux, RoundStyle
+    >;
+
+  struct Arguments {
+    ElementScalar alpha = ElementScalar(1);
+    ElementScalar beta = ElementScalar(0);
+    ElementScalar const* alpha_ptr = nullptr;
+    ElementScalar const* beta_ptr = nullptr;
+
+    using StrideAlpha = Stride<_0,_0,int64_t>;
+    using StrideBeta  = Stride<_0,_0,int64_t>;
+    StrideAlpha dAlpha = {_0{}, _0{}, 0};
+    StrideBeta  dBeta  = {_0{}, _0{}, 0};
+
+    using ActivationArguments = typename Sm90Compute<ActivationFn, ElementOutput, ElementCompute, RoundStyle>::Arguments;
+    ActivationArguments activation = ActivationArguments();
+
+    using StrideAux = cutlass::gemm::TagToStrideC_t<GmemLayoutTagAux>;
+    ElementAux const* aux_ptr = nullptr;
+    StrideAux dAux = {};
+
+    operator typename Impl::Arguments() const {
+      return
+        {    // binary op : activation(beta * C + (alpha * acc), aux)
+          {                  // ternary op : beta * C + (alpha * acc)
+            {{beta}, {beta_ptr}, {dBeta}}, // leaf args : beta
+            {},                   // leaf args : C
+            {                     // binary op : alpha * acc
+              {{alpha}, {alpha_ptr}, {dAlpha}}, // leaf args : alpha
+              {},                     // leaf args : acc
+              {}                  // binary args : multiplies
+            },                    // end binary op
+            {}               // ternary args : multiply_add
+          },                 // end ternary op
+          {aux_ptr, ElementAux(0), dAux}, // leaf args : aux
+          activation // binary args : activation
+        };   // end binary op
+    }
+  };
+
+  // Ctor inheritance
+  using Impl::Impl;
+};
+
 
 } // namespace cutlass::epilogue::fusion
 
