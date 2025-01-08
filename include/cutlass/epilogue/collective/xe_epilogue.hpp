@@ -265,6 +265,10 @@ public:
     (void) smem;
     using namespace cute;
 
+    static_assert(cute::rank(CtaTileMNK{}) == 3, "CtaTileMNK must be rank-3: [CTA_M, CTA_N, CTA_K]");
+    static_assert(cute::rank(StrideC{}) == 3, "StrideC must be rank-3: [M, N, L]");
+    static_assert(cute::rank(StrideD{}) == 3, "StrideD must be rank-3: [M, N, L]");
+
     using MmaAtomShape = typename TiledMma::AtomShape_MNK;
     static constexpr auto BLK_M = get<0>(CtaTileMNK{});
     static constexpr auto BLK_N = get<1>(CtaTileMNK{});
@@ -274,9 +278,14 @@ public:
     static constexpr auto ATOM_N = get<2>(typename TiledMma::ThrLayoutVMNK{}.shape());
     static constexpr auto ATOM_K = get<3>(typename TiledMma::ThrLayoutVMNK{}.shape());
     
-    static constexpr auto SG_M = ceil_div(BLK_M, ATOM_M);
-    static constexpr auto SG_N = ceil_div(BLK_N, ATOM_N);
-    static constexpr auto SG_K = ceil_div(BLK_K, ATOM_K);
+    static_assert(
+      BLK_M % ATOM_M == 0 &&
+      BLK_N % ATOM_N == 0 &&
+      BLK_K % ATOM_K == 0,
+      "expected CTATileMNK to be evenly divided by TiledMma::ThrLayoutVMNK");
+    static constexpr auto SG_M = BLK_M / ATOM_M;
+    static constexpr auto SG_N = BLK_N / ATOM_N;
+    static constexpr auto SG_K = BLK_K / ATOM_K;
     using SubgroupTileShape = Shape<decltype(SG_M), decltype(SG_N), decltype(SG_K)>;
 
     static constexpr int FragsM = get<0>(SubgroupTileShape{}) / get<0>(MmaAtomShape()); // A frags per sub_group
@@ -313,7 +322,7 @@ public:
                       tiled_mma,
                       SubgroupTileShape{}, // Epilogue tile
                       params.xe_load_c,
-                      cD,
+                      rw_coord,
                       residue_mn,
                       cD,
                       residue_mn,
@@ -326,6 +335,11 @@ public:
 
     auto acc_frag = recast<Array<ElementOutput, FragmentSize>>(accumulators);
     auto trD_frag = recast<Array<ElementOutput, FragmentSize>>(trD);
+
+    constexpr int ValuesLoaded =
+      FragsM * FragsN * FragmentSize * SubgroupSize * ATOM_M * ATOM_N * ATOM_K;
+    constexpr int MN = get<0>(CtaTileMNK{}) * get<1>(CtaTileMNK{});
+    static_assert(ValuesLoaded == MN, "the total elements loaded by all threads should be the same as MxN" );
 
     CUTLASS_PRAGMA_UNROLL
     for (int epi_n = 0; epi_n < FragsN; epi_n++) {
@@ -341,7 +355,7 @@ public:
         auto acc_frag_mn = acc_frag(_, epi_m, epi_n);
 
         CUTLASS_PRAGMA_UNROLL
-        for (int epi_v = 0; epi_v < FragmentSize; ++epi_v) {
+        for (int epi_v = 0; epi_v < size(trD_frag); ++epi_v) {
           trD_frag(epi_v) = cst_callbacks.visit(acc_frag_mn(epi_v), epi_v, epi_m, epi_n);
         }
         copy(params.xe_store_d, trD, rw_coord(_, epi_m, epi_n));

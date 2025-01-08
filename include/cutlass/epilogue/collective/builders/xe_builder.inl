@@ -39,6 +39,87 @@
 
 namespace cutlass::epilogue::collective {
 
+namespace detail {
+  template <class FusionOp>
+  struct FusionOpInfo {
+    static_assert(cutlass::detail::dependent_false<FusionOp>,
+      "Could not find a builder specialization.");
+  };
+
+  template <
+    class ElementD,
+    class ElementCompute,
+    class ElementC
+  >
+  struct FusionOpInfo<cutlass::epilogue::fusion::LinearCombination<
+    ElementD, ElementCompute, ElementC, ElementCompute
+  >> {
+      constexpr static bool HasBuilder = true;
+
+      template <
+        class DispatchPolicy,
+        class TileShape_MNK,
+        class EpilogueTile,
+        class>
+      using FusionCallbacks = cutlass::epilogue::fusion::FusionCallbacks<
+        DispatchPolicy,
+        cutlass::epilogue::fusion::LinearCombination<ElementD, ElementCompute, ElementC, ElementCompute>,
+        TileShape_MNK,
+        EpilogueTile
+      >;
+  };
+
+  template <
+    template <class> class ActivationFn,
+    class ElementD,
+    class ElementCompute,
+    class ElementC
+  >
+  struct FusionOpInfo<cutlass::epilogue::fusion::LinCombEltAct<
+    ActivationFn, ElementD, ElementCompute, ElementC, ElementCompute
+  >> {
+      constexpr static bool HasBuilder = true;
+      template <
+        class DispatchPolicy,
+        class TileShape_MNK,
+        class EpilogueTile,
+        class>
+
+      using FusionCallbacks = cutlass::epilogue::fusion::FusionCallbacks<
+        DispatchPolicy,
+        cutlass::epilogue::fusion::LinCombEltAct<ActivationFn, ElementD, ElementCompute, ElementC, ElementCompute>,
+        TileShape_MNK,
+        EpilogueTile
+      >;
+  };
+
+  template <
+    class GmemLayoutTagC,
+    template <class> class ActivationFn,
+    class ElementD,
+    class ElementCompute,
+    class ElementC
+  >
+  struct FusionOpInfo<cutlass::epilogue::fusion::LinCombDeEltAct<
+    GmemLayoutTagC, ActivationFn, ElementD, ElementCompute, ElementC, ElementCompute
+  >> {
+      constexpr static bool HasBuilder = true;
+
+      template <
+        class DispatchPolicy,
+        class TileShape_MNK,
+        class EpilogueTile,
+        class CopyOpG2R>
+      using FusionCallbacks = cutlass::epilogue::fusion::FusionCallbacks<
+        DispatchPolicy,
+        cutlass::epilogue::fusion::LinCombDeEltAct<GmemLayoutTagC, ActivationFn, ElementD, ElementCompute, ElementC, ElementCompute>,
+        TileShape_MNK,
+        EpilogueTile,
+        CopyOpG2R
+      >;
+  };
+}
+
   // Intel epilogue builder
 
 template <
@@ -74,15 +155,7 @@ template <
         cute::is_same_v<GmemLayoutTagC,  cutlass::layout::RowMajor> &&
         cute::is_same_v<GmemLayoutTagD,  cutlass::layout::RowMajor> &&
         cute::is_same_v<EpilogueTileType, EpilogueTileAuto> &&
-        // Only linear combination is supported at the moment
-        (cute::is_same_v<FusionOpOrCallbacks, 
-                        cutlass::epilogue::fusion::LinearCombination<ElementD,ElementCompute,ElementC,ElementCompute>> ||
-        cute::is_same_v<FusionOpOrCallbacks,
-                        cutlass::epilogue::fusion::LinCombEltAct<cutlass::epilogue::thread::ReLu,
-                        ElementD, ElementCompute, ElementC, ElementCompute>> ||
-        cute::is_same_v<FusionOpOrCallbacks,
-                        cutlass::epilogue::fusion::LinCombEltAct<cutlass::epilogue::thread::Identity,
-                        ElementD,ElementCompute,ElementC,ElementCompute>>)
+        detail::FusionOpInfo<FusionOpOrCallbacks>::HasBuilder
       >
     >{
       #ifdef SYCL_NVIDIA_TARGET
@@ -106,9 +179,7 @@ template <
       using SmemLayoutAtomD_ = void;
       using CopyOpR2S_ = void;
 
-      using FusionCallBacks = cutlass::epilogue::fusion::FusionCallbacks<
-          DispatchPolicy, FusionOpOrCallbacks, TileShape_MNK,
-          decltype(tile_shape(TiledMma()))>;
+      using FusionCallbacks = typename detail::FusionOpInfo<FusionOpOrCallbacks>::template FusionCallbacks<DispatchPolicy,  TileShape_MNK, decltype(tile_shape(TiledMma())), CopyOpG2R>;
 
       using CollectiveOp = cutlass::epilogue::collective::CollectiveEpilogue<
             DispatchPolicy,
@@ -117,7 +188,7 @@ template <
             cutlass::gemm::TagToStrideC_t<GmemLayoutTagC>,
             ElementD,
             cutlass::gemm::TagToStrideC_t<GmemLayoutTagD>,
-            FusionCallBacks,
+            FusionCallbacks,
             CopyOpG2R,
             SmemLayoutAtomC_,
             CopyOpS2R_,
