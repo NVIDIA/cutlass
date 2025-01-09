@@ -189,6 +189,55 @@ struct CollectiveMma<
     return Params{copyA, copyB, prefetchA, prefetchB};
   }
 
+  // Helper functions to select packing for conversion
+  template <class SrcType,
+            class DstType,
+            int Cosize>
+  struct select_packing { // Naive packing policy
+    static constexpr auto value() {
+      return Int<cute::gcd(Cosize, 32 / cute::min(sizeof_bits_v<SrcType>, sizeof_bits_v<DstType>))>{};
+    }
+  };
+
+  /// Utilities to transform A.
+  template <class EngineIn,
+            class EngineOut, 
+            class LayoutIn,
+            class LayoutOut,
+            class... Ts>
+  CUTLASS_DEVICE
+  void transform_A(
+    Tensor<EngineIn, LayoutIn> const& tCrA_load, 
+    Tensor<EngineOut, LayoutOut>& tCrA_mma) {
+
+    static_assert(is_rmem<EngineIn>::value, "Input tensor for A conversion must come from registers");
+    static_assert(is_rmem<EngineOut>::value, "Output tensor for A conversion must come from registers");
+    static_assert(cosize_v<LayoutIn> == cosize_v<LayoutOut>);
+    static_assert(size_v<LayoutIn> == cosize_v<LayoutIn>);
+    static_assert(size_v<LayoutOut> == cosize_v<LayoutOut>);
+    using SrcType = typename EngineIn::value_type;
+    using DstType = typename EngineOut::value_type;
+
+    auto const& src = tCrA_load(_, _, _); // TODO(joe): confirm kblock removal here makes sense
+    auto const& dst = tCrA_mma(_, _, _);
+    auto pSrc = raw_pointer_cast(src.data());
+    auto pDst = const_cast<DstType*>(raw_pointer_cast(dst.data()));
+    constexpr int num_elements = decltype(size(src))::value;
+
+    constexpr int pack = decltype(select_packing<SrcType, DstType, num_elements>::value())::value;
+    using Converter = cutlass::NumericArrayConverter<DstType, SrcType, pack, cutlass::FloatRoundStyle::round_to_nearest>;
+    using SrcArray = cutlass::Array<SrcType, pack>;
+    using DstArray = cutlass::Array<DstType, pack>;
+    constexpr int iters = num_elements / pack;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < iters; ++i) {
+      SrcArray const* pSrcArr = reinterpret_cast<SrcArray const*>(pSrc) + i;
+      DstArray* pDstArr = reinterpret_cast<DstArray*>(pDst) + i;
+      *pDstArr = Converter::convert(*pSrcArr);
+    }
+  }
+
   /// Perform a subgroup-scoped matrix multiply-accumulate
   template <
     int PrefetchStrideA,
@@ -225,9 +274,10 @@ struct CollectiveMma<
     // Instantiate the MMA object
     TiledMma tiled_mma;
     auto thread_mma = tiled_mma.get_slice(thread_idx);
-    Tensor tCrA_partition = thread_mma.partition_fragment_A(gA(_, _, 0));
+    Tensor tCrA_partition = thread_mma.partition_fragment_A(gA(_, _, 0)); // upcast MMA fragment
     Tensor tCrA = make_tensor(static_cast<decltype(tCrA_partition) &&>(tCrA_partition).data(),
                               tCrA_partition.shape());
+    Tensor tCrA_input = make_tensor<ElementA>(tCrA.shape()); // narrow input fragment
     Tensor tCrB_partition = thread_mma.partition_fragment_B(gB(_, _, 0));
     Tensor tCrB = make_tensor(static_cast<decltype(tCrB_partition) &&>(tCrB_partition).data(),
                               make_shape(size<0>(tCrB_partition.shape()),
@@ -237,7 +287,7 @@ struct CollectiveMma<
     auto gmem_thr_copy_A = mainloop.gmem_tiled_copy_a.get_slice(thread_idx);
     auto gmem_thr_copy_B = mainloop.gmem_tiled_copy_b.get_slice(thread_idx);
 
-    auto tCrA_copy_view = gmem_thr_copy_A.retile_D(tCrA);
+    auto tCrA_copy_view = gmem_thr_copy_A.retile_D(tCrA_input);
     auto tCrB_copy_view = gmem_thr_copy_B.retile_D(tCrB);
 
   #if CUTLASS_ENABLE_DEBUG_PRINTS
@@ -312,6 +362,7 @@ struct CollectiveMma<
       // Copy gmem to rmem for the first k_tile
       copy(mainloop.gmem_tiled_copy_a, iter_a(_,_,_,k), tCrA_copy_view);
       copy(mainloop.gmem_tiled_copy_b, iter_b(_,_,_,k), tCrB_copy_view);
+      transform_A(tCrA_input, tCrA);
 
       if(prefetch_k < k_tile_count) {
         if constexpr(cute::detail::has_prefetch<GmemTiledCopyA>) {
