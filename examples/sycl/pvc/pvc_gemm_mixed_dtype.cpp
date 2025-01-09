@@ -160,17 +160,7 @@ struct ExampleRunner {
     //
     // Compute reference output (default gemm kernel w/ ElementA == ElementB)
     //
-  // TODO(joe): avoid redefining these here
-    using ElementAccumulator = float;                   // <- data type of accumulator
-    using ElementComputeEpilogue = float;  // <- data type of epilogue operations
-    using ElementInputA = bfloat16_t;                    // <- data type of elements in input matrix A 
-    using ElementInputB = bfloat16_t;                        // <- data type of elements in input matrix B
-    using ElementOutput = float;                        // <- data type of elements in output matrix D
-
-    using LayoutA = cutlass::layout::RowMajor;
-    using LayoutB = cutlass::layout::RowMajor;
-    using LayoutC = cutlass::layout::RowMajor;
-    using LayoutD = cutlass::layout::RowMajor;
+    using ElementRefA = ElementB;          // <- data type of ElementA in reference implementation
 
     using GmemTiledCopyA = XE_2D_U16x32x32_LD_N;
     using GmemTiledCopyB = XE_2D_U16x32x32_LD_V;
@@ -186,7 +176,7 @@ struct ExampleRunner {
     using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelPVC<PipelineStages>;
     using EpilogueDispatchPolicy = cutlass::epilogue::IntelPVCEpilogue;
 
-    using EpilogueOp = cutlass::epilogue::fusion::LinearCombination<ElementOutput, ElementComputeEpilogue,
+    using EpilogueOp = cutlass::epilogue::fusion::LinearCombination<ElementOutput, ElementCompute,
             ElementAccumulator, ElementAccumulator, cutlass::FloatRoundStyle::round_to_nearest>;
 
     using FusionCallBacks = cutlass::epilogue::fusion::FusionCallbacks<EpilogueDispatchPolicy, EpilogueOp, TileShape,
@@ -209,9 +199,9 @@ struct ExampleRunner {
     using CollectiveMainloopRef = cutlass::gemm::collective::CollectiveMma<
             GEMMDispatchPolicy,
             TileShape,
-            ElementInputA,
+            ElementRefA,
             cutlass::gemm::TagToStrideA_t<LayoutA>,
-            ElementInputB,
+            ElementB,
             cutlass::gemm::TagToStrideB_t<LayoutB>,
             TiledMma,
             GmemTiledCopyA, void, void, cute::identity,  // A
