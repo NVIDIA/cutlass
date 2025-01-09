@@ -241,11 +241,12 @@ struct CollectiveMma<
     auto tCrB_copy_view = gmem_thr_copy_B.retile_D(tCrB);
 
   #if CUTLASS_ENABLE_DEBUG_PRINTS
-    if (thread(LOG_THREAD, LOG_GROUP)) {
+    if (cutlass::thread(LOG_THREAD, LOG_GROUP)) {
         print("======================= A: \n");
         print("  gA : "); print(gA); print("\n");
         print("tCrA_copy_view : "); print(tCrA_copy_view); print("\n");
         print("  tCrA : "); print(tCrA); print("\n");
+        print("tCrA_input : "); print(tCrA_input); print("\n");
 
         print("=====================  B :\n");
         print("  gB : "); print(gB); print("\n");
@@ -261,7 +262,7 @@ struct CollectiveMma<
         print(" PrefetchATileSize :    ");print(PrefetchATileSize{});print("\n");
         print(" PrefetchBTileSize :    ");print(PrefetchBTileSize{});print("\n");
       }
-    #endif
+  #endif
 
     //
     // Mainloop

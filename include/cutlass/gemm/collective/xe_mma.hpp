@@ -238,7 +238,7 @@ struct CollectiveMma<
 
 
   #if CUTLASS_ENABLE_DEBUG_PRINTS
-    if (thread(LOG_THREAD, LOG_GROUP)) {
+    if (cutlass::thread(LOG_THREAD, LOG_GROUP)) {
         print("======================= A: \n");
         print("  gA : "); print(gA); print("\n");
         print("copy_tCrA : "); print(copy_tCrA); print("\n");
