@@ -321,8 +321,8 @@ public:
                       tile_coord_mnkl,
                       tiled_mma,
                       SubgroupTileShape{}, // Epilogue tile
-                      params.xe_load_c,
-                      rw_coord,
+                      params.xe_store_d,
+                      cD,
                       residue_mn,
                       cD,
                       residue_mn,

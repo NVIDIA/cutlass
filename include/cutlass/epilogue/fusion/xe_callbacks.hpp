@@ -171,6 +171,7 @@ struct FusionCallbacks<
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<
+  class CtaTileShapeMNK,
   class StrideAux,
   class CopyOpG2R,
   template <class> class ActivationFn,
@@ -184,7 +185,7 @@ template<
 using XeLinCombDeEltAct =
   Sm90EVT<Sm90Compute<ActivationFn, ElementOutput, ElementCompute, RoundStyle>, // activation(beta * C + (alpha * acc), aux)
     Sm90LinearCombination<ElementCompute, ElementCompute, ElementSource, ElementScalar, RoundStyle>, // beta * C + (alpha * acc)
-    XeAuxLoad<ElementAux, StrideAux, CopyOpG2R> // aux
+    XeAuxLoad<CtaTileShapeMNK, ElementAux, StrideAux, CopyOpG2R> // aux
   >;
 
 // Z = Aux
@@ -215,8 +216,8 @@ struct FusionCallbacks<
     EpilogueTile,
     CopyOpG2R
 > : XeLinCombDeEltAct<
-      cutlass::gemm::TagToStrideC_t<GmemLayoutTagAux>, CopyOpG2R, ActivationFn, ElementOutput_,
-      ElementCompute_, ElementAux, ElementSource, ElementScalar, RoundStyle
+      CtaTileShapeMNK, cutlass::gemm::TagToStrideC_t<GmemLayoutTagAux>, CopyOpG2R, ActivationFn,
+      ElementOutput_, ElementCompute_, ElementAux, ElementSource, ElementScalar, RoundStyle
     > {
 
   using ElementOutput = ElementOutput_;
@@ -224,8 +225,8 @@ struct FusionCallbacks<
 
   using Impl =
     XeLinCombDeEltAct<
-      cutlass::gemm::TagToStrideC_t<GmemLayoutTagAux>, CopyOpG2R, ActivationFn, ElementOutput,
-      ElementCompute, ElementAux, ElementSource, ElementScalar, RoundStyle
+      CtaTileShapeMNK, cutlass::gemm::TagToStrideC_t<GmemLayoutTagAux>, CopyOpG2R, ActivationFn,
+      ElementOutput, ElementCompute, ElementAux, ElementSource, ElementScalar, RoundStyle
     >;
   using Operation =
     fusion::LinCombDeEltAct<
