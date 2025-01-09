@@ -63,3 +63,8 @@ cutlass_example_add_executable(
 )
 
 add_subdirectory(flash_attention_v2)
+
+cutlass_example_add_executable(
+  pvc_gemm_mixed_dtype
+  pvc_gemm_mixed_dtype.cpp
+)
