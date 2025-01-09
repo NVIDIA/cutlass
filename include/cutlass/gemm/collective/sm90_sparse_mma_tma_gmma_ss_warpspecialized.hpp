@@ -150,6 +150,9 @@ struct CollectiveMma<
 
   using PipelineParams = typename MainloopPipeline::Params;
 
+  // One threads per CTA are producers (1 for operand tile)
+  static constexpr int NumProducerThreadEvents = 1;
+
   static_assert(cute::rank(SmemLayoutAtomA{}) == 2, "SmemLayoutAtom must be rank 2 (M,K)");
   static_assert((size<0>(TileShape{}) % size<0>(SmemLayoutAtomA{})) == 0, "SmemLayoutAtom must evenly divide tile shape.");
   static_assert((size<2>(TileShape{}) % size<1>(SmemLayoutAtomA{})) == 0, "SmemLayoutAtom must evenly divide tile shape.");
