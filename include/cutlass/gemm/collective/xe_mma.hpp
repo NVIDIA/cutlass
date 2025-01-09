@@ -98,6 +98,10 @@ struct CollectiveMma<
   using TransformB = TransformB_;
   using ArchTag = typename DispatchPolicy::ArchTag;
 
+  static_assert(
+      platform::is_same<ElementA, ElementB>::value,
+      "MainloopIntelPVC requires that A and B have same type.");
+
   static constexpr int SubgroupSize = DispatchPolicy::SubgroupSize;
 
   using MmaAtomShape = typename TiledMma::AtomShape_MNK;

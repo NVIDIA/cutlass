@@ -61,7 +61,7 @@ template <
   class SmemCopyAtomB_,
   class TransformB_>
 struct CollectiveMma<
-    MainloopIntelPVC<Stages>,
+    MainloopIntelPVCMixedPrecision<Stages>,
     TileShape_,
     ElementA_,
     StrideA_,
@@ -80,7 +80,7 @@ struct CollectiveMma<
   //
   // Type Aliases
   //
-  using DispatchPolicy = MainloopIntelPVC<Stages>;
+  using DispatchPolicy = MainloopIntelPVCMixedPrecision<Stages>;
   using WorkgroupTileShape = TileShape_;
   using ElementA = ElementA_;
   using StrideA = StrideA_;
@@ -97,6 +97,10 @@ struct CollectiveMma<
   using TransformA = TransformA_;
   using TransformB = TransformB_;
   using ArchTag = typename DispatchPolicy::ArchTag;
+
+  static_assert(
+      sizeof(ElementA) < sizeof(ElementB),
+      "MainloopIntelPVCMixedPrecision requires that A is narrower than B.");
 
   static constexpr int SubgroupSize = DispatchPolicy::SubgroupSize;
 
