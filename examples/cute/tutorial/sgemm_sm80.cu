@@ -208,10 +208,10 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
   Tensor tCsB_p = tCsB(_,_,_,smem_pipe_read);
 
   // Size of the register pipeline
-  auto K_BLOCK_MAX = size<2>(tCrA);
+  constexpr auto K_BLOCK_MAX = size<2>(tCrA);
 
   // PREFETCH register pipeline
-  if (K_BLOCK_MAX > 1) {
+  if constexpr (K_BLOCK_MAX > 1) {
     // Wait until our first prefetched tile is loaded in
     cp_async_wait<K_PIPE_MAX-2>();
     __syncthreads();
