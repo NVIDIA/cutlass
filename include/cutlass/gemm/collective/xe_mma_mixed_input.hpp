@@ -218,7 +218,7 @@ struct CollectiveMma<
     using SrcType = typename EngineIn::value_type;
     using DstType = typename EngineOut::value_type;
 
-    auto const& src = tCrA_load(_, _, _); // TODO(joe): confirm kblock removal here makes sense
+    auto const& src = tCrA_load(_, _, _);
     auto const& dst = tCrA_mma(_, _, _);
     auto pSrc = raw_pointer_cast(src.data());
     auto pDst = const_cast<DstType*>(raw_pointer_cast(dst.data()));
