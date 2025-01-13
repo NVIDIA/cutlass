@@ -88,9 +88,7 @@ struct TensorPerRowBiasFunc {
       BiasView bias_view_ = BiasView(),
       Element threshold_ = Element(0)
     ):
-      view(view_), bias_view{bias_view_}{
-
-    }
+      view(view_), bias_view{bias_view_} { }
   };
 
   //
@@ -104,13 +102,10 @@ struct TensorPerRowBiasFunc {
   //
 
   CUTLASS_DEVICE
-  TensorPerRowBiasFunc(Params const &params): params(params) {
-
-  }
+  TensorPerRowBiasFunc(Params const &params): params(params) { }
 
   CUTLASS_DEVICE
   void operator()(TensorCoord const &coord) {
-
     Element const & value = params.view.at(coord);
     params.view.at(coord) = value + params.bias_view.at(coord);
   }
@@ -128,7 +123,7 @@ template <
   typename LayoutBias>
 void TensorPerRowBias(
   TensorView<Element, Layout> view,       ///< destination tensor
-  TensorView<ElementBias, LayoutBias> bias_view){         ///< bias tensor 
+  TensorView<ElementBias, LayoutBias> bias_view) {         ///< bias tensor 
   
   using Func = detail::TensorPerRowBiasFunc<Element, Layout, ElementBias, LayoutBias>;
   using Params = typename Func::Params;
