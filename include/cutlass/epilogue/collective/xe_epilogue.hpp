@@ -335,6 +335,7 @@ public:
     Tensor rw_coord = tOuti(_,_,_,l_coord);
 
     // Get the fusion callbacks
+    // Arguments passed here relate to sub-group tiles, rather than CTA (work-group) tiles
     constexpr bool RefSrc = true;
     auto residue_mn = make_coord(M, N);
     auto cst_args = cutlass::epilogue::fusion::detail::ConsumerStoreArgs{
