@@ -102,7 +102,7 @@ auto benchmark_main(int argc, const char **argv) -> int {
 
   std::stringstream benchmark_name;
   benchmark_name << benchmark_config << "/" << options.benchmark_name();
-  benchmark::RegisterBenchmark(benchmark_name.str(), runner, options, hw_info)->UseManualTime();
+  ::benchmark::RegisterBenchmark(benchmark_name.str(), runner, options, hw_info)->UseManualTime();
   return 0;
 }
 
@@ -163,11 +163,11 @@ int main(int argc, const char** argv) {
   file.close();
 
   int argc_bm = 0;
-  benchmark::SetDefaultTimeUnit(benchmark::kMillisecond);
-  benchmark::Initialize(&argc_bm, nullptr);
+  ::benchmark::SetDefaultTimeUnit(::benchmark::kMillisecond);
+  ::benchmark::Initialize(&argc_bm, nullptr);
 
-  benchmark::RunSpecifiedBenchmarks();
-  benchmark::Shutdown();
+  ::benchmark::RunSpecifiedBenchmarks();
+  ::benchmark::Shutdown();
 
   return 0;
 }
