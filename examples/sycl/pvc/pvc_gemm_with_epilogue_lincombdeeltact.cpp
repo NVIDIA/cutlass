@@ -285,10 +285,10 @@ struct ExampleRunner {
       std::exit(1);
     }
 
-    gemm_op.initialize(arguments, workspace.get());
+    CUTLASS_CHECK(gemm_op.initialize(arguments, workspace.get()));
 
     // Run the GEMM
-    gemm_op.run();
+    CUTLASS_CHECK(gemm_op.run());
 
     syclcompat::wait();
 

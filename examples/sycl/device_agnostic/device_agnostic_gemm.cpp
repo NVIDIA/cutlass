@@ -241,12 +241,12 @@ struct ExampleRunner {
     size_t workspace_size = Gemm::get_workspace_size(arguments);
     cutlass::device_memory::allocation<uint8_t> workspace(workspace_size);
 
-    gemm_op.can_implement(arguments);
+    CUTLASS_CHECK(gemm_op.can_implement(arguments));
 
-    gemm_op.initialize(arguments, workspace.get());
+    CUTLASS_CHECK(gemm_op.initialize(arguments, workspace.get()));
 
     // Run the GEMM
-    gemm_op.run();
+    CUTLASS_CHECK(gemm_op.run());
 
     syclcompat::wait();
 
