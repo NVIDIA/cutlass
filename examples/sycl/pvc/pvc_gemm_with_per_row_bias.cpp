@@ -49,7 +49,7 @@
 #include "cutlass/tensor_view.h"
 #include "cutlass/coord.h"
 
-#include "common.h"
+#include "common.hpp"
 
 using namespace cute;
 
@@ -233,7 +233,7 @@ struct ExampleRunner {
 
     initialize(problem_size);
 
-    using StrideBias = Stride<_1, _0, int>;
+    using StrideBias = Stride<_1, _0, int64_t>;
     StrideBias dBias = {};
 
     using EpilogueArguments = typename Gemm::GemmKernel::EpilogueArguments;
