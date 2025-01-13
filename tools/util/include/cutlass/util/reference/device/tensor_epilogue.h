@@ -29,7 +29,7 @@
  *
  **************************************************************************************************/
 /* \file
-  \brief Defines device-side elementwise operations on TensorView. Note, the operations defined
+  \brief Defines device-side epilogue operations on TensorView. Note, the operations defined
     in this header are not specialized for any particular data layout and are therefore not
     intended to offer the best possible performance. Rather, they are intended to be generic
     reference implementations to support the CUTLASS unit tests.
@@ -85,8 +85,7 @@ struct TensorPerRowBiasFunc {
 
     Params(
       TensorViewD view_ = TensorViewD(),
-      BiasView bias_view_ = BiasView(),
-      Element threshold_ = Element(0)
+      BiasView bias_view_ = BiasView()
     ):
       view(view_), bias_view{bias_view_} { }
   };
