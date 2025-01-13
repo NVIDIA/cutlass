@@ -326,6 +326,7 @@ public:
     // OOB predication for tile quantization "residue"
     // Absolute coordinate tensors (dynamic)
     Tensor mD_crd = make_identity_tensor(make_shape(M,N));                                                     // (M,N)
+    Tensor cD = local_tile(mD_crd, take<0,2>(SubgroupTileShape{}), make_coord(sg_m_coord, sg_n_coord));
     Tensor cD_mn = local_tile(mD_crd, take<0,2>(CtaTileMNK{}), make_coord(m_coord, n_coord));          // (CTA_M,CTA_N)
     Tensor tRS_cD_mn = thread_g2r.partition_S(flat_divide(cD_mn, EpilogueTile{}));     // (G2R,G2R_M,G2R_N,EPI_M,EPI_N)
 
@@ -343,7 +344,7 @@ public:
                       tiled_mma,
                       EpilogueTile{},
                       params.xe_store_d,
-                      rw_coord,
+                      cD,
                       residue_mn,
                       tRS_cD,
                       residue_mn,
