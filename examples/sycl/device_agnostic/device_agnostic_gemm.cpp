@@ -47,6 +47,7 @@
 
 #include "cutlass/util/device_memory.h"
 #include "cutlass/util/reference/device/sycl_tensor_fill.h"
+#include "helper.h"
 
 using namespace cute;
 
@@ -222,7 +223,7 @@ struct ExampleRunner {
     initialize_block(block_C, seed + 2021);
   }
 
-  void run(const Options& options, const cutlass::KernelHardwareInfo& hw_info) {
+  cutlass::Status run(const Options& options, const cutlass::KernelHardwareInfo& hw_info) {
     ProblemShapeType problem_size = ProblemShapeType{options.m, options.n, options.k, options.l};
 
     initialize(problem_size);
@@ -253,7 +254,9 @@ struct ExampleRunner {
     bool passed = verify(problem_size, options.alpha, options.beta);
     std::cout << "Disposition: " << (passed ? "Passed" : "Failed") << std::endl;
 
-    if (passed && options.iterations > 0) {
+    if(!passed) return cutlass::Status::kErrorInternal;
+
+    if (options.iterations > 0) {
       GPU_Clock timer;
       timer.start();
       for (int i = 0; i < options.iterations; ++i) {
@@ -267,7 +270,7 @@ struct ExampleRunner {
       printf("Cutlass GEMM Performance:     [%4.3f]TFlop/s  (%6.4f)ms\n", tflops / cute_time, cute_time*1000);
     }
 
-    return;
+    return cutlass::Status::kSuccess;
   }
 
 };
@@ -376,7 +379,7 @@ int main(int argc, const char** argv)
 
   ExampleRunner<Gemm> runner;
 
-  runner.run(options, hw_info);
+  CUTLASS_CHECK(runner.run(options, hw_info));
 
   return 0;
 }
