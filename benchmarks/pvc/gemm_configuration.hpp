@@ -52,6 +52,8 @@ namespace cutlass {
 namespace gemm {
 namespace device {
 
+enum class Scheduler { Gemm, GemmSplitK, GemmStreamK };
+
 template<
   class ArchTag,
   class ElementA, class LayoutA,
@@ -59,7 +61,8 @@ template<
   class ElementC, class LayoutC,
   class ElementAccumulator,
   class TileShape, class TiledMma,
-  class GmemTiledCopyA, class GmemTiledCopyB>
+  class GmemTiledCopyA, class GmemTiledCopyB,
+  Scheduler TileScheduler>
 struct GemmConfiguration {
   static_assert(sizeof(ElementA) == 0, "No valid GemmConfiguration configuration exists.");
 };
@@ -69,14 +72,14 @@ struct GemmConfiguration {
 // bfloat16
 
 template<typename LayoutA, typename LayoutB, typename LayoutC,
-  class TileShape, class TiledMma, class GmemTiledCopyA, class GmemTiledCopyB>
+  class TileShape, class TiledMma, class GmemTiledCopyA, class GmemTiledCopyB, Scheduler TileScheduler>
 struct GemmConfiguration<
       arch::IntelPVC,
       bfloat16_t, LayoutA,
       bfloat16_t, LayoutB,
       float, LayoutC,
       float, TileShape, TiledMma,
-      GmemTiledCopyA, GmemTiledCopyB> {
+      GmemTiledCopyA, GmemTiledCopyB, TileScheduler> {
   using DispatchPolicy = MainloopIntelPVC<3>;
 
   // Mainloop
@@ -111,10 +114,28 @@ struct GemmConfiguration<
   using GemmKernel = kernel::GemmUniversal<
     Shape<int, int, int, int>,
     CollectiveMainloop,
-    CollectiveEpilogue
+    CollectiveEpilogue,
+    std::conditional_t<TileScheduler == Scheduler::Gemm, void, cutlass::gemm::StreamKScheduler>
   >;
 
   using Gemm = GemmUniversalAdapter<GemmKernel>;
+
+  constexpr static typename GemmKernel::Arguments defaultArguments() {
+    using StreamKMode =
+      cutlass::gemm::kernel::detail::PersistentTileSchedulerXeStreamKParams::DecompositionMode;
+    if constexpr (TileScheduler == Scheduler::Gemm) {
+      return {};
+    } else if constexpr (TileScheduler == Scheduler::GemmStreamK) {
+      typename GemmKernel::Arguments arguments{};
+      arguments.scheduler = {1, StreamKMode::StreamK};
+      return arguments;
+    } else {
+      static_assert(TileScheduler == Scheduler::GemmSplitK);
+      typename GemmKernel::Arguments arguments{};
+      arguments.scheduler = {1, StreamKMode::SplitK};
+      return arguments;
+    }
+  }
 };
 
 } // namespace device
