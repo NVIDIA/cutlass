@@ -49,7 +49,6 @@ using namespace cutlass::epilogue::fusion;
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <
-  class CtaTileShapeMNK,
   class Element,
   class StrideMNL,
   class CopyOpG2R,
@@ -196,22 +195,16 @@ struct XeAuxLoad {
     using TiledMma = decltype(args.tiled_mma);
     using MmaAtomShape = typename TiledMma::AtomShape_MNK;
 
-    static constexpr auto BLK_M = get<0>(CtaTileShapeMNK{});
-    static constexpr auto BLK_N = get<1>(CtaTileShapeMNK{});
-
-    static constexpr auto ATOM_M = get<1>(typename TiledMma::ThrLayoutVMNK{}.shape());
-    static constexpr auto ATOM_N = get<2>(typename TiledMma::ThrLayoutVMNK{}.shape());
-
-    static constexpr auto SG_M = BLK_M / ATOM_M;
-    static constexpr auto SG_N = BLK_N / ATOM_N;
+    auto SG_M = get<0>(args.tile_shape_mnk);
+    auto SG_N = get<1>(args.tile_shape_mnk);
 
     static constexpr int FragsM = SG_M / get<0>(MmaAtomShape()); // A frags per sub_group
     static constexpr int FragsN = SG_N / get<1>(MmaAtomShape()); // B frags per sub_group
 
     auto [M, N, K, L] = args.problem_shape_mnkl;
     auto [m_coord, n_coord, k_coord, l_coord] = args.tile_coord_mnkl;
-    auto m_offset = m_coord * BLK_M + (get_sub_group_id() / ATOM_N) * SG_M;
-    auto n_offset = n_coord * BLK_N + (get_sub_group_id() % ATOM_N) * SG_N;
+    auto m_offset = m_coord * SG_M;
+    auto n_offset = n_coord * SG_N;
     Tensor tOuti = args.tiled_copy.get_pvc_tensor(
             make_coord(m_offset, n_offset, 0),
             make_shape(_, Int<FragsM>{}, Int<FragsN>{}, L),

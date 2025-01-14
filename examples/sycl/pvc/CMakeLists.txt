@@ -48,6 +48,11 @@ cutlass_example_add_executable(
 )
 
 cutlass_example_add_executable(
+  pvc_gemm_with_per_row_bias
+  pvc_gemm_with_per_row_bias.cpp
+)
+
+cutlass_example_add_executable(
   pvc_collective_builder
   pvc_collective_builder.cpp
 )
