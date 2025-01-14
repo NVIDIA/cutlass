@@ -37,13 +37,21 @@
 #ifdef __SYCL_DEVICE_ONLY__
 #define SYCL_DEVICE_BUILTIN(x) SYCL_EXTERNAL extern "C" x
 #else
-#define SYCL_DEVICE_BUILTIN(x) inline x { assert(false); }
+#define SYCL_DEVICE_BUILTIN(x)                                                 \
+  inline x {                                                                   \
+    CUTE_INVALID_CONTROL_PATH(                                                 \
+        "Attempting to use a device built-in in host code.");                  \
+  }
 #endif
 
 #ifdef __SYCL_DEVICE_ONLY__
 #define SYCL_DEVICE_OCL(x) SYCL_EXTERNAL x
 #else
-#define SYCL_DEVICE_OCL(x) inline x { assert(false); }
+#define SYCL_DEVICE_OCL(x)                                                     \
+  inline x {                                                                   \
+    CUTE_INVALID_CONTROL_PATH(                                                 \
+        "Attempting to use a device built-in in host code.");                  \
+  }
 #endif
 
 enum class CacheControl {

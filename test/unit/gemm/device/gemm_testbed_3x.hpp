@@ -287,6 +287,10 @@ bool initialize_tensor(
     cutlass::reference::host::TensorFill(view, Element(1));
   }
 
+  else if (dist_kind == cutlass::Distribution::AllZeros) {
+    cutlass::reference::host::TensorFill(view, Element(0));
+  }
+
   else {
     EXPECT_TRUE(false) << "Not implemented";
     return false;

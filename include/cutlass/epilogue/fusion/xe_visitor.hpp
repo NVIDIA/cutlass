@@ -190,8 +190,26 @@ struct XeAuxLoad {
   CUTLASS_DEVICE auto
   get_consumer_store_callbacks(ConsumerStoreArgs<Args...> const& args) {
     auto xe_copy_aux = params_ptr->xe_load_aux;
-    Tensor rw_coord = args.cD;
     Tensor trAux = make_tensor_like<Element>(args.tCrC);
+
+    using TiledMma = decltype(args.tiled_mma);
+    using MmaAtomShape = typename TiledMma::AtomShape_MNK;
+
+    auto SG_M = get<0>(args.tile_shape_mnk);
+    auto SG_N = get<1>(args.tile_shape_mnk);
+
+    static constexpr int FragsM = SG_M / get<0>(MmaAtomShape()); // A frags per sub_group
+    static constexpr int FragsN = SG_N / get<1>(MmaAtomShape()); // B frags per sub_group
+
+    auto [M, N, K, L] = args.problem_shape_mnkl;
+    auto [m_coord, n_coord, k_coord, l_coord] = args.tile_coord_mnkl;
+    auto m_offset = m_coord * SG_M;
+    auto n_offset = n_coord * SG_N;
+    Tensor tOuti = args.tiled_copy.get_pvc_tensor(
+            make_coord(m_offset, n_offset, 0),
+            make_shape(_, Int<FragsM>{}, Int<FragsN>{}, L),
+            make_stride(Int<get<0>(MmaAtomShape{})>{}, Int<get<1>(MmaAtomShape{})>{}, _1{}));
+    Tensor rw_coord = tOuti(_,_,_,l_coord);
 
     return ConsumerStoreCallbacks(
         rw_coord, xe_copy_aux, cute::move(trAux), params_ptr

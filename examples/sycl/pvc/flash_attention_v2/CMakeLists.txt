@@ -1,5 +1,4 @@
-
-# Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -28,15 +27,7 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-
-if (NOT CUTLASS_ENABLE_SYCL)
 cutlass_example_add_executable(
-  35_gemm_softmax
-  gemm_softmax.cu
-  )
-elseif (SYCL_NVIDIA_TARGET)
-cutlass_example_add_executable(
-  35_gemm_online_softmax
-  gemm_online_softmax.cpp
-  )
-endif()
+  pvc_flash_attention
+  pvc_flash_attn.cpp
+)

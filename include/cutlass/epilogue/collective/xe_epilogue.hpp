@@ -300,6 +300,15 @@ public:
     auto n_offset = n_coord * BLK_N + (get_sub_group_id() % ATOM_N) * SG_N;
     auto l_offset = l_coord;
 
+    using EpilogueTile = decltype(get<0>(params.xe_store_d.get_layoutS_MN()).shape());
+
+    auto sg_local_m_coord = get_sub_group_id() / ATOM_N;
+    auto sg_local_n_coord = get_sub_group_id() % ATOM_N;
+
+    auto sg_m_coord = m_coord * ATOM_M + sg_local_m_coord;
+    auto sg_n_coord = n_coord * ATOM_N + sg_local_n_coord;
+    auto sg_coord = make_coord(sg_m_coord, sg_n_coord, k_coord, l_coord);
+
     bool is_C_load_needed = is_source_supported && fusion_callbacks.is_C_load_needed();
 
     Tensor trC = make_tensor<typename TiledMma::ValTypeC>(Shape<Int<FragmentSize>>{});
@@ -309,22 +318,36 @@ public:
             make_shape(_, Int<FragsM>{}, Int<FragsN>{}, L),
             make_stride(Int<get<0>(MmaAtomShape{})>{}, Int<get<1>(MmaAtomShape{})>{}, _1{}));
 
+    // Because Sm90 uses shared memory, they are not tied to using the same accumulator values
+    // for MMA and Epilogue. But because we are operating directly in the accumulators, we need to be
+    // sure that we are operating on the same values.
+    ThrCopy thread_g2r = params.xe_load_c.get_slice(thread_idx);
+
+    // OOB predication for tile quantization "residue"
+    // Absolute coordinate tensors (dynamic)
+    Tensor mD_crd = make_identity_tensor(make_shape(M,N));                                                     // (M,N)
+    Tensor cD = local_tile(mD_crd, take<0,2>(SubgroupTileShape{}), make_coord(sg_m_coord, sg_n_coord));
+    Tensor cD_mn = local_tile(mD_crd, take<0,2>(CtaTileMNK{}), make_coord(m_coord, n_coord));          // (CTA_M,CTA_N)
+    Tensor tRS_cD_mn = thread_g2r.partition_S(flat_divide(cD_mn, EpilogueTile{}));     // (G2R,G2R_M,G2R_N,EPI_M,EPI_N)
+
+    Tensor tRS_cD = make_counting_tensor(tRS_cD_mn.layout());                          // (G2R,G2R_M,G2R_N,EPI_M,EPI_N)
+
     Tensor rw_coord = tOuti(_,_,_,l_coord);
-    Tensor mD_crd = make_identity_tensor(make_shape(M,N));
-    Tensor cD = local_tile(mD_crd, take<0,2>(SubgroupTileShape{}), make_coord(m_coord, n_coord));
+
     // Get the fusion callbacks
+    // Arguments passed here relate to sub-group tiles, rather than CTA (work-group) tiles
     constexpr bool RefSrc = true;
     auto residue_mn = make_coord(M, N);
     auto cst_args = cutlass::epilogue::fusion::detail::ConsumerStoreArgs{
                       problem_shape_mnkl,
-                      TileShapeMNK{},
-                      tile_coord_mnkl,
+                      SubgroupTileShape{},
+                      sg_coord,
                       tiled_mma,
-                      SubgroupTileShape{}, // Epilogue tile
-                      params.xe_load_c,
-                      rw_coord,
-                      residue_mn,
+                      EpilogueTile{},
+                      params.xe_store_d,
                       cD,
+                      residue_mn,
+                      tRS_cD,
                       residue_mn,
                       trC,
                       thread_idx,

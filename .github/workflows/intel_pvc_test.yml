@@ -1,4 +1,4 @@
-name: "Test"
+name: "Intel PVC Test"
 
 on:
   push:
@@ -19,8 +19,8 @@ concurrency:
 
 jobs:
   run-tests:
-    name: Run tests
-    runs-on: cp-nvidia-gpu
+    name: Run Intel PVC tests
+    runs-on: cp-gpumax-1100-gpu
     timeout-minutes: 30
 
     steps:
@@ -30,7 +30,6 @@ jobs:
       - name: Install dependencies
         shell: bash
         run: |
-          nvidia-smi
           mkdir ~/dpcpp
           pushd ~/dpcpp
           echo "Will use DPCPP ${{ inputs.DPCPP_VERSION }}."
@@ -60,8 +59,7 @@ jobs:
           clang++ --version
           cmake -G Ninja  \
             -DCUTLASS_ENABLE_SYCL=ON \
-            -DDPCPP_SYCL_TARGET=nvptx64-nvidia-cuda \
-            -DDPCPP_SYCL_ARCH=sm_80
+            -DDPCPP_SYCL_TARGET=intel_gpu_pvc
           cmake --build .
 
       - name: Unit test

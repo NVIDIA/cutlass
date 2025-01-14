@@ -274,6 +274,71 @@ struct FusionCallbacks<
   using Impl::Impl;
 };
 
+template <
+  class ElementOutput_,
+  class ElementCompute_,
+  class ElementBias_,
+  class ElementSource_,
+  class ElementScalar_,
+  int AlignmentBias_,
+  FloatRoundStyle RoundStyle_,
+  class CtaTileShapeMNK_,
+  class EpilogueTile_
+>
+struct FusionCallbacks<
+    epilogue::IntelPVCEpilogue,
+    fusion::LinCombPerRowBias<ElementOutput_, ElementCompute_, ElementBias_, ElementSource_, ElementScalar_, AlignmentBias_, RoundStyle_>,
+    CtaTileShapeMNK_,
+    EpilogueTile_
+> : Sm90LinCombPerRowBias<CtaTileShapeMNK_, ElementOutput_, ElementCompute_, ElementBias_, ElementSource_, ElementScalar_, AlignmentBias_, RoundStyle_> {
+
+  using Impl = Sm90LinCombPerRowBias<
+      CtaTileShapeMNK_,
+      typename cutlass::detail::get_unpacked_element_type<ElementOutput_>::type,
+      ElementCompute_, ElementBias_, ElementSource_, ElementScalar_,
+      AlignmentBias_, RoundStyle_>;
+  using ElementOutput = ElementOutput_;
+  using ElementCompute = ElementCompute_;
+  using ElementBias = ElementBias_;
+  using ElementSource = ElementSource_;
+  using ElementScalar = ElementScalar_;
+  static constexpr int AlignmentBias = AlignmentBias_;
+  using Operation = fusion::LinCombPerRowBias<ElementOutput_, ElementCompute_, ElementBias_, ElementSource_, ElementScalar_, AlignmentBias_, RoundStyle_>;
+
+  struct Arguments {
+    ElementScalar_ alpha = ElementScalar_(1);
+    ElementScalar_ beta = ElementScalar_(0);
+    ElementScalar_ const* alpha_ptr = nullptr;
+    ElementScalar_ const* beta_ptr = nullptr;
+
+    using StrideAlpha = Stride<_0,_0,int64_t>;
+    using StrideBeta  = Stride<_0,_0,int64_t>;
+    StrideAlpha dAlpha = {_0{}, _0{}, 0};
+    StrideBeta  dBeta  = {_0{}, _0{}, 0};
+
+    using StrideBias = Stride<_1, _0, int64_t>;
+    ElementBias const* bias_ptr = nullptr;
+    StrideBias dBias = {};
+
+    operator typename Impl::Arguments() const {
+      return
+        {     // ternary op : beta * C + (alpha * acc + bias)
+          {{beta}, {beta_ptr}, {dBeta}}, // leaf args : beta
+          {},                   // leaf args : C
+          {                     // ternary op : alpha * acc + bias
+            {{alpha}, {alpha_ptr}, {dAlpha}}, // leaf args : alpha
+            {},                     // leaf args : acc
+            {bias_ptr, ElementBias(0), dBias}, // leaf args : bias
+            {}                  // ternary args : multiply_add
+          },                    // end ternary op
+          {} // ternary args : multiply_add
+        };   // end ternary op
+    }
+  };
+
+  // Ctor inheritance
+  using Impl::Impl;
+};
 
 } // namespace cutlass::epilogue::fusion
 

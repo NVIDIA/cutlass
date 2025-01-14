@@ -45,7 +45,8 @@
 #include "cutlass/util/packed_stride.hpp"
 #include "cutlass/util/reference/device/gemm_complex.h"
 #include "cutlass/util/reference/device/tensor_compare.h"
-#include "common.h"
+#include "common.hpp"
+#include "helper.h"
 
 #include "cutlass/gemm/kernel/xe_persistent_tile_scheduler_params_streamk.hpp"
 using namespace cute;
@@ -230,7 +231,7 @@ struct ExampleRunner {
     block_ref_D.reset(M * N * L);
   }
 
-  void run(const Options& options, const cutlass::KernelHardwareInfo& hw_info) {
+  cutlass::Status run(const Options& options, const cutlass::KernelHardwareInfo& hw_info) {
     ProblemShapeType problem_size = ProblemShapeType{options.m, options.n, options.k, options.l};
 
     initialize(problem_size);
@@ -252,12 +253,12 @@ struct ExampleRunner {
     size_t workspace_size = Gemm::get_workspace_size(arguments);
     cutlass::device_memory::allocation<uint8_t> workspace(workspace_size);
 
-    gemm_op.can_implement(arguments);
+    CUTLASS_CHECK(gemm_op.can_implement(arguments));
 
-    gemm_op.initialize(arguments, workspace.get());
+    CUTLASS_CHECK(gemm_op.initialize(arguments, workspace.get()));
 
     // Run the GEMM
-    gemm_op.run();
+    CUTLASS_CHECK(gemm_op.run());
 
     syclcompat::wait();
 
@@ -265,7 +266,9 @@ struct ExampleRunner {
     bool passed = verify(problem_size, options.alpha, options.beta);
     std::cout << "Disposition: " << (passed ? "Passed" : "Failed") << std::endl;
 
-    if (passed && options.iterations > 0) {
+    if(!passed) return cutlass::Status::kErrorInternal;
+
+    if (options.iterations > 0) {
       GPU_Clock timer;
       float elapsed_time_seconds = 0.f;
       for (int i = 0; i < options.iterations; ++i) {
@@ -293,7 +296,7 @@ struct ExampleRunner {
       printf("Cutlass GEMM Performance:     [%4.3f]TFlop/s  (%6.4f)ms\n", tflops / cute_time, cute_time*1000);
     }
 
-    return;
+    return cutlass::Status::kSuccess;
   }
 
 };
@@ -399,7 +402,7 @@ int main(int argc, const char** argv)
 
   ExampleRunner<Gemm> runner;
 
-  runner.run(options, hw_info);
+  CUTLASS_CHECK(runner.run(options, hw_info));
 
   return 0;
 }
