@@ -52,7 +52,7 @@ namespace cutlass {
 namespace gemm {
 namespace device {
 
-enum class Scheduler { Parallel, SplitK, StreamK };
+enum class Scheduler { Gemm, GemmSplitK, GemmStreamK };
 
 template<
   class ArchTag,
@@ -115,7 +115,7 @@ struct GemmConfiguration<
     Shape<int, int, int, int>,
     CollectiveMainloop,
     CollectiveEpilogue,
-    std::conditional_t<TileScheduler == Scheduler::Parallel, void, cutlass::gemm::StreamKScheduler>
+    std::conditional_t<TileScheduler == Scheduler::Gemm, void, cutlass::gemm::StreamKScheduler>
   >;
 
   using Gemm = GemmUniversalAdapter<GemmKernel>;
@@ -123,14 +123,14 @@ struct GemmConfiguration<
   constexpr static typename GemmKernel::Arguments defaultArguments() {
     using StreamKMode =
       cutlass::gemm::kernel::detail::PersistentTileSchedulerXeStreamKParams::DecompositionMode;
-    if constexpr (TileScheduler == Scheduler::Parallel) {
+    if constexpr (TileScheduler == Scheduler::Gemm) {
       return {};
-    } else if constexpr (TileScheduler == Scheduler::StreamK) {
+    } else if constexpr (TileScheduler == Scheduler::GemmStreamK) {
       typename GemmKernel::Arguments arguments{};
       arguments.scheduler = {1, StreamKMode::StreamK};
       return arguments;
     } else {
-      static_assert(TileScheduler == Scheduler::SplitK);
+      static_assert(TileScheduler == Scheduler::GemmSplitK);
       typename GemmKernel::Arguments arguments{};
       arguments.scheduler = {1, StreamKMode::SplitK};
       return arguments;
