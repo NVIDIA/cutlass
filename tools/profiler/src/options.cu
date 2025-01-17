@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -474,6 +474,8 @@ Options::Profiling::Profiling(cutlass::CommandLine const &cmdline) {
   cmdline.get_cmd_line_argument("profiling-iterations", iterations, 100);
   cmdline.get_cmd_line_argument("sleep-duration", sleep_duration, 50);
   cmdline.get_cmd_line_argument("profiling-enabled", enabled, true);
+  cmdline.get_cmd_line_argument("profiling-duration", duration, 10);
+  cmdline.get_cmd_line_argument("min-iterations", min_iterations, 10);
 
   if (cmdline.check_cmd_line_flag("providers")) {
 
@@ -504,7 +506,17 @@ void Options::Profiling::print_usage(std::ostream &out) const {
 
     << "  --profiling-iterations=<iterations>          "
     << "    Number of iterations to profile each kernel. If zero, kernels" << end_of_line
-    << "      are launched up to the profiling duration.\n\n"
+    << "      are launched up to the profiling duration. If non-zero, this overrides" << end_of_line
+    << "      --profiling-duration and --min-iterations.\n\n"
+
+    << "  --profiling-duration=<duration>             "
+    << "    Time to spend profiling each kernel (ms)." << end_of_line
+    << "    Overriden by `profiling-iterations` when `profiling-iterations` > 0." << end_of_line
+    << "    Note that `min-iterations` must also be satisfied.\n\n"
+
+    << "  --min-iterations=<iterations>             "
+    << "    Minimum number of iterations to spend profiling each kernel, even if" << end_of_line
+    << "    `profiling-duration` has been met.\n\n"
 
     << "  --warmup-iterations=<iterations>             "
     << "    Number of iterations to execute each kernel prior to profiling.\n\n"

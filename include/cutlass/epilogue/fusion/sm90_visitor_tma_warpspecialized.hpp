@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -38,6 +38,7 @@
 
 #include "cutlass/cutlass.h"
 #include "cutlass/workspace.h"
+#include "cutlass/detail/helper_macros.hpp"
 
 #include "cute/tensor.hpp"
 
@@ -215,7 +216,7 @@ struct Sm90VisitorImplBase {
   to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
     uint8_t* op_workspace = reinterpret_cast<uint8_t*>(workspace);
     return transform_apply(tuple<Ops...>{}, args,
-      [&] (auto&& op, auto const& op_args) {
+      [&] (auto&& op, auto const& op_args) CUTLASS_LAMBDA_FUNC_INLINE {
         using Op = cute::remove_cvref_t<decltype(op)>;
         auto ret = Op::to_underlying_arguments(problem_shape, op_args, op_workspace);
         if (op_workspace != nullptr) {
@@ -224,7 +225,7 @@ struct Sm90VisitorImplBase {
         }
         return ret;
       },
-      [] (auto&&... op_params) { return cute::make_tuple(op_params...); }
+      [] (auto&&... op_params) CUTLASS_LAMBDA_FUNC_INLINE { return cute::make_tuple(op_params...); }
     );
   }
 
@@ -232,11 +233,11 @@ struct Sm90VisitorImplBase {
   static bool
   can_implement(ProblemShape const& problem_shape, Arguments const& args) {
     return transform_apply(tuple<Ops...>{}, args,
-      [&] (auto&& op, auto const& op_args) {
+      [&] (auto&& op, auto const& op_args) CUTLASS_LAMBDA_FUNC_INLINE {
         using Op = cute::remove_cvref_t<decltype(op)>;
         return Op::can_implement(problem_shape, op_args);
       },
-      [&] (auto&&... implementable) {
+      [&] (auto&&... implementable) CUTLASS_LAMBDA_FUNC_INLINE {
         return (true && ... && implementable);
       }
     );
@@ -246,12 +247,12 @@ struct Sm90VisitorImplBase {
   static size_t
   get_workspace_size(ProblemShape const& problem_shape, Arguments const& args) {
     return transform_apply(tuple<Ops...>{}, args,
-      [&] (auto&& op, auto const& op_args) {
+      [&] (auto&& op, auto const& op_args) CUTLASS_LAMBDA_FUNC_INLINE {
         using Op = cute::remove_cvref_t<decltype(op)>;
         size_t op_workspace_size = Op::get_workspace_size(problem_shape, op_args);
         return round_nearest(op_workspace_size, MinWorkspaceAlignment);
       },
-      [&] (auto&&... op_workspace_size) {
+      [&] (auto&&... op_workspace_size) CUTLASS_LAMBDA_FUNC_INLINE {
         return (0 + ... + op_workspace_size);
       }
     );
@@ -265,7 +266,7 @@ struct Sm90VisitorImplBase {
     uint8_t* op_workspace = reinterpret_cast<uint8_t*>(workspace);
     return transform_apply(tuple<Ops...>{}, args,
       // Initialize each operation's workspace, stopping at the first error
-      [&] (auto&& op, auto const& op_args) {
+      [&] (auto&& op, auto const& op_args) CUTLASS_LAMBDA_FUNC_INLINE {
         if (status != Status::kSuccess) {
           return status;
         }
@@ -279,7 +280,7 @@ struct Sm90VisitorImplBase {
         return status;
       },
       // Return the final status
-      [&] (auto const&...ops) { return status; }
+      [&] (auto const&...ops) CUTLASS_LAMBDA_FUNC_INLINE { return status; }
     );
   }
 
@@ -289,11 +290,11 @@ struct Sm90VisitorImplBase {
   CUTLASS_HOST_DEVICE
   Sm90VisitorImplBase(Params const& params, SharedStorage const& shared_storage)
     : ops(transform_apply(tuple<Ops...>{}, params, shared_storage,
-        [] (auto&& op, auto const& op_params, auto&& op_storage) {
+        [] (auto&& op, auto const& op_params, auto&& op_storage) CUTLASS_LAMBDA_FUNC_INLINE {
           using Op = cute::remove_cvref_t<decltype(op)>;
           return Op(op_params, op_storage);
         },
-        [] (auto&&... ops) { return cute::make_tuple(ops...); }
+        [] (auto&&... ops) CUTLASS_LAMBDA_FUNC_INLINE { return cute::make_tuple(ops...); }
       )) {}
 
   // Ops can store kernel persistent variables (e.g. descriptors, scalars, wave counters)
@@ -328,7 +329,7 @@ struct Sm90VisitorImpl : Sm90VisitorImplBase<Ops...> {
   CUTLASS_DEVICE bool
   is_producer_load_needed() const {
     return cute::apply(ops,
-      [] (auto const&... op) {
+      [] (auto const&... op) CUTLASS_LAMBDA_FUNC_INLINE {
         return (false || ... || op.is_producer_load_needed());
       }
     );
@@ -342,7 +343,7 @@ struct Sm90VisitorImpl : Sm90VisitorImplBase<Ops...> {
   CUTLASS_DEVICE bool
   is_C_load_needed() const {
     return cute::apply(ops,
-      [] (auto const&... op) {
+      [] (auto const&... op) CUTLASS_LAMBDA_FUNC_INLINE {
         return (false || ... || op.is_C_load_needed());
       }
     );
@@ -364,7 +365,7 @@ struct Sm90VisitorImpl : Sm90VisitorImplBase<Ops...> {
     CUTLASS_DEVICE void
     begin() {
       for_each(callbacks_tuple,
-        [&] (auto& callbacks) {
+        [&] (auto& callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
           callbacks.begin();
         }
       );
@@ -376,7 +377,7 @@ struct Sm90VisitorImpl : Sm90VisitorImplBase<Ops...> {
     CUTLASS_DEVICE void
     step(uint64_t* full_mbarrier_ptr, int epi_m, int epi_n, int load_iteration, bool issue_tma_load) {
       for_each(callbacks_tuple,
-        [&] (auto& callbacks) {
+        [&] (auto& callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
           callbacks.step(full_mbarrier_ptr, epi_m, epi_n, load_iteration, issue_tma_load);
         }
       );
@@ -386,7 +387,7 @@ struct Sm90VisitorImpl : Sm90VisitorImplBase<Ops...> {
     CUTLASS_DEVICE void
     end() {
       for_each(callbacks_tuple,
-        [] (auto& callbacks) {
+        [] (auto& callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
           callbacks.end();
         }
       );
@@ -399,10 +400,10 @@ struct Sm90VisitorImpl : Sm90VisitorImplBase<Ops...> {
   CUTLASS_DEVICE auto
   get_producer_load_callbacks(ProducerLoadArgs<Args...> const& args) {
     return transform_apply(ops,
-      [&] (auto& op) {
+      [&] (auto& op) CUTLASS_LAMBDA_FUNC_INLINE {
         return op.get_producer_load_callbacks(args);
       },
-      [] (auto&&... callbacks) {
+      [] (auto&&... callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
         auto callbacks_tuple = cute::make_tuple(callbacks...);
         return ProducerLoadCallbacks<decltype(callbacks_tuple)>{callbacks_tuple};
       }
@@ -422,8 +423,18 @@ struct Sm90VisitorImpl : Sm90VisitorImplBase<Ops...> {
     CUTLASS_DEVICE void
     begin() {
       for_each(callbacks_tuple,
-        [] (auto& callbacks) {
+        [] (auto& callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
           callbacks.begin();
+        }
+      );
+    }
+
+    // Is a thread sync needed after begin(). Allows chaining async copies across multiple nodes
+    CUTLASS_DEVICE bool
+    begin_sync_needed() const {
+      return cute::apply(callbacks_tuple,
+        [] (auto const&... callbacks) {
+          return (false || ... || callbacks.begin_sync_needed());
         }
       );
     }
@@ -432,7 +443,7 @@ struct Sm90VisitorImpl : Sm90VisitorImplBase<Ops...> {
     CUTLASS_DEVICE void
     begin_loop(int epi_m, int epi_n) {
       for_each(callbacks_tuple,
-        [&] (auto& callbacks) {
+        [&] (auto& callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
           callbacks.begin_loop(epi_m, epi_n);
         }
       );
@@ -443,7 +454,7 @@ struct Sm90VisitorImpl : Sm90VisitorImplBase<Ops...> {
     CUTLASS_DEVICE void
     previsit(int epi_m, int epi_n, int load_iteration, bool is_producer_load_needed) {
       for_each(callbacks_tuple,
-        [&] (auto& callbacks) {
+        [&] (auto& callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
           callbacks.previsit(epi_m, epi_n, load_iteration, is_producer_load_needed);
         }
       );
@@ -468,7 +479,7 @@ struct Sm90VisitorImpl : Sm90VisitorImplBase<Ops...> {
     CUTLASS_DEVICE void
     reduce(STensor&& reduction_buffer, SyncFn const& sync_fn, int epi_m, int epi_n, bool is_last_iteration, VTensor visit_results) {
       for_each(callbacks_tuple,
-        [&] (auto& callbacks) {
+        [&] (auto& callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
           callbacks.reduce(reduction_buffer, sync_fn, epi_m, epi_n, is_last_iteration, visit_results);
         }
       );
@@ -479,7 +490,7 @@ struct Sm90VisitorImpl : Sm90VisitorImplBase<Ops...> {
     CUTLASS_DEVICE void
     postreduce(int epi_m, int epi_n, int store_iteration, bool issue_smem_store) {
       for_each(callbacks_tuple,
-        [&] (auto& callbacks) {
+        [&] (auto& callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
           callbacks.postreduce(epi_m, epi_n, store_iteration, issue_smem_store);
         }
       );
@@ -492,7 +503,7 @@ struct Sm90VisitorImpl : Sm90VisitorImplBase<Ops...> {
     CUTLASS_DEVICE void
     tma_store(int epi_m, int epi_n, int store_iteration, bool issue_tma_store) {
       for_each(callbacks_tuple,
-        [&] (auto& callbacks) {
+        [&] (auto& callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
           callbacks.tma_store(epi_m, epi_n, store_iteration, issue_tma_store);
         }
       );
@@ -502,7 +513,7 @@ struct Sm90VisitorImpl : Sm90VisitorImplBase<Ops...> {
     CUTLASS_DEVICE void
     end_loop(int epi_m, int epi_n) {
       for_each(callbacks_tuple,
-        [&] (auto& callbacks) {
+        [&] (auto& callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
           callbacks.end_loop(epi_m, epi_n);
         }
       );
@@ -512,7 +523,7 @@ struct Sm90VisitorImpl : Sm90VisitorImplBase<Ops...> {
     CUTLASS_DEVICE void
     end() {
       for_each(callbacks_tuple,
-        [&] (auto& callbacks) {
+        [&] (auto& callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
           callbacks.end();
         }
       );
@@ -528,10 +539,10 @@ struct Sm90VisitorImpl : Sm90VisitorImplBase<Ops...> {
   CUTLASS_DEVICE auto
   get_consumer_store_callbacks(ConsumerStoreArgs<Args...> const& args) {
     return transform_apply(ops,
-      [&] (auto& op) {
+      [&] (auto& op) CUTLASS_LAMBDA_FUNC_INLINE {
         return op.template get_consumer_store_callbacks<ReferenceSrc>(args);
       },
-      [] (auto&&... callbacks) {
+      [] (auto&&... callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
         auto callbacks_tuple = cute::make_tuple(callbacks...);
         return ConsumerStoreCallbacks<decltype(callbacks_tuple)>{callbacks_tuple};
       }
@@ -586,10 +597,10 @@ struct Sm90TreeVisitor : Sm90VisitorImpl<ChildOps..., NodeOp> {
     visit(Array<ElementAccumulator, FragmentSize> const& frg_acc, int epi_v, int epi_m, int epi_n) {
       constexpr int Rm1 = sizeof...(ChildOps);
       return cute::detail::tapply(callbacks_tuple,
-        [&] (auto& child_callbacks) {
+        [&] (auto& child_callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
           return child_callbacks.visit(frg_acc, epi_v, epi_m, epi_n); // child ops must be nullary (e.g. loads, trees)
         },
-        [&] (auto&&... frg_inputs) {
+        [&] (auto&&... frg_inputs) CUTLASS_LAMBDA_FUNC_INLINE {
           return get<Rm1>(callbacks_tuple).visit(frg_acc, epi_v, epi_m, epi_n, frg_inputs...);
         },
         make_seq<Rm1>{} // restrict the transform to R-1 child ops, apply is for node op
@@ -637,7 +648,7 @@ struct Sm90SplitTreeVisitor : Sm90VisitorImpl<InputTree, AuxOutTrees..., OutputT
 
       constexpr int Rm2 = sizeof...(AuxOutTrees);
       cute::for_each(make_seq<Rm2>{}, // restrict the sequence to aux out trees
-        [&] (auto I) {
+        [&] (auto I) CUTLASS_LAMBDA_FUNC_INLINE {
           get<I+1>(callbacks_tuple).visit(frg_input, epi_v, epi_m, epi_n);
         }
       );
@@ -689,10 +700,10 @@ struct Sm90TopologicalVisitor : Sm90VisitorImpl<Ops...> {
 
       return cute::detail::tapply(EdgeTuple{}, callbacks_tuple, frg_compute_tuple,
         // Visit the first R-1 ops in topological order
-        [&] (auto&& edge_seq, auto& callbacks, auto& frg_compute) {
+        [&] (auto&& edge_seq, auto& callbacks, auto& frg_compute) CUTLASS_LAMBDA_FUNC_INLINE {
           frg_compute = cute::detail::apply(frg_compute_tuple,
             // Compute the current op with children inputs
-            [&] (auto const&... frg_inputs) {
+            [&] (auto const&... frg_inputs) CUTLASS_LAMBDA_FUNC_INLINE {
               auto frg_output = callbacks.visit(frg_acc, epi_v, epi_m, epi_n, frg_inputs...);
               using ElementOutput = typename decltype(frg_output)::Element;
               using ConvertOutput = NumericArrayConverter<ElementCompute, ElementOutput, FragmentSize>;
@@ -706,10 +717,10 @@ struct Sm90TopologicalVisitor : Sm90VisitorImpl<Ops...> {
           return frg_compute; // unused
         },
         // Visit the last op
-        [&] (auto const&...ops) {
+        [&] (auto const&...ops) CUTLASS_LAMBDA_FUNC_INLINE {
           return cute::detail::apply(frg_compute_tuple,
             // Compute the last op with children inputs
-            [&] (auto const&... frg_inputs) {
+            [&] (auto const&... frg_inputs) CUTLASS_LAMBDA_FUNC_INLINE {
               return get<Rm1>(callbacks_tuple).visit(frg_acc, epi_v, epi_m, epi_n, frg_inputs...);
             },
             // Get inputs in the sequence given by the children indices of the last op

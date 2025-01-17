@@ -1,6 +1,6 @@
 #################################################################################################
 #
-# Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -563,17 +563,31 @@ class Manifest:
     self.operations_by_name = {}
     self.disable_full_archs_compilation = args.disable_full_archs_compilation
     self.is_kernel_filter_set_to_all = args.instantiation_level == "max" and args.kernels != ''
+    self.instantiation_level = 0
+    try:
+        self.instantiation_level = int(args.instantiation_level)
+    except ValueError:
+        self.instantiation_level = 0
 
-  def get_sm90_instantiation_level(self, pruned_level=0, default_level=111, exhaustive_level=9999):
+  def get_sm90_instantiation_level(self, pruned_level=0, default_level=111, exhaustive_level=9992):
     # Non-negative integer which determines how many kernels are instantiated.
     # 0 = 0000 generates the fewest kernels, 9999 generates all possible combinations.
     # increasing first digit reduces schedule / mixed type pruning,
     # increasing second digit generates more cluster sizes,
-    # increasing third digit generates more MMA shapes,
+    # increasing third digit generates more MMA multipliers,
     # increasing fourth digit generates more instruction shapes.
-    return exhaustive_level if self.is_kernel_filter_set_to_all else (
-      pruned_level if self.kernel_filter == '' else default_level
-    )
+
+    if self.instantiation_level > 0:
+        return self.instantiation_level
+
+    elif self.is_kernel_filter_set_to_all:
+        return exhaustive_level
+
+    elif self.kernel_filter == '':
+        return pruned_level
+
+    else:
+        return default_level
 
 
   def get_kernel_filters (self, kernelListFile):

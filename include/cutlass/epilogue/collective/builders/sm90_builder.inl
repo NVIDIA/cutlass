@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -442,6 +442,7 @@ struct CollectiveBuilder<
     cute::is_same_v<Schedule, NoSmemWarpSpecialized>,
     cutlass::epilogue::collective::detail::Sm90TmaWarpSpecializedAdapter<
       cutlass::epilogue::collective::DefaultEpilogue<
+        ElementC_,
         cutlass::detail::TagToStrideC_t<GmemLayoutTagC>,
         cutlass::detail::TagToStrideC_t<GmemLayoutTagD>,
         ThreadOp,
@@ -449,6 +450,7 @@ struct CollectiveBuilder<
     // Epilogue for Ptr-Array and Grouped Gemm
     cutlass::epilogue::collective::detail::Sm90TmaWarpSpecializedAdapter<
       cutlass::epilogue::collective::DefaultEpilogueArray<
+        ElementC_,
         cutlass::detail::TagToStrideC_t<GmemLayoutTagC>,
         cutlass::detail::TagToStrideC_t<GmemLayoutTagD>,
         ThreadOp,
@@ -801,6 +803,7 @@ struct CollectiveBuilder<
 
   using CollectiveOp = cutlass::epilogue::collective::detail::Sm90TmaWarpSpecializedAdapter<
     cutlass::epilogue::collective::DefaultEpilogue<
+      ElementC_,
       cutlass::detail::TagToStrideC_t<GmemLayoutTagC>,
       cutlass::detail::TagToStrideC_t<GmemLayoutTagD>,
       ThreadOp,

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -869,6 +869,13 @@ bool arg_as_int(
 /// Lexically casts an argument to an int64 if it is defined. Returns true if not null.
 bool arg_as_int(
   int64_t &int_value,
+  char const *name,
+  ProblemSpace const &problem_space, 
+  ProblemSpace::Problem const &problem);
+
+bool arg_as_bool(bool &bool_value, KernelArgument::Value const *value_ptr);
+
+bool arg_as_bool(bool &bool_value,
   char const *name,
   ProblemSpace const &problem_space, 
   ProblemSpace::Problem const &problem);

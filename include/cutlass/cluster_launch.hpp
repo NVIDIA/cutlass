@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,7 +30,7 @@
  **************************************************************************************************/
 
 /*! \file
-    \brief PTX for TMA Tensor Memory Access operators on memory added for SM90
+    \brief CUDA interfaces to launch CUTLASS device-level operators (for >= SM90) that use thread-block clusters.
 */
 
 #pragma once
@@ -74,6 +74,17 @@ namespace cutlass {
 
 struct ClusterLauncher {
   constexpr static int MaxClusterSize = 32;
+
+  struct LaunchConfig {
+#if defined(CUTLASS_SM90_CLUSTER_LAUNCH_ENABLED)
+    cudaLaunchConfig_t launch_config;
+    constexpr static int numAttrs = 2;
+    cudaLaunchAttribute launch_attribute[numAttrs];
+  // Commonly used utility functions
+  dim3 gridDim()  { return launch_config.gridDim;  }
+  dim3 blockDim() { return launch_config.blockDim; }
+#endif
+  };
 
   // Check for hardware compatibility
   static inline CUTLASS_HOST
@@ -124,6 +135,42 @@ struct ClusterLauncher {
 #endif
   }
 
+  static inline CUTLASS_HOST
+  LaunchConfig make_cluster_launch_config(
+      dim3 const grid_dims,
+      dim3 const cluster_dims,
+      dim3 const block_dims,
+      size_t const smem_size = 0,
+      cudaStream_t cuda_stream = 0,
+      bool launch_with_pdl = false
+    ) {
+    LaunchConfig cluster_launch_config;
+#if defined(CUTLASS_SM90_CLUSTER_LAUNCH_ENABLED)
+    auto &launch_config    = cluster_launch_config.launch_config;
+    auto &launch_attribute = cluster_launch_config.launch_attribute;
+    auto numAttrs = cluster_launch_config.numAttrs;
+
+    launch_attribute[0].id = cudaLaunchAttributeClusterDimension;
+    launch_attribute[0].val.clusterDim = {cluster_dims.x, cluster_dims.y, cluster_dims.z};
+    CUTLASS_TRACE_HOST("ClusterLauncher: Setting ClusterDims = "
+        "(" << cluster_dims.x << ", " << cluster_dims.y << ", " << cluster_dims.z << ")\n");
+    // PDL attributes
+    launch_attribute[numAttrs - 1].id = cudaLaunchAttributeProgrammaticStreamSerialization;
+    launch_attribute[numAttrs - 1].val.programmaticStreamSerializationAllowed = 1;
+
+    launch_config.gridDim = {grid_dims.x, grid_dims.y, grid_dims.z};
+    launch_config.blockDim = {block_dims.x, block_dims.y, block_dims.z};
+    launch_config.dynamicSmemBytes = smem_size;
+    launch_config.stream = cuda_stream;
+    launch_config.numAttrs = launch_with_pdl ? numAttrs : numAttrs - 1;
+    launch_config.attrs = launch_attribute;
+    return cluster_launch_config;
+#else
+    CUTLASS_TRACE_HOST("ClusterLauncher: CUTLASS_SM90_CLUSTER_LAUNCH_ENABLED not defined! Aborting cluster launch.");
+    return cluster_launch_config;
+#endif
+  }
+
   // This is the method we expect to use going forward
   static inline CUTLASS_HOST
   Status launch(
@@ -136,7 +183,11 @@ struct ClusterLauncher {
       void** kernel_params,
       bool launch_with_pdl = false) {
 #if defined(CUTLASS_SM90_CLUSTER_LAUNCH_ENABLED)
-    if (check_cluster_dims(grid_dims, cluster_dims) != Status::kSuccess) {
+    LaunchConfig cluster_launch_config = make_cluster_launch_config(grid_dims, cluster_dims,
+                                            block_dims, smem_size, cuda_stream, launch_with_pdl);
+
+    auto launch_grid_dims = cluster_launch_config.gridDim();
+    if (check_cluster_dims(launch_grid_dims, cluster_dims) != Status::kSuccess) {
       CUTLASS_TRACE_HOST("ClusterLauncher: check_cluster_dims() failed. Aborting.");
       return Status::kInvalid;
     }
@@ -147,33 +198,13 @@ struct ClusterLauncher {
       return Status::kInvalid;
     }
 
-    cudaLaunchConfig_t launch_config;
-    launch_config.gridDim = {grid_dims.x, grid_dims.y, grid_dims.z};
-    launch_config.blockDim = {block_dims.x, block_dims.y, block_dims.z};
-    launch_config.dynamicSmemBytes = smem_size;
-    launch_config.stream = cuda_stream;
-
-    cudaLaunchAttribute launch_attribute[2];
-
-    launch_attribute[0].id = cudaLaunchAttributeClusterDimension;
-    launch_attribute[0].val.clusterDim.x = cluster_dims.x;
-    launch_attribute[0].val.clusterDim.y = cluster_dims.y;
-    launch_attribute[0].val.clusterDim.z = cluster_dims.z;
-
-    launch_attribute[1].id = cudaLaunchAttributeProgrammaticStreamSerialization;
-    launch_attribute[1].val.programmaticStreamSerializationAllowed = 1;
-
-    launch_config.numAttrs = launch_with_pdl ? 2 : 1;
-
-    launch_config.attrs = launch_attribute;
-
     CUTLASS_TRACE_HOST("ClusterLauncher: Launching GPC_CLUSTER_GRID GridDims = "
-        "(" << grid_dims.x << ", " << grid_dims.y << ", " << grid_dims.z << "), "
+        "(" << launch_grid_dims.x << ", " << launch_grid_dims.y << ", " << launch_grid_dims.z << "), "
         "And ClusterDims = "
         "(" << cluster_dims.x << ", " << cluster_dims.y << ", " << cluster_dims.z << ")\n");
 
     cutlass::arch::synclog_setup();
-    cudaError_t status = cudaLaunchKernelExC(&launch_config, kernel, kernel_params);
+    cudaError_t status = cudaLaunchKernelExC(&cluster_launch_config.launch_config, kernel, kernel_params);
     Return_Status(status);
 #else
     CUTLASS_TRACE_HOST("ClusterLauncher: CUTLASS_SM90_CLUSTER_LAUNCH_ENABLED not defined! Aborting cluster launch.");

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
-
 /*! \file
     \brief Testbed for Ptr-Array and Grouped GEMM interface
 */
@@ -1354,6 +1353,8 @@ struct HostCollectiveEpilogue {
       decltype(Valpha),
       decltype(Vbeta),
       ActivationFunctor
+      , cutlass::plus<ElementCompute>
+      , false
     > epilogue_params{};
 
     epilogue_params.C = C;
@@ -1602,14 +1603,14 @@ struct TestbedImpl {
     mainloop_args = collective_mma_inputs.to_args(problem_shapes);
 
     if constexpr (IsGroupGemm) {
-    arguments =
-    {
-      cutlass::gemm::GemmUniversalMode::kGrouped,
-      problem_shapes,
-      mainloop_args,
-      collective_epilogue.to_args(problem_shapes),
-      hw_info
-    };
+      arguments =
+      {
+        cutlass::gemm::GemmUniversalMode::kGrouped,
+        problem_shapes,
+        mainloop_args,
+        collective_epilogue.to_args(problem_shapes),
+        hw_info
+      };
     }
     else {
       arguments =
@@ -1795,6 +1796,127 @@ bool TestAll(double alpha = 1.0, double beta = 0.0, CheckEquality check_relative
   } // batch
 
   return passed;
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <typename Gemm, bool force_legacy_epilogue = false, bool apply_alignment_offset = false>
+bool TestSmall(double alpha = 1.0, double beta = 1.0,
+  CheckEquality check_relative_equality = CheckEquality::RELATIVE, 
+  ScalarLoc use_device_scalars = ScalarLoc::ON_DEVICE, 
+  VectorScale vector_scale_mode = VectorScale::ENABLED, 
+  std::vector<int> override_problem_size_k = {}) {
+  using ProblemShapeType = typename Gemm::GemmKernel::ProblemShape;
+  using ElementScalar = typename Gemm::EpilogueOutputOp::ElementScalar;
+  using ElementA = typename Gemm::GemmKernel::ElementA;
+  using ElementB = typename Gemm::GemmKernel::ElementB;
+  using TiledMma = typename Gemm::GemmKernel::TiledMma;
+  int alignment_bits = 128;
+  int alignment_input = (alignment_bits / cute::sizeof_bits<ElementA>::value == 128) ? 0 : (alignment_bits / cute::sizeof_bits<ElementA>::value);
+
+  using CtaShape_MNK = typename Gemm::GemmKernel::CollectiveMainloop::CtaShape_MNK;
+  using DispatchPolicy = typename Gemm::GemmKernel::CollectiveMainloop::DispatchPolicy;
+  CtaShape_MNK cta_shape;
+  Testbed3x<Gemm, cutlass::epilogue::thread::Identity, force_legacy_epilogue> testbed(check_relative_equality, use_device_scalars, vector_scale_mode);
+  // For Ptr-Array and Grouped GEMM ideally we need to know SM count at runtime 
+  static constexpr int SmCount = 16;
+
+  float waves[] = {0.5, 2.5};
+  int batches[] = {3};
+  int cluster_m = 1;
+  int cluster_n = 1;
+
+  std::vector<int> problem_size_k;
+  if (override_problem_size_k.empty()) {
+    // this is to test with min alignment
+    problem_size_k = {256 - alignment_input, 512 + alignment_input};
+  }
+  else {
+    problem_size_k = override_problem_size_k;
+  }
+
+  if constexpr(DispatchPolicy::ArchTag::kMinComputeCapability >= 90) {
+    typename DispatchPolicy::ClusterShape cluster_shape;
+    cluster_m = cute::size<0>(cluster_shape);
+    cluster_n = cute::size<1>(cluster_shape);
+  }
+
+  bool passed = true;
+
+  for (int batch : batches) {
+    for (float wave : waves) {
+      for (int k : problem_size_k) {
+        int grid_m, grid_n = 0;
+        float num_grid = wave * SmCount;
+
+        if (cluster_m >= cluster_n) {
+          grid_m = cluster_m;
+          grid_n = static_cast<int>(num_grid) / grid_m;
+          // Align grid_n to cluster_n
+          grid_n = std::max((grid_n + cluster_n - 1 ) / cluster_n * cluster_n, 1);
+        }
+        else {
+          grid_n = cluster_n;
+          grid_m = static_cast<int>(num_grid) / grid_n;
+          // Align grid_m to cluster_m
+          grid_m = std::max((grid_m + cluster_m - 1 ) / cluster_m * cluster_m, 1);
+        }
+
+        int m = grid_m * cute::size<0>(cta_shape) - alignment_input; // this is just to test with unusual problem shapes
+        int n = grid_n * cute::size<1>(cta_shape) + alignment_input;
+
+        if constexpr (Testbed3x<Gemm, cutlass::epilogue::thread::Identity, force_legacy_epilogue>::IsGroupGemm) {
+          std::vector<typename ProblemShapeType::UnderlyingProblemShape> problem_sizes_host;
+          cutlass::DeviceAllocation<typename ProblemShapeType::UnderlyingProblemShape> problem_sizes_device;
+          for (int i = 0; i < batch; ++i) {
+            problem_sizes_host.push_back({m * ((i % 2) + 1), n * ((i % 3) + 1), k * ((i % 2) + 1)});
+          }
+          problem_sizes_device.reset(problem_sizes_host.size());
+          problem_sizes_device.copy_from_host(problem_sizes_host.data());
+
+          ProblemShapeType problem_shapes{batch, problem_sizes_device.get(), problem_sizes_host.data()};
+
+          if (CUTLASS_DEBUG_TRACE_LEVEL > 0) {
+            for (int i = 0; i < batch; ++i) {
+              std::cout << "problem_shapes : "  << problem_shapes.get_host_problem_shape(i) << " \n";
+            }
+          }
+          passed = testbed.run(
+            problem_shapes,
+            cutlass::from_real<ElementScalar>(alpha),
+            cutlass::from_real<ElementScalar>(beta)
+          );
+        }
+        else {
+          ProblemShapeType problem_shapes{{m, n, k, batch}};
+          if (CUTLASS_DEBUG_TRACE_LEVEL > 0) {
+            std::cout << "problem_shapes : "  << problem_shapes.get_host_problem_shape() << " \n";
+          }
+          passed = testbed.run(
+            problem_shapes,
+            cutlass::from_real<ElementScalar>(alpha),
+            cutlass::from_real<ElementScalar>(beta)
+          );
+        }
+
+        if (!passed) {
+          std::cout << __FILE__ << ':' << __LINE__ << " : GEMM MNK " << m << " " << n << " " << k << " FAILED.\n";
+          return false;
+        }
+      } // k
+    } // waves
+  } // batches
+
+  return passed;
+}
+
+template <typename Gemm, bool force_legacy_epilogue = false, bool apply_alignment_offset = true>
+bool TestSmallFusion(double alpha = 1.0, double beta = 0.0,
+    CheckEquality check_relative_equality = CheckEquality::RELATIVE,
+    ScalarLoc use_device_scalars = ScalarLoc::ON_DEVICE,
+    VectorScale vector_scale_mode = VectorScale::ENABLED) {
+  return TestSmall<Gemm, force_legacy_epilogue, apply_alignment_offset>(
+    alpha, beta, check_relative_equality, use_device_scalars, vector_scale_mode);
 }
 
 } // namespace device

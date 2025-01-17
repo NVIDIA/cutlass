@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -398,8 +398,7 @@ public:
       void const *arguments_ptr,
       void *host_workspace,
       void *device_workspace,
-      cudaStream_t stream = nullptr,
-      bool launch_with_pdl = false) const override {
+      cudaStream_t stream = nullptr) const override {
 
     OperatorArguments operator_args;
 
@@ -421,7 +420,8 @@ public:
 
     Operator *op = static_cast<Operator *>(host_workspace);
     // We need to call initialize() since we have to rebuild TMA desc for every new set of args
-    status = op->run(operator_args, device_op_workspace_ptr, stream, nullptr, launch_with_pdl);
+    status = op->run(operator_args, device_op_workspace_ptr, stream, nullptr, 
+                     static_cast<GemmUniversalArguments const *>(arguments_ptr)->use_pdl);
     return status;
   }
 

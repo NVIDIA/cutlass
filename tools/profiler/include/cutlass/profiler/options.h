@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -199,7 +199,14 @@ public:
     int warmup_iterations{10};
 
     /// Number of iterations to profile each kernel - if 0, kernels are launched up to the profiling duration
+    /// This will always override profiling-duration and min-iterations.
     int iterations{100};
+
+    /// Time to spend profiling each kernel (ms)
+    int duration{10};
+
+    /// Minimum number of iterations to profile
+    int min_iterations{10};
 
     /// Number of ms to sleep between profiling periods (ms)
     int sleep_duration{50};

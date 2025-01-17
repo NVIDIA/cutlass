@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -191,7 +191,7 @@ void gett_mainloop(
 
   static_assert(cute::rank(typename MainloopParams::LayoutA{}) == 3, "M, K, B");
   static_assert(cute::rank(typename MainloopParams::LayoutB{}) == 3, "N, K, B");
-  
+
   using cute::raw_pointer_cast;
 
   using ElementA = typename ElementTraits<typename MainloopParams::EngineA::value_type>::type;

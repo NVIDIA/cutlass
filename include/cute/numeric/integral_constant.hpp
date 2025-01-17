@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -341,14 +341,14 @@ operator||(U, C<t>) {
 #define CUTE_NAMED_UNARY_FN(OP)                                      \
   template <auto t>                                                  \
   CUTE_HOST_DEVICE constexpr                                         \
-  C<OP(t)> OP (C<t>) {                                               \
-    return {};                                                       \
+  auto OP (C<t>) {                                                   \
+    return C<OP(t)>{};                                               \
   }
 #define CUTE_NAMED_BINARY_FN(OP)                                     \
   template <auto t, auto u>                                          \
   CUTE_HOST_DEVICE constexpr                                         \
-  C<OP(t,u)> OP (C<t>, C<u>) {                                       \
-    return {};                                                       \
+  auto OP (C<t>, C<u>) {                                             \
+    return C<OP(t,u)>{};                                             \
   }                                                                  \
   template <auto t, class U,                                         \
             __CUTE_REQUIRES(is_std_integral<U>::value)>              \

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -33,9 +33,6 @@
 
 #include <cstdint>
 
-
-#include "cutlass/util/device_memory.h"
-#include "cutlass/integer_subbyte.h"
 #include "cutlass/float8.h"
 #include "cutlass/util/reference/device/tensor_fill.h"
 
@@ -200,6 +197,7 @@ bool initialize_packed_scale(
   {
     cutlass::packed_scale_t<ElementScale> tmp(data_in[i]);
     data_out[i] = reinterpret_cast<cutlass::Array<ElementScale, 8> const&>(tmp);
+    // std::cout << data_in[i] << ":" << std::hex << static_cast<uint16_t>(data_in[i].storage) << ",\t" << -data_in[i] << ":" << std::hex << static_cast<uint16_t>((-data_in[i]).storage) << std::endl;
   }
   try {
     block_out.copy_from_host(data_out.data());

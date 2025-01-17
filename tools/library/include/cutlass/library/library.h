@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -117,8 +117,7 @@ public:
     void const *arguments,
     void *host_workspace,
     void *device_workspace = nullptr,
-    cudaStream_t stream = nullptr,
-    bool launch_with_pdl = false) const = 0;
+    cudaStream_t stream = nullptr) const = 0;
 
 };
 
@@ -173,6 +172,9 @@ struct GemmArguments {
 
   /// Enumerant indicating whether alpha/beta point to host or device memory
   ScalarPointerMode pointer_mode{};
+  
+  /// Whether to use PDL when launching the kernel
+  bool use_pdl{false};
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -253,6 +255,7 @@ struct GemmArrayArguments {
   void const *alpha{nullptr};
   void const *beta{nullptr};
   ScalarPointerMode pointer_mode{};
+  bool use_pdl{false};
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -307,6 +310,8 @@ struct GemmUniversalArguments {
   int swizzle_size{1};
 
   int device_index{0};
+  
+  bool use_pdl{false};
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -354,6 +359,7 @@ struct GemmPlanarComplexArguments {
   int64_t batch_stride_C_imag{0};
   int64_t batch_stride_D_real{0};
   int64_t batch_stride_D_imag{0};
+  bool use_pdl{false};
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -394,6 +400,7 @@ struct GemmPlanarComplexArrayArguments {
   void const * alpha{nullptr};
   void const * beta{nullptr};
   ScalarPointerMode pointer_mode{};
+  bool use_pdl{false};
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -425,6 +432,7 @@ struct GemmGroupedArguments {
   void const *alpha{nullptr};
   void const *beta{nullptr};
   ScalarPointerMode pointer_mode{};
+  bool use_pdl{false};
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -461,6 +469,7 @@ struct SparseGemmArguments {
   void const *beta{nullptr};       /// pointer to beta scalar
   ScalarPointerMode pointer_mode{}; /// enumerant indicating whether alpha/beta pointers are host
                                     ///   or device pointers.
+  bool use_pdl{false};              /// Whether to use PDL when launching the kernel
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -519,6 +528,7 @@ struct RankKArguments {
   int64_t batch_stride_B{0};
   int64_t batch_stride_C{0};
   int64_t batch_stride_D{0};
+  bool use_pdl{false};
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -570,6 +580,7 @@ struct TrmmArguments {
   int64_t batch_stride_A{0};
   int64_t batch_stride_B{0};
   int64_t batch_stride_D{0};
+  bool use_pdl{false};
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -628,6 +639,7 @@ struct SymmArguments {
   int64_t batch_stride_B{0};
   int64_t batch_stride_C{0};
   int64_t batch_stride_D{0};
+  bool use_pdl{false};
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -744,6 +756,9 @@ struct ConvArguments {
 
   /// Enumerant indicating whether alpha/beta point to host or device memory
   ScalarPointerMode pointer_mode{};
+  
+  /// Whether to use PDL when launching the kernel
+  bool use_pdl{false};
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -796,6 +811,9 @@ struct ReductionArguments {
 
   /// Enumerant indicating whether alpha/beta point to host or device memory
   ScalarPointerMode pointer_mode{};
+
+  /// Whether to use PDL when launching the kernel
+  bool use_pdl{false};
 };
 
 } // namespace library

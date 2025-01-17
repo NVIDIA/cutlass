@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -238,6 +238,21 @@ protected:
     void *arguments,
     void *host_workspace,
     void *device_workspace);
+
+  /// Profiles the GPU kernel launched in `func` running simultaneously on all
+  /// requested devices.
+  Status profile_kernel_(
+    PerformanceResult &result,
+    Options const &options,
+    const std::function<Status(int, cudaStream_t, int)> &func,
+    const std::vector<cudaStream_t> &streams);
+
+  /// Profiles the GPU kernel launched in `func` on the `stream`
+  Status profile_kernel_(
+    PerformanceResult &result,
+    Options const &options,
+    const std::function<Status(cudaStream_t, int)> &func,
+    cudaStream_t stream = nullptr);
 
 private:
   /// finds string matches filter_string in operation_name

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2024 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -92,15 +92,15 @@ using ElementAccumulator  = float;                                          // E
 using TileShape           = Shape<_128,_128,_128>;                          // Threadblock-level tile size for sparse kernel
 using TileShapeRef        = Shape<_128,_128, _64>;                          // Threadblock-level tile size for reference (dense) kernel
 using ClusterShape        = Shape<_1,_2,_1>;                                // Shape of the threadblocks in a cluster
-using KernelSchedule      = cutlass::gemm::KernelTmaWarpSpecialized;        // Kernel schedule policy
-using EpilogueSchedule    = cutlass::epilogue::TmaWarpSpecialized;          // Epilogue schedule policy
+using KernelSchedule      = cutlass::gemm::collective::KernelScheduleAuto;        // Kernel schedule policy
+using EpilogueSchedule    = cutlass::epilogue::collective::EpilogueScheduleAuto;  // Epilogue schedule policy
 
 using ProblemShape = Shape<int,int,int,int>;
 
 // Sparse kernel setup
 
 using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
-    cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+    cutlass::arch::Sm90, cutlass::arch::OpClassSparseTensorOp,
     TileShape, ClusterShape,
     cutlass::epilogue::collective::EpilogueTileAuto,
     ElementAccumulator, ElementAccumulator,
@@ -224,18 +224,12 @@ cutlass::DeviceAllocation<typename Gemm::EpilogueOutputOp::ElementOutput> block_
 // Command line options parsing
 struct Options {
 
-  bool help;
+  bool help = false;
 
-  float alpha, beta;
-  int iterations;
-  int m, n, k, l;
-
-  Options():
-    help(false),
-    m(5120), n(4096), k(16384), l(1),
-    alpha(1.f), beta(0.f),
-    iterations(10)
-  { }
+  float alpha = 1.f, beta = 0.f;
+  int iterations = 100;
+  int warmup = 100;
+  int m = 5120, n = 4096, k = 16384, l = 1;
 
   // Parses the command line
   void parse(int argc, char const **args) {
@@ -253,26 +247,32 @@ struct Options {
     cmd.get_cmd_line_argument("alpha", alpha);
     cmd.get_cmd_line_argument("beta", beta);
     cmd.get_cmd_line_argument("iterations", iterations);
+    cmd.get_cmd_line_argument("warmup", warmup);
   }
 
   /// Prints the usage statement.
   std::ostream & print_usage(std::ostream &out) const {
 
-    out << "62_hopper_sparse_gemm\n\n"
-      << "  Hopper Sparse GEMM example.\n\n"
-      << "Options:\n\n"
-      << "  --help                      If specified, displays this usage statement\n\n"
-      << "  --m=<int>                   Sets the M extent of the GEMM\n"
-      << "  --n=<int>                   Sets the N extent of the GEMM\n"
-      << "  --k=<int>                   Sets the K extent of the GEMM\n"
-      << "  --l=<int>                   Sets the L extent of the GEMM (batch size)\n"
-      << "  --alpha=<f32>               Epilogue scalar alpha\n"
-      << "  --beta=<f32>                Epilogue scalar beta\n\n"
-      << "  --iterations=<int>          Number of profiling iterations to perform.\n\n";
-
-    out
-      << "\n\nExamples:\n\n"
-      << "$ " << "62_hopper_sparse_gemm" << " --m=4096 --n=5120 --k=8192 --l=1 --alpha=2 --beta=0.707 \n\n";
+    out << "62_hopper_sparse_gemm\n"
+           "\n"
+           "  Hopper Sparse GEMM example.\n"
+           "\n"
+           "Options:\n"
+           "\n"
+           "  --help                      If specified, displays this usage statement\n\n"
+           "  --m=<int>                   Sets the M extent of the GEMM\n"
+           "  --n=<int>                   Sets the N extent of the GEMM\n"
+           "  --k=<int>                   Sets the K extent of the GEMM\n"
+           "  --l=<int>                   Sets the L extent of the GEMM (batch size)\n"
+           "  --alpha=<f32>               Epilogue scalar alpha\n"
+           "  --beta=<f32>                Epilogue scalar beta\n"
+           "  --iterations=<int>          Number of profiling iterations to perform.\n"
+           "  --warmup=<int>              Number of warmup iterations to perform.\n"
+           "\n"
+           "Examples:\n"
+           "\n"
+           "62_hopper_sparse_gemm --m=4096 --n=5120 --k=8192 --l=1 --alpha=2 --beta=0.707\n"
+           "\n";
 
     return out;
   }
@@ -442,7 +442,6 @@ void print_device_tensor(cute::Tensor<Engine, Layout> const& t)
 }
 
 bool verify(Options const& options) {
-  CUDA_CHECK(cudaDeviceSynchronize());
 
   bool passed = cutlass::reference::device::BlockCompareEqual(block_D_ref.get(), block_D.get(), block_D.size());
 
@@ -492,6 +491,10 @@ struct Runner
   void benchmark(Options const& options) {
     if (options.iterations > 0)
     {
+      for (int iter = 0; iter < options.warmup; ++iter) {
+        run();
+      }
+
       GpuTimer timer;
       timer.start();
       for (int iter = 0; iter < options.iterations; ++iter) {
@@ -525,12 +528,16 @@ void run(Options &options) {
   Runner<Gemm> gemm(make_args(options));
   Runner<GemmRef> gemm_ref(make_args_ref(options));
 
+  std::cout << "  Problem Size: " << options.m << 'x' << options.n << 'x' << options.k << 'x' << options.l << std::endl;
+
   gemm.run();
+  CUDA_CHECK(cudaDeviceSynchronize());
+
   gemm_ref.run();
+  CUDA_CHECK(cudaDeviceSynchronize());
 
   bool passed = verify(options);
 
-  std::cout << "  Problem Size: " << options.m << 'x' << options.n << 'x' << options.k << std::endl;
   std::cout << "  Disposition: " << (passed ? "Passed" : "Failed") << std::endl;
 
   if (!passed) {

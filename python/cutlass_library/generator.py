@@ -1,6 +1,6 @@
 #################################################################################################
 #
-# Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -5203,7 +5203,7 @@ def GenerateSM90_TensorOp_16b_WGMMA_gemm(manifest, cuda_version):
   if not CudaToolkitVersionSatisfies(cuda_version, 12, 0):
     return
 
-  instantiation_level = manifest.get_sm90_instantiation_level(pruned_level=100, default_level=131, exhaustive_level=9999)
+  instantiation_level = manifest.get_sm90_instantiation_level(pruned_level=100, default_level=131, exhaustive_level=9992)
   is_aligned = True
 
   # layouts for ABC and their alignments.
@@ -5268,7 +5268,7 @@ def GenerateSM90_TensorOp_16b_WGMMA_alignx_gemm(manifest, cuda_version):
   if not CudaToolkitVersionSatisfies(cuda_version, 12, 0):
     return
 
-  instantiation_level = manifest.get_sm90_instantiation_level(pruned_level=100, default_level=101, exhaustive_level=9999)
+  instantiation_level = manifest.get_sm90_instantiation_level(pruned_level=100, default_level=101, exhaustive_level=9992)
   is_aligned = False
 
   # layouts for ABC and their alignments.
@@ -5329,7 +5329,7 @@ def GenerateSM90_SparseTensorOp_16b_WGMMA_gemm(manifest, cuda_version):
   if not CudaToolkitVersionSatisfies(cuda_version, 12, 2):
     return
 
-  instantiation_level = manifest.get_sm90_instantiation_level(pruned_level=100, default_level=131, exhaustive_level=9999)
+  instantiation_level = manifest.get_sm90_instantiation_level(pruned_level=100, default_level=131, exhaustive_level=9992)
   is_aligned = True
 
   # layouts for ABC and their alignments.
@@ -5394,7 +5394,7 @@ def GenerateSM90_TensorOp_tf32_WGMMA_gemm(manifest, cuda_version):
   if not CudaToolkitVersionSatisfies(cuda_version, 12, 0):
     return
 
-  instantiation_level = manifest.get_sm90_instantiation_level(pruned_level=120, default_level=121, exhaustive_level=9999)
+  instantiation_level = manifest.get_sm90_instantiation_level(pruned_level=120, default_level=121, exhaustive_level=9992)
   is_aligned = True
 
   # layouts for ABC and their alignments
@@ -5452,7 +5452,7 @@ def GenerateSM90_TensorOp_tf32_WGMMA_alignx_gemm(manifest, cuda_version):
   if not CudaToolkitVersionSatisfies(cuda_version, 12, 0):
     return
 
-  instantiation_level = manifest.get_sm90_instantiation_level(pruned_level=100, default_level=101, exhaustive_level=9999)
+  instantiation_level = manifest.get_sm90_instantiation_level(pruned_level=100, default_level=101, exhaustive_level=9992)
   is_aligned = False
 
   # layouts for ABC and their alignments.
@@ -5509,7 +5509,7 @@ def GenerateSM90_SparseTensorOp_tf32_WGMMA_gemm(manifest, cuda_version):
   if not CudaToolkitVersionSatisfies(cuda_version, 12, 2):
     return
 
-  instantiation_level = manifest.get_sm90_instantiation_level(pruned_level=120, default_level=121, exhaustive_level=9999)
+  instantiation_level = manifest.get_sm90_instantiation_level(pruned_level=120, default_level=121, exhaustive_level=9992)
   is_aligned = True
 
   # layouts for ABC and their alignments
@@ -5564,7 +5564,7 @@ def GenerateSM90_TensorOp_int8_WGMMA_gemm(manifest, cuda_version):
   if not CudaToolkitVersionSatisfies(cuda_version, 12, 0):
     return
 
-  instantiation_level = manifest.get_sm90_instantiation_level(pruned_level=100, default_level=111, exhaustive_level=9999)
+  instantiation_level = manifest.get_sm90_instantiation_level(pruned_level=100, default_level=111, exhaustive_level=9992)
   is_aligned = True
 
   # layouts for ABC and their alignments
@@ -5616,7 +5616,7 @@ def GenerateSM90_TensorOp_int8_WGMMA_alignx_gemm(manifest, cuda_version):
   if not CudaToolkitVersionSatisfies(cuda_version, 12, 0):
     return
 
-  instantiation_level = manifest.get_sm90_instantiation_level(pruned_level=100, default_level=111, exhaustive_level=9999)
+  instantiation_level = manifest.get_sm90_instantiation_level(pruned_level=100, default_level=111, exhaustive_level=9992)
   is_aligned = False
 
   # layouts for ABC and their alignments
@@ -5668,7 +5668,7 @@ def GenerateSM90_SparseTensorOp_int8_WGMMA_gemm(manifest, cuda_version):
   if not CudaToolkitVersionSatisfies(cuda_version, 12, 2):
     return
 
-  instantiation_level = manifest.get_sm90_instantiation_level(pruned_level=100, default_level=111, exhaustive_level=9999)
+  instantiation_level = manifest.get_sm90_instantiation_level(pruned_level=100, default_level=111, exhaustive_level=9992)
   is_aligned = True
 
   # layouts for ABC and their alignments
@@ -5723,7 +5723,7 @@ def GenerateSM90_TensorOp_fp8_WGMMA_gemm(manifest, cuda_version):
   if not CudaToolkitVersionSatisfies(cuda_version, 12, 0):
     return
 
-  instantiation_level = manifest.get_sm90_instantiation_level(pruned_level=20, default_level=121, exhaustive_level=9999)
+  instantiation_level = manifest.get_sm90_instantiation_level(pruned_level=20, default_level=121, exhaustive_level=9992)
   is_aligned = True
 
   # layouts for ABC and their alignments
@@ -5789,7 +5789,7 @@ def GenerateSM90_TensorOp_fp8_WGMMA_alignx_gemm(manifest, cuda_version):
   if not CudaToolkitVersionSatisfies(cuda_version, 12, 0):
     return
 
-  instantiation_level = manifest.get_sm90_instantiation_level(pruned_level=0, default_level=101, exhaustive_level=9999)
+  instantiation_level = manifest.get_sm90_instantiation_level(pruned_level=0, default_level=101, exhaustive_level=9992)
   is_aligned = False
 
   # layouts for ABC and their alignments
@@ -5847,7 +5847,7 @@ def GenerateSM90_SparseTensorOp_fp8_WGMMA_gemm(manifest, cuda_version):
   if not CudaToolkitVersionSatisfies(cuda_version, 12, 2):
     return
 
-  instantiation_level = manifest.get_sm90_instantiation_level(pruned_level=20, default_level=121, exhaustive_level=9999)
+  instantiation_level = manifest.get_sm90_instantiation_level(pruned_level=20, default_level=121, exhaustive_level=9992)
   is_aligned = True
 
   # layouts for ABC and their alignments
