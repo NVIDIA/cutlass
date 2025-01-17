@@ -294,37 +294,45 @@ public:
     const int item_id = thread_idx % SubgroupSize;
     const int k_tile_count= head_size / get<1>(subgroup_shape); 
     //m, k
-    Tensor prefetch_iter_a = params.mainloop.gmem_prefetch_q.get_pvc_tensor(
+    Tensor prefetch_iter_2d_a = params.mainloop.gmem_prefetch_q.get_pvc_tensor(
       make_coord(seq_coord + (((sub_group_id % ATOM_N) / get<1>(PrefetchQThrShape{}))* get<0>(PrefetchQTileSize{})),   // iteration 0/M/Hight/vertical
-               (((sub_group_id % ATOM_N) % get<1>(PrefetchQThrShape{})) * get<1>(PrefetchQTileSize{})), // Iteration 1/K/Width/Horisontal
-                blk_l_coord), 
-      append<4>(make_shape(_1{}, _1{}, _1{}), k_tile_count),
-      append<3>(make_shape(_, _), BLK_K), seq<0, 0, 1>{});
+                ((sub_group_id % ATOM_N) % get<1>(PrefetchQThrShape{})) * get<1>(PrefetchQTileSize{}), // Iteration 1/K/Width/Horisontal
+                blk_l_coord),
+            make_shape(_1{}, _1{}, _1{}));
+    Tensor prefetch_iter_a = append_pvc_tensor<1>(prefetch_iter_2d_a, k_tile_count, BLK_K);
+      // append<4>(make_shape(_1{}, _1{}, _1{}), k_tile_count),
+      // append<3>(make_shape(_, _), BLK_K), seq<0, 0, 1>{});
     // The Key point is 1 is horisontal and zero is vertical
     // the iteration over K dimention of B matrix (head_size) should be :
     auto iter_over_head_count = head_size / BLK_N;
     // k, n
-    Tensor prefetch_iter_b = params.mainloop.gmem_prefetch_k.get_pvc_tensor(
+    Tensor prefetch_iter_2d_b = params.mainloop.gmem_prefetch_k.get_pvc_tensor(
          make_coord(sub_group_id * get<0>(PrefetchKTileSize{}),            // iteration 0/K/Hight/vertical
                     (sub_group_id % ATOM_N) * get<1>(PrefetchKTileSize{}), //  iteration 1/N/W/Horisontal
                     blk_l_coord),                                          // batch
          // ?, ?, k, N swap k and n here to match cutlass
-         append<4>(make_shape(_1{}, _1{}, nblock_limit/*This is N*/), iter_over_head_count/* This is K*/), //(frag, iter_m, iter_n, iter_k)
+         make_shape(_1{}, _1{}, nblock_limit/*This is N*/));
+          // iter_over_head_count/* This is K*/), //(frag, iter_m, iter_n, iter_k)
          // K, ?, N (The N should move along the N as get<0>(PrefetchKThrShape) load 32 each and we want 128 of N )
          // The K should move along the dimmension of Block load as we lay 8x32 using the 8x1  shape for subgroups
          // leading to load 64x32 of (K,N) per each prefetch (BLOCK_N SHows K DIM)
-         append<3>(make_shape(_, SG_N), BLK_N), seq<0, 1, 0>{}); // so 64 * iteration 0 (SG_N that is K which is vertical) and 32 * iteration 1 (N which is horisontal)
+        //  append<3>(make_shape(_, SG_N), BLK_N), seq<0, 1, 0>{}); // so 64 * iteration 0 (SG_N that is K which is vertical) and 32 * iteration 1 (N which is horisontal)
       // V is a transposed matrix, So here the Sequense length is consumed, it is transposed so the consumed dimension looks like B matrix
       // Hence, the Head size is the fast moving dimention and horisontal and sequence length is vertical.
      // The prefetch only move along the sequence lenth. Here we call sequence length K since it get consumed and head size N since it stay
-    Tensor prefetch_iter_v = params.mainloop.gmem_prefetch_v.get_pvc_tensor(
+
+    Tensor prefetch_iter_b = append_pvc_tensor<0>(prefetch_iter_2d_b, iter_over_head_count, BLK_N);
+
+    Tensor prefetch_iter_2d_v = params.mainloop.gmem_prefetch_v.get_pvc_tensor(
          make_coord((sub_group_id / ATOM_N) * get<0>(PrefetchVTileSize{}), // iteration 0/K/Hight/vertical/ sequence lengh
-                    head_size_coord,                                       //  iteration 1/N/W/Horisontal / Head size
+                    head_size_coord,         //  iteration 1/N/W/Horisontal / Head size
                     blk_l_coord),
           // We loop over the consuming dimension which is the iteration 0(N) here 
-         append<4>(make_shape(_1{}, _1{}, _1{}), nblock_limit),
+         make_shape(_1{}, _1{}, _1{}));
+        //  , nblock_limit),
          // first one is to use the intrinsic along the vertical , Second one is N/M  and third one is K
-         append<3>(make_shape(_, _), BLK_K), seq<0, 1, 0>{});
+        //  append<3>(make_shape(_, _), BLK_K), seq<0, 1, 0>{});
+    Tensor prefetch_iter_v = append_pvc_tensor<0>(prefetch_iter_2d_v, nblock_limit, BLK_K);
 
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < k_tile_count; i++) {

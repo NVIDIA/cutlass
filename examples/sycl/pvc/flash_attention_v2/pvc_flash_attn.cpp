@@ -299,7 +299,7 @@ struct ExampleRunner {
 
     stride_Q = cutlass::make_cute_packed_stride(StrideQ{}, cute::make_shape(seq_len, head_size, batch * num_heads));
     stride_K = cutlass::make_cute_packed_stride(StrideK{}, cute::make_shape(seq_len, head_size, batch * num_heads));
-    stride_V = cutlass::make_cute_packed_stride(StrideV{}, cute::make_shape(seq_len, head_size, batch * num_heads));
+    stride_V = cutlass::make_cute_packed_stride(StrideV{}, cute::make_shape(head_size, seq_len, batch * num_heads));
     stride_O = cutlass::make_cute_packed_stride(StrideO{}, cute::make_shape(seq_len, head_size, batch * num_heads));
     stride_LSE = cutlass::make_cute_packed_stride(StrideLSE{}, cute::make_shape(seq_len, 1, batch * num_heads));
 

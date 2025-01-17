@@ -89,6 +89,8 @@ SYCL_DEVICE_OCL(intel::ulong4 intel_sub_group_block_read_transpose_64b_8r4c(
 namespace cute
 {
 struct XE_2D_U64x8x1_LD_T {
+  static constexpr bool is_transpose = true;
+
   template <class T>
   CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
                                     int height, int pitch, intel::coord_t coord,
@@ -105,6 +107,8 @@ struct XE_2D_U64x8x1_LD_T {
 };
 
 struct XE_2D_U64x8x2_LD_T {
+  static constexpr bool is_transpose = true;
+
   template <class T>
   CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
                                     int height, int pitch, intel::coord_t coord,
@@ -121,6 +125,8 @@ struct XE_2D_U64x8x2_LD_T {
 };
 
 struct XE_2D_U64x8x4_LD_T {
+  static constexpr bool is_transpose = true;
+
   template <class T>
   CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
                                     int height, int pitch, intel::coord_t coord,

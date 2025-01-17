@@ -29,7 +29,7 @@
  *
  **************************************************************************************************/
 
-#include "gemm_utils.hpp"
+#include "utils.hpp"
 
 template <uint32_t wg_m, uint32_t wg_n, uint32_t sg_m, uint32_t sg_n,
           uint32_t sg_k, class dtype_a, class dtype_b, class dtype_c,
@@ -54,15 +54,14 @@ struct gemm_device_partition_sd {
 
     // Represent the full tensors
     Tensor mA = make_tensor(make_gmem_ptr(A),
-                            make_layout(make_shape(m, k), make_stride(k, 1)));
+                            make_layout(make_shape(m, k), cute::LayoutRight{}));
     Tensor mB = make_tensor(make_gmem_ptr(B),
-                            make_layout(make_shape(k, n), make_stride(n, 1)));
+                            make_layout(make_shape(n, k), cute::LayoutLeft{}));
     Tensor mC = make_tensor(make_gmem_ptr(C),
-                            make_layout(make_shape(m, n), make_stride(n, 1)));
+                            make_layout(make_shape(m, n), cute::LayoutRight{}));
 
     // Get the appropriate blocks for this thread block
-    auto cta_coord = make_coord(BlockIdxX(),
-                                BlockIdxY(), _); // (m,n,k)
+    auto cta_coord = make_coord(BlockIdxX(), BlockIdxY(), _); // (m,n,k)
 
     auto cta_tiler =
         make_shape(Int<wg_tile_m>{}, Int<wg_tile_n>{}, Int<sg_tile_k>{});
@@ -82,26 +81,21 @@ struct gemm_device_partition_sd {
         local_tile(gC, make_shape(Int<sg_tile_m>{}, Int<sg_tile_n>{}),
                    make_coord(sg_id / sg_per_wg_x, sg_id % sg_per_wg_x));
 
-    using traits_load_A = Copy_Traits<traits_a>;
+    using traits_load_A = Copy_Traits<traits_a, decltype(mA)>;
     using atom_load_A = Copy_Atom<traits_load_A, TA>;
-    TiledCopy copy_a = make_tiled_copy(
-        atom_load_A{}.with(A, k, m, k), Layout<Shape<_1, Int<SUBGROUP_SIZE>>>{},
-        make_layout(make_shape(get<0>(typename traits_load_A::Shape_MN{}),
-                               get<1>(typename traits_load_A::Shape_MN{}) / Int<SUBGROUP_SIZE>{})));
+    TiledCopy copy_a = make_xe_2d_copy(
+        atom_load_A{}.with(mA), Layout<Shape<_1, Int<SUBGROUP_SIZE>>>{});
 
-    using traits_load_B = Copy_Traits<traits_b>;
+    using traits_load_B = Copy_Traits<traits_b, decltype(mB)>;
     using atom_load_B = Copy_Atom<traits_load_B, TB>;
-    TiledCopy copy_b = make_tiled_copy(
-        atom_load_B{}.with(B, n, k, n), Layout<Shape<_1, Int<SUBGROUP_SIZE>>>{},
-        make_layout(make_shape(get<0>(typename traits_load_B::Shape_MN{}),
-                               get<1>(typename traits_load_B::Shape_MN{}) / Int<SUBGROUP_SIZE>{})));
-    using traits_store_C = Copy_Traits<traits_c>;
+    TiledCopy copy_b = make_xe_2d_copy(
+        atom_load_B{}.with(mB), Layout<Shape<_1, Int<SUBGROUP_SIZE>>>{});
+
+    using traits_store_C = Copy_Traits<traits_c, decltype(mC)>;
     using atom_store_C = Copy_Atom<traits_store_C, TC>;
-    TiledCopy copy_c = make_tiled_copy(
-        atom_store_C{}.with(C, n, m, n),
-        Layout<Shape<_1, Int<SUBGROUP_SIZE>>>{},
-        make_layout(make_shape(get<0>(typename traits_store_C::Shape_MN{}),
-                               get<1>(typename traits_store_C::Shape_MN{}) / Int<SUBGROUP_SIZE>{})));
+    TiledCopy copy_c = make_xe_2d_copy(
+        atom_store_C{}.with(mC), Layout<Shape<_1, Int<SUBGROUP_SIZE>>>{});
+
     TiledMMA mma = make_tiled_mma(
         MMA_Atom<traits_mma>{},
         Layout<Shape<Int<cute::ceil_div(wg_tile_m, sg_tile_m)>,
@@ -128,42 +122,68 @@ struct gemm_device_partition_sd {
     clear(fragment_C);
 
 #if CUTLASS_ENABLE_DEBUG_PRINTS
-  if (thread(LOG_THREAD, LOG_GROUP)) {
-    print("=====================  A :\n");
-    print("  mA : "); print(mA); print("\n");
-    print("  gA : "); print(gA); print("\n");
-    print("tgA : "); print(tgA); print("\n");
-    print("fragment_A : "); print(fragment_A); print("\n");
+    if (thread(LOG_THREAD, LOG_GROUP)) {
+      print("=====================  A :\n");
+      print("  mA : ");
+      print(mA);
+      print("\n");
+      print("  gA : ");
+      print(gA);
+      print("\n");
+      print("tgA : ");
+      print(tgA);
+      print("\n");
+      print("fragment_A : ");
+      print(fragment_A);
+      print("\n");
 
-    print("=====================  B :\n");
-    print("  mB : "); print(mB); print("\n");
-    print("  gB : "); print(gB); print("\n");
-    print("tgB : "); print(tgB); print("\n");
-    print("fragment_B : "); print(fragment_B); print("\n");
- 
-    print("=====================  C :\n");
-    print("  mC : "); print(mC); print("\n");
-    print("  gC : "); print(gC); print("\n");
-    print("tgC : "); print(tgC); print("\n");
-    print("fragment_C : "); print(fragment_C); print("\n");
-  }
+      print("=====================  B :\n");
+      print("  mB : ");
+      print(mB);
+      print("\n");
+      print("  gB : ");
+      print(gB);
+      print("\n");
+      print("tgB : ");
+      print(tgB);
+      print("\n");
+      print("fragment_B : ");
+      print(fragment_B);
+      print("\n");
+
+      print("=====================  C :\n");
+      print("  mC : ");
+      print(mC);
+      print("\n");
+      print("  gC : ");
+      print(gC);
+      print("\n");
+      print("tgC : ");
+      print(tgC);
+      print("\n");
+      print("fragment_C : ");
+      print(fragment_C);
+      print("\n");
+    }
 #endif
 
     auto k_tile_max = size<3>(tgA);
     for (int k_tile = 0; k_tile < k_tile_max; ++k_tile) {
 
-      Tensor blk_tgA = copy_a.get_pvc_tensor(
-          make_coord(m_coord, k_tile * sg_tile_k, l_coord), fragment_A.shape(),
-          typename traits_load_A::Shape_MN{});
-      Tensor blk_tgB = copy_b.get_pvc_tensor(
-          make_coord(k_tile * sg_tile_k, n_coord, l_coord), fragment_B.shape(),
-          typename traits_load_B::Shape_MN{}, seq<1,0>{});
+      Tensor blk_tgA = copy_a.get_pvc_tensor(make_coord(m_coord, k_tile * sg_tile_k, l_coord),
+                                             fragment_A.shape());
+      Tensor blk_tgB = copy_b.get_pvc_tensor(make_coord(n_coord, k_tile * sg_tile_k, l_coord),
+                                             fragment_B.shape());
 
 #if CUTLASS_ENABLE_DEBUG_PRINTS
-    if (thread(LOG_THREAD, LOG_GROUP) && k_tile == 1) {
-       print("blk_tgA : "); print(blk_tgA); print("\n");
-       print("blk_tgB : "); print(blk_tgB); print("\n");
-    }
+      if (thread(LOG_THREAD, LOG_GROUP) && k_tile == 1) {
+        print("blk_tgA : ");
+        print(blk_tgA);
+        print("\n");
+        print("blk_tgB : ");
+        print(blk_tgB);
+        print("\n");
+      }
 #endif
 
       // Copy gmem to rmem for k_tile+1 with tA|tB thread-partitioned tensors
@@ -172,13 +192,12 @@ struct gemm_device_partition_sd {
 
       // Compute gemm on mma-partitioned smem
       for (int i = 0; i < sg_tile_k / SUBGROUP_SIZE; i++) {
-        gemm(mma, fragment_A(_, _, i), fragment_B(_, _, i), fragment_C);
+        cute::gemm(mma, fragment_A(_, _, i), fragment_B(_, _, i), fragment_C);
       }
     }
 
-    Tensor blk_tgC = copy_c.get_pvc_tensor(
-        make_coord(m_coord, n_coord, l_coord), fragment_C.shape(),
-        typename traits_store_C::Shape_MN{});
+    Tensor blk_tgC =
+        copy_c.get_pvc_tensor(make_coord(m_coord, n_coord, l_coord), fragment_C.shape());
 
     copy(copy_c, fragment_C, blk_tgC);
   }

@@ -29,6 +29,8 @@
  *
  **************************************************************************************************/
 
+#include "cutlass/detail/layout.hpp"
+
 #include <cute/tensor.hpp>
 #include <sycl/sycl.hpp>
 #include <syclcompat.hpp>
@@ -52,12 +54,8 @@ void copy_kernel_vectorized(TensorS S, TensorD D, uint32_t M, uint32_t N) {
       D, Shape<Int<wg_tile_m>, Int<wg_tile_n>>{}); // ((M, N), m', n')
 
   // Slice work group.
-  Tensor tile_wg_S =
-      tiled_tensor_S(make_coord(_, _), BlockIdxX(),
-                     BlockIdxY());
-  Tensor tile_wg_D =
-      tiled_tensor_D(make_coord(_, _), BlockIdxX(),
-                     BlockIdxY());
+  Tensor tile_wg_S = tiled_tensor_S(make_coord(_, _), BlockIdxX(), BlockIdxY());
+  Tensor tile_wg_D = tiled_tensor_D(make_coord(_, _), BlockIdxX(), BlockIdxY());
 
   // Slice subgroup.
   auto SubgroupShape = Shape<Int<sg_tile_m>, Int<sg_tile_n>>{};
@@ -77,14 +75,10 @@ void copy_kernel_vectorized(TensorS S, TensorD D, uint32_t M, uint32_t N) {
   }
 #endif
 
-  using traits_load = Copy_Traits<XE_2D_U32x8x16_LD_N, TensorS>;
+  using traits_load = Copy_Traits<XE_2D_U32x8x16_LD_N, decltype(S)>;
   using Atom_load = Copy_Atom<traits_load, Element>;
-  auto VecLayout = make_layout(
-      make_shape(get<0>(typename traits_load::Shape_MN{}),
-                 get<1>(typename traits_load::Shape_MN{}) / _16{}),
-      Stride<_1, _0>{});
-  auto tiled_copy_load = make_tiled_copy(Atom_load{}.with(&*S.data(), N, M, N),
-                                         Layout<Shape<_1, _16>>{}, VecLayout);
+  auto tiled_copy_load = make_xe_2d_copy(Atom_load{}.with(S),
+                                         Layout<Shape<_1, _16>>{});
 
   // Construct a Tensor corresponding to each thread's slice.
   auto thr_copy_load =
@@ -114,26 +108,23 @@ void copy_kernel_vectorized(TensorS S, TensorD D, uint32_t M, uint32_t N) {
 #endif
 
   static constexpr auto sg_per_wg_x = wg_tile_n / sg_tile_n;
-  const int m_coord =
-      BlockIdxX() * wg_tile_m + (cutlass::get_sub_group_id() / sg_per_wg_x) * sg_tile_m;
-  const int n_coord =
-      BlockIdxY() * wg_tile_n + (cutlass::get_sub_group_id() % sg_per_wg_x) * sg_tile_n;
+  const int m_coord = BlockIdxX() * wg_tile_m +
+                      (cutlass::get_sub_group_id() / sg_per_wg_x) * sg_tile_m;
+  const int n_coord = BlockIdxY() * wg_tile_n +
+                      (cutlass::get_sub_group_id() % sg_per_wg_x) * sg_tile_n;
   const int l_coord = BlockIdxZ();
 
   // Copy from GMEM to RMEM and from RMEM to GMEM
-  auto blk_load_S = tiled_copy_load.get_pvc_tensor(
-      make_coord(m_coord, n_coord, l_coord), fragment.shape(),
-      typename traits_load::Shape_MN{});
+  auto blk_load_S = tiled_copy_load.get_pvc_tensor(make_coord(m_coord, n_coord, l_coord),
+                                                   fragment.shape());
   copy(tiled_copy_load, blk_load_S, fragment);
 
-  using traits_store = Copy_Traits<XE_2D_U32x8x16_ST_N, TensorD>;
+  using traits_store = Copy_Traits<XE_2D_U32x8x16_ST_N, decltype(D)>;
   using Atom_store = Copy_Atom<traits_store, Element>;
 
   auto tiled_copy_store =
-      make_tiled_copy(Atom_store{}.with(&*D.data(), N, M, N),
-                      Layout<Shape<_1, _16>, Stride<_0, _1>>{}, VecLayout);
-  auto thr_copy_store =
-      tiled_copy_store.get_thread_slice(ThreadIdxX());
+      make_xe_2d_copy(Atom_store{}.with(D), Layout<Shape<_1, _16>>{});
+  auto thr_copy_store = tiled_copy_store.get_thread_slice(ThreadIdxX());
 
   Tensor thr_tile_store_D = thr_copy_store.partition_D(tile_sg_D);
 
@@ -150,9 +141,8 @@ void copy_kernel_vectorized(TensorS S, TensorD D, uint32_t M, uint32_t N) {
   }
 #endif
 
-  auto blk_store_D = tiled_copy_store.get_pvc_tensor(
-      make_coord(m_coord, n_coord, l_coord), fragment.shape(),
-      typename traits_store::Shape_MN{});
+  auto blk_store_D = tiled_copy_store.get_pvc_tensor(make_coord(m_coord, n_coord, l_coord),
+                                                     fragment.shape());
 
   // onlt run first subgroup
   if (syclcompat::global_id::x() < 16 && !syclcompat::global_id::y() &&
@@ -185,7 +175,6 @@ bool copy(uint32_t M, uint32_t N) {
 
   cutlass::device_vector<dtype> device_src = host_src;
   cutlass::device_vector<dtype> device_output = host_output;
-
 
   //
   // Make tensors

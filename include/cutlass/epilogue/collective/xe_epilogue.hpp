@@ -120,16 +120,16 @@ public:
 
   using Trait_C = Copy_Traits<GmemTiledCopyC>;
   using XE_Copy_C = decltype(make_tiled_copy(Copy_Atom<Trait_C, ElementC>{}
-                                             .with(static_cast<ElementC const*>(nullptr), int32_t(0), int32_t(0), int32_t(0)),
+                                             .with(static_cast<ElementC const*>(nullptr), int32_t(0), int32_t(0)),
                                              Layout<Shape<_1, Int<SubgroupSize>>>{},
-                                             make_layout(make_shape(get<0>(typename Trait_C::Shape_MN{}),
-                                                                    get<1>(typename Trait_C::Shape_MN{}) / Int<SubgroupSize>{}))));
+                                             make_layout(make_shape(get<0>(typename Trait_C::BlockShape{}),
+                                                                    get<1>(typename Trait_C::BlockShape{}) / Int<SubgroupSize>{}))));
   using Trait_D = Copy_Traits<GmemTiledCopyD>;
   using XE_Copy_D = decltype(make_tiled_copy(Copy_Atom<Trait_D, ElementD>{}
-                                             .with(static_cast<ElementD const*>(nullptr),int32_t(0), int32_t(0), int32_t(0)),
+                                             .with(static_cast<ElementD const*>(nullptr),int32_t(0), int32_t(0)),
                                              Layout<Shape<_1, Int<SubgroupSize>>>{},
-                                             make_layout(make_shape(get<0>(typename Trait_D::Shape_MN{}),
-                                                                    get<1>(typename Trait_D::Shape_MN{}) / Int<SubgroupSize>{}))));
+                                             make_layout(make_shape(get<0>(typename Trait_D::BlockShape{}),
+                                                                    get<1>(typename Trait_D::BlockShape{}) / Int<SubgroupSize>{}))));
 private:
   constexpr static bool is_source_supported = not cute::is_void_v<ElementC>;
   constexpr static bool is_destination_supported = not cute::is_void_v<ElementD>;
@@ -188,19 +188,19 @@ public:
     XE_Copy_C xe_load_c = {};
     if constexpr (is_source_supported) {
       xe_load_c = make_tiled_copy(Copy_Atom<Copy_Traits<CopyOpG2R>, ElementC>{}.with(
-                                  args.ptr_C, N, M, N),
+                                  args.ptr_C, M, N),
                                   Layout<Shape<_1, Int<SubgroupSize>>>{},
-                                  make_layout(make_shape(get<0>(typename Trait_C::Shape_MN{}),
-                                                         get<1>(typename Trait_C::Shape_MN{}) / Int<SubgroupSize>{})));
+                                  make_layout(make_shape(get<0>(typename Trait_C::BlockShape{}),
+                                                         get<1>(typename Trait_C::BlockShape{}) / Int<SubgroupSize>{})));
     }
 
     XE_Copy_D xe_store_d = {};
     if constexpr (is_destination_supported) {
       xe_store_d = make_tiled_copy(Copy_Atom<Copy_Traits<CopyOpR2G>, ElementD>{}.with(
-                                   args.ptr_D, N, M, N),
+                                   args.ptr_D, M, N),
                                    Layout<Shape<_1, Int<SubgroupSize>>>{},
-                                   make_layout(make_shape(get<0>(typename Trait_D::Shape_MN{}),
-                                                          get<1>(typename Trait_D::Shape_MN{}) / Int<SubgroupSize>{})));
+                                   make_layout(make_shape(get<0>(typename Trait_D::BlockShape{}),
+                                                          get<1>(typename Trait_D::BlockShape{}) / Int<SubgroupSize>{})));
     }
 
     return {
@@ -313,10 +313,9 @@ public:
 
     Tensor trC = make_tensor<typename TiledMma::ValTypeC>(Shape<Int<FragmentSize>>{});
     Tensor trD = make_tensor<typename TiledMma::ValTypeD>(Shape<Int<FragmentSize>>{});
-    Tensor tOuti = params.xe_store_d.get_pvc_tensor(
-            make_coord(m_offset, n_offset, 0),
-            make_shape(_, Int<FragsM>{}, Int<FragsN>{}, L),
-            make_stride(Int<get<0>(MmaAtomShape{})>{}, Int<get<1>(MmaAtomShape{})>{}, _1{}));
+    Tensor rw_coord = params.xe_store_d.get_pvc_tensor(
+            make_coord(m_offset, n_offset, l_offset),
+            make_shape(_, Int<FragsM>{}, Int<FragsN>{}));
 
     // Because Sm90 uses shared memory, they are not tied to using the same accumulator values
     // for MMA and Epilogue. But because we are operating directly in the accumulators, we need to be
@@ -331,8 +330,6 @@ public:
     Tensor tRS_cD_mn = thread_g2r.partition_S(flat_divide(cD_mn, EpilogueTile{}));     // (G2R,G2R_M,G2R_N,EPI_M,EPI_N)
 
     Tensor tRS_cD = make_counting_tensor(tRS_cD_mn.layout());                          // (G2R,G2R_M,G2R_N,EPI_M,EPI_N)
-
-    Tensor rw_coord = tOuti(_,_,_,l_coord);
 
     // Get the fusion callbacks
     // Arguments passed here relate to sub-group tiles, rather than CTA (work-group) tiles

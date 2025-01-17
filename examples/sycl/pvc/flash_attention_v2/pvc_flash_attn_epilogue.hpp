@@ -104,11 +104,9 @@ public:
   static_assert(cute::rank(StrideLSE{}) == 3, "StrideLSE must be rank-3: [batch, num_heads, seq_len]");
 
   using Trait_O = Copy_Traits<GmemTiledCopyO>;
-  using XE_Copy_O = decltype(make_tiled_copy(Copy_Atom<Trait_O, ElementO>{}
-                               .with(static_cast<ElementO const*>(nullptr), int32_t(0), int32_t(0), int32_t(0)),
-                               Layout<Shape<_1, Int<SubgroupSize>>>{},
-                               make_layout(make_shape(get<0>(typename Trait_O::Shape_MN{}),
-                                                      get<1>(typename Trait_O::Shape_MN{}) / Int<SubgroupSize>{}))));
+  using XE_Copy_O = decltype(make_xe_2d_copy(Copy_Atom<Copy_Traits<CopyOpO, StrideO>, ElementO>{}.with(
+            make_tensor(make_gmem_ptr(static_cast<ElementO const*>(nullptr)), make_layout(make_shape(0, 0, 0), StrideO{}))),
+                                Layout<Shape<_1, Int<SubgroupSize>>>{}));
 private:
   constexpr static bool is_destination_supported = not cute::is_void_v<ElementO>;
 
@@ -157,11 +155,9 @@ public:
     auto [batch, num_heads, seq_len, head_size] = problem_shape;
 
     XE_Copy_O xe_store_o = {};
-    xe_store_o = make_tiled_copy(Copy_Atom<Copy_Traits<CopyOpO>, ElementO>{}.with(
-                                args.ptr_O, head_size, seq_len, head_size),
-                                Layout<Shape<_1, Int<SubgroupSize>>>{},
-                                make_layout(make_shape(get<0>(typename Trait_O::Shape_MN{}),
-                                                        get<1>(typename Trait_O::Shape_MN{}) / Int<SubgroupSize>{})));
+    xe_store_o = make_xe_2d_copy(Copy_Atom<Copy_Traits<CopyOpO, StrideO>, ElementO>{}.with(
+            make_tensor(make_gmem_ptr(static_cast<ElementO const*>(args.ptr_O)), make_layout(make_shape(seq_len, head_size, batch * num_heads), args.dO))),
+                                Layout<Shape<_1, Int<SubgroupSize>>>{});
 
     return {
       FusionCallbacks::to_underlying_arguments(problem_shape, args.thread, workspace),
@@ -263,11 +259,10 @@ public:
     auto [batch, num_heads, seq_len, head_size] = problem_shape;
 
     Tensor tOi = params.xe_store_o.get_pvc_tensor(
-            make_coord(m_offset, n_offset, 0),
-            make_shape(_, Int<FragsM>{}, Int<FragsN>{}, batch * num_heads),
-            make_stride(Int<get<0>(MmaAtomShape{})>{}, Int<get<1>(MmaAtomShape{})>{}, _1{}));
+            make_coord(m_offset, n_offset, l_coord),
+            make_shape(_, Int<FragsM>{}, Int<FragsN>{}));
 
-    copy(params.xe_store_o, out, tOi(_,_,_,l_coord));
+    copy(params.xe_store_o, out, tOi);
 
     const int lse_offset = m_offset + l_coord * seq_len;
 

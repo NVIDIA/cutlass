@@ -61,10 +61,10 @@ SYCL_DEVICE_OCL(cute::intel::int4 intel_sub_group_u8_u8_matrix_mad_k32(cute::int
 SYCL_DEVICE_OCL(cute::intel::int2 intel_sub_group_u8_u8_matrix_mad_k32(cute::intel::ushort2 a, cute::intel::uint8 b, cute::intel::int2 acc));
 SYCL_DEVICE_OCL(int  intel_sub_group_u8_u8_matrix_mad_k32(ushort a, cute::intel::uint8 b, int acc));
 // mma_tf32
-SYCL_DEVICE_OCL(cute::intel::float8 intel_sub_group_tf32_tf32_matrix_mad_k8_f32(cute::intel::float4 a, cute::intel::float8 b, cute::intel::float8 acc));
-SYCL_DEVICE_OCL(cute::intel::float4 intel_sub_group_tf32_tf32_matrix_mad_k8_f32(cute::intel::float2 a, cute::intel::float8 b, cute::intel::float4 acc));
-SYCL_DEVICE_OCL(cute::intel::float2 intel_sub_group_tf32_tf32_matrix_mad_k8_f32(float a, cute::intel::float8 b, cute::intel::float2 acc));
-SYCL_DEVICE_OCL(float  intel_sub_group_tf32_tf32_matrix_mad_k8_f32(float a, cute::intel::float8 b, float acc));
+SYCL_DEVICE_OCL(cute::intel::float8 intel_sub_group_tf32_tf32_matrix_mad_k8(cute::intel::float4 a, cute::intel::float8 b, cute::intel::float8 acc));
+SYCL_DEVICE_OCL(cute::intel::float4 intel_sub_group_tf32_tf32_matrix_mad_k8(cute::intel::float2 a, cute::intel::float8 b, cute::intel::float4 acc));
+SYCL_DEVICE_OCL(cute::intel::float2 intel_sub_group_tf32_tf32_matrix_mad_k8(float a, cute::intel::float8 b, cute::intel::float2 acc));
+SYCL_DEVICE_OCL(float  intel_sub_group_tf32_tf32_matrix_mad_k8(float a, cute::intel::float8 b, float acc));
 
 
 #undef SYCL_DEVICE_OCL
@@ -430,7 +430,7 @@ struct XE_8x16x8_F32TF32TF32F32_TT
       intel::float8 const& c)
   {
 #if defined(SYCL_INTEL_TARGET)
-    d = intel_sub_group_tf32_tf32_matrix_mad_k8_f32(a, b, c);
+    d = intel_sub_group_tf32_tf32_matrix_mad_k8(a, b, c);
 #else
     CUTE_INVALID_CONTROL_PATH("Attempting to use XE_8x16x8_F32TF32TF32F32_TT on non-PVC hardware");
 #endif
@@ -451,7 +451,7 @@ struct XE_4x16x8_F32TF32TF32F32_TT
       intel::float4 const& c)
   {
 #if defined(SYCL_INTEL_TARGET)
-    d = intel_sub_group_tf32_tf32_matrix_mad_k8_f32(a, b, c);
+    d = intel_sub_group_tf32_tf32_matrix_mad_k8(a, b, c);
 #else
     CUTE_INVALID_CONTROL_PATH("Attempting to use XE_4x16x8_F32TF32TF32F32_TT on non-PVC hardware");
 #endif
@@ -472,7 +472,7 @@ struct XE_2x16x8_F32TF32TF32F32_TT
       intel::float2 const& c)
   {
 #if defined(SYCL_INTEL_TARGET)
-    d = intel_sub_group_tf32_tf32_matrix_mad_k8_f32(a, b, c);
+    d = intel_sub_group_tf32_tf32_matrix_mad_k8(a, b, c);
 #else
     CUTE_INVALID_CONTROL_PATH("Attempting to use XE_2x16x8_F32TF32TF32F32_TT on non-PVC hardware");
 #endif
@@ -493,7 +493,7 @@ struct XE_1x16x8_F32TF32TF32F32_TT
       float const& c)
   {
 #if defined(SYCL_INTEL_TARGET)
-    d = intel_sub_group_tf32_tf32_matrix_mad_k8_f32(a, b, c);
+    d = intel_sub_group_tf32_tf32_matrix_mad_k8(a, b, c);
 #else
     CUTE_INVALID_CONTROL_PATH("Attempting to use XE_1x16x8_F32TF32TF32F32_TT on non-PVC hardware");
 #endif

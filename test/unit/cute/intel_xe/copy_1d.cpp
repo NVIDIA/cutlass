@@ -29,6 +29,8 @@
  *
  **************************************************************************************************/
 
+#include "cutlass/detail/layout.hpp"
+
 #include <cute/tensor.hpp>
 #include <sycl/sycl.hpp>
 #include <syclcompat.hpp>
@@ -82,26 +84,24 @@ void copy_kernel_vectorized(TensorS tile_S, TensorD tile_D) {
       make_shape(_1{}, Int<sizeof(cutlass::uint128_t) / sizeof(Element)>{}),
       Stride<Int<sizeof(cutlass::uint128_t) / sizeof(Element)>, _1>{});
   auto ThreadLayout = make_layout(make_shape(_1{}, _16{}));
-  auto tiled_copy_load = make_tiled_copy(Atom_load{},  // access size
+  auto tiled_copy_load = make_xe_2d_copy(Atom_load{},  // access size
                                          ThreadLayout, // thread layout
                                          VecLayout); // vector layout (e.g. 4x1)
   auto tiled_copy_store =
-      make_tiled_copy(Atom_store{}, // access size
+      make_xe_2d_copy(Atom_store{}, // access size
                       ThreadLayout, // thread layout
                       VecLayout);   // vector layout (e.g. 4x1)
 
-  auto tiled_ldsm = make_tiled_copy(Atom_ldsm{},  // access size
+  auto tiled_ldsm = make_xe_2d_copy(Atom_ldsm{},  // access size
                                     ThreadLayout, // thread layout
                                     VecLayout);   // vector layout (e.g. 4x1)
-  auto tiled_stsm = make_tiled_copy(Atom_stsm{},  // access size
+  auto tiled_stsm = make_xe_2d_copy(Atom_stsm{},  // access size
                                     ThreadLayout, // thread layout
                                     VecLayout);   // vector layout (e.g. 4x1)
 
   // Construct a Tensor corresponding to each thread's slice.
-  auto thr_copy_load =
-      tiled_copy_load.get_thread_slice(ThreadIdxX());
-  auto thr_copy_store =
-      tiled_copy_store.get_thread_slice(ThreadIdxX());
+  auto thr_copy_load = tiled_copy_load.get_thread_slice(ThreadIdxX());
+  auto thr_copy_store = tiled_copy_store.get_thread_slice(ThreadIdxX());
 
   auto thr_copy_ldsm = tiled_ldsm.get_thread_slice(ThreadIdxX());
   auto thr_copy_stsm = tiled_stsm.get_thread_slice(ThreadIdxX());
@@ -171,7 +171,6 @@ TEST(PVC_1d_copy, copy_double) {
 
     cutlass::device_vector<Element> device_src = host_src;
     cutlass::device_vector<Element> device_output(M * N);
-
 
     Tensor S =
         make_tensor(make_gmem_ptr(device_src.data()),

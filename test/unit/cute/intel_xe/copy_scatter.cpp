@@ -29,6 +29,8 @@
  *
  **************************************************************************************************/
 
+#include "cutlass/detail/layout.hpp"
+
 #include <cute/tensor.hpp>
 #include <sycl/sycl.hpp>
 #include <syclcompat.hpp>
@@ -42,7 +44,8 @@ using namespace syclcompat::experimental;
 #define SUBGROUP_SIZE (16)
 
 template <class TensorS, class TensorD, class TiledLoad, class TiledStore>
-void copy_kernel_global(TensorS S, TensorD D, TiledLoad load, TiledStore store) {
+void copy_kernel_global(TensorS S, TensorD D, TiledLoad load,
+                        TiledStore store) {
 
   auto thr_copy_load = load.get_thread_slice(ThreadIdxX());
   Tensor thr_tile_load_S = thr_copy_load.partition_S(S);
@@ -117,9 +120,10 @@ TEST(PVC_2d_copy, load_store_global) {
         make_tensor(make_gmem_ptr(device_output.data()),
                     make_layout(Shape<Int<M>, Int<N>>{}, Stride<Int<N>, _1>{}));
 
-    auto tiled_copy = make_tiled_copy(Copy_Atom<UniversalCopy<Element>, Element>{},
-                                      Layout<Shape<_1, _16>, Stride<_16, _1>>{},
-                                      Layout<Shape<_8, _1>, Stride<_1, _8>>{});
+    auto tiled_copy =
+        make_tiled_copy(Copy_Atom<UniversalCopy<Element>, Element>{},
+                        Layout<Shape<_1, _16>, Stride<_16, _1>>{},
+                        Layout<Shape<_8, _1>, Stride<_1, _8>>{});
     static constexpr auto subgroup_size = 16;
     auto blockDim = syclcompat::dim3(size(tiled_copy));
     //
@@ -165,9 +169,10 @@ TEST(PVC_2d_copy, load_store_global_V) {
         make_tensor(make_gmem_ptr(device_output.data()),
                     make_layout(Shape<Int<M>, Int<N>>{}, Stride<Int<N>, _1>{}));
 
-    auto tiled_copy = make_tiled_copy(Copy_Atom<UniversalCopy<Element>, Element>{},
-                                      Layout<Shape<_1, _16>, Stride<_16, _1>>{},
-                                      Layout<Shape<_8, _2>, Stride<_1, _8>>{});
+    auto tiled_copy =
+        make_tiled_copy(Copy_Atom<UniversalCopy<Element>, Element>{},
+                        Layout<Shape<_1, _16>, Stride<_16, _1>>{},
+                        Layout<Shape<_8, _2>, Stride<_1, _8>>{});
     static constexpr auto subgroup_size = 16;
     auto blockDim = syclcompat::dim3(size(tiled_copy));
     //
@@ -240,9 +245,10 @@ TEST(PVC_2d_copy, load_store_local) {
         make_tensor(make_gmem_ptr(device_output.data()),
                     make_layout(Shape<Int<M>, Int<N>>{}, Stride<Int<N>, _1>{}));
 
-    auto tiled_copy = make_tiled_copy(Copy_Atom<UniversalCopy<Element>, Element>{},
-                                      Layout<Shape<_1, _16>, Stride<_16, _1>>{},
-                                      Layout<Shape<_8, _1>, Stride<_1, _8>>{});
+    auto tiled_copy =
+        make_tiled_copy(Copy_Atom<UniversalCopy<Element>, Element>{},
+                        Layout<Shape<_1, _16>, Stride<_16, _1>>{},
+                        Layout<Shape<_8, _1>, Stride<_1, _8>>{});
     static constexpr auto subgroup_size = 16;
     auto blockDim = syclcompat::dim3(size(tiled_copy));
     //
@@ -263,7 +269,8 @@ TEST(PVC_2d_copy, load_store_local) {
 }
 
 template <class TensorS, class TensorD, class TiledLoad, class TiledStore>
-void copy_kernel_atomic(TensorS S, TensorD D, TiledLoad load, TiledStore store) {
+void copy_kernel_atomic(TensorS S, TensorD D, TiledLoad load,
+                        TiledStore store) {
 
   auto thr_copy_load = load.get_thread_slice(ThreadIdxX());
   Tensor thr_tile_load_S = thr_copy_load.partition_S(S);
@@ -331,9 +338,10 @@ TEST(PVC_2d_copy, load_store_stomic_float) {
         make_tensor(make_gmem_ptr(device_output.data()),
                     make_layout(Shape<Int<M>, Int<N>>{}, Stride<Int<N>, _1>{}));
 
-    auto tiled_load = make_tiled_copy(Copy_Atom<UniversalCopy<Element>, Element>{},
-                                      Layout<Shape<_1, _16>, Stride<_16, _1>>{},
-                                      Layout<Shape<_8, _1>, Stride<_1, _8>>{});
+    auto tiled_load =
+        make_tiled_copy(Copy_Atom<UniversalCopy<Element>, Element>{},
+                        Layout<Shape<_1, _16>, Stride<_16, _1>>{},
+                        Layout<Shape<_8, _1>, Stride<_1, _8>>{});
     auto tiled_atom = make_tiled_copy(Copy_Atom<XE_ATOMIC<Element>, Element>{},
                                       Layout<Shape<_1, _16>, Stride<_16, _1>>{},
                                       Layout<Shape<_8, _1>, Stride<_1, _8>>{});
@@ -382,9 +390,10 @@ TEST(PVC_2d_copy, load_store_stomic_int) {
         make_tensor(make_gmem_ptr(device_output.data()),
                     make_layout(Shape<Int<M>, Int<N>>{}, Stride<Int<N>, _1>{}));
 
-    auto tiled_load = make_tiled_copy(Copy_Atom<UniversalCopy<Element>, Element>{},
-                                      Layout<Shape<_1, _16>, Stride<_16, _1>>{},
-                                      Layout<Shape<_8, _1>, Stride<_1, _8>>{});
+    auto tiled_load =
+        make_tiled_copy(Copy_Atom<UniversalCopy<Element>, Element>{},
+                        Layout<Shape<_1, _16>, Stride<_16, _1>>{},
+                        Layout<Shape<_8, _1>, Stride<_1, _8>>{});
     auto tiled_atom = make_tiled_copy(Copy_Atom<XE_ATOMIC<Element>, Element>{},
                                       Layout<Shape<_1, _16>, Stride<_16, _1>>{},
                                       Layout<Shape<_8, _1>, Stride<_1, _8>>{});

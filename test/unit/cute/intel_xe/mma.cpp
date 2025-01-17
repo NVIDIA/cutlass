@@ -29,11 +29,14 @@
  *
  **************************************************************************************************/
 
+#include "cutlass/detail/layout.hpp"
+
 #include <cute/tensor.hpp>
 #include <sycl/sycl.hpp>
 #include <syclcompat.hpp>
 
 #include "cutlass_unit_test.h"
+#include "utils.hpp"
 
 using namespace cute;
 using namespace cutlass;
@@ -56,8 +59,7 @@ void gemm_device(TA const *A, TB const *B, TC *C, uint32_t m, uint32_t n,
                           make_layout(make_shape(m, n), make_stride(n, 1)));
 
   // Get the appropriate blocks for this thread block
-  auto cta_coord = make_coord(BlockIdxX(),
-                              BlockIdxY(), _); // (m,n,k)
+  auto cta_coord = make_coord(BlockIdxX(), BlockIdxY(), _); // (m,n,k)
 
   auto cta_tiler =
       make_shape(Int<wg_tile_m>{}, Int<wg_tile_n>{}, Int<sg_tile_k>{});
@@ -93,10 +95,18 @@ void gemm_device(TA const *A, TB const *B, TC *C, uint32_t m, uint32_t n,
   if (thread(LOG_THREAD)) {
     print("=====================  A :\n");
 
-    print("  mA : "); print(mA); print("\n");
-    print("  gA : "); print(gA); print("\n");
-    print("tgA : "); print(tgA); print("\n");
-    print("fragment_A : "); print(fragment_A); print("\n\n");
+    print("  mA : ");
+    print(mA);
+    print("\n");
+    print("  gA : ");
+    print(gA);
+    print("\n");
+    print("tgA : ");
+    print(tgA);
+    print("\n");
+    print("fragment_A : ");
+    print(fragment_A);
+    print("\n\n");
   }
 #endif
 
@@ -104,10 +114,18 @@ void gemm_device(TA const *A, TB const *B, TC *C, uint32_t m, uint32_t n,
   if (thread(LOG_THREAD)) {
     print("=====================  B :\n");
 
-    print("  mB : "); print(mB); print("\n");
-    print("  gB : "); print(gB); print("\n");
-    print("tgB : "); print(tgB); print("\n");
-    print("fragment_B : "); print(fragment_B); print("\n\n");
+    print("  mB : ");
+    print(mB);
+    print("\n");
+    print("  gB : ");
+    print(gB);
+    print("\n");
+    print("tgB : ");
+    print(tgB);
+    print("\n");
+    print("fragment_B : ");
+    print(fragment_B);
+    print("\n\n");
   }
 #endif
 
@@ -115,10 +133,18 @@ void gemm_device(TA const *A, TB const *B, TC *C, uint32_t m, uint32_t n,
   if (thread(LOG_THREAD)) {
     print("=====================  C :\n");
 
-    print("  mC : "); print(mC); print("\n");
-    print("  gC : "); print(gC); print("\n");
-    print("tgC : "); print(tgC); print("\n");
-    print("fragment_C : "); print(fragment_C); print("\n\n");
+    print("  mC : ");
+    print(mC);
+    print("\n");
+    print("  gC : ");
+    print(gC);
+    print("\n");
+    print("tgC : ");
+    print(tgC);
+    print("\n");
+    print("fragment_C : ");
+    print(fragment_C);
+    print("\n\n");
   }
 #endif
 
@@ -131,7 +157,7 @@ void gemm_device(TA const *A, TB const *B, TC *C, uint32_t m, uint32_t n,
     copy(kB, fragment_B);
 
     // Compute gemm on mma-partitioned smem
-    gemm(mma, fragment_A, fragment_B, fragment_C);
+    cute::gemm(mma, fragment_A, fragment_B, fragment_C);
   }
 
   copy(fragment_C, tgC);
@@ -155,63 +181,26 @@ void gemm(int m, int n, int k, TA *A, TB *B, TC *C) {
       A, B, C, m, n, k);
 }
 
-template <class atype, class btype, class ctype>
-void verify(uint32_t m, uint32_t n, uint32_t k, atype *A, btype *B, ctype *C,
-            ctype *D) {
-  std::vector<ctype> h_D(m * n);
-
-  syclcompat::memcpy<ctype>(h_D.data(), D, m * n);
-
-  int cnt = 0;
-  for (int i = 0; i < m; i++) {
-    for (int j = 0; j < n; j++) {
-      for (int z = 0; z < k; z++) {
-        C[i * n + j] += A[i * k + z] * B[z * n + j];
-      }
-
-      auto error = abs((C[i * n + j] - h_D.data()[i * n + j]) /
-                       (float)h_D.data()[i * n + j]);
-      if (error > 0.01f) {
-        cnt++;
-      }
-    }
-  }
-
-  EXPECT_EQ(cnt, 0);
-}
-
-template <typename T> static void fill_matrix(std::vector<T> &M) {
-  std::random_device dev;
-  std::mt19937 rng(dev());
-  std::uniform_real_distribution<float> dist((T)0.0, (T)4.0);
-  std::generate(std::begin(M), std::end(M),
-                [&] { return static_cast<T>(dist(rng)); });
-}
-
 template <class MMA, uint32_t wg_tile_m, uint32_t wg_tile_n, uint32_t sg_tile_m,
           uint32_t sg_tile_n, uint32_t sg_tile_k, class TA, class TB, class TC>
 void MMA_Test(int m, int n, int k) {
-  std::vector<TA> h_A(m * k);
-  std::vector<TB> h_B(n * k);
-  std::vector<TC> h_C(m * n);
-  h_C.clear();
+  cutlass::host_vector<TA> h_A(m * k);
+  cutlass::host_vector<TB> h_B(n * k);
+  cutlass::host_vector<TC> h_C(m * n);
 
   fill_matrix(h_A);
   fill_matrix(h_B);
 
-  auto d_A = syclcompat::malloc<TA>(m * k);
-  auto d_B = syclcompat::malloc<TB>(k * n);
-  auto d_C = syclcompat::malloc<TC>(m * n);
+  cutlass::device_vector<TA> d_A = h_A;
+  cutlass::device_vector<TB> d_B = h_B;
+  cutlass::device_vector<TC> d_C = h_C;
 
-  syclcompat::memcpy<TA>(d_A, h_A.data(), m * k);
-  syclcompat::memcpy<TB>(d_B, h_B.data(), k * n);
-  syclcompat::memcpy<TC>(d_C, h_C.data(), m * n);
-
-  gemm<MMA, wg_tile_m, wg_tile_n, sg_tile_m, sg_tile_n, sg_tile_k>(m, n, k, d_A,
-                                                                   d_B, d_C);
+  ::gemm<MMA, wg_tile_m, wg_tile_n, sg_tile_m, sg_tile_n, sg_tile_k>(
+      m, n, k, d_A.data(), d_B.data(), d_C.data());
   syclcompat::wait();
 
-  verify(m, n, k, h_A.data(), h_B.data(), h_C.data(), d_C);
+  h_C = d_C;
+  verify(m, n, k, h_A.data(), h_B.data(), h_C.data());
 }
 
 TEST(PVC_CuTe_Xe, MMA_XE_8x16x32_S32S8S8S32_TT) {
@@ -297,4 +286,24 @@ TEST(PVC_CuTe_Xe, MMA_XE_1x16x16_F32F16F16F32_TT) {
 TEST(PVC_CuTe_Xe, FMA_XE_UniversalFMA_F32F32F32F32) {
   MMA_Test<UniversalFMA<float, float, float, float>, 64, 64, 8, 16, 16, float,
            float, float>(512, 512, 256);
+}
+
+TEST(PVC_CuTe_Xe, MMA_XE_1x16x8_F32TF32TF32F32_TT) {
+  MMA_Test<XE_1x16x8_F32TF32TF32F32_TT, 64, 64, 8, 16, 16, tfloat32_t,
+           tfloat32_t, float>(512, 512, 256);
+}
+
+TEST(PVC_CuTe_Xe, MMA_XE_2x16x8_F32TF32TF32F32_TT) {
+  MMA_Test<XE_2x16x8_F32TF32TF32F32_TT, 64, 64, 8, 16, 16, tfloat32_t,
+           tfloat32_t, float>(512, 512, 256);
+}
+
+TEST(PVC_CuTe_Xe, MMA_XE_4x16x8_F32TF32TF32F32_TT) {
+  MMA_Test<XE_4x16x8_F32TF32TF32F32_TT, 64, 64, 8, 16, 16, tfloat32_t,
+           tfloat32_t, float>(512, 512, 256);
+}
+
+TEST(PVC_CuTe_Xe, MMA_XE_8x16x8_F32TF32TF32F32_TT) {
+  MMA_Test<XE_8x16x8_F32TF32TF32F32_TT, 64, 64, 8, 16, 32, tfloat32_t,
+           tfloat32_t, float>(512, 512, 256);
 }

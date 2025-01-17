@@ -29,6 +29,8 @@
  *
  **************************************************************************************************/
 
+#include "cutlass/detail/layout.hpp"
+
 #include <cute/tensor.hpp>
 #include <sycl/sycl.hpp>
 #include <syclcompat.hpp>
@@ -41,7 +43,8 @@ using namespace syclcompat::experimental;
 
 #define SUBGROUP_SIZE (16)
 
-template <class TensorS, class TensorD, class TiledLoad, class TiledStore, class CopyOp = void>
+template <class TensorS, class TensorD, class TiledLoad, class TiledStore,
+          class CopyOp = void>
 void copy_kernel_vectorized(TensorS S, TensorD D, TiledLoad load,
                             TiledStore store) {
   const int m_coord = 0;
@@ -53,9 +56,9 @@ void copy_kernel_vectorized(TensorS S, TensorD D, TiledLoad load,
   auto thr_tile_load_D = thr_copy_load.partition_D(S);
   auto fragment = make_fragment_like(thr_tile_load_D);
   auto ld_tensor =
-      load.get_pvc_tensor(make_coord(m_coord, n_coord, l_coord),
-                          fragment.shape(), typename TiledLoad::Shape_MN{});
-  if constexpr (cute::detail::has_prefetch<CopyOp>) prefetch(load, ld_tensor);
+      load.get_pvc_tensor(make_coord(m_coord, n_coord, l_coord), fragment.shape());
+  if constexpr (cute::detail::has_prefetch<CopyOp>)
+    prefetch(load, ld_tensor);
   copy(load, ld_tensor, fragment);
 
   // ==========  store   ==========
@@ -63,9 +66,8 @@ void copy_kernel_vectorized(TensorS S, TensorD D, TiledLoad load,
   Tensor frag_view =
       make_tensor(static_cast<decltype(fragment) &&>(fragment).data(),
                   thr_copy_store.partition_S(D).shape());
-  auto st_tensor = store.get_pvc_tensor(make_coord(m_coord, n_coord, l_coord),
-                                        frag_view.shape(),
-                                        typename TiledStore::Shape_MN{});
+  auto st_tensor =
+      store.get_pvc_tensor(make_coord(m_coord, n_coord, l_coord), frag_view.shape());
   copy(store, frag_view, st_tensor);
 
 #if 0
@@ -88,10 +90,11 @@ void copy_kernel_vectorized(TensorS S, TensorD D, TiledLoad load,
   }
 #endif
 }
-template<class dtype, class load, class store, uint32_t M, uint32_t N, bool trans = false>
+template <class dtype, class load, class store, uint32_t M, uint32_t N,
+          bool trans = false>
 struct copy_op;
 
-template<class dtype, class load, class store, uint32_t M, uint32_t N>
+template <class dtype, class load, class store, uint32_t M, uint32_t N>
 struct copy_op<dtype, load, store, M, N, false> {
   void operator()() {
     //
@@ -99,7 +102,7 @@ struct copy_op<dtype, load, store, M, N, false> {
     //
     cutlass::host_vector<dtype> host_src(M * N);
     cutlass::host_vector<dtype> host_output(M * N);
-    
+
     for (size_t i = 0; i < host_src.size(); ++i) {
       host_src[i] = static_cast<dtype>(i);
     }
@@ -110,29 +113,28 @@ struct copy_op<dtype, load, store, M, N, false> {
     Tensor S =
         make_tensor(make_gmem_ptr(device_src.data()),
                     make_layout(Shape<Int<M>, Int<N>>{}, Stride<Int<N>, _1>{}));
-    Tensor D = 
+    Tensor D =
         make_tensor(make_gmem_ptr(device_output.data()),
-                make_layout(Shape<Int<M>, Int<N>>{}, Stride<Int<N>, _1>{}));
+                    make_layout(Shape<Int<M>, Int<N>>{}, Stride<Int<N>, _1>{}));
 
-    auto tiled_load = 
-      make_tiled_copy(
-        Copy_Atom<Copy_Traits<load>, dtype>{}.with(device_src.data(), N, M,
-                                                              N),
-        Layout<Shape<_1, Int<SUBGROUP_SIZE>>, Stride<_0, _1>>{},
-        Layout<Shape<decltype(size<0>(typename Copy_Traits<load>::Shape_MN{})), _1>, Stride<_1, _0>>{});
-    auto tiled_store = make_tiled_copy(
-        Copy_Atom<Copy_Traits<store>, dtype>{}.with(device_output.data(), N,
-                                                              M, N),
-        Layout<Shape<_1, Int<SUBGROUP_SIZE>>, Stride<_0, _1>>{},
-        Layout<Shape<decltype(size<0>(typename Copy_Traits<store>::Shape_MN{})), _1>, Stride<_1, _0>>{});
+    auto tiled_load = make_xe_2d_copy(
+        Copy_Atom<Copy_Traits<load, decltype(S)>, dtype>{}.with(device_src.data(), M, N),
+        Layout<Shape<_1, Int<SUBGROUP_SIZE>>>{});
+
+    auto tiled_store = make_xe_2d_copy(
+        Copy_Atom<Copy_Traits<store, decltype(D)>, dtype>{}.with(device_output.data(), M, N),
+        Layout<Shape<_1, Int<SUBGROUP_SIZE>>>{});
+
     auto blockDim = syclcompat::dim3(size(tiled_load));
     //
     // Launch the kernel
     //
-    launch<copy_kernel_vectorized<decltype(S), decltype(D), decltype(tiled_load),
+    launch<
+        copy_kernel_vectorized<decltype(S), decltype(D), decltype(tiled_load),
                                decltype(tiled_store), load>>(
-        launch_policy{syclcompat::dim3(1), blockDim,
-                      kernel_properties{sycl_exp::sub_group_size<SUBGROUP_SIZE>}},
+        launch_policy{
+            syclcompat::dim3(1), blockDim,
+            kernel_properties{sycl_exp::sub_group_size<SUBGROUP_SIZE>}},
         S, D, tiled_load, tiled_store);
 
     syclcompat::wait_and_throw();
@@ -143,7 +145,7 @@ struct copy_op<dtype, load, store, M, N, false> {
   }
 };
 
-template<class load, uint32_t M, uint32_t N> 
+template <class load, uint32_t M, uint32_t N>
 struct copy_op<char, load, XE_2D_U8x2x32_ST_N, M, N, false> {
   void operator()() {
     //
@@ -152,7 +154,7 @@ struct copy_op<char, load, XE_2D_U8x2x32_ST_N, M, N, false> {
     using dtype = char;
     cutlass::host_vector<dtype> host_src(M * N);
     cutlass::host_vector<dtype> host_output(M * N);
-    
+
     for (size_t i = 0; i < host_src.size(); ++i) {
       host_src[i] = static_cast<dtype>(i);
     }
@@ -167,24 +169,22 @@ struct copy_op<char, load, XE_2D_U8x2x32_ST_N, M, N, false> {
         make_tensor(make_gmem_ptr(device_output.data()),
                     make_layout(Shape<Int<M>, Int<N>>{}, Stride<Int<N>, _1>{}));
 
-    auto tiled_load = make_tiled_copy(
-        Copy_Atom<Copy_Traits<load>, dtype>{}.with(device_src.data(), N, M,
-                                                              N),
-        Layout<Shape<_1, _16>, Stride<_0, _1>>{},
-        make_layout(shape<1>(typename Copy_Atom<Copy_Traits<load>, dtype>::ValLayoutDst{})));
-    auto tiled_store = make_tiled_copy(
-        Copy_Atom<Copy_Traits<XE_2D_U8x2x32_ST_N>, dtype>{}.with(device_output.data(), N, M,
-                                                          N),
-        Layout<Shape<_1, _16>, Stride<_0, _1>>{},
-        Layout<Shape<_2, _2>, Stride<_2, _1>>{});
+    auto tiled_load = make_xe_2d_copy(
+        Copy_Atom<Copy_Traits<load, decltype(S)>, dtype>{}.with(S), Layout<Shape<_1, _16>>{});
+
+    auto tiled_store = make_xe_2d_copy(
+        Copy_Atom<Copy_Traits<XE_2D_U8x2x32_ST_N, decltype(D)>, dtype>{}.with(D), Layout<Shape<_1, _16>>{});
+
     auto blockDim = syclcompat::dim3(size(tiled_load));
     //
     // Launch the kernel
     //
-    launch<copy_kernel_vectorized<decltype(S), decltype(D), decltype(tiled_load),
+    launch<
+        copy_kernel_vectorized<decltype(S), decltype(D), decltype(tiled_load),
                                decltype(tiled_store), load>>(
-        launch_policy{syclcompat::dim3(1), blockDim,
-                      kernel_properties{sycl_exp::sub_group_size<SUBGROUP_SIZE>}},
+        launch_policy{
+            syclcompat::dim3(1), blockDim,
+            kernel_properties{sycl_exp::sub_group_size<SUBGROUP_SIZE>}},
         S, D, tiled_load, tiled_store);
 
     syclcompat::wait_and_throw();
@@ -195,8 +195,8 @@ struct copy_op<char, load, XE_2D_U8x2x32_ST_N, M, N, false> {
   }
 };
 
-template<class load, uint32_t M, uint32_t N>
-struct copy_op<uint16_t, load, XE_2D_U16x2x16_ST_N, M, N, false>{
+template <class load, uint32_t M, uint32_t N>
+struct copy_op<uint16_t, load, XE_2D_U16x2x16_ST_N, M, N, false> {
   void operator()() {
     //
     // Allocate and initialize
@@ -204,7 +204,7 @@ struct copy_op<uint16_t, load, XE_2D_U16x2x16_ST_N, M, N, false>{
     using dtype = uint16_t;
     cutlass::host_vector<dtype> host_src(M * N);
     cutlass::host_vector<dtype> host_output(M * N);
-    
+
     for (size_t i = 0; i < host_src.size(); ++i) {
       host_src[i] = static_cast<dtype>(i);
     }
@@ -215,28 +215,26 @@ struct copy_op<uint16_t, load, XE_2D_U16x2x16_ST_N, M, N, false>{
     Tensor S =
         make_tensor(make_gmem_ptr(device_src.data()),
                     make_layout(Shape<Int<M>, Int<N>>{}, Stride<Int<N>, _1>{}));
-    Tensor D =
-        make_tensor(make_gmem_ptr(device_output.data()),
-                    make_layout(Shape<Int<M * 2>, Int<N / 2>>{}, Stride<Int<N / 2>, _1>{}));
+    Tensor D = make_tensor(
+        make_gmem_ptr(device_output.data()),
+        make_layout(Shape<Int<M * 2>, Int<N / 2>>{}, Stride<Int<N / 2>, _1>{}));
 
-    auto tiled_load = make_tiled_copy(
-        Copy_Atom<Copy_Traits<load>, dtype>{}.with(device_src.data(), N, M,
-                                                              N),
-        Layout<Shape<_1, Int<SUBGROUP_SIZE>>, Stride<_0, _1>>{},
-        Layout<Shape<Int<M>, _2>, Stride<_1, _2>>{});
-    auto tiled_store = make_tiled_copy(
-        Copy_Atom<Copy_Traits<XE_2D_U16x2x16_ST_N>, uint16_t>{}.with(device_output.data(), N / 2,
-                                                              M * 2, N / 2),
-        Layout<Shape<_1, _16>, Stride<_0, _1>>{},
-        Layout<Shape<_2, _1>, Stride<_1, _0>>{});
+    auto tiled_load = make_xe_2d_copy(
+        Copy_Atom<Copy_Traits<load, decltype(S)>, dtype>{}.with(device_src.data(), M, N),
+        Layout<Shape<_1, Int<SUBGROUP_SIZE>>>{});
+    auto tiled_store = make_xe_2d_copy(
+        Copy_Atom<Copy_Traits<XE_2D_U16x2x16_ST_N, decltype(D)>, uint16_t>{}.with(
+            device_output.data(), M * 2, N / 2), Layout<Shape<_1, _16>>{});
     auto blockDim = syclcompat::dim3(size(tiled_load));
     //
     // Launch the kernel
     //
-    launch<copy_kernel_vectorized<decltype(S), decltype(D), decltype(tiled_load),
+    launch<
+        copy_kernel_vectorized<decltype(S), decltype(D), decltype(tiled_load),
                                decltype(tiled_store), load>>(
-        launch_policy{syclcompat::dim3(1), blockDim,
-                      kernel_properties{sycl_exp::sub_group_size<SUBGROUP_SIZE>}},
+        launch_policy{
+            syclcompat::dim3(1), blockDim,
+            kernel_properties{sycl_exp::sub_group_size<SUBGROUP_SIZE>}},
         S, D, tiled_load, tiled_store);
 
     syclcompat::wait_and_throw();
@@ -247,10 +245,10 @@ struct copy_op<uint16_t, load, XE_2D_U16x2x16_ST_N, M, N, false>{
                   host_src[(i % M) * N + j + (i / M) * N / 2]);
       }
     }
-  }  
+  }
 };
 
-template<class load, class store, int32_t M, int32_t N>
+template <class load, class store, int32_t M, int32_t N>
 struct copy_op<uint32_t, load, store, M, N, true> {
   void operator()() {
     //
@@ -259,7 +257,7 @@ struct copy_op<uint32_t, load, store, M, N, true> {
     using dtype = uint32_t;
     cutlass::host_vector<dtype> host_src(M * N);
     cutlass::host_vector<dtype> host_output(M * N);
-    
+
     for (size_t i = 0; i < host_src.size(); ++i) {
       host_src[i] = static_cast<dtype>(i);
     }
@@ -274,25 +272,22 @@ struct copy_op<uint32_t, load, store, M, N, true> {
         make_tensor(make_gmem_ptr(device_output.data()),
                     make_layout(Shape<Int<N>, Int<M>>{}, Stride<Int<M>, _1>{}));
 
-    auto tiled_load = 
-      make_tiled_copy(
-        Copy_Atom<Copy_Traits<load>, dtype>{}.with(device_src.data(), N, M,
-                                                              N),
-        Layout<Shape<Int<SUBGROUP_SIZE>, _1>, Stride<_1, _0>>{},
-        Layout<Shape<_1, decltype(size<0>(typename Copy_Traits<load>::Shape_MN{}))>, Stride<_0, _1>>{});
-    auto tiled_store = make_tiled_copy(
-        Copy_Atom<Copy_Traits<store>, dtype>{}.with(device_output.data(), M, N,
-                                                           M),
-        Layout<Shape<_1, Int<SUBGROUP_SIZE>>, Stride<_0, _1>>{},
-        Layout<Shape<decltype(size<0>(typename Copy_Traits<store>::Shape_MN{})), _1>, Stride<_1, _0>>{});
+    auto tiled_load = make_xe_2d_copy(
+        Copy_Atom<Copy_Traits<load, decltype(S)>, dtype>{}.with(device_src.data(), M, N),
+        Layout<Shape<Int<SUBGROUP_SIZE>, _1>>{});
+    auto tiled_store = make_xe_2d_copy(
+        Copy_Atom<Copy_Traits<store, decltype(D)>, dtype>{}.with(device_output.data(), N, M),
+        Layout<Shape<_1, Int<SUBGROUP_SIZE>>>{});
     auto blockDim = syclcompat::dim3(size(tiled_load));
     //
     // Launch the kernel
     //
-    launch<copy_kernel_vectorized<decltype(S), decltype(D), decltype(tiled_load),
+    launch<
+        copy_kernel_vectorized<decltype(S), decltype(D), decltype(tiled_load),
                                decltype(tiled_store), load>>(
-        launch_policy{syclcompat::dim3(1), blockDim,
-                      kernel_properties{sycl_exp::sub_group_size<SUBGROUP_SIZE>}},
+        launch_policy{
+            syclcompat::dim3(1), blockDim,
+            kernel_properties{sycl_exp::sub_group_size<SUBGROUP_SIZE>}},
         S, D, tiled_load, tiled_store);
 
     syclcompat::wait_and_throw();
