@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -54,6 +54,7 @@ namespace collective {
 // Applies an element wise operation to all elements within the fragment
 // and writes them out to destination storage.
 template <
+  class ElementC_,
   class StrideC_,
   class StrideD_,
   class ThreadEpilogueOp_,
@@ -73,12 +74,14 @@ public:
   using ElementAccumulator = typename ThreadEpilogueOp::ElementAccumulator;
   using ElementCompute = typename ThreadEpilogueOp::ElementCompute;
   using ElementScalar = ElementCompute;
-  using ElementC = typename ThreadEpilogueOp::ElementC;
+  using ElementC = ElementC_;
   using StrideC = StrideC_;
   using InternalStrideC = cute::remove_pointer_t<StrideC>;
   using ElementD = typename ThreadEpilogueOp::ElementD;
   using StrideD = StrideD_;
   using InternalStrideD = cute::remove_pointer_t<StrideD>;
+
+  using GmemElementC = cute::conditional_t<cute::is_void_v<ElementC>, ElementD, ElementC>; // prevents void ref breakages
 
   using GmemTiledCopyC = void;
   using GmemTiledCopyD = void;
@@ -227,7 +230,7 @@ public:
     if (epilogue_op.is_source_needed()) {
       ptr_C_l = params.ptr_C[l_coord];
     }
-    Tensor mC_mnl = make_tensor(make_gmem_ptr(ptr_C_l), make_shape(M,N,mock_L), stride_c);      // (m,n,l)
+    Tensor mC_mnl = make_tensor(make_gmem_ptr<GmemElementC>(ptr_C_l), make_shape(M,N,mock_L), stride_c);      // (m,n,l)
     Tensor mD_mnl = make_tensor(make_gmem_ptr(params.ptr_D[l_coord]), make_shape(M,N,mock_L), stride_d);      // (m,n,l)
     Tensor gC_mnl = local_tile(mC_mnl, blk_shape_MNK, make_coord(_,_,_), Step<_1,_1, X>{});    // (BLK_M,BLK_N,m,n,l)
     Tensor gD_mnl = local_tile(mD_mnl, blk_shape_MNK, make_coord(_,_,_), Step<_1,_1, X>{});    // (BLK_M,BLK_N,m,n,l)

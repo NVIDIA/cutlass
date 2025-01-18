@@ -128,6 +128,7 @@ using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder
 
 // Step 2: Specify the collective layer epilogue type
 using CollectiveEpilogue = cutlass::epilogue::collective::DefaultEpilogue<
+    ElementC,
     cutlass::gemm::TagToStrideC_t<LayoutC>,
     cutlass::gemm::TagToStrideC_t<LayoutC>,
     cutlass::epilogue::thread::LinearCombination<ElementC, 1, ElementAccumulator, ElementAccumulator>>;
@@ -673,7 +674,7 @@ please refer to CuTe's tutorial, e.g., the sections on
 
 # Copyright
 
-Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: BSD-3-Clause
 
 ```

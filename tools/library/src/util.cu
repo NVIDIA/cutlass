@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -1052,6 +1052,53 @@ RasterOrder from_string<RasterOrder>(std::string const &str) {
 
   return RasterOrder::kInvalid;
 }
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+static struct {
+  char const *text;
+  char const *pretty;
+  char const *character;
+  bool enumerant;
+}
+Bool_enumerants[] = {
+  {"true", "<true>", "t", true},
+  {"false", "<false>", "f", false},
+};
+
+/// Converts a RasterOrder enumerant to a string
+char const *to_string(bool type, bool pretty) {
+
+  for (auto const & possible : Bool_enumerants) {
+    if (type == possible.enumerant) {
+      if (pretty) {
+        return possible.pretty;
+      }
+      else {
+        return possible.text;
+      }
+    }
+  }
+
+  return pretty ? "Invalid" : "invalid";
+}
+
+
+/// Converts a RasterOrder enumerant from a string
+template <>
+bool from_string<bool>(std::string const &str) {
+
+  for (auto const & possible : Bool_enumerants) {
+    if ((str.compare(possible.text) == 0) ||
+        (str.compare(possible.pretty) == 0) ||
+        (str.compare(possible.character) == 0)) {
+      return possible.enumerant;
+    }
+  }
+
+  return false;
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Lexical cast a string to a byte array. Returns true if cast is successful or false if invalid.

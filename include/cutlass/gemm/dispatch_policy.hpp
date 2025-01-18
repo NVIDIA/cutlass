@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -105,11 +105,21 @@ struct KernelCpAsyncWarpSpecializedPingpong { };
 struct KernelCpAsyncWarpSpecializedCooperative { };
 struct KernelTma { };
 struct KernelTmaWarpSpecialized { };
-struct KernelTmaWarpSpecializedPingpong { };
-struct KernelTmaWarpSpecializedCooperative { };
+struct KernelTmaWarpSpecializedPingpong { 
+};
+struct KernelTmaWarpSpecializedCooperative { 
+};
 
 struct KernelPtrArrayTmaWarpSpecializedCooperative { };
 struct KernelPtrArrayTmaWarpSpecializedPingpong { };
+
+// FP8 related policies (including Blocked Scaled Accumulation)
+struct KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum: KernelTmaWarpSpecializedCooperative { };
+
+// Policies to opt into mixed type GEMMs
+struct KernelTmaWarpSpecializedMixedInput : KernelTmaWarpSpecialized { };
+struct KernelTmaWarpSpecializedPingpongMixedInput : KernelTmaWarpSpecializedPingpong { };
+struct KernelTmaWarpSpecializedCooperativeMixedInput: KernelTmaWarpSpecializedCooperative { };
 
 //////////////////////////////////////////////////////////////////////////////
 
@@ -124,14 +134,6 @@ struct KernelTmaWarpSpecializedPingpongFP8FastAccum : KernelTmaWarpSpecializedPi
 struct KernelTmaWarpSpecializedCooperativeFP8FastAccum: KernelTmaWarpSpecializedCooperative { };
 struct KernelPtrArrayTmaWarpSpecializedCooperativeFP8FastAccum : KernelPtrArrayTmaWarpSpecializedCooperative { };
 struct KernelPtrArrayTmaWarpSpecializedPingpongFP8FastAccum : KernelPtrArrayTmaWarpSpecializedPingpong { };
-
-// FP8 related policies (including Blocked Scaled Accumulation)
-struct KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum: KernelTmaWarpSpecializedCooperative { };
-
-// Policies to opt into mixed type GEMMs
-struct KernelTmaWarpSpecializedMixedInput : KernelTmaWarpSpecialized { };
-struct KernelTmaWarpSpecializedPingpongMixedInput : KernelTmaWarpSpecializedPingpong { };
-struct KernelTmaWarpSpecializedCooperativeMixedInput: KernelTmaWarpSpecializedCooperative { };
 
 //////////////////////////////////////////////////////////////////////////////
 
@@ -288,6 +290,7 @@ struct MainloopSm90TmaGmmaWarpSpecializedFP8
     "KernelSchedule must be one of the warp specialized policies");
 };
 
+
 // n-buffer in smem (Hopper TMA), pipelined with Hopper GMMA and TMA, Warp specialized dynamic schedule
 // For FP8 kernels with Block Scaling
 template<
@@ -301,7 +304,6 @@ struct MainloopSm90TmaGmmaWarpSpecializedBlockScalingFP8
     cute::is_same_v<KernelSchedule, KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum>,
     "KernelSchedule must be one of the warp specialized policies");
 };
-
 
 // n-buffer in smem (Hopper TMA), pipelined with Hopper GMMA and TMA, Warp specialized dynamic schedule for Ptr-Array and Grouped Gemm
 template<
@@ -331,6 +333,16 @@ struct MainloopSm90TmaGmmaWarpSpecializedSparse {
   using ClusterShape = ClusterShape_;
   using ArchTag = arch::Sm90;
   using Schedule = KernelSchedule;
+};
+
+// For slow-accumulation sparse FP8 kernels
+template<
+  int Stages,
+  class ClusterShape = Shape<_1,_1,_1>,
+  class KernelSchedule = KernelTmaWarpSpecializedCooperative
+>
+struct MainloopSm90TmaGmmaWarpSpecializedSparseFP8 
+  : MainloopSm90TmaGmmaWarpSpecializedSparse<Stages, ClusterShape, KernelSchedule> {
 };
 
 

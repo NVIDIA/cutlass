@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -60,7 +60,7 @@
 #if ! defined(_MSC_VER)
 #define CUTLASS_LAMBDA_FUNC_INLINE __attribute__((always_inline))
 #else
-#define CUTLASS_LAMBDA_FUNC_INLINE [[msvc::forceinline]]
+#define CUTLASS_LAMBDA_FUNC_INLINE
 #endif
 
 #define CUTLASS_HOST __host__

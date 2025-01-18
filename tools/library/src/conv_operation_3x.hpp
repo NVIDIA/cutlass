@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -334,8 +334,7 @@ public:
     void const* arguments,
     void* host_workspace,
     void* device_workspace = nullptr,
-    cudaStream_t stream = nullptr,
-    bool launch_with_pdl = false) const override
+    cudaStream_t stream = nullptr) const override
   {
     auto status = Status::kInvalid;
 
@@ -361,7 +360,7 @@ public:
     }
 
     auto* op = reinterpret_cast<Operator*>(host_workspace);
-    return op->run(out_args, device_workspace, stream, nullptr, launch_with_pdl);
+    return op->run(out_args, device_workspace, stream, nullptr, in_args_ptr->use_pdl);
   }
 
 private:

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -208,7 +208,7 @@ struct IsLegacyEpiloguePolicy {
 };
 
 template <typename Epilogue>
-struct IsLegacyEpiloguePolicy<Epilogue, cute::void_t<typename Epilogue::DispatchPolicy>> {
+struct IsLegacyEpiloguePolicy<Epilogue, cute::void_t<decltype(Epilogue::DispatchPolicy::FragmentSize)>> {
   using EpiloguePolicy = typename Epilogue::DispatchPolicy;
   static constexpr bool value = cute::is_same_v<
                                       EpiloguePolicy,
@@ -830,11 +830,11 @@ template<
 >
 struct HostCollectiveMainloop<ScheduleType_, Gemm, ElementA_, ElementB_,
     cute::enable_if_t<
-      cute::is_same_v<
-        typename Gemm::CollectiveMainloop::DispatchPolicy, 
+      cute::is_base_of_v<
         cutlass::gemm::MainloopSm90TmaGmmaWarpSpecializedSparse<Gemm::CollectiveMainloop::DispatchPolicy::Stages,
                                                                 typename Gemm::CollectiveMainloop::DispatchPolicy::ClusterShape,
-                                                                ScheduleType_>>>>
+                                                                ScheduleType_>,
+        typename Gemm::CollectiveMainloop::DispatchPolicy>>>
   : HostCollectiveMainloopSparse<Gemm, ElementA_, ElementB_>
 {
   using HostCollectiveMainloopSparse<Gemm, ElementA_, ElementB_>::HostCollectiveMainloopSparse;

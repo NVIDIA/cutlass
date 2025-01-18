@@ -159,9 +159,17 @@ Profiling:
                                                  capacity of the last-level cache.
 
   --profiling-iterations=<iterations>              Number of iterations to profile each kernel. If zero, kernels
-                                                   are launched up to the profiling duration.
+                                                   are launched up to the profiling duration. If non-zero, this
+                                                   overrides `profiling-duration` and `min-iterations`.
 
-  --warmup-iterations=<iterations>                 Number of iterations to execute each kernel prior to profiling.
+  --profiling-duration=<duration>                  Time to spend profiling each kernel (ms). Overriden by
+                                                   `profiling-iterations` when `profiling-iterations` != 0.
+                                                   Note that `min-iterations` must also be satisfied.
+
+  --min-iterations=<iterations>                    Minimum number of iterations to spend profiling each kernel, even if
+                                                   `profiling-duration` has been met.
+
+  --warmup-iterations=<iterations>                 Number of iterations to execute each kernel prior to profiling (default: 10).
 
   --sleep-duration=<duration>                      Number of ms to sleep between profiling periods (ms).
 
@@ -624,7 +632,7 @@ reference_device: Passed
 
 # Copyright
 
-Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: BSD-3-Clause
 
 ```

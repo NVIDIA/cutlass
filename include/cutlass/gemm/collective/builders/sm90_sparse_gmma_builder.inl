@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2024 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -124,7 +124,6 @@ struct CollectiveBuilder<
                 "Should meet TMA alignment requirement\n");
 
   static constexpr bool IsFP8Input = detail::is_input_fp8<ElementA, ElementB>();
-  static_assert(!IsFP8Input, "FP8 sparse collective currently only supports FastAccum schedules");
 
   // For fp32 types, map to tf32 MMA value type
   using ElementAMmaRaw = cute::conditional_t<cute::is_same_v<ElementA, float>, tfloat32_t, ElementA>;
@@ -160,7 +159,10 @@ struct CollectiveBuilder<
 
   static constexpr int PipelineStages = detail::compute_stage_count_or_override_sparse<detail::sm90_smem_capacity_bytes,
       ElementAMma, ElementBMma, ElementEMma, TileShape_MNK>(StageCountType{});
-  using DispatchPolicy = MainloopSm90TmaGmmaWarpSpecializedSparse<PipelineStages, ClusterShape_MNK, KernelScheduleType>;
+
+  using DispatchPolicy = cute::conditional_t<IsFP8Input,
+      MainloopSm90TmaGmmaWarpSpecializedSparseFP8<PipelineStages, ClusterShape_MNK, KernelScheduleType>,
+      MainloopSm90TmaGmmaWarpSpecializedSparse<PipelineStages, ClusterShape_MNK, KernelScheduleType>>;
 
   using SmemCopyAtomA = void; 
   using SmemCopyAtomB = void; 
@@ -354,15 +356,14 @@ struct CollectiveBuilder<
   static_assert(cutlass::detail::dependent_false<ElementA>, "Unsupported Toolkit for SM90 Collective Builder\n");
 #endif
 
-  static constexpr bool IsFP8Input = detail::is_input_fp8<ElementA, ElementB>();
-
+#if ((__CUDACC_VER_MAJOR__ > 12) || ((__CUDACC_VER_MAJOR__ == 12) && (__CUDACC_VER_MINOR__ >= 1)))
+  // Persistent schedules perform best for CUDA Toolkits with version >= 12.1
+  // KernelTmaWarpSpecializedCooperative requires TileShape_M to be at least 128
   using KernelSchedule = cute::conditional_t<size<0>(TileShape_MNK{}) == Int<64>{},
-                                             cute::conditional_t<IsFP8Input,
-                                                                 KernelTmaWarpSpecializedPingpongFP8FastAccum,
-                                                                 KernelTmaWarpSpecializedPingpong>,
-                                             cute::conditional_t<IsFP8Input,
-                                                                 KernelTmaWarpSpecializedCooperativeFP8FastAccum,
-                                                                 KernelTmaWarpSpecializedCooperative>>;
+      KernelTmaWarpSpecializedPingpong, KernelTmaWarpSpecializedCooperative>;
+#else
+  using KernelSchedule = KernelTmaWarpSpecialized;
+#endif
 
   using CollectiveOp = typename CollectiveBuilder<
       arch::Sm90,

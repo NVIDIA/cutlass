@@ -1,4 +1,4 @@
-# Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2024 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -27,6 +27,6 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 cutlass_example_add_executable(
-  65_hopper_fp8_warp_specialized_gemm_with_blockwise_scaling
-  65_hopper_fp8_warp_specialized_gemm_with_blockwise_scaling.cu
+  65_distributed_gemm
+  65_distributed_gemm.cu
   )

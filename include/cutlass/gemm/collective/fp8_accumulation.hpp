@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -37,7 +37,7 @@
 //////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////FP8 Accumulation///////////////////////////
 //////////////////////////////////////////////////////////////////////////////
-/// This calss provides API to promote (add) or scale (multiply_add) the results 
+/// This class provides API to promote (add) or scale (multiply_add) the results 
 /// from the tensor core accumulators to the main accumulators when the number 
 /// of MMAs reaches the max number of MMA interval specified by user, after that
 /// the tensor core accumulators are zeroed.

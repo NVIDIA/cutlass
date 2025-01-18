@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2024 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -120,6 +120,45 @@ TEST(SM90_Device_Sparse_Gemm_e4m3t_e5m2n_f32t_tensorop_f32, 128x128x128_1x1x1_wa
       float,
       TileShape, ClusterShape,
       cutlass::gemm::collective::StageCountAutoCarveout<static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
+      cutlass::gemm::KernelTmaWarpSpecialized
+    >::CollectiveOp;
+
+  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+      Shape<int,int,int,int>,
+      CollectiveMainloop,
+      CollectiveEpilogue
+    >;
+
+  using namespace test::gemm::device;
+  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  bool result = TestAll<Gemm>(1.0, 1.0, CheckEquality::EXACT);
+  EXPECT_TRUE(result);
+}
+
+TEST(SM90_Device_Sparse_Gemm_e4m3t_e5m2n_f32t_tensorop_f32, 128x128x128_1x1x1_warpspecialized_fastaccum) {
+  using LayoutA = cutlass::layout::RowMajor;
+  using LayoutB = cutlass::layout::ColumnMajor;
+  using LayoutC = cutlass::layout::RowMajor;
+  using TileShape = Shape<_128,_128,_128>;
+  using ClusterShape = Shape<_1,_1,_1>;
+
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+      TileShape, ClusterShape,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      float, float,
+      float, LayoutC, 4,
+      float, LayoutC, 4,
+      cutlass::epilogue::TmaWarpSpecialized
+    >::CollectiveOp;
+
+  using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+      cutlass::arch::Sm90, cutlass::arch::OpClassSparseTensorOp,
+      cutlass::float_e4m3_t, LayoutA, 32,
+      cutlass::float_e5m2_t, LayoutB, 16,
+      float,
+      TileShape, ClusterShape,
+      cutlass::gemm::collective::StageCountAutoCarveout<static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
       cutlass::gemm::KernelTmaWarpSpecializedFP8FastAccum
     >::CollectiveOp;
 
@@ -159,6 +198,45 @@ TEST(SM90_Device_Sparse_Gemm_e4m3t_e5m2n_f32t_tensorop_f32, 128x128x256_1x2x1_co
       float,
       TileShape, ClusterShape,
       cutlass::gemm::collective::StageCountAutoCarveout<static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
+      cutlass::gemm::KernelTmaWarpSpecializedCooperative
+    >::CollectiveOp;
+
+  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+      Shape<int,int,int,int>,
+      CollectiveMainloop,
+      CollectiveEpilogue
+    >;
+
+  using namespace test::gemm::device;
+  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  bool result = TestAll<Gemm>(1.0, 1.0, CheckEquality::EXACT);
+  EXPECT_TRUE(result);
+}
+
+TEST(SM90_Device_Sparse_Gemm_e4m3t_e5m2n_f32t_tensorop_f32, 128x128x256_1x2x1_cooperative_fastaccum) {
+  using LayoutA = cutlass::layout::RowMajor;
+  using LayoutB = cutlass::layout::ColumnMajor;
+  using LayoutC = cutlass::layout::RowMajor;
+  using TileShape = Shape<_128,_128,_256>;
+  using ClusterShape = Shape<_1,_2,_1>;
+
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+      TileShape, ClusterShape,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      float, float,
+      float, LayoutC, 4,
+      float, LayoutC, 4,
+      cutlass::epilogue::TmaWarpSpecializedCooperative
+    >::CollectiveOp;
+
+  using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+      cutlass::arch::Sm90, cutlass::arch::OpClassSparseTensorOp,
+      cutlass::float_e4m3_t, LayoutA, 32,
+      cutlass::float_e5m2_t, LayoutB, 16,
+      float,
+      TileShape, ClusterShape,
+      cutlass::gemm::collective::StageCountAutoCarveout<static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
       cutlass::gemm::KernelTmaWarpSpecializedCooperativeFP8FastAccum
     >::CollectiveOp;
 
@@ -175,6 +253,45 @@ TEST(SM90_Device_Sparse_Gemm_e4m3t_e5m2n_f32t_tensorop_f32, 128x128x256_1x2x1_co
 }
 
 TEST(SM90_Device_Sparse_Gemm_e4m3t_e5m2n_f32t_tensorop_f32, 128x128x64_2x1x1_pingpong) {
+  using LayoutA = cutlass::layout::RowMajor;
+  using LayoutB = cutlass::layout::ColumnMajor;
+  using LayoutC = cutlass::layout::RowMajor;
+  using TileShape = Shape<_128,_128,_64>;
+  using ClusterShape = Shape<_2,_1,_1>;
+
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+      TileShape, ClusterShape,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      float, float,
+      float, LayoutC, 4,
+      float, LayoutC, 4,
+      cutlass::epilogue::TmaWarpSpecialized
+    >::CollectiveOp;
+
+  using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+      cutlass::arch::Sm90, cutlass::arch::OpClassSparseTensorOp,
+      cutlass::float_e4m3_t, LayoutA, 32,
+      cutlass::float_e5m2_t, LayoutB, 16,
+      float,
+      TileShape, ClusterShape,
+      cutlass::gemm::collective::StageCountAutoCarveout<static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
+      cutlass::gemm::KernelTmaWarpSpecializedPingpong
+    >::CollectiveOp;
+
+  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+      Shape<int,int,int,int>,
+      CollectiveMainloop,
+      CollectiveEpilogue
+    >;
+
+  using namespace test::gemm::device;
+  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  bool result = TestAll<Gemm>(1.0, 1.0, CheckEquality::EXACT);
+  EXPECT_TRUE(result);
+}
+
+TEST(SM90_Device_Sparse_Gemm_e4m3t_e5m2n_f32t_tensorop_f32, 128x128x64_2x1x1_pingpong_fastaccum) {
   using LayoutA = cutlass::layout::RowMajor;
   using LayoutB = cutlass::layout::ColumnMajor;
   using LayoutC = cutlass::layout::RowMajor;
