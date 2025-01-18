@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -412,7 +412,8 @@ public:
     FrgTensorC& accumulators,
     uint32_t num_barriers,
     uint32_t barrier_idx,
-    uint32_t num_accumulator_mtxs = 1) {
+    uint32_t num_accumulator_mtxs = 1,
+    uint32_t idx_accumulator_mtxs = 0) {
 
     using ElementAccumulator = typename FrgTensorC::value_type;
 
@@ -443,7 +444,8 @@ public:
     // Reductions use BlockStripedReduce with a width of BarrierManager::ThreadCount under the hood.
     // Thus, the start of the reduction space is the same across all threads in a warp group.
     uint64_t reduction_offset_base = (static_cast<uint64_t>(cute::size<0>(TileShape{})) * static_cast<uint64_t>(cute::size<1>(TileShape{})) * reduction_tile_idx * num_accumulator_mtxs) +
-      (static_cast<uint64_t>(size(accumulators)) * barrier_idx * BarrierManager::ThreadCount);
+      (static_cast<uint64_t>(size(accumulators)) * barrier_idx * BarrierManager::ThreadCount * num_accumulator_mtxs)
+      + static_cast<uint64_t>(size(accumulators)) * BarrierManager::ThreadCount * idx_accumulator_mtxs;
     uint64_t reduction_offset = reduction_offset_base + reduction_peer_offset;
 
     ElementAccumulator* group_reduction_workspace = reinterpret_cast<ElementAccumulator*>(params.reduction_workspace_) + reduction_offset;
@@ -497,8 +499,18 @@ public:
         BlockStripedReduceT::store(reduction_workspace_array, *accumulator_array, barrier_group_thread_idx);
       }
       else {
-        // Wait until the preceding split added its accumulators
-        BarrierManager::wait_eq(barrier_idx, lock_workspace, barrier_group_thread_idx, lock_idx, work_tile_info.K_idx);
+        if (params.reduction_mode_ == ReductionMode::Deterministic) {
+          // Wait until the preceding split added its accumulators
+          BarrierManager::wait_eq(barrier_idx, lock_workspace, barrier_group_thread_idx, lock_idx, work_tile_info.K_idx);
+        }
+        else {
+          // Wait until the first split has stored its accumulators. Note that the first split will have
+          // accumulated a value into the lock potentially greater than one (since the locked value is
+          // incremented by work_tile_info.k_tile_count below for both the deterministic and non-deterministic)
+          // cases. For non-deterministic reductions, all that non-first or last splits care about is whether
+          // the first split has been written, so we only wait while the locked value is less than 1.
+          BarrierManager::wait_lt(barrier_idx, lock_workspace, barrier_group_thread_idx, lock_idx, 1);
+        }
 
         // Perform reduction in workspace
         BlockStripedReduceT::reduce(reduction_workspace_array, *accumulator_array, barrier_group_thread_idx);
@@ -509,21 +521,13 @@ public:
       uint32_t increment = params.requires_separate_reduction() ? 1 : work_tile_info.k_tile_count;
 
       // Signal our arrival
-      BarrierManager::arrive_inc(barrier_idx, lock_workspace, barrier_group_thread_idx, lock_idx, increment);
+      if (idx_accumulator_mtxs == (num_accumulator_mtxs - 1)) {
+        BarrierManager::arrive_inc(barrier_idx, lock_workspace, barrier_group_thread_idx, lock_idx, increment);
+      }
     }
     else {
-      if (
-        params.reduction_mode_ == ReductionMode::Deterministic
-      ) {
-
-        // Wait until the preceding split added its accumulators
-        BarrierManager::wait_eq(barrier_idx, lock_workspace, barrier_group_thread_idx, lock_idx, work_tile_info.K_idx);
-
-      }
-      else {
-        // Wait until the first split has stored its accumulators
-        BarrierManager::wait_lt(barrier_idx, lock_workspace, barrier_group_thread_idx, lock_idx, 1);
-      }
+      // Wait until the preceding split added its accumulators
+      BarrierManager::wait_eq(barrier_idx, lock_workspace, barrier_group_thread_idx, lock_idx, work_tile_info.K_idx);
 
       // The block computing the final split for the tile adds previously-reduced partials
       // to its accumulators and computes the epilogue.
@@ -554,10 +558,7 @@ public:
       AccumulatorArrayT addend_fragment;
       auto peer_reduction_workspace = reinterpret_cast<AccumulatorArrayT*>(reduction_workspace + (i * peer_offset));
 
-      BlockStripedReduceT::load(addend_fragment, peer_reduction_workspace, thread_idx);
-
-      // Add peer fragment
-      *accumulator_array = add_fragments(*accumulator_array, addend_fragment);
+      BlockStripedReduceT::load_add(*accumulator_array, peer_reduction_workspace, thread_idx);
     }
   }
 

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -68,7 +68,7 @@ struct Swizzle
   using zzz_msk = cute::constant<int, bit_msk{} << (num_base - min(0,num_shft))>;
   using msk_sft = cute::constant<int, num_shft>;
 
-  static constexpr uint32_t swizzle_code = uint32_t(yyy_msk{} | zzz_msk{});
+  static constexpr uint32_t swizzle_code = uint32_t(yyy_msk::value | zzz_msk::value);
 
   template <class Offset>
   CUTE_HOST_DEVICE constexpr static

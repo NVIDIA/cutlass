@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -818,6 +818,78 @@ get_conv_problem_vector<3, cutlass::conv::Operator::kWgrad>() {
     {1, 1, 1},
     1
   });
+  return problem_shapes;
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+// Grouped Wgrad
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Get problem size vectors for group conv problems
+template<int SpatialDim, cutlass::conv::Operator ConvOp>
+std::vector<cutlass::conv::ConvProblemShape<ConvOp, SpatialDim>>
+inline
+get_grouped_conv_problem_vector(int GroupsPerTile);
+
+// Specialization for 3D wgrad problems
+template<>
+std::vector<cutlass::conv::ConvProblemShape<cutlass::conv::Operator::kWgrad, 3>> inline
+get_grouped_conv_problem_vector<3, cutlass::conv::Operator::kWgrad>(int GroupsPerTile) {
+  using ProblemShape = cutlass::conv::ConvProblemShape<cutlass::conv::Operator::kWgrad, 3>;
+  std::vector<ProblemShape> problem_shapes;
+
+  if (GroupsPerTile == 1) {
+    // channel_per_group == 64
+    problem_shapes.push_back({
+      cutlass::conv::Mode::kCrossCorrelation,
+      {1, 1, 16, 16, 2048}, // ndhwc
+      {2048, 1, 3, 3, 64},  // ktrsc
+      {0, 1, 1},            // padding lower (pad_d, pad_h, pad_w)
+      {0, 1, 1},            // padding upper (pad_d, pad_h, pad_w)
+      {1, 1, 1},            // stride (stride_d, stride_h, stride_w)
+      {1, 1, 1},            // dilation (dilation_d, dilation_h, dilation_w)
+      32                    // groups
+    });
+  }
+  else if (GroupsPerTile == 2) {
+    // channel_per_group == 32
+    problem_shapes.push_back({
+      cutlass::conv::Mode::kCrossCorrelation,
+      {1, 1, 16, 16, 1024}, // ndhwc
+      {1024, 1, 3, 3, 32},  // ktrsc
+      {0, 1, 1},            // padding lower (pad_d, pad_h, pad_w)
+      {0, 1, 1},            // padding upper (pad_d, pad_h, pad_w)
+      {1, 1, 1},            // stride (stride_d, stride_h, stride_w)
+      {1, 1, 1},            // dilation (dilation_d, dilation_h, dilation_w)
+      32                    // groups
+    });
+  }
+  else if (GroupsPerTile == 4) {
+    // channel_per_group == 16
+    problem_shapes.push_back({
+      cutlass::conv::Mode::kCrossCorrelation,
+      {1, 1, 16, 16, 512}, // ndhwc
+      {512, 1, 3, 3, 16},  // ktrsc
+      {0, 1, 1},           // padding lower (pad_d, pad_h, pad_w)
+      {0, 1, 1},           // padding upper (pad_d, pad_h, pad_w)
+      {1, 1, 1},           // stride (stride_d, stride_h, stride_w)
+      {1, 1, 1},           // dilation (dilation_d, dilation_h, dilation_w)
+      32                   // groups
+    });
+  }
+  else if (GroupsPerTile == 8) {
+    // channel_per_group == 8
+    problem_shapes.push_back({
+      cutlass::conv::Mode::kCrossCorrelation,
+      {1, 1, 16, 16, 256},  // ndhwc
+      {256, 1, 3, 3, 8},    // ktrsc
+      {0, 1, 1},            // padding lower (pad_d, pad_h, pad_w)
+      {0, 1, 1},            // padding upper (pad_d, pad_h, pad_w)
+      {1, 1, 1},            // stride (stride_d, stride_h, stride_w)
+      {1, 1, 1},            // dilation (dilation_d, dilation_h, dilation_w)
+      32                    // groups
+    });
+  }
   return problem_shapes;
 }
 

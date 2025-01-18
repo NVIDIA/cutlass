@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -31,29 +31,21 @@
 
 /*! \file
     \brief Blocked scale Hopper FP8 GEMM example using CUTLASS 3.0 APIs for NVIDIA Hopper architecture
-
     This example demonstrate a blocked scaled FP8 GEMM using the new CUTLASS 3.0.
     APIs on NVIDIA Hopper architecture. New features that will be showcased in this example are as follows:
-
     1. NVIDIA Hopper architecture introduces a new series of tensor core instructions (GMMA)
     which are more efficient than the Ampere tensor core instructions.
-
     2. NVIDIA Hopper architecture includes new Tensor Memory Accelerator (TMA) unit to transfer large
     blocks of data efficiently between global memory and shared memory. TMA also supports asynchronous
     copies between thread blocks in a cluster.
-
     3. This example uses the Warp Specialized kernel design (see /media/docs/efficient_gemm.md for details).
-
     4. This example shows all important fusions used by FP8 gemm kernels, i.e., blocked scale factor for
     A, B tensor, the abs_max value of D tensor.
-
     5. A simple way to tune the CTA rasterization direction and swizzle pattern of Hopper kernels. Both the
     CTA rasterization direction and swizzle pattern impact cross-CTA locality of accesses. By tuning we can
     improve performance.
-
     Examples:
-
-      $ ./examples/65_hopper_fp8_warp_specialized_gemm_with_blockwise_scaling/64_hopper_fp8_warp_specialized_gemm_with_blockwise_scaling  \
+      $ ./examples/67_hopper_fp8_warp_specialized_gemm_with_blockwise_scaling/67_hopper_fp8_warp_specialized_gemm_with_blockwise_scaling  \
         --m=2816 --n=3072 --k=16384 \
         --save_aux=false --save_amax=false \
         --device_scale=false --raster=h --swizzle=2
@@ -730,7 +722,7 @@ int main(int argc, char const **args) {
   CUDA_CHECK(cudaGetDevice(&current_device_id));
   CUDA_CHECK(cudaGetDeviceProperties(&props, current_device_id));
   cudaError_t error = cudaGetDeviceProperties(&props, 0);
-  if (props.major < 9) {
+  if (props.major != 9) {
     std::cerr
       << "This example requires a GPU of NVIDIA's Hopper Architecture or "
       << "later (compute capability 90 or greater).\n";

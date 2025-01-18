@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -238,6 +238,10 @@ protected:
     operator_args.ref_C.reset(static_cast<ElementC *>(const_cast<void *>(arguments->C)));
     operator_args.ref_D.reset(static_cast<ElementC *>(const_cast<void *>(arguments->D)));
 
+    if (arguments->use_pdl) {
+      return Status::kErrorNotSupported; 
+    }
+
     return Status::kSuccess;
   }
 
@@ -326,12 +330,7 @@ public:
     void const *arguments_ptr,
     void *host_workspace, 
     void *device_workspace = nullptr, 
-    cudaStream_t stream = nullptr,
-    bool launch_with_pdl = false) const {
-
-    if (launch_with_pdl) {
-      return Status::kErrorNotSupported;
-    }
+    cudaStream_t stream = nullptr) const {
 
     OperatorArguments args;
 
@@ -495,6 +494,10 @@ protected:
     operator_args.ref_D.reset(static_cast<ElementC *>(const_cast<void *>(arguments->D)));
     operator_args.ref_reordered_B.reset(static_cast<ElementC *>(const_cast<void *>(arguments->reordered_B)));
 
+    if (arguments->use_pdl) {
+      return Status::kErrorNotSupported; 
+    }
+
     return Status::kSuccess;
   }
 
@@ -583,12 +586,7 @@ public:
     void const *arguments_ptr,
     void *host_workspace, 
     void *device_workspace = nullptr, 
-    cudaStream_t stream = nullptr,
-    bool launch_with_pdl = false) const {
-
-    if (launch_with_pdl) {
-      return Status::kErrorNotSupported;
-    }
+    cudaStream_t stream = nullptr) const {
 
     OperatorArguments args;
 

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -217,6 +217,7 @@ struct PersistentTileSchedulerSm90Params {
     ) {
 
     int const sm_count = hw_info.sm_count;
+    int const max_active_clusters = hw_info.max_active_clusters;
 
     // Round up to nearest multiple of swizzle_size along each mode
     auto log_swizzle_size = get_log_swizzle_size(problem_blocks.x, problem_blocks.y, max_swizzle_size);
@@ -259,6 +260,18 @@ struct PersistentTileSchedulerSm90Params {
         launch_grid.x = possibly_truncate(sm_count, problem_blocks_total);
       }
     }
+    // In case the maximum number of clusters that could co-exist on the target device is
+    // already calculated using cudaOccupancyMaxActiveClusters
+    else if (max_active_clusters != 0) {
+      if (raster_order == RasterOrder::AlongN) {
+        launch_grid.y = max_active_clusters * cluster_shape.n();
+      }
+      else {
+        launch_grid.x = max_active_clusters * cluster_shape.m();
+      }
+      CUTLASS_TRACE_HOST("get_grid_shape(): Proposed GridDims by the scheduler using cudaOccupancyMaxActiveClusters = "
+          "(" << launch_grid.x << ", " << launch_grid.y << ", " << launch_grid.z << ")\n");
+    }
     else {
       int cta_per_device = sm_count;
       /*
@@ -278,6 +291,8 @@ struct PersistentTileSchedulerSm90Params {
             cta_per_device       / cluster_shape.n(),
             problem_blocks_total / cluster_shape.n());
       }
+      CUTLASS_TRACE_HOST("get_grid_shape(): Proposed GridDims by the scheduler using heuristics = "
+          "(" << launch_grid.x << ", " << launch_grid.y << ", " << launch_grid.z << ")\n");
     }
     return launch_grid;
   }
@@ -635,6 +650,7 @@ struct PersistentTileSchedulerSm90StreamKParams {
     // number of K tiles per stream-K unit remains above min_iters_per_sk_unit_
 
     uint32_t groups = platform::min(max_groups_problem, uint32_t(max_sk_groups_));
+
     // Grouping is disabled when separate reduction is used because grouping is primarily an attempt
     // to improve L2 locality, and L2-locality optimizations are unnecessary when the the kernel
     // is a single wave (which is the case for separate reduction).
@@ -755,7 +771,8 @@ struct PersistentTileSchedulerSm90StreamKParams {
       cluster_shape,
       splits,
       epilogue_subtile,
-      reduction_mode);
+      reduction_mode
+      );
   }
 
   // Return the optimal decomposition result by heuristic.
@@ -906,7 +923,8 @@ struct PersistentTileSchedulerSm90StreamKParams {
     GemmCoord cluster_shape,
     uint32_t splits,
     uint32_t epilogue_subtile,
-    ReductionMode reduction_mode) {
+    ReductionMode reduction_mode
+    ) {
     // The highest priority when customers set as splitk mode, may set
     // with a adpated splits value rather than the original splits
     // even it does not make sense
@@ -1666,6 +1684,7 @@ struct PersistentTileSchedulerSm90GroupParams {
     bool truncate_by_problem_size=true) {
 
     int const sm_count = hw_info.sm_count;
+    int const max_active_clusters = hw_info.max_active_clusters;
 
     // Round up to nearest multiple of swizzle_size along each mode
     auto log_swizzle_size = get_log_swizzle_size(problem_blocks.x, problem_blocks.y, max_swizzle_size);
@@ -1708,6 +1727,18 @@ struct PersistentTileSchedulerSm90GroupParams {
         launch_grid.x = possibly_truncate(sm_count, problem_blocks_total);
       }
     }
+    // In case the maximum number of clusters that could co-exist on the target device is
+    // already calculated using cudaOccupancyMaxActiveClusters
+    else if (max_active_clusters != 0) {
+      if (raster_order == RasterOrder::AlongN) {
+        launch_grid.y = max_active_clusters * cluster_shape.n();
+      }
+      else {
+        launch_grid.x = max_active_clusters * cluster_shape.m();
+      }
+      CUTLASS_TRACE_HOST("get_grid_shape(): Proposed GridDims by the scheduler using cudaOccupancyMaxActiveClusters = "
+          "(" << launch_grid.x << ", " << launch_grid.y << ", " << launch_grid.z << ")\n");
+    }
     else {
       // Optimal grid size calculation is based on
       // GH100: 8 GPCs, 72 TPCs (9 TPCs/GPC), 2 SMs/TPC, 144 SMs per full GPU
@@ -1725,6 +1756,8 @@ struct PersistentTileSchedulerSm90GroupParams {
             cta_per_device       / cluster_shape.n(),
             problem_blocks_total / cluster_shape.n());
       }
+      CUTLASS_TRACE_HOST("get_grid_shape(): Proposed GridDims by the scheduler using heuristics = "
+          "(" << launch_grid.x << ", " << launch_grid.y << ", " << launch_grid.z << ")\n");
     }
     return launch_grid;
   }

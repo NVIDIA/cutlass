@@ -1,6 +1,6 @@
 #################################################################################################
 #
-# Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2024 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -261,21 +261,30 @@ def is_tile_desc_valid(tile_description):
         tile_description.math_instruction.element_accumulator
     )
 
-    cluster_shape, cta_shape, inst_shape = (
+    cluster_size, cta_shape = (
         tile_description.cluster_shape,
         tile_description.threadblock_shape,
-        tile_description.math_instruction.instruction_shape
     )
     grid_size = (
-        cta_shape[0] * cluster_shape[0] +
-        cta_shape[1] * cluster_shape[1] +
-        cta_shape[2] * cluster_shape[2]
+        cta_shape[0] * cluster_size[0] +
+        cta_shape[1] * cluster_size[1] +
+        cta_shape[2] * cluster_size[2]
     )
-    cluster_size = cluster_shape[0] * cluster_shape[1] * cluster_shape[2]
+    num_ctas_in_cluster = cluster_size[0] * cluster_size[1] * cluster_size[2]
+    cluster_shape = (
+        cluster_size[0] * cta_shape[0],
+        cluster_size[1] * cta_shape[1],
+        cluster_size[2] * cta_shape[2]
+    )
+
+    FP32_TYPES = [DataType.f32, DataType.tf32]
+    FP16_TYPES = [DataType.f16, DataType.bf16]
+    is_fp32 = element_a in FP32_TYPES and element_b in FP32_TYPES
+    is_fp16 = element_a in FP16_TYPES and element_b in FP16_TYPES
 
     # Maximum number of CTAs per cluster is 8 for Hopper, but up to 16 is
     # allowed for non portable clusters.
-    if cluster_size > 16 or cluster_size < 1:
+    if num_ctas_in_cluster > 16 or num_ctas_in_cluster < 1:
         return False
 
     if grid_size < 1:
@@ -299,8 +308,17 @@ def is_tile_desc_valid(tile_description):
     if cta_shape[2] < 16 or cta_shape[2] % 8 != 0:
         return False
 
-    # Minimum of 2 stages
-    if cta_shape[2] < inst_shape[2] or cta_shape[2] % inst_shape[2] != 0 or cta_shape[2] / inst_shape[2] < 2:
+    # Minimum of 2 stages (very rough heuristic that may filter out valid kernel configs)
+    if (cluster_shape[0] >= 128 or cluster_shape[1] >= 128) and cluster_shape[2] >= 256:
+        return False
+
+    if is_fp32 and (cluster_shape[0] >= 128 or cluster_shape[1] >= 128) and cluster_shape[2] >= 128:
+        return False
+
+    if is_fp32 and cluster_shape[0] >= 256 and cluster_shape[1] >= 256 and cluster_shape[2] >= 64:
+        return False
+
+    if is_fp16 and cluster_shape[0] >= 256 and cluster_shape[1] >= 256 and cluster_shape[2] >= 128:
         return False
 
     # CTA shape upper bound: <256, 256, 256>
@@ -329,6 +347,7 @@ def generate_tile_descriptions_sm90(math_instructions, is_aligned: bool, level: 
     tile_descriptions = set()
     mma_multipliers, cluster_sizes = get_mma_multipliers(level), get_cluster_sizes(level, is_aligned)
     for math_inst, mma_mul, cluster_size in product(math_instructions, mma_multipliers, cluster_sizes):
+
         tile_desc = TileDescription(
             threadblock_shape=[
                 math_inst.instruction_shape[0] * mma_mul[0],
@@ -426,6 +445,25 @@ def get_valid_schedules(tile_description, cuda_version, is_aligned, data_types, 
     d_type = data_types["d_type"]
     is_void_c = c_type == DataType.void
 
+    # Filter out invalid kernels
+    is_nt = layout[0][0] == LayoutType.ColumnMajor and layout[1][0] == LayoutType.RowMajor
+    is_tn = layout[0][0] == LayoutType.RowMajor and layout[1][0] == LayoutType.ColumnMajor
+    is_nn = layout[0][0] == LayoutType.ColumnMajor and layout[1][0] == LayoutType.ColumnMajor
+
+    # static_assert(size<0>(SmemLayoutB{}) % WarpgroupTileSize == 0,
+    #   "Copy size must evenly divide SMEM tile.");
+    if is_fp32 and is_nt and (cta_n % cta_k != 0):
+        return [], []
+
+    # static_assert(!TransposeB || (cutlass::bits_to_bytes((size<1>(SmemLayoutB{}) * sizeof_bits<InternalElementB>::value))) == 128,
+    # "SmemLayoutB K must be 128bytes to be transposed.")
+    if is_fp32 and is_nt and cta_k != 32:
+        return [], []
+
+    # Static assert failure when instantiating SmemLayoutB
+    if is_fp32 and (is_tn or is_nn) and (cta_n % cta_k != 0):
+        return [], []
+
     # Early pruning
     if level < 1:
         # Don't stamp out FP16/BF16 kernels smaller than or equal to 64x128x64
@@ -441,7 +479,7 @@ def get_valid_schedules(tile_description, cuda_version, is_aligned, data_types, 
             if CudaToolkitVersionSatisfies(cuda_version, 12, 1) and can_do_cooperative and can_do_tma_epilogue:
                 return [
                     [
-                        KernelScheduleType.TmaWarpSpecializedCooperative if not is_sparse else KernelScheduleType.TmaWarpSpecializedCooperativeFP8FastAccum,
+                        KernelScheduleType.TmaWarpSpecializedCooperative,
                         EpilogueScheduleType.TmaWarpSpecializedCooperative
                     ],
                     [
@@ -489,8 +527,7 @@ def get_valid_schedules(tile_description, cuda_version, is_aligned, data_types, 
         # Pruning: don't stamp out fp8 kernels with auto schedule
         if not is_fp8:
             schedules.append([KernelScheduleType.ScheduleAuto, auto_epilogue])
-        if not (is_fp8 and is_sparse):
-            schedules.append([KernelScheduleType.TmaWarpSpecialized, default_epilogue])
+        schedules.append([KernelScheduleType.TmaWarpSpecialized, default_epilogue])
     stream_k_schedules = []
     
     if CudaToolkitVersionSatisfies(cuda_version, 12, 0):
@@ -518,16 +555,14 @@ def get_valid_schedules(tile_description, cuda_version, is_aligned, data_types, 
             schedules.append([KernelScheduleType.TmaWarpSpecializedPingpongFP8FastAccum, default_epilogue])
 
         if can_do_cooperative:
-            # Sparse kernels only support FastAccum FP8 mainloop
-            if not (is_fp8 and is_sparse):
-                schedules.append([
-                    KernelScheduleType.TmaWarpSpecializedCooperative,
-                    default_epilogue
-                ])
-                stream_k_schedules.append([
-                    KernelScheduleType.TmaWarpSpecializedCooperative,
-                    default_epilogue
-                ])
+            schedules.append([
+                KernelScheduleType.TmaWarpSpecializedCooperative,
+                default_epilogue
+            ])
+            stream_k_schedules.append([
+                KernelScheduleType.TmaWarpSpecializedCooperative,
+                default_epilogue
+            ])
             if can_do_fp8_fast_accum:
                 schedules.append([
                     KernelScheduleType.TmaWarpSpecializedCooperativeFP8FastAccum,
@@ -542,16 +577,14 @@ def get_valid_schedules(tile_description, cuda_version, is_aligned, data_types, 
         if can_do_tma_epilogue:
             assert not requires_transposed_epilogue
             if can_do_cooperative:
-                # Sparse kernels only support FastAccum FP8 mainloop
-                if not (is_fp8 and is_sparse):
-                    schedules.append([
-                        KernelScheduleType.TmaWarpSpecializedCooperative,
-                        EpilogueScheduleType.TmaWarpSpecializedCooperative
-                    ])
-                    stream_k_schedules.append([
-                        KernelScheduleType.TmaWarpSpecializedCooperative,
-                        EpilogueScheduleType.TmaWarpSpecializedCooperative
-                    ])
+                schedules.append([
+                    KernelScheduleType.TmaWarpSpecializedCooperative,
+                    EpilogueScheduleType.TmaWarpSpecializedCooperative
+                ])
+                stream_k_schedules.append([
+                    KernelScheduleType.TmaWarpSpecializedCooperative,
+                    EpilogueScheduleType.TmaWarpSpecializedCooperative
+                ])
                 if can_do_fp8_fast_accum:
                     schedules.append([
                         KernelScheduleType.TmaWarpSpecializedCooperativeFP8FastAccum,

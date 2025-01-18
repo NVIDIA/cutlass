@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -194,6 +194,20 @@ struct LinCombPerRowBiasEltAct
   static constexpr bool IsEltActSupported = true;
 };
 
+// Grouped Wgrad's D = alpha * acc + beta * C with special AccFetch.
+template<
+  class GroupsPerTile_,
+  class ElementOutput_,
+  class ElementCompute_,
+  class ElementSource_ = ElementOutput_,
+  class ElementScalar_ = ElementCompute_,
+  FloatRoundStyle RoundStyle_ = FloatRoundStyle::round_to_nearest
+>
+struct LinearCombinationGroupedWgrad
+    : LinearCombination<ElementOutput_, ElementCompute_, ElementSource_, ElementScalar_, RoundStyle_> {
+  using GroupsPerTile = GroupsPerTile_;
+};
+
 // D = activation(alpha * acc + beta * C + per-column bias)
 template<
   template <class> class ActivationFn_,
@@ -277,27 +291,6 @@ struct PerRowLinCombPerRowBiasEltAct
         ElementBias_, ElementSource_, ElementScalar_, AlignmentBias_, RoundStyle_> {
   static constexpr int AlignmentScalar = AlignmentScalar_;
   static constexpr bool IsPerRowScaleSupported = true;
-};
-
-// D = per-column alpha * per-row alpha * acc + beta * C
-template<
-  class ElementOutput_,
-  class ElementCompute_,
-  class ElementSource_ = ElementCompute_,
-  class ElementScalar_ = ElementCompute_,
-  int AlignmentScalar_ = 128 / cute::sizeof_bits_v<ElementScalar_>,
-  FloatRoundStyle RoundStyle_ = FloatRoundStyle::round_to_nearest
->
-struct OuterProdLinComb : FusionOperation {
-  using ElementOutput = ElementOutput_;
-  using ElementCompute = ElementCompute_;
-  using ElementSource = ElementSource_;
-  using ElementScalar = ElementScalar_;
-  static constexpr int AlignmentScalar = AlignmentScalar_;
-  static constexpr auto RoundStyle = RoundStyle_;
-  static constexpr bool IsSourceSupported = true;
-  static constexpr bool IsPerRowScaleSupported = true;
-  static constexpr bool IsPerColScaleSupported = true;
 };
 
 // D = activation(per-col alpha * acc + per-col beta * C + per-column bias)

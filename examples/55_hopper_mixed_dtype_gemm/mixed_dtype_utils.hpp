@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -151,16 +151,16 @@ void mixed_dtype_profiling(
   runtimes.reserve(options.iterations);
 
   for (int iter = 0; iter < options.warmup + options.iterations; ++iter) {
-    cudaEventRecord(start);
-    CUTLASS_CHECK(gemm.run());
-    cudaEventRecord(stop);
-    cudaEventSynchronize(stop);
+      cudaEventRecord(start);
+      CUTLASS_CHECK(gemm.run());
+      cudaEventRecord(stop);
+      cudaEventSynchronize(stop);
 
-    if (iter >= options.warmup) {
-        float milliseconds = 0;
-        cudaEventElapsedTime(&milliseconds, start, stop);
-        runtimes.push_back(milliseconds);
-    }
+      if (iter >= options.warmup) {
+          float milliseconds = 0;
+          cudaEventElapsedTime(&milliseconds, start, stop);
+          runtimes.push_back(milliseconds);
+      }
   }
 
   cudaEventDestroy(start);

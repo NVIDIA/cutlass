@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -43,6 +43,7 @@
 #include "cutlass/epilogue/fusion/sm90_callbacks_tma_warpspecialized.hpp"
 #include "cutlass/detail/collective.hpp"
 #include "cutlass/detail/layout.hpp"
+#include "cutlass/detail/helper_macros.hpp"
 #include "cutlass/trace.h"
 
 #include "cute/tensor.hpp"
@@ -584,7 +585,7 @@ public:
     TiledCopy tiled_copy_C_atom = make_tiled_copy_C_atom(CopyAtomC{}, tiled_mma);
 
     // (t)hread-partition for (r)egister to (r)egister copy (tRR_)
-    TiledCopy tiled_r2r = [&]() {
+    TiledCopy tiled_r2r = [&]() CUTLASS_LAMBDA_FUNC_INLINE {
       if constexpr (IsUseR2R) {
         return make_tiled_copy_S(Copy_Atom<CopyOpR2R, ElementCompute>{}, tiled_copy_C_atom);
       }
@@ -596,7 +597,7 @@ public:
     ThrCopy thread_r2r = tiled_r2r.get_slice(thread_idx);
 
     // (t)hread-partition for (r)egister to (s)mem copy (tRS_)
-    TiledCopy tiled_r2s = [&]() {
+    TiledCopy tiled_r2s = [&]() CUTLASS_LAMBDA_FUNC_INLINE {
       if constexpr (IsUseR2R) {
         return make_tiled_copy_D(Copy_Atom<CopyOpR2S,SmemElementD>{}, tiled_r2r);
       }
@@ -647,7 +648,7 @@ public:
     // Absolute coordinate tensors (dynamic)
     Tensor mD_crd = make_identity_tensor(make_shape(M,N));                                                     // (M,N)
     Tensor cD_mn = local_tile(mD_crd, take<0,2>(CtaTileMNK{}), make_coord(m_coord, n_coord));          // (CTA_M,CTA_N)
-    Tensor tRS_cD_mn = [&]() {
+    Tensor tRS_cD_mn = [&]() CUTLASS_LAMBDA_FUNC_INLINE {
       if constexpr (IsUseR2R) {
         // (t)hread-partition for ConsumerStoreCallbacks. 
         TiledCopy tiled_cst = make_tiled_copy_S(Copy_Atom<CopyOpR2S,SmemElementC>{}, tiled_copy_C_atom);
@@ -699,7 +700,7 @@ public:
 
     // Thread synchronizer for previously issued waits or fences
     // to ensure visibility of smem reads/writes to threads or TMA unit
-    auto synchronize = [&] () { cutlass::arch::NamedBarrier::sync(size(TiledMma{}), cutlass::arch::ReservedNamedBarriers::EpilogueBarrier); };
+    auto synchronize = [&] () CUTLASS_LAMBDA_FUNC_INLINE { cutlass::arch::NamedBarrier::sync(size(TiledMma{}), cutlass::arch::ReservedNamedBarriers::EpilogueBarrier); };
 
     // Predication for TMA store (one warp issues TMA store)
     bool issue_tma_store = (thread_idx / NumThreadsPerWarp) == 0;
@@ -722,7 +723,7 @@ public:
     static_assert(not (DelayTmaStore and ReuseSmemC and StagesC <= StagesD), "This TMA epilogue configuration will deadlock");
 
     // The TMA store sequence for one subtile iteration
-    auto tma_store_fn = [&] (int epi_m, int epi_n) {
+    auto tma_store_fn = [&] (int epi_m, int epi_n) CUTLASS_LAMBDA_FUNC_INLINE {
       // Write the tile from smem to gmem with TMA
       cutlass::arch::fence_view_async_shared(); // ensure smem writes are visible to TMA
       synchronize(); // ensure all threads have issued their async fence
@@ -767,6 +768,9 @@ public:
 
     // Pre-loop fusion callback entry point
     cst_callbacks.begin();
+    if (cst_callbacks.begin_sync_needed()) {
+      synchronize();
+    }
 
     // For each output tile
     CUTLASS_PRAGMA_UNROLL

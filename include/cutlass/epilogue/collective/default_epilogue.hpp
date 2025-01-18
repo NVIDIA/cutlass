@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -53,6 +53,7 @@ namespace collective {
 /// Applies an element wise operation to all elements within the fragment
 /// and writes them out to destination storage.
 template <
+  class ElementC_,
   class StrideC_,
   class StrideD_,
   class ThreadEpilogueOp_,
@@ -72,10 +73,12 @@ public:
   using ElementAccumulator = typename ThreadEpilogueOp::ElementAccumulator;
   using ElementCompute = typename ThreadEpilogueOp::ElementCompute;
   using ElementScalar = ElementCompute;
-  using ElementC = typename ThreadEpilogueOp::ElementC;
+  using ElementC = ElementC_;
   using StrideC = StrideC_;
   using ElementD = typename ThreadEpilogueOp::ElementD;
   using StrideD = StrideD_;
+
+  using GmemElementC = cute::conditional_t<cute::is_void_v<ElementC>, ElementD, ElementC>; // prevents void ref breakages
 
   using GmemTiledCopyC = void;
   using GmemTiledCopyD = void;
@@ -183,7 +186,7 @@ public:
     auto stride_d = detail::get_epilogue_stride<EpilogueSchedule>(params.dD);
 
     // Represent the full output tensor
-    Tensor mC_mnl = make_tensor(make_gmem_ptr(params.ptr_C), make_shape(M,N,L), stride_c);                 // (m,n,l)
+    Tensor mC_mnl = make_tensor(make_gmem_ptr<GmemElementC>(params.ptr_C), make_shape(M,N,L), stride_c);   // (m,n,l)
     Tensor mD_mnl = make_tensor(make_gmem_ptr(params.ptr_D), make_shape(M,N,L), stride_d);                 // (m,n,l)
     Tensor gC_mnl = local_tile(mC_mnl, blk_shape_MNK, make_coord(_,_,_), Step<_1,_1, X>{});    // (BLK_M,BLK_N,m,n,l)
     Tensor gD_mnl = local_tile(mD_mnl, blk_shape_MNK, make_coord(_,_,_), Step<_1,_1, X>{});    // (BLK_M,BLK_N,m,n,l)

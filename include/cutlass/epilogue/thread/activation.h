@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -354,7 +354,11 @@ struct Sigmoid {
 
   CUTLASS_HOST_DEVICE
   T operator()(T const &value) const {
+#if defined(CUTLASS_USE_TANH_FOR_SIGMOID)
+    return fast_tanh(value * T(0.5)) * T(0.5) + T(0.5);
+#else
     return T(1) / (T(1) + fast_exp(-value));
+#endif
   }
 };
 
@@ -364,14 +368,15 @@ struct Sigmoid<Array<T, N>> {
 
   CUTLASS_HOST_DEVICE
   Array<T, N> operator()(Array<T, N> const& z) const {
-    plus<Array<T, N>> add;
-
 #if defined(CUTLASS_USE_TANH_FOR_SIGMOID)
     multiplies<Array<T, N>> mul;
+    multiply_add<Array<T, N>> fma;
     fast_tanh_op<Array<T, N>> tanh;
-    return mul(add(tanh(mul(z, cutlass::constants::half<T>())), cutlass::constants::one<T>()),
+    return fma(tanh(mul(z, cutlass::constants::half<T>())),
+               cutlass::constants::half<T>(),
                cutlass::constants::half<T>());
 #else
+    plus<Array<T, N>> add;
     divides<Array<T, N>> div;
     negate<Array<T, N>> neg;
     fast_exp_op<Array<T, N>> fast_exp;

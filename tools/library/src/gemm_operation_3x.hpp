@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -248,8 +248,17 @@ protected:
         arguments->ldc, arguments->batch_stride_C);
     operator_args.epilogue.dD = operator_args.epilogue.dC;
 
-    /* Query device SM count to pass onto the kernel as an argument, where needed */
+    /* Query device SM count and max active clusters to pass onto the kernel as an argument, where needed */
     operator_args.hw_info.sm_count = arguments->sm_count;
+    if constexpr (Operator::ArchTag::kMinComputeCapability == 90) {
+      dim3 cluster_dims(cute::size<0>(typename Operator::GemmKernel::ClusterShape{}),
+                        cute::size<1>(typename Operator::GemmKernel::ClusterShape{}),
+                        cute::size<2>(typename Operator::GemmKernel::ClusterShape{}));
+      uint32_t threads_per_block = Operator::GemmKernel::MaxThreadsPerBlock;
+      void const* kernel_ptr = (void*)(device_kernel<typename Operator::GemmKernel>);
+      operator_args.hw_info.max_active_clusters = cutlass::KernelHardwareInfo::query_device_max_active_clusters(
+                                                    cluster_dims, threads_per_block, kernel_ptr);
+    }
     if constexpr (!std::is_const_v<decltype(operator_args.scheduler.max_swizzle_size)>) {
       operator_args.scheduler.max_swizzle_size = arguments->swizzle_size;
     }
@@ -275,20 +284,11 @@ public:
 
   /// Returns success if the operation can proceed
   Status can_implement(
-      void const *configuration_ptr, void const *arguments_ptr) const override {
-    GemmUniversalConfiguration const *configuration =
-      static_cast<GemmUniversalConfiguration const *>(configuration_ptr);
+      [[maybe_unused]] void const *configuration_ptr, void const *arguments_ptr) const override {
     GemmUniversalArguments const *arguments =
       static_cast<GemmUniversalArguments const *>(arguments_ptr);
-
     OperatorArguments args;
-    // can_implement rules may need access to problem shape
-    args.problem_shape = cute::make_shape(
-      configuration->problem_size.m(),
-      configuration->problem_size.n(),
-      configuration->problem_size.k(),
-      configuration->batch_count);
-
+    
     auto status = update_arguments_(args, arguments);
     if (status != Status::kSuccess) {
       return status;
@@ -332,8 +332,7 @@ public:
       void const *arguments_ptr,
       void *host_workspace,
       void *device_workspace = nullptr,
-      cudaStream_t stream = nullptr,
-      bool launch_with_pdl = false) const override {
+      cudaStream_t stream = nullptr) const override {
 
     OperatorArguments args;
     Status status = update_arguments_(args, static_cast<GemmUniversalArguments const *>(arguments_ptr));
@@ -343,7 +342,8 @@ public:
 
     Operator *op = static_cast<Operator *>(host_workspace);
     // We need to call initialize() since we have to rebuild TMA desc for every new set of args
-    status = op->run(args, device_workspace, stream, nullptr, launch_with_pdl);
+    status = op->run(args, device_workspace, stream, nullptr, 
+                     static_cast<GemmUniversalArguments const *>(arguments_ptr)->use_pdl);
     return status;
   }
 };

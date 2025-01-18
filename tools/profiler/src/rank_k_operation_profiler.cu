@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -285,6 +285,10 @@ void RankKOperationProfiler::RankKProblem::initialize_result(
 
   set_argument(result, "n", problem_space, n);
   set_argument(result, "k", problem_space, k);
+
+  set_argument(result, "cluster_m", problem_space, operation_desc.tile_description.cluster_shape.m());
+  set_argument(result, "cluster_n", problem_space, operation_desc.tile_description.cluster_shape.n());
+  set_argument(result, "cluster_k", problem_space, operation_desc.tile_description.cluster_shape.k());
 
   set_argument(result, "split_k_slices", problem_space, split_k_slices);
   set_argument(result, "batch_count", problem_space, batch_count);

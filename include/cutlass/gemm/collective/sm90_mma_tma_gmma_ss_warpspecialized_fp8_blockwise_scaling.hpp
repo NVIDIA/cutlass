@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -135,10 +135,10 @@ struct CollectiveMma<
       SmemLayoutAtomB{},
       make_shape(shape<1>(TileShape{}), shape<2>(TileShape{}), Int<DispatchPolicy::Stages>{}),
       cute::conditional_t< ::cutlass::gemm::detail::is_major<0,StrideB>(), Step<_2,_1,_3>, Step<_1,_2,_3>>{}));
-  
+
   // Block scaling gmem-to-smem copy atom 
   using SmemBlockScalingCopyAtom = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<ElementBlockScale>, ElementBlockScale>;
-  
+
   // Block scaling smem layout
   using SmemLayoutScaleA = Layout<Shape<Int<DispatchPolicy::Stages>>, Stride<_1>>;
   using SmemLayoutScaleB = Layout<Shape<Int<DispatchPolicy::Stages>>, Stride<_1>>;
@@ -261,7 +261,7 @@ struct CollectiveMma<
     constexpr int tma_alignment_bits = 128;
     auto problem_shape_MNKL = append<4>(problem_shape, 1);
     auto [M,N,K,L] = problem_shape_MNKL;
-    
+
     bool implementable = true;
     constexpr int min_tma_aligned_elements_A = tma_alignment_bits / cutlass::sizeof_bits<ElementA>::value;
     implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_A>(cute::make_shape(M,K,L), StrideA{});
@@ -381,13 +381,13 @@ struct CollectiveMma<
 
       Tensor gScaleA = mScaleA_mkl(m_coord,_,l_coord);                                           // (1,k,1)
       Tensor gScaleB = mScaleB_nkl(n_coord,_,l_coord);                                           // (1,k,1)
-      
+
       TiledCopy scale_copy = make_tiled_copy(SmemBlockScalingCopyAtom{}, Layout<Shape<_1>>{}, Layout<Shape<_1>>{}); // (1,1,1)
       ThrCopy thr_scale_copy = scale_copy.get_slice(threadIdx.x);
-      
+
       Tensor tAgA_ScaleA = thr_scale_copy.partition_S(gScaleA);
       Tensor tAsA_ScaleA = thr_scale_copy.partition_D(sScaleA);
-      
+
       Tensor tBgB_ScaleB = thr_scale_copy.partition_S(gScaleB);
       Tensor tBsB_ScaleB = thr_scale_copy.partition_D(sScaleB);
 
@@ -491,7 +491,7 @@ struct CollectiveMma<
 
     Tensor sA = make_tensor(make_smem_ptr(shared_tensors.smem_A.data()), SmemLayoutA{});          // (BLK_M,BLK_K,PIPE)
     Tensor sB = make_tensor(make_smem_ptr(shared_tensors.smem_B.data()), SmemLayoutB{});          // (BLK_N,BLK_K,PIPE)
-    
+
     // Block scaling
     Tensor sScaleA = make_tensor(cute::make_smem_ptr(shared_tensors.smem_scale_A.data()), SmemLayoutScaleA{}); // (k)
     Tensor sScaleB = make_tensor(cute::make_smem_ptr(shared_tensors.smem_scale_B.data()), SmemLayoutScaleB{}); // (k)
@@ -499,7 +499,7 @@ struct CollectiveMma<
     //
     // Define C accumulators and A/B partitioning
     //
-    
+
     // Layout of warp group to thread mapping
 
     static_assert(stride<0>(typename TiledMma::ALayout{}) == 0 and 
@@ -539,7 +539,7 @@ struct CollectiveMma<
 
     // We release buffers to producer warps(dma load) with some mmas in flight
     PipelineState smem_pipe_release = smem_pipe_read;
-    
+
     // Per block scale values for operand A and B
     ElementBlockScale scale_a;
     ElementBlockScale scale_b;
@@ -564,7 +564,7 @@ struct CollectiveMma<
       }
 
       int read_stage = smem_pipe_read.index();
-      
+
       // Load per block scale values from shared memory to registers.
       scale_a = sScaleA[read_stage];
       scale_b = sScaleB[read_stage];
@@ -636,7 +636,7 @@ struct CollectiveMma<
       ++smem_pipe_read;
       ++smem_pipe_release;
     }
-    
+
     accumulation.scale_residue_if_needed(scale);
 
     warpgroup_fence_operand(accumulation());

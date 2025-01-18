@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -55,8 +55,9 @@ template<class EngineAct, class LayoutAct>
 bool
 is_activation_in_bounds(
     cute::Tensor<EngineAct, LayoutAct> const& activation,
-    int32_t n_, int32_t d_, int32_t h_, int32_t w_, int32_t c_) {
-  return ((n_ >= 0 && n_ < size<4>(activation)) &&
+    int32_t n_, int32_t d_, int32_t h_, int32_t w_, int32_t c_, int32_t g_) {
+  return ((g_ >= 0 && g_ < size<5>(activation)) &&
+          (n_ >= 0 && n_ < size<4>(activation)) &&
           (d_ >= 0 && d_ < size<3>(activation)) &&
           (h_ >= 0 && h_ < size<2>(activation)) &&
           (w_ >= 0 && w_ < size<1>(activation)) &&
@@ -67,8 +68,9 @@ template<class EngineAct, class LayoutAct>
 bool
 is_activation_in_bounds(
     cute::Tensor<EngineAct, LayoutAct> const& activation,
-    int32_t n_, int32_t h_, int32_t w_, int32_t c_) {
-  return ((n_ >= 0 && n_ < size<3>(activation)) &&
+    int32_t n_, int32_t h_, int32_t w_, int32_t c_, int32_t g_) {
+  return ((g_ >= 0 && g_ < size<4>(activation)) &&
+          (n_ >= 0 && n_ < size<3>(activation)) &&
           (h_ >= 0 && h_ < size<2>(activation)) &&
           (w_ >= 0 && w_ < size<1>(activation)) &&
           (c_ >= 0 && c_ < size<0>(activation)));
@@ -78,8 +80,9 @@ template<class EngineAct, class LayoutAct>
 bool
 is_activation_in_bounds(
     cute::Tensor<EngineAct, LayoutAct> const& activation,
-    int32_t n_, int32_t w_, int32_t c_) {
-  return ((n_ >= 0 && n_ < size<2>(activation)) &&
+    int32_t n_, int32_t w_, int32_t c_, int32_t g_) {
+  return ((g_ >= 0 && g_ < size<3>(activation)) &&
+          (n_ >= 0 && n_ < size<2>(activation)) &&
           (w_ >= 0 && w_ < size<1>(activation)) &&
           (c_ >= 0 && c_ < size<0>(activation)));
 }
@@ -196,6 +199,7 @@ struct ConvReferenceImpl {
 private:
   // Specialization for 1D fprop kernel
   void fprop_reference(cute::Int<1> spatial_dims) {
+    int32_t G = size<3>(tensor_d_);
     int32_t N = size<2>(tensor_d_);
     int32_t Q = size<1>(tensor_d_);
     int32_t K = size<0>(tensor_d_);
@@ -205,31 +209,33 @@ private:
 #if defined(_OPENMP)
   #pragma omp parallel for collapse(2)
 #endif
-    for (int32_t n = 0; n < N; ++n) {
-      for (int32_t q = 0; q < Q; ++q) {
-        for (int32_t k = 0; k < K; ++k) {
-          auto accumulator = ElementAcc(0);
-          for (int32_t s = 0; s < S; ++s) {
-            for (int32_t c = 0; c < C; ++c) {
-              int32_t w =  q * cute::get<0>(tstride_) - cute::get<0>(padding_) + s * cute::get<0>(dilation_);
-              if (detail::is_activation_in_bounds(tensor_a_, n, w, c)) {
-                auto a = tensor_a_(c, w, n);
-                auto b = tensor_b_(c, s, k);
-                accumulator += ElementAcc(a * b);
+    for (int32_t g = 0; g < G; ++g) {
+      for (int32_t n = 0; n < N; ++n) {
+        for (int32_t q = 0; q < Q; ++q) {
+          for (int32_t k = 0; k < K; ++k) {
+            auto accumulator = ElementAcc(0);
+            for (int32_t s = 0; s < S; ++s) {
+              for (int32_t c = 0; c < C; ++c) {
+                int32_t w =  q * cute::get<0>(tstride_) - cute::get<0>(padding_) + s * cute::get<0>(dilation_);
+                if (detail::is_activation_in_bounds(tensor_a_, n, w, c, g)) {
+                  auto a = tensor_a_(c, w, n, g);
+                  auto b = tensor_b_(c, s, k, g);
+                  accumulator += ElementAcc(a * b);
+                }
               }
             }
+            ElementScalar alpha = raw_pointer_cast(epi_fusion_params_.tensor_alpha.data()) ?
+              epi_fusion_params_.tensor_alpha[k] : epi_fusion_params_.alpha;
+            ElementScalar beta = raw_pointer_cast(epi_fusion_params_.tensor_beta.data()) ?
+              epi_fusion_params_.tensor_beta[k] : epi_fusion_params_.beta;
+            ElementCompute output = scale_converter(alpha) * acc_converter(accumulator) +
+                                    scale_converter(beta) * residual_converter(tensor_c_(k, q, n, g));
+            if (raw_pointer_cast(epi_fusion_params_.tensor_bias.data())) {
+              output += bias_converter(epi_fusion_params_.tensor_bias[k]);
+            }
+            output = epi_activation(output);
+            tensor_d_(k, q, n, g) = output_converter(output);
           }
-          ElementScalar alpha = raw_pointer_cast(epi_fusion_params_.tensor_alpha.data()) ?
-            epi_fusion_params_.tensor_alpha[k] : epi_fusion_params_.alpha;
-          ElementScalar beta = raw_pointer_cast(epi_fusion_params_.tensor_beta.data()) ?
-            epi_fusion_params_.tensor_beta[k] : epi_fusion_params_.beta;
-          ElementCompute output = scale_converter(alpha) * acc_converter(accumulator) +
-                                  scale_converter(beta) * residual_converter(tensor_c_(k, q, n));
-          if (raw_pointer_cast(epi_fusion_params_.tensor_bias.data())) {
-            output += bias_converter(epi_fusion_params_.tensor_bias[k]);
-          }
-          output = epi_activation(output);
-          tensor_d_(k, q, n) = output_converter(output);
         }
       }
     }
@@ -238,6 +244,7 @@ private:
 
   // Specialization for 2D fprop kernel
   void fprop_reference(cute::Int<2> spatial_dims) {
+    int32_t G = size<4>(tensor_d_);
     int32_t N = size<3>(tensor_d_);
     int32_t P = size<2>(tensor_d_);
     int32_t Q = size<1>(tensor_d_);
@@ -249,35 +256,37 @@ private:
 #if defined(_OPENMP)
     #pragma omp parallel for collapse(3)
 #endif
-    for (int32_t n = 0; n < N; ++n) {
-      for (int32_t p = 0; p < P; ++p) {
-        for (int32_t q = 0; q < Q; ++q) {
-          for (int32_t k = 0; k < K; ++k) {
-            auto accumulator = ElementAcc(0);
-            for (int32_t r = 0; r < R; ++r) {
-              for (int32_t s = 0; s < S; ++s) {
-                for (int32_t c = 0; c < C; ++c) {
-                  int32_t w =  q * cute::get<0>(tstride_) - cute::get<0>(padding_) + s * cute::get<0>(dilation_);
-                  int32_t h =  p * cute::get<1>(tstride_) - cute::get<1>(padding_) + r * cute::get<1>(dilation_);
-                  if (detail::is_activation_in_bounds(tensor_a_, n, h, w, c)) {
-                    auto a = tensor_a_(c, w, h, n);
-                    auto b = tensor_b_(c, s, r, k);
-                    accumulator += ElementAcc(a * b);
+    for (int32_t g = 0; g < G; ++g) {
+      for (int32_t n = 0; n < N; ++n) {
+        for (int32_t p = 0; p < P; ++p) {
+          for (int32_t q = 0; q < Q; ++q) {
+            for (int32_t k = 0; k < K; ++k) {
+              auto accumulator = ElementAcc(0);
+              for (int32_t r = 0; r < R; ++r) {
+                for (int32_t s = 0; s < S; ++s) {
+                  for (int32_t c = 0; c < C; ++c) {
+                    int32_t w =  q * cute::get<0>(tstride_) - cute::get<0>(padding_) + s * cute::get<0>(dilation_);
+                    int32_t h =  p * cute::get<1>(tstride_) - cute::get<1>(padding_) + r * cute::get<1>(dilation_);
+                    if (detail::is_activation_in_bounds(tensor_a_, n, h, w, c, g)) {
+                      auto a = tensor_a_(c, w, h, n, g);
+                      auto b = tensor_b_(c, s, r, k, g);
+                      accumulator += ElementAcc(a * b);
+                    }
                   }
                 }
               }
+              ElementScalar alpha = raw_pointer_cast(epi_fusion_params_.tensor_alpha.data()) ?
+                epi_fusion_params_.tensor_alpha[k] : epi_fusion_params_.alpha;
+              ElementScalar beta = raw_pointer_cast(epi_fusion_params_.tensor_beta.data()) ?
+                epi_fusion_params_.tensor_beta[k] : epi_fusion_params_.beta;
+              ElementCompute output = scale_converter(alpha) * acc_converter(accumulator) +
+                                      scale_converter(beta) * residual_converter(tensor_c_(k, q, p, n, g));
+              if (raw_pointer_cast(epi_fusion_params_.tensor_bias.data())) {
+                output += bias_converter(epi_fusion_params_.tensor_bias[k]);
+              }
+              output = epi_activation(output);
+              tensor_d_(k, q, p, n, g) = output_converter(output);
             }
-            ElementScalar alpha = raw_pointer_cast(epi_fusion_params_.tensor_alpha.data()) ?
-              epi_fusion_params_.tensor_alpha[k] : epi_fusion_params_.alpha;
-            ElementScalar beta = raw_pointer_cast(epi_fusion_params_.tensor_beta.data()) ?
-              epi_fusion_params_.tensor_beta[k] : epi_fusion_params_.beta;
-            ElementCompute output = scale_converter(alpha) * acc_converter(accumulator) +
-                                    scale_converter(beta) * residual_converter(tensor_c_(k, q, p, n));
-            if (raw_pointer_cast(epi_fusion_params_.tensor_bias.data())) {
-              output += bias_converter(epi_fusion_params_.tensor_bias[k]);
-            }
-            output = epi_activation(output);
-            tensor_d_(k, q, p, n) = output_converter(output);
           }
         }
       }
@@ -287,6 +296,7 @@ private:
 
   // Specialization for 3D fprop kernel
   void fprop_reference(cute::Int<3> spatial_dims) {
+    int32_t G = size<5>(tensor_d_);
     int32_t N = size<4>(tensor_d_);
     int32_t Z = size<3>(tensor_d_);
     int32_t P = size<2>(tensor_d_);
@@ -300,39 +310,41 @@ private:
 #if defined(_OPENMP)
     #pragma omp parallel for collapse(3)
 #endif
-    for (int32_t n = 0; n < N; ++n) {
-      for (int32_t z = 0; z < Z; ++z) {
-        for (int32_t p = 0; p < P; ++p) {
-          for (int32_t q = 0; q < Q; ++q) {
-            for (int32_t k = 0; k < K; ++k) {
-              auto accumulator = ElementAcc(0);
-              for (int32_t t = 0; t < T; ++t) {
-                for (int32_t r = 0; r < R; ++r) {
-                  for (int32_t s = 0; s < S; ++s) {
-                    for (int32_t c = 0; c < C; ++c) {
-                      int32_t w =  q * cute::get<0>(tstride_) - cute::get<0>(padding_) + s * cute::get<0>(dilation_);
-                      int32_t h =  p * cute::get<1>(tstride_) - cute::get<1>(padding_) + r * cute::get<1>(dilation_);
-                      int32_t d =  z * cute::get<2>(tstride_) - cute::get<2>(padding_) + t * cute::get<2>(dilation_);
-                      if (detail::is_activation_in_bounds(tensor_a_, n, d, h, w, c)) {
-                        auto a = tensor_a_(c, w, h, d, n);
-                        auto b = tensor_b_(c, s, r, t, k);
-                        accumulator += ElementAcc(a * b);
+    for (int32_t g = 0; g < G; ++g) {
+      for (int32_t n = 0; n < N; ++n) {
+        for (int32_t z = 0; z < Z; ++z) {
+          for (int32_t p = 0; p < P; ++p) {
+            for (int32_t q = 0; q < Q; ++q) {
+              for (int32_t k = 0; k < K; ++k) {
+                auto accumulator = ElementAcc(0);
+                for (int32_t t = 0; t < T; ++t) {
+                  for (int32_t r = 0; r < R; ++r) {
+                    for (int32_t s = 0; s < S; ++s) {
+                      for (int32_t c = 0; c < C; ++c) {
+                        int32_t w =  q * cute::get<0>(tstride_) - cute::get<0>(padding_) + s * cute::get<0>(dilation_);
+                        int32_t h =  p * cute::get<1>(tstride_) - cute::get<1>(padding_) + r * cute::get<1>(dilation_);
+                        int32_t d =  z * cute::get<2>(tstride_) - cute::get<2>(padding_) + t * cute::get<2>(dilation_);
+                        if (detail::is_activation_in_bounds(tensor_a_, n, d, h, w, c, g)) {
+                          auto a = tensor_a_(c, w, h, d, n, g);
+                          auto b = tensor_b_(c, s, r, t, k, g);
+                          accumulator += ElementAcc(a * b);
+                        }
                       }
                     }
                   }
                 }
+                ElementScalar alpha = raw_pointer_cast(epi_fusion_params_.tensor_alpha.data()) ?
+                  epi_fusion_params_.tensor_alpha[k] : epi_fusion_params_.alpha;
+                ElementScalar beta = raw_pointer_cast(epi_fusion_params_.tensor_beta.data()) ?
+                  epi_fusion_params_.tensor_beta[k] : epi_fusion_params_.beta;
+                ElementCompute output = scale_converter(alpha) * acc_converter(accumulator) +
+                                        scale_converter(beta) * residual_converter(tensor_c_(k, q, p, z, n, g));
+                if (raw_pointer_cast(epi_fusion_params_.tensor_bias.data())) {
+                  output += bias_converter(epi_fusion_params_.tensor_bias[k]);
+                }
+                output = epi_activation(output);
+                tensor_d_(k, q, p, z, n, g) = output_converter(output);
               }
-              ElementScalar alpha = raw_pointer_cast(epi_fusion_params_.tensor_alpha.data()) ?
-                epi_fusion_params_.tensor_alpha[k] : epi_fusion_params_.alpha;
-              ElementScalar beta = raw_pointer_cast(epi_fusion_params_.tensor_beta.data()) ?
-                epi_fusion_params_.tensor_beta[k] : epi_fusion_params_.beta;
-              ElementCompute output = scale_converter(alpha) * acc_converter(accumulator) +
-                                      scale_converter(beta) * residual_converter(tensor_c_(k, q, p, z, n));
-              if (raw_pointer_cast(epi_fusion_params_.tensor_bias.data())) {
-                output += bias_converter(epi_fusion_params_.tensor_bias[k]);
-              }
-              output = epi_activation(output);
-              tensor_d_(k, q, p, z, n) = output_converter(output);
             }
           }
         }
@@ -343,6 +355,7 @@ private:
 
   // Specialization for 1D dgrad kernel
   void dgrad_reference(cute::Int<1> spatial_dims) {
+    int32_t G = size<3>(tensor_d_);
     int32_t N = size<2>(tensor_d_);
     int32_t W = size<1>(tensor_d_);
     int32_t C = size<0>(tensor_d_);
@@ -352,36 +365,38 @@ private:
 #if defined(_OPENMP)
    #pragma omp parallel for collapse(2)
 #endif
-    for (int32_t n = 0; n < N; ++n) {
-      for (int32_t w = 0; w < W; ++w) {
-        for (int32_t c = 0; c < C; ++c) {
-          auto accumulator = ElementAcc(0);
-          for (int32_t k = 0; k < K; ++k) {
-            for (int32_t s = 0; s < S; ++s) {
-              int32_t q = w + cute::get<0>(padding_) - s * cute::get<0>(dilation_);
+    for (int32_t g = 0; g < G; ++g) {
+      for (int32_t n = 0; n < N; ++n) {
+        for (int32_t w = 0; w < W; ++w) {
+          for (int32_t c = 0; c < C; ++c) {
+            auto accumulator = ElementAcc(0);
+            for (int32_t k = 0; k < K; ++k) {
+              for (int32_t s = 0; s < S; ++s) {
+                int32_t q = w + cute::get<0>(padding_) - s * cute::get<0>(dilation_);
 
-              if (q % cute::get<0>(tstride_) == 0) {
-                q /= cute::get<0>(tstride_);
-              } else {
-                continue;
-              }
+                if (q % cute::get<0>(tstride_) == 0) {
+                  q /= cute::get<0>(tstride_);
+                } else {
+                  continue;
+                }
 
-              if (detail::is_activation_in_bounds(tensor_a_, n, q, k)) {
-                accumulator += ElementAcc(tensor_a_(k, q, n) * tensor_b_(c, s, k));
+                if (detail::is_activation_in_bounds(tensor_a_, n, q, k, g)) {
+                  accumulator += ElementAcc(tensor_a_(k, q, n, g) * tensor_b_(c, s, k, g));
+                }
               }
             }
+            ElementScalar alpha = raw_pointer_cast(epi_fusion_params_.tensor_alpha.data())
+              ? epi_fusion_params_.tensor_alpha[c] : epi_fusion_params_.alpha;
+            ElementScalar beta = raw_pointer_cast(epi_fusion_params_.tensor_beta.data())
+              ? epi_fusion_params_.tensor_beta[c] : epi_fusion_params_.beta;
+            ElementCompute output = scale_converter(alpha) * acc_converter(accumulator) +
+                                    scale_converter(beta) * residual_converter(tensor_c_(c, w, n, g));
+            if (raw_pointer_cast(epi_fusion_params_.tensor_bias.data())) {
+              output += bias_converter(epi_fusion_params_.tensor_bias[c]);
+            }
+            output = epi_activation(output);
+            tensor_d_(c, w, n, g) = output_converter(output);
           }
-          ElementScalar alpha = raw_pointer_cast(epi_fusion_params_.tensor_alpha.data())
-            ? epi_fusion_params_.tensor_alpha[c] : epi_fusion_params_.alpha;
-          ElementScalar beta = raw_pointer_cast(epi_fusion_params_.tensor_beta.data())
-            ? epi_fusion_params_.tensor_beta[c] : epi_fusion_params_.beta;
-          ElementCompute output = scale_converter(alpha) * acc_converter(accumulator) +
-                                  scale_converter(beta) * residual_converter(tensor_c_(c, w, n));
-          if (raw_pointer_cast(epi_fusion_params_.tensor_bias.data())) {
-            output += bias_converter(epi_fusion_params_.tensor_bias[c]);
-          }
-          output = epi_activation(output);
-          tensor_d_(c, w, n) = output_converter(output);
         }
       }
     }
@@ -390,6 +405,7 @@ private:
 
   // Specialization for 2D dgrad kernel
   void dgrad_reference(cute::Int<2> spatial_dims) {
+    int32_t G = size<4>(tensor_d_);
     int32_t N = size<3>(tensor_d_);
     int32_t H = size<2>(tensor_d_);
     int32_t W = size<1>(tensor_d_);
@@ -401,47 +417,49 @@ private:
 #if defined(_OPENMP)
     #pragma omp parallel for collapse(3)
 #endif
-    for (int32_t n = 0; n < N; ++n) {
-      for (int32_t h = 0; h < H; ++h) {
-        for (int32_t w = 0; w < W; ++w) {
-          for (int32_t c = 0; c < C; ++c) {
-            auto accumulator = ElementAcc(0);
-            for (int32_t k = 0; k < K; ++k) {
-              for (int32_t r = 0; r < R; ++r) {
-                for (int32_t s = 0; s < S; ++s) {
-                  int32_t q = w + cute::get<0>(padding_) - s * cute::get<0>(dilation_);
-                  int32_t p = h + cute::get<1>(padding_) - r * cute::get<1>(dilation_);
+    for (int32_t g = 0; g < G; ++g) {
+      for (int32_t n = 0; n < N; ++n) {
+        for (int32_t h = 0; h < H; ++h) {
+          for (int32_t w = 0; w < W; ++w) {
+            for (int32_t c = 0; c < C; ++c) {
+              auto accumulator = ElementAcc(0);
+              for (int32_t k = 0; k < K; ++k) {
+                for (int32_t r = 0; r < R; ++r) {
+                  for (int32_t s = 0; s < S; ++s) {
+                    int32_t q = w + cute::get<0>(padding_) - s * cute::get<0>(dilation_);
+                    int32_t p = h + cute::get<1>(padding_) - r * cute::get<1>(dilation_);
 
-                  if (q % cute::get<0>(tstride_) == 0) {
-                    q /= cute::get<0>(tstride_);
-                  } else {
-                    continue;
-                  }
+                    if (q % cute::get<0>(tstride_) == 0) {
+                      q /= cute::get<0>(tstride_);
+                    } else {
+                      continue;
+                    }
 
-                  if (p % cute::get<1>(tstride_) == 0) {
-                    p /= cute::get<1>(tstride_);
-                  } else {
-                    continue;
-                  }
+                    if (p % cute::get<1>(tstride_) == 0) {
+                      p /= cute::get<1>(tstride_);
+                    } else {
+                      continue;
+                    }
 
-                  if (detail::is_activation_in_bounds(tensor_a_, n, p, q, k)) {
-                    accumulator += ElementAcc(tensor_a_(k, q, p, n) * tensor_b_(c, s, r, k));
+                    if (detail::is_activation_in_bounds(tensor_a_, n, p, q, k, g)) {
+                      accumulator += ElementAcc(tensor_a_(k, q, p, n, g) * tensor_b_(c, s, r, k, g));
+                    }
                   }
                 }
               }
-            }
-            ElementScalar alpha = raw_pointer_cast(epi_fusion_params_.tensor_alpha.data())
-              ? epi_fusion_params_.tensor_alpha[c] : epi_fusion_params_.alpha;
-            ElementScalar beta = raw_pointer_cast(epi_fusion_params_.tensor_beta.data())
-              ? epi_fusion_params_.tensor_beta[c] : epi_fusion_params_.beta;
-            ElementCompute output = scale_converter(alpha) * acc_converter(accumulator) +
-                                    scale_converter(beta) * residual_converter(tensor_c_(c, w, h, n));
-            if (raw_pointer_cast(epi_fusion_params_.tensor_bias.data())) {
-              output += bias_converter(epi_fusion_params_.tensor_bias[c]);
-            }
-            output = epi_activation(output);
+              ElementScalar alpha = raw_pointer_cast(epi_fusion_params_.tensor_alpha.data())
+                ? epi_fusion_params_.tensor_alpha[c] : epi_fusion_params_.alpha;
+              ElementScalar beta = raw_pointer_cast(epi_fusion_params_.tensor_beta.data())
+                ? epi_fusion_params_.tensor_beta[c] : epi_fusion_params_.beta;
+              ElementCompute output = scale_converter(alpha) * acc_converter(accumulator) +
+                                      scale_converter(beta) * residual_converter(tensor_c_(c, w, h, n, g));
+              if (raw_pointer_cast(epi_fusion_params_.tensor_bias.data())) {
+                output += bias_converter(epi_fusion_params_.tensor_bias[c]);
+              }
+              output = epi_activation(output);
 
-            tensor_d_(c, w, h, n) = output_converter(output);
+              tensor_d_(c, w, h, n, g) = output_converter(output);
+            }
           }
         }
       }
@@ -451,6 +469,7 @@ private:
 
   // Specialization for 3D dgrad kernel
   void dgrad_reference(cute::Int<3> spatial_dims) {
+    int32_t G = size<5>(tensor_d_);
     int32_t N = size<4>(tensor_d_);
     int32_t D = size<3>(tensor_d_);
     int32_t H = size<2>(tensor_d_);
@@ -464,56 +483,58 @@ private:
 #if defined(_OPENMP)
     #pragma omp parallel for collapse(3)
 #endif
-    for (int32_t n = 0; n < N; ++n) {
-      for (int32_t d = 0; d < D; ++d) {
-        for (int32_t h = 0; h < H; ++h) {
-          for (int32_t w = 0; w < W; ++w) {
-            for (int32_t c = 0; c < C; ++c) {
-              auto accumulator = ElementAcc(0);
-              for (int32_t k = 0; k < K; ++k) {
-                for (int32_t t = 0; t < T; ++t) {
-                  for (int32_t r = 0; r < R; ++r) {
-                    for (int32_t s = 0; s < S; ++s) {
-                      int32_t q = w + cute::get<0>(padding_) - s * cute::get<0>(dilation_);
-                      int32_t p = h + cute::get<1>(padding_) - r * cute::get<1>(dilation_);
-                      int32_t z = d + cute::get<2>(padding_) - t * cute::get<2>(dilation_);
+    for (int32_t g = 0; g < G; ++g) {
+      for (int32_t n = 0; n < N; ++n) {
+        for (int32_t d = 0; d < D; ++d) {
+          for (int32_t h = 0; h < H; ++h) {
+            for (int32_t w = 0; w < W; ++w) {
+              for (int32_t c = 0; c < C; ++c) {
+                auto accumulator = ElementAcc(0);
+                for (int32_t k = 0; k < K; ++k) {
+                  for (int32_t t = 0; t < T; ++t) {
+                    for (int32_t r = 0; r < R; ++r) {
+                      for (int32_t s = 0; s < S; ++s) {
+                        int32_t q = w + cute::get<0>(padding_) - s * cute::get<0>(dilation_);
+                        int32_t p = h + cute::get<1>(padding_) - r * cute::get<1>(dilation_);
+                        int32_t z = d + cute::get<2>(padding_) - t * cute::get<2>(dilation_);
 
-                      if (q % cute::get<0>(tstride_) == 0) {
-                        q /= cute::get<0>(tstride_);
-                      } else {
-                        continue;
-                      }
+                        if (q % cute::get<0>(tstride_) == 0) {
+                          q /= cute::get<0>(tstride_);
+                        } else {
+                          continue;
+                        }
 
-                      if (p % cute::get<1>(tstride_) == 0) {
-                        p /= cute::get<1>(tstride_);
-                      } else {
-                        continue;
-                      }
+                        if (p % cute::get<1>(tstride_) == 0) {
+                          p /= cute::get<1>(tstride_);
+                        } else {
+                          continue;
+                        }
 
-                      if (z % cute::get<2>(tstride_) == 0) {
-                        z /= cute::get<2>(tstride_);
-                      } else {
-                        continue;
-                      }
+                        if (z % cute::get<2>(tstride_) == 0) {
+                          z /= cute::get<2>(tstride_);
+                        } else {
+                          continue;
+                        }
 
-                      if (detail::is_activation_in_bounds(tensor_a_, n, z, p, q, k)) {
-                        accumulator += ElementAcc(tensor_a_(k, q, p, z, n) * tensor_b_(c, s, r, t, k));
+                        if (detail::is_activation_in_bounds(tensor_a_, n, z, p, q, k, g)) {
+                          accumulator += ElementAcc(tensor_a_(k, q, p, z, n, g) * tensor_b_(c, s, r, t, k, g));
+                        }
                       }
                     }
                   }
                 }
+                ElementScalar alpha = raw_pointer_cast(epi_fusion_params_.tensor_alpha.data())
+                  ? epi_fusion_params_.tensor_alpha[c] : epi_fusion_params_.alpha;
+                ElementScalar beta = raw_pointer_cast(epi_fusion_params_.tensor_beta.data())
+                  ? epi_fusion_params_.tensor_beta[c] : epi_fusion_params_.beta;
+                ElementCompute output = scale_converter(alpha) * acc_converter(accumulator) +
+                                        scale_converter(beta) * residual_converter(tensor_c_(c, w, h, d, n, g));
+                if (raw_pointer_cast(epi_fusion_params_.tensor_bias.data())) {
+                  output += bias_converter(epi_fusion_params_.tensor_bias[c]);
+                }
+                output = epi_activation(output);
+                tensor_d_(c, w, h, d, n, g) = output_converter(output);
               }
-              ElementScalar alpha = raw_pointer_cast(epi_fusion_params_.tensor_alpha.data())
-                ? epi_fusion_params_.tensor_alpha[c] : epi_fusion_params_.alpha;
-              ElementScalar beta = raw_pointer_cast(epi_fusion_params_.tensor_beta.data())
-                ? epi_fusion_params_.tensor_beta[c] : epi_fusion_params_.beta;
-              ElementCompute output = scale_converter(alpha) * acc_converter(accumulator) +
-                                      scale_converter(beta) * residual_converter(tensor_c_(c, w, h, d, n));
-              if (raw_pointer_cast(epi_fusion_params_.tensor_bias.data())) {
-                output += bias_converter(epi_fusion_params_.tensor_bias[c]);
-              }
-              output = epi_activation(output);
-              tensor_d_(c, w, h, d, n) = output_converter(output);
             }
           }
         }
@@ -524,6 +545,7 @@ private:
 
   // Specialization for 1D wgrad kernel
   void wgrad_reference(cute::Int<1> spatial_dims) {
+    int32_t G = size<3>(tensor_d_);
     int32_t N =
         size<2>(tensor_a_);
     int32_t Q =
@@ -536,35 +558,39 @@ private:
 #if defined(_OPENMP)
     #pragma omp parallel for collapse(2)
 #endif
-    for (int32_t k = 0; k < K; ++k) {
-      ElementScalar alpha = raw_pointer_cast(epi_fusion_params_.tensor_alpha.data()) ?
-        epi_fusion_params_.tensor_alpha[k] : epi_fusion_params_.alpha;
-      ElementScalar beta = raw_pointer_cast(epi_fusion_params_.tensor_beta.data()) ?
-        epi_fusion_params_.tensor_beta[k] : epi_fusion_params_.beta;
-      for (int32_t s = 0; s < S; ++s) {
-        for (int32_t c = 0; c < C; ++c) {
-          auto accumulator = ElementAcc(0);
-          for (int32_t n = 0; n < N; ++n) {
-            for (int32_t q = 0; q < Q; ++q) {
-              int32_t w =  q * cute::get<0>(tstride_) - cute::get<0>(padding_) + s * cute::get<0>(dilation_);
-              bool is_in_bounds =
-                  detail::is_activation_in_bounds(tensor_b_, n, w, c);
-              if (is_in_bounds) {
-                auto act =
-                    tensor_b_(c, w, n);
-                auto xformed_act =
-                    tensor_a_(k, q, n);
-                accumulator += ElementAcc(act * xformed_act);
+    for (int32_t g = 0; g < G; ++g) {
+      for (int32_t k = 0; k < K; ++k) {
+        for (int32_t s = 0; s < S; ++s) {
+          for (int32_t c = 0; c < C; ++c) {
+            auto accumulator = ElementAcc(0);
+            for (int32_t n = 0; n < N; ++n) {
+              for (int32_t q = 0; q < Q; ++q) {
+                int32_t w =  q * cute::get<0>(tstride_) - cute::get<0>(padding_) + s * cute::get<0>(dilation_);
+                bool is_in_bounds =
+                    detail::is_activation_in_bounds(tensor_b_, n, w, c, g);
+                if (is_in_bounds) {
+                  auto act =
+                      tensor_b_(c, w, n, g);
+                  auto xformed_act =
+                      tensor_a_(k, q, n, g);
+                  accumulator += ElementAcc(act * xformed_act);
+                }
               }
             }
+
+            ElementScalar alpha = raw_pointer_cast(epi_fusion_params_.tensor_alpha.data()) ?
+              epi_fusion_params_.tensor_alpha[c] : epi_fusion_params_.alpha;
+            ElementScalar beta = raw_pointer_cast(epi_fusion_params_.tensor_beta.data()) ?
+              epi_fusion_params_.tensor_beta[c] : epi_fusion_params_.beta;
+
+            ElementCompute output = scale_converter(alpha) * acc_converter(accumulator) +
+                                    scale_converter(beta) * residual_converter(tensor_c_(c, s, k, g));
+            if (raw_pointer_cast(epi_fusion_params_.tensor_bias.data())) {
+              output += bias_converter(epi_fusion_params_.tensor_bias[c]);
+            }
+            output = epi_activation(output);
+            tensor_d_(c, s, k, g) = output_converter(output);
           }
-          ElementCompute output = scale_converter(alpha) * acc_converter(accumulator) +
-                                  scale_converter(beta) * residual_converter(tensor_c_(c, s, k));
-          if (raw_pointer_cast(epi_fusion_params_.tensor_bias.data())) {
-            output += bias_converter(epi_fusion_params_.tensor_bias[k]);
-          }
-          output = epi_activation(output);
-          tensor_d_(c, s, k) = output_converter(output);
         }
       }
     }
@@ -572,6 +598,7 @@ private:
 
   // Specialization for 2D wgrad kernel
   void wgrad_reference(cute::Int<2> spatial_dims) {
+    int32_t G = size<4>(tensor_d_);
     int32_t N =
         size<3>(tensor_a_);
     int32_t P =
@@ -587,39 +614,43 @@ private:
 #if defined(_OPENMP)
     #pragma omp parallel for collapse(3)
 #endif
-    for (int32_t k = 0; k < K; ++k) {
-      ElementScalar alpha = raw_pointer_cast(epi_fusion_params_.tensor_alpha.data()) ?
-        epi_fusion_params_.tensor_alpha[k] : epi_fusion_params_.alpha;
-      ElementScalar beta = raw_pointer_cast(epi_fusion_params_.tensor_beta.data()) ?
-        epi_fusion_params_.tensor_beta[k] : epi_fusion_params_.beta;
-      for (int32_t r = 0; r < R; ++r) {
-        for (int32_t s = 0; s < S; ++s) {
-          for (int32_t c = 0; c < C; ++c) {
-            auto accumulator = ElementAcc(0);
-            for (int32_t n = 0; n < N; ++n) {
-              for (int32_t p = 0; p < P; ++p) {
-                for (int32_t q = 0; q < Q; ++q) {
-                  int32_t w =  q * cute::get<0>(tstride_) - cute::get<0>(padding_) + s * cute::get<0>(dilation_);
-                  int32_t h =  p * cute::get<1>(tstride_) - cute::get<1>(padding_) + r * cute::get<1>(dilation_);
-                  bool is_in_bounds =
-                      detail::is_activation_in_bounds(tensor_b_, n, h, w, c);
-                  if (is_in_bounds) {
-                    auto act =
-                        tensor_b_(c, w, h, n);
-                    auto xformed_act =
-                        tensor_a_(k, q, p, n);
-                    accumulator += ElementAcc(act * xformed_act);
+    for (int32_t g = 0; g < G; ++g) {
+      for (int32_t k = 0; k < K; ++k) {
+        for (int32_t r = 0; r < R; ++r) {
+          for (int32_t s = 0; s < S; ++s) {
+            for (int32_t c = 0; c < C; ++c) {
+              auto accumulator = ElementAcc(0);
+              for (int32_t n = 0; n < N; ++n) {
+                for (int32_t p = 0; p < P; ++p) {
+                  for (int32_t q = 0; q < Q; ++q) {
+                    int32_t w =  q * cute::get<0>(tstride_) - cute::get<0>(padding_) + s * cute::get<0>(dilation_);
+                    int32_t h =  p * cute::get<1>(tstride_) - cute::get<1>(padding_) + r * cute::get<1>(dilation_);
+                    bool is_in_bounds =
+                        detail::is_activation_in_bounds(tensor_b_, n, h, w, c, g);
+                    if (is_in_bounds) {
+                      auto act =
+                          tensor_b_(c, w, h, n, g);
+                      auto xformed_act =
+                          tensor_a_(k, q, p, n, g);
+                      accumulator += ElementAcc(act * xformed_act);
+                    }
                   }
                 }
               }
+
+              ElementScalar alpha = raw_pointer_cast(epi_fusion_params_.tensor_alpha.data()) ?
+                epi_fusion_params_.tensor_alpha[c] : epi_fusion_params_.alpha;
+              ElementScalar beta = raw_pointer_cast(epi_fusion_params_.tensor_beta.data()) ?
+                epi_fusion_params_.tensor_beta[c] : epi_fusion_params_.beta;
+
+              ElementCompute output = scale_converter(alpha) * acc_converter(accumulator) +
+                                      scale_converter(beta) * residual_converter(tensor_c_(c, s, r, k, g));
+              if (raw_pointer_cast(epi_fusion_params_.tensor_bias.data())) {
+                output += bias_converter(epi_fusion_params_.tensor_bias[c]);
+              }
+              output = epi_activation(output);
+              tensor_d_(c, s, r, k, g) = output_converter(output);
             }
-            ElementCompute output = scale_converter(alpha) * acc_converter(accumulator) +
-                                    scale_converter(beta) * residual_converter(tensor_c_(c, s, r, k));
-            if (raw_pointer_cast(epi_fusion_params_.tensor_bias.data())) {
-              output += bias_converter(epi_fusion_params_.tensor_bias[k]);
-            }
-            output = epi_activation(output);
-            tensor_d_(c, s, r, k) = output_converter(output);
           }
         }
       }
@@ -628,6 +659,7 @@ private:
 
   // Specialization for 3D wgrad kernel
   void wgrad_reference(cute::Int<3> spatial_dims) {
+    int32_t G = size<5>(tensor_d_);
     int32_t N =
         size<4>(tensor_a_);
     int32_t Z =
@@ -646,43 +678,47 @@ private:
 #if defined(_OPENMP)
     #pragma omp parallel for collapse(3)
 #endif
-    for (int32_t k = 0; k < K; ++k) {
-      ElementScalar alpha = raw_pointer_cast(epi_fusion_params_.tensor_alpha.data()) ?
-        epi_fusion_params_.tensor_alpha[k] : epi_fusion_params_.alpha;
-      ElementScalar beta = raw_pointer_cast(epi_fusion_params_.tensor_beta.data()) ?
-        epi_fusion_params_.tensor_beta[k] : epi_fusion_params_.beta;
-      for (int32_t t = 0; t < T; ++t) {
-        for (int32_t r = 0; r < R; ++r) {
-          for (int32_t s = 0; s < S; ++s) {
-            for (int32_t c = 0; c < C; ++c) {
-              auto accumulator = ElementAcc(0);
-              for (int32_t n = 0; n < N; ++n) {
-                for (int32_t z = 0; z < Z; ++z) {
-                  for (int32_t p = 0; p < P; ++p) {
-                    for (int32_t q = 0; q < Q; ++q) {
-                      int32_t w =  q * cute::get<0>(tstride_) - cute::get<0>(padding_) + s * cute::get<0>(dilation_);
-                      int32_t h =  p * cute::get<1>(tstride_) - cute::get<1>(padding_) + r * cute::get<1>(dilation_);
-                      int32_t d =  z * cute::get<2>(tstride_) - cute::get<2>(padding_) + t * cute::get<2>(dilation_);
-                      bool is_in_bounds =
-                          detail::is_activation_in_bounds(tensor_b_, n, d, h, w, c);
-                      if (is_in_bounds) {
-                        auto act =
-                            tensor_b_(c, w, h, d, n);
-                        auto xformed_act =
-                            tensor_a_(k, q, p, z, n);
-                        accumulator += ElementAcc(act * xformed_act);
+    for (int32_t g = 0 ; g < G; ++g) {
+      for (int32_t k = 0; k < K; ++k) {
+        for (int32_t t = 0; t < T; ++t) {
+          for (int32_t r = 0; r < R; ++r) {
+            for (int32_t s = 0; s < S; ++s) {
+              for (int32_t c = 0; c < C; ++c) {
+                auto accumulator = ElementAcc(0);
+                for (int32_t n = 0; n < N; ++n) {
+                  for (int32_t z = 0; z < Z; ++z) {
+                    for (int32_t p = 0; p < P; ++p) {
+                      for (int32_t q = 0; q < Q; ++q) {
+                        int32_t w =  q * cute::get<0>(tstride_) - cute::get<0>(padding_) + s * cute::get<0>(dilation_);
+                        int32_t h =  p * cute::get<1>(tstride_) - cute::get<1>(padding_) + r * cute::get<1>(dilation_);
+                        int32_t d =  z * cute::get<2>(tstride_) - cute::get<2>(padding_) + t * cute::get<2>(dilation_);
+                        bool is_in_bounds =
+                            detail::is_activation_in_bounds(tensor_b_, n, d, h, w, c, g);
+                        if (is_in_bounds) {
+                          auto act =
+                              tensor_b_(c, w, h, d, n, g);
+                          auto xformed_act =
+                              tensor_a_(k, q, p, z, n, g);
+                          accumulator += ElementAcc(act * xformed_act);
+                        }
                       }
                     }
                   }
                 }
+
+                ElementScalar alpha = raw_pointer_cast(epi_fusion_params_.tensor_alpha.data()) ?
+                  epi_fusion_params_.tensor_alpha[c] : epi_fusion_params_.alpha;
+                ElementScalar beta = raw_pointer_cast(epi_fusion_params_.tensor_beta.data()) ?
+                  epi_fusion_params_.tensor_beta[c] : epi_fusion_params_.beta;
+
+                ElementCompute output = scale_converter(alpha) * acc_converter(accumulator) +
+                                        scale_converter(beta) * residual_converter(tensor_c_(c, s, r, t, k, g));
+                if (raw_pointer_cast(epi_fusion_params_.tensor_bias.data())) {
+                  output += bias_converter(epi_fusion_params_.tensor_bias[c]);
+                }
+                output = epi_activation(output);
+                tensor_d_(c, s, r, t, k, g) = output_converter(output);
               }
-              ElementCompute output = scale_converter(alpha) * acc_converter(accumulator) +
-                                      scale_converter(beta) * residual_converter(tensor_c_(c, s, r, t, k));
-              if (raw_pointer_cast(epi_fusion_params_.tensor_bias.data())) {
-                output += bias_converter(epi_fusion_params_.tensor_bias[k]);
-              }
-              output = epi_activation(output);
-              tensor_d_(c, s, r, t, k) = output_converter(output);
             }
           }
         }

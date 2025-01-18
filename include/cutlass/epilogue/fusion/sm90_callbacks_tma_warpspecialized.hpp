@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -2499,87 +2499,6 @@ struct FusionCallbacks<
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-// D = per-column alpha * per-row alpha * acc + beta * c
-template<
-  class CtaTileShapeMNK,
-  class ElementOutput,
-  class ElementCompute,
-  class ElementSource = ElementOutput,
-  class ElementScalar = ElementCompute,
-  int AlignmentScalar = 128 / sizeof_bits_v<ElementScalar>, // Alignment of per-column and per-row scaling vectors
-  FloatRoundStyle RoundStyle = FloatRoundStyle::round_to_nearest
->
-using Sm90OuterProdLinComb =
-  Sm90EVT<Sm90Compute<homogeneous_multiply_add, ElementOutput, ElementCompute, RoundStyle>, // c(beta) * c(C) + c(alpha * acc)
-    Sm90ScalarBroadcast<ElementScalar, Stride<_0,_0,int>>, // beta
-    Sm90SrcFetch<ElementSource>, // C
-    Sm90EVT<Sm90Compute<multiplies, ElementCompute, ElementCompute, RoundStyle>, // c(alpha) * c(acc)
-      Sm90OuterProduct<0, CtaTileShapeMNK, ElementScalar, Stride<_1,_0,int>, Stride<_0,_1,int>, AlignmentScalar>, // alpha_col * alpha_row
-      Sm90AccFetch // acc
-    >
-  >;
-
-template <
-  int StagesC,
-  int StagesD,
-  int FragmentSize,
-  bool ReuseSmemC,
-  bool DelayTmaStore,
-  class ElementOutput,
-  class ElementCompute,
-  class ElementSource,
-  class ElementScalar,
-  int AlignmentScalar,
-  FloatRoundStyle RoundStyle,
-  class CtaTileShapeMNK,
-  class EpilogueTile
->
-struct FusionCallbacks<
-    epilogue::Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore>,
-    OuterProdLinComb<ElementOutput, ElementCompute, ElementSource, ElementScalar, AlignmentScalar, RoundStyle>,
-    CtaTileShapeMNK,
-    EpilogueTile
-> : Sm90OuterProdLinComb<CtaTileShapeMNK, ElementOutput, ElementCompute, ElementSource, ElementScalar, AlignmentScalar, RoundStyle> {
-  using Impl = Sm90OuterProdLinComb<CtaTileShapeMNK, ElementOutput, ElementCompute, ElementSource, ElementScalar, AlignmentScalar, RoundStyle>;
-  using Operation = OuterProdLinComb<ElementOutput, ElementCompute, ElementSource, ElementScalar, AlignmentScalar, RoundStyle>;
-
-  struct Arguments {
-
-    // Give a name and flat ordering to the fusion callback args
-    using StrideCol  = Stride<_1,_0,int>;
-    using StrideRow  = Stride<_0,_1,int>;
-    using StrideBeta = Stride<_0,_0,int>;
-    ElementScalar const* alpha_ptr_col = nullptr;
-    ElementScalar const* alpha_ptr_row = nullptr;
-    ElementScalar        beta = static_cast<ElementScalar>(0);
-    ElementScalar const* beta_ptr = nullptr;
-    StrideCol  dAlphaCol = {};
-    StrideRow  dAlphaRow = {};
-    StrideBeta dBeta     = {};
-
-    // Conversion to the args expected by the visitor implementation
-    // to_underlying_arguments will implicitly call this
-    operator typename Impl::Arguments() const {
-      return
-        {
-          {beta, beta_ptr, dBeta}, // leaf args : beta
-          {},                      // leaf args : C
-          {
-            { alpha_ptr_col, alpha_ptr_row, dAlphaCol, dAlphaRow }, // leaf args : alpha cols / rows
-            {},                                                     // leaf args : acc
-            {}
-          },
-          {}
-        };
-    }
-  };
-
-  // Ctor inheritance
-  using Impl::Impl;
-};
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
 // D = softmax(top_k(alpha * acc + beta * C))
 template<
   int TopK,
@@ -2643,6 +2562,83 @@ struct FusionCallbacks<
           },   // end ternary op
           {} // unary args: activation
         };   // end unary op
+    }
+  };
+
+  // Ctor inheritance
+  using Impl::Impl;
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Grouped Wgrad Conv
+template<
+  class GroupsPerTile,
+  class ElementOutput,
+  class ElementCompute,
+  class ElementSource = ElementOutput,
+  class ElementScalar = ElementCompute,
+  FloatRoundStyle RoundStyle = FloatRoundStyle::round_to_nearest
+>
+using Sm90LinearCombinationGroupedWgrad =
+  Sm90EVT<Sm90Compute<homogeneous_multiply_add, ElementOutput, ElementCompute, RoundStyle>, // beta * C + (alpha * acc)
+    Sm90ScalarBroadcast<ElementScalar, Stride<_0,_0,int64_t>>, // beta
+    Sm90SrcFetch<ElementSource>, // C
+    Sm90EVT<Sm90Compute<multiplies, ElementCompute, ElementCompute, RoundStyle>, // alpha * acc
+      Sm90ScalarBroadcast<ElementScalar, Stride<_0,_0,int64_t>>, // alpha
+      Sm90AccFetchGroupedWgrad<GroupsPerTile> // acc
+    >
+  >;
+
+template <
+  int StagesC,
+  int StagesD,
+  int FragmentSize,
+  bool ReuseSmemC,
+  bool DelayTmaStore,
+  class ElementOutput,
+  class ElementCompute,
+  class ElementSource,
+  class ElementScalar,
+  FloatRoundStyle RoundStyle,
+  class CtaTileShapeMNK,
+  class EpilogueTile,
+  class GroupsPerTile
+>
+struct FusionCallbacks<
+    epilogue::Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore>,
+    fusion::LinearCombinationGroupedWgrad<GroupsPerTile, ElementOutput, ElementCompute, ElementSource, ElementScalar, RoundStyle>,
+    CtaTileShapeMNK,
+    EpilogueTile
+> : Sm90LinearCombinationGroupedWgrad<GroupsPerTile, typename cutlass::detail::get_unpacked_element_type<ElementOutput>::type, ElementCompute, ElementSource, ElementScalar, RoundStyle> {
+
+  using Impl = Sm90LinearCombinationGroupedWgrad<GroupsPerTile, typename cutlass::detail::get_unpacked_element_type<ElementOutput>::type, ElementCompute, ElementSource, ElementScalar, RoundStyle>;
+  using Operation = fusion::LinearCombinationGroupedWgrad<GroupsPerTile, ElementOutput, ElementCompute, ElementSource, ElementScalar, RoundStyle>;
+
+  struct Arguments {
+    ElementScalar alpha = ElementScalar(1);
+    ElementScalar beta = ElementScalar(0);
+    //ElementScalar groups = ElementScalar(1);
+    ElementScalar const* alpha_ptr = nullptr;
+    ElementScalar const* beta_ptr = nullptr;
+
+    using StrideAlpha = Stride<_0,_0,int64_t>;
+    using StrideBeta  = Stride<_0,_0,int64_t>;
+    StrideAlpha dAlpha = {_0{}, _0{}, 0};
+    StrideBeta  dBeta  = {_0{}, _0{}, 0};
+
+    operator typename Impl::Arguments() const {
+      return
+        {    // ternary op : beta * C + (alpha * acc)
+          {{beta}, {beta_ptr}, {dBeta}}, // leaf args : beta
+          {},                   // leaf args : C
+          {                     // binary op : alpha * acc
+            {{alpha}, {alpha_ptr}, {dAlpha}}, // leaf args : alpha
+            {},                     // leaf args : acc
+            {}                  // binary args : multiplies
+          },                    // end binary op
+          {} // ternary args : multiply_add
+        };   // end ternary op
     }
   };
 

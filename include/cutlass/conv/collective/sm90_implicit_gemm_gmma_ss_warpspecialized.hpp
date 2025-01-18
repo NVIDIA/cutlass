@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -386,6 +386,22 @@ public:
 
       if (!implementable) {
         CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Padding values don't meet requirements for TMA LOAD IM2COL.\n");
+        return false;
+      }
+    }
+
+    if (is_im2col_A || is_im2col_B) {
+      // Check valid filter offsets for TMA_LOAD_IM2COL, unsigned int ranging from [0, offset_limit - 1]
+      constexpr int32_t offset_limit = 1 << (16 / NumSpatialDimensions);
+      auto flt_data = (ConvOp == conv::Operator::kWgrad) ? problem_shape.shape_C : problem_shape.shape_B;
+      for (int i = 0; i < problem_shape.RankS; ++i) {
+        // flt_data array contains [K, T, R, S, C], so pure filter [T, R, S] starts from the second position in the array
+        implementable = implementable && (flt_data[i+1] * problem_shape.dilation[i] >= 0)
+                                      && (flt_data[i+1] * problem_shape.dilation[i] < offset_limit);
+      }
+
+      if (!implementable) {
+        CUTLASS_TRACE_HOST("  CAN IMPLEMENT: tensor coordinate offset values don't meet requirements for TMA LOAD IM2COL.\n");
         return false;
       }
     }
