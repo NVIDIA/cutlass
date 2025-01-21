@@ -48,6 +48,7 @@ CUTLASS 3.7.0 is an update to CUTLASS adding:
 - A new [Hopper blockwise scaling FP8 GEMM](./examples/67_hopper_fp8_warp_specialized_gemm_with_blockwise_scaling/67_hopper_fp8_warp_specialized_gemm_with_blockwise_scaling.cu) where the operands and block scaling tensor are staged via shared memory.
 - [Distributed GEMM](./examples/65_distributed_gemm/65_distributed_gemm.cu) is an experimental pipelined Tensor Parallelism implementation utilizing existing CUTLASS kernels and CUDA runtime features, which can hide the most of communication behind computation.
 - Improved persistent grid launch for Hopper kernels with large cluster sizes (>= size of 4) using the new `make_kernel_hardware_info` API as shown in [example 48](./examples/48_hopper_warp_specialized_gemm/48_hopper_warp_specialized_gemm.cu).
+- Enabled high precision accumulation for Hopper FP8 Sparse GEMM.
 - Potential API breaking changes:
   + Fix `cute::UniversalCopy` for type safety.
   + No longer implicitly select `cute::SM80_CP_ASYNC_*` based on input tensors. This avoids implicit downstream synchronization requirements. To use `SM80_CP_ASYNC`, users must explicitly select the appropriate CopyAtom.
