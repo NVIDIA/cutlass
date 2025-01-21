@@ -239,7 +239,7 @@ struct ExampleRunner {
   }
 
   template <typename T1, typename T2> 
-  void initialize_block_A(cutlass::DeviceAllocation<T1> block_device, cutlass::DeviceAllocation<T2> block_device_dq,  uint64_t seed) {
+  void initialize_block_A(cutlass::DeviceAllocation<T1>& block_device, cutlass::DeviceAllocation<T2>& block_device_dq,  uint64_t seed) {
     using Limits = cutlass::platform::numeric_limits<T1>;
     static_assert(Limits::is_integer, "initialize_block_A requires integer types");
     std::mt19937 rng(std::random_device{}());
