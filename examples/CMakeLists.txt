@@ -69,9 +69,7 @@ function(cutlass_example_add_executable NAME)
     )
 
   if (CUTLASS_ENABLE_SYCL)
-    add_dependencies(${NAME} onemkl_project)
-    target_include_directories(${NAME} PRIVATE ${ONEMKL_INCLUDE_DIR})
-    target_link_libraries(${NAME} PUBLIC ${ONEMKL_LIB})
+    add_onemkl_to_target(TARGET ${NAME})
     add_sycl_to_target(TARGET ${NAME})
   endif()
 
