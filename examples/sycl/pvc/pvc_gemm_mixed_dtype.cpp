@@ -240,8 +240,10 @@ struct ExampleRunner {
 
   template <typename T1, typename T2> 
   void initialize_block_A(cutlass::DeviceAllocation<T1> block_device, cutlass::DeviceAllocation<T2> block_device_dq,  uint64_t seed) {
+    using Limits = cutlass::platform::numeric_limits<T1>;
+    static_assert(Limits::is_integer, "initialize_block_A requires integer types");
     std::mt19937 rng(std::random_device{}());
-    std::uniform_real_distribution<> dist(0.0f, 1.0f);
+    std::uniform_int_distribution<> dist(Limits::lowest(), Limits::max());
     rng.seed(seed);
 
     auto block_host = std::vector<T1>(block_device.size());
@@ -364,7 +366,7 @@ int main(int argc, const char** argv)
   // elements in input matrices.
   using ElementAccumulator = float;                   // <- data type of accumulator
   using ElementComputeEpilogue = float;  // <- data type of epilogue operations
-  using ElementInputA = cutlass::float_e4m3_t;         // <- data type of elements in input matrix A
+  using ElementInputA = cutlass::int8_t;         // <- data type of elements in input matrix A
   using ElementInputB = bfloat16_t;                        // <- data type of elements in input matrix B
   using ElementOutput = float;                        // <- data type of elements in output matrix D
 
