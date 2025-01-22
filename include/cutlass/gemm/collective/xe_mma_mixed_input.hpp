@@ -278,6 +278,9 @@ struct CollectiveMma<
     // narrow input fragment
     Tensor tCrA_input = make_tensor<ElementA>(fragment_A.shape());
 
+    static_assert(std::is_same_v<typename decltype(tCrA_input)::value_type, ElementA>);
+    static_assert(std::is_same_v<typename decltype(fragment_A)::value_type, ElementB>);
+
     // Retile for copy
     auto copy_tCrA = thr_copy_A.retile_D(tCrA_input);
     Tensor copy_tCrB = thr_copy_B.retile_D(fragment_B);
