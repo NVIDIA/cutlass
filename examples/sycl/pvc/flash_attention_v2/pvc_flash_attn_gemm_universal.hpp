@@ -45,8 +45,8 @@
   inline x { assert(false); }
 #endif
 
-SYCL_DEVICE_SPV_SPLIT_BARRIER(void __spirv_ControlBarrierArriveINTEL(int, int, int));
-SYCL_DEVICE_SPV_SPLIT_BARRIER(void __spirv_ControlBarrierWaitINTEL(int, int, int));
+SYCL_DEVICE_SPV_SPLIT_BARRIER(void __spirv_ControlBarrierArriveINTEL(int execution_scope, int memory_scope, int memory_semantics));
+SYCL_DEVICE_SPV_SPLIT_BARRIER(void __spirv_ControlBarrierWaitINTEL(int execution_scope, int memory_scope, int memory_semantics));
 
 #undef SYCL_DEVICE_SPV_SPLIT_BARRIER
 namespace cutlass::gemm::kernel {
@@ -233,9 +233,9 @@ public:
     auto seq_len = get<2>(params.problem_shape);
     auto head_size = get<3>(params.problem_shape);
     // Preconditions
-    static_assert(cute::rank(StrideQ{}) == 3, "StrideQ must be rank-4: [batch, num_heads, seq_len, head_size].");
-    static_assert(cute::rank(StrideK{}) == 3, "StrideK must be rank-4: [batch, num_heads, seq_len, head_size].");
-    static_assert(cute::rank(StrideV{}) == 3, "StrideV must be rank-4: [batch, num_heads, seq_len, head_size].");
+    static_assert(cute::rank(StrideQ{}) == 3, "StrideQ must be rank-3: [seq_len, head_size, batch * num_heads].");
+    static_assert(cute::rank(StrideK{}) == 3, "StrideK must be rank-3: [head_size, seq_len, batch * num_heads].");
+    static_assert(cute::rank(StrideV{}) == 3, "StrideV must be rank-3: [seq_len, head_size, batch * num_heads].");
 
     int thread_idx = int(ThreadIdxX());
     int sub_group_id = thread_idx / SubgroupSize;

@@ -65,7 +65,6 @@ template <
   class StrideO_,
   class ElementLSE_,
   class StrideLSE_,
-  class FusionCallbacks_,
   class CopyOpO_
 >
 class CollectiveEpilogueAttention<
@@ -75,7 +74,6 @@ class CollectiveEpilogueAttention<
   StrideO_,
   ElementLSE_,
   StrideLSE_,
-  FusionCallbacks_,
   CopyOpO_
 > {
 public:
@@ -84,7 +82,6 @@ public:
   //
   using DispatchPolicy = IntelPVCEpilogue;
   using CtaTileMNK = CtaTileMNK_;
-  using FusionCallbacks = FusionCallbacks_;
   using ElementO = ElementO_;
   using ElementAccumulator = ElementO_;
   using StrideO = StrideO_;
@@ -92,15 +89,14 @@ public:
   using StrideLSE = StrideLSE_;
   using CopyOpO = CopyOpO_;
 
-  using ThreadEpilogueOp = typename fusion::FusionCallbacksTraits<FusionCallbacks>::Operation;
   using GmemTiledCopyO = CopyOpO;
-  using ElementOutput = typename FusionCallbacks::ElementOutput;
-  using ElementCompute = typename FusionCallbacks::ElementCompute;
+  using ElementOutput = ElementO_;
+  using ElementCompute = ElementO_;
 
   static constexpr int SubgroupSize = DispatchPolicy::SubgroupSize;
 
   static_assert(cute::rank(CtaTileMNK{}) == 3, "CtaTileMNK must be rank-3: [CTA_M, CTA_N, CTA_K]");
-  static_assert(cute::rank(StrideO{}) == 3, "StrideO must be rank-4: [batch, num_heads, seq_len, head_size]");
+  static_assert(cute::rank(StrideO{}) == 3, "StrideO must be rank-3: [seq_len, head_size, batch * num_heads]");
   static_assert(cute::rank(StrideLSE{}) == 3, "StrideLSE must be rank-3: [batch, num_heads, seq_len]");
 
   using Trait_O = Copy_Traits<GmemTiledCopyO>;
@@ -114,10 +110,7 @@ public:
 
   using EmptyType = cute::tuple<>;
 
-  struct TensorStorageImpl: cute::tuple<EmptyType, EmptyType> {
-    using FusionStorage = typename FusionCallbacks::SharedStorage;
-    FusionStorage thread;
-  };
+  struct TensorStorageImpl: cute::tuple<EmptyType, EmptyType> {};
 
   struct SharedStorage {
     using TensorStorage = TensorStorageImpl;
@@ -128,7 +121,6 @@ public:
 
   // Host side epilogue arguments
   struct Arguments {
-    typename FusionCallbacks::Arguments thread{};
     ElementO const* ptr_O;
     StrideO dO;
     ElementLSE* ptr_LSE;
@@ -137,7 +129,6 @@ public:
 
   // Device side epilogue params
   struct Params {
-    typename FusionCallbacks::Params thread{};
     XE_Copy_O xe_store_o;
     ElementLSE* ptr_LSE;
   };
@@ -160,7 +151,6 @@ public:
                                 Layout<Shape<_1, Int<SubgroupSize>>>{});
 
     return {
-      FusionCallbacks::to_underlying_arguments(problem_shape, args.thread, workspace),
       xe_store_o,
       args.ptr_LSE
     };
@@ -188,8 +178,8 @@ public:
   }
 
   CUTLASS_HOST_DEVICE
-  CollectiveEpilogueAttention(Params const& params_, TensorStorage const& shared_storage_)
-      : params(params_), fusion_callbacks(params_.thread, shared_storage_.thread) {}
+  CollectiveEpilogueAttention(Params const& params_, TensorStorage const&)
+      : params(params_) {}
 
   template <
   class ProblemShape,
@@ -282,7 +272,6 @@ public:
 
 private:
   Params const& params;
-  FusionCallbacks fusion_callbacks;
 };
 
 

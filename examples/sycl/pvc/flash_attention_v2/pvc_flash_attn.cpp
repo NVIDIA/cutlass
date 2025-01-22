@@ -165,123 +165,128 @@ struct ExampleRunner {
 
     int batch_size = batch * num_heads;
 
-    cutlass::DeviceAllocation<ElementOutput> block_S;
-    block_S.reset(batch_size * seq_len * seq_len);
+    // loop over the batch dimension to compute the output
+    // to avoid the risk of running out of device memory
+    for(int b = 0, offset = 0; b < batch_size; b++, offset += seq_len * head_size) {
 
-    cutlass::TensorRef ref_Q(block_Q.get(), LayoutQ::packed({seq_len, head_size}));
-    cutlass::TensorRef ref_K(block_K.get(), LayoutK::packed({head_size, seq_len}));
-    cutlass::TensorRef ref_V(block_V.get(), LayoutV::packed({seq_len, head_size}));
-    cutlass::TensorRef ref_S(block_S.get(), LayoutQ::packed({seq_len, seq_len}));
-    cutlass::TensorRef ref_O(block_ref_O.get(), LayoutO::packed({seq_len, head_size}));
+      cutlass::DeviceAllocation<ElementOutput> block_S;
+      block_S.reset(seq_len * seq_len);
 
-    cutlass::reference::device::GemmComplex(
-          {seq_len, seq_len, head_size},
-          1.f,
-          ref_Q,
-          cutlass::ComplexTransform::kNone,
-          ref_K,
-          cutlass::ComplexTransform::kNone,
-          0.f,
-          ref_S,
-          ref_S,
-          ElementAccumulator(0),
-          batch_size,     // batch_count
-          seq_len * head_size, // batch_stride_Q
-          seq_len * head_size, // batch_stride_K
-          seq_len * seq_len, // batch_stride_S
-          seq_len * seq_len  // batch_stride_S
-        );
+      cutlass::TensorRef ref_Q(block_Q.get() + offset, LayoutQ::packed({seq_len, head_size}));
+      cutlass::TensorRef ref_K(block_K.get() + offset, LayoutK::packed({head_size, seq_len}));
+      cutlass::TensorRef ref_V(block_V.get() + offset, LayoutV::packed({seq_len, head_size}));
+      cutlass::TensorRef ref_S(block_S.get(), LayoutQ::packed({seq_len, seq_len}));
+      cutlass::TensorRef ref_O(block_ref_O.get() + offset, LayoutO::packed({seq_len, head_size}));
 
-    syclcompat::wait();
+      cutlass::reference::device::GemmComplex(
+            {seq_len, seq_len, head_size},
+            1.f,
+            ref_Q,
+            cutlass::ComplexTransform::kNone,
+            ref_K,
+            cutlass::ComplexTransform::kNone,
+            0.f,
+            ref_S,
+            ref_S,
+            ElementAccumulator(0),
+            1,     // batch_count
+            seq_len * head_size, // batch_stride_Q
+            seq_len * head_size, // batch_stride_K
+            seq_len * seq_len, // batch_stride_S
+            seq_len * seq_len  // batch_stride_S
+          );
 
-    std::vector<ElementOutput> host_S(batch_size * seq_len * seq_len);
-    syclcompat::memcpy<ElementOutput>(host_S.data(), block_S.get(), host_S.size());
-    syclcompat::wait();
+      syclcompat::wait();
 
-    if(is_causal) {
-      // apply mask to S
-      for (int b = 0; b < batch_size; b++) {
+      std::vector<ElementOutput> host_S(seq_len * seq_len);
+      syclcompat::memcpy<ElementOutput>(host_S.data(), block_S.get(), host_S.size());
+      syclcompat::wait();
+
+      // delete this memory as it is no longer needed
+      block_S.reset();
+
+      if(is_causal) {
+        // apply mask to S
         for (int row = 0; row < seq_len; row++) {
           for (int col = 0; col < seq_len; col++) {
             if (col > row)
-              host_S[col + (b * seq_len + row) * seq_len] = -INFINITY;
+              host_S[col + row * seq_len] = -INFINITY;
           }
         }
       }
-    }
 
-    // compute max element per row of S
-    std::vector<ElementOutput> max_vec(batch_size * seq_len, -INFINITY);
-    for (int b = 0; b < batch_size; b++) {
+      // compute max element per row of S
+      std::vector<ElementOutput> max_vec(seq_len, -INFINITY);
       for (int row = 0; row < seq_len; row++) {
-        int idx = (b * seq_len + row) * seq_len;
-        int max_idx = b * seq_len + row;
+        int idx = row * seq_len;
+        int max_idx = row;
         max_vec[max_idx] = host_S[idx++];
         for (int col = 1; col < seq_len; col++, idx++) {
           if (max_vec[max_idx] < host_S[idx])
             max_vec[max_idx] = host_S[idx];
         }
       }
-    }
 
-    // compute exp of S
-    for (int b = 0; b < batch_size; b++) {
+      // compute exp of S
       for (int row = 0; row < seq_len; row++) {
-        int idx = (b * seq_len + row) * seq_len;
-        int max_idx = b * seq_len + row;
+        int idx = row * seq_len;
+        int max_idx = row;
         for (int col = 0; col < seq_len; col++, idx++) {
           host_S[idx] = expf((host_S[idx] - max_vec[max_idx]) / sqrt(static_cast<ElementOutput>((head_size))));
         }
       }
-    }
 
-    // compute sum per row of S
-    std::vector<ElementOutput> sum_vec(batch_size * seq_len, ElementOutput{0});
-    for (int b = 0; b < batch_size; b++) {
+      // compute sum per row of S
+      std::vector<ElementOutput> sum_vec(seq_len, ElementOutput{0});
       for (int row = 0; row < seq_len; row++) {
-        int idx = (b * seq_len + row) * seq_len;
-        int sum_idx = b * seq_len + row;
+        int idx = row * seq_len;
+        int sum_idx = row;
         for (int col = 0; col < seq_len; col++, idx++) {
           sum_vec[sum_idx] += host_S[idx];
         }
 
         //scale each row with the sum to compute softmax
-        idx = (b * seq_len + row) * seq_len;
-        sum_idx = b * seq_len + row;
+        idx = row * seq_len;
+        sum_idx = row;
         for (int col = 0; col < seq_len; col++, idx++) {
           host_S[idx] /= sum_vec[sum_idx];
         }
-      } 
+      }
+
+      std::vector<ElementV> host_P(host_S.size());
+      for(int p = 0; p < host_P.size(); p++) host_P[p] = static_cast<ElementV>(host_S[p]);
+
+      cutlass::DeviceAllocation<ElementV> block_P;
+      block_P.reset(host_P.size());
+
+      syclcompat::memcpy<ElementV>(block_P.get(), host_P.data(), host_P.size());
+      syclcompat::wait();
+
+      cutlass::TensorRef ref_P(block_P.get(), LayoutQ::packed({seq_len, seq_len}));
+
+      cutlass::reference::device::GemmComplex(
+            {seq_len, head_size, seq_len},
+            1.f,
+            ref_P,
+            cutlass::ComplexTransform::kNone,
+            ref_V,
+            cutlass::ComplexTransform::kNone,
+            0.f,
+            ref_O,
+            ref_O,
+            ElementAccumulator(0),
+            1,     // batch_count
+            seq_len * seq_len, // batch_stride_P
+            seq_len * head_size, // batch_stride_V
+            seq_len * head_size, // batch_stride_O
+            seq_len * head_size  // batch_stride_O
+          );
+
+      syclcompat::wait();
+      // delete this memory as it is no longer needed
+      block_P.reset();
+
     }
-
-    std::vector<ElementV> host_P(host_S.size());
-    for(int p = 0; p < host_P.size(); p++) host_P[p] = static_cast<ElementV>(host_S[p]);
-
-    cutlass::DeviceAllocation<ElementV> block_P;
-    block_P.reset(host_P.size());
-
-    syclcompat::memcpy<ElementV>(block_P.get(), host_P.data(), host_P.size());
-    syclcompat::wait();
-
-    cutlass::TensorRef ref_P(block_P.get(), LayoutQ::packed({seq_len, seq_len}));
-
-    cutlass::reference::device::GemmComplex(
-          {seq_len, head_size, seq_len},
-          1.f,
-          ref_P,
-          cutlass::ComplexTransform::kNone,
-          ref_V,
-          cutlass::ComplexTransform::kNone,
-          0.f,
-          ref_O,
-          ref_O,
-          ElementAccumulator(0),
-          batch_size,     // batch_count
-          seq_len * seq_len, // batch_stride_P
-          seq_len * head_size, // batch_stride_V
-          seq_len * head_size, // batch_stride_O
-          seq_len * head_size  // batch_stride_O
-        );
 
     syclcompat::wait();
 
@@ -347,7 +352,7 @@ struct ExampleRunner {
       problem_size,
       {block_Q.get(), stride_Q, block_K.get(), stride_K, block_V.get(), stride_V},
       {options.softmax_scale},
-      {{1}, block_O.get(), stride_O, block_lse.get(), stride_LSE},
+      {block_O.get(), stride_O, block_lse.get(), stride_LSE},
       hw_info
     };
 
@@ -455,12 +460,6 @@ int main(int argc, const char** argv)
   using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelPVC<PipelineStages>;
   using EpilogueDispatchPolicy = cutlass::epilogue::IntelPVCEpilogue;
 
-  using EpilogueOp = cutlass::epilogue::fusion::LinearCombination<ElementOutput, ElementComputeEpilogue,
-          ElementAccumulator, ElementAccumulator, cutlass::FloatRoundStyle::round_to_nearest>;
-
-  using FusionCallBacks = cutlass::epilogue::fusion::FusionCallbacks<EpilogueDispatchPolicy, EpilogueOp, TileShape,
-          decltype(tile_shape(TiledMma()))>;
-  
   using CollectiveEpilogue = cutlass::epilogue::collective::CollectiveEpilogueAttention<
           EpilogueDispatchPolicy,
           TileShape,
@@ -468,7 +467,6 @@ int main(int argc, const char** argv)
           cutlass::gemm::TagToStrideC_t<LayoutO>,
           ElementOutput,
           cutlass::gemm::TagToStrideC_t<LayoutLSE>,
-          FusionCallBacks,
           XE_2D_U32x8x16_ST_N>;
 
   if(options.is_causal) {
