@@ -30,14 +30,24 @@ include_guard()
 
 include(ExternalProject)
 
-option(CUTLASS_SYCL_DISCONNECT_ONEMKL_UPDATE "Stop onemkl from updating when the git tag is not changed" YES)
+option(CUTLASS_SYCL_DISCONNECT_ONEMKL_UPDATE "Stop oneMKL from updating when the git tag is not changed" YES)
 
 set(ONEMKL_INSTALL_DIR ${CMAKE_BINARY_DIR}/deps/oneMKL)
-set(ONEMKL_INCLUDE_DIR ${ONEMKL_INSTALL_DIR}/include)
-set(ONEMKL_LIB_DIR ${ONEMKL_INSTALL_DIR}/lib)
-set(ONEMKL_LIB ${ONEMKL_LIB_DIR}/libonemkl.so)
 
-ExternalProject_Add(
+# Try to find oneMKL using find_package
+find_package(MKL CONFIG QUIET PATHS $ENV{MKLROOT})
+
+if (MKL_FOUND)
+  message(STATUS "oneMKL found.")
+  set(CUTLASS_USING_SYSTEM_ONEMKL TRUE)
+else()
+  message(STATUS "oneMKL not found, downloading and installing...")
+
+  set(CUTLASS_USING_SYSTEM_ONEMKL FALSE)
+  set(ONEMKL_INCLUDE_DIR ${ONEMKL_INSTALL_DIR}/include)
+  set(ONEMKL_LIB ${ONEMKL_INSTALL_DIR}/lib/libonemkl.so)
+
+  ExternalProject_Add(
     onemkl_project
 
     PREFIX                  ${ONEMKL_INSTALL_DIR}
@@ -50,7 +60,7 @@ ExternalProject_Add(
     -DCMAKE_GENERATOR=${CMAKE_GENERATOR}
     -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
     -DCMAKE_INSTALL_PREFIX=${ONEMKL_INSTALL_DIR}
-    -DCMAKE_SHARED_LINKER_FLAGS="-Wl,-rpath=${ONEMKL_LIB_DIR}"
+    -DCMAKE_SHARED_LINKER_FLAGS="-Wl,-rpath=${ONEMKL_INSTALL_DIR}/lib"
     -DENABLE_MKLCPU_BACKEND=OFF
     -DENABLE_MKLGPU_BACKEND=OFF
     -DBUILD_FUNCTIONAL_TESTS=OFF
@@ -60,6 +70,27 @@ ExternalProject_Add(
     INSTALL_DIR ${ONEMKL_INSTALL_DIR}
     BUILD_BYPRODUCTS ${ONEMKL_LIB}
     UPDATE_DISCONNECTED ${CUTLASS_SYCL_DISCONNECT_ONEMKL_UPDATE}
-)
+  )
 
-add_library(oneMKL SHARED IMPORTED)
+endif()
+
+
+function(add_onemkl_to_target)
+  set(options)
+  set(oneValueArgs TARGET)
+  set(multiValueArgs SOURCES)
+  cmake_parse_arguments(CUTLASS_ADD_ONEMKL_TARGET
+    "${options}"
+    "${oneValueArgs}"
+    "${multiValueArgs}"
+    ${ARGN}
+  )
+
+  if (CUTLASS_USING_SYSTEM_ONEMKL)
+    target_link_libraries(${NAME} PUBLIC MKL::MKL)
+  else ()
+    add_dependencies(${NAME} onemkl_project)
+    target_include_directories(${NAME} PRIVATE ${ONEMKL_INCLUDE_DIR})
+    target_link_libraries(${NAME} PUBLIC ${ONEMKL_LIB})
+  endif ()
+endfunction()
