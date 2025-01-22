@@ -1,4 +1,4 @@
-# Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
+# Copyright (c) 2024 - 2025 Codeplay Software Ltd. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -26,55 +26,24 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+include(FetchContent)
 
-add_custom_target(cutlass_benchmarks)
+set(GOOGLEBENCHMARK_DIR "" CACHE STRING "Location of local GoogleBenchmark repo to build against")
 
-function(cutlass_benchmark_add_executable NAME)
+if(GOOGLEBENCHMARK_DIR)
+  set(FETCHCONTENT_SOURCE_DIR_GOOGLEBENCHMARK ${GOOGLEBENCHMARK_DIR} CACHE STRING "GoogleBenchmark source directory override")
+endif()
 
-  set(options)
-  set(oneValueArgs DISABLE_TESTS)
-  set(multiValueArgs DEPENDS DEPENDEES TEST_COMMAND_OPTIONS)
-  cmake_parse_arguments(_ "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
-
-  set(__DISABLE_TESTS ON)
-
-  cutlass_add_executable(${NAME} ${__UNPARSED_ARGUMENTS} BATCH_SOURCES OFF)
-
-  add_dependencies(cutlass_benchmarks ${NAME})
-
-  if (NOT CUTLASS_ENABLE_SYCL)
-    SET(ADD_CUDA ON)
-  endif()
-
-  target_link_libraries(
-    ${NAME}
-    PRIVATE
-    CUTLASS
-    cutlass_tools_util_includes
-    $<$<BOOL:${CUTLASS_ENABLE_CUBLAS}>:nvidia::cublas>
-    $<$<BOOL:${ADD_CUDA}>:cuda>
-    benchmark::benchmark
+set(GBENCH_REPOSITORY "https://github.com/google/benchmark.git" CACHE STRING "GoogleBench repo to fetch")
+FetchContent_Declare(
+  googlebenchmark
+  GIT_REPOSITORY ${GBENCH_REPOSITORY}
+  GIT_TAG        v1.9.0
   )
 
-  if (CUTLASS_ENABLE_SYCL)
-    add_onemkl_to_target(TARGET ${NAME})
-    add_sycl_to_target(TARGET ${NAME})
-  endif()
+FetchContent_GetProperties(googlebenchmark)
 
-  install(
-    TARGETS ${NAME}
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-  )
-endfunction()
-
-if (CUTLASS_ENABLE_SYCL)
-  cutlass_benchmark_add_executable(
-    benchmarks
-    main.cpp
-    )
-else()
-  cutlass_benchmark_add_executable(
-    benchmarks
-    main.cu
-    )
+if(NOT googlebenchmark_POPULATED)
+  FetchContent_Populate(googlebenchmark)
+  add_subdirectory(${googlebenchmark_SOURCE_DIR} ${googlebenchmark_BINARY_DIR} EXCLUDE_FROM_ALL)
 endif()

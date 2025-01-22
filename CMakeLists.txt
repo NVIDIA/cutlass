@@ -1047,6 +1047,7 @@ if (CUTLASS_ENABLE_TESTS)
 endif()
 
 if (CUTLASS_ENABLE_BENCHMARKS)
+  include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/googlebenchmark.cmake)
   add_subdirectory(benchmarks)
 endif()
 
