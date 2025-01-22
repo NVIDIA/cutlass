@@ -38,7 +38,12 @@
 #include "../../common/cutlass_unit_test.h"
 #include "cutlass/cutlass.h"
 
+#include "cutlass/epilogue/collective/default_epilogue.hpp"
+#include "cutlass/epilogue/collective/xe_epilogue.hpp"
+#include "cutlass/epilogue/fusion/xe_callbacks.hpp"
 #include "cutlass/gemm/device/gemm_universal.h"
+#include "cutlass/gemm/device/gemm_universal_adapter.h"
+#include "cutlass/gemm/collective/collective_mma.hpp"
 
 #include "cutlass/util/host_tensor.h"
 #include "cutlass/util/reference/host/gemm.h"
@@ -47,51 +52,88 @@
 #include "cutlass/util/reference/host/tensor_fill.h"
 #include "cutlass/util/tensor_view_io.h"
 
-#include "testbed_universal.h"
+#include "gemm_testbed_3x.hpp"
 
 ////////////////////////////////////////////////////////////////////////////////
 
-#if defined(CUTLASS_ARCH_MMA_SM80_SUPPORTED)
+#if defined(CUTLASS_ENABLE_SYCL) && defined(SYCL_INTEL_TARGET)
 
 ////////////////////////////////////////////////////////////////////////////////
 
 
-TEST(SM80_Device_GemmUniversal_s8t_bf16n_f32t_mixed_input_tensor_op_f32, 128x128x64_64x64x64) {
+TEST(XE_Device_GemmUniversal_s8t_bf16n_f32t_mixed_input_tensor_op_f32, 128x128x64_64x64x64) {
 
-  using ElementA = int8_t;
-  using ElementB = cutlass::bfloat16_t;
-  using ElementOutput = float;
-  using ElementAccumulator = float;
+  using ElementAccumulator = float;                   // <- data type of accumulator
+  using ElementComputeEpilogue = float;  // <- data type of epilogue operations
+  using ElementInputA = cutlass::int8_t;         // <- data type of elements in input matrix A
+  using ElementInputB = bfloat16_t;                        // <- data type of elements in input matrix B
+  using ElementOutput = float;                        // <- data type of elements in output matrix D
 
-  using Gemm = cutlass::gemm::device::GemmUniversal<
-    ElementA, 
-    cutlass::layout::RowMajor, 
-    ElementB,
-    cutlass::layout::ColumnMajor, 
-    ElementOutput, 
-    cutlass::layout::RowMajor,
-    ElementAccumulator, 
-    cutlass::arch::OpClassTensorOp, 
-    cutlass::arch::Sm80,
-    cutlass::gemm::GemmShape<128, 128, 64>,
-    cutlass::gemm::GemmShape<64, 64, 64>,
-    cutlass::gemm::GemmShape<16, 8, 16>,
-      cutlass::epilogue::thread::LinearCombination<
-          ElementOutput, 128 / cutlass::sizeof_bits<ElementOutput>::value,
-          ElementAccumulator, ElementAccumulator>,
-    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 
-    4,   // Stages
-    16,  // AlignmentA
-    8,   // AlignmentB
-    cutlass::arch::OpMultiplyAddMixedInputUpcast,
-    cutlass::ComplexTransform::kNone,
-    cutlass::ComplexTransform::kNone
+  using LayoutA = cutlass::layout::RowMajor;
+  using LayoutB = cutlass::layout::RowMajor;
+  using LayoutC = cutlass::layout::RowMajor;
+  using LayoutD = cutlass::layout::RowMajor;
+
+  // Note: XE_2D_U18x32x32_LD_N is incompatible with our bf16 MMA atoms
+  using GmemTiledCopyA = XE_2D_U8x32x32_LD_V;
+  using GmemTiledCopyB = XE_2D_U16x32x32_LD_V;
+  static_assert(sizeof(ElementInputA) == 1, "ElementA width must match GmemTiledCopyA U8");
+
+  // Workgroup-level tile
+  using TileShape = Shape<_256, _256, _32>;
+
+  using TiledMma = TiledMMA<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
+          Layout<Shape<_8,_4,_1>>,
+          Tile<_64,_64,_32>>; // Subgroup level-tile
+
+  constexpr int PipelineStages = 3;
+  using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelPVCMixedPrecision<PipelineStages>;
+  using EpilogueDispatchPolicy = cutlass::epilogue::IntelPVCEpilogue;
+
+  using EpilogueOp = cutlass::epilogue::fusion::LinearCombination<ElementOutput, ElementComputeEpilogue,
+          ElementAccumulator, ElementAccumulator, cutlass::FloatRoundStyle::round_to_nearest>;
+
+  using FusionCallBacks = cutlass::epilogue::fusion::FusionCallbacks<EpilogueDispatchPolicy, EpilogueOp, TileShape,
+          decltype(tile_shape(TiledMma()))>;
+  using CollectiveEpilogue = cutlass::epilogue::collective::CollectiveEpilogue<
+          EpilogueDispatchPolicy,
+          TileShape,
+          ElementAccumulator,
+          cutlass::gemm::TagToStrideC_t<LayoutC>,
+          ElementOutput,
+          cutlass::gemm::TagToStrideC_t<LayoutD>,
+          FusionCallBacks,
+          XE_2D_U32x8x16_LD_N,
+          void, void,
+          XE_2D_U32x8x16_ST_N,
+          void, void>;
+
+  // Mainloop
+  using CollectiveMainloop = cutlass::gemm::collective::CollectiveMma<
+          GEMMDispatchPolicy,
+          TileShape,
+          ElementInputA,
+          cutlass::gemm::TagToStrideA_t<LayoutA>,
+          ElementInputB,
+          cutlass::gemm::TagToStrideB_t<LayoutB>,
+          TiledMma,
+          GmemTiledCopyA, void, void, cute::identity,  // A
+          GmemTiledCopyB, void, void, cute::identity   // B
   >;
 
-  EXPECT_TRUE(test::gemm::device::TestAllGemmUniversal<Gemm>());
+  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+      Shape<int, int, int, int>,
+      CollectiveMainloop,
+      CollectiveEpilogue
+  >;
+
+  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+
+  bool passed = test::gemm::device::TestXe<Gemm>(1.0, 1.0);
+  EXPECT_TRUE(passed);
 }
 ////////////////////////////////////////////////////////////////////////////////
 
-#endif // #if defined(CUTLASS_ARCH_MMA_SM80_SUPPORTED)
+#endif // #if defined(CUTLASS_ENABLE_SYCL) && defined(SYCL_INTEL_TARGET)
 
 ////////////////////////////////////////////////////////////////////////////////

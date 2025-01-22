@@ -33,16 +33,23 @@ if(CUTLASS_ENABLE_SYCL)
       xe_gemm_bf16_bf16_fp32_tensor_op_fp32_evt.cpp
     )
 
+    cutlass_test_unit_add_executable(
+      cutlass_test_unit_gemm_device_mixed_input_tensorop_xe
+      gemm_universal_s8t_bf16n_f32t_mixed_input_tensor_op_f32_xe.cpp
+    )
+
     add_custom_target(
       cutlass_test_unit_gemm_device
       DEPENDS
       cutlass_test_unit_gemm_device_tensorop_epilogue_fusion_xe
+      cutlass_test_unit_gemm_device_mixed_input_tensorop_xe
     )
 
     add_custom_target(
       test_unit_gemm_device
       DEPENDS
       test_unit_gemm_device_tensorop_epilogue_fusion_xe
+      test_unit_gemm_device_mixed_input_tensorop_xe
     )
   else()
     # Dummy targets if not building for Intel
