@@ -318,6 +318,10 @@ int main(int argc, const char** argv)
   // Workgroup-level tile
   using TileShape = Shape<_256, _256, _32>;
 
+  // The Tile of this layout describes how 8x4x1 sub-groups tile the TileShape of <256, 256, 32>. 
+  // This permutation (which can be thought of as a scatter operation on the default tiling) 
+  // ensures that each sub-group operates on a contiguous 32x64x32 chunk (4x4x2 iterations)
+  // See 0t_mma_atom.md#TiledMMAs for more info.
   using TiledMma =
       TiledMMA<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
                Layout<Shape<_8, _4, _1>>,
