@@ -586,7 +586,7 @@ struct guarded_multiply_add_relu0<half_t, half_t, half_t> {
   }
 };
 
-/// Fused multiply-add
+/// Fused and-add
 template <typename T>
 struct and_add {
   CUTLASS_HOST_DEVICE
@@ -596,12 +596,67 @@ struct and_add {
 };
 
 
+/// Fused and-popc-add
+template <typename A, typename B = A, typename C = A>
+struct and_popc_add {
+  CUTLASS_HOST_DEVICE
+  C operator()(A const &a, B const &b, C const &c) const {
+    A and_result = a & b;
+
+    #if defined(__CUDA__ARCH__)
+      int popc_result = __popc(and_result);
+      
+      if constexpr (sizeof(A) == sizeof(uint64_t)) {
+        popc_result += __popc(static_cast<uint32_t>(and_result >> 32));
+      }
+
+    #else
+      int popc_result = __builtin_popcount(and_result);
+      if constexpr (sizeof(A) == sizeof(uint64_t)) {
+        popc_result += __builtin_popcount(static_cast<uint32_t>(and_result >> 32));
+      }
+
+    #endif
+
+    return C(popc_result) + c;
+    
+  }
+};
+
 /// Fused multiply-add
 template <typename T>
 struct xor_add {
   CUTLASS_HOST_DEVICE
   T operator()(T const &a, T const &b, T const &c) const {
     return ((a ^ b) + c);
+  }
+};
+
+
+/// Fused xor-popc-add
+template <typename A, typename B = A, typename C = A>
+struct xor_popc_add {
+  CUTLASS_HOST_DEVICE
+  C operator()(A const &a, B const &b, C const &c) const {
+    A and_result = a ^ b;
+
+    #if defined(__CUDA__ARCH__)
+      int popc_result = __popc(and_result);
+      
+      if constexpr (sizeof(A) == sizeof(uint64_t)) {
+        popc_result += __popc(static_cast<uint32_t>(and_result >> 32));
+      }
+
+    #else
+      int popc_result = __builtin_popcount(and_result);
+      if constexpr (sizeof(A) == sizeof(uint64_t)) {
+        popc_result += __builtin_popcount(static_cast<uint32_t>(and_result >> 32));
+      }
+
+    #endif
+
+    return C(popc_result) + c;
+    
   }
 };
 
