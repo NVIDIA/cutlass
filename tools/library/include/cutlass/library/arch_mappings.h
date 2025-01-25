@@ -119,6 +119,18 @@ template <> struct ArchMap<arch::Sm90, arch::OpClassSparseTensorOp> {
   static int const kMax = 90;
 };
 
+
+template <typename OperatorClass> struct ArchMap<arch::Sm100, OperatorClass> {
+  static int const kMin = 100;
+  static int const kMax = 1024;
+};
+
+template <> struct ArchMap<arch::Sm100, arch::OpClassTensorOp> {
+  static int const kMin = 100;
+  static int const kMax = 100;
+};
+
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace library

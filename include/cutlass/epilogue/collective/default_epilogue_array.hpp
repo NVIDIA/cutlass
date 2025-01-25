@@ -169,9 +169,9 @@ public:
       BlockCoordMNKL blk_coord_mnkl,
       cute::Tensor<FrgEngine, FrgLayout> const& accumulators,
       TiledMma tiled_mma,
-      ResidueMNK residue_mnk,
+      [[maybe_unused]] ResidueMNK,
       int thread_idx,
-      [[maybe_unused]] char* smem_buf)
+      [[maybe_unused]] char*)
   {
     using namespace cute;
     using X = Underscore;
@@ -230,18 +230,18 @@ public:
     if (epilogue_op.is_source_needed()) {
       ptr_C_l = params.ptr_C[l_coord];
     }
-    Tensor mC_mnl = make_tensor(make_gmem_ptr<GmemElementC>(ptr_C_l), make_shape(M,N,mock_L), stride_c);      // (m,n,l)
-    Tensor mD_mnl = make_tensor(make_gmem_ptr(params.ptr_D[l_coord]), make_shape(M,N,mock_L), stride_d);      // (m,n,l)
-    Tensor gC_mnl = local_tile(mC_mnl, blk_shape_MNK, make_coord(_,_,_), Step<_1,_1, X>{});    // (BLK_M,BLK_N,m,n,l)
-    Tensor gD_mnl = local_tile(mD_mnl, blk_shape_MNK, make_coord(_,_,_), Step<_1,_1, X>{});    // (BLK_M,BLK_N,m,n,l)
+    Tensor mC_mnl = make_tensor(make_gmem_ptr<GmemElementC>(ptr_C_l), make_shape(M,N,mock_L), stride_c);     // (m,n,l)
+    Tensor mD_mnl = make_tensor(make_gmem_ptr(params.ptr_D[l_coord]), make_shape(M,N,mock_L), stride_d);     // (m,n,l)
+    Tensor gC_mnl = local_tile(mC_mnl, blk_shape_MNK, make_coord(_,_,_), Step<_1,_1, X>{});      // (BLK_M,BLK_N,m,n,l)
+    Tensor gD_mnl = local_tile(mD_mnl, blk_shape_MNK, make_coord(_,_,_), Step<_1,_1, X>{});      // (BLK_M,BLK_N,m,n,l)
 
-    Tensor gC = gC_mnl(_,_,m_coord,n_coord, mock_l_coord);                                                 // (BLK_M,BLK_N)
-    Tensor gD = gD_mnl(_,_,m_coord,n_coord, mock_l_coord);                                                 // (BLK_M,BLK_N)
+    Tensor gC = gC_mnl(_,_,m_coord,n_coord, mock_l_coord);                                             // (BLK_M,BLK_N)
+    Tensor gD = gD_mnl(_,_,m_coord,n_coord, mock_l_coord);                                             // (BLK_M,BLK_N)
 
     // Partition source and destination tiles to match the accumulator partitioning
     auto thr_mma = tiled_mma.get_thread_slice(thread_idx);
-    Tensor tCgD = thr_mma.partition_C(gD);                                       // (VEC,THR_M,THR_N)
-    Tensor tCgC = thr_mma.partition_C(gC);                                       // (VEC,THR_M,THR_N)
+    Tensor tCgD = thr_mma.partition_C(gD);                                                         // (VEC,THR_M,THR_N)
+    Tensor tCgC = thr_mma.partition_C(gC);                                                         // (VEC,THR_M,THR_N)
 
     static_assert(is_static<FrgLayout>::value, "Accumulator layout must be static");
     CUTE_STATIC_ASSERT_V(size(tCgC) == size(tCgD),
@@ -249,15 +249,16 @@ public:
     CUTE_STATIC_ASSERT_V(size(tCgD) == size(accumulators),
         "Accumulator count must have the same destination element count.");
 
-    // Make an identity coordinate tensor for predicating our output MN tile
-    auto cD = make_identity_tensor(make_shape(unwrap(shape<0>(gD)), unwrap(shape<1>(gD))));
-    Tensor tCcD = thr_mma.partition_C(cD);
+    // Absolute coordinate tensors (dynamic)
+    Tensor mD_crd = make_identity_tensor(make_shape(M,N));                                                     // (M,N)
+    Tensor cD_mn = local_tile(mD_crd, take<0,2>(blk_shape_MNK), make_coord(m_coord, n_coord));         // (BLK_M,BLK_N)
+    Tensor tCcD = thr_mma.partition_C(cD_mn);                                                      // (VEC,THR_M,THR_N)
 
     // source is needed
     if (epilogue_op.is_source_needed()) {
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < size(accumulators); ++i) {
-        if (elem_less(tCcD(i), make_coord(get<0>(residue_mnk), get<1>(residue_mnk)))) {
+        if (elem_less(tCcD(i), make_shape(M,N))) {
           tCgD(i) = epilogue_op(accumulators(i), tCgC(i));
         }
       }
@@ -266,7 +267,7 @@ public:
     else {
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < size(accumulators); ++i) {
-        if (elem_less(tCcD(i), make_coord(get<0>(residue_mnk), get<1>(residue_mnk)))) {
+        if (elem_less(tCcD(i), make_shape(M,N))) {
           tCgD(i) = epilogue_op(accumulators(i));
         }
       }

@@ -31,6 +31,7 @@ cutlass_test_unit_add_executable(
   pipeline_tma_async.cu
   pipeline_tma_async_warp_specialized.cu
   pipeline_tma_async_warp_specialized_persistent.cu
+  pipeline_cluster_launch_control_async_warp_specialized_blackwell.cu 
   pipeline_async.cu
   sequence_barrier.cu
 )

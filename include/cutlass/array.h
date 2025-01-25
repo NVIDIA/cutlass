@@ -2567,7 +2567,6 @@ struct bit_not<Array<uint1b_t, N>> {
   }
 };
 
-
 /// bit_xor
 template <int N>
 struct bit_xor<Array<uint1b_t, N>> {
@@ -2589,6 +2588,137 @@ struct bit_xor<Array<uint1b_t, N>> {
     return result;
   }
 };
+
+/// Fused and-popc-add
+template <typename T, int N>
+struct and_popc_add<Array<T, N>, Array<T, N>, Array<T, N>> {
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &a, Array<T, N> const &b, Array<T, N> const &c) const {
+    Array<T, N> result;
+    and_popc_add<T> scalar_op;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = scalar_op(a[i], b[i], c[i]);
+    }
+
+    return result;
+  }
+
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &a, T const &scalar, Array<T, N> const &c) const {
+    Array<T, N> result;
+    and_popc_add<T> scalar_op;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = scalar_op(a[i], scalar, c[i]);
+    }
+
+    return result;
+  }
+
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(T const &scalar, Array<T, N> const &b, Array<T, N> const &c) const {
+    Array<T, N> result;
+    and_popc_add<T> scalar_op;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = scalar_op(scalar, b[i], c[i]);
+    }
+
+    return result;
+  }
+};
+
+
+/// Fused or-popc-add
+template <typename T, int N>
+struct or_popc_add<Array<T, N>, Array<T, N>, Array<T, N>> {
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &a, Array<T, N> const &b, Array<T, N> const &c) const {
+    Array<T, N> result;
+    or_popc_add<T> scalar_op;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = scalar_op(a[i], b[i], c[i]);
+    }
+
+    return result;
+  }
+
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &a, T const &scalar, Array<T, N> const &c) const {
+    Array<T, N> result;
+    or_popc_add<T> scalar_op;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = scalar_op(a[i], scalar, c[i]);
+    }
+
+    return result;
+  }
+
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(T const &scalar, Array<T, N> const &b, Array<T, N> const &c) const {
+    Array<T, N> result;
+    or_popc_add<T> scalar_op;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = scalar_op(scalar, b[i], c[i]);
+    }
+
+    return result;
+  }
+};
+
+/// Fused xor-popc-add
+template <typename T, int N>
+struct xor_popc_add<Array<T, N>, Array<T, N>, Array<T, N>> {
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &a, Array<T, N> const &b, Array<T, N> const &c) const {
+    Array<T, N> result;
+    xor_popc_add<T> scalar_op;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = scalar_op(a[i], b[i], c[i]);
+    }
+
+    return result;
+  }
+
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &a, T const &scalar, Array<T, N> const &c) const {
+    Array<T, N> result;
+    xor_popc_add<T> scalar_op;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = scalar_op(a[i], scalar, c[i]);
+    }
+
+    return result;
+  }
+
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(T const &scalar, Array<T, N> const &b, Array<T, N> const &c) const {
+    Array<T, N> result;
+    xor_popc_add<T> scalar_op;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = scalar_op(scalar, b[i], c[i]);
+    }
+
+    return result;
+  }
+};
+
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 // Operator overloads

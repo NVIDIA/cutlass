@@ -330,6 +330,23 @@ struct CudaHostAdapter {
     void** kernel_params,
     int32_t kernel_index) const = 0;
 
+  
+
+  /// Launches a kernel using the CUDA Extensible Launch API and Threadblock Clusters.
+  /// This API is for preferred cluster launch; a preferred and a fallback cluster shapes are
+  /// considered for launch respectively.
+  virtual Status launch(
+    dim3 const grid_dims,
+    dim3 const cluster_dims,
+    dim3 const fallback_cluster_dims,
+    dim3 const block_dims,
+    size_t const smem_size,
+    cudaStream_t cuda_stream,
+    void** kernel_params,
+    int32_t kernel_index) const = 0;
+
+  
+
 #if defined(CUDA_HOST_ADAPTER_TENSORMAP_ENABLED)
 
   /// Create a tensor map descriptor object representing im2col memory region.

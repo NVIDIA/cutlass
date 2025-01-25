@@ -133,7 +133,8 @@ using namespace cute;
 using TP = _8;
 static constexpr int TP_ = TP{};
 
-#if (defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED) && (__CUDACC_VER_MAJOR__ >= 12) && (__CUDACC_VER_MINOR__ >= 4))
+#if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED) && \
+  (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 4))
 
 // Distributed GEMM tiling/sharding schedule
 // Choices:
@@ -344,7 +345,8 @@ struct Result {
 
 };
 
-#if (defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED) && (__CUDACC_VER_MAJOR__ >= 12) && (__CUDACC_VER_MINOR__ >= 4))
+#if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED) && \
+  (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 4))
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /// GEMM setup and evaluation

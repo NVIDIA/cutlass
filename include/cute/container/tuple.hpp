@@ -119,12 +119,16 @@ template <size_t N, class T>
 CUTE_HOST_DEVICE constexpr T getv(EBO<N, T, true> const&)
 { return {}; }
 
+// This is a work around approach to solve a shared memory misalign issue (https://github.com/NVIDIA/cutlass/issues/1250).
+// Will remove this work around implementation once the corresponding fix in compiler is released.
+struct dummy_EBO_base {};
+
 // Specialization for types T that are not empty;
 // the "dynamic tuple leaf."  Valid T here include int,
 // any other integral or floating-point type,
 // or any semiregular type for which std::is_empty_v<T> is false.
 template <size_t N, class T>
-struct EBO<N, T, false>
+struct EBO<N, T, false> : private dummy_EBO_base
 {
   CUTE_HOST_DEVICE constexpr
   EBO() : t_{} {}

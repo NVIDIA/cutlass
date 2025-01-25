@@ -258,6 +258,12 @@ struct Testbed3xTensorBroadcast {
         cute::make_layout(cute::make_shape(M, N, 1), cute::make_stride(cute::_1{}, cute::_0{}, M)));
     auto dummy_Vbeta = cute::make_tensor(static_cast<ElementCompute*>(nullptr),
         cute::make_layout(cute::make_shape(M, N, 1), cute::make_stride(cute::_1{}, cute::_0{}, M)));
+    
+    auto dummy_SFD = cute::make_tensor(static_cast<ElementD*>(nullptr),
+        cute::make_layout(cute::make_shape(M, N, L), impl_.collective_epilogue.stride_c));
+    using DummySFDVectorSize = cute::Int<0>;
+    
+
     cutlass::reference::host::GettEpilogueParams<
         ElementScalar,
         ElementScalar,
@@ -270,6 +276,8 @@ struct Testbed3xTensorBroadcast {
         decltype(dummy_Valpha),
         decltype(dummy_Vbeta),
         ActivationFunctor,
+        decltype(dummy_SFD),            
+        DummySFDVectorSize,             
         cutlass::plus<ElementCompute>,
         PerColBias> epilogue_params{
           alpha,

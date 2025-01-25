@@ -115,6 +115,10 @@ usage:
                                                    ("s1688" and "nt") or ("s844" and "tn" and "align8") in their
                                                    operation name using --kernels="s1688*nt, s884*tn*align8"
 
+  --kernels-file=<path>                            Same behavior as `kernels`, but kernel names are specified in a file with
+                                                   one kernel name on each line. Set of profiled kernels is the union of kernels
+                                                   specified here and those specified in `kernels`.
+
   --ignore-kernels=<string_list>                   Excludes kernels whose names match anything in this list.
 
 Device:
@@ -284,6 +288,8 @@ GEMM
   [int]       --max_cc,--maximum-compute-capability             Maximum device compute capability
   [enum]      --raster_order={heuristic|H|along_m|M|along_n|N}  If supported by kernel, sets the tile raster direction
   [int]       --swizzle_size={1,2,4,8}                          If supported by kernel, sets the 2D tile swizzle extent (In Hopper, other values will be rounded down to the nearest supported value)
+  [int]       --use_pdl,--use-pdl                               Use PDL (true, false)
+
 Examples:
 
 Profile a particular problem size:
@@ -322,6 +328,8 @@ Profile when execution is performed on device 0 and the C tensor is located on a
 ```
 
 The format of tensor argument is followed by `<type>:<layout>`. The type could be `f32` as 32-bit floating point, `s8` as 8-bit signed integer, etc. The available types can be referred to the `NumericTypeID_enumerants` in [util.cu](tools/library/src/util.cu). The layout could be `row` or `column`.
+
+CUTLASS 3.x kernels for Hopper and Blackwell also support a new feature called programatic dependent launch (PDL). This can be enabled with `--use-pdl`, and can overlap the epilogue of the prior kernel with the prologue of the next kernel. This can effectively hide kernel prologues. Using PDL can improve performance for back to back GEMMs. See [dependent kernel launch](dependent_kernel_launch.md) for more information.
 
 ## Example CUDA Core GEMM Operation
 

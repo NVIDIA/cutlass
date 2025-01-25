@@ -113,6 +113,15 @@ set(header_files_to_check
     cute/arch/mma_sm90_gmma.hpp
     cute/arch/mma.hpp
     cute/arch/util.hpp
+    
+    cute/arch/cluster_sm100.hpp
+    cute/arch/copy_sm100.hpp
+    cute/arch/copy_sm100_tma.hpp
+    cute/arch/mma_sm100.hpp
+    cute/arch/mma_sm100_desc.hpp
+    cute/arch/mma_sm100_umma.hpp
+    # cute/arch/tmem_allocator_sm100.hpp
+    
     # cute/atom
     # cute/atom/copy_atom.hpp
     # cute/atom/copy_traits.hpp
@@ -131,6 +140,10 @@ set(header_files_to_check
     cute/atom/mma_traits_sm80.hpp
     cute/atom/mma_traits_sm90.hpp
     cute/atom/mma_traits_sm90_gmma.hpp
+    
+    cute/atom/mma_traits_sm100.hpp 
+    cute/atom/partitioner.hpp
+    
     # cutlass
     cutlass/aligned_buffer.h
     cutlass/array.h
@@ -185,12 +198,20 @@ set(header_files_to_check
     cutlass/version.h
     cutlass/wmma_array.h
     cutlass/workspace.h
+    
+    cutlass/exmy_base.h
+    cutlass/float_subbyte.h
+    
     # cutlass/platform
     cutlass/platform/platform.h
 
     # cutlass/pipeline
     cutlass/pipeline/pipeline.hpp
     cutlass/pipeline/sm90_pipeline.hpp
+    
+    cutlass/pipeline/sm100_pipeline.hpp
+    
+
     # cutlass/detail
     cutlass/detail/cluster.hpp
     cutlass/detail/collective.hpp
@@ -199,6 +220,10 @@ set(header_files_to_check
     cutlass/detail/layout.hpp
     cutlass/detail/mainloop_fusion_helper_bgrada.hpp
     cutlass/detail/mma.hpp
+    
+    cutlass/detail/sm100_blockscaled_layout.hpp
+    
+
     # cutlass/arch
     cutlass/arch/arch.h
     cutlass/arch/barrier.h

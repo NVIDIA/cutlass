@@ -79,6 +79,10 @@ struct integer_subbyte {
   integer_subbyte(T value)
       : integer_subbyte(static_cast<xint_t>(value)) {}
 
+  CUTLASS_HOST_DEVICE
+  integer_subbyte(float value)
+      : integer_subbyte(static_cast<xint_t>(value)) {}
+
   // CUTLASS code commonly converts both signed and unsigned integers
   // into integer_subbyte, so the class provides both explicit
   // conversions.
@@ -202,6 +206,11 @@ using int4b_t = integer_subbyte<4, true>;
 
 /// 4-bit Unsigned integer type
 using uint4b_t = integer_subbyte<4, false>;
+
+
+/// 6-bit unsigned integer type
+using uint6b_t = integer_subbyte<6, false>;
+
 
 /// 1-bit binary type
 using bin1_t = bool;

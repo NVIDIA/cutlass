@@ -219,7 +219,11 @@ which has to happen at the end among the participating warps.
 This is because each warp computes using only a "slice" of CtaTileK,
 so each warp only has a partial sum before the reduction.
 
-### Warp Specialization
+### Hopper Warp Specialization
+
+Note: the following section on warp-specialization contains details that are specific
+to the Hopper kernel design. Blackwell SM100 kernels have a substantially different warp-specialization structure,
+however, the concept of separating out producer and consumer agents still applies.
 
 Starting with Hopper, CUTLASS 3.0 incorporates the concept of [Warp Specialization](https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#spatial-partitioning-also-known-as-warp-specialization)
 as part of the kernel design. A thread block is partitioned into two sets of warps, [*producer* warp group](../../include/cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized.hpp) and [*consumer* warp group](../../include/cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized.hpp). The *producer* warp group loads data from global memory into shared memory buffers using the new [Tensor Memory Accelerator (TMA)](https://developer.nvidia.com/blog/nvidia-hopper-architecture-in-depth/). 

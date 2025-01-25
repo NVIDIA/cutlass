@@ -295,6 +295,7 @@ public:
     uint32_t is_leader = 0;
     uint32_t num_consumers = 0; // Number of consumer threads
     uint32_t num_producers = 1; // Number of producer threads
+    int initializing_warp = 0; 
   };
 
   template <class ClusterShape>
@@ -304,6 +305,7 @@ public:
   init_barriers(SharedStorage& storage, Params params, ClusterShape cluster_shape) {
     int warp_idx = canonical_warp_idx_sync();
     bool is_initializing_warp = (warp_idx == 0);
+    is_initializing_warp = (warp_idx == params.initializing_warp); 
     if (is_initializing_warp) {
       // Barrier FULL and EMPTY init
       uint32_t const producer_arv_cnt = params.num_producers;
@@ -750,6 +752,7 @@ public:
     uint32_t producer_arv_count = 1;
     uint32_t consumer_arv_count = 1;
     uint32_t dst_blockid = cute::block_rank_in_cluster();
+    int initializing_warp = 0; 
   };
 
   static
@@ -760,6 +763,8 @@ public:
     EmptyBarrier *empty_barrier_ptr = storage.empty_barrier_.data();
     int warp_idx = canonical_warp_idx_sync();
     bool is_initializing_warp = (warp_idx == 0);
+    is_initializing_warp = (warp_idx == params.initializing_warp); 
+
     if (is_initializing_warp) {
       // Barrier FULL and EMPTY init
       cutlass::arch::detail::initialize_barrier_array_pair_aligned<decltype(full_barrier_ptr), decltype(empty_barrier_ptr), Stages>(
@@ -989,6 +994,7 @@ public:
     uint32_t producer_arv_count = 1;
     uint32_t consumer_arv_count = 1;
     uint32_t dst_blockid = cute::block_rank_in_cluster();
+    int initializing_warp = 0; 
   };
 
   static
@@ -997,6 +1003,7 @@ public:
   init_barriers(SharedStorage& storage, Params params) {
     int warp_idx = canonical_warp_idx_sync();
     bool is_initializing_warp = (warp_idx == 0);
+    is_initializing_warp = (warp_idx == params.initializing_warp); 
     if (is_initializing_warp) {
       // Barrier FULL and EMPTY init
       cutlass::arch::detail::initialize_barrier_array_pair_aligned<decltype(storage.full_barrier_), decltype(storage.empty_barrier_), Stages>(
@@ -1222,6 +1229,7 @@ public:
   struct Params {
     uint32_t group_id;
     uint32_t group_size;
+    int initializing_warp = 0; 
   };
 
 private:
@@ -1247,6 +1255,19 @@ public:
       barrier_ptr_(&storage.barrier_[0][0]),
       // Group 0 - starts with an opposite phase
       stage_({0, params.group_id == 0, 0}) {
+
+#if (__CUDA_ARCH__ >= 1000)
+    int warp_idx = canonical_warp_idx_sync();
+
+    // Barrier FULL, EMPTY init
+    if (warp_idx == params.initializing_warp) {
+      int arv_cnt = params.group_size;
+      constexpr int Stages = Depth * Length;
+      cutlass::arch::detail::initialize_barrier_array_aligned<decltype(barrier_ptr_), Stages>(
+          barrier_ptr_, arv_cnt);
+    }
+#else
+
     int warp_idx = canonical_warp_idx_sync();
     int lane_predicate = cute::elect_one_sync();
 
@@ -1259,6 +1280,7 @@ public:
         }
       }
     }
+#endif 
     cutlass::arch::fence_barrier_init();
   }
 

@@ -134,7 +134,7 @@ def get_option_registry():
         this._option_registry = OptionRegistry(device_cc())
     return this._option_registry
 
-this.__version__ = '3.7.0'
+this.__version__ = '3.8.0'
 
 from cutlass.backend import create_memory_pool
 from cutlass.emit.pytorch import pytorch

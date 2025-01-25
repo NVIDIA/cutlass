@@ -73,6 +73,15 @@ public:
     int64_t n{16};
     int64_t k{16};
 
+    
+    int cluster_m{1};
+    int cluster_n{1};
+    int cluster_k{1};
+    int cluster_m_fallback{1};
+    int cluster_n_fallback{1};
+    int cluster_k_fallback{1};
+    
+
     int64_t lda{0};
     int64_t ldb{0};
     int64_t ldc{0};
@@ -85,6 +94,11 @@ public:
 
     cutlass::library::RasterOrder raster_order{cutlass::library::RasterOrder::kHeuristic};
     int swizzle_size{1};
+
+    
+    cutlass::library::RuntimeDatatype runtime_input_datatype_a{};
+    cutlass::library::RuntimeDatatype runtime_input_datatype_b{};
+    
 
     // gemm with parallel interleaved reduction
     // gemm epilogue (alpha, beta) = (1.0, 0.0)

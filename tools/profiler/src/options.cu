@@ -33,6 +33,7 @@
 */
 
 #include <algorithm>
+#include <fstream>
 #include <set>
 
 #include "cutlass/cutlass.h"
@@ -810,15 +811,26 @@ Options::Options(cutlass::CommandLine const &cmdline):
   }
   else if (cmdline.check_cmd_line_flag("kernels")) {
     cmdline.get_cmd_line_arguments("kernels", operation_names);
-    profiling.error_on_no_match = cmdline.check_cmd_line_flag("error-on-no-match");
-    profiling.error_if_nothing_is_profiled = cmdline.check_cmd_line_flag("error-if-nothing-is-profiled");
+  }
+
+  if (cmdline.check_cmd_line_flag("kernels-file")) {
+    std::string filename;
+    cmdline.get_cmd_line_argument("kernels-file", filename, {});
+    std::ifstream input(filename);
+    if (!input.good()) {
+      throw std::runtime_error("failed to open: " + filename);
+    }
+    for (std::string line; getline(input, line);) {
+      operation_names.push_back(line);
+    }
   }
 
   if (cmdline.check_cmd_line_flag("ignore-kernels")) {
     cmdline.get_cmd_line_arguments("ignore-kernels", excluded_operation_names);
-    profiling.error_on_no_match = cmdline.check_cmd_line_flag("error-on-no-match");
-    profiling.error_if_nothing_is_profiled = cmdline.check_cmd_line_flag("error-if-nothing-is-profiled");
   }
+
+  profiling.error_on_no_match            = cmdline.check_cmd_line_flag("error-on-no-match");
+  profiling.error_if_nothing_is_profiled = cmdline.check_cmd_line_flag("error-if-nothing-is-profiled");
 
   // Prevent launches on the device for anything other than CUTLASS operation
   // Allow verification only on host
@@ -855,6 +867,11 @@ void Options::print_usage(std::ostream &out) const {
     << "    Filter operations by kernel names. For example, call all kernels with" << end_of_line
     << "      (\"s1688\" and \"nt\") or (\"s844\" and \"tn\" and \"align8\") in their" << end_of_line
     << "      operation name using --kernels=\"s1688*nt, s884*tn*align8\"\n\n"
+
+    << "  --kernels-file=<filename>                      "
+    << "    Same behavior as --kernels, but kernel names are specified in a file" << end_of_line
+    << "    with one kernel on each line. Set of profiled kernels is the union of kernels specified" << end_of_line
+    << "    here and those specified in `kernels`.\n\n"
 
     << "  --ignore-kernels=<string_list>               "
     << "    Excludes kernels whose names match anything in this list.\n\n"

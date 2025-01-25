@@ -76,6 +76,8 @@ GemmOperationProfiler::GemmOperationProfiler(Options const &options):
       {ArgumentTypeID::kInteger, {"split_k_slices", "split-k-slices"}, "Number of partitions of K dimension"},
       {ArgumentTypeID::kInteger, {"batch_count", "batch-count"}, "Number of GEMMs computed in one batch"},
       {ArgumentTypeID::kEnumerated, {"raster_order", "raster-order"}, "Raster order (heuristic, along_n, along_m)"},
+      {ArgumentTypeID::kEnumerated, {"runtime_input_datatype_a", "runtime-input-datatype::a"}, "Runtime datatype (e4m3, e5m2, e3m2, e2m3, e2m1)"}, 
+      {ArgumentTypeID::kEnumerated, {"runtime_input_datatype_b", "runtime-input-datatype::b"}, "Runtime datatype (e4m3, e5m2, e3m2, e2m3, e2m1)"}, 
       {ArgumentTypeID::kInteger, {"use_pdl", "use-pdl"}, "Use PDL (true, false)"}, 
       {ArgumentTypeID::kInteger, {"swizzle_size", "swizzle-size"}, "Size to swizzle"},
     },
@@ -172,6 +174,38 @@ Status GemmOperationProfiler::GemmProblem::parse(
     this->k = 1024;
   }
 
+  
+  if (!arg_as_int(this->cluster_m, "cluster_m", problem_space, problem)) {
+    // default value
+    this->cluster_m = 1;
+  }
+
+  if (!arg_as_int(this->cluster_n, "cluster_n", problem_space, problem)) {
+    // default value
+    this->cluster_n = 1;
+  }
+
+  if (!arg_as_int(this->cluster_k, "cluster_k", problem_space, problem)) {
+    // default value
+    this->cluster_k = 1;
+  }
+
+  if (!arg_as_int(this->cluster_m_fallback, "cluster_m_fallback", problem_space, problem)) {
+    // default value
+    this->cluster_m_fallback = 0;
+  }
+
+  if (!arg_as_int(this->cluster_n_fallback, "cluster_n_fallback", problem_space, problem)) {
+    // default value
+    this->cluster_n_fallback = 0;
+  }
+
+  if (!arg_as_int(this->cluster_k_fallback, "cluster_k_fallback", problem_space, problem)) {
+    // default value
+    this->cluster_k_fallback = 0;
+  }
+  
+
   if (!arg_as_bool(this->use_pdl, "use_pdl", problem_space, problem)) {
     // default value
     this->use_pdl = false;
@@ -191,6 +225,18 @@ Status GemmOperationProfiler::GemmProblem::parse(
     // default value
     this->split_k_slices = 1;
   }
+
+  
+  if (!arg_as_RuntimeDatatype(this->runtime_input_datatype_a, "runtime_input_datatype_a", problem_space, problem)) {
+    // default value
+    this->runtime_input_datatype_a = cutlass::library::RuntimeDatatype::kStatic;
+  }
+
+  if (!arg_as_RuntimeDatatype(this->runtime_input_datatype_b, "runtime_input_datatype_b", problem_space, problem)) {
+    // default value
+    this->runtime_input_datatype_b = cutlass::library::RuntimeDatatype::kStatic;
+  }
+  
 
   if (!arg_as_int(this->batch_count, "batch_count", problem_space, problem)) {
     // default value
@@ -338,12 +384,26 @@ void GemmOperationProfiler::GemmProblem::initialize_result(
   set_argument(result, "n", problem_space, n);
   set_argument(result, "k", problem_space, k);
 
+  
+  set_argument(result, "cluster_m", problem_space, cluster_m);
+  set_argument(result, "cluster_n", problem_space, cluster_n);
+  set_argument(result, "cluster_k", problem_space, cluster_k);
+  set_argument(result, "cluster_m_fallback", problem_space, cluster_m_fallback);
+  set_argument(result, "cluster_n_fallback", problem_space, cluster_n_fallback);
+  set_argument(result, "cluster_k_fallback", problem_space, cluster_k_fallback);
+  
+
   set_argument(result, "split_k_mode", problem_space, library::to_string(split_k_mode));
   set_argument(result, "split_k_slices", problem_space, split_k_slices);
   set_argument(result, "batch_count", problem_space, batch_count);
   set_argument(result, "raster_order", problem_space, library::to_string(raster_order));
   set_argument(result, "swizzle_size", problem_space, swizzle_size);
   set_argument(result, "use_pdl", problem_space, library::to_string(use_pdl));
+
+  
+  set_argument(result, "runtime_input_datatype_a", problem_space, library::to_string(runtime_input_datatype_a));
+  set_argument(result, "runtime_input_datatype_b", problem_space, library::to_string(runtime_input_datatype_b));
+  
 
   set_argument(result, "alpha", problem_space,
     library::lexical_cast(alpha, operation_desc.element_epilogue));
@@ -388,6 +448,14 @@ Status GemmOperationProfiler::initialize_configuration(
     gemm_workspace_[i].configuration.problem_size.m() = int(problem_.m);
     gemm_workspace_[i].configuration.problem_size.n() = int(problem_.n);
     gemm_workspace_[i].configuration.problem_size.k() = int(problem_.k);
+    
+    gemm_workspace_[i].configuration.cluster_shape.m() = int(problem_.cluster_m);
+    gemm_workspace_[i].configuration.cluster_shape.n() = int(problem_.cluster_n);
+    gemm_workspace_[i].configuration.cluster_shape.k() = int(problem_.cluster_k);
+    gemm_workspace_[i].configuration.cluster_shape_fallback.m() = int(problem_.cluster_m_fallback);
+    gemm_workspace_[i].configuration.cluster_shape_fallback.n() = int(problem_.cluster_n_fallback);
+    gemm_workspace_[i].configuration.cluster_shape_fallback.k() = int(problem_.cluster_k_fallback);
+    
     gemm_workspace_[i].configuration.lda = problem_.lda;
     gemm_workspace_[i].configuration.ldb = problem_.ldb;
     gemm_workspace_[i].configuration.ldc = problem_.ldc;
@@ -423,6 +491,15 @@ Status GemmOperationProfiler::initialize_configuration(
     gemm_workspace_[i].arguments.pointer_mode = library::ScalarPointerMode::kHost;
     gemm_workspace_[i].arguments.swizzle_size = problem_.swizzle_size;
     gemm_workspace_[i].arguments.raster_order = problem_.raster_order;
+    gemm_workspace_[i].arguments.cluster_shape = {int(problem_.cluster_m), int(problem_.cluster_n), int(problem_.cluster_k)}; 
+    gemm_workspace_[i].arguments.cluster_shape_fallback = {int(problem_.cluster_m_fallback), int(problem_.cluster_n_fallback), int(problem_.cluster_k_fallback)}; 
+    gemm_workspace_[i].arguments.split_k_slices = problem_.split_k_slices;
+
+    
+    gemm_workspace_[i].arguments.runtime_input_datatype_a = problem_.runtime_input_datatype_a;
+    gemm_workspace_[i].arguments.runtime_input_datatype_b = problem_.runtime_input_datatype_b;
+    
+
     initialize_result_(this->model_result_, options, operation_desc, problem_space);
     if (const auto can_implement = operation->can_implement(&gemm_workspace_[i].configuration, &gemm_workspace_[i].arguments); can_implement != Status::kSuccess) {
       return can_implement;
@@ -621,6 +698,9 @@ Status GemmOperationProfiler::initialize_workspace(
     if (options.execution_mode != ExecutionMode::kDryRun) {
       // NOTE: the leading non-batch strides are duplicated here for 3.0 API kernels
       gemm_workspace_[i].arguments.problem_size = {int(problem_.m), int(problem_.n), int(problem_.k)};
+      gemm_workspace_[i].arguments.cluster_shape = {int(problem_.cluster_m), int(problem_.cluster_n), int(problem_.cluster_k)}; 
+      gemm_workspace_[i].arguments.cluster_shape_fallback = {int(problem_.cluster_m_fallback), int(problem_.cluster_n_fallback), int(problem_.cluster_k_fallback)}; 
+      gemm_workspace_[i].arguments.split_k_slices = problem_.split_k_slices;
       gemm_workspace_[i].arguments.batch_count = problem_.batch_count;
       gemm_workspace_[i].arguments.lda = problem_.lda;
       gemm_workspace_[i].arguments.ldb = problem_.ldb;
@@ -857,12 +937,32 @@ bool GemmOperationProfiler::verify_cutlass(
     }
 #endif // #if CUTLASS_ENABLE_CUBLAS
 
+    
+    cutlass::library::RuntimeDatatype runtime_datatype_a = gemm_workspace_.front().arguments.runtime_input_datatype_a;
+    cutlass::library::RuntimeDatatype runtime_datatype_b = gemm_workspace_.front().arguments.runtime_input_datatype_b;
+
+    bool is_runtime_datatype_a = runtime_datatype_a != cutlass::library::RuntimeDatatype::kStatic;
+    bool is_runtime_datatype_b = runtime_datatype_b != cutlass::library::RuntimeDatatype::kStatic;
+
+    assert(is_runtime_datatype_a == is_runtime_datatype_b && "runtime datatype should be both dynamic or static.");
+    
+
     library::GemmDescription const &gemm_desc =
       static_cast<library::GemmDescription const &>(operation->description());
 
 
     cutlass::library::NumericTypeID element_A = gemm_desc.A.element;
     cutlass::library::NumericTypeID element_B = gemm_desc.B.element;
+    
+    if (is_runtime_datatype_a) {
+      element_A = cutlass::library::dynamic_datatype_to_id(runtime_datatype_a);
+    }
+
+    if (is_runtime_datatype_b) {
+      element_B = cutlass::library::dynamic_datatype_to_id(runtime_datatype_b);
+    }
+    
+
     bool verification_status = verify_with_reference_(options, report, device_context, operation, problem_space, problem, element_A, element_B);
 
     // Update disposition to worst case verification outcome among all
@@ -1087,6 +1187,14 @@ bool GemmOperationProfiler::verify_with_reference_(
         gemm_workspace_[i].configuration.problem_size.m(),
         gemm_workspace_[i].configuration.problem_size.n(),
         gemm_workspace_[i].configuration.problem_size.k(),
+        
+        gemm_workspace_[i].configuration.cluster_shape.m(),
+        gemm_workspace_[i].configuration.cluster_shape.n(),
+        gemm_workspace_[i].configuration.cluster_shape.k(),
+        gemm_workspace_[i].configuration.cluster_shape_fallback.m(),
+        gemm_workspace_[i].configuration.cluster_shape_fallback.n(),
+        gemm_workspace_[i].configuration.cluster_shape_fallback.k(),
+        
         gemm_desc.tile_description.math_instruction.element_accumulator,
         gemm_desc.element_epilogue,
 

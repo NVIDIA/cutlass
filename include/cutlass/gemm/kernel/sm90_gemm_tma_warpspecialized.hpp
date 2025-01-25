@@ -401,9 +401,7 @@ public:
 
     // Compute m_coord, n_coord, and l_coord with their post-tiled shapes
     auto m_coord = idx2crd(int(blockIdx.x), shape<2>(gA_mkl));
-
-    auto n_coord = idx2crd(int(blockIdx.y), shape<2>(gB_nkl), compact_col_major(shape<2>(gB_nkl)));
-
+    auto n_coord = idx2crd(int(blockIdx.y), shape<2>(gB_nkl));
     // handles the difference between the rank of Tensor returned by load_input in case they do not have a batch mode
     auto l_coord = [&] (auto const& gB_nkl_) {
       // gB_nkl needs to be passed into the lambda because C++17

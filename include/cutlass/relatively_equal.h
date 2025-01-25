@@ -270,6 +270,36 @@ bool relatively_equal(complex<T> a,  complex<T> b, complex<T> epsilon, complex<T
   return abs_diff < abs(epsilon) * (abs_A + abs_B);
 }
 
+
+template <>
+CUTLASS_HOST_DEVICE
+bool relatively_equal<float_e2m3_t>(float_e2m3_t a, float_e2m3_t b, float_e2m3_t epsilon, float_e2m3_t nonzero_floor) {
+  return detail::relatively_equal_float<float>(a, b, epsilon, nonzero_floor);
+}
+
+template <>
+CUTLASS_HOST_DEVICE
+bool relatively_equal<float_e3m2_t>(float_e3m2_t a, float_e3m2_t b, float_e3m2_t epsilon, float_e3m2_t nonzero_floor) {
+  return detail::relatively_equal_float<float>(a, b, epsilon, nonzero_floor);
+}
+
+template <>
+CUTLASS_HOST_DEVICE
+bool relatively_equal<float_e2m1_t>(float_e2m1_t a, float_e2m1_t b, float_e2m1_t epsilon, float_e2m1_t nonzero_floor) {
+  return detail::relatively_equal_float<float>(a, b, epsilon, nonzero_floor);
+}
+template <>
+CUTLASS_HOST_DEVICE
+bool relatively_equal<float_ue8m0_t>(float_ue8m0_t a, float_ue8m0_t b, float_ue8m0_t epsilon, float_ue8m0_t nonzero_floor) {
+  return detail::relatively_equal_float<float>(a, b, epsilon, nonzero_floor);
+}
+
+template <>
+CUTLASS_HOST_DEVICE
+bool relatively_equal<float_ue4m3_t>(float_ue4m3_t a, float_ue4m3_t b, float_ue4m3_t epsilon, float_ue4m3_t nonzero_floor) {
+  return detail::relatively_equal_float<float>(a, b, epsilon, nonzero_floor);
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace cutlass
