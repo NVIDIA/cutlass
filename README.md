@@ -99,12 +99,7 @@ CUTLASS team is working on a fix.
 # Performance
 
 CUTLASS primitives are very efficient.  When used to construct device-wide GEMM kernels,
-they exhibit nearly optimal utilization of peak theoretical throughput. The figure below
-shows CUTLASS 3.8's performance as a % of theoretical peak utilization 
-on various input and output data types when run on NVIDIA Blackwell SM100 architecture GPU.
-
-<p align="center"><img src=media/images/cutlass-3.8-blackwell-gemm-peak-performance.svg></p>
-
+they exhibit nearly optimal utilization of peak theoretical throughput. 
 The two figures below show the continual CUTLASS performance improvements 
 on an [NVIDIA H100](https://www.nvidia.com/en-us/data-center/h100/) (NVIDIA Hopper architecture) since
 CUTLASS 3.1.
