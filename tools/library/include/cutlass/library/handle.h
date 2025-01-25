@@ -178,6 +178,15 @@ public:
     int M,                                    /// GEMM M dimension
     int N,                                    /// GEMM N dimension
     int K,                                    /// GEMM K dimension
+    
+    int cluster_m,                            /// cluster shape M dimension
+    int cluster_n,                            /// cluster shape N dimension
+    int cluster_k,                            /// cluster shape K dimension
+    int cluster_m_fallback,                   /// Fallback cluster shape M dimension
+    int cluster_n_fallback,                   /// Fallback cluster shape N dimension
+    int cluster_k_fallback,                   /// Fallback cluster shape K dimension
+    
+    
     NumericTypeID element_compute,            /// Data type of internal accumulation
 
     NumericTypeID element_scalar,             /// Data type of alpha/beta scalars

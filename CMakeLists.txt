@@ -164,6 +164,11 @@ endif()
 if (CUDA_VERSION VERSION_GREATER_EQUAL 12.0)
   list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 90a)
 endif()
+
+if (CUDA_VERSION VERSION_GREATER_EQUAL 12.8)
+  list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 100 100a)
+endif()
+
 set(CUTLASS_NVCC_ARCHS ${CUTLASS_NVCC_ARCHS_SUPPORTED} CACHE STRING "The SM architectures requested.")
 set(CUTLASS_NVCC_ARCHS_ENABLED ${CUTLASS_NVCC_ARCHS} CACHE STRING "The SM architectures to build code for.")
 
@@ -379,6 +384,21 @@ if (CUTLASS_ENABLE_SYNCLOG)
   set(CMAKE_CUDA_SEPARABLE_COMPILATION ON)
   string(APPEND CMAKE_CXX_FLAGS " -DCUTLASS_ENABLE_SYNCLOG=1")
   string(APPEND CMAKE_CUDA_FLAGS " -DCUTLASS_ENABLE_SYNCLOG=1")
+endif()
+
+
+
+
+###################################################################################################
+#
+# Blackwell features
+#
+###################################################################################################
+
+if (CUDA_VERSION VERSION_GREATER_EQUAL 12.8)
+  list(APPEND CUTLASS_CUDA_NVCC_FLAGS -DCUDA_BLACKWELL_TMA_SWIZZLE_ENABLED=1)
+
+  list(APPEND CUTLASS_CUDA_NVCC_FLAGS -DCUDA_ENABLE_PREFERRED_CLUSTER=1)
 endif()
 
 

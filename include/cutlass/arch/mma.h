@@ -129,6 +129,11 @@ struct OpClassWmmaTensorOp {};
 /// Tag classifying operators as Tensor Core with structure sparse operations.
 struct OpClassSparseTensorOp {};
 
+
+/// Tag classifying operators as Tensor Core with blockScaled
+struct OpClassBlockScaledTensorOp {};
+
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Matrix multiply-add operation

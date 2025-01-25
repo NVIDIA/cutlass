@@ -942,6 +942,18 @@ bool arg_as_IteratorAlgorithmID(
   ProblemSpace const &problem_space, 
   ProblemSpace::Problem const &problem);
 
+
+/// Lexically casts an argument to an int64 if it is defined. Returns true if not null.
+bool arg_as_RuntimeDatatype(library::RuntimeDatatype &runtime_datatype, KernelArgument::Value const *value_ptr);
+
+/// Lexically casts an argument to an int64 if it is defined. Returns true if not null.
+bool arg_as_RuntimeDatatype(
+  library::RuntimeDatatype &runtime_datatype,
+  char const *name,
+  ProblemSpace const &problem_space, 
+  ProblemSpace::Problem const &problem);
+
+
 /// Lexically casts an argument to an int64 if it is defined. Returns true if not null.
 bool arg_as_RasterOrder(library::RasterOrder &raster_order, KernelArgument::Value const *value_ptr);
 

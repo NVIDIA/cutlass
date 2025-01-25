@@ -87,6 +87,17 @@ void initialize_gemm_reference_operations_u8_u8_s32(Manifest &manifest) {
     NumericConverterClamp<int8_t, float> // From Scalar to D
   >(manifest);
 
+  // 4.
+  make_gemm_real_canonical_layouts<
+    uint8_t,                          // ElementA
+    uint8_t,                          // ElementB
+    int8_t,                           // ElementC
+    float,                            // ElementScalar / ElementCompute
+    int32_t,                          // ElementAccumulator
+    uint8_t,                          // ElementD
+    NumericConverterClamp<uint8_t, float> // From Scalar to D
+  >(manifest);
+
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

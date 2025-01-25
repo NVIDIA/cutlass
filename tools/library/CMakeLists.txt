@@ -221,6 +221,19 @@ cutlass_add_cutlass_library(
 
   # files split for parallel compilation
   src/reference/gemm_int4.cu
+  
+  src/reference/block_scaled_gemm_fp4a_vs16.cu 
+  src/reference/block_scaled_gemm_fp4a_vs32.cu 
+  src/reference/block_scaled_gemm_mixed8bitsa.cu
+  src/reference/gemm_f4_f4_f32.cu
+  src/reference/gemm_f4_f6_f32.cu
+  src/reference/gemm_f4_f8_f32.cu
+  src/reference/gemm_f6_f4_f32.cu
+  src/reference/gemm_f6_f6_f32.cu
+  src/reference/gemm_f6_f8_f32.cu
+  src/reference/gemm_f8_f4_f32.cu
+  src/reference/gemm_f8_f6_f32.cu
+  
   src/reference/gemm_s8_s8_s32.cu
   src/reference/gemm_u8_u8_s32.cu
   src/reference/gemm_int8_interleaved_32.cu

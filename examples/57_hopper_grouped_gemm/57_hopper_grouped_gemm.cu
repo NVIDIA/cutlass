@@ -737,6 +737,13 @@ int main(int argc, char const **args) {
       << "later (compute capability 90 or greater).\n";
     return 0;
   }
+  
+  else if (props.major != 9 || props.minor != 0) {
+    std::cerr << "This example requires a GPU of NVIDIA's Hopper Architecture (compute capability 90).\n";
+    return 0;
+  }
+  
+
   //
   // Parse options
   //

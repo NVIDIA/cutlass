@@ -48,4 +48,10 @@
 #include "cutlass/gemm/collective/sm90_mma_array_tma_gmma_ss_warpspecialized.hpp"
 #include "cutlass/gemm/collective/sm90_mma_tma_gmma_ss_warpspecialized_fp8.hpp"
 #include "cutlass/gemm/collective/sm90_mma_tma_gmma_ss_warpspecialized_fp8_blockwise_scaling.hpp"
+#if !defined(__CUDACC_RTC__) 
+#include "cutlass/gemm/collective/sm100_mma_warpspecialized.hpp" 
+#include "cutlass/gemm/collective/sm100_mma_array_warpspecialized.hpp" 
+#include "cutlass/gemm/collective/sm100_blockscaled_mma_warpspecialized.hpp" 
+#include "cutlass/gemm/collective/sm100_blockscaled_mma_array_warpspecialized.hpp" 
+#endif // !defined(__CUDACC_RTC__) 
 /////////////////////////////////////////////////////////////////////////////////////////////////

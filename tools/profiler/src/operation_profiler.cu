@@ -91,6 +91,11 @@ OperationProfiler::OperationProfiler(
     {ArgumentTypeID::kInteger, {"cluster_m", "cluster-shape::m"}, "Cluster shape in the M dimension"},
     {ArgumentTypeID::kInteger, {"cluster_n", "cluster-shape::n"}, "Cluster shape in the N dimension"},
     {ArgumentTypeID::kInteger, {"cluster_k", "cluster-shape::k"}, "Cluster shape in the K dimension"},
+    
+    {ArgumentTypeID::kInteger, {"cluster_m_fallback", "cluster-shape-fallback::m"}, "Fallback Cluster shape in the M dimension"},
+    {ArgumentTypeID::kInteger, {"cluster_n_fallback", "cluster-shape-fallback::n"}, "Fallback Cluster shape in the N dimension"},
+    {ArgumentTypeID::kInteger, {"cluster_k_fallback", "cluster-shape-fallback::k"}, "Fallback Cluster shape in the K dimension"},
+    
     {ArgumentTypeID::kInteger, {"stages", "threadblock-stages"}, "Number of stages of threadblock-scoped matrix multiply"},
     {ArgumentTypeID::kInteger, {"warps_m", "warp-count::m"}, "Number of warps within threadblock along the M dimension"},
     {ArgumentTypeID::kInteger, {"warps_n", "warp-count::n"}, "Number of warps within threadblock along the N dimension"},
@@ -174,6 +179,11 @@ bool OperationProfiler::satisfies(
       return false;
     }
   }
+  
+  bool dynamic_cluster = int64_t(op_desc.tile_description.cluster_shape.m()) == 0 ||
+                         int64_t(op_desc.tile_description.cluster_shape.n()) == 0 ||
+                         int64_t(op_desc.tile_description.cluster_shape.k()) == 0;
+  
   int64_t int_value;
 
   if (arg_as_int(int_value, "inst_m", problem_space, problem)) {
@@ -212,6 +222,7 @@ bool OperationProfiler::satisfies(
     }
   }
 
+  if (!dynamic_cluster) { 
   if (arg_as_int(int_value, "cluster_m", problem_space, problem)) {
     if (int64_t(op_desc.tile_description.cluster_shape.m()) != int_value) {
       return false;
@@ -230,6 +241,7 @@ bool OperationProfiler::satisfies(
     }
   }
 
+  } 
   if (arg_as_int(int_value, "stages", problem_space, problem)) {
     if (int64_t(op_desc.tile_description.threadblock_stages) != int_value) {
       return false;
@@ -296,6 +308,11 @@ std::ostream& operator<<(std::ostream& out, library::OperationKind provider) {
   if (provider == library::OperationKind::kGemm) {
     out << "kGemm";
   }
+  
+  else if (provider == library::OperationKind::kBlockScaledGemm) {
+    out << "kBlockScaledGemm";
+  }
+  
   else if (provider == library::OperationKind::kRankK) {
     out << "kRankK";
   }

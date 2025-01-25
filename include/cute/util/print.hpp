@@ -255,7 +255,12 @@ pretty_print(double v) {
 template <class T>
 CUTE_HOST_DEVICE void
 pretty_print(T t) {
+  constexpr auto has_print_exmy_base = cute::is_valid([](auto t) -> decltype(pretty_print_float_exmy_base(t)) {}, t);  
+  if constexpr (has_print_exmy_base) {   
+  pretty_print_float_exmy_base(t);       
+  } else {                               
   printf("  "); print(t);
+  }                                      
 }
 
 } // end namespace cute

@@ -139,7 +139,7 @@ struct ElementComputeType {
 };
 
 template <typename Gemm, typename Default>
-struct ElementComputeType<Gemm, Default, std::void_t<typename Gemm::EpilogueOutputOp::ElementCompute>> {
+struct ElementComputeType<Gemm, Default, std::enable_if_t<not std::is_void_v<typename Gemm::EpilogueOutputOp::ElementCompute>>> {
   using Type = typename Gemm::EpilogueOutputOp::ElementCompute;
 };
 
@@ -149,9 +149,21 @@ struct ElementScalarType {
 };
 
 template <typename Gemm, typename Default>
-struct ElementScalarType<Gemm, Default, std::void_t<typename Gemm::EpilogueOutputOp::ElementScalar>> {
+struct ElementScalarType<Gemm, Default, std::enable_if_t<not std::is_void_v<typename Gemm::EpilogueOutputOp::ElementScalar>>> {
   using Type = typename Gemm::EpilogueOutputOp::ElementScalar;
 };
+
+
+template <typename Gemm, typename = void>
+struct IsF8F6F4Kernel {
+  static constexpr bool value = false;
+};
+
+template <typename Gemm>
+struct IsF8F6F4Kernel<Gemm, std::void_t<decltype(Gemm::GemmKernel::CollectiveMainloop::IsF8F6F4)>> {
+  static constexpr bool value = true;
+};
+
 
 template<class CollectiveEpilogue, class = void>
 struct IsSfdEpi : cute::false_type {};
@@ -274,9 +286,26 @@ bool initialize_tensor(
       scope_max = 2;
       scope_min = 0;
     }
+    
+    else if (bits_input <= 6) {
+      scope_max = 2;
+      scope_min = -2;
+    }
+    
     else if (bits_input <= 8) {
+    
+      if constexpr (
+                    cute::is_same_v<Element, cutlass::float_ue8m0_t>){
+        scope_max = 4;
+        scope_min = 1;
+      }
+      else {
+    
         scope_max = 1;
         scope_min = -1;
+    
+      }
+    
     }
     else{
       scope_max = 4;
@@ -491,11 +520,24 @@ struct HostCollectiveMainloop {
 
   Arguments to_args() {
 
+    
+    // Runtime datatype selection
+    if constexpr (not cute::is_same_v<ElementA, typename Gemm::GemmKernel::ElementA>) {
+      using ArrayElementA = typename Gemm::GemmKernel::CollectiveMainloop::ArrayElementA;
+      using ArrayElementB = typename Gemm::GemmKernel::CollectiveMainloop::ArrayElementB;
+      return {
+        reinterpret_cast<ArrayElementA *>(tensor_A.device_data()), stride_a,
+        reinterpret_cast<ArrayElementB *>(tensor_B.device_data()), stride_b
+      };
+    }
+    else {
+    
     Arguments arguments = 
     {
       tensor_A.device_data(), stride_a, tensor_B.device_data(), stride_b
     };
     return arguments;
+    } 
   }
 
   auto to_host_args(ProblemShapeType problem_size) {
@@ -513,9 +555,19 @@ struct HostCollectiveMainloop {
     auto B = make_tensor(make_iterator(tensor_B.host_data()),
         make_layout(make_shape(N, K, L), stride_b));
 
+    
+    auto dummy_SFA = cute::make_tensor(static_cast<ElementA*>(nullptr),
+        cute::make_layout(cute::make_shape(M, K, L), stride_a));
+    auto dummy_SFB = cute::make_tensor(static_cast<ElementB*>(nullptr),
+        cute::make_layout(cute::make_shape(N, K, L), stride_b));
+    
     cutlass::reference::host::GettMainloopParams<ElementAccumulator, 
                                                  decltype(A), 
                                                  decltype(B)
+                                                 
+                                                 , decltype(dummy_SFA),
+                                                 decltype(dummy_SFB)
+                                                 
                                                  > mainloop_params{};
 
     mainloop_params.A = A;
@@ -840,6 +892,213 @@ struct HostCollectiveMainloop<ScheduleType_, Gemm, ElementA_, ElementB_,
   using HostCollectiveMainloopSparse<Gemm, ElementA_, ElementB_>::HostCollectiveMainloopSparse;
 };
 
+
+
+//
+// Block Scaled Gemm Input Operands : A , B, scalefactorA, scalefactorB
+//
+template<
+  class Gemm,
+  int SchedulerPipelineStageCount_,
+  int AccumulatorPipelineStageCount_,
+  class ElementA_,
+  class ElementB_
+>
+struct HostCollectiveMainloop<cutlass::gemm::KernelTmaWarpSpecializedBlockScaledSm100<SchedulerPipelineStageCount_,
+                                                                                      AccumulatorPipelineStageCount_>,
+                              Gemm, ElementA_, ElementB_> {
+  // Kernel data types
+  using ElementA = ElementA_;
+  using StrideA  = typename Gemm::GemmKernel::StrideA;
+  using ElementB = ElementB_;
+  using StrideB  = typename Gemm::GemmKernel::StrideB;
+  using ScheduleType = typename Gemm::GemmKernel::CollectiveMainloop::DispatchPolicy::Schedule;
+  using LayoutTagA = cutlass::detail::StrideToLayoutTagA_t<StrideA>;
+  using LayoutTagB = cutlass::detail::StrideToLayoutTagB_t<StrideB>;
+
+  using ElementAccumulator = typename Gemm::GemmKernel::ElementAccumulator;
+  using ElementScalingFactor = ElementAccumulator;
+  using ProblemShapeType = typename Gemm::GemmKernel::ProblemShape;
+  using EpilogueOutputOp = typename Gemm::EpilogueOutputOp;
+
+  static constexpr int SFVecSize = Gemm::GemmKernel::CollectiveMainloop::SFVecSize;
+
+  using ElementSF = typename Gemm::GemmKernel::CollectiveMainloop::ElementSF;
+  using Sm100BlkScaledConfig =  typename Gemm::GemmKernel::CollectiveMainloop::Sm100BlkScaledConfig;
+  using Blk_MN   = typename Sm100BlkScaledConfig::Blk_MN;
+  using Blk_SF   = typename Sm100BlkScaledConfig::Blk_SF;
+  using SfAtom   = typename Sm100BlkScaledConfig::SfAtom;
+  using LayoutSFA = typename Gemm::GemmKernel::CollectiveMainloop::LayoutSFA;
+  using LayoutSFB = typename Gemm::GemmKernel::CollectiveMainloop::LayoutSFB;
+
+  using Arguments = typename Gemm::GemmKernel::MainloopArguments;
+
+  // Whether to use relative equality checks
+  CheckEquality check_relative_equality = CheckEquality::EXACT;
+
+  StrideA stride_a;
+  StrideB stride_b;
+
+  LayoutSFA layout_sfa;
+  LayoutSFB layout_sfb;
+
+  typename LayoutTagA::Stride stride_factor_A;
+  typename LayoutTagB::Stride stride_factor_B;
+
+  cutlass::Distribution::Kind init_A;
+  cutlass::Distribution::Kind init_B;
+
+  cutlass::HostTensor<ElementA, LayoutTagA> tensor_A;
+  cutlass::HostTensor<ElementB, LayoutTagB> tensor_B;
+  cutlass::HostTensor<ElementSF, LayoutTagA> tensor_SFA;
+  cutlass::HostTensor<ElementSF, LayoutTagB> tensor_SFB;
+
+  uint64_t seed;
+  static constexpr uint64_t kDefaultSeed = 4096;
+
+  // Note: this limitation comes from testbed / not the library
+  static_assert(is_row_or_col_major<StrideA>(),
+    "ERROR : A Layout is neither Row / Column Major)");
+  static_assert(is_row_or_col_major<StrideB>(),
+    "ERROR : B Layout is neither Row / Column Major)");
+
+  HostCollectiveMainloop(
+    CheckEquality check_relative_equality_ = CheckEquality::EXACT,
+    cutlass::Distribution::Kind init_A_ = cutlass::Distribution::Uniform,
+    cutlass::Distribution::Kind init_B_ = cutlass::Distribution::Uniform,
+    uint64_t seed_ = kDefaultSeed,
+    typename LayoutTagA::Stride stride_factor_A_ = typename LayoutTagA::Stride(),
+    typename LayoutTagB::Stride stride_factor_B_ = typename LayoutTagB::Stride()
+  ):
+    check_relative_equality(check_relative_equality_),
+    stride_factor_A(stride_factor_A_),
+    stride_factor_B(stride_factor_B_),
+    init_A(init_A_), init_B(init_B_), seed(seed_) { }
+
+  template<class ProblemShapeType>
+  bool initialize(ProblemShapeType problem_size) {
+#if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
+    CUTLASS_TRACE_HOST("HostCollectiveMainloop (KernelTmaWarpSpecializedBlockScaledSm100)::initialize");
+#endif
+    //
+    // Allocate the GEMM workspace
+    //
+    auto problem_shape_MNKL = cute::append<4>(problem_size, 1);
+    auto M = cute::size<0>(problem_shape_MNKL);
+    auto N = cute::size<1>(problem_shape_MNKL);
+    auto K = cute::size<2>(problem_shape_MNKL);
+    auto L = cute::size<3>(problem_shape_MNKL);
+
+    stride_a = cutlass::make_cute_packed_stride(StrideA{}, cute::make_shape(M, K, L));
+    stride_b = cutlass::make_cute_packed_stride(StrideB{}, cute::make_shape(N, K, L));
+
+    // 2.x host tensor does not natively contain a batch stride or coord, so we spoof if by folding it into the outer mode
+    auto a_coord = cutlass::make_Coord(M * L, K);
+    // Cutlass has Row/Col major refers to MxK times KxN matrix product,
+    // so the HostTensorB should be treated as KxN in "coord"'s view
+    auto b_coord = cutlass::make_Coord(K, N * L);
+
+    tensor_A.resize(a_coord, cutlass::layout::Affine2Layout_Factory<LayoutTagA>::layout_factory(a_coord, stride_factor_A));
+    tensor_B.resize(b_coord, cutlass::layout::Affine2Layout_Factory<LayoutTagB>::layout_factory(b_coord, stride_factor_B));
+ 
+    EXPECT_TRUE(initialize_tensor(tensor_A.host_view(), init_A, seed + 2022));
+    EXPECT_TRUE(initialize_tensor(tensor_B.host_view(), init_B, seed + 2021));
+
+    // It is possible to randomly initialize to all zeros, so override this with non-zeros
+    // in the upper left corner of each operand.
+    tensor_A.host_view().at({0, 0}) = ElementA(1);
+    tensor_B.host_view().at({0, 0}) = ElementB(1);
+
+    tensor_A.sync_device();
+    tensor_B.sync_device();
+
+    using namespace cute;
+    auto k_blks = cutlass::ceil_div(K, size<1>(shape(SfAtom{})));
+    auto m_blks = cutlass::ceil_div(M, Blk_MN{});
+    auto n_blks = cutlass::ceil_div(N, Blk_MN{});
+    layout_sfa = Sm100BlkScaledConfig::tile_atom_to_shape_SFA(problem_shape_MNKL);
+    layout_sfb = Sm100BlkScaledConfig::tile_atom_to_shape_SFB(problem_shape_MNKL);
+
+    // 2.x host tensor does not natively contain a batch stride or coord, so we spoof if by folding it into the outer mode
+    auto sfa_coord   = cutlass::make_Coord(m_blks * Blk_MN{} * L, k_blks * Blk_SF{});
+    auto sfb_coord   = cutlass::make_Coord(n_blks * Blk_MN{} * L, k_blks * Blk_SF{});
+ 
+    tensor_SFA.resize(sfa_coord, cutlass::layout::Affine2Layout_Factory<LayoutTagA>::layout_factory(sfa_coord, stride_factor_A));
+    tensor_SFB.resize(sfb_coord, cutlass::layout::Affine2Layout_Factory<LayoutTagB>::layout_factory(sfb_coord, stride_factor_B));
+
+    EXPECT_TRUE(initialize_tensor(tensor_SFA.host_view(), init_A, seed + 2024));
+    EXPECT_TRUE(initialize_tensor(tensor_SFB.host_view(), init_B, seed + 2025));
+
+    // It is possible to randomly initialize to all zeros, so override this with non-zeros
+    // in the upper left corner of each operand.
+    tensor_SFA.host_view().at({0, 0}) = ElementSF(1);
+    tensor_SFB.host_view().at({0, 0}) = ElementSF(1);
+
+    tensor_SFA.sync_device();
+    tensor_SFB.sync_device();
+
+    return true;
+  }
+
+  Arguments to_args() {
+    using ArrayElementA = typename Gemm::GemmKernel::CollectiveMainloop::ArrayElementA;
+    using ArrayElementB = typename Gemm::GemmKernel::CollectiveMainloop::ArrayElementB;
+    return {
+      reinterpret_cast<ArrayElementA *>(tensor_A.device_data()), stride_a,
+      reinterpret_cast<ArrayElementB *>(tensor_B.device_data()), stride_b,
+      tensor_SFA.device_data(), layout_sfa,
+      tensor_SFB.device_data(), layout_sfb
+    };
+  }
+
+  auto to_host_args(ProblemShapeType problem_size) {
+    using namespace cute;
+    //
+    // Allocate the GEMM workspace
+    //
+    auto problem_shape_MNKL = cute::append<4>(problem_size, 1);
+    auto M = cute::size<0>(problem_shape_MNKL);
+    auto N = cute::size<1>(problem_shape_MNKL);
+    auto K = cute::size<2>(problem_shape_MNKL);
+    auto L = cute::size<3>(problem_shape_MNKL);
+    auto A = make_tensor(make_iterator(tensor_A.host_data()),
+          make_layout(make_shape(M, K, L), stride_a));
+    auto SfA = make_tensor(tensor_SFA.host_data(), layout_sfa);
+
+    auto B = make_tensor(make_iterator(tensor_B.host_data()),
+        make_layout(make_shape(N, K, L), stride_b));
+    auto SfB = make_tensor(tensor_SFB.host_data(), layout_sfb);
+
+    cutlass::reference::host::GettMainloopParams<ElementAccumulator, 
+        decltype(A),  
+        decltype(B), 
+        decltype(SfA), 
+        decltype(SfB)
+      > 
+      mainloop_params{A, SfA, B, SfB};
+    return mainloop_params;
+  }
+
+  void print_tensors(std::ofstream& file) {
+    file << "A =\n" << tensor_A.host_view()
+         << "\nB =\n" << tensor_B.host_view()
+         << "\nSFA =\n" << tensor_SFA.host_view()
+         << "\nSFB =\n" << tensor_SFB.host_view();
+  }
+
+  bool compare_reference(
+      cute::Shape<int,int,int,int> problem_shape_MNKL) {
+    auto [M, N, K, L] = problem_shape_MNKL;
+
+    EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_A.host_view()), 0);
+    EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_B.host_view()), 0);
+    EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_SFA.host_view()), 0);
+    EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_SFB.host_view()), 0);
+    return true;
+  }
+};
+
+
 template<class Gemm>
 struct HostCollectiveDefaultEpilogue {
   // fusion types are potentially void if the fusion is not supported
@@ -1127,6 +1386,22 @@ struct HostCollectiveEpilogue {
                                        typename Gemm::EpilogueOutputOp>;
   static_assert(cute::is_base_of_v<cutlass::epilogue::fusion::FusionOperation, FusionOp>);
 
+  
+  // Scale factor Generation related
+  using SfStrategy = cutlass::reference::host::SfStrategy;
+  static constexpr bool IsBlockScaleSupported            = FusionOp::IsBlockScaleSupported;
+  static constexpr SfStrategy SfGenStrategy              = (!IsBlockScaleSupported) ? SfStrategy::None : SfStrategy::SfDGen;
+  static constexpr int32_t SFD_VectorSize = IsBlockScaleSupported ? FusionOp::SFVecSize : 1;
+  using ElementSFD = non_void_t<typename FusionOp::ElementBlockScaleFactor, ElementD>;
+  using Sm100BlockScaledOutputConfig = cutlass::detail::Sm100BlockScaledOutputConfig<
+                                          SFD_VectorSize
+                                        >;
+  using Blk_MN = typename Sm100BlockScaledOutputConfig::Blk_MN;
+  using Blk_SF = typename Sm100BlockScaledOutputConfig::Blk_SF; 
+  using OutputSFAtom = typename Sm100BlockScaledOutputConfig::SfAtom;
+  cutlass::HostTensor<ElementSFD, LayoutTagD> tensor_SFD;
+  cutlass::HostTensor<ElementSFD, LayoutTagD> reference_SFD;
+  
   using ElementCompute    = typename FusionOp::ElementCompute;
   using ElementScalar     = typename FusionOp::ElementScalar;
   using ElementBias       = non_void_t<typename FusionOp::ElementBias>;
@@ -1412,6 +1687,22 @@ struct HostCollectiveEpilogue {
       }
     }
 
+    
+    if constexpr (IsBlockScaleSupported) {
+      auto m_blks = cutlass::ceil_div(M, cute::size<0>(cute::shape(OutputSFAtom{})));
+      auto n_blks = cutlass::ceil_div(N, cute::size<1>(cute::shape(OutputSFAtom{})));
+      auto sfd_coord = [&] () {
+          return cutlass::make_Coord(m_blks * Blk_MN{} * L, n_blks * Blk_SF{});
+      }();
+      tensor_SFD.resize(sfd_coord, cutlass::layout::Affine2Layout_Factory<LayoutTagD>::layout_factory(sfd_coord, stride_factor_D));
+      reference_SFD.resize(sfd_coord, cutlass::layout::Affine2Layout_Factory<LayoutTagD>::layout_factory(sfd_coord, stride_factor_D), false);
+      tensor_SFD.sync_device();
+      norm_constant.resize(scalar_coord, true);
+      EXPECT_TRUE(initialize_tensor(norm_constant.host_view(), init_scale, seed + 2023));
+      norm_constant.sync_device();
+    }
+    
+
     return true;
   }
 
@@ -1510,6 +1801,17 @@ struct HostCollectiveEpilogue {
       }
     }
 
+    
+    if constexpr (IsBlockScaleSupported) {
+      tensor_SFD.sync_host();
+      bool passed_sf = equality_check(reference_SFD.host_view(), tensor_SFD.host_view());
+      if(!passed_sf) {
+        std::cout<<"SF is incorrect"<<std::endl;  
+      }
+      passed &= passed_sf;
+    }
+    
+
     return passed;
   }
 
@@ -1568,6 +1870,14 @@ struct HostCollectiveEpilogue {
         << "\n\nReference Aux =\n" << reference_Aux.host_view()
         << "\n\nComputed Aux =\n" << tensor_Aux.host_view();
     }
+    
+    if constexpr (IsBlockScaleSupported) {
+      file
+        << "\n\nSFD Reference =\n" << reference_SFD.host_view()
+        << "\n\nSFD Computed =\n" << tensor_SFD.host_view();
+    }
+    
+
     file
     << "\nC =\n" << tensor_C.host_view()
     << "\n\nReference =\n" << reference_D.host_view()
@@ -1678,6 +1988,12 @@ struct HostCollectiveEpilogue {
         }
       }
 
+      
+      if constexpr (IsBlockScaleSupported) {
+        arguments.thread.block_scale_factor_ptr = tensor_SFD.device_data();
+        arguments.thread.norm_constant_ptr = norm_constant.device_data();
+      }
+      
     }
 
     return arguments;
@@ -1727,6 +2043,18 @@ struct HostCollectiveEpilogue {
             cute::make_layout(cute::make_shape(M, N, L), make_stride(cute::_0{}, cute::_0{}, cute::_1{})));
       }
     }();
+    
+    auto SfD = [&](){
+      if constexpr (IsBlockScaleSupported) {
+        auto tensor = make_tensor(detail::make_iterator(reference_SFD.host_data()),
+          Sm100BlockScaledOutputConfig::tile_atom_to_shape_SFD(problem_shape_MNKL));
+        return tensor;
+      }
+      else {
+        // Reference kernel has a logic to ignore scalefactor computation if we pass the tensor type same as output D tensor.
+        return D;
+      }
+    }();
     cutlass::reference::host::GettEpilogueParams<
       ElementScalar,
       ElementScalar,
@@ -1739,8 +2067,11 @@ struct HostCollectiveEpilogue {
       decltype(Valpha),
       decltype(Vbeta),
       ActivationFunctor,
+      decltype(SfD),             
+      Int<SFD_VectorSize>,       
       cutlass::plus<ElementCompute>
       , false /*PerColumnBias_*/
+      , SfGenStrategy            
     > epilogue_params{};
 
     epilogue_params.C = C;
@@ -1791,6 +2122,11 @@ struct HostCollectiveEpilogue {
         epilogue_params.Vbeta = Vbeta;
       }
     }
+    
+    if constexpr (IsBlockScaleSupported) {
+      epilogue_params.SfD = SfD;
+      epilogue_params.st = norm_constant.at(coord_0);
+    }
     return epilogue_params;
   }
 };
@@ -1801,6 +2137,8 @@ template <
   bool force_legacy_epilogue = false,
   typename ElementA = typename Gemm::GemmKernel::ElementA,
   typename ElementB = typename Gemm::GemmKernel::ElementB
+  , typename RuntimeDatatypeA = void* 
+  , typename RuntimeDatatypeB = void* 
 >
 struct TestbedImpl {
   // Kernel data types
@@ -1821,6 +2159,20 @@ struct TestbedImpl {
   using LayoutTagB = typename HostCollectiveMainloopType::LayoutTagB;
   using LayoutTagC = typename CollectiveEpilogue::LayoutTagC;
   using LayoutTagD = typename CollectiveEpilogue::LayoutTagD;
+
+  
+  using InternalElementA = typename Gemm::GemmKernel::ElementA;
+  using InternalElementB = typename Gemm::GemmKernel::ElementB;
+  static constexpr bool IsRuntimeDataTypeA = cutlass::gemm::collective::detail::is_sm10x_runtime_f8f6f4<InternalElementA>();
+
+  static constexpr bool IsRuntimeDataTypeB = cutlass::gemm::collective::detail::is_sm10x_runtime_f8f6f4<InternalElementB>();
+
+  static_assert((IsRuntimeDataTypeA && IsRuntimeDataTypeB) ||
+                (!IsRuntimeDataTypeA && !IsRuntimeDataTypeB), 
+                "ElementA and ElementB in a GEMM kernel should be both runtime or both static.");
+
+  static constexpr bool IsRuntimeDataType = IsRuntimeDataTypeA && IsRuntimeDataTypeB;
+  
 
   uint32_t sm_count;
   // Used to force multi-wave tests for persistent kernel schedules
@@ -2007,6 +2359,8 @@ struct TestbedImpl {
     detail::MaxSwizzleSize max_swizzle = detail::MaxSwizzleSize{},
     detail::Splits splits = detail::Splits{},
     DecompositionMode decomposition_mode = DecompositionMode::Heuristic
+    , RuntimeDatatypeA runtime_input_datatype_a = {} 
+    , RuntimeDatatypeB runtime_input_datatype_b = {} 
     )
   {
 #if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
@@ -2072,6 +2426,13 @@ struct TestbedImpl {
     typename HostCollectiveMainloopType::Arguments mainloop_args;
 
     mainloop_args = collective_mma_inputs.to_args();
+
+    
+    if constexpr (IsRuntimeDataType) {
+      mainloop_args.runtime_data_type_a = runtime_input_datatype_a;
+      mainloop_args.runtime_data_type_b = runtime_input_datatype_b;
+    }
+    
 
     arguments =
     {
@@ -2195,6 +2556,8 @@ template <
   bool force_legacy_epilogue = false,
   typename ElementA = typename Gemm::GemmKernel::ElementA,
   typename ElementB = typename Gemm::GemmKernel::ElementB
+  , typename RuntimeDatatypeA = void* 
+  , typename RuntimeDatatypeB = void* 
 >
 struct Testbed3x {
 
@@ -2204,6 +2567,8 @@ struct Testbed3x {
                         force_legacy_epilogue, 
                         ElementA, 
                         ElementB
+                        , RuntimeDatatypeA 
+                        , RuntimeDatatypeB 
                         >;
   using Kernel      = typename Gemm::GemmKernel;
   using Epilogue    = typename Gemm::GemmKernel::CollectiveEpilogue;
@@ -2244,10 +2609,13 @@ struct Testbed3x {
     DecompositionMode decomposition_mode = DecompositionMode::Heuristic,
     bool profiling = false,
     detail::Iterations iterations = detail::Iterations{}
+    , RuntimeDatatypeA runtime_input_datatype_a = {} 
+    , RuntimeDatatypeB runtime_input_datatype_b = {} 
     )
   {
     return impl_.run(
         problem_size, alpha, beta, profiling, iterations, raster_order, max_swizzle, splits, decomposition_mode
+        , runtime_input_datatype_a, runtime_input_datatype_b 
         );
   }
 };
@@ -2298,11 +2666,629 @@ bool TestGemmPerf3x(int iterations = 20) {
   return true;
 }
 
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+//
+template <
+  typename Gemm, 
+  typename RuntimeDataTypeA,
+  typename RuntimeDataTypeB,
+  bool force_legacy_epilogue = false>
+bool TestRuntimeDataTypeSmall(
+  RuntimeDataTypeA runtime_input_datatype_a,
+  RuntimeDataTypeB runtime_input_datatype_b,
+  double alpha = 1.0, double beta = cute::is_same_v<typename Gemm::GemmKernel::ElementC, void> ? 0.0 : 1.0,
+  CheckEquality check_relative_equality = CheckEquality::RELATIVE, ScalarLoc use_device_scalars = ScalarLoc::ON_DEVICE, VectorScale vector_scale_mode = VectorScale::ENABLED, std::vector<int> override_problem_size_k = {}) {
+  using ProblemShapeType = typename Gemm::GemmKernel::ProblemShape;
+  using ElementScalar = typename Gemm::EpilogueOutputOp::ElementScalar;
+  using CtaShape_MNK = typename Gemm::GemmKernel::CollectiveMainloop::CtaShape_MNK;
+  using DispatchPolicy = typename Gemm::GemmKernel::CollectiveMainloop::DispatchPolicy;
+
+  using InternalElementA = typename Gemm::GemmKernel::ElementA;
+  using InternalElementB = typename Gemm::GemmKernel::ElementB;
+
+  CtaShape_MNK cta_shape;
+  static constexpr int SmCount  = 16;
+  static constexpr int MultiplierOffsetM = 1;
+  static constexpr int MultiplierOffsetN = 2;
+  static constexpr int MultiplierOffsetK = 3;
+  int max_alignment = std::max(Gemm::kAlignmentA, Gemm::kAlignmentB);
+
+  float waves[] = {0.5, 1.25, 2.5};
+  int cluster_m = 1;
+  int cluster_n = 1;
+
+  std::vector<int> problem_size_k;
+  if (override_problem_size_k.empty()) {
+    problem_size_k = {256 + max_alignment * MultiplierOffsetK, 512 + max_alignment * MultiplierOffsetK};
+  }
+  else {
+    problem_size_k = override_problem_size_k;
+  }
+
+  if constexpr(DispatchPolicy::ArchTag::kMinComputeCapability >= 90) {
+    typename DispatchPolicy::ClusterShape cluster_shape;
+    cluster_m = cute::size<0>(cluster_shape);
+    cluster_n = cute::size<1>(cluster_shape);
+  }
+
+  [[maybe_unused]] constexpr int TileShapeK = cute::size<2>(typename Gemm::GemmKernel::TileShape{});
+  using DecompositionMode = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90StreamKParams::DecompositionMode;
+  using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90::RasterOrderOptions;
+
+  std::vector<DecompositionMode> decomposition_modes = {DecompositionMode::Heuristic};
+  static constexpr bool UsesStreamKScheduler = cute::is_same_v<typename Gemm::GemmKernel::TileSchedulerTag, cutlass::gemm::StreamKScheduler>;
+  if constexpr (UsesStreamKScheduler) {
+    decomposition_modes.push_back(DecompositionMode::DataParallel);
+    decomposition_modes.push_back(DecompositionMode::SplitK);
+    decomposition_modes.push_back(DecompositionMode::StreamK);
+  }
+  bool passed = true;
+
+  for (float wave : waves) {
+    for (int k : problem_size_k) {
+      int grid_m, grid_n = 0;
+      int num_grid = int(wave * SmCount);
+
+      if (cluster_m >= cluster_n) {
+        grid_m = cluster_m;
+        grid_n = num_grid / grid_m;
+        // Align grid_n to cluster_n
+        grid_n = std::max((grid_n + cluster_n - 1 ) / cluster_n * cluster_n, 1);
+      }
+      else {
+        grid_n = cluster_n;
+        grid_m = num_grid / grid_n;
+        // Align grid_m to cluster_m
+        grid_m = std::max((grid_m + cluster_m - 1 ) / cluster_m * cluster_m, 1);
+      }
+
+      int m = grid_m * cute::size<0>(cta_shape) + MultiplierOffsetM * max_alignment;
+      int n = grid_n * cute::size<1>(cta_shape) + MultiplierOffsetN * max_alignment;
+
+      ProblemShapeType problem_size;
+      if constexpr (cute::rank(ProblemShapeType{}) == 4) {
+        problem_size = ProblemShapeType{m, n, k, /* l */ 1};
+      }
+      else {
+        problem_size = ProblemShapeType{m, n, k};
+      }
+
+      for (DecompositionMode decomp_mode : decomposition_modes) {
+        std::vector problem_splits = {detail::Splits{1}};
+        if (decomp_mode == DecompositionMode::Heuristic || decomp_mode == DecompositionMode::SplitK) {
+          problem_splits.push_back(detail::Splits{2});
+        }
+        for (auto splits : problem_splits) {
+          
+          if constexpr (cute::is_same_v<RuntimeDataTypeA, cute::UMMA::MXF4Format> && 
+                        cute::is_same_v<RuntimeDataTypeB, cute::UMMA::MXF4Format>) {
+            // e2m1_e2m1
+            if (runtime_input_datatype_a == cute::UMMA::MXF4Format::E2M1 &&
+                runtime_input_datatype_b == cute::UMMA::MXF4Format::E2M1) {
+              Testbed3x<Gemm,
+                        cutlass::epilogue::thread::Identity,
+                        force_legacy_epilogue,
+                        cutlass::float_e2m1_t,
+                        cutlass::float_e2m1_t,
+                        cute::UMMA::MXF4Format,
+                        cute::UMMA::MXF4Format> testbed(check_relative_equality,
+                                                        use_device_scalars,
+                                                        vector_scale_mode);
+              passed = testbed.run(
+                problem_size,
+                cutlass::from_real<ElementScalar>(alpha),
+                cutlass::from_real<ElementScalar>(beta),
+                RasterOrderOptions::Heuristic, // raster_order
+                detail::MaxSwizzleSize(1),
+                splits,
+                decomp_mode,
+                false,
+                detail::Iterations{},
+                runtime_input_datatype_a,
+                runtime_input_datatype_b
+              );
+            }
+            else {
+              std::cout << "Unsupported configuration for runtime datatype MXFP4." << std::endl;
+              return false;
+            }
+          }
+          
+          else 
+          if constexpr (cute::is_same_v<RuntimeDataTypeA, cute::UMMA::MXF8F6F4Format> && 
+                             cute::is_same_v<RuntimeDataTypeB, cute::UMMA::MXF8F6F4Format>) {
+            static_assert((cute::is_same_v<InternalElementA, cutlass::type_erased_dynamic_float8_t> ||
+                           cute::is_same_v<InternalElementA, cutlass::type_erased_dynamic_float6_t> ||
+                           cute::is_same_v<InternalElementA, cutlass::type_erased_dynamic_float4_t>) && 
+                          (cute::is_same_v<InternalElementB, cutlass::type_erased_dynamic_float8_t> ||
+                           cute::is_same_v<InternalElementB, cutlass::type_erased_dynamic_float6_t> ||
+                           cute::is_same_v<InternalElementB, cutlass::type_erased_dynamic_float4_t>), 
+                          "Runtime datatype must be selected with an appropriate static umbrella data type.");
+            if constexpr (cute::is_same_v<InternalElementA, cutlass::type_erased_dynamic_float8_t> &&
+                          cute::is_same_v<InternalElementB, cutlass::type_erased_dynamic_float4_t>) {
+              // e4m3_e2m1
+              if (runtime_input_datatype_a == cute::UMMA::MXF8F6F4Format::E4M3 &&
+                  runtime_input_datatype_b == cute::UMMA::MXF8F6F4Format::E2M1) {
+                Testbed3x<Gemm,
+                          cutlass::epilogue::thread::Identity,
+                          force_legacy_epilogue,
+                          cutlass::float_e4m3_t,
+                          cutlass::float_e2m1_t,
+                          cute::UMMA::MXF8F6F4Format,
+                          cute::UMMA::MXF8F6F4Format> testbed(check_relative_equality,
+                                                          use_device_scalars,
+                                                          vector_scale_mode);
+                passed = testbed.run(
+                  problem_size,
+                  cutlass::from_real<ElementScalar>(alpha),
+                  cutlass::from_real<ElementScalar>(beta),
+                  RasterOrderOptions::Heuristic, // raster_order
+                  detail::MaxSwizzleSize(1),
+                  splits,
+                  decomp_mode,
+                  false,
+                  detail::Iterations{},
+                  runtime_input_datatype_a,
+                  runtime_input_datatype_b
+                );
+              }
+              // Unsupport
+              else {
+                std::cout << "Unsupported configuration for runtime datatype Mxf8f6f4." << std::endl;
+                return false;
+              }
+            }
+            // f6xf4
+            else if constexpr (cute::is_same_v<InternalElementA, cutlass::type_erased_dynamic_float6_t> &&
+                               cute::is_same_v<InternalElementB, cutlass::type_erased_dynamic_float4_t>) {
+              // e3m2_e2m1
+              if (runtime_input_datatype_a == cute::UMMA::MXF8F6F4Format::E3M2 &&
+                  runtime_input_datatype_b == cute::UMMA::MXF8F6F4Format::E2M1) {
+                Testbed3x<Gemm,
+                          cutlass::epilogue::thread::Identity,
+                          force_legacy_epilogue,
+                          cutlass::float_e3m2_t,
+                          cutlass::float_e2m1_t,
+                          cute::UMMA::MXF8F6F4Format,
+                          cute::UMMA::MXF8F6F4Format> testbed(check_relative_equality,
+                                                          use_device_scalars,
+                                                          vector_scale_mode);
+
+                passed = testbed.run(
+                  problem_size,
+                  cutlass::from_real<ElementScalar>(alpha),
+                  cutlass::from_real<ElementScalar>(beta),
+                  RasterOrderOptions::Heuristic, // raster_order
+                  detail::MaxSwizzleSize(1),
+                  splits,
+                  decomp_mode,
+                  false,
+                  detail::Iterations{},
+                  runtime_input_datatype_a,
+                  runtime_input_datatype_b
+                );
+              }
+              // Unsupport
+              else {
+                std::cout << "Unsupported configuration for runtime datatype Mxf8f6f4." << std::endl;
+                return false;
+              }
+            }
+            else if constexpr (cute::is_same_v<InternalElementA, cutlass::type_erased_dynamic_float4_t> &&
+                               cute::is_same_v<InternalElementB, cutlass::type_erased_dynamic_float4_t>) {
+              // e2m1_e2m1
+              if (runtime_input_datatype_a == cute::UMMA::MXF8F6F4Format::E2M1 &&
+                  runtime_input_datatype_b == cute::UMMA::MXF8F6F4Format::E2M1) {
+                Testbed3x<Gemm,
+                          cutlass::epilogue::thread::Identity,
+                          force_legacy_epilogue,
+                          cutlass::float_e2m1_t,
+                          cutlass::float_e2m1_t,
+                          cute::UMMA::MXF8F6F4Format,
+                          cute::UMMA::MXF8F6F4Format> testbed(check_relative_equality,
+                                                          use_device_scalars,
+                                                          vector_scale_mode);
+                passed = testbed.run(
+                  problem_size,
+                  cutlass::from_real<ElementScalar>(alpha),
+                  cutlass::from_real<ElementScalar>(beta),
+                  RasterOrderOptions::Heuristic, // raster_order
+                  detail::MaxSwizzleSize(1),
+                  splits,
+                  decomp_mode,
+                  false,
+                  detail::Iterations{},
+                  runtime_input_datatype_a,
+                  runtime_input_datatype_b
+                );
+              }
+              // Unsupport
+              else {
+                std::cout << "Unsupported configuration for runtime datatype Mxf8f6f4." << std::endl;
+                return false;
+              }
+            }
+            else if constexpr (cute::is_same_v<InternalElementA, cutlass::type_erased_dynamic_float8_t> &&
+                               cute::is_same_v<InternalElementB, cutlass::type_erased_dynamic_float6_t>) {
+              // e4m3_e3m2
+              if (runtime_input_datatype_a == cute::UMMA::MXF8F6F4Format::E4M3 &&
+                  runtime_input_datatype_b == cute::UMMA::MXF8F6F4Format::E3M2) {
+                Testbed3x<Gemm,
+                          cutlass::epilogue::thread::Identity,
+                          force_legacy_epilogue,
+                          cutlass::float_e4m3_t,
+                          cutlass::float_e3m2_t,
+                          cute::UMMA::MXF8F6F4Format,
+                          cute::UMMA::MXF8F6F4Format> testbed(check_relative_equality,
+                                                          use_device_scalars,
+                                                          vector_scale_mode);
+                passed = testbed.run(
+                  problem_size,
+                  cutlass::from_real<ElementScalar>(alpha),
+                  cutlass::from_real<ElementScalar>(beta),
+                  RasterOrderOptions::Heuristic, // raster_order
+                  detail::MaxSwizzleSize(1),
+                  splits,
+                  decomp_mode,
+                  false,
+                  detail::Iterations{},
+                  runtime_input_datatype_a,
+                  runtime_input_datatype_b
+                );
+              }
+              // Unsupport
+              else {
+                std::cout << "Unsupported configuration for runtime datatype Mxf8f6f4." << std::endl;
+                return false;
+              }
+            }
+            else if constexpr (cute::is_same_v<InternalElementA, cutlass::type_erased_dynamic_float6_t> &&
+                               cute::is_same_v<InternalElementB, cutlass::type_erased_dynamic_float6_t>) {
+              // e3m2_e2m3
+              if (runtime_input_datatype_a == cute::UMMA::MXF8F6F4Format::E3M2 &&
+                  runtime_input_datatype_b == cute::UMMA::MXF8F6F4Format::E2M3) {
+                Testbed3x<Gemm,
+                          cutlass::epilogue::thread::Identity,
+                          force_legacy_epilogue,
+                          cutlass::float_e3m2_t,
+                          cutlass::float_e2m3_t,
+                          cute::UMMA::MXF8F6F4Format,
+                          cute::UMMA::MXF8F6F4Format> testbed(check_relative_equality,
+                                                          use_device_scalars,
+                                                          vector_scale_mode);
+                passed = testbed.run(
+                  problem_size,
+                  cutlass::from_real<ElementScalar>(alpha),
+                  cutlass::from_real<ElementScalar>(beta),
+                  RasterOrderOptions::Heuristic, // raster_order
+                  detail::MaxSwizzleSize(1),
+                  splits,
+                  decomp_mode,
+                  false,
+                  detail::Iterations{},
+                  runtime_input_datatype_a,
+                  runtime_input_datatype_b
+                );
+              }
+              // Unsupported
+              else {
+                std::cout << "Unsupported configuration for runtime datatype Mxf8f6f4." << std::endl;
+                return false;
+              }
+            }
+            else 
+            if constexpr (cute::is_same_v<InternalElementA, cutlass::type_erased_dynamic_float8_t> &&
+                               cute::is_same_v<InternalElementB, cutlass::type_erased_dynamic_float8_t>) {
+              // e5m2_e5m2
+              if (runtime_input_datatype_a == cute::UMMA::MXF8F6F4Format::E5M2 &&
+                  runtime_input_datatype_b == cute::UMMA::MXF8F6F4Format::E5M2) {
+                Testbed3x<Gemm,
+                          cutlass::epilogue::thread::Identity,
+                          force_legacy_epilogue,
+                          cutlass::float_e5m2_t,
+                          cutlass::float_e5m2_t,
+                          cute::UMMA::MXF8F6F4Format,
+                          cute::UMMA::MXF8F6F4Format> testbed(check_relative_equality,
+                                                          use_device_scalars,
+                                                          vector_scale_mode);
+                passed = testbed.run(
+                  problem_size,
+                  cutlass::from_real<ElementScalar>(alpha),
+                  cutlass::from_real<ElementScalar>(beta),
+                  RasterOrderOptions::Heuristic, // raster_order
+                  detail::MaxSwizzleSize(1),
+                  splits,
+                  decomp_mode,
+                  false,
+                  detail::Iterations{},
+                  runtime_input_datatype_a,
+                  runtime_input_datatype_b
+                );
+              }
+              // e4m3_e5m2
+              else if (runtime_input_datatype_a == cute::UMMA::MXF8F6F4Format::E4M3 &&
+                       runtime_input_datatype_b == cute::UMMA::MXF8F6F4Format::E5M2){
+                Testbed3x<Gemm,
+                          cutlass::epilogue::thread::Identity,
+                          force_legacy_epilogue,
+                          cutlass::float_e4m3_t,
+                          cutlass::float_e5m2_t,
+                          cute::UMMA::MXF8F6F4Format,
+                          cute::UMMA::MXF8F6F4Format> testbed(check_relative_equality,
+                                                          use_device_scalars,
+                                                          vector_scale_mode);
+                passed = testbed.run(
+                  problem_size,
+                  cutlass::from_real<ElementScalar>(alpha),
+                  cutlass::from_real<ElementScalar>(beta),
+                  RasterOrderOptions::Heuristic, // raster_order
+                  detail::MaxSwizzleSize(1),
+                  splits,
+                  decomp_mode,
+                  false,
+                  detail::Iterations{},
+                  runtime_input_datatype_a,
+                  runtime_input_datatype_b
+                );
+              }
+              // e5m2_e4m3
+              else if (runtime_input_datatype_a == cute::UMMA::MXF8F6F4Format::E5M2 &&
+                       runtime_input_datatype_b == cute::UMMA::MXF8F6F4Format::E4M3){
+                Testbed3x<Gemm,
+                          cutlass::epilogue::thread::Identity,
+                          force_legacy_epilogue,
+                          cutlass::float_e5m2_t,
+                          cutlass::float_e4m3_t,
+                          cute::UMMA::MXF8F6F4Format,
+                          cute::UMMA::MXF8F6F4Format> testbed(check_relative_equality,
+                                                          use_device_scalars,
+                                                          vector_scale_mode);
+                passed = testbed.run(
+                  problem_size,
+                  cutlass::from_real<ElementScalar>(alpha),
+                  cutlass::from_real<ElementScalar>(beta),
+                  RasterOrderOptions::Heuristic, // raster_order
+                  detail::MaxSwizzleSize(1),
+                  splits,
+                  decomp_mode,
+                  false,
+                  detail::Iterations{},
+                  runtime_input_datatype_a,
+                  runtime_input_datatype_b
+                );
+              }
+              // e4m3_e4m3
+              else if (runtime_input_datatype_a == cute::UMMA::MXF8F6F4Format::E4M3 &&
+                       runtime_input_datatype_b == cute::UMMA::MXF8F6F4Format::E4M3){
+                Testbed3x<Gemm,
+                          cutlass::epilogue::thread::Identity,
+                          force_legacy_epilogue,
+                          cutlass::float_e4m3_t,
+                          cutlass::float_e4m3_t,
+                          cute::UMMA::MXF8F6F4Format,
+                          cute::UMMA::MXF8F6F4Format> testbed(check_relative_equality,
+                                                          use_device_scalars,
+                                                          vector_scale_mode);
+                passed = testbed.run(
+                  problem_size,
+                  cutlass::from_real<ElementScalar>(alpha),
+                  cutlass::from_real<ElementScalar>(beta),
+                  RasterOrderOptions::Heuristic, // raster_order
+                  detail::MaxSwizzleSize(1),
+                  splits,
+                  decomp_mode,
+                  false,
+                  detail::Iterations{},
+                  runtime_input_datatype_a,
+                  runtime_input_datatype_b
+                );
+              }
+              // Unsupported
+              else {
+                std::cout << "Unsupported configuration for runtime datatype Mxf8f6f4." << std::endl;
+                return false;
+              }
+            }
+            // Unsupported
+            else {
+              std::cout << "Unsupported configuration for runtime datatype Mxf8f6f4." << std::endl;
+              return false;
+            }
+          }
+
+          else {
+            static_assert(cutlass::detail::dependent_false<RuntimeDataTypeA>,
+                "Unsupported configuration for runtime datatype.");
+          }
+
+          if (!passed) {
+            std::cout << __FILE__ << ':' << __LINE__ << " : GEMM MNK " << m << " " << n << " " << k << " FAILED.\n";
+            return false;
+          }
+        } // splits
+      } // decomposition_mode
+    } // k
+  } // waves
+
+  return passed;
+}
+
+template <typename Gemm, bool force_legacy_epilogue = false, bool apply_alignment_offset = true, bool test_batched_alpha_beta = false>
+bool TestSmall(double alpha = 1.0, double beta = cute::is_same_v<typename Gemm::GemmKernel::ElementC, void> ? 0.0 : 1.0,
+  CheckEquality check_relative_equality = CheckEquality::RELATIVE, 
+  ScalarLoc use_device_scalars = ScalarLoc::ON_DEVICE, 
+  VectorScale vector_scale_mode = VectorScale::ENABLED, 
+  std::vector<int> override_problem_size_k = {}) {
+ 
+  using ProblemShapeType = typename Gemm::GemmKernel::ProblemShape;
+  using ElementScalar = typename Gemm::EpilogueOutputOp::ElementScalar;
+  using CtaShape_MNK = typename Gemm::GemmKernel::CollectiveMainloop::CtaShape_MNK;
+  using DispatchPolicy = typename Gemm::GemmKernel::CollectiveMainloop::DispatchPolicy;
+  CtaShape_MNK cta_shape;  
+  Testbed3x<Gemm, cutlass::epilogue::thread::Identity, force_legacy_epilogue> testbed(check_relative_equality, use_device_scalars, vector_scale_mode);
+  static constexpr int SmCount  = 16;
+  static constexpr int MultiplierOffsetM = 1;
+  static constexpr int MultiplierOffsetN = 2;
+  static constexpr int MultiplierOffsetK = 3;
+  int max_alignment_k = 0;
+  int max_alignment_m = 0;
+  int max_alignment_n = 0;
+
+  if constexpr (apply_alignment_offset) {
+    max_alignment_k = std::max(Gemm::kAlignmentA, Gemm::kAlignmentB);
+    max_alignment_n = std::max(Gemm::kAlignmentA, Gemm::kAlignmentB);
+    max_alignment_m = std::max(Gemm::kAlignmentA, Gemm::kAlignmentB);
+  }
+  float waves[] = {0.5, 1.25, 2.5};
+  int cluster_m = 1;
+  int cluster_n = 1;
+
+  std::vector<int> problem_size_k;
+  if (override_problem_size_k.empty()) {
+    problem_size_k = {256 + max_alignment_k * MultiplierOffsetK, 512 + max_alignment_k * MultiplierOffsetK};
+  }
+  else {
+    problem_size_k = override_problem_size_k;
+  }
+
+  if constexpr(DispatchPolicy::ArchTag::kMinComputeCapability >= 90) {
+    typename DispatchPolicy::ClusterShape cluster_shape;
+    cluster_m = cute::size<0>(cluster_shape);
+    cluster_n = cute::size<1>(cluster_shape);
+  }
+
+  using DecompositionMode = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90StreamKParams::DecompositionMode;
+  using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90::RasterOrderOptions;
+
+  std::vector<DecompositionMode> decomposition_modes = {DecompositionMode::Heuristic};
+  static constexpr bool UsesStreamKScheduler = cute::is_same_v<typename Gemm::GemmKernel::TileSchedulerTag, cutlass::gemm::StreamKScheduler>;
+  if constexpr (UsesStreamKScheduler) {
+    decomposition_modes.push_back(DecompositionMode::DataParallel);
+    decomposition_modes.push_back(DecompositionMode::SplitK);
+    decomposition_modes.push_back(DecompositionMode::StreamK);
+  }
+  bool passed = true;
+
+  std::vector<RasterOrderOptions> raster_order_options = {RasterOrderOptions::Heuristic};
+  for (float wave : waves) {
+    for (int k : problem_size_k) {
+      int grid_m, grid_n = 0;
+      int num_grid = int(wave * SmCount);
+
+      if (cluster_m >= cluster_n) {
+        grid_m = cluster_m;
+        grid_n = num_grid / grid_m;
+        // Align grid_n to cluster_n
+        grid_n = std::max((grid_n + cluster_n - 1 ) / cluster_n * cluster_n, 1);
+      }
+      else {
+        grid_n = cluster_n;
+        grid_m = num_grid / grid_n;
+        // Align grid_m to cluster_m
+        grid_m = std::max((grid_m + cluster_m - 1 ) / cluster_m * cluster_m, 1);
+      }
+
+      int m = grid_m * cute::size<0>(cta_shape) + MultiplierOffsetM * max_alignment_m;
+      int n = grid_n * cute::size<1>(cta_shape) + MultiplierOffsetN * max_alignment_n;
+      int l = test_batched_alpha_beta && wave == waves[0] && k == problem_size_k[0] ? 2 : 1; // only test the smallest problem size
+      ProblemShapeType problem_size;
+      if constexpr (cute::rank(ProblemShapeType{}) == 4) {
+        problem_size = ProblemShapeType{m, n, k, l};
+      }
+      else {
+        problem_size = ProblemShapeType{m, n, k};
+      }
+
+      for (DecompositionMode decomp_mode : decomposition_modes) {
+        for (RasterOrderOptions raster_order : raster_order_options) {
+          std::vector problem_splits = {detail::Splits{1}};
+          if constexpr (UsesStreamKScheduler) {
+            if (decomp_mode == DecompositionMode::SplitK) {
+              problem_splits.push_back(detail::Splits{2});
+              problem_splits.push_back(detail::Splits{4});
+            }
+          }
+          for (auto splits : problem_splits) {
+            try {
+              passed = testbed.run(
+                problem_size,
+                cutlass::from_real<ElementScalar>(alpha),
+                cutlass::from_real<ElementScalar>(beta),
+                raster_order, // raster_order
+                detail::MaxSwizzleSize(0),
+                splits,
+                decomp_mode
+              );
+            }
+            catch (std::exception const& e) {
+              EXPECT_TRUE(false) << "TestSmall: testbed.run {"
+                << "m: " << m << ", n: " << n << ", k: " << k << ", l: " << l
+                << ", alpha: " << alpha << ", beta: " << beta
+                << ", raster_order: " << detail::raster_order_to_string(raster_order)
+                << ", max_swizzle_size: 1"
+                << ", splits: " << static_cast<int>(splits)
+                << ", decomp_mode: " << detail::decomp_mode_to_string(decomp_mode)
+                << "} threw an exception: " << e.what();
+              throw;
+            }
+            catch (...) {
+              EXPECT_TRUE(false) << "TestSmall: testbed.run {"
+                << "m: " << m << ", n: " << n << ", k: " << k << ", l: " << l
+                << ", alpha: " << alpha << ", beta: " << beta
+                << ", raster_order: " << detail::raster_order_to_string(raster_order)
+                << ", max_swizzle_size: 1"
+                << ", splits: " << static_cast<int>(splits)
+                << ", decomp_mode: " << detail::decomp_mode_to_string(decomp_mode)
+                << "} threw an exception (unknown)";
+              throw;
+            }
+            EXPECT_TRUE(passed) << "TestSmall: testbed.run {"
+              << "m: " << m << ", n: " << n << ", k: " << k << ", l: " << l
+              << ", alpha: " << alpha << ", beta: " << beta
+              << ", raster_order: " << detail::raster_order_to_string(raster_order)
+              << ", max_swizzle_size: 1"
+              << ", splits: " << static_cast<int>(splits)
+              << ", decomp_mode: " << detail::decomp_mode_to_string(decomp_mode)
+              << "} failed";
+
+            if (!passed) {
+              std::cout << __FILE__ << ':' << __LINE__ << " : GEMM MNKL " << m << " " << n << " " << k << " " << l << " FAILED.\n";
+              return false;
+            }
+          } // splits
+        } // raster_order
+      } // decomposition_mode
+    } // k
+  } // waves
+
+  return passed;
+}
+
+template <typename Gemm, bool force_legacy_epilogue = false, bool apply_alignment_offset = true, bool test_batched_alpha_beta = false>
+bool TestSmallFusion(double alpha = 1.0, double beta = cute::is_same_v<typename Gemm::GemmKernel::ElementC, void> ? 0.0 : 1.0,
+                     CheckEquality check_relative_equality = CheckEquality::RELATIVE,
+                     ScalarLoc use_device_scalars = ScalarLoc::ON_DEVICE,
+                     VectorScale vector_scale_mode = VectorScale::ENABLED,
+                     std::vector<int> override_problem_size_k = {}) {
+  return TestSmall<Gemm,
+                   force_legacy_epilogue,
+                   apply_alignment_offset,
+                   test_batched_alpha_beta>(alpha,
+                                            beta,
+                                            check_relative_equality,
+                                            use_device_scalars,
+                                            vector_scale_mode,
+                                            override_problem_size_k);
+}
+
+
+
 template <
   typename Gemm,
   template <class T> class ActivationFunctor = cutlass::epilogue::thread::Identity
 >
-bool TestAll(double alpha = 1.0, double beta = 0.0, CheckEquality check_relative_equality = CheckEquality::RELATIVE) {
+bool TestAll(double alpha = 1.0, double beta = cute::is_same_v<typename Gemm::GemmKernel::ElementC, void> ? 0.0 : 1.0, CheckEquality check_relative_equality = CheckEquality::RELATIVE) {
   using ElementScalar = typename Gemm::EpilogueOutputOp::ElementScalar;
   using ProblemShapeType = typename Gemm::GemmKernel::ProblemShape;
 
@@ -2451,7 +3437,7 @@ bool TestAll(double alpha = 1.0, double beta = 0.0, CheckEquality check_relative
 }
 
 template <typename Gemm>
-bool TestAllBiasElementwise(double alpha = 1.0, double beta = 0.0, CheckEquality check_relative_equality = CheckEquality::EXACT) {
+bool TestAllBiasElementwise(double alpha = 1.0, double beta = cute::is_same_v<typename Gemm::GemmKernel::ElementC, void> ? 0.0 : 1.0, CheckEquality check_relative_equality = CheckEquality::EXACT) {
   return TestAll<Gemm>(alpha, beta, check_relative_equality);
 }
 

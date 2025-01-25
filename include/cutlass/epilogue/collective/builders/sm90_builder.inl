@@ -167,7 +167,7 @@ sm90_compute_tile_shape_or_override() {
   }
 }
 
-// callbacks builder with TMA aux out
+// aux fusion callbacks builder for sm90 tma epilogue
 template <
   int StagesC,
   int StagesD,
@@ -177,6 +177,7 @@ template <
   class FusionOp,
   class TileShape_MNK,
   class EpilogueTile_MN,
+  class AccLoadOp,
   class ElementAccumulator
 >
 struct CallbacksBuilder<
@@ -185,8 +186,9 @@ struct CallbacksBuilder<
   TileShape_MNK,
   EpilogueTile_MN,
   ElementAccumulator,
+  AccLoadOp,
   cute::enable_if_t<(FusionOp::IsAuxOutSupported ^ FusionOp::IsAuxInSupported) // only one aux tensor
-              && not cute::is_subbyte_v<typename FusionOp::ElementAux>>
+              && not cute::is_subbyte_v<typename FusionOp::ElementAux>> // aux subbyte tensor doesn't use smem
 > {
   using GmemStrideTypeAux = gemm::TagToStrideC_t<typename FusionOp::GmemLayoutTagAux>;
   using SmemLayoutAtomAux = decltype(detail::sm90_get_epilogue_smem_swizzle_layout_atom<
@@ -213,6 +215,7 @@ template <
   class FusionOp,
   class TileShape_MNK,
   class EpilogueTile_MN,
+  class AccLoadOp,
   class ElementAccumulator
 >
 struct CallbacksBuilder<
@@ -221,6 +224,7 @@ struct CallbacksBuilder<
   TileShape_MNK,
   EpilogueTile_MN,
   ElementAccumulator,
+  AccLoadOp,
   cute::enable_if_t<(FusionOp::IsAuxOutSupported ^ FusionOp::IsAuxInSupported) // only one aux tensor
               && sizeof_bits_v<typename FusionOp::ElementAux> == 1>
 > {

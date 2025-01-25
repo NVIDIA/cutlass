@@ -510,6 +510,15 @@ Status Handle::gemm_universal(
   int M,                                    /// GEMM M dimension
   int N,                                    /// GEMM N dimension
   int K,                                    /// GEMM K dimension
+  
+  int cluster_m,                            /// cluster shape M dimension
+  int cluster_n,                            /// cluster shape N dimension
+  int cluster_k,                            /// cluster shape K dimension
+  int cluster_m_fallback,                   /// Fallback cluster shape M dimension
+  int cluster_n_fallback,                   /// Fallback cluster shape N dimension
+  int cluster_k_fallback,                   /// Fallback cluster shape K dimension
+  
+
   NumericTypeID element_compute,            /// Data type of internal accumulation
 
   NumericTypeID element_scalar,             /// Data type of alpha/beta scalars
@@ -629,6 +638,8 @@ Status Handle::gemm_universal(
   GemmUniversalConfiguration configuration{
     mode,
     {M, N, K},
+    {cluster_m, cluster_n, cluster_k}, 
+    {cluster_m_fallback, cluster_n_fallback, cluster_k_fallback}, 
     batch_count,
     lda,
     ldb,
@@ -647,6 +658,8 @@ Status Handle::gemm_universal(
 
   GemmUniversalArguments arguments{
     {M, N, K},
+    {cluster_m, cluster_n, cluster_k}, 
+    {cluster_m_fallback, cluster_n_fallback, cluster_k_fallback}, 
     batch_count,
     ptr_A,
     ptr_B,

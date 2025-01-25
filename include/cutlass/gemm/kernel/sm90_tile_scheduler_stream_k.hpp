@@ -714,6 +714,19 @@ public:
     auto [cta_m_in_cluster_, cta_n_in_cluster_, _] = block_id_in_cluster;
     uint64_t cta_m_in_cluster = static_cast<uint64_t>(cta_m_in_cluster_);
     uint64_t cta_n_in_cluster = static_cast<uint64_t>(cta_n_in_cluster_);
+    
+    // Determine the CTA's M and N offsets within the preferred cluster
+    // This simply finds the linear offset of the CTA within the cluster, and takes a divmod
+    // on it depending on the rasterization order used by the scheduler.
+    uint64_t cluster_linear_work_idx_tmp = params.div_cluster_size(linear_idx) * params.get_cluster_size();
+
+    if (params.raster_order_ == RasterOrder::AlongN) {
+      params.divmod_cluster_shape_minor_(cta_n_in_cluster, cta_m_in_cluster, linear_idx - cluster_linear_work_idx_tmp);
+    }
+    else {
+      params.divmod_cluster_shape_minor_(cta_m_in_cluster, cta_n_in_cluster, linear_idx - cluster_linear_work_idx_tmp);
+    }
+    
     return {static_cast<uint32_t>(cta_m_in_cluster), static_cast<uint32_t>(cta_n_in_cluster), _};
   }
 
@@ -946,6 +959,8 @@ private:
                                           params.divmod_cluster_blk_major_,
                                           params.log_swizzle_size_,
                                           params.raster_order_
+                                          , cta_m_in_cluster  
+                                          , cta_n_in_cluster  
                                         );
 
     // Set the M, N, and L block offsets

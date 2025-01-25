@@ -95,6 +95,9 @@ template <class... Iters>
 struct is_smem<ZipIterator<Iters...>> : conjunction<is_smem<Iters>...> {};
 template <class... Iters>
 struct is_gmem<ZipIterator<Iters...>> : conjunction<is_gmem<Iters>...> {};
+template <class... Iters>                                                   
+struct is_tmem<ZipIterator<Iters...>> : conjunction<is_tmem<Iters>...> {};  
+
 // A tuple of Layouts that operates on each Layout symmetrically
 // The Layouts need to have compatible shapes and ranks.
 // The ZipLayout presents the intersection of the domain of its component Layouts.

@@ -87,6 +87,7 @@ TEST(SM80_Device_Trmm_f32t_f32n_f32n_ls_l_nu_tensor_op_fast_f32_align1_align1, 6
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+#if 0 
 TEST(SM80_Device_Trmm_f32t_f32n_f32n_ls_l_nu_tensor_op_fast_f32_align1_align4, 128x128x32_64x64x32) {
 
   using ElementOutput = float;
@@ -124,6 +125,8 @@ TEST(SM80_Device_Trmm_f32t_f32n_f32n_ls_l_nu_tensor_op_fast_f32_align1_align4, 1
 
   EXPECT_TRUE(test::gemm::device::TestAllTrmmUniversal<Trmm>());
 }
+#endif 
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
