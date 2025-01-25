@@ -326,7 +326,9 @@ public:
       else {
         CUTLASS_ASSERT(cuda_adapter == nullptr);
         void const* kernel = (void const*) device_kernel<ConvKernel>;
-        if constexpr (ConvKernel::ArchTag::kMinComputeCapability == 90) {
+        if constexpr (ConvKernel::ArchTag::kMinComputeCapability == 90
+                        || ConvKernel::ArchTag::kMinComputeCapability == 100 
+                     ) {
           if constexpr (is_static_1x1x1) {
             device_kernel<ConvKernel><<<grid, block, smem_size, stream>>>(params);
             launch_result = Status::kSuccess;

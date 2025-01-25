@@ -680,6 +680,11 @@ struct GetName<cutlass::float_e4m3_t> {
 };
 
 template <>
+struct GetName<cutlass::float_e5m2_t> {
+  static constexpr char name[] = "float_e5m2_t";
+};
+
+template <>
 struct GetName<cutlass::half_t> {
   static constexpr char name[] = "half_t";
 };
@@ -724,13 +729,20 @@ using VectorConvertTypes = ::testing::Types<
   ResultSourcePair<cutlass::bfloat16_t, uint8_t>,
   ResultSourcePair<cutlass::bfloat16_t, int8_t>,
 
+  ResultSourcePair<cutlass::float_e4m3_t, cutlass::int2b_t>,
+  ResultSourcePair<cutlass::float_e5m2_t, cutlass::int2b_t>,
   ResultSourcePair<cutlass::half_t, cutlass::int2b_t>,
   ResultSourcePair<cutlass::bfloat16_t, cutlass::int2b_t>,
+  ResultSourcePair<cutlass::float_e4m3_t, cutlass::uint2b_t>,
+  ResultSourcePair<cutlass::float_e5m2_t, cutlass::uint2b_t>,
   ResultSourcePair<cutlass::half_t, cutlass::uint2b_t>,
   ResultSourcePair<cutlass::bfloat16_t, cutlass::uint2b_t>,
+
   ResultSourcePair<cutlass::float_e4m3_t, cutlass::int4b_t>,
+  ResultSourcePair<cutlass::float_e5m2_t, cutlass::int4b_t>,
   ResultSourcePair<cutlass::half_t, cutlass::int4b_t>,
   ResultSourcePair<cutlass::bfloat16_t, cutlass::int4b_t>,
+  ResultSourcePair<cutlass::float_e4m3_t, cutlass::uint4b_t>,
   ResultSourcePair<cutlass::half_t, cutlass::uint4b_t>,
   ResultSourcePair<cutlass::bfloat16_t, cutlass::uint4b_t>,
   ResultSourcePair<float, cutlass::int4b_t>

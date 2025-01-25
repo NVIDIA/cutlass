@@ -103,6 +103,7 @@ public:
     void *device_workspace = nullptr,
     cudaStream_t stream = nullptr) const = 0;
 
+  // Originally designed for metadata, but should be useful for FP8/6/4 too. 
   virtual Status initialize_with_profiler_workspace(
     void const *configuration,
     void *host_workspace,
@@ -269,6 +270,8 @@ struct GemmUniversalConfiguration {
 
   GemmUniversalMode mode{GemmUniversalMode::kGemm};
   gemm::GemmCoord problem_size{};
+  gemm::GemmCoord cluster_shape{};           
+  gemm::GemmCoord cluster_shape_fallback{};  
   int batch_count{1};
 
   int64_t lda{0};
@@ -282,6 +285,8 @@ struct GemmUniversalConfiguration {
 struct GemmUniversalArguments {
   // NOTE: these are replicated for 3.0 interfaces
   gemm::GemmCoord problem_size{};
+  gemm::GemmCoord cluster_shape{};          
+  gemm::GemmCoord cluster_shape_fallback{}; 
   int batch_count{1};
 
   void const *A{nullptr};
@@ -307,12 +312,67 @@ struct GemmUniversalArguments {
   // Needed for some 3.x kernels
   int sm_count{0};
   library::RasterOrder raster_order{};
+  library::RuntimeDatatype runtime_input_datatype_a{};
+  library::RuntimeDatatype runtime_input_datatype_b{};
   int swizzle_size{1};
+  int split_k_slices{1};
 
   int device_index{0};
   
   bool use_pdl{false};
 };
+
+
+/// Block Scaled GEMM
+//
+// OperationKind: kBlockScaledGemm
+// GemmKind:      Universal
+
+struct BlockScaledGemmArguments {
+  // NOTE: these are replicated for 3.0 interfaces
+  gemm::GemmCoord problem_size{};
+  gemm::GemmCoord cluster_shape{};  
+  gemm::GemmCoord cluster_shape_fallback{}; 
+  int batch_count{1};
+
+  void const *A{nullptr};
+  void const *B{nullptr};
+  void const *SFA{nullptr};
+  void const *SFB{nullptr};
+  void const *C{nullptr};
+  void *D{nullptr};
+  void *SFD{nullptr}; 
+
+  void const *alpha{nullptr};
+  void const *beta{nullptr};
+  ScalarPointerMode pointer_mode{};
+
+  // NOTE: these are replicated for 3.0 interfaces
+  int64_t lda{0};
+  int64_t ldb{0};
+  int64_t ldc{0};
+  int64_t ldd{0};
+
+  int64_t batch_stride_A{0};
+  int64_t batch_stride_B{0};
+  int64_t batch_stride_C{0};
+  int64_t batch_stride_D{0};
+
+  // Needed for ScaleFactor Generation
+  void const *norm_constant{nullptr};
+
+  // Needed for some 3.x kernels
+  int sm_count{0};
+  library::RasterOrder raster_order{};
+  int swizzle_size{1};
+  int split_k_slices{1};
+
+  library::RuntimeDatatype runtime_input_datatype_a{library::RuntimeDatatype::kStatic}; 
+  library::RuntimeDatatype runtime_input_datatype_b{library::RuntimeDatatype::kStatic}; 
+
+  bool use_pdl{false};
+};
+
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

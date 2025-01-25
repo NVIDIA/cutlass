@@ -170,6 +170,15 @@ char const *to_string(ConvKind type, bool pretty = false);
 template <>
 ConvKind from_string<ConvKind>(std::string const &str);
 
+
+/// Converts a RuntimeDatatype enumerant to a string
+char const *to_string(cutlass::library::RuntimeDatatype type, bool pretty = false);
+
+/// Convers a RuntimeDatatype enumerant from a string
+template<>
+cutlass::library::RuntimeDatatype from_string<cutlass::library::RuntimeDatatype>(std::string const &str);
+
+
 /// Converts a RasterOrder enumerant to a string
 char const *to_string(RasterOrder type, bool pretty = false);
 
@@ -201,6 +210,8 @@ bool cast_from_uint64(std::vector<uint8_t> &bytes, NumericTypeID type, uint64_t 
 
 /// Casts from a real value represented as a double to the destination type. Returns true if successful.
 bool cast_from_double(std::vector<uint8_t> &bytes, NumericTypeID type, double src);
+
+NumericTypeID dynamic_datatype_to_id(RuntimeDatatype type); 
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

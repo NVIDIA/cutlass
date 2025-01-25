@@ -56,6 +56,13 @@ get_tma_swizzle_bits(Swizzle<B,M,S>)
       case 0:   return TMA::SmemSwizzleBits::DISABLE;
     }
   } else
+
+  if constexpr (M == 5 || M == 6) {
+    static_assert(B == 2, "Expected B = 2 when M == 5 or 6. Unsupported layout swizzle.");
+    // S-condition as well?
+    return TMA::SmemSwizzleBits::B128;
+  } else
+
   {
     static_assert(M < 0, "Unsupported layout swizzle.");
   }
@@ -78,9 +85,25 @@ get_tma_swizzle_base(Swizzle<B,M,S>)
     static_assert(S == 3, "Expected S = 3 when M == 4. Unsupported layout swizzle.");
     return TMA::SmemSwizzleBase::SWIZZLE_BASE_16B;
   } 
+  
+  else if constexpr (M == 5) {
+    static_assert(B == 2, "Expected B = 2 when M == 5. Unsupported layout swizzle.");
+    static_assert(S == 2, "Expected S = 2 when M == 5. Unsupported layout swizzle.");
+    return TMA::SmemSwizzleBase::SWIZZLE_BASE_32B;
+  } else if constexpr (M == 6) {
+    static_assert(B == 2, "Expected B = 2 when M == 5. Unsupported layout swizzle.");
+    return TMA::SmemSwizzleBase::SWIZZLE_BASE_64B;
+  } 
+  #if 1
+  else {
+    static_assert(4 <= M && M <= 6, "Expected 128b=16B=(2^4)B to 512b=64B=(2^6)B base swizzle.");
+  }
+  #else 
+  
   else {
     static_assert(M == 4, "Expected 128b=16B=(2^4)B base swizzle.");
   }
+  #endif 
 }
 
 template <class Layout>

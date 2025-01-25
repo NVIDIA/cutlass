@@ -59,7 +59,8 @@ struct FusionCallbacks {
 template <class T>
 struct FusionCallbacksTraits {
   using DispatchPolicy = void;
-  using Operation = T;
+  using Callbacks = T;
+  using Operation = FusionOperation;
   using CtaTile_MNK = void;
   using EpilogueTile_MN = void;
   using ElementCompute = void;
@@ -76,6 +77,7 @@ struct FusionCallbacksTraits<
   FusionCallbacks<DispatchPolicy_, Operation_, CtaTile_MNK_, EpilogueTile_MN_, Args...>
 > {
   using DispatchPolicy = DispatchPolicy_;
+  using Callbacks = FusionCallbacks<DispatchPolicy_, Operation_, CtaTile_MNK_, EpilogueTile_MN_, Args...>;
   using Operation = Operation_;
   using CtaTile_MNK = CtaTile_MNK_;
   using EpilogueTile_MN = EpilogueTile_MN_;

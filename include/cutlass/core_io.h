@@ -110,6 +110,48 @@ std::ostream & operator<<(std::ostream &out, tfloat32_t const &x) {
   return out << float(x);
 }
 
+
+inline
+std::ostream & operator<<(std::ostream &out, float_e2m1_t const &x) {
+  return out << float(x);
+}
+
+inline
+std::ostream & operator<<(std::ostream &out, detail::float_e2m1_unpacksmem_t const &x) {
+  return out << float(x);
+}
+
+inline
+std::ostream & operator<<(std::ostream &out, float_e3m2_t const &x) {
+  return out << float(x);
+}
+
+inline
+std::ostream & operator<<(std::ostream &out, float_e2m3_t const &x) {
+  return out << float(x);
+}
+
+inline
+std::ostream & operator<<(std::ostream &out, detail::float_e3m2_unpacksmem_t const &x) {
+  return out << float(x);
+}
+
+inline
+std::ostream & operator<<(std::ostream &out, detail::float_e2m3_unpacksmem_t const &x) {
+  return out << float(x);
+}
+
+inline
+std::ostream & operator<<(std::ostream &out, float_ue8m0_t const &x) {
+  return out << float(x);
+}
+
+inline
+std::ostream & operator<<(std::ostream &out, float_ue4m3_t const &x) {
+  return out << float(x);
+}
+
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Helper to enable formatted printing of CUTLASS scalar types to an ostream

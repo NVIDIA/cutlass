@@ -356,6 +356,15 @@ int main(int argc, char const **args) {
       << "later (compute capability 90 or greater) and CUDA 12.0 or greater.\n";
       return 0;
   }
+  
+  else if (__CUDACC_VER_MAJOR__ < 12 || props.major != 9 || props.minor != 0) {
+    std::cout
+      << "This example requires a GPU of NVIDIA's Hopper Architecture "
+      << "(compute capability 90) and CUDA 12.0 or greater.\n";
+    return 0;
+  }
+  
+
   //
   // Parse options
   //

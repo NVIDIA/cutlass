@@ -47,7 +47,7 @@ void launch_full_barrier(
     cudaStream_t stream,
     bool launch_with_pdl) {
 
-#if ((__CUDACC_VER_MAJOR__ >= 12) && (__CUDACC_VER_MINOR__ >= 4))
+#if (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 4))
   // Legacy (kernel) launch with PDL
   cudaLaunchAttribute attributes[1];
   attributes[0].id = cudaLaunchAttributeProgrammaticStreamSerialization;

@@ -211,6 +211,10 @@ protected:
       }
     }
 
+    if constexpr (std::is_same_v<typename Operator::GemmKernel::TileSchedulerTag, cutlass::gemm::StreamKScheduler>) {
+      operator_args.scheduler.splits = arguments->split_k_slices;
+    }
+
     return status;
   }
 

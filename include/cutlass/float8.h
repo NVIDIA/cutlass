@@ -36,6 +36,10 @@
 
 #pragma once
 
+
+#include "cutlass/arch/config.h"
+
+
 // FP8 types are available starting CUDA 11.8+
 #if (__CUDACC_VER_MAJOR__ >= 12) || ((__CUDACC_VER_MAJOR__ == 11) && (__CUDACC_VER_MINOR__ >= 8))
 #define CUDA_FP8_ENABLED 1
@@ -52,6 +56,12 @@
 #    endif // (__CUDACC_VER_MAJOR__ > 12) || ((__CUDACC_VER_MAJOR__ == 12) && (__CUDACC_VER_MINOR__ >= 1))
 #  endif // (__CUDA_ARCH__ >= 900)
 #endif // defined(__CUDA_ARCH__)
+
+
+#if (defined(CUTLASS_ARCH_MMA_SM100A_ENABLED))
+#  define CUDA_PTX_UE8M0_CVT_ENABLED 1
+#endif
+
 
 #ifdef __GNUC__
 // Ignore checks on reinterpret-casts that are being used for bitcasts.
@@ -80,6 +90,12 @@
 #include <cuda_fp16.h>
 
 #include "cutlass/cutlass.h"
+
+#include "cutlass/exmy_base.h"
+
+#include "cute/util/type_traits.hpp"
+
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
@@ -1028,6 +1044,204 @@ float_e5m2_t operator--(float_e5m2_t & lhs, int) {
     return ret;
 }
 
+
+///////////////////////////////////////////////////////////////
+///
+/// floating-point 8 type : UE4M3
+///
+///////////////////////////////////////////////////////////////
+// UE4M3:
+//   4 Exponent bits, 3 Mantissa bits
+//   Range: [0:448]
+//   has_inf: false
+//   has_NaN: true
+//   has_denorm: true
+//   Exponent bias (exp_bias): 7
+struct float_ue4m3_t : public float_exmy_base<cutlass::detail::FpEncoding::UE4M3, float_ue4m3_t> {
+  using Base = float_exmy_base<cutlass::detail::FpEncoding::UE4M3, float_ue4m3_t>;
+
+  float_ue4m3_t() = default;
+
+  CUTLASS_HOST_DEVICE
+  float_ue4m3_t convert_from_float(float const &flt) const {
+    #if defined(CUDA_PTX_FP8_CVT_ENABLED)
+      uint16_t tmp;
+      float y = float();
+      asm volatile("cvt.rn.satfinite.e4m3x2.f32 %0, %1, %2;" : "=h"(tmp) : "f"(y), "f"(flt));
+      return bitcast(*reinterpret_cast<uint8_t *>(&tmp));
+    #else 
+      Base::FP32BitRepresentation::Storage fp32_bits = Base::FP32BitRepresentation::to_bits(flt);
+      return bitcast(BitRepresentation::convert_from(fp32_bits, Base::FP32BitRepresentation{}));
+    #endif
+  }
+
+  CUTLASS_HOST_DEVICE
+  float convert_to_float(float_ue4m3_t const &x) const {
+    #if defined(CUDA_PTX_FP8_CVT_ENABLED)
+      uint16_t bits = x.storage;
+      uint32_t packed;
+      asm volatile("cvt.rn.f16x2.e4m3x2 %0, %1;\n" : "=r"(packed) : "h"(bits));
+      return __half2float(reinterpret_cast<half2 const &>(packed).x);
+    #else 
+      Base::FP32BitRepresentation::Storage fp32_bits;
+      fp32_bits = Base::BitRepresentation::convert_to(x.storage, Base::FP32BitRepresentation{});
+      return detail::copy_bits<Base::FP32BitRepresentation::Storage, float>(fp32_bits);
+    #endif
+  }
+
+  CUTLASS_HOST_DEVICE
+  explicit float_ue4m3_t(double x) : Base(float(x)) {
+  }
+
+  CUTLASS_HOST_DEVICE
+  explicit float_ue4m3_t(float x) : Base(x) {
+  }
+
+  CUTLASS_HOST_DEVICE
+  explicit float_ue4m3_t(int x) : Base(x) {
+  }
+
+  CUTLASS_HOST_DEVICE
+  explicit float_ue4m3_t(unsigned x) : Base(x) {
+  }
+
+  CUTLASS_HOST_DEVICE
+  float_ue4m3_t(Base x) : Base(x) {
+  }
+
+  CUTLASS_HOST_DEVICE
+  friend bool isnan(float_ue4m3_t const& x) {
+    return x.storage == uint8_t(0x7f);
+  }
+
+};
+
+/// Defines the size of an element in bits - specialized for float_ue4m3_t
+template <>
+struct sizeof_bits<float_ue4m3_t> {
+  static constexpr int value = sizeof_bits<float_exmy_base<cutlass::detail::FpEncoding::UE4M3, float_ue4m3_t>>::value;
+};
+
+
+
+///////////////////////////////////////////////////////////////
+///
+/// floating-point 8 type : UE8M0
+///
+///////////////////////////////////////////////////////////////
+// UE8M0:
+//   8 Exponent bits, 0 Mantissa bits
+//   Range: [2^-127:2^127]
+//   has_inf: false
+//   has_NaN: true (11111111)
+//   has_denorm: true
+//   Exponent bias (exp_bias): 8
+
+struct float_ue8m0_t : public float_exmy_base<cutlass::detail::FpEncoding::UE8M0, float_ue8m0_t> {
+  using Base = float_exmy_base<cutlass::detail::FpEncoding::UE8M0, float_ue8m0_t>;
+  using FP32Bits = typename Base::FP32BitRepresentation;
+
+  float_ue8m0_t() = default;
+
+  CUTLASS_HOST_DEVICE
+  float_ue8m0_t convert_from_float(float const &flt) const {
+  #if defined(CUDA_PTX_UE8M0_CVT_ENABLED)
+    uint16_t out;
+    asm volatile(
+        "{ cvt.rp.satfinite.ue8m0x2.f32 %0, 0.0, %1; }"
+        : "=h"(out) : "f"(flt));      
+    return bitcast(*reinterpret_cast<uint8_t *>(&out));
+  #else
+    if (CUTLASS_CMATH_NAMESPACE::isnan(flt) || CUTLASS_CMATH_NAMESPACE::isinf(flt)) {
+      return bitcast(0xFF);
+    }
+    uint32_t flt_uint32 = cutlass::detail::copy_bits<float, uint32_t>(flt);
+    uint8_t exp = (flt_uint32 >> 23) & 0xff;  // Extract the 8 bit exponent
+    uint32_t mant = flt_uint32 & 0x7fffff;    // Extract the 23 bit mantissa
+    // Do the round up
+    // Deals w/ satfinite all at once
+    if ((mant > 0) && (exp != 0xFE) && !(exp == 0 && mant <= 0x00400000)) {
+      exp++;
+    }
+    return bitcast(exp);
+  #endif
+  }
+
+  CUTLASS_HOST_DEVICE
+  float convert_to_float(float_ue8m0_t const &x) const {
+    //////////////////////////////////////////////////////////////
+    // The conversion of UE8M0 to FP32 scale can be done simply
+    // with a left shift (No rounding necessary)
+    // Note: The base class implements ue8m0 to FP32 based on the rules of float math conversions.
+    //       The result of current implementation and base class are aligned.
+    //////////////////////////////////////////////////////////////
+    #if defined(CUDA_PTX_UE8M0_CVT_ENABLED)
+      uint16_t bits = x.storage;
+      uint32_t bf16x2_val;
+      // E8 -> BF16
+      asm volatile(
+        "{\n"
+        "cvt.rn.bf16x2.ue8m0x2 %0, %1;\n"
+        "}\n" : "=r"(bf16x2_val): "h"(bits));
+      // BF16 -> FP32
+      float f1;
+      asm(
+        "{\n"
+        "prmt.b32 %0, %1, %2, %3;\n"
+        "}\n"
+          : "=f"(f1) 
+          : "r"(0), "r"(bf16x2_val), "r"(0x5410));
+      return f1;
+    #else
+      using FP32Bits = cutlass::detail::FpBitRepresentation<uint32_t, 32, 8, 23, cutlass::detail::NanInfEncoding::IEEE_754>;
+      if (x.storage == 0x00) {
+        return cutlass::detail::copy_bits<FP32Bits::Storage, float>(0x00400000);
+      }
+      else if (x.storage == 0xFF) {
+        return cutlass::detail::copy_bits<FP32Bits::Storage, float>(0x7fffffff);
+      }
+      else {
+        auto f8 = static_cast<FP32Bits::Storage>(x.storage);
+        FP32Bits::Storage f = (f8 << FP32Bits::NUM_MANTISSA_BITS);
+        return cutlass::detail::copy_bits<FP32Bits::Storage, float>(f);
+      }
+    #endif
+  }
+
+  CUTLASS_HOST_DEVICE
+  explicit float_ue8m0_t(double x) : Base(float(x)) {
+  }
+
+  CUTLASS_HOST_DEVICE
+  explicit float_ue8m0_t(float x) : Base(x) {
+  }
+
+  CUTLASS_HOST_DEVICE
+  explicit float_ue8m0_t(int x) : Base(x) {
+  }
+
+  CUTLASS_HOST_DEVICE
+  explicit float_ue8m0_t(unsigned x) : Base(x) {
+  }
+
+  CUTLASS_HOST_DEVICE
+  float_ue8m0_t(Base x) : Base(x) {
+  }
+
+  CUTLASS_HOST_DEVICE
+  friend bool isnan(float_ue8m0_t const& x) {
+    return x.storage == uint8_t(0xff);
+  }
+
+};
+
+/// Defines the size of an element in bits - specialized for float_ue8m0_t
+template <>
+struct sizeof_bits<float_ue8m0_t> {
+  static constexpr int value = sizeof_bits<float_exmy_base<cutlass::detail::FpEncoding::UE8M0, float_ue8m0_t>>::value;
+};
+
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 //
 // float_e4m3_t <=> float_e5m2_t conversions
@@ -1073,6 +1287,26 @@ union type_erased_dynamic_float8_t {
   }
 
 };
+
+
+
+///////////////////////////////////////////////////////////////
+/// MX type for float8
+/// Intended to be used in builders
+///////////////////////////////////////////////////////////////
+
+template <class F8Type>
+struct mx_float8_t {
+  static_assert(cute::is_same_v<F8Type,cutlass::float_e5m2_t>
+                || cute::is_same_v<F8Type,cutlass::float_e4m3_t>
+                || cute::is_same_v<F8Type,type_erased_dynamic_float8_t>
+                , "Only float_e5m2_t, float_e4m3_t can have scale factors for MXFP8");
+  using ScaleFactorType = cutlass::float_ue8m0_t;
+  using DataType = F8Type;
+};
+
+using type_erased_dynamic_mx_float8_t = mx_float8_t<type_erased_dynamic_float8_t>;
+
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -1161,6 +1395,73 @@ struct numeric_limits<cutlass::float_e5m2_t>  :
   /// Machine epsilon, that is, the difference between 1.0 and the next representable value
   static cutlass::float_e5m2_t epsilon() { return cutlass::float_e5m2_t::bitcast(0x34); }
 };
+
+
+template <typename T>
+struct float8_exmy_numeric_limits
+{
+private:
+  using type = T;
+
+public:
+  static bool const is_specialized = true;
+  static bool const is_signed = true;
+  static bool const is_integer = false;
+  static bool const is_exact = false;
+  static bool const has_quiet_NaN = true;
+  static bool const has_signaling_NaN = false;
+  static bool const has_denorm_loss = true;
+  static cutlass::platform::float_denorm_style const has_denorm = cutlass::platform::denorm_present;
+  static cutlass::platform::float_round_style const round_style = cutlass::platform::round_to_nearest;
+  static bool const is_iec559 = false;
+  static bool const is_bounded = true;
+  static bool const is_modulo = false;
+  static int const digits = type::Base::BitRepresentation::NUM_MANTISSA_BITS;
+  static bool const has_infinity = false;
+
+  /// Least positive value
+  CUTLASS_HOST_DEVICE
+  static type min() { return type::bitcast(0x01); }
+
+  /// Maximum finite value
+  CUTLASS_HOST_DEVICE
+  static type max() { return type::bitcast(type::Base::BitRepresentation::MAX_VALUE); }
+
+  /// Returns maximum rounding error
+  CUTLASS_HOST_DEVICE
+  static type round_error() { return type(0.5f); }
+
+  /// Returns positive infinity value
+  CUTLASS_HOST_DEVICE
+  static type infinity() { return type::bitcast(type::Base::BitRepresentation::INF_MASK); }
+
+  /// Returns quiet NaN value
+  CUTLASS_HOST_DEVICE
+  static type quiet_NaN() { return type::bitcast(type::Base::BitRepresentation::INF_MASK); }
+
+  /// Returns signaling NaN value
+  CUTLASS_HOST_DEVICE
+  static type signaling_NaN() { return type::bitcast(type::Base::BitRepresentation::INF_MASK); }
+
+  /// Returns smallest positive subnormal value
+  CUTLASS_HOST_DEVICE
+  static type denorm_min() { return type::bitcast(0x01); }
+};
+
+/// Numeric limits for float_ue8m0_t
+template <>
+struct numeric_limits<cutlass::float_ue8m0_t> :
+    public float8_exmy_numeric_limits<cutlass::float_ue8m0_t> {
+  static bool const has_infinity = false;
+  static bool const is_signed = false;
+
+  /// Minimum finite value
+  static cutlass::float_ue8m0_t lowest() { return cutlass::float_ue8m0_t::bitcast(0xfe); }
+
+  /// Machine epsilon, that is, the difference between 1.0 and the next representable value (2^0)
+  static cutlass::float_ue8m0_t epsilon() { return cutlass::float_ue8m0_t::bitcast(0x7f); }
+};
+
 
 }  // namespace std
 #endif
@@ -1251,6 +1552,73 @@ struct numeric_limits<cutlass::float_e5m2_t>  :
   static cutlass::float_e5m2_t epsilon() { return cutlass::float_e5m2_t::bitcast(0x34); }
 };
 
+
+template <typename T>
+struct float8_exmy_numeric_limits
+{
+private:
+  using type = T;
+
+public:
+  static bool const is_specialized = true;
+  static bool const is_signed = true;
+  static bool const is_integer = false;
+  static bool const is_exact = false;
+  static bool const has_quiet_NaN = true;
+  static bool const has_signaling_NaN = false;
+  static bool const has_denorm_loss = true;
+  static cutlass::platform::float_denorm_style const has_denorm = cutlass::platform::denorm_present;
+  static cutlass::platform::float_round_style const round_style = cutlass::platform::round_to_nearest;
+  static bool const is_iec559 = false;
+  static bool const is_bounded = true;
+  static bool const is_modulo = false;
+  static int const digits = type::Base::BitRepresentation::NUM_MANTISSA_BITS;
+  static bool const has_infinity = false;
+
+  /// Least positive value
+  CUTLASS_HOST_DEVICE
+  static type min() { return type::bitcast(0x01); }
+
+  /// Maximum finite value
+  CUTLASS_HOST_DEVICE
+  static type max() { return type::bitcast(type::Base::BitRepresentation::MAX_VALUE); }
+
+  /// Returns maximum rounding error
+  CUTLASS_HOST_DEVICE
+  static type round_error() { return type(0.5f); }
+
+  /// Returns positive infinity value
+  CUTLASS_HOST_DEVICE
+  static type infinity() { return type::bitcast(type::Base::BitRepresentation::INF_MASK); }
+
+  /// Returns quiet NaN value
+  CUTLASS_HOST_DEVICE
+  static type quiet_NaN() { return type::bitcast(type::Base::BitRepresentation::INF_MASK); }
+
+  /// Returns signaling NaN value
+  CUTLASS_HOST_DEVICE
+  static type signaling_NaN() { return type::bitcast(type::Base::BitRepresentation::INF_MASK); }
+
+  /// Returns smallest positive subnormal value
+  CUTLASS_HOST_DEVICE
+  static type denorm_min() { return type::bitcast(0x01); }
+};
+
+/// Numeric limits for float_ue8m0_t
+template <>
+struct numeric_limits<cutlass::float_ue8m0_t> :
+    public float8_exmy_numeric_limits<cutlass::float_ue8m0_t> {
+  static bool const has_infinity = false;
+  static bool const is_signed = false;
+
+  /// Minimum finite value
+  static cutlass::float_ue8m0_t lowest() { return cutlass::float_ue8m0_t::bitcast(0xfe); }
+
+  /// Machine epsilon, that is, the difference between 1.0 and the next representable value (2^0)
+  static cutlass::float_ue8m0_t epsilon() { return cutlass::float_ue8m0_t::bitcast(0x7f); }
+};
+
+
 }  // namespace platform
 
 }  // namespace cutlass
@@ -1271,6 +1639,18 @@ cutlass::float_e4m3_t operator "" _fe4m3(unsigned long long int x) {
   return cutlass::float_e4m3_t(int(x));
 }
 
+
+CUTLASS_HOST_DEVICE
+cutlass::float_ue4m3_t operator "" _fue4m3(long double x) {
+  return cutlass::float_ue4m3_t(float(x));
+}
+
+CUTLASS_HOST_DEVICE
+cutlass::float_ue4m3_t operator "" _fue4m3(unsigned long long int x) {
+  return cutlass::float_ue4m3_t(int(x));
+}
+
+
 CUTLASS_HOST_DEVICE
 cutlass::float_e5m2_t operator "" _fe5m2(long double x) {
   return cutlass::float_e5m2_t(float(x));
@@ -1280,5 +1660,19 @@ CUTLASS_HOST_DEVICE
 cutlass::float_e5m2_t operator "" _fe5m2(unsigned long long int x) {
   return cutlass::float_e5m2_t(int(x));
 }
+
+
+CUTLASS_HOST_DEVICE
+cutlass::float_ue8m0_t operator "" _fue8m0(long double x)
+{
+  return cutlass::float_ue8m0_t(float(x));
+}
+
+CUTLASS_HOST_DEVICE
+cutlass::float_ue8m0_t operator "" _fue8m0(unsigned long long int x)
+{
+  return cutlass::float_ue8m0_t(int(x));
+}
+
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

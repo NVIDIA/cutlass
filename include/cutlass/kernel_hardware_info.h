@@ -51,6 +51,9 @@ struct KernelHardwareInfo {
 
   // Kernel properties
   int max_active_clusters = 0;              // Maximum number of clusters that could co-exist on the target device.
+  dim3 cluster_shape = {0,0,0};             
+  dim3 cluster_shape_fallback = {0,0,0};    
+
   //
   // Methods
   //
