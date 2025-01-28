@@ -55,7 +55,7 @@ For a background on Blackwell's new features, please consult the PTX documentati
   - [Pipelines that implement Blackwell specific synchronization](./include/cutlass/pipeline/sm100_pipeline.hpp).
   - [Cluster launch control API supporting preferred and fallback cluster shapes](./include/cutlass/cluster_launch.hpp).
   - Data types including NVFP4, MXFP4, MXFP6, and MXFP8 and all their supported element and scale factor types.
-  - Tile schedulers using [Blackwell's Cluster Launch Control (CLC) feature](./cutlass/media/docs/blackwell_cluster_launch_control.md) to implement dynamic persistence scheduling for [GEMMs](./include/cutlass/gemm/kernel/sm100_tile_scheduler.hpp), and [stream-K](./include/cutlass/gemm/kernel/sm100_tile_scheduler_stream_k.hpp).
+  - Tile schedulers using [Blackwell's Cluster Launch Control (CLC) feature](./media/docs/blackwell_cluster_launch_control.md) to implement dynamic persistence scheduling for [GEMMs](./include/cutlass/gemm/kernel/sm100_tile_scheduler.hpp), and [stream-K](./include/cutlass/gemm/kernel/sm100_tile_scheduler_stream_k.hpp).
   - Extensions to testbeds and reference check code for unit tests and CUTLASS profiler.
 * Full support for Blackwell kernels in CUTLASS 3.x API:
   - [Blackwell specific kernel layers](./include/cutlass/gemm/kernel/sm100_gemm_tma_warpspecialized.hpp) that
