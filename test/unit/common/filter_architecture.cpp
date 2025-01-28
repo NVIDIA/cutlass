@@ -134,7 +134,8 @@ void FilterArchitecture() {
     {architecture::nvidia_gpu_sm_89, 89},
     {architecture::nvidia_gpu_sm_90, 90},
     {architecture::nvidia_gpu_sm_90a, 90},
-    {architecture::intel_gpu_pvc, 0}
+    {architecture::intel_gpu_pvc, 0},
+    {architecture::intel_gpu_bmg_g21, 1}
   };
   auto device_architecture = 
         syclcompat::get_default_queue().get_device().get_info<info::device::architecture>();
