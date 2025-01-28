@@ -64,7 +64,6 @@ template <
   class ElementO_,
   class StrideO_,
   class ElementLSE_,
-  class StrideLSE_,
   class CopyOpO_
 >
 class CollectiveEpilogueAttention<
@@ -73,7 +72,6 @@ class CollectiveEpilogueAttention<
   ElementO_,
   StrideO_,
   ElementLSE_,
-  StrideLSE_,
   CopyOpO_
 > {
 public:
@@ -86,7 +84,6 @@ public:
   using ElementAccumulator = ElementO_;
   using StrideO = StrideO_;
   using ElementLSE = ElementLSE_;
-  using StrideLSE = StrideLSE_;
   using CopyOpO = CopyOpO_;
 
   using GmemTiledCopyO = CopyOpO;
@@ -97,7 +94,6 @@ public:
 
   static_assert(cute::rank(CtaTileMNK{}) == 3, "CtaTileMNK must be rank-3: [CTA_M, CTA_N, CTA_K]");
   static_assert(cute::rank(StrideO{}) == 3, "StrideO must be rank-3: [seq_len, head_size, batch * num_heads]");
-  static_assert(cute::rank(StrideLSE{}) == 3, "StrideLSE must be rank-3: [batch, num_heads, seq_len]");
 
   using Trait_O = Copy_Traits<GmemTiledCopyO>;
   using XE_Copy_O = decltype(make_xe_2d_copy(Copy_Atom<Copy_Traits<CopyOpO, StrideO>, ElementO>{}.with(
@@ -124,7 +120,6 @@ public:
     ElementO const* ptr_O;
     StrideO dO;
     ElementLSE* ptr_LSE;
-    StrideLSE dLSE;
   };
 
   // Device side epilogue params
@@ -236,7 +231,7 @@ public:
         
         ElementLSE curr_sum = sum(x, y);
         ElementO scale = (curr_sum == 0.f || curr_sum != curr_sum) ? 1.f : sycl::native::recip(curr_sum);
-        tLSEr(x, y) = curr_sum == 0.f ? -INFINITY : max(x, y) * softmax_scale + logf(curr_sum);
+        tLSEr(x, y) = curr_sum == 0.f ? -INFINITY : max(x, y) * softmax_scale + sycl::native::log(curr_sum);
         
         CUTLASS_PRAGMA_UNROLL
         for (int z = 0; z < FragsN; z++) {

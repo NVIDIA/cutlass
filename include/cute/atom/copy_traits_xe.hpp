@@ -175,7 +175,6 @@ struct XE_2D_LD_Unpack {
     auto [m, n, l] = src.data().coord_;
     int x = is_need_reversed ? m : n;
     int y = is_need_reversed ? n : m;
-
     constexpr auto inst_size = detail::size_of_inst<CopyOp, dtype>;
 
     CopyOp::copy(base_addr + l * traits.stride_l,
@@ -2025,6 +2024,7 @@ struct Copy_Traits<XE_1D_STORE_GLOBAL<S, D>> {
 
 namespace detail
 {
+  //TODO:: THIS SHOULD GET DEPRECATED
   template<class PrefetchTileSize, class dtype>
   auto prefetch_selector(void* ptr = nullptr, int32_t width = 0, int32_t height = 0, int32_t pitch = 0) {
     if constexpr (get<0>(PrefetchTileSize{}) == 1) {
@@ -2073,6 +2073,69 @@ namespace detail
     else{
       static_assert(dependent_false<PrefetchTileSize> && "Invalid PrefetchTileSize[0]");
     }
+  }
+ 
+template<typename PrefetchShape, class Stride, class dtype, int subgroupsize, class Tensor >
+  CUTE_HOST_DEVICE  auto make_prefetch(Tensor const& tensor) {
+      using prefetch_trait = Copy_Traits<PrefetchShape, Stride>;
+      using prefetch_atom = Copy_Atom<prefetch_trait, dtype>;
+      return make_xe_2d_copy(prefetch_atom{}.with(tensor),
+                                      Layout<Shape<_1, Int<16>>>{});
+    }
+// Define macros to map types to their corresponding sizes
+#define TYPE_BITS_float(row) XE_2D_U32##x##row##x##16_LD_N
+#define TYPE_BITS_bfloat16_t(row) XE_2D_U16##x##row##x##32_LD_N
+#define TYPE_BITS_int8_t(row) XE_2D_U8##x##row##x##64_LD_N
+
+#define SELECT_BITS(type, row) TYPE_BITS_##type(row)
+// Template to dynamically construct and return the type
+template <typename T, int row>
+struct XePrefetchConstructor {
+       static_assert( "Invalid PrefetchTileSize and type"); 
+};
+
+#define BUILD_XE_NAME(row)\
+template <>\
+struct XePrefetchConstructor<float, row> {\
+  using type_t = TYPE_BITS_float(row);\
+};\
+template <>\
+struct XePrefetchConstructor<bfloat16_t, row> {\
+  using type_t = TYPE_BITS_bfloat16_t(row);\
+};\
+template <>\
+struct XePrefetchConstructor<int8_t, row> {\
+  using type_t = TYPE_BITS_int8_t(row);\
+};\
+
+BUILD_XE_NAME(1)
+BUILD_XE_NAME(2)
+BUILD_XE_NAME(4)
+BUILD_XE_NAME(8)
+BUILD_XE_NAME(16)
+BUILD_XE_NAME(32)
+
+#undef TYPE_BITS_float
+#undef TYPE_BITS_bfloat16_t
+#undef TYPE_BITS_int8_t
+#undef BUILD_XE_NAME
+
+   template<class PrefetchTileSize, class dtype, class Stride, int SubgroupSize, class Tensor>
+   CUTE_HOST_DEVICE auto prefetch_selector(Tensor const& tensor) {
+    if constexpr (get<0>(PrefetchTileSize{}) == 1)
+      return make_prefetch<typename XePrefetchConstructor<dtype, 1>::type_t, Stride, dtype, SubgroupSize>(tensor);
+    else if constexpr (get<0>(PrefetchTileSize{}) == 2)
+      return make_prefetch<typename XePrefetchConstructor<dtype, 2>::type_t, Stride, dtype, SubgroupSize>(tensor);
+    else if constexpr (get<0>(PrefetchTileSize{}) == 4)
+      return make_prefetch<typename XePrefetchConstructor<dtype, 4>::type_t, Stride, dtype, SubgroupSize>(tensor);
+    else if constexpr (get<0>(PrefetchTileSize{}) == 8)
+      return make_prefetch<typename XePrefetchConstructor<dtype, 8>::type_t, Stride, dtype, SubgroupSize>(tensor);
+    else if constexpr (get<0>(PrefetchTileSize{}) == 16)
+      return make_prefetch<typename XePrefetchConstructor<dtype, 16>::type_t, Stride, dtype, SubgroupSize>(tensor);
+    else if constexpr (get<0>(PrefetchTileSize{}) == 32)
+      return make_prefetch<typename XePrefetchConstructor<dtype, 32>::type_t, Stride, dtype, SubgroupSize>(tensor); 
+    else
+      static_assert(dependent_false<PrefetchTileSize> && "Invalid PrefetchTileSize[0]");
   }
 } // end namespace detail
 
