@@ -1,9 +1,11 @@
-name: "Intel PVC Test"
+name: "SYCL Intel PVC Test"
 
 on:
   push:
     branches: [ "sycl-develop" ]
   pull_request:
+    branches: [ "sycl-develop" ]
+  merge_group:
     branches: [ "sycl-develop" ]
   workflow_dispatch:
     inputs:
