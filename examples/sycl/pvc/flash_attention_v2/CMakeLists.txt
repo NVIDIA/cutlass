@@ -33,6 +33,6 @@ cutlass_example_add_executable(
 )
 
 cutlass_example_add_executable(
-  pvc_flash_attention_k_transpose
-  pvc_flash_attn_k_transpose.cpp
+  pvc_flash_attention_transposed_k
+  pvc_flash_attn_transposed_k.cpp
 )

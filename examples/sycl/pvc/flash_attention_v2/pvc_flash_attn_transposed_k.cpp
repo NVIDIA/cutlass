@@ -107,13 +107,6 @@ struct Options {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-
-  using LayoutQ = cutlass::layout::RowMajor;
-  using LayoutK = cutlass::layout::ColumnMajor;
-  using LayoutV = cutlass::layout::RowMajor;
-  using LayoutO = cutlass::layout::RowMajor;
-  using LayoutLSE = cutlass::layout::RowMajor;
-
 template <
   class GemmKernel
 >
@@ -123,6 +116,12 @@ struct ExampleRunner {
   using StrideK = typename GemmKernel::StrideK;
   using StrideV = typename GemmKernel::StrideV;
   using StrideO = typename GemmKernel::StrideO;
+
+  using LayoutQ = cutlass::layout::RowMajor;
+  using LayoutK = cutlass::layout::RowMajor;
+  using LayoutV = cutlass::layout::RowMajor;
+  using LayoutO = cutlass::layout::RowMajor;
+  using LayoutLSE = cutlass::layout::RowMajor;
 
   using ElementQ = typename GemmKernel::ElementQ;
   using ElementK = typename GemmKernel::ElementK;
@@ -373,10 +372,11 @@ struct ExampleRunner {
     syclcompat::wait();
 
     // Verify that the result is correct
-    bool passed =  verify(problem_size, options.is_causal);
+    bool passed = verify(problem_size, options.is_causal);
     std::cout << "Disposition: " << (passed ? "Passed" : "Failed") << std::endl;
 
-     if (passed && options.iterations > 0) {
+    if (passed && options.iterations > 0) 
+    {
       GPU_Clock timer;
       timer.start();
       for (int i = 0; i < options.iterations; ++i) {
@@ -387,9 +387,10 @@ struct ExampleRunner {
       float cute_time = timer.seconds() / options.iterations;
       double flops_qk = 2.0 * options.batch * options.num_heads * options.seq_len * options.seq_len * options.head_size;
       double flops_pv = 2.0 * options.batch * options.num_heads * options.seq_len * options.head_size * options.seq_len;
-      double tflops = (flops_qk + flops_pv) * 1e-12;
+      double tflops = ((flops_qk + flops_pv) * 1e-12)/cute_time;
+      double gbps = options.batch * options.num_heads * (options.seq_len * options.head_size + options.seq_len * options.head_size) * 2 * 2 * (1e-9) / (cute_time);
       std::cout << "Problem Size: " << options.batch << 'x' << options.num_heads << 'x' << options.seq_len << 'x' << options.head_size << std::endl;
-      printf("Cutlass Flash Attention Performance:     [%4.3f]TFlop/s  (%6.4f)ms\n", tflops / cute_time, cute_time*1000);
+      printf("Cutlass Flash Attention Performance:   %4.3f  GB/s   ,    %4.3f  TFlop/s   ,   %6.4f  ms\n", gbps, tflops, cute_time * 1000);
     } 
 
     return;
@@ -439,12 +440,18 @@ int main(int argc, const char** argv)
   using ElementInputKV = bfloat16_t;                        // <- data type of elements in input matrix B
   using ElementOutput = float;                        // <- data type of elements in output matrix D
 
+  using LayoutQ = cutlass::layout::RowMajor;
+  using LayoutK = cutlass::layout::RowMajor;
+  using LayoutV = cutlass::layout::RowMajor;
+  using LayoutO = cutlass::layout::RowMajor;
+  using LayoutLSE = cutlass::layout::RowMajor;
+
   // Workgroup-level tile
   using TileShape = Shape<_128, _64, _32>;
 
   using TiledMma =
       TiledMMA<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
-               Layout<Shape<_4, _2, _1>>,
+               Layout<Shape<_4, _2, _1>, Stride<_2, _1, _0>>,
                Tile<Layout<Shape<_8, _4, _4>, Stride<_1, _32, _8>>,
                     Layout<Shape<_16, _2, _2>, Stride<_1, _32, _16>>, _32>>;
 
@@ -462,7 +469,7 @@ int main(int argc, const char** argv)
 
   if(options.is_causal) {
     using GmemTiledCopyQ = XE_2D_U16x32x32_LD_N;
-    using GmemTiledCopyK = XE_2D_U16x16x16_LD_T;
+    using GmemTiledCopyK = XE_2D_U16x16x32_LD_V;
     using GmemTiledCopyV = XE_2D_U16x16x32_LD_V;
     // Mainloop
     using CollectiveMainloop = cutlass::gemm::collective::CollectiveMmaAttention<
@@ -492,8 +499,8 @@ int main(int argc, const char** argv)
     runner.run(options, hw_info);
   } else {
     using GmemTiledCopyQ = XE_2D_U16x32x32_LD_N;
-    using GmemTiledCopyK = XE_2D_U16x16x16_LD_T;
-    using GmemTiledCopyV = XE_2D_U16x16x32_LD_V;
+    using GmemTiledCopyK = XE_2D_U16x32x32_LD_V;
+    using GmemTiledCopyV = XE_2D_U16x32x32_LD_V;
     // Mainloop
     using CollectiveMainloop = cutlass::gemm::collective::CollectiveMmaAttention<
             GEMMDispatchPolicy,
