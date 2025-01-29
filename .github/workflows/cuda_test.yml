@@ -3,6 +3,8 @@ name: "Cuda Test"
 on:
   push:
     branches: [ "sycl-develop" ]
+  pull_request:
+    branches: [ "sycl-develop" ]
   merge_group:
     branches: [ "sycl-develop" ]
   workflow_dispatch:
