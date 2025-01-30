@@ -134,7 +134,7 @@ struct BlockForEach {
 #if defined (CUTLASS_ENABLE_SYCL)
       // TODO: query the queue for block size
       block_size = 128;
-      grid_size = (capacity + block_size - 1) / block_size;
+      grid_size = cute::ceil_div(capacity, block_size);
 #else
       // if grid_size or block_size are zero, query occupancy using the CUDA Occupancy API
       cudaError_t result = cudaOccupancyMaxPotentialBlockSize(
