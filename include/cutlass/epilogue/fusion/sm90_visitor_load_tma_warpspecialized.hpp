@@ -972,19 +972,19 @@ compute_row_broadcast_stages() {
 template<
   int Stages,
   class CtaTileShapeMNK,
-  class ElementInput,
-  class ElementCompute = std::remove_pointer_t<ElementInput>,
+  class ElementInput_,
+  class ElementCompute = cute::remove_pointer_t<ElementInput_>,
   class StrideMNL_ = Stride<_0,_1,_0>,
-  int Alignment = 128 / sizeof_bits_v<std::remove_pointer_t<ElementInput>>,
+  int Alignment = 128 / sizeof_bits_v<cute::remove_pointer_t<ElementInput_>>,
   bool EnableNullptr = true // Fallback scalar broadcast for nullptr params
 >
 struct Sm90RowBroadcast {
   using StrideMNL = StrideMNL_;
   // Get base element input type.
-  using ElementInput_ = std::remove_pointer_t<ElementInput>;
+  using ElementInput = cute::remove_pointer_t<ElementInput_>;
   // Check if input is an array of pointers.
-  static constexpr bool is_ptr_array_ = is_same_v<ElementInput_*, ElementInput>;
-  using PtrRowType = std::conditional_t<is_ptr_array_, ElementInput_ const* const*, ElementInput_ const*>;
+  static constexpr bool IsArrayOfPointers = is_same_v<ElementInput*, ElementInput_>;
+  using PtrRowType = cute::conditional_t<IsArrayOfPointers, ElementInput const* const*, ElementInput const*>;
 
   static_assert(Stages == 0, "Row broadcast doesn't support smem pipelining");
 
@@ -993,12 +993,12 @@ struct Sm90RowBroadcast {
   static_assert(take<0,2>(StrideMNL{}) == Stride<_0,_1>{} || IsDynamicBroadcast);
 
   struct SharedStorage { 
-    array_aligned<ElementInput_, size<1>(CtaTileShapeMNK{})> smem;
+    array_aligned<ElementInput, size<1>(CtaTileShapeMNK{})> smem;
   };
 
   struct Arguments {
     PtrRowType ptr_row = nullptr;
-    ElementInput_ null_default = ElementInput_(0);
+    ElementInput null_default = ElementInput(0);
     StrideMNL dRow = {};
   };
 
@@ -1035,23 +1035,21 @@ struct Sm90RowBroadcast {
   CUTLASS_HOST_DEVICE
   Sm90RowBroadcast(Params const& params, SharedStorage const& shared_storage)
       : params(params), is_zero_(false),
-        smem(const_cast<ElementInput_*>(shared_storage.smem.data())) {
+        smem(const_cast<ElementInput*>(shared_storage.smem.data())) {
     auto const& [stride_M, stride_N, stride_L] = params.dRow;
     // Nullptr default
     if (EnableNullptr && params.ptr_row == nullptr) {
       is_zero_ = params.null_default == ElementCompute(0);
     }
     // Dynamic non-batched scalar broadcast
-    if constexpr(!is_ptr_array_) {
-      if (IsDynamicBroadcast && stride_N == bool(0) && stride_L == repeat_like(stride_L, 0)) {
-        is_zero_ = params.ptr_row[0] == ElementInput_(0);
-      }
+    else if (IsDynamicBroadcast && stride_N == bool(0) && stride_L == repeat_like(stride_L, 0) && !IsArrayOfPointers) {
+      is_zero_ = params.ptr_row[0] == ElementInput(0);
     }
   }
 
   Params params;
   bool is_zero_ = false;
-  ElementInput_ *smem = nullptr;
+  ElementInput *smem = nullptr;
 
   CUTLASS_DEVICE bool
   is_producer_load_needed() const {
@@ -1133,13 +1131,13 @@ struct Sm90RowBroadcast {
     begin_loop(int epi_m, int epi_n) {
       if (epi_m == 0) { // Assumes M-major subtile loop
         Tensor tSR_sRow_flt = filter_zeros(tSR_sRow(_,_,_,epi_m,epi_n));
-        Tensor tSR_rRow_flt = make_tensor_like<ElementInput_>(tSR_sRow_flt);
+        Tensor tSR_rRow_flt = make_tensor_like<ElementInput>(tSR_sRow_flt);
         copy_aligned(tSR_sRow_flt, tSR_rRow_flt);
 
         constexpr int FrgSize = size(tSR_rRow_flt);
-        using FrgInput = Array<ElementInput_, FrgSize>;
+        using FrgInput = Array<ElementInput, FrgSize>;
         using FrgCompute = Array<ElementCompute, FrgSize>;
-        using ConvertInput = NumericArrayConverter<ElementCompute, ElementInput_, FrgSize>;
+        using ConvertInput = NumericArrayConverter<ElementCompute, ElementInput, FrgSize>;
 
         Tensor tSR_rRow_input_frg = recast<FrgInput>(coalesce(tSR_rRow_flt));
         Tensor tSR_rRow_compute_frg = recast<FrgCompute>(filter(tSR_rRow));
@@ -1191,8 +1189,8 @@ struct Sm90RowBroadcast {
 
     auto layout_M = make_layout(M, repeat_like(M, _0{}));
     auto layout_L = make_layout(L, get<2>(params.dRow));
-    ElementInput_ const* ptr_row;
-    if constexpr(is_ptr_array_) {
+    ElementInput const* ptr_row;
+    if constexpr(IsArrayOfPointers) {
       ptr_row = params.ptr_row[l];
     } else {
       ptr_row = params.ptr_row;
@@ -1202,7 +1200,7 @@ struct Sm90RowBroadcast {
     Tensor sRow = make_tensor(make_smem_ptr(smem), 
         make_shape(size<0>(CtaTileShapeMNK{}), size<1>(CtaTileShapeMNK{})), make_shape(_0{}, _1{}));  // (CTA_M, CTA_N)
     //// G2S: Gmem to Smem
-    auto tiled_g2s = make_tiled_copy(Copy_Atom<DefaultCopy, ElementInput_>{},
+    auto tiled_g2s = make_tiled_copy(Copy_Atom<DefaultCopy, ElementInput>{},
                                      Layout< Shape<_1, ThreadCount>, 
                                             Stride<_0,          _1>>{}, 
                                      Layout<_1>{});   
@@ -1234,19 +1232,19 @@ struct Sm90RowBroadcast {
 template<
   int Stages,
   class CtaTileShapeMNK,
-  class ElementInput,
-  class ElementCompute = std::remove_pointer_t<ElementInput>,
+  class ElementInput_,
+  class ElementCompute = cute::remove_pointer_t<ElementInput_>,
   class StrideMNL_ = Stride<_1,_0,_0>,
-  int Alignment = 128 / sizeof_bits_v<std::remove_pointer_t<ElementInput>>,
+  int Alignment = 128 / sizeof_bits_v<cute::remove_pointer_t<ElementInput_>>,
   bool EnableNullptr = true // Fallback scalar broadcast for nullptr params
 >
 struct Sm90ColBroadcast {
   using StrideMNL = StrideMNL_;
   // Get base element input type.
-  using ElementInput_ = std::remove_pointer_t<ElementInput>;
+  using ElementInput = cute::remove_pointer_t<ElementInput_>;
   // Check if input is an array of pointers.
-  static constexpr bool is_ptr_array_ = is_same_v<ElementInput_*, ElementInput>;
-  using PtrColType = std::conditional_t<is_ptr_array_, ElementInput_ const* const*, ElementInput_ const*>;
+  static constexpr bool IsArrayOfPointers = is_same_v<ElementInput*, ElementInput_>;
+  using PtrColType = cute::conditional_t<IsArrayOfPointers, ElementInput const* const*, ElementInput const*>;
 
   static_assert(Stages == 0, "Column broadcast doesn't support smem pipelining");
 
@@ -1259,7 +1257,7 @@ struct Sm90ColBroadcast {
 
   struct Arguments {
     PtrColType ptr_col = nullptr;
-    ElementInput_ null_default = ElementInput_(0);
+    ElementInput null_default = ElementInput(0);
     StrideMNL dCol = {};
   };
 
@@ -1321,10 +1319,8 @@ struct Sm90ColBroadcast {
       is_zero_ = params.null_default == ElementCompute(0);
     }
     // Dynamic non-batched scalar broadcast
-    if constexpr(!is_ptr_array_) {
-      if (IsDynamicBroadcast && stride_M == bool(0) && stride_L == repeat_like(stride_L, 0)) {
-        is_zero_ = params.ptr_col[0] == ElementInput_(0);
-      }
+    else if (IsDynamicBroadcast && stride_M == bool(0) && stride_L == repeat_like(stride_L, 0) && !IsArrayOfPointers) {
+      is_zero_ = params.ptr_col[0] == ElementInput(0);
     }
   }
 
@@ -1366,13 +1362,13 @@ struct Sm90ColBroadcast {
       // Filter so we don't issue redundant copies over stride-0 modes
       // (only works if 0-strides are in same location, which is by construction)
       Tensor tCgCol_flt = filter_zeros(tCgCol);
-      Tensor tCrCol_flt = make_tensor_like<ElementInput_>(filter_zeros(tCrCol));
+      Tensor tCrCol_flt = make_tensor_like<ElementInput>(filter_zeros(tCrCol));
       Tensor tCcCol_flt = filter_zeros(tCcCol, tCgCol.stride());
 
       constexpr auto MCL = decltype(max_common_layout(tCgCol_flt, tCrCol_flt)){};
       constexpr int V = cute::min(Alignment, size(MCL));
       if constexpr (V > 1) {
-        using VecType = uint_bit_t<V * sizeof_bits_v<ElementInput_>>;
+        using VecType = uint_bit_t<V * sizeof_bits_v<ElementInput>>;
         Tensor tCgCol_vec = recast<VecType>(coalesce(tCgCol_flt));
         Tensor tCrCol_vec = recast<VecType>(coalesce(tCrCol_flt));
         Tensor tCcCol_vec = tensor<1>(zipped_divide(tCcCol_flt, MCL.compose(Int<V>{})));
@@ -1385,9 +1381,9 @@ struct Sm90ColBroadcast {
       }
 
       constexpr int FrgSize = size(tCrCol_flt);
-      using FrgInput = Array<ElementInput_, FrgSize>;
+      using FrgInput = Array<ElementInput, FrgSize>;
       using FrgCompute = Array<ElementCompute, FrgSize>;
-      using ConvertInput = NumericArrayConverter<ElementCompute, ElementInput_, FrgSize>;
+      using ConvertInput = NumericArrayConverter<ElementCompute, ElementInput, FrgSize>;
 
       Tensor tCrCol_input_frg = recast<FrgInput>(coalesce(tCrCol_flt));
       Tensor tCrCol_compute_frg = recast<FrgCompute>(filter(tCrCol));
@@ -1439,8 +1435,8 @@ struct Sm90ColBroadcast {
 
     auto layout_N = make_layout(N, repeat_like(N, _0{}));
     auto layout_L = make_layout(L, get<2>(params.dCol));
-    ElementInput_ const* ptr_col;
-    if constexpr(is_ptr_array_) {
+    ElementInput const* ptr_col;
+    if constexpr(IsArrayOfPointers) {
       ptr_col = params.ptr_col[l];
     } else {
       ptr_col = params.ptr_col;
