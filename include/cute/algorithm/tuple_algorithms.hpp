@@ -173,7 +173,8 @@ void
 for_each(T&& t, F&& f)
 {
   if constexpr (is_tuple<remove_cvref_t<T>>::value) {
-    return detail::apply(t, [&](auto&&... a) { (f(static_cast<decltype(a)&&>(a)), ...); }, tuple_seq<T>{});
+    return detail::apply(t,
+      [&](auto&&... a) { CUTE_INLINE_CALL (f(static_cast<decltype(a)&&>(a)), ...); }, tuple_seq<T>{});
   } else {
     return f(static_cast<T&&>(t));
   }

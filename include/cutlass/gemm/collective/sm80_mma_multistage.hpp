@@ -294,13 +294,8 @@ struct CollectiveMma<
     {
       // Pipeline the outer products with a static for loop.
       //
-#if defined(CUTLASS_ENABLE_SYCL)
-      CUTLASS_PRAGMA_UNROLL
-      for (auto k_block = 0; k_block < K_BLOCK_MAX; ++k_block)
-#else
       // Note, the for_each() function is required here to ensure `k_block` is of type Int<N>.
       for_each(make_int_sequence<K_BLOCK_MAX>{}, [&] (auto k_block)
-#endif
       {
         if (k_block == K_BLOCK_MAX - 1)
         {
@@ -340,9 +335,7 @@ struct CollectiveMma<
         // Thread-level register gemm for k_block
         cute::gemm(tiled_mma, accum, tCrA(_,_,k_block), tCrB(_,_,k_block), src_accum);
       }
-#if !defined(CUTLASS_ENABLE_SYCL)
       );
-#endif
     }
 
     cp_async_wait<0>();
