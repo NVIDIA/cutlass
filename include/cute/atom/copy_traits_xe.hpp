@@ -2214,4 +2214,16 @@ size(Xe2DTiledCopy<Args...> const&)
   return typename Xe2DTiledCopy<Args...>::TiledNumThr{};
 }
 
+template <class CopyAtom, class TV, class Tiler,
+          class SrcEngine, class SrcLayout,
+          class DstEngine, class DstLayout>
+CUTE_HOST_DEVICE
+void
+copy(Xe2DTiledCopy<CopyAtom, TV, Tiler> const& tiled_copy,
+     Tensor<SrcEngine, SrcLayout>   const& src,
+     Tensor<DstEngine, DstLayout>        & dst)
+{
+  return copy(static_cast<CopyAtom const&>(tiled_copy), src, dst);
+}
+
 } // end namespace cute

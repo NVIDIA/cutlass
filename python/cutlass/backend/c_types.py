@@ -1,6 +1,6 @@
 #################################################################################################
 #
-# Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -139,7 +139,7 @@ def get_tile_scheduler_arguments_3x(
     splits: int = 1):
     max_swizzle_size = 1
     raster_order_option = 0 # Heuristic
-    if tile_scheduler == TileSchedulerType.Persistent:
+    if tile_scheduler in [TileSchedulerType.Default, TileSchedulerType.Persistent]:
         return _PersistentTileSchedulerArguments(
             max_swizzle_size,
             raster_order_option,

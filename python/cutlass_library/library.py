@@ -1,6 +1,6 @@
 #################################################################################################
 #
-# Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -75,6 +75,7 @@ class DataType(enum.Enum):
   u16 = enum_auto()
   u32 = enum_auto()
   u64 = enum_auto()
+  s2 = enum_auto()
   s4 = enum_auto()
   s8 = enum_auto()
   s16 = enum_auto()
@@ -82,6 +83,14 @@ class DataType(enum.Enum):
   s64 = enum_auto()
   e4m3 = enum_auto()
   e5m2 = enum_auto()
+  f8 = enum_auto()    
+  f6 = enum_auto()    
+  f4 = enum_auto()    
+  e3m2 = enum_auto()     
+  e2m3 = enum_auto()     
+  e2m1 = enum_auto()     
+  ue8m0 = enum_auto()    
+  ue4m3 = enum_auto()    
   f16 = enum_auto()
   bf16 = enum_auto()
   f32 = enum_auto()
@@ -92,11 +101,13 @@ class DataType(enum.Enum):
   cf32 = enum_auto()
   ctf32 = enum_auto()
   cf64 = enum_auto()
+  cs2 = enum_auto()
   cs4 = enum_auto()
   cs8 = enum_auto()
   cs16 = enum_auto()
   cs32 = enum_auto()
   cs64 = enum_auto()
+  cu2 = enum_auto()
   cu4 = enum_auto()
   cu8 = enum_auto()
   cu16 = enum_auto()
@@ -114,6 +125,9 @@ ShortDataTypeNames = {
   DataType.f64: 'd',
   DataType.cf32: 'c',
   DataType.cf64: 'z',
+  DataType.f8: 'f8',      
+  DataType.f6: 'f6',      
+  DataType.f4: 'f4',      
 }
 
 #
@@ -126,6 +140,7 @@ DataTypeNames = {
   DataType.u16: "u16",
   DataType.u32: "u32",
   DataType.u64: "u64",
+  DataType.s2: "s2",
   DataType.s4: "s4",
   DataType.s8: "s8",
   DataType.s16: "s16",
@@ -133,6 +148,14 @@ DataTypeNames = {
   DataType.s64: "s64",
   DataType.e4m3: 'e4m3',
   DataType.e5m2: 'e5m2',
+  DataType.f8: 'f8',     
+  DataType.f6: 'f6',     
+  DataType.f4: 'f4',     
+  DataType.e2m3: 'e2m3',       
+  DataType.e3m2: 'e3m2',       
+  DataType.e2m1: 'e2m1',       
+  DataType.ue8m0: 'ue8m0',     
+  DataType.ue4m3: 'ue4m3',     
   DataType.f16: "f16",
   DataType.bf16: "bf16",
   DataType.f32: "f32",
@@ -143,11 +166,13 @@ DataTypeNames = {
   DataType.cf32: "cf32",
   DataType.ctf32: "ctf32",
   DataType.cf64: "cf64",
+  DataType.cu2: "cu2",
   DataType.cu4: "cu4",
   DataType.cu8: "cu8",
   DataType.cu16: "cu16",
   DataType.cu32: "cu32",
   DataType.cu64: "cu64",
+  DataType.cs2: "cs2",
   DataType.cs4: "cs4",
   DataType.cs8: "cs8",
   DataType.cs16: "cs16",
@@ -164,6 +189,7 @@ DataTypeTag = {
   DataType.u16: "uint16_t",
   DataType.u32: "uint32_t",
   DataType.u64: "uint64_t",
+  DataType.s2: "cutlass::int2b_t",
   DataType.s4: "cutlass::int4b_t",
   DataType.s8: "int8_t",
   DataType.s16: "int16_t",
@@ -171,6 +197,14 @@ DataTypeTag = {
   DataType.s64: "int64_t",
   DataType.e4m3: 'cutlass::float_e4m3_t',
   DataType.e5m2: 'cutlass::float_e5m2_t',
+  DataType.f8: 'cutlass::type_erased_dynamic_float8_t',      
+  DataType.f6: 'cutlass::type_erased_dynamic_float6_t',      
+  DataType.f4: 'cutlass::type_erased_dynamic_float4_t',      
+  DataType.e2m3: 'cutlass::float_e2m3_t',                       
+  DataType.e3m2: 'cutlass::float_e3m2_t',                       
+  DataType.e2m1: 'cutlass::float_e2m1_t',                       
+  DataType.ue8m0: 'cutlass::float_ue8m0_t',                     
+  DataType.ue4m3: 'cutlass::float_ue4m3_t',                     
   DataType.f16: "cutlass::half_t",
   DataType.bf16: "cutlass::bfloat16_t",
   DataType.f32: "float",
@@ -181,11 +215,13 @@ DataTypeTag = {
   DataType.cf32: "cutlass::complex<float>",
   DataType.ctf32: "cutlass::complex<cutlass::tfloat32_t>",
   DataType.cf64: "cutlass::complex<double>",
+  DataType.cu2: "cutlass::complex<cutlass::uint2b_t>",
   DataType.cu4: "cutlass::complex<cutlass::uint4b_t>",
   DataType.cu8: "cutlass::complex<cutlass::uint8_t>",
   DataType.cu16: "cutlass::complex<cutlass::uint16_t>",
   DataType.cu32: "cutlass::complex<cutlass::uint32_t>",
   DataType.cu64: "cutlass::complex<cutlass::uint64_t>",
+  DataType.cs2: "cutlass::complex<cutlass::int2b_t>",
   DataType.cs4: "cutlass::complex<cutlass::int4b_t>",
   DataType.cs8: "cutlass::complex<cutlass::int8_t>",
   DataType.cs16: "cutlass::complex<cutlass::int16_t>",
@@ -202,6 +238,7 @@ DataTypeSize = {
   DataType.u16: 16,
   DataType.u32: 32,
   DataType.u64: 64,
+  DataType.s2: 2,
   DataType.s4: 4,
   DataType.s8: 8,
   DataType.s16: 16,
@@ -209,6 +246,14 @@ DataTypeSize = {
   DataType.s64: 64,
   DataType.e4m3: 8,
   DataType.e5m2: 8,
+  DataType.f8: 8,      
+  DataType.f6: 6,      
+  DataType.f4: 4,      
+  DataType.e2m3: 6,       
+  DataType.e3m2: 6,       
+  DataType.e2m1: 4,       
+  DataType.ue8m0: 8,      
+  DataType.ue4m3: 8,      
   DataType.f16: 16,
   DataType.bf16: 16,
   DataType.f32: 32,
@@ -219,11 +264,13 @@ DataTypeSize = {
   DataType.cf32: 64,
   DataType.ctf32: 32,
   DataType.cf64: 128,
+  DataType.cu2: 4,
   DataType.cu4: 8,
   DataType.cu8: 16,
   DataType.cu16: 32,
   DataType.cu32: 64,
   DataType.cu64: 128,
+  DataType.cs2: 4,
   DataType.cs4: 8,
   DataType.cs8: 16,
   DataType.cs16: 32,
@@ -435,6 +482,22 @@ class KernelScheduleType(enum.Enum):
   TmaWarpSpecializedCooperativeFP8FastAccum = enum_auto()
   TmaWarpSpecializedPingpongFP8FastAccum = enum_auto()
   ImplicitTmaWarpSpecializedSm90 = enum_auto()
+  
+  TmaWarpSpecialized1SmSm100 = enum_auto()
+  TmaWarpSpecialized2SmSm100 = enum_auto()
+  
+  
+  BlockScaledTmaWarpSpecialized1SmSm100 = enum_auto()
+  BlockScaledTmaWarpSpecialized2SmSm100 = enum_auto()
+  Mxf8f6f4TmaWarpSpecialized1SmSm100 = enum_auto()
+  Mxf8f6f4TmaWarpSpecialized2SmSm100 = enum_auto()
+  
+  
+  Mxf4TmaWarpSpecialized1SmSm100 = enum_auto()
+  Mxf4TmaWarpSpecialized2SmSm100 = enum_auto()
+  Nvf4TmaWarpSpecialized1SmSm100 = enum_auto()
+  Nvf4TmaWarpSpecialized2SmSm100 = enum_auto()
+  
 #
 KernelScheduleTag = {
   KernelScheduleType.ScheduleAuto: 'cutlass::gemm::collective::KernelScheduleAuto',
@@ -450,6 +513,22 @@ KernelScheduleTag = {
   KernelScheduleType.TmaWarpSpecializedCooperativeFP8FastAccum: 'cutlass::gemm::KernelTmaWarpSpecializedCooperativeFP8FastAccum',
   KernelScheduleType.TmaWarpSpecializedPingpongFP8FastAccum: 'cutlass::gemm::KernelTmaWarpSpecializedPingpongFP8FastAccum',
   KernelScheduleType.ImplicitTmaWarpSpecializedSm90: 'cutlass::conv::KernelImplicitTmaWarpSpecializedSm90',
+  
+  KernelScheduleType.TmaWarpSpecialized1SmSm100: 'cutlass::gemm::KernelTmaWarpSpecialized1SmSm100',
+  KernelScheduleType.TmaWarpSpecialized2SmSm100: 'cutlass::gemm::KernelTmaWarpSpecialized2SmSm100',
+  
+  
+  KernelScheduleType.BlockScaledTmaWarpSpecialized1SmSm100: 'cutlass::gemm::KernelTmaWarpSpecialized1SmBlockScaledSm100',
+  KernelScheduleType.BlockScaledTmaWarpSpecialized2SmSm100: 'cutlass::gemm::KernelTmaWarpSpecialized2SmBlockScaledSm100',
+  KernelScheduleType.Mxf8f6f4TmaWarpSpecialized1SmSm100: 'cutlass::gemm::KernelTmaWarpSpecialized1SmMxf8f6f4Sm100',
+  KernelScheduleType.Mxf8f6f4TmaWarpSpecialized2SmSm100: 'cutlass::gemm::KernelTmaWarpSpecialized2SmMxf8f6f4Sm100',
+  
+  
+  KernelScheduleType.Mxf4TmaWarpSpecialized1SmSm100: 'cutlass::gemm::KernelTmaWarpSpecialized1SmMxf4Sm100',
+  KernelScheduleType.Mxf4TmaWarpSpecialized2SmSm100: 'cutlass::gemm::KernelTmaWarpSpecialized2SmMxf4Sm100',
+  KernelScheduleType.Nvf4TmaWarpSpecialized1SmSm100: 'cutlass::gemm::KernelTmaWarpSpecialized1SmNvf4Sm100',
+  KernelScheduleType.Nvf4TmaWarpSpecialized2SmSm100: 'cutlass::gemm::KernelTmaWarpSpecialized2SmNvf4Sm100',
+  
 }
 
 #
@@ -467,6 +546,22 @@ KernelScheduleSuffixes = {
   KernelScheduleType.TmaWarpSpecializedCooperativeFP8FastAccum: '_warpspecialized_cooperative_fp8_fastaccum',
   KernelScheduleType.TmaWarpSpecializedPingpongFP8FastAccum: '_warpspecialized_pingpong_fp8_fastaccum',
   KernelScheduleType.ImplicitTmaWarpSpecializedSm90: '_warpspecialized',
+  
+  KernelScheduleType.TmaWarpSpecialized1SmSm100: '_1sm',
+  KernelScheduleType.TmaWarpSpecialized2SmSm100: '_2sm',
+  
+  
+  KernelScheduleType.BlockScaledTmaWarpSpecialized1SmSm100: '_1sm',
+  KernelScheduleType.BlockScaledTmaWarpSpecialized2SmSm100: '_2sm',
+  KernelScheduleType.Mxf8f6f4TmaWarpSpecialized1SmSm100: '_q_1sm',
+  KernelScheduleType.Mxf8f6f4TmaWarpSpecialized2SmSm100: '_q_2sm',
+  
+  
+  KernelScheduleType.Mxf4TmaWarpSpecialized1SmSm100: '_o_vs32_1sm',
+  KernelScheduleType.Mxf4TmaWarpSpecialized2SmSm100: '_o_vs32_2sm',
+  KernelScheduleType.Nvf4TmaWarpSpecialized1SmSm100: '_o_vs16_1sm',
+  KernelScheduleType.Nvf4TmaWarpSpecialized2SmSm100: '_o_vs16_2sm',
+  
 }
 
 class EpilogueScheduleType(enum.Enum):
@@ -475,6 +570,9 @@ class EpilogueScheduleType(enum.Enum):
   NoSmemWarpSpecialized = enum_auto()
   TmaWarpSpecialized = enum_auto()
   TmaWarpSpecializedCooperative = enum_auto()
+  TmaWarpSpecialized1Sm = enum_auto() 
+  TmaWarpSpecialized2Sm = enum_auto() 
+
 #
 EpilogueScheduleTag = {
   EpilogueScheduleType.ScheduleAuto: 'cutlass::epilogue::collective::EpilogueScheduleAuto',
@@ -482,6 +580,8 @@ EpilogueScheduleTag = {
   EpilogueScheduleType.NoSmemWarpSpecialized: 'cutlass::epilogue::NoSmemWarpSpecialized',
   EpilogueScheduleType.TmaWarpSpecialized: 'cutlass::epilogue::TmaWarpSpecialized',
   EpilogueScheduleType.TmaWarpSpecializedCooperative: 'cutlass::epilogue::TmaWarpSpecializedCooperative',
+  EpilogueScheduleType.TmaWarpSpecialized1Sm: 'cutlass::epilogue::TmaWarpSpecialized1Sm', 
+  EpilogueScheduleType.TmaWarpSpecialized2Sm: 'cutlass::epilogue::TmaWarpSpecialized2Sm', 
 }
 
 #
@@ -491,13 +591,18 @@ EpilogueScheduleSuffixes = {
   EpilogueScheduleType.NoSmemWarpSpecialized: '_epi_nosmem',
   EpilogueScheduleType.TmaWarpSpecialized: '_epi_tma',
   EpilogueScheduleType.TmaWarpSpecializedCooperative: '_epi_tma',
+  EpilogueScheduleType.TmaWarpSpecialized1Sm: '', 
+  EpilogueScheduleType.TmaWarpSpecialized2Sm: '_epi_tma', 
 }
 
 class EpilogueFunctor3x(enum.Enum):
   LinearCombination = enum_auto()
+  LinearCombinationBlockScaleFactor = enum_auto() 
+
 #
 EpilogueFunctor3xTag = {
   EpilogueFunctor3x.LinearCombination: 'cutlass::epilogue::fusion::LinearCombination',
+  EpilogueFunctor3x.LinearCombinationBlockScaleFactor: 'cutlass::epilogue::fusion::LinCombBlockScaleFactor',  
 }
 
 class TileSchedulerType(enum.Enum):
@@ -583,12 +688,15 @@ class OpcodeClass(enum.Enum):
   TensorOp = enum_auto()
   WmmaTensorOp = enum_auto()
   SparseTensorOp = enum_auto()
+  BlockScaledTensorOp = enum_auto()                                     
+
 
 OpcodeClassNames = {
   OpcodeClass.Simt: 'simt',
   OpcodeClass.TensorOp: 'tensorop',
   OpcodeClass.WmmaTensorOp: 'wmma_tensorop',
   OpcodeClass.SparseTensorOp: 'sptensorop',
+  OpcodeClass.BlockScaledTensorOp: 'bstensorop'                         
 }
 
 OpcodeClassTag = {
@@ -596,6 +704,7 @@ OpcodeClassTag = {
   OpcodeClass.TensorOp: 'cutlass::arch::OpClassTensorOp',
   OpcodeClass.WmmaTensorOp: 'cutlass::arch::OpClassWmmaTensorOp',
   OpcodeClass.SparseTensorOp: 'cutlass::arch::OpClassSparseTensorOp',
+  OpcodeClass.BlockScaledTensorOp: 'cutlass::arch::OpClassBlockScaledTensorOp'    
 }
 
 ###################################################################################################
@@ -676,6 +785,8 @@ class GemmKind(enum.Enum):
   PlanarComplex = enum_auto()
   PlanarComplexArray = enum_auto()
   Grouped = enum_auto()
+  BlockScaledUniversal3x = enum_auto()                                   
+
 #
 GemmKindNames = {
   GemmKind.Gemm: "gemm",
@@ -686,6 +797,7 @@ GemmKindNames = {
   GemmKind.PlanarComplex: "gemm_planar_complex",
   GemmKind.PlanarComplexArray: "gemm_planar_complex_array",
   GemmKind.Grouped: "gemm_grouped",
+  GemmKind.BlockScaledUniversal3x: "gemm_block_scaled"                              
 }
 
 #
@@ -859,6 +971,8 @@ GroupModeNames = {
   GroupMode.Depthwise: 'depthwise',
 }
 
+DynamicClusterShape = [0, 0, 1] 
+
 ###################################################################################################
 
 #
@@ -867,6 +981,7 @@ class MathInstruction:
       instruction_shape,                                            \
       element_a, element_b, element_accumulator,                    \
       opcode_class, math_operation = MathOperation.multiply_add     \
+      , element_scale_factor = None 
     ):
 
     self.instruction_shape = instruction_shape
@@ -875,6 +990,8 @@ class MathInstruction:
     self.element_accumulator = element_accumulator
     self.opcode_class = opcode_class
     self.math_operation = math_operation
+    self.element_scale_factor = element_scale_factor 
+
 #
 class TileDescription:
 

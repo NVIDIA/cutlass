@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -43,9 +43,9 @@
 using namespace cute;
 
 #ifdef CUTLASS_ENABLE_SYCL
-  namespace sc = syclcompat;
-  namespace sc_exp = syclcompat::experimental;
-  namespace sycl_ext = sycl::ext::oneapi::experimental;
+namespace sc = syclcompat;
+namespace sc_exp = syclcompat::experimental;
+namespace sycl_ext = sycl::ext::oneapi::experimental;
 
 CUTLASS_GLOBAL void
 test(double const* g_in, double* g_out, sycl::local_ptr<char> base_smem)
@@ -70,8 +70,6 @@ test2(double const* g_in, double* g_out, sycl::local_ptr<char> base_smem)
 
   copy(g_tensor, s_tensor);
 
-  cp_async_fence();
-  cp_async_wait<0>();
   syncthreads();
 
   g_out[ThreadIdxX()] = 2 * smem[ThreadIdxX()];
@@ -79,39 +77,38 @@ test2(double const* g_in, double* g_out, sycl::local_ptr<char> base_smem)
 
 #else
 
-CUTLASS_GLOBAL void
+__global__ void
 test(double const* g_in, double* g_out)
 {
-  extern CUTLASS_SHARED double smem[];
-  smem[ThreadIdxX()] = g_in[ThreadIdxX()];
+  extern __shared__ double smem[];
 
-  syncthreads();
+  smem[threadIdx.x] = g_in[threadIdx.x];
 
-  g_out[ThreadIdxX()] = 2 * smem[ThreadIdxX()];
+  __syncthreads();
+
+  g_out[threadIdx.x] = 2 * smem[threadIdx.x];
 }
 
-CUTLASS_GLOBAL void
+__global__ void
 test2(double const* g_in, double* g_out)
 {
   using namespace cute;
 
-  extern CUTLASS_SHARED double smem[];
+  extern __shared__ double smem[];
 
-  auto s_tensor = make_tensor(make_smem_ptr(smem + ThreadIdxX()), Int<1>{});
-  auto g_tensor = make_tensor(make_gmem_ptr(g_in + ThreadIdxX()), Int<1>{});
+  auto s_tensor = make_tensor(make_smem_ptr(smem + threadIdx.x), Int<1>{});
+  auto g_tensor = make_tensor(make_gmem_ptr(g_in + threadIdx.x), Int<1>{});
 
   copy(g_tensor, s_tensor);
 
-  cp_async_fence();
-  cp_async_wait<0>();
-  syncthreads();
+  __syncthreads();
 
-  g_out[ThreadIdxX()] = 2 * smem[ThreadIdxX()];
+  g_out[threadIdx.x] = 2 * smem[threadIdx.x];
 }
 
 #endif
 
-TEST(SM80_CuTe_Ampere, CpAsync)
+TEST(SM80_CuTe_Ampere, CpSync)
 {
   constexpr int count = 32;
   host_vector<double> h_in(count);

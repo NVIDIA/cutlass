@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -35,6 +35,7 @@
 #pragma once
 
 #include "cutlass/cutlass.h"
+#include "cutlass/detail/collective.hpp"
 #include "cutlass/library/library.h"
 #include "library_internal.h"
 #include "cutlass/gemm/dispatch_policy.hpp"
@@ -161,6 +162,18 @@ public:
   using CollectiveEpilogue = typename Operator::CollectiveEpilogue;
   using ThreadEpilogueOp = typename CollectiveEpilogue::ThreadEpilogueOp;
 
+  
+  static constexpr bool IsRuntimeDataTypeA = cutlass::gemm::collective::detail::is_sm10x_runtime_f8f6f4<ElementA>();
+
+  static constexpr bool IsRuntimeDataTypeB = cutlass::gemm::collective::detail::is_sm10x_runtime_f8f6f4<ElementB>();
+
+  static_assert((IsRuntimeDataTypeA && IsRuntimeDataTypeB) ||
+                (!IsRuntimeDataTypeA && !IsRuntimeDataTypeB), 
+                "ElementA and ElementB in a GEMM kernel should be both runtime or both static.");
+
+  static constexpr bool IsRuntimeDataType = IsRuntimeDataTypeA && IsRuntimeDataTypeB;
+  
+
 public:
 
   /// Constructor
@@ -234,8 +247,42 @@ protected:
       arguments->batch_count);
 
     // update arguments
+    
+
+    if constexpr (IsRuntimeDataType) {
+      using ArrayElementA = typename Operator::GemmKernel::CollectiveMainloop::ArrayElementA;
+      using ArrayElementB = typename Operator::GemmKernel::CollectiveMainloop::ArrayElementB;
+      operator_args.mainloop.ptr_A = static_cast<ArrayElementA const *>(arguments->A);
+      operator_args.mainloop.ptr_B = static_cast<ArrayElementB const *>(arguments->B);
+
+      std::unordered_map<RuntimeDatatype, cute::UMMA::MXF8F6F4Format> mapping = {
+          {RuntimeDatatype::kE4M3, cute::UMMA::MXF8F6F4Format::E4M3},
+          {RuntimeDatatype::kE5M2, cute::UMMA::MXF8F6F4Format::E5M2}, 
+          {RuntimeDatatype::kE3M2, cute::UMMA::MXF8F6F4Format::E3M2},
+          {RuntimeDatatype::kE2M1, cute::UMMA::MXF8F6F4Format::E2M1}
+      };
+
+      auto iter_runtime_a = mapping.find(arguments->runtime_input_datatype_a);
+      auto iter_runtime_b = mapping.find(arguments->runtime_input_datatype_b);
+
+      if (iter_runtime_a != mapping.end()) {
+          operator_args.mainloop.runtime_data_type_a = iter_runtime_a->second;
+      } else {
+        assert("invalid runtime argument for datatype A!");
+      }
+
+      if (iter_runtime_b != mapping.end()) {
+          operator_args.mainloop.runtime_data_type_b = iter_runtime_b->second;
+      } else {
+        assert("invalid runtime argument for datatype B!");
+      }
+
+    }
+    else {
+    
     operator_args.mainloop.ptr_A = static_cast<ElementA const *>(arguments->A);
     operator_args.mainloop.ptr_B = static_cast<ElementB const *>(arguments->B);
+    } 
     operator_args.epilogue.ptr_C = static_cast<ElementC const *>(arguments->C);
     operator_args.epilogue.ptr_D = static_cast<ElementD       *>(arguments->D);
 
@@ -247,8 +294,17 @@ protected:
         arguments->ldc, arguments->batch_stride_C);
     operator_args.epilogue.dD = operator_args.epilogue.dC;
 
-    /* Query device SM count to pass onto the kernel as an argument, where needed */
+    /* Query device SM count and max active clusters to pass onto the kernel as an argument, where needed */
     operator_args.hw_info.sm_count = arguments->sm_count;
+    if constexpr (Operator::ArchTag::kMinComputeCapability == 90) {
+      dim3 cluster_dims(cute::size<0>(typename Operator::GemmKernel::ClusterShape{}),
+                        cute::size<1>(typename Operator::GemmKernel::ClusterShape{}),
+                        cute::size<2>(typename Operator::GemmKernel::ClusterShape{}));
+      uint32_t threads_per_block = Operator::GemmKernel::MaxThreadsPerBlock;
+      void const* kernel_ptr = (void*)(device_kernel<typename Operator::GemmKernel>);
+      operator_args.hw_info.max_active_clusters = cutlass::KernelHardwareInfo::query_device_max_active_clusters(
+                                                    cluster_dims, threads_per_block, kernel_ptr);
+    }
     if constexpr (!std::is_const_v<decltype(operator_args.scheduler.max_swizzle_size)>) {
       operator_args.scheduler.max_swizzle_size = arguments->swizzle_size;
     }
@@ -267,6 +323,22 @@ protected:
       }
     }
 
+    if constexpr (std::is_same_v<typename Operator::GemmKernel::TileSchedulerTag, cutlass::gemm::StreamKScheduler>) {
+      operator_args.scheduler.splits = arguments->split_k_slices;
+    }
+
+    
+    if constexpr (Operator::ArchTag::kMinComputeCapability >= 100) {
+      operator_args.hw_info.cluster_shape = dim3(
+        arguments->cluster_shape.m(),
+        arguments->cluster_shape.n(),
+        arguments->cluster_shape.k());
+      operator_args.hw_info.cluster_shape_fallback = dim3(
+        arguments->cluster_shape_fallback.m(),
+        arguments->cluster_shape_fallback.n(),
+        arguments->cluster_shape_fallback.k());
+    }
+    
     return status;
   }
 
@@ -274,20 +346,11 @@ public:
 
   /// Returns success if the operation can proceed
   Status can_implement(
-      void const *configuration_ptr, void const *arguments_ptr) const override {
-    GemmUniversalConfiguration const *configuration =
-      static_cast<GemmUniversalConfiguration const *>(configuration_ptr);
+      [[maybe_unused]] void const *configuration_ptr, void const *arguments_ptr) const override {
     GemmUniversalArguments const *arguments =
       static_cast<GemmUniversalArguments const *>(arguments_ptr);
-
     OperatorArguments args;
-    // can_implement rules may need access to problem shape
-    args.problem_shape = cute::make_shape(
-      configuration->problem_size.m(),
-      configuration->problem_size.n(),
-      configuration->problem_size.k(),
-      configuration->batch_count);
-
+    
     auto status = update_arguments_(args, arguments);
     if (status != Status::kSuccess) {
       return status;
@@ -341,7 +404,8 @@ public:
 
     Operator *op = static_cast<Operator *>(host_workspace);
     // We need to call initialize() since we have to rebuild TMA desc for every new set of args
-    status = op->run(args, device_workspace, stream);
+    status = op->run(args, device_workspace, stream, nullptr, 
+                     static_cast<GemmUniversalArguments const *>(arguments_ptr)->use_pdl);
     return status;
   }
 };

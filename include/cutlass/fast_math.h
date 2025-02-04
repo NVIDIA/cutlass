@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -38,7 +38,9 @@
 #include <cmath>
 #include <type_traits>
 #endif
-
+#if !defined(__QNX__) && !defined(CUTLASS_ENABLE_SYCL)
+#include <cuda/std/utility>
+#endif
 #include "cutlass/cutlass.h"
 #include "cutlass/array.h"
 #include "cutlass/uint128.h"
@@ -53,13 +55,16 @@
 namespace cutlass {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-
+#if !defined(__QNX__) && !defined(CUTLASS_ENABLE_SYCL)
+using ::cuda::std::swap;
+#else
 template <typename T>
 CUTLASS_HOST_DEVICE void swap(T &lhs, T &rhs) {
   T tmp = lhs;
   lhs = rhs;
   rhs = tmp;
 }
+#endif
 
 /******************************************************************************
  * Static math utilities

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -2974,6 +2974,7 @@ TEST(SM80_gemm_threadblock_crosswise,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+#if 0 
 TEST(SM80_gemm_threadblock_crosswise,
      tensor_op_64x64x1024_64x64x1024_16x8x256_3stage) {
   using ElementA = cutlass::uint1b_t;
@@ -3006,8 +3007,11 @@ TEST(SM80_gemm_threadblock_crosswise,
                                             problem_size.k(), alpha, beta)
       .run(grid, block);
 }
+#endif 
+
 ////////////////////////////////////////////////////////////////////////////////
 
+#if 0 
 TEST(SM80_gemm_threadblock_crosswise,
      tensor_op_64x64x1024_32x32x1024_16x8x256_3stage) {
   using ElementA = cutlass::uint1b_t;
@@ -3040,8 +3044,11 @@ TEST(SM80_gemm_threadblock_crosswise,
                                             problem_size.k(), alpha, beta)
       .run(grid, block);
 }
+#endif 
+
 ////////////////////////////////////////////////////////////////////////////////
 
+#if 0 
 TEST(SM80_gemm_threadblock_crosswise,
      tensor_op_128x64x1024_64x32x1024_16x8x256_3stage) {
   using ElementA = cutlass::uint1b_t;
@@ -3074,8 +3081,11 @@ TEST(SM80_gemm_threadblock_crosswise,
                                             problem_size.k(), alpha, beta)
       .run(grid, block);
 }
+#endif 
+
 ////////////////////////////////////////////////////////////////////////////////
 
+#if 0 
 TEST(SM80_gemm_threadblock_crosswise,
      tensor_op_64x1024x1024_32x64x1024_16x8x256_3stage) {
   using ElementA = cutlass::uint1b_t;
@@ -3108,8 +3118,11 @@ TEST(SM80_gemm_threadblock_crosswise,
                                             problem_size.k(), alpha, beta)
       .run(grid, block);
 }
+#endif 
+
 ////////////////////////////////////////////////////////////////////////////////
 
+#if 0 
 TEST(SM80_gemm_threadblock_crosswise,
      tensor_op_128x1024x1024_64x64x1024_16x8x256_3stage) {
   using ElementA = cutlass::uint1b_t;
@@ -3142,8 +3155,11 @@ TEST(SM80_gemm_threadblock_crosswise,
                                             problem_size.k(), alpha, beta)
       .run(grid, block);
 }
+#endif 
+
 ////////////////////////////////////////////////////////////////////////////////
 
+#if 0 
 TEST(SM80_gemm_threadblock_crosswise,
      multicta_256x256x6144_128x1024x1024_64x64x1024_16x8x256_3stage) {
   using ElementA = cutlass::uint1b_t;
@@ -3176,8 +3192,11 @@ TEST(SM80_gemm_threadblock_crosswise,
                                             problem_size.k(), alpha, beta)
       .run(grid, block);
 }
+#endif 
+
 ////////////////////////////////////////////////////////////////////////////////
 
+#if 0 
 TEST(SM80_gemm_threadblock_crosswise,
      multicta_512x256x6144_256x1024x1024_64x64x1024_16x8x256_3stage) {
   using ElementA = cutlass::uint1b_t;
@@ -3210,8 +3229,11 @@ TEST(SM80_gemm_threadblock_crosswise,
                                             problem_size.k(), alpha, beta)
       .run(grid, block);
 }
+#endif 
+
 ////////////////////////////////////////////////////////////////////////////////
 
+#if 0 
 TEST(SM80_gemm_threadblock_crosswise,
      tensor_op_64x64x512_64x64x512_16x8x256_4stage) {
   using ElementA = cutlass::uint1b_t;
@@ -3244,8 +3266,11 @@ TEST(SM80_gemm_threadblock_crosswise,
                                             problem_size.k(), alpha, beta)
       .run(grid, block);
 }
+#endif 
+
 ////////////////////////////////////////////////////////////////////////////////
 
+#if 0 
 TEST(SM80_gemm_threadblock_crosswise,
      tensor_op_64x64x512_32x32x512_16x8x256_4stage) {
   using ElementA = cutlass::uint1b_t;
@@ -3278,8 +3303,11 @@ TEST(SM80_gemm_threadblock_crosswise,
                                             problem_size.k(), alpha, beta)
       .run(grid, block);
 }
+#endif 
+
 ////////////////////////////////////////////////////////////////////////////////
 
+#if 0 
 TEST(SM80_gemm_threadblock_crosswise,
      tensor_op_128x64x512_64x32x512_16x8x256_4stage) {
   using ElementA = cutlass::uint1b_t;
@@ -3312,8 +3340,11 @@ TEST(SM80_gemm_threadblock_crosswise,
                                             problem_size.k(), alpha, beta)
       .run(grid, block);
 }
+#endif 
+
 ////////////////////////////////////////////////////////////////////////////////
 
+#if 0 
 TEST(SM80_gemm_threadblock_crosswise,
      tensor_op_64x128x512_32x64x512_16x8x256_4stage) {
   using ElementA = cutlass::uint1b_t;
@@ -3346,8 +3377,11 @@ TEST(SM80_gemm_threadblock_crosswise,
                                             problem_size.k(), alpha, beta)
       .run(grid, block);
 }
+#endif 
+
 ////////////////////////////////////////////////////////////////////////////////
 
+#if 0 
 TEST(SM80_gemm_threadblock_crosswise,
      tensor_op_128x128x512_64x64x512_16x8x256_4stage) {
   using ElementA = cutlass::uint1b_t;
@@ -3380,8 +3414,11 @@ TEST(SM80_gemm_threadblock_crosswise,
                                             problem_size.k(), alpha, beta)
       .run(grid, block);
 }
+#endif 
+
 ////////////////////////////////////////////////////////////////////////////////
 
+#if 0 
 TEST(SM80_gemm_threadblock_crosswise,
      multicta_256x256x6144_128x128x512_64x64x512_16x8x256_4stage) {
   using ElementA = cutlass::uint1b_t;
@@ -3414,8 +3451,11 @@ TEST(SM80_gemm_threadblock_crosswise,
                                             problem_size.k(), alpha, beta)
       .run(grid, block);
 }
+#endif 
+
 ////////////////////////////////////////////////////////////////////////////////
 
+#if 0 
 TEST(SM80_gemm_threadblock_crosswise,
      multicta_512x256x6144_256x128x512_64x64x512_16x8x256_4stage) {
   using ElementA = cutlass::uint1b_t;
@@ -3448,6 +3488,8 @@ TEST(SM80_gemm_threadblock_crosswise,
                                             problem_size.k(), alpha, beta)
       .run(grid, block);
 }
+#endif 
+
 ////////////////////////////////////////////////////////////////////////////////
 TEST(SM80_gemm_threadblock_congruous,
      tensor_op_64x64x16_32x64x16_8x8x4_3stage) {

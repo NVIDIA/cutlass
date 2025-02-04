@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -39,6 +39,7 @@
 #include "cutlass/array.h"
 #include "cutlass/numeric_conversion.h"
 #include "cutlass/epilogue/thread/activation.h"
+#include "cutlass/detail/helper_macros.hpp"
 
 #include "cute/tensor.hpp"
 
@@ -172,14 +173,14 @@ public:
     visit(Array<ElementAccumulator, FragmentSize> const& frg_acc, int epi_v, int epi_m, int epi_n,
           Array<ElementInputs, FragmentSize> const&... frg_inputs) {
       return transform_apply(cute::make_tuple(frg_inputs...),
-        [&] (auto&& frg_input) {
+        [&] (auto&& frg_input) CUTLASS_LAMBDA_FUNC_INLINE {
           using ElementInput = typename cute::remove_cvref_t<decltype(frg_input)>::Element;
           using ConvertInput = NumericArrayConverter<ElementCompute, ElementInput, FragmentSize, RoundStyle>;
           ConvertInput convert_input{};
 
           return convert_input(frg_input);
         },
-        [&] (auto&&... cvt_frg_inputs) {
+        [&] (auto&&... cvt_frg_inputs) CUTLASS_LAMBDA_FUNC_INLINE {
           using ComputeOutput = ComputeFn<Array<ElementCompute, FragmentSize>>;
           ComputeOutput compute_output{};
 
@@ -266,8 +267,8 @@ struct Sm90TreeVisitor<
     auto const& scale_op = get<0>(Impl::ops);
     auto const& added_op = get<2>(Impl::ops);
     if constexpr (detail::IsScalarBroadcast<InputScaleOp>::value && not is_void_v<ElementSource>) {
-      return (get<2>(scale_op.params_ptr->dScalar[0]) != 0 && scale_op.params_ptr->scalar_ptrs[0] != nullptr) || 
-              is_C_load_needed() || 
+      return (get<2>(scale_op.params_ptr->dScalar[0]) != 0 && scale_op.params_ptr->scalar_ptrs[0] != nullptr) ||
+              is_C_load_needed() ||
               added_op.is_producer_load_needed();
     }
     else {
@@ -408,8 +409,9 @@ template <
 >
 struct Sm90TreeVisitor<
   Sm90Compute<Activation, ElementOutput, ElementCompute, RoundStyle,
-              cute::enable_if_t<cute::is_same_v<Activation<ElementCompute>, cutlass::epilogue::thread::ReLu<ElementCompute>> ||
-                                cute::is_same_v<Activation<ElementCompute>, cutlass::epilogue::thread::Clamp<ElementCompute>>  >>,
+              cute::enable_if_t<cute::is_same_v<Activation<ElementCompute>, cutlass::epilogue::thread::ReLu<ElementCompute>>  ||
+                                cute::is_same_v<Activation<ElementCompute>, cutlass::epilogue::thread::Clamp<ElementCompute>> ||
+                                cute::is_same_v<Activation<ElementCompute>, cutlass::epilogue::thread::ThresholdReLU<ElementCompute>> >>,
   Sm90TreeVisitor<
     Sm90AuxStore<
       Stages,
@@ -503,7 +505,8 @@ struct Sm90TreeVisitor<
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < FragmentSize; ++i) {
         ElementCompute pre_relu = frg_compute[i];
-        if constexpr (cute::is_same_v<Activation<ElementCompute>, cutlass::epilogue::thread::Clamp<ElementCompute>>) {
+        if constexpr (cute::is_same_v<Activation<ElementCompute>, cutlass::epilogue::thread::Clamp<ElementCompute>> ||
+                      cute::is_same_v<Activation<ElementCompute>, cutlass::epilogue::thread::ThresholdReLU<ElementCompute>>) {
           frg_compute[i] = relu(frg_compute[i], params_compute);
         }
         else {
@@ -561,14 +564,14 @@ struct Sm90TreeVisitor<
         Tensor tC_rAux_vec = recast<VecType>(tC_rAux);
         Tensor tC_gAux_vec = recast<VecType>(tC_gAux);
         Tensor tC_cAux_vec = tensor<1>(zipped_divide(tC_cAux, MCL.compose(Int<V>{})));
-        auto predicate_fn = [&] (auto&&... coords) { return elem_less(tC_cAux_vec(coords...), residue_tC_cAux); };
+        auto predicate_fn = [&] (auto&&... coords) CUTLASS_LAMBDA_FUNC_INLINE { return elem_less(tC_cAux_vec(coords...), residue_tC_cAux); };
         copy_if(predicate_fn, tC_rAux_vec, tC_gAux_vec);
       }
       // sub-byte vectorization, must serialize threads
       else {
         // Assumes no inter-warp sharing of bytes (most copy layouts should satisfy this)
         int lane_idx = canonical_lane_idx();
-        auto predicate_fn = [&] (auto&&... coords) { return elem_less(tC_cAux(coords...), residue_tC_cAux); };
+        auto predicate_fn = [&] (auto&&... coords) CUTLASS_LAMBDA_FUNC_INLINE { return elem_less(tC_cAux(coords...), residue_tC_cAux); };
         CUTLASS_PRAGMA_NO_UNROLL
         for (int i = 0; i < NumThreadsPerWarp; ++i) {
           if (lane_idx == i) {
@@ -720,11 +723,11 @@ struct Sm90AuxLoad<
           Tensor tC_gAux_vec = recast<VecType>(tC_gAux);
           Tensor tC_rAux_vec = recast<VecType>(tC_rAux);
           Tensor tC_cAux_vec = tensor<1>(zipped_divide(tC_cAux, MCL.compose(Int<V>{})));
-          auto predicate_fn = [&] (auto&&... coords) { return elem_less(tC_cAux_vec(coords...), residue_tC_cAux); };
+          auto predicate_fn = [&] (auto&&... coords) CUTLASS_LAMBDA_FUNC_INLINE { return elem_less(tC_cAux_vec(coords...), residue_tC_cAux); };
           copy_if(predicate_fn, tC_gAux_vec, tC_rAux_vec);
         }
         else {
-          auto predicate_fn = [&] (auto&&... coords) { return elem_less(tC_cAux(coords...), residue_tC_cAux); };
+          auto predicate_fn = [&] (auto&&... coords) CUTLASS_LAMBDA_FUNC_INLINE { return elem_less(tC_cAux(coords...), residue_tC_cAux); };
           copy_if(predicate_fn, tC_gAux, tC_rAux);
         }
       }
@@ -739,7 +742,7 @@ struct Sm90AuxLoad<
           }
         }
 
-        auto predicate_fn = [&] (auto&&... coords) { return elem_less(tC_cAux(_,_,_,epi_m,epi_n)(coords...), residue_tC_cAux); };
+        auto predicate_fn = [&] (auto&&... coords) CUTLASS_LAMBDA_FUNC_INLINE { return elem_less(tC_cAux(_,_,_,epi_m,epi_n)(coords...), residue_tC_cAux); };
         copy_if(predicate_fn, tC_gAux(_,_,_,epi_m,epi_n), tC_rAux);
       }
     }
@@ -775,7 +778,7 @@ struct Sm90AuxLoad<
 
     // If byte-unaligned vectorization, store in registers as uint32_t to reduce redundant pack+unpack instruction sequences
     constexpr int V = decltype(max_common_vector(tC_gAux.layout(), make_layout(tC_gAux.shape())))::value;
-    Tensor tC_rAux = [&] () {
+    Tensor tC_rAux = [&] () CUTLASS_LAMBDA_FUNC_INLINE {
       if constexpr (V % 8 != 0) {
         return make_tensor<uint32_t>(take<0,3>(shape(tC_gAux)));                       // (CPY,CPY_M,CPY_N)
       } else {

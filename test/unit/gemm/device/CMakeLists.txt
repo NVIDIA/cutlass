@@ -1,4 +1,4 @@
-# Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -51,52 +51,34 @@ if(CUTLASS_ENABLE_SYCL)
   endif()
 else()
 
-  add_custom_target(
-  cutlass_test_unit_gemm_device
-  DEPENDS
-  cutlass_test_unit_gemm_device_simt
-  cutlass_test_unit_gemm_device_tensorop_sm70
-  cutlass_test_unit_gemm_device_tensorop_sm75
-  cutlass_test_unit_gemm_device_tensorop_f16_sm80
-  cutlass_test_unit_gemm_device_tensorop_f32_sm80
-  cutlass_test_unit_gemm_device_tensorop_f32_tf32_sm80
-  cutlass_test_unit_gemm_device_tensorop_f64
-  cutlass_test_unit_gemm_device_tensorop_s32_sm80
-  cutlass_test_unit_gemm_device_wmma
-  cutlass_test_unit_gemm_device_tensorop_planar_complex
-  cutlass_test_unit_gemm_device_sparse_tensorop_sm80
-  cutlass_test_unit_gemv_device
-  cutlass_test_unit_gemm_device_tensorop_sm90
-  cutlass_test_unit_sparse_gemm_device_tensorop_sm90
-  cutlass_test_unit_gemm_device_tensorop_cluster_multicast_sm90
-)
+add_custom_target(cutlass_test_unit_gemm_device)
+add_custom_target(test_unit_gemm_device)
 
-add_custom_target(
-  test_unit_gemm_device
-  DEPENDS
-  test_unit_gemm_device_simt
-  test_unit_gemm_device_tensorop_sm70
-  test_unit_gemm_device_tensorop_sm75
-  test_unit_gemm_device_tensorop_f16_sm80
-  test_unit_gemm_device_tensorop_f32_sm80
-  test_unit_gemm_device_tensorop_f32_tf32_sm80
-  test_unit_gemm_device_tensorop_f64
-  test_unit_gemm_device_tensorop_s32_sm80
-  test_unit_gemm_device_wmma
-  test_unit_gemm_device_tensorop_planar_complex
-  test_unit_gemm_device_sparse_tensorop_sm80
-  test_unit_gemv_device
-  test_unit_gemm_device_tensorop_sm90
-)
 
-add_custom_target(
-  cutlass_test_unit_gemm_device_sm90
-  DEPENDS
-  cutlass_test_unit_gemm_device_tensorop_sm90
-  cutlass_test_unit_gemm_device_tensorop_cluster_multicast_sm90
-)
+add_subdirectory(sm100_blockscaled_tensorop_gemm)
 
-cutlass_test_unit_add_executable(
+
+################################################################################
+
+function(cutlass_test_unit_gemm_device_add_deps NAME)
+  string(REGEX REPLACE "^cutlass_" "" TEST_NAME "${NAME}")
+  add_dependencies(cutlass_test_unit_gemm_device ${NAME})
+  add_dependencies(test_unit_gemm_device ${TEST_NAME})
+endfunction()
+
+function(cutlass_test_unit_gemm_device_add_executable NAME)
+  cutlass_test_unit_add_executable(${NAME} ${ARGN} DO_NOT_LOWERCASE_TEST_NAME)
+  cutlass_test_unit_gemm_device_add_deps(${NAME})
+endfunction()
+
+function(cutlass_test_unit_gemm_device_add_executable_split_file NAME)
+  cutlass_test_unit_add_executable_split_file(${NAME} ${ARGN} DO_NOT_LOWERCASE_TEST_NAME)
+  cutlass_test_unit_gemm_device_add_deps(${NAME})
+endfunction()
+
+################################################################################
+
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_simt
 
   BATCH_SOURCES ON
@@ -151,7 +133,9 @@ cutlass_test_unit_add_executable(
   gemm_splitk_simt_sm50.cu
 )
 
-cutlass_test_unit_add_executable(
+list(APPEND CUTLASS_TEST_UNIT_GEMM_DEVICE_LIST cutlass_test_unit_gemm_device_simt)
+
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_simt_3x
 
   BATCH_SOURCES ON
@@ -164,8 +148,7 @@ cutlass_test_unit_add_executable(
   sm61_gemm_s8_s8_s32_simt.cu
 )
 
-
-cutlass_test_unit_add_executable(
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_tensorop_sm70
 
   BATCH_SOURCES ON
@@ -184,7 +167,7 @@ cutlass_test_unit_add_executable(
   gemm_splitk_tensor_op_sm70.cu
 )
 
-cutlass_test_unit_add_executable(
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_tensorop_sm75
 
   BATCH_SOURCES ON
@@ -229,7 +212,7 @@ cutlass_test_unit_add_executable(
 
 )
 
-cutlass_test_unit_add_executable(
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_tensorop_f16_sm80
 
   BATCH_SOURCES ON
@@ -239,7 +222,7 @@ cutlass_test_unit_add_executable(
   gemm_f16n_f16t_f16t_tensor_op_f16_slicedk_sm80.cu
 )
 
-cutlass_test_unit_add_executable(
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_tensorop_f32_sm80
 
   BATCH_SOURCES ON
@@ -261,7 +244,7 @@ cutlass_test_unit_add_executable(
   gemm_f16n_f16n_f16n_direct_store_tensor_op_f32_sm80.cu
 )
 
-cutlass_test_unit_add_executable(
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_tensorop_f32_sm80_3x
 
   sm80_gemm_s8_s8_s32_tensor_op.cu
@@ -270,7 +253,7 @@ cutlass_test_unit_add_executable(
 )
 
 
-cutlass_test_unit_add_executable(
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_mixed_input_tensorop_sm80
 
   BATCH_SOURCES ON
@@ -311,13 +294,14 @@ cutlass_test_unit_add_executable(
   gemm_universal_s8t_s4n_s8t_mixed_input_tensor_op_s32_sm80.cu
 )
 
-cutlass_test_unit_add_executable(
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_tensorop_sm90
 
   BATCH_SOURCES ON
   BATCH_SIZE 4
 
   sm90_gemm_f16_f16_f16_tensor_op.cu
+  sm90_gett_f16_f16_f16_tensor_op.cu
   sm90_gemm_bf16_bf16_bf16_tensor_op_f32.cu
   sm90_gemm_s8_s8_s8_tensor_op_s32.cu
   sm90_gemm_tf32_tf32_f32_tensor_op_f32.cu
@@ -327,7 +311,7 @@ cutlass_test_unit_add_executable(
   sm90_gemm_f8_f8_f8_tensor_op_fp32.cu
 )
 
-cutlass_test_unit_add_executable(
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_tensorop_sm90_stream_k
 
   sm90_gemm_stream_k_scheduler.cu
@@ -336,7 +320,7 @@ cutlass_test_unit_add_executable(
 )
 
 # Alignment tests
-cutlass_test_unit_add_executable(
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_tensorop_alignx_sm90
 
   BATCH_SOURCES ON
@@ -361,14 +345,14 @@ cutlass_test_unit_add_executable(
 )
 
 # Ptr Array test
-cutlass_test_unit_add_executable(
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_tensorop_sm90_ptr_array
   sm90_gemm_f16_f16_f16_tensor_op_f32_ptr_array.cu
   sm90_gemm_f16_f16_f16_tensor_op_f32_ptr_array_pingpong.cu
 )
 
 # Group Gemm test
-cutlass_test_unit_add_executable(
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_tensorop_sm90_group_gemm
   sm90_gemm_f16_f16_f16_tensor_op_f32_group_gemm.cu
   sm90_gemm_f16_f16_f16_tensor_op_f32_group_gemm_pingpong.cu
@@ -376,31 +360,25 @@ cutlass_test_unit_add_executable(
 
 # Sparse tests
 # Sparse kernels trigger an ICE in gcc 7.5
-if (NOT (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8.0))
-cutlass_test_unit_add_executable(
-  cutlass_test_unit_sparse_gemm_device_tensorop_sm90
+if (NOT (CUTLASS_GNU_HOST_COMPILE AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8.0))
 
-  # No batching of source to control compiler memory usage
-  BATCH_SOURCES ON
-  BATCH_SIZE 1
+  cutlass_test_unit_gemm_device_add_executable(
+    cutlass_test_unit_sparse_gemm_device_tensorop_sm90
 
-  sm90_sparse_gemm_s8_s8_s32_tensor_op_s32.cu
-  sm90_sparse_gemm_f8_f8_f32_tensor_op_f32.cu
-  sm90_sparse_gemm_f16_f16_f32_tensor_op_f32.cu
-  sm90_sparse_gemm_tf32_tf32_f32_tensor_op_f32.cu
-)
-else()
-cutlass_test_unit_add_executable(
-  cutlass_test_unit_sparse_gemm_device_tensorop_sm90
+    # No batching of source to control compiler memory usage
+    BATCH_SOURCES ON
+    BATCH_SIZE 1
 
-  # No batching of source to control compiler memory usage
-  BATCH_SOURCES ON
-  BATCH_SIZE 1
-)
+    sm90_sparse_gemm_s8_s8_s32_tensor_op_s32.cu
+    sm90_sparse_gemm_f8_f8_f32_tensor_op_f32.cu
+    sm90_sparse_gemm_f16_f16_f32_tensor_op_f32.cu
+    sm90_sparse_gemm_tf32_tf32_f32_tensor_op_f32.cu
+  )
+
 endif()
 
 # Fused epilogue tests
-cutlass_test_unit_add_executable(
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_tensorop_epilogue_fusion_sm90
 
   BATCH_SOURCES ON
@@ -425,8 +403,7 @@ cutlass_test_unit_add_executable(
   sm90_gemm_f8_f8_bf16_tensor_op_fp32_evt.cu
   sm90_gemm_f8_f8_f32_tensor_op_f32_cluster_warpspecialized_cooperative_evt.cu
 )
-
-  cutlass_test_unit_add_executable(
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_tensorop_cluster_multicast_sm90
 
   BATCH_SOURCES ON
@@ -438,7 +415,7 @@ cutlass_test_unit_add_executable(
   sm90_gemm_f16_f16_f16_tensor_op_f32_cluster_warpspecialized_cooperative.cu
   sm90_gemm_f8_f8_f32_tensor_op_f32_cluster_warpspecialized_cooperative.cu
 )
-cutlass_test_unit_add_executable(
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_tensorop_gmma_rs_warpspecialized_sm90
 
   BATCH_SOURCES ON
@@ -449,7 +426,7 @@ cutlass_test_unit_add_executable(
   sm90_gemm_f16_f16_f32_tensor_op_f32_rs_cluster_warpspecialized_cooperative.cu
 )
 
-cutlass_test_unit_add_executable(
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_tensorop_f32_tf32_sm80
 
   BATCH_SOURCES ON
@@ -469,7 +446,7 @@ cutlass_test_unit_add_executable(
   sm80_gemm_f16_f16_f32_tensor_op_f32.cu
 )
 
-cutlass_test_unit_add_executable(
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_tensorop_f64
 
   BATCH_SOURCES ON
@@ -485,11 +462,11 @@ cutlass_test_unit_add_executable(
   gemm_cf64n_cf64t_cf64t_tensor_op_f64_gaussian_sm80.cu
   gemm_cf64t_cf64n_cf64t_tensor_op_f64_gaussian_sm80.cu
 
+  sm80_gemm_f64_f64_f64_tensor_op_f64.cu
+
   # SM90 device level tests
   gemm_f64n_f64t_f64t_tensor_op_f64_sm90.cu
   gemm_f64t_f64n_f64t_tensor_op_f64_sm90.cu
-
-  sm80_gemm_f64_f64_f64_tensor_op_f64.cu
 
   gemm_cf64n_cf64t_cf64t_tensor_op_f64_sm90.cu
   gemm_cf64t_cf64n_cf64t_tensor_op_f64_sm90.cu
@@ -497,7 +474,7 @@ cutlass_test_unit_add_executable(
   gemm_cf64t_cf64n_cf64t_tensor_op_f64_gaussian_sm90.cu
 )
 
-cutlass_test_unit_add_executable(
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_tensorop_s32_sm80
 
   BATCH_SOURCES ON
@@ -519,7 +496,7 @@ cutlass_test_unit_add_executable(
   gemm_s4n_s4t_s4n_tensor_op_s32_sm80.cu
 )
 
-cutlass_test_unit_add_executable(
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_wmma
 
   BATCH_SOURCES ON
@@ -577,7 +554,7 @@ cutlass_test_unit_add_executable(
   gemm_f16t_f16n_f32t_singlestage_wmma_tensor_op_f32_sm70.cu
 )
 
-cutlass_test_unit_add_executable(
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_tensorop_planar_complex
 
   BATCH_SOURCES ON
@@ -588,7 +565,7 @@ cutlass_test_unit_add_executable(
   gemm_planar_complex_f16_f16_f32_tensor_op_sm80.cu
 )
 
-cutlass_test_unit_add_executable(
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_tensorop_sm89
 
   BATCH_SOURCES ON
@@ -600,7 +577,7 @@ cutlass_test_unit_add_executable(
 #  gemm_f8t_f8n_f8t_tensor_op_f32_sparse_sm89.cu
 )
 
-cutlass_test_unit_add_executable(
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_grouped
 
   BATCH_SOURCES ON
@@ -609,7 +586,7 @@ cutlass_test_unit_add_executable(
   gemm_grouped_sm80.cu
 )
 
-cutlass_test_unit_add_executable(
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_grouped_scheduler
 
   BATCH_SOURCES ON
@@ -618,7 +595,7 @@ cutlass_test_unit_add_executable(
   gemm_grouped_scheduler_sm80.cu
 )
 
-cutlass_test_unit_add_executable(
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_grouped_rank_2k_scheduler
 
   BATCH_SOURCES ON
@@ -627,7 +604,7 @@ cutlass_test_unit_add_executable(
   rank_2k_grouped_scheduler_sm80.cu
 )
 
-cutlass_test_unit_add_executable(
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_sparse_tensorop_sm80
 
   BATCH_SOURCES ON
@@ -648,7 +625,7 @@ cutlass_test_unit_add_executable(
   gemm_s4t_s4n_s32t_tensor_op_s32_sparse_sm80.cu
 )
 
-cutlass_test_unit_add_executable(
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemv_device
 
   BATCH_SOURCES ON
@@ -657,42 +634,22 @@ cutlass_test_unit_add_executable(
   gemv.cu
 )
 
-if (NOT CUDA_COMPILER MATCHES "[Cc]lang")
+if (CUTLASS_NVCC_DEVICE_COMPILE)
 
-add_dependencies(
-  cutlass_test_unit_gemm_device
-  cutlass_test_unit_gemm_device_gemm_with_fused_epilogue_tensorop
+  cutlass_test_unit_gemm_device_add_executable(
+    cutlass_test_unit_gemm_device_gemm_with_fused_epilogue_tensorop
+
+    gemm_with_reduction_f16n_f16n_f16n_tensorop_f32_sm75.cu
+    gemm_with_broadcast_f16n_f16n_f16n_tensorop_f32_sm75.cu
+
+    gemm_with_reduction_f16t_f16n_f16n_tensorop_f32_sm80.cu
   )
-
-add_dependencies(
-  test_unit_gemm_device
-  test_unit_gemm_device_gemm_with_fused_epilogue_tensorop
-  )
-
-cutlass_test_unit_add_executable(
-  cutlass_test_unit_gemm_device_gemm_with_fused_epilogue_tensorop
-
-  gemm_with_reduction_f16n_f16n_f16n_tensorop_f32_sm75.cu
-  gemm_with_broadcast_f16n_f16n_f16n_tensorop_f32_sm75.cu
-
-  gemm_with_reduction_f16t_f16n_f16n_tensorop_f32_sm80.cu
-)
 
 endif()
 
-if (NOT CUDA_COMPILER MATCHES "[Cc]lang")
+if (CUTLASS_NVCC_DEVICE_COMPILE)
 
-add_dependencies(
-  cutlass_test_unit_gemm_device
-  cutlass_test_unit_gemm_device_blas3
-  )
-
-add_dependencies(
-  test_unit_gemm_device
-  test_unit_gemm_device_blas3
-  )
-
-cutlass_test_unit_add_executable(
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_blas3
 
   BATCH_SOURCES ON
@@ -859,7 +816,7 @@ cutlass_test_unit_add_executable(
   hemm_cf64_cf64_cf64_tensor_op_f64_sm90.cu
 )
 
-cutlass_test_unit_add_executable(
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_grouped_blas3
 
   BATCH_SOURCES ON
@@ -884,13 +841,156 @@ cutlass_test_unit_add_executable(
 
 endif()
 
-if (NOT CUDA_COMPILER MATCHES "[Cc]lang")
+if (CUTLASS_NVCC_DEVICE_COMPILE)
+
+  cutlass_test_unit_gemm_device_add_executable(
+    cutlass_test_unit_gemm_device_broadcast
+    gemm_f16t_f16n_f16t_tensor_op_f16_broadcast_sm80.cu
+  )
+
+endif()
+
+
+
+if(NOT CUTLASS_NVCC_ARCHS STREQUAL "100")
 
 cutlass_test_unit_add_executable(
-  cutlass_test_unit_gemm_device_broadcast
+  cutlass_test_unit_gemm_device_sm100_fp16_gemm
 
-  gemm_f16t_f16n_f16t_tensor_op_f16_broadcast_sm80.cu
+  # No batching of source to control compiler memory usage
+  BATCH_SOURCES ON
+  BATCH_SIZE 1
+
+  sm100_gemm_f16_f16_f32_tensor_op_f32.cu
 )
 
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_sm100_stream_k
+
+  sm100_gemm_f16_f16_f16_tensor_op_f32_stream_k.cu
+)
+
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_sm100_bf16_gemm
+
+  # No batching of source to control compiler memory usage
+  BATCH_SOURCES ON
+  BATCH_SIZE 1
+
+  sm100_gemm_bf16_bf16_f32_tensor_op_f32.cu
+)
+
+
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_stride_batch_alpha_beta_sm100
+
+  # No batching of source to control compiler memory usage
+  BATCH_SOURCES ON
+  BATCH_SIZE 1
+
+  sm100_gemm_f8_f8_f8_tensor_op_s32_batch_alpha_beta.cu
+)
+
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_runtime_datatype_sm100
+
+  # No batching of source to control compiler memory usage
+  BATCH_SOURCES ON
+  BATCH_SIZE 1
+
+  sm100_gemm_f8_f8_f8_tensor_op_f32_runtime_datatype.cu
+  sm100_gemm_f6_f6_f32_tensor_op_f32_runtime_datatype.cu
+  sm100_gemm_f4_f4_f32_tensor_op_f32_runtime_datatype.cu
+  sm100_gemm_f8_f4_f32_tensor_op_f32_runtime_datatype.cu
+)
+
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_16b_tensorop_sm100_ptr_array
+
+  # 14 (9 + 5) unit tests
+  sm100_gemm_f16_f16_f16_tensor_op_f32_ptr_array.cu
+  sm100_gemm_bf16_bf16_bf16_tensor_op_f32_ptr_array.cu
+)
+
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_16b_tensorop_sm100_group_gemm
+
+  sm100_gemm_f16_f16_f16_tensor_op_f32_group_gemm.cu
+)
+
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_16b_mixed_tensorop_sm100_ptr_array
+
+  # 14 (9 + 5) unit tests
+  sm100_gemm_f16_f16_f32_tensor_op_f32_ptr_array.cu
+  sm100_gemm_f16_f16_f16_tensor_op_f16_ptr_array.cu
+)
+
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_32b_tensorop_sm100_ptr_array
+
+  # 10 unit tests
+  sm100_gemm_f32_f32_f32_tensor_op_f32_ptr_array.cu
+)
+
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_32b_tensorop_sm100_group_gemm
+
+  # 10 unit tests
+  sm100_gemm_f32_f32_f32_tensor_op_f32_group_gemm.cu
+)
+
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_8b_tensorop_sm100_ptr_array
+
+  # 12 unit tests
+  sm100_gemm_i8_i8_i8_tensor_op_s32_ptr_array.cu
+  sm100_gemm_f8_f8_f8_tensor_op_f32_ptr_array.cu
+)
+
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_8b_tensorop_sm100_group_gemm
+
+  # 8 unit tests
+  sm100_gemm_f8_f8_f8_tensor_op_f32_group_gemm.cu
+)
+
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_mxf8_training_sm100_group_gemm
+
+  # No batching of source to control compiler memory usage
+  BATCH_SOURCES ON
+  BATCH_SIZE 1
+
+  sm100_gemm_mxf8_mxf8_mxf8_tensor_op_f32_group_gemm.cu
+)
+
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_mxf4xmxf8_sm100_group_gemm
+
+  # 8 unit tests
+  sm100_gemm_mxf4_mxf8_mxf8_tensor_op_f32_group_gemm.cu
+)
+
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_blockscaled_gemm_device_fp4_tensorop_sm100_ptr_array
+
+  # 8 unit tests
+  sm100_gemm_f4_f4_f32_tensor_op_f32_ptr_array.cu
+)
+
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_blockscaled_gemm_device_fp4_tensorop_sm100_group_gemm_1
+
+  # 8 unit tests
+  sm100_gemm_f4_f4_f32_tensor_op_f32_group_gemm.cu
+)
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_blockscaled_gemm_device_fp6_tensorop_sm100_ptr_array
+
+  # 8 unit tests
+  sm100_gemm_f6_f6_f32_tensor_op_f32_ptr_array.cu
+)
 endif()
 endif()
+

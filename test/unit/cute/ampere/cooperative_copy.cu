@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -39,10 +39,14 @@
 #include <numeric>
 #include <tuple>
 
+#include <thrust/host_vector.h>
+#include <thrust/device_vector.h>
+
 #include <cute/tensor.hpp>
 #include <cute/swizzle.hpp> // cute::Swizzle
 #include <cute/swizzle_layout.hpp> // cute::compose(cute::Swizzle)
 #include <cute/numeric/numeric_types.hpp>
+#include <cute/atom/copy_traits_sm80.hpp>
 
 using namespace cute;
 
@@ -52,9 +56,79 @@ namespace cooperative_copy_mode {
   struct shared_shared {};
 }
 
+// gs --> global to/from shared
+template <int MaxVecBits, uint32_t ThreadBlockSize, class T, class GMemLayout, class SMemLayout>
+__device__ void
+cooperative_copy_default_gs(T const* g_in, T* g_out, GMemLayout const& gmem_layout, SMemLayout const& smem_layout)
+{
+  using namespace cute;
+  extern __shared__ uint128_t smem_buf[];
+  // Cast smem_buf to smem_uint8_ptr and move it by MaxVecBits bits
+  // This is to make sure tests pass on pointer aligned to MaxVecBits bits
+  uint8_t* smem_uint8_ptr = reinterpret_cast<uint8_t*>(smem_buf) + (MaxVecBits/8);
+  T* smem = reinterpret_cast<T*>(smem_uint8_ptr);
+
+  Tensor g_in_tensor  = make_tensor(make_gmem_ptr(g_in),  gmem_layout);
+  Tensor g_out_tensor = make_tensor(make_gmem_ptr(g_out), gmem_layout);
+  Tensor s_tensor     = make_tensor(make_smem_ptr(smem),  smem_layout);
+
+  cooperative_copy<ThreadBlockSize, MaxVecBits>(threadIdx.x, g_in_tensor, s_tensor, AutoCopyAsync{});
+
+  cp_async_fence();
+  cp_async_wait<0>();
+  __syncthreads();
+
+  if(thread0()) {
+    for(int i = 0; i < size(s_tensor); ++i) {
+      s_tensor(i) += T(i);
+    }
+  }
+  __syncthreads();
+
+  cooperative_copy<ThreadBlockSize, MaxVecBits>(threadIdx.x, s_tensor, g_out_tensor, AutoCopyAsync{});
+}
+
+// ss --> shared to shared
+template <int MaxVecBits, uint32_t ThreadBlockSize, class T, class Layout1, class Layout2>
+__device__ void
+cooperative_copy_default_ss(T const* g_in, T* g_out, Layout1 const& layout1, Layout2 const& layout2)
+{
+  using namespace cute;
+  extern __shared__ uint128_t smem_buf[];
+  // Cast smem_buf to smem_uint8_ptr and move it by MaxVecBits bits
+  // This is to make sure tests pass on pointer aligned to MaxVecBits bits
+  T* smem1 = reinterpret_cast<T*>(smem_buf);
+  uint8_t* smem2_uint8_ptr = reinterpret_cast<uint8_t*>(smem_buf) + (MaxVecBits/8);
+  T* smem2 = reinterpret_cast<T*>(smem2_uint8_ptr) + cute::cosize(layout2);
+
+  Tensor g_in_tensor  = make_tensor(make_gmem_ptr(g_in),  layout1);
+  Tensor g_out_tensor = make_tensor(make_gmem_ptr(g_out), layout2);
+
+  Tensor s1_tensor    = make_tensor(make_smem_ptr(smem1), layout2);
+  Tensor s2_tensor    = make_tensor(make_smem_ptr(smem2), layout1);
+
+  cooperative_copy<ThreadBlockSize,  cute::sizeof_bits_v<T>>(threadIdx.x, g_in_tensor, s1_tensor, AutoCopyAsync{});
+
+  cp_async_fence();
+  cp_async_wait<0>();
+  __syncthreads();
+
+  if(thread0()) {
+    for(int i = 0; i < size(s1_tensor); ++i) {
+      s1_tensor(i) += T(i);
+    }
+  }
+  __syncthreads();
+
+  cooperative_copy<ThreadBlockSize, MaxVecBits>(threadIdx.x, s1_tensor, s2_tensor, AutoCopyAsync{});
+  __syncthreads();
+
+  cooperative_copy<ThreadBlockSize,  cute::sizeof_bits_v<T>>(threadIdx.x, s2_tensor, g_out_tensor, AutoCopyAsync{});
+}
+
 // gg --> global to global
 template <int MaxVecBits, uint32_t ThreadBlockSize, class T, class Layout1, class Layout2>
-CUTLASS_DEVICE void
+__device__ void
 cooperative_copy_default_gg(T const* g_in, T* g_out, Layout1 const& layout1, Layout2 const& layout2)
 {
   using namespace cute;
@@ -62,182 +136,11 @@ cooperative_copy_default_gg(T const* g_in, T* g_out, Layout1 const& layout1, Lay
   Tensor g_in_tensor  = make_tensor(make_gmem_ptr(g_in),  layout1);
   Tensor g_out_tensor = make_tensor(make_gmem_ptr(g_out), layout2);
 
-  cooperative_copy<ThreadBlockSize, MaxVecBits>(ThreadIdxX(), g_in_tensor, g_out_tensor);
-}
-
-#ifdef CUTLASS_ENABLE_SYCL
-namespace sc = syclcompat;
-namespace sc_exp = syclcompat::experimental;
-namespace sycl_ext = sycl::ext::oneapi::experimental;
-
-// gs --> global to/from shared
-template <int MaxVecBits, uint32_t ThreadBlockSize, class T, class GMemLayout, class SMemLayout>
-CUTLASS_DEVICE void
-cooperative_copy_default_gs(T const* g_in, T* g_out, GMemLayout const& gmem_layout, SMemLayout const& smem_layout,
-  sycl::local_ptr<char> base_smem)
-{
-  using namespace cute;
-
-  auto smem_buf = reinterpret_cast<uint128_t*>((char*)base_smem);
-
-  // Cast smem_buf to smem_uint8_ptr and move it by MaxVecBits bits
-  // This is to make sure tests pass on pointer aligned to MaxVecBits bits
-  uint8_t* smem_uint8_ptr = reinterpret_cast<uint8_t*>(smem_buf) + (MaxVecBits/8);
-  T* smem = reinterpret_cast<T*>(smem_uint8_ptr);
-
-  Tensor g_in_tensor  = make_tensor(make_gmem_ptr(g_in),  gmem_layout);
-  Tensor g_out_tensor = make_tensor(make_gmem_ptr(g_out), gmem_layout);
-  Tensor s_tensor     = make_tensor(make_smem_ptr(smem),  smem_layout);
-
-  cooperative_copy<ThreadBlockSize, MaxVecBits>(ThreadIdxX(), g_in_tensor, s_tensor);
-
-  cp_async_fence();
-  cp_async_wait<0>();
-  syncthreads();
-
-  if(thread0()) {
-    for(int i = 0; i < size(s_tensor); ++i) {
-      s_tensor(i) += T(i);
-    }
-  }
-  syncthreads();
-
-  cooperative_copy<ThreadBlockSize, MaxVecBits>(ThreadIdxX(), s_tensor, g_out_tensor);
-}
-
-// ss --> shared to shared
-template <int MaxVecBits, uint32_t ThreadBlockSize, class T, class Layout1, class Layout2>
-CUTLASS_DEVICE void
-cooperative_copy_default_ss(T const* g_in, T* g_out, Layout1 const& layout1, Layout2 const& layout2,
-  sycl::local_ptr<char> base_smem)
-{
-  using namespace cute;
-
-  auto smem_buf =  reinterpret_cast<uint128_t*>((char*)base_smem);
-
-  // Cast smem_buf to smem_uint8_ptr and move it by MaxVecBits bits
-  // This is to make sure tests pass on pointer aligned to MaxVecBits bits
-  T* smem1 = reinterpret_cast<T*>(smem_buf);
-  uint8_t* smem2_uint8_ptr = reinterpret_cast<uint8_t*>(smem_buf) + (MaxVecBits/8);
-  T* smem2 = reinterpret_cast<T*>(smem2_uint8_ptr) + cute::cosize(layout2);
-
-  Tensor g_in_tensor  = make_tensor(make_gmem_ptr(g_in),  layout1);
-  Tensor g_out_tensor = make_tensor(make_gmem_ptr(g_out), layout2);
-
-  Tensor s1_tensor    = make_tensor(make_smem_ptr(smem1), layout2);
-  Tensor s2_tensor    = make_tensor(make_smem_ptr(smem2), layout1);
-
-  cooperative_copy<ThreadBlockSize,  cute::sizeof_bits_v<T>>(ThreadIdxX(), g_in_tensor, s1_tensor);
-
-  cp_async_fence();
-  cp_async_wait<0>();
-  syncthreads();
-
-  if(thread0()) {
-    for(int i = 0; i < size(s1_tensor); ++i) {
-      s1_tensor(i) += T(i);
-    }
-  }
-  syncthreads();
-
-  cooperative_copy<ThreadBlockSize, MaxVecBits>(ThreadIdxX(), s1_tensor, s2_tensor);
-  syncthreads();
-
-  cooperative_copy<ThreadBlockSize,  cute::sizeof_bits_v<T>>(ThreadIdxX(), s2_tensor, g_out_tensor);
+  cooperative_copy<ThreadBlockSize, MaxVecBits>(threadIdx.x, g_in_tensor, g_out_tensor, AutoCopyAsync{});
 }
 
 template <class Mode, int MaxVecBits, uint32_t ThreadBlockSize, class T, class Layout1, class Layout2>
-CUTLASS_GLOBAL void
-cooperative_copy_default_kernel(T const* g_in, T* g_out, Layout1 const layout1, Layout2 const layout2,
-  sycl::local_ptr<char> base_smem)
-{
-  if constexpr(std::is_same_v<Mode, cooperative_copy_mode::global_shared>) {
-    cooperative_copy_default_gs<MaxVecBits, ThreadBlockSize>(g_in, g_out, layout1, layout2, base_smem);
-  } else if constexpr (std::is_same_v<Mode, cooperative_copy_mode::global_global>) {
-    cooperative_copy_default_gg<MaxVecBits, ThreadBlockSize>(g_in, g_out, layout1, layout2);
-  } else if constexpr (std::is_same_v<Mode, cooperative_copy_mode::shared_shared>) {
-    cooperative_copy_default_ss<MaxVecBits, ThreadBlockSize>(g_in, g_out, layout1, layout2, base_smem);
-  }
-}
-
-#else
-
-// gs --> global to/from shared
-template <int MaxVecBits, uint32_t ThreadBlockSize, class T, class GMemLayout, class SMemLayout>
-CUTLASS_DEVICE void
-cooperative_copy_default_gs(T const* g_in, T* g_out, GMemLayout const& gmem_layout, SMemLayout const& smem_layout)
-{
-  using namespace cute;
-
-  extern CUTLASS_SHARED uint128_t smem_buf[];
-
-  // Cast smem_buf to smem_uint8_ptr and move it by MaxVecBits bits
-  // This is to make sure tests pass on pointer aligned to MaxVecBits bits
-  uint8_t* smem_uint8_ptr = reinterpret_cast<uint8_t*>(smem_buf) + (MaxVecBits/8);
-  T* smem = reinterpret_cast<T*>(smem_uint8_ptr);
-
-  Tensor g_in_tensor  = make_tensor(make_gmem_ptr(g_in),  gmem_layout);
-  Tensor g_out_tensor = make_tensor(make_gmem_ptr(g_out), gmem_layout);
-  Tensor s_tensor     = make_tensor(make_smem_ptr(smem),  smem_layout);
-
-  cooperative_copy<ThreadBlockSize, MaxVecBits>(ThreadIdxX(), g_in_tensor, s_tensor);
-
-  cp_async_fence();
-  cp_async_wait<0>();
-  syncthreads();
-
-  if(thread0()) {
-    for(int i = 0; i < size(s_tensor); ++i) {
-      s_tensor(i) += T(i);
-    }
-  }
-  syncthreads();
-
-  cooperative_copy<ThreadBlockSize, MaxVecBits>(ThreadIdxX(), s_tensor, g_out_tensor);
-}
-
-// ss --> shared to shared
-template <int MaxVecBits, uint32_t ThreadBlockSize, class T, class Layout1, class Layout2>
-CUTLASS_DEVICE void
-cooperative_copy_default_ss(T const* g_in, T* g_out, Layout1 const& layout1, Layout2 const& layout2)
-{
-  using namespace cute;
-
-  extern CUTLASS_SHARED uint128_t smem_buf[];
-
-  // Cast smem_buf to smem_uint8_ptr and move it by MaxVecBits bits
-  // This is to make sure tests pass on pointer aligned to MaxVecBits bits
-  T* smem1 = reinterpret_cast<T*>(smem_buf);
-  uint8_t* smem2_uint8_ptr = reinterpret_cast<uint8_t*>(smem_buf) + (MaxVecBits/8);
-  T* smem2 = reinterpret_cast<T*>(smem2_uint8_ptr) + cute::cosize(layout2);
-
-  Tensor g_in_tensor  = make_tensor(make_gmem_ptr(g_in),  layout1);
-  Tensor g_out_tensor = make_tensor(make_gmem_ptr(g_out), layout2);
-
-  Tensor s1_tensor    = make_tensor(make_smem_ptr(smem1), layout2);
-  Tensor s2_tensor    = make_tensor(make_smem_ptr(smem2), layout1);
-
-  cooperative_copy<ThreadBlockSize,  cute::sizeof_bits_v<T>>(ThreadIdxX(), g_in_tensor, s1_tensor);
-
-  cp_async_fence();
-  cp_async_wait<0>();
-  syncthreads();
-
-  if(thread0()) {
-    for(int i = 0; i < size(s1_tensor); ++i) {
-      s1_tensor(i) += T(i);
-    }
-  }
-  syncthreads();
-
-  cooperative_copy<ThreadBlockSize, MaxVecBits>(ThreadIdxX(), s1_tensor, s2_tensor);
-  syncthreads();
-
-  cooperative_copy<ThreadBlockSize,  cute::sizeof_bits_v<T>>(ThreadIdxX(), s2_tensor, g_out_tensor);
-}
-
-template <class Mode, int MaxVecBits, uint32_t ThreadBlockSize, class T, class Layout1, class Layout2>
-CUTLASS_GLOBAL void
+__global__ void
 cooperative_copy_default_kernel(T const* g_in, T* g_out, Layout1 const layout1, Layout2 const layout2)
 {
   if constexpr(std::is_same_v<Mode, cooperative_copy_mode::global_shared>) {
@@ -248,8 +151,6 @@ cooperative_copy_default_kernel(T const* g_in, T* g_out, Layout1 const layout1, 
     cooperative_copy_default_ss<MaxVecBits, ThreadBlockSize>(g_in, g_out, layout1, layout2);
   }
 }
-
-#endif
 
 // Mode - defines memory types of src and dst in cooperative_copy operation
 // MaxVecBits - defines max vectorization in cooperative_copy operation, and enforces that
@@ -282,8 +183,8 @@ void test_cooperative_copy_default(Layout1 const& layout1, Layout2 const& layout
     uint32_t extra_elements = max_vec_bytes / sizeof(value_type);
 
     // Allocate
-    host_vector<value_type> h_in (count + extra_elements);
-    host_vector<value_type> h_out(count + extra_elements);
+    thrust::host_vector<value_type> h_in (count + extra_elements);
+    thrust::host_vector<value_type> h_out(count + extra_elements);
 
     // Initialize
     Tensor h_in_tensor  = make_tensor(h_in.data()  + extra_elements, gmem_layout_in);
@@ -295,25 +196,14 @@ void test_cooperative_copy_default(Layout1 const& layout1, Layout2 const& layout
     }
 
     // To GPU
-    device_vector<value_type> d_in = h_in;
-    device_vector<value_type> d_out(d_in.size(), value_type(float(-2)));
+    thrust::device_vector<value_type> d_in = h_in;
+    thrust::device_vector<value_type> d_out(d_in.size(), value_type(float(-2)));
 
     // Adds (MaxVecBits/8) bytes to shared memory as we'll move pointer by that many bytes inside the kernel to enforce
     // alignment to (MaxVecBits/8) bytes
     size_t shared_memory_bytes = (sizeof(value_type) * count) + max_vec_bytes;
     shared_memory_bytes += std::is_same_v<Mode, cooperative_copy_mode::shared_shared> * (sizeof(value_type) * count);
 
-    #if defined(CUTLASS_ENABLE_SYCL)
-    sc_exp::launch<cooperative_copy_default_kernel<Mode, 
-                    MaxVecBits, 
-                    ThreadBlockSize, 
-                    value_type, 
-                    Layout1, 
-                    Layout2>>(sc_exp::launch_policy{sc::dim3(1), sc::dim3(ThreadBlockSize), 
-                             sc_exp::local_mem_size{shared_memory_bytes}},
-                              d_in.data() + extra_elements, d_out.data() + extra_elements, layout1, layout2);
-    sc::wait_and_throw();
-    #else
     // Launch
     auto coop_copy = cooperative_copy_default_kernel<Mode, MaxVecBits, ThreadBlockSize, value_type, Layout1, Layout2>;
     ASSERT_EQ(cudaFuncSetAttribute(coop_copy, cudaFuncAttributeMaxDynamicSharedMemorySize, static_cast<int>(shared_memory_bytes)), cudaSuccess);
@@ -327,9 +217,9 @@ void test_cooperative_copy_default(Layout1 const& layout1, Layout2 const& layout
       cudaError_t error = cudaGetLastError();
       FAIL() << "Error at kernel sync: " << cudaGetErrorString(error) << "\n";
     }
-    #endif
+
     // Validate
-    host_vector<value_type> h_result        = d_out;
+    thrust::host_vector<value_type> h_result        = d_out;
     Tensor                          h_result_tensor = make_tensor(h_result.data() + extra_elements, gmem_layout_out);
     for (int i = 0; i < cute::size(h_in_tensor); ++i) {
       ASSERT_EQ(h_result_tensor(i), h_out_tensor(i))

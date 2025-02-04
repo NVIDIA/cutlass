@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -214,6 +214,10 @@ protected:
     operator_args.batch_stride_B = arguments->batch_stride_B;
     operator_args.ptr_D = arguments->D;
     operator_args.batch_stride_D = arguments->batch_stride_D;
+
+    if (arguments->use_pdl) {
+      return Status::kErrorNotSupported; 
+    }
 
     return Status::kSuccess;
   }

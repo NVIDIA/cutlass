@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -87,7 +87,11 @@ namespace cutlass {
 
 #if !defined(__CUDACC_RTC__) && !defined(CUTLASS_ENABLE_SYCL)
 
+#if ((__CUDACC_VER_MAJOR__ >= 12) ||                               \
+    ((__CUDACC_VER_MAJOR__ == 11) && (__CUDACC_VER_MINOR__ >= 8)))
 #include <cudaTypedefs.h>
+#endif // (__CUDACC_VERSION__ >= 11.8)
+
 #include <driver_types.h>
 
 #define CUTLASS_CUDA_DRIVER_STRINGIFY(tok) #tok
@@ -102,7 +106,8 @@ namespace cutlass {
 
 #else // defined(CUTLASS_ENABLE_DIRECT_CUDA_DRIVER_CALL)
 
-#if (__CUDACC_VER_MAJOR__ >= 12 && __CUDACC_VER_MINOR__ >= 5)
+#if ((__CUDACC_VER_MAJOR__ >= 13) ||                               \
+    ((__CUDACC_VER_MAJOR__ == 12) && (__CUDACC_VER_MINOR__ >= 5))) \
 
 #define CUTLASS_CUDA_DRIVER_WRAPPER_DECL(func, ver)             \
   template <typename... Args>                                   \
@@ -140,7 +145,7 @@ namespace cutlass {
     return reinterpret_cast<PFN_##func>(pfn)(args...);          \
   }
 
-#endif // (__CUDACC_VER_MAJOR__ >= 12 && __CUDACC_VER_MINOR__ >= 5)
+#endif // (__CUDACC_VERSION__ >= 12.5)
 
 #endif // defined(CUTLASS_ENABLE_DIRECT_CUDA_DRIVER_CALL)
 
@@ -326,6 +331,23 @@ struct CudaHostAdapter {
     cudaStream_t cuda_stream,
     void** kernel_params,
     int32_t kernel_index) const = 0;
+
+  
+
+  /// Launches a kernel using the CUDA Extensible Launch API and Threadblock Clusters.
+  /// This API is for preferred cluster launch; a preferred and a fallback cluster shapes are
+  /// considered for launch respectively.
+  virtual Status launch(
+    dim3 const grid_dims,
+    dim3 const cluster_dims,
+    dim3 const fallback_cluster_dims,
+    dim3 const block_dims,
+    size_t const smem_size,
+    cudaStream_t cuda_stream,
+    void** kernel_params,
+    int32_t kernel_index) const = 0;
+
+  
 
 #if defined(CUDA_HOST_ADAPTER_TENSORMAP_ENABLED)
 

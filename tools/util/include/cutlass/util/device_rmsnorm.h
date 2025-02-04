@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -37,7 +37,7 @@
 #include "cutlass/tensor_coord.h"
 #include "cutlass/tensor_ref.h"
 #include "cutlass/util/device_utils.h"
-#include <float.h>
+#include <cfloat>
 
 namespace cutlass {
 
@@ -165,12 +165,12 @@ void rmsnorm(cutlass::MatrixCoord tensor_size,
   dim3 grid(m);
 
   if (n % 8 == 0 && std::is_same<T, cutlass::half_t>::value) {
-    dim3 block(min(1024, (n / 8 + 31) / 32 * 32));
+    dim3 block(cutlass::platform::min(1024, (n / 8 + 31) / 32 * 32));
 
     rmsnorm_twoPassAlgo_e8<<<grid, block, 0, stream>>>(
         (float4 *)output, (const float4 *)input, (const float4 *)weight, m, n, epsilon);
   } else {
-    dim3 block(min(1024, ((n + 31)/32 + 31)/32*32));
+    dim3 block(cutlass::platform::min(1024, ((n + 31)/32 + 31)/32*32));
 
     rmsnorm_twoPassAlgo_e1<<<grid, block, 0, stream>>>(
         output, input, weight, m, n, epsilon);

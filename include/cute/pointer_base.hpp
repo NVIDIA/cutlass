@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,9 +30,10 @@
  **************************************************************************************************/
 #pragma once
 
-#include <cute/config.hpp>                 // CUTE_HOST_DEVICE
-#include <cute/numeric/numeric_types.hpp>  // cute::sizeof_bits
-#include <cute/util/type_traits.hpp>       // cute::declval, cute::void_t, etc
+#include <cute/config.hpp>                     // CUTE_HOST_DEVICE
+#include <cute/numeric/numeric_types.hpp>      // cute::sizeof_bits
+#include <cute/numeric/integral_constant.hpp>  // Int<0>
+#include <cute/util/type_traits.hpp>           // cute::declval, cute::void_t, etc
 
 namespace cute
 {
@@ -115,6 +116,14 @@ raw_pointer_cast(T* ptr) {
   return ptr;
 }
 
+// The statically-known alignment of a dynamic pointer is unknown
+template <class T>
+CUTE_HOST_DEVICE constexpr
+Int<0>
+max_alignment(T*) {
+  return {};
+}
+
 //
 // A very simplified iterator adaptor.
 // Derived classed may override methods, but be careful to reproduce interfaces exactly.
@@ -167,6 +176,13 @@ CUTE_HOST_DEVICE constexpr
 auto
 raw_pointer_cast(iter_adaptor<I,D> const& x) {
   return raw_pointer_cast(x.ptr_);
+}
+
+template <class I, class D>
+CUTE_HOST_DEVICE constexpr
+auto
+max_alignment(iter_adaptor<I,D> const& x) {
+  return max_alignment(x.ptr_);
 }
 
 //

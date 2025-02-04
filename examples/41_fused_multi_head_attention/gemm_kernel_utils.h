@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -55,13 +55,14 @@
 #define DISPATCH_BOOL(BOOL_V, BOOL_NAME, F) \
   {                                         \
     if (BOOL_V) {                           \
-      constexpr bool BOOL_NAME = true;      \
+      using BOOL_NAME = std::true_type;      \
       F();                                  \
     } else {                                \
-      constexpr bool BOOL_NAME = false;     \
+      using BOOL_NAME = std::false_type;      \
       F();                                  \
     }                                       \
   }
+
 #define DISPATCH_ARCHTAG(CC, func)                                        \
   {                                                                       \
     if (CC >= 80) {                                                       \

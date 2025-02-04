@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -134,9 +134,9 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
 
   // TUTORIAL: Example of partitioning via projections of a ThreadLayout tC
 
-  // Partition sA (M,K) by the rows of tC
+  // Partition sA (BLK_M, BLK_K) by the rows of tC
   Tensor tCsA = local_partition(sA, tC, threadIdx.x, Step<_1, X>{});   // (THR_M,BLK_K)
-  // Partition sB (N,K) by the cols of tC
+  // Partition sB (BLK_N, BLK_K) by the cols of tC
   Tensor tCsB = local_partition(sB, tC, threadIdx.x, Step< X,_1>{});   // (THR_N,BLK_K)
   // Partition gC (M,N) by the tile of tC
   Tensor tCgC = local_partition(gC, tC, threadIdx.x, Step<_1,_1>{});   // (THR_M,THR_N)

@@ -72,6 +72,7 @@ struct CollectiveBuilder<
        cutlass::epilogue::fusion::LinearCombination<ElementD_, ElementCompute_, ElementC_, ElementCompute_>>)
   >
 > {
+  using ElementC = ElementC_;
   using ElementD = ElementD_;
   using ElementOutput = ElementD_;
   using ElementCompute = ElementCompute_;
@@ -82,6 +83,7 @@ struct CollectiveBuilder<
     ElementD, FragmentSize, ElementAccumulator, ElementCompute>;
 
   using CollectiveOp = cutlass::epilogue::collective::DefaultEpilogue<
+          ElementC,
           cutlass::detail::TagToStrideC_t<GmemLayoutTagC_>,
           cutlass::detail::TagToStrideC_t<GmemLayoutTagD_>,
           ThreadOp,

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -645,8 +645,23 @@ struct GetName {
 };
 
 template <>
+struct GetName<cutlass::int2b_t> {
+  static constexpr char name[] = "int2b_t";
+};
+
+template <>
+struct GetName<cutlass::uint2b_t> {
+  static constexpr char name[] = "uint2b_t";
+};
+
+template <>
 struct GetName<cutlass::int4b_t> {
   static constexpr char name[] = "int4b_t";
+};
+
+template <>
+struct GetName<cutlass::uint4b_t> {
+  static constexpr char name[] = "uint4b_t";
 };
 
 template <>
@@ -662,6 +677,11 @@ struct GetName<int8_t> {
 template <>
 struct GetName<cutlass::float_e4m3_t> {
   static constexpr char name[] = "float_e4m3_t";
+};
+
+template <>
+struct GetName<cutlass::float_e5m2_t> {
+  static constexpr char name[] = "float_e5m2_t";
 };
 
 template <>
@@ -709,9 +729,22 @@ using VectorConvertTypes = ::testing::Types<
   ResultSourcePair<cutlass::bfloat16_t, uint8_t>,
   ResultSourcePair<cutlass::bfloat16_t, int8_t>,
 
+  ResultSourcePair<cutlass::float_e4m3_t, cutlass::int2b_t>,
+  ResultSourcePair<cutlass::float_e5m2_t, cutlass::int2b_t>,
+  ResultSourcePair<cutlass::half_t, cutlass::int2b_t>,
+  ResultSourcePair<cutlass::bfloat16_t, cutlass::int2b_t>,
+  ResultSourcePair<cutlass::float_e4m3_t, cutlass::uint2b_t>,
+  ResultSourcePair<cutlass::float_e5m2_t, cutlass::uint2b_t>,
+  ResultSourcePair<cutlass::half_t, cutlass::uint2b_t>,
+  ResultSourcePair<cutlass::bfloat16_t, cutlass::uint2b_t>,
+
   ResultSourcePair<cutlass::float_e4m3_t, cutlass::int4b_t>,
+  ResultSourcePair<cutlass::float_e5m2_t, cutlass::int4b_t>,
   ResultSourcePair<cutlass::half_t, cutlass::int4b_t>,
   ResultSourcePair<cutlass::bfloat16_t, cutlass::int4b_t>,
+  ResultSourcePair<cutlass::float_e4m3_t, cutlass::uint4b_t>,
+  ResultSourcePair<cutlass::half_t, cutlass::uint4b_t>,
+  ResultSourcePair<cutlass::bfloat16_t, cutlass::uint4b_t>,
   ResultSourcePair<float, cutlass::int4b_t>
 >;
 

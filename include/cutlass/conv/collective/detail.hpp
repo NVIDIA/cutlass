@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -167,6 +167,20 @@ sm90_dispatch_policy_to_stride_B() {
   }
 }
 
+
+template <class DispatchPolicy>
+constexpr auto
+sm100_dispatch_policy_to_stride_A() {
+  return sm90_dispatch_policy_to_stride_A<DispatchPolicy>();
+}
+
+template <class DispatchPolicy>
+constexpr auto
+sm100_dispatch_policy_to_stride_B() {
+  return sm90_dispatch_policy_to_stride_B<DispatchPolicy>();
+}
+
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 // Compute the lower/near corner, returning it as a cute::array in [W,H,D] order
@@ -247,8 +261,11 @@ compute_lower_srt(ConvProblemShape<ConvOp, NumSpatialDimensions> const& problem_
 }
 
 template <class CopyOp> struct is_im2col_load { static constexpr bool value = false; };
-template <> struct is_im2col_load<SM90_TMA_LOAD_IM2COL          > { static constexpr bool value = true; };
-template <> struct is_im2col_load<SM90_TMA_LOAD_IM2COL_MULTICAST> { static constexpr bool value = true; };
+template <> struct is_im2col_load<cute::SM90_TMA_LOAD_IM2COL          > { static constexpr bool value = true; };
+template <> struct is_im2col_load<cute::SM90_TMA_LOAD_IM2COL_MULTICAST> { static constexpr bool value = true; };
+template <> struct is_im2col_load<cute::SM100_TMA_2SM_LOAD_IM2COL          > { static constexpr bool value = true; }; 
+template <> struct is_im2col_load<cute::SM100_TMA_2SM_LOAD_IM2COL_MULTICAST> { static constexpr bool value = true; }; 
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace cutlass::conv::collective::detail

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -43,10 +43,8 @@
 #include <utility>
 #endif
 
-#if defined(__CUDACC_RTC__)
+#if !defined(CUTLASS_ENABLE_SYCL)
 #include <cuda/std/cassert>
-#else
-#include <assert.h>
 #endif
 
 #include "cutlass/cutlass.h"

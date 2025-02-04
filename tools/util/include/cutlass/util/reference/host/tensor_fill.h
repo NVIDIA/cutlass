@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -269,8 +269,8 @@ struct RandomGaussianFunc<complex<Element> > {
     // Sample from the Gaussian distribution for a nonzero element
     if (bernoulli_result) {
       if (int_scale >= 0) {
-        rnd[0] = double(int(rnd[0] * double(1 << int_scale)));
-        rnd[1] = double(int(rnd[1] * double(1 << int_scale)));
+        rnd[0] = double(std::llround(rnd[0] * double(1 << int_scale)));
+        rnd[1] = double(std::llround(rnd[1] * double(1 << int_scale)));
         reals[0] = from_real<Element>(rnd[0] / double(1 << int_scale));
         reals[1] = from_real<Element>(rnd[1] / double(1 << int_scale));
       }
@@ -348,10 +348,10 @@ struct RandomGaussianFunc<Quaternion<Element> > {
     // Sample from the Gaussian distribution for a nonzero element
     if (bernoulli_result) {
       if (int_scale >= 0) {
-        rnd1[0] = double(int(rnd1[0] * double(1 << int_scale)));
-        rnd1[1] = double(int(rnd1[1] * double(1 << int_scale)));
-        rnd2[0] = double(int(rnd2[0] * double(1 << int_scale)));
-        rnd2[1] = double(int(rnd2[1] * double(1 << int_scale)));
+        rnd1[0] = double(std::llround(rnd1[0] * double(1 << int_scale)));
+        rnd1[1] = double(std::llround(rnd1[1] * double(1 << int_scale)));
+        rnd2[0] = double(std::llround(rnd2[0] * double(1 << int_scale)));
+        rnd2[1] = double(std::llround(rnd2[1] * double(1 << int_scale)));
 
         reals[0] = from_real<Element>(rnd1[0] / double(1 << int_scale));
         reals[1] = from_real<Element>(rnd1[1] / double(1 << int_scale));
@@ -725,7 +725,7 @@ public:
       // testing
       
       if (int_scale >= 0) {
-        rnd = double(int(rnd * double(1 << int_scale)));
+        rnd = double(std::llround(rnd * double(1 << int_scale)));
         reals[i] = from_real<Element>(Real(rnd / double(1 << int_scale)));
       }
       else {
@@ -808,7 +808,7 @@ public:
       // testing
 
       if (int_scale >= 0) {
-        rnd = double(int(rnd * double(1 << int_scale)));
+        rnd = double(std::llround(rnd * double(1 << int_scale)));
         reals[i] = from_real<Element>(Real(rnd / double(1 << int_scale)));
       }
       else {

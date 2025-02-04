@@ -1,5 +1,5 @@
 
-# Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -153,7 +153,18 @@ if (NOT CUTLASS_ENABLE_SYCL)
     61_hopper_gemm_with_topk_and_softmax
     62_hopper_sparse_gemm
     63_hopper_gemm_with_weight_prefetch
-    )
+    64_ada_fp8_gemm_grouped
+    65_distributed_gemm
+    67_hopper_fp8_warp_specialized_gemm_with_blockwise_scaling
+    70_blackwell_gemm
+    71_blackwell_gemm_with_collective_builder
+    72_blackwell_narrow_precision_gemm
+    73_blackwell_gemm_preferred_cluster
+    74_blackwell_gemm_streamk
+    75_blackwell_grouped_gemm
+    76_blackwell_conv
+    77_blackwell_fmha
+  )
     add_subdirectory(${EXAMPLE})
   endforeach()
 else()
@@ -166,3 +177,4 @@ else()
     add_subdirectory(${EXAMPLE})
   endforeach()
 endif()
+

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -170,12 +170,28 @@ char const *to_string(ConvKind type, bool pretty = false);
 template <>
 ConvKind from_string<ConvKind>(std::string const &str);
 
+
+/// Converts a RuntimeDatatype enumerant to a string
+char const *to_string(cutlass::library::RuntimeDatatype type, bool pretty = false);
+
+/// Convers a RuntimeDatatype enumerant from a string
+template<>
+cutlass::library::RuntimeDatatype from_string<cutlass::library::RuntimeDatatype>(std::string const &str);
+
+
 /// Converts a RasterOrder enumerant to a string
 char const *to_string(RasterOrder type, bool pretty = false);
 
 /// Convers a RasterOrder enumerant from a string
 template<>
 RasterOrder from_string<RasterOrder>(std::string const &str);
+
+/// Converts a bool to a string
+char const *to_string(bool type, bool pretty = false);
+
+/// Convers a bool from a string
+template<>
+bool from_string<bool>(std::string const &str);
 
 /// Lexical cast from int64_t to string
 std::string lexical_cast(int64_t int_value);
@@ -194,6 +210,8 @@ bool cast_from_uint64(std::vector<uint8_t> &bytes, NumericTypeID type, uint64_t 
 
 /// Casts from a real value represented as a double to the destination type. Returns true if successful.
 bool cast_from_double(std::vector<uint8_t> &bytes, NumericTypeID type, double src);
+
+NumericTypeID dynamic_datatype_to_id(RuntimeDatatype type); 
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

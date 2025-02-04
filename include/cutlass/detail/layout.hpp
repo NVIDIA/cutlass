@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -36,6 +36,8 @@
 #include "cute/swizzle_layout.hpp"       // cute::detail::get_swizzle_portion
 #include "cute/util/type_traits.hpp"
 #include "cute/arch/copy_sm90_tma.hpp"
+#include "cute/arch/copy_sm100_tma.hpp"  
+
 #include "cutlass/layout/matrix.h"
 #include "cutlass/layout/tensor.h"
 #include "cutlass/numeric_types.h"
@@ -306,6 +308,8 @@ constexpr bool is_tma_copy_engine() {
                   || cute::is_base_of_v<cute::SM90_TMA_LOAD_IM2COL_MULTICAST,       GmemTiledCopy>
                   || cute::is_base_of_v<cute::SM90_TMA_STORE,                       GmemTiledCopy>
                   || cute::is_base_of_v<cute::SM90_TMA_STORE_IM2COL,                GmemTiledCopy>
+                  || cute::is_base_of_v<cute::SM100_TMA_2SM_LOAD,                   GmemTiledCopy> 
+                  || cute::is_base_of_v<cute::SM100_TMA_2SM_LOAD_MULTICAST,         GmemTiledCopy> 
                   ) {
       return true;
     }
@@ -337,6 +341,16 @@ get_alignment_count_from_gmem_tiled_copy() {
   else {
     // For TMA tiled copies, we know the alignment has to be 128 bits
     if constexpr (is_tma_copy_engine<GmemTiledCopy>()) {
+      
+      if constexpr ( cute::is_same_v<typename RawDtype<ElementMma>::type, cutlass::detail::float_e2m1_unpacksmem_t> ||
+                     cute::is_same_v<typename RawDtype<ElementMma>::type, cutlass::detail::float_e3m2_unpacksmem_t> ||
+                     cute::is_same_v<typename RawDtype<ElementMma>::type, cutlass::detail::float_e2m3_unpacksmem_t> ||
+                     cute::is_same_v<typename RawDtype<ElementMma>::type, cutlass::detail::type_erased_dynamic_float4_unpacksmem_t> ||
+                     cute::is_same_v<typename RawDtype<ElementMma>::type, cutlass::detail::type_erased_dynamic_float6_unpacksmem_t> ||
+                     cutlass::gemm::collective::detail::is_sm10x_f8f6f4_element<Element>() && cute::is_same_v<typename RawDtype<ElementMma>::type, uint8_t>) {
+        return 128;
+      }
+      
       // For sparse MMA, alignment in logical elements is increased by sparsity factor
       if constexpr (cute::is_sparse_v<ElementMma>) {
         return 128 / sizeof_bits<Element>::value * ElementMma::sparsity;
@@ -353,9 +367,17 @@ get_alignment_count_from_gmem_tiled_copy() {
 // Return alignment bit requirements for the GEMM inputs.
 template <
   class ElementType
+  , bool IsF8F6F4SubBytes=false  
 >
 constexpr int
 get_input_alignment_bits() {
+  
+  if constexpr (IsF8F6F4SubBytes && sizeof_bits<ElementType>::value == 4) {
+    return 64 * 8;
+  }
+  else if constexpr (IsF8F6F4SubBytes && sizeof_bits<ElementType>::value == 6) {
+    return 96 * 8;
+  }
   return 128;
 }
 
@@ -363,6 +385,12 @@ get_input_alignment_bits() {
 template <class ElementType>
 constexpr int
 get_output_alignment_bits() {
+  
+  if constexpr (sizeof_bits<ElementType>::value == 6) {
+    // U6 format : The inner tensor size dimension must be a multiple of 96B.
+    return 96 * 8;
+  }
+  
   return 128;
 }
 

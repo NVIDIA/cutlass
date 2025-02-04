@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -37,17 +37,11 @@
 
 #include "cutlass/arch/arch.h"
 #include "cutlass/detail/dependent_false.hpp"
-#include "cutlass/gemm/kernel/sm90_tile_scheduler.hpp"
-#include "cutlass/gemm/kernel/sm90_tile_scheduler_stream_k.hpp"
-#include "cutlass/gemm/kernel/sm90_tile_scheduler_group.hpp"
-#if defined (SYCL_INTEL_TARGET)
-#include "cutlass/gemm/kernel/xe_tile_scheduler_streamk.hpp"
-#endif
+
+
 ////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass::gemm {
-
-////////////////////////////////////////////////////////////////////////////////
 
 //
 // Tags for specifying tile schedulers
@@ -59,10 +53,19 @@ struct StreamKScheduler { };
 
 struct GroupScheduler { }; // Only used for Grouped GEMMs
 
+} // namespace cutlass::gemm
 ////////////////////////////////////////////////////////////////////////////////
 
-} // namespace cutlass::gemm
+#include "cutlass/gemm/kernel/sm90_tile_scheduler.hpp"
+#include "cutlass/gemm/kernel/sm90_tile_scheduler_stream_k.hpp"
+#include "cutlass/gemm/kernel/sm90_tile_scheduler_group.hpp"
+#include "cutlass/gemm/kernel/sm100_tile_scheduler.hpp"
+#include "cutlass/gemm/kernel/sm100_tile_scheduler_stream_k.hpp"
+#include "cutlass/gemm/kernel/sm100_tile_scheduler_group.hpp"
 
+#if defined (SYCL_INTEL_TARGET)
+#include "cutlass/gemm/kernel/xe_tile_scheduler_streamk.hpp"
+#endif
 ////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass::gemm::kernel::detail {
@@ -76,6 +79,7 @@ template <
   class ArchTag,
   class TileShape,
   class ClusterShape
+  , uint32_t SchedulerPipelineStageCount = 2
   , class ProblemShapeType = void
 >
 struct TileSchedulerSelector {
@@ -87,12 +91,14 @@ template <
   class ArchTag,
   class TileShape,
   class ClusterShape
+  , uint32_t SchedulerPipelineStageCount
 >
 struct TileSchedulerSelector<
     PersistentScheduler,
     ArchTag,
     TileShape,
     ClusterShape
+    , SchedulerPipelineStageCount
   > {
   using Scheduler = PersistentTileSchedulerSm90;
 };
@@ -102,30 +108,35 @@ template <
   class ArchTag,
   class TileShape,
   class ClusterShape
+  , uint32_t SchedulerPipelineStageCount
 >
 struct TileSchedulerSelector<
     void,
     ArchTag,
     TileShape,
     ClusterShape
+    , SchedulerPipelineStageCount
   > {
   using Scheduler = typename TileSchedulerSelector<
       PersistentScheduler,
       ArchTag,
       TileShape,
       ClusterShape
+      , SchedulerPipelineStageCount
   >::Scheduler;
 };
 
 template <
   class TileShape,
   class ClusterShape
+  , uint32_t SchedulerPipelineStageCount
 >
 struct TileSchedulerSelector<
     StreamKScheduler,
     arch::Sm90,
     TileShape,
     ClusterShape
+    , SchedulerPipelineStageCount
   > {
   using Scheduler = PersistentTileSchedulerSm90StreamK<TileShape, ClusterShape>;
 };
@@ -148,6 +159,7 @@ struct TileSchedulerSelector<
 template <
   class TileShape,
   class ClusterShape
+  , uint32_t SchedulerPipelineStageCount
   , class GroupProblemShape
 >
 struct TileSchedulerSelector<
@@ -155,10 +167,112 @@ struct TileSchedulerSelector<
     arch::Sm90,
     TileShape,
     ClusterShape
+    , SchedulerPipelineStageCount
     , GroupProblemShape
   > {
   using Scheduler = PersistentTileSchedulerSm90Group<GroupProblemShape>;
 };
+
+
+template <class TileShape, class ClusterShape, uint32_t SchedulerPipelineStageCount>
+struct TileSchedulerSelector<
+    PersistentScheduler,
+    arch::Sm100,
+    TileShape,
+    ClusterShape,
+    SchedulerPipelineStageCount> {
+  using Scheduler = PersistentTileSchedulerSm100<
+                        ClusterShape,
+                        SchedulerPipelineStageCount>;
+};
+
+// Ptr-Array kernel may provide a specialized ArrayProblemShape type
+template <class TileShape,
+  class ClusterShape,
+  uint32_t SchedulerPipelineStageCount,
+  class ProblemShape>
+struct TileSchedulerSelector<
+    PersistentScheduler,
+    arch::Sm100,
+    TileShape,
+    ClusterShape,
+    SchedulerPipelineStageCount,
+    ProblemShape> {
+  using Scheduler = PersistentTileSchedulerSm100<
+                        ClusterShape,
+                        SchedulerPipelineStageCount>;
+};
+
+// Default (void) for Sm100 maps to PersistentTileSchedulerSm100
+template <class TileShape, class ClusterShape, uint32_t SchedulerPipelineStageCount>
+struct TileSchedulerSelector<
+    void,
+    arch::Sm100,
+    TileShape,
+    ClusterShape,
+    SchedulerPipelineStageCount> {
+  using Scheduler = typename TileSchedulerSelector<
+      PersistentScheduler,
+      arch::Sm100,
+      TileShape,
+      ClusterShape,
+      SchedulerPipelineStageCount>::Scheduler;
+};
+
+// Default (void) for Sm100 maps to PersistentTileSchedulerSm100
+// Ptr-Array kernel may provide a specialized ArrayProblemShape type
+template <class TileShape,
+  class ClusterShape,
+  uint32_t SchedulerPipelineStageCount,
+  class ProblemShape>
+struct TileSchedulerSelector<
+    void,
+    arch::Sm100,
+    TileShape,
+    ClusterShape,
+    SchedulerPipelineStageCount,
+    ProblemShape> {
+  using Scheduler = typename TileSchedulerSelector<
+      PersistentScheduler,
+      arch::Sm100,
+      TileShape,
+      ClusterShape,
+      SchedulerPipelineStageCount>::Scheduler;
+};
+
+// SM100 Group tile scheduler
+template <
+  class TileShape,
+  class ClusterShape,
+  uint32_t SchedulerPipelineStageCount,
+  class GroupProblemShape
+>
+struct TileSchedulerSelector<
+    GroupScheduler,
+    arch::Sm100,
+    TileShape,
+    ClusterShape,
+    SchedulerPipelineStageCount,
+    GroupProblemShape
+  > {
+  using Scheduler = PersistentTileSchedulerSm100Group<GroupProblemShape>;
+};
+
+// SM100 stream-K scheduler
+template <class TileShape, class ClusterShape, uint32_t SchedulerPipelineStageCount>
+struct TileSchedulerSelector<
+    StreamKScheduler,
+    arch::Sm100,
+    TileShape,
+    ClusterShape,
+    SchedulerPipelineStageCount> {
+  using Scheduler = PersistentTileSchedulerSm100StreamK<
+                        TileShape,
+                        ClusterShape,
+                        SchedulerPipelineStageCount>;
+};
+
+
 
 ////////////////////////////////////////////////////////////////////////////////
 

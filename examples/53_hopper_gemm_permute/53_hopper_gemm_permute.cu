@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -750,6 +750,13 @@ int main(int argc, char const **argv)
     std::cerr << "This example requires a device with compute capability 90 or higher.\n";
     notSupported = true;
   }
+  
+  else if (props.major != 9 || props.minor != 0) {
+    std::cerr << "This example requires a GPU of NVIDIA's Hopper Architecture (compute capability 90).\n";
+    notSupported = true;
+  }
+  
+
   if (notSupported) {
     return EXIT_SUCCESS; // Do not fail CI checks on unsupported systems
   }

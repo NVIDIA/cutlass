@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -138,8 +138,8 @@ struct RandomGaussianFunc {
       int_scale(int_scale_),
       exclude_zero(exclude_zero_) {
 
-      float_scale_up = FloatType(IntType(2) << int_scale); // scale up to clamp low order bits
-      float_scale_down = FloatType(1) / FloatType(IntType(2) << int_scale);
+      float_scale_up = FloatType(IntType(1) << int_scale); // scale up to clamp low order bits
+      float_scale_down = FloatType(1) / FloatType(IntType(1) << int_scale);
     }
   };
 
@@ -175,8 +175,8 @@ struct RandomGaussianFunc {
 
     Element result;
     if (params.int_scale >= 0) {
-      rnd = FloatType(IntType(std::llround(rnd * params.float_scale_up)));
-      result = Element(IntType(rnd * params.float_scale_down));
+      rnd = FloatType(std::llround(rnd * params.float_scale_up));
+      result = Element(rnd * params.float_scale_down);
     }
     else {
       result = Element(rnd);
@@ -237,7 +237,6 @@ struct RandomGaussianFunc<complex<Real>> {
       exclude_zero(exclude_zero_) {
 
       float_scale_up = FloatType(IntType(1) << int_scale);
-      float_scale_up += FloatType(0.5) * float_scale_up;
       float_scale_down = FloatType(1) / FloatType(IntType(1) << int_scale);
     }
   };
@@ -276,8 +275,8 @@ struct RandomGaussianFunc<complex<Real>> {
 
     Element result;
     if (params.int_scale >= 0) {
-      rnd_r = FloatType(IntType(rnd_r * params.float_scale_up));
-      rnd_i = FloatType(IntType(rnd_i * params.float_scale_down));
+      rnd_r = FloatType(std::llround(rnd_r * params.float_scale_up));
+      rnd_i = FloatType(std::llround(rnd_i * params.float_scale_up));
 
       result = {
         Real(rnd_r * params.float_scale_down),
@@ -482,8 +481,8 @@ struct RandomUniformFunc {
       pnan(pnan_),
       exclude_zero(exclude_zero_) {
       
-      float_scale_up = FloatType(IntType(2) << int_scale); // scale up to clamp low order bits
-      float_scale_down = FloatType(1) / FloatType(IntType(2) << int_scale);
+      float_scale_up = FloatType(IntType(1) << int_scale); // scale up to clamp low order bits
+      float_scale_down = FloatType(1) / FloatType(IntType(1) << int_scale);
 
       // Handle cases where min = 0 or max = 0 for excluding zeros
       if (exclude_zero >= 0) {
@@ -535,8 +534,8 @@ struct RandomUniformFunc {
     Element result;
 
     if (params.int_scale >= 0) {
-      rnd = FloatType(IntType(std::llround(rnd * params.float_scale_up)));
-      result = Element(IntType(rnd * params.float_scale_down));
+      rnd = FloatType(std::llround(rnd * params.float_scale_up));
+      result = Element(rnd * params.float_scale_down);
     }
     else {
       result = Element(rnd);
@@ -612,7 +611,6 @@ struct RandomUniformFunc<complex<Real>> {
       exclude_zero(exclude_zero_) {
 
       float_scale_up = FloatType(IntType(1) << int_scale);
-      float_scale_up += FloatType(0.5) * float_scale_up;
       float_scale_down = FloatType(1) / FloatType(IntType(1) << int_scale);
 
       // Handle cases where min = 0 or max = 0 for excluding zeros
@@ -668,8 +666,8 @@ struct RandomUniformFunc<complex<Real>> {
     Element result;
 
     if (params.int_scale >= 0) {
-      rnd_r = FloatType(IntType(rnd_r * params.float_scale_up));
-      rnd_i = FloatType(IntType(rnd_i * params.float_scale_up));
+      rnd_r = FloatType(std::llround(rnd_r * params.float_scale_up));
+      rnd_i = FloatType(std::llround(rnd_i * params.float_scale_up));
 
       result = {
         Real(rnd_r * params.float_scale_down),

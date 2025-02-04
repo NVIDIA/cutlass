@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -73,6 +73,15 @@ public:
     int64_t n{16};
     int64_t k{16};
 
+    
+    int cluster_m{1};
+    int cluster_n{1};
+    int cluster_k{1};
+    int cluster_m_fallback{1};
+    int cluster_n_fallback{1};
+    int cluster_k_fallback{1};
+    
+
     int64_t lda{0};
     int64_t ldb{0};
     int64_t ldc{0};
@@ -86,11 +95,18 @@ public:
     cutlass::library::RasterOrder raster_order{cutlass::library::RasterOrder::kHeuristic};
     int swizzle_size{1};
 
+    
+    cutlass::library::RuntimeDatatype runtime_input_datatype_a{};
+    cutlass::library::RuntimeDatatype runtime_input_datatype_b{};
+    
+
     // gemm with parallel interleaved reduction
     // gemm epilogue (alpha, beta) = (1.0, 0.0)
     // reduction epilogue (alpha, beta) = (GemmProblem::alpha, GemmProblem::beta)
     std::vector<uint8_t> alpha_one;
     std::vector<uint8_t> beta_zero;
+
+    bool use_pdl{false};
 
     //
     // Methods
@@ -143,6 +159,8 @@ public:
 
     /// Buffer used for the cutlass reduction operations' host workspace
     std::vector<uint8_t> reduction_host_workspace;
+
+    cudaStream_t stream;
   };
 
 protected:
@@ -155,7 +173,7 @@ protected:
   GemmProblem problem_;
 
   /// Device memory allocations
-  GemmWorkspace gemm_workspace_;
+  std::vector<GemmWorkspace> gemm_workspace_;
 
   /// CUTLASS parallel reduction operation to follow this* gemm operation
   library::Operation const *reduction_op_;
@@ -231,7 +249,8 @@ protected:
     DeviceContext &device_context,
     library::Operation const *operation,
     ProblemSpace const &problem_space,
-    ProblemSpace::Problem const &problem);
+    ProblemSpace::Problem const &problem,
+    GemmWorkspace &gemm_workspace);
 
   /// Verifies CUTLASS against host and device references
   bool verify_with_reference_(
@@ -246,7 +265,7 @@ protected:
 
   /// Method to profile a CUTLASS Operation
   Status profile_cutlass_(
-    double &runtime,
+    PerformanceResult &result,
     Options const &options,
     library::Operation const *operation,
     void *arguments,

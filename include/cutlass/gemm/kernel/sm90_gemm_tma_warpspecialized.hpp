@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -154,7 +154,7 @@ public:
     // Default constructor
     Arguments() = default;
 
-    // Constructor with specified mode
+    // Constructor with specified mode 
     // It is used for Gemm
     Arguments(
         cutlass::gemm::GemmUniversalMode mode_,
@@ -369,7 +369,7 @@ public:
         return [] () {}; // do nothing
       }
     } ();
-
+  
     // Preconditions only valid for Gemm
     static_assert(IsConvProblemShape || cute::rank(StrideA{}) == 3, "StrideA must be rank-3: [M, K, L]. If batch mode is not needed, set L stride to Int<0>.");
     static_assert(IsConvProblemShape || cute::rank(StrideB{}) == 3, "StrideB must be rank-3: [N, K, L]. If batch mode is not needed, set L stride to Int<0>.");
@@ -383,27 +383,25 @@ public:
     // Optionally append 1s until problem shape is rank-4 in case it is only rank-3 (MNK)
     // Using constexpr if (C++17 and later)
     auto problem_shape_MNKL = append<4>(params.problem_shape, cute::Int<1>{});
-
+    
     // In a warp specialized kernel, collectives expose data movement and compute operations separately
     CollectiveMainloop collective_mainloop;
     CollectiveEpilogue collective_epilogue(params.epilogue, shared_storage.tensors.epilogue);
 
-    // Prepare and partition the input tensors.
+    // Prepare and partition the input tensors. 
     // Expects a tuple of tensors for conv where:
     // get<0>(load_inputs) is the tma tensor A after local tiling so that it has shape (BLK_M,BLK_K,m,k)
     // get<1>(load_inputs) is the tma tensor B after local tiling so that it has shape (BLK_N,BLK_K,n,k)
     auto load_inputs = collective_mainloop.load_init(problem_shape_MNKL, params.mainloop);
     static_assert(cute::tuple_size_v<decltype(load_inputs)> >= 2, "Output of load_init must have at least two elements (A, B)");
-
+    
     // Extract out partitioned A and B.
     Tensor gA_mkl = get<0>(load_inputs);
     Tensor gB_nkl = get<1>(load_inputs);
 
     // Compute m_coord, n_coord, and l_coord with their post-tiled shapes
     auto m_coord = idx2crd(int(BlockIdxX()), shape<2>(gA_mkl));
-
-    auto n_coord = idx2crd(int(BlockIdxY()), shape<2>(gB_nkl), compact_col_major(shape<2>(gB_nkl)));
-
+    auto n_coord = idx2crd(int(BlockIdxY()), shape<2>(gB_nkl));
     // handles the difference between the rank of Tensor returned by load_input in case they do not have a batch mode
     auto l_coord = [&] (auto const& gB_nkl_) {
       // gB_nkl needs to be passed into the lambda because C++17

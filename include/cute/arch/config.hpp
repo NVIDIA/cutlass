@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -47,4 +47,43 @@
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+#if (defined(CUTLASS_ARCH_MMA_SM100A_ENABLED))
+#  define CUTE_ARCH_TMA_SM90_ENABLED
+#  define CUTE_ARCH_DEVICE_MODIFIABLE_TMA_SM90_ENABLED
+#  define CUTE_ARCH_STSM_SM90_ENABLED
+#endif
+
+#if defined(CUTLASS_ARCH_MMA_SM100A_ENABLED)
+#  define CUTE_ARCH_TCGEN05_TF32_MMA_ENABLED
+#  define CUTE_ARCH_TCGEN05_F16F32_MMA_ENABLED
+#  define CUTE_ARCH_TCGEN05_MXF8F6F4_MMA_ENABLED
+#  define CUTE_ARCH_TCGEN05_MXF4_MMA_ENABLED
+#  define CUTE_ARCH_TCGEN05_MXF4NVF4_MMA_ENABLED
+#endif
+
+#if defined(CUTLASS_ARCH_MMA_SM100A_ENABLED)
+#  define CUTE_ARCH_TCGEN05_S8_MMA_ENABLED
+#endif
+
+#if defined(CUTLASS_ARCH_MMA_SM100A_ENABLED)
+#  define CUTE_ARCH_LDSM_SM100A_ENABLED
+#  define CUTE_ARCH_STSM_SM100A_ENABLED
+#endif
+
+#if defined(CUTLASS_ARCH_MMA_SM100A_ENABLED)
+#  define CUTE_ARCH_TCGEN05_TMEM_ENABLED
+#endif
+
+#if defined(CUTLASS_ARCH_MMA_SM100A_ENABLED)
+#  define CUTE_ARCH_TMA_SM100_ENABLED
+#endif
+
+// {add, mul, fma}.f32x2 PTX
+#if defined(CUTLASS_ARCH_MMA_SM100A_ENABLED)
+  #define CUTE_ARCH_FLOAT2_MATH_ENABLED
+#endif
+
+
 

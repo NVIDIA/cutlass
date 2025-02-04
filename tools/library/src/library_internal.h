@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -72,6 +72,10 @@ template <> struct NumericTypeMap<cutlass::uint1b_t> {
   static NumericTypeID const kId = NumericTypeID::kB1;
 };
 
+template <> struct NumericTypeMap<cutlass::int2b_t> {
+  static NumericTypeID const kId = NumericTypeID::kS2;
+};
+
 template <> struct NumericTypeMap<cutlass::int4b_t> {
   static NumericTypeID const kId = NumericTypeID::kS4;
 };
@@ -92,6 +96,10 @@ template <> struct NumericTypeMap<int64_t> {
   static NumericTypeID const kId = NumericTypeID::kS64;
 };
 
+template <> struct NumericTypeMap<cutlass::uint2b_t> {
+  static NumericTypeID const kId = NumericTypeID::kU2;
+};
+
 template <> struct NumericTypeMap<cutlass::uint4b_t> {
   static NumericTypeID const kId = NumericTypeID::kU4;
 };
@@ -107,6 +115,27 @@ template <> struct NumericTypeMap<cutlass::float_e4m3_t> {
 template <> struct NumericTypeMap<cutlass::float_e5m2_t> {
   static NumericTypeID const kId = NumericTypeID::kFE5M2;
 };
+
+
+template <> struct NumericTypeMap<cutlass::float_e2m3_t> {
+  static NumericTypeID const kId = NumericTypeID::kFE2M3;
+};
+
+template <> struct NumericTypeMap<cutlass::float_e3m2_t> {
+  static NumericTypeID const kId = NumericTypeID::kFE3M2;
+};
+
+template <> struct NumericTypeMap<cutlass::float_e2m1_t> {
+  static NumericTypeID const kId = NumericTypeID::kFE2M1;
+};
+template <> struct NumericTypeMap<cutlass::float_ue8m0_t> {
+  static NumericTypeID const kId = NumericTypeID::kFUE8M0;
+};
+
+template <> struct NumericTypeMap<cutlass::float_ue4m3_t> {
+  static NumericTypeID const kId = NumericTypeID::kFUE4M3;
+};
+
 
 template <> struct NumericTypeMap<uint16_t> {
   static NumericTypeID const kId = NumericTypeID::kU16;
@@ -150,6 +179,21 @@ template <> struct NumericTypeMap<cutlass::bfloat16_t> {
 
 template <> struct NumericTypeMap<cutlass::tfloat32_t> {
   static NumericTypeID const kId = NumericTypeID::kTF32;
+};
+
+
+
+
+template <> struct NumericTypeMap<cutlass::type_erased_dynamic_float8_t> {
+  static NumericTypeID const kId = NumericTypeID::kF8;
+};
+
+template <> struct NumericTypeMap<cutlass::type_erased_dynamic_float6_t> {
+  static NumericTypeID const kId = NumericTypeID::kF6;
+};
+
+template <> struct NumericTypeMap<cutlass::type_erased_dynamic_float4_t> {
+  static NumericTypeID const kId = NumericTypeID::kF4;
 };
 
 
@@ -291,6 +335,12 @@ template <> struct OpcodeClassMap<arch::OpClassTensorOp> {
 template <> struct OpcodeClassMap<arch::OpClassSparseTensorOp> {
   static OpcodeClassID const kId = OpcodeClassID::kSparseTensorOp;
 };
+
+
+template <> struct OpcodeClassMap<arch::OpClassBlockScaledTensorOp> {
+  static OpcodeClassID const kId = OpcodeClassID::kBlockScaledOp;
+};
+
 
 template <> struct OpcodeClassMap<arch::OpClassWmmaTensorOp> {
   static OpcodeClassID const kId = OpcodeClassID::kWmmaTensorOp;

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -391,7 +391,7 @@ struct OutputTileOptimalThreadMap {
     1>;
 
   /// Initial offset function
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   static MatrixCoord initial_offset(int thread_idx) {
 
 //    int warp_idx = __shfl_sync(0xffffffff, thread_idx / kWarpSize, 0);
@@ -462,7 +462,7 @@ struct OutputTileOptimalThreadMap {
     static int const kThreads = Threads;
 
     /// Function to compute each thread's initial offset
-    CUTLASS_DEVICE
+    CUTLASS_HOST_DEVICE
     static MatrixCoord initial_offset(int thread_idx) {
 
 //      int warp_idx = __shfl_sync(0xffffffff, thread_idx / kWarpSize, 0);

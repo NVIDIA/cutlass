@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -63,7 +63,7 @@
 #include <fstream>
 #include <sstream>
 #include <vector>
-#include <float.h>
+#include <cfloat>
 
 #include "cutlass/cutlass.h"
 
@@ -550,11 +550,10 @@ void initialize(const Options &options) {
 template <typename GemmT>
 typename GemmT::Arguments args_from_options(const Options &options, bool host_problem_shapes_available = true)
 {
-  cutlass::KernelHardwareInfo hw_info;
   // Change device_id to another value if you are running on a machine with multiple GPUs and wish
   // to use a GPU other than that with device ID 0.
-  hw_info.device_id = 0;
-  hw_info.sm_count = cutlass::KernelHardwareInfo::query_device_multiprocessor_count(hw_info.device_id);
+  int device_id = 0;
+  cutlass::KernelHardwareInfo kernel_hw_info = cutlass::KernelHardwareInfo::make_kernel_hardware_info<Gemm::GemmKernel>(device_id);
 
   typename GemmT::Arguments arguments;
   decltype(arguments.epilogue.thread) fusion_args;
@@ -590,7 +589,7 @@ typename GemmT::Arguments args_from_options(const Options &options, bool host_pr
       {options.groups, problem_sizes.get(), options.problem_sizes_host.data()},
       {ptr_A.get(), stride_A.get(), ptr_B.get(), stride_B.get()},
       {fusion_args, ptr_C.get(), stride_C.get(), ptr_D.get(), stride_D.get()},
-      hw_info
+      kernel_hw_info
     };
   }
   else {
@@ -599,7 +598,7 @@ typename GemmT::Arguments args_from_options(const Options &options, bool host_pr
       {options.groups, problem_sizes.get(), nullptr},
       {ptr_A.get(), stride_A.get(), ptr_B.get(), stride_B.get()},
       {fusion_args, ptr_C.get(), stride_C.get(), ptr_D.get(), stride_D.get()},
-      hw_info
+      kernel_hw_info
     };
   }
 
@@ -738,6 +737,13 @@ int main(int argc, char const **args) {
       << "later (compute capability 90 or greater).\n";
     return 0;
   }
+  
+  else if (props.major != 9 || props.minor != 0) {
+    std::cerr << "This example requires a GPU of NVIDIA's Hopper Architecture (compute capability 90).\n";
+    return 0;
+  }
+  
+
   //
   // Parse options
   //

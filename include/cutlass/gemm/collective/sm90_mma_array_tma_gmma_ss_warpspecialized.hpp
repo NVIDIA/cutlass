@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -374,7 +374,7 @@ struct CollectiveMma<
       // Prepare the TMA loads for A and B
       //
 
-      constexpr uint32_t cluster_shape_x = get<0>(DispatchPolicy::ClusterShape());
+      constexpr uint32_t cluster_shape_x = get<0>(typename DispatchPolicy::ClusterShape());
       uint2 cluster_local_block_id = {block_rank_in_cluster % cluster_shape_x, block_rank_in_cluster / cluster_shape_x};
 
       Tensor gA_mkl = get<0>(load_inputs);

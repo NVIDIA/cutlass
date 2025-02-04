@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -73,15 +73,15 @@ struct OpMultiplyAddFastF16 {};
 struct OpMultiplyAddMixedInputUpcast {};
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-
-/// Tag indicating the input is converted to 2 (big and small) TF32 components
-//  Perform 3xTF32 or 4xTF32 for every F32 output element
+/// Tag indicating the input is converted to 2 (big and small) TF32 or FP16 components
+//  Perform 3xTF32 or 4xTF32 for every F32 output element on Ampere
+//  Perform 3xFP16 or 4xFP16 for every F32 output element on Hopper with axiswise quantization factor support
 struct OpMultiplyAddFastF32 {};
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-
-/// Tag indicating the input is converted to 2 (big and small) TF32 components
-//  Perform 3xTF32 or 4xTF32 for every complex<F32> output element
+/// Tag indicating the input is converted to 2 (big and small) TF32 or FP16 components
+//  Perform 3xTF32 or 4xTF32 for every complex<F32> output element on Ampere
+//  Perform 3xFP16 or 4xFP16 for every complex<F32> output element on Hopper with axiswise quantization factor support
 struct OpMultiplyAddComplexFastF32 {};
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -128,6 +128,11 @@ struct OpClassWmmaTensorOp {};
 
 /// Tag classifying operators as Tensor Core with structure sparse operations.
 struct OpClassSparseTensorOp {};
+
+
+/// Tag classifying operators as Tensor Core with blockScaled
+struct OpClassBlockScaledTensorOp {};
+
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

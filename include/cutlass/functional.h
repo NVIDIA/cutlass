@@ -1,5 +1,5 @@
   /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -52,8 +52,14 @@
 
 #ifdef _MSC_VER
 // Provides support for alternate operators such as 'and', 'or', ...
-#include <iso646.h>
+#include <ciso646>
 #endif // _MSC_VER
+
+
+#if defined(CUTLASS_ARCH_MMA_SM100A_ENABLED)
+#  define CUTLASS_ARCH_CREDUX_ENABLED
+#endif
+
 
 namespace cutlass {
 
@@ -276,6 +282,16 @@ struct reciprocal_approximate <float> {
     return ret;
   }
 };
+
+
+template <>
+struct reciprocal_approximate<cutlass::float_ue8m0_t> {
+  CUTLASS_HOST_DEVICE
+  cutlass::float_ue8m0_t operator()(cutlass::float_ue8m0_t lhs) const {
+    return cutlass::float_ue8m0_t::bitcast(static_cast<uint8_t>(static_cast<uint8_t>(254u) - lhs.storage));
+  }
+};
+
 
 /// reciprocal_approximate with ftz
 template<typename T>
@@ -588,6 +604,33 @@ struct guarded_multiply_add_relu0<half_t, half_t, half_t> {
   }
 };
 
+
+/// Fused and-popc-add
+template <typename A, typename B = A, typename C = A>
+struct and_popc_add {
+  CUTLASS_HOST_DEVICE
+  C operator()(A const &a, B const &b, C const &c) const {
+    A and_result = a & b;
+
+#if defined(__CUDA__ARCH__)
+    int popc_result = __popc(and_result);
+
+    if constexpr (sizeof(A) == sizeof(uint64_t)) {
+      popc_result += __popc(static_cast<uint32_t>(and_result >> 32));
+    }
+
+#else
+    int popc_result = __builtin_popcount(and_result);
+    if constexpr (sizeof(A) == sizeof(uint64_t)) {
+      popc_result += __builtin_popcount(static_cast<uint32_t>(and_result >> 32));
+    }
+
+#endif
+
+    return C(popc_result) + c;
+  }
+};
+
 /// Fused multiply-add
 template <typename T>
 struct and_add {
@@ -598,12 +641,76 @@ struct and_add {
 };
 
 
+
+/// Fused xor-popc-add
+template <typename A, typename B = A, typename C = A>
+struct xor_popc_add {
+  CUTLASS_HOST_DEVICE
+  C operator()(A const &a, B const &b, C const &c) const {
+    A xor_result = a ^ b;
+
+#if defined(__CUDA__ARCH__)
+    int popc_result = __popc(xor_result);
+
+    if constexpr (sizeof(A) == sizeof(uint64_t)) {
+      popc_result += __popc(static_cast<uint32_t>(xor_result >> 32));
+    }
+
+#else
+    int popc_result = __builtin_popcount(xor_result);
+    if constexpr (sizeof(A) == sizeof(uint64_t)) {
+      popc_result += __builtin_popcount(static_cast<uint32_t>(xor_result >> 32));
+    }
+
+#endif
+
+    return C(popc_result) + c;
+  }
+};
+
 /// Fused multiply-add
 template <typename T>
 struct xor_add {
   CUTLASS_HOST_DEVICE
   T operator()(T const &a, T const &b, T const &c) const {
     return ((a ^ b) + c);
+  }
+};
+
+
+/// Fused or-popc-add
+template <typename A, typename B = A, typename C = A>
+struct or_popc_add {
+  CUTLASS_HOST_DEVICE
+  C operator()(A const &a, B const &b, C const &c) const {
+    A or_result = a | b;
+
+#if defined(__CUDA__ARCH__)
+    int popc_result = __popc(or_result);
+
+    if constexpr (sizeof(A) == sizeof(uint64_t)) {
+      popc_result += __popc(static_cast<uint32_t>(or_result >> 32));
+    }
+
+#else
+    int popc_result = __builtin_popcount(or_result);
+    if constexpr (sizeof(A) == sizeof(uint64_t)) {
+      popc_result += __builtin_popcount(static_cast<uint32_t>(or_result >> 32));
+    }
+
+#endif
+
+    return C(popc_result) + c;
+  }
+};
+
+
+/// Fused multiply-add
+template <typename T>
+struct or_add {
+  CUTLASS_HOST_DEVICE
+  T operator()(T const &a, T const &b, T const &c) const {
+    return ((a | b) + c);
   }
 };
 
@@ -887,6 +994,78 @@ template <class T>
 struct is_atomic<atomic_add<T>> : platform::true_type {};
 template <class T>
 struct is_atomic<atomic_maximum<T>> : platform::true_type {};
+
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+/// Parallel Synchronization and Communication Instructions
+template <typename T>
+struct redux_abs_max_nan_propagation_sync_warp;
+
+template <>
+struct redux_abs_max_nan_propagation_sync_warp <float>{
+  CUTLASS_DEVICE
+  float operator()(float const &lhs) const {
+#if defined(CUTLASS_ARCH_CREDUX_ENABLED)
+    float result;
+    asm volatile("redux.sync.max.abs.NaN.f32 %0, %1, 0xffffffff;\n" : "=f"(result) : "f"(lhs));
+    return result;
+#elif defined(__CUDA_ARCH__)
+    cutlass::maximum<float, /*PropagateNaN*/true> max_op;
+    int shuffle_width = 32;
+    float abs_max = cutlass::absolute_value_op<float>{}(lhs);
+    CUTLASS_PRAGMA_UNROLL
+    for(int offset = shuffle_width / 2; offset > 0; offset /= 2) {
+      float value = __shfl_down_sync(0xffffffff, abs_max, offset, shuffle_width);
+      abs_max = max_op(abs_max,value);
+    }
+    // Broadcast the maximum to all threads participating in the reduction.
+    abs_max = __shfl_sync(0xffffffff, abs_max, 0, shuffle_width);
+    return abs_max;
+#else
+    CUTLASS_UNUSED(lhs);
+    CUTLASS_NOT_IMPLEMENTED();
+    return 0;
+#endif
+  }
+};
+
+template <typename T>
+struct redux_abs_max_nan_propagation_sync_warp_t0t15_t16t31;
+
+template <>
+struct redux_abs_max_nan_propagation_sync_warp_t0t15_t16t31<float>{
+  CUTLASS_DEVICE
+  float operator()(float const &max) const {
+#if defined(CUTLASS_ARCH_CREDUX_ENABLED)
+    int half_warp_idx = threadIdx.x / (NumThreadsPerWarp / 2);
+    bool first_half_threads = (half_warp_idx % 2) == 0;
+    float value0 =  first_half_threads ? max : 0;
+    float v0 = cutlass::redux_abs_max_nan_propagation_sync_warp<float>{}(value0);
+
+    float value1 = !first_half_threads ? max : 0;
+    float v1 = cutlass::redux_abs_max_nan_propagation_sync_warp<float>{}(value1);
+    return first_half_threads ? v0: v1;
+    
+#elif defined(__CUDA_ARCH__)
+    float abs_max = cutlass::absolute_value_op<float>{}(max);
+    cutlass::maximum<float, /*PropagateNaN*/true> max_op;
+    constexpr int shuffle_width = 16;
+    CUTLASS_PRAGMA_UNROLL
+    for(int offset = shuffle_width/2; offset > 0; offset /= 2) {
+      float value = __shfl_down_sync(0xffffffff, abs_max, offset, shuffle_width);
+        abs_max  = max_op(abs_max,value);
+    }
+    // Broadcast the maximum to all threads participating in the reduction.
+    abs_max = __shfl_sync(0xffffffff, abs_max, 0, shuffle_width);
+    return abs_max;
+#else 
+    CUTLASS_UNUSED(max);
+    CUTLASS_NOT_IMPLEMENTED();
+    return 0;
+#endif
+  }
+};
+
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 //
