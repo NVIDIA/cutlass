@@ -911,6 +911,9 @@ void OperationProfiler::initialize_result_(
   set_argument(result, "cta_m", problem_space, operation_desc.tile_description.threadblock_shape.m());
   set_argument(result, "cta_n", problem_space, operation_desc.tile_description.threadblock_shape.n());
   set_argument(result, "cta_k", problem_space, operation_desc.tile_description.threadblock_shape.k());
+  set_argument(result, "cluster_m", problem_space, operation_desc.tile_description.cluster_shape.m());
+  set_argument(result, "cluster_n", problem_space, operation_desc.tile_description.cluster_shape.n());
+  set_argument(result, "cluster_k", problem_space, operation_desc.tile_description.cluster_shape.k());
   set_argument(result, "stages", problem_space, operation_desc.tile_description.threadblock_stages);
   set_argument(result, "warps_m", problem_space, operation_desc.tile_description.warp_count.m());
   set_argument(result, "warps_n", problem_space, operation_desc.tile_description.warp_count.n());
