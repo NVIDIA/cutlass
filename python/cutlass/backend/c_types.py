@@ -161,7 +161,8 @@ def get_mainloop_arguments_3x(
     element_A,
     element_B,
     alignment_A: int,
-    alignment_B: int) -> ctypes.Structure:
+    alignment_B: int,
+    use_sycl: bool = False) -> ctypes.Structure:
     """
     Returns the ctypes structure to be used for the 3.x kernel's mainloop parameters.
 
@@ -207,10 +208,15 @@ def get_mainloop_arguments_3x(
                 args.ptr_A, args.stride_A, args.ptr_B, args.stride_B,
             )
 
-    # Currently all 3.x kernels (CpAsync and Tma) have the same argument structure.
-    # Should that become not the case, this is the place to return custom ctypes
-    # structures based on selected kernel schedule.
-    return _MainloopArgumentsTma
+    if use_sycl:
+        # For SYCL, we don't have the additional 'mma_promotion_interval' arg.
+        return _MainloopArgumentsMultistage
+    else:
+        # Currently all 3.x kernels (CpAsync and Tma) for Nvidia devices have
+        # the same argument structure. Should that become not the case, this is
+        # the place to return custom ctypes structures based on selected kernel
+        # schedule.
+        return _MainloopArgumentsTma
 
 
 def get_gemm_arguments_3x(mainloop_arguments, epilogue_functor, scheduler_args, default_epilogue):

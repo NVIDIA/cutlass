@@ -6902,6 +6902,47 @@ def GenerateSM90(manifest, cuda_version):
 
 ###################################################################################################
 
+def GeneratePVC_TensorOp_16b_gemm(manifest, cuda_version):
+    # TODO: Add remaining supported configurations
+    layouts = [
+      [[LayoutType.RowMajor, 2], [LayoutType.RowMajor, 2], [LayoutType.RowMajor, 4]]
+    ]
+
+    math_instructions = [
+      MathInstruction(
+          [8, 16, 16],
+          DataType.bf16, DataType.bf16, DataType.f32,
+          OpcodeClass.TensorOp,
+          MathOperation.multiply_add)
+    ]
+
+    min_cc = 11
+    max_cc = 11
+
+    for math_inst in math_instructions:
+      tile_descriptions = [
+        TileDescription([math_inst.instruction_shape[0] * 32, math_inst.instruction_shape[1] * 16, math_inst.instruction_shape[2] * 2],
+            0, [4, 1, 1], math_inst, min_cc, max_cc, [1, 1, 1])
+      ]
+      
+      data_type = {
+        "a_type" : math_inst.element_a,
+        "b_type" : math_inst.element_b,
+        "c_type" : math_inst.element_accumulator,
+        "d_type" : math_inst.element_accumulator,
+        "acc_type" : math_inst.element_accumulator,
+        "epi_type" : math_inst.element_accumulator
+      }
+
+      schedules = [[KernelScheduleType.ScheduleAuto, EpilogueScheduleType.ScheduleAuto]]
+
+      CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type, schedules, tile_schedulers=[TileSchedulerType.Persistent])
+
+def GeneratePVC(manifest, cuda_version):
+    GeneratePVC_TensorOp_16b_gemm(manifest, cuda_version)
+
+###################################################################################################
+
 def numeric_log_level(log_level: str) -> int:
   """
   Converts the string identifier of the log level

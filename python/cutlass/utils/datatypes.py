@@ -200,6 +200,17 @@ def is_torch_tensor(inp) -> bool:
         return isinstance(inp, torch.Tensor)
     return False
 
+def is_xpu_available():
+    if is_torch_available():
+        import torch
+        return torch.xpu.is_available()
+    return False
+
+def is_xpu_tensor(inp) -> bool:
+    if is_torch_tensor(inp):
+        return inp.device.type == "xpu"
+    return False
+
 
 def torch_library_type(inp) -> cutlass.DataType:
     return _torch_to_library_dict.get(inp, None)

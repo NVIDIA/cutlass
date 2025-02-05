@@ -40,6 +40,8 @@ if cutlass.use_rmm:
 else:
     from cuda import cudart
 
+from dpctl.memory import MemoryUSMDevice
+
 
 class PoolMemoryManager:
     def __init__(self, init_pool_size: int, max_pool_size: int) -> None:
@@ -67,13 +69,33 @@ class DevicePtrWrapper:
     def ptr(self):
         return self.dev_ptr
 
+class SYCLPtrWrapper:
+    """
+    Wrapper around a pointer to USM device memory to provide a uniform interface.
+    """
+    def __init__(self, usm):
+        self.usm = usm
 
-def _todevice(host_data):
+    @property
+    def ptr(self):
+        return self.usm.__sycl_usm_array_interface__["data"][0]
+
+    @property
+    def usm_mem(self):
+        return self.usm
+
+
+def _todevice(host_data, stream):
     """
     Helper for transferring host data to device memory
     """
     if cutlass.use_rmm:
         return rmm.DeviceBuffer.to_device(host_data.tobytes())
+    if cutlass._use_sycl:
+        nbytes = len(host_data.tobytes())
+        usm_device_ptr = device_mem_alloc(nbytes, stream)
+        stream.memcpy(usm_device_ptr.usm_mem, host_data.tobytes(), nbytes)
+        return usm_device_ptr
     else:
         nbytes = len(host_data.tobytes())
         dev_ptr_wrapper = device_mem_alloc(nbytes)
@@ -88,19 +110,22 @@ def _todevice(host_data):
         return dev_ptr_wrapper
 
 
-def todevice(host_data, dtype=np.float32):
+def todevice(host_data, dtype=np.float32, stream = None):
     """
     Pass the host_data to device memory
     """
     if isinstance(host_data, list):
-        return _todevice(np.array(host_data, dtype=dtype))
+        return _todevice(np.array(host_data, dtype=dtype), stream)
     elif is_numpy_tensor(host_data):
-        return _todevice(host_data)
+        return _todevice(host_data, stream)
 
 
-def device_mem_alloc(size):
+def device_mem_alloc(size, stream = None):
     if cutlass.use_rmm:
         return rmm.DeviceBuffer(size=size)
+    elif cutlass._use_sycl:
+        device_usm = MemoryUSMDevice(size, queue=stream)
+        return SYCLPtrWrapper(device_usm)
     else:
         err, ptr = cudart.cudaMalloc(size)
         if err != cudart.cudaError_t.cudaSuccess:

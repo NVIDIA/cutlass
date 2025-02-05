@@ -118,10 +118,21 @@ def valid_stage_count(
                 "stage count, and shared memory requirement of the epilogue exceeds "
                 "the available shared memory per SM.")
 
+    if kernel_cc == 11:
+        if (td.stages is None or td.stages == 0):
+            # Support for Intel PVC GPU currently does not allow explicit
+            # specification of the stage count. With None or 0, the 
+            # CollectiveBuilder automatically determines the stage count to use.
+            return (True, "")
+        elif verbose:
+            cutlass.logger.warning(
+                "Setting an explicit stage count for Intel PVC GPU is currently "
+                "not supported.")
+
     if td.stages <= 0:
         return (False, f"Stage counts must be positive integers. Tile description has stage count of {td.stages}.")
 
-    if cc < 80 and td.stages != 2:
+    if cc >= 50 and cc < 80 and td.stages != 2:
         return (False, f"Tile description has stage count of {td.stages}, "
                        f"but only 2 stages are supported on SM{cc}.")
 
