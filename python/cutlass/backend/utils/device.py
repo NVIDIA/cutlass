@@ -35,6 +35,7 @@ Utility functions for interacting with the device
 """
 
 from cuda import cuda, cudart
+import dpctl
 
 import cutlass
 from cutlass.utils.datatypes import is_cupy_tensor, is_numpy_tensor, is_torch_tensor
@@ -76,6 +77,10 @@ def device_cc(device: int = -1) -> int:
     if device == -1:
         device = cutlass.device_id()
 
+    if cutlass._use_sycl:
+        # Using '11' to encode Intel PVC as an integer in the expected format.
+        return 11
+
     deviceProp = check_cuda_errors(cudart.cudaGetDeviceProperties(device))
     major = str(deviceProp.major)
     minor = str(deviceProp.minor)
@@ -85,6 +90,10 @@ def device_cc(device: int = -1) -> int:
 def device_sm_count(device: int = -1):
     if device == -1:
         device = cutlass.device_id()
+
+    if cutlass._use_sycl:
+        return cutlass._sycl_device.max_compute_units
+
     err, device_sm_count = cuda.cuDeviceGetAttribute(
         cuda.CUdevice_attribute.CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT, device
     )
@@ -121,3 +130,9 @@ def to_device_ptr(tensor) -> cuda.CUdeviceptr:
         raise NotImplementedError(tensor)
 
     return ptr
+
+
+def default_stream():
+    if cutlass._use_sycl:
+        return dpctl.SyclQueue(cutlass._sycl_device)
+    return cuda.CUstream(0)

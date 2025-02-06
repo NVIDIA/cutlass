@@ -33,8 +33,16 @@
 from cuda import cuda
 import numpy as np
 
+import dpctl
+
 from cutlass.backend.memory_manager import device_mem_alloc, todevice
-from cutlass.utils.datatypes import is_cupy_tensor, is_numpy_tensor, is_torch_tensor
+from cutlass.utils.datatypes import (
+    is_cupy_tensor,
+    is_numpy_tensor,
+    is_torch_tensor,
+    is_xpu_tensor,
+    is_xpu_available
+)
 
 
 class NumpyFrontend:
@@ -43,19 +51,19 @@ class NumpyFrontend:
     """
 
     @staticmethod
-    def argument(np_tensor: "np.ndarray", is_output: "bool") -> cuda.CUdeviceptr:
+    def argument(np_tensor: "np.ndarray", is_output: "bool", stream=None):
         """Convert the input numpy tensor to CUDA device pointer
 
         :param np_tensor: input numpy nd array
         :param is_output: whether the tensor is output
 
-        :return: CUDA device pointer
+        :return: Wrapped device pointer
         """
         # copy the data to device
         if is_output:
-            return device_mem_alloc(np_tensor.size * np_tensor.itemsize)
+            return device_mem_alloc(np_tensor.size * np_tensor.itemsize, stream=stream)
         else:
-            return todevice(np_tensor)
+            return todevice(np_tensor, stream=stream)
 
 
 class TorchFrontend:
@@ -64,14 +72,22 @@ class TorchFrontend:
     """
 
     @staticmethod
-    def argument(torch_tensor: "torch.Tensor") -> cuda.CUdeviceptr:
+    def argument(torch_tensor: "torch.Tensor", stream=None):
         """Convert the input torch tensor to CUDA device pointer
 
         :param torch_tensor: input torch tensor
         :param is_output: whether the tensor is output
 
-        :return: CUDA device pointer
+        :return: Device pointer
         """
+
+        if isinstance(stream, dpctl.SyclQueue):
+            if not is_xpu_available():
+                raise Exception("No XPU support in Torch available")
+            if not is_xpu_tensor(torch_tensor):
+                torch_tensor = torch_tensor.to("xpu")
+
+            return torch_tensor.data_ptr()
 
         # check the device of torch_tensor
         if not torch_tensor.is_cuda:

@@ -129,6 +129,7 @@ from cutlass.backend import compiler
 from cutlass.backend.evt import EpilogueFunctorVisitor
 from cutlass.backend.gemm_operation import GemmArguments, GemmOperationUniversal
 from cutlass.backend.library import TensorDescription, TileDescription
+from cutlass.backend.utils.device import default_stream
 from cutlass.op.op import OperationBase
 from cutlass.shape import GemmCoord
 from cutlass.utils import check, datatypes
@@ -623,7 +624,7 @@ class Gemm(OperationBase):
 
     def run(self, A=None, B=None, C=None, D=None,
             alpha=None, beta=None, sync: bool = True, print_module: bool = False, visitor_args: dict = None,
-            stream: cuda.CUstream = cuda.CUstream(0)) -> GemmArguments:
+            stream = default_stream()) -> GemmArguments:
         """
         Runs the kernel currently specified. If it has not already been, the kernel is emitted and
         compiled. Tensors holding operands and outputs of the kernel are sourced either from the

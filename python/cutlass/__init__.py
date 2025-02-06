@@ -108,6 +108,8 @@ if (sys.version_info.major == 3 and sys.version_info.major > 8) or sys.version_i
 else:
     this.use_rmm = False
 
+this._use_sycl = False
+
 
 def set_log_level(level: int):
     """
@@ -185,6 +187,35 @@ def initialize_cuda_context():
     this._device_id = int(device_id)
 
 
+import dpctl
+
+this._sycl_device: dpctl.SyclDevice = None
+
+def initialize_sycl_context():
+    if this._device_id is not None and this._sycl_device is not None:
+        return
+
+    device_id = int(os.getenv("CUTLASS_SYCL_DEVICE_ID", default=0))
+    sycl_gpus = dpctl.get_devices(
+        dpctl.backend_type.level_zero, dpctl.device_type.gpu)
+
+    if len(sycl_gpus) <= device_id:
+        raise Exception("No LevelZero device found")
+
+    this._device_id = device_id
+    this._sycl_device = sycl_gpus[device_id]
+
+
 def device_id() -> int:
-    initialize_cuda_context()
+    if os.getenv("CUTLASS_USE_SYCL"):
+        initialize_sycl_context()
+        this._use_sycl = True
+    else:
+        this._use_sycl = False
+        initialize_cuda_context()
     return this._device_id
+
+
+def sycl_device() -> dpctl.SyclDevice:
+    initialize_sycl_context()
+    return this._sycl_device

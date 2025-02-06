@@ -38,6 +38,8 @@ from cuda import cuda, cudart
 from cutlass_library import SubstituteTemplate
 import numpy as np
 
+import dpctl
+
 from cutlass_library import (
     ComplexTransformTag,
     DataType,
@@ -512,12 +514,14 @@ class GemmArguments3x(GemmArguments2x):
         super().__init__(operation, problem_size, A, B, C, D, gemm_mode, **kwargs)
 
     def get_arguments(self):
+        use_sycl = isinstance(self.stream, dpctl.SyclQueue)
         mainloop_args = get_mainloop_arguments_3x(
             self.operation.tile_description.kernel_schedule,
             self.operation.A.element,
             self.operation.B.element,
             self.operation.A.alignment,
-            self.operation.B.alignment
+            self.operation.B.alignment,
+            use_sycl
         )
         scheduler_args = get_tile_scheduler_arguments_3x(self.operation.tile_description.tile_scheduler)
         uses_default_epilogue = self.operation.rt_module.uses_default_epilogue()
@@ -908,6 +912,9 @@ ${operation_name}(${operation_name}${operation_suffix}::Params params) {
         return 0
 
     def initialize(self):
+        if self.operation.arch == 11:
+            return
+
         err, = cuda.cuFuncSetAttribute(
             self.kernel,
             attrib=cuda.CUfunction_attribute.CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,
@@ -1112,11 +1119,19 @@ class GemmRTUniversal3x(GemmRTUniversal):
 
 using Operator = ${operation_name}${operation_suffix};
 extern "C"
+#if defined(CUTLASS_ENABLE_SYCL)
+SYCL_EXTERNAL SYCL_EXT_ONEAPI_FUNCTION_PROPERTY(
+    (sycl::ext::oneapi::experimental::nd_range_kernel<
+     3>)) [[sycl::reqd_sub_group_size(16)]]
+void ${operation_name}(typename Operator::Params const params, 
+                       sycl::ext::oneapi::experimental::work_group_memory<char[]> mem) {
+  auto* smem = &mem[0];
+#else
 __global__ __launch_bounds__(Operator::MaxThreadsPerBlock, Operator::MinBlocksPerMultiprocessor)
 void ${operation_name}(__grid_constant__ typename Operator::Params const params) {
   // Dynamic shared memory base pointer
   extern __shared__ char smem[];
-
+#endif
   // Declare pointer to dynamic shared memory.
   Operator op;
   op(params, smem);
@@ -1300,8 +1315,9 @@ using DeviceKernel = cutlass::gemm::device::GemmUniversalAdapter<${operation_nam
 
     def emit(self, operation):
         # Support built-in epilogue functors or user-defined functions
-
-        if operation.tile_description.stages is None or operation.tile_description.stages == 0:
+        if operation.arch == 11:
+            stage_count_type = "cutlass::gemm::collective::StageCountAuto"
+        elif operation.tile_description.stages is None or operation.tile_description.stages == 0:
             stage_count_type = "cutlass::gemm::collective::StageCountAutoCarveout<static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>"
         else:
             stage_count_type = "_" + str(operation.tile_description.stages)
@@ -1321,6 +1337,7 @@ using DeviceKernel = cutlass::gemm::device::GemmUniversalAdapter<${operation_nam
         if operation.tile_description.tile_scheduler is not None:
             tschedule = operation.tile_description.tile_scheduler
 
+        arch = "cutlass::arch::IntelPVC" if operation.arch == 11 else f"cutlass::arch::Sm{operation.arch}"
         values = {
             "operation_name": operation.procedural_name(),
             "operation_suffix": self.operation_suffix,
@@ -1335,7 +1352,7 @@ using DeviceKernel = cutlass::gemm::device::GemmUniversalAdapter<${operation_nam
             "element_accumulator": DataTypeTag[operation.accumulator_type()],
             "element_epilogue": DataTypeTag[operation.epilogue_functor.element_epilogue],
             "opcode_class": OpcodeClassTag[operation.tile_description.math_instruction.opcode_class],
-            "arch": "cutlass::arch::Sm%d" % operation.arch,
+            "arch": arch,
             "threadblock_shape_m": str(operation.tile_description.threadblock_shape[0]),
             "threadblock_shape_n": str(operation.tile_description.threadblock_shape[1]),
             "threadblock_shape_k": str(operation.tile_description.threadblock_shape[2]),
