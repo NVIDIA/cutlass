@@ -17,7 +17,7 @@ Han Li<br />
 Nick Zhao<br />
 Ivan Yin<br />
 Yu-Jung Chen<br />
-Markus Hoehnerback<br />
+Markus Hoehnerbach<br />
 Honghao Lu<br />
 Mihir Awatramani<br />
 Hao  Sheng<br />
