@@ -506,7 +506,6 @@ sm100_get_smem_load_op() {
 template <class Schedule, class LayoutTag>
 constexpr auto
 sm100_get_gmem_load_op() {
-  
   if constexpr (detail::is_im2col_mode<LayoutTag>) {
     return SM90_TMA_LOAD_IM2COL{};
   }
@@ -519,7 +518,6 @@ sm100_get_gmem_load_op() {
 template <class Schedule, class LayoutTag>
 constexpr auto
 sm100_get_gmem_store_op() {
-  
   if constexpr (detail::is_im2col_mode<LayoutTag>) {
     return SM90_TMA_STORE_IM2COL{};
   }

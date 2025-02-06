@@ -75,7 +75,6 @@ BlockScaledGemmOperationProfiler::BlockScaledGemmOperationProfiler(Options const
       {ArgumentTypeID::kTensor, {"D"}, "Tensor storing the D output"},
       {ArgumentTypeID::kScalar, {"alpha", "epilogue::alpha"}, "Epilogue scalar alpha"},
       {ArgumentTypeID::kScalar, {"beta", "epilogue::beta"}, "Epilogue scalar beta"},
-      // TODO: Bring these back once SM100 future audits are complete
       {ArgumentTypeID::kEnumerated, {"split_k_mode", "split-k-mode"}, "Variant of split K mode(serial, parallel)"},
       {ArgumentTypeID::kInteger, {"split_k_slices", "split-k-slices"}, "Number of partitions of K dimension"},
       {ArgumentTypeID::kInteger, {"batch_count", "batch-count"}, "Number of GEMMs computed in one batch"},
@@ -113,14 +112,11 @@ void BlockScaledGemmOperationProfiler::print_examples(std::ostream &out) const {
     << "Schmoo over problem size and beta:\n"
     << "  $ cutlass_profiler --operation=block_scaled_gemm --m=1024:4096:256 --n=1024:4096:256 --k=128:8192:128 --beta=0,1,2.5\n\n"
 
-    // TODO: Bring these back once SM100 future audits are complete
-#if 0
-    << "Run when A is f16 with column-major and B is any datatype with row-major (For column major, use column, col, or n. For row major use, row or t):\n"
+    << "For column major, use column, col, or n. For row major use, row or t:\n"
     << "  $ cutlass_profiler --operation=Gemm --A=f16:column --B=*:row\n\n"
 
     << "Profile a particular problem size with split K and parallel reduction:\n"
     << "  $ cutlass_profiler --operation=Gemm --split_k_mode=parallel --split_k_slices=2 --m=1024 --n=1024 --k=128\n\n"
-#endif
 
     << "Using various input value distribution:\n"
     << "  $ cutlass_profiler --operation=Gemm --dist=uniform,min:0,max:3\n"
@@ -225,7 +221,6 @@ Status BlockScaledGemmOperationProfiler::GemmProblem::parse(
     this->split_k_slices = 1;
   }
 
-  // TODO: Bring these back once SM100 future audits are complete
   if (this->split_k_mode != library::SplitKMode::kSerial) {
     std::cout<<"SplitK/StreamK feature is not supported yet!";
     return Status::kErrorInvalidProblem;
@@ -403,7 +398,6 @@ void BlockScaledGemmOperationProfiler::GemmProblem::initialize_result(
   set_argument(result, "cluster_k_fallback", problem_space, cluster_k_fallback);
   
 
-  // TODO: Bring these back once SM100 future audits are complete
   set_argument(result, "split_k_mode", problem_space, library::to_string(split_k_mode));
   set_argument(result, "split_k_slices", problem_space, split_k_slices);
   set_argument(result, "batch_count", problem_space, batch_count);
@@ -536,8 +530,6 @@ bool BlockScaledGemmOperationProfiler::initialize_reduction_configuration_(
   library::Operation const *operation,
   ProblemSpace::Problem const &problem) {
 
-  // TODO: Bring these back once SM100 future audits are complete
-#if 1
   library::BlockScaledGemmDescription const &gemm_desc =
     static_cast<library::BlockScaledGemmDescription const&>(operation->description());
 
@@ -577,8 +569,6 @@ bool BlockScaledGemmOperationProfiler::initialize_reduction_configuration_(
 
   // reduction operation found and initialized
   return true;
-#endif
-  return false;
 }
 
 /// Initializes workspace

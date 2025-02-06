@@ -44,12 +44,13 @@
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 #if (__CUDACC_VER_MAJOR__ > 12) || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 4)
-
-#  define CUTLASS_ARCH_SPARSE_MMA_SM89_SUPPORTED 1
+#  define CUTLASS_ARCH_SPARSE_MMA_F32_SM89_SUPPORTED
 #endif
 
-#if defined(CUTLASS_ARCH_SPARSE_MMA_SM89_SUPPORTED) && defined(__CUDA_ARCH__) && (__CUDA_ARCH__ == 890)
-#  define CUTLASS_ARCH_SPARSE_MMA_SM89_ENABLED
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 890)
+#  if defined(CUTLASS_ARCH_SPARSE_MMA_F32_SM89_SUPPORTED)
+#    define CUTLASS_ARCH_SPARSE_MMA_F32_SM89_ENABLED
+#  endif
 #endif
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -113,7 +114,7 @@ struct SparseMma<
     int const id2
   ) const {
 
-#if defined(CUTLASS_ARCH_SPARSE_MMA_SM89_ENABLED)
+#if defined(CUTLASS_ARCH_SPARSE_MMA_F32_SM89_ENABLED)
 
     uint32_t const *A = reinterpret_cast<uint32_t const *>(&a);
     uint32_t const *B = reinterpret_cast<uint32_t const *>(&b);
@@ -198,7 +199,7 @@ struct SparseMma<
     int const id2
   ) const {
 
-#if defined(CUTLASS_ARCH_SPARSE_MMA_SM89_ENABLED)
+#if defined(CUTLASS_ARCH_SPARSE_MMA_F32_SM89_ENABLED)
 
     uint32_t const *A = reinterpret_cast<uint32_t const *>(&a);
     uint32_t const *B = reinterpret_cast<uint32_t const *>(&b);
@@ -283,7 +284,7 @@ struct SparseMma<
     int const id2
   ) const {
 
-#if defined(CUTLASS_ARCH_SPARSE_MMA_SM89_ENABLED)
+#if defined(CUTLASS_ARCH_SPARSE_MMA_F32_SM89_ENABLED)
 
     uint32_t const *A = reinterpret_cast<uint32_t const *>(&a);
     uint32_t const *B = reinterpret_cast<uint32_t const *>(&b);
@@ -368,7 +369,7 @@ struct SparseMma<
     int const id2
   ) const {
 
-#if defined(CUTLASS_ARCH_SPARSE_MMA_SM89_ENABLED)
+#if defined(CUTLASS_ARCH_SPARSE_MMA_F32_SM89_ENABLED)
 
     uint32_t const *A = reinterpret_cast<uint32_t const *>(&a);
     uint32_t const *B = reinterpret_cast<uint32_t const *>(&b);

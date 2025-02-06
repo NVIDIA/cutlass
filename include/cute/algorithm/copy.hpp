@@ -248,15 +248,6 @@ copy(AutoVectorizingCopyWithAssumedAlignment<MaxVecBits> const&,
     // Recast
     Tensor src_v = recast<SrcVecType>(src);
     Tensor dst_v = recast<DstVecType>(dst);
-
-#if 0
-    if (thread0()) {
-      print("copy -- found max_common_vector of %d elems and vectorization to %d bits\n", common_elem, vec_bits);
-      print("   "); print(src); print(" => "); print(src_v); print("\n");
-      print("   "); print(dst); print(" => "); print(dst_v); print("\n");
-    }
-#endif
-
     return copy_if(TrivialPredTensor{}, src_v, dst_v);
   } else {
     return copy_if(TrivialPredTensor{}, src, dst);
@@ -374,15 +365,6 @@ copy(Copy_Traits<SM90_BULK_COPY_AUTO, CT_Args...> const& atom,  // Copy_Traits m
   // Construct a new concrete Atom of the vector size
   using BulkAtom = Copy_Atom<Copy_Traits<BULK_COPY_OP, Int<vec_bits>, CT_Args...>, SrcType>;
   auto bulk_atom = apply(atom.opargs_, [](auto const&... args) { return BulkAtom{args...}; });
-
-#if 0
-  if (thread0()) {
-    print("copy blkcp -- found a max_common_layout of "); print(tiler); print("\n");
-    print("   "); print(src); print("\n");
-    print("   "); print(dst); print("\n");
-  }
-#endif
-
   return copy(bulk_atom, logical_divide(src, tiler), logical_divide(dst, tiler));
 }
 

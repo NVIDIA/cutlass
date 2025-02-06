@@ -31,28 +31,20 @@
 
 /*! \file
     \brief Grouped scale Hopper FP8 GEMM example using CUTLASS 3.0 APIs for NVIDIA Hopper architecture
-
     This example demonstrate a grouped scaled FP8 GEMM using the new CUTLASS 3.0.
     APIs on NVIDIA Hopper architecture. New features that will be showcased in this example are as follows:
-
     1. NVIDIA Hopper architecture introduces a new series of tensor core instructions (GMMA)
     which are more efficient than the Ampere tensor core instructions.
-
     2. NVIDIA Hopper architecture includes new Tensor Memory Accelerator (TMA) unit to transfer large
     blocks of data efficiently between global memory and shared memory. TMA also supports asynchronous
     copies between thread blocks in a cluster.
-
     3. This example uses the Warp Specialized kernel design (see /media/docs/efficient_gemm.md for details).
-
     4. This example shows all important fusions used by FP8 gemm kernels, i.e., grouped scale factor along M for
     A, blocked scale factor along K for A tensor, blocked scale factor for B tensor, the abs_max value of D tensor.
-
     5. A simple way to tune the CTA rasterization direction and swizzle pattern of Hopper kernels. Both the
     CTA rasterization direction and swizzle pattern impact cross-CTA locality of accesses. By tuning we can
     improve performance.
-
     Examples:
-
       $ ./examples/64_hopper_fp8_warp_specialized_gemm_with_groupwise_scaling/64_hopper_fp8_warp_specialized_gemm_with_groupwise_scaling  \
         --m=2816 --n=3072 --k=16384 \
         --save_aux=false --save_amax=false \

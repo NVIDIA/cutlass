@@ -392,12 +392,12 @@ public:
 
     if (is_im2col_A || is_im2col_B) {
       // Check valid filter offsets for TMA_LOAD_IM2COL, unsigned int ranging from [0, offset_limit - 1]
-      constexpr int32_t offset_limit = 1 << (16 / NumSpatialDimensions);
+      constexpr int32_t offset_limit = (1 << (16 / NumSpatialDimensions)) - 1;
       auto flt_data = (ConvOp == conv::Operator::kWgrad) ? problem_shape.shape_C : problem_shape.shape_B;
       for (int i = 0; i < problem_shape.RankS; ++i) {
         // flt_data array contains [K, T, R, S, C], so pure filter [T, R, S] starts from the second position in the array
-        implementable = implementable && (flt_data[i+1] * problem_shape.dilation[i] >= 0)
-                                      && (flt_data[i+1] * problem_shape.dilation[i] < offset_limit);
+        implementable = implementable && ((flt_data[i+1] - 1) * problem_shape.dilation[i] >= 0)
+                                      && ((flt_data[i+1] - 1) * problem_shape.dilation[i] < offset_limit);
       }
 
       if (!implementable) {

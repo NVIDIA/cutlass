@@ -56,9 +56,7 @@ template <typename T>
 T* allocate(size_t count = 1) {
 
   T* ptr = 0;
-  size_t bytes = 0;
-
-  bytes = count * sizeof(T);
+  size_t bytes = count * sizeof_bits<T>::value / 8;
 
   cudaError_t cuda_error = cudaMalloc((void**)&ptr, bytes);
 

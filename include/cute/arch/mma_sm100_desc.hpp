@@ -391,7 +391,6 @@ CUTE_HOST_DEVICE constexpr auto to_UMMAFormat() {
   
   if constexpr (is_same_v<T, float_e4m3_t>) { return MXF8F6F4Format::E4M3;  } else
   if constexpr (is_same_v<T, float_e5m2_t>) { return MXF8F6F4Format::E5M2;  } else
-  
   if constexpr (is_same_v<T, detail::type_erased_dynamic_float6_unpacksmem_t>) {return MXF8F6F4Format::INVALID; } else
   if constexpr (is_same_v<T, detail::float_e2m3_unpacksmem_t>) { return MXF8F6F4Format::E2M3;  } else
   if constexpr (is_same_v<T, detail::float_e3m2_unpacksmem_t>) { return MXF8F6F4Format::E3M2;  } else
@@ -399,7 +398,6 @@ CUTE_HOST_DEVICE constexpr auto to_UMMAFormat() {
   if constexpr (is_same_v<T, float_e3m2_t>) { return MXF8F6F4Format::E3M2;  } else
   if constexpr (is_same_v<T, detail::float_e2m1_unpacksmem_t>) { return MXF8F6F4Format::E2M1;  } else
   if constexpr (is_same_v<T, float_e2m1_t>) { return MXF4Format::E2M1;  } else
-  
   { static_assert(sizeof(T) == 0, "Unknown type for UMMAFormat"); }
 }
 

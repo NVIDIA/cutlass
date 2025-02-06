@@ -893,7 +893,6 @@ struct HostCollectiveMainloop<ScheduleType_, Gemm, ElementA_, ElementB_,
 };
 
 
-
 //
 // Block Scaled Gemm Input Operands : A , B, scalefactorA, scalefactorB
 //
@@ -1412,8 +1411,12 @@ struct HostCollectiveEpilogue {
                               cutlass::epilogue::thread::Identity<ElementCompute>>;
 
   static constexpr bool IsRowBiasEnabled        = FusionOp::IsPerRowBiasSupported;
+  static constexpr bool IsColBiasEnabled        = FusionOp::IsPerColBiasSupported;
+  static_assert(not (IsColBiasEnabled && IsRowBiasEnabled));
+
   static constexpr bool IsDeBiasEnabled      = FusionOp::IsDePerRowBiasSupported;
   static constexpr bool IsPerRowScaleEnabled = FusionOp::IsPerRowScaleSupported;
+  static constexpr bool IsPerColScaleEnabled = FusionOp::IsPerColScaleSupported;
   static constexpr bool IsScaleFactorEnabled = FusionOp::IsScaleFactorSupported;
   static constexpr bool IsAuxInEnabled       = FusionOp::IsAuxInSupported;
   static constexpr bool IsAuxOutEnabled      = FusionOp::IsAuxOutSupported;
@@ -1462,7 +1465,7 @@ struct HostCollectiveEpilogue {
   CheckEquality check_relative_equality = CheckEquality::EXACT;
   // Are scalars copied to device memory before kernel launch
   ScalarLoc use_device_scalars = ScalarLoc::ON_HOST;
-  // If per-row scale is enabled and this is disabled, alpha/beta are passed as a host or device scalar instead of device vector
+  // If vector scale is supported and this is disabled, alpha/beta are passed as a host or device scalar instead of device vector
   VectorScale vector_scale_mode = VectorScale::DISABLED;
 
   // Random distribution with which to initialize the A/B/C/D/Aux scaling factors
@@ -1555,8 +1558,7 @@ struct HostCollectiveEpilogue {
     auto col_vector_coord = cutlass::make_Coord(M);
     auto row_vector_coord = cutlass::make_Coord(N);
     auto batch_vector_coord = cutlass::make_Coord(L);
-    auto ML_coord = cutlass::make_Coord(M * L);
-    if constexpr (IsPerRowScaleEnabled) {
+    if constexpr (IsPerRowScaleEnabled or IsPerColScaleEnabled) {
       // scalars
       if (vector_scale_mode == VectorScale::DISABLED) {
         // batched scalars
@@ -1581,8 +1583,9 @@ struct HostCollectiveEpilogue {
       }
       // batched vectors
       else {
-        alpha.resize(ML_coord, true);
-        beta.resize(ML_coord, true);
+        auto batched_vector_coord = cutlass::make_Coord((IsPerRowScaleEnabled ? M : N) * L);
+        alpha.resize(batched_vector_coord, true);
+        beta.resize(batched_vector_coord, true);
         EXPECT_TRUE(initialize_tensor(alpha.host_view(), init_scale, seed + 2023));
         if (beta_ != ElementScalar(0)) {
           EXPECT_TRUE(initialize_tensor(beta.host_view(), init_scale, seed + 2024));
@@ -1627,9 +1630,7 @@ struct HostCollectiveEpilogue {
       scale_D.sync_device();
     }
 
-    if constexpr (
-      IsRowBiasEnabled
-    ) {
+    if constexpr (IsRowBiasEnabled or IsColBiasEnabled) {
       bias.resize(IsRowBiasEnabled ? col_vector_coord : row_vector_coord);
       EXPECT_TRUE(initialize_tensor(bias.host_view(), init_bias, seed + 2023));
       bias.sync_device();
@@ -1810,7 +1811,6 @@ struct HostCollectiveEpilogue {
       }
       passed &= passed_sf;
     }
-    
 
     return passed;
   }
@@ -1823,7 +1823,7 @@ struct HostCollectiveEpilogue {
         << ", scale_b: " << scale_B.at(coord_0)
         << ", scale_c: " << scale_C.at(coord_0);
     }
-    if constexpr (IsPerRowScaleEnabled) {
+    if constexpr (IsPerRowScaleEnabled or IsPerColScaleEnabled) {
       file << "\n\nvalpha = \n" << alpha.host_view();
       file << "\n\nvbeta = \n" << beta.host_view();
     } else {
@@ -1853,9 +1853,10 @@ struct HostCollectiveEpilogue {
       file << "\n\n";
     }
 
-    if constexpr (IsRowBiasEnabled) {
+    if constexpr (IsRowBiasEnabled or IsColBiasEnabled) {
       file << "\n\nBias = \n" << bias.host_view();
     }
+
     if constexpr (IsAuxInEnabled) {
       file << "\n\nAux Input = \n" << tensor_Aux.host_view();
     }
@@ -1876,7 +1877,6 @@ struct HostCollectiveEpilogue {
         << "\n\nSFD Reference =\n" << reference_SFD.host_view()
         << "\n\nSFD Computed =\n" << tensor_SFD.host_view();
     }
-    
 
     file
     << "\nC =\n" << tensor_C.host_view()
@@ -1921,6 +1921,12 @@ struct HostCollectiveEpilogue {
         fusion_args.dAlpha = cute::make_stride(bool(m_stride),cute::_0{}, l_stride);
         fusion_args.dBeta = cute::make_stride(bool(m_stride),cute::_0{}, l_stride);
       }
+      else if constexpr (IsPerColScaleEnabled) {
+        int32_t n_stride = vector_scale_mode == VectorScale::ENABLED ? 1 : 0;
+        int64_t l_stride = vector_scale_mode == VectorScale::ENABLED ? N : (use_device_scalars == ScalarLoc::ON_DEVICE ? 1 : 0);
+        fusion_args.dAlpha = cute::make_stride(cute::_0{}, bool(n_stride), l_stride);
+        fusion_args.dBeta = cute::make_stride(cute::_0{}, bool(n_stride), l_stride);
+      }
       else {
         if constexpr (not IsFfma2Kernel) {
           if (use_device_scalars == ScalarLoc::ON_DEVICE) {
@@ -1943,9 +1949,7 @@ struct HostCollectiveEpilogue {
         fusion_args.scale_d_ptr = scale_D.device_data();
       }
 
-      if constexpr (
-        IsRowBiasEnabled
-      ) {
+      if constexpr (IsRowBiasEnabled or IsColBiasEnabled) {
         fusion_args.bias_ptr = bias.device_data();
       }
 
@@ -1993,7 +1997,6 @@ struct HostCollectiveEpilogue {
         arguments.thread.block_scale_factor_ptr = tensor_SFD.device_data();
         arguments.thread.norm_constant_ptr = norm_constant.device_data();
       }
-      
     }
 
     return arguments;
@@ -2025,6 +2028,12 @@ struct HostCollectiveEpilogue {
         return cute::make_tensor(detail::make_iterator(alpha.host_data()),
             cute::make_layout(cute::make_shape(M, N, L), make_stride(m_stride, cute::_0{}, l_stride)));
       }
+      else if constexpr (IsPerColScaleEnabled) {
+        int n_stride = vector_scale_mode == VectorScale::ENABLED ? 1 : 0;
+        int l_stride = vector_scale_mode == VectorScale::ENABLED ? N : (use_device_scalars == ScalarLoc::ON_DEVICE ? 1 : 0);
+        return cute::make_tensor(detail::make_iterator(alpha.host_data()),
+            cute::make_layout(cute::make_shape(M, N, L), make_stride(cute::_0{}, n_stride, l_stride)));
+      }
       else {
         return cute::make_tensor(detail::make_iterator(alpha.host_data()),
             cute::make_layout(cute::make_shape(M, N, L), make_stride(cute::_0{}, cute::_0{}, cute::_1{})));
@@ -2037,6 +2046,12 @@ struct HostCollectiveEpilogue {
         int l_stride = vector_scale_mode == VectorScale::ENABLED ? M : (use_device_scalars == ScalarLoc::ON_DEVICE ? 1 : 0);
         return cute::make_tensor(detail::make_iterator(beta.host_data()),
             cute::make_layout(cute::make_shape(M, N, L), make_stride(m_stride, cute::_0{}, l_stride)));
+      }
+      else if constexpr (IsPerColScaleEnabled) {
+        int n_stride = vector_scale_mode == VectorScale::ENABLED ? 1 : 0;
+        int l_stride = vector_scale_mode == VectorScale::ENABLED ? N : (use_device_scalars == ScalarLoc::ON_DEVICE ? 1 : 0);
+        return cute::make_tensor(detail::make_iterator(beta.host_data()),
+            cute::make_layout(cute::make_shape(M, N, L), make_stride(cute::_0{}, n_stride, l_stride)));
       }
       else {
         return  cute::make_tensor(detail::make_iterator(beta.host_data()),
@@ -2069,8 +2084,8 @@ struct HostCollectiveEpilogue {
       ActivationFunctor,
       decltype(SfD),             
       Int<SFD_VectorSize>,       
-      cutlass::plus<ElementCompute>
-      , false /*PerColumnBias_*/
+      cutlass::plus<ElementCompute>,
+      IsColBiasEnabled
       , SfGenStrategy            
     > epilogue_params{};
 
@@ -2086,8 +2101,7 @@ struct HostCollectiveEpilogue {
       epilogue_params.scale_d = scale_D.at(coord_0);
     }
 
-    if constexpr (IsRowBiasEnabled 
-      or IsDeBiasEnabled) 
+    if constexpr (IsRowBiasEnabled or IsColBiasEnabled or IsDeBiasEnabled) 
     {
       epilogue_params.Bias = Bias;
     }
@@ -2110,7 +2124,7 @@ struct HostCollectiveEpilogue {
       }
     }
 
-    if constexpr (IsPerRowScaleEnabled) {
+    if constexpr (IsPerRowScaleEnabled or IsPerColScaleEnabled) {
       epilogue_params.Valpha = Valpha;
       if (vector_scale_mode == VectorScale::ENABLED) {
         epilogue_params.Vbeta = Vbeta;
@@ -3294,9 +3308,14 @@ bool TestAll(double alpha = 1.0, double beta = cute::is_same_v<typename Gemm::Ge
 
   Testbed3x<Gemm, ActivationFunctor> testbed(check_relative_equality, ScalarLoc::ON_HOST, VectorScale::DISABLED);
 
-  int max_alignment = std::max(Gemm::kAlignmentA, Gemm::kAlignmentB);
-  std::vector<int> problem_size_m = {max_alignment, 512 - 3 * max_alignment};
-  std::vector<int> problem_size_n = {max_alignment, 512 - 2 * max_alignment};
+  int max_alignment_m = std::max({Gemm::kAlignmentA, Gemm::kAlignmentC, Gemm::kAlignmentD});
+  int max_alignment_n = std::max({Gemm::kAlignmentB, Gemm::kAlignmentC, Gemm::kAlignmentD});
+  if constexpr (std::is_base_of_v<cutlass::epilogue::fusion::FusionOperation, typename Gemm::EpilogueOutputOp>) {
+    max_alignment_m = std::max(max_alignment_m, Gemm::EpilogueOutputOp::AlignmentAux);
+    max_alignment_n = std::max(max_alignment_n, Gemm::EpilogueOutputOp::AlignmentAux);
+  }
+  std::vector<int> problem_size_m = {max_alignment_m, 512 - 3 * max_alignment_m};
+  std::vector<int> problem_size_n = {max_alignment_n, 512 - 2 * max_alignment_n};
 
   if constexpr (cute::is_same_v<typename Gemm::GemmKernel::DispatchPolicy::Schedule,
                 cutlass::gemm::KernelTmaWarpSpecializedPingpong>) {
@@ -3307,7 +3326,8 @@ bool TestAll(double alpha = 1.0, double beta = cute::is_same_v<typename Gemm::Ge
   constexpr int Stages = Gemm::GemmKernel::DispatchPolicy::Stages;
   constexpr int TileShapeK = cute::size<2>(typename Gemm::GemmKernel::TileShape{});
 
-  std::vector<int> problem_size_k = {max_alignment, TileShapeK * (Stages + 1) - max_alignment};
+  int max_alignment_k = std::max(Gemm::kAlignmentA, Gemm::kAlignmentB);
+  std::vector<int> problem_size_k = {max_alignment_k, TileShapeK * (Stages + 1) - max_alignment_k};
 
   using DecompositionMode = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90StreamKParams::DecompositionMode;
   std::vector<DecompositionMode> decomposition_modes = {DecompositionMode::Heuristic};
@@ -3323,7 +3343,7 @@ bool TestAll(double alpha = 1.0, double beta = cute::is_same_v<typename Gemm::Ge
 
     // Use larger K sizes for stream-K tests
     static constexpr int min_tiles_per_sk_unit = cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90StreamKParams::min_iters_per_sk_unit_;
-    problem_size_k = {TileShapeK * min_tiles_per_sk_unit, TileShapeK * 3 * min_tiles_per_sk_unit - max_alignment};
+    problem_size_k = {TileShapeK * min_tiles_per_sk_unit, TileShapeK * 3 * min_tiles_per_sk_unit - max_alignment_k};
   }
 
   using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90::RasterOrderOptions;
@@ -3421,7 +3441,7 @@ bool TestAll(double alpha = 1.0, double beta = cute::is_same_v<typename Gemm::Ge
 
   // if we do support batched GEMM, just run one test on it to save on test time
   if constexpr (cute::rank(ProblemShapeType{}) == 4) {
-    auto problem_size = ProblemShapeType{256 + max_alignment, 256 + max_alignment, 160 + max_alignment, /* l */ 3};
+    auto problem_size = ProblemShapeType{256 + max_alignment_m, 256 + max_alignment_n, 160 + max_alignment_k, /* l */ 3};
     passed = testbed.run(
       problem_size,
       cutlass::from_real<ElementScalar>(alpha),

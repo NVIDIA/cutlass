@@ -24,6 +24,17 @@ $ make cutlass_profiler -j
 Enabling the unity build places multiple kernel instances in one compilation unit, thereby reducing size of the compiled
 binary and avoiding linker limitations on some platforms.
 
+The CUTLASS Profiler sources are stored in:
+
+```bash
+tools/
+  profiler/
+```
+
+# Emitting kernels via `emit_kernel_listing.py`
+
+We provide a Python script `emit_kernel_listing.py` that allows a user to selectively test a subset of profiler-based kernels stamped out in `generator.py`. A unique benefit to generate kernels and test via this script is that it can feed a series of runtime arguments, such as different `M`/`N`/`K` and `alpha`/`beta`, to each kernel, instead of relying on a single default value. It also properly generates runtime datatype and cluster shapes for certain kernels to help reduce the generated kernel count and accordingly the total compilation time. An interested user may refer to [emit_kernel_listing.py](../../python/cutlass_library/emit_kernel_listing.py) for details. To enable this new feature, a user should add `-DCUTLASS_BUILD_FOR_PROFILER_REGRESSIONS=ON` when building CUTLASS profiler.
+
 ### Instantiating more kernels with Hopper
 With Hopper (SM90), you will need to use an additional flag,
 `CUTLASS_LIBRARY_INSTANTIATION_LEVEL`, in order to instantiate all possible combinations,
@@ -84,12 +95,30 @@ An instantiation level `500`, which is padded to `0500`, thus indicates:
 - **Cluster Sizes**: At level 5, allowing for clusters with 1, 2, 4, 8, or 16 CTAs.
 - **Schedule Pruning**: At level 0, where pruning is applied according to the existing `generator.py` behavior.
 
-The CUTLASS Profiler sources are stored in:
+### Mixed input data type kernels for Hopper
 
-```bash
-tools/
-  profiler/
-```
+With Hopper (SM90), the kernel generator will generate the following combinations of mixed input data types ("mixed dtype"):
+
+| dtype(A) | dtype(B)   |
+| -------- | ---------- |
+| e4m3     | f16, bf16  |
+| e5m2     | f16, bf16  |
+| int8     | f16, bf16  |
+| uint8    | f16, bf16  |
+| int4     | f16, bf16  |
+| int4     | e4m3, e5m2 |
+| uint4    | f16, bf16  |
+| int2     | f16, bf16  |
+| uint2    | f16, bf16  |
+
+For each mixed dtype kernel, the kernel generator will generate combinations of three different running modes:
+* Convert-only
+* Scale-only
+* Scale-with-zero-point-shifting
+
+For {4-bits-dtype, 8-bits-dtype} x 16-bits-dtype, the kernel generator will further generate kernels using shuffled layouts for the narrow data type matrix, which may have a better performance compared to its non-shuffle counter parts.
+
+### CUTLASS Profiler usage
 
 The CUTLASS Profiler usage statement may be obtained by executing `cutlass_profiler --help` and appears as follows.
 ```bash
@@ -174,6 +203,8 @@ Profiling:
                                                    `profiling-duration` has been met.
 
   --warmup-iterations=<iterations>                 Number of iterations to execute each kernel prior to profiling (default: 10).
+
+  --use-cuda-graphs=<bool>                         If true, kernels are launched in a CUDA graph. Useful when the kernel launch time is a bottleneck.
 
   --sleep-duration=<duration>                      Number of ms to sleep between profiling periods (ms).
 
@@ -289,6 +320,8 @@ GEMM
   [enum]      --raster_order={heuristic|H|along_m|M|along_n|N}  If supported by kernel, sets the tile raster direction
   [int]       --swizzle_size={1,2,4,8}                          If supported by kernel, sets the 2D tile swizzle extent (In Hopper, other values will be rounded down to the nearest supported value)
   [int]       --use_pdl,--use-pdl                               Use PDL (true, false)
+  [enum]      --runtime_input_datatype_a                        Runtime data type for A matrix, narrow-precision only (e4m3, e5m2, e3m2, e2m3, e2m1)
+  [enum]      --runtime_input_datatype_b                        Runtime data type for B matrix, narrow-precision only (e4m3, e5m2, e3m2, e2m3, e2m1)
 
 Examples:
 
@@ -329,7 +362,11 @@ Profile when execution is performed on device 0 and the C tensor is located on a
 
 The format of tensor argument is followed by `<type>:<layout>`. The type could be `f32` as 32-bit floating point, `s8` as 8-bit signed integer, etc. The available types can be referred to the `NumericTypeID_enumerants` in [util.cu](tools/library/src/util.cu). The layout could be `row` or `column`.
 
-CUTLASS 3.x kernels for Hopper and Blackwell also support a new feature called programatic dependent launch (PDL). This can be enabled with `--use-pdl`, and can overlap the epilogue of the prior kernel with the prologue of the next kernel. This can effectively hide kernel prologues. Using PDL can improve performance for back to back GEMMs. See [dependent kernel launch](dependent_kernel_launch.md) for more information.
+In addition to encoded data types, CUTLASS profiler allows non-encoded generic data types, namely `f8`, `f6`, and `f4`, with corresponding encoding specified through GEMM input argument: `--runtime_input_datatype_a` and `--runtime_input_datatype_b`. Currently, six encoding schemes are supported: `e4m3`, `e5m2`, `e3m2`, `e2m3`, and `e2m1`.
+
+Cluster shapes can be statically set to `Shape<int,int,_1>;` and specified via runtime arguments: `cluster_m`, `cluster_n` and `cluster_k` in CUTLASS profiler. One may refer to our CUTLASS Example [73_blackwell_gemm_flexible_cluster](../../examples/73_blackwell_gemm_preferred_cluster/blackwell_gemm_preferred_cluster.cu) for more details of the this feature.
+
+CUTLASS 3.x kernels for Hopper and Blackwell also support a new feature called programatic dependent launch (PDL). This can be enabled with `--use-pdl`, and can overlap the epilogue of the prior kernel with the prologue of the next kernel. This can effectively hide kernel prologues. Using PDL can improve performance for back to back GEMMs. See [dependent kernel launch](dependent_kernel_launch.md) for more information. CUDA graphs can also be used (`--use-cuda-graphs`) with PDL to ensure that smaller kernels are enqueued back-to-back on a stream.
 
 ## Example CUDA Core GEMM Operation
 
@@ -444,7 +481,7 @@ To best illustrate this naming convention, we will walk through the meaning of e
 in a GEMM kernel used by the profiler:
 
 ```
-cutlass3x_sm90_tensorop_s64x128x16gemm_f16_f16_f32_f16_f32_128x128x64_2x1x1_0_ntn_align8
+cutlass3x_sm90_tensorop_s64x128x16gemm_f16_f16_f32_f16_f32_{optional-mixed-dtype-config}_128x128x64_2x1x1_0_ntn_align8
 ```
 
 The components within this name are as follows:
@@ -457,6 +494,7 @@ The components within this name are as follows:
 (as opposed to `h`, which indicates half precision)
 * `64x128x16gemm`: indicates that the shape of the Tensor Core instruction being used (MxNxK) is 64x128x16
 * `f16_f16_f32_f16_f16`: indicates that the data types for operands A, B, Accumulator, C and D (in that order).
+* `optional-mixed-dtype-config`: optional, will be empty if this is not a mixed dtype kernel. For mixed dtype kernels, it contains `_cvt`, `_scl`, `_sclzr`, respectively, for convert-only, scale-only, scale-with-zero-point running modes. It further contains `_shfl` if the kernel uses a shuffled layout for the narrow data type input matrix.
 * `128x128x64`: indicates that the thread block shape used in the GEMM (MxNxK) is 128x128x64
 * `2x1x1`: indicates that the cluster shape being used is 2x1x1
 * `0`: indicates that the kernel uses the CollectiveBuilder's automatic stage calculation to determine the

@@ -768,16 +768,26 @@ int main(int argc, char const** argv) {
     return -1;
   }
 
-  if (__CUDACC_VER_MAJOR__ < 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ < 4) ||
-      (props.major != 8 && props.minor != 9)) {
+  bool satisfied;
+  if (props.major < 10) {
+    // Pre-Blackwell 
+    satisfied =  (__CUDACC_VER_MAJOR__ > 12) || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 4);
+    satisfied &= (props.major > 8) || (props.major == 8 && props.minor == 9); 
+  }
+  else {
+    satisfied = (__CUDACC_VER_MAJOR__ > 12) || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 8);
+  }
 
+  if (!satisfied) {
     //
-    // This example requires an NVIDIA Ada-architecture GPU.
+    // This example requires an NVIDIA GPU with compute capability 8.9 or greater.
     //
 
     std::cout
-      << "CUTLASS's FP8 SM89 example requires a GPU of NVIDIA's Ada architecture "
-      << "and CUDA toolkit version 12.4 or later.\n";
+      << "CUTLASS's FP8 SM89 example requires an NVIDIA GPU with compute capability 8.9 or greater "
+      << "and CUDA toolkit version 12.4 or later"
+      << " (12.8 or later needed for SM100+)" 
+      << std::endl;
 
     return 0;
   }

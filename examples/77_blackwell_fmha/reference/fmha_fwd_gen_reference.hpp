@@ -149,8 +149,6 @@ void __global__ fmha_fwd_gen_reference_kernel(
 
         __syncthreads();
         for (int idx_d = threadIdx.x; idx_d < kDim; idx_d += blockDim.x) {
-
-//          printf("O[%d,%d,%d] = %f\n", idx_d, idx_h, idx_b, mS[idx_d]);
           mO(_0{}, idx_d, make_coord(idx_h, idx_b)) = static_cast<typename TensorO::value_type>(mS[idx_d]);
         }
       }

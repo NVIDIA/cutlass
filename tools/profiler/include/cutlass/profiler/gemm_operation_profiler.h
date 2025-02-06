@@ -108,6 +108,8 @@ public:
 
     bool use_pdl{false};
 
+    bool enable_sm90_mixed_dtype_shuffle_test{false};
+
     //
     // Methods
     //
@@ -159,6 +161,13 @@ public:
 
     /// Buffer used for the cutlass reduction operations' host workspace
     std::vector<uint8_t> reduction_host_workspace;
+
+    /// For mixed input dtype kernels
+    DeviceAllocation *Scale{nullptr};             // Scale tensor
+    DeviceAllocation *Zero{nullptr};              // Zero tensor
+    DeviceAllocation *dequantized_AB{nullptr};    // Dequantized A or B tensor for verification
+    DeviceAllocation *encoded_AB{nullptr};        // Encoded A or B in int4 x fp8 or shuffle
+    DeviceAllocation *packed_Scale{nullptr};      // Packed scale for int4 * fp8
 
     cudaStream_t stream;
   };

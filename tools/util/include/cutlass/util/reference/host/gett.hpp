@@ -388,7 +388,7 @@ void compute_1d_scaling_factor_and_quantized_output(
   absolute_value_op<ElementCompute> abs_op;
   maximum_with_nan_propogation<ElementCompute> max_op;
 
-  if constexpr (cute::is_constant<1, decltype(cute::stride<0,1>(tensor_SfD))>::value) {
+  if constexpr (cute::is_constant<1, decltype(cute::stride<0,0,1>(tensor_SfD))>::value) {
     // MN major output
     int const NumVecPerBlock = ceil_div(kBlockM, kVectorSize);
     // Col major output
@@ -705,7 +705,7 @@ void gett_epilogue(
       if (m + m_b < cute::size<0>(epilogue_params.D.layout()) && n + n_b < cute::size<1>(epilogue_params.D.layout())) {
         // Convert every type to ElementCompute first, do compute, convert to output type, write it out
         ElementCompute converted_acc = accumulator_converter(acc[m_b][n_b]);
-        // per-row alpha
+        // vector alpha
         if (raw_pointer_cast(epilogue_params.Valpha.data())) {
           converted_alpha = scale_converter(epilogue_params.Valpha(m + m_b, n + n_b, l));
           converted_alpha = mul(converted_alpha, mul(converted_scale_a, converted_scale_b));
@@ -719,7 +719,7 @@ void gett_epilogue(
 
         if (raw_pointer_cast(epilogue_params.C.data())) {
           ElementCompute converted_src = source_converter(epilogue_params.C(m + m_b, n + n_b, l));
-          // per-row beta
+          // vector beta
           if (epilogue_params.Vbeta.data()) {
             converted_beta = scale_converter(epilogue_params.Vbeta(m + m_b, n + n_b, l));
             converted_beta = mul(converted_beta, converted_scale_c);

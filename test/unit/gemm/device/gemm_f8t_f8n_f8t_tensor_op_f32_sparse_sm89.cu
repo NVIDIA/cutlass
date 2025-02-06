@@ -54,7 +54,7 @@
 #include "testbed_sparse.h"
 #include "testbed_with_absmax.h"
 
-#if defined(CUTLASS_ARCH_MMA_SM89_SUPPORTED)
+#if defined(CUTLASS_ARCH_SPARSE_MMA_F32_SM89_SUPPORTED)
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -461,4 +461,4 @@ TEST(SM89_Device_Sparse_Gemm_fe4m3t_fe4m3n_fe4m3t_tensor_op_f32, identity_noAux_
 
 ////////////////////////////////////////////////////////////////////////////////
 
-#endif  // CUTLASS_ARCH_MMA_SM89_SUPPORTED
+#endif  // CUTLASS_ARCH_MMA_F32_SM89_SUPPORTED

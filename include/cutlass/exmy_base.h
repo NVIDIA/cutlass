@@ -747,7 +747,6 @@ private:
         src_sign_bit, dst_exponent, dst_mantissa);
 #endif
 
-      // TODO potential narrowing here
       if (dst_encoding.significand_hidden_bits(dst_mantissa) > 0b1) {
 
         // Significant became larger than 01.X...X. Divide significand by 2 and multiply exp by 2
@@ -848,16 +847,13 @@ CUTLASS_CONSTEXPR_IF_CXX17 auto fp_encoding_selector() {
     return cutlass::detail::FpBitRepresentation<uint32_t, 32, 8, 23, cutlass::detail::NanInfEncoding::IEEE_754>{};
   }
   else if CUTLASS_CONSTEXPR_IF_CXX17 (FpExMyCode == FpEncoding::E5M2)   {   // FP8
-    // TODO: Not tested. Will be done in another MR
     return cutlass::detail::FpBitRepresentation<uint8_t, 8, 5, 2, cutlass::detail::NanInfEncoding::IEEE_754>{};
   }
   else if CUTLASS_CONSTEXPR_IF_CXX17 (FpExMyCode == FpEncoding::E4M3)   {   // FP8
-    // TODO: Not tested. Will be done in another MR
     return cutlass::detail::FpBitRepresentation<uint8_t, 8, 4, 3, cutlass::detail::NanInfEncoding::CANONICAL_ONLY>{};
   }
   
   else if CUTLASS_CONSTEXPR_IF_CXX17 (FpExMyCode == FpEncoding::UE4M3)   {   // FP8
-    // TODO: Not tested. Will be done in another MR
     return cutlass::detail::FpBitRepresentation<uint8_t, 8, 4, 3, cutlass::detail::NanInfEncoding::CANONICAL_ONLY, false>{};
   }
   
@@ -993,20 +989,16 @@ struct float_exmy_base
     return f;
   }
 
-  // TODO: Add rounding parameter with a reasonable default
   CUTLASS_HOST_DEVICE
   float_exmy_base convert_from_float(float const &flt) const {
-    // TODO: If we have a cvt instruction specialize in the children structs
     FP32BitRepresentation::Storage fp32_bits = FP32BitRepresentation::to_bits(flt);
     float_exmy_base float_exmy;
     float_exmy.storage = BitRepresentation::convert_from(fp32_bits, FP32BitRepresentation{});
     return float_exmy;
   }
 
-  // TODO: Add rounding parameter with a reasonable default
   CUTLASS_HOST_DEVICE
   float convert_to_float(float_exmy_base<T, Derived> const &x) const {
-    // TODO: If we have a cvt instruction specialize in the children structs
     FP32BitRepresentation::Storage fp32_bits;
     fp32_bits = BitRepresentation::convert_to(x.storage, FP32BitRepresentation{});
     return detail::copy_bits<FP32BitRepresentation::Storage, float>(fp32_bits);

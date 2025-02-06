@@ -60,8 +60,8 @@ struct MixedDtypeOptions {
 
   float alpha = 1.0f;
   float beta = 0.0f;
-  int iterations = 1000;
-  int warmup = 1000;
+  int iterations = 100;
+  int warmup = 10;
   int mode = 1;
   int m = 5120, n = 4096, k = 4096;
   int g = 128;
@@ -228,22 +228,18 @@ bool initialize_scale(
   MixedDtypeOptions const& options,
   uint64_t seed = 2023) {
   
-  if (options.mode == MixedDtypeGemmMode::ConvertOnly) {
-    // No scales, so just initialize with 1 so we can use the same kernel to dequantize the data.
-    std::vector<Element> stage(block.size(), Element(1.0f));
-    block.copy_from_host(stage.data());
-  } 
-  else {
+  // If no scales, initialize with 1 so we can use the same kernel to dequantize the data
+  float scope_max = 1.0f, scope_min = 1.0f;
+  if (options.mode != MixedDtypeGemmMode::ConvertOnly) {
     float elt_max_f = float(cutlass::platform::numeric_limits<Element>::max());
     const float max_dequant_val = 4.f;
     const float min_dequant_val = 0.5f;
-
-    float scope_max(max_dequant_val / elt_max_f);
-    float scope_min(min_dequant_val / elt_max_f);
-
-    cutlass::reference::device::BlockFillRandomUniform(
-      block.get(), block.size(), seed, Element(scope_max), Element(scope_min));
+    scope_max = max_dequant_val / elt_max_f;
+    scope_min = min_dequant_val / elt_max_f;
   }
+  cutlass::reference::device::BlockFillRandomUniform(
+    block.get(), block.size(), seed, Element(scope_max), Element(scope_min));
+
   return true;
 }
 
@@ -253,139 +249,14 @@ bool initialize_zero(
   MixedDtypeOptions const& options,
   uint64_t seed = 2023) {
   
+  // If no bias, initialize with 0 so we can use the same kernel to dequantize the data
+  float scope_max = 0.0f, scope_min = 0.0f;
   if (options.mode == MixedDtypeGemmMode::ScaleWithZeroPoint) {
-    cutlass::reference::device::BlockFillRandomUniform(
-      block.get(), block.size(), seed, Element(2.0f), Element(-2.0f));
-  } else {
-    // No bias, so just initialize with 1 so we can use the same kernel to dequantize the data.
-    std::vector<Element> stage(block.size(), Element(0.0f));
-    block.copy_from_host(stage.data());
+    scope_max = 2.0f;
+    scope_min = -2.0f;
   }
+  cutlass::reference::device::BlockFillRandomUniform(
+    block.get(), block.size(), seed, Element(scope_max), Element(scope_min));
+
   return true;
-}
-
-/// Dequantize the weights for verification
-
-template <class QuantizedElement, 
-          class DequantizedElement,
-          class OperandLayout,
-          class ElementScale,
-          class ElementZero,
-          class ScaleBroadCastLayout,
-          class ThrLayout>
-__global__ void dequantize_weight_kernel(DequantizedElement* dq_buffer,
-                                         QuantizedElement const* q_buffer,
-                                         OperandLayout const operand_layout,
-                                         ElementScale const* scale_buffer,
-                                         ElementZero const* zero_buffer,
-                                         ScaleBroadCastLayout const broadcasted_scale_layout,
-                                         ThrLayout thr_layout) {
-  using namespace cute;
-
-  // Represent the full tensors to gmem elements. 
-  // These are expected to have shape [MN, K, L]
-  cute::Tensor gmem_op_dq = cute::make_tensor(cute::make_gmem_ptr(dq_buffer), operand_layout);
-  auto init_quantized_iterator = [&]() {
-    if constexpr (cute::sizeof_bits_v<QuantizedElement> >= 8) {
-      return cute::make_gmem_ptr(q_buffer);
-    } else {
-      return cute::subbyte_iterator<const QuantizedElement>(q_buffer);
-    }
-  };
-  cute::Tensor gmem_op_q  = cute::make_tensor(init_quantized_iterator(), operand_layout);
-  // While the scales are expected to have shape [MN, G, L] but with a stride to allow broadcasting
-  // It is expected that K % G == 0
-  cute::Tensor gmem_scale_broadcasted = cute::make_tensor(make_gmem_ptr(scale_buffer), broadcasted_scale_layout);
-  cute::Tensor gmem_zero_broadcasted = cute::make_tensor(make_gmem_ptr(zero_buffer), broadcasted_scale_layout);
-
-  // Assign 1 thread per element in the thread block
-  auto blk_shape = make_shape(size<0>(thr_layout), _1{}, _1{}); // 
-  auto blk_coord = make_coord(_, blockIdx.x, blockIdx.y);  // (MN, K, L)
-
-  // Tile across the block
-  auto gOp_dq = cute::local_tile(gmem_op_dq, blk_shape, blk_coord);
-  auto gScale = cute::local_tile(gmem_scale_broadcasted, blk_shape, blk_coord);
-  auto gZero  = cute::local_tile(gmem_zero_broadcasted,  blk_shape, blk_coord);
-  auto gOp_q  = cute::local_tile(gmem_op_q, blk_shape, blk_coord);
-  
-  auto tOpDq_gOpDq = cute::local_partition(gOp_dq, thr_layout, threadIdx.x);
-  auto tScale_gScale = cute::local_partition(gScale, thr_layout, threadIdx.x);
-  auto tZero_gZero = cute::local_partition(gZero, thr_layout, threadIdx.x);
-  auto tOpQ_gOpQ = cute::local_partition(gOp_q, thr_layout, threadIdx.x);
-
-  // Make a fragment of registers to hold gmem loads
-  cute::Tensor rmem_op_q = cute::make_fragment_like(tOpQ_gOpQ(_, _, _, 0));
-  cute::Tensor rmem_scale = cute::make_fragment_like(tScale_gScale(_, _, _, 0));
-  cute::Tensor rmem_zero = cute::make_fragment_like(tZero_gZero(_, _, _, 0));
-  cute::Tensor rmem_op_dq = cute::make_fragment_like(tOpDq_gOpDq(_, _, _, 0));
-  cute::Tensor rmem_op_scaled = cute::make_fragment_like<ElementScale>(rmem_op_dq);
-  cute::Tensor rmem_zero_buf = cute::make_fragment_like<ElementScale>(rmem_zero);
-
-  cute::Tensor pred_id = cute::make_identity_tensor(shape(operand_layout));
-  auto pred_blk_tile = cute::local_tile(pred_id, blk_shape, blk_coord);
-  auto pred_thr_partition = cute::local_partition(pred_blk_tile, thr_layout, threadIdx.x);
-
-  const auto num_iters = cute::size<3>(tOpDq_gOpDq);
-  
-  for (int ii = 0; ii < num_iters; ++ii) {
-    const auto thread_offset = cute::get<0>(pred_thr_partition(0, 0, 0, ii));
-    if (thread_offset < cute::size<0>(operand_layout)) {
-      cute::copy(tOpQ_gOpQ(_, _, _, ii), rmem_op_q);
-      cute::copy(tScale_gScale(_, _, _, ii), rmem_scale);
-      cute::copy(tZero_gZero(_, _, _, ii), rmem_zero);
-      cute::transform(rmem_op_q, rmem_op_scaled, [] (const QuantizedElement& elt) { return ElementScale(elt); } );
-      cute::transform(rmem_zero, rmem_zero_buf, [] (const ElementZero& elt) { return ElementScale(elt); } );
-      cute::transform(rmem_op_scaled, rmem_scale, rmem_op_scaled, multiplies{});
-      cute::transform(rmem_op_scaled, rmem_zero_buf, rmem_op_scaled, plus{});
-      cute::transform(rmem_op_scaled, rmem_op_dq, [] (const ElementScale& elt) { return DequantizedElement(elt); } );
-      cute::copy(rmem_op_dq, tOpDq_gOpDq(_, _, _, ii));
-    }
-  }
-}
-
-template <class QuantizedElement, 
-          class DequantizedElement,
-          class OperandLayout,
-          class ElementScale,
-          class ElementZero,
-          class ScaleLayout>
-void dequantize_weight(DequantizedElement* dq_buffer,
-                       QuantizedElement const* q_buffer,
-                       OperandLayout const operand_layout,
-                       ElementScale const* scale_buffer,
-                       ElementZero const* zero_buffer,
-                       ScaleLayout const scale_layout,
-                       int const group_size) {
-  
-  using namespace cute;
-
-  constexpr int tpb = 128;
-  auto thr_layout = make_layout(make_shape(Int<tpb>{}));
-
-  const auto num_rows = get<0>(shape(operand_layout));
-  const auto gemm_k = get<1>(shape(operand_layout));   // [MN, K, L]
-  const auto batches = get<2>(shape(operand_layout));  // [MN, K, L]
-  const auto scale_k = get<1>(shape(scale_layout));    // [MN, Scale_K, L]
-
-  if (num_rows != size<0>(scale_layout)) {
-    std::cerr << "Invalid first dimension for scales. Must match first dim for weights."
-              << " But got shapes " << shape(operand_layout) << " " << shape(scale_layout) 
-              << std::endl;
-    exit(-1);
-  }
-
-  const auto scale_stride0 = get<0>(stride(scale_layout));
-  const auto scale_stride1 = get<1>(stride(scale_layout));
-  const auto scale_stride2 = get<2>(stride(scale_layout));
-
-  auto scale_shape_bcast = make_shape(num_rows, make_shape(group_size, scale_k), batches);
-  auto scale_stride_bcast = make_stride(scale_stride0, make_stride(0, scale_stride1), scale_stride2);
-  auto scale_layout_bcast = make_layout(scale_shape_bcast, scale_stride_bcast);
-
-  const auto blocks_x = gemm_k;
-  const auto blocks_y = batches;
-
-  dim3 blocks(blocks_x, blocks_y, 1);
-  dequantize_weight_kernel<<<blocks, tpb>>>(dq_buffer, q_buffer, operand_layout, scale_buffer, zero_buffer, scale_layout_bcast, thr_layout);
-  CUDA_CHECK(cudaDeviceSynchronize());
 }

@@ -275,6 +275,189 @@ private:
   }
 };
 
+////////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// TMA (producer) Transform (consumer) Async Pipeline
+//
+///////////////////////////////////////////////////////////////////////////////////////////////////
+template <
+  int Stages_,
+  class AtomThrShape_MNK_ = Shape<_1,_1,_1>
+>
+class PipelineTmaTransformAsync {
+public:
+  static constexpr uint32_t Stages = Stages_;
+  using AtomThrShape_MNK = AtomThrShape_MNK_;
+private:
+  using Impl = PipelineTmaAsync<Stages>;
+public:
+  using FullBarrier  = typename Impl::FullBarrier;
+  using EmptyBarrier = typename Impl::EmptyBarrier;
+  using ProducerBarrierType = typename Impl::ProducerBarrierType;
+  using ConsumerBarrierType = typename Impl::ConsumerBarrierType;
+  using PipelineState = typename Impl::PipelineState;
+  using SharedStorage = typename Impl::SharedStorage;
+  using ThreadCategory = typename Impl::ThreadCategory;
+  using Params = typename Impl::Params;
+
+  // Constructor
+  template <class ClusterShape, class InitBarriers = cute::true_type, class InitMasks = cute::true_type>
+  CUTLASS_DEVICE
+  PipelineTmaTransformAsync(SharedStorage& storage, Params params, ClusterShape cluster_shape, InitBarriers = {}, InitMasks = {})
+      : impl_(storage, params, cluster_shape, cute::false_type{}, cute::false_type{})
+      , params_(params)
+      , full_barrier_ptr_(&storage.full_barrier_[0])
+      , empty_barrier_ptr_(&storage.empty_barrier_[0]) {
+
+    static_assert(cute::is_same_v<InitBarriers, cute::true_type> || cute::is_same_v<InitBarriers, cute::false_type>);
+    if constexpr (cute::is_same_v<InitBarriers, cute::true_type>) {
+      init_barriers(storage, params_, cluster_shape);
+    }
+
+    static_assert(cute::is_same_v<InitMasks, cute::true_type> || cute::is_same_v<InitMasks, cute::false_type>);
+    if constexpr (cute::is_same_v<InitMasks, cute::true_type>) {
+      init_masks(cluster_shape);
+    }
+  }
+
+  // Helper function to initialize barriers
+  template <class ClusterShape>
+  static
+  CUTLASS_DEVICE
+  void
+  init_barriers(SharedStorage& storage, Params params, ClusterShape cluster_shape) {
+    int warp_idx = canonical_warp_idx_sync();
+    if (warp_idx == params.initializing_warp) {
+      // Barrier FULL and EMPTY init
+      constexpr int producer_arv_cnt = 1;
+      auto atom_thr_shape = AtomThrShape_MNK{};
+      static constexpr bool IsDynamicCluster = not cute::is_static_v<ClusterShape>;
+      static_assert(IsDynamicCluster or ((cute::size<0>(cluster_shape) % cute::size<0>(atom_thr_shape) == 0) &&
+                    (cute::size<1>(cluster_shape) % cute::size<1>(atom_thr_shape) == 0)));
+      uint32_t const multicast_consumer_arrival_count = (cute::size<0>(cluster_shape) / cute::size<0>(atom_thr_shape)) +
+                                     (cute::size<1>(cluster_shape) / cute::size<1>(atom_thr_shape)) - 1;
+
+      cutlass::arch::detail::initialize_barrier_array_pair_aligned<decltype(storage.full_barrier_), decltype(storage.empty_barrier_), Stages>(
+          storage.full_barrier_, storage.empty_barrier_, producer_arv_cnt, multicast_consumer_arrival_count);
+    }
+    cutlass::arch::fence_barrier_init();
+  }
+
+  template <class ClusterShape>
+  CUTLASS_DEVICE
+  void init_masks(ClusterShape cluster_shape, dim3 block_id_in_cluster = cute::block_id_in_cluster()) {
+    // Calculate consumer mask
+    if (params_.role == ThreadCategory::Consumer) {
+      // Logic to optimally schedule Empty Arrives
+      // Goal : To divide SYNCS Empty Arrival duty equally amongst the Warp-Group (128 threads)
+      int warp_idx = canonical_warp_idx_sync();
+      int thread_idx = threadIdx.x;
+      auto cluster_size = cute::size(cluster_shape);
+
+      // STEP 1 : Use Cute Layout function to generate an optimal dst block-id (0-15)
+      if (params_.num_consumers % NumThreadsPerWarpGroup == 0) {
+        auto [is_signaling_thread, dst_blockid] = detail::spread_arrivals_to_warpgroup(thread_idx % NumThreadsPerWarpGroup, warp_idx);
+        is_signaling_thread_ = is_signaling_thread;
+        dst_blockid_ = dst_blockid;
+      }
+      else if (params_.num_consumers == 32) {
+        auto [is_signaling_thread, dst_blockid] = detail::spread_arrivals_to_warp(thread_idx % 32);
+        is_signaling_thread_ = is_signaling_thread;
+        dst_blockid_ = dst_blockid;
+      }
+      else {
+        is_signaling_thread_ = 0;
+        #ifndef NDEBUG
+          asm volatile ("brkpt;\n" ::);
+        #endif
+      }
+
+      // STEP 2: Find if this dst block-id needs an arrival for this problem
+      is_signaling_thread_ &= dst_blockid_ < cluster_size;
+      is_signaling_thread_ &= is_same_row_or_col(dst_blockid_, block_id_in_cluster, cluster_shape);
+    }
+  }
+
+  template <class ClusterShape>
+  CUTLASS_DEVICE
+  bool is_same_row_or_col(int dst_block_id, dim3 block_id, ClusterShape cluster_shape) {
+    return (((dst_block_id % cute::size<0>(cluster_shape)) == block_id.x) ||
+            (
+              ((dst_block_id / cute::size<0>(cluster_shape)) == block_id.y)
+              // If we are in the same cluster column and using 2CTA MMA, only odd or only even CTAs sync with each other
+                 && ((dst_block_id % cute::size<0>(cluster_shape)) % cute::size<0>(AtomThrShape_MNK{}) ==
+                      block_id.x % cute::size<0>(AtomThrShape_MNK{}))
+            ));
+  }
+
+  ////////////////////
+  // Producer APIs
+  ////////////////////
+  CUTLASS_DEVICE
+  ProducerToken producer_try_acquire(PipelineState state, uint32_t skip_wait = false) {
+    return impl_.producer_try_acquire(state, skip_wait);
+  }
+
+  CUTLASS_DEVICE
+  void producer_acquire(PipelineState state, ProducerToken barrier_token = {BarrierStatus::WaitAgain}) {
+    impl_.producer_acquire(state, barrier_token);
+  }
+
+  CUTLASS_DEVICE
+  void producer_commit(PipelineState state, uint32_t bytes) {
+    impl_.producer_commit(state, bytes);
+  }
+
+  // Prevents early exit of producer blocks in Cluster.
+  // This should be called once before kernel exits.
+  CUTLASS_DEVICE
+  void producer_tail(PipelineState state) {
+    impl_.producer_tail(state);
+  }
+
+  CUTLASS_DEVICE
+  ProducerBarrierType* producer_get_barrier(PipelineState state) {
+    return impl_.producer_get_barrier(state);
+  }
+
+  ////////////////////
+  // Consumer APIs
+  ////////////////////
+  CUTLASS_DEVICE
+  ConsumerToken consumer_try_wait(PipelineState state, uint32_t skip_wait = false) {
+    return impl_.consumer_try_wait(state, skip_wait);
+  }
+
+  CUTLASS_DEVICE
+  ConsumerToken consumer_test_wait(PipelineState state, uint32_t skip_wait = false) {
+    return impl_.consumer_test_wait(state, skip_wait);
+  }
+
+  CUTLASS_DEVICE
+  void consumer_wait(PipelineState state) {
+    impl_.consumer_wait(state);
+  }
+
+  CUTLASS_DEVICE
+  void consumer_wait(PipelineState state, ConsumerToken barrier_token) {
+    impl_.consumer_wait(state, barrier_token);
+  }
+
+  CUTLASS_DEVICE
+  void consumer_release(PipelineState state, uint32_t skip = false) {
+    detail::pipeline_check_is_consumer(params_.role);
+    empty_barrier_ptr_[state.index()].arrive(dst_blockid_, is_signaling_thread_ & (!skip));
+  }
+
+private:
+  Impl impl_;
+  uint32_t dst_blockid_ = 0;
+  uint32_t is_signaling_thread_ = 0;
+  FullBarrier *full_barrier_ptr_ = nullptr;
+  EmptyBarrier *empty_barrier_ptr_ = nullptr;
+  Params params_;
+};
+
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 //
@@ -391,7 +574,6 @@ public:
     }
   }
 
-  // !!!!!! I DONT LIKE THIS MCAST BASED CONSTRUCTOR SPECIALIZATION. THIS VARIABLE NEVER CHANGES AT RUNTIME.
   template<typename InitBarriers = cute::true_type, typename InitMasks = cute::true_type>
   CUTLASS_DEVICE
   PipelineTmaUmmaAsync(SharedStorage& storage, Params params, ClusterShape cluster_shape, McastDirection mcast_direction, InitBarriers = {}, InitMasks = {})
