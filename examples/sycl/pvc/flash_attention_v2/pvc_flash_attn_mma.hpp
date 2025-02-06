@@ -140,7 +140,7 @@ struct CollectiveMmaAttention<
   using PrefetchQTileSize = decltype(ceil_div(Shape<Int<SG_M>, Int<SG_K>>{},PrefetchQThrShape{})); //16x32
   using PrefetchKTileSize = decltype(ceil_div(Shape<Int<SG_K>, Int<SG_N>>{},PrefetchKThrShape{})); //8x32
   using PrefetchVTileSize = decltype(ceil_div(Shape<Int<SG_K>, Int<SG_N>>{},PrefetchVThrShape{})); // 8x32
-  
+  static constexpr bool is_k_transposed = cute::detail::is_transpose_load<GmemTiledCopyK_>;
   static constexpr uint32_t MaxThreadsPerBlock = size(TiledMma{});
   using traits_load_Q = Copy_Traits<GmemTiledCopyQ, StrideQ>;
   using atom_load_Q = Copy_Atom<traits_load_Q, ElementQ>;
@@ -159,9 +159,10 @@ struct CollectiveMmaAttention<
                                             .with(make_tensor(make_gmem_ptr(static_cast<ElementV const*>(nullptr)), make_layout(make_shape(0, 0, 0), StrideV{}))),
                                             Layout<Shape<_1, Int<SubgroupSize>>>{}));
 
-  using XE_Prefetch_Q = decltype(cute::detail::prefetch_selector<PrefetchQTileSize, ElementQ>());
-  using XE_Prefetch_K = decltype(cute::detail::prefetch_selector<PrefetchKTileSize, ElementK>());
-  using XE_Prefetch_V = decltype(cute::detail::prefetch_selector<PrefetchVTileSize, ElementV>());
+// The prefetch copy is different from the main copy here we use the subgroup collectively to load the data
+  using XE_Prefetch_Q = decltype(cute::detail::prefetch_selector<PrefetchQTileSize, ElementQ, StrideQ, SubgroupSize>(make_tensor(make_gmem_ptr(static_cast<ElementQ const*>(nullptr)), make_layout(make_shape(0, 0, 0), StrideQ{}))));
+  using XE_Prefetch_K = decltype(cute::detail::prefetch_selector<PrefetchKTileSize, ElementK, StrideK, SubgroupSize>(make_tensor(make_gmem_ptr(static_cast<ElementK const*>(nullptr)), make_layout(make_shape(0, 0, 0), StrideK{}))));
+  using XE_Prefetch_V = decltype(cute::detail::prefetch_selector<PrefetchVTileSize, ElementV, StrideV, SubgroupSize>(make_tensor(make_gmem_ptr(static_cast<ElementV const*>(nullptr)), make_layout(make_shape(0, 0, 0), StrideV{})))); 
 
   // Host side kernel arguments
   struct Arguments {
@@ -196,19 +197,20 @@ struct CollectiveMmaAttention<
 
     auto [batch, num_heads, seq_len, head_size] = problem_shape;
 
-    XE_Copy_Q copyQ = make_xe_2d_copy(Copy_Atom<Copy_Traits<GmemTiledCopyQ, StrideQ>, ElementQ>{}.with(
-      make_tensor(make_gmem_ptr(static_cast<ElementQ const*>(args.ptr_Q)), make_layout(make_shape(seq_len, head_size, batch * num_heads), args.dQ))),
-                                      Layout<Shape<_1, Int<SubgroupSize>>>{});
-    XE_Copy_K copyK = make_xe_2d_copy(Copy_Atom<Copy_Traits<GmemTiledCopyK, StrideK>, ElementK>{}.with(
-      make_tensor(make_gmem_ptr(static_cast<ElementK const*>(args.ptr_K)), make_layout(make_shape(seq_len, head_size, batch * num_heads), args.dK))),
-                                      Layout<Shape<_1, Int<SubgroupSize>>>{});
-    XE_Copy_V copyV = make_xe_2d_copy(Copy_Atom<Copy_Traits<GmemTiledCopyV, StrideV>, ElementV>{}.with(
-      make_tensor(make_gmem_ptr(static_cast<ElementV const*>(args.ptr_V)), make_layout(make_shape(head_size, seq_len, batch * num_heads), args.dV))),
-                                      Layout<Shape<_1, Int<SubgroupSize>>>{});
+    auto tensorQ = make_tensor(make_gmem_ptr(static_cast<ElementQ const*>(args.ptr_Q)), make_layout(make_shape(seq_len, head_size, batch * num_heads), args.dQ));
+    auto tensorK = make_tensor(make_gmem_ptr(static_cast<ElementK const*>(args.ptr_K)), make_layout(make_shape(seq_len, head_size, batch * num_heads), args.dK));
+    auto tensorV = make_tensor(make_gmem_ptr(static_cast<ElementV const*>(args.ptr_V)), make_layout(make_shape(head_size, seq_len, batch * num_heads), args.dV));
 
-    XE_Prefetch_Q prefetchQ = cute::detail::prefetch_selector<PrefetchQTileSize, ElementQ>((void *)args.ptr_Q, head_size, seq_len, head_size);
-    XE_Prefetch_K prefetchK = cute::detail::prefetch_selector<PrefetchKTileSize, ElementK>((void *)args.ptr_K, seq_len, head_size, seq_len);
-    XE_Prefetch_V prefetchV = cute::detail::prefetch_selector<PrefetchVTileSize, ElementV>((void *)args.ptr_V, head_size, seq_len, head_size);
+    XE_Copy_Q copyQ = make_xe_2d_copy(Copy_Atom<Copy_Traits<GmemTiledCopyQ, StrideQ>, ElementQ>{}.with(tensorQ),
+                                      Layout<Shape<_1, Int<SubgroupSize>>>{});
+    XE_Copy_K copyK = make_xe_2d_copy(Copy_Atom<Copy_Traits<GmemTiledCopyK, StrideK>, ElementK>{}.with(tensorK),
+                                      Layout<Shape<_1, Int<SubgroupSize>>>{});
+    XE_Copy_V copyV = make_xe_2d_copy(Copy_Atom<Copy_Traits<GmemTiledCopyV, StrideV>, ElementV>{}.with(tensorV),
+                                      Layout<Shape<_1, Int<SubgroupSize>>>{});
+    
+    XE_Prefetch_Q prefetchQ {tensorQ};
+    XE_Prefetch_K prefetchK {tensorK};
+    XE_Prefetch_V prefetchV {tensorV};
     return Params{copyQ, copyK, copyV, prefetchQ, prefetchK, prefetchV};
   }
 
@@ -271,7 +273,6 @@ struct CollectiveMmaAttention<
     //
     // Mainloop
     //
-    int sub_group_id = get_sub_group_id();
     auto [m_coord, n_coord, k_coord, l_coord] = tile_coord;
     Tensor iter_2d_a = params.gmem_tiled_copy_q.get_pvc_tensor(
       make_coord(m_coord, 0, l_coord), tCrA_copy_view.shape());
@@ -339,7 +340,6 @@ struct CollectiveMmaAttention<
     //
     // Mainloop
     //
-    int sub_group_id = get_sub_group_id();
     auto [m_coord, n_coord, k_coord, l_coord] = tile_coord;
 
     Tensor iter_2d_b = params.gmem_tiled_copy_v.get_pvc_tensor(

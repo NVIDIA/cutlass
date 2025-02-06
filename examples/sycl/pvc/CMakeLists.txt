@@ -1,4 +1,4 @@
-# Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
+# Copyright (c) 2024 - 2025 Codeplay Software Ltd. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -63,3 +63,8 @@ cutlass_example_add_executable(
 )
 
 add_subdirectory(flash_attention_v2)
+
+cutlass_example_add_executable(
+  pvc_gemm_mixed_dtype
+  pvc_gemm_mixed_dtype.cpp
+)

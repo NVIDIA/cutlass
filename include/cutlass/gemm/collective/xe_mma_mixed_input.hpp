@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
+ * Copyright (c) 2025 - 2025 Codeplay Software Ltd. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -61,7 +61,7 @@ template <
   class SmemCopyAtomB_,
   class TransformB_>
 struct CollectiveMma<
-    MainloopIntelPVC<Stages>,
+    MainloopIntelPVCMixedPrecision<Stages>,
     TileShape_,
     ElementA_,
     StrideA_,
@@ -80,7 +80,7 @@ struct CollectiveMma<
   //
   // Type Aliases
   //
-  using DispatchPolicy = MainloopIntelPVC<Stages>;
+  using DispatchPolicy = MainloopIntelPVCMixedPrecision<Stages>;
   using WorkgroupTileShape = TileShape_;
   using ElementA = ElementA_;
   using StrideA = StrideA_;
@@ -99,8 +99,8 @@ struct CollectiveMma<
   using ArchTag = typename DispatchPolicy::ArchTag;
 
   static_assert(
-      platform::is_same<ElementA, ElementB>::value,
-      "MainloopIntelPVC requires that A and B have same type.");
+      sizeof(ElementA) < sizeof(ElementB),
+      "MainloopIntelPVCMixedPrecision requires that A is narrower than B.");
 
   static constexpr int SubgroupSize = DispatchPolicy::SubgroupSize;
 
@@ -130,7 +130,6 @@ struct CollectiveMma<
   using PrefetchBTileSize = decltype(ceil_div(Shape<Int<SG_K>, Int<SG_N>>{},PrefetchBThrShape{}));
   
   static constexpr uint32_t MaxThreadsPerBlock = size(TiledMma{});
-
   using traits_load_A = Copy_Traits<GmemTiledCopyA, StrideA>;
   using atom_load_A = Copy_Atom<traits_load_A, ElementA>;
 
@@ -176,6 +175,55 @@ struct CollectiveMma<
                               make_layout(make_shape(N, K, L), args.dB));
 
     return Params{mA_mkl, mB_nkl};
+  }
+
+  // Helper functions to select packing for conversion
+  template <class SrcType,
+            class DstType,
+            int Cosize>
+  struct select_packing { // Naive packing policy
+    static constexpr auto value() {
+      return Int<cute::gcd(Cosize, 32 / cute::min(sizeof_bits_v<SrcType>, sizeof_bits_v<DstType>))>{};
+    }
+  };
+
+  /// Utilities to transform A.
+  template <class EngineIn,
+            class EngineOut, 
+            class LayoutIn,
+            class LayoutOut,
+            class... Ts>
+  CUTLASS_DEVICE
+  void transform_A(
+    Tensor<EngineIn, LayoutIn> const& tCrA_load, 
+    Tensor<EngineOut, LayoutOut>& tCrA_mma) {
+
+    static_assert(is_rmem<EngineIn>::value, "Input tensor for A conversion must come from registers");
+    static_assert(is_rmem<EngineOut>::value, "Output tensor for A conversion must come from registers");
+    static_assert(cosize_v<LayoutIn> == cosize_v<LayoutOut>);
+    static_assert(size_v<LayoutIn> == cosize_v<LayoutIn>);
+    static_assert(size_v<LayoutOut> == cosize_v<LayoutOut>);
+    using SrcType = typename EngineIn::value_type;
+    using DstType = typename EngineOut::value_type;
+
+    auto const& src = tCrA_load(_, _, _);
+    auto const& dst = tCrA_mma(_, _, _);
+    auto pSrc = raw_pointer_cast(src.data());
+    auto pDst = const_cast<DstType*>(raw_pointer_cast(dst.data()));
+    constexpr int num_elements = decltype(size(src))::value;
+
+    constexpr int pack = decltype(select_packing<SrcType, DstType, num_elements>::value())::value;
+    using Converter = cutlass::NumericArrayConverter<DstType, SrcType, pack, cutlass::FloatRoundStyle::round_to_nearest>;
+    using SrcArray = cutlass::Array<SrcType, pack>;
+    using DstArray = cutlass::Array<DstType, pack>;
+    constexpr int iters = num_elements / pack;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < iters; ++i) {
+      SrcArray const* pSrcArr = reinterpret_cast<SrcArray const*>(pSrc) + i;
+      DstArray* pDstArr = reinterpret_cast<DstArray*>(pDst) + i;
+      *pDstArr = Converter::convert(*pSrcArr);
+    }
   }
 
   /// Perform a subgroup-scoped matrix multiply-accumulate
@@ -227,15 +275,19 @@ struct CollectiveMma<
     // Partition fragment
     Tensor fragment_A = thr_mma.partition_fragment_A(gA(_, _, 0));
     Tensor fragment_B = thr_mma.partition_fragment_B(gB(_, _, 0));
+    // narrow input fragment
+    Tensor tCrA_input = make_tensor<ElementA>(fragment_A.shape());
+
+    static_assert(std::is_same_v<typename decltype(tCrA_input)::value_type, ElementA>);
+    static_assert(std::is_same_v<typename decltype(fragment_A)::value_type, ElementB>);
 
     // Retile for copy
-    Tensor copy_tCrA = thr_copy_A.retile_D(fragment_A);
+    auto copy_tCrA = thr_copy_A.retile_D(tCrA_input);
     Tensor copy_tCrB = thr_copy_B.retile_D(fragment_B);
 
     // Retile for cute::gemm
     Tensor mma_tCrA = thr_copy_A.retile_MMA(thr_mma, fragment_A);
     Tensor mma_tCrB = thr_copy_B.retile_MMA(thr_mma, fragment_B);
-
 
   #if CUTLASS_ENABLE_DEBUG_PRINTS
     if (cutlass::thread(LOG_THREAD, LOG_GROUP)) {
@@ -258,7 +310,7 @@ struct CollectiveMma<
         print(" PrefetchATileSize :    ");print(PrefetchATileSize{});print("\n");
         print(" PrefetchBTileSize :    ");print(PrefetchBTileSize{});print("\n");
       }
- #endif
+  #endif
 
     //
     // Mainloop
@@ -272,7 +324,6 @@ struct CollectiveMma<
     const int n_coord = n_idx * BLK_N + (get_sub_group_id() % ATOM_N) * SG_N;
   #endif
     const int l_coord = l_idx;
-
     Tensor block2d_copy_iter_a = tiled_copy_a.get_pvc_tensor(make_coord(m_coord, 0, l_coord), copy_tCrA.shape());
     auto copy_iter_a = append_pvc_tensor<1>(block2d_copy_iter_a, k_tile_count, BLK_K);
 
@@ -311,7 +362,7 @@ struct CollectiveMma<
       // Copy gmem to rmem for the first k_tile
       copy(tiled_copy_a, copy_iter_a(_,_,_,k), copy_tCrA);
       copy(tiled_copy_b, copy_iter_b(_,_,_,k), copy_tCrB);
-
+      transform_A(tCrA_input, mma_tCrA);
       if(prefetch_k < k_tile_count) {
         if constexpr(cute::detail::has_prefetch<GmemTiledCopyA>) {
           prefetch(tiled_copy_a, prefetch_iter_a(_,_,_,prefetch_k));
@@ -325,6 +376,7 @@ struct CollectiveMma<
     }
   }
 };
+
 
 } // namespace cutlass::gemm::collective
 

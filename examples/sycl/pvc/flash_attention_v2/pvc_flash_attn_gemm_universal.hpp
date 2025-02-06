@@ -114,7 +114,6 @@ public:
   using ElementO = typename CollectiveEpilogue::ElementO;
   using StrideO  = typename CollectiveEpilogue::StrideO;
   using ElementLSE = typename CollectiveEpilogue::ElementLSE;
-  using StrideLSE  = typename CollectiveEpilogue::StrideLSE;
   using EpilogueArguments = typename CollectiveEpilogue::Arguments;
   using EpilogueParams = typename CollectiveEpilogue::Params;
   static_assert(cute::is_same_v<ElementAccumulator, typename CollectiveEpilogue::ElementAccumulator>,
@@ -144,6 +143,7 @@ public:
   static constexpr int Vec = (get<0>(MmaAtomShape()) * get<1>(MmaAtomShape())) / SubgroupSize; //8
   static constexpr int FragsM = get<0>(SubgroupTileShape{}) / get<0>(MmaAtomShape());  // 4
   static constexpr int FragsN = get<1>(SubgroupTileShape{}) / get<1>(MmaAtomShape());  // 2
+  static_assert(FragsM % 4 == 0, "For better Softmax EXP scheduling operation SubgroupTileShape for M / MmaAtomShape for M must be multipe of 4." );
 
   // Kernel level shared memory storage
   struct SharedStorage {
@@ -294,66 +294,60 @@ public:
     const int item_id = thread_idx % SubgroupSize;
     const int k_tile_count= head_size / get<1>(subgroup_shape); 
     //m, k
-    Tensor prefetch_iter_2d_a = params.mainloop.gmem_prefetch_q.get_pvc_tensor(
-      make_coord(seq_coord + (((sub_group_id % ATOM_N) / get<1>(PrefetchQThrShape{}))* get<0>(PrefetchQTileSize{})),   // iteration 0/M/Hight/vertical
+    Tensor prefetch_iter_2d_q = params.mainloop.gmem_prefetch_q.get_pvc_tensor(
+      // subgroup arranged 8x1 to load 128x32 in one load (each 16X32)
+      make_coord(BlockIdxY() * BLK_M + (sub_group_id * get<0>(PrefetchQTileSize{})),   // iteration 0/M/Hight/vertical
                 0, // Iteration 1/K/Width/Horisontal
                 blk_l_coord),
             make_shape(_1{}, _1{}, _1{}));
-    Tensor prefetch_iter_a = append_pvc_tensor<1>(prefetch_iter_2d_a, k_tile_count, BLK_K);
-      // append<4>(make_shape(_1{}, _1{}, _1{}), k_tile_count),
-      // append<3>(make_shape(_, _), BLK_K), seq<0, 0, 1>{});
+    Tensor prefetch_iter_q = append_pvc_tensor<1>(prefetch_iter_2d_q, k_tile_count, BLK_K);
     // The Key point is 1 is horisontal and zero is vertical
     // the iteration over K dimention of B matrix (head_size) should be :
     auto iter_over_head_count = head_size / BLK_N;
-    // k, n
-    Tensor prefetch_iter_b = params.mainloop.gmem_prefetch_k.get_pvc_tensor(
-         make_coord(sub_group_id * get<0>(PrefetchKTileSize{}),            // iteration 0/K/Hight/vertical
-                    0, //  iteration 1/N/W/Horisontal
-                    blk_l_coord),                                          // batch
-         // ?, ?, k, N swap k and n here to match cutlass
-         append<4>(make_shape(_1{}, _1{}, nblock_limit/*This is N*/), iter_over_head_count/* This is K*/), //(frag, iter_m, iter_n, iter_k)
-         // K, ?, N (The N should move along the N as get<0>(PrefetchKThrShape) load 32 each and we want 128 of N )
-         // The K should move along the dimmension of Block load as we lay 8x32 using the 8x1  shape for subgroups
-         // leading to load 64x32 of (K,N) per each prefetch (BLOCK_N SHows K DIM)
-         append<3>(make_shape(_, SG_N), BLK_N), seq<0, 1, 0>{}); // so 64 * iteration 0 (SG_N that is K which is vertical) and 32 * iteration 1 (N which is horisontal)
+    // subgroup arranged 8x1 to load (64x32) in one load(each 8x32)
+    // Assume LD_T/LD_N will indicate ColumnMajor and RowMajor
+    auto k_prefetch_coordinate =
+        CollectiveMainloop::is_k_transposed ? make_coord((sub_group_id % ATOM_M) * get<0>(PrefetchKTileSize{}), // iteration 0/N/Hight/vertical
+                                                         (sub_group_id / ATOM_M) * get<1>(PrefetchKTileSize{}), //  iteration 1/K//Horisontal
+                                                         blk_l_coord)
+                                            : make_coord(sub_group_id * get<0>(PrefetchKTileSize{}), // iteration 0/K/Hight/vertical
+                                                         0,                                          //  iteration 1/N/W/Horisontal
+                                                         blk_l_coord);
+      // To load the 64x32
+      Tensor prefetch_iter_k_base = params.mainloop.gmem_prefetch_k.get_pvc_tensor(k_prefetch_coordinate, make_shape(_1{}, _1{}, _1{}));
+      // Adding iterator for the dimention N(sequence length) along 0 /Vertical
+      Tensor prefetch_iter_ndim = append_pvc_tensor< CollectiveMainloop::is_k_transposed? 0 : 1>(prefetch_iter_k_base, nblock_limit, SG_N);
+      // Adding iterator for  the dimension K (head size) along /Horizontal
+      Tensor prefetch_iter_k = append_pvc_tensor< CollectiveMainloop::is_k_transposed ? 1 : 0>(prefetch_iter_ndim, iter_over_head_count, BLK_N);
 
-      // V is a transposed matrix, So here the Sequense length is consumed, it is transposed so the consumed dimension looks like B matrix
-      // Hence, the Head size is the fast moving dimention and horisontal and sequence length is vertical.
-     // The prefetch only move along the sequence lenth. Here we call sequence length K since it get consumed and head size N since it stay
-
+    // V is a transposed matrix, So here the Sequense length is consumed, it is transposed so the consumed dimension looks like B matrix
+    // Hence, the Head size is the fast moving dimention and horisontal and sequence length is vertical.
+    // The prefetch only move along the sequence lenth. Here we call sequence length K since it get consumed and head size N since it stay
+    // subgroup arranged 4x2 to load (32x64) in one load(each 8x32)
     Tensor prefetch_iter_2d_v = params.mainloop.gmem_prefetch_v.get_pvc_tensor(
          make_coord((sub_group_id / ATOM_N) * get<0>(PrefetchVTileSize{}), // iteration 0/K/Hight/vertical/ sequence lengh
                     head_size_coord,         //  iteration 1/N/W/Horisontal / Head size
                     blk_l_coord),
           // We loop over the consuming dimension which is the iteration 0(N) here 
          make_shape(_1{}, _1{}, _1{}));
-        //  , nblock_limit),
          // first one is to use the intrinsic along the vertical , Second one is N/M  and third one is K
-        //  append<3>(make_shape(_, _), BLK_K), seq<0, 1, 0>{});
     Tensor prefetch_iter_v = append_pvc_tensor<0>(prefetch_iter_2d_v, nblock_limit, BLK_K);
-
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < k_tile_count; i++) {
-      if constexpr (cute::detail::has_prefetch<typename CollectiveMainloop::GmemTiledCopyQ>) {
-        prefetch(params.mainloop.gmem_tiled_copy_q, prefetch_iter_a(_, _, _, i));
-      }
+        prefetch(params.mainloop.gmem_prefetch_q, prefetch_iter_q(_, _, _, i));
     }
     auto Prefetch_per_workgroup = cute::min(nblock_limit, DispatchPolicy::Stages);
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < Prefetch_per_workgroup; i++) {
       CUTLASS_PRAGMA_UNROLL
       for (int j = 0; j < iter_over_head_count; j++) {
-        if constexpr (cute::detail::has_prefetch<typename CollectiveMainloop::GmemTiledCopyK>) {
-          prefetch(params.mainloop.gmem_tiled_copy_k, prefetch_iter_b(_, _, i, j));
-        }
+          prefetch(params.mainloop.gmem_prefetch_k, prefetch_iter_k(_, _, _, i, j));
       }
     }
 
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < Prefetch_per_workgroup; i++) {
-      if constexpr(cute::detail::has_prefetch<typename CollectiveMainloop::GmemTiledCopyK>) {
-        prefetch(params.mainloop.gmem_tiled_copy_v, prefetch_iter_v(_, _, _, i));
-      }
+        prefetch(params.mainloop.gmem_prefetch_v, prefetch_iter_v(_, _, _, i));
     }
 
     // Allocate the tiled_mma and the accumulators for the (M,N) subgroup_shape
@@ -431,17 +425,15 @@ public:
       if(nblock + Prefetch_per_workgroup < nblock_limit ) {
         CUTLASS_PRAGMA_UNROLL
         for (int j = 0; j < iter_over_head_count; j++) {
-          if constexpr(cute::detail::has_prefetch<typename CollectiveMainloop::GmemTiledCopyK>)
-            prefetch(params.mainloop.gmem_tiled_copy_k, prefetch_iter_b(_,_,nblock + Prefetch_per_workgroup, j));
+            prefetch(params.mainloop.gmem_prefetch_k, prefetch_iter_k(_, _, _, nblock + Prefetch_per_workgroup, j));
         }
-        prefetch(params.mainloop.gmem_tiled_copy_v, prefetch_iter_v(_,_,_,nblock + Prefetch_per_workgroup));
+        prefetch(params.mainloop.gmem_prefetch_v, prefetch_iter_v(_,_,_,nblock + Prefetch_per_workgroup));
       }
       barrier_wait(barrier_scope);
     }
 
     // Reduce the sum of exponents across the subgroup before scaling/normalizing output
-    flash::SumOp<ElementAccumulator> op;
-    flash::Softmax<ElementAccumulator>::template subgroup_allreduce<Vec, FragsM, FragsN>(sum_reg, op);
+    flash::Softmax<ElementAccumulator>::template subgroup_allreduce<Vec, FragsM, FragsN>(sum_reg, sycl::plus<>());
 
     CollectiveEpilogue epilogue{params.epilogue, shared_storage.epilogue};
 

@@ -165,9 +165,12 @@ template <
       static_assert(is_static<TileShape_MNK>::value);
       static_assert(cute::is_same_v<ElementC, float>, "ElementC needs to be float for the Intel pipeline");
       
-      using TiledMma = TiledMMA<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
-              Layout<Shape<_1,_1,_1>>,
-              Tile<_32,_64,_32>>;  // Subgroup level-tile
+      // Note, this must match the TiledMma definition in the GEMM builder
+      using TiledMma =
+          TiledMMA<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
+                   Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>,
+                   Tile<Layout<Shape<_8, _8, _4>, Stride<_1, _32, _8>>,
+                        Layout<Shape<_16, _4, _4>, Stride<_1, _64, _16>>, _32>>;
       
       using DispatchPolicy = cutlass::epilogue::IntelPVCEpilogue;
       using CopyOpG2R = XE_2D_U32x8x16_LD_N;

@@ -56,5 +56,7 @@ bool initialize_block(
 
   cutlass::reference::device::BlockFillRandomUniform(
        block.get(), block.size(), seed, scope_max, scope_min, 0);
+
+  syclcompat::wait();
   return true;
 }

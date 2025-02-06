@@ -84,10 +84,12 @@ struct CollectiveBuilder<
       static_assert(cute::is_same_v<ElementAccumulator, float>, "Intel multi-stage pipeline requires ElementC to be of type float");
 
       //Prepare Template arguments required of CollectiveMainLoop
-      
-      using TiledMma = TiledMMA<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
-          Layout<Shape<_8,_4,_1>>,
-          Tile<_64,_64,_32>>;
+
+      using TiledMma =
+          TiledMMA<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
+                   Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>,
+                   Tile<Layout<Shape<_8, _8, _4>, Stride<_1, _32, _8>>,
+                        Layout<Shape<_16, _4, _4>, Stride<_1, _64, _16>>, _32>>;
       
       static constexpr int PipelineStages = 3;
       using DispatchPolicy = cutlass::gemm::MainloopIntelPVC<PipelineStages>;

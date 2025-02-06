@@ -94,21 +94,22 @@ void FilterArchitecture() {
 
   // We might be adding PVC unit tests someday
   std::map<architecture, int> arch_map {
-      {architecture::nvidia_gpu_sm_50, 50},
-      {architecture::nvidia_gpu_sm_52, 52},
-      {architecture::nvidia_gpu_sm_53, 53},
-      {architecture::nvidia_gpu_sm_60, 60},
-      {architecture::nvidia_gpu_sm_61, 61},
-      {architecture::nvidia_gpu_sm_62, 62},
-      {architecture::nvidia_gpu_sm_70, 70},
-      {architecture::nvidia_gpu_sm_72, 72},
-      {architecture::nvidia_gpu_sm_75, 75},
-      {architecture::nvidia_gpu_sm_80, 80},
-      {architecture::nvidia_gpu_sm_86, 86},
-      {architecture::nvidia_gpu_sm_89, 89},
-      {architecture::nvidia_gpu_sm_90, 90},
-      {architecture::nvidia_gpu_sm_90a, 90},
-      {architecture::intel_gpu_pvc, 0}
+    {architecture::nvidia_gpu_sm_50, 50},
+    {architecture::nvidia_gpu_sm_52, 52},
+    {architecture::nvidia_gpu_sm_53, 53},
+    {architecture::nvidia_gpu_sm_60, 60},
+    {architecture::nvidia_gpu_sm_61, 61},
+    {architecture::nvidia_gpu_sm_62, 62},
+    {architecture::nvidia_gpu_sm_70, 70},
+    {architecture::nvidia_gpu_sm_72, 72},
+    {architecture::nvidia_gpu_sm_75, 75},
+    {architecture::nvidia_gpu_sm_80, 80},
+    {architecture::nvidia_gpu_sm_86, 86},
+    {architecture::nvidia_gpu_sm_89, 89},
+    {architecture::nvidia_gpu_sm_90, 90},
+    {architecture::nvidia_gpu_sm_90a, 90},
+    {architecture::intel_gpu_pvc, 0},
+    {architecture::intel_gpu_bmg_g21, 1}
   };
   auto device_architecture =
         syclcompat::get_default_queue().get_device().get_info<info::device::architecture>();
@@ -131,6 +132,7 @@ void FilterArchitecture() {
               << " [" << cudaGetErrorString(err) << "]" << std::endl;
     exit(1);
   }
+
   cudaDeviceProp deviceProperties;
   err = cudaGetDeviceProperties(&deviceProperties, cudaDeviceId);
   if (cudaSuccess != err) {
@@ -151,9 +153,9 @@ void FilterArchitecture() {
     /// Minimum compute capability for the kernels in the named test
     int min_compute_capability;
 
-    /// Maximum compute capability for which the kernels are enabled 
+    /// Maximum compute capability for which the kernels are enabled
     int max_compute_capability;
-  } 
+  }
   test_filters[] = {
     { "SM50*",                      50, kMaxDevice},
     { "SM60*",                      60, kMaxDevice},
@@ -165,6 +167,7 @@ void FilterArchitecture() {
     { "SM90*",                      90, 90},
     { "SM100*",                    100, 100},
     { "IntelPVC",                   0,  0},
+    { "IntelBMG",                   1,  1},
     { 0, 0, false }
   };
 
