@@ -157,7 +157,6 @@ struct MMA_Atom<MMA_Traits<MMAOperation, Args...>>
                         
                         || (sizeof_bits_v<typename remove_cvref_t<ATensor>::value_type> == 8 &&
                             (sizeof_bits_v<ValTypeA> == 8 || sizeof_bits_v<ValTypeA> == 6 || sizeof_bits_v<ValTypeA> == 4))
-                        
                       , "Expecting ValTypeA type");
       return make_tensor<FrgTypeA>(static_cast<ATensor&&>(atensor));
     } else {

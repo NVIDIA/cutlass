@@ -107,11 +107,10 @@
 #include "cutlass/util/tensor_view_io.h"
 #include "cutlass/util/reference/device/tensor_fill.h"
 #include "cutlass/util/reference/device/tensor_compare.h"
+#include "cutlass/util/mixed_dtype_utils.hpp"
 
 #include "helper.h"
 #include "mixed_dtype_utils.hpp"
-#include "packed_scale.hpp"
-#include "reorder_utils.hpp"
 
 using namespace cute;
 
@@ -144,8 +143,8 @@ using StrideB = cutlass::detail::TagToStrideB_t<LayoutB>;
 // Define the CuTe layout for reoredered quantized tensor B
 // LayoutAtomQuant places values that will be read by the same thread in contiguous locations in global memory.
 // It specifies the reordering within a single warp's fragment
-using LayoutAtomQuant = decltype(compute_memory_reordering_atom<MmaType>());
-using LayoutB_Reordered = decltype(tile_to_shape(LayoutAtomQuant{}, Layout<Shape<int,int,int>, StrideB>{}));
+using LayoutAtomQuant = decltype(cutlass::compute_memory_reordering_atom<MmaType>());
+using LayoutB_Reordered = decltype(cute::tile_to_shape(LayoutAtomQuant{}, Layout<Shape<int,int,int>, StrideB>{}));
 
 using ElementScale = MmaType;
 using ElementZero = ElementScale; // only for verify
@@ -349,10 +348,10 @@ void initialize(Options const& options) {
 
   initialize_tensor(block_A, seed + 2022);
   initialize_quant_tensor(block_B, seed + 2021);
-  unify_quant_encoding(block_B, block_B_modified);
+  cutlass::unified_encode_int4b(block_B.get(), block_B_modified.get(), block_B.size());
   initialize_tensor(block_C, seed + 2020);
   initialize_scale(block_scale, options);
-  initialize_packed_scale(block_scale, block_scale_packed);
+  cutlass::pack_scale_fp8(block_scale.get(), block_scale_packed.get(), block_scale.size());
   initialize_zero(block_zero, options);
 
   auto shape_scale_zero = cute::make_shape(options.n, scale_k, options.l);
@@ -360,12 +359,13 @@ void initialize(Options const& options) {
   stride_S_ref = cutlass::make_cute_packed_stride(StrideS_ref{}, cute::make_shape(options.n, scale_k, options.l));
   auto layout_scale_zero = make_layout(shape_scale_zero, stride_S_ref);
 
-  dequantize_weight(block_B_dq.get(), block_B.get(), layout_B, block_scale.get(), block_zero.get(), layout_scale_zero, options.g);
+  cudaStream_t stream = cudaStreamDefault;
+  cutlass::dequantize(block_B_dq.get(), block_B.get(), layout_B, block_scale.get(), block_zero.get(), layout_scale_zero, options.g, stream);
 
   if (options.shuffle) {
     // Repeat the reorder layout atom to tile the whole tensor shape 
-    layout_B_reordered = tile_to_shape(LayoutAtomQuant{}, shape_B);
-    reorder_tensor(block_B_modified.get(), layout_B, layout_B_reordered);
+    layout_B_reordered = cute::tile_to_shape(LayoutAtomQuant{}, shape_B);
+    cutlass::reorder_tensor(block_B_modified.get(), layout_B, layout_B_reordered);
 
     print("Quantized tensor layout: ");
     print(layout_B_reordered);
@@ -518,17 +518,13 @@ int main(int argc, char const **args) {
   CUDA_CHECK(cudaGetDevice(&current_device_id));
   CUDA_CHECK(cudaGetDeviceProperties(&props, current_device_id));
   cudaError_t error = cudaGetDeviceProperties(&props, 0);
-  if (props.major < 9) {
+  if (props.major != 9 || props.minor != 0) {
     std::cerr
-      << "This example requires a GPU of NVIDIA's Hopper Architecture or "
-      << "later (compute capability 90 or greater).\n";
+      << "This example requires a GPU of NVIDIA's Hopper Architecture (compute capability 90).\n";
     return 0;
   }
+
   
-  else if (props.major != 9 || props.minor != 0) {
-    std::cerr << "This example requires a GPU of NVIDIA's Hopper Architecture (compute capability 90).\n";
-    return 0;
-  }
   
 
   //

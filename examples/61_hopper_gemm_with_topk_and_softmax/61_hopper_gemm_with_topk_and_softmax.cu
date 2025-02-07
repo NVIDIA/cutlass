@@ -504,17 +504,13 @@ int main(int argc, char const **args) {
   CUDA_CHECK(cudaGetDevice(&current_device_id));
   CUDA_CHECK(cudaGetDeviceProperties(&props, current_device_id));
   cudaError_t error = cudaGetDeviceProperties(&props, 0);
-  if (props.major < 9) {
+  if (props.major != 9 || props.minor != 0) {
     std::cerr
-      << "This example requires a GPU of NVIDIA's Hopper Architecture or "
-      << "later (compute capability 90 or greater).\n";
+      << "This example requires a GPU of NVIDIA's Hopper Architecture (compute capability 90).\n";
     return 0;
   }
+
   
-  else if (props.major != 9 || props.minor != 0) {
-    std::cerr << "This example requires a GPU of NVIDIA's Hopper Architecture (compute capability 90).\n";
-    return 0;
-  }
   
 
   //

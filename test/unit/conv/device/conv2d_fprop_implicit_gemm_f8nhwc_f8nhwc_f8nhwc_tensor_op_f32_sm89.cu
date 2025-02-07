@@ -49,7 +49,7 @@
 
 #include "conv2d_with_absmax_testbed.h"
 
-#if defined(CUTLASS_ARCH_MMA_SM89_SUPPORTED)
+#if defined(CUTLASS_ARCH_MMA_F32_SM89_SUPPORTED)
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -365,4 +365,4 @@ TEST(SM89_Device_Conv2d_Fprop_Optimized_ImplicitGemm_fe4m3nhwc_fe4mnhwc_fe4mnhwc
 
 ////////////////////////////////////////////////////////////////////////////////
 
-#endif  // CUTLASS_ARCH_MMA_SM89_SUPPORTED
+#endif  // CUTLASS_ARCH_MMA_F32_SM89_SUPPORTED

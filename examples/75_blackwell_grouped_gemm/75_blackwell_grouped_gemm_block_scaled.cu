@@ -124,13 +124,14 @@ constexpr int AlignmentD  = 128 / cutlass::sizeof_bits<ElementD>::value;    // A
 using ElementAccumulator  = float;                                          // Element type for internal accumulation
 
 // using ElementD = cutlass::float_e2m1_t; // Enable for SF Output          // Element type for D matrix operands
+using ElementSFD  = cutlass::float_ue4m3_t;                                 // Element type for SF Output operands
 constexpr int OutputSFVectorSize = 16;
 using FusionOperation = cutlass::epilogue::fusion::LinCombEltActBlockScaleFactor<
     cutlass::epilogue::thread::SiLu,
     OutputSFVectorSize,
     ElementD, 
     ElementAccumulator, 
-    ElementSF,
+    ElementSFD,
     LayoutC,
     ElementC>;
 

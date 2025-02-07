@@ -57,16 +57,6 @@
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-#define CUDA_CHECK(call)                                                                                               \
-  do {                                                                                                                 \
-    cudaError_t err = call;                                                                                            \
-    if (err != cudaSuccess) {                                                                                          \
-      std::cerr << "CUDA error at " << __FILE__ << ":" << __LINE__ << " code=" << err << " \""                         \
-                << cudaGetErrorString(err) << "\"\n";                                                                  \
-      return Status::kErrorInternal;                                                                                   \
-    }                                                                                                                  \
-  } while (0)
-
 namespace cutlass {
 namespace profiler {
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -304,41 +294,42 @@ std::ostream& operator<<(std::ostream& out, library::Provider provider) {
   return out;
 }
 
-std::ostream& operator<<(std::ostream& out, library::OperationKind provider) {
-  if (provider == library::OperationKind::kGemm) {
+std::ostream& operator<<(std::ostream& out, library::OperationKind op_kind) {
+  if (op_kind == library::OperationKind::kGemm) {
     out << "kGemm";
   }
-  
-  else if (provider == library::OperationKind::kBlockScaledGemm) {
+  else if (op_kind == library::OperationKind::kBlockScaledGemm) {
     out << "kBlockScaledGemm";
   }
-  
-  else if (provider == library::OperationKind::kRankK) {
+  else if (op_kind == library::OperationKind::kRankK) {
     out << "kRankK";
   }
-  else if (provider == library::OperationKind::kRank2K) {
+  else if (op_kind == library::OperationKind::kRank2K) {
     out << "kRank2K";
   }
-  else if (provider == library::OperationKind::kTrmm) {
+  else if (op_kind == library::OperationKind::kTrmm) {
     out << "kTrmm";
   }
-  else if (provider == library::OperationKind::kSymm) {
+  else if (op_kind == library::OperationKind::kSymm) {
     out << "kSymm";
   }
-  else if (provider == library::OperationKind::kConv2d) {
+  else if (op_kind == library::OperationKind::kConv2d) {
     out << "kConv2d";
   }
-  else if (provider == library::OperationKind::kConv3d) {
+  else if (op_kind == library::OperationKind::kConv3d) {
     out << "kConv3d";
   }
-  else if (provider == library::OperationKind::kEqGemm) {
+  else if (op_kind == library::OperationKind::kEqGemm) {
     out << "kEqGemm";
   }
-  else if (provider == library::OperationKind::kSparseGemm) {
+  else if (op_kind == library::OperationKind::kSparseGemm) {
     out << "kSparseGemm";
   }
-  else if (provider == library::OperationKind::kReduction) {
+  else if (op_kind == library::OperationKind::kReduction) {
     out << "kReduction";
+  }
+  else if (op_kind == library::OperationKind::kGroupedGemm) {
+    out << "kGroupedGemm";
   }
   else {
     out << "kInvalid";
@@ -660,6 +651,11 @@ void OperationProfiler::save_workspace(
 
     DeviceAllocation *allocation = named_allocation.second;
 
+    if (allocation->layout() == library::LayoutTypeID::kUnknown) {
+      continue; // write_tensor not set up to handle DeviceAllocations initialized using
+                // allocate_block()
+    }
+
     std::stringstream filename;
 
     filename << desc.name << "_" << library::to_string(provider) << "_";
@@ -736,15 +732,20 @@ Status predict_iters(
 /// CUDA graphs allows you to record the launch of large numbers of kernels without
 /// blocking and therefore avoids a deadlock which happens if you try to enqueue too
 /// many kernels behind the spinloop kernel.
-Status OperationProfiler::profile_kernel_(
-  PerformanceResult &result,
-  Options const &options,
-  const std::function<Status(int, cudaStream_t, int)> &func,
-  const std::vector<cudaStream_t> &streams) {
+Status OperationProfiler::profile_kernel_w_cuda_graphs_(
+  PerformanceResult& result,
+  Options const& options,
+  std::function<Status(int, cudaStream_t, int)> const& func,
+  std::vector<cudaStream_t> const& streams) {
+
   auto dev_count = streams.size();
+
   cuda::atomic<bool> *release;
-  CUDA_CHECK(cudaHostAlloc(&release, sizeof(*release), cudaHostAllocPortable));
-  release->store(false, cuda::memory_order_release);
+
+  if (dev_count > 1) {
+    CUDA_CHECK(cudaHostAlloc(&release, sizeof(*release), cudaHostAllocPortable));
+    release->store(false, cuda::memory_order_release);
+  }
 
   std::vector<GpuTimer> timer;
   for (size_t i = 0; i < dev_count; ++i) {
@@ -774,9 +775,11 @@ Status OperationProfiler::profile_kernel_(
   for (size_t i = 0; i < dev_count; ++i) {
     CUDA_CHECK(cudaSetDevice(options.device.device_id(i)));
     CUDA_CHECK(cudaStreamBeginCapture(streams[i], cudaStreamCaptureModeGlobal));
-    // Halt execution until all GPUs are ready to precede.
-    // It allows the CPU to trigger the GPUs all start at the same time.
-    delay<<<1, 1, 0, streams[i]>>>(release);
+    if (dev_count > 1) {
+      // Halt execution until all GPUs are ready to precede.
+      // It allows the CPU to trigger the GPUs all start at the same time.
+      delay<<<1, 1, 0, streams[i]>>>(release);
+    }
     for (int iteration = 0; iteration < options.profiling.warmup_iterations; ++iteration) {
       Status status = func(i, streams[i], iteration);
       if (status != Status::kSuccess) {
@@ -803,8 +806,10 @@ Status OperationProfiler::profile_kernel_(
     CUDA_CHECK(cudaGraphLaunch(graphExecs[i], streams[i]));
   }
 
-  // release the enqueued kernels
-  release->store(true, cuda::memory_order_release);
+  if (dev_count > 1) {
+    // release the enqueued kernels
+    release->store(true, cuda::memory_order_release);
+  }
 
   for (size_t i = 0; i < dev_count; ++i) {
     CUDA_CHECK(cudaSetDevice(options.device.device_id(i)));
@@ -819,7 +824,9 @@ Status OperationProfiler::profile_kernel_(
   }
   result.runtime /= static_cast<double>(dev_count);
 
-  CUDA_CHECK(cudaFreeHost(release));
+  if (dev_count > 1) {
+    CUDA_CHECK(cudaFreeHost(release));
+  }
 
   for (size_t i = 0; i < dev_count; ++i) {
     CUDA_CHECK(cudaSetDevice(options.device.device_id(i)));
@@ -835,11 +842,47 @@ Status OperationProfiler::profile_kernel_(
   return Status::kSuccess;
 }
 
-/// Method to profile GPU execution time of a kernel launched in func
 Status OperationProfiler::profile_kernel_(
   PerformanceResult &result,
   Options const &options,
-  const std::function<Status(cudaStream_t, int)> &func,
+  const std::function<Status(int, cudaStream_t, int)> &func,
+  const std::vector<cudaStream_t> &streams) {
+
+  if (options.profiling.use_cuda_graphs) {
+    return profile_kernel_w_cuda_graphs_(result, options, func, streams);
+  }
+  else if (streams.size() == 1) {
+    auto single_device_func = [&](cudaStream_t stream, int iteration) {
+      return func(0, stream, iteration);
+    };
+    return profile_kernel_no_cuda_graphs_(result, options, single_device_func, streams[0]);
+  }
+  return Status::kErrorNotSupported;
+}
+
+/// Method to profile GPU execution time of a kernel launched in func
+Status OperationProfiler::profile_kernel_(
+  PerformanceResult& result,
+  Options const& options,
+  std::function<Status(cudaStream_t, int)> const& func,
+  cudaStream_t stream) {
+
+  if (options.profiling.use_cuda_graphs) {
+    auto graph_func = [&](int dev_id, cudaStream_t stream, int iteration) {
+      return func(stream, iteration);
+    };
+    return profile_kernel_w_cuda_graphs_(result, options, graph_func, {stream});
+  } else {
+    return profile_kernel_no_cuda_graphs_(result, options, func, stream);
+  }
+  return Status::kSuccess;
+}
+
+/// Method to profile GPU execution time of a kernel launched in func
+Status OperationProfiler::profile_kernel_no_cuda_graphs_(
+  PerformanceResult& result,
+  Options const& options,
+  std::function<Status(cudaStream_t, int)> const& func,
   cudaStream_t stream) {
 
   GpuTimer timer;

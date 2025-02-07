@@ -142,7 +142,7 @@ enum class Provider {
 /// Enumeration indicating the kind of operation
 enum class OperationKind {
   kGemm,
-  kBlockScaledGemm,     
+  kBlockScaledGemm,
   kRankK,
   kRank2K,
   kTrmm,
@@ -152,6 +152,7 @@ enum class OperationKind {
   kEqGemm,
   kSparseGemm,
   kReduction,
+  kGroupedGemm,
   kInvalid
 };
 
@@ -270,7 +271,6 @@ enum class RuntimeDatatype {
   kStatic,
   kE4M3,
   kE5M2,
-  
   kE3M2,
   kE2M3,
   kE2M1,

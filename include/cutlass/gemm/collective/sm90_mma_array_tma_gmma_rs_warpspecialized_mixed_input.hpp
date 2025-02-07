@@ -240,7 +240,6 @@ public:
 
   // To relax them, we need to handle loading more than 1 row of scales for every main loop iteration.
   // We must also handle updating the pipeline transaction bytes on the fly.
-  // NOTE: Deleting this assertion without required changes will cause the code to hang.
   static_assert(size<1>(SmemLayoutAtomScale{}) == 1, "size<1>(SmemLayoutAtomScale) must be 1.");
 
 private:
@@ -490,8 +489,6 @@ public:
                     : args_setup(args.ptr_A, args.ptr_B);
     }
     else if constexpr (ModeHasScales) {
-      // NOTE: fix chunk wise scaling
-      //auto scale_k = (K + args.chunk_size - 1) / args.chunk_size;
       auto scale_k = 1;
       ElementScale const* ptr_S = reinterpret_cast<ElementScale const*>(args.ptr_S);
       StrideScale dS{};
@@ -998,7 +995,6 @@ public:
         Utils::copy_tensors_MK(smem_tiled_copy_A, tCsA, tCrA_copy_view, 
           partitioned_extra_info, copy_partitions_extra_info, 0, smem_pipe_read.index());
         
-        // NOTE: Check this when applying swizzling PR on top of GGMD
         Utils::copy_tensors_MK(smem_tiled_copy_A, tCsA, tCrA_copy_view, 
           partitioned_extra_info, copy_partitions_extra_info, 1, smem_pipe_read.index());
         
@@ -1049,7 +1045,6 @@ public:
           Utils::copy_tensors_MK(smem_tiled_copy_A, tCsA, tCrA_copy_view, 
             partitioned_extra_info, copy_partitions_extra_info, 0, smem_pipe_read.index());
 
-          // NOTE: Check this when applying swizzling PR on top of GGMD
           Utils::copy_tensors_MK(smem_tiled_copy_A, tCsA, tCrA_copy_view, 
             partitioned_extra_info, copy_partitions_extra_info, 1, smem_pipe_read.index());
           Utils::dequantize_A_kblock(tCrA_load, tCrA_mma, partitioned_extra_info, 0);
@@ -1248,7 +1243,6 @@ public:
 
     if constexpr (KernelConversionMode == ConversionMode::ConvertAndScale) {
       NonVoidElementScale const* ptr_S = nullptr;
-      // NOTE: figure out chunk wise scaling. auto scale_k = (K + mainloop_params.chunk_size - 1) / mainloop_params.chunk_size;
       auto scale_k = 1;
       Tensor tensor_scale = make_tensor(detail::get_logical_ptr(ptr_S), make_shape(M,scale_k,Int<1>{}), mainloop_params.dS[next_group]);
       cute::detail::fill_tma_gmem_shape_stride(mainloop_params.tma_load_scale, tensor_scale, 
@@ -1256,7 +1250,6 @@ public:
     }
     else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
       ElementZero const* ptr_Z = nullptr;
-      // NOTE: figure out chunk wise scaling. auto scale_k = (K + mainloop_params.chunk_size - 1) / mainloop_params.chunk_size;
       auto scale_k = 1;
       Tensor tensor_zero = make_tensor(detail::get_logical_ptr(ptr_Z), make_shape(M,scale_k,Int<1>{}), mainloop_params.dS[next_group]);
       cute::detail::fill_tma_gmem_shape_stride(mainloop_params.tma_load_zero, tensor_zero, 

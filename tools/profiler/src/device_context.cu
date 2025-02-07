@@ -75,6 +75,35 @@ DeviceAllocation *DeviceContext::allocate_tensor(
   return allocation;
 }
 
+static void initialize_allocation_with_data_distribution(
+  Options const &options,
+  int seed_shift,
+  DeviceAllocation *allocation,
+  Distribution &data_distribution) {
+  if (options.initialization.provider == library::Provider::kReferenceDevice) {
+    if (data_distribution.kind == Distribution::Sequential) {
+      allocation->initialize_sequential_device(
+        data_distribution);
+    }
+    else {
+      allocation->initialize_random_device(
+        options.initialization.seed + seed_shift,
+        data_distribution);
+    }
+  }
+  else if (options.initialization.provider == library::Provider::kReferenceHost) {
+    if (data_distribution.kind == Distribution::Sequential) {
+      allocation->initialize_sequential_host(
+        data_distribution);
+    }
+    else {
+      allocation->initialize_random_host(
+        options.initialization.seed + seed_shift,
+        data_distribution);
+    }
+  }
+}
+
 /// Allocates memory of a given type, capacity (elements), and name
 DeviceAllocation *DeviceContext::allocate_and_initialize_tensor(
   Options const &options,
@@ -122,7 +151,6 @@ DeviceAllocation *DeviceContext::allocate_and_initialize_tensor(
           data_distribution.set_uniform(1, 4, 0);
           break;
         
-        
         case library::NumericTypeID::kF16:
           data_distribution.set_uniform(-3, 3, 0);
           break;
@@ -168,28 +196,9 @@ DeviceAllocation *DeviceContext::allocate_and_initialize_tensor(
       }
     }
 
-    if (options.initialization.provider == library::Provider::kReferenceDevice) {
-      if (data_distribution.kind == Distribution::Sequential) {
-        allocation->initialize_sequential_device(
-          data_distribution);
-      }
-      else {
-        allocation->initialize_random_device(
-          options.initialization.seed + seed_shift,
-          data_distribution);
-      }
-    }
-    else if (options.initialization.provider == library::Provider::kReferenceHost) {
-      if (data_distribution.kind == Distribution::Sequential) {
-        allocation->initialize_sequential_host(
-          data_distribution);
-      }
-      else {
-        allocation->initialize_random_host(
-          options.initialization.seed + seed_shift,
-          data_distribution);
-      }
-    }
+    initialize_allocation_with_data_distribution(
+      options, seed_shift, allocation, data_distribution
+    );
   }
 
   return allocation;

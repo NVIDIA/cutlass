@@ -521,15 +521,6 @@ make_cotiled_copy(Copy_Atom<Args...> const& copy_atom,
   // Check validity
   CUTE_STATIC_ASSERT_V(coalesce(composition(data_layout, layout<1>(layout_tv_data))) == coalesce(layout<1>(atom_tv_layout)),
                        "The memory pointed to by AtomTVLayout does not exist in the DataLayout.");
-
-#if 0
-  if (thread0()) {
-    print("data_layout        : "); print(data_layout); print("\n");
-    print("atom_tv_layout     : "); print(atom_tv_layout); print("\n");
-    print("layout_tv_data     : "); print(layout_tv_data); print("\n");
-  }
-#endif
-
   //
   // Tiler -- Find the active elements in the DATA tensor and generate a tiler to extract them
   //
@@ -552,15 +543,6 @@ make_cotiled_copy(Copy_Atom<Args...> const& copy_atom,
 
   // (tid,vid) -> tile_coord
   auto layout_tv = composition(left_inverse(tile2data), layout_tv_data);
-
-#if 0
-  if (thread0()) {
-    print("tiler              : "); print(tiler); print("\n");
-    print("tile2data          : "); print(tile2data); print("\n");
-    print("layout_tv          : "); print(layout_tv); print("\n");
-  }
-#endif
-
   return make_tiled_copy_impl(copy_atom, layout_tv, tiler);
 }
 

@@ -37,6 +37,7 @@
 #include "cutlass/cutlass.h"
 #include "cutlass/detail/collective.hpp"
 #include "cutlass/library/library.h"
+#include "cutlass/library/util.h"
 #include "cutlass/transform/kernel/sparse_gemm_compressor.hpp" // StructuredSparseCompressor
 #include "cutlass/transform/device/transform_universal_adapter.hpp" // TransformUniversalAdapter
 #include "cutlass/util/packed_stride.hpp"        // make_cute_packed_stride
@@ -44,14 +45,6 @@
 #include "library_internal.h"
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-
-#define CUDA_CHECK(cuda_error)                                                                 \
-  {                                                                                            \
-    if (cuda_error != cudaSuccess) {                                                           \
-      printf("cudaError %s in %s:%d\n", cudaGetErrorString(cuda_error), __func__, __LINE__ );  \
-      return Status::kInvalid;                                                                 \
-    }                                                                                          \
-  }
 
 namespace cutlass::library {
 

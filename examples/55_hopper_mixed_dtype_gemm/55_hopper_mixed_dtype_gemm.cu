@@ -100,6 +100,7 @@
 #include "cutlass/util/tensor_view_io.h"
 #include "cutlass/util/reference/device/tensor_fill.h"
 #include "cutlass/util/reference/device/tensor_compare.h"
+#include "cutlass/util/mixed_dtype_utils.hpp"
 
 #include "helper.h"
 #include "mixed_dtype_utils.hpp"
@@ -322,9 +323,10 @@ void initialize(MixedDtypeOptions const& options) {
   auto shape_scale_zero = cute::make_shape(options.n, scale_k, options.l);
   stride_S = cutlass::make_cute_packed_stride(StrideS{}, cute::make_shape(options.n, scale_k, options.l));
   stride_S_ref = cutlass::make_cute_packed_stride(StrideS_ref{}, cute::make_shape(options.n, scale_k, options.l));
-  auto layout_scale_zero = make_layout(shape_scale_zero, stride_S_ref);
+  auto layout_scale_zero = cute::make_layout(shape_scale_zero, stride_S_ref);
 
-  dequantize_weight(block_B_dq.get(), block_B.get(), layout_B, block_scale.get(), block_zero.get(), layout_scale_zero, options.g);
+  cudaStream_t stream = cudaStreamDefault;
+  cutlass::dequantize(block_B_dq.get(), block_B.get(), layout_B, block_scale.get(), block_zero.get(), layout_scale_zero, options.g, stream);
 }
 
 /// Populates a Gemm::Arguments structure from the given commandline options
@@ -483,17 +485,13 @@ int main(int argc, char const **args) {
   CUDA_CHECK(cudaGetDevice(&current_device_id));
   CUDA_CHECK(cudaGetDeviceProperties(&props, current_device_id));
   cudaError_t error = cudaGetDeviceProperties(&props, 0);
-  if (props.major < 9) {
+  if (props.major != 9 || props.minor != 0) {
     std::cerr
-      << "This example requires a GPU of NVIDIA's Hopper Architecture or "
-      << "later (compute capability 90 or greater).\n";
+      << "This example requires a GPU of NVIDIA's Hopper Architecture (compute capability 90).\n";
     return 0;
   }
+
   
-  else if (props.major != 9 || props.minor != 0) {
-    std::cerr << "This example requires a GPU of NVIDIA's Hopper Architecture (compute capability 90).\n";
-    return 0;
-  }
   
 
   //
