@@ -215,6 +215,7 @@ struct GemmConfiguration<
 
   // Epilogue
   using CollectiveEpilogue = epilogue::collective::DefaultEpilogue<
+    float,
     TagToStrideC_t<LayoutC>,
     TagToStrideC_t<LayoutC>,
     epilogue::thread::LinearCombination<float, 1>,
@@ -379,6 +380,7 @@ struct GemmConfiguration<
 
   // Epilogue
   using CollectiveEpilogue = epilogue::collective::DefaultEpilogue<
+    float,
     TagToStrideC_t<LayoutC>,
     TagToStrideC_t<LayoutC>,
     epilogue::thread::LinearCombination<float, 1>,
@@ -523,6 +525,7 @@ struct GemmConfiguration<
 
   // Epilogue
   using CollectiveEpilogue = epilogue::collective::DefaultEpilogue<
+    float,
     TagToStrideC_t<LayoutC>,
     TagToStrideC_t<LayoutC>,
     epilogue::thread::LinearCombination<float, 1>,
