@@ -282,100 +282,100 @@ struct PipelineTest {
 #if defined(CUTLASS_ARCH_MMA_SM100_SUPPORTED)
 //Cluster1x2 Stage4
 TEST(SM100_Verify_PipelineClusterLaunchControlAsync_WS, Cluster1x2_Stage4) {
-  Options options;
+  OptionsClusterLaunch options;
   options.grid_dim = {32,32,1};
   using ClusterShape = cutlass::gemm::GemmShape<1, 2, 1>;
   static constexpr uint32_t Stages = 4;
   using Test = PipelineTest<Stages, ClusterShape>;
-  Testbed<Test> testbed(options);
+  TestbedClusterLaunch<Test> testbed(options);
   EXPECT_TRUE(testbed.verification());
 }
 
 //Cluster2x1 Stage4
 TEST(SM100_Verify_PipelineClusterLaunchControlAsync_WS, Cluster2x1_Stage4) {
-  Options options;
+  OptionsClusterLaunch options;
   options.grid_dim = {32,32,1};
   using ClusterShape = cutlass::gemm::GemmShape<2, 1, 1>;
   static constexpr uint32_t Stages = 4;
   using Test = PipelineTest<Stages, ClusterShape>;
-  Testbed<Test> testbed(options);
+  TestbedClusterLaunch<Test> testbed(options);
   EXPECT_TRUE(testbed.verification());
 }
 
 //Cluster2x2 Stage4
 TEST(SM100_Verify_PipelineClusterLaunchControlAsync_WS, Cluster2x2_Stage4) {
-  Options options;
+  OptionsClusterLaunch options;
   options.grid_dim = {32,32,1};
   using ClusterShape = cutlass::gemm::GemmShape<2, 2, 1>;
   static constexpr uint32_t Stages = 4;
   using Test = PipelineTest<Stages, ClusterShape>;
-  Testbed<Test> testbed(options);
+  TestbedClusterLaunch<Test> testbed(options);
   EXPECT_TRUE(testbed.verification());
 }
 
 //Cluster1x1 Stage3
 TEST(SM100_Verify_PipelineClusterLaunchControlAsync_WS, Cluster1x1_Stage3) {
-  Options options;
+  OptionsClusterLaunch options;
   options.grid_dim = {32,32,1};
   using ClusterShape = cutlass::gemm::GemmShape<1, 1, 1>;
   static constexpr uint32_t Stages = 3;
   using Test = PipelineTest<Stages, ClusterShape>;
-  Testbed<Test> testbed(options);
+  TestbedClusterLaunch<Test> testbed(options);
   EXPECT_TRUE(testbed.verification());
 }
 
 //Cluster1x4 Stage4
 TEST(SM100_Verify_PipelineClusterLaunchControlAsync_WS, Cluster1x4_Stage4) {
-  Options options;
+  OptionsClusterLaunch options;
   options.grid_dim = {32,32,1};
   using ClusterShape = cutlass::gemm::GemmShape<1, 4, 1>;
   static constexpr uint32_t Stages = 4;
   using Test = PipelineTest<Stages, ClusterShape>;
-  Testbed<Test> testbed(options);
+  TestbedClusterLaunch<Test> testbed(options);
   EXPECT_TRUE(testbed.verification());
 }
 
 //Cluster4x1 Stage4
 TEST(SM100_Verify_PipelineClusterLaunchControlAsync_WS, Cluster4x1_Stage4) {
-  Options options;
+  OptionsClusterLaunch options;
   options.grid_dim = {32,32,1};
   using ClusterShape = cutlass::gemm::GemmShape<4, 1, 1>;
   static constexpr uint32_t Stages = 4;
   using Test = PipelineTest<Stages, ClusterShape>;
-  Testbed<Test> testbed(options);
+  TestbedClusterLaunch<Test> testbed(options);
   EXPECT_TRUE(testbed.verification());
 }
 
 //Cluster2x4 Stage4
 TEST(SM100_Verify_PipelineClusterLaunchControlAsync_WS, Cluster2x4_Stage4) {
-  Options options;
+  OptionsClusterLaunch options;
   options.grid_dim = {32,32,1};
   using ClusterShape = cutlass::gemm::GemmShape<2, 4, 1>;
   static constexpr uint32_t Stages = 4;
   using Test = PipelineTest<Stages, ClusterShape>;
-  Testbed<Test> testbed(options);
+  TestbedClusterLaunch<Test> testbed(options);
   EXPECT_TRUE(testbed.verification());
 }
 
 //Cluster4x2 Stage4
 TEST(SM100_Verify_PipelineClusterLaunchControlAsync_WS, Cluster4x2_Stage4) {
-  Options options;
+  OptionsClusterLaunch options;
   options.grid_dim = {32,32,1};
   using ClusterShape = cutlass::gemm::GemmShape<4, 2, 1>;
   static constexpr uint32_t Stages = 4;
   using Test = PipelineTest<Stages, ClusterShape>;
-  Testbed<Test> testbed(options);
+  TestbedClusterLaunch<Test> testbed(options);
   EXPECT_TRUE(testbed.verification());
 }
 
 //Cluster4x4 Stage4
 TEST(SM100_Verify_PipelineClusterLaunchControlAsync_WS, Cluster4x4_Stage4) {
-  Options options;
+  OptionsClusterLaunch options;
   options.grid_dim = {32,32,1};
   using ClusterShape = cutlass::gemm::GemmShape<4, 4, 1>;
   static constexpr uint32_t Stages = 4;
   using Test = PipelineTest<Stages, ClusterShape>;
-  Testbed<Test> testbed(options);
+  TestbedClusterLaunch<Test> testbed(options);
   EXPECT_TRUE(testbed.verification());
 }
 #endif

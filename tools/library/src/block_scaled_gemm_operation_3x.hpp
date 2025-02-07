@@ -73,7 +73,7 @@ public:
   using ThreadEpilogueOp = typename CollectiveEpilogue::ThreadEpilogueOp;
 
   using Sm100BlkScaledConfig =  typename CollectiveMainloop::Sm100BlkScaledConfig;
-  
+    
   static constexpr bool epilogue_scalefactor_generation = not cute::is_same_v<typename ThreadEpilogueOp::ElementBlockScaleFactor, void>;
   static constexpr int32_t SFD_VectorSize = epilogue_scalefactor_generation ? ThreadEpilogueOp::SFVecSize : SFVecSize;
   using ElementSFD = cute::conditional_t<epilogue_scalefactor_generation, typename ThreadEpilogueOp::ElementBlockScaleFactor, void>;

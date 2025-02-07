@@ -71,7 +71,7 @@ template <
 >
 constexpr int
 sm100_compute_stage_count_or_override_blockscaled(StageCountAutoCarveout<carveout_bytes> stage_count) {
-  // For Mxf8f6f4 sub-bytes, ElementA/B will be passed in as uint8_t
+  // For MXF8F6F4 MMA, ElementA/B will be passed in as uint8_t
   // Each stage include (CollectiveMma::SharedStorage)
   // 1. smem for A and smem for B (CollectiveMma::SharedStorage::TensorStorage)
   // 2. one MainloopPipeline = PipelineTmaUmmaAsync (CollectiveMma::SharedStorage::SharedStorage)
@@ -386,7 +386,7 @@ select_instr() {
     }
     else if constexpr (( sizeof_bits_v<ElementA> == 4 && (sizeof_bits_v<ElementB> == 6 || sizeof_bits_v<ElementB> == 8)) ||
                       ((sizeof_bits_v<ElementA> == 6 || sizeof_bits_v<ElementA> == 8) && sizeof_bits_v<ElementB> == 4)) {
-      // Fp4 can be mixed with FP6, Fp8 with Mxf8f6f4 only
+      // Fp4 can be mixed with FP6, Fp8 with MMA.MXF8F6F4 only
       return detail::blockscaled::BlockScaledInstr::MXF4F6F8;
     }
     else if constexpr (sizeof_bits_v<ElementA> == 4 && sizeof_bits_v<ElementB> == 4) {
@@ -400,7 +400,7 @@ select_instr() {
         static_assert( cute::is_same_v<ElementSF, cutlass::float_ue8m0_t> &&
                       (cute::is_same_v<ElementA, cutlass::float_e2m1_t> && cute::is_same_v<ElementB, cutlass::float_e2m1_t> ||
                         cute::is_same_v<ElementA, cutlass::type_erased_dynamic_float4_t> && cute::is_same_v<ElementB, cutlass::type_erased_dynamic_float4_t>),
-                      "Only MXF4 support with non-TN and Mxf8f6f4");
+                      "Only MXF4 support with non-TN and MMA.MXF8F6F4.");
         return detail::blockscaled::BlockScaledInstr::MXF4F6F8;
       }
     }
@@ -636,7 +636,7 @@ struct CollectiveBuilder<
 
   static constexpr bool UseMxf8f6f4 = Instr == detail::blockscaled::BlockScaledInstr::MXF4F6F8;
 
-  static_assert(UseMxf8f6f4 || (cutlass::gemm::detail::is_k_major_A<GmemLayoutATag>() && cutlass::gemm::detail::is_k_major_B<GmemLayoutBTag>()), "Only Mxf8f6f4 supports non-K major inputs");
+  static_assert(UseMxf8f6f4 || (cutlass::gemm::detail::is_k_major_A<GmemLayoutATag>() && cutlass::gemm::detail::is_k_major_B<GmemLayoutBTag>()), "Only MMA.MXF8F6F4 supports non-K major inputs");
 
   // Data type used by MMA instruction
   using ElementAMma = decltype(cutlass::gemm::collective::detail::sm100_kernel_input_element_to_mma_input_element<ElementA, UseMxf8f6f4>());

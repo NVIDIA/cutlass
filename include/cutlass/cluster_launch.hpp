@@ -51,10 +51,8 @@
 #  define CUTLASS_SM90_CLUSTER_LAUNCH_ENABLED
 #endif
 
-#ifndef CUDA_ENABLE_PREFERRED_CLUSTER
-  #if (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 8))
+#if (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 8))
   #  define CUDA_ENABLE_PREFERRED_CLUSTER
-  #endif
 #endif
 namespace cutlass {
 

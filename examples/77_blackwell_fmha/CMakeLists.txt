@@ -29,11 +29,11 @@
 
 set_property(
   SOURCE 77_blackwell_fmha.cu
-  PROPERTY COMPILE_FLAGS "--use_fast_math -ftemplate-backtrace-limit=0 --ptxas-options -v")
+  PROPERTY COMPILE_FLAGS "--use_fast_math -ftemplate-backtrace-limit=0")
 
 set_property(
   SOURCE 77_blackwell_fmha_gen.cu
-  PROPERTY COMPILE_FLAGS "--use_fast_math -ftemplate-backtrace-limit=0 --ptxas-options -v")
+  PROPERTY COMPILE_FLAGS "--use_fast_math -ftemplate-backtrace-limit=0")
 
 set(TEST_BASIC --b=1 --h=4 --q=512 --k=512 --d=128 --verify --mask=no)
 set(TEST_CAUSAL --b=1 --h=4 --q=512 --k=512 --d=128 --verify --mask=causal)

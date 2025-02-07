@@ -246,8 +246,6 @@
 
     Hopper GEMM kernel with Top-K and softmax epilogue fusion.
 
-[//]: # 
-
 * [70_blackwell_gemm](70_blackwell_gemm)
 
     Simple dense GEMM example targeting the NVIDIA Blackwell SM100 Tensor Core MMA using CUTLASS 3.x APIs.
@@ -279,8 +277,6 @@
 * [77_blackwell_fmha](77_blackwell_fmha)
 
     Blackwell SM100 FMHA kernel
-
-[//]: # 
 
 # CuTe - Programming Examples
 

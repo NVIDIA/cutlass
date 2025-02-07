@@ -71,7 +71,7 @@ bool relatively_equal_float(T a, T b, T epsilon, T nonzero_floor) {
   if (a == b) {
     return true;
   }
-  else if (a == zero || b == zero || diff < nonzero_floor) {
+  else if (a == zero || b == zero || (abs_A + abs_B) < nonzero_floor) {
     return diff < epsilon * nonzero_floor;
   }
   

@@ -79,6 +79,7 @@ GemmOperationProfiler::GemmOperationProfiler(Options const &options):
       {ArgumentTypeID::kEnumerated, {"runtime_input_datatype_a", "runtime-input-datatype::a"}, "Runtime datatype (e4m3, e5m2, e3m2, e2m3, e2m1)"}, 
       {ArgumentTypeID::kEnumerated, {"runtime_input_datatype_b", "runtime-input-datatype::b"}, "Runtime datatype (e4m3, e5m2, e3m2, e2m3, e2m1)"}, 
       {ArgumentTypeID::kInteger, {"use_pdl", "use-pdl"}, "Use PDL (true, false)"}, 
+      {ArgumentTypeID::kEnumerated, {"enable_sm90_mixed_dtype_shuffle_test", "enable-sm90-mixed-dtype-shuffle-test"}, "Enable SM90 mixed input data type kernel shuffle layout test (true, false)"},
       {ArgumentTypeID::kInteger, {"swizzle_size", "swizzle-size"}, "Size to swizzle"},
     },
     { library::Provider::kCUBLAS}
@@ -209,6 +210,11 @@ Status GemmOperationProfiler::GemmProblem::parse(
   if (!arg_as_bool(this->use_pdl, "use_pdl", problem_space, problem)) {
     // default value
     this->use_pdl = false;
+  }
+
+  if (!arg_as_bool(this->enable_sm90_mixed_dtype_shuffle_test, "enable_sm90_mixed_dtype_shuffle_test", problem_space, problem)) {
+    // default value
+    this->enable_sm90_mixed_dtype_shuffle_test = false;
   }
 
   if (!arg_as_SplitKModeID(this->split_k_mode, "split_k_mode", problem_space, problem)) {
@@ -399,6 +405,7 @@ void GemmOperationProfiler::GemmProblem::initialize_result(
   set_argument(result, "raster_order", problem_space, library::to_string(raster_order));
   set_argument(result, "swizzle_size", problem_space, swizzle_size);
   set_argument(result, "use_pdl", problem_space, library::to_string(use_pdl));
+  set_argument(result, "enable_sm90_mixed_dtype_shuffle_test", problem_space, library::to_string(enable_sm90_mixed_dtype_shuffle_test));
 
   
   set_argument(result, "runtime_input_datatype_a", problem_space, library::to_string(runtime_input_datatype_a));
@@ -432,13 +439,25 @@ Status GemmOperationProfiler::initialize_configuration(
 
   Status status = problem_.parse(operation_desc, problem_space, problem);
 
+  // Note: this is a temporary workaround
+  bool is_current_operation_sm90_mixed_dtype_shuffle = (strstr(operation_desc.name, "_shfl") != NULL);
+  if (is_current_operation_sm90_mixed_dtype_shuffle && (problem_.enable_sm90_mixed_dtype_shuffle_test == false)) {
+    return Status::kErrorInvalidProblem;
+  }
+
   if (status != Status::kSuccess) {
     return status;
   }
 
-  const auto device_count = options.device.devices.size();
+  auto const device_count = options.device.devices.size();
 
   gemm_workspace_.clear();
+
+  library::NumericTypeID a_elem = library::get_real_type(operation_desc.A.element);
+  library::NumericTypeID b_elem = library::get_real_type(operation_desc.B.element);
+  int a_elem_bits = library::sizeof_bits(a_elem);
+  int b_elem_bits = library::sizeof_bits(b_elem);
+  bool is_mixed_input = (a_elem_bits != b_elem_bits);
 
   for (size_t i = 0; i < device_count; ++i) {
     cudaSetDevice(options.device.device_id(i));
@@ -455,7 +474,6 @@ Status GemmOperationProfiler::initialize_configuration(
     gemm_workspace_[i].configuration.cluster_shape_fallback.m() = int(problem_.cluster_m_fallback);
     gemm_workspace_[i].configuration.cluster_shape_fallback.n() = int(problem_.cluster_n_fallback);
     gemm_workspace_[i].configuration.cluster_shape_fallback.k() = int(problem_.cluster_k_fallback);
-    
     gemm_workspace_[i].configuration.lda = problem_.lda;
     gemm_workspace_[i].configuration.ldb = problem_.ldb;
     gemm_workspace_[i].configuration.ldc = problem_.ldc;
@@ -501,7 +519,77 @@ Status GemmOperationProfiler::initialize_configuration(
     
 
     initialize_result_(this->model_result_, options, operation_desc, problem_space);
-    if (const auto can_implement = operation->can_implement(&gemm_workspace_[i].configuration, &gemm_workspace_[i].arguments); can_implement != Status::kSuccess) {
+    if (is_mixed_input)
+    {
+      const int options_g = problem_.k;
+      const int options_l = problem_.batch_count;
+      const int scale_k = (problem_.k + options_g - 1) / options_g;
+      // We cannot get the mainloop's ElementScale and ElementZero here,
+      // use the wide type to allocate a large enough workspace for S and Z.
+      library::NumericTypeID wide_dtype;
+      size_t SZ_mat_size = 0;
+      if (a_elem_bits > b_elem_bits) {
+        wide_dtype = a_elem;
+        SZ_mat_size = static_cast<size_t>(problem_.n * scale_k);
+      }
+      else {
+        wide_dtype = b_elem;
+        SZ_mat_size = static_cast<size_t>(problem_.m * scale_k);
+      }
+
+      gemm_workspace_[i].Scale = device_context.allocate_tensor(
+        options,
+        "Scale",
+        wide_dtype,
+        library::LayoutTypeID::kRowMajor,
+        {int(SZ_mat_size), int(options_l)},
+        {int(options_l)},
+        problem_.batch_count * gemm_workspace_[i].problem_count,
+        i // device_index
+      );
+      gemm_workspace_[i].Zero = device_context.allocate_tensor(
+        options,
+        "Zero",
+        wide_dtype,
+        library::LayoutTypeID::kRowMajor,
+        {int(SZ_mat_size), int(options_l)},
+        {int(options_l)},
+        problem_.batch_count * gemm_workspace_[i].problem_count,
+        i // device_index
+      );
+
+      // Packed scale is for int4 * fp8, where the original scale is fp8, and
+      // each scale element will be packed into an Array<fp8, 8> which is 64-bit
+      gemm_workspace_[i].packed_Scale = device_context.allocate_tensor(
+        options,
+        "packed-Scale",
+        library::NumericTypeID::kU64,
+        library::LayoutTypeID::kRowMajor,
+        {int(SZ_mat_size), int(options_l)},
+        {int(options_l)},
+        problem_.batch_count * gemm_workspace_[i].problem_count,
+        i // device_index
+      );
+
+      gemm_workspace_[i].arguments.problem_size = {int(problem_.m), int(problem_.n), int(problem_.k)};
+      gemm_workspace_[i].arguments.batch_count = problem_.batch_count;
+
+      // Here is the first touch of the arguments, mark the mixed dtype,
+      // populate the scale and zero tensors in the following can_implement() call later.
+      // A and B are not populated at this moment, so do not update the dequantized A or B
+      gemm_workspace_[i].arguments.is_mixed_dtype = true;
+      gemm_workspace_[i].arguments.wider_operand = (a_elem_bits > b_elem_bits) ? cutlass::library::Sm90MixedInputWiderOperand::A : cutlass::library::Sm90MixedInputWiderOperand::B;
+      gemm_workspace_[i].arguments.generate_scale_and_zero = true;
+      gemm_workspace_[i].arguments.generate_dequantized_AB = false;
+      gemm_workspace_[i].arguments.dequantized_AB_ready = (bool *) malloc(sizeof(bool));
+      gemm_workspace_[i].arguments.dequantized_AB_ready[0] = false;
+      gemm_workspace_[i].arguments.Scale = gemm_workspace_[i].Scale->data();
+      gemm_workspace_[i].arguments.Zero = gemm_workspace_[i].Zero->data();
+      gemm_workspace_[i].arguments.packed_Scale = gemm_workspace_[i].packed_Scale->data();
+    }  // End of "if (is_mixed_input)"
+
+    const auto can_implement = operation->can_implement(&gemm_workspace_[i].configuration, &gemm_workspace_[i].arguments);
+    if (can_implement != Status::kSuccess) {
       return can_implement;
     }
   }
@@ -693,6 +781,56 @@ Status GemmOperationProfiler::initialize_workspace(
         problem_.batch_count * gemm_workspace_[i].problem_count,
         i // device_index
       );
+
+      if (gemm_workspace_[i].arguments.is_mixed_dtype) {
+        // Dequantized tensor has the same shape of the narrow data type tensor,
+        // and the same data type as the wide data type tensor
+        // Encoded tensor has the same shape and data type of the narrow data type tensor
+        if (gemm_workspace_[i].arguments.wider_operand == cutlass::library::Sm90MixedInputWiderOperand::A) {
+          gemm_workspace_[i].dequantized_AB = device_context.allocate_tensor(
+            options,
+            "dequantized-B",
+            operation_desc.A.element,
+            operation_desc.B.layout,
+            {int(problem_.k), int(problem_.n)},
+            {int(problem_.ldb)},
+            problem_.batch_count * gemm_workspace_[i].problem_count,
+            i // device_index
+          );
+          gemm_workspace_[i].encoded_AB = device_context.allocate_tensor(
+            options,
+            "encoded-B",
+            operation_desc.B.element,
+            operation_desc.B.layout,
+            {int(problem_.k), int(problem_.n)},
+            {int(problem_.ldb)},
+            problem_.batch_count * gemm_workspace_[i].problem_count,
+            i // device_index
+          );
+        }
+        else {
+          gemm_workspace_[i].dequantized_AB = device_context.allocate_tensor(
+            options,
+            "dequantized-A",
+            operation_desc.B.element,
+            operation_desc.A.layout,
+            {int(problem_.m), int(problem_.k)},
+            {int(problem_.lda)},
+            problem_.batch_count * gemm_workspace_[i].problem_count,
+            i // device_index
+          );
+          gemm_workspace_[i].encoded_AB = device_context.allocate_tensor(
+            options,
+            "encoded-A",
+            operation_desc.A.element,
+            operation_desc.A.layout,
+            {int(problem_.m), int(problem_.k)},
+            {int(problem_.lda)},
+            problem_.batch_count * gemm_workspace_[i].problem_count,
+            i // device_index
+          );
+        }
+      }
     }
 
     if (options.execution_mode != ExecutionMode::kDryRun) {
@@ -712,7 +850,7 @@ Status GemmOperationProfiler::initialize_workspace(
       gemm_workspace_[i].arguments.batch_stride_D = gemm_workspace_[i].Computed->batch_stride();
 
       /* Query device SM count to pass onto the kernel as an argument, where needed */
-      gemm_workspace_[i].arguments.sm_count = options.device.properties[0].multiProcessorCount;
+      gemm_workspace_[i].arguments.sm_count = options.device.properties[i].multiProcessorCount;
       gemm_workspace_[i].arguments.device_index = static_cast<int>(i);
     }
   }
@@ -835,6 +973,17 @@ bool GemmOperationProfiler::verify_cutlass(
     gemm_workspace_[i].arguments.batch_stride_B = gemm_workspace_[i].B->batch_stride();
     gemm_workspace_[i].arguments.batch_stride_C = gemm_workspace_[i].C->batch_stride();
     gemm_workspace_[i].arguments.batch_stride_D = gemm_workspace_[i].Computed->batch_stride();
+
+    if (gemm_workspace_[i].arguments.is_mixed_dtype) {
+      // Scale and zero already generated in initialize_configuration(),
+      // A and B already generated in initialize_workspace(), signal
+      // GemmUniversal3xOperation::update_arguments_() (trigger by underlying_operation->run())
+      // to generate the dequantized matrix for verification
+      gemm_workspace_[i].arguments.generate_scale_and_zero = false;
+      gemm_workspace_[i].arguments.generate_dequantized_AB = true;
+      gemm_workspace_[i].arguments.dequantized_AB = gemm_workspace_[i].dequantized_AB->data();
+      gemm_workspace_[i].arguments.encoded_AB = gemm_workspace_[i].encoded_AB->data();
+    }
 
     if (problem_.split_k_mode == library::SplitKMode::kParallel) {
       gemm_workspace_[i].arguments.D                       = gemm_workspace_[i].device_workspace.data();
@@ -1133,7 +1282,6 @@ bool GemmOperationProfiler::verify_with_reference_(
   //
   // Initialize state
   //
-
   for (auto provider : options.verification.providers) {
 
     // Skip providers that are not enabled
@@ -1148,6 +1296,21 @@ bool GemmOperationProfiler::verify_with_reference_(
       void *ptr_B = gemm_workspace_[i].B->data();
       void *ptr_C = gemm_workspace_[i].C->data();
       void *ptr_D = gemm_workspace_[i].Reference->data();
+
+      cutlass::library::NumericTypeID element_A_for_reference = element_A;
+      cutlass::library::NumericTypeID element_B_for_reference = element_B;
+      if (gemm_workspace_[i].arguments.is_mixed_dtype && gemm_workspace_[i].arguments.dequantized_AB_ready[0]) {
+        // Dequantized tensor has the same shape of the narrow data type tensor,
+        // and the same data type as the wide data type tensor
+        if (gemm_workspace_[i].arguments.wider_operand == cutlass::library::Sm90MixedInputWiderOperand::A) {
+          ptr_B = gemm_workspace_[i].dequantized_AB->data();
+          element_B_for_reference = element_A;
+        }
+        else {
+          ptr_A = gemm_workspace_[i].dequantized_AB->data();
+          element_A_for_reference = element_B;
+        }
+      }
 
       // To support the host-side reference, conditionally allocate and
       // copy tensors to host memory.
@@ -1200,13 +1363,13 @@ bool GemmOperationProfiler::verify_with_reference_(
 
         problem_.alpha.data(),
 
-        element_A,
+        element_A_for_reference,
         gemm_desc.A.layout,
         gemm_desc.transform_A,
         ptr_A,
         int(gemm_workspace_[i].configuration.lda),
 
-        element_B,
+        element_B_for_reference,
         gemm_desc.B.layout,
         gemm_desc.transform_B,
         ptr_B,
@@ -1349,6 +1512,13 @@ Status GemmOperationProfiler::profile_cutlass_(
     gemm_workspace_[dev_id].arguments.C = gemm_workspace_[dev_id].C->batch_data(problem_idx);
     gemm_workspace_[dev_id].arguments.D = gemm_workspace_[dev_id].Computed->batch_data(problem_idx);
 
+      if (gemm_workspace_[dev_id].arguments.is_mixed_dtype) {
+        // Scale, zero, and dequantized tensors are already generated in
+        // verify_cutlass(), no need to re-generate them in profiling
+        gemm_workspace_[dev_id].arguments.generate_scale_and_zero = false;
+        gemm_workspace_[dev_id].arguments.generate_dequantized_AB = false;
+      }
+
     if (problem_.split_k_mode == library::SplitKMode::kParallel) {
       gemm_workspace_[dev_id].arguments.D                     = gemm_workspace_[dev_id].device_workspace.data();
 
@@ -1382,11 +1552,6 @@ Status GemmOperationProfiler::profile_cutlass_(
     }
     return Status::kSuccess;
   };
-
-  if (options.device.devices.size() == 1) {
-    auto func = [&](cudaStream_t stream, int iteration) { return launch_gemm(0, stream, iteration); };
-    return profile_kernel_(result, options, func, gemm_workspace_[0].stream);
-  }
 
   std::vector<cudaStream_t> streams(gemm_workspace_.size());
   for (size_t i = 0; i < streams.size(); i++) {

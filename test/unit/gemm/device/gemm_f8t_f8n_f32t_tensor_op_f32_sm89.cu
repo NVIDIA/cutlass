@@ -51,7 +51,7 @@
 
 #include "testbed.h"
 
-#if defined(CUTLASS_ARCH_MMA_SM89_SUPPORTED)
+#if defined(CUTLASS_ARCH_MMA_F32_SM89_SUPPORTED)
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -151,4 +151,4 @@ TEST(SM89_Device_Gemm_fe5m2t_fe5m2n_f32t_tensor_op_f32, 128x256x64_64x64x64) {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-#endif  // CUTLASS_ARCH_MMA_SM89_SUPPORTED
+#endif  // CUTLASS_ARCH_MMA_F32_SM89_SUPPORTED

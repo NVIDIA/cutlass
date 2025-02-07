@@ -285,7 +285,7 @@ private:
     uint8_t storage_ = 0b0000;
   };
 
-  using MetadataOneChunk = cute::conditional_t<SparseConfig::IsTfmma,
+  using MetadataOneChunk = cute::conditional_t<SparseConfig::IsTF32,
                                                MetadataOneChunk1to2,
                                                MetadataOneChunk2to4>;
 
