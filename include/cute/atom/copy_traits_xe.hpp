@@ -2104,6 +2104,10 @@ struct XePrefetchConstructor<bfloat16_t, row> {\
   using type_t = TYPE_BITS_bfloat16_t(row);\
 };\
 template <>\
+struct XePrefetchConstructor<half_t, row> {\
+  using type_t = TYPE_BITS_bfloat16_t(row);\
+};\
+template <>\
 struct XePrefetchConstructor<int8_t, row> {\
   using type_t = TYPE_BITS_int8_t(row);\
 };\
