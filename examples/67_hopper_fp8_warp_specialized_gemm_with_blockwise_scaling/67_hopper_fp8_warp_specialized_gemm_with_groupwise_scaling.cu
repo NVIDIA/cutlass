@@ -519,7 +519,6 @@ GemmArguments args_from_options(const Options<RasterOrderOptions> &options)
      stride_A,
      tensor_B.device_data(),
      stride_B,
-     mma_promotion_interval,
      blockscale_tensor_A.device_data(),
      blockscale_tensor_B.device_data()
      },
