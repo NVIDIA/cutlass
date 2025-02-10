@@ -44,55 +44,20 @@ namespace cutlass::gemm::collective {
 using namespace cute;
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <
-  class DispatchPolicy,
-  class TileShape_,
-  class ElementQ_,
-  class StrideQ_,
-  class ElementK_,
-  class StrideK_,
-  class ElementV_,
-  class StrideV_,
-  class TiledMma_,
-  class GmemTiledCopyQ_,
-  class GmemTiledCopyK_,
-  class GmemTiledCopyV_,
-  bool CausalMask_>
+template <class DispatchPolicy, class TileShape_, class ElementQ_, class StrideQ_, class ElementK_, class StrideK_,
+          class ElementV_, class StrideV_, class TiledMma_, class GmemTiledCopyQ_, class GmemTiledCopyK_,
+          class GmemTiledCopyV_, bool CausalMask_>
 struct CollectiveMmaAttention {
   static_assert(cutlass::detail::dependent_false<ElementQ_>, "Could not find a mainloop specialization.");
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <
-  int Stages,
-  class TileShape_,
-  class ElementQ_,
-  class StrideQ_,
-  class ElementK_,
-  class StrideK_,
-  class ElementV_,
-  class StrideV_,
-  class TiledMma_,
-  class GmemTiledCopyQ_,
-  class GmemTiledCopyK_,
-  class GmemTiledCopyV_,
-  bool CausalMask_>
-struct CollectiveMmaAttention<
-  MainloopIntelPVC<Stages>,
-  TileShape_,
-  ElementQ_,
-  StrideQ_,
-  ElementK_,
-  StrideK_,
-  ElementV_,
-  StrideV_,
-  TiledMma_,
-  GmemTiledCopyQ_,
-  GmemTiledCopyK_,
-  GmemTiledCopyV_,
-  CausalMask_>
-{
+template <int Stages, class TileShape_, class ElementQ_, class StrideQ_, class ElementK_, class StrideK_,
+          class ElementV_, class StrideV_, class TiledMma_, class GmemTiledCopyQ_, class GmemTiledCopyK_,
+          class GmemTiledCopyV_, bool CausalMask_>
+struct CollectiveMmaAttention<MainloopIntelPVC<Stages>, TileShape_, ElementQ_, StrideQ_, ElementK_, StrideK_, ElementV_,
+                              StrideV_, TiledMma_, GmemTiledCopyQ_, GmemTiledCopyK_, GmemTiledCopyV_, CausalMask_> {
   //
   // Type Aliases
   //
@@ -117,60 +82,69 @@ struct CollectiveMmaAttention<
   using MmaAtomShape = typename TiledMma::AtomShape_MNK;
 
   static constexpr auto BLK_M = get<0>(WorkgroupTileShape{}); // 128
-  static constexpr auto BLK_N = get<1>(WorkgroupTileShape{});// 64
-  static constexpr auto BLK_K = get<2>(WorkgroupTileShape{});// 32
-  
-  static constexpr auto ATOM_M = get<1>(typename TiledMma::ThrLayoutVMNK{}.shape()); //4
-  static constexpr auto ATOM_N = get<2>(typename TiledMma::ThrLayoutVMNK{}.shape()); //2 
-  static constexpr auto ATOM_K = get<3>(typename TiledMma::ThrLayoutVMNK{}.shape()); //1
+  static constexpr auto BLK_N = get<1>(WorkgroupTileShape{}); // 64
+  static constexpr auto BLK_K = get<2>(WorkgroupTileShape{}); // 32
 
-  static constexpr auto SG_M = ceil_div(BLK_M, ATOM_M); //32
-  static constexpr auto SG_N = ceil_div(BLK_N, ATOM_N); //32
-  static constexpr auto SG_K = ceil_div(BLK_K, ATOM_K); //32
+  static constexpr auto ATOM_M = get<1>(typename TiledMma::ThrLayoutVMNK{}.shape()); // 8
+  static constexpr auto ATOM_N = get<2>(typename TiledMma::ThrLayoutVMNK{}.shape()); // 1
+  static constexpr auto ATOM_K = get<3>(typename TiledMma::ThrLayoutVMNK{}.shape()); // 1
+
+  static constexpr auto SG_M = ceil_div(BLK_M, ATOM_M); // 16
+  static constexpr auto SG_N = ceil_div(BLK_N, ATOM_N); // 64
+  static constexpr auto SG_K = ceil_div(BLK_K, ATOM_K); // 64
   using SubgroupTileShape = Shape<decltype(SG_M), decltype(SG_N), decltype(SG_K)>;
 
   static constexpr size_t cacheline_bytes = 64;
-  static constexpr auto block_size_w_a = cute::min(SG_K, cacheline_bytes / sizeof(ElementQ)); //32
-  static constexpr auto block_size_w_b = cute::min(SG_N, cacheline_bytes / sizeof(ElementK)); //32
-  static constexpr auto nums_block_w_a = ceil_div(SG_K, block_size_w_a); // 1
-  static constexpr auto nums_block_w_b = ceil_div(SG_N, block_size_w_b); // 1
-  using PrefetchQThrShape = Shape<Int<ATOM_N /cute::gcd(ATOM_N, nums_block_w_a)>, Int<cute::gcd(ATOM_N, nums_block_w_a)>>; //shape<2,1>
-  using PrefetchKThrShape = Shape<Int<ATOM_M /cute::gcd(ATOM_M, nums_block_w_b)>, Int<cute::gcd(ATOM_M, nums_block_w_b)>>; //shape <4,1>
-  using PrefetchVThrShape = Shape<Int<ATOM_M /cute::gcd(ATOM_M, nums_block_w_b)>, Int<cute::gcd(ATOM_M, nums_block_w_b)>>; //shape <4,1>
-  using PrefetchQTileSize = decltype(ceil_div(Shape<Int<SG_M>, Int<SG_K>>{},PrefetchQThrShape{})); //16x32
-  using PrefetchKTileSize = decltype(ceil_div(Shape<Int<SG_K>, Int<SG_N>>{},PrefetchKThrShape{})); //8x32
-  using PrefetchVTileSize = decltype(ceil_div(Shape<Int<SG_K>, Int<SG_N>>{},PrefetchVThrShape{})); // 8x32
-  static constexpr bool is_k_transposed = cute::detail::is_transpose_load<GmemTiledCopyK_>;
+  static constexpr auto block_size_w_a = cute::min(BLK_K, cacheline_bytes / sizeof(ElementQ)); // min(64,32)-> 32
+  static constexpr auto block_size_w_b = cute::min(BLK_N, cacheline_bytes / sizeof(ElementK)); // min(64, 32) ->32
+  static constexpr auto nums_block_w_a = ceil_div(BLK_K, block_size_w_a);                      // 2
+  static constexpr auto nums_block_w_b = ceil_div(BLK_N, block_size_w_b);                      // 2
+  static constexpr auto Total_SG = ATOM_N * ATOM_M * ATOM_K;
+  using PrefetchQThrShape = Shape<Int<Total_SG / cute::gcd(Total_SG, nums_block_w_a)>,
+                                  Int<cute::gcd(Total_SG, nums_block_w_a)>>; // shape<4,2>  //(8,2)
+  using PrefetchKThrShape = Shape<Int<Total_SG / cute::gcd(Total_SG, nums_block_w_b)>,
+                                  Int<cute::gcd(Total_SG, nums_block_w_b)>>; // shape <4,2> //(4,4)
+  using PrefetchVThrShape = Shape<Int<Total_SG / cute::gcd(Total_SG, nums_block_w_b)>,
+                                  Int<cute::gcd(Total_SG, nums_block_w_b)>>; // shape <4,2>  // (4,4)
+  using PrefetchQTileSize = decltype(ceil_div(Shape<Int<BLK_M>, Int<BLK_K>>{}, PrefetchQThrShape{})); // (32/16)x32
+  using PrefetchKTileSize = decltype(ceil_div(Shape<Int<BLK_K>, Int<BLK_N>>{}, PrefetchKThrShape{})); // 16x32
+  using PrefetchVTileSize = decltype(ceil_div(Shape<Int<BLK_K>, Int<BLK_N>>{}, PrefetchVThrShape{})); // 16x32 
   static constexpr uint32_t MaxThreadsPerBlock = size(TiledMma{});
   using traits_load_Q = Copy_Traits<GmemTiledCopyQ, StrideQ>;
   using atom_load_Q = Copy_Atom<traits_load_Q, ElementQ>;
-  using XE_Copy_Q = decltype(make_xe_2d_copy(atom_load_Q{}
-                                            .with(make_tensor(make_gmem_ptr(static_cast<ElementQ const*>(nullptr)), make_layout(make_shape(0, 0, 0), StrideQ{}))),
-                                            Layout<Shape<_1, Int<SubgroupSize>>>{}));
+  using XE_Copy_Q =
+      decltype(make_xe_2d_copy(atom_load_Q{}.with(make_tensor(make_gmem_ptr(static_cast<ElementQ const *>(nullptr)),
+                                                              make_layout(make_shape(0, 0, 0), StrideQ{}))),
+                               Layout<Shape<_1, Int<SubgroupSize>>>{}));
   using traits_load_K = Copy_Traits<GmemTiledCopyK, StrideK>;
   using atom_load_K = Copy_Atom<traits_load_K, ElementK>;
-  using XE_Copy_K = decltype(make_xe_2d_copy(atom_load_K{}
-                                            .with(make_tensor(make_gmem_ptr(static_cast<ElementK const*>(nullptr)), make_layout(make_shape(0, 0, 0), StrideK{}))),
-                                            Layout<Shape<_1, Int<SubgroupSize>>>{}));
+  using XE_Copy_K =
+      decltype(make_xe_2d_copy(atom_load_K{}.with(make_tensor(make_gmem_ptr(static_cast<ElementK const *>(nullptr)),
+                                                              make_layout(make_shape(0, 0, 0), StrideK{}))),
+                               Layout<Shape<_1, Int<SubgroupSize>>>{}));
 
   using traits_load_V = Copy_Traits<GmemTiledCopyV, StrideV>;
   using atom_load_V = Copy_Atom<traits_load_V, ElementV>;
-  using XE_Copy_V = decltype(make_xe_2d_copy(atom_load_V{}
-                                            .with(make_tensor(make_gmem_ptr(static_cast<ElementV const*>(nullptr)), make_layout(make_shape(0, 0, 0), StrideV{}))),
-                                            Layout<Shape<_1, Int<SubgroupSize>>>{}));
+  using XE_Copy_V =
+      decltype(make_xe_2d_copy(atom_load_V{}.with(make_tensor(make_gmem_ptr(static_cast<ElementV const *>(nullptr)),
+                                                              make_layout(make_shape(0, 0, 0), StrideV{}))),
+                               Layout<Shape<_1, Int<SubgroupSize>>>{}));
 
-// The prefetch copy is different from the main copy here we use the subgroup collectively to load the data
-  using XE_Prefetch_Q = decltype(cute::detail::prefetch_selector<PrefetchQTileSize, ElementQ, StrideQ, SubgroupSize>(make_tensor(make_gmem_ptr(static_cast<ElementQ const*>(nullptr)), make_layout(make_shape(0, 0, 0), StrideQ{}))));
-  using XE_Prefetch_K = decltype(cute::detail::prefetch_selector<PrefetchKTileSize, ElementK, StrideK, SubgroupSize>(make_tensor(make_gmem_ptr(static_cast<ElementK const*>(nullptr)), make_layout(make_shape(0, 0, 0), StrideK{}))));
-  using XE_Prefetch_V = decltype(cute::detail::prefetch_selector<PrefetchVTileSize, ElementV, StrideV, SubgroupSize>(make_tensor(make_gmem_ptr(static_cast<ElementV const*>(nullptr)), make_layout(make_shape(0, 0, 0), StrideV{})))); 
+  // The prefetch copy is different from the main copy here we use the subgroup collectively to load the data
+  using XE_Prefetch_Q = decltype(cute::detail::prefetch_selector<PrefetchQTileSize, ElementQ, StrideQ, SubgroupSize>(
+      make_tensor(make_gmem_ptr(static_cast<ElementQ const *>(nullptr)), make_layout(make_shape(0, 0, 0), StrideQ{}))));
+  using XE_Prefetch_K = decltype(cute::detail::prefetch_selector<PrefetchKTileSize, ElementK, StrideK, SubgroupSize>(
+      make_tensor(make_gmem_ptr(static_cast<ElementK const *>(nullptr)), make_layout(make_shape(0, 0, 0), StrideK{}))));
+  using XE_Prefetch_V = decltype(cute::detail::prefetch_selector<PrefetchVTileSize, ElementV, StrideV, SubgroupSize>(
+      make_tensor(make_gmem_ptr(static_cast<ElementV const *>(nullptr)), make_layout(make_shape(0, 0, 0), StrideV{}))));
 
   // Host side kernel arguments
   struct Arguments {
-    ElementQ const* ptr_Q;
+    ElementQ const *ptr_Q;
     StrideQ dQ;
-    ElementK const* ptr_K;
+    ElementK const *ptr_K;
     StrideK dK;
-    ElementV const* ptr_V;
+    ElementV const *ptr_V;
     StrideV dV;
   };
 
@@ -191,15 +165,18 @@ struct CollectiveMmaAttention<
   CollectiveMmaAttention() = default;
 
   template <class ProblemShape>
-  static constexpr Params
-  to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
-    (void) workspace;
+  static constexpr Params to_underlying_arguments(ProblemShape const &problem_shape, Arguments const &args,
+                                                  void *workspace) {
+    (void)workspace;
 
     auto [batch, num_heads, seq_len, head_size] = problem_shape;
 
-    auto tensorQ = make_tensor(make_gmem_ptr(static_cast<ElementQ const*>(args.ptr_Q)), make_layout(make_shape(seq_len, head_size, batch * num_heads), args.dQ));
-    auto tensorK = make_tensor(make_gmem_ptr(static_cast<ElementK const*>(args.ptr_K)), make_layout(make_shape(seq_len, head_size, batch * num_heads), args.dK));
-    auto tensorV = make_tensor(make_gmem_ptr(static_cast<ElementV const*>(args.ptr_V)), make_layout(make_shape(head_size, seq_len, batch * num_heads), args.dV));
+    auto tensorQ = make_tensor(make_gmem_ptr(static_cast<ElementQ const *>(args.ptr_Q)),
+                               make_layout(make_shape(seq_len, head_size, batch * num_heads), args.dQ));
+    auto tensorK = make_tensor(make_gmem_ptr(static_cast<ElementK const *>(args.ptr_K)),
+                               make_layout(make_shape(seq_len, head_size, batch * num_heads), args.dK));
+    auto tensorV = make_tensor(make_gmem_ptr(static_cast<ElementV const *>(args.ptr_V)),
+                               make_layout(make_shape(head_size, seq_len, batch * num_heads), args.dV));
 
     XE_Copy_Q copyQ = make_xe_2d_copy(Copy_Atom<Copy_Traits<GmemTiledCopyQ, StrideQ>, ElementQ>{}.with(tensorQ),
                                       Layout<Shape<_1, Int<SubgroupSize>>>{});
@@ -207,29 +184,16 @@ struct CollectiveMmaAttention<
                                       Layout<Shape<_1, Int<SubgroupSize>>>{});
     XE_Copy_V copyV = make_xe_2d_copy(Copy_Atom<Copy_Traits<GmemTiledCopyV, StrideV>, ElementV>{}.with(tensorV),
                                       Layout<Shape<_1, Int<SubgroupSize>>>{});
-    
-    XE_Prefetch_Q prefetchQ {tensorQ};
-    XE_Prefetch_K prefetchK {tensorK};
-    XE_Prefetch_V prefetchV {tensorV};
+
+    XE_Prefetch_Q prefetchQ{tensorQ};
+    XE_Prefetch_K prefetchK{tensorK};
+    XE_Prefetch_V prefetchV{tensorV};
     return Params{copyQ, copyK, copyV, prefetchQ, prefetchK, prefetchV};
   }
 
-  template <
-  class TileCoord,
-  class FragAccum,
-  class TensorQ,
-  class TensorK,
-  class FragSrc
-  >
-  CUTLASS_DEVICE void
-  mmaQK(
-    TileCoord tile_coord,
-    FragAccum& accum,
-    TensorQ gA,
-    TensorK gB,
-    FragSrc const &frag_src,
-    int const &k_tile_count,
-    Params const &params) {
+  template <class TileCoord, class FragAccum, class TensorQ, class TensorK, class FragSrc>
+  CUTLASS_DEVICE void mmaQK(TileCoord tile_coord, FragAccum &accum, TensorQ gA, TensorK gB, FragSrc const &frag_src,
+                            int const &k_tile_count, Params const &params) {
 
     int thread_idx = static_cast<int>(ThreadIdxX());
     // Instantiate the MMA object
@@ -247,66 +211,74 @@ struct CollectiveMmaAttention<
     Tensor tCrA = gmem_thr_copy_A.retile_MMA(thread_mma, tCrA_partition);
     Tensor tCrB = gmem_thr_copy_B.retile_MMA(thread_mma, tCrB_partition);
 
-  #if CUTLASS_ENABLE_DEBUG_PRINTS
+#if CUTLASS_ENABLE_DEBUG_PRINTS
     if (thread(LOG_THREAD, LOG_GROUP)) {
-        print("======================= A: \n");
-        print("  gA : "); print(gA); print("\n");
-        print("tCrA_copy_view : "); print(tCrA_copy_view); print("\n");
-        print("  tCrA : "); print(tCrA); print("\n");
+      print("======================= A: \n");
+      print("  gA : ");
+      print(gA);
+      print("\n");
+      print("tCrA_copy_view : ");
+      print(tCrA_copy_view);
+      print("\n");
+      print("  tCrA : ");
+      print(tCrA);
+      print("\n");
 
-        print("=====================  B :\n");
-        print("  gB : "); print(gB); print("\n");
-        print("tCrB_copy_view : "); print(tCrB_copy_view); print("\n");
-        print("  tCrB : "); print(tCrB); print("\n");
+      print("=====================  B :\n");
+      print("  gB : ");
+      print(gB);
+      print("\n");
+      print("tCrB_copy_view : ");
+      print(tCrB_copy_view);
+      print("\n");
+      print("  tCrB : ");
+      print(tCrB);
+      print("\n");
 
-        print("=====================  Config: \n");
-        print("  threads per workgroup : "); print(MaxThreadsPerBlock); print("\n");
-        print("  SubgroupTileShape : "); print(SubgroupTileShape{}); print("\n");
+      print("=====================  Config: \n");
+      print("  threads per workgroup : ");
+      print(MaxThreadsPerBlock);
+      print("\n");
+      print("  SubgroupTileShape : ");
+      print(SubgroupTileShape{});
+      print("\n");
 
-        print(" PrefetchQThrShape :    ");print(PrefetchQThrShape{});print("\n");
-        print(" PrefetchKThrShape :    ");print(PrefetchKThrShape{});print("\n");
-        print(" PrefetchQTileSize :    ");print(PrefetchQTileSize{});print("\n");
-        print(" PrefetchKTileSize :    ");print(PrefetchKTileSize{});print("\n");
-      }
-    #endif
+      print(" PrefetchQThrShape :    ");
+      print(PrefetchQThrShape{});
+      print("\n");
+      print(" PrefetchKThrShape :    ");
+      print(PrefetchKThrShape{});
+      print("\n");
+      print(" PrefetchQTileSize :    ");
+      print(PrefetchQTileSize{});
+      print("\n");
+      print(" PrefetchKTileSize :    ");
+      print(PrefetchKTileSize{});
+      print("\n");
+    }
+#endif
 
     //
     // Mainloop
     //
     auto [m_coord, n_coord, k_coord, l_coord] = tile_coord;
-    Tensor iter_2d_a = params.gmem_tiled_copy_q.get_pvc_tensor(
-      make_coord(m_coord, 0, l_coord), tCrA_copy_view.shape());
+    Tensor iter_2d_a = params.gmem_tiled_copy_q.get_pvc_tensor(make_coord(m_coord, 0, l_coord), tCrA_copy_view.shape());
     Tensor iter_a = append_pvc_tensor<1>(iter_2d_a, k_tile_count, BLK_K);
-    Tensor iter_2d_b = params.gmem_tiled_copy_k.get_pvc_tensor(
-      make_coord(n_coord, 0, l_coord), tCrB_copy_view.shape());
+    Tensor iter_2d_b = params.gmem_tiled_copy_k.get_pvc_tensor(make_coord(n_coord, 0, l_coord), tCrB_copy_view.shape());
     Tensor iter_b = append_pvc_tensor<1>(iter_2d_b, k_tile_count, BLK_K);
 
-    CUTLASS_PRAGMA_UNROLL
     for (int k_tile = 0; k_tile < k_tile_count; ++k_tile) {
       // Copy gmem to rmem for the first k_tile
-      copy(params.gmem_tiled_copy_q, iter_a(_,_,_,k_tile), tCrA_copy_view);
-      copy(params.gmem_tiled_copy_k, iter_b(_,_,_,k_tile), tCrB_copy_view);
+      copy(params.gmem_tiled_copy_q, iter_a(_, _, _, k_tile), tCrA_copy_view);
+      copy(params.gmem_tiled_copy_k, iter_b(_, _, _, k_tile), tCrB_copy_view);
       cute::gemm(tiled_mma, accum, tCrA, tCrB, frag_src);
     }
   }
 
-  template <
-  class TileCoord,
-  class FragAccum,
-  class FragP,
-  class TensorV,
-  class FragSrc
-  >
-  CUTLASS_DEVICE void
-  mmaPV(
-    TileCoord tile_coord,
-    FragAccum& accum,
-    FragP const &tPr,
-    TensorV gB,
-    FragSrc const &frag_src,
-    int const &k_tile_count,
-    int const &load_idx,
-    Params const &params) {
+  template <class TileCoord, class FragAccum, class FragP, class TensorV, class FragSrc>
+  CUTLASS_DEVICE void mmaPV(TileCoord tile_coord, FragAccum &accum, FragP const &tPr, TensorV gB,
+                            FragSrc const &frag_src, int const &k_tile_count, int const &load_idx,
+                            Params const &params) {
 
     int thread_idx = static_cast<int>(ThreadIdxX());
     // Instantiate the MMA object
@@ -321,36 +293,48 @@ struct CollectiveMmaAttention<
 
     Tensor tCrB = gmem_thr_copy_B.retile_MMA(thread_mma, tCrB_partition);
 
-  #if CUTLASS_ENABLE_DEBUG_PRINTS
+#if CUTLASS_ENABLE_DEBUG_PRINTS
     if (thread(LOG_THREAD, LOG_GROUP)) {
-        print("=====================  B :\n");
-        print("  gB : "); print(gB); print("\n");
-        print("tCrB_copy_view : "); print(tCrB_copy_view); print("\n");
-        print("  tCrB : "); print(tCrB); print("\n");
+      print("=====================  B :\n");
+      print("  gB : ");
+      print(gB);
+      print("\n");
+      print("tCrB_copy_view : ");
+      print(tCrB_copy_view);
+      print("\n");
+      print("  tCrB : ");
+      print(tCrB);
+      print("\n");
 
-        print("=====================  Config: \n");
-        print("  threads per workgroup : "); print(MaxThreadsPerBlock); print("\n");
-        print("  SubgroupTileShape : "); print(SubgroupTileShape{}); print("\n");
+      print("=====================  Config: \n");
+      print("  threads per workgroup : ");
+      print(MaxThreadsPerBlock);
+      print("\n");
+      print("  SubgroupTileShape : ");
+      print(SubgroupTileShape{});
+      print("\n");
 
-        print(" PrefetchVThrShape :    ");print(PrefetchVThrShape{});print("\n");
-        print(" PrefetchVTileSize :    ");print(PrefetchVTileSize{});print("\n");
-      }
-  #endif
+      print(" PrefetchVThrShape :    ");
+      print(PrefetchVThrShape{});
+      print("\n");
+      print(" PrefetchVTileSize :    ");
+      print(PrefetchVTileSize{});
+      print("\n");
+    }
+#endif
 
     //
     // Mainloop
     //
     auto [m_coord, n_coord, k_coord, l_coord] = tile_coord;
 
-    Tensor iter_2d_b = params.gmem_tiled_copy_v.get_pvc_tensor(
-      make_coord(n_coord, 0, l_coord), tCrB_copy_view.shape());
+    Tensor iter_2d_b = params.gmem_tiled_copy_v.get_pvc_tensor(make_coord(n_coord, 0, l_coord), tCrB_copy_view.shape());
     Tensor iter_b = append_pvc_tensor<1>(iter_2d_b, k_tile_count, BLK_K);
 
-    copy(params.gmem_tiled_copy_v, iter_b(_,_,_, load_idx), tCrB_copy_view);
+    copy(params.gmem_tiled_copy_v, iter_b(_, _, _, load_idx), tCrB_copy_view);
 
     cute::gemm(tiled_mma, accum, tPr, tCrB, frag_src);
   }
-
 };
 
 } // namespace cutlass::gemm::collective
