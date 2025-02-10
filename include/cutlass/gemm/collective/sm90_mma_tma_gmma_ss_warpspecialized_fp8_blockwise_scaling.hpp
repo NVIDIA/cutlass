@@ -382,7 +382,7 @@ struct CollectiveMma<
     // Block scaling: load_scale has scaling tensors in global memory which are not tiled
     Tensor mScaleA_mkl = get<2>(load_inputs);
     Tensor mScaleB_nkl = get<3>(load_inputs);
-    auto scales_m = get<0>(mScaleA_mkl.shape());
+    auto scales_m = size<0>(mScaleA_mkl);
 
     Tensor cScaleA_mkl = make_identity_tensor(mScaleA_mkl.shape());
 
@@ -396,7 +396,7 @@ struct CollectiveMma<
 
     // TODO: test `scale_copy_a` with `ScaleMsPerTile` < 128
     TiledCopy scale_copy_a = make_tiled_copy(SmemBlockScalingCopyAtomA{}, 
-      Layout<Shape<_32, _1>>{}, Layout<Shape<_4, _1>>{}); // (1,1,1)
+      Layout<Shape<_32>>{}, Layout<Shape<_1>>{}); // (1,1,1)
     TiledCopy scale_copy_b = make_tiled_copy(SmemBlockScalingCopyAtomB{}, 
       Layout<Shape<_1>>{}, Layout<Shape<_1>>{}); // (1,1,1)
     ThrCopy thr_scale_copy_a = scale_copy_a.get_slice(threadIdx.x);
@@ -440,7 +440,8 @@ struct CollectiveMma<
     Tensor tApA_ScaleA = make_tensor<bool>(shape(tAsA_ScaleA(_,_,0)));
     #pragma unroll
     for (int i = 0; i < size(tApA_ScaleA); ++i) {
-      tApA_ScaleA(i) = get<0>(tAcA_ScaleA(i)) < scales_m;
+      tApA_ScaleA(i) = get<0>(tAcA_ScaleA(i)) < 
+        std::min(scales_m, (m_coord + 1) * ScaleMsPerTile);
     }
 
     // Mainloop
