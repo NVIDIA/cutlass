@@ -217,15 +217,17 @@ void gett_mainloop(
     }
   }
 
-  int64_t block_m = m / kBlockM;
-  int64_t block_n = n / kBlockN;
-  cute::Tensor blockscale_A = mainloop_params.ScaleA(block_m, _, _, l);
-  cute::Tensor blockscale_B = mainloop_params.ScaleB(block_n, _, _, l);
+  const int M = cute::size<0>(mainloop_params.A.layout());
+  const int N = cute::size<0>(mainloop_params.B.layout());
+  const int ScaleGranularityM = M / cute::size<0>(mainloop_params.ScaleA);
+  const int ScaleGranularityN = N / cute::size<0>(mainloop_params.ScaleB);
+  assert(M % ScaleGranularityM == 0 && "ScaleGranularityM must divide M");
+  assert(N % ScaleGranularityN == 0 && "ScaleGranularityN must divide N"); 
 
-  const int ScaleGranularityM = cute::size<0>(typename MainloopParams::TileShape{}) / cute::size<1>(mainloop_params.ScaleA.shape());
-  const int ScaleGranularityN = cute::size<1>(typename MainloopParams::TileShape{}) / cute::size<1>(mainloop_params.ScaleB.shape());
-  assert(cute::size<0>(typename MainloopParams::TileShape{}) == ScaleGranularityM * cute::size<1>(mainloop_params.ScaleA.shape()));
-  assert(cute::size<1>(typename MainloopParams::TileShape{}) == ScaleGranularityN * cute::size<1>(mainloop_params.ScaleB.shape()));
+  cute::Tensor blockscale_A = domain_offset(
+    make_coord(m / ScaleGranularityM, _0{}), mainloop_params.ScaleA(_, _, l));
+  cute::Tensor blockscale_B = domain_offset(
+    make_coord(n / ScaleGranularityN, _0{}), mainloop_params.ScaleB(_, _, l));
 
   // Compute on this k-block
   for (int64_t k = 0; k < cute::size<1>(mainloop_params.A.layout()); ++k) {

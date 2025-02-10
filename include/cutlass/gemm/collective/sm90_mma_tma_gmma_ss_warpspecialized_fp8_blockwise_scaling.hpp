@@ -152,6 +152,7 @@ struct CollectiveMma<
   // Block scaling gmem-to-smem copy atom 
   //  we can have partial tiles in M, so don't vectorize those loads
   using BlockScaleCopyTypeB = cute::uint_byte_t<cute::min(static_cast<int>(sizeof(ElementBlockScale)) * ScaleNsPerTile, 16)>;
+  using BlockScaleCopyVecWidthB = Int<static_cast<int>(sizeof(BlockScaleCopyTypeB) / sizeof(ElementBlockScale))>;
   using SmemBlockScalingCopyAtomA = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<ElementBlockScale>, ElementBlockScale>;
   using SmemBlockScalingCopyAtomB = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<BlockScaleCopyTypeB>, ElementBlockScale>;
 
@@ -336,8 +337,6 @@ struct CollectiveMma<
     Tensor gA_mkl = local_tile(mA_mkl, TileShape{}, make_coord(_,_,_), Step<_1, X,_1>{});        // (BLK_M,BLK_K,m,k,l)
     Tensor gB_nkl = local_tile(mB_nkl, TileShape{}, make_coord(_,_,_), Step< X,_1,_1>{});        // (BLK_N,BLK_K,n,k,l)
 
-    constexpr auto scales_m = Int<ScaleMsPerTile>{};
-    constexpr auto scales_n = Int<ScaleNsPerTile>{};
     auto tM = get<2>(gA_mkl.shape());
     auto tN = get<2>(gB_nkl.shape());
     auto tK = get<3>(gA_mkl.shape());
@@ -404,8 +403,10 @@ struct CollectiveMma<
     Tensor mScaleA_mkl = get<2>(load_inputs);
     Tensor mScaleB_nkl = get<3>(load_inputs);
     auto scales_m = get<0>(mScaleA_mkl.shape());
+    auto scales_n = get<0>(mScaleB_nkl.shape());
 
     Tensor cScaleA_mkl = make_identity_tensor(mScaleA_mkl.shape());
+    Tensor cScaleB_nkl = make_identity_tensor(mScaleB_nkl.shape());
 
     Tensor gScaleA = local_tile( 
       mScaleA_mkl, make_tile(Int<ScaleMsPerTile>{}), 
@@ -414,13 +415,16 @@ struct CollectiveMma<
       cScaleA_mkl, make_tile(Int<ScaleMsPerTile>{}), 
       make_coord(m_coord,_,l_coord));
     Tensor gScaleB = local_tile( 
-      mScaleA_mkl, make_tile(Int<ScaleNsPerTile>{}),
-      make_coord(n_coord,_,l_coord));                                      // (1,k,1)
+      mScaleB_nkl, make_tile(Int<ScaleNsPerTile>{}),
+      make_coord(n_coord,_,l_coord));                   // (ScaleNsPerTile,k,1)
+    Tensor cScaleB = local_tile( 
+      cScaleB_nkl, make_tile(Int<ScaleNsPerTile>{}), 
+      make_coord(n_coord,_,l_coord));
 
     TiledCopy scale_copy_a = make_tiled_copy(SmemBlockScalingCopyAtomA{}, 
-      Layout<Shape<_32>>{}, Layout<Shape<_1>>{}); // (1,1,1)
+      Layout<Shape<_32>>{}, Layout<Shape<_1>>{});
     TiledCopy scale_copy_b = make_tiled_copy(SmemBlockScalingCopyAtomB{}, 
-      Layout<Shape<_32>>{}, Layout<Shape<_1>>{}); // (1,1,1)
+      Layout<Shape<_32>>{}, Layout<Shape<BlockScaleCopyVecWidthB>>{});
     ThrCopy thr_scale_copy_a = scale_copy_a.get_slice(threadIdx.x);
     ThrCopy thr_scale_copy_b = scale_copy_b.get_slice(threadIdx.x);
     
@@ -429,6 +433,7 @@ struct CollectiveMma<
     Tensor tAsA_ScaleA = thr_scale_copy_a.partition_D(sScaleA);
 
     Tensor tBgB_ScaleB = thr_scale_copy_b.partition_S(gScaleB);
+    Tensor tBcB_ScaleB = thr_scale_copy_b.partition_S(cScaleB);
     Tensor tBsB_ScaleB = thr_scale_copy_b.partition_D(sScaleB);
 
     // Applies the mapping from block_tma_a
@@ -457,12 +462,17 @@ struct CollectiveMma<
       }
     }
 
-    // Allocate predicate tensors for a_scales (since we can't guarantee that 
-    // all scales are valid, since we could have a partial tiles along M)
     Tensor tApA_ScaleA = make_tensor<bool>(shape(tAsA_ScaleA(_,_,0)));
+    Tensor tBpB_ScaleB = make_tensor<bool>(shape(tBsB_ScaleB(_,_,0)));
+
     #pragma unroll
     for (int i = 0; i < size(tApA_ScaleA); ++i) {
       tApA_ScaleA(i) = get<0>(tAcA_ScaleA(i)) < scales_m;
+    }
+
+    #pragma unroll
+    for (int i = 0; i < size(tApA_ScaleA); ++i) {
+      tBpB_ScaleB(i) = get<0>(tBcB_ScaleB(i)) < scales_n;
     }
 
     // Mainloop
@@ -484,7 +494,7 @@ struct CollectiveMma<
 
       // Copy scale tensors from global memory to shared memory
       copy_if(scale_copy_a, tApA_ScaleA, tAgA_ScaleA(_,_,*k_tile_iter), tAsA_ScaleA(_,_,write_stage));
-      copy(scale_copy_b, tBgB_ScaleB(_,_,*k_tile_iter), tBsB_ScaleB(_,_,write_stage));
+      copy_if(scale_copy_b, tBpB_ScaleB, tBgB_ScaleB(_,_,*k_tile_iter), tBsB_ScaleB(_,_,write_stage));
       pipeline.producer_commit(smem_pipe_write, cutlass::arch::cpasync_barrier_arrive_noinc);
 
       ++k_tile_iter;

@@ -581,6 +581,8 @@ bool verify(const Options<RasterOrderOptions> &options, const int ScaleMsPerTile
   auto blockscale_m = cute::get<0>(blockscale_shape);
   auto blockscale_n = cute::get<1>(blockscale_shape);
   auto blockscale_k = cute::get<2>(blockscale_shape);
+  auto groupscale_m = blockscale_m * ScaleMsPerTile;
+  auto groupscale_n = blockscale_n * ScaleNsPerTile;
 
   // Create instantiation for device reference gemm kernel
   auto A = cute::make_tensor(tensor_A.host_data(),
@@ -616,14 +618,14 @@ bool verify(const Options<RasterOrderOptions> &options, const int ScaleMsPerTile
 
   auto blockscale_A = cute::make_tensor(blockscale_tensor_A.host_data(),
                                         cute::make_layout(
-                                          cute::make_shape(blockscale_m, ScaleMsPerTile, blockscale_k, options.l),
-                                          cute::make_stride(blockscale_k * ScaleMsPerTile, 1, ScaleMsPerTile, blockscale_m * blockscale_k * ScaleMsPerTile)
+                                          cute::make_shape(groupscale_m, blockscale_k, options.l),
+                                          cute::make_stride(1, groupscale_m, groupscale_m * blockscale_k)
                                         )
                                       );
   auto blockscale_B = cute::make_tensor(blockscale_tensor_B.host_data(),
                                         cute::make_layout(
-                                          cute::make_shape(blockscale_n, ScaleNsPerTile, blockscale_k, options.l),
-                                          cute::make_stride(blockscale_k * ScaleNsPerTile, 1, ScaleNsPerTile, blockscale_n * blockscale_k * ScaleNsPerTile)
+                                          cute::make_shape(groupscale_n, blockscale_k, options.l),
+                                          cute::make_stride(1, groupscale_n, groupscale_n * blockscale_k)
                                         )
                                       );
 
