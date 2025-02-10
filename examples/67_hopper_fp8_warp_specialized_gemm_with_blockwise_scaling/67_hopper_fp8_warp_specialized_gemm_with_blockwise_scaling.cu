@@ -196,7 +196,6 @@ cutlass::HostTensor<ElementA  , LayoutA  > tensor_A;
 cutlass::HostTensor<ElementB  , LayoutB  > tensor_B;
 cutlass::HostTensor<ElementC  , LayoutC  > tensor_C;
 cutlass::HostTensor<ElementD  , LayoutD  > tensor_D;
-uint32_t mma_promotion_interval;
 cutlass::HostTensor<ElementBlockScale, LayoutA> blockscale_tensor_A;
 cutlass::HostTensor<ElementBlockScale, LayoutB> blockscale_tensor_B;
 cutlass::HostTensor<ElementD  , LayoutD  > tensor_ref_D;
@@ -398,8 +397,6 @@ void initialize(const Options<RasterOrderOptions> &options) {
   blockscale_tensor_A.sync_device();
   blockscale_tensor_B.sync_device();
 
-  mma_promotion_interval = 4;
-
   if (options.save_aux) {
     tensor_aux.resize(c_coord);
     tensor_aux.sync_device();
@@ -455,7 +452,6 @@ typename Gemm::Arguments args_from_options(const Options<RasterOrderOptions> &op
      stride_A,
      tensor_B.device_data(),
      stride_B,
-     mma_promotion_interval,
      blockscale_tensor_A.device_data(),
      blockscale_tensor_B.device_data()
      },
