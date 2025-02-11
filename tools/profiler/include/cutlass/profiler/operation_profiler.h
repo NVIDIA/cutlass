@@ -241,17 +241,30 @@ protected:
 
   /// Profiles the GPU kernel launched in `func` running simultaneously on all
   /// requested devices.
+  Status profile_kernel_w_cuda_graphs_(
+    PerformanceResult& result,
+    Options const& options,
+    std::function<Status(int, cudaStream_t, int)> const& func,
+    std::vector<cudaStream_t> const& streams);
+
   Status profile_kernel_(
-    PerformanceResult &result,
-    Options const &options,
-    const std::function<Status(int, cudaStream_t, int)> &func,
-    const std::vector<cudaStream_t> &streams);
+    PerformanceResult& result,
+    Options const& options,
+    std::function<Status(int, cudaStream_t, int)> const& func,
+    std::vector<cudaStream_t> const& streams);
 
   /// Profiles the GPU kernel launched in `func` on the `stream`
   Status profile_kernel_(
-    PerformanceResult &result,
-    Options const &options,
-    const std::function<Status(cudaStream_t, int)> &func,
+    PerformanceResult& result,
+    Options const& options,
+    std::function<Status(cudaStream_t, int)> const& func,
+    cudaStream_t stream = nullptr);
+
+  /// Profiles the GPU kernel launched in `func` on the `stream`
+  Status profile_kernel_no_cuda_graphs_(
+    PerformanceResult& result,
+    Options const& options,
+    std::function<Status(cudaStream_t, int)> const& func,
     cudaStream_t stream = nullptr);
 
 private:

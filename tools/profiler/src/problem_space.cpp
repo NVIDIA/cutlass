@@ -1203,6 +1203,34 @@ bool arg_as_scalar(
   return arg_as_scalar(bytes, numeric_type, value_ptr);
 }
 
+/// Returns a copy of the string passed to the argument.
+/// (kScalar arguments are stored as strings).
+bool arg_as_string(
+  std::string& arg,
+  char const* name,
+  ProblemSpace const& problem_space,
+  ProblemSpace::Problem const& problem) {
+
+  size_t idx = problem_space.argument_index(name);
+  KernelArgument::Value const* value_ptr = problem.at(idx).get();
+
+  if (value_ptr->not_null) {
+    if (value_ptr->argument->description->type == ArgumentTypeID::kScalar) {
+      std::string const& str_value =
+        static_cast<ScalarArgument::ScalarValue const*>(value_ptr)->value;
+      arg = std::string(str_value);
+    }
+    else {
+      throw std::runtime_error(
+        "arg_as_string() - illegal cast. Problem space argument must be scalar");
+    }
+
+    return true;
+  }
+
+  return false;
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Returns true if a tensor description satisfies a `tensor` value

@@ -616,7 +616,6 @@ void DeviceAllocation::initialize_random_device(int seed, Distribution dist) {
       dist
     );
     break;
-  
   case library::NumericTypeID::kFUE4M3:
     cutlass::reference::device::BlockFillRandom<cutlass::float_ue4m3_t>(
       reinterpret_cast<cutlass::float_ue4m3_t *>(pointer_),
@@ -657,7 +656,6 @@ void DeviceAllocation::initialize_random_device(int seed, Distribution dist) {
       dist
     );
     break;
-  
   case library::NumericTypeID::kF64:
     cutlass::reference::device::BlockFillRandom<double>(
       reinterpret_cast<double *>(pointer_),
@@ -823,7 +821,6 @@ void DeviceAllocation::initialize_random_host(int seed, Distribution dist) {
     );
     break;
   
-  
   case library::NumericTypeID::kFE2M3:
     cutlass::reference::host::BlockFillRandom<cutlass::float_e2m3_t>(
       reinterpret_cast<cutlass::float_e2m3_t *>(host_data.data()),
@@ -856,7 +853,6 @@ void DeviceAllocation::initialize_random_host(int seed, Distribution dist) {
       dist
     );
     break;
-    
   case library::NumericTypeID::kF16:
     cutlass::reference::host::BlockFillRandom<cutlass::half_t>(
       reinterpret_cast<cutlass::half_t *>(host_data.data()),
@@ -1086,7 +1082,6 @@ void DeviceAllocation::initialize_sequential_device(Distribution dist) {
     );
     break;
   
-  
   case library::NumericTypeID::kFE2M3:
     cutlass::reference::device::BlockFillSequential<cutlass::float_e2m3_t>(
       reinterpret_cast<cutlass::float_e2m3_t *>(pointer_),
@@ -1119,7 +1114,6 @@ void DeviceAllocation::initialize_sequential_device(Distribution dist) {
       static_cast<cutlass::float_ue8m0_t>(dist.sequential.start)
     );
     break;
-  
   case library::NumericTypeID::kF16:
     cutlass::reference::device::BlockFillSequential<cutlass::half_t>(
       reinterpret_cast<cutlass::half_t *>(pointer_),
@@ -1360,7 +1354,6 @@ void DeviceAllocation::initialize_sequential_host(Distribution dist) {
     );
     break;
   
-  
   case library::NumericTypeID::kFE2M3:
     cutlass::reference::host::BlockFillSequential<cutlass::float_e2m3_t>(
       reinterpret_cast<cutlass::float_e2m3_t *>(host_data.data()),
@@ -1393,7 +1386,6 @@ void DeviceAllocation::initialize_sequential_host(Distribution dist) {
       static_cast<cutlass::float_ue8m0_t>(dist.sequential.start)
     );
     break;
-  
   case library::NumericTypeID::kF16:
     cutlass::reference::host::BlockFillSequential<cutlass::half_t>(
       reinterpret_cast<cutlass::half_t *>(host_data.data()),
@@ -1690,7 +1682,6 @@ bool DeviceAllocation::block_compare_equal(
       reinterpret_cast<float_e5m2_t const *>(ptr_A),
       reinterpret_cast<float_e5m2_t const *>(ptr_B),
       capacity);
-  
   case library::NumericTypeID::kFUE4M3:
     return reference::device::BlockCompareEqual<float_ue4m3_t>(
       reinterpret_cast<float_ue4m3_t const *>(ptr_A),
@@ -1717,7 +1708,6 @@ bool DeviceAllocation::block_compare_equal(
       reinterpret_cast<float_e2m1_t const *>(ptr_A),
       reinterpret_cast<float_e2m1_t const *>(ptr_B),
       capacity);
-  
   case library::NumericTypeID::kF16:
     return reference::device::BlockCompareEqual<half_t>(
       reinterpret_cast<half_t const *>(ptr_A),
@@ -1886,7 +1876,6 @@ bool DeviceAllocation::block_compare_relatively_equal(
       capacity,
       static_cast<float_e5m2_t>(epsilon),
       static_cast<float_e5m2_t>(nonzero_floor));
-  
   case library::NumericTypeID::kFUE4M3:
     return reference::device::BlockCompareRelativelyEqual<float_ue4m3_t>(
       reinterpret_cast<float_ue4m3_t const *>(ptr_A),
@@ -1925,7 +1914,6 @@ bool DeviceAllocation::block_compare_relatively_equal(
       capacity,
       static_cast<float_e2m1_t>(epsilon),
       static_cast<float_e2m1_t>(nonzero_floor));
-  
   case library::NumericTypeID::kF16:
     return reference::device::BlockCompareRelativelyEqual<half_t>(
       reinterpret_cast<half_t const *>(ptr_A),
@@ -2273,7 +2261,6 @@ void DeviceAllocation::write_tensor_csv(
     write_tensor_csv_static_type<float_ue4m3_t>(out, *this);
     break;
   
-  
   case library::NumericTypeID::kFE2M3:
     write_tensor_csv_static_type<float_e2m3_t>(out, *this);
     break;
@@ -2288,7 +2275,6 @@ void DeviceAllocation::write_tensor_csv(
   case library::NumericTypeID::kFUE8M0:
     write_tensor_csv_static_type<float_ue8m0_t>(out, *this);
     break;
-  
   case library::NumericTypeID::kF16:
     write_tensor_csv_static_type<half_t>(out, *this);
     break;
@@ -2475,7 +2461,6 @@ void DeviceAllocation::fill_device(double val = 0.0) {
   case library::NumericTypeID::kFE2M1:
     tensor_fill<float_e2m1_t>(*this, static_cast<float_e2m1_t>(val));
     break;
-  
 
   case library::NumericTypeID::kF16:
     tensor_fill<half_t>(*this, static_cast<half_t>(val));
@@ -2611,7 +2596,6 @@ void DeviceAllocation::fill_host(double val = 0.0) {
       static_cast<float_e2m1_t>(val)
     );
     break;
-  
 
   case library::NumericTypeID::kFE4M3:
     cutlass::reference::host::BlockFill<float_e4m3_t>(

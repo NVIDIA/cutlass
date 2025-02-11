@@ -162,6 +162,13 @@ set(CUTLASS_TEST_LEVEL "0" CACHE STRING "Level of tests to compile.")
 find_package(Python3 3.5 COMPONENTS Interpreter REQUIRED)
 
 ################################################################################
+
+
+include(customConfigs.cmake)
+
+################################################################################
+
+
 set(CUTLASS_ENABLE_HEADERS_ONLY OFF CACHE BOOL "Enable only the header library")
 
 if(CUTLASS_ENABLE_HEADERS_ONLY)
@@ -445,12 +452,6 @@ endif()
 # Blackwell features
 #
 ###################################################################################################
-
-if (CUDA_VERSION VERSION_GREATER_EQUAL 12.8 AND NOT CUTLASS_ENABLE_SYCL)
-  list(APPEND CUTLASS_CUDA_NVCC_FLAGS -DCUDA_BLACKWELL_TMA_SWIZZLE_ENABLED=1)
-
-  list(APPEND CUTLASS_CUDA_NVCC_FLAGS -DCUDA_ENABLE_PREFERRED_CLUSTER=1)
-endif()
 
 
 
@@ -1028,6 +1029,94 @@ function(cutlass_add_executable_tests NAME TARGET)
     endif()
 
 endfunction()
+
+
+
+function(cutlass_generate_profiler_tests NAME)
+
+  set(options)
+  set(oneValueArgs)
+  set(multiValueArgs DEPENDS DEPENDEES CUTLASS_PROFILER_EXTRA_OPTIONS)
+  cmake_parse_arguments(_ "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+
+  if (NOT CUTLASS_BUILD_FOR_PROFILER_REGRESSIONS AND NOT CUTLASS_BUILD_FOR_PROFILER_PERFORMANCE_REGRESSIONS)
+    return()
+  endif()
+
+  install(
+    FILES ${CUTLASS_PROFILER_REGRESSION_LIST_FILE}
+    DESTINATION ${CMAKE_INSTALL_INFODIR}/cutlass/
+    RENAME profiler_regressions.csv
+    )
+
+  # Generate cmake test targets for each entry in the testlist csv
+
+  if (NOT EXISTS "${CUTLASS_PROFILER_REGRESSION_LIST_FILE}")
+    message(SEND_ERROR "Profiler unit tests list path is invalid: CUTLASS_PROFILER_REGRESSION_LIST_FILE = ${CUTLASS_PROFILER_REGRESSION_LIST_FILE}")
+  else()
+    message(STATUS "Using ${CUTLASS_PROFILER_REGRESSION_LIST_FILE} to generate profiler-based tests.")
+  endif()
+
+  file(STRINGS ${CUTLASS_PROFILER_REGRESSION_LIST_FILE} TEST_LIST)
+
+  foreach(TEST IN LISTS TEST_LIST)
+
+    if ("${TEST}" MATCHES " *cutlass_profiler.*")
+
+    # Generate a flattened name for the test from the test command line.
+    string(REPLACE "," ";" TEST_NAME_LIST ${TEST})
+    list(GET TEST_NAME_LIST 0 TEST)
+    string(REGEX MATCHALL "[a-zA-Z0-9_=]+" TEST_NAME "${TEST}")
+      list(FILTER TEST_NAME EXCLUDE REGEX "cutlass_profiler|mode=trace|providers=cutlass")
+    list(JOIN TEST_NAME "_" TEST_NAME)
+    string(REGEX REPLACE "_verification_required=(true|false)" "" TEST_NAME "${TEST_NAME}")
+    string(REPLACE "_verification_providers=device" "" TEST_NAME "${TEST_NAME}")
+    string(REPLACE "batch_count=" "batch" TEST_NAME "${TEST_NAME}")
+    string(REPLACE "cluster_m=" "" TEST_NAME "${TEST_NAME}")
+    string(REPLACE "_cluster_n=" "x" TEST_NAME "${TEST_NAME}")
+    string(REGEX REPLACE "_cluster_k=[0-9]+" "" TEST_NAME "${TEST_NAME}")
+    string(REPLACE "cluster_m_fallback=" "" TEST_NAME "${TEST_NAME}")
+    string(REPLACE "_cluster_n_fallback=" "x" TEST_NAME "${TEST_NAME}")
+    string(REGEX REPLACE "_cluster_k_fallback=[0-9]+" "" TEST_NAME "${TEST_NAME}")
+    string(REPLACE "runtime_input_datatype_a=" "" TEST_NAME "${TEST_NAME}")
+    string(REPLACE "runtime_input_datatype_b=" "" TEST_NAME "${TEST_NAME}")
+    string(REPLACE "=" "" TEST_NAME "${TEST_NAME}")
+    string(REPLACE "_error_on_no_match" "" TEST_NAME "${TEST_NAME}")
+    string(REPLACE "_error_if_nothing_is_profiled" "" TEST_NAME "${TEST_NAME}")
+    string(REPLACE "kernels" "" TEST_NAME "${TEST_NAME}")
+    string(REPLACE "operation" "" TEST_NAME "${TEST_NAME}")
+
+    if (__DO_NOT_LOWERCASE_TEST_NAME)
+      string(TEST_NAME_LOWER "${TEST_NAME}")
+    else()
+      string(TOLOWER "${TEST_NAME}" TEST_NAME_LOWER)
+    endif()
+
+    # Munge the test command
+    string(REPLACE "cutlass_profiler" "" TEST "${TEST}")
+    set(TEST "${TEST}" ${__CUTLASS_PROFILER_EXTRA_OPTIONS} "--junit-output=${TEST_NAME_LOWER}")
+    set(TEST_COMMAND_${TEST_NAME_LOWER} "${TEST}")
+    list(APPEND TEST_COMMAND_VARS ${TEST_NAME_LOWER})
+
+    endif()
+
+  endforeach()
+
+  cutlass_add_executable_tests(
+    ${NAME} cutlass_profiler
+    DEPENDS ${__DEPENDS}
+    DEPENDEES ${__DEPENDEES}
+    TEST_COMMAND_OPTIONS ${TEST_COMMAND_VARS}
+    TEST_COMMAND_OPTIONS_PREFIX TEST_COMMAND_
+    DISABLE_EXECUTABLE_INSTALL_RULE
+    # Uncomment the following line when alloc/dealloc tracking
+    # is fixed for all configurations.
+    # TEST_SETS_SUPPORTED tmem_alloc_tracking
+    )
+
+endfunction()
+
+
 
 if (CUTLASS_ENABLE_TOOLS)
   add_subdirectory(tools)

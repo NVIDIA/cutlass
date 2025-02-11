@@ -120,7 +120,7 @@ public:
     typename detail::TileSchedulerSelector<
       GroupScheduler, ArchTag,
       TileShape, ClusterShape,
-      2, // Default unused parameter - SchedulerPipelineStageCoun
+      2, // Default unused parameter - SchedulerPipelineStageCount
       ProblemShape>::Scheduler,
     typename detail::TileSchedulerSelector<
     void, ArchTag, TileShape, ClusterShape>::Scheduler>;

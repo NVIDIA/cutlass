@@ -87,11 +87,11 @@ For a background on Blackwell's new features, please consult the PTX documentati
   - [Fused multi-head attention fprop kernel](./examples/77_blackwell_fmha/77_blackwell_fmha.cu) supporting fp16/bf16/fp8 data types across head dims of 32,64, and 128.
 * Documentation updates:
   - [Quickstart - instantiating a Blackwell block-scaled GEMM](./media/docs/quickstart.md#instantiating-a-blackwell-gemm-kernel).
-  - Detailed [Blackwell block-scaled GEMM functionality documentation](./media/docs/narrow_and_mixed_precision_gemms.md)
+  - Detailed [Blackwell block-scaled GEMM functionality documentation](./media/docs/blackwell_functionality.md)
   - A new [functionality documentation](./media/docs/functionality.md) specifically for 3.x API comprehensively documenting all supported kernel types, data types, kernel features, minimum CUDA tookit support etc for 3.x supported architectures.
   - Updates to [compatibility](./README.md#compatibility) section regarding supported compilers, operating systems, CUDA Toolkits, Hardware Architectures, and [Target Architecture](./README.md#Target-Architecture).
 
-Note: CUTLASS 3.x builds are known to be broken on Windows platforms for all CUDA toolkits.
+Note: CUTLASS 3.x builds are known to be down on Windows platforms for all CUDA toolkits.
 CUTLASS team is working on a fix.
 
 **See the [CHANGELOG](CHANGELOG.md) for details of all past releases and updates.**
@@ -162,7 +162,7 @@ We have tested the following environments.
 
 Note: GCC 8.5.0 has known regressions regarding fold expressions and overloaded operators. Using GCC 7.5.0 or (preferred) GCC >= 9 is recommended.
 
-Note: CUTLASS 3.x builds are known to be broken on Windows platforms for all CUDA toolkits.
+Note: CUTLASS 3.x builds are known to be down on Windows platforms for all CUDA toolkits.
 CUTLASS team is working on a fix.
 
 ## Hardware

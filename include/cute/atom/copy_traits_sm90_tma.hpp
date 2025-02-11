@@ -1374,19 +1374,6 @@ tma_partition(Copy_Atom<Args...>      const& copy_atom,
   // Transform tile mode and coalesce
   Tensor gtensor_v = coalesce(gtensor.compose(glayout_V), Shape<Shape<_1,_1>>{});    // ((TMA,TMA_Iter), Rest...)
   Tensor stensor_v = coalesce(stensor.compose(slayout_V), Shape<Shape<_1,_1>>{});    // ((TMA,TMA_Iter), Rest...)
-
-#if 0
-  if (thread0()) {
-    print("cta_coord  : "); print(cta_coord); print("\n");
-    print("cta_layout : "); print(cta_layout); print("\n");
-    print("gtensor   : "); print(gtensor); print("\n");
-    print("stensor   : "); print(stensor); print("\n");
-    print("layout_V  : "); print(layout_V); print("\n");
-    print("gtensor_v : "); print(gtensor_v); print("\n");
-    print("stensor_v : "); print(stensor_v); print("\n");
-  }
-#endif
-
   // Offset inside the TMA-mode for the multicast
   auto multicast_offset = cta_layout(cta_coord) * (size(tma_layout_v) / cosize(cta_layout));
   auto multicast_coord  = make_coord(make_coord(multicast_offset, Int<0>{}));

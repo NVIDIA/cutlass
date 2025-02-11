@@ -51,7 +51,7 @@
 #include "cutlass/util/command_line.h"
 
 // Command line test options
-struct Options {
+struct OptionsClusterLaunch {
   //
   // Data Members
   // 
@@ -95,10 +95,10 @@ struct Options {
 //
 
 template<typename Pipeline>
-class Testbed {
+class TestbedClusterLaunch {
 private:
   // Commandline options
-  Options options;
+  OptionsClusterLaunch options;
 
   bool run_test() {
 
@@ -114,7 +114,7 @@ private:
 
 
 public:
-  Testbed(Options const &options_) : options(options_) {
+  TestbedClusterLaunch(OptionsClusterLaunch const &options_) : options(options_) {
     int device_id = 0;
     cudaDeviceProp device_prop;
     CUTE_CHECK_ERROR(cudaSetDevice(device_id));

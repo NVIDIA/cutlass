@@ -477,6 +477,94 @@ sm100_make_trivial_tiled_mma() {
   }
 }
 
+template<
+  class ElementAMma,
+  class ElementBMma,
+  class ElementAccumulator,
+  class TileShape_MNK,
+  class ClusterShape_MNK,
+  UMMA::Major UmmaMajorA,
+  UMMA::Major UmmaMajorB,
+  int Scale,
+  class KernelScheduleType
+>
+constexpr auto
+sm100_make_trivial_fastFP32_tiled_mma() {
+  // MMA_2SM requested
+  if constexpr (cute::is_base_of_v<KernelSchedule2Sm, KernelScheduleType> ) {
+    using AtomLayout_MNK = decltype(make_layout(shape_div(ClusterShape_MNK{}, Shape<_2,_1,_1>{})));
+    constexpr int M = cute::size<0>(TileShape_MNK{});
+    constexpr int N = cute::size<1>(TileShape_MNK{});
+    if constexpr (UmmaMajorA == cute::UMMA::Major::K && !cute::is_base_of_v<KernelTmaWarpSpecializedFastFP32SmemSm100, KernelScheduleType>) {
+      return make_tiled_mma(cute::SM100_MMA_F16BF16_2x1SM_TS_SCALED<ElementAMma, ElementBMma, ElementAccumulator,
+                                                     M, N,  UmmaMajorA,  UmmaMajorB, Scale>{});
+    }
+    else { // If A needs to be transposed by MMA, fall back to SMEM from A MMA instructions
+      return make_tiled_mma(cute::SM100_MMA_F16BF16_2x1SM_SS_SCALED<ElementAMma, ElementBMma, ElementAccumulator,
+                                                     M, N,  UmmaMajorA,  UmmaMajorB, Scale>{});
+    }
+  }
+  // MMA_1SM requested
+  else if constexpr (cute::is_base_of_v<KernelSchedule1Sm, KernelScheduleType> ) {
+    // using AtomLayout_MNK = Layout<ClusterShape_MNK>;
+    constexpr int M = cute::size<0>(TileShape_MNK{});
+    constexpr int N = cute::size<1>(TileShape_MNK{});
+    if constexpr (UmmaMajorA == cute::UMMA::Major::K  && !cute::is_base_of_v<KernelTmaWarpSpecializedFastFP32SmemSm100, KernelScheduleType>) {
+      return make_tiled_mma(cute::SM100_MMA_F16BF16_TS_SCALED<ElementAMma, ElementBMma, ElementAccumulator,
+                                                      M, N,  UmmaMajorA,  UmmaMajorB, Scale>{});
+    }
+    else { // If A needs to be transposed by MMA, fall back to SMEM from A MMA instructions
+      return make_tiled_mma(cute::SM100_MMA_F16BF16_SS_SCALED<ElementAMma, ElementBMma, ElementAccumulator,
+                                                      M, N,  UmmaMajorA,  UmmaMajorB, Scale>{});
+    }
+  }
+  else if constexpr (cute::is_same_v<KernelScheduleType, KernelScheduleSm100FastFP32Gemm> ||
+                     cute::is_same_v<KernelScheduleType, KernelTmaWarpSpecializedFastFP32SmemSm100> ||
+                     cute::is_same_v<KernelScheduleType, KernelScheduleSm100PtrArrayFastFP32Gemm> ||
+                     cute::is_same_v<KernelScheduleType, KernelTmaWarpSpecializedPtrArrayFastFP32SmemSm100>) {
+    // Static cluster
+    if constexpr (cute::is_static_v<ClusterShape_MNK>) {
+      // For MMA_2SM we need a cluster shape that is multiple of 2x1
+      // and only M=128 and M=256 are supported, otherwise, fall back to MMA_1SM
+      if constexpr (cute::get<0>(ClusterShape_MNK{}) % 2 == 0 &&
+                  (cute::get<0>(TileShape_MNK{}) / cute::get<0>(ClusterShape_MNK{})) % 64 == 0) {
+        if constexpr (!cute::is_base_of_v<KernelTmaWarpSpecializedFastFP32SmemSm100, KernelScheduleType>) {
+          return sm100_make_trivial_fastFP32_tiled_mma<ElementAMma, ElementBMma, ElementAccumulator, TileShape_MNK,
+                                            ClusterShape_MNK, UmmaMajorA, UmmaMajorB, Scale, KernelTmaWarpSpecialized2SmFastFP32Sm100>();
+        }
+        else {
+          return sm100_make_trivial_fastFP32_tiled_mma<ElementAMma, ElementBMma, ElementAccumulator, TileShape_MNK,
+                                            ClusterShape_MNK, UmmaMajorA, UmmaMajorB, Scale, KernelTmaWarpSpecialized2SmFastFP32SmemSm100>();
+        }
+      }
+      else {
+        if constexpr (!cute::is_base_of_v<KernelTmaWarpSpecializedFastFP32SmemSm100, KernelScheduleType>) {
+          return sm100_make_trivial_fastFP32_tiled_mma<ElementAMma, ElementBMma, ElementAccumulator, TileShape_MNK,
+                                              ClusterShape_MNK, UmmaMajorA, UmmaMajorB, Scale, KernelTmaWarpSpecialized1SmFastFP32Sm100>();
+        }
+        else {
+          return sm100_make_trivial_fastFP32_tiled_mma<ElementAMma, ElementBMma, ElementAccumulator, TileShape_MNK,
+                                            ClusterShape_MNK, UmmaMajorA, UmmaMajorB, Scale, KernelTmaWarpSpecialized1SmFastFP32SmemSm100>();
+        }
+      }
+    }
+    // Dynamic cluster shape means we cannot assume we can use 2SM MMA 
+    else {
+      if constexpr (!cute::is_base_of_v<KernelTmaWarpSpecializedFastFP32SmemSm100, KernelScheduleType>) {
+        return sm100_make_trivial_fastFP32_tiled_mma<ElementAMma, ElementBMma, ElementAccumulator, TileShape_MNK,
+                                            ClusterShape_MNK, UmmaMajorA, UmmaMajorB, Scale, KernelTmaWarpSpecialized1SmFastFP32Sm100>();
+      }
+      else {
+        return sm100_make_trivial_fastFP32_tiled_mma<ElementAMma, ElementBMma, ElementAccumulator, TileShape_MNK,
+                                          ClusterShape_MNK, UmmaMajorA, UmmaMajorB, Scale, KernelTmaWarpSpecialized1SmFastFP32SmemSm100>();
+      }
+    }
+  }
+  else {
+    static_assert(cutlass::detail::dependent_false<TileShape_MNK> == 0,
+        "Unsupported policy for SM100 collective builder.");
+  }
+}
 
 /**
  * @brief Check for U4_UNPACK_U8, U6_UNPACK_U8 alignment requirement
@@ -547,22 +635,22 @@ template <class ElementA, int AlignmentA, class ElementB, int AlignmentB, class 
 constexpr bool
 sm1xx_gemm_is_aligned() {
   // Only support dense gemm alignment check
-  constexpr bool is_f6f4_subbytes = cute::sizeof_bits_v<ElementA> < 8 || cute::sizeof_bits_v<ElementB> < 8;
+  constexpr bool is_f8f6f4_subbytes = cute::sizeof_bits_v<ElementA> < 8 || cute::sizeof_bits_v<ElementB> < 8;
 
-  return ((cute::sizeof_bits_v<ElementA> * AlignmentA) % cutlass::detail::get_input_alignment_bits<ElementA, is_f6f4_subbytes>() == 0) &&
-         ((cute::sizeof_bits_v<ElementB> * AlignmentB) % cutlass::detail::get_input_alignment_bits<ElementB, is_f6f4_subbytes>() == 0);
+  return ((cute::sizeof_bits_v<ElementA> * AlignmentA) % cutlass::detail::get_input_alignment_bits<ElementA, is_f8f6f4_subbytes>() == 0) &&
+         ((cute::sizeof_bits_v<ElementB> * AlignmentB) % cutlass::detail::get_input_alignment_bits<ElementB, is_f8f6f4_subbytes>() == 0);
 }
 
 template <class ElementA, int AlignmentA, class ElementB, int AlignmentB, class KernelScheduleType>
 constexpr bool
 sm1xx_blockscaled_gemm_is_aligned() {
   // Only support blocksscaled gemm alignment check
-  constexpr bool is_f6f4_subbytes = (cute::sizeof_bits_v<ElementA> < 8 || cute::sizeof_bits_v<ElementB> < 8) &&
+  constexpr bool is_mxf8f6f4_subbytes = (cute::sizeof_bits_v<ElementA> < 8 || cute::sizeof_bits_v<ElementB> < 8) &&
                                     (cute::is_base_of_v<KernelScheduleMxf8f6f4Sm100, KernelScheduleType> 
                                     );
 
-  return ((cute::sizeof_bits_v<ElementA> * AlignmentA) % cutlass::detail::get_input_alignment_bits<ElementA, is_f6f4_subbytes>() == 0) &&
-         ((cute::sizeof_bits_v<ElementB> * AlignmentB) % cutlass::detail::get_input_alignment_bits<ElementB, is_f6f4_subbytes>() == 0);
+  return ((cute::sizeof_bits_v<ElementA> * AlignmentA) % cutlass::detail::get_input_alignment_bits<ElementA, is_mxf8f6f4_subbytes>() == 0) &&
+         ((cute::sizeof_bits_v<ElementB> * AlignmentB) % cutlass::detail::get_input_alignment_bits<ElementB, is_mxf8f6f4_subbytes>() == 0);
 }
 
 } // namespace detail

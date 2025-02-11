@@ -330,18 +330,18 @@ static struct {
   char const *text;
   char const *pretty;
   OperationKind enumerant;
-}
-OperationKind_enumerants[] = {
-  {"eq_gemm", "EqGemm", OperationKind::kEqGemm}, 
+} OperationKind_enumerants[] = {
+  {"eq_gemm", "EqGemm", OperationKind::kEqGemm},
   {"gemm", "Gemm", OperationKind::kGemm},
   {"block_scaled_gemm", "blockScaledGemm", OperationKind::kBlockScaledGemm}, 
   {"rank_k", "RankK", OperationKind::kRankK},
   {"rank_2k", "Rank2K", OperationKind::kRank2K},
   {"trmm", "Trmm", OperationKind::kTrmm},
   {"symm", "Symm", OperationKind::kSymm},
-  {"conv2d", "Conv2d", OperationKind::kConv2d},           
-  {"conv3d", "Conv3d", OperationKind::kConv3d},           
+  {"conv2d", "Conv2d", OperationKind::kConv2d},
+  {"conv3d", "Conv3d", OperationKind::kConv3d},
   {"spgemm", "SparseGemm", OperationKind::kSparseGemm},
+  {"grouped_gemm", "GroupedGemm", OperationKind::kGroupedGemm},
 };
 
 /// Converts a Status enumerant to a string
@@ -504,7 +504,6 @@ NumericTypeID_enumerants[] = {
   {"fe2m1", "FE2M1", NumericTypeID::kFE2M1},
   {"fue8m0", "FUE8M0", NumericTypeID::kFUE8M0},
   {"fue4m3", "FUE4M3", NumericTypeID::kFUE4M3},
-  
   {"f16", "F16", NumericTypeID::kF16},
   {"bf16", "BF16", NumericTypeID::kBF16},
   {"f32", "F32", NumericTypeID::kF32},
@@ -577,7 +576,6 @@ int sizeof_bits(NumericTypeID type) {
     case NumericTypeID::kFE2M1: return 4;
     case NumericTypeID::kFUE8M0: return 8;
     case NumericTypeID::kFUE4M3: return 8;
-    
     case NumericTypeID::kF16: return 16;
     case NumericTypeID::kBF16: return 16;
     case NumericTypeID::kTF32: return 32;
@@ -666,7 +664,6 @@ bool is_signed_type(NumericTypeID type) {
     case NumericTypeID::kFE2M1: return true;
     case NumericTypeID::kFUE8M0: return false;
     case NumericTypeID::kFUE4M3: return false;
-    
     case NumericTypeID::kF16: return true;
     case NumericTypeID::kBF16: return true;
     case NumericTypeID::kTF32: return true;
@@ -707,7 +704,6 @@ bool is_float_type(NumericTypeID type) {
   case NumericTypeID::kFE2M1: return true;
   case NumericTypeID::kFUE8M0: return true;
   case NumericTypeID::kFUE4M3: return true;
-  
   case NumericTypeID::kF16: return true;
   case NumericTypeID::kBF16: return true;
   case NumericTypeID::kTF32: return true;
@@ -1256,7 +1252,6 @@ bool lexical_cast(std::vector<uint8_t> &bytes, NumericTypeID type, std::string c
     *reinterpret_cast<float_e5m2_t *>(bytes.data()) = static_cast<float_e5m2_t>(tmp);
   }
     break;
-  
   case NumericTypeID::kFE2M3:
   {
     float tmp;
@@ -1292,7 +1287,6 @@ bool lexical_cast(std::vector<uint8_t> &bytes, NumericTypeID type, std::string c
     *reinterpret_cast<float_ue4m3_t *>(bytes.data()) = static_cast<float_ue4m3_t>(tmp);
   }
     break;
-  
   case NumericTypeID::kF16:
   {
     float tmp;
@@ -1473,7 +1467,6 @@ std::string lexical_cast(std::vector<uint8_t> &bytes, NumericTypeID type) {
     ss << tmp;
   }
     break;
-  
   case NumericTypeID::kF16:
   {
     float tmp = *reinterpret_cast<half_t *>(bytes.data());
@@ -1652,7 +1645,6 @@ bool cast_from_int64(std::vector<uint8_t> &bytes, NumericTypeID type, int64_t sr
     *reinterpret_cast<float_ue4m3_t *>(bytes.data()) = static_cast<float_ue4m3_t>(float(src));
   }
     break;
-  
   case NumericTypeID::kF16:
   {
     *reinterpret_cast<half_t *>(bytes.data()) = static_cast<half_t>(float(src));
@@ -1789,7 +1781,6 @@ bool cast_from_uint64(std::vector<uint8_t> &bytes, NumericTypeID type, uint64_t 
     *reinterpret_cast<float_ue4m3_t *>(bytes.data()) = static_cast<float_ue4m3_t>(float(src));
   }
     break;
-  
   case NumericTypeID::kF16:
   {
     *reinterpret_cast<half_t *>(bytes.data()) = static_cast<half_t>(float(src));
@@ -1927,7 +1918,6 @@ bool cast_from_double(std::vector<uint8_t> &bytes, NumericTypeID type, double sr
     *reinterpret_cast<float_ue4m3_t *>(bytes.data()) = static_cast<float_ue4m3_t>(float(src));
   }
     break;
-  
   case NumericTypeID::kF16:
   {
     *reinterpret_cast<half_t *>(bytes.data()) = static_cast<half_t>(float(src));

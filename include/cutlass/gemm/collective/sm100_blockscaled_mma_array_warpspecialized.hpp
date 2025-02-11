@@ -682,11 +682,11 @@ struct CollectiveMma<
     auto mSFB_nkl = [=](){
       if constexpr (IsCtaN192) {
         Tensor mSFB_tmp = observed_tma_load_sfb_->get_tma_tensor(shape(layout_SFB));
-        auto x = stride<0,2>(mSFB_tmp);
-        auto y = ceil_div(shape<0,2>(mSFB_tmp), 4);
-        auto  new_shape =  make_shape (make_shape( shape<0,0>(mSFB_tmp),  shape<0,1>(mSFB_tmp),
+        auto x = stride<0,1>(mSFB_tmp);
+        auto y = ceil_div(shape<0,1>(mSFB_tmp), 4);
+        auto  new_shape =  make_shape (make_shape( shape<0,0>(mSFB_tmp),
                                        make_shape( make_shape(_2{}, _2{}),   y)),  shape<1>(mSFB_tmp), shape<2>(mSFB_tmp));
-        auto new_stride = make_stride(make_stride(stride<0,0>(mSFB_tmp), stride<0,1>(mSFB_tmp),
+        auto new_stride = make_stride(make_stride(stride<0,0>(mSFB_tmp),
                                       make_stride(make_stride(   x,    x), x*3)), stride<1>(mSFB_tmp), stride<2>(mSFB_tmp));
         return make_tensor(mSFB_tmp.data(), make_layout(new_shape, new_stride));
       }

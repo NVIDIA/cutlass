@@ -276,11 +276,12 @@ endif()
 
 if (CUTLASS_NVCC_MAX_ARCH GREATER_EQUAL 89)
 
-  # Conv - F8 input, F8 output, F32 accumulation
+  # Conv - F8 input, F8 output
   cutlass_test_unit_add_executable(
     cutlass_test_unit_conv_device_tensorop_f8_sm89
 
     conv2d_fprop_implicit_gemm_f8nhwc_f8nhwc_f8nhwc_tensor_op_f32_sm89.cu
+    conv2d_fprop_implicit_gemm_f8nhwc_f8nhwc_f8nhwc_tensor_op_f16_sm89.cu
   )
 
 endif()

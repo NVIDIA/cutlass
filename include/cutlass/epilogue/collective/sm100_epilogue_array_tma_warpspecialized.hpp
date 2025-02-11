@@ -986,6 +986,314 @@ public:
     return cute::make_tuple(load_pipe_consumer_state, store_pipe_producer_state, acc_pipe_consumer_state);
   }
 
+  // API with Global Accumulator in registers for FastFP32 (emulated MMA) kernels.
+  // The accumulator in TMEM periodically loaded into the registers so that the MMA can clear out the TMEM accumulator
+  // values for better accuracy. This epilogue accepts the accumulator in registers and take TiledCopy for the
+  // TMEM->Reg as a parameter to be used in partitioning GMEM tensors C and D.
+  template<
+    class ProblemShapeMNKL,
+    class CtaTileMNK,
+    class CtaCoordMNKL,
+    class MmaTileMNK,
+    class TiledMma,
+    class AccEngine,
+    class AccLayout,
+    class TiledCopyT2R,
+    class TensorMapD
+  >
+  CUTLASS_DEVICE auto
+  store(
+      LoadPipeline load_pipeline,
+      LoadPipelineState load_pipe_consumer_state,
+      StorePipeline store_pipeline,
+      StorePipelineState store_pipe_producer_state,
+      ProblemShapeMNKL problem_shape_mnkl,
+      CtaTileMNK cta_tile_mnk,
+      CtaCoordMNKL cta_coord_mnkl,
+      MmaTileMNK mma_tile_mnk,
+      TiledMma tiled_mma,
+      cute::Tensor<AccEngine, AccLayout>& tTR_rAcc,                                     // (T2R,T2R_M,T2R_N,EPI_M,EPI_N)
+      TensorStorage& shared_tensors,
+      TensorMapD store_tensormap,
+      TiledCopyT2R tiled_t2r
+      ) {
+    using namespace cute;
+    using ElementAccumulator = typename AccEngine::value_type;
+    using ElementCompute_ = typename epilogue::fusion::FusionCallbacksTraits<FusionCallbacks>::ElementCompute;
+    using ElementCompute = cute::conditional_t<cute::is_void_v<ElementCompute_>,ElementAccumulator,ElementCompute_>;
+
+    static_assert(is_rmem<AccEngine>::value, "Accumulator must be Register resident.");
+    static_assert(rank(AccLayout{}) == 5, "Accumulators must be copy-partitioned:  (T2R,T2R_M,T2R_N,EPI_M,EPI_N)");
+    static_assert(rank(ProblemShapeMNKL{}) == 4, "ProblemShapeMNKL must be rank 4");
+    static_assert(rank(CtaCoordMNKL{}) == 4, "CoordMNKL must be rank 4");
+
+    // Indexing variables
+    auto [M, N, K, L] = problem_shape_mnkl;
+    auto [m_coord, n_coord, k_coord, l_coord] = cta_coord_mnkl;
+    int thread_idx = ThreadIdxX() % ThreadCount;
+    int warp_idx = thread_idx / NumThreadsPerWarp;
+    [[maybe_unused]] int lane_idx = thread_idx % NumThreadsPerWarp;
+
+    auto coord_shape = append<3>(make_shape(m_coord, n_coord),Int<0>{});
+
+    // Represent the full output tensor, slice to get the tile this CTA is responsible for
+    Tensor mD_mn = params.tma_store_d.get_tma_tensor(append<3>(make_shape(M,N),Int<1>{}));             //       (M,N,L)
+    Tensor mD = coalesce(mD_mn, take<0,2>(cta_tile_mnk));
+    Tensor gD = local_tile(mD, take<0,2>(cta_tile_mnk), coord_shape);                                  // (CTA_M,CTA_N)
+
+    // Apply epilogue subtiling
+    Tensor gD_epi = flat_divide(  gD, EpilogueTile{});                           // (EPI_TILE_M,EPI_TILE_N,EPI_M,EPI_N)
+
+    // Construct the corresponding pipelined smem tensors
+    auto ptr_sC = shared_tensors.collective.smem_C.begin();
+    auto ptr_sD = shared_tensors.collective.smem_D.begin();
+    Tensor sC_epi = cute::as_position_independent_swizzle_tensor(
+                      make_tensor(make_smem_ptr(ptr_sC), SmemLayoutC{}));             // (EPI_TILE_M,EPI_TILE_N,PIPE_C)
+    Tensor sD_epi = cute::as_position_independent_swizzle_tensor(
+                      make_tensor(make_smem_ptr(ptr_sD), SmemLayoutD{}));             // (EPI_TILE_M,EPI_TILE_N,PIPE_D)
+
+    // (t)hread-partition for (t)mem to (r)egister copy (tTR_)
+    ThrCopy thread_t2r = tiled_t2r.get_slice(thread_idx);
+    Tensor tTR_sD = thread_t2r.partition_D(sD_epi(_,_,_0{}));                                      // (T2R,T2R_M,T2R_N)
+
+    // Allocate D and accumulator registers
+    Tensor tTR_rD = make_tensor<SmemElementD>(shape(tTR_sD));                                      // (T2R,T2R_M,T2R_N)
+
+    // Vectorized fragment view
+    constexpr int FragmentSize = DispatchPolicy::FragmentSize;
+    Tensor tTR_rD_frg = recast<Array<SmemElementD, FragmentSize>>(coalesce(tTR_rD));                         // (EPI_V)
+
+    // (t)hread-partition for (s)mem to (r)egister copy (tSR_)
+    TiledCopy tiled_s2r  = make_tiled_copy_D(Copy_Atom<CopyOpS2R, SmemElementC>{}, tiled_t2r);
+    ThrCopy thread_s2r   = tiled_s2r.get_slice(thread_idx);
+    Tensor tSR_sC        = thread_s2r.partition_S(sC_epi);                                  // (S2R,S2R_M,S2R_N,PIPE_C)
+    Layout tSR_rC_layout = thread_s2r.retile_D(tTR_rD).layout();                                   // (S2R,S2R_M,S2R_N)
+
+    // Allocate C registers
+    // If C smem load is a non-vectorized dst(i) = src(i) then we can allocate C registers directly in the compute type
+    // to eliminate some redundant pack+unpack instruction sequences for sub-word types
+    constexpr bool IsDirectS2R = cute::is_same_v<CopyOpS2R, AutoVectorizingCopyWithAssumedAlignment<128>>
+                                && decltype(max_common_vector(tSR_rC_layout, tSR_sC.layout()))::value <= 1;
+    using RegisterElementC = cute::conditional_t<IsDirectS2R, ElementCompute, SmemElementC>;
+    Tensor tTR_rC = make_tensor<RegisterElementC>(shape(tTR_sD));                                  // (T2R,T2R_M,T2R_N)
+    Tensor tSR_rC = thread_s2r.retile_D(tTR_rC);                                                   // (S2R,S2R_M,S2R_N)
+
+    // (t)hread-partition for (r)egister to (s)mem copy (tRS_)
+    TiledCopy tiled_r2s = make_tiled_copy_D(Copy_Atom<CopyOpR2S,SmemElementD>{}, tiled_t2r);
+    ThrCopy thread_r2s = tiled_r2s.get_slice(thread_idx);
+    Tensor tRS_rD = thread_r2s.retile_S(tTR_rD);                                                   // (R2S,R2S_M,R2S_N)
+    Tensor tRS_sD = thread_r2s.partition_D(sD_epi);                                         // (R2S,R2S_M,R2S_N,PIPE_D)
+
+    // thread(b)lock-partition for (s)mem to (g)mem copy (bSG_)
+    ThrCopy thrblk_s2g = params.tma_store_d.get_slice(Int<0>{});
+    Tensor bSG_sD = thrblk_s2g.partition_S(sD_epi);                                         // (S2G,S2G_M,S2G_N,PIPE_D)
+    Tensor bSG_gD = thrblk_s2g.partition_D(gD_epi);                                    // (S2G,S2G_M,S2G_N,EPI_M,EPI_N)
+
+    // OOB predication for tile quantization "residue"
+    // Absolute coordinate tensors (dynamic)
+    Tensor mD_crd = make_identity_tensor(make_shape(M,N));                                                     // (M,N)
+    Tensor cD_mn = local_tile(mD_crd, take<0,2>(cta_tile_mnk), make_coord(m_coord, n_coord));          // (CTA_M,CTA_N)
+    Tensor tTR_cD_mn = thread_t2r.partition_D(flat_divide(cD_mn, EpilogueTile{}));     // (T2R,T2R_M,T2R_N,EPI_M,EPI_N)
+    // Relative coordinate tensors (static)
+    Tensor cD = make_counting_tensor(cD_mn.layout());                                                  // (CTA_M,CTA_N)
+    Tensor tTR_cD = make_counting_tensor(tTR_cD_mn.layout());                          // (T2R,T2R_M,T2R_N,EPI_M,EPI_N)
+    // Subtract the global "bottom right" corner from the local "top left" corner to get the max relative coordinate
+    auto residue_cD = make_coord(M,N) - cD_mn(_0{});                                                           // (m,n)
+    auto residue_tTR_cD = make_coord(M,N) - tTR_cD_mn(_0{});                                                   // (m,n)
+
+    // Get the fusion callbacks for the consumer store warps
+    constexpr bool RefSrc = false; // Register tensors reference T2R copy dst layout
+    auto cst_args = cutlass::epilogue::fusion::detail::ConsumerStoreArgs{
+                      problem_shape_mnkl,
+                      cta_tile_mnk,
+                      cta_coord_mnkl,
+                      tiled_mma,
+                      EpilogueTile{},
+                      tiled_t2r,
+                      cD,
+                      residue_cD,
+                      tTR_cD,
+                      residue_tTR_cD,
+                      tTR_rC,
+                      thread_idx
+        };
+
+    auto cst_callbacks = fusion_callbacks.template get_consumer_store_callbacks<RefSrc>(cst_args);
+    bool is_producer_load_needed = fusion_callbacks.is_producer_load_needed();
+    bool is_C_load_needed = is_source_supported && fusion_callbacks.is_C_load_needed();
+
+    // Thread synchronizer for previously issued waits or fences
+    // to ensure visibility of smem reads/writes to threads or TMA unit
+    auto synchronize = [] () { cutlass::arch::NamedBarrier::sync(ThreadCount, cutlass::arch::ReservedNamedBarriers::EpilogueBarrier); };
+
+    // Predication for TMA store (one warp issues TMA store)
+    bool issue_tma_store = warp_idx == 0;
+
+    // In the reuse smem configuration we have StagesC smem buffers and at most StagesD committed TMA stores in flight.
+    // The TMA store pipeline producer acquire returns when at most StagesD-1 committed stores are in-flight, so we can
+    // only guarantee store completion after StagesD iterations, then we can begin issuing releases on the smem buffer locks.
+    // store_pipe_producer_state tracks the acquire and load_pipe_consumer_state tracks the release, in circular buffer fashion.
+    // If TMA store supported async transaction mbarriers we would not need this synchronous release behavior.
+    LoadPipelineState load_wait_state = load_pipe_consumer_state;
+    if constexpr (ReuseSmemC) {
+      load_wait_state = store_pipe_producer_state;
+      load_wait_state.phase_ ^= 1;
+    }
+
+    // We can delay issue of TMA store by one iteration to achieve better interleaving of non-TMA instructions
+    // Sync requirements of smem reuse may preclude this optimization
+    // Delayed stores cause delayed stage releases which causes deadlock when StagesC == StagesD
+    int epi_m_prev = 0, epi_n_prev = 0;
+    static_assert(not (DelayTmaStore and ReuseSmemC and StagesC <= StagesD), "This TMA epilogue configuration will deadlock");
+
+    // The TMA store sequence for one subtile iteration
+    auto tma_store_fn = [&] (int epi_m, int epi_n) {
+      // Write the tile from smem to gmem with TMA
+      cutlass::arch::fence_view_async_shared(); // ensure smem writes are visible to TMA
+      synchronize(); // ensure all threads have issued their async fence
+      if (issue_tma_store) {
+        copy(params.tma_store_d.with(store_tensormap), bSG_sD(_,_,_,store_pipe_producer_state.index()), bSG_gD(_,_,_,epi_m,epi_n));
+      }
+
+      // Post async fence, pre TMA commit callback entry point
+      cst_callbacks.tma_store(epi_m, epi_n, store_pipe_producer_state.count(), issue_tma_store);
+
+      // Commit the TMA stores for this stage
+      if (issue_tma_store) {
+        store_pipeline.producer_commit(store_pipe_producer_state);
+      }
+      ++store_pipe_producer_state;
+
+      // Wait for the next smem buffer to be available
+      if (issue_tma_store) {
+        store_pipeline.producer_acquire(store_pipe_producer_state);
+      }
+      synchronize();
+
+      if constexpr (ReuseSmemC) {
+        // producer_acquire returns when at most StagesD-1 committed stores are pending
+        bool store_finished = store_pipe_producer_state.count() > StorePipeline::UnacquiredStages;
+        // Let dma warp know earliest smem buffer is consumed and empty after StagesD producer commits
+        if (store_finished) {
+          if (is_producer_load_needed) {
+            load_pipeline.consumer_release(load_pipe_consumer_state);
+          }
+          ++load_pipe_consumer_state;
+        }
+      }
+    };
+
+    //
+    // BEGIN EPILOGUE
+    //
+
+    // Begin the wait for the producer load results
+    ConsumerToken load_wait_token{BarrierStatus::WaitDone};
+    if (is_producer_load_needed) {
+      load_wait_token = load_pipeline.consumer_try_wait(load_wait_state);
+    }
+
+    cst_callbacks.begin();
+    if (cst_callbacks.begin_sync_needed()) {
+      synchronize();
+    }
+
+    // For each epilogue subtile within the CTA tile
+    CUTLASS_PRAGMA_UNROLL
+    for (int iter_n = 0; iter_n < size<3>(gD_epi); ++iter_n) {
+      CUTLASS_PRAGMA_UNROLL
+      for (int iter_m = 0; iter_m < size<2>(gD_epi); ++iter_m) {
+        int epi_m = iter_m, epi_n = iter_n;
+        bool is_first_iteration = iter_m == 0 && iter_n == 0;
+        bool is_last_iteration = iter_m == size<2>(gD_epi)-1 && iter_n == size<3>(gD_epi)-1;
+
+        cst_callbacks.begin_loop(epi_m, epi_n);
+
+        if (is_producer_load_needed) {
+          // Wait for the producer load to fill smem
+          load_pipeline.consumer_wait(load_wait_state, load_wait_token);
+
+          if (is_C_load_needed) {
+            // Copy source tile from smem to register
+            copy(tiled_s2r, tSR_sC(_,_,_,load_wait_state.index()), tSR_rC);
+            // Ensure smem loads are complete before reusing smem for mixed types/layouts
+            if constexpr (ReuseSmemC && not (SmemLayoutC{} == SmemLayoutD{})) {
+              synchronize();
+            }
+          }
+        }
+
+        // First loop fusion callback entry point
+        cst_callbacks.previsit(epi_m, epi_n, load_wait_state.count(), is_producer_load_needed);
+
+        if (is_producer_load_needed) {
+          // Let producer load warp know smem buffers are consumed and empty
+          if constexpr (not ReuseSmemC) {
+            cutlass::arch::fence_view_async_shared();
+            load_pipeline.consumer_release(load_pipe_consumer_state);
+            ++load_pipe_consumer_state;
+          }
+          ++load_wait_state;
+        }
+
+        bool issue_smem_store = true;
+        Tensor tTR_rAcc_epi_tile = tTR_rAcc(_,_,_,epi_m,epi_n);
+        Tensor tTR_rAcc_frg = recast<Array<ElementAccumulator, FragmentSize>>(coalesce(tTR_rAcc_epi_tile));     // (EPI_V)        
+
+        // Vectorized fragment loop with visitor callback entry point
+        CUTLASS_PRAGMA_UNROLL
+        for (int epi_v = 0; epi_v < size(tTR_rD_frg); ++epi_v) {
+          tTR_rD_frg(epi_v) = cst_callbacks.visit(tTR_rAcc_frg(epi_v), epi_v, epi_m, epi_n);
+        }
+
+        // The latest we can delay the TMA store is right before the smem store of the next iteration
+        // since the current TMA store needs to be committed before we can acquire the next smem buffer
+        if constexpr (DelayTmaStore) {
+          // Issue TMA stores for the previous subtile
+          if (not is_first_iteration) {
+            tma_store_fn(epi_m_prev, epi_n_prev);
+          }
+          epi_m_prev = epi_m;
+          epi_n_prev = epi_n;
+        }
+
+        // Smem reduction callback entry point using current store buffer for workspace
+        Tensor reduction_buffer = make_tensor(raw_pointer_cast(sD_epi(_,_,store_pipe_producer_state.index()).data()),
+                                              make_layout(stride<2>(get_nonswizzle_portion(SmemLayoutD{})), _1{}));
+        cst_callbacks.reduce(reduction_buffer, synchronize, epi_m, epi_n, is_last_iteration, tTR_rD_frg);
+
+        // Copy output tile from register to smem
+        if (issue_smem_store) {
+          copy(tiled_r2s, tRS_rD, tRS_sD(_,_,_,store_pipe_producer_state.index()));
+        }
+
+        // Post reduction, pre TMA store callback entry point
+        cst_callbacks.postreduce(epi_m, epi_n, store_pipe_producer_state.count(), issue_smem_store);
+
+        if constexpr (not DelayTmaStore) {
+          // Issue TMA stores for this subtile
+          tma_store_fn(epi_m, epi_n);
+        }
+
+        cst_callbacks.end_loop(epi_m, epi_n);
+
+        if (is_producer_load_needed) {
+          // Begin the wait for the next subtile producer load
+          load_wait_token = load_pipeline.consumer_try_wait(load_wait_state, is_last_iteration);
+        }
+      } // for epi_m
+    } // for epi_n
+
+    if constexpr (DelayTmaStore) {
+      // Issue TMA stores for the last subtile
+      tma_store_fn(epi_m_prev, epi_n_prev);
+    }
+
+    cst_callbacks.end();
+
+    return cute::make_tuple(load_pipe_consumer_state, store_pipe_producer_state);
+  }
+
   template <class CtaTileMNK>
   CUTLASS_DEVICE void
   store_tail(

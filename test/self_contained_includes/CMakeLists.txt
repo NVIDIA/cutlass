@@ -198,7 +198,6 @@ set(header_files_to_check
     cutlass/version.h
     cutlass/wmma_array.h
     cutlass/workspace.h
-    
     cutlass/exmy_base.h
     cutlass/float_subbyte.h
     

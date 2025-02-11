@@ -988,6 +988,12 @@ bool arg_as_scalar(
   ProblemSpace const &problem_space, 
   ProblemSpace::Problem const &problem);
 
+bool arg_as_string(
+  std::string& arg,
+  char const* name,
+  ProblemSpace const& problem_space,
+  ProblemSpace::Problem const& problem);
+
 /// Returns true if a tensor description satisfies a `tensor` value
 bool tensor_description_satisfies(
   library::TensorDescription const &tensor_desc,

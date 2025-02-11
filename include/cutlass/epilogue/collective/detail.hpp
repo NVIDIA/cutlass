@@ -208,7 +208,6 @@ struct IsThreadEpilogueOpWithElementwiseArguments<
         ThreadEpilogueOp,
         cute::void_t<typename ThreadEpilogueOp::ElementwiseOp::Arguments>> : cute::true_type {};
 
-
 // Check if ActivationFn has 'Arguments' type defined
 template <class ActivationFn, class = void>
 struct sm100_act_has_arguments : cute::false_type {};
@@ -499,7 +498,6 @@ public:
   using TensorMapStorage = typename EpilogueOp::SharedStorage;
   using PipelineStorage = typename LoadPipeline::SharedStorage;
 
-  // Planar complex kernels have two accumulator copies for the real and imaginary tensors.
   static constexpr int NumAccumulatorMtxs = Sm100EpilogueOpNumAccumulatorMtxs<EpilogueOp>::value;
 
   template<class CtaTileMNK>

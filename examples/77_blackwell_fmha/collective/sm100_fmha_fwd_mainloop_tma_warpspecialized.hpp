@@ -529,7 +529,6 @@ struct Sm100FmhaFwdMainloopTmaWarpspecialized {
     Tensor tStS_P = tStS.compose(make_layout(make_shape(_128{}, tilePlikeFP32)));
     tStS_P.data() = warp_uniform(uint32_t(stage == _0{} ? TmemAllocation::P0 : TmemAllocation::P1));
     Tensor tScS_P = tScS.compose(make_layout(make_shape(_128{}, tilePlikeFP32)));
-//    Tensor tScS_P = tScS.compose(make_layout(make_shape(make_shape(_128{}, _32{}), _4{}, _1{}, _1{})))(_, _1{}, _, _);
 
     // Each thread owns a single row
       using TMEM_LOAD = SM100_TMEM_LOAD_32dp32b32x; // 4x32 threads with 128 cols of 32b elem 
@@ -822,9 +821,7 @@ struct Sm100FmhaFwdMainloopTmaWarpspecialized {
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < get<2>(TileShape{}) / kCorrectionTileSize; i++) {
       Tensor tTMEM_LOADtO_i = tTMEM_LOADtO(_, _0{}, _0{}, i);
-//      tTMEM_LOADtO_i.data() = tTMEM_LOADtO_i.data().get() + uint32_t(i * kCorrectionTileSize);
       Tensor tTMEM_LOADsO_i = tTMEM_LOADsO(_, _0{}, _0{}, i);
-//      tTMEM_LOADsO_i.data() = tTMEM_LOADsO_i.data().get() + sO.layout()(_0{}, i * kCorrectionTileSize, _0{});
 
       Tensor tTMrO = make_tensor<ElementPV>(shape(tTMEM_LOADcO(_, _0{}, _0{}, i)));
       
@@ -939,8 +936,6 @@ struct Sm100FmhaFwdMainloopTmaWarpspecialized {
         cute::mul(out, scale_f32x2, in);
         tTMrO_i(j) = out.x;
         tTMrO_i(j+1) = out.y;
-        //tTMrO(j) = scale * tTMrO(j);
-        //tTMrO(j+1) = scale * tTMrO(j+1);
       }
 
       copy_out(i);

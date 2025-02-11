@@ -208,6 +208,8 @@ public:
     /// Minimum number of iterations to profile
     int min_iterations{10};
 
+    bool use_cuda_graphs{false};
+
     /// Number of ms to sleep between profiling periods (ms)
     int sleep_duration{50};
 

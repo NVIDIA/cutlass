@@ -188,21 +188,15 @@ struct Sm100FmhaLoadCpAsyncWarpspecialized {
 
     // Q1
     int q0_index = get<0>(blk_coord);
-//    pipeline_q.producer_acquire(pipeline_q_producer_state);
 
-    // copy_with_limit(tiled_copy_q, tQcQ, limitQ, tQgQ, tQsQ(_, _, _, _, pipeline_q_producer_state.index());
     auto load_q = [&](int q_index, auto& state) {
       pipeline_q.producer_acquire(state);
 
-//        using Vec = Element;
-//        auto vzero = Element(0);
       // q is always loaded masked
       using Vec = uint128_t;
       Vec vzero = uint128_t(0, 0);
-      //auto src = recast<Vec>(tQgQ(_, _, _, _, q_index));
       auto src = recast<Vec>(tQgQ(_, _, _, _));
       auto dst = recast<Vec>(tQsQ(_, _, _, _, state.index()));
-      // auto c = tQcQ(_, _, _, _, q_index);
       auto c = tQcQ(_, _, _, _);
       int vlen = sizeof(Vec) / sizeof(Element);
       CUTLASS_PRAGMA_UNROLL
@@ -220,7 +214,6 @@ struct Sm100FmhaLoadCpAsyncWarpspecialized {
     };
 
     load_q(q0_index, pipeline_q_producer_state);
-//    pipeline_q.producer_commit(pipeline_q_producer_state, cutlass::arch::cpasync_barrier_arrive);
     ++pipeline_q_producer_state;
 
     auto cK_t = make_identity_tensor(select<1,2>(TileShapeQK{}));
@@ -287,8 +280,6 @@ struct Sm100FmhaLoadCpAsyncWarpspecialized {
         copy(tiled_copy_k, tKgK(_, _, _, _, k_index), tKsK(_, _, _, _, state.index()));
         pipeline_kv.producer_commit(state, cutlass::arch::cpasync_barrier_arrive);
       } else {
-//        using Vec = Element;
-//        auto vzero = Element(0);
         using Vec = uint128_t;
         Vec vzero = uint128_t(0, 0);
         auto src = recast<Vec>(tKgK(_, _, _, _, k_index));
@@ -322,8 +313,6 @@ struct Sm100FmhaLoadCpAsyncWarpspecialized {
         copy(tiled_copy_v, tVgV(_, _, _, _, v_index), tVsV(_, _, _, _, state.index()));
         pipeline_kv.producer_commit(state, cutlass::arch::cpasync_barrier_arrive);
       } else {
-//        using Vec = Element;
-//        auto vzero = Element(0);
         using Vec = uint128_t;
         Vec vzero = uint128_t(0, 0);
         auto src = recast<Vec>(tVgV(_, _, _, _, v_index));
