@@ -124,7 +124,7 @@ using OperatorClass       = cutlass::arch::OpClassTensorOp;                 // O
 using TileShape           = Shape<_128,_128,_128>;                           // Threadblock-level tile size
 using ClusterShape        = Shape<_1,_2,_1>;                                // Shape of the threadblocks in a cluster
 
-constexpr int ScaleMsPerTile = 2;
+constexpr int ScaleMsPerTile = 128;
 constexpr int ScaleGranularityM = size<0>(TileShape{}) / ScaleMsPerTile;
 
 using KernelSchedule      = cutlass::gemm::KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum<ScaleGranularityM>;
@@ -462,7 +462,6 @@ typename Gemm::Arguments args_from_options(const Options<RasterOrderOptions> &op
      stride_A,
      tensor_B.device_data(),
      stride_B,
-     mma_promotion_interval,
      blockscale_tensor_A.device_data(),
      blockscale_tensor_B.device_data()
      },
@@ -522,6 +521,7 @@ bool verify(const Options<RasterOrderOptions> &options) {
   auto gemm_problem_shape = cute::make_shape(options.m, options.n, options.k);
   auto blockscale_shape = shape(get<1>(cute::zipped_divide(cute::make_layout(gemm_problem_shape), TileShape{})));
   auto blockscale_m = cute::get<0>(blockscale_shape);
+  auto groupscale_m = blockscale_m * ScaleMsPerTile;
   auto blockscale_n = cute::get<1>(blockscale_shape);
   auto blockscale_k = cute::get<2>(blockscale_shape);
 
@@ -559,8 +559,8 @@ bool verify(const Options<RasterOrderOptions> &options) {
 
   auto blockscale_A = cute::make_tensor(blockscale_tensor_A.host_data(),
                                         cute::make_layout(
-                                          cute::make_shape(blockscale_m, ScaleMsPerTile, blockscale_k, options.l),
-                                          cute::make_stride(blockscale_k * ScaleMsPerTile, 1, ScaleMsPerTile, blockscale_m * blockscale_k * ScaleMsPerTile)
+                                          cute::make_shape(groupscale_m, blockscale_k, options.l),
+                                          cute::make_stride(1, groupscale_m, groupscale_m * blockscale_k)
                                         )
                                       );
   auto blockscale_B = cute::make_tensor(blockscale_tensor_B.host_data(),
