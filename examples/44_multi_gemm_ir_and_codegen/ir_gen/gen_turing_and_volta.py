@@ -1,6 +1,6 @@
 #################################################################################################
 #
-# Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -380,7 +380,7 @@ class gen_one_API:
     def gen_CUTLASS_irrelevant_API(self):
         code = ""
         code += "#include <cuda_runtime.h>\n"
-        code += "#include <assert.h>\n"
+        code += "#include <cassert>\n"
 
         param_name = "Fused" + str(self.b2b_num) + "xGemm_"
         for i in range(self.b2b_num):

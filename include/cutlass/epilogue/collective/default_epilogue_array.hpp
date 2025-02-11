@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -54,6 +54,7 @@ namespace collective {
 // Applies an element wise operation to all elements within the fragment
 // and writes them out to destination storage.
 template <
+  class ElementC_,
   class StrideC_,
   class StrideD_,
   class ThreadEpilogueOp_,
@@ -73,12 +74,14 @@ public:
   using ElementAccumulator = typename ThreadEpilogueOp::ElementAccumulator;
   using ElementCompute = typename ThreadEpilogueOp::ElementCompute;
   using ElementScalar = ElementCompute;
-  using ElementC = typename ThreadEpilogueOp::ElementC;
+  using ElementC = ElementC_;
   using StrideC = StrideC_;
   using InternalStrideC = cute::remove_pointer_t<StrideC>;
   using ElementD = typename ThreadEpilogueOp::ElementD;
   using StrideD = StrideD_;
   using InternalStrideD = cute::remove_pointer_t<StrideD>;
+
+  using GmemElementC = cute::conditional_t<cute::is_void_v<ElementC>, ElementD, ElementC>; // prevents void ref breakages
 
   using GmemTiledCopyC = void;
   using GmemTiledCopyD = void;
@@ -86,7 +89,7 @@ public:
   static const int kOutputAlignment = ThreadEpilogueOp::kCount;
   using AlignmentType = typename cute::uint_bit<sizeof_bits<ElementOutput>::value * kOutputAlignment>::type;
 
-  static_assert(cute::is_same_v<EpilogueSchedule, PtrArrayNoSmemWarpSpecialized> || cute::is_same_v<EpilogueSchedule, PtrArrayDefault>, "Incompatible epilogue schedule.");
+  static_assert(cute::is_same_v<EpilogueSchedule, PtrArrayNoSmemWarpSpecialized> || cute::is_same_v<EpilogueSchedule, PtrArrayDefault> || cute::is_same_v<EpilogueSchedule, PtrArrayNoSmemWarpSpecializedTransposed>, "Incompatible epilogue schedule.");
   static_assert(rank(InternalStrideC{}) == 3, "StrideCD must be rank-3: [M, N, L]");
   static_assert(rank(InternalStrideD{}) == 3, "StrideCD must be rank-3: [M, N, L]");
 
@@ -166,9 +169,9 @@ public:
       BlockCoordMNKL blk_coord_mnkl,
       cute::Tensor<FrgEngine, FrgLayout> const& accumulators,
       TiledMma tiled_mma,
-      ResidueMNK residue_mnk,
+      [[maybe_unused]] ResidueMNK,
       int thread_idx,
-      [[maybe_unused]] char* smem_buf)
+      [[maybe_unused]] char*)
   {
     using namespace cute;
     using X = Underscore;
@@ -198,37 +201,47 @@ public:
       assert(0);
     }
 
-    InternalStrideC stride_c;
-    InternalStrideD stride_d;
-    if constexpr (!cute::is_same_v<InternalStrideC, StrideC>) {
-      // If grouped gemm
-      if (epilogue_op.is_source_needed()) {
-        stride_c = detail::get_epilogue_stride<EpilogueSchedule>(params.dC[l_coord]);
+    auto [stride_c, stride_d] = [&, l = l_coord]() {
+      if constexpr (!cute::is_same_v<InternalStrideC, StrideC>) {
+        // If grouped gemm
+        if (epilogue_op.is_source_needed()) {
+            return make_tuple(
+                detail::get_epilogue_stride<EpilogueSchedule>(params.dC[l]),
+                detail::get_epilogue_stride<EpilogueSchedule>(params.dD[l])
+            );
+        } 
+        else {
+          return make_tuple(
+              InternalStrideC{}, 
+              detail::get_epilogue_stride<EpilogueSchedule>(params.dD[l])
+          );
+        }
+      } 
+      else {
+        return make_tuple(
+            detail::get_epilogue_stride<EpilogueSchedule>(params.dC),
+            detail::get_epilogue_stride<EpilogueSchedule>(params.dD)
+        );
       }
-      stride_d = detail::get_epilogue_stride<EpilogueSchedule>(params.dD[l_coord]);
-    }
-    else {
-      stride_c = detail::get_epilogue_stride<EpilogueSchedule>(params.dC);
-      stride_d = detail::get_epilogue_stride<EpilogueSchedule>(params.dD);
-    }
-
+    }();
+    
     // Represent the full output tensor
     ElementC const* ptr_C_l = nullptr;
     if (epilogue_op.is_source_needed()) {
       ptr_C_l = params.ptr_C[l_coord];
     }
-    Tensor mC_mnl = make_tensor(make_gmem_ptr(ptr_C_l), make_shape(M,N,mock_L), stride_c);      // (m,n,l)
-    Tensor mD_mnl = make_tensor(make_gmem_ptr(params.ptr_D[l_coord]), make_shape(M,N,mock_L), stride_d);      // (m,n,l)
-    Tensor gC_mnl = local_tile(mC_mnl, blk_shape_MNK, make_coord(_,_,_), Step<_1,_1, X>{});    // (BLK_M,BLK_N,m,n,l)
-    Tensor gD_mnl = local_tile(mD_mnl, blk_shape_MNK, make_coord(_,_,_), Step<_1,_1, X>{});    // (BLK_M,BLK_N,m,n,l)
+    Tensor mC_mnl = make_tensor(make_gmem_ptr<GmemElementC>(ptr_C_l), make_shape(M,N,mock_L), stride_c);     // (m,n,l)
+    Tensor mD_mnl = make_tensor(make_gmem_ptr(params.ptr_D[l_coord]), make_shape(M,N,mock_L), stride_d);     // (m,n,l)
+    Tensor gC_mnl = local_tile(mC_mnl, blk_shape_MNK, make_coord(_,_,_), Step<_1,_1, X>{});      // (BLK_M,BLK_N,m,n,l)
+    Tensor gD_mnl = local_tile(mD_mnl, blk_shape_MNK, make_coord(_,_,_), Step<_1,_1, X>{});      // (BLK_M,BLK_N,m,n,l)
 
-    Tensor gC = gC_mnl(_,_,m_coord,n_coord, mock_l_coord);                                                 // (BLK_M,BLK_N)
-    Tensor gD = gD_mnl(_,_,m_coord,n_coord, mock_l_coord);                                                 // (BLK_M,BLK_N)
+    Tensor gC = gC_mnl(_,_,m_coord,n_coord, mock_l_coord);                                             // (BLK_M,BLK_N)
+    Tensor gD = gD_mnl(_,_,m_coord,n_coord, mock_l_coord);                                             // (BLK_M,BLK_N)
 
     // Partition source and destination tiles to match the accumulator partitioning
     auto thr_mma = tiled_mma.get_thread_slice(thread_idx);
-    Tensor tCgD = thr_mma.partition_C(gD);                                       // (VEC,THR_M,THR_N)
-    Tensor tCgC = thr_mma.partition_C(gC);                                       // (VEC,THR_M,THR_N)
+    Tensor tCgD = thr_mma.partition_C(gD);                                                         // (VEC,THR_M,THR_N)
+    Tensor tCgC = thr_mma.partition_C(gC);                                                         // (VEC,THR_M,THR_N)
 
     static_assert(is_static<FrgLayout>::value, "Accumulator layout must be static");
     CUTE_STATIC_ASSERT_V(size(tCgC) == size(tCgD),
@@ -236,15 +249,16 @@ public:
     CUTE_STATIC_ASSERT_V(size(tCgD) == size(accumulators),
         "Accumulator count must have the same destination element count.");
 
-    // Make an identity coordinate tensor for predicating our output MN tile
-    auto cD = make_identity_tensor(make_shape(unwrap(shape<0>(gD)), unwrap(shape<1>(gD))));
-    Tensor tCcD = thr_mma.partition_C(cD);
+    // Absolute coordinate tensors (dynamic)
+    Tensor mD_crd = make_identity_tensor(make_shape(M,N));                                                     // (M,N)
+    Tensor cD_mn = local_tile(mD_crd, take<0,2>(blk_shape_MNK), make_coord(m_coord, n_coord));         // (BLK_M,BLK_N)
+    Tensor tCcD = thr_mma.partition_C(cD_mn);                                                      // (VEC,THR_M,THR_N)
 
     // source is needed
     if (epilogue_op.is_source_needed()) {
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < size(accumulators); ++i) {
-        if (elem_less(tCcD(i), make_coord(get<0>(residue_mnk), get<1>(residue_mnk)))) {
+        if (elem_less(tCcD(i), make_shape(M,N))) {
           tCgD(i) = epilogue_op(accumulators(i), tCgC(i));
         }
       }
@@ -253,7 +267,7 @@ public:
     else {
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < size(accumulators); ++i) {
-        if (elem_less(tCcD(i), make_coord(get<0>(residue_mnk), get<1>(residue_mnk)))) {
+        if (elem_less(tCcD(i), make_shape(M,N))) {
           tCgD(i) = epilogue_op(accumulators(i));
         }
       }

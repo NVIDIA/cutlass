@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -53,6 +53,18 @@ struct StageCountAutoCarveout {
   StageCountAutoCarveout() = default;
   explicit StageCountAutoCarveout(cute::Int<carveout_bytes>) {}
 };
+
+namespace detail {
+
+// Forward Declaration
+template<class CollectiveEpilogue>
+constexpr int
+compute_carveout_from_epi();
+
+} // namespace detail
+
+template<class CollectiveEpilogue>
+struct StageCountAutoCarveoutEpi : StageCountAutoCarveout<detail::compute_carveout_from_epi<CollectiveEpilogue>()> {};
 
 using StageCountAuto = StageCountAutoCarveout<0>;
 

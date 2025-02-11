@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -43,6 +43,7 @@ enum class LayoutTypeID {
   kUnknown,
   kColumnMajor,
   kRowMajor,
+  kBlockScalingTensor,          
   kColumnMajorInterleavedK2,
   kRowMajorInterleavedK2,
   kColumnMajorInterleavedK4,
@@ -83,6 +84,16 @@ enum class NumericTypeID {
   kS64,
   kFE4M3,
   kFE5M2,
+  
+  kFE2M3,
+  kFE3M2,
+  kFE2M1,
+  kFUE8M0, 
+  kFUE4M3, 
+  kF8,
+  kF6,
+  kF4,
+  
   kF16,
   kBF16, 
   kTF32,
@@ -131,6 +142,7 @@ enum class Provider {
 /// Enumeration indicating the kind of operation
 enum class OperationKind {
   kGemm,
+  kBlockScaledGemm,     
   kRankK,
   kRank2K,
   kTrmm,
@@ -165,6 +177,7 @@ enum class OpcodeClassID {
   kTensorOp,
   kWmmaTensorOp,
   kSparseTensorOp,
+  kBlockScaledOp,                
   kInvalid
 };
 
@@ -188,6 +201,7 @@ enum class MathOperationID {
 /// Enumeration indicating what kind of GEMM operation to perform
 enum class GemmKind {
   kGemm,
+  kBlockScaledGemm,                
   kSparse,
   kUniversal,
   kPlanarComplex,
@@ -250,6 +264,20 @@ enum class EpilogueKind {
   kLinearCombinationSigmoid,
   kInvalid
 };
+
+
+enum class RuntimeDatatype {
+  kStatic,
+  kE4M3,
+  kE5M2,
+  
+  kE3M2,
+  kE2M3,
+  kE2M1,
+  
+  kInvalid
+};
+
 
 enum class RasterOrder {
   kAlongN,

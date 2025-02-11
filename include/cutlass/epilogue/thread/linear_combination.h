@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -169,7 +169,7 @@ public:
 
   /// Constructs the function object, possibly loading from pointers in host memory
   CUTLASS_HOST_DEVICE
-  LinearCombination(Params const &params, int group_idx = 0) {
+  explicit LinearCombination(Params const &params, int group_idx) {
     if (params.alpha_ptr_array != nullptr && params.alpha_ptr_array[group_idx] != nullptr) {
       alpha_ = *(params.alpha_ptr_array[group_idx]);
     }
@@ -189,6 +189,10 @@ public:
       beta_ = params.beta;
     }
   }
+
+  CUTLASS_HOST_DEVICE
+  explicit LinearCombination(const Params & params) 
+  : LinearCombination(params, /* group_idx */ 0) { }
 
   /// Returns true if source is needed
   CUTLASS_HOST_DEVICE

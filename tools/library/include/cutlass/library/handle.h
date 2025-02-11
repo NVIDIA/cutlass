@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -71,6 +71,8 @@ private:
 
   /// Pointer to the most recently executed operation
   Operation const *last_operation_;
+
+  int device_idx_;
 
 public:
 
@@ -176,6 +178,15 @@ public:
     int M,                                    /// GEMM M dimension
     int N,                                    /// GEMM N dimension
     int K,                                    /// GEMM K dimension
+    
+    int cluster_m,                            /// cluster shape M dimension
+    int cluster_n,                            /// cluster shape N dimension
+    int cluster_k,                            /// cluster shape K dimension
+    int cluster_m_fallback,                   /// Fallback cluster shape M dimension
+    int cluster_n_fallback,                   /// Fallback cluster shape N dimension
+    int cluster_k_fallback,                   /// Fallback cluster shape K dimension
+    
+    
     NumericTypeID element_compute,            /// Data type of internal accumulation
 
     NumericTypeID element_scalar,             /// Data type of alpha/beta scalars

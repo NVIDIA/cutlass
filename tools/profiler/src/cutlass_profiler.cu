@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -38,6 +38,7 @@
 // Profiler includes
 #include "cutlass/profiler/cutlass_profiler.h"
 #include "cutlass/profiler/gemm_operation_profiler.h"
+#include "cutlass/profiler/block_scaled_gemm_operation_profiler.h"  
 #include "cutlass/profiler/rank_k_operation_profiler.h"
 #include "cutlass/profiler/rank_2k_operation_profiler.h"
 #include "cutlass/profiler/trmm_operation_profiler.h"
@@ -59,6 +60,8 @@ CutlassProfiler::CutlassProfiler(
   options_(options) {
 
   operation_profilers_.emplace_back(new GemmOperationProfiler(options));
+
+  operation_profilers_.emplace_back(new BlockScaledGemmOperationProfiler(options));   
 
   operation_profilers_.emplace_back(new SparseGemmOperationProfiler(options));
 

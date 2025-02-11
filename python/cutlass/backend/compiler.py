@@ -1,6 +1,6 @@
 #################################################################################################
 #
-# Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -33,6 +33,7 @@
 import ctypes
 import json
 import pathlib
+import os
 import sqlite3
 import subprocess
 import tempfile
@@ -99,7 +100,7 @@ class CompilationOptions:
             arch_flag = f"-fsycl-targets={self.arch}"
         else:
             arch_flag = f"-arch=sm_{self.arch}"
-            if self.arch == 90:
+            if self.arch == 90 and int(cutlass.nvcc_version().split('.')[0]) >= 12:
                 arch_flag += "a"
 
         opts.append(arch_flag)
@@ -261,9 +262,11 @@ class ArtifactManager:
                 if incl not in includes:
                     includes.append(incl)
 
-        includes_host = ["stddef.h"] + includes
-        if not self._is_sycl():
-            includes_host.extend(["device_launch_parameters.h", "builtin_types.h"])
+        includes_host = includes
+        if self._is_sycl():
+            includes_host.extend(["stddef"])
+        else:
+            includes_host.extend(["builtin_types.h", "device_launch_parameters.h", "cstddef"])
 
         for incl in includes:
             source_buffer_device += SubstituteTemplate(

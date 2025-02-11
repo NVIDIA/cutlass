@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -35,13 +35,14 @@
 #pragma once
 
 #include "cutlass/cutlass.h"
-#include "cutlass/platform/platform.h"
+#include <cute/config.hpp>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
 namespace arch {
 
+constexpr int sm100_smem_capacity_bytes = 232448;
 #if defined(__NVCC__) || defined(__CUDACC_RTC__) || (defined(__clang__) && (defined(__CUDA__) || defined(CUTLASS_ENABLE_SYCL)))
 
 /// Computes laneId within a warp
@@ -52,7 +53,7 @@ int LaneId() {
   asm ("mov.u32 %0, %%laneid;" : "=r"(ret) : );
   return ret;
 #else
-  CUTLASS_INVALID_CONTROL_PATH("Attempting to use Nvidia-specific code path on non-Nvidia hardware.");
+  CUTE_INVALID_CONTROL_PATH("Attempting to use Nvidia-specific code path on non-Nvidia hardware.");
 #endif
 }
 
@@ -64,7 +65,7 @@ int SmId() {
   asm ("mov.u32 %0, %%smid;" : "=r"(ret) : );
   return ret;
 #else
-  CUTLASS_INVALID_CONTROL_PATH("Attempting to use Nvidia-specific code path on non-Nvidia hardware.");
+  CUTE_INVALID_CONTROL_PATH("Attempting to use Nvidia-specific code path on non-Nvidia hardware.");
 #endif
 }
 
@@ -101,6 +102,12 @@ struct Sm89 {
 struct Sm90 {
   static int const kMinComputeCapability = 90; 
 };
+
+
+struct Sm100 {
+  static int const kMinComputeCapability = 100;
+};
+
 
 #if defined(CUTLASS_ENABLE_SYCL)
 struct IntelPVC {

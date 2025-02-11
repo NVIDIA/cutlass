@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -1099,7 +1099,7 @@ bool Conv3dOperationProfiler::profile(
     set_cutlass_operator_arguments_();
 
     results_.back().status = profile_cutlass_(
-      results_.back().runtime,
+      results_.back(),
       options,
       operation,
       &conv_workspace_.arguments,
@@ -1141,14 +1141,12 @@ void Conv3dOperationProfiler::set_cutlass_operator_arguments_(int problem_idx) {
 
 /// Method to profile a CUTLASS Operation
 Status Conv3dOperationProfiler::profile_cutlass_(
-  double &runtime,
+  PerformanceResult &result,
   Options const &options,
   library::Operation const *operation,
   void *arguments,
   void *host_workspace,
   void *device_workspace) {
-
-  GpuTimer timer;
 
   // initialize conv2d underlying operation to handle parallel reduction
   library::Operation const* underlying_operation = operation;
@@ -1159,68 +1157,14 @@ Status Conv3dOperationProfiler::profile_cutlass_(
     }
   }
 
-  //
-  // Optional sleep to limit power consumption and thermals
-  //
-
-  sleep(options.profiling.sleep_duration);
-
-  //
-  // Warmup loop
-  //
-
-  Status status;
-
-  for (int iteration = 0; iteration < options.profiling.warmup_iterations; ++iteration) {
-
+  auto func = [&](cudaStream_t, int iteration) {
     // Setup rotating workspace
-    int workspace_idx = options.profiling.warmup_iterations + iteration;
-    int problem_idx = (workspace_idx % conv_workspace_.problem_count);
+    int problem_idx = iteration % conv_workspace_.problem_count;
 
     set_cutlass_operator_arguments_(problem_idx);
 
     // Run underlying conv2d operation
-    status = underlying_operation->run(
-      arguments,
-      host_workspace,
-      device_workspace);
-
-    // Run parallel reduction kernel for parallel split_k_mode
-    if (conv_workspace_.configuration.split_k_mode == conv::SplitKMode::kParallel) {
-
-      status = reduction_op_->run(
-        &conv_workspace_.reduction_arguments,
-        conv_workspace_.reduction_host_workspace.data(),
-        nullptr);
-    }
-
-    if (status != Status::kSuccess) {
-      return status;
-    }
-  }
-
-  //
-  // Initialize GPU timer
-  //
-
-  timer.start();
-
-  //
-  // Profiling loop
-  //
-
-  int Iterations = options.profiling.iterations;
-
-  int iteration = 0;
-  for (; iteration < Iterations; ++iteration) {
-
-    // Setup rotating workspace
-    int problem_idx = (iteration % conv_workspace_.problem_count);
-
-    set_cutlass_operator_arguments_(problem_idx);
-
-    // Run underlying conv2d operation
-    status = underlying_operation->run(
+    Status status = underlying_operation->run(
       arguments,
       host_workspace,
       device_workspace);
@@ -1236,21 +1180,11 @@ Status Conv3dOperationProfiler::profile_cutlass_(
     if (status != Status::kSuccess) {
       return status;
     }
-  }
 
-  //
-  // Wait for completion
-  //
+    return status;
+  };
 
-  timer.stop_and_wait();
-
-  //
-  // Update performance result
-  //
-
-  runtime = timer.duration(iteration);
-
-  return status;
+  return profile_kernel_(result, options, func);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

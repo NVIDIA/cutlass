@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -145,6 +145,14 @@ CUTE_HOST_DEVICE constexpr
 auto
 recast_ptr(swizzle_ptr<SwizzleFn,P> const& ptr) {
   return make_swizzle_ptr(recast_ptr<NewT>(ptr.get()), SwizzleFn{});
+}
+
+// The statically-known alignment of a swizzle pointer is the alignment of the swizzle function converted to bits
+template <class SwizzleFn, class P>
+CUTE_HOST_DEVICE constexpr
+auto
+max_alignment(swizzle_ptr<SwizzleFn,P> const&) {
+  return Int<8>{} * max_alignment(SwizzleFn{});
 }
 
 //

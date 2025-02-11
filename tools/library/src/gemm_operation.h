@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -204,6 +204,10 @@ protected:
     }
     else {
       return Status::kErrorInvalidProblem;
+    }
+
+    if (arguments->use_pdl) {
+      return Status::kErrorNotSupported; 
     }
 
     operator_args.ref_A.reset(static_cast<ElementA const *>(arguments->A));
@@ -415,6 +419,10 @@ protected:
     operator_args.ref_D.reset(static_cast<ElementD *>(arguments->D));
     operator_args.ref_E.reset(static_cast<ElementE const *>(arguments->E));
 
+    if (arguments->use_pdl) {
+      return Status::kErrorNotSupported; 
+    }
+
     return Status::kSuccess;
   }
 
@@ -501,7 +509,7 @@ public:
     void *host_workspace, 
     void *device_workspace = nullptr, 
     cudaStream_t stream = nullptr) const {
-
+ 
     OperatorArguments args;
 
     Status status = update_arguments_(
@@ -623,6 +631,10 @@ protected:
     operator_args.batch_stride_B = arguments->batch_stride_B;
     operator_args.batch_stride_C = arguments->batch_stride_C;
     operator_args.batch_stride_D = arguments->batch_stride_D;
+    
+    if (arguments->use_pdl) {
+      return Status::kErrorNotSupported; 
+    }
     
     return Status::kSuccess;
   }
@@ -931,7 +943,6 @@ public:
     void *host_workspace,
     void *device_workspace = nullptr,
     cudaStream_t stream = nullptr) const {
-
     OperatorArguments args;
 
     Status status = update_arguments_(
@@ -1044,6 +1055,10 @@ protected:
     operator_args.ptr_N = arguments->N;
     operator_args.ptr_K = arguments->K;
     
+    if (arguments->use_pdl) {
+      return Status::kErrorNotSupported; 
+    }
+
     return Status::kSuccess;
   }
 
@@ -1239,6 +1254,10 @@ protected:
     op_args.ldb           = arguments->ldb;
     op_args.ldc           = arguments->ldc;
     op_args.ldd           = arguments->ldd;
+
+    if (arguments->use_pdl) {
+      return Status::kErrorNotSupported; 
+    }
 
     return Status::kSuccess;
   }

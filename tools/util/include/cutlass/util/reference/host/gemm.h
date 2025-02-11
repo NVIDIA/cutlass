@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -352,7 +352,7 @@ struct Gemm<ElementA, LayoutA, ElementB, LayoutB, ElementC, LayoutC, ScalarType,
         "Tensors must be of rank 2");
 
     compute_gemm<ElementA, LayoutA, ElementB, LayoutB, ElementC, LayoutC,
-                 ScalarType, ComputeType, xor_add<ComputeType>>(
+                 ScalarType, ComputeType, xor_popc_add<ComputeType>>(
         problem_size, alpha, tensor_a, tensor_b, beta, tensor_c, initial_accum);
   }
 
@@ -367,7 +367,7 @@ struct Gemm<ElementA, LayoutA, ElementB, LayoutB, ElementC, LayoutC, ScalarType,
         "Tensors must be of rank 2");
 
     compute_gemm<ElementA, LayoutA, ElementB, LayoutB, ElementC, LayoutC,
-                 ScalarType, ComputeType, xor_add<ComputeType>>(
+                 ScalarType, ComputeType, xor_popc_add<ComputeType>>(
         problem_size, alpha, tensor_a, tensor_b, beta, tensor_c, tensor_d, initial_accum);
   }
 };
@@ -389,7 +389,7 @@ struct Gemm<ElementA, LayoutA, ElementB, LayoutB, ElementC, LayoutC, ScalarType,
         "Tensors must be of rank 2");
 
     compute_gemm<ElementA, LayoutA, ElementB, LayoutB, ElementC, LayoutC,
-                 ScalarType, ComputeType, and_add<ComputeType>>(
+                 ScalarType, ComputeType, and_popc_add<ComputeType>>(
         problem_size, alpha, tensor_a, tensor_b, beta, tensor_c, initial_accum);
   }
 
@@ -404,7 +404,7 @@ struct Gemm<ElementA, LayoutA, ElementB, LayoutB, ElementC, LayoutC, ScalarType,
         "Tensors must be of rank 2");
 
     compute_gemm<ElementA, LayoutA, ElementB, LayoutB, ElementC, LayoutC,
-                 ScalarType, ComputeType, and_add<ComputeType>>(
+                 ScalarType, ComputeType, and_popc_add<ComputeType>>(
         problem_size, alpha, tensor_a, tensor_b, beta, tensor_c, tensor_d, initial_accum);
   }
 };

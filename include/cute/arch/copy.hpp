@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -39,7 +39,7 @@ namespace cute
 {
 
 //
-// Direct Copy for any type
+// Direct Copy for any specific types
 //
 
 template <class S, class D = S>
@@ -48,21 +48,15 @@ struct UniversalCopy
   using SRegisters = S[1];
   using DRegisters = D[1];
 
-  template <class S_, class D_>
-  CUTE_HOST_DEVICE static constexpr void
-  copy(S_ const& src,
-       D_      & dst)
-  {
-    dst = static_cast<D>(static_cast<S>(src));
-  }
+  // Sanity
+  static_assert(sizeof_bits_v<S> >= 8);
+  static_assert(sizeof_bits_v<D> >= 8);
 
-  // Accept mutable temporaries
-  template <class S_, class D_>
   CUTE_HOST_DEVICE static constexpr void
-  copy(S_ const& src,
-       D_     && dst)
+  copy(S const& src,
+       D      & dst)
   {
-    UniversalCopy<S,D>::copy(src, dst);
+    dst = src;
   }
 };
 
@@ -91,6 +85,12 @@ using AutoVectorizingCopy = AutoVectorizingCopyWithAssumedAlignment<128>;
 //
 
 using DefaultCopy = AutoVectorizingCopyWithAssumedAlignment<8>;
+
+//
+// Copy policy automatically selecting between
+// UniversalCopy and cp.async , based on type and memory space.
+//
+struct AutoCopyAsync {};
 
 //
 // Global memory prefetch into L2

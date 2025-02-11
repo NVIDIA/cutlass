@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -50,9 +50,15 @@ struct EpilogueSimtVectorized {};
 struct EpiloguePtrArraySimtVectorized {};
 struct NoSmemWarpSpecialized {};
 struct PtrArrayNoSmemWarpSpecialized {};
-struct PtrArrayPlanarComplexNoSmemWarpSpecialized {};
+struct PtrArrayNoSmemWarpSpecializedTransposed {};
 struct TmaWarpSpecialized {};
 struct TmaWarpSpecializedCooperative {};
+
+struct TmaWarpSpecialized1Sm {};
+struct TmaWarpSpecialized2Sm {};
+struct PtrArrayTmaWarpSpecialized1Sm {};
+struct PtrArrayTmaWarpSpecialized2Sm {};
+
 struct PtrArrayTmaWarpSpecializedCooperative {
   static constexpr int NumEpilogueWarpGroups = 2;
 };
@@ -189,6 +195,46 @@ struct Sm90TmaWarpSpecializedBiasElementwise {
   constexpr static int StagesD = StagesD_;
   constexpr static int FragmentSize = FragmentSize_;
 };
+
+
+template<
+  int StagesC_,
+  int StagesD_,
+  int FragmentSize_,
+  bool ReuseSmemC_,
+  bool DelayTmaStore_
+>
+struct Sm100TmaWarpSpecialized {
+  constexpr static int StagesC = StagesC_;
+  constexpr static int StagesD = StagesD_;
+  constexpr static int FragmentSize = FragmentSize_;
+  constexpr static bool ReuseSmemC = ReuseSmemC_;
+  constexpr static bool DelayTmaStore = DelayTmaStore_;
+};
+
+template<
+  int StagesC_,
+  int StagesD_,
+  int FragmentSize_,
+  bool ReuseSmemC_,
+  bool DelayTmaStore_
+>
+struct Sm100PtrArrayTmaWarpSpecialized {
+  constexpr static int StagesC = StagesC_;
+  constexpr static int StagesD = StagesD_;
+  constexpr static int FragmentSize = FragmentSize_;
+  constexpr static bool ReuseSmemC = ReuseSmemC_;
+  constexpr static bool DelayTmaStore = DelayTmaStore_;
+
+  static_assert(StagesC >= 1, "StagesC must be >= 1");
+  static_assert(StagesD >= 1, "StagesD must be >= 1");
+};
+
+// default elementwise operator epilogue without smem
+struct Sm100NoSmem {};
+struct Sm100NoSmemWarpSpecialized {};
+struct Sm100PtrArrayNoSmem {};
+struct Sm100PtrArrayNoSmemWarpSpecialized {};
 
 #if defined (SYCL_INTEL_TARGET)
 struct IntelPVCEpilogue {

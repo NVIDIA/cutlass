@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -89,32 +89,6 @@ void FilterArchitecture() {
 
   int const kMaxDevice = 999;
 
-  // Defines text filters for each GEMM kernel based on minimum supported compute capability
-  struct {
-
-    /// Unit test filter string
-    char const *filter;
-
-    /// Minimum compute capability for the kernels in the named test
-    int min_compute_capability;
-
-    /// Maximum compute capability for which the kernels are enabled 
-    int max_compute_capability;
-  } 
-  test_filters[] = {
-    { "SM50*",                      50, kMaxDevice},
-    { "SM60*",                      60, kMaxDevice},
-    { "SM61*",                      61, kMaxDevice},
-    { "SM70*",                      70, 75},
-    { "SM75*",                      75, kMaxDevice},
-    { "SM80*",                      80, kMaxDevice},
-    { "SM89*",                      89, 89},
-    { "SM90*",                      90, 90},
-    { "IntelPVC",                   0,  0},
-    { 0, 0, false }
-  };
-
-
 #if defined(CUTLASS_ENABLE_SYCL)
   using namespace sycl::ext::oneapi::experimental;
 
@@ -137,7 +111,7 @@ void FilterArchitecture() {
     {architecture::intel_gpu_pvc, 0},
     {architecture::intel_gpu_bmg_g21, 1}
   };
-  auto device_architecture = 
+  auto device_architecture =
         syclcompat::get_default_queue().get_device().get_info<info::device::architecture>();
   if (device_architecture == architecture::unknown) {
     throw std::runtime_error("Encountered Unknown architecture.");
@@ -148,7 +122,6 @@ void FilterArchitecture() {
   }
 
   const int deviceMajorMinor = arch_map[device_architecture];
-
 #else
   cudaError_t err;
 
@@ -170,7 +143,36 @@ void FilterArchitecture() {
 
   int deviceMajorMinor = deviceProperties.major * 10 + deviceProperties.minor;
 #endif
-  
+
+  // Defines text filters for each GEMM kernel based on minimum supported compute capability
+  struct {
+
+    /// Unit test filter string
+    char const *filter;
+
+    /// Minimum compute capability for the kernels in the named test
+    int min_compute_capability;
+
+    /// Maximum compute capability for which the kernels are enabled
+    int max_compute_capability;
+  }
+  test_filters[] = {
+    { "SM50*",                      50, kMaxDevice},
+    { "SM60*",                      60, kMaxDevice},
+    { "SM61*",                      61, kMaxDevice},
+    { "SM70*",                      70, 75},
+    { "SM75*",                      75, kMaxDevice},
+    { "SM80*",                      80, kMaxDevice},
+    { "SM89*",                      89, 89},
+    { "SM90*",                      90, 90},
+    { "SM100*",                    100, 100},
+    { "IntelPVC",                   0,  0},
+    { "IntelBMG",                   1,  1},
+    { 0, 0, false }
+  };
+
+
+  // Set negative test filters
   std::stringstream ss;
   ss << "-";
   for (int i = 0, j = 0; test_filters[i].filter; ++i) {
@@ -183,7 +185,6 @@ void FilterArchitecture() {
   }
 
   ::testing::GTEST_FLAG(filter) = ss.str();
-  // Set negative test filters
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

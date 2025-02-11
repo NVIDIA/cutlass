@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -437,7 +437,7 @@ protected:
 
     int m_begin = tile_work.tiled_coord.m() * Mma::Shape::kM;
     int m_end = params.block_mapping.problem_size.m();
-    return Mma::IteratorA(
+    return typename Mma::IteratorA(
         params.params_A,
         ptr_A,
         { m_end, tile_work.k_end },
@@ -466,7 +466,7 @@ protected:
 
     int n_begin = tile_work.tiled_coord.n() * Mma::Shape::kN;
     int n_end = params.block_mapping.problem_size.n();
-    return Mma::IteratorB(
+    return typename Mma::IteratorB(
         params.params_B,
         ptr_B,
         { tile_work.k_end, n_end },

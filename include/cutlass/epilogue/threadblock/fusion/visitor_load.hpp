@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -335,7 +335,8 @@ struct VisitorAuxLoad{
 template<
   class ThreadMap,
   class Element,
-  class StrideMNL
+  class StrideMNL,
+  bool EnableNullptr = true // Fallback scalar broadcast for nullptr params
 >
 struct VisitorRowBroadcast {
 
@@ -399,6 +400,16 @@ struct VisitorRowBroadcast {
 
     CUTLASS_DEVICE void
     begin_epilogue() {
+      if constexpr (EnableNullptr) {
+        if (params_ptr->ptr_row == nullptr) {
+          auto tC_rRow_vec = recast<Array<Element, VecLength>>(coalesce(tC_rRow));
+          CUTLASS_PRAGMA_UNROLL
+          for (int i = 0; i < size(tC_rRow_vec); ++i) {
+            tC_rRow_vec[i].fill(params_ptr->null_default);
+          }
+          return;
+        }
+      }
       clear(tC_rRow);
       auto src_v = filter(tC_gRow);
       auto coord_v = filter(tC_cRow);
@@ -406,7 +417,7 @@ struct VisitorRowBroadcast {
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < size(src_v); ++i) {
         bool guard = get<1>(coord_v(i)) < n;
-        cutlass::arch::global_load<VecType, sizeof(VecType)>(dst_v(i), (void const*)&src_v(i), guard);
+        cutlass::arch::global_load<VecType, sizeof(VecType)>(dst_v(i), (void const *)&src_v(i), guard);
       }
     }
 
@@ -464,7 +475,8 @@ struct VisitorRowBroadcast {
 template<
   class ThreadMap,
   class Element,
-  class StrideMNL = Stride<_1,_0,_0>
+  class StrideMNL = Stride<_1,_0,_0>,
+  bool EnableNullptr = true // Fallback scalar broadcast for nullptr params
 >
 struct VisitorColBroadcast {
 
@@ -523,6 +535,12 @@ struct VisitorColBroadcast {
 
     CUTLASS_DEVICE void
     begin_epilogue() {
+      if constexpr (EnableNullptr) {
+        if (params_ptr->ptr_col == nullptr) {
+          fill(tC_rCol, params_ptr->null_default);
+          return;
+        }
+      }
       clear(tC_rCol);
       Tensor pred = make_tensor<bool>(shape(tC_gCol));
       CUTLASS_PRAGMA_UNROLL

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -145,6 +145,10 @@ protected:
     operator_args.source.reset(static_cast<ElementOutput *>(const_cast<void *>(arguments->source)));
     operator_args.destination.reset(static_cast<ElementOutput *>(const_cast<void *>(arguments->destination)));
 
+    if (arguments->use_pdl) {
+      return Status::kErrorNotSupported; 
+    }
+
     return Status::kSuccess;
   }
 
@@ -232,7 +236,7 @@ public:
     void *host_workspace, 
     void *device_workspace = nullptr, 
     cudaStream_t stream = nullptr) const {
-
+ 
     OperatorArguments args;
 
     Status status = update_arguments_(

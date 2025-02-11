@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -34,8 +34,6 @@
 */
 #pragma once
 
-#include "cutlass/cutlass.h"
-#include "cutlass/platform/platform.h"
 #include "cutlass/numeric_size.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -84,5 +82,7 @@ struct get_unpacked_element_type {
 #include "cutlass/tfloat32.h"
 #include "cutlass/float8.h"
 #include "cutlass/uint128.h"
+#include "cutlass/exmy_base.h" 
+#include "cutlass/float_subbyte.h" 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

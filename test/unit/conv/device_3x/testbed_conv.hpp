@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -113,14 +113,14 @@ struct DenseConvParams {
   // Default Kernel data types
   using ElementA = typename Conv::ConvKernel::ElementA;
   using ElementB = typename Conv::ConvKernel::ElementB;
-  
+
   static constexpr cutlass::conv::Operator ConvOp = Conv::DispatchPolicy::ConvOp;
   static constexpr int NumSpatialDimensions = Conv::NumSpatialDimensions;
   using ProblemShape = cutlass::conv::ConvProblemShape<ConvOp, NumSpatialDimensions>;
 
   // get the default arguments without sparse data
   auto get_mainloop_arguments(
-    [[maybe_unused]] ProblemShape const& problem_shape,  
+    [[maybe_unused]] ProblemShape const& problem_shape,
     thrust::universal_vector<ElementA>& tensor_A,
     thrust::universal_vector<ElementB>& tensor_B
   ) {
@@ -242,6 +242,74 @@ struct ConvTestbed {
     return max_smem_size >= Conv::ConvKernel::SharedStorageSize;
   }
 
+  auto transform_shape_and_stride_with_groups(ProblemShape const& problem_shape) {
+    using TensorExtent = cute::array<int32_t, NumSpatialDimensions + 3>;
+    using TensorStride = cute::array<int64_t, NumSpatialDimensions + 3>;
+
+    TensorExtent shape_a_g{};
+    TensorExtent shape_b_g{};
+    TensorExtent shape_c_g{};
+    TensorStride stride_a_g{};
+    TensorStride stride_b_g{};
+    TensorStride stride_c_g{};
+
+    auto shape_a = cute::reverse(problem_shape.shape_A);
+    auto shape_b = cute::reverse(problem_shape.shape_B);
+    auto shape_c = cute::reverse(problem_shape.shape_C);
+    auto stride_a = cute::reverse(problem_shape.stride_A);
+    auto stride_b = cute::reverse(problem_shape.stride_B);
+    auto stride_c = cute::reverse(problem_shape.stride_C);
+
+    int32_t G = problem_shape.groups;
+
+    if constexpr (ConvOp == cutlass::conv::Operator::kFprop ||
+                  ConvOp == cutlass::conv::Operator::kDgrad) {
+      // shape_a_g = (c,w,h,d,n,g) or (k,q,p,z,n,g)
+      // shape_b_g = (c,s,r,k,t,g)
+      // shape_c_g = (k,q,p,z,n,g) or (c,w,h,d,n,g)
+      shape_a_g = cute::to_array<int32_t>(tuple_cat(
+        cute::make_shape(cute::size<0>(shape_a) / G),
+        cute::take<1,NumSpatialDimensions + 2>(shape_a),
+        cute::make_shape(G)));
+      shape_b_g = cute::to_array<int32_t>(tuple_cat(
+        cute::take<0,NumSpatialDimensions + 1>(shape_b),
+        cute::make_shape(cute::size<NumSpatialDimensions + 1>(shape_b) / G, G)));
+      shape_c_g = cute::to_array<int32_t>(tuple_cat(
+        cute::make_shape(cute::size<0>(shape_c) / G),
+        cute::take<1,NumSpatialDimensions + 2>(shape_c),
+        cute::make_shape(G)));
+
+      stride_a_g = cute::to_array<int64_t>(append(stride_a, cute::size<0>(shape_a) / G));
+      stride_b_g = cute::to_array<int64_t>(append(stride_b,
+        cute::size<NumSpatialDimensions + 1>(stride_b) * cute::size<NumSpatialDimensions + 1>(shape_b) / G));
+      stride_c_g = cute::to_array<int64_t>(append(stride_c, cute::size<0>(shape_c) / G));
+    }
+    else if constexpr (ConvOp == cutlass::conv::Operator::kWgrad) {
+      // shape_a_g = (k,q,p,z,n,g)
+      // shape_b_g = (c,w,h,d,n,g)
+      // shape_c_g = (c,s,r,k,t,g)
+      shape_a_g = cute::to_array<int32_t>(tuple_cat(
+        cute::make_shape(cute::size<0>(shape_a) / G),
+        cute::take<1,NumSpatialDimensions + 2>(shape_a),
+        cute::make_shape(G)));
+      shape_b_g = cute::to_array<int32_t>(tuple_cat(
+        cute::make_shape(cute::size<0>(shape_b) / G),
+        cute::take<1,NumSpatialDimensions + 2>(shape_b),
+        cute::make_shape(G)));
+      shape_c_g = cute::to_array<int32_t>(tuple_cat(
+        cute::take<0,NumSpatialDimensions + 1>(shape_c),
+        cute::make_shape(cute::size<NumSpatialDimensions + 1>(shape_c) / G, G)));
+
+      stride_a_g = cute::to_array<int64_t>(append(stride_a, cute::size<0>(shape_a) / G));
+      stride_b_g = cute::to_array<int64_t>(append(stride_b, cute::size<0>(shape_b) / G));
+      stride_c_g = cute::to_array<int64_t>(append(stride_c,
+        cute::size<NumSpatialDimensions + 1>(stride_c) * cute::size<NumSpatialDimensions + 1>(shape_c) / G));
+    }
+
+    return make_tuple(shape_a_g, shape_b_g, shape_c_g,
+                      stride_a_g, stride_b_g, stride_c_g);
+  }
+
   // Executes one test
   bool run(
     ProblemShape const& problem_shape,
@@ -263,7 +331,7 @@ struct ConvTestbed {
     }
 
     bool ret = initialize(problem_shape);
-    
+
     if (!ret) {
       std::cerr << "initialize failed for the given problem_shape: \n";
       return false;
@@ -336,8 +404,15 @@ struct ConvTestbed {
 
     // Scale
     if constexpr (cute::is_same_v<ActivationFunctor, cutlass::epilogue::thread::ScaledGELU_taylor<ElementCompute>> ||
-                  cute::is_same_v<ActivationFunctor, cutlass::epilogue::thread::ScaledGELU<ElementCompute>>) {
+                  cute::is_same_v<ActivationFunctor, cutlass::epilogue::thread::ScaledGELU<ElementCompute>> ||
+                  cute::is_same_v<ActivationFunctor, cutlass::epilogue::thread::ScaledSiLu<ElementCompute>> ||
+                  cute::is_same_v<ActivationFunctor, cutlass::epilogue::thread::ScaledHardSwish<ElementCompute>> ) {
       fusion_args.activation.scale = ElementCompute{1};
+    }
+
+    // LeakyRelu
+    if constexpr (cute::is_same_v<ActivationFunctor, cutlass::epilogue::thread::LeakyReLU<ElementCompute>> ) {
+      fusion_args.activation.leaky_alpha = ElementCompute{0};
     }
 
     cutlass::Status status = cutlass::Status::kInvalid;
@@ -375,14 +450,9 @@ struct ConvTestbed {
                                    << cudaGetErrorString(result);
 
     // Create cute::Tensors using the logical rank-3 MNK multi-mode shapes the mainloop gives us
-    auto shape_mA = cute::reverse(problem_shape.shape_A);
-    auto shape_mB = cute::reverse(problem_shape.shape_B);
-    auto shape_mC = cute::reverse(problem_shape.shape_C);
+    auto [shape_mA, shape_mB, shape_mC, stride_mA, stride_mB, stride_mC] =
+      transform_shape_and_stride_with_groups(problem_shape);
     auto shape_mBias = cute::make_shape(cute::size(cute::get<0>(problem_shape.get_shape_B())));
-
-    auto stride_mA = cute::reverse(problem_shape.stride_A);
-    auto stride_mB = cute::reverse(problem_shape.stride_B);
-    auto stride_mC = cute::reverse(problem_shape.stride_C);
 
     auto mA = make_tensor(tensor_A.data().get(), make_layout(shape_mA, stride_mA));
     auto mB = make_tensor(tensor_B.data().get(), make_layout(shape_mB, stride_mB));
@@ -617,8 +687,9 @@ bool TestAllConv(double alpha = 1.0, double beta = 0.0, float epsilon = 0.0f
     for (DecompositionMode decomp_mode : decomposition_modes) {
       std::vector problem_splits = {Splits{1}};
       if constexpr (UsesStreamKScheduler) {
-        if (decomp_mode == DecompositionMode::Heuristic || decomp_mode == DecompositionMode::SplitK) {
+        if (decomp_mode == DecompositionMode::SplitK) {
           problem_splits.push_back(Splits{2});
+          problem_splits.push_back(Splits{4});
         }
       }
       for (auto splits : problem_splits) {

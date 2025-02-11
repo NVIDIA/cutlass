@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -114,7 +114,7 @@ using CollectiveOp = typename cutlass::gemm::collective::CollectiveBuilder<
   cutlass::gemm::KernelTmaWarpSpecialized
 >::CollectiveOp;
 
-using EpilogueOutputOp = cutlass::epilogue::collective::DefaultEpilogue<StrideC, StrideC, EpilogueThread, cutlass::gemm::EpilogueDefault>;
+using EpilogueOutputOp = cutlass::epilogue::collective::DefaultEpilogue<ElementC, StrideC, StrideC, EpilogueThread, cutlass::gemm::EpilogueDefault>;
 using CollectiveEpilogue = cutlass::epilogue::collective::detail::Sm90TmaWarpSpecializedAdapter<EpilogueOutputOp>;
 using Kernel = cutlass::gemm::kernel::GemmUniversal<
   ProblemShape,

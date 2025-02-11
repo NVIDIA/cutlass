@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -140,6 +140,11 @@ enum class SmemSwizzleBits : uint8_t {
 
 enum class SmemSwizzleBase : uint8_t {
   SWIZZLE_BASE_16B         = 0,
+  
+  SWIZZLE_BASE_32B         = 1,
+  SWIZZLE_BASE_32B_FLIP_8B = 2,
+  SWIZZLE_BASE_64B         = 3,
+  
 };
 
 enum class OOBFill : uint8_t {
@@ -184,6 +189,14 @@ enum class CacheHintSm90 : uint64_t {
   EVICT_LAST = 0x14F0000000000000,
 };
 
+
+enum class CacheHintSm100 : uint64_t {
+  EVICT_NORMAL = 0x1000000000000000,
+  EVICT_FIRST = 0x12F0000000000000,
+  EVICT_LAST = 0x14F0000000000000,
+};
+
+
 #if (__CUDACC_VER_MAJOR__ >= 12)
 
 #if !defined(__CUDACC_RTC__)
@@ -195,6 +208,7 @@ to_CUtensorMapDataType() {
   if constexpr (is_same_v<T,      uint8_t>) { return CU_TENSOR_MAP_DATA_TYPE_UINT8;    } else
   if constexpr (is_same_v<T, float_e4m3_t>) { return CU_TENSOR_MAP_DATA_TYPE_UINT8;    } else
   if constexpr (is_same_v<T, float_e5m2_t>) { return CU_TENSOR_MAP_DATA_TYPE_UINT8;    } else
+  if constexpr (is_same_v<T, type_erased_dynamic_float8_t>) { return CU_TENSOR_MAP_DATA_TYPE_UINT8;} else 
   if constexpr (is_same_v<T,     uint16_t>) { return CU_TENSOR_MAP_DATA_TYPE_UINT16;   } else
   if constexpr (is_same_v<T,     uint32_t>) { return CU_TENSOR_MAP_DATA_TYPE_UINT32;   } else
   if constexpr (is_same_v<T,     uint64_t>) { return CU_TENSOR_MAP_DATA_TYPE_UINT64;   } else
@@ -205,6 +219,18 @@ to_CUtensorMapDataType() {
   if constexpr (is_same_v<T,       double>) { return CU_TENSOR_MAP_DATA_TYPE_FLOAT64;  } else
   if constexpr (is_same_v<T,   bfloat16_t>) { return CU_TENSOR_MAP_DATA_TYPE_BFLOAT16; } else
   if constexpr (is_same_v<T,   tfloat32_t>) { return CU_TENSOR_MAP_DATA_TYPE_TFLOAT32; } else
+  #if defined(CUDA_VERSION) && CUDA_VERSION > 12060
+  if constexpr (is_same_v<T, float_e2m3_t>) { return CU_TENSOR_MAP_DATA_TYPE_16U6_ALIGN16B;} else
+  if constexpr (is_same_v<T, float_e3m2_t>) { return CU_TENSOR_MAP_DATA_TYPE_16U6_ALIGN16B;} else
+  if constexpr (is_same_v<T, float_e2m1_t>) { return CU_TENSOR_MAP_DATA_TYPE_16U4_ALIGN8B;} else
+  if constexpr (is_same_v<T, cutlass::detail::float_e2m1_unpacksmem_t>) { return CU_TENSOR_MAP_DATA_TYPE_16U4_ALIGN16B;} else
+  if constexpr (is_same_v<T, cutlass::detail::float_e2m3_unpacksmem_t>) { return CU_TENSOR_MAP_DATA_TYPE_16U6_ALIGN16B;} else
+  if constexpr (is_same_v<T, cutlass::detail::float_e3m2_unpacksmem_t>) { return CU_TENSOR_MAP_DATA_TYPE_16U6_ALIGN16B;} else
+  if constexpr (is_same_v<T, detail::type_erased_dynamic_float6_unpacksmem_t>) { return CU_TENSOR_MAP_DATA_TYPE_16U6_ALIGN16B;} else
+  if constexpr (is_same_v<T, type_erased_dynamic_float6_t>) { return CU_TENSOR_MAP_DATA_TYPE_16U6_ALIGN16B;} else
+  if constexpr (is_same_v<T, detail::type_erased_dynamic_float4_unpacksmem_t>) { return CU_TENSOR_MAP_DATA_TYPE_16U4_ALIGN16B;} else
+  if constexpr (is_same_v<T, type_erased_dynamic_float4_t>) { return CU_TENSOR_MAP_DATA_TYPE_16U4_ALIGN8B; } else
+  #endif
   { static_assert(sizeof(T) < 0, "Unknown TMA Format!"); }
 }
 
@@ -221,9 +247,23 @@ to_CUtensorMapSwizzle(SmemSwizzleBits const& t, SmemSwizzleBase const& b) {
     case SmemSwizzleBits::B64:
       assert((b == SmemSwizzleBase::SWIZZLE_BASE_16B) && "Expected 16B swizzle base for 64B swizzle bits.");
       return CU_TENSOR_MAP_SWIZZLE_64B;
+    #if (0) 
     case SmemSwizzleBits::B128:
       assert((b == SmemSwizzleBase::SWIZZLE_BASE_16B) && "Expected 16B swizzle base for 128B swizzle bits.");
       return CU_TENSOR_MAP_SWIZZLE_128B;
+    
+    #else
+    case SmemSwizzleBits::B128:
+      switch (b) {
+        default: assert(false && "Unsupported pair of SmemSwizzleBits and SmemSwizzleBase!");
+        case SmemSwizzleBase::SWIZZLE_BASE_16B: return CU_TENSOR_MAP_SWIZZLE_128B;
+        #if defined(CUDA_VERSION) && CUDA_VERSION > 12060
+        case SmemSwizzleBase::SWIZZLE_BASE_32B: return CU_TENSOR_MAP_SWIZZLE_128B_ATOM_32B;
+        case SmemSwizzleBase::SWIZZLE_BASE_64B: return CU_TENSOR_MAP_SWIZZLE_128B_ATOM_64B;
+        #endif
+      }
+    #endif
+    
   }
 }
 

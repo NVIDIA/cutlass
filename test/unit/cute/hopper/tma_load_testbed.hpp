@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -142,7 +142,7 @@ tma_test_device_cute(T const* g_in, T* g_out,
   for (int stage = 0; stage < size<1>(tAgA); ++stage)
   {
     // Set the bytes transferred in this TMA transaction (may involve multiple issues)
-    constexpr int kTmaTransactionBytes = sizeof(ArrayEngine<T, size(sA)>);
+    constexpr int kTmaTransactionBytes = sizeof(ArrayEngine<T, CUTE_STATIC_V(size(filter_zeros(sA)))>);
 
     if (ThreadIdxX() == 0)
     {

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -357,7 +357,7 @@ struct Rank2KGroupedProblemVisitor : public GroupedProblemVisitor<
     int32_t macro_col = macro_id - (((macro_row+1) * macro_row)/2);
 
     if (kFillModeC == cutlass::FillMode::kUpper) {
-      swap(macro_row, macro_col);
+      cutlass::swap(macro_row, macro_col);
     }
 
     int32_t row = OffsetHelper::macro_row_to_row(macro_row, threadblock_id);

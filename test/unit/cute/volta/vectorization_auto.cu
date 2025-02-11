@@ -1,6 +1,6 @@
 
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -64,7 +64,6 @@ kernel(GmemTensor gC, RmemTiler tiler, CopyPolicy policy)
 
   // NOTE: only 1 thread, this thread produce a block of 8x8 output. The fringe will not be touched.
   //copy(rC, tCgC);           // Enable auto-vectorization if static
-  //copy_vec<T>(rC, tCgC);    // Disable auto-vectorization always
   copy(policy, rC, tCgC);     // Use a policy to establish vectorization assumptions
 }
 

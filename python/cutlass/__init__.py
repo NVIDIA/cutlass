@@ -1,6 +1,6 @@
 #################################################################################################
 #
-# Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -56,6 +56,19 @@ CUTLASS_PATH = os.getenv("CUTLASS_PATH", cutlass_library.source_path)
 
 # Alias CUTLASS_PATH as source_path
 source_path = CUTLASS_PATH
+
+_NVCC_VERSION = None
+def nvcc_version():
+    global _NVCC_VERSION
+    if _NVCC_VERSION is None:
+        import subprocess
+
+        # Attempt to get NVCC version
+        result = subprocess.run(['nvcc', '--version'], capture_output=True)
+        if result.returncode != 0:
+            raise Exception('Unable to run `nvcc --version')
+        _NVCC_VERSION = str(result.stdout).split(" release ")[-1].split(",")[0]
+    return _NVCC_VERSION
 
 _CUDA_INSTALL_PATH = None
 def cuda_install_path():
@@ -123,7 +136,7 @@ def get_option_registry():
         this._option_registry = OptionRegistry(device_cc())
     return this._option_registry
 
-this.__version__ = '3.6.0'
+this.__version__ = '3.8.0'
 
 from cutlass.backend import create_memory_pool
 from cutlass.emit.pytorch import pytorch

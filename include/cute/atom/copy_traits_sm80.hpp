@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -51,13 +51,6 @@ struct Copy_Traits<SM80_CP_ASYNC_CACHEALWAYS<S,D>>
 
   // Reference map from (thr,val) to bit
   using RefLayout = SrcLayout;
-
-  // Construct a zfill variant with a given predicate value
-  CUTE_HOST_DEVICE constexpr
-  Copy_Traits<SM80_CP_ASYNC_CACHEALWAYS_ZFILL<S,D>>
-  with(bool pred) const {
-    return {pred};
-  }
 };
 
 template <class S, class D>
@@ -73,13 +66,6 @@ struct Copy_Traits<SM80_CP_ASYNC_CACHEGLOBAL<S,D>>
 
   // Reference map from (thr,val) to bit
   using RefLayout = SrcLayout;
-
-  // Construct a zfill variant with a given predicate value
-  CUTE_HOST_DEVICE constexpr
-  Copy_Traits<SM80_CP_ASYNC_CACHEGLOBAL_ZFILL<S,D>>
-  with(bool pred) const {
-    return {pred};
-  }
 };
 
 template <class S, class D>
@@ -96,8 +82,15 @@ struct Copy_Traits<SM80_CP_ASYNC_CACHEALWAYS_ZFILL<S,D>>
   // Reference map from (thr,val) to bit
   using RefLayout = SrcLayout;
 
-  // Predicate value that determines whether to load or zfill
-  bool pred = false;
+  // Predicate value: true = load, false = zfill
+  bool pred = true;
+
+  // Construct a zfill variant with a given predicate value
+  CUTE_HOST_DEVICE constexpr
+  Copy_Traits<SM80_CP_ASYNC_CACHEALWAYS_ZFILL<S,D>>
+  with(bool pred) const {
+    return {pred};
+  }
 
   // Overload copy_unpack for zfill variant to pass the predicate into the op
   template <class TS, class SLayout,
@@ -137,8 +130,15 @@ struct Copy_Traits<SM80_CP_ASYNC_CACHEGLOBAL_ZFILL<S,D>>
   // Reference map from (thr,val) to bit
   using RefLayout = SrcLayout;
 
-  // Predicate value that determines whether to load or zfill
-  bool pred = false;
+  // Predicate value: true = load, false = zfill
+  bool pred = true;
+
+  // Construct a zfill variant with a given predicate value
+  CUTE_HOST_DEVICE constexpr
+  Copy_Traits<SM80_CP_ASYNC_CACHEGLOBAL_ZFILL<S,D>>
+  with(bool pred) const {
+    return {pred};
+  }
 
   // Overload copy_unpack for zfill variant to pass the predicate into the op
   template <class TS, class SLayout,
@@ -164,31 +164,4 @@ struct Copy_Traits<SM80_CP_ASYNC_CACHEGLOBAL_ZFILL<S,D>>
   }
 };
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-// Element copy selector
-template <class SrcTensor, class DstTensor>
-CUTE_HOST_DEVICE constexpr
-auto
-select_elementwise_copy(SrcTensor const&, DstTensor const&)
-{
-  using SrcType = typename SrcTensor::value_type;
-  using DstType = typename DstTensor::value_type;
-
-#if defined(CUTE_ARCH_CP_ASYNC_SM80_ENABLED)
-  if constexpr (is_gmem<SrcTensor>::value && is_smem<DstTensor>::value &&
-                sizeof(SrcType) == sizeof(DstType) &&
-               (sizeof(SrcType) == 4 || sizeof(SrcType) == 8 || sizeof(SrcType) == 16))
-  {
-    return SM80_CP_ASYNC_CACHEALWAYS<SrcType,DstType>{};
-  } else {
-    return UniversalCopy<SrcType,DstType>{};
-  }
-
-  CUTE_GCC_UNREACHABLE;
-#else
-  return UniversalCopy<SrcType,DstType>{};
-#endif
-}
-
-}
+} // end namespace cute

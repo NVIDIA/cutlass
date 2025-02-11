@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -35,6 +35,7 @@
 #pragma once
 
 #include "cutlass/array.h"
+#include "cutlass/detail/helper_macros.hpp"
 #include "cutlass/layout/matrix.h"
 #include "cute/arch/copy_sm75.hpp"
 #include "cute/arch/util.hpp"

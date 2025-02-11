@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -32,6 +32,7 @@
 #pragma once
 
 #include <cmath>
+#include <cinttypes>
 #include <type_traits>
 #include <vector>
 
@@ -84,8 +85,6 @@
 #include "gemm/mma_accum_lambda_iterator.h"
 #include "gemm/mma_from_smem.h"
 #include "transform/tile_smem_loader.h"
-
-#include <inttypes.h>
 
 using namespace gemm_kernel_utils;
 
@@ -1956,7 +1955,8 @@ struct AttentionBackwardKernel {
 
           // no-op epilogue operator - just casting and storing contents of
           // accum to global memory
-          typename MatmulDOIVJ::BiasGradEpilogue::OutputOp output_op({1, 1});
+          typename MatmulDOIVJ::BiasGradEpilogue::OutputOp output_op(
+              typename MatmulDOIVJ::BiasGradEpilogue::OutputOp::Params{1, 1});
           typename MatmulDOIVJ::BiasGradEpilogue epilogue(
               shared_storage.gradB_epilogue(), thread_id, warp_id, lane_id);
           epilogue(output_op, output_iter, accum, output_iter);
@@ -2211,7 +2211,7 @@ struct AttentionBackwardKernel {
         incrIteration(p, query_start, key_start, next_query, next_key);
         DISPATCH_BOOL(
             next_key != key_start, kForceReloadK, ([&]() {
-              prologueQkNextIteration<kForceReloadK>(
+              prologueQkNextIteration<kForceReloadK::value>(
                   shared_storage, p, next_query, next_key, warp_id, lane_id);
             }));
       }
@@ -2342,7 +2342,7 @@ struct AttentionBackwardKernel {
         thread_id,
         cutlass::MatrixCoord{0, 0});
 
-    MatmulQK::Mma::prologue<kReloadK, true>(
+    MatmulQK::Mma::template prologue<kReloadK, true>(
         shared_storage.mm_qk_k(),
         shared_storage.mm_qk_q(),
         iterator_A,
@@ -2369,6 +2369,7 @@ struct AttentionBackwardKernel {
         p.grad_value_ptr + key_start * p.gV_strideM(),
         {num_keys_in_block, p.head_dim_value},
         thread_id);
+
     accumulateInGmem<MatmulGradV>(
         shared_storage.gradV_epilogue_final(),
         output_frags.gradV,
@@ -2406,7 +2407,7 @@ struct AttentionBackwardKernel {
     int thread_id = 32 * warp_id + lane_id;
     DISPATCH_BOOL(
         first, kIsFirst, ([&]() {
-          static constexpr auto ScaleType = kIsFirst
+          static constexpr auto ScaleType = kIsFirst::value
               ? cutlass::epilogue::thread::ScaleType::Nothing
               : cutlass::epilogue::thread::ScaleType::NoBetaScaling;
           using EpilogueOutputOp =

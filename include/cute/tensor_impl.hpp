@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -84,6 +84,8 @@ struct ArrayEngine
 };
 
 // Specialization for sparse_elem<S,T> tensor allocation/iteration
+// NOTE: This can and should be used for allocation of SMEM as well!
+//       Fuse these two ArrayEngines?
 template <int S, class T, size_t N>
 struct ArrayEngine<sparse_elem<S,T>, N>
 {
@@ -858,6 +860,17 @@ max_common_layout(Tensor<SrcEngine,SrcLayout> const& a,
   CUTE_GCC_UNREACHABLE;
 }
 
+/* Return the maximum (statically known) alignment of a Tensor in the number of bits
+ */
+template <class Engine, class Layout>
+CUTE_HOST_DEVICE constexpr
+auto
+max_alignment(Tensor<Engine,Layout> const& t)
+{
+  return gcd(max_alignment(t.data()),
+             max_alignment(t.layout()) * static_value<sizeof_bits<typename Engine::value_type>>());
+}
+
 //
 // Key algebraic operations -- Composition, Divide, and Product
 //
@@ -1031,8 +1044,8 @@ local_tile(Tensor    && tensor,
 //   auto cta_tiler = Shape<_32, _64, _4>{};
 //   auto cta_coord = make_coord(blockIdx.x, blockIdx.y, _);
 //   Tensor ctaA = local_tile(dataA, cta_tiler, cta_coord, Step<_1, X,_1>{});  // (_32,_4,k)
-//   Tensor ctaB = local_tile(dataA, cta_tiler, cta_coord, Step< X,_1,_1>{});  // (_64,_4,k)
-//   Tensor ctaC = local_tile(dataA, cta_tiler, cta_coord, Step<_1,_1, X>{});  // (_32,_64)
+//   Tensor ctaB = local_tile(dataB, cta_tiler, cta_coord, Step< X,_1,_1>{});  // (_64,_4,k)
+//   Tensor ctaC = local_tile(dataC, cta_tiler, cta_coord, Step<_1,_1, X>{});  // (_32,_64)
 template <class Tensor, class Tiler, class Coord, class Proj,
           __CUTE_REQUIRES(is_tensor<remove_cvref_t<Tensor>>::value)>
 CUTE_HOST_DEVICE

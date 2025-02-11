@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -267,7 +267,9 @@ private:
           case 3:
             return 0b11;
           default:
+            CUTLASS_ASSERT(false);
             CUTE_GCC_UNREACHABLE;
+            return 0b00;
         }
       };
 

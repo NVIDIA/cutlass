@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -328,7 +328,7 @@ public:
     }
 
     uint32_t transaction_bytes = TmaTransactionBytes;
-    typename Params::TMA_C tma_load_c = {};
+    typename Params::TMA_C tma_load_c{};
     if constexpr (is_source_supported) {
       ElementC const* ptr_C_first_batch = reinterpret_cast<ElementC const*>(args.ptr_C); 
       Tensor tensor_c = make_tensor(ptr_C_first_batch, make_layout(make_shape(init_M,init_N,init_L), append<3>(stride_c, _0{})));
@@ -409,7 +409,7 @@ public:
           implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_D>(cute::make_shape(M,N,L), InternalStrideD{});
         }
 
-        if constexpr (not cute::is_void_v<ElementC>) {
+        if constexpr (is_source_supported) {
           constexpr int tma_alignment_bits_C = cutlass::detail::get_input_alignment_bits<ElementC>();
           constexpr int min_tma_aligned_elements_C = tma_alignment_bits_C / cutlass::sizeof_bits<ElementC>::value;
           implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_C>(cute::make_shape(M,N,L), InternalStrideC{});
@@ -432,12 +432,15 @@ public:
 
     bool beta_implementable = true;
 
-    if constexpr (cute::is_void_v<ElementC>) {
+    if (cute::is_void_v<ElementC> || args.ptr_C == nullptr) {
       if constexpr (detail::has_beta<Arguments>::value) {
         beta_implementable = args.thread.beta == 0.0;
       }
       if constexpr (detail::has_beta_ptr<Arguments>::value) {
         beta_implementable = beta_implementable && args.thread.beta_ptr == nullptr;
+      }
+      if constexpr (detail::has_beta_ptr_array<Arguments>::value) {
+        beta_implementable = beta_implementable && args.thread.beta_ptr_array == nullptr;
       }
     }
 
@@ -775,7 +778,7 @@ public:
                       tRS_rC,
                       thread_idx
                     };
-    auto cst_callbacks = fusion_callbacks.get_consumer_store_callbacks<RefSrc>(cst_args);
+    auto cst_callbacks = fusion_callbacks.template get_consumer_store_callbacks<RefSrc>(cst_args);
     bool is_producer_load_needed = fusion_callbacks.is_producer_load_needed();
     bool is_C_load_needed = is_source_supported && fusion_callbacks.is_C_load_needed();
 
@@ -848,6 +851,9 @@ public:
 
     // Pre-loop fusion callback entry point
     cst_callbacks.begin();
+    if (cst_callbacks.begin_sync_needed()) {
+      synchronize();
+    }
 
     // For each output tile
     CUTLASS_PRAGMA_UNROLL
@@ -1017,7 +1023,7 @@ public:
     Tensor gmem_tensormap = make_tensor(params.tensormaps, desc_layout);                      // (SMs, NumInputTensors)
 
     if constexpr (IsLoad) {
-      if (not cute::is_void_v<ElementC>) {
+      if (is_source_supported) {
         constexpr int C_tensormap_index = NumEpilogueWarpGroups;
         Tensor pC_tensormap = make_tensor(params.tma_load_c.get_tma_descriptor(), Int<1>{}, Int<1>{});
         Tensor sC_tensormap = make_tensor(make_smem_ptr(&shared_tensormaps.smem_tensormap_C), Int<1>{}, Int<1>{});
@@ -1058,8 +1064,10 @@ public:
     // Replacing global_address for the next batch
     if constexpr (IsLoad) {
       if constexpr (is_source_supported) {
-        cute::tma_descriptor_replace_addr_in_shared_mem(shared_tensormaps.smem_tensormap_C,
-                                                        params.ptr_C[next_batch]);
+        if (params.ptr_C != nullptr) {
+          cute::tma_descriptor_replace_addr_in_shared_mem(shared_tensormaps.smem_tensormap_C,
+                                                          params.ptr_C[next_batch]);
+        }
       }
     }
     else if constexpr (is_destination_supported) {
@@ -1087,18 +1095,20 @@ public:
 
     if constexpr (IsLoad) {
       if constexpr (is_source_supported) {
-        ElementC const* ptr_C = nullptr;
-        Tensor tensor_c = make_tensor(ptr_C, make_layout(make_shape(M,N,Int<1>{}), params.dC[next_group]));
+        if (params.dC != nullptr) {
+          ElementC const* ptr_C = nullptr;
+          Tensor tensor_c = make_tensor(ptr_C, make_layout(make_shape(M,N,Int<1>{}), params.dC[next_group]));
 
-        cute::detail::fill_tma_gmem_shape_stride(params.tma_load_c, tensor_c, 
-                                                 prob_shape, prob_stride);
-        // Convert strides to byte strides
-        for (uint64_t& stride : prob_stride) {
-          stride = (stride * sizeof_bits_v<ElementC>) / 8;
+          cute::detail::fill_tma_gmem_shape_stride(params.tma_load_c, tensor_c, 
+                                                  prob_shape, prob_stride);
+          // Convert strides to byte strides
+          for (uint64_t& stride : prob_stride) {
+            stride = (stride * sizeof_bits_v<ElementC>) / 8;
+          }
+          cute::tma_descriptor_replace_dims_strides_in_shared_mem(shared_tensormaps.smem_tensormap_C,
+                                                                  prob_shape,
+                                                                  prob_stride);
         }
-        cute::tma_descriptor_replace_dims_strides_in_shared_mem(shared_tensormaps.smem_tensormap_C,
-                                                                prob_shape,
-                                                                prob_stride);
       }
     }
     else if constexpr (is_destination_supported) {
@@ -1166,7 +1176,7 @@ public:
   void
   tensormaps_fence_acquire(cute::TmaDescriptor const* tensormap) {
     if constexpr (IsLoad) {
-      if constexpr (not cute::is_void_v<ElementC>) {
+      if constexpr (is_source_supported) {
         cute::tma_descriptor_fence_acquire(tensormap);
       }
     } 

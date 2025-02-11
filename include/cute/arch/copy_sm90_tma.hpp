@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -1157,6 +1157,17 @@ tma_store_arrive() {
 #endif
 }
 
+
+CUTE_HOST_DEVICE static void
+tma_desc_commit_group() {
+#if defined(CUTE_ARCH_TMA_SM90_ENABLED)
+    asm volatile("cp.async.bulk.commit_group;");
+#else
+    CUTE_INVALID_CONTROL_PATH("Trying to use tma without CUTE_ARCH_TMA_SM90_ENABLED.");
+#endif
+}
+
+
 // Wait until at most Count committed TMA_STOREs are pending and all prior commits are complete
 template <int Count>
 CUTE_HOST_DEVICE static void
@@ -1172,6 +1183,22 @@ tma_store_wait() {
     CUTE_INVALID_CONTROL_PATH("Trying to use tma without CUTE_ARCH_TMA_SM90_ENABLED.");
 #endif
 }
+
+
+// Wait until all TMA descriptor previously issued are safe to be modified after tma_desc_commit_group()
+CUTE_HOST_DEVICE static void
+tma_desc_wait_group() {
+#if defined(CUTE_ARCH_TMA_SM90_ENABLED)
+    asm volatile(
+      "cp.async.bulk.wait_group.read %0;"
+      :
+      : "n"(0)
+      : "memory");
+#else
+    CUTE_INVALID_CONTROL_PATH("Trying to use tma without CUTE_ARCH_TMA_SM90_ENABLED.");
+#endif
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 /// TMA_REDUCE_ADD : Initiates a TMA reduce-add from shared memory to global memory

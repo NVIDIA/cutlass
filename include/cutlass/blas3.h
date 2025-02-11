@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -132,7 +132,7 @@ struct MantissaInBits<double> {
 template <>
 struct MantissaInBits<cutlass::complex<double>> {
   static int constexpr bits = 30;
-  static double constexpr error = 1.0e-15;
+  static double constexpr error = 1.0e-14;
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

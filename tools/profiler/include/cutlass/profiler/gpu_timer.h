@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -51,16 +51,21 @@ struct GpuTimer {
   //
   
   GpuTimer();
+
+  GpuTimer(GpuTimer const&) = delete;
+
+  GpuTimer(GpuTimer &&gpu_timer) noexcept;
+
   ~GpuTimer();
 
-  /// Records a start event in the stream
-  void start(cudaStream_t stream = nullptr);
+  /// Records a start event in the stream, the flag is for cudaEventRecordWithFlags
+  void start(cudaStream_t stream = nullptr, unsigned int flag = cudaEventRecordDefault);
 
-  /// Records a stop event in the stream
-  void stop(cudaStream_t stream = nullptr);
+  /// Records a stop event in the stream, the flag is for cudaEventRecordWithFlags
+  void stop(cudaStream_t stream = nullptr, unsigned int flag = cudaEventRecordDefault);
 
-  /// Records a stop event in the stream and synchronizes on the stream
-  void stop_and_wait(cudaStream_t stream = nullptr);
+  /// Records a stop event in the stream and synchronizes on the stream, the flag is for cudaEventRecordWithFlags
+  void stop_and_wait(cudaStream_t stream = nullptr, unsigned int flag = cudaEventRecordDefault);
 
   /// Returns the duration in milliseconds
   double duration(int iterations = 1) const;

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -47,17 +47,33 @@ template <class TiledMma>
 struct IsSparseTensorOp<TiledMma, cute::void_t<typename TiledMma::ValTypeE>>
     : cute::true_type { };
 
+
+template <class TiledMma, class = void>
+struct IsBlockScaledTensorOp : cute::false_type { };
+
+// TiledMma for blockScaled must have FrgTypeSFA
+template <class TiledMma>
+struct IsBlockScaledTensorOp<TiledMma, cute::void_t<typename TiledMma::FrgTypeSFA>>
+    : cute::true_type { };
+
+
 // The following metafunction is used to extract the OperatorClass from a cutlass 3.x kernel.
 template <class TiledMma>
 struct get_operator_class {
   static constexpr bool is_sparse_op = IsSparseTensorOp<TiledMma>::value;
+  static constexpr bool is_block_scaled_op = IsBlockScaledTensorOp<TiledMma>::value;    
+  // All tensorop operations have atom shape's M >= 8   
   static constexpr bool is_tensor_op = cute::size<0>(typename TiledMma::AtomShape_MNK{}) >= 8;
   using type = cute::conditional_t<
                 is_tensor_op, 
                 cute::conditional_t<
                   is_sparse_op,
                   cutlass::arch::OpClassSparseTensorOp,
+                  cute::conditional_t<                          
+                    is_block_scaled_op,                         
+                    cutlass::arch::OpClassBlockScaledTensorOp,  
                     cutlass::arch::OpClassTensorOp
+                    >                                           
                   >,
                 cutlass::arch::OpClassSimt
                 >;

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -59,4 +59,5 @@ struct CollectiveConv {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include "sm90_implicit_gemm_gmma_ss_warpspecialized.hpp"
+#include "sm100_implicit_gemm_umma_warpspecialized.hpp" 
 /////////////////////////////////////////////////////////////////////////////////////////////////

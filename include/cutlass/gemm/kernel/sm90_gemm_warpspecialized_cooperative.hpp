@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -179,10 +179,21 @@ public:
           "  For optimal performance, populate the arguments KernelHardwareInfo struct with the SM count.");
       sm_count = KernelHardwareInfo::query_device_multiprocessor_count(args.hw_info.device_id);
     }
-
     CUTLASS_TRACE_HOST("to_underlying_arguments(): Setting persistent grid SM count to " << sm_count);
 
-    KernelHardwareInfo hw_info{args.hw_info.device_id, sm_count};
+    // Get maximum number of clusters that could co-exist on the target device
+    int max_active_clusters = args.hw_info.max_active_clusters;
+    if (max_active_clusters <= 0) {
+      max_active_clusters = 0;
+      CUTLASS_TRACE_HOST("  WARNING: Arguments do not include a valid max cluster count.\n"
+          "  For optimal performance, populate the arguments KernelHardwareInfo struct with the max_active_clusters.");
+    }
+    else {
+      CUTLASS_TRACE_HOST("to_underlying_arguments(): Setting persistent grid cluster count to " << max_active_clusters);
+    }
+
+    KernelHardwareInfo hw_info{args.hw_info.device_id, sm_count, max_active_clusters};
+
     TileSchedulerParams scheduler = TileScheduler::to_underlying_arguments(
       problem_shape_MNKL, TileShape{}, ClusterShape{}, hw_info, args.scheduler, workspace);
 
