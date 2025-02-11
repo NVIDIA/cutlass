@@ -104,8 +104,7 @@ namespace cutlass {
 
 #else // defined(CUTLASS_ENABLE_DIRECT_CUDA_DRIVER_CALL)
 
-#if ((__CUDACC_VER_MAJOR__ >= 13) ||                               \
-    ((__CUDACC_VER_MAJOR__ == 12) && (__CUDACC_VER_MINOR__ >= 5))) \
+#if (__CUDACC_VER_MAJOR__ >= 13)
 
 #define CUTLASS_CUDA_DRIVER_WRAPPER_DECL(func, ver)             \
   template <typename... Args>                                   \
