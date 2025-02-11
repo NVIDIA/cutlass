@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -800,6 +800,44 @@ bool arg_as_int(
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+/// Lexically casts an argument to an bool if it is defined. Returns true if not null.
+bool arg_as_bool(bool &bool_value, KernelArgument::Value const *value_ptr) {
+  if (value_ptr->not_null) {
+    if (value_ptr->argument->description->type == ArgumentTypeID::kInteger) {
+      int64_t value64;
+      arg_as_int(value64, value_ptr);
+      bool_value = static_cast<bool>(value64); 
+    }
+    else if (value_ptr->argument->description->type == ArgumentTypeID::kEnumerated) {
+      bool_value = library::from_string<bool>(
+        static_cast<EnumeratedTypeArgument::EnumeratedTypeValue const *>(value_ptr)->element);
+    }
+    else {
+      throw std::runtime_error(
+        "arg_as_bool() - illegal cast. Problem space argument must be integer or enumerated");
+    }
+
+    return true;
+  }
+
+  return false;
+}
+
+/// Lexically casts an argument to a bool
+bool arg_as_bool(
+  bool &bool_value,
+  char const *name,
+  ProblemSpace const &problem_space,
+  ProblemSpace::Problem const &problem) {
+
+  size_t idx = problem_space.argument_index(name);
+  KernelArgument::Value const *value_ptr = problem.at(idx).get();
+
+  return arg_as_bool(bool_value, value_ptr);
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 /// Lexically casts an argument to an int64 if it is defined. Returns true if not null.
 bool arg_as_NumericTypeID(
   library::NumericTypeID &numeric_type, 
@@ -840,6 +878,32 @@ bool arg_as_NumericTypeID(
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+/// Lexically casts an argument to an int64 if it is defined. Returns true if not null.
+bool arg_as_RuntimeDatatype(
+  library::RuntimeDatatype &runtime_datatype, 
+  KernelArgument::Value const *value_ptr) {
+  
+  if (value_ptr->not_null) {
+    if (value_ptr->argument->description->type == ArgumentTypeID::kEnumerated) {
+      
+      runtime_datatype = library::from_string<library::RuntimeDatatype>(
+        static_cast<EnumeratedTypeArgument::EnumeratedTypeValue const *>(value_ptr)->element);
+      if (runtime_datatype == library::RuntimeDatatype::kInvalid) {
+        throw std::runtime_error(
+          "arg_as_RuntimeDatatype() - illegal cast.");
+      }
+    }
+    else {
+      throw std::runtime_error(
+        "arg_as_RuntimeDatatype() - illegal cast.");
+    }
+    return true;
+  }
+  return false;
+}
+
 
 /// Lexically casts an argument to an int64 if it is defined. Returns true if not null.
 bool arg_as_RasterOrder(
@@ -906,6 +970,21 @@ bool arg_as_LayoutTypeID(
   }
   return false;
 }
+
+
+/// Lexically casts an argument to an int64 if it is defined. Returns true if not null.
+bool arg_as_RuntimeDatatype(
+  library::RuntimeDatatype &runtime_datatype,
+  char const *name,
+  ProblemSpace const &problem_space, 
+  ProblemSpace::Problem const &problem) {
+
+  size_t idx = problem_space.argument_index(name);
+  KernelArgument::Value const *value_ptr = problem.at(idx).get();
+
+  return arg_as_RuntimeDatatype(runtime_datatype, value_ptr);
+}
+
 
 /// Lexically casts an argument to an int64 if it is defined. Returns true if not null.
 bool arg_as_LayoutTypeID(

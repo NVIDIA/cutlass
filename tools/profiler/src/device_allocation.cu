@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -290,9 +290,8 @@ DeviceAllocation::DeviceAllocation():
   capacity_(0),
   pointer_(nullptr),
   layout_(library::LayoutTypeID::kUnknown),
-  batch_count_(1),
-  device_(-1) {
-
+  batch_count_(1) {
+  cudaGetDevice(&device_);
 }
 
 DeviceAllocation::DeviceAllocation(
@@ -329,13 +328,33 @@ DeviceAllocation::DeviceAllocation(
 
 DeviceAllocation::~DeviceAllocation() {
   if (pointer_) {
+    int current_device;
+    cudaGetDevice(&current_device);
+
+    if (current_device != device_) {
+      cudaSetDevice(device_);
+    }
     cudaFree(pointer_);
+
+    if (current_device != device_) {
+      cudaSetDevice(current_device);
+    }
   }
 }
 
 DeviceAllocation &DeviceAllocation::reset() {
   if (pointer_) {
+    int current_device;
+    cudaGetDevice(&current_device);
+
+    if (current_device != device_) {
+      cudaSetDevice(device_);
+    }
     cudaFree(pointer_);
+
+    if (current_device != device_) {
+      cudaSetDevice(current_device);
+    }
   }
 
   type_ = library::NumericTypeID::kInvalid;
@@ -597,6 +616,48 @@ void DeviceAllocation::initialize_random_device(int seed, Distribution dist) {
       dist
     );
     break;
+  
+  case library::NumericTypeID::kFUE4M3:
+    cutlass::reference::device::BlockFillRandom<cutlass::float_ue4m3_t>(
+      reinterpret_cast<cutlass::float_ue4m3_t *>(pointer_),
+      capacity_,
+      seed,
+      dist
+    );
+    break;
+  case library::NumericTypeID::kFUE8M0:
+    cutlass::reference::device::BlockFillRandom<cutlass::float_ue8m0_t>(
+      reinterpret_cast<cutlass::float_ue8m0_t *>(pointer_),
+      capacity_,
+      seed,
+      dist
+    );
+    break;
+  case library::NumericTypeID::kFE2M3:
+    cutlass::reference::device::BlockFillRandom<cutlass::float_e2m3_t>(
+      reinterpret_cast<cutlass::float_e2m3_t *>(pointer_),
+      capacity_,
+      seed,
+      dist
+    );
+    break;
+  case library::NumericTypeID::kFE3M2:
+    cutlass::reference::device::BlockFillRandom<cutlass::float_e3m2_t>(
+      reinterpret_cast<cutlass::float_e3m2_t *>(pointer_),
+      capacity_,
+      seed,
+      dist
+    );
+    break;
+  case library::NumericTypeID::kFE2M1:
+    cutlass::reference::device::BlockFillRandom<cutlass::float_e2m1_t>(
+      reinterpret_cast<cutlass::float_e2m1_t *>(pointer_),
+      capacity_,
+      seed,
+      dist
+    );
+    break;
+  
   case library::NumericTypeID::kF64:
     cutlass::reference::device::BlockFillRandom<double>(
       reinterpret_cast<double *>(pointer_),
@@ -752,6 +813,50 @@ void DeviceAllocation::initialize_random_host(int seed, Distribution dist) {
       dist
     );
     break;
+  
+  case library::NumericTypeID::kFUE4M3:
+    cutlass::reference::host::BlockFillRandom<cutlass::float_ue4m3_t>(
+      reinterpret_cast<cutlass::float_ue4m3_t *>(host_data.data()),
+      capacity_,
+      seed,
+      dist
+    );
+    break;
+  
+  
+  case library::NumericTypeID::kFE2M3:
+    cutlass::reference::host::BlockFillRandom<cutlass::float_e2m3_t>(
+      reinterpret_cast<cutlass::float_e2m3_t *>(host_data.data()),
+      capacity_,
+      seed,
+      dist
+    );
+    break;
+  case library::NumericTypeID::kFE3M2:
+    cutlass::reference::host::BlockFillRandom<cutlass::float_e3m2_t>(
+      reinterpret_cast<cutlass::float_e3m2_t *>(host_data.data()),
+      capacity_,
+      seed,
+      dist
+    );
+    break;
+  case library::NumericTypeID::kFE2M1:
+    cutlass::reference::host::BlockFillRandom<cutlass::float_e2m1_t>(
+      reinterpret_cast<cutlass::float_e2m1_t *>(host_data.data()),
+      capacity_,
+      seed,
+      dist
+    );
+    break;
+  case library::NumericTypeID::kFUE8M0:
+    cutlass::reference::host::BlockFillRandom<cutlass::float_ue8m0_t>(
+      reinterpret_cast<cutlass::float_ue8m0_t *>(host_data.data()),
+      capacity_,
+      seed,
+      dist
+    );
+    break;
+    
   case library::NumericTypeID::kF16:
     cutlass::reference::host::BlockFillRandom<cutlass::half_t>(
       reinterpret_cast<cutlass::half_t *>(host_data.data()),
@@ -971,6 +1076,50 @@ void DeviceAllocation::initialize_sequential_device(Distribution dist) {
       static_cast<cutlass::float_e5m2_t>(dist.sequential.start)
     );
     break;
+  
+  case library::NumericTypeID::kFUE4M3:
+    cutlass::reference::device::BlockFillSequential<cutlass::float_ue4m3_t>(
+      reinterpret_cast<cutlass::float_ue4m3_t *>(pointer_),
+      capacity_,
+      static_cast<cutlass::float_ue4m3_t>(dist.sequential.delta),
+      static_cast<cutlass::float_ue4m3_t>(dist.sequential.start)
+    );
+    break;
+  
+  
+  case library::NumericTypeID::kFE2M3:
+    cutlass::reference::device::BlockFillSequential<cutlass::float_e2m3_t>(
+      reinterpret_cast<cutlass::float_e2m3_t *>(pointer_),
+      capacity_,
+      static_cast<cutlass::float_e2m3_t>(dist.sequential.delta),
+      static_cast<cutlass::float_e2m3_t>(dist.sequential.start)
+    );
+    break;
+  case library::NumericTypeID::kFE3M2:
+    cutlass::reference::device::BlockFillSequential<cutlass::float_e3m2_t>(
+      reinterpret_cast<cutlass::float_e3m2_t *>(pointer_),
+      capacity_,
+      static_cast<cutlass::float_e3m2_t>(dist.sequential.delta),
+      static_cast<cutlass::float_e3m2_t>(dist.sequential.start)
+    );
+    break;
+  case library::NumericTypeID::kFE2M1:
+    cutlass::reference::device::BlockFillSequential<cutlass::float_e2m1_t>(
+      reinterpret_cast<cutlass::float_e2m1_t *>(pointer_),
+      capacity_,
+      static_cast<cutlass::float_e2m1_t>(dist.sequential.delta),
+      static_cast<cutlass::float_e2m1_t>(dist.sequential.start)
+    );
+    break;
+  case library::NumericTypeID::kFUE8M0:
+    cutlass::reference::device::BlockFillSequential<cutlass::float_ue8m0_t>(
+      reinterpret_cast<cutlass::float_ue8m0_t *>(pointer_),
+      capacity_,
+      static_cast<cutlass::float_ue8m0_t>(dist.sequential.delta),
+      static_cast<cutlass::float_ue8m0_t>(dist.sequential.start)
+    );
+    break;
+  
   case library::NumericTypeID::kF16:
     cutlass::reference::device::BlockFillSequential<cutlass::half_t>(
       reinterpret_cast<cutlass::half_t *>(pointer_),
@@ -1201,6 +1350,50 @@ void DeviceAllocation::initialize_sequential_host(Distribution dist) {
       static_cast<cutlass::float_e5m2_t>(dist.sequential.start)
     );
     break;
+  
+  case library::NumericTypeID::kFUE4M3:
+    cutlass::reference::host::BlockFillSequential<cutlass::float_ue4m3_t>(
+      reinterpret_cast<cutlass::float_ue4m3_t *>(host_data.data()),
+      capacity_,
+      static_cast<cutlass::float_ue4m3_t>(dist.sequential.delta),
+      static_cast<cutlass::float_ue4m3_t>(dist.sequential.start)
+    );
+    break;
+  
+  
+  case library::NumericTypeID::kFE2M3:
+    cutlass::reference::host::BlockFillSequential<cutlass::float_e2m3_t>(
+      reinterpret_cast<cutlass::float_e2m3_t *>(host_data.data()),
+      capacity_,
+      static_cast<cutlass::float_e2m3_t>(dist.sequential.delta),
+      static_cast<cutlass::float_e2m3_t>(dist.sequential.start)
+    );
+    break;
+  case library::NumericTypeID::kFE3M2:
+    cutlass::reference::host::BlockFillSequential<cutlass::float_e3m2_t>(
+      reinterpret_cast<cutlass::float_e3m2_t *>(host_data.data()),
+      capacity_,
+      static_cast<cutlass::float_e3m2_t>(dist.sequential.delta),
+      static_cast<cutlass::float_e3m2_t>(dist.sequential.start)
+    );
+    break;
+  case library::NumericTypeID::kFE2M1:
+    cutlass::reference::host::BlockFillSequential<cutlass::float_e2m1_t>(
+      reinterpret_cast<cutlass::float_e2m1_t *>(host_data.data()),
+      capacity_,
+      static_cast<cutlass::float_e2m1_t>(dist.sequential.delta),
+      static_cast<cutlass::float_e2m1_t>(dist.sequential.start)
+    );
+    break;
+  case library::NumericTypeID::kFUE8M0:
+    cutlass::reference::host::BlockFillSequential<cutlass::float_ue8m0_t>(
+      reinterpret_cast<cutlass::float_ue8m0_t *>(host_data.data()),
+      capacity_,
+      static_cast<cutlass::float_ue8m0_t>(dist.sequential.delta),
+      static_cast<cutlass::float_ue8m0_t>(dist.sequential.start)
+    );
+    break;
+  
   case library::NumericTypeID::kF16:
     cutlass::reference::host::BlockFillSequential<cutlass::half_t>(
       reinterpret_cast<cutlass::half_t *>(host_data.data()),
@@ -1497,6 +1690,34 @@ bool DeviceAllocation::block_compare_equal(
       reinterpret_cast<float_e5m2_t const *>(ptr_A),
       reinterpret_cast<float_e5m2_t const *>(ptr_B),
       capacity);
+  
+  case library::NumericTypeID::kFUE4M3:
+    return reference::device::BlockCompareEqual<float_ue4m3_t>(
+      reinterpret_cast<float_ue4m3_t const *>(ptr_A),
+      reinterpret_cast<float_ue4m3_t const *>(ptr_B),
+      capacity);
+  case library::NumericTypeID::kFUE8M0:
+    return reference::device::BlockCompareEqual<float_ue8m0_t>(
+      reinterpret_cast<float_ue8m0_t const *>(ptr_A),
+      reinterpret_cast<float_ue8m0_t const *>(ptr_B),
+      capacity);
+  case library::NumericTypeID::kFE2M3:
+    return reference::device::BlockCompareEqual<float_e2m3_t>(
+      reinterpret_cast<float_e2m3_t const *>(ptr_A),
+      reinterpret_cast<float_e2m3_t const *>(ptr_B),
+      capacity);
+
+  case library::NumericTypeID::kFE3M2:
+    return reference::device::BlockCompareEqual<float_e3m2_t>(
+      reinterpret_cast<float_e3m2_t const *>(ptr_A),
+      reinterpret_cast<float_e3m2_t const *>(ptr_B),
+      capacity);
+  case library::NumericTypeID::kFE2M1:
+    return reference::device::BlockCompareEqual<float_e2m1_t>(
+      reinterpret_cast<float_e2m1_t const *>(ptr_A),
+      reinterpret_cast<float_e2m1_t const *>(ptr_B),
+      capacity);
+  
   case library::NumericTypeID::kF16:
     return reference::device::BlockCompareEqual<half_t>(
       reinterpret_cast<half_t const *>(ptr_A),
@@ -1665,6 +1886,46 @@ bool DeviceAllocation::block_compare_relatively_equal(
       capacity,
       static_cast<float_e5m2_t>(epsilon),
       static_cast<float_e5m2_t>(nonzero_floor));
+  
+  case library::NumericTypeID::kFUE4M3:
+    return reference::device::BlockCompareRelativelyEqual<float_ue4m3_t>(
+      reinterpret_cast<float_ue4m3_t const *>(ptr_A),
+      reinterpret_cast<float_ue4m3_t const *>(ptr_B),
+      capacity,
+      static_cast<float_ue4m3_t>(epsilon),
+      static_cast<float_ue4m3_t>(nonzero_floor));
+  case library::NumericTypeID::kFUE8M0:
+    return reference::device::BlockCompareRelativelyEqual<float_ue8m0_t>(
+      reinterpret_cast<float_ue8m0_t const *>(ptr_A),
+      reinterpret_cast<float_ue8m0_t const *>(ptr_B),
+      capacity,
+      static_cast<float_ue8m0_t>(epsilon),
+      static_cast<float_ue8m0_t>(nonzero_floor));
+
+  case library::NumericTypeID::kFE2M3:
+    return reference::device::BlockCompareRelativelyEqual<float_e2m3_t>(
+      reinterpret_cast<float_e2m3_t const *>(ptr_A),
+      reinterpret_cast<float_e2m3_t const *>(ptr_B),
+      capacity,
+      static_cast<float_e2m3_t>(epsilon),
+      static_cast<float_e2m3_t>(nonzero_floor));
+
+  case library::NumericTypeID::kFE3M2:
+      return reference::device::BlockCompareRelativelyEqual<float_e3m2_t>(
+        reinterpret_cast<float_e3m2_t const *>(ptr_A),
+        reinterpret_cast<float_e3m2_t const *>(ptr_B),
+        capacity,
+        static_cast<float_e3m2_t>(epsilon),
+        static_cast<float_e3m2_t>(nonzero_floor));
+
+  case library::NumericTypeID::kFE2M1:
+    return reference::device::BlockCompareRelativelyEqual<float_e2m1_t>(
+      reinterpret_cast<float_e2m1_t const *>(ptr_A),
+      reinterpret_cast<float_e2m1_t const *>(ptr_B),
+      capacity,
+      static_cast<float_e2m1_t>(epsilon),
+      static_cast<float_e2m1_t>(nonzero_floor));
+  
   case library::NumericTypeID::kF16:
     return reference::device::BlockCompareRelativelyEqual<half_t>(
       reinterpret_cast<half_t const *>(ptr_A),
@@ -2007,6 +2268,27 @@ void DeviceAllocation::write_tensor_csv(
   case library::NumericTypeID::kFE5M2:
     write_tensor_csv_static_type<float_e5m2_t>(out, *this);
     break;
+  
+  case library::NumericTypeID::kFUE4M3:
+    write_tensor_csv_static_type<float_ue4m3_t>(out, *this);
+    break;
+  
+  
+  case library::NumericTypeID::kFE2M3:
+    write_tensor_csv_static_type<float_e2m3_t>(out, *this);
+    break;
+
+  case library::NumericTypeID::kFE3M2:
+    write_tensor_csv_static_type<float_e3m2_t>(out, *this);
+    break;
+
+  case library::NumericTypeID::kFE2M1:
+    write_tensor_csv_static_type<float_e2m1_t>(out, *this);
+    break;
+  case library::NumericTypeID::kFUE8M0:
+    write_tensor_csv_static_type<float_ue8m0_t>(out, *this);
+    break;
+  
   case library::NumericTypeID::kF16:
     write_tensor_csv_static_type<half_t>(out, *this);
     break;
@@ -2174,6 +2456,27 @@ void DeviceAllocation::fill_device(double val = 0.0) {
   case library::NumericTypeID::kFE5M2:
     tensor_fill<float_e5m2_t>(*this, static_cast<float_e5m2_t>(val));
     break;
+  
+  case library::NumericTypeID::kFUE4M3:
+    tensor_fill<float_ue4m3_t>(*this, static_cast<float_ue4m3_t>(val));
+    break;
+  
+  case library::NumericTypeID::kFUE8M0:
+    tensor_fill<float_ue8m0_t>(*this, static_cast<float_ue8m0_t>(val));
+    break;
+  case library::NumericTypeID::kFE2M3:
+    tensor_fill<float_e2m3_t>(*this, static_cast<float_e2m3_t>(val));
+    break;
+
+  case library::NumericTypeID::kFE3M2:
+    tensor_fill<float_e3m2_t>(*this, static_cast<float_e3m2_t>(val));
+    break;
+
+  case library::NumericTypeID::kFE2M1:
+    tensor_fill<float_e2m1_t>(*this, static_cast<float_e2m1_t>(val));
+    break;
+  
+
   case library::NumericTypeID::kF16:
     tensor_fill<half_t>(*this, static_cast<half_t>(val));
     break;
@@ -2269,6 +2572,47 @@ void DeviceAllocation::fill_host(double val = 0.0) {
   std::vector<uint8_t> host_data(bytes());
 
   switch (this->type()) {
+  
+  case library::NumericTypeID::kFUE4M3:
+    cutlass::reference::host::BlockFill<float_ue4m3_t>(
+      reinterpret_cast<float_ue4m3_t *>(host_data.data()),
+      capacity_,
+      static_cast<float_ue4m3_t>(val)
+    );
+    break;
+
+  case library::NumericTypeID::kFUE8M0:
+    cutlass::reference::host::BlockFill<float_ue8m0_t>(
+      reinterpret_cast<float_ue8m0_t *>(host_data.data()),
+      capacity_,
+      static_cast<float_ue8m0_t>(val)
+    );
+    break;
+  case library::NumericTypeID::kFE2M3:
+    cutlass::reference::host::BlockFill<float_e2m3_t>(
+      reinterpret_cast<float_e2m3_t *>(host_data.data()),
+      capacity_,
+      static_cast<float_e2m3_t>(val)
+    );
+    break;
+
+  case library::NumericTypeID::kFE3M2:
+    cutlass::reference::host::BlockFill<float_e3m2_t>(
+      reinterpret_cast<float_e3m2_t *>(host_data.data()),
+      capacity_,
+      static_cast<float_e3m2_t>(val)
+    );
+    break;
+
+  case library::NumericTypeID::kFE2M1:
+    cutlass::reference::host::BlockFill<float_e2m1_t>(
+      reinterpret_cast<float_e2m1_t *>(host_data.data()),
+      capacity_,
+      static_cast<float_e2m1_t>(val)
+    );
+    break;
+  
+
   case library::NumericTypeID::kFE4M3:
     cutlass::reference::host::BlockFill<float_e4m3_t>(
       reinterpret_cast<float_e4m3_t *>(host_data.data()),
@@ -2438,25 +2782,11 @@ void DeviceAllocation::fill_host(double val = 0.0) {
 
 cudaError_t DeviceAllocation::malloc(void** ptr, size_t size) {
   cudaError_t result;
-  int set_device_back_to = -1;
+  int current_device;
+  cudaGetDevice(&current_device);
 
-  /// When needed this sets the device to the allocation's device remembering
-  /// the current device so that it can be set back after the cudaMalloc is
-  /// performed.
-  if (device_ >= 0) {
-    int current_device;
-    result = cudaGetDevice(&current_device);
-    if (result != cudaSuccess) {
-      return result;
-    }
-
-    if (current_device != device_) {
-      set_device_back_to = current_device;
-      result = cudaSetDevice(device_);
-      if (result != cudaSuccess) {
-        return result;
-      }
-    }
+  if (current_device != device_) {
+    cudaSetDevice(device_);
   }
 
   // This performs the cudaMalloc
@@ -2465,13 +2795,8 @@ cudaError_t DeviceAllocation::malloc(void** ptr, size_t size) {
     return result;
   }
 
-  /// When needed this sets the device back to what it was when the function was
-  /// called.
-  if (set_device_back_to != -1) {
-    result = cudaSetDevice(set_device_back_to);
-    if (result != cudaSuccess) {
-      return result;
-    }
+  if (current_device != device_) {
+    cudaSetDevice(current_device);
   }
 
   return cudaSuccess;

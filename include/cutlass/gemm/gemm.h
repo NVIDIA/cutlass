@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -46,6 +46,13 @@
 namespace cutlass {
 namespace gemm {
 
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Scaling kind
+enum class ScalingKind {
+  kTensorwise,   // Accumulated GEMM result is scaled per tensor (default alpha scaling)
+  kBlockwise     // Accumulated GEMM result is scaled per CTA tile (blockwise)
+};
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -104,7 +104,7 @@ TEST(CuTe_core, Inverse_left)
   auto layout = Layout<Shape <_8, _4>,
                        Stride<_4, _1>>{};
 
-  test_left_inverse(filter(layout));
+  test_left_inverse(layout);
   }
 
   {

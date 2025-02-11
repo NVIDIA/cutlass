@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -50,31 +50,115 @@ namespace cute
 
 namespace detail {
 
-// Predicated Cooperative GEMM
-template <class... Args,
-          class Alpha, class TA, class ALayout, class TB, class BLayout,
-          class Beta,  class TC, class CLayout,
-          class ALoadTransformOp, class BLoadTransformOp,
-          class CLoadTransformOp, class CStoreTransformOp,
-          __CUTE_REQUIRES(ALayout::rank == 2 && is_smem<TA>::value &&
-                          BLayout::rank == 2 && is_smem<TB>::value &&
-                          CLayout::rank == 2 && is_smem<TC>::value)>
+// Slow fallback path:
+template<typename ... Args,
+         typename Alpha, typename TRC, typename RCLayout,
+         typename Beta, class TSC, typename CLayout, typename SCLayout,
+         typename CLoadTransformOp, typename CStoreTransformOp>
 CUTE_HOST_DEVICE
 void
-cooperative_gemm_predication(ThrMMA<Args...> const& thr_mma,
-                             Alpha const& alpha,
-                             Tensor<TA, ALayout> sA,
-                             Tensor<TB, BLayout> sB,
-                             Beta  const& beta,
-                             Tensor<TC, CLayout> sC,
-                             ALoadTransformOp  const& sA_load_op,  // transforms A values before use in GEMM
-                             BLoadTransformOp  const& sB_load_op,  // transforms B values before use in GEMM
-                             CLoadTransformOp  const& sC_load_op,  // transforms C values before use in GEMM
-                             CStoreTransformOp const& sC_store_op) // transforms results before they are stored to C
+epilogue_predication(ThrMMA<Args...>    const& thr_mma,
+                     Alpha              const& alpha,
+                     Tensor<TRC, RCLayout>   & tCrC,
+                     Beta               const& beta,
+                     Tensor<TSC, CLayout>    & sC,
+                     Tensor<TSC, SCLayout>   & tCsC,
+                     CLoadTransformOp   const& sC_load_op,  // transforms C values before use in GEMM
+                     CStoreTransformOp  const& sC_store_op) // transforms results before they are stored to C
 {
-  using TypeA = typename TA::value_type;
-  using TypeB = typename TB::value_type;
-  using TypeC = typename TC::value_type;
+  using InputTypeC   = typename TSC::value_type;
+  using ComputeTypeC = typename ThrMMA<Args...>::ValTypeC;
+  CUTE_STATIC_ASSERT(CUTE_STL_NAMESPACE::is_same_v<ComputeTypeC, typename TRC::value_type>);
+
+  // Create coordinate tensors for the problem
+  Tensor cC   = make_identity_tensor(shape(sC));                     // (M,N) -> (m,n)
+  // Repeat partitioning with thr_mma
+  Tensor tCcC = thr_mma.partition_C(cC);                             // (MMA,MMA_M,MMA_N) -> (m,n)
+
+  const bool isBetaZero = [&] () {
+    if constexpr (is_complex<Beta>::value) {
+      return beta.real() == Int<0>{} && beta.imag() == Int<0>{};
+    }
+    else {
+      return beta == Int<0>{};
+    }
+    CUTE_GCC_UNREACHABLE;
+  } ();
+
+  // Custom axpby_if for now
+  CUTE_UNROLL
+  for (int i = 0; i < size(tCrC); ++i)
+  {
+    if (elem_less(tCcC(i), shape(sC)))
+    {
+      tCsC(i) = sC_store_op(isBetaZero ? alpha * tCrC(i)
+                                       : alpha * tCrC(i) +
+                                          beta * static_cast<ComputeTypeC>(sC_load_op(tCsC(i))));
+    }
+  }
+}
+
+template<class Alpha, class TRC, class RCLayout,
+         class Beta, class TSC, class SCLayout,
+         class CLoadTransformOp, class CStoreTransformOp,
+         class SmemCopyOpC>
+CUTE_HOST_DEVICE
+void
+epilogue_no_predication(Alpha              const& alpha,
+                        Tensor<TRC, RCLayout>   & tCrC,
+                        Beta               const& beta,
+                        Tensor<TSC, SCLayout>   & tCsC,
+                        CLoadTransformOp   const& sC_load_op,  // transforms C values before use in GEMM
+                        CStoreTransformOp  const& sC_store_op, // transforms results before they are stored to C
+                        SmemCopyOpC        const& sC_copy_op)
+{
+  using InputTypeC   = typename TSC::value_type;
+  using ComputeTypeC = typename TRC::value_type;
+
+  const bool isBetaZero = [&] () {
+    if constexpr (is_complex<Beta>::value) {
+      return beta.real() == Int<0>{} && beta.imag() == Int<0>{};
+    }
+    else {
+      return beta == Int<0>{};
+    }
+    CUTE_GCC_UNREACHABLE;
+  } ();
+
+  Tensor tCrDi = make_fragment_like(tCsC);
+  Tensor tCrD = make_fragment_like(tCrC);
+  if(!isBetaZero) {
+    copy(sC_copy_op, tCsC, tCrDi);
+    // Transform C on/after load
+    cute::transform(tCrDi, tCrD, sC_load_op);
+  }
+  // C = alpha * (A * B) + beta * C
+  axpby(alpha, tCrC, beta, tCrD);
+  // Transform C before/on store
+  cute::transform(tCrD, tCrDi, sC_store_op);
+  copy(sC_copy_op, tCrDi, tCsC);
+}
+
+// Predicated Cooperative GEMM
+template <class... Args,
+          class TA, class ALayout, class TB, class BLayout,
+          class TC, class RCLayout,
+          class ALoadTransformOp, class BLoadTransformOp>
+CUTE_HOST_DEVICE
+void
+cooperative_gemm_predication(ThrMMA<Args...>     const& thr_mma,
+                             Tensor<TA, ALayout> const& sA,
+                             Tensor<TB, BLayout> const& sB,
+                             Tensor<TC, RCLayout>     & tCrC,
+                             ALoadTransformOp    const& sA_load_op,  // transforms A values before use in GEMM
+                             BLoadTransformOp    const& sB_load_op)  // transforms B values before use in GEMM
+{
+  using InputTypeA        = typename TA::value_type;
+  using InputTypeB        = typename TB::value_type;
+  using InputTypeC        = typename TC::value_type;
+  using ComputeTypeA = typename ThrMMA<Args...>::ValTypeA;
+  using ComputeTypeB = typename ThrMMA<Args...>::ValTypeB;
+  using ComputeTypeC = typename ThrMMA<Args...>::ValTypeC;
 
   //
   // MMA Partitioning
@@ -83,22 +167,18 @@ cooperative_gemm_predication(ThrMMA<Args...> const& thr_mma,
   // Partition the sA, sB, and sC tiles across the threads for the MMA
   Tensor tCsA = thr_mma.partition_A(sA);                            // (MMA,MMA_M,MMA_K)
   Tensor tCsB = thr_mma.partition_B(sB);                            // (MMA,MMA_N,MMA_K)
-  Tensor tCsC = thr_mma.partition_C(sC);                            // (MMA,MMA_M,MMA_N)
 
   // Create register tensors for the MMA to operate on
   Tensor tCrA = thr_mma.make_fragment_A(tCsA);                      // (MMA,MMA_M,MMA_K)
   Tensor tCrB = thr_mma.make_fragment_B(tCsB);                      // (MMA,MMA_N,MMA_K)
-  Tensor tCrC = thr_mma.make_fragment_C(tCsC);                      // (MMA,MMA_M,MMA_N)
 
 #if 0
   if (thread0()) {
     print("  sA: "); print(  sA); print("\n");
     print("  sB: "); print(  sB); print("\n");
-    print("  sC: "); print(  sC); print("\n");
     print(thr_mma);
     print("tCsA: "); print(tCsA); print("\n");
     print("tCsB: "); print(tCsB); print("\n");
-    print("tCsC: "); print(tCsC); print("\n");
     print("tCrA: "); print(tCrA); print("\n");
     print("tCrB: "); print(tCrB); print("\n");
     print("tCrC: "); print(tCrC); print("\n");
@@ -154,22 +234,19 @@ cooperative_gemm_predication(ThrMMA<Args...> const& thr_mma,
   for (int m = 0; m < size<1>(tCrA); ++m) {     // Copy MMA_M
     CUTE_UNROLL
     for (int i = 0; i < size<0>(tCrA); ++i) {   // Copy MMA_I
-      tCrA(i,m,0) = (tCpA(i,m) && (0 < K_BLOCK_MAX-1 || elem_less(get<1>(tCcA(i,m,0)), shape<1>(sA)))) ? sA_load_op(tCsA(i,m,0)) : TypeA{};
+      tCrA(i,m,0) = (tCpA(i,m) && (0 < K_BLOCK_MAX-1 || elem_less(get<1>(tCcA(i,m,0)), shape<1>(sA)))) ? static_cast<ComputeTypeA>(sA_load_op(tCsA(i,m,0))) : ComputeTypeA{};
     }
   }
   CUTE_UNROLL
   for (int n = 0; n < size<1>(tCrB); ++n) {     // Copy MMA_N
     CUTE_UNROLL
     for (int i = 0; i < size<0>(tCrB); ++i) {   // Copy MMA_I
-      tCrB(i,n,0) = (tCpB(i,n) && (0 < K_BLOCK_MAX-1 || elem_less(get<1>(tCcB(i,n,0)), shape<1>(sB)))) ? sB_load_op(tCsB(i,n,0)) : TypeB{};
+      tCrB(i,n,0) = (tCpB(i,n) && (0 < K_BLOCK_MAX-1 || elem_less(get<1>(tCcB(i,n,0)), shape<1>(sB)))) ? static_cast<ComputeTypeB>(sB_load_op(tCsB(i,n,0))) : ComputeTypeB{};
     }
   }
   //
   // MAINLOOP
   //
-
-  // Clear accumulators
-  clear(tCrC);
 
   CUTE_UNROLL
   for (int k_block = 0; k_block < K_BLOCK_MAX; ++k_block)
@@ -185,138 +262,80 @@ cooperative_gemm_predication(ThrMMA<Args...> const& thr_mma,
       for (int m = 0; m < size<1>(tCrA); ++m) {       // Copy MMA_M
         CUTE_UNROLL
         for (int i = 0; i < size<0>(tCrA); ++i) {     // Copy MMA_I
-          tCrA(i,m,k_next) = (tCpA(i,m) && (k_next < K_BLOCK_MAX-1 || elem_less(get<1>(tCcA(i,m,k_next)), shape<1>(sA)))) ? sA_load_op(tCsA(i,m,k_next)) : TypeA{};
+          tCrA(i,m,k_next) = (tCpA(i,m) && (k_next < K_BLOCK_MAX-1 || elem_less(get<1>(tCcA(i,m,k_next)), shape<1>(sA)))) ? static_cast<ComputeTypeA>(sA_load_op(tCsA(i,m,k_next))) : ComputeTypeA{};
         }
       }
       CUTE_UNROLL
       for (int n = 0; n < size<1>(tCrB); ++n) {       // Copy MMA_N
         CUTE_UNROLL
         for (int i = 0; i < size<0>(tCrB); ++i) {     // Copy MMA_I
-          tCrB(i,n,k_next) = (tCpB(i,n) && (k_next < K_BLOCK_MAX-1 || elem_less(get<1>(tCcB(i,n,k_next)), shape<1>(sB)))) ? sB_load_op(tCsB(i,n,k_next)) : TypeB{};
+          tCrB(i,n,k_next) = (tCpB(i,n) && (k_next < K_BLOCK_MAX-1 || elem_less(get<1>(tCcB(i,n,k_next)), shape<1>(sB)))) ? static_cast<ComputeTypeB>(sB_load_op(tCsB(i,n,k_next))) : ComputeTypeB{};
         }
       }
     }
     // GEMM on k_block in registers
     gemm(thr_mma, tCrA(_,_,k_block), tCrB(_,_,k_block), tCrC);
   }
-
-  //
-  // Epilogue
-  //
-
-  // Create coordinate tensors for the problem
-  Tensor cC   = make_identity_tensor(shape(sC));                     // (M,N) -> (m,n)
-  // Repeat partitioning with thr_mma
-  Tensor tCcC = thr_mma.partition_C(cC);                             // (MMA,MMA_M,MMA_N) -> (m,n)
-
-  const bool isBetaZero = (beta == Beta{});
-
-  // Custom axpby_if for now
-  CUTE_UNROLL
-  for (int i = 0; i < size(tCrC); ++i)
-  {
-    if (elem_less(tCcC(i), shape(sC)))
-    {
-      tCsC(i) = sC_store_op(isBetaZero ? alpha * static_cast<TypeC>(tCrC(i))
-                                       : alpha * static_cast<TypeC>(tCrC(i)) +
-                                          beta * static_cast<TypeC>(sC_load_op(tCsC(i))));
-    }
-  }
-}
-
-// Slow fallback path
-template <class... Args,
-          class Alpha, class TA, class ALayout, class TB, class BLayout,
-          class Beta,  class TC, class CLayout,
-          class ALoadTransformOp, class BLoadTransformOp,
-          class CLoadTransformOp, class CStoreTransformOp,
-          __CUTE_REQUIRES(ALayout::rank == 2 && is_smem<TA>::value &&
-                          BLayout::rank == 2 && is_smem<TB>::value &&
-                          CLayout::rank == 2 && is_smem<TC>::value)>
-CUTE_HOST_DEVICE
-void
-cooperative_gemm_predication(uint32_t thread_idx,
-                             TiledMMA<Args...> const& tiled_mma,
-                             Alpha const& alpha,
-                             Tensor<TA, ALayout> sA,
-                             Tensor<TB, BLayout> sB,
-                             Beta  const& beta,
-                             Tensor<TC, CLayout> sC,
-                             ALoadTransformOp  const& sA_load_op,  // transforms A values before use in GEMM
-                             BLoadTransformOp  const& sB_load_op,  // transforms B values before use in GEMM
-                             CLoadTransformOp  const& sC_load_op,  // transforms C values before use in GEMM
-                             CStoreTransformOp const& sC_store_op) // transforms results before they are stored to C
-{
-  // ThrMMA
-  auto thr_mma = tiled_mma.get_thread_slice(thread_idx);
-  cooperative_gemm_predication(thr_mma, alpha, sA, sB, beta, sC, sA_load_op, sB_load_op, sC_load_op, sC_store_op);
 }
 
 // Unpredicated Cooperative GEMM
-template <class SmemCopyOpA, class SmemCopyOpB, class SmemCopyOpC,
-          class... Args,
-          class Alpha, class TA, class ALayout, class TB, class BLayout,
-          class Beta,  class TC, class CLayout,
+template <class... Args,
+          class TA, class ALayout, class TB, class BLayout,
+          class TC, class CLayout,
           class ALoadTransformOp, class BLoadTransformOp,
-          class CLoadTransformOp, class CStoreTransformOp,
-          __CUTE_REQUIRES(ALayout::rank == 2 && is_smem<TA>::value &&
-                          BLayout::rank == 2 && is_smem<TB>::value &&
-                          CLayout::rank == 2 && is_smem<TC>::value)>
+          class SmemCopyOpA, class SmemCopyOpB>
 CUTE_HOST_DEVICE
 void
-cooperative_gemm_no_predication(uint32_t thread_idx,
-                                TiledMMA<Args...> const& tiled_mma,
-                                Alpha const& alpha,
-                                Tensor<TA, ALayout> sA,
-                                Tensor<TB, BLayout> sB,
-                                Beta  const& beta,
-                                Tensor<TC, CLayout> sC,
-                                ALoadTransformOp  const& sA_load_op,  // transforms A values before use in GEMM
-                                BLoadTransformOp  const& sB_load_op,  // transforms B values before use in GEMM
-                                CLoadTransformOp  const& sC_load_op,  // transforms C values before use in GEMM
-                                CStoreTransformOp const& sC_store_op) // transforms results before they are stored to C
+cooperative_gemm_no_predication(uint32_t                   thread_idx,
+                                ThrMMA<Args...>     const& thr_mma,
+                                Tensor<TA, ALayout> const& sA,
+                                Tensor<TB, BLayout> const& sB,
+                                Tensor<TC, CLayout>      & tCrC,
+                                ALoadTransformOp    const& sA_load_op,  // transforms A values before use in GEMM
+                                BLoadTransformOp    const& sB_load_op,  // transforms B values before use in GEMM
+                                SmemCopyOpA         const& sA_copy_op,
+                                SmemCopyOpB         const& sB_copy_op)
 {
-  using TypeA = typename TA::value_type;
-  using TypeB = typename TB::value_type;
-  using TypeC = typename TC::value_type;
+  using InputTypeA        = typename TA::value_type;
+  using InputTypeB        = typename TB::value_type;
+  using InputTypeC        = typename TC::value_type;
+  using ComputeTypeA = typename ThrMMA<Args...>::ValTypeA;
+  using ComputeTypeB = typename ThrMMA<Args...>::ValTypeB;
+  using ComputeTypeC = typename ThrMMA<Args...>::ValTypeC;
 
-  // ThrMMA
-  auto thr_mma = tiled_mma.get_thread_slice(thread_idx);
 
   //
   // MMA Partitioning
   //
 
-  Tensor tCsC = thr_mma.partition_C(sC);
   // Create register tensors for the MMA to operate on
   Tensor tCrA  = thr_mma.partition_fragment_A(sA);                    // (MMA,MMA_M,MMA_K)
   Tensor tCrB  = thr_mma.partition_fragment_B(sB);                    // (MMA,MMA_N,MMA_K)
-  Tensor tCrC  = thr_mma.make_fragment_C(tCsC);                       // (MMA,MMA_M,MMA_N)
 
   using CopyOpAType = SmemCopyOpA;
   using CopyOpBType = SmemCopyOpB;
 
-  auto smem_tiled_copy_A = make_tiled_copy_A(Copy_Atom<CopyOpAType, TypeA>{}, thr_mma);
+  auto smem_tiled_copy_A = make_tiled_copy_A(Copy_Atom<CopyOpAType, InputTypeA>{}, thr_mma);
   auto smem_thr_copy_A   = smem_tiled_copy_A.get_thread_slice(thread_idx);
   Tensor tCsA            = smem_thr_copy_A.partition_S(sA);
-  Tensor tCrA_copy_view  = smem_thr_copy_A.retile_D(tCrA);
-  CUTE_STATIC_ASSERT_V(size<1>(tCsA) == size<1>(tCrA_copy_view));             // CPY_M
-  CUTE_STATIC_ASSERT_V(size<2>(tCsA) == size<2>(tCrA_copy_view));             // CPY_K
+  Tensor tCrAi           = make_fragment_like(tCsA);
+  Tensor tCrAi_copy_view = smem_thr_copy_A.retile_D(tCrAi);
+  CUTE_STATIC_ASSERT_V(size<1>(tCsA) == size<1>(tCrAi_copy_view));             // CPY_M
+  CUTE_STATIC_ASSERT_V(size<2>(tCsA) == size<2>(tCrAi_copy_view));             // CPY_K
 
-  auto smem_tiled_copy_B = make_tiled_copy_B(Copy_Atom<CopyOpBType, TypeB>{}, thr_mma);
+  auto smem_tiled_copy_B = make_tiled_copy_B(Copy_Atom<CopyOpBType, InputTypeB>{}, thr_mma);
   auto smem_thr_copy_B   = smem_tiled_copy_B.get_thread_slice(thread_idx);
   Tensor tCsB            = smem_thr_copy_B.partition_S(sB);
-  Tensor tCrB_copy_view  = smem_thr_copy_B.retile_D(tCrB);
-  CUTE_STATIC_ASSERT_V(size<1>(tCsB) == size<1>(tCrB_copy_view));            // CPY_N
-  CUTE_STATIC_ASSERT_V(size<2>(tCsB) == size<2>(tCrB_copy_view));            // CPY_K
+  Tensor tCrBi           = make_fragment_like(tCsB);
+  Tensor tCrBi_copy_view = smem_thr_copy_B.retile_D(tCrBi);
+  CUTE_STATIC_ASSERT_V(size<1>(tCsB) == size<1>(tCrBi_copy_view));            // CPY_N
+  CUTE_STATIC_ASSERT_V(size<2>(tCsB) == size<2>(tCrBi_copy_view));            // CPY_K
 
 #if 0
   if (thread0()) {
     print("  sA: "); print(sA); print("\n");
     print("  sB: "); print(sB); print("\n");
-    print("  sC: "); print(sC); print("\n");
     print(thr_mma); print("\n");
-    print("tCsC: "); print(tCsC); print("\n");
     print("tCrA: "); print(tCrA); print("\n");
     print("tCrB: "); print(tCrB); print("\n");
     print("tCrC: "); print(tCrC); print("\n");
@@ -333,14 +352,11 @@ cooperative_gemm_no_predication(uint32_t thread_idx,
   // PREFETCH
   //
 
-  copy(smem_tiled_copy_A, tCsA(_,_,Int<0>{}), tCrA_copy_view(_,_,Int<0>{}));
-  copy(smem_tiled_copy_B, tCsB(_,_,Int<0>{}), tCrB_copy_view(_,_,Int<0>{}));
+  copy(smem_tiled_copy_A, tCsA(_,_,Int<0>{}), tCrAi_copy_view(_,_,Int<0>{}));
+  copy(smem_tiled_copy_B, tCsB(_,_,Int<0>{}), tCrBi_copy_view(_,_,Int<0>{}));
   //
   // MAINLOOP
   //
-
-  // Clear accumulators
-  clear(tCrC);
 
   constexpr int K_BLOCK_MAX = size<2>(tCrA);
 
@@ -352,132 +368,178 @@ cooperative_gemm_no_predication(uint32_t thread_idx,
     {
       // Load the next k_block
       int k_next = k_block + 1;       // statically unrolled
-      copy(smem_tiled_copy_A, tCsA(_,_,k_next), tCrA_copy_view(_,_,k_next));
-      copy(smem_tiled_copy_B, tCsB(_,_,k_next), tCrB_copy_view(_,_,k_next));
+      copy(smem_tiled_copy_A, tCsA(_,_,k_next), tCrAi_copy_view(_,_,k_next));
+      copy(smem_tiled_copy_B, tCsB(_,_,k_next), tCrBi_copy_view(_,_,k_next));
     }
 
     // Transform A and B, relying on the compiler to remove in case of identity ops
-    cute::transform(tCrA(_,_,k_block), sA_load_op);
-    cute::transform(tCrB(_,_,k_block), sB_load_op);
+    cute::transform(tCrAi(_,_,k_block), tCrA(_,_,k_block), sA_load_op);
+    cute::transform(tCrBi(_,_,k_block), tCrB(_,_,k_block), sB_load_op);
 
     // GEMM on k_block in registers
     gemm(thr_mma, tCrA(_,_,k_block), tCrB(_,_,k_block), tCrC);
   }
-
-  //
-  // Epilogue
-  //
-
-  auto isBetaZero = [&] () {
-    if constexpr (is_complex<Beta>::value) {
-      return beta.real() == Int<0>{} && beta.imag() == Int<0>{};
-    }
-    else {
-      return beta == Int<0>{};
-    }
-    CUTE_GCC_UNREACHABLE;
-  } ();
-
-  using CopyOpCType = SmemCopyOpC;
-  Tensor tCrD = thr_mma.make_fragment_C(tCsC);
-  if(!isBetaZero) {
-    copy(CopyOpCType{}, tCsC, tCrD);
-    // Transform C on/after load
-    cute::transform(tCrD, sC_load_op);
-  }
-  // C = alpha * (A * B) + beta * C
-  axpby(alpha, tCrC, beta, tCrD);
-  // Transform C before/on store
-  cute::transform(tCrD, sC_store_op);
-  copy(CopyOpCType{}, tCrD, tCsC);
 }
 
 } // end namespace detail
 
-template <class SmemCopyOpA, class SmemCopyOpB, class SmemCopyOpC,
-          class... Args,
-          class Alpha, class TA, class ALayout, class TB, class BLayout,
-          class Beta,  class TC, class CLayout,
-          class ALoadTransformOp = cute::identity, class BLoadTransformOp  = cute::identity,
-          class CLoadTransformOp = cute::identity, class CStoreTransformOp = cute::identity,
-          __CUTE_REQUIRES(ALayout::rank == 2 && is_smem<TA>::value &&
-                          BLayout::rank == 2 && is_smem<TB>::value &&
-                          CLayout::rank == 2 && is_smem<TC>::value)>
-CUTE_HOST_DEVICE
-void
-cooperative_gemm(uint32_t thread_idx,
-                 TiledMMA<Args...> const& tiled_mma,
-                 Alpha const& alpha,
-                 Tensor<TA, ALayout> sA,
-                 Tensor<TB, BLayout> sB,
-                 Beta  const& beta,
-                 Tensor<TC, CLayout> sC,
-                 ALoadTransformOp  const& sA_load_op  = {}, // transforms A values before use in GEMM
-                 BLoadTransformOp  const& sB_load_op  = {}, // transforms B values before use in GEMM
-                 CLoadTransformOp  const& sC_load_op  = {}, // transforms C values before use in GEMM
-                 CStoreTransformOp const& sC_store_op = {}) // transforms results before they are stored to C
-{
-  CUTE_STATIC_ASSERT_V(size<0>(sA) == size<0>(sC));  // AM == CM
-  CUTE_STATIC_ASSERT_V(size<0>(sB) == size<1>(sC));  // BN == CN
-  CUTE_STATIC_ASSERT_V(size<1>(sA) == size<1>(sB));  // AK == BK
-
-  using TypeA = typename TA::value_type;
-  using TypeB = typename TB::value_type;
-  using TypeC = typename TC::value_type;
-
-  static_assert(is_convertible_v<decay_t<invoke_result_t<ALoadTransformOp, TypeA>>, TypeA>,
-    "ALoadTransformOp functor must accept value of type TA::value_type and return value convertible to type TA::value_type");
-  static_assert(is_convertible_v<decay_t<invoke_result_t<BLoadTransformOp, TypeB>>, TypeB>,
-    "BLoadTransformOp functor must accept value of type TB::value_type and return value convertible to type TB::value_type");
-  static_assert(is_convertible_v<decay_t<invoke_result_t<CLoadTransformOp, TypeC>>, TypeC>,
-    "CLoadTransformOp functor must accept value of type TC::value_type and return value convertible to type TC::value_type");
-  static_assert(is_convertible_v<decay_t<invoke_result_t<CStoreTransformOp, TypeC>>, TypeC>,
-    "CStoreTransformOp functor must accept value of type TC::value_type and return value convertible to type TC::value_type");
-
-  static constexpr bool compat = evenly_divides(make_shape(size<0>(sA), size<0>(sB), size<1>(sA)),
-                                                tile_shape(TiledMMA<Args...>{}));
-  if constexpr (compat) {
-    detail::cooperative_gemm_no_predication<SmemCopyOpA, SmemCopyOpB, SmemCopyOpC>(
-        thread_idx, tiled_mma, alpha, sA, sB, beta, sC,
-        sA_load_op, sB_load_op, sC_load_op, sC_store_op
-    );
-  } else {
-    detail::cooperative_gemm_predication(
-      thread_idx, tiled_mma, alpha, sA, sB, beta, sC,
-      sA_load_op, sB_load_op, sC_load_op, sC_store_op
-    );
-  }
-}
-
+// C passed as a shared memory tensor
+// Epilogue included
 template <class... Args,
           class Alpha, class TA, class ALayout, class TB, class BLayout,
           class Beta,  class TC, class CLayout,
           class ALoadTransformOp = cute::identity, class BLoadTransformOp  = cute::identity,
           class CLoadTransformOp = cute::identity, class CStoreTransformOp = cute::identity,
-          __CUTE_REQUIRES(ALayout::rank == 2 && is_smem<TA>::value &&
-                          BLayout::rank == 2 && is_smem<TB>::value &&
-                          CLayout::rank == 2 && is_smem<TC>::value)>
+          class SmemCopyOpA = DefaultCopy, class SmemCopyOpB = DefaultCopy,
+          class SmemCopyOpC = DefaultCopy>
+CUTE_HOST_DEVICE
+void
+cooperative_gemm(uint32_t                   thread_idx,
+                 TiledMMA<Args...>   const& tiled_mma,
+                 Alpha               const& alpha,
+                 Tensor<TA, ALayout> const& sA,
+                 Tensor<TB, BLayout> const& sB,
+                 Beta                const& beta,
+                 Tensor<TC, CLayout>      & sC,
+                 ALoadTransformOp    const& sA_load_op  = {}, // transforms A values before use in GEMM
+                 BLoadTransformOp    const& sB_load_op  = {}, // transforms B values before use in GEMM
+                 CLoadTransformOp    const& sC_load_op  = {}, // transforms C values before use in GEMM
+                 CStoreTransformOp   const& sC_store_op = {}, // transforms results before they are stored to C
+                 SmemCopyOpA         const& sA_copy_op  = {},
+                 SmemCopyOpB         const& sB_copy_op  = {},
+                 SmemCopyOpC         const& sC_copy_op  = {})
+{
+  CUTE_STATIC_ASSERT_V(rank(sA) == Int<2>{});
+  CUTE_STATIC_ASSERT_V(rank(sB) == Int<2>{});
+  CUTE_STATIC_ASSERT_V(rank(sC) == Int<2>{});
+
+  CUTE_STATIC_ASSERT_V(size<0>(sA) == size<0>(sC));  // AM == CM
+  CUTE_STATIC_ASSERT_V(size<0>(sB) == size<1>(sC));  // BN == CN
+  CUTE_STATIC_ASSERT_V(size<1>(sA) == size<1>(sB));  // AK == BK
+
+  using InputTypeA        = typename TA::value_type;
+  using InputTypeB        = typename TB::value_type;
+  using InputTypeC        = typename TC::value_type;
+  using ComputeTypeA = typename TiledMMA<Args...>::ValTypeA;
+  using ComputeTypeB = typename TiledMMA<Args...>::ValTypeB;
+  using ComputeTypeC = typename TiledMMA<Args...>::ValTypeC;
+
+  auto compat = evenly_divides(make_shape(size<0>(sA), size<0>(sB), size<1>(sA)),
+                               tile_shape(TiledMMA<Args...>{}));
+
+  // ThrMMA
+  auto thr_mma = tiled_mma.get_thread_slice(thread_idx);
+  Tensor tCsC  = thr_mma.partition_C(sC);                             // (MMA,MMA_M,MMA_N) :: InputTypeC
+  Tensor tCrC  = thr_mma.make_fragment_C(tCsC);                       // (MMA,MMA_M,MMA_N) :: ComputeTypeC
+
+  // Clear accumulators
+  clear(tCrC);
+
+#if 0
+  if (thread0()) {
+    print("  sC: "); print(sC); print("\n");
+    print("  tCsC: "); print(tCsC); print("\n");
+  }
+#endif
+
+  if constexpr (is_constant<true, decltype(compat)>::value) {
+    detail::cooperative_gemm_no_predication(
+        thread_idx, thr_mma, sA, sB, tCrC, sA_load_op, sB_load_op, sA_copy_op, sB_copy_op
+    );
+    detail::epilogue_no_predication(
+        alpha, tCrC, beta, tCsC, sC_load_op, sC_store_op, sC_copy_op
+    );
+  } else {
+    detail::cooperative_gemm_predication(
+        thr_mma, sA, sB, tCrC, sA_load_op, sB_load_op
+    );
+    detail::epilogue_predication(
+        thr_mma, alpha, tCrC, beta, sC, tCsC, sC_load_op, sC_store_op
+    );
+  }
+}
+
+// C already partitioned into registers on input
+// It can be passed non-empty
+// Epilogue not included
+template <class... Args,
+          class TA, class ALayout, class TB, class BLayout,
+          class TC, class CLayout,
+          class ALoadTransformOp = cute::identity, class BLoadTransformOp  = cute::identity,
+          class SmemCopyOpA = DefaultCopy, class SmemCopyOpB = DefaultCopy>
+CUTE_HOST_DEVICE
+void
+cooperative_gemm(uint32_t                   thread_idx,
+                 TiledMMA<Args...>   const& tiled_mma,
+                 Tensor<TA, ALayout> const& sA,
+                 Tensor<TB, BLayout> const& sB,
+                 Tensor<TC, CLayout>      & tCrC,
+                 ALoadTransformOp    const& sA_load_op  = {}, // transforms A values before use in GEMM
+                 BLoadTransformOp    const& sB_load_op  = {}, // transforms B values before use in GEMM
+                 SmemCopyOpA         const& sA_copy_op  = {},
+                 SmemCopyOpB         const& sB_copy_op  = {})
+{
+  CUTE_STATIC_ASSERT_V(rank(sA) == Int<2>{});
+  CUTE_STATIC_ASSERT_V(rank(sB) == Int<2>{});
+
+  CUTE_STATIC_ASSERT_V(size<1>(sA) == size<1>(sB));  // AK == BK
+
+  using InputTypeA        = typename TA::value_type;
+  using InputTypeB        = typename TB::value_type;
+  using InputTypeC        = typename TC::value_type;
+  using ComputeTypeA = typename TiledMMA<Args...>::ValTypeA;
+  using ComputeTypeB = typename TiledMMA<Args...>::ValTypeB;
+  using ComputeTypeC = typename TiledMMA<Args...>::ValTypeC;
+
+  // Check if input C fragment is compatible with thr_mma and problem size
+  using ref_c_frag = decltype(partition_shape_C(tiled_mma, make_shape(size<0>(sA), size<0>(sB))));
+  CUTE_STATIC_ASSERT_V(compatible(shape(ref_c_frag{}), shape(tCrC)));
+
+  auto compat = evenly_divides(make_shape(size<0>(sA), size<0>(sB), size<1>(sA)),
+                               tile_shape(TiledMMA<Args...>{}));
+
+  // ThrMMA
+  auto thr_mma = tiled_mma.get_thread_slice(thread_idx);
+
+  if constexpr (is_constant<true, decltype(compat)>::value) {
+    detail::cooperative_gemm_no_predication(
+        thread_idx, thr_mma, sA, sB, tCrC, sA_load_op, sB_load_op, sA_copy_op, sB_copy_op
+    );
+  } else {
+    detail::cooperative_gemm_predication(
+        thr_mma, sA, sB, tCrC, sA_load_op, sB_load_op
+    );
+  }
+}
+
+// Accept mutable temporaries
+template <class... Args,
+          class Alpha, class TA, class ALayout, class TB, class BLayout,
+          class Beta,  class TC, class CLayout,
+          class ALoadTransformOp = cute::identity, class BLoadTransformOp  = cute::identity,
+          class CLoadTransformOp = cute::identity, class CStoreTransformOp = cute::identity,
+          class SmemCopyOpA = DefaultCopy, class SmemCopyOpB = DefaultCopy,
+          class SmemCopyOpC = DefaultCopy>
 CUTE_HOST_DEVICE
 void
 cooperative_gemm(uint32_t thread_idx,
-                 TiledMMA<Args...> const& tiled_mma,
-                 Alpha const& alpha,
-                 Tensor<TA, ALayout> sA,
-                 Tensor<TB, BLayout> sB,
-                 Beta  const& beta,
-                 Tensor<TC, CLayout> sC,
-                 ALoadTransformOp  const& sA_load_op  = {}, // transforms A values before use in GEMM
-                 BLoadTransformOp  const& sB_load_op  = {}, // transforms B values before use in GEMM
-                 CLoadTransformOp  const& sC_load_op  = {}, // transforms C values before use in GEMM
-                 CStoreTransformOp const& sC_store_op = {}) // transforms results before they are stored to C
+                 TiledMMA<Args...>   const& tiled_mma,
+                 Alpha               const& alpha,
+                 Tensor<TA, ALayout> const& sA,
+                 Tensor<TB, BLayout> const& sB,
+                 Beta                const& beta,
+                 Tensor<TC, CLayout>     && sC,
+                 ALoadTransformOp    const& sA_load_op  = {}, // transforms A values before use in GEMM
+                 BLoadTransformOp    const& sB_load_op  = {}, // transforms B values before use in GEMM
+                 CLoadTransformOp    const& sC_load_op  = {}, // transforms C values before use in GEMM
+                 CStoreTransformOp   const& sC_store_op = {}, // transforms results before they are stored to C
+                 SmemCopyOpA         const& sA_copy_op  = {},
+                 SmemCopyOpB         const& sB_copy_op  = {},
+                 SmemCopyOpC         const& sC_copy_op  = {})
 {
-  using CopyOpA = AutoVectorizingCopyWithAssumedAlignment<sizeof_bits_v<typename TA::value_type>>;
-  using CopyOpB = AutoVectorizingCopyWithAssumedAlignment<sizeof_bits_v<typename TB::value_type>>;
-  using CopyOpC = AutoVectorizingCopyWithAssumedAlignment<sizeof_bits_v<typename TC::value_type>>;
-  cooperative_gemm<CopyOpA, CopyOpB, CopyOpC>(
-      thread_idx, tiled_mma, alpha, sA, sB, beta, sC,
-      sA_load_op, sB_load_op, sC_load_op, sC_store_op
-  );
+  cooperative_gemm(thread_idx, tiled_mma, alpha, sA, sB, beta, sC,
+                   sA_load_op, sB_load_op, sC_load_op, sC_store_op,
+                   sA_copy_op, sB_copy_op, sC_copy_op);
 }
 
 // Legacy overload of cute::gemm for backwards-compatibility
@@ -485,27 +547,38 @@ template <class... Args,
           class Alpha, class TA, class ALayout, class TB, class BLayout,
           class Beta,  class TC, class CLayout,
           class ALoadTransformOp = cute::identity, class BLoadTransformOp  = cute::identity,
-          class CLoadTransformOp = cute::identity, class CStoreTransformOp = cute::identity,
-          __CUTE_REQUIRES(ALayout::rank == 2 && is_smem<TA>::value &&
-                          BLayout::rank == 2 && is_smem<TB>::value &&
-                          CLayout::rank == 2 && is_smem<TC>::value)>
+          class CLoadTransformOp = cute::identity, class CStoreTransformOp = cute::identity>
 CUTE_HOST_DEVICE
 void
-gemm(ThrMMA<Args...> const& thr_mma,
-     Alpha const& alpha,
-     Tensor<TA, ALayout> sA,
-     Tensor<TB, BLayout> sB,
-     Beta  const& beta,
-     Tensor<TC, CLayout> sC,
-     ALoadTransformOp  const& sA_load_op  = {}, // transforms A values before use in GEMM
-     BLoadTransformOp  const& sB_load_op  = {}, // transforms B values before use in GEMM
-     CLoadTransformOp  const& sC_load_op  = {}, // transforms C values before use in GEMM
-     CStoreTransformOp const& sC_store_op = {}) // transforms results before they are stored to C
+gemm(ThrMMA<Args...>     const& thr_mma,
+     Alpha               const& alpha,
+     Tensor<TA, ALayout> const& sA,
+     Tensor<TB, BLayout> const& sB,
+     Beta                const& beta,
+     Tensor<TC, CLayout>      & sC,
+     ALoadTransformOp    const& sA_load_op  = {}, // transforms A values before use in GEMM
+     BLoadTransformOp    const& sB_load_op  = {}, // transforms B values before use in GEMM
+     CLoadTransformOp    const& sC_load_op  = {}, // transforms C values before use in GEMM
+     CStoreTransformOp   const& sC_store_op = {}) // transforms results before they are stored to C
 {
+  CUTE_STATIC_ASSERT_V(rank(sA) == Int<2>{});
+  CUTE_STATIC_ASSERT_V(rank(sB) == Int<2>{});
+  CUTE_STATIC_ASSERT_V(rank(sC) == Int<2>{});
+
+  CUTE_STATIC_ASSERT_V(size<0>(sA) == size<0>(sC));  // AM == CM
+  CUTE_STATIC_ASSERT_V(size<0>(sB) == size<1>(sC));  // BN == CN
+  CUTE_STATIC_ASSERT_V(size<1>(sA) == size<1>(sB));  // AK == BK
+
+  Tensor tCsC  = thr_mma.partition_C(sC);                           // (MMA,MMA_M,MMA_N)
+  Tensor tCrC  = thr_mma.make_fragment_C(tCsC);                     // (MMA,MMA_M,MMA_N)
+
   // Goes directly to the slow path to avoid getting thread_idx from thr_mma
   detail::cooperative_gemm_predication(
-    thr_mma, alpha, sA, sB, beta, sC,
-    sA_load_op, sB_load_op, sC_load_op, sC_store_op
+    thr_mma, sA, sB, sC, sA_load_op, sB_load_op
+  );
+
+  detail::epilogue_predication(
+      thr_mma, alpha, tCrC, beta, sC, tCsC, sC_load_op, sC_store_op
   );
 }
 

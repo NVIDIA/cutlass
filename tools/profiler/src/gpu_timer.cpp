@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -33,8 +33,10 @@
 */
 
 #include <stdexcept>
+#include <cstring>
 
 #include "cutlass/profiler/gpu_timer.h"
+
 
 namespace cutlass {
 namespace profiler {
@@ -52,32 +54,39 @@ GpuTimer::GpuTimer() {
   }
 }
 
+GpuTimer::GpuTimer(GpuTimer&& gpu_timer) noexcept {
+  memcpy(events, gpu_timer.events, sizeof(events));
+  memset(gpu_timer.events, 0, sizeof(gpu_timer.events));
+}
+
 GpuTimer::~GpuTimer() {
-  for (auto & event : events) {
-    cudaEventDestroy(event);
+  for (const auto & event : events) {
+    if (event != nullptr) {
+      cudaEventDestroy(event);
+    }
   }
 }
 
-/// Records a start event in the stream
-void GpuTimer::start(cudaStream_t stream) {
-  cudaError_t result = cudaEventRecord(events[0], stream);
+/// Records a start event in the stream, the flag is for cudaEventRecordWithFlags
+void GpuTimer::start(cudaStream_t stream, const unsigned int flag) {
+  cudaError_t result = cudaEventRecordWithFlags(events[0], stream, flag);
   if (result != cudaSuccess) {
     throw std::runtime_error("Failed to record start event.");
   }
 }
 
-/// Records a stop event in the stream
-void GpuTimer::stop(cudaStream_t stream) {
-cudaError_t result = cudaEventRecord(events[1], stream);
+/// Records a stop event in the stream, the flag is for cudaEventRecordWithFlags
+void GpuTimer::stop(cudaStream_t stream, const unsigned int flag) {
+cudaError_t result = cudaEventRecordWithFlags(events[1], stream, flag);
   if (result != cudaSuccess) {
     throw std::runtime_error("Failed to record stop event.");
   }
 }
 
-/// Records a stop event in the stream and synchronizes on the stream
-void GpuTimer::stop_and_wait(cudaStream_t stream) {
+/// Records a stop event in the stream and synchronizes on the stream, the flag is for cudaEventRecordWithFlags
+void GpuTimer::stop_and_wait(cudaStream_t stream, const unsigned int flag) {
 
-  stop(stream);
+  stop(stream, flag);
 
   cudaError_t result;
   if (stream) {

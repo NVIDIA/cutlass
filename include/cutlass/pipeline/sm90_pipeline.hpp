@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -50,6 +50,65 @@ namespace cutlass {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 using namespace cute;
+
+namespace detail {
+
+// Helper function for DEBUG checks
+template<class ThreadCategory>
+CUTLASS_DEVICE
+bool pipeline_is_producer(ThreadCategory role) {
+  return (role == ThreadCategory::Producer || role == ThreadCategory::ProducerConsumer);
+}
+
+template<class ThreadCategory>
+CUTLASS_DEVICE
+void pipeline_check_is_producer(ThreadCategory role) {
+  #ifndef NDEBUG
+  if (!pipeline_is_producer(role)) {
+    asm volatile ("brkpt;\n" ::);
+  }
+  #endif
+}
+
+template<class ThreadCategory>
+CUTLASS_DEVICE
+bool pipeline_is_consumer(ThreadCategory role) {
+  return (role == ThreadCategory::Consumer || role == ThreadCategory::ProducerConsumer);
+}
+
+template<class ThreadCategory>
+CUTLASS_DEVICE
+void pipeline_check_is_consumer(ThreadCategory role) {
+  #ifndef NDEBUG
+  if (!pipeline_is_consumer(role)) {
+    asm volatile ("brkpt;\n" ::);
+  }
+  #endif
+}
+
+CUTLASS_DEVICE
+cute::tuple<bool, uint32_t> spread_arrivals_to_warp(int thread_idx_in_warp) {
+  constexpr uint32_t MaxClusterSize = 16;
+  bool is_signaling_thread = (thread_idx_in_warp % (32 / MaxClusterSize)) == 0;
+  auto layout = Layout<Shape<_4,_4>,Stride<_4, _1>>{};
+  uint32_t thread_row = thread_idx_in_warp / 8;
+  uint32_t thread_col = (thread_idx_in_warp % 8) / 2;
+  uint32_t dst_blockid = layout(thread_row, thread_col);
+  return cute::make_tuple(is_signaling_thread, dst_blockid);
+}
+
+CUTLASS_DEVICE
+cute::tuple<bool, uint32_t> spread_arrivals_to_warpgroup(int thread_idx_in_warpgroup, int warp_idx) {
+  constexpr uint32_t MaxClusterSize = 16;
+  bool is_signaling_thread = (thread_idx_in_warpgroup % (NumThreadsPerWarpGroup / MaxClusterSize)) == 0;
+  auto layout = cute::composition(Swizzle<2,0,-2>{},
+                                  Layout<Shape<_4,_4>,Stride<_4,_1>>{});
+  uint32_t thread_row = warp_idx % 4;
+  uint32_t thread_col = (thread_idx_in_warpgroup / 8) % 4;
+  uint32_t dst_blockid = layout(thread_row, thread_col);
+  return cute::make_tuple(is_signaling_thread, dst_blockid);
+}
+} // namespace detail
 
 enum class BarrierStatus : uint32_t {
   WaitAgain = 0u,
@@ -210,7 +269,7 @@ PipelineState<Pipeline::Stages> make_producer_start_state() {
 // Currently, it is optional to elect a leader for the Consumers
 template <int Stages_>
 class PipelineTmaAsync {
-public :
+public:
   using FullBarrier = cutlass::arch::ClusterTransactionBarrier;
   using EmptyBarrier = cutlass::arch::ClusterBarrier;
   using ProducerBarrierType = FullBarrier::ValueType;
@@ -234,70 +293,98 @@ public :
     uint32_t transaction_bytes = 0;
     ThreadCategory role = ThreadCategory::NonParticipant;
     uint32_t is_leader = 0;
-    uint32_t num_consumers = 0;
+    uint32_t num_consumers = 0; // Number of consumer threads
+    uint32_t num_producers = 1; // Number of producer threads
+    int initializing_warp = 0;
   };
 
-  // Constructor
-  template<class ClusterShape>
+  template <class ClusterShape>
+  static
   CUTLASS_DEVICE
-  PipelineTmaAsync(SharedStorage& storage, Params params, ClusterShape cluster_shape)
+  void
+  init_barriers(SharedStorage& storage, Params params, ClusterShape cluster_shape) {
+    int warp_idx = canonical_warp_idx_sync();
+    bool is_initializing_warp = (warp_idx == 0);
+    is_initializing_warp = (warp_idx == params.initializing_warp);
+    if (is_initializing_warp) {
+      // Barrier FULL and EMPTY init
+      uint32_t const producer_arv_cnt = params.num_producers;
+      uint32_t const num_consumer_warpgroups_per_cluster = params.num_consumers / NumThreadsPerWarpGroup;
+      uint32_t multicast_consumer_arrival_count = params.num_consumers; // If cluster_size is 1
+      if (cute::size(cluster_shape) > 1) {
+        multicast_consumer_arrival_count = (cute::size<0>(cluster_shape) + cute::size<1>(cluster_shape) - 1) *
+              num_consumer_warpgroups_per_cluster;
+      }
+
+      cutlass::arch::detail::initialize_barrier_array_pair_aligned<decltype(storage.full_barrier_), decltype(storage.empty_barrier_), Stages>(
+          storage.full_barrier_, storage.empty_barrier_, producer_arv_cnt, multicast_consumer_arrival_count);
+    }
+    cutlass::arch::fence_barrier_init();
+  }
+
+  template<class ClusterShape, class InitBarriers, class InitMasks>
+  CUTLASS_DEVICE
+  PipelineTmaAsync(SharedStorage& storage, Params params, ClusterShape cluster_shape, InitBarriers = {}, InitMasks = {})
       : params_(params)
       , full_barrier_ptr_(&storage.full_barrier_[0])
       , empty_barrier_ptr_(&storage.empty_barrier_[0]) {
 
     int warp_idx = canonical_warp_idx_sync();
+    int thread_idx = ThreadIdxX();
     int lane_predicate = cute::elect_one_sync();
 
-    if (warp_idx == 0 && lane_predicate == 1) {
-      // Barrier FULL init
-      for (int i = 0; i < Stages; ++i) {
-        full_barrier_ptr_[i].init(1);
+    static_assert(cute::is_same_v<InitBarriers, cute::true_type> || cute::is_same_v<InitBarriers, cute::false_type>);
+    static_assert(cute::is_same_v<InitMasks, cute::true_type> || cute::is_same_v<InitMasks, cute::false_type>);
+    if constexpr (cute::is_same_v<InitBarriers, cute::true_type>) {
+      init_barriers(storage, params_, cluster_shape);
+    }
+
+    if constexpr (cute::is_same_v<InitMasks, cute::true_type>) {
+      // Logic to optimally schedule Empty Arrives
+      // Goal : To divide SYNCS Empty Arrival duty equally amongst the Warp-Group (128 threads)
+      dim3 block_id = cute::block_id_in_cluster();
+      auto cluster_size = cute::size(cluster_shape);
+
+      if (cluster_size == 1) {
+        is_signaling_thread_ = true;
+        dst_blockid_ = 0;
       }
-      uint32_t const num_consumer_warpgroups_per_cluster = params_.num_consumers / NumThreadsPerWarpGroup;
-      uint32_t const multicast_consumer_arrival_count = (cute::size<0>(cluster_shape) + cute::size<1>(cluster_shape) - 1) *
-          num_consumer_warpgroups_per_cluster;
-      // Barrier EMPTY init
-      for (int i = 0; i < Stages; ++i) {
-        empty_barrier_ptr_[i].init(multicast_consumer_arrival_count);
+      else {
+        // STEP 1 : Use Cute Layout function to generate an optimal dst block-id (0-15)
+        if (params_.num_consumers % NumThreadsPerWarpGroup == 0) {
+          auto [is_signaling_thread, dst_blockid] = detail::spread_arrivals_to_warpgroup(thread_idx % NumThreadsPerWarpGroup, warp_idx);
+          is_signaling_thread_ = is_signaling_thread;
+          dst_blockid_ = dst_blockid;
+        }
+        else if (params_.num_consumers == 32) {
+          auto [is_signaling_thread, dst_blockid] = detail::spread_arrivals_to_warp(thread_idx % 32);
+          is_signaling_thread_ = is_signaling_thread;
+          dst_blockid_ = dst_blockid;
+        }
+        else {
+          is_signaling_thread_ = 0;
+          #ifndef NDEBUG
+            asm volatile ("brkpt;\n" ::);
+          #endif
+        }
+
+        // STEP 2: Find if this dst block-id needs an arrival for this problem
+        is_signaling_thread_ &= dst_blockid_ < cluster_size;
+        is_signaling_thread_ &= is_same_row_or_col(dst_blockid_, block_id, cluster_shape);
       }
     }
-    cutlass::arch::fence_barrier_init();
-
-    // Logic to optimally schedule Empty Arrives
-    // Goal : To divide SYNCS Empty Arrival duty equally amongst the Warp-Group (128 threads)
-    dim3 block_id = cute::block_id_in_cluster();
-    auto cluster_size = cute::size(cluster_shape);
-    static constexpr int MaxClusterSize = 16;
-
-    // STEP 1 : Use Cute Layout function to generate an optimal dst block-id (0-15)
-    if (params_.num_consumers % NumThreadsPerWarpGroup == 0) {
-      int thread_idx = ThreadIdxX() % NumThreadsPerWarpGroup;
-      is_signalling_thread_ = (thread_idx % (NumThreadsPerWarpGroup / MaxClusterSize)) == 0;
-      auto layout = cute::composition(Swizzle<2,0,-2>{},
-                                      Layout<Shape<_4,_4>,Stride<_4,_1>>{});
-      uint32_t thread_row = warp_idx % 4;
-      uint32_t thread_col = (thread_idx / 8) % 4;
-      dst_blockid_ = layout(thread_row, thread_col);
-    }
-    else if (params_.num_consumers == 32) {
-      int thread_idx = ThreadIdxX() % 32;
-      is_signalling_thread_ = (thread_idx % (32 / MaxClusterSize)) == 0;
-      auto layout = Layout<Shape<_4,_4>,Stride<_4, _1>>{};
-      uint32_t thread_row = thread_idx / 8;
-      uint32_t thread_col = (thread_idx % 8) / 2;
-      dst_blockid_ = layout(thread_row, thread_col);
-    }
-    else {
-      is_signalling_thread_ = 0;
-      #ifndef NDEBUG
-        asm volatile ("brkpt;\n" ::);
-      #endif
-    }
-
-    // STEP 2: Find if this dst block-id needs an arrival for this problem
-    is_signalling_thread_ &= dst_blockid_ < cluster_size;
-    is_signalling_thread_ &= is_same_row_or_col(dst_blockid_, block_id, cluster_shape);
   }
+
+  // Constructor
+  template<class ClusterShape>
+  CUTLASS_DEVICE
+  PipelineTmaAsync(SharedStorage& storage, Params params, ClusterShape cluster_shape)
+      : PipelineTmaAsync(storage, params, cluster_shape, cute::true_type{}, cute::true_type{}) { }
+
+  template<class ClusterShape, class InitBarriers>
+  CUTLASS_DEVICE
+  PipelineTmaAsync(SharedStorage& storage, Params params, ClusterShape cluster_shape, InitBarriers = {})
+      : PipelineTmaAsync(storage, params, cluster_shape, InitBarriers{}, cute::true_type{}) { }
 
   template <class ClusterShape>
   CUTLASS_DEVICE
@@ -343,10 +430,17 @@ public :
     producer_commit(state.index(), bytes);
   }
 
+  template<class UserDefinedArriveOp>
+  CUTLASS_DEVICE
+  void producer_commit(PipelineState state, UserDefinedArriveOp&& user_defined_arrive_op) {
+    cute::forward<UserDefinedArriveOp>(user_defined_arrive_op)(producer_get_barrier(state.index()));;
+  }
+
   // Prevents early exit of producer blocks in Cluster.
   // This should be called once before kernel exits.
   CUTLASS_DEVICE
   void producer_tail(PipelineState state) {
+    detail::pipeline_check_is_producer(params_.role);
     for (int count = 0; count < Stages; ++count) {
       empty_barrier_ptr_[state.index()].wait(state.phase());
       ++state;
@@ -386,15 +480,16 @@ public :
     consumer_release(state.index());
   }
 
-private :
+private:
   uint32_t dst_blockid_ = 0;
-  uint32_t is_signalling_thread_ = 0;
+  uint32_t is_signaling_thread_ = 0;
   FullBarrier *full_barrier_ptr_ = nullptr;
   EmptyBarrier *empty_barrier_ptr_ = nullptr;
   Params params_;
 
   CUTLASS_DEVICE
   ProducerToken producer_try_acquire(uint32_t stage, uint32_t phase, uint32_t skip_wait) {
+    detail::pipeline_check_is_producer(params_.role);
     if (skip_wait) {
       return {BarrierStatus::WaitDone};
     }
@@ -404,6 +499,7 @@ private :
 
   CUTLASS_DEVICE
   void producer_acquire(uint32_t stage, uint32_t phase, ProducerToken barrier_token) {
+    detail::pipeline_check_is_producer(params_.role);
     if (barrier_token != BarrierStatus::WaitDone) {
       empty_barrier_ptr_[stage].wait(phase);
     }
@@ -454,6 +550,7 @@ private :
 
   CUTLASS_DEVICE
   ConsumerToken consumer_try_wait(uint32_t stage, uint32_t phase, uint32_t skip_wait) {
+    detail::pipeline_check_is_consumer(params_.role);
     if (skip_wait) {
       return {BarrierStatus::WaitDone};
     }
@@ -463,6 +560,7 @@ private :
 
   CUTLASS_DEVICE
   ConsumerToken consumer_test_wait(uint32_t stage, uint32_t phase, uint32_t skip_wait) {
+    detail::pipeline_check_is_consumer(params_.role);
     if (skip_wait) {
       return {BarrierStatus::WaitDone};
     }
@@ -473,12 +571,14 @@ private :
   // Wait for producer to commit transactions (done by TMA)
   CUTLASS_DEVICE
   void consumer_wait(uint32_t stage, uint32_t phase) {
+    detail::pipeline_check_is_consumer(params_.role);
     full_barrier_ptr_[stage].wait(phase);
   }
 
   // Wait for producer to commit transactions (done by TMA)
   CUTLASS_DEVICE
   void consumer_wait(uint32_t stage, uint32_t phase, ConsumerToken barrier_token) {
+    detail::pipeline_check_is_consumer(params_.role);
     if (barrier_token == BarrierStatus::WaitAgain) {
       full_barrier_ptr_[stage].wait(phase);
     }
@@ -488,7 +588,8 @@ private :
   // Ensures all blocks in the Same Row and Column get notifed.
   CUTLASS_DEVICE
   void consumer_release(uint32_t stage, uint32_t skip = false) {
-    empty_barrier_ptr_[stage].arrive(dst_blockid_, is_signalling_thread_ & (!skip));
+    detail::pipeline_check_is_consumer(params_.role);
+    empty_barrier_ptr_[stage].arrive(dst_blockid_, is_signaling_thread_ & (!skip));
     #ifndef NDEBUG
     if (params_.role == ThreadCategory::Producer || params_.role == ThreadCategory::NonParticipant) {
       asm volatile ("brkpt;\n" ::);
@@ -625,7 +726,7 @@ private:
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 template <int Stages_>
 class PipelineTransactionAsync {
-public :
+public:
   using FullBarrier = cutlass::arch::ClusterTransactionBarrier;
   using EmptyBarrier = cutlass::arch::ClusterBarrier;
   using ProducerBarrierType = FullBarrier::ValueType;
@@ -651,27 +752,50 @@ public :
     uint32_t producer_arv_count = 1;
     uint32_t consumer_arv_count = 1;
     uint32_t dst_blockid = cute::block_rank_in_cluster();
+    int initializing_warp = 0;
   };
 
-  // Constructor
+  static
   CUTLASS_DEVICE
-  PipelineTransactionAsync(SharedStorage& storage, Params const& params)
-    : params_(params)
-    , full_barrier_ptr_(storage.full_barrier_.data())
-    , empty_barrier_ptr_(storage.empty_barrier_.data()) {
+  void
+  init_barriers(SharedStorage& storage, Params const& params) {
+    FullBarrier *full_barrier_ptr = storage.full_barrier_.data();
+    EmptyBarrier *empty_barrier_ptr = storage.empty_barrier_.data();
     int warp_idx = canonical_warp_idx_sync();
-    int lane_predicate = cute::elect_one_sync();
+    bool is_initializing_warp = (warp_idx == 0);
+    is_initializing_warp = (warp_idx == params.initializing_warp);
 
-    // Barrier FULL, EMPTY init
-    // Init is done only by thread 0 of the block
-    if (warp_idx == 0 && lane_predicate) {
-      for (int i = 0; i < Stages; ++i) {
-        full_barrier_ptr_[i].init(params.producer_arv_count);
-        empty_barrier_ptr_[i].init(params.consumer_arv_count);
-      }
+    if (is_initializing_warp) {
+      // Barrier FULL and EMPTY init
+      cutlass::arch::detail::initialize_barrier_array_pair_aligned<decltype(full_barrier_ptr), decltype(empty_barrier_ptr), Stages>(
+          full_barrier_ptr, empty_barrier_ptr, params.producer_arv_count, params.consumer_arv_count);
     }
     cutlass::arch::fence_barrier_init();
   }
+
+  // Constructor
+  template<class InitBarriers>
+  CUTLASS_DEVICE
+  PipelineTransactionAsync(SharedStorage& storage, Params const& params, InitBarriers = cute::true_type{})
+    : params_(params)
+    , full_barrier_ptr_(storage.full_barrier_.data())
+    , empty_barrier_ptr_(storage.empty_barrier_.data()) {
+
+    int warp_idx = canonical_warp_idx_sync();
+    int lane_predicate = cute::elect_one_sync();
+
+    static_assert(cute::is_same_v<InitBarriers, cute::true_type> || cute::is_same_v<InitBarriers, cute::false_type>);
+
+    if constexpr (cute::is_same_v<InitBarriers, cute::true_type>) {
+      init_barriers(storage, params);
+    }
+
+  }
+
+  // Constructor
+  CUTLASS_DEVICE
+  PipelineTransactionAsync(SharedStorage& storage, Params const& params) :
+    PipelineTransactionAsync(storage, params, cute::true_type{}) { }
 
   ////////////////////
   // Producer APIs
@@ -758,6 +882,7 @@ private:
 
   CUTLASS_DEVICE
   ProducerToken producer_try_acquire(uint32_t stage, uint32_t phase, uint32_t skip_wait) {
+    detail::pipeline_check_is_producer(params_.role);
     if (skip_wait) {
       return {BarrierStatus::WaitDone};
     }
@@ -767,6 +892,7 @@ private:
 
   CUTLASS_DEVICE
   void producer_acquire(uint32_t stage, uint32_t phase, ProducerToken barrier_token) {
+    detail::pipeline_check_is_producer(params_.role);
     if (barrier_token == BarrierStatus::WaitAgain) {
       empty_barrier_ptr_[stage].wait(phase);
     }
@@ -775,11 +901,13 @@ private:
   // Perform an expect-tx operation on the stage's full barrier. Must be called by 1 thread
   CUTLASS_DEVICE
   void producer_expect_transaction(uint32_t stage) {
+    detail::pipeline_check_is_producer(params_.role);
     full_barrier_ptr_[stage].expect_transaction(params_.transaction_bytes);
   }
 
   CUTLASS_DEVICE
   void producer_commit(uint32_t stage) {
+    detail::pipeline_check_is_producer(params_.role);
     full_barrier_ptr_[stage].arrive(params_.dst_blockid);
   }
 
@@ -790,6 +918,7 @@ private:
 
   CUTLASS_DEVICE
   ConsumerToken consumer_try_wait(uint32_t stage, uint32_t phase, uint32_t skip_wait) {
+    detail::pipeline_check_is_consumer(params_.role);
     if (skip_wait) {
       return {BarrierStatus::WaitDone};
     }
@@ -799,6 +928,7 @@ private:
 
   CUTLASS_DEVICE
   ConsumerToken consumer_test_wait(uint32_t stage, uint32_t phase, uint32_t skip_wait) {
+    detail::pipeline_check_is_consumer(params_.role);
     if (skip_wait) {
       return {BarrierStatus::WaitDone};
     }
@@ -808,6 +938,7 @@ private:
 
   CUTLASS_DEVICE
   void consumer_wait(uint32_t stage, uint32_t phase, ConsumerToken barrier_token) {
+    detail::pipeline_check_is_consumer(params_.role);
     if (barrier_token == BarrierStatus::WaitAgain) {
       full_barrier_ptr_[stage].wait(phase);
     }
@@ -815,6 +946,7 @@ private:
 
   CUTLASS_DEVICE
   void consumer_release(uint32_t stage, uint32_t skip = false) {
+    detail::pipeline_check_is_consumer(params_.role);
     empty_barrier_ptr_[stage].arrive(params_.dst_blockid, (not skip));
   }
 };
@@ -841,7 +973,7 @@ namespace PipelineDetail {
 
 template <int Stages_>
 class PipelineAsync {
-public :
+public:
   static constexpr uint32_t Stages = Stages_;
   using SharedStorage = PipelineDetail::PipelineAsyncSharedStorage<Stages>;
   using FullBarrier = typename SharedStorage::FullBarrier;
@@ -862,35 +994,51 @@ public :
     uint32_t producer_arv_count = 1;
     uint32_t consumer_arv_count = 1;
     uint32_t dst_blockid = cute::block_rank_in_cluster();
+    int initializing_warp = 0;
   };
 
-  // Default assumption when only storage is passed is :
-  // => single producer, single consumer & they are in the same block (within the Cluster)
+  static
   CUTLASS_DEVICE
-  PipelineAsync(SharedStorage& storage)
-    : PipelineAsync(storage, {}) {}
+  void
+  init_barriers(SharedStorage& storage, Params params) {
+    int warp_idx = canonical_warp_idx_sync();
+    bool is_initializing_warp = (warp_idx == 0);
+    is_initializing_warp = (warp_idx == params.initializing_warp);
+    if (is_initializing_warp) {
+      // Barrier FULL and EMPTY init
+      cutlass::arch::detail::initialize_barrier_array_pair_aligned<decltype(storage.full_barrier_), decltype(storage.empty_barrier_), Stages>(
+          storage.full_barrier_, storage.empty_barrier_, params.producer_arv_count, params.consumer_arv_count);
+    }
+    cutlass::arch::fence_barrier_init();
+  }
+
+  template<class InitBarriers>
+  CUTLASS_DEVICE
+  PipelineAsync(
+    SharedStorage& storage,
+    Params const& params,
+    InitBarriers = {}) :
+      params_(params),
+      full_barrier_ptr_(&storage.full_barrier_[0]),
+      empty_barrier_ptr_(&storage.empty_barrier_[0]) {
+
+    static_assert(cute::is_same_v<InitBarriers, cute::true_type> || cute::is_same_v<InitBarriers, cute::false_type>);
+    if constexpr (cute::is_same_v<InitBarriers, cute::true_type>) {
+      init_barriers(storage, params_);
+    }
+  }
 
   CUTLASS_DEVICE
   PipelineAsync(
     SharedStorage& storage,
     Params const& params) :
-      params_(params),
-      full_barrier_ptr_(&storage.full_barrier_[0]),
-      empty_barrier_ptr_(&storage.empty_barrier_[0]) {
+      PipelineAsync(storage, params, cute::true_type{}) { }
 
-    int warp_idx = canonical_warp_idx_sync();
-    int lane_predicate = cute::elect_one_sync();
-
-    // Barrier FULL, EMPTY init
-    // Init is done only by thread 0 of the block
-    if (warp_idx == 0 && lane_predicate == 1) {
-      for (int i = 0; i < Stages; ++i) {
-        full_barrier_ptr_[i].init(params.producer_arv_count);
-        empty_barrier_ptr_[i].init(params.consumer_arv_count);
-      }
-    }
-    cutlass::arch::fence_barrier_init();
-  }
+  // Default assumption when only storage is passed is :
+  // => single producer, single consumer & they are in the same block (within the Cluster)
+  CUTLASS_DEVICE
+  PipelineAsync(SharedStorage& storage)
+    : PipelineAsync(storage, {}, cute::true_type{}) {}
 
   ////////////////////
   // Producer APIs
@@ -983,6 +1131,7 @@ private:
 
   CUTLASS_DEVICE
   ProducerToken producer_try_acquire(uint32_t stage, uint32_t phase, uint32_t skip_wait) {
+    detail::pipeline_check_is_producer(params_.role);
     if (skip_wait) {
       return {BarrierStatus::WaitDone};
     }
@@ -992,6 +1141,7 @@ private:
 
   CUTLASS_DEVICE
   void producer_acquire(uint32_t stage, uint32_t phase, ProducerToken barrier_token) {
+    detail::pipeline_check_is_producer(params_.role);
     if (barrier_token == BarrierStatus::WaitAgain) {
       empty_barrier_ptr_[stage].wait(phase);
     }
@@ -999,11 +1149,13 @@ private:
 
   CUTLASS_DEVICE
   void producer_commit(uint32_t stage) {
+    detail::pipeline_check_is_producer(params_.role);
     full_barrier_ptr_[stage].arrive();
   }
 
   CUTLASS_DEVICE
   ConsumerToken consumer_try_wait(uint32_t stage, uint32_t phase, uint32_t skip_wait) {
+    detail::pipeline_check_is_consumer(params_.role);
     if (skip_wait) {
       return {BarrierStatus::WaitDone};
     }
@@ -1013,6 +1165,7 @@ private:
 
   CUTLASS_DEVICE
   ConsumerToken consumer_test_wait(uint32_t stage, uint32_t phase, uint32_t skip_wait) {
+    detail::pipeline_check_is_consumer(params_.role);
     if (skip_wait) {
       return {BarrierStatus::WaitDone};
     }
@@ -1022,6 +1175,7 @@ private:
 
   CUTLASS_DEVICE
   void consumer_wait(uint32_t stage, uint32_t phase) {
+    detail::pipeline_check_is_consumer(params_.role);
     bool done = full_barrier_ptr_[stage].test_wait(phase);
     if (!done) {
       full_barrier_ptr_[stage].wait(phase);
@@ -1030,6 +1184,7 @@ private:
 
   CUTLASS_DEVICE
   void consumer_wait(uint32_t stage, uint32_t phase, ConsumerToken barrier_token) {
+    detail::pipeline_check_is_consumer(params_.role);
     if (barrier_token == BarrierStatus::WaitAgain) {
       full_barrier_ptr_[stage].wait(phase);
     }
@@ -1037,6 +1192,7 @@ private:
 
   CUTLASS_DEVICE
   void consumer_release(uint32_t stage) {
+    detail::pipeline_check_is_consumer(params_.role);
     empty_barrier_ptr_[stage].arrive(params_.dst_blockid);
   }
 };
@@ -1073,9 +1229,10 @@ public:
   struct Params {
     uint32_t group_id;
     uint32_t group_size;
+    int initializing_warp = 0;
   };
 
-private :
+private:
   // In future this Params object can be replaced easily with a CG object
   Params params_;
   Barrier *barrier_ptr_;
@@ -1098,6 +1255,19 @@ public:
       barrier_ptr_(&storage.barrier_[0][0]),
       // Group 0 - starts with an opposite phase
       stage_({0, params.group_id == 0, 0}) {
+
+#if (__CUDA_ARCH__ >= 1000)
+    int warp_idx = canonical_warp_idx_sync();
+
+    // Barrier FULL, EMPTY init
+    if (warp_idx == params.initializing_warp) {
+      int arv_cnt = params.group_size;
+      constexpr int Stages = Depth * Length;
+      cutlass::arch::detail::initialize_barrier_array_aligned<decltype(barrier_ptr_), Stages>(
+          barrier_ptr_, arv_cnt);
+    }
+#else
+
     int warp_idx = canonical_warp_idx_sync();
     int lane_predicate = cute::elect_one_sync();
 
@@ -1110,6 +1280,7 @@ public:
         }
       }
     }
+#endif
     cutlass::arch::fence_barrier_init();
   }
 

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -922,7 +922,7 @@ __global__ void Conv3dWgrad(
               filter_s = problem_size.S - 1 - filter_s;
             }
 
-            int d = Z * problem_size.stride_d - problem_size.pad_w + filter_t * problem_size.dilation_d;
+            int d = Z * problem_size.stride_d - problem_size.pad_d + filter_t * problem_size.dilation_d;
             int h = P * problem_size.stride_h - problem_size.pad_h + filter_r * problem_size.dilation_h;
             int w = Q * problem_size.stride_w - problem_size.pad_w + filter_s * problem_size.dilation_w;
 

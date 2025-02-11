@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -212,15 +212,23 @@ public:
     // When the optimization is enabled, small tiles require separate logic.
     bool kN32_optimization = (WarpShape::kN * Detail::kLanesInQuad * Policy::kElementsPerAccess * sizeof_bits<Element>::value) % 1024 == 0;
     if (kN32_optimization) {
+      
       int ptr_idx = ((warp_column_ * sizeof_bits<Element>::value) / 1024) % Detail::kPointerCount;
+      
       if (ptr_idx == 0) {
         ptr = pointers_[0];
       } else if (ptr_idx == 1) {
-        ptr = pointers_[1];
+	if constexpr (AccessType::kElements >= 2) {
+          ptr = pointers_[1];
+	}
       } else if (ptr_idx == 2) {
-        ptr = pointers_[2];
+	if constexpr (AccessType::kElements >= 3) {
+          ptr = pointers_[2];
+	}
       } else if (ptr_idx == 3) {
-        ptr = pointers_[3];
+	if constexpr (AccessType::kElements >= 4) {
+          ptr = pointers_[3];
+	}
       }
     }
 

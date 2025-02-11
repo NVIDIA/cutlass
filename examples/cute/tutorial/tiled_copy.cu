@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -95,36 +95,17 @@ __global__ void copy_kernel(TensorS S, TensorD D, ThreadLayout)
 /// Uses `make_tiled_copy()` to perform a copy using vector instructions. This operation
 /// has the precondition that pointers are aligned to the vector size.
 ///
-template <class TensorS, class TensorD, class ThreadLayout, class VecLayout>
-__global__ void copy_kernel_vectorized(TensorS S, TensorD D, ThreadLayout, VecLayout)
+template <class TensorS, class TensorD, class Tiled_Copy>
+__global__ void copy_kernel_vectorized(TensorS S, TensorD D, Tiled_Copy tiled_copy)
 {
   using namespace cute;
-  using Element = typename TensorS::value_type;
 
   // Slice the tensors to obtain a view into each tile.
   Tensor tile_S = S(make_coord(_, _), blockIdx.x, blockIdx.y);  // (BlockShape_M, BlockShape_N)
   Tensor tile_D = D(make_coord(_, _), blockIdx.x, blockIdx.y);  // (BlockShape_M, BlockShape_N)
 
-  // Define `AccessType` which controls the size of the actual memory access.
-  using AccessType = cutlass::AlignedArray<Element, size(VecLayout{})>;
-
-  // A copy atom corresponds to one hardware memory access.
-  using Atom = Copy_Atom<UniversalCopy<AccessType>, Element>;
-
-  // Construct tiled copy, a tiling of copy atoms.
-  //
-  // Note, this assumes the vector and thread layouts are aligned with contigous data
-  // in GMEM. Alternative thread layouts are possible but may result in uncoalesced
-  // reads. Alternative vector layouts are also possible, though incompatible layouts
-  // will result in compile time errors.
-  auto tiled_copy =
-    make_tiled_copy(
-      Atom{},                       // access size
-      ThreadLayout{},               // thread layout
-      VecLayout{});                 // vector layout (e.g. 4x1)
-
   // Construct a Tensor corresponding to each thread's slice.
-  auto thr_copy = tiled_copy.get_thread_slice(threadIdx.x);
+  ThrCopy thr_copy = tiled_copy.get_thread_slice(threadIdx.x);
 
   Tensor thr_tile_S = thr_copy.partition_S(tile_S);             // (CopyOp, CopyM, CopyN)
   Tensor thr_tile_D = thr_copy.partition_D(tile_D);             // (CopyOp, CopyM, CopyN)
@@ -198,11 +179,34 @@ int main(int argc, char** argv)
   Tensor tiled_tensor_S = tiled_divide(tensor_S, block_shape);      // ((M, N), m', n')
   Tensor tiled_tensor_D = tiled_divide(tensor_D, block_shape);      // ((M, N), m', n')
 
-  // Thread arrangement
-  Layout thr_layout = make_layout(make_shape(Int<32>{}, Int<8>{}));
+  // Construct a TiledCopy with a specific access pattern.
+  //   This version uses a
+  //   (1) Layout-of-Threads to describe the number and arrangement of threads (e.g. row-major, col-major, etc),
+  //   (2) Layout-of-Values that each thread will access.
 
-  // Vector dimensions
-  Layout vec_layout = make_layout(make_shape(Int<4>{}, Int<1>{}));
+  // Thread arrangement
+  Layout thr_layout = make_layout(make_shape(Int<32>{}, Int<8>{}));  // (32,8) -> thr_idx
+
+  // Value arrangement per thread
+  Layout val_layout = make_layout(make_shape(Int<4>{}, Int<1>{}));   // (4,1) -> val_idx
+
+  // Define `AccessType` which controls the size of the actual memory access instruction.
+  using CopyOp = UniversalCopy<uint_byte_t<sizeof(Element) * size(val_layout)>>;     // A very specific access width copy instruction
+  //using CopyOp = UniversalCopy<cutlass::AlignedArray<Element, size(val_layout)>>;  // A more generic type that supports many copy strategies
+  //using CopyOp = AutoVectorizingCopy;                                              // An adaptable-width instruction that assumes maximal alignment of inputs
+
+  // A Copy_Atom corresponds to one CopyOperation applied to Tensors of type Element.
+  using Atom = Copy_Atom<CopyOp, Element>;
+
+  // Construct tiled copy, a tiling of copy atoms.
+  //
+  // Note, this assumes the vector and thread layouts are aligned with contigous data
+  // in GMEM. Alternative thread layouts are possible but may result in uncoalesced
+  // reads. Alternative value layouts are also possible, though incompatible layouts
+  // will result in compile time errors.
+  TiledCopy tiled_copy = make_tiled_copy(Atom{},             // Access strategy
+                                         thr_layout,         // thread layout (e.g. 32x4 Col-Major)
+                                         val_layout);        // value layout (e.g. 4x1)
 
   //
   // Determine grid and block dimensions
@@ -217,8 +221,7 @@ int main(int argc, char** argv)
   copy_kernel_vectorized<<< gridDim, blockDim >>>(
     tiled_tensor_S,
     tiled_tensor_D,
-    thr_layout,
-    vec_layout);
+    tiled_copy);
 
   cudaError result = cudaDeviceSynchronize();
   if (result != cudaSuccess) {

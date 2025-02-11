@@ -1,4 +1,4 @@
-# Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -33,12 +33,12 @@ add_custom_target(
   cutlass_test_unit_transform
   DEPENDS
   cutlass_test_unit_transform_threadblock
-  cutlass_test_unit_transform_filter_format
+  cutlass_test_unit_transform_kernel
 )
 
 add_custom_target(
   test_unit_transform
   DEPENDS
   test_unit_transform_threadblock
-  test_unit_transform_filter_format
+  test_unit_transform_kernel
 )

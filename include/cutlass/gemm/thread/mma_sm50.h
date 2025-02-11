@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -147,7 +147,7 @@ struct MmaGeneric {
     CUTLASS_PRAGMA_UNROLL
     for (int k = 0; k < Shape::kK; ++k) {
       #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 860)
-      if (kMultipleOf2 && kAllFp32) {
+      if constexpr (kMultipleOf2 && kAllFp32) {
         //2x2 zigzag - m and n loops to increment by 2. Inner loop to process 4 multiply-adds in a 2x2 tile.
         CUTLASS_PRAGMA_UNROLL
         for (int n = 0; n < Shape::kN; n+=2) {
@@ -396,34 +396,36 @@ struct MmaGeneric<
     CUTLASS_PRAGMA_UNROLL
     for (int k = 0; k < Shape::kK; ++k) {
 
-      CUTLASS_PRAGMA_UNROLL
-      for (int n = 0; n < Shape::kN; ++n) {
-
+      {
         CUTLASS_PRAGMA_UNROLL
-        for (int m = 0; m < Shape::kM; ++m) {
+        for (int n = 0; n < Shape::kN; ++n) {
 
-          int m_serpentine = (n % 2) ? (Shape::kM - 1 - m) : m;
+          CUTLASS_PRAGMA_UNROLL
+          for (int m = 0; m < Shape::kM; ++m) {
 
-          MatrixCoord mn(m_serpentine, n);
-          MatrixCoord mk(m_serpentine, k);
-          MatrixCoord kn(k, n);
+            int m_serpentine = (n % 2) ? (Shape::kM - 1 - m) : m;
 
-          Array<ElementC, 1> d;
-          Array<ElementA, 1> a;
-          Array<ElementB, 1> b;
+            MatrixCoord mn(m_serpentine, n);
+            MatrixCoord mk(m_serpentine, k);
+            MatrixCoord kn(k, n);
 
-          d[0] = d_ref.at(mn);
-          a[0] = a_ref.at(mk);
-          b[0] = b_ref.at(kn);
+            Array<ElementC, 1> d;
+            Array<ElementA, 1> a;
+            Array<ElementB, 1> b;
 
-          if ((m == 0 && n) || m == Shape::kM - 1) {
-            mma_corner(d, a, b, d);
+            d[0] = d_ref.at(mn);
+            a[0] = a_ref.at(mk);
+            b[0] = b_ref.at(kn);
+
+            if ((m == 0 && n) || m == Shape::kM - 1) {
+              mma_corner(d, a, b, d);
+            }
+            else {
+              mma_column(d, a, b, d);
+            }
+
+            d_ref.at(mn) = d[0];
           }
-          else {
-            mma_column(d, a, b, d);
-          }
-
-          d_ref.at(mn) = d[0];
         }
       }
     }

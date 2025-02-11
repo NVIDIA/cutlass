@@ -350,6 +350,7 @@ int main(int argc, const char** argv)
           ElementOutput>;
 
   using CollectiveEpilogue = cutlass::epilogue::collective::DefaultEpilogue<
+          ElementOutput,
           cutlass::detail::TagToStrideC_t<LayoutC>,
           cutlass::detail::TagToStrideC_t<LayoutD>,
           EpilogueOp,

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -92,23 +92,29 @@ struct Copy_Traits<AutoVectorizingCopyWithAssumedAlignment<MaxVecBits>>
   using RefLayout = SrcLayout;
 };
 
+// Extract a CPY_Op from a CPY_Traits
+template <class CPY_Traits>
+struct CPY_Op {};
+
+template <class CPY_Op_Arg, class... Args>
+struct CPY_Op<Copy_Traits<CPY_Op_Arg, Args...>> {
+  using type = CPY_Op_Arg;
+};
+  
 //
 // Generic copy_unpack for common argument-based Copy_Traits
 //
 
-template <class CopyOp, class... Args,
+template <class AnyCPYTraits,
           class SEngine, class SLayout,
           class DEngine, class DLayout>
 CUTE_HOST_DEVICE constexpr
 void
-copy_unpack(Copy_Traits<CopyOp,Args...> const&,
-            Tensor<SEngine,SLayout>     const& src,
-            Tensor<DEngine,DLayout>          & dst)
+copy_unpack(AnyCPYTraits            const&,
+            Tensor<SEngine,SLayout> const& src,
+            Tensor<DEngine,DLayout>      & dst)
 {
-  // Specializations can generalize on these checks
-  //static_assert(is_smem<TS>::value, "Expected smem for this Copy_Traits<CopyOp>");
-  //static_assert(is_rmem<TD>::value, "Expected rmem for this Copy_Traits<CopyOp>");
-
+  using CopyOp       = typename CPY_Op<AnyCPYTraits>::type;  
   using RegistersSrc = typename CopyOp::SRegisters;
   using RegistersDst = typename CopyOp::DRegisters;
   using RegTypeSrc   = typename remove_extent<RegistersSrc>::type;
@@ -129,18 +135,15 @@ copy_unpack(Copy_Traits<CopyOp,Args...> const&,
                   rD, make_int_sequence<RegNumDst>{});
 }
 
-//
 // Accept mutable temporaries
-//
-
-template <class CopyOp, class... Args,
+template <class AnyCPYTraits,
           class SEngine, class SLayout,
           class DEngine, class DLayout>
 CUTE_HOST_DEVICE constexpr
 void
-copy_unpack(Copy_Traits<CopyOp,Args...> const& traits,
-            Tensor<SEngine,SLayout>     const& src,
-            Tensor<DEngine,DLayout>         && dst)
+copy_unpack(AnyCPYTraits            const& traits,
+            Tensor<SEngine,SLayout> const& src,
+            Tensor<DEngine,DLayout>     && dst)
 {
   copy_unpack(traits, src, dst);
 }

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -59,7 +59,7 @@ template <class TransformKernel_>
 class TransformUniversalAdapter
 {
 public:
-  using TransformKernel = TransformKernel_;
+  using TransformKernel = GetUnderlyingKernel_t<TransformKernel_>;
   using Arguments = typename TransformKernel::Arguments;
   using Params = typename TransformKernel::Params;
   static bool const kEnableCudaHostAdapter = CUTLASS_ENABLE_CUDA_HOST_ADAPTER;

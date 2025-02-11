@@ -1,6 +1,6 @@
 #################################################################################################
 #
-# Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -65,11 +65,15 @@ class GemmOperation:
       epilogue_functor = EpilogueFunctor.LinearCombination, swizzling_functor = SwizzlingFunctor.Identity8, D = None,
       kernel_schedule = KernelScheduleType.ScheduleAuto, epilogue_schedule = EpilogueScheduleType.ScheduleAuto,
       tile_scheduler = TileSchedulerType.Default
+      
+      , ScaleFactorA = None, ScaleFactorB = None, ScaleFactorD = None
+      
     ):
 
     kinds_3x = {
       GemmKind.Universal3x,
       GemmKind.SparseUniversal3x,
+      GemmKind.BlockScaledUniversal3x, 
     }
     self.is_3x = gemm_kind in kinds_3x
     self.prefix = "3x" if self.is_3x else ""
@@ -81,6 +85,14 @@ class GemmOperation:
     self.B = B
     self.C = C
     self.D = D
+
+    
+    if self.gemm_kind == GemmKind.BlockScaledUniversal3x:
+      self.ScaleFactorA = ScaleFactorA
+      self.ScaleFactorB = ScaleFactorB
+      self.ScaleFactorD = ScaleFactorD["tensor"]
+      self.ScaleFactorVectorSize = ScaleFactorD["vector_size"]
+    
 
     if self.D == None:
       self.D = self.C
@@ -150,6 +162,7 @@ class GemmOperation:
       OpcodeClass.TensorOp,
       OpcodeClass.WmmaTensorOp,
       OpcodeClass.SparseTensorOp,
+      OpcodeClass.BlockScaledTensorOp, 
     ]
 
     is_tensor_op = self.tile_description.math_instruction.opcode_class in tensor_ops
@@ -207,6 +220,23 @@ class GemmOperation:
       element_c = DataTypeNames[self.C.element],
       element_d = DataTypeNames[self.D.element],
       core_name = self.core_name())
+    
+    if self.gemm_kind == GemmKind.BlockScaledUniversal3x:
+      d_type_names = DataTypeNames[self.D.element]
+      
+      if self.ScaleFactorD.element != DataType.void:
+        d_type_names = DataTypeNames[self.ScaleFactorD.element] + "x" + d_type_names
+      
+      extended_name = "{core_name}_{element_sfa}x{element_a}_{element_sfb}x{element_b}_{element_acc}_{element_c}_{element_d}".format(
+        element_sfa = DataTypeNames[self.ScaleFactorA],
+        element_a = DataTypeNames[self.A.element],
+        element_sfb = DataTypeNames[self.ScaleFactorB],
+        element_b = DataTypeNames[self.B.element],
+        element_acc = DataTypeNames[self.accumulator_type()],
+        element_c = DataTypeNames[self.C.element],
+        element_d = d_type_names,
+        core_name = self.core_name())
+    
     return extended_name
 
   def datatype_name_3x(self):
@@ -247,6 +277,11 @@ class GemmOperation:
 
   # Generates a short string representing underlying epilogue schedule type
   def epilogue_schedule_name_3x(self):
+    
+    if self.gemm_kind == GemmKind.BlockScaledUniversal3x:
+      if self.ScaleFactorD.element != DataType.void:
+        return EpilogueScheduleSuffixes[self.epilogue_schedule] + "_epiVs" + str(self.ScaleFactorVectorSize)+ShortLayoutTypeNames[self.ScaleFactorD.layout]
+    
     return EpilogueScheduleSuffixes[self.epilogue_schedule]
 
   # Generate a short string representing the operation class
@@ -769,6 +804,32 @@ ${compile_guard_start}
 ${compile_guard_end}
 """
 
+  
+  def emit_block_scale_epilogue_functor(self, operation):
+    block_scaled_template = """
+      ${epilogue_functor}<
+        ${epi_vs},
+        ${element_d},
+        ${element_accumulator},
+        ${element_sfd},
+        ${layout_sfd},
+        ${element_c},
+        ${element_scalar}
+      >
+    """
+    block_scaled_values = {
+      'epi_vs'  : str(operation.ScaleFactorVectorSize),
+      'element_d': str(DataTypeTag[operation.D.element]),
+      'element_sfd': str(DataTypeTag[operation.ScaleFactorD.element]),
+      'layout_sfd': LayoutTag[operation.ScaleFactorD.layout],
+      'epilogue_functor': EpilogueFunctor3xTag[EpilogueFunctor3x.LinearCombinationBlockScaleFactor],
+      'element_accumulator': str(DataTypeTag[operation.accumulator_type()]),
+      'element_scalar': str(DataTypeTag[operation.accumulator_type()]),
+      'element_c': str(DataTypeTag[operation.C.element]),
+    }
+    return SubstituteTemplate(block_scaled_template, block_scaled_values)
+  
+
   #
   def emit(self, operation):
     _LOGGER.debug("*** EmitGemmConfigurationLibrary::emit(operation)")
@@ -778,6 +839,12 @@ ${compile_guard_end}
 
     opcode_class_main = operation.tile_description.math_instruction.opcode_class
     opcode_class_epi = opcode_class_main
+    
+    if opcode_class_main == OpcodeClass.BlockScaledTensorOp:
+      if operation.epilogue_schedule != EpilogueScheduleType.NoSmemWarpSpecialized:
+        opcode_class_epi = OpcodeClass.TensorOp
+    
+
     tile_shape = operation.tile_description.tile_shape
     instruction_shape = operation.tile_description.math_instruction.instruction_shape
     cluster_m = operation.tile_description.cluster_shape[0]
@@ -790,6 +857,23 @@ ${compile_guard_end}
     cta_m = tile_shape[0] // cluster_m if cluster_m > 0 else tile_shape[0]
     cta_n = tile_shape[1] // cluster_n if cluster_n > 0 else tile_shape[1]
 
+    
+    # Shape passed to epilogue builder
+    is_sm100_kernel = (operation.arch == 100)
+    if is_sm100_kernel:
+      cta_m_per_mma_instruction = 2 if "2sm" in operation.procedural_name() else 1
+      if cluster_m <= 0: 
+        cta_m = cta_m // cta_m_per_mma_instruction
+
+      if opcode_class_main in [OpcodeClass.TensorOp 
+                               , OpcodeClass.BlockScaledTensorOp 
+                              ]:
+        tile_shape_main_m = instruction_shape[0]
+        tile_shape_main_n = instruction_shape[1]
+      tile_shape_epi_m = cta_m
+      tile_shape_epi_n = cta_n
+    
+ 
     # stage count set to zero indicates builder automatic stage selection
     if operation.tile_description.stages > 0:
       stage_count_string = f"cutlass::gemm::collective::StageCount<{str(operation.tile_description.stages)}>"
@@ -811,13 +895,37 @@ ${compile_guard_end}
         'epilogue_functor': EpilogueFunctor3xTag[operation.epilogue_functor],
       }
       epilogue_functor = SubstituteTemplate(self.builtin_epilogue_functor_template, values)
+      
+      if operation.gemm_kind == GemmKind.BlockScaledUniversal3x and operation.ScaleFactorD.element != DataType.void:
+        epilogue_functor =  self.emit_block_scale_epilogue_functor(operation)
+
+      
     else:
       epilogue_functor = self.epilogue_functor.emit_declaration()
+      
+      if operation.gemm_kind == GemmKind.BlockScaledUniversal3x and operation.ScaleFactorD.element != DataType.void:
+        epilogue_functor =  self.emit_block_scale_epilogue_functor(operation)
+      
     #
     # Cutlass3x complex kernels' ElementA(B) is a tuple in collective mainloop builder, e.g. cute::tuple<Element, Transform>, Transform : cute::identity / cute::conjugate.
     element_a = DataTypeTag[operation.A.element] if not operation.is_complex() else f"cute::tuple<{str(DataTypeTag[operation.A.element])},{str(ComplexTransformTag3x[operation.A.complex_transform])}>"
     element_b = DataTypeTag[operation.B.element] if not operation.is_complex() else f"cute::tuple<{str(DataTypeTag[operation.B.element])},{str(ComplexTransformTag3x[operation.B.complex_transform])}>"
     epilogue_schedule_type = EpilogueScheduleTag[operation.epilogue_schedule]
+    is_no_smem_epilogue = operation.epilogue_schedule == EpilogueScheduleType.NoSmemWarpSpecialized
+    
+    if opcode_class_main == OpcodeClass.BlockScaledTensorOp:
+      if cta_n == 256 and operation.kernel_schedule == KernelScheduleType.Nvf4TmaWarpSpecialized1SmSm100:
+        epi_tile_mn = "cute::Shape<cute::_128,cute::_64>"
+        if not is_no_smem_epilogue:
+          epilogue_schedule_type = EpilogueScheduleTag[EpilogueScheduleType.TmaWarpSpecialized1Sm]
+      if cta_n == 256 and operation.kernel_schedule == KernelScheduleType.Nvf4TmaWarpSpecialized2SmSm100:
+        epi_tile_mn = "cute::Shape<cute::_128,cute::_64>"
+        if not is_no_smem_epilogue:
+          epilogue_schedule_type = EpilogueScheduleTag[EpilogueScheduleType.TmaWarpSpecialized2Sm]
+      element_a = f'cute::tuple<{str(element_a)},{str(DataTypeTag[operation.ScaleFactorA])}>'
+      element_b = f'cute::tuple<{str(element_b)},{str(DataTypeTag[operation.ScaleFactorB])}>'
+    
+
     values = {
       'operation_name': operation.procedural_name(),
       'operation_suffix': self.operation_suffix,
@@ -1183,6 +1291,7 @@ class EmitGemmConfigurationLibrary:
       GemmKind.Universal: EmitGemmUniversalInstance,
       GemmKind.Universal3x: EmitGemmUniversal3xInstance,
       GemmKind.SparseUniversal3x: EmitGemmUniversal3xInstance,
+      GemmKind.BlockScaledUniversal3x: EmitGemmUniversal3xInstance,  
       GemmKind.PlanarComplex: EmitGemmPlanarComplexInstance,
       GemmKind.PlanarComplexArray: EmitGemmPlanarComplexArrayInstance,
       GemmKind.Grouped: EmitGemmGroupedInstance
@@ -1194,6 +1303,7 @@ class EmitGemmConfigurationLibrary:
       GemmKind.Universal: 'GemmUniversalOperation',
       GemmKind.Universal3x: 'GemmUniversal3xOperation',
       GemmKind.SparseUniversal3x: 'SparseGemmUniversal3xOperation',
+      GemmKind.BlockScaledUniversal3x: 'BlockScaledGemmUniversal3xOperation', 
       GemmKind.PlanarComplex: 'GemmPlanarComplexOperation',
       GemmKind.PlanarComplexArray: 'GemmPlanarComplexArrayOperation',
       GemmKind.Grouped: 'GemmGroupedOperation'
@@ -1254,6 +1364,7 @@ void initialize_${configuration_name}(Manifest &manifest) {
       ("gemm_operation.h", None),
       ("gemm_operation_3x.hpp", None),
       ("sparse_gemm_operation_3x.hpp", None),
+      ("block_scaled_gemm_operation_3x.hpp", None),   
       ("cutlass/arch/wmma.h", None),
       ("cutlass/numeric_types.h", None)
     ])

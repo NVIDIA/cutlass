@@ -1,4 +1,4 @@
-# Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -71,7 +71,7 @@ set(CUTLASS_TEST_UNIT_RESULTS_CACHE_DIR ${CMAKE_CURRENT_LIST_DIR}/data/hashes)
 
 function(cutlass_test_unit_add_executable NAME)
 
-  set(options WITHOUT_CUDA)
+  set(options WITHOUT_CUDA DO_NOT_LOWERCASE_TEST_NAME)
   set(oneValueArgs)
   set(multiValueArgs TEST_SETS_SUPPORTED EXTRA_INCLUDE_DIRS)
   cmake_parse_arguments(_ "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
@@ -121,14 +121,22 @@ function(cutlass_test_unit_add_executable NAME)
 
   set(CUTLASS_TEST_UNIT_TEST_COMMAND_OPTIONS --gtest_output=xml:${NAME_STEM}.gtest.xml)
 
+  if (__DO_NOT_LOWERCASE_TEST_NAME)
+    set(DO_NOT_LOWERCASE_TEST_NAME DO_NOT_LOWERCASE_TEST_NAME)
+  else()
+    set(DO_NOT_LOWERCASE_TEST_NAME)
+  endif()
+  
   cutlass_add_executable_tests(
     ${NAME_STEM} ${NAME}
     TEST_SETS_SUPPORTED ${__TEST_SETS_SUPPORTED}
     TEST_COMMAND_OPTIONS CUTLASS_TEST_UNIT_TEST_COMMAND_OPTIONS
     ${RESULT_CACHE_FILE_ARGS}
+    ${DO_NOT_LOWERCASE_TEST_NAME}
     )
 
 endfunction()
+  
 add_custom_target(cutlass_test_unit)
 add_custom_target(test_unit)
 

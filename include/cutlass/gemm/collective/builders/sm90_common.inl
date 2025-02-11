@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -182,7 +182,7 @@ rs_smem_selector() {
   static_assert(BLK_MN0 % 8 == 0, "BLK_MN0 must be a multiple of 8.");
   static_assert(BLK_K0 % 8 == 0,  "BLK_K0 must be a multiple of 8.");
   if constexpr (major == GMMA::Major::MN) {
-    if constexpr (sizeof(ElementType) == 4){
+    if constexpr (sizeof(ElementType) % 4 == 0) { // Whole-word types
       if constexpr (is_ws_transposed_B) {
         // only optimized transpositionB(SW32 and SW128 for tf32) can be used, but prefer SW32 due to free bank conflict
         if constexpr (BLK_MN0 % size<0>(GMMA::Layout_MN_SW32_Atom<ElementType>{}) == 0) {

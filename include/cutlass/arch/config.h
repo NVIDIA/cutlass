@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2024 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -35,6 +35,8 @@
 
 #pragma once
 
+#include "cutlass/platform/platform.h"
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 // SM90
@@ -49,21 +51,32 @@
   #endif
 #endif
 
-#if (__CUDACC_VER_MAJOR__ >= 12 && __CUDACC_VER_MINOR__ >= 2)
+#if (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 2))
   #define CUTLASS_ARCH_MMA_SPARSE_SM90_SUPPORTED
 #endif
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-// SM90 Modifiable
+// SM90 Modifiable TMA
 #if (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 3))
   #define CUTLASS_ARCH_MMA_MODIFIABLE_TMA_SM90_SUPPORTED 1
-  #if (!defined(CUTLASS_ARCH_MMA_MODIFIABLE_TMA_SM90_ENABLED) && defined(__CUDA_ARCH__) && __CUDA_ARCH__ == 900)
+  #if (!defined(CUTLASS_ARCH_MMA_MODIFIABLE_TMA_SM90_ENABLED) && defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 900)
     #define CUTLASS_ARCH_MMA_MODIFIABLE_TMA_SM90_ENABLED 1
+  #endif
+#endif
 
-    #if (!defined(CUTLASS_ARCH_MMA_MODIFIABLE_TMA_SM90A_ENABLED) && defined(__CUDA_ARCH_FEAT_SM90_ALL))
-      #define CUTLASS_ARCH_MMA_MODIFIABLE_TMA_SM90A_ENABLED 1
+#if (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ == 8)
+  #if defined(CUTLASS_ARCH_MMA_MODIFIABLE_TMA_SM90_ENABLED)
+    #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ == 900 && \
+        !defined(__CUDA_ARCH_FEAT_SM90_ALL)
+      #undef CUTLASS_ARCH_MMA_MODIFIABLE_TMA_SM90_ENABLED
     #endif
+    
+    #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ == 1000 && \
+        !defined(__CUDA_ARCH_FEAT_SM100_ALL)
+      #undef CUTLASS_ARCH_MMA_MODIFIABLE_TMA_SM90_ENABLED
+    #endif
+    
   #endif
 #endif
 
@@ -76,6 +89,30 @@
     #define CUTLASS_ARCH_MMA_SM90_F64_MMA_ENABLED 1
   #endif
 #endif
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+// SM100, SM100a
+#if !CUTLASS_CLANG_CUDA && (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 8))
+  #define CUTLASS_ARCH_MMA_SM100_SUPPORTED 1
+  #if (!defined(CUTLASS_ARCH_MMA_SM100_ENABLED) && defined(__CUDA_ARCH__) && __CUDA_ARCH__ == 1000)
+    #define CUTLASS_ARCH_MMA_SM100_ENABLED 1
+
+    #if (!defined(CUTLASS_ARCH_MMA_SM100A_ENABLED) && defined(__CUDA_ARCH_FEAT_SM100_ALL))
+      #define CUTLASS_ARCH_MMA_SM100A_ENABLED 1
+    #endif
+  #endif
+#endif
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+
+#if (defined(CUTLASS_ARCH_MMA_SM100A_ENABLED))
+#  define CUTLASS_ARCH_CLC_ENABLED
+#endif
+
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

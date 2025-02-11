@@ -1,4 +1,4 @@
-# Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -223,6 +223,19 @@ if (NOT CUTLASS_ENABLE_SYCL)
 
   # files split for parallel compilation
   src/reference/gemm_int4.cu
+  
+  src/reference/block_scaled_gemm_fp4a_vs16.cu 
+  src/reference/block_scaled_gemm_fp4a_vs32.cu 
+  src/reference/block_scaled_gemm_mixed8bitsa.cu
+  src/reference/gemm_f4_f4_f32.cu
+  src/reference/gemm_f4_f6_f32.cu
+  src/reference/gemm_f4_f8_f32.cu
+  src/reference/gemm_f6_f4_f32.cu
+  src/reference/gemm_f6_f6_f32.cu
+  src/reference/gemm_f6_f8_f32.cu
+  src/reference/gemm_f8_f4_f32.cu
+  src/reference/gemm_f8_f6_f32.cu
+  
   src/reference/gemm_s8_s8_s32.cu
   src/reference/gemm_u8_u8_s32.cu
   src/reference/gemm_int8_interleaved_32.cu
@@ -287,7 +300,7 @@ execute_process(
     --kernel-filter-file "${KERNEL_FILTER_FILE}"
     --selected-kernel-list "${CUTLASS_LIBRARY_GENERATED_KERNEL_LIST_FILE}"
     --cuda-version "${CUTLASS_GENERATOR_CUDA_COMPILER_VERSION}"
-    --log-level DEBUG
+    --log-level INFO
     --disable-cutlass-package-imports
   RESULT_VARIABLE cutlass_lib_INSTANCE_GENERATION_RESULT
   OUTPUT_VARIABLE cutlass_lib_INSTANCE_GENERATION_OUTPUT

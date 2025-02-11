@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2024 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -35,8 +35,35 @@
 
 #include "dispatch_policy_extra.hpp"
 #include "sm90_mma_tma_gmma_ss_warpspecialized_with_prefetch.hpp"
+#include "../pipeline/prefetch_pipeline_sm90.hpp"
 
 namespace cutlass::gemm::collective {
+
+namespace detail {
+
+// Returns the maximum number of smem tiles that can be used with a given smem capacity, or overrides with manual count. 
+template<int CapacityBytes, class ElementA, class ElementB, class TileShapeMNK, int stages>
+constexpr int
+compute_stage_count_or_override_prefetch(StageCount<stages> stage_count) {
+  return stages;
+}
+
+// Returns the maximum number of smem tiles that can be used with a given smem capacity, or overrides with manual count. 
+template<int CapacityBytes, class ElementA, class ElementB, class TileShapeMNK, int carveout_bytes>
+constexpr int
+compute_stage_count_or_override_prefetch(StageCountAutoCarveout<carveout_bytes> stage_count) {
+  constexpr auto mainloop_pipeline_bytes = sizeof(typename cutlass::PipelineTmaAsync<1>::SharedStorage);
+  constexpr auto prefetch_pipeline_bytes = sizeof(typename cutlass::detail::PrefetcherPipelineSharedStorage<PrefetchStages>);
+  constexpr auto a_bits = cute::sizeof_bits_v<ElementA>;
+  constexpr auto b_bits = cute::sizeof_bits_v<ElementB>;
+  constexpr int MK_bytes = cutlass::bits_to_bytes(a_bits * size<0>(TileShapeMNK{}) * size<2>(TileShapeMNK{})); //also the prefetch smem size
+  constexpr int NK_bytes = cutlass::bits_to_bytes(b_bits * size<1>(TileShapeMNK{}) * size<2>(TileShapeMNK{}));
+  constexpr int stage_bytes = MK_bytes + NK_bytes + static_cast<int>(mainloop_pipeline_bytes);
+
+  return (CapacityBytes - carveout_bytes - MK_bytes * PrefetchStagesActual - prefetch_pipeline_bytes) / stage_bytes;
+}
+
+} // namespace detail
 
 // GMMA_TMA_WS_FP8_FAST_ACCUM_SS + prefetch
 template <
@@ -98,7 +125,7 @@ struct CollectiveBuilder<
   using SmemLayoutAtomB = decltype(detail::ss_smem_selector<
       GmmaMajorB, ElementB, decltype(cute::get<1>(TileShape_MNK{})), decltype(cute::get<2>(TileShape_MNK{}))>());
 
-  static constexpr int PipelineStages = detail::compute_stage_count_or_override<detail::sm90_smem_capacity_bytes,
+  static constexpr int PipelineStages = detail::compute_stage_count_or_override_prefetch<detail::sm90_smem_capacity_bytes,
       ElementA, ElementB, TileShape_MNK>(StageCountType{});
   using DispatchPolicy = MainloopSm90TmaGmmaWarpSpecializedWithPrefetch<PipelineStages, ClusterShape_MNK, KernelScheduleType>;
 
@@ -184,7 +211,7 @@ struct CollectiveBuilder<
   using SmemLayoutAtomB = decltype(detail::ss_smem_selector<
       GmmaMajorB, ElementB, decltype(cute::get<1>(TileShape_MNK{})), decltype(cute::get<2>(TileShape_MNK{}))>());
 
-  static constexpr int PipelineStages = detail::compute_stage_count_or_override<detail::sm90_smem_capacity_bytes,
+  static constexpr int PipelineStages = detail::compute_stage_count_or_override_prefetch<detail::sm90_smem_capacity_bytes,
       ElementA, ElementB, TileShape_MNK>(StageCountType{});
   using DispatchPolicy = MainloopSm90TmaGmmaWarpSpecializedWithPrefetch<PipelineStages, ClusterShape_MNK, KernelScheduleType>;
 

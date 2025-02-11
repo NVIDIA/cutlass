@@ -1,4 +1,4 @@
-# Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -31,6 +31,7 @@ cutlass_test_unit_add_executable(
   pipeline_tma_async.cu
   pipeline_tma_async_warp_specialized.cu
   pipeline_tma_async_warp_specialized_persistent.cu
+  pipeline_cluster_launch_control_async_warp_specialized_blackwell.cu 
   pipeline_async.cu
   sequence_barrier.cu
 )

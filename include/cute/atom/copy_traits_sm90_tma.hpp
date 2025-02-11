@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -58,37 +58,31 @@ struct AuxTmaParams {
 };
 
 // Utility for unpacking TMA_LOAD arguments into a CopyOp
-template <class CopyOp>
+template <class CopyOp, class... Args>
 struct TMA_LOAD_Unpack
 {
-  template <class... Args,
-            class TS, class SLayout,
+  template <class TS, class SLayout,
             class TD, class DLayout>
   CUTE_HOST_DEVICE friend constexpr void
   copy_unpack(Copy_Traits<CopyOp, Args...> const& traits,
               Tensor<TS,SLayout>           const& src,
               Tensor<TD,DLayout>                & dst)
   {
+    static_assert(is_smem<TD>::value, "SM90_TMA_LOAD requires the destination be shared memory.");
+
     auto src_coord = src.data().coord_;
-    if constexpr (detail::is_prefetch<CopyOp>) {
-      return detail::explode_tuple(detail::CallCOPY<CopyOp>{},
-                                   traits.opargs_, tuple_seq<decltype(traits.opargs_)>{},
-                                   src_coord, tuple_seq<decltype(src_coord)>{});
-    } else {
-      static_assert(is_smem<TD>::value, "SM90_TMA_LOAD requires the destination be shared memory.");
-      void* dst_ptr = cute::raw_pointer_cast(dst.data());
+    void* dst_ptr = cute::raw_pointer_cast(dst.data());
 #if 0
-      auto [c0,c1,c2,c3,c4] = append<5>(src_coord, 0);
-      printf("THR (%d,%d,%d) BLK (%d,%d,%d) TMACRD (%d,%d,%d,%d,%d) SMEMADDR (%p)\n",
-            threadIdx.x, threadIdx.y, threadIdx.z,
-            blockIdx.x, blockIdx.y, blockIdx.z,
-            int32_t(c0), int32_t(c1), int32_t(c2), int32_t(c3), int32_t(c4), dst_ptr);
+    auto [c0,c1,c2,c3,c4] = append<5>(src_coord, 0);
+    printf("THR (%d,%d,%d) BLK (%d,%d,%d) TMACRD (%d,%d,%d,%d,%d) SMEMADDR (%p)\n",
+          threadIdx.x, threadIdx.y, threadIdx.z,
+          blockIdx.x, blockIdx.y, blockIdx.z,
+          int32_t(c0), int32_t(c1), int32_t(c2), int32_t(c3), int32_t(c4), dst_ptr);
 #endif
-      return detail::explode_tuple(detail::CallCOPY<CopyOp>{},
-                                   traits.opargs_, tuple_seq<decltype(traits.opargs_)>{},
-                                   make_tuple(dst_ptr), seq<0>{},
-                                   src_coord, tuple_seq<decltype(src_coord)>{});
-    }
+    return detail::explode_tuple(detail::CallCOPY<CopyOp>{},
+                                 traits.opargs_, tuple_seq<decltype(traits.opargs_)>{},
+                                 make_tuple(dst_ptr), seq<0>{},
+                                 src_coord, tuple_seq<decltype(src_coord)>{});
   }
 };
 
@@ -131,7 +125,7 @@ struct Copy_Traits<SM90_TMA_LOAD, NumBitsPerTMA, AuxParams_>
     [[maybe_unused]] uint16_t const& multicast_mask = 0,
     TMA::CacheHintSm90 const& cache_hint = TMA::CacheHintSm90::EVICT_NORMAL) const {
     // We accept multicast_mask here to keep the API for both atoms consistent
-    return {{}, {&tma_desc_, &tma_mbar, static_cast<uint64_t>(cache_hint)}};
+    return {&tma_desc_, &tma_mbar, static_cast<uint64_t>(cache_hint)};
   }
 
   // Construct an executable SM90_TMA_LOAD with tma_mbar (temp. overloaded for grouped gemm/ptr array gemm)
@@ -143,7 +137,7 @@ struct Copy_Traits<SM90_TMA_LOAD, NumBitsPerTMA, AuxParams_>
     [[maybe_unused]] uint16_t const& multicast_mask = 0,
     TMA::CacheHintSm90 const& cache_hint = TMA::CacheHintSm90::EVICT_NORMAL) const {
     // We accept multicast_mask here to keep the API for both atoms consistent
-    return {{}, {new_tma_desc, &tma_mbar, static_cast<uint64_t>(cache_hint)}};
+    return {new_tma_desc, &tma_mbar, static_cast<uint64_t>(cache_hint)};
   }
 
   // Generate the TMA coord tensor
@@ -167,7 +161,7 @@ struct Copy_Traits<SM90_TMA_LOAD, NumBitsPerTMA, AuxParams_>
 // The executable SM90_TMA_LOAD with tma_desc and tma_mbar
 template <class NumBitsPerTMA>
 struct Copy_Traits<SM90_TMA_LOAD_OP, NumBitsPerTMA>
-     : TMA_LOAD_Unpack<SM90_TMA_LOAD_OP>
+  : TMA_LOAD_Unpack<SM90_TMA_LOAD_OP, NumBitsPerTMA>
 {
   using ThrID     = Layout<_1>;
   // Map from (src-thr,src-val) to bit
@@ -183,12 +177,15 @@ struct Copy_Traits<SM90_TMA_LOAD_OP, NumBitsPerTMA>
   uint64_t*, // smem mbarrier
   uint64_t   // cache hint
   > const opargs_;
+
+  CUTE_HOST_DEVICE
+  Copy_Traits(TmaDescriptor const* desc, uint64_t* mbar, uint64_t cache)
+    : opargs_(desc, mbar, cache) {}
 };
 
 // The prefetch for SM90_TMA_LOAD with tma_desc
 template <class NumBitsPerTMA, class... Args>
 struct Copy_Traits<SM90_TMA_LOAD::PREFETCH, NumBitsPerTMA, Args...>
-     : TMA_LOAD_Unpack<SM90_TMA_LOAD::PREFETCH>
 {
   using ThrID     = Layout<_1>;
   // Map from (src-thr,src-val) to bit
@@ -206,6 +203,19 @@ struct Copy_Traits<SM90_TMA_LOAD::PREFETCH, NumBitsPerTMA, Args...>
   CUTE_HOST_DEVICE
   Copy_Traits(Copy_Traits<CopyArgs...> const& traits)
     : opargs_({&traits.tma_desc_}) {}
+
+  template <class TS, class SLayout,
+            class TD, class DLayout>
+  CUTE_HOST_DEVICE friend constexpr void
+  copy_unpack(Copy_Traits        const& traits,
+              Tensor<TS,SLayout> const& src,
+              Tensor<TD,DLayout>      & dst)
+  {
+    auto src_coord = src.data().coord_;
+    return detail::explode_tuple(detail::CallCOPY<SM90_TMA_LOAD::PREFETCH>{},
+                                 traits.opargs_, tuple_seq<decltype(traits.opargs_)>{},
+                                 src_coord, tuple_seq<decltype(src_coord)>{});
+  }
 };
 
 //////////////////////////////////////////////////////////////////////////////
@@ -246,7 +256,7 @@ struct Copy_Traits<SM90_TMA_LOAD_MULTICAST, NumBitsPerTMA, AuxParams_>
     uint64_t& tma_load_mbar,
     uint16_t const& multicast_mask,
     TMA::CacheHintSm90 const& cache_hint = TMA::CacheHintSm90::EVICT_NORMAL) const {
-    return {{}, {&tma_desc_, &tma_load_mbar, multicast_mask, static_cast<uint64_t>(cache_hint)}};
+    return {&tma_desc_, &tma_load_mbar, multicast_mask, static_cast<uint64_t>(cache_hint)};
   }
 
   // Construct an executable SM90_TMA_LOAD_MULTICAST_OP with tma_mbar (temp. overloaded for grouped gemm/ptr array gemm)
@@ -257,7 +267,7 @@ struct Copy_Traits<SM90_TMA_LOAD_MULTICAST, NumBitsPerTMA, AuxParams_>
     uint64_t& tma_load_mbar,
     uint16_t const& multicast_mask,
     TMA::CacheHintSm90 const& cache_hint = TMA::CacheHintSm90::EVICT_NORMAL) const {
-    return {{}, {new_tma_desc, &tma_load_mbar, multicast_mask, static_cast<uint64_t>(cache_hint)}};
+    return {new_tma_desc, &tma_load_mbar, multicast_mask, static_cast<uint64_t>(cache_hint)};
   }
 
   // Generate the TMA coord tensor
@@ -281,7 +291,7 @@ struct Copy_Traits<SM90_TMA_LOAD_MULTICAST, NumBitsPerTMA, AuxParams_>
 // The executable SM90_TMA_LOAD_MULTICAST with tma_desc and tma_mbar and multicast_mask
 template <class NumBitsPerTMA>
 struct Copy_Traits<SM90_TMA_LOAD_MULTICAST_OP, NumBitsPerTMA>
-     : TMA_LOAD_Unpack<SM90_TMA_LOAD_MULTICAST_OP>
+  : TMA_LOAD_Unpack<SM90_TMA_LOAD_MULTICAST_OP, NumBitsPerTMA>
 {
   using ThrID     = Layout<_1>;
   // Map from (src-thr,src-val) to bit
@@ -298,43 +308,17 @@ struct Copy_Traits<SM90_TMA_LOAD_MULTICAST_OP, NumBitsPerTMA>
   uint16_t,  // multicast mask
   uint64_t   // cache hint
   > const opargs_;
+
+  CUTE_HOST_DEVICE
+  Copy_Traits(TmaDescriptor const* desc, uint64_t* mbar, uint16_t mask, uint64_t hint)
+    : opargs_(desc, mbar, mask, hint) {}
 };
 
 //////////////////////////////////////////////////////////////////////////////
 ///////////////////////////// TMA_STORE //////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////
 
-// Utility for unpacking TMA_STORE arguments into a CopyOp
-template <class CopyOp>
-struct TMA_STORE_Unpack
-{
-  template <class... Args,
-            class TS, class SLayout,
-            class TD, class DLayout>
-  CUTE_HOST_DEVICE friend constexpr void
-  copy_unpack(Copy_Traits<CopyOp, Args...> const& traits,
-              Tensor<TS,SLayout>           const& src,
-              Tensor<TD,DLayout>                & dst)
-  {
-    static_assert(is_smem<TS>::value, "Expected smem src for SM90_TMA_STORE");
-
-    void const* const desc_ptr = traits.tma_desc_;
-    void const* const src_ptr  = cute::raw_pointer_cast(src.data());
-    auto dst_coord = dst.data().coord_;
-#if 0
-    auto [c0,c1,c2,c3,c4] = append<5>(dst_coord, 0);
-    printf("THR (%d,%d,%d) BLK (%d,%d,%d) TMACRD (%d,%d,%d,%d,%d) SMEMADDR (%p)\n",
-           threadIdx.x, threadIdx.y, threadIdx.z,
-           blockIdx.x, blockIdx.y, blockIdx.z,
-           int32_t(c0), int32_t(c1), int32_t(c2), int32_t(c3), int32_t(c4), src_ptr);
-#endif
-    return detail::explode_tuple(detail::CallCOPY<SM90_TMA_STORE>{},
-                                 make_tuple(desc_ptr, src_ptr), seq<0,1>{},
-                                 dst_coord, tuple_seq<decltype(dst_coord)>{});
-  }
-};
-
-struct SM90_TMA_STORE_OP : SM90_TMA_STORE {};
+struct SM90_TMA_STORE_PTR : SM90_TMA_STORE {};
 
 // The executable SM90_TMA_STORE with tma_desc
 template <class NumBitsPerTMA, class AuxParams_>
@@ -369,6 +353,13 @@ struct Copy_Traits<SM90_TMA_STORE, NumBitsPerTMA, AuxParams_>
     return make_counting_tensor(make_layout(g_shape, aux_params_.g_stride_));
   }
 
+  // Construct new TMA_STORE with (unsafe) swapped out TMA descriptor ptr (for grouped gemm/ptr array gemm)
+  CUTE_HOST_DEVICE constexpr
+  Copy_Traits<SM90_TMA_STORE_PTR, NumBitsPerTMA>
+  with(TmaDescriptor const* new_tma_desc) const {
+    return {new_tma_desc};
+  }
+
   template <class TS, class SLayout,
             class TD, class DLayout>
   CUTE_HOST_DEVICE friend constexpr void
@@ -393,19 +384,11 @@ struct Copy_Traits<SM90_TMA_STORE, NumBitsPerTMA, AuxParams_>
                                  make_tuple(desc_ptr, src_ptr), seq<0,1>{},
                                  dst_coord, tuple_seq<decltype(dst_coord)>{});
   }
-
-  // Construct Copy_Traits executable (w/ swapped out TMA descriptor) for SM90_TMA_STORE (for grouped gemm/ptr array gemm)
-  CUTE_HOST_DEVICE constexpr
-  Copy_Traits<SM90_TMA_STORE_OP, NumBitsPerTMA>
-  with(TmaDescriptor const* new_tma_desc) const {
-    return {{}, new_tma_desc};
-  }
 };
 
-// The executable SM90_TMA_STORE with tma_desc
+// Same as SM90_TMA_STORE, but with an unsafe TMA Desc PTR instead
 template <class NumBitsPerTMA>
-struct Copy_Traits<SM90_TMA_STORE_OP, NumBitsPerTMA>
-     : TMA_STORE_Unpack<SM90_TMA_STORE_OP>
+struct Copy_Traits<SM90_TMA_STORE_PTR, NumBitsPerTMA>
 {
   using ThrID     = Layout<_1>;
   // Map from (src-thr,src-val) to bit
@@ -417,6 +400,31 @@ struct Copy_Traits<SM90_TMA_STORE_OP, NumBitsPerTMA>
 
   // SM90_TMA_STORE arguments
   TmaDescriptor const* tma_desc_;
+
+  template <class TS, class SLayout,
+            class TD, class DLayout>
+  CUTE_HOST_DEVICE friend constexpr void
+  copy_unpack(Copy_Traits        const& traits,
+              Tensor<TS,SLayout> const& src,
+              Tensor<TD,DLayout>      & dst)
+  {
+    static_assert(is_smem<TS>::value, "Expected smem src for SM90_TMA_STORE");
+    //static_assert(is_gmem<TD>::value, "Expected gmem dst for SM90_TMA_STORE");  // TMA spoofed src tensor
+
+    void const* const desc_ptr = traits.tma_desc_;
+    void const* const src_ptr  = cute::raw_pointer_cast(src.data());
+    auto dst_coord = dst.data().coord_;
+#if 0
+    auto [c0,c1,c2,c3,c4] = append<5>(dst_coord, 0);
+    printf("THR (%d,%d,%d) BLK (%d,%d,%d) TMACRD (%d,%d,%d,%d,%d) SMEMADDR (%p)\n",
+           threadIdx.x, threadIdx.y, threadIdx.z,
+           blockIdx.x, blockIdx.y, blockIdx.z,
+           int32_t(c0), int32_t(c1), int32_t(c2), int32_t(c3), int32_t(c4), src_ptr);
+#endif
+    return detail::explode_tuple(detail::CallCOPY<SM90_TMA_STORE_PTR>{},
+                                 make_tuple(desc_ptr, src_ptr), seq<0,1>{},
+                                 dst_coord, tuple_seq<decltype(dst_coord)>{});
+  }
 };
 
 //////////////////////////////////////////////////////////////////////////////
@@ -520,7 +528,7 @@ struct Copy_Traits<SM90_BULK_COPY_G2S, NumBitsPerTMA, OpArgs...>
   CUTE_HOST_DEVICE constexpr
   Copy_Traits<SM90_BULK_COPY_G2S, NumBitsPerTMA, uint64_t*>
   with(uint64_t& bulk_mbar) const {
-    return {{&bulk_mbar}};
+    return {&bulk_mbar};
   }
 
   template <class TS, class SLayout,
@@ -613,7 +621,7 @@ struct Copy_Traits<SM90_BULK_COPY_AUTO, OpArgs...>
   CUTE_HOST_DEVICE constexpr
   Copy_Traits<SM90_BULK_COPY_AUTO, uint64_t*>
   with(uint64_t& bulk_mbar) const {
-    return {{&bulk_mbar}};
+    return {&bulk_mbar};
   }
 };
 
@@ -1391,19 +1399,46 @@ tma_partition(Copy_Atom<Args...>      const& copy_atom,
   return cute::make_tuple(gresult, sresult);
 }
 
+// Explicit defaults for cta_coord and cta_layout
+template <class... Args,
+          class SEngine, class SLayout,
+          class GEngine, class GLayout>
+CUTE_DEVICE
+auto
+tma_partition(Copy_Atom<Args...>      const& copy_atom,
+              Tensor<SEngine,SLayout> const& stensor,     // SMEM Tensor (TMATile, Rest...)
+              Tensor<GEngine,GLayout> const& gtensor)     // GMEM Tensor (TMATile, Rest...)
+{
+  return tma_partition(copy_atom, Int<0>{}, Layout<_1,_0>{}, stensor, gtensor);
+}
+
 // TMA Multicast Masks Calculation
 template <int Mode, class CtaLayout, class CtaCoord>
 CUTE_HOST_DEVICE constexpr
-auto
+uint16_t
 create_tma_multicast_mask(CtaLayout const& cta_layout_vmnk,
                           CtaCoord  const& cta_coord_vmnk)
 {
   auto cta_coord_slicer = replace<Mode>(cta_coord_vmnk, _);
   auto [cta_layout, elected_cta] = slice_and_offset(cta_coord_slicer, cta_layout_vmnk);
-  // Get the instruction code
+
   uint16_t mcast_mask = 0;
-  for (int i = 0; i < size(cta_layout); ++i) {
-    mcast_mask |= uint16_t(1) << cta_layout(i);
+  if constexpr (rank_v<decltype(cta_layout)> == 1 and depth_v<decltype(cta_layout)> <= 1 and
+                not is_static<decltype(cta_layout)>::value) {
+    // Get the instruction code -- optimized for dynamic flat-rank-1 cta_layout
+    mcast_mask = uint16_t(1);
+    // Smear by stride<0> (may want to predicate on stride<0> mag?)
+    mcast_mask |= mcast_mask << (1*stride<0>(cta_layout));
+    mcast_mask |= mcast_mask << (2*stride<0>(cta_layout));
+    mcast_mask |= mcast_mask << (4*stride<0>(cta_layout));
+    mcast_mask |= mcast_mask << (8*stride<0>(cta_layout));
+    // Select shape<0>
+    mcast_mask &= (uint16_t(-1) >> (16 - shape<0>(cta_layout) * stride<0>(cta_layout)));
+  } else {
+    // Get the instruction code -- generic path
+    for (int i = 0; i < size(cta_layout); ++i) {
+      mcast_mask |= uint16_t(1) << cta_layout(i);
+    }
   }
   // Shift by the instruction's elected block rank (dynamic)
   mcast_mask <<= elected_cta;

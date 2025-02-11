@@ -1,6 +1,6 @@
 #################################################################################################
 #
-# Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -59,17 +59,20 @@ def max(x, dim):
     elif is_torch_tensor(x):
         return torch.amax(x, dim)
 
+
 def maximum(x, y):
     if is_numpy_tensor(x):
         return np.maximum(x, y)
     elif is_torch_tensor(x):
         return torch.maximum(x, torch.tensor(y))
-    
+
+
 def minimum(x, y):
     if is_numpy_tensor(x):
         return np.minimum(x, y)
     elif is_torch_tensor(x):
         return torch.minimum(x, torch.tensor(y))
+
 
 ##############################################################################
 # Layout manipulate nodes

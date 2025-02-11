@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -230,7 +230,7 @@ struct Mma<
     __half2 const *C = reinterpret_cast<__half2 const *>(&c);
 
     __half2 Dlo = __hfma2(Alo, B, C[0]);
-    __half2 Dhi = __hfma2(Ahi, B, C[0]);
+    __half2 Dhi = __hfma2(Ahi, B, C[1]);
 
     Array<half_t, 2> * D = reinterpret_cast<Array<half_t, 2> *>(&d);
 

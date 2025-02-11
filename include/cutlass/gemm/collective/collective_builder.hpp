@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -39,6 +39,11 @@
 #include "cutlass/gemm/collective/collective_builder_decl.hpp"
 #include "cutlass/gemm/collective/builders/sm90_gmma_builder.inl"
 #include "cutlass/gemm/collective/builders/sm90_sparse_gmma_builder.inl"
+#if !defined(__CUDACC_RTC__)
+#include "cutlass/gemm/collective/builders/sm100_umma_builder.inl"
+#include "cutlass/gemm/collective/builders/sm100_blockscaled_umma_builder.inl"
+#endif
+
 
 #if defined(SYCL_INTEL_TARGET)
 #include "cutlass/gemm/collective/builders/xe_mma_builder.inl"

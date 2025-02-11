@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -33,6 +33,7 @@
 */
 
 #include <algorithm>
+#include <fstream>
 #include <set>
 
 #include "cutlass/cutlass.h"
@@ -307,12 +308,6 @@ void Options::Initialization::get_distribution(
     {0, 0}
   };
 
-  // Initalize pnz values to a default value of 100%
-  dist.gaussian.pnz = 1.0;
-  dist.gaussian.pnzA = 1.0;
-  dist.gaussian.pnzB = 1.0;
-  dist.gaussian.pnzC = 1.0;
-
   using KeyValueVector = std::vector<std::pair<std::string, std::string> >;
 
   KeyValueVector values;
@@ -328,6 +323,25 @@ void Options::Initialization::get_distribution(
       }
     }
     ++it;
+  }
+
+  // Default initialization
+  switch (dist.kind) {
+    case cutlass::Distribution::Uniform:
+      dist.set_uniform(-4/*min*/, 4/*max*/);
+      break;
+    case cutlass::Distribution::Gaussian:
+      dist.set_gaussian(0/*mean*/, 4/*stddev*/);
+      break;
+    case cutlass::Distribution::Identity:
+      dist.set_identity();
+      break;
+    case cutlass::Distribution::Sequential:
+      dist.set_sequential(0/*start*/, 4/*delta*/);
+      break;
+    default:
+      dist.set_uniform(-4/*min*/, 4/*max*/);
+      return;
   }
 
   // Subsequent key-value pairs update the named field of the distribution struct.
@@ -461,6 +475,8 @@ Options::Profiling::Profiling(cutlass::CommandLine const &cmdline) {
   cmdline.get_cmd_line_argument("profiling-iterations", iterations, 100);
   cmdline.get_cmd_line_argument("sleep-duration", sleep_duration, 50);
   cmdline.get_cmd_line_argument("profiling-enabled", enabled, true);
+  cmdline.get_cmd_line_argument("profiling-duration", duration, 10);
+  cmdline.get_cmd_line_argument("min-iterations", min_iterations, 10);
 
   if (cmdline.check_cmd_line_flag("providers")) {
 
@@ -491,7 +507,17 @@ void Options::Profiling::print_usage(std::ostream &out) const {
 
     << "  --profiling-iterations=<iterations>          "
     << "    Number of iterations to profile each kernel. If zero, kernels" << end_of_line
-    << "      are launched up to the profiling duration.\n\n"
+    << "      are launched up to the profiling duration. If non-zero, this overrides" << end_of_line
+    << "      --profiling-duration and --min-iterations.\n\n"
+
+    << "  --profiling-duration=<duration>             "
+    << "    Time to spend profiling each kernel (ms)." << end_of_line
+    << "    Overriden by `profiling-iterations` when `profiling-iterations` > 0." << end_of_line
+    << "    Note that `min-iterations` must also be satisfied.\n\n"
+
+    << "  --min-iterations=<iterations>             "
+    << "    Minimum number of iterations to spend profiling each kernel, even if" << end_of_line
+    << "    `profiling-duration` has been met.\n\n"
 
     << "  --warmup-iterations=<iterations>             "
     << "    Number of iterations to execute each kernel prior to profiling.\n\n"
@@ -785,15 +811,26 @@ Options::Options(cutlass::CommandLine const &cmdline):
   }
   else if (cmdline.check_cmd_line_flag("kernels")) {
     cmdline.get_cmd_line_arguments("kernels", operation_names);
-    profiling.error_on_no_match = cmdline.check_cmd_line_flag("error-on-no-match");
-    profiling.error_if_nothing_is_profiled = cmdline.check_cmd_line_flag("error-if-nothing-is-profiled");
+  }
+
+  if (cmdline.check_cmd_line_flag("kernels-file")) {
+    std::string filename;
+    cmdline.get_cmd_line_argument("kernels-file", filename, {});
+    std::ifstream input(filename);
+    if (!input.good()) {
+      throw std::runtime_error("failed to open: " + filename);
+    }
+    for (std::string line; getline(input, line);) {
+      operation_names.push_back(line);
+    }
   }
 
   if (cmdline.check_cmd_line_flag("ignore-kernels")) {
     cmdline.get_cmd_line_arguments("ignore-kernels", excluded_operation_names);
-    profiling.error_on_no_match = cmdline.check_cmd_line_flag("error-on-no-match");
-    profiling.error_if_nothing_is_profiled = cmdline.check_cmd_line_flag("error-if-nothing-is-profiled");
   }
+
+  profiling.error_on_no_match            = cmdline.check_cmd_line_flag("error-on-no-match");
+  profiling.error_if_nothing_is_profiled = cmdline.check_cmd_line_flag("error-if-nothing-is-profiled");
 
   // Prevent launches on the device for anything other than CUTLASS operation
   // Allow verification only on host
@@ -830,6 +867,11 @@ void Options::print_usage(std::ostream &out) const {
     << "    Filter operations by kernel names. For example, call all kernels with" << end_of_line
     << "      (\"s1688\" and \"nt\") or (\"s844\" and \"tn\" and \"align8\") in their" << end_of_line
     << "      operation name using --kernels=\"s1688*nt, s884*tn*align8\"\n\n"
+
+    << "  --kernels-file=<filename>                      "
+    << "    Same behavior as --kernels, but kernel names are specified in a file" << end_of_line
+    << "    with one kernel on each line. Set of profiled kernels is the union of kernels specified" << end_of_line
+    << "    here and those specified in `kernels`.\n\n"
 
     << "  --ignore-kernels=<string_list>               "
     << "    Excludes kernels whose names match anything in this list.\n\n"

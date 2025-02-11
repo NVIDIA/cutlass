@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -82,6 +82,37 @@ struct MainloopSm90TmaGmmaWarpSpecializedImplicitGemm {
                    cute::is_same_v<KernelSchedule,KernelImplicitTmaWarpSpecializedSm90Pingpong>),
     "Persistent schedules not support for conv yet.");
 };
+
+
+
+// SM100 tensor op kernel schedule
+struct KernelImplicitTmaWarpSpecializedSm100 { };
+
+// Pseudo-policies for builder auto override that dispatches to the KernelImplicitTmaWarpSpecializedSm100
+// but for opting into 1 or 2 SM atoms
+struct KernelImplicitTmaWarpSpecialized1SmSm100 : KernelImplicitTmaWarpSpecializedSm100 { };
+struct KernelImplicitTmaWarpSpecialized2SmSm100 : KernelImplicitTmaWarpSpecializedSm100 { };
+
+struct KernelStridedDgradTmaWs1SmSm100 { };
+struct KernelStridedDgradTmaWs2SmSm100 { };
+
+// n-buffer in smem (Blackwell TMA), pipelined with Blackwell UMMA and TMA, fprop
+template<
+  conv::Operator ConvOp_,
+  int Stages_,
+  int NumSpatialDimensions_,
+  class ClusterShape_ = cute::Shape<cute::C<1>,cute::C<1>,cute::C<1>>
+>
+struct MainloopSm100TmaUmmaWarpSpecializedImplicitGemm {
+  static constexpr int Stages = Stages_;
+  static constexpr int NumSpatialDimensions = NumSpatialDimensions_;
+  static constexpr Operator ConvOp = ConvOp_;
+  using ClusterShape = ClusterShape_;
+  using ArchTag = arch::Sm100;
+  using Schedule = KernelImplicitTmaWarpSpecializedSm100;
+
+  static_assert(NumSpatialDimensions >= 1);
+}; 
 
 //////////////////////////////////////////////////////////////////////////////
 

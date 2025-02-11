@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -395,6 +395,29 @@ Status Conv2dOperationProfiler::initialize_configuration(
   conv_workspace_.set_stride_vector(
       problem_, operation_desc.conv_kind, operation_desc.A.layout,
       operation_desc.B.layout, operation_desc.C.layout);
+
+#if defined(CUTLASS_DEBUG_TRACE_LEVEL) && (CUTLASS_DEBUG_TRACE_LEVEL > 1)
+  {
+    auto print_vector = [] (const auto& vec) {
+      printf("[");
+      for (size_t k = 0; k < vec.size(); ++k) {
+        cute::print(vec[k]);
+        if (k + 1 < vec.size()) {
+          printf(",");
+        }
+      }
+      printf("]");
+    };
+  
+    printf("\n    conv_workspace_.configuration.stride_a: ");
+    print_vector(conv_workspace_.configuration.stride_a);
+    printf("\n    conv_workspace_.configuration.stride_b: ");
+    print_vector(conv_workspace_.configuration.stride_b);
+    printf("\n    conv_workspace_.configuration.stride_c: ");
+    print_vector(conv_workspace_.configuration.stride_c);
+    printf("\n");
+  }
+#endif
 
   // initialize library::ConvArguments
   conv_workspace_.arguments.A            = nullptr;
@@ -1237,7 +1260,7 @@ bool Conv2dOperationProfiler::profile(
     }
 
     results_.back().status = profile_cutlass_(
-      results_.back().runtime,
+      results_.back(),
       options,
       operation,
       &conv_workspace_.arguments,
@@ -1251,14 +1274,12 @@ bool Conv2dOperationProfiler::profile(
 
 /// Method to profile a CUTLASS Operation
 Status Conv2dOperationProfiler::profile_cutlass_(
-  double &runtime,
+  PerformanceResult &result,
   Options const &options,
   library::Operation const *operation,
   void *arguments,
   void *host_workspace,
   void *device_workspace) {
-
-  GpuTimer timer;
 
   // initialize conv2d underlying operation to handle parallel reduction
   library::Operation const* underlying_operation = operation;
@@ -1271,23 +1292,9 @@ Status Conv2dOperationProfiler::profile_cutlass_(
     }
   }
 
-  //
-  // Optional sleep to limit power consumption and thermals
-  //
-
-  sleep(options.profiling.sleep_duration);
-
-  //
-  // Warmup loop
-  //
-
-  Status status;
-
-  for (int iteration = 0; iteration < options.profiling.warmup_iterations; ++iteration) {
-
+  auto func = [&](cudaStream_t, int iteration) {
     // Setup rotating workspace
-    int workspace_idx = options.profiling.warmup_iterations + iteration;
-    int problem_idx = (workspace_idx % conv_workspace_.problem_count);
+    int problem_idx = iteration % conv_workspace_.problem_count;
 
     conv_arguments->A = conv_workspace_.A->batch_data(problem_idx);
     conv_arguments->B = conv_workspace_.B->batch_data(problem_idx);
@@ -1305,7 +1312,7 @@ Status Conv2dOperationProfiler::profile_cutlass_(
     }
 
     // Run underlying conv2d operation
-    status = underlying_operation->run(
+    Status status = underlying_operation->run(
       arguments,
       host_workspace,
       device_workspace);
@@ -1322,74 +1329,10 @@ Status Conv2dOperationProfiler::profile_cutlass_(
     if (status != Status::kSuccess) {
       return status;
     }
-  }
+    return status;
+  };
 
-  //
-  // Initialize GPU timer
-  //
-
-  timer.start();
-
-  //
-  // Profiling loop
-  //
-
-  int Iterations = options.profiling.iterations;
-
-  int iteration = 0;
-  for (; iteration < Iterations; ++iteration) {
-
-    // Setup rotating workspace
-    int problem_idx = (iteration % conv_workspace_.problem_count);
-
-    conv_arguments->A = conv_workspace_.A->batch_data(problem_idx);
-    conv_arguments->B = conv_workspace_.B->batch_data(problem_idx);
-    conv_arguments->C = conv_workspace_.C->batch_data(problem_idx);
-    conv_arguments->D = conv_workspace_.Computed->batch_data(problem_idx);
-
-    if (conv_workspace_.configuration.split_k_mode == conv::SplitKMode::kParallel) {
-      // update library::ConvArguments for parallel split-k reduction
-      conv_arguments->D = conv_workspace_.device_workspace.data();
-
-      /// initialize library::ReductionArguments
-      conv_workspace_.reduction_arguments.workspace           = conv_workspace_.device_workspace.data();
-      conv_workspace_.reduction_arguments.source              = conv_workspace_.C->batch_data(problem_idx);
-      conv_workspace_.reduction_arguments.destination         = conv_workspace_.Computed->batch_data(problem_idx);
-    }
-
-    // Run underlying conv2d operation
-    status = underlying_operation->run(
-      arguments,
-      host_workspace,
-      device_workspace);
-
-    // Run parallel reduction kernel for parallel split_k_mode
-    if (conv_workspace_.configuration.split_k_mode == conv::SplitKMode::kParallel) {
-
-      status = reduction_op_->run(
-        &conv_workspace_.reduction_arguments,
-        conv_workspace_.reduction_host_workspace.data(),
-        nullptr);
-    }
-
-    if (status != Status::kSuccess) {
-      return status;
-    }
-  }
-
-  //
-  // Wait for completion
-  //
-
-  timer.stop_and_wait();
-
-  //
-  // Update performance result
-  //
-
-  runtime = timer.duration(iteration);
-
-  return status;
+  return profile_kernel_(result, options, func);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

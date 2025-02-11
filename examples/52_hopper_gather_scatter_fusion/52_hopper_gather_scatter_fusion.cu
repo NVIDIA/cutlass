@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -45,17 +45,17 @@
   and BEFORE scatter operations are applied.
 */
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <time.h>
-#include <math.h>
-#include <assert.h>
-#include <cuda_runtime.h>
-
+#include <cstdlib>
+#include <cstdio>
+#include <ctime>
+#include <cmath>
+#include <cassert>
 #include <algorithm>
 #include <iostream>
 #include <random>
 #include <numeric>
+
+#include <cuda_runtime.h>
 
 #include "cutlass/cutlass.h"
 #include "cutlass/gemm/device/gemm_universal.h"
@@ -64,7 +64,6 @@
 #include "cutlass/epilogue/thread/linear_combination.h"
 #include "cutlass/epilogue/collective/collective_builder.hpp"
 #include "cutlass/epilogue/collective/default_epilogue.hpp"
-
 #include "cutlass/util/command_line.h"
 #include "cutlass/util/device_memory.h"
 #include "cutlass/util/packed_stride.hpp"
@@ -254,7 +253,7 @@ struct ExampleRunner
 
   using EpilogueRef = cutlass::epilogue::collective::detail::Sm90TmaWarpSpecializedAdapter<
     cutlass::epilogue::collective::DefaultEpilogue<
-      StrideC, StrideD,
+      ElementC, StrideC, StrideD,
       typename Epilogue::ThreadEpilogueOp,
       typename Epilogue::EpilogueSchedule
     >
@@ -627,6 +626,13 @@ int main(int argc, const char ** argv) {
     std::cerr << "This example requires a device with compute capability 90 or higher.\n";
     notSupported = true;
   }
+  
+  else if (props.major != 9 || props.minor != 0) {
+    std::cerr << "This example requires a GPU of NVIDIA's Hopper Architecture (compute capability 90).\n";
+    notSupported = true;
+  }
+  
+
   if (notSupported) {
     return EXIT_SUCCESS; // Do not fail CI checks on unsupported systems
   }

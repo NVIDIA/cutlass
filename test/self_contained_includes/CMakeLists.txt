@@ -1,4 +1,4 @@
-# Copyright (c) 2024 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2024 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -113,6 +113,15 @@ set(header_files_to_check
     cute/arch/mma_sm90_gmma.hpp
     cute/arch/mma.hpp
     cute/arch/util.hpp
+    
+    cute/arch/cluster_sm100.hpp
+    cute/arch/copy_sm100.hpp
+    cute/arch/copy_sm100_tma.hpp
+    cute/arch/mma_sm100.hpp
+    cute/arch/mma_sm100_desc.hpp
+    cute/arch/mma_sm100_umma.hpp
+    # cute/arch/tmem_allocator_sm100.hpp
+    
     # cute/atom
     # cute/atom/copy_atom.hpp
     # cute/atom/copy_traits.hpp
@@ -131,6 +140,131 @@ set(header_files_to_check
     cute/atom/mma_traits_sm80.hpp
     cute/atom/mma_traits_sm90.hpp
     cute/atom/mma_traits_sm90_gmma.hpp
+    
+    cute/atom/mma_traits_sm100.hpp 
+    cute/atom/partitioner.hpp
+    
+    # cutlass
+    cutlass/aligned_buffer.h
+    cutlass/array.h
+    cutlass/array_planar_complex.h
+    cutlass/array_subbyte.h
+    cutlass/barrier.h
+    cutlass/bfloat16.h
+    cutlass/blas3.h
+    cutlass/blas3_types.h
+    cutlass/block_striped.h
+    cutlass/cluster_launch.hpp
+    cutlass/complex.h
+    cutlass/constants.h
+    cutlass/coord.h
+    cutlass/core_io.h
+    cutlass/cuda_host_adapter.hpp
+    cutlass/cutlass.h
+    cutlass/device_kernel.h
+    cutlass/fast_math.h
+    cutlass/float8.h
+    # cutlass/floating_point_nvrtc.h
+    cutlass/functional.h
+    cutlass/gemm_coord.h
+    cutlass/gemm_coord.hpp
+    cutlass/half.h
+    cutlass/integer_subbyte.h
+    cutlass/kernel_hardware_info.h
+    cutlass/kernel_hardware_info.hpp
+    cutlass/kernel_launch.h
+    cutlass/matrix.h
+    cutlass/matrix_coord.h
+    cutlass/matrix_shape.h
+    cutlass/numeric_conversion.h
+    cutlass/numeric_size.h
+    cutlass/numeric_types.h
+    cutlass/pitch_linear_coord.h
+    cutlass/predicate.h
+    cutlass/predicate_vector.h
+    cutlass/quaternion.h
+    cutlass/real.h
+    cutlass/relatively_equal.h
+    cutlass/semaphore.h
+    cutlass/subbyte_reference.h
+    cutlass/tensor_coord.h
+    cutlass/tensor_ref.h
+    cutlass/tensor_ref_planar_complex.h
+    cutlass/tensor_view.h
+    cutlass/tensor_view_planar_complex.h
+    cutlass/tfloat32.h
+    cutlass/trace.h
+    cutlass/uint128.h
+    cutlass/version.h
+    cutlass/wmma_array.h
+    cutlass/workspace.h
+    
+    cutlass/exmy_base.h
+    cutlass/float_subbyte.h
+    
+    # cutlass/platform
+    cutlass/platform/platform.h
+
+    # cutlass/pipeline
+    cutlass/pipeline/pipeline.hpp
+    cutlass/pipeline/sm90_pipeline.hpp
+    
+    cutlass/pipeline/sm100_pipeline.hpp
+    
+
+    # cutlass/detail
+    cutlass/detail/cluster.hpp
+    cutlass/detail/collective.hpp
+    cutlass/detail/dependent_false.hpp
+    cutlass/detail/helper_macros.hpp
+    cutlass/detail/layout.hpp
+    cutlass/detail/mainloop_fusion_helper_bgrada.hpp
+    cutlass/detail/mma.hpp
+    
+    cutlass/detail/sm100_blockscaled_layout.hpp
+    
+
+    # cutlass/arch
+    cutlass/arch/arch.h
+    cutlass/arch/barrier.h
+    cutlass/arch/cache_operation.h
+    cutlass/arch/config.h
+    cutlass/arch/custom_abi.h
+    cutlass/arch/grid_dependency_control.h
+    cutlass/arch/memory.h
+    # cutlass/arch/memory_sm75.h
+    # cutlass/arch/memory_sm80.h
+    cutlass/arch/mma.h
+    # cutlass/arch/mma_sm50.h
+    # cutlass/arch/mma_sm60.h
+    # cutlass/arch/mma_sm61.h
+    # cutlass/arch/mma_sm70.h
+    # cutlass/arch/mma_sm75.h
+    # cutlass/arch/mma_sm80.h
+    # cutlass/arch/mma_sm89.h
+    # cutlass/arch/mma_sm90.h
+    cutlass/arch/mma_sparse_sm80.h
+    cutlass/arch/mma_sparse_sm89.h
+    # cutlass/arch/simd.h
+    # cutlass/arch/simd_sm60.h
+    # cutlass/arch/simd_sm61.h
+    cutlass/arch/reg_reconfig.h
+    cutlass/arch/tma_operation.h
+    cutlass/arch/wmma.h
+    # cutlass/arch/wmma_sm70.h
+    # cutlass/arch/wmma_sm72.h
+    # cutlass/arch/wmma_sm75.h
+    # cutlass/arch/wmma_sm80.h
+     # cutlass/layout
+    cutlass/layout/layout.h
+    cutlass/layout/matrix.h
+    cutlass/layout/permute.h
+    cutlass/layout/pitch_linear.h
+    cutlass/layout/tensor.h
+    cutlass/layout/tensor_op_multiplicand_sm70.h
+    cutlass/layout/tensor_op_multiplicand_sm75.h
+    cutlass/layout/tensor_op_multiplicand_sm80.h
+    cutlass/layout/vector.h
 )
 
 # for each header in _header_files:

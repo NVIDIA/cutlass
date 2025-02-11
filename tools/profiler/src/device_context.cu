@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -104,6 +104,25 @@ DeviceAllocation *DeviceContext::allocate_and_initialize_tensor(
         case library::NumericTypeID::kFE5M2:
           data_distribution.set_uniform(-1, 1, 0);
           break;
+        
+        case library::NumericTypeID::kFE2M3:
+          data_distribution.set_uniform(-2, 2, 0);
+          break;
+        case library::NumericTypeID::kFE3M2:
+          data_distribution.set_uniform(-2, 2, 0);
+          break;
+        case library::NumericTypeID::kFE2M1:
+          data_distribution.set_uniform(-2, 2, 0);
+          break;
+        case library::NumericTypeID::kFUE8M0:
+          data_distribution.set_uniform(1, 4, 0);
+          break;
+        
+        case library::NumericTypeID::kFUE4M3:
+          data_distribution.set_uniform(1, 4, 0);
+          break;
+        
+        
         case library::NumericTypeID::kF16:
           data_distribution.set_uniform(-3, 3, 0);
           break;

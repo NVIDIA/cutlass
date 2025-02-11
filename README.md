@@ -1,8 +1,8 @@
 ![ALT](./media/images/gemm-hierarchy-with-epilogue-no-labels.png "Complete CUDA GEMM decomposition")
 
-# CUTLASS 3.6.0
+# CUTLASS 3.8.0
 
-_CUTLASS 3.6.0 - October 2024_
+_CUTLASS 3.8.0 - January 2025_
 
 CUTLASS is a collection of CUDA C++ template abstractions for implementing
 high-performance matrix-matrix multiplication (GEMM) and related computations at all levels 
@@ -16,75 +16,96 @@ as building blocks within custom kernels and applications.
 
 To support a wide variety of applications, CUTLASS provides extensive support for
 mixed-precision computations, providing specialized data-movement and
-multiply-accumulate abstractions for half-precision floating
-point (FP16), BFloat16 (BF16), Tensor Float 32 (TF32),
-single-precision floating point (FP32),
-[FP32 emulation via tensor core instruction](./examples/27_ampere_3xtf32_fast_accurate_tensorop_gemm),
-double-precision floating
-point (FP64) types, integer data types (4b and 8b), and binary data types (1b).
-CUTLASS demonstrates warp-synchronous matrix multiply operations
+multiply-accumulate abstractions for FP64, FP32, TF32, FP16, BF16,
+[FP32 emulation via tensor core instruction](./examples/27_ampere_3xtf32_fast_accurate_tensorop_gemm), 
+ 8b floating point types (e5m2 and e4m3),
+ block scaled data types (NVIDIA NVFP4 and OCP standard MXFP4, MXFP6, MXFP8),
+ narrow integer types (4 and 8b signed and unsigned integers),
+ and binary 1b data types (where architectures allow for the
+native support of such data types).
+CUTLASS demonstrates optimal matrix multiply operations
 targeting the programmable, high-throughput _Tensor Cores_ implemented by
-NVIDIA's Volta, Turing, Ampere, and Hopper architectures.
+NVIDIA's Volta, Turing, Ampere, Ada, Hopper, and Blackwell architectures.
+
+In addition to GEMMs, CUTLASS implements high-performance convolution via
+the implicit GEMM algorithm. Implicit GEMM is the formulation of a convolution
+operation as a GEMM thereby taking advantage of CUTLASS's modular GEMM pipeline.
+This allows CUTLASS to build convolutions by reusing highly-optimized GEMM components.
 
 See the [Quick Start Guide](./media/docs/quickstart.md) to get started quickly.
 
-See the [functionality listing](./media/docs/functionality.md) for the list of operations
-supported at each level of the execution model hierarchy.
+See the [functionality docs](./media/docs/functionality.md) for a more comprehensive
+list of kernel level features, data types, instructions, and minimum supported by CUTLASS on each GPU
+architecture.
 
-CUTLASS 3.0 introduced a new core library, CuTe, to describe and manipulate tensors of threads and data.
-CuTe is a collection of C++ CUDA template abstractions for defining and operating on hierarchically multidimensional layouts of threads and data. CuTe provides `Layout` and `Tensor` objects that compactly package the type, shape, memory space, and layout of data, while performing the complicated indexing for the user. This lets programmers focus on the logical descriptions of their algorithms while CuTe does the mechanical bookkeeping for them. With these tools, we can quickly design, implement, and modify all dense linear algebra operations.
+# What's New in CUTLASS 3.8
 
-The core abstractions of CuTe are hierarchically multidimensional layouts which can be composed with data arrays to represent tensors. The representation of layouts is powerful enough to represent nearly everything we need to implement efficient dense linear algebra. Layouts can also be combined and manipulated via functional composition, on which we build a large set of common operations such as tiling and partitioning.
+CUTLASS 3.8 is the first release that supports the NVIDIA Blackwell SM100 architecture.
+For a background on Blackwell's new features, please consult the PTX documentation for CUDA 12.8.
 
-CUTLASS 3.0 and beyond adopts CuTe throughout the GEMM hierarchy in its templates. This greatly simplifies the design
-and improves code composability and readability. More documentation specific to CuTe can be found in its [dedicated documentation directory](./media/docs/cute/00_quickstart.md).
+* Support for new CuTe building blocks specifically for Blackwell architecture:
+  - [5th generation Blackwell Tensor Core instructions (TCGen05)](./include/cute/atom/mma_traits_sm100.hpp) via CuTe MMA atoms.
+  - Extensions to [Tensor Memory Accelerator](./include/cute/atom/copy_traits_sm100_tma.hpp) via CuTe Copy atoms.
+  - Exposure of Blackwell's new tensor memory (note: distinct from TMA) as [`tmem`](./include/cute/pointer.hpp#L290) across CuTe as a first class data locale.
+  - Exposure of [`tmem->rmem`, `rmem->tmem` and `smem->tmem data movement instructions`](./include/cute/atom/copy_traits_sm100.hpp) as copy atoms in CuTe.
+  - [`make_tmem_copy()`](./include/cute/atom/copy_traits_sm100.hpp) utility method to ease creation of tiled copies for tmem copy atoms.
+  - Support for [new variants of LDSM on Blackwell](./include/cute/atom/copy_traits_sm100.hpp) via CuTe Copy atoms.
+* Support for new CUTLASS building blocks specifically for Blackwell architecture:
+  - Various narrow precision [FP4, FP6, and FP8](./include/cutlass/exmy_base.h) formats as well as their [block-scaled variants NVFP4, MXFP4, MXFP6, and MXFP8](./include/cutlass/float_subbyte.h)
+  - [Pipelines that implement Blackwell specific synchronization](./include/cutlass/pipeline/sm100_pipeline.hpp).
+  - [Cluster launch control API supporting preferred and fallback cluster shapes](./include/cutlass/cluster_launch.hpp).
+  - Data types including NVFP4, MXFP4, MXFP6, and MXFP8 and all their supported element and scale factor types.
+  - Tile schedulers using [Blackwell's Cluster Launch Control (CLC) feature](./media/docs/blackwell_cluster_launch_control.md) to implement dynamic persistence scheduling for [GEMMs](./include/cutlass/gemm/kernel/sm100_tile_scheduler.hpp), and [stream-K](./include/cutlass/gemm/kernel/sm100_tile_scheduler_stream_k.hpp).
+  - Extensions to testbeds and reference check code for unit tests and CUTLASS profiler.
+* Full support for Blackwell kernels in CUTLASS 3.x API:
+  - [Blackwell specific kernel layers](./include/cutlass/gemm/kernel/sm100_gemm_tma_warpspecialized.hpp) that
+    + Implement a new warp-specialization recipe tuned specifically for Blackwell.
+    + Leverage all the new features such as CLC based tile scheduling, preferred cluster, and TMEM based double buffering of accumulators.
+    + Support stream-K load balancing for all kernel types everywhere via composable scheduler support.
+  - Blackwell collective mainloops that target the TCGen05 MMA instructions (both SS and TS) for
+    * [Non-block scaled data types without support for pointer array and grouped GEMM with TMA](./include/cutlass/gemm/collective/sm100_mma_warpspecialized.hpp)
+    * [Non-block scaled data types with support for pointer array and grouped GEMM with TMA](./include/cutlass/gemm/collective/sm100_mma_array_warpspecialized.hpp)
+    * [Block scaled data types without support for pointer array and grouped GEMM with TMA](./include/cutlass/gemm/collective/sm100_blockscaled_mma_warpspecialized.hpp)
+    * [Block scaled data types with support for pointer array and grouped GEMM with TMA](./include/cutlass/gemm/collective/sm100_blockscaled_mma_array_warpspecialized.hpp)
+  - Blackwell [collective mainloop for convolution kernels](./include/cutlass/conv/collective/sm100_implicit_gemm_umma_warpspecialized.hpp) supporting non-block scaled data types for fprop, dgrad, and wgrad.
+  - New [GEMM](./include/cutlass/gemm/dispatch_policy.hpp), [convolution](./include/cutlass/conv/dispatch_policy.hpp), and [epilogue](./include/cutlass/epilogue/dispatch_policy.hpp) dispatch policies for collectives, kernel layers, and builders.
+  - [Blackwell epilogue that supports loading accumulators from `tmem`](./include/cutlass/epilogue/collective/sm100_epilogue_tma_warpspecialized.hpp) and [full set of EVT fusions]().
+* CUTLASS library and profiler integration for block scaled data types for kernel emission, profiling, and verification.
+  - Support for preferred and fallback cluster shapes via profiler command line arguments parsing to set dynamic cluster shapes.
+  - Support for dynamic datatypes by parsing profiler via profiler command line arguments parsing to set dynamic datatype setting in TCGen05 MMA instruction descriptors.
+* Set of examples that demonstrate the usage of the 3.x API for targeting Blackwell
+  - [Basic FP16 and FP8 GEMMs with minimal changes from Hopper examples](./examples/70_blackwell_gemm/), demonstrating ease of migration for off the shelf kernels using the 3.x collective builder API.
+  - GEMM with [opt-in collective builder schedules showcasing available recipes](./examples/71_blackwell_gemm_with_collective_builder/71_blackwell_gemm_with_collective_builder.cu) for Blackwell.
+  - Block scaled data type GEMMs targeting Blackwell's native block scaled Tensor Cores:
+    + [NVFP4 inputs with BF16 output](./examples/72_blackwell_narrow_precision_gemm/72a_blackwell_nvfp4_bf16_gemm.cu)
+    + [NVFP4 inputs with NVFP4 output](./examples/72_blackwell_narrow_precision_gemm/72b_blackwell_nvfp4_nvfp4_gemm.cu)
+    + [Mixed MXFP8 and MXFP6 inputs with BF16 output](./examples/72_blackwell_narrow_precision_gemm/72c_blackwell_mixed_mxfp8_bf16_gemm.cu)
+  - GEMM example demonstrating [Blackwell's new preferred cluster support via dynamic cluster shapes](./examples/73_blackwell_gemm_preferred_cluster/blackwell_gemm_preferred_cluster.cu) for increased occupancy.
+  - [GEMM with CLC based StreamK scheduler for load balancing](./examples/74_blackwell_gemm_streamk/blackwell_gemm_streamk.cu).
+  - Grouped GEMM for [vanilla FP8 data inputs](./examples/75_blackwell_grouped_gemm/75_blackwell_grouped_gemm.cu) and [NVFP4 block scaled inputs](./examples/75_blackwell_grouped_gemm/75_blackwell_grouped_gemm_block_scaled.cu).
+  - Convolution kernels for [fprop](./examples/76_blackwell_conv/76_blackwell_conv_fprop.cu), [dgrad](./examples/76_blackwell_conv/76_blackwell_conv_dgrad.cu), and [wgrad](./examples/76_blackwell_conv/76_blackwell_conv_wgrad.cu).
+  - [Fused multi-head attention fprop kernel](./examples/77_blackwell_fmha/77_blackwell_fmha.cu) supporting fp16/bf16/fp8 data types across head dims of 32,64, and 128.
+* Documentation updates:
+  - [Quickstart - instantiating a Blackwell block-scaled GEMM](./media/docs/quickstart.md#instantiating-a-blackwell-gemm-kernel).
+  - Detailed [Blackwell block-scaled GEMM functionality documentation](./media/docs/narrow_and_mixed_precision_gemms.md)
+  - A new [functionality documentation](./media/docs/functionality.md) specifically for 3.x API comprehensively documenting all supported kernel types, data types, kernel features, minimum CUDA tookit support etc for 3.x supported architectures.
+  - Updates to [compatibility](./README.md#compatibility) section regarding supported compilers, operating systems, CUDA Toolkits, Hardware Architectures, and [Target Architecture](./README.md#Target-Architecture).
 
-In addition to GEMMs, CUTLASS implements high-performance convolution via the implicit GEMM algorithm. Implicit GEMM is the formulation of a convolution operation as a GEMM thereby taking advantage of CUTLASS's modular GEMM pipeline. This allows CUTLASS to build convolutions by reusing highly-optimized GEMM components.
+Note: CUTLASS 3.x builds are known to be broken on Windows platforms for all CUDA toolkits.
+CUTLASS team is working on a fix.
 
-# What's New in CUTLASS 3.6
-
-CUTLASS 3.6.0 is an update to CUTLASS adding:
-
-- [Hopper structured sparse GEMM](./examples/62_hopper_sparse_gemm/62_hopper_sparse_gemm.cu).
-  + [FP16](./test/unit/gemm/device/sm90_sparse_gemm_f16_f16_f32_tensor_op_f32.cu)
-  + [FP8](./test/unit/gemm/device/sm90_sparse_gemm_f8_f8_f32_tensor_op_f32.cu)
-  + [INT8](./test/unit/gemm/device/sm90_sparse_gemm_s8_s8_s32_tensor_op_s32.cu)
-  + [TF32](./test/unit/gemm/device/sm90_sparse_gemm_tf32_tf32_f32_tensor_op_f32.cu)
-- A refactor to the CUTLASS 3.x convolution `kernel::ConvUniversal` [API](./include/cutlass/conv/kernel/sm90_implicit_gemm_tma_warpspecialized.hpp) to bring it in line with `gemm::GemmUniversal`. Now the 3.x convolution API is no longer considered as a beta API.
-- [An improved mixed input GEMM](./examples/55_hopper_mixed_dtype_gemm/README.md) and a [lookup table implementation](./examples/55_hopper_mixed_dtype_gemm/55_hopper_int4_fp8_gemm.cu) for `INT4`x`FP8` scale-only mode.
-- [EVT nodes for Top-K selection and softmax](./include/cutlass/epilogue/fusion/sm90_visitor_topk_softmax.hpp) and [GEMM example using those](./examples/61_hopper_gemm_with_topk_and_softmax/61_hopper_gemm_with_topk_and_softmax.cu).
-- [Programmatic Dependent Launch](./include/cutlass/arch/grid_dependency_control.h) (PDL) that leverages a new Hopper feature to speedup two back-to-back kernels, and its corresponding [documentations](./media/docs/dependent_kernel_launch.md).
-- [A new debugging tool, synclog](./include/cutlass/arch/synclog.hpp), for dumping out all synchronization events from within a kernel to a file. Please see [synclog documentation](./media/docs/utilities.md#debugging-asynchronous-kernels-with-cutlasss-built-in-synclog-tool) for details.
-- A new TMA-enabled [epilogue](./include/cutlass/epilogue/collective/sm90_epilogue_array_tma_warpspecialized.hpp) for grouped GEMM that brings significant performance improvement, as well as its EVT support.
-- A SIMT-enabled pointer-array [epilogue](./include/cutlass/epilogue/collective/sm70_epilogue_vectorized_array.hpp).
-- A new [Ping-Pong kernel schedule for Grouped GEMM](./include/cutlass/gemm/kernel/sm90_gemm_array_tma_warpspecialized_pingpong.hpp) and some other optimizations.
-- [A new instantiation strategy for CUTLASS profiler kernels](./python/cutlass_library/sm90_shapes.py) along with [improved documentation for instantiation level in CUTLASS profiler](./media/docs/profiler.md#instantiating-more-kernels-with-hopper).
-- A new hardware support for comparisons and computations of [`cutlass::bfloat16_t`](./include/cutlass/bfloat16.h)
-- Fixed use of isnan on Windows for [`half_t`](./test/unit/core/functional.cu).
-
-Minimum requirements:
-
-- Architecture: Volta
-- Compiler: Must support at least C++17
-- CUDA Toolkit version: 11.4
-
-Starting from CUTLASS 3.0, CUTLASS removed support for the following:
-
-- Maxwell and Pascal GPU architectures
-- Ubuntu 16.04
-- CUDA 10.2
-- C++ language versions less than 17.
-
-**See the [CHANGELOG](CHANGELOG.md) for a detailed listing of releases and updates.**
+**See the [CHANGELOG](CHANGELOG.md) for details of all past releases and updates.**
 
 # Performance
 
-<p align="center"><img src=media/images/cutlass-3.5.1-gemm-peak-performance.png></p>
-<p align="center"><img src=media/images/cutlass-3.5.1-gemm-peak-performance-fp8.png></p>
-
 CUTLASS primitives are very efficient.  When used to construct device-wide GEMM kernels,
-they exhibit peak performance comparable to cuBLAS for scalar GEMM
-computations. The above figure shows the continual CUTLASS performance improvements 
+they exhibit nearly optimal utilization of peak theoretical throughput. The figure below
+shows CUTLASS 3.8's performance as a % of theoretical peak utilization 
+on various input and output data types when run on NVIDIA Blackwell SM100 architecture GPU.
+
+<p align="center"><img src=media/images/cutlass-3.8-blackwell-gemm-peak-performance.svg></p>
+
+The two figures below show the continual CUTLASS performance improvements 
 on an [NVIDIA H100](https://www.nvidia.com/en-us/data-center/h100/) (NVIDIA Hopper architecture) since
 CUTLASS 3.1.
 CUTLASS 3.5.1 was compiled with the [CUDA 12.5u1 Toolkit](https://developer.nvidia.com/cuda-downloads). 
@@ -92,20 +113,45 @@ Tensor Core operations are implemented using CUDA's
 [mma](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#warp-level-matrix-instructions-mma) and
 [wgmma](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#asynchronous-warpgroup-level-matrix-instructions) instructions.
 
-<p align="center"><img src=media/images/cutlass-2.9-implicit-gemm-performance.png></p>
+<p align="center"><img src=media/images/cutlass-3.5.1-gemm-peak-performance.png></p>
+<p align="center"><img src=media/images/cutlass-3.5.1-gemm-peak-performance-fp8.png></p>
 
-When using CUTLASS building blocks to construct device-wide implicit gemm (Fprop, Dgrad, and Wgrad)
-kernels, CUTLASS performance is also comparable to cuDNN when running Resnet-50 layers on an [NVIDIA A100](https://www.nvidia.com/en-us/data-center/a100/)
-as shown in the above figure.  Tensor Core operations are implemented using CUDA's
-[mma instruction](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#warp-level-matrix-instructions-mma).
+# CuTe
+
+CUTLASS 3.0 introduced a new core library, CuTe, to describe and manipulate tensors of threads and data.
+CuTe is a collection of C++ CUDA template abstractions for
+defining and operating on hierarchically multidimensional layouts of threads and data.
+CuTe provides `Layout` and `Tensor` objects that compactly package the type,
+shape, memory space, and layout of data, while performing the complicated indexing for the user.
+This lets programmers focus on the logical descriptions of their algorithms while
+CuTe does the mechanical bookkeeping for them. With these tools, we can quickly design,
+implement, and modify all dense linear algebra operations.
+
+The core abstractions of CuTe are hierarchically multidimensional layouts
+which can be composed with data arrays to represent tensors.
+The representation of layouts is powerful enough to represent nearly
+everything we need to implement efficient dense linear algebra.
+Layouts can also be combined and manipulated via functional composition, on which we build a large set of common operations such as tiling and partitioning.
+
+CUTLASS 3.0 and beyond adopts CuTe throughout the GEMM hierarchy in its templates.
+This greatly simplifies the design and improves code composability and readability.
+More documentation specific to CuTe can be found in its
+[dedicated documentation directory](./media/docs/cute/00_quickstart.md).
 
 # Compatibility
 
+Minimum requirements:
+
+- Architecture: Volta (compute capability 7.0)
+- Compiler: Must support at least C++17
+- CUDA Toolkit version: 11.4
+
 CUTLASS requires a C++17 host compiler and 
-performs best when built with the [**CUDA 12.4 Toolkit**](https://developer.nvidia.com/cuda-downloads).
-It is also compatible with CUDA 11.4, CUDA 11.5, CUDA 11.6, CUDA 11.7, CUDA 11.8, CUDA 12.0, CUDA 12.1, CUDA 12.2.2, CUDA 12.3.1 and CUDA 12.3.2.
+performs best when built with the [**CUDA 12.8 Toolkit**](https://developer.nvidia.com/cuda-downloads).
+It is also compatible with CUDA 11.4, CUDA 11.5, CUDA 11.6, CUDA 11.7, CUDA 11.8, and all other CUDA 12.x versions.
 
 ## Operating Systems
+
 We have tested the following environments.
 
 |**Operating System** | **Compiler** |
@@ -113,47 +159,74 @@ We have tested the following environments.
 | Ubuntu 18.04 | GCC 7.5.0  |
 | Ubuntu 20.04 | GCC 10.3.0 |
 | Ubuntu 22.04 | GCC 11.2.0 |
-| Ubuntu 22.04 | Clang 10.0.0 |
-| Ubuntu 22.04 | Clang 14.0.6 |
-| Ubuntu 22.04 | Clang 17.0.6 |
-| Windows 10.0 | Visual Studio 2019 v16.11.27 |
 
 Note: GCC 8.5.0 has known regressions regarding fold expressions and overloaded operators. Using GCC 7.5.0 or (preferred) GCC >= 9 is recommended.
 
+Note: CUTLASS 3.x builds are known to be broken on Windows platforms for all CUDA toolkits.
+CUTLASS team is working on a fix.
+
 ## Hardware
+
 CUTLASS runs successfully on the following NVIDIA GPUs, and it is expected to be efficient on Volta, Turing, Ampere, Ada, and Hopper architecture based NVIDIA GPUs.
 
 |**GPU**|**CUDA Compute Capability**|**Minimum CUDA Toolkit Required by CUTLASS-3**|
 |---|---|---|
 |NVIDIA V100 Tensor Core GPU            |7.0|11.4|
 |NVIDIA TitanV                          |7.0|11.4|
-|NVIDIA GeForce RTX 2080 TI, 2080, 2070 |7.5|11.4|
+|NVIDIA GeForce RTX 20x0 series         |7.5|11.4|
 |NVIDIA T4                              |7.5|11.4|
 |NVIDIA A100 Tensor Core GPU            |8.0|11.4|
 |NVIDIA A10                             |8.6|11.4|
-|NVIDIA GeForce RTX 3090                |8.6|11.4|
-|NVIDIA GeForce RTX 4090                |8.9|11.8|
+|NVIDIA GeForce RTX 30x0 series         |8.6|11.4|
+|NVIDIA GeForce RTX 40x0 series         |8.9|11.8|
 |NVIDIA L40                             |8.9|11.8|
 |NVIDIA H100 Tensor Core GPU            |9.0|11.8|
+|NVIDIA H200 Tensor Core GPU            |9.0|11.8|
+|NVIDIA B200 Tensor Core GPU            |10.0|12.8|
 
 ## Target Architecture
 
-In general, PTX code generated for one target architecture can be run on future architectures (i.e., it is forward compatible).  However, CUDA 12.0 introduced the concept of "architecture-accelerated features" whose PTX does not have forward compatibility guarantees. Several Hopper PTX instructions fall under this category of architecture-accelerated features, and thus require a `sm_90a` target architecture (note the "a" appended). For more details on this and other architecture-accelerated instructions, please refer to the [CUDA Documentation](https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#feature-availability).
+In general, PTX code generated for one target architecture can be run on future architectures
+(i.e., it is forward compatible).
+However, CUDA 12.0 introduced the concept of "architecture-accelerated features" whose
+PTX does not have forward compatibility guarantees.
+Several Hopper and Blackwell PTX instructions fall under this category of
+architecture-accelerated features, and thus require a `sm_90a` or `sm100a` target architecture
+(note the "a" appended). For more details on this and other architecture-accelerated instructions,
+please refer to the [CUDA Documentation](https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#feature-availability).
 
-The target architecture information is passed on to CUTLASS via the cmake flag `CUTLASS_NVCC_ARCHS`. In order to maximize performance on Hopper GH100, users are required to build CUTLASS with `90a` as the target architecture. If a user accidentally builds a kernel which uses SM90a features (e.g. Hopper Tensor Core Instructions), using the SM90 target (note the lack of "a"), with either CUDA Toolkit 12 or 11.8, the kernel is expected to fail with a runtime error.
+The target architecture information is passed on to CUTLASS via the cmake flag
+`CUTLASS_NVCC_ARCHS`. In order to maximize performance on Hopper GH100,
+users are required to build CUTLASS with `90a` as the target architecture.
+If a user accidentally builds a kernel which uses SM90a features
+(e.g. Hopper Tensor Core Instructions), using the SM90 target
+(note the lack of "a"), with either CUDA Toolkit 12 or 11.8,
+the kernel is expected to fail with a runtime error.
 
 ```
-cmake .. -DCUTLASS_NVCC_ARCHS="90a" 
+cmake .. -DCUTLASS_NVCC_ARCHS="90a"
+```
+Or 
+
+```
+cmake .. -DCUTLASS_NVCC_ARCHS="100a" 
 ```
 
-Please refer to the [functionality documentation](./media/docs/functionality.md) for details on which kernels require which target architectures.
+Note: The NVIDIA Blackwell SM100 architecture used in the datacenter 
+products has a different compute capability than the one underpinning 
+NVIDIA Blackwell GeForce RTX 50 series GPUs. As a result, kernels 
+compiled for Blackwell SM100 architecture with arch conditional features 
+(using `sm100a`) are not compatible with RTX 50 series GPUs. 
+
+Please refer to the [functionality documentation](./media/docs/functionality.md)
+for details on which kernels require which target architectures.
 
 # Documentation
 
 CUTLASS is described in the following documents and the accompanying
 [Doxygen documentation](https://nvidia.github.io/cutlass).
 
-- [Quick Start Guide](./media/docs/quickstart.md) - build and run CUTLASS
+- [Quick Start Guide](./media/docs/quickstart.md) - basics of building and running CUTLASS
 - [Functionality](./media/docs/functionality.md) - summarizes functionality available in CUTLASS
 - [Efficient GEMM in CUDA](./media/docs/efficient_gemm.md) - describes how GEMM kernels may be implemented efficiently in CUDA
 - [CUTLASS 3.x Design](./media/docs/cutlass_3x_design.md) - describes the CUTLASS 3.x design, its benefits, and how CuTe enables us to write much more composable components
@@ -167,7 +240,7 @@ CUTLASS is described in the following documents and the accompanying
 - [Layouts](./media/docs/layout.md) - describes layouts of matrices and tensors in memory
 - [Tile Iterators](./media/docs/tile_iterator_concept.md) - describes C++ concepts for iterating over tiles of matrices in memory
 - [CUTLASS Profiler](./media/docs/profiler.md) - command-line driven profiling application
-- [CUTLASS Utilities](./media/docs/utilities.md) - additional templates used to facilate rapid development
+- [CUTLASS Utilities](./media/docs/utilities.md) - additional templates used to facilitate rapid development
 - [Dependent kernel launch](./media/docs/dependent_kernel_launch.md) - describes a new feature in Hopper which allows overlapping dependent 
 kernels in the same stream, and how it is used in CUTLASS.
 
@@ -175,11 +248,11 @@ kernels in the same stream, and how it is used in CUTLASS.
 We have also described the structure of an efficient GEMM in our talk at the
 [GPU Technology Conference 2018](http://on-demand.gputechconf.com/gtc/2018/presentation/s8854-cutlass-software-primitives-for-dense-linear-algebra-at-all-levels-and-scales-within-cuda.pdf).
 
- - [CUTLASS: Software Primitives for Dense Linear Algebra at All Levels and Scales within CUDA](https://www.nvidia.com/en-us/on-demand/session/gtcsiliconvalley2018-s8854/)
- - [Developing CUDA Kernels to Push Tensor Cores to the Absolute Limit on NVIDIA A100](https://www.nvidia.com/en-us/on-demand/session/gtcsj20-s21745/)
- - [Accelerating Convolution with Tensor Cores in CUTLASS](https://www.nvidia.com/en-us/on-demand/session/gtcspring21-s31883/)
- - [Accelerating Backward Data Gradient by Increasing Tensor Core Utilization in CUTLASS](https://www.nvidia.com/en-us/on-demand/session/gtcspring22-s41996/)
- - [CUTLASS: Python API, Enhancements, and NVIDIA Hopper](https://www.nvidia.com/en-us/on-demand/session/gtcfall22-a41131/)
+- [CUTLASS: Software Primitives for Dense Linear Algebra at All Levels and Scales within CUDA](https://www.nvidia.com/en-us/on-demand/session/gtcsiliconvalley2018-s8854/)
+- [Developing CUDA Kernels to Push Tensor Cores to the Absolute Limit on NVIDIA A100](https://www.nvidia.com/en-us/on-demand/session/gtcsj20-s21745/)
+- [Accelerating Convolution with Tensor Cores in CUTLASS](https://www.nvidia.com/en-us/on-demand/session/gtcspring21-s31883/)
+- [Accelerating Backward Data Gradient by Increasing Tensor Core Utilization in CUTLASS](https://www.nvidia.com/en-us/on-demand/session/gtcspring22-s41996/)
+- [CUTLASS: Python API, Enhancements, and NVIDIA Hopper](https://www.nvidia.com/en-us/on-demand/session/gtcfall22-a41131/)
 
 # Building CUTLASS
 
@@ -539,7 +612,7 @@ The official list of CUTLASS developers and contributors is available here: [CON
 
 # Copyright
 
-Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: BSD-3-Clause
 
 ```

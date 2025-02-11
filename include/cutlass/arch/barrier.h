@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -36,6 +36,8 @@
 
 #include <cutlass/arch/memory_sm75.h>
 #include <cute/arch/cluster_sm90.hpp>
+#include <cute/arch/copy_sm100_tma.hpp>
+#include <cutlass/arch/config.h>
 
 #if defined(SYCL_INTEL_TARGET)
 SYCL_EXTERNAL __attribute__((convergent)) void __spirv_ControlBarrierWaitINTEL(int execution_scope, int memory_scope, int memory_semantics);
@@ -51,11 +53,119 @@ SYCL_EXTERNAL __attribute__((convergent)) void __spirv_ControlBarrierArriveINTEL
 #define CUDA_BARRIER_ENABLED 0
 #endif
 
+
+#if (defined(CUTLASS_ARCH_MMA_SM100A_ENABLED))
+#define CUTLASS_ARCH_TCGEN_ENABLED 1
+#endif
+
+
 namespace cutlass {
 /// @brief
 namespace arch {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+CUTLASS_DEVICE void fence_view_async_shared();
+
+namespace detail { // namespace detail begin
+
+// Single threaded versions that need to be called in an elect_one region
+template<typename T, uint32_t Stages>
+CUTLASS_DEVICE
+void initialize_barrier_array(T ptr, int arv_cnt) {
+  CUTLASS_PRAGMA_UNROLL
+  for (int i = 0; i < Stages; i++) {
+    ptr[i].init(arv_cnt);
+  }
+}
+
+template<typename T, uint32_t Stages>
+CUTLASS_DEVICE
+void initialize_barrier_array(uint64_t *ptr, int arv_cnt) {
+  CUTLASS_PRAGMA_UNROLL
+  for (int i = 0; i < Stages; i++) {
+    T::init(&ptr[i], arv_cnt);
+  }
+}
+
+template<typename FullBarrier, typename EmptyBarrier, uint32_t Stages>
+CUTLASS_DEVICE
+void initialize_barrier_array_pair(FullBarrier full_barriers, EmptyBarrier empty_barriers, int full_barrier_arv_cnt, int empty_barrier_arv_cnt) {
+  CUTLASS_PRAGMA_UNROLL
+  for (int i = 0; i < Stages; i++) {
+    full_barriers[i].init(full_barrier_arv_cnt);
+    empty_barriers[i].init(empty_barrier_arv_cnt);
+  }
+}
+
+template<typename FullBarrier, typename EmptyBarrier, uint32_t Stages>
+CUTLASS_DEVICE
+void initialize_barrier_array_pair(uint64_t *full_barriers_ptr, uint64_t *empty_barriers_ptr, int full_barrier_arv_cnt, int empty_barrier_arv_cnt) {
+  CUTLASS_PRAGMA_UNROLL
+  for (int i = 0; i < Stages; i++) {
+    FullBarrier::init(&full_barriers_ptr[i], full_barrier_arv_cnt);
+    EmptyBarrier::init(&empty_barriers_ptr[i], empty_barrier_arv_cnt);
+  }
+}
+
+// Aligned versions that need to be call warp wide
+template<typename T, uint32_t Stages>
+CUTLASS_DEVICE
+void initialize_barrier_array_aligned(T ptr, int arv_cnt) {
+  if(cute::elect_one_sync()) {
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < Stages; i++) {
+      ptr[i].init(arv_cnt);
+    }
+  }
+}
+
+template<typename T, uint32_t Stages>
+CUTLASS_DEVICE
+void initialize_barrier_array_aligned(uint64_t *ptr, int arv_cnt) {
+  if(cute::elect_one_sync()) {
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < Stages; i++) {
+      T::init(&ptr[i], arv_cnt);
+    }
+  }
+}
+
+template<typename FullBarrier, typename EmptyBarrier, uint32_t Stages>
+CUTLASS_DEVICE
+void initialize_barrier_array_pair_aligned(FullBarrier full_barriers, EmptyBarrier empty_barriers, int full_barrier_arv_cnt, int empty_barrier_arv_cnt) {
+  if(cute::elect_one_sync()) {
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < Stages; i++) {
+      full_barriers[i].init(full_barrier_arv_cnt);
+      empty_barriers[i].init(empty_barrier_arv_cnt);
+    }
+  }
+}
+
+template<typename FullBarrier, typename EmptyBarrier, uint32_t Stages>
+CUTLASS_DEVICE
+void initialize_barrier_array_pair_aligned(uint64_t *full_barriers_ptr, uint64_t *empty_barriers_ptr, int full_barrier_arv_cnt, int empty_barrier_arv_cnt) {
+  if(cute::elect_one_sync()) {
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < Stages; i++) {
+      FullBarrier::init(&full_barriers_ptr[i], full_barrier_arv_cnt);
+      EmptyBarrier::init(&empty_barriers_ptr[i], empty_barrier_arv_cnt);
+    }
+  }
+}
+
+} // namespace detail end
+
+
+
+
+// There are 16 Named Barriers provided by Hardware starting in Hopper
+// Their IDs are in the range 0-15
+// Number of threads syncing using the barrier must be a multiple of warp-size
+// ID 0 should not be used for safety, as other driver APIs (i.e. __syncthreads)
+// may use it and conflict with other uses.
+
+
 // Enumerates the reserved named barriers to avoid potential conflicts
 // This enum class specifies the NamedBarriers reserved by CUTLASS.
 enum class ReservedNamedBarriers { 
@@ -64,6 +174,7 @@ enum class ReservedNamedBarriers {
   TransformBarrier = 3,
   StreamkBarrier0 = 4,
   StreamkBarrier1 = 5
+  , TmemAllocBarrier = 6
   , FirstUserBarrier = StreamkBarrier1 + 1
 };
 
@@ -637,7 +748,170 @@ void cpasync_barrier_arrive(uint64_t const* smem_ptr) {
 #endif
 }
 
+// Arrive on completion of in-flight cp.async operations issued by the calling thread (noinc)
+CUTLASS_DEVICE
+void cpasync_barrier_arrive_noinc(uint64_t const* smem_ptr) {
+#if CUDA_BARRIER_ENABLED
+  uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
+  asm volatile(
+    "{\n\t"
+    "cp.async.mbarrier.arrive.noinc.shared::cta.b64 [%0];\n\t"
+    "}"
+    :
+    : "r"(smem_addr));
+  cutlass::arch::synclog_emit_cpasync_barrier_arrive(__LINE__, smem_addr);
+#elif defined(__CUDA_ARCH__)
+  asm volatile ("brkpt;\n" ::);
+#endif
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+CUTLASS_DEVICE
+void umma_arrive(uint64_t const* smem_ptr) {
+#if defined(CUTLASS_ARCH_TCGEN_ENABLED)
+  uint32_t bar_intptr = cute::cast_smem_ptr_to_uint(smem_ptr);
+  if (cute::elect_one_sync()) {
+    asm volatile("tcgen05.commit.cta_group::1.mbarrier::arrive::one.shared::cluster.b64 [%0];"
+      :
+      :"r"(bar_intptr));
+  }
+#elif defined(__CUDA_ARCH__)
+  asm volatile ("brkpt;\n" ::);
+#endif
+}
+
+//UMMA arrive for MMA_2x1SM
+CUTLASS_DEVICE
+void umma_arrive_2x1SM(uint64_t const* smem_ptr) {
+#if defined(CUTLASS_ARCH_TCGEN_ENABLED)
+  uint32_t bar_intptr = cute::cast_smem_ptr_to_uint(smem_ptr);
+  if (cute::elect_one_sync()) {
+    asm volatile("tcgen05.commit.cta_group::2.mbarrier::arrive::one.shared::cluster.b64 [%0];"
+      :
+      :"r"(bar_intptr));
+  }
+#elif defined(__CUDA_ARCH__)
+  asm volatile ("brkpt;\n" ::);
+#endif
+}
+
+// UMMA arrive for MMA_1sm + TMA_LOAD_MULTICAST combination
+CUTLASS_DEVICE
+void umma_arrive_multicast(uint64_t const* smem_ptr, uint16_t cta_mask) {
+#if defined(CUTLASS_ARCH_TCGEN_ENABLED)
+  uint32_t bar_intptr = cute::cast_smem_ptr_to_uint(smem_ptr);
+  if(cute::elect_one_sync()) {
+    asm volatile(
+      "{\n\t"
+      "tcgen05.commit.cta_group::1.mbarrier::arrive::one.shared::cluster.multicast::cluster.b64 [%0], %1; \n\t"
+      "}"
+      :
+      :"r"(bar_intptr), "h"(cta_mask));
+  }
+#elif defined(__CUDA_ARCH__)
+  asm volatile ("brkpt;\n" ::);
+#endif
+}
+
+// UMMA arrive for MMA_2x1SM + TMA_LOAD_MULTICAST combination
+CUTLASS_DEVICE
+void umma_arrive_multicast_2x1SM(uint64_t const* smem_ptr, uint16_t cta_mask) {
+#if defined(CUTLASS_ARCH_TCGEN_ENABLED)
+  uint32_t bar_intptr = cute::cast_smem_ptr_to_uint(smem_ptr);
+  if (cute::elect_one_sync()) {
+    asm volatile(
+      "{\n\t"
+      "tcgen05.commit.cta_group::2.mbarrier::arrive::one.shared::cluster.multicast::cluster.b64 [%0], %1; \n\t"
+      "}"
+      :
+      :"r"(bar_intptr), "h"(cta_mask));
+  }
+#else
+  asm volatile ("brkpt;\n" ::);
+#endif
+}
+
+// Temporary solution for sparse kernel.
+// Will remove this when we done tightly elect_one wrap.
+CUTLASS_DEVICE
+void umma_arrive_multicast_no_elect(uint64_t const* smem_ptr, uint16_t cta_mask) {
+#if defined(CUTLASS_ARCH_TCGEN_ENABLED)
+  uint32_t bar_intptr = cute::cast_smem_ptr_to_uint(smem_ptr);
+  asm volatile(
+      "{\n\t"
+      ".reg .b16 lo, hi;\n\t"
+      "mov.b32 {lo, hi}, %1;\n\t"
+      "tcgen05.commit.cta_group::1.mbarrier::arrive::one.shared::cluster.multicast::cluster.b64 [%0], lo; \n\t"
+      "}"
+      :
+      :"r"(bar_intptr), "r"(uint32_t(cta_mask)));
+#elif defined(__CUDA_ARCH__)
+  CUTLASS_NOT_IMPLEMENTED();
+#endif
+}
+
+// Temporary solution for sparse kernel.
+// UMMA arrive for MMA_2x1SM + TMA_LOAD_MULTICAST combination
+CUTLASS_DEVICE
+void umma_arrive_multicast_2x1SM_no_elect(uint64_t const* smem_ptr, uint16_t cta_mask) {
+#if defined(CUTLASS_ARCH_TCGEN_ENABLED)
+  uint32_t bar_intptr = cute::cast_smem_ptr_to_uint(smem_ptr);
+  asm volatile(
+      "{\n\t"
+      ".reg .b16 lo, hi;\n\t"
+      "mov.b32 {lo, hi}, %1;\n\t"
+      "tcgen05.commit.cta_group::2.mbarrier::arrive::one.shared::cluster.multicast::cluster.b64 [%0], lo; \n\t"
+      "}"
+      :
+      :"r"(bar_intptr), "r"(uint32_t(cta_mask)));
+#else
+  CUTLASS_NOT_IMPLEMENTED();
+#endif
+}
+
+// Always arrive on even SM of collaborating 2 SMs.
+CUTLASS_DEVICE
+void umma_arrive_2x1SM_sm0(uint64_t const* smem_ptr) {
+#if defined(CUTLASS_ARCH_TCGEN_ENABLED)
+  uint32_t bar_intptr = cute::cast_smem_ptr_to_uint(smem_ptr) & cute::Sm100MmaPeerBitMask;
+  asm volatile (
+    "{\n\t"
+    "mbarrier.arrive.shared::cluster.b64 _, [%0];\n\t"
+    "}"
+    :
+    : "r"(bar_intptr));
+
+#else
+  asm volatile ("brkpt;\n" ::);
+#endif
+}
+
+CUTE_DEVICE static void fence_view_async_tmem_load() {
+#if defined(CUTLASS_ARCH_TCGEN_ENABLED)
+  asm volatile (
+    "{\n\t"
+    "tcgen05.wait::ld.sync.aligned; \n"
+    "}"
+    ::);
+#elif defined(__CUDA_ARCH__)
+  asm volatile ("brkpt;\n" ::);
+#endif
+}
+
+CUTE_DEVICE static void fence_view_async_tmem_store() {
+#if defined(CUTLASS_ARCH_TCGEN_ENABLED)
+  asm volatile (
+    "{\n\t"
+    "tcgen05.wait::st.sync.aligned; \n"
+    "}"
+    ::);
+#elif defined(__CUDA_ARCH__)
+  asm volatile ("brkpt;\n" ::);
+#endif
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 }  // end namespace arch

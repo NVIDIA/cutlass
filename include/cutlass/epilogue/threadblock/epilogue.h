@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -39,10 +39,8 @@
 
 #pragma once
 
-#if defined(__CUDACC_RTC__)
+#if !defined(CUTLASS_ENABLE_SYCL)
 #include <cuda/std/cassert>
-#else
-#include <assert.h>
 #endif
 
 #include "cutlass/cutlass.h"
@@ -478,6 +476,12 @@ public:
     // Iterate over accumulator tile
     //
 
+    #ifdef __clang__
+    #pragma clang diagnostic push
+    #pragma clang diagnostic ignored "-Wcuda-compat"
+    // Turn off clangs warning about loop unroll argument using parens.
+    #endif
+
     #pragma unroll(IterationsUnroll ? OutputTileIterator::kIterations : 1)
     for (int iter = 0; iter < OutputTileIterator::kIterations; ++iter)
     {
@@ -531,6 +535,10 @@ public:
       destination_iterator.store(output_fragment);
       ++destination_iterator;
     }
+    
+    #ifdef __clang__
+    #pragma clang diagnostic pop
+    #endif
   }
 };
 

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -77,7 +77,7 @@ void initialize_gemm_reference_operations_s8_s8_s32(Manifest &manifest) {
     int8_t,                           // ElementA
     int8_t,                           // ElementB
     int32_t,                          // ElementC
-    int32_t,                          // ElementScalar / ElementCompute
+    float,                            // ElementScalar / ElementCompute
     int32_t,                          // ElementAccumulator
     int32_t                           // ElementD
   >(manifest);

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -167,7 +167,7 @@ sm90_compute_tile_shape_or_override() {
   }
 }
 
-// callbacks builder with TMA aux out
+// aux fusion callbacks builder for sm90 tma epilogue
 template <
   int StagesC,
   int StagesD,
@@ -177,6 +177,7 @@ template <
   class FusionOp,
   class TileShape_MNK,
   class EpilogueTile_MN,
+  class AccLoadOp,
   class ElementAccumulator
 >
 struct CallbacksBuilder<
@@ -185,8 +186,9 @@ struct CallbacksBuilder<
   TileShape_MNK,
   EpilogueTile_MN,
   ElementAccumulator,
+  AccLoadOp,
   cute::enable_if_t<(FusionOp::IsAuxOutSupported ^ FusionOp::IsAuxInSupported) // only one aux tensor
-              && not cute::is_subbyte_v<typename FusionOp::ElementAux>>
+              && not cute::is_subbyte_v<typename FusionOp::ElementAux>> // aux subbyte tensor doesn't use smem
 > {
   using GmemStrideTypeAux = gemm::TagToStrideC_t<typename FusionOp::GmemLayoutTagAux>;
   using SmemLayoutAtomAux = decltype(detail::sm90_get_epilogue_smem_swizzle_layout_atom<
@@ -213,6 +215,7 @@ template <
   class FusionOp,
   class TileShape_MNK,
   class EpilogueTile_MN,
+  class AccLoadOp,
   class ElementAccumulator
 >
 struct CallbacksBuilder<
@@ -221,6 +224,7 @@ struct CallbacksBuilder<
   TileShape_MNK,
   EpilogueTile_MN,
   ElementAccumulator,
+  AccLoadOp,
   cute::enable_if_t<(FusionOp::IsAuxOutSupported ^ FusionOp::IsAuxInSupported) // only one aux tensor
               && sizeof_bits_v<typename FusionOp::ElementAux> == 1>
 > {
@@ -422,7 +426,8 @@ struct CollectiveBuilder<
     Schedule,
     fusion::LinearCombination<ElementD,ElementCompute,ElementC_,ElementCompute,RoundStyle>,
     cute::enable_if_t<cute::is_same_v<Schedule, NoSmemWarpSpecialized> ||
-                      cute::is_same_v<Schedule, PtrArrayNoSmemWarpSpecialized> >> {
+                      cute::is_same_v<Schedule, PtrArrayNoSmemWarpSpecialized> ||
+                      cute::is_same_v<Schedule, PtrArrayNoSmemWarpSpecializedTransposed> >> {
 
   // Passing void C disables source load
   using ElementC = cute::conditional_t<cute::is_void_v<ElementC_>,
@@ -441,6 +446,7 @@ struct CollectiveBuilder<
     cute::is_same_v<Schedule, NoSmemWarpSpecialized>,
     cutlass::epilogue::collective::detail::Sm90TmaWarpSpecializedAdapter<
       cutlass::epilogue::collective::DefaultEpilogue<
+        ElementC_,
         cutlass::detail::TagToStrideC_t<GmemLayoutTagC>,
         cutlass::detail::TagToStrideC_t<GmemLayoutTagD>,
         ThreadOp,
@@ -448,6 +454,7 @@ struct CollectiveBuilder<
     // Epilogue for Ptr-Array and Grouped Gemm
     cutlass::epilogue::collective::detail::Sm90TmaWarpSpecializedAdapter<
       cutlass::epilogue::collective::DefaultEpilogueArray<
+        ElementC_,
         cutlass::detail::TagToStrideC_t<GmemLayoutTagC>,
         cutlass::detail::TagToStrideC_t<GmemLayoutTagD>,
         ThreadOp,
@@ -800,6 +807,7 @@ struct CollectiveBuilder<
 
   using CollectiveOp = cutlass::epilogue::collective::detail::Sm90TmaWarpSpecializedAdapter<
     cutlass::epilogue::collective::DefaultEpilogue<
+      ElementC_,
       cutlass::detail::TagToStrideC_t<GmemLayoutTagC>,
       cutlass::detail::TagToStrideC_t<GmemLayoutTagD>,
       ThreadOp,

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -519,10 +519,7 @@ struct VisitorRowReduction {
       // Guard against uses of the existing SMEM tile
       __syncthreads();
 
-      CUTLASS_PRAGMA_UNROLL
-      for (int i = 0; i < size(tRS_rSrc); ++i) {
-        copy_vec<VecType>(filter(tRS_rSrc), filter(tRS_sRows));
-      }
+      copy(tRS_rSrc, tRS_sRows);
 
       __syncthreads();
 

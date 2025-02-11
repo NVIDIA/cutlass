@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -39,79 +39,6 @@ namespace cute
 {
 
 //
-// Accept mutable temporaries
-//
-
-template <class SrcEngine, class SrcLayout,
-          class DstEngine, class DstLayout>
-CUTE_HOST_DEVICE
-void
-copy(Tensor<SrcEngine, SrcLayout> const& src,
-     Tensor<DstEngine, DstLayout>     && dst)
-{
-  return copy(src, dst);
-}
-
-template <class VecType,
-          class SrcEngine, class SrcLayout,
-          class DstEngine, class DstLayout>
-CUTE_HOST_DEVICE
-void
-copy_vec(Tensor<SrcEngine, SrcLayout> const& src,
-         Tensor<DstEngine, DstLayout>     && dst)
-{
-  return copy_vec<VecType>(src, dst);
-}
-
-template <class SrcEngine, class SrcLayout,
-          class DstEngine, class DstLayout>
-CUTE_HOST_DEVICE
-void
-copy_aligned(Tensor<SrcEngine, SrcLayout> const& src,
-             Tensor<DstEngine, DstLayout>     && dst)
-{
-  return copy_aligned(src, dst);
-}
-
-template <class PrdTensor,
-          class SrcEngine, class SrcLayout,
-          class DstEngine, class DstLayout>
-CUTE_HOST_DEVICE
-void
-copy_if(PrdTensor                    const& pred,
-        Tensor<SrcEngine, SrcLayout> const& src,
-        Tensor<DstEngine, DstLayout>     && dst)
-{
-  return copy_if(pred, src, dst);
-}
-
-template <class CopyPolicy,
-          class PrdTensor,
-          class SrcEngine, class SrcLayout,
-          class DstEngine, class DstLayout>
-CUTE_HOST_DEVICE
-void
-copy_if(CopyPolicy                   const& copy_policy,
-        PrdTensor                    const& pred,
-        Tensor<SrcEngine, SrcLayout> const& src,
-        Tensor<DstEngine, DstLayout>     && dst)
-{
-  return copy_if(copy_policy, pred, src, dst);
-}
-
-template <class CopyPolicy,
-          class SrcEngine, class SrcLayout,
-          class DstEngine, class DstLayout>
-CUTE_HOST_DEVICE
-void
-copy(CopyPolicy                   const& copy_policy,
-     Tensor<SrcEngine, SrcLayout> const& src,
-     Tensor<DstEngine, DstLayout>     && dst)
-{
-  return copy(copy_policy, src, dst);
-}
-
-//
 // copy_if -- Predicated Copy
 //
 
@@ -124,12 +51,13 @@ copy_if(PrdTensor                    const& pred,
         Tensor<SrcEngine, SrcLayout> const& src,
         Tensor<DstEngine, DstLayout>      & dst)
 {
-  auto copy_op = select_elementwise_copy(src, dst);
+  using SrcType = typename SrcEngine::value_type;
+  using DstType = typename DstEngine::value_type;
 
   CUTE_UNROLL
-  for (int i = 0; i < size(src); ++i) {
+  for (int i = 0; i < size(dst); ++i) {
     if (pred(i)) {
-      copy_op.copy(src(i), dst(i));
+      dst(i) = static_cast<DstType>(static_cast<SrcType>(src(i)));
     }
   }
 }
@@ -137,17 +65,6 @@ copy_if(PrdTensor                    const& pred,
 //
 // copy_if -- Predicated CopyAtom
 //
-
-namespace detail {
-
-// Trait that detects if atom's traits has a member function with(bool)
-template <class, class Enable = void>
-constexpr bool has_with_bool = false;
-
-template <class T>
-constexpr bool has_with_bool<T, cute::void_t<decltype(declval<typename T::Traits>().with(declval<bool>()))>> = true;
-
-} // end namespace detail
 
 template <class... CopyArgs,
           class PredTensor,
@@ -161,71 +78,88 @@ copy_if(Copy_Atom<CopyArgs...>       const& copy_atom,
         Tensor<DstEngine, DstLayout>      & dst)       // (V,Rest...)
 {
   static_assert(SrcLayout::rank == DstLayout::rank, "CopyAtom rank-mismatch.");
+  auto has_with_bool = cute::is_valid([](auto t)->void_t<decltype(declval<typename decltype(t)::Traits>().with(true))>{}, copy_atom);
+
   if constexpr (SrcLayout::rank == 1) {   // Dispatch the copy
-    copy_atom.call(src, dst);
+    if constexpr (has_with_bool) {
+      copy_atom.with(pred()).call(src, dst);
+    } else {
+      if (pred()) { copy_atom.call(src, dst); }
+    }
   } else {                                // Loop over all but the first mode
     constexpr int R = SrcLayout::rank;
     Tensor src_v = group_modes<1,R>(src);
     Tensor dst_v = group_modes<1,R>(dst);
     CUTE_UNROLL
-    for (int i = 0; i < size<1>(src_v); ++i) {
-      // If copy traits can be transformed with a predicate value, do it, otherwise branch here
-      if constexpr (detail::has_with_bool<Copy_Atom<CopyArgs...>>) {
+    for (int i = 0; i < size<1>(dst_v); ++i) {
+      if constexpr (has_with_bool) {
         copy_atom.with(pred(i)).call(src_v(_,i), dst_v(_,i));
       } else {
-        if (pred(i)) {
-          copy_atom.call(src_v(_,i), dst_v(_,i));
-        }
+        if (pred(i)) { copy_atom.call(src_v(_,i), dst_v(_,i)); }
       }
     }
   }
 }
 
 //
-// copy_vec -- attempt vectorized copy with VecType
+// copy_if -- AutoCopyAsync
 //
-
-template <class VecType,
+template <class PrdTensor,
           class SrcEngine, class SrcLayout,
           class DstEngine, class DstLayout>
 CUTE_HOST_DEVICE
 void
-copy_vec(Tensor<SrcEngine, SrcLayout> const& src,
-         Tensor<DstEngine, DstLayout>      & dst)
+copy_if(AutoCopyAsync                const& cpy,
+        PrdTensor                    const& pred,
+        Tensor<SrcEngine, SrcLayout> const& src,
+        Tensor<DstEngine, DstLayout>      & dst)
 {
-  static_assert(sizeof_bits_v<VecType> >= 8 && sizeof_bits_v<VecType> % 8 == 0,
-                "Expected a vectorization type of at least a byte.");
+  using SrcElemWithConst = remove_reference_t<typename SrcEngine::reference>;
   using SrcType = typename SrcEngine::value_type;
   using DstType = typename DstEngine::value_type;
-  if constexpr (cute::is_same<SrcType, DstType>::value &&
-                sizeof_bits_v<VecType>  > sizeof_bits_v<DstType>)
-  {
-    // Preserve volatility of Src/Dst types.
-    using SrcVecType = conditional_t<is_volatile_v<typename SrcEngine::element_type>, VecType const volatile, VecType const>;
-    using DstVecType = conditional_t<is_volatile_v<typename DstEngine::element_type>, VecType       volatile, VecType      >;
-    Tensor src_v = recast<SrcVecType>(src);
-    Tensor dst_v = recast<DstVecType>(dst);
 
-#if 0
-    if (thread0()) {
-      print("copy_vec<%db> -- vectorizing copy:\n", int(sizeof_bits_v<VecType>));
-      print("   "); print(src); print(" => "); print(src_v); print("\n");
-      print("   "); print(dst); print(" => "); print(dst_v); print("\n");
+  auto copy_op = []() {
+#if defined(CUTE_ARCH_CP_ASYNC_SM80_ENABLED)
+    if constexpr (is_gmem<SrcEngine>::value && is_smem<DstEngine>::value &&
+                  sizeof(SrcType) == sizeof(DstType)) {
+      if constexpr (is_const_v<SrcElemWithConst> && sizeof(SrcType) == 16) {
+          return SM80_CP_ASYNC_CACHEGLOBAL<SrcType,DstType>{};
+      } else if constexpr (sizeof(SrcType) == 4 || sizeof(SrcType) == 8 || sizeof(SrcType) == 16) {
+          return SM80_CP_ASYNC_CACHEALWAYS<SrcType,DstType>{};
+      } else {
+          return UniversalCopy<SrcType,DstType>{};
+      }
+    } else {
+        return UniversalCopy<SrcType,DstType>{};
     }
-#endif
 
-    return copy_if(TrivialPredTensor{}, src_v, dst_v);
-  } else {
-#if 0
-  if (thread0()) {
-    print("copy_vec<%db> -- NOT vectorizing copy:\n", int(sizeof_bits_v<VecType>));
-    print("   "); print(src); print("\n");
-    print("   "); print(dst); print("\n");
-  }
+    CUTE_GCC_UNREACHABLE;
+#else
+    return UniversalCopy<SrcType,DstType>{};
 #endif
+  }();
 
-    return copy_if(TrivialPredTensor{}, src, dst);
+  CUTE_UNROLL
+  for (int i = 0; i < size(dst); ++i) {
+    if (pred(i)) {
+      copy_op.copy(src(i), dst(i));
+    }
   }
+}
+
+//
+// copy -- AutoCopyAsync
+//
+
+template <class SrcEngine, class SrcLayout,
+          class DstEngine, class DstLayout>
+CUTE_HOST_DEVICE
+void
+copy(AutoCopyAsync                const& cpy,
+     Tensor<SrcEngine, SrcLayout> const& src,       // (V,Rest...)
+     Tensor<DstEngine, DstLayout>      & dst)       // (V,Rest...)
+{
+  copy_if(cpy, TrivialPredTensor{}, src, dst);
 }
 
 //
@@ -238,15 +172,56 @@ template <class... CopyArgs,
 CUTE_HOST_DEVICE
 void
 copy(Copy_Atom<CopyArgs...>       const& copy_atom,
-     Tensor<SrcEngine, SrcLayout> const& src,
-     Tensor<DstEngine, DstLayout>      & dst)
+     Tensor<SrcEngine, SrcLayout> const& src,       // (V,Rest...)
+     Tensor<DstEngine, DstLayout>      & dst)       // (V,Rest...)
 {
-  return copy_if(copy_atom, TrivialPredTensor{}, src, dst);
+  static_assert(SrcLayout::rank == DstLayout::rank, "CopyAtom rank-mismatch.");
+
+  if constexpr (SrcLayout::rank == 1) {   // Dispatch the copy
+    copy_atom.call(src, dst);
+  } else {                                // Loop over all but the first mode
+    constexpr int R = SrcLayout::rank;
+    Tensor src_v = group_modes<1,R>(src);
+    Tensor dst_v = group_modes<1,R>(dst);
+
+    if constexpr (is_static<decltype(shape(src_v))>::value && is_static<decltype(shape(dst_v))>::value) {
+      CUTE_STATIC_ASSERT_V(size<1>(src_v) == size<1>(dst_v));
+
+      // AutoFilter on the Rest-mode
+      auto dst_null = nullspace(layout<1>(dst_v));
+
+      Tensor dst_n = zipped_divide(dst_v, make_tile(shape<0>(dst_v), dst_null));  // ((V, NLL), (_1, Rest))
+      Tensor src_n = zipped_divide(src_v, make_tile(shape<0>(src_v), dst_null));  // ((V, NLL), (_1, Rest))
+
+      CUTE_STATIC_ASSERT_V(size<1>(src_n) == size<1>(dst_n));
+      CUTE_STATIC_ASSERT_V((cosize<0,1>(dst_n.layout()) == Int<1>{}), "Nullspace definition error");
+      CUTE_STATIC_ASSERT_V((cosize<0,1>(src_n.layout()) == Int<1>{}), "Error: Ambiguous scatter detected in copy");
+      CUTE_STATIC_ASSERT_V((size<1,0>(dst_n) == Int<1>{}));
+      CUTE_STATIC_ASSERT_V((size<1,0>(src_n) == Int<1>{}));
+
+      Tensor dst_c = dst_n(make_coord(_,Int<0>{}),make_coord(Int<0>{},_));        // (V, Rest)
+      Tensor src_c = src_n(make_coord(_,Int<0>{}),make_coord(Int<0>{},_));        // (V, Rest)
+
+      CUTE_STATIC_ASSERT_V(size<1>(src_c) == size<1>(dst_c));
+      CUTE_STATIC_ASSERT_V(shape<0>(dst_c) == shape<0>(dst));
+      CUTE_STATIC_ASSERT_V(shape<0>(src_c) == shape<0>(src));
+
+      CUTE_UNROLL
+      for (int i = 0; i < size<1>(dst_c); ++i) {
+        copy_atom.call(src_c(_,i), dst_c(_,i));
+      }
+    } else {
+      CUTE_UNROLL
+      for (int i = 0; i < size<1>(dst_v); ++i) {
+        copy_atom.call(src_v(_,i), dst_v(_,i));
+      }
+    }
+  }
 }
 
-//////////////////////////////////////////
-// Special Auto-Vectorizing Overloads
-//////////////////////////////////////////
+////////////////////////////////////////////////////////
+// Special Auto-Vectorizing, Auto-Filtering Overloads //
+////////////////////////////////////////////////////////
 
 // Specialization for AutoVectorizingCopyAssumedAlignment<MaxVecBits>
 template <int MaxVecBits, class... Args,
@@ -258,27 +233,64 @@ copy(AutoVectorizingCopyWithAssumedAlignment<MaxVecBits> const&,
      Tensor<SrcEngine, SrcLayout>                        const& src,
      Tensor<DstEngine, DstLayout>                             & dst)
 {
-  constexpr int vec_elem = decltype(max_common_vector(src, dst))::value;
+  constexpr int common_elem = CUTE_STATIC_V(max_common_vector(src, dst));
+  constexpr int align_bits  = CUTE_STATIC_V(gcd(max_alignment(src), max_alignment(dst), Int<MaxVecBits>{}));
+  static_assert(is_integral<decltype(Int<common_elem>{} * sizeof_bits_v<typename SrcEngine::value_type>)>::value, "Error: Attempting a subbit copy!");
+  constexpr int vec_bits    = gcd(common_elem * sizeof_bits_v<typename SrcEngine::value_type>, align_bits);
 
-  constexpr int max_align_src = decltype(max_alignment(src.layout()))::value;
-  constexpr int max_align_dst = decltype(max_alignment(dst.layout()))::value;
-  constexpr int max_align     = gcd(vec_elem, max_align_src, max_align_dst);
+  if constexpr (common_elem > 1 && ((vec_bits % 8) == 0)) {
+    // If more than one element vectorizes to 8bits or more, then recast and copy
+    using VecType = uint_bit_t<vec_bits>;
+    // Preserve volatility
+    using SrcVecType = conditional_t<is_volatile_v<typename SrcEngine::element_type>, VecType const volatile, VecType const>;
+    using DstVecType = conditional_t<is_volatile_v<typename DstEngine::element_type>, VecType       volatile, VecType      >;
 
-  constexpr int src_bits = sizeof_bits<typename SrcEngine::value_type>::value;
-  constexpr int vec_bits = gcd(src_bits * max_align, MaxVecBits);
+    // Recast
+    Tensor src_v = recast<SrcVecType>(src);
+    Tensor dst_v = recast<DstVecType>(dst);
 
-  if constexpr (vec_elem > 1 && vec_bits >= 8) {
-    // If more than one element vectorizes to 8bits or more, then copy_vec
 #if 0
     if (thread0()) {
-      print("copy -- found max_common_vector of %d elems and vectorization to %d bits\n", vec_elem, vec_bits);
-      print("   "); print(src); print("\n");
-      print("   "); print(dst); print("\n");
+      print("copy -- found max_common_vector of %d elems and vectorization to %d bits\n", common_elem, vec_bits);
+      print("   "); print(src); print(" => "); print(src_v); print("\n");
+      print("   "); print(dst); print(" => "); print(dst_v); print("\n");
     }
 #endif
-    return copy_vec<uint_bit_t<vec_bits>>(src, dst);
+
+    return copy_if(TrivialPredTensor{}, src_v, dst_v);
   } else {
     return copy_if(TrivialPredTensor{}, src, dst);
+  }
+}
+
+template <class Base>
+struct AutoFilter {
+  Base const& base;
+  CUTE_HOST_DEVICE AutoFilter(Base const& b) : base(b) {}
+};
+
+// Specialization for AutoFilter
+template <class CopyOp,
+          class SrcEngine, class SrcLayout,
+          class DstEngine, class DstLayout>
+CUTE_HOST_DEVICE
+void
+copy(AutoFilter<CopyOp>           const& copy_op,
+     Tensor<SrcEngine, SrcLayout> const& src,
+     Tensor<DstEngine, DstLayout>      & dst)
+{
+  if constexpr (is_constant<true, decltype(size(src) == size(dst))>::value) {
+    auto dst_null = nullspace(dst.layout());
+
+    Tensor dst_n = zipped_divide(dst, dst_null);
+    Tensor src_n = zipped_divide(src, dst_null);
+
+    CUTE_STATIC_ASSERT_V(cosize<0>(dst_n.layout()) == Int<1>{}, "Nullspace definition error");
+    CUTE_STATIC_ASSERT_V(cosize<0>(src_n.layout()) == Int<1>{}, "Error: Ambiguous scatter detected in copy");
+
+    copy(copy_op.base, src_n(Int<0>{},_), dst_n(Int<0>{},_));
+  } else {
+    copy(copy_op.base, src, dst);
   }
 }
 
@@ -292,7 +304,11 @@ copy(Tensor<SrcEngine, SrcLayout> const& src,
 {
   if constexpr (is_static<SrcLayout>::value && is_static<DstLayout>::value) {
     // Assume Tensors with static layouts (e.g. registers) have pointers that are 128b aligned
-    return copy(AutoVectorizingCopyWithAssumedAlignment<128>{}, src, dst);
+    return copy(AutoFilter(AutoVectorizingCopyWithAssumedAlignment<128>{}), src, dst);
+  } else
+  if constexpr (is_static<decltype(shape(src))>::value && is_static<decltype(shape(dst))>::value) {
+    // Tensors with static shapes can be filtered, but do not assume that dynamic layouts are aligned.
+    return copy(AutoFilter(AutoVectorizingCopyWithAssumedAlignment<8>{}), src, dst);
   } else {
     // Do not assume that dynamic layouts are aligned.
     return copy(AutoVectorizingCopyWithAssumedAlignment<8>{}, src, dst);
@@ -307,7 +323,12 @@ void
 copy_aligned(Tensor<SrcEngine, SrcLayout> const& src,
              Tensor<DstEngine, DstLayout>      & dst)
 {
-  return copy(AutoVectorizingCopyWithAssumedAlignment<128>{}, src, dst);
+  if constexpr (is_static<decltype(shape(src))>::value && is_static<decltype(shape(dst))>::value) {
+    // Tensors with static shapes can be filtered
+    return copy(AutoFilter(AutoVectorizingCopyWithAssumedAlignment<128>{}), src, dst);
+  } else {
+    return copy(AutoVectorizingCopyWithAssumedAlignment<128>{}, src, dst);
+  }
 }
 
 // Specializaton for Atom AutoVectorizingCopyAssumedAlignment
@@ -378,5 +399,147 @@ copy(Copy_Atom<Copy_Traits<SM90_BULK_COPY_AUTO, CT_Args...>, CA_Args...> const& 
   return copy(static_cast<Copy_Traits<SM90_BULK_COPY_AUTO, CT_Args...> const&>(atom), src, dst);
 }
 #endif // #if defined(CUTE_COPY_ATOM_TMA_SM90_ENABLED)
+
+//
+// Decay TiledCopy to CopyAtom
+//
+
+template <class CopyAtom, class TV, class Tiler,
+          class PrdTensor,
+          class SrcEngine, class SrcLayout,
+          class DstEngine, class DstLayout>
+CUTE_HOST_DEVICE
+void
+copy_if(TiledCopy<CopyAtom, TV, Tiler> const& tiled_copy,
+        PrdTensor                      const& pred,
+        Tensor<SrcEngine, SrcLayout>   const& src,
+        Tensor<DstEngine, DstLayout>        & dst)
+{
+  return copy_if(static_cast<CopyAtom const&>(tiled_copy), pred, src, dst);
+}
+
+template <class CopyAtom, class TV, class Tiler,
+          class SrcEngine, class SrcLayout,
+          class DstEngine, class DstLayout>
+CUTE_HOST_DEVICE
+void
+copy(TiledCopy<CopyAtom, TV, Tiler> const& tiled_copy,
+     Tensor<SrcEngine, SrcLayout>   const& src,
+     Tensor<DstEngine, DstLayout>        & dst)
+{
+  return copy(static_cast<CopyAtom const&>(tiled_copy), src, dst);
+}
+
+template <class TiledCopy, class ThrIdx,
+          class PrdTensor,
+          class SrcEngine, class SrcLayout,
+          class DstEngine, class DstLayout>
+CUTE_HOST_DEVICE
+void
+copy_if(ThrCopy<TiledCopy, ThrIdx>   const& thr_copy,
+        PrdTensor                    const& pred,
+        Tensor<SrcEngine, SrcLayout> const& src,
+        Tensor<DstEngine, DstLayout>      & dst) = delete;
+
+template <class TiledCopy, class ThrIdx,
+          class SrcEngine, class SrcLayout,
+          class DstEngine, class DstLayout>
+CUTE_HOST_DEVICE
+void
+copy(ThrCopy<TiledCopy, ThrIdx>   const& thr_copy,
+     Tensor<SrcEngine, SrcLayout> const& src,
+     Tensor<DstEngine, DstLayout>      & dst) = delete;
+
+//
+// Catch uncaught policies
+//
+
+template <class CopyPolicy,
+          class PredTensor,
+          class SrcEngine, class SrcLayout,
+          class DstEngine, class DstLayout>
+CUTE_HOST_DEVICE
+void
+copy_if(CopyPolicy                   const& cpy,
+        PredTensor                   const& prd,
+        Tensor<SrcEngine, SrcLayout> const& src,
+        Tensor<DstEngine, DstLayout>      & dst)
+{
+  static_assert(dependent_false<CopyPolicy>, "Unrecognized CopyPolicy.");
+}
+
+template <class CopyPolicy,
+          class SrcEngine, class SrcLayout,
+          class DstEngine, class DstLayout>
+CUTE_HOST_DEVICE
+void
+copy(CopyPolicy                   const& cpy,
+     Tensor<SrcEngine, SrcLayout> const& src,
+     Tensor<DstEngine, DstLayout>      & dst)
+{
+  static_assert(dependent_false<CopyPolicy>, "Unrecognized CopyPolicy.");
+}
+
+//
+// Accept mutable temporaries
+//
+
+template <class PrdTensor,
+          class SrcEngine, class SrcLayout,
+          class DstEngine, class DstLayout>
+CUTE_HOST_DEVICE
+void
+copy_if(PrdTensor                    const& pred,
+        Tensor<SrcEngine, SrcLayout> const& src,
+        Tensor<DstEngine, DstLayout>     && dst)
+{
+  return copy_if(pred, src, dst);
+}
+
+template <class CopyPolicy,
+          class PrdTensor,
+          class SrcEngine, class SrcLayout,
+          class DstEngine, class DstLayout>
+CUTE_HOST_DEVICE
+void
+copy_if(CopyPolicy                   const& copy_policy,
+        PrdTensor                    const& pred,
+        Tensor<SrcEngine, SrcLayout> const& src,
+        Tensor<DstEngine, DstLayout>     && dst)
+{
+  return copy_if(copy_policy, pred, src, dst);
+}
+
+template <class SrcEngine, class SrcLayout,
+          class DstEngine, class DstLayout>
+CUTE_HOST_DEVICE
+void
+copy(Tensor<SrcEngine, SrcLayout> const& src,
+     Tensor<DstEngine, DstLayout>     && dst)
+{
+  return copy(src, dst);
+}
+
+template <class CopyPolicy,
+          class SrcEngine, class SrcLayout,
+          class DstEngine, class DstLayout>
+CUTE_HOST_DEVICE
+void
+copy(CopyPolicy                   const& copy_policy,
+     Tensor<SrcEngine, SrcLayout> const& src,
+     Tensor<DstEngine, DstLayout>     && dst)
+{
+  return copy(copy_policy, src, dst);
+}
+
+template <class SrcEngine, class SrcLayout,
+          class DstEngine, class DstLayout>
+CUTE_HOST_DEVICE
+void
+copy_aligned(Tensor<SrcEngine, SrcLayout> const& src,
+             Tensor<DstEngine, DstLayout>     && dst)
+{
+  return copy_aligned(src, dst);
+}
 
 } // end namespace cute
