@@ -84,7 +84,8 @@ using AutoVectorizingCopy = AutoVectorizingCopyWithAssumedAlignment<128>;
 // DefaultCopy alias does not assume alignment of pointers or dynamic strides.
 //
 
-using DefaultCopy = AutoVectorizingCopyWithAssumedAlignment<8>;
+
+using DefaultCopy = UniversalCopy<uint_bit_t<128>>;
 
 //
 // Copy policy automatically selecting between

@@ -494,7 +494,7 @@ int main(int argc, char const **args) {
   // Tiled copy from Smem to Registers
   // Note : CuTe will vectorize this copy if the tiling + swizzling above were right
   using TiledCopyS2R = TiledCopy<
-                         Copy_Atom<DefaultCopy, ElementAcc>,
+                         Copy_Atom<AutoVectorizingCopyWithAssumedAlignment<128>, ElementAcc>,
                          Layout< Shape<_128,_16>, 
                                  Stride<_16,_1>>,
                          TileShapeS2R>;
@@ -505,9 +505,9 @@ int main(int argc, char const **args) {
       cutlass::gemm::TagToStrideC_t<LayoutD>,
       cutlass::epilogue::thread::LinearCombination<int32_t, 1, int32_t, int32_t>,
       SmemLayout,
-      Copy_Atom<DefaultCopy, ElementAcc>,
+      Copy_Atom<AutoVectorizingCopyWithAssumedAlignment<128>, ElementAcc>,
       TiledCopyS2R,
-      Copy_Atom<DefaultCopy, ElementOutput>>>;
+      Copy_Atom<AutoVectorizingCopyWithAssumedAlignment<128>, ElementOutput>>>;
 
   //
   // Assembling the GemmKernel
