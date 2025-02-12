@@ -366,7 +366,7 @@ template <class GemmKernel> struct ExampleRunner {
                     (options.seq_len * options.head_size + options.seq_len * options.head_size) * 2 * 2 * (1e-9) /
                     (cute_time);
       std::cout << "Problem Size: " << options.batch << 'x' << options.num_heads << 'x' << options.seq_len << 'x'
-                << options.head_size;
+                << options.head_size << (options.is_causal ? "xCausal" : "xNonCausal");
       printf(":   %4.3f  GB/s   ,    %4.3f  TFlop/s   ,   %6.4f  ms\n", gbps, tflops, cute_time * 1000);
     }
 
