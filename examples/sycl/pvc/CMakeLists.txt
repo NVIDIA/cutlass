@@ -43,6 +43,11 @@ cutlass_example_add_executable(
 )
 
 cutlass_example_add_executable(
+  pvc_gemm_with_epilogue_softmax
+  pvc_gemm_with_epilogue_softmax.cpp
+)
+
+cutlass_example_add_executable(
   pvc_gemm_with_epilogue_lincombdeeltact
   pvc_gemm_with_epilogue_lincombdeeltact.cpp
 )
