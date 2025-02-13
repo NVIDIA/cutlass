@@ -42,6 +42,20 @@
 
 namespace cutlass::gemm::collective {
 using namespace cute;
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <typename To_type, typename Engine, typename Layout>
+CUTLASS_DEVICE auto convert_type(Tensor<Engine, Layout> const &tensor) {
+    using From_type = typename Engine::value_type;
+    constexpr int numel = decltype(size(tensor))::value;
+    cutlass::NumericArrayConverter<To_type, From_type, numel> convert_op;
+    auto frag = convert_op(*reinterpret_cast<const cutlass::Array<From_type, numel> *>(tensor.data()));
+    return make_tensor(make_rmem_ptr<To_type>(&frag), tensor.layout());
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <class DispatchPolicy, class TileShape_, class ElementQ_, class StrideQ_, class ElementK_, class StrideK_,
@@ -275,8 +289,8 @@ struct CollectiveMmaAttention<MainloopIntelPVC<Stages>, TileShape_, ElementQ_, S
     }
   }
 
-  template <class TileCoord, class FragAccum, class FragP, class TensorV, class FragSrc>
-  CUTLASS_DEVICE void mmaPV(TileCoord tile_coord, FragAccum &accum, FragP const &tPr, TensorV gB,
+  template <class TileCoord, class FragAccum, class FragS, class TensorV, class FragSrc>
+  CUTLASS_DEVICE void mmaPV(TileCoord tile_coord, FragAccum &accum, FragS const &tSr, TensorV gB,
                             FragSrc const &frag_src, int const &k_tile_count, int const &load_idx,
                             Params const &params) {
 
@@ -322,6 +336,9 @@ struct CollectiveMmaAttention<MainloopIntelPVC<Stages>, TileShape_, ElementQ_, S
       print("\n");
     }
 #endif
+
+    // 7) Convert S to P (FP32 -> BF16)
+    Tensor tPr = convert_type<typename TiledMma::ValTypeA>(tSr);
 
     //
     // Mainloop
