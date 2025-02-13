@@ -286,26 +286,26 @@ bool initialize_tensor(
       scope_max = 2;
       scope_min = 0;
     }
-
+    
     else if (bits_input <= 6) {
       scope_max = 2;
       scope_min = -2;
     }
-
+    
     else if (bits_input <= 8) {
-
+    
       if constexpr (
                     cute::is_same_v<Element, cutlass::float_ue8m0_t>){
         scope_max = 4;
         scope_min = 1;
       }
       else {
-
+    
         scope_max = 1;
         scope_min = -1;
-
+    
       }
-
+    
     }
     else{
       scope_max = 4;
@@ -524,7 +524,7 @@ struct HostCollectiveMainloop {
 
   Arguments to_args() {
 
-
+    
     // Runtime datatype selection
     if constexpr (not cute::is_same_v<ElementA, typename Gemm::GemmKernel::ElementA>) {
       using ArrayElementA = typename Gemm::GemmKernel::CollectiveMainloop::ArrayElementA;
@@ -535,13 +535,13 @@ struct HostCollectiveMainloop {
       };
     }
     else {
-
-    Arguments arguments =
+    
+    Arguments arguments = 
     {
       tensor_A.device_data(), stride_a, tensor_B.device_data(), stride_b
     };
     return arguments;
-    }
+    } 
   }
 
   auto to_host_args(ProblemShapeType problem_size) {
@@ -559,19 +559,19 @@ struct HostCollectiveMainloop {
     auto B = make_tensor(make_iterator(tensor_B.host_data()),
         make_layout(make_shape(N, K, L), stride_b));
 
-
+    
     auto dummy_SFA = cute::make_tensor(static_cast<ElementA*>(nullptr),
         cute::make_layout(cute::make_shape(M, K, L), stride_a));
     auto dummy_SFB = cute::make_tensor(static_cast<ElementB*>(nullptr),
         cute::make_layout(cute::make_shape(N, K, L), stride_b));
-
-    cutlass::reference::host::GettMainloopParams<ElementAccumulator,
+    
+    cutlass::reference::host::GettMainloopParams<ElementAccumulator, 
                                                  decltype(A), 
                                                  decltype(B)
-
+                                                 
                                                  , decltype(dummy_SFA),
                                                  decltype(dummy_SFB)
-
+                                                 
                                                  > mainloop_params{};
 
     mainloop_params.A = A;
@@ -905,7 +905,6 @@ struct HostCollectiveMainloop<ScheduleType_, Gemm, ElementA_, ElementB_,
 };
 
 
-
 //
 // Block Scaled Gemm Input Operands : A , B, scalefactorA, scalefactorB
 //
@@ -1012,7 +1011,7 @@ struct HostCollectiveMainloop<cutlass::gemm::KernelTmaWarpSpecializedBlockScaled
 
     tensor_A.resize(a_coord, cutlass::layout::Affine2Layout_Factory<LayoutTagA>::layout_factory(a_coord, stride_factor_A));
     tensor_B.resize(b_coord, cutlass::layout::Affine2Layout_Factory<LayoutTagB>::layout_factory(b_coord, stride_factor_B));
-
+ 
     EXPECT_TRUE(initialize_tensor(tensor_A.host_view(), init_A, seed + 2022));
     EXPECT_TRUE(initialize_tensor(tensor_B.host_view(), init_B, seed + 2021));
 
@@ -1034,7 +1033,7 @@ struct HostCollectiveMainloop<cutlass::gemm::KernelTmaWarpSpecializedBlockScaled
     // 2.x host tensor does not natively contain a batch stride or coord, so we spoof if by folding it into the outer mode
     auto sfa_coord   = cutlass::make_Coord(m_blks * Blk_MN{} * L, k_blks * Blk_SF{});
     auto sfb_coord   = cutlass::make_Coord(n_blks * Blk_MN{} * L, k_blks * Blk_SF{});
-
+ 
     tensor_SFA.resize(sfa_coord, cutlass::layout::Affine2Layout_Factory<LayoutTagA>::layout_factory(sfa_coord, stride_factor_A));
     tensor_SFB.resize(sfb_coord, cutlass::layout::Affine2Layout_Factory<LayoutTagB>::layout_factory(sfb_coord, stride_factor_B));
 
@@ -1081,12 +1080,12 @@ struct HostCollectiveMainloop<cutlass::gemm::KernelTmaWarpSpecializedBlockScaled
         make_layout(make_shape(N, K, L), stride_b));
     auto SfB = make_tensor(tensor_SFB.host_data(), layout_sfb);
 
-    cutlass::reference::host::GettMainloopParams<ElementAccumulator,
-        decltype(A),
-        decltype(B),
-        decltype(SfA),
+    cutlass::reference::host::GettMainloopParams<ElementAccumulator, 
+        decltype(A),  
+        decltype(B), 
+        decltype(SfA), 
         decltype(SfB)
-      >
+      > 
       mainloop_params{A, SfA, B, SfB};
     return mainloop_params;
   }
@@ -1398,7 +1397,7 @@ struct HostCollectiveEpilogue {
                                        typename Gemm::EpilogueOutputOp>;
   static_assert(cute::is_base_of_v<cutlass::epilogue::fusion::FusionOperation, FusionOp>);
 
-
+  
   // Scale factor Generation related
   using SfStrategy = cutlass::reference::host::SfStrategy;
   static constexpr bool IsBlockScaleSupported            = FusionOp::IsBlockScaleSupported;
@@ -1409,11 +1408,11 @@ struct HostCollectiveEpilogue {
                                           SFD_VectorSize
                                         >;
   using Blk_MN = typename Sm100BlockScaledOutputConfig::Blk_MN;
-  using Blk_SF = typename Sm100BlockScaledOutputConfig::Blk_SF;
+  using Blk_SF = typename Sm100BlockScaledOutputConfig::Blk_SF; 
   using OutputSFAtom = typename Sm100BlockScaledOutputConfig::SfAtom;
   cutlass::HostTensor<ElementSFD, LayoutTagD> tensor_SFD;
   cutlass::HostTensor<ElementSFD, LayoutTagD> reference_SFD;
-
+  
   using ElementCompute    = typename FusionOp::ElementCompute;
   using ElementScalar     = typename FusionOp::ElementScalar;
   using ElementBias       = non_void_t<typename FusionOp::ElementBias>;
@@ -1424,8 +1423,12 @@ struct HostCollectiveEpilogue {
                               cutlass::epilogue::thread::Identity<ElementCompute>>;
 
   static constexpr bool IsRowBiasEnabled        = FusionOp::IsPerRowBiasSupported;
+  static constexpr bool IsColBiasEnabled        = FusionOp::IsPerColBiasSupported;
+  static_assert(not (IsColBiasEnabled && IsRowBiasEnabled));
+
   static constexpr bool IsDeBiasEnabled      = FusionOp::IsDePerRowBiasSupported;
   static constexpr bool IsPerRowScaleEnabled = FusionOp::IsPerRowScaleSupported;
+  static constexpr bool IsPerColScaleEnabled = FusionOp::IsPerColScaleSupported;
   static constexpr bool IsScaleFactorEnabled = FusionOp::IsScaleFactorSupported;
   static constexpr bool IsAuxInEnabled       = FusionOp::IsAuxInSupported;
   static constexpr bool IsAuxOutEnabled      = FusionOp::IsAuxOutSupported;
@@ -1474,7 +1477,7 @@ struct HostCollectiveEpilogue {
   CheckEquality check_relative_equality = CheckEquality::EXACT;
   // Are scalars copied to device memory before kernel launch
   ScalarLoc use_device_scalars = ScalarLoc::ON_HOST;
-  // If per-row scale is enabled and this is disabled, alpha/beta are passed as a host or device scalar instead of device vector
+  // If vector scale is supported and this is disabled, alpha/beta are passed as a host or device scalar instead of device vector
   VectorScale vector_scale_mode = VectorScale::DISABLED;
 
   // Random distribution with which to initialize the A/B/C/D/Aux scaling factors
@@ -1567,8 +1570,7 @@ struct HostCollectiveEpilogue {
     auto col_vector_coord = cutlass::make_Coord(M);
     auto row_vector_coord = cutlass::make_Coord(N);
     auto batch_vector_coord = cutlass::make_Coord(L);
-    auto ML_coord = cutlass::make_Coord(M * L);
-    if constexpr (IsPerRowScaleEnabled) {
+    if constexpr (IsPerRowScaleEnabled or IsPerColScaleEnabled) {
       // scalars
       if (vector_scale_mode == VectorScale::DISABLED) {
         // batched scalars
@@ -1593,8 +1595,9 @@ struct HostCollectiveEpilogue {
       }
       // batched vectors
       else {
-        alpha.resize(ML_coord, true);
-        beta.resize(ML_coord, true);
+        auto batched_vector_coord = cutlass::make_Coord((IsPerRowScaleEnabled ? M : N) * L);
+        alpha.resize(batched_vector_coord, true);
+        beta.resize(batched_vector_coord, true);
         EXPECT_TRUE(initialize_tensor(alpha.host_view(), init_scale, seed + 2023));
         if (beta_ != ElementScalar(0)) {
           EXPECT_TRUE(initialize_tensor(beta.host_view(), init_scale, seed + 2024));
@@ -1639,9 +1642,7 @@ struct HostCollectiveEpilogue {
       scale_D.sync_device();
     }
 
-    if constexpr (
-      IsRowBiasEnabled
-    ) {
+    if constexpr (IsRowBiasEnabled or IsColBiasEnabled) {
       bias.resize(IsRowBiasEnabled ? col_vector_coord : row_vector_coord);
       EXPECT_TRUE(initialize_tensor(bias.host_view(), init_bias, seed + 2023));
       bias.sync_device();
@@ -1699,7 +1700,7 @@ struct HostCollectiveEpilogue {
       }
     }
 
-
+    
     if constexpr (IsBlockScaleSupported) {
       auto m_blks = cutlass::ceil_div(M, cute::size<0>(cute::shape(OutputSFAtom{})));
       auto n_blks = cutlass::ceil_div(N, cute::size<1>(cute::shape(OutputSFAtom{})));
@@ -1713,7 +1714,7 @@ struct HostCollectiveEpilogue {
       EXPECT_TRUE(initialize_tensor(norm_constant.host_view(), init_scale, seed + 2023));
       norm_constant.sync_device();
     }
-
+    
 
     return true;
   }
@@ -1780,7 +1781,7 @@ struct HostCollectiveEpilogue {
         }
       }
       #endif
-      std::cout<<"D is incorrect"<<std::endl;
+      std::cout<<"D is incorrect"<<std::endl;  
     }
 
     if constexpr (IsAbsMaxEnabledD) {
@@ -1813,16 +1814,15 @@ struct HostCollectiveEpilogue {
       }
     }
 
-
+    
     if constexpr (IsBlockScaleSupported) {
       tensor_SFD.sync_host();
       bool passed_sf = equality_check(reference_SFD.host_view(), tensor_SFD.host_view());
       if(!passed_sf) {
-        std::cout<<"SF is incorrect"<<std::endl;
+        std::cout<<"SF is incorrect"<<std::endl;  
       }
       passed &= passed_sf;
     }
-
 
     return passed;
   }
@@ -1835,7 +1835,7 @@ struct HostCollectiveEpilogue {
         << ", scale_b: " << scale_B.at(coord_0)
         << ", scale_c: " << scale_C.at(coord_0);
     }
-    if constexpr (IsPerRowScaleEnabled) {
+    if constexpr (IsPerRowScaleEnabled or IsPerColScaleEnabled) {
       file << "\n\nvalpha = \n" << alpha.host_view();
       file << "\n\nvbeta = \n" << beta.host_view();
     } else {
@@ -1865,9 +1865,10 @@ struct HostCollectiveEpilogue {
       file << "\n\n";
     }
 
-    if constexpr (IsRowBiasEnabled) {
+    if constexpr (IsRowBiasEnabled or IsColBiasEnabled) {
       file << "\n\nBias = \n" << bias.host_view();
     }
+
     if constexpr (IsAuxInEnabled) {
       file << "\n\nAux Input = \n" << tensor_Aux.host_view();
     }
@@ -1882,13 +1883,12 @@ struct HostCollectiveEpilogue {
         << "\n\nReference Aux =\n" << reference_Aux.host_view()
         << "\n\nComputed Aux =\n" << tensor_Aux.host_view();
     }
-
+    
     if constexpr (IsBlockScaleSupported) {
       file
         << "\n\nSFD Reference =\n" << reference_SFD.host_view()
         << "\n\nSFD Computed =\n" << tensor_SFD.host_view();
     }
-
 
     file
     << "\nC =\n" << tensor_C.host_view()
@@ -1933,6 +1933,12 @@ struct HostCollectiveEpilogue {
         fusion_args.dAlpha = cute::make_stride(bool(m_stride),cute::_0{}, l_stride);
         fusion_args.dBeta = cute::make_stride(bool(m_stride),cute::_0{}, l_stride);
       }
+      else if constexpr (IsPerColScaleEnabled) {
+        int32_t n_stride = vector_scale_mode == VectorScale::ENABLED ? 1 : 0;
+        int64_t l_stride = vector_scale_mode == VectorScale::ENABLED ? N : (use_device_scalars == ScalarLoc::ON_DEVICE ? 1 : 0);
+        fusion_args.dAlpha = cute::make_stride(cute::_0{}, bool(n_stride), l_stride);
+        fusion_args.dBeta = cute::make_stride(cute::_0{}, bool(n_stride), l_stride);
+      }
       else {
         if constexpr (not IsFfma2Kernel) {
           if (use_device_scalars == ScalarLoc::ON_DEVICE) {
@@ -1955,9 +1961,7 @@ struct HostCollectiveEpilogue {
         fusion_args.scale_d_ptr = scale_D.device_data();
       }
 
-      if constexpr (
-        IsRowBiasEnabled
-      ) {
+      if constexpr (IsRowBiasEnabled or IsColBiasEnabled) {
         fusion_args.bias_ptr = bias.device_data();
       }
 
@@ -2000,12 +2004,11 @@ struct HostCollectiveEpilogue {
         }
       }
 
-
+      
       if constexpr (IsBlockScaleSupported) {
         arguments.thread.block_scale_factor_ptr = tensor_SFD.device_data();
         arguments.thread.norm_constant_ptr = norm_constant.device_data();
       }
-
     }
 
     return arguments;
@@ -2037,6 +2040,12 @@ struct HostCollectiveEpilogue {
         return cute::make_tensor(detail::make_iterator(alpha.host_data()),
             cute::make_layout(cute::make_shape(M, N, L), make_stride(m_stride, cute::_0{}, l_stride)));
       }
+      else if constexpr (IsPerColScaleEnabled) {
+        int n_stride = vector_scale_mode == VectorScale::ENABLED ? 1 : 0;
+        int l_stride = vector_scale_mode == VectorScale::ENABLED ? N : (use_device_scalars == ScalarLoc::ON_DEVICE ? 1 : 0);
+        return cute::make_tensor(detail::make_iterator(alpha.host_data()),
+            cute::make_layout(cute::make_shape(M, N, L), make_stride(cute::_0{}, n_stride, l_stride)));
+      }
       else {
         return cute::make_tensor(detail::make_iterator(alpha.host_data()),
             cute::make_layout(cute::make_shape(M, N, L), make_stride(cute::_0{}, cute::_0{}, cute::_1{})));
@@ -2050,12 +2059,18 @@ struct HostCollectiveEpilogue {
         return cute::make_tensor(detail::make_iterator(beta.host_data()),
             cute::make_layout(cute::make_shape(M, N, L), make_stride(m_stride, cute::_0{}, l_stride)));
       }
+      else if constexpr (IsPerColScaleEnabled) {
+        int n_stride = vector_scale_mode == VectorScale::ENABLED ? 1 : 0;
+        int l_stride = vector_scale_mode == VectorScale::ENABLED ? N : (use_device_scalars == ScalarLoc::ON_DEVICE ? 1 : 0);
+        return cute::make_tensor(detail::make_iterator(beta.host_data()),
+            cute::make_layout(cute::make_shape(M, N, L), make_stride(cute::_0{}, n_stride, l_stride)));
+      }
       else {
         return  cute::make_tensor(detail::make_iterator(beta.host_data()),
             cute::make_layout(cute::make_shape(M, N, L), make_stride(cute::_0{}, cute::_0{}, cute::_1{})));
       }
     }();
-
+    
     auto SfD = [&](){
       if constexpr (IsBlockScaleSupported) {
         auto tensor = make_tensor(detail::make_iterator(reference_SFD.host_data()),
@@ -2079,11 +2094,11 @@ struct HostCollectiveEpilogue {
       decltype(Valpha),
       decltype(Vbeta),
       ActivationFunctor,
-      decltype(SfD),
-      Int<SFD_VectorSize>,
-      cutlass::plus<ElementCompute>
-      , false /*PerColumnBias_*/
-      , SfGenStrategy
+      decltype(SfD),             
+      Int<SFD_VectorSize>,       
+      cutlass::plus<ElementCompute>,
+      IsColBiasEnabled
+      , SfGenStrategy            
     > epilogue_params{};
 
     epilogue_params.C = C;
@@ -2098,8 +2113,7 @@ struct HostCollectiveEpilogue {
       epilogue_params.scale_d = scale_D.at(coord_0);
     }
 
-    if constexpr (IsRowBiasEnabled 
-      or IsDeBiasEnabled) 
+    if constexpr (IsRowBiasEnabled or IsColBiasEnabled or IsDeBiasEnabled)
     {
       epilogue_params.Bias = Bias;
     }
@@ -2122,7 +2136,7 @@ struct HostCollectiveEpilogue {
       }
     }
 
-    if constexpr (IsPerRowScaleEnabled) {
+    if constexpr (IsPerRowScaleEnabled or IsPerColScaleEnabled) {
       epilogue_params.Valpha = Valpha;
       if (vector_scale_mode == VectorScale::ENABLED) {
         epilogue_params.Vbeta = Vbeta;
@@ -2134,7 +2148,7 @@ struct HostCollectiveEpilogue {
         epilogue_params.Vbeta = Vbeta;
       }
     }
-
+    
     if constexpr (IsBlockScaleSupported) {
       epilogue_params.SfD = SfD;
       epilogue_params.st = norm_constant.at(coord_0);
@@ -2149,16 +2163,16 @@ template <
   bool force_legacy_epilogue = false,
   typename ElementA = typename Gemm::GemmKernel::ElementA,
   typename ElementB = typename Gemm::GemmKernel::ElementB
-  , typename RuntimeDatatypeA = void*
-  , typename RuntimeDatatypeB = void*
+  , typename RuntimeDatatypeA = void* 
+  , typename RuntimeDatatypeB = void* 
 >
 struct TestbedImpl {
   // Kernel data types
   using ScheduleType = typename Gemm::GemmKernel::CollectiveMainloop::DispatchPolicy::Schedule;
   // All Collective MMA operands are defined by HostCollectiveMainloopType based on the schedule type
   using HostCollectiveMainloopType = HostCollectiveMainloop<ScheduleType, Gemm, ElementA, ElementB>;
-
-  using CollectiveEpilogue = cute::conditional_t<IsDefaultEpilogue<typename Gemm::GemmKernel::CollectiveEpilogue>::value || force_legacy_epilogue,
+  
+  using CollectiveEpilogue = cute::conditional_t<IsDefaultEpilogue<typename Gemm::GemmKernel::CollectiveEpilogue>::value || force_legacy_epilogue, 
                                                 HostCollectiveDefaultEpilogue<Gemm>, 
                                                 HostCollectiveEpilogue<Gemm>>;
   
@@ -2172,7 +2186,7 @@ struct TestbedImpl {
   using LayoutTagC = typename CollectiveEpilogue::LayoutTagC;
   using LayoutTagD = typename CollectiveEpilogue::LayoutTagD;
 
-
+  
   using InternalElementA = typename Gemm::GemmKernel::ElementA;
   using InternalElementB = typename Gemm::GemmKernel::ElementB;
   static constexpr bool IsRuntimeDataTypeA = cutlass::gemm::collective::detail::is_sm10x_runtime_f8f6f4<InternalElementA>();
@@ -2180,11 +2194,11 @@ struct TestbedImpl {
   static constexpr bool IsRuntimeDataTypeB = cutlass::gemm::collective::detail::is_sm10x_runtime_f8f6f4<InternalElementB>();
 
   static_assert((IsRuntimeDataTypeA && IsRuntimeDataTypeB) ||
-                (!IsRuntimeDataTypeA && !IsRuntimeDataTypeB),
+                (!IsRuntimeDataTypeA && !IsRuntimeDataTypeB), 
                 "ElementA and ElementB in a GEMM kernel should be both runtime or both static.");
 
   static constexpr bool IsRuntimeDataType = IsRuntimeDataTypeA && IsRuntimeDataTypeB;
-
+  
 
   uint32_t sm_count;
   // Used to force multi-wave tests for persistent kernel schedules
@@ -2386,8 +2400,8 @@ struct TestbedImpl {
     detail::MaxSwizzleSize max_swizzle = detail::MaxSwizzleSize{},
     detail::Splits splits = detail::Splits{},
     DecompositionMode decomposition_mode = DecompositionMode::Heuristic
-    , RuntimeDatatypeA runtime_input_datatype_a = {}
-    , RuntimeDatatypeB runtime_input_datatype_b = {}
+    , RuntimeDatatypeA runtime_input_datatype_a = {} 
+    , RuntimeDatatypeB runtime_input_datatype_b = {} 
     )
   {
 #if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
@@ -2454,12 +2468,12 @@ struct TestbedImpl {
 
     mainloop_args = collective_mma_inputs.to_args();
 
-
+    
     if constexpr (IsRuntimeDataType) {
       mainloop_args.runtime_data_type_a = runtime_input_datatype_a;
       mainloop_args.runtime_data_type_b = runtime_input_datatype_b;
     }
-
+    
 
     arguments =
     {
@@ -2501,6 +2515,7 @@ struct TestbedImpl {
       return true;
 #endif
     }
+
     //
     // Run the GEMM
     //
@@ -2600,8 +2615,8 @@ template <
   bool force_legacy_epilogue = false,
   typename ElementA = typename Gemm::GemmKernel::ElementA,
   typename ElementB = typename Gemm::GemmKernel::ElementB
-  , typename RuntimeDatatypeA = void*
-  , typename RuntimeDatatypeB = void*
+  , typename RuntimeDatatypeA = void* 
+  , typename RuntimeDatatypeB = void* 
 >
 struct Testbed3x {
 
@@ -2611,8 +2626,8 @@ struct Testbed3x {
                         force_legacy_epilogue, 
                         ElementA, 
                         ElementB
-                        , RuntimeDatatypeA
-                        , RuntimeDatatypeB
+                        , RuntimeDatatypeA 
+                        , RuntimeDatatypeB 
                         >;
   using Kernel      = typename Gemm::GemmKernel;
   using Epilogue    = typename Gemm::GemmKernel::CollectiveEpilogue;
@@ -2653,13 +2668,13 @@ struct Testbed3x {
     DecompositionMode decomposition_mode = DecompositionMode::Heuristic,
     bool profiling = false,
     detail::Iterations iterations = detail::Iterations{}
-    , RuntimeDatatypeA runtime_input_datatype_a = {}
-    , RuntimeDatatypeB runtime_input_datatype_b = {}
+    , RuntimeDatatypeA runtime_input_datatype_a = {} 
+    , RuntimeDatatypeB runtime_input_datatype_b = {} 
     )
   {
     return impl_.run(
         problem_size, alpha, beta, profiling, iterations, raster_order, max_swizzle, splits, decomposition_mode
-        , runtime_input_datatype_a, runtime_input_datatype_b
+        , runtime_input_datatype_a, runtime_input_datatype_b 
         );
   }
 };
@@ -2714,7 +2729,7 @@ bool TestGemmPerf3x(int iterations = 20) {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 //
 template <
-  typename Gemm,
+  typename Gemm, 
   typename RuntimeDataTypeA,
   typename RuntimeDataTypeB,
   bool force_legacy_epilogue = false>
@@ -2804,8 +2819,8 @@ bool TestRuntimeDataTypeSmall(
           problem_splits.push_back(detail::Splits{2});
         }
         for (auto splits : problem_splits) {
-
-          if constexpr (cute::is_same_v<RuntimeDataTypeA, cute::UMMA::MXF4Format> &&
+          
+          if constexpr (cute::is_same_v<RuntimeDataTypeA, cute::UMMA::MXF4Format> && 
                         cute::is_same_v<RuntimeDataTypeB, cute::UMMA::MXF4Format>) {
             // e2m1_e2m1
             if (runtime_input_datatype_a == cute::UMMA::MXF4Format::E2M1 &&
@@ -2838,16 +2853,16 @@ bool TestRuntimeDataTypeSmall(
               return false;
             }
           }
-
-          else
-          if constexpr (cute::is_same_v<RuntimeDataTypeA, cute::UMMA::MXF8F6F4Format> &&
+          
+          else 
+          if constexpr (cute::is_same_v<RuntimeDataTypeA, cute::UMMA::MXF8F6F4Format> && 
                              cute::is_same_v<RuntimeDataTypeB, cute::UMMA::MXF8F6F4Format>) {
             static_assert((cute::is_same_v<InternalElementA, cutlass::type_erased_dynamic_float8_t> ||
                            cute::is_same_v<InternalElementA, cutlass::type_erased_dynamic_float6_t> ||
-                           cute::is_same_v<InternalElementA, cutlass::type_erased_dynamic_float4_t>) &&
+                           cute::is_same_v<InternalElementA, cutlass::type_erased_dynamic_float4_t>) && 
                           (cute::is_same_v<InternalElementB, cutlass::type_erased_dynamic_float8_t> ||
                            cute::is_same_v<InternalElementB, cutlass::type_erased_dynamic_float6_t> ||
-                           cute::is_same_v<InternalElementB, cutlass::type_erased_dynamic_float4_t>),
+                           cute::is_same_v<InternalElementB, cutlass::type_erased_dynamic_float4_t>), 
                           "Runtime datatype must be selected with an appropriate static umbrella data type.");
             if constexpr (cute::is_same_v<InternalElementA, cutlass::type_erased_dynamic_float8_t> &&
                           cute::is_same_v<InternalElementB, cutlass::type_erased_dynamic_float4_t>) {
@@ -3021,7 +3036,7 @@ bool TestRuntimeDataTypeSmall(
                 return false;
               }
             }
-            else
+            else 
             if constexpr (cute::is_same_v<InternalElementA, cutlass::type_erased_dynamic_float8_t> &&
                                cute::is_same_v<InternalElementB, cutlass::type_erased_dynamic_float8_t>) {
               // e5m2_e5m2
@@ -3160,16 +3175,16 @@ bool TestRuntimeDataTypeSmall(
 
 template <typename Gemm, bool force_legacy_epilogue = false, bool apply_alignment_offset = true, bool test_batched_alpha_beta = false>
 bool TestSmall(double alpha = 1.0, double beta = cute::is_same_v<typename Gemm::GemmKernel::ElementC, void> ? 0.0 : 1.0,
-  CheckEquality check_relative_equality = CheckEquality::RELATIVE,
-  ScalarLoc use_device_scalars = ScalarLoc::ON_DEVICE,
-  VectorScale vector_scale_mode = VectorScale::ENABLED,
+  CheckEquality check_relative_equality = CheckEquality::RELATIVE, 
+  ScalarLoc use_device_scalars = ScalarLoc::ON_DEVICE, 
+  VectorScale vector_scale_mode = VectorScale::ENABLED, 
   std::vector<int> override_problem_size_k = {}) {
-
+ 
   using ProblemShapeType = typename Gemm::GemmKernel::ProblemShape;
   using ElementScalar = typename Gemm::EpilogueOutputOp::ElementScalar;
   using CtaShape_MNK = typename Gemm::GemmKernel::CollectiveMainloop::CtaShape_MNK;
   using DispatchPolicy = typename Gemm::GemmKernel::CollectiveMainloop::DispatchPolicy;
-  CtaShape_MNK cta_shape;
+  CtaShape_MNK cta_shape;  
   Testbed3x<Gemm, cutlass::epilogue::thread::Identity, force_legacy_epilogue> testbed(check_relative_equality, use_device_scalars, vector_scale_mode);
   static constexpr int SmCount  = 16;
   static constexpr int MultiplierOffsetM = 1;
@@ -3338,9 +3353,14 @@ bool TestAll(double alpha = 1.0, double beta = cute::is_same_v<typename Gemm::Ge
 
   Testbed3x<Gemm, ActivationFunctor> testbed(check_relative_equality, ScalarLoc::ON_HOST, VectorScale::DISABLED);
 
-  int max_alignment = std::max(Gemm::kAlignmentA, Gemm::kAlignmentB);
-  std::vector<int> problem_size_m = {max_alignment, 512 - 3 * max_alignment};
-  std::vector<int> problem_size_n = {max_alignment, 512 - 2 * max_alignment};
+  int max_alignment_m = std::max({Gemm::kAlignmentA, Gemm::kAlignmentC, Gemm::kAlignmentD});
+  int max_alignment_n = std::max({Gemm::kAlignmentB, Gemm::kAlignmentC, Gemm::kAlignmentD});
+  if constexpr (std::is_base_of_v<cutlass::epilogue::fusion::FusionOperation, typename Gemm::EpilogueOutputOp>) {
+    max_alignment_m = std::max(max_alignment_m, Gemm::EpilogueOutputOp::AlignmentAux);
+    max_alignment_n = std::max(max_alignment_n, Gemm::EpilogueOutputOp::AlignmentAux);
+  }
+  std::vector<int> problem_size_m = {max_alignment_m, 512 - 3 * max_alignment_m};
+  std::vector<int> problem_size_n = {max_alignment_n, 512 - 2 * max_alignment_n};
 
   if constexpr (cute::is_same_v<typename Gemm::GemmKernel::DispatchPolicy::Schedule,
                 cutlass::gemm::KernelTmaWarpSpecializedPingpong>) {
@@ -3351,7 +3371,8 @@ bool TestAll(double alpha = 1.0, double beta = cute::is_same_v<typename Gemm::Ge
   constexpr int Stages = Gemm::GemmKernel::DispatchPolicy::Stages;
   constexpr int TileShapeK = cute::size<2>(typename Gemm::GemmKernel::TileShape{});
 
-  std::vector<int> problem_size_k = {max_alignment, TileShapeK * (Stages + 1) - max_alignment};
+  int max_alignment_k = std::max(Gemm::kAlignmentA, Gemm::kAlignmentB);
+  std::vector<int> problem_size_k = {max_alignment_k, TileShapeK * (Stages + 1) - max_alignment_k};
 
   using DecompositionMode = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90StreamKParams::DecompositionMode;
   std::vector<DecompositionMode> decomposition_modes = {DecompositionMode::Heuristic};
@@ -3367,7 +3388,7 @@ bool TestAll(double alpha = 1.0, double beta = cute::is_same_v<typename Gemm::Ge
 
     // Use larger K sizes for stream-K tests
     static constexpr int min_tiles_per_sk_unit = cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90StreamKParams::min_iters_per_sk_unit_;
-    problem_size_k = {TileShapeK * min_tiles_per_sk_unit, TileShapeK * 3 * min_tiles_per_sk_unit - max_alignment};
+    problem_size_k = {TileShapeK * min_tiles_per_sk_unit, TileShapeK * 3 * min_tiles_per_sk_unit - max_alignment_k};
   }
 
   using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90::RasterOrderOptions;
@@ -3465,7 +3486,7 @@ bool TestAll(double alpha = 1.0, double beta = cute::is_same_v<typename Gemm::Ge
 
   // if we do support batched GEMM, just run one test on it to save on test time
   if constexpr (cute::rank(ProblemShapeType{}) == 4) {
-    auto problem_size = ProblemShapeType{256 + max_alignment, 256 + max_alignment, 160 + max_alignment, /* l */ 3};
+    auto problem_size = ProblemShapeType{256 + max_alignment_m, 256 + max_alignment_n, 160 + max_alignment_k, /* l */ 3};
     passed = testbed.run(
       problem_size,
       cutlass::from_real<ElementScalar>(alpha),

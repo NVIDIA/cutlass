@@ -34,7 +34,8 @@
   \brief Utilities accompanying the CUTLASS library for interacting with Library types.
 */
 
-#pragma once
+#ifndef CUTLASS_LIBRARY_UTIL_H
+#define CUTLASS_LIBRARY_UTIL_H
 
 #include "cutlass/cutlass.h"
 #include "cutlass/library/library.h"
@@ -213,6 +214,63 @@ bool cast_from_double(std::vector<uint8_t> &bytes, NumericTypeID type, double sr
 
 NumericTypeID dynamic_datatype_to_id(RuntimeDatatype type); 
 
+#define CUDA_CHECK(call)                                                                           \
+  do {                                                                                             \
+    cudaError_t err = (call);                                                                      \
+    if (err != cudaSuccess) {                                                                      \
+      std::cerr << "CUDA Error: " << cudaGetErrorString(err) << " in " << __func__ << " at "       \
+                << __FILE__ << ":" << __LINE__ << std::endl;                                       \
+      return Status::kInvalid;                                                                     \
+    }                                                                                              \
+  } while (0)
+
+// RAII CUDA buffer container
+class CudaBuffer {
+public:
+  CudaBuffer() : size_(0), d_ptr_(nullptr) {}
+
+  explicit CudaBuffer(size_t size) : size_(size), d_ptr_(nullptr) {
+    cudaError_t err = cudaMalloc(&d_ptr_, size_);
+    if (err != cudaSuccess) {
+      throw std::runtime_error("cudaMalloc failed: " + std::string(cudaGetErrorString(err)));
+    }
+  }
+
+  ~CudaBuffer() {
+    if (d_ptr_) {
+      cudaFree(d_ptr_);
+    }
+  }
+
+  CudaBuffer(CudaBuffer const&) = delete;
+  CudaBuffer& operator=(CudaBuffer const&) = delete;
+
+  CudaBuffer(CudaBuffer&& other) noexcept : size_(other.size_), d_ptr_(other.d_ptr_) {
+    other.d_ptr_ = nullptr;
+    other.size_ = 0;
+  }
+
+  CudaBuffer& operator=(CudaBuffer&& other) noexcept {
+    if (this != &other) {
+      if (d_ptr_) {
+        cudaFree(d_ptr_);
+      }
+      d_ptr_ = other.d_ptr_;
+      size_ = other.size_;
+      other.d_ptr_ = nullptr;
+      other.size_ = 0;
+    }
+    return *this;
+  }
+
+  void* data() const noexcept { return d_ptr_; }
+  size_t size() const noexcept { return size_; }
+
+private:
+  size_t size_;
+  void* d_ptr_;
+};
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace library
@@ -220,3 +278,4 @@ NumericTypeID dynamic_datatype_to_id(RuntimeDatatype type);
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+#endif

@@ -82,11 +82,9 @@ struct FusionOperation {
   using ElementAmax = void;
   static constexpr bool IsAbsMaxSupported = false;
 
-  
   using ElementBlockScaleFactor = void;
   static constexpr int SFVecSize = 0;
   static constexpr bool IsBlockScaleSupported = false;               // Umbrella variable to check BlockScaling support in the epilogues
-  
   using GmemLayoutTagScalefactor = void;
 };
 
@@ -495,7 +493,6 @@ struct LinCombDeEltActDePerRowBias
   static constexpr int AlignmentBias = AlignmentBias_;
   static constexpr bool IsDePerRowBiasSupported = true;
 };
-
 
 template<
   int SFVecSize_,

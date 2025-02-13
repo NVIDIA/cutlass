@@ -202,7 +202,7 @@ Use of static layouts has a few advantages.
 
 As stated, the shared memory layouts can be anything that satisfy those conditions. Optimizing kernels like these is often performed by finding a good shared memory layout that provides good access patterns for both the writes to and the reads from shared memory. This includes the ability to vectorize reads and writes as well as avoid shared memory bank conflicts.
 
-Wih the static smem layouts, the `gemm_device` kernel can allocate the required shared memory and create the smem `Tensor`s.
+With the static smem layouts, the `gemm_device` kernel can allocate the required shared memory and create the smem `Tensor`s.
 
 ```cpp
   // Shared memory buffers

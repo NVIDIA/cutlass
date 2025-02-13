@@ -53,6 +53,10 @@ using uint4 = struct alignas(16) {
   unsigned int x, y, z, w;
 };
 
+using float2 = struct alignas(16) {
+  float x, y;
+};
+
 using float4 = struct alignas(16) {
   float x, y, z, w;
 };

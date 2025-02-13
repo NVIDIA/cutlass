@@ -46,7 +46,8 @@ set(CUTLASS_TOOLS_PROFILER_SOURCES
   src/problem_space.cpp
   src/operation_profiler.cu
   src/gemm_operation_profiler.cu
-  src/block_scaled_gemm_operation_profiler.cu                      
+  src/grouped_gemm_operation_profiler.cu
+  src/block_scaled_gemm_operation_profiler.cu
   src/rank_k_operation_profiler.cu
   src/rank_2k_operation_profiler.cu
   src/trmm_operation_profiler.cu
@@ -112,6 +113,7 @@ set(CUTLASS_PROFILER_TEST_COMMAND_OPTIONS_RANK_K   --operation=RankK       --pro
 set(CUTLASS_PROFILER_TEST_COMMAND_OPTIONS_RANK_2K   --operation=Rank2K       --providers=cutlass --verification-providers=cublas        --junit-output=test_cutlass_profiler_rank_2k --print-kernel-before-running=true)
 set(CUTLASS_PROFILER_TEST_COMMAND_OPTIONS_TRMM   --operation=Trmm       --providers=cutlass --verification-providers=device,host        --junit-output=test_cutlass_profiler_trmm    --print-kernel-before-running=true)
 set(CUTLASS_PROFILER_TEST_COMMAND_OPTIONS_SYMM   --operation=Symm       --providers=cutlass --verification-providers=cublas,host        --junit-output=test_cutlass_profiler_symm    --print-kernel-before-running=true)
+set(CUTLASS_PROFILER_TEST_COMMAND_OPTIONS_GROUPED_GEMM --operation=GroupedGemm --providers=cutlass --verification-providers=device --junit-output=test_cutlass_profiler_grouped_gemm --print-kernel-before-running=true)
 
 cutlass_add_executable_tests(
   test_profiler cutlass_profiler
@@ -125,6 +127,7 @@ cutlass_add_executable_tests(
     RANK_2K
     TRMM
     SYMM
+    GROUPED_GEMM
   TEST_COMMAND_OPTIONS_PREFIX
     CUTLASS_PROFILER_TEST_COMMAND_OPTIONS_
   DISABLE_EXECUTABLE_INSTALL_RULE

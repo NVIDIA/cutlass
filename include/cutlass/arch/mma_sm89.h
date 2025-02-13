@@ -47,12 +47,21 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 #if (__CUDACC_VER_MAJOR__ > 12) || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 4)
-
-#  define CUTLASS_ARCH_MMA_SM89_SUPPORTED 1
+#  define CUTLASS_ARCH_MMA_F32_SM89_SUPPORTED
 #endif
 
-#if defined(CUTLASS_ARCH_MMA_SM89_SUPPORTED) && defined(__CUDA_ARCH__) && (__CUDA_ARCH__ == 890)
-#  define CUTLASS_ARCH_MMA_SM89_ENABLED
+#if (__CUDACC_VER_MAJOR__ > 12) || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 8)
+#  define CUTLASS_ARCH_MMA_F16_SM89_SUPPORTED
+#endif
+
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 890)
+#  if defined(CUTLASS_ARCH_MMA_F32_SM89_SUPPORTED)
+#    define CUTLASS_ARCH_MMA_F32_SM89_ENABLED
+#  endif
+
+#  if defined(CUTLASS_ARCH_MMA_F16_SM89_SUPPORTED)
+#    define CUTLASS_ARCH_MMA_F16_SM89_ENABLED
+#  endif
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -134,7 +143,7 @@ struct Mma<
   void operator()(FragmentC &d, FragmentA const &a, FragmentB const &b,
                   FragmentC const &c) const {
 
-#if defined(CUTLASS_ARCH_MMA_SM89_ENABLED)
+#if defined(CUTLASS_ARCH_MMA_F32_SM89_ENABLED)
 
   uint32_t const *A = reinterpret_cast<uint32_t const *>(&a);
   uint32_t const *B = reinterpret_cast<uint32_t const *>(&b);
@@ -200,7 +209,7 @@ struct Mma<
   void operator()(FragmentC &d, FragmentA const &a, FragmentB const &b,
                   FragmentC const &c) const {
 
-#if defined(CUTLASS_ARCH_MMA_SM89_ENABLED)
+#if defined(CUTLASS_ARCH_MMA_F32_SM89_ENABLED)
 
   uint32_t const *A = reinterpret_cast<uint32_t const *>(&a);
   uint32_t const *B = reinterpret_cast<uint32_t const *>(&b);
@@ -266,7 +275,7 @@ struct Mma<
   void operator()(FragmentC &d, FragmentA const &a, FragmentB const &b,
                   FragmentC const &c) const {
 
-#if defined(CUTLASS_ARCH_MMA_SM89_ENABLED)
+#if defined(CUTLASS_ARCH_MMA_F32_SM89_ENABLED)
 
   uint32_t const *A = reinterpret_cast<uint32_t const *>(&a);
   uint32_t const *B = reinterpret_cast<uint32_t const *>(&b);
@@ -332,7 +341,7 @@ struct Mma<
   void operator()(FragmentC &d, FragmentA const &a, FragmentB const &b,
                   FragmentC const &c) const {
 
-#if defined(CUTLASS_ARCH_MMA_SM89_ENABLED)
+#if defined(CUTLASS_ARCH_MMA_F32_SM89_ENABLED)
 
   uint32_t const *A = reinterpret_cast<uint32_t const *>(&a);
   uint32_t const *B = reinterpret_cast<uint32_t const *>(&b);
@@ -347,6 +356,276 @@ struct Mma<
         "r"(A[0]), "r"(A[1]), "r"(A[2]), "r"(A[3]),
         "r"(B[0]), "r"(B[1]),
         "f"(C[0]), "f"(C[1]), "f"(C[2]), "f"(C[3])
+  );
+
+#else
+
+    CUTLASS_UNUSED(d);
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_NOT_IMPLEMENTED();
+
+#endif
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// Matrix Multiply 16832 - Float {E4M3, E5M2}, FP16 accumulation
+//
+////////////////////////////////////////////////////////////////////////////////
+
+/// Matrix multiply-add operation - F16 = fe4m3 * fe4m3 + F16
+template <typename Operator_>
+struct Mma<
+  gemm::GemmShape<16, 8, 32>,
+  32,
+  cutlass::float_e4m3_t,
+  layout::RowMajor,
+  cutlass::float_e4m3_t,
+  layout::ColumnMajor,
+  cutlass::half_t,
+  layout::RowMajor,
+  Operator_> {
+  static_assert(platform::is_same<Operator_, OpMultiplyAdd>::value ||
+                platform::is_same<Operator_, OpMultiplyAddFastAccum>::value,
+                "Invalid operator for SM89 FP8 instruction");
+
+  using Shape = gemm::GemmShape<16, 8, 32>;
+
+  using ElementA = cutlass::float_e4m3_t;
+  using LayoutA = layout::RowMajor;
+  using FragmentA = Array<ElementA, 16>;
+
+  using ElementB = cutlass::float_e4m3_t;
+  using LayoutB = layout::ColumnMajor;
+  using FragmentB = Array<ElementB, 8>;
+
+  using ElementC = cutlass::half_t;
+  using LayoutC = layout::RowMajor;
+  using FragmentC = Array<cutlass::half_t, 4>;
+
+  using Operator = Operator_;
+  using ArchTag = arch::Sm89;
+
+  CUTLASS_HOST_DEVICE
+  void operator()(FragmentC &d, FragmentA const &a, FragmentB const &b,
+                  FragmentC const &c) const {
+
+#if defined(CUTLASS_ARCH_MMA_F16_SM89_ENABLED)
+
+  uint32_t const *A = reinterpret_cast<uint32_t const *>(&a);
+  uint32_t const *B = reinterpret_cast<uint32_t const *>(&b);
+  uint32_t const *C = reinterpret_cast<uint32_t const *>(&c);
+  uint32_t *D = reinterpret_cast<uint32_t *>(&d);
+
+  asm(
+      "mma.sync.aligned.m16n8k32.row.col.f16.e4m3.e4m3.f16 "
+      "{%0,%1}, {%2,%3,%4,%5}, {%6,%7}, {%8,%9};\n"
+      : "=r"(D[0]), "=r"(D[1])
+      :
+        "r"(A[0]), "r"(A[1]), "r"(A[2]), "r"(A[3]),
+        "r"(B[0]), "r"(B[1]),
+        "r"(C[0]), "r"(C[1])
+  );
+
+#else
+
+    CUTLASS_UNUSED(d);
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_NOT_IMPLEMENTED();
+
+#endif
+  }
+};
+
+/// Matrix multiply-add operation - F16 = fe4m3 * fe5m2 + F16
+template <typename Operator_>
+struct Mma<
+  gemm::GemmShape<16, 8, 32>,
+  32,
+  cutlass::float_e4m3_t,
+  layout::RowMajor,
+  cutlass::float_e5m2_t,
+  layout::ColumnMajor,
+  cutlass::half_t,
+  layout::RowMajor,
+  Operator_> {
+  static_assert(platform::is_same<Operator_, OpMultiplyAdd>::value ||
+                platform::is_same<Operator_, OpMultiplyAddFastAccum>::value,
+                "Invalid operator for SM89 FP8 instruction");
+
+  using Shape = gemm::GemmShape<16, 8, 32>;
+
+  using ElementA = cutlass::float_e4m3_t;
+  using LayoutA = layout::RowMajor;
+  using FragmentA = Array<ElementA, 16>;
+
+  using ElementB = cutlass::float_e5m2_t;
+  using LayoutB = layout::ColumnMajor;
+  using FragmentB = Array<ElementB, 8>;
+
+  using ElementC = cutlass::half_t;
+  using LayoutC = layout::RowMajor;
+  using FragmentC = Array<cutlass::half_t, 4>;
+
+  using Operator = Operator_;
+  using ArchTag = arch::Sm89;
+
+  CUTLASS_HOST_DEVICE
+  void operator()(FragmentC &d, FragmentA const &a, FragmentB const &b,
+                  FragmentC const &c) const {
+
+#if defined(CUTLASS_ARCH_MMA_F16_SM89_ENABLED)
+
+  uint32_t const *A = reinterpret_cast<uint32_t const *>(&a);
+  uint32_t const *B = reinterpret_cast<uint32_t const *>(&b);
+  uint32_t const *C = reinterpret_cast<uint32_t const *>(&c);
+  uint32_t *D = reinterpret_cast<uint32_t *>(&d);
+
+  asm(
+      "mma.sync.aligned.m16n8k32.row.col.f16.e4m3.e5m2.f16 "
+      "{%0,%1}, {%2,%3,%4,%5}, {%6,%7}, {%8,%9};\n"
+      : "=r"(D[0]), "=r"(D[1])
+      :
+        "r"(A[0]), "r"(A[1]), "r"(A[2]), "r"(A[3]),
+        "r"(B[0]), "r"(B[1]),
+        "r"(C[0]), "r"(C[1])
+  );
+
+#else
+
+    CUTLASS_UNUSED(d);
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_NOT_IMPLEMENTED();
+
+#endif
+  }
+};
+
+/// Matrix multiply-add operation - F16 = fe5m2 * fe4m3 + F16
+template <typename Operator_>
+struct Mma<
+  gemm::GemmShape<16, 8, 32>,
+  32,
+  cutlass::float_e5m2_t,
+  layout::RowMajor,
+  cutlass::float_e4m3_t,
+  layout::ColumnMajor,
+  cutlass::half_t,
+  layout::RowMajor,
+  Operator_> {
+  static_assert(platform::is_same<Operator_, OpMultiplyAdd>::value ||
+                platform::is_same<Operator_, OpMultiplyAddFastAccum>::value,
+                "Invalid operator for SM89 FP8 instruction");
+
+  using Shape = gemm::GemmShape<16, 8, 32>;
+
+  using ElementA = cutlass::float_e5m2_t;
+  using LayoutA = layout::RowMajor;
+  using FragmentA = Array<ElementA, 16>;
+
+  using ElementB = cutlass::float_e4m3_t;
+  using LayoutB = layout::ColumnMajor;
+  using FragmentB = Array<ElementB, 8>;
+
+  using ElementC = cutlass::half_t;
+  using LayoutC = layout::RowMajor;
+  using FragmentC = Array<cutlass::half_t, 4>;
+
+  using Operator = Operator_;
+  using ArchTag = arch::Sm89;
+
+  CUTLASS_HOST_DEVICE
+  void operator()(FragmentC &d, FragmentA const &a, FragmentB const &b,
+                  FragmentC const &c) const {
+
+#if defined(CUTLASS_ARCH_MMA_F16_SM89_ENABLED)
+
+  uint32_t const *A = reinterpret_cast<uint32_t const *>(&a);
+  uint32_t const *B = reinterpret_cast<uint32_t const *>(&b);
+  uint32_t const *C = reinterpret_cast<uint32_t const *>(&c);
+  uint32_t *D = reinterpret_cast<uint32_t *>(&d);
+
+  asm(
+      "mma.sync.aligned.m16n8k32.row.col.f16.e5m2.e4m3.f16 "
+      "{%0,%1}, {%2,%3,%4,%5}, {%6,%7}, {%8,%9};\n"
+      : "=r"(D[0]), "=r"(D[1])
+      :
+        "r"(A[0]), "r"(A[1]), "r"(A[2]), "r"(A[3]),
+        "r"(B[0]), "r"(B[1]),
+        "r"(C[0]), "r"(C[1])
+  );
+
+#else
+
+    CUTLASS_UNUSED(d);
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_NOT_IMPLEMENTED();
+
+#endif
+  }
+};
+
+/// Matrix multiply-add operation - F16 = fe5m2 * fe5m2 + F16
+template <typename Operator_>
+struct Mma<
+  gemm::GemmShape<16, 8, 32>,
+  32,
+  cutlass::float_e5m2_t,
+  layout::RowMajor,
+  cutlass::float_e5m2_t,
+  layout::ColumnMajor,
+  cutlass::half_t,
+  layout::RowMajor,
+  Operator_> {
+  static_assert(platform::is_same<Operator_, OpMultiplyAdd>::value ||
+                platform::is_same<Operator_, OpMultiplyAddFastAccum>::value,
+                "Invalid operator for SM89 FP8 instruction");
+
+  using Shape = gemm::GemmShape<16, 8, 32>;
+
+  using ElementA = cutlass::float_e5m2_t;
+  using LayoutA = layout::RowMajor;
+  using FragmentA = Array<ElementA, 16>;
+
+  using ElementB = cutlass::float_e5m2_t;
+  using LayoutB = layout::ColumnMajor;
+  using FragmentB = Array<ElementB, 8>;
+
+  using ElementC = cutlass::half_t;
+  using LayoutC = layout::RowMajor;
+  using FragmentC = Array<cutlass::half_t, 4>;
+
+  using Operator = Operator_;
+  using ArchTag = arch::Sm89;
+
+  CUTLASS_HOST_DEVICE
+  void operator()(FragmentC &d, FragmentA const &a, FragmentB const &b,
+                  FragmentC const &c) const {
+
+#if defined(CUTLASS_ARCH_MMA_F16_SM89_ENABLED)
+
+  uint32_t const *A = reinterpret_cast<uint32_t const *>(&a);
+  uint32_t const *B = reinterpret_cast<uint32_t const *>(&b);
+  uint32_t const *C = reinterpret_cast<uint32_t const *>(&c);
+  uint32_t *D = reinterpret_cast<uint32_t *>(&d);
+
+  asm(
+      "mma.sync.aligned.m16n8k32.row.col.f16.e5m2.e5m2.f16 "
+      "{%0,%1}, {%2,%3,%4,%5}, {%6,%7}, {%8,%9};\n"
+      : "=r"(D[0]), "=r"(D[1])
+      :
+        "r"(A[0]), "r"(A[1]), "r"(A[2]), "r"(A[3]),
+        "r"(B[0]), "r"(B[1]),
+        "r"(C[0]), "r"(C[1])
   );
 
 #else

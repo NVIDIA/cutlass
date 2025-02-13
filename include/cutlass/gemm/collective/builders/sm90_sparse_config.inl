@@ -71,15 +71,15 @@ struct Sm90GemmSparseConfig {
   using ElementEMmaSparsity = Int<ElementEMma::sparsity>;
 
   // MMA type
-  static constexpr bool IsQmma = cute::is_same_v<ElementAMmaRaw, float_e4m3_t> && ElementAMmaSparsity{} == _2{} ||
+  static constexpr bool IsF8 = cute::is_same_v<ElementAMmaRaw, float_e4m3_t> && ElementAMmaSparsity{} == _2{} ||
                                   cute::is_same_v<ElementAMmaRaw, float_e5m2_t> && ElementAMmaSparsity{} == _2{};
-  static constexpr bool IsImma = cute::is_same_v<ElementAMmaRaw, int8_t> && ElementAMmaSparsity{} == _2{} ||
+  static constexpr bool IsI8 = cute::is_same_v<ElementAMmaRaw, int8_t> && ElementAMmaSparsity{} == _2{} ||
                                  cute::is_same_v<ElementAMmaRaw, uint8_t> && ElementAMmaSparsity{} == _2{};
-  static constexpr bool IsHmma = cute::is_same_v<ElementAMmaRaw, half_t> && ElementAMmaSparsity{} == _2{} ||
+  static constexpr bool IsF16BF16 = cute::is_same_v<ElementAMmaRaw, half_t> && ElementAMmaSparsity{} == _2{} ||
                                  cute::is_same_v<ElementAMmaRaw, bfloat16_t> && ElementAMmaSparsity{} == _2{};
-  static constexpr bool IsTfmma = cute::is_same_v<ElementAMmaRaw, tfloat32_t> && ElementAMmaSparsity{} == _2{} || 
+  static constexpr bool IsTF32 = cute::is_same_v<ElementAMmaRaw, tfloat32_t> && ElementAMmaSparsity{} == _2{} || 
                                   cute::is_same_v<ElementAMmaRaw, float> && ElementAMmaSparsity{} == _2{};
-  static_assert(int(IsQmma) + int(IsImma) + int(IsHmma) + int(IsTfmma) == 1, "Ambigious Input Type Config (failed to choose MMA type)");
+  static_assert(int(IsF8) + int(IsI8) + int(IsF16BF16) + int(IsTF32) == 1, "Ambigious Input Type Config (failed to choose MMA type)");
 
   // Number of ElementARaw stored in ElementAMmaRaw. For Hopper this is always 1.
   using ElemsARawPerElementAMmaRaw = _1;
@@ -89,12 +89,12 @@ struct Sm90GemmSparseConfig {
   static_assert(ElementASparsity{} == _2{}, "ElementASparsity must be 2 for Hopper Sparse Gemm");
 
   // Logical/Physical ElementA per Chunk
-  using LogicalElemsAPerChunk = conditional_t<IsTfmma, _2, _4>;
+  using LogicalElemsAPerChunk = conditional_t<IsTF32, _2, _4>;
   using PhysicalElemsAPerChunk = Int<LogicalElemsAPerChunk{} / ElementASparsity{}>;
 
   // Metadata Bits
   using ElementEBitsPerChunk = _4;
-  using ElementEBitsPerElementAMma = cute::conditional_t<IsTfmma, _4, _2>;
+  using ElementEBitsPerElementAMma = cute::conditional_t<IsTF32, _4, _2>;
 
   // Metadata Layout. Unit in corresbonding logical elements.
   // Basic metadata block is (16,64) for 8-bit, (16,32) for 16-bit, (16,16) for 32-bit data types.
@@ -114,8 +114,8 @@ struct Sm90GemmSparseConfig {
   using TensorEAtom_8bit  = decltype(make_ordered_layout(Shape<_64,MinTileShapeK>{},
                                                          Step < _1,           _0>{}));
 
-  using TensorEAtom = cute::conditional_t<(IsQmma || IsImma),  TensorEAtom_8bit, 
-                      cute::conditional_t<IsTfmma, TensorEAtom_32bit,
+  using TensorEAtom = cute::conditional_t<(IsF8 || IsI8),  TensorEAtom_8bit, 
+                      cute::conditional_t<IsTF32, TensorEAtom_32bit,
                       TensorEAtom_16bit>>;
 
   // Logical elems that construct the atomK for tensorE/A.  

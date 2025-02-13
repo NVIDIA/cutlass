@@ -82,7 +82,7 @@ template<
   int carveout_bytes>
 constexpr int
 sm100_compute_stage_count_or_override(StageCountAutoCarveout<carveout_bytes> stage_count) {
-  // For F8F6F4 sub-bytes, ElementA/B will be passed in as uint8_t
+  // For F8/F6/F4 sub-bytes, ElementA/B will be passed in as uint8_t
   // For Planar Complex, ElementA/B will be passed in as cutlass::complex<ElementARaw>
   // Each stage include (CollectiveMma::SharedStorage)
   // 1. smem for A and smem for B (CollectiveMma::SharedStorage::TensorStorage)
@@ -253,7 +253,9 @@ struct CollectiveBuilder<
   static constexpr uint32_t TotalTmemRows = 128;
   static constexpr uint32_t Sm100TmemCapacityColumns = 512;
   static constexpr uint32_t TotalTmem = TotalTmemRows * Sm100TmemCapacityColumns;
-  static constexpr uint32_t AccumulatorPipelineStageCount = TotalTmem / (cute::size<0>(CtaTileShape_MNK{}) * cute::size<1>(CtaTileShape_MNK{}));
+  static constexpr uint32_t AccumulatorPipelineStageCount = (is_2sm || (!is_2sm && size(shape<0,0>(MmaShapeA_MK{}) > 64))) ? 
+                                                              TotalTmem / (cute::size<0>(CtaTileShape_MNK{}) * cute::size<1>(CtaTileShape_MNK{}))
+                                                            : (Sm100TmemCapacityColumns / cute::size<1>(CtaTileShape_MNK{})) * 2;                       // 1SM MMA_M = 64 case
   static_assert(AccumulatorPipelineStageCount > 0, "Accumulator pipeline stage count must be positive.  This error probably means that TileShape_MNK and/or TiledMma::ThrLayoutVMNK are wrong.");
 
   // Calculate scheduler pipeline stages. Having one more stage than the accumulator allows more latency hiding.

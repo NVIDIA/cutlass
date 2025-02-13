@@ -466,7 +466,6 @@ struct ExampleRunner {
 
     int max_seqlen_kv = 0;
     for (auto e : seqlen_kv) {
-      // if (options.varlen) std::cout << "seqlen " << e << std::endl;
       max_seqlen_kv = std::max(e, max_seqlen_kv);
     }
 

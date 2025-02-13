@@ -43,7 +43,8 @@
                     computational overhead
 */
 
-#pragma once
+#ifndef CUTLASS_LIBRARY_LIBRARY_H
+#define CUTLASS_LIBRARY_LIBRARY_H
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -103,7 +104,7 @@ public:
     void *device_workspace = nullptr,
     cudaStream_t stream = nullptr) const = 0;
 
-  // Originally designed for metadata, but should be useful for FP8/6/4 too. 
+  // Originally designed for metadata, but should be useful for FP8/6/4 too.  
   virtual Status initialize_with_profiler_workspace(
     void const *configuration,
     void *host_workspace,
@@ -282,6 +283,11 @@ struct GemmUniversalConfiguration {
   int device_count{1};
 };
 
+enum class Sm90MixedInputWiderOperand {
+  A = 0,
+  B = 1
+};
+
 struct GemmUniversalArguments {
   // NOTE: these are replicated for 3.0 interfaces
   gemm::GemmCoord problem_size{};
@@ -316,6 +322,18 @@ struct GemmUniversalArguments {
   library::RuntimeDatatype runtime_input_datatype_b{};
   int swizzle_size{1};
   int split_k_slices{1};
+
+  // For mixed input dtype kernels
+  bool is_mixed_dtype{false};
+  Sm90MixedInputWiderOperand wider_operand{Sm90MixedInputWiderOperand::B};
+  bool generate_scale_and_zero{false};
+  bool generate_dequantized_AB{false};
+  bool *dequantized_AB_ready{nullptr};  // Carry the info back to gemm_operation_profiler.cu
+  void *Scale{nullptr};                 // Scale tensor
+  void *Zero{nullptr};                  // Zero tensor
+  void *dequantized_AB{nullptr};        // Dequantized A or B tensor for verification
+  void *encoded_AB{nullptr};            // Encoded A or B in int4 x fp8 or shuffle
+  void *packed_Scale{nullptr};          // Packed scale for int4 * fp8
 
   int device_index{0};
   
@@ -472,12 +490,16 @@ struct GemmPlanarComplexArrayArguments {
 
 struct GemmGroupedConfiguration {
   int problem_count{0};
-  int threadblock_count{0};
+  // GemmGroupedConfiguration is passed to initialize(), which
+  // is responsible for allocating the device-side stride storage.
+  int64_t* lda;
+  int64_t* ldb;
+  int64_t* ldc;
 };
 
 struct GemmGroupedArguments {
-
-  gemm::GemmCoord *problem_sizes{nullptr};
+  int problem_count{};
+  gemm::GemmCoord* problem_sizes{nullptr};
 
   void * ptr_A{nullptr};
   void * ptr_B{nullptr};
@@ -493,6 +515,18 @@ struct GemmGroupedArguments {
   void const *beta{nullptr};
   ScalarPointerMode pointer_mode{};
   bool use_pdl{false};
+
+  gemm::GemmCoord cluster_shape{};          
+  gemm::GemmCoord cluster_shape_fallback{}; 
+
+  // these should really be in the configuration but staying consistent with GEMM
+  int sm_count{0};
+  // The user is responsible for allocating storage for problem sizes.
+  // Since GemmGroupedArguments is used by both the 2.x and 3.x APIs, we
+  // unfortunately need to have both options in this struct, and the
+  // underlying operation uses the one it needs.
+  cute::Shape<int, int, int>* problem_sizes_3x;
+  cute::Shape<int, int, int>* problem_sizes_3x_host;
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -880,3 +914,5 @@ struct ReductionArguments {
 } // namespace cutlass
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+
+#endif

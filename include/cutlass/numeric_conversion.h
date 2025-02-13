@@ -1095,6 +1095,34 @@ struct NumericArrayConverter<cutlass::bfloat16_t, float, 2, FloatRoundStyle::rou
   }
 };
 
+
+/// Partial specialization for Array<cutlass::bfloat16_t, 2> <= Array<float, 2>, round to nearest with min/max saturation
+template <>
+struct NumericArrayConverter<cutlass::bfloat16_t, float, 2, FloatRoundStyle::round_to_nearest_satfinite> {
+
+  using result_type = Array<cutlass::bfloat16_t, 2>;
+  using source_type = Array<float, 2>;
+  static FloatRoundStyle const round_style = FloatRoundStyle::round_to_nearest_satfinite;
+
+  CUTLASS_HOST_DEVICE
+  static result_type convert(source_type const & source) {
+
+    unsigned d;
+
+    asm("cvt.rn.satfinite.bf16x2.f32 %0, %1, %2;\n" : "=r"(d) : "f"(source[1]), "f"(source[0]) );
+
+    return reinterpret_cast<result_type const &>(d);
+  }
+
+  CUTLASS_HOST_DEVICE
+  result_type operator()(source_type const &s) const {
+    return convert(s);
+  }
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+
 /// Partial specialization for Array<cutlass::bfloat16_t> <= Array<float>
 template <
   int N,
@@ -2382,7 +2410,6 @@ struct NumericArrayConverterPacked4Element<float_ue8m0_t, float, Round> {
 };
 
 
-
 /////////////////////////////////////////////////////////////////////////////////////////////////
 //
 // Partial specializations for Array<float, N> <=> Array<float_e2m3_unpack8bits_t, N>
@@ -3579,7 +3606,6 @@ template <
 >
 struct NumericArrayConverter<float_ue8m0_t, S, N, Round> :
   public PackedNumericArrayConverter<float_ue8m0_t, S, N, Round> {};
-
 /// Partial specialization for Array<T, N> <= Array<float_ue4m3_t, N>
 template <
   typename T,

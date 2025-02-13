@@ -394,15 +394,6 @@ make_tmem_warp_partitioner(Tensor<TEngine,TLayout> const& tmem)
 
   // wid -> tmem_coord
   auto layout_t_tmem = composition(inv_tmem_layout, atom_t_layout);
-
-#if 0
-  if (thread0()) {
-    print("input              : "); print(tmem.data()); print(" o "); print(tmem_layout); print("\n");
-    print("atom_t_layout      : "); print(atom_t_layout); print("\n");
-    print("layout_tv_tmem     : "); print(layout_tv_tmem); print("\n");
-  }
-#endif
-
   //
   // Tiler -- Find the active elements in the TMEM tensor and generate a tiler to extract them
   //
@@ -425,15 +416,6 @@ make_tmem_warp_partitioner(Tensor<TEngine,TLayout> const& tmem)
 
   // wid -> tile_coord
   auto layout_tv = composition(left_inverse(tile2tmem), layout_t_tmem);
-
-#if 0
-  if (thread0()) {
-    print("tiler              : "); print(tiler); print("\n");
-    print("tile2tmem          : "); print(tile2tmem); print("\n");
-    print("layout_tv          : "); print(layout_tv); print("\n");
-  }
-#endif
-
   return make_tiler_impl(layout_tv, tiler);
 }
 

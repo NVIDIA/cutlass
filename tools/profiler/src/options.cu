@@ -477,6 +477,7 @@ Options::Profiling::Profiling(cutlass::CommandLine const &cmdline) {
   cmdline.get_cmd_line_argument("profiling-enabled", enabled, true);
   cmdline.get_cmd_line_argument("profiling-duration", duration, 10);
   cmdline.get_cmd_line_argument("min-iterations", min_iterations, 10);
+  cmdline.get_cmd_line_argument("use-cuda-graphs", use_cuda_graphs, false);
 
   if (cmdline.check_cmd_line_flag("providers")) {
 

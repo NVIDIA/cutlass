@@ -295,19 +295,6 @@ make_gmma_desc(Tensor<TEngine,TLayout> const& tensor)
   } else {
     static_assert(MajorMode != Major::MN && MajorMode != Major::K, "Unrecognized MajorMode!");
   }
-
-#if 0
-  // DEBUG and SANITY
-  assert((start_address & 0b0000001111) == 0); // Must be 16B aligned (4LSB are 0) no negotiation
-  assert((start_address & 0b1110000000) == 0); // Assert base_offset is 0, generalize later
-  if (thread0()) {
-    print("smem_desc input     tensor: "); print(tensor.data()); print(" o "); print(tensor.layout()); print("\n");
-    print("smem_desc uint128_t tensor: "); print(u128_tensor.data()); print(" o "); print(u128_tensor.layout()); print("\n");
-    //print("     desc canonical layout: "); print(canonical_layout); print("\n");
-    print(desc);
-  }
-#endif
-
   return desc;
 }
 

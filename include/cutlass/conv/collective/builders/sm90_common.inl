@@ -50,7 +50,7 @@ sm90_cluster_shape_to_im2col_tma_atom(UnimodalClusterShape unimodal_cluster_shap
   static_assert(cute::rank(unimodal_cluster_shape) == 1,
     "Use this function to figure out TMA for each mode individually.");
 
-  if constexpr (cute::size(unimodal_cluster_shape) == 1) {
+  if constexpr (UnimodalClusterShape::value == 1) {
     return cute::SM90_TMA_LOAD_IM2COL{};
   }
   else {

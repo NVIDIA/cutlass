@@ -62,8 +62,6 @@ add_custom_target(cutlass_test_unit_gemm_device)
 add_custom_target(test_unit_gemm_device)
 
 
-add_subdirectory(sm100_blockscaled_tensorop_gemm)
-
 
 ################################################################################
 
@@ -84,6 +82,12 @@ function(cutlass_test_unit_gemm_device_add_executable_split_file NAME)
 endfunction()
 
 ################################################################################
+
+
+add_subdirectory(sm100_blockscaled_tensorop_gemm)
+add_subdirectory(sm100_tensorop_gemm)
+
+
 
 cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_simt
@@ -580,8 +584,10 @@ cutlass_test_unit_gemm_device_add_executable(
 
   gemm_f8t_f8n_f32t_tensor_op_f32_sm89.cu
   gemm_f8t_f8n_f32t_tensor_op_f32_sparse_sm89.cu
+  gemm_f8t_f8n_f16t_tensor_op_f16_sm89.cu
   gemm_f8t_f8n_f8t_tensor_op_f32_sm89.cu
 #  gemm_f8t_f8n_f8t_tensor_op_f32_sparse_sm89.cu
+  gemm_f8t_f8n_f8t_tensor_op_f16_sm89.cu
 )
 
 cutlass_test_unit_gemm_device_add_executable(
@@ -860,56 +866,6 @@ endif()
 
 
 if(NOT CUTLASS_NVCC_ARCHS STREQUAL "100")
-
-cutlass_test_unit_add_executable(
-  cutlass_test_unit_gemm_device_sm100_fp16_gemm
-
-  # No batching of source to control compiler memory usage
-  BATCH_SOURCES ON
-  BATCH_SIZE 1
-
-  sm100_gemm_f16_f16_f32_tensor_op_f32.cu
-)
-
-cutlass_test_unit_gemm_device_add_executable(
-  cutlass_test_unit_gemm_device_tensorop_sm100_stream_k
-
-  sm100_gemm_f16_f16_f16_tensor_op_f32_stream_k.cu
-)
-
-cutlass_test_unit_gemm_device_add_executable(
-  cutlass_test_unit_gemm_device_sm100_bf16_gemm
-
-  # No batching of source to control compiler memory usage
-  BATCH_SOURCES ON
-  BATCH_SIZE 1
-
-  sm100_gemm_bf16_bf16_f32_tensor_op_f32.cu
-)
-
-
-cutlass_test_unit_gemm_device_add_executable(
-  cutlass_test_unit_gemm_device_tensorop_stride_batch_alpha_beta_sm100
-
-  # No batching of source to control compiler memory usage
-  BATCH_SOURCES ON
-  BATCH_SIZE 1
-
-  sm100_gemm_f8_f8_f8_tensor_op_s32_batch_alpha_beta.cu
-)
-
-cutlass_test_unit_gemm_device_add_executable(
-  cutlass_test_unit_gemm_device_tensorop_runtime_datatype_sm100
-
-  # No batching of source to control compiler memory usage
-  BATCH_SOURCES ON
-  BATCH_SIZE 1
-
-  sm100_gemm_f8_f8_f8_tensor_op_f32_runtime_datatype.cu
-  sm100_gemm_f6_f6_f32_tensor_op_f32_runtime_datatype.cu
-  sm100_gemm_f4_f4_f32_tensor_op_f32_runtime_datatype.cu
-  sm100_gemm_f8_f4_f32_tensor_op_f32_runtime_datatype.cu
-)
 
 cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_16b_tensorop_sm100_ptr_array
