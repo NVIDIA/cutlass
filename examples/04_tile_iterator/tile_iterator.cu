@@ -94,18 +94,7 @@ __global__ void copy(
 
     typename Iterator::Fragment fragment;
 
-    for(size_t i = 0; i < fragment.size(); ++i) {
-      fragment[i] = 0;
-    }
-
-    src_iterator.load(fragment);
-    dst_iterator.store(fragment);
-
-
-    ++src_iterator;
-    ++dst_iterator;
-
-    for(; iterations > 1; --iterations) {
+    for(; iterations > 0; --iterations) {
 
       src_iterator.load(fragment);
       dst_iterator.store(fragment);
