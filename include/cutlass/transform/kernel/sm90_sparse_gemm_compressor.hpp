@@ -46,6 +46,7 @@
 #include "cutlass/fast_math.h"             // cutlass::ceil_div, cutlass::round_up
 #include "cutlass/kernel_hardware_info.h"  // cutlass::KernelHardwareInfo
 #include "cutlass/numeric_size.h"          // cutlass::bits_to_bytes
+#include "cutlass/numeric_type_traits.h"   // cutlass::has_negative_zero_v
 #include "cutlass/cuda_host_adapter.hpp"   // cutlass::CudaHostAdapter
 
 namespace cutlass::transform::kernel {
@@ -376,6 +377,15 @@ private:
       copy_vec_pred<true, LayoutATag>(cAgA, cAsA, threadIdx_X, GemmM_within_Cta, GemmK_within_Cta);
     }
 
+    // Construct a sign bit mask for handling negative zeros 
+    ElementAMmaRawUnit sign_mask = { 0 };
+    if constexpr (has_negative_zero_v<ElementA>) {
+      ElementAMmaRawUnit one_sign_mask = static_cast<ElementAMmaRawUnit>(~(ElementAMmaRawUnit{ 1 } << (cute::sizeof_bits_v<ElementA> - 1)));
+      for(int i = 0; i < sizeof(ElementAMmaRawUnit) / sizeof(ElementAUint); ++i) {
+        sign_mask |= one_sign_mask << (i * cute::sizeof_bits_v<ElementA>);
+      }
+    }
+
     // * Compress
     // cACsAC is always row major order
     // TensorEAtomM threads perform the compression, each thread compress one row
@@ -401,7 +411,14 @@ private:
           CUTE_UNROLL
           for (int elt_log_idx = 0; elt_log_idx < OneChunkSizeA{}; ++elt_log_idx) {
             ElementAMmaRawUnit elem_A = tAsA[elt_log_idx];
-            if ( elem_A != ElementAMmaRawUnit{0} ) {
+
+            // Handle negative 0
+            ElementAMmaRawUnit masked_elem_A = elem_A;
+            if constexpr (has_negative_zero_v<ElementA>) {
+              masked_elem_A = elem_A & sign_mask;
+            }
+
+            if ( masked_elem_A != ElementAMmaRawUnit{0} ) {
               non_zero_elt_log_idx[non_zero_cnt] = elt_log_idx;
               tACsAC[non_zero_cnt] = elem_A;
               non_zero_cnt++;
