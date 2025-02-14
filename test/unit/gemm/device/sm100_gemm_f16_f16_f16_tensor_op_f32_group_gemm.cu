@@ -80,17 +80,14 @@ constexpr int AlignmentD  = 128 / cutlass::sizeof_bits<ElementD>::value;    // M
 using ElementAccumulator  = float;                                           // Element type for internal accumulation
 using ArchTag             = cutlass::arch::Sm100;                            // Tag indicating the minimum SM that supports the intended feature
 using OperatorClass       = cutlass::arch::OpClassTensorOp;                  // Operator class tag
-using TileShape_MNK = Shape<_128,_128,_64>;
-using ClusterShape_MNK = Shape<_1,_2,_1>;
-using AtomThrShape = decltype(shape_div(ClusterShape_MNK{}, Shape<_1,_1,_1>{}));
-using OutputCtaShape = decltype(shape_div(TileShape_MNK{}, ClusterShape_MNK{})); 
-using MmaTileShape = decltype(shape_div(TileShape_MNK{}, AtomThrShape{}));
+using MmaTileShape = Shape<_128,_64,_64>;
+using ClusterShape = Shape<_1,_2,_1>;
 using KernelSchedule   = cutlass::gemm::KernelPtrArrayTmaWarpSpecialized1SmSm100;   // Kernel to launch
 using EpilogueSchedule = cutlass::epilogue::PtrArrayTmaWarpSpecialized1Sm;          // Epilogue to launch
 
 using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
     cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
-    OutputCtaShape, ClusterShape_MNK,
+    MmaTileShape, ClusterShape,
     cutlass::epilogue::collective::EpilogueTileAuto,
     ElementAccumulator, ElementAccumulator,
     ElementC, LayoutC *, AlignmentC,
@@ -103,7 +100,7 @@ using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder
     ElementA, LayoutA *, AlignmentA,
     ElementB, LayoutB *, AlignmentB,
     ElementAccumulator,
-    MmaTileShape, ClusterShape_MNK,
+    MmaTileShape, ClusterShape,
     cutlass::gemm::collective::StageCountAutoCarveout<
       static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
     KernelSchedule
@@ -141,17 +138,14 @@ constexpr int AlignmentD  = 128 / cutlass::sizeof_bits<ElementD>::value;    // M
 using ElementAccumulator  = float;                                           // Element type for internal accumulation
 using ArchTag             = cutlass::arch::Sm100;                            // Tag indicating the minimum SM that supports the intended feature
 using OperatorClass       = cutlass::arch::OpClassTensorOp;                  // Operator class tag
-using TileShape_MNK = Shape<_128,_64,_64>;
-using ClusterShape_MNK = Shape<_1,_2,_1>;
-using AtomThrShape = decltype(shape_div(ClusterShape_MNK{}, Shape<_1,_1,_1>{}));
-using OutputCtaShape = decltype(shape_div(TileShape_MNK{}, ClusterShape_MNK{})); 
-using MmaTileShape = decltype(shape_div(TileShape_MNK{}, AtomThrShape{}));
+using MmaTileShape = Shape<_128,_32,_64>;
+using ClusterShape = Shape<_1,_2,_1>;
 using KernelSchedule   = cutlass::gemm::KernelPtrArrayTmaWarpSpecialized1SmSm100;   // Kernel to launch
 using EpilogueSchedule = cutlass::epilogue::PtrArrayTmaWarpSpecialized1Sm;          // Epilogue to launch
 
 using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
     cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
-    OutputCtaShape, ClusterShape_MNK,
+    MmaTileShape, ClusterShape,
     cutlass::epilogue::collective::EpilogueTileAuto,
     ElementAccumulator, ElementAccumulator,
     ElementC, LayoutC *, AlignmentC,
@@ -164,7 +158,7 @@ using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder
     ElementA, LayoutA *, AlignmentA,
     ElementB, LayoutB *, AlignmentB,
     ElementAccumulator,
-    MmaTileShape, ClusterShape_MNK,
+    MmaTileShape, ClusterShape,
     cutlass::gemm::collective::StageCountAutoCarveout<
       static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
     KernelSchedule
@@ -202,17 +196,14 @@ constexpr int AlignmentD  = 128 / cutlass::sizeof_bits<ElementD>::value;    // M
 using ElementAccumulator  = float;                                           // Element type for internal accumulation
 using ArchTag             = cutlass::arch::Sm100;                            // Tag indicating the minimum SM that supports the intended feature
 using OperatorClass       = cutlass::arch::OpClassTensorOp;                  // Operator class tag
-using TileShape_MNK = Shape<_256,_128,_64>;
-using ClusterShape_MNK = Shape<_2,_1,_1>;
-using AtomThrShape = decltype(shape_div(ClusterShape_MNK{}, Shape<_2,_1,_1>{}));
-using OutputCtaShape = decltype(shape_div(TileShape_MNK{}, ClusterShape_MNK{})); 
-using MmaTileShape = decltype(shape_div(TileShape_MNK{}, AtomThrShape{}));
+using MmaTileShape = Shape<_256,_128,_64>;
+using ClusterShape = Shape<_2,_1,_1>;
 using KernelSchedule   = cutlass::gemm::KernelPtrArrayTmaWarpSpecialized2SmSm100;   // Kernel to launch
 using EpilogueSchedule = cutlass::epilogue::PtrArrayTmaWarpSpecialized2Sm;          // Epilogue to launch
 
 using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
     cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
-    OutputCtaShape, ClusterShape_MNK,
+    MmaTileShape, ClusterShape,
     cutlass::epilogue::collective::EpilogueTileAuto,
     ElementAccumulator, ElementAccumulator,
     ElementC, LayoutC *, AlignmentC,
@@ -225,7 +216,7 @@ using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder
     ElementA, LayoutA *, AlignmentA,
     ElementB, LayoutB *, AlignmentB,
     ElementAccumulator,
-    MmaTileShape, ClusterShape_MNK,
+    MmaTileShape, ClusterShape,
     cutlass::gemm::collective::StageCountAutoCarveout<
       static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
     KernelSchedule
@@ -263,16 +254,13 @@ constexpr int AlignmentD  = 128 / cutlass::sizeof_bits<ElementD>::value;    // M
 using ElementAccumulator  = float;                                           // Element type for internal accumulation
 using ArchTag             = cutlass::arch::Sm100;                            // Tag indicating the minimum SM that supports the intended feature
 using OperatorClass       = cutlass::arch::OpClassTensorOp;                  // Operator class tag
-using TileShape_MNK = Shape<_256,_256,_64>;
-using ClusterShape_MNK = Shape<_2,_2,_1>;
-using AtomThrShape = decltype(shape_div(ClusterShape_MNK{}, Shape<_2,_1,_1>{}));
-using OutputCtaShape = decltype(shape_div(TileShape_MNK{}, ClusterShape_MNK{})); 
-using MmaTileShape = decltype(shape_div(TileShape_MNK{}, AtomThrShape{}));
+using MmaTileShape = Shape<_256,_128,_64>;
+using ClusterShape = Shape<_2,_2,_1>;
 using KernelSchedule   = cutlass::gemm::KernelPtrArrayTmaWarpSpecialized2SmSm100;   // Kernel to launch
 using EpilogueSchedule = cutlass::epilogue::PtrArrayTmaWarpSpecialized2Sm;          // Epilogue to launch
 using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
     cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
-    OutputCtaShape, ClusterShape_MNK,
+    MmaTileShape, ClusterShape,
     cutlass::epilogue::collective::EpilogueTileAuto,
     ElementAccumulator, ElementAccumulator,
     ElementC, LayoutC *, AlignmentC,
@@ -284,7 +272,7 @@ using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder
     ElementA, LayoutA *, AlignmentA,
     ElementB, LayoutB *, AlignmentB,
     ElementAccumulator,
-    MmaTileShape, ClusterShape_MNK,
+    MmaTileShape, ClusterShape,
     cutlass::gemm::collective::StageCountAutoCarveout<
       static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
     KernelSchedule
@@ -321,17 +309,14 @@ constexpr int AlignmentD  = 128 / cutlass::sizeof_bits<ElementD>::value;    // M
 using ElementAccumulator  = float;                                           // Element type for internal accumulation
 using ArchTag             = cutlass::arch::Sm100;                            // Tag indicating the minimum SM that supports the intended feature
 using OperatorClass       = cutlass::arch::OpClassTensorOp;                  // Operator class tag
-using TileShape_MNK = Shape<_64,_128,_64>;
-using ClusterShape_MNK = Shape<_1,_1,_1>;
-using AtomThrShape = decltype(shape_div(ClusterShape_MNK{}, Shape<_1,_1,_1>{}));
-using OutputCtaShape = decltype(shape_div(TileShape_MNK{}, ClusterShape_MNK{})); 
-using MmaTileShape = decltype(shape_div(TileShape_MNK{}, AtomThrShape{}));
+using MmaTileShape = Shape<_64,_128,_64>;
+using ClusterShape = Shape<_1,_1,_1>;
 using KernelSchedule   = cutlass::gemm::KernelPtrArrayTmaWarpSpecialized1SmSm100;   // Kernel to launch
 using EpilogueSchedule = cutlass::epilogue::PtrArrayTmaWarpSpecialized1Sm;          // Epilogue to launch
 
 using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
     cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
-    OutputCtaShape, ClusterShape_MNK,
+    MmaTileShape, ClusterShape,
     cutlass::epilogue::collective::EpilogueTileAuto,
     ElementAccumulator, ElementAccumulator,
     ElementC, LayoutC *, AlignmentC,
@@ -344,7 +329,7 @@ using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder
     ElementA, LayoutA *, AlignmentA,
     ElementB, LayoutB *, AlignmentB,
     ElementAccumulator,
-    MmaTileShape, ClusterShape_MNK,
+    MmaTileShape, ClusterShape,
     cutlass::gemm::collective::StageCountAutoCarveout<
       static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
     KernelSchedule
@@ -382,17 +367,14 @@ constexpr int AlignmentD  = 128 / cutlass::sizeof_bits<ElementD>::value;    // M
 using ElementAccumulator  = float;                                           // Element type for internal accumulation
 using ArchTag             = cutlass::arch::Sm100;                            // Tag indicating the minimum SM that supports the intended feature
 using OperatorClass       = cutlass::arch::OpClassTensorOp;                  // Operator class tag
-using TileShape_MNK = Shape<_128,_128,_64>;
-using ClusterShape_MNK = Shape<_1,_2,_1>;
-using AtomThrShape = decltype(shape_div(ClusterShape_MNK{}, Shape<_1,_1,_1>{}));
-using OutputCtaShape = decltype(shape_div(TileShape_MNK{}, ClusterShape_MNK{})); 
-using MmaTileShape = decltype(shape_div(TileShape_MNK{}, AtomThrShape{}));
+using MmaTileShape = Shape<_128,_64,_64>;
+using ClusterShape = Shape<_1,_2,_1>;
 using KernelSchedule   = cutlass::gemm::KernelPtrArrayTmaWarpSpecialized1SmSm100;   // Kernel to launch
 using EpilogueSchedule = cutlass::epilogue::PtrArrayTmaWarpSpecialized1Sm;          // Epilogue to launch
 
 using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
     cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
-    OutputCtaShape, ClusterShape_MNK,
+    MmaTileShape, ClusterShape,
     cutlass::epilogue::collective::EpilogueTileAuto,
     ElementAccumulator, ElementAccumulator,
     ElementC, LayoutC *, AlignmentC,
@@ -405,7 +387,7 @@ using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder
     ElementA, LayoutA *, AlignmentA,
     ElementB, LayoutB *, AlignmentB,
     ElementAccumulator,
-    MmaTileShape, ClusterShape_MNK,
+    MmaTileShape, ClusterShape,
     cutlass::gemm::collective::StageCountAutoCarveout<
       static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
     KernelSchedule
@@ -443,17 +425,14 @@ constexpr int AlignmentD  = 128 / cutlass::sizeof_bits<ElementD>::value;    // M
 using ElementAccumulator  = float;                                           // Element type for internal accumulation
 using ArchTag             = cutlass::arch::Sm100;                            // Tag indicating the minimum SM that supports the intended feature
 using OperatorClass       = cutlass::arch::OpClassTensorOp;                  // Operator class tag
-using TileShape_MNK = Shape<_128,_64,_64>;
-using ClusterShape_MNK = Shape<_1,_2,_1>;
-using AtomThrShape = decltype(shape_div(ClusterShape_MNK{}, Shape<_1,_1,_1>{}));
-using OutputCtaShape = decltype(shape_div(TileShape_MNK{}, ClusterShape_MNK{})); 
-using MmaTileShape = decltype(shape_div(TileShape_MNK{}, AtomThrShape{}));
+using MmaTileShape = Shape<_128,_32,_64>;
+using ClusterShape = Shape<_1,_2,_1>;
 using KernelSchedule   = cutlass::gemm::KernelPtrArrayTmaWarpSpecialized1SmSm100;   // Kernel to launch
 using EpilogueSchedule = cutlass::epilogue::PtrArrayTmaWarpSpecialized1Sm;          // Epilogue to launch
 
 using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
     cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
-    OutputCtaShape, ClusterShape_MNK,
+    MmaTileShape, ClusterShape,
     cutlass::epilogue::collective::EpilogueTileAuto,
     ElementAccumulator, ElementAccumulator,
     ElementC, LayoutC *, AlignmentC,
@@ -466,7 +445,7 @@ using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder
     ElementA, LayoutA *, AlignmentA,
     ElementB, LayoutB *, AlignmentB,
     ElementAccumulator,
-    MmaTileShape, ClusterShape_MNK,
+    MmaTileShape, ClusterShape,
     cutlass::gemm::collective::StageCountAutoCarveout<
       static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
     KernelSchedule
@@ -504,17 +483,14 @@ constexpr int AlignmentD  = 128 / cutlass::sizeof_bits<ElementD>::value;    // M
 using ElementAccumulator  = float;                                           // Element type for internal accumulation
 using ArchTag             = cutlass::arch::Sm100;                            // Tag indicating the minimum SM that supports the intended feature
 using OperatorClass       = cutlass::arch::OpClassTensorOp;                  // Operator class tag
-using TileShape_MNK = Shape<_256,_128,_64>;
-using ClusterShape_MNK = Shape<_2,_1,_1>;
-using AtomThrShape = decltype(shape_div(ClusterShape_MNK{}, Shape<_2,_1,_1>{}));
-using OutputCtaShape = decltype(shape_div(TileShape_MNK{}, ClusterShape_MNK{})); 
-using MmaTileShape = decltype(shape_div(TileShape_MNK{}, AtomThrShape{}));
+using MmaTileShape = Shape<_256,_128,_64>;
+using ClusterShape = Shape<_2,_1,_1>;
 using KernelSchedule   = cutlass::gemm::KernelPtrArrayTmaWarpSpecialized2SmSm100;   // Kernel to launch
 using EpilogueSchedule = cutlass::epilogue::PtrArrayTmaWarpSpecialized2Sm;          // Epilogue to launch
 
 using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
     cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
-    OutputCtaShape, ClusterShape_MNK,
+    MmaTileShape, ClusterShape,
     cutlass::epilogue::collective::EpilogueTileAuto,
     ElementAccumulator, ElementAccumulator,
     ElementC, LayoutC *, AlignmentC,
@@ -527,7 +503,7 @@ using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder
     ElementA, LayoutA *, AlignmentA,
     ElementB, LayoutB *, AlignmentB,
     ElementAccumulator,
-    MmaTileShape, ClusterShape_MNK,
+    MmaTileShape, ClusterShape,
     cutlass::gemm::collective::StageCountAutoCarveout<
       static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
     KernelSchedule
@@ -565,16 +541,13 @@ constexpr int AlignmentD  = 128 / cutlass::sizeof_bits<ElementD>::value;    // M
 using ElementAccumulator  = float;                                           // Element type for internal accumulation
 using ArchTag             = cutlass::arch::Sm100;                            // Tag indicating the minimum SM that supports the intended feature
 using OperatorClass       = cutlass::arch::OpClassTensorOp;                  // Operator class tag
-using TileShape_MNK = Shape<_256,_256,_64>;
-using ClusterShape_MNK = Shape<_2,_2,_1>;
-using AtomThrShape = decltype(shape_div(ClusterShape_MNK{}, Shape<_2,_1,_1>{}));
-using OutputCtaShape = decltype(shape_div(TileShape_MNK{}, ClusterShape_MNK{})); 
-using MmaTileShape = decltype(shape_div(TileShape_MNK{}, AtomThrShape{}));
+using MmaTileShape = Shape<_256,_128,_64>;
+using ClusterShape = Shape<_2,_2,_1>;
 using KernelSchedule   = cutlass::gemm::KernelPtrArrayTmaWarpSpecialized2SmSm100;   // Kernel to launch
 using EpilogueSchedule = cutlass::epilogue::PtrArrayTmaWarpSpecialized2Sm;          // Epilogue to launch
 using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
     cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
-    OutputCtaShape, ClusterShape_MNK,
+    MmaTileShape, ClusterShape,
     cutlass::epilogue::collective::EpilogueTileAuto,
     ElementAccumulator, ElementAccumulator,
     ElementC, LayoutC *, AlignmentC,
@@ -586,7 +559,7 @@ using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder
     ElementA, LayoutA *, AlignmentA,
     ElementB, LayoutB *, AlignmentB,
     ElementAccumulator,
-    MmaTileShape, ClusterShape_MNK,
+    MmaTileShape, ClusterShape,
     cutlass::gemm::collective::StageCountAutoCarveout<
       static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
     KernelSchedule

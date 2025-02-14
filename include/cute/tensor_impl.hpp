@@ -235,7 +235,7 @@ struct Tensor
   decltype(auto)
   operator()(Coord const& coord) {
     if constexpr (has_underscore<Coord>::value) {
-      auto const& [sliced_layout,offset] = slice_and_offset(coord, layout());
+      auto [sliced_layout,offset] = slice_and_offset(coord, layout());
       return make_tensor(data() + offset, sliced_layout);
     } else {
       return data()[layout()(coord)];
@@ -249,7 +249,7 @@ struct Tensor
   decltype(auto)
   operator()(Coord const& coord) const {
     if constexpr (has_underscore<Coord>::value) {
-      auto const& [sliced_layout,offset] = slice_and_offset(coord, layout());
+      auto [sliced_layout,offset] = slice_and_offset(coord, layout());
       return make_tensor(data() + offset, sliced_layout);
     } else {
       return data()[layout()(coord)];

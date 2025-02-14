@@ -53,6 +53,7 @@ struct FusionOperation {
   // metadata types/queries that can be overrided
   using ElementOutput = void;
   using ElementCompute = void;
+  FloatRoundStyle RoundStyle = FloatRoundStyle::round_indeterminate;
 
   using ElementSource = void;
   static constexpr bool IsSourceSupported = false;

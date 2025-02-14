@@ -74,10 +74,8 @@ TEST(SM100Only_Device_Gemm_e2m1t_e4m3n_e4m3t_tensorop_2sm_f32_group, 512x512x128
   using GmemLayoutA = cutlass::layout::RowMajor;
   using GmemLayoutB = cutlass::layout::ColumnMajor;
   using GmemLayoutC = cutlass::layout::RowMajor;
-  using ClusterTileShape_MNK = Shape<_512,_512,_128>;
-  using ClusterShape_MNK = Shape<_4,_4,_1>;
   using MmaTileShape_MNK = Shape<_256,_128,_128>;
-  using OutputCtaShape = decltype(shape_div(ClusterTileShape_MNK{}, ClusterShape_MNK{})); 
+  using ClusterShape_MNK = Shape<_4,_4,_1>;
   
   //
   // Construct CollectiveEpilogue
@@ -85,7 +83,7 @@ TEST(SM100Only_Device_Gemm_e2m1t_e4m3n_e4m3t_tensorop_2sm_f32_group, 512x512x128
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
-      OutputCtaShape, ClusterShape_MNK,
+      MmaTileShape_MNK, ClusterShape_MNK,
       cutlass::epilogue::collective::EpilogueTileAuto,
       ElementAccumulator, ElementCompute,
       ElementC, GmemLayoutC *, 16,
@@ -132,10 +130,8 @@ TEST(SM100Only_Device_Gemm_e2m1n_e4m3t_e4m3t_tensorop_2sm_f32_group, 512x512x128
   using GmemLayoutA = cutlass::layout::ColumnMajor;
   using GmemLayoutB = cutlass::layout::RowMajor;
   using GmemLayoutC = cutlass::layout::RowMajor;
-  using ClusterTileShape_MNK = Shape<_512,_512,_128>;
-  using ClusterShape_MNK = Shape<_4,_4,_1>;
   using MmaTileShape_MNK = Shape<_256,_128,_128>;
-  using OutputCtaShape = decltype(shape_div(ClusterTileShape_MNK{}, ClusterShape_MNK{})); 
+  using ClusterShape_MNK = Shape<_4,_4,_1>;
   
   //
   // Construct CollectiveEpilogue
@@ -143,7 +139,7 @@ TEST(SM100Only_Device_Gemm_e2m1n_e4m3t_e4m3t_tensorop_2sm_f32_group, 512x512x128
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
-      OutputCtaShape, ClusterShape_MNK,
+      MmaTileShape_MNK, ClusterShape_MNK,
       cutlass::epilogue::collective::EpilogueTileAuto,
       ElementAccumulator, ElementCompute,
       ElementC, GmemLayoutC *, 16,
@@ -190,10 +186,8 @@ TEST(SM100Only_Device_Gemm_e2m1t_e4m3t_e4m3t_tensorop_2sm_f32_group, 512x512x128
   using GmemLayoutA = cutlass::layout::RowMajor;
   using GmemLayoutB = cutlass::layout::RowMajor;
   using GmemLayoutC = cutlass::layout::RowMajor;
-  using ClusterTileShape_MNK = Shape<_512,_512,_128>;
-  using ClusterShape_MNK = Shape<_4,_4,_1>;
   using MmaTileShape_MNK = Shape<_256,_128,_128>;
-  using OutputCtaShape = decltype(shape_div(ClusterTileShape_MNK{}, ClusterShape_MNK{})); 
+  using ClusterShape_MNK = Shape<_4,_4,_1>;
   
   //
   // Construct CollectiveEpilogue
@@ -201,7 +195,7 @@ TEST(SM100Only_Device_Gemm_e2m1t_e4m3t_e4m3t_tensorop_2sm_f32_group, 512x512x128
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
-      OutputCtaShape, ClusterShape_MNK,
+      MmaTileShape_MNK, ClusterShape_MNK,
       cutlass::epilogue::collective::EpilogueTileAuto,
       ElementAccumulator, ElementCompute,
       ElementC, GmemLayoutC *, 16,
@@ -248,10 +242,8 @@ TEST(SM100Only_Device_Gemm_e2m1n_e4m3n_e4m3t_tensorop_2sm_f32_group, 512x512x128
   using GmemLayoutA = cutlass::layout::ColumnMajor;
   using GmemLayoutB = cutlass::layout::ColumnMajor;
   using GmemLayoutC = cutlass::layout::RowMajor;
-  using ClusterTileShape_MNK = Shape<_512,_512,_128>;
-  using ClusterShape_MNK = Shape<_4,_4,_1>;
   using MmaTileShape_MNK = Shape<_256,_128,_128>;
-  using OutputCtaShape = decltype(shape_div(ClusterTileShape_MNK{}, ClusterShape_MNK{})); 
+  using ClusterShape_MNK = Shape<_4,_4,_1>;
   
   //
   // Construct CollectiveEpilogue
@@ -259,7 +251,7 @@ TEST(SM100Only_Device_Gemm_e2m1n_e4m3n_e4m3t_tensorop_2sm_f32_group, 512x512x128
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
-      OutputCtaShape, ClusterShape_MNK,
+      MmaTileShape_MNK, ClusterShape_MNK,
       cutlass::epilogue::collective::EpilogueTileAuto,
       ElementAccumulator, ElementCompute,
       ElementC, GmemLayoutC *, 16,

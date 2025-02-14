@@ -455,8 +455,9 @@ public:
     auto blk_shape = TileShape{};                                                                // (BLK_M,BLK_N,BLK_K)
 
     TileScheduler scheduler{params.scheduler};
-    auto work_tile_info = scheduler.initial_work_tile_info(ClusterShape{});
-    
+    // Declare work_tile_info, then define it in each of warps that use it.
+    typename TileScheduler::WorkTileInfo work_tile_info;
+
     // In a warp specialized kernel, collectives expose data movement and compute operations separately
     CollectiveMainloop collective_mainloop;
 
@@ -474,6 +475,7 @@ public:
     cluster_wait_fn();
 
     if (warp_group_role == WarpGroupRole::Producer) {
+      work_tile_info = scheduler.initial_work_tile_info(ClusterShape{});
       cutlass::arch::warpgroup_reg_dealloc<LoadRegisterRequirement>();
 
       // Mainloop Producer Warp
@@ -578,6 +580,7 @@ public:
     } // Producer Warp Group End
 
     else if (warp_group_role == WarpGroupRole::Consumer0 || warp_group_role == WarpGroupRole::Consumer1) {
+      work_tile_info = scheduler.initial_work_tile_info(ClusterShape{});
       cutlass::arch::warpgroup_reg_alloc<MmaRegisterRequirement>();
 
       CollectiveEpilogue collective_epilogue(params.epilogue, shared_storage.tensors.epilogue);

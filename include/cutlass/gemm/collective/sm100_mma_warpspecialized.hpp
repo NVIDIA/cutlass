@@ -31,7 +31,6 @@
 
 
 
-
 #pragma once
 
 #include "cutlass/cutlass.h"
@@ -239,12 +238,12 @@ struct CollectiveMma<
     cutlass::bits_to_bytes(size(AtomThrShapeMNK{}) * cosize(take<0,3>(SmemLayoutA{})) * cute::sizeof_bits_v<ElementA>) +
     cutlass::bits_to_bytes(size(AtomThrShapeMNK{}) * cosize(take<0,3>(SmemLayoutB{})) * cute::sizeof_bits_v<ElementB>);
 
-  template<class AccTensor>
+  template <class AccTensor>
   struct TmemStorage {
     AccTensor accumulators;
   };
 
-  template<
+  template <
     class KTileCount,
     class GTensorPartitionedA, class GTensorPartitionedB,
     class STensorA, class STensorB
@@ -273,7 +272,10 @@ struct CollectiveMma<
     , mcast_mask_a(mcast_mask_a_), mcast_mask_b(mcast_mask_b_) {}
   };
 
-  template<class FragmentA, class FragmentB>
+  template <
+    class TiledMma,
+    class FragmentA, class FragmentB
+  >
   struct MmaParams {
     TiledMma tiled_mma;
     FragmentA tCrA;
@@ -336,7 +338,7 @@ struct CollectiveMma<
     , runtime_data_type_a_(params.runtime_data_type_a)
     , runtime_data_type_b_(params.runtime_data_type_b) {
     if constexpr (IsDynamicCluster) {
-      const bool is_fallback_cluster = (cute::size<0>(cluster_shape_) == params.cluster_shape_fallback.x && 
+      const bool is_fallback_cluster = (cute::size<0>(cluster_shape_) == params.cluster_shape_fallback.x &&
                                         cute::size<1>(cluster_shape_) == params.cluster_shape_fallback.y);
       observed_tma_load_a_ = is_fallback_cluster ? &params.tma_load_a_fallback : &params.tma_load_a;
       observed_tma_load_b_ = is_fallback_cluster ? &params.tma_load_b_fallback : &params.tma_load_b;
@@ -461,7 +463,7 @@ struct CollectiveMma<
     return cute::make_tuple(tmem_storage.accumulators(_,_,_,stage));
   }
 
-  template<class EpilogueTile, bool IsOverlappingAccum = false>
+  template <class EpilogueTile, bool IsOverlappingAccum = false>
   CUTLASS_DEVICE static
   auto
   init_tmem_tensors(EpilogueTile epi_tile) {
@@ -475,10 +477,10 @@ struct CollectiveMma<
     return tmem_storage;
   }
 
-  template<class AccTensor>
+  template <class TmemStorage>
   CUTLASS_DEVICE static
   void
-  set_tmem_offsets(TmemStorage<AccTensor>& tmem_storage, uint32_t tmem_base_addr) {
+  set_tmem_offsets(TmemStorage& tmem_storage, uint32_t tmem_base_addr) {
     tmem_storage.accumulators.data() = tmem_base_addr;
   }
 
@@ -535,21 +537,21 @@ struct CollectiveMma<
     // TMA Multicast Masks
     uint16_t mcast_mask_a = create_tma_multicast_mask<2>(cta_layout_vmnk, cta_coord_vmnk);
     uint16_t mcast_mask_b = create_tma_multicast_mask<1>(cta_layout_vmnk, cta_coord_vmnk);
-    
-    LoadParams load_params {
+
+    return LoadParams{
       shape<3>(gA_mkl),                       // for scheduler
       tAgA_mkl, tBgB_nkl, tAsA, tBsB,        // for input tensor values
-      mcast_mask_a, mcast_mask_b             // multicast masks
-    };
-    return load_params;
+      mcast_mask_a, mcast_mask_b};           // multicast masks
   }
 
   /// Set up the data needed by this collective for mma compute.
-  template <class AccTensor>
+  template <class TmemStorage>
   CUTLASS_DEVICE auto
   mma_init(
-      [[maybe_unused]] TmemStorage<AccTensor> tmem_tensors,
-      TensorStorage& shared_tensors) const {
+    [[maybe_unused]] TmemStorage tmem_storage,
+    TensorStorage& shared_tensors) const {
+
+    // Allocate "fragments/descriptors" for A and B matrices
     Tensor sA = make_tensor(make_smem_ptr(shared_tensors.smem_A.begin()), SmemLayoutA{});          // (BLK_M,BLK_K,PIPE)
     Tensor sB = make_tensor(make_smem_ptr(shared_tensors.smem_B.begin()), SmemLayoutB{});          // (BLK_N,BLK_K,PIPE)
 
@@ -558,7 +560,7 @@ struct CollectiveMma<
     Tensor tCrB = TiledMma::make_fragment_B(sB);                                           // (MMA,MMA_N,MMA_K,PIPE)
 
     CUTE_STATIC_ASSERT_V(Int<DispatchPolicy::Stages>{} == size<3>(sA));                                     // PIPE
-    CUTE_STATIC_ASSERT_V(Int<DispatchPolicy::Stages>{} == size<3>(sB));
+    CUTE_STATIC_ASSERT_V(Int<DispatchPolicy::Stages>{} == size<3>(sB));                                     // PIPE
 
     TiledMma tiled_mma;
 
@@ -568,11 +570,10 @@ struct CollectiveMma<
       tiled_mma.idesc_.a_format_ = uint8_t(runtime_data_type_a_) & 0b111;
       tiled_mma.idesc_.b_format_ = uint8_t(runtime_data_type_b_) & 0b111;
     }
-    MmaParams<decltype(tCrA), decltype(tCrB)> mma_params {
+
+    return MmaParams{
       tiled_mma,
-      tCrA, tCrB
-    };
-    return mma_params;
+      tCrA, tCrB};
   }
 
   /// Perform a collective-scoped matrix multiply-accumulate
@@ -657,6 +658,7 @@ struct CollectiveMma<
   ) {
     static_assert(is_tmem<FrgEngine>::value, "Accumulator must be tmem resident.");
     static_assert(rank(FrgLayout{}) == 3, "Accumulator must be MMA-partitioned: (MMA, MMA_M, MMA_N)");
+
     auto accumulators = get<0>(accumulators_pair);
     auto [tiled_mma, tCrA, tCrB] = mma_inputs;
 

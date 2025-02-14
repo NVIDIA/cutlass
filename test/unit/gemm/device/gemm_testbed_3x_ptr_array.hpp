@@ -2204,7 +2204,7 @@ bool TestSmall(double alpha = 1.0, double beta = 1.0,
   
   static constexpr bool IsF8F6F4 = cutlass::gemm::collective::detail::is_sm100_mma_f8f6f4<TiledMma, ElementA, ElementB>();
   alignment_bits = cutlass::detail::get_input_alignment_bits<ElementA, IsF8F6F4>();
-  // For fp4 and fp6 QMMA kernels, the min alignment_input is 128 elements, so we don't need to add alignment_input in test problem sizes.
+  // For fp4 and fp6 kernels, the min alignment_input is 128 elements, so we don't need to add alignment_input in test problem sizes.
   int alignment_input = (alignment_bits / cute::sizeof_bits<ElementA>::value == 128) ? 0 : (alignment_bits / cute::sizeof_bits<ElementA>::value);
 
   

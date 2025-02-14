@@ -29,7 +29,7 @@
 #
 
 #
-
+if (CUTLASS_NVCC_ARCHS MATCHES 100a)
 add_custom_target(
   cutlass_test_unit_gemm_device_sm100_tensorop
   DEPENDS
@@ -67,5 +67,6 @@ cutlass_test_unit_gemm_device_add_executable_split_file(
   s8_s8_void_s32.cu
   s8_s8_s32_s32_fusion.cu
 )
+endif()
 
 add_subdirectory(narrow_precision) 

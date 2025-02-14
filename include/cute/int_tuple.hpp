@@ -330,7 +330,7 @@ ceil_div(IntTupleA const& a, IntTupleB const& b)
       constexpr int R = tuple_size<IntTupleA>::value;        // Missing ranks in TupleB are implicitly 1
       return transform(a, append<R>(b,Int<1>{}), [](auto const& x, auto const& y) { return ceil_div(x,y); });
     } else {                                     // tuple int
-      auto const [result, rest] = fold(a, cute::make_tuple(cute::make_tuple(), b),
+      auto [result, rest] = fold(a, cute::make_tuple(cute::make_tuple(), b),
         [] (auto const& init, auto const& ai) {
           return cute::make_tuple(append(get<0>(init), ceil_div(ai, get<1>(init))), ceil_div(get<1>(init), ai));
         });
@@ -390,7 +390,7 @@ shape_div(IntTupleA const& a, IntTupleB const& b)
       static_assert(tuple_size<IntTupleA>::value == tuple_size<IntTupleB>::value, "Mismatched ranks");
       return transform(a, b, [](auto const& x, auto const& y) { return shape_div(x,y); });
     } else {                                     // tuple int
-      auto const [result, rest] = fold(a, cute::make_tuple(cute::make_tuple(), b),
+      auto [result, rest] = fold(a, cute::make_tuple(cute::make_tuple(), b),
         [] (auto const& init, auto const& ai) {
           return cute::make_tuple(append(get<0>(init), shape_div(ai, get<1>(init))), shape_div(get<1>(init), ai));
         });

@@ -106,25 +106,23 @@ using ArchTag             = cutlass::arch::Sm100;                           // T
 using OperatorClass       = cutlass::arch::OpClassTensorOp;                 // Operator class tag
 
 // Kernel Perf config
-using ClusterTileShape    = Shape<_256,_128,_16>;                                    // Cluster-level tile shape
-using ClusterShape        = Shape<_2,_1,_1>;                                         // Shape of the threadblocks in a cluster
-using CtaTileShape        = decltype(shape_div(ClusterTileShape{}, ClusterShape{})); // Threadblock-level tile shape
-using MmaTileShape        = Shape<_256,_128,_16>;                                    // Mma instruction shape
+using ClusterShape        = Shape<_2,_1,_1>;                                // Shape of the threadblocks in a cluster
+using MmaTileShape        = Shape<_256,_128,_16>;                           // Mma instruction shape
 
 // Build the epilogue
 using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
     ArchTag, OperatorClass, 
-    CtaTileShape, ClusterShape,
+    MmaTileShape, ClusterShape,
     cutlass::epilogue::collective::EpilogueTileAuto,
     ElementAccumulator, ElementAccumulator,
     ElementC, LayoutC, AlignmentC,
     ElementC, LayoutC, AlignmentC,
-    cutlass::epilogue::NoSmemWarpSpecialized
+    cutlass::epilogue::NoSmemWarpSpecialized2Sm
   >::CollectiveOp;
 
 // Build the mainloop
 // Note: Emulated BF16x9 kernels need to manually specify a mainloop schedule and cannot use KernelScheduleAuto
-using MainloopSchedule = cutlass::gemm::KernelTmaWarpSpecializedFastFP32SmemSm100;
+using MainloopSchedule = cutlass::gemm::KernelTmaWarpSpecialized2SmFastFP32SmemSm100;
 using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
     ArchTag, OperatorClass,
     ElementA, LayoutA, AlignmentA,

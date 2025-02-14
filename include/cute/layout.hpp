@@ -1044,7 +1044,7 @@ composition_impl(LShape const& lhs_shape, LStride const& lhs_stride,
     auto result_shape_0  = take<0,R-1>(lhs_shape);
 
     // Mod out the rhs_shape from the lhs_shape
-    auto const [result_shape_1, rest_shape]  = fold(result_shape_0, cute::make_tuple(cute::make_tuple(), rhs_shape),
+    auto [result_shape_1, rest_shape]  = fold(result_shape_0, cute::make_tuple(cute::make_tuple(), rhs_shape),
       [] (auto const& init, auto const& si) {
         return cute::make_tuple(append(get<0>(init), shape_min(abs(si), get<1>(init))), shape_div(get<1>(init), abs(si)));
       });
@@ -1058,7 +1058,7 @@ composition_impl(LShape const& lhs_shape, LStride const& lhs_stride,
     auto result_stride_0 = take<0,R-1>(lhs_stride);
 
     // Divide out the rhs_stride from the lhs_shape
-    auto const [result_shape_1, rest_stride] = fold(result_shape_0, cute::make_tuple(cute::make_tuple(), rhs_stride),
+    auto [result_shape_1, rest_stride] = fold(result_shape_0, cute::make_tuple(cute::make_tuple(), rhs_stride),
       [] (auto const& init, auto const& di) {
         return cute::make_tuple(append(get<0>(init), shape_div(di, get<1>(init))), shape_div(get<1>(init), di));
       });
@@ -1067,7 +1067,7 @@ composition_impl(LShape const& lhs_shape, LStride const& lhs_stride,
     auto result_stride_1 = elem_scale(result_stride_0, shape_div(result_shape_0, result_shape_1));
 
     // Mod out the rhs_shape from the lhs_shape
-    auto const [result_shape_2, rest_shape] = fold(result_shape_1, cute::make_tuple(cute::make_tuple(), rhs_shape),
+    auto [result_shape_2, rest_shape] = fold(result_shape_1, cute::make_tuple(cute::make_tuple(), rhs_shape),
       [] (auto const& init, auto const& si) {
         return cute::make_tuple(append(get<0>(init), shape_min(abs(si), get<1>(init))), shape_div(get<1>(init), abs(si)));
       });

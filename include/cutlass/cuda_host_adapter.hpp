@@ -104,7 +104,7 @@ namespace cutlass {
 
 #else // defined(CUTLASS_ENABLE_DIRECT_CUDA_DRIVER_CALL)
 
-#if (__CUDACC_VER_MAJOR__ >= 13)
+#if (__CUDACC_VER_MAJOR__ > 12)
 
 #define CUTLASS_CUDA_DRIVER_WRAPPER_DECL(func, ver)             \
   template <typename... Args>                                   \
@@ -142,7 +142,7 @@ namespace cutlass {
     return reinterpret_cast<PFN_##func>(pfn)(args...);          \
   }
 
-#endif // (__CUDACC_VERSION__ >= 12.5)
+#endif // (__CUDACC_VER_MAJOR__ > 12)
 
 #endif // defined(CUTLASS_ENABLE_DIRECT_CUDA_DRIVER_CALL)
 

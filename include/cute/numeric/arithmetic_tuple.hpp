@@ -508,16 +508,6 @@ struct tuple_element<I, cute::ArithmeticTuple<T...>>
   : CUTE_STL_NAMESPACE::tuple_element<I, CUTE_STL_NAMESPACE::tuple<T...>>
 {};
 
-template <class... T>
-struct tuple_size<const cute::ArithmeticTuple<T...>>
-  : CUTE_STL_NAMESPACE::integral_constant<size_t, sizeof...(T)>
-{};
-
-template <size_t I, class... T>
-struct tuple_element<I, const cute::ArithmeticTuple<T...>>
-  : CUTE_STL_NAMESPACE::tuple_element<I, const CUTE_STL_NAMESPACE::tuple<T...>>
-{};
-
 } // end namespace CUTE_STL_NAMESPACE
 
 #ifdef CUTE_STL_NAMESPACE_IS_CUDA_STD
@@ -540,16 +530,6 @@ struct tuple_size<cute::ArithmeticTuple<T...>>
 template <size_t I, class... T>
 struct tuple_element<I, cute::ArithmeticTuple<T...>>
   : CUTE_STL_NAMESPACE::tuple_element<I, CUTE_STL_NAMESPACE::tuple<T...>>
-{};
-
-template <class... T>
-struct tuple_size<const cute::ArithmeticTuple<T...>>
-  : CUTE_STL_NAMESPACE::integral_constant<size_t, sizeof...(T)>
-{};
-
-template <size_t I, class... T>
-struct tuple_element<I, const cute::ArithmeticTuple<T...>>
-  : CUTE_STL_NAMESPACE::tuple_element<I, const CUTE_STL_NAMESPACE::tuple<T...>>
 {};
 
 } // end namespace std

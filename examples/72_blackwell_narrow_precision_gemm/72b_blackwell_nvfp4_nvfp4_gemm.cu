@@ -121,7 +121,6 @@ using OperatorClass       = cutlass::arch::OpClassBlockScaledTensorOp;      // O
 // Kernel Perf config
 using MmaTileShape        = Shape<_128,_128,_256>;                          // MMA's tile size
 using ClusterShape        = Shape<_1,_1,_1>;                                // Shape of the threadblocks in a cluster
-using PerSmTileShape_MNK  = Shape<_128,_128,_256>;                          // Threadblock-level tile size
 
 constexpr int InputSFVectorSize  = 16;
 constexpr int OutputSFVectorSize = InputSFVectorSize;
@@ -137,7 +136,7 @@ using FusionOperation = cutlass::epilogue::fusion::LinCombBlockScaleFactor<
 
 using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
     ArchTag, OperatorClass,                     
-    PerSmTileShape_MNK, ClusterShape,
+    MmaTileShape, ClusterShape,
     cutlass::epilogue::collective::EpilogueTileAuto,
     ElementAccumulator, ElementAccumulator,
     ElementC, LayoutCTag, AlignmentC,

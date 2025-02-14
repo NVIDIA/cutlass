@@ -138,7 +138,6 @@ bool BlockCompareEqual(
     if (result != cudaSuccess) {
       throw std::runtime_error("Failed to query occupancy.");
     }
-
     // Limit block size. This has the effect of increasing the number of items processed by a
     // single thread and reduces the impact of initialization overhead.
     block_size = (block_size < 128 ? block_size : 128);
@@ -205,7 +204,6 @@ bool BlockCompareRelativelyEqual(
     if (result != cudaSuccess) {
       throw std::runtime_error("Failed to query occupancy.");
     }
-
     // Limit block size. This has the effect of increasing the number of items processed by a
     // single thread and reduces the impact of initialization overhead.
     block_size = (block_size < 128 ? block_size : 128);

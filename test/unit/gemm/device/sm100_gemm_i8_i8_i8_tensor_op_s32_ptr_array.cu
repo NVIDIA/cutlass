@@ -71,17 +71,13 @@ TEST(SM100_Device_Gemm_s8t_s8n_s8n_tensorop_1cta_s32_ptr_array, 128x64x128_1x1x1
   using ElementAccumulator = int32_t;
   using ElementCompute = float;
   using ElementBias = int8_t;
-  using ClusterTileShape = cute::Shape<_128,_64,Int<128 / sizeof(ElementA)>>;
+  using MmaTileShape = cute::Shape<_128,_64,Int<128 / sizeof(ElementA)>>;
   using ClusterShape = Shape<_1,_1,_1>;
-  using AtomThrShape = decltype(shape_div(ClusterShape{}, Shape<_1,_1,_1>{}));
-
-  using OutputCtaShape = decltype(shape_div(ClusterTileShape{}, ClusterShape{}));
-  using MmaTileShape = decltype(shape_div(ClusterTileShape{}, AtomThrShape{}));
 
   using EpilogueSchedule = cutlass::epilogue::PtrArrayTmaWarpSpecialized1Sm;
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
-      OutputCtaShape, ClusterShape,
+      MmaTileShape, ClusterShape,
       cutlass::epilogue::collective::EpilogueTileAuto,
       ElementAccumulator, ElementCompute,
       ElementC, LayoutC, 16 / sizeof(ElementC),
@@ -126,18 +122,13 @@ TEST(SM100_Device_Gemm_s8t_s8n_s8n_tensorop_1cta_s32_ptr_array, 512x128x128_4x2x
   using ElementAccumulator = int32_t;
   using ElementCompute = float;
   using ElementBias = int8_t;
-  using ClusterTileShape = Shape<_512,_128,Int<128 / sizeof(ElementA)>>;
+  using MmaTileShape = Shape<_128,_64,Int<128 / sizeof(ElementA)>>;
   using ClusterShape = Shape<_4,_2,_1>;
-  using OutputCtaShape = decltype(shape_div(ClusterTileShape{}, ClusterShape{})); 
-  using AtomThrShape = decltype(shape_div(ClusterShape{}, Shape<_1,_1,_1>{}));
-
-  using OutputCtaShape = decltype(shape_div(ClusterTileShape{}, ClusterShape{}));
-  using MmaTileShape = decltype(shape_div(ClusterTileShape{}, AtomThrShape{}));
 
   using EpilogueSchedule = cutlass::epilogue::PtrArrayTmaWarpSpecialized1Sm;
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
-      OutputCtaShape, ClusterShape,
+      MmaTileShape, ClusterShape,
       cutlass::epilogue::collective::EpilogueTileAuto,
       ElementAccumulator, ElementCompute,
       ElementC, LayoutC, 16 / sizeof(ElementC),
@@ -183,17 +174,13 @@ TEST(SM100_Device_Gemm_s8t_s8n_s32n_tensorop_1cta_s32_ptr_array, 64x256x128_1x1x
   using ElementAccumulator = int32_t;
   using ElementCompute = int32_t;
   using ElementBias = int32_t;
-  using ClusterTileShape = cute::Shape<_64,_256,Int<128 / sizeof(ElementA)>>;
+  using MmaTileShape = cute::Shape<_64,_256,Int<128 / sizeof(ElementA)>>;
   using ClusterShape = Shape<_1,_1,_1>;
-  using AtomThrShape = decltype(shape_div(ClusterShape{}, Shape<_1,_1,_1>{}));
-
-  using OutputCtaShape = decltype(shape_div(ClusterTileShape{}, ClusterShape{}));
-  using MmaTileShape = decltype(shape_div(ClusterTileShape{}, AtomThrShape{}));
 
   using EpilogueSchedule = cutlass::epilogue::PtrArrayTmaWarpSpecialized1Sm;
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
-      OutputCtaShape, ClusterShape,
+      MmaTileShape, ClusterShape,
       cutlass::epilogue::collective::EpilogueTileAuto,
       ElementAccumulator, ElementCompute,
       ElementC, LayoutC, 16 / sizeof(ElementC),
@@ -239,17 +226,13 @@ TEST(SM100_Device_Gemm_s8t_s8n_s8n_tensorop_2cta_s32_ptr_array, 128x1024x128_2x4
   using ElementAccumulator = int32_t;
   using ElementCompute = float;
   using ElementBias = int8_t;
-  using ClusterTileShape = Shape<_128,_1024,Int<128 / sizeof(ElementA)>>;
+  using MmaTileShape = Shape<_128,_256,Int<128 / sizeof(ElementA)>>;
   using ClusterShape = Shape<_2,_4,_1>;
-  using AtomThrShape = decltype(shape_div(ClusterShape{}, Shape<_2,_1,_1>{}));
-
-  using OutputCtaShape = decltype(shape_div(ClusterTileShape{}, ClusterShape{}));
-  using MmaTileShape = decltype(shape_div(ClusterTileShape{}, AtomThrShape{}));
 
   using EpilogueSchedule = cutlass::epilogue::PtrArrayTmaWarpSpecialized2Sm;
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
-      OutputCtaShape, ClusterShape,
+      MmaTileShape, ClusterShape,
       cutlass::epilogue::collective::EpilogueTileAuto,
       ElementAccumulator, ElementCompute,
       ElementC, LayoutC, 16 / sizeof(ElementC),

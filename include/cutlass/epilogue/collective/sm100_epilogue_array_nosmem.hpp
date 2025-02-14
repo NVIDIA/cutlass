@@ -356,24 +356,21 @@ public:
     }
 
     // Represent the full output tensor, slice to get the tile this CTA is responsible for
-    Tensor mC = make_tensor(make_gmem_ptr(ptr_C_l), problem_shape_mnl, append<3>(params.dC,_0{}));      // (M,N,L)
-    Tensor mD = make_tensor(make_gmem_ptr(params.ptr_D[l_coord]), problem_shape_mnl, append<3>(params.dD,_0{}));      // (M,N,L)
-    Tensor gC = local_tile(mC, cta_tiler, cta_coord_mnl);                                               // (CTA_M,CTA_N)
-    Tensor gD = local_tile(mD, cta_tiler, cta_coord_mnl);                                               // (CTA_M,CTA_N)
-    Tensor gC_epi   = flat_divide(  gC, EpilogueTile{});                          // (EPI_TILE_M,EPI_TILE_N,EPI_M,EPI_N)
-    Tensor gD_epi   = flat_divide(  gD, EpilogueTile{});                          // (EPI_TILE_M,EPI_TILE_N,EPI_M,EPI_N)
+    Tensor mC = make_tensor(make_gmem_ptr(ptr_C_l), problem_shape_mnl, append<3>(params.dC,_0{}));           // (M,N,L)
+    Tensor mD = make_tensor(make_gmem_ptr(params.ptr_D[l_coord]), problem_shape_mnl, append<3>(params.dD,_0{})); // (M,N,L)
+    Tensor gC = local_tile(mC, cta_tiler, cta_coord_mnl);                                              // (CTA_M,CTA_N)
+    Tensor gD = local_tile(mD, cta_tiler, cta_coord_mnl);                                              // (CTA_M,CTA_N)
 
 
     // Partition source and destination tiles according to tmem copy T2R partitioning (tTR_)
     auto thread_t2r = tiled_t2r.get_slice(threadIdx.x % size(tiled_t2r));
-    Tensor tTR_gC   = thread_t2r.partition_D(gC_epi);                                               // (T2R,T2R_M,T2R_N)
-    Tensor tTR_gD   = thread_t2r.partition_D(gD_epi);                                               // (T2R,T2R_M,T2R_N)
+    Tensor tTR_gC   = thread_t2r.partition_D(gC);                                                  // (T2R,T2R_M,T2R_N)
+    Tensor tTR_gD   = thread_t2r.partition_D(gD);                                                  // (T2R,T2R_M,T2R_N)
  
 
-    Tensor coordD = make_identity_tensor(problem_shape_mnl);                                       // (M,N,L) -> (m,n,l)
-    Tensor cD = local_tile(coordD, cta_tiler, cta_coord_mnl);                                // (CTA_M,CTA_N) -> (m,n,l)
-    Tensor cD_epi   = flat_divide(  cD, EpilogueTile{});                          // (EPI_TILE_M,EPI_TILE_N,EPI_M,EPI_N)
-    Tensor tTR_cD = thread_t2r.partition_D(cD);                                          // (T2R,T2R_M,T2R_N) -> (m,n,l)
+    Tensor coordD = make_identity_tensor(problem_shape_mnl);                                      // (M,N,L) -> (m,n,l)
+    Tensor cD = local_tile(coordD, cta_tiler, cta_coord_mnl);                               // (CTA_M,CTA_N) -> (m,n,l)
+    Tensor tTR_cD = thread_t2r.partition_D(cD);                                         // (T2R,T2R_M,T2R_N) -> (m,n,l)
 
     // 2. Apply element-wise operation and store to gmem
     // source is needed
@@ -410,7 +407,9 @@ template <
   class ElementD_,
   class StrideD_,
   class ThreadEpilogueOp_,
-  class CopyOpT2R_
+  class CopyOpT2R_,
+  class AlignmentC,
+  class AlignmentD
 >
 class CollectiveEpilogue<
     Sm100PtrArrayNoSmemWarpSpecialized,
@@ -420,7 +419,9 @@ class CollectiveEpilogue<
     ElementD_,
     StrideD_,
     ThreadEpilogueOp_,
-    CopyOpT2R_
+    CopyOpT2R_,
+    AlignmentC,
+    AlignmentD
 > : public detail::Sm100TmaWarpSpecializedAdapter<CollectiveEpilogue<
       Sm100PtrArrayNoSmem,
       EpilogueTile_,

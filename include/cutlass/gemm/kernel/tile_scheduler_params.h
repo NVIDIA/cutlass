@@ -1204,6 +1204,7 @@ struct PersistentTileSchedulerSm90StreamKParams {
       KernelHardwareInfo new_hw_info;
       new_hw_info.device_id = hw_info.device_id;
       new_hw_info.sm_count = hw_info.sm_count;
+      new_hw_info.max_active_clusters = hw_info.max_active_clusters;
       if (new_hw_info.sm_count <= 0) {
         CUTLASS_TRACE_HOST("  WARNING: Arguments do not include a valid SM count.\n"
             "  For optimal performance, populate the arguments KernelHardwareInfo struct with the SM count.");

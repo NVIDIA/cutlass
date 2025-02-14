@@ -49,7 +49,7 @@ set(TEST_GEN_REMAP --b=2 --h=4 --h_k=2 --k=512 --d=128 --verify --remap)
 set(TEST_GEN_CACHEONLY --b=2 --h=4 --h_k=2 --k=512 --d=128 --verify --cache-only)
 
 if(NOT WIN32 AND (NOT (CMAKE_CXX_COMPILER_ID MATCHES "Clang")))
-  if(NOT CUTLASS_NVCC_ARCHS STREQUAL "100")
+  if (CUTLASS_NVCC_ARCHS MATCHES 100a)
   cutlass_example_add_executable(
       77_blackwell_fmha_fp8
       77_blackwell_fmha.cu

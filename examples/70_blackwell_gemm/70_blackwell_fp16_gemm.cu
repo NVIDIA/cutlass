@@ -115,15 +115,11 @@ using OperatorClass       = cutlass::arch::OpClassTensorOp;                 // O
 using MmaTileShape_MNK = Shape<_256,_128,_64>;                          
 // Shape of the threadblocks in a cluster
 using ClusterShape_MNK = Shape<_2,_2,_1>;
-// Shape of the threadblocks participating in a tcgen05 MMA. <1, 1, 1> for cta_group = 1, <2, 1, 1> for cta_group = 2
-using AtomThrShape_MNK = Shape<_2, _1, _1>;
-// Shape of the tile computed by each SM
-using PerSmTileShape_MNK = decltype(shape_div(MmaTileShape_MNK{}, AtomThrShape_MNK{}));
 
 // Build the epilogue
 using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
     ArchTag, OperatorClass, 
-    PerSmTileShape_MNK, ClusterShape_MNK,
+    MmaTileShape_MNK, ClusterShape_MNK,
     cutlass::epilogue::collective::EpilogueTileAuto,
     ElementAccumulator, ElementAccumulator,
     ElementC, LayoutC, AlignmentC,

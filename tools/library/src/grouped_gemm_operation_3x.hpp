@@ -179,7 +179,6 @@ protected:
     if constexpr (Operator::ArchTag::kMinComputeCapability >= 90) {
       operator_args.hw_info.max_active_clusters = max_active_clusters;
     }
-    
     if constexpr (Operator::ArchTag::kMinComputeCapability >= 100) {
       operator_args.hw_info.cluster_shape = dim3(
         arguments->cluster_shape.m(),
@@ -190,7 +189,6 @@ protected:
         arguments->cluster_shape_fallback.n(),
         arguments->cluster_shape_fallback.k());
     }
-    
 
     return status;
   }

@@ -372,7 +372,7 @@ void swap(array<T,N>& a, array<T,N>& b)
 /// @return A cute::array of the elements of @c t in reverse order.
 template <class T, size_t N>
 CUTE_HOST_DEVICE constexpr
-cute::array<T,N> reverse(cute::array<T,N> const& t) 
+cute::array<T,N> reverse(cute::array<T,N> const& t)
 {
   if constexpr (N == 0u) {
     return t;
@@ -441,17 +441,6 @@ struct tuple_element<I, cute::array<T,N>>
   using type = T;
 };
 
-template <class T, size_t N>
-struct tuple_size<cute::array<T,N> const>
-    : CUTE_STL_NAMESPACE::integral_constant<size_t, N>
-{};
-
-template <size_t I, class T, size_t N>
-struct tuple_element<I, cute::array<T,N> const>
-{
-  using type = T;
-};
-
 } // end namespace CUTE_STL_NAMESPACE
 
 #ifdef CUTE_STL_NAMESPACE_IS_CUDA_STD
@@ -473,17 +462,6 @@ struct tuple_size<cute::array<T,N>>
 
 template <size_t I, class T, size_t N>
 struct tuple_element<I, cute::array<T,N>>
-{
-  using type = T;
-};
-
-template <class T, size_t N>
-struct tuple_size<cute::array<T,N> const>
-    : CUTE_STL_NAMESPACE::integral_constant<size_t, N>
-{};
-
-template <size_t I, class T, size_t N>
-struct tuple_element<I, cute::array<T,N> const>
 {
   using type = T;
 };

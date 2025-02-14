@@ -567,7 +567,7 @@ sm100_make_trivial_fastFP32_tiled_mma() {
 }
 
 /**
- * @brief Check for U4_UNPACK_U8, U6_UNPACK_U8 alignment requirement
+ * @brief Check for F8F6F4 alignment requirement
  * 
  * @tparam TileShape_MNK (MmaAtomShape_M, MmaAtomShape_N, TileShape_K)
  * @tparam ClusterShape_MNK (cluster_M, cluster_N, cluster_K)

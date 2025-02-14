@@ -69,7 +69,7 @@ struct LayoutAwareConvertImpl {
     auto&& src_vm = cute::recast<SrcArray>(src);
     auto&& dst_vm = cute::recast<DstArray>(dst);
     CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i <src.size(); ++i) {
+    for (int i = 0; i < src_vm.size(); ++i) {
       dst_vm(i) = Converter::convert(src_vm(i));
     }
   }

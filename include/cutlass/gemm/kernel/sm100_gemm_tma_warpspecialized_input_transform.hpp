@@ -1057,6 +1057,10 @@ public:
       }
     }
 
+    else {
+      // Register reconfiguration
+      arch::warpgroup_reg_dealloc<GenericRegisterRequirement>();
+    }
   }
 };
 

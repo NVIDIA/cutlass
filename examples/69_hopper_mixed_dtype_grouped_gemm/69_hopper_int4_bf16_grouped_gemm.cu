@@ -32,7 +32,19 @@
 
 /*! \file
     \brief 
-    NOTE: Write docu
+    Hopper Mixed-input Grouped GEMM example using CUTLASS 3 APIs for NVIDIA Hopper architecture.
+    See 55_hopper_int4_bf16_gemm.cu for more details about W4A16 GEMMs with layout shuffling.
+
+    Limitations:
+      1) Only support row-wise scaling. Zero-points and block-wise scaling is currently not supported.
+
+    To run this example:
+
+      $ ./examples/69_hopper_mixed_dtype_grouped_gemm/69_hopper_int4_bf16_grouped_gemm --m=2048 --n=2048 --k=2048 --mode=1 --groups=10
+
+      The above example command makes all 10 groups to be sized at the given m, n, k sizes.
+      Skipping any of the problem dimensions randomizes it across the different groups.
+      Same applies for alpha and beta values that are randomized across the different groups.
 */
 
 #include <iostream>

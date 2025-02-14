@@ -109,8 +109,6 @@ TEST(SM100Only_Device_Gemm_ue8m0xe2m1t_ue8m0xe2m1n_void_f16t_bstensorop_f32, 128
   using MmaTileShape_MNK = Shape<_128,_128,_256>;
   // Cluster size for multicast
   using ClusterShape_MNK = Shape<_4,_4,_1>;
-  // Collective Epilogue takes the output tile shape for 1 CTA
-  using PerSmTileShape_MNK = Shape<_128,_128,_256>;
 
   //
   // Construct CollectiveEpilogue
@@ -118,7 +116,7 @@ TEST(SM100Only_Device_Gemm_ue8m0xe2m1t_ue8m0xe2m1n_void_f16t_bstensorop_f32, 128
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm100, cutlass::arch::OpClassBlockScaledTensorOp,      // Arch and Tensorop spec
-      PerSmTileShape_MNK, ClusterShape_MNK,                                     // Epilogue tile shape, and cluster shape
+      MmaTileShape_MNK, ClusterShape_MNK,                                   // Mma instruction tile shape, cluster shape
       cutlass::epilogue::collective::EpilogueTileAuto,                      // Epilogue subtile shape. Auto will find a suitable tile shape
       ElementAccumulator, ElementCompute,                                   // Mma instr's accumulator type and compute precision for epilogue
       ElementC, GmemLayoutC, AlignC,                                        // C tensor description
@@ -182,8 +180,6 @@ TEST(SM100Only_Device_Gemm_ue8m0xe2m1t_ue8m0xe2m1n_void_f16t_bstensorop_f32, 128
   using MmaTileShape_MNK = Shape<_128,_192,_256>;
   // Cluster size for multicast
   using ClusterShape_MNK = Shape<_1,_1,_1>;
-  // Collective Epilogue takes the output tile shape for 1 CTA
-  using PerSmTileShape_MNK = Shape<_128,_192,_256>;
 
   //
   // Construct CollectiveEpilogue
@@ -191,12 +187,12 @@ TEST(SM100Only_Device_Gemm_ue8m0xe2m1t_ue8m0xe2m1n_void_f16t_bstensorop_f32, 128
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm100, cutlass::arch::OpClassBlockScaledTensorOp,      // Arch and Tensorop spec
-      PerSmTileShape_MNK, ClusterShape_MNK,                                     // Epilogue tile shape, and cluster shape
+      MmaTileShape_MNK, ClusterShape_MNK,                                   // Mma instruction tile shape, cluster shape
       cutlass::epilogue::collective::EpilogueTileAuto,                      // Epilogue subtile shape. Auto will find a suitable tile shape
       ElementAccumulator, ElementCompute,                                   // Mma instr's accumulator type and compute precision for epilogue
       ElementC, GmemLayoutC, AlignC,                                        // C tensor description
       ElementD, GmemLayoutD, AlignD,                                        // D tensor description
-      cutlass::epilogue::collective::EpilogueScheduleAuto                   // Epilogue schedule policy
+      cutlass::epilogue::TmaWarpSpecialized1Sm                              // Epilogue schedule policy
     >::CollectiveOp;
 
   //
@@ -255,8 +251,6 @@ TEST(SM100Only_Device_Gemm_ue8m0xe2m1t_ue8m0xe2m1n_void_f16t_bstensorop_f32, 128
   using MmaTileShape_MNK = Shape<_128,_256,_256>;
   // Cluster size for multicast
   using ClusterShape_MNK = Shape<_2,_2,_1>;
-  // Collective Epilogue takes the output tile shape for 1 CTA
-  using PerSmTileShape_MNK = Shape<_128,_256,_256>;
 
   //
   // Construct CollectiveEpilogue
@@ -264,12 +258,12 @@ TEST(SM100Only_Device_Gemm_ue8m0xe2m1t_ue8m0xe2m1n_void_f16t_bstensorop_f32, 128
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm100, cutlass::arch::OpClassBlockScaledTensorOp,      // Arch and Tensorop spec
-      PerSmTileShape_MNK, ClusterShape_MNK,                                     // Epilogue tile shape, and cluster shape
+      MmaTileShape_MNK, ClusterShape_MNK,                                   // Mma instruction tile shape, cluster shape
       cutlass::epilogue::collective::EpilogueTileAuto,                      // Epilogue subtile shape. Auto will find a suitable tile shape
       ElementAccumulator, ElementCompute,                                   // Mma instr's accumulator type and compute precision for epilogue
       ElementC, GmemLayoutC, AlignC,                                        // C tensor description
       ElementD, GmemLayoutD, AlignD,                                        // D tensor description
-      cutlass::epilogue::collective::EpilogueScheduleAuto                   // Epilogue schedule policy
+      cutlass::epilogue::TmaWarpSpecialized1Sm                              // Epilogue schedule policy
     >::CollectiveOp;
 
   //
@@ -328,8 +322,6 @@ TEST(SM100Only_Device_Gemm_ue8m0xe2m1t_ue8m0xe2m1n_void_f16t_bstensorop_f32, 256
   using MmaTileShape_MNK = Shape<_256,_128,_256>;
   // Cluster size for multicast
   using ClusterShape_MNK = Shape<_2,_4,_1>;
-  // Collective Epilogue takes the output tile shape for 1 CTA
-  using PerSmTileShape_MNK = Shape<_128,_128,_256>;
 
   //
   // Construct CollectiveEpilogue
@@ -337,12 +329,12 @@ TEST(SM100Only_Device_Gemm_ue8m0xe2m1t_ue8m0xe2m1n_void_f16t_bstensorop_f32, 256
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm100, cutlass::arch::OpClassBlockScaledTensorOp,      // Arch and Tensorop spec
-      PerSmTileShape_MNK, ClusterShape_MNK,                                     // Epilogue tile shape, and cluster shape
+      MmaTileShape_MNK, ClusterShape_MNK,                                   // Mma instruction tile shape, cluster shape
       cutlass::epilogue::collective::EpilogueTileAuto,                      // Epilogue subtile shape. Auto will find a suitable tile shape
       ElementAccumulator, ElementCompute,                                   // Mma instr's accumulator type and compute precision for epilogue
       ElementC, GmemLayoutC, AlignC,                                        // C tensor description
       ElementD, GmemLayoutD, AlignD,                                        // D tensor description
-      cutlass::epilogue::collective::EpilogueScheduleAuto                   // Epilogue schedule policy
+      cutlass::epilogue::TmaWarpSpecialized2Sm                              // Epilogue schedule policy
     >::CollectiveOp;
 
   //
@@ -401,8 +393,6 @@ TEST(SM100Only_Device_Gemm_ue8m0xe2m1t_ue8m0xe2m1n_void_f16t_bstensorop_f32, 256
   using MmaTileShape_MNK = Shape<_256,_192,_256>;
   // Cluster size for multicast
   using ClusterShape_MNK = Shape<_2,_1,_1>;
-  // Collective Epilogue takes the output tile shape for 1 CTA
-  using PerSmTileShape_MNK = Shape<_128,_192,_256>;
 
   //
   // Construct CollectiveEpilogue
@@ -410,7 +400,7 @@ TEST(SM100Only_Device_Gemm_ue8m0xe2m1t_ue8m0xe2m1n_void_f16t_bstensorop_f32, 256
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm100, cutlass::arch::OpClassBlockScaledTensorOp,      // Arch and Tensorop spec
-      PerSmTileShape_MNK, ClusterShape_MNK,                                     // Epilogue tile shape, and cluster shape
+      MmaTileShape_MNK, ClusterShape_MNK,                                   // Mma instruction tile shape, cluster shape
       cutlass::epilogue::collective::EpilogueTileAuto,                      // Epilogue subtile shape. Auto will find a suitable tile shape
       ElementAccumulator, ElementCompute,                                   // Mma instr's accumulator type and compute precision for epilogue
       ElementC, GmemLayoutC, AlignC,                                        // C tensor description
@@ -474,8 +464,6 @@ TEST(SM100Only_Device_Gemm_ue8m0xe2m1t_ue8m0xe2m1n_void_f16t_bstensorop_f32, 256
   using MmaTileShape_MNK = Shape<_256,_256,_256>;
   // Cluster size for multicast
   using ClusterShape_MNK = Shape<_4,_2,_1>;
-  // Collective Epilogue takes the output tile shape for 1 CTA
-  using PerSmTileShape_MNK = Shape<_128,_256,_256>;
 
   //
   // Construct CollectiveEpilogue
@@ -483,12 +471,12 @@ TEST(SM100Only_Device_Gemm_ue8m0xe2m1t_ue8m0xe2m1n_void_f16t_bstensorop_f32, 256
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm100, cutlass::arch::OpClassBlockScaledTensorOp,      // Arch and Tensorop spec
-      PerSmTileShape_MNK, ClusterShape_MNK,                                     // Epilogue tile shape, and cluster shape
+      MmaTileShape_MNK, ClusterShape_MNK,                                   // Mma instruction tile shape, cluster shape
       cutlass::epilogue::collective::EpilogueTileAuto,                      // Epilogue subtile shape. Auto will find a suitable tile shape
       ElementAccumulator, ElementCompute,                                   // Mma instr's accumulator type and compute precision for epilogue
       ElementC, GmemLayoutC, AlignC,                                        // C tensor description
       ElementD, GmemLayoutD, AlignD,                                        // D tensor description
-      cutlass::epilogue::collective::EpilogueScheduleAuto                   // Epilogue schedule policy
+      cutlass::epilogue::TmaWarpSpecialized2Sm                              // Epilogue schedule policy
     >::CollectiveOp;
 
   //

@@ -51,16 +51,55 @@
 #ifdef _MSC_VER
 // Provides support for alternate operators such as 'and', 'or', ...
 #include <ciso646>
+#include <intrin.h>
 #endif // _MSC_VER
-
 
 #if defined(CUTLASS_ARCH_MMA_SM100A_ENABLED)
 #  define CUTLASS_ARCH_CREDUX_ENABLED
 #endif
 
-
 namespace cutlass {
 
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+namespace detail {
+
+  CUTLASS_HOST_DEVICE int32_t popcount(int32_t x) {
+    #if defined(__CUDA_ARCH__)
+    return __popc(x);
+    #elif defined(__GNUC__) || defined(__clang__)
+    return __builtin_popcount(x);
+    #elif defined(_MSC_VER)
+    return __popcnt(x);
+    #else
+    int32_t count = 0;
+    while (x) {
+      count += x & 1;
+      x >>= 1;
+    }
+    return count;
+    #endif
+  }
+
+  CUTLASS_HOST_DEVICE int64_t popcount(int64_t x) {
+    #if defined(__CUDA_ARCH__)
+    return __popcll(x);
+    #elif defined(__GNUC__) || defined(__clang__)
+    return __builtin_popcountll(x);
+    #elif defined(_MSC_VER)
+    return __popcnt64(x);
+    #else
+    int64_t count = 0;
+    while (x) {
+      count += x & 1;
+      x >>= 1;
+    }
+    return count;
+    #endif
+  }
+
+} // namespace detail
+  
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename T>
@@ -609,22 +648,7 @@ struct and_popc_add {
   CUTLASS_HOST_DEVICE
   C operator()(A const &a, B const &b, C const &c) const {
     A and_result = a & b;
-
-#if defined(__CUDA__ARCH__)
-    int popc_result = __popc(and_result);
-
-    if constexpr (sizeof(A) == sizeof(uint64_t)) {
-      popc_result += __popc(static_cast<uint32_t>(and_result >> 32));
-    }
-
-#else
-    int popc_result = __builtin_popcount(and_result);
-    if constexpr (sizeof(A) == sizeof(uint64_t)) {
-      popc_result += __builtin_popcount(static_cast<uint32_t>(and_result >> 32));
-    }
-
-#endif
-
+    int32_t popc_result = detail::popcount(and_result);
     return C(popc_result) + c;
   }
 };
@@ -646,22 +670,7 @@ struct xor_popc_add {
   CUTLASS_HOST_DEVICE
   C operator()(A const &a, B const &b, C const &c) const {
     A xor_result = a ^ b;
-
-#if defined(__CUDA__ARCH__)
-    int popc_result = __popc(xor_result);
-
-    if constexpr (sizeof(A) == sizeof(uint64_t)) {
-      popc_result += __popc(static_cast<uint32_t>(xor_result >> 32));
-    }
-
-#else
-    int popc_result = __builtin_popcount(xor_result);
-    if constexpr (sizeof(A) == sizeof(uint64_t)) {
-      popc_result += __builtin_popcount(static_cast<uint32_t>(xor_result >> 32));
-    }
-
-#endif
-
+    int32_t popc_result = detail::popcount(xor_result);
     return C(popc_result) + c;
   }
 };
@@ -682,22 +691,7 @@ struct or_popc_add {
   CUTLASS_HOST_DEVICE
   C operator()(A const &a, B const &b, C const &c) const {
     A or_result = a | b;
-
-#if defined(__CUDA__ARCH__)
-    int popc_result = __popc(or_result);
-
-    if constexpr (sizeof(A) == sizeof(uint64_t)) {
-      popc_result += __popc(static_cast<uint32_t>(or_result >> 32));
-    }
-
-#else
-    int popc_result = __builtin_popcount(or_result);
-    if constexpr (sizeof(A) == sizeof(uint64_t)) {
-      popc_result += __builtin_popcount(static_cast<uint32_t>(or_result >> 32));
-    }
-
-#endif
-
+    int32_t popc_result = detail::popcount(or_result);
     return C(popc_result) + c;
   }
 };

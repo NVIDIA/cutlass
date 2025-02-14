@@ -41,7 +41,6 @@
 #pragma once
 
 #include <cuda/std/cassert>
-
 #include "cutlass/cutlass.h"
 #include "cutlass/fast_math.h"
 #include "cutlass/layout/pitch_linear.h"
