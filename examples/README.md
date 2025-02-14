@@ -278,6 +278,10 @@
 
     Blackwell SM100 FMHA kernel
 
+* [78_blackwell_emulated_bf16x9_gemm](78_blackwell_emulated_bf16x9_gemm)
+
+    Blackwell SM100 FastFP32 (using BF16 to emulate SGEMM) kernel
+
 # CuTe - Programming Examples
 
 Examples that do not rely on CUTLASS and directly showcase the features of CuTe are located in [cutlass/examples/cute](./cute/).

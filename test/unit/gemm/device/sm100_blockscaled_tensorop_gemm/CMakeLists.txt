@@ -30,7 +30,7 @@
 
 #
 
-if(NOT CUTLASS_NVCC_ARCHS STREQUAL "100")
+if (CUTLASS_NVCC_ARCHS MATCHES 100a)
 add_custom_target(
   cutlass_test_unit_gemm_device_sm100_blockscaled
   DEPENDS

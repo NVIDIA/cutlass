@@ -29,8 +29,6 @@
  *
  **************************************************************************************************/
 
-
-
 #pragma once
 
 #include "cutlass/cutlass.h"
@@ -564,20 +562,21 @@ public:
     // Sync deallocation status between MMA warps of peer CTAs
     arch::ClusterBarrier& tmem_deallocation_result_barrier = shared_storage.pipelines.tmem_dealloc;
     [[maybe_unused]] uint32_t dealloc_barrier_phase = 0;
-    if constexpr(!IsOverlappingAccum) {
-      if (WarpCategory::MMA == warp_category && has_mma_peer_cta && lane_predicate) {
-        tmem_deallocation_result_barrier.init(NumMMAThreads);
+    if (WarpCategory::MMA == warp_category) {
+      if constexpr(!IsOverlappingAccum) {
+        if (has_mma_peer_cta && lane_predicate) {
+          tmem_deallocation_result_barrier.init(NumMMAThreads);
+        }
+      }
+      else {
+        if (has_mma_peer_cta && lane_predicate) {
+          tmem_deallocation_result_barrier.init(NumEpilogueThreads*2);
+        }
+        else if (lane_predicate) {
+          tmem_deallocation_result_barrier.init(NumEpilogueThreads);
+        }
       }
     }
-    else {
-      if (WarpCategory::MMA == warp_category && has_mma_peer_cta && lane_predicate) {
-        tmem_deallocation_result_barrier.init(NumEpilogueThreads*2);
-      }
-      else if (WarpCategory::MMA == warp_category && lane_predicate) {
-        tmem_deallocation_result_barrier.init(NumEpilogueThreads);
-      }
-    }
-
 
     // Initialize smem barrier for prologue throttling. Epilogue warps are stalled until the prologue finishes.
     arch::ClusterBarrier& epilogue_throttle_barrier = shared_storage.pipelines.epilogue_throttle;
@@ -699,7 +698,6 @@ public:
       epilogue_throttle_barrier.arrive();
 
       if constexpr (IsSchedDynamicPersistent) {
-
         // Whether a new CLC query must be performed.
         // See comment below where this variable is updated for a description of
         // why this variable is needed.
@@ -738,7 +736,6 @@ public:
           work_tile_info = next_work_tile_info;
         } while (work_tile_info.is_valid());
         clc_pipeline.producer_tail(clc_pipe_producer_state);
-
       }
     }
 
@@ -963,7 +960,6 @@ public:
           epi_load_pipe_consumer_state = load_state_next;
           epi_store_pipe_producer_state = store_state_next;
           accumulator_pipe_consumer_state = acc_state_next;
-
           do_tail_store = true;
         }
         work_tile_info = next_work_tile_info;

@@ -585,6 +585,10 @@ class EpilogueScheduleType(enum.Enum):
   EpilogueTransposed = enum_auto()
   NoSmemWarpSpecialized = enum_auto()
   PtrArrayNoSmemWarpSpecialized = enum_auto()
+  NoSmemWarpSpecialized1Sm = enum_auto()
+  NoSmemWarpSpecialized2Sm = enum_auto()
+  PtrArrayNoSmemWarpSpecialized1Sm = enum_auto()
+  PtrArrayNoSmemWarpSpecialized2Sm = enum_auto()
   TmaWarpSpecialized = enum_auto()
   TmaWarpSpecializedCooperative = enum_auto()
   TmaWarpSpecialized1Sm = enum_auto() 
@@ -600,6 +604,10 @@ EpilogueScheduleTag = {
   EpilogueScheduleType.EpilogueTransposed: 'cutlass::gemm::EpilogueTransposed',
   EpilogueScheduleType.NoSmemWarpSpecialized: 'cutlass::epilogue::NoSmemWarpSpecialized',
   EpilogueScheduleType.PtrArrayNoSmemWarpSpecialized: 'cutlass::epilogue::PtrArrayNoSmemWarpSpecialized',
+  EpilogueScheduleType.NoSmemWarpSpecialized1Sm: 'cutlass::epilogue::NoSmemWarpSpecialized1Sm',
+  EpilogueScheduleType.NoSmemWarpSpecialized2Sm: 'cutlass::epilogue::NoSmemWarpSpecialized2Sm',
+  EpilogueScheduleType.PtrArrayNoSmemWarpSpecialized1Sm: 'cutlass::epilogue::PtrArrayNoSmemWarpSpecialized1Sm',
+  EpilogueScheduleType.PtrArrayNoSmemWarpSpecialized2Sm: 'cutlass::epilogue::PtrArrayNoSmemWarpSpecialized2Sm',
   EpilogueScheduleType.TmaWarpSpecialized: 'cutlass::epilogue::TmaWarpSpecialized',
   EpilogueScheduleType.TmaWarpSpecializedCooperative: 'cutlass::epilogue::TmaWarpSpecializedCooperative',
   EpilogueScheduleType.TmaWarpSpecialized1Sm: 'cutlass::epilogue::TmaWarpSpecialized1Sm', 
@@ -616,6 +624,10 @@ EpilogueScheduleSuffixes = {
   EpilogueScheduleType.EpilogueTransposed: '',
   EpilogueScheduleType.NoSmemWarpSpecialized: '_epi_nosmem',
   EpilogueScheduleType.PtrArrayNoSmemWarpSpecialized: '_epi_nosmem',
+  EpilogueScheduleType.NoSmemWarpSpecialized1Sm: '_epi_nosmem',
+  EpilogueScheduleType.NoSmemWarpSpecialized2Sm: '_epi_nosmem',
+  EpilogueScheduleType.PtrArrayNoSmemWarpSpecialized1Sm: '_epi_nosmem',
+  EpilogueScheduleType.PtrArrayNoSmemWarpSpecialized2Sm: '_epi_nosmem',
   EpilogueScheduleType.TmaWarpSpecialized: '_epi_tma',
   EpilogueScheduleType.TmaWarpSpecializedCooperative: '_epi_tma',
   EpilogueScheduleType.TmaWarpSpecialized1Sm: '', 

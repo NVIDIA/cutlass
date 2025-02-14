@@ -779,7 +779,7 @@ class EmitGemmUniversal3xInstance:
 using ${operation_name}_epilogue =
   typename cutlass::epilogue::collective::CollectiveBuilder<
     ${arch}, ${opcode_class_epi},
-    cute::Shape<cute::_${tile_shape_epi_m}, cute::_${tile_shape_epi_n}, cute::_${tile_shape_epi_k}>,
+    cute::Shape<cute::_${tile_shape_m}, cute::_${tile_shape_n}, cute::_${tile_shape_k}>,
     cute::Shape<${cluster_shape_m}, ${cluster_shape_n}, ${cluster_shape_k}>,
     ${epi_tile_mn},
     ${element_accumulator}, ${element_epilogue},
@@ -797,7 +797,7 @@ using ${operation_name}_mainloop =
     ${element_a}, ${layout_a}, ${align_a},
     ${element_b}, ${layout_b}, ${align_b},
     ${element_accumulator},
-    cute::Shape<cute::_${tile_shape_main_m}, cute::_${tile_shape_main_n}, cute::_${tile_shape_main_k}>,
+    cute::Shape<cute::_${tile_shape_m}, cute::_${tile_shape_n}, cute::_${tile_shape_k}>,
     cute::Shape<${cluster_shape_m}, ${cluster_shape_n}, ${cluster_shape_k}>,
     ${stages},
     ${kernel_schedule}
@@ -874,18 +874,12 @@ ${compile_guard_end}
     opcode_class_main = operation.tile_description.math_instruction.opcode_class
     opcode_class_epi = opcode_class_main
     
-    if opcode_class_main == OpcodeClass.BlockScaledTensorOp:
-      if operation.epilogue_schedule != EpilogueScheduleType.NoSmemWarpSpecialized:
-        opcode_class_epi = OpcodeClass.TensorOp
-    
-
     tile_shape = operation.tile_description.tile_shape
     instruction_shape = operation.tile_description.math_instruction.instruction_shape
     cluster_m = operation.tile_description.cluster_shape[0]
     cluster_n = operation.tile_description.cluster_shape[1]
 
-    tile_shape_main_m, tile_shape_main_n, tile_shape_main_k = tile_shape
-    tile_shape_epi_m, tile_shape_epi_n, tile_shape_epi_k = tile_shape
+    tile_shape_m, tile_shape_n, tile_shape_k = tile_shape
 
     # account for static/dynamic cluster shapes
     cta_m = tile_shape[0] // cluster_m if cluster_m > 0 else tile_shape[0]
@@ -902,10 +896,8 @@ ${compile_guard_end}
       if opcode_class_main in [OpcodeClass.TensorOp 
                                , OpcodeClass.BlockScaledTensorOp 
                               ]:
-        tile_shape_main_m = instruction_shape[0]
-        tile_shape_main_n = instruction_shape[1]
-      tile_shape_epi_m = cta_m
-      tile_shape_epi_n = cta_n
+        tile_shape_m = instruction_shape[0]
+        tile_shape_n = instruction_shape[1]
     
  
     # stage count set to zero indicates builder automatic stage selection
@@ -945,9 +937,9 @@ ${compile_guard_end}
     element_a = DataTypeTag[operation.A.element] if not operation.is_complex() else f"cute::tuple<{str(DataTypeTag[operation.A.element])},{str(ComplexTransformTag3x[operation.A.complex_transform])}>"
     element_b = DataTypeTag[operation.B.element] if not operation.is_complex() else f"cute::tuple<{str(DataTypeTag[operation.B.element])},{str(ComplexTransformTag3x[operation.B.complex_transform])}>"
     epilogue_schedule_type = EpilogueScheduleTag[operation.epilogue_schedule]
-    is_no_smem_epilogue = operation.epilogue_schedule == EpilogueScheduleType.NoSmemWarpSpecialized
     
     if opcode_class_main == OpcodeClass.BlockScaledTensorOp:
+      is_no_smem_epilogue = operation.epilogue_schedule in [EpilogueScheduleType.NoSmemWarpSpecialized1Sm, EpilogueScheduleType.NoSmemWarpSpecialized2Sm]
       if cta_n == 256 and operation.kernel_schedule == KernelScheduleType.Nvf4TmaWarpSpecialized1SmSm100:
         epi_tile_mn = "cute::Shape<cute::_128,cute::_64>"
         if not is_no_smem_epilogue:
@@ -1041,12 +1033,9 @@ using {operation_name_str}_LayoutNarrowReordered = decltype(cute::tile_to_shape(
       'opcode_class_main': OpcodeClassTag[opcode_class_main],
       'opcode_class_epi': OpcodeClassTag[opcode_class_epi],
       'arch': "cutlass::arch::Sm%d" % operation.arch,
-      'tile_shape_epi_m': str(tile_shape_epi_m),
-      'tile_shape_epi_n': str(tile_shape_epi_n),
-      'tile_shape_epi_k': str(tile_shape_epi_k),
-      'tile_shape_main_m': str(tile_shape_main_m),
-      'tile_shape_main_n': str(tile_shape_main_n),
-      'tile_shape_main_k': str(tile_shape_main_k),
+      'tile_shape_m': str(tile_shape_m),
+      'tile_shape_n': str(tile_shape_n),
+      'tile_shape_k': str(tile_shape_k),
       'cluster_shape_m': 'cute::_' + str(operation.tile_description.cluster_shape[0]) if operation.tile_description.cluster_shape[0] > 0 else "int",
       'cluster_shape_n': 'cute::_' + str(operation.tile_description.cluster_shape[1]) if operation.tile_description.cluster_shape[1] > 0 else "int",
       'cluster_shape_k': 'cute::_' + str(operation.tile_description.cluster_shape[2]) if operation.tile_description.cluster_shape[2] > 0 else "int",

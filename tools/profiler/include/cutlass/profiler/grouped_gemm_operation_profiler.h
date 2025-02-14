@@ -158,8 +158,8 @@ private:
       gemm_workspace_.problem_sizes_3x_array_device->data());
     gemm_workspace_.arguments.problem_sizes_3x_host = problem_.problem_sizes_3x.data();
     gemm_workspace_.arguments.problem_count = problem_.problem_sizes.size();
-    gemm_workspace_.arguments.cluster_shape = {int(problem_.cluster_m), int(problem_.cluster_n), int(problem_.cluster_k)}; 
-    gemm_workspace_.arguments.cluster_shape_fallback = {int(problem_.cluster_m_fallback), int(problem_.cluster_n_fallback), int(problem_.cluster_k_fallback)}; 
+    gemm_workspace_.arguments.cluster_shape = {int(problem_.cluster_m), int(problem_.cluster_n), int(problem_.cluster_k)};
+    gemm_workspace_.arguments.cluster_shape_fallback = {int(problem_.cluster_m_fallback), int(problem_.cluster_n_fallback), int(problem_.cluster_k_fallback)};
 
     /* Query device SM count to pass onto the kernel as an argument, where needed */
     gemm_workspace_.arguments.sm_count = options.device.properties[0].multiProcessorCount;

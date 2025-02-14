@@ -516,8 +516,8 @@ struct GemmGroupedArguments {
   ScalarPointerMode pointer_mode{};
   bool use_pdl{false};
 
-  gemm::GemmCoord cluster_shape{};          
-  gemm::GemmCoord cluster_shape_fallback{}; 
+  gemm::GemmCoord cluster_shape{};
+  gemm::GemmCoord cluster_shape_fallback{};
 
   // these should really be in the configuration but staying consistent with GEMM
   int sm_count{0};

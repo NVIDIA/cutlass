@@ -106,7 +106,6 @@ struct CollectiveConv<
   
   using ProblemShape = ConvProblemShape<ConvOp, NumSpatialDimensions>;
 
-  // TODO: move pipeline mode tiling into the collective setup phase instead
   static_assert(rank(SmemLayoutA{}) == 3, "SmemLayout must be rank 3 (M/N, K, PIPE)");
   static_assert((size<0>(TileShape{}) == size<0>(SmemLayoutA{})), "SmemLayout must be compatible with the tile shape.");
   static_assert((size<2>(TileShape{}) == size<1>(SmemLayoutA{})), "SmemLayout must be compatible with the tile shape.");

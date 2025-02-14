@@ -37,169 +37,183 @@
 
 #include <cute/container/cuda_types.hpp>
 #include <cute/container/type_list.hpp>
-#if defined(CUTLASS_USE_PACKED_TUPLE)
-#  include <cute/container/packed_tuple.hpp>
-#endif
-
 //#include <cute/container/array.hpp>            // Advanced optimizations
 
-// cute::tuple is like std::tuple, with two differences.
+// cute::tuple is like std::tuple, with differences:
 //
 // 1. It works on both host and device.
 // 2. Its template arguments must be semiregular types.
+// 3. It is always a standard-layout type if all of its template arguments are standard-layout types.
+// 4. It is always an empty type if all of its template arguments are empty types.
 //
 // Semiregular types are default constructible and copyable.
 // They include "value types" like int or float,
 // but do _not_ include references like int& or float&.
 // (See std::tie for an example of a tuple of references.)
 //
-// If the template arguments of cute::tuple are all empty types (in
-// the sense of std::is_empty_v), then the cute::tuple is also an
-// empty type.  Furthermore, if CUTLASS_USE_PACKED_TUPLE is defined,
-// cute::tuple is always a standard-layout type if all of its template
-// arguments are standard-layout types.
-
-namespace cute
-{
-
-#if defined(CUTLASS_USE_PACKED_TUPLE)
-
-template<class... T>
-using tuple = packed_tuple<T...>;
-
-#else
-
-namespace detail
-{
-
-// This is simplified over the implementations in std::, cuda::std::, and thrust:: by ignoring much of
+// Standard-layout types preserve ABI across host-device boundaries.
+// They are safe to use as device kernel parameters.
+//
+// The cute::tuple is also simplified over the implementations in std::, cuda::std::, and thrust:: by ignoring much of
 // the conversion SFINAE, special overloading, and avoiding cvref template types.
 //
 // Over standard-conforming tuple implementations, this appears to accelerate compilation times by over 3x.
 
-// EBO stands for "empty base optimization."
+namespace cute
+{
+
+namespace detail
+{
+
+// ESO stands for "empty structure optimization."
 // We use this technique to ensure that cute::tuple
-// doesn't need to waste space storing any template arguments
-// of cute::tuple that have no data (like integral_constant).
-// Otherwise, cute::tuple would need to spend at least 1 byte
-// for each of its template arguments.
-//
-// This is one way in which cute::tuple differs from std::tuple.
+// doesn't waste space storing template arguments that have no data (like integral_constant).
 // Empty types in the template argument list are not even constructed,
-// and do not have unique element addresses.  In fact, they are not
-// even members of the tuple or stored in any way.  Calling `get`
+// and do not have unique element addresses. Calling `get`
 // constructs and returns an instance of an empty type on demand.
-//
-// EBO always "holds" a single value of type T.
-// N is like an array index that TupleBase uses
-// to access the desired tuple element.
-template <size_t N, class T, bool IsEmpty = is_empty<T>::value>
-struct EBO;
 
-template <class T, size_t N, bool B>
-CUTE_HOST_DEVICE constexpr C<N> findt(EBO<N, T, B> const&)
-{ return {}; }
+template <bool IsFirstEmpty, bool IsRestEmpty, class... T>
+struct ESO;
 
-// Specialization for types T that have no data;
-// the "static tuple leaf."  Valid T here include
-// integral_constant<U, Value>, Int<Value>,
-// and any other semiregular type
-// for which std::is_empty_v<T> is true.
-template <size_t N, class T>
-struct EBO<N, T, true>
-{
+template <class First, class... Rest>
+static constexpr bool is_first_empty_v = cute::is_empty<First>::value;
+template <class First, class... Rest>
+static constexpr bool is_rest_empty_v  = (cute::is_empty<Rest>::value && ...);
+
+template <class... T>
+using ESO_t = ESO<is_first_empty_v<T...>, is_rest_empty_v<T...>, T...>;
+
+// Empty First and Empty Rest...
+template <class First, class... Rest>
+struct ESO<true, true, First, Rest...> {
   CUTE_HOST_DEVICE constexpr
-  EBO() {}
+  ESO() {}
 
   CUTE_HOST_DEVICE constexpr
-  EBO(T const&) {}
+  ESO(First const&, Rest const&...) {}
 };
 
-template <size_t N, class T>
-CUTE_HOST_DEVICE constexpr T getv(EBO<N, T, true> const&)
-{ return {}; }
-
-// This is a work around approach to solve a shared memory misalign issue (https://github.com/NVIDIA/cutlass/issues/1250).
-// Will remove this work around implementation once the corresponding fix in compiler is released.
-struct dummy_EBO_base {};
-
-// Specialization for types T that are not empty;
-// the "dynamic tuple leaf."  Valid T here include int,
-// any other integral or floating-point type,
-// or any semiregular type for which std::is_empty_v<T> is false.
-template <size_t N, class T>
-struct EBO<N, T, false> : private dummy_EBO_base
-{
+// NonEmpty First and Empty Rest...
+template <class First, class... Rest>
+struct ESO<false, true, First, Rest...> {
   CUTE_HOST_DEVICE constexpr
-  EBO() : t_{} {}
+  ESO() : first_{} {}
 
   CUTE_HOST_DEVICE constexpr
-  EBO(T const& t) : t_{t} {}
+  ESO(First const& first, Rest const&...) : first_{first} {}
 
-  T t_;
+  First first_;
 };
 
-template <size_t N, class T>
-CUTE_HOST_DEVICE constexpr T const& getv(EBO<N, T, false> const& x)
-{ return x.t_; }
-
-template <size_t N, class T>
-CUTE_HOST_DEVICE constexpr T& getv(EBO<N, T, false>& x)
-{ return x.t_; }
-
-template <size_t N, class T>
-CUTE_HOST_DEVICE constexpr T&& getv(EBO<N, T, false>&& x)
-{ return cute::move(x.t_); }
-
-template <class IdxSeq, class... T>
-struct TupleBase;
-
-// Base class of cute::tuple binds each element to an index
-// by inheriting from EBO<i, t> for each (i, t) in (I..., T...).
-// The storage (for nonempty t) lives in the base classes.
-template <size_t... I, class... T>
-struct TupleBase<index_sequence<I...>, T...>
-    : EBO<I,T>...
-{
+// Empty First and NonEmpty Rest...
+template <class First, class... Rest>
+struct ESO<true, false, First, Rest...> {
   CUTE_HOST_DEVICE constexpr
-  TupleBase() {}
+  ESO() : rest_{} {}
 
   CUTE_HOST_DEVICE constexpr
-  TupleBase(T const&... t) : EBO<I,T>(t)... {}
+  ESO(First const&, Rest const&... rest) : rest_{rest...} {}
+
+  ESO_t<Rest...> rest_;
 };
+
+// NonEmpty T and NonEmpty Rest...
+template <class First, class... Rest>
+struct ESO<false, false, First, Rest...> {
+  CUTE_HOST_DEVICE constexpr
+  ESO() : first_{}, rest_{} {}
+
+  CUTE_HOST_DEVICE constexpr
+  ESO(First const& first, Rest const&... rest) : first_{first}, rest_{rest...} {}
+
+  First first_;
+  ESO_t<Rest...> rest_;
+};
+
+// Get Nth value from ESO
+template <size_t N, bool F, bool R, class T, class... Rest>
+CUTE_HOST_DEVICE constexpr
+cute::enable_if_t<cute::is_empty<cute::tuple_element_t<N, cute::type_list<T, Rest...>>>::value,
+                                 cute::tuple_element_t<N, cute::type_list<T, Rest...>>>
+getv(ESO<F, R, T, Rest...> const&)
+{
+  return {};
+}
+
+template <size_t N, bool F, bool R, class T, class... Rest>
+CUTE_HOST_DEVICE constexpr
+cute::enable_if_t<not cute::is_empty<cute::tuple_element_t<N, cute::type_list<T, Rest...>>>::value,
+                                     cute::tuple_element_t<N, cute::type_list<T, Rest...>> const&>
+getv(ESO<F, R, T, Rest...> const& s)
+{
+  if constexpr (N == 0) {
+    return static_cast<T const&>(s.first_);
+  } else {
+    return getv<N-1>(s.rest_);
+  }
+}
+
+template <size_t N, bool F, bool R, class T, class... Rest>
+CUTE_HOST_DEVICE constexpr
+cute::enable_if_t<not cute::is_empty<cute::tuple_element_t<N, cute::type_list<T, Rest...>>>::value,
+                                     cute::tuple_element_t<N, cute::type_list<T, Rest...>> &>
+getv(ESO<F, R, T, Rest...>& s)
+{
+  if constexpr (N == 0) {
+    return static_cast<T&>(s.first_);
+  } else {
+    return getv<N-1>(s.rest_);
+  }
+}
+
+template <size_t N, bool F, bool R, class T, class... Rest>
+CUTE_HOST_DEVICE constexpr
+cute::enable_if_t<not cute::is_empty<cute::tuple_element_t<N, cute::type_list<T, Rest...>>>::value,
+                                     cute::tuple_element_t<N, cute::type_list<T, Rest...>> &&>
+getv(ESO<F, R, T, Rest...>&& s)
+{
+  if constexpr (N == 0) {
+    return static_cast<T&&>(s.first_);
+  } else {
+    return getv<N-1>(static_cast<ESO_t<Rest...>&&>(s.rest_));
+  }
+}
+
+template <class X, size_t N,
+          bool IsFirstEmpty, bool IsRestEmpty, class First, class... Rest>
+CUTE_HOST_DEVICE constexpr
+auto
+findt(ESO<IsFirstEmpty, IsRestEmpty, First, Rest...> const& t) noexcept
+{
+  if constexpr (cute::is_same_v<X, First>) {
+    return C<N>{};
+  } else
+  if constexpr (sizeof...(Rest) == 0) {
+    return C<N+1>{};
+  } else
+  if constexpr (IsRestEmpty) {
+    return cute::detail::findt<X, N+1>(ESO_t<Rest...>{});
+  } else {
+    return cute::detail::findt<X, N+1>(t.rest_);
+  }
+}
 
 } // end namespace detail
 
-// Attempting to use the following commented-out alias
-// in the declaration of `struct tuple` causes MSVC 2022 build errors.
-//
-//template <class... T>
-//using TupleBase = detail::TupleBase<make_index_sequence<sizeof...(T)>, T...>;
-
-// This is the actual cute::tuple class.
-// The storage (if any) lives in TupleBase's EBO base classes.
-//
-// Inheriting from the above alias TupleBase
-// causes MSVC 2022 build errors when assigning one tuple to another:
-// In summary: this is verbose as a work-around for MSVC build errors.
 template <class... T>
-struct tuple : detail::TupleBase<make_index_sequence<sizeof...(T)>, T...>
+struct tuple : detail::ESO_t<T...>
 {
   CUTE_HOST_DEVICE constexpr
   tuple() {}
 
   CUTE_HOST_DEVICE constexpr
-  tuple(T const&... t) : detail::TupleBase<make_index_sequence<sizeof...(T)>, T...>(t...) {}
+  tuple(T const&... t) : detail::ESO_t<T...>(t...) {}
 };
 
 template <>
-struct tuple<>
-{};
+struct tuple<> {};
 
-//
-// get for cute::tuple (just like std::get for std::tuple)
-//
-
+// Returns the element in the ith position of the tuple
 template <size_t I, class... T>
 CUTE_HOST_DEVICE constexpr
 decltype(auto)
@@ -224,24 +238,18 @@ decltype(auto)
 get(tuple<T...>&& t) noexcept
 {
   static_assert(I < sizeof...(T), "Index out of range");
-  return detail::getv<I>(static_cast<tuple<T...>&&>(t));
+  return detail::getv<I>(static_cast<detail::ESO_t<T...>&&>(t));
 }
 
-//
-// find a type X within a cute::tuple
-//   Requires X to be unique in tuple
-//   Returns a static integer
-//
-
+// Returns the position of type X (as a static integer) in the tuple
+// type's argument list.  X must be unique in the argument list.
 template <class X, class... T>
 CUTE_HOST_DEVICE constexpr
 auto
 find(tuple<T...> const& t) noexcept
 {
-  return detail::findt<X>(t);
+  return detail::findt<X, 0>(t);
 }
-
-#endif // CUTLASS_USE_PACKED_TUPLE
 
 //
 // Custom is_tuple trait simply checks the existence of tuple_size
@@ -258,7 +266,7 @@ auto has_tuple_size(...) -> false_type;
 template <class T>
 struct is_tuple : decltype(detail::has_tuple_size((T*)0)) {};
 
-template<typename T>
+template <class T>
 constexpr bool is_tuple_v = cute::is_tuple<T>::value;
 
 //
@@ -679,8 +687,6 @@ CUTE_HOST std::ostream& operator<<(std::ostream& os, Tuple const& t)
 
 } // end namespace cute
 
-#if ! defined(CUTLASS_USE_PACKED_TUPLE)
-
 namespace CUTE_STL_NAMESPACE
 {
 
@@ -694,21 +700,7 @@ struct tuple_element<I, cute::tuple<T...>>
     : CUTE_STL_NAMESPACE::tuple_element<I, CUTE_STL_NAMESPACE::tuple<T...>>
 {};
 
-template <class... T>
-struct tuple_size<const cute::tuple<T...>>
-    : CUTE_STL_NAMESPACE::integral_constant<size_t, sizeof...(T)>
-{};
-
-template <size_t I, class... T>
-struct tuple_element<I, const cute::tuple<T...>>
-    : CUTE_STL_NAMESPACE::tuple_element<I, const CUTE_STL_NAMESPACE::tuple<T...>>
-{};
-
 } // end namespace CUTE_STL_NAMESPACE
-
-//
-// std compatibility
-//
 
 #ifdef CUTE_STL_NAMESPACE_IS_CUDA_STD
 namespace std
@@ -732,17 +724,5 @@ struct tuple_element<I, cute::tuple<T...>>
     : CUTE_STL_NAMESPACE::tuple_element<I, CUTE_STL_NAMESPACE::tuple<T...>>
 {};
 
-template <class... T>
-struct tuple_size<const cute::tuple<T...>>
-    : CUTE_STL_NAMESPACE::integral_constant<size_t, sizeof...(T)>
-{};
-
-template <size_t I, class... T>
-struct tuple_element<I, const cute::tuple<T...>>
-    : CUTE_STL_NAMESPACE::tuple_element<I, const CUTE_STL_NAMESPACE::tuple<T...>>
-{};
-
 } // end namespace std
 #endif // CUTE_STL_NAMESPACE_IS_CUDA_STD
-
-#endif // CUTLASS_USE_PACKED_TUPLE

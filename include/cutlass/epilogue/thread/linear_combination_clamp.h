@@ -482,7 +482,6 @@ public:
 /// Note: The below method only when problem_size_K <= 256 for signed int8 gemm
 /// or problem_size_K <= 128 for unsigned int8 gemm. The default approach is
 /// above.
-/// TODO: Add logic to fallback to the default approach
 template <
     /// Data type used to load and store< tensors
     typename ElementOutput_,

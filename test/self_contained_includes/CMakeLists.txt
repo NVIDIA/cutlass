@@ -75,7 +75,6 @@ set(header_files_to_check
     cute/container/array_subbyte.hpp
     cute/container/bit_field.hpp
     cute/container/cuda_types.hpp
-    cute/container/packed_tuple.hpp
     cute/container/tuple.hpp
     cute/container/type_list.hpp
 
@@ -107,13 +106,12 @@ set(header_files_to_check
     cute/arch/mma_sm70.hpp
     cute/arch/mma_sm75.hpp
     cute/arch/mma_sm80.hpp
-    cute/arch/mma_sm80_sparse.hpp
     cute/arch/mma_sm90.hpp
     cute/arch/mma_sm90_desc.hpp
     cute/arch/mma_sm90_gmma.hpp
     cute/arch/mma.hpp
     cute/arch/util.hpp
-    
+
     cute/arch/cluster_sm100.hpp
     cute/arch/copy_sm100.hpp
     cute/arch/copy_sm100_tma.hpp
@@ -121,7 +119,7 @@ set(header_files_to_check
     cute/arch/mma_sm100_desc.hpp
     cute/arch/mma_sm100_umma.hpp
     # cute/arch/tmem_allocator_sm100.hpp
-    
+
     # cute/atom
     # cute/atom/copy_atom.hpp
     # cute/atom/copy_traits.hpp
@@ -140,10 +138,10 @@ set(header_files_to_check
     cute/atom/mma_traits_sm80.hpp
     cute/atom/mma_traits_sm90.hpp
     cute/atom/mma_traits_sm90_gmma.hpp
-    
-    cute/atom/mma_traits_sm100.hpp 
+
+    cute/atom/mma_traits_sm100.hpp
     cute/atom/partitioner.hpp
-    
+
     # cutlass
     cutlass/aligned_buffer.h
     cutlass/array.h
@@ -180,7 +178,6 @@ set(header_files_to_check
     cutlass/numeric_size.h
     cutlass/numeric_types.h
     cutlass/pitch_linear_coord.h
-    cutlass/predicate.h
     cutlass/predicate_vector.h
     cutlass/quaternion.h
     cutlass/real.h
@@ -200,16 +197,16 @@ set(header_files_to_check
     cutlass/workspace.h
     cutlass/exmy_base.h
     cutlass/float_subbyte.h
-    
+
     # cutlass/platform
     cutlass/platform/platform.h
 
     # cutlass/pipeline
     cutlass/pipeline/pipeline.hpp
     cutlass/pipeline/sm90_pipeline.hpp
-    
+
     cutlass/pipeline/sm100_pipeline.hpp
-    
+
 
     # cutlass/detail
     cutlass/detail/cluster.hpp
@@ -217,18 +214,16 @@ set(header_files_to_check
     cutlass/detail/dependent_false.hpp
     cutlass/detail/helper_macros.hpp
     cutlass/detail/layout.hpp
-    cutlass/detail/mainloop_fusion_helper_bgrada.hpp
     cutlass/detail/mma.hpp
-    
+
     cutlass/detail/sm100_blockscaled_layout.hpp
-    
+
 
     # cutlass/arch
     cutlass/arch/arch.h
     cutlass/arch/barrier.h
     cutlass/arch/cache_operation.h
     cutlass/arch/config.h
-    cutlass/arch/custom_abi.h
     cutlass/arch/grid_dependency_control.h
     cutlass/arch/memory.h
     # cutlass/arch/memory_sm75.h
@@ -248,7 +243,6 @@ set(header_files_to_check
     # cutlass/arch/simd_sm60.h
     # cutlass/arch/simd_sm61.h
     cutlass/arch/reg_reconfig.h
-    cutlass/arch/tma_operation.h
     cutlass/arch/wmma.h
     # cutlass/arch/wmma_sm70.h
     # cutlass/arch/wmma_sm72.h
