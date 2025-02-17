@@ -227,10 +227,7 @@ struct CollectiveMma<
   }
 
   /// Perform a subgroup-scoped matrix multiply-accumulate
-  template <
-    int PrefetchStrideA,
-    int PrefetchStrideB,
-    class FrgTensorD,
+  template <class FrgTensorD,
     class TensorA,
     class TensorB,
     class FrgTensorC,
@@ -335,13 +332,13 @@ struct CollectiveMma<
 
     Tensor block2d_prefetch_iter_a = XE_Prefetch_A{}.get_pvc_tensor(
                                make_coord(m_coord + (get_sub_group_id() % ATOM_N) / get<1>(PrefetchAThrShape{}) * get<0>(PrefetchATileSize{}),
-                                          (k_start_idx + (get_sub_group_id() % ATOM_N) % get<1>(PrefetchAThrShape{})) * PrefetchStrideA,
+                                          (k_start_idx + (get_sub_group_id() % ATOM_N) % get<1>(PrefetchAThrShape{})) * get<1>(PrefetchATileSize{}),
                                           l_coord),
                                make_shape(_1{}, _1{}, _1{}));
     auto prefetch_iter_a = append_pvc_tensor<1>(block2d_prefetch_iter_a, k_tile_count, BLK_K);
 
     Tensor block2d_prefetch_iter_b = XE_Prefetch_B{}.get_pvc_tensor(
-                               make_coord((get_sub_group_id() / ATOM_N / get<1>(PrefetchBThrShape{}) + k_start_idx) * PrefetchStrideB,
+                               make_coord((get_sub_group_id() / ATOM_N / get<1>(PrefetchBThrShape{}) + k_start_idx) * get<0>(PrefetchBTileSize{}),
                                            n_coord + (get_sub_group_id() / ATOM_N) % get<1>(PrefetchBThrShape{}) * get<1>(PrefetchBTileSize{}),
                                            l_coord),
                                make_shape(_1{}, _1{}, _1{}));

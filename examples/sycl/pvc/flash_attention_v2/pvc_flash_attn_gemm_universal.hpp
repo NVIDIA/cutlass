@@ -38,19 +38,6 @@
 #include "online_softmax.hpp"
 #include "pvc_flash_attn_mma.hpp"
 
-#ifdef __SYCL_DEVICE_ONLY__
-#define SYCL_DEVICE_SPV_SPLIT_BARRIER(x) SYCL_EXTERNAL x
-#else
-#define SYCL_DEVICE_SPV_SPLIT_BARRIER(x)                                                                               \
-  inline x { assert(false); }
-#endif
-
-SYCL_DEVICE_SPV_SPLIT_BARRIER(void __spirv_ControlBarrierArriveINTEL(int execution_scope, int memory_scope,
-                                                                     int memory_semantics));
-SYCL_DEVICE_SPV_SPLIT_BARRIER(void __spirv_ControlBarrierWaitINTEL(int execution_scope, int memory_scope,
-                                                                   int memory_semantics));
-
-#undef SYCL_DEVICE_SPV_SPLIT_BARRIER
 namespace cutlass::gemm::kernel {
 
 template <class ProblemShape, class CollectiveMainloop, class CollectiveEpilogue, class TileScheduler_ = void>
@@ -60,9 +47,6 @@ class GemmUniversalAttention;
 
 template <class ProblemShape_, class CollectiveMainloop_, class CollectiveEpilogue_, class TileScheduler_>
 class GemmUniversalAttention {
-// 3 is for subgroup, 2 is for workgroup
-#define barrier_arrive(scope) __spirv_ControlBarrierArriveINTEL(scope, 0, 0);
-#define barrier_wait(scope) __spirv_ControlBarrierWaitINTEL(scope, 0, 0);
 
 public:
   //

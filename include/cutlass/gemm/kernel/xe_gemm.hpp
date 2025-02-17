@@ -105,11 +105,7 @@ public:
   static constexpr uint32_t MaxThreadsPerBlock = CollectiveMainloop::MaxThreadsPerBlock;
   using MmaAtomShape = typename CollectiveMainloop::MmaAtomShape;
   using SubgroupTileShape = typename CollectiveMainloop::SubgroupTileShape;
-  using PrefetchATileSize = typename CollectiveMainloop::PrefetchATileSize;
-  using PrefetchBTileSize = typename CollectiveMainloop::PrefetchBTileSize;
-  static constexpr int PrefetchStrideA = static_cast<int>(get<1>(PrefetchATileSize{}));
-  static constexpr int PrefetchStrideB = static_cast<int>(get<0>(PrefetchBTileSize{}));
-
+ 
   using  TensorMKL = typename CollectiveMainloop::TensorMKL;
   using  TensorNKL = typename CollectiveMainloop::TensorNKL;
 
@@ -277,7 +273,7 @@ public:
 
     // Perform the collective scoped MMA
     CollectiveMainloop collective_mma;
-    collective_mma.template operator()<PrefetchStrideA, PrefetchStrideB>(
+    collective_mma(
       accumulators,
       gA,
       gB,

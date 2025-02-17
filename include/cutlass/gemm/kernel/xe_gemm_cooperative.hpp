@@ -102,10 +102,6 @@ public:
   using MmaAtomShape = typename CollectiveMainloop::MmaAtomShape;
   using SubgroupTileShape = typename CollectiveMainloop::SubgroupTileShape;
 
-  using PrefetchATileSize = typename CollectiveMainloop::PrefetchATileSize;
-  static constexpr int PrefetchStrideA = static_cast<int>(get<1>(PrefetchATileSize{}));
-  static constexpr int PrefetchStrideB = static_cast<int>(CollectiveMainloop::SG_K);
-
   // Kernel level shared memory storage
   struct SharedStorage {
     using EpilogueTensorStorage = typename CollectiveEpilogue::TensorStorage;
@@ -277,7 +273,7 @@ public:
       CollectiveMainloop collective_mma;
 
       // Perform the collective scoped MMA
-      collective_mma.template operator()<PrefetchStrideA, PrefetchStrideB>(
+      collective_mma(
         accumulators,
         gA,
         gB,
