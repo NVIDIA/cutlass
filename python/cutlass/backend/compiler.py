@@ -107,7 +107,6 @@ class CompilationOptions:
 
         return opts
 
-
     def get_str(self):
         opts = self._encode()
 
@@ -212,7 +211,8 @@ class ArtifactManager:
             op_attr = json.loads(op_attr)
             if self._is_sycl():
                 q = dpctl.SyclQueue(cutlass.sycl_device())
-                module = dpctl.program.create_program_from_spirv(q, cubin_image)
+                module = dpctl.program.create_program_from_spirv(
+                    q, cubin_image)
                 kernel = module.get_sycl_kernel(operation_name)
             else:
                 err, module = cuda.cuModuleLoadData(cubin_image)
@@ -264,9 +264,10 @@ class ArtifactManager:
 
         includes_host = includes
         if self._is_sycl():
-            includes_host.extend(["stddef"])
+            includes_host.extend(["stddef.h"])
         else:
-            includes_host.extend(["builtin_types.h", "device_launch_parameters.h", "cstddef"])
+            includes_host.extend(
+                ["builtin_types.h", "device_launch_parameters.h", "cstddef"])
 
         for incl in includes:
             source_buffer_device += SubstituteTemplate(
@@ -338,46 +339,50 @@ class ArtifactManager:
         elif self.backend == "dpcpp":
             # Emit code to file
             tempfile.tempdir = "./"
-            temp_cpp = tempfile.NamedTemporaryFile(
-                prefix="kernel_", suffix=".cpp", delete=True)
-            temp_dump_dir = tempfile.TemporaryDirectory(
-                prefix="kernel_", suffix="_dpcpp")
-            ignore_out = tempfile.NamedTemporaryFile(
-                prefix="kernel_", suffix=".o", delete=True)
-            with open(temp_cpp.name, "w") as file:
-                file.write(source_buffer_device)
+            with (
+                tempfile.NamedTemporaryFile(
+                    prefix="kernel_", suffix=".cpp", delete=True) as temp_cpp,
+                tempfile.TemporaryDirectory(
+                    prefix="kernel_", suffix="_dpcpp") as temp_dump_dir,
+                tempfile.NamedTemporaryFile(
+                    prefix="kernel_", suffix=".o", delete=True) as ignore_out
+            ):
+                with open(temp_cpp.name, "w") as file:
+                    file.write(source_buffer_device)
 
-            # Compile with DPC++
-            cmd_template = "clang++ ${options} ${srcfile} -o ${outfile} -fsycl-dump-device-code=${tmpdir}"
-            values = {
-                "options": compilation_options.get_str(),
-                "srcfile": temp_cpp.name,
-                "outfile": ignore_out.name,
-                "tmpdir": temp_dump_dir.name
-            }
-            cmd = SubstituteTemplate(cmd_template, values)
-            compile_with_nvcc(cmd.split(" "), source_buffer_device,
-                              "./cutlass_python_compilation_device_error.txt")
+                # Compile with DPC++
+                cmd_template = "clang++ ${options} ${srcfile} -o ${outfile} -fsycl-dump-device-code=${tmpdir}"
+                values = {
+                    "options": compilation_options.get_str(),
+                    "srcfile": temp_cpp.name,
+                    "outfile": ignore_out.name,
+                    "tmpdir": temp_dump_dir
+                }
+                cmd = SubstituteTemplate(cmd_template, values)
+                compile_with_nvcc(cmd.split(" "), source_buffer_device,
+                                  "./cutlass_python_compilation_device_error.txt")
 
-            # Find SPIR-V device code in temporary directory
-            spv_files = list(pathlib.Path(temp_dump_dir.name).glob("*.spv"))
+                # Find SPIR-V device code in temporary directory
+                spv_files = list(pathlib.Path(
+                    temp_dump_dir).glob("*.spv"))
 
-            # When specifying a specific subgroup size, DPC++ currently
-            # generates multiple SPIR-V files. We create a program from each of
-            # them to find the one containing the kernel with the correct
-            # subgroup size.
-            q = dpctl.SyclQueue(cutlass.sycl_device())
-            op_name = f"__sycl_kernel_{operation_list[0].name()}"
-            for f in spv_files:
-                with open(f, "rb") as spirv_file:
-                    spirv_image = spirv_file.read()
-                    program = dpctl.program.create_program_from_spirv(q, spirv_image)
-                    if not program.has_sycl_kernel(op_name):
-                        continue
-                    spirv_kernel = program.get_sycl_kernel(op_name)
-                    if spirv_kernel.max_sub_group_size == 16:
-                        cubin_image = spirv_image
-                        break
+                # When specifying a specific subgroup size, DPC++ currently
+                # generates multiple SPIR-V files. We create a program from each of
+                # them to find the one containing the kernel with the correct
+                # subgroup size.
+                q = dpctl.SyclQueue(cutlass.sycl_device())
+                op_name = f"__sycl_kernel_{operation_list[0].name()}"
+                for f in spv_files:
+                    with open(f, "rb") as spirv_file:
+                        spirv_image = spirv_file.read()
+                        program = dpctl.program.create_program_from_spirv(
+                            q, spirv_image)
+                        if not program.has_sycl_kernel(op_name):
+                            continue
+                        spirv_kernel = program.get_sycl_kernel(op_name)
+                        if spirv_kernel.max_sub_group_size == 16:
+                            cubin_image = spirv_image
+                            break
 
         else:  # with nvcc backend
             # emit code
@@ -461,8 +466,8 @@ class ArtifactManager:
             cutlass.initialize_sycl_context()
             arch = "spir64"
             host_compile_options = CompilationOptions(
-                    ["-std=c++17", "-DCUTLASS_ENABLE_SYCL", "-DSYCL_INTEL_TARGET"],
-                    arch, include_paths, True)
+                ["-std=c++17", "-DCUTLASS_ENABLE_SYCL", "-DSYCL_INTEL_TARGET"],
+                arch, include_paths, True)
 
         if compile_options is None:
             compile_options = CompilationOptions(
@@ -500,7 +505,8 @@ class ArtifactManager:
 
             if self._is_sycl():
                 q = dpctl.SyclQueue(cutlass.sycl_device())
-                program = dpctl.program.create_program_from_spirv(q, cubin_image)
+                program = dpctl.program.create_program_from_spirv(
+                    q, cubin_image)
             else:
                 err, module = cuda.cuModuleLoadData(cubin_image)
                 if err != cuda.CUresult.CUDA_SUCCESS:

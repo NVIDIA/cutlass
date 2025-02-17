@@ -8977,9 +8977,11 @@ def GenerateSM90(manifest, cuda_version):
 ###################################################################################################
 
 def GeneratePVC_TensorOp_16b_gemm(manifest, cuda_version):
-    # TODO: Add remaining supported configurations
     layouts = [
-      [[LayoutType.RowMajor, 2], [LayoutType.RowMajor, 2], [LayoutType.RowMajor, 4]]
+      [[LayoutType.RowMajor, 2], [LayoutType.RowMajor, 2], [LayoutType.RowMajor, 4]],
+      [[LayoutType.RowMajor, 2], [LayoutType.ColumnMajor, 2], [LayoutType.RowMajor, 4]],
+      [[LayoutType.ColumnMajor, 2], [LayoutType.RowMajor, 2], [LayoutType.RowMajor, 4]],
+      [[LayoutType.ColumnMajor, 2], [LayoutType.ColumnMajor, 2], [LayoutType.RowMajor, 4]],
     ]
 
     math_instructions = [
@@ -8995,10 +8997,18 @@ def GeneratePVC_TensorOp_16b_gemm(manifest, cuda_version):
 
     for math_inst in math_instructions:
       tile_descriptions = [
-        TileDescription([math_inst.instruction_shape[0] * 32, math_inst.instruction_shape[1] * 16, math_inst.instruction_shape[2] * 2],
-            0, [4, 1, 1], math_inst, min_cc, max_cc, [1, 1, 1])
+        TileDescription([256, 256, 32],
+            0, [8, 4, 1], math_inst, min_cc, max_cc, [1, 1, 1]),
+        TileDescription([128, 512, 32],
+            0, [4, 8, 1], math_inst, min_cc, max_cc, [1, 1, 1]),
+        TileDescription([256, 128, 32],
+            0, [8, 4, 1], math_inst, min_cc, max_cc, [1, 1, 1]),
+        TileDescription([128, 256, 16],
+            0, [4, 8, 1], math_inst, min_cc, max_cc, [1, 1, 1]),
+        TileDescription([8, 128, 32],
+            0, [1, 4, 1], math_inst, min_cc, max_cc, [1, 1, 1]),
       ]
-      
+
       data_type = {
         "a_type" : math_inst.element_a,
         "b_type" : math_inst.element_b,

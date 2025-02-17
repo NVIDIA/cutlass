@@ -121,7 +121,7 @@ def get_name(
     return SubstituteTemplate(
         name_format,
         {
-            "arch": str(arch),
+            "arch": "PVC" if arch == 11 else f"SM{str(arch)}",
             "eA": DataTypeNames[element_a],
             "eB": DataTypeNames[element_b],
             "eC": DataTypeNames[element_c],

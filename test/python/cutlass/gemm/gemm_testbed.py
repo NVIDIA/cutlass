@@ -37,6 +37,9 @@ import subprocess
 
 import torch
 
+import cuda
+import dpctl
+
 from cutlass_library import (
     DataType,
     DataTypeSize,
@@ -67,15 +70,22 @@ class GemmUniversalLauncher:
         self.math_operation = operation.tile_description.math_instruction.math_operation
         self.verification = verification
 
+        self.device = "cuda"
         if compiler_mode == "nvcc":
             compiler.nvcc()
+            self.stream = cuda.CUstream(0)
         elif compiler_mode == "nvrtc":
             compiler.nvrtc()
+            self.stream = cuda.CUstream(0)
+        elif compiler_mode == "dpcpp":
+            compiler.dpcpp()
+            self.stream = dpctl.SyclQueue("level_zero")
+            self.device = "xpu"
         else:
             raise Exception(f"Unexpected compiler string {compiler_mode}")
 
         op_list = [operation]
-        if operation.arch < 90:
+        if operation.arch < 90 and operation.arch > 11:
             # Split K via Python is currently only supported for pre-SM90 kernels
             self.reduction_operation: ReductionOperation = ReductionOperation(
                 shape=MatrixCoord(4, 32 * operation.C.alignment),
@@ -133,7 +143,7 @@ class GemmUniversalLauncher:
             # call uniform_ on a tensor with torch.float8_e4m3fn data:
             # RuntimeError: "check_uniform_bounds" not implemented for 'Float8_e4m3fn'
             data = torch.ceil(
-                torch.empty(size=(size,), dtype=torch.float32, device="cuda").uniform_(
+                torch.empty(size=(size,), dtype=torch.float32, device=self.device).uniform_(
                     self.rand_min - 0.5, self.rand_max - 0.5)
                 ).to(dtype)
         else:
@@ -153,7 +163,7 @@ class GemmUniversalLauncher:
         else:
             data_cutlass = data_ref.transpose(-1, -2).contiguous()
 
-        data_cutlass = data_cutlass.to("cuda")
+        data_cutlass = data_cutlass.to(self.device)
 
         # As of this writing, few operations in PyTorch are supported with FP8 data.
         # Thus, we perform computation in FP32 for FP8 reference checks.
@@ -177,7 +187,7 @@ class GemmUniversalLauncher:
         if tensor_C is not None:
             devices.append(tensor_C.device.type)
 
-        if "cpu" in devices and devices != ["cuda", "cuda", "cpu"]:
+        if "cpu" in devices and devices != [self.device, self.device, "cpu"]:
             device = torch.device("cpu")
         else:
             device = tensor_A.device
@@ -260,6 +270,7 @@ class GemmUniversalLauncher:
             gemm_mode=mode,
             split_k_slices=split_k_slices,
             batch=batch_count,
+            stream=self.stream,
         )
 
         if mode == GemmUniversalMode.GemmSplitKParallel:
@@ -298,7 +309,7 @@ class GemmUniversalLauncher:
                 beta,
             )
 
-            tensor_D_ref = tensor_D_ref.to('cuda')
+            tensor_D_ref = tensor_D_ref.to(self.device)
 
             if self.operation.switched or self.operation.C.layout == LayoutType.ColumnMajor:
                 tensor_D = tensor_D.transpose(-1, -2).contiguous()

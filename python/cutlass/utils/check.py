@@ -222,7 +222,7 @@ def valid_schedule(
     kernel_auto = (kernel_schedule == cutlass.KernelScheduleType.ScheduleAuto)
     epilogue_auto = (epilogue_schedule == cutlass.EpilogueScheduleType.ScheduleAuto)
     tile_scheduler_default = (tile_scheduler == cutlass.TileSchedulerType.Default)
-    if cc < 90 and not (kernel_auto and epilogue_auto and tile_scheduler_default):
+    if 11 < cc < 90 and not (kernel_auto and epilogue_auto and tile_scheduler_default):
         return (False, "Non-default schedules are only supported on SM90 and beyond")
 
     if (kernel_auto and not epilogue_auto) or (not kernel_auto and epilogue_auto):

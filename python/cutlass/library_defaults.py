@@ -36,6 +36,7 @@ Classes containing valid operations for a given compute capability and data type
 
 from itertools import combinations_with_replacement
 import logging
+import os
 
 from cuda import __version__
 import cutlass_library
@@ -52,19 +53,23 @@ _generator_ccs = [11, 50, 60, 61, 70, 75, 80, 90]
 # Strip any additional information from the CUDA version
 _cuda_version = __version__.split("rc")[0]
 
-# Check that Python CUDA version exceeds NVCC version
-_nvcc_version = cutlass.nvcc_version()
-_cuda_list = _cuda_version.split('.')
-_nvcc_list = _nvcc_version.split('.')
-for val_cuda, val_nvcc in zip(_cuda_list, _nvcc_list):
-    if int(val_cuda) < int(val_nvcc):
-        raise Exception(f"Python CUDA version of {_cuda_version} must be greater than or equal to NVCC version of {_nvcc_version}")
+if not os.getenv("CUTLASS_USE_SYCL"):
+    # Check that Python CUDA version exceeds NVCC version
+    _nvcc_version = cutlass.nvcc_version()
+    _cuda_list = _cuda_version.split('.')
+    _nvcc_list = _nvcc_version.split('.')
+    for val_cuda, val_nvcc in zip(_cuda_list, _nvcc_list):
+        if int(val_cuda) < int(val_nvcc):
+            raise Exception(f"Python CUDA version of {_cuda_version} must be greater than or equal to NVCC version of {_nvcc_version}")
 
-if len(_nvcc_list) > len(_cuda_list):
-    if len(_nvcc_list) != len(_cuda_list) + 1:
-        raise Exception(f"Malformatted NVCC version of {_nvcc_version}")
-    if _nvcc_list[:-1] == _cuda_list and int(_nvcc_list[-1]) != 0:
-        raise Exception(f"Python CUDA version of {_cuda_version} must be greater than or equal to NVCC version of {_nvcc_version}")
+    if len(_nvcc_list) > len(_cuda_list):
+        if len(_nvcc_list) != len(_cuda_list) + 1:
+            raise Exception(f"Malformatted NVCC version of {_nvcc_version}")
+        if _nvcc_list[:-1] == _cuda_list and int(_nvcc_list[-1]) != 0:
+            raise Exception(f"Python CUDA version of {_cuda_version} must be greater than or equal to NVCC version of {_nvcc_version}")
+
+else:
+    _nvcc_version = "2025.0"
 
 
 class KernelsForDataType:

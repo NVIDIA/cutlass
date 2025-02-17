@@ -1715,7 +1715,7 @@ class GemmOperationBase:
     def procedural_name(self):
         """The full procedural name indicates architecture, extended name, tile size, and layout."""
         opcode_class_name = OpcodeClassNames[self.tile_description.math_instruction.opcode_class]
-        if self.api == ApiVersion.v3x and self.arch >= 90:
+        if self.api == ApiVersion.v3x and (self.arch >= 90 or self.arch == 11):
             kernel_name_template = "cutlass{p}_sm{ar}_{op}_{ex}_{tbm}x{tbn}x{tbk}_{cm}x{cn}x{ck}_{l}_{s}_align{al}{k}{e}"
             return kernel_name_template.format(
                 p=self.prefix,
