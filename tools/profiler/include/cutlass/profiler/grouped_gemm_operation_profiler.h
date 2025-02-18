@@ -85,7 +85,7 @@ public:
 
     /// Parses the problem
     Status parse(
-      library::GemmDescription const& operation_desc,
+      library::GroupedGemmDescription const& operation_desc,
       ProblemSpace const& problem_space,
       ProblemSpace::Problem const& problem);
 
@@ -94,27 +94,50 @@ public:
     int64_t k(int group_idx) const { return problem_sizes[group_idx].k(); };
 
     /// Total number of bytes loaded
-    int64_t bytes(library::GemmDescription const& operation_desc) const;
+    int64_t bytes(library::GroupedGemmDescription const& operation_desc) const;
 
     /// Total number of flops computed
-    int64_t flops(library::GemmDescription const& operation_desc) const;
+    int64_t flops(library::GroupedGemmDescription const& operation_desc) const;
 
     /// Initializes a performance result
     void initialize_result(
       PerformanceResult& result,
-      library::GemmDescription const& operation_desc,
+      library::GroupedGemmDescription const& operation_desc,
       ProblemSpace const& problem_space);
+  };
+
+  struct BlockScalingWorkspace {
+    // host vector (per L2 workspace) of device vectors (per group) of device pointers
+    std::vector<DeviceAllocation*> SFA_ptr_array_device;
+    std::vector<DeviceAllocation*> SFB_ptr_array_device;
+    std::vector<DeviceAllocation*> SFC_ptr_array_device;
+    std::vector<DeviceAllocation*> SFD_ptr_array_device;
+
+    // host vector (per group) of device tensors
+    // (where each batch of device allocation is for a L2 workspace)
+    std::vector<DeviceAllocation*> SFA_ptr_array_host;
+    std::vector<DeviceAllocation*> SFB_ptr_array_host;
+    std::vector<DeviceAllocation*> SFC_ptr_array_host;
+    std::vector<DeviceAllocation*> SFD_ptr_array_host;
+    std::vector<DeviceAllocation*> SFD_reference_ptr_array_host;
+
+    // matrix wide constant, not per-batch or per-group
+    DeviceAllocation* norm_constant;
   };
 
   // workspace contains the allocated blocks, arguments just contain the raw
   // pointers
   struct GroupedGemmWorkspace {
 
+    // host vector (per L2 workspace) of device vectors (per group) of device pointers
     std::vector<DeviceAllocation*> A_ptr_array_device;
     std::vector<DeviceAllocation*> B_ptr_array_device;
     std::vector<DeviceAllocation*> C_ptr_array_device;
     std::vector<DeviceAllocation*> D_ptr_array_device;
     std::vector<DeviceAllocation*> reference_ptr_array_host;
+
+    // host vector (per group) of device tensors
+    // (where each batch of device allocation is for a L2 workspace)
     std::vector<DeviceAllocation*> A_ptr_array_host;
     std::vector<DeviceAllocation*> B_ptr_array_host;
     std::vector<DeviceAllocation*> C_ptr_array_host;
@@ -122,7 +145,7 @@ public:
 
     /// Number of copies of the problem workspace which are visited sequentially during
     /// profiling to avoid camping in the last level cache.
-    /// *NOT* the number of groups in the grouped GEMM
+    /// *NOT* the number of groups in the grouped GEMM (we use `num_groups` in the profiler)
     int problem_count{1};
 
     DeviceAllocation* problem_sizes_array_device{nullptr};
@@ -132,8 +155,10 @@ public:
     DeviceAllocation* ldc_array_device{nullptr};
     DeviceAllocation* ldd_array_device{nullptr};
 
+    std::optional<BlockScalingWorkspace> block_scales;
+
     library::GemmGroupedConfiguration configuration;
-    library::GemmGroupedArguments arguments;
+    library::GroupedGemmBlockScaledArguments arguments;
 
     std::vector<uint8_t> host_workspace;
     DeviceAllocation device_workspace;
@@ -141,20 +166,23 @@ public:
 
 private:
   void init_arguments(Options const& options) {
-    gemm_workspace_.arguments.ptr_A = gemm_workspace_.A_ptr_array_device[0]->data();
-    gemm_workspace_.arguments.ptr_B = gemm_workspace_.B_ptr_array_device[0]->data();
-    gemm_workspace_.arguments.ptr_C = gemm_workspace_.C_ptr_array_device[0]->data();
-    gemm_workspace_.arguments.ptr_D = gemm_workspace_.D_ptr_array_device[0]->data();
-    gemm_workspace_.arguments.alpha = problem_.alpha.data();
-    gemm_workspace_.arguments.beta = problem_.beta.data();
-    gemm_workspace_.arguments.pointer_mode = library::ScalarPointerMode::kHost;
-    gemm_workspace_.arguments.lda = static_cast<int64_t*>(gemm_workspace_.lda_array_device->data());
-    gemm_workspace_.arguments.ldb = static_cast<int64_t*>(gemm_workspace_.ldb_array_device->data());
-    gemm_workspace_.arguments.ldc = static_cast<int64_t*>(gemm_workspace_.ldc_array_device->data());
-    gemm_workspace_.arguments.ldd = static_cast<int64_t*>(gemm_workspace_.ldc_array_device->data());
-    gemm_workspace_.arguments.problem_sizes =
+    auto& arguments = gemm_workspace_.arguments;
+    // these get updated in each profiler run to ensure L2 cycling
+    arguments.ptr_A = gemm_workspace_.A_ptr_array_device[0]->data();
+    arguments.ptr_B = gemm_workspace_.B_ptr_array_device[0]->data();
+    arguments.ptr_C = gemm_workspace_.C_ptr_array_device[0]->data();
+    arguments.ptr_D = gemm_workspace_.D_ptr_array_device[0]->data();
+
+    arguments.alpha = problem_.alpha.data();
+    arguments.beta = problem_.beta.data();
+    arguments.pointer_mode = library::ScalarPointerMode::kHost;
+    arguments.lda = static_cast<int64_t*>(gemm_workspace_.lda_array_device->data());
+    arguments.ldb = static_cast<int64_t*>(gemm_workspace_.ldb_array_device->data());
+    arguments.ldc = static_cast<int64_t*>(gemm_workspace_.ldc_array_device->data());
+    arguments.ldd = static_cast<int64_t*>(gemm_workspace_.ldc_array_device->data());
+    arguments.problem_sizes =
       static_cast<gemm::GemmCoord*>(gemm_workspace_.problem_sizes_array_device->data());
-    gemm_workspace_.arguments.problem_sizes_3x = static_cast<cute::Shape<int, int, int>*>(
+    arguments.problem_sizes_3x = static_cast<cute::Shape<int, int, int>*>(
       gemm_workspace_.problem_sizes_3x_array_device->data());
     gemm_workspace_.arguments.problem_sizes_3x_host = problem_.problem_sizes_3x.data();
     gemm_workspace_.arguments.problem_count = problem_.problem_sizes.size();
@@ -162,7 +190,14 @@ private:
     gemm_workspace_.arguments.cluster_shape_fallback = {int(problem_.cluster_m_fallback), int(problem_.cluster_n_fallback), int(problem_.cluster_k_fallback)};
 
     /* Query device SM count to pass onto the kernel as an argument, where needed */
-    gemm_workspace_.arguments.sm_count = options.device.properties[0].multiProcessorCount;
+    arguments.sm_count = options.device.properties[0].multiProcessorCount;
+    if (is_block_scaled) {
+      auto& block_scaled_ws = gemm_workspace_.block_scales.value();
+      arguments.SFA = block_scaled_ws.SFA_ptr_array_device[0]->data();
+      arguments.SFB = block_scaled_ws.SFB_ptr_array_device[0]->data();
+      arguments.SFD = block_scaled_ws.SFD_ptr_array_device[0]->data();
+      arguments.norm_constant = block_scaled_ws.norm_constant->data();
+    }
   }
 
 protected:
@@ -171,6 +206,8 @@ protected:
 
   /// Device memory allocations
   GroupedGemmWorkspace gemm_workspace_;
+
+  bool is_block_scaled{false};
 
 public:
   GroupedGemmOperationProfiler(Options const& options);
@@ -226,7 +263,7 @@ protected:
   void initialize_result_(
     PerformanceResult& result,
     Options const& options,
-    library::GemmDescription const& operation_desc,
+    library::GroupedGemmDescription const& operation_desc,
     ProblemSpace const& problem_space);
 
   /// Verifies CUTLASS against host and device references
@@ -249,10 +286,6 @@ protected:
     void* host_workspace,
     void* device_workspace) override;
 
-  /// Initialize reduction problem dimensions and library::Operation
-  bool initialize_reduction_configuration_(
-    library::Operation const* operation,
-    ProblemSpace::Problem const& problem);
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

@@ -265,7 +265,7 @@ struct PersistentTileSchedulerSm90Params {
     }
     // In case the maximum number of clusters that could co-exist on the target device is
     // already calculated using cudaOccupancyMaxActiveClusters
-    else if (max_active_clusters != 0) {
+    else if (max_active_clusters != 0 && max_active_clusters * cluster_size <= sm_count) {
       if (raster_order == RasterOrder::AlongN) {
         launch_grid.y = max_active_clusters * cluster_shape.n();
       }
@@ -1788,7 +1788,7 @@ struct PersistentTileSchedulerSm90GroupParams {
     }
     // In case the maximum number of clusters that could co-exist on the target device is
     // already calculated using cudaOccupancyMaxActiveClusters
-    else if (max_active_clusters != 0) {
+    else if (max_active_clusters != 0 && max_active_clusters * cluster_size <= sm_count) {
       if (raster_order == RasterOrder::AlongN) {
         launch_grid.y = max_active_clusters * cluster_shape.n();
       }
@@ -2500,6 +2500,7 @@ struct PersistentTileSchedulerSm100GroupParams {
     bool is_static_cluster_shape = false) {
 
     int const sm_count = hw_info.sm_count;
+    int const max_active_clusters = hw_info.max_active_clusters;
 
     // Round up to nearest multiple of swizzle_size along each mode
     auto log_swizzle_size = get_log_swizzle_size(problem_blocks.x, problem_blocks.y, max_swizzle_size);
@@ -2542,6 +2543,18 @@ struct PersistentTileSchedulerSm100GroupParams {
         else {
           launch_grid.x = possibly_truncate(sm_count, problem_blocks_total);
         }
+      }
+      // In case the maximum number of clusters that could co-exist on the target device is
+      // already calculated using cudaOccupancyMaxActiveClusters
+      else if (max_active_clusters != 0 && max_active_clusters * cluster_size <= sm_count) {
+        if (raster_order == RasterOrder::AlongN) {
+          launch_grid.y = max_active_clusters * cluster_shape.n();
+        }
+        else {
+          launch_grid.x = max_active_clusters * cluster_shape.m();
+        }
+        CUTLASS_TRACE_HOST("get_grid_shape(): Proposed GridDims by the scheduler using cudaOccupancyMaxActiveClusters = "
+            "(" << launch_grid.x << ", " << launch_grid.y << ", " << launch_grid.z << ")\n");
       }
       else {
         constexpr int max_sm_per_gpc = 20;

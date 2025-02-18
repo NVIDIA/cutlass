@@ -64,17 +64,15 @@ class GemmOperation:
   def __init__(self, gemm_kind, arch, tile_description, A, B, C, element_epilogue, \
       epilogue_functor = EpilogueFunctor.LinearCombination, swizzling_functor = SwizzlingFunctor.Identity8, D = None,
       kernel_schedule = KernelScheduleType.ScheduleAuto, epilogue_schedule = EpilogueScheduleType.ScheduleAuto,
-      tile_scheduler = TileSchedulerType.Default, mixed_input_mode = None, mixed_input_shuffle = False
-      
-      , ScaleFactorA = None, ScaleFactorB = None, ScaleFactorD = None
-      
-    ):
+      tile_scheduler = TileSchedulerType.Default, mixed_input_mode = None, mixed_input_shuffle = False,
+      ScaleFactorA = None, ScaleFactorB = None, ScaleFactorD = None):
 
     kinds_3x = {
       GemmKind.Universal3x,
       GemmKind.SparseUniversal3x,
       GemmKind.BlockScaledUniversal3x, 
-      GemmKind.GroupedGemmUniversal3x,
+      GemmKind.GroupedUniversal3x,
+      GemmKind.GroupedBlockScaledUniversal3x,
     }
     self.is_3x = gemm_kind in kinds_3x
     self.prefix = "3x" if self.is_3x else ""
@@ -87,13 +85,11 @@ class GemmOperation:
     self.C = C
     self.D = D
 
-    
-    if self.gemm_kind == GemmKind.BlockScaledUniversal3x:
+    if is_block_scaled(gemm_kind):
       self.ScaleFactorA = ScaleFactorA
       self.ScaleFactorB = ScaleFactorB
       self.ScaleFactorD = ScaleFactorD["tensor"]
       self.ScaleFactorVectorSize = ScaleFactorD["vector_size"]
-    
 
     if self.D == None:
       self.D = self.C
@@ -239,13 +235,13 @@ class GemmOperation:
       element_c = DataTypeNames[self.C.element],
       element_d = DataTypeNames[self.D.element],
       core_name = self.core_name())
-    
-    if self.gemm_kind == GemmKind.BlockScaledUniversal3x:
+
+    if is_block_scaled(self.gemm_kind):
       d_type_names = DataTypeNames[self.D.element]
-      
+
       if self.ScaleFactorD.element != DataType.void:
         d_type_names = DataTypeNames[self.ScaleFactorD.element] + "x" + d_type_names
-      
+
       extended_name = "{core_name}_{element_sfa}x{element_a}_{element_sfb}x{element_b}_{element_acc}_{element_c}_{element_d}".format(
         element_sfa = DataTypeNames[self.ScaleFactorA],
         element_a = DataTypeNames[self.A.element],
@@ -255,7 +251,7 @@ class GemmOperation:
         element_c = DataTypeNames[self.C.element],
         element_d = d_type_names,
         core_name = self.core_name())
-    
+
     if self.mixed_input_mode != None:
       extended_name = extended_name + self.mixed_input_mode_name()
     return extended_name
@@ -298,8 +294,8 @@ class GemmOperation:
 
   # Generates a short string representing underlying epilogue schedule type
   def epilogue_schedule_name_3x(self):
-    
-    if self.gemm_kind == GemmKind.BlockScaledUniversal3x:
+
+    if is_block_scaled(self.gemm_kind):
       if self.ScaleFactorD.element != DataType.void:
         return EpilogueScheduleSuffixes[self.epilogue_schedule] + "_epiVs" + str(self.ScaleFactorVectorSize)+ShortLayoutTypeNames[self.ScaleFactorD.layout]
     
@@ -855,7 +851,7 @@ ${compile_guard_end}
 
   @staticmethod
   def pointerize_if_grouped(operation, layout):
-    return layout if operation.gemm_kind  != GemmKind.GroupedGemmUniversal3x else layout + "* "
+    return layout if not is_grouped(operation.gemm_kind) else layout + "* "
 
   @staticmethod
   def problem_shape(operation):
@@ -863,7 +859,7 @@ ${compile_guard_end}
     grouped_gemm_shape_type = "cute::Shape<int,int,int>"
     grouped_gemm_shape_type = "cutlass::gemm::GroupProblemShape<" + grouped_gemm_shape_type + ">"
 
-    return gemm_shape_type if operation.gemm_kind != GemmKind.GroupedGemmUniversal3x else grouped_gemm_shape_type
+    return gemm_shape_type if not is_grouped(operation.gemm_kind) else grouped_gemm_shape_type
 
   def emit(self, operation):
     _LOGGER.debug("*** EmitGemmConfigurationLibrary::emit(operation)")
@@ -922,16 +918,16 @@ ${compile_guard_end}
       }
       epilogue_functor = SubstituteTemplate(self.builtin_epilogue_functor_template, values)
       
-      if operation.gemm_kind == GemmKind.BlockScaledUniversal3x and operation.ScaleFactorD.element != DataType.void:
+      if is_block_scaled(operation.gemm_kind) and operation.ScaleFactorD.element != DataType.void:
         epilogue_functor =  self.emit_block_scale_epilogue_functor(operation)
 
-      
+
     else:
       epilogue_functor = self.epilogue_functor.emit_declaration()
-      
-      if operation.gemm_kind == GemmKind.BlockScaledUniversal3x and operation.ScaleFactorD.element != DataType.void:
+
+      if is_block_scaled(operation.gemm_kind) and operation.ScaleFactorD.element != DataType.void:
         epilogue_functor =  self.emit_block_scale_epilogue_functor(operation)
-      
+
     #
     # Cutlass3x complex kernels' ElementA(B) is a tuple in collective mainloop builder, e.g. cute::tuple<Element, Transform>, Transform : cute::identity / cute::conjugate.
     element_a = DataTypeTag[operation.A.element] if not operation.is_complex() else f"cute::tuple<{str(DataTypeTag[operation.A.element])},{str(ComplexTransformTag3x[operation.A.complex_transform])}>"
@@ -940,17 +936,18 @@ ${compile_guard_end}
     
     if opcode_class_main == OpcodeClass.BlockScaledTensorOp:
       is_no_smem_epilogue = operation.epilogue_schedule in [EpilogueScheduleType.NoSmemWarpSpecialized1Sm, EpilogueScheduleType.NoSmemWarpSpecialized2Sm]
-      if cta_n == 256 and operation.kernel_schedule == KernelScheduleType.Nvf4TmaWarpSpecialized1SmSm100:
+      grouped = is_grouped(operation.gemm_kind)
+      if cta_n == 256 and operation.kernel_schedule == to_grouped_schedule(KernelScheduleType.Nvf4TmaWarpSpecialized1SmSm100, grouped):
         epi_tile_mn = "cute::Shape<cute::_128,cute::_64>"
         if not is_no_smem_epilogue:
-          epilogue_schedule_type = EpilogueScheduleTag[EpilogueScheduleType.TmaWarpSpecialized1Sm]
-      if cta_n == 256 and operation.kernel_schedule == KernelScheduleType.Nvf4TmaWarpSpecialized2SmSm100:
+          epilogue_schedule_type = EpilogueScheduleTag[to_grouped_schedule(EpilogueScheduleType.TmaWarpSpecialized1Sm, grouped)]
+      if cta_n == 256 and operation.kernel_schedule == to_grouped_schedule(KernelScheduleType.Nvf4TmaWarpSpecialized2SmSm100, grouped):
         epi_tile_mn = "cute::Shape<cute::_128,cute::_64>"
         if not is_no_smem_epilogue:
-          epilogue_schedule_type = EpilogueScheduleTag[EpilogueScheduleType.TmaWarpSpecialized2Sm]
+          epilogue_schedule_type = EpilogueScheduleTag[to_grouped_schedule(EpilogueScheduleType.TmaWarpSpecialized2Sm, grouped)]
       element_a = f'cute::tuple<{str(element_a)},{str(DataTypeTag[operation.ScaleFactorA])}>'
       element_b = f'cute::tuple<{str(element_b)},{str(DataTypeTag[operation.ScaleFactorB])}>'
-    
+
 
     operation_name_str = operation.procedural_name()
     layout_a_str = LayoutTag[instance_layout_A]
@@ -1385,7 +1382,8 @@ class EmitGemmConfigurationLibrary:
       GemmKind.PlanarComplex: EmitGemmPlanarComplexInstance,
       GemmKind.PlanarComplexArray: EmitGemmPlanarComplexArrayInstance,
       GemmKind.Grouped: EmitGemmGroupedInstance,
-      GemmKind.GroupedGemmUniversal3x: EmitGemmUniversal3xInstance,
+      GemmKind.GroupedUniversal3x: EmitGemmUniversal3xInstance,
+      GemmKind.GroupedBlockScaledUniversal3x: EmitGemmUniversal3xInstance,
     }
 
     self.gemm_kind_wrappers = {
@@ -1398,7 +1396,8 @@ class EmitGemmConfigurationLibrary:
       GemmKind.PlanarComplex: 'GemmPlanarComplexOperation',
       GemmKind.PlanarComplexArray: 'GemmPlanarComplexArrayOperation',
       GemmKind.Grouped: 'GemmGroupedOperation',
-      GemmKind.GroupedGemmUniversal3x: 'GroupedGemmUniversal3xOperation'
+      GemmKind.GroupedUniversal3x: 'GroupedGemmUniversal3xOperation',
+      GemmKind.GroupedBlockScaledUniversal3x: 'GroupedBlockScaledGemmUniversal3xOperation',
     }
 
     self.wmma_guard_start = "#if defined(CUTLASS_ARCH_WMMA_SM${sm_number}_ENABLED)"

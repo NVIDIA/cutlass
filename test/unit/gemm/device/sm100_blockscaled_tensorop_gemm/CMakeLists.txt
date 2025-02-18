@@ -57,7 +57,7 @@ cutlass_test_unit_gemm_device_add_executable(
   nvf4_nvf4_f16_nvfp4_epilogue.cu
 )
 
-cutlass_test_unit_gemm_device_add_executable_split_file(
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_bstensorop_sm100_mxf4xmxf4
 
   BATCH_SOURCES ON
@@ -67,7 +67,7 @@ cutlass_test_unit_gemm_device_add_executable_split_file(
   mxf4_mxf4_void_f16_nt_layout.cu
 )
 
-cutlass_test_unit_gemm_device_add_executable_split_file(
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_bstensorop_sm100_mxf6xmxf6
 
   BATCH_SOURCES ON
@@ -77,7 +77,7 @@ cutlass_test_unit_gemm_device_add_executable_split_file(
   mxf6_mxf6_void_bf16_nt_layout.cu
 )
 
-cutlass_test_unit_gemm_device_add_executable_split_file(
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_bstensorop_sm100_mxf8xmxf8
 
   BATCH_SOURCES ON
@@ -87,7 +87,7 @@ cutlass_test_unit_gemm_device_add_executable_split_file(
   mxf8_mxf8_void_f8_nt_layout.cu
 )
 
-cutlass_test_unit_gemm_device_add_executable_split_file(
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_bstensorop_sm100_mxf6xmxf8
 
   BATCH_SOURCES ON
@@ -97,7 +97,7 @@ cutlass_test_unit_gemm_device_add_executable_split_file(
   mxf6_mxf8_void_f32_nt_layout.cu
 )
 
-cutlass_test_unit_gemm_device_add_executable_split_file(
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_bstensorop_sm100_mxf8xmxf6
 
   BATCH_SOURCES ON
@@ -107,7 +107,7 @@ cutlass_test_unit_gemm_device_add_executable_split_file(
   mxf8_mxf6_f16_f8_nt_layout.cu
 )
 
-cutlass_test_unit_gemm_device_add_executable_split_file(
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_bstensorop_sm100_mxf4xmxf8
 
   BATCH_SOURCES ON
@@ -117,7 +117,7 @@ cutlass_test_unit_gemm_device_add_executable_split_file(
   mxf4_mxf8_bf16_bf16_nt_layout.cu
 )
 
-cutlass_test_unit_gemm_device_add_executable_split_file(
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_bstensorop_sm100_mxf8xmxf4
 
   BATCH_SOURCES ON
@@ -127,7 +127,7 @@ cutlass_test_unit_gemm_device_add_executable_split_file(
   mxf8_mxf4_f16_bf16_nt_layout.cu
 )
 
-cutlass_test_unit_gemm_device_add_executable_split_file(
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_bstensorop_sm100_mxf6xmxf4
 
   BATCH_SOURCES ON
@@ -137,7 +137,7 @@ cutlass_test_unit_gemm_device_add_executable_split_file(
   mxf6_mxf4_f16_f16_nt_layout.cu
 )
 
-cutlass_test_unit_gemm_device_add_executable_split_file(
+cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_bstensorop_sm100_mxf4xmxf6
 
   BATCH_SOURCES ON

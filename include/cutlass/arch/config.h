@@ -102,6 +102,7 @@
     #if (!defined(CUTLASS_ARCH_MMA_SM100A_ENABLED) && defined(__CUDA_ARCH_FEAT_SM100_ALL))
       #define CUTLASS_ARCH_MMA_SM100A_ENABLED 1
     #endif
+
   #endif
 #endif
 

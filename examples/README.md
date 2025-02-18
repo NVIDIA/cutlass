@@ -254,7 +254,7 @@
 
     Blackwell SM100 GEMM example demonstrating compatible mainloop+epilogue builder schedules and epilogue visitor tree (EVT) construction
 
-* [72a_blackwell_narrow_precision_gemm](72a_blackwell_narrow_precision_gemm)
+* [72_blackwell_narrow_precision_gemm](72_blackwell_narrow_precision_gemm/)
 
     Block-scaled dense GEMM example targeting the NVIDIA Blackwell SM100 Tensor Core MMA using CUTLASS 3.x APIs.
 

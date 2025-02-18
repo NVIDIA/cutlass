@@ -217,8 +217,7 @@ def CreateGemmUniversal3xOperator(
       gemm_op_extra_args["ScaleFactorB"] = data_type["sf_type"]
       gemm_op_extra_args["ScaleFactorD"] = { "tensor": TensorDescription(data_type["sfd_type"]["type"], data_type["sfd_type"]["layout"]),
                                              "vector_size" : data_type["sfd_type"]["vector_size"]}
-      gemm_kind = GemmKind.BlockScaledUniversal3x
-    
+      assert is_block_scaled(gemm_kind)
 
     A_dtype = data_type["a_type"]
     B_dtype = data_type["b_type"]
@@ -253,9 +252,6 @@ def CreateGemmUniversal3xOperator(
       operations.append(operation)
 
   return operations
-
-def is_grouped(gemm_kind):
-  return gemm_kind == GemmKind.GroupedGemmUniversal3x
 
 # Generates 3.0 API based GemmUniversal API kernels. Alignment constraints are folded in with layouts
 def CreateSparseGemmUniversal3xOperator(
@@ -7741,7 +7737,7 @@ def GenerateSM100_TensorOp_mixed_8bits_UMMA_gemm(manifest, cuda_version):
         CreateGemmUniversal3xOperator(manifest, layouts_copy, tile_descriptions, [kernel_data_type],
           [[KernelScheduleType.TmaWarpSpecialized2SmSm100, EpilogueScheduleType.ScheduleAuto]], tile_schedulers=tile_schedulers)
 
-def GenerateSM100_TensorOp_mixed_8bits_UMMA_gemm_with_block_scaled(manifest, cuda_version):
+def GenerateSM100_TensorOp_mixed_8bits_UMMA_gemm_with_block_scaled(manifest, cuda_version, gemm_kind=GemmKind.BlockScaledUniversal3x):
   # SM100 MMA with mixed F4/F6/F8 inputs + block scale
   if not CudaToolkitVersionSatisfies(cuda_version, 12, 8):
     return
@@ -7893,8 +7889,7 @@ def GenerateSM100_TensorOp_mixed_8bits_UMMA_gemm_with_block_scaled(manifest, cud
     for data_type in data_types:
       CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type,
         [[KernelScheduleType.Mxf8f6f4TmaWarpSpecialized1SmSm100, EpilogueScheduleType.TmaWarpSpecialized1Sm]]
-        , tile_schedulers = tile_schedulers(data_type["sfd_type"])
-        )
+        , tile_schedulers = tile_schedulers(data_type["sfd_type"]), gemm_kind=gemm_kind)
 
   cluster_shapes_2sm = [
     [2,1,1],
@@ -7989,20 +7984,20 @@ def GenerateSM100_TensorOp_mixed_8bits_UMMA_gemm_with_block_scaled(manifest, cud
           if math_inst.instruction_shape[0] == 128:
             CreateGemmUniversal3xOperator(manifest, [layout], [tile], [data_type],
               [[KernelScheduleType.Mxf8f6f4TmaWarpSpecialized2SmSm100, EpilogueScheduleType.TmaWarpSpecialized2Sm]]
-              , tile_schedulers = tile_schedulers(data_type["sfd_type"])
-              )
+              , tile_schedulers = tile_schedulers(data_type["sfd_type"]), gemm_kind=gemm_kind)
           else:
             CreateGemmUniversal3xOperator(manifest, [layout], [tile], [data_type],
               [[KernelScheduleType.Mxf8f6f4TmaWarpSpecialized2SmSm100, EpilogueScheduleType.ScheduleAuto]]
-              , tile_schedulers = tile_schedulers(data_type["sfd_type"])
-              )
+              , tile_schedulers = tile_schedulers(data_type["sfd_type"]), gemm_kind=gemm_kind)
 
 
 
-def GenerateSM100_TensorOp_fp4_UMMA_gemm_with_block_scaled(manifest, cuda_version):
+def GenerateSM100_TensorOp_fp4_UMMA_gemm_with_block_scaled(manifest, cuda_version, gemm_kind=GemmKind.BlockScaledUniversal3x):
   # SM100 MMA with F4 + block scale
   if not CudaToolkitVersionSatisfies(cuda_version, 12, 8):
     return
+
+  grouped = is_grouped(gemm_kind)
 
   # layouts for ABC and their alignments.
   layouts = [
@@ -8028,7 +8023,7 @@ def GenerateSM100_TensorOp_fp4_UMMA_gemm_with_block_scaled(manifest, cuda_versio
   def tile_schedulers(sfdtype):
     # Only use the stream-K scheduler for non-void SFD to limit kernel count. When SFD is void,
     # the epilogue is the traditional linear combination, for which we already have tests with stream-K.
-    if sfdtype["type"] == DataType.void:
+    if sfdtype["type"] == DataType.void or grouped:
       return [TileSchedulerType.Default]
     else:
       return [TileSchedulerType.Default, TileSchedulerType.StreamK]
@@ -8047,6 +8042,10 @@ def GenerateSM100_TensorOp_fp4_UMMA_gemm_with_block_scaled(manifest, cuda_versio
 
     # A/B datatypes should be both static or dynamic
     if (is_runtime_datatype_a != is_runtime_datatype_b):
+      continue
+
+    # grouped GEMM does not support runtime data type yet
+    if grouped and (is_runtime_datatype_a or is_runtime_datatype_b):
       continue
 
     math_instructions_1sm.append(
@@ -8074,6 +8073,10 @@ def GenerateSM100_TensorOp_fp4_UMMA_gemm_with_block_scaled(manifest, cuda_versio
 
     # A/B datatypes should be both static or dynamic
     if (is_runtime_datatype_a != is_runtime_datatype_b):
+      continue
+
+    # grouped GEMM does not support runtime data type yet
+    if grouped and (is_runtime_datatype_a or is_runtime_datatype_b):
       continue
 
     math_instructions_2sm.append(
@@ -8198,14 +8201,18 @@ def GenerateSM100_TensorOp_fp4_UMMA_gemm_with_block_scaled(manifest, cuda_versio
         # E2M1 x E2M1, vector size 32, E8
         # E2M1 x E2M1, vector size 16, UE4M3
         isFp4 = math_inst.element_scale_factor == DataType.ue8m0 and  math_inst.element_a == DataType.e2m1 and math_inst.element_b == DataType.e2m1
-        nvfp4_schedule = [KernelScheduleType.Nvf4TmaWarpSpecialized1SmSm100, EpilogueScheduleType.TmaWarpSpecialized1Sm]
-        fp4_schedule   = [KernelScheduleType.Mxf4TmaWarpSpecialized1SmSm100, EpilogueScheduleType.TmaWarpSpecialized1Sm]
+        epi_schedule = to_grouped_schedule(EpilogueScheduleType.TmaWarpSpecialized1Sm, grouped)
+        nvfp4_kernel_schedule = to_grouped_schedule(KernelScheduleType.Nvf4TmaWarpSpecialized1SmSm100, grouped)
+        fp4_kernel_schedule = to_grouped_schedule(KernelScheduleType.Mxf4TmaWarpSpecialized1SmSm100, grouped)
+
+        nvfp4_schedule = [nvfp4_kernel_schedule, epi_schedule]
+        fp4_schedule   = [fp4_kernel_schedule, epi_schedule]
         CreateGemmUniversal3xOperator(manifest, [layout], tile_descriptions, data_type, [nvfp4_schedule]
-          , tile_schedulers=tile_schedulers(data_type["sfd_type"])
+          , tile_schedulers=tile_schedulers(data_type["sfd_type"]), gemm_kind=gemm_kind
           )
         if isFp4:
           CreateGemmUniversal3xOperator(manifest, [layout], tile_descriptions, data_type, [fp4_schedule]
-          , tile_schedulers=tile_schedulers(data_type["sfd_type"])
+          , tile_schedulers=tile_schedulers(data_type["sfd_type"]), gemm_kind=gemm_kind
           )
 
   cluster_shapes_2sm = [
@@ -8313,15 +8320,17 @@ def GenerateSM100_TensorOp_fp4_UMMA_gemm_with_block_scaled(manifest, cuda_versio
         # E2M1 x E2M1, vector size 32, E8
         isFp4 = math_inst.element_scale_factor == DataType.ue8m0 and  math_inst.element_a == DataType.e2m1 and math_inst.element_b == DataType.e2m1
 
-        nvfp4_schedule = [KernelScheduleType.Nvf4TmaWarpSpecialized2SmSm100, EpilogueScheduleType.ScheduleAuto]
-        fp4_schedule   = [KernelScheduleType.Mxf4TmaWarpSpecialized2SmSm100, EpilogueScheduleType.ScheduleAuto]
+        epi_schedule = EpilogueScheduleType.ScheduleAuto if not grouped else EpilogueScheduleType.PtrArrayTmaWarpSpecialized2Sm
+        nvfp4_kernel_schedule = to_grouped_schedule(KernelScheduleType.Nvf4TmaWarpSpecialized2SmSm100, grouped)
+        fp4_kernel_schedule = to_grouped_schedule(KernelScheduleType.Mxf4TmaWarpSpecialized2SmSm100, grouped)
+
+        nvfp4_schedule = [nvfp4_kernel_schedule, epi_schedule]
+        fp4_schedule   = [fp4_kernel_schedule, epi_schedule]
         CreateGemmUniversal3xOperator(manifest, [layout], tile_descriptions, data_type, [nvfp4_schedule]
-          , tile_schedulers=tile_schedulers(data_type["sfd_type"])
-          )
+          , tile_schedulers=tile_schedulers(data_type["sfd_type"]), gemm_kind=gemm_kind)
         if isFp4:
           CreateGemmUniversal3xOperator(manifest, [layout], tile_descriptions, data_type, [fp4_schedule]
-          , tile_schedulers=tile_schedulers(data_type["sfd_type"])
-          )
+          , tile_schedulers=tile_schedulers(data_type["sfd_type"]), gemm_kind=gemm_kind)
 
 
 
@@ -8920,8 +8929,8 @@ def GenerateSM100(manifest, cuda_version):
 
   GenerateSM100_TensorOp_fp8_UMMA_gemm(manifest, cuda_version)
   # grouped GEMM
-  GenerateSM100_TensorOp_fp8_UMMA_gemm(manifest, cuda_version, gemm_kind=GemmKind.GroupedGemmUniversal3x)
-  GenerateSM100_TensorOp_16b_UMMA_gemm(manifest, cuda_version, gemm_kind=GemmKind.GroupedGemmUniversal3x)
+  GenerateSM100_TensorOp_fp8_UMMA_gemm(manifest, cuda_version, gemm_kind=GemmKind.GroupedUniversal3x)
+  GenerateSM100_TensorOp_16b_UMMA_gemm(manifest, cuda_version, gemm_kind=GemmKind.GroupedUniversal3x)
 
   GenerateSM100_TensorOp_fp8_UMMA_gemm_stream_k(manifest, cuda_version)
 
@@ -8932,6 +8941,7 @@ def GenerateSM100(manifest, cuda_version):
   #
   GenerateSM100_TensorOp_mixed_8bits_UMMA_gemm_with_block_scaled(manifest, cuda_version)
   GenerateSM100_TensorOp_fp4_UMMA_gemm_with_block_scaled(manifest, cuda_version)
+  GenerateSM100_TensorOp_fp4_UMMA_gemm_with_block_scaled(manifest, cuda_version,  gemm_kind=GemmKind.GroupedBlockScaledUniversal3x)
 
 ###################################################################################################
 
@@ -9310,8 +9320,8 @@ def GenerateSM90(manifest, cuda_version):
   GenerateSM90_TensorOp_fp8_WGMMA_alignx_gemm(manifest, cuda_version)
   GenerateSM90_TensorOp_mixed_dtype_WGMMA_gemm(manifest, cuda_version)
   GenerateSM90_TensorOp_1684(manifest, cuda_version)
-  GenerateSM90_TensorOp_16b_WGMMA_gemm(manifest, cuda_version, gemm_kind=GemmKind.GroupedGemmUniversal3x)
-  GenerateSM90_TensorOp_fp8_WGMMA_gemm(manifest, cuda_version, gemm_kind=GemmKind.GroupedGemmUniversal3x)
+  GenerateSM90_TensorOp_16b_WGMMA_gemm(manifest, cuda_version, gemm_kind=GemmKind.GroupedUniversal3x)
+  GenerateSM90_TensorOp_fp8_WGMMA_gemm(manifest, cuda_version, gemm_kind=GemmKind.GroupedUniversal3x)
   GenerateSM90_TensorOp_1684_complex(manifest, cuda_version)
   GenerateSM90_TensorOp_1684_complex_gaussian(manifest, cuda_version)
   GenerateSM90_TensorOp_1684_rank_k(manifest, cuda_version)

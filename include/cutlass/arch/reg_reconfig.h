@@ -45,6 +45,7 @@
     #define CUDA_CTA_RECONFIG_ACTIVATED 1
   #endif
 
+
 #endif
 
 namespace cutlass {

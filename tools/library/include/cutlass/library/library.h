@@ -336,10 +336,9 @@ struct GemmUniversalArguments {
   void *packed_Scale{nullptr};          // Packed scale for int4 * fp8
 
   int device_index{0};
-  
+
   bool use_pdl{false};
 };
-
 
 /// Block Scaled GEMM
 //
@@ -495,21 +494,23 @@ struct GemmGroupedConfiguration {
   int64_t* lda;
   int64_t* ldb;
   int64_t* ldc;
+
+  cute::Shape<int, int, int>* problem_sizes_3x_host;
 };
 
 struct GemmGroupedArguments {
   int problem_count{};
   gemm::GemmCoord* problem_sizes{nullptr};
 
-  void * ptr_A{nullptr};
-  void * ptr_B{nullptr};
-  void * ptr_C{nullptr};
-  void * ptr_D{nullptr};
+  void* ptr_A{nullptr};
+  void* ptr_B{nullptr};
+  void* ptr_C{nullptr};
+  void* ptr_D{nullptr};
 
-  int64_t *lda{nullptr};
-  int64_t *ldb{nullptr};
-  int64_t *ldc{nullptr};
-  int64_t *ldd{nullptr};
+  int64_t* lda{nullptr};
+  int64_t* ldb{nullptr};
+  int64_t* ldc{nullptr};
+  int64_t* ldd{nullptr};
 
   void const *alpha{nullptr};
   void const *beta{nullptr};
@@ -527,6 +528,13 @@ struct GemmGroupedArguments {
   // underlying operation uses the one it needs.
   cute::Shape<int, int, int>* problem_sizes_3x;
   cute::Shape<int, int, int>* problem_sizes_3x_host;
+};
+
+struct GroupedGemmBlockScaledArguments : GemmGroupedArguments {
+  void* SFA{nullptr};
+  void* SFB{nullptr};
+  void* SFD{nullptr};
+  void* norm_constant{nullptr};
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

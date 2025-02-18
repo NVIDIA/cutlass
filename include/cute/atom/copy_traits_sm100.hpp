@@ -45,7 +45,6 @@
 
 namespace cute
 {
-
 template <>
 struct Copy_Traits<SM100_U8x8_LDSM_T>
 {

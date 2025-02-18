@@ -686,19 +686,22 @@ public:
             do_acc_release = iter_m == size<3>(tTR_tAcc)-1 && iter_n == 0;
           }
 
-        Tensor tTR_cCD_mn = tTR_cCD(_,_,_,epi_m,epi_n);
+          Tensor tTR_cCD_mn = tTR_cCD(_,_,_,epi_m,epi_n);
           cst_callbacks.begin_loop(epi_m, epi_n);
 
-          if (is_C_load_needed) {
-            Tensor tTR_cC_frag = tensor<1>(zipped_divide(coalesce(tTR_cCD_mn), mclC.compose(Int<VC>{})));
-            Tensor tTR_gC_frg = recast<Array<GmemElementC, VC>>(coalesce(tTR_gC(_,_,_,epi_m,epi_n)));
-            Tensor tTR_rC_frg = recast<Array<GmemElementC, VC>>(coalesce(tCrC));
+          if constexpr (not cute::is_void_v<ElementC>) {
+            if (is_C_load_needed) {
+              using CVecType = uint_bit_t<VC * sizeof_bits_v<ElementC>>;
+              Tensor tTR_cC_frag = tensor<1>(zipped_divide(coalesce(tTR_cCD_mn), mclC.compose(Int<VC>{})));
 
-            auto pred_fn_C = [&] (auto const&... coords) {
-              return elem_less(tTR_cC_frag(coords...), problem_shape_mnl);
-            };
+              auto pred_fn_C = [&] (auto const&... coords) CUTLASS_LAMBDA_FUNC_INLINE {
+                return elem_less(tTR_cC_frag(coords...), problem_shape_mnl);
+              };
 
-            copy_if(pred_fn_C, tTR_gC_frg, tTR_rC_frg);
+                Tensor tTR_gC_frg = recast<CVecType>(coalesce(tTR_gC(_,_,_,epi_m,epi_n)));
+                Tensor tTR_rC_frg = recast<CVecType>(coalesce(tCrC));
+                copy_if(pred_fn_C, tTR_gC_frg, tTR_rC_frg);
+            }
           }
 
           // Copy accumulator tile from tmem to register
@@ -730,17 +733,15 @@ public:
 
           
           Tensor tTR_cD_frag = tensor<1>(zipped_divide(coalesce(tTR_cCD_mn), mclD.compose(Int<VD>{})));
-          
-          using VecType = uint_bit_t<VD * sizeof_bits_v<ElementD>>;
-          Tensor tTR_gD_frg = recast<VecType>(coalesce(tTR_gD(_,_,_,epi_m,epi_n)));
-          Tensor tTR_rD_frg = recast<VecType>(coalesce(tTR_rD));
-
           auto pred_fn_D = [&] (auto const&... coords) CUTLASS_LAMBDA_FUNC_INLINE {
             return elem_less(tTR_cD_frag(coords...), problem_shape_mnl);
           };
 
-          copy_if(pred_fn_D, tTR_rD_frg, tTR_gD_frg);
+          using VecType = uint_bit_t<VD * sizeof_bits_v<ElementD>>;
+            Tensor tTR_gD_frg = recast<VecType>(coalesce(tTR_gD(_,_,_,epi_m,epi_n)));
+            Tensor tTR_rD_frg = recast<VecType>(coalesce(tTR_rD));
 
+            copy_if(pred_fn_D, tTR_rD_frg, tTR_gD_frg);
         } // for epi_m
       } // for epi_n
 
