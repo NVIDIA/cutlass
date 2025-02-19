@@ -174,7 +174,12 @@ for_each(T&& t, F&& f)
 {
   if constexpr (is_tuple<remove_cvref_t<T>>::value) {
     return detail::apply(t,
-      [&](auto&&... a) { CUTE_INLINE_CALL (f(static_cast<decltype(a)&&>(a)), ...); }, tuple_seq<T>{});
+      [&](auto &&...a) {
+        if constexpr (sizeof...(a) > 0) { // Avoid spurious warnings about ignored inline attr on empty callsite
+          CUTE_INLINE_CALL(f(static_cast<decltype(a) &&>(a)), ...);
+        }
+      },
+      tuple_seq<T>{});
   } else {
     return f(static_cast<T&&>(t));
   }
