@@ -2,9 +2,9 @@
 
 ## Overview
 
-A GEMM workload usually consists of three phases: prologue, mainloop and epilogue. Each available SM will process multiple output tiles in series if the number of output tiles are much more than the number of available SMs, completely exposing the overhead of prologue and epilogue.
+A GEMM workload usually consists of three phases: prologue, mainloop and epilogue. Each SM will process multiple output tiles in series if the number of output tiles are much more than the number of SMs, completely exposing the overhead of prologue and epilogue.
 
-Consider a GEMM that has `20x20x1` output tiles, running on a GPU with `100` SMs. Only `80` out of the `100` SMs are available. Assume cluster shape is `1x1x1`. The following diagram shows how the schedule would look like for such a kernel. 
+Consider a GEMM that has `20x20x1` output tiles, running on a GPU with `100` SMs. There is another kernel occupying all the resources of `20` SMs so only `80` SMs can be used. Assume cluster shape is `1x1x1`. The following diagram shows how the schedule would look like for such a kernel. 
 
 <p align="center"><img src=../images/non_persistent.png alt="A beautiful sunset" title="Sunset over the mountains"></p>
 
@@ -12,22 +12,22 @@ Consider a GEMM that has `20x20x1` output tiles, running on a GPU with `100` SMs
 ### Static Scheduler
 CUTLASS has adopted a software technique named **persistent kernels**. Persistent clusters, or Workers, can stay on the GPU throughout kernel execution and process multiple tiles, hiding prologue and epilogue costs. The tile scheduler statically determines the next output tile to process with zero overhead. 
 
-However, static scheduler is susceptible to workload imbalance if some SMs are unavailable. The following diagram illustrates this issue. 
+However, static scheduler is susceptible to workload imbalance if the resources of some SMs are unavailable. The following diagram illustrates this issue. 
 
 <p align="center"><img src=../images/persistent_static.png alt="A beautiful sunset" title="Sunset over the mountains"></p>
 
 ### Dynamic Scheduler with Cluster Launch Control
-A fundamental limitation of persistent scheduling is that the kernel is unaware of the number of available SMs in real time. Some SMs might be occupied by another kernel and thus be unavailable. This makes it challenging to load-balance work across available SMs.
+A fundamental limitation of persistent scheduling is that the number of SMs this kernel can utilize is unknown in real time. Some SMs might be occupied by another kernel and thus their resources are unavailable. This makes it challenging to load-balance work across SMs.
 
 Blackwell introduces cluster launch control (CLC) for dynamic scheduling. (See https://docs.nvidia.com/cuda/parallel-thread-execution).  With this feature, the kernel launches a grid containing as many threadblocks as there are output tiles to compute in the kernel -- just like one would in a non-persistent kernel. Here we define `ClcID` to be a coordinate from the 3D grid launched on GPU.
 
 Cluster launch control follows the below rules:
 
-1. A `ClcID` will be launched as a Worker when there are available SMs.
+1. A `ClcID` will be launched as a Worker when there are available resources.
 2. A `ClcID` can be queried by an existing Worker via `clusterlaunchcontrol.try_cancel` instruction.
 3. Every `ClcID` is guaranteed to be processed by either (1) or (2).
-4. Each Worker is pre-loaded with a `ClcID`, which is the coordinate indicated by `{blockIdx.x, blockIdx.y, blockIdx.z}`.
-5. `clusterlaunchcontrol.try_cancel` instruction returns either a success signal with a `ClcID` or a decline signal. The most common reason of a decline is that akk `ClcID`s have been processed.
+4. Each worker uses the `{blockIdx.x, blockIdx.y, blockIdx.z}` coordinate as the first output tile to process and uses the CLC query for subsequent processing of output tiles.
+5. `clusterlaunchcontrol.try_cancel` instruction returns either a success signal with a `ClcID` or a decline signal. The most common reason of a decline is that all `ClcID`s have been processed.
 6. Cluster launch control works on the granularity of clusters. For example, a 2x2 persistent worker cluster's query will consume 2x2 `ClcID`s at once.
 
 The following diagram shows how the schedule would look like with cluster launch control.

@@ -86,5 +86,3 @@
   #define CUTE_ARCH_FLOAT2_MATH_ENABLED
 #endif
 
-
-

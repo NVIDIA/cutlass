@@ -53,8 +53,6 @@ private:
 template<class Integral, Integral Value>
 using IC = std::integral_constant<Integral, Value>;
 
-#if ! defined(CUTLASS_USE_PACKED_TUPLE)
-
 TEST(CuTe_core_msvc_compilation, TupleAssignment)
 {
   CUTLASS_TRACE_HOST("-------------------------------");
@@ -64,30 +62,10 @@ TEST(CuTe_core_msvc_compilation, TupleAssignment)
   using forty_two_type = IC<int, 42>;
   using forty_three_type = IC<size_t, 43>;
 
-  using ebo_s_type = cute::detail::EBO<0, forty_two_type>;
-  [[maybe_unused]] ebo_s_type ebo_s;
-  static_assert(std::is_same_v<decltype(cute::detail::getv(ebo_s)), forty_two_type>);
-
-  using ebo_d_type = cute::detail::EBO<1, size_t>;
-  [[maybe_unused]] ebo_d_type ebo_d(43u);
-  assert(ebo_d.t_ == 43u);
-  static_assert(std::is_same_v<std::remove_const_t<std::remove_reference_t<decltype(cute::detail::getv(ebo_d))>>, size_t > );
-  assert(cute::detail::getv(ebo_d) == 43u);
-
-  [[maybe_unused]] cute::detail::TupleBase<std::index_sequence<0, 1, 2>, int, forty_two_type, size_t> tb0{
-          41, forty_two_type{}, size_t(43u) };
-  [[maybe_unused]] cute::detail::TupleBase<std::index_sequence<0, 1, 2>, int, forty_two_type, size_t> tb1;
-
   int val41 = ConvertibleTo{41};
   assert(val41 == 41);
   size_t val43 = ConvertibleTo{size_t(43u)};
   assert(val43 == size_t{43u});
-  [[maybe_unused]] cute::detail::TupleBase<std::index_sequence<0, 1, 2>, int, forty_two_type, size_t> tb2{
-        ConvertibleTo{41}, forty_two_type{}, ConvertibleTo{size_t(43u)}};
-
-  [[maybe_unused]] cute::detail::TupleBase<std::index_sequence<0>, int> tb3{ 41 };
-  [[maybe_unused]] cute::detail::TupleBase<std::index_sequence<0>, int> tb3a{ 42 };
-  tb3 = tb3a;
 
   using tuple_0d_type = cute::tuple<>;
   using tuple_1d_d_type = cute::tuple<int>;
@@ -106,7 +84,6 @@ TEST(CuTe_core_msvc_compilation, TupleAssignment)
   // 'TupleBase<int, unsigned __int64>' is not a base or member"
   t3 = t3a;
 }
-#endif // CUTLASS_USE_PACKED_TUPLE
 
 TEST(CuTe_core_msvc_compilation, TupleGetSingleInteger)
 {

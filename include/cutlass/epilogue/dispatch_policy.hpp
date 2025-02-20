@@ -44,35 +44,30 @@ namespace cutlass::epilogue {
 // Builder Epilogue Schedules
 //
 //////////////////////////////////////////////////////////////////////////////
-
+// Pre-Hopper schedules
 struct PtrArrayDefault {};
 struct EpilogueSimtVectorized {};
 struct EpiloguePtrArraySimtVectorized {};
+// Hopper direct store schedules
 struct NoSmemWarpSpecialized {};
 struct PtrArrayNoSmemWarpSpecialized {};
 struct PtrArrayNoSmemWarpSpecializedTransposed {};
+// Hopper TMA schedules
 struct TmaWarpSpecialized {};
 struct TmaWarpSpecializedCooperative {};
-
+struct PtrArrayTmaWarpSpecialized { static constexpr int NumEpilogueWarpGroups = 1; };
+struct PtrArrayTmaWarpSpecializedPingpong { static constexpr int NumEpilogueWarpGroups = 2; };
+struct PtrArrayTmaWarpSpecializedCooperative { static constexpr int NumEpilogueWarpGroups = 2; };
+// Blackwell direct store schedules
+struct NoSmemWarpSpecialized1Sm {};
+struct NoSmemWarpSpecialized2Sm {};
+struct PtrArrayNoSmemWarpSpecialized1Sm : NoSmemWarpSpecialized1Sm {};
+struct PtrArrayNoSmemWarpSpecialized2Sm : NoSmemWarpSpecialized2Sm {};
+// Blackwell TMA schedules 
 struct TmaWarpSpecialized1Sm {};
 struct TmaWarpSpecialized2Sm {};
-struct PtrArrayTmaWarpSpecialized1Sm {};
-struct PtrArrayTmaWarpSpecialized2Sm {};
-
-struct PtrArrayTmaWarpSpecializedCooperative {
-  static constexpr int NumEpilogueWarpGroups = 2;
-};
-
-// Standard warp specialized epilogue
-struct PtrArrayTmaWarpSpecialized {
-  static constexpr int NumEpilogueWarpGroups = 1;
-};
-
-// Pingpong kernel epilogue
-struct PtrArrayTmaWarpSpecializedPingpong {
-  static constexpr int NumEpilogueWarpGroups = 2;
-};
-
+struct PtrArrayTmaWarpSpecialized1Sm : TmaWarpSpecialized1Sm {};
+struct PtrArrayTmaWarpSpecialized2Sm : TmaWarpSpecialized2Sm {};
 // DEPRECATED schedules, will be removed in next release
 struct TmaWarpSpecializedElementwiseBase : public TmaWarpSpecialized {};
 struct TmaWarpSpecializedCooperativeElementwiseBase : public TmaWarpSpecializedCooperative {};

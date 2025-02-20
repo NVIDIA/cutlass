@@ -287,7 +287,7 @@ public:
           EpilogueTile{});
     }
 
-    typename Params::TMA_D tma_store_d;
+    typename Params::TMA_D tma_store_d{};
     if constexpr (is_destination_supported) {
       Tensor tensor_d = make_tensor(make_gmem_ptr<TmaElementD>(args.ptr_D), make_layout(make_shape(M,N,L), args.dD));
       tma_store_d = make_tma_copy_C_sm90(

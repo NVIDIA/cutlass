@@ -50,23 +50,23 @@ architecture.
 CUTLASS 3.8 is the first release that supports the NVIDIA Blackwell SM100 architecture.
 For a background on Blackwell's new features, please consult the PTX documentation for CUDA 12.8.
 
-* Support for new CuTe building blocks specifically for Blackwell architecture:
+* Support for new CuTe building blocks specifically for Blackwell SM100 architecture:
   - [5th generation Blackwell Tensor Core instructions (TCGen05)](./include/cute/atom/mma_traits_sm100.hpp) via CuTe MMA atoms.
   - Extensions to [Tensor Memory Accelerator](./include/cute/atom/copy_traits_sm100_tma.hpp) via CuTe Copy atoms.
-  - Exposure of Blackwell's new tensor memory (note: distinct from TMA) as [`tmem`](./include/cute/pointer.hpp#L290) across CuTe as a first class data locale.
+  - Exposure of Blackwell's new tensor memory (note: distinct from TMA) as [`tmem`](./include/cute/pointer.hpp) across CuTe as a first class data locale.
   - Exposure of [`tmem->rmem`, `rmem->tmem` and `smem->tmem data movement instructions`](./include/cute/atom/copy_traits_sm100.hpp) as copy atoms in CuTe.
   - [`make_tmem_copy()`](./include/cute/atom/copy_traits_sm100.hpp) utility method to ease creation of tiled copies for tmem copy atoms.
   - Support for [new variants of LDSM on Blackwell](./include/cute/atom/copy_traits_sm100.hpp) via CuTe Copy atoms.
-* Support for new CUTLASS building blocks specifically for Blackwell architecture:
+* Support for new CUTLASS building blocks specifically for Blackwell SM100 architecture:
   - Various narrow precision [FP4, FP6, and FP8](./include/cutlass/exmy_base.h) formats as well as their [block-scaled variants NVFP4, MXFP4, MXFP6, and MXFP8](./include/cutlass/float_subbyte.h)
   - [Pipelines that implement Blackwell specific synchronization](./include/cutlass/pipeline/sm100_pipeline.hpp).
   - [Cluster launch control API supporting preferred and fallback cluster shapes](./include/cutlass/cluster_launch.hpp).
   - Data types including NVFP4, MXFP4, MXFP6, and MXFP8 and all their supported element and scale factor types.
   - Tile schedulers using [Blackwell's Cluster Launch Control (CLC) feature](./media/docs/blackwell_cluster_launch_control.md) to implement dynamic persistence scheduling for [GEMMs](./include/cutlass/gemm/kernel/sm100_tile_scheduler.hpp), and [stream-K](./include/cutlass/gemm/kernel/sm100_tile_scheduler_stream_k.hpp).
   - Extensions to testbeds and reference check code for unit tests and CUTLASS profiler.
-* Full support for Blackwell kernels in CUTLASS 3.x API:
+* Full support for Blackwell SM100 kernels in CUTLASS 3.x API:
   - [Blackwell specific kernel layers](./include/cutlass/gemm/kernel/sm100_gemm_tma_warpspecialized.hpp) that
-    + Implement a new warp-specialization recipe tuned specifically for Blackwell.
+    + Implement a new warp-specialization recipe tuned specifically for Blackwell SM100 architecture.
     + Leverage all the new features such as CLC based tile scheduling, preferred cluster, and TMEM based double buffering of accumulators.
     + Support stream-K load balancing for all kernel types everywhere via composable scheduler support.
   - Blackwell collective mainloops that target the TCGen05 MMA instructions (both SS and TS) for
@@ -80,7 +80,10 @@ For a background on Blackwell's new features, please consult the PTX documentati
 * CUTLASS library and profiler integration for block scaled data types for kernel emission, profiling, and verification.
   - Support for preferred and fallback cluster shapes via profiler command line arguments parsing to set dynamic cluster shapes.
   - Support for dynamic datatypes by parsing profiler via profiler command line arguments parsing to set dynamic datatype setting in TCGen05 MMA instruction descriptors.
-* Set of examples that demonstrate the usage of the 3.x API for targeting Blackwell
+  - Support for mixed input GEMM kernels on Hopper in the profiler.
+* New CUTLASS profiler flag `use-cuda-graphs` to reduce overheads when benchmarking launch-bound kernels.
+* A new 3.x version of grouped GEMM to the CUTLASS library and generates kernels for Hopper and Blackwell. Now grouped GEMM support is enabled in the CUTLASS profiler (`./cutlass_profiler --operation=GroupedGemm --help` for details).
+* Set of examples that demonstrate the usage of the 3.x API for targeting Blackwell SM100 architecture:
   - [Basic FP16 and FP8 GEMMs with minimal changes from Hopper examples](./examples/70_blackwell_gemm/), demonstrating ease of migration for off the shelf kernels using the 3.x collective builder API.
   - GEMM with [opt-in collective builder schedules showcasing available recipes](./examples/71_blackwell_gemm_with_collective_builder/71_blackwell_gemm_with_collective_builder.cu) for Blackwell.
   - Block scaled data type GEMMs targeting Blackwell's native block scaled Tensor Cores:
@@ -92,6 +95,10 @@ For a background on Blackwell's new features, please consult the PTX documentati
   - Grouped GEMM for [vanilla FP8 data inputs](./examples/75_blackwell_grouped_gemm/75_blackwell_grouped_gemm.cu) and [NVFP4 block scaled inputs](./examples/75_blackwell_grouped_gemm/75_blackwell_grouped_gemm_block_scaled.cu).
   - Convolution kernels for [fprop](./examples/76_blackwell_conv/76_blackwell_conv_fprop.cu), [dgrad](./examples/76_blackwell_conv/76_blackwell_conv_dgrad.cu), and [wgrad](./examples/76_blackwell_conv/76_blackwell_conv_wgrad.cu).
   - [Fused multi-head attention fprop kernel](./examples/77_blackwell_fmha/77_blackwell_fmha.cu) supporting fp16/bf16/fp8 data types across head dims of 32,64, and 128.
+  - A new BF16x9 GEMM [kernel](./examples/78_blackwell_emulated_bf16x9_gemm/78_blackwell_emulated_bf16x9_gemm.cu) that emulates FP32 GEMM (SGEMM) using BF16 operations.
+* Set of examples that demonstrate the usage of the 3.x API for targeting Hopper architecture:
+  - A set of new [Hopper grouped GEMM kernels](./examples/69_hopper_mixed_dtype_grouped_gemm/) that support mixed A and B datatypes.
+  - A new [Hopper FP8 GEMM with groupwise scaling](./examples/67_hopper_fp8_warp_specialized_gemm_with_blockwise_scaling/67_hopper_fp8_warp_specialized_gemm_with_groupwise_scaling.cu).
 * Documentation updates:
   - [Quickstart - instantiating a Blackwell block-scaled GEMM](./media/docs/quickstart.md#instantiating-a-blackwell-gemm-kernel).
   - Detailed [Blackwell block-scaled GEMM functionality documentation](./media/docs/blackwell_functionality.md)
