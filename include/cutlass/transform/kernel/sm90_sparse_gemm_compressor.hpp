@@ -418,7 +418,7 @@ private:
               masked_elem_A = elem_A & sign_mask;
             }
 
-            if ( masked_elem_A != ElementAMmaRawUnit{0} ) {
+            if (masked_elem_A != ElementAMmaRawUnit{0}) {
               non_zero_elt_log_idx[non_zero_cnt] = elt_log_idx;
               tACsAC[non_zero_cnt] = elem_A;
               non_zero_cnt++;
