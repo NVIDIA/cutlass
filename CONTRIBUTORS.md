@@ -27,7 +27,7 @@ Siyu Liu<br />
 Richard Cai<br />
 Vikas Gupta<br />
 Ethan Yan<br />
-Vijay Thakkar (CUTLASS 3.x founding member)<br />
+Vijay Thakkar (CUTLASS 3.x and CuTe founding member)<br />
 Cris Cecka (CuTe and CUTLASS 3.x founding member)<br />
 Lawrence Ryan<br />
 Qun Song<br />

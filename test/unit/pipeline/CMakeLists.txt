@@ -26,12 +26,21 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-cutlass_test_unit_add_executable(
-  cutlass_test_unit_pipeline
+set(PIPELINE_SOURCES
   pipeline_tma_async.cu
   pipeline_tma_async_warp_specialized.cu
   pipeline_tma_async_warp_specialized_persistent.cu
-  pipeline_cluster_launch_control_async_warp_specialized_blackwell.cu 
   pipeline_async.cu
   sequence_barrier.cu
+)
+
+if (CUTLASS_NVCC_ARCHS MATCHES 100a)
+  list(APPEND PIPELINE_SOURCES 
+    pipeline_cluster_launch_control_async_warp_specialized_blackwell.cu
+  )
+endif()
+
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_pipeline
+  ${PIPELINE_SOURCES}
 )

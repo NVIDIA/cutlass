@@ -84,7 +84,6 @@ using CUTE_STL_NAMESPACE::uint16_t;
 using CUTE_STL_NAMESPACE::uint32_t;
 using CUTE_STL_NAMESPACE::uint64_t;
 using cutlass::uint128_t;
-
 template <int N> struct uint_bit;
 template <> struct uint_bit<  1> { using type = uint1_t; };
 template <> struct uint_bit<  2> { using type = uint2_t; };
@@ -95,7 +94,6 @@ template <> struct uint_bit< 16> { using type = uint16_t; };
 template <> struct uint_bit< 32> { using type = uint32_t; };
 template <> struct uint_bit< 64> { using type = uint64_t; };
 template <> struct uint_bit<128> { using type = cutlass::uint128_t; };
-
 template <int N>
 using uint_bit_t = typename uint_bit<N>::type;
 

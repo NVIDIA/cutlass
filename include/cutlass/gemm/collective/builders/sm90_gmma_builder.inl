@@ -85,7 +85,7 @@ compute_stage_count_or_override(StageCountAutoCarveout<carveout_bytes_> stage_co
 }
 
 // Returns the maximum number of smem tiles that can be used with a given smem capacity in gemm of blockwise/groupwise scale.
-template<int capacity_bytes_, class ElementA, class ElementB, class ElementBlockScale, class TileShapeMNK, int ScaleMsPerTile, int carveout_bytes_, int alignment = 128>
+template<int capacity_bytes_, class ElementA, class ElementB, class ElementBlockScale, class TileShapeMNK, int ScaleMsPerTile, int ScaleNsPerTile, int carveout_bytes_, int alignment = 128>
 constexpr int
 compute_stage_count_with_blockwise_scale(StageCountAutoCarveout<carveout_bytes_> stage_count) {
   constexpr auto mainloop_pipeline_bytes = sizeof(typename cutlass::PipelineTmaAsync<1>::SharedStorage);
@@ -96,7 +96,7 @@ compute_stage_count_with_blockwise_scale(StageCountAutoCarveout<carveout_bytes_>
     cutlass::bits_to_bytes(a_bits * size<0>(TileShapeMNK{}) * size<2>(TileShapeMNK{})) +
     cutlass::bits_to_bytes(b_bits * size<1>(TileShapeMNK{}) * size<2>(TileShapeMNK{})) +
     cutlass::bits_to_bytes(scale_bits * ScaleMsPerTile) + // scale of tensor A
-    cutlass::bits_to_bytes(scale_bits * 1);               // scale of tensor B
+    cutlass::bits_to_bytes(scale_bits * ScaleNsPerTile);  // scale of tensor B
 
   constexpr int stage_bytes = cutlass::round_up(stage_bytes_, alignment) +
     static_cast<int>(mainloop_pipeline_bytes);
@@ -1043,7 +1043,8 @@ template <
   class TileShape_MNK,
   class ClusterShape_MNK,
   class StageCountType,
-  int ScaleGranularityM_
+  int ScaleGranularityM_,
+  int ScaleGranularityN_
 >
 struct CollectiveBuilder<
     arch::Sm90,
@@ -1058,11 +1059,11 @@ struct CollectiveBuilder<
     TileShape_MNK,
     ClusterShape_MNK,
     StageCountType,
-    KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum<ScaleGranularityM_>,
+    KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum<ScaleGranularityM_, ScaleGranularityN_>,
     cute::enable_if_t<
       not detail::is_use_rmem_A<ElementA, GmemLayoutATag, ElementB, GmemLayoutBTag>()>
 > {
-  using KernelScheduleType = KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum<ScaleGranularityM_>;
+  using KernelScheduleType = KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum<ScaleGranularityM_, ScaleGranularityN_>;
 
   static_assert(is_static<TileShape_MNK>::value);
   static_assert(is_static<ClusterShape_MNK>::value);
@@ -1090,7 +1091,7 @@ struct CollectiveBuilder<
   static constexpr bool IsCooperative = cute::is_any_of_v<KernelScheduleType,
                                                           KernelTmaWarpSpecializedCooperative,
                                                           KernelPtrArrayTmaWarpSpecializedCooperative,
-                                                          KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum<ScaleGranularityM_>>;
+                                                          KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum<ScaleGranularityM_, ScaleGranularityN_>>;
   using AtomLayoutMNK = cute::conditional_t<IsCooperative,
       Layout<Shape<_2,_1,_1>>, Layout<Shape<_1,_1,_1>>>;
 
@@ -1109,12 +1110,15 @@ struct CollectiveBuilder<
   static constexpr int KernelSmemCarveout = static_cast<int>(TensorMapStorage);
 
   static constexpr int ScaleGranularityM = ScaleGranularityM_ == 0 ? size<0>(TileShape_MNK{}) : ScaleGranularityM_;
+  static constexpr int ScaleGranularityN = ScaleGranularityN_ == 0 ? size<1>(TileShape_MNK{}) : ScaleGranularityN_;
   static constexpr int ScaleMsPerTile = size<0>(TileShape_MNK{}) / ScaleGranularityM;
+  static constexpr int ScaleNsPerTile = size<1>(TileShape_MNK{}) / ScaleGranularityN;
   static_assert((size<0>(TileShape_MNK{}) % ScaleGranularityM) == 0, "FP8 scaling granularity must evenly divide tile shape along M.");
+  static_assert((size<1>(TileShape_MNK{}) % ScaleGranularityN) == 0, "FP8 scaling granularity must evenly divide tile shape along N.");
 
   static constexpr int PipelineStages = detail::compute_stage_count_with_blockwise_scale<detail::sm90_smem_capacity_bytes - KernelSmemCarveout,
-      ElementAMma, ElementBMma, ElementBlockScale, TileShape_MNK, ScaleMsPerTile>(StageCountType{});
-  using DispatchPolicy = MainloopSm90TmaGmmaWarpSpecializedBlockScalingFP8<PipelineStages, ClusterShape_MNK, KernelScheduleType, ScaleGranularityM_>;
+      ElementAMma, ElementBMma, ElementBlockScale, TileShape_MNK, ScaleMsPerTile, ScaleNsPerTile>(StageCountType{});
+  using DispatchPolicy = MainloopSm90TmaGmmaWarpSpecializedBlockScalingFP8<PipelineStages, ClusterShape_MNK, KernelScheduleType, ScaleGranularityM_, ScaleGranularityN_>;
 
   using SmemCopyAtomA = void;
   using SmemCopyAtomB = void;

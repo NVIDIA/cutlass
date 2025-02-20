@@ -150,14 +150,14 @@ set(CUTLASS_ENABLE_PERFORMANCE ${CUTLASS_ENABLE_PROFILER} CACHE BOOL "Enable CUT
 set(CUTLASS_ENABLE_TESTS ${CUTLASS_ENABLE_TESTS_INIT} CACHE BOOL "Enable CUTLASS Tests")
 set(CUTLASS_ENABLE_GTEST_UNIT_TESTS ${CUTLASS_ENABLE_TESTS} CACHE BOOL "Enable CUTLASS GTest-based Unit Tests")
 set(CUTLASS_USE_SYSTEM_GOOGLETEST OFF CACHE BOOL "Use system/external installation of GTest")
-set(CUTLASS_USE_PACKED_TUPLE ON CACHE BOOL "If ON, make cute::tuple be new standard-layout tuple type; if OFF, use the original cute::tuple implementation that is _not_ standard-layout.")
-if (CUTLASS_USE_PACKED_TUPLE)
-  list(APPEND CUTLASS_CUDA_NVCC_FLAGS -DCUTE_USE_PACKED_TUPLE=1)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DCUTLASS_USE_PACKED_TUPLE=1")
-  message(STATUS "Make cute::tuple be the new standard-layout tuple type")
-elseif()
-  message(STATUS "Use the original cute::tuple implementation that is _not_ standard-layout")
+
+if (CUTLASS_ENABLE_TESTS AND CUTLASS_ENABLE_PROFILER)
+  set(CUTLASS_ENABLE_PROFILER_UNIT_TESTS_INIT ON)
+else()
+  set(CUTLASS_ENABLE_PROFILER_UNIT_TESTS_INIT OFF)
 endif()
+set(CUTLASS_ENABLE_PROFILER_UNIT_TESTS ${CUTLASS_ENABLE_PROFILER_UNIT_TESTS_INIT} CACHE BOOL "Enable CUTLASS Profiler-based Unit Tests")
+set(CUTLASS_ENABLE_SELF_CONTAINED_INCLUDES_CHECK ON CACHE BOOL "Enable CUTLASS check for self-contained header includes")
 
 ################################################################################
 
@@ -406,7 +406,7 @@ endif()
 
 # Warnings-as-error exceptions and warning suppressions for Clang builds
 if (CUTLASS_CLANG_HOST_COMPILE)
-  
+
   set(FLAGS_TO_ADD
     "-Wno-error=implicit-int-conversion"
     "-Wno-error=pass-failed"
@@ -414,13 +414,13 @@ if (CUTLASS_CLANG_HOST_COMPILE)
     "-Wno-sign-conversion"
     "-Wno-unused-parameter"
   )
-  
+
   foreach(FLAG ${FLAGS_TO_ADD})
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${FLAG}")
     list(APPEND CUTLASS_CUDA_NVCC_FLAGS "${FLAG}")
     list(APPEND CUTLASS_CUDA_CLANG_FLAGS "${FLAG}")
   endforeach()
-  
+
 endif()
 
 if (NOT MSVC AND CUTLASS_NVCC_KEEP)
@@ -486,7 +486,7 @@ if (CUTLASS_CLANG_DEVICE_COMPILE)
 
   link_libraries(nvidia::cudart)
   link_libraries(nvidia::cuda_driver)
-  
+
 endif()
 
 #Report CUDA build flags
@@ -561,7 +561,7 @@ function(cutlass_apply_cuda_gencode_flags TARGET)
       list(APPEND __CMAKE_CUDA_ARCHS ${ARCH}-real)
     endif()
     if(CUTLASS_NVCC_EMBED_PTX AND NOT CUTLASS_CLANG_DEVICE_COMPILE)
-      # If we're using clang for device compilation, the ptx is inserted 
+      # If we're using clang for device compilation, the ptx is inserted
       # via another command line option and the `-virtual` flags will cause an error.
       list(APPEND __CMAKE_CUDA_ARCHS ${ARCH}-virtual)
     endif()
@@ -922,7 +922,7 @@ function(cutlass_add_executable_tests NAME TARGET)
     if (NOT __DO_NOT_LOWERCASE_TEST_NAME)
       string(TOLOWER "${TESTCASE_NAME}" TESTCASE_NAME)
     endif()
-    
+
     # The following rigmarole is needed to deal with spaces and possible quotes in
     # command line arguments. The options are passed "by reference" as the actual
     # variable names holding the real options. We then expand these in a way that
@@ -1007,46 +1007,51 @@ function(cutlass_generate_profiler_tests NAME)
   endif()
 
   file(STRINGS ${CUTLASS_PROFILER_REGRESSION_LIST_FILE} TEST_LIST)
-
   foreach(TEST IN LISTS TEST_LIST)
-
+    set(TEMP_TEST ${TEST})
     if ("${TEST}" MATCHES " *cutlass_profiler.*")
 
-    # Generate a flattened name for the test from the test command line.
-    string(REPLACE "," ";" TEST_NAME_LIST ${TEST})
-    list(GET TEST_NAME_LIST 0 TEST)
-    string(REGEX MATCHALL "[a-zA-Z0-9_=]+" TEST_NAME "${TEST}")
-      list(FILTER TEST_NAME EXCLUDE REGEX "cutlass_profiler|mode=trace|providers=cutlass")
-    list(JOIN TEST_NAME "_" TEST_NAME)
-    string(REGEX REPLACE "_verification_required=(true|false)" "" TEST_NAME "${TEST_NAME}")
-    string(REPLACE "_verification_providers=device" "" TEST_NAME "${TEST_NAME}")
-    string(REPLACE "batch_count=" "batch" TEST_NAME "${TEST_NAME}")
-    string(REPLACE "cluster_m=" "" TEST_NAME "${TEST_NAME}")
-    string(REPLACE "_cluster_n=" "x" TEST_NAME "${TEST_NAME}")
-    string(REGEX REPLACE "_cluster_k=[0-9]+" "" TEST_NAME "${TEST_NAME}")
-    string(REPLACE "cluster_m_fallback=" "" TEST_NAME "${TEST_NAME}")
-    string(REPLACE "_cluster_n_fallback=" "x" TEST_NAME "${TEST_NAME}")
-    string(REGEX REPLACE "_cluster_k_fallback=[0-9]+" "" TEST_NAME "${TEST_NAME}")
-    string(REPLACE "runtime_input_datatype_a=" "" TEST_NAME "${TEST_NAME}")
-    string(REPLACE "runtime_input_datatype_b=" "" TEST_NAME "${TEST_NAME}")
-    string(REPLACE "=" "" TEST_NAME "${TEST_NAME}")
-    string(REPLACE "_error_on_no_match" "" TEST_NAME "${TEST_NAME}")
-    string(REPLACE "_error_if_nothing_is_profiled" "" TEST_NAME "${TEST_NAME}")
-    string(REPLACE "kernels" "" TEST_NAME "${TEST_NAME}")
-    string(REPLACE "operation" "" TEST_NAME "${TEST_NAME}")
+      # Generate a flattened name for the test from the test command line.
+      string(REPLACE "," ";" TEST_NAME_LIST ${TEMP_TEST})
+      string(REGEX REPLACE "\\*" "_" TEST_NAME "${TEMP_TEST}")
+      string(REGEX REPLACE "\\\"\\{\\\"\\\"input_params.*\\{.*\\}\\}\\\"" "" TEST_NAME "${TEST_NAME}")
+      string(REGEX REPLACE "\\\"\\{\\\"\\\"input_params.*\\{.*\\}\\}\\\"" "" TEST "${TEST}")
+      string(REGEX REPLACE "," ";" TEST "${TEST}")
+      string(REGEX MATCHALL "[a-zA-Z0-9_=]+" TEST_NAME "${TEST_NAME}")
+        list(FILTER TEST_NAME EXCLUDE REGEX "cutlass_profiler|mode=trace|providers=cutlass")
+      list(JOIN TEST_NAME "_" TEST_NAME)
+      string(REGEX REPLACE "_verification_required=(true|false)" "" TEST_NAME "${TEST_NAME}")
+      string(REPLACE "_verification_providers=device" "" TEST_NAME "${TEST_NAME}")
+      string(REPLACE "batch_count=" "batch" TEST_NAME "${TEST_NAME}")
+      string(REPLACE "cluster_m=" "" TEST_NAME "${TEST_NAME}")
+      string(REPLACE "_cluster_n=" "x" TEST_NAME "${TEST_NAME}")
+      string(REGEX REPLACE "_cluster_k=[0-9]+" "" TEST_NAME "${TEST_NAME}")
+      string(REPLACE "cluster_m_fallback=" "" TEST_NAME "${TEST_NAME}")
+      string(REPLACE "_cluster_n_fallback=" "x" TEST_NAME "${TEST_NAME}")
+      string(REGEX REPLACE "_cluster_k_fallback=[0-9]+" "" TEST_NAME "${TEST_NAME}")
+      string(REPLACE "runtime_input_datatype_a=" "" TEST_NAME "${TEST_NAME}")
+      string(REPLACE "runtime_input_datatype_b=" "" TEST_NAME "${TEST_NAME}")
+      string(REGEX REPLACE "verification_enabled=(true|false)" "" TEST_NAME "${TEST_NAME}")
+      string(REGEX REPLACE "warmup_iterations=[0-9]+" "" TEST_NAME "${TEST_NAME}")
+      string(REGEX REPLACE "profiling_iterations=[0-9]+" "" TEST_NAME "${TEST_NAME}")
+      string(REGEX REPLACE "sleep_duration=[0-9]+" "" TEST_NAME "${TEST_NAME}")
+      string(REGEX REPLACE "profiling_enabled=(true|false)" "" TEST_NAME "${TEST_NAME}")
+      string(REPLACE "=" "" TEST_NAME "${TEST_NAME}")
+      string(REPLACE "_error_on_no_match" "" TEST_NAME "${TEST_NAME}")
+      string(REPLACE "_error_if_nothing_is_profiled" "" TEST_NAME "${TEST_NAME}")
+      string(REPLACE "kernels" "" TEST_NAME "${TEST_NAME}")
+      string(REPLACE "operation" "" TEST_NAME "${TEST_NAME}")
 
-    if (__DO_NOT_LOWERCASE_TEST_NAME)
-      string(TEST_NAME_LOWER "${TEST_NAME}")
-    else()      
-      string(TOLOWER "${TEST_NAME}" TEST_NAME_LOWER)
-    endif()
+      if (NOT __DO_NOT_LOWERCASE_TEST_NAME)
+        string(TOLOWER "${TEST_NAME}" TEST_NAME)
+      endif()
 
-    # Munge the test command
-    string(REPLACE "cutlass_profiler" "" TEST "${TEST}")
-    set(TEST "${TEST}" ${__CUTLASS_PROFILER_EXTRA_OPTIONS} "--junit-output=${TEST_NAME_LOWER}")
-    set(TEST_COMMAND_${TEST_NAME_LOWER} "${TEST}")
-    list(APPEND TEST_COMMAND_VARS ${TEST_NAME_LOWER})
+      # Munge the test command
 
+      string(REPLACE "cutlass_profiler" "" TEST "${TEST}")
+      set(TEST "${TEST}" ${__CUTLASS_PROFILER_EXTRA_OPTIONS} "--junit-output=${TEST_NAME}")
+      set(TEST_COMMAND_${TEST_NAME} "${TEST}")
+      list(APPEND TEST_COMMAND_VARS ${TEST_NAME})
     endif()
 
   endforeach()
@@ -1084,6 +1089,14 @@ if (CUTLASS_ENABLE_TESTS)
   if (CUTLASS_ENABLE_GTEST_UNIT_TESTS)
   add_dependencies(test_all test_unit)
   endif()
+  if (CUTLASS_ENABLE_PROFILER_UNIT_TESTS AND CUTLASS_BUILD_FOR_PROFILER_REGRESSIONS)
+    # Generate profiler based unit test
+    cutlass_generate_profiler_tests(
+      tup
+      DEPENDEES test_unit
+    )
+  endif()
+
 endif()
 
 if (CUTLASS_INSTALL_TESTS)
