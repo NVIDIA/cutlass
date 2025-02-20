@@ -401,7 +401,9 @@ private:
           CUTE_UNROLL
           for (int elt_log_idx = 0; elt_log_idx < OneChunkSizeA{}; ++elt_log_idx) {
             ElementAMmaRawUnit elem_A = tAsA[elt_log_idx];
-            if ( elem_A != ElementAMmaRawUnit{0} ) {
+            constexpr ElementAMmaRawUnit zero(0);
+            constexpr ElementAMmaRawUnit minus_zero(ElementAMmaRawUnit(1) << cutlass::sizeof_bits<ElementA>::value - 1);
+            if ( elem_A != zero && elem_A != minus_zero ) {
               non_zero_elt_log_idx[non_zero_cnt] = elt_log_idx;
               tACsAC[non_zero_cnt] = elem_A;
               non_zero_cnt++;
