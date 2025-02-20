@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
+ * Copyright (c) 2024 - 2025 Codeplay Software Ltd. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -103,10 +103,11 @@ struct CollectiveMmaAttention<MainloopIntelPVC<Stages>, TileShape_, ElementQ_, S
   static constexpr auto ATOM_N = get<2>(typename TiledMma::ThrLayoutVMNK{}.shape()); // 1
   static constexpr auto ATOM_K = get<3>(typename TiledMma::ThrLayoutVMNK{}.shape()); // 1
 
-  static constexpr auto SG_M = ceil_div(BLK_M, ATOM_M); // 16
-  static constexpr auto SG_N = ceil_div(BLK_N, ATOM_N); // 64
-  static constexpr auto SG_K = ceil_div(BLK_K, ATOM_K); // 64
-  using SubgroupTileShape = Shape<decltype(SG_M), decltype(SG_N), decltype(SG_K)>;
+  using SubgroupTileShape = decltype(cute::shape_div(WorkgroupTileShape{}, take<1, 4>(typename TiledMma::ThrLayoutVMNK{}.shape())));
+
+  static constexpr auto SG_M = get<0>(SubgroupTileShape{});
+  static constexpr auto SG_N = get<1>(SubgroupTileShape{});
+  static constexpr auto SG_K = get<2>(SubgroupTileShape{});
 
   static constexpr size_t cacheline_bytes = 64;
   static constexpr auto block_size_w_a = cute::min(BLK_K, cacheline_bytes / sizeof(ElementQ)); // min(64,32)-> 32

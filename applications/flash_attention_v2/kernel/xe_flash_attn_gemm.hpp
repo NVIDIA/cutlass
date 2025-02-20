@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
+ * Copyright (c) 2024 - 2025 Codeplay Software Ltd. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -35,17 +35,16 @@
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/kernel_hardware_info.hpp"
 
-#include "online_softmax.hpp"
-#include "pvc_flash_attn_mma.hpp"
+#include "flash_attention_v2/collective/xe_flash_attn_mma.hpp"
 
 namespace cutlass::gemm::kernel {
 
-template <class ProblemShape, class CollectiveMainloop, class CollectiveEpilogue, class TileScheduler_ = void>
+template <class ProblemShape, class CollectiveMainloop, class CollectiveSoftmaxEpilogue_, class CollectiveEpilogue, class TileScheduler_ = void>
 class GemmUniversalAttention;
 
 ///////////////////////////////////////////////////////////////////////////////
 
-template <class ProblemShape_, class CollectiveMainloop_, class CollectiveEpilogue_, class TileScheduler_>
+template <class ProblemShape_, class CollectiveMainloop_, class CollectiveSoftmaxEpilogue_, class CollectiveEpilogue_, class TileScheduler_>
 class GemmUniversalAttention {
 
 public:
@@ -73,8 +72,9 @@ public:
   using MainloopArguments = typename CollectiveMainloop::Arguments;
   using MainloopParams = typename CollectiveMainloop::Params;
 
-  using SoftmaxArguments = typename flash::Softmax<ElementAccumulator>::Arguments;
-  using SoftmaxParams = typename flash::Softmax<ElementAccumulator>::Params;
+  using CollectiveSoftmaxEpilogue = CollectiveSoftmaxEpilogue_;
+  using SoftmaxArguments = typename CollectiveSoftmaxEpilogue::Arguments;
+  using SoftmaxParams = typename CollectiveSoftmaxEpilogue::Params;
 
   static_assert(cute::is_void_v<TileScheduler_> or cute::is_same_v<TileScheduler_, PersistentScheduler>,
                 "Intel PVC does not support specializing the tile scheduler.");
@@ -119,8 +119,9 @@ public:
                 "The QKV multiplication in this implementation requires the squar block computation in per subgroup.");
 
   static constexpr int Vec = (get<0>(MmaAtomShape()) * get<1>(MmaAtomShape())) / SubgroupSize; // 8
-  static constexpr int FragsM = get<0>(SubgroupTileShape{}) / get<0>(MmaAtomShape());          // 2
-  static constexpr int FragsN = get<1>(SubgroupTileShape{}) / get<1>(MmaAtomShape());          // 4
+  using FragsShape = decltype(cute::shape_div(take<0, 2>(SubgroupTileShape{}), take<0, 2>(MmaAtomShape())));
+  static constexpr int FragsM = get<0>(FragsShape{});                                          // 2
+  static constexpr int FragsN = get<1>(FragsShape{});                                          // 4
 
   // Kernel level shared memory storage
   struct SharedStorage {
@@ -144,7 +145,7 @@ public:
     GemmUniversalMode mode;
     ProblemShape problem_shape;
     MainloopParams mainloop;
-    SoftmaxArguments softmax;
+    SoftmaxParams softmax;
     EpilogueParams epilogue;
   };
 
@@ -157,7 +158,7 @@ public:
     (void)workspace;
     return {args.mode, args.problem_shape,
             CollectiveMainloop::to_underlying_arguments(args.problem_shape, args.mainloop, workspace),
-            flash::Softmax<ElementAccumulator>::to_underlying_arguments(args.softmax),
+            CollectiveSoftmaxEpilogue::to_underlying_arguments(args.softmax),
             CollectiveEpilogue::to_underlying_arguments(args.problem_shape, args.epilogue, workspace)};
   }
 
@@ -331,8 +332,8 @@ public:
       auto tile_coord_QK = make_coord(seq_coord, load_idx, _, blk_l_coord);
       collective_mma.mmaQK(tile_coord_QK, tSr, gQ, gK, tSr, head_size / get<1>(subgroup_shape), params.mainloop);
 
-      flash::Softmax<ElementAccumulator>::template run<CausalMask, Vec, FragsM, FragsN>(
-          nblock == 0, tSr, max_reg, sum_reg, out_reg, params.softmax);
+      CollectiveSoftmaxEpilogue softmax(params.softmax);
+      softmax(nblock == 0, tSr, max_reg, sum_reg, out_reg);
 
       auto gV = local_tile(mV_nk, blk_shape, make_coord(0, 0, _), Step<X, _1, _1>{});
       auto tile_coord_PV = make_coord(0, head_size_coord, _, blk_l_coord);
@@ -371,8 +372,8 @@ public:
         }
       }
 
-      flash::Softmax<ElementAccumulator>::template run<CausalMask, Vec, FragsM, FragsN>(
-          (nblock_limit - 1) == 0, tSr, max_reg, sum_reg, out_reg, params.softmax);
+      CollectiveSoftmaxEpilogue softmax(params.softmax);
+      softmax((nblock_limit - 1) == 0, tSr, max_reg, sum_reg, out_reg);
 
       auto gV = local_tile(mV_nk, blk_shape, make_coord(0, 0, _), Step<X, _1, _1>{});
       auto tile_coord_PV = make_coord(0, head_size_coord, _, blk_l_coord);

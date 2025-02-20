@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
+ * Copyright (c) 2024 - 2025 Codeplay Software Ltd. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -34,26 +34,77 @@
 
 #pragma once
 
-#include "cutlass/cutlass.h"
 #include <sycl/sycl.hpp>
+#include "cutlass/cutlass.h"
+#include "cutlass/epilogue/dispatch_policy.hpp"
+#include "cutlass/epilogue/collective/collective_epilogue.hpp"
+#include "cutlass/epilogue/collective/detail.hpp"
+#include "cutlass/detail/layout.hpp"
 
-namespace flash {
+/////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename Element> struct Softmax {
+namespace cutlass {
+namespace epilogue {
+namespace collective {
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <bool CausalMask_, class DispatchPolicy, class... Args> class CollectiveSoftmaxEpilogue {
+  static_assert(cutlass::detail::dependent_false<DispatchPolicy>, "Could not find an epilogue specialization.");
+};
+
+
+template <bool CausalMask_, class Element_>
+class CollectiveSoftmaxEpilogue<CausalMask_, IntelPVCEpilogue, Element_> {
+public:
+
+  //
+  // Type Aliases
+  //
+  using DispatchPolicy = IntelPVCEpilogue;
+  using Element = Element_;
+
+  static constexpr bool CausalMask = CausalMask_;
+
+  using GmemTiledCopyOut = void;
+
+  // Host side epilogue arguments
   struct Arguments {
-    Element scale;
+    Element const scale;
   };
 
+  // Device side epilogue params
   using Params = Arguments;
 
+  //
+  // Methods
+  //
+
   static constexpr Params to_underlying_arguments(Arguments const &args) {
-    Arguments x{static_cast<Element>(args.scale) * static_cast<Element>(M_LOG2E)};
-    return x;
+    Element val = args.scale * static_cast<Element>(M_LOG2E);
+    return Params{val};
   }
 
-  template <bool CausalMask, int Vec, int FragsM, int FragsN, class FragAcc, class FragMax, class FragSum>
-  CUTLASS_DEVICE static constexpr void scale_exp_log2(FragAcc &frag_s, FragMax const &max, FragSum &sum,
-                                                      Params const &params) {
+  template <class ProblemShape>
+  static size_t get_workspace_size() {
+    return 0;
+  }
+
+  template <class ProblemShape>
+  static cutlass::Status initialize_workspace() {
+    return Status::kSuccess;
+  }
+
+  template <class ProblemShape>
+  CUTLASS_HOST_DEVICE static bool can_implement() {
+    return true;
+  }
+
+  CUTLASS_HOST_DEVICE
+  CollectiveSoftmaxEpilogue(Params const &params_) : params(params_) {}
+
+  template <int Vec, int FragsM, int FragsN, class FragAcc, class FragMax, class FragSum>
+  CUTLASS_DEVICE void scale_exp_log2(FragAcc &frag_s, FragMax const &max, FragSum &sum) {
     auto g = syclcompat::get_nd_item<1>().get_sub_group();
     const auto max_scale = max * params.scale;
     CUTLASS_PRAGMA_UNROLL
@@ -70,7 +121,7 @@ template <typename Element> struct Softmax {
   }
 
   template <int Vec, int FragsM, int FragsN, class FragSrc, class FragMax>
-  CUTLASS_DEVICE static void reduce_max(FragSrc &src, FragMax &max, Params const &params) {
+  CUTLASS_DEVICE void reduce_max(FragSrc &src, FragMax &max) {
     auto g = syclcompat::get_nd_item<1>().get_sub_group();
     CUTLASS_PRAGMA_UNROLL
     for (int indx = 0; indx < Vec * FragsM; indx++) {
@@ -87,12 +138,15 @@ template <typename Element> struct Softmax {
       }
     }
   }
-  template <bool CausalMask, int Vec, int FragsM, int FragsN, class FragAcc, class FragMax, class FragSum,
-            class FragOut>
-  CUTLASS_DEVICE static void run(bool is_first, FragAcc &frag_s, FragMax &max, FragSum &sum, FragOut &out,
-                                 Params const &params) {
+
+  template <class FragAcc, class FragMax, class FragSum, class FragOut>
+  CUTLASS_DEVICE void operator()(bool is_first, FragAcc &frag_s, FragMax &max, FragSum &sum, FragOut &out) {
     auto max_prev = max;
-    reduce_max<Vec, FragsM, FragsN>(frag_s, max, params);
+    using FragAccLayout = typename FragAcc::layout_type;
+    constexpr int Vec = get<0>(FragAccLayout{}.shape());
+    constexpr int FragsM = get<1>(FragAccLayout{}.shape());
+    constexpr int FragsN = get<2>(FragAccLayout{}.shape());
+    reduce_max<Vec, FragsM, FragsN>(frag_s, max);
     static_assert(Vec * FragsM == 16, " the number of reg_max per workitem should be adopted accordingly.");
     if (!is_first) {
       auto g = syclcompat::get_nd_item<1>().get_sub_group();
@@ -112,9 +166,16 @@ template <typename Element> struct Softmax {
         }
       }
     } else {
-      scale_exp_log2<CausalMask, Vec, FragsM, FragsN>(frag_s, max, sum, params);
+      scale_exp_log2<Vec, FragsM, FragsN>(frag_s, max, sum);
     }
   }
   Params params;
 };
-} // namespace flash
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+} // namespace collective
+} // namespace epilogue
+} // namespace cutlass
+
+/////////////////////////////////////////////////////////////////////////////////////////////////

@@ -66,6 +66,7 @@ function(cutlass_example_add_executable NAME)
     PRIVATE
     ${CUTLASS_EXAMPLES_COMMON_SOURCE_DIR}
     ${CUTLASS_EXAMPLES_UTILS_DIR}
+    ${CUTLASS_APPLICATIONS_DIR}
     )
 
   if (CUTLASS_ENABLE_SYCL)
