@@ -489,7 +489,7 @@ def get_valid_schedules(tile_description, cuda_version, is_aligned, data_types, 
     if is_fp32 and (is_tn or is_nn) and (cta_n % cta_k != 0):
         return [], []
 
-    grouped = gemm_kind == GemmKind.GroupedGemmUniversal3x
+    grouped = is_grouped(gemm_kind)
     if grouped:
         # the following cases are unsupported by grouped GEMM
         if not is_aligned:

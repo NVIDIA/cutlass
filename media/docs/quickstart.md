@@ -672,11 +672,8 @@ The kernel starts with setting up datatypes and cluster shapes.
   using ElementAccumulator = float;
   using ElementCompute = float;
   using ElementBias = cutlass::half_t;
-  using ClusterTileShape = cute::Shape<_128,_64,Int<128 / sizeof(ElementA)>>;
-  using ClusterShape = Shape<_1,_1,_1>;
-  using AtomThrShape = decltype(shape_div(ClusterShape{}, Shape<_1,_1,_1>{}));
-  using OutputCtaShape = decltype(shape_div(ClusterTileShape{}, ClusterShape{})); 
-  using MmaTileShape = decltype(shape_div(ClusterTileShape{}, AtomThrShape{}));
+  using MmaTileShape = cute::Shape<_128,_64,Int<128 / sizeof(ElementA)>>;
+  using ClusterShape = cute::Shape<_1,_1,_1>;
 ```
 
 The epilogue needs to be instantiated first as the mainloop collective builder takes the shared memory budget of epilogue in the template parameter list. The 3.x epilogue collective builder API has not changed
@@ -688,13 +685,12 @@ for Blackwell, so the epilogue fusion is built in a same way as an SM90 epilogue
   using FusionOperation = cutlass::epilogue::fusion::LinearCombination<
     ElementD,
     ElementCompute,
-    ElementC,
-    ElementBias
+    ElementC
   >;
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
-      OutputCtaShape, ClusterShape,
+      MmaTileShape, ClusterShape,
       cutlass::epilogue::collective::EpilogueTileAuto,
       ElementAccumulator, ElementCompute,
       ElementC, LayoutC, 16 / sizeof(ElementC),
@@ -728,8 +724,6 @@ dispatch policies can be in [blackwell_functionality.md](./blackwell_functionali
   >;
 ```
 
-It is worth noting that the mainloop builder takes `MmaTileShape` while the epilogue builder takes `OutputCtaShape`.
-
 Instantiating a blockscaled GEMM kernel is slightly different. Referring to an [MXFP8 GEMM](./../../test/unit/gemm/device/sm100_gemm_mxf8_mxf8_mxf8_tensor_op_f32_auto.cu) sample unit test, it takes a different tensor operation class:
  
 ```c++
@@ -742,10 +736,10 @@ are needed in the mainloop builder:
 ```c++
   using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
       cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
-      ElementA, GmemLayoutA, 16,
-      ElementB, GmemLayoutB, 16,
+      ElementA, LayoutA, 16,
+      ElementB, LayoutB, 16,
       ElementAccumulator,
-      MmaTileShape_MNK, ClusterShape_MNK,
+      MmaTileShape, ClusterShape,
       cutlass::gemm::collective::StageCountAutoCarveout<static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
       cutlass::gemm::KernelScheduleAuto
     >::CollectiveOp;

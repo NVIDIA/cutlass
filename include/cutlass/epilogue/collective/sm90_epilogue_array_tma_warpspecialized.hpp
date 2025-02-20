@@ -340,7 +340,7 @@ public:
           _1{});
     }
 
-    typename Params::TMA_D tma_store_d;
+    typename Params::TMA_D tma_store_d{};
     if constexpr (is_destination_supported) {
       ElementD const* ptr_D_first_batch = reinterpret_cast<ElementD const*>(args.ptr_D);
       Tensor tensor_d = make_tensor(ptr_D_first_batch, make_layout(make_shape(init_M,init_N,init_L), append<3>(stride_d, _0{})));

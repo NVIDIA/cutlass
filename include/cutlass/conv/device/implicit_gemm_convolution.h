@@ -114,6 +114,33 @@ public:
       return status;
     }
 
+    // Check that tensor sizes don't exceed maximum supported size
+    if (kConvolutionalOperator == conv::Operator::kFprop) {
+      if (args.problem_size.activation_size() * sizeof(ElementA) >=
+              (1ull << 31) ||
+          args.problem_size.filter_size() * sizeof(ElementB) >= (1ull << 31) ||
+          args.problem_size.output_size() * sizeof(ElementC) >= (1ull << 31)) {
+        return Status::kErrorInvalidProblem;
+      }
+    }
+    else if (kConvolutionalOperator == conv::Operator::kDgrad ||
+               kConvolutionalOperator == conv::Operator::kDeconv) {
+      if (args.problem_size.activation_size() * sizeof(ElementC) >=
+              (1ull << 31) ||
+          args.problem_size.filter_size() * sizeof(ElementB) >= (1ull << 31) ||
+          args.problem_size.output_size() * sizeof(ElementA) >= (1ull << 31)) {
+        return Status::kErrorInvalidProblem;
+      }
+    }
+    else if (kConvolutionalOperator == conv::Operator::kWgrad) {
+      if (args.problem_size.activation_size() * sizeof(ElementB) >=
+              (1ull << 31) ||
+          args.problem_size.filter_size() * sizeof(ElementC) >= (1ull << 31) ||
+          args.problem_size.output_size() * sizeof(ElementA) >= (1ull << 31)) {
+        return Status::kErrorInvalidProblem;
+      }
+    }
+
     // check group conv constraint
     if (args.problem_size.groups != 1) {
       if (kGroupMode == conv::GroupMode::kNone) {

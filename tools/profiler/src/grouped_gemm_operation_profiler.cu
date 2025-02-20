@@ -35,6 +35,8 @@
 #include <bitset>
 #include <cstdint>
 #include <iostream>
+#include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -45,6 +47,8 @@
 #include "cutlass/profiler/grouped_gemm_operation_profiler.h"
 #include "cutlass/library/handle.h"
 #include "cutlass/library/library.h"
+#include "cutlass/library/operation_table.h"
+#include "cutlass/library/singleton.h"
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace {
@@ -161,7 +165,7 @@ void GroupedGemmOperationProfiler::print_examples(std::ostream& out) const {
 }
 
 Status GroupedGemmOperationProfiler::GroupedGemmProblem::parse(
-  library::GemmDescription const& operation_desc,
+  library::GroupedGemmDescription const& operation_desc,
   ProblemSpace const& problem_space,
   ProblemSpace::Problem const& problem) {
 
@@ -242,7 +246,8 @@ Status GroupedGemmOperationProfiler::GroupedGemmProblem::parse(
       if (iss >> m >> sep1 >> n >> sep2 >> k && sep1 == 'x' && sep2 == 'x' && !(iss >> remaining)) {
         problem_sizes.emplace_back(m, n, k);
         problem_sizes_3x.emplace_back(m, n, k);
-      } else {
+      }
+      else {
         throw std::runtime_error(
           "Invalid format in line: " + line + ". Each line in file expected to be 'mxnxk'.");
       }
@@ -281,37 +286,42 @@ Status GroupedGemmOperationProfiler::GroupedGemmProblem::parse(
 
   this->mode = library::GemmUniversalMode::kGrouped;
 
-  if (!tensor_description_satisfies(operation_desc.A, "A", problem_space, problem)) {
+  if (!tensor_description_satisfies(operation_desc.gemm.A, "A", problem_space, problem)) {
     return Status::kErrorInvalidProblem;
   }
 
-  if (!tensor_description_satisfies(operation_desc.B, "B", problem_space, problem)) {
+  if (!tensor_description_satisfies(operation_desc.gemm.B, "B", problem_space, problem)) {
     return Status::kErrorInvalidProblem;
   }
 
-  if (!tensor_description_satisfies(operation_desc.C, "C", problem_space, problem)) {
+  if (!tensor_description_satisfies(operation_desc.gemm.C, "C", problem_space, problem)) {
     return Status::kErrorInvalidProblem;
   }
 
-  if (!tensor_description_satisfies(operation_desc.D, "D", problem_space, problem)) {
+  if (!tensor_description_satisfies(operation_desc.gemm.D, "D", problem_space, problem)) {
     return Status::kErrorInvalidProblem;
   }
 
   if (!arg_as_scalar(
         this->alpha,
-        operation_desc.element_epilogue,
+        operation_desc.gemm.element_epilogue,
         "alpha",
         problem_space,
         problem)) {
 
-    if (!cast_from_double(this->alpha, operation_desc.element_epilogue, 1)) {
+    if (!cast_from_double(this->alpha, operation_desc.gemm.element_epilogue, 1)) {
       return Status::kErrorInternal;
     }
   }
 
-  if (!arg_as_scalar(this->beta, operation_desc.element_epilogue, "beta", problem_space, problem)) {
+  if (!arg_as_scalar(
+        this->beta,
+        operation_desc.gemm.element_epilogue,
+        "beta",
+        problem_space,
+        problem)) {
 
-    if (!cast_from_double(this->beta, operation_desc.element_epilogue, 0)) {
+    if (!cast_from_double(this->beta, operation_desc.gemm.element_epilogue, 0)) {
       return Status::kErrorInternal;
     }
   }
@@ -322,17 +332,17 @@ Status GroupedGemmOperationProfiler::GroupedGemmProblem::parse(
   this->ldc.resize(num_groups);
   for (size_t group_idx = 0; group_idx < num_groups; group_idx++) {
     this->lda[group_idx] = DeviceAllocation::get_packed_layout(
-                             operation_desc.A.layout,
+                             operation_desc.gemm.A.layout,
                              {int(this->m(group_idx)), int(this->k(group_idx))})
                              .front();
 
     this->ldb[group_idx] = DeviceAllocation::get_packed_layout(
-                             operation_desc.B.layout,
+                             operation_desc.gemm.B.layout,
                              {int(this->k(group_idx)), int(this->n(group_idx))})
                              .front();
 
     this->ldc[group_idx] = DeviceAllocation::get_packed_layout(
-                             operation_desc.C.layout,
+                             operation_desc.gemm.C.layout,
                              {int(this->m(group_idx)), int(this->n(group_idx))})
                              .front();
   }
@@ -342,23 +352,23 @@ Status GroupedGemmOperationProfiler::GroupedGemmProblem::parse(
 
 /// Total number of bytes loaded
 int64_t GroupedGemmOperationProfiler::GroupedGemmProblem::bytes(
-  library::GemmDescription const& operation_desc) const {
+  library::GroupedGemmDescription const& operation_desc) const {
   // Input bytes read and Output bytes written for the gemm problem
   int64_t bytes = 0;
   for (size_t group_idx = 0, num_groups = problem_sizes.size(); group_idx < num_groups;
        group_idx++) {
 
     bytes +=
-      int64_t(library::sizeof_bits(operation_desc.A.element) * m(group_idx) / 8) * k(group_idx) +
-      int64_t(library::sizeof_bits(operation_desc.B.element) * n(group_idx) / 8) * k(group_idx) +
-      int64_t(library::sizeof_bits(operation_desc.C.element) * m(group_idx) / 8) * n(group_idx);
+      int64_t(library::sizeof_bits(operation_desc.gemm.A.element) * m(group_idx) / 8) * k(group_idx) +
+      int64_t(library::sizeof_bits(operation_desc.gemm.B.element) * n(group_idx) / 8) * k(group_idx) +
+      int64_t(library::sizeof_bits(operation_desc.gemm.C.element) * m(group_idx) / 8) * n(group_idx);
 
     // Set is_beta_zero true if beta is zero
     bool is_beta_zero = std::all_of(beta.begin(), beta.end(), [](uint8_t i) { return i == 0; });
     // Output bytes read for the gemm problem for non-zero beta values
     if (!is_beta_zero) {
       bytes +=
-        int64_t(library::sizeof_bits(operation_desc.C.element) * m(group_idx) / 8) * n(group_idx);
+        int64_t(library::sizeof_bits(operation_desc.gemm.C.element) * m(group_idx) / 8) * n(group_idx);
     }
   }
 
@@ -367,7 +377,7 @@ int64_t GroupedGemmOperationProfiler::GroupedGemmProblem::bytes(
 
 /// Total number of flops computed
 int64_t GroupedGemmOperationProfiler::GroupedGemmProblem::flops(
-  library::GemmDescription const& operation_desc) const {
+  library::GroupedGemmDescription const& operation_desc) const {
   int64_t flops_ = 0;
   for (size_t group_idx = 0, num_groups = problem_sizes.size(); group_idx < num_groups;
        group_idx++) {
@@ -376,7 +386,7 @@ int64_t GroupedGemmOperationProfiler::GroupedGemmProblem::flops(
   }
 
   // complex-valued support
-  switch (operation_desc.tile_description.math_instruction.math_operation) {
+  switch (operation_desc.gemm.tile_description.math_instruction.math_operation) {
   case library::MathOperationID::kMultiplyAddComplex:
   case library::MathOperationID::kMultiplyAddComplexFastF32:
     flops_ *= 4;
@@ -395,40 +405,44 @@ int64_t GroupedGemmOperationProfiler::GroupedGemmProblem::flops(
 /// Initializes a performance result
 void GroupedGemmOperationProfiler::GroupedGemmProblem::initialize_result(
   PerformanceResult& result,
-  library::GemmDescription const& operation_desc,
+  library::GroupedGemmDescription const& operation_desc,
   ProblemSpace const& problem_space) {
 
   result.arguments.resize(problem_space.rank());
 
-  set_argument(result, "gemm_kind", problem_space, library::to_string(operation_desc.gemm_kind));
+  set_argument(
+    result,
+    "gemm_kind",
+    problem_space,
+    library::to_string(operation_desc.gemm.gemm_kind));
 
   set_argument(
     result,
     "A",
     problem_space,
-    std::string(library::to_string(operation_desc.A.element)) + ":" +
-      library::to_string(operation_desc.A.layout));
+    std::string(library::to_string(operation_desc.gemm.A.element)) + ":" +
+      library::to_string(operation_desc.gemm.A.layout));
 
   set_argument(
     result,
     "B",
     problem_space,
-    std::string(library::to_string(operation_desc.B.element)) + ":" +
-      library::to_string(operation_desc.B.layout));
+    std::string(library::to_string(operation_desc.gemm.B.element)) + ":" +
+      library::to_string(operation_desc.gemm.B.layout));
 
   set_argument(
     result,
     "C",
     problem_space,
-    std::string(library::to_string(operation_desc.C.element)) + ":" +
-      library::to_string(operation_desc.C.layout));
+    std::string(library::to_string(operation_desc.gemm.C.element)) + ":" +
+      library::to_string(operation_desc.gemm.C.layout));
 
   set_argument(
     result,
     "D",
     problem_space,
-    std::string(library::to_string(operation_desc.D.element)) + ":" +
-      library::to_string(operation_desc.D.layout));
+    std::string(library::to_string(operation_desc.gemm.D.element)) + ":" +
+      library::to_string(operation_desc.gemm.D.layout));
 
   {
     std::stringstream ss;
@@ -456,13 +470,13 @@ void GroupedGemmOperationProfiler::GroupedGemmProblem::initialize_result(
     result,
     "alpha",
     problem_space,
-    library::lexical_cast(alpha, operation_desc.element_epilogue));
+    library::lexical_cast(alpha, operation_desc.gemm.element_epilogue));
 
   set_argument(
     result,
     "beta",
     problem_space,
-    library::lexical_cast(beta, operation_desc.element_epilogue));
+    library::lexical_cast(beta, operation_desc.gemm.element_epilogue));
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -476,10 +490,23 @@ Status GroupedGemmOperationProfiler::initialize_configuration(
   ProblemSpace const& problem_space,
   ProblemSpace::Problem const& problem) {
 
-  library::GemmDescription const& operation_desc =
-    static_cast<library::GemmDescription const&>(operation->description());
+  library::GroupedGemmDescription const& operation_desc =
+    static_cast<library::GroupedGemmDescription const&>(operation->description());
 
-  if (operation_desc.gemm_kind != library::GemmKind::kGrouped) {
+  // We want to share the same operation profiler for any grouped gemm operation.
+  // We distinguish between block scaled and non-block scaled operations by looking at the kernel
+  // name, which tells us what reference kernel to use, which arguments to pass to the operation
+  // etc. This avoids creating yet another OperationProfiler with a lot of boilerplate in it.
+  if (std::string(operation_desc.gemm.name).find("bstensor") != std::string::npos) {
+    is_block_scaled = true;
+    gemm_workspace_.block_scales = BlockScalingWorkspace{};
+  }
+  else {
+    is_block_scaled = false;
+    gemm_workspace_.block_scales = std::nullopt;
+  }
+
+  if (operation_desc.gemm.gemm_kind != library::GemmKind::kGrouped) {
     return Status::kErrorInvalidProblem;
   }
 
@@ -489,10 +516,12 @@ Status GroupedGemmOperationProfiler::initialize_configuration(
   }
 
   auto num_groups = problem_.problem_sizes.size();
-  gemm_workspace_.configuration.problem_count = num_groups;
-  gemm_workspace_.configuration.lda = problem_.lda.data();
-  gemm_workspace_.configuration.ldb = problem_.ldb.data();
-  gemm_workspace_.configuration.ldc = problem_.ldc.data();
+  auto& config = gemm_workspace_.configuration;
+  config.problem_count = num_groups;
+  config.lda = problem_.lda.data();
+  config.ldb = problem_.ldb.data();
+  config.ldc = problem_.ldc.data();
+  config.problem_sizes_3x_host = problem_.problem_sizes_3x.data();
 
   initialize_result_(this->model_result_, options, operation_desc, problem_space);
 
@@ -503,13 +532,13 @@ Status GroupedGemmOperationProfiler::initialize_configuration(
 void GroupedGemmOperationProfiler::initialize_result_(
   PerformanceResult& result,
   Options const& options,
-  library::GemmDescription const& operation_desc,
+  library::GroupedGemmDescription const& operation_desc,
   ProblemSpace const& problem_space) {
 
   result.provider = library::Provider::kCUTLASS;
   result.disposition = Disposition::kNotRun;
   result.status = Status::kSuccess;
-  result.operation_name = operation_desc.name;
+  result.operation_name = operation_desc.gemm.name;
 
   problem_.initialize_result(result, operation_desc, problem_space);
 
@@ -542,8 +571,8 @@ Status GroupedGemmOperationProfiler::initialize_workspace(
   }
 
   library::Operation const* underlying_operation = operation;
-  library::GemmDescription const& operation_desc =
-    static_cast<library::GemmDescription const&>(operation->description());
+  library::GroupedGemmDescription const& operation_desc =
+    static_cast<library::GroupedGemmDescription const&>(operation->description());
 
   // Compute the number of copies of the problem to avoid L2 camping.
   if (!options.profiling.workspace_count) {
@@ -568,6 +597,14 @@ Status GroupedGemmOperationProfiler::initialize_workspace(
     gemm_workspace_.B_ptr_array_host.resize(num_groups);
     gemm_workspace_.C_ptr_array_host.resize(num_groups);
     gemm_workspace_.D_ptr_array_host.resize(num_groups);
+    if (is_block_scaled) {
+      auto& block_scaling_ws = gemm_workspace_.block_scales.value();
+      block_scaling_ws.SFA_ptr_array_host.resize(num_groups);
+      block_scaling_ws.SFB_ptr_array_host.resize(num_groups);
+      block_scaling_ws.SFC_ptr_array_host.resize(num_groups);
+      block_scaling_ws.SFD_ptr_array_host.resize(num_groups);
+      block_scaling_ws.SFD_reference_ptr_array_host.resize(num_groups);
+    }
     static_assert(sizeof(void*) == 8); // allocating blocks for pointers, so verify pointer size
     // ldx
     gemm_workspace_.lda_array_device =
@@ -608,8 +645,8 @@ Status GroupedGemmOperationProfiler::initialize_workspace(
       gemm_workspace_.A_ptr_array_host[group_idx] = device_context.allocate_and_initialize_tensor(
         options,
         "A_" + group_str,
-        operation_desc.A.element,
-        operation_desc.A.layout,
+        operation_desc.gemm.A.element,
+        operation_desc.gemm.A.layout,
         {int(problem_.m(group_idx)), int(problem_.k(group_idx))},
         {int(problem_.lda[group_idx])},
         gemm_workspace_.problem_count,
@@ -618,8 +655,8 @@ Status GroupedGemmOperationProfiler::initialize_workspace(
       gemm_workspace_.B_ptr_array_host[group_idx] = device_context.allocate_and_initialize_tensor(
         options,
         "B_" + group_str,
-        operation_desc.B.element,
-        operation_desc.B.layout,
+        operation_desc.gemm.B.element,
+        operation_desc.gemm.B.layout,
         {int(problem_.k(group_idx)), int(problem_.n(group_idx))},
         {int(problem_.ldb[group_idx])},
         gemm_workspace_.problem_count,
@@ -628,8 +665,8 @@ Status GroupedGemmOperationProfiler::initialize_workspace(
       gemm_workspace_.C_ptr_array_host[group_idx] = device_context.allocate_and_initialize_tensor(
         options,
         "C_" + group_str,
-        operation_desc.C.element,
-        operation_desc.C.layout,
+        operation_desc.gemm.C.element,
+        operation_desc.gemm.C.layout,
         {int(problem_.m(group_idx)), int(problem_.n(group_idx))},
         {int(problem_.ldc[group_idx])},
         gemm_workspace_.problem_count,
@@ -638,8 +675,8 @@ Status GroupedGemmOperationProfiler::initialize_workspace(
       gemm_workspace_.D_ptr_array_host[group_idx] = device_context.allocate_tensor(
         options,
         "D_" + group_str,
-        operation_desc.D.element,
-        operation_desc.D.layout,
+        operation_desc.gemm.D.element,
+        operation_desc.gemm.D.layout,
         {int(problem_.m(group_idx)), int(problem_.n(group_idx))},
         {int(problem_.ldc[group_idx])},
         gemm_workspace_.problem_count,
@@ -648,12 +685,81 @@ Status GroupedGemmOperationProfiler::initialize_workspace(
       gemm_workspace_.reference_ptr_array_host[group_idx] = device_context.allocate_tensor(
         options,
         "Reference_" + group_str,
-        operation_desc.D.element,
-        operation_desc.D.layout,
+        operation_desc.gemm.D.element,
+        operation_desc.gemm.D.layout,
         {int(problem_.m(group_idx)), int(problem_.n(group_idx))},
         {int(problem_.ldc[group_idx])},
-        gemm_workspace_.problem_count,
+        1,
         0);
+
+      if (is_block_scaled) {
+        auto const block_scale_desc = operation_desc.block_scales.value();
+        auto& block_scale_ws = gemm_workspace_.block_scales.value();
+        int sfa_m = round_up(int(problem_.m(group_idx)), 128);
+        int sfb_n = round_up(int(problem_.n(group_idx)), 128);
+        int sfa_sfb_k =
+          round_up(ceil_div(int(problem_.k(group_idx)), block_scale_desc.SFVecSize), 4);
+
+        int sfd_m =
+          block_scale_desc.SFD.layout == cutlass::library::LayoutTypeID::kRowMajor
+            ? sfa_m
+            : round_up(ceil_div(int(problem_.m(group_idx)), block_scale_desc.EpilogueSFVecSize), 4);
+        int sfd_n =
+          block_scale_desc.SFD.layout == cutlass::library::LayoutTypeID::kRowMajor
+            ? round_up(ceil_div(int(problem_.n(group_idx)), block_scale_desc.EpilogueSFVecSize), 4)
+            : sfb_n;
+
+        block_scale_ws.SFA_ptr_array_host[group_idx] =
+          device_context.allocate_and_initialize_tensor(
+            options,
+            "SFA",
+            block_scale_desc.SFA.element,
+            block_scale_desc.SFA.layout,
+            {sfa_m, sfa_sfb_k},
+            {sfa_sfb_k},
+            gemm_workspace_.problem_count,
+            seed_shift++,
+            0);
+
+        block_scale_ws.SFB_ptr_array_host[group_idx] =
+          device_context.allocate_and_initialize_tensor(
+            options,
+            "SFB",
+            block_scale_desc.SFB.element,
+            block_scale_desc.SFB.layout,
+            {sfb_n, sfa_sfb_k},
+            {sfa_sfb_k},
+            gemm_workspace_.problem_count,
+            seed_shift++,
+            0);
+
+        block_scale_ws.SFD_ptr_array_host[group_idx] = device_context.allocate_tensor(
+          options,
+          "SFD",
+          block_scale_desc.SFD.element,
+          block_scale_desc.SFD.layout,
+          {sfd_m, sfd_n},
+          {sfd_n},
+          gemm_workspace_.problem_count,
+          0);
+
+        block_scale_ws.SFD_reference_ptr_array_host[group_idx] = device_context.allocate_tensor(
+          options,
+          "Reference_SFD",
+          block_scale_desc.SFD.element,
+          block_scale_desc.SFD.layout,
+          {sfd_m, sfd_n},
+          {sfd_n},
+          gemm_workspace_.problem_count,
+          0);
+
+        // ScaleFactor tensor results may have some holes and will not be touched by the kernel.
+        // If we randomly fill the two tensors, these holes may encounter refcheck errors.
+        if (block_scale_ws.SFD_ptr_array_host[group_idx]->type() != library::NumericTypeID::kVoid) {
+          block_scale_ws.SFD_reference_ptr_array_host[group_idx]->fill_device(0);
+          block_scale_ws.SFD_ptr_array_host[group_idx]->fill_device(0);
+        }
+      }
     }
 
     // takes the allocated tensors and initializes an array of pointers per problem in the workspace
@@ -691,8 +797,36 @@ Status GroupedGemmOperationProfiler::initialize_workspace(
       gemm_workspace_.D_ptr_array_device,
       gemm_workspace_.D_ptr_array_host,
       "D");
+
+    if (is_block_scaled) {
+      auto& block_scale_ws = gemm_workspace_.block_scales.value();
+      create_dev_ptr_array_all_workspace(
+        block_scale_ws.SFA_ptr_array_device,
+        block_scale_ws.SFA_ptr_array_host,
+        "SFA");
+      create_dev_ptr_array_all_workspace(
+        block_scale_ws.SFB_ptr_array_device,
+        block_scale_ws.SFB_ptr_array_host,
+        "SFB");
+      create_dev_ptr_array_all_workspace(
+        block_scale_ws.SFD_ptr_array_device,
+        block_scale_ws.SFD_ptr_array_host,
+        "SFD");
+
+      block_scale_ws.norm_constant = device_context.allocate_and_initialize_tensor(
+        options,
+        "norm_constant",
+        operation_desc.gemm.element_epilogue,
+        operation_desc.gemm.A.layout, // copied, but should this be D layout?
+        {1, 1},
+        {1},
+        1,
+        seed_shift++,
+        0 // device_index
+      );
+    }
+    init_arguments(options);
   }
-  init_arguments(options);
 
   //
   // Initialize the CUTLASS operation
@@ -769,7 +903,6 @@ bool GroupedGemmOperationProfiler::verify_cutlass(
 
   if (results_.back().status != Status::kSuccess) {
     results_.back().disposition = Disposition::kFailed;
-    throw "failed";
     return false;
   }
 
@@ -795,8 +928,8 @@ bool GroupedGemmOperationProfiler::verify_cutlass(
     }
 #endif // #if CUTLASS_ENABLE_CUBLAS
 
-    library::GemmDescription const& gemm_desc =
-      static_cast<library::GemmDescription const&>(operation->description());
+    auto const& desc =
+      static_cast<library::GroupedGemmDescription const&>(operation->description());
 
     bool verification_status = verify_with_reference_(
       options,
@@ -805,8 +938,8 @@ bool GroupedGemmOperationProfiler::verify_cutlass(
       operation,
       problem_space,
       problem,
-      gemm_desc.A.element,
-      gemm_desc.B.element);
+      desc.gemm.A.element,
+      desc.gemm.B.element);
 
     // Update disposition to worst case verification outcome among all
     // verification providers which are supported
@@ -854,8 +987,8 @@ bool GroupedGemmOperationProfiler::verify_with_reference_(
   ProblemSpace::Problem const& problem,
   cutlass::library::NumericTypeID element_A,
   cutlass::library::NumericTypeID element_B) {
-  library::GemmDescription const& gemm_desc =
-    static_cast<library::GemmDescription const&>(operation->description());
+  library::GroupedGemmDescription const& desc =
+    static_cast<library::GroupedGemmDescription const&>(operation->description());
 
   for (auto provider : options.verification.providers) {
 
@@ -864,8 +997,15 @@ bool GroupedGemmOperationProfiler::verify_with_reference_(
       continue;
     }
 
+    // we only have a block scaled reference kernel implemented on the host
+    if (is_block_scaled && provider != library::Provider::kReferenceHost) {
+      continue;
+    }
+
     auto status = Status::kSuccess;
     auto disposition = Disposition::kFailed;
+    // we don't have grouped GEMM reference kernels so we loop over the groups and perform
+    // a regular GEMM for each group
     for (size_t group_idx = 0, num_groups = problem_.problem_sizes.size(); group_idx < num_groups;
          group_idx++) {
       void* ptr_A = gemm_workspace_.A_ptr_array_host[group_idx]->data();
@@ -879,6 +1019,16 @@ bool GroupedGemmOperationProfiler::verify_with_reference_(
       std::vector<uint8_t> host_data_B;
       std::vector<uint8_t> host_data_C;
       std::vector<uint8_t> host_data_D;
+      std::vector<uint8_t> host_data_SFA;
+      std::vector<uint8_t> host_data_SFB;
+      std::vector<uint8_t> host_data_SFC;
+      std::vector<uint8_t> host_data_SFD;
+      std::vector<uint8_t> host_data_norm_constant;
+
+      void* ptr_SFA{nullptr};
+      void* ptr_SFB{nullptr};
+      void* ptr_SFD{nullptr};
+      void* ptr_norm_constant{nullptr};
 
       if (provider == library::Provider::kReferenceHost) {
         host_data_A.resize(gemm_workspace_.A_ptr_array_host[group_idx]->bytes());
@@ -896,52 +1046,171 @@ bool GroupedGemmOperationProfiler::verify_with_reference_(
 
         host_data_D.resize(gemm_workspace_.reference_ptr_array_host[group_idx]->bytes());
         ptr_D = host_data_D.data();
+
+        if (is_block_scaled) {
+          auto const& ws = gemm_workspace_.block_scales.value();
+
+          host_data_SFA.resize(ws.SFA_ptr_array_host[group_idx]->bytes());
+          ptr_SFA = host_data_SFA.data();
+          ws.SFA_ptr_array_host[group_idx]->copy_to_host(ptr_SFA);
+          host_data_SFB.resize(ws.SFB_ptr_array_host[group_idx]->bytes());
+          ptr_SFB = host_data_SFB.data();
+          ws.SFB_ptr_array_host[group_idx]->copy_to_host(ptr_SFB);
+
+          host_data_SFD.resize(ws.SFD_reference_ptr_array_host[group_idx]->bytes());
+          ptr_SFD = host_data_SFD.data();
+
+          host_data_norm_constant.resize(ws.norm_constant->bytes());
+          ptr_norm_constant = host_data_norm_constant.data();
+          ws.norm_constant->copy_to_host(ptr_norm_constant);
+        }
       }
 
-      library::Handle handle;
-      handle.set_provider(provider);
+      const auto &desc = static_cast<library::GroupedGemmDescription const &>(operation->description());
+      const auto& gemm_desc = desc.gemm;
 
-      status = handle.gemm_universal(
-        library::GemmUniversalMode::kGemm,
-        problem_.m(group_idx),
-        problem_.n(group_idx),
-        problem_.k(group_idx),
-        problem_.cluster_m,
-        problem_.cluster_n,
-        problem_.cluster_k,
-        problem_.cluster_m_fallback,
-        problem_.cluster_n_fallback,
-        problem_.cluster_k_fallback,
-        gemm_desc.tile_description.math_instruction.element_accumulator,
-        gemm_desc.element_epilogue,
-        problem_.alpha.data(),
-        element_A,
-        gemm_desc.A.layout,
-        gemm_desc.transform_A,
-        ptr_A,
-        int(problem_.lda[group_idx]),
-        element_B,
-        gemm_desc.B.layout,
-        gemm_desc.transform_B,
-        ptr_B,
-        int(problem_.ldb[group_idx]),
-        problem_.beta.data(),
-        gemm_desc.C.element,
-        gemm_desc.C.layout,
-        ptr_C,
-        int(problem_.ldc[group_idx]),
-        gemm_desc.D.element,
-        gemm_desc.D.layout,
-        ptr_D,
-        int(problem_.ldc[group_idx]),
-        1,
-        gemm_workspace_.A_ptr_array_host[group_idx]->batch_stride(),
-        gemm_workspace_.B_ptr_array_host[group_idx]->batch_stride(),
-        gemm_workspace_.C_ptr_array_host[group_idx]->batch_stride(),
-        gemm_workspace_.reference_ptr_array_host[group_idx]->batch_stride());
+      if (!is_block_scaled) {
+        library::Handle handle;
+        handle.set_provider(provider);
 
-      if (status != Status::kSuccess)
+        status = handle.gemm_universal(
+          library::GemmUniversalMode::kGemm,
+          problem_.m(group_idx),
+          problem_.n(group_idx),
+          problem_.k(group_idx),
+          problem_.cluster_m,
+          problem_.cluster_n,
+          problem_.cluster_k,
+          problem_.cluster_m_fallback,
+          problem_.cluster_n_fallback,
+          problem_.cluster_k_fallback,
+          desc.gemm.tile_description.math_instruction.element_accumulator,
+          desc.gemm.element_epilogue,
+          problem_.alpha.data(),
+          element_A,
+          desc.gemm.A.layout,
+          desc.gemm.transform_A,
+          ptr_A,
+          int(problem_.lda[group_idx]),
+          element_B,
+          desc.gemm.B.layout,
+          desc.gemm.transform_B,
+          ptr_B,
+          int(problem_.ldb[group_idx]),
+          problem_.beta.data(),
+          desc.gemm.C.element,
+          desc.gemm.C.layout,
+          ptr_C,
+          int(problem_.ldc[group_idx]),
+          desc.gemm.D.element,
+          desc.gemm.D.layout,
+          ptr_D,
+          int(problem_.ldc[group_idx]),
+          1,
+          gemm_workspace_.A_ptr_array_host[group_idx]->batch_stride(),
+          gemm_workspace_.B_ptr_array_host[group_idx]->batch_stride(),
+          gemm_workspace_.C_ptr_array_host[group_idx]->batch_stride(),
+          gemm_workspace_.reference_ptr_array_host[group_idx]->batch_stride());
+      }
+      else {
+        auto const& block_scale_desc = desc.block_scales.value();
+        auto& block_scale_ws = gemm_workspace_.block_scales.value();
+
+        library::BlockScaledGemmFunctionalKey blockScaledGemm_key(
+          library::Provider::kReferenceHost,
+          library::GemmKind::kUniversal,
+          library::OperationKind::kBlockScaledGemm,
+          gemm_desc.tile_description.math_instruction.element_accumulator,
+          gemm_desc.element_epilogue,
+          element_A,
+          gemm_desc.A.layout,
+          block_scale_desc.SFA.element,
+          element_B,
+          gemm_desc.B.layout,
+          block_scale_desc.SFB.element,
+          gemm_desc.C.element,
+          gemm_desc.C.layout,
+          gemm_desc.D.element,
+          gemm_desc.D.layout,
+          block_scale_desc.SFD.element,
+          block_scale_desc.SFD.layout,
+          block_scale_desc.SFVecSize,
+          block_scale_desc.EpilogueSFVecSize);
+
+        auto operators_it =
+          library::Singleton::get().operation_table.block_scaled_gemm_operations.find(
+            blockScaledGemm_key);
+        if (
+          operators_it ==
+          library::Singleton::get().operation_table.block_scaled_gemm_operations.end()) {
+          disposition = Disposition::kNotSupported;
+          break;
+        }
+
+        if (operators_it->second.empty()) {
+          disposition = Disposition::kNotSupported;
+          break;
+        }
+
+        auto cc_it = operators_it->second.begin();
+        if (cc_it == operators_it->second.end()) {
+          disposition = Disposition::kNotSupported;
+          break;
+        }
+
+        // host reference has only one instances in BlockScaledOperationVectorMap
+        library::Operation const* reference_op = cc_it->second[0];
+        library::BlockScaledGemmArguments arguments{
+          {int(problem_.m(group_idx)), int(problem_.n(group_idx)), int(problem_.k(group_idx))},
+          {int(problem_.cluster_m), int(problem_.cluster_n), int(problem_.cluster_k)},
+          {int(problem_.cluster_m_fallback), int(problem_.cluster_n_fallback), int(problem_.cluster_k_fallback)},
+          1, // batch count
+          ptr_A,
+          ptr_B,
+          ptr_SFA,
+          ptr_SFB,
+          ptr_C,
+          ptr_D,
+          ptr_SFD,
+          problem_.alpha.data(),
+          problem_.beta.data(),
+          library::ScalarPointerMode::kHost,
+          problem_.lda[group_idx],
+          problem_.ldb[group_idx],
+          problem_.ldc[group_idx],
+          problem_.ldc[group_idx],
+          gemm_workspace_.A_ptr_array_host[group_idx]->batch_stride(),
+          gemm_workspace_.B_ptr_array_host[group_idx]->batch_stride(),
+          gemm_workspace_.C_ptr_array_host[group_idx]->batch_stride(),
+          gemm_workspace_.reference_ptr_array_host[group_idx]->batch_stride(),
+          ptr_norm_constant};
+
+        library::GemmUniversalConfiguration configuration{
+          library::GemmUniversalMode::kGemm,
+          problem_.problem_sizes[group_idx],
+          {problem_.cluster_m, problem_.cluster_n, problem_.cluster_k},
+          {problem_.cluster_m_fallback, problem_.cluster_n_fallback, problem_.cluster_k_fallback},
+          1,
+          problem_.lda[group_idx],
+          problem_.ldb[group_idx],
+          problem_.ldc[group_idx],
+          problem_.ldc[group_idx],
+          1,
+        };
+        uint64_t host_workspace_size_needed = reference_op->get_host_workspace_size(&gemm_workspace_.configuration);
+        std::vector<char> host_workspace(host_workspace_size_needed);
+        status = reference_op->initialize(&configuration, host_workspace.data());
+        if (status != Status::kSuccess) {
+          break;
+        }
+
+        status = reference_op->run(&arguments, host_workspace.data());
+
+        block_scale_ws.SFD_reference_ptr_array_host[group_idx]->copy_from_host(ptr_SFD);
+      }
+      if (status != Status::kSuccess) {
         break;
+      }
 
       if (provider == library::Provider::kReferenceHost) {
         gemm_workspace_.reference_ptr_array_host[group_idx]->copy_from_host(ptr_D);
@@ -952,26 +1221,40 @@ bool GroupedGemmOperationProfiler::verify_with_reference_(
         *gemm_workspace_.D_ptr_array_host[group_idx],
         *gemm_workspace_.reference_ptr_array_host[group_idx],
         gemm_workspace_.D_ptr_array_host[group_idx]->batch_stride());
-      if (disposition != Disposition::kPassed)
+      if (disposition != Disposition::kPassed) {
         break;
+      }
+
+      if (is_block_scaled) {
+        auto& ws = gemm_workspace_.block_scales.value();
+        auto const& block_scale_desc = desc.block_scales.value();
+        if (block_scale_desc.SFD.element != library::NumericTypeID::kVoid) {
+          disposition = compare_tensors(
+            options,
+            *ws.SFD_ptr_array_host[group_idx],
+            *ws.SFD_reference_ptr_array_host[group_idx],
+            ws.SFD_ptr_array_host[group_idx]->batch_stride());
+          if (disposition != Disposition::kPassed) {
+            break;
+          }
+        }
+      }
     }
     if (status != Status::kSuccess) {
-      results_.back().verification_map[provider] = Disposition::kNotRun;
+      results_.back().verification_map[provider] = Disposition::kNotVerified;
       continue;
     }
     results_.back().status = status;
     results_.back().verification_map[provider] = disposition;
 
-    // Save workspace if incorrect
     if (
       options.verification.save_workspace == SaveWorkspace::kIncorrect &&
       results_.back().verification_map[provider] == Disposition::kIncorrect) {
-
-      save_workspace(device_context, options, gemm_desc, library::Provider::kCUTLASS, provider);
+      save_workspace(device_context, options, desc, library::Provider::kCUTLASS, provider);
     }
   }
 
-  return true;
+  return true; // continue profiling
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1008,7 +1291,6 @@ Status GroupedGemmOperationProfiler::profile_cutlass_(
   void* host_workspace,
   void* device_workspace) {
 
-  // initialize gemm underlying operation to handle parallel reduction
   library::Operation const* underlying_operation = operation;
 
   auto func = [&](cudaStream_t stream, int iteration) {

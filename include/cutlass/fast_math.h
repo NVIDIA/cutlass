@@ -39,12 +39,7 @@
 #include <type_traits>
 #endif
 #if !defined(__QNX__)
-#include <cuda/std/version>
-#if defined(_MSC_VER) && defined(CCCL_VERSION) && CCCL_VERSION >= 2008000
-#include <cuda/std/__utility/swap.h>
-#else
 #include <cuda/std/utility>
-#endif
 #endif
 #include "cutlass/cutlass.h"
 #include "cutlass/array.h"
