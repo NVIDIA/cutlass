@@ -336,6 +336,21 @@ struct MainloopSm90ArrayTmaGmmaWarpSpecialized {
     "KernelSchedule must be one of the Ptr-Array or Grouped Gemm TMA Warp Specialized Cooperative or Pingpong policies");
 };
 
+// n-buffer in smem (Hopper TMA), pipelined with Hopper GMMA and TMA, Warp specialized dynamic schedule for Ptr-Array and Grouped Gemm
+// For FP8 kernels
+template<
+  int Stages_,
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class KernelSchedule = KernelPtrArrayTmaWarpSpecializedCooperative
+>
+struct MainloopSm90ArrayTmaGmmaWarpSpecializedFP8
+  : MainloopSm90ArrayTmaGmmaWarpSpecialized<Stages_, ClusterShape_, KernelSchedule> {
+  static_assert(
+    cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedCooperative, KernelSchedule> ||
+    cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedPingpong, KernelSchedule>,
+    "KernelSchedule must be one of the Ptr-Array or Grouped Gemm TMA Warp Specialized Cooperative or Pingpong policies");
+};
+
 // n-buffer in smem (Hopper TMA), pipelined with Hopper sparse GMMA and TMA, Warp specialized dynamic schedule
 template<
   int Stages_,
