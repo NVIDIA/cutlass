@@ -900,9 +900,9 @@ GemmKindNames = {
   GemmKind.PlanarComplex: "gemm_planar_complex",
   GemmKind.PlanarComplexArray: "gemm_planar_complex_array",
   GemmKind.Grouped: "gemm_grouped",
-  GemmKind.BlockScaledUniversal3x: "gemm_block_scaled",
+  GemmKind.BlockScaledUniversal3x: "gemm",
   GemmKind.GroupedUniversal3x: "gemm_grouped",
-  GemmKind.GroupedBlockScaledUniversal3x: "gemm_grouped_block_scaled"
+  GemmKind.GroupedBlockScaledUniversal3x: "gemm_grouped"
 }
 
 #
