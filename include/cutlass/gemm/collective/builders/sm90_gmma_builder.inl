@@ -234,8 +234,6 @@ struct CollectiveBuilder<
                                                                    KernelPtrArrayTmaWarpSpecializedCooperative,
                                                                    KernelPtrArrayTmaWarpSpecializedPingpong>);
   static constexpr bool IsFP8Input = detail::is_input_fp8<ElementA, ElementB>();
-  static_assert(!IsFP8Input || (IsFP8Input && !IsArrayOfPointersGemm),
-                "KernelPtrArrayTmaWarpSpecialized[Cooperative|Pingpong] is only compatible with FP8 FastAccum version right now.");
 
   // For fp32 types, map to tf32 MMA value type
   using ElementAMma = cute::conditional_t<cute::is_same_v<ElementA, float>, tfloat32_t, ElementA>;
@@ -267,12 +265,17 @@ struct CollectiveBuilder<
 
   static constexpr int PipelineStages = detail::compute_stage_count_or_override<Sm90ReducedSmemCapacityBytes,
       ElementAMma, ElementBMma, TileShape_MNK>(StageCountType{});
+  /* For FP8 use a separate mainloop compared to other datatypes */
   using DispatchPolicy = cute::conditional_t<IsArrayOfPointersGemm,
-      MainloopSm90ArrayTmaGmmaWarpSpecialized<PipelineStages, ClusterShape_MNK, KernelScheduleType>,
-      /* For FP8 use a separate mainloop compared to other datatypes */
+      cute::conditional_t<IsFP8Input,
+          MainloopSm90ArrayTmaGmmaWarpSpecializedFP8<PipelineStages, ClusterShape_MNK, KernelScheduleType>,
+          MainloopSm90ArrayTmaGmmaWarpSpecialized<PipelineStages, ClusterShape_MNK, KernelScheduleType>
+      >,
       cute::conditional_t<IsFP8Input,
           MainloopSm90TmaGmmaWarpSpecializedFP8<PipelineStages, ClusterShape_MNK, KernelScheduleType>,
-          MainloopSm90TmaGmmaWarpSpecialized<PipelineStages, ClusterShape_MNK, KernelScheduleType>>>;
+          MainloopSm90TmaGmmaWarpSpecialized<PipelineStages, ClusterShape_MNK, KernelScheduleType>
+      >
+  >;
 
   using SmemCopyAtomA = void;
   using SmemCopyAtomB = void;

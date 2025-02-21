@@ -204,9 +204,6 @@ protected:
       fusion_args.beta_ptr = nullptr;
       fusion_args.alpha_ptr_array = nullptr;
       fusion_args.beta_ptr_array = nullptr;
-      // Single alpha and beta for all groups
-      fusion_args.dAlpha = {cute::_0{}, cute::_0{}, 0};
-      fusion_args.dBeta = {cute::_0{}, cute::_0{}, 0};
 
       return Status::kSuccess;
     }
@@ -215,6 +212,8 @@ protected:
       fusion_args.beta = 0;
       fusion_args.alpha_ptr = static_cast<ElementCompute const*>(arguments.alpha);
       fusion_args.beta_ptr = static_cast<ElementCompute const*>(arguments.beta);
+      fusion_args.alpha_ptr_array = nullptr;
+      fusion_args.beta_ptr_array = nullptr;
       return Status::kSuccess;
     }
     else {
