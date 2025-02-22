@@ -49,7 +49,14 @@ template <typename T>
 struct has_negative_zero : std::false_type {};
 
 // Float types that support negative zero
-// Note that this is false for float8_e4m3_t and float8_e5m2_t
+template <> struct has_negative_zero<mx_float4_t<float_e2m1_t>> : std::true_type {};
+template <> struct has_negative_zero<mx_float6_t<float_e2m3_t>> : std::true_type {};
+template <> struct has_negative_zero<mx_float8_t<float_e4m3_t>> : std::true_type {};
+template <> struct has_negative_zero<mx_float8_t<float_e5m2_t>> : std::true_type {};
+template <> struct has_negative_zero<float_e2m1_t> : std::true_type {};
+template <> struct has_negative_zero<float_e2m3_t> : std::true_type {};
+template <> struct has_negative_zero<float_e4m3_t> : std::true_type {};
+template <> struct has_negative_zero<float_e5m2_t> : std::true_type {};
 template <> struct has_negative_zero<half_t> : std::true_type {};
 template <> struct has_negative_zero<bfloat16_t> : std::true_type {};
 template <> struct has_negative_zero<float> : std::true_type {};

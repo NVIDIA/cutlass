@@ -28,6 +28,7 @@
 
 add_subdirectory(threadblock)
 add_subdirectory(kernel)
+add_subdirectory(device)
 
 add_custom_target(
   cutlass_test_unit_transform
