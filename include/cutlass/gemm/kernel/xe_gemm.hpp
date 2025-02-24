@@ -132,8 +132,8 @@ public:
   struct Params {
     GemmUniversalMode mode;
     ProblemShape problem_shape;
-    TensorMK mA_mk;
-    TensorNK mB_nk;
+    TensorMKL mA_mkl;
+    TensorNKL mB_nkl;
     MainloopParams mainloop;
     EpilogueParams epilogue;
   };
@@ -150,15 +150,11 @@ public:
 
     auto mainloop_args = CollectiveMainloop::to_underlying_arguments(args.problem_shape, args.mainloop, workspace);
 
-    auto l_coord = BlockIdxZ();
-    Tensor mA_mk = mainloop_args.mA(_,_,l_coord);
-    Tensor mB_nk = mainloop_args.mB(_,_,l_coord);
-
     return {
       args.mode,
       args.problem_shape,
-      mA_mk,
-      mB_nk,
+      mainloop_args.mA,
+      mainloop_args.mB,
       mainloop_args,
       CollectiveEpilogue::to_underlying_arguments(args.problem_shape, args.epilogue, workspace)
     };
@@ -253,8 +249,8 @@ public:
     constexpr auto workgroup_shape = WorkgroupTileShape{};                                                  // (SUB_M,SUB_N,SUB_K)
     constexpr auto subgroup_shape = SubgroupTileShape{};                   
 
-    auto gA = local_tile(params.mA_mk, blk_shape, take<0, 3>(blk_coord_mnkl), Step<_1,  X, _1>{});
-    auto gB = local_tile(params.mB_nk, blk_shape, take<0, 3>(blk_coord_mnkl), Step< X, _1, _1>{});
+    auto gA = local_tile(params.mA_mkl(_,_,l_coord), blk_shape, take<0, 3>(blk_coord_mnkl), Step<_1,  X, _1>{});
+    auto gB = local_tile(params.mB_nkl(_,_,l_coord), blk_shape, take<0, 3>(blk_coord_mnkl), Step< X, _1, _1>{});
 
     // Compute tile residues for predication
     auto m_max_coord = M - get<0>(subgroup_shape) * m_coord;                             // M - SUB_M * m_coord
