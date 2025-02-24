@@ -232,11 +232,8 @@ auto initialize_metadata(
 
   num_sm_parts = sm_count / options.h_kv / cutlass::ceil_div(options.h_kv, block_size_m);
 
-  printf("sm_count: %d, h_kv: %d, block_size_m: %d, num_sm_parts: %d\n", 
-         sm_count, options.h_kv, block_size_m, num_sm_parts);
-
   block_MD.resize(num_sm_parts * TileSchedulerMetaDataSize);
-  block_S.resize(num_sm_parts);
+  block_S.resize(options.b + 1);
 
   Mla_metadata_params params{};
   params.seqlens_k_ptr = block_C.data().get();
