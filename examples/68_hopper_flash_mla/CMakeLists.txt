@@ -30,7 +30,7 @@
 # Sparse kernel in this example triggers an ICE in gcc 7.5
 if (NOT (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8.0))
 cutlass_example_add_executable(
-  79_hopper_flash_mla
-  79_hopper_flash_mla.cu
+  68_hopper_flash_mla
+  68_hopper_flash_mla.cu
   )
 endif()
