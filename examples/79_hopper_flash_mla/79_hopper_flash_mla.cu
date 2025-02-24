@@ -287,8 +287,13 @@ struct TestBed {
     blocks_per_seq = max_seqlen_pad / options.block_size;
     total_blocks = options.b * blocks_per_seq;
 
+    // Query: [b, s_q, h_q, d]
     block_Q.resize(options.b * options.s_q * options.h_q * options.d);
+
+    // Block table: [b, max_num_blocks_per_seq]
     block_T.resize(total_blocks);
+
+    // Key: [b, max_num_blocks_per_seq, block_size, h_kv, d]
     block_K.resize(total_blocks * options.block_size * options.h_kv * options.d);
 
     initialize_values(block_Q, cutlass::Distribution::Gaussian, seed + 1);
@@ -299,11 +304,18 @@ struct TestBed {
 
     initialize_metadata(block_C, block_MD, block_S, num_sm_parts, options);
 
-    block_LSE.resize(options.b * options.s_q * options.h_q);
-    block_O.resize(options.b * options.s_q * options.h_q * options.dv);
+    int ngroups = options.h_q / options.h_kv;
+    int num_heads = options.h_kv;
+    int seqlen_q = options.s_q * ngroups;
 
-    auto softmax_lse_size = (options.b + num_sm_parts) * options.s_q * options.h_q;
-    auto out_accum_size = (options.b + num_sm_parts) * options.s_q * options.h_q * options.dv;
+    // LSE: [batch_size, num_heads, seqlen_q]
+    block_LSE.resize(options.b * num_heads * seqlen_q);
+
+    // Output: [batch_size, seqlen_q, num_heads, head_size_v]
+    block_O.resize(options.b * seqlen_q * num_heads * options.dv);
+
+    auto softmax_lse_size = (options.b + num_sm_parts) * num_heads * seqlen_q;
+    auto out_accum_size = (options.b + num_sm_parts) * num_heads * seqlen_q * options.dv;
 
     block_LSE_Accum.resize(softmax_lse_size);
     block_O_Accum.resize(out_accum_size);
@@ -343,6 +355,9 @@ struct TestBed {
     int seqlen_q = seqlen_q_ori * ngroups;
     int num_heads = num_heads_k;
 
+    // TODO: preprocess the query
+    // q = q.view({batch_size, seqlen_q_ori, num_heads_k, ngroups, head_size}).transpose(2, 3).reshape({batch_size, seqlen_q, num_heads, head_size});
+
     cudaStream_t stream{nullptr};
 
     // set the parameters
@@ -363,12 +378,12 @@ struct TestBed {
     kernel_params.o_ptr = block_O.data().get();
     kernel_params.softmax_lse_ptr = block_LSE.data().get();
 
-    kernel_params.q_batch_stride = options.s_q * options.h_q * options.d;
+    kernel_params.q_batch_stride = seqlen_q * num_heads * options.d;
     kernel_params.k_batch_stride = page_block_size * options.h_kv * options.d;
     kernel_params.v_batch_stride = page_block_size * options.h_kv * options.dv;
     kernel_params.o_batch_stride = options.s_q * options.h_q * options.dv;
 
-    kernel_params.q_row_stride = options.h_q * options.d;
+    kernel_params.q_row_stride = num_heads * options.d;
     kernel_params.k_row_stride = options.h_kv * options.d;
     kernel_params.v_row_stride = options.h_kv * options.dv;
     kernel_params.o_row_stride = options.h_q * options.dv;
@@ -400,6 +415,12 @@ struct TestBed {
     run_mha_fwd_splitkv_mla<cutlass::bfloat16_t, 576>(kernel_params, stream);
 
     CUDA_CHECK(cudaDeviceSynchronize());
+
+    // TODO: postprocess the output
+    // out = out.view({batch_size, seqlen_q_ori, ngroups, num_heads_k, head_size_v}).transpose(2, 3)
+    //         .reshape({batch_size, seqlen_q_ori, num_heads_ori, head_size_v});
+    // softmax_lse = softmax_lse.view({batch_size, num_heads_k, seqlen_q_ori, ngroups}).transpose(2, 3)
+    //         .reshape({batch_size, num_heads_ori, seqlen_q_ori});
 
     // TODO: reference check
 
