@@ -491,7 +491,7 @@ This is clearly just a copy of `A`.
 
 > the second mode is the layout `B` but with each element replaced by a "unique replication" of layout `A`.
 
-The "unique replication" of layout `A` sounds like complement, `A*`, up to the cosize of `B`. As we've seen in the `complement` section, this can be described as the "layout of the repetition of `A`". If `A` is the "tile", then `A*` is the layout of repetitions that are available for `B`.
+The "unique replication" of layout `A` sounds like complement, `A*`, up to the cosize of `B`. As we've seen in the `complement` section, this can be described as the "layout of the repetition of `A`". If `A` is the "tile", then `A* o B` is the layout of repetitions that are available for `B`.
 
 ### Logical Product 1-D Example
 
