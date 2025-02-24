@@ -33,7 +33,7 @@ else()
   add_custom_target(test_unit)
 endif()
 
-if (CUTLASS_ENABLE_SELF_CONTAINED_INCLUDES_CHECK)
+if (CUTLASS_ENABLE_SELF_CONTAINED_INCLUDES_CHECK AND NOT CUTLASS_ENABLE_SYCL)
   add_subdirectory(self_contained_includes)
 endif()
 

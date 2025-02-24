@@ -189,7 +189,7 @@ public:
   CUTLASS_DEVICE
   void scale_if_needed(ElementAccumulator const &scale) {
     mma_count_ += mma_count_per_mainloop_iteration_;
-    reset_accum_flag_ = __shfl_sync(0xffffffff, mma_count_ == accum_promotion_interval_, 0);
+    reset_accum_flag_ = shfl_sync(0xffffffff, mma_count_ == accum_promotion_interval_, 0);
     if (reset_accum_flag_) {
       scale_core(scale);
       mma_count_ = 0;
@@ -217,7 +217,7 @@ public:
   CUTLASS_DEVICE
   void scale_if_needed(const cute::Tensor<EngineScaleA, LayoutScaleA> &scaleA, const cute::Tensor<EngineScaleB, LayoutScaleB> &scaleB) {
     mma_count_ += mma_count_per_mainloop_iteration_;
-    reset_accum_flag_ = __shfl_sync(0xffffffff, mma_count_ == accum_promotion_interval_, 0);
+    reset_accum_flag_ = shfl_sync(0xffffffff, mma_count_ == accum_promotion_interval_, 0);
     if (reset_accum_flag_) {
       scale_core(scaleA, scaleB);
       mma_count_ = 0;
@@ -227,7 +227,7 @@ public:
   /// scale (multiply_add) the residue results from the MMA accumulators to main accumulator if needed.
   CUTLASS_DEVICE
   void scale_residue_if_needed(ElementAccumulator const &scale) {
-    if (__shfl_sync(0xffffffff, mma_count_ > 0, 0)) {
+    if (shfl_sync(0xffffffff, mma_count_ > 0, 0)) {
       scale_core(scale);
     }
   }
@@ -249,7 +249,7 @@ public:
     class LayoutScaleB>
   CUTLASS_DEVICE
   void scale_residue_if_needed(const cute::Tensor<EngineScaleA, LayoutScaleA> &scaleA, const cute::Tensor<EngineScaleB, LayoutScaleB> &scaleB) {
-    if (__shfl_sync(0xffffffff, mma_count_ > 0, 0)) {
+    if (shfl_sync(0xffffffff, mma_count_ > 0, 0)) {
       scale_core(scaleA, scaleB);
     }
   }
