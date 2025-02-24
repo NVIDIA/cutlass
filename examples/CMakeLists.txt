@@ -146,6 +146,7 @@ foreach(EXAMPLE
   64_ada_fp8_gemm_grouped
   65_distributed_gemm
   67_hopper_fp8_warp_specialized_gemm_with_blockwise_scaling
+  68_hopper_flash_mla
   69_hopper_mixed_dtype_grouped_gemm
   70_blackwell_gemm                             
   71_blackwell_gemm_with_collective_builder     
