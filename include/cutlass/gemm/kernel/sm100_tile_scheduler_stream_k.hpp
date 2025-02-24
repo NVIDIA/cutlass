@@ -783,7 +783,6 @@ private:
       int L_idx, Split_idx;
       params_.sk_params_.divmod_splits_(L_idx, Split_idx, work_tile_info.L_idx);
 
-      // TODO: Modularize the SM90 scheduler to pull out and reuse this redundant code
       int additional_k_tiles = 0;
       int split_start_offset = params_.sk_params_.big_units_;
 

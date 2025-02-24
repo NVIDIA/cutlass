@@ -47,7 +47,7 @@ function(cutlass_generate_kernel_filter_and_testlists_files)
     COMMAND ${CMAKE_COMMAND} -E env PYTHONPATH=${CUTLASS_LIBRARY_PACKAGE_DIR}
       ${Python3_EXECUTABLE} ${CUTLASS_SOURCE_DIR}/python/cutlass_library/generator.py 
       --generator-target=${__TEST_SET_NAME} 
-      --cuda-version=${CUTLASS_GENERATOR_CUDA_COMPILER_VERSION}
+      --cuda-version=${CUDA_VERSION_MAJOR}.${CUDA_VERSION_MINOR}
       --architectures=${CUTLASS_NVCC_ARCHS}
       --kernels=\*
       --disable-cutlass-package-imports

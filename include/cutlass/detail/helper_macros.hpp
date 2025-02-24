@@ -63,7 +63,7 @@
 #if ! defined(_MSC_VER)
 #define CUTLASS_LAMBDA_FUNC_INLINE __attribute__((always_inline))
 #else
-#define CUTLASS_LAMBDA_FUNC_INLINE
+#define CUTLASS_LAMBDA_FUNC_INLINE [[msvc::forceinline]]
 #endif
 
 #if defined(CUTLASS_ENABLE_SYCL)

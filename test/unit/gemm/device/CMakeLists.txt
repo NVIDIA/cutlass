@@ -83,12 +83,8 @@ endfunction()
 
 ################################################################################
 
-
 add_subdirectory(sm100_blockscaled_tensorop_gemm)
 add_subdirectory(sm100_tensorop_gemm)
-
-
-
 cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_simt
 
@@ -865,7 +861,7 @@ endif()
 
 
 
-if(NOT CUTLASS_NVCC_ARCHS STREQUAL "100")
+if (CUTLASS_NVCC_ARCHS MATCHES 100a)
 
 cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_16b_tensorop_sm100_ptr_array

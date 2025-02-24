@@ -220,10 +220,12 @@ void gett_mainloop(
   int64_t block_m = m / kBlockM;
   int64_t block_n = n / kBlockN;
   cute::Tensor blockscale_A = mainloop_params.ScaleA(block_m, _, _, l);
-  cute::Tensor blockscale_B = mainloop_params.ScaleB(block_n, _, l);
+  cute::Tensor blockscale_B = mainloop_params.ScaleB(block_n, _, _, l);
 
   const int ScaleGranularityM = cute::size<0>(typename MainloopParams::TileShape{}) / cute::size<1>(mainloop_params.ScaleA.shape());
-  assert(cute::size<0>(typename MainloopParams::TileShape{}) == ScaleGranularityM * cute::size<1>(mainloop_params.ScaleA.shape())); 
+  const int ScaleGranularityN = cute::size<1>(typename MainloopParams::TileShape{}) / cute::size<1>(mainloop_params.ScaleB.shape());
+  assert(cute::size<0>(typename MainloopParams::TileShape{}) == ScaleGranularityM * cute::size<1>(mainloop_params.ScaleA.shape()));
+  assert(cute::size<1>(typename MainloopParams::TileShape{}) == ScaleGranularityN * cute::size<1>(mainloop_params.ScaleB.shape()));
 
   // Compute on this k-block
   for (int64_t k = 0; k < cute::size<1>(mainloop_params.A.layout()); ++k) {
@@ -231,7 +233,7 @@ void gett_mainloop(
     // Load Blockwise scaling factor from blockscale Tensors for B
     int64_t block_k = k / kBlockK;
     cute::Tensor scale_a = blockscale_A(_, block_k);
-    ElementBlockScaleB scale_b = blockscale_B[block_k];
+    cute::Tensor scale_b = blockscale_B(_, block_k);
 
     // Load A
     ElementAccumulator a_frag[kBlockM];
@@ -268,8 +270,10 @@ void gett_mainloop(
     // (c) Update permanent (accu)
     if ((k+1) % kBlockK == 0) {
       for (int m_b = 0; m_b < kBlockM; ++m_b) {
+        auto scale_a_m_b = scale_a[m_b / ScaleGranularityM];
         for (int n_b = 0; n_b < kBlockN; ++n_b) {
-          ElementAccumulator blockwise_scaled_accum = acc_temp[m_b][n_b] * scale_a[m_b / ScaleGranularityM] * scale_b;
+          auto scale_b_n_b = scale_b[n_b / ScaleGranularityN];
+          ElementAccumulator blockwise_scaled_accum = acc_temp[m_b][n_b] * scale_a_m_b * scale_b_n_b;
           acc[m_b][n_b] = blockwise_scaled_accum + acc[m_b][n_b];
           acc_temp[m_b][n_b] = ElementAccumulator(0); 
         }

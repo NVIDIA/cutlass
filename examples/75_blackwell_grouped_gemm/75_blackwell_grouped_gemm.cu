@@ -121,32 +121,25 @@ using StageCountType = cutlass::gemm::collective::StageCountAuto;           // S
 
 // Runtime Cluster Shape
 using ClusterShape = Shape<int32_t,int32_t,_1>;
-// For Static Cluster Shape: 
-// using ClusterShape    = Shape<_2,_1,_1>; // for example
-// using AtomThrShape    = decltype(shape_div(ClusterShape{}, Shape<_2,_1,_1>{}));    // for 2SM config
-// using OutputTileShape = decltype(shape_div(ClusterTileShape{}, ClusterShape{}));   // for epilogue builder
-// using MmaTileShape    = decltype(shape_div(ClusterTileShape{}, AtomThrShape{}));   // for mainloop builder
 
 // Different configs for 1SM and 2SM MMA kernel
 struct MMA1SMConfig {
   using MmaTileShape     = Shape<_128,_256,Int<128 / sizeof(ElementA)>>;
   using KernelSchedule   = cutlass::gemm::KernelPtrArrayTmaWarpSpecialized1SmSm100;   // Kernel to launch
   using EpilogueSchedule = cutlass::epilogue::PtrArrayTmaWarpSpecialized1Sm;          // Epilogue to launch
-  using OutputTileShape  = decltype(shape_div(MmaTileShape{}, Shape<_1,_1,_1>{}));
 };
 
 struct MMA2SMConfig {
   using MmaTileShape     = Shape<_256,_256,Int<128 / sizeof(ElementA)>>;
   using KernelSchedule   = cutlass::gemm::KernelPtrArrayTmaWarpSpecialized2SmSm100;   // Kernel to launch
   using EpilogueSchedule = cutlass::epilogue::PtrArrayTmaWarpSpecialized2Sm;          // Epilogue to launch
-  using OutputTileShape  = decltype(shape_div(MmaTileShape{}, Shape<_2,_1,_1>{}));
 };
 
 template <typename ScheduleConfig>
 struct GivenGemmSchedule {
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
     ArchTag, OperatorClass,
-    typename ScheduleConfig::OutputTileShape, ClusterShape,
+    typename ScheduleConfig::MmaTileShape, ClusterShape,
     cutlass::epilogue::collective::EpilogueTileAuto,
     ElementAccumulator, ElementAccumulator,
     ElementC, LayoutC *, AlignmentC,

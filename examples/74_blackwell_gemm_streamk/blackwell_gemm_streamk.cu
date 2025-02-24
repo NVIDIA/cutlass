@@ -133,22 +133,17 @@ using OperatorClass       = cutlass::arch::OpClassTensorOp;                 // O
 // MMA and Cluster Tile Shapes
 // Shape of the tile computed by tcgen05 MMA, could be across 2 SMs if Cluster Shape % 2 == 0
 using MmaTileShape_MNK = Shape<_256,_128,_64>;
-// Shape of the threadblocks participating in a tcgen05 MMA. <1, 1, 1> for cta_group = 1, <2, 1, 1> for cta_group = 2
-using AtomThrShape_MNK = Shape<_2, _1, _1>;
-// Shape of the tile computed by each SM
-using PerSmTileShape_MNK = decltype(shape_div(MmaTileShape_MNK{}, AtomThrShape_MNK{}));
 // Shape of the cluster set to <int,int,_1> to indicate dynamic cluster shape
 using ClusterShape_MNK = Shape<int,int,_1>;
-// When dynamic cluster is used, KernelScheduleAuto always selects mainloop dispatch policy that
+// When dynamic cluster is used, KernelScheduleAuto always selects mainloop dispatch policy that 
 // lowers to tcgen05 MMA cta_group = 1 as we don't know if the dynamic cluster M dimension will be a multiple of 2
-// To use KernelScheduleAuto, users need to set AtomThrShape_MNK to Shape<1, 1, 1>
-using KernelSchedule = cute::conditional_t<cute::size(AtomThrShape_MNK{}) == 2,
-  cutlass::gemm::KernelTmaWarpSpecialized2SmSm100,
-  cutlass::gemm::collective::KernelScheduleAuto>;
+// To use tcgen05 MMA cta_group = 2, users must explicitly use 2sm builder schedules
+using KernelSchedule = cutlass::gemm::KernelTmaWarpSpecialized2SmSm100;
+using EpilogueSchedule = cutlass::epilogue::TmaWarpSpecialized2Sm;
 
 using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
     ArchTag, OperatorClass,
-    PerSmTileShape_MNK, ClusterShape_MNK,
+    MmaTileShape_MNK, ClusterShape_MNK,
     cutlass::epilogue::collective::EpilogueTileAuto,
     ElementAccumulator, ElementAccumulator,
     ElementC, LayoutC, AlignmentC,
