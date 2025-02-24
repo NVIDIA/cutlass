@@ -97,25 +97,26 @@ struct Options {
   // Parses the command line
   void parse(int argc, char const **args) {
     cutlass::CommandLine cmd(argc, args);
+    Options defaults;
 
     if (cmd.check_cmd_line_flag("help")) {
       help = true;
       return;
     }
 
-    cmd.get_cmd_line_argument("b", b);
-    cmd.get_cmd_line_argument("s", s);
-    cmd.get_cmd_line_argument("h_q", h_q);
-    cmd.get_cmd_line_argument("s_q", s_q);
-    cmd.get_cmd_line_argument("h_kv", h_kv);
-    cmd.get_cmd_line_argument("d", d);
-    cmd.get_cmd_line_argument("dv", dv);
+    cmd.get_cmd_line_argument("b", b, defaults.b);
+    cmd.get_cmd_line_argument("s", s, defaults.s);
+    cmd.get_cmd_line_argument("h_q", h_q, defaults.h_q);
+    cmd.get_cmd_line_argument("s_q", s_q, defaults.s_q);
+    cmd.get_cmd_line_argument("h_kv", h_kv, defaults.h_kv);
+    cmd.get_cmd_line_argument("d", d, defaults.d);
+    cmd.get_cmd_line_argument("dv", dv, defaults.dv);
 
     if (cmd.check_cmd_line_flag("varlen")) {
       varlen = true;
     }
 
-    cmd.get_cmd_line_argument("iterations", iterations);
+    cmd.get_cmd_line_argument("iterations", iterations, defaults.iterations);
 
     softmax_scale = 1 / std::sqrt(d);
   }
@@ -247,150 +248,156 @@ auto initialize_metadata(
   get_mla_metadata_func(params, stream);
 }
 
-using Element = cutlass::bfloat16_t;
-using ElementAcc = float;
+struct TestBed {
+  using Element = cutlass::bfloat16_t;
+  using ElementAcc = float;
 
-thrust::universal_vector<Element> block_Q;     // query
-thrust::universal_vector<Element> block_K;     // blocked key
-thrust::universal_vector<int32_t> block_T;     // block table
-thrust::universal_vector<int32_t> block_C;     // cache seqlens
-// TODO: block_V is not used in the example
-// thrust::universal_vector<Element> block_V;     // dv
-thrust::universal_vector<int32_t> block_MD;    // mla metadata
-thrust::universal_vector<int32_t> block_S;     // num splits
-thrust::universal_vector<ElementAcc> block_O;    // output
-thrust::universal_vector<ElementAcc> block_LSE;  // lse
-
-/// Initialize operands to be used in the GEMM and reference GEMM
-void initialize(
-  const Options &options,
-  int& total_blocks, int& blocks_per_seq, int& max_seqlen_pad, int& num_sm_parts,
-  uint64_t seed = 2025) {
-
-  initialize_varlen(block_C, options);
-  
-  thrust::device_ptr<int32_t> d_ptr(block_C.data().get());
-  
-  int64_t total_seqlens = thrust::reduce(d_ptr, d_ptr + options.b);
-  float sum = static_cast<float>(total_seqlens);
-  int32_t mean_seqlens = static_cast<int32_t>(sum / options.b);
-  int32_t max_seqlen = thrust::reduce(d_ptr, d_ptr + options.b, 
-                                      0, 
-                                      thrust::maximum<int32_t>());
-  max_seqlen_pad = ((max_seqlen + 255) / 256) * 256;
-
-  blocks_per_seq = max_seqlen_pad / options.block_size;
-  total_blocks = options.b * blocks_per_seq;
-
-  block_Q.resize(options.b * options.s_q * options.h_q * options.d);
-  block_T.resize(total_blocks);
-  block_K.resize(total_blocks * options.block_size * options.h_kv * options.d);
-
-  initialize_values(block_Q, cutlass::Distribution::Gaussian, seed + 1);
-  initialize_values(block_T, cutlass::Distribution::Sequential, seed + 3);
-  initialize_values(block_K, cutlass::Distribution::Gaussian, seed + 5);
-
-  // TODO: Set the exceeding part to NaN
-
-  initialize_metadata(block_C, block_MD, block_S, num_sm_parts, options);
-
-  auto softmax_lse_size = (options.b + num_sm_parts) * options.s_q * options.h_q;
-  auto out_accum_size = (options.b + num_sm_parts) * options.s_q * options.h_q * options.dv;
-
-  block_LSE.resize(softmax_lse_size);
-  block_O.resize(out_accum_size);
-}
-
-/// Execute a given example Flash MLA computation
-int run(Options &options)
-{
-  cudaDeviceProp props;
-  int current_device;
-  CUDA_CHECK(cudaGetDevice(&current_device));
-  CUDA_CHECK(cudaGetDeviceProperties(&props, current_device));
-
-  // TODO: use vcache which is None in the example
-
-  auto& cache = block_K;
-  auto batch_size = options.b;
-  auto seqlen_q_ori = options.s_q;
-  auto num_heads_ori = options.h_q;
-  auto head_size = options.d;
-  auto head_size_v = options.dv;
-  auto num_heads_k = options.h_kv;
-  int total_blocks, max_num_blocks_per_seq, page_block_size;
-  int num_sm_parts;
-
-  assert(head_size % 8 == 0);
-  assert(head_size_v % 32 == 0);
-
-  initialize(options, total_blocks, max_num_blocks_per_seq, page_block_size, num_sm_parts);
-
-  assert(batch_size > 0);
-  assert(num_heads_ori % num_heads_k == 0);
-
-  bool is_causal = seqlen_q_ori == 1 ? false : options.causal;
-
-  int ngroups = num_heads_ori / num_heads_k;
-  int seqlen_q = seqlen_q_ori * ngroups;
-  int num_heads = num_heads_k;
-
-  cudaStream_t stream{nullptr};
-
-  // set the parameters
-  Flash_fwd_mla_params kernel_params{};
-
-  kernel_params.b = options.b;
-  kernel_params.seqlen_q = options.s_q;
-  kernel_params.d = options.d;
-  kernel_params.d_v = options.dv;
-  kernel_params.h = options.h_q;
-  kernel_params.h_h_k_ratio = num_heads_ori / num_heads_k;
-  kernel_params.ngroups = ngroups;
-
-  kernel_params.q_ptr = block_Q.data().get();
-  kernel_params.k_ptr = block_K.data().get();
+  thrust::universal_vector<Element> block_Q;     // query
+  thrust::universal_vector<Element> block_K;     // blocked key
+  thrust::universal_vector<int32_t> block_T;     // block table
+  thrust::universal_vector<int32_t> block_C;     // cache seqlens
   // TODO: block_V is not used in the example
-  kernel_params.v_ptr = block_K.data().get();
-  kernel_params.o_ptr = block_O.data().get();
-  kernel_params.softmax_lse_ptr = block_LSE.data().get();
+  // thrust::universal_vector<Element> block_V;     // dv
+  thrust::universal_vector<int32_t> block_MD;    // mla metadata
+  thrust::universal_vector<int32_t> block_S;     // num splits
+  thrust::universal_vector<ElementAcc> block_O;    // output
+  thrust::universal_vector<ElementAcc> block_LSE;  // lse
 
-  kernel_params.q_batch_stride = options.s_q * options.h_q * options.d;
-  kernel_params.k_batch_stride = page_block_size * options.h_kv * options.d;
-  kernel_params.v_batch_stride = page_block_size * options.h_kv * options.dv;
-  kernel_params.o_batch_stride = options.s_q * options.h_q * options.dv;
+  /// Initialize operands to be used in the GEMM and reference GEMM
+  void initialize(
+    const Options &options,
+    int& total_blocks, int& blocks_per_seq, int& num_sm_parts,
+    uint64_t seed = 2025) {
 
-  kernel_params.q_row_stride = options.h_q * options.d;
-  kernel_params.k_row_stride = options.h_kv * options.d;
-  kernel_params.v_row_stride = options.h_kv * options.dv;
-  kernel_params.o_row_stride = options.h_q * options.dv;
+    initialize_varlen(block_C, options);
 
-  kernel_params.q_head_stride = options.d;
-  kernel_params.k_head_stride = options.d;
-  kernel_params.v_head_stride = options.dv;
-  kernel_params.o_head_stride = options.dv; 
+    thrust::device_ptr<int32_t> d_ptr(block_C.data().get());
 
-  kernel_params.block_table = block_T.data().get();
-  kernel_params.block_table_batch_stride = max_num_blocks_per_seq;
-  kernel_params.page_block_size = page_block_size;
+    int64_t total_seqlens = thrust::reduce(d_ptr, d_ptr + options.b);
+    float sum = static_cast<float>(total_seqlens);
+    int32_t mean_seqlens = static_cast<int32_t>(sum / options.b);
+    int32_t max_seqlen = thrust::reduce(d_ptr, d_ptr + options.b, 
+                                        0, 
+                                        thrust::maximum<int32_t>());
+    int max_seqlen_pad = ((max_seqlen + 255) / 256) * 256;
 
-  kernel_params.tile_scheduler_metadata_ptr = block_MD.data().get();
-  kernel_params.num_splits_ptr = block_S.data().get(); 
+    blocks_per_seq = max_seqlen_pad / options.block_size;
+    total_blocks = options.b * blocks_per_seq;
 
-  kernel_params.softmax_lseaccum_ptr = block_LSE.data().get();
-  kernel_params.oaccum_ptr = block_O.data().get();
+    block_Q.resize(options.b * options.s_q * options.h_q * options.d);
+    block_T.resize(total_blocks);
+    block_K.resize(total_blocks * options.block_size * options.h_kv * options.d);
 
-  kernel_params.is_causal = is_causal;
-  kernel_params.scale_softmax = options.softmax_scale;
-  kernel_params.scale_softmax_log2 = std::log2(options.softmax_scale);
+    initialize_values(block_Q, cutlass::Distribution::Gaussian, seed + 1);
+    initialize_values(block_T, cutlass::Distribution::Sequential, seed + 3);
+    initialize_values(block_K, cutlass::Distribution::Gaussian, seed + 5);
 
-  kernel_params.cu_seqlens_k = block_C.data().get();
+    // TODO: Set the exceeding part to NaN
 
-  assert(head_size == 576);
-  run_mha_fwd_splitkv_mla<cutlass::bfloat16_t, 576>(kernel_params, stream);
+    initialize_metadata(block_C, block_MD, block_S, num_sm_parts, options);
 
-  // TODO: reference check
-}
+    auto softmax_lse_size = (options.b + num_sm_parts) * options.s_q * options.h_q;
+    auto out_accum_size = (options.b + num_sm_parts) * options.s_q * options.h_q * options.dv;
+
+    block_LSE.resize(softmax_lse_size);
+    block_O.resize(out_accum_size);
+  }
+
+  /// Execute a given example Flash MLA computation
+  void run(Options &options)
+  {
+    cudaDeviceProp props;
+    int current_device;
+    CUDA_CHECK(cudaGetDevice(&current_device));
+    CUDA_CHECK(cudaGetDeviceProperties(&props, current_device));
+
+    // TODO: use vcache which is None in the example
+
+    auto batch_size = options.b;
+    auto seqlen_q_ori = options.s_q;
+    auto num_heads_ori = options.h_q;
+    auto head_size = options.d;
+    auto head_size_v = options.dv;
+    auto num_heads_k = options.h_kv;
+    auto page_block_size = options.block_size;
+    int total_blocks, max_num_blocks_per_seq;
+    int num_sm_parts;
+
+    assert(head_size % 8 == 0);
+    assert(head_size_v % 32 == 0);
+
+    initialize(options, total_blocks, max_num_blocks_per_seq, num_sm_parts);
+
+    assert(batch_size > 0);
+    assert(num_heads_ori % num_heads_k == 0);
+
+    bool is_causal = seqlen_q_ori == 1 ? false : options.causal;
+
+    int ngroups = num_heads_ori / num_heads_k;
+    int seqlen_q = seqlen_q_ori * ngroups;
+    int num_heads = num_heads_k;
+
+    cudaStream_t stream{nullptr};
+
+    // set the parameters
+    Flash_fwd_mla_params kernel_params{};
+
+    kernel_params.b = options.b;
+    kernel_params.seqlen_q = options.s_q;
+    kernel_params.d = options.d;
+    kernel_params.d_v = options.dv;
+    kernel_params.h = options.h_q;
+    kernel_params.h_h_k_ratio = num_heads_ori / num_heads_k;
+    kernel_params.ngroups = ngroups;
+
+    kernel_params.q_ptr = block_Q.data().get();
+    kernel_params.k_ptr = block_K.data().get();
+    // TODO: block_V is not used in the example
+    kernel_params.v_ptr = block_K.data().get();
+    kernel_params.o_ptr = block_O.data().get();
+    kernel_params.softmax_lse_ptr = block_LSE.data().get();
+
+    kernel_params.q_batch_stride = options.s_q * options.h_q * options.d;
+    kernel_params.k_batch_stride = page_block_size * options.h_kv * options.d;
+    kernel_params.v_batch_stride = page_block_size * options.h_kv * options.dv;
+    kernel_params.o_batch_stride = options.s_q * options.h_q * options.dv;
+
+    kernel_params.q_row_stride = options.h_q * options.d;
+    kernel_params.k_row_stride = options.h_kv * options.d;
+    kernel_params.v_row_stride = options.h_kv * options.dv;
+    kernel_params.o_row_stride = options.h_q * options.dv;
+
+    kernel_params.q_head_stride = options.d;
+    kernel_params.k_head_stride = options.d;
+    kernel_params.v_head_stride = options.dv;
+    kernel_params.o_head_stride = options.dv; 
+
+    kernel_params.block_table = block_T.data().get();
+    kernel_params.block_table_batch_stride = max_num_blocks_per_seq;
+    kernel_params.page_block_size = page_block_size;
+
+    kernel_params.tile_scheduler_metadata_ptr = block_MD.data().get();
+    kernel_params.num_splits_ptr = block_S.data().get(); 
+
+    kernel_params.softmax_lseaccum_ptr = block_LSE.data().get();
+    kernel_params.oaccum_ptr = block_O.data().get();
+
+    kernel_params.is_causal = is_causal;
+    kernel_params.scale_softmax = options.softmax_scale;
+    kernel_params.scale_softmax_log2 = std::log2(options.softmax_scale);
+
+    kernel_params.cu_seqlens_k = block_C.data().get();
+
+    assert(head_size == 576);
+    run_mha_fwd_splitkv_mla<cutlass::bfloat16_t, 576>(kernel_params, stream);
+
+    CUDA_CHECK(cudaDeviceSynchronize());
+
+    // TODO: reference check
+
+    printf("run done\n");
+  }
+};
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -430,7 +437,8 @@ int main(int argc, char const **args) {
   //
   // Evaluate CUTLASS kernels
   //
-  run(options);
+  TestBed testbed{};
+  testbed.run(options);
 
   return 0;
 }
