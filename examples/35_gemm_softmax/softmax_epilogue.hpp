@@ -188,7 +188,7 @@ public:
 
     auto N_partials = cute::ceil_div(N, N_tile);
 
-    cute::packed_tuple partial_block(M_tile, K_tile);
+    cute::tuple partial_block(M_tile, K_tile);
 
     auto stride_c = detail::get_epilogue_stride<EpilogueSchedule>(params.dC);
     auto stride_d = detail::get_epilogue_stride<EpilogueSchedule>(params.dD);
