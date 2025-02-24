@@ -229,7 +229,11 @@ auto initialize_metadata(
 
   auto batch_size = options.b;
   int sm_count = props.multiProcessorCount;
+
   num_sm_parts = sm_count / options.h_kv / cutlass::ceil_div(options.h_kv, block_size_m);
+
+  printf("sm_count: %d, h_kv: %d, block_size_m: %d, num_sm_parts: %d\n", 
+         sm_count, options.h_kv, block_size_m, num_sm_parts);
 
   block_MD.resize(num_sm_parts * TileSchedulerMetaDataSize);
   block_S.resize(num_sm_parts);
@@ -260,8 +264,10 @@ struct TestBed {
   // thrust::universal_vector<Element> block_V;     // dv
   thrust::universal_vector<int32_t> block_MD;    // mla metadata
   thrust::universal_vector<int32_t> block_S;     // num splits
-  thrust::universal_vector<ElementAcc> block_O;    // output
-  thrust::universal_vector<ElementAcc> block_LSE;  // lse
+  thrust::universal_vector<Element> block_O;    // output
+  thrust::universal_vector<Element> block_LSE;  // lse
+  thrust::universal_vector<ElementAcc> block_O_Accum;    // output
+  thrust::universal_vector<ElementAcc> block_LSE_Accum;  // lse
 
   /// Initialize operands to be used in the GEMM and reference GEMM
   void initialize(
@@ -296,11 +302,14 @@ struct TestBed {
 
     initialize_metadata(block_C, block_MD, block_S, num_sm_parts, options);
 
+    block_LSE.resize(options.b * options.s_q * options.h_q);
+    block_O.resize(options.b * options.s_q * options.h_q * options.dv);
+
     auto softmax_lse_size = (options.b + num_sm_parts) * options.s_q * options.h_q;
     auto out_accum_size = (options.b + num_sm_parts) * options.s_q * options.h_q * options.dv;
 
-    block_LSE.resize(softmax_lse_size);
-    block_O.resize(out_accum_size);
+    block_LSE_Accum.resize(softmax_lse_size);
+    block_O_Accum.resize(out_accum_size);
   }
 
   /// Execute a given example Flash MLA computation
@@ -379,14 +388,16 @@ struct TestBed {
     kernel_params.tile_scheduler_metadata_ptr = block_MD.data().get();
     kernel_params.num_splits_ptr = block_S.data().get(); 
 
-    kernel_params.softmax_lseaccum_ptr = block_LSE.data().get();
-    kernel_params.oaccum_ptr = block_O.data().get();
+    kernel_params.softmax_lseaccum_ptr = block_LSE_Accum.data().get();
+    kernel_params.oaccum_ptr = block_O_Accum.data().get();
 
     kernel_params.is_causal = is_causal;
     kernel_params.scale_softmax = options.softmax_scale;
     kernel_params.scale_softmax_log2 = std::log2(options.softmax_scale);
 
     kernel_params.cu_seqlens_k = block_C.data().get();
+
+    kernel_params.num_sm_parts = num_sm_parts;
 
     assert(head_size == 576);
     run_mha_fwd_splitkv_mla<cutlass::bfloat16_t, 576>(kernel_params, stream);
