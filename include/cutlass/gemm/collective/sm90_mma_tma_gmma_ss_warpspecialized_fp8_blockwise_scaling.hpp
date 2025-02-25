@@ -337,8 +337,6 @@ struct CollectiveMma<
     Tensor gA_mkl = local_tile(mA_mkl, TileShape{}, make_coord(_,_,_), Step<_1, X,_1>{});        // (BLK_M,BLK_K,m,k,l)
     Tensor gB_nkl = local_tile(mB_nkl, TileShape{}, make_coord(_,_,_), Step< X,_1,_1>{});        // (BLK_N,BLK_K,n,k,l)
 
-    auto tM = get<2>(gA_mkl.shape());
-    auto tN = get<2>(gB_nkl.shape());
     auto tK = get<3>(gA_mkl.shape());
 
     // Make the tiled views of scale tensors
@@ -443,6 +441,21 @@ struct CollectiveMma<
     Tensor tBgB = block_tma_b.partition_S(gB);                                              // (TMA,TMA_N,TMA_K,k)
     Tensor tBsB = block_tma_b.partition_D(sB);                                              // (TMA,TMA_N,TMA_K,PIPE)
 
+    Tensor tApA_ScaleA = make_tensor<bool>(shape(tAsA_ScaleA(_,_,0)));
+    Tensor tBpB_ScaleB = make_tensor<bool>(shape(tBsB_ScaleB(_,_,0)));
+
+    #pragma unroll
+    for (int i = 0; i < size(tApA_ScaleA); ++i) {
+      tApA_ScaleA(i) = get<0>(tAcA_ScaleA(i)) < 
+        std::min(scales_m, (m_coord + 1) * ScaleMsPerTile);
+    }
+
+    #pragma unroll
+    for (int i = 0; i < size(tApA_ScaleA); ++i) {
+      tBpB_ScaleB(i) = get<0>(tBcB_ScaleB(i)) < 
+        std::min(scales_n, (n_coord + 1) * ScaleNsPerTile);
+    }
+
     uint16_t mcast_mask_a = 0;
     uint16_t mcast_mask_b = 0;
 
@@ -460,21 +473,6 @@ struct CollectiveMma<
       for (int m = 0; m < size<0>(block_layout); ++m) {
         mcast_mask_b |= (uint16_t(1) << block_layout(m,cluster_local_block_id.y,Int<0>{}));
       }
-    }
-
-    Tensor tApA_ScaleA = make_tensor<bool>(shape(tAsA_ScaleA(_,_,0)));
-    Tensor tBpB_ScaleB = make_tensor<bool>(shape(tBsB_ScaleB(_,_,0)));
-
-    #pragma unroll
-    for (int i = 0; i < size(tApA_ScaleA); ++i) {
-      tApA_ScaleA(i) = get<0>(tAcA_ScaleA(i)) < 
-        std::min(scales_m, (m_coord + 1) * ScaleMsPerTile);
-    }
-
-    #pragma unroll
-    for (int i = 0; i < size(tApA_ScaleA); ++i) {
-      tBpB_ScaleB(i) = get<0>(tBcB_ScaleB(i)) < 
-        std::min(scales_n, (n_coord + 1) * ScaleNsPerTile);
     }
 
     // Mainloop
