@@ -34,9 +34,12 @@
 */
 
 #include <cassert>
+#include <iostream>
 
-#include "flash_fwd_mla_kernel.h"
-#include "flash_mla.h"
+#include <cutlass/cutlass.h>
+#include <cutlass/numeric_types.h>
+#include <cutlass/numeric_conversion.h>
+#include "cutlass/transform/device/transform_universal_adapter.hpp"
 
 #include <thrust/universal_vector.h>
 #include <thrust/device_vector.h>
@@ -54,6 +57,11 @@
 #include "cutlass/util/reference/device/tensor_fill.h"
 
 #include <cuda_runtime.h>
+
+#include "flash_fwd_mla_kernel.h"
+#include "flash_mla.h"
+#include "fill_nan.h"
+#include "transform.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -138,14 +146,8 @@ struct Options {
     return out;
   }
 
-  /// TOOD:Compute performance in GFLOP/s
-  double gflops(double runtime_s) const
-  {
-    // Two flops per multiply-add
-    // uint64_t flop = uint64_t(2) * m * n * k;
-    // double gflop = double(flop) / double(1.0e9);
-    // return gflop / runtime_s;
-  }
+  /// TOOD:Compute performance in GFLOP
+
 };
 
 /// Helper to initialize a block of device data
@@ -249,20 +251,79 @@ auto initialize_metadata(
   get_mla_metadata_func(params, stream);
 }
 
+// only transpose the dimensions 2 and 3
+template <class Element>
+void transpose(
+  thrust::universal_vector<Element> &block_S,
+  thrust::universal_vector<Element> &block_D,
+  cute::tuple<int, int, int, int, int> problem_shape) {
+  
+  using Operator = cutlass::transform::device::TransformUniversalAdapter<TransposeKernel<Element>>;
+
+  cudaError_t result;
+  result = cudaDeviceSynchronize();
+  if (result != cudaSuccess) {
+    std::cerr << "Error running the Transpose kernel. Last CUDA error is: "
+                << cudaGetErrorString(result) << std::endl;
+  }
+
+  typename Operator::Arguments arguments{
+    block_S.data().get(),
+    block_D.data().get(),
+    problem_shape,
+  };
+
+  Operator op;
+
+  size_t workspace_size = Operator::get_workspace_size(arguments);
+  cutlass::device_memory::allocation<uint8_t> workspace(workspace_size);
+
+  cutlass::Status status = op.can_implement(arguments);
+  if (status != cutlass::Status::kSuccess) {
+    std::cerr << "This kernel is not supported. Last CUDA error is: "
+              << cudaGetErrorString(cudaGetLastError()) << std::endl;
+    return;
+  }
+
+  status = op.initialize(arguments, workspace.get());
+  if (status != cutlass::Status::kSuccess) {
+    std::cerr << "Failed to initialize the CUTLASS kernel. Last CUDA error is: "
+              << cudaGetErrorString(cudaGetLastError()) << std::endl;
+    return;
+  }
+
+  status = op.run();
+  if (status != cutlass::Status::kSuccess) {
+    std::cerr << "Failed to launch the CUTLASS kernel. Last CUDA error is: "
+              << cudaGetErrorString(cudaGetLastError()) << std::endl;
+    return;
+  }
+
+  result = cudaDeviceSynchronize();
+  if (result != cudaSuccess) {
+    std::cerr << "Error running the CUTLASS kernel. Last CUDA error is: "
+              << cudaGetErrorString(result) << std::endl;
+    return;
+  }
+}
+
 struct TestBed {
   using Element = cutlass::bfloat16_t;
   using ElementAcc = float;
 
-  thrust::universal_vector<Element> block_Q;     // query
-  thrust::universal_vector<Element> block_K;     // blocked key
-  thrust::universal_vector<int32_t> block_T;     // block table
-  thrust::universal_vector<int32_t> block_C;     // cache seqlens
+  thrust::universal_vector<Element> block_Q;      // query
+  thrust::universal_vector<Element> block_Q_T;    // query transpose
+  thrust::universal_vector<Element> block_K;      // blocked key
+  thrust::universal_vector<int32_t> block_T;      // block table
+  thrust::universal_vector<int32_t> block_C;      // cache seqlens
   // TODO: block_V is not used in the example
   // thrust::universal_vector<Element> block_V;     // dv
-  thrust::universal_vector<int32_t> block_MD;    // mla metadata
-  thrust::universal_vector<int32_t> block_S;     // num splits
-  thrust::universal_vector<Element> block_O;    // output
-  thrust::universal_vector<Element> block_LSE;  // lse
+  thrust::universal_vector<int32_t> block_MD;     // mla metadata
+  thrust::universal_vector<int32_t> block_S;      // num splits
+  thrust::universal_vector<Element> block_O;      // output
+  thrust::universal_vector<Element> block_LSE;    // lse
+  thrust::universal_vector<Element> block_O_T;    // output transpose
+  thrust::universal_vector<Element> block_LSE_T;  // lse transpose
   thrust::universal_vector<ElementAcc> block_O_Accum;    // output
   thrust::universal_vector<ElementAcc> block_LSE_Accum;  // lse
 
@@ -289,6 +350,7 @@ struct TestBed {
 
     // Query: [b, s_q, h_q, d]
     block_Q.resize(options.b * options.s_q * options.h_q * options.d);
+    block_Q_T.resize(options.b * options.s_q * options.h_q * options.d);
 
     // Block table: [b, max_num_blocks_per_seq]
     block_T.resize(total_blocks);
@@ -300,7 +362,9 @@ struct TestBed {
     initialize_values(block_T, cutlass::Distribution::Sequential, seed + 3);
     initialize_values(block_K, cutlass::Distribution::Gaussian, seed + 5);
 
-    // TODO: Set the exceeding part to NaN
+    // Set the exceeding part to NaN
+    fill_nan(block_K.data().get(), block_C.data().get(),
+             options.b, max_seqlen_pad, options.h_kv, options.d);
 
     initialize_metadata(block_C, block_MD, block_S, num_sm_parts, options);
 
@@ -310,9 +374,10 @@ struct TestBed {
 
     // LSE: [batch_size, num_heads, seqlen_q]
     block_LSE.resize(options.b * num_heads * seqlen_q);
-
+    block_LSE_T.resize(options.b * seqlen_q * num_heads);
     // Output: [batch_size, seqlen_q, num_heads, head_size_v]
     block_O.resize(options.b * seqlen_q * num_heads * options.dv);
+    block_O_T.resize(options.b * seqlen_q * num_heads * options.dv);
 
     auto softmax_lse_size = (options.b + num_sm_parts) * num_heads * seqlen_q;
     auto out_accum_size = (options.b + num_sm_parts) * num_heads * seqlen_q * options.dv;
@@ -355,8 +420,10 @@ struct TestBed {
     int seqlen_q = seqlen_q_ori * ngroups;
     int num_heads = num_heads_k;
 
-    // TODO: preprocess the query
-    // q = q.view({batch_size, seqlen_q_ori, num_heads_k, ngroups, head_size}).transpose(2, 3).reshape({batch_size, seqlen_q, num_heads, head_size});
+    // preprocess the query
+    transpose(
+      block_Q, block_Q_T,
+      cute::make_shape(options.b, seqlen_q_ori, num_heads_k, ngroups, options.d));
 
     cudaStream_t stream{nullptr};
 
@@ -371,7 +438,7 @@ struct TestBed {
     kernel_params.h_h_k_ratio = num_heads_ori / num_heads_k;
     kernel_params.ngroups = ngroups;
 
-    kernel_params.q_ptr = block_Q.data().get();
+    kernel_params.q_ptr = block_Q_T.data().get();
     kernel_params.k_ptr = block_K.data().get();
     // TODO: block_V is not used in the example
     kernel_params.v_ptr = block_K.data().get();
@@ -416,11 +483,12 @@ struct TestBed {
 
     CUDA_CHECK(cudaDeviceSynchronize());
 
-    // TODO: postprocess the output
-    // out = out.view({batch_size, seqlen_q_ori, ngroups, num_heads_k, head_size_v}).transpose(2, 3)
-    //         .reshape({batch_size, seqlen_q_ori, num_heads_ori, head_size_v});
-    // softmax_lse = softmax_lse.view({batch_size, num_heads_k, seqlen_q_ori, ngroups}).transpose(2, 3)
-    //         .reshape({batch_size, num_heads_ori, seqlen_q_ori});
+    transpose(
+      block_O, block_O_T,
+      cute::make_shape(options.b, seqlen_q_ori, ngroups, num_heads_k, options.dv));
+    transpose(
+      block_LSE, block_LSE_T,
+      cute::make_shape(options.b, num_heads_k, seqlen_q_ori, ngroups, 1));
 
     // TODO: reference check
 
