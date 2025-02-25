@@ -120,15 +120,19 @@ public:
   static_assert(std::is_same_v<SmemLayoutAtomC, void>, "Copy operation to shared memory is not supported");
   static_assert(std::is_same_v<SmemLayoutAtomD, void>, "Copy operation to shared memory is not supported");
 
-  using Trait_C = Copy_Traits<GmemTiledCopyC>;
-  using XE_Copy_C = decltype(make_tiled_copy(Copy_Atom<Trait_C, ElementC>{}
-                                             .with(static_cast<ElementC const*>(nullptr), int32_t(0), int32_t(0)),
+  using TensorC = decltype(make_tensor(make_gmem_ptr(static_cast<ElementC const*>(nullptr)),
+                           make_layout(make_shape((int32_t)0, (int32_t)0, (int32_t)0), StrideC{})));
+
+  using TensorD = decltype(make_tensor(make_gmem_ptr(static_cast<ElementD const*>(nullptr)),
+                           make_layout(make_shape((int32_t)0, (int32_t)0, (int32_t)0), StrideD{})));
+
+  using Trait_C = Copy_Traits<GmemTiledCopyC, TensorC>;
+  using XE_Copy_C = decltype(make_tiled_copy(Copy_Atom<Trait_C, ElementC>{}.with(TensorC{}),
                                              Layout<Shape<_1, Int<SubgroupSize>>>{},
                                              make_layout(make_shape(get<0>(typename Trait_C::BlockShape{}),
                                                                     get<1>(typename Trait_C::BlockShape{}) / Int<SubgroupSize>{}))));
-  using Trait_D = Copy_Traits<GmemTiledCopyD>;
-  using XE_Copy_D = decltype(make_tiled_copy(Copy_Atom<Trait_D, ElementD>{}
-                                             .with(static_cast<ElementD const*>(nullptr),int32_t(0), int32_t(0)),
+  using Trait_D = Copy_Traits<GmemTiledCopyD, TensorD>;
+  using XE_Copy_D = decltype(make_tiled_copy(Copy_Atom<Trait_D, ElementD>{}.with(TensorD{}),
                                              Layout<Shape<_1, Int<SubgroupSize>>>{},
                                              make_layout(make_shape(get<0>(typename Trait_D::BlockShape{}),
                                                                     get<1>(typename Trait_D::BlockShape{}) / Int<SubgroupSize>{}))));
@@ -189,8 +193,10 @@ public:
 
     XE_Copy_C xe_load_c = {};
     if constexpr (is_source_supported) {
-      xe_load_c = make_tiled_copy(Copy_Atom<Copy_Traits<CopyOpG2R>, ElementC>{}.with(
-                                  args.ptr_C, M, N),
+      auto mC = make_tensor(make_gmem_ptr(static_cast<ElementC const*>(args.ptr_C)),
+                            make_layout(make_shape(M, N, L), args.dC));
+
+      xe_load_c = make_tiled_copy(Copy_Atom<Copy_Traits<CopyOpG2R, decltype(mC)>, ElementC>{}.with(mC),
                                   Layout<Shape<_1, Int<SubgroupSize>>>{},
                                   make_layout(make_shape(get<0>(typename Trait_C::BlockShape{}),
                                                          get<1>(typename Trait_C::BlockShape{}) / Int<SubgroupSize>{})));
@@ -198,8 +204,10 @@ public:
 
     XE_Copy_D xe_store_d = {};
     if constexpr (is_destination_supported) {
-      xe_store_d = make_tiled_copy(Copy_Atom<Copy_Traits<CopyOpR2G>, ElementD>{}.with(
-                                   args.ptr_D, M, N),
+      auto mD = make_tensor(make_gmem_ptr(static_cast<ElementD const*>(args.ptr_D)),
+                            make_layout(make_shape(M, N, L), args.dD));
+
+      xe_store_d = make_tiled_copy(Copy_Atom<Copy_Traits<CopyOpR2G, decltype(mD)>, ElementD>{}.with(mD),
                                    Layout<Shape<_1, Int<SubgroupSize>>>{},
                                    make_layout(make_shape(get<0>(typename Trait_D::BlockShape{}),
                                                           get<1>(typename Trait_D::BlockShape{}) / Int<SubgroupSize>{})));
