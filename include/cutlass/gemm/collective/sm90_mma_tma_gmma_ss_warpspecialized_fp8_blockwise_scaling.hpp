@@ -451,7 +451,7 @@ struct CollectiveMma<
     }
 
     #pragma unroll
-    for (int i = 0; i < size(tApA_ScaleA); ++i) {
+    for (int i = 0; i < size(tBpB_ScaleB); ++i) {
       tBpB_ScaleB(i) = get<0>(tBcB_ScaleB(i)) < 
         std::min(scales_n, (n_coord + 1) * ScaleNsPerTile);
     }
