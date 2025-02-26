@@ -73,7 +73,6 @@
 // using namespace cute;
 using namespace deep_gemm;
 
-// #define CUTLASS_ARCH_MMA_SM90_SUPPORTED
 
 #if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
 
@@ -82,13 +81,14 @@ using namespace deep_gemm;
 struct Options {
   bool help;
   int iterations;
-  int m, n, k;
+  int m, n, k, num_groups;
 
   Options():
     help(false),
     m(4096),
     n(4096),
     k(4096),
+    num_groups(4),
     iterations(10)
   { }
 
@@ -103,7 +103,7 @@ struct Options {
     }
 
     cmd.get_cmd_line_argument("m", m, defaults.m);
-
+    cmd.get_cmd_line_argument("num_groups", num_groups, defaults.num_groups);
     cmd.get_cmd_line_argument("iterations", iterations, defaults.iterations);
   }
 
@@ -115,6 +115,7 @@ struct Options {
       << "Options:\n\n"
       << "  --help                      If specified, displays this usage statement\n\n"
       << "  --m=<int>                   Sets the m size\n"
+      << "  --num_groups=<int>          Sets the number of groups\n"
       << "  --iterations=<int>          Number of profiling iterations to perform.\n\n";
 
     return out;
@@ -258,7 +259,8 @@ bool verify(const Options &options) {
   return true;
 }
 
-struct TestBed {
+
+struct TestGemm {
   using Element = cutlass::float_e4m3_t;
   using ElementScale = float;
   using ElementAcc = float;
@@ -339,7 +341,7 @@ struct TestBed {
 
     CUDA_CHECK(cudaDeviceSynchronize());
 
-    std::cout << "run done\n";
+    std::cout << "run Gemm...\n";
     // TODO: reference check
     Result result;
     // result.passed = verify(options, ScaleMsPerTile, ScaleNsPerTile);
@@ -370,6 +372,142 @@ struct TestBed {
       result.gflops = options.gflops(result.avg_runtime_ms / 1000.0);
 
       std::cout << "  Problem Size: " << options.m << 'x' << options.n << 'x' << options.k << std::endl;
+      std::cout << "  Tile shape (M, N, K): (128, 128, 128)" << std::endl;
+      std::cout << "  ScaleGranularityM: 1 (ScaleMsPerTile: 128)" << std::endl;
+      std::cout << "  ScaleGranularityN: 128 (ScaleNsPerTile: 1)" << std::endl;
+      std::cout << "  Avg runtime: " << result.avg_runtime_ms << " ms" << std::endl;
+      std::cout << "  GFLOPS: " << result.gflops << std::endl;
+      fflush(stdout);
+    }
+  }
+};
+
+struct TestGroupedGemm_Contiguous {
+  using Element = cutlass::float_e4m3_t;
+  using ElementScale = float;
+  using ElementAcc = float;
+  using ElementOut = cutlass::bfloat16_t;
+
+  cutlass::HostTensor<Element, cutlass::layout::RowMajor> Tensor_lhs;
+  cutlass::HostTensor<Element, cutlass::layout::RowMajor> Tensor_rhs;
+  cutlass::HostTensor<ElementScale, cutlass::layout::ColumnMajor> Tensor_lhs_scale;
+  cutlass::HostTensor<ElementScale, cutlass::layout::RowMajor> Tensor_rhs_scale;
+  cutlass::HostTensor<ElementOut, cutlass::layout::RowMajor> Tensor_out;
+  cutlass::HostTensor<int, cutlass::layout::RowMajor> Tensor_grouped_layout;
+
+  /// Initialize operands to be used in the GEMM
+  void initialize(
+    const Options &options,
+    uint64_t seed = 2025) {
+
+    Tensor_lhs.resize({options.m, options.k}); //[m, k]
+    Tensor_rhs.resize({options.num_groups * options.n, options.k}); //[num_groups, n, k]
+    Tensor_lhs_scale.resize({options.m, cdiv(options.k, 128)}); // [m, cdiv(k, 128)] column major
+    Tensor_rhs_scale.resize({options.num_groups * cdiv(options.n, 128), cdiv(options.k, 128)}); // [num_groups, cdiv(n, 128), cdiv(k, 128)]
+    Tensor_out.resize({options.m, options.n}); // [m, n]
+    Tensor_grouped_layout.resize({1,options.m}); // [num_groups,]
+
+    std::vector<int> group_start {0, options.m/4, 2*options.m/4, 3*options.m/4, options.m}; // sum(grouped_layout) = options.m
+    for (int i = 0; i < options.m; ++i) {
+      for(int j = 0; j < options.num_groups; ++j) {
+        if(i >= group_start[j] && i < group_start[j+1]) {
+          Tensor_grouped_layout.host_data()[i] = j;
+          break;
+        }
+      }
+    }
+
+    initialize_tensor(Tensor_lhs.host_view(), cutlass::Distribution::Uniform, seed + 1);
+    initialize_tensor(Tensor_rhs.host_view(), cutlass::Distribution::Uniform, seed + 2);
+    initialize_scale_tensor(Tensor_lhs_scale.host_view(), cutlass::Distribution::Uniform, seed + 3);
+    initialize_scale_tensor(Tensor_rhs_scale.host_view(), cutlass::Distribution::Uniform, seed + 4);
+
+    Tensor_lhs.sync_device();
+    Tensor_rhs.sync_device();
+    Tensor_lhs_scale.sync_device();
+    Tensor_rhs_scale.sync_device();
+    Tensor_out.sync_device();
+    Tensor_grouped_layout.sync_device();
+
+  }
+
+  void run(Options &options)
+  {
+    cudaDeviceProp props;
+    int current_device;
+    CUDA_CHECK(cudaGetDevice(&current_device));
+    CUDA_CHECK(cudaGetDeviceProperties(&props, current_device));
+
+    initialize(options);
+
+    cudaStream_t stream{nullptr};
+    constexpr auto N = 4096;
+    constexpr auto K = 4096;
+    constexpr auto BLOCK_M = 128;
+    constexpr auto BLOCK_N = 128;
+    constexpr auto num_groups = 4;
+    constexpr auto kNumStages = 5;
+    constexpr auto kNumTMAMulticast = 2;
+    const int num_sms = 132; // for H100 
+    const int best_smem_size = 199376; 
+
+    // Make a templated GEMM
+    using GemmKernel = Gemm<N, K, BLOCK_M, BLOCK_N, 128, num_groups, kNumStages, kNumTMAMulticast, GemmType::GroupedContiguous>;
+
+    int m = options.m;
+    // DeepGEMM requires __nv_fp8_e4m3 input and __nv_bfloat16 output
+    __nv_fp8_e4m3* lhs = reinterpret_cast<__nv_fp8_e4m3*>(Tensor_lhs.device_data());
+    __nv_fp8_e4m3* rhs = reinterpret_cast<__nv_fp8_e4m3*>(Tensor_rhs.device_data());
+    float* lhs_scales = Tensor_lhs_scale.device_data();
+    float* rhs_scales = Tensor_rhs_scale.device_data();
+    __nv_bfloat16* out = reinterpret_cast<__nv_bfloat16*>(Tensor_out.device_data());
+    int* grouped_layout = Tensor_grouped_layout.device_data();
+    // Launch kernel
+    auto tma_a_desc = GemmKernel::make_2d_tma_a_desc(lhs, m);
+    auto tma_b_desc = GemmKernel::make_2d_tma_b_desc(rhs);
+    auto tma_scales_a_desc = GemmKernel::make_2d_tma_scales_a_desc(lhs_scales, m);
+    auto tma_d_desc = GemmKernel::make_2d_tma_d_desc(out, m);
+    GemmKernel::run(out, rhs_scales, grouped_layout,
+                  m,
+                  tma_a_desc, tma_b_desc, tma_scales_a_desc, tma_d_desc,
+                  stream, num_sms, best_smem_size);
+
+    CUDA_CHECK(cudaStreamSynchronize(stream));
+
+    CUDA_CHECK(cudaDeviceSynchronize());
+
+    std::cout << "run GroupedGemm Contiguous...\n";
+    // TODO: reference check
+    Result result;
+    // result.passed = verify(options, ScaleMsPerTile, ScaleNsPerTile);
+
+    // std::cout << "  Disposition: " << (result.passed ? "Passed" : "Failed") << std::endl;
+
+    // if (!result.passed) {
+    //  exit(-1);
+    // }
+
+    // Run profiling loop
+    if (options.iterations > 0)
+    {
+      GpuTimer timer;
+      timer.start();
+      for (int iter = 0; iter < options.iterations; ++iter) {
+        // initialize(options);
+        GemmKernel::run(out, rhs_scales, grouped_layout,
+                    m,
+                    tma_a_desc, tma_b_desc, tma_scales_a_desc, tma_d_desc,
+                    stream, num_sms, best_smem_size);
+      }
+      timer.stop();
+
+      // Compute average runtime and GFLOPs.
+      float elapsed_ms = timer.elapsed_millis();
+      result.avg_runtime_ms = double(elapsed_ms) / double(options.iterations);
+      result.gflops = options.gflops(result.avg_runtime_ms / 1000.0);
+
+      std::cout << "  Problem Size: " << options.m << 'x' << options.n << 'x' << options.k << std::endl;
+      std::cout << "  Number of groups: " << options.num_groups << std::endl;
       std::cout << "  Tile shape (M, N, K): (128, 128, 128)" << std::endl;
       std::cout << "  ScaleGranularityM: 1 (ScaleMsPerTile: 128)" << std::endl;
       std::cout << "  ScaleGranularityN: 128 (ScaleNsPerTile: 1)" << std::endl;
@@ -420,8 +558,12 @@ int main(int argc, char const **args) {
     return 0;
   }
 
-  TestBed testbed{};
-  testbed.run(options);
+  TestGemm testgemm{};
+  testgemm.run(options);
+
+  TestGroupedGemm_Contiguous testgroupedgemm_contiguous{};
+  testgroupedgemm_contiguous.run(options);
+
 
   #endif // defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
 
