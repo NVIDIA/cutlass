@@ -68,7 +68,7 @@
 #include "helper.h"
 // #include "reference/host/gemm_with_groupwise_scaling.h"
 
-#include "deep_gemm/fp8_gemm.cuh"
+#include "include/deep_gemm/fp8_gemm.cuh"
 
 // using namespace cute;
 using namespace deep_gemm;
@@ -518,6 +518,143 @@ struct TestGroupedGemm_Contiguous {
   }
 };
 
+struct TestGroupedGemm_Masked {
+  using Element = cutlass::float_e4m3_t;
+  using ElementScale = float;
+  using ElementAcc = float;
+  using ElementOut = cutlass::bfloat16_t;
+
+  cutlass::HostTensor<Element, cutlass::layout::RowMajor> Tensor_lhs;
+  cutlass::HostTensor<Element, cutlass::layout::RowMajor> Tensor_rhs;
+  cutlass::HostTensor<ElementScale, cutlass::layout::ColumnMajor> Tensor_lhs_scale;
+  cutlass::HostTensor<ElementScale, cutlass::layout::RowMajor> Tensor_rhs_scale;
+  cutlass::HostTensor<ElementOut, cutlass::layout::RowMajor> Tensor_out;
+  cutlass::HostTensor<int, cutlass::layout::RowMajor> Tensor_masked_m;
+
+  /// Initialize operands to be used in the GEMM
+  void initialize(
+    const Options &options,
+    uint64_t seed = 2025) {
+
+    int m_max = options.m;
+    Tensor_lhs.resize({options.num_groups * m_max, options.k}); //[num_groups, m, k]
+    Tensor_rhs.resize({options.num_groups * options.n, options.k}); //[num_groups, n, k]
+    Tensor_lhs_scale.resize({options.num_groups * m_max, cdiv(options.k, 128)}); // [num_groups, m, cdiv(k, 128)] column major
+    Tensor_rhs_scale.resize({options.num_groups * cdiv(options.n, 128), cdiv(options.k, 128)}); // [num_groups, cdiv(n, 128), cdiv(k, 128)]
+    Tensor_out.resize({options.num_groups * m_max, options.n}); // [num_groups, m, n]
+    Tensor_masked_m.resize({1,options.num_groups}); // [num_groups,]
+
+    std::vector<int> masked_m {options.m/4,2*options.m/4,3*options.m/4,options.m}; // max(masked_m) <= options.m
+    for (int i = 0; i < options.num_groups; ++i) {
+      Tensor_masked_m.host_data()[i] = masked_m[i];
+    }
+
+    initialize_tensor(Tensor_lhs.host_view(), cutlass::Distribution::Uniform, seed + 1);
+    initialize_tensor(Tensor_rhs.host_view(), cutlass::Distribution::Uniform, seed + 2);
+    initialize_scale_tensor(Tensor_lhs_scale.host_view(), cutlass::Distribution::Uniform, seed + 3);
+    initialize_scale_tensor(Tensor_rhs_scale.host_view(), cutlass::Distribution::Uniform, seed + 4);
+
+    Tensor_lhs.sync_device();
+    Tensor_rhs.sync_device();
+    Tensor_lhs_scale.sync_device();
+    Tensor_rhs_scale.sync_device();
+    Tensor_out.sync_device();
+    Tensor_masked_m.sync_device();
+
+  }
+
+  void run(Options &options)
+  {
+    cudaDeviceProp props;
+    int current_device;
+    CUDA_CHECK(cudaGetDevice(&current_device));
+    CUDA_CHECK(cudaGetDeviceProperties(&props, current_device));
+
+    initialize(options);
+
+    cudaStream_t stream{nullptr};
+    constexpr auto N = 4096;
+    constexpr auto K = 4096;
+    constexpr auto BLOCK_M = 128;
+    constexpr auto BLOCK_N = 128;
+    constexpr auto num_groups = 4;
+    constexpr auto kNumStages = 5;
+    constexpr auto kNumTMAMulticast = 2;
+    const int num_sms = 132; // for H100 
+    const int best_smem_size = 199376; 
+
+    // Make a templated GEMM
+    using GemmKernel = Gemm<N, K, BLOCK_M, BLOCK_N, 128, num_groups, kNumStages, kNumTMAMulticast, GemmType::GroupedMasked>;
+
+    int m = options.m;
+    // DeepGEMM requires __nv_fp8_e4m3 input and __nv_bfloat16 output
+    __nv_fp8_e4m3* lhs = reinterpret_cast<__nv_fp8_e4m3*>(Tensor_lhs.device_data());
+    __nv_fp8_e4m3* rhs = reinterpret_cast<__nv_fp8_e4m3*>(Tensor_rhs.device_data());
+    float* lhs_scales = Tensor_lhs_scale.device_data();
+    float* rhs_scales = Tensor_rhs_scale.device_data();
+    __nv_bfloat16* out = reinterpret_cast<__nv_bfloat16*>(Tensor_out.device_data());
+    int* masked_m = Tensor_masked_m.device_data();
+    // Launch kernel
+    auto tma_a_desc = GemmKernel::make_2d_tma_a_desc(lhs, m);
+    auto tma_b_desc = GemmKernel::make_2d_tma_b_desc(rhs);
+    auto tma_scales_a_desc = GemmKernel::make_2d_tma_scales_a_desc(lhs_scales, m);
+    auto tma_d_desc = GemmKernel::make_2d_tma_d_desc(out, m);
+    GemmKernel::run(out, rhs_scales, masked_m,
+                  m,
+                  tma_a_desc, tma_b_desc, tma_scales_a_desc, tma_d_desc,
+                  stream, num_sms, best_smem_size);
+
+    CUDA_CHECK(cudaStreamSynchronize(stream));
+
+    CUDA_CHECK(cudaDeviceSynchronize());
+
+    std::cout << "run GroupedGemm Contiguous...\n";
+    // TODO: reference check
+    Result result;
+    // result.passed = verify(options, ScaleMsPerTile, ScaleNsPerTile);
+
+    // std::cout << "  Disposition: " << (result.passed ? "Passed" : "Failed") << std::endl;
+
+    // if (!result.passed) {
+    //  exit(-1);
+    // }
+
+    // Run profiling loop
+    if (options.iterations > 0)
+    {
+      GpuTimer timer;
+      timer.start();
+      for (int iter = 0; iter < options.iterations; ++iter) {
+        // initialize(options);
+        GemmKernel::run(out, rhs_scales, masked_m,
+                    m,
+                    tma_a_desc, tma_b_desc, tma_scales_a_desc, tma_d_desc,
+                    stream, num_sms, best_smem_size);
+      }
+      timer.stop();
+
+      // Compute average runtime and GFLOPs.
+      float elapsed_ms = timer.elapsed_millis();
+      result.avg_runtime_ms = double(elapsed_ms) / double(options.iterations);
+      result.gflops = options.gflops(result.avg_runtime_ms / 1000.0);
+
+      std::cout << "  Problem Size: M " << 'x' << options.n << 'x' << options.k << std::endl;
+      std::cout << "  Number of groups: " << options.num_groups << std::endl;
+      std::cout << "  Number of masked rows: " ;
+      for (int i = 0; i < options.num_groups; ++i) {
+        std::cout << Tensor_masked_m.host_data()[i] << " ";
+      }
+      std::cout << std::endl;
+      std::cout << "  Tile shape (M, N, K): (128, 128, 128)" << std::endl;
+      std::cout << "  ScaleGranularityM: 1 (ScaleMsPerTile: 128)" << std::endl;
+      std::cout << "  ScaleGranularityN: 128 (ScaleNsPerTile: 1)" << std::endl;
+      std::cout << "  Avg runtime: " << result.avg_runtime_ms << " ms" << std::endl;
+      std::cout << "  GFLOPS: " << result.gflops << std::endl;
+      fflush(stdout);
+    }
+  }
+};
+
 #endif // defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -564,6 +701,8 @@ int main(int argc, char const **args) {
   TestGroupedGemm_Contiguous testgroupedgemm_contiguous{};
   testgroupedgemm_contiguous.run(options);
 
+  TestGroupedGemm_Masked testgroupedgemm_masked{};
+  testgroupedgemm_masked.run(options);
 
   #endif // defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
 
