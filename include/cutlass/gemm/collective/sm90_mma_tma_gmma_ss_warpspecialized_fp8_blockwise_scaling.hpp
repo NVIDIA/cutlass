@@ -261,7 +261,6 @@ struct CollectiveMma<
       transaction_bytes,
       transaction_bytes_mk,
       transaction_bytes_nk,
-      args.mma_promotion_interval,
       args.ptr_scale_A,
       args.ptr_scale_B
     };
