@@ -396,14 +396,17 @@ template <typename GroupScaleConfig>
 void initialize(const Options<RasterOrderOptions> &options) {
 
   using TileShape = typename GroupScaleConfig::TileShape;
-  const int ScaleMsPerTile = GroupScaleConfig::ScaleMsPerTile;
-  const int ScaleNsPerTile = GroupScaleConfig::ScaleNsPerTile;
+  const int ScaleGranularityM = GroupScaleConfig::ScaleGranularityM;
+  const int ScaleGranularityN = GroupScaleConfig::ScaleGranularityN;
+
+  assert(options.m % ScaleGranularityM == 0);
+  assert(options.n % ScaleGranularityN == 0);
 
   // Find Group Scaling tensor shapes based on `ScaleGranularityM`, problem shape, and TileShape
   auto gemm_problem_shape = cute::make_shape(options.m, options.n, options.k);
   auto blockscale_shape = shape(get<1>(cute::zipped_divide(cute::make_layout(gemm_problem_shape), TileShape{})));
-  auto groupscale_m = cute::get<0>(blockscale_shape) * ScaleMsPerTile; // We need to pad along M in scale tensor of A to prevent illegal memory access.
-  auto groupscale_n = cute::get<1>(blockscale_shape) * ScaleNsPerTile; // We need to pad along N in scale tensor of A to prevent illegal memory access.
+  auto groupscale_m = cute::get<0>(gemm_problem_shape) / ScaleGranularityM;
+  auto groupscale_n = cute::get<1>(gemm_problem_shape) / ScaleGranularityN;
   auto blockscale_k = cute::get<2>(blockscale_shape);
 
   stride_A = cutlass::make_cute_packed_stride(StrideA{}, cute::make_shape(options.m, options.k, options.l));
@@ -574,6 +577,8 @@ bool verify(const Options<RasterOrderOptions> &options, const int ScaleMsPerTile
   //
   // Compute reference output
   //
+  const int ScaleGranularityM = get<0>(TileShape_{}) / ScaleMsPerTile;
+  const int ScaleGranularityN = get<1>(TileShape_{}) / ScaleNsPerTile;
 
   // Group scaling tensors shapes based `ScaleGranularityM`, CTA Block (TileShape) and GEMM Problem shape
   auto gemm_problem_shape = cute::make_shape(options.m, options.n, options.k);
@@ -581,8 +586,8 @@ bool verify(const Options<RasterOrderOptions> &options, const int ScaleMsPerTile
   auto blockscale_m = cute::get<0>(blockscale_shape);
   auto blockscale_n = cute::get<1>(blockscale_shape);
   auto blockscale_k = cute::get<2>(blockscale_shape);
-  auto groupscale_m = blockscale_m * ScaleMsPerTile;
-  auto groupscale_n = blockscale_n * ScaleNsPerTile;
+  auto groupscale_m = get<0>(gemm_problem_shape) / ScaleGranularityM;
+  auto groupscale_n = get<1>(gemm_problem_shape) / ScaleGranularityN;
 
   // Create instantiation for device reference gemm kernel
   auto A = cute::make_tensor(tensor_A.host_data(),
@@ -709,6 +714,31 @@ int run(Options<RasterOrderOptions> &options)
   const int ScaleMsPerTile    = GroupScaleConfig::ScaleMsPerTile;
   const int ScaleNsPerTile    = GroupScaleConfig::ScaleNsPerTile;
 
+  bool skip = false;
+
+  if (options.m % ScaleGranularityM != 0) {
+    std::cout << "Skippig (m size: " << options.m << " less then ScaleGranularityM: " << ScaleGranularityM << "):" << std::endl;
+    skip = true;
+  }
+
+  if (options.n % ScaleGranularityN != 0) {
+    std::cout << "Skippig (n size: " << options.m << " less then ScaleGranularityN: " << ScaleGranularityM << "):" << std::endl;
+    skip = true;
+  }
+
+  if (options.k % size<2>(TileShape{}) != 0) {
+    std::cout << "Skippig (k size: " << options.k << " less then TileShape[2]: " << size<2>(TileShape{}) << "):" << std::endl;
+    skip = true;
+  }
+
+  if (!skip) std::cout << "Running: " << std::endl;
+  std::cout << "  Problem Size: " << options.m << 'x' << options.n << 'x' << options.k << 'x' << options.l << std::endl;
+  std::cout << "  Tile shape (M, N, K): " << size<0>(TileShape{}) << ", " << size<1>(TileShape{}) << ", " << size<2>(TileShape{}) << std::endl;
+  std::cout << "  ScaleGranularityM: " << ScaleGranularityM << " (ScaleMsPerTile: " << ScaleMsPerTile << ")" << std::endl;
+  std::cout << "  ScaleGranularityN: " << ScaleGranularityN << " (ScaleNsPerTile: " << ScaleNsPerTile << ")" << std::endl;
+
+  if (skip) return -1;
+
   initialize<GroupScaleConfig>(options);
 
   // Instantiate CUTLASS kernel depending on templates
@@ -769,10 +799,6 @@ int run(Options<RasterOrderOptions> &options)
       raster = "Along M";
     }
 
-    std::cout << "  Problem Size: " << options.m << 'x' << options.n << 'x' << options.k << 'x' << options.l << std::endl;
-    std::cout << "  Tile shape (M, N, K): " << size<0>(TileShape{}) << ", " << size<1>(TileShape{}) << ", " << size<2>(TileShape{}) << std::endl;
-    std::cout << "  ScaleGranularityM: " << ScaleGranularityM << " (ScaleMsPerTile: " << ScaleMsPerTile << ")" << std::endl;
-    std::cout << "  ScaleGranularityN: " << ScaleGranularityN << " (ScaleNsPerTile: " << ScaleNsPerTile << ")" << std::endl;
     std::cout << "  Rasterization: " << raster << " with a maximum CTA swizzle of " << options.swizzle << std::endl;
     std::cout << "  Avg runtime: " << result.avg_runtime_ms << " ms" << std::endl;
     std::cout << "  GFLOPS: " << result.gflops << std::endl;

@@ -261,9 +261,12 @@ void gett_mainloop(
       }
     }
 
+    int m_size = std::min(static_cast<int64_t>(kBlockM), cute::size<0>(mainloop_params.A.layout()) - m);
+    int n_size = std::min(static_cast<int64_t>(kBlockN), cute::size<0>(mainloop_params.B.layout()) - n);
+
     // do compute
-    for (int m_b = 0; m_b < kBlockM; ++m_b) {
-      for (int n_b = 0; n_b < kBlockN; ++n_b) {
+    for (int m_b = 0; m_b < m_size; ++m_b) {
+      for (int n_b = 0; n_b < n_size; ++n_b) {
         acc_temp[m_b][n_b] = fma_op(a_frag[m_b], b_frag[n_b], acc_temp[m_b][n_b]);
       }
     }
@@ -273,9 +276,9 @@ void gett_mainloop(
     // (b) Zero-out partial temporary (acc_temp),
     // (c) Update permanent (accu)
     if ((k+1) % kBlockK == 0) {
-      for (int m_b = 0; m_b < kBlockM; ++m_b) {
+      for (int m_b = 0; m_b < m_size; ++m_b) {
         auto scale_a_m_b = scale_a[m_b / ScaleGranularityM];
-        for (int n_b = 0; n_b < kBlockN; ++n_b) {
+        for (int n_b = 0; n_b < n_size; ++n_b) {
           auto scale_b_n_b = scale_b[n_b / ScaleGranularityN];
           ElementAccumulator blockwise_scaled_accum = acc_temp[m_b][n_b] * scale_a_m_b * scale_b_n_b;
           acc[m_b][n_b] = blockwise_scaled_accum + acc[m_b][n_b];

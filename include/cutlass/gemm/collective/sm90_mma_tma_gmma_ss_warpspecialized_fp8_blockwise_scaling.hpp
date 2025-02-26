@@ -150,11 +150,9 @@ struct CollectiveMma<
       cute::conditional_t< ::cutlass::gemm::detail::is_major<0,StrideB>(), Step<_2,_1,_3>, Step<_1,_2,_3>>{}));
 
   // Block scaling gmem-to-smem copy atom 
-  //  we can have partial tiles in M, so don't vectorize those loads
-  using BlockScaleCopyTypeB = cute::uint_byte_t<cute::min(static_cast<int>(sizeof(ElementBlockScale)) * ScaleNsPerTile, 16)>;
-  using BlockScaleCopyVecWidthB = Int<static_cast<int>(sizeof(BlockScaleCopyTypeB) / sizeof(ElementBlockScale))>;
+  //  we can have partial tiles in M or N, so don't vectorize those loads
   using SmemBlockScalingCopyAtomA = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<ElementBlockScale>, ElementBlockScale>;
-  using SmemBlockScalingCopyAtomB = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<BlockScaleCopyTypeB>, ElementBlockScale>;
+  using SmemBlockScalingCopyAtomB = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<ElementBlockScale>, ElementBlockScale>;
 
   // Block scaling smem layout
   using SmemLayoutScaleA = Layout<Shape<Int<ScaleMsPerTile>, Int<DispatchPolicy::Stages>>>;
@@ -289,8 +287,6 @@ struct CollectiveMma<
     implementable = implementable && (args.mma_promotion_interval % 4 == 0) && (args.mma_promotion_interval == ScalePromotionInterval);
     implementable = implementable && (pipe_k % 4 == 0) && (pipe_k <= args.mma_promotion_interval);
 
-    // We expect full tiles in N, i.e. so we can vectorize loads
-    implementable = implementable && (N % size<1>(TileShape{}) == 0);
     // We expect full tiles in K
     implementable = implementable && (K % size<2>(TileShape{}) == 0);
 
@@ -422,7 +418,7 @@ struct CollectiveMma<
     TiledCopy scale_copy_a = make_tiled_copy(SmemBlockScalingCopyAtomA{}, 
       Layout<Shape<_32>>{}, Layout<Shape<_1>>{});
     TiledCopy scale_copy_b = make_tiled_copy(SmemBlockScalingCopyAtomB{}, 
-      Layout<Shape<_32>>{}, Layout<Shape<BlockScaleCopyVecWidthB>>{});
+      Layout<Shape<_32>>{}, Layout<Shape<_1>>{});
     ThrCopy thr_scale_copy_a = scale_copy_a.get_slice(threadIdx.x);
     ThrCopy thr_scale_copy_b = scale_copy_b.get_slice(threadIdx.x);
     
