@@ -1046,8 +1046,7 @@ template <
   class TileShape_MNK,
   class ClusterShape_MNK,
   class StageCountType,
-  int ScaleGranularityM_,
-  int ScaleGranularityN_
+  class KernelScheduleType
 >
 struct CollectiveBuilder<
     arch::Sm90,
@@ -1062,11 +1061,16 @@ struct CollectiveBuilder<
     TileShape_MNK,
     ClusterShape_MNK,
     StageCountType,
-    KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum<ScaleGranularityM_, ScaleGranularityN_>,
+    KernelScheduleType,
     cute::enable_if_t<
-      not detail::is_use_rmem_A<ElementA, GmemLayoutATag, ElementB, GmemLayoutBTag>()>
+      cute::is_same_v<decltype(KernelScheduleType::ScaleGranularityM), decltype(KernelScheduleType::ScaleGranularityN)> and
+      not detail::is_use_rmem_A<ElementA, GmemLayoutATag, ElementB, GmemLayoutBTag>()
+    >
 > {
-  using KernelScheduleType = KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum<ScaleGranularityM_, ScaleGranularityN_>;
+
+  static constexpr auto ScaleGranularityM_ = KernelScheduleType::ScaleGranularityM;
+  static constexpr auto ScaleGranularityN_ = KernelScheduleType::ScaleGranularityN;
+  static constexpr auto ScalePromotionInterval_ = KernelScheduleType::ScalePromotionInterval;
 
   static_assert(is_static<TileShape_MNK>::value);
   static_assert(is_static<ClusterShape_MNK>::value);
@@ -1076,12 +1080,12 @@ struct CollectiveBuilder<
   static_assert(detail::is_aligned<ElementA, AlignmentA, ElementB, AlignmentB, detail::tma_alignment_bytes>(),
                 "Should meet TMA alignment requirement\n");
 
-  static constexpr bool IsArrayOfPointersGemm = (cute::is_any_of_v<KernelScheduleType,
-                                                                   KernelPtrArrayTmaWarpSpecializedCooperative,
-                                                                   KernelPtrArrayTmaWarpSpecializedPingpong>);
+  static constexpr bool IsArrayOfPointersGemm = (
+    cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedCooperative, KernelScheduleType> ||
+    cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedPingpong, KernelScheduleType>);
+
   static constexpr bool IsFP8Input = detail::is_input_fp8<ElementA, ElementB>();
-  static_assert((!IsFP8Input || !IsArrayOfPointersGemm),
-                "KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum is only compatible with FP8 Blocked Scaled version right now.");
+  static_assert(IsFP8Input, "Warp Specialized gemm with FP8 BlockScaled Accumulator is only compatible with FP8 Blocked Scaled version right now.");
 
   // For fp32 types, map to tf32 MMA value type
   using ElementAMma = cute::conditional_t<cute::is_same_v<ElementA, float>, tfloat32_t, ElementA>;
@@ -1091,10 +1095,9 @@ struct CollectiveBuilder<
   static constexpr cute::GMMA::Major GmmaMajorA = detail::gmma_ss_tag_to_major_A<ElementAMma, GmemLayoutATag>();
   static constexpr cute::GMMA::Major GmmaMajorB = detail::gmma_ss_tag_to_major_B<ElementBMma, GmemLayoutBTag>();
 
-  static constexpr bool IsCooperative = cute::is_any_of_v<KernelScheduleType,
-                                                          KernelTmaWarpSpecializedCooperative,
-                                                          KernelPtrArrayTmaWarpSpecializedCooperative,
-                                                          KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum<ScaleGranularityM_, ScaleGranularityN_>>;
+  static constexpr bool IsCooperative = cute::is_base_of_v<KernelTmaWarpSpecializedCooperative, KernelScheduleType> ||
+                                        cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedCooperative, KernelScheduleType>;
+
   using AtomLayoutMNK = cute::conditional_t<IsCooperative,
       Layout<Shape<_2,_1,_1>>, Layout<Shape<_1,_1,_1>>>;
 
@@ -1121,7 +1124,9 @@ struct CollectiveBuilder<
 
   static constexpr int PipelineStages = detail::compute_stage_count_with_blockwise_scale<detail::sm90_smem_capacity_bytes - KernelSmemCarveout,
       ElementAMma, ElementBMma, ElementBlockScale, TileShape_MNK, ScaleMsPerTile, ScaleNsPerTile>(StageCountType{});
-  using DispatchPolicy = MainloopSm90TmaGmmaWarpSpecializedBlockScalingFP8<PipelineStages, ClusterShape_MNK, KernelScheduleType, ScaleGranularityM_, ScaleGranularityN_>;
+  using DispatchPolicy = cute::conditional_t<IsArrayOfPointersGemm,
+    MainloopSm90ArrayTmaGmmaWarpSpecializedBlockScaling<PipelineStages, ClusterShape_MNK, KernelScheduleType, ScaleGranularityM_, ScaleGranularityN_, ScalePromotionInterval_>,
+    MainloopSm90TmaGmmaWarpSpecializedBlockScalingFP8<PipelineStages, ClusterShape_MNK, KernelScheduleType, ScaleGranularityM_, ScaleGranularityN_, ScalePromotionInterval_>>;
 
   using SmemCopyAtomA = void;
   using SmemCopyAtomB = void;

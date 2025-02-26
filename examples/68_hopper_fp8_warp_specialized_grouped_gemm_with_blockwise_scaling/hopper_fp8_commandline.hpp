@@ -30,20 +30,26 @@
  **************************************************************************************************/
 
 // Command line options parsing
-template<typename RasterOrderOptions>
+template<typename _RasterOrderOptions, typename _ProblemShape, typename _GroupScaleConfig>
 struct Options {
 
+  using RasterOrderOptions = _RasterOrderOptions;
+  using ProblemShape = _ProblemShape;
+  using GroupScaleConfig = _GroupScaleConfig;
+
   bool help = false;
-  bool verify = true;
 
   float alpha = 1.f, beta = 0.f;
-  float scale_a = 1.f, scale_b = 1.f, scale_c = 1.f, scale_d = 1.f, scale_aux = 1.f;
-  bool device_scale = false;
-  bool save_aux = true;
-  bool save_amax = true;
   int iterations = 1000;
-  int warmup = 1000;
-  int m = 1024, n = 512, k = 1024, l = 1;
+  int m = 1024, n = 512, k = 1024, groups = 10;
+  std::string benchmark_path;
+  std::vector<typename ProblemShape::UnderlyingProblemShape> problem_sizes_host;
+  int const tma_alignment_bits = 128;
+  int const alignment = tma_alignment_bits / cutlass::sizeof_bits<cutlass::float_e4m3_t>::value;
+  int const k_alignment = 128;
+  int const m_alignment = 128;
+  int const n_alignment = 128;
+
   RasterOrderOptions raster;
   int swizzle;
 
@@ -59,20 +65,10 @@ struct Options {
     cmd.get_cmd_line_argument("m", m);
     cmd.get_cmd_line_argument("n", n);
     cmd.get_cmd_line_argument("k", k);
-    cmd.get_cmd_line_argument("l", l);
+    cmd.get_cmd_line_argument("groups", groups);
     cmd.get_cmd_line_argument("alpha", alpha, 1.f);
     cmd.get_cmd_line_argument("beta", beta, 0.f);
-    cmd.get_cmd_line_argument("scale_a", scale_a, 1.f);
-    cmd.get_cmd_line_argument("scale_b", scale_b, 1.f);
-    cmd.get_cmd_line_argument("scale_c", scale_c, 1.f);
-    cmd.get_cmd_line_argument("scale_d", scale_d, 1.f);
-    cmd.get_cmd_line_argument("scale_aux", scale_aux, 1.f);
-    cmd.get_cmd_line_argument("device_scale", device_scale, false);
-    cmd.get_cmd_line_argument("save_aux", save_aux, true);
-    cmd.get_cmd_line_argument("save_amax", save_amax, true);
-    cmd.get_cmd_line_argument("warmup", warmup);
     cmd.get_cmd_line_argument("iterations", iterations);
-    cmd.get_cmd_line_argument("verify", verify);
 
     char raster_char;
     cmd.get_cmd_line_argument("raster", raster_char);
@@ -88,36 +84,110 @@ struct Options {
     }
 
     cmd.get_cmd_line_argument("swizzle", swizzle, 1);
+    cmd.get_cmd_line_argument("benchmark", benchmark_path);
+
+    // Decide how to initialize the problems
+    if (!benchmark_path.empty()) {
+      if (!benchmark_problems()) {
+        problem_sizes_host.clear();
+        return;
+      }
+    }
+    else {
+      randomize_problems(cmd);
+    }
+
+  }
+
+  void randomize_problems(cutlass::CommandLine &cmd) {
+    int cmd_line_m = -1, cmd_line_n = -1, cmd_line_k = -1;
+    cmd.get_cmd_line_argument("m", cmd_line_m);
+    cmd.get_cmd_line_argument("n", cmd_line_n);
+    cmd.get_cmd_line_argument("k", cmd_line_k);
+
+    problem_sizes_host.reserve(groups);
+
+    for (int i = groups; i > 0; i--) {
+      int m = cmd_line_m;
+      int n = cmd_line_n;
+      int k = cmd_line_k;
+      if (m < 1) {
+        m = m_alignment * ((rand() % (64 * alignment / m_alignment)) + 1);
+      }
+      if (n < 1) {
+        n = n_alignment * ((rand() % (64 * alignment / n_alignment)) + 1);
+      }
+      if (k < 1) {
+        k = k_alignment * ((rand() % (32 * alignment / k_alignment)) + 1);
+      }
+      problem_sizes_host.push_back({m, n, k});
+    }
+  }
+
+  /// Load a benchmark
+  bool benchmark_problems() {
+    std::ifstream file(benchmark_path);
+    if (!file.good()) {
+      return false;
+    }
+
+    while (file.good()) {
+
+      int idx = -1;
+      std::string extent_str;
+
+      file >> idx >> extent_str;
+
+      if (idx < 0 || extent_str.empty()) {
+        break;
+      }
+
+      cutlass::gemm::GemmCoord extent;
+      std::vector<std::string> tokens;
+
+      cutlass::CommandLine::tokenize(tokens, extent_str, 'x');
+
+      for (int i = 0; i < int(tokens.size()); ++i) {
+        int x = std::atoi(tokens.at(i).c_str());
+
+        // round up
+        if (x % alignment) {
+          x += (alignment - (x % alignment));
+        }
+
+        extent.at(i) = x;
+      }
+
+      if (extent.product()) {
+        problem_sizes_host.push_back({extent.m(), extent.n(), extent.k()});
+      }
+    }
+    groups = static_cast<int>(problem_sizes_host.size());
+
+    return true;
   }
 
   /// Prints the usage statement.
   std::ostream & print_usage(std::ostream &out) const {
 
-    out << "67_hopper_fp8_warp_specialized_gemm_with_blockwise_scaling\n\n"
-      << "  Hopper FP8 GEMM using a Warp Specialized kernel with Blockwise Scaling.\n\n"
+    out << "68_hopper_fp8_warp_specialized_grouped_gemm_with_blockwise_scaling\n\n"
+      << "  Hopper FP8 Grouped GEMM using a Warp Specialized kernel with Blockwise Scaling.\n\n"
       << "Options:\n\n"
       << "  --help                      If specified, displays this usage statement\n\n"
       << "  --m=<int>                   Sets the M extent of the GEMM\n"
       << "  --n=<int>                   Sets the N extent of the GEMM\n"
       << "  --k=<int>                   Sets the K extent of the GEMM\n"
-      << "  --l=<int>                   Sets the l extent (batch) of the GEMM\n"
+      << "  --groups=<int>              Sets the number of individual GEMM problems for Grouped GEMM\n"
       << "  --alpha=<f32>               Epilogue scalar alpha\n"
       << "  --beta=<f32>                Epilogue scalar beta\n"
-      << "  --scale_a=<f32>             Scaling factor for A\n"
-      << "  --scale_b=<f32>             Scaling factor for B\n"
-      << "  --scale_c=<f32>             Scaling factor for C\n"
-      << "  --scale_d=<f32>             Scaling factor for D (ignored for non-fp8 D)\n"
-      << "  --scale_aux=<f32>           Scaling factor for the auxiliary tensor (ignored for non-fp8 aux)\n"
-      << "  --device_scale=<bool>       Copy scalars to device memory before kernel launch (default: false)\n"
-      << "  --save_aux=<bool>           Save the pre-activation as an auxiliary tensor (default: true)\n"
-      << "  --save_amax=<bool>          Save the pre-scaled max absolute value of any fp8 outputs (aux and/or D) (default: true)\n"
       << "  --raster=<char>             CTA Rasterization direction (N for along N, M for along M, and H for heuristic)\n\n"
       << "  --swizzle=<int>             CTA Rasterization swizzle\n\n"
+      << "  --benchmark=<str>           Executes a benchmark problem size.\n\n"
       << "  --iterations=<int>          Number of profiling iterations to perform.\n\n";
 
     out
       << "\n\nExamples:\n\n"
-      << "$ " << "67_hopper_fp8_warp_specialized_gemm_with_blockwise_scaling" << " --m=1024 --n=512 --k=1024 --alpha=2 --beta=0.707 \n\n";
+      << "$ " << "68_hopper_fp8_warp_specialized_grouped_gemm_with_blockwise_scaling" << " --m=1024 --n=512 --k=1024 --groups=10 --alpha=2 --beta=0.707 \n\n";
 
     return out;
   }
@@ -125,8 +195,16 @@ struct Options {
   /// Compute performance in GFLOP/s
   double gflops(double runtime_s) const
   {
+    // Number of real-valued multiply-adds
+    uint64_t fmas = 0ull;
+
+    for (auto const [m, n, k] : problem_sizes_host) {
+      fmas += static_cast<uint64_t>(m) *
+              static_cast<uint64_t>(n) *
+              static_cast<uint64_t>(k);
+    }
     // Two flops per multiply-add
-    uint64_t flop = uint64_t(2) * m * n * k;
+    uint64_t flop = uint64_t(2) * uint64_t(fmas);
     double gflop = double(flop) / double(1.0e9);
     return gflop / runtime_s;
   }
