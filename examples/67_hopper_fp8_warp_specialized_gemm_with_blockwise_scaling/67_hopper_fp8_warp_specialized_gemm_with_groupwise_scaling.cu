@@ -453,6 +453,10 @@ void initialize(const Options<RasterOrderOptions> &options) {
   blockscale_tensor_A.sync_device();
   blockscale_tensor_B.sync_device();
 
+  // Note : This value has to match the KernelSchedule::ScalePromotionInterval
+  // Else kernel will fail can_implement() check
+  // Deprecation Notice : We plan to remove this params member in an upcoming release
+  // Users can safely delete this line from their code, since the default is already 4
   mma_promotion_interval = 4;
 
   if (options.save_aux) {
@@ -668,14 +672,14 @@ bool verify(const Options<RasterOrderOptions> &options, const int ScaleMsPerTile
   tensor_D.sync_host();
   bool passed = cutlass::reference::host::TensorEquals(tensor_ref_D.host_view(), tensor_D.host_view());
 
-  if (false) {
-    std::cout << "tensor_ref_D.host_view() {" << std::endl
-              << tensor_ref_D.host_view() << std::endl
-              << "}"  << std::endl;
-    std::cout << "tensor_D.host_view() {" << std::endl
-              << tensor_D.host_view() << std::endl
-              << "}"  << std::endl;
-  }
+#if 0
+  std::cout << "tensor_ref_D.host_view() {" << std::endl
+            << tensor_ref_D.host_view() << std::endl
+            << "}"  << std::endl;
+  std::cout << "tensor_D.host_view() {" << std::endl
+            << tensor_D.host_view() << std::endl
+            << "}"  << std::endl;
+#endif
 
   if (IsDFp8 && options.save_amax) {
     abs_max_D.sync_host();
@@ -729,13 +733,15 @@ int run(Options<RasterOrderOptions> &options)
 
   // Check if output from CUTLASS kernel and reference kernel are equal or not
   Result result;
-  result.passed = verify(options, ScaleMsPerTile, ScaleNsPerTile);
+  if (options.verify) {
+    result.passed = verify(options, ScaleMsPerTile, ScaleNsPerTile);
 
-  std::cout << "  Disposition: " << (result.passed ? "Passed" : "Failed") << std::endl;
+    std::cout << "  Disposition: " << (result.passed ? "Passed" : "Failed") << std::endl;
+  }
 
-  // if (!result.passed) {
-  //  exit(-1);
-  // }
+  if (!result.passed) {
+   exit(-1);
+  }
 
   // Run profiling loop
   if (options.iterations > 0)

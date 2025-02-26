@@ -43,6 +43,7 @@
 #include "cutlass/gemm/collective/builders/sm100_umma_builder.inl"              
 #include "cutlass/gemm/collective/builders/sm100_9xBF16_umma_builder.inl"       
 #include "cutlass/gemm/collective/builders/sm100_blockscaled_umma_builder.inl"  
+#include "cutlass/gemm/collective/builders/sm100_blockwise_umma_builder.inl"
 #endif 
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
