@@ -1,4 +1,4 @@
-// Adapted from https://github.com/deepseek-ai/FlashMLA/blob/main/csrc/softmax.h
+// Adapted from https://github.com/Dao-AILab/flash-attention/blob/main/csrc/flash_attn/src/softmax.h
 
 #pragma once
 
