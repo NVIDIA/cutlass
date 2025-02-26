@@ -1,5 +1,3 @@
-// Adapted from https://github.com/deepseek-ai/FlashMLA/blob/main/csrc/static_switch.h
-
 #pragma once
 
 #define CHECK_CUDA(call)                                                                                  \
