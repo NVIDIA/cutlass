@@ -59,6 +59,7 @@ template <
   class KernelSchedule,
   int ScaleGranularityM_,
   int ScaleGranularityN_,
+  int ScalePromotionInterval_,
   class TileShape_,
   class ElementA_,
   class StrideA_,
@@ -74,7 +75,7 @@ template <
   class SmemCopyAtomB_,
   class TransformB_>
 struct CollectiveMma<
-    MainloopSm90TmaGmmaWarpSpecializedBlockScalingFP8<Stages, ClusterShape, KernelSchedule, ScaleGranularityM_, ScaleGranularityN_>,
+    MainloopSm90TmaGmmaWarpSpecializedBlockScalingFP8<Stages, ClusterShape, KernelSchedule, ScaleGranularityM_, ScaleGranularityN_, ScalePromotionInterval_>,
     TileShape_,
     ElementA_,
     StrideA_,
@@ -93,7 +94,7 @@ struct CollectiveMma<
   //
   // Type Aliases
   //
-  using DispatchPolicy = MainloopSm90TmaGmmaWarpSpecializedBlockScalingFP8<Stages, ClusterShape, KernelSchedule, ScaleGranularityM_, ScaleGranularityN_>;
+  using DispatchPolicy = MainloopSm90TmaGmmaWarpSpecializedBlockScalingFP8<Stages, ClusterShape, KernelSchedule, ScaleGranularityM_, ScaleGranularityN_, ScalePromotionInterval_>;
   using TileShape = TileShape_;
   using ElementA = ElementA_;
   using StrideA = StrideA_;
@@ -122,6 +123,8 @@ struct CollectiveMma<
 
   static constexpr int ScaleGranularityM = ScaleGranularityM_ == 0 ? size<0>(TileShape{}) : ScaleGranularityM_;
   static constexpr int ScaleGranularityN = ScaleGranularityN_ == 0 ? size<1>(TileShape{}) : ScaleGranularityN_;
+  static constexpr int ScalePromotionInterval = ScalePromotionInterval_;
+  static_assert(ScalePromotionInterval % 4 == 0, "ScalePromotionInterval must be a multiple of 4.");
   static constexpr int ScaleMsPerTile = size<0>(TileShape{}) / ScaleGranularityM;
   static constexpr int ScaleNsPerTile = size<1>(TileShape{}) / ScaleGranularityN;
 
@@ -281,7 +284,9 @@ struct CollectiveMma<
     constexpr int min_tma_aligned_elements_B = tma_alignment_bits / cutlass::sizeof_bits<ElementB>::value;
     implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_B>(cute::make_shape(N,K,L), StrideB{});
     /* MMA promotion interval should be a multiple of 4, since each mainloop iteration would issue 4 MMA instructions. */
-    implementable = implementable && (args.mma_promotion_interval % 4 == 0);
+    constexpr int pipe_k = size<2>(TileShape{}) / tile_size<2>(TiledMma{});
+    implementable = implementable && (args.mma_promotion_interval % 4 == 0) && (args.mma_promotion_interval == ScalePromotionInterval);
+    implementable = implementable && (pipe_k % 4 == 0) && (pipe_k <= args.mma_promotion_interval);
 
     if (!implementable) {
       CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Problem Size doesn't meet the minimum alignment requirements for TMA.\n");
@@ -481,6 +486,38 @@ struct CollectiveMma<
     }
   }
 
+  template<
+    class EngineAccum,
+    class LayoutAccum,
+    class ScaleFactor
+  >
+  CUTLASS_DEVICE
+  void scale_if_needed(GmmaFP8Accumulation<EngineAccum, LayoutAccum>& accumulation, ScaleFactor scaleFactor) {
+    if constexpr (ScalePromotionInterval != 4) {
+      accumulation.scale_if_needed(scaleFactor);
+    }
+    else {
+      // avoid unnecessary tests when granularity is the finnest
+      accumulation.scale(scaleFactor);
+    }
+  }
+  template<
+    class EngineAccum,
+    class LayoutAccum,
+    class ScaleFactor1,
+    class ScaleFactor2
+  >
+  CUTLASS_DEVICE
+  void scale_if_needed(GmmaFP8Accumulation<EngineAccum, LayoutAccum>& accumulation, ScaleFactor1 scaleFactor1, ScaleFactor2 scaleFactor2) {
+    if constexpr (ScalePromotionInterval != 4) {
+      accumulation.scale_if_needed(scaleFactor1, scaleFactor2);
+    }
+    else {
+      // avoid unnecessary tests when granularity is the finnest
+      accumulation.scale(scaleFactor1, scaleFactor2);
+    }
+  }
+
   /// Perform a collective-scoped matrix multiply-accumulate
   /// Consumer Perspective
   template <
@@ -575,7 +612,7 @@ struct CollectiveMma<
 
     tiled_mma.accumulate_ = GMMA::ScaleOut::Zero;
 
-    GmmaFP8Accumulation accumulation(accum, mainloop_params.mma_promotion_interval, size<2>(tCrA));
+    GmmaFP8Accumulation accumulation(accum, ScalePromotionInterval, size<2>(tCrA));
     warpgroup_fence_operand(accumulation());
     CUTLASS_PRAGMA_UNROLL
     for (int k_tile_prologue = prologue_mma_count; k_tile_prologue > 0; --k_tile_prologue)
@@ -584,7 +621,13 @@ struct CollectiveMma<
       auto barrier_token = pipeline.consumer_try_wait(smem_pipe_read);
       pipeline.consumer_wait(smem_pipe_read, barrier_token);
 
-      if (accumulation.prepare_if_needed()) {
+      if constexpr (ScalePromotionInterval != 4) {
+        if (accumulation.prepare_if_needed()) {
+          tiled_mma.accumulate_ = GMMA::ScaleOut::Zero;
+        }
+      }
+      else {
+        // Always zero out the accumulator for finest granularity
         tiled_mma.accumulate_ = GMMA::ScaleOut::Zero;
       }
 
@@ -624,16 +667,16 @@ struct CollectiveMma<
       // Block scale the accumulators with reg tensor `tCrScaleAViewAsC` and `tCrScaleBViewAsC`
       if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile == 1) {
         ElementBlockScale scale_ab = tCrScaleAViewAsC.data()[0];
-        accumulation.scale_if_needed(scale_ab);
+        scale_if_needed(accumulation, scale_ab);
       }
       if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile == 1) {
-        accumulation.scale_if_needed(tCrScaleAViewAsC);
+        scale_if_needed(accumulation, tCrScaleAViewAsC);
       }
       if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile  > 1) {
-        accumulation.scale_if_needed(tCrScaleBViewAsC);
+        scale_if_needed(accumulation, tCrScaleBViewAsC);
       }
       if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile  > 1) {
-        accumulation.scale_if_needed(tCrScaleAViewAsC, tCrScaleBViewAsC);
+        scale_if_needed(accumulation, tCrScaleAViewAsC, tCrScaleBViewAsC);
       }
 
       ++smem_pipe_read;
@@ -677,7 +720,13 @@ struct CollectiveMma<
         }
       }
 
-      if (accumulation.prepare_if_needed()) {
+      if constexpr (ScalePromotionInterval != 4) {
+        if (accumulation.prepare_if_needed()) {
+          tiled_mma.accumulate_ = GMMA::ScaleOut::Zero;
+        }
+      }
+      else {
+        // Always zero out the accumulator for finest granularity
         tiled_mma.accumulate_ = GMMA::ScaleOut::Zero;
       }
 
@@ -699,16 +748,16 @@ struct CollectiveMma<
       // Block scale the accumulators with reg tensor `tCrScaleAViewAsC` and `tCrScaleBViewAsC`
       if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile == 1) {
         ElementBlockScale scale_ab = tCrScaleAViewAsC.data()[0];
-        accumulation.scale_if_needed(scale_ab);
+        scale_if_needed(accumulation, scale_ab);
       }
       if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile == 1) {
-        accumulation.scale_if_needed(tCrScaleAViewAsC);
+        scale_if_needed(accumulation, tCrScaleAViewAsC);
       }
       if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile  > 1) {
-        accumulation.scale_if_needed(tCrScaleBViewAsC);
+        scale_if_needed(accumulation, tCrScaleBViewAsC);
       }
       if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile  > 1) {
-        accumulation.scale_if_needed(tCrScaleAViewAsC, tCrScaleBViewAsC);
+        scale_if_needed(accumulation, tCrScaleAViewAsC, tCrScaleBViewAsC);
       }
 
       pipeline.consumer_release(smem_pipe_release);                 // UNLOCK smem_pipe_release, done _computing_ on it
@@ -718,18 +767,21 @@ struct CollectiveMma<
       ++smem_pipe_release;
     }
 
-    if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile == 1) {
-      ElementBlockScale scale_ab = tCrScaleAViewAsC.data()[0];
-      accumulation.scale_residue_if_needed(scale_ab);
-    }
-    if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile == 1) {
-      accumulation.scale_residue_if_needed(tCrScaleAViewAsC);
-    }
-    if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile  > 1) {
-      accumulation.scale_residue_if_needed(tCrScaleBViewAsC);
-    }
-    if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile  > 1) {
-      accumulation.scale_residue_if_needed(tCrScaleAViewAsC, tCrScaleBViewAsC);
+    if constexpr (ScalePromotionInterval != 4) {
+      // residues only exists when granularity is not the finnest
+      if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile == 1) {
+        ElementBlockScale scale_ab = tCrScaleAViewAsC.data()[0];
+        accumulation.scale_residue_if_needed(scale_ab);
+      }
+      if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile == 1) {
+        accumulation.scale_residue_if_needed(tCrScaleAViewAsC);
+      }
+      if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile  > 1) {
+        accumulation.scale_residue_if_needed(tCrScaleBViewAsC);
+      }
+      if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile  > 1) {
+        accumulation.scale_residue_if_needed(tCrScaleAViewAsC, tCrScaleBViewAsC);
+      }
     }
 
     warpgroup_fence_operand(accumulation());

@@ -398,6 +398,10 @@ void initialize(const Options<RasterOrderOptions> &options) {
   blockscale_tensor_A.sync_device();
   blockscale_tensor_B.sync_device();
 
+  // Note : This value has to match the KernelSchedule::ScalePromotionInterval
+  // Else kernel will fail can_implement() check
+  // Deprecation Notice : We plan to remove this params member in an upcoming release
+  // Users can safely delete this line from their code, since the default is already 4
   mma_promotion_interval = 4;
 
   if (options.save_aux) {
@@ -662,9 +666,11 @@ int run(Options<RasterOrderOptions> &options)
 
   // Check if output from CUTLASS kernel and reference kernel are equal or not
   Result result;
-  result.passed = verify(options);
+  if (options.verify) {
+    result.passed = verify(options);
 
-  std::cout << "  Disposition: " << (result.passed ? "Passed" : "Failed") << std::endl;
+    std::cout << "  Disposition: " << (result.passed ? "Passed" : "Failed") << std::endl;
+  }
 
   // if (!result.passed) {
   //  exit(-1);
@@ -674,8 +680,9 @@ int run(Options<RasterOrderOptions> &options)
   if (options.iterations > 0)
   {
     GpuTimer timer;
-    timer.start();
-    for (int iter = 0; iter < options.iterations; ++iter) {
+    for (int iter = 0; iter < options.warmup + options.iterations; ++iter) {
+      if (iter == options.warmup)
+        timer.start();
       CUTLASS_CHECK(gemm.run());
     }
     timer.stop();
