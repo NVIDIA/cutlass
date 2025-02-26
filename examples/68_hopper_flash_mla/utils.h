@@ -1,4 +1,4 @@
-// Adapted from https://github.com/deepseek-ai/FlashMLA/blob/main/csrc/utils.h
+// Adapted from https://github.com/Dao-AILab/flash-attention/blob/main/hopper/utils.h
 
 #pragma once
 
