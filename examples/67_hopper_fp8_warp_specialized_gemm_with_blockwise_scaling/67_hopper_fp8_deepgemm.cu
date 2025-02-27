@@ -68,7 +68,7 @@
 #include "helper.h"
 // #include "reference/host/gemm_with_groupwise_scaling.h"
 
-#include "include/deep_gemm/fp8_gemm.cuh"
+#include "deep_gemm/include/deep_gemm/fp8_gemm.cuh"
 
 // using namespace cute;
 using namespace deep_gemm;
