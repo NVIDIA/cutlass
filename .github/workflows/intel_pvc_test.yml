@@ -28,34 +28,22 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
-
-      - name: Install dependencies
-        shell: bash
-        run: |
-          mkdir ~/dpcpp
-          pushd ~/dpcpp
-          echo "Will use DPCPP ${{ inputs.DPCPP_VERSION }}."
-          if [[ "${{ inputs.DPCPP_VERSION }}" != "" ]]; then \
-            echo "Downloading DPCPP from https://github.com/intel/llvm/releases/download/${{ inputs.DPCPP_VERSION }}/sycl_linux.tar.gz"; \
-            wget -q https://github.com/intel/llvm/releases/download/${{ inputs.DPCPP_VERSION }}/sycl_linux.tar.gz; \
-          else
-            latest=$(curl -sS https://api.github.com/repos/intel/llvm/releases | jq -r '[.[].tag_name|select(match("nightly-[0-9]{4}-[0-9]{2}-[0-9]{2}"))][0]') && \
-            echo "Downloading DPCPP from https://github.com/intel/llvm/releases/download/${latest}/sycl_linux.tar.gz"; \
-            wget -q https://github.com/intel/llvm/releases/download/${latest}/sycl_linux.tar.gz; \
-          fi
-          tar -xf sycl_linux.tar.gz
-          rm sycl_linux.tar.gz
-          popd
-
       # For a specific DPC++ nightly build define the repository variable DPCPP_VERSION
       # for example using the tag: 'nightly-2024-04-22'
+      - name: Install DPC++
+        id: install_dpcpp
+        uses: ./.github/actions/install-dpcpp
+        with:
+          DPCPP_VERSION: ${{ inputs.DPCPP_VERSION }}
+          DPCPP_PATH: ~/dpcpp
       - name: Build
         shell: bash
         run: |
-          export PATH=~/dpcpp/bin/:$PATH
-          export C_INCLUDE_PATH=~/dpcpp/include/:$C_INCLUDE_PATH
-          export CPLUS_INCLUDE_PATH=~/dpcpp/include/:$CPLUS_INCLUDE_PATH
-          export LD_LIBRARY_PATH=~/dpcpp/lib/:$LD_LIBRARY_PATH
+          export DPCPP_PATH=~/dpcpp
+          export PATH=$DPCPP_PATH/bin/:$PATH
+          export C_INCLUDE_PATH=$DPCPP_PATH/include/:$C_INCLUDE_PATH
+          export CPLUS_INCLUDE_PATH=$DPCPP_PATH/include/:$CPLUS_INCLUDE_PATH
+          export LD_LIBRARY_PATH=$DPCPP_PATH/lib/:$LD_LIBRARY_PATH
           export CC=clang
           export CXX=clang++
           clang++ --version
@@ -67,11 +55,13 @@ jobs:
       - name: Unit test
         shell: bash
         run: |
-          export LD_LIBRARY_PATH=~/dpcpp/lib/:$LD_LIBRARY_PATH
+          export DPCPP_PATH=~/dpcpp
+          export LD_LIBRARY_PATH=$DPCPP_PATH/lib/:$LD_LIBRARY_PATH
           cmake --build . --target test_unit -j 24
 
       - name: Examples
         shell: bash
         run: |
-          export LD_LIBRARY_PATH=~/dpcpp/lib/:$LD_LIBRARY_PATH
+          export DPCPP_PATH=~/dpcpp
+          export LD_LIBRARY_PATH=$DPCPP_PATH/lib/:$LD_LIBRARY_PATH
           cmake --build . --target test_examples -j 24

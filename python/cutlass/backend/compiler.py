@@ -165,6 +165,7 @@ class ArtifactManager:
                                        "-DSYCL_INTEL_TARGET",
                                        "-shared", "-fPIC",
                                        "-fno-sycl-dead-args-optimization",
+                                       "-Xspirv-translator -spirv-ext=+SPV_INTEL_split_barrier",
                                        "-fsycl-range-rounding=disable"]
         self.nvcc()
         self.compiled_cache_device = {}

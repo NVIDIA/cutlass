@@ -1,0 +1,69 @@
+name: "SYCL Intel PVC Python Interface Test"
+
+on:
+  push:
+    branches: [ "sycl-develop" ]
+  pull_request:
+    branches: [ "sycl-develop" ]
+  merge_group:
+    branches: [ "sycl-develop" ]
+  workflow_dispatch:
+    inputs:
+      DPCPP_VERSION:
+        description: "DPCPP version to use"
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  run-tests:
+    name: Run Intel PVC tests
+    runs-on: cp-gpumax-1100-gpu
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install DPC++
+        id: install_dpcpp
+        uses: ./.github/actions/install-dpcpp
+        with:
+          DPCPP_VERSION: ${{ inputs.DPCPP_VERSION }}
+          DPCPP_PATH: ~/dpcpp
+      - name: Setup virtual environment
+        shell: bash
+        run: |
+          python3 -m venv ~/.venv
+      - name: Install DPCTL
+        id: install_dpctl
+        uses: ./.github/actions/install-dpctl
+        with:
+          DPCTL_URL: https://github.com/sommerlukas/dpctl.git
+          DPCTL_BRANCH: additional-kernel-param-types
+          DPCTL_PATH: ~/dpctl
+          DPCPP_PATH: ~/dpcpp
+          VENV_PATH: ~/.venv
+      - name: Install Torch XPU
+        shell: bash
+        run: |
+          source ~/.venv/bin/activate
+          pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/test/xpu
+          pip uninstall --yes intel-sycl-rt intel-cmplr-lib-ur umf
+      - name: Run Python Interface GEMM Tests
+        shell: bash
+        run: |
+          export DPCPP_PATH=~/dpcpp
+          export PATH=$DPCPP_PATH/bin:$PATH
+          export LD_LIBRARY_PATH=$DPCPP_PATH/lib:$LD_LIBRARY_PATH
+          source ~/.venv/bin/activate
+          pip install -e .
+          export CUTLASS_USE_SYCL=1
+          python test/python/cutlass/gemm/run_all_tests.py
