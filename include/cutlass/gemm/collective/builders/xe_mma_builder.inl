@@ -85,17 +85,29 @@ struct CollectiveBuilder<
 
       //Prepare Template arguments required of CollectiveMainLoop
 
+      using Tile_M = decltype(get<0>(TileShape_MNK{}));
+      using Tile_N = decltype(get<1>(TileShape_MNK{}));
+      using Tile_K = decltype(get<2>(TileShape_MNK{}));
+      using Atom_M = decltype(get<0>(typename MMA_Traits<XE_8x16x16_F32BF16BF16F32_TT>::Shape_MNK{}));
+      using Atom_N = decltype(get<1>(typename MMA_Traits<XE_8x16x16_F32BF16BF16F32_TT>::Shape_MNK{}));
+      using SGs_M = _8;
+      using SGs_N = _4;
+      using Iters_M = decltype(Tile_M{} / Atom_M{} / SGs_M{});
+      using Iters_N = decltype(Tile_N{} / Atom_N{} / SGs_N{});
+      using Stride_M = decltype(Iters_M{} * Atom_M{});
+      using Stride_N = decltype(Iters_N{} * Atom_N{});
+
       using TiledMma =
           TiledMMA<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
-                   Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>,
-                   Tile<Layout<Shape<_8, _8, _4>, Stride<_1, _32, _8>>,
-                        Layout<Shape<_16, _4, _4>, Stride<_1, _64, _16>>, _32>>;
+                   Layout<Shape<SGs_M, SGs_N, _1>, Stride<SGs_N, _1, _0>>,
+                   Tile<Layout<Shape<Atom_M, SGs_M, Iters_M>, Stride<_1, Stride_M, Atom_M>>,
+                        Layout<Shape<Atom_N, SGs_N, Iters_N>, Stride<_1, Stride_N, Atom_N>>, Tile_K>>;
       
       static constexpr int PipelineStages = 3;
       using DispatchPolicy = cutlass::gemm::MainloopIntelPVC<PipelineStages>;
 
-      using GmemTiledCopyA = XE_2D_U16x32x32_LD_N;
-      using GmemTiledCopyB = XE_2D_U16x32x32_LD_V;
+      using GmemTiledCopyA = XE_2D_U16x16x16_LD_N;
+      using GmemTiledCopyB = XE_2D_U16x16x16_LD_V;
 
       //PVC pipeline does not use shared memory
       using SmemLayoutAtomA = void; 

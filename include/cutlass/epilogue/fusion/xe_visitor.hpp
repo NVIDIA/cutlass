@@ -192,25 +192,16 @@ struct XeAuxLoad {
     auto xe_copy_aux = params_ptr->xe_load_aux;
     Tensor trAux = make_tensor_like<Element>(args.tCrC);
 
-    using TiledMma = decltype(args.tiled_mma);
-    using MmaAtomShape = typename TiledMma::AtomShape_MNK;
-
-    auto SG_M = get<0>(args.tile_shape_mnk);
-    auto SG_N = get<1>(args.tile_shape_mnk);
-
-    static constexpr int FragsM = SG_M / get<0>(MmaAtomShape()); // A frags per sub_group
-    static constexpr int FragsN = SG_N / get<1>(MmaAtomShape()); // B frags per sub_group
-
     auto [M, N, K, L] = args.problem_shape_mnkl;
     auto [m_coord, n_coord, k_coord, l_coord] = args.tile_coord_mnkl;
-    auto m_offset = m_coord * SG_M;
-    auto n_offset = n_coord * SG_N;
-    Tensor rw_coord = args.tiled_copy.get_pvc_tensor(
-            make_coord(m_offset, n_offset, l_coord),
-            make_shape(_, Int<FragsM>{}, Int<FragsN>{}));
+
+    Tensor mAux_mnl = args.tiled_copy.get_pvc_tensor(make_shape(M,N,L));
+    // Tiling is done differently than in epilogue as we get in coordinates of subgroup in kernel
+    Tensor gAux = local_tile(mAux_mnl, select<0,1>(args.tile_shape_mnk), make_coord(m_coord,n_coord,l_coord));
+    Tensor tCgAux = args.tiled_copy.get_thread_slice(args.thread_idx).partition_D(gAux);
 
     return ConsumerStoreCallbacks(
-        rw_coord, xe_copy_aux, cute::move(trAux), params_ptr
+        tCgAux, xe_copy_aux, cute::move(trAux), params_ptr
     );
   }
 };
