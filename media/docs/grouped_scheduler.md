@@ -340,7 +340,7 @@ Thus, there are 216 tiles across the group.
 Suppose this grouped GEMM is run on GA100, which has 108 SMs. Suppose that
 the occupancy given the parameters of the grouped GEMM is one -- one threadblock
 can be active at a time on an SM. The grouped GEMM will, thus, run with 108
-persistent threadblocks, each of which computes (256 / 108) = 2 tiles.
+persistent threadblocks, each of which computes (216 / 108) = 2 tiles.
 
 Under the round-robin assignment of tiles to threadblocks employed by
 the grouped GEMM scheduler, the assignment of tiles to threadblocks
