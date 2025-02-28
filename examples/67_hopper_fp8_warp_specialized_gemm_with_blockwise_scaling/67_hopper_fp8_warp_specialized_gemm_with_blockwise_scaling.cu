@@ -557,13 +557,13 @@ bool verify(const Options<RasterOrderOptions> &options) {
   auto blockscale_A = cute::make_tensor(blockscale_tensor_A.host_data(),
                                         cute::make_layout(
                                           cute::make_shape(blockscale_m, blockscale_k, options.l),
-                                          cute::make_stride(blockscale_k, 1, blockscale_m * blockscale_k)
+                                          cute::make_stride(1, blockscale_m, blockscale_m * blockscale_k)
                                         )
                                       );
   auto blockscale_B = cute::make_tensor(blockscale_tensor_B.host_data(),
                                         cute::make_layout(
                                           cute::make_shape(blockscale_n, blockscale_k, options.l),
-                                          cute::make_stride(blockscale_k, 1, blockscale_n * blockscale_k)
+                                          cute::make_stride(1, blockscale_n, blockscale_n * blockscale_k)
                                         )
                                       );
 
