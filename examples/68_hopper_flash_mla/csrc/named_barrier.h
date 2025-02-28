@@ -1,5 +1,3 @@
-// Adapted from https://github.com/deepseek-ai/FlashMLA/blob/main/csrc/named_barrier.h
-
 #pragma once
 
 #include "cutlass/barrier.h"
