@@ -1,4 +1,4 @@
-# Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2024 - 2025 Codeplay Software Ltd. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -26,24 +26,19 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-cmake_policy(SET CMP0112 NEW)
+if (CUTLASS_ENABLE_SYCL AND SYCL_INTEL_TARGET)
+  cutlass_add_executable(
+    copy_debug
+    copy_debug.cpp
+    )
 
-add_subdirectory(util)
+  target_link_libraries(
+    copy_debug
+    PRIVATE
+    CUTLASS
+    cutlass_tools_util_includes
+    )
+    
+  add_sycl_to_target(TARGET copy_debug)
 
-if (CUTLASS_ENABLE_SYCL)
-  add_subdirectory(copy_debug)
-endif()
-
-if (CUTLASS_ENABLE_LIBRARY)
-  add_subdirectory(library)
-endif()
-
-if (CUTLASS_ENABLE_PROFILER AND NOT CUTLASS_ENABLE_SYCL)
-  if (NOT CUTLASS_ENABLE_LIBRARY)
-    message(SEND_ERROR "Build conflict: The CUTLASS profiler requires the CUTLASS library.")
-    message(SEND_ERROR "  CUTLASS_ENABLE_PROFILER = ${CUTLASS_ENABLE_PROFILER}")
-    message(SEND_ERROR "  CUTLASS_ENABLE_LIBRARY = ${CUTLASS_ENABLE_LIBRARY}")
-  else()
-    add_subdirectory(profiler)
-  endif()
 endif()
