@@ -41,7 +41,6 @@
 #include "cutlass/epilogue/collective/detail.hpp"
 #include "cutlass/epilogue/fusion/callbacks.hpp"
 #include "cutlass/epilogue/fusion/sm90_visitor_tma_warpspecialized.hpp"
-#include "cutlass/epilogue/fusion/xe_vistor_softmax.hpp"
 #include "cutlass/detail/layout.hpp"
 
 #include "cute/tensor.hpp"
