@@ -29,4 +29,4 @@ runs:
         python scripts/build_locally.py --c-compiler=$DPCPP_PATH/bin/clang \
           --cxx-compiler=$DPCPP_PATH/bin/clang++ \
           --compiler-root=$DPCPP_PATH/bin \
-          --cmake-opts="-DCMAKE_INCLUDE_PATH=/lib/x86_64-linux-gnu"
+          --cmake-opts="-DCMAKE_INCLUDE_PATH=/lib/x86_64-linux-gnu -DLIBZE_LOADER_FILENAME=libze_loader.so.1"

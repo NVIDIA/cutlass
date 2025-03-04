@@ -47,7 +47,7 @@ jobs:
         uses: ./.github/actions/install-dpctl
         with:
           DPCTL_URL: https://github.com/sommerlukas/dpctl.git
-          DPCTL_BRANCH: additional-kernel-param-types
+          DPCTL_BRANCH: rebase-kernel-param
           DPCTL_PATH: ~/dpctl
           DPCPP_PATH: ~/dpcpp
           VENV_PATH: ~/.venv
