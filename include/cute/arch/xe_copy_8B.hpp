@@ -54,21 +54,19 @@
   }
 #endif
 
-using namespace cute;
-
 // 64bits No transform Transpose
 SYCL_DEVICE_BUILTIN(
-    intel::ulong __builtin_IB_subgroup_block_read_flat_transpose_u64_k1(
+    cute::intel::ulong __builtin_IB_subgroup_block_read_flat_transpose_u64_k1(
         long baseoffset, int width_minus_one, int height_minus_one,
-        int pitch_minus_one, intel::coord_t coord));
+        int pitch_minus_one, cute::intel::coord_t coord));
 SYCL_DEVICE_BUILTIN(
-    intel::ulong2 __builtin_IB_subgroup_block_read_flat_transpose_u64_k2(
+    cute::intel::ulong2 __builtin_IB_subgroup_block_read_flat_transpose_u64_k2(
         long baseoffset, int width_minus_one, int height_minus_one,
-        int pitch_minus_one, intel::coord_t coord));
+        int pitch_minus_one, cute::intel::coord_t coord));
 SYCL_DEVICE_BUILTIN(
-    intel::ulong4 __builtin_IB_subgroup_block_read_flat_transpose_u64_k4(
+    cute::intel::ulong4 __builtin_IB_subgroup_block_read_flat_transpose_u64_k4(
         long baseoffset, int width_minus_one, int height_minus_one,
-        int pitch_minus_one, intel::coord_t coord));
+        int pitch_minus_one, cute::intel::coord_t coord));
 #undef SYCL_DEVICE_BUILTIN
 
 #undef __global
@@ -77,13 +75,13 @@ SYCL_DEVICE_BUILTIN(
 // 64bits No transform Transpose
 SYCL_DEVICE_OCL(ulong intel_sub_group_block_read_transpose_64b_8r1c(
     const __global void *base_address, int width, int height, int pitch,
-    intel::coord_t coord));
-SYCL_DEVICE_OCL(intel::ulong2 intel_sub_group_block_read_transpose_64b_8r2c(
+    cute::intel::coord_t coord));
+SYCL_DEVICE_OCL(cute::intel::ulong2 intel_sub_group_block_read_transpose_64b_8r2c(
     const __global void *base_address, int width, int height, int pitch,
-    intel::coord_t coord));
-SYCL_DEVICE_OCL(intel::ulong4 intel_sub_group_block_read_transpose_64b_8r4c(
+    cute::intel::coord_t coord));
+SYCL_DEVICE_OCL(cute::intel::ulong4 intel_sub_group_block_read_transpose_64b_8r4c(
     const __global void *base_address, int width, int height, int pitch,
-    intel::coord_t coord));
+    cute::intel::coord_t coord));
 #undef SYCL_DEVICE_OCL
 
 namespace cute

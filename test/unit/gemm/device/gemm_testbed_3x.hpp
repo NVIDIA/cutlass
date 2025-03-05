@@ -2362,8 +2362,6 @@ struct TestbedImpl {
     //
     // Run the GEMM
     //
-    cudaError_t result;
-
     for (int iter = 0; iter < iterations; ++iter) {
       status = gemm_op(arguments, workspace.get());
       if (status != cutlass::Status::kSuccess) {
@@ -2380,7 +2378,7 @@ struct TestbedImpl {
       return false;
     }
 #else
-    result = cudaDeviceSynchronize();
+    auto result = cudaDeviceSynchronize();
     if (result != cudaSuccess) {
       EXPECT_EQ(result, cudaSuccess) << "Error at Kernel Sync.";
       return false;
@@ -2527,7 +2525,6 @@ struct TestbedImpl {
       return profile(problem_size, static_cast<int>(iterations), gemm_op, arguments, workspace);
     }
     else {
-      cudaError_t result;
 #if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
       CUTLASS_TRACE_HOST("TestbedImpl::run: Calling gemm_op.initialize");
 #endif
@@ -2561,7 +2558,7 @@ struct TestbedImpl {
 #if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
       CUTLASS_TRACE_HOST("TestbedImpl::run: Calling cudaDeviceSynchronize");
 #endif
-      result = cudaDeviceSynchronize();
+      auto result = cudaDeviceSynchronize();
       if (result != cudaSuccess) {
         CUTLASS_TRACE_HOST("TestbedImpl::run: cudaDeviceSynchronize reports non-success");
         EXPECT_EQ(result, cudaSuccess) << "Error at Kernel Sync.";

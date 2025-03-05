@@ -39,8 +39,6 @@
 #define SYCL_DEVICE_BUILTIN(x) inline x { assert(false); }
 #endif
 
-using namespace cute;
-
 // prefetch
 SYCL_DEVICE_BUILTIN(void __builtin_IB_lsc_prefetch_global_uchar(
     const __attribute__((opencl_global)) uint8_t *base, int immElemOff,

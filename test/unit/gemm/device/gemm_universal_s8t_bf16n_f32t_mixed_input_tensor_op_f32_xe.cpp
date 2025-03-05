@@ -62,6 +62,7 @@
 
 
 TEST(XE_Device_GemmUniversal_s8t_bf16n_f32t_mixed_input_tensor_op_f32, 128x128x64_64x64x64) {
+  using namespace cute;
 
   using ElementAccumulator = float;                   // <- data type of accumulator
   using ElementComputeEpilogue = float;  // <- data type of epilogue operations

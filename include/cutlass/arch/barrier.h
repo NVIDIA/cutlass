@@ -280,8 +280,8 @@ class NamedBarrier {
   CUTLASS_DEVICE
   static void arrive_and_wait_internal(uint32_t num_threads, uint32_t barrier_id) {
 #if defined(SYCL_INTEL_TARGET)
-    barrier_arrive(2,2,0);
-    barrier_wait(2,2,0);
+    cute::barrier_arrive(2,2,0);
+    cute::barrier_wait(2,2,0);
 #elif CUDA_BARRIER_ENABLED
     asm volatile("bar.sync %0, %1;" : : "r"(barrier_id), "r"(num_threads));
     cutlass::arch::synclog_emit_named_barrier_arrive_and_wait(__LINE__, num_threads, barrier_id);
@@ -303,7 +303,7 @@ class NamedBarrier {
   CUTLASS_DEVICE
   static void arrive_internal(uint32_t num_threads, uint32_t barrier_id) {
 #if defined(SYCL_INTEL_TARGET)
-    barrier_arrive(2,2,0);
+    cute::barrier_arrive(2,2,0);
 #elif CUDA_BARRIER_ENABLED
     cutlass::arch::synclog_emit_named_barrier_arrive(__LINE__, num_threads, barrier_id);
     asm volatile("bar.arrive %0, %1;" : : "r"(barrier_id), "r"(num_threads));

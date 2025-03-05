@@ -65,114 +65,112 @@ enum class CacheControl {
     kL1IAR_L3C = 7, // Override to L1 invalidate-after-read, and L3 cached
 };
 
-using namespace cute;
-
 // 32bits specific for tf32 No transform No transpose
 SYCL_DEVICE_BUILTIN(
     uint __builtin_IB_subgroup_block_read_flat_u32_m1k8v1(
         long baseoffset, int width_minus_one, int height_minus_one,
-        int pitch_minus_one, intel::coord_t coord));
+        int pitch_minus_one, cute::intel::coord_t coord));
 SYCL_DEVICE_BUILTIN(
     uint __builtin_IB_subgroup_block_read_flat_u32_m2k8v1(
         long baseoffset, int width_minus_one, int height_minus_one,
-        int pitch_minus_one, intel::coord_t coord));
+        int pitch_minus_one, cute::intel::coord_t coord));
 SYCL_DEVICE_BUILTIN(
-    intel::uint2 __builtin_IB_subgroup_block_read_flat_u32_m4k8v1(
+    cute::intel::uint2 __builtin_IB_subgroup_block_read_flat_u32_m4k8v1(
         long baseoffset, int width_minus_one, int height_minus_one,
-        int pitch_minus_one, intel::coord_t coord));
+        int pitch_minus_one, cute::intel::coord_t coord));
 SYCL_DEVICE_BUILTIN(
-    intel::uint4 __builtin_IB_subgroup_block_read_flat_u32_m8k8v1(
+    cute::intel::uint4 __builtin_IB_subgroup_block_read_flat_u32_m8k8v1(
         long baseoffset, int width_minus_one, int height_minus_one,
-        int pitch_minus_one, intel::coord_t coord));
+        int pitch_minus_one, cute::intel::coord_t coord));
 SYCL_DEVICE_BUILTIN(
-    intel::uint8 __builtin_IB_subgroup_block_read_flat_u32_m16k8v1(
+    cute::intel::uint8 __builtin_IB_subgroup_block_read_flat_u32_m16k8v1(
         long baseoffset, int width_minus_one, int height_minus_one,
-        int pitch_minus_one, intel::coord_t coord));
+        int pitch_minus_one, cute::intel::coord_t coord));
 SYCL_DEVICE_BUILTIN(
-    intel::uint16 __builtin_IB_subgroup_block_read_flat_u32_m32k8v1(
+    cute::intel::uint16 __builtin_IB_subgroup_block_read_flat_u32_m32k8v1(
         long baseoffset, int width_minus_one, int height_minus_one,
-        int pitch_minus_one, intel::coord_t coord));
+        int pitch_minus_one, cute::intel::coord_t coord));
 
 SYCL_DEVICE_BUILTIN(
-    intel::uint2 __builtin_IB_subgroup_block_read_flat_u32_m1k8v2(
+    cute::intel::uint2 __builtin_IB_subgroup_block_read_flat_u32_m1k8v2(
         long baseoffset, int width_minus_one, int height_minus_one,
-        int pitch_minus_one, intel::coord_t coord));
+        int pitch_minus_one, cute::intel::coord_t coord));
 SYCL_DEVICE_BUILTIN(
-    intel::uint2 __builtin_IB_subgroup_block_read_flat_u32_m2k8v2(
+    cute::intel::uint2 __builtin_IB_subgroup_block_read_flat_u32_m2k8v2(
         long baseoffset, int width_minus_one, int height_minus_one,
-        int pitch_minus_one, intel::coord_t coord));
+        int pitch_minus_one, cute::intel::coord_t coord));
 SYCL_DEVICE_BUILTIN(
-    intel::uint4 __builtin_IB_subgroup_block_read_flat_u32_m4k8v2(
+    cute::intel::uint4 __builtin_IB_subgroup_block_read_flat_u32_m4k8v2(
         long baseoffset, int width_minus_one, int height_minus_one,
-        int pitch_minus_one, intel::coord_t coord));
+        int pitch_minus_one, cute::intel::coord_t coord));
 SYCL_DEVICE_BUILTIN(
-    intel::uint8 __builtin_IB_subgroup_block_read_flat_u32_m8k8v2(
+    cute::intel::uint8 __builtin_IB_subgroup_block_read_flat_u32_m8k8v2(
         long baseoffset, int width_minus_one, int height_minus_one,
-        int pitch_minus_one, intel::coord_t coord));
+        int pitch_minus_one, cute::intel::coord_t coord));
 SYCL_DEVICE_BUILTIN(
-    intel::uint16 __builtin_IB_subgroup_block_read_flat_u32_m16k8v2(
+    cute::intel::uint16 __builtin_IB_subgroup_block_read_flat_u32_m16k8v2(
         long baseoffset, int width_minus_one, int height_minus_one,
-        int pitch_minus_one, intel::coord_t coord));
+        int pitch_minus_one, cute::intel::coord_t coord));
 SYCL_DEVICE_BUILTIN(
-    intel::uint32 __builtin_IB_subgroup_block_read_flat_u32_m32k8v2(
+    cute::intel::uint32 __builtin_IB_subgroup_block_read_flat_u32_m32k8v2(
         long baseoffset, int width_minus_one, int height_minus_one,
-        int pitch_minus_one, intel::coord_t coord));
+        int pitch_minus_one, cute::intel::coord_t coord));
 
 // 32bits No transform No transpose
 SYCL_DEVICE_BUILTIN(uint __builtin_IB_subgroup_block_read_flat_u32_m1k16v1(
     long baseoffset, int width_minus_one, int height_minus_one,
-    int pitch_minus_one, intel::coord_t coord));
+    int pitch_minus_one, cute::intel::coord_t coord));
 SYCL_DEVICE_BUILTIN(
-    intel::uint2 __builtin_IB_subgroup_block_read_flat_u32_m2k16v1(
+    cute::intel::uint2 __builtin_IB_subgroup_block_read_flat_u32_m2k16v1(
         long baseoffset, int width_minus_one, int height_minus_one,
-        int pitch_minus_one, intel::coord_t coord));
+        int pitch_minus_one, cute::intel::coord_t coord));
 SYCL_DEVICE_BUILTIN(
-    intel::uint4 __builtin_IB_subgroup_block_read_flat_u32_m4k16v1(
+    cute::intel::uint4 __builtin_IB_subgroup_block_read_flat_u32_m4k16v1(
         long baseoffset, int width_minus_one, int height_minus_one,
-        int pitch_minus_one, intel::coord_t coord));
+        int pitch_minus_one, cute::intel::coord_t coord));
 SYCL_DEVICE_BUILTIN(
-    intel::uint8 __builtin_IB_subgroup_block_read_flat_u32_m8k16v1(
+    cute::intel::uint8 __builtin_IB_subgroup_block_read_flat_u32_m8k16v1(
         long baseoffset, int width_minus_one, int height_minus_one,
-        int pitch_minus_one, intel::coord_t coord));
+        int pitch_minus_one, cute::intel::coord_t coord));
 SYCL_DEVICE_BUILTIN(
-    intel::uint16 __builtin_IB_subgroup_block_read_flat_u32_m16k16v1(
+    cute::intel::uint16 __builtin_IB_subgroup_block_read_flat_u32_m16k16v1(
         long baseoffset, int width_minus_one, int height_minus_one,
-        int pitch_minus_one, intel::coord_t coord));
+        int pitch_minus_one, cute::intel::coord_t coord));
 SYCL_DEVICE_BUILTIN(
-    intel::uint32 __builtin_IB_subgroup_block_read_flat_u32_m32k16v1(
+    cute::intel::uint32 __builtin_IB_subgroup_block_read_flat_u32_m32k16v1(
         long baseoffset, int width_minus_one, int height_minus_one,
-        int pitch_minus_one, intel::coord_t coord));
+        int pitch_minus_one, cute::intel::coord_t coord));
 
 // 32bits No transform Transpose
 SYCL_DEVICE_BUILTIN(uint __builtin_IB_subgroup_block_read_flat_transpose_u32_k1(
     long baseoffset, int width_minus_one, int height_minus_one,
-    int pitch_minus_one, intel::coord_t coord));
+    int pitch_minus_one, cute::intel::coord_t coord));
 SYCL_DEVICE_BUILTIN(
-    intel::uint2 __builtin_IB_subgroup_block_read_flat_transpose_u32_k2(
+    cute::intel::uint2 __builtin_IB_subgroup_block_read_flat_transpose_u32_k2(
         long baseoffset, int width_minus_one, int height_minus_one,
-        int pitch_minus_one, intel::coord_t coord));
+        int pitch_minus_one, cute::intel::coord_t coord));
 SYCL_DEVICE_BUILTIN(
-    intel::uint4 __builtin_IB_subgroup_block_read_flat_transpose_u32_k4(
+    cute::intel::uint4 __builtin_IB_subgroup_block_read_flat_transpose_u32_k4(
         long baseoffset, int width_minus_one, int height_minus_one,
-        int pitch_minus_one, intel::coord_t coord));
+        int pitch_minus_one, cute::intel::coord_t coord));
 SYCL_DEVICE_BUILTIN(
-    intel::uint8 __builtin_IB_subgroup_block_read_flat_transpose_u32_k8(
+    cute::intel::uint8 __builtin_IB_subgroup_block_read_flat_transpose_u32_k8(
         long baseoffset, int width_minus_one, int height_minus_one,
-        int pitch_minus_one, intel::coord_t coord));
+        int pitch_minus_one, cute::intel::coord_t coord));
 
 // 32bits
 SYCL_DEVICE_BUILTIN(void __builtin_IB_subgroup_block_write_flat_u32_m1k16v1(
     long baseoffset, int width_minus_one, int height_minus_one,
-    int pitch_minus_one, intel::coord_t coord, uint data));
+    int pitch_minus_one, cute::intel::coord_t coord, uint data));
 SYCL_DEVICE_BUILTIN(void __builtin_IB_subgroup_block_write_flat_u32_m2k16v1(
     long baseoffset, int width_minus_one, int height_minus_one,
-    int pitch_minus_one, intel::coord_t coord, intel::uint2 data));
+    int pitch_minus_one, cute::intel::coord_t coord, cute::intel::uint2 data));
 SYCL_DEVICE_BUILTIN(void __builtin_IB_subgroup_block_write_flat_u32_m4k16v1(
     long baseoffset, int width_minus_one, int height_minus_one,
-    int pitch_minus_one, intel::coord_t coord, intel::uint4 data));
+    int pitch_minus_one, cute::intel::coord_t coord, cute::intel::uint4 data));
 SYCL_DEVICE_BUILTIN(void __builtin_IB_subgroup_block_write_flat_u32_m8k16v1(
     long baseoffset, int width_minus_one, int height_minus_one,
-    int pitch_minus_one, intel::coord_t coord, intel::uint8 data));
+    int pitch_minus_one, cute::intel::coord_t coord, cute::intel::uint8 data));
 
 #undef SYCL_DEVICE_BUILTIN
 
@@ -181,92 +179,92 @@ SYCL_DEVICE_BUILTIN(void __builtin_IB_subgroup_block_write_flat_u32_m8k16v1(
 // 32bits specific for tf32 No transform No transpose
 SYCL_DEVICE_OCL(uint intel_sub_group_block_read_32b_1r8c(
     const __global void *base_address, int width, int height, int pitch,
-    intel::coord_t coord));
+    cute::intel::coord_t coord));
 SYCL_DEVICE_OCL(uint intel_sub_group_block_read_32b_2r8c(
     const __global void *base_address, int width, int height, int pitch,
-    intel::coord_t coord));
-SYCL_DEVICE_OCL(intel::uint2 intel_sub_group_block_read_32b_4r8c(
+    cute::intel::coord_t coord));
+SYCL_DEVICE_OCL(cute::intel::uint2 intel_sub_group_block_read_32b_4r8c(
     const __global void *base_address, int width, int height, int pitch,
-    intel::coord_t coord));
-SYCL_DEVICE_OCL(intel::uint4 intel_sub_group_block_read_32b_8r8c(
+    cute::intel::coord_t coord));
+SYCL_DEVICE_OCL(cute::intel::uint4 intel_sub_group_block_read_32b_8r8c(
     const __global void *base_address, int width, int height, int pitch,
-    intel::coord_t coord));
-SYCL_DEVICE_OCL(intel::uint8 intel_sub_group_block_read_32b_16r8c(
+    cute::intel::coord_t coord));
+SYCL_DEVICE_OCL(cute::intel::uint8 intel_sub_group_block_read_32b_16r8c(
     const __global void *base_address, int width, int height, int pitch,
-    intel::coord_t coord));
-SYCL_DEVICE_OCL(intel::uint16 intel_sub_group_block_read_32b_32r8c(
+    cute::intel::coord_t coord));
+SYCL_DEVICE_OCL(cute::intel::uint16 intel_sub_group_block_read_32b_32r8c(
     const __global void *base_address, int width, int height, int pitch,
-    intel::coord_t coord));
+    cute::intel::coord_t coord));
 
-SYCL_DEVICE_OCL(intel::uint2 intel_sub_group_block_read_32b_1r8x2c(
+SYCL_DEVICE_OCL(cute::intel::uint2 intel_sub_group_block_read_32b_1r8x2c(
     const __global void *base_address, int width, int height, int pitch,
-    intel::coord_t coord));
-SYCL_DEVICE_OCL(intel::uint2 intel_sub_group_block_read_32b_2r8x2c(
+    cute::intel::coord_t coord));
+SYCL_DEVICE_OCL(cute::intel::uint2 intel_sub_group_block_read_32b_2r8x2c(
     const __global void *base_address, int width, int height, int pitch,
-    intel::coord_t coord));
-SYCL_DEVICE_OCL(intel::uint4 intel_sub_group_block_read_32b_4r8x2c(
+    cute::intel::coord_t coord));
+SYCL_DEVICE_OCL(cute::intel::uint4 intel_sub_group_block_read_32b_4r8x2c(
     const __global void *base_address, int width, int height, int pitch,
-    intel::coord_t coord));
-SYCL_DEVICE_OCL(intel::uint8 intel_sub_group_block_read_32b_8r8x2c(
+    cute::intel::coord_t coord));
+SYCL_DEVICE_OCL(cute::intel::uint8 intel_sub_group_block_read_32b_8r8x2c(
     const __global void *base_address, int width, int height, int pitch,
-    intel::coord_t coord));
-SYCL_DEVICE_OCL(intel::uint16 intel_sub_group_block_read_32b_16r8x2c(
+    cute::intel::coord_t coord));
+SYCL_DEVICE_OCL(cute::intel::uint16 intel_sub_group_block_read_32b_16r8x2c(
     const __global void *base_address, int width, int height, int pitch,
-    intel::coord_t coord));
-SYCL_DEVICE_OCL(intel::uint32 intel_sub_group_block_read_32b_32r8x2c(
+    cute::intel::coord_t coord));
+SYCL_DEVICE_OCL(cute::intel::uint32 intel_sub_group_block_read_32b_32r8x2c(
     const __global void *base_address, int width, int height, int pitch,
-    intel::coord_t coord));
+    cute::intel::coord_t coord));
 
 // 32bits No transform No transpose
 SYCL_DEVICE_OCL(uint intel_sub_group_block_read_32b_1r16c(
     const __global void *base_address, int width, int height, int pitch,
-    intel::coord_t coord));
-SYCL_DEVICE_OCL(intel::uint2 intel_sub_group_block_read_32b_2r16c(
+    cute::intel::coord_t coord));
+SYCL_DEVICE_OCL(cute::intel::uint2 intel_sub_group_block_read_32b_2r16c(
     const __global void *base_address, int width, int height, int pitch,
-    intel::coord_t coord));
-SYCL_DEVICE_OCL(intel::uint4 intel_sub_group_block_read_32b_4r16c(
+    cute::intel::coord_t coord));
+SYCL_DEVICE_OCL(cute::intel::uint4 intel_sub_group_block_read_32b_4r16c(
     const __global void *base_address, int width, int height, int pitch,
-    intel::coord_t coord));
-SYCL_DEVICE_OCL(intel::uint8 intel_sub_group_block_read_32b_8r16c(
+    cute::intel::coord_t coord));
+SYCL_DEVICE_OCL(cute::intel::uint8 intel_sub_group_block_read_32b_8r16c(
     const __global void *base_address, int width, int height, int pitch,
-    intel::coord_t coord));
-SYCL_DEVICE_OCL(intel::uint16 intel_sub_group_block_read_32b_16r16c(
+    cute::intel::coord_t coord));
+SYCL_DEVICE_OCL(cute::intel::uint16 intel_sub_group_block_read_32b_16r16c(
     const __global void *base_address, int width, int height, int pitch,
-    intel::coord_t coord));
-SYCL_DEVICE_OCL(intel::uint32 intel_sub_group_block_read_32b_32r16c(
+    cute::intel::coord_t coord));
+SYCL_DEVICE_OCL(cute::intel::uint32 intel_sub_group_block_read_32b_32r16c(
     const __global void *base_address, int width, int height, int pitch,
-    intel::coord_t coord));
+    cute::intel::coord_t coord));
 
 // 32bits No transform Transpose
 SYCL_DEVICE_OCL(uint intel_sub_group_block_read_transpose_32b_16r1c(
     const __global void *base_address, int width, int height, int pitch,
-    intel::coord_t coord));
-SYCL_DEVICE_OCL(intel::uint2 intel_sub_group_block_read_transpose_32b_16r2c(
+    cute::intel::coord_t coord));
+SYCL_DEVICE_OCL(cute::intel::uint2 intel_sub_group_block_read_transpose_32b_16r2c(
     const __global void *base_address, int width, int height, int pitch,
-    intel::coord_t coord));
-SYCL_DEVICE_OCL(intel::uint4 intel_sub_group_block_read_transpose_32b_16r4c(
+    cute::intel::coord_t coord));
+SYCL_DEVICE_OCL(cute::intel::uint4 intel_sub_group_block_read_transpose_32b_16r4c(
     const __global void *base_address, int width, int height, int pitch,
-    intel::coord_t coord));
-SYCL_DEVICE_OCL(intel::uint8 intel_sub_group_block_read_transpose_32b_16r8c(
+    cute::intel::coord_t coord));
+SYCL_DEVICE_OCL(cute::intel::uint8 intel_sub_group_block_read_transpose_32b_16r8c(
     const __global void *base_address, int width, int height, int pitch,
-    intel::coord_t coord));
+    cute::intel::coord_t coord));
 
 // 32bits store
 SYCL_DEVICE_OCL(void intel_sub_group_block_write_32b_1r16c(
     const __global void *base_address, int width, int height, int pitch,
-    intel::coord_t coord, uint data));
+    cute::intel::coord_t coord, uint data));
 SYCL_DEVICE_OCL(void intel_sub_group_block_write_32b_2r16c(
     const __global void *base_address, int width, int height, int pitch,
-    intel::coord_t coord, intel::uint2 data));
+    cute::intel::coord_t coord, cute::intel::uint2 data));
 SYCL_DEVICE_OCL(void intel_sub_group_block_write_32b_4r16c(
     const __global void *base_address, int width, int height, int pitch,
-    intel::coord_t coord, intel::uint4 data));
+    cute::intel::coord_t coord, cute::intel::uint4 data));
 SYCL_DEVICE_OCL(void intel_sub_group_block_write_32b_8r16c(
     const __global void *base_address, int width, int height, int pitch,
-    intel::coord_t coord, intel::uint8 data));
+    cute::intel::coord_t coord, cute::intel::uint8 data));
 SYCL_DEVICE_OCL(void intel_sub_group_2d_block_prefetch_32b_16r8x1c(
     __global void* base_address, int width, int height, int pitch,
-    intel::coord_t coord));
+    cute::intel::coord_t coord));
 #undef SYCL_DEVICE_OCL
 
 namespace cute

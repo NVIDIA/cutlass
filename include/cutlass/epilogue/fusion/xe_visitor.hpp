@@ -39,14 +39,13 @@
 
 #include "cute/tensor.hpp"
 
-using namespace cutlass;
-using namespace cutlass::epilogue::fusion;
-
 /////////////////////////////////////////////////////////////////////////////////////////////////
 //
 // Elementwise Load Operations
 //
 /////////////////////////////////////////////////////////////////////////////////////////////////
+
+namespace cutlass::epilogue::fusion {
 
 template <
   class Element,
@@ -206,3 +205,4 @@ struct XeAuxLoad {
   }
 };
 
+} // namespace cutlass::epilogue::fusion
