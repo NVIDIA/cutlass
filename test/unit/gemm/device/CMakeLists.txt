@@ -29,6 +29,14 @@
 if(CUTLASS_ENABLE_SYCL)
   if(SYCL_INTEL_TARGET)
     cutlass_test_unit_add_executable(
+      cutlass_test_unit_gemm_device_tensorop_xe
+      xe_gemm_bf16_bf16_fp32_tensor_op_fp32.cpp
+      xe_gemm_fp16_fp16_fp32_tensor_op_fp32.cpp
+      xe_gemm_s8_s8_s32_tensor_op_s32.cpp
+      xe_gemm_tf32_tf32_fp32_tensor_op_fp32.cpp
+    )
+
+    cutlass_test_unit_add_executable(
       cutlass_test_unit_gemm_device_tensorop_epilogue_fusion_xe
       xe_gemm_bf16_bf16_fp32_tensor_op_fp32_evt.cpp
     )
@@ -41,6 +49,7 @@ if(CUTLASS_ENABLE_SYCL)
     add_custom_target(
       cutlass_test_unit_gemm_device
       DEPENDS
+      cutlass_test_unit_gemm_device_tensorop_xe
       cutlass_test_unit_gemm_device_tensorop_epilogue_fusion_xe
       cutlass_test_unit_gemm_device_mixed_input_tensorop_xe
     )
@@ -48,6 +57,7 @@ if(CUTLASS_ENABLE_SYCL)
     add_custom_target(
       test_unit_gemm_device
       DEPENDS
+      test_unit_gemm_device_tensorop_xe
       test_unit_gemm_device_tensorop_epilogue_fusion_xe
       test_unit_gemm_device_mixed_input_tensorop_xe
     )

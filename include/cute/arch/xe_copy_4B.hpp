@@ -582,6 +582,20 @@ struct XE_2D_TF32x16x16_LD_N {
     CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
 #endif
   }
+
+  struct PREFETCH {
+    CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
+                                        int height, int pitch,
+                                        intel::coord_t coord) {
+#if defined(SYCL_INTEL_TARGET)
+      intel_sub_group_2d_block_prefetch_32b_16r8x1c(
+          (__global void*)baseoffset, width - 1, height - 1, pitch - 1, coord);
+#else
+      CUTE_INVALID_CONTROL_PATH(
+              "Trying to use block prefetch on non-Xe hardware");
+#endif
+    }
+  };
 };
 
 struct XE_2D_TF32x32x16_LD_N {
