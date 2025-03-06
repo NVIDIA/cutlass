@@ -55,8 +55,7 @@ class GemmUniversal<
   CollectiveMainloop_,
   CollectiveEpilogue_,
   TileScheduler_,
-  cute::enable_if_t<cute::is_base_of_v<KernelPVC, typename CollectiveMainloop_::DispatchPolicy::Schedule> 
-                    && cute::is_same_v<TileScheduler_, cutlass::gemm::StreamKScheduler>>>
+  cute::enable_if_t<cute::is_base_of_v<KernelPVCCooperative, typename CollectiveMainloop_::DispatchPolicy::Schedule>>>
 {
 public:
   //
@@ -65,6 +64,8 @@ public:
   using ProblemShape = ProblemShape_;
   static_assert(cute::rank(ProblemShape{}) == 3 or cute::rank(ProblemShape{}) == 4,
     "ProblemShape{} should be <M,N,K> or <M,N,K,L>");
+  static_assert(cute::is_same_v<TileScheduler_, StreamKScheduler> or cute::is_same_v<TileScheduler_, PersistentScheduler>,
+    "Xe cooperative pipeline does not support GroupScheduler.");
 
   // Mainloop derived types
   using CollectiveMainloop = CollectiveMainloop_;
@@ -161,7 +162,7 @@ public:
     uint8_t* workspace_ptr = reinterpret_cast<uint8_t*>(workspace);
 
     TileSchedulerParams scheduler = TileScheduler::to_underlying_arguments(
-      problem_shape_MNKL, TileShape{}, hw_info, args.scheduler, workspace_ptr);
+      problem_shape_MNKL, TileShape{}, ClusterShape{}, hw_info, args.scheduler, workspace_ptr);
 
     return {
       args.mode,
@@ -185,7 +186,7 @@ public:
   get_workspace_size(Arguments const& args) {
     size_t workspace_size = 0;
     workspace_size += TileScheduler::template get_workspace_size<ProblemShape, ElementAccumulator>(
-      args.scheduler, args.problem_shape, args.hw_info);
+      args.scheduler, args.problem_shape, args.hw_info, 1);
     return workspace_size;
   }
 
@@ -196,7 +197,7 @@ public:
     uint8_t* workspace_ptr = reinterpret_cast<uint8_t*>(workspace);
 
     status = TileScheduler::template initialize_workspace<ProblemShape, ElementAccumulator>(
-      args.scheduler, workspace_ptr, args.problem_shape, args.hw_info);
+      args.scheduler, workspace_ptr, stream, args.problem_shape, args.hw_info, 1);
 
     return status;
   }
@@ -205,7 +206,9 @@ public:
   static dim3
   get_grid_shape(Params const& params) {
     // Given device SM count, set grid size s.t. we do not launch more thread blocks than we can run concurrently
-    return TileScheduler::get_grid_shape(params.problem_shape, TileShape{}, params.hw_info);
+    TileSchedulerArguments args{};
+    args.raster_order = params.scheduler.raster_order_ == TileScheduler::RasterOrder::AlongN ? TileScheduler::RasterOrderOptions::AlongN : TileScheduler::RasterOrderOptions::AlongM;
+    return TileScheduler::get_grid_shape(params.scheduler, params.problem_shape, TileShape{}, ClusterShape{}, params.hw_info, args);
   }
 
   static dim3
@@ -235,7 +238,7 @@ public:
     auto L = get<3>(problem_shape_MNKL);
 
     TileScheduler scheduler{params.scheduler};
-    auto work_tile_info = scheduler.initial_work_tile_info();
+    auto work_tile_info = scheduler.initial_work_tile_info(ClusterShape{});
 
     int thread_idx = int(ThreadIdxX());
     constexpr auto workgroup_shape = WorkgroupTileShape{};                                                  // (BLK_M,BLK_N,BLK_K)
@@ -289,8 +292,11 @@ public:
       );
 
       // Perform reduction across splits, if needed
-      TileScheduler::template fixup<MaxThreadsPerBlock>(
-        params.scheduler, work_tile_info, accumulators);
+      if constexpr (cute::is_same_v<TileScheduler, detail::PersistentTileSchedulerXeStreamK<TileShape>>)
+      {
+        TileScheduler::template fixup<MaxThreadsPerBlock>(
+          params.scheduler, work_tile_info, accumulators);  
+      }
 
       if (TileScheduler::compute_epilogue(work_tile_info, params.scheduler)) {
         CollectiveEpilogue epilogue{params.epilogue, shared_storage.epilogue};
@@ -308,7 +314,8 @@ public:
       }
 
       // Get next work tile
-      work_tile_info = scheduler.fetch_next_work(work_tile_info);
+      auto [next_work_tile_info, increment_pipe] = scheduler.fetch_next_work(work_tile_info);
+      work_tile_info = next_work_tile_info;
     }
   }
 

@@ -84,6 +84,10 @@ struct PersistentTileSchedulerXeStreamKParams {
     StreamK
   };
 
+  using UnderlyingParams = PersistentTileSchedulerSm90Params;
+  using RasterOrder = UnderlyingParams::RasterOrder;
+  using RasterOrderOptions = UnderlyingParams::RasterOrderOptions;
+
   FastDivmodU64 divmod_batch_{};
   FastDivmodU64 divmod_blk_major_{};
 
@@ -96,6 +100,7 @@ struct PersistentTileSchedulerXeStreamKParams {
 
   uint64_t units_per_problem_ = 0;
   FastDivmod divmod_tiles_per_output_tile_{};
+  RasterOrder raster_order_ = RasterOrder::AlongN;
 
   // The splitting factor to be used in a split-K decomposition of the problem.
   // If this is set to a value greater than 1, stream-K decomposition logic

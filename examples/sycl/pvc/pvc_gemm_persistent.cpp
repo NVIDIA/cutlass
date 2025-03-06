@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
+ * Copyright (c) 2024 - 2025 Codeplay Software Ltd. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -48,7 +48,6 @@
 #include "common.hpp"
 #include "helper.h"
 
-#include "cutlass/gemm/kernel/xe_persistent_tile_scheduler_params_streamk.hpp"
 using namespace cute;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -60,18 +59,14 @@ struct Options {
 
   bool help;
   bool error;
-  bool splitk;
-  bool dp;
 
-  int m, n, k, l, iterations, splits;
+  int m, n, k, l, iterations;
   float alpha, beta;
 
   Options():
     help(false),
     error(false),
-    splitk(false),
-    dp(false),
-    m(5120), n(4096), k(4096), l(1), iterations(20), splits(1),
+    m(5120), n(4096), k(4096), l(1), iterations(20),
     alpha(1.f), beta(0.f)
   { }
 
@@ -84,14 +79,6 @@ struct Options {
       return;
     }
 
-    if (cmd.check_cmd_line_flag("splitk")) {
-      splitk = true;
-    }
-
-    if (cmd.check_cmd_line_flag("dp")) {
-      dp = true;
-    }
-
     cmd.get_cmd_line_argument("m", m, 5120);
     cmd.get_cmd_line_argument("n", n, 4096);
     cmd.get_cmd_line_argument("k", k, 4096);
@@ -99,22 +86,18 @@ struct Options {
     cmd.get_cmd_line_argument("alpha", alpha, 1.f);
     cmd.get_cmd_line_argument("beta", beta, 0.f);
     cmd.get_cmd_line_argument("iterations", iterations, 100);
-    cmd.get_cmd_line_argument("splits", splits, 1);
   }
 
   /// Prints the usage statement.
   std::ostream & print_usage(std::ostream &out) const {
 
-    out << "PVC GEMM Example\n\n"
+    out << "PVC GEMM Example with PersistentTileScheduler\n\n"
       << "Options:\n\n"
       << "  --help                      If specified, displays this usage statement\n\n"
-      << "  --dp                        If specified, uses Data Parallel decomposition\n"
-      << "  --splitk                    If specified, uses SplitK decomposition\n"
       << "  --m=<int>                   Sets the M extent of the GEMM\n"
       << "  --n=<int>                   Sets the N extent of the GEMM\n"
       << "  --k=<int>                   Sets the K extent of the GEMM\n"
       << "  --l=<int>                   Sets the L extent (batch count) of the GEMM\n"
-      << "  --splits=<int>              Sets the splitting factor for GEMM\n"
       << "  --alpha=<s32>               Epilogue scalar alpha\n"
       << "  --beta=<s32>                Epilogue scalar beta\n\n"
       << "  --iterations=<int>          Iterations\n\n";
@@ -235,6 +218,7 @@ struct ExampleRunner {
     ProblemShapeType problem_size = ProblemShapeType{options.m, options.n, options.k, options.l};
 
     initialize(problem_size);
+    using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90Params::RasterOrderOptions;
 
     typename Gemm::GemmKernel::Arguments arguments{
       cutlass::gemm::GemmUniversalMode::kGemm,
@@ -242,10 +226,7 @@ struct ExampleRunner {
       {block_A.get(), stride_A, block_B.get(), stride_B},
       {{options.alpha, options.beta}, block_C.get(), stride_C, block_D.get(), stride_D},
       hw_info,
-      {options.splits, 
-      options.dp ? cutlass::gemm::kernel::detail::PersistentTileSchedulerXeStreamKParams::DecompositionMode::DataParallel :
-      options.splitk ? cutlass::gemm::kernel::detail::PersistentTileSchedulerXeStreamKParams::DecompositionMode::SplitK :
-                          cutlass::gemm::kernel::detail::PersistentTileSchedulerXeStreamKParams::DecompositionMode::StreamK}
+      {1, RasterOrderOptions::AlongM}
     };
 
     Gemm gemm_op;
@@ -272,18 +253,6 @@ struct ExampleRunner {
       GPU_Clock timer;
       float elapsed_time_seconds = 0.f;
       for (int i = 0; i < options.iterations; ++i) {
-        typename Gemm::GemmKernel::Arguments arguments{
-          cutlass::gemm::GemmUniversalMode::kGemm,
-          problem_size,
-          {block_A.get(), stride_A, block_B.get(), stride_B},
-          {{options.alpha, options.beta}, block_C.get(), stride_C, block_D.get(), stride_D},
-          hw_info,
-          {options.splits, 
-          options.dp ? cutlass::gemm::kernel::detail::PersistentTileSchedulerXeStreamKParams::DecompositionMode::DataParallel :
-          options.splitk ? cutlass::gemm::kernel::detail::PersistentTileSchedulerXeStreamKParams::DecompositionMode::SplitK :
-                              cutlass::gemm::kernel::detail::PersistentTileSchedulerXeStreamKParams::DecompositionMode::StreamK}
-        };
-        gemm_op.initialize(arguments, workspace.get());
         timer.start();
         gemm_op.run();
         syclcompat::wait();
@@ -301,8 +270,8 @@ struct ExampleRunner {
 
 };
 
-int main(int argc, const char** argv)
-{
+template <typename Schedule>
+int run(int argc, const char** argv) {
   //
   // Parse options
   //
@@ -359,7 +328,7 @@ int main(int argc, const char** argv)
                     Layout<Shape<_16, _4, _4>, Stride<_1, _64, _16>>, _32>>;
 
   constexpr int PipelineStages = 2;
-  using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelPVC<PipelineStages, cutlass::gemm::KernelPVCCooperative>;
+  using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelPVC<PipelineStages, Schedule>;
   using EpilogueDispatchPolicy = cutlass::epilogue::IntelPVCEpilogue;
 
   using EpilogueOp = cutlass::epilogue::fusion::LinearCombination<ElementOutput, ElementComputeEpilogue,
@@ -397,7 +366,7 @@ int main(int argc, const char** argv)
   Shape<int, int, int, int>,
   CollectiveMainloop,
   CollectiveEpilogue,
-  cutlass::gemm::StreamKScheduler
+  cutlass::gemm::PersistentScheduler
   >;
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
@@ -405,6 +374,17 @@ int main(int argc, const char** argv)
   ExampleRunner<Gemm> runner;
 
   CUTLASS_CHECK(runner.run(options, hw_info));
+
+  return 0;
+}
+
+int main(int argc, const char** argv) {
+
+  std::cout << "Running GEMM with Normal schedule" << std::endl;
+  run<cutlass::gemm::KernelPVC>(argc, argv);
+
+  std::cout << "\nRunning GEMM with Cooperative schedule" << std::endl;
+  run<cutlass::gemm::KernelPVCCooperative>(argc, argv);
 
   return 0;
 }

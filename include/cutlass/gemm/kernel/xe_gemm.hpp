@@ -52,8 +52,7 @@ class GemmUniversal<
   CollectiveMainloop_,
   CollectiveEpilogue_,
   TileScheduler_,
-  cute::enable_if_t<cute::is_base_of_v<KernelPVC, typename CollectiveMainloop_::DispatchPolicy::Schedule> 
-                    && !cute::is_same_v<TileScheduler_, cutlass::gemm::StreamKScheduler>>>
+  cute::enable_if_t<cute::is_base_of_v<KernelPVC, typename CollectiveMainloop_::DispatchPolicy::Schedule>>>
 {
 public:
   //
@@ -77,6 +76,7 @@ public:
   using DispatchPolicy = typename CollectiveMainloop::DispatchPolicy;
   using ElementAccumulator = typename CollectiveMainloop::ElementAccumulator;
   using MainloopArguments = typename CollectiveMainloop::Arguments;
+  using ClusterShape = typename DispatchPolicy::ClusterShape;
   using MainloopParams = typename CollectiveMainloop::Params;
 
   static_assert(cute::is_void_v<TileScheduler_> or cute::is_same_v<TileScheduler_, PersistentScheduler>,
@@ -86,6 +86,7 @@ public:
     TileScheduler_, ArchTag, WorkgroupTileShape,
     cute::Shape<cute::Int<1>, cute::Int<1>, cute::Int<1>>>::Scheduler;
   using TileSchedulerArguments = typename TileScheduler::Arguments;
+  using TileSchedulerParams = typename TileScheduler::Params;
 
   // Epilogue derived types
   using CollectiveEpilogue = CollectiveEpilogue_;
@@ -130,10 +131,12 @@ public:
 
   // Kernel entry point API
   struct Params {
-    GemmUniversalMode mode;
-    ProblemShape problem_shape;
-    MainloopParams mainloop;
-    EpilogueParams epilogue;
+    GemmUniversalMode mode{};
+    ProblemShape problem_shape{};
+    MainloopParams mainloop{};
+    EpilogueParams epilogue{};
+    KernelHardwareInfo hw_info{};
+    TileSchedulerParams scheduler{};
   };
 
   //
@@ -145,14 +148,18 @@ public:
   Params
   to_underlying_arguments(Arguments const& args, void* workspace) {
     (void) workspace;
+    auto problem_shape_MNKL = append<4>(args.problem_shape, 1);
 
     auto mainloop_args = CollectiveMainloop::to_underlying_arguments(args.problem_shape, args.mainloop, workspace);
-
+    TileSchedulerParams scheduler = TileScheduler::to_underlying_arguments(
+      problem_shape_MNKL, TileShape{}, ClusterShape{}, args.hw_info, args.scheduler, &workspace);
     return {
       args.mode,
       args.problem_shape,
       mainloop_args,
-      CollectiveEpilogue::to_underlying_arguments(args.problem_shape, args.epilogue, workspace)
+      CollectiveEpilogue::to_underlying_arguments(args.problem_shape, args.epilogue, workspace),
+      args.hw_info,
+      scheduler
     };
   }
 
@@ -186,15 +193,12 @@ public:
 
   static dim3
   get_grid_shape(Params const& params) {
-    int batch_count = 1;
-    if constexpr (cute::rank(ProblemShape{}) == 4) {
-      batch_count = cute::size<3>(params.problem_shape);
+    dim3 grid = TileScheduler::get_tiled_cta_shape_mnl(params.problem_shape, TileShape{}, ClusterShape{});
+    if(params.scheduler.raster_order_ == TileScheduler::RasterOrder::AlongN) {
+      return {grid.y, grid.x, grid.z};
+    } else {
+      return {grid.x, grid.y, grid.z};
     }
-    return dim3(
-            cute::size(cute::ceil_div(cute::shape<1>(params.problem_shape), cute::shape<1>(WorkgroupTileShape{}))),
-            cute::size(cute::ceil_div(cute::shape<0>(params.problem_shape), cute::shape<0>(WorkgroupTileShape{}))),
-            batch_count
-    );
   }
 
   static dim3
@@ -226,9 +230,16 @@ public:
     // Get the appropriate blocks for this sub_group -- potential for sub_group locality
     int thread_idx = int(ThreadIdxX());
     auto blk_shape = TileShape{};
-    auto m_coord = BlockIdxY();
-    auto n_coord = BlockIdxX();
-    auto l_coord = BlockIdxZ();
+    int m_coord, n_coord, l_coord;
+    if (params.scheduler.raster_order_ == TileScheduler::RasterOrder::AlongN) {
+      m_coord = BlockIdxY();
+      n_coord = BlockIdxX();
+      l_coord = BlockIdxZ();
+    } else {
+      m_coord = BlockIdxX();
+      n_coord = BlockIdxY();
+      l_coord = BlockIdxZ();
+    }
 
     auto blk_coord_mnkl = make_coord(m_coord, n_coord, _, l_coord);
     constexpr auto workgroup_shape = WorkgroupTileShape{};                                                  // (SUB_M,SUB_N,SUB_K)

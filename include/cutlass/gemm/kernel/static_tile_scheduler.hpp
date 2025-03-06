@@ -145,6 +145,15 @@ public:
     }
 
     total_grid_size_ = uint64_t(gridDim.x) * uint64_t(gridDim.y) * uint64_t(gridDim.z);
+#elif defined(__SYCL_DEVICE_ONLY__)
+   if (params_.raster_order_ == RasterOrder::AlongN) {
+     current_work_linear_idx_ = uint64_t(BlockIdxX()) + uint64_t(BlockIdxY()) * uint64_t(GridDimX());
+   }
+   else {
+     current_work_linear_idx_ = uint64_t(BlockIdxX()) * uint64_t(GridDimY()) + uint64_t(BlockIdxY());
+   }
+   
+   total_grid_size_ = uint64_t(GridDimX()) * uint64_t(GridDimY()) * uint64_t(GridDimZ());
 #else
     CUTLASS_ASSERT(false && "This line should never be reached");
 #endif

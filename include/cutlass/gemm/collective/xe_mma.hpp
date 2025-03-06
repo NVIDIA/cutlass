@@ -44,16 +44,16 @@ namespace cutlass::gemm::collective {
 using namespace cute;
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <int Stages, class TileShape_, class ElementA_, class StrideA_, class ElementB_, class StrideB_,
+template <int Stages, class Schedule, class TileShape_, class ElementA_, class StrideA_, class ElementB_, class StrideB_,
           class TiledMma_, class GmemTiledCopyA_, class SmemLayoutAtomA_, class SmemCopyAtomA_, class TransformA_,
           class GmemTiledCopyB_, class SmemLayoutAtomB_, class SmemCopyAtomB_, class TransformB_>
-struct CollectiveMma<MainloopIntelPVC<Stages>, TileShape_, ElementA_, StrideA_, ElementB_, StrideB_, TiledMma_,
+struct CollectiveMma<MainloopIntelPVC<Stages, Schedule>, TileShape_, ElementA_, StrideA_, ElementB_, StrideB_, TiledMma_,
                      GmemTiledCopyA_, SmemLayoutAtomA_, SmemCopyAtomA_, TransformA_, GmemTiledCopyB_, SmemLayoutAtomB_,
                      SmemCopyAtomB_, TransformB_> {
   //
   // Type Aliases
   //
-  using DispatchPolicy = MainloopIntelPVC<Stages>;
+  using DispatchPolicy = MainloopIntelPVC<Stages, Schedule>;
   using WorkgroupTileShape = TileShape_;
   using ElementA = ElementA_;
   using StrideA = StrideA_;

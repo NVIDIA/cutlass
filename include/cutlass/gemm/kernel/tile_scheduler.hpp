@@ -154,6 +154,19 @@ struct TileSchedulerSelector<
   > {
   using Scheduler = PersistentTileSchedulerXeStreamK<TileShape>;
 };
+
+template <
+  class TileShape,
+  class ClusterShape
+>
+struct TileSchedulerSelector<
+  PersistentScheduler,
+  arch::IntelPVC,
+  TileShape,
+  ClusterShape
+  > {
+  using Scheduler = PersistentTileSchedulerSm90;
+};
 #endif
 
 template <

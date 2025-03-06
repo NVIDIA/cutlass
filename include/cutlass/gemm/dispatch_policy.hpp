@@ -131,7 +131,7 @@ struct KernelTmaWarpSpecializedPingpongMixedInput : KernelTmaWarpSpecializedPing
 struct KernelTmaWarpSpecializedCooperativeMixedInput: KernelTmaWarpSpecializedCooperative { };
 
 struct KernelPVC { };
-
+struct KernelPVCCooperative { };
 //////////////////////////////////////////////////////////////////////////////
 
 //
@@ -697,12 +697,12 @@ struct MainloopSm100ArrayTmaUmmaWarpSpecializedFastF32 {
 
 
 #if defined(SYCL_INTEL_TARGET)
-template<int Stages_>
+template<int Stages_, class KernelSchedule = KernelPVC>
 struct MainloopIntelPVC {
   constexpr static int Stages = Stages_;
   constexpr static int SubgroupSize = 16;
   using ArchTag = arch::IntelPVC;
-  using Schedule = KernelPVC;
+  using Schedule = KernelSchedule;
   using ClusterShape = Shape<_1,_1,_1>;
 };
 

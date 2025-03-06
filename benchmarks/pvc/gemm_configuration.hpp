@@ -80,7 +80,7 @@ struct GemmConfiguration<
       float, LayoutC,
       float, TileShape, TiledMma,
       GmemTiledCopyA, GmemTiledCopyB, TileScheduler> {
-  using DispatchPolicy = MainloopIntelPVC<3>;
+  using DispatchPolicy = MainloopIntelPVC<3, std::conditional_t<TileScheduler == Scheduler::Gemm, cutlass::gemm::KernelPVC, cutlass::gemm::KernelPVCCooperative>>;
 
   // Mainloop
   using CollectiveMainloop = collective::CollectiveMma<
