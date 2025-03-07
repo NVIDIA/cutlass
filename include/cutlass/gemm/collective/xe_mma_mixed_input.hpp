@@ -176,12 +176,16 @@ struct CollectiveMma<
 
     auto [M,N,K,L] = problem_shape;
 
-    auto tiled_copy_a = make_tiled_copy(atom_load_A{}.with(
-                                   static_cast<ElementA const*>(args.ptr_A), M, K),
+    auto mA_mkl = make_tensor(make_gmem_ptr(static_cast<ElementA const*>(args.ptr_A)),
+                              make_layout(make_shape(M, K, L), args.dA));
+
+    auto mB_nkl = make_tensor(make_gmem_ptr(static_cast<ElementB const*>(args.ptr_B)),
+                              make_layout(make_shape(N, K, L), args.dB));
+
+    auto tiled_copy_a = make_tiled_copy(atom_load_A{}.with(mA_mkl),
                                    Layout<CopyThreadShape>{},
                                    make_layout(shape_div(typename traits_load_A::BlockShape{}, CopyThreadShape{})));
-    auto tiled_copy_b = make_tiled_copy(atom_load_B{}.with(
-                                   static_cast<ElementB const*>(args.ptr_B), N, K),
+    auto tiled_copy_b = make_tiled_copy(atom_load_B{}.with(mB_nkl),
                                    Layout<CopyThreadShape>{},
                                    make_layout(shape_div(typename traits_load_B::BlockShape{}, CopyThreadShape{})));
 

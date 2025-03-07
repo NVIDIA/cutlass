@@ -133,7 +133,7 @@ TEST(XE_Device_GemmUniversal_s8t_bf16n_f32t_mixed_input_tensor_op_f32, 128x128x6
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
 
   // TODO(Codeplay): gemm batch doesn't work for mixed type
-  bool passed = test::gemm::device::TestXe<Gemm>(1.0, 1.0, false);
+  bool passed = test::gemm::device::TestXe<Gemm>(1.0, 1.0);
   EXPECT_TRUE(passed);
 }
 ////////////////////////////////////////////////////////////////////////////////
