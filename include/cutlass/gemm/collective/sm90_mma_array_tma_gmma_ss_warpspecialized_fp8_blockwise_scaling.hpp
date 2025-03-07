@@ -391,8 +391,8 @@ struct CollectiveMma<
     auto tK = get<3>(gA_mkl.shape());
 
     // Make the tiled views of scale tensors
-    auto scaleA_shape = make_shape(M / ScaleGranularityM, tK, L); // (scale_m,k,l)
-    auto scaleB_shape = make_shape(N / ScaleGranularityN, tK, L); // (scale_n,k,l)
+    auto scaleA_shape = make_shape(ceil_div(M, ScaleGranularityM), tK, L); // (scale_m,k,l)
+    auto scaleB_shape = make_shape(ceil_div(N, ScaleGranularityN), tK, L); // (scale_n,k,l)
     auto scaleA_layout = make_ordered_layout(scaleA_shape, Step<_0, _1, _2>{});
     auto scaleB_layout = make_ordered_layout(scaleB_shape, Step<_0, _1, _2>{});
 
