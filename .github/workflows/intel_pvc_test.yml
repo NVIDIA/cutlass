@@ -21,6 +21,9 @@ concurrency:
 
 jobs:
   run-tests:
+    strategy:
+      matrix:
+        compiler: [ NIGHTLY, RELEASE ]
     name: Run Intel PVC tests
     runs-on: cp-gpumax-1100-gpu
     timeout-minutes: 30
@@ -31,22 +34,18 @@ jobs:
       # For a specific DPC++ nightly build define the repository variable DPCPP_VERSION
       # for example using the tag: 'nightly-2024-04-22'
       - name: Install DPC++
-        id: install_dpcpp
         uses: ./.github/actions/install-dpcpp
         with:
+          DPCPP_RELEASE: ${{ matrix.compiler }}
           DPCPP_VERSION: ${{ inputs.DPCPP_VERSION }}
-          DPCPP_PATH: ~/dpcpp
       - name: Build
         shell: bash
         run: |
-          export DPCPP_PATH=~/dpcpp
-          export PATH=$DPCPP_PATH/bin/:$PATH
-          export C_INCLUDE_PATH=$DPCPP_PATH/include/:$C_INCLUDE_PATH
-          export CPLUS_INCLUDE_PATH=$DPCPP_PATH/include/:$CPLUS_INCLUDE_PATH
-          export LD_LIBRARY_PATH=$DPCPP_PATH/lib/:$LD_LIBRARY_PATH
-          export CC=clang
-          export CXX=clang++
-          clang++ --version
+          . setvars.sh
+          # Persist environment variables to following steps
+          env >> $GITHUB_ENV
+          which $CXX
+          $CXX --version
           cmake -G Ninja  \
             -DCUTLASS_ENABLE_SYCL=ON \
             -DDPCPP_SYCL_TARGET=intel_gpu_pvc
@@ -55,13 +54,9 @@ jobs:
       - name: Unit test
         shell: bash
         run: |
-          export DPCPP_PATH=~/dpcpp
-          export LD_LIBRARY_PATH=$DPCPP_PATH/lib/:$LD_LIBRARY_PATH
           cmake --build . --target test_unit -j 24
 
       - name: Examples
         shell: bash
         run: |
-          export DPCPP_PATH=~/dpcpp
-          export LD_LIBRARY_PATH=$DPCPP_PATH/lib/:$LD_LIBRARY_PATH
           cmake --build . --target test_examples -j 24

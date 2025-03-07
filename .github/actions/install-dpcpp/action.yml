@@ -1,34 +1,65 @@
 name: install-dpcpp
 description: Download and unpack DPC++ nightly release
 inputs:
+  DPCPP_RELEASE:
+    description: "Use RELEASE or NIGHTLY DPC++ release"
+    type: string
+    default: NIGHTLY
   DPCPP_VERSION:
     description: "DPC++ version to use"
     type: string
   DPCPP_PATH:
     description: Path to DPC++
     type: string
+    default: ~/dpcpp
 runs:
   using: "composite"
   steps:
     - name: Install DPCPP
-      id: install_dpcpp
+      if: inputs.DPCPP_RELEASE == 'NIGHTLY'
       shell: bash
       run: |
         export DPCPP_PATH=${{ inputs.DPCPP_PATH }}
-        mkdir $DPCPP_PATH
+        mkdir -p $DPCPP_PATH
         pushd $DPCPP_PATH
-        if [[ "${{ inputs.DPCPP_VERSION }}" != "" ]]; then \
-          echo "Will use DPCPP ${{ inputs.DPCPP_VERSION }}."; \
-          echo "Downloading DPCPP from https://github.com/intel/llvm/releases/download/${{ inputs.DPCPP_VERSION }}/sycl_linux.tar.gz"; \
-          wget -q https://github.com/intel/llvm/releases/download/${{ inputs.DPCPP_VERSION }}/sycl_linux.tar.gz; \
+        if [[ "${{ inputs.DPCPP_VERSION }}" != "" ]]; then
+          echo "Will use DPCPP ${{ inputs.DPCPP_VERSION }}"
+          URL=https://github.com/intel/llvm/releases/download/${{ inputs.DPCPP_VERSION }}/sycl_linux.tar.gz;
         else
-          echo "Will use latest DPCPP version."; \
-          latest=$(curl -sS https://api.github.com/repos/intel/llvm/releases | jq -r '[.[].tag_name|select(match("nightly-[0-9]{4}-[0-9]{2}-[0-9]{2}"))][0]') && \
-          echo "Downloading DPCPP from https://github.com/intel/llvm/releases/download/${latest}/sycl_linux.tar.gz"; \
-          wget -q https://github.com/intel/llvm/releases/download/${latest}/sycl_linux.tar.gz; \
+          echo "Will use latest DPCPP version"
+          latest=$(curl -sS https://api.github.com/repos/intel/llvm/releases | jq -r '[.[].tag_name|select(match("nightly-[0-9]{4}-[0-9]{2}-[0-9]{2}"))][0]')
+          URL=https://github.com/intel/llvm/releases/download/${latest}/sycl_linux.tar.gz;
         fi
-        tar -xf sycl_linux.tar.gz
-        rm sycl_linux.tar.gz
+        echo "Downloading DPCPP from ${URL}"
+        sudo wget -q $URL
+        sudo tar -xf sycl_linux.tar.gz
+        sudo rm sycl_linux.tar.gz
         popd
-
+        cat <<EOF | tee setvars.sh
+        export PATH=$DPCPP_PATH/bin:$PATH
+        export C_INCLUDE_PATH=$DPCPP_PATH/include:$C_INCLUDE_PATH
+        export CPLUS_INCLUDE_PATH=$DPCPP_PATH/include:$CPLUS_INCLUDE_PATH
+        export LD_LIBRARY_PATH=$DPCPP_PATH/lib:$LD_LIBRARY_PATH
+        export CC=$DPCPP_PATH/bin/clang
+        export CXX=$DPCPP_PATH/bin/clang++
+        EOF
+    - name: Install DPCPP
+      if: inputs.DPCPP_RELEASE == 'RELEASE'
+      shell: bash
+      run: |
+        wget https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
+        sudo apt-key add GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
+        rm GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
+        echo "deb https://apt.repos.intel.com/oneapi all main" | sudo tee /etc/apt/sources.list.d/oneAPI.list
+        sudo apt update
+        sudo apt install -y intel-oneapi-runtime-libs intel-oneapi-compiler-dpcpp-cpp
+        . /opt/intel/oneapi/setvars.sh
+        cat <<EOF | tee setvars.sh
+        . /opt/intel/oneapi/setvars.sh
+        export CC=icx
+        export CXX=icpx
+        export C_INCLUDE_PATH=$CMPLR_ROOT/include:$C_INCLUDE_PATH
+        export CPLUS_INCLUDE_PATH=$CMPLR_ROOT/include:$CPLUS_INCLUDE_PATH
+        export LD_LIBRARY_PATH=$CMPLR_ROOT/lib:$LD_LIBRARY_PATH
+        EOF
 

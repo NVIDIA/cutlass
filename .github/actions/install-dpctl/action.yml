@@ -7,8 +7,6 @@ inputs:
     description: Name of the DPCTL branch to use.
   DPCTL_PATH:
     description: Path where to put DPCTL
-  DPCPP_PATH:
-    description: Path to DPC++
   VENV_PATH:
     description: Path to virtualenv
 
@@ -22,11 +20,8 @@ runs:
         git clone --depth=1 --branch ${{ inputs.DPCTL_BRANCH }} ${{ inputs.DPCTL_URL }} $DPCTL_PATH
         pushd $DPCTL_PATH
         source ${{ inputs.VENV_PATH }}/bin/activate
-        export DPCPP_PATH=${{ inputs.DPCPP_PATH }}
-        export PATH=$DPCPP_PATH/bin:$PATH
-        export LD_LIBRARY_PATH=$DPCPP_PATH/lib:$LD_LIBRARY_PATH
         pip install --no-cache-dir numpy cython scikit-build cmake ninja pytest versioneer
-        python scripts/build_locally.py --c-compiler=$DPCPP_PATH/bin/clang \
-          --cxx-compiler=$DPCPP_PATH/bin/clang++ \
-          --compiler-root=$DPCPP_PATH/bin \
+        python scripts/build_locally.py --c-compiler=$(which $CC) \
+          --cxx-compiler=$(which $CXX) \
+          --compiler-root=$(dirname `which $CXX`) \
           --cmake-opts="-DCMAKE_INCLUDE_PATH=/lib/x86_64-linux-gnu -DLIBZE_LOADER_FILENAME=libze_loader.so.1"

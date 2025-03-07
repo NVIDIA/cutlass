@@ -1,4 +1,4 @@
-name: "SYCL Intel PVC Python Interface Test"
+name: "SYCL Python Interface Test"
 
 on:
   push:
@@ -21,7 +21,10 @@ concurrency:
 
 jobs:
   run-tests:
-    name: Run Intel PVC tests
+    name: Run Python Interface tests on Intel PVC
+    # strategy:
+    #   matrix:
+    #     compiler: [ NIGHTLY, RELEASE ]
     runs-on: cp-gpumax-1100-gpu
     timeout-minutes: 60
 
@@ -36,12 +39,18 @@ jobs:
         id: install_dpcpp
         uses: ./.github/actions/install-dpcpp
         with:
+          # DPCPP_RELEASE: ${{ matrix.compiler }}
           DPCPP_VERSION: ${{ inputs.DPCPP_VERSION }}
           DPCPP_PATH: ~/dpcpp
       - name: Setup virtual environment
         shell: bash
         run: |
           python3 -m venv ~/.venv
+          source ~/.venv/bin/activate
+          . setvars.sh
+          # Persist environment variables to following steps
+          env >> $GITHUB_ENV
+
       - name: Install DPCTL
         id: install_dpctl
         uses: ./.github/actions/install-dpctl
@@ -49,7 +58,6 @@ jobs:
           DPCTL_URL: https://github.com/sommerlukas/dpctl.git
           DPCTL_BRANCH: rebase-kernel-param
           DPCTL_PATH: ~/dpctl
-          DPCPP_PATH: ~/dpcpp
           VENV_PATH: ~/.venv
       - name: Install Torch XPU
         shell: bash
@@ -60,9 +68,6 @@ jobs:
       - name: Run Python Interface GEMM Tests
         shell: bash
         run: |
-          export DPCPP_PATH=~/dpcpp
-          export PATH=$DPCPP_PATH/bin:$PATH
-          export LD_LIBRARY_PATH=$DPCPP_PATH/lib:$LD_LIBRARY_PATH
           source ~/.venv/bin/activate
           pip install -e .
           export CUTLASS_USE_SYCL=1
