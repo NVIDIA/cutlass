@@ -281,13 +281,15 @@ struct CollectiveMma<
   static constexpr int LeadingScalesPerTileSFA = size<0,1>(LayoutSFA{}.stride()) == 1 ? ScaleMsPerTile : ScaleKsPerTile;
   using ScaleCopyTypeA = cute::uint_byte_t<cute::min(static_cast<int>(sizeof(ElementAccumulator)) * LeadingScalesPerTileSFA, 16)>;
   using SmemScalingCopyAtomA = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<ScaleCopyTypeA>, ElementAccumulator>;
+  static constexpr int ElementsPerSFACopy = static_cast<int>(sizeof(ScaleCopyTypeA) / sizeof(ElementAccumulator));
 
   static constexpr int LeadingScalesPerTileSFB = size<0,1>(LayoutSFB{}.stride()) == 1 ? ScaleNsPerTile : ScaleKsPerTile;
   using ScaleCopyTypeB = cute::uint_byte_t<cute::min(static_cast<int>(sizeof(ElementAccumulator)) * LeadingScalesPerTileSFB, 16)>;
   using SmemScalingCopyAtomB = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<ScaleCopyTypeB>, ElementAccumulator>;
+  static constexpr int ElementsPerSFBCopy = static_cast<int>(sizeof(ScaleCopyTypeB) / sizeof(ElementAccumulator));
 
-  using TiledCopyScaleA = decltype(make_tiled_copy(SmemScalingCopyAtomA{}, Layout<Shape<_1>>{}, Layout<Shape<Int<LeadingScalesPerTileSFA>>>{}));
-  using TiledCopyScaleB = decltype(make_tiled_copy(SmemScalingCopyAtomB{}, Layout<Shape<_1>>{}, Layout<Shape<Int<LeadingScalesPerTileSFB>>>{}));
+  using TiledCopyScaleA = decltype(make_tiled_copy(SmemScalingCopyAtomA{}, Layout<Shape<_1>>{}, Layout<Shape<Int<ElementsPerSFACopy>>>{}));
+  using TiledCopyScaleB = decltype(make_tiled_copy(SmemScalingCopyAtomB{}, Layout<Shape<_1>>{}, Layout<Shape<Int<ElementsPerSFBCopy>>>{}));
 
   struct SharedStorage {
     struct TensorStorage : cute::aligned_struct<128, _0> {
