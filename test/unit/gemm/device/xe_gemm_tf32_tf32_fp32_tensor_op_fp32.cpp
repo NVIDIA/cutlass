@@ -42,8 +42,6 @@
 
 #include "gemm_testbed_3x.hpp"
 
-using namespace cute;
-
 /* TODO(Codeplay): TF32 copy builtins don't work well with GEMM. Needs more investigation
 TEST(XE_Device_Gemm_tf32t_tf32t_f32t_tensor_op_f32, 256x256x32) {
   using Config = cutlass::gemm::device::DefaultGemmConfigurationToCutlass3Types<
@@ -54,7 +52,7 @@ TEST(XE_Device_Gemm_tf32t_tf32t_f32t_tensor_op_f32, 256x256x32) {
     float>;
 
   using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
-      Shape<int,int,int,int>,
+      cute::Shape<int,int,int,int>,
       Config::CollectiveMainloop,
       Config::CollectiveEpilogue
   >;
@@ -73,7 +71,7 @@ TEST(XE_Device_Gemm_tf32n_tf32t_f32t_tensor_op_f32, 256x256x32) {
     float>;
 
   using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
-      Shape<int,int,int,int>,
+      cute::Shape<int,int,int,int>,
       Config::CollectiveMainloop,
       Config::CollectiveEpilogue
   >;
@@ -91,7 +89,7 @@ TEST(XE_Device_Gemm_tf32t_tf32n_f32t_tensor_op_f32, 256x256x32) {
     float>;
 
   using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
-      Shape<int,int,int,int>,
+      cute::Shape<int,int,int,int>,
       Config::CollectiveMainloop,
       Config::CollectiveEpilogue
   >;
@@ -109,7 +107,7 @@ TEST(XE_Device_Gemm_tf32n_tf32n_f32t_tensor_op_f32, 256x256x32) {
     float>;
 
   using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
-      Shape<int,int,int,int>,
+      cute::Shape<int,int,int,int>,
       Config::CollectiveMainloop,
       Config::CollectiveEpilogue
   >;

@@ -42,8 +42,6 @@
 
 #include "gemm_testbed_3x.hpp"
 
-using namespace cute;
-
 /* TODO(Codeplay): Issue with U8 copy builtins return type
 TEST(XE_Device_Gemm_s8t_s8t_s32t_tensor_op_s32, 64x128x32) {
   using Config = cutlass::gemm::device::DefaultGemmConfigurationToCutlass3Types<
@@ -54,7 +52,7 @@ TEST(XE_Device_Gemm_s8t_s8t_s32t_tensor_op_s32, 64x128x32) {
     int32_t>;
 
   using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
-      Shape<int,int,int,int>,
+      cute::Shape<int,int,int,int>,
       Config::CollectiveMainloop,
       Config::CollectiveEpilogue
   >;
@@ -73,7 +71,7 @@ TEST(XE_Device_Gemm_s8n_s8t_s32t_tensor_op_s32, 64x128x32) {
     int32_t>;
 
   using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
-      Shape<int,int,int,int>,
+      cute::Shape<int,int,int,int>,
       Config::CollectiveMainloop,
       Config::CollectiveEpilogue
   >;
@@ -91,7 +89,7 @@ TEST(XE_Device_Gemm_s8t_s8n_s32t_tensor_op_s32, 64x128x32) {
     int32_t>;
 
   using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
-      Shape<int,int,int,int>,
+      cute::Shape<int,int,int,int>,
       Config::CollectiveMainloop,
       Config::CollectiveEpilogue
   >;
@@ -109,7 +107,7 @@ TEST(XE_Device_Gemm_s8n_s8n_s32t_tensor_op_s32, 64x128x32) {
     int32_t>;
 
   using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
-      Shape<int,int,int,int>,
+      cute::Shape<int,int,int,int>,
       Config::CollectiveMainloop,
       Config::CollectiveEpilogue
   >;

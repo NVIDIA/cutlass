@@ -92,9 +92,9 @@ enum class CheckEquality {
 
 namespace detail {
 
-inline constexpr auto decomp_mode_to_string =
-  [] (cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90StreamKParams::DecompositionMode mode) -> std::string {
-    using Mode = cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90StreamKParams::DecompositionMode;
+template <typename Mode>
+constexpr auto
+decomp_mode_to_string(Mode mode) {
     if (mode == Mode::Heuristic) {
       return "Heuristic";
     }
@@ -2164,7 +2164,8 @@ template <
   typename ElementA = typename Gemm::GemmKernel::ElementA,
   typename ElementB = typename Gemm::GemmKernel::ElementB
   , typename RuntimeDatatypeA = void* 
-  , typename RuntimeDatatypeB = void* 
+  , typename RuntimeDatatypeB = void*,
+  typename DecompositionMode = cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90StreamKParams::DecompositionMode
 >
 struct TestbedImpl {
   // Kernel data types
@@ -2206,7 +2207,6 @@ struct TestbedImpl {
   static constexpr uint64_t kDefaultSeed = 4096;
   static constexpr uint32_t mma_promotion_interval = 4;
   using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90::RasterOrderOptions;
-  using DecompositionMode = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90StreamKParams::DecompositionMode;
 
   HostCollectiveMainloopType collective_mma_inputs;
   CollectiveEpilogue collective_epilogue;
@@ -2457,7 +2457,11 @@ struct TestbedImpl {
 
     typename Gemm::GemmKernel::TileScheduler::Arguments scheduler_args;
     if constexpr (cute::is_same_v<typename Gemm::GemmKernel::TileSchedulerTag, cutlass::gemm::StreamKScheduler>) {
+#if defined(SYCL_INTEL_TARGET)
+      scheduler_args = { static_cast<int>(splits), decomposition_mode };
+#else
       scheduler_args = { static_cast<int>(splits), static_cast<int>(max_swizzle), raster_order, decomposition_mode };
+#endif
     }
     else {
       scheduler_args = { static_cast<int>(max_swizzle), raster_order };
@@ -2613,7 +2617,8 @@ template <
   typename ElementA = typename Gemm::GemmKernel::ElementA,
   typename ElementB = typename Gemm::GemmKernel::ElementB
   , typename RuntimeDatatypeA = void* 
-  , typename RuntimeDatatypeB = void* 
+  , typename RuntimeDatatypeB = void*,
+  typename DecompositionMode = cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90StreamKParams::DecompositionMode
 >
 struct Testbed3x {
 
@@ -2624,7 +2629,8 @@ struct Testbed3x {
                         ElementA, 
                         ElementB
                         , RuntimeDatatypeA 
-                        , RuntimeDatatypeB 
+                        , RuntimeDatatypeB,
+                        DecompositionMode
                         >;
   using Kernel      = typename Gemm::GemmKernel;
   using Epilogue    = typename Gemm::GemmKernel::CollectiveEpilogue;
@@ -2634,8 +2640,6 @@ struct Testbed3x {
   using ElementScalar        = typename TestBedImpl::ElementScalar;
 
   using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90::RasterOrderOptions;
-  using DecompositionMode = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90StreamKParams::DecompositionMode;
-
   // Detail Implementation
   TestBedImpl impl_;
 
@@ -3498,6 +3502,7 @@ bool TestAll(double alpha = 1.0, double beta = cute::is_same_v<typename Gemm::Ge
   return passed;
 }
 
+#if defined(SYCL_INTEL_TARGET)
 template <typename Gemm, template <class T> class ActivationFunctor =
                              cutlass::epilogue::thread::Identity>
 // TODO(Codeplay): remove the test_batch option once batching is enabled for all tests
@@ -3507,8 +3512,13 @@ bool TestXe(
   using ElementScalar = typename Gemm::EpilogueOutputOp::ElementScalar;
   using ProblemShapeType = typename Gemm::GemmKernel::ProblemShape;
 
-  Testbed3x<Gemm, ActivationFunctor> testbed(
-    check_relative_equality, ScalarLoc::ON_HOST, VectorScale::DISABLED);
+  using DecompositionMode = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerXeStreamKParams::DecompositionMode;
+
+  Testbed3x<Gemm, ActivationFunctor, false,
+    typename Gemm::GemmKernel::ElementA,
+    typename Gemm::GemmKernel::ElementB,
+    void*, void*, DecompositionMode> testbed(
+      check_relative_equality, ScalarLoc::ON_HOST, VectorScale::DISABLED);
 
   // For M & N we test a small and a big size
   // For K, we currently only support K = TileShapeK
@@ -3521,27 +3531,107 @@ bool TestXe(
   constexpr int TileShapeK = cute::size<2>(typename Gemm::GemmKernel::TileShape{});
   std::vector<int> problem_size_k{TileShapeK};
 
+  using DecompositionMode = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerXeStreamKParams::DecompositionMode;
+  std::vector decomposition_modes = {DecompositionMode::Heuristic};
+  std::vector problem_splits = {detail::Splits{1}};
+  static constexpr bool UsesStreamKScheduler = cute::is_same_v<typename Gemm::GemmKernel::TileSchedulerTag, cutlass::gemm::StreamKScheduler>;
+  if constexpr (UsesStreamKScheduler) {
+    problem_splits.push_back(detail::Splits{2});
+    problem_splits.push_back(detail::Splits{3});
+
+    decomposition_modes.push_back(DecompositionMode::DataParallel);
+    decomposition_modes.push_back(DecompositionMode::SplitK);
+    decomposition_modes.push_back(DecompositionMode::StreamK);
+
+    // Use larger K sizes for stream-K tests
+    static constexpr int min_tiles_per_sk_unit = cutlass::gemm::kernel::detail::PersistentTileSchedulerXeStreamKParams::min_iters_per_sk_unit_;
+    problem_size_k = {TileShapeK * min_tiles_per_sk_unit, TileShapeK * 3 * min_tiles_per_sk_unit - max_alignment};
+  }
+
+  using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90::RasterOrderOptions;
+  std::vector<RasterOrderOptions> raster_orders = {RasterOrderOptions::AlongM};
+  std::vector max_swizzle_sizes{detail::MaxSwizzleSize{1}};
+
   bool passed = true;
 
   for (int m : problem_size_m) {
     for (int n : problem_size_n) {
       for (int k : problem_size_k) {
         for (int l : problem_size_l) {
-          ProblemShapeType problem_size{m, n, k, l};
-          passed = testbed.run(problem_size,
-                               cutlass::from_real<ElementScalar>(alpha),
-                               cutlass::from_real<ElementScalar>(beta));
-          if (!passed) {
-            std::cout << __FILE__ << ':' << __LINE__ << " : GEMM MNKL " << m
-                      << " " << n << " " << k << " " << l << " FAILED.\n";
-            return false;
-          }
-        }
-      }
-    }
-  }
+          for (auto raster_order : raster_orders) {
+            for (auto max_swizzle_size : max_swizzle_sizes) {
+              for (DecompositionMode decomp_mode : decomposition_modes) {
+                            std::vector problem_splits = {detail::Splits{1}};
+                if (decomp_mode == DecompositionMode::Heuristic || decomp_mode == DecompositionMode::SplitK) {
+                  auto max_splits = (k + TileShapeK - 1) / TileShapeK;
+                  if (max_splits > 2) {
+                    problem_splits.push_back(detail::Splits{2});
+                  }
+                  if (max_splits > 3) {
+                    problem_splits.push_back(detail::Splits{3});
+                  }
+
+                  problem_splits.push_back(detail::Splits{max_splits});
+
+                  // Test the case in which we ask for more splits than there are K tiles in the GEMM. In this
+                  // case, split-K will fall back to a splitting factor of `max_splits`.
+                  problem_splits.push_back(detail::Splits{max_splits + 1});
+                }
+
+                for (auto splits : problem_splits) {
+                  ProblemShapeType problem_size{m, n, k, l};
+                  try {
+                    passed = testbed.run(problem_size,
+                                         cutlass::from_real<ElementScalar>(alpha),
+                                         cutlass::from_real<ElementScalar>(beta),
+                                         raster_order,
+                                         max_swizzle_size,
+                                         splits,
+                                         decomp_mode
+                                         );
+                  }
+                  catch (std::exception const& e) {
+                    EXPECT_TRUE(false) << "TestAll: testbed.run {"
+                      << "m: " << m << ", n: " << n << ", k: " << k << ", l: " << l
+                      << ", alpha: " << alpha << ", beta: " << beta
+                      << ", splits: " << static_cast<int>(splits)
+                      << ", decomp_mode: " << detail::decomp_mode_to_string(decomp_mode)
+                      << "} threw an exception: " << e.what();
+                    throw;
+                  }
+                  catch (...) {
+                    EXPECT_TRUE(false) << "TestAll: testbed.run {"
+                      << "m: " << m << ", n: " << n << ", k: " << k << ", l: " << l
+                      << ", alpha: " << alpha << ", beta: " << beta
+                      << ", splits: " << static_cast<int>(splits)
+                      << ", decomp_mode: " << detail::decomp_mode_to_string(decomp_mode)
+                      << "} threw an exception (unknown)";
+                    throw;
+                  }
+
+                  EXPECT_TRUE(passed) << "TestAll: testbed.run {"
+                      << "m: " << m << ", n: " << n << ", k: " << k << ", l: " << l
+                    << ", alpha: " << alpha << ", beta: " << beta
+                    << ", splits: " << static_cast<int>(splits)
+                    << ", decomp_mode: " << detail::decomp_mode_to_string(decomp_mode)
+                    << "} failed";
+
+                  if (!passed) {
+                    std::cout << __FILE__ << ':' << __LINE__ << " : GEMM MNKL " << m
+                              << " " << n << " " << k << " " << l << " FAILED.\n";
+                    return false;
+                  }
+                } // splits
+              } // decomp_mode
+            } // max_swizzle_size
+          } // raster_order
+        } // l
+      }  // k
+    }  // n
+  }  // m
   return passed;
 }
+#endif
 
 template <typename Gemm>
 bool TestAllBiasElementwise(double alpha = 1.0, double beta = cute::is_same_v<typename Gemm::GemmKernel::ElementC, void> ? 0.0 : 1.0, CheckEquality check_relative_equality = CheckEquality::EXACT) {
