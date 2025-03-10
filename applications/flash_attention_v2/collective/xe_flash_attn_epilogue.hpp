@@ -76,12 +76,12 @@ public:
   static_assert(cute::rank(CtaTileMNK{}) == 3, "CtaTileMNK must be rank-3: [CTA_M, CTA_N, CTA_K]");
   static_assert(cute::rank(StrideO{}) == 3, "StrideO must be rank-3: [seq_len, head_size, batch * num_heads]");
 
-  using Trait_O = Copy_Traits<GmemTiledCopyO>;
-  using XE_Copy_O = decltype(make_xe_2d_copy(
-      Copy_Atom<Copy_Traits<CopyOpO, StrideO>, ElementO>{}.with(make_tensor(
-          make_gmem_ptr(static_cast<ElementO const *>(nullptr)), make_layout(make_shape(0, 0, 0), StrideO{}))),
-      Layout<Shape<_1, Int<SubgroupSize>>>{}));
-
+  using Trait_O = Copy_Traits<GmemTiledCopyO, StrideO>;
+  using XE_Copy_O = decltype(make_tiled_copy(Copy_Atom<Trait_O, ElementO>{}
+                                             .with(static_cast<ElementO const*>(nullptr),int32_t(0), int32_t(0)),
+                                             Layout<Shape<_1, Int<SubgroupSize>>>{},
+                                             make_layout(make_shape(get<0>(typename Trait_O::BlockShape{}),
+                                                                    get<1>(typename Trait_O::BlockShape{}) / Int<SubgroupSize>{}))));
 private:
   constexpr static bool is_destination_supported = not cute::is_void_v<ElementO>;
 
@@ -118,11 +118,13 @@ public:
     auto [batch, num_heads, seq_len, head_size] = problem_shape;
 
     XE_Copy_O xe_store_o = {};
-    xe_store_o = make_xe_2d_copy(Copy_Atom<Copy_Traits<CopyOpO, StrideO>, ElementO>{}.with(make_tensor(
-                                     make_gmem_ptr(static_cast<ElementO const *>(args.ptr_O)),
-                                     make_layout(make_shape(seq_len, head_size, batch * num_heads), args.dO))),
-                                 Layout<Shape<_1, Int<SubgroupSize>>>{});
-
+    xe_store_o = make_tiled_copy(Copy_Atom<Trait_O, ElementO>{}.with(
+                                      make_tensor(make_gmem_ptr(static_cast<ElementO const*>(args.ptr_O)), 
+                                                  make_layout(make_shape(seq_len, head_size, batch * num_heads), 
+                                                  args.dO))),
+                                 Layout<Shape<_1, Int<SubgroupSize>>>{},
+                                 make_layout(make_shape(get<0>(typename Trait_O::BlockShape{}),
+                                                        get<1>(typename Trait_O::BlockShape{}) / Int<SubgroupSize>{})));
     return {
         xe_store_o,
     };
@@ -155,30 +157,13 @@ public:
     using namespace cute;
 
     using MmaAtomShape = typename TiledMma::AtomShape_MNK;
-    static constexpr auto BLK_M = get<0>(CtaTileMNK{});
-    static constexpr auto BLK_N = get<1>(CtaTileMNK{});
-    static constexpr auto BLK_K = get<2>(CtaTileMNK{});
-    static constexpr auto ATOM_M = get<1>(typename TiledMma::ThrLayoutVMNK{}.shape());
-    static constexpr auto ATOM_N = get<2>(typename TiledMma::ThrLayoutVMNK{}.shape());
-    static constexpr auto ATOM_K = get<3>(typename TiledMma::ThrLayoutVMNK{}.shape());
-
     using SubgroupTileShape = decltype(cute::shape_div(CtaTileMNK{}, take<1, 4>(typename TiledMma::ThrLayoutVMNK{}.shape())));
-
-    static constexpr auto SG_M = get<0>(SubgroupTileShape{});
-    static constexpr auto SG_N = get<1>(SubgroupTileShape{});
-    static constexpr auto SG_K = get<2>(SubgroupTileShape{});
-
     using FragsShape = decltype(cute::shape_div(take<0, 2>(SubgroupTileShape{}), take<0, 2>(MmaAtomShape())));
+  
     static constexpr int FragsM = get<0>(FragsShape{}); // A frags per sub_group
     static constexpr int FragsN = get<1>(FragsShape{}); // B frags per sub_group
-
     static constexpr int Vec = (get<0>(MmaAtomShape()) * get<1>(MmaAtomShape())) / SubgroupSize;
 
-    // Indexing variables
-    auto [m_coord, n_coord, k_coord, l_coord] = tile_coord;
-    auto m_offset = m_coord * BLK_M + (get_sub_group_id() / ATOM_N) * SG_M;
-    auto n_offset = n_coord * BLK_N + (get_sub_group_id() % ATOM_N) * SG_N;
-    auto l_offset = l_coord;
     auto g = syclcompat::get_nd_item<1>().get_sub_group();
 
     CUTLASS_PRAGMA_UNROLL
@@ -197,11 +182,23 @@ public:
 
     // Indexing variables
     auto [batch, num_heads, seq_len, head_size] = problem_shape;
+    // Represent the full output tensor
+    Tensor mO_mnl = params.xe_store_o.get_pvc_tensor(make_shape(seq_len, head_size, batch * num_heads));
+    
+    auto [m_coord, n_coord, k_coord, l_coord] = tile_coord;
+    // Tile the output tensor per WG
+    Tensor g_wg_O = local_tile(mO_mnl, select<0,1>(CtaTileMNK{}), make_coord(m_coord,n_coord,l_coord));             // (BLK_M,BLK_N,m,n,l)
+    static constexpr auto ATOM_N = get<2>(typename TiledMma::ThrLayoutVMNK{}.shape());
+    static constexpr auto ATOM_K = get<3>(typename TiledMma::ThrLayoutVMNK{}.shape());
+    auto m_sg = get_sub_group_id() / ATOM_N;
+    auto n_sg = get_sub_group_id() % ATOM_N;
+    // Tile the output tensor per SG
+    Tensor gO = local_tile(g_wg_O, SubgroupTileShape{}, make_coord(m_sg,n_sg,_), Step<_1,_1, X>{});             // (BLK_M,BLK_N,m,n,l)
 
-    Tensor tOi = params.xe_store_o.get_pvc_tensor(make_coord(m_offset, n_offset, l_coord),
-                                                  make_shape(_, Int<FragsM>{}, Int<FragsN>{}));
+    auto thread_xe_store_o = params.xe_store_o.get_thread_slice(ThreadIdxX());
+    Tensor tOgO = thread_xe_store_o.partition_D(gO);
 
-    copy(params.xe_store_o, out, tOi);
+    copy(params.xe_store_o, out, tOgO);
   }
 
 private:
