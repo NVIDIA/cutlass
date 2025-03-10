@@ -84,18 +84,18 @@ void copy_kernel_vectorized(TensorS tile_S, TensorD tile_D) {
       make_shape(_1{}, Int<sizeof(cutlass::uint128_t) / sizeof(Element)>{}),
       Stride<Int<sizeof(cutlass::uint128_t) / sizeof(Element)>, _1>{});
   auto ThreadLayout = make_layout(make_shape(_1{}, _16{}));
-  auto tiled_copy_load = make_xe_2d_copy(Atom_load{},  // access size
+  auto tiled_copy_load = make_tiled_copy(Atom_load{},  // access size
                                          ThreadLayout, // thread layout
                                          VecLayout); // vector layout (e.g. 4x1)
   auto tiled_copy_store =
-      make_xe_2d_copy(Atom_store{}, // access size
+      make_tiled_copy(Atom_store{}, // access size
                       ThreadLayout, // thread layout
                       VecLayout);   // vector layout (e.g. 4x1)
 
-  auto tiled_ldsm = make_xe_2d_copy(Atom_ldsm{},  // access size
+  auto tiled_ldsm = make_tiled_copy(Atom_ldsm{},  // access size
                                     ThreadLayout, // thread layout
                                     VecLayout);   // vector layout (e.g. 4x1)
-  auto tiled_stsm = make_xe_2d_copy(Atom_stsm{},  // access size
+  auto tiled_stsm = make_tiled_copy(Atom_stsm{},  // access size
                                     ThreadLayout, // thread layout
                                     VecLayout);   // vector layout (e.g. 4x1)
 

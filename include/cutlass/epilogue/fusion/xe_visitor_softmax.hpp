@@ -460,12 +460,15 @@ public:
     Tensor res = make_tensor<ElementOutput>(Shape<Int<FragmentSize>, Int<FragsM>, Int<FragsN>>{});
 
     auto [sg_m_coord, sg_n_coord, k_coord, l_offset] = args.tile_coord_mnkl;
-    Tensor rw_coord = params.xe_store_output.get_pvc_tensor(
-        make_coord(sg_m_coord * Epi_M, sg_n_coord * Epi_N, l_offset),
-        make_shape(_, Int<FragsM>{}, Int<FragsN>{}));
-    return ConsumerStoreCallbacks<decltype(res),decltype(rw_coord)>(
+    auto [M, N, K, L] = args.problem_shape_mnkl;
+    Tensor mAux_mnl = args.tiled_copy.get_pvc_tensor(make_shape(M,N,L));
+    // Tiling is done differently than in epilogue as we get in coordinates of subgroup in kernel
+    Tensor gAux = local_tile(mAux_mnl, select<0,1>(EpilogueTile{}), make_coord(sg_m_coord,sg_n_coord,l_offset));
+    Tensor tCgAux = args.tiled_copy.get_thread_slice(args.thread_idx).partition_D(gAux);
+
+    return ConsumerStoreCallbacks<decltype(res),decltype(tCgAux)>(
       cute::move(res), 
-      cute::move(rw_coord),
+      cute::move(tCgAux),
       params);
   }
 

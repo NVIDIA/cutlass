@@ -48,10 +48,25 @@ void copy_kernel_vectorized(TensorS S, TensorD D, uint32_t M, uint32_t N) {
 
   using Element = typename TensorS::value_type;
 
+  using traits_load = Copy_Traits<XE_2D_U32x8x16_LD_N, decltype(S)>;
+  using Atom_load = Copy_Atom<traits_load, Element>;
+  auto tiled_copy_load = make_tiled_copy(Atom_load{}.with(S),
+                                         Layout<Shape<_1, _16>>{},
+                                         make_layout(shape_div(typename traits_load::BlockShape{}, Shape<_1, _16>{})));
+  using traits_store = Copy_Traits<XE_2D_U32x8x16_ST_N, decltype(D)>;
+  using Atom_store = Copy_Atom<traits_store, Element>;
+
+  auto tiled_copy_store = make_tiled_copy(Atom_store{}.with(D), 
+                                          Layout<Shape<_1, _16>>{},
+                                          make_layout(shape_div(typename traits_store::BlockShape{}, Shape<_1, _16>{})));
+
+  auto S_coord = tiled_copy_load.get_pvc_tensor(append(S.shape(),_1{}))(_,_,0);
+  auto D_coord = tiled_copy_store.get_pvc_tensor(append(D.shape(),_1{}))(_,_,0);
+
   Tensor tiled_tensor_S = tiled_divide(
-      S, Shape<Int<wg_tile_m>, Int<wg_tile_n>>{}); // ((M, N), m', n')
+    S_coord, Shape<Int<wg_tile_m>, Int<wg_tile_n>>{}); // ((M, N), m', n')
   Tensor tiled_tensor_D = tiled_divide(
-      D, Shape<Int<wg_tile_m>, Int<wg_tile_n>>{}); // ((M, N), m', n')
+    D_coord, Shape<Int<wg_tile_m>, Int<wg_tile_n>>{}); // ((M, N), m', n')
 
   // Slice work group.
   Tensor tile_wg_S = tiled_tensor_S(make_coord(_, _), BlockIdxX(), BlockIdxY());
@@ -75,11 +90,6 @@ void copy_kernel_vectorized(TensorS S, TensorD D, uint32_t M, uint32_t N) {
   }
 #endif
 
-  using traits_load = Copy_Traits<XE_2D_U32x8x16_LD_N, decltype(S)>;
-  using Atom_load = Copy_Atom<traits_load, Element>;
-  auto tiled_copy_load = make_xe_2d_copy(Atom_load{}.with(S),
-                                         Layout<Shape<_1, _16>>{});
-
   // Construct a Tensor corresponding to each thread's slice.
   auto thr_copy_load =
       tiled_copy_load.get_thread_slice(cutlass::get_sub_group_local_id());
@@ -89,7 +99,7 @@ void copy_kernel_vectorized(TensorS S, TensorD D, uint32_t M, uint32_t N) {
   // Construct a register-backed Tensor with the same shape as each thread's
   // partition Use make_fragment because the first mode is the instruction-local
   // mode
-  Tensor fragment = make_fragment_like(thr_tile_load_D);
+  Tensor fragment = make_tensor<Element>(thr_tile_load_D.shape());
 
 #if 0
   if (thread(1)) {
@@ -117,13 +127,9 @@ void copy_kernel_vectorized(TensorS S, TensorD D, uint32_t M, uint32_t N) {
   // Copy from GMEM to RMEM and from RMEM to GMEM
   auto blk_load_S = tiled_copy_load.get_pvc_tensor(make_coord(m_coord, n_coord, l_coord),
                                                    fragment.shape());
-  copy(tiled_copy_load, blk_load_S, fragment);
 
-  using traits_store = Copy_Traits<XE_2D_U32x8x16_ST_N, decltype(D)>;
-  using Atom_store = Copy_Atom<traits_store, Element>;
+  copy(tiled_copy_load, thr_tile_load_S, fragment);
 
-  auto tiled_copy_store =
-      make_xe_2d_copy(Atom_store{}.with(D), Layout<Shape<_1, _16>>{});
   auto thr_copy_store = tiled_copy_store.get_thread_slice(ThreadIdxX());
 
   Tensor thr_tile_store_D = thr_copy_store.partition_D(tile_sg_D);
@@ -147,7 +153,7 @@ void copy_kernel_vectorized(TensorS S, TensorD D, uint32_t M, uint32_t N) {
   // onlt run first subgroup
   if (syclcompat::global_id::x() < 16 && !syclcompat::global_id::y() &&
       !syclcompat::global_id::z()) {
-    copy(tiled_copy_store, fragment, blk_store_D);
+    copy(tiled_copy_store, fragment, thr_tile_store_D);
   }
 }
 
