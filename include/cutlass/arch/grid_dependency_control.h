@@ -46,6 +46,11 @@
      defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 900 && defined(__CUDA_ARCH_FEAT_SM90_ALL))
     #define CUTLASS_GDC_ENABLED
   #endif
+  #if (defined(CUTLASS_ENABLE_GDC_FOR_SM100) && \
+     __CUDACC_VER_MAJOR__ >= 12 && \
+     defined(__CUDA_ARCH__) && __CUDA_ARCH__ == 1000 && defined(__CUDA_ARCH_FEAT_SM100_ALL))
+    #define CUTLASS_GDC_ENABLED
+  #endif
 #endif
 
 namespace cutlass {
