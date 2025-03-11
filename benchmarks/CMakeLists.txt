@@ -56,6 +56,12 @@ function(cutlass_benchmark_add_executable NAME)
     benchmark::benchmark
   )
 
+  target_include_directories(
+    ${NAME}
+    PRIVATE
+    ${CUTLASS_APPLICATIONS_DIR}
+  )
+
   if (CUTLASS_ENABLE_SYCL)
     add_onemkl_to_target(TARGET ${NAME})
     add_sycl_to_target(TARGET ${NAME})
@@ -68,6 +74,7 @@ function(cutlass_benchmark_add_executable NAME)
 endfunction()
 
 if (CUTLASS_ENABLE_SYCL)
+  set(CUTLASS_APPLICATIONS_DIR ${CMAKE_SOURCE_DIR}/applications)
   cutlass_benchmark_add_executable(
     benchmarks
     main.cpp

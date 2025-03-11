@@ -38,6 +38,7 @@
 #include "ampere/benchmarks.hpp"
 #elif defined(SYCL_INTEL_TARGET)
 #include "pvc/benchmarks.hpp"
+#include "pvc/flash_attention_v2/benchmarks.hpp"
 #endif
 
 #include <benchmark/benchmark.h>
@@ -85,8 +86,9 @@ struct BenckmarkOptions {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <typename BenchOptions>
 auto benchmark_main(int argc, const char **argv) -> int {
-  cutlass::benchmark::Options options;
+  BenchOptions options;
 
   options.parse(argc, argv);
 
@@ -98,7 +100,7 @@ auto benchmark_main(int argc, const char **argv) -> int {
   cutlass::KernelHardwareInfo hw_info;
   hw_info.sm_count = cutlass::KernelHardwareInfo::query_device_multiprocessor_count(hw_info.device_id);
   const auto benchmark_config = argv[0];
-  auto runner = cutlass::benchmark::BenchmarkRegistry::get_benchmark(benchmark_config);
+  auto runner = cutlass::benchmark::BenchmarkRegistry<BenchOptions>::get_benchmark(benchmark_config);
 
   std::stringstream benchmark_name;
   benchmark_name << benchmark_config << "/" << options.benchmark_name();
@@ -156,8 +158,16 @@ int main(int argc, const char** argv) {
         line_argv[i] = &args[i][0]; // Convert std::string to char*
       }
 
+      std::string const& benchmark_config = line_argv.data()[0];
+
       // Call the secondary main function with the parsed arguments
-      benchmark_main(line_argc, line_argv.data());
+      if(benchmark_config.find("Gemm") != std::string::npos) {
+        benchmark_main<cutlass::benchmark::GEMMOptions>(line_argc, line_argv.data());
+      } else {
+#if defined SYCL_INTEL_TARGET
+        benchmark_main<cutlass::benchmark::FMHAOptions>(line_argc, line_argv.data());
+#endif
+      }
     }
   }
   file.close();

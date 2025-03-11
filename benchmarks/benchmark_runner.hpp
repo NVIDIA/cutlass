@@ -103,7 +103,7 @@ bool initialize_block(
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 // Command line options parsing
-struct Options {
+struct GEMMOptions {
 
   bool error;
 
@@ -111,11 +111,11 @@ struct Options {
   float alpha, beta;
   std::string bm_name;
 
-  Options():
+  GEMMOptions():
           error(false),
           m(5120), n(4096), k(4096), l(1),
           alpha(1.f), beta(0.f),
-          bm_name("unknown")
+          bm_name("GEMM")
   { }
 
   // Parses the command line
@@ -128,7 +128,7 @@ struct Options {
     cmd.get_cmd_line_argument("l", l, 1);
     cmd.get_cmd_line_argument("alpha", alpha, 1.f);
     cmd.get_cmd_line_argument("beta", beta, 0.f);
-    cmd.get_cmd_line_argument("bm_name", bm_name, std::string("unknown"));
+    cmd.get_cmd_line_argument("bm_name", bm_name, std::string("GEMM"));
   }
 
   std::string benchmark_name() const {
@@ -272,7 +272,7 @@ struct BenchmarkRunnerGemm {
 
   }
 
-  void run(::benchmark::State& state, const Options& options, const KernelHardwareInfo& hw_info) {
+  void run(::benchmark::State& state, const GEMMOptions& options, const KernelHardwareInfo& hw_info) {
     ProblemShapeType problem_size = ProblemShapeType{options.m, options.n, options.k, options.l};
 
     initialize(problem_size);
@@ -391,8 +391,9 @@ private:
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+template<typename Options>
 class BenchmarkRegistry {
-  using BM_Lambda = std::function<void(::benchmark::State& state, Options const&, KernelHardwareInfo const &)>;;
+  using BM_Lambda = std::function<void(::benchmark::State& state, Options const&, KernelHardwareInfo const &)>;
   std::map<const std::string, BM_Lambda> benchmarks;
 
   static BenchmarkRegistry& get_instance() {
@@ -426,12 +427,12 @@ public:
 
 }
 
-#define CUTLASS_BENCHMARK(F) cutlass::benchmark::BenchmarkRegistry::Register(#F, &F##_func)
+#define CUTLASS_BENCHMARK(F) cutlass::benchmark::BenchmarkRegistry<cutlass::benchmark::GEMMOptions>::Register(#F, &F##_func)
 
 #define CUTLASS_CREATE_GEMM_BENCHMARK(F)                          \
   static void F##_func(                                           \
       ::benchmark::State& state,                                  \
-      cutlass::benchmark::Options const& options,                 \
+      cutlass::benchmark::GEMMOptions const& options,                 \
       cutlass::KernelHardwareInfo const& hw_info) {               \
     auto bench = cutlass::benchmark::BenchmarkRunnerGemm<F>();    \
     bench.run(state, options, hw_info);                           \

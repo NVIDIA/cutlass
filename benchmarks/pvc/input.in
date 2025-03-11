@@ -1,4 +1,4 @@
-# BFloat16 benchmarks
+# GEMM BFloat16 benchmarks
 PvcGemmBF16BF16FP32_RRR_1 --bm_name=bf16_bf16_fp32 --l=1 --m=4096 --k=4096 --n=4096
 PvcGemmBF16BF16FP32_RRR_1 --bm_name=bf16_bf16_fp32 --l=1 --m=8192 --k=8192 --n=8192
 PvcGemmBF16BF16FP32_RRR_1 --bm_name=bf16_bf16_fp32 --l=1 --m=1 --k=5120 --n=13824
@@ -59,3 +59,69 @@ PvcGemmBF16BF16FP32_SplitK_RRR_1 --bm_name=bf16_bf16_fp32 --l=1 --m=8192 --k=163
 PvcGemmBF16BF16FP32_SplitK_RRR_1 --bm_name=bf16_bf16_fp32 --l=4 --m=32768 --k=128 --n=4096
 PvcGemmBF16BF16FP32_SplitK_RRR_1 --bm_name=bf16_bf16_fp32 --l=4 --m=32768 --k=4096 --n=128
 PvcGemmBF16BF16FP32_SplitK_RRR_1 --bm_name=bf16_bf16_fp32 --l=32 --m=4096 --k=4096 --n=128
+
+# FMHA BFloat16 benchmarks
+PvcFMHABF16BF16FP32_RCR_h64_Causal --bm_name=bf16_bf16_fp32 --seq_len=512   --batch=32 --num_heads=32 --head_size=64
+PvcFMHABF16BF16FP32_RCR_h64_NonCausal --bm_name=bf16_bf16_fp32 --seq_len=512   --batch=32 --num_heads=32 --head_size=64 
+PvcFMHABF16BF16FP32_RCR_h64_Causal --bm_name=bf16_bf16_fp32 --seq_len=1024  --batch=4  --num_heads=48 --head_size=64
+PvcFMHABF16BF16FP32_RCR_h64_NonCausal --bm_name=bf16_bf16_fp32 --seq_len=1024  --batch=4  --num_heads=48 --head_size=64 
+PvcFMHABF16BF16FP32_RCR_h64_Causal --bm_name=bf16_bf16_fp32 --seq_len=1024  --batch=32 --num_heads=16 --head_size=64
+PvcFMHABF16BF16FP32_RCR_h64_NonCausal --bm_name=bf16_bf16_fp32 --seq_len=1024  --batch=32 --num_heads=16 --head_size=64 
+PvcFMHABF16BF16FP32_RCR_h64_Causal --bm_name=bf16_bf16_fp32 --seq_len=2048  --batch=32 --num_heads=8  --head_size=64
+PvcFMHABF16BF16FP32_RCR_h64_NonCausal --bm_name=bf16_bf16_fp32 --seq_len=2048  --batch=32 --num_heads=8  --head_size=64 
+PvcFMHABF16BF16FP32_RCR_h64_Causal --bm_name=bf16_bf16_fp32 --seq_len=4096  --batch=32 --num_heads=4  --head_size=64
+PvcFMHABF16BF16FP32_RCR_h64_NonCausal --bm_name=bf16_bf16_fp32 --seq_len=4096  --batch=32 --num_heads=4  --head_size=64 
+PvcFMHABF16BF16FP32_RCR_h64_Causal --bm_name=bf16_bf16_fp32 --seq_len=8192  --batch=32 --num_heads=2  --head_size=64
+PvcFMHABF16BF16FP32_RCR_h64_NonCausal --bm_name=bf16_bf16_fp32 --seq_len=8192  --batch=32 --num_heads=2  --head_size=64 
+PvcFMHABF16BF16FP32_RCR_h64_Causal --bm_name=bf16_bf16_fp32 --seq_len=16384 --batch=32 --num_heads=1  --head_size=64
+PvcFMHABF16BF16FP32_RCR_h64_NonCausal --bm_name=bf16_bf16_fp32 --seq_len=16384 --batch=32 --num_heads=1  --head_size=64 
+
+PvcFMHABF16BF16FP32_RCR_h128_Causal --bm_name=bf16_bf16_fp32 --seq_len=512   --batch=32 --num_heads=16 --head_size=128
+PvcFMHABF16BF16FP32_RCR_h128_NonCausal --bm_name=bf16_bf16_fp32 --seq_len=512   --batch=32 --num_heads=16 --head_size=128
+PvcFMHABF16BF16FP32_RCR_h128_Causal --bm_name=bf16_bf16_fp32 --seq_len=1024  --batch=16 --num_heads=16 --head_size=128
+PvcFMHABF16BF16FP32_RCR_h128_NonCausal --bm_name=bf16_bf16_fp32 --seq_len=1024  --batch=16 --num_heads=16 --head_size=128
+PvcFMHABF16BF16FP32_RCR_h128_Causal --bm_name=bf16_bf16_fp32 --seq_len=2048  --batch=16 --num_heads=8  --head_size=128
+PvcFMHABF16BF16FP32_RCR_h128_NonCausal --bm_name=bf16_bf16_fp32 --seq_len=2048  --batch=16 --num_heads=8  --head_size=128
+PvcFMHABF16BF16FP32_RCR_h128_Causal --bm_name=bf16_bf16_fp32 --seq_len=4096  --batch=16 --num_heads=4  --head_size=128
+PvcFMHABF16BF16FP32_RCR_h128_NonCausal --bm_name=bf16_bf16_fp32 --seq_len=4096  --batch=16 --num_heads=4  --head_size=128
+PvcFMHABF16BF16FP32_RCR_h128_Causal --bm_name=bf16_bf16_fp32 --seq_len=8192  --batch=16 --num_heads=2  --head_size=128
+PvcFMHABF16BF16FP32_RCR_h128_NonCausal --bm_name=bf16_bf16_fp32 --seq_len=8192  --batch=16 --num_heads=2  --head_size=128
+PvcFMHABF16BF16FP32_RCR_h128_Causal --bm_name=bf16_bf16_fp32 --seq_len=2048  --batch=8 --num_heads=32  --head_size=128
+PvcFMHABF16BF16FP32_RCR_h128_NonCausal --bm_name=bf16_bf16_fp32 --seq_len=2048  --batch=8 --num_heads=32  --head_size=128
+PvcFMHABF16BF16FP32_RCR_h128_Causal --bm_name=bf16_bf16_fp32 --seq_len=2048  --batch=8 --num_heads=96  --head_size=128
+PvcFMHABF16BF16FP32_RCR_h128_NonCausal --bm_name=bf16_bf16_fp32 --seq_len=2048  --batch=8 --num_heads=96  --head_size=128
+PvcFMHABF16BF16FP32_RCR_h128_Causal --bm_name=bf16_bf16_fp32 --seq_len=16384 --batch=16 --num_heads=1  --head_size=128
+PvcFMHABF16BF16FP32_RCR_h128_NonCausal --bm_name=bf16_bf16_fp32 --seq_len=16384 --batch=16 --num_heads=1  --head_size=128
+
+# FMHA FP16 benchmarks
+PvcFMHAFP16FP16FP32_RCR_h64_Causal --bm_name=fp16_fp16_fp32 --seq_len=512   --batch=32 --num_heads=32 --head_size=64
+PvcFMHAFP16FP16FP32_RCR_h64_NonCausal --bm_name=fp16_fp16_fp32 --seq_len=512   --batch=32 --num_heads=32 --head_size=64 
+PvcFMHAFP16FP16FP32_RCR_h64_Causal --bm_name=fp16_fp16_fp32 --seq_len=1024  --batch=4  --num_heads=48 --head_size=64
+PvcFMHAFP16FP16FP32_RCR_h64_NonCausal --bm_name=fp16_fp16_fp32 --seq_len=1024  --batch=4  --num_heads=48 --head_size=64 
+PvcFMHAFP16FP16FP32_RCR_h64_Causal --bm_name=fp16_fp16_fp32 --seq_len=1024  --batch=32 --num_heads=16 --head_size=64
+PvcFMHAFP16FP16FP32_RCR_h64_NonCausal --bm_name=fp16_fp16_fp32 --seq_len=1024  --batch=32 --num_heads=16 --head_size=64 
+PvcFMHAFP16FP16FP32_RCR_h64_Causal --bm_name=fp16_fp16_fp32 --seq_len=2048  --batch=32 --num_heads=8  --head_size=64
+PvcFMHAFP16FP16FP32_RCR_h64_NonCausal --bm_name=fp16_fp16_fp32 --seq_len=2048  --batch=32 --num_heads=8  --head_size=64 
+PvcFMHAFP16FP16FP32_RCR_h64_Causal --bm_name=fp16_fp16_fp32 --seq_len=4096  --batch=32 --num_heads=4  --head_size=64
+PvcFMHAFP16FP16FP32_RCR_h64_NonCausal --bm_name=fp16_fp16_fp32 --seq_len=4096  --batch=32 --num_heads=4  --head_size=64 
+PvcFMHAFP16FP16FP32_RCR_h64_Causal --bm_name=fp16_fp16_fp32 --seq_len=8192  --batch=32 --num_heads=2  --head_size=64
+PvcFMHAFP16FP16FP32_RCR_h64_NonCausal --bm_name=fp16_fp16_fp32 --seq_len=8192  --batch=32 --num_heads=2  --head_size=64 
+PvcFMHAFP16FP16FP32_RCR_h64_Causal --bm_name=fp16_fp16_fp32 --seq_len=16384 --batch=32 --num_heads=1  --head_size=64
+PvcFMHAFP16FP16FP32_RCR_h64_NonCausal --bm_name=fp16_fp16_fp32 --seq_len=16384 --batch=32 --num_heads=1  --head_size=64 
+
+PvcFMHAFP16FP16FP32_RCR_h128_Causal --bm_name=fp16_fp16_fp32 --seq_len=512   --batch=32 --num_heads=16 --head_size=128
+PvcFMHAFP16FP16FP32_RCR_h128_NonCausal --bm_name=fp16_fp16_fp32 --seq_len=512   --batch=32 --num_heads=16 --head_size=128
+PvcFMHAFP16FP16FP32_RCR_h128_Causal --bm_name=fp16_fp16_fp32 --seq_len=1024  --batch=16 --num_heads=16 --head_size=128
+PvcFMHAFP16FP16FP32_RCR_h128_NonCausal --bm_name=fp16_fp16_fp32 --seq_len=1024  --batch=16 --num_heads=16 --head_size=128
+PvcFMHAFP16FP16FP32_RCR_h128_Causal --bm_name=fp16_fp16_fp32 --seq_len=2048  --batch=16 --num_heads=8  --head_size=128
+PvcFMHAFP16FP16FP32_RCR_h128_NonCausal --bm_name=fp16_fp16_fp32 --seq_len=2048  --batch=16 --num_heads=8  --head_size=128
+PvcFMHAFP16FP16FP32_RCR_h128_Causal --bm_name=fp16_fp16_fp32 --seq_len=4096  --batch=16 --num_heads=4  --head_size=128
+PvcFMHAFP16FP16FP32_RCR_h128_NonCausal --bm_name=fp16_fp16_fp32 --seq_len=4096  --batch=16 --num_heads=4  --head_size=128
+PvcFMHAFP16FP16FP32_RCR_h128_Causal --bm_name=fp16_fp16_fp32 --seq_len=8192  --batch=16 --num_heads=2  --head_size=128
+PvcFMHAFP16FP16FP32_RCR_h128_NonCausal --bm_name=fp16_fp16_fp32 --seq_len=8192  --batch=16 --num_heads=2  --head_size=128
+PvcFMHAFP16FP16FP32_RCR_h128_Causal --bm_name=fp16_fp16_fp32 --seq_len=2048  --batch=8 --num_heads=32  --head_size=128
+PvcFMHAFP16FP16FP32_RCR_h128_NonCausal --bm_name=fp16_fp16_fp32 --seq_len=2048  --batch=8 --num_heads=32  --head_size=128
+PvcFMHAFP16FP16FP32_RCR_h128_Causal --bm_name=fp16_fp16_fp32 --seq_len=2048  --batch=8 --num_heads=96  --head_size=128
+PvcFMHAFP16FP16FP32_RCR_h128_NonCausal --bm_name=fp16_fp16_fp32 --seq_len=2048  --batch=8 --num_heads=96  --head_size=128
+PvcFMHAFP16FP16FP32_RCR_h128_Causal --bm_name=fp16_fp16_fp32 --seq_len=16384 --batch=16 --num_heads=1  --head_size=128
+PvcFMHAFP16FP16FP32_RCR_h128_NonCausal --bm_name=fp16_fp16_fp32 --seq_len=16384 --batch=16 --num_heads=1  --head_size=128
