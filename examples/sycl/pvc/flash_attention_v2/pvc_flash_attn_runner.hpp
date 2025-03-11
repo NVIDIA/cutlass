@@ -358,13 +358,13 @@ template <class GemmKernel> struct ExampleRunner {
       }
       syclcompat::wait();
 
-      float cute_time = timer.seconds() / options.iterations;
+      double cute_time = timer.seconds() / options.iterations;
       double flops_qk = 2.0 * options.batch * options.num_heads * options.seq_len * options.seq_len * options.head_size;
       double flops_pv = 2.0 * options.batch * options.num_heads * options.seq_len * options.head_size * options.seq_len;
       double tflops = ((flops_qk + flops_pv) * 1e-12) / cute_time;
-      double gbps = options.batch * options.num_heads *
-                    (options.seq_len * options.head_size + options.seq_len * options.head_size) * 2 * 2 * (1e-9) /
-                    (cute_time);
+      double gbps_qk = 2.0 * options.batch * options.num_heads * (options.seq_len * options.head_size + options.seq_len * options.head_size);
+      double gbps_pv = 2.0 * options.batch * options.num_heads * (options.seq_len * options.head_size + options.seq_len * options.head_size);
+      double gbps = ((gbps_qk + gbps_pv)  * 1e-9) / (cute_time);
       std::cout << "Problem Size: " << options.batch << 'x' << options.num_heads << 'x' << options.seq_len << 'x'
                 << options.head_size << (options.is_causal ? "xCausal" : "xNonCausal");
       printf(":   %4.3f  GB/s   ,    %4.3f  TFlop/s   ,   %6.4f  ms\n", gbps, tflops, cute_time * 1000);

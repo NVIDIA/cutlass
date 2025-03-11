@@ -219,10 +219,10 @@ public:
     const int head_size_coord = blk_n_coord * BLK_N + (sub_group_id % ATOM_N) * SG_N;
     const int l_coord = blk_l_coord;
 
-    using PrefetchQThrShape = typename CollectiveMainloop::PrefetchQThrShape; // shape<4,2> // (8,2)
+    using PrefetchQThrShape = typename CollectiveMainloop::PrefetchQThrShape; // shape<4,2> // (4,4)
     using PrefetchKThrShape = typename CollectiveMainloop::PrefetchKThrShape; // shape<4,2> // (4,4)
     using PrefetchVThrShape = typename CollectiveMainloop::PrefetchVThrShape; // shape<4,2> // (4,4)
-    using PrefetchQTileSize = typename CollectiveMainloop::PrefetchQTileSize; // 32x32   // 16x32
+    using PrefetchQTileSize = typename CollectiveMainloop::PrefetchQTileSize; // 32x32   // 32x32
     using PrefetchKTileSize = typename CollectiveMainloop::PrefetchKTileSize; // 16x32   // 16x32
     using PrefetchVTileSize = typename CollectiveMainloop::PrefetchVTileSize; // 16x32   // 16x32
 
@@ -325,7 +325,7 @@ public:
 
       // 3) Perform GEMM S = Q*K
       auto tile_coord_QK = make_coord(seq_coord, load_idx, _, blk_l_coord);
-      collective_mma.mmaQK(tile_coord_QK, tSr, gQ, gK, tSr, head_size / get<1>(subgroup_shape), params.mainloop);
+      collective_mma.mmaQK(tile_coord_QK, tSr, gQ, gK, tSr, ceil_div(head_size , get<1>(subgroup_shape)), params.mainloop);
 
       CollectiveSoftmaxEpilogue softmax(params.softmax);
       softmax(nblock == 0, tSr, max_reg, sum_reg, out_reg);
@@ -351,7 +351,7 @@ public:
       clear(tSr);
       // 3) Perform GEMM S = Q*K
       auto tile_coord_QK = make_coord(seq_coord, (nblock_limit - 1) * get<1>(subgroup_shape), _, blk_l_coord);
-      collective_mma.mmaQK(tile_coord_QK, tSr, gQ, gK, tSr, head_size / get<1>(subgroup_shape), params.mainloop);
+      collective_mma.mmaQK(tile_coord_QK, tSr, gQ, gK, tSr, ceil_div(head_size , get<1>(subgroup_shape)), params.mainloop);
       // mask the elements of each tile where j > i
       const int item_id = thread_idx % SubgroupSize;
       int col_idx = item_id + (nblock_limit - 1) * get<1>(subgroup_shape);
