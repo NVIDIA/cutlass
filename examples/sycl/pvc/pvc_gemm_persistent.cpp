@@ -226,7 +226,7 @@ struct ExampleRunner {
       {block_A.get(), stride_A, block_B.get(), stride_B},
       {{options.alpha, options.beta}, block_C.get(), stride_C, block_D.get(), stride_D},
       hw_info,
-      {1, RasterOrderOptions::AlongM}
+      {1, RasterOrderOptions::AlongN}
     };
 
     Gemm gemm_op;

@@ -380,7 +380,7 @@ struct PersistentTileSchedulerXeStreamKParams {
     KernelHardwareInfo hw_info,
     bool truncate_range = true
   ) {
-    uint32_t available_sms = hw_info.sm_count / 8;
+    uint32_t available_sms = hw_info.sm_count;
     auto possibly_truncate = [&](int x, int y) {
       if(truncate_range)
         return static_cast<unsigned int>(platform::min(x, y));

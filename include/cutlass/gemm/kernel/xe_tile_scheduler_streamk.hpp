@@ -44,7 +44,8 @@ namespace cutlass::gemm::kernel::detail {
 
 // Persistent Thread Block (TB) scheduler leveraging stream-K decomposition
 template <
-  class TileShape
+  class TileShape,
+  uint32_t ThreadsPerBlock
 >
 class PersistentTileSchedulerXeStreamK {
   //
@@ -290,7 +291,7 @@ public:
   }
 
   // Performs the reduction across splits for a given output tile.
-template <int ThreadsPerBlock, class FrgTensorC>
+template <class FrgTensorC>
   CUTLASS_DEVICE
   static void
   fixup(
@@ -302,12 +303,12 @@ template <int ThreadsPerBlock, class FrgTensorC>
     static constexpr uint32_t Offset = static_cast<int>(cutlass::arch::ReservedNamedBarriers::StreamkBarrier0);
     static constexpr uint32_t MaxNumNamedBarriers = 1;
     using BarrierManager = NamedBarrierManager<ThreadsPerBlock, Offset, MaxNumNamedBarriers>;
-    return fixup_helper<ThreadsPerBlock, FrgTensorC, BarrierManager>(
+    return fixup_helper<FrgTensorC, BarrierManager>(
       params, work_tile_info, accumulators, num_barriers, barrier_idx);
   }
 
   // Helper for performing the reduction across splits for a given output tile.
-  template <int ThreadsPerBlock, class FrgTensorC, class BarrierManager>
+  template <class FrgTensorC, class BarrierManager>
   CUTLASS_DEVICE
   static void
   fixup_helper(
