@@ -218,7 +218,6 @@ public:
     const int seq_coord = blk_m_coord * BLK_M + (sub_group_id / ATOM_N) * SG_M;
     const int head_size_coord = blk_n_coord * BLK_N + (sub_group_id % ATOM_N) * SG_N;
     const int l_coord = blk_l_coord;
-
     using PrefetchQThrShape = typename CollectiveMainloop::PrefetchQThrShape; // shape<4,2> // (4,4)
     using PrefetchKThrShape = typename CollectiveMainloop::PrefetchKThrShape; // shape<4,2> // (4,4)
     using PrefetchVThrShape = typename CollectiveMainloop::PrefetchVThrShape; // shape<4,2> // (4,4)
@@ -229,8 +228,8 @@ public:
     const int causal_seq_len = seq_coord + get<0>(subgroup_shape);
     const int non_causal_seq_len = seq_len;
 
-    const int nblock_limit = CausalMask ? cute::ceil_div(causal_seq_len, get<1>(subgroup_shape))
-                                        : cute::ceil_div(non_causal_seq_len, get<1>(subgroup_shape));
+    const int nblock_limit = CausalMask ? cute::ceil_div(causal_seq_len, SG_N)
+                                        : cute::ceil_div(non_causal_seq_len, SG_N);
 
     const int k_tile_count = head_size / (get<1>(PrefetchQThrShape{}) * get<1>(PrefetchQTileSize{}));
     // m, k
@@ -312,10 +311,13 @@ public:
     // of the barrier to workgroup level as the number n block is
     // different for each subgroup due to triangular nature of causal based operation
     static constexpr int barrier_scope = CausalMask ? 3 : 2;
-
+    // FIX ME(Codeplay): The ceil_div perfrom //(head_size + SG_N-1)  / SG_N) so in both cases 
+    // the performance must be intact having different results seems to be a problem in the code gen
+    // Temporarily working around the issue by disabling the ceil_div when head_dim == BLK_N
+    const int tile_qk_count = (CausalMask && head_size % SG_N == 0  ) ? (head_size / SG_N) : cute::ceil_div(head_size, SG_N); 
     // MAIN LOOP: loop over K and V, perform fused attention + online softmax
-    for (int nblock = 0, load_idx = 0; nblock < nblock_limit - static_cast<int>(CausalMask);
-         nblock++, load_idx += get<1>(subgroup_shape)) {
+    for (int nblock = 0, load_idx = 0; nblock < nblock_limit - static_cast<int>(CausalMask); nblock++, 
+         load_idx += SG_N) {
       barrier_arrive(barrier_scope);
       // 1) Load K (performed inside mmaQK)
       // 2) Create Tensor S
@@ -325,7 +327,7 @@ public:
 
       // 3) Perform GEMM S = Q*K
       auto tile_coord_QK = make_coord(seq_coord, load_idx, _, blk_l_coord);
-      collective_mma.mmaQK(tile_coord_QK, tSr, gQ, gK, tSr, ceil_div(head_size , get<1>(subgroup_shape)), params.mainloop);
+      collective_mma.mmaQK(tile_coord_QK, tSr, gQ, gK, tSr, tile_qk_count, params.mainloop);
 
       CollectiveSoftmaxEpilogue softmax(params.softmax);
       softmax(nblock == 0, tSr, max_reg, sum_reg, out_reg);
@@ -350,11 +352,11 @@ public:
       Tensor tSr = make_tensor<ElementAccumulator>(Shape<Int<Vec>, Int<FragsM>, Int<FragsN>>{});
       clear(tSr);
       // 3) Perform GEMM S = Q*K
-      auto tile_coord_QK = make_coord(seq_coord, (nblock_limit - 1) * get<1>(subgroup_shape), _, blk_l_coord);
-      collective_mma.mmaQK(tile_coord_QK, tSr, gQ, gK, tSr, ceil_div(head_size , get<1>(subgroup_shape)), params.mainloop);
+      auto tile_coord_QK = make_coord(seq_coord, (nblock_limit - 1) * SG_N, _, blk_l_coord);
+      collective_mma.mmaQK(tile_coord_QK, tSr, gQ, gK, tSr, tile_qk_count, params.mainloop);
       // mask the elements of each tile where j > i
       const int item_id = thread_idx % SubgroupSize;
-      int col_idx = item_id + (nblock_limit - 1) * get<1>(subgroup_shape);
+      int col_idx = item_id + (nblock_limit - 1) * SG_N;
       CUTLASS_PRAGMA_UNROLL
       for (int n = 0; n < FragsN; n++, col_idx += get<1>(MmaAtomShape())) { // 4
         CUTLASS_PRAGMA_UNROLL
