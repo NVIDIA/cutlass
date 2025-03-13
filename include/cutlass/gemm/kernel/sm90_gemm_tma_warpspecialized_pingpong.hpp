@@ -548,8 +548,13 @@ public:
         // unflushed global memory prior to this instruction
         cutlass::arch::wait_on_dependent_grids();
 
-        load_order_barrier.wait();
+        bool do_load_order_wait = true;
         while (work_tile_info.is_valid()) {
+          if (do_load_order_wait) {
+            load_order_barrier.wait();
+            do_load_order_wait = false;
+          }
+
           // Compute m_coord, n_coord, l_coord with the post-tiled m-shape and n-shape
           auto m_coord = idx2crd(work_tile_info.M_idx, shape<2>(gA_mkl));
           auto n_coord = idx2crd(work_tile_info.N_idx, shape<2>(gB_nkl));

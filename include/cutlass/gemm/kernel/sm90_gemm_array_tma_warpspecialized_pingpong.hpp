@@ -693,9 +693,9 @@ public:
           // Converge before issuing tensormap fence release since fence is aligned
           __syncwarp();
           collective_epilogue.template tensormaps_cp_fence_release<IsEpiLoad>(shared_storage.tensormaps.epilogue, epi_load_tensormap, 0);
+        
+          load_order_barrier.wait();
         }
-
-        load_order_barrier.wait();
 
         while (work_tile_info.is_valid()) {
           int32_t curr_batch = work_tile_info.L_idx;
