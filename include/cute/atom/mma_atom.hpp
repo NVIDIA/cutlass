@@ -449,8 +449,6 @@ struct TiledMMA : MMA_Atom
   {
     // (M,K) -> (M,K)
     auto ref_A = make_layout(make_shape(tile_size_mnk<0>(), tile_size_mnk<2>()));
-    // (athrid,val) -> (M,K)
-    auto layoutA_TV = thrfrg_A(ref_A);
 
     // (ThrV,(ThrM,ThrK)) -> (ThrV,(ThrM,ThrN,ThrK))
     auto atile = make_tile(_,
@@ -488,8 +486,6 @@ struct TiledMMA : MMA_Atom
   {
     // (N,K) -> (N,K)
     auto ref_B = make_layout(make_shape(tile_size_mnk<1>(), tile_size_mnk<2>()));
-    // (bthrid,val) -> (N,K)
-    auto layoutB_TV = thrfrg_B(ref_B);
 
     // (ThrV,(ThrN,ThrK)) -> (ThrV,(ThrM,ThrN,ThrK))
     auto btile = make_tile(_,
