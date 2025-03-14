@@ -154,8 +154,10 @@ namespace detail {
         for(int elem_idx = 0; elem_idx < ElemsARawPerElementAMmaRaw; elem_idx++) {
           int offset = chunk_idx * LogicalElemsAPerChunk + subchunk_idx * ElemsARawPerElementAMmaRaw + elem_idx;
           subchunk_elems[elem_idx] = offset < effective_elems ? tensorA(offset) : ElementA(0);
-          
-          if (subchunk_elems[elem_idx] != ElementA(0)) {
+
+          constexpr ElementA zero(0);
+          constexpr ElementA minus_zero(ElementA(1) << cutlass::sizeof_bits_v<ElementA> - 1);
+          if (subchunk_elems[elem_idx] != zero && subchunk_elems[elem_idx] != minus_zero) {
             if (non_zero_cnt >= PhysicalSubChunk) {
               #ifdef  __CUDA_ARCH__
                 asm volatile ("brkpt;\n" ::);
@@ -213,6 +215,13 @@ template<
   class SparseConfig_
 >
 class SM90StructuredSparseCompressorLegacy {
+  static_assert(is_same_v<ElementA_, float_e4m3_t>
+                || is_same_v<ElementA_, float_e5m2_t>
+                || is_same_v<ElementA_, half_t>
+                || is_same_v<ElementA_, bfloat16_t>
+                || is_same_v<ElementA_, float>
+                || is_same_v<ElementA_, tfloat32_t>);
+
 public:
   using SparseConfig = SparseConfig_;
   using ProblemShape = ProblemShape_;
