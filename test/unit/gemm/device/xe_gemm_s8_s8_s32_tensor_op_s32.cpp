@@ -42,8 +42,7 @@
 
 #include "gemm_testbed_3x.hpp"
 
-/* TODO(Codeplay): Issue with U8 copy builtins return type
-TEST(XE_Device_Gemm_s8t_s8t_s32t_tensor_op_s32, 64x128x32) {
+TEST(XE_Device_Gemm_s8t_s8t_s32t_tensor_op_s32, 256x256x32) {
   using Config = cutlass::gemm::device::DefaultGemmConfigurationToCutlass3Types<
     cutlass::arch::OpClassTensorOp, cutlass::arch::IntelPVC,
     int8_t, cutlass::layout::RowMajor,
@@ -61,7 +60,7 @@ TEST(XE_Device_Gemm_s8t_s8t_s32t_tensor_op_s32, 64x128x32) {
   EXPECT_TRUE(test::gemm::device::TestXe<Gemm>());
 }
 
- TODO(Codeplay): Transposed copy are not implemented
+/*  TODO(Codeplay): Transposed copy are not implemented
 TEST(XE_Device_Gemm_s8n_s8t_s32t_tensor_op_s32, 64x128x32) {
   using Config = cutlass::gemm::device::DefaultGemmConfigurationToCutlass3Types<
     cutlass::arch::OpClassTensorOp, cutlass::arch::IntelPVC,
