@@ -1114,6 +1114,7 @@ print_svg(TiledMMA<Args...> const &mma) {
 #include <cute/atom/mma_traits_sm70.hpp>
 #include <cute/atom/mma_traits_sm75.hpp>
 #include <cute/atom/mma_traits_sm80.hpp>
+#include <cute/atom/mma_traits_sm89.hpp>
 #include <cute/atom/mma_traits_sm90.hpp>
 #include <cute/atom/mma_traits_sm90_gmma.hpp>
 #include <cute/atom/mma_traits_sm100.hpp> 
