@@ -268,14 +268,15 @@ public:
     // vertical. The prefetch only move along the sequence length. Here we call sequence length K since it get consumed
     // and head size N since it stay subgroup arranged 4x2 to load (64x64) in one load(each 64x32)
     Tensor prefetch_iter_2d_v = params.mainloop.gmem_prefetch_v.get_pvc_tensor(
-        make_coord((sub_group_id / get<1>(PrefetchVThrShape{})) *
-                       get<0>(PrefetchVTileSize{}), // iteration 0/K/Hight/vertical/ sequence lengh
+        make_coord(
                    BlockIdxX() * BLK_N + ((sub_group_id % get<1>(PrefetchVThrShape{})) *
                                           get<1>(PrefetchVTileSize{})), //  iteration 1/N/W/Horisontal / Head size
+                   (sub_group_id / get<1>(PrefetchVThrShape{})) *
+                       get<0>(PrefetchVTileSize{}), // iteration 0/K/Hight/vertical/ sequence lengh
                    blk_l_coord),
         // We loop over the consuming dimension which is the iteration 0(N) here
         make_shape(_1{}, _1{}, _1{}));
-    Tensor prefetch_iter_v = append_pvc_tensor<0>(prefetch_iter_2d_v, nblock_limit,
+    Tensor prefetch_iter_v = append_pvc_tensor<1>(prefetch_iter_2d_v, nblock_limit,
                                                   (get<0>(PrefetchVThrShape{}) * get<0>(PrefetchVTileSize{})));
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < k_tile_count; i++) {
