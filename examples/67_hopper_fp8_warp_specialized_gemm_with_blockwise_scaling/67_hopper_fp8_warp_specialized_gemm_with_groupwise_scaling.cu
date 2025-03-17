@@ -769,10 +769,10 @@ int run(Options<RasterOrderOptions> &options)
     result.passed = verify(options, ScaleMsPerTile, ScaleNsPerTile);
 
     std::cout << "  Disposition: " << (result.passed ? "Passed" : "Failed") << std::endl;
-  }
-
-  if (!result.passed) {
-   exit(-1);
+    
+    if (!result.passed) {
+      exit(-1);
+    }
   }
 
   // Run profiling loop
