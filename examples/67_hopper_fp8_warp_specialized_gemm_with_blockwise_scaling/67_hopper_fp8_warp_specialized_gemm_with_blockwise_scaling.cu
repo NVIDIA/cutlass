@@ -398,6 +398,10 @@ void initialize(const Options<RasterOrderOptions> &options) {
   blockscale_tensor_A.sync_device();
   blockscale_tensor_B.sync_device();
 
+  // Note : This value has to match the KernelSchedule::ScalePromotionInterval
+  // Else kernel will fail can_implement() check
+  // Deprecation Notice : We plan to remove this params member in an upcoming release
+  // Users can safely delete this line from their code, since the default is already 4
   mma_promotion_interval = 4;
 
   if (options.save_aux) {
@@ -553,13 +557,13 @@ bool verify(const Options<RasterOrderOptions> &options) {
   auto blockscale_A = cute::make_tensor(blockscale_tensor_A.host_data(),
                                         cute::make_layout(
                                           cute::make_shape(blockscale_m, blockscale_k, options.l),
-                                          cute::make_stride(blockscale_k, 1, blockscale_m * blockscale_k)
+                                          cute::make_stride(1, blockscale_m, blockscale_m * blockscale_k)
                                         )
                                       );
   auto blockscale_B = cute::make_tensor(blockscale_tensor_B.host_data(),
                                         cute::make_layout(
                                           cute::make_shape(blockscale_n, blockscale_k, options.l),
-                                          cute::make_stride(blockscale_k, 1, blockscale_n * blockscale_k)
+                                          cute::make_stride(1, blockscale_n, blockscale_n * blockscale_k)
                                         )
                                       );
 
@@ -662,9 +666,11 @@ int run(Options<RasterOrderOptions> &options)
 
   // Check if output from CUTLASS kernel and reference kernel are equal or not
   Result result;
-  result.passed = verify(options);
+  if (options.verify) {
+    result.passed = verify(options);
 
-  std::cout << "  Disposition: " << (result.passed ? "Passed" : "Failed") << std::endl;
+    std::cout << "  Disposition: " << (result.passed ? "Passed" : "Failed") << std::endl;
+  }
 
   // if (!result.passed) {
   //  exit(-1);
@@ -674,8 +680,9 @@ int run(Options<RasterOrderOptions> &options)
   if (options.iterations > 0)
   {
     GpuTimer timer;
-    timer.start();
-    for (int iter = 0; iter < options.iterations; ++iter) {
+    for (int iter = 0; iter < options.warmup + options.iterations; ++iter) {
+      if (iter == options.warmup)
+        timer.start();
       CUTLASS_CHECK(gemm.run());
     }
     timer.stop();

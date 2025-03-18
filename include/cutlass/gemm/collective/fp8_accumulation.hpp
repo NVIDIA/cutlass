@@ -223,6 +223,30 @@ public:
       mma_count_ = 0;
     }
   }
+  
+  /// scale (multiply_add) the results from the MMA accumulators to main accumulator without checking the counter.
+  CUTLASS_DEVICE
+  void scale(ElementAccumulator const &scale) {
+    scale_core(scale);
+  }
+
+  template <
+    class EngineScale,
+    class LayoutScale>
+  CUTLASS_DEVICE
+  void scale(const cute::Tensor<EngineScale, LayoutScale> &scale) {
+    scale_core(scale);
+  }
+
+  template <
+    class EngineScaleA,
+    class LayoutScaleA,
+    class EngineScaleB,
+    class LayoutScaleB>
+  CUTLASS_DEVICE
+  void scale(const cute::Tensor<EngineScaleA, LayoutScaleA> &scaleA, const cute::Tensor<EngineScaleB, LayoutScaleB> &scaleB) {
+    scale_core(scaleA, scaleB);
+  }
 
   /// scale (multiply_add) the residue results from the MMA accumulators to main accumulator if needed.
   CUTLASS_DEVICE

@@ -120,10 +120,38 @@ template<
   // `ScaleGranularityM`/`ScaleGranularityN` specifies scaling granularity along M/N, while zero-value
   // `ScaleGranularityM`/`ScaleGranularityN` indicates that scaling granularity is
   // `size<0>(TileShape_MNK{})`/`size<1>(TileShape_MNK{})` along M/N.
-  int ScaleGranularityM = 0,
-  int ScaleGranularityN = 0
+  int ScaleGranularityM_ = 0,
+  int ScaleGranularityN_ = 0,
+  // `ScalePromotionInterval` specifies the interval to promote the accumulator for scaling
+  // It is required to be a multiple of 4 and specified in terms of number of MMA instructions
+  // in the reduction dimension. i.e for FP8 kernels, it is 
+  // ScalePromotionInterval * MMA_K = ScalePromotionInterval * 32 = 128 elements in K by default
+  int ScalePromotionInterval_ = 4
+
 >
-struct KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum: KernelTmaWarpSpecializedCooperative { };
+struct KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum: KernelTmaWarpSpecializedCooperative {
+  constexpr static int ScaleGranularityM = ScaleGranularityM_;
+  constexpr static int ScaleGranularityN = ScaleGranularityN_;
+  constexpr static int ScalePromotionInterval = ScalePromotionInterval_;
+};
+
+template<
+  // `ScaleGranularityM`/`ScaleGranularityN` specifies scaling granularity along M/N, while zero-value
+  // `ScaleGranularityM`/`ScaleGranularityN` indicates that scaling granularity is
+  // `size<0>(TileShape_MNK{})`/`size<1>(TileShape_MNK{})` along M/N.
+  int ScaleGranularityM_,
+  int ScaleGranularityN_,
+  // `ScalePromotionInterval` specifies the interval to promote the accumulator for scaling
+  // It is required to be a multiple of 4 and specified in terms of number of MMA instructions
+  // in the reduction dimension. i.e for FP8 kernels, it is 
+  // ScalePromotionInterval * MMA_K = ScalePromotionInterval * 32 = 128 elements in K by default
+  int ScalePromotionInterval_ = 4
+>
+struct KernelPtrArrayTmaWarpSpecializedCooperativeFP8BlockScaledAccum: KernelPtrArrayTmaWarpSpecializedCooperative {
+  constexpr static int ScaleGranularityM = ScaleGranularityM_;
+  constexpr static int ScaleGranularityN = ScaleGranularityN_;
+  constexpr static int ScalePromotionInterval = ScalePromotionInterval_;
+};
 
 // Policies to opt into mixed type GEMMs
 struct KernelTmaWarpSpecializedMixedInput : KernelTmaWarpSpecialized { };
@@ -312,12 +340,17 @@ template<
   // `ScaleGranularityM`/`ScaleGranularityN` indicates that scaling granularity is
   // `size<0>(TileShape_MNK{})`/`size<1>(TileShape_MNK{})` along M/N.
   int ScaleGranularityM = 0,
-  int ScaleGranularityN = 0
+  int ScaleGranularityN = 0,
+  // `ScalePromotionInterval` specifies the interval to promote the accumulator for scaling
+  // It is required to be a multiple of 4 and specified in terms of number of MMA instructions
+  // in the reduction dimension. i.e for FP8 kernels, it is 
+  // ScalePromotionInterval * MMA_K = ScalePromotionInterval * 32 = 128 elements in K by default
+  int ScalePromotionInterval = 4
 >
 struct MainloopSm90TmaGmmaWarpSpecializedBlockScalingFP8
   : MainloopSm90TmaGmmaWarpSpecialized<Stages_, ClusterShape_, KernelSchedule> {
   static_assert(
-    cute::is_same_v<KernelSchedule, KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum<ScaleGranularityM, ScaleGranularityN>>,
+    cute::is_same_v<KernelSchedule, KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum<ScaleGranularityM, ScaleGranularityN, ScalePromotionInterval>>,
     "KernelSchedule must be one of the warp specialized policies");
 };
 
@@ -329,9 +362,25 @@ template<
 >
 struct MainloopSm90ArrayTmaGmmaWarpSpecialized {
   constexpr static int Stages = Stages_;
+  constexpr static int PipelineAsyncMmaStages = 1;
   using ClusterShape = ClusterShape_;
   using ArchTag = arch::Sm90;
   using Schedule = KernelSchedule;
+  static_assert(
+    cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedCooperative, KernelSchedule> ||
+    cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedPingpong, KernelSchedule>,
+    "KernelSchedule must be one of the Ptr-Array or Grouped Gemm TMA Warp Specialized Cooperative or Pingpong policies");
+};
+
+// n-buffer in smem (Hopper TMA), pipelined with Hopper GMMA and TMA, Warp specialized dynamic schedule for Ptr-Array and Grouped Gemm
+// For FP8 kernels
+template<
+  int Stages_,
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class KernelSchedule = KernelPtrArrayTmaWarpSpecializedCooperative
+>
+struct MainloopSm90ArrayTmaGmmaWarpSpecializedFP8
+  : MainloopSm90ArrayTmaGmmaWarpSpecialized<Stages_, ClusterShape_, KernelSchedule> {
   static_assert(
     cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedCooperative, KernelSchedule> ||
     cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedPingpong, KernelSchedule>,
@@ -378,6 +427,26 @@ struct MainloopSm90ArrayTmaGmmaWarpSpecializedMixedInput {
     "KernelSchedule must be one of the Ptr-Array or Grouped Gemm TMA Warp Specialized Cooperative policies");
 };
 
+// n-buffer in smem (Hopper TMA), pipelined with Hopper GMMA and TMA, Warp specialized dynamic schedule
+// For FP8 kernels with Block Scaling
+template<
+  int Stages_,
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class KernelSchedule = KernelPtrArrayTmaWarpSpecializedCooperative,
+  // `ScaleGranularityM`/`ScaleGranularityN` specifies scaling granularity along M/N, while zero-value
+  // `ScaleGranularityM`/`ScaleGranularityN` indicates that scaling granularity is
+  // `size<0>(TileShape_MNK{})`/`size<1>(TileShape_MNK{})` along M/N.
+  int ScaleGranularityM = 0,
+  int ScaleGranularityN = 0,
+  int ScalePromotionInterval = 4
+>
+struct MainloopSm90ArrayTmaGmmaWarpSpecializedBlockScaling
+  : MainloopSm90ArrayTmaGmmaWarpSpecialized<Stages_, ClusterShape_, KernelSchedule> {
+  static_assert(
+    cute::is_same_v<KernelSchedule, KernelPtrArrayTmaWarpSpecializedCooperativeFP8BlockScaledAccum<ScaleGranularityM, ScaleGranularityN>>,
+    "KernelSchedule must be one of the warp specialized policies");
+};
+
 
 template<
   int SchedulerPipelineStageCount_,
@@ -398,6 +467,14 @@ struct KernelTmaWarpSpecializedBlockScaledSm100 final {
   static constexpr int AccumulatorPipelineStageCount = AccumulatorPipelineStageCount_;
 };
 
+template<
+  int SchedulerPipelineStageCount_,
+  int AccumulatorPipelineStageCount_
+>
+struct KernelTmaWarpSpecializedMmaTransformSm100 final {
+  static constexpr int SchedulerPipelineStageCount = SchedulerPipelineStageCount_;
+  static constexpr int AccumulatorPipelineStageCount = AccumulatorPipelineStageCount_;
+};
 
 
 // InputTransform GEMM
@@ -471,6 +548,13 @@ struct KernelScheduleSm100PtrArrayDenseGemm : KernelScheduleSm100DenseGemm {};
 struct KernelPtrArrayTmaWarpSpecialized1SmSm100 final : KernelSchedule1Sm, KernelScheduleSm100PtrArrayDenseGemm {};
 struct KernelPtrArrayTmaWarpSpecialized2SmSm100 final : KernelSchedule2Sm, KernelScheduleSm100PtrArrayDenseGemm {};
 
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+// SM100 Blockwise GEMM Dispatch Policies
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+struct KernelScheduleSm100Blockwise  : KernelScheduleSm100 {};
+struct KernelTmaWarpSpecializedBlockwise1SmSm100 final : KernelSchedule1Sm, KernelScheduleSm100Blockwise {};
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 // SM100 Planar Complex GEMM Dispatch Policies
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -517,6 +601,9 @@ struct KernelTmaWarpSpecialized1SmMxf4Sm100 final : KernelSchedule1Sm, KernelSch
 struct KernelTmaWarpSpecialized2SmMxf4Sm100 final : KernelSchedule2Sm, KernelScheduleMxNvf4Sm100 { };
 struct KernelTmaWarpSpecialized1SmMxf8f6f4Sm100 final : KernelSchedule1Sm, KernelScheduleMxf8f6f4Sm100 { };
 struct KernelTmaWarpSpecialized2SmMxf8f6f4Sm100 final : KernelSchedule2Sm, KernelScheduleMxf8f6f4Sm100 { };
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+// SM100 BlockScaled Ptr Array Dense GEMM Dispatch Policies
+///////////////////////////////////////////////////////////////////////////////////////////////////////
 // BlockScaled Dense GEMM + (Ptr Array or Group GEMM)
 struct KernelSchedulePtrArrayBlockScaledGemmSm100 : KernelScheduleBlockScaledGemmSm100 {};
 struct KernelSchedulePtrArrayMxNvf4Sm100 : KernelSchedulePtrArrayBlockScaledGemmSm100 {};
@@ -530,8 +617,6 @@ struct KernelPtrArrayTmaWarpSpecialized1SmMxf4Sm100 final : KernelSchedule1Sm, K
 struct KernelPtrArrayTmaWarpSpecialized2SmMxf4Sm100 final : KernelSchedule2Sm, KernelSchedulePtrArrayMxNvf4Sm100 { };
 struct KernelPtrArrayTmaWarpSpecialized1SmMxf8f6f4Sm100 final : KernelSchedule1Sm, KernelSchedulePtrArrayMxf8f6f4Sm100 { };
 struct KernelPtrArrayTmaWarpSpecialized2SmMxf8f6f4Sm100 final : KernelSchedule2Sm, KernelSchedulePtrArrayMxf8f6f4Sm100 { };
-
-
 
 // n-buffer in smem, pipelined with Blackwell UMMA and TMA, Warp specialized dynamic schedule
 template<
@@ -548,7 +633,20 @@ struct MainloopSm100TmaUmmaWarpSpecialized {
   constexpr static bool IsOverlappingAccum = false;
 };
 
-
+// n-buffer in smem, pipelined with Blackwell UMMA and TMA, Warp specialized dynamic schedule
+template<
+  int Stages_,
+  int SchedulerPipelineStageCount_,
+  int AccumulatorPipelineStageCount_,
+  class ClusterShape_ = Shape<_1,_1,_1>
+>
+struct MainloopSm100TmaUmmaWarpSpecializedBlockwiseScaling {
+  constexpr static int Stages = Stages_;
+  using ClusterShape = ClusterShape_;
+  using ArchTag = arch::Sm100;
+  using Schedule = KernelTmaWarpSpecializedMmaTransformSm100<SchedulerPipelineStageCount_, AccumulatorPipelineStageCount_>;
+  constexpr static bool IsOverlappingAccum = false;
+};
 
 // n-buffer in smem, pipelined with Blackwell UMMA and TMA, Warp specialized dynamic schedule
 template<

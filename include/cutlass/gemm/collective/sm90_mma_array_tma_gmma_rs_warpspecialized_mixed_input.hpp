@@ -204,6 +204,8 @@ public:
   using PipelineState = cutlass::PipelineState<DispatchPolicy::Stages>;
   using PipelineParams = typename MainloopPipeline::Params;
 
+  static constexpr int NumProducerThreadEvents = 1;
+
   using SmemLayoutAtomScale = Layout<Shape<decltype(cute::shape<0>(SwappedSmemLayoutAtomA{})), cute::Int<1>>>;
   using ScaleTileShape = decltype(make_shape(shape<0>(TileShape{}), shape<1>(SmemLayoutAtomScale{})));
 
@@ -1354,6 +1356,18 @@ public:
       static_assert(cutlass::detail::dependent_false<KernelSchedule>, "Conversion mode not handled in tensormaps_fence_acquire.");
     }
   }
+
+  template <class InputTensors, class ProblemShape_MNKL>
+  CUTLASS_DEVICE
+  InputTensors
+  tensors_perform_update(
+      InputTensors const& input_tensors,
+      [[maybe_unused]] Params const& mainloop_params,
+      [[maybe_unused]] ProblemShape_MNKL problem_shape_mnkl,
+      [[maybe_unused]] int32_t next_batch) {
+    return input_tensors;
+  }
+
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

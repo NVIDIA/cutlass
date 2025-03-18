@@ -128,10 +128,11 @@ public:
   using TileSchedulerParams = typename TileScheduler::Params;
 
   static constexpr uint32_t NumLoadWarpGroups = 1;
-  static constexpr uint32_t NumMmaThreads = CUTE_STATIC_V(size(TiledMma{}));
+  static constexpr uint32_t NumMmaThreads = size(TiledMma{});
   static constexpr uint32_t NumMmaWarpGroups = NumMmaThreads / NumThreadsPerWarpGroup;
   static constexpr uint32_t MaxThreadsPerBlock = NumMmaThreads + (NumLoadWarpGroups * NumThreadsPerWarpGroup);
   static constexpr uint32_t MinBlocksPerMultiprocessor = 1;
+  static constexpr uint32_t NumProducerThreads = CollectiveMainloop::NumProducerThreadEvents;
 
   /// Register requirement for Load and Math WGs
   static constexpr uint32_t LoadRegisterRequirement = 40;
@@ -434,7 +435,8 @@ public:
       mainloop_pipeline_params.role = MainloopPipeline::ThreadCategory::Consumer;
     }
     mainloop_pipeline_params.is_leader = warp_group_thread_idx == 0;
-    mainloop_pipeline_params.num_consumers = size(TiledMma{});
+    mainloop_pipeline_params.num_consumers = NumMmaThreads;
+    mainloop_pipeline_params.num_producers = NumProducerThreads;
     mainloop_pipeline_params.transaction_bytes = params.mainloop.tma_transaction_bytes;
     MainloopPipeline mainloop_pipeline(shared_storage.pipelines.mainloop, mainloop_pipeline_params, ClusterShape{});
 
@@ -575,6 +577,7 @@ public:
           auto k_tile_iter = cute::make_coord_iterator(idx2crd(work_k_tile_start, shape<3>(gA_mkl)), shape<3>(gA_mkl));
 
           if (did_batch_change) {
+            load_inputs = collective_mainloop.tensors_perform_update(load_inputs, params.mainloop, problem_shape_MNKL, curr_batch);
             collective_mainloop.tensormaps_fence_acquire(input_tensormaps);
           }
 
@@ -658,9 +661,9 @@ public:
           // Converge before issuing tensormap fence release since fence is aligned
           __syncwarp();
           collective_epilogue.template tensormaps_cp_fence_release<IsEpiLoad>(shared_storage.tensormaps.epilogue, epi_load_tensormap, 0);
-        }
 
-        load_order_barrier.wait();
+          load_order_barrier.wait();
+        }
 
         while (work_tile_info.is_valid()) {
           int32_t curr_batch = work_tile_info.L_idx;

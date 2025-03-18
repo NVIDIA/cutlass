@@ -219,17 +219,15 @@ void gett_mainloop(
 
   const int M = cute::size<0>(mainloop_params.A.layout());
   const int N = cute::size<0>(mainloop_params.B.layout());
-  const int ScaleGranularityM = M / cute::size<0>(mainloop_params.ScaleA);
-  const int ScaleGranularityN = N / cute::size<0>(mainloop_params.ScaleB);
-  assert(ScaleGranularityM && M % ScaleGranularityM == 0 
-    && "ScaleGranularityM must divide M");
-  assert(ScaleGranularityN && N % ScaleGranularityN == 0 
-    && "ScaleGranularityN must divide N"); 
 
-  cute::Tensor blockscale_A = domain_offset(
-    make_coord(m / ScaleGranularityM, _0{}), mainloop_params.ScaleA(_, _, l));
-  cute::Tensor blockscale_B = domain_offset(
-    make_coord(n / ScaleGranularityN, _0{}), mainloop_params.ScaleB(_, _, l));
+  const int ScaleGranularityM = M / cute::size<0>(mainloop_params.ScaleA.layout());
+  const int ScaleGranularityN = N / cute::size<0>(mainloop_params.ScaleB.layout());
+
+  assert(ScaleGranularityM && M % ScaleGranularityM == 0 && "ScaleGranularityM must divide M");
+  assert(ScaleGranularityN && N % ScaleGranularityN == 0 && "ScaleGranularityN must divide N");
+
+  cute::Tensor blockscale_A = domain_offset(make_coord(m / ScaleGranularityM, _0{}), mainloop_params.ScaleA(_, _, l));
+  cute::Tensor blockscale_B = domain_offset(make_coord(n / ScaleGranularityN, _0{}), mainloop_params.ScaleB(_, _, l));
 
   // Compute on this k-block
   for (int64_t k = 0; k < cute::size<1>(mainloop_params.A.layout()); ++k) {
@@ -261,12 +259,9 @@ void gett_mainloop(
       }
     }
 
-    int m_size = std::min(static_cast<int64_t>(kBlockM), cute::size<0>(mainloop_params.A.layout()) - m);
-    int n_size = std::min(static_cast<int64_t>(kBlockN), cute::size<0>(mainloop_params.B.layout()) - n);
-
     // do compute
-    for (int m_b = 0; m_b < m_size; ++m_b) {
-      for (int n_b = 0; n_b < n_size; ++n_b) {
+    for (int m_b = 0; m_b < kBlockM; ++m_b) {
+      for (int n_b = 0; n_b < kBlockN; ++n_b) {
         acc_temp[m_b][n_b] = fma_op(a_frag[m_b], b_frag[n_b], acc_temp[m_b][n_b]);
       }
     }
@@ -276,9 +271,9 @@ void gett_mainloop(
     // (b) Zero-out partial temporary (acc_temp),
     // (c) Update permanent (accu)
     if ((k+1) % kBlockK == 0) {
-      for (int m_b = 0; m_b < m_size; ++m_b) {
+      for (int m_b = 0; m_b < kBlockM; ++m_b) {
         auto scale_a_m_b = scale_a[m_b / ScaleGranularityM];
-        for (int n_b = 0; n_b < n_size; ++n_b) {
+        for (int n_b = 0; n_b < kBlockN; ++n_b) {
           auto scale_b_n_b = scale_b[n_b / ScaleGranularityN];
           ElementAccumulator blockwise_scaled_accum = acc_temp[m_b][n_b] * scale_a_m_b * scale_b_n_b;
           acc[m_b][n_b] = blockwise_scaled_accum + acc[m_b][n_b];
@@ -360,7 +355,14 @@ void gett_epilogue(
   plus<ElementCompute> add;
 
   // Activation operation
-  ActivationFunctor activation;
+
+  auto activation = [] (ElementCompute x, ElementCompute y = ElementCompute(0)) {
+    if constexpr (std::is_same_v<ActivationFunctor, void>) {
+      return x + y;
+    } else {
+      return ActivationFunctor()(x, y);
+    }
+  };
 
   // Bias binary operation
   BiasBinaryOp bias_op;
