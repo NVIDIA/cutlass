@@ -169,18 +169,18 @@ struct CollectiveMma<MainloopIntelPVC<Stages, Schedule>, TileShape_, ElementA_, 
     auto first_thread_in_sg_idx = sg.get_group_linear_id() * DispatchPolicy::SubgroupSize;
     auto thr_mma = tiled_mma.get_slice(first_thread_in_sg_idx);
 
-    // Partition
+    // Partition global counting tensors for MMA
     Tensor tCgA = thr_mma.partition_A(gA);
     Tensor tCgB = thr_mma.partition_B(gB);
 
-    Tensor tCrA = make_tensor<ElementA>(tiled_copy_a.make_fragment_layout(tCgA(_,_,_,0).shape()));
-    Tensor tCrB = make_tensor<ElementB>(tiled_copy_b.make_fragment_layout(tCgB(_,_,_,0).shape()));
-  
+    Tensor tCrA = make_tensor<ElementA>(make_fragment_layout(tiled_copy_a, tCgA(_,_,_,0).shape()));
+    Tensor tCrB = make_tensor<ElementB>(make_fragment_layout(tiled_copy_b, tCgB(_,_,_,0).shape()));
+
     // Retile registers for copies
     Tensor tArA = thr_copy_A.retile_D(tCrA);
     Tensor tBrB = thr_copy_B.retile_D(tCrB);
     
-    // Retile global tile for copies
+    // Retile global counting tensors for copies
     Tensor tAgA = thr_copy_A.retile_S(tCgA);
     Tensor tBgB = thr_copy_B.retile_S(tCgB);
     
@@ -194,26 +194,25 @@ struct CollectiveMma<MainloopIntelPVC<Stages, Schedule>, TileShape_, ElementA_, 
     auto pBgB = thr_prefetch_B.partition_S(gB);
 
 #if CUTLASS_ENABLE_DEBUG_PRINTS
-    if (cutlass::thread(LOG_THREAD, LOG_GROUP)) {
-        print("======================= A: \n");
-        print("  gA : "); print(gA); print("\n");
-        print("tCgA : "); print(tCgA); print("\n");
-        print("tAgA : "); print(tAgA); print("\n");
+#define PRINT(x) print(#x ": "); print(x); print("\n");
+    if (cute::thread(LOG_THREAD, LOG_GROUP)) {
+      print("======================= A: \n");
+      PRINT(tCgA);
+      PRINT(tAgA);
 
-        print("=====================  B :\n");
-        print("  gB : "); print(gB); print("\n");
-        print("tCgB : "); print(tCgB); print("\n");
-        print("tBgB : "); print(tBgB); print("\n");
+      PRINT(tCrA);
+      PRINT(tArA);
+      PRINT(mainloop.copy_A);
 
-        print("=====================  Config: \n");
-        print("  threads per workgroup : "); print(MaxThreadsPerBlock); print("\n");
-        print("  SubgroupTileShape : "); print(SubgroupTileShape{}); print("\n");
+      print("======================= B: \n");
+      PRINT(tCgB);
+      PRINT(tBgB);
 
-        print(" PrefetchAThrShape :    ");print(PrefetchAThrShape{});print("\n");
-        print(" PrefetchBThrShape :    ");print(PrefetchBThrShape{});print("\n");
-        print(" PrefetchATileSize :    ");print(PrefetchATileSize{});print("\n");
-        print(" PrefetchBTileSize :    ");print(PrefetchBTileSize{});print("\n");
+      PRINT(tCrB);
+      PRINT(tBrB);
+      PRINT(mainloop.copy_B);
       }
+#undef PRINT
 #endif
 
     //

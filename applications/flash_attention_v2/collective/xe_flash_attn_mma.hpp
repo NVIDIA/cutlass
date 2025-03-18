@@ -232,8 +232,8 @@ struct CollectiveMmaAttention<MainloopIntelPVC<Stages>, TileShape_, ElementQ_, S
 
     // Create fragments
     // TODO(Codeplay): fix this, this is probably not general
-    Tensor tCrA = make_tensor<ElementQ>(params.gmem_tiled_copy_q.make_fragment_layout(take<0,3>(tCgA.shape())));
-    Tensor tCrB = make_tensor<ElementK>(params.gmem_tiled_copy_k.make_fragment_layout(take<0,3>(tCgB.shape())));
+    Tensor tCrA = make_tensor<ElementQ>(make_fragment_layout(params.gmem_tiled_copy_q, take<0,3>(tCgA.shape())));
+    Tensor tCrB = make_tensor<ElementK>(make_fragment_layout(params.gmem_tiled_copy_k, take<0,3>(tCgB.shape())));
     
     // Retile registers for copies
     Tensor tArA = thr_copy_A.retile_D(tCrA);
@@ -312,7 +312,7 @@ struct CollectiveMmaAttention<MainloopIntelPVC<Stages>, TileShape_, ElementQ_, S
     auto first_thread_in_sg_idx = sg.get_group_id()[0] * DispatchPolicy::SubgroupSize;
     auto thread_mma = tiled_mma.get_slice(first_thread_in_sg_idx);  
     Tensor tCgB = thread_mma.partition_B(gB);
-    Tensor tCrB = make_tensor<ElementV>(params.gmem_tiled_copy_v.make_fragment_layout(tCgB.shape()));
+    Tensor tCrB = make_tensor<ElementV>(make_fragment_layout(params.gmem_tiled_copy_v, tCgB.shape()));
 
     // Partition the copying of A and B tiles across the threads
     auto gmem_thr_copy_B = params.gmem_tiled_copy_v.get_slice(thread_idx);
