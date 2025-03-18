@@ -207,8 +207,8 @@ struct CollectiveMmaAttention<MainloopIntelPVC<Stages>, TileShape_, ElementQ_, S
     return Params{copyQ, copyK, copyV, prefetchQ, prefetchK, prefetchV};
   }
 
-  template <class TileCoord, class FragAccum, class TensorQ, class TensorK, class FragSrc>
-  CUTLASS_DEVICE void mmaQK(TileCoord tile_coord, FragAccum &accum, TensorQ gA, TensorK gB, FragSrc const &frag_src,
+  template <class FragAccum, class TensorQ, class TensorK, class FragSrc>
+  CUTLASS_DEVICE void mmaQK(FragAccum &accum, TensorQ gA, TensorK gB, FragSrc const &frag_src,
                             int const &k_tile_count, Params const &params) {
 
     int thread_idx = static_cast<int>(ThreadIdxX());
@@ -301,8 +301,8 @@ struct CollectiveMmaAttention<MainloopIntelPVC<Stages>, TileShape_, ElementQ_, S
     }
   }
 
-  template <class TileCoord, class FragAccum, class FragS, class TensorV, class FragSrc>
-  CUTLASS_DEVICE void mmaPV(TileCoord tile_coord, FragAccum &accum, FragS const &tSr, TensorV gB,
+  template <class FragAccum, class FragS, class TensorV, class FragSrc>
+  CUTLASS_DEVICE void mmaPV(FragAccum &accum, FragS const &tSr, TensorV gB,
                             FragSrc const &frag_src, Params const &params) {
 
     int thread_idx = static_cast<int>(ThreadIdxX());
