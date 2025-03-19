@@ -107,8 +107,10 @@ CUTE_HOST_DEVICE auto prefetch_selector(Tensor const& tensor) {
   constexpr size_t cacheline_bytes = 64;
   using dtype = typename Tensor::value_type;
   constexpr size_t dtype_size_bits = sizeof_bits_v<dtype>;
-  using CopyThreadShape = Shape<_1, Int<SubgroupSize >>;
   constexpr bool is_need_reversed = detail::is_stride_leftmost<decltype(tensor.stride())>;
+  using CopyThreadShape = std::conditional_t<is_need_reversed,
+                                             Shape<Int<SubgroupSize>, _1>,
+                                             Shape<_1, Int<SubgroupSize>>>;
 
   constexpr int tile_contig_size = is_need_reversed ? size<0>(TileShape{}) : size<1>(TileShape{});
   constexpr int tile_non_contig_size = is_need_reversed ? size<1>(TileShape{}) : size<0>(TileShape{});
@@ -132,14 +134,11 @@ CUTE_HOST_DEVICE auto prefetch_selector(Tensor const& tensor) {
     Layout<Shape<Int<sgs_non_contig>, Shape<Int<SubgroupSize >, Int<sgs_contig>>>,
            Stride<Int<SubgroupSize >,  Stride<_1, Int<SubgroupSize  * sgs_non_contig>>>>
   >;
-
+  
   #define RETURN_STATEMENT(NON_CONTIG, DTYPE_SIZE, CONTIG) \
     using PrefetchTraits = Copy_Traits<XE_2D_U##DTYPE_SIZE##x##NON_CONTIG##x##CONTIG##_LD_N, decltype(tensor.stride())>; \
     using PrefetchAtom = Copy_Atom<PrefetchTraits, dtype>; \
-    using PrefetchValLayoutBase = decltype(make_layout(shape_div(typename PrefetchTraits::BlockShape{}, CopyThreadShape{}))); \
-    using PrefetchValLayout = std::conditional_t<is_need_reversed, \
-                                                 decltype(make_layout(make_shape(size<1>(PrefetchValLayoutBase{}), size<0>(PrefetchValLayoutBase{})), LayoutRight{})), \
-                                                 PrefetchValLayoutBase>; \
+    using PrefetchValLayout = decltype(make_layout(shape_div(typename PrefetchTraits::BlockShape{}, CopyThreadShape{}))); \
     return make_tiled_copy(PrefetchAtom{}.with(tensor), \
                            PrefetchTilingLayout{}, \
                            PrefetchValLayout{});
