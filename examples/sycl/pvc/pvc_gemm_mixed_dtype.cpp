@@ -133,6 +133,8 @@ struct ExampleRunner {
 
   using ProblemShapeType = typename Gemm::GemmKernel::ProblemShape;
 
+  using TiledMma = typename Gemm::CollectiveMainloop::TiledMma;
+
   //
   // Data members
   //
@@ -146,7 +148,8 @@ struct ExampleRunner {
 
   cutlass::DeviceAllocation<ElementA> block_A;
   cutlass::DeviceAllocation<ElementB> block_B;
-  cutlass::DeviceAllocation<ElementB> block_A_dq; // Dequantized copy of A for validation
+  cutlass::DeviceAllocation<typename TiledMma::ValTypeA> block_A_dq; // Dequantized copy of A for validation
+  cutlass::DeviceAllocation<typename TiledMma::ValTypeB> block_B_dq; // Dequantized copy of B for validation
   cutlass::DeviceAllocation<ElementC> block_C;
   cutlass::DeviceAllocation<ElementOutput> block_D;
   cutlass::DeviceAllocation<ElementOutput> block_ref_D;
@@ -156,11 +159,6 @@ struct ExampleRunner {
   //
 
   bool verify(const Options &options) {
-      
-    //
-    // Compute reference output (default gemm kernel w/ ElementA == ElementB)
-    //
-    using ElementRefA = ElementB;          // <- data type of ElementA in reference implementation
 
     using GmemTiledCopyA = XE_2D_U16x32x32_LD_N;
     using GmemTiledCopyB = XE_2D_U16x32x32_LD_V;
@@ -201,9 +199,9 @@ struct ExampleRunner {
     using CollectiveMainloopRef = cutlass::gemm::collective::CollectiveMma<
             GEMMDispatchPolicy,
             TileShape,
-            ElementRefA,
+            typename TiledMma::ValTypeA,
             cutlass::gemm::TagToStrideA_t<LayoutA>,
-            ElementB,
+            typename TiledMma::ValTypeB,
             cutlass::gemm::TagToStrideB_t<LayoutB>,
             TiledMma,
             GmemTiledCopyA, void, void, cute::identity,  // A
@@ -221,7 +219,7 @@ struct ExampleRunner {
     typename GemmRef::Arguments arguments{
       cutlass::gemm::GemmUniversalMode::kGemm,
       {options.m, options.n, options.k, options.l},
-      {block_A_dq.get(), stride_A, block_B.get(), stride_B},
+      {block_A_dq.get(), stride_A, block_B_dq.get(), stride_B},
       {{options.alpha, options.beta}, block_C.get(), stride_C, block_ref_D.get(), stride_D}
     };
 
@@ -240,25 +238,6 @@ struct ExampleRunner {
     return passed;
   }
 
-  template <typename T1, typename T2> 
-  void initialize_block_A(cutlass::DeviceAllocation<T1>& block_device, cutlass::DeviceAllocation<T2>& block_device_dq,  uint64_t seed) {
-    using Limits = cutlass::platform::numeric_limits<T1>;
-    static_assert(Limits::is_integer, "initialize_block_A requires integer types");
-    std::ranlux24_base rng(std::random_device{}());
-    std::uniform_int_distribution<> dist(Limits::lowest(), Limits::max());
-    rng.seed(seed);
-
-    auto block_host = std::vector<T1>(block_device.size());
-    auto block_host_dq = std::vector<T2>(block_device.size());
-    for (int i = 0; i < block_host.size(); ++i) {
-      block_host[i] = static_cast<T1>(dist(rng));
-      block_host_dq[i] = static_cast<T2>(block_host[i]);
-    }
-
-    block_device.copy_from_host(block_host.data());
-    block_device_dq.copy_from_host(block_host_dq.data());
-  }
-
   /// Initialize operands to be used in the GEMM and reference GEMM
   void initialize(const ProblemShapeType& problem_size) {
     auto problem_shape_MNKL = cute::append<4>(problem_size, 1);
@@ -272,16 +251,17 @@ struct ExampleRunner {
     block_A.reset(M * K * L);
     block_A_dq.reset(M * K * L);
     block_B.reset(K * N * L);
+    block_B_dq.reset(K * N * L);
     block_C.reset(M * N * L);
     block_D.reset(M * N * L);
     block_ref_D.reset(M * N * L);
 
-    initialize_block_A(block_A, block_A_dq, seed+2023);
-    initialize_block(block_B, seed + 2022);
+    initialize_mixed_dtype_block(block_A, block_A_dq, seed + 2023);
+    initialize_mixed_dtype_block(block_B, block_B_dq, seed + 2022);
     initialize_block(block_C, seed + 2021);
   }
 
-  void run(const Options& options, const cutlass::KernelHardwareInfo& hw_info) {
+  cutlass::Status run(const Options& options, const cutlass::KernelHardwareInfo& hw_info) {
     ProblemShapeType problem_size = ProblemShapeType{options.m, options.n, options.k, options.l};
 
     initialize(problem_size);
@@ -299,7 +279,11 @@ struct ExampleRunner {
     size_t workspace_size = Gemm::get_workspace_size(arguments);
     cutlass::device_memory::allocation<uint8_t> workspace(workspace_size);
 
-    CUTLASS_CHECK(gemm_op.can_implement(arguments));
+    if (gemm_op.can_implement(arguments) != cutlass::Status::kSuccess){
+      std::cout << "Invalid Problem Size: " << options.m << 'x' << options.n << 'x' << options.k << 'x' << options.l << std::endl;
+      std::exit(1);
+    }
+
     CUTLASS_CHECK(gemm_op.initialize(arguments, workspace.get()));
 
     // Run the GEMM
@@ -311,11 +295,13 @@ struct ExampleRunner {
     bool passed = verify(options);
     std::cout << "Disposition: " << (passed ? "Passed" : "Failed") << std::endl;
 
-    if (passed && options.iterations > 0) {
+    if(!passed) return cutlass::Status::kErrorInternal;
+
+    if (options.iterations > 0) {
       GPU_Clock timer;
       timer.start();
       for (int i = 0; i < options.iterations; ++i) {
-        CUTLASS_CHECK(gemm_op.run());
+        gemm_op.run();
       }
       syclcompat::wait();
 
@@ -325,7 +311,7 @@ struct ExampleRunner {
       printf("Cutlass GEMM Performance:     [%4.3f]TFlop/s  (%6.4f)ms\n", tflops / cute_time, cute_time*1000);
     }
 
-    return;
+    return cutlass::Status::kSuccess;
   }
 
 };
@@ -367,9 +353,9 @@ int main(int argc, const char** argv)
   // The code section below describes datatype for input, output matrices and computation between
   // elements in input matrices.
   using ElementAccumulator = float;                   // <- data type of accumulator
-  using ElementComputeEpilogue = float;  // <- data type of epilogue operations
-  using ElementInputA = cutlass::int8_t;         // <- data type of elements in input matrix A
-  using ElementInputB = bfloat16_t;                        // <- data type of elements in input matrix B
+  using ElementComputeEpilogue = float;               // <- data type of epilogue operations
+  using ElementInputA = cutlass::int8_t;              // <- data type of elements in input matrix A
+  using ElementInputB = bfloat16_t;                   // <- data type of elements in input matrix B
   using ElementOutput = float;                        // <- data type of elements in output matrix D
 
   using LayoutA = cutlass::layout::RowMajor;
@@ -377,7 +363,7 @@ int main(int argc, const char** argv)
   using LayoutC = cutlass::layout::RowMajor;
   using LayoutD = cutlass::layout::RowMajor;
 
-  // Note: XE_2D_U18x32x32_LD_N is incompatible with our bf16 MMA atoms
+  // Note: XE_2D_U8x32x32_LD_V is incompatible with our bf16 MMA atoms
   using GmemTiledCopyA = XE_2D_U8x32x32_LD_V;
   using GmemTiledCopyB = XE_2D_U16x32x32_LD_V;
   static_assert(sizeof(ElementInputA) == 1, "ElementA width must match GmemTiledCopyA U8");
@@ -436,7 +422,7 @@ int main(int argc, const char** argv)
 
   ExampleRunner<Gemm> runner;
 
-  runner.run(options, hw_info);
+  CUTLASS_CHECK(runner.run(options, hw_info));
 
   return 0;
 }
