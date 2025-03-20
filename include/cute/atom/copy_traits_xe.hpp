@@ -129,10 +129,10 @@ CUTE_HOST_DEVICE auto prefetch_selector(Tensor const& tensor) {
   constexpr auto block_non_contig_size = tile_non_contig_size / sgs_non_contig;
 
   using PrefetchTilingLayout = std::conditional_t<is_need_reversed,
-    Layout<Shape<Shape<Int<SubgroupSize >, Int<sgs_contig>>, Int<sgs_non_contig>>,
-           Stride<Stride<_1, Int<SubgroupSize >>,            Int<SubgroupSize  * sgs_contig>>>,
+           Layout<Shape<Shape<Int<SubgroupSize >, Int<sgs_contig>>, Int<sgs_non_contig>>,
+                  Stride<Stride<_1, Int<SubgroupSize >>,            Int<SubgroupSize  * sgs_contig>>>,
     Layout<Shape<Int<sgs_non_contig>, Shape<Int<SubgroupSize >, Int<sgs_contig>>>,
-           Stride<Int<SubgroupSize >,  Stride<_1, Int<SubgroupSize  * sgs_non_contig>>>>
+           Stride<Int<SubgroupSize * sgs_contig>,  Stride<_1, Int<SubgroupSize>>>>
   >;
 
   #define RETURN_STATEMENT(NON_CONTIG, DTYPE_SIZE, CONTIG) \
