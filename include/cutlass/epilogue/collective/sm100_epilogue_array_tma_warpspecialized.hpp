@@ -188,6 +188,7 @@ public:
   using LoadPipeline = cutlass::PipelineTransactionAsync<StagesC>;
   using LoadPipelineState = cutlass::PipelineState<StagesC>;
   constexpr static uint32_t TmaTransactionBytes = StageCBits / 8;
+  constexpr static uint32_t MinTensorMapWorkspaceAlignment = 64;
 
   // TMA pipeline for storing D
   using StorePipeline = cute::conditional_t<ReuseSmemC,
@@ -312,7 +313,7 @@ public:
     typename Params::TMA_D tma_store_d = make_tma_copy(CopyOpS2G{}, tensor_d, SmemLayoutStageD{}, EpilogueTile{}, _1{});
 
     auto fusion_workspace = static_cast<char*>(workspace);
-    auto fusion_workspace_size = FusionCallbacks::get_workspace_size(problem_shape, args.thread);
+    auto fusion_workspace_size = round_nearest(FusionCallbacks::get_workspace_size(problem_shape, args.thread), MinTensorMapWorkspaceAlignment);
     auto tma_descriptor_workspace = reinterpret_cast<cute::TmaDescriptor*>(
                                         static_cast<char*>(workspace) + fusion_workspace_size);
 
@@ -334,7 +335,7 @@ public:
     constexpr uint32_t NumInputTensors = cute::is_void_v<ElementC> ? 1 : 2;
     constexpr size_t SizeOfCuTensorMap = sizeof(cute::TmaDescriptor);
     // Allocate gmem space for input tensormaps per each SM, A tensormap copies followed by B tensormap copies
-    return (NumInputTensors * SizeOfCuTensorMap * sm_count) + FusionCallbacks::get_workspace_size(problem_shape, args.thread);
+    return (NumInputTensors * SizeOfCuTensorMap * sm_count) + (round_nearest(FusionCallbacks::get_workspace_size(problem_shape, args.thread), MinTensorMapWorkspaceAlignment));
   }
 
   template <class ProblemShape>

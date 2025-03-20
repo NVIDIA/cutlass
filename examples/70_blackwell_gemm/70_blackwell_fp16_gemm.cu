@@ -194,12 +194,14 @@ struct Options {
   float alpha, beta;
   int iterations;
   int m, n, k;
+  int swizzle;
 
   Options():
     help(false),
     m(8192), n(8192), k(8192),
     alpha(1.f), beta(0.f),
-    iterations(10)
+    iterations(10),
+    swizzle(0)
   { }
 
   // Parses the command line
@@ -217,6 +219,7 @@ struct Options {
     cmd.get_cmd_line_argument("alpha", alpha, 1.f);
     cmd.get_cmd_line_argument("beta", beta, 0.f);
     cmd.get_cmd_line_argument("iterations", iterations);
+    cmd.get_cmd_line_argument("swizzle", swizzle);
   }
 
   /// Prints the usage statement.
@@ -231,6 +234,7 @@ struct Options {
       << "  --k=<int>                   Sets the K extent of the GEMM\n"
       << "  --alpha=<f32>               Epilogue scalar alpha\n"
       << "  --beta=<f32>                Epilogue scalar beta\n\n"
+      << "  --swizzle=<int>             Cluster rasterization swizzle\n\n"
       << "  --iterations=<int>          Number of profiling iterations to perform.\n\n";
 
     out
@@ -330,6 +334,8 @@ typename Gemm::Arguments args_from_options(const Options &options)
     {block_A.get(), stride_A, block_B.get(), stride_B},
     {{options.alpha, options.beta}, block_C.get(), stride_C, block_D.get(), stride_D}
   };
+
+  arguments.scheduler.max_swizzle_size = options.swizzle;
 
   return arguments;
 }

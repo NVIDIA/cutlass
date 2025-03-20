@@ -29,8 +29,6 @@
  *
  **************************************************************************************************/
 
-
-
 /*! \file
     \brief Blocked Scale configs specific for SM100 BlockScaled MMA
 */
@@ -42,13 +40,13 @@
 #include "cute/int_tuple.hpp"
 #include "cute/atom/mma_traits_sm100.hpp"
 
-namespace cutlass::detail{
+namespace cutlass::detail {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 using namespace cute;
 
 template<int SFVecSize, UMMA::Major major = UMMA::Major::K>
-struct Sm100BlockScaledBasicChunk {
+struct Sm1xxBlockScaledBasicChunk {
 
   using Blk_MN    = _128;
   using Blk_SF    =   _4; 
@@ -61,14 +59,14 @@ struct Sm100BlockScaledBasicChunk {
 };
 
 template<int SFVecSize_>
-struct Sm100BlockScaledConfig {
+struct Sm1xxBlockScaledConfig {
   // We are creating the SFA and SFB tensors' layouts in the collective since they always have the same layout.
   // k-major order
   static constexpr int SFVecSize = SFVecSize_;
-  using Sm100BlkScaledChunk = Sm100BlockScaledBasicChunk<SFVecSize>;
-  using Blk_MN = typename Sm100BlkScaledChunk::Blk_MN;
-  using Blk_SF = typename Sm100BlkScaledChunk::Blk_SF; 
-  using SfAtom = typename Sm100BlkScaledChunk::SfAtom;
+  using Sm1xxBlkScaledChunk = Sm1xxBlockScaledBasicChunk<SFVecSize>;
+  using Blk_MN = typename Sm1xxBlkScaledChunk::Blk_MN;
+  using Blk_SF = typename Sm1xxBlkScaledChunk::Blk_SF; 
+  using SfAtom = typename Sm1xxBlkScaledChunk::SfAtom;
 
   using LayoutSF = decltype(blocked_product(SfAtom{}, make_layout( make_shape(int32_t(0), int32_t(0), int32_t(0)),
                                                                   make_stride(int32_t(0),       _1{}, int32_t(0)))));
@@ -125,8 +123,8 @@ struct Sm100BlockScaledConfig {
                                                                           cute::size<2>(TileShape_MNK{}))));
     // A single indivisible block will hold 4 scale factors of 128 rows/columns (A/B matrix).
     // 4 is chosen to make consecutive 32bits of data to have scale factors for only a single row (col). 32bits corresponds to the TMEM word size 
-    using Blk_MN    = typename Sm100BlkScaledChunk::Blk_MN;
-    using Blk_SF    = typename Sm100BlkScaledChunk::Blk_SF; 
+    using Blk_MN    = typename Sm1xxBlkScaledChunk::Blk_MN;
+    using Blk_SF    = typename Sm1xxBlkScaledChunk::Blk_SF; 
     using Blk_Elems = decltype(Blk_MN{} * Blk_SF{});
 
     using TL_VMNK = typename TiledMma::ThrLayoutVMNK;
@@ -160,8 +158,8 @@ struct Sm100BlockScaledConfig {
                                                                           cute::size<2>(TileShape_MNK{}))));
     // A single indivisible block will hold 4 scale factors of 128 rows/columns (A/B matrix).
     // 4 is chosen to make consecutive 32bits of data to have scale factors for only a single row (col). 32bits corresponds to the TMEM word size 
-    using Blk_MN    = typename Sm100BlkScaledChunk::Blk_MN;
-    using Blk_SF    = typename Sm100BlkScaledChunk::Blk_SF; 
+    using Blk_MN    = typename Sm1xxBlkScaledChunk::Blk_MN;
+    using Blk_SF    = typename Sm1xxBlkScaledChunk::Blk_SF; 
     using Blk_Elems = decltype(Blk_MN{} * Blk_SF{});
 
     using TL_VMNK = typename TiledMma::ThrLayoutVMNK;
@@ -181,20 +179,23 @@ struct Sm100BlockScaledConfig {
 
 
 template<int SFVecSize_, UMMA::Major major = UMMA::Major::K>
-struct Sm100BlockScaledOutputConfig {
+struct Sm1xxBlockScaledOutputConfig {
   // We are creating the SFD tensors' layouts in the collective.
   // k-major order
   static constexpr int SFVecSize = SFVecSize_;
-  using Sm100BlkScaledChunk = cutlass::detail::Sm100BlockScaledBasicChunk<SFVecSize, major>;
-  using Blk_MN = typename Sm100BlkScaledChunk::Blk_MN;
-  using Blk_SF = typename Sm100BlkScaledChunk::Blk_SF; 
-  using SfAtom = typename Sm100BlkScaledChunk::SfAtom;
+  using Sm1xxBlkScaledChunk = cutlass::detail::Sm1xxBlockScaledBasicChunk<SFVecSize, major>;
+  using Blk_MN = typename Sm1xxBlkScaledChunk::Blk_MN;
+  using Blk_SF = typename Sm1xxBlkScaledChunk::Blk_SF; 
+  using SfAtom = typename Sm1xxBlkScaledChunk::SfAtom;
 
   using LayoutKMajorSF  = decltype(blocked_product(SfAtom{}, make_layout(make_shape (int32_t(0), int32_t(0), int32_t(0)),
                                                                          make_stride(int32_t(0),       _1{}, int32_t(0)))));
 
-  static_assert(major == UMMA::Major::K, "Only K-major scalefactor output is supported");
-  using LayoutSF = LayoutKMajorSF;
+  using LayoutMNMajorSF = decltype(blocked_product(SfAtom{}, make_layout(make_shape (int32_t(0), int32_t(0), int32_t(0)),
+                                                                         make_stride(      _1{}, int32_t(0), int32_t(0)))));
+
+  using LayoutSF = cute::conditional_t<major == UMMA::Major::K, LayoutKMajorSF, LayoutMNMajorSF>;
+
   CUTE_HOST_DEVICE
   static constexpr auto
   deduce_layoutSFD() {
@@ -208,12 +209,17 @@ struct Sm100BlockScaledOutputConfig {
   tile_atom_to_shape_SFD(ProblemShape problem_shape, LayoutSFD layout_sfc = LayoutSFD{}) {
     auto problem_shape_MNKL = append<4>(problem_shape, 1);
     auto [M, N, K, L] = problem_shape_MNKL;
-    return tile_to_shape(SfAtom{}, make_shape(M,N,L), Step<_2,_1,_3>{});
+    if constexpr (major == UMMA::Major::K) {
+      return tile_to_shape(SfAtom{}, make_shape(M,N,L), Step<_2,_1,_3>{});
+    } 
+    else { 
+      return tile_to_shape(SfAtom{}, make_shape(M,N,L), Step<_1,_2,_3>{});
+    }
   }
 };
 
 //// Describe the Scalefactor Tensor without VectorSize
-struct Sm100BlockScaledTensorConfig {
+struct Sm1xxBlockScaledTensorConfig {
   // k-major order
   // The blockscaled tensor does not need to know vectorsize
   using Blk_M = _128;

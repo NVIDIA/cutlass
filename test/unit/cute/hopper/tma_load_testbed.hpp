@@ -131,7 +131,7 @@ tma_test_device_cute(T const* g_in, T* g_out,
   for (int stage = 0; stage < size<1>(tAgA); ++stage)
   {
     // Set the bytes transferred in this TMA transaction (may involve multiple issues)
-    constexpr int kTmaTransactionBytes = sizeof(ArrayEngine<T, CUTE_STATIC_V(size(filter_zeros(sA)))>);
+    constexpr int kTmaTransactionBytes = sizeof(make_tensor_like(tensor<0>(tAsA)));
 
     if (threadIdx.x == 0)
     {

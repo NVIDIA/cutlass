@@ -174,7 +174,6 @@ Status BlockScaledGemmOperationProfiler::GemmProblem::parse(
     this->k = 1024;
   }
 
-  
   if (!arg_as_int(this->cluster_m, "cluster_m", problem_space, problem)) {
     // default value
     this->cluster_m = 1;
@@ -204,7 +203,6 @@ Status BlockScaledGemmOperationProfiler::GemmProblem::parse(
     // default value
     this->cluster_k_fallback = 0;
   }
-  
 
   if (!arg_as_SplitKModeID(this->split_k_mode, "split_k_mode", problem_space, problem)) {
     // default value
@@ -314,23 +312,61 @@ Status BlockScaledGemmOperationProfiler::GemmProblem::parse(
   this->ldc = DeviceAllocation::get_packed_layout(
     operation_desc.C.layout, {int(this->m), int(this->n)}).front();
 
+  // instantiation for deep profiling
+  int num_sizes = 8;
+  this->problem_sizes.resize(num_sizes);
+  this->leading_dims.resize(num_sizes, {0, 0, 0});
+
+  int m0 = 1024;
+  int n0 = 1024;
+  int k0 = 1024;
+  for (int i = 0; i < num_sizes; i++) {
+    auto m = m0 * (i + 3);
+    auto n = n0 * (i + 3);
+    auto k = k0 * (i + 3);
+    this->problem_sizes[i] = {m, n, k};
+    this->leading_dims[i] = {
+      DeviceAllocation::get_packed_layout(operation_desc.A.layout, {int(m), int(k)}).front(),
+      DeviceAllocation::get_packed_layout(operation_desc.B.layout, {int(k), int(n)}).front(),
+      DeviceAllocation::get_packed_layout(operation_desc.C.layout, {int(m), int(n)}).front()
+    };
+
+  }
+
+  this->raster_orders = {
+    cutlass::library::RasterOrder::kAlongN,
+    cutlass::library::RasterOrder::kAlongM
+  };
+
+  this->swizzle_sizes = {1, 2, 4, 8};
+
+  this->preferred_clusters = {
+    {1, 1, 1}, {2, 1, 1}, {2, 2, 1}, {4, 1, 1}, {4, 2, 1}, {4, 4, 1}, {8, 2, 1}
+  };
+
+  this->fallback_clusters = {
+    {1, 1, 1}, {2, 1, 1}, {2, 2, 1}
+  };
+
   return Status::kSuccess;
 }
 
 /// Total number of bytes loaded
-int64_t BlockScaledGemmOperationProfiler::GemmProblem::bytes(library::BlockScaledGemmDescription const &operation_desc) const {
+int64_t BlockScaledGemmOperationProfiler::GemmProblem::bytes_with_problem_shape(
+  library::BlockScaledGemmDescription const &operation_desc,
+  gemm::GemmCoord const &problem_shape) const {
   // Input bytes read and Output bytes written for the gemm problem
   int64_t bytes =
-    int64_t(library::sizeof_bits(operation_desc.A.element) * m / 8) * k +
-    int64_t(library::sizeof_bits(operation_desc.B.element) * n / 8) * k +
-    int64_t(library::sizeof_bits(operation_desc.C.element) * m / 8) * n;
+    int64_t(library::sizeof_bits(operation_desc.A.element) * problem_shape.m() / 8) * problem_shape.k() +
+    int64_t(library::sizeof_bits(operation_desc.B.element) * problem_shape.n() / 8) * problem_shape.k() +
+    int64_t(library::sizeof_bits(operation_desc.C.element) * problem_shape.m() / 8) * problem_shape.n();
 
   // Set is_beta_zero true if beta is zero
   bool is_beta_zero = std::all_of(beta.begin(), beta.end(), [](uint8_t i) { return i==0; });
 
   // Output bytes read for the gemm problem for non-zero beta values
   if (!is_beta_zero) {
-    bytes += int64_t(library::sizeof_bits(operation_desc.C.element) * m / 8) * n;
+    bytes += int64_t(library::sizeof_bits(operation_desc.C.element) * problem_shape.m() / 8) * problem_shape.n();
   }
 
   bytes *= batch_count;
@@ -338,9 +374,16 @@ int64_t BlockScaledGemmOperationProfiler::GemmProblem::bytes(library::BlockScale
   return bytes;
 }
 
+int64_t BlockScaledGemmOperationProfiler::GemmProblem::bytes(library::BlockScaledGemmDescription const &operation_desc) const {
+  gemm::GemmCoord problem_shape({int(m), int(n), int(k)});
+  return bytes_with_problem_shape(operation_desc, problem_shape);
+}
+
 /// Total number of flops computed
-int64_t BlockScaledGemmOperationProfiler::GemmProblem::flops(library::BlockScaledGemmDescription const &operation_desc) const {
-  int64_t flops_ = (int64_t(m) * n * k + m * n) * 2 * batch_count;
+int64_t BlockScaledGemmOperationProfiler::GemmProblem::flops_with_problem_shape(
+  library::BlockScaledGemmDescription const &operation_desc,
+  gemm::GemmCoord const &problem_shape) const {
+  int64_t flops_ = (int64_t(problem_shape.m()) * problem_shape.n() * problem_shape.k() + problem_shape.m() * problem_shape.n()) * 2 * batch_count;
 
   // complex-valued support
   switch (operation_desc.tile_description.math_instruction.math_operation) {
@@ -362,6 +405,10 @@ int64_t BlockScaledGemmOperationProfiler::GemmProblem::flops(library::BlockScale
   return flops_;
 }
 
+int64_t BlockScaledGemmOperationProfiler::GemmProblem::flops(library::BlockScaledGemmDescription const &operation_desc) const {
+  gemm::GemmCoord problem_shape({int(m), int(n), int(k)});
+  return flops_with_problem_shape(operation_desc, problem_shape);
+}
 
 /// Initializes a performance result
 void BlockScaledGemmOperationProfiler::GemmProblem::initialize_result(
@@ -480,8 +527,8 @@ Status BlockScaledGemmOperationProfiler::initialize_configuration(
   gemm_workspace_.arguments.swizzle_size = problem_.swizzle_size;
   gemm_workspace_.arguments.raster_order = problem_.raster_order;
   gemm_workspace_.arguments.norm_constant = 0;                    
-  gemm_workspace_.arguments.cluster_shape = {int(problem_.cluster_m), int(problem_.cluster_n), int(problem_.cluster_k)}; 
-  gemm_workspace_.arguments.cluster_shape_fallback = {int(problem_.cluster_m_fallback), int(problem_.cluster_n_fallback), int(problem_.cluster_k_fallback)}; 
+  gemm_workspace_.arguments.cluster_shape = {int(problem_.cluster_m), int(problem_.cluster_n), int(problem_.cluster_k)};
+  gemm_workspace_.arguments.cluster_shape_fallback = {int(problem_.cluster_m_fallback), int(problem_.cluster_n_fallback), int(problem_.cluster_k_fallback)};
   gemm_workspace_.arguments.split_k_slices = problem_.split_k_slices;
 
   
@@ -499,8 +546,74 @@ Status BlockScaledGemmOperationProfiler::initialize_configuration(
   }
 
   initialize_result_(this->model_result_, options, operation_desc, problem_space);
-
   return operation->can_implement(&gemm_workspace_.configuration, &gemm_workspace_.arguments);
+  
+}
+
+void BlockScaledGemmOperationProfiler::update_workspace_(
+  GemmWorkspace &gemm_workspace,
+  gemm::GemmCoord const &problem_shape,
+  std::array<int64_t, 3> const &leading_dim,
+  std::array<int64_t, 3> const &preferred_cluster,
+  std::array<int64_t, 3> const &fallback_cluster,
+  cutlass::library::RasterOrder const &raster_order,
+  int swizzle_size
+) {
+
+  gemm_workspace.arguments.problem_size.m() = problem_shape.m();
+  gemm_workspace.arguments.problem_size.n() = problem_shape.n();
+  gemm_workspace.arguments.problem_size.k() = problem_shape.k();
+
+  gemm_workspace.arguments.lda = leading_dim[0];
+  gemm_workspace.arguments.ldb = leading_dim[1];
+  gemm_workspace.arguments.ldc = leading_dim[2];
+
+  gemm_workspace.arguments.swizzle_size = swizzle_size;
+  gemm_workspace.arguments.raster_order = raster_order;
+
+  gemm_workspace.arguments.cluster_shape = {int(preferred_cluster[0]), int(preferred_cluster[1]), int(preferred_cluster[2])};
+  gemm_workspace.arguments.cluster_shape_fallback = {int(fallback_cluster[0]), int(fallback_cluster[1]), int(fallback_cluster[2])};
+
+  gemm_workspace.configuration.problem_size.m() = problem_shape.m();
+  gemm_workspace.configuration.problem_size.n() = problem_shape.n();
+  gemm_workspace.configuration.problem_size.k() = problem_shape.k();
+
+  gemm_workspace.configuration.cluster_shape = {int(preferred_cluster[0]), int(preferred_cluster[1]), int(preferred_cluster[2])};
+  gemm_workspace.configuration.cluster_shape_fallback = {int(fallback_cluster[0]), int(fallback_cluster[1]), int(fallback_cluster[2])};
+
+  gemm_workspace.configuration.lda = leading_dim[0];
+  gemm_workspace.configuration.ldb = leading_dim[1];
+  gemm_workspace.configuration.ldc = leading_dim[2];
+
+}
+
+
+void BlockScaledGemmOperationProfiler::update_result_(
+  PerformanceResult &result,
+  library::BlockScaledGemmDescription const &operation_desc,
+  ProblemSpace const &problem_space,
+  gemm::GemmCoord const &problem_shape,
+  cutlass::library::RasterOrder const &raster_order,
+  std::array<int64_t, 3> const &preferred_cluster,
+  std::array<int64_t, 3> const &fallback_cluster,
+  int swizzle_size
+) {
+  result.bytes = problem_.bytes_with_problem_shape(operation_desc, problem_shape);
+  result.flops = problem_.flops_with_problem_shape(operation_desc, problem_shape);
+  set_argument(result, "m", problem_space, problem_shape.m());
+  set_argument(result, "n", problem_space, problem_shape.n());
+  set_argument(result, "k", problem_space, problem_shape.k());
+
+  set_argument(result, "raster_order", problem_space, library::to_string(raster_order));
+  set_argument(result, "swizzle_size", problem_space, swizzle_size);
+
+  set_argument(result, "cluster_m", problem_space, preferred_cluster[0]);
+  set_argument(result, "cluster_n", problem_space, preferred_cluster[1]);
+  set_argument(result, "cluster_k", problem_space, preferred_cluster[2]);
+  set_argument(result, "cluster_m_fallback", problem_space, fallback_cluster[0]);
+  set_argument(result, "cluster_n_fallback", problem_space, fallback_cluster[1]);
+  set_argument(result, "cluster_k_fallback", problem_space, fallback_cluster[2]);
+
 }
 
 /// Initializes the performance result
@@ -619,27 +732,38 @@ Status BlockScaledGemmOperationProfiler::initialize_workspace(
 
   bool allocate_device_tensors = options.execution_mode != ExecutionMode::kDryRun;
   if (allocate_device_tensors) {
+    bool enable_deep_profiling = options.profiling.enable_kernel_performance_search;
     int seed_shift = 0;
+
+    // When exhaustive performance search (deep profiling) option is enabled, device buffers are initialized to the largest problem shape
+    // so that later performance search can re-use those buffers.
+    int init_m = enable_deep_profiling ? std::max(int(problem_.m),  problem_.problem_sizes.back().m()) : int(problem_.m);
+    int init_n = enable_deep_profiling ? std::max(int(problem_.n),  problem_.problem_sizes.back().n()) : int(problem_.n);
+    int init_k = enable_deep_profiling ? std::max(int(problem_.k),  problem_.problem_sizes.back().k()) : int(problem_.k);
+    int init_lda = enable_deep_profiling ? int(std::max(problem_.lda,  problem_.leading_dims.back()[0])) : int(problem_.lda);
+    int init_ldb = enable_deep_profiling ? int(std::max(problem_.ldb,  problem_.leading_dims.back()[1])) : int(problem_.ldb);
+    int init_ldc = enable_deep_profiling ? int(std::max(problem_.ldc,  problem_.leading_dims.back()[2])) : int(problem_.ldc);
+
     gemm_workspace_.A = device_context.allocate_and_initialize_tensor(
       options,
       "A",
       operation_desc.A.element,
       operation_desc.A.layout,
-      {int(problem_.m), int(problem_.k)},
-      {int(problem_.lda)},
+      {init_m, init_k},
+      {init_lda},
       problem_.batch_count * gemm_workspace_.problem_count,
       seed_shift++,
       0 // device_index
     );
 
-    int sfa_m     = round_up(int(problem_.m), 128);
-    int sfb_n     = round_up(int(problem_.n), 128);
-    int sfa_sfb_k = round_up(ceil_div(int(problem_.k), operation_desc.SFVecSize), 4);
+    int sfa_m     = round_up(init_m, 128);
+    int sfb_n     = round_up(init_n, 128);
+    int sfa_sfb_k = round_up(ceil_div(init_k, operation_desc.SFVecSize), 4);
     
     int sfd_m     = operation_desc.SFD.layout == cutlass::library::LayoutTypeID::kRowMajor ?
-                      sfa_m : round_up(ceil_div(int(problem_.m), operation_desc.EpilogueSFVecSize), 4);
+                      sfa_m : round_up(ceil_div(init_m, operation_desc.EpilogueSFVecSize), 4);
     int sfd_n     = operation_desc.SFD.layout == cutlass::library::LayoutTypeID::kRowMajor ?
-                      round_up(ceil_div(int(problem_.n), operation_desc.EpilogueSFVecSize), 4) : sfb_n;
+                      round_up(ceil_div(init_n, operation_desc.EpilogueSFVecSize), 4) : sfb_n;
     
 
     gemm_workspace_.SFA = device_context.allocate_and_initialize_tensor(
@@ -671,8 +795,8 @@ Status BlockScaledGemmOperationProfiler::initialize_workspace(
       "B",
       operation_desc.B.element,
       operation_desc.B.layout,
-      {int(problem_.k), int(problem_.n)},
-      {int(problem_.ldb)},
+      {init_k, init_n},
+      {init_ldb},
       problem_.batch_count * gemm_workspace_.problem_count,
       seed_shift++,
       0 // device_index
@@ -683,8 +807,8 @@ Status BlockScaledGemmOperationProfiler::initialize_workspace(
       "C",
       operation_desc.C.element,
       operation_desc.C.layout,
-      {int(problem_.m), int(problem_.n)},
-      {int(problem_.ldc)},
+      {init_m, init_n},
+      {init_ldc},
       problem_.batch_count * gemm_workspace_.problem_count,
       seed_shift++,
       0 // device_index
@@ -695,8 +819,8 @@ Status BlockScaledGemmOperationProfiler::initialize_workspace(
       "D",
       operation_desc.D.element,
       operation_desc.D.layout,
-      {int(problem_.m), int(problem_.n)},
-      {int(problem_.ldc)},
+      {init_m, init_n},
+      {init_ldc},
       problem_.batch_count * gemm_workspace_.problem_count,
       0 // device_index
     );
@@ -706,8 +830,8 @@ Status BlockScaledGemmOperationProfiler::initialize_workspace(
       "Reference",
       operation_desc.D.element,
       operation_desc.D.layout,
-      {int(problem_.m), int(problem_.n)},
-      {int(problem_.ldc)},
+      {init_m, init_n},
+      {init_ldc},
       problem_.batch_count * gemm_workspace_.problem_count,
       0 // device_index
     );
@@ -766,8 +890,8 @@ Status BlockScaledGemmOperationProfiler::initialize_workspace(
 
     // NOTE: the leading non-batch strides are duplicated here for 3.0 API kernels
     gemm_workspace_.arguments.problem_size = {int(problem_.m), int(problem_.n), int(problem_.k)};
-    gemm_workspace_.arguments.cluster_shape = {int(problem_.cluster_m), int(problem_.cluster_n), int(problem_.cluster_k)}; 
-    gemm_workspace_.arguments.cluster_shape_fallback = {int(problem_.cluster_m_fallback), int(problem_.cluster_n_fallback), int(problem_.cluster_k_fallback)}; 
+    gemm_workspace_.arguments.cluster_shape = {int(problem_.cluster_m), int(problem_.cluster_n), int(problem_.cluster_k)};
+    gemm_workspace_.arguments.cluster_shape_fallback = {int(problem_.cluster_m_fallback), int(problem_.cluster_n_fallback), int(problem_.cluster_k_fallback)};
     gemm_workspace_.arguments.split_k_slices = problem_.split_k_slices;
     gemm_workspace_.arguments.batch_count = problem_.batch_count;
     gemm_workspace_.arguments.lda = problem_.lda;
@@ -1247,42 +1371,186 @@ bool BlockScaledGemmOperationProfiler::profile(
 
   if (options.profiling.provider_enabled(library::Provider::kCUTLASS)) {
 
-    // Initialize structure containing GEMM arguments
-    gemm_workspace_.arguments.A = gemm_workspace_.A->data();
-    gemm_workspace_.arguments.B = gemm_workspace_.B->data();
-    gemm_workspace_.arguments.SFA = gemm_workspace_.SFA->data();
-    gemm_workspace_.arguments.SFB = gemm_workspace_.SFB->data();
-    gemm_workspace_.arguments.C = gemm_workspace_.C->data();
-    gemm_workspace_.arguments.D = gemm_workspace_.Computed->data();
-    gemm_workspace_.arguments.alpha = problem_.alpha.data();
-    gemm_workspace_.arguments.beta = problem_.beta.data();
-    gemm_workspace_.arguments.pointer_mode = library::ScalarPointerMode::kHost;
-    gemm_workspace_.arguments.batch_stride_A = gemm_workspace_.A->batch_stride();
-    gemm_workspace_.arguments.batch_stride_B = gemm_workspace_.B->batch_stride();
-    gemm_workspace_.arguments.batch_stride_C = gemm_workspace_.C->batch_stride();
-    gemm_workspace_.arguments.batch_stride_D = gemm_workspace_.Computed->batch_stride();
+    if (options.profiling.enable_kernel_performance_search || options.profiling.enable_best_kernel_for_fixed_shape) {
+      library::BlockScaledGemmDescription const &operation_desc =
+        static_cast<library::BlockScaledGemmDescription const &>(operation->description());
 
-    if (problem_.split_k_mode == library::SplitKMode::kParallel) {
-      gemm_workspace_.arguments.D                       = gemm_workspace_.device_workspace.data();
-      gemm_workspace_.arguments.alpha                   = problem_.alpha_one.data();
-      gemm_workspace_.arguments.beta                    = problem_.beta_zero.data();
+      auto min_cc = operation_desc.tile_description.minimum_compute_capability;
 
-      gemm_workspace_.reduction_arguments.workspace     = gemm_workspace_.device_workspace.data();
-      gemm_workspace_.reduction_arguments.source        = gemm_workspace_.C->data();
-      gemm_workspace_.reduction_arguments.destination   = gemm_workspace_.Computed->data();
-      gemm_workspace_.reduction_arguments.alpha         = problem_.alpha.data();
-      gemm_workspace_.reduction_arguments.beta          = problem_.beta.data();
-      gemm_workspace_.reduction_arguments.pointer_mode  = library::ScalarPointerMode::kHost;
+      bool is_dynamic_cluster_enabled = (min_cc >= 100);
+
+      // Helper function wrapping up performance test with flexible parameters.
+      auto initialize_and_profile = [&](
+        PerformanceResult const &result,
+        gemm::GemmCoord const &problem_shape,
+        std::array<int64_t, 3> const &leading_dim,
+        std::array<int64_t, 3> const &preferred_cluster,
+        std::array<int64_t, 3> const &fallback_cluster,
+        cutlass::library::RasterOrder const &raster_order,
+        int swizzle_size) -> std::optional<PerformanceResult> {
+
+        // Initialize structure containing GEMM arguments
+        gemm_workspace_.arguments.A = gemm_workspace_.A->data();
+        gemm_workspace_.arguments.B = gemm_workspace_.B->data();
+        gemm_workspace_.arguments.SFA = gemm_workspace_.SFA->data();
+        gemm_workspace_.arguments.SFB = gemm_workspace_.SFB->data();
+        gemm_workspace_.arguments.C = gemm_workspace_.C->data();
+        gemm_workspace_.arguments.D = gemm_workspace_.Computed->data();
+        gemm_workspace_.arguments.alpha = problem_.alpha.data();
+        gemm_workspace_.arguments.beta = problem_.beta.data();
+        gemm_workspace_.arguments.pointer_mode = library::ScalarPointerMode::kHost;
+        gemm_workspace_.arguments.batch_stride_A = gemm_workspace_.A->batch_stride();
+        gemm_workspace_.arguments.batch_stride_B = gemm_workspace_.B->batch_stride();
+        gemm_workspace_.arguments.batch_stride_C = gemm_workspace_.C->batch_stride();
+        gemm_workspace_.arguments.batch_stride_D = gemm_workspace_.Computed->batch_stride();
+
+        if (problem_.split_k_mode == library::SplitKMode::kParallel) {
+          gemm_workspace_.arguments.D                       = gemm_workspace_.device_workspace.data();
+          gemm_workspace_.arguments.alpha                   = problem_.alpha_one.data();
+          gemm_workspace_.arguments.beta                    = problem_.beta_zero.data();
+
+          gemm_workspace_.reduction_arguments.workspace     = gemm_workspace_.device_workspace.data();
+          gemm_workspace_.reduction_arguments.source        = gemm_workspace_.C->data();
+          gemm_workspace_.reduction_arguments.destination   = gemm_workspace_.Computed->data();
+          gemm_workspace_.reduction_arguments.alpha         = problem_.alpha.data();
+          gemm_workspace_.reduction_arguments.beta          = problem_.beta.data();
+          gemm_workspace_.reduction_arguments.pointer_mode  = library::ScalarPointerMode::kHost;
+        }
+
+        update_workspace_(gemm_workspace_, problem_shape, leading_dim, preferred_cluster, fallback_cluster, raster_order, swizzle_size);
+
+        const auto can_implement = operation->can_implement(&gemm_workspace_.configuration, &gemm_workspace_.arguments);
+        if (can_implement != Status::kSuccess) {
+          return std::nullopt;  // Return nullopt to indicate failure
+        }
+        library::Operation const* underlying_operation = operation;
+
+        uint64_t workspace_size = underlying_operation->get_host_workspace_size(&gemm_workspace_.configuration);
+        gemm_workspace_.host_workspace.resize(workspace_size, 0);
+
+        workspace_size = underlying_operation->get_device_workspace_size(&gemm_workspace_.configuration,
+                                                              &gemm_workspace_.arguments);
+        
+        gemm_workspace_.device_workspace.reset(library::NumericTypeID::kU8, workspace_size);
+
+        Status status = Status::kSuccess;
+
+        status = underlying_operation->initialize(
+          &gemm_workspace_.configuration,
+          gemm_workspace_.host_workspace.data(),
+          gemm_workspace_.device_workspace.data());
+
+        if (status != Status::kSuccess) {
+          return std::nullopt;  // Return nullopt to indicate failure
+        }
+
+        PerformanceResult curr_result(result);
+        update_result_(curr_result, operation_desc, problem_space, problem_shape, raster_order, preferred_cluster, fallback_cluster, swizzle_size);
+
+        curr_result.status = profile_cutlass_(
+          curr_result,
+          options,
+          operation,
+          &gemm_workspace_.arguments,
+          gemm_workspace_.host_workspace.data(),
+          gemm_workspace_.device_workspace.data()
+        );
+
+        return curr_result;
+      };
+
+
+      // Helper function to test validity of fallback cluster shapes and preferred cluster shapes.
+      auto is_valid_dynamic_cluster_shape = [](const std::array<int64_t, 3>& preferred_cluster, const std::array<int64_t, 3>& fallback_cluster) {
+        for (size_t i = 0; i < 3; ++i) {
+          if (preferred_cluster[i] % fallback_cluster[i] != 0) {
+            return false;
+          }
+        }
+        return true;
+      };
+
+
+      // Helper function to select the best performance number among a list.
+      auto select_best_candidate = [&](std::vector<PerformanceResult> &candidates) {
+        assert(!candidates.empty() && "Candidates vector should not be empty");
+        auto best_iter = std::max_element(
+          candidates.begin(), candidates.end(),
+          [](PerformanceResult const &a, PerformanceResult const &b) {
+            return a.gflops_per_sec() < b.gflops_per_sec();
+          }
+        );
+        assert(best_iter != candidates.end() && "No candidate found despite non-empty candidates vector");
+        results_.push_back(std::move(*best_iter));
+      };
+
+      std::vector<PerformanceResult> candidates;
+      PerformanceResult result_base = results_.back();
+      results_.pop_back();
+
+      bool dynamic_cluster = int64_t(operation_desc.tile_description.cluster_shape.m()) == 0 ||
+                             int64_t(operation_desc.tile_description.cluster_shape.n()) == 0 ||
+                             int64_t(operation_desc.tile_description.cluster_shape.k()) == 0;
+
+      std::vector<std::array<int64_t, 3>> preferred_clusters;
+      std::vector<std::array<int64_t, 3>> fallback_clusters;
+
+      // Only loop over built-in cluster shape lists for dynamic cluster kernels
+      // and for kernels that can leverage the dynamic cluster feature.
+      if (dynamic_cluster && is_dynamic_cluster_enabled) {
+        preferred_clusters = this->problem_.preferred_clusters;
+        fallback_clusters = this->problem_.fallback_clusters;
+      } 
+      else {
+        preferred_clusters = {{int(problem_.cluster_m), int(problem_.cluster_n), int(problem_.cluster_k)}};
+        fallback_clusters = {{int(problem_.cluster_m_fallback), int(problem_.cluster_n_fallback), int(problem_.cluster_k_fallback)}};
+      }
+
+      for (auto preferred_cluster : preferred_clusters) {
+        for (auto fallback_cluster : fallback_clusters) {
+          if (dynamic_cluster && !is_valid_dynamic_cluster_shape(preferred_cluster, fallback_cluster)) {
+            continue;
+          }
+          for (auto swizzle_size : this->problem_.swizzle_sizes) {
+            for (auto raster_order : this->problem_.raster_orders) {
+              // With the fixed shape option turned on, only a specific problem shape is tested.
+              if (options.profiling.enable_best_kernel_for_fixed_shape) {
+                this->problem_.problem_sizes = {{int(this->problem_.m), int(this->problem_.n), int(this->problem_.k)}};
+                this->problem_.leading_dims = {{this->problem_.lda, this->problem_.ldb, this->problem_.ldc}};
+              }
+
+              for (int i = 0; i < int(this->problem_.problem_sizes.size()); i++) {
+                gemm::GemmCoord problem_shape = problem_.problem_sizes[i];
+                std::array<int64_t, 3> leading_dim = problem_.leading_dims[i];
+                auto result_opt = initialize_and_profile(result_base, problem_shape, leading_dim, preferred_cluster, fallback_cluster, raster_order, swizzle_size);
+                  
+                if (result_opt) {  // Only add valid results
+                  candidates.push_back(*result_opt);
+                }
+
+              }
+            }// for raster_order
+          }// for swizzle_size
+        }// for fallback_cluster
+      }// for swizzle_size
+
+      if (candidates.empty()) {
+        return false;
+      }
+      select_best_candidate(candidates);
+
+    }
+    else {
+      results_.back().status = profile_cutlass_(
+        results_.back(),
+        options,
+        operation,
+        &gemm_workspace_.arguments,
+        gemm_workspace_.host_workspace.data(),
+        gemm_workspace_.device_workspace.data()
+      );
     }
 
-    results_.back().status = profile_cutlass_(
-      results_.back(),
-      options,
-      operation,
-      &gemm_workspace_.arguments,
-      gemm_workspace_.host_workspace.data(),
-      gemm_workspace_.device_workspace.data()
-    );
   }
   return true;
 }

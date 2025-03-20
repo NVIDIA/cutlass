@@ -243,14 +243,14 @@ public:
     auto stride_c = cutlass::make_cute_packed_stride(StrideC{}, cute::make_shape(M, N, L));
     auto stride_d = cutlass::make_cute_packed_stride(StrideD{}, cute::make_shape(M, N, L));
 
-    using Sm100BlockScaledConfig = cutlass::detail::Sm100BlockScaledConfig<SFVecSize>;
+    using Sm1xxBlockScaledConfig = cutlass::detail::Sm1xxBlockScaledConfig<SFVecSize>;
     auto A = cute::make_tensor(detail::make_iterator(static_cast<ElementA const*>(args.A)),
         cute::make_layout(cute::make_shape(M, K, L), stride_a));
-    auto SfA = make_tensor(static_cast<ElementSFA const*>(args.SFA), Sm100BlockScaledConfig::tile_atom_to_shape_SFA(problem_shape_MNKL));
+    auto SfA = make_tensor(static_cast<ElementSFA const*>(args.SFA), Sm1xxBlockScaledConfig::tile_atom_to_shape_SFA(problem_shape_MNKL));
 
     auto B = cute::make_tensor(detail::make_iterator(static_cast<ElementB const*>(args.B)),
         cute::make_layout(cute::make_shape(N, K, L), stride_b));
-    auto SfB = make_tensor(static_cast<ElementSFB const*>(args.SFB), Sm100BlockScaledConfig::tile_atom_to_shape_SFB(problem_shape_MNKL));
+    auto SfB = make_tensor(static_cast<ElementSFB const*>(args.SFB), Sm1xxBlockScaledConfig::tile_atom_to_shape_SFB(problem_shape_MNKL));
 
     auto C = [&]() {
       if constexpr (not is_same_v<ElementC, void>) {
@@ -273,11 +273,11 @@ public:
 
     if constexpr (not is_same_v<ElementSFD, void>) { 
 
-      using Sm100BlockScaledOutputConfig = cutlass::detail::Sm100BlockScaledOutputConfig<
+      using Sm1xxBlockScaledOutputConfig= cutlass::detail::Sm1xxBlockScaledOutputConfig<
                                               EpilogueSFVecSize
                                             >;
 
-      auto SfD = cute::make_tensor(detail::make_iterator(static_cast<ElementSFD*>(args.SFD)), Sm100BlockScaledOutputConfig::tile_atom_to_shape_SFD(problem_shape_MNKL));
+      auto SfD = cute::make_tensor(detail::make_iterator(static_cast<ElementSFD*>(args.SFD)), Sm1xxBlockScaledOutputConfig::tile_atom_to_shape_SFD(problem_shape_MNKL));
 
       cutlass::reference::host::GettBlockScalingEpilogueParams<
           ElementCompute, ElementAccumulator, ElementCompute,

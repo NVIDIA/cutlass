@@ -79,7 +79,7 @@ struct Sm90GemmSparseConfig {
                                  cute::is_same_v<ElementAMmaRaw, bfloat16_t> && ElementAMmaSparsity{} == _2{};
   static constexpr bool IsTF32 = cute::is_same_v<ElementAMmaRaw, tfloat32_t> && ElementAMmaSparsity{} == _2{} || 
                                   cute::is_same_v<ElementAMmaRaw, float> && ElementAMmaSparsity{} == _2{};
-  static_assert(int(IsF8) + int(IsI8) + int(IsF16BF16) + int(IsTF32) == 1, "Ambigious Input Type Config (failed to choose MMA type)");
+  static_assert(int(IsF8) + int(IsI8) + int(IsF16BF16) + int(IsTF32) == 1, "Ambiguous Input Type Config (failed to choose MMA type)");
 
   // Number of ElementARaw stored in ElementAMmaRaw. For Hopper this is always 1.
   using ElemsARawPerElementAMmaRaw = _1;

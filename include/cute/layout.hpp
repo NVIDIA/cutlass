@@ -627,27 +627,37 @@ depth(Layout<Shape,Stride> const& layout)
   return depth(shape<Is...>(layout));
 }
 
+// Return the coprofile of a mode as a tuple of _0s
+// @post congruent(coprofile(@a layout), @a layout(i)) for any i
+// @return T Tuple that is congruent with the codomain of @a a.
+template <int... Is, class Shape, class Stride>
+CUTE_HOST_DEVICE constexpr
+auto
+coprofile(Layout<Shape,Stride> const& layout)
+{
+  return repeat_like(as_arithmetic_tuple(sum(stride<Is...>(layout))), Int<0>{});
+}
+
 // Return the codomain shape of a mode
-// @post size(coshape(@a a)) == cosize(@a a)
+// @post size(coshape(@a layout)) == cosize(@a layout)
 // @return C Coordinate with smallest elements such that
-//           @a elem_less(sub_layout(c), C) for all c < size(@a sub_layout)
-//           where sub_layout = get<Is...>(layout).
+//           elem_less(@a sub_layout(c), C) for all c < size(@a sub_layout)
+//           where @a sub_layout = get<Is...>(layout).
 template <int... Is, class Shape, class Stride>
 CUTE_HOST_DEVICE constexpr
 auto
 coshape(Layout<Shape,Stride> const& layout)
 {
-  // Protect against negative strides
-  auto abs_sub_layout = make_layout(shape<Is...>(layout),
-                                    transform_leaf(stride<Is...>(layout), abs_fn{}));
-  auto co_coord = as_arithmetic_tuple(abs_sub_layout(size(abs_sub_layout) - Int<1>{}));
-  return co_coord + repeat_like(co_coord, Int<1>{});
+  auto m1_shapes   = transform_leaf( shape<Is...>(layout), [](auto s) { return s - Int<1>{}; });
+  auto abs_strides = transform_leaf(stride<Is...>(layout), abs_fn{});
+  auto co_coord    = as_arithmetic_tuple(inner_product(m1_shapes, abs_strides));
+  return transform_leaf(co_coord, [](auto c) { return c + Int<1>{}; });
 }
 
 // Return the codomain size of a mode
 // @return M smallest integer such that
-//           @a sub_layout(c) < M for all c < size(@a sub_layout)
-//           where sub_layout = get<Is...>(layout).
+//           size(@a sub_layout(c)) < M for all c < size(@a sub_layout)
+//           where @a sub_layout = get<Is...>(layout).
 template <int... Is, class Shape, class Stride>
 CUTE_HOST_DEVICE constexpr
 auto
@@ -1019,61 +1029,93 @@ auto
 composition_impl(LShape const& lhs_shape, LStride const& lhs_stride,
                  RShape const& rhs_shape, RStride const& rhs_stride)
 {
-  if constexpr (is_tuple<RShape>::value) {
-    // Apply the right-distributivity of Layout composition
+  if constexpr (is_tuple<RShape>::value) {                 // Right-distributivity of Layout composition for RHS tuple
     return transform_layout(rhs_shape, rhs_stride, [&](auto const& s, auto const& d) {
       return composition_impl(lhs_shape, lhs_stride, s, d);
     });
   } else
-  if constexpr (is_scaled_basis<RStride>::value) {
-    // Special case for a ScaledBasis stride
+  if constexpr (is_scaled_basis<RStride>::value) {         // Special case for a RHS ScaledBasis stride
     return composition_impl(basis_get(rhs_stride, lhs_shape), basis_get(rhs_stride, lhs_stride),
                             rhs_shape, basis_value(rhs_stride));
   } else
-  if constexpr (is_constant<0, RStride>::value) {
-    // Special case shortcut for any static stride-0
+  if constexpr (is_constant<0, RStride>::value) {          // Special case shortcut for any RHS static stride-0
     return Layout<RShape, RStride>{rhs_shape, rhs_stride};
   } else
-  if constexpr (is_integral<decltype(lhs_shape)>::value) {
-    // Special case shortcut for any integral LShape
+  if constexpr (is_integral<LShape>::value) {              // Special case shortcut for any LHS integral shape
     return Layout{rhs_shape, rhs_stride * lhs_stride};
-  } else
-  if constexpr (is_constant<1, RStride>::value) {
-    // Special case shortcut for any static stride-1
-    constexpr int R  = rank_v<LShape>;
-    auto result_shape_0  = take<0,R-1>(lhs_shape);
+  } else {                                                 // General case: LHS tuple, RHS integral
+    constexpr int R = tuple_size<LShape>::value;
 
-    // Mod out the rhs_shape from the lhs_shape
-    auto [result_shape_1, rest_shape]  = fold(result_shape_0, cute::make_tuple(cute::make_tuple(), rhs_shape),
-      [] (auto const& init, auto const& si) {
-        return cute::make_tuple(append(get<0>(init), shape_min(abs(si), get<1>(init))), shape_div(get<1>(init), abs(si)));
-      });
+    auto [result_shape, result_stride, rest_shape, rest_stride] =
+      cute::fold(make_seq<R-1>{},                           // t = [0,1,2,...,R-1)
+                 cute::make_tuple(cute::tuple<>{},          // v = (result_shape,
+                                  cute::tuple<>{},          //      result_stride,
+                                  rhs_shape,                //      rest_shape:Integral,
+                                  rhs_stride),              //      rest_stride:Integral)
+                 [&](auto const& init, auto curr_i) {       // f(v,t) -> v'
+                   // Can ICE on some compilers
+                   //auto [result_shape, result_stride, rest_shape, rest_stride] = init;
+                   //auto [curr_shape, curr_stride] = curr;
+                   // Unpack inputs
+                   auto result_shape  = get<0>(init);
+                   auto result_stride = get<1>(init);
+                   auto rest_shape    = get<2>(init);
+                   auto rest_stride   = get<3>(init);
 
-    // Jump into coalesce and append (rest_shape, get<R-1>(lhs_stride))
-    return detail::bw_coalesce<R-2>(result_shape_1, lhs_stride, rest_shape, get<R-1>(lhs_stride));
-  } else {
-    // General case: integral RShape and RStride, tuple LShape and LStride
-    constexpr int R  = rank_v<LShape>;
-    auto result_shape_0  = take<0,R-1>(lhs_shape);
-    auto result_stride_0 = take<0,R-1>(lhs_stride);
+                   auto curr_shape  = get<curr_i>(lhs_shape);
+                   auto curr_stride = get<curr_i>(lhs_stride);
 
-    // Divide out the rhs_stride from the lhs_shape
-    auto [result_shape_1, rest_stride] = fold(result_shape_0, cute::make_tuple(cute::make_tuple(), rhs_stride),
-      [] (auto const& init, auto const& di) {
-        return cute::make_tuple(append(get<0>(init), shape_div(di, get<1>(init))), shape_div(get<1>(init), di));
-      });
+                   // Strong divisibility condition -- requires composition to be statically verifiable.
+                   //CUTE_STATIC_ASSERT_V(((rest_stride % curr_shape) == Int<0>{}) or (rest_stride < curr_shape), "Stride Divisibility Condition");
 
-    // Apply any lhs_shape changes to the stride
-    auto result_stride_1 = elem_scale(result_stride_0, shape_div(result_shape_0, result_shape_1));
+                   // Weak divisibility condition -- verify the divisibility condition whenever possible
+                   if constexpr (is_static<decltype(curr_shape)>::value and is_static<decltype(rest_stride)>::value) {
+                     CUTE_STATIC_ASSERT_V(((rest_stride % curr_shape) == Int<0>{}) or (rest_stride < curr_shape), "Stride Divisibility Condition");
+                   } else {
+                     // DEBUG assert can cause extra registers and inappropriate compile-time/run-time failure
+                     //assert((((rest_stride % curr_shape) == 0) or (rest_stride < curr_shape)) && "Stride Divisibility Condition");
+                   }
 
-    // Mod out the rhs_shape from the lhs_shape
-    auto [result_shape_2, rest_shape] = fold(result_shape_1, cute::make_tuple(cute::make_tuple(), rhs_shape),
-      [] (auto const& init, auto const& si) {
-        return cute::make_tuple(append(get<0>(init), shape_min(abs(si), get<1>(init))), shape_div(get<1>(init), abs(si)));
-      });
+                   // next_shape:  ceil(exclusive_prefix_product<r>(lhs_shape) / rhs_stride)
+                   [[maybe_unused]] auto next_shape  = cute::ceil_div(curr_shape, abs(rest_stride));
+                   // next_stride: ceil(rhs_stride / exclusive_prefix_product<r>(lhs_shape))
+                   [[maybe_unused]] auto next_stride = cute::ceil_div(abs(rest_stride), curr_shape) * signum(rest_stride);
 
-    // Jump into coalesce and append (rest_shape, rest_stride * get<R-1>(lhs_stride))
-    return detail::bw_coalesce<R-2>(result_shape_2, result_stride_1, rest_shape, rest_stride * get<R-1>(lhs_stride));
+                   if constexpr (is_constant<1, decltype(next_shape)>::value or is_constant<1, decltype(rest_shape)>::value) {
+                     return cute::make_tuple(result_shape,
+                                             result_stride,
+                                             rest_shape,
+                                             next_stride);
+                   } else {
+                     auto new_shape = cute::min(next_shape, rest_shape);
+
+                     // Strong divisibility condition
+                     //CUTE_STATIC_ASSERT_V(((rest_shape % new_shape) == Int<0>{}), "Shape Divisibility Condition");
+
+                     // Weak divisibility condition
+                     if constexpr (is_static<decltype(new_shape)>::value and is_static<decltype(rest_shape)>::value) {
+                       CUTE_STATIC_ASSERT_V(((rest_shape % new_shape) == Int<0>{}), "Shape Divisibility Condition");
+                     } else {
+                       // DEBUG assert can cause extra registers and inappropriate compile-time/run-time failure
+                       //assert(((rest_shape % new_shape) == 0) && "Shape Divisibility Condition");
+                     }
+
+                     return cute::make_tuple(append(result_shape,  new_shape),
+                                             append(result_stride, rest_stride * curr_stride),
+                                             rest_shape / new_shape,
+                                             next_stride);
+                   }
+                 });
+
+    if constexpr (tuple_size<decltype(result_shape)>::value == 0) {
+      return Layout{rest_shape, rest_stride * get<R-1>(lhs_stride)};
+    } else
+    if constexpr (is_constant<1, decltype(rest_shape)>::value) {
+      return Layout{unwrap(result_shape), unwrap(result_stride)};
+    } else {
+      return Layout{append(result_shape,  rest_shape),
+                    append(result_stride, rest_stride * get<R-1>(lhs_stride))};
+    }
   }
 
   CUTE_GCC_UNREACHABLE;
@@ -1088,8 +1130,7 @@ auto
 composition(Layout<LShape,LStride> const& lhs,
             Layout<RShape,RStride> const& rhs)
 {
-  auto coprofile = repeat_like(decltype(coshape(rhs)){}, Int<0>{});
-  auto flat_lhs = detail::coalesce_x(lhs, coprofile);
+  auto flat_lhs = detail::coalesce_x(lhs, coprofile(rhs));
   return detail::composition_impl(flat_lhs.shape(), flat_lhs.stride(), rhs.shape(), rhs.stride());
 }
 
@@ -1203,37 +1244,6 @@ complement(Layout<Shape,Stride> const& layout)
 // Right-Inverse and Left-Inverse
 //
 
-namespace detail {
-
-template <int NextStride, class Shape, class Stride, int... Is>
-CUTE_HOST_DEVICE constexpr
-auto
-inverse_seq(Shape const& shape, Stride const& stride, seq<Is...>)
-{
-  auto next_I = cute::find_if(stride, [](auto a) { return is_constant<NextStride, decltype(a)>{}; });
-
-  if constexpr (next_I == decltype(rank(stride))::value) {
-    // If not found, return current seq
-    return seq<Is...>{};
-  } else {
-    // auto next_stride = get<next_I>(shape) * get<next_I>(stride);
-    // NOTE: Needed for g++-7
-    using next_stride = decltype(get<next_I>(shape) * get<next_I>(stride));
-
-    if constexpr (is_static<next_stride>::value && !is_constant<NextStride, next_stride>::value) {
-      // If next_stride is static and unique, then continue
-      return inverse_seq<next_stride::value>(shape, stride, seq<Is..., next_I>{});
-    } else {
-      // Else return current seq + next_I
-      return seq<Is..., next_I>{};
-    }
-  }
-
-  CUTE_GCC_UNREACHABLE;
-}
-
-} // end namespace detail
-
 //
 // Build the right-inverse of a layout
 // @pre is_static<Layout>
@@ -1248,22 +1258,40 @@ CUTE_HOST_DEVICE constexpr
 auto
 right_inverse(Layout<Shape,Stride> const& layout)
 {
-  auto flat_layout = coalesce(layout);
-  auto astride = transform_leaf(flat_layout.stride(), abs_fn{});
+  // Flatten and filter shape-1
+  auto clayout = coalesce(layout);
+  auto lstride = wrap(clayout.stride());
+  auto lshape  = wrap(clayout.shape());
 
-  // Find Int<1>{}, the starting stride, and follow the strides to gen inverse_seq
-  [[maybe_unused]] auto iseq = detail::inverse_seq<1>(flat_layout.shape(), astride, seq<>{});
+  // Prefix product of the shape
+  auto preprod_shape = cute::fold(lshape, cute::tuple<_1>{}, [](auto c, auto vi) { return append(c, vi*back(c)); });
 
-  if constexpr (iseq.size() == 0) {
-    return Layout<_1,_0>{};     // Empty case, nothing found
-  } else {
-    // Generate the corresponding new strides and construct
-    auto rstride = compact_major<LayoutLeft>(flat_layout.shape());
-    return make_layout(unwrap(transform(iseq, [&](auto i) { return shape<i>(flat_layout); })),
-                       unwrap(transform(iseq, [&](auto i) { return signum(stride<i>(flat_layout)) * get<i>(rstride); })));
-  }
+  // Filter out any dynamic strides
+  [[maybe_unused]] auto filtered_seq    = filter_tuple(make_seq<rank(lstride)>{}, lstride, [](auto i, auto d) {
+                                                         return conditional_return<is_static_v<decltype(d)>>(cute::tuple{i}, cute::tuple<>{}); });
+  [[maybe_unused]] auto filtered_stride = transform(filtered_seq, [&](auto i) { return get<i>(lstride); });
 
-  CUTE_GCC_UNREACHABLE;
+  // Sort by strides
+  using Sorted = detail::SortByKey<decltype(filtered_stride), decltype(filtered_seq)>;
+  auto sorted_seq = typename Sorted::val_type{};
+  //auto sorted_stride = typename Sorted::key_type{};
+
+  auto [result_shape, result_stride, curr] = cute::fold(sorted_seq, tuple<tuple<_1>,tuple<_0>,_1>{},
+    [&](auto const& init, auto i) {
+      [[maybe_unused]] auto ishape  = get<i>(lshape);
+      [[maybe_unused]] auto istride = get<i>(lstride);
+      [[maybe_unused]] auto curr_stride = get<2>(init);
+
+      if constexpr (is_constant<decltype(istride)::value, decltype(curr_stride)>::value) {
+        return make_tuple(append(get<0>(init),  ishape),                // result_shape
+                          append(get<1>(init), get<i>(preprod_shape)),  // result_stride
+                          ishape * istride);
+      } else {
+        return init;
+      }
+    });
+
+  return coalesce(make_layout(result_shape, result_stride));
 }
 
 CUTE_HOST_DEVICE constexpr
@@ -1274,13 +1302,12 @@ right_inverse(Underscore const& _)
 }
 
 //
-// Build the left-inverse of a layout
+// Build the quasi-inverse of a layout (left-inverse when layout is injective)
 // @pre is_static<Layout>
-// @pre @a layout is an injective function
 // @result A layout @a result such that
-//    @a result(@a layout(i)) == i for all i < size(@a layout)
+//    @a layout(@a result(@a layout(i))) == @a layout(i) for all i < size(@a layout)
 // @result A layout @a result such that
-//    composition(@a result, @a layout) is identical to make_layout(shape(layout))
+//    composition(@layout, composition(@a result, @a layout)) is identical to @a layout
 //
 
 template <class Shape, class Stride>
@@ -1288,7 +1315,39 @@ CUTE_HOST_DEVICE constexpr
 auto
 left_inverse(Layout<Shape,Stride> const& layout)
 {
-  return right_inverse(make_layout(layout, complement(layout)));
+  // Flatten and filter shape-1
+  auto clayout = coalesce(layout);
+  auto lstride = wrap(clayout.stride());
+  auto lshape  = wrap(clayout.shape());
+
+  // Prefix product of the shape
+  auto preprod_shape = cute::fold(lshape, cute::tuple<_1>{}, [](auto c, auto vi) { return append(c, vi*back(c)); });
+
+  // Sort by strides
+  static_assert(is_static<decltype(lstride)>::value, "Left inverse requires static strides.");
+  using Sorted = detail::SortByKey<decltype(lstride), tuple_seq<decltype(lstride)>>;
+  auto sorted_seq = typename Sorted::val_type{};
+  //auto sorted_stride = typename Sorted::key_type{};
+
+  auto [result_shape, result_stride] = cute::fold(sorted_seq, tuple<tuple<>,tuple<_0>>{},
+    [&](auto const& init, auto i) {
+      [[maybe_unused]] auto istride = get<i>(lstride);
+
+      if constexpr (is_constant<0, decltype(istride)>::value) {
+        return init;
+      } else {
+        auto result_shape  = get<0>(init);
+        auto result_stride = get<1>(init);
+
+        CUTE_STATIC_ASSERT_V((istride % size(result_shape)) == Int<0>{}, "Left inverse divisibility condition");
+
+        return make_tuple(append(result_shape,  istride / size(result_shape)),
+                          append(result_stride, get<i>(preprod_shape)));
+      }
+    });
+
+  return coalesce(make_layout(append(result_shape, get<back(sorted_seq)>(lshape)),
+                              result_stride));
 }
 
 CUTE_HOST_DEVICE constexpr
@@ -1506,7 +1565,7 @@ auto
 logical_divide(Layout<LShape,LStride> const& layout,
                Layout<TShape,TStride> const& tiler)
 {
-  return composition(layout, make_layout(tiler, complement(tiler, shape(layout))));
+  return composition(layout, make_layout(tiler, complement(tiler, shape(coalesce(layout)))));
 }
 
 template <class LShape, class LStride, class Tiler>
@@ -1760,10 +1819,11 @@ upcast(Shape const& shape, Stride const& stride)
   } else if constexpr (is_constant<0, Stride>::value) {    // static-0 stride
     return Layout<Shape,Stride>{shape,stride};
   } else if constexpr (is_static<Stride>::value) {         // static stride
-    return make_layout(shape_div(shape,  shape_div(Int<N>{}, abs(stride))),
-                       shape_div(stride, Int<N>{}));
+    static_assert(Stride::value % N == 0 or N % Stride::value == 0, "Divisibility condition");
+    return make_layout(ceil_div(shape,  ceil_div(Int<N>{}, abs(stride))),
+                       signum(stride) * ceil_div(abs(stride), Int<N>{}));
   } else {                                                 // dynamic stride
-    // assume dynamic strides are larger than N and divisible
+    // Assume dynamic strides are larger than N and divisible
     // assert(stride % N == 0);
     return make_layout(shape, safe_div(stride, Int<N>{}));
   }

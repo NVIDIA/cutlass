@@ -159,7 +159,7 @@ template <typename value_t>
 CUTLASS_HOST_DEVICE
 CUTLASS_CONSTEXPR_IF_CXX17
 value_t abs_for_integer(value_t a) {
-  return ((a > 0) ? a : -a);
+  return ((a > value_t{0}) ? a : -a);
 }
 /**
  * Greatest common divisor
@@ -169,9 +169,9 @@ CUTLASS_HOST_DEVICE
 CUTLASS_CONSTEXPR_IF_CXX17
 value_t gcd(value_t a, value_t b) {
   for (;;) {
-    if (a == 0) return cutlass::abs_for_integer(b);
+    if (a == value_t{0}) return cutlass::abs_for_integer(b);
     b %= a;
-    if (b == 0) return cutlass::abs_for_integer(a);
+    if (b == value_t{0}) return cutlass::abs_for_integer(a);
     a %= b;
   }
 }
@@ -184,7 +184,7 @@ CUTLASS_HOST_DEVICE
 CUTLASS_CONSTEXPR_IF_CXX17
 value_t lcm(value_t a, value_t b) {
   value_t temp = cutlass::gcd(a, b);
-  return (temp != 0) ? value_t(cutlass::abs_for_integer(a) / temp * cutlass::abs_for_integer(b)) : value_t{};
+  return (temp != value_t{0}) ? value_t(cutlass::abs_for_integer(a) / temp * cutlass::abs_for_integer(b)) : value_t{};
 }
 
 /**
@@ -194,7 +194,7 @@ template <typename value_t>
 CUTLASS_HOST_DEVICE
 CUTLASS_CONSTEXPR_IF_CXX17
 value_t gcd_cxx11(value_t a, value_t b) {
-  return (a == 0 || b == 0) ? cutlass::abs_for_integer(a | b) : cutlass::gcd_cxx11(b, a % b);
+  return (a == value_t{0} || b == value_t{0}) ? cutlass::abs_for_integer(a | b) : cutlass::gcd_cxx11(b, a % b);
 }
 
 /**

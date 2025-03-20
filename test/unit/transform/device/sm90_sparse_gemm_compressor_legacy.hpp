@@ -155,7 +155,9 @@ namespace detail {
           int offset = chunk_idx * LogicalElemsAPerChunk + subchunk_idx * ElemsARawPerElementAMmaRaw + elem_idx;
           subchunk_elems[elem_idx] = offset < effective_elems ? tensorA(offset) : ElementA(0);
           
-          if (subchunk_elems[elem_idx] != ElementA(0)) {
+          ElementA zero = static_cast<ElementA>(0);
+          ElementA minus_zero = static_cast<ElementA>(ElementA(1) << cutlass::sizeof_bits_v<ElementA> - 1);
+          if (subchunk_elems[elem_idx] != zero && subchunk_elems[elem_idx] != minus_zero) {
             if (non_zero_cnt >= PhysicalSubChunk) {
               #ifdef  __CUDA_ARCH__
                 asm volatile ("brkpt;\n" ::);

@@ -512,8 +512,8 @@ public:
       auto N = get<1>(shape);
       auto K = get<2>(shape);
 
-      auto layout_SFA = CollectiveMainloop::Sm100BlkScaledConfig::tile_atom_to_shape_SFA(cute::make_shape(M, N, K, 1));
-      auto layout_SFB = CollectiveMainloop::Sm100BlkScaledConfig::tile_atom_to_shape_SFB(cute::make_shape(M, N, K, 1));
+      auto layout_SFA = CollectiveMainloop::Sm1xxBlkScaledConfig::tile_atom_to_shape_SFA(cute::make_shape(M, N, K, 1));
+      auto layout_SFB = CollectiveMainloop::Sm1xxBlkScaledConfig::tile_atom_to_shape_SFB(cute::make_shape(M, N, K, 1));
       layout_SFA_host[group_idx] = layout_SFA;
       layout_SFB_host[group_idx] = layout_SFB;
     }

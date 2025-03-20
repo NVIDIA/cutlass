@@ -394,12 +394,12 @@ public:
     InternalSwappedStrideB dB;
 
     if constexpr (not SwapAB) {
-      ptr_A_first_batch = reinterpret_cast<SwappedElementA const*>(args.ptr_A);
-      ptr_B_first_batch = reinterpret_cast<SwappedElementB const*>(args.ptr_B);
+      ptr_A_first_batch = reinterpret_cast<SwappedElementA const*>(reinterpret_cast<uint64_t>(args.ptr_A) & 0xFFFFFFFFFFFFFFF0);  // Address must be 16B-aligned
+      ptr_B_first_batch = reinterpret_cast<SwappedElementB const*>(reinterpret_cast<uint64_t>(args.ptr_B) & 0xFFFFFFFFFFFFFFF0);  // Address must be 16B-aligned
     }
     else {
-      ptr_A_first_batch = reinterpret_cast<SwappedElementA const*>(args.ptr_B);
-      ptr_B_first_batch = reinterpret_cast<SwappedElementB const*>(args.ptr_A);
+      ptr_A_first_batch = reinterpret_cast<SwappedElementA const*>(reinterpret_cast<uint64_t>(args.ptr_B) & 0xFFFFFFFFFFFFFFF0);  // Address must be 16B-aligned
+      ptr_B_first_batch = reinterpret_cast<SwappedElementB const*>(reinterpret_cast<uint64_t>(args.ptr_A) & 0xFFFFFFFFFFFFFFF0);  // Address must be 16B-aligned
     }
 
     if constexpr (IsGroupedGemmKernel) {

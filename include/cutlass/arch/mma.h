@@ -133,6 +133,8 @@ struct OpClassSparseTensorOp {};
 /// Tag classifying operators as Tensor Core with blockScaled
 struct OpClassBlockScaledTensorOp {};
 
+/// Tag classifying operators as Tensor Core with blockScaled structured sparse operations.
+struct OpClassBlockScaledSparseTensorOp {};
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

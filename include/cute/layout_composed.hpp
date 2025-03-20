@@ -37,7 +37,7 @@
 /* This implements a ComposedLayout of the form
  *   LayoutA o Offset o LayoutB
  * and is useful in cases where composition() does not or cannot apply to LayoutA and LayoutB.
- * For example, when the "divisibility condition" in shape_div is violated in composition(LayoutA, LayoutB).
+ * For example, when the "divisibility condition" is violated in composition(LayoutA, LayoutB).
  *
  * This ComposedLayout provides similar functionality to Layout including tiling, partitioning,
  * coordinate-to-index mapping and layout manipulations, but is not considered a "normal" layout.

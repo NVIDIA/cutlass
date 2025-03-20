@@ -51,8 +51,6 @@ struct Sm100DenseGemmTmaUmmaCarveout {
   static constexpr auto LoadOrderBarrierStorage = sizeof(typename cutlass::OrderedSequenceBarrier<1,2>::SharedStorage);
   // CLC (scheduler) response
   static constexpr auto CLCResponseStorage = SchedulerPipelineStageCount * detail::CLCResponseSize;
-  // CLC Throttle pipeline storage
-  static constexpr auto CLCThrottlePipelineStorage = sizeof(typename cutlass::PipelineAsync<SchedulerPipelineStageCount>::SharedStorage);
   // Tmem dealloc
   static constexpr auto TmemDeallocStorage = sizeof(cutlass::arch::ClusterBarrier);
   // Tmem ptr storage
@@ -66,7 +64,6 @@ struct Sm100DenseGemmTmaUmmaCarveout {
                                                                CLCPipelineStorage +
                                                                LoadOrderBarrierStorage +
                                                                TmemDeallocStorage +
-                                                               CLCThrottlePipelineStorage +
                                                                CLCResponseStorage +
                                                                TmemBasePtrsStorage +
                                                                TensorMapStorage
@@ -83,20 +80,14 @@ struct Sm100SparseGemmTmaUmmaCarveout {
   static constexpr auto CLCPipelineStorage = sizeof(typename cutlass::PipelineCLCFetchAsync<SchedulerPipelineStageCount, ClusterShape_MNK>::SharedStorage);
   // AccumulatorPipeline = PipelineUmmaAsync
   static constexpr auto AccumulatorPipelineStorage = sizeof(typename cutlass::PipelineUmmaAsync<AccumulatorPipelineStageCount>::SharedStorage);
-  // CLC Throttle pipeline storage
-  static constexpr auto CLCThrottlePipelineStorage = sizeof(typename cutlass::PipelineAsync<SchedulerPipelineStageCount>::SharedStorage);
   // Tmem dealloc
   static constexpr auto TmemDeallocStorage = sizeof(cutlass::arch::ClusterBarrier);
-  // Epilogue Throttle 
-  static constexpr auto EpilogueThrottleStorage = sizeof(arch::ClusterBarrier);
 
   static constexpr auto PipelineStorage = static_cast<int>(cutlass::round_up(
                                                       cutlass::round_up(LoadOrderBarrierStorage, 16) +
                                                       cutlass::round_up(CLCPipelineStorage, 16) +
                                                       cutlass::round_up(AccumulatorPipelineStorage, 16) +
-                                                      cutlass::round_up(CLCThrottlePipelineStorage, 16) +
-                                                      cutlass::round_up(TmemDeallocStorage, 8) +
-                                                      cutlass::round_up(EpilogueThrottleStorage, 8),
+                                                      cutlass::round_up(TmemDeallocStorage, 16),
                                                     16));
 
   // * GemmUniversal::SharedStorage::Others
