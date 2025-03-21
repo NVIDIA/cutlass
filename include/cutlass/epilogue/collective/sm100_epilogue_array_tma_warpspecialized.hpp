@@ -188,6 +188,7 @@ public:
   using LoadPipeline = cutlass::PipelineTransactionAsync<StagesC>;
   using LoadPipelineState = cutlass::PipelineState<StagesC>;
   constexpr static uint32_t TmaTransactionBytes = StageCBits / 8;
+  constexpr static uint32_t MinTensorMapWorkspaceAlignment = 64;
 
   // TMA pipeline for storing D
   using StorePipeline = cute::conditional_t<ReuseSmemC,
@@ -277,8 +278,9 @@ public:
     // These tensor shapes (only applicable for grouped gemm) and pointers are only used to create tensormap/tma desc.
     // These will be replaced with correct values before the initial tma load.
     auto init_shape = repeat_like(append<4>(typename ProblemShape::UnderlyingProblemShape{}, 1), int32_t(1));
-    auto init_M = get<0>(init_shape);
-    auto init_N = get<1>(init_shape);
+    constexpr int tma_alignment_bits = 128;
+    auto init_M = tma_alignment_bits;
+    auto init_N = tma_alignment_bits;
     auto init_L = 1;
 
     InternalStrideC stride_c;
@@ -312,7 +314,7 @@ public:
     typename Params::TMA_D tma_store_d = make_tma_copy(CopyOpS2G{}, tensor_d, SmemLayoutStageD{}, EpilogueTile{}, _1{});
 
     auto fusion_workspace = static_cast<char*>(workspace);
-    auto fusion_workspace_size = FusionCallbacks::get_workspace_size(problem_shape, args.thread);
+    auto fusion_workspace_size = round_nearest(FusionCallbacks::get_workspace_size(problem_shape, args.thread), MinTensorMapWorkspaceAlignment);
     auto tma_descriptor_workspace = reinterpret_cast<cute::TmaDescriptor*>(
                                         static_cast<char*>(workspace) + fusion_workspace_size);
 
@@ -334,7 +336,7 @@ public:
     constexpr uint32_t NumInputTensors = cute::is_void_v<ElementC> ? 1 : 2;
     constexpr size_t SizeOfCuTensorMap = sizeof(cute::TmaDescriptor);
     // Allocate gmem space for input tensormaps per each SM, A tensormap copies followed by B tensormap copies
-    return (NumInputTensors * SizeOfCuTensorMap * sm_count) + FusionCallbacks::get_workspace_size(problem_shape, args.thread);
+    return (NumInputTensors * SizeOfCuTensorMap * sm_count) + (round_nearest(FusionCallbacks::get_workspace_size(problem_shape, args.thread), MinTensorMapWorkspaceAlignment));
   }
 
   template <class ProblemShape>

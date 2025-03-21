@@ -126,6 +126,7 @@ public:
   static constexpr bool IsDynamicCluster = not cute::is_static_v<ClusterShape>;
 
   static constexpr bool IsSchedDynamicPersistent = TileScheduler::IsDynamicPersistent;
+  static constexpr uint32_t MinTensorMapWorkspaceAlignment = 64;
 
   // Warp specialization thread count per threadblock
   static constexpr uint32_t NumSchedThreads           = NumThreadsPerWarp;                             // 1 warp
@@ -284,17 +285,17 @@ public:
     // Epilogue
     void* epilogue_workspace = workspace_ptr + workspace_offset;
     workspace_offset += CollectiveEpilogue::get_workspace_size(problem_shapes, args.epilogue, args.hw_info.sm_count);
-    workspace_offset = round_nearest(workspace_offset,  MinWorkspaceAlignment);
+    workspace_offset = round_nearest(workspace_offset, MinTensorMapWorkspaceAlignment);
 
     void* mainloop_workspace = workspace_ptr + workspace_offset;
     workspace_offset += CollectiveMainloop::get_workspace_size(problem_shapes, args.mainloop, args.hw_info.sm_count);
-    workspace_offset = round_nearest(workspace_offset,  MinWorkspaceAlignment);
+    workspace_offset = round_nearest(workspace_offset, MinTensorMapWorkspaceAlignment);
 
     // Tile scheduler
     void* scheduler_workspace = workspace_ptr + workspace_offset;
     workspace_offset += TileScheduler::template get_workspace_size<typename ProblemShape::UnderlyingProblemShape, ElementAccumulator>(
       args.scheduler, problem_shapes.get_host_problem_shape(0), args.hw_info, NumFixupBarriers, NumEpilogueSubTiles, CollectiveEpilogue::NumAccumulatorMtxs);
-    workspace_offset = round_nearest(workspace_offset,  MinWorkspaceAlignment);
+    workspace_offset = round_nearest(workspace_offset, MinTensorMapWorkspaceAlignment);
 
     return {
       args.mode,
@@ -337,16 +338,16 @@ public:
 
     // Epilogue
     workspace_size += CollectiveEpilogue::get_workspace_size(args.problem_shape, args.epilogue, args.hw_info.sm_count);
-    workspace_size = round_nearest(workspace_size,  MinWorkspaceAlignment);
+    workspace_size = round_nearest(workspace_size, MinTensorMapWorkspaceAlignment);
 
     // Mainloop
     workspace_size += CollectiveMainloop::get_workspace_size(args.problem_shape, args.mainloop, args.hw_info.sm_count);
-    workspace_size = round_nearest(workspace_size,  MinWorkspaceAlignment);
+    workspace_size = round_nearest(workspace_size, MinTensorMapWorkspaceAlignment);
 
     // Tile scheduler
     workspace_size += TileScheduler::template get_workspace_size<typename ProblemShape::UnderlyingProblemShape, ElementAccumulator>(
       args.scheduler, args.problem_shape.get_host_problem_shape(0), args.hw_info, NumFixupBarriers, NumEpilogueSubTiles, CollectiveEpilogue::NumAccumulatorMtxs);
-    workspace_size = round_nearest(workspace_size,  MinWorkspaceAlignment);
+    workspace_size = round_nearest(workspace_size, MinTensorMapWorkspaceAlignment);
 
     return workspace_size;
   }
@@ -362,7 +363,7 @@ public:
     // Epilogue
     status = CollectiveEpilogue::initialize_workspace(args.problem_shape, args.epilogue, workspace_ptr + workspace_offset, stream, cuda_adapter);
     workspace_offset += CollectiveEpilogue::get_workspace_size(args.problem_shape, args.epilogue, args.hw_info.sm_count);
-    workspace_offset = round_nearest(workspace_offset,  MinWorkspaceAlignment);
+    workspace_offset = round_nearest(workspace_offset, MinTensorMapWorkspaceAlignment);
     if (status != Status::kSuccess) {
       return status;
     }
@@ -370,7 +371,7 @@ public:
     // Mainloop
     status = CollectiveMainloop::initialize_workspace(args.problem_shape, args.mainloop, workspace_ptr + workspace_offset, stream, cuda_adapter);
     workspace_offset += CollectiveMainloop::get_workspace_size(args.problem_shape, args.mainloop, args.hw_info.sm_count);
-    workspace_offset = round_nearest(workspace_offset,  MinWorkspaceAlignment);
+    workspace_offset = round_nearest(workspace_offset, MinTensorMapWorkspaceAlignment);
     if (status != Status::kSuccess) {
       return status;
     }
@@ -380,7 +381,7 @@ public:
       args.scheduler, workspace_ptr + workspace_offset, stream, args.problem_shape.get_host_problem_shape(0), args.hw_info, NumFixupBarriers, NumEpilogueSubTiles, CollectiveEpilogue::NumAccumulatorMtxs, cuda_adapter);
     workspace_offset += TileScheduler::template get_workspace_size<typename ProblemShape::UnderlyingProblemShape, ElementAccumulator>(
       args.scheduler, args.problem_shape.get_host_problem_shape(0), args.hw_info, NumFixupBarriers, NumEpilogueSubTiles, CollectiveEpilogue::NumAccumulatorMtxs);
-    workspace_offset = round_nearest(workspace_offset,  MinWorkspaceAlignment);
+    workspace_offset = round_nearest(workspace_offset, MinTensorMapWorkspaceAlignment);
     if (status != Status::kSuccess) {
       return status;
     }

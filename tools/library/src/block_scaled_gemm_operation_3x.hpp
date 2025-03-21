@@ -72,7 +72,7 @@ public:
   using CollectiveEpilogue = typename Operator::CollectiveEpilogue;
   using ThreadEpilogueOp = typename CollectiveEpilogue::ThreadEpilogueOp;
 
-  using Sm100BlkScaledConfig =  typename CollectiveMainloop::Sm100BlkScaledConfig;
+  using Sm1xxBlkScaledConfig =  typename CollectiveMainloop::Sm1xxBlkScaledConfig;
     
   static constexpr bool epilogue_scalefactor_generation = not cute::is_same_v<typename ThreadEpilogueOp::ElementBlockScaleFactor, void>;
   static constexpr int32_t SFD_VectorSize = epilogue_scalefactor_generation ? ThreadEpilogueOp::SFVecSize : SFVecSize;
@@ -315,8 +315,8 @@ protected:
         arguments->ldc, arguments->batch_stride_C);
     operator_args.epilogue.dD = operator_args.epilogue.dC;
 
-    operator_args.mainloop.layout_SFA = Sm100BlkScaledConfig::tile_atom_to_shape_SFA(operator_args.problem_shape);
-    operator_args.mainloop.layout_SFB = Sm100BlkScaledConfig::tile_atom_to_shape_SFB(operator_args.problem_shape);
+    operator_args.mainloop.layout_SFA = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFA(operator_args.problem_shape);
+    operator_args.mainloop.layout_SFB = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFB(operator_args.problem_shape);
 
     /* Query device SM count to pass onto the kernel as an argument, where needed */
     operator_args.hw_info.sm_count = arguments->sm_count;

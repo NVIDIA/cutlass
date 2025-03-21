@@ -212,12 +212,14 @@ struct Options {
   float alpha, beta;
   int iterations;
   int m, n, k;
+  int swizzle = 0;
 
   Options():
     help(false),
     m(1024), n(1024), k(1024),
     alpha(1.f), beta(0.f),
-    iterations(10)
+    iterations(10),
+    swizzle(0)
   { }
 
   // Parses the command line
@@ -235,6 +237,7 @@ struct Options {
     cmd.get_cmd_line_argument("alpha", alpha, 1.f);
     cmd.get_cmd_line_argument("beta", beta, 0.f);
     cmd.get_cmd_line_argument("iterations", iterations);
+    cmd.get_cmd_line_argument("swizzle", swizzle);
   }
 
   /// Prints the usage statement.
@@ -248,7 +251,8 @@ struct Options {
       << "  --n=<int>                   Sets the N extent of the GEMM\n"
       << "  --k=<int>                   Sets the K extent of the GEMM\n"
       << "  --alpha=<f32>               Epilogue scalar alpha\n"
-      << "  --beta=<f32>                Epilogue scalar beta\n\n"
+      << "  --beta=<f32>                Epilogue scalar beta\n"
+      << "  --swizzle=<int>             Cluster rasterization swizzle\n"
       << "  --iterations=<int>          Number of profiling iterations to perform.\n\n";
 
     out << "\n\nExamples:\n\n"
@@ -334,7 +338,7 @@ bool initialize_block(
 void initialize(const Options &options) {
   using namespace cute;
   // For SFA and SFB tensors layouts
-  using Sm100BlkScaledConfig =  typename Gemm::GemmKernel::CollectiveMainloop::Sm100BlkScaledConfig;
+  using Sm1xxBlkScaledConfig =  typename Gemm::GemmKernel::CollectiveMainloop::Sm1xxBlkScaledConfig;
 
   stride_A = cutlass::make_cute_packed_stride(StrideA{}, {options.m, options.k, 1});
   stride_B = cutlass::make_cute_packed_stride(StrideB{}, {options.n, options.k, 1});
@@ -345,8 +349,8 @@ void initialize(const Options &options) {
   layout_B = make_layout(make_shape(options.n, options.k, 1), stride_B);
   layout_C = make_layout(make_shape(options.m, options.n, 1), stride_C);
   layout_D = make_layout(make_shape(options.m, options.n, 1), stride_D);
-  layout_SFA = Sm100BlkScaledConfig::tile_atom_to_shape_SFA(cute::make_shape(options.m, options.n, options.k, 1));
-  layout_SFB = Sm100BlkScaledConfig::tile_atom_to_shape_SFB(cute::make_shape(options.m, options.n, options.k, 1));
+  layout_SFA = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFA(cute::make_shape(options.m, options.n, options.k, 1));
+  layout_SFB = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFB(cute::make_shape(options.m, options.n, options.k, 1));
 
   block_A.reset(cutlass::make_Coord(size(layout_A)));
   block_B.reset(cutlass::make_Coord(size(layout_B)));
@@ -388,6 +392,7 @@ typename Gemm::Arguments args_from_options(const Options &options)
     }
   };
 
+  arguments.scheduler.max_swizzle_size = options.swizzle;
   return arguments;
 }
 

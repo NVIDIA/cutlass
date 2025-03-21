@@ -117,7 +117,7 @@ struct CollectiveMma<
                                         Layout<Shape<_1,_1,_1>>,
                                         Tile<Underscore,Underscore,Underscore>>;
 
-  static constexpr bool IsDynamicCluster = not cute::is_static_v<ClusterShape>; 
+  static constexpr bool IsDynamicCluster = not cute::is_static_v<ClusterShape>;
   static constexpr int SFVecSize = TiledMma::SFVecSize;
   static constexpr bool IsOverlappingAccum = DispatchPolicy::IsOverlappingAccum;
 
@@ -125,13 +125,15 @@ struct CollectiveMma<
                        "Static cluster shape used: TileShape should be evenly divided by TiledMma");
 
   using CtaShape_MNK = decltype(shape_div(TileShape{}, AtomThrShapeMNK{}));
-  static_assert(shape<1>(CtaShape_MNK{}) == 192 or shape<1>(CtaShape_MNK{}) == 128 or shape<1>(CtaShape_MNK{}) == 256,
-      "Cta N should be one of 128/192/256");
+  static_assert(shape<1>(CtaShape_MNK{}) == 192 or shape<1>(CtaShape_MNK{}) == 64 or 
+      shape<1>(CtaShape_MNK{}) == 128 or shape<1>(CtaShape_MNK{}) == 256,
+      "Cta N should be one of 64/128/192/256");
 
   using ClusterTileShape = decltype(make_shape(get<0>(TileShape{})*get<0>(ClusterShape{}),get<1>(TileShape{})*get<1>(ClusterShape{}),get<2>(TileShape{})*get<2>(ClusterShape{})));
-  using Sm100BlkScaledConfig = cutlass::detail::Sm100BlockScaledConfig<SFVecSize>;
-  using Blk_MN = typename Sm100BlkScaledConfig::Blk_MN;
+  using Sm1xxBlkScaledConfig = cutlass::detail::Sm1xxBlockScaledConfig<SFVecSize>;
+  using Blk_MN = typename Sm1xxBlkScaledConfig::Blk_MN;
   static constexpr int IsCtaN192 = shape<1>(CtaShape_MNK{}) == 192;
+  static constexpr int IsCtaN64 = shape<1>(CtaShape_MNK{}) == 64;
   static int constexpr CTA_N_SF = cutlass::ceil_div(size<1>(CtaShape_MNK{}), Blk_MN{}) * Blk_MN{};
   // Tile shape used for partitioning Scale Factor B.
   // The M-dim does not affect the SFB, so just set it as the original TileShape;
@@ -162,7 +164,6 @@ struct CollectiveMma<
   using StrideB  = remove_cvref_t<decltype(get<0>(StridePairB{}))>;
 
   static constexpr bool IsRuntimeDataTypeA = cutlass::gemm::collective::detail::is_sm10x_runtime_f8f6f4<ElementA>();
-
   static constexpr bool IsRuntimeDataTypeB = cutlass::gemm::collective::detail::is_sm10x_runtime_f8f6f4<ElementB>();
 
   static_assert((IsRuntimeDataTypeA && IsRuntimeDataTypeB) ||
@@ -606,8 +607,8 @@ struct CollectiveMma<
     implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_B>(cute::make_shape(N,K,L), StrideB{});
 
     // Check for SFA SFB layout requirement
-    const auto layout_sfa_ref = Sm100BlkScaledConfig::tile_atom_to_shape_SFA(problem_shape_MNKL);
-    const auto layout_sfb_ref = Sm100BlkScaledConfig::tile_atom_to_shape_SFB(problem_shape_MNKL);
+    const auto layout_sfa_ref = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFA(problem_shape_MNKL);
+    const auto layout_sfb_ref = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFB(problem_shape_MNKL);
     implementable = implementable && (layout_sfa_ref == args.layout_SFA);
     if (!implementable) {
       CUTLASS_TRACE_HOST("  CAN IMPLEMENT: layout_SFA mismatch, layout_SFA needs to be K-major\n");
@@ -725,6 +726,14 @@ struct CollectiveMma<
                                       make_stride(make_stride(   x,    x), x*3)), stride<1>(mSFB_tmp), stride<2>(mSFB_tmp));
         return make_tensor(mSFB_tmp.data(), make_layout(new_shape, new_stride));
       }
+      else if constexpr (IsCtaN64) {
+        Tensor mSFB_tmp = observed_tma_load_sfb_->get_tma_tensor(shape(layout_SFB_));
+        auto new_shape = make_shape(make_shape(shape<0,0>(mSFB_tmp), 
+                                    make_shape(_2{} , shape<0,1>(mSFB_tmp))), shape<1>(mSFB_tmp), shape<2>(mSFB_tmp));
+        auto new_stride = make_stride(make_stride(stride<0,0>(mSFB_tmp), 
+                                      make_stride(_0{}, stride<0,1>(mSFB_tmp))), stride<1>(mSFB_tmp), stride<2>(mSFB_tmp));
+        return make_tensor(mSFB_tmp.data(), make_layout(new_shape, new_stride));
+      }
       else {
         return observed_tma_load_sfb_->get_tma_tensor(shape(layout_SFB_));
       }
@@ -732,7 +741,6 @@ struct CollectiveMma<
 
     Tensor gSFA_mkl = local_tile(mSFA_mkl, TileShape{},    make_coord(_,_,_), Step<_1, X,_1>{});  // (TILE_M,TILE_K,m,k,l)
     Tensor gSFB_nkl = local_tile(mSFB_nkl, TileShape_SF{}, make_coord(_,_,_), Step< X,_1,_1>{});  // (TILE_N,TILE_K,n,k,l)
-
 
     // Partition for this CTA
     ThrMMA cta_mma = TiledMma{}.get_slice(blockIdx.x % size(typename TiledMma::AtomThrID{}));
@@ -963,9 +971,15 @@ struct CollectiveMma<
       if constexpr (IsCtaN192) {
         // If this is an ODD tile, shift the TMEM start address for N=192 case by two words (ignores first 64 columns of SFB)
         auto tCtSFB_tmp = tCtSFB;
-        if (get<1>(cta_tile_coord) % 2 == 1) {
+        if (size<1>(cta_tile_coord) % 2 == 1) {
           tCtSFB_tmp.data() = tCtSFB_tmp.data().get() + 2;
         }
+        return tCtSFB_tmp;
+      }
+      else if constexpr (IsCtaN64) {
+        // Move in increments of 64 columns of SFB
+        auto tCtSFB_tmp = tCtSFB;
+        tCtSFB_tmp.data() = tCtSFB_tmp.data().get() + (size<1>(cta_tile_coord) % 2) * 2;
         return tCtSFB_tmp;
       }
       else {
@@ -1004,11 +1018,10 @@ struct CollectiveMma<
         copy(tiled_copy_s2t_SFB, thr_tCsSFB_s2t(_,_,_,_,read_stage), thr_tCtSFB_s2t);
       }
 
-      if constexpr (IsOverlappingAccum) {
-        if (is_first_iter) {
-          accumulator_pipeline.producer_acquire(accumulator_pipe_producer_state);
-          is_first_iter = false;
-        }
+      // Wait for tmem accumulator buffer to become empty with a flipped phase
+      if (is_first_iter) {
+        accumulator_pipeline.producer_acquire(accumulator_pipe_producer_state);
+        is_first_iter = false;
       }
 
       // Unroll the K mode manually so we can set scale C to 1
@@ -1023,14 +1036,14 @@ struct CollectiveMma<
             accumulators);
         tiled_mma.accumulate_ = UMMA::ScaleOut::One;
       }
-
       mainloop_pipeline.consumer_release(curr_mainloop_pipe_consumer_state);
     }
 
     return mainloop_pipe_consumer_state;
   }
 
-private:
+protected:
+
   typename Params::TMA_A const* observed_tma_load_a_{nullptr};
   typename Params::TMA_B const* observed_tma_load_b_{nullptr};
   typename Params::TMA_SFA const* observed_tma_load_sfa_{nullptr};

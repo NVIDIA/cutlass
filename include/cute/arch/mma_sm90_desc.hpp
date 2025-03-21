@@ -31,14 +31,9 @@
 
 #pragma once
 
-#include <cute/config.hpp>
+#include <cute/arch/config.hpp>
 
 #include <cute/arch/mma.hpp>
-
-// Config
-#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900) && defined(__CUDA_ARCH_FEAT_SM90_ALL))
-#    define CUTE_ARCH_MMA_SM90A_ENABLED
-#endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 

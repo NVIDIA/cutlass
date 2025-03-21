@@ -242,6 +242,7 @@ using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTil
 struct Options {
 
   bool help = false;
+  bool use_pdl = false;
 
   float alpha = FLT_MAX;
   float beta  = FLT_MAX;
@@ -263,6 +264,9 @@ struct Options {
     if (cmd.check_cmd_line_flag("help")) {
       help = true;
       return;
+    }
+    if (cmd.check_cmd_line_flag("use_pdl")) {
+      use_pdl = true;
     }
 
     cmd.get_cmd_line_argument("m", m);
@@ -387,7 +391,8 @@ struct Options {
       << "  --raster=<char>                                              CTA Rasterization direction (N for along N, M for along M)\n\n"
       << "  --iterations=<int>                                           Number of profiling iterations to perform\n\n"
       << "  --benchmark=<str>                                            Executes a benchmark problem size\n"
-      << "  --max_sm_count=<int>                                         Run kernels using only these number of SMs\n";
+      << "  --max_sm_count=<int>                                         Run kernels using only these number of SMs\n"
+      << "  --use_pdl                                                    Launch kernel with PDL (Programmatic Dependent Launch) enabled\n";
                                                                                              
     out
       << "\n\nExamples:\n\n"
@@ -711,7 +716,7 @@ int run(Options &options, bool host_problem_shapes_available = true)
   CUTLASS_CHECK(gemm.initialize(arguments, workspace.get()));
 
   // Correctness / Warmup iteration
-  CUTLASS_CHECK(gemm.run());
+  CUTLASS_CHECK(gemm.run(/* stream = */ nullptr, /* cuda_adapter = */ nullptr, /* launch_with_pdl = */ options.use_pdl));
 
   // Check if output from CUTLASS kernel and reference kernel are equal or not
   Result result;
@@ -730,7 +735,7 @@ int run(Options &options, bool host_problem_shapes_available = true)
     timer.start();
     for (int iter = 0; iter < options.iterations; ++iter) {
       CUTLASS_CHECK(gemm.initialize(arguments, workspace.get()));
-      CUTLASS_CHECK(gemm.run());
+      CUTLASS_CHECK(gemm.run(/* stream = */ nullptr, /* cuda_adapter = */ nullptr, /* launch_with_pdl = */ options.use_pdl));
     }
     timer.stop();
 
