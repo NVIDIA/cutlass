@@ -411,7 +411,7 @@ private:
           CUTE_UNROLL
           for (int elt_log_idx = 0; elt_log_idx < OneChunkSizeA{}; ++elt_log_idx) {
             ElementAMmaRawUnit elem_A = tAsA[elt_log_idx];
-            
+
             // Handle negative 0
             ElementAMmaRawUnit masked_elem_A = elem_A;
             if constexpr (has_negative_zero_v<ElementA>) {
@@ -506,7 +506,9 @@ private:
 
     constexpr bool IsRowMajor = cute::is_same_v<LayoutTag, cutlass::layout::RowMajor>;
     using Element = typename TensorSrc::element_type;
+
     constexpr bool IsQmmaF6 = cute::sizeof_bits_v<Element> == 6;
+
 
     CUTE_STATIC_ASSERT(cute::is_static_v<decltype(shape(dSrc))>, "shape(dSrc) needs to be static");
     CUTE_STATIC_ASSERT(cute::is_static_v<decltype(shape(dDst))>, "shape(dDst) needs to be static");
@@ -555,6 +557,7 @@ private:
             for (int iter_col_thr = 0; iter_col_thr < ValueShapeCols; ++iter_col_thr) {
               const int row_i = (iter_row_blk * ThreadShapeRows + threadIdx_X_row) * ValueShapeRows + iter_row_thr;
               const int col_i = (col_chunk_i * ThreadShapeCols + threadIdx_X_col) * ValueShapeCols + iter_col_thr;
+
               if constexpr ( (not pred) and (not IsQmmaF6) ) {
                 dDst(row_i, col_i) = dSrc(row_i, col_i);
               }

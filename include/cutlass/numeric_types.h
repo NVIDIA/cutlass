@@ -86,7 +86,8 @@ template <> struct has_negative_zero<float> : CUTE_STL_NAMESPACE::true_type{};
 template <> struct has_negative_zero<double> : CUTE_STL_NAMESPACE::true_type{};
 template <> struct has_negative_zero<tfloat32_t> : CUTE_STL_NAMESPACE::true_type{};
 
-// Helper variable template 
+
+// Helper variable template
 template <typename T>
 inline constexpr bool has_negative_zero_v = has_negative_zero<T>::value;
 
@@ -108,6 +109,3 @@ struct get_unpacked_element_type {
 }  // namespace cutlass
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-
