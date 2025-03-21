@@ -45,7 +45,7 @@
     CTA rasterization direction and swizzle pattern impact cross-CTA locality of accesses. By tuning we can
     improve performance.
     Examples:
-      $ ./examples/64_hopper_fp8_warp_specialized_gemm_with_groupwise_scaling/64_hopper_fp8_warp_specialized_gemm_with_groupwise_scaling  \
+      $ ./examples/67_hopper_fp8_warp_specialized_gemm_with_blockwise_scaling/67_hopper_fp8_warp_specialized_gemm_with_groupwise_scaling  \
         --m=2816 --n=3072 --k=16384 \
         --save_aux=false --save_amax=false \
         --device_scale=false --raster=h --swizzle=2
@@ -119,22 +119,56 @@ using         ElementBias  = float;
 using ElementAccumulator  = float;                                          // Element type for internal accumulation
 using ElementBlockScale   = float;                                          // Element type for blockscaling during accumulation
 using ElementCompute      = float;                                          // Element type for epilogue computation
-using ArchTag             = cutlass::arch::Sm90;                            // Tag indicating the minimum SM that supports the intended feature
-using OperatorClass       = cutlass::arch::OpClassTensorOp;                 // Operator class tag
-using TileShape           = Shape<_128,_128,_128>;                           // Threadblock-level tile size
-using ClusterShape        = Shape<_1,_2,_1>;                                // Shape of the threadblocks in a cluster
 
-constexpr int ScaleMsPerTile = 2;
-constexpr int ScaleGranularityM = size<0>(TileShape{}) / ScaleMsPerTile;
+using TileShape_  = Shape<_128,_128,_128>;  // This one is just to make the compiler happy with verify()...
 
-using KernelSchedule      = cutlass::gemm::KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum<ScaleGranularityM>;
-using EpilogueSchedule    = cutlass::epilogue::TmaWarpSpecializedCooperative;
+// ScaleGranularity{M,N}: number of {rows in A}/{columns in B} that share the same scaling factor
+// Given TileShape = Shape<_128,_128,_128>:
+//   ScaleGranularityM == 128 and ScaleGranularityN == 128 --> 2Dx2D (the shape of the scaling factor)
+//   ScaleGranularityM == 1   and ScaleGranularityN == 128 --> 1Dx2D scaling
+//   ScaleGranularityM == 128 and ScaleGranularityN == 1   --> 2Dx1D scaling
+//   ScaleGranularityM == 1   and ScaleGranularityN == 1   --> 1Dx1D scaling
+template <int ScaleGranularityM_, int ScaleGranularityN_>
+struct GroupScaleConfig {
+  using ArchTag       = cutlass::arch::Sm90;                          // Tag indicating the minimum SM that supports the intended feature
+  using OperatorClass = cutlass::arch::OpClassTensorOp;               // Operator class tag
+  using TileShape     = Shape<_128,_128,_128>;                        // Threadblock-level tile size
+  using ClusterShape  = Shape<_1,_2,_1>;                              // Shape of the threadblocks in a cluster
 
-using EpilogueTileType    = cutlass::epilogue::collective::EpilogueTileAuto;
-using FusionOperation     = cutlass::epilogue::fusion::ScaledLinCombPerRowBiasEltActAmaxAux<
+  static constexpr int ScaleGranularityM = ScaleGranularityM_;
+  static constexpr int ScaleGranularityN = ScaleGranularityN_;
+  static constexpr int ScaleMsPerTile = size<0>(TileShape{}) / ScaleGranularityM;
+  static constexpr int ScaleNsPerTile = size<1>(TileShape{}) / ScaleGranularityN;
+
+  static_assert(size<0>(TileShape{}) == ScaleGranularityM * ScaleMsPerTile,
+              "FP8 scaling granularity must evenly divide tile shape along M.");
+  static_assert(size<1>(TileShape{}) == ScaleGranularityN * ScaleNsPerTile,
+              "FP8 scaling granularity must evenly divide tile shape along N.");
+
+  using KernelSchedule    = cutlass::gemm::KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum<ScaleGranularityM_, ScaleGranularityN_>;
+  using EpilogueSchedule  = cutlass::epilogue::TmaWarpSpecializedCooperative;
+  using EpilogueTileType  = cutlass::epilogue::collective::EpilogueTileAuto;
+  using FusionOperation   = cutlass::epilogue::fusion::ScaledLinCombPerRowBiasEltActAmaxAux<
     LayoutAux, cutlass::epilogue::thread::ReLU, ElementD, ElementCompute, ElementAux, ElementAmax, ElementBias, ElementC>;
+};
 
-using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+using GroupScale1D1DConfig = GroupScaleConfig<                    1,                     1>;
+using GroupScale1D2DConfig = GroupScaleConfig<                    1, size<1>(TileShape_{})>;
+using GroupScale2D1DConfig = GroupScaleConfig<size<0>(TileShape_{}),                     1>;
+using GroupScale2D2DConfig = GroupScaleConfig<size<0>(TileShape_{}), size<1>(TileShape_{})>;
+
+template <typename ScheduleConfig>
+struct GroupScaleGemm {
+  using ArchTag           = typename ScheduleConfig::ArchTag;
+  using OperatorClass     = typename ScheduleConfig::OperatorClass;
+  using TileShape         = typename ScheduleConfig::TileShape;
+  using ClusterShape      = typename ScheduleConfig::ClusterShape;
+  using KernelSchedule    = typename ScheduleConfig::KernelSchedule;
+  using EpilogueSchedule  = typename ScheduleConfig::EpilogueSchedule;
+  using EpilogueTileType  = typename ScheduleConfig::EpilogueTileType;
+  using FusionOperation   = typename ScheduleConfig::FusionOperation;
+
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
     ArchTag, OperatorClass,
     TileShape, ClusterShape,
     EpilogueTileType,
@@ -145,7 +179,7 @@ using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBui
     FusionOperation
   >::CollectiveOp;
 
-using CollectiveMainloopWithBlockWiseScaling = typename cutlass::gemm::collective::CollectiveBuilder<
+  using CollectiveMainloopWithGroupWiseScaling = typename cutlass::gemm::collective::CollectiveBuilder<
     ArchTag, OperatorClass,
     ElementA, LayoutA, AlignmentA,
     ElementB, LayoutB, AlignmentB,
@@ -157,24 +191,38 @@ using CollectiveMainloopWithBlockWiseScaling = typename cutlass::gemm::collectiv
     KernelSchedule
   >::CollectiveOp;
 
-using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
-    Shape<int,int,int,int>, // Indicates ProblemShape
-    CollectiveMainloopWithBlockWiseScaling,
-    CollectiveEpilogue
->;
+  using GemmKernelDefault = cutlass::gemm::kernel::GemmUniversal<
+      Shape<int,int,int,int>,
+      CollectiveMainloopWithGroupWiseScaling,
+      CollectiveEpilogue
+  >;
 
-using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  using GemmKernelStreamK = cutlass::gemm::kernel::GemmUniversal<
+      Shape<int,int,int,int>,
+      CollectiveMainloopWithGroupWiseScaling,
+      CollectiveEpilogue,
+      cutlass::gemm::StreamKScheduler
+  >;
+
+  using GemmDefault = cutlass::gemm::device::GemmUniversalAdapter<GemmKernelDefault>;
+  using GemmStreamK = cutlass::gemm::device::GemmUniversalAdapter<GemmKernelStreamK>;
+};
+
+using GroupScale1D1DGemm = GroupScaleGemm<GroupScale1D1DConfig>;
+using GroupScale1D2DGemm = GroupScaleGemm<GroupScale1D2DConfig>;
+using GroupScale2D1DGemm = GroupScaleGemm<GroupScale2D1DConfig>;
+using GroupScale2D2DGemm = GroupScaleGemm<GroupScale2D2DConfig>;
 
 // Extract information from Gemm kernel.
-using EpilogueOutputOp  = typename Gemm::EpilogueOutputOp;
+using EpilogueOutputOp  = typename GroupScale1D1DGemm::GemmDefault::EpilogueOutputOp;
 using ElementScalar     = typename EpilogueOutputOp::ElementScalar;
 using ElementAmax       = typename EpilogueOutputOp::ElementAmax;
 using ActivationFunctor = typename EpilogueOutputOp::ActivationFn;
 
-using StrideA = typename Gemm::GemmKernel::StrideA;
-using StrideB = typename Gemm::GemmKernel::StrideB;
-using StrideC = typename Gemm::GemmKernel::StrideC;
-using StrideD = typename Gemm::GemmKernel::StrideD;
+using StrideA = typename GroupScale1D1DGemm::GemmDefault::GemmKernel::StrideA;
+using StrideB = typename GroupScale1D1DGemm::GemmDefault::GemmKernel::StrideB;
+using StrideC = typename GroupScale1D1DGemm::GemmDefault::GemmKernel::StrideC;
+using StrideD = typename GroupScale1D1DGemm::GemmDefault::GemmKernel::StrideD;
 using StrideAux = StrideD;
 
 constexpr bool IsDFp8 =
@@ -184,9 +232,6 @@ constexpr bool IsDFp8 =
 constexpr bool IsAuxFp8 =
     cute::is_same_v<ElementAux, cutlass::float_e4m3_t> or
     cute::is_same_v<ElementAux, cutlass::float_e5m2_t>;
-
-static_assert(size<0>(TileShape{}) == ScaleGranularityM * ScaleMsPerTile,
-             "FP8 scaling granularity must evenly divide tile shape along M.");
 
 static_assert(cute::is_same_v<ElementAccumulator, ElementBlockScale>,
              "ElementAccumulator and ElementBlockScale should be same datatype");
@@ -347,13 +392,21 @@ struct Result
   }
 
 /// Initialize operands to be used in the GEMM and reference GEMM
+template <typename GroupScaleConfig>
 void initialize(const Options<RasterOrderOptions> &options) {
+
+  using TileShape = typename GroupScaleConfig::TileShape;
+  const int ScaleGranularityM = GroupScaleConfig::ScaleGranularityM;
+  const int ScaleGranularityN = GroupScaleConfig::ScaleGranularityN;
+
+  assert(options.m % ScaleGranularityM == 0);
+  assert(options.n % ScaleGranularityN == 0);
 
   // Find Group Scaling tensor shapes based on `ScaleGranularityM`, problem shape, and TileShape
   auto gemm_problem_shape = cute::make_shape(options.m, options.n, options.k);
   auto blockscale_shape = shape(get<1>(cute::zipped_divide(cute::make_layout(gemm_problem_shape), TileShape{})));
-  auto groupscale_m = cute::get<0>(blockscale_shape) * ScaleMsPerTile; // We need to pad along M in scale tensor of A to prevent illegal memory access.
-  auto blockscale_n = cute::get<1>(blockscale_shape);
+  auto groupscale_m = cute::get<0>(gemm_problem_shape) / ScaleGranularityM;
+  auto groupscale_n = cute::get<1>(gemm_problem_shape) / ScaleGranularityN;
   auto blockscale_k = cute::get<2>(blockscale_shape);
 
   stride_A = cutlass::make_cute_packed_stride(StrideA{}, cute::make_shape(options.m, options.k, options.l));
@@ -362,18 +415,16 @@ void initialize(const Options<RasterOrderOptions> &options) {
   stride_D = cutlass::make_cute_packed_stride(StrideD{}, cute::make_shape(options.m, options.n, options.l));
   stride_aux = stride_D;
 
-
-
   auto a_coord = cutlass::make_Coord(options.m * options.l, options.k);
   auto c_coord = cutlass::make_Coord(options.m * options.l, options.n);
   auto b_coord = cutlass::make_Coord(options.k, options.n * options.l);
   auto groupscale_a_coord = cutlass::make_Coord(groupscale_m * options.l, blockscale_k);
-  auto blockscale_b_coord = cutlass::make_Coord(blockscale_k, blockscale_n * options.l);
+  auto groupscale_b_coord = cutlass::make_Coord(groupscale_n * options.l, blockscale_k);
 
   tensor_A.resize(a_coord);
-  blockscale_tensor_A.resize(groupscale_a_coord);
   tensor_B.resize(b_coord);
-  blockscale_tensor_B.resize(blockscale_b_coord);
+  blockscale_tensor_A.resize(groupscale_a_coord);
+  blockscale_tensor_B.resize(groupscale_b_coord);
   tensor_C.resize(c_coord);
   tensor_D.resize(c_coord);
   tensor_ref_D.resize(c_coord);
@@ -393,7 +444,7 @@ void initialize(const Options<RasterOrderOptions> &options) {
 #if 0 // Dump blockscaled tensors
   std::cout << "blockscale_tensor_A: " << groupscale_a_coord << std::endl;
   std::cout << blockscale_tensor_A.host_view() << "\n";
-  std::cout << "blockscale_tensor_B: " << blockscale_b_coord << std::endl;
+  std::cout << "blockscale_tensor_B: " << groupscale_b_coord << std::endl;
   std::cout << blockscale_tensor_B.host_view() << "\n";
 #endif
 
@@ -405,6 +456,10 @@ void initialize(const Options<RasterOrderOptions> &options) {
   blockscale_tensor_A.sync_device();
   blockscale_tensor_B.sync_device();
 
+  // Note : This value has to match the KernelSchedule::ScalePromotionInterval
+  // Else kernel will fail can_implement() check
+  // Deprecation Notice : We plan to remove this params member in an upcoming release
+  // Users can safely delete this line from their code, since the default is already 4
   mma_promotion_interval = 4;
 
   if (options.save_aux) {
@@ -441,21 +496,26 @@ void initialize(const Options<RasterOrderOptions> &options) {
 
   if (IsDFp8 && options.save_amax) {
     abs_max_D.resize(cutlass::make_Coord(1));
+    initialize_tensor(abs_max_D.host_view(), cutlass::Distribution::AllZeros, 0);
     abs_max_D.sync_device();
     reference_abs_max_D.resize(cutlass::make_Coord(1));
+    initialize_tensor(reference_abs_max_D.host_view(), cutlass::Distribution::AllZeros, 0);
   }
 
   if (IsAuxFp8 && options.save_aux && options.save_amax) {
     abs_max_aux.resize(cutlass::make_Coord(1));
+    initialize_tensor(abs_max_aux.host_view(), cutlass::Distribution::AllZeros, 0);
     abs_max_aux.sync_device();
     reference_abs_max_aux.resize(cutlass::make_Coord(1));
+    initialize_tensor(reference_abs_max_aux.host_view(), cutlass::Distribution::AllZeros, 0);
   }
 }
 
 /// Populates a Gemm::Arguments structure from the given commandline options
-typename Gemm::Arguments args_from_options(const Options<RasterOrderOptions> &options)
+template<typename GemmArguments>
+GemmArguments args_from_options(const Options<RasterOrderOptions> &options)
 {
-  typename Gemm::Arguments arguments{
+  GemmArguments arguments{
     cutlass::gemm::GemmUniversalMode::kGemm,
     {options.m, options.n, options.k, options.l},
     {tensor_A.device_data(),
@@ -513,17 +573,22 @@ typename Gemm::Arguments args_from_options(const Options<RasterOrderOptions> &op
   return arguments;
 }
 
-bool verify(const Options<RasterOrderOptions> &options) {
+/// Don't know why the compiler does not like verify() being templated...
+bool verify(const Options<RasterOrderOptions> &options, const int ScaleMsPerTile, const int ScaleNsPerTile) {
   //
   // Compute reference output
   //
+  const int ScaleGranularityM = get<0>(TileShape_{}) / ScaleMsPerTile;
+  const int ScaleGranularityN = get<1>(TileShape_{}) / ScaleNsPerTile;
 
   // Group scaling tensors shapes based `ScaleGranularityM`, CTA Block (TileShape) and GEMM Problem shape
   auto gemm_problem_shape = cute::make_shape(options.m, options.n, options.k);
-  auto blockscale_shape = shape(get<1>(cute::zipped_divide(cute::make_layout(gemm_problem_shape), TileShape{})));
+  auto blockscale_shape = shape(get<1>(cute::zipped_divide(cute::make_layout(gemm_problem_shape), TileShape_{})));
   auto blockscale_m = cute::get<0>(blockscale_shape);
   auto blockscale_n = cute::get<1>(blockscale_shape);
   auto blockscale_k = cute::get<2>(blockscale_shape);
+  auto groupscale_m = get<0>(gemm_problem_shape) / ScaleGranularityM;
+  auto groupscale_n = get<1>(gemm_problem_shape) / ScaleGranularityN;
 
   // Create instantiation for device reference gemm kernel
   auto A = cute::make_tensor(tensor_A.host_data(),
@@ -559,14 +624,14 @@ bool verify(const Options<RasterOrderOptions> &options) {
 
   auto blockscale_A = cute::make_tensor(blockscale_tensor_A.host_data(),
                                         cute::make_layout(
-                                          cute::make_shape(blockscale_m, ScaleMsPerTile, blockscale_k, options.l),
-                                          cute::make_stride(blockscale_k * ScaleMsPerTile, 1, ScaleMsPerTile, blockscale_m * blockscale_k * ScaleMsPerTile)
+                                          cute::make_shape(groupscale_m, blockscale_k, options.l),
+                                          cute::make_stride(1, groupscale_m, groupscale_m * blockscale_k)
                                         )
                                       );
   auto blockscale_B = cute::make_tensor(blockscale_tensor_B.host_data(),
                                         cute::make_layout(
-                                          cute::make_shape(blockscale_n, blockscale_k, options.l),
-                                          cute::make_stride(blockscale_k, 1, blockscale_n * blockscale_k)
+                                          cute::make_shape(groupscale_n, blockscale_k, options.l),
+                                          cute::make_stride(1, groupscale_n, groupscale_n * blockscale_k)
                                         )
                                       );
 
@@ -575,7 +640,7 @@ bool verify(const Options<RasterOrderOptions> &options) {
   cutlass::reference::host::GettMainloopParams<ElementAccumulator,
                                                decltype(A), decltype(B),
                                                decltype(blockscale_A), decltype(blockscale_B),
-                                               TileShape> mainloop_params{
+                                               TileShape_> mainloop_params{
                                                A, B,                         // Operand Tensors
                                                blockscale_A, blockscale_B    // Groupwise scaling Tensors
                                               };
@@ -614,14 +679,14 @@ bool verify(const Options<RasterOrderOptions> &options) {
   tensor_D.sync_host();
   bool passed = cutlass::reference::host::TensorEquals(tensor_ref_D.host_view(), tensor_D.host_view());
 
-  if (false) {
-    std::cout << "tensor_ref_D.host_view() {" << std::endl
-              << tensor_ref_D.host_view() << std::endl
-              << "}"  << std::endl;
-    std::cout << "tensor_D.host_view() {" << std::endl
-              << tensor_D.host_view() << std::endl
-              << "}"  << std::endl;
-  }
+#if 0
+  std::cout << "tensor_ref_D.host_view() {" << std::endl
+            << tensor_ref_D.host_view() << std::endl
+            << "}"  << std::endl;
+  std::cout << "tensor_D.host_view() {" << std::endl
+            << tensor_D.host_view() << std::endl
+            << "}"  << std::endl;
+#endif
 
   if (IsDFp8 && options.save_amax) {
     abs_max_D.sync_host();
@@ -641,16 +706,47 @@ bool verify(const Options<RasterOrderOptions> &options) {
 }
 
 /// Execute a given example GEMM computation
-template <typename Gemm>
+template <typename GroupScaleConfig, typename Gemm>
 int run(Options<RasterOrderOptions> &options)
 {
-  initialize(options);
+  using TileShape = typename GroupScaleConfig::TileShape;
+  const int ScaleGranularityM = GroupScaleConfig::ScaleGranularityM;
+  const int ScaleGranularityN = GroupScaleConfig::ScaleGranularityN;
+  const int ScaleMsPerTile    = GroupScaleConfig::ScaleMsPerTile;
+  const int ScaleNsPerTile    = GroupScaleConfig::ScaleNsPerTile;
+
+  bool skip = false;
+
+  if (options.m % ScaleGranularityM != 0) {
+    std::cout << "Skippig (m size: " << options.m << " less then ScaleGranularityM: " << ScaleGranularityM << "):" << std::endl;
+    skip = true;
+  }
+
+  if (options.n % ScaleGranularityN != 0) {
+    std::cout << "Skippig (n size: " << options.m << " less then ScaleGranularityN: " << ScaleGranularityM << "):" << std::endl;
+    skip = true;
+  }
+
+  if (options.k % size<2>(TileShape{}) != 0) {
+    std::cout << "Skippig (k size: " << options.k << " less then TileShape[2]: " << size<2>(TileShape{}) << "):" << std::endl;
+    skip = true;
+  }
+
+  if (!skip) std::cout << "Running: " << std::endl;
+  std::cout << "  Problem Size: " << options.m << 'x' << options.n << 'x' << options.k << 'x' << options.l << std::endl;
+  std::cout << "  Tile shape (M, N, K): " << size<0>(TileShape{}) << ", " << size<1>(TileShape{}) << ", " << size<2>(TileShape{}) << std::endl;
+  std::cout << "  ScaleGranularityM: " << ScaleGranularityM << " (ScaleMsPerTile: " << ScaleMsPerTile << ")" << std::endl;
+  std::cout << "  ScaleGranularityN: " << ScaleGranularityN << " (ScaleNsPerTile: " << ScaleNsPerTile << ")" << std::endl;
+
+  if (skip) return -1;
+
+  initialize<GroupScaleConfig>(options);
 
   // Instantiate CUTLASS kernel depending on templates
   Gemm gemm;
 
   // Create a structure of gemm kernel arguments suitable for invoking an instance of Gemm
-  auto arguments = args_from_options(options);
+  auto arguments = args_from_options<typename Gemm::Arguments>(options);
 
   // Using the arguments, query for extra workspace required for matrix multiplication computation
   size_t workspace_size = Gemm::get_workspace_size(arguments);
@@ -669,13 +765,15 @@ int run(Options<RasterOrderOptions> &options)
 
   // Check if output from CUTLASS kernel and reference kernel are equal or not
   Result result;
-  result.passed = verify(options);
+  if (options.verify) {
+    result.passed = verify(options, ScaleMsPerTile, ScaleNsPerTile);
 
-  std::cout << "  Disposition: " << (result.passed ? "Passed" : "Failed") << std::endl;
+    std::cout << "  Disposition: " << (result.passed ? "Passed" : "Failed") << std::endl;
+  }
 
-  // if (!result.passed) {
-  //  exit(-1);
-  // }
+  if (!result.passed) {
+   exit(-1);
+  }
 
   // Run profiling loop
   if (options.iterations > 0)
@@ -683,6 +781,7 @@ int run(Options<RasterOrderOptions> &options)
     GpuTimer timer;
     timer.start();
     for (int iter = 0; iter < options.iterations; ++iter) {
+      CUTLASS_CHECK(gemm.initialize(arguments, workspace.get()));
       CUTLASS_CHECK(gemm.run());
     }
     timer.stop();
@@ -701,10 +800,10 @@ int run(Options<RasterOrderOptions> &options)
       raster = "Along M";
     }
 
-    std::cout << "  Problem Size: " << options.m << 'x' << options.n << 'x' << options.k << 'x' << options.l << std::endl;
     std::cout << "  Rasterization: " << raster << " with a maximum CTA swizzle of " << options.swizzle << std::endl;
     std::cout << "  Avg runtime: " << result.avg_runtime_ms << " ms" << std::endl;
     std::cout << "  GFLOPS: " << result.gflops << std::endl;
+    fflush(stdout);
   }
 
   return 0;
@@ -753,7 +852,27 @@ int main(int argc, char const **args) {
   //
 
 #if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
-  run<Gemm>(options);
+  std::cout << "Basic split-K GEMM kernel" << std::endl;
+  run<GroupScale1D1DConfig, GroupScale1D1DGemm::GemmDefault>(options);
+  std::cout << std::endl;
+  run<GroupScale1D2DConfig, GroupScale1D2DGemm::GemmDefault>(options);
+  std::cout << std::endl;
+  run<GroupScale2D1DConfig, GroupScale2D1DGemm::GemmDefault>(options);
+  std::cout << std::endl;
+  run<GroupScale2D2DConfig, GroupScale2D2DGemm::GemmDefault>(options);
+  std::cout << std::endl;
+
+  std::cout << std::endl;
+
+  std::cout << "StreamK GEMM kernel" << std::endl;
+  run<GroupScale1D1DConfig, GroupScale1D1DGemm::GemmStreamK>(options);
+  std::cout << std::endl;
+  run<GroupScale1D2DConfig, GroupScale1D2DGemm::GemmStreamK>(options);
+  std::cout << std::endl;
+  run<GroupScale2D1DConfig, GroupScale2D1DGemm::GemmStreamK>(options);
+  std::cout << std::endl;
+  run<GroupScale2D2DConfig, GroupScale2D2DGemm::GemmStreamK>(options);
+  std::cout << std::endl;
 #endif
 
   return 0;

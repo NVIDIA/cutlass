@@ -32,8 +32,8 @@ CUTLASS defines classes for the following numeric data types.
 * `type_erased_dynamic_float4_t`: Type agnostic 4 bits signed float allowing the user to provide a specific datatype as runtime argument.
 * `mx_float8_t<float_e5m2_t>` or `mx_float8_t<float_e4m3_t>` : Block scaled data type with fp8 element type and float_ue8m0_t scale factor and vector size of 32.
 * `mx_float6_t<float_e3m2_t>` or `mx_float6_t<float_e2m3_t>` : Block scaled data type with fp6 element type and float_ue8m0_t scale factor and vector size of 32.
-* `mx_float6_t<float_e2m1_t>` : Block scaled data type with signed e2m1 element type and float_ue8m0_t scale factor and vector size of 32.
-* `nv_float4_t<float_e2m1_t>` : Block scaled data type with signed e2m1 element type and float_ue8m0_t scale factor and vector size of 16.
+* `mx_float4_t<float_e2m1_t>` : Block scaled data type with signed e2m1 element type and float_ue8m0_t scale factor and vector size of 32.
+* `nv_float4_t<float_e2m1_t>` : Block scaled data type with signed e2m1 element type and float_ue4m3_t scale factor and vector size of 16.
 * `complex<T>`: defines complex-valued data type based on the supplied real-valued numeric type
 
 Numeric types in CUTLASS may be used in both host and device code and are intended to function

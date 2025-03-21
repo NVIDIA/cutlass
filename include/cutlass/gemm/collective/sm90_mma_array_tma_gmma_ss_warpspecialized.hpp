@@ -116,6 +116,9 @@ struct CollectiveMma<
 
   using PipelineParams = typename MainloopPipeline::Params;
   using CtaShape_MNK = decltype(shape_div(TileShape{}, ClusterShape{}));
+
+  static constexpr int NumProducerThreadEvents = 1;
+
   static_assert(rank(SmemLayoutAtomA{}) == 2, "SmemLayoutAtom must be rank 2 (M/N, K)");
   static_assert((size<0>(TileShape{}) % size<0>(SmemLayoutAtomA{})) == 0, "SmemLayoutAtom must evenly divide tile shape.");
   static_assert((size<2>(TileShape{}) % size<1>(SmemLayoutAtomA{})) == 0, "SmemLayoutAtom must evenly divide tile shape.");
@@ -749,6 +752,16 @@ struct CollectiveMma<
     cute::tma_descriptor_fence_acquire(get<1>(input_tensormaps));
   }
 
+  template <class InputTensors, class ProblemShape_MNKL>
+  CUTLASS_DEVICE
+  InputTensors
+  tensors_perform_update(
+      InputTensors const& input_tensors,
+      [[maybe_unused]] Params const& mainloop_params,
+      [[maybe_unused]] ProblemShape_MNKL problem_shape_mnkl,
+      [[maybe_unused]] int32_t next_batch) {
+    return input_tensors;
+  }
 
 };
 

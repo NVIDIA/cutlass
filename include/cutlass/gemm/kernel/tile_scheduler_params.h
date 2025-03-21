@@ -188,8 +188,8 @@ struct PersistentTileSchedulerSm90Params {
     KernelHardwareInfo hw_info,
     int max_swizzle_size,
     RasterOrderOptions raster_order_option,
-    bool truncate_by_problem_size=true
-    , bool bypass_occupancy_calculation=false 
+    bool truncate_by_problem_size=true,
+    bool bypass_sm90_occupancy_calculation=false
     ) {
 
     dim3 problem_blocks = get_tiled_cta_shape_mnl(problem_shape, cta_shape, cluster_shape);
@@ -199,8 +199,8 @@ struct PersistentTileSchedulerSm90Params {
       hw_info,
       max_swizzle_size,
       raster_order_option,
-      truncate_by_problem_size
-      , bypass_occupancy_calculation 
+      truncate_by_problem_size,
+      bypass_sm90_occupancy_calculation
     );
   }
 
@@ -215,8 +215,8 @@ struct PersistentTileSchedulerSm90Params {
     KernelHardwareInfo hw_info,
     int max_swizzle_size,
     RasterOrderOptions raster_order_option,
-    bool truncate_by_problem_size=true
-    , bool bypass_occupancy_calculation=false 
+    bool truncate_by_problem_size=true,
+    bool bypass_sm90_occupancy_calculation=false
     ) {
 
     int const sm_count = hw_info.sm_count;
@@ -265,26 +265,30 @@ struct PersistentTileSchedulerSm90Params {
     }
     // In case the maximum number of clusters that could co-exist on the target device is
     // already calculated using cudaOccupancyMaxActiveClusters
-    else if (max_active_clusters != 0) {
+    else if (max_active_clusters != 0 && max_active_clusters * cluster_size <= sm_count) {
       if (raster_order == RasterOrder::AlongN) {
-        launch_grid.y = max_active_clusters * cluster_shape.n();
+        launch_grid.y = possibly_truncate(
+            max_active_clusters * cluster_shape.n(),
+            problem_blocks_total / cluster_shape.m());
       }
       else {
-        launch_grid.x = max_active_clusters * cluster_shape.m();
+        launch_grid.x = possibly_truncate(
+            max_active_clusters * cluster_shape.m(),
+            problem_blocks_total / cluster_shape.n());
       }
       CUTLASS_TRACE_HOST("get_grid_shape(): Proposed GridDims by the scheduler using cudaOccupancyMaxActiveClusters = "
           "(" << launch_grid.x << ", " << launch_grid.y << ", " << launch_grid.z << ")\n");
     }
     else {
       int cta_per_device = sm_count;
-      if (!bypass_occupancy_calculation) { 
-      /*
-      * Optimal grid size calculation is based on
-      * GH100: 8 GPCs, 72 TPCs (9 TPCs/GPC), 2 SMs/TPC, 144 SMs per full GPU
-      * Hence, maximum SMs per GPC = 18
-      */
-      constexpr int max_sm_per_gpc = 18;
-      cta_per_device = get_max_cta_occupancy(max_sm_per_gpc, cluster_shape, sm_count);
+      if (!bypass_sm90_occupancy_calculation) {
+        /*
+        * Optimal grid size calculation is based on
+        * GH100: 8 GPCs, 72 TPCs (9 TPCs/GPC), 2 SMs/TPC, 144 SMs per full GPU
+        * Hence, maximum SMs per GPC = 18
+        */
+        constexpr int max_sm_per_gpc = 18;
+        cta_per_device = get_max_cta_occupancy(max_sm_per_gpc, cluster_shape, sm_count);
       } 
 
       if (raster_order == RasterOrder::AlongN) {
@@ -573,8 +577,9 @@ struct PersistentTileSchedulerSm90StreamKParams {
     ReductionMode reduction_mode,
     DecompositionMode decomposition_mode,
     void* workspace,
-    const uint32_t epilogue_subtile = 1u
-    , uint32_t ktile_start_alignment_count = 1u 
+    const uint32_t epilogue_subtile = 1u,
+    uint32_t ktile_start_alignment_count = 1u,
+    bool bypass_sm90_occupancy_calculation=false
   ) {
     dim3 problem_blocks = UnderlyingParams::get_tiled_cta_shape_mnl(
       problem_shape, tile_shape, cluster_shape);
@@ -593,8 +598,9 @@ struct PersistentTileSchedulerSm90StreamKParams {
       reduction_mode,
       decomposition_mode,
       workspace,
-      epilogue_subtile
-      , ktile_start_alignment_count 
+      epilogue_subtile,
+      ktile_start_alignment_count,
+      bypass_sm90_occupancy_calculation
     );
   }
 
@@ -613,8 +619,9 @@ struct PersistentTileSchedulerSm90StreamKParams {
     ReductionMode reduction_mode,
     DecompositionMode decomposition_mode,
     void* workspace,
-    const uint32_t epilogue_subtile = 1
-    , uint32_t ktile_start_alignment_count = 1u 
+    const uint32_t epilogue_subtile = 1,
+    uint32_t ktile_start_alignment_count = 1u, 
+    bool bypass_sm90_occupancy_calculation=false
   ) {
 
     #if !defined(__CUDACC_RTC__)
@@ -650,7 +657,9 @@ struct PersistentTileSchedulerSm90StreamKParams {
       raster_order_option,
       decomposition_mode,
       reduction_mode,
-      epilogue_subtile
+      epilogue_subtile,
+      ktile_start_alignment_count,
+      bypass_sm90_occupancy_calculation
     ); 
   }
   
@@ -741,19 +750,19 @@ struct PersistentTileSchedulerSm90StreamKParams {
   // Stream-K kernel use below function to set stream-K feature related parameters to choose
   // optimal/customized decomposition mode.
   void stream_k_heuristic(
-    UnderlyingParams underlying_params,
-    dim3 problem_blocks,
-    uint32_t k_tiles_per_output_tile,
-    GemmCoord cluster_shape,
-    KernelHardwareInfo hw_info,
-    int splits,
-    int max_swizzle,
-    RasterOrderOptions raster_order_option,
-    DecompositionMode decomposition_mode,
-    ReductionMode reduction_mode,
-    const uint32_t epilogue_subtile = 1
-    , uint32_t ktile_start_alignment_count = 1u 
-    ) {
+      UnderlyingParams underlying_params,
+      dim3 problem_blocks,
+      uint32_t k_tiles_per_output_tile,
+      GemmCoord cluster_shape,
+      KernelHardwareInfo hw_info,
+      int splits,
+      int max_swizzle,
+      RasterOrderOptions raster_order_option,
+      DecompositionMode decomposition_mode,
+      ReductionMode reduction_mode,
+      const uint32_t epilogue_subtile = 1,
+      uint32_t ktile_start_alignment_count = 1u,
+      bool bypass_sm90_occupancy_calculation=false) {
     uint32_t groups = 0;
     uint32_t sk_tiles = 0;
     uint64_t sk_units = 0;
@@ -785,8 +794,9 @@ struct PersistentTileSchedulerSm90StreamKParams {
         raster_order_option,
         decomposition_mode,
         reduction_mode,
-        epilogue_subtile
-        , ktile_start_alignment_count 
+        epilogue_subtile,
+        ktile_start_alignment_count,
+        bypass_sm90_occupancy_calculation
       );
 
     // Given heuristic_mode returned from the heuristic() method, set params fields.
@@ -809,8 +819,8 @@ struct PersistentTileSchedulerSm90StreamKParams {
       cluster_shape,
       splits,
       epilogue_subtile,
-      reduction_mode
-      , ktile_start_alignment_count 
+      reduction_mode,
+      ktile_start_alignment_count
       );
   }
 
@@ -835,8 +845,9 @@ struct PersistentTileSchedulerSm90StreamKParams {
     RasterOrderOptions raster_order_option,
     DecompositionMode decomposition_mode,
     ReductionMode reduction_mode,
-    uint32_t epilogue_subtile
-    , uint32_t ktile_start_alignment_count 
+    uint32_t epilogue_subtile,
+    uint32_t ktile_start_alignment_count,
+    bool bypass_sm90_occupancy_calculation=false
   ) {
 
     // Get block numbers in m, n and l dimensions
@@ -863,7 +874,8 @@ struct PersistentTileSchedulerSm90StreamKParams {
         cluster_shape,
         hw_info,
         max_swizzle,
-        raster_order_option
+        raster_order_option,
+        bypass_sm90_occupancy_calculation
       );
       uint64_t ctas_per_wave = grid.x * grid.y;
       cluster_size = cluster_shape.m() * cluster_shape.n();
@@ -875,8 +887,8 @@ struct PersistentTileSchedulerSm90StreamKParams {
         ctas_per_wave,
         cluster_size,
         k_tiles_per_output_tile,
-        decomposition_mode
-        , ctas_per_wave_in_full_clusters 
+        decomposition_mode,
+        ctas_per_wave_in_full_clusters
       );
       uint64_t dp_tiles = output_tiles - sk_tiles;
       // Calculate the number of work units covering the data-parallel and stream-K tiles.
@@ -1035,7 +1047,8 @@ struct PersistentTileSchedulerSm90StreamKParams {
     GemmCoord cluster_shape,
     KernelHardwareInfo hw_info,
     int max_swizzle_size,
-    RasterOrderOptions raster_order_option
+    RasterOrderOptions raster_order_option,
+    bool bypass_sm90_occupancy_calculation=false
   ) {
 
     dim3 problem_blocks = UnderlyingParams::get_tiled_cta_shape_mnl(problem_shape, cta_shape, cluster_shape);
@@ -1045,7 +1058,8 @@ struct PersistentTileSchedulerSm90StreamKParams {
       cluster_shape,
       hw_info,
       max_swizzle_size,
-      raster_order_option
+      raster_order_option,
+      bypass_sm90_occupancy_calculation
     );
   }
 
@@ -1059,7 +1073,8 @@ struct PersistentTileSchedulerSm90StreamKParams {
     GemmCoord cluster_shape,
     KernelHardwareInfo hw_info,
     int max_swizzle_size,
-    RasterOrderOptions raster_order_option
+    RasterOrderOptions raster_order_option,
+    bool bypass_sm90_occupancy_calculation=false
   ) {
 
     // Call into the underlying get_grid_shape method, but do not allow the grid shape returned
@@ -1070,8 +1085,8 @@ struct PersistentTileSchedulerSm90StreamKParams {
       hw_info,
       max_swizzle_size,
       raster_order_option,
-      /* truncate_by_problem_size = */false
-      /* bypass_occupancy_calculation = */, true 
+      /* truncate_by_problem_size = */false,
+      bypass_sm90_occupancy_calculation
     );
   }
 
@@ -1186,7 +1201,8 @@ struct PersistentTileSchedulerSm90StreamKParams {
     uint32_t accumulator_bits,
     uint32_t epilogue_subtile = 1,
     uint32_t num_accumulator_mtxs = 1,
-    uint32_t ktile_start_alignment_count = 1) {
+    uint32_t ktile_start_alignment_count = 1,
+    bool bypass_sm90_occupancy_calculation=false) {
 
     auto log_swizzle_size = UnderlyingParams::get_log_swizzle_size(problem_blocks.x, problem_blocks.y, max_swizzle);
     problem_blocks.x = round_up(problem_blocks.x, (1 << log_swizzle_size) * cluster_shape.m());
@@ -1204,6 +1220,7 @@ struct PersistentTileSchedulerSm90StreamKParams {
       KernelHardwareInfo new_hw_info;
       new_hw_info.device_id = hw_info.device_id;
       new_hw_info.sm_count = hw_info.sm_count;
+      new_hw_info.max_active_clusters = hw_info.max_active_clusters;
       if (new_hw_info.sm_count <= 0) {
         CUTLASS_TRACE_HOST("  WARNING: Arguments do not include a valid SM count.\n"
             "  For optimal performance, populate the arguments KernelHardwareInfo struct with the SM count.");
@@ -1215,7 +1232,8 @@ struct PersistentTileSchedulerSm90StreamKParams {
         cluster_shape,
         new_hw_info,
         max_swizzle,
-        raster_order_option
+        raster_order_option,
+        bypass_sm90_occupancy_calculation
       );
       uint64_t ctas_per_wave = grid.x * grid.y;
       uint64_t cluster_size = cluster_shape.m() * cluster_shape.n();
@@ -1346,7 +1364,8 @@ struct PersistentTileSchedulerSm90StreamKParams {
     uint32_t element_accumulator_bits,
     uint32_t epilogue_subtile = 1,
     uint32_t num_accumulator_mtxs = 1,
-    uint32_t ktile_start_alignment_count = 1) {
+    uint32_t ktile_start_alignment_count = 1,
+    bool bypass_sm90_occupancy_calculation=false) {
 
     size_t barrier_workspace_size = 0;
     size_t reduction_workspace_size = 0;
@@ -1370,7 +1389,8 @@ struct PersistentTileSchedulerSm90StreamKParams {
         element_accumulator_bits,
         epilogue_subtile,
         num_accumulator_mtxs,
-        ktile_start_alignment_count
+        ktile_start_alignment_count,
+        bypass_sm90_occupancy_calculation
       );
     #endif
 
@@ -1448,7 +1468,8 @@ struct PersistentTileSchedulerSm90StreamKParams {
     uint32_t epilogue_subtile = 1,
     uint32_t num_accumulator_mtxs = 1,
     CudaHostAdapter* cuda_adapter = nullptr,
-    uint32_t ktile_start_alignment_count = 1) {
+    uint32_t ktile_start_alignment_count = 1,
+    bool bypass_sm90_occupancy_calculation=false) {
 
     #if !defined(__CUDACC_RTC__)
       uint64_t barrier_workspace_size = 0;
@@ -1472,7 +1493,8 @@ struct PersistentTileSchedulerSm90StreamKParams {
         element_accumulator_bits,
         epilogue_subtile,
         num_accumulator_mtxs,
-        ktile_start_alignment_count
+        ktile_start_alignment_count,
+        bypass_sm90_occupancy_calculation
       );
 
       if (barrier_workspace_size > 0) {
@@ -1787,7 +1809,7 @@ struct PersistentTileSchedulerSm90GroupParams {
     }
     // In case the maximum number of clusters that could co-exist on the target device is
     // already calculated using cudaOccupancyMaxActiveClusters
-    else if (max_active_clusters != 0) {
+    else if (max_active_clusters != 0 && max_active_clusters * cluster_size <= sm_count) {
       if (raster_order == RasterOrder::AlongN) {
         launch_grid.y = max_active_clusters * cluster_shape.n();
       }
@@ -2164,7 +2186,8 @@ struct PersistentTileSchedulerSm100StreamKParams {
       decomposition_mode,
       workspace,
       /*epilogue_subtile=*/1,
-      ktile_start_alignment_count
+      ktile_start_alignment_count,
+      /*bypass_sm90_occupancy_calculation=*/true
     );
 
     log_swizzle_size_ = sk_params_.log_swizzle_size_;
@@ -2333,7 +2356,8 @@ struct PersistentTileSchedulerSm100StreamKParams {
       element_accumulator_bits,
       epilogue_subtile,
       num_accumulator_mtxs,
-      ktile_start_alignment_count
+      ktile_start_alignment_count,
+      /*bypass_sm90_occupancy_calculation=*/true
     );
   }
 
@@ -2430,7 +2454,8 @@ struct PersistentTileSchedulerSm100StreamKParams {
       epilogue_subtile,
       num_accumulator_mtxs,
       cuda_adapter,
-      ktile_start_alignment_count
+      ktile_start_alignment_count,
+      /*bypass_sm90_occupancy_calculation=*/true
     );
   }
 };
@@ -2499,6 +2524,7 @@ struct PersistentTileSchedulerSm100GroupParams {
     bool is_static_cluster_shape = false) {
 
     int const sm_count = hw_info.sm_count;
+    int const max_active_clusters = hw_info.max_active_clusters;
 
     // Round up to nearest multiple of swizzle_size along each mode
     auto log_swizzle_size = get_log_swizzle_size(problem_blocks.x, problem_blocks.y, max_swizzle_size);
@@ -2541,6 +2567,18 @@ struct PersistentTileSchedulerSm100GroupParams {
         else {
           launch_grid.x = possibly_truncate(sm_count, problem_blocks_total);
         }
+      }
+      // In case the maximum number of clusters that could co-exist on the target device is
+      // already calculated using cudaOccupancyMaxActiveClusters
+      else if (max_active_clusters != 0 && max_active_clusters * cluster_size <= sm_count) {
+        if (raster_order == RasterOrder::AlongN) {
+          launch_grid.y = max_active_clusters * cluster_shape.n();
+        }
+        else {
+          launch_grid.x = max_active_clusters * cluster_shape.m();
+        }
+        CUTLASS_TRACE_HOST("get_grid_shape(): Proposed GridDims by the scheduler using cudaOccupancyMaxActiveClusters = "
+            "(" << launch_grid.x << ", " << launch_grid.y << ", " << launch_grid.z << ")\n");
       }
       else {
         constexpr int max_sm_per_gpc = 20;

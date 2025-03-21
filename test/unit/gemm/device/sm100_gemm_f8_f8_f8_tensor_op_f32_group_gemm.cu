@@ -69,16 +69,13 @@ TEST(SM100_Device_Gemm_e4m3t_e4m3n_e4m3n_tensorop_1sm_f32_group, 64x128x128_1x2x
   using ElementD = cutlass::float_e4m3_t;
   using ElementAccumulator = float;
   using ElementCompute = float;
-  using ClusterTileShape = cute::Shape<_64,_128,Int<128 / sizeof(ElementA)>>;
+  using MmaTileShape = cute::Shape<_64,_64,Int<128 / sizeof(ElementA)>>;
   using ClusterShape = Shape<_1,_2,_1>;
-  using AtomThrShape = decltype(shape_div(ClusterShape{}, Shape<_1,_1,_1>{}));
-  using OutputCtaShape = decltype(shape_div(ClusterTileShape{}, ClusterShape{})); 
-  using MmaTileShape = decltype(shape_div(ClusterTileShape{}, AtomThrShape{}));
 
   using EpilogueSchedule = cutlass::epilogue::PtrArrayTmaWarpSpecialized1Sm;
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
-      OutputCtaShape, ClusterShape,
+      MmaTileShape, ClusterShape,
       cutlass::epilogue::collective::EpilogueTileAuto,
       ElementAccumulator, ElementCompute,
       ElementC, LayoutC *, 16 / sizeof(ElementC),
@@ -118,16 +115,13 @@ TEST(SM100Only_Device_Gemm_e4m3t_e4m3n_e4m3n_tensorop_2sm_f32_group, 256x128x128
   using ElementD = cutlass::float_e4m3_t;
   using ElementAccumulator = float;
   using ElementCompute = float;
-  using ClusterTileShape = cute::Shape<_256,_128,Int<128 / sizeof(ElementA)>>;
+  using MmaTileShape = cute::Shape<_256,_128,Int<128 / sizeof(ElementA)>>;
   using ClusterShape = Shape<_2,_1,_1>;
-  using AtomThrShape = decltype(shape_div(ClusterShape{}, Shape<_2,_1,_1>{}));
-  using OutputCtaShape = decltype(shape_div(ClusterTileShape{}, ClusterShape{})); 
-  using MmaTileShape = decltype(shape_div(ClusterTileShape{}, AtomThrShape{}));
 
   using EpilogueSchedule = cutlass::epilogue::PtrArrayTmaWarpSpecialized2Sm;
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
-      OutputCtaShape, ClusterShape,
+      MmaTileShape, ClusterShape,
       cutlass::epilogue::collective::EpilogueTileAuto,
       ElementAccumulator, ElementCompute,
       ElementC, LayoutC *, 16 / sizeof(ElementC),
@@ -167,16 +161,13 @@ TEST(SM100Only_Device_Gemm_e4m3t_e4m3n_e4m3n_tensorop_2sm_f32_group, 512x512x128
   using ElementD = cutlass::float_e4m3_t;
   using ElementAccumulator = float;
   using ElementCompute = float;
-  using ClusterTileShape = cute::Shape<_512,_512,Int<128 / sizeof(ElementA)>>;
+  using MmaTileShape = cute::Shape<_256,_128,Int<128 / sizeof(ElementA)>>;
   using ClusterShape = Shape<_4,_4,_1>;
-  using AtomThrShape = decltype(shape_div(ClusterShape{}, Shape<_2,_1,_1>{}));
-  using OutputCtaShape = decltype(shape_div(ClusterTileShape{}, ClusterShape{})); 
-  using MmaTileShape = decltype(shape_div(ClusterTileShape{}, AtomThrShape{}));
 
   using EpilogueSchedule = cutlass::epilogue::PtrArrayTmaWarpSpecialized2Sm;
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
-      OutputCtaShape, ClusterShape,
+      MmaTileShape, ClusterShape,
       cutlass::epilogue::collective::EpilogueTileAuto,
       ElementAccumulator, ElementCompute,
       ElementC, LayoutC *, 16 / sizeof(ElementC),
@@ -216,16 +207,13 @@ TEST(SM100Only_Device_Gemm_e4m3n_e4m3t_e4m3n_tensorop_1sm_f32_group, 128x128x128
   using ElementD = cutlass::float_e4m3_t;
   using ElementAccumulator = float;
   using ElementCompute = float;
-  using ClusterTileShape = cute::Shape<_128,_128,Int<128 / sizeof(ElementA)>>;
+  using MmaTileShape = cute::Shape<_128,_128,Int<128 / sizeof(ElementA)>>;
   using ClusterShape = Shape<_1,_1,_1>;
-  using AtomThrShape = decltype(shape_div(ClusterShape{}, Shape<_1,_1,_1>{}));
-  using OutputCtaShape = decltype(shape_div(ClusterTileShape{}, ClusterShape{})); 
-  using MmaTileShape = decltype(shape_div(ClusterTileShape{}, AtomThrShape{}));
 
   using EpilogueSchedule = cutlass::epilogue::PtrArrayTmaWarpSpecialized1Sm;
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
-      OutputCtaShape, ClusterShape,
+      MmaTileShape, ClusterShape,
       cutlass::epilogue::collective::EpilogueTileAuto,
       ElementAccumulator, ElementCompute,
       ElementC, LayoutC *, 16 / sizeof(ElementC),
@@ -265,16 +253,13 @@ TEST(SM100Only_Device_Gemm_e4m3n_e4m3n_e4m3n_tensorop_1sm_f32_group, 64x128x128_
   using ElementD = cutlass::float_e4m3_t;
   using ElementAccumulator = float;
   using ElementCompute = float;
-  using ClusterTileShape = cute::Shape<_64,_128,Int<128 / sizeof(ElementA)>>;
+  using MmaTileShape = cute::Shape<_64,_64,Int<128 / sizeof(ElementA)>>;
   using ClusterShape = Shape<_1,_2,_1>;
-  using AtomThrShape = decltype(shape_div(ClusterShape{}, Shape<_1,_1,_1>{}));
-  using OutputCtaShape = decltype(shape_div(ClusterTileShape{}, ClusterShape{})); 
-  using MmaTileShape = decltype(shape_div(ClusterTileShape{}, AtomThrShape{}));
 
   using EpilogueSchedule = cutlass::epilogue::PtrArrayTmaWarpSpecialized1Sm;
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
-      OutputCtaShape, ClusterShape,
+      MmaTileShape, ClusterShape,
       cutlass::epilogue::collective::EpilogueTileAuto,
       ElementAccumulator, ElementCompute,
       ElementC, LayoutC *, 16 / sizeof(ElementC),
@@ -314,16 +299,13 @@ TEST(SM100Only_Device_Gemm_e4m3t_e4m3t_e4m3n_tensorop_2sm_f32_group, 256x128x128
   using ElementD = cutlass::float_e4m3_t;
   using ElementAccumulator = float;
   using ElementCompute = float;
-  using ClusterTileShape = cute::Shape<_256,_128,Int<128 / sizeof(ElementA)>>;
+  using MmaTileShape = cute::Shape<_256,_128,Int<128 / sizeof(ElementA)>>;
   using ClusterShape = Shape<_2,_1,_1>;
-  using AtomThrShape = decltype(shape_div(ClusterShape{}, Shape<_2,_1,_1>{}));
-  using OutputCtaShape = decltype(shape_div(ClusterTileShape{}, ClusterShape{})); 
-  using MmaTileShape = decltype(shape_div(ClusterTileShape{}, AtomThrShape{}));
 
   using EpilogueSchedule = cutlass::epilogue::PtrArrayTmaWarpSpecialized2Sm;
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
-      OutputCtaShape, ClusterShape,
+      MmaTileShape, ClusterShape,
       cutlass::epilogue::collective::EpilogueTileAuto,
       ElementAccumulator, ElementCompute,
       ElementC, LayoutC *, 16 / sizeof(ElementC),
@@ -363,16 +345,13 @@ TEST(SM100Only_Device_Gemm_e4m3t_e4m3t_e4m3t_tensorop_2sm_f32_group, 512x512x128
   using ElementD = cutlass::float_e4m3_t;
   using ElementAccumulator = float;
   using ElementCompute = float;
-  using ClusterTileShape = cute::Shape<_512,_512,Int<128 / sizeof(ElementA)>>;
+  using MmaTileShape = cute::Shape<_256,_128,Int<128 / sizeof(ElementA)>>;
   using ClusterShape = Shape<_4,_4,_1>;
-  using AtomThrShape = decltype(shape_div(ClusterShape{}, Shape<_2,_1,_1>{}));
-  using OutputCtaShape = decltype(shape_div(ClusterTileShape{}, ClusterShape{})); 
-  using MmaTileShape = decltype(shape_div(ClusterTileShape{}, AtomThrShape{}));
 
   using EpilogueSchedule = cutlass::epilogue::PtrArrayTmaWarpSpecialized2Sm;
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
-      OutputCtaShape, ClusterShape,
+      MmaTileShape, ClusterShape,
       cutlass::epilogue::collective::EpilogueTileAuto,
       ElementAccumulator, ElementCompute,
       ElementC, LayoutC *, 16 / sizeof(ElementC),
@@ -412,16 +391,13 @@ TEST(SM100Only_Device_Gemm_e4m3t_e4m3t_e4m3t_tensorop_2sm_f32_group, 512x512x128
   using ElementD = cutlass::float_e4m3_t;
   using ElementAccumulator = float;
   using ElementCompute = float;
-  using ClusterTileShape = cute::Shape<_512,_512,Int<128 / sizeof(ElementA)>>;
+  using MmaTileShape = cute::Shape<_256,_128,Int<128 / sizeof(ElementA)>>;
   using ClusterShape = Shape<_4,_4,_1>;
-  using AtomThrShape = decltype(shape_div(ClusterShape{}, Shape<_2,_1,_1>{}));
-  using OutputCtaShape = decltype(shape_div(ClusterTileShape{}, ClusterShape{})); 
-  using MmaTileShape = decltype(shape_div(ClusterTileShape{}, AtomThrShape{}));
 
   using EpilogueSchedule = cutlass::epilogue::PtrArrayTmaWarpSpecialized2Sm;
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
-      OutputCtaShape, ClusterShape,
+      MmaTileShape, ClusterShape,
       cutlass::epilogue::collective::EpilogueTileAuto,
       ElementAccumulator, ElementCompute,
       ElementC, LayoutC *, 16 / sizeof(ElementC),
@@ -461,16 +437,13 @@ TEST(SM100Only_Device_Gemm_e4m3t_e4m3t_e4m3t_tensorop_2sm_f32_group, 512x512x128
   using ElementD = cutlass::float_e4m3_t;
   using ElementAccumulator = float;
   using ElementCompute = float;
-  using ClusterTileShape = cute::Shape<_512,_512,Int<128 / sizeof(ElementA)>>;
+  using MmaTileShape = cute::Shape<_256,_128,Int<128 / sizeof(ElementA)>>;
   using ClusterShape = Shape<_4,_4,_1>;
-  using AtomThrShape = decltype(shape_div(ClusterShape{}, Shape<_2,_1,_1>{}));
-  using OutputCtaShape = decltype(shape_div(ClusterTileShape{}, ClusterShape{})); 
-  using MmaTileShape = decltype(shape_div(ClusterTileShape{}, AtomThrShape{}));
 
   using EpilogueSchedule = cutlass::epilogue::PtrArrayTmaWarpSpecialized2Sm;
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
-      OutputCtaShape, ClusterShape,
+      MmaTileShape, ClusterShape,
       cutlass::epilogue::collective::EpilogueTileAuto,
       ElementAccumulator, ElementCompute,
       void, LayoutD *, 16 / sizeof(ElementD),

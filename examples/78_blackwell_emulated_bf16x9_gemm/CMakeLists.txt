@@ -28,7 +28,7 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-if(NOT CUTLASS_NVCC_ARCHS STREQUAL "100")
+if (CUTLASS_NVCC_ARCHS MATCHES 100a)
 cutlass_example_add_executable(
   78_blackwell_emulated_bf16x9_gemm
   78_blackwell_emulated_bf16x9_gemm.cu

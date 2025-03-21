@@ -35,6 +35,8 @@
 #include <cutlass/blas3_types.h>
 #include <cutlass/gemm_coord.h>
 
+#include <optional>
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
@@ -300,13 +302,34 @@ struct GemmDescription : public OperationDescription {
     transform_B(transform_B) {}
 };
 
+struct BlockScaleDescription {
+  /// Describes the SFA operand
+  TensorDescription SFA;
+
+  /// Describes the SFB operand
+  TensorDescription SFB;
+
+  /// Describes the SFD operand
+  TensorDescription SFD;
+
+  /// Describes the input ScaleFactor VectorSize
+  int SFVecSize;
+
+  /// Describes the Output ScaleFactor VectorSize
+  int EpilogueSFVecSize;
+};
+
+struct GroupedGemmDescription : public OperationDescription {
+  GemmDescription gemm;
+  std::optional<BlockScaleDescription> block_scales;
+};
 
 /// Description of all GEMM computations
 struct BlockScaledGemmDescription : public OperationDescription {
 
   /// Indicates the kind of GEMM performed
   GemmKind gemm_kind;
-  
+
   /// Describes the A operand
   TensorDescription A;
 

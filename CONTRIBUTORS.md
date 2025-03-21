@@ -1,17 +1,18 @@
 ![ALT](./media/images/gemm-hierarchy-with-epilogue-no-labels.png "CUTLASS")
 
-[README](./README.md#documentation) > **Active Developers**
+[README](./README.md#documentation) > **Contributors**
 
 # CUTLASS Developers **
 
-Andrew Kerr (CUTLASS founding member)<br />
+Andrew Kerr<br />
+Paul Springer<br />
 Dustyn Blasig<br />
 Albert Xu<br />
 Junkai Wu<br />
 Xiuxia Zhang<br />
-Haicheng Wu (CUTLASS founding member)<br />
+Haicheng Wu<br />
 Jack Yang<br />
-Pradeep Ramani (CUTLASS 3.x founding member)<br />
+Pradeep Ramani<br />
 Aditya Atluri<br />
 Han Li<br />
 Nick Zhao<br />
@@ -20,15 +21,15 @@ Yu-Jung Chen<br />
 Markus Hoehnerbach<br />
 Honghao Lu<br />
 Mihir Awatramani<br />
-Hao  Sheng<br />
+Hao Sheng<br />
 Zekun Fan<br />
-Aniket	Shivam<br />
+Aniket Shivam<br />
 Siyu Liu<br />
 Richard Cai<br />
 Vikas Gupta<br />
 Ethan Yan<br />
-Vijay Thakkar (CUTLASS 3.x founding member)<br />
-Cris Cecka (CuTe and CUTLASS 3.x founding member)<br />
+Vijay Thakkar<br />
+Cris Cecka<br />
 Lawrence Ryan<br />
 Qun Song<br />
 Daniel Ricketts<br />
@@ -69,5 +70,61 @@ Shreya Gaur<br />
 
 ** _The list is sorted in order of the author's first contribution to the CUTLASS project._
 
+
+# CUTE Developers
+
+Cris Cecka<br />
+Vijay Thakkar<br />
+
+
 # CUTLASS Product Manager
+
 Matthew Nicely<br />
+
+
+# Former CUTLASS Developers
+
+Manish Gupta<br />
+Duane Merrill<br />
+Piotr Majcher<br />
+Naila Farooqui<br />
+Mark Hoemmen<br />
+Rawn Henry<br />
+Jin Wang<br />
+Timmy Liu<br />
+Manikandan Ananth<br />
+David Tanner<br />
+
+
+# Acknowledgements
+
+Tri Dao<br />
+Jay Shah<br />
+Timothy Costa<br />
+Julien Demouth<br />
+Brian Fahs<br />
+Michael Garland<br />
+Michael Goldfarb<br />
+Mostafa Hagog<br />
+Fei Hu<br />
+Alan Kaatz<br />
+Tina Li<br />
+Wei Liu<br />
+Tim Martin<br />
+Kevin Siu<br />
+Markus Tavenrath<br />
+John Tran<br />
+Vicki Wang<br />
+Fung Xie<br />
+Yang Xu<br />
+Scott Yokim<br />
+Girish Bharambe<br />
+Luke Durant<br />
+Carter Edwards<br />
+Olivier Giroux<br />
+Stephen Jones<br />
+Rishkul Kulkarni<br />
+Bryce Lelbach<br />
+Joel McCormack<br />
+Kyrylo Perelygin<br />
+Sean Treichler<br />

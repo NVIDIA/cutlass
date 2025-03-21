@@ -34,6 +34,7 @@ template<typename RasterOrderOptions>
 struct Options {
 
   bool help = false;
+  bool verify = true;
 
   float alpha = 1.f, beta = 0.f;
   float scale_a = 1.f, scale_b = 1.f, scale_c = 1.f, scale_d = 1.f, scale_aux = 1.f;
@@ -41,6 +42,7 @@ struct Options {
   bool save_aux = true;
   bool save_amax = true;
   int iterations = 1000;
+  int warmup = 1000;
   int m = 1024, n = 512, k = 1024, l = 1;
   RasterOrderOptions raster;
   int swizzle;
@@ -68,7 +70,9 @@ struct Options {
     cmd.get_cmd_line_argument("device_scale", device_scale, false);
     cmd.get_cmd_line_argument("save_aux", save_aux, true);
     cmd.get_cmd_line_argument("save_amax", save_amax, true);
+    cmd.get_cmd_line_argument("warmup", warmup);
     cmd.get_cmd_line_argument("iterations", iterations);
+    cmd.get_cmd_line_argument("verify", verify);
 
     char raster_char;
     cmd.get_cmd_line_argument("raster", raster_char);
@@ -89,8 +93,8 @@ struct Options {
   /// Prints the usage statement.
   std::ostream & print_usage(std::ostream &out) const {
 
-    out << "54_fp8_hopper_warp_specialized_gemm\n\n"
-      << "  Hopper FP8 GEMM using a Warp Specialized kernel.\n\n"
+    out << "67_hopper_fp8_warp_specialized_gemm_with_blockwise_scaling\n\n"
+      << "  Hopper FP8 GEMM using a Warp Specialized kernel with Blockwise Scaling.\n\n"
       << "Options:\n\n"
       << "  --help                      If specified, displays this usage statement\n\n"
       << "  --m=<int>                   Sets the M extent of the GEMM\n"
@@ -113,7 +117,7 @@ struct Options {
 
     out
       << "\n\nExamples:\n\n"
-      << "$ " << "54_fp8_hopper_warp_specialized_gemm" << " --m=1024 --n=512 --k=1024 --alpha=2 --beta=0.707 \n\n";
+      << "$ " << "67_hopper_fp8_warp_specialized_gemm_with_blockwise_scaling" << " --m=1024 --n=512 --k=1024 --alpha=2 --beta=0.707 \n\n";
 
     return out;
   }

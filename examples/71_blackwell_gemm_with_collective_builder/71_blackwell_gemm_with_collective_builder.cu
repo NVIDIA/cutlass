@@ -184,12 +184,8 @@ struct ExampleRunner {
       std::is_same_v<MainloopScheduleType, cutlass::gemm::KernelTmaWarpSpecialized2SmSm100> ||
       // Auto schedule will try to select 2sm cluster MMA based on cluster M
       std::is_same_v<MainloopScheduleType, cutlass::gemm::collective::KernelScheduleAuto> && size<0>(ClusterShapeMNK{}) % 2 == 0;
-  // The MNK layout of CTAs within a cluster MMA
-  using AtomThrMNK    = std::conditional_t<Use2SmMma, Shape<_2,_1,_1>, Shape<_1,_1,_1>>;
   // The MMA tile used by the mainloop collective. Blackwell 1sm MMA supports up to MMA tile M = 128, 2sm MMA supports up to MMA tile M = 256
   using MmaTileMNK    = std::conditional_t<Use2SmMma, Shape<_256,_128,_64>, Shape<_128,_128,_64>>;
-  // The Output tile used by the epilogue collective
-  using OutputTileMNK = decltype(shape_div(MmaTileMNK{}, AtomThrMNK{}));
 
   // 16B alignment lets us use TMA
   static constexpr int AlignmentA = 128 / cutlass::sizeof_bits<ElementA>::value;
@@ -220,7 +216,7 @@ struct ExampleRunner {
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
-      OutputTileMNK, ClusterShapeMNK,
+      MmaTileMNK, ClusterShapeMNK,
       cutlass::epilogue::collective::EpilogueTileAuto,
       ElementAccumulator, ElementCompute,
       ElementC, LayoutC, AlignmentC,
@@ -503,20 +499,20 @@ if (__CUDACC_VER_MAJOR__ < 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MIN
   print_result("KernelScheduleAuto mainloop schedule with EpilogueScheduleAuto epilogue schedule and 3 mainloop stages", passed);
 
   // 1SM cluster MMA mainloop schedules can be used with direct store ("no-smem") epilogue schedules
-  ExampleRunner<cutlass::gemm::KernelTmaWarpSpecialized1SmSm100, cutlass::epilogue::NoSmemWarpSpecialized> runner_2;
+  ExampleRunner<cutlass::gemm::KernelTmaWarpSpecialized1SmSm100, cutlass::epilogue::NoSmemWarpSpecialized1Sm> runner_2;
   passed = runner_2.run(options, hw_info);
-  print_result("KernelTmaWarpSpecialized1SmSm100 mainloop schedule with NoSmemWarpSpecialized epilogue schedule", passed);
+  print_result("KernelTmaWarpSpecialized1SmSm100 mainloop schedule with NoSmemWarpSpecialized1Sm epilogue schedule", passed);
 
   // 1SM cluster MMA mainloop schedules can also be used with 1SM TMA epilogue schedules
   // 1SM cluster MMA mainloop schedules will not work with 2SM TMA epilogue schedules
   ExampleRunner<cutlass::gemm::KernelTmaWarpSpecialized1SmSm100, cutlass::epilogue::TmaWarpSpecialized1Sm> runner_3;
   passed = runner_3.run(options, hw_info);
-  print_result("KernelTmaWarpSpecialized1SmSm100 mainloop schedule with NoSmemWarpSpecialized epilogue schedule", passed);
+  print_result("KernelTmaWarpSpecialized1SmSm100 mainloop schedule with TmaWarpSpecialized1Sm epilogue schedule", passed);
 
   // 2SM cluster MMA mainloop schedules can be used with direct store ("no-smem") epilogue schedules
-  ExampleRunner<cutlass::gemm::KernelTmaWarpSpecialized2SmSm100, cutlass::epilogue::NoSmemWarpSpecialized> runner_4;
+  ExampleRunner<cutlass::gemm::KernelTmaWarpSpecialized2SmSm100, cutlass::epilogue::NoSmemWarpSpecialized2Sm> runner_4;
   passed = runner_4.run(options, hw_info);
-  print_result("KernelTmaWarpSpecialized2SmSm100 mainloop schedule with NoSmemWarpSpecialized epilogue schedule", passed);
+  print_result("KernelTmaWarpSpecialized2SmSm100 mainloop schedule with NoSmemWarpSpecialized2Sm epilogue schedule", passed);
 
   // 2SM cluster MMA mainloop schedules can also be used with 2SM TMA epilogue schedules
   // 2SM cluster MMA mainloop schedules will not work with SM TMA epilogue schedules
@@ -556,11 +552,11 @@ if (__CUDACC_VER_MAJOR__ < 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MIN
   // Blackwell direct store epilogue schedule supports custom EVTs and named fusion operations as well (not supported for pre-Blackwell kernels)
   ExampleRunner<
     cutlass::gemm::KernelTmaWarpSpecialized1SmSm100,
-    cutlass::epilogue::NoSmemWarpSpecialized,
+    cutlass::epilogue::NoSmemWarpSpecialized1Sm,
     cutlass::gemm::collective::StageCountAuto,
     UseCustomEVT> runner_9;
   passed = runner_9.run(options, hw_info);
-  print_result("KernelTmaWarpSpecialized1SmSm100 mainloop schedule with NoSmemWarpSpecialized epilogue and custom EVT", passed);
+  print_result("KernelTmaWarpSpecialized1SmSm100 mainloop schedule with NoSmemWarpSpecialized1Sm epilogue and custom EVT", passed);
 
 #endif
 

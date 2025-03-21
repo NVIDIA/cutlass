@@ -47,11 +47,9 @@ cutlass_test_unit_add_executable(
   math.cpp
   mixedbits.cpp
   nullspace.cpp
-  packed_tuple.cpp
   pointer.cpp
   reverse.cpp
   swizzle_layout.cpp
   transform.cpp
   tuple.cpp
-  tuple_find.cpp
 )

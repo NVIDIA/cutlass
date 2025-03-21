@@ -29,7 +29,7 @@
 
 
 
-if(NOT CUTLASS_NVCC_ARCHS STREQUAL "100")
+if (CUTLASS_NVCC_ARCHS MATCHES 100a)
 cutlass_example_add_executable(
   74_blackwell_gemm_streamk
   blackwell_gemm_streamk.cu

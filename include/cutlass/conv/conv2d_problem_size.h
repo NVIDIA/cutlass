@@ -255,23 +255,27 @@ public:
   CUTLASS_HOST_DEVICE
   int64_t activation_size() const {
 
-    return (N * H * W * C);
+    return static_cast<int64_t>(N) * static_cast<int64_t>(H) *
+           static_cast<int64_t>(W) * static_cast<int64_t>(C);
   }
 
   /// Returns filter size in number of elements
   CUTLASS_HOST_DEVICE
   int64_t filter_size() const {
 
-    return (K * R * S * C / groups);
+    return static_cast<int64_t>(K) * static_cast<int64_t>(R) *
+           static_cast<int64_t>(S) * static_cast<int64_t>(C) /
+           static_cast<int64_t>(groups);
   }
 
   /// Returns output size in number of elements
   CUTLASS_HOST_DEVICE
   int64_t output_size() const {
 
-    return (N * P * Q * K);
+    return static_cast<int64_t>(N) * static_cast<int64_t>(P) *
+           static_cast<int64_t>(Q) * static_cast<int64_t>(K);
   }
-  
+
   /// Returns padding as Tensor4DCoord
   CUTLASS_HOST_DEVICE
   cutlass::Tensor4DCoord padding() const {
