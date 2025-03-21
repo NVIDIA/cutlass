@@ -278,8 +278,9 @@ public:
     // These tensor shapes (only applicable for grouped gemm) and pointers are only used to create tensormap/tma desc.
     // These will be replaced with correct values before the initial tma load.
     auto init_shape = repeat_like(append<4>(typename ProblemShape::UnderlyingProblemShape{}, 1), int32_t(1));
-    auto init_M = get<0>(init_shape);
-    auto init_N = get<1>(init_shape);
+    constexpr int tma_alignment_bits = 128;
+    auto init_M = tma_alignment_bits;
+    auto init_N = tma_alignment_bits;
     auto init_L = 1;
 
     InternalStrideC stride_c;
