@@ -183,7 +183,7 @@ public:
     // Indexing variables
     auto [batch, num_heads, seq_len, head_size] = problem_shape;
     // Represent the full output tensor
-    Tensor mO_mnl = params.xe_store_o.get_pvc_tensor(make_shape(seq_len, head_size, batch * num_heads));
+    Tensor mO_mnl = cute::get_pvc_tensor(make_shape(seq_len, head_size, batch * num_heads));
     
     auto [m_coord, n_coord, k_coord, l_coord] = tile_coord;
     // Tile the output tensor per WG

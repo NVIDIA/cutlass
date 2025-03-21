@@ -49,6 +49,7 @@ if(CUTLASS_ENABLE_SYCL)
     cutlass_test_unit_add_executable(
       cutlass_test_unit_gemm_device_mixed_input_tensorop_xe
       gemm_universal_s8t_bf16n_f32t_mixed_input_tensor_op_f32_xe.cpp
+      gemm_universal_f16t_s4t_f32t_mixed_input_tensor_op_f32_xe.cpp
     )
 
     add_custom_target(

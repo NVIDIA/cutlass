@@ -461,7 +461,7 @@ public:
 
     auto [sg_m_coord, sg_n_coord, k_coord, l_offset] = args.tile_coord_mnkl;
     auto [M, N, K, L] = args.problem_shape_mnkl;
-    Tensor mAux_mnl = args.tiled_copy.get_pvc_tensor(make_shape(M,N,L));
+    Tensor mAux_mnl = cute::get_pvc_tensor(make_shape(M,N,L));
     // Tiling is done differently than in epilogue as we get in coordinates of subgroup in kernel
     Tensor gAux = local_tile(mAux_mnl, select<0,1>(EpilogueTile{}), make_coord(sg_m_coord,sg_n_coord,l_offset));
     Tensor tCgAux = args.tiled_copy.get_thread_slice(args.thread_idx).partition_D(gAux);

@@ -60,3 +60,60 @@ bool initialize_block(
   syclcompat::wait();
   return true;
 }
+
+template <typename T1, typename T2>
+void initialize_mixed_dtype_block(cutlass::DeviceAllocation<T1>& block_device,
+                           cutlass::DeviceAllocation<T2>& block_device_dq,
+                          uint64_t seed) {
+  static_assert(cute::sizeof_bits_v<T2> >= 8);
+
+  std::ranlux24_base rng(std::random_device{}());
+  rng.seed(seed);
+
+  using Limits = cutlass::platform::numeric_limits<T1>;
+  std::uniform_int_distribution<> dist(Limits::lowest(), Limits::max());
+
+  if constexpr (cute::sizeof_bits_v<T1> >= 8) {
+    auto block_host = std::vector<T1>(block_device.size());
+    auto block_host_dq = std::vector<T2>(block_device.size());
+    for (int i = 0; i < block_host.size(); ++i) {
+      block_host[i] = static_cast<T1>(dist(rng));
+      block_host_dq[i] = static_cast<T2>(block_host[i]);
+    }
+
+    block_device.copy_from_host(block_host.data());
+    block_device_dq.copy_from_host(block_host_dq.data());
+  } else {
+    static constexpr auto array_size = 1024;
+
+    cute::array_subbyte<T1, array_size> block_host{};
+    auto block_host_dq = std::vector<T2>(array_size);
+
+    for (int i = 0; i < block_host.size(); ++i) {
+      block_host[i] = static_cast<T1>(dist(rng));
+      block_host_dq[i] = static_cast<T2>(block_host[i].get());
+    }
+
+    static constexpr auto elements_per_byte = cute::sizeof_bits_v<int8_t> / cute::sizeof_bits_v<T1>;
+
+    int loop_cnt = block_device.size() / array_size;
+    for (int i = 0; i < loop_cnt; i++) {
+      cutlass::device_memory::copy_to_device(block_device.get() + (i * array_size) / elements_per_byte,
+                                    raw_pointer_cast(block_host.begin()),
+                                    array_size);
+      cutlass::device_memory::copy_to_device(block_device_dq.get() + i * array_size,
+                                    block_host_dq.data(),
+                                    array_size);
+    }
+
+    auto tail_size = block_device.size() % array_size;
+    if (tail_size) {
+      cutlass::device_memory::copy_to_device(block_device.get() + (loop_cnt * array_size) / elements_per_byte,
+                                    raw_pointer_cast(block_host.begin()),
+                                    tail_size);
+      cutlass::device_memory::copy_to_device(block_device_dq.get() + loop_cnt * array_size,
+                                    block_host_dq.data(),
+                                    tail_size);
+    }
+  }
+}
