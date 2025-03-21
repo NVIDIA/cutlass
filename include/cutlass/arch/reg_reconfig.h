@@ -41,10 +41,11 @@
   #if defined(__CUDA_ARCH__) && __CUDACC_VER_MAJOR__ >= 12 && (             \
          (__CUDA_ARCH__ ==  900 && defined(__CUDA_ARCH_FEAT_SM90_ALL))      \
       || (__CUDA_ARCH__ == 1000 && defined(__CUDA_ARCH_FEAT_SM100_ALL))     \
+      || (__CUDA_ARCH__ == 1010 && defined(__CUDA_ARCH_FEAT_SM101_ALL))     \
+      || (__CUDA_ARCH__ == 1200 && defined(__CUDA_ARCH_FEAT_SM120_ALL))     \
     )
     #define CUDA_CTA_RECONFIG_ACTIVATED 1
   #endif
-
 
 #endif
 

@@ -120,4 +120,6 @@ struct CallbacksBuilder<
 
 #include "builders/sm90_builder.inl"
 #include "builders/sm100_builder.inl"  
+#include "builders/sm120_builder.inl"
+
 /////////////////////////////////////////////////////////////////////////////////////////////////

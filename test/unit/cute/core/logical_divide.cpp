@@ -29,6 +29,8 @@
  *
  **************************************************************************************************/
 
+//#define CUTLASS_DEBUG_TRACE_LEVEL 1
+
 #include "cutlass_unit_test.h"
 
 #include <cutlass/trace.h>

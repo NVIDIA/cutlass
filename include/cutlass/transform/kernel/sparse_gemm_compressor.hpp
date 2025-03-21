@@ -271,6 +271,46 @@ template<
   class ProblemShape,
   class ElementA,
   class LayoutATag,
+  class SparseConfig
+>
+struct StructuredSparseCompressorSelector<
+    ProblemShape,
+    ElementA,
+    LayoutATag,
+    SparseConfig,
+    arch::Sm100> {
+  using Compressor = SM90StructuredSparseCompressor<
+    ProblemShape,
+    ElementA,
+    LayoutATag,
+    SparseConfig
+  >;
+};
+
+template<
+  class ProblemShape,
+  class ElementA,
+  class LayoutATag,
+  class SparseConfig
+>
+struct StructuredSparseCompressorSelector<
+    ProblemShape,
+    ElementA,
+    LayoutATag,
+    SparseConfig,
+    arch::Sm120> {
+  using Compressor = SM90StructuredSparseCompressor<
+    ProblemShape,
+    ElementA,
+    LayoutATag,
+    SparseConfig
+  >;
+};
+
+template<
+  class ProblemShape,
+  class ElementA,
+  class LayoutATag,
   class SparseConfig,
   class ArchTag
 >

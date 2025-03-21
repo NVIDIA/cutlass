@@ -29,8 +29,6 @@
  *
  **************************************************************************************************/
 
-
-
 #pragma once
 
 #include <cute/config.hpp>
@@ -72,6 +70,41 @@ using Layout_MN_SW128_32B_Atom_Bits = ComposedLayout<Swizzle<2,5,2>, smem_ptr_fl
 
 template <class Type>
 using Layout_MN_SW128_32B_Atom = decltype(upcast<sizeof_bits<Type>::value>(Layout_MN_SW128_32B_Atom_Bits{}));
+
+//////////////////////////////////////////////////
+// Common layouts for Sparse UMMA Shared Memory //
+//////////////////////////////////////////////////
+
+using cute::GMMA::Layout_MN_INTER_SpAtom;
+using cute::GMMA::Layout_MN_SW32_SpAtom;
+using cute::GMMA::Layout_MN_SW64_SpAtom;
+using cute::GMMA::Layout_MN_SW128_SpAtom;
+using cute::GMMA::Layout_K_INTER_SpAtom;
+using cute::GMMA::Layout_K_SW32_SpAtom;
+using cute::GMMA::Layout_K_SW64_SpAtom;
+using cute::GMMA::Layout_K_SW128_SpAtom;
+
+template <class Type, int S>
+using Layout_MN_SW128_32B_SpAtom = ComposedLayout<Swizzle<2,5,2>, smem_sparse_ptr_flag_bits<S,sizeof_bits_v<Type>>,
+                                                  decltype(blocked_product(Layout<Shape<_1,Int<S>>>{}, Layout_MN_SW128_32B_Atom<Type>{}.layout_b()))>;
+
+// With UMMA::Major param
+template <class Type, int S, UMMA::Major tnsp>
+using Layout_INTER_SpAtom = typename conditional<tnsp == UMMA::Major::MN,
+                                                 Layout_MN_INTER_SpAtom<Type,S>,
+                                                 Layout_K_INTER_SpAtom<Type,S>>::type;
+template <class Type, int S, UMMA::Major tnsp>
+using Layout_SW32_SpAtom = typename conditional<tnsp == UMMA::Major::MN,
+                                                Layout_MN_SW32_SpAtom<Type,S>,
+                                                Layout_K_SW32_SpAtom<Type,S>>::type;
+template <class Type, int S, UMMA::Major tnsp>
+using Layout_SW64_SpAtom = typename conditional<tnsp == UMMA::Major::MN,
+                                                Layout_MN_SW64_SpAtom<Type,S>,
+                                                Layout_K_SW64_SpAtom<Type,S>>::type;
+template <class Type, int S, UMMA::Major tnsp>
+using Layout_SW128_SpAtom = typename conditional<tnsp == UMMA::Major::MN,
+                                                 Layout_MN_SW128_SpAtom<Type,S>,
+                                                 Layout_K_SW128_SpAtom<Type,S>>::type;
 
 // Tile a MN-logical layout atom to an MMA Tile Shape ((MMA_M,MMA_N),M_MMAs,N_MMAs,...)
 template <class LayoutAtom, class MMATileShape, class ModeOrder = GenColMajor>
@@ -212,16 +245,11 @@ make_umma_desc(Tensor<TEngine,TLayout> const& tensor)
 
     constexpr int SwizzleAtomKSize = LAYOUT_TYPE == UMMA::LayoutType::SWIZZLE_128B_BASE32B ? 4 : 8;
 
-    // Construct the canonical UMMA T Layout with shape
-    //    ((SwizzleAtomMNSize,n),(SwizzleAtomKSize,2))
-    Layout canonical_layout =
-        logical_divide(layout(u128_tensor),
-                       make_tile(Layout<Int<SwizzleAtomMNSize>, _1>{},
-                                 Layout<Int<SwizzleAtomKSize>,  _1>{}));
+    // Construct the canonical UMMA T Layout with shape ((SwizzleAtomMNSize,n),(SwizzleAtomKSize,2))
+    Layout canonical_layout = logical_divide(layout(u128_tensor), Tile<Layout<Int<SwizzleAtomMNSize>>,Layout<Int<SwizzleAtomKSize>>>{});
 
-    // Check ranks of canonical
-    CUTE_STATIC_ASSERT_V(rank<0>(canonical_layout) == Int<2>{}, "Not a canonical UMMA_MN Layout: No flat offset mode");
-    CUTE_STATIC_ASSERT_V(rank<1>(canonical_layout) == Int<2>{}, "Not a canonical UMMA_MN Layout: No flat offset mode");
+    // Check profile of canonical
+    CUTE_STATIC_ASSERT_V(congruent(canonical_layout, Shape<Shape<_1,_1>,Shape<_1,_1>>{}), "Not a canonical UMMA_MN Layout: Expected profile failure.");
     // Check canonical mode strides
     constexpr uint32_t stride_00 = stride<0,0>(canonical_layout);
     constexpr uint32_t expected_stride_00 = LAYOUT_TYPE == UMMA::LayoutType::SWIZZLE_NONE ? stride<0,0>(canonical_layout) : 1;
@@ -253,11 +281,10 @@ make_umma_desc(Tensor<TEngine,TLayout> const& tensor)
                          "Not a canonical UMMA_K Layout: Expected MN-size multiple of 8.");
 
     // Construct the canonical UMMA N Layout with shape ((8,n),(2,1))
-    Layout canonical_layout = logical_divide(layout(u128_tensor), make_tile(Layout<_8,_1>{}, Layout<_2,_1>{}));
+    Layout canonical_layout = logical_divide(layout(u128_tensor), Tile<Layout<_8,_1>,Layout<_2,_1>>{});
 
-    // Check ranks of canonical
-    CUTE_STATIC_ASSERT_V(rank<0>(canonical_layout) == Int<2>{}, "Not a canonical UMMA_K Layout: No flat offset mode");
-    CUTE_STATIC_ASSERT_V(rank<1>(canonical_layout) == Int<2>{}, "Not a canonical UMMA_K Layout: No flat offset mode");
+    // Check profile of canonical
+    CUTE_STATIC_ASSERT_V(congruent(canonical_layout, Shape<Shape<_1,_1>,Shape<_1,_1>>{}), "Not a canonical UMMA_K Layout: Expected profile failure.");
     // Check canonical mode strides
     constexpr uint32_t stride_00 = stride<0,0>(canonical_layout);
     constexpr uint32_t expected_stride_00 = SwizzleAtomMNSize;
@@ -1397,6 +1424,182 @@ struct MMA_Traits<SM100_MMA_F16BF16_TS_SCALED<a_type, b_type, c_type,
 };
 
 template <class a_type, class b_type, class c_type,
+          int M, int N, UMMA::Major a_major, UMMA::Major b_major,
+          UMMA::ScaleIn a_neg, UMMA::ScaleIn b_neg,
+          class... sparse_args>
+struct MMA_Traits<SM100_MMA_TF32_SS_SPARSE<a_type, b_type, c_type,
+                                       M, N, a_major, b_major,
+                                       a_neg, b_neg>, sparse_args...>
+{
+  using ValTypeD = c_type;
+  static_assert(sizeof(a_type) == 4);
+  using ValTypeA = sparse_elem<2, a_type>;
+  using ValTypeE = sparse_elem<4, uint8_t>;
+  using ValTypeB = b_type;
+  using ValTypeC = c_type;
+  static_assert(cute::sizeof_bits_v<a_type> == cute::sizeof_bits_v<b_type> && cute::sizeof_bits_v<b_type> == 32, "SM100_MMA_TF32_SS_SPARSE supports 32bit types");
+
+  using FrgTypeA = UMMA::sparse_smem_desc<a_major>;
+  using FrgTypeE = UMMA::tmem_e_frg<a_type>;
+  using FrgTypeB = UMMA::smem_desc<b_major>;
+  using FrgTypeC = UMMA::tmem_frg_1sm<c_type>;
+
+  // SparseMma consume double mma-k bits
+  static constexpr int K = 512 / cute::sizeof_bits<a_type>::value;
+
+  using Shape_MNK = Shape<Int<M>,Int<N>,Int<K>>;
+  using ThrID   = Layout<_1>;
+  using ALayout = Layout<Shape <_1,Shape <Int<M>,Int<K>>>,
+                         Stride<_0,Stride<    _1,Int<M>>>>;
+  using BLayout = Layout<Shape <_1,Shape <Int<N>,Int<K>>>,
+                         Stride<_0,Stride<    _1,Int<N>>>>;
+  using CLayout = Layout<Shape <_1,Shape <Int<M>,Int<N>>>,
+                         Stride<_0,Stride<    _1,Int<M>>>>;
+
+  // Accumulate or overwrite C.   1: read C, 0: ignore C [clear accumulators]
+  UMMA::ScaleOut accumulate_ = UMMA::ScaleOut::One;
+  // uint32_t tmem_e: Metadata tmem address.
+  cute::tuple<sparse_args...> sparse_args_;
+
+  UMMA::InstrDescriptor idesc_ = UMMA::make_instr_desc<
+    a_type, b_type, c_type, M, N, a_major, b_major, a_neg, b_neg, UMMA::Saturate::False, true>();
+
+  template <class TD, class DLayout,
+            class TA, class ALayout,
+            class TB, class BLayout,
+            class TC, class CLayout>
+  CUTE_HOST_DEVICE constexpr friend
+  void
+  mma_unpack(MMA_Traits          const& traits,
+             Tensor<TD, DLayout>      & D,
+             Tensor<TA, ALayout> const& A,
+             Tensor<TB, BLayout> const& B,
+             Tensor<TC, CLayout> const& C)
+  {
+    static_assert(is_same<cute::tuple<sparse_args...>, cute::tuple<uint32_t>>::value,
+                  "Params must be set via .with()?");
+    static_assert(is_tmem<TD>::value, "Expected tmem in MMA_Atom::call");
+    static_assert(is_rmem<TA>::value, "Expected desc registers in MMA_Atom::call");
+    static_assert(is_rmem<TB>::value, "Expected desc registers in MMA_Atom::call");
+    static_assert(is_tmem<TC>::value, "Expected tmem in MMA_Atom::call");
+
+    uint64_t desc_a = A[0];
+    uint64_t desc_b = B[0];
+    uint32_t tmem_c = raw_pointer_cast(D.data());
+
+    uint32_t tmem_e = get<0>(traits.sparse_args_);
+    uint32_t id2 = tmem_e &  0x00000001;
+    tmem_e       = tmem_e & ~0x00000001;
+
+    uint64_t idesc = UMMA::make_runtime_instr_desc<true>(traits.idesc_, static_cast<uint16_t>(id2), tmem_e);
+
+    SM100_MMA_TF32_SS_SPARSE<a_type, b_type, c_type,
+                          M, N, a_major, b_major,
+                          a_neg, b_neg>::fma(desc_a, desc_b, tmem_c, uint32_t(traits.accumulate_), idesc, tmem_e);
+  }
+
+  // Construct an executable sparse MMA_traits with sp into set.
+  template <class TE, class ELayout>
+  CUTE_HOST_DEVICE constexpr
+  MMA_Traits<SM100_MMA_TF32_SS_SPARSE<a_type, b_type, c_type,
+                                   M, N, a_major, b_major,
+                                   a_neg, b_neg>, uint32_t>
+  with(Tensor<TE, ELayout> const& E) const {
+    // Check sparse_ptr, check sparsity, check shape/layout?
+    uint32_t tmem_e_addr = raw_pointer_cast(E.data());     // Move to a CoupledTensor rather than a .with()?
+    return {accumulate_, {tmem_e_addr}, idesc_};
+  }
+};
+
+template <class a_type, class b_type, class c_type,
+          int M, int N, UMMA::Major a_major, UMMA::Major b_major,
+          UMMA::ScaleIn a_neg, UMMA::ScaleIn b_neg,
+          class... sparse_args>
+struct MMA_Traits<SM100_MMA_F16BF16_SS_SPARSE<a_type, b_type, c_type,
+                                       M, N, a_major, b_major,
+                                       a_neg, b_neg>, sparse_args...>
+{
+  using ValTypeD = c_type;
+  static_assert(sizeof(a_type) == 2);
+  using ValTypeA = sparse_elem<2, a_type>;
+  using ValTypeE = sparse_elem<8, uint8_t>;
+  using ValTypeB = b_type;
+  using ValTypeC = c_type;
+  static_assert(cute::sizeof_bits_v<a_type> == cute::sizeof_bits_v<b_type> && cute::sizeof_bits_v<b_type> == 16, "SM100_MMA_F16BF16_SS_SPARSE supports 16bit types");
+
+  using FrgTypeA = UMMA::sparse_smem_desc<a_major>;
+  using FrgTypeE = UMMA::tmem_e_frg<a_type>;
+  using FrgTypeB = UMMA::smem_desc<b_major>;
+  using FrgTypeC = UMMA::tmem_frg_1sm<c_type>;
+
+  // SparseMma consume double mma-k bits
+  static constexpr int K = 512 / cute::sizeof_bits<a_type>::value;
+
+  using Shape_MNK = Shape<Int<M>,Int<N>,Int<K>>;
+  using ThrID   = Layout<_1>;
+  using ALayout = Layout<Shape <_1,Shape <Int<M>,Int<K>>>,
+                         Stride<_0,Stride<    _1,Int<M>>>>;
+  using BLayout = Layout<Shape <_1,Shape <Int<N>,Int<K>>>,
+                         Stride<_0,Stride<    _1,Int<N>>>>;
+  using CLayout = Layout<Shape <_1,Shape <Int<M>,Int<N>>>,
+                         Stride<_0,Stride<    _1,Int<M>>>>;
+
+  // Accumulate or overwrite C.   1: read C, 0: ignore C [clear accumulators]
+  UMMA::ScaleOut accumulate_ = UMMA::ScaleOut::One;
+  // uint32_t tmem_e: Metadata tmem address.
+  cute::tuple<sparse_args...> sparse_args_;
+
+  UMMA::InstrDescriptor idesc_ = UMMA::make_instr_desc<
+    a_type, b_type, c_type, M, N, a_major, b_major, a_neg, b_neg, UMMA::Saturate::False, true>();
+
+  template <class TD, class DLayout,
+            class TA, class ALayout,
+            class TB, class BLayout,
+            class TC, class CLayout>
+  CUTE_HOST_DEVICE constexpr friend
+  void
+  mma_unpack(MMA_Traits          const& traits,
+             Tensor<TD, DLayout>      & D,
+             Tensor<TA, ALayout> const& A,
+             Tensor<TB, BLayout> const& B,
+             Tensor<TC, CLayout> const& C)
+  {
+    static_assert(is_same<cute::tuple<sparse_args...>, cute::tuple<uint32_t>>::value,
+                  "Params must be set via .with()?");
+    static_assert(is_tmem<TD>::value, "Expected tmem in MMA_Atom::call");
+    static_assert(is_rmem<TA>::value, "Expected desc registers in MMA_Atom::call");
+    static_assert(is_rmem<TB>::value, "Expected desc registers in MMA_Atom::call");
+    static_assert(is_tmem<TC>::value, "Expected tmem in MMA_Atom::call");
+
+    uint64_t desc_a = A[0];
+    uint64_t desc_b = B[0];
+    uint32_t tmem_c = raw_pointer_cast(D.data());
+
+    uint32_t tmem_e = get<0>(traits.sparse_args_);
+    uint32_t id2 = tmem_e &  0x00000001;
+    tmem_e       = tmem_e & ~0x00000001;
+
+    uint64_t idesc = UMMA::make_runtime_instr_desc<true>(traits.idesc_, static_cast<uint16_t>(id2), tmem_e);
+
+    SM100_MMA_F16BF16_SS_SPARSE<a_type, b_type, c_type,
+                         M, N, a_major, b_major,
+                         a_neg, b_neg>::fma(desc_a, desc_b, tmem_c, uint32_t(traits.accumulate_), idesc, tmem_e);
+  }
+
+  // Construct an executable sparse MMA_traits with sp into set.
+  template <class TE, class ELayout>
+  CUTE_HOST_DEVICE constexpr
+  MMA_Traits<SM100_MMA_F16BF16_SS_SPARSE<a_type, b_type, c_type,
+                                  M, N, a_major, b_major,
+                                  a_neg, b_neg>, uint32_t>
+  with(Tensor<TE, ELayout> const& E) const {
+    // Check sparse_ptr, check sparsity, check shape/layout?
+    uint32_t tmem_e_addr = raw_pointer_cast(E.data());     // Move to a CoupledTensor rather than a .with()?
+    return {accumulate_, {tmem_e_addr}, idesc_};
+  }
+};
+
+template <class a_type, class b_type, class c_type,
           int M, int N,
           UMMA::Major a_major, UMMA::Major b_major,
           UMMA::ScaleIn a_neg, UMMA::ScaleIn b_neg>
@@ -1806,6 +2009,182 @@ struct MMA_Traits<SM100_MMA_F16BF16_2x1SM_TS_SCALED<a_type, b_type, c_type,
 
 template <class a_type, class b_type, class c_type,
           int M, int N, UMMA::Major a_major, UMMA::Major b_major,
+          UMMA::ScaleIn a_neg, UMMA::ScaleIn b_neg,
+          class... sparse_args>
+struct MMA_Traits<SM100_MMA_TF32_2x1SM_SS_SPARSE<a_type, b_type, c_type,
+                                             M, N, a_major, b_major,
+                                             a_neg, b_neg>, sparse_args...>
+{
+  using ValTypeD = c_type;
+  static_assert(sizeof(a_type) == 4);
+  using ValTypeA = sparse_elem<2, a_type>;
+  using ValTypeE = sparse_elem<4, uint8_t>;
+  using ValTypeB = b_type;
+  using ValTypeC = c_type;
+  static_assert(cute::sizeof_bits_v<a_type> == cute::sizeof_bits_v<b_type> && cute::sizeof_bits_v<b_type> == 32, "SM100_MMA_TF32_2x1SM_SS_SPARSE supports 32bit types");
+
+  using FrgTypeA = UMMA::sparse_smem_desc<a_major>;
+  using FrgTypeE = UMMA::tmem_e_frg<a_type>;
+  using FrgTypeB = UMMA::smem_desc<b_major>;
+  using FrgTypeC = UMMA::tmem_frg_2sm<c_type>;
+
+  // SparseMma consume double mma-k bits
+  constexpr static int K = 512 / cute::sizeof_bits<a_type>::value;
+
+  using Shape_MNK = Shape<Int<M>,Int<N>,Int<K>>;
+  using ThrID   = Layout<_2>;
+  using ALayout = Layout<Shape <      _2,Shape <Int<M/2>,Int<K>>>,
+                         Stride<Int<M/2>,Stride<      _1,Int<M>>>>;
+  using BLayout = Layout<Shape <      _2,Shape <Int<N/2>,Int<K>>>,
+                         Stride<Int<N/2>,Stride<      _1,Int<N>>>>;
+  using CLayout = Layout<Shape <      _2,Shape <Int<M/2>,Int<N>>>,
+                         Stride<Int<M/2>,Stride<      _1,Int<M>>>>;
+
+  // Accumulate or overwrite C.   1: read C, 0: ignore C [clear accumulators]
+  UMMA::ScaleOut accumulate_ = UMMA::ScaleOut::One;
+  // uint32_t tmem_e: Metadata tmem address.
+  cute::tuple<sparse_args...> sparse_args_;
+
+  UMMA::InstrDescriptor idesc_ = UMMA::make_instr_desc<
+    a_type, b_type, c_type, M, N, a_major, b_major, a_neg, b_neg, UMMA::Saturate::False, true>();
+
+  template <class TD, class DLayout,
+            class TA, class ALayout,
+            class TB, class BLayout,
+            class TC, class CLayout>
+  CUTE_HOST_DEVICE constexpr friend
+  void
+  mma_unpack(MMA_Traits          const& traits,
+             Tensor<TD, DLayout>      & D,
+             Tensor<TA, ALayout> const& A,
+             Tensor<TB, BLayout> const& B,
+             Tensor<TC, CLayout> const& C)
+  {
+    static_assert(is_same<cute::tuple<sparse_args...>, cute::tuple<uint32_t>>::value,
+                  "Params must be set via .with()?");
+    static_assert(is_tmem<TD>::value, "Expected tmem in MMA_Atom::call");
+    static_assert(is_rmem<TA>::value, "Expected desc registers in MMA_Atom::call");
+    static_assert(is_rmem<TB>::value, "Expected desc registers in MMA_Atom::call");
+    static_assert(is_tmem<TC>::value, "Expected tmem in MMA_Atom::call");
+
+    uint64_t desc_a = A[0];
+    uint64_t desc_b = B[0];
+    uint32_t tmem_c = raw_pointer_cast(D.data());
+
+    uint32_t tmem_e = get<0>(traits.sparse_args_);
+    uint32_t id2 = tmem_e &  0x00000001;
+    tmem_e       = tmem_e & ~0x00000001;
+
+    uint64_t idesc = UMMA::make_runtime_instr_desc<true>(traits.idesc_, static_cast<uint16_t>(id2), tmem_e);
+
+    SM100_MMA_TF32_2x1SM_SS_SPARSE<a_type, b_type, c_type,
+                              M, N, a_major, b_major,
+                              a_neg, b_neg>::fma(desc_a, desc_b, tmem_c, uint32_t(traits.accumulate_), idesc, tmem_e);
+  }
+
+  // Construct an executable sparse MMA_traits with sp into set.
+  template <class TE, class ELayout>
+  CUTE_HOST_DEVICE constexpr
+  MMA_Traits<SM100_MMA_TF32_2x1SM_SS_SPARSE<a_type, b_type, c_type,
+                                       M, N, a_major, b_major,
+                                       a_neg, b_neg>, uint32_t>
+  with(Tensor<TE, ELayout> const& E, uint32_t id2 = 0) const {
+    // Check sparse_ptr, check sparsity, check shape/layout?
+    uint32_t tmem_e_addr = raw_pointer_cast(E.data());
+    return {accumulate_, {tmem_e_addr}, idesc_};
+  }
+};
+
+template <class a_type, class b_type, class c_type,
+          int M, int N, UMMA::Major a_major, UMMA::Major b_major,
+          UMMA::ScaleIn a_neg, UMMA::ScaleIn b_neg,
+          class... sparse_args>
+struct MMA_Traits<SM100_MMA_F16BF16_2x1SM_SS_SPARSE<a_type, b_type, c_type,
+                                             M, N, a_major, b_major,
+                                             a_neg, b_neg>, sparse_args...>
+{
+  using ValTypeD = c_type;
+  static_assert(sizeof(a_type) == 2);
+  using ValTypeA = sparse_elem<2, a_type>;
+  using ValTypeE = sparse_elem<8, uint8_t>;
+  using ValTypeB = b_type;
+  using ValTypeC = c_type;
+  static_assert(cute::sizeof_bits_v<a_type> == cute::sizeof_bits_v<b_type> && cute::sizeof_bits_v<b_type> == 16, "SM100_MMA_F16BF16_2x1SM_SS_SPARSE supports 16bit types");
+
+  using FrgTypeA = UMMA::sparse_smem_desc<a_major>;
+  using FrgTypeE = UMMA::tmem_e_frg<a_type>;
+  using FrgTypeB = UMMA::smem_desc<b_major>;
+  using FrgTypeC = UMMA::tmem_frg_2sm<c_type>;
+
+  // SparseMma consume double mma-k bits
+  constexpr static int K = 512 / cute::sizeof_bits<a_type>::value;
+
+  using Shape_MNK = Shape<Int<M>,Int<N>,Int<K>>;
+  using ThrID   = Layout<_2>;
+  using ALayout = Layout<Shape <      _2,Shape <Int<M/2>,Int<K>>>,
+                         Stride<Int<M/2>,Stride<      _1,Int<M>>>>;
+  using BLayout = Layout<Shape <      _2,Shape <Int<N/2>,Int<K>>>,
+                         Stride<Int<N/2>,Stride<      _1,Int<N>>>>;
+  using CLayout = Layout<Shape <      _2,Shape <Int<M/2>,Int<N>>>,
+                         Stride<Int<M/2>,Stride<      _1,Int<M>>>>;
+
+  // Accumulate or overwrite C.   1: read C, 0: ignore C [clear accumulators]
+  UMMA::ScaleOut accumulate_ = UMMA::ScaleOut::One;
+  // uint32_t tmem_e: Metadata tmem address.
+  cute::tuple<sparse_args...> sparse_args_;
+
+  UMMA::InstrDescriptor idesc_ = UMMA::make_instr_desc<
+    a_type, b_type, c_type, M, N, a_major, b_major, a_neg, b_neg, UMMA::Saturate::False, true>();
+
+  template <class TD, class DLayout,
+            class TA, class ALayout,
+            class TB, class BLayout,
+            class TC, class CLayout>
+  CUTE_HOST_DEVICE constexpr friend
+  void
+  mma_unpack(MMA_Traits          const& traits,
+             Tensor<TD, DLayout>      & D,
+             Tensor<TA, ALayout> const& A,
+             Tensor<TB, BLayout> const& B,
+             Tensor<TC, CLayout> const& C)
+  {
+    static_assert(is_same<cute::tuple<sparse_args...>, cute::tuple<uint32_t>>::value,
+                  "Params must be set via .with()?");
+    static_assert(is_tmem<TD>::value, "Expected tmem in MMA_Atom::call");
+    static_assert(is_rmem<TA>::value, "Expected desc registers in MMA_Atom::call");
+    static_assert(is_rmem<TB>::value, "Expected desc registers in MMA_Atom::call");
+    static_assert(is_tmem<TC>::value, "Expected tmem in MMA_Atom::call");
+
+    uint64_t desc_a = A[0];
+    uint64_t desc_b = B[0];
+    uint32_t tmem_c = raw_pointer_cast(D.data());
+
+    uint32_t tmem_e = get<0>(traits.sparse_args_);
+    uint32_t id2 = tmem_e &  0x00000001;
+    tmem_e       = tmem_e & ~0x00000001;
+
+    uint64_t idesc = UMMA::make_runtime_instr_desc<true>(traits.idesc_, static_cast<uint16_t>(id2), tmem_e);
+
+    SM100_MMA_F16BF16_2x1SM_SS_SPARSE<a_type, b_type, c_type,
+                              M, N, a_major, b_major,
+                              a_neg, b_neg>::fma(desc_a, desc_b, tmem_c, uint32_t(traits.accumulate_), idesc, tmem_e);
+  }
+
+  // Construct an executable sparse MMA_traits with sp into set.
+  template <class TE, class ELayout>
+  CUTE_HOST_DEVICE constexpr
+  MMA_Traits<SM100_MMA_F16BF16_2x1SM_SS_SPARSE<a_type, b_type, c_type,
+                                       M, N, a_major, b_major,
+                                       a_neg, b_neg>, uint32_t>
+  with(Tensor<TE, ELayout> const& E, uint32_t id2 = 0) const {
+    // Check sparse_ptr, check sparsity, check shape/layout?
+    uint32_t tmem_e_addr = raw_pointer_cast(E.data());
+    return {accumulate_, {tmem_e_addr}, idesc_};
+  }
+};
+
+template <class a_type, class b_type, class c_type,
+          int M, int N, UMMA::Major a_major, UMMA::Major b_major,
           UMMA::Saturate c_sat>
 struct MMA_Traits<SM100_MMA_S8_SS<a_type, b_type, c_type,
                                 M, N, a_major, b_major,
@@ -1930,6 +2309,94 @@ struct MMA_Traits<SM100_MMA_S8_TS<a_type, b_type, c_type,
                   M, N,
                   a_major, b_major,
                   a_neg, b_neg, c_sat>::fma(tmem_a, desc_b, tmem_c, uint32_t(traits.accumulate_), idesc);
+  }
+};
+
+template <class a_type, class b_type, class c_type,
+          int M, int N,
+          UMMA::Major a_major, UMMA::Major b_major,
+          UMMA::Saturate c_sat,
+          class... sparse_args>
+struct MMA_Traits<SM100_MMA_S8_SS_SPARSE<a_type, b_type, c_type,
+                                       M, N, a_major, b_major,
+                                       c_sat>, sparse_args...>
+{
+  using ValTypeD = c_type;
+  static_assert(sizeof(a_type) == 1);
+  using ValTypeA = sparse_elem<2, a_type>;
+  using ValTypeE = sparse_elem<8, uint8_t>;
+  using ValTypeB = b_type;
+  using ValTypeC = c_type;
+  static_assert(cute::sizeof_bits_v<a_type> == cute::sizeof_bits_v<b_type> && cute::sizeof_bits_v<b_type> == 8, "SM100_MMA_S8_SS_SPARSE supports 8bit types");
+
+  using FrgTypeA = UMMA::sparse_smem_desc<a_major>;
+  using FrgTypeE = UMMA::tmem_e_frg<a_type>;
+  using FrgTypeB = UMMA::smem_desc<b_major>;
+  using FrgTypeC = UMMA::tmem_frg_1sm<c_type>;
+
+  // SparseMma consume double mma-k bits
+  static constexpr int K = 512 / cute::sizeof_bits<a_type>::value;
+
+  using Shape_MNK = Shape<Int<M>,Int<N>,Int<K>>;
+  using ThrID   = Layout<_1>;
+  using ALayout = Layout<Shape <_1,Shape <Int<M>,Int<K>>>,
+                         Stride<_0,Stride<    _1,Int<M>>>>;
+  using BLayout = Layout<Shape <_1,Shape <Int<N>,Int<K>>>,
+                         Stride<_0,Stride<    _1,Int<N>>>>;
+  using CLayout = Layout<Shape <_1,Shape <Int<M>,Int<N>>>,
+                         Stride<_0,Stride<    _1,Int<M>>>>;
+
+  // Accumulate or overwrite C.   1: read C, 0: ignore C [clear accumulators]
+  UMMA::ScaleOut accumulate_ = UMMA::ScaleOut::One;
+  // uint32_t tmem_e: Metadata tmem address.
+  cute::tuple<sparse_args...> sparse_args_;
+
+  UMMA::InstrDescriptor idesc_ = UMMA::make_instr_desc<
+    a_type, b_type, c_type, M, N, a_major, b_major, UMMA::ScaleIn::One, UMMA::ScaleIn::One, c_sat, true>();
+
+  template <class TD, class DLayout,
+            class TA, class ALayout,
+            class TB, class BLayout,
+            class TC, class CLayout>
+  CUTE_HOST_DEVICE constexpr friend
+  void
+  mma_unpack(MMA_Traits          const& traits,
+             Tensor<TD, DLayout>      & D,
+             Tensor<TA, ALayout> const& A,
+             Tensor<TB, BLayout> const& B,
+             Tensor<TC, CLayout> const& C)
+  {
+    static_assert(is_same<cute::tuple<sparse_args...>, cute::tuple<uint32_t>>::value,
+                  "Params must be set via .with()?");
+    static_assert(is_tmem<TD>::value, "Expected tmem in MMA_Atom::call");
+    static_assert(is_rmem<TA>::value, "Expected desc registers in MMA_Atom::call");
+    static_assert(is_rmem<TB>::value, "Expected desc registers in MMA_Atom::call");
+    static_assert(is_tmem<TC>::value, "Expected tmem in MMA_Atom::call");
+
+    uint64_t desc_a = A[0];
+    uint64_t desc_b = B[0];
+    uint32_t tmem_c = raw_pointer_cast(D.data());
+
+    uint32_t tmem_e = get<0>(traits.sparse_args_);
+    uint32_t id2 = 0;
+
+    uint64_t idesc = UMMA::make_runtime_instr_desc<true>(traits.idesc_, static_cast<uint16_t>(id2), tmem_e);
+
+    SM100_MMA_S8_SS_SPARSE<a_type, b_type, c_type,
+                         M, N, a_major, b_major,
+                         c_sat>::fma(desc_a, desc_b, tmem_c, uint32_t(traits.accumulate_), idesc, tmem_e);
+  }
+
+  // Construct an executable sparse MMA_traits with sp into set.
+  template <class TE, class ELayout>
+  CUTE_HOST_DEVICE constexpr
+  MMA_Traits<SM100_MMA_S8_SS_SPARSE<a_type, b_type, c_type,
+                                  M, N, a_major, b_major,
+                                  c_sat>, uint32_t>
+  with(Tensor<TE, ELayout> const& E, uint32_t id2 = 0) const {
+    // Check sparse_ptr, check sparsity, check shape/layout?
+    uint32_t tmem_e_addr = raw_pointer_cast(E.data());
+    return {accumulate_, {tmem_e_addr}, idesc_};
   }
 };
 
@@ -2063,6 +2530,94 @@ struct MMA_Traits<SM100_MMA_S8_2x1SM_TS<a_type, b_type, c_type,
 };
 
 template <class a_type, class b_type, class c_type,
+          int M, int N,
+          UMMA::Major a_major, UMMA::Major b_major,
+          UMMA::Saturate c_sat,
+          class... sparse_args>
+struct MMA_Traits<SM100_MMA_S8_2x1SM_SS_SPARSE<a_type, b_type, c_type,
+                                             M, N, a_major, b_major,
+                                             c_sat>, sparse_args...>
+{
+  using ValTypeD = c_type;
+  static_assert(sizeof(a_type) == 1);
+  using ValTypeA = sparse_elem<2, a_type>;
+  using ValTypeE = sparse_elem<8, uint8_t>;
+  using ValTypeB = b_type;
+  using ValTypeC = c_type;
+  static_assert(cute::sizeof_bits_v<a_type> == cute::sizeof_bits_v<b_type> && cute::sizeof_bits_v<b_type> == 8, "SM100_MMA_S8_2x1SM_SS_SPARSE supports 8bit types");
+
+  using FrgTypeA = UMMA::sparse_smem_desc<a_major>;
+  using FrgTypeE = UMMA::tmem_e_frg<a_type>;
+  using FrgTypeB = UMMA::smem_desc<b_major>;
+  using FrgTypeC = UMMA::tmem_frg_2sm<c_type>;
+
+  // SparseMma consume double mma-k bits
+  constexpr static int K = 512 / cute::sizeof_bits<a_type>::value;
+
+  using Shape_MNK = Shape<Int<M>,Int<N>,Int<K>>;
+  using ThrID   = Layout<_2>;
+  using ALayout = Layout<Shape <      _2,Shape <Int<M/2>,Int<K>>>,
+                         Stride<Int<M/2>,Stride<      _1,Int<M>>>>;
+  using BLayout = Layout<Shape <      _2,Shape <Int<N/2>,Int<K>>>,
+                         Stride<Int<N/2>,Stride<      _1,Int<N>>>>;
+  using CLayout = Layout<Shape <      _2,Shape <Int<M/2>,Int<N>>>,
+                         Stride<Int<M/2>,Stride<      _1,Int<M>>>>;
+
+  // Accumulate or overwrite C.   1: read C, 0: ignore C [clear accumulators]
+  UMMA::ScaleOut accumulate_ = UMMA::ScaleOut::One;
+  // uint32_t tmem_e: Metadata tmem address.
+  cute::tuple<sparse_args...> sparse_args_;
+
+  UMMA::InstrDescriptor idesc_ = UMMA::make_instr_desc<
+    a_type, b_type, c_type, M, N, a_major, b_major, UMMA::ScaleIn::One, UMMA::ScaleIn::One, c_sat, true>();
+
+  template <class TD, class DLayout,
+            class TA, class ALayout,
+            class TB, class BLayout,
+            class TC, class CLayout>
+  CUTE_HOST_DEVICE constexpr friend
+  void
+  mma_unpack(MMA_Traits          const& traits,
+             Tensor<TD, DLayout>      & D,
+             Tensor<TA, ALayout> const& A,
+             Tensor<TB, BLayout> const& B,
+             Tensor<TC, CLayout> const& C)
+  {
+    static_assert(is_same<cute::tuple<sparse_args...>, cute::tuple<uint32_t>>::value,
+                  "Params must be set via .with()?");
+    static_assert(is_tmem<TD>::value, "Expected tmem in MMA_Atom::call");
+    static_assert(is_rmem<TA>::value, "Expected desc registers in MMA_Atom::call");
+    static_assert(is_rmem<TB>::value, "Expected desc registers in MMA_Atom::call");
+    static_assert(is_tmem<TC>::value, "Expected tmem in MMA_Atom::call");
+
+    uint64_t desc_a = A[0];
+    uint64_t desc_b = B[0];
+    uint32_t tmem_c = raw_pointer_cast(D.data());
+
+    uint32_t tmem_e = get<0>(traits.sparse_args_);
+    uint16_t id2    = 0u;
+
+    uint64_t idesc = UMMA::make_runtime_instr_desc<true>(traits.idesc_, id2, tmem_e);
+
+    SM100_MMA_S8_2x1SM_SS_SPARSE<a_type, b_type, c_type,
+                              M, N, a_major, b_major,
+                              c_sat>::fma(desc_a, desc_b, tmem_c, uint32_t(traits.accumulate_), idesc, tmem_e);
+  }
+
+  // Construct an executable sparse MMA_traits with sp into set.
+  template <class TE, class ELayout>
+  CUTE_HOST_DEVICE constexpr
+  MMA_Traits<SM100_MMA_S8_2x1SM_SS_SPARSE<a_type, b_type, c_type,
+                                       M, N, a_major, b_major,
+                                       c_sat>, uint32_t>
+  with(Tensor<TE, ELayout> const& E, uint32_t id2 = 0) const {
+    // Check sparse_ptr, check sparsity, check shape/layout?
+    uint32_t tmem_e_addr = raw_pointer_cast(E.data());
+    return {accumulate_, {tmem_e_addr}, idesc_};
+  }
+};
+
+template <class a_type, class b_type, class c_type,
           int M, int N, UMMA::Major a_major, UMMA::Major b_major,
           UMMA::ScaleIn a_neg, UMMA::ScaleIn b_neg>
 struct MMA_Traits<SM100_MMA_F8F6F4_SS, a_type, b_type, c_type,
@@ -2171,7 +2726,7 @@ struct MMA_Traits<SM100_MMA_MXF8F6F4_SS<a_type, b_type, c_type, sf_type,
   using CLayout = Layout<Shape <_1,Shape <Int<M>,Int<N>>>,
                          Stride<_0,Stride<    _1,Int<M>>>>;
   using MMA_ScaleFactor = SM100_MMA_MXF8F6F4_SS<a_type, b_type, c_type, sf_type,
-                                M, (N == 192 ? 256 : N), a_major, b_major,
+                                M, (round_up(N, 128)), a_major, b_major,
                                 a_neg, b_neg>;
 
   // Accumulate or overwrite C.   1: read C, 0: ignore C [clear accumulators]
@@ -2222,6 +2777,107 @@ struct MMA_Traits<SM100_MMA_MXF8F6F4_SS<a_type, b_type, c_type, sf_type,
   }
 };
 
+template <class a_type, class b_type, class c_type, class sf_type,
+          int M, int N, UMMA::Major a_major, UMMA::Major b_major,
+          UMMA::ScaleIn a_neg, UMMA::ScaleIn b_neg,
+          class... sparse_args>
+struct MMA_Traits<SM100_MMA_MXF8F6F4_SS_SPARSE<a_type, b_type, c_type, sf_type,
+                                          M, N, a_major, b_major,
+                                          a_neg, b_neg>, sparse_args...>
+{
+  using ValTypeD = c_type;
+  using ValTypeA = sparse_elem<2, a_type>;
+  using ValTypeE = sparse_elem<8, uint8_t>;
+  using ValTypeB = b_type;
+  using ValTypeC = c_type;
+  using ValTypeSFA = sf_type;
+  using ValTypeSFB = sf_type;
+  static_assert(cute::sizeof_bits_v<a_type> <= 8 && cute::sizeof_bits_v<b_type> <= 8, "SM100_MMA_MXF8F6F4_SS_SPARSE supports types with leq 8bit types");
+
+  // Logical shape-K is always 512bits, transform to units of elements
+  constexpr static int K = 64;
+  constexpr static int SFVecSize = 64;
+
+  using FrgTypeA = UMMA::sparse_smem_desc<a_major>;
+  using FrgTypeE = UMMA::tmem_e_frg<uint8_t>;
+  using FrgTypeB = UMMA::smem_desc<b_major>;
+  using FrgTypeC = UMMA::tmem_frg_1sm<c_type>;
+  using FrgTypeSFA = UMMA::tmem_sf_frg<sf_type, SFVecSize, 1, true>;
+  using FrgTypeSFB = UMMA::tmem_sf_frg<sf_type, SFVecSize, 1, false>;
+
+  static_assert(sizeof_bits_v<ValTypeA> <= sizeof_bits_v<uint8_t> &&
+                sizeof_bits_v<ValTypeB> <= sizeof_bits_v<uint8_t>);
+
+
+  using Shape_MNK = Shape<Int<M>,Int<N>,Int<K>>;
+  using ThrID   = Layout<_1>;
+  using ALayout = Layout<Shape <_1,Shape <Int<M>,Int<K>>>,
+                         Stride<_0,Stride<    _1,Int<M>>>>;
+  using BLayout = Layout<Shape <_1,Shape <Int<N>,Int<K>>>,
+                         Stride<_0,Stride<    _1,Int<N>>>>;
+  using CLayout = Layout<Shape <_1,Shape <Int<M>,Int<N>>>,
+                         Stride<_0,Stride<    _1,Int<M>>>>;
+  using MMA_ScaleFactor = SM100_MMA_MXF8F6F4_SS_SPARSE<a_type, b_type, c_type, sf_type,
+                                M, (round_up(N, 128)), a_major, b_major,
+                                a_neg, b_neg>;
+
+  // Accumulate or overwrite C.   1: read C, 0: ignore C [clear accumulators]
+  UMMA::ScaleOut accumulate_ = UMMA::ScaleOut::One;
+  uint32_t tsfa_addr_ = 0;
+  uint32_t tsfb_addr_ = 0;
+
+  // uint32_t tmem_e: Metadata tmem address.
+  cute::tuple<sparse_args...> sparse_args_;
+
+  UMMA::InstrDescriptorBlockScaled idesc_ = UMMA::make_instr_desc_block_scaled<
+    a_type, b_type, c_type, sf_type, M, N, a_major, b_major, a_neg, b_neg, true>();
+
+  template <class TD, class DLayout,
+            class TA, class ALayout,
+            class TB, class BLayout,
+            class TC, class CLayout>
+  CUTE_HOST_DEVICE constexpr friend
+  void
+  mma_unpack(MMA_Traits          const& traits,
+             Tensor<TD, DLayout>      & D,
+             Tensor<TA, ALayout> const& A,
+             Tensor<TB, BLayout> const& B,
+             Tensor<TC, CLayout> const& C)
+  {
+    static_assert(is_same<cute::tuple<sparse_args...>, cute::tuple<uint32_t>>::value,
+              "Params must be set via .with()?");
+    static_assert(is_tmem<TD>::value, "Expected tmem in MMA_Atom::call");
+    static_assert(is_rmem<TA>::value, "Expected desc registers in MMA_Atom::call");
+    static_assert(is_rmem<TB>::value, "Expected desc registers in MMA_Atom::call");
+    static_assert(is_tmem<TC>::value, "Expected tmem in MMA_Atom::call");
+
+    uint64_t desc_a = A[0];
+    uint64_t desc_b = B[0];
+    uint32_t tmem_c = raw_pointer_cast(D.data());
+
+    uint32_t tmem_e = get<0>(traits.sparse_args_);
+    uint16_t id2    = 0u;
+
+    uint64_t idesc = UMMA::make_runtime_instr_desc_block_scaled<true>(traits.idesc_, traits.tsfa_addr_, traits.tsfb_addr_, id2, tmem_e);
+
+    SM100_MMA_MXF8F6F4_SS_SPARSE<a_type, b_type, c_type, sf_type,
+                            M, N,
+                            a_major, b_major,
+                            a_neg, b_neg>::fma(desc_a, desc_b, tmem_c, uint32_t(traits.accumulate_), idesc, traits.tsfa_addr_, traits.tsfb_addr_, tmem_e);
+  }
+
+  // Construct an executable MMA_traits with sp into set.
+  template <class TE, class TELayout, class TSFA, class TSFALayout, class TSFB, class TSFBLayout>
+  CUTE_HOST_DEVICE constexpr
+  MMA_Traits<SM100_MMA_MXF8F6F4_SS_SPARSE<a_type, b_type, c_type, sf_type,
+                              M, N, a_major, b_major, a_neg, b_neg>, uint32_t>
+  with(UMMA::ScaleOut accumulate, Tensor<TE, TELayout> const& E, Tensor<TSFA, TSFALayout> const& SFA, Tensor<TSFB, TSFBLayout> const& SFB) const {
+    uint32_t tmem_e_addr = raw_pointer_cast(E.data());
+    uint32_t tmem_sfa_addr = raw_pointer_cast(SFA.data());
+    uint32_t tmem_sfb_addr = raw_pointer_cast(SFB.data());
+    return {accumulate, tmem_sfa_addr, tmem_sfb_addr, {tmem_e_addr}, idesc_};
+  }
+};
 
 template <class a_type, class b_type, class c_type,
           int M, int N, UMMA::Major a_major, UMMA::Major b_major,
@@ -2288,6 +2944,94 @@ struct MMA_Traits<SM100_MMA_F8F6F4_TS<a_type, b_type, c_type,
                   M, N,
                   a_major, b_major,
                   a_neg, b_neg, c_sat>::fma(tmem_a, desc_b, tmem_c, uint32_t(traits.accumulate_), idesc);
+  }
+};
+
+template <class a_type, class b_type, class c_type,
+          int M, int N,
+          UMMA::Major a_major, UMMA::Major b_major,
+          UMMA::ScaleIn a_neg, UMMA::ScaleIn b_neg,
+          class... sparse_args>
+struct MMA_Traits<SM100_MMA_F8F6F4_SS_SPARSE<a_type, b_type, c_type,
+                                       M, N, a_major, b_major,
+                                       a_neg, b_neg>, sparse_args...>
+{
+  using ValTypeD = c_type;
+  static_assert(sizeof(a_type) == 1);
+  using ValTypeA = sparse_elem<2, a_type>;
+  using ValTypeE = sparse_elem<8, uint8_t>;
+  using ValTypeB = b_type;
+  using ValTypeC = c_type;
+  static_assert(cute::sizeof_bits_v<a_type> <= 8 && cute::sizeof_bits_v<b_type> <= 8, "SM100_MMA_F8F6F4_SS_SPARSE supports types with leq 8bit types");
+
+  using FrgTypeA = UMMA::sparse_smem_desc<a_major>;
+  using FrgTypeE = UMMA::tmem_e_frg<uint8_t>;
+  using FrgTypeB = UMMA::smem_desc<b_major>;
+  using FrgTypeC = UMMA::tmem_frg_1sm<c_type>;
+
+  // SparseMma consume double mma-k bits
+  static constexpr int K = 512 / cute::sizeof_bits<uint8_t>::value;
+
+  using Shape_MNK = Shape<Int<M>,Int<N>,Int<K>>;
+  using ThrID   = Layout<_1>;
+  using ALayout = Layout<Shape <_1,Shape <Int<M>,Int<K>>>,
+                         Stride<_0,Stride<    _1,Int<M>>>>;
+  using BLayout = Layout<Shape <_1,Shape <Int<N>,Int<K>>>,
+                         Stride<_0,Stride<    _1,Int<N>>>>;
+  using CLayout = Layout<Shape <_1,Shape <Int<M>,Int<N>>>,
+                         Stride<_0,Stride<    _1,Int<M>>>>;
+
+  // Accumulate or overwrite C.   1: read C, 0: ignore C [clear accumulators]
+  UMMA::ScaleOut accumulate_ = UMMA::ScaleOut::One;
+  // uint32_t tmem_e: Metadata tmem address.
+  cute::tuple<sparse_args...> sparse_args_;
+
+  UMMA::InstrDescriptor idesc_ = UMMA::make_instr_desc<
+    a_type, b_type, c_type, M, N, a_major, b_major, a_neg, b_neg, UMMA::Saturate::False, true>();
+
+  template <class TD, class DLayout,
+            class TA, class ALayout,
+            class TB, class BLayout,
+            class TC, class CLayout>
+  CUTE_HOST_DEVICE constexpr friend
+  void
+  mma_unpack(MMA_Traits          const& traits,
+             Tensor<TD, DLayout>      & D,
+             Tensor<TA, ALayout> const& A,
+             Tensor<TB, BLayout> const& B,
+             Tensor<TC, CLayout> const& C)
+  {
+    static_assert(is_same<cute::tuple<sparse_args...>, cute::tuple<uint32_t>>::value,
+                  "Params must be set via .with()?");
+    static_assert(is_tmem<TD>::value, "Expected tmem in MMA_Atom::call");
+    static_assert(is_rmem<TA>::value, "Expected desc registers in MMA_Atom::call");
+    static_assert(is_rmem<TB>::value, "Expected desc registers in MMA_Atom::call");
+    static_assert(is_tmem<TC>::value, "Expected tmem in MMA_Atom::call");
+
+    uint64_t desc_a = A[0];
+    uint64_t desc_b = B[0];
+    uint32_t tmem_c = raw_pointer_cast(D.data());
+
+    uint32_t tmem_e = get<0>(traits.sparse_args_);
+    uint16_t id2    = 0u;
+
+    uint64_t idesc = UMMA::make_runtime_instr_desc<true>(traits.idesc_, id2, tmem_e);
+
+    SM100_MMA_F8F6F4_SS_SPARSE<a_type, b_type, c_type,
+                         M, N, a_major, b_major,
+                         a_neg, b_neg>::fma(desc_a, desc_b, tmem_c, uint32_t(traits.accumulate_), idesc, tmem_e);
+  }
+
+  // Construct an executable sparse MMA_traits with sp into set.
+  template <class TE, class ELayout>
+  CUTE_HOST_DEVICE constexpr
+  MMA_Traits<SM100_MMA_F8F6F4_SS_SPARSE<a_type, b_type, c_type,
+                                  M, N, a_major, b_major,
+                                  a_neg, b_neg>, uint32_t>
+  with(Tensor<TE, ELayout> const& E, uint32_t id2 = 0) const {
+    // Check sparse_ptr, check sparsity, check shape/layout?
+    uint32_t tmem_e_addr = raw_pointer_cast(E.data());
+    return {accumulate_, {tmem_e_addr}, idesc_};
   }
 };
 
@@ -2427,6 +3171,92 @@ struct MMA_Traits<SM100_MMA_F8F6F4_2x1SM_TS<a_type, b_type, c_type,
   }
 };
 
+template <class a_type, class b_type, class c_type,
+          int M, int N, UMMA::Major a_major, UMMA::Major b_major,
+          UMMA::ScaleIn a_neg, UMMA::ScaleIn b_neg,
+          class... sparse_args>
+struct MMA_Traits<SM100_MMA_F8F6F4_2x1SM_SS_SPARSE<a_type, b_type, c_type,
+                                             M, N, a_major, b_major,
+                                             a_neg, b_neg>, sparse_args...>
+{
+  using ValTypeD = c_type;
+  static_assert(sizeof(a_type) == 1);
+  using ValTypeA = sparse_elem<2, a_type>;
+  using ValTypeE = sparse_elem<8, uint8_t>;
+  using ValTypeB = b_type;
+  using ValTypeC = c_type;
+  static_assert(cute::sizeof_bits_v<a_type> <= 8 && cute::sizeof_bits_v<b_type> <= 8, "SM100_MMA_F8F6F4_2x1SM_SS_SPARSE supports types with leq 8bit types");
+
+  using FrgTypeA = UMMA::sparse_smem_desc<a_major>;
+  using FrgTypeE = UMMA::tmem_e_frg<uint8_t>;
+  using FrgTypeB = UMMA::smem_desc<b_major>;
+  using FrgTypeC = UMMA::tmem_frg_2sm<c_type>;
+
+  // SparseMma consume double mma-k bits
+  constexpr static int K = 512 / cute::sizeof_bits<uint8_t>::value;
+
+  using Shape_MNK = Shape<Int<M>,Int<N>,Int<K>>;
+  using ThrID   = Layout<_2>;
+  using ALayout = Layout<Shape <      _2,Shape <Int<M/2>,Int<K>>>,
+                         Stride<Int<M/2>,Stride<      _1,Int<M>>>>;
+  using BLayout = Layout<Shape <      _2,Shape <Int<N/2>,Int<K>>>,
+                         Stride<Int<N/2>,Stride<      _1,Int<N>>>>;
+  using CLayout = Layout<Shape <      _2,Shape <Int<M/2>,Int<N>>>,
+                         Stride<Int<M/2>,Stride<      _1,Int<M>>>>;
+
+  // Accumulate or overwrite C.   1: read C, 0: ignore C [clear accumulators]
+  UMMA::ScaleOut accumulate_ = UMMA::ScaleOut::One;
+  // uint32_t tmem_e: Metadata tmem address.
+  cute::tuple<sparse_args...> sparse_args_;
+
+  UMMA::InstrDescriptor idesc_ = UMMA::make_instr_desc<
+    a_type, b_type, c_type, M, N, a_major, b_major, a_neg, b_neg, UMMA::Saturate::False, true>();
+
+  template <class TD, class DLayout,
+            class TA, class ALayout,
+            class TB, class BLayout,
+            class TC, class CLayout>
+  CUTE_HOST_DEVICE constexpr friend
+  void
+  mma_unpack(MMA_Traits          const& traits,
+             Tensor<TD, DLayout>      & D,
+             Tensor<TA, ALayout> const& A,
+             Tensor<TB, BLayout> const& B,
+             Tensor<TC, CLayout> const& C)
+  {
+    static_assert(is_same<cute::tuple<sparse_args...>, cute::tuple<uint32_t>>::value,
+                  "Params must be set via .with()?");
+    static_assert(is_tmem<TD>::value, "Expected tmem in MMA_Atom::call");
+    static_assert(is_rmem<TA>::value, "Expected desc registers in MMA_Atom::call");
+    static_assert(is_rmem<TB>::value, "Expected desc registers in MMA_Atom::call");
+    static_assert(is_tmem<TC>::value, "Expected tmem in MMA_Atom::call");
+
+    uint64_t desc_a = A[0];
+    uint64_t desc_b = B[0];
+    uint32_t tmem_c = raw_pointer_cast(D.data());
+
+    uint32_t tmem_e = get<0>(traits.sparse_args_);
+    uint16_t id2    = 0u;
+
+    uint64_t idesc = UMMA::make_runtime_instr_desc<true>(traits.idesc_, id2, tmem_e);
+
+    SM100_MMA_F8F6F4_2x1SM_SS_SPARSE<a_type, b_type, c_type,
+                              M, N, a_major, b_major,
+                              a_neg, b_neg>::fma(desc_a, desc_b, tmem_c, uint32_t(traits.accumulate_), idesc, tmem_e);
+  }
+
+  // Construct an executable sparse MMA_traits with sp into set.
+  template <class TE, class ELayout>
+  CUTE_HOST_DEVICE constexpr
+  MMA_Traits<SM100_MMA_F8F6F4_2x1SM_SS_SPARSE<a_type, b_type, c_type,
+                                       M, N, a_major, b_major,
+                                       a_neg, b_neg>, uint32_t>
+  with(Tensor<TE, ELayout> const& E, uint32_t id2 = 0) const {
+    // Check sparse_ptr, check sparsity, check shape/layout?
+    uint32_t tmem_e_addr = raw_pointer_cast(E.data());
+    return {accumulate_, {tmem_e_addr}, idesc_};
+  }
+};
 
 template <class a_type, class b_type, class c_type, class sf_type,
           int M, int N, UMMA::Major a_major, UMMA::Major b_major,
@@ -2468,7 +3298,7 @@ struct MMA_Traits<SM100_MMA_MXF8F6F4_2x1SM_SS<a_type, b_type, c_type, sf_type,
   using CLayout = Layout<Shape <      _2,Shape <Int<M/2>,Int<N>>>,
                          Stride<Int<M/2>,Stride<      _1,Int<M>>>>;
   using MMA_ScaleFactor = SM100_MMA_MXF8F6F4_SS<a_type, b_type, c_type, sf_type,
-                                (M/2 > 64 ? M/2 : M), (N == 192 ? 256 : N), a_major, b_major,
+                                (M/2 > 64 ? M/2 : M), (round_up(N, 128)), a_major, b_major,
                                 a_neg, b_neg>;
 
   // Accumulate or overwrite C.   1: read C, 0: ignore C [clear accumulators]
@@ -2519,7 +3349,106 @@ struct MMA_Traits<SM100_MMA_MXF8F6F4_2x1SM_SS<a_type, b_type, c_type, sf_type,
   }
 };
 
+template <class a_type, class b_type, class c_type, class sf_type,
+          int M, int N, UMMA::Major a_major, UMMA::Major b_major,
+          UMMA::ScaleIn a_neg, UMMA::ScaleIn b_neg,
+          class... sparse_args>
+struct MMA_Traits<SM100_MMA_MXF8F6F4_2x1SM_SS_SPARSE<a_type, b_type, c_type, sf_type,
+                                      M, N, a_major, b_major,
+                                      a_neg, b_neg>, sparse_args...>
+{
+  using ValTypeD = c_type;
+  static_assert(sizeof(a_type) == 1);
+  using ValTypeA = sparse_elem<2, a_type>;
+  using ValTypeE = sparse_elem<8, uint8_t>;
+  using ValTypeB = b_type;
+  using ValTypeC = c_type;
+  static_assert(cute::sizeof_bits_v<a_type> <= 8 && cute::sizeof_bits_v<b_type> <= 8, "SM100_MMA_MXF8F6F4_2x1SM_SS_SPARSE supports types with leq 8bit types");
 
+  using FrgTypeA = UMMA::sparse_smem_desc<a_major>;
+  using FrgTypeE = UMMA::tmem_e_frg<uint8_t>;
+  using FrgTypeB = UMMA::smem_desc<b_major>;
+  using FrgTypeC = UMMA::tmem_frg_2sm<c_type>;
+
+  // SparseMma consume double mma-k bits
+  constexpr static int K = 64;
+  constexpr static int SFVecSize = 64;
+
+  constexpr static UMMA::TmemAllocMode TmemAlloc = M == 128 ?
+      UMMA::TmemAllocMode::ScaleFactorDuplicated2by2 : UMMA::TmemAllocMode::ScaleFactorDuplicated4by1;
+  using FrgTypeSFA = UMMA::tmem_sf_frg<sf_type, SFVecSize, 2,  true, TmemAlloc>;
+  using FrgTypeSFB = UMMA::tmem_sf_frg<sf_type, SFVecSize, 2, false, TmemAlloc>;
+
+  static_assert(sizeof_bits_v<ValTypeA> <= sizeof_bits_v<uint8_t> &&
+                sizeof_bits_v<ValTypeB> <= sizeof_bits_v<uint8_t>);
+
+  using Shape_MNK = Shape<Int<M>,Int<N>,Int<K>>;
+  using ThrID   = Layout<_2>;
+  using ALayout = Layout<Shape <      _2,Shape <Int<M/2>,Int<K>>>,
+                         Stride<Int<M/2>,Stride<      _1,Int<M>>>>;
+  using BLayout = Layout<Shape <      _2,Shape <Int<N/2>,Int<K>>>,
+                         Stride<Int<N/2>,Stride<      _1,Int<N>>>>;
+  using CLayout = Layout<Shape <      _2,Shape <Int<M/2>,Int<N>>>,
+                         Stride<Int<M/2>,Stride<      _1,Int<M>>>>;
+  using MMA_ScaleFactor = SM100_MMA_MXF8F6F4_SS_SPARSE<a_type, b_type, c_type, sf_type,
+                                (M/2 > 64 ? M/2 : M), (round_up(N, 128)), a_major, b_major,
+                                a_neg, b_neg>;
+
+  // Accumulate or overwrite C.   1: read C, 0: ignore C [clear accumulators]
+  UMMA::ScaleOut accumulate_ = UMMA::ScaleOut::One;
+  uint32_t tsfa_addr_ = 0;
+  uint32_t tsfb_addr_ = 0;
+
+  // uint32_t tmem_e: Metadata tmem address.
+  cute::tuple<sparse_args...> sparse_args_;
+
+  UMMA::InstrDescriptorBlockScaled idesc_ = UMMA::make_instr_desc_block_scaled<
+    a_type, b_type, c_type, sf_type, M, N, a_major, b_major, a_neg, b_neg, true>();
+
+  template <class TD, class DLayout,
+            class TA, class ALayout,
+            class TB, class BLayout,
+            class TC, class CLayout>
+  CUTE_HOST_DEVICE constexpr friend
+  void
+  mma_unpack(MMA_Traits          const& traits,
+             Tensor<TD, DLayout>      & D,
+             Tensor<TA, ALayout> const& A,
+             Tensor<TB, BLayout> const& B,
+             Tensor<TC, CLayout> const& C)
+  {
+    static_assert(is_tmem<TD>::value, "Expected tmem in MMA_Atom::call");
+    static_assert(is_rmem<TA>::value, "Expected desc registers in MMA_Atom::call");
+    static_assert(is_rmem<TB>::value, "Expected desc registers in MMA_Atom::call");
+    static_assert(is_tmem<TC>::value, "Expected tmem in MMA_Atom::call");
+
+    uint64_t desc_a = A[0];
+    uint64_t desc_b = B[0];
+    uint32_t tmem_c = raw_pointer_cast(D.data());
+
+    uint32_t tmem_e = get<0>(traits.sparse_args_);
+    uint16_t id2    = 0u;
+
+    uint64_t idesc = UMMA::make_runtime_instr_desc_block_scaled<true>(traits.idesc_, traits.tsfa_addr_, traits.tsfb_addr_, id2, tmem_e);
+
+    SM100_MMA_MXF8F6F4_2x1SM_SS_SPARSE<a_type, b_type, c_type, sf_type,
+                          M, N,
+                          a_major, b_major,
+                          a_neg, b_neg>::fma(desc_a, desc_b, tmem_c, uint32_t(traits.accumulate_), idesc, traits.tsfa_addr_, traits.tsfb_addr_, tmem_e);
+  }
+
+  // Construct an executable MMA_traits with sp into set.
+  template <class TE, class TELayout, class TSFA, class TSFALayout, class TSFB, class TSFBLayout>
+  CUTE_HOST_DEVICE constexpr
+  MMA_Traits<SM100_MMA_MXF8F6F4_2x1SM_SS_SPARSE<a_type, b_type, c_type, sf_type,
+                                M, N, a_major, b_major, a_neg, b_neg>, uint32_t>
+  with(UMMA::ScaleOut accumulate, Tensor<TE, TELayout> const& E, Tensor<TSFA, TSFALayout> const& SFA, Tensor<TSFB, TSFBLayout> const& SFB) const {
+    uint32_t tmem_e_addr = raw_pointer_cast(E.data());
+    uint32_t tmem_sfa_addr = raw_pointer_cast(SFA.data());
+    uint32_t tmem_sfb_addr = raw_pointer_cast(SFB.data());
+    return {accumulate, tmem_sfa_addr, tmem_sfb_addr, {tmem_e_addr}, idesc_};
+  }
+};
 
 template <class a_type, class b_type, class c_type, class sf_type,
           int M, int N, int VS, UMMA::Major a_major, UMMA::Major b_major,
@@ -2561,7 +3490,7 @@ struct MMA_Traits<SM100_MMA_MXF4_SS<a_type, b_type, c_type, sf_type,
   using CLayout = Layout<Shape <_1,Shape <Int<M>,Int<N>>>,
                          Stride<_0,Stride<    _1,Int<M>>>>;
   using MMA_ScaleFactor = SM100_MMA_MXF4_SS<a_type, b_type, c_type, sf_type,
-                                M, (N == 192 ? 256 : N), VS, a_major, b_major,
+                                M, (round_up(N, 128)), VS, a_major, b_major,
                                 a_neg, b_neg>;
 
   // Accumulate or overwrite C.   1: read C, 0: ignore C [clear accumulators]
@@ -2612,7 +3541,107 @@ struct MMA_Traits<SM100_MMA_MXF4_SS<a_type, b_type, c_type, sf_type,
   }
 };
 
+template <class a_type, class b_type, class c_type, class sf_type,
+          int M, int N, int VS, UMMA::Major a_major, UMMA::Major b_major,
+          UMMA::ScaleIn a_neg, UMMA::ScaleIn b_neg,
+          class... sparse_args>
+struct MMA_Traits<SM100_MMA_MXF4NVF4_SS_SPARSE<a_type, b_type, c_type, sf_type,
+                                M, N, VS, a_major, b_major,
+                                a_neg, b_neg>, sparse_args...>
+{
+  using ValTypeD   = c_type;
+  using ValTypeA   = sparse_elem<4, uint8_t>;
+  using ValTypeE   = sparse_elem<16, uint8_t>;
+  using ValTypeB   = b_type;
+  using ValTypeC   = c_type;
+  using ValTypeSFA = sf_type;
+  using ValTypeSFB = sf_type;
+  static_assert(cute::sizeof_bits_v<a_type> == 4 && cute::sizeof_bits_v<b_type> == 4, "SM100_MMA_MXF4NVF4_SS_SPARSE supports 4bit types");
 
+  // Logical shape-K is always 256bits, transform to units of elements
+  constexpr static int K = 128;
+  constexpr static int SFVecSize = VS;
+
+  using FrgTypeA   = UMMA::sparse_smem_desc<a_major>;
+  using FrgTypeE   = UMMA::tmem_e_frg<a_type>;
+  using FrgTypeB   = UMMA::smem_desc<b_major>;
+  using FrgTypeC   = UMMA::tmem_frg_1sm<c_type>;
+  using FrgTypeSFA = UMMA::tmem_sf_frg<sf_type, SFVecSize, 1, true>;
+  using FrgTypeSFB = UMMA::tmem_sf_frg<sf_type, SFVecSize, 1, false>;
+
+  static_assert((VS == 64 && ((is_same_v<a_type, cutlass::float_e2m1_t> || is_same_v<a_type, cutlass::type_erased_dynamic_float4_t>) &&
+                              (is_same_v<b_type, cutlass::float_e2m1_t> || is_same_v<b_type, cutlass::type_erased_dynamic_float4_t>))
+                          &&   is_same_v<sf_type, cutlass::float_ue8m0_t>)
+             || (VS == 32),
+       "2x mode (VectorSize=64) only supports a_type and b_type=float_e2m1_t or cutlass::type_erased_dynamic_float4_t and sf_type=ue8m0_t");
+
+  using Shape_MNK = Shape<Int<M>,Int<N>,Int<K>>;
+  using ThrID   = Layout<_1>;
+  using ALayout = Layout<Shape <_1,Shape <Int<M>,Int<K>>>,
+                         Stride<_0,Stride<    _1,Int<M>>>>;
+  using BLayout = Layout<Shape <_1,Shape <Int<N>,Int<K>>>,
+                         Stride<_0,Stride<    _1,Int<N>>>>;
+  using CLayout = Layout<Shape <_1,Shape <Int<M>,Int<N>>>,
+                         Stride<_0,Stride<    _1,Int<M>>>>;
+  using MMA_ScaleFactor = SM100_MMA_MXF4NVF4_SS_SPARSE<a_type, b_type, c_type, sf_type,
+                                M, (round_up(N, 128)), VS, a_major, b_major,
+                                a_neg, b_neg>;
+
+  // Accumulate or overwrite C.   1: read C, 0: ignore C [clear accumulators]
+  UMMA::ScaleOut accumulate_ = UMMA::ScaleOut::One;
+  uint32_t tsfa_addr_ = 0;
+  uint32_t tsfb_addr_ = 0;
+
+  // uint32_t tmem_e: Metadata tmem address.
+  cute::tuple<sparse_args...> sparse_args_;
+
+  UMMA::InstrDescriptorBlockScaled idesc_ = UMMA::make_instr_desc_block_scaled<
+    a_type, b_type, c_type, sf_type, M, N, a_major, b_major, a_neg, b_neg, true>();
+
+  template <class TD, class DLayout,
+            class TA, class ALayout,
+            class TB, class BLayout,
+            class TC, class CLayout>
+  CUTE_HOST_DEVICE constexpr friend
+  void
+  mma_unpack(MMA_Traits          const& traits,
+             Tensor<TD, DLayout>      & D,
+             Tensor<TA, ALayout> const& A,
+             Tensor<TB, BLayout> const& B,
+             Tensor<TC, CLayout> const& C)
+  {
+    static_assert(is_tmem<TD>::value, "Expected tmem in MMA_Atom::call");
+    static_assert(is_rmem<TA>::value, "Expected desc registers in MMA_Atom::call");
+    static_assert(is_rmem<TB>::value, "Expected desc registers in MMA_Atom::call");
+    static_assert(is_tmem<TC>::value, "Expected tmem in MMA_Atom::call");
+
+    uint64_t desc_a = A[0];
+    uint64_t desc_b = B[0];
+    uint32_t tmem_c = raw_pointer_cast(D.data());
+
+    uint32_t tmem_e = get<0>(traits.sparse_args_);
+    uint16_t id2    = 0u;
+
+    uint64_t idesc = UMMA::make_runtime_instr_desc_block_scaled<true>(traits.idesc_, traits.tsfa_addr_, traits.tsfb_addr_, id2, tmem_e);
+
+    SM100_MMA_MXF4NVF4_SS_SPARSE<a_type, b_type, c_type, sf_type,
+                  M, N, VS,
+                  a_major, b_major,
+                  a_neg, b_neg>::fma(desc_a, desc_b, tmem_c, uint32_t(traits.accumulate_), idesc, traits.tsfa_addr_, traits.tsfb_addr_, tmem_e);
+  }
+
+  // Construct an executable sparse MMA_traits with sp into set.
+  template <class TE, class TELayout, class TSFA, class TSFALayout, class TSFB, class TSFBLayout>
+  CUTE_HOST_DEVICE constexpr
+  MMA_Traits<SM100_MMA_MXF4NVF4_SS_SPARSE<a_type, b_type, c_type, sf_type,
+                              M, N, VS, a_major, b_major, a_neg, b_neg>, uint32_t>
+  with(UMMA::ScaleOut accumulate, Tensor<TE, TELayout> const& E, Tensor<TSFA, TSFALayout> const& SFA, Tensor<TSFB, TSFBLayout> const& SFB) const {
+    uint32_t tmem_e_addr   = raw_pointer_cast(E.data());
+    uint32_t tmem_sfa_addr = raw_pointer_cast(SFA.data());     // Move to a CoupledTensor rather than a .with()?
+    uint32_t tmem_sfb_addr = raw_pointer_cast(SFB.data());     // Move to a CoupledTensor rather than a .with()?
+    return {accumulate, tmem_sfa_addr, tmem_sfb_addr, {tmem_e_addr}, idesc_};
+  }
+};
 
 template <class a_type, class b_type, class c_type, class sf_type,
           int M, int N, int VS, UMMA::Major a_major, UMMA::Major b_major,
@@ -2651,7 +3680,7 @@ struct MMA_Traits<SM100_MMA_MXF4_2x1SM_SS<a_type, b_type, c_type, sf_type,
   using CLayout = Layout<Shape <      _2,Shape <Int<M/2>,Int<N>>>,
                          Stride<Int<M/2>,Stride<      _1,Int<M>>>>;
   using MMA_ScaleFactor = SM100_MMA_MXF4_SS<a_type, b_type, c_type, sf_type,
-                                (M/2 > 64 ? M/2 : M), (N == 192 ? 256 : N), VS, a_major, b_major,
+                                (M/2 > 64 ? M/2 : M), (round_up(N, 128)), VS, a_major, b_major,
                                 a_neg, b_neg>;
 
   // Accumulate or overwrite C.   1: read C, 0: ignore C [clear accumulators]
@@ -2703,5 +3732,110 @@ struct MMA_Traits<SM100_MMA_MXF4_2x1SM_SS<a_type, b_type, c_type, sf_type,
   }
 };
 
+template <class a_type, class b_type, class c_type, class sf_type,
+          int M, int N, int VS, UMMA::Major a_major, UMMA::Major b_major,
+          UMMA::ScaleIn a_neg, UMMA::ScaleIn b_neg,
+          class... sparse_args>
+struct MMA_Traits<SM100_MMA_MXF4NVF4_2x1SM_SS_SPARSE<a_type, b_type, c_type, sf_type,
+                                M, N, VS, a_major, b_major,
+                                a_neg, b_neg>, sparse_args...>
+{
+  using ValTypeD   = c_type;
+  using ValTypeA = sparse_elem<4, uint8_t>;
+  using ValTypeE = sparse_elem<16, uint8_t>;
+  using ValTypeB   = b_type;
+  using ValTypeC   = c_type;
+  using ValTypeSFA = sf_type;
+  using ValTypeSFB = sf_type;
+  static_assert(cute::sizeof_bits_v<a_type> == 4 && cute::sizeof_bits_v<b_type> == 4, "SM100_MMA_MXF4NVF4_2x1SM_SS_SPARSE supports 4bit types");
+
+  // Logical shape-K is always 256bits, transform to units of elements
+  constexpr static int K = 128;
+  constexpr static int SFVecSize = VS;
+
+  constexpr static UMMA::TmemAllocMode TmemAlloc = M == 128 ?
+      UMMA::TmemAllocMode::ScaleFactorDuplicated2by2 : UMMA::TmemAllocMode::ScaleFactorDuplicated4by1;
+  using FrgTypeA   = UMMA::sparse_smem_desc<a_major>;
+  // using FrgTypeE = UMMA::tmem_e_frg<uint8_t>;
+  using FrgTypeE   = UMMA::tmem_e_frg<a_type>;
+  using FrgTypeB   = UMMA::smem_desc<b_major>;
+  using FrgTypeC   = UMMA::tmem_frg_2sm<c_type>;
+  using FrgTypeSFA = UMMA::tmem_sf_frg<sf_type, SFVecSize, 2,  true, TmemAlloc>;
+  using FrgTypeSFB = UMMA::tmem_sf_frg<sf_type, SFVecSize, 2, false, TmemAlloc>;
+
+  static_assert((VS == 64 && ((is_same_v<a_type, cutlass::float_e2m1_t> || is_same_v<a_type, cutlass::type_erased_dynamic_float4_t>) &&
+                              (is_same_v<b_type, cutlass::float_e2m1_t> || is_same_v<b_type, cutlass::type_erased_dynamic_float4_t>))
+                          &&   is_same_v<sf_type, cutlass::float_ue8m0_t>)
+             || (VS == 32),
+       "2x mode (VectorSize=64) only supports a_type and b_type=float_e2m1_t or cutlass::type_erased_dynamic_float4_t and sf_type=ue8m0_t");
+
+  using Shape_MNK = Shape<Int<M>,Int<N>,Int<K>>;
+  using ThrID   = Layout<_2>;
+  using ALayout = Layout<Shape <      _2,Shape <Int<M/2>,Int<K>>>,
+                         Stride<Int<M/2>,Stride<      _1,Int<M>>>>;
+  using BLayout = Layout<Shape <      _2,Shape <Int<N/2>,Int<K>>>,
+                         Stride<Int<N/2>,Stride<      _1,Int<N>>>>;
+  using CLayout = Layout<Shape <      _2,Shape <Int<M/2>,Int<N>>>,
+                         Stride<Int<M/2>,Stride<      _1,Int<M>>>>;
+  using MMA_ScaleFactor = SM100_MMA_MXF4NVF4_SS_SPARSE<a_type, b_type, c_type, sf_type,
+                                (M/2 > 64 ? M/2 : M), (round_up(N, 128)), VS, a_major, b_major,
+                                a_neg, b_neg>;
+
+
+  // Accumulate or overwrite C.   1: read C, 0: ignore C [clear accumulators]
+  UMMA::ScaleOut accumulate_ = UMMA::ScaleOut::One;
+  uint32_t tsfa_addr_ = 0;
+  uint32_t tsfb_addr_ = 0;
+
+  // uint32_t tmem_e: Metadata tmem address.
+  cute::tuple<sparse_args...> sparse_args_;
+
+  UMMA::InstrDescriptorBlockScaled idesc_ = UMMA::make_instr_desc_block_scaled<
+    a_type, b_type, c_type, sf_type, M, N, a_major, b_major, a_neg, b_neg, true>();
+
+  template <class TD, class DLayout,
+            class TA, class ALayout,
+            class TB, class BLayout,
+            class TC, class CLayout>
+  CUTE_HOST_DEVICE constexpr friend
+  void
+  mma_unpack(MMA_Traits          const& traits,
+             Tensor<TD, DLayout>      & D,
+             Tensor<TA, ALayout> const& A,
+             Tensor<TB, BLayout> const& B,
+             Tensor<TC, CLayout> const& C)
+  {
+    static_assert(is_tmem<TD>::value, "Expected tmem in MMA_Atom::call");
+    static_assert(is_rmem<TA>::value, "Expected desc registers in MMA_Atom::call");
+    static_assert(is_rmem<TB>::value, "Expected desc registers in MMA_Atom::call");
+    static_assert(is_tmem<TC>::value, "Expected tmem in MMA_Atom::call");
+
+    uint64_t desc_a = A[0];
+    uint64_t desc_b = B[0];
+    uint32_t tmem_c = raw_pointer_cast(D.data());
+
+    uint32_t tmem_e = get<0>(traits.sparse_args_);
+    uint16_t id2    = 0u;
+
+    uint64_t idesc = UMMA::make_runtime_instr_desc_block_scaled<true>(traits.idesc_, traits.tsfa_addr_, traits.tsfb_addr_, id2, tmem_e);
+
+    SM100_MMA_MXF4NVF4_2x1SM_SS_SPARSE<a_type, b_type, c_type, sf_type,
+                  M, N, VS,
+                  a_major, b_major,
+                  a_neg, b_neg>::fma(desc_a, desc_b, tmem_c, uint32_t(traits.accumulate_), idesc, traits.tsfa_addr_, traits.tsfb_addr_, tmem_e);
+  }
+
+  // Construct an executable sparse MMA_traits with sp into set.
+  template <class TE, class TELayout, class TSFA, class TSFALayout, class TSFB, class TSFBLayout>
+  CUTE_HOST_DEVICE constexpr
+  MMA_Traits<SM100_MMA_MXF4NVF4_2x1SM_SS_SPARSE<a_type, b_type, c_type, sf_type,
+                              M, N, VS, a_major, b_major, a_neg, b_neg>, uint32_t>
+  with(UMMA::ScaleOut accumulate, Tensor<TE, TELayout> const& E, Tensor<TSFA, TSFALayout> const& SFA, Tensor<TSFB, TSFBLayout> const& SFB) const {
+    uint32_t tmem_e_addr   = raw_pointer_cast(E.data());
+    uint32_t tmem_sfa_addr = raw_pointer_cast(SFA.data());     // Move to a CoupledTensor rather than a .with()?
+    uint32_t tmem_sfb_addr = raw_pointer_cast(SFB.data());     // Move to a CoupledTensor rather than a .with()?
+    return {accumulate, tmem_sfa_addr, tmem_sfb_addr, {tmem_e_addr}, idesc_};
+  }
+};
 
 } // end namespace cute

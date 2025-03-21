@@ -221,9 +221,9 @@ void gett_mainloop(
   const int N = cute::size<0>(mainloop_params.B.layout());
   const int ScaleGranularityM = M / cute::size<0>(mainloop_params.ScaleA);
   const int ScaleGranularityN = N / cute::size<0>(mainloop_params.ScaleB);
-  assert(ScaleGranularityM && M % ScaleGranularityM == 0 
+  assert(ScaleGranularityM && M % ScaleGranularityM == 0
     && "ScaleGranularityM must divide M");
-  assert(ScaleGranularityN && N % ScaleGranularityN == 0 
+  assert(ScaleGranularityN && N % ScaleGranularityN == 0
     && "ScaleGranularityN must divide N"); 
 
   cute::Tensor blockscale_A = domain_offset(

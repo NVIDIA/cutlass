@@ -246,14 +246,14 @@ DataTypeSize = {
   DataType.s64: 64,
   DataType.e4m3: 8,
   DataType.e5m2: 8,
-  DataType.f8: 8,      
-  DataType.f6: 6,      
-  DataType.f4: 4,      
-  DataType.e2m3: 6,       
-  DataType.e3m2: 6,       
-  DataType.e2m1: 4,       
-  DataType.ue8m0: 8,      
-  DataType.ue4m3: 8,      
+  DataType.f8: 8,
+  DataType.f6: 6,
+  DataType.f4: 4,
+  DataType.e2m3: 6,
+  DataType.e3m2: 6,
+  DataType.e2m1: 4,
+  DataType.ue8m0: 8,
+  DataType.ue4m3: 8,
   DataType.f16: 16,
   DataType.bf16: 16,
   DataType.f32: 32,
@@ -495,6 +495,8 @@ class KernelScheduleType(enum.Enum):
 
   TmaWarpSpecialized1SmSm100 = enum_auto()
   TmaWarpSpecialized2SmSm100 = enum_auto()
+  ImplicitTmaWarpSpecialized1SmSm100 = enum_auto()
+  ImplicitTmaWarpSpecialized2SmSm100 = enum_auto()
 
   PtrArrayTmaWarpSpecialized1SmSm100 = enum_auto()
   PtrArrayTmaWarpSpecialized2SmSm100 = enum_auto()
@@ -508,6 +510,9 @@ class KernelScheduleType(enum.Enum):
   PtrArrayMxf8f6f4TmaWarpSpecialized1SmSm100 = enum_auto()
   PtrArrayMxf8f6f4TmaWarpSpecialized2SmSm100 = enum_auto()
 
+  SparseTmaWarpSpecialized1SmSm100 = enum_auto()
+  SparseTmaWarpSpecialized2SmSm100 = enum_auto()
+
   BlockScaledTmaWarpSpecialized1SmSm100 = enum_auto()
   BlockScaledTmaWarpSpecialized2SmSm100 = enum_auto()
   Mxf8f6f4TmaWarpSpecialized1SmSm100 = enum_auto()
@@ -518,7 +523,15 @@ class KernelScheduleType(enum.Enum):
   Nvf4TmaWarpSpecialized1SmSm100 = enum_auto()
   Nvf4TmaWarpSpecialized2SmSm100 = enum_auto()
 
-#
+  Mxf8f6f4TmaWarpSpecializedCooperativeSm120 = enum_auto()
+  Mxf8f6f4TmaWarpSpecializedPingpongSm120 = enum_auto()
+  Nvf4TmaWarpSpecializedCooperativeSm120 = enum_auto()
+  Nvf4TmaWarpSpecializedPingpongSm120 = enum_auto()
+  Mxf4TmaWarpSpecializedCooperativeSm120 = enum_auto()
+  Mxf4TmaWarpSpecializedPingpongSm120 = enum_auto()
+
+  F8f6f4SparseTmaWarpSpecializedCooperativeSm120 = enum_auto()
+
 KernelScheduleTag = {
   KernelScheduleType.ScheduleAuto: 'cutlass::gemm::collective::KernelScheduleAuto',
   KernelScheduleType.Multistage: 'cutlass::gemm::KernelMultistage',
@@ -537,8 +550,14 @@ KernelScheduleTag = {
   KernelScheduleType.TmaWarpSpecialized1SmSm100: 'cutlass::gemm::KernelTmaWarpSpecialized1SmSm100',
   KernelScheduleType.TmaWarpSpecialized2SmSm100: 'cutlass::gemm::KernelTmaWarpSpecialized2SmSm100',
 
+  KernelScheduleType.ImplicitTmaWarpSpecialized1SmSm100: 'cutlass::conv::KernelImplicitTmaWarpSpecialized1SmSm100',
+  KernelScheduleType.ImplicitTmaWarpSpecialized2SmSm100: 'cutlass::conv::KernelImplicitTmaWarpSpecialized2SmSm100',
+
   KernelScheduleType.PtrArrayTmaWarpSpecialized1SmSm100: 'cutlass::gemm::KernelPtrArrayTmaWarpSpecialized1SmSm100',
   KernelScheduleType.PtrArrayTmaWarpSpecialized2SmSm100: 'cutlass::gemm::KernelPtrArrayTmaWarpSpecialized2SmSm100',
+
+  KernelScheduleType.SparseTmaWarpSpecialized1SmSm100: 'cutlass::gemm::KernelSparseTmaWarpSpecialized1SmSm100',
+  KernelScheduleType.SparseTmaWarpSpecialized2SmSm100: 'cutlass::gemm::KernelSparseTmaWarpSpecialized2SmSm100',
 
   KernelScheduleType.BlockScaledTmaWarpSpecialized1SmSm100: 'cutlass::gemm::KernelTmaWarpSpecialized1SmBlockScaledSm100',
   KernelScheduleType.BlockScaledTmaWarpSpecialized2SmSm100: 'cutlass::gemm::KernelTmaWarpSpecialized2SmBlockScaledSm100',
@@ -563,6 +582,15 @@ KernelScheduleTag = {
   KernelScheduleType.PtrArrayMxf4TmaWarpSpecialized2SmSm100: "cutlass::gemm::KernelPtrArrayTmaWarpSpecialized2SmMxf4Sm100",
   KernelScheduleType.PtrArrayMxf8f6f4TmaWarpSpecialized1SmSm100: "cutlass::gemm::KernelPtrArrayTmaWarpSpecialized1SmMxf8f6f4Sm100",
   KernelScheduleType.PtrArrayMxf8f6f4TmaWarpSpecialized2SmSm100: "cutlass::gemm::KernelPtrArrayTmaWarpSpecialized2SmMxf8f6f4Sm100",
+
+  KernelScheduleType.Mxf8f6f4TmaWarpSpecializedCooperativeSm120: 'cutlass::gemm::KernelTmaWarpSpecializedMxf8f6f4Sm120',
+  KernelScheduleType.Mxf8f6f4TmaWarpSpecializedPingpongSm120: 'cutlass::gemm::KernelTmaWarpSpecializedPingpongMxf8f6f4Sm120',
+  KernelScheduleType.Nvf4TmaWarpSpecializedCooperativeSm120: 'cutlass::gemm::KernelTmaWarpSpecializedNvf4Sm120',
+  KernelScheduleType.Nvf4TmaWarpSpecializedPingpongSm120: 'cutlass::gemm::KernelTmaWarpSpecializedPingpongNvf4Sm120',
+  KernelScheduleType.Mxf4TmaWarpSpecializedCooperativeSm120: 'cutlass::gemm::KernelTmaWarpSpecializedMxf4Sm120',
+  KernelScheduleType.Mxf4TmaWarpSpecializedPingpongSm120: 'cutlass::gemm::KernelTmaWarpSpecializedPingpongMxf4Sm120',
+
+  KernelScheduleType.F8f6f4SparseTmaWarpSpecializedCooperativeSm120: 'cutlass::gemm::KernelScheduleSparseF8f6f4Sm120'
 }
 
 #
@@ -584,8 +612,14 @@ KernelScheduleSuffixes = {
   KernelScheduleType.TmaWarpSpecialized1SmSm100: '_1sm',
   KernelScheduleType.TmaWarpSpecialized2SmSm100: '_2sm',
 
+  KernelScheduleType.ImplicitTmaWarpSpecialized1SmSm100: '_1sm',
+  KernelScheduleType.ImplicitTmaWarpSpecialized2SmSm100: '_2sm',
+
   KernelScheduleType.PtrArrayTmaWarpSpecialized1SmSm100: '_1sm',
   KernelScheduleType.PtrArrayTmaWarpSpecialized2SmSm100: '_2sm',
+
+  KernelScheduleType.SparseTmaWarpSpecialized1SmSm100: '_1sm',
+  KernelScheduleType.SparseTmaWarpSpecialized2SmSm100: '_2sm',
 
   KernelScheduleType.BlockScaledTmaWarpSpecialized1SmSm100: '_1sm',
   KernelScheduleType.BlockScaledTmaWarpSpecialized2SmSm100: '_2sm',
@@ -610,6 +644,15 @@ KernelScheduleSuffixes = {
   KernelScheduleType.PtrArrayMxf4TmaWarpSpecialized2SmSm100: '_o_vs32_2sm',
   KernelScheduleType.PtrArrayMxf8f6f4TmaWarpSpecialized1SmSm100: '_o_vs32_1sm',
   KernelScheduleType.PtrArrayMxf8f6f4TmaWarpSpecialized2SmSm100: '_o_vs32_2sm',
+
+  KernelScheduleType.Mxf8f6f4TmaWarpSpecializedCooperativeSm120: '_cooperative_q',
+  KernelScheduleType.Mxf8f6f4TmaWarpSpecializedPingpongSm120: '_pingpong_q',
+  KernelScheduleType.Nvf4TmaWarpSpecializedCooperativeSm120: '_cooperative_o_vs16',
+  KernelScheduleType.Nvf4TmaWarpSpecializedPingpongSm120: '_pingpong_o_vs16',
+  KernelScheduleType.Mxf4TmaWarpSpecializedCooperativeSm120: '_cooperative_o_vs32',
+  KernelScheduleType.Mxf4TmaWarpSpecializedPingpongSm120: '_pingpong_o_vs32',
+
+  KernelScheduleType.F8f6f4SparseTmaWarpSpecializedCooperativeSm120: '_q'
 }
 
 class EpilogueScheduleType(enum.Enum):

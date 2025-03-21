@@ -135,47 +135,21 @@ With the above, we can assume without loss of generality that `B = s:d` is a lay
 
 When `A` is integral, `A = a:b`, the result is rather trivial: `R = A o B = a:b o s:d = s:(b*d)`. But when `A` is multimodal, we need to be more careful.
 
-Put into words, `A o B = A o s:d`, for integral `s` and `d` means that we want (1) every `d`th element of `A`, and then (2) keep the first `s` of those strided elements.
+Put into words, `A o B = A o s:d`, for integral `s` and `d` means that we want (1) "remove" the first `d` elements from `A`, and then (2) "keep" the first `s` of those strided elements.
 
-1. Every `d`th element of `A` can be computed by "dividing out" the first `d` elements from the shape of `A`. For an array of integers representing the shape, this is computed as
-```cpp
-void shape_div(int* shapeA, int N, int& strideB) {
-   for (int i = 0; i < N; ++i) {
-      assert(shapeA[i] %   strideB == 0 or
-               strideB % shapeA[i] == 0);
-      int new_shape  = ceil_div(shapeA[i], strideB);
-      int new_stride = ceil_div(strideB, shapeA[i]);
-      shapeA[i] = new_shape;
-      strideB   = new_stride;
-   }
-}
-```
-which progressively "removes" the first `strideB` elements from `shapeA` starting from the left. For example,
+1. Removing the first `d` elements of `A` can be computed by progressively "dividing out" the first `d` elements from the shape of `A` starting from the left. For example,
 * `(6,2) /  2 => (3,2)`
 * `(6,2) /  3 => (2,2)`
 * `(6,2) /  6 => (1,2)`
 * `(6,2) / 12 => (1,1)`
-* `(3,6,2,8) / 6 => (1,3,2,8)`
-* `(3,6,2,8) / 9 => (1,2,2,8)`
-* `(42,16,3) / 2 => (21,16,3)`
-* `(42,16,3) / 6 => ( 7,16,3)`
+* `(3,6,2,8) /  3 => (1,3,2,8)`
+* `(3,6,2,8) /  6 => (1,3,2,8)`
+* `(3,6,2,8) /  9 => (1,2,2,8)`
+* `(3,6,2,8) / 72 => (1,1,1,4)`
 
-As you may have noticed, we can only divide shapes by certain values and get a sensible result. This is called the **divisibility condition** and is enforced by the `assert` in the above code and statically checked in CuTe when possible.
+As you may have noticed, we can only divide shapes by certain values and get a sensible result. This is called the **stride divisibility condition** and is statically checked in CuTe when possible.
 
-2. The first `s` elements of the strided `A` layout can be computed by "modding out" the first `s` elements from the shape of `A`. For an array of integers representing the shape, this is computed as
-```cpp
-void shape_mod(int* shapeA, int N, int& shapeB) {
-   for (int i = 0; i < N; ++i) {
-      assert(shapeA[i] %    shapeB == 0 or
-                shapeB % shapeA[i] == 0);
-      int new_shapeA =      min(shapeA[i], shapeB);
-      int new_shapeB = ceil_div(shapeB, shapeA[i]);
-      shapeA[i] = new_shapeA;
-      shapeB    = new_shapeB;
-   }
-}
-```
-which progressibly "keeps" the first `shapeB` elements from `shapeA` starting from the left. For example,
+2. Keeping the first `s` elements of the strided `A` layout can be computed by "modding out" the first `s` elements from the shape of `A` starting from the left. For example,
 * `(6,2) %  2 => (2,1)`
 * `(6,2) %  3 => (3,1)`
 * `(6,2) %  6 => (6,1)`
@@ -185,9 +159,9 @@ which progressibly "keeps" the first `shapeB` elements from `shapeA` starting fr
 * `(1,2,2,8) %  2 => (1,2,1,1)`
 * `(1,2,2,8) % 16 => (1,2,2,4)`
 
-Again, this operation must satisfy the divisibility condition to yield a sensible result. This is enforced by the `assert` in the above code and statically checked in CuTe when possible.
+Again, this operation must satisfy a **shape divisibility condition** to yield a sensible result and is statically checked in CuTe when possible.
 
-Clearly, CuTe does not use arrays to store shapes or strides and the above code is for explication only. CuTe works with shapes and strides as `IntTuple`s and the implementation is expressed as algorithmic `fold`s which carefully account for static and dynamic integers.
+From the above examples, we can construct the composition `(3,6,2,8):(w,x,y,z) o 16:9 = (1,2,2,4):(3*w,3*x,y,z)`.
 
 #### Example 1 -- Reshape a layout into a matrix
 
@@ -571,4 +545,36 @@ logical_product : ((M,TileM), (N,TileN), L, ...)
 zipped_product  : ((M,N), (TileM,TileN,L,...))
 tiled_product   : ((M,N), TileM, TileN, L, ...)
 flat_product    : (M, N, TileM, TileN, L, ...)
+```
+
+## Copyright
+
+Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: BSD-3-Clause
+
+```
+  Redistribution and use in source and binary forms, with or without
+  modification, are permitted provided that the following conditions are met:
+
+  1. Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+
+  2. Redistributions in binary form must reproduce the above copyright notice,
+  this list of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution.
+
+  3. Neither the name of the copyright holder nor the names of its
+  contributors may be used to endorse or promote products derived from
+  this software without specific prior written permission.
+
+  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+  DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+  FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+  DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+  SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+  CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```

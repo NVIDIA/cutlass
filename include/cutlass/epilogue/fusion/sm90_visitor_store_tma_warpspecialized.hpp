@@ -680,13 +680,13 @@ public:
 
   struct Arguments {
     void* ptr_row = nullptr; // ElementOutput* if FinalReduction, else ElementCompute*
-    ElementCompute reduction_identity = 0;
+    ElementCompute reduction_identity = ElementCompute(0);
     StrideMNL dRow = {};
   };
 
   struct Params {
     void* ptr_row = nullptr;
-    ElementCompute reduction_identity = 0;
+    ElementCompute reduction_identity = ElementCompute(0);
     StrideMNL dRow = {};
     ElementCompute* reduction_buffer = nullptr;
     int* tile_counters = nullptr;
@@ -1267,13 +1267,13 @@ public:
 
   struct Arguments {
     void* ptr_col = nullptr; // ElementOutput* if FinalReduction, else ElementCompute*
-    ElementCompute reduction_identity = 0;
+    ElementCompute reduction_identity = ElementCompute(0);
     StrideMNL dCol = {};
   };
 
   struct Params {
     void* ptr_col = nullptr;
-    ElementCompute reduction_identity = 0;
+    ElementCompute reduction_identity = ElementCompute(0);
     StrideMNL dCol = {};
     ElementCompute* reduction_buffer = nullptr;
     int* tile_counters = nullptr;

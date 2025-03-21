@@ -223,8 +223,9 @@ struct CollectiveMma<
         auto init_K = get<2>(init_shape);
         auto init_L = get<3>(init_shape);
 
-    ElementA const* ptr_A_first_batch = reinterpret_cast<ElementA const*>(args.ptr_A);
-    ElementB const* ptr_B_first_batch = reinterpret_cast<ElementB const*>(args.ptr_B);
+    // NOTE: Since TMA desc creation with nullptr not possible until 12.6, we use an initial address even when tensor addresses are on device. This address is never used.
+    ElementA const* ptr_A_first_batch = reinterpret_cast<ElementA const*>(reinterpret_cast<uint64_t>(args.ptr_A) & 0xFFFFFFFFFFFFFFF0);  // Address must be 16B-aligned
+    ElementB const* ptr_B_first_batch = reinterpret_cast<ElementB const*>(reinterpret_cast<uint64_t>(args.ptr_B) & 0xFFFFFFFFFFFFFFF0);  // Address must be 16B-aligned
 
     InternalStrideA stride_a;
     InternalStrideB stride_b;

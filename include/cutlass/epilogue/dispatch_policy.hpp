@@ -68,6 +68,15 @@ struct TmaWarpSpecialized1Sm {};
 struct TmaWarpSpecialized2Sm {};
 struct PtrArrayTmaWarpSpecialized1Sm : TmaWarpSpecialized1Sm {};
 struct PtrArrayTmaWarpSpecialized2Sm : TmaWarpSpecialized2Sm {};
+struct TmaWarpSpecialized1SmNvf4     final : TmaWarpSpecialized1Sm {};
+struct TmaWarpSpecialized2SmNvf4     final : TmaWarpSpecialized2Sm {};
+struct TmaWarpSpecialized1SmMxf4     final : TmaWarpSpecialized1Sm {};
+struct TmaWarpSpecialized2SmMxf4     final : TmaWarpSpecialized2Sm {};
+struct TmaWarpSpecialized1SmMxf8f6f4 final : TmaWarpSpecialized1Sm {};
+struct TmaWarpSpecialized2SmMxf8f6f4 final : TmaWarpSpecialized2Sm {};
+// Cooperative epilogue schedule for sm120 sparse kernels
+struct SparseTmaWarpSpecializedCooperativeSm120 : public TmaWarpSpecializedCooperative {};
+
 // DEPRECATED schedules, will be removed in next release
 struct TmaWarpSpecializedElementwiseBase : public TmaWarpSpecialized {};
 struct TmaWarpSpecializedCooperativeElementwiseBase : public TmaWarpSpecializedCooperative {};
@@ -230,6 +239,21 @@ struct Sm100NoSmem {};
 struct Sm100NoSmemWarpSpecialized {};
 struct Sm100PtrArrayNoSmem {};
 struct Sm100PtrArrayNoSmemWarpSpecialized {};
+
+template<
+  int StagesC_,
+  int StagesD_,
+  int FragmentSize_,
+  bool ReuseSmemC_,
+  bool DelayTmaStore_
+>
+struct Sm120TmaWarpSpecialized {
+  constexpr static int StagesC = StagesC_;
+  constexpr static int StagesD = StagesD_;
+  constexpr static int FragmentSize = FragmentSize_;
+  constexpr static bool ReuseSmemC = ReuseSmemC_;
+  constexpr static bool DelayTmaStore = DelayTmaStore_;
+};
 
 //////////////////////////////////////////////////////////////////////////////
 

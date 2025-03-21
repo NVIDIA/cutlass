@@ -157,6 +157,7 @@ foreach(EXAMPLE
   76_blackwell_conv                             
   77_blackwell_fmha                             
   78_blackwell_emulated_bf16x9_gemm             
+  79_blackwell_geforce_gemm             
   81_blackwell_gemm_blockwise 
   )
 

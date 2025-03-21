@@ -44,7 +44,8 @@
 #define CUDA_FP4_ENABLED 1
 #endif
 
-#if (defined(CUTLASS_ARCH_MMA_SM100A_ENABLED))
+#if (defined(CUTLASS_ARCH_MMA_SM100A_ENABLED) || defined(CUTLASS_ARCH_MMA_SM101A_ENABLED) ||\
+     defined(CUTLASS_ARCH_MMA_SM120A_ENABLED))
 #  define CUDA_PTX_FP4FP6_CVT_ENABLED 1
 #endif
 #include "cutlass/cutlass.h"
