@@ -154,9 +154,10 @@ struct MMA_Atom<MMA_Traits<MMAOperation, Args...>>
     if constexpr (has_dereference<FrgTypeA>::value) {
       // If the intended FrgTypeA is a view (of the current tensor), forward the whole
       static_assert(is_same<ValTypeA, typename remove_cvref_t<ATensor>::value_type>::value
-                        
                         || (sizeof_bits_v<typename remove_cvref_t<ATensor>::value_type> == 8 &&
                             (sizeof_bits_v<ValTypeA> == 8 || sizeof_bits_v<ValTypeA> == 6 || sizeof_bits_v<ValTypeA> == 4))
+                        || (sizeof_bits_v<typename remove_cvref_t<ATensor>::value_type> == 4 &&
+                            (sizeof_bits_v<ValTypeA> == 4 || sizeof_bits_v<ValTypeA> == 3 || sizeof_bits_v<ValTypeA> == 2))
                       , "Expecting ValTypeA type");
       return make_tensor<FrgTypeA>(static_cast<ATensor&&>(atensor));
     } else {
@@ -1118,4 +1119,7 @@ print_svg(TiledMMA<Args...> const &mma) {
 #include <cute/atom/mma_traits_sm90.hpp>
 #include <cute/atom/mma_traits_sm90_gmma.hpp>
 #include <cute/atom/mma_traits_sm100.hpp> 
+#include <cute/atom/mma_traits_sm120.hpp>
+#include <cute/atom/mma_traits_sm120_sparse.hpp>
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////

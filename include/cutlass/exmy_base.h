@@ -90,7 +90,7 @@ enum class FpEncoding
 
 #if (CUTLASS_CXX17_OR_LATER)
 template<uint32_t NumExpBits, uint32_t NumMantissaBits>
-CUTLASS_CONSTEXPR_IF_CXX17 int exponent_bias_cxx17() {
+constexpr int exponent_bias_cxx17() {
   if CUTLASS_CONSTEXPR_IF_CXX17 (NumExpBits == 0) {
     static_assert(NumMantissaBits <= static_cast<uint32_t>(cutlass::platform::numeric_limits<int32_t>::max()));
     return -1 * static_cast<int>(NumMantissaBits);
@@ -98,13 +98,15 @@ CUTLASS_CONSTEXPR_IF_CXX17 int exponent_bias_cxx17() {
   else {
     return static_cast<int>((1 << (NumExpBits - 1))) - 1;
   }
+
+  CUTLASS_GCC_UNREACHABLE;
 }
 #endif
 
 namespace impl {
 template<uint32_t NumExpBitsMinusOne>
 constexpr int shift_num_bits_expression_cxx11() {
-#if (__cplusplus >= 201700L) || (defined(_MSVC_LANG) && (_MSVC_LANG >= 201700L))
+#if (CUTLASS_CXX17_OR_LATER)
   static_assert(NumExpBitsMinusOne <= 31u);
 #endif
   return NumExpBitsMinusOne > 31u ? 31u : NumExpBitsMinusOne;
@@ -120,7 +122,7 @@ constexpr int inner_shift_expression_cxx11() {
 // C++11 equivalent of exponent_bias_cxx17()
 template<uint32_t NumExpBits, uint32_t NumMantissaBits>
 constexpr int exponent_bias_cxx11() {
-#if (__cplusplus >= 201700L) || (defined(_MSVC_LANG) && (_MSVC_LANG >= 201700L))
+#if (CUTLASS_CXX17_OR_LATER)
   return exponent_bias_cxx17<NumExpBits, NumMantissaBits>();
 #else
   return (NumExpBits == 0) ?
@@ -151,12 +153,12 @@ constexpr int maximum_exponent_cxx11() {
 template<uint32_t NumExpBits, uint32_t NumMantissaBits, NanInfEncoding NaNEncoding>
 constexpr int maximum_exponent_cxx17() {
   constexpr int exp_bias = exponent_bias_cxx17<NumExpBits, NumMantissaBits>();
-  if constexpr (NumExpBits == 0) {
+  if CUTLASS_CONSTEXPR_IF_CXX17 (NumExpBits == 0) {
     // If no exponent bits, return fixed hidden bias
     return 0 - exp_bias;
   }
   else {
-    if constexpr (NaNEncoding == NanInfEncoding::IEEE_754) {
+    if CUTLASS_CONSTEXPR_IF_CXX17 (NaNEncoding == NanInfEncoding::IEEE_754) {
       // We have IEEE style NaN and infinity
       // All values when exp_bits = 1...1s are used.
       int max_exp_bits = static_cast<int>((1 << NumExpBits)) - 2;
@@ -168,8 +170,8 @@ constexpr int maximum_exponent_cxx17() {
       // If we have a canonical NaN. Only exp=1..1 and mantissa=1..1
       // value has a special meaning. If we also have at least one mantissa
       // bit, then maximum exponent is 1...1 - exponent_bias
-      if constexpr (NaNEncoding == NanInfEncoding::CANONICAL_ONLY) {
-        if constexpr (NumMantissaBits > 0) {
+      if CUTLASS_CONSTEXPR_IF_CXX17 (NaNEncoding == NanInfEncoding::CANONICAL_ONLY) {
+        if CUTLASS_CONSTEXPR_IF_CXX17 (NumMantissaBits > 0) {
           int max_exp_bits = static_cast<int>((1 << NumExpBits)) - 1;
           return max_exp_bits - exp_bias;
         }
@@ -183,6 +185,8 @@ constexpr int maximum_exponent_cxx17() {
       return max_exp_bits - exp_bias;
     }
   }
+
+  CUTLASS_GCC_UNREACHABLE;
 }
 #endif
 
@@ -228,7 +232,7 @@ template<class Storage, uint32_t NumExpBits, uint32_t NumMantissaBits, NanInfEnc
 constexpr Storage max_pos_denormal_value_cxx17() {
   static_assert(NumExpBits > 0 || NumMantissaBits > 0, "Both NumExpBits and NumMantissaBits can't be zero");
   constexpr bool has_denorm = (NumMantissaBits > 0);
-  if constexpr (!has_denorm) {
+  if CUTLASS_CONSTEXPR_IF_CXX17 (!has_denorm) {
     // If we don't have denormal values, return all 0s
     return Storage(0);
   }
@@ -236,6 +240,8 @@ constexpr Storage max_pos_denormal_value_cxx17() {
     // Case: (NumExpBits > 0 && NumMantissaBits > 0) or (NumExpBits == 0 && NumMantissaBits > 0)
     return Storage((1ull << NumMantissaBits) - 1);
   }
+
+  CUTLASS_GCC_UNREACHABLE;
 }
 #endif
 
@@ -249,7 +255,7 @@ constexpr Storage min_pos_denormal_value_cxx11() {
 template<class Storage, uint32_t NumExpBits, uint32_t NumMantissaBits, NanInfEncoding NaNEncoding>
 constexpr Storage min_pos_denormal_value_cxx17() {
   constexpr bool has_denorm = (NumMantissaBits > 0);
-  if constexpr (!has_denorm) {
+  if CUTLASS_CONSTEXPR_IF_CXX17 (!has_denorm) {
     // If we don't have denormal values, return all 0s
     return Storage(0);
   }
@@ -278,7 +284,7 @@ constexpr Storage max_pos_normal_value_cxx11() {
 #if (CUTLASS_CXX17_OR_LATER)
 template<class Storage, uint32_t NumExpBits, uint32_t NumMantissaBits, NanInfEncoding NaNEncoding>
 constexpr Storage max_pos_normal_value_cxx17() {
-  if constexpr (NumExpBits == 0) {
+  if CUTLASS_CONSTEXPR_IF_CXX17 (NumExpBits == 0) {
     // if there are no exponent bits, we don't have normal values.
     return Storage(0);
   }
@@ -289,12 +295,12 @@ constexpr Storage max_pos_normal_value_cxx17() {
   // place the exponent
   Storage val = static_cast<Storage>(exp) << NumMantissaBits;
   // If there are no mantissa bits return the exponent
-  if constexpr (NumMantissaBits == 0) {
+  if CUTLASS_CONSTEXPR_IF_CXX17 (NumMantissaBits == 0) {
     return val;
   }
   else {
     // If the NaN Inf encoding follows IEEE 754 or there is no (NaN and Inf) then mantissa can be all 1..1s
-    if constexpr (NaNEncoding == NanInfEncoding::IEEE_754 ||
+    if CUTLASS_CONSTEXPR_IF_CXX17 (NaNEncoding == NanInfEncoding::IEEE_754 ||
                   NaNEncoding == NanInfEncoding::NONE  ) {
       Storage mantissa = (1ull << NumMantissaBits) - 1;
       val |= mantissa;
@@ -307,6 +313,8 @@ constexpr Storage max_pos_normal_value_cxx17() {
     }
     return val;
   }
+
+  CUTLASS_GCC_UNREACHABLE;
 }
 #endif
 
@@ -324,12 +332,12 @@ template<class Storage, uint32_t NumExpBits, uint32_t NumMantissaBits, NanInfEnc
 constexpr Storage min_pos_normal_value_cxx17() {
   constexpr bool has_denorm = (NumMantissaBits > 0);
 
-  if constexpr (NumExpBits == 0) {
+  if CUTLASS_CONSTEXPR_IF_CXX17 (NumExpBits == 0) {
     // if there are no exponent bits, we don't have normal values.
     return Storage(0);
   }
   Storage exp = 0;
-  if constexpr (has_denorm) {
+  if CUTLASS_CONSTEXPR_IF_CXX17 (has_denorm) {
     exp = 1;
   }
   return static_cast<Storage>(exp << NumMantissaBits);
@@ -349,12 +357,14 @@ constexpr Storage max_value_cxx11() {
 template<class Storage, uint32_t NumExpBits, uint32_t NumMantissaBits, NanInfEncoding NaNEncoding>
 constexpr Storage max_value_cxx17() {
   constexpr bool has_normal = (NumExpBits > 0);
-  if (has_normal) {
+  if CUTLASS_CONSTEXPR_IF_CXX17 (has_normal) {
     return max_pos_normal_value_cxx17<Storage, NumExpBits, NumMantissaBits, NaNEncoding>();
   }
   else {
     return max_pos_denormal_value_cxx17<Storage, NumExpBits, NumMantissaBits, NaNEncoding>();
   }
+
+  CUTLASS_GCC_UNREACHABLE;
 }
 #endif
 
@@ -376,6 +386,8 @@ constexpr Storage min_value_cxx17() {
   else { // Unsigned number
     return Storage(0);
   }
+
+  CUTLASS_GCC_UNREACHABLE;
 }
 #endif
 
@@ -388,7 +400,7 @@ public:
 
   using Storage = StorageType;
 
-#if (201700L <= __cplusplus)
+#if (CUTLASS_CXX17_OR_LATER)
   static_assert(cutlass::platform::is_unsigned_v<Storage>, "Use an unsigned integer for StorageType");
 #endif
   static constexpr bool IS_SIGNED = IsSigned;
@@ -597,6 +609,8 @@ private:
       // If INF is not defined assume satfinite behavior
       return (sign == ZERO) ? MAX_VALUE : MIN_VALUE;
     }
+
+    CUTLASS_GCC_UNREACHABLE;
   }
 
   CUTLASS_HOST_DEVICE
@@ -607,6 +621,8 @@ private:
     else {
       return (ONE << Storage(NUM_MANTISSA_BITS)) | mantissa_bits(flt);
     }
+
+    CUTLASS_GCC_UNREACHABLE;
   }
 
   template<typename T>
@@ -670,7 +686,6 @@ private:
     using DstT = typename DstFpBits::Storage;
     using LargeStorage = typename cutlass::platform::conditional<(sizeof(SrcT) > sizeof(DstT)), SrcT, DstT>::type;
 
-
     LargeStorage src_sign_bit = src_encoding.sign_bit(src_val);
 
     // If the source is NaN, set the destination to NaN carrying the sign bit
@@ -718,7 +733,6 @@ private:
     // Return positive/negative infinity.
     // If no INF is defined, return positive/negative largest value.
     if (src_exp > DstFpBits::MAX_EXP) {
-
       return dst_encoding.set_sign_bit(DstFpBits::INF_MASK, DstT(src_sign_bit));
     }
     else if (src_exp <= DstFpBits::MAX_EXP && src_exp >= DstFpBits::MIN_EXP) {
@@ -748,7 +762,6 @@ private:
 #endif
 
       if (dst_encoding.significand_hidden_bits(dst_mantissa) > 0b1) {
-
         // Significant became larger than 01.X...X. Divide significand by 2 and multiply exp by 2
         while (dst_exponent < (DstFpBits::MAX_EXP+DstFpBits::EXP_BIAS) &&
                dst_encoding.significand_hidden_bits(dst_mantissa) > LargeStorage(0b1)) {
@@ -869,9 +882,7 @@ CUTLASS_CONSTEXPR_IF_CXX17 auto fp_encoding_selector() {
   else if CUTLASS_CONSTEXPR_IF_CXX17 (FpExMyCode == FpEncoding::E2M1)   {   // FP4
     return cutlass::detail::FpBitRepresentation<uint8_t, 4, 2, 1, cutlass::detail::NanInfEncoding::NONE>{};
   }
-  else {
-    CUTLASS_GCC_UNREACHABLE;
-  }
+  CUTLASS_GCC_UNREACHABLE;
 }
 
 #else

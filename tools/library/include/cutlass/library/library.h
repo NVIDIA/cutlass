@@ -323,12 +323,11 @@ struct GemmUniversalArguments {
   int swizzle_size{1};
   int split_k_slices{1};
 
-  // For mixed input dtype kernels
-  bool is_mixed_dtype{false};
+  // For SM90 mixed input dtype kernels
+  bool is_sm90_mixed_dtype{false};
   Sm90MixedInputWiderOperand wider_operand{Sm90MixedInputWiderOperand::B};
   bool generate_scale_and_zero{false};
   bool generate_dequantized_AB{false};
-  bool *dequantized_AB_ready{nullptr};  // Carry the info back to gemm_operation_profiler.cu
   void *Scale{nullptr};                 // Scale tensor
   void *Zero{nullptr};                  // Zero tensor
   void *dequantized_AB{nullptr};        // Dequantized A or B tensor for verification

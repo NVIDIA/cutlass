@@ -530,13 +530,13 @@ If the scale factor tensor exceeds M128xSF4, it indicates that there are multipl
   <img src="../images/narrow_precison_multiple_block_sf_layout.png" alt="/narrow_precison_multiple_block_sf_layout.png"/>
 </p>
 
-The creation of scale factor tensors' layouts are tedious. CUTLASS provides `Sm100BlockScaledConfig` to create these layouts easily
+The creation of scale factor tensors' layouts are tedious. CUTLASS provides `Sm1xxBlockScaledConfig` to create these layouts easily
 (See [sm100_blockscaled_layout.hpp](cutlass/include/cutlass/detail/sm100_blockscaled_layout.hpp)).
 The interface to create SFA and SFB tensor layouts is as follows:
 
 ```cpp
 auto problem_shape = make_shape(M, N, K, L);
-using SfConfig = Sm100BlockScaledConfig<SFVecSize>;
+using SfConfig = Sm1xxBlockScaledConfig<SFVecSize>;
 
 // SFA shape: ((32,4), ceil(M/128)), ((SFVecSize,4), ceil(K/4), L)
 auto layout_sfa = SfConfig::tile_atom_to_shape_SFA(problem_shape);

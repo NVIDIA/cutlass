@@ -170,13 +170,12 @@ public:
   using CollectiveEpilogue = typename Operator::CollectiveEpilogue;
   using ThreadEpilogueOp = typename CollectiveEpilogue::ThreadEpilogueOp;
 
-  
   static constexpr bool IsRuntimeDataTypeA = cutlass::gemm::collective::detail::is_sm10x_runtime_f8f6f4<ElementA>();
 
   static constexpr bool IsRuntimeDataTypeB = cutlass::gemm::collective::detail::is_sm10x_runtime_f8f6f4<ElementB>();
 
   static_assert((IsRuntimeDataTypeA && IsRuntimeDataTypeB) ||
-                (!IsRuntimeDataTypeA && !IsRuntimeDataTypeB), 
+                (!IsRuntimeDataTypeA && !IsRuntimeDataTypeB),
                 "ElementA and ElementB in a GEMM kernel should be both runtime or both static.");
 
   static constexpr bool IsRuntimeDataType = IsRuntimeDataTypeA && IsRuntimeDataTypeB;
@@ -252,13 +251,13 @@ protected:
   };
 
   template<template<int, class, class> class Policy, int Stages, class ClusterShape, class KernelSchedule>
-  static constexpr bool is_mixed_dtype_mainloop_(Policy<Stages, ClusterShape, KernelSchedule> policy) {
+  static constexpr bool is_sm90_mixed_dtype_mainloop_(Policy<Stages, ClusterShape, KernelSchedule> policy) {
     return (cute::is_same_v<Policy<Stages, ClusterShape, KernelSchedule>,
                             cutlass::gemm::MainloopSm90TmaGmmaRmemAWarpSpecializedMixedInput<Stages, ClusterShape, KernelSchedule>>);
   }
 
   template <class DispatchPolicy>
-  static constexpr bool is_mixed_dtype_mainloop_(DispatchPolicy) {
+  static constexpr bool is_sm90_mixed_dtype_mainloop_(DispatchPolicy) {
     return false;
   }
 
@@ -380,7 +379,6 @@ protected:
       arguments->batch_count);
 
     // update arguments
-    
 
     if constexpr (IsRuntimeDataType) {
       using ArrayElementA = typename Operator::GemmKernel::CollectiveMainloop::ArrayElementA;
@@ -390,7 +388,7 @@ protected:
 
       std::unordered_map<RuntimeDatatype, cute::UMMA::MXF8F6F4Format> mapping = {
           {RuntimeDatatype::kE4M3, cute::UMMA::MXF8F6F4Format::E4M3},
-          {RuntimeDatatype::kE5M2, cute::UMMA::MXF8F6F4Format::E5M2}, 
+          {RuntimeDatatype::kE5M2, cute::UMMA::MXF8F6F4Format::E5M2},
           {RuntimeDatatype::kE3M2, cute::UMMA::MXF8F6F4Format::E3M2},
           {RuntimeDatatype::kE2M1, cute::UMMA::MXF8F6F4Format::E2M1}
       };
@@ -412,10 +410,9 @@ protected:
 
     }
     else {
-    
-    operator_args.mainloop.ptr_A = static_cast<ElementA const *>(arguments->A);
-    operator_args.mainloop.ptr_B = static_cast<ElementB const *>(arguments->B);
-    } 
+      operator_args.mainloop.ptr_A = static_cast<ElementA const *>(arguments->A);
+      operator_args.mainloop.ptr_B = static_cast<ElementB const *>(arguments->B);
+    }
     operator_args.epilogue.ptr_C = static_cast<ElementC const *>(arguments->C);
     operator_args.epilogue.ptr_D = static_cast<ElementD       *>(arguments->D);
 
@@ -441,11 +438,11 @@ protected:
     operator_args.epilogue.dD = operator_args.epilogue.dC;
 
     using MainloopPolicy = typename CollectiveMainloop::DispatchPolicy;
-    if constexpr(is_mixed_dtype_mainloop_(MainloopPolicy{})) {
-      int problem_m = arguments->problem_size.m();
-      int problem_n = arguments->problem_size.n();
-      int problem_k = arguments->problem_size.k();
-      int options_l = arguments->batch_count;
+    if constexpr(is_sm90_mixed_dtype_mainloop_(MainloopPolicy{})) {
+      const int problem_m = arguments->problem_size.m();
+      const int problem_n = arguments->problem_size.n();
+      const int problem_k = arguments->problem_size.k();
+      const int options_l = arguments->batch_count;
 
       constexpr Sm90MixedInputWiderOperand wider_operand =
         (cutlass::sizeof_bits<ElementA>::value > cutlass::sizeof_bits<ElementB>::value) ?
@@ -455,100 +452,118 @@ protected:
 
       constexpr bool has_scale = !std::is_same_v<typename CollectiveMainloop::ElementScale, void>;
       constexpr bool has_zero  = !std::is_same_v<typename CollectiveMainloop::ElementZero,  void>;
-      if constexpr(has_scale) {
-        int options_g = problem_k;
-        int scale_k = (problem_k + options_g - 1) / options_g;
 
-        constexpr bool is_A4B8 = (
-          cutlass::is_same_v<ElementA, cutlass::int4b_t> &&
-          (cutlass::is_same_v<ElementB, cutlass::float_e4m3_t> ||
-           cutlass::is_same_v<ElementB, cutlass::float_e5m2_t>));
-        constexpr bool is_A8B4 = (
-          cutlass::is_same_v<ElementB, cutlass::int4b_t> &&
-          (cutlass::is_same_v<ElementA, cutlass::float_e4m3_t> ||
-           cutlass::is_same_v<ElementA, cutlass::float_e5m2_t>));
-        constexpr bool is_int4_x_fp8 = is_A4B8 || is_A8B4;
+      const int options_g = problem_k;
+      const int scale_k = (problem_k + options_g - 1) / options_g;
 
-        // In int4 * fp8, ElementScale is a cutlass::Array, need to take out it's real element
-        using ElementScaleMainloop = typename CollectiveMainloop::ElementScale;
-        using ElementScale = typename UnderlyingElement<typename CollectiveMainloop::ElementScale>::type;
-        using StrideS = typename CollectiveMainloop::StrideScale;
-        // In ScaleOnly mode, we have allocated the same size of memory for arguments->Z and arguments->S
-        using ElementZero = std::conditional_t<
-          has_zero,
-          typename CollectiveMainloop::ElementZero,
-          ElementScale
-        >;
-        const int SZ_1st_dim = (wider_operand == Sm90MixedInputWiderOperand::A) ? problem_n : problem_m;
-        const size_t SZ_size = static_cast<size_t>(SZ_1st_dim * scale_k * options_l);
-        auto shape_SZ = cute::make_shape(SZ_1st_dim, scale_k, options_l);
-        ElementScale *ptr_S = static_cast<ElementScale *>(arguments->Scale);
-        ElementZero  *ptr_Z = static_cast<ElementZero  *>(arguments->Zero);
+      constexpr bool is_A4B8 = (
+        cutlass::is_same_v<ElementA, cutlass::int4b_t> &&
+        (cutlass::is_same_v<ElementB, cutlass::float_e4m3_t> ||
+         cutlass::is_same_v<ElementB, cutlass::float_e5m2_t>));
+      constexpr bool is_A8B4 = (
+        cutlass::is_same_v<ElementB, cutlass::int4b_t> &&
+        (cutlass::is_same_v<ElementA, cutlass::float_e4m3_t> ||
+         cutlass::is_same_v<ElementA, cutlass::float_e5m2_t>));
+      constexpr bool is_int4_x_fp8 = is_A4B8 || is_A8B4;
 
-        // 1. If arguments is initialized in profiler, S and Z needs to be allocated and filled
-        if (arguments->generate_scale_and_zero) {
-          // Need to fix max_dequant_val and min_dequant_val?
+      // If this is a convert-only kernel, we still need to generate dequantized A or B for verification,
+      // and in this case ElementScale is the same as ElementWide
+      // In int4 * fp8, ElementScale is a cutlass::Array, need to take out it's real element
+      using DummyElementScaleMainloop = std::conditional_t<
+        is_int4_x_fp8,
+        typename cutlass::Array<ElementWide, 8>,
+        ElementWide
+      >;
+      using ElementScaleMainloop = std::conditional_t<
+        has_scale,
+        typename CollectiveMainloop::ElementScale,
+        DummyElementScaleMainloop
+      >;
+      using ElementScale = std::conditional_t<
+        has_scale,
+        typename UnderlyingElement<typename CollectiveMainloop::ElementScale>::type,
+        ElementWide
+      >;
+      using StrideScale = typename CollectiveMainloop::StrideScale;
+      // In ScaleOnly mode, we have allocated the same size of memory for arguments->Z and arguments->S
+      using ElementZero = std::conditional_t<
+        has_zero,
+        typename CollectiveMainloop::ElementZero,
+        ElementScale
+      >;
+      const int SZ_1st_dim = (wider_operand == Sm90MixedInputWiderOperand::A) ? problem_n : problem_m;
+      const size_t SZ_size = static_cast<size_t>(SZ_1st_dim * scale_k * options_l);
+      auto shape_SZ = cute::make_shape(SZ_1st_dim, scale_k, options_l);
+      ElementScale *ptr_S = static_cast<ElementScale *>(arguments->Scale);
+      ElementZero  *ptr_Z = static_cast<ElementZero  *>(arguments->Zero);
+
+      // 1. If arguments is initialized in profiler, S and Z needs to be allocated and filled
+      if (arguments->generate_scale_and_zero) {
+        float scale_min = 1.0f, scale_max = 1.0f;
+        if constexpr(has_scale) {
           const float elt_max_f = float(cutlass::platform::numeric_limits<ElementScale>::max());
+          // Need to fix max_dequant_val and min_dequant_val?
           const float max_dequant_val = elt_max_f * 0.25f;
           const float min_dequant_val = 0.5f;
-          const float scale_max = max_dequant_val / elt_max_f;
-          const float scale_min = min_dequant_val / elt_max_f;
-          uint64_t seed = 2023;
-          cutlass::reference::device::BlockFillRandomUniform(
-            ptr_S, SZ_size, seed, ElementScale(scale_max), ElementScale(scale_min));
+          scale_max = max_dequant_val / elt_max_f;
+          scale_min = min_dequant_val / elt_max_f;
+        }
+        uint64_t seed = 2023;
+        cutlass::reference::device::BlockFillRandomUniform(
+          ptr_S, SZ_size, seed, ElementScale(scale_max), ElementScale(scale_min));
 
-          // In ScaleOnly mode, set Z as zero for generating dequantized A or B
-          const float zero_max = has_zero ?  2.0f : 0.0f;
-          const float zero_min = has_zero ? -2.0f : 0.0f;
-          cutlass::reference::device::BlockFillRandomUniform(
-            ptr_Z, SZ_size, seed, ElementZero(zero_max), ElementZero(zero_min));
-        }  // End of "if (arguments->generate_scale_and_zero)"
+        // In ScaleOnly mode, set Z as zero for generating dequantized A or B
+        const float zero_max = has_zero ?  2.0f : 0.0f;
+        const float zero_min = has_zero ? -2.0f : 0.0f;
+        cutlass::reference::device::BlockFillRandomUniform(
+          ptr_Z, SZ_size, seed, ElementZero(zero_max), ElementZero(zero_min));
+      }  // End of "if (arguments->generate_scale_and_zero)"
 
-        // 2. Generate the dequantized A or B for verification
-        if (arguments->generate_dequantized_AB) {
-          StrideS stride_SZ = cutlass::make_cute_packed_stride(StrideS{}, shape_SZ);
-          auto layout_SZ = cute::make_layout(shape_SZ, stride_SZ);
-          if constexpr(wider_operand == Sm90MixedInputWiderOperand::A) {
-            if constexpr(is_StrideB_Layout) {
-              // The generator only generates row-major A and col-major B at the moment
-              // Need a way to read out the actual layout of B later
-              using ActualLayoutB = cutlass::layout::ColumnMajor;
-              using ActualStrideB = cutlass::detail::TagToStrideB_t<ActualLayoutB>;
-              dequantize_encode_<ElementWide, ElementNarrow, ElementScaleMainloop, ActualStrideB, wider_operand, is_A8B4>(
-                operator_args, arguments, stream, problem_m, problem_k, options_l, options_g, ptr_S, ptr_Z, SZ_size, layout_SZ);
-            }
-            else {
-              using ActualStrideB = typename CollectiveMainloop::StrideB;
-              dequantize_encode_<ElementWide, ElementNarrow, ElementScaleMainloop, ActualStrideB, wider_operand, is_A8B4>(
-                operator_args, arguments, stream, problem_m, problem_k, options_l, options_g, ptr_S, ptr_Z, SZ_size, layout_SZ);
-            }
+      // 2. Generate the dequantized A or B for verification
+      if (arguments->generate_dequantized_AB) {
+        StrideScale stride_SZ = cutlass::make_cute_packed_stride(StrideScale{}, shape_SZ);
+        auto layout_SZ = cute::make_layout(shape_SZ, stride_SZ);
+        if constexpr(wider_operand == Sm90MixedInputWiderOperand::A) {
+          if constexpr(is_StrideB_Layout) {
+            // The generator only generates row-major A and col-major B at the moment
+            // Need a way to read out the actual layout of B later
+            using ActualLayoutB = cutlass::layout::ColumnMajor;
+            using ActualStrideB = cutlass::detail::TagToStrideB_t<ActualLayoutB>;
+            dequantize_encode_<ElementWide, ElementNarrow, ElementScaleMainloop, ActualStrideB, wider_operand, is_A8B4>(
+              operator_args, arguments, stream, problem_m, problem_k, options_l, options_g, ptr_S, ptr_Z, SZ_size, layout_SZ);
           }
           else {
-            if constexpr(is_StrideA_Layout) {
-              // The generator only generates row-major A and col-major B at the moment
-              // Need a way to read out the actual layout of A later
-              using ActualLayoutA = cutlass::layout::RowMajor;
-              using ActualStrideA = cutlass::detail::TagToStrideA_t<ActualLayoutA>;
-              dequantize_encode_<ElementWide, ElementNarrow, ElementScaleMainloop, ActualStrideA, wider_operand, is_A4B8>(
-                operator_args, arguments, stream, problem_m, problem_k, options_l, options_g, ptr_S, ptr_Z, SZ_size, layout_SZ);
-            }
-            else {
-              using ActualStrideA = typename CollectiveMainloop::StrideA;
-              dequantize_encode_<ElementWide, ElementNarrow, ElementScaleMainloop, ActualStrideA, wider_operand, is_A4B8>(
-                operator_args, arguments, stream, problem_m, problem_k, options_l, options_g, ptr_S, ptr_Z, SZ_size, layout_SZ);
-            }
-          }  // End of "if constexpr(wider_operand == Sm90MixedInputWiderOperand::A)"
-          arguments->dequantized_AB_ready[0] = true;
-        }  // End of "if (arguments->generate_dequantized_AB)"
+            using ActualStrideB = typename CollectiveMainloop::StrideB;
+            dequantize_encode_<ElementWide, ElementNarrow, ElementScaleMainloop, ActualStrideB, wider_operand, is_A8B4>(
+              operator_args, arguments, stream, problem_m, problem_k, options_l, options_g, ptr_S, ptr_Z, SZ_size, layout_SZ);
+          }
+        }
+        else {
+          if constexpr(is_StrideA_Layout) {
+            // The generator only generates row-major A and col-major B at the moment
+            // Need a way to read out the actual layout of A later
+            using ActualLayoutA = cutlass::layout::RowMajor;
+            using ActualStrideA = cutlass::detail::TagToStrideA_t<ActualLayoutA>;
+            dequantize_encode_<ElementWide, ElementNarrow, ElementScaleMainloop, ActualStrideA, wider_operand, is_A4B8>(
+              operator_args, arguments, stream, problem_m, problem_k, options_l, options_g, ptr_S, ptr_Z, SZ_size, layout_SZ);
+          }
+          else {
+            using ActualStrideA = typename CollectiveMainloop::StrideA;
+            dequantize_encode_<ElementWide, ElementNarrow, ElementScaleMainloop, ActualStrideA, wider_operand, is_A4B8>(
+              operator_args, arguments, stream, problem_m, problem_k, options_l, options_g, ptr_S, ptr_Z, SZ_size, layout_SZ);
+          }
+        }  // End of "if constexpr(wider_operand == Sm90MixedInputWiderOperand::A)"
+      }  // End of "if (arguments->generate_dequantized_AB)"
 
-        // 3. Put arguments in mainloop
+      // 3. Put Scale and Zero in mainloop
+      if constexpr(has_scale) {
         if constexpr(is_int4_x_fp8) {
           operator_args.mainloop.ptr_S = static_cast<ElementScaleMainloop const*>(arguments->packed_Scale);
         }
         else {
           operator_args.mainloop.ptr_S = static_cast<ElementScale const*>(arguments->Scale);
         }
-        operator_args.mainloop.dS = cutlass::make_cute_packed_stride(StrideS{}, shape_SZ);
+        operator_args.mainloop.dS = cutlass::make_cute_packed_stride(StrideScale{}, shape_SZ);
         operator_args.mainloop.group_size = options_g;
         if constexpr(has_zero) {
           operator_args.mainloop.ptr_Z = static_cast<ElementZero const*>(arguments->Zero);
@@ -580,7 +595,7 @@ protected:
         handle_shuffle_tensor_<ElementA, ActualStrideA, LayoutA_Reordered, LayoutAtomQuant, wider_operand>(
           operator_args, arguments, problem_m, problem_k, options_l);
       }
-    } // End of "if constexpr(is_mixed_dtype_mainloop_(MainloopPolicy{}))"
+    } // End of "if constexpr(is_sm90_mixed_dtype_mainloop_(MainloopPolicy{}))"
 
     /* Query device SM count and max active clusters to pass onto the kernel as an argument, where needed */
     operator_args.hw_info.sm_count = arguments->sm_count;
@@ -609,7 +624,6 @@ protected:
       operator_args.scheduler.splits = arguments->split_k_slices;
     }
 
-    
     if constexpr (Operator::ArchTag::kMinComputeCapability >= 100) {
       operator_args.hw_info.cluster_shape = dim3(
         arguments->cluster_shape.m(),
@@ -620,7 +634,6 @@ protected:
         arguments->cluster_shape_fallback.n(),
         arguments->cluster_shape_fallback.k());
     }
-    
     return status;
   }
 
@@ -632,7 +645,7 @@ public:
     GemmUniversalArguments const *arguments =
       static_cast<GemmUniversalArguments const *>(arguments_ptr);
     OperatorArguments args;
-    
+
     auto status = update_arguments_(args, arguments);
     if (status != Status::kSuccess) {
       return status;

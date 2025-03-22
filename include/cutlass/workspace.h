@@ -52,7 +52,11 @@ static constexpr int MinWorkspaceAlignment = 16;
 
 #if !defined(__CUDACC_RTC__)
 static Status
-zero_workspace(void* workspace, size_t workspace_size, cudaStream_t stream = nullptr, CudaHostAdapter *cuda_adapter = nullptr) {
+zero_workspace(
+    void* workspace,
+    size_t workspace_size,
+    cudaStream_t stream = nullptr,
+    [[maybe_unused]] CudaHostAdapter *cuda_adapter = nullptr) {
   if (workspace_size > 0) {
     if (workspace == nullptr) {
       CUTLASS_TRACE_HOST("  error: device workspace must not be null");

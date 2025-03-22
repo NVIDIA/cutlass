@@ -46,7 +46,7 @@
 #endif
 
 
-#if (defined(CUTLASS_ARCH_MMA_SM100A_ENABLED))
+#if (defined(CUTLASS_ARCH_MMA_SM100A_ENABLED) || defined(CUTLASS_ARCH_MMA_SM101A_ENABLED))
 #define CUTLASS_ARCH_TCGEN_ENABLED 1
 #endif
 
@@ -167,7 +167,8 @@ enum class ReservedNamedBarriers {
   StreamkBarrier0 = 4,
   StreamkBarrier1 = 5
   , TmemAllocBarrier = 6 
-  , FirstUserBarrier = StreamkBarrier1 + 1
+  , Sm120MainloopBarrier = 7
+  , FirstUserBarrier = Sm120MainloopBarrier + 1
 };
 
 

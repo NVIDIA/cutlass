@@ -214,7 +214,8 @@ struct Options {
   int iterations;
   int m, n, k;
   int preferred_cluster_m, preferred_cluster_n, fallback_cluster_m, fallback_cluster_n;
-  
+  int swizzle = 0;
+
   Options():
     help(false),
     m(4096), n(4096), k(4096),
@@ -223,7 +224,8 @@ struct Options {
     preferred_cluster_m(4),
     preferred_cluster_n(4),
     fallback_cluster_m(2),
-    fallback_cluster_n(1)
+    fallback_cluster_n(1),
+    swizzle(0)
   { }
 
   // Parses the command line
@@ -245,6 +247,7 @@ struct Options {
     cmd.get_cmd_line_argument("preferred_cluster_n", preferred_cluster_n, 4);
     cmd.get_cmd_line_argument("fallback_cluster_m", fallback_cluster_m, 2);
     cmd.get_cmd_line_argument("fallback_cluster_n", fallback_cluster_n, 1);
+    cmd.get_cmd_line_argument("swizzle", swizzle);
 
     if (!validate_cluster_shape()){
       std::cout << "--Invalid cluster shapes" << std::endl;
@@ -265,6 +268,7 @@ struct Options {
       << "  --k=<int>                   Sets the K extent of the GEMM\n"
       << "  --alpha=<f32>               Epilogue scalar alpha\n"
       << "  --beta=<f32>                Epilogue scalar beta\n"
+      << "  --swizzle=<int>             Cluster rasterization swizzle\n"
       << "  --preferred_cluster_m=<str> Sets the M extent of preferred cluster shape\n"
       << "  --preferred_cluster_n=<str> Sets the N extent of preferred cluster shape\n"
       << "  --fallback_cluster_m=<str>  Sets the M extent of fallback cluster shape\n"
@@ -384,7 +388,8 @@ typename Gemm::Arguments args_from_options(const Options &options) {
 
   arguments.hw_info.cluster_shape = dim3(options.preferred_cluster_m, options.preferred_cluster_n,1);
   arguments.hw_info.cluster_shape_fallback = dim3(options.fallback_cluster_m, options.fallback_cluster_n,1);
-  
+
+  arguments.scheduler.max_swizzle_size = options.swizzle;
   return arguments;
 }
 

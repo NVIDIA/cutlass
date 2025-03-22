@@ -414,7 +414,7 @@ public:
       const auto & input_stride  = problem_shape.stride_A;
 
       implementable &= input_stride[ProblemShape::RankT - 1] == 1;
-      int input_shape_size = 1;
+      int64_t input_shape_size = 1;
       for (int i = ProblemShape::RankT - 2; i >= 0; --i) {
         input_shape_size *= input_shape[i + 1];
         implementable &= input_stride[i] == input_shape_size;
@@ -443,7 +443,7 @@ public:
       const auto & output_stride  = problem_shape.stride_C;
 
       implementable &= output_stride[ProblemShape::RankT - 1] == 1;
-      int output_shape_size = 1;
+      int64_t output_shape_size = 1;
       for (int i = ProblemShape::RankT - 2; i >= 0; --i) {
         output_shape_size *= output_shape[i + 1];
         implementable &= output_stride[i] == output_shape_size;
@@ -480,6 +480,24 @@ public:
     if (problem_shape.groups > 1) {
       CUTLASS_TRACE_HOST("  CAN IMPLEMENT: This kernel does not support conv groups > 1.\n");
       return false;
+    }
+
+    if constexpr (is_im2col_A || is_im2col_B) {
+      auto [M, N, K, L] = cutlass::conv::detail::get_transformed_problem_shape_MNKL(problem_shape);
+      auto to_64b = [](auto S) { return transform_leaf(S, [](auto s) { return static_cast<int64_t>(s); }); };
+
+      if constexpr (ConvOp == conv::Operator::kFprop || ConvOp == conv::Operator::kDgrad) {
+        implementable &= (cute::product(to_64b(M)) <= cutlass::platform::numeric_limits<int32_t>::max()) &
+                         (cute::product(to_64b(L)) <= cutlass::platform::numeric_limits<int32_t>::max());
+      }
+      else if constexpr (ConvOp == conv::Operator::kWgrad) {
+        implementable &= (cute::product(to_64b(K)) <= cutlass::platform::numeric_limits<int32_t>::max());
+      }
+
+      if (!implementable) {
+        CUTLASS_TRACE_HOST("  CAN IMPLEMENT: the extents exceed the maximum number.\n");
+        return false;
+      }
     }
 
     return true;

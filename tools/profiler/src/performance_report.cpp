@@ -160,7 +160,7 @@ void PerformanceReport::append_result(PerformanceResult result) {
   }
 }
 
-void PerformanceReport::sort_results(PerformanceResultVector &results) {
+void PerformanceReport::sort_flops_per_byte(PerformanceResultVector &results) {
 
   struct FlopsPerByteCompare
   {
@@ -174,6 +174,19 @@ void PerformanceReport::sort_results(PerformanceResultVector &results) {
   };
 
   std::stable_sort(results.begin(), results.end(), FlopsPerByteCompare());
+}
+
+void PerformanceReport::sort_flops_per_sec(PerformanceResultVector &results) {
+
+  struct FlopsPerSecondCompare
+  {
+    bool operator()(const PerformanceResult &a, const PerformanceResult &b)
+    {
+      return a.gflops_per_sec() > b.gflops_per_sec();
+    }
+  };
+
+  std::stable_sort(results.begin(), results.end(), FlopsPerSecondCompare());
 }
 
 void PerformanceReport::append_results(PerformanceResultVector const &results) {
@@ -195,8 +208,12 @@ PerformanceReport::~PerformanceReport() {
   //
   if (options_.report.verbose && !concatenated_results_.empty()) {
 
-    if (options_.report.sort_results) {
-      sort_results(concatenated_results_);
+    if (options_.report.sort_flops_per_byte) {
+      sort_flops_per_byte(concatenated_results_);
+    }
+
+    if (options_.report.sort_flops_per_sec) {
+      sort_flops_per_sec(concatenated_results_);
     }
 
     std::cout << "\n\n";
