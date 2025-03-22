@@ -531,7 +531,7 @@ If the scale factor tensor exceeds M128xSF4, it indicates that there are multipl
 </p>
 
 The creation of scale factor tensors' layouts are tedious. CUTLASS provides `Sm1xxBlockScaledConfig` to create these layouts easily
-(See [sm100_blockscaled_layout.hpp](cutlass/include/cutlass/detail/sm100_blockscaled_layout.hpp)).
+(See [sm100_blockscaled_layout.hpp](../../include/cutlass/detail/sm100_blockscaled_layout.hpp)).
 The interface to create SFA and SFB tensor layouts is as follows:
 
 ```cpp
