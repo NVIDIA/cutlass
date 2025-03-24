@@ -35,16 +35,17 @@
 
 #pragma once
 
-#include <algorithm>                       // std::fill
-#include <array>                           // std::array
-#include <random>                          // std::mt19937
+#include <algorithm>                           // std::fill
+#include <array>                               // std::array
+#include <random>                              // std::mt19937
 
-#include "cute/numeric/numeric_types.hpp"  // cute::sizeof_bits_v
-#include "cute/tensor.hpp"                 // cute::Tensor, cute::make_tensor
-#include "cutlass/arch/arch.h"             // cutlass::arch::SmXY
-#include "cutlass/gemm/gemm.h"             // cutlass::TagToStrideA_t
-#include "cutlass/fast_math.h"             // cutlass::ceil_div, cutlass::round_up
-#include "cutlass/numeric_size.h"          // cutlass::bits_to_bytes
+#include "cute/numeric/numeric_types.hpp"      // cute::sizeof_bits_v
+#include "cute/tensor.hpp"                     // cute::Tensor, cute::make_tensor
+#include "cutlass/arch/arch.h"                 // cutlass::arch::SmXY
+#include "cutlass/detail/dependent_false.hpp"  // cutlass::detail::dependent_false
+#include "cutlass/gemm/gemm.h"                 // cutlass::TagToStrideA_t
+#include "cutlass/fast_math.h"                 // cutlass::ceil_div, cutlass::round_up
+#include "cutlass/numeric_size.h"              // cutlass::bits_to_bytes
 
 #include "cutlass/transform/kernel/sm90_sparse_gemm_compressor.hpp"
 
@@ -258,6 +259,46 @@ struct StructuredSparseCompressorSelector<
     LayoutATag,
     SparseConfig,
     arch::Sm90> {
+  using Compressor = SM90StructuredSparseCompressor<
+    ProblemShape,
+    ElementA,
+    LayoutATag,
+    SparseConfig
+  >;
+};
+
+template<
+  class ProblemShape,
+  class ElementA,
+  class LayoutATag,
+  class SparseConfig
+>
+struct StructuredSparseCompressorSelector<
+    ProblemShape,
+    ElementA,
+    LayoutATag,
+    SparseConfig,
+    arch::Sm100> {
+  using Compressor = SM90StructuredSparseCompressor<
+    ProblemShape,
+    ElementA,
+    LayoutATag,
+    SparseConfig
+  >;
+};
+
+template<
+  class ProblemShape,
+  class ElementA,
+  class LayoutATag,
+  class SparseConfig
+>
+struct StructuredSparseCompressorSelector<
+    ProblemShape,
+    ElementA,
+    LayoutATag,
+    SparseConfig,
+    arch::Sm120> {
   using Compressor = SM90StructuredSparseCompressor<
     ProblemShape,
     ElementA,

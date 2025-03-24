@@ -478,6 +478,8 @@ Options::Profiling::Profiling(cutlass::CommandLine const &cmdline) {
   cmdline.get_cmd_line_argument("profiling-duration", duration, 10);
   cmdline.get_cmd_line_argument("min-iterations", min_iterations, 10);
   cmdline.get_cmd_line_argument("use-cuda-graphs", use_cuda_graphs, false);
+  cmdline.get_cmd_line_argument("enable-kernel-performance-search", enable_kernel_performance_search, false);
+  cmdline.get_cmd_line_argument("enable-best-kernel-for-fixed-shape", enable_best_kernel_for_fixed_shape, false);
 
   if (cmdline.check_cmd_line_flag("providers")) {
 
@@ -683,7 +685,9 @@ Options::Report::Report(cutlass::CommandLine const &cmdline) {
 
   cmdline.get_cmd_line_argument("verbose", verbose, true);
 
-  cmdline.get_cmd_line_argument("sort-results", sort_results, false);
+  cmdline.get_cmd_line_argument("sort-results-flops-per-byte", sort_flops_per_byte, false);
+
+  cmdline.get_cmd_line_argument("sort-results-flops-per-sec", sort_flops_per_sec, false);
 
   cmdline.get_cmd_line_argument("print-kernel-before-running", print_kernel_before_running, false);
 }

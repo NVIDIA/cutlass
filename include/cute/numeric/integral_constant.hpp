@@ -74,29 +74,40 @@ struct integral_constant : C<v> {
 
 // Use cute::is_std_integral<T> to match built-in integral types (int, int64_t, unsigned, etc)
 // Use cute::is_integral<T> to match both built-in integral types AND static integral types.
-
 template <class T>
 struct is_integral : bool_constant<is_std_integral<T>::value> {};
 template <auto v>
 struct is_integral<C<v>                  > : true_type {};
 template <class T, T v>
 struct is_integral<integral_constant<T,v>> : true_type {};
+template <class T>
+constexpr bool is_integral_v = is_integral<T>::value;
 
-// Register FastDivmod as the integral type
+// Register FastDivmod as integral type
 template<>
 struct is_integral<cutlass::FastDivmod> : true_type {};
 
 // is_static detects if an (abstract) value is defined completely by its type (no members)
 template <class T>
-struct is_static : bool_constant<is_empty<remove_cvref_t<T>>::value> {};
-
+struct is_static : bool_constant<is_empty<T>::value> {};
+template <class T>
+struct is_static<T const > : is_static<T> {};
+template <class T>
+struct is_static<T const&> : is_static<T> {};
+template <class T>
+struct is_static<T      &> : is_static<T> {};
+template <class T>
+struct is_static<T     &&> : is_static<T> {};
 template <class T>
 constexpr bool is_static_v = is_static<T>::value;
 
 // is_constant detects if a type is a static integral type and if v is equal to a value
-
 template <auto n, class T>
 struct is_constant : false_type {};
+template <auto n, auto v>
+struct is_constant<n, C<v>                  > : bool_constant<v == n> {};
+template <auto n, class T, T v>
+struct is_constant<n, integral_constant<T,v>> : bool_constant<v == n> {};
 template <auto n, class T>
 struct is_constant<n, T const > : is_constant<n,T> {};
 template <auto n, class T>
@@ -105,10 +116,8 @@ template <auto n, class T>
 struct is_constant<n, T      &> : is_constant<n,T> {};
 template <auto n, class T>
 struct is_constant<n, T     &&> : is_constant<n,T> {};
-template <auto n, auto v>
-struct is_constant<n, C<v>                  > : bool_constant<v == n> {};
-template <auto n, class T, T v>
-struct is_constant<n, integral_constant<T,v>> : bool_constant<v == n> {};
+template <auto n, class T>
+constexpr bool is_constant_v = is_constant<n,T>::value;
 
 //
 // Specializations

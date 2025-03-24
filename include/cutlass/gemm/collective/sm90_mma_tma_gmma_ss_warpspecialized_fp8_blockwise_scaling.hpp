@@ -335,9 +335,9 @@ struct CollectiveMma<
     auto tK = get<3>(gA_mkl.shape());
 
     // Make the tiled views of scale tensors
-    auto scaleA_shape = make_shape(M / ScaleGranularityM, tK, L); // (scale_m,k,l)
+    auto scaleA_shape = make_shape(ceil_div(M, ScaleGranularityM), tK, L); // (scale_m,k,l)
     auto scaleA_layout = make_ordered_layout(scaleA_shape, Step<_0, _1, _2>{});
-    auto scaleB_shape = make_shape(N / ScaleGranularityN, tK, L); // (scale_n,k,l)
+    auto scaleB_shape = make_shape(ceil_div(N, ScaleGranularityN), tK, L); // (scale_n,k,l)
     auto scaleB_layout = make_ordered_layout(scaleB_shape, Step<_0, _1, _2>{});
 
     // Note that mScaleA_mkl and mScaleB_nkl are already blocked tiled in the `m` host and
@@ -416,7 +416,7 @@ struct CollectiveMma<
 
     TiledCopy scale_copy_a = make_tiled_copy(SmemBlockScalingCopyAtomA{},
       Layout<Shape<_32>>{}, Layout<Shape<_1>>{});
-    TiledCopy scale_copy_b = make_tiled_copy(SmemBlockScalingCopyAtomB{},
+    TiledCopy scale_copy_b = make_tiled_copy(SmemBlockScalingCopyAtomB{}, 
       Layout<Shape<_32>>{}, Layout<Shape<_1>>{});
     ThrCopy thr_scale_copy_a = scale_copy_a.get_slice(ThreadIdxX());
     ThrCopy thr_scale_copy_b = scale_copy_b.get_slice(ThreadIdxX());

@@ -205,7 +205,9 @@ namespace cutlass {
 #  define CUTLASS_CPLUSPLUS __cplusplus
 #endif
 
-#if (201700L <= CUTLASS_CPLUSPLUS)
+// https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2018/n4762.pdf
+// Section 14.8 Predefined macro names
+#if (201703L <= CUTLASS_CPLUSPLUS)
 #define CUTLASS_CONSTEXPR_IF_CXX17 constexpr
 #define CUTLASS_CXX17_OR_LATER 1
 #else

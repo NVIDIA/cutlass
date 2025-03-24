@@ -114,6 +114,20 @@ using ${operation_name}_base = cutlass::conv::kernel::ConvUniversal<
     mma_n = cta_n
     mma_k = cta_k
 
+    if operation.arch >= 100:
+      # MmaTileShape (mma_m, mma_n, mma_k) is passed to kernel mainloop where
+      # mma_m = cta_m for 1sm version and mma_m = cta_m * 2 for 2sm version.
+      # If schedule is auto and cluster size is static and cta_m % 64 == 0 and cluster_m % 2 == 0, 2sm kernel version is allocated,
+      # otherwise 1sm kernel is allocated.
+      cta_m_per_mma_instruction = 1
+      if "2sm" in operation.procedural_name() :
+        cta_m_per_mma_instruction = 2
+      elif "1sm" in operation.procedural_name() :
+        cta_m_per_mma_instruction = 1
+      elif operation.tile_description.cluster_shape[0] > 0 and operation.tile_description.cluster_shape[0] % 2 == 0 and cta_m % 64 == 0 :
+        cta_m_per_mma_instruction = 2
+      mma_m = cta_m * cta_m_per_mma_instruction
+
     # For all three kinds of convolutions, the tile shape's K mode
     # differs from GEMM in that needs to be wrapped in a Shape.
     # For Wgrad convolutions specifically,
@@ -170,6 +184,11 @@ using ${operation_name}_base = cutlass::conv::kernel::ConvUniversal<
     cluster_n = operation.tile_description.cluster_shape[1]
 
     cta_m, cta_n, cta_k = tile_shape
+    # account for static/dynamic cluster shapes
+    if operation.arch >= 100:
+      cta_m = cta_m // cluster_m if cluster_m > 0 else cta_m
+      cta_n = cta_n // cluster_n if cluster_n > 0 else cta_n
+
     warp_count = operation.tile_description.warp_count
     epilogue_schedule = EpilogueScheduleTag[operation.epilogue_schedule]
 

@@ -221,6 +221,7 @@ public:
   constexpr static bool RequiresTransactionBytes = true;
 
   constexpr static int NumEpilogueWarpGroups = NumEpilogueWarpGroups_;
+  constexpr static uint32_t MinTensorMapWorkspaceAlignment = 64;
 
   // TMA pipeline for storing D
   using StorePipeline = cute::conditional_t<ReuseSmemC,
@@ -330,7 +331,8 @@ public:
     uint32_t transaction_bytes = TmaTransactionBytes;
     typename Params::TMA_C tma_load_c{};
     if constexpr (is_source_supported) {
-      ElementC const* ptr_C_first_batch = reinterpret_cast<ElementC const*>(args.ptr_C); 
+    // NOTE: Since TMA desc creation with nullptr not possible until 12.6, we use an initial address even when tensor addresses are on device. This address is never used.
+      ElementC const* ptr_C_first_batch = reinterpret_cast<ElementC const*>(reinterpret_cast<uint64_t>(args.ptr_C) & 0xFFFFFFFFFFFFFFF0);  // Address must be 16B-aligned
       Tensor tensor_c = make_tensor(ptr_C_first_batch, make_layout(make_shape(init_M,init_N,init_L), append<3>(stride_c, _0{})));
       tma_load_c = make_tma_copy(
           CopyOpG2S{},
@@ -342,7 +344,8 @@ public:
 
     typename Params::TMA_D tma_store_d{};
     if constexpr (is_destination_supported) {
-      ElementD const* ptr_D_first_batch = reinterpret_cast<ElementD const*>(args.ptr_D);
+    // NOTE: Since TMA desc creation with nullptr not possible until 12.6, we use an initial address even when tensor addresses are on device. This address is never used.
+      ElementD const* ptr_D_first_batch = reinterpret_cast<ElementD const*>(reinterpret_cast<uint64_t>(args.ptr_D) & 0xFFFFFFFFFFFFFFF0);  // Address must be 16B-aligned
       Tensor tensor_d = make_tensor(ptr_D_first_batch, make_layout(make_shape(init_M,init_N,init_L), append<3>(stride_d, _0{})));
       tma_store_d = make_tma_copy(
           CopyOpS2G{},
@@ -353,7 +356,7 @@ public:
     }
 
     auto fusion_workspace = static_cast<char*>(workspace);
-    auto fusion_workspace_size = FusionCallbacks::get_workspace_size(problem_shape, args.thread);
+    auto fusion_workspace_size = round_nearest(FusionCallbacks::get_workspace_size(problem_shape, args.thread), MinTensorMapWorkspaceAlignment);
     auto tma_descriptor_workspace = reinterpret_cast<cute::TmaDescriptor*>(
                                       static_cast<char*>(workspace) + fusion_workspace_size);
 
@@ -373,13 +376,12 @@ public:
   template <class ProblemShape>
   static size_t
   get_workspace_size(ProblemShape const& problem_shape, Arguments const& args, int sm_count) {
-    
     constexpr uint32_t NumInputTensors = NumEpilogueWarpGroups + (cute::is_void_v<ElementC> ? 0 : 1);
     auto descriptors_shape = cute::make_shape(sm_count, Int<NumInputTensors>{});
     constexpr size_t SizeOfCuTensorMap = sizeof(cute::TmaDescriptor);
-
     // Allocate gmem space for input tensormaps per each SM, A tensormap copies followed by B tensormap copies
-    return (size(descriptors_shape) * SizeOfCuTensorMap) + FusionCallbacks::get_workspace_size(problem_shape, args.thread);
+    return (size(descriptors_shape) * SizeOfCuTensorMap) + 
+        (round_nearest(FusionCallbacks::get_workspace_size(problem_shape, args.thread), MinTensorMapWorkspaceAlignment));
   }
 
   template <class ProblemShape>

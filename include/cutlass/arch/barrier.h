@@ -36,20 +36,20 @@
 
 #include <cutlass/arch/memory_sm75.h>
 #include <cute/arch/cluster_sm90.hpp>
-#include <cute/arch/copy_sm100_tma.hpp>
+#include <cute/arch/copy_sm100_tma.hpp> 
 #include <cutlass/arch/config.h>
-
 #if defined(SYCL_INTEL_TARGET)
 #include <cute/arch/copy_xe.hpp>
+#endif
 
-#elif defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 900 && (__CUDACC_VER_MAJOR__ >= 12)
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 900 && (__CUDACC_VER_MAJOR__ >= 12)
 #define CUDA_BARRIER_ENABLED 1
 #else
 #define CUDA_BARRIER_ENABLED 0
 #endif
 
 
-#if (defined(CUTLASS_ARCH_MMA_SM100A_ENABLED))
+#if (defined(CUTLASS_ARCH_MMA_SM100A_ENABLED) || defined(CUTLASS_ARCH_MMA_SM101A_ENABLED))
 #define CUTLASS_ARCH_TCGEN_ENABLED 1
 #endif
 
@@ -169,8 +169,9 @@ enum class ReservedNamedBarriers {
   TransformBarrier = 3,
   StreamkBarrier0 = 4,
   StreamkBarrier1 = 5
-  , TmemAllocBarrier = 6
-  , FirstUserBarrier = StreamkBarrier1 + 1
+  , TmemAllocBarrier = 6 
+  , Sm120MainloopBarrier = 7
+  , FirstUserBarrier = Sm120MainloopBarrier + 1
 };
 
 
@@ -801,7 +802,7 @@ void umma_arrive_multicast(uint64_t const* smem_ptr, uint16_t cta_mask) {
     asm volatile(
       "{\n\t"
       "tcgen05.commit.cta_group::1.mbarrier::arrive::one.shared::cluster.multicast::cluster.b64 [%0], %1; \n\t"
-      "}"
+      "}" 
       :
       :"r"(bar_intptr), "h"(cta_mask));
   }
@@ -819,7 +820,7 @@ void umma_arrive_multicast_2x1SM(uint64_t const* smem_ptr, uint16_t cta_mask) {
     asm volatile(
       "{\n\t"
       "tcgen05.commit.cta_group::2.mbarrier::arrive::one.shared::cluster.multicast::cluster.b64 [%0], %1; \n\t"
-      "}"
+      "}" 
       :
       :"r"(bar_intptr), "h"(cta_mask));
   }
@@ -839,7 +840,7 @@ void umma_arrive_multicast_no_elect(uint64_t const* smem_ptr, uint16_t cta_mask)
       ".reg .b16 lo, hi;\n\t"
       "mov.b32 {lo, hi}, %1;\n\t"
       "tcgen05.commit.cta_group::1.mbarrier::arrive::one.shared::cluster.multicast::cluster.b64 [%0], lo; \n\t"
-      "}"
+      "}" 
       :
       :"r"(bar_intptr), "r"(uint32_t(cta_mask)));
 #elif defined(__CUDA_ARCH__)
@@ -858,7 +859,7 @@ void umma_arrive_multicast_2x1SM_no_elect(uint64_t const* smem_ptr, uint16_t cta
       ".reg .b16 lo, hi;\n\t"
       "mov.b32 {lo, hi}, %1;\n\t"
       "tcgen05.commit.cta_group::2.mbarrier::arrive::one.shared::cluster.multicast::cluster.b64 [%0], lo; \n\t"
-      "}"
+      "}" 
       :
       :"r"(bar_intptr), "r"(uint32_t(cta_mask)));
 #else

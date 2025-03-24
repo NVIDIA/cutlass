@@ -29,58 +29,53 @@
 
 if (NOT CUTLASS_ENABLE_SYCL)
   cutlass_example_add_executable(
-    sgemm_1
+    cute_tutorial_sgemm_1
     sgemm_1.cu
   )
 
   cutlass_example_add_executable(
-    sgemm_2
+    cute_tutorial_sgemm_2
     sgemm_2.cu
   )
 
   cutlass_example_add_executable(
-    sgemm_sm70
+    cute_tutorial_sgemm_sm70
     sgemm_sm70.cu
   )
 
   cutlass_example_add_executable(
-    sgemm_sm80
+    cute_tutorial_sgemm_sm80
     sgemm_sm80.cu
   )
 
   cutlass_example_add_executable(
-    tiled_copy
+    cute_tutorial_tiled_copy
     tiled_copy.cu
-  )
-
-  cutlass_example_add_executable(
-    wgmma_sm90
-    wgmma_sm90.cu
   )
 else()
   cutlass_example_add_executable(
-    sgemm_1
+    cute_tutorial_sgemm_1
     sgemm_1_sycl.cpp
   )
 
   cutlass_example_add_executable(
-    sgemm_2
+    cute_tutorial_sgemm_2
     sgemm_2_sycl.cpp
   )
 
   cutlass_example_add_executable(
-    tiled_copy
+    cute_tutorial_tiled_copy
     tiled_copy_sycl.cpp
   )
 
   if (SYCL_NVIDIA_TARGET)
     cutlass_example_add_executable(
-      sgemm_sm70
+      cute_tutorial_sgemm_sm70
       sgemm_sm70_sycl.cpp
     )
 
     cutlass_example_add_executable(
-      sgemm_sm80
+      cute_tutorial_sgemm_sm80
       sgemm_sm80_sycl.cpp
     )
   endif()

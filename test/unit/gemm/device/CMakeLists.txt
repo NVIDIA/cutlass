@@ -103,6 +103,13 @@ endfunction()
 
 add_subdirectory(sm100_blockscaled_tensorop_gemm)
 add_subdirectory(sm100_tensorop_gemm)
+add_subdirectory(sm100_blockscaled_sparse_tensorop_gemm)
+add_subdirectory(sm100_sparse_tensorop_gemm)
+add_subdirectory(sm120_blockscaled_sparse_tensorop_gemm)
+add_subdirectory(sm120_sparse_tensorop_gemm)
+add_subdirectory(sm120_tensorop_gemm)
+add_subdirectory(sm120_blockscaled_tensorop_gemm)
+
 cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_simt
 
@@ -380,6 +387,11 @@ cutlass_test_unit_gemm_device_add_executable(
 cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_tensorop_sm90_group_gemm
   sm90_gemm_f16_f16_f16_tensor_op_f32_group_gemm.cu
+)
+
+# Group Gemm pingpong test
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_sm90_group_gemm_pingpong
   sm90_gemm_f16_f16_f16_tensor_op_f32_group_gemm_pingpong.cu
 )
 

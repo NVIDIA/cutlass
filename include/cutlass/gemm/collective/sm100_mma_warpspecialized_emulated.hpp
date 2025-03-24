@@ -986,7 +986,8 @@ struct CollectiveMma<
     return cute::make_tuple(mma2accum_pipeline_consumer_state, tTR_rGlobAcc);
   }
 
-private:
+protected:
+
   template <class ProblemShape_MNKL>
   CUTLASS_DEVICE
   constexpr auto

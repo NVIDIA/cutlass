@@ -68,6 +68,19 @@ public:
   using RasterOrderOptions = UnderlyingScheduler::RasterOrderOptions;
   static constexpr bool IsDynamicPersistent = false;
 
+  using Pipeline = PipelineEmpty;
+  using PipelineStorage = typename Pipeline::SharedStorage;
+  using ThrottlePipeline = PipelineEmpty;
+  using ThrottlePipelineStorage = typename ThrottlePipeline::SharedStorage;
+  struct CLCResponse {};
+
+  class SharedStorage {
+  public:
+    CUTLASS_DEVICE PipelineStorage pipeline() { return PipelineStorage{}; }
+    CUTLASS_DEVICE ThrottlePipelineStorage throttle_pipeline() { return ThrottlePipelineStorage{}; }
+    CUTLASS_DEVICE CLCResponse* data() { return nullptr; }
+  };
+
   // Use a dummy barrier manager to simply get the type used to store the barrier
   using BarrierType = typename NamedBarrierManager<1>::T;
 
@@ -695,6 +708,17 @@ public:
 
     advance_to_next_work();
     return cute::make_tuple(get_current_work(), true);
+  }
+
+  // Kernel helper function to get next work tile
+  template <class TileSchedulerPipeline, class TileSchedulerPipelineState>
+  CUTLASS_DEVICE
+  auto
+  fetch_next_work(
+      WorkTileInfo work_tile_info,
+      TileSchedulerPipeline& scheduler_pipeline,
+      TileSchedulerPipelineState scheduler_pipe_consumer_state) {
+    return fetch_next_work(work_tile_info);
   }
 
   // Returns the initial work tile info that will be computed over

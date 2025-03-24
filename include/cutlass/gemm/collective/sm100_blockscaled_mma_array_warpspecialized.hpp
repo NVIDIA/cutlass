@@ -128,13 +128,15 @@ struct CollectiveMma<
                        "Static cluster shape used: TileShape should be evenly divided by TiledMma");
 
   using CtaShape_MNK = decltype(shape_div(TileShape{}, AtomThrShapeMNK{}));
-  static_assert(shape<1>(CtaShape_MNK{}) == 192 or shape<1>(CtaShape_MNK{}) == 128 or shape<1>(CtaShape_MNK{}) == 256,
-      "Cta N should be one of 128/192/256");
+  static_assert(shape<1>(CtaShape_MNK{}) == 192 or shape<1>(CtaShape_MNK{}) == 64 or
+      shape<1>(CtaShape_MNK{}) == 128 or shape<1>(CtaShape_MNK{}) == 256,
+      "Cta N should be one of 64/128/192/256");
 
   using ClusterTileShape = decltype(make_shape(get<0>(TileShape{})*get<0>(ClusterShape{}),get<1>(TileShape{})*get<1>(ClusterShape{}),get<2>(TileShape{})*get<2>(ClusterShape{})));
-  using Sm100BlkScaledConfig = cutlass::detail::Sm100BlockScaledConfig<SFVecSize>;
-  using Blk_MN = typename Sm100BlkScaledConfig::Blk_MN;
+  using Sm1xxBlkScaledConfig = cutlass::detail::Sm1xxBlockScaledConfig<SFVecSize>;
+  using Blk_MN = typename Sm1xxBlkScaledConfig::Blk_MN;
   static constexpr int IsCtaN192 = shape<1>(CtaShape_MNK{}) == 192;
+  static constexpr int IsCtaN64 = shape<1>(CtaShape_MNK{}) == 64;
   static int constexpr CTA_N_SF = cutlass::ceil_div(size<1>(CtaShape_MNK{}), Blk_MN{}) * Blk_MN{};
   // Tile shape used for partitioning Scale Factor B.
   // The M-dim does not affect the SFB, so just set it as the original TileShape;
@@ -444,8 +446,8 @@ struct CollectiveMma<
       // Strides for Grouped Gemm will be replaced prior to the first access regardless.
       stride_a = InternalStrideA{};
       stride_b = InternalStrideB{};
-      layout_SFA = Sm100BlkScaledConfig::tile_atom_to_shape_SFA(cute::make_shape(init_M, init_N, init_K, 1));
-      layout_SFB = Sm100BlkScaledConfig::tile_atom_to_shape_SFA(cute::make_shape(init_M, init_N, init_K, 1));
+      layout_SFA = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFA(cute::make_shape(init_M, init_N, init_K, 1));
+      layout_SFB = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFA(cute::make_shape(init_M, init_N, init_K, 1));
     }
     else {
       // Tensor shapes for Ptr-Array are initialized correctly only here.
@@ -688,6 +690,14 @@ struct CollectiveMma<
                                        make_shape( make_shape(_2{}, _2{}),   y)),  shape<1>(mSFB_tmp), shape<2>(mSFB_tmp));
         auto new_stride = make_stride(make_stride(stride<0,0>(mSFB_tmp),
                                       make_stride(make_stride(   x,    x), x*3)), stride<1>(mSFB_tmp), stride<2>(mSFB_tmp));
+        return make_tensor(mSFB_tmp.data(), make_layout(new_shape, new_stride));
+      }
+      else if constexpr (IsCtaN64) {
+        Tensor mSFB_tmp = observed_tma_load_sfb_->get_tma_tensor(shape(layout_SFB));
+        auto new_shape = make_shape(make_shape(shape<0,0>(mSFB_tmp), 
+                                    make_shape(_2{} , shape<0,1>(mSFB_tmp))), shape<1>(mSFB_tmp), shape<2>(mSFB_tmp));
+        auto new_stride = make_stride(make_stride(stride<0,0>(mSFB_tmp), 
+                                      make_stride(_0{}, stride<0,1>(mSFB_tmp))), stride<1>(mSFB_tmp), stride<2>(mSFB_tmp));
         return make_tensor(mSFB_tmp.data(), make_layout(new_shape, new_stride));
       }
       else {
@@ -964,9 +974,15 @@ struct CollectiveMma<
       if constexpr (IsCtaN192) {
         // If this is an ODD tile, shift the TMEM start address for N=192 case by two words (ignores first 64 columns of SFB)
         auto tCtSFB_tmp = tCtSFB;
-        if (get<1>(cta_tile_coord) % 2 == 1) {
+        if (size<1>(cta_tile_coord) % 2 == 1) {
           tCtSFB_tmp.data() = tCtSFB_tmp.data().get() + 2;
         }
+        return tCtSFB_tmp;
+      }
+      else if constexpr (IsCtaN64) {
+        // Move in increments of 64 columns of SFB
+        auto tCtSFB_tmp = tCtSFB;
+        tCtSFB_tmp.data() = tCtSFB_tmp.data().get() + (size<1>(cta_tile_coord) % 2) * 2;
         return tCtSFB_tmp;
       }
       else {
@@ -1251,7 +1267,8 @@ struct CollectiveMma<
     cute::tma_descriptor_fence_acquire(get<3>(input_tensormaps));
   }
 
-private:
+protected:
+
   typename Params::TMA_A const* observed_tma_load_a_{nullptr};
   typename Params::TMA_B const* observed_tma_load_b_{nullptr};
   typename Params::TMA_SFA const* observed_tma_load_sfa_{nullptr};

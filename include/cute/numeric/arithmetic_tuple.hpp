@@ -370,10 +370,19 @@ safe_div(ScaledBasis<T,M> const& b, U const& u)
 template <class T, int M, class U>
 CUTE_HOST_DEVICE constexpr
 auto
-shape_div(ScaledBasis<T,M> const& b, U const& u)
+ceil_div(ScaledBasis<T,M> const& b, U const& u)
 {
-  auto t = shape_div(b.value(), u);
+  auto t = ceil_div(b.value(), u);
   return ScaledBasis<decltype(t),M>{t};
+}
+
+template <class T, int N>
+CUTE_HOST_DEVICE constexpr
+auto
+abs(ScaledBasis<T,N> const& e)
+{
+  auto t = abs(e.value());
+  return ScaledBasis<decltype(t),N>{t};
 }
 
 // Equality
@@ -397,14 +406,6 @@ CUTE_HOST_DEVICE constexpr
 false_type
 operator==(T const&, ScaledBasis<U,M> const&) {
   return {};
-}
-
-// Abs
-template <class T, int N>
-CUTE_HOST_DEVICE constexpr
-auto
-abs(ScaledBasis<T,N> const& e) {
-  return ScaledBasis<decltype(abs(e.value())),N>{abs(e.value())};
 }
 
 // Multiplication

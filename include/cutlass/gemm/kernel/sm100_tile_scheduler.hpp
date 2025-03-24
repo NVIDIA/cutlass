@@ -29,8 +29,9 @@
  *
  **************************************************************************************************/
 
-
 #pragma once
+// Enable printing of transformation of CLC IDs into swizzled tile coordinates
+#define CUTLASS_SWIZZLE_DEVICE_DEBUG_PRINT 0
 
 #include "cute/int_tuple.hpp"
 
@@ -61,7 +62,6 @@ private:
   using UnderlyingTileScheduler = PersistentTileSchedulerSm90;
 
 public:
-
   using ClusterShape = ClusterShape_;
   using RasterOrder = UnderlyingTileScheduler::RasterOrder;
   using RasterOrderOptions = UnderlyingTileScheduler::RasterOrderOptions;
@@ -70,12 +70,11 @@ public:
   static constexpr uint32_t Stages = Stages_;
 
   // CLC response is an opaque 16B value
-  struct CLCResponse { uint32_t data[4]; };
+  struct CLCResponse { uint32_t data[4] = {0}; };
 
-  using WorkTileInfo = typename PersistentTileSchedulerSm90::WorkTileInfo;
+  using WorkTileInfo = typename UnderlyingTileScheduler::WorkTileInfo;
 
   using Params = PersistentTileSchedulerSm100Params;
-
   using Pipeline = PipelineCLCFetchAsync<Stages, ClusterShape>;
   using PipelineStorage = typename Pipeline::SharedStorage;
 
@@ -113,7 +112,7 @@ public:
       return *this;
     }
 
-    int max_swizzle_size = 1;
+    int max_swizzle_size = 0;
     RasterOrderOptions raster_order = RasterOrderOptions::Heuristic;
   };
 
@@ -143,7 +142,7 @@ public:
       problem_blocks,
       to_gemm_coord(cs),
       hw_info,
-      args.max_swizzle_size, 
+      args.max_swizzle_size,
       args.raster_order
     );
     return params;
@@ -159,7 +158,7 @@ public:
       KernelHardwareInfo const& hw_info,
       Arguments const& args,
       void* workspace = nullptr
-    ) { 
+    ) {
 
     auto selected_cluster_shape = cutlass::detail::select_cluster_shape(cluster_shape_mnk, hw_info.cluster_shape);
 
@@ -171,7 +170,7 @@ public:
       problem_blocks,
       to_gemm_coord(selected_cluster_shape),
       hw_info,
-      args.max_swizzle_size, 
+      args.max_swizzle_size,
       args.raster_order
     );
     return params;
@@ -364,22 +363,16 @@ public:
   //
   CUTLASS_DEVICE
   PersistentTileSchedulerSm100(Params const& params)
-    : scheduler_params(params) {}
+    : params_(params) {}
 
   CUTLASS_DEVICE
   PersistentTileSchedulerSm100(CLCResponse* clc_response_ptr, Params const& params, dim3 block_id_in_cluster)
-    : clc_response_ptr_(clc_response_ptr), scheduler_params(params), block_id_in_cluster_(block_id_in_cluster) {}
+    : clc_response_ptr_(clc_response_ptr), params_(params), block_id_in_cluster_(block_id_in_cluster) {}
 
   template <class ProblemShapeMNKL, class TileShape>
   CUTLASS_DEVICE
   PersistentTileSchedulerSm100(CLCResponse* clc_response_ptr, Params const& params, ProblemShapeMNKL problem_shape_mnkl, TileShape tile_shape, dim3 block_id_in_cluster)
     : PersistentTileSchedulerSm100(clc_response_ptr, params, block_id_in_cluster) {}
-  //
-  // Data Members
-  //
-  CLCResponse *clc_response_ptr_ = nullptr;
-  Params const& scheduler_params;
-  dim3 block_id_in_cluster_;
 
   //
   // Work Tile API
@@ -388,51 +381,27 @@ public:
   // Returns the initial work tile info that will be computed over
   template <class ClusterShape>
   CUTLASS_DEVICE
-  static WorkTileInfo
-  initial_work_tile_info(ClusterShape cluster_shape, Params const& params) {
-    WorkTileInfo work_tile{
-      static_cast<int32_t>((BlockIdxX() / cute::size<0>(cluster_shape)) * cute::size<0>(cluster_shape)),
-      static_cast<int32_t>((BlockIdxY() / cute::size<1>(cluster_shape)) * cute::size<1>(cluster_shape)),
-      static_cast<int32_t>((BlockIdxZ() / cute::size<2>(cluster_shape)) * cute::size<2>(cluster_shape)),
-      true
-    };
-
-    possibly_transpose_work_tile(work_tile, params);
-    return work_tile;
-  }
-
-  // Returns the initial work tile info that will be computed over
-  template <class ClusterShape>
-  CUTLASS_DEVICE
   WorkTileInfo
   initial_work_tile_info(ClusterShape cluster_shape) {
-    return initial_work_tile_info(cluster_shape, scheduler_params);
+    return swizzle_and_rasterize(BlockIdxX(), BlockIdxY(), BlockIdxZ(), /*valid=*/true, /*cluster_offset_m=*/0, /*cluster_offset_n=*/0);
   }
 
   CUTLASS_DEVICE
   auto
   work_tile_to_cta_coord(WorkTileInfo work_tile_info) {
-    // Get every cta coord in three dimensions of the cluster
-    auto [cta_m_in_cluster, cta_n_in_cluster, cta_l_in_cluster] = block_id_in_cluster_;
-    return make_coord(
-      work_tile_info.M_idx + static_cast<int32_t>(cta_m_in_cluster),
-      work_tile_info.N_idx + static_cast<int32_t>(cta_n_in_cluster),
-      _,
-      work_tile_info.L_idx + static_cast<int32_t>(cta_l_in_cluster)
-    );
+    return make_coord(work_tile_info.M_idx, work_tile_info.N_idx, _, work_tile_info.L_idx);
   }
 
   // Convert CTA-level work tile info to cluster-level tile coord
   CUTLASS_DEVICE
   auto
   work_tile_to_cluster_coord_mnkl(WorkTileInfo work_tile_info) const {
-    // TileScheduler works at CTA-level, kernel works at cluster-level
-    int m_coord = idx2crd(scheduler_params.divmod_cluster_shape_m_.divide(work_tile_info.M_idx),
-                          scheduler_params.problem_tiles_m_);
-    int n_coord = idx2crd(scheduler_params.divmod_cluster_shape_n_.divide(work_tile_info.N_idx),
-                          scheduler_params.problem_tiles_n_);
+    int m_coord = idx2crd(params_.divmod_cluster_shape_m_.divide(work_tile_info.M_idx),
+                          params_.problem_tiles_m_);
+    int n_coord = idx2crd(params_.divmod_cluster_shape_n_.divide(work_tile_info.N_idx),
+                          params_.problem_tiles_n_);
     int l_coord = idx2crd(work_tile_info.L_idx,
-                          scheduler_params.problem_tiles_l_);
+                          params_.problem_tiles_l_);
     return make_coord(m_coord, n_coord, _, l_coord);
   }
 
@@ -507,11 +476,16 @@ public:
     TileSchedulerPipelineState scheduler_pipe_consumer_state) {
 
     scheduler_pipeline.consumer_wait(scheduler_pipe_consumer_state);
-    auto new_work_tile_info = get_current_work(scheduler_pipe_consumer_state);
+    uint32_t smem_addr = cute::cast_smem_ptr_to_uint(&clc_response_ptr_[scheduler_pipe_consumer_state.index()]);
+    auto work_tile = work_tile_info_from_clc_response(smem_addr);
     scheduler_pipeline.consumer_release(scheduler_pipe_consumer_state);
 
+    work_tile = swizzle_and_rasterize(
+      work_tile.M_idx, work_tile.N_idx, work_tile.L_idx, work_tile.is_valid(),
+      block_id_in_cluster_.x, block_id_in_cluster_.y);
+
     // Return true to indicate that the tile scheduler pipeline state should be advanced
-    return cute::make_tuple(new_work_tile_info, true);
+    return cute::make_tuple(work_tile, true);
   }
 
   //
@@ -646,15 +620,30 @@ public:
             static_cast<uint32_t>(ctas_l)};
   }
 
+  CUTLASS_DEVICE
+  void
+  store_invalid_response(PipelineState<Stages> state) {
+    // Only writes to local CTA.
+    store_query_response(state, make_invalid_response());
+  }
 
-  // Get clcID and success bit
-  [[nodiscard]] CUTLASS_DEVICE
-  WorkTileInfo
-  get_current_work(PipelineState<Stages> state) {
-    uint32_t smem_addr = cute::cast_smem_ptr_to_uint(&clc_response_ptr_[state.index()]);
-    auto work_tile = work_tile_info_from_clc_response(smem_addr);
-    possibly_transpose_work_tile(work_tile);
-    return work_tile;
+  CUTLASS_DEVICE
+  void
+  store_query_response(PipelineState<Stages> state, CLCResponse clc_response) {
+    uint32_t smem_ptr = cute::cast_smem_ptr_to_uint(&clc_response_ptr_[state.index()]);
+    asm volatile("st.shared.v4.b32 [%0], {%1, %2, %3, %4};\n"
+                  : : "r"(smem_ptr)
+                    , "r"(clc_response.data[0])
+                    , "r"(clc_response.data[1])
+                    , "r"(clc_response.data[2])
+                    , "r"(clc_response.data[3]));
+    cutlass::arch::fence_view_async_shared();
+  }
+
+  CUTLASS_DEVICE
+  static CLCResponse
+  make_invalid_response() {
+    return CLCResponse{};
   }
 
   // Set data SMEM ptr 
@@ -690,8 +679,8 @@ public:
 
   CUTLASS_DEVICE
   static cute::tuple<int32_t, int32_t>
-  possibly_transpose_work_tile(Params::RasterOrder raster_order, int32_t M_idx, int32_t N_idx, FastDivmod divmod_cluster_shape_m, FastDivmod divmod_cluster_shape_n) {
-    if (raster_order == Params::RasterOrder::AlongN) {
+  possibly_transpose_work_tile(RasterOrder raster_order, int32_t M_idx, int32_t N_idx, FastDivmod divmod_cluster_shape_m, FastDivmod divmod_cluster_shape_n) {
+    if (raster_order == RasterOrder::AlongN) {
       int cluster_m, remainder_m, cluster_n, remainder_n;
       divmod_cluster_shape_m(cluster_m, remainder_m, M_idx);
       divmod_cluster_shape_n(cluster_n, remainder_n, N_idx);
@@ -714,8 +703,136 @@ public:
   CUTLASS_DEVICE
   void
   possibly_transpose_work_tile(WorkTileInfo& work_tile_info) {
-    possibly_transpose_work_tile(work_tile_info, scheduler_params);
+    possibly_transpose_work_tile(work_tile_info, params_);
   }
+
+  CUTLASS_DEVICE
+  WorkTileInfo
+  swizzle_and_rasterize(
+      int cta_coord_m,
+      int cta_coord_n,
+      int cta_coord_l,
+      bool valid,
+      int cta_in_cluster_offset_m,
+      int cta_in_cluster_offset_n) const {
+    #if CUTLASS_SWIZZLE_DEVICE_DEBUG_PRINT == 1
+    // Save original cta_coord_m and cta_coord_n
+    int orig_cta_coord_m = cta_coord_m;
+    int orig_cta_coord_n = cta_coord_n;
+    #endif
+
+    // Swizzling is enabled if the swizzle size is greater than 0
+    if (params_.divmod_swizzle_size_.divisor > 0) {
+      //
+      // Swizzling enabled
+      //
+
+      // Swizzling is performed in terms of clusters. Convert the major and minor CTA coordinates
+      // into cluster coordinates.
+      int32_t cluster_coord_major, cluster_coord_minor, cluster_offset_m, cluster_offset_n;
+      params_.divmod_cluster_shape_m_(cluster_coord_major, cluster_offset_m, cta_coord_m);
+      params_.divmod_cluster_shape_n_(cluster_coord_minor, cluster_offset_n, cta_coord_n);
+
+      // The general swizzling transformation is performed as follows:
+      //
+      // Consider a grid of size (M,N) (in terms of clusters) that uses a swizzle size of S.
+      // For simplicity, assume that both M and N are divisible by S.
+      //
+      // Consider M=4, N=4, and S=2. We'd like to transform the original rasterization as follows
+      //
+      //                           <---- N ---->
+      //                           <- S ->
+      //  +--+--+--+--+            +--+--+--+--+  ^
+      //  |00|04|08|12|            |00|01|14|15|  |
+      //  +--+--+--+--+            +--+--+--+--+  |
+      //  |01|05|09|13|            |02|03|12|13|  |
+      //  +--+--+--+--+     --->   +--+--+--+--+  M
+      //  |02|06|10|14|            |04|05|10|11|  |
+      //  +--+--+--+--+            +--+--+--+--+  |
+      //  |03|07|11|15|            |06|07|08|09|  |
+      //  +--+--+--+--+            +--+--+--+--+  v
+      //
+      // An easy way to do this is by breaking our MxN grid into (N/S) grids of size MxS:
+      //
+      //  +--+--+        +--+--+             +--+--+        +--+--+
+      //  |00|04|        |00|01|             |08|12|        |14|15|
+      //  +--+--+        +--+--+             +--+--+        +--+--+
+      //  |01|05|        |02|03|             |09|13|        |12|13|
+      //  +--+--+  --->  +--+--+     and     +--+--+  --->  +--+--+
+      //  |02|06|        |04|05|             |10|14|        |10|11|
+      //  +--+--+        +--+--+             +--+--+        +--+--+
+      //  |03|07|        |06|07|             |11|15|        |08|09|
+      //  +--+--+        +--+--+             +--+--+        +--+--+
+      //
+      // Given an M and N cluster coordinate (m,n) within one of these MxS grids, the desired remapping can
+      // be performed as:
+      //   new_m_local = (m / S) + ((M / S) * (n % S))
+      //   new_n_local = (m % S)
+      //
+      // We can map these local coordinates within the MxS subgrid to the full MxN grid by offsetting the new
+      // local N coordinate based on which subgrid we're in. We can obtain the serpantine rasterization order
+      // across subgrids by flipping the new M coordinate depending on which subgrid we're in.
+      //
+      //   new_m_global = (n / S) % 2 == 0 ? new_m_local : M - new_m_local
+      //   new_n_global = new_n_local + ((n / S) * S)
+      //
+      // In reality, we need to handle cases in which M and N are not divisible by swizzle size. In this case,
+      // we currently simply perform the swizzling transformation above for the ((M/S)*S) x ((N/S)*S) subgrid
+      // that is divisible by swizzle size, and do not remap any residual tiles.
+      //
+
+      int32_t minor_div_swizz, minor_mod_swizz;
+      params_.divmod_swizzle_size_(minor_div_swizz, minor_mod_swizz, cluster_coord_minor);
+
+      int32_t major_clusters = params_.divmod_cluster_shape_m_.divide(GridDimX());
+
+      // Determine the first IDs in the major and minor mode that constitute "residual" space
+      int32_t major_clusters_div_swizzle = params_.divmod_swizzle_size_.divide(major_clusters);
+      int32_t first_residual_major_cluster_id = major_clusters_div_swizzle * params_.divmod_swizzle_size_.divisor;
+      int32_t minor_clusters_div_swizzle = params_.divmod_swizzle_size_.divide(params_.divmod_cluster_shape_n_.divide(GridDimX()));
+      int32_t first_residual_minor_cluster_id = minor_clusters_div_swizzle * params_.divmod_swizzle_size_.divisor;
+
+      // Only schedule via the swizzle if we're not within the residual space in either the major or minor mode.
+      int32_t new_major_coord = cluster_coord_major, new_minor_coord = cluster_coord_minor;
+      if (cluster_coord_major < first_residual_major_cluster_id && cluster_coord_minor < first_residual_minor_cluster_id) {
+        // Not a residual cluster
+        int32_t major_div_swizz, major_mod_swizz;
+        params_.divmod_swizzle_size_(major_div_swizz, major_mod_swizz, cluster_coord_major);
+
+        new_major_coord = major_div_swizz + (major_clusters_div_swizzle * minor_mod_swizz);
+        new_minor_coord = major_mod_swizz + (minor_div_swizz * params_.divmod_swizzle_size_.divisor);
+      }
+
+      // Map the swizzled cluster tile back to a CTA tile
+      cta_coord_m = new_major_coord * params_.divmod_cluster_shape_m_.divisor + cluster_offset_m;
+      cta_coord_n = new_minor_coord * params_.divmod_cluster_shape_n_.divisor + cluster_offset_n;
+    }
+    // Since we swap the grid x and y modes if raster order is AlongN, swap the M and N tile offsets when
+    // raster order is AlongN.
+    auto [new_cta_coord_m, new_cta_coord_n] = possibly_transpose_work_tile(
+      params_.raster_order_, cta_coord_m, cta_coord_n, params_.divmod_cluster_shape_m_, params_.divmod_cluster_shape_n_);
+
+    new_cta_coord_m += cta_in_cluster_offset_m;
+    new_cta_coord_n += cta_in_cluster_offset_n;
+
+    #if CUTLASS_SWIZZLE_DEVICE_DEBUG_PRINT == 1
+    if (threadIdx.x == 0) {
+      printf("B[%d,%d,%d] T=%d new=%d,%d,%d orig=%d,%d,%d valid=%d\n",
+        blockIdx.x, blockIdx.y, blockIdx.z, threadIdx.x,
+        new_cta_coord_m, new_cta_coord_n, cta_coord_l,
+        orig_cta_coord_m, orig_cta_coord_n, cta_coord_l, (int)valid);
+      }
+    #endif
+
+    return {new_cta_coord_m, new_cta_coord_n, static_cast<int32_t>(cta_coord_l), valid};
+  }
+
+  //
+  // Data Members
+  //
+  CLCResponse *clc_response_ptr_ = nullptr;
+  Params const& params_;
+  dim3 block_id_in_cluster_ = {0, 0, 0};
 };
 
 ///////////////////////////////////////////////////////////////////////////////

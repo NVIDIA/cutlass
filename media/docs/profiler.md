@@ -373,6 +373,47 @@ Please be noted that this feature (flexible cluster shapes within a single grid)
 
 CUTLASS 3.x kernels for Hopper and Blackwell also support a new feature called programatic dependent launch (PDL). This can be enabled with `--use-pdl`, and can overlap the epilogue of the prior kernel with the prologue of the next kernel. This can effectively hide kernel prologues. Using PDL can improve performance for back to back GEMMs. See [dependent kernel launch](dependent_kernel_launch.md) for more information. CUDA graphs can also be used (`--use-cuda-graphs`) with PDL to ensure that smaller kernels are enqueued back-to-back on a stream.
 
+## Exhaustive search mode and top-k output ranking according to performance in GFLOPS/s
+
+CUTLASS also allows a few options to enable searching best performing kernel in a broader parameter space.
+
+1. **Sorting Performance Results by GFLOPs/second**  
+   A new option enables users to sort the final performance report based on GFLOPs/second, making it easier to identify the most efficient kernels.
+
+2. **Exhaustive Search for Best Kernel Performance in GFLOPs/second**  
+   This feature allows the profiler to search for the best-performing kernel across a range of problem sizes, swizzle sizes, rasterization orders, and dynamic cluster configurations. It ensures that all viable configurations are considered to maximize performance.
+
+3. **Performance Search Under a Fixed GEMM Shape**  
+   This option enables exhaustive performance tuning for a specific problem size. Unlike the previous feature, this restricts the search to a fixed GEMM shape while still exploring various kernel parameters to find the best configuration.
+
+### Usage Examples
+
+#### 1. Finding the Best Performing Kernel
+
+Use the following command to conduct an exhaustive search and sort results by GFLOPs/second:
+
+```bash
+cutlass_profiler --kernels=*gemm* --enable-kernel-performance-search --sort-results-flops-per-sec
+```
+
+#### 2. Performance Optimization for a Fixed GEMM Shape
+
+To optimize kernel performance for a specific GEMM problem size:
+
+```bash
+cutlass_profiler --kernels=*gemm* --enable-best-kernel-for-fixed-shape --m=6144 --n=6144 --k=6144 --sort-results-flops-per-sec
+```
+
+To search optimized kernel performance for a series of GEMM shapes (m, n, k = 1024, 2048):
+
+```bash
+cutlass_profiler --kernels=*gemm* --enable-best-kernel-for-fixed-shape --m=1024,2048 --n=1024,2048 --k=1024,2048 --sort-results-flops-per-sec
+```
+
+It is worth noting that by enabling exhaustive performance search via `--enable-kernel-performance-search`, a user is still able and responsible to decide parameters like data distribution in argument list, for which a user can choose `--dist=uniform,min:-1,max:1,scale:-1` to initialize a tensor with floating point numbers in uniform distribution. Otherwise, those parameters will be initialized to their default values.
+
+For examples above, one can change the kernel filtering regex according to their own use cases.
+
 ## Example CUDA Core GEMM Operation
 
 Example command line for profiling SGEMM kernels is as follows:

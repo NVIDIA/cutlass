@@ -56,6 +56,15 @@ struct SM90_TMA_LOAD_1D
     uint32_t smem_int_mbar = cast_smem_ptr_to_uint(mbar_ptr);
     uint32_t smem_int_ptr  = cast_smem_ptr_to_uint(smem_ptr);
     cutlass::arch::synclog_emit_tma_load(__LINE__, gmem_int_desc, smem_int_mbar, smem_int_ptr);
+#if defined(CUTE_ARCH_TMA_SM120_ENABLED)
+    asm volatile (
+      "cp.async.bulk.tensor.1d.shared::cta.global.mbarrier::complete_tx::bytes.L2::cache_hint"
+      " [%0], [%1, {%3}], [%2], %4;"
+      :
+      : "r"(smem_int_ptr), "l"(gmem_int_desc), "r"(smem_int_mbar),
+        "r"(crd0), "l"(cache_hint)
+      : "memory");
+#else
     asm volatile (
       "cp.async.bulk.tensor.1d.shared::cluster.global.mbarrier::complete_tx::bytes.L2::cache_hint"
       " [%0], [%1, {%3}], [%2], %4;"
@@ -63,6 +72,7 @@ struct SM90_TMA_LOAD_1D
       : "r"(smem_int_ptr), "l"(gmem_int_desc), "r"(smem_int_mbar),
         "r"(crd0), "l"(cache_hint)
       : "memory");
+#endif
 #else
     CUTE_INVALID_CONTROL_PATH("Trying to use tma without CUTE_ARCH_TMA_SM90_ENABLED.");
 #endif
@@ -102,6 +112,15 @@ struct SM90_TMA_LOAD_2D
     uint32_t smem_int_mbar = cast_smem_ptr_to_uint(mbar_ptr);
     uint32_t smem_int_ptr  = cast_smem_ptr_to_uint(smem_ptr);
     cutlass::arch::synclog_emit_tma_load(__LINE__, gmem_int_desc, smem_int_mbar, smem_int_ptr);
+#if defined(CUTE_ARCH_TMA_SM120_ENABLED)
+    asm volatile (
+      "cp.async.bulk.tensor.2d.shared::cta.global.mbarrier::complete_tx::bytes.L2::cache_hint"
+      " [%0], [%1, {%3, %4}], [%2], %5;"
+      :
+      : "r"(smem_int_ptr), "l"(gmem_int_desc), "r"(smem_int_mbar),
+        "r"(crd0), "r"(crd1), "l"(cache_hint)
+      : "memory");
+#else
     asm volatile (
       "cp.async.bulk.tensor.2d.shared::cluster.global.mbarrier::complete_tx::bytes.L2::cache_hint"
       " [%0], [%1, {%3, %4}], [%2], %5;"
@@ -109,6 +128,7 @@ struct SM90_TMA_LOAD_2D
       : "r"(smem_int_ptr), "l"(gmem_int_desc), "r"(smem_int_mbar),
         "r"(crd0), "r"(crd1), "l"(cache_hint)
       : "memory");
+#endif
 #else
     CUTE_INVALID_CONTROL_PATH("Trying to use tma without CUTE_ARCH_TMA_SM90_ENABLED.");
 #endif
@@ -148,6 +168,15 @@ struct SM90_TMA_LOAD_3D
     uint32_t smem_int_mbar = cast_smem_ptr_to_uint(mbar_ptr);
     uint32_t smem_int_ptr  = cast_smem_ptr_to_uint(smem_ptr);
     cutlass::arch::synclog_emit_tma_load(__LINE__, gmem_int_desc, smem_int_mbar, smem_int_ptr);
+#if defined(CUTE_ARCH_TMA_SM120_ENABLED)
+    asm volatile (
+      "cp.async.bulk.tensor.3d.shared::cta.global.mbarrier::complete_tx::bytes.L2::cache_hint"
+      " [%0], [%1, {%3, %4, %5}], [%2], %6;"
+      :
+      : "r"(smem_int_ptr), "l"(gmem_int_desc), "r"(smem_int_mbar),
+        "r"(crd0), "r"(crd1), "r"(crd2), "l"(cache_hint)
+      : "memory");
+#else
     asm volatile (
       "cp.async.bulk.tensor.3d.shared::cluster.global.mbarrier::complete_tx::bytes.L2::cache_hint"
       " [%0], [%1, {%3, %4, %5}], [%2], %6;"
@@ -155,6 +184,7 @@ struct SM90_TMA_LOAD_3D
       : "r"(smem_int_ptr), "l"(gmem_int_desc), "r"(smem_int_mbar),
         "r"(crd0), "r"(crd1), "r"(crd2), "l"(cache_hint)
       : "memory");
+#endif
 #else
     CUTE_INVALID_CONTROL_PATH("Trying to use tma without CUTE_ARCH_TMA_SM90_ENABLED.");
 #endif
@@ -194,6 +224,15 @@ struct SM90_TMA_LOAD_4D
     uint32_t smem_int_mbar = cast_smem_ptr_to_uint(mbar_ptr);
     uint32_t smem_int_ptr  = cast_smem_ptr_to_uint(smem_ptr);
     cutlass::arch::synclog_emit_tma_load(__LINE__, gmem_int_desc, smem_int_mbar, smem_int_ptr);
+#if defined(CUTE_ARCH_TMA_SM120_ENABLED)
+    asm volatile (
+      "cp.async.bulk.tensor.4d.shared::cta.global.mbarrier::complete_tx::bytes.L2::cache_hint"
+      " [%0], [%1, {%3, %4, %5, %6}], [%2], %7;"
+      :
+      : "r"(smem_int_ptr), "l"(gmem_int_desc), "r"(smem_int_mbar),
+        "r"(crd0), "r"(crd1), "r"(crd2), "r"(crd3), "l"(cache_hint)
+      : "memory");
+#else
     asm volatile (
       "cp.async.bulk.tensor.4d.shared::cluster.global.mbarrier::complete_tx::bytes.L2::cache_hint"
       " [%0], [%1, {%3, %4, %5, %6}], [%2], %7;"
@@ -201,6 +240,7 @@ struct SM90_TMA_LOAD_4D
       : "r"(smem_int_ptr), "l"(gmem_int_desc), "r"(smem_int_mbar),
         "r"(crd0), "r"(crd1), "r"(crd2), "r"(crd3), "l"(cache_hint)
       : "memory");
+#endif
 #else
     CUTE_INVALID_CONTROL_PATH("Trying to use tma without CUTE_ARCH_TMA_SM90_ENABLED.");
 #endif
@@ -240,6 +280,15 @@ struct SM90_TMA_LOAD_5D
     uint32_t smem_int_mbar = cast_smem_ptr_to_uint(mbar_ptr);
     uint32_t smem_int_ptr  = cast_smem_ptr_to_uint(smem_ptr);
     cutlass::arch::synclog_emit_tma_load(__LINE__, gmem_int_desc, smem_int_mbar, smem_int_ptr);
+#if defined(CUTE_ARCH_TMA_SM120_ENABLED)
+    asm volatile (
+      "cp.async.bulk.tensor.5d.shared::cta.global.mbarrier::complete_tx::bytes.L2::cache_hint"
+      " [%0], [%1, {%3, %4, %5, %6, %7}], [%2], %8;"
+      :
+      : "r"(smem_int_ptr), "l"(gmem_int_desc), "r"(smem_int_mbar),
+        "r"(crd0), "r"(crd1), "r"(crd2), "r"(crd3), "r"(crd4), "l"(cache_hint)
+      : "memory");
+#else
     asm volatile (
       "cp.async.bulk.tensor.5d.shared::cluster.global.mbarrier::complete_tx::bytes.L2::cache_hint"
       " [%0], [%1, {%3, %4, %5, %6, %7}], [%2], %8;"
@@ -247,6 +296,7 @@ struct SM90_TMA_LOAD_5D
       : "r"(smem_int_ptr), "l"(gmem_int_desc), "r"(smem_int_mbar),
         "r"(crd0), "r"(crd1), "r"(crd2), "r"(crd3), "r"(crd4), "l"(cache_hint)
       : "memory");
+#endif
 #else
     CUTE_INVALID_CONTROL_PATH("Trying to use tma without CUTE_ARCH_TMA_SM90_ENABLED.");
 #endif
@@ -581,6 +631,9 @@ struct SM90_TMA_LOAD_MULTICAST_1D
        int32_t const& crd0)
   {
 #if defined(CUTE_ARCH_TMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_TMA_SM120_ENABLED)
+    CUTE_INVALID_CONTROL_PATH("Trying to use tma without CUTE_ARCH_TMA_SM90_ENABLED.");
+#endif
     uint64_t gmem_int_desc = reinterpret_cast<uint64_t>(desc_ptr);
     uint32_t smem_int_mbar = cast_smem_ptr_to_uint(mbar_ptr);
     uint32_t smem_int_ptr  = cast_smem_ptr_to_uint(smem_ptr);
@@ -607,6 +660,9 @@ struct SM90_TMA_LOAD_MULTICAST_2D
        int32_t const& crd0, int32_t const& crd1)
   {
 #if defined(CUTE_ARCH_TMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_TMA_SM120_ENABLED)
+    CUTE_INVALID_CONTROL_PATH("Trying to use tma without CUTE_ARCH_TMA_SM90_ENABLED.");
+#endif
     uint64_t gmem_int_desc = reinterpret_cast<uint64_t>(desc_ptr);
     uint32_t smem_int_mbar = cast_smem_ptr_to_uint(mbar_ptr);
     uint32_t smem_int_ptr  = cast_smem_ptr_to_uint(smem_ptr);
@@ -633,6 +689,9 @@ struct SM90_TMA_LOAD_MULTICAST_3D
        int32_t const& crd0, int32_t const& crd1, int32_t const& crd2)
   {
 #if defined(CUTE_ARCH_TMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_TMA_SM120_ENABLED)
+    CUTE_INVALID_CONTROL_PATH("Trying to use tma without CUTE_ARCH_TMA_SM90_ENABLED.");
+#endif
     uint64_t gmem_int_desc = reinterpret_cast<uint64_t>(desc_ptr);
     uint32_t smem_int_mbar = cast_smem_ptr_to_uint(mbar_ptr);
     uint32_t smem_int_ptr  = cast_smem_ptr_to_uint(smem_ptr);
@@ -659,6 +718,9 @@ struct SM90_TMA_LOAD_MULTICAST_4D
        int32_t const& crd0, int32_t const& crd1, int32_t const& crd2, int32_t const& crd3)
   {
 #if defined(CUTE_ARCH_TMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_TMA_SM120_ENABLED)
+    CUTE_INVALID_CONTROL_PATH("Trying to use tma without CUTE_ARCH_TMA_SM90_ENABLED.");
+#endif
     uint64_t gmem_int_desc = reinterpret_cast<uint64_t>(desc_ptr);
     uint32_t smem_int_mbar = cast_smem_ptr_to_uint(mbar_ptr);
     uint32_t smem_int_ptr  = cast_smem_ptr_to_uint(smem_ptr);
@@ -685,6 +747,9 @@ struct SM90_TMA_LOAD_MULTICAST_5D
        int32_t const& crd0, int32_t const& crd1, int32_t const& crd2, int32_t const& crd3, int32_t const& crd4)
   {
 #if defined(CUTE_ARCH_TMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_TMA_SM120_ENABLED)
+    CUTE_INVALID_CONTROL_PATH("Trying to use tma without CUTE_ARCH_TMA_SM90_ENABLED.");
+#endif
     uint64_t gmem_int_desc = reinterpret_cast<uint64_t>(desc_ptr);
     uint32_t smem_int_mbar = cast_smem_ptr_to_uint(mbar_ptr);
     uint32_t smem_int_ptr  = cast_smem_ptr_to_uint(smem_ptr);
@@ -757,6 +822,9 @@ struct SM90_TMA_LOAD_IM2COL_MULTICAST_3D
        uint16_t const& offset_w)
   {
 #if defined(CUTE_ARCH_TMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_TMA_SM120_ENABLED)
+    CUTE_INVALID_CONTROL_PATH("Trying to use tma without CUTE_ARCH_TMA_SM90_ENABLED.");
+#endif
     uint64_t gmem_int_desc = reinterpret_cast<uint64_t>(desc_ptr);
     uint32_t smem_int_mbar = cast_smem_ptr_to_uint(mbar_ptr);
     uint32_t smem_int_ptr  = cast_smem_ptr_to_uint(smem_ptr);
@@ -786,6 +854,9 @@ struct SM90_TMA_LOAD_IM2COL_MULTICAST_4D
        uint16_t const& offset_w, uint16_t const& offset_h)
   {
 #if defined(CUTE_ARCH_TMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_TMA_SM120_ENABLED)
+    CUTE_INVALID_CONTROL_PATH("Trying to use tma without CUTE_ARCH_TMA_SM90_ENABLED.");
+#endif
     uint64_t gmem_int_desc = reinterpret_cast<uint64_t>(desc_ptr);
     uint32_t smem_int_mbar = cast_smem_ptr_to_uint(mbar_ptr);
     uint32_t smem_int_ptr  = cast_smem_ptr_to_uint(smem_ptr);
@@ -815,6 +886,9 @@ struct SM90_TMA_LOAD_IM2COL_MULTICAST_5D
        uint16_t const& offset_w, uint16_t const& offset_h, uint16_t const& offset_d)
   {
 #if defined(CUTE_ARCH_TMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_TMA_SM120_ENABLED)
+    CUTE_INVALID_CONTROL_PATH("Trying to use tma without CUTE_ARCH_TMA_SM90_ENABLED.");
+#endif
     uint64_t gmem_int_desc = reinterpret_cast<uint64_t>(desc_ptr);
     uint32_t smem_int_mbar = cast_smem_ptr_to_uint(mbar_ptr);
     uint32_t smem_int_ptr  = cast_smem_ptr_to_uint(smem_ptr);

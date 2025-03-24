@@ -626,7 +626,7 @@ make_tma_atom_im2col(CopyOp,
   auto tma_layout_trunc = take<0,smem_tma_rank>(tma_layout_full);
 
   // Split according to the portion each multicast CTA will be responsible for
-  auto tma_layout_vt = logical_divide(tma_layout_trunc, shape_div(size(tma_layout_trunc), num_multicast));
+  auto tma_layout_vt = logical_divide(tma_layout_trunc, safe_div(size(tma_layout_trunc), num_multicast));
 
 #if 0
   print("glayout_basis   : "); print(glayout_basis); print("\n");
@@ -748,7 +748,7 @@ make_tma_copy_im2col(CopyOp                       const& copy_op,
   // Scale that up to cover all of the smem_coords
   auto layout_V = tile_to_shape(make_layout(layout_v), size(cta_v_map));
   // CTA T -> smem idx
-  auto layout_t = make_layout(cosize(cta_t_map), shape_div(num_elems_per_tma, cosize(cta_t_map)));
+  auto layout_t = make_layout(cosize(cta_t_map), safe_div(num_elems_per_tma, cosize(cta_t_map)));
   // CTA TID -> smem coord
   auto layout_T = composition(inv_smem_layout, composition(layout_t, cta_t_map));
   // Combine with the T mapping
