@@ -289,7 +289,7 @@ private:
   static void
   wait_lt_helper(uint32_t idx, void *lock_ptr, int thread_idx, int flag_idx, int count, cute::integer_sequence<uint32_t, Idx...>) {
     check_barrier_in_range(idx);
-    ((Idx == idx && (BarrierSync<Idx + Offset>::wait_lt(lock_ptr, thread_idx, flag_idx, count), true)) || ...);
+    (void)((Idx == idx && (BarrierSync<Idx + Offset>::wait_lt(lock_ptr, thread_idx, flag_idx, count), true)) || ...);
   }
 
   template <bool Reset, uint32_t... Idx>
@@ -298,10 +298,10 @@ private:
   wait_eq_helper(uint32_t idx, void *lock_ptr, int thread_idx, int flag_idx, T val, cute::integer_sequence<uint32_t, Idx...>) {
     check_barrier_in_range(idx);
     if constexpr (Reset) {
-      ((Idx == idx && (BarrierSync<Idx + Offset>::wait_eq_reset(lock_ptr, thread_idx, flag_idx, val), true)) || ...);
+      (void)((Idx == idx && (BarrierSync<Idx + Offset>::wait_eq_reset(lock_ptr, thread_idx, flag_idx, val), true)) || ...);
     }
     else {
-      ((Idx == idx && (BarrierSync<Idx + Offset>::wait_eq(lock_ptr, thread_idx, flag_idx, val), true)) || ...);
+      (void)((Idx == idx && (BarrierSync<Idx + Offset>::wait_eq(lock_ptr, thread_idx, flag_idx, val), true)) || ...);
     }
   }
 
@@ -310,7 +310,7 @@ private:
   static void
   arrive_inc_helper(uint32_t idx, void *lock_ptr, int thread_idx, int flag_idx, int val, cute::integer_sequence<uint32_t, Idx...>) {
     check_barrier_in_range(idx);
-    ((Idx == idx && (BarrierSync<Idx + Offset>::arrive_inc(lock_ptr, thread_idx, flag_idx, val), true)) || ...);
+    (void)((Idx == idx && (BarrierSync<Idx + Offset>::arrive_inc(lock_ptr, thread_idx, flag_idx, val), true)) || ...);
   }
 
   template <uint32_t... Idx>
@@ -318,7 +318,7 @@ private:
   static void
   arrive_range_inc_helper(uint32_t idx, void *lock_ptr, int thread_idx, int first_flag_idx, int count, int val, cute::integer_sequence<uint32_t, Idx...>) {
     check_barrier_in_range(idx);
-    ((Idx == idx && (BarrierSync<Idx + Offset>::arrive_range_inc(lock_ptr, thread_idx, first_flag_idx, count, val), true)) || ...);
+    (void)((Idx == idx && (BarrierSync<Idx + Offset>::arrive_range_inc(lock_ptr, thread_idx, first_flag_idx, count, val), true)) || ...);
   }
 };
 

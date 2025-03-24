@@ -85,6 +85,10 @@ struct integer_subbyte {
   integer_subbyte(float value)
       : integer_subbyte(static_cast<xint_t>(value)) {}
 
+  CUTLASS_HOST_DEVICE
+  integer_subbyte(double value)
+      : integer_subbyte(static_cast<xint_t>(value)) {}
+
   // CUTLASS code commonly converts both signed and unsigned integers
   // into integer_subbyte, so the class provides both explicit
   // conversions.
