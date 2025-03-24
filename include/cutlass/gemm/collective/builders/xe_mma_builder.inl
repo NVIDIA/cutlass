@@ -84,25 +84,11 @@ struct CollectiveBuilder<
       static_assert(cute::is_same_v<ElementAccumulator, float>, "Intel multi-stage pipeline requires ElementC to be of type float");
 
       //Prepare Template arguments required of CollectiveMainLoop
-
-      using Tile_M = decltype(get<0>(TileShape_MNK{}));
-      using Tile_N = decltype(get<1>(TileShape_MNK{}));
-      using Tile_K = decltype(get<2>(TileShape_MNK{}));
-      using Atom_M = decltype(get<0>(typename MMA_Traits<XE_8x16x16_F32BF16BF16F32_TT>::Shape_MNK{}));
-      using Atom_N = decltype(get<1>(typename MMA_Traits<XE_8x16x16_F32BF16BF16F32_TT>::Shape_MNK{}));
-      using SGs_M = _8;
-      using SGs_N = _4;
-      using Iters_M = decltype(Tile_M{} / Atom_M{} / SGs_M{});
-      using Iters_N = decltype(Tile_N{} / Atom_N{} / SGs_N{});
-      using Stride_M = decltype(Iters_M{} * Atom_M{});
-      using Stride_N = decltype(Iters_N{} * Atom_N{});
-
       using TiledMma =
-          TiledMMA<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
-                   Layout<Shape<SGs_M, SGs_N, _1>, Stride<SGs_N, _1, _0>>,
-                   Tile<Layout<Shape<Atom_M, SGs_M, Iters_M>, Stride<_1, Stride_M, Atom_M>>,
-                        Layout<Shape<Atom_N, SGs_N, Iters_N>, Stride<_1, Stride_N, Atom_N>>, Tile_K>>;
-      
+          typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
+                                        Layout<TileShape_MNK>,
+                                        Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>>::TiledMMA;
+
       static constexpr int PipelineStages = 3;
       using DispatchPolicy = cutlass::gemm::MainloopIntelPVC<PipelineStages>;
 

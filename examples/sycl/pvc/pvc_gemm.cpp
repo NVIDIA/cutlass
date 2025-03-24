@@ -322,11 +322,10 @@ int main(int argc, const char** argv)
   // This permutation (which can be thought of as a scatter operation on the default tiling) 
   // ensures that each sub-group operates on a contiguous 32x64x32 chunk (4x4x2 iterations)
   // See 0t_mma_atom.md#TiledMMAs for more info.
+  // Sub-groups are arranged row-major (stride 4,1,0) for performance reasons.
   using TiledMma =
-      TiledMMA<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
-               Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>,
-               Tile<Layout<Shape<_8, _8, _4>, Stride<_1, _32, _8>>,
-                    Layout<Shape<_16, _4, _4>, Stride<_1, _64, _16>>, _32>>;
+      typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>, Layout<TileShape>,
+                                    Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>>::TiledMMA;
 
   constexpr int PipelineStages = 2;
   using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelPVC<PipelineStages>;

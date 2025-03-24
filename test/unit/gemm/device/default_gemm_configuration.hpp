@@ -1439,10 +1439,9 @@ struct DefaultGemmConfigurationToCutlass3Types<
 
   using DispatchPolicy = MainloopIntelPVC<3>;
   using TiledMma =
-      TiledMMA<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
-               Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>,
-               Tile<Layout<Shape<_8, _8, _4>, Stride<_1, _32, _8>>,
-                    Layout<Shape<_16, _4, _4>, Stride<_1, _64, _16>>, _32>>;
+      typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
+               Layout<TileShape>,
+               Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>>::TiledMMA;
 
   // A
   static constexpr int kAlignmentA = 32;
@@ -1546,10 +1545,9 @@ struct DefaultGemmConfigurationToCutlass3Types<
 
   using DispatchPolicy = MainloopIntelPVC<3>;
   using TiledMma =
-      TiledMMA<MMA_Atom<XE_8x16x16_F32F16F16F32_TT>,
-               Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>,
-               Tile<Layout<Shape<_8, _8, _4>, Stride<_1, _32, _8>>,
-                    Layout<Shape<_16, _4, _4>, Stride<_1, _64, _16>>, _32>>;
+      typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32F16F16F32_TT>,
+               Layout<TileShape>,
+               Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>>::TiledMMA;
 
   // A
   static constexpr int kAlignmentA = 32;
@@ -1655,10 +1653,9 @@ struct DefaultGemmConfigurationToCutlass3Types<
 
   using DispatchPolicy = MainloopIntelPVC<3>;
   using TiledMma =
-      TiledMMA<MMA_Atom<XE_8x16x32_S32S8S8S32_TT>,
-               Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>,
-               Tile<Layout<Shape<_8, _8, _4>, Stride<_1, _32, _8>>,
-                    Layout<Shape<_16, _4, _4>, Stride<_1, _64, _16>>, _32>>;
+      typename TiledMMAHelper<MMA_Atom<XE_8x16x32_S32S8S8S32_TT>,
+               Layout<TileShape>,
+               Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>>::TiledMMA;
 
   // A
   static constexpr int kAlignmentA = 32;
@@ -1763,10 +1760,9 @@ struct DefaultGemmConfigurationToCutlass3Types<
 
   using DispatchPolicy = MainloopIntelPVC<3>;
   using TiledMma =
-      TiledMMA<MMA_Atom<XE_8x16x8_F32TF32TF32F32_TT>,
-               Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>,
-               Tile<Layout<Shape<_8, _8, _4>, Stride<_1, _32, _8>>,
-                    Layout<Shape<_16, _4, _4>, Stride<_1, _64, _16>>, _32>>;
+      typename TiledMMAHelper<MMA_Atom<XE_8x16x8_F32TF32TF32F32_TT>,
+               Layout<TileShape>,
+               Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>>::TiledMMA;
 
   // A
   static constexpr int kAlignmentA = 32;

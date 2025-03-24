@@ -395,11 +395,9 @@ int main(int argc, const char** argv)
   // Workgroup-level tile
   using TileShape = Shape<_32, _512, _32>;
 
-  using TiledMma = TiledMMA<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
-          Layout<Shape<_2,_16,_1>, Stride<_16,_1,_0>>,
-          Tile<Layout<Shape<_8,_2,_2>, Stride<_1,_16,_8>>,
-               Layout<Shape<_16,_16,_2>, Stride<_1,_32,_16>>,
-               _32>>;
+  using TiledMma =
+      typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>, Layout<TileShape>,
+                                    Layout<Shape<_2, _16, _1>, Stride<_16, _1, _0>>>::TiledMMA;
 
   using EpilogueTile = Shape<_16, _32>;
   constexpr int PipelineStages = 3;

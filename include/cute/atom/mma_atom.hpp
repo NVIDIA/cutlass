@@ -607,6 +607,79 @@ make_tiled_mma(MMA_Op       const&,
   return make_tiled_mma(MMA_Atom<MMA_Op>{}, thr_layout, permutations);
 }
 
+// This helper fn adopts the approach described in
+// media/docs/cute/0t_mma_atom.md#tiledmmas to construct a scatter
+// permutation which ensures hardware operates on contiguous
+// chunks of the TiledMMA. The docs describe how the Layout
+// implies a repetition of the atom across additional hardware. 
+// Permutations, in the simplest form, imply additional iterations
+// to cover a larger tile (i.e. CTALayout) than the hardware can handle
+// at once. 
+//
+// Consider an example for PVC hardware:
+//   using TiledMma =
+//       TiledMMA<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
+//                Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>,
+//                Tile<_256, _256, _32>>;
+//
+// This MMA_Atom is performed by a whole warp and operates on an 8x16x16 chunk. 
+// The second arg (Layout) defines a repetition of the atom across *additional warps*,
+// i.e. iterating across more hardware. The third arg (Tile) defines a repetition of this
+// MMA across *additional values*. For this example, in the M dimension, the atom produces
+// 8 values of C, the hardware repetition (8) scales this up to 64 values in M, and the
+// requested permutation (256) scales this up to 256 values (implying 4 iterations in the 
+// M direction). 
+//
+// By cute convention, the repetition of the atom across hardware is the inner
+// iteration, while the repetition across values is the outer. We can use a more complex
+// permutation to *swap* the 'hardware' and 'iteration' in the layout, so that each 'unit'
+// of hardware (warp, in this case) processes contiguous blocks of A, B and C.
+// This has the advantage that we can use larger block load operations to load data without
+// relying on local memory.
+//
+// For the given example:
+//  using TiledMma =
+//    TiledMMA<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
+//             Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>, // 8x4 n-major layout of warps
+//             Tile<Layout<Shape<_8, _8, _4>, Stride<_1, _32, _8>>, // Permutation on M
+//                  Layout<Shape<_16, _4, _4>, Stride<_1, _64, _16>>, // Permutation on N
+//                  _32>>; // K unpermuted
+//
+// Consider only the M permutation (each mode's permutation is independent and in this 
+// example the M & N permutations are similar). This permutation maintains blocks of 8
+// contiguous values from the canonical tiling (mode 0 is 8:1).
+// It scatters 8 of these blocks of 8 to a spacing of 32 values (mode 1 is 8:32), leaving 
+// a 'gap' of 24. These gaps of 24 are filled by repeating the preceding pattern 4 times, 
+// at a spacing of 8 values (mode 2 is 4:8).
+// In this manner, the tiling has been permuted so that the values handled by each thread are
+// closer together.
+template <typename MMA_Atom, typename CTALayout, typename WarpLayout>
+struct TiledMMAHelper{
+private:
+  using AtomShape = typename MMA_Atom::Shape_MNK;
+
+  // Represents the canonical MMA block which would be handled by these subgroups without permutation.
+  // product_each(shape(...)) converts the layout into a tiler by taking only the shapes
+  // e.g. (8,8):(1,8) -> 64
+  static constexpr auto CanonicalBlockShape =
+      product_each(shape(blocked_product(Layout<AtomShape>{}, WarpLayout{})));
+
+  // Construct the default tiled MMA, to extract the iteration count per dim below
+  static constexpr auto CanonicalTiling = logical_divide(CTALayout{}, CanonicalBlockShape);
+
+  static constexpr auto permutation =
+      transform(AtomShape{}, WarpLayout{}.shape(), CanonicalTiling.shape(),
+                [](auto atom_size, auto sg_count, auto canonical_tiling) {
+                  constexpr auto iters = get<1>(canonical_tiling);
+                  // atom, tile_over_hardware, tile_over_iteration
+                  auto tiler_shape = make_shape(atom_size, sg_count, iters);
+                  return coalesce(make_ordered_layout(tiler_shape, Step<_0, _2, _1>{}));
+                });
+public:
+  using Permutation = decltype(permutation);
+  using TiledMMA = cute::TiledMMA<MMA_Atom, WarpLayout, Permutation>;
+};
+
 //
 // partition_fragment_C -- static context
 //

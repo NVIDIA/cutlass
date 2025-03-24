@@ -83,10 +83,9 @@ TEST(XE_Device_GemmUniversal_f16t_s4t_f32t_mixed_input_tensor_op_f32, 128x128x64
   using TileShape = Shape<_256, _256, _64>;
 
   using TiledMma =
-      TiledMMA<MMA_Atom<XE_8x16x16_F32F16F16F32_TT>,
-               Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>,
-               Tile<Layout<Shape<_8, _8, _4>, Stride<_1, _32, _8>>,
-                    Layout<Shape<_16, _4, _4>, Stride<_1, _64, _16>>, _64>>;
+      typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32F16F16F32_TT>,
+               Layout<TileShape>,
+               Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>>::TiledMMA;
 
   constexpr int PipelineStages = 3;
   using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelPVCMixedPrecision<PipelineStages>;

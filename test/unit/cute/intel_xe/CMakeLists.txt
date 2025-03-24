@@ -34,6 +34,7 @@ cutlass_test_unit_add_executable(
   copy_block.cpp
   copy_scatter.cpp
   mma.cpp
+  tiled_mma.cpp
 )
 else()
 cutlass_test_unit_add_executable(
