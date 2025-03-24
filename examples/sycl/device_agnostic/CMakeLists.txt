@@ -26,12 +26,12 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-cutlass_example_add_executable(
-  device_agnostic_gemm
-  device_agnostic_gemm.cpp
-)
-
-cutlass_example_add_executable(
-  device_agnostic_collective_builder
-  device_agnostic_collective_builder.cpp
-)
+#cutlass_example_add_executable(
+#  device_agnostic_gemm
+#  device_agnostic_gemm.cpp
+#)
+#
+#cutlass_example_add_executable(
+#  device_agnostic_collective_builder
+#  device_agnostic_collective_builder.cpp
+#)
