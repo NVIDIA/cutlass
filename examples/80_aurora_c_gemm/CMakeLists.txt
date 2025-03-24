@@ -1,5 +1,5 @@
 
-# Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -28,63 +28,8 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-set(CUTLASS_EXAMPLES_COMMON_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/common)
 
-add_custom_target(cutlass_examples)
-add_custom_target(test_examples)
-
-function(cutlass_example_add_executable NAME)
-
-  set(options)
-  set(oneValueArgs DISABLE_TESTS)
-  set(multiValueArgs DEPENDS DEPENDEES TEST_COMMAND_OPTIONS)
-  cmake_parse_arguments(_ "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
-
-  if (NOT DEFINED __DISABLE_TESTS)
-    set(__DISABLE_TESTS OFF)
-  endif()
-
-  cutlass_add_executable(${NAME} ${__UNPARSED_ARGUMENTS} BATCH_SOURCES OFF)
-
-  add_dependencies(cutlass_examples ${NAME})
-
-  target_link_libraries(
-    ${NAME}
-    PRIVATE
-    CUTLASS
-    cutlass_tools_util_includes
-    $<$<BOOL:${CUTLASS_ENABLE_CUBLAS}>:nvidia::cublas>
-    cuda
-    )
-
-  target_include_directories(
-    ${NAME}
-    PRIVATE
-    ${CUTLASS_EXAMPLES_COMMON_SOURCE_DIR}
-    ${CUTLASS_EXAMPLES_UTILS_DIR}
-    )
-
-  install(
-    TARGETS ${NAME}
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-    )
-
-  cutlass_add_executable_tests(
-    test_examples_${NAME} ${NAME}
-    DEPENDS ${__DEPENDS}
-    DEPENDEES test_examples ${__DEPENDEES}
-    TEST_COMMAND_OPTIONS ${__TEST_COMMAND_OPTIONS}
-    DISABLE_EXECUTABLE_INSTALL_RULE
-    DISABLE_TESTS ${__DISABLE_TESTS}
-    )
-
-endfunction()
-
-foreach(EXAMPLE
+cutlass_example_add_executable(
   80_aurora_c_gemm
+  80_aurora_c_gemm.cu
   )
-
-  add_subdirectory(${EXAMPLE})
-
-endforeach()
-

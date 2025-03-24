@@ -129,11 +129,11 @@ public:
   using CollectiveMainloop = typename GemmKernel::CollectiveMainloop;
   using CollectiveEpilogue = typename GemmKernel::CollectiveEpilogue;
 
-  // Map back to 2.x type as best as possible
-  using LayoutA = gemm::detail::StrideToLayoutTagA_t<typename GemmKernel::StrideA>;
-  using LayoutB = gemm::detail::StrideToLayoutTagB_t<typename GemmKernel::StrideB>;
-  using LayoutC = gemm::detail::StrideToLayoutTagC_t<typename GemmKernel::StrideC>;
-  using LayoutD = gemm::detail::StrideToLayoutTagC_t<typename GemmKernel::StrideD>;
+  // // Map back to 2.x type as best as possible
+  // using LayoutA = gemm::detail::StrideToLayoutTagA_t<typename GemmKernel::StrideA>;
+  // using LayoutB = gemm::detail::StrideToLayoutTagB_t<typename GemmKernel::StrideB>;
+  // using LayoutC = gemm::detail::StrideToLayoutTagC_t<typename GemmKernel::StrideC>;
+  // using LayoutD = gemm::detail::StrideToLayoutTagC_t<typename GemmKernel::StrideD>;
 
   static bool const kEnableCudaHostAdapter = CUTLASS_ENABLE_CUDA_HOST_ADAPTER;
 
@@ -378,171 +378,184 @@ public:
 
     Status launch_result{ Status::kSuccess };
     // Use extended launch API only for mainloops that use it
-    if constexpr (GemmKernel::ArchTag::kMinComputeCapability >= 90) {
-#if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
-      CUTLASS_TRACE_HOST("GemmUniversal::run: Use extended launch API");
-#endif
-      [[maybe_unused]] constexpr bool is_static_1x1x1 =
-        cute::is_static_v<typename GemmKernel::DispatchPolicy::ClusterShape> and
-        cute::size(typename GemmKernel::DispatchPolicy::ClusterShape{}) == 1;
-      [[maybe_unused]] dim3 cluster(cute::size<0>(typename GemmKernel::DispatchPolicy::ClusterShape{}),
-        cute::size<1>(typename GemmKernel::DispatchPolicy::ClusterShape{}),
-        cute::size<2>(typename GemmKernel::DispatchPolicy::ClusterShape{}));
+//     if constexpr (GemmKernel::ArchTag::kMinComputeCapability >= 90) {
+// #if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
+//       CUTLASS_TRACE_HOST("GemmUniversal::run: Use extended launch API");
+// #endif
+//       [[maybe_unused]] constexpr bool is_static_1x1x1 =
+//         cute::is_static_v<typename GemmKernel::DispatchPolicy::ClusterShape> and
+//         cute::size(typename GemmKernel::DispatchPolicy::ClusterShape{}) == 1;
+//       [[maybe_unused]] dim3 cluster(cute::size<0>(typename GemmKernel::DispatchPolicy::ClusterShape{}),
+//         cute::size<1>(typename GemmKernel::DispatchPolicy::ClusterShape{}),
+//         cute::size<2>(typename GemmKernel::DispatchPolicy::ClusterShape{}));
       
-      // Dynamic cluster support
-      [[maybe_unused]] dim3 fallback_cluster = dim3{0,0,0};
-      if constexpr (GemmKernel::ArchTag::kMinComputeCapability == 100 
-                    ) {
-        if constexpr (!cute::is_static_v<typename GemmKernel::DispatchPolicy::ClusterShape>) {
-          fallback_cluster = params.hw_info.cluster_shape_fallback;
-          cluster = params.hw_info.cluster_shape;
-        }
-      }
+//       // Dynamic cluster support
+//       [[maybe_unused]] dim3 fallback_cluster = dim3{0,0,0};
+//       if constexpr (GemmKernel::ArchTag::kMinComputeCapability == 100 
+//                     ) {
+//         if constexpr (!cute::is_static_v<typename GemmKernel::DispatchPolicy::ClusterShape>) {
+//           fallback_cluster = params.hw_info.cluster_shape_fallback;
+//           cluster = params.hw_info.cluster_shape;
+//         }
+//       }
       
-      [[maybe_unused]] void* kernel_params[] = {&params};
+//       [[maybe_unused]] void* kernel_params[] = {&params};
 
-      if constexpr (kEnableCudaHostAdapter) {
-        //
-        // Use the cuda host adapter
-        //
-        CUTLASS_ASSERT(cuda_adapter);
-        if (cuda_adapter) {
-          if (launch_with_pdl) {
-            CUTLASS_TRACE_HOST(
-              "GemmUniversal::run() does not support launching with PDL and a custom cuda adapter.");
-            return Status::kErrorInternal;
-          }
-#if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
-          CUTLASS_TRACE_HOST("GemmUniversal::run: Launching kernel with CUDA host adapter");
-#endif
-          if constexpr (is_static_1x1x1) {
-            launch_result = cuda_adapter->launch(grid,
-                                                block,
-                                                smem_size,
-                                                stream,
-                                                kernel_params,
-                                                0);
-          }
-          else {
-            launch_result = cuda_adapter->launch(grid,
-                                                cluster,
-                                                fallback_cluster, 
-                                                block,
-                                                smem_size,
-                                                stream,
-                                                kernel_params,
-                                                0);
-          }
-        }
-        else {
-          CUTLASS_TRACE_HOST("GemmUniversal::run: kEnableCudaHostAdapter is true, but CUDA host adapter is null");
-          return Status::kErrorInternal;
-        }
-      }
-      else {
-        CUTLASS_ASSERT(cuda_adapter == nullptr);
-        [[maybe_unused]] void const* kernel = (void const*) device_kernel<GemmKernel>;
-        static constexpr bool kClusterLaunch = GemmKernel::ArchTag::kMinComputeCapability == 90;
-        if constexpr (kClusterLaunch) {
-          if constexpr (is_static_1x1x1) {
-#if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
-            CUTLASS_TRACE_HOST("GemmUniversal::run: Launching static 1x1x1 kernel");
-#endif
-            launch_result = cutlass::kernel_launch<GemmKernel>(
-              grid, block, smem_size, stream, params, launch_with_pdl);
-            if (launch_result != Status::kSuccess) {
-              CUTLASS_TRACE_HOST("GemmUniversal::run: cutlass::kernel_launch reports failure");
-            }
-#if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
-            else {
-              CUTLASS_TRACE_HOST("GemmUniversal::run: cutlass::kernel_launch reports success");
-            }
-#endif
-          }
-          else {
-#if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
-            CUTLASS_TRACE_HOST("GemmUniversal::run: Launching dynamic cluster kernel");
-#endif
-            launch_result = ClusterLauncher::launch(
-              grid, cluster, block, smem_size, stream, kernel, kernel_params, launch_with_pdl);
-          }
-        }
+//       if constexpr (kEnableCudaHostAdapter) {
+//         //
+//         // Use the cuda host adapter
+//         //
+//         CUTLASS_ASSERT(cuda_adapter);
+//         if (cuda_adapter) {
+//           if (launch_with_pdl) {
+//             CUTLASS_TRACE_HOST(
+//               "GemmUniversal::run() does not support launching with PDL and a custom cuda adapter.");
+//             return Status::kErrorInternal;
+//           }
+// #if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
+//           CUTLASS_TRACE_HOST("GemmUniversal::run: Launching kernel with CUDA host adapter");
+// #endif
+//           if constexpr (is_static_1x1x1) {
+//             launch_result = cuda_adapter->launch(grid,
+//                                                 block,
+//                                                 smem_size,
+//                                                 stream,
+//                                                 kernel_params,
+//                                                 0);
+//           }
+//           else {
+//             launch_result = cuda_adapter->launch(grid,
+//                                                 cluster,
+//                                                 fallback_cluster, 
+//                                                 block,
+//                                                 smem_size,
+//                                                 stream,
+//                                                 kernel_params,
+//                                                 0);
+//           }
+//         }
+//         else {
+//           CUTLASS_TRACE_HOST("GemmUniversal::run: kEnableCudaHostAdapter is true, but CUDA host adapter is null");
+//           return Status::kErrorInternal;
+//         }
+//       }
+//       else {
+//         CUTLASS_ASSERT(cuda_adapter == nullptr);
+//         [[maybe_unused]] void const* kernel = (void const*) device_kernel<GemmKernel>;
+//         static constexpr bool kClusterLaunch = GemmKernel::ArchTag::kMinComputeCapability == 90;
+//         if constexpr (kClusterLaunch) {
+//           if constexpr (is_static_1x1x1) {
+// #if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
+//             CUTLASS_TRACE_HOST("GemmUniversal::run: Launching static 1x1x1 kernel");
+// #endif
+//             launch_result = cutlass::kernel_launch<GemmKernel>(
+//               grid, block, smem_size, stream, params, launch_with_pdl);
+//             if (launch_result != Status::kSuccess) {
+//               CUTLASS_TRACE_HOST("GemmUniversal::run: cutlass::kernel_launch reports failure");
+//             }
+// #if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
+//             else {
+//               CUTLASS_TRACE_HOST("GemmUniversal::run: cutlass::kernel_launch reports success");
+//             }
+// #endif
+//           }
+//           else {
+// #if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
+//             CUTLASS_TRACE_HOST("GemmUniversal::run: Launching dynamic cluster kernel");
+// #endif
+//             launch_result = ClusterLauncher::launch(
+//               grid, cluster, block, smem_size, stream, kernel, kernel_params, launch_with_pdl);
+//           }
+//         }
         
-        else {
-          if constexpr (GemmKernel::ArchTag::kMinComputeCapability == 100 
-                       ) {
-            if constexpr (is_static_1x1x1) {
-#if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
-              CUTLASS_TRACE_HOST("GemmUniversal::run: Launching static 1x1x1 kernel");
-#endif
-              launch_result = cutlass::kernel_launch<GemmKernel>(grid, block, smem_size, stream, params, launch_with_pdl);
-              if (launch_result != Status::kSuccess) {
-                CUTLASS_TRACE_HOST("GemmUniversal::run: cutlass::kernel_launch reports failure");
-              }
-#if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
-              else {
-                CUTLASS_TRACE_HOST("GemmUniversal::run: cutlass::kernel_launch reports success");
-              }
-#endif
-            }
-            else {
-#if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
-              CUTLASS_TRACE_HOST("GemmUniversal::run: Launching kernel with fall-back cluster");
-#endif
-              launch_result = ClusterLauncher::launch_with_fallback_cluster(
-                grid, 
-                cluster,
-                fallback_cluster,
-                block,
-                smem_size,
-                stream,
-                kernel,
-                kernel_params,
-                launch_with_pdl);
-            }
-          }
-        }
+//         else {
+//           if constexpr (GemmKernel::ArchTag::kMinComputeCapability == 100 
+//                        ) {
+//             if constexpr (is_static_1x1x1) {
+// #if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
+//               CUTLASS_TRACE_HOST("GemmUniversal::run: Launching static 1x1x1 kernel");
+// #endif
+//               launch_result = cutlass::kernel_launch<GemmKernel>(grid, block, smem_size, stream, params, launch_with_pdl);
+//               if (launch_result != Status::kSuccess) {
+//                 CUTLASS_TRACE_HOST("GemmUniversal::run: cutlass::kernel_launch reports failure");
+//               }
+// #if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
+//               else {
+//                 CUTLASS_TRACE_HOST("GemmUniversal::run: cutlass::kernel_launch reports success");
+//               }
+// #endif
+//             }
+//             else {
+// #if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
+//               CUTLASS_TRACE_HOST("GemmUniversal::run: Launching kernel with fall-back cluster");
+// #endif
+//               launch_result = ClusterLauncher::launch_with_fallback_cluster(
+//                 grid, 
+//                 cluster,
+//                 fallback_cluster,
+//                 block,
+//                 smem_size,
+//                 stream,
+//                 kernel,
+//                 kernel_params,
+//                 launch_with_pdl);
+//             }
+//           }
+//         }
         
-      }
+//       }
+//     }
+//     else {
+//       launch_result = Status::kSuccess;
+//       cutlass::arch::synclog_setup();
+
+//       if constexpr (kEnableCudaHostAdapter) {
+//         CUTLASS_ASSERT(cuda_adapter);
+//         if (cuda_adapter) {
+//           void* kernel_params[] = {&params};
+// #if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
+//           CUTLASS_TRACE_HOST("GemmUniversal::run: Launching kernel with CUDA host adapter");
+// #endif
+//           launch_result = cuda_adapter->launch(
+//             grid, block, smem_size, stream, kernel_params, 0
+//           );
+
+//         }
+//         else {
+//           CUTLASS_TRACE_HOST("GemmUniversal::run: CUDA host adapter is null");
+//           return Status::kErrorInternal;
+//         }
+//       }
+//       else {
+//         CUTLASS_ASSERT(cuda_adapter == nullptr);
+// #if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
+//         CUTLASS_TRACE_HOST("GemmUniversal::run: Launching kernel with cutlass::kernel_launch");
+// #endif
+//         launch_result = cutlass::kernel_launch<GemmKernel>(
+//           grid, block, smem_size, stream, params, launch_with_pdl);
+//         if (launch_result != Status::kSuccess) {
+//           CUTLASS_TRACE_HOST("GemmUniversal::run: cutlass::kernel_launch reports failure");
+//         }
+// #if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
+//         else {
+//           CUTLASS_TRACE_HOST("GemmUniversal::run: cutlass::kernel_launch reports success");
+//         }
+// #endif
+//       }
+//     }
+
+    launch_result = cutlass::kernel_launch<GemmKernel>(
+      grid, block, smem_size, stream, params, launch_with_pdl);
+    if (launch_result != Status::kSuccess) {
+      CUTLASS_TRACE_HOST("GemmUniversal::run: cutlass::kernel_launch reports failure");
     }
+#if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
     else {
-      launch_result = Status::kSuccess;
-      cutlass::arch::synclog_setup();
-
-      if constexpr (kEnableCudaHostAdapter) {
-        CUTLASS_ASSERT(cuda_adapter);
-        if (cuda_adapter) {
-          void* kernel_params[] = {&params};
-#if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
-          CUTLASS_TRACE_HOST("GemmUniversal::run: Launching kernel with CUDA host adapter");
-#endif
-          launch_result = cuda_adapter->launch(
-            grid, block, smem_size, stream, kernel_params, 0
-          );
-
-        }
-        else {
-          CUTLASS_TRACE_HOST("GemmUniversal::run: CUDA host adapter is null");
-          return Status::kErrorInternal;
-        }
-      }
-      else {
-        CUTLASS_ASSERT(cuda_adapter == nullptr);
-#if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
-        CUTLASS_TRACE_HOST("GemmUniversal::run: Launching kernel with cutlass::kernel_launch");
-#endif
-        launch_result = cutlass::kernel_launch<GemmKernel>(
-          grid, block, smem_size, stream, params, launch_with_pdl);
-        if (launch_result != Status::kSuccess) {
-          CUTLASS_TRACE_HOST("GemmUniversal::run: cutlass::kernel_launch reports failure");
-        }
-#if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
-        else {
-          CUTLASS_TRACE_HOST("GemmUniversal::run: cutlass::kernel_launch reports success");
-        }
-#endif
-      }
+      CUTLASS_TRACE_HOST("GemmUniversal::run: cutlass::kernel_launch reports success");
     }
+#endif
+
+
 
     cudaError_t result = cudaGetLastError();
     if (cudaSuccess == result && Status::kSuccess == launch_result) {
@@ -602,173 +615,6 @@ public:
   Status
   operator()(cudaStream_t stream = nullptr, CudaHostAdapter *cuda_adapter = nullptr, bool launch_with_pdl = false) {
     return run(params_, stream, cuda_adapter, launch_with_pdl);
-  }
-};
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////// CUTLASS 2.x API /////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-
-template <class GemmKernel_>
-class GemmUniversalAdapter<
-  GemmKernel_,
-  cute::enable_if_t<not gemm::detail::IsCutlass3GemmKernel<GetUnderlyingKernel_t<GemmKernel_>>::value>>
-{
-public:
-
-  using GemmKernel = GetUnderlyingKernel_t<GemmKernel_>;
-
-  static bool const kInternalTranspose =
-    !cutlass::epilogue::threadblock::detail::is_2x_evt_v<typename GemmKernel::Epilogue> &&  // 2.x EVT does not require internal transpose
-    cute::is_same<typename GemmKernel::LayoutC, cutlass::layout::RowMajor>::value;
-
-  using ThreadblockShape = typename GemmKernel::Mma::Shape;
-  using WarpShape = typename GemmKernel::WarpShape;
-  using InstructionShape = typename GemmKernel::InstructionShape;
-
-  // warp-level, arch-level (instruction), math operator
-  using WarpMmaOperator = typename GemmKernel::Mma::Policy::Operator;
-  using ArchMmaOperator = typename WarpMmaOperator::ArchMmaOperator;
-  using MathOperator = typename WarpMmaOperator::MathOperator;
-
-  // Operator class and arch tag extract bottom-up
-  // set it for top-level gemm device-level template
-  using OperatorClass = typename WarpMmaOperator::OperatorClass;
-  using ArchTag = typename WarpMmaOperator::ArchTag;
-
-  // Type, layout, and complex transform deliberately exchanged with B
-  using MapArguments = kernel::detail::MapArguments<
-    typename GemmKernel::ElementA,
-    typename GemmKernel::LayoutA,
-    GemmKernel::kTransformA,
-    GemmKernel::kAlignmentA,
-    typename GemmKernel::ElementB,
-    typename GemmKernel::LayoutB,
-    GemmKernel::kTransformB,
-    GemmKernel::kAlignmentB,
-    typename GemmKernel::LayoutC,
-    kInternalTranspose
-  >;
-
-  using ElementA = typename MapArguments::ElementA;
-  using LayoutA = typename MapArguments::LayoutA;
-  static ComplexTransform const kTransformA = MapArguments::kTransformA;
-  static int const kAlignmentA = MapArguments::kAlignmentA;
-
-  using ElementB = typename MapArguments::ElementB;
-  using LayoutB = typename MapArguments::LayoutB;
-  static ComplexTransform const kTransformB = MapArguments::kTransformB;
-  static int const kAlignmentB = MapArguments::kAlignmentB;
-
-  using ElementC = typename GemmKernel::ElementC;
-  using LayoutC = typename MapArguments::LayoutC;
-  static int const kAlignmentC = GemmKernel::kAlignmentC;
-
-  // C and D same type for 2.x kernel
-  using ElementD = ElementC;
-  using LayoutD = LayoutC;
-
-  using TensorRefA = TensorRef<ElementA const, LayoutA>;
-  using TensorRefB = TensorRef<ElementB const, LayoutB>;
-  using TensorRefC = TensorRef<ElementC const, LayoutC>;
-  using TensorRefD = TensorRef<ElementD, LayoutD>;
-
-  static int const kStages = GemmKernel::Mma::kStages;
-
-  using EpilogueOutputOp = typename GemmKernel::EpilogueOutputOp;
-  using ElementAccumulator = typename EpilogueOutputOp::ElementAccumulator;
-  using ThreadblockSwizzle = typename GemmKernel::ThreadblockSwizzle;
-  using UnderlyingOperator = GemmUniversalBase<GemmKernel>;
-  using Arguments = typename UnderlyingOperator::Arguments;
-
-private:
-
-  UnderlyingOperator underlying_operator_;
-
-public:
-
-  /// Constructs the GEMM.
-  GemmUniversalAdapter() { }
-
-  /// Helper to construct a transposed equivalent for the underying GEMM operator
-  static Arguments to_underlying_arguments(Arguments const &args) {
-    if (kInternalTranspose) {
-      return args.transposed_problem();
-    }
-    else {
-      return args;
-    }
-  }
-
-  /// Determines whether the GEMM can execute the given problem.
-  static Status can_implement(Arguments const &args, CudaHostAdapter *cuda_adapter = nullptr) {
-
-    return UnderlyingOperator::can_implement(to_underlying_arguments(args), cuda_adapter);
-  }
-
-  /// Gets the workspace size
-  static size_t get_workspace_size(Arguments const &args, CudaHostAdapter *cuda_adapter = nullptr) {
-
-    return UnderlyingOperator::get_workspace_size(to_underlying_arguments(args), cuda_adapter);
-  }
-
-  /// Computes the grid shape
-  static dim3 get_grid_shape(Arguments const &args) {
-    return UnderlyingOperator::get_grid_shape(to_underlying_arguments(args));
-  }
-
-  /// Computes the maximum number of active blocks per multiprocessor
-  static int maximum_active_blocks(int smem_capacity = -1) {
-    return UnderlyingOperator::maximum_active_blocks(smem_capacity);
-  }
-
-  /// Initializes GEMM state from arguments.
-  Status initialize(
-    Arguments const &args,
-    void *workspace = nullptr,
-    cudaStream_t stream = nullptr,
-    CudaHostAdapter *cuda_adapter = nullptr
-  ) {
-
-    return underlying_operator_.initialize(to_underlying_arguments(args), workspace, stream, cuda_adapter);
-  }
-
-  /// Lightweight update given a subset of arguments.
-  Status update(Arguments const &args) {
-
-    return underlying_operator_.update(to_underlying_arguments(args));
-  }
-
-  /// Runs the kernel using initialized state.
-  Status run(
-    cudaStream_t stream = nullptr,
-    CudaHostAdapter *cuda_adapter = nullptr) {
-
-    return underlying_operator_.run(stream, cuda_adapter);
-  }
-
-  /// Runs the kernel using initialized state.
-  Status operator()(
-    cudaStream_t stream = nullptr,
-    CudaHostAdapter *cuda_adapter = nullptr) {
-
-    return run(stream);
-  }
-
-  /// Runs the kernel using initialized state.
-  Status operator()(
-    Arguments const &args,
-    void *workspace = nullptr,
-    cudaStream_t stream = nullptr,
-    CudaHostAdapter *cuda_adapter = nullptr) {
-
-    Status status = initialize(args, workspace, stream, cuda_adapter);
-
-    if (status == Status::kSuccess) {
-      status = run(stream, cuda_adapter);
-    }
-
-    return status;
   }
 };
 

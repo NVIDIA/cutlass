@@ -109,6 +109,29 @@ gmma_rs_tag_to_major_B() {
     return cute::GMMA::Major::K;
   }
 }
+
+template <class LayoutA>
+constexpr cute::GMMA::Major
+gmma_aurora_tag_to_major_A() {
+  if constexpr (cutlass::gemm::detail::is_mn_major_A<LayoutA>()) {
+    return cute::GMMA::Major::MN;
+  }
+  else {
+    return cute::GMMA::Major::K;
+  }
+}
+
+template <class LayoutB>
+constexpr cute::GMMA::Major
+gmma_aurora_tag_to_major_B() {
+  if constexpr (cutlass::gemm::detail::is_mn_major_B<LayoutB>()) {
+    return cute::GMMA::Major::MN;
+  }
+  else {
+    return cute::GMMA::Major::K;
+  }
+}
+
 // Maps a rank-1 cute::Shape<> representing the cluster shape on to the TMA atom that should be used with it
 template <class UnimodalClusterShape>
 constexpr auto

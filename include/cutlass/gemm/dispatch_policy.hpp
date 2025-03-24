@@ -112,6 +112,8 @@ struct KernelTmaWarpSpecializedPingpong {
 struct KernelTmaWarpSpecializedCooperative { 
 };
 
+struct KernelCooperative { };
+
 struct KernelPtrArrayTmaWarpSpecializedCooperative { };
 struct KernelPtrArrayTmaWarpSpecializedPingpong { };
 
@@ -155,6 +157,18 @@ struct EpilogueTransposed { };
 //
 // Collective Mainloop Policies
 //
+
+template<
+  int Stages_,
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class KernelSchedule = KernelCooperative
+>
+struct MainloopMa100Cooperative {
+  constexpr static int Stages = Stages_;
+  using ClusterShape = ClusterShape_;
+  using ArchTag = arch::Ma100;
+  using Schedule = KernelSchedule;
+};
 
 // 2 stage pipeline through 1 stage in smem, 1 in rmem, WITHOUT predicated gmem loads
 struct MainloopSm70TwoStageUnpredicated {
