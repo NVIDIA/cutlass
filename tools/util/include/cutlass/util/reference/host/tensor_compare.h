@@ -58,6 +58,124 @@ namespace detail {
 template <
   typename Element,               ///< Element type
   typename Layout>                ///< Layout function
+struct TensorGreatestErrorFunc {
+
+  //
+  // Data members
+  //
+
+  TensorView<Element, Layout> lhs;
+  TensorView<Element, Layout> rhs;
+  double result;
+
+  /// Ctor
+  TensorGreatestErrorFunc(
+    TensorView<Element, Layout> const &lhs_,
+    TensorView<Element, Layout> const &rhs_
+  ) :
+    lhs(lhs_),
+    rhs(rhs_),
+    result(0.0) { }
+
+  /// Visits a coordinate
+  void operator()(Coord<Layout::kRank> const &coord) {
+
+    Element lhs_ = lhs.at(coord);
+    Element rhs_ = rhs.at(coord);
+
+    result = std::max(result, std::abs(double(lhs_) - double(rhs_)));
+  }
+
+  /// Returns true if equal
+  operator double() const {
+    return result;
+  }
+};
+
+template <
+  typename Element,               ///< Element type
+  typename Layout>                ///< Layout function
+struct TensorMREFunc {
+
+  //
+  // Data members
+  //
+
+  TensorView<Element, Layout> lhs;
+  TensorView<Element, Layout> rhs;
+  double sum;
+  uint64_t count;
+  static constexpr double epsilon = 1e-6;
+
+  /// Ctor
+  TensorMREFunc(
+    TensorView<Element, Layout> const &lhs_,
+    TensorView<Element, Layout> const &rhs_
+  ) :
+    lhs(lhs_),
+    rhs(rhs_),
+    sum(0.0),
+    count(0) { }
+
+  /// Visits a coordinate
+  void operator()(Coord<Layout::kRank> const &coord) {
+
+    Element lhs_ = lhs.at(coord);
+    Element rhs_ = rhs.at(coord);
+
+    sum += std::abs(double(lhs_) - double(rhs_) / (double(rhs_) + epsilon));
+    ++count;
+  }
+
+  /// Returns true if equal
+  operator double() const {
+    return sum / double(count);
+  }
+};
+
+template <
+  typename Element,               ///< Element type
+  typename Layout>                ///< Layout function
+struct TensorMSEFunc {
+
+  //
+  // Data members
+  //
+
+  TensorView<Element, Layout> lhs;
+  TensorView<Element, Layout> rhs;
+  double sum;
+  uint64_t count;
+
+  /// Ctor
+  TensorMSEFunc(
+    TensorView<Element, Layout> const &lhs_,
+    TensorView<Element, Layout> const &rhs_
+  ) :
+    lhs(lhs_),
+    rhs(rhs_),
+    sum(0.0),
+    count(0) { }
+
+  /// Visits a coordinate
+  void operator()(Coord<Layout::kRank> const &coord) {
+
+    Element lhs_ = lhs.at(coord);
+    Element rhs_ = rhs.at(coord);
+
+    sum += std::pow((double(lhs_) - double(rhs_)), 2);
+    ++count;
+  }
+
+  /// Returns true if equal
+  operator double() const {
+    return sum / double(count);
+  }
+};
+
+template <
+  typename Element,               ///< Element type
+  typename Layout>                ///< Layout function
 struct TensorEqualsFunc {
 
   //
@@ -142,6 +260,81 @@ struct TensorRelativelyEqualsFunc {
 
 } // namespace detail
 
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Returns the Mean Squared Error between two tensors.
+template <
+  typename Element,               ///< Element type
+  typename Layout>                ///< Layout function
+double TensorMSE(
+  TensorView<Element, Layout> const &lhs,
+  TensorView<Element, Layout> const &rhs) {
+
+  // Extents must be identical
+  if (lhs.extent() != rhs.extent()) {
+    return -1;
+  }
+
+  detail::TensorMSEFunc<Element, Layout> func(lhs, rhs);
+  TensorForEach(
+    lhs.extent(),
+    func
+  );
+
+  return double(func);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Returns the Mean Relative Error between two tensors.
+template <
+  typename Element,               ///< Element type
+  typename Layout>                ///< Layout function
+double TensorMRE(
+  TensorView<Element, Layout> const &lhs,
+  TensorView<Element, Layout> const &rhs) {
+
+  // Extents must be identical
+  if (lhs.extent() != rhs.extent()) {
+    return -1;
+  }
+
+  detail::TensorMREFunc<Element, Layout> func(lhs, rhs);
+  TensorForEach(
+    lhs.extent(),
+    func
+  );
+
+  return double(func);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Returns the greatest error between two tensors.
+template <
+  typename Element,               ///< Element type
+  typename Layout>                ///< Layout function
+double TensorGreatestError(
+  TensorView<Element, Layout> const &lhs,
+  TensorView<Element, Layout> const &rhs) {
+
+  // Extents must be identical
+  if (lhs.extent() != rhs.extent()) {
+    return -1;
+  }
+
+  detail::TensorGreatestErrorFunc<Element, Layout> func(lhs, rhs);
+  TensorForEach(
+    lhs.extent(),
+    func
+  );
+
+  return double(func);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Returns true if two tensor views are equal.

@@ -188,17 +188,6 @@ public:
     return sm100_scheduler_.advance_to_next_work(clc_pipeline, clc_pipe_producer_state);
  }
 
-  // Get clcID and success bit
-  [[nodiscard]] CUTLASS_DEVICE
-  WorkTileInfo
-  get_current_work(PipelineState<Stages> state) {
-    InternalWorkTileInfo work_tile_info = sm100_scheduler_.get_current_work(state);
-    if (!work_tile_info.is_valid()) {
-      return invalid_work_tile();
-    }
-
-    return convert_work(work_tile_info);
-  }
   // Given the inputs, computes the total number of output blocks this problem will compute over
   template<class ProblemShape>
   CUTLASS_HOST_DEVICE
@@ -255,7 +244,7 @@ public:
   CUTLASS_DEVICE
   WorkTileInfo
   initial_work_tile_info(ClusterShape cluster_shape) {
-    InternalWorkTileInfo work_tile_info = UnderlyingScheduler::initial_work_tile_info(cluster_shape, params_.sm100_params_);
+    InternalWorkTileInfo work_tile_info = sm100_scheduler_.initial_work_tile_info(cluster_shape);
     work_tile_info.is_valid_tile = false;
     return convert_work(work_tile_info);
   }
@@ -307,12 +296,15 @@ public:
       return cute::make_tuple(work_tile_info, false);
     }
 
-    clc_pipeline.consumer_wait(clc_pipe_consumer_state);
-    auto new_work_tile_info = get_current_work(clc_pipe_consumer_state);
-    clc_pipeline.consumer_release(clc_pipe_consumer_state);
+    auto [work_tile, _] = sm100_scheduler_.fetch_next_work(InternalWorkTileInfo{}, clc_pipeline, clc_pipe_consumer_state);
+    if (!work_tile.is_valid()) {
+      return cute::make_tuple(invalid_work_tile(), true);
+    }
+
+    auto converted_work_tile = convert_work(work_tile);
 
     // Return true to indicate that the CLC pipeline state should be advanced
-    return cute::make_tuple(new_work_tile_info, true);
+    return cute::make_tuple(converted_work_tile, true);
   }
 
   CUTLASS_DEVICE
@@ -689,8 +681,6 @@ public:
     }
   }
 
-
-
   // Convert CTA-level work tile info to cluster-level tile coord
   CUTLASS_DEVICE
   auto
@@ -746,9 +736,8 @@ private:
     //
     // In the case where this CTA is part of a preferred cluster, the resulting offsets are equivalent
     // to those returned by cute::block_id_in_cluster();
-    auto [cta_m_in_cluster, cta_n_in_cluster, _] = block_id_in_cluster_;
-    uint64_t cta_m_in_preferred_cluster = work_tile_info.M_idx + cta_m_in_cluster - start_cta_m_preferred_cluster;
-    uint64_t cta_n_in_preferred_cluster = work_tile_info.N_idx + cta_n_in_cluster - start_cta_n_preferred_cluster;
+    uint64_t cta_m_in_preferred_cluster = work_tile_info.M_idx - start_cta_m_preferred_cluster;
+    uint64_t cta_n_in_preferred_cluster = work_tile_info.N_idx - start_cta_n_preferred_cluster;
 
     if (params.sk_params_.raster_order_ == RasterOrder::AlongN) {
       return cluster_start_linear_id + (params.sk_params_.divmod_cluster_shape_minor_.divisor * cta_n_in_preferred_cluster) + cta_m_in_preferred_cluster;
@@ -776,9 +765,8 @@ private:
       // the first CTA tile of work for each CTA in a cluster, but later use of the
       // split-K work tile for fixup expect a CTA-offset tile. Thus, we need to offset
       // each CTA's M and N index by the CTA offset in the cluster.
-      auto [cta_m_in_cluster, cta_n_in_cluster, _] = block_id_in_cluster_;
-      auto M_idx = work_tile_info.M_idx + cta_m_in_cluster;
-      auto N_idx = work_tile_info.N_idx + cta_n_in_cluster;
+      int32_t M_idx = work_tile_info.M_idx;
+      int32_t N_idx = work_tile_info.N_idx;
 
       int L_idx, Split_idx;
       params_.sk_params_.divmod_splits_(L_idx, Split_idx, work_tile_info.L_idx);
@@ -828,8 +816,8 @@ private:
       }
 
       return {
-        static_cast<int32_t>(M_idx),
-        static_cast<int32_t>(N_idx),
+        M_idx,
+        N_idx,
         static_cast<int32_t>(K_idx),
         static_cast<int32_t>(L_idx),
         k_tiles,

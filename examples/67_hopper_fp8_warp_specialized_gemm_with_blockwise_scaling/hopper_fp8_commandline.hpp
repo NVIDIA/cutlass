@@ -46,6 +46,8 @@ struct Options {
   int m = 1024, n = 512, k = 1024, l = 1;
   RasterOrderOptions raster;
   int swizzle;
+  float epsilon = 0.02f;
+  float non_zero_floor = 1.f;
 
   // Parses the command line
   void parse(int argc, char const **args) {
@@ -73,6 +75,8 @@ struct Options {
     cmd.get_cmd_line_argument("warmup", warmup);
     cmd.get_cmd_line_argument("iterations", iterations);
     cmd.get_cmd_line_argument("verify", verify);
+    cmd.get_cmd_line_argument("epsilon", epsilon);
+    cmd.get_cmd_line_argument("non-zero-floor", non_zero_floor);
 
     char raster_char;
     cmd.get_cmd_line_argument("raster", raster_char);
@@ -113,7 +117,10 @@ struct Options {
       << "  --save_amax=<bool>          Save the pre-scaled max absolute value of any fp8 outputs (aux and/or D) (default: true)\n"
       << "  --raster=<char>             CTA Rasterization direction (N for along N, M for along M, and H for heuristic)\n\n"
       << "  --swizzle=<int>             CTA Rasterization swizzle\n\n"
-      << "  --iterations=<int>          Number of profiling iterations to perform.\n\n";
+      << "  --iterations=<int>          Number of profiling iterations to perform.\n\n"
+      << "  --verify=<bool>             Verify the results.\n\n"
+      << "  --epsilon=<float>           The epsilon value for comparing the results.\n\n"
+      << "  --non-zero-floor=<float>    The none zero floor for comparing the results.\n\n";
 
     out
       << "\n\nExamples:\n\n"

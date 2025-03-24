@@ -58,7 +58,8 @@
 #endif // defined(__CUDA_ARCH__)
 
 
-#if (defined(CUTLASS_ARCH_MMA_SM100A_ENABLED))
+#if (defined(CUTLASS_ARCH_MMA_SM100A_ENABLED) || defined(CUTLASS_ARCH_MMA_SM101A_ENABLED) ||\
+     defined(CUTLASS_ARCH_MMA_SM120A_ENABLED))
 #  define CUDA_PTX_UE8M0_CVT_ENABLED 1
 #endif
 

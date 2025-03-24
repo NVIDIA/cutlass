@@ -1043,9 +1043,9 @@ struct Sm90RowBroadcast {
     }
     // Dynamic non-batched scalar broadcast
     else if (IsDynamicBroadcast && stride_N == bool(0) && stride_L == repeat_like(stride_L, 0)) {
-      if constexpr (!IsArrayOfPointers) {
-        is_zero_ = params.ptr_row[0] == ElementInput(0);
-      }
+       if constexpr (!IsArrayOfPointers) {
+         is_zero_ = params.ptr_row[0] == ElementInput(0);
+       }
     }
   }
 
@@ -1322,9 +1322,9 @@ struct Sm90ColBroadcast {
     }
     // Dynamic non-batched scalar broadcast
     else if (IsDynamicBroadcast && stride_M == bool(0) && stride_L == repeat_like(stride_L, 0)) {
-      if constexpr (!IsArrayOfPointers) {
-        is_zero_ = params.ptr_col[0] == ElementInput(0);
-      }
+       if constexpr (!IsArrayOfPointers) {
+         is_zero_ = params.ptr_col[0] == ElementInput(0);
+       }
     }
   }
 

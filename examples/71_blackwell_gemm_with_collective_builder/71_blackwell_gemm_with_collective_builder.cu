@@ -74,12 +74,14 @@ struct Options {
 
   int m, n, k, l;
   float alpha, beta;
+  int swizzle;
 
   Options():
     help(false),
     error(false),
     m(2048), n(2048), k(2048), l(1),
-    alpha(1.f), beta(0.f)
+    alpha(1.f), beta(0.f),
+    swizzle(0)
   { }
 
   // Parses the command line
@@ -97,6 +99,7 @@ struct Options {
     cmd.get_cmd_line_argument("l", l, 1);
     cmd.get_cmd_line_argument("alpha", alpha, 1.f);
     cmd.get_cmd_line_argument("beta", beta, 0.f);
+    cmd.get_cmd_line_argument("swizzle", swizzle);
   }
 
   /// Prints the usage statement.
@@ -112,7 +115,8 @@ struct Options {
       << "  --k=<int>                   Sets the K extent of the GEMM\n"
       << "  --l=<int>                   Sets the L extent (batch count) of the GEMM\n"
       << "  --alpha=<f32>               Epilogue scalar alpha\n"
-      << "  --beta=<f32>                Epilogue scalar beta\n\n";
+      << "  --beta=<f32>                Epilogue scalar beta\n"
+      << "  --swizzle=<int>             Cluster rasterization swizzle\n\n";
 
     return out;
   }
@@ -351,6 +355,8 @@ struct ExampleRunner {
        block_C.get(), stride_C, block_D.get(), stride_D},
       hw_info
     };
+
+    arguments.scheduler.max_swizzle_size = options.swizzle;
 
     // See example 48 for details on custom EVT construction
     if constexpr (UseCustomEVT) {

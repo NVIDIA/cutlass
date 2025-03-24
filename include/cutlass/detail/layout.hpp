@@ -341,7 +341,6 @@ get_alignment_count_from_gmem_tiled_copy() {
   else {
     // For TMA tiled copies, we know the alignment has to be 128 bits
     if constexpr (is_tma_copy_engine<GmemTiledCopy>()) {
-      
       if constexpr ( cute::is_same_v<typename RawDtype<ElementMma>::type, cutlass::detail::float_e2m1_unpacksmem_t> ||
                      cute::is_same_v<typename RawDtype<ElementMma>::type, cutlass::detail::float_e3m2_unpacksmem_t> ||
                      cute::is_same_v<typename RawDtype<ElementMma>::type, cutlass::detail::float_e2m3_unpacksmem_t> ||
@@ -371,7 +370,6 @@ template <
 >
 constexpr int
 get_input_alignment_bits() {
-  
   if constexpr (IsF8F6F4SubBytes && sizeof_bits<ElementType>::value == 4) {
     return 64 * 8;
   }

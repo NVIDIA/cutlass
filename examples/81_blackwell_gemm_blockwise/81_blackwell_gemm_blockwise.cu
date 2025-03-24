@@ -216,7 +216,7 @@ struct Options {
 
     out
       << "\n\nExamples:\n\n"
-      << "$ " << "81_blackwell_gemm_blockwise" << " --m=1024 --n=512 --k=1024 --alpha=2 --beta=0.707 \n\n";
+      << "$ " << "112_blackwell_gemm_blockwise" << " --m=1024 --n=512 --k=1024 --alpha=2 --beta=0.707 \n\n";
 
     return out;
   }

@@ -219,6 +219,8 @@ public:
 
   #if defined(__CUDA_ARCH__) && ((__CUDA_ARCH__ < 800) || (__CUDA_ARCH__ == 890)) 
     static int const kVerticalVisit = true;
+  #elif defined(__CUDA_ARCH__) && (__CUDA_ARCH__ == 1200) 
+    static int const kVerticalVisit = true;
   #else
     static int const kVerticalVisit = false;
   #endif

@@ -71,7 +71,7 @@ namespace detail {
     return __popc(x);
     #elif defined(__GNUC__) || defined(__clang__)
     return __builtin_popcount(x);
-    #elif defined(_MSC_VER)
+    #elif (defined(_MSC_VER) && !defined(_M_ARM64))
     return __popcnt(x);
     #else
     int32_t count = 0;
@@ -88,7 +88,7 @@ namespace detail {
     return __popcll(x);
     #elif defined(__GNUC__) || defined(__clang__)
     return __builtin_popcountll(x);
-    #elif defined(_MSC_VER)
+    #elif (defined(_MSC_VER) && !defined(_M_ARM64))
     return __popcnt64(x);
     #else
     int64_t count = 0;

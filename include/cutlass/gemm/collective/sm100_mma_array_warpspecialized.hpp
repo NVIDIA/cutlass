@@ -848,7 +848,7 @@ struct CollectiveMma<
     cute::tma_descriptor_fence_acquire(get<1>(input_tensormaps));
   }
 
-private:
+protected:
 
   typename Params::TMA_A const* observed_tma_load_a_{nullptr};
   typename Params::TMA_B const* observed_tma_load_b_{nullptr};

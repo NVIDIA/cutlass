@@ -552,7 +552,8 @@ make_runtime_instr_desc(UMMA::InstrDescriptor desc_i, uint16_t sparse_id2 = 0u, 
 template <class a_type, class b_type, class c_type, class sf_type,
           int M, int N, UMMA::Major a_major, UMMA::Major b_major,
           UMMA::ScaleIn a_neg = UMMA::ScaleIn::One, UMMA::ScaleIn b_neg = UMMA::ScaleIn::One,
-          bool is_sparse = false>
+          bool is_sparse = false
+          >
 CUTE_HOST_DEVICE constexpr
 UMMA::InstrDescriptorBlockScaled
 make_instr_desc_block_scaled()

@@ -122,6 +122,13 @@ is_sm10x_f8f6f4_element() {
 }
 
 
+template <class Element>
+CUTLASS_HOST_DEVICE
+static constexpr bool
+is_sm10x_f4_element() {
+  return (cute::is_same_v<Element, cute::float_e2m1_t> 
+  );
+}
 
 template <class ElementType>
 CUTLASS_HOST_DEVICE
@@ -162,6 +169,20 @@ struct sm10x_block_scale_runtime_input_t {
                                   >;
 };
 
+
+template <class TiledMma, class ElementA, class ElementB>
+CUTLASS_HOST_DEVICE
+static constexpr bool
+is_sm120_f8f6f4() {
+  return (cute::size<2>(typename TiledMma::Shape_MNK{}) == 32) && is_sm10x_f8f6f4_inputs<ElementA, ElementB>();
+}
+
+template <class TiledMma, class ElementA, class ElementB>
+CUTLASS_HOST_DEVICE
+static constexpr bool
+is_sm100_sparse_f8f6f4() {
+  return (cute::size<2>(typename TiledMma::Shape_MNK{}) == 64) && is_sm10x_f8f6f4_inputs<ElementA, ElementB>();
+}
 
 } // namespace detail
 

@@ -259,9 +259,10 @@ struct CollectiveMma<
     auto init_N = get<1>(init_shape);
     auto init_K = get<2>(init_shape);
     // Batches/Groups are managed by using appropriate pointers to input matrices
-    const uint32_t mock_L = 1;
-    InternalElementA const* ptr_A_first_batch = reinterpret_cast<InternalElementA const*>(args.ptr_A);
-    InternalElementB const* ptr_B_first_batch = reinterpret_cast<InternalElementB const*>(args.ptr_B);
+    const uint32_t init_L = 1;
+    // NOTE: Since TMA desc creation with nullptr not possible until 12.6, we use an initial address even when tensor addresses are on device. This address is never used.
+    InternalElementA const* ptr_A_first_batch = reinterpret_cast<InternalElementA const*>(reinterpret_cast<uint64_t>(args.ptr_A) & 0xFFFFFFFFFFFFFFF0);  // Address must be 16B-aligned
+    InternalElementB const* ptr_B_first_batch = reinterpret_cast<InternalElementB const*>(reinterpret_cast<uint64_t>(args.ptr_B) & 0xFFFFFFFFFFFFFFF0);  // Address must be 16B-aligned
 
     InternalStrideA stride_a;
     InternalStrideB stride_b;
@@ -280,8 +281,8 @@ struct CollectiveMma<
       stride_a = args.dA;
       stride_b = args.dB;
     }
-    Tensor tensor_a = make_tensor(ptr_A_first_batch, make_layout(make_shape(init_M,init_K,mock_L), stride_a));
-    Tensor tensor_b = make_tensor(ptr_B_first_batch, make_layout(make_shape(init_N,init_K,mock_L), stride_b));
+    Tensor tensor_a = make_tensor(ptr_A_first_batch, make_layout(make_shape(init_M,init_K,init_L), stride_a));
+    Tensor tensor_b = make_tensor(ptr_B_first_batch, make_layout(make_shape(init_N,init_K,init_L), stride_b));
     auto tma_load_a = make_tma_copy(
          GmemTiledCopyA{},
          tensor_a,
@@ -378,12 +379,12 @@ struct CollectiveMma<
     using X = Underscore;
     // Separate out problem shape for convenience
     auto [M,N,K,L] = problem_shape_MNKL;
-    const int32_t mock_L = 1;
+    const int32_t init_L = 1;
 
     // TMA requires special handling of strides to deal with coord codomain mapping
     // Represent the full tensors -- get these from TMA
-    Tensor mA_mkl = mainloop_params.tma_load_a.get_tma_tensor(make_shape(M,K,mock_L));                            // (m,k,l)
-    Tensor mB_nkl = mainloop_params.tma_load_b.get_tma_tensor(make_shape(N,K,mock_L));                            // (n,k,l)
+    Tensor mA_mkl = mainloop_params.tma_load_a.get_tma_tensor(make_shape(M,K,init_L));                            // (m,k,l)
+    Tensor mB_nkl = mainloop_params.tma_load_b.get_tma_tensor(make_shape(N,K,init_L));                            // (n,k,l)
 
     // Make tiled views, defer the slice
     Tensor gA_mkl = local_tile(mA_mkl, TileShape{}, make_coord(_,_,_), Step<_1, X,_1>{});  // (BLK_M,BLK_K,m,k,l)
@@ -391,8 +392,8 @@ struct CollectiveMma<
     auto tK = get<3>(gA_mkl.shape());
 
     // Make the tiled views of scale tensors
-    auto scaleA_shape = make_shape(M / ScaleGranularityM, tK, L); // (scale_m,k,l)
-    auto scaleB_shape = make_shape(N / ScaleGranularityN, tK, L); // (scale_n,k,l)
+    auto scaleA_shape = make_shape(ceil_div(M, ScaleGranularityM), tK, L); // (scale_m,k,l)
+    auto scaleB_shape = make_shape(ceil_div(N, ScaleGranularityN), tK, L); // (scale_n,k,l)
     auto scaleA_layout = make_ordered_layout(scaleA_shape, Step<_0, _1, _2>{});
     auto scaleB_layout = make_ordered_layout(scaleB_shape, Step<_0, _1, _2>{});
 

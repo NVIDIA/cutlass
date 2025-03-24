@@ -275,7 +275,7 @@ private:
 };
 
 // In the mainloop, PRMT selects 1 byte from only 8 bytes so the sign bit is handled in an extra PRMT.
-// Here the encodings of positive values and negative values are unified (except for the sign bit). 
+// Here the encodings of positive values and negative values are unified (except for the sign bit).
 // For instance, 1 becomes 0b0111, which is the same encoding as -1 (0b1111).
 static bool unified_encode_int4b(cutlass::int4b_t const *block_in, cutlass::int4b_t *block_out, const size_t block_size) {
 
@@ -430,7 +430,7 @@ void reorder_tensor(
   };
   static_assert(has_major_mode(stride<0>(LayoutDst{})) ^ has_major_mode(stride<1>(LayoutDst{})),
                 "Could not find stride-1 mode in destination layout");
-  constexpr int N = shape_div(Int<8>{}, sizeof_bits<T>{});
+  constexpr int N = shape_div(Int<8>{}, Int<sizeof_bits_v<T>>{});
   auto val_layout = conditional_return<has_major_mode(stride<0>(LayoutDst{}))>(
     make_layout(make_shape(Int<N>{}, Int<1>{}), GenColMajor{}),
     make_layout(make_shape(Int<1>{}, Int<N>{}), GenRowMajor{}));

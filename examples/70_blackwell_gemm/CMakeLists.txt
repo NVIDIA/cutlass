@@ -28,14 +28,29 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-if (CUTLASS_NVCC_ARCHS MATCHES 100a)
+set(TEST_SWIZZLE_1 --swizzle=1)
+set(TEST_SWIZZLE_2 --swizzle=2)
+set(TEST_SWIZZLE_5 --swizzle=5)
+set(TEST_SWIZZLE_5_UNEVEN --swizzle=5 --m=4096 --n=16384)
+
+if(NOT CUTLASS_NVCC_ARCHS STREQUAL "100")
 cutlass_example_add_executable(
   70_blackwell_fp16_gemm
   70_blackwell_fp16_gemm.cu
-)  
+  TEST_COMMAND_OPTIONS
+  TEST_SWIZZLE_1
+  TEST_SWIZZLE_2
+  TEST_SWIZZLE_5
+  TEST_SWIZZLE_5_UNEVEN
+)
 
 cutlass_example_add_executable(
   70_blackwell_fp8_gemm
   70_blackwell_fp8_gemm.cu
+  TEST_COMMAND_OPTIONS
+  TEST_SWIZZLE_1
+  TEST_SWIZZLE_2
+  TEST_SWIZZLE_5
+  TEST_SWIZZLE_5_UNEVEN
 )
 endif()

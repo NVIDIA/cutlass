@@ -36,13 +36,22 @@
 
 #include "cutlass/cutlass.h"
 #include "cutlass/detail/collective.hpp"
+#include "cutlass/array.h"
+#include "cutlass/array_subbyte.h"
 #include "cutlass/library/library.h"
-#include "cutlass/library/util.h"
 #include "cutlass/transform/kernel/sparse_gemm_compressor.hpp" // StructuredSparseCompressor
 #include "cutlass/transform/device/transform_universal_adapter.hpp" // TransformUniversalAdapter
 #include "cutlass/util/packed_stride.hpp"        // make_cute_packed_stride
 #include "gemm_operation_3x.hpp"
 #include "library_internal.h"
+#include "cutlass/gemm/dispatch_policy.hpp"
+#include "cutlass/util/packed_stride.hpp"
+#include "cutlass/util/mixed_dtype_utils.hpp"
+#include "cutlass/util/device_memory.h"
+#include "cutlass/util/reference/device/tensor_fill.h"
+#include "cutlass/util/reference/device/tensor_compare.h"
+#include "cute/tensor.hpp"
+#include <unordered_map>
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -76,6 +85,16 @@ public:
   using CollectiveMainloop = typename Operator::CollectiveMainloop;
   using CollectiveEpilogue = typename Operator::CollectiveEpilogue;
   using ThreadEpilogueOp = typename CollectiveEpilogue::ThreadEpilogueOp;
+
+  static constexpr bool IsRuntimeDataTypeA = cutlass::gemm::collective::detail::is_sm10x_runtime_f8f6f4<ElementA>();
+
+  static constexpr bool IsRuntimeDataTypeB = cutlass::gemm::collective::detail::is_sm10x_runtime_f8f6f4<ElementB>();
+
+  static_assert((IsRuntimeDataTypeA && IsRuntimeDataTypeB) ||
+                (!IsRuntimeDataTypeA && !IsRuntimeDataTypeB),
+                "ElementA and ElementB in a GEMM kernel should be both runtime or both static.");
+
+  static constexpr bool IsRuntimeDataType = IsRuntimeDataTypeA && IsRuntimeDataTypeB;
 
   using ElementE = typename CollectiveMainloop::ElementE;
   using LayoutE = typename CollectiveMainloop::LayoutE;
@@ -170,9 +189,41 @@ protected:
       arguments->batch_count);
 
     // update arguments
-    operator_args.mainloop.ptr_A = reinterpret_cast<ElementA const *>(device_a_compressed_ptr);
-    operator_args.mainloop.ptr_B = static_cast<ElementB const *>(arguments->B);
-    operator_args.mainloop.ptr_E = reinterpret_cast<ElementE const *>(device_e_ptr);
+
+    if constexpr (IsRuntimeDataType) {
+      using ArrayElementA = typename Operator::GemmKernel::CollectiveMainloop::ArrayElementA;
+      using ArrayElementB = typename Operator::GemmKernel::CollectiveMainloop::ArrayElementB;
+      operator_args.mainloop.ptr_A = static_cast<ArrayElementA const *>(device_a_compressed_ptr);
+      operator_args.mainloop.ptr_B = static_cast<ArrayElementB const *>(arguments->B);
+
+      std::unordered_map<RuntimeDatatype, cute::UMMA::MXF8F6F4Format> mapping = {
+          {RuntimeDatatype::kE4M3, cute::UMMA::MXF8F6F4Format::E4M3},
+          {RuntimeDatatype::kE5M2, cute::UMMA::MXF8F6F4Format::E5M2},
+          {RuntimeDatatype::kE3M2, cute::UMMA::MXF8F6F4Format::E3M2},
+          {RuntimeDatatype::kE2M1, cute::UMMA::MXF8F6F4Format::E2M1}
+      };
+
+      auto iter_runtime_a = mapping.find(arguments->runtime_input_datatype_a);
+      auto iter_runtime_b = mapping.find(arguments->runtime_input_datatype_b);
+
+      if (iter_runtime_a != mapping.end()) {
+          operator_args.mainloop.runtime_data_type_a = iter_runtime_a->second;
+      } else {
+        assert("invalid runtime argument for datatype A!");
+      }
+
+      if (iter_runtime_b != mapping.end()) {
+          operator_args.mainloop.runtime_data_type_b = iter_runtime_b->second;
+      } else {
+        assert("invalid runtime argument for datatype B!");
+      }
+
+    }
+    else {
+      operator_args.mainloop.ptr_A = static_cast<ElementA const *>(device_a_compressed_ptr);
+      operator_args.mainloop.ptr_B = static_cast<ElementB const *>(arguments->B);
+    }
+    operator_args.mainloop.ptr_E = static_cast<ElementE const *>(device_e_ptr);
     operator_args.epilogue.ptr_C = static_cast<ElementC const *>(arguments->C);
     operator_args.epilogue.ptr_D = static_cast<ElementD       *>(arguments->D);
 
@@ -184,7 +235,7 @@ protected:
         arguments->ldc, arguments->batch_stride_C);
     operator_args.epilogue.dD = operator_args.epilogue.dC;
 
-    /* Query device SM count to pass onto the kernel as an argument, where needed */
+    /* Query device SM count and max active clusters to pass onto the kernel as an argument, where needed */
     operator_args.hw_info.sm_count = arguments->sm_count;
     if constexpr (!std::is_const_v<decltype(operator_args.scheduler.max_swizzle_size)>) {
       operator_args.scheduler.max_swizzle_size = arguments->swizzle_size;
@@ -208,6 +259,16 @@ protected:
       operator_args.scheduler.splits = arguments->split_k_slices;
     }
 
+    if constexpr (Operator::ArchTag::kMinComputeCapability >= 100) {
+      operator_args.hw_info.cluster_shape = dim3(
+        arguments->cluster_shape.m(),
+        arguments->cluster_shape.n(),
+        arguments->cluster_shape.k());
+      operator_args.hw_info.cluster_shape_fallback = dim3(
+        arguments->cluster_shape_fallback.m(),
+        arguments->cluster_shape_fallback.n(),
+        arguments->cluster_shape_fallback.k());
+    }
     return status;
   }
 

@@ -740,7 +740,6 @@ public:
           using VecType = uint_bit_t<VD * sizeof_bits_v<ElementD>>;
             Tensor tTR_gD_frg = recast<VecType>(coalesce(tTR_gD(_,_,_,epi_m,epi_n)));
             Tensor tTR_rD_frg = recast<VecType>(coalesce(tTR_rD));
-
             copy_if(pred_fn_D, tTR_rD_frg, tTR_gD_frg);
         } // for epi_m
       } // for epi_n

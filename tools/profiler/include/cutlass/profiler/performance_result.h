@@ -105,6 +105,12 @@ struct PerformanceResult {
     runtime(0)
   { }
 
+  // Copy constructor for deep copy
+  PerformanceResult(const PerformanceResult& other) = default;
+
+  // Explicitly define copy assignment operator
+  PerformanceResult& operator=(const PerformanceResult& other) = default;
+
   /// Returns true if the runtime is valid
   bool good() const {
     return runtime > 0;
