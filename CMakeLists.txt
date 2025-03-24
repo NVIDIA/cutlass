@@ -433,7 +433,21 @@ endif()
 
 if (CUTLASS_ENABLE_GDC_FOR_SM90)
   message(STATUS "Grid Dependency Control (GDC) is enabled for SM90 kernels (required for programmatic dependent launches).")
-  list(APPEND CUTLASS_CUDA_NVCC_FLAGS -DCUTLASS_ENABLE_GDC_FOR_SM90=1)
+  list(APPEND CUTLASS_CUDA_FLAGS -DCUTLASS_ENABLE_GDC_FOR_SM90=1)
+endif()
+
+if (NOT DEFINED CUTLASS_ENABLE_GDC_FOR_SM100_DEFAULT)
+  set(CUTLASS_ENABLE_GDC_FOR_SM100_DEFAULT ON)
+endif()
+
+set(CUTLASS_ENABLE_GDC_FOR_SM100
+    ${CUTLASS_ENABLE_GDC_FOR_SM100_DEFAULT}
+    CACHE BOOL
+    "Enables Grid Dependency Control (GDC) for SM100 kernels (required for PDL).")
+
+if (CUTLASS_ENABLE_GDC_FOR_SM100)
+  message(STATUS "Grid Dependency Control (GDC) is enabled for SM100 kernels (required for programmatic dependent launches).")
+  list(APPEND CUTLASS_CUDA_FLAGS -DCUTLASS_ENABLE_GDC_FOR_SM100=1)
 endif()
 
 set(CUTLASS_ENABLE_SYNCLOG OFF CACHE BOOL "Enable synchronization event logging for race condition debugging. WARNING: This redefines __syncthreads() and __syncwarp() in all downstream code!")
