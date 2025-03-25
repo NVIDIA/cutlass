@@ -84,6 +84,8 @@ as_arithmetic_tuple(T const& t) {
   } else {
     return t;
   }
+
+  CUTE_GCC_UNREACHABLE;
 }
 
 //
