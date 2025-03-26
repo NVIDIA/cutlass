@@ -97,6 +97,14 @@ struct SM90_TMA_LOAD_2D
        void      * smem_ptr,
        int32_t const& crd0, int32_t const& crd1)
   {
+    {
+    uint y = threadIdx.y + blockIdx.y * blockDim.y;
+    uint x = threadIdx.x + blockIdx.x * blockDim.x + gridDim.x * blockDim.x * y;
+    if (x == 0)
+    {
+      printf("2d load test\n");
+    }
+  }
 #if defined(CUTE_ARCH_TMA_SM90_ENABLED)
     uint64_t gmem_int_desc = reinterpret_cast<uint64_t>(desc_ptr);
     uint32_t smem_int_mbar = cast_smem_ptr_to_uint(mbar_ptr);
@@ -143,6 +151,14 @@ struct SM90_TMA_LOAD_3D
        void      * smem_ptr,
        int32_t const& crd0, int32_t const& crd1, int32_t const& crd2)
   {
+    {
+      uint y = threadIdx.y + blockIdx.y * blockDim.y;
+      uint x = threadIdx.x + blockIdx.x * blockDim.x + gridDim.x * blockDim.x * y;
+      if (x == 0)
+      {
+        printf("3d load test\n");
+      }
+    }
 #if defined(CUTE_ARCH_TMA_SM90_ENABLED)
     uint64_t gmem_int_desc = reinterpret_cast<uint64_t>(desc_ptr);
     uint32_t smem_int_mbar = cast_smem_ptr_to_uint(mbar_ptr);

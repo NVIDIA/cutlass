@@ -214,15 +214,15 @@ struct CollectiveMma<
   // Device side kernel params
   struct Params {
     // Assumption: StrideA is congruent with Problem_MK
-    using TMA_A = decltype(make_tma_copy_A_sm90(
-        GmemTiledCopyA{},
+    using TMA_A = decltype(make_dma_copy_A_sma(
+        SMA_DMA_LOAD{},
         make_tensor(static_cast<InternalElementA const*>(nullptr), repeat_like(StrideA{}, int32_t(0)), StrideA{}),
         SmemLayoutA{}(_,_,cute::Int<0>{}),
         TileShape{},
         ClusterShape{}));
     // Assumption: StrideB is congruent with Problem_NK
-    using TMA_B = decltype(make_tma_copy_B_sm90(
-        GmemTiledCopyB{},
+    using TMA_B = decltype(make_dma_copy_B_sma(
+        SMA_DMA_LOAD{},
         make_tensor(static_cast<InternalElementB const*>(nullptr), repeat_like(StrideB{}, int32_t(0)), StrideB{}),
         SmemLayoutB{}(_,_,cute::Int<0>{}),
         TileShape{},
@@ -255,14 +255,14 @@ struct CollectiveMma<
     Tensor tensor_a = make_tensor(ptr_A, make_layout(make_shape(M,K,L), args.dA));
     Tensor tensor_b = make_tensor(ptr_B, make_layout(make_shape(N,K,L), args.dB));
 
-    typename Params::TMA_A tma_load_a = make_tma_copy_A_sm90(
-        GmemTiledCopyA{},
+    typename Params::TMA_A tma_load_a = make_dma_copy_A_sma(
+        SMA_DMA_LOAD{},
         tensor_a,
         SmemLayoutA{}(_,_,cute::Int<0>{}),
         TileShape{},
         ClusterShape{});
-    typename Params::TMA_B tma_load_b = make_tma_copy_B_sm90(
-        GmemTiledCopyB{},
+    typename Params::TMA_B tma_load_b = make_dma_copy_B_sma(
+        SMA_DMA_LOAD{},
         tensor_b,
         SmemLayoutB{}(_,_,cute::Int<0>{}),
         TileShape{},
@@ -324,8 +324,8 @@ struct CollectiveMma<
 
     // TMA requires special handling of strides to deal with coord codomain mapping
     // Represent the full tensors -- get these from TMA
-    Tensor mA_mkl = mainloop_params.tma_load_a.get_tma_tensor(make_shape(M,K,L));                            // (m,k,l)
-    Tensor mB_nkl = mainloop_params.tma_load_b.get_tma_tensor(make_shape(N,K,L));                            // (n,k,l)
+    Tensor mA_mkl = mainloop_params.tma_load_a.get_dma_tensor(make_shape(M,K,L));                            // (m,k,l)
+    Tensor mB_nkl = mainloop_params.tma_load_b.get_dma_tensor(make_shape(N,K,L));                            // (n,k,l)
 
     // Make tiled views, defer the slice
     Tensor gA_mkl = local_tile(mA_mkl, TileShape{}, make_coord(_,_,_), Step<_1, X,_1>{});        // (BLK_M,BLK_K,m,k,l)
