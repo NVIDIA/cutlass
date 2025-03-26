@@ -555,7 +555,7 @@ public:
       auto n_max_coord = N - size<0>(gB) * get<1>(blk_coord);                             // N - BLK_N * n_coord
       auto k_residue   = K - size<1>(gA) * size<2>(gA);                                   // K - BLK_K * k_coord_max
       auto residue_mnk = make_tuple(m_max_coord, n_max_coord, k_residue);
-
+      printf("111\n");
       collective_mainloop.load(
         params.mainloop,
         mainloop_pipeline,
@@ -567,7 +567,7 @@ public:
         block_rank_in_cluster,
         shared_storage.tensors.mainloop
       );      
-
+      printf("222\n");
       collective_mainloop.mma(
         mainloop_pipeline,
         mainloop_pipe_consumer_state,
@@ -590,7 +590,7 @@ public:
       auto n_max_coord = N - size<0>(gB) * get<1>(blk_coord);                             // N - BLK_N * n_coord
       auto k_residue   = K - size<1>(gA) * size<2>(gA);                                   // K - BLK_K * k_coord_max
       auto residue_mnk = make_tuple(m_max_coord, n_max_coord, k_residue);
-
+      // printf("111\n");
       collective_mainloop.load(
         params.mainloop,
         mainloop_pipeline,
@@ -605,7 +605,7 @@ public:
 
       // mma consumer 
       Tensor accumulators = partition_fragment_C(tiled_mma, take<0,2>(blk_shape));                 // (MMA,MMA_M,MMA_N)
-
+      // printf("222\n");
       collective_mainloop.mma(
         mainloop_pipeline,
         mainloop_pipe_consumer_state,

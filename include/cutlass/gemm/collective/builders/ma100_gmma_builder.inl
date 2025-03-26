@@ -324,9 +324,17 @@ struct CollectiveBuilder<
   using AtomLayoutMNK = cute::conditional_t<cute::is_same_v<KernelScheduleType, KernelCooperative>,
       Layout<Shape<cute::Int<(size<0>(TileShape_MNK{}) < 128) ? 1 : 2>,_1,_1>>, Layout<Shape<_1,_1,_1>>>;
 
-  using TiledMma = decltype(cute::make_tiled_mma(cute::GMMA::aurora_ss_op_selector<
-      ElementAMma, ElementBMma, ElementAccumulator, TileShape_MNK, GMMA::Major::K, GMMA::Major::K>(), AtomLayoutMNK{}));
+  //way1:
+   // using TiledMma = decltype(cute::make_tiled_mma(cute::GMMA::aurora_ss_op_selector<
+   //     ElementAMma, ElementBMma, ElementAccumulator, TileShape_MNK, GMMA::Major::K, GMMA::Major::K>(), AtomLayoutMNK{}));
+   
+   //way2:
+   using TiledMma = decltype(cute::make_tiled_mma(cute::AMMA::aurora_ss_op_selector<
+    ElementAMma, ElementBMma, ElementAccumulator, TileShape_MNK, AMMA::Major::K, AMMA::Major::K>(), AtomLayoutMNK{}));
 
+  //way3:
+  // using TiledMma = decltype(cute::make_tiled_mma(Aurora_64x64x16_F16F16F16_SS<AMMA::Major::K,AMMA::Major::K>{}));
+  
   // static constexpr int NumLoadWarpGroups = 1;
 
   // using AlignmentTypeA = cute::uint_byte_t<static_cast<int>(sizeof(ElementA)) * AlignmentA>;

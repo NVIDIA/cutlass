@@ -39,7 +39,7 @@
 #include <cute/atom/mma_traits.hpp>            // cute::MMA_Traits
 #include <cute/layout_composed.hpp>            // cute::ComposedLayout
 #include <cute/numeric/integral_constant.hpp>  // cute::is_static
-
+#include <cute/arch/mma_aurora_gmma.hpp>
 namespace cute {
 
 // Fence between the async destination accumulators of GMMA & source for their dependent use

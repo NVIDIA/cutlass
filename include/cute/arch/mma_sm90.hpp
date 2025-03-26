@@ -33,6 +33,8 @@
 
 #include <cute/config.hpp>
 #include <cute/arch/mma.hpp>
+#include <cute/arch/mma_aurora_desc.hpp>
+#include <cute/arch/mma_aurora_gmma.hpp>
 
 // Config
 #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900)
@@ -345,6 +347,7 @@ struct MMA_16x8x16_C64C64C64C64_TN
 #include <cute/numeric/integral_constant.hpp>  // cute::is_static
 #include <cute/numeric/numeric_types.hpp>      // cute::half_t, cute::float_e4m3_t, cute::tfloat32_t, etc
 #include <cute/util/type_traits.hpp>           // cute::is_same_v
+
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -9526,6 +9529,11 @@ aurora_ss_op_selector()
   static_assert(size<0>(TileShape_MNK{}) % 64 == 0, "Tile_M must be a multiple of 64.");
   auto Tile_N = size<1>(TileShape_MNK{});
 
+  return AURORA::AMMA::MMA_Aurora_64x64x16_F16F16F16_SS<AURORA::AMMA::Major::K, AURORA::AMMA::Major::K, Args...>{};
+  //return AURORA::AMMA::MMA_Aurora_64x64x16_F16F16F16_SS<MajorA, MajorB, Args...>{};
+
+
+  /*
   // F16 accumulator
   if constexpr (is_same_v<ElementC, half_t>) {
 
@@ -11382,6 +11390,7 @@ aurora_ss_op_selector()
   else {
     static_assert(sizeof(ElementC) == 0, "Unknown ElementC accumulator type.");
   }
+  */
 }
 
 
