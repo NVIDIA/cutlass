@@ -143,6 +143,12 @@
 #endif
 
 //
+// Type
+//
+
+#include <cstdint>
+
+//
 // Debugging utilities
 //
 
