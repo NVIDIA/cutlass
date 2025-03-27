@@ -78,12 +78,13 @@ namespace detail {
         }
       }();
 
+      // norm_constant and qpvscale_rcps are all positive numbers.
+      auto acc_scales = cutlass::multiplies<Array<ElementCompute, NumVecs>>{}(norm_constant, qpvscale_rcps);
+
       CUTLASS_PRAGMA_UNROLL
       for (int sf_v = 0; sf_v < NumVecs; ++sf_v) {
-        // norm_constant and qpvscale_rcps[sf_v] are all positive numbers.
-        ElementCompute acc_scale = mul(norm_constant, qpvscale_rcps[sf_v]);
         // Map INF to fp32::max
-        acc_scale = minimum_with_nan_propagation<ElementCompute>{}(acc_scale, cutlass::platform::numeric_limits<ElementCompute>::max());
+        auto acc_scale = minimum_with_nan_propagation<ElementCompute>{}(acc_scales[sf_v], cutlass::platform::numeric_limits<ElementCompute>::max());
         // Convert to output type
         output_frgs[sf_v] = cutlass::NumericArrayConverter<ElementOutput, ElementCompute, SFVecSize>{}(mul_array(compute_frgs[sf_v], acc_scale));
       }
@@ -240,16 +241,18 @@ struct Sm100BlockScaleFactorRowStore {
       cutlass::multiplies<ElementCompute> mul;
       cutlass::maximum_absolute_value_reduction<Array<ElementCompute, SFVecSize>, true> amax_reduction;
 
+      cutlass::Array<ElementCompute, NumVecs> vec_maxs;
       cutlass::Array<ElementCompute, NumVecs> pvscales;
       // SF generation
       CUTLASS_PRAGMA_UNROLL
       for (int sf_v = 0; sf_v < NumVecs; ++sf_v) {
         compute_frgs[sf_v] = NumericArrayConverter<ElementCompute, ElementInput, SFVecSize>{}(input_frgs[sf_v]);
         /// Step1: get max across a vector
-        ElementCompute vec_max = amax_reduction(ElementCompute(0), compute_frgs[sf_v]);
-        /// Step2: Compute Scale
-        pvscales[sf_v] = mul(vec_max, norm_constant_scaled_down);
+        vec_maxs[sf_v] = amax_reduction(ElementCompute(0), compute_frgs[sf_v]);
       }
+
+      /// Step2: Compute Scale
+      pvscales = cutlass::multiplies<Array<ElementCompute, NumVecs>>{}(vec_maxs, norm_constant_scaled_down);
 
       tC_rSFD_frg(_0{}) = cutlass::NumericArrayConverter<UnderlyingElementBlockScaleFactor, ElementCompute, NumVecs>{}(pvscales);
 

@@ -646,12 +646,12 @@ public:
       thread_idx
     };
 
-    auto cst_callbacks = fusion_callbacks.get_consumer_store_callbacks<RefSrc>(cst_args);
-    bool is_C_load_needed = fusion_callbacks.is_C_load_needed();
-
     auto synchronize = [] () CUTLASS_LAMBDA_FUNC_INLINE { cutlass::arch::NamedBarrier::sync(ThreadCount, cutlass::arch::ReservedNamedBarriers::EpilogueBarrier); };
 
+    // The Epilogue Loop
     auto epi_loop_fn = [&] (auto& cst_callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
+      bool is_C_load_needed = fusion_callbacks.is_C_load_needed();
+
       // Ensure there are no threads from the previous wave writing to shared memory being utilized for the current wave.
       synchronize();
       cst_callbacks.begin();
@@ -747,6 +747,10 @@ public:
       cst_callbacks.end();
     };
 
+    //
+    // BEGIN EPILOGUE
+    //
+    auto cst_callbacks = fusion_callbacks.template get_consumer_store_callbacks<RefSrc>(cst_args);
     epi_loop_fn(cst_callbacks);
     return cute::make_tuple(acc_pipe_consumer_state);
   }

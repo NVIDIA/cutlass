@@ -210,6 +210,45 @@ struct Clamp<Array<T,N>> {
   }
 };
 
+// Lower Bound
+template <typename T>
+struct LowerBound {
+  struct Arguments {
+    T lower_bound;
+  };
+
+  CUTLASS_HOST_DEVICE
+  T operator()(T const& value, T const& lower_bound) const {
+    constexpr bool PropagateNaN = true;
+    maximum<T, PropagateNaN> mx;
+
+    return mx(value, lower_bound);
+  }
+
+  CUTLASS_HOST_DEVICE
+  T operator()(T const& value, Arguments const& args = Arguments()) const {
+    return this->operator()(value, args.lower_bound);
+  }
+};
+
+template <typename T, int N>
+struct LowerBound<Array<T,N>> {
+  using Arguments = typename LowerBound<T>::Arguments;
+
+  CUTLASS_HOST_DEVICE
+  Array<T,N> operator()(Array<T,N> const& values, T const& lower_bound) const {
+    constexpr bool PropagateNaN = true;
+    maximum<Array<T,N>, PropagateNaN> mx;
+
+    return mx(values, lower_bound);
+  }
+
+  CUTLASS_HOST_DEVICE
+  Array<T,N> operator()(Array<T,N> const& values, Arguments const& args = Arguments()) const {
+    return this->operator()(values, args.lower_bound);
+  }
+};
+
 // Leaky Relu operator
 template <typename T>
 struct LeakyReLU {
@@ -567,6 +606,28 @@ struct GELU_taylor {
   }
 };
 
+template <>
+struct GELU_taylor <float>{
+  static const bool kIsHeavy = true;
+  using T = float;
+  CUTLASS_HOST_DEVICE
+  T operator()(T const &z) const {
+    // 0.5f * (x + x * tanh(x * (0.797885f + 0.0356774f * x * x)));
+    T k0 = T(0.7978845608028654);
+    T tmp = T(0.044715);
+    T k1 = T(k0*tmp);
+    multiply_add<T> fma;
+    multiplies<T> mul;
+    T v0 = mul(k1, z);
+    T v1 = fma(v0, z, k0);
+    T v2 = mul(z, v1);
+    T v3 = fast_tanh(v2);
+    T v4 = fma(z, v3, z);
+    T v5 = mul(cutlass::constants::half<T>(), v4);
+    return v5;
+  }
+};
+
 template <int N>
 struct GELU_taylor<Array<half_t, N> > {
   static const bool kIsHeavy = true;
@@ -591,6 +652,30 @@ struct GELU_taylor<Array<half_t, N> > {
     y = mul(mul(z, cutlass::constants::half<T>()), add(cutlass::constants::one<T>(), tanh(u)));
 
     return y;
+  }
+};
+
+template <int N>
+struct GELU_taylor<Array<float, N> > {
+  static const bool kIsHeavy = true;
+
+  CUTLASS_HOST_DEVICE
+  Array<float, N> operator()(Array<float, N> const &value) const {
+    multiply_add<Array<float, N>> fma;
+    multiplies<Array<float, N>> mul;
+    fast_tanh_op<Array<float, N>> tanh;
+    // 0.5f * (x + x * tanh(x * (0.797885f + 0.0356774f * x * x)));
+    float k0 = float(0.7978845608028654);
+    float tmp = float(0.044715);
+    float k1 = float(k0*tmp);
+
+    Array<float, N> v0 = mul(k1, value);
+    Array<float, N> v1 = fma(v0, value, k0);
+    Array<float, N> v2 = mul(value, v1);
+    Array<float, N> v3 = tanh(v2);
+    Array<float, N> v4 = fma(value, v3, value);
+    Array<float, N> v5 = mul(cutlass::constants::half<float>(), v4);
+    return v5;
   }
 };
 
