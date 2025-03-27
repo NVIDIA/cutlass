@@ -282,6 +282,8 @@ def _computeFlopsPerByte(operation, m, n, k, batch_count=1, beta=0.0):
 def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
                               ):
   profiler_reference_computing = "--verification-providers=device --providers=cutlass"
+  
+
   # beta values for L0 and L1
   # TODO: randomize beta values for wider coverage
   beta_values = [0.5]

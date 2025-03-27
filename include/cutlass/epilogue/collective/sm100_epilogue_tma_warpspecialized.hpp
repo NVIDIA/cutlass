@@ -687,7 +687,7 @@ public:
     // OOB predication for tile quantization "residue"
     // Absolute coordinate tensors (dynamic)
     Tensor mD_crd = make_identity_tensor(make_shape(M,N));                                                     // (M,N)
-    Tensor cD_mn = local_tile(mD_crd, take<0,2>(cta_tile_mnk), make_coord(m_coord, n_coord));        // (CTA_M,CTA_N)
+    Tensor cD_mn = local_tile(mD_crd, take<0,2>(cta_tile_mnk), make_coord(m_coord, n_coord));          // (CTA_M,CTA_N)
     Tensor tTR_cD_mn = thread_t2r.partition_D(flat_divide(cD_mn, EpilogueTile{}));     // (T2R,T2R_M,T2R_N,EPI_M,EPI_N)
     // Relative coordinate tensors (static)
     Tensor cD = make_counting_tensor(cD_mn.layout());                                                  // (CTA_M,CTA_N)
@@ -696,7 +696,7 @@ public:
     auto residue_cD = make_coord(M,N) - cD_mn(_0{});                                                           // (m,n)
     auto residue_tTR_cD = make_coord(M,N) - tTR_cD_mn(_0{});                                                   // (m,n)
 
-    // Get the fusion callbacks for the consumer store warps
+    // Arguments for the fusion callbacks for the consumer store warps
     constexpr bool RefSrc = false; // Register tensors reference T2R copy dst layout
     auto cst_args = cutlass::epilogue::fusion::detail::ConsumerStoreArgs{
                       problem_shape_mnkl,
@@ -712,10 +712,6 @@ public:
                       tTR_rC,
                       thread_idx
                     };
-
-    auto cst_callbacks = fusion_callbacks.template get_consumer_store_callbacks<RefSrc>(cst_args);
-    bool is_producer_load_needed = fusion_callbacks.is_producer_load_needed();
-    bool is_C_load_needed = is_source_supported && fusion_callbacks.is_C_load_needed();
 
     // Thread synchronizer for previously issued waits or fences
     // to ensure visibility of smem reads/writes to threads or TMA unit
@@ -756,8 +752,12 @@ public:
     [[maybe_unused]] int epi_n_prev = 0;
     static_assert(not (DelayTmaStore and ReuseSmemC and StagesC <= StagesD), "This TMA epilogue configuration will deadlock");
 
+    // The Epilogue Loop
     auto epi_loop_fn = [&] (auto& cst_callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
-      // The TMA store sequence for one subtile iteration
+      bool is_producer_load_needed = fusion_callbacks.is_producer_load_needed();
+      bool is_C_load_needed = is_source_supported && fusion_callbacks.is_C_load_needed();
+
+      // The TMA store sequence for one epilogue loop iteration
       auto tma_store_fn = [&] (int epi_m, int epi_n) CUTLASS_LAMBDA_FUNC_INLINE {
         // Write the tile from smem to gmem with TMA
         cutlass::arch::fence_view_async_shared(); // ensure smem writes are visible to TMA
@@ -765,22 +765,22 @@ public:
         if (issue_tma_store) {
           copy(params.tma_store_d, bSG_sD(_,_,_,store_pipe_producer_state.index()), bSG_gD(_,_,_,epi_m,epi_n));
         }
-
+  
         // Post async fence, pre TMA commit callback entry point
         cst_callbacks.tma_store(epi_m, epi_n, store_pipe_producer_state.count(), issue_tma_store);
-
+  
         // Commit the TMA stores for this stage
         if (issue_tma_store) {
           store_pipeline.producer_commit(store_pipe_producer_state);
         }
         ++store_pipe_producer_state;
-
+  
         // Wait for the next smem buffer to be available
         if (issue_tma_store) {
           store_pipeline.producer_acquire(store_pipe_producer_state);
         }
         synchronize();
-
+  
         if constexpr (ReuseSmemC) {
           // producer_acquire returns when at most StagesD-1 committed stores are pending
           bool store_finished = store_pipe_producer_state.count() > StorePipeline::UnacquiredStages;
@@ -792,11 +792,8 @@ public:
             ++load_pipe_consumer_state;
           }
         }
-      };
+      }; // tma_store_fn
 
-      //
-      // BEGIN EPILOGUE
-      //
       cst_callbacks.begin();
       if (cst_callbacks.begin_sync_needed()) {
         synchronize();
@@ -941,9 +938,13 @@ public:
       }
 
       cst_callbacks.end();
-    };
+    }; // epi_loop_fn
 
-      epi_loop_fn(cst_callbacks);
+    //
+    // BEGIN EPILOGUE
+    //
+    auto cst_callbacks = fusion_callbacks.template get_consumer_store_callbacks<RefSrc>(cst_args);
+    epi_loop_fn(cst_callbacks);
     return cute::make_tuple(load_pipe_consumer_state, store_pipe_producer_state, acc_pipe_consumer_state);
   }
 

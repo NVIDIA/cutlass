@@ -987,6 +987,21 @@ struct multiply_add<Array<T, N>, Array<T, N>, Array<T, N>> {
   }
 
   CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &a, Array<T, N> const &b, T const &scalar) const {
+
+    Array<T, N> result;
+    multiply_add<T> scalar_op;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = scalar_op(a[i], b[i], scalar);
+    }
+
+    return result;
+  }
+
+
+  CUTLASS_HOST_DEVICE
   Array<T, N> operator()(Array<T, N> const &a, T const &scalar_b, T const &scalar_c) const {
 
     Array<T, N> result;

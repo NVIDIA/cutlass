@@ -43,8 +43,6 @@
 
 #pragma once
 
-#if !(defined(__clang__) && defined(__CUDA__))
-
 #include "cutlass/wmma_array.h"
 #include "cutlass/layout/matrix.h"
 
@@ -157,8 +155,4 @@ public:
 } // namespace cutlass
 
 ////////////////////////////////////////////////////////////////////////////////
-
-#else
-#error (defined(__clang__) && defined(__CUDA__))
-#endif // !defined(__clang__)
 

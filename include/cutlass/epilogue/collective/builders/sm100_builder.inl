@@ -866,6 +866,45 @@ struct CallbacksBuilder<
   >;
 };
 
+// ptr array aux fusion callbacks builder for sm100 tma epilogue
+template <
+  int StagesC,
+  int StagesD,
+  int FragmentSize,
+  bool ReuseSmemC,
+  bool DelayTmaStore,
+  class FusionOp,
+  class CtaTileShape_MNK,
+  class EpilogueTile_MN,
+  class ElementAccumulator,
+  class AccLoadOp
+>
+struct CallbacksBuilder<
+  Sm100PtrArrayTmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore>,
+  FusionOp,
+  CtaTileShape_MNK,
+  EpilogueTile_MN,
+  ElementAccumulator,
+  AccLoadOp,
+  cute::enable_if_t<(FusionOp::IsAuxOutSupported ^ FusionOp::IsAuxInSupported) // only one aux tensor
+              && not cute::is_subbyte_v<typename FusionOp::ElementAux>>
+> {
+  using GmemStrideTypeAux = gemm::TagToStrideC_t<typename FusionOp::GmemLayoutTagAux>;
+  using SmemLayoutAtomAux = decltype(detail::sm100_get_epilogue_smem_swizzle_layout_atom<
+    GmemStrideTypeAux, typename FusionOp::ElementAux, EpilogueTile_MN>());
+  using CopyOpR2S = decltype(detail::sm100_get_smem_store_op<
+    GmemStrideTypeAux, typename FusionOp::ElementAux, ElementAccumulator, AccLoadOp>());
+  using CopyOpS2R = decltype(detail::sm100_get_smem_load_op<
+    GmemStrideTypeAux, typename FusionOp::ElementAux, ElementAccumulator, AccLoadOp>());
+  using SmemCopyOpAux = cute::conditional_t<FusionOp::IsAuxOutSupported, CopyOpR2S, CopyOpS2R>;
+
+  using Callbacks = fusion::FusionCallbacks<
+    Sm100PtrArrayTmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore>,
+    FusionOp, CtaTileShape_MNK, EpilogueTile_MN,
+    SmemLayoutAtomAux, SmemCopyOpAux
+  >;
+};
+
 template <
   int StagesC,
   int StagesD,
@@ -930,7 +969,7 @@ template <
   class ElementC_,
   class GmemLayoutTagC_,
   int AlignmentC,
-  class ElementD,
+  class ElementD_,
   class GmemLayoutTagD,
   int AlignmentD,
   class Schedule,
@@ -942,6 +981,9 @@ private:
   static constexpr bool Is2SmMma = is_base_of_v<TmaWarpSpecialized2Sm, Schedule>;
   static_assert(Is1SmMma ^ Is2SmMma, "unsupported schedule");
   static_assert(not (Is2SmMma && size<0>(ClusterShape_MNK{}) % 2 == 1), "schedule + cluster mismatch");
+
+  static constexpr bool DisableDestination = cute::is_void_v<ElementD_>;
+  using ElementD = cute::conditional_t<DisableDestination,fusion::get_element_aux_t<FusionOpOrCallbacks>,ElementD_>; // prevents void ref breakages
 
   // Passing void C disables source load + smem allocation
   static constexpr bool DisableSource = cute::is_void_v<ElementC_>;
@@ -1168,7 +1210,7 @@ public:
       EpilogueTile_MN,
       ElementC_, // Need to pass void through to expose via GemmUniversal
       GmemStrideTypeC,
-      ElementD,
+      ElementD_, // Need to pass void through to expose via GemmUniversal
       GmemStrideTypeD,
       decltype(fusion_callbacks()),
       AccLoadOp,

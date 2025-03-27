@@ -57,7 +57,7 @@ public:
    * @pre Must never be issued by more than one warp at the same time.
    * @pre For repeated allocations, the same warp must be used to issue all allocations.
   **/
-  __device__ void
+  CUTE_HOST_DEVICE void
   allocate(int num_columns, uint32_t* dst_ptr) {
   #if defined(CUTE_ARCH_TCGEN05_TMEM_ENABLED)
     uint32_t dst_intptr = cute::cast_smem_ptr_to_uint(dst_ptr);
@@ -116,7 +116,7 @@ public:
    * @pre For repeated allocations, the same warp must be used to issue all allocations.
    * @pre The 2 warps from participating CTAs have the same logical warp ID.
   **/
-  __device__ void
+  CUTE_HOST_DEVICE void
   allocate(int num_columns, uint32_t* dst_ptr) {
   #if defined(CUTE_ARCH_TCGEN05_TMEM_ENABLED)
     uint32_t dst_intptr = cute::cast_smem_ptr_to_uint(dst_ptr);

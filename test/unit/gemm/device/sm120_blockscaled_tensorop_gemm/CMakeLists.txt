@@ -45,24 +45,26 @@ cutlass_test_unit_gemm_device_add_executable(
   BATCH_SOURCES ON
   BATCH_SIZE 1
 
-  sm120_bs_gemm_f4_f4_f32_f32_epilogue_fusion.cu
-  sm120_bs_gemm_f4_f4_f32_f4_epilogue_fusion.cu
-  sm120_bs_gemm_f4_f4_f32_bf16_epilogue_fusion.cu
+  sm120_bs_gemm_nvf4_nvf4_f32_f32_epilogue_fusion.cu
+  sm120_bs_gemm_nvf4_nvf4_f32_nvf4_epilogue_fusion.cu
+  sm120_bs_gemm_nvf4_nvf4_f32_bf16_epilogue_fusion.cu
 )
 
 cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_bs_gemm_device_tensorop_sm120
 
-  sm120_bs_gemm_f4_f4_f32_bf16.cu
-  sm120_bs_gemm_f4_f4_f32_f16.cu
-  sm120_bs_gemm_f4_f4_f32_f32.cu
-  sm120_bs_gemm_f4_f4_f32_f32_narrow_output.cu
-  sm120_bs_gemm_f4_f4_f32_epilogue.cu
+  sm120_bs_gemm_nvf4_nvf4_f32_bf16.cu
+  sm120_bs_gemm_nvf4_nvf4_f32_f16.cu
+  sm120_bs_gemm_nvf4_nvf4_f32_f32.cu
+  sm120_bs_gemm_nvf4_nvf4_f32_f32_narrow_output.cu
+  sm120_bs_gemm_nvf4_nvf4_f32_epilogue.cu
+  sm120_bs_gemm_mxf4_mxf4_f32_f32.cu
+  sm120_bs_gemm_mxf6_mxf8_f32_f32.cu
 )
 
 cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_bs_gemm_device_tensorop_sm120_stream_k
-  sm120_bs_gemm_f4_f4_f32_f32_stream_k.cu
+  sm120_bs_gemm_nvf4_nvf4_f32_f32_stream_k.cu
 )
 
 endif()

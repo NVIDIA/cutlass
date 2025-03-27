@@ -45,7 +45,11 @@ namespace cutlass::gemm::collective::detail {
 
 constexpr int sm120_smem_capacity_bytes = cutlass::arch::sm120_smem_capacity_bytes;
 // Helper for selecting the shared memory copy atom to use for operand A
-template <class ElementA, class ElementB, bool UseF8f6f4>
+template <
+  class ElementA,
+  class ElementB,
+  bool UseF8f6f4
+>
 CUTLASS_HOST_DEVICE constexpr
 auto
 sm120_rr_smem_copy_selector_A() {
@@ -66,7 +70,11 @@ sm120_rr_smem_copy_selector_A() {
 }
 
 // Helper for selecting the shared memory copy atom to use for operand B
-template <class ElementA, class ElementB, bool UseF8f6f4>
+template <
+  class ElementA,
+  class ElementB,
+  bool UseF8f6f4
+>
 CUTLASS_HOST_DEVICE constexpr
 auto
 sm120_rr_smem_copy_selector_B() {

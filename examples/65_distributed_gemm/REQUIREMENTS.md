@@ -17,6 +17,8 @@ Like all other CUTLASS examples, the NVIDIA driver, runtime, and CUDA Toolkit ar
 This example specifically requires CUDA Toolkit 12.6 or newer, due to some of the necessary
 CUDA graph APIs.
 
+The minimum CUDA driver version for running this example is [560.28.03](https://docs.nvidia.com/cuda/archive/12.6.0/cuda-toolkit-release-notes/index.html#id5).
+
 ### Hardware / driver settings
 
 This example requires Hopper GPUs with NVLink network.

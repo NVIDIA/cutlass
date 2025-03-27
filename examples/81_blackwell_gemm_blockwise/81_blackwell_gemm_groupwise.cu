@@ -30,7 +30,7 @@
  **************************************************************************************************/
 
 /*! \file
-    \brief A FP8 groupwise scaled GEMM example for the NVIDIA Blackwell SM100 architecture using CUTLASS.
+    \brief An FP8 groupwise scaled GEMM example for the NVIDIA Blackwell SM100 architecture using CUTLASS.
 */
 
 #include <iostream>
@@ -96,9 +96,9 @@ using ElementCompute = float;
 
 // MMA and Cluster Tile Shapes
 // Shape of the tile computed by tcgen05 MMA, could be across 2 SMs if Cluster Shape %2 == 0 
-using MmaTileShape_MNK = Shape<_128,_128,_128>;                          
+using MmaTileShape_MNK = Shape<_256,_128,_128>;                          
 // Shape of the threadblocks in a cluster
-using ClusterShape_MNK = Shape<_1,_1,_1>;
+using ClusterShape_MNK = Shape<_2,_1,_1>;
  
 constexpr int ScaleGranularityM = 1;
 constexpr int ScaleGranularityN = 128;
@@ -120,7 +120,7 @@ using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBui
     ElementAccumulator, ElementCompute,
     ElementC, LayoutC, AlignmentC,
     ElementD, LayoutC, AlignmentD,
-    cutlass::epilogue::TmaWarpSpecialized1Sm
+    cutlass::epilogue::collective::EpilogueScheduleAuto
   >::CollectiveOp;
 
 using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
@@ -130,7 +130,7 @@ using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder
     ElementAccumulator,
     MmaTileShape_MNK, ClusterShape_MNK,
     cutlass::gemm::collective::StageCountAutoCarveout<static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
-    cutlass::gemm::KernelTmaWarpSpecializedBlockwise1SmSm100 // Note: Groupwise and Blockwise only support 1 SM MMA at this moment
+    cutlass::gemm::KernelScheduleSm100Blockwise
   >::CollectiveOp;
 
 using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
@@ -227,8 +227,7 @@ struct Options {
   }
 
   /// Compute performance in GFLOP/s
-  double gflops(double runtime_s) const
-  {
+  double gflops(double runtime_s) const {
     // Two flops per multiply-add
     uint64_t flop = uint64_t(2) * m * n * k;
     double gflop = double(flop) / double(1.0e9);
@@ -237,8 +236,7 @@ struct Options {
 };
 
 /// Result structure
-struct Result
-{
+struct Result {
   double avg_runtime_ms;
   double gflops;
   cutlass::Status status;
@@ -278,13 +276,16 @@ bool initialize_tensor(
     if (bits_input == 1) {
       scope_max = 2;
       scope_min = 0;
-    } else if (bits_input <= 8) {
+    } 
+    else if (bits_input <= 8) {
       scope_max = 2;
       scope_min = -2;
-    } else if (bits_output == 16) {
+    } 
+    else if (bits_output == 16) {
       scope_max = 5;
       scope_min = -5;
-    } else {
+    } 
+    else {
       scope_max = 8;
       scope_min = -8;
     }
@@ -397,9 +398,8 @@ void initialize(const Options &options) {
 }
 
 /// Populates a Gemm::Arguments structure from the given commandline options
-typename Gemm::Arguments args_from_options(const Options &options)
-{
-  typename Gemm::Arguments arguments{
+typename Gemm::Arguments args_from_options(const Options &options) {
+  typename Gemm::Arguments arguments {
     cutlass::gemm::GemmUniversalMode::kGemm,
     {options.m, options.n, options.k, options.l},
     {tensor_A.device_data(), stride_A, 
@@ -473,8 +473,7 @@ bool verify(const Options &options) {
 
 /// Execute a given example GEMM computation
 template <typename Gemm>
-int run(Options &options)
-{
+int run(Options &options) {
   initialize(options);
 
   
@@ -515,8 +514,7 @@ int run(Options &options)
   }
 
   // Run profiling loop
-  if (options.iterations > 0)
-  {
+  if (options.iterations > 0) {
     GpuTimer timer;
     timer.start();
     for (int iter = 0; iter < options.iterations; ++iter) {

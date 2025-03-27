@@ -985,7 +985,7 @@ public:
     consumer_release(state.index());
   }
 
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   uint32_t producer_get_barrier(PipelineState state) {
     return cute::cast_smem_ptr_to_uint(reinterpret_cast<void*>(&full_barrier_ptr_[state.index()]));
   }

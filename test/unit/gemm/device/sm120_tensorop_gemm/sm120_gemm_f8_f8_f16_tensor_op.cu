@@ -82,7 +82,7 @@ TEST(SM120_Device_Gemm_fe4m3t_fe4m3n_f16n_tensor_op_f32, 128x64x64_1x1x1) {
       ElementAccumulator, ElementCompute,
       ElementC, LayoutC, AlignmentC,
       ElementD, LayoutD, AlignmentD,
-      cutlass::epilogue::TmaWarpSpecializedCooperative
+      cutlass::epilogue::collective::EpilogueScheduleAuto
     >::CollectiveOp;
 
   using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<

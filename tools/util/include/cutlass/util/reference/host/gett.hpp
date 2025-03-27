@@ -645,8 +645,9 @@ void gett_epilogue(
       (cute::is_same_v<ActivationFunctor, cutlass::epilogue::thread::ReLu<ElementCompute>> or
        cute::is_same_v<ActivationFunctor, cutlass::epilogue::thread::Clamp<ElementCompute>>) and 
       cute::is_same_v<ElementAux, cutlass::uint1b_t>;
-  constexpr bool IsClamp =
-      cute::is_same_v<ActivationFunctor, cutlass::epilogue::thread::Clamp<ElementCompute>>;
+  constexpr bool UseReLU =
+      cute::is_same_v<ActivationFunctor, cutlass::epilogue::thread::Clamp<ElementCompute>>; // Treat Clamp as ReLU
+
   constexpr bool IsBackpropFusion =
       cute::is_same_v<ActivationFunctor, cutlass::epilogue::thread::dGELU<ElementCompute>> or
       cute::is_same_v<ActivationFunctor, cutlass::epilogue::thread::dReLU<ElementCompute>>;
@@ -752,8 +753,9 @@ void gett_epilogue(
             }
           }
 
-          if constexpr (IsClamp) { // Treat Clamp as ReLU
-            output = activation(output, {0, std::numeric_limits<ElementCompute>::max()});
+          if constexpr (UseReLU) {
+            cutlass::epilogue::thread::ReLU<ElementCompute> relu;
+            output = relu(output);
           }
           else {
             output = activation(output);

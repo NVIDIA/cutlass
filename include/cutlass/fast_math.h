@@ -399,6 +399,20 @@ struct FastDivmod {
     return div(dividend);
   }
 
+  /// Computes integer division remainder using precomputed values.
+  CUTLASS_HOST_DEVICE
+  int rem(int dividend) const {
+    int quotient, remainder;
+    fast_divmod(quotient, remainder, dividend);
+    return remainder;
+  }
+
+  /// Alias for `rem`
+  CUTLASS_HOST_DEVICE
+  int remainder(int dividend) const {
+    return rem(dividend);
+  }
+
   /// Computes integer division and modulus using precomputed values. This is computationally
   /// inexpensive.
   ///

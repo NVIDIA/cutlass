@@ -116,6 +116,172 @@ sm90_partition_for_epilogue(
 //
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+//
+// Producer load callbacks, called by the epilogue load warp.
+// Operations usually only define this if TMA load is needed. Most operations will reuse this empy implementation
+// Load callbacks are responsible for issuing corresponding mbarrier expect-tx ops for any TMA loads issued, but
+// are not responsible for issuing the producer_commit barrier arrival, which is issued by the collective instead
+// If this is non-empty, is_producer_load_needed must be true.
+//
+template <class CallbacksTuple>
+struct ProducerLoadCallbacksImpl {
+  // Callbacks can store non-persistent variables (e.g. tensors) or copies of persistent variables
+  CallbacksTuple callbacks_tuple;
+
+  // Before entry of the subtile load loop
+  CUTLASS_DEVICE void
+  begin() {
+    for_each(callbacks_tuple,
+      [&] (auto& callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
+        callbacks.begin();
+      }
+    );
+  }
+
+  // Entry of the subtile load loop. Aux loads usually performed here
+  // Upon entry the producer acquire of the current subtile lock has completed.
+  // Upon exit all TMA loads for this subtile must have been issued, with corresponding expect-tx operations
+  CUTLASS_DEVICE void
+  step(uint64_t* full_mbarrier_ptr, int epi_m, int epi_n, int load_iteration, bool issue_tma_load) {
+    for_each(callbacks_tuple,
+      [&] (auto& callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
+        callbacks.step(full_mbarrier_ptr, epi_m, epi_n, load_iteration, issue_tma_load);
+      }
+    );
+  }
+
+  // Exit of the subtile load loop.
+  CUTLASS_DEVICE void
+  end() {
+    for_each(callbacks_tuple,
+      [] (auto& callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
+        callbacks.end();
+      }
+    );
+  }
+};
+
+
+//
+// Consumer store callbacks, called by the epilogue store warps.
+// All operations must redefine this, with optional inheritance from this empty implementation.
+//
+template <class CallbacksTuple>
+struct ConsumerStoreCallbacksImpl {
+  // Callbacks can store non-persistent variables (e.g. tensors) or copies of persistent variables
+  CallbacksTuple callbacks_tuple;
+
+  // Before entry of subtile store loop. Gmem broadcasts usually performed here.
+  CUTLASS_DEVICE void
+  begin() {
+    for_each(callbacks_tuple,
+      [] (auto& callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
+        callbacks.begin();
+      }
+    );
+  }
+
+  // Is a thread sync needed after begin(). Allows chaining async copies across multiple nodes
+  CUTLASS_DEVICE bool
+  begin_sync_needed() const {
+    return cute::apply(callbacks_tuple,
+      [] (auto const&... callbacks) {
+        return (false || ... || callbacks.begin_sync_needed());
+      }
+    );
+  }
+
+  // Start of subtile store iteration
+  CUTLASS_DEVICE void
+  begin_loop(int epi_m, int epi_n) {
+    for_each(callbacks_tuple,
+      [&] (auto& callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
+        callbacks.begin_loop(epi_m, epi_n);
+      }
+    );
+  }
+
+  // Before visit callback. Smem broadcasts usually performed here.
+  // Upon entry, all producer loads for this subtile are completed and visible.
+  CUTLASS_DEVICE void
+  previsit(int epi_m, int epi_n, int load_iteration, bool is_producer_load_needed) {
+    for_each(callbacks_tuple,
+      [&] (auto& callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
+        callbacks.previsit(epi_m, epi_n, load_iteration, is_producer_load_needed);
+      }
+    );
+  }
+
+  // Perform the fused elementwise computation
+  template <typename ElementAccumulator, typename... ElementInputs, int FragmentSize>
+  CUTLASS_DEVICE auto // returns an Array
+  visit(Array<ElementAccumulator, FragmentSize> const& frg_acc, int epi_v, int epi_m, int epi_n,
+        Array<ElementInputs, FragmentSize> const&... frg_inputs) // depends on the N-naryness of the op
+    = delete; // Must be implemented for each operation
+
+  // After visit call. Smem reductions usually performed here
+  // reduction_buffer is an arbitrary smem tensor that can be used for workspace
+  // It is each nodes reponsibility to assert that this buffer is sufficiently sized
+  // and to ensure that this buffer is no longer needed upon callback exit
+  // i.e. results are synchronized and no longer in the reduction buffer
+  //
+  // visit_results is a rmem tensor that contains the results of visit() for an entire
+  // on the current epilogue subtile
+  template <class STensor, class SyncFn, class VTensor>
+  CUTLASS_DEVICE void
+  reduce(STensor&& reduction_buffer, SyncFn const& sync_fn, int epi_m, int epi_n, bool is_last_iteration, VTensor visit_results) {
+    for_each(callbacks_tuple,
+      [&] (auto& callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
+        callbacks.reduce(reduction_buffer, sync_fn, epi_m, epi_n, is_last_iteration, visit_results);
+      }
+    );
+  }
+
+  // After reduce call, before smem async fence. Smem stores usually performed here.
+  // Upon exit, all smem stores for TMA must have been issued
+  CUTLASS_DEVICE void
+  postreduce(int epi_m, int epi_n, int store_iteration, bool issue_smem_store) {
+    for_each(callbacks_tuple,
+      [&] (auto& callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
+        callbacks.postreduce(epi_m, epi_n, store_iteration, issue_smem_store);
+      }
+    );
+  }
+
+  // After smem async fence, before TMA store commit. Aux stores usually performed here
+  // Upon exit, all TMA stores for this subtile must have been issued
+  // Because of the TMA store delay optimization, this entry point must ONLY be used for TMA stores
+  // other gmem stores can be placed in the reduce or postreduce entry points
+  CUTLASS_DEVICE void
+  tma_store(int epi_m, int epi_n, int store_iteration, bool issue_tma_store) {
+    for_each(callbacks_tuple,
+      [&] (auto& callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
+        callbacks.tma_store(epi_m, epi_n, store_iteration, issue_tma_store);
+      }
+    );
+  }
+
+  // End of subtile store iteration
+  CUTLASS_DEVICE void
+  end_loop(int epi_m, int epi_n) {
+    for_each(callbacks_tuple,
+      [&] (auto& callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
+        callbacks.end_loop(epi_m, epi_n);
+      }
+    );
+  }
+
+  // Exit of subtile store loop. Gmem reductions usually performed here.
+  CUTLASS_DEVICE void
+  end() {
+    for_each(callbacks_tuple,
+      [&] (auto& callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
+        callbacks.end();
+      }
+    );
+  }
+};
+
 template<
   class ProblemShapeMNKL,
   class TileShapeMNK,
@@ -349,51 +515,6 @@ struct Sm90VisitorImpl : Sm90VisitorImplBase<Ops...> {
     );
   }
 
-  //
-  // Producer load callbacks, called by the epilogue load warp.
-  // Operations usually only define this if TMA load is needed. Most operations will reuse this empy implementation
-  // Load callbacks are responsible for issuing corresponding mbarrier expect-tx ops for any TMA loads issued, but
-  // are not responsible for issuing the producer_commit barrier arrival, which is issued by the collective instead
-  // If this is non-empty, is_producer_load_needed must be true.
-  //
-  template <class CallbacksTuple>
-  struct ProducerLoadCallbacks {
-    // Callbacks can store non-persistent variables (e.g. tensors) or copies of persistent variables
-    CallbacksTuple callbacks_tuple;
-
-    // Before entry of the subtile load loop
-    CUTLASS_DEVICE void
-    begin() {
-      for_each(callbacks_tuple,
-        [&] (auto& callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
-          callbacks.begin();
-        }
-      );
-    }
-
-    // Entry of the subtile load loop. Aux loads usually performed here
-    // Upon entry the producer acquire of the current subtile lock has completed.
-    // Upon exit all TMA loads for this subtile must have been issued, with corresponding expect-tx operations
-    CUTLASS_DEVICE void
-    step(uint64_t* full_mbarrier_ptr, int epi_m, int epi_n, int load_iteration, bool issue_tma_load) {
-      for_each(callbacks_tuple,
-        [&] (auto& callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
-          callbacks.step(full_mbarrier_ptr, epi_m, epi_n, load_iteration, issue_tma_load);
-        }
-      );
-    }
-
-    // Exit of the subtile load loop.
-    CUTLASS_DEVICE void
-    end() {
-      for_each(callbacks_tuple,
-        [] (auto& callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
-          callbacks.end();
-        }
-      );
-    }
-  };
-
   // Producer load callbacks factory
   // All operations must redefine this, but most can just dispatch to the base impl
   template <class... Args>
@@ -405,130 +526,10 @@ struct Sm90VisitorImpl : Sm90VisitorImplBase<Ops...> {
       },
       [] (auto&&... callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
         auto callbacks_tuple = cute::make_tuple(callbacks...);
-        return ProducerLoadCallbacks<decltype(callbacks_tuple)>{callbacks_tuple};
+        return ProducerLoadCallbacksImpl<decltype(callbacks_tuple)>{callbacks_tuple};
       }
     );
   }
-
-  //
-  // Consumer store callbacks, called by the epilogue store warps.
-  // All operations must redefine this, with optional inheritance from this empty implementation.
-  //
-  template <class CallbacksTuple>
-  struct ConsumerStoreCallbacks {
-    // Callbacks can store non-persistent variables (e.g. tensors) or copies of persistent variables
-    CallbacksTuple callbacks_tuple;
-
-    // Before entry of subtile store loop. Gmem broadcasts usually performed here.
-    CUTLASS_DEVICE void
-    begin() {
-      for_each(callbacks_tuple,
-        [] (auto& callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
-          callbacks.begin();
-        }
-      );
-    }
-
-    // Is a thread sync needed after begin(). Allows chaining async copies across multiple nodes
-    CUTLASS_DEVICE bool
-    begin_sync_needed() const {
-      return cute::apply(callbacks_tuple,
-        [] (auto const&... callbacks) {
-          return (false || ... || callbacks.begin_sync_needed());
-        }
-      );
-    }
-
-    // Start of subtile store iteration
-    CUTLASS_DEVICE void
-    begin_loop(int epi_m, int epi_n) {
-      for_each(callbacks_tuple,
-        [&] (auto& callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
-          callbacks.begin_loop(epi_m, epi_n);
-        }
-      );
-    }
-
-    // Before visit callback. Smem broadcasts usually performed here.
-    // Upon entry, all producer loads for this subtile are completed and visible.
-    CUTLASS_DEVICE void
-    previsit(int epi_m, int epi_n, int load_iteration, bool is_producer_load_needed) {
-      for_each(callbacks_tuple,
-        [&] (auto& callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
-          callbacks.previsit(epi_m, epi_n, load_iteration, is_producer_load_needed);
-        }
-      );
-    }
-
-    // Perform the fused elementwise computation
-    template <typename ElementAccumulator, typename... ElementInputs, int FragmentSize>
-    CUTLASS_DEVICE auto // returns an Array
-    visit(Array<ElementAccumulator, FragmentSize> const& frg_acc, int epi_v, int epi_m, int epi_n,
-          Array<ElementInputs, FragmentSize> const&... frg_inputs) // depends on the N-naryness of the op
-      = delete; // Must be implemented for each operation
-
-    // After visit call. Smem reductions usually performed here
-    // reduction_buffer is an arbitrary smem tensor that can be used for workspace
-    // It is each nodes reponsibility to assert that this buffer is sufficiently sized
-    // and to ensure that this buffer is no longer needed upon callback exit
-    // i.e. results are synchronized and no longer in the reduction buffer
-    //
-    // visit_results is a rmem tensor that contains the results of visit() for an entire
-    // on the current epilogue subtile
-    template <class STensor, class SyncFn, class VTensor>
-    CUTLASS_DEVICE void
-    reduce(STensor&& reduction_buffer, SyncFn const& sync_fn, int epi_m, int epi_n, bool is_last_iteration, VTensor visit_results) {
-      for_each(callbacks_tuple,
-        [&] (auto& callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
-          callbacks.reduce(reduction_buffer, sync_fn, epi_m, epi_n, is_last_iteration, visit_results);
-        }
-      );
-    }
-
-    // After reduce call, before smem async fence. Smem stores usually performed here.
-    // Upon exit, all smem stores for TMA must have been issued
-    CUTLASS_DEVICE void
-    postreduce(int epi_m, int epi_n, int store_iteration, bool issue_smem_store) {
-      for_each(callbacks_tuple,
-        [&] (auto& callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
-          callbacks.postreduce(epi_m, epi_n, store_iteration, issue_smem_store);
-        }
-      );
-    }
-
-    // After smem async fence, before TMA store commit. Aux stores usually performed here
-    // Upon exit, all TMA stores for this subtile must have been issued
-    // Because of the TMA store delay optimization, this entry point must ONLY be used for TMA stores
-    // other gmem stores can be placed in the reduce or postreduce entry points
-    CUTLASS_DEVICE void
-    tma_store(int epi_m, int epi_n, int store_iteration, bool issue_tma_store) {
-      for_each(callbacks_tuple,
-        [&] (auto& callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
-          callbacks.tma_store(epi_m, epi_n, store_iteration, issue_tma_store);
-        }
-      );
-    }
-
-    // End of subtile store iteration
-    CUTLASS_DEVICE void
-    end_loop(int epi_m, int epi_n) {
-      for_each(callbacks_tuple,
-        [&] (auto& callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
-          callbacks.end_loop(epi_m, epi_n);
-        }
-      );
-    }
-
-    // Exit of subtile store loop. Gmem reductions usually performed here.
-    CUTLASS_DEVICE void
-    end() {
-      for_each(callbacks_tuple,
-        [&] (auto& callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
-          callbacks.end();
-        }
-      );
-    }
-  };
 
   // Consumer store callbacks factory
   // All operations must redefine this
@@ -544,7 +545,7 @@ struct Sm90VisitorImpl : Sm90VisitorImplBase<Ops...> {
       },
       [] (auto&&... callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
         auto callbacks_tuple = cute::make_tuple(callbacks...);
-        return ConsumerStoreCallbacks<decltype(callbacks_tuple)>{callbacks_tuple};
+        return ConsumerStoreCallbacksImpl<decltype(callbacks_tuple)>{callbacks_tuple};
       }
     );
   }
@@ -553,8 +554,8 @@ struct Sm90VisitorImpl : Sm90VisitorImplBase<Ops...> {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 // Convenience aliases
-using EmptyProducerLoadCallbacks = Sm90VisitorImpl<>::ProducerLoadCallbacks<cute::tuple<>>;
-using EmptyConsumerStoreCallbacks = Sm90VisitorImpl<>::ConsumerStoreCallbacks<cute::tuple<>>;
+using EmptyProducerLoadCallbacks = ProducerLoadCallbacksImpl<cute::tuple<>>;
+using EmptyConsumerStoreCallbacks = ConsumerStoreCallbacksImpl<cute::tuple<>>;
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -614,9 +615,9 @@ struct Sm90TreeVisitor : Sm90VisitorImpl<ChildOps..., NodeOp> {
   >
   CUTLASS_DEVICE auto
   get_consumer_store_callbacks(ConsumerStoreArgs<Args...> const& args) {
-    auto callbacks_tuple = Sm90VisitorImpl<ChildOps..., NodeOp>::
+    auto callbacks_impl = Sm90VisitorImpl<ChildOps..., NodeOp>::
       template get_consumer_store_callbacks<ReferenceSrc>(args);
-    return ConsumerStoreCallbacks<decltype(callbacks_tuple)>(std::move(callbacks_tuple));
+    return ConsumerStoreCallbacks<decltype(callbacks_impl)>(cute::move(callbacks_impl));
   }
 };
 
@@ -663,9 +664,9 @@ struct Sm90SplitTreeVisitor : Sm90VisitorImpl<InputTree, AuxOutTrees..., OutputT
   >
   CUTLASS_DEVICE auto
   get_consumer_store_callbacks(ConsumerStoreArgs<Args...> const& args) {
-    auto callbacks_tuple = Sm90VisitorImpl<InputTree, AuxOutTrees..., OutputTree>::
+    auto callbacks_impl = Sm90VisitorImpl<InputTree, AuxOutTrees..., OutputTree>::
       template get_consumer_store_callbacks<ReferenceSrc>(args);
-    return ConsumerStoreCallbacks<decltype(callbacks_tuple)>(std::move(callbacks_tuple));
+    return ConsumerStoreCallbacks<decltype(callbacks_impl)>(cute::move(callbacks_impl));
   }
 };
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -739,9 +740,9 @@ struct Sm90TopologicalVisitor : Sm90VisitorImpl<Ops...> {
   >
   CUTLASS_DEVICE auto
   get_consumer_store_callbacks(ConsumerStoreArgs<Args...> const& args) {
-    auto callbacks_tuple = Sm90VisitorImpl<Ops...>::
+    auto callbacks_impl = Sm90VisitorImpl<Ops...>::
       template get_consumer_store_callbacks<ReferenceSrc>(args);
-    return ConsumerStoreCallbacks<decltype(callbacks_tuple)>(std::move(callbacks_tuple));
+    return ConsumerStoreCallbacks<decltype(callbacks_impl)>(cute::move(callbacks_impl));
   }
 };
 

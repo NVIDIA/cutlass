@@ -499,3 +499,40 @@ TEST(SM80_CuTe_Ampere, CooperativeGemm2_Double_MMA_Predicated_Reg) {
 
   test_cooperative_gemm_col_major_layout_rmem_c<thread_block_size, value_type>(shape_mnk, tiled_mma);
 }
+
+TEST(SM80_CuTe_Ampere, CooperativeGemmLDSMx2) {
+
+  constexpr uint32_t thread_block_size = 128;
+  constexpr int MaxVecBits = 128;
+  using TA = cute::half_t;
+  using TB = cute::half_t;
+  using TC = float;
+
+  auto tiled_mma =
+      TiledMMA<
+        MMA_Atom<SM80_16x8x16_F32F16F16F32_TN>,
+        Layout<Shape<_2, _2, _1>, Stride<_1, _2, _0>>,
+        Tile<_32, _16, _16>
+      >{};
+
+  auto global_a_layout = make_layout(Shape<_32, _32>{}, LayoutRight{});
+  auto global_b_layout = make_layout(Shape<_16, _32>{}, LayoutRight{});
+  auto global_c_layout = make_layout(Shape<_32, _16>{}, LayoutRight{});
+
+  test_cooperative_gemm<thread_block_size,
+                        MaxVecBits,
+                        TA, TB, TC>
+    (global_a_layout,
+     global_b_layout,
+     global_c_layout,
+     global_a_layout,
+     global_b_layout,
+     global_c_layout,
+     tiled_mma, 
+     identity{}, 
+     identity{},
+     identity{},
+     identity{},
+     SM75_U32x4_LDSM_N{},
+     SM75_U32x2_LDSM_N{});
+}

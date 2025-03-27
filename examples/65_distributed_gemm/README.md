@@ -63,6 +63,10 @@ procedure is the same, simply modify the following line in the example:
 using TP = _8;
 ```
 
+## References
+* [Distributed GEMM Blog](https://blog.shi-labs.com/distributed-gemm-88be6a481e2b)
+* [Distributed GEMM Talk on CUDA Mode](https://www.youtube.com/watch?v=NHRTCQBZokg)
+
 ## Copyright
 
 Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.

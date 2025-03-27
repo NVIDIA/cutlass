@@ -104,10 +104,10 @@ struct CollectiveBuilder<
                                                                   UmmaMajorB,
                                                                   BuilderScheduleTag>();
   static constexpr bool UseMxf8f6f4 = Instr == detail::blockscaled::BlockScaledInstr::MXF4F6F8;
-
   using PermTileM = decltype(cute::min(size<0>(TileShape_MNK{}), _128{}));
   using PermTileN = decltype(detail::sm120_tile_n_permute_selector<SFVectorSize>());
-  using PermTileK = cute::conditional_t<UseMxf8f6f4, _32, _64>;
+  using PermTileK = cute::conditional_t<(UseMxf8f6f4
+                                        ), _32, _64>;
 
   static constexpr bool IsCooperative = !cute::is_base_of_v<KernelTmaWarpSpecializedPingpong, BuilderScheduleTag>;
   // Data type used by MMA instruction
@@ -124,7 +124,13 @@ struct CollectiveBuilder<
       Layout<Shape<_4,_2,_1>>, Layout<Shape<_2,_2,_1>>>;
 
   using TiledMma = decltype(cute::make_tiled_mma(
-    cute::rr_blockscaled_op_selector_sm120<ElementA, ElementB, ElementAccumulator, ElementSF, SFVectorSize, UseMxf8f6f4>(),
+    cute::rr_blockscaled_op_selector_sm120<ElementA,
+                                           ElementB,
+                                           ElementAccumulator,
+                                           ElementSF,
+                                           SFVectorSize,
+                                           UseMxf8f6f4
+                                           >(),
     AtomLayoutMNK{},
     Tile<PermTileM, PermTileN, PermTileK>{}
   ));
@@ -150,8 +156,14 @@ struct CollectiveBuilder<
   using SmemLayoutAtomA = decltype(detail::sm120_rr_smem_selector<SmemAllocTypeA, decltype(size<2>(TileShape_MNK{}))>());
   using SmemLayoutAtomB = decltype(detail::sm120_rr_smem_selector<SmemAllocTypeB, decltype(size<2>(TileShape_MNK{}))>());
 
-  using SmemCopyAtomA = Copy_Atom<decltype(detail::sm120_rr_smem_copy_selector_A<ElementA, ElementB, UseMxf8f6f4>()), SmemAllocTypeA>;
-  using SmemCopyAtomB = Copy_Atom<decltype(detail::sm120_rr_smem_copy_selector_B<ElementA, ElementB, UseMxf8f6f4>()), SmemAllocTypeB>;
+  using SmemCopyAtomA = Copy_Atom<decltype(detail::sm120_rr_smem_copy_selector_A<ElementA,
+                                                                                 ElementB,
+                                                                                 UseMxf8f6f4
+                                                                                 >()), SmemAllocTypeA>;
+  using SmemCopyAtomB = Copy_Atom<decltype(detail::sm120_rr_smem_copy_selector_B<ElementA,
+                                                                                 ElementB,
+                                                                                 UseMxf8f6f4
+                                                                                >()), SmemAllocTypeB>;
 
   using SmemCopyAtomSF = Copy_Atom<UniversalCopy<SmemAllocTypeSF>, SmemAllocTypeSF>; // auto-vectorized LDS
   using SmemCopyAtomSFA = SmemCopyAtomSF;

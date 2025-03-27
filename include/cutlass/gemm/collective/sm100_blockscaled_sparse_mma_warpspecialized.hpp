@@ -1197,12 +1197,61 @@ struct CollectiveMma<
 
     uint32_t skip_wait = k_tile_count <= 0;
     auto barrier_token = mainloop_pipeline.consumer_try_wait(mainloop_pipe_consumer_state, skip_wait);
-    bool is_first_iter = true;
 
     //
     // PIPELINED MAIN LOOP
     //
     tiled_mma.accumulate_ = UMMA::ScaleOut::Zero;
+    if constexpr (IsOverlappingAccum) {
+      // first iteration manual unroll for tmem overlap kernel
+      if (k_tile_count > 0) {
+        // WAIT on mainloop_pipe_consumer_state until its data are available
+        // (phase bit flips from mainloop_pipe_consumer_state.phase() value)
+        mainloop_pipeline.consumer_wait(mainloop_pipe_consumer_state, barrier_token);
+
+        // Compute on k_tile
+        int read_stage = mainloop_pipe_consumer_state.index();
+        // Save current mainlop pipeline read state
+        auto curr_mainloop_pipe_consumer_state = mainloop_pipe_consumer_state;
+
+        // Advance mainloop_pipe
+        ++mainloop_pipe_consumer_state;
+        --k_tile_count;
+        skip_wait = k_tile_count <= 0;
+        // Peek at next iteration
+        barrier_token = mainloop_pipeline.consumer_try_wait(mainloop_pipe_consumer_state, skip_wait);
+
+        if (cute::elect_one_sync()) {
+          copy(tiled_copy_s2t_E,   thr_tCsE_s2t(_,_,_,_,read_stage),   thr_tCtE_s2t);
+          copy(tiled_copy_s2t_SFA, thr_tCsSFA_s2t(_,_,_,_,read_stage), thr_tCtSFA_s2t);
+          copy(tiled_copy_s2t_SFB, thr_tCsSFB_s2t(_,_,_,_,read_stage), thr_tCtSFB_s2t);
+        }
+
+        // Wait for tmem accumulator buffer to become empty with a flipped phase
+        accumulator_pipeline.producer_acquire(accumulator_pipe_producer_state);
+
+        // Unroll the K mode manually so we can set scale C to 1
+        CUTLASS_PRAGMA_UNROLL
+        for (int k_block = 0; k_block < size<2>(tCrA); ++k_block) {
+          // (V,M) x (V,N) => (V,M,N)
+          cute::gemm(tiled_mma.with(tiled_mma.accumulate_,
+                                    tCtE(_,_,k_block),
+                                    tCtSFA(_,_,k_block),
+                                    tCtSFB_mma(_,_,k_block)),
+              tCrA(_,_,k_block,read_stage),
+              tCrB(_,_,k_block,read_stage),
+              accumulators);
+          tiled_mma.accumulate_ = UMMA::ScaleOut::One;
+        }
+
+        mainloop_pipeline.consumer_release(curr_mainloop_pipe_consumer_state);
+      }
+    }
+    else {
+      // Wait for tmem accumulator buffer to become empty with a flipped phase
+      accumulator_pipeline.producer_acquire(accumulator_pipe_producer_state);
+    }
+
     CUTLASS_PRAGMA_NO_UNROLL
     while (k_tile_count > 0) {
       // WAIT on mainloop_pipe_consumer_state until its data are available
@@ -1225,12 +1274,6 @@ struct CollectiveMma<
         copy(tiled_copy_s2t_E,   thr_tCsE_s2t(_,_,_,_,read_stage),   thr_tCtE_s2t);
         copy(tiled_copy_s2t_SFA, thr_tCsSFA_s2t(_,_,_,_,read_stage), thr_tCtSFA_s2t);
         copy(tiled_copy_s2t_SFB, thr_tCsSFB_s2t(_,_,_,_,read_stage), thr_tCtSFB_s2t);
-      }
-
-      // Wait for tmem accumulator buffer to become empty with a flipped phase
-      if (is_first_iter) {
-        accumulator_pipeline.producer_acquire(accumulator_pipe_producer_state);
-        is_first_iter = false;
       }
 
       // Unroll the K mode manually so we can set scale C to 1

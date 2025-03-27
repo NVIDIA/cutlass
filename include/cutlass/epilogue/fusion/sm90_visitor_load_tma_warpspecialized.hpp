@@ -1191,9 +1191,11 @@ struct Sm90RowBroadcast {
 
     auto layout_M = make_layout(M, repeat_like(M, _0{}));
     auto layout_L = make_layout(L, get<2>(params.dRow));
-    ElementInput const* ptr_row;
+    ElementInput const* ptr_row = nullptr;
     if constexpr(IsArrayOfPointers) {
-      ptr_row = params.ptr_row[l];
+      if (!(EnableNullptr && params.ptr_row == nullptr)) {
+        ptr_row = params.ptr_row[l];
+      }
     } else {
       ptr_row = params.ptr_row;
     }
@@ -1439,9 +1441,11 @@ struct Sm90ColBroadcast {
 
     auto layout_N = make_layout(N, repeat_like(N, _0{}));
     auto layout_L = make_layout(L, get<2>(params.dCol));
-    ElementInput const* ptr_col;
+    ElementInput const* ptr_col = nullptr;
     if constexpr(IsArrayOfPointers) {
-      ptr_col = params.ptr_col[l];
+      if (!(EnableNullptr && params.ptr_col == nullptr)) {
+        ptr_col = params.ptr_col[l];
+      }
     } else {
       ptr_col = params.ptr_col;
     }
