@@ -27,59 +27,10 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-cutlass_example_add_executable(
-  pvc_gemm
-  pvc_gemm.cpp
-)
+set(CUTLASS_APPLICATIONS_DIR ${CMAKE_SOURCE_DIR}/applications)
 
 cutlass_example_add_executable(
-  pvc_gemm_with_epilogue_relu
-  pvc_gemm_with_epilogue_relu.cpp
+  pvc_dual_gemm
+  pvc_dual_gemm.cpp
 )
 
-cutlass_example_add_executable(
-  pvc_gemm_with_epilogue_gelu
-  pvc_gemm_with_epilogue_gelu.cpp
-)
-
-cutlass_example_add_executable(
-  pvc_gemm_with_epilogue_softmax
-  pvc_gemm_with_epilogue_softmax.cpp
-)
-
-cutlass_example_add_executable(
-  pvc_gemm_with_epilogue_lincombdeeltact
-  pvc_gemm_with_epilogue_lincombdeeltact.cpp
-)
-
-cutlass_example_add_executable(
-  pvc_gemm_with_per_row_bias
-  pvc_gemm_with_per_row_bias.cpp
-)
-
-cutlass_example_add_executable(
-  pvc_collective_builder
-  pvc_collective_builder.cpp
-)
-
-cutlass_example_add_executable(
-  pvc_gemm_streamk
-  pvc_gemm_streamk.cpp
-)
-
-cutlass_example_add_executable(
-  pvc_gemm_persistent
-  pvc_gemm_persistent.cpp
-)
-add_subdirectory(flash_attention_v2)
-add_subdirectory(dual_gemm)
-
-cutlass_example_add_executable(
-  pvc_gemm_mixed_dtype
-  pvc_gemm_mixed_dtype.cpp
-)
-
-cutlass_example_add_executable(
-  pvc_gemm_group
-  pvc_gemm_group.cpp
-)

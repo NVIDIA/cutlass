@@ -356,6 +356,8 @@ struct Sigmoid {
   T operator()(T const &value) const {
 #if defined(CUTLASS_USE_TANH_FOR_SIGMOID)
     return fast_tanh(value * T(0.5)) * T(0.5) + T(0.5);
+#elif defined __SYCL_DEVICE_ONLY__
+    return sycl::native::recip(T(1) + fast_exp(-value));
 #else
     return T(1) / (T(1) + fast_exp(-value));
 #endif

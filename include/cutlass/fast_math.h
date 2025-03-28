@@ -864,7 +864,7 @@ CUTLASS_HOST_DEVICE
 float fast_exp(float x) {
   #if defined(__CUDA_ARCH__)
   return ::expf(x);
-  #elif defined(__SYCL_CUDA_ARCH__)
+  #elif defined(__SYCL_DEVICE_ONLY__)
   return ::sycl::native::exp(x);
   #else
   return std::exp(x);
