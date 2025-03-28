@@ -247,11 +247,10 @@ struct XE_2D_LD_Unpack {
     constexpr int dtype_bits = sizeof_bits_v<dtype>;
 
     static_assert(is_rmem<TD>::value);
-    // TODO(Codeplay): enable this check once the coordinate refactoring is complete
-    //static_assert(size(SLayout{}) * dtype_bits == size<1>(typename Traits_LD_t::SrcLayout{}),
-      //            "Src tensor size does not match copy atom size");
-    // static_assert(size(DLayout{}) * dtype_bits == size<1>(typename Traits_LD_t::DstLayout{}),
-    //               "Dst tensor size does not match copy atom size");
+    static_assert(size(SLayout{}) * dtype_bits == size<1>(typename Traits_LD_t::SrcLayout{}),
+                  "Src tensor size does not match copy atom size.");
+    static_assert(size(DLayout{}) * dtype_bits == size<1>(typename Traits_LD_t::DstLayout{}),
+                  "Dst tensor size does not match copy atom size.");
 
     dtype *base_addr = (dtype *)traits.base_ptr;
   
@@ -272,10 +271,11 @@ struct XE_2D_LD_Unpack {
   CUTE_HOST_DEVICE friend constexpr void
   prefetch(Copy_Atom<Traits_LD_t, CA_Args...> const &atom,
            Tensor<TS, SLayout> const &src) {
-    static_assert(detail::has_prefetch<CopyOp>);
-    //TODO(Codeplay) add asserts on size
-
     using dtype = typename Copy_Atom<Traits_LD_t, CA_Args...>::ValType;
+
+    static_assert(detail::has_prefetch<CopyOp>);
+    static_assert(size(SLayout{}) * sizeof_bits_v<dtype> == size<1>(typename Traits_LD_t::SrcLayout{}),
+                  "Src tensor size does not match copy atom for prefetch size");
 
     dtype *base_addr = (dtype *)atom.base_ptr;
 
@@ -352,10 +352,9 @@ template <class CopyOp, class StrideIndicator = cute::Stride<int64_t, cute::Int<
 
     static_assert(is_rmem<TS>::value);
     static_assert(size(SLayout{}) * dtype_bits == size<1>(typename Traits_ST_t::SrcLayout{}),
-                  "Src tensor size does not match copy atom size");
-    // TODO(Codeplay): rnable this check once the coordinate refactoring is complete
-    //static_assert(size(DLayout{}) * dtype_bits == size<1>(typename Traits_ST_t::DstLayout{}),
-    //              "Dst tensor size does not match copy atom size");
+                  "Src tensor size does not match copy atom size.");
+    static_assert(size(DLayout{}) * dtype_bits == size<1>(typename Traits_ST_t::DstLayout{}),
+                  "Dst tensor size does not match copy atom size.");
 
     dtype *base_addr = (dtype *)traits.base_ptr;
     
@@ -398,8 +397,8 @@ CUTE_HOST_DEVICE constexpr auto make_fragment_layout(TiledCopy &tiled_copy,
   Int copy_size_M = size<0>(thread_copy_shape);
   Int copy_size_N = size<1>(thread_copy_shape);
 
-  static_assert(copy_size_M >= mma_atom_size_M);
-  static_assert(copy_size_N >= mma_atom_size_N);
+  static_assert(copy_size_M >= mma_atom_size_M, "MMA atom larger than copy atom is not currently supported.");
+  static_assert(copy_size_N >= mma_atom_size_N, "MMA atom larger than copy atom is not currently supported.");
   Int mma_atom_iters_in_copy_M = copy_size_M / mma_atom_size_M;
   Int mma_atom_iters_in_copy_N = copy_size_N / mma_atom_size_N;
   Int copy_iters_M = total_mma_atom_iters_M / mma_atom_iters_in_copy_M;
