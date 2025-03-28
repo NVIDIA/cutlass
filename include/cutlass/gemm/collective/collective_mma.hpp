@@ -69,6 +69,7 @@
 
 #if defined(SYCL_INTEL_TARGET)
 #include "cutlass/gemm/collective/xe_mma.hpp"
+#include "cutlass/gemm/collective/xe_array_mma.hpp"
 #include "cutlass/gemm/collective/xe_mma_mixed_input.hpp"
 #endif
 

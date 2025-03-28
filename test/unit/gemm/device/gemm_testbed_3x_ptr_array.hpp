@@ -166,6 +166,20 @@ struct IsDefaultEpilogue<cutlass::epilogue::collective::detail::Sm90TmaWarpSpeci
   static constexpr bool value = true;
 };
 
+template <typename Epilogue, typename = void>
+struct IsLegacyEpiloguePolicy {
+  static constexpr bool value = false;
+};
+
+template <typename Epilogue>
+struct IsLegacyEpiloguePolicy<Epilogue, cute::void_t<decltype(Epilogue::DispatchPolicy::FragmentSize)>> {
+  using EpiloguePolicy = typename Epilogue::DispatchPolicy;
+  static constexpr bool value = cute::is_same_v<
+                                      EpiloguePolicy,
+                                      cutlass::epilogue::Sm90TmaWarpSpecializedBiasElementwise<
+                                        EpiloguePolicy::StagesC, EpiloguePolicy::StagesD, EpiloguePolicy::FragmentSize>>;
+};
+
 // The number of splits to test.
 //
 // This class makes it harder to confuse the order of arguments
@@ -1092,13 +1106,7 @@ struct HostCollectiveEpilogue {
   //
   // FusionOperation derived types/queries
   //
-  using EpiloguePolicy = typename Epilogue::DispatchPolicy;
-  static constexpr bool IsLegacy =
-  cute::is_same_v<
-    EpiloguePolicy,
-    cutlass::epilogue::Sm90TmaWarpSpecializedBiasElementwise<
-      EpiloguePolicy::StagesC, EpiloguePolicy::StagesD, EpiloguePolicy::FragmentSize>
-  >;
+  static constexpr bool IsLegacy = detail::IsLegacyEpiloguePolicy<Epilogue>::value;
 
   using FusionOp = typename Gemm::EpilogueOutputOp;
   static_assert(cute::is_base_of_v<cutlass::epilogue::fusion::FusionOperation, FusionOp>);
@@ -1925,6 +1933,7 @@ struct TestbedImpl {
     return passed;
   }
 
+#ifndef SYCL_INTEL_TARGET
   /// Determine if the CUDA device is sufficient to run the kernel
   bool sufficient() {
     //
@@ -1956,6 +1965,7 @@ struct TestbedImpl {
 
     return true;
   }
+  #endif
 
   /// Executes one test
   bool run(
@@ -1966,11 +1976,14 @@ struct TestbedImpl {
     )
   {
 
+    using namespace cutlass;
+#ifndef SYCL_INTEL_TARGET
     // Fail test if insufficient CUDA device
     if (!sufficient()) {
       std::cout << "Test failed due to insufficient CUDA device." << std::endl;
       return false;
     }
+#endif
 
     if (!this->initialize(problem_shapes, alpha, beta)) {
       std::cerr << "Initialization failed \n";
@@ -2033,7 +2046,12 @@ struct TestbedImpl {
     cudaError_t result;
     status = gemm_op.initialize(arguments, workspace.get());
     status = gemm_op.run();
+#if defined SYCL_INTEL_TARGET
+    result = cudaSuccess;
+    syclcompat::wait();
+#else
     result = cudaDeviceSynchronize();
+#endif
     if (result != cudaSuccess) {
       EXPECT_EQ(result, cudaSuccess) << "Error at Kernel Sync.";
       return false;
@@ -2130,7 +2148,13 @@ bool TestAll(double alpha = 1.0, double beta = 0.0, CheckEquality check_relative
 
   Testbed3x<Gemm, ActivationFunctor> testbed(check_relative_equality, ScalarLoc::ON_DEVICE, VectorScale::DISABLED);
 
-  int max_alignment = std::max(Gemm::kAlignmentA, Gemm::kAlignmentB);
+  int max_alignment = 0;
+  // TODO(codeplay): unhardcode max_alignment
+#if defined SYCL_INTEL_TARGET
+  max_alignment = 32;
+#else
+  max_alignment = std::max(Gemm::kAlignmentA, Gemm::kAlignmentB);
+#endif
   std::vector<int> problem_size_m = {max_alignment, 512 - 3 * max_alignment};
   std::vector<int> problem_size_n = {max_alignment, 512 - 2 * max_alignment};
 
