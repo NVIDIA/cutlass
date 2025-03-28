@@ -347,12 +347,8 @@ struct CollectiveMma<
 
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < DispatchPolicy::Stages; i++, prefetch_k++) {
-      if constexpr(cute::detail::has_prefetch<GmemTiledCopyA>) {
-        prefetch(tiled_prefetch_a, pAgA(_,_,_,prefetch_k));
-      }
-      if constexpr(cute::detail::has_prefetch<GmemTiledCopyB>) {
-        prefetch(tiled_prefetch_b, pBgB(_,_,_,prefetch_k));
-      }
+      prefetch(tiled_prefetch_a, pAgA(_,_,_,prefetch_k));
+      prefetch(tiled_prefetch_b, pBgB(_,_,_,prefetch_k));
     }
 
     CUTLASS_PRAGMA_UNROLL
@@ -365,12 +361,8 @@ struct CollectiveMma<
       auto mma_B = transform_if_needed<MmaType>(tCrB);
 
       if(prefetch_k < k_tile_count) {
-        if constexpr(cute::detail::has_prefetch<GmemTiledCopyA>) {
-          prefetch(tiled_prefetch_a, pAgA(_,_,_,prefetch_k));
-        }
-        if constexpr(cute::detail::has_prefetch<GmemTiledCopyB>) {
-          prefetch(tiled_prefetch_b, pBgB(_,_,_,prefetch_k));
-        } 
+        prefetch(tiled_prefetch_a, pAgA(_,_,_,prefetch_k));
+        prefetch(tiled_prefetch_b, pBgB(_,_,_,prefetch_k));
       }
 
       cute::gemm(tiled_mma, mma_A, mma_B, accum);

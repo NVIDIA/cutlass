@@ -122,9 +122,10 @@ CUTE_HOST_DEVICE auto prefetch_selector(Tensor const& tensor) {
   #define RETURN_STATEMENT(NON_CONTIG, DTYPE_SIZE, CONTIG) \
     using PrefetchTraits = Copy_Traits<XE_2D_U##DTYPE_SIZE##x##NON_CONTIG##x##CONTIG##_LD_N, decltype(tensor.stride())>; \
     using PrefetchAtom = Copy_Atom<PrefetchTraits, dtype>; \
-    constexpr auto scalar = cute::max(1, DTYPE_SIZE / dtype_size_bits); \
-    using ScalarPrefetchShape = Shape<Int<size<0>(typename PrefetchTraits::BlockShape{})>, \
-                                      Int<size<1>(typename PrefetchTraits::BlockShape{}) * scalar>>; \
+    using Scalar = Int<cute::max(1, DTYPE_SIZE / dtype_size_bits)>; \
+    using ScalarLayout = std::conditional_t<is_need_reversed, Layout<Shape<Scalar, _1>>, Layout<Shape<_1, Scalar>>>; \
+    using ScalarPrefetchShape =  decltype(product_each(raked_product(ScalarLayout{}, \
+                                                        Layout<typename PrefetchTraits::BlockShape>{}).shape())); \
     using PrefetchValLayout = decltype(make_layout(shape_div(ScalarPrefetchShape{}, CopyThreadShape{}))); \
     return make_tiled_copy(PrefetchAtom{}.with(tensor), \
                            PrefetchTilingLayout{}, \
@@ -284,10 +285,12 @@ struct XE_2D_LD_Unpack {
     int x = is_need_reversed ? m : n;
     int y = is_need_reversed ? n : m;
 
-    CopyOp::PREFETCH::copy((void *)(base_addr + l * atom.stride_l),
-                           atom.width * sizeof(dtype), atom.height,
-                           atom.pitch * sizeof(dtype),
-                           intel::coord_t{x, y});
+    constexpr auto inst_size_bits = detail::size_of_inst_bits<CopyOp, dtype>;
+
+    CopyOp::PREFETCH::copy(base_addr + l * atom.stride_l,
+                           (atom.width * sizeof_bits_v<dtype>) / sizeof_bits_v<int8_t>, atom.height,
+                           (atom.pitch * sizeof_bits_v<dtype>) / sizeof_bits_v<int8_t>,
+                           intel::coord_t{(int)(x * sizeof_bits_v<dtype> / inst_size_bits), y});
   }
 
   template <class... TensorArgs>
@@ -562,6 +565,41 @@ struct Copy_Traits_<XE_2D_U4x16x64_LD_N, args_t...>
   template <class... ArgT>
   Copy_Traits_(ArgT... args)
       : XE_2D_LD_Unpack<XE_2D_U4x16x64_LD_N, args_t...>(args...) {}
+};
+
+template <class... args_t>
+struct Copy_Traits_<XE_2D_U4x16x16_LD_T, args_t...>
+    : XE_2D_LD_Unpack<XE_2D_U4x16x16_LD_T, args_t...> {
+  using ThrID = Layout<_16>;
+  // Map from (src-thr,src-val) to bit
+  using SrcLayout = Layout<Shape <_16,Shape <_4, _16>>,
+                           Stride<_0,Stride< _1,_64>>>;
+  // Map from (dst-thr,dst-val) to bit
+  using DstLayout = Layout<Shape <_16,Shape <_4, _16>>,
+                           Stride<_16,Stride< _1,_64>>>;
+  // Reference map from (thr,val) to bit
+  using RefLayout = DstLayout;
+
+  template <class... ArgT>
+  Copy_Traits_(ArgT... args)
+      : XE_2D_LD_Unpack<XE_2D_U4x16x16_LD_T, args_t...>(args...) {}
+};
+template <class... args_t>
+struct Copy_Traits_<XE_2D_U4x32x16_LD_T, args_t...>
+    : XE_2D_LD_Unpack<XE_2D_U4x32x16_LD_T, args_t...> {
+  using ThrID = Layout<_16>;
+  // Map from (src-thr,src-val) to bit
+  using SrcLayout = Layout<Shape <_16,Shape <_4, _32>>,
+                          Stride<_0,Stride< _1,_64>>>;
+  // Map from (dst-thr,dst-val) to bit
+  using DstLayout = Layout<Shape <_16,Shape <_4, _32>>,
+                           Stride<_16,Stride< _1,_64>>>;
+  // Reference map from (thr,val) to bit
+  using RefLayout = DstLayout;
+
+  template <class... ArgT>
+  Copy_Traits_(ArgT... args)
+      : XE_2D_LD_Unpack<XE_2D_U4x32x16_LD_T, args_t...>(args...) {}
 };
 
 template <class... args_t>
@@ -2217,6 +2255,8 @@ COPY_TRAIT_LD_DEF(XE_2D_TF32x16x16_LD_N)
 COPY_TRAIT_LD_DEF(XE_2D_TF32x32x16_LD_N)
 COPY_TRAIT_LD_DEF(XE_2D_U4x32x64_LD_N)
 COPY_TRAIT_LD_DEF(XE_2D_U4x16x64_LD_N)
+COPY_TRAIT_LD_DEF(XE_2D_U4x32x16_LD_T)
+COPY_TRAIT_LD_DEF(XE_2D_U4x16x16_LD_T)
 COPY_TRAIT_LD_DEF(XE_2D_U8x1x64_LD_N::PREFETCH)
 COPY_TRAIT_LD_DEF(XE_2D_U8x2x64_LD_N::PREFETCH)
 COPY_TRAIT_LD_DEF(XE_2D_U8x4x64_LD_N::PREFETCH)
