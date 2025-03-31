@@ -106,12 +106,6 @@ public:
   static constexpr uint32_t MaxThreadsPerBlock = CollectiveMainloop::MaxThreadsPerBlock;
   using MmaAtomShape = typename CollectiveMainloop::MmaAtomShape;
   using SubgroupTileShape = typename CollectiveMainloop::SubgroupTileShape;
- 
-  using  TensorMKL = typename CollectiveMainloop::TensorMKL;
-  using  TensorNKL = typename CollectiveMainloop::TensorNKL;
-
-  using  TensorMK = decltype(TensorMKL{}(_, _, 0));
-  using  TensorNK = decltype(TensorNKL{}(_, _, 0));
 
   // Kernel level shared memory storage
   struct SharedStorage {

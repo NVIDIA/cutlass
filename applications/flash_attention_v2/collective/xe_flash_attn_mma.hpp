@@ -111,29 +111,21 @@ struct CollectiveMmaAttention<MainloopIntelPVC<Stages>, TileShape_, ElementQ_, S
 
   static constexpr uint32_t MaxThreadsPerBlock = size(TiledMma{});
   using CopyThreadShape = Shape<_1, Int<SubgroupSize>>;
+  
   using traits_load_Q = Copy_Traits<GmemTiledCopyQ, StrideQ>;
   using atom_load_Q = Copy_Atom<traits_load_Q, ElementQ>;
-  using XE_Copy_Q = decltype(make_tiled_copy(atom_load_Q{}.with(nullptr, 0, 0),
-                                             Layout<CopyThreadShape>{},
-                                             make_layout(shape_div(typename traits_load_Q::BlockShape{}, CopyThreadShape{}))));
+  using val_layout_load_Q = decltype(make_layout(shape_div(typename traits_load_Q::BlockShape{}, CopyThreadShape{})));
+  using XE_Copy_Q = decltype(make_tiled_copy(atom_load_Q{}, Layout<CopyThreadShape>{}, val_layout_load_Q{}));
+
   using traits_load_K = Copy_Traits<GmemTiledCopyK, StrideK>;
   using atom_load_K = Copy_Atom<traits_load_K, ElementK>;
-  using XE_Copy_K = decltype(make_tiled_copy(atom_load_K{}.with(nullptr, 0, 0),
-                                             Layout<CopyThreadShape>{},
-                                             make_layout(shape_div(typename traits_load_K::BlockShape{}, CopyThreadShape{}))));
+  using val_layout_load_K = decltype(make_layout(shape_div(typename traits_load_K::BlockShape{}, CopyThreadShape{})));
+  using XE_Copy_K = decltype(make_tiled_copy(atom_load_K{}, Layout<CopyThreadShape>{}, val_layout_load_K{}));
 
   using traits_load_V = Copy_Traits<GmemTiledCopyV, StrideV>;
   using atom_load_V = Copy_Atom<traits_load_V, ElementV>;
-  using XE_Copy_V = decltype(make_tiled_copy(atom_load_V{}.with(nullptr, 0, 0),
-                                             Layout<CopyThreadShape>{},
-                                             make_layout(shape_div(typename traits_load_V::BlockShape{}, CopyThreadShape{}))));
-
-  using TensorQ_mkl = decltype(make_tensor(make_gmem_ptr(static_cast<ElementQ const *>(nullptr)),
-                                           make_layout(make_shape(0, 0, 0), StrideQ{})));
-  using TensorK_nkl = decltype(make_tensor(make_gmem_ptr(static_cast<ElementK const *>(nullptr)),
-                                           make_layout(make_shape(0, 0, 0), StrideK{})));
-  using TensorV_nkl = decltype(make_tensor(make_gmem_ptr(static_cast<ElementV const *>(nullptr)),
-                                           make_layout(make_shape(0, 0, 0), StrideV{})));
+  using val_layout_load_V = decltype(make_layout(shape_div(typename traits_load_V::BlockShape{}, CopyThreadShape{})));
+  using XE_Copy_V = decltype(make_tiled_copy(atom_load_V{}, Layout<CopyThreadShape>{}, val_layout_load_V{}));
 
   // Host side kernel arguments
   struct Arguments {
@@ -149,10 +141,6 @@ struct CollectiveMmaAttention<MainloopIntelPVC<Stages>, TileShape_, ElementQ_, S
     XE_Copy_Q gmem_tiled_copy_q;
     XE_Copy_K gmem_tiled_copy_k;
     XE_Copy_V gmem_tiled_copy_v;
-
-    TensorQ_mkl mQ;
-    TensorK_nkl mK;
-    TensorV_nkl mV;
   };
 
   //
@@ -168,24 +156,14 @@ struct CollectiveMmaAttention<MainloopIntelPVC<Stages>, TileShape_, ElementQ_, S
 
     auto [batch, num_heads, seq_len, head_size] = problem_shape;
 
-    auto tensorQ = make_tensor(make_gmem_ptr(static_cast<ElementQ const *>(args.ptr_Q)),
-                               make_layout(make_shape(seq_len, head_size, batch * num_heads), args.dQ));
-    auto tensorK = make_tensor(make_gmem_ptr(static_cast<ElementK const *>(args.ptr_K)),
-                               make_layout(make_shape(seq_len, head_size, batch * num_heads), args.dK));
-    auto tensorV = make_tensor(make_gmem_ptr(static_cast<ElementV const *>(args.ptr_V)),
-                               make_layout(make_shape(head_size, seq_len, batch * num_heads), args.dV));
-
-    XE_Copy_Q copyQ = make_tiled_copy(atom_load_Q{}.with(tensorQ),
-                                      Layout<CopyThreadShape>{},
-                                      make_layout(shape_div(typename traits_load_Q::BlockShape{}, CopyThreadShape{})));
-    XE_Copy_K copyK = make_tiled_copy(atom_load_K{}.with(tensorK),
-                                      Layout<CopyThreadShape>{},
-                                      make_layout(shape_div(typename traits_load_K::BlockShape{}, CopyThreadShape{})));
-    XE_Copy_V copyV = make_tiled_copy(atom_load_V{}.with(tensorV),
-                                      Layout<CopyThreadShape>{},
-                                      make_layout(shape_div(typename traits_load_V::BlockShape{}, CopyThreadShape{})));
+    auto tensorQ = make_tensor(make_gmem_ptr(args.ptr_Q), make_layout(make_shape(seq_len, head_size, batch * num_heads), args.dQ));
+    auto tensorK = make_tensor(make_gmem_ptr(args.ptr_K), make_layout(make_shape(seq_len, head_size, batch * num_heads), args.dK));
+    auto tensorV = make_tensor(make_gmem_ptr(args.ptr_V), make_layout(make_shape(head_size, seq_len, batch * num_heads), args.dV));
+    XE_Copy_Q copyQ{XE_Copy_Q{}.with(tensorQ)};
+    XE_Copy_K copyK{XE_Copy_K{}.with(tensorK)};
+    XE_Copy_V copyV{XE_Copy_V{}.with(tensorV)};
   
-    return Params{copyQ, copyK, copyV, tensorQ, tensorK, tensorV};
+    return Params{copyQ, copyK, copyV};
   }
 
   template <class FragAccum, class TensorQ, class TensorK, class FragSrc>
