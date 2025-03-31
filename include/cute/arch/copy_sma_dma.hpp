@@ -34,7 +34,7 @@
 
 #include <cute/arch/config.hpp> // CUTE_ARCH_TMA_SMxx_ENABLED
 #include <cute/arch/copy.hpp>
-#include <cute/arch/copy_sm90.hpp>
+// #include <cute/arch/copy_sm90.hpp>
 #include "cutlass/arch/synclog.hpp"
 
 namespace cute
@@ -224,6 +224,45 @@ struct SMA_DMA_LOAD
 //     CUTE_INVALID_CONTROL_PATH("Trying to use tma without CUTE_ARCH_TMA_SM90_ENABLED.");
 // #endif
 // }
+
+// for SM90 pipeline
+// Fence for smem stores for subsequent TMA_STORE
+CUTE_HOST_DEVICE static void
+tma_store_fence() {
+#if defined(CUTE_ARCH_TMA_SM90_ENABLED)
+    cutlass::arch::synclog_emit_fence_view_async_shared(__LINE__);
+    asm volatile ("fence.proxy.async.shared::cta;");
+#elif defined(__CUDA_ARCH__)
+    CUTE_INVALID_CONTROL_PATH("Trying to use tma without CUTE_ARCH_TMA_SM90_ENABLED.");
+#endif
+}
+
+// Indicate arrival of warp issuing TMA_STORE
+CUTE_HOST_DEVICE static void
+tma_store_arrive() {
+#if defined(CUTE_ARCH_TMA_SM90_ENABLED)
+    cutlass::arch::synclog_emit_tma_store_arrive(__LINE__);
+    asm volatile("cp.async.bulk.commit_group;");
+#else
+    CUTE_INVALID_CONTROL_PATH("Trying to use tma without CUTE_ARCH_TMA_SM90_ENABLED.");
+#endif
+}
+
+// Wait until at most Count committed TMA_STOREs are pending and all prior commits are complete
+template <int Count>
+CUTE_HOST_DEVICE static void
+tma_store_wait() {
+#if defined(CUTE_ARCH_TMA_SM90_ENABLED)
+    asm volatile(
+      "cp.async.bulk.wait_group.read %0;"
+      :
+      : "n"(Count)
+      : "memory");
+    cutlass::arch::synclog_emit_tma_store_wait(__LINE__, Count);
+#else
+    CUTE_INVALID_CONTROL_PATH("Trying to use tma without CUTE_ARCH_TMA_SM90_ENABLED.");
+#endif
+}
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

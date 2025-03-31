@@ -30,21 +30,21 @@
  **************************************************************************************************/
 #pragma once
 
-#include "cute/atom/mma_traits_sm90.hpp"
-#include "cute/atom/mma_traits_sm90_gmma.hpp"
-#include "cute/atom/copy_traits_sm90.hpp"
+// #include "cute/atom/mma_traits_sm90.hpp"
+// #include "cute/atom/mma_traits_sm90_gmma.hpp"
+// #include "cute/atom/copy_traits_sm90.hpp"
 
 #include "cutlass/detail/dependent_false.hpp"
 #include "cutlass/detail/layout.hpp"
-#include "cutlass/gemm/collective/builders/sm90_common.inl"
+#include "cutlass/gemm/collective/builders/ma100_common.inl"
 #include "cutlass/epilogue/dispatch_policy.hpp"
 #include "cutlass/epilogue/collective/collective_epilogue.hpp"
-#include "cutlass/epilogue/collective/builders/sm90_common.inl"
+// #include "cutlass/epilogue/collective/builders/sm90_common.inl"
 #include "cutlass/epilogue/thread/linear_combination.h"
 #include "cutlass/epilogue/thread/linear_combination_generic.h"
 #include "cutlass/epilogue/thread/linear_combination_bias_elementwise.h"
 #include "cutlass/epilogue/fusion/callbacks.hpp"
-#include "cutlass/epilogue/fusion/sm90_callbacks_tma_warpspecialized.hpp"
+// #include "cutlass/epilogue/fusion/sm90_callbacks_tma_warpspecialized.hpp"
 
 #if defined(__CUDACC_RTC__)
 #include <cuda/std/type_traits>
@@ -167,73 +167,73 @@ sm90_compute_tile_shape_or_override() {
   }
 }
 
-// aux fusion callbacks builder for sm90 tma epilogue
-template <
-  int StagesC,
-  int StagesD,
-  int FragmentSize,
-  bool ReuseSmemC,
-  bool DelayTmaStore,
-  class FusionOp,
-  class TileShape_MNK,
-  class EpilogueTile_MN,
-  class AccLoadOp,
-  class ElementAccumulator
->
-struct CallbacksBuilder<
-  Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore>,
-  FusionOp,
-  TileShape_MNK,
-  EpilogueTile_MN,
-  ElementAccumulator,
-  AccLoadOp,
-  cute::enable_if_t<(FusionOp::IsAuxOutSupported ^ FusionOp::IsAuxInSupported) // only one aux tensor
-              && not cute::is_subbyte_v<typename FusionOp::ElementAux>> // aux subbyte tensor doesn't use smem
-> {
-  using GmemStrideTypeAux = gemm::TagToStrideC_t<typename FusionOp::GmemLayoutTagAux>;
-  using SmemLayoutAtomAux = decltype(detail::sm90_get_epilogue_smem_swizzle_layout_atom<
-    GmemStrideTypeAux, typename FusionOp::ElementAux, EpilogueTile_MN>());
-  using CopyOpR2S = decltype(detail::sm90_get_smem_store_op_for_accumulator<
-    GmemStrideTypeAux, typename FusionOp::ElementAux>());
-  using CopyOpS2R = decltype(detail::sm90_get_smem_load_op_for_source<
-    GmemStrideTypeAux, typename FusionOp::ElementAux>());
-  using SmemCopyOpAux = cute::conditional_t<FusionOp::IsAuxOutSupported, CopyOpR2S, CopyOpS2R>;
+// // aux fusion callbacks builder for sm90 tma epilogue
+// template <
+//   int StagesC,
+//   int StagesD,
+//   int FragmentSize,
+//   bool ReuseSmemC,
+//   bool DelayTmaStore,
+//   class FusionOp,
+//   class TileShape_MNK,
+//   class EpilogueTile_MN,
+//   class AccLoadOp,
+//   class ElementAccumulator
+// >
+// struct CallbacksBuilder<
+//   Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore>,
+//   FusionOp,
+//   TileShape_MNK,
+//   EpilogueTile_MN,
+//   ElementAccumulator,
+//   AccLoadOp,
+//   cute::enable_if_t<(FusionOp::IsAuxOutSupported ^ FusionOp::IsAuxInSupported) // only one aux tensor
+//               && not cute::is_subbyte_v<typename FusionOp::ElementAux>> // aux subbyte tensor doesn't use smem
+// > {
+//   using GmemStrideTypeAux = gemm::TagToStrideC_t<typename FusionOp::GmemLayoutTagAux>;
+//   using SmemLayoutAtomAux = decltype(detail::sm90_get_epilogue_smem_swizzle_layout_atom<
+//     GmemStrideTypeAux, typename FusionOp::ElementAux, EpilogueTile_MN>());
+//   using CopyOpR2S = decltype(detail::sm90_get_smem_store_op_for_accumulator<
+//     GmemStrideTypeAux, typename FusionOp::ElementAux>());
+//   using CopyOpS2R = decltype(detail::sm90_get_smem_load_op_for_source<
+//     GmemStrideTypeAux, typename FusionOp::ElementAux>());
+//   using SmemCopyOpAux = cute::conditional_t<FusionOp::IsAuxOutSupported, CopyOpR2S, CopyOpS2R>;
 
-  using Callbacks = fusion::FusionCallbacks<
-    Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore>,
-    FusionOp, TileShape_MNK, EpilogueTile_MN,
-    SmemLayoutAtomAux, SmemCopyOpAux
-  >;
-};
+//   using Callbacks = fusion::FusionCallbacks<
+//     Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore>,
+//     FusionOp, TileShape_MNK, EpilogueTile_MN,
+//     SmemLayoutAtomAux, SmemCopyOpAux
+//   >;
+// };
 
-template <
-  int StagesC,
-  int StagesD,
-  int FragmentSize,
-  bool ReuseSmemC,
-  bool DelayTmaStore,
-  class FusionOp,
-  class TileShape_MNK,
-  class EpilogueTile_MN,
-  class AccLoadOp,
-  class ElementAccumulator
->
-struct CallbacksBuilder<
-  Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore>,
-  FusionOp,
-  TileShape_MNK,
-  EpilogueTile_MN,
-  ElementAccumulator,
-  AccLoadOp,
-  cute::enable_if_t<(FusionOp::IsAuxOutSupported ^ FusionOp::IsAuxInSupported) // only one aux tensor
-              && sizeof_bits_v<typename FusionOp::ElementAux> == 1>
-> {
-  using Callbacks = fusion::FusionCallbacks<
-    Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore>,
-    FusionOp, TileShape_MNK, EpilogueTile_MN,
-    Layout<_1,_0>, DefaultCopy // aux bit tensor doesn't use smem
-  >;
-};
+// template <
+//   int StagesC,
+//   int StagesD,
+//   int FragmentSize,
+//   bool ReuseSmemC,
+//   bool DelayTmaStore,
+//   class FusionOp,
+//   class TileShape_MNK,
+//   class EpilogueTile_MN,
+//   class AccLoadOp,
+//   class ElementAccumulator
+// >
+// struct CallbacksBuilder<
+//   Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore>,
+//   FusionOp,
+//   TileShape_MNK,
+//   EpilogueTile_MN,
+//   ElementAccumulator,
+//   AccLoadOp,
+//   cute::enable_if_t<(FusionOp::IsAuxOutSupported ^ FusionOp::IsAuxInSupported) // only one aux tensor
+//               && sizeof_bits_v<typename FusionOp::ElementAux> == 1>
+// > {
+//   using Callbacks = fusion::FusionCallbacks<
+//     Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore>,
+//     FusionOp, TileShape_MNK, EpilogueTile_MN,
+//     Layout<_1,_0>, DefaultCopy // aux bit tensor doesn't use smem
+//   >;
+// };
 
 // // Helper for building TMA warp-specialized collective epilogues, specialized by
 // // the fusion operation performed and the dispatch policy to use.
@@ -346,47 +346,47 @@ struct EpilogueDescriptor {
   constexpr static int StagesD = DispatchPolicy::StagesD;
 };
 
-// Get Stride, SmemLayout, and CopyOpS2R for AuxLoad node
-template<
-  typename EpilogueDescriptor,
-  typename StrideOrLayoutTag,
-  typename ElementAux
->
-struct AuxLoadDescriptor {
-  constexpr static int Stages = EpilogueDescriptor::StagesC;
-  using EpilogueTile = typename EpilogueDescriptor::EpilogueTile;
-  using Element = ElementAux;
-  using Stride = cutlass::detail::TagToStrideC_t<StrideOrLayoutTag>;
-  using SmemLayoutAtom =
-    decltype(
-      detail::sm90_get_epilogue_smem_swizzle_layout_atom<
-        Stride, ElementAux, typename EpilogueDescriptor::EpilogueTile
-      >()
-    );
-  using CopyOpS2R =
-    decltype(detail::sm90_get_smem_load_op_for_source<Stride, ElementAux>());
-};
+// // Get Stride, SmemLayout, and CopyOpS2R for AuxLoad node
+// template<
+//   typename EpilogueDescriptor,
+//   typename StrideOrLayoutTag,
+//   typename ElementAux
+// >
+// struct AuxLoadDescriptor {
+//   constexpr static int Stages = EpilogueDescriptor::StagesC;
+//   using EpilogueTile = typename EpilogueDescriptor::EpilogueTile;
+//   using Element = ElementAux;
+//   using Stride = cutlass::detail::TagToStrideC_t<StrideOrLayoutTag>;
+//   using SmemLayoutAtom =
+//     decltype(
+//       detail::sm90_get_epilogue_smem_swizzle_layout_atom<
+//         Stride, ElementAux, typename EpilogueDescriptor::EpilogueTile
+//       >()
+//     );
+//   using CopyOpS2R =
+//     decltype(detail::sm90_get_smem_load_op_for_source<Stride, ElementAux>());
+// };
 
-// Get Stride, SmemLayout, and CopyOpS2R for AuxStore node
-template<
-  typename EpilogueDescriptor,
-  typename StrideOrLayoutTag,
-  typename ElementAux
->
-struct AuxStoreDescriptor {
-  constexpr static int Stages = EpilogueDescriptor::StagesD;
-  using EpilogueTile = typename EpilogueDescriptor::EpilogueTile;
-  using Element = ElementAux;
-  using Stride = cutlass::detail::TagToStrideC_t<StrideOrLayoutTag>;
-  using SmemLayoutAtom =
-    decltype(
-      detail::sm90_get_epilogue_smem_swizzle_layout_atom<
-        Stride, ElementAux, typename EpilogueDescriptor::EpilogueTile
-      >()
-    );
-  using CopyOpR2S =
-    decltype(detail::sm90_get_smem_store_op_for_accumulator<Stride, ElementAux>());
-};
+// // Get Stride, SmemLayout, and CopyOpS2R for AuxStore node
+// template<
+//   typename EpilogueDescriptor,
+//   typename StrideOrLayoutTag,
+//   typename ElementAux
+// >
+// struct AuxStoreDescriptor {
+//   constexpr static int Stages = EpilogueDescriptor::StagesD;
+//   using EpilogueTile = typename EpilogueDescriptor::EpilogueTile;
+//   using Element = ElementAux;
+//   using Stride = cutlass::detail::TagToStrideC_t<StrideOrLayoutTag>;
+//   using SmemLayoutAtom =
+//     decltype(
+//       detail::sm90_get_epilogue_smem_swizzle_layout_atom<
+//         Stride, ElementAux, typename EpilogueDescriptor::EpilogueTile
+//       >()
+//     );
+//   using CopyOpR2S =
+//     decltype(detail::sm90_get_smem_store_op_for_accumulator<Stride, ElementAux>());
+// };
 
 } // namespace detail
 

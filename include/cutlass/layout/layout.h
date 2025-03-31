@@ -46,8 +46,8 @@
 #include "cutlass/layout/tensor.h"
 #include "cutlass/layout/vector.h"
 
-#include "cutlass/layout/tensor_op_multiplicand_sm70.h"
-#include "cutlass/layout/tensor_op_multiplicand_sm75.h"
+// #include "cutlass/layout/tensor_op_multiplicand_sm70.h"
+// #include "cutlass/layout/tensor_op_multiplicand_sm75.h"
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {

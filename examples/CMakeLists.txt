@@ -52,7 +52,7 @@ function(cutlass_example_add_executable NAME)
     ${NAME}
     PRIVATE
     CUTLASS
-    cutlass_tools_util_includes
+    # cutlass_tools_util_includes
     $<$<BOOL:${CUTLASS_ENABLE_CUBLAS}>:nvidia::cublas>
     cuda
     )
@@ -62,6 +62,7 @@ function(cutlass_example_add_executable NAME)
     PRIVATE
     ${CUTLASS_EXAMPLES_COMMON_SOURCE_DIR}
     ${CUTLASS_EXAMPLES_UTILS_DIR}
+    ${CUTLASS_TOOLS_UTIL_INCLUDE_DIR}
     )
 
   install(

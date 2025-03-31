@@ -41,7 +41,7 @@
 #include "cutlass/matrix_shape.h"
 #include "cutlass/numeric_conversion.h"
 #include "cutlass/arch/memory.h"
-#include "cutlass/arch/memory_sm75.h"
+// #include "cutlass/arch/memory_sm75.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

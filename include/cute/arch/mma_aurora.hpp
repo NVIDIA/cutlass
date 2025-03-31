@@ -342,7 +342,7 @@ struct MMA_16x8x16_C64C64C64C64_TN
 //#include <cute/arch/mma_sm90_AMMA.hpp>
 #include <cute/arch/mma_aurora_desc.hpp>
 #include <cute/arch/mma_aurora_gmma.hpp>
-#include <cute/arch/mma_sm90_gmma_sparse.hpp>
+// #include <cute/arch/mma_sm90_gmma_sparse.hpp>
 #include <cute/layout.hpp>                     // cute::size
 #include <cute/numeric/integral_constant.hpp>  // cute::is_static
 #include <cute/numeric/numeric_types.hpp>      // cute::half_t, cute::float_e4m3_t, cute::tfloat32_t, etc

@@ -51,10 +51,10 @@
 #endif // !defined(__CUDACC_RTC__)
 
 // 2.x
-#include "cutlass/gemm/device/gemm_universal_base.h"
-#include "cutlass/gemm/kernel/gemm_transpose_operands.h"
-#include "cutlass/gemm/threadblock/threadblock_swizzle.h"
-#include "cutlass/epilogue/threadblock/epilogue_with_visitor_callbacks.h"
+// #include "cutlass/gemm/device/gemm_universal_base.h"
+// #include "cutlass/gemm/kernel/gemm_transpose_operands.h"
+// #include "cutlass/gemm/threadblock/threadblock_swizzle.h"
+// #include "cutlass/epilogue/threadblock/epilogue_with_visitor_callbacks.h"
 
 // 3.x
 #include "cutlass/gemm/kernel/gemm_universal.hpp"
@@ -149,25 +149,25 @@ public:
 
   using ArchTag = typename GemmKernel::ArchTag;
 
-  // NOTE: Assume identity swizzle for now
-  using ThreadblockSwizzle = cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>;
+  // // NOTE: Assume identity swizzle for now
+  // using ThreadblockSwizzle = cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>;
 
-  // Assume TiledMma's ShapeMNK is the same as 2.x's ThreadblockShape
-  using ThreadblockShape = cutlass::gemm::GemmShape<
-      cute::size<0>(TileShape{}),
-      cute::size<1>(TileShape{}),
-      cute::size<2>(TileShape{})>;
+  // // Assume TiledMma's ShapeMNK is the same as 2.x's ThreadblockShape
+  // using ThreadblockShape = cutlass::gemm::GemmShape<
+  //     cute::size<0>(TileShape{}),
+  //     cute::size<1>(TileShape{}),
+  //     cute::size<2>(TileShape{})>;
 
-  using ClusterShape = cutlass::gemm::GemmShape<
-      cute::size<0>(typename GemmKernel::DispatchPolicy::ClusterShape{}),
-      cute::size<1>(typename GemmKernel::DispatchPolicy::ClusterShape{}),
-      cute::size<2>(typename GemmKernel::DispatchPolicy::ClusterShape{})>;
+  // using ClusterShape = cutlass::gemm::GemmShape<
+  //     cute::size<0>(typename GemmKernel::DispatchPolicy::ClusterShape{}),
+  //     cute::size<1>(typename GemmKernel::DispatchPolicy::ClusterShape{}),
+  //     cute::size<2>(typename GemmKernel::DispatchPolicy::ClusterShape{})>;
 
-  // Instruction shape is easy too, since we get that directly from our TiledMma's atom shape
-  using InstructionShape = cutlass::gemm::GemmShape<
-      cute::size<0>(typename CollectiveMainloop::TiledMma::AtomShape_MNK{}),
-      cute::size<1>(typename CollectiveMainloop::TiledMma::AtomShape_MNK{}),
-      cute::size<2>(typename CollectiveMainloop::TiledMma::AtomShape_MNK{})>;
+  // // Instruction shape is easy too, since we get that directly from our TiledMma's atom shape
+  // using InstructionShape = cutlass::gemm::GemmShape<
+  //     cute::size<0>(typename CollectiveMainloop::TiledMma::AtomShape_MNK{}),
+  //     cute::size<1>(typename CollectiveMainloop::TiledMma::AtomShape_MNK{}),
+  //     cute::size<2>(typename CollectiveMainloop::TiledMma::AtomShape_MNK{})>;
 
   // Legacy: provide a correct warp count, but no reliable warp shape
   static int const kThreadCount = GemmKernel::MaxThreadsPerBlock;

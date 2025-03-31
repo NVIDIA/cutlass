@@ -729,37 +729,37 @@ print_latex_copy(LayoutS const& S, ThrIDS const& TS,  // (m,n) -> (tid,vid)  and
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-#include <cute/atom/copy_traits_sm50.hpp>
-#include <cute/atom/copy_traits_sm75.hpp>
-#include <cute/atom/copy_traits_sm80.hpp>
-#include <cute/atom/copy_traits_sm90.hpp>
-#include <cute/atom/copy_traits_sm100.hpp> 
+// #include <cute/atom/copy_traits_sm50.hpp>
+// #include <cute/atom/copy_traits_sm75.hpp>
+// #include <cute/atom/copy_traits_sm80.hpp>
+// #include <cute/atom/copy_traits_sm90.hpp>
+// #include <cute/atom/copy_traits_sm100.hpp> 
 #include <cute/arch/copy_sma_dma.hpp>
 
 // Config
-#if (__CUDACC_VER_MAJOR__ >= 12)
-#  define CUTE_COPY_ATOM_TMA_SM90_ENABLED
-#  define CUTE_COPY_ATOM_TMA_SM100_ENABLED 
-#endif
+// #if (__CUDACC_VER_MAJOR__ >= 12)
+// #  define CUTE_COPY_ATOM_TMA_SM90_ENABLED
+// #  define CUTE_COPY_ATOM_TMA_SM100_ENABLED 
+// #endif
 
 
-#if (!defined(CUTE_COPY_ATOM_TMA_SM90_ENABLED))
-#  define CUTE_COPY_ATOM_TMA_SM90_ENABLED
-#endif
+// #if (!defined(CUTE_COPY_ATOM_TMA_SM90_ENABLED))
+// #  define CUTE_COPY_ATOM_TMA_SM90_ENABLED
+// #endif
 
-#if (!defined(CUTE_COPY_ATOM_TMA_SM100_ENABLED))
-#  define CUTE_COPY_ATOM_TMA_SM100_ENABLED
-#endif
-
-
-#if defined(CUTE_COPY_ATOM_TMA_SM90_ENABLED)
-#include <cute/atom/copy_traits_sm90_tma.hpp>
-#endif
+// #if (!defined(CUTE_COPY_ATOM_TMA_SM100_ENABLED))
+// #  define CUTE_COPY_ATOM_TMA_SM100_ENABLED
+// #endif
 
 
-#if defined(CUTE_COPY_ATOM_TMA_SM100_ENABLED)
-#include <cute/atom/copy_traits_sm100_tma.hpp>
-#endif
+// #if defined(CUTE_COPY_ATOM_TMA_SM90_ENABLED)
+// #include <cute/atom/copy_traits_sm90_tma.hpp>
+// #endif
+
+
+// #if defined(CUTE_COPY_ATOM_TMA_SM100_ENABLED)
+// #include <cute/atom/copy_traits_sm100_tma.hpp>
+// #endif
 
 #include <cute/atom/copy_traits_sma_dma.hpp>
 ////////////////////////////////////////////////////////////////////////////////////////////////////

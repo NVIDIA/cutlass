@@ -82,7 +82,7 @@
 
 using namespace cute;
 
-#if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
+// #if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /// GEMM kernel configurations
@@ -174,7 +174,7 @@ cutlass::DeviceAllocation<typename Gemm::ElementC> block_C;
 cutlass::DeviceAllocation<typename Gemm::EpilogueOutputOp::ElementOutput> block_D;
 cutlass::DeviceAllocation<typename Gemm::EpilogueOutputOp::ElementOutput> block_ref_D;
 
-#endif // defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
+// #endif // defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /// Testbed utility types
@@ -290,7 +290,7 @@ struct Result
 
 };
 
-#if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
+// #if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /// GEMM setup and evaluation
@@ -462,7 +462,7 @@ int run(Options &options)
   return 0;
 }
 
-#endif // defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
+// #endif // defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -504,9 +504,9 @@ int main(int argc, char const **args) {
   // Evaluate CUTLASS kernels
   //
 
-#if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
+// #if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
   run<Gemm>(options);
-#endif
+// #endif
 
   return 0;
 }

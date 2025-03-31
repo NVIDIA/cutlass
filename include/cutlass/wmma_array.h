@@ -35,7 +35,7 @@
 
 #pragma once
 
-#include "cutlass/arch/wmma.h"
+// #include "cutlass/arch/wmma.h"
 
 #if defined(CUTLASS_ARCH_WMMA_ENABLED)
 

@@ -35,13 +35,15 @@
 #include "cutlass/kernel_hardware_info.hpp"
 #include "cute/arch/cluster_sm90.hpp"
 #include "cutlass/arch/reg_reconfig.h"
-#include "cutlass/arch/mma_sm90.h"
+// #include "cutlass/arch/mma_sm90.h"
 #include "cutlass/epilogue/collective/detail.hpp"
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/gemm/dispatch_policy.hpp"
-#include "cutlass/gemm/kernel/sm90_tile_scheduler.hpp"
+#include "cutlass/gemm/kernel/ma100_tile_scheduler.hpp"
 #include "cutlass/pipeline/pipeline.hpp"
 #include "cute/tensor.hpp"
+
+// #include "cutlass/conv/detail.hpp"
 ///////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass::gemm::kernel {
@@ -123,10 +125,10 @@ public:
 
   using GmemTiledCopyA = typename CollectiveMainloop::GmemTiledCopyA;
   using GmemTiledCopyB = typename CollectiveMainloop::GmemTiledCopyB;
-  static_assert(cute::is_same_v<GmemTiledCopyA, SM90_TMA_LOAD> || cute::is_same_v<GmemTiledCopyA, SM90_TMA_LOAD_MULTICAST>,
-      "GmemTiledCopy - invalid SM90 TMA copy atom specified.");
-  static_assert(cute::is_same_v<GmemTiledCopyB, SM90_TMA_LOAD> || cute::is_same_v<GmemTiledCopyB, SM90_TMA_LOAD_MULTICAST>,
-      "GmemTiledCopy - invalid SM90 TMA copy atom specified.");
+  // static_assert(cute::is_same_v<GmemTiledCopyA, SM90_TMA_LOAD> || cute::is_same_v<GmemTiledCopyA, SM90_TMA_LOAD_MULTICAST>,
+  //     "GmemTiledCopy - invalid SM90 TMA copy atom specified.");
+  // static_assert(cute::is_same_v<GmemTiledCopyB, SM90_TMA_LOAD> || cute::is_same_v<GmemTiledCopyB, SM90_TMA_LOAD_MULTICAST>,
+  //     "GmemTiledCopy - invalid SM90 TMA copy atom specified.");
 
   static constexpr int SharedStorageSize = sizeof(SharedStorage);
   static constexpr uint32_t NumLoadWarpGroups = 1;
@@ -182,7 +184,8 @@ public:
   // Kernel entry point API
   struct Params {
     GemmUniversalMode mode{};
-    using ProblemShapeMNKL = decltype(cutlass::conv::detail::get_problem_shape_MNKL_helper<CollectiveMainloop>(ProblemShape{}, cute::false_type{}));
+    // using ProblemShapeMNKL = decltype(cutlass::conv::detail::get_problem_shape_MNKL_helper<CollectiveMainloop>(ProblemShape{}, cute::false_type{}));
+    using ProblemShapeMNKL = decltype(ProblemShape{});
     ProblemShape problem_shape{};
     MainloopParams mainloop{};
     EpilogueParams epilogue{};
@@ -197,8 +200,10 @@ public:
   Params
   to_underlying_arguments(Arguments const& args, void* workspace) {
     (void) workspace;
-    auto problem_shape_mnkl = cutlass::conv::detail::get_problem_shape_MNKL_helper<CollectiveMainloop>(args.problem_shape, cute::false_type{});
-    auto transformed_problem_shape = cutlass::conv::detail::get_transformed_problem_shape_MNKL(args.problem_shape);
+    // auto problem_shape_mnkl = cutlass::conv::detail::get_problem_shape_MNKL_helper<CollectiveMainloop>(args.problem_shape, cute::false_type{});
+    // auto transformed_problem_shape = cutlass::conv::detail::get_transformed_problem_shape_MNKL(args.problem_shape);
+    auto problem_shape_mnkl = args.problem_shape;
+    auto transformed_problem_shape = args.problem_shape;
 
     auto swapped_problem_shape = problem_shape_mnkl;
     if constexpr (detail::Has_SwapAB_v<CollectiveMainloop>) {
@@ -217,7 +222,8 @@ public:
   static bool
   can_implement(Arguments const& args) {
     bool implementable = true;
-    auto transformed_problem_shape = cutlass::conv::detail::get_transformed_problem_shape_MNKL(args.problem_shape);
+    // auto transformed_problem_shape = cutlass::conv::detail::get_transformed_problem_shape_MNKL(args.problem_shape);
+    auto transformed_problem_shape = args.problem_shape;
 
     if (!implementable) {
         CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Arguments or Problem Shape don't meet the requirements.\n");

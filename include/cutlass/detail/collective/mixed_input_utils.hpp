@@ -34,7 +34,7 @@
 #include "cutlass/numeric_conversion.h"
 
 #include "cute/util/type_traits.hpp"
-#include "cute/arch/copy_sm90.hpp"
+// #include "cute/arch/copy_sm90.hpp"
 #include "cute/numeric/arithmetic_tuple.hpp"
 
 

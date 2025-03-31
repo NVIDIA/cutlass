@@ -38,7 +38,7 @@
 #include <cuda_runtime_api.h>
 #include "cutlass/cutlass.h"
 #include "cutlass/trace.h"
-#include <cute/arch/cluster_sm100.hpp> 
+// #include <cute/arch/cluster_sm100.hpp> 
 
 #if defined(__CUDACC_RTC__)
 #include <cuda/std/type_traits>

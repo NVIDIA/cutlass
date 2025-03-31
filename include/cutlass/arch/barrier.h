@@ -34,9 +34,9 @@
 
 #pragma once
 
-#include <cutlass/arch/memory_sm75.h>
+// #include <cutlass/arch/memory_sm75.h>
 #include <cute/arch/cluster_sm90.hpp>
-#include <cute/arch/copy_sm100_tma.hpp> 
+// #include <cute/arch/copy_sm100_tma.hpp> 
 #include <cutlass/arch/config.h>        
 
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 900 && (__CUDACC_VER_MAJOR__ >= 12)
@@ -755,149 +755,149 @@ void cpasync_barrier_arrive_noinc(uint64_t const* smem_ptr) {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
-CUTLASS_DEVICE
-void umma_arrive(uint64_t const* smem_ptr) {
-#if defined(CUTLASS_ARCH_TCGEN_ENABLED)
-  uint32_t bar_intptr = cute::cast_smem_ptr_to_uint(smem_ptr);
-  if (cute::elect_one_sync()) {
-    asm volatile("tcgen05.commit.cta_group::1.mbarrier::arrive::one.shared::cluster.b64 [%0];"
-      :
-      :"r"(bar_intptr));
-  }
-#elif defined(__CUDA_ARCH__)
-  asm volatile ("brkpt;\n" ::);
-#endif
-}
+// CUTLASS_DEVICE
+// void umma_arrive(uint64_t const* smem_ptr) {
+// #if defined(CUTLASS_ARCH_TCGEN_ENABLED)
+//   uint32_t bar_intptr = cute::cast_smem_ptr_to_uint(smem_ptr);
+//   if (cute::elect_one_sync()) {
+//     asm volatile("tcgen05.commit.cta_group::1.mbarrier::arrive::one.shared::cluster.b64 [%0];"
+//       :
+//       :"r"(bar_intptr));
+//   }
+// #elif defined(__CUDA_ARCH__)
+//   asm volatile ("brkpt;\n" ::);
+// #endif
+// }
 
-//UMMA arrive for MMA_2x1SM
-CUTLASS_DEVICE
-void umma_arrive_2x1SM(uint64_t const* smem_ptr) {
-#if defined(CUTLASS_ARCH_TCGEN_ENABLED)
-  uint32_t bar_intptr = cute::cast_smem_ptr_to_uint(smem_ptr);
-  if (cute::elect_one_sync()) {
-    asm volatile("tcgen05.commit.cta_group::2.mbarrier::arrive::one.shared::cluster.b64 [%0];"
-      :
-      :"r"(bar_intptr));
-  }
-#elif defined(__CUDA_ARCH__)
-  asm volatile ("brkpt;\n" ::);
-#endif
-}
+// //UMMA arrive for MMA_2x1SM
+// CUTLASS_DEVICE
+// void umma_arrive_2x1SM(uint64_t const* smem_ptr) {
+// #if defined(CUTLASS_ARCH_TCGEN_ENABLED)
+//   uint32_t bar_intptr = cute::cast_smem_ptr_to_uint(smem_ptr);
+//   if (cute::elect_one_sync()) {
+//     asm volatile("tcgen05.commit.cta_group::2.mbarrier::arrive::one.shared::cluster.b64 [%0];"
+//       :
+//       :"r"(bar_intptr));
+//   }
+// #elif defined(__CUDA_ARCH__)
+//   asm volatile ("brkpt;\n" ::);
+// #endif
+// }
 
-// UMMA arrive for MMA_1sm + TMA_LOAD_MULTICAST combination
-CUTLASS_DEVICE
-void umma_arrive_multicast(uint64_t const* smem_ptr, uint16_t cta_mask) {
-#if defined(CUTLASS_ARCH_TCGEN_ENABLED)
-  uint32_t bar_intptr = cute::cast_smem_ptr_to_uint(smem_ptr);
-  if(cute::elect_one_sync()) {
-    asm volatile(
-      "{\n\t"
-      "tcgen05.commit.cta_group::1.mbarrier::arrive::one.shared::cluster.multicast::cluster.b64 [%0], %1; \n\t"
-      "}" 
-      :
-      :"r"(bar_intptr), "h"(cta_mask));
-  }
-#elif defined(__CUDA_ARCH__)
-  asm volatile ("brkpt;\n" ::);
-#endif
-}
+// // UMMA arrive for MMA_1sm + TMA_LOAD_MULTICAST combination
+// CUTLASS_DEVICE
+// void umma_arrive_multicast(uint64_t const* smem_ptr, uint16_t cta_mask) {
+// #if defined(CUTLASS_ARCH_TCGEN_ENABLED)
+//   uint32_t bar_intptr = cute::cast_smem_ptr_to_uint(smem_ptr);
+//   if(cute::elect_one_sync()) {
+//     asm volatile(
+//       "{\n\t"
+//       "tcgen05.commit.cta_group::1.mbarrier::arrive::one.shared::cluster.multicast::cluster.b64 [%0], %1; \n\t"
+//       "}" 
+//       :
+//       :"r"(bar_intptr), "h"(cta_mask));
+//   }
+// #elif defined(__CUDA_ARCH__)
+//   asm volatile ("brkpt;\n" ::);
+// #endif
+// }
 
-// UMMA arrive for MMA_2x1SM + TMA_LOAD_MULTICAST combination
-CUTLASS_DEVICE
-void umma_arrive_multicast_2x1SM(uint64_t const* smem_ptr, uint16_t cta_mask) {
-#if defined(CUTLASS_ARCH_TCGEN_ENABLED)
-  uint32_t bar_intptr = cute::cast_smem_ptr_to_uint(smem_ptr);
-  if (cute::elect_one_sync()) {
-    asm volatile(
-      "{\n\t"
-      "tcgen05.commit.cta_group::2.mbarrier::arrive::one.shared::cluster.multicast::cluster.b64 [%0], %1; \n\t"
-      "}" 
-      :
-      :"r"(bar_intptr), "h"(cta_mask));
-  }
-#else
-  asm volatile ("brkpt;\n" ::);
-#endif
-}
+// // UMMA arrive for MMA_2x1SM + TMA_LOAD_MULTICAST combination
+// CUTLASS_DEVICE
+// void umma_arrive_multicast_2x1SM(uint64_t const* smem_ptr, uint16_t cta_mask) {
+// #if defined(CUTLASS_ARCH_TCGEN_ENABLED)
+//   uint32_t bar_intptr = cute::cast_smem_ptr_to_uint(smem_ptr);
+//   if (cute::elect_one_sync()) {
+//     asm volatile(
+//       "{\n\t"
+//       "tcgen05.commit.cta_group::2.mbarrier::arrive::one.shared::cluster.multicast::cluster.b64 [%0], %1; \n\t"
+//       "}" 
+//       :
+//       :"r"(bar_intptr), "h"(cta_mask));
+//   }
+// #else
+//   asm volatile ("brkpt;\n" ::);
+// #endif
+// }
 
-// Temporary solution for sparse kernel.
-// Will remove this when we done tightly elect_one wrap.
-CUTLASS_DEVICE
-void umma_arrive_multicast_no_elect(uint64_t const* smem_ptr, uint16_t cta_mask) {
-#if defined(CUTLASS_ARCH_TCGEN_ENABLED)
-  uint32_t bar_intptr = cute::cast_smem_ptr_to_uint(smem_ptr);
-  asm volatile(
-      "{\n\t"
-      ".reg .b16 lo, hi;\n\t"
-      "mov.b32 {lo, hi}, %1;\n\t"
-      "tcgen05.commit.cta_group::1.mbarrier::arrive::one.shared::cluster.multicast::cluster.b64 [%0], lo; \n\t"
-      "}" 
-      :
-      :"r"(bar_intptr), "r"(uint32_t(cta_mask)));
-#elif defined(__CUDA_ARCH__)
-  CUTLASS_NOT_IMPLEMENTED();
-#endif
-}
+// // Temporary solution for sparse kernel.
+// // Will remove this when we done tightly elect_one wrap.
+// CUTLASS_DEVICE
+// void umma_arrive_multicast_no_elect(uint64_t const* smem_ptr, uint16_t cta_mask) {
+// #if defined(CUTLASS_ARCH_TCGEN_ENABLED)
+//   uint32_t bar_intptr = cute::cast_smem_ptr_to_uint(smem_ptr);
+//   asm volatile(
+//       "{\n\t"
+//       ".reg .b16 lo, hi;\n\t"
+//       "mov.b32 {lo, hi}, %1;\n\t"
+//       "tcgen05.commit.cta_group::1.mbarrier::arrive::one.shared::cluster.multicast::cluster.b64 [%0], lo; \n\t"
+//       "}" 
+//       :
+//       :"r"(bar_intptr), "r"(uint32_t(cta_mask)));
+// #elif defined(__CUDA_ARCH__)
+//   CUTLASS_NOT_IMPLEMENTED();
+// #endif
+// }
 
-// Temporary solution for sparse kernel.
-// UMMA arrive for MMA_2x1SM + TMA_LOAD_MULTICAST combination
-CUTLASS_DEVICE
-void umma_arrive_multicast_2x1SM_no_elect(uint64_t const* smem_ptr, uint16_t cta_mask) {
-#if defined(CUTLASS_ARCH_TCGEN_ENABLED)
-  uint32_t bar_intptr = cute::cast_smem_ptr_to_uint(smem_ptr);
-  asm volatile(
-      "{\n\t"
-      ".reg .b16 lo, hi;\n\t"
-      "mov.b32 {lo, hi}, %1;\n\t"
-      "tcgen05.commit.cta_group::2.mbarrier::arrive::one.shared::cluster.multicast::cluster.b64 [%0], lo; \n\t"
-      "}" 
-      :
-      :"r"(bar_intptr), "r"(uint32_t(cta_mask)));
-#else
-  CUTLASS_NOT_IMPLEMENTED();
-#endif
-}
+// // Temporary solution for sparse kernel.
+// // UMMA arrive for MMA_2x1SM + TMA_LOAD_MULTICAST combination
+// CUTLASS_DEVICE
+// void umma_arrive_multicast_2x1SM_no_elect(uint64_t const* smem_ptr, uint16_t cta_mask) {
+// #if defined(CUTLASS_ARCH_TCGEN_ENABLED)
+//   uint32_t bar_intptr = cute::cast_smem_ptr_to_uint(smem_ptr);
+//   asm volatile(
+//       "{\n\t"
+//       ".reg .b16 lo, hi;\n\t"
+//       "mov.b32 {lo, hi}, %1;\n\t"
+//       "tcgen05.commit.cta_group::2.mbarrier::arrive::one.shared::cluster.multicast::cluster.b64 [%0], lo; \n\t"
+//       "}" 
+//       :
+//       :"r"(bar_intptr), "r"(uint32_t(cta_mask)));
+// #else
+//   CUTLASS_NOT_IMPLEMENTED();
+// #endif
+// }
 
-// Always arrive on even SM of collaborating 2 SMs.
-CUTLASS_DEVICE
-void umma_arrive_2x1SM_sm0(uint64_t const* smem_ptr) {
-#if defined(CUTLASS_ARCH_TCGEN_ENABLED)
-  uint32_t bar_intptr = cute::cast_smem_ptr_to_uint(smem_ptr) & cute::Sm100MmaPeerBitMask;
-  asm volatile (
-    "{\n\t"
-    "mbarrier.arrive.shared::cluster.b64 _, [%0];\n\t"
-    "}"
-    :
-    : "r"(bar_intptr));
+// // Always arrive on even SM of collaborating 2 SMs.
+// CUTLASS_DEVICE
+// void umma_arrive_2x1SM_sm0(uint64_t const* smem_ptr) {
+// #if defined(CUTLASS_ARCH_TCGEN_ENABLED)
+//   uint32_t bar_intptr = cute::cast_smem_ptr_to_uint(smem_ptr) & cute::Sm100MmaPeerBitMask;
+//   asm volatile (
+//     "{\n\t"
+//     "mbarrier.arrive.shared::cluster.b64 _, [%0];\n\t"
+//     "}"
+//     :
+//     : "r"(bar_intptr));
 
-#else
-  asm volatile ("brkpt;\n" ::);
-#endif
-}
+// #else
+//   asm volatile ("brkpt;\n" ::);
+// #endif
+// }
 
-CUTE_DEVICE static void fence_view_async_tmem_load() {
-#if defined(CUTLASS_ARCH_TCGEN_ENABLED)
-  asm volatile (
-    "{\n\t"
-    "tcgen05.wait::ld.sync.aligned; \n"
-    "}"
-    ::);
-#elif defined(__CUDA_ARCH__)
-  asm volatile ("brkpt;\n" ::);
-#endif
-}
+// CUTE_DEVICE static void fence_view_async_tmem_load() {
+// #if defined(CUTLASS_ARCH_TCGEN_ENABLED)
+//   asm volatile (
+//     "{\n\t"
+//     "tcgen05.wait::ld.sync.aligned; \n"
+//     "}"
+//     ::);
+// #elif defined(__CUDA_ARCH__)
+//   asm volatile ("brkpt;\n" ::);
+// #endif
+// }
 
-CUTE_DEVICE static void fence_view_async_tmem_store() {
-#if defined(CUTLASS_ARCH_TCGEN_ENABLED)
-  asm volatile (
-    "{\n\t"
-    "tcgen05.wait::st.sync.aligned; \n"
-    "}"
-    ::);
-#elif defined(__CUDA_ARCH__)
-  asm volatile ("brkpt;\n" ::);
-#endif
-}
+// CUTE_DEVICE static void fence_view_async_tmem_store() {
+// #if defined(CUTLASS_ARCH_TCGEN_ENABLED)
+//   asm volatile (
+//     "{\n\t"
+//     "tcgen05.wait::st.sync.aligned; \n"
+//     "}"
+//     ::);
+// #elif defined(__CUDA_ARCH__)
+//   asm volatile ("brkpt;\n" ::);
+// #endif
+// }
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

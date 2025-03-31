@@ -34,7 +34,7 @@
 #include <cuda.h>
 #endif
 
-#include <cute/atom/copy_traits_sm90_tma_swizzle.hpp>
+// #include <cute/atom/copy_traits_sm90_tma_swizzle.hpp>
 #include <cute/atom/copy_traits.hpp>
 #include <cute/atom/copy_atom.hpp>
 
@@ -618,7 +618,7 @@ make_dma_copy_desc(Tensor<GEngine,GLayout> const& gtensor,         // The origin
   //
 
   cute::array<uint32_t, 5> smem_box_shape  = {1,1,1,1,1};
-  cute::array<uint32_t, 5> smem_box_stride = {1,1,1,1,1};
+  [[maybe_unused]] cute::array<uint32_t, 5> smem_box_stride = {1,1,1,1,1};
   // The smem box is simply given by the sizes of the modes in tma_gbasis
   for_each(make_seq<dma_dim>{}, [&](auto i) {
     smem_box_shape[i] *= size<i>(dma_gbasis);

@@ -208,22 +208,22 @@ struct IsThreadEpilogueOpWithElementwiseArguments<
         ThreadEpilogueOp,
         cute::void_t<typename ThreadEpilogueOp::ElementwiseOp::Arguments>> : cute::true_type {};
 
-// Check if ActivationFn has 'Arguments' type defined
-template <class ActivationFn, class = void>
-struct sm100_act_has_arguments : cute::false_type {};
+// // Check if ActivationFn has 'Arguments' type defined
+// template <class ActivationFn, class = void>
+// struct sm100_act_has_arguments : cute::false_type {};
 
-template <class ActivationFn>
-struct sm100_act_has_arguments<ActivationFn, cute::void_t<typename ActivationFn::Arguments> > : cute::true_type {};
+// template <class ActivationFn>
+// struct sm100_act_has_arguments<ActivationFn, cute::void_t<typename ActivationFn::Arguments> > : cute::true_type {};
 
-template<typename EpilogueOp, typename = void>
-struct Sm100EpilogueOpNumAccumulatorMtxs {
-  static constexpr int value = 1;
-};
+// template<typename EpilogueOp, typename = void>
+// struct Sm100EpilogueOpNumAccumulatorMtxs {
+//   static constexpr int value = 1;
+// };
 
-template<typename EpilogueOp>
-struct Sm100EpilogueOpNumAccumulatorMtxs<EpilogueOp, cute::void_t<decltype(EpilogueOp::NumAccumulatorMtxs)>> {
-  static constexpr int value = EpilogueOp::NumAccumulatorMtxs;
-};
+// template<typename EpilogueOp>
+// struct Sm100EpilogueOpNumAccumulatorMtxs<EpilogueOp, cute::void_t<decltype(EpilogueOp::NumAccumulatorMtxs)>> {
+//   static constexpr int value = EpilogueOp::NumAccumulatorMtxs;
+// };
 
 
 // Wrapper class to use operator-style epilogues in sm90 TMA warp-specialized kernels
@@ -457,360 +457,360 @@ public:
 
   // Dummy methods to perform different parts of TMA/Tensormap modifications
 
-  template <bool IsLoad,
-            class ProblemShapeMNKL>
-  CUTLASS_DEVICE
-  void
-  tensormaps_perform_update(
-      [[maybe_unused]] TensorMapStorage& shared_tensormaps,
-      [[maybe_unused]] typename EpilogueOp::Params const& params,
-      [[maybe_unused]] cute::TmaDescriptor const* tensormap,
-      [[maybe_unused]] ProblemShapeMNKL problem_shape,
-      [[maybe_unused]] int32_t next_batch,
-      [[maybe_unused]] int32_t warp_group_idx) { }
+  // template <bool IsLoad,
+//           class ProblemShapeMNKL>
+// CUTLASS_DEVICE
+// void
+// tensormaps_perform_update(
+//     [[maybe_unused]] TensorMapStorage& shared_tensormaps,
+//     [[maybe_unused]] typename EpilogueOp::Params const& params,
+//     [[maybe_unused]] cute::TmaDescriptor const* tensormap,
+//     [[maybe_unused]] ProblemShapeMNKL problem_shape,
+//     [[maybe_unused]] int32_t next_batch,
+//     [[maybe_unused]] int32_t warp_group_idx) { }
 
-  template <bool IsLoad>
-  CUTLASS_DEVICE
-  void
-  tensormaps_cp_fence_release(
-      [[maybe_unused]] TensorMapStorage& shared_tensormaps,
-      [[maybe_unused]] cute::TmaDescriptor const* tensormap,
-      [[maybe_unused]] int32_t warp_group_idx) { }
+// template <bool IsLoad>
+// CUTLASS_DEVICE
+// void
+// tensormaps_cp_fence_release(
+//     [[maybe_unused]] TensorMapStorage& shared_tensormaps,
+//     [[maybe_unused]] cute::TmaDescriptor const* tensormap,
+//     [[maybe_unused]] int32_t warp_group_idx) { }
 
-  template <bool IsLoad>
-  CUTLASS_DEVICE
-  void
-  tensormaps_fence_acquire([[maybe_unused]] cute::TmaDescriptor const* tensormap) { }
+// template <bool IsLoad>
+// CUTLASS_DEVICE
+// void
+// tensormaps_fence_acquire([[maybe_unused]] cute::TmaDescriptor const* tensormap) { }
 };
 
 
-// Wrapper class to use operator-style epilogues in sm100 TMA warp-specialized kernels
-template <class EpilogueOp>
-class Sm100TmaWarpSpecializedAdapter : public EpilogueOp {
-public:
-  using LoadPipeline = cutlass::PipelineTransactionAsync<0>; // 0 stage to disable smem alloc
-  using LoadPipelineState = cutlass::PipelineState<0>;
+// // Wrapper class to use operator-style epilogues in sm100 TMA warp-specialized kernels
+// template <class EpilogueOp>
+// class Sm100TmaWarpSpecializedAdapter : public EpilogueOp {
+// public:
+//   using LoadPipeline = cutlass::PipelineTransactionAsync<0>; // 0 stage to disable smem alloc
+//   using LoadPipelineState = cutlass::PipelineState<0>;
 
-  using StorePipeline = cutlass::PipelineTmaStore<1>; // tma store pipe has no smem alloc
-  using StorePipelineState = cutlass::PipelineState<1>;
+//   using StorePipeline = cutlass::PipelineTmaStore<1>; // tma store pipe has no smem alloc
+//   using StorePipelineState = cutlass::PipelineState<1>;
 
-  using TensorStorage = typename EpilogueOp::SharedStorage;
-  using TensorMapStorage = typename EpilogueOp::SharedStorage;
-  using PipelineStorage = typename LoadPipeline::SharedStorage;
+//   using TensorStorage = typename EpilogueOp::SharedStorage;
+//   using TensorMapStorage = typename EpilogueOp::SharedStorage;
+//   using PipelineStorage = typename LoadPipeline::SharedStorage;
 
-  static constexpr int NumAccumulatorMtxs = Sm100EpilogueOpNumAccumulatorMtxs<EpilogueOp>::value;
+//   static constexpr int NumAccumulatorMtxs = Sm100EpilogueOpNumAccumulatorMtxs<EpilogueOp>::value;
 
-  template<class CtaTileMNK>
-  CUTLASS_HOST_DEVICE
-  static constexpr int
-  get_load_pipe_increment(CtaTileMNK) {
-    return 1;
-  }
+//   template<class CtaTileMNK>
+//   CUTLASS_HOST_DEVICE
+//   static constexpr int
+//   get_load_pipe_increment(CtaTileMNK) {
+//     return 1;
+//   }
 
-  template<class CtaTileMNK>
-  CUTLASS_HOST_DEVICE
-  static constexpr int
-  get_store_pipe_increment(CtaTileMNK) {
-    return 1;
-  }
+//   template<class CtaTileMNK>
+//   CUTLASS_HOST_DEVICE
+//   static constexpr int
+//   get_store_pipe_increment(CtaTileMNK) {
+//     return 1;
+//   }
 
-  CUTLASS_DEVICE
-  static void prefetch_tma_descriptors([[maybe_unused]] typename EpilogueOp::Params const&) {
-  }
+//   CUTLASS_DEVICE
+//   static void prefetch_tma_descriptors([[maybe_unused]] typename EpilogueOp::Params const&) {
+//   }
 
-  CUTLASS_DEVICE
-  bool
-  is_producer_load_needed() const {
-    return false;
-  }
+//   CUTLASS_DEVICE
+//   bool
+//   is_producer_load_needed() const {
+//     return false;
+//   }
 
-  // ctor inheritance
-  using EpilogueOp::EpilogueOp;
+//   // ctor inheritance
+//   using EpilogueOp::EpilogueOp;
 
-  CUTLASS_DEVICE auto
-  load_init(
-      [[maybe_unused]] typename EpilogueOp::Params const& params,
-      [[maybe_unused]] TensorMapStorage& shared_tensormap,
-      [[maybe_unused]] int32_t const sm_count,
-      [[maybe_unused]] int32_t const sm_idx) const {
-    return cute::make_tuple(nullptr);
-  }
+//   CUTLASS_DEVICE auto
+//   load_init(
+//       [[maybe_unused]] typename EpilogueOp::Params const& params,
+//       [[maybe_unused]] TensorMapStorage& shared_tensormap,
+//       [[maybe_unused]] int32_t const sm_count,
+//       [[maybe_unused]] int32_t const sm_idx) const {
+//     return cute::make_tuple(nullptr);
+//   }
 
-  template<
-    bool ReuseTmem = false,
-    class ProblemShapeMNKL,
-    class CtaTileMNK,
-    class CtaCoordMNKL,
-    class MmaTileMNK,
-    class TiledMma
-  >
-  CUTLASS_DEVICE auto
-  load(
-      LoadPipeline load_pipeline,
-      LoadPipelineState load_pipe_producer_state,
-      ProblemShapeMNKL problem_shape_mnkl,
-      CtaTileMNK cta_tile_mnk,
-      CtaCoordMNKL cta_coord_mnkl,
-      MmaTileMNK mma_tile_mnk,
-      TiledMma tiled_mma,
-      TensorStorage& shared_tensors,
-      bool reverse_epi_n = false)
-  {
-    // C load is performed in epilogue operator
-    return load_pipe_producer_state;
-  }
+//   template<
+//     bool ReuseTmem = false,
+//     class ProblemShapeMNKL,
+//     class CtaTileMNK,
+//     class CtaCoordMNKL,
+//     class MmaTileMNK,
+//     class TiledMma
+//   >
+//   CUTLASS_DEVICE auto
+//   load(
+//       LoadPipeline load_pipeline,
+//       LoadPipelineState load_pipe_producer_state,
+//       ProblemShapeMNKL problem_shape_mnkl,
+//       CtaTileMNK cta_tile_mnk,
+//       CtaCoordMNKL cta_coord_mnkl,
+//       MmaTileMNK mma_tile_mnk,
+//       TiledMma tiled_mma,
+//       TensorStorage& shared_tensors,
+//       bool reverse_epi_n = false)
+//   {
+//     // C load is performed in epilogue operator
+//     return load_pipe_producer_state;
+//   }
 
-  // with Tensormap
-  template<
-    bool ReuseTmem = false,
-    class ProblemShapeMNKL,
-    class CtaTileShapeMNK,
-    class CtaTileCoordMNKL,
-    class MmaTileMNK,
-    class TiledMma,
-    class TensorMap
-  >
-  CUTLASS_DEVICE auto
-  load(
-      LoadPipeline load_pipeline,
-      LoadPipelineState load_pipe_producer_state,
-      ProblemShapeMNKL problem_shape_mnkl,
-      CtaTileShapeMNK tile_shape_mnk,
-      CtaTileCoordMNKL cta_coord_mnkl,
-      MmaTileMNK mma_tile_mnk,
-      TiledMma tiled_mma,
-      TensorStorage& shared_tensors,
-      [[maybe_unused]] cute::tuple<TensorMap, bool> const& load_tensormap_info,
-      bool reverse_epi_n = false)
-  {
-    // C load is performed in epilogue operator
-    return load_pipe_producer_state;
-  }
+//   // with Tensormap
+//   template<
+//     bool ReuseTmem = false,
+//     class ProblemShapeMNKL,
+//     class CtaTileShapeMNK,
+//     class CtaTileCoordMNKL,
+//     class MmaTileMNK,
+//     class TiledMma,
+//     class TensorMap
+//   >
+//   CUTLASS_DEVICE auto
+//   load(
+//       LoadPipeline load_pipeline,
+//       LoadPipelineState load_pipe_producer_state,
+//       ProblemShapeMNKL problem_shape_mnkl,
+//       CtaTileShapeMNK tile_shape_mnk,
+//       CtaTileCoordMNKL cta_coord_mnkl,
+//       MmaTileMNK mma_tile_mnk,
+//       TiledMma tiled_mma,
+//       TensorStorage& shared_tensors,
+//       [[maybe_unused]] cute::tuple<TensorMap, bool> const& load_tensormap_info,
+//       bool reverse_epi_n = false)
+//   {
+//     // C load is performed in epilogue operator
+//     return load_pipe_producer_state;
+//   }
 
-  CUTLASS_DEVICE void
-  load_tail(
-      [[maybe_unused]] LoadPipeline load_pipeline,
-      [[maybe_unused]] LoadPipelineState load_pipe_producer_state,
-      [[maybe_unused]] StorePipeline store_pipeline,
-      [[maybe_unused]] StorePipelineState store_pipe_producer_state)
-  {
-  }
+//   CUTLASS_DEVICE void
+//   load_tail(
+//       [[maybe_unused]] LoadPipeline load_pipeline,
+//       [[maybe_unused]] LoadPipelineState load_pipe_producer_state,
+//       [[maybe_unused]] StorePipeline store_pipeline,
+//       [[maybe_unused]] StorePipelineState store_pipe_producer_state)
+//   {
+//   }
 
-  CUTLASS_DEVICE auto
-  store_init(
-      [[maybe_unused]] typename EpilogueOp::Params const& params,
-      [[maybe_unused]] TensorMapStorage& shared_tensormap,
-      [[maybe_unused]] int32_t const sm_count,
-      [[maybe_unused]] int32_t const sm_idx) const {
-    return cute::make_tuple(nullptr);
-  }
+//   CUTLASS_DEVICE auto
+//   store_init(
+//       [[maybe_unused]] typename EpilogueOp::Params const& params,
+//       [[maybe_unused]] TensorMapStorage& shared_tensormap,
+//       [[maybe_unused]] int32_t const sm_count,
+//       [[maybe_unused]] int32_t const sm_idx) const {
+//     return cute::make_tuple(nullptr);
+//   }
 
-  template<
-    bool ReuseTmem = false,
-    class AccumulatorPipeline,
-    class AccumulatorPipelineState,
-    class ProblemShapeMNKL,
-    class CtaTileMNK,
-    class CtaCoordMNKL,
-    class MmaTileMNK,
-    class TiledMma,
-    class AccEngine,
-    class AccLayout
-  >
-  CUTLASS_DEVICE auto
-  store(
-      LoadPipeline load_pipeline,
-      LoadPipelineState load_pipe_consumer_state,
-      StorePipeline store_pipeline,
-      StorePipelineState store_pipe_producer_state,
-      AccumulatorPipeline acc_pipeline,
-      AccumulatorPipelineState acc_pipe_consumer_state,
-      ProblemShapeMNKL problem_shape_mnkl,
-      CtaTileMNK cta_tile_mnk,
-      CtaCoordMNKL cta_coord_mnkl,
-      MmaTileMNK mma_tile_mnk,
-      TiledMma tiled_mma,
-      cute::Tensor<AccEngine,AccLayout> accumulators,
-      TensorStorage& shared_tensors
-      )
-  {
-    // Wait for mma warp to fill tmem buffer with accumulator results
-    acc_pipeline.consumer_wait(acc_pipe_consumer_state);
+//   template<
+//     bool ReuseTmem = false,
+//     class AccumulatorPipeline,
+//     class AccumulatorPipelineState,
+//     class ProblemShapeMNKL,
+//     class CtaTileMNK,
+//     class CtaCoordMNKL,
+//     class MmaTileMNK,
+//     class TiledMma,
+//     class AccEngine,
+//     class AccLayout
+//   >
+//   CUTLASS_DEVICE auto
+//   store(
+//       LoadPipeline load_pipeline,
+//       LoadPipelineState load_pipe_consumer_state,
+//       StorePipeline store_pipeline,
+//       StorePipelineState store_pipe_producer_state,
+//       AccumulatorPipeline acc_pipeline,
+//       AccumulatorPipelineState acc_pipe_consumer_state,
+//       ProblemShapeMNKL problem_shape_mnkl,
+//       CtaTileMNK cta_tile_mnk,
+//       CtaCoordMNKL cta_coord_mnkl,
+//       MmaTileMNK mma_tile_mnk,
+//       TiledMma tiled_mma,
+//       cute::Tensor<AccEngine,AccLayout> accumulators,
+//       TensorStorage& shared_tensors
+//       )
+//   {
+//     // Wait for mma warp to fill tmem buffer with accumulator results
+//     acc_pipeline.consumer_wait(acc_pipe_consumer_state);
 
-    auto [acc_state_next] = (*this).template operator()<ReuseTmem>(
-        acc_pipeline,
-        acc_pipe_consumer_state,
-        problem_shape_mnkl,
-        cta_tile_mnk,
-        cta_coord_mnkl,
-        accumulators,
-        shared_tensors);
+//     auto [acc_state_next] = (*this).template operator()<ReuseTmem>(
+//         acc_pipeline,
+//         acc_pipe_consumer_state,
+//         problem_shape_mnkl,
+//         cta_tile_mnk,
+//         cta_coord_mnkl,
+//         accumulators,
+//         shared_tensors);
 
-    // Let mma warp know tmem buffer is consumed and empty
-    ++load_pipe_consumer_state;
-    ++store_pipe_producer_state;
+//     // Let mma warp know tmem buffer is consumed and empty
+//     ++load_pipe_consumer_state;
+//     ++store_pipe_producer_state;
 
-    return cute::make_tuple(load_pipe_consumer_state, store_pipe_producer_state, acc_state_next);
-  }
+//     return cute::make_tuple(load_pipe_consumer_state, store_pipe_producer_state, acc_state_next);
+//   }
 
-  // FastF32 API
-  template<
-    class ProblemShapeMNKL,
-    class CtaTileMNK,
-    class CtaCoordMNKL,
-    class MmaTileMNK,
-    class TiledMma,
-    class AccEngine,
-    class AccLayout,
-    class TiledCopyT2R
-  >
-  CUTLASS_DEVICE auto
-  store(
-    LoadPipeline load_pipeline,
-    LoadPipelineState load_pipe_consumer_state,
-    StorePipeline store_pipeline,
-    StorePipelineState store_pipe_producer_state,
-    ProblemShapeMNKL problem_shape_mnkl,
-    CtaTileMNK cta_tile_mnk,
-    CtaCoordMNKL cta_coord_mnkl,
-    MmaTileMNK mma_tile_mnk,
-    TiledMma tiled_mma,
-    cute::Tensor<AccEngine, AccLayout>& tTR_rAcc,
-    TensorStorage& shared_tensors,
-    TiledCopyT2R tiled_t2r)
-  {
-    (*this)(
-      problem_shape_mnkl,
-      cta_tile_mnk,
-      cta_coord_mnkl,
-      tTR_rAcc,
-      shared_tensors,
-      tiled_t2r);
-    return cute::make_tuple(load_pipe_consumer_state, store_pipe_producer_state);
-  }
+//   // FastF32 API
+//   template<
+//     class ProblemShapeMNKL,
+//     class CtaTileMNK,
+//     class CtaCoordMNKL,
+//     class MmaTileMNK,
+//     class TiledMma,
+//     class AccEngine,
+//     class AccLayout,
+//     class TiledCopyT2R
+//   >
+//   CUTLASS_DEVICE auto
+//   store(
+//     LoadPipeline load_pipeline,
+//     LoadPipelineState load_pipe_consumer_state,
+//     StorePipeline store_pipeline,
+//     StorePipelineState store_pipe_producer_state,
+//     ProblemShapeMNKL problem_shape_mnkl,
+//     CtaTileMNK cta_tile_mnk,
+//     CtaCoordMNKL cta_coord_mnkl,
+//     MmaTileMNK mma_tile_mnk,
+//     TiledMma tiled_mma,
+//     cute::Tensor<AccEngine, AccLayout>& tTR_rAcc,
+//     TensorStorage& shared_tensors,
+//     TiledCopyT2R tiled_t2r)
+//   {
+//     (*this)(
+//       problem_shape_mnkl,
+//       cta_tile_mnk,
+//       cta_coord_mnkl,
+//       tTR_rAcc,
+//       shared_tensors,
+//       tiled_t2r);
+//     return cute::make_tuple(load_pipe_consumer_state, store_pipe_producer_state);
+//   }
 
-    // FastF32 API with Tensor Map
-  template<
-    class ProblemShapeMNKL,
-    class CtaTileMNK,
-    class CtaCoordMNKL,
-    class MmaTileMNK,
-    class TiledMma,
-    class AccEngine,
-    class AccLayout,
-    class TiledCopyT2R,
-    class TensorMap
-  >
-  CUTLASS_DEVICE auto
-  store(
-    LoadPipeline load_pipeline,
-    LoadPipelineState load_pipe_consumer_state,
-    StorePipeline store_pipeline,
-    StorePipelineState store_pipe_producer_state,
-    ProblemShapeMNKL problem_shape_mnkl,
-    CtaTileMNK cta_tile_mnk,
-    CtaCoordMNKL cta_coord_mnkl,
-    MmaTileMNK mma_tile_mnk,
-    TiledMma tiled_mma,
-    cute::Tensor<AccEngine, AccLayout>& tTR_rAcc,
-    TensorStorage& shared_tensors,
-    TensorMap tensormap,
-    TiledCopyT2R tiled_t2r) {
-    (*this)(
-      problem_shape_mnkl,
-      cta_tile_mnk,
-      cta_coord_mnkl,
-      tTR_rAcc,
-      shared_tensors,
-      tiled_t2r);
-    return cute::make_tuple(load_pipe_consumer_state, store_pipe_producer_state);
-  }
+//     // FastF32 API with Tensor Map
+//   template<
+//     class ProblemShapeMNKL,
+//     class CtaTileMNK,
+//     class CtaCoordMNKL,
+//     class MmaTileMNK,
+//     class TiledMma,
+//     class AccEngine,
+//     class AccLayout,
+//     class TiledCopyT2R,
+//     class TensorMap
+//   >
+//   CUTLASS_DEVICE auto
+//   store(
+//     LoadPipeline load_pipeline,
+//     LoadPipelineState load_pipe_consumer_state,
+//     StorePipeline store_pipeline,
+//     StorePipelineState store_pipe_producer_state,
+//     ProblemShapeMNKL problem_shape_mnkl,
+//     CtaTileMNK cta_tile_mnk,
+//     CtaCoordMNKL cta_coord_mnkl,
+//     MmaTileMNK mma_tile_mnk,
+//     TiledMma tiled_mma,
+//     cute::Tensor<AccEngine, AccLayout>& tTR_rAcc,
+//     TensorStorage& shared_tensors,
+//     TensorMap tensormap,
+//     TiledCopyT2R tiled_t2r) {
+//     (*this)(
+//       problem_shape_mnkl,
+//       cta_tile_mnk,
+//       cta_coord_mnkl,
+//       tTR_rAcc,
+//       shared_tensors,
+//       tiled_t2r);
+//     return cute::make_tuple(load_pipe_consumer_state, store_pipe_producer_state);
+//   }
 
-  template<
-    bool ReuseTmem = false,
-    class AccumulatorPipeline,
-    class AccumulatorPipelineState,
-    class ProblemShapeMNKL,
-    class CtaTileMNK,
-    class TileCoordMNKL,
-    class MmaTileMNK,
-    class TiledMma,
-    class AccEngine,
-    class AccLayout,
-    class TensorMap
-  >
-  CUTLASS_DEVICE auto
-  store(
-      LoadPipeline load_pipeline,
-      LoadPipelineState load_pipe_consumer_state,
-      StorePipeline store_pipeline,
-      StorePipelineState store_pipe_producer_state,
-      AccumulatorPipeline acc_pipeline,
-      AccumulatorPipelineState acc_pipe_consumer_state,
-      ProblemShapeMNKL problem_shape_mnkl,
-      CtaTileMNK cta_tile_mnk,
-      TileCoordMNKL cta_coord_mnkl,
-      MmaTileMNK mma_tile_mnk,
-      TiledMma tiled_mma,
-      cute::Tensor<AccEngine,AccLayout> accumulators,
-      TensorStorage& shared_tensors,
-      TensorMap tensormap
-      )
-  {
-    // Wait for mma warp to fill tmem buffer with accumulator results
-    acc_pipeline.consumer_wait(acc_pipe_consumer_state);
+//   template<
+//     bool ReuseTmem = false,
+//     class AccumulatorPipeline,
+//     class AccumulatorPipelineState,
+//     class ProblemShapeMNKL,
+//     class CtaTileMNK,
+//     class TileCoordMNKL,
+//     class MmaTileMNK,
+//     class TiledMma,
+//     class AccEngine,
+//     class AccLayout,
+//     class TensorMap
+//   >
+//   CUTLASS_DEVICE auto
+//   store(
+//       LoadPipeline load_pipeline,
+//       LoadPipelineState load_pipe_consumer_state,
+//       StorePipeline store_pipeline,
+//       StorePipelineState store_pipe_producer_state,
+//       AccumulatorPipeline acc_pipeline,
+//       AccumulatorPipelineState acc_pipe_consumer_state,
+//       ProblemShapeMNKL problem_shape_mnkl,
+//       CtaTileMNK cta_tile_mnk,
+//       TileCoordMNKL cta_coord_mnkl,
+//       MmaTileMNK mma_tile_mnk,
+//       TiledMma tiled_mma,
+//       cute::Tensor<AccEngine,AccLayout> accumulators,
+//       TensorStorage& shared_tensors,
+//       TensorMap tensormap
+//       )
+//   {
+//     // Wait for mma warp to fill tmem buffer with accumulator results
+//     acc_pipeline.consumer_wait(acc_pipe_consumer_state);
 
-    auto [acc_state_next] = (*this).template operator()<ReuseTmem>(
-        acc_pipeline,
-        acc_pipe_consumer_state,
-        problem_shape_mnkl,
-        cta_tile_mnk,
-        cta_coord_mnkl,
-        accumulators,
-        shared_tensors);
+//     auto [acc_state_next] = (*this).template operator()<ReuseTmem>(
+//         acc_pipeline,
+//         acc_pipe_consumer_state,
+//         problem_shape_mnkl,
+//         cta_tile_mnk,
+//         cta_coord_mnkl,
+//         accumulators,
+//         shared_tensors);
 
-    // Let mma warp know tmem buffer is consumed and empty
-    ++load_pipe_consumer_state;
-    ++store_pipe_producer_state;
+//     // Let mma warp know tmem buffer is consumed and empty
+//     ++load_pipe_consumer_state;
+//     ++store_pipe_producer_state;
 
-    return cute::make_tuple(load_pipe_consumer_state, store_pipe_producer_state, acc_state_next);
-  }
+//     return cute::make_tuple(load_pipe_consumer_state, store_pipe_producer_state, acc_state_next);
+//   }
 
-  template <class CtaTileMNK>
-  CUTLASS_DEVICE void
-  store_tail(
-      [[maybe_unused]] LoadPipeline load_pipeline,
-      [[maybe_unused]] LoadPipelineState load_pipe_consumer_state,
-      [[maybe_unused]] StorePipeline store_pipeline,
-      [[maybe_unused]] StorePipelineState store_pipe_producer_state,
-      [[maybe_unused]] CtaTileMNK cta_tile_mnk)
-  {
-  }
+//   template <class CtaTileMNK>
+//   CUTLASS_DEVICE void
+//   store_tail(
+//       [[maybe_unused]] LoadPipeline load_pipeline,
+//       [[maybe_unused]] LoadPipelineState load_pipe_consumer_state,
+//       [[maybe_unused]] StorePipeline store_pipeline,
+//       [[maybe_unused]] StorePipelineState store_pipe_producer_state,
+//       [[maybe_unused]] CtaTileMNK cta_tile_mnk)
+//   {
+//   }
 
-  // Dummy methods to perform different parts of TMA/Tensormap modifications
+//   // Dummy methods to perform different parts of TMA/Tensormap modifications
 
-  template <bool IsLoad, class ProblemShape>
-  CUTLASS_DEVICE
-  void
-  tensormaps_perform_update(
-      [[maybe_unused]] TensorMapStorage& shared_tensormap,
-      [[maybe_unused]] typename EpilogueOp::Params const& params,
-      [[maybe_unused]] cute::TmaDescriptor const* tensormap,
-      [[maybe_unused]] ProblemShape problem_shape,
-      [[maybe_unused]] int32_t next_batch) { }
+//   // template <bool IsLoad, class ProblemShape>
+//   // CUTLASS_DEVICE
+//   // void
+//   // tensormaps_perform_update(
+//   //     [[maybe_unused]] TensorMapStorage& shared_tensormap,
+//   //     [[maybe_unused]] typename EpilogueOp::Params const& params,
+//   //     [[maybe_unused]] cute::TmaDescriptor const* tensormap,
+//   //     [[maybe_unused]] ProblemShape problem_shape,
+//   //     [[maybe_unused]] int32_t next_batch) { }
 
-  template <bool IsLoad>
-  CUTLASS_DEVICE
-  void
-  tensormaps_cp_fence_release(
-      [[maybe_unused]] TensorMapStorage& shared_tensormap,
-      [[maybe_unused]] cute::TmaDescriptor const* tensormap) { }
+//   // template <bool IsLoad>
+//   // CUTLASS_DEVICE
+//   // void
+//   // tensormaps_cp_fence_release(
+//   //     [[maybe_unused]] TensorMapStorage& shared_tensormap,
+//   //     [[maybe_unused]] cute::TmaDescriptor const* tensormap) { }
 
-  template <bool IsLoad>
-  CUTLASS_DEVICE
-  void
-  tensormaps_fence_acquire([[maybe_unused]] cute::TmaDescriptor const* tensormap) { }
-};
+//   // template <bool IsLoad>
+//   // CUTLASS_DEVICE
+//   // void
+//   // tensormaps_fence_acquire([[maybe_unused]] cute::TmaDescriptor const* tensormap) { }
+// };
 
 
 // SFINAE helpers for detecting beta/beta_ptr/beta_ptr_array in EVT arguments.

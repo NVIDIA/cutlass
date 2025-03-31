@@ -35,8 +35,8 @@
 #include "cute/swizzle.hpp"              // cute::Swizzle
 #include "cute/swizzle_layout.hpp"       // cute::detail::get_swizzle_portion
 #include "cute/util/type_traits.hpp"
-#include "cute/arch/copy_sm90_tma.hpp"
-#include "cute/arch/copy_sm100_tma.hpp"  
+// #include "cute/arch/copy_sm90_tma.hpp"
+// #include "cute/arch/copy_sm100_tma.hpp"  
 
 #include "cutlass/layout/matrix.h"
 #include "cutlass/layout/tensor.h"
@@ -302,14 +302,15 @@ constexpr bool is_tma_copy_engine() {
     return false;
   }
   else {
-   if constexpr (   cute::is_base_of_v<cute::SM90_TMA_LOAD,                         GmemTiledCopy>
-                  || cute::is_base_of_v<cute::SM90_TMA_LOAD_MULTICAST,              GmemTiledCopy>
-                  || cute::is_base_of_v<cute::SM90_TMA_LOAD_IM2COL,                 GmemTiledCopy>
-                  || cute::is_base_of_v<cute::SM90_TMA_LOAD_IM2COL_MULTICAST,       GmemTiledCopy>
-                  || cute::is_base_of_v<cute::SM90_TMA_STORE,                       GmemTiledCopy>
-                  || cute::is_base_of_v<cute::SM90_TMA_STORE_IM2COL,                GmemTiledCopy>
-                  || cute::is_base_of_v<cute::SM100_TMA_2SM_LOAD,                   GmemTiledCopy> 
-                  || cute::is_base_of_v<cute::SM100_TMA_2SM_LOAD_MULTICAST,         GmemTiledCopy> 
+   if constexpr (   false
+                  // || cute::is_base_of_v<cute::SM90_TMA_LOAD,                         GmemTiledCopy>
+                  // || cute::is_base_of_v<cute::SM90_TMA_LOAD_MULTICAST,              GmemTiledCopy>
+                  // || cute::is_base_of_v<cute::SM90_TMA_LOAD_IM2COL,                 GmemTiledCopy>
+                  // || cute::is_base_of_v<cute::SM90_TMA_LOAD_IM2COL_MULTICAST,       GmemTiledCopy>
+                  // || cute::is_base_of_v<cute::SM90_TMA_STORE,                       GmemTiledCopy>
+                  // || cute::is_base_of_v<cute::SM90_TMA_STORE_IM2COL,                GmemTiledCopy>
+                  // || cute::is_base_of_v<cute::SM100_TMA_2SM_LOAD,                   GmemTiledCopy> 
+                  // || cute::is_base_of_v<cute::SM100_TMA_2SM_LOAD_MULTICAST,         GmemTiledCopy> 
                   ) {
       return true;
     }
@@ -346,8 +347,8 @@ get_alignment_count_from_gmem_tiled_copy() {
                      cute::is_same_v<typename RawDtype<ElementMma>::type, cutlass::detail::float_e3m2_unpacksmem_t> ||
                      cute::is_same_v<typename RawDtype<ElementMma>::type, cutlass::detail::float_e2m3_unpacksmem_t> ||
                      cute::is_same_v<typename RawDtype<ElementMma>::type, cutlass::detail::type_erased_dynamic_float4_unpacksmem_t> ||
-                     cute::is_same_v<typename RawDtype<ElementMma>::type, cutlass::detail::type_erased_dynamic_float6_unpacksmem_t> ||
-                     cutlass::gemm::collective::detail::is_sm10x_f8f6f4_element<Element>() && cute::is_same_v<typename RawDtype<ElementMma>::type, uint8_t>) {
+                     cute::is_same_v<typename RawDtype<ElementMma>::type, cutlass::detail::type_erased_dynamic_float6_unpacksmem_t> &&
+                     cute::is_same_v<typename RawDtype<ElementMma>::type, uint8_t>) {
         return 128;
       }
       
