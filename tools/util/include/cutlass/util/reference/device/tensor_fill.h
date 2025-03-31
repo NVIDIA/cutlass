@@ -37,6 +37,10 @@
 
 #pragma once
 
+#if defined(CUTLASS_ENABLE_SYCL)
+#include "cutlass/util/reference/device/sycl_tensor_fill.h"
+#else
+
 #if !defined(__CUDACC_RTC__)
 
 // Standard Library includes
@@ -2073,3 +2077,4 @@ void TensorCopyDiagonalOut(
 } // namespace device
 } // namespace reference
 } // namespace cutlass
+#endif // defined(CUTLASS_ENABLE_SYCL)

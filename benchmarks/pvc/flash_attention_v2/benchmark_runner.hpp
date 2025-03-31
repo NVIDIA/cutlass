@@ -316,11 +316,22 @@ template <class FMHAConfiguration> struct BenchmarkRunnerFMHA {
     const auto sycl_block = syclcompat::dim3(block.x, block.y, block.z);
     const auto sycl_grid = syclcompat::dim3(grid.x, grid.y, grid.z);
 
+#if !defined(SYCL_EXT_ONEAPI_WORK_GROUP_SCRATCH_MEMORY)
     using namespace syclcompat::experimental;
     auto event = launch<cutlass::device_kernel<GemmKernel>>(
         launch_policy{sycl_grid, sycl_block, local_mem_size{static_cast<std::size_t>(smem_size)},
                       kernel_properties{sycl_exp::sub_group_size<GemmKernel::DispatchPolicy::SubgroupSize>}},
         params);
+#else
+    syclcompat::experimental::launch_properties launch_props{
+      sycl::ext::oneapi::experimental::work_group_scratch_size(smem_size)
+    };
+    syclcompat::experimental::kernel_properties kernel_props{
+      sycl::ext::oneapi::experimental::sub_group_size<GemmKernel::DispatchPolicy::SubgroupSize>
+    };
+    syclcompat::experimental::launch_policy policy{sycl_grid, sycl_block, launch_props, kernel_props};
+    auto event = syclcompat::experimental::launch<cutlass::device_kernel<GemmKernel>>(policy, params);
+#endif
 
     EventManager::getInstance().addEvent(event);
   }

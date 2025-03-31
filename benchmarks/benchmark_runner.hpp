@@ -46,11 +46,7 @@
 #include "cutlass/util/packed_stride.hpp"
 #include "cutlass/util/reference/device/gemm_complex.h"
 #include "cutlass/util/reference/device/tensor_compare.h"
-#if defined(CUTLASS_ENABLE_SYCL)
-#include "cutlass/util/reference/device/sycl_tensor_fill.h"
-#else
 #include "cutlass/util/reference/device/tensor_fill.h"
-#endif
 
 #include <benchmark/benchmark.h>
 

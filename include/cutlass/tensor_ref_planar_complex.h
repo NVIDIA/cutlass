@@ -174,12 +174,22 @@ class TensorRefPlanarComplex {
   
   }
 
+#if defined(CUTLASS_ENABLE_SYCL)
+  CUTLASS_HOST_DEVICE
+  TensorRefPlanarComplex(TensorRefPlanarComplex const&) = default;
+
+  CUTLASS_HOST_DEVICE
+  TensorRefPlanarComplex(
+    std::conditional_t<std::is_const_v<Element_>, NonConstTensorRef, ConstTensorRef> const& ref)
+  : ptr_(ref.data()), layout_(ref.layout()), imaginary_stride_(ref.imaginary_stride_) { }
+#else
   /// Converting constructor from TensorRef to non-constant data.
   CUTLASS_HOST_DEVICE
   TensorRefPlanarComplex(
     NonConstTensorRef const &ref              ///< TensorRef to non-const data
   ):
     ptr_(ref.data()), layout_(ref.layout()), imaginary_stride_(ref.imaginary_stride_) { }
+#endif
 
   /// Returns a reference to constant-valued tensor.
   CUTLASS_HOST_DEVICE

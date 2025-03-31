@@ -241,39 +241,27 @@ using tuple_element_t = typename tuple_element<I,T>::type;
 
 namespace detail {
 
-#if defined(CUTLASS_ENABLE_SYCL)
-template <class F, class Args, class = decltype(declval<F&&>()(declval<Args&&>()))>
-CUTE_HOST_DEVICE constexpr auto
-is_valid_impl(int) { return CUTE_STL_NAMESPACE::true_type{}; }
-
-template <class F, class Args>
-CUTE_HOST_DEVICE constexpr auto
-is_valid_impl(int) { return CUTE_STL_NAMESPACE::false_type{}; }
-#else
 template <class F, class... Args, class = decltype(declval<F&&>()(declval<Args&&>()...))>
 CUTE_HOST_DEVICE constexpr auto
 is_valid_impl(int) { return CUTE_STL_NAMESPACE::true_type{}; }
 
 template <class F, class... Args>
 CUTE_HOST_DEVICE constexpr auto
+#if defined(CUTLASS_ENABLE_SYCL)
+// when is_valid_impl(int) has a successful substitution,
+// it will be prefered because no implicit cast is needed
+is_valid_impl(char) { return CUTE_STL_NAMESPACE::false_type{}; }
+#else
 is_valid_impl(...) { return CUTE_STL_NAMESPACE::false_type{}; }
 #endif
 
 template <class F>
 struct is_valid_fn {
-#if defined(CUTLASS_ENABLE_SYCL)
-  template <class Args>
-  CUTE_HOST_DEVICE constexpr auto
-  operator()(Args&&) const {
-    return is_valid_impl<F, Args&&>(int{});
-  }
-#else
   template <class... Args>
   CUTE_HOST_DEVICE constexpr auto
   operator()(Args&&...) const {
     return is_valid_impl<F, Args&&...>(int{});
   }
-#endif
 };
 
 } // end namespace detail
@@ -284,19 +272,11 @@ is_valid(F&&) {
   return detail::is_valid_fn<F&&>{};
 }
 
-#if defined(CUTLASS_ENABLE_SYCL)
-template <class F, class Args>
-CUTE_HOST_DEVICE constexpr auto
-is_valid(F&&, Args&&) {
-  return detail::is_valid_impl<F&&, Args&&>(int{});
-}
-#else
 template <class F, class... Args>
 CUTE_HOST_DEVICE constexpr auto
 is_valid(F&&, Args&&...) {
   return detail::is_valid_impl<F&&, Args&&...>(int{});
 }
-#endif
 
 template <bool B, template<class...> class True, template<class...> class False>
 struct conditional_template {

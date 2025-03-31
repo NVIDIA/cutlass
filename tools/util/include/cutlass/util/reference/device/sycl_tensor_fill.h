@@ -42,6 +42,7 @@
 // Cutlass includes
 #include "cutlass/cutlass.h"
 #include "cutlass/complex.h"
+#include "cutlass/util/reference/device/tensor_foreach.h"
 
 
 namespace cutlass {
@@ -128,7 +129,6 @@ struct RandomUniformFunc {
     oneapi::mkl::rng::device::philox4x32x10<> generator(params.seed,
       ThreadIdxX() + BlockIdxX() * BlockDimX());
     FloatType rnd = oneapi::mkl::rng::device::generate(distribution, generator);
-    
     // Random values are cast to integer after scaling by a power of two to facilitate error
     // testing
     Element result;
@@ -164,6 +164,124 @@ void BlockFillRandomUniform(
 
   typename RandomFunc::Params params(seed, max, min, bits);
   BlockForEach<Element, RandomFunc>(ptr, capacity, params);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+namespace detail {
+
+/// Compute the linear offset into the tensor-view with a scale and offset
+template <
+  typename Element,               ///< Element type
+  typename Layout>                ///< Layout function
+struct TensorFillLinearFunc {
+
+  /// View type
+  using TensorView = TensorView<Element, Layout>;
+
+  /// Scalar type
+  typedef typename TensorView::Element T;
+
+  /// Coordinate in tensor's index space
+  typedef typename TensorView::TensorCoord TensorCoord;
+
+  struct Params {
+    TensorView view;
+    Array<Element, Layout::kRank> v;
+    Element s;
+
+    Params() { }
+
+    Params(
+      TensorView view_,      ///< destination tensor
+      Array<Element, Layout::kRank> const & v_,
+      Element s_ = Element(0)
+    ):
+      view(view_), v(v_), s(s_) { }
+  };
+
+  Params params;
+
+  TensorFillLinearFunc(Params const &params): params(params) {}
+  TensorFillLinearFunc(TensorFillLinearFunc const &) = default;
+
+  void operator()(TensorCoord const &coord) {
+
+    Element sum = params.s;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < Layout::kRank; ++i) {
+      if constexpr (is_complex<Element>::value) {
+        if constexpr (sizeof_bits<Element>::value <= 32) {
+          sum = Element(static_cast<complex<float>>(sum) +
+                  static_cast<complex<float>>(params.v[i]) * static_cast<complex<float>>(coord[i]));
+        }
+      }
+      else if constexpr (sizeof_bits<Element>::value <= 32) {
+        if constexpr (std::numeric_limits<Element>::is_integer) {
+          sum = Element(static_cast<int32_t>(sum) +
+                  static_cast<int32_t>(params.v[i]) * static_cast<int32_t>(coord[i]));
+        }
+        else {
+          sum = Element(static_cast<float>(sum) +
+                  static_cast<float>(params.v[i]) * static_cast<float>(coord[i]));
+        }
+      }
+      else {
+        sum += params.v[i] * coord[i];
+      }
+    }
+
+    params.view.at(coord) = sum;
+  }
+};
+
+} // namespace detail
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Fills tensor with a linear combination of its coordinate and another vector
+template <
+  typename Element,               ///< Element type
+  typename Layout>                ///< Layout function
+void TensorFillLinear(
+  TensorView<Element, Layout> view,      ///< destination tensor
+  Array<Element, Layout::kRank> const & v,
+  Element s = Element(0)) {
+
+  using Func = detail::TensorFillLinearFunc<Element, Layout>;
+  using Params = typename Func::Params;
+
+  TensorForEach<Func, Layout::kRank, Params>(
+    view.extent(),
+    Params(view, v, s),
+    /*grid_size*/0, /*block_size*/0
+  );
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Fills a block of data with sequential elements
+template <
+  typename Element
+>
+void BlockFillSequential(
+  Element *ptr,
+  int64_t capacity,
+  Element v = Element(1),
+  Element s = Element(0)) {
+
+  using Layout = layout::PackedVectorLayout;
+  Layout::TensorCoord size(static_cast<Layout::Index>(capacity)); // -Wconversion
+  Layout layout = Layout::packed(size);
+  TensorView<Element, Layout> view(ptr, layout, size);
+
+  Array<Element, Layout::kRank> c{};
+  c[0] = v;
+
+  TensorFillLinear(view, c, s);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
