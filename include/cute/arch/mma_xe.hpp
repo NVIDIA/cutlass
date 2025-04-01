@@ -155,7 +155,7 @@ struct XE_1x16x16_F32BF16BF16F32_TT
   }
 };
 
-//MxNxK_A,B,C,D
+//MxNxK_D,A,B,C
 //# of vector component of a x subgroup-size x function name
 //float8 intel_sub_group_f16_f16_matrix_mad_k16(short8 a, int8 b, int8 acc);
 //TODO: Is A really not transposed? Maybe better a macro than separate define for 1,2,4,8

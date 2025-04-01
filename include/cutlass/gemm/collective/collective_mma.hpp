@@ -71,6 +71,7 @@
 #include "cutlass/gemm/collective/xe_mma.hpp"
 #include "cutlass/gemm/collective/xe_array_mma.hpp"
 #include "cutlass/gemm/collective/xe_mma_mixed_input.hpp"
+#include "cutlass/gemm/collective/xe_mma_w8a8.hpp"
 #endif
 
 #if defined(CUTLASS_ENABLE_SYCL)
