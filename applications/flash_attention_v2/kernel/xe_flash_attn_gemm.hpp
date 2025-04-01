@@ -229,7 +229,7 @@ public:
 
     auto tiled_prefetch_q = cute::prefetch_selector<Shape<Int<BLK_M>,Int<BLK_N>>, Num_SGs>(params.mainloop.gmem_tiled_copy_q);   // <M=128 (BLK_M), K=128 (BLK_N)>  // is_reverse_needed=0
     auto tiled_prefetch_k = cute::prefetch_selector<Shape<Int<BLK_K>,Int<BLK_N>>, Num_SGs>(params.mainloop.gmem_tiled_copy_k);   // <N=64  (BLK_K), K=128 (BLK_N)>  // is_revese_needed=0
-    auto tiled_prefetch_v = cute::prefetch_selector<Shape<Int<BLK_N>,Int<BLK_K>>, Num_SGs>(params.mainloop.gmem_tiled_copy_q);   // <N=128 (BLK_N), K=64  (BLK_K)>  // is_reverse_needed=1 
+    auto tiled_prefetch_v = cute::prefetch_selector<Shape<Int<BLK_N>,Int<BLK_K>>, Num_SGs>(params.mainloop.gmem_tiled_copy_v);   // <N=128 (BLK_N), K=64  (BLK_K)>  // is_reverse_needed=1 
     auto thr_prefetch_Q = tiled_prefetch_q.get_slice(thread_idx);
     auto thr_prefetch_K = tiled_prefetch_k.get_slice(thread_idx);
     auto thr_prefetch_V = tiled_prefetch_v.get_slice(thread_idx);
