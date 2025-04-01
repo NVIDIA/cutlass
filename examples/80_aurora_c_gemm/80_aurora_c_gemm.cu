@@ -414,8 +414,8 @@ int run(Options &options)
   // Initialize CUTLASS kernel with arguments and workspace pointer
   CUTLASS_CHECK(gemm.initialize(arguments, workspace.get()));
 
-  // Correctness / Warmup iteration
-  CUTLASS_CHECK(gemm.run());
+  // // Correctness / Warmup iteration
+  // CUTLASS_CHECK(gemm.run());
 
   // Check if output from CUTLASS kernel and reference kernel are equal or not
   Result result;

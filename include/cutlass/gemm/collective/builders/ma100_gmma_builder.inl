@@ -32,7 +32,10 @@
 
 #include "cutlass/gemm/collective/builders/ma100_common.inl"
 #include "cutlass/gemm/dispatch_policy.hpp"
-#include "cutlass/pipeline/sm90_pipeline.hpp"
+
+// #include "cutlass/pipeline/sm90_pipeline.hpp"
+#include "cutlass/pipeline/ma100_pipeline.hpp"
+
 #include "cutlass/gemm/collective/collective_mma_decl.hpp"
 #include "cutlass/gemm/collective/collective_builder_decl.hpp"
 #include "cute/arch/cluster_sm90.hpp"
@@ -69,7 +72,7 @@ compute_stage_count_or_override(cute::Int<stages> stage_count) {
 template<int capacity_bytes_, class ElementA, class ElementB, class TileShapeMNK, int carveout_bytes_, int alignment = 128>
 constexpr int
 compute_stage_count_or_override(StageCountAutoCarveout<carveout_bytes_> stage_count) {
-  constexpr auto mainloop_pipeline_bytes = sizeof(typename cutlass::PipelineTmaAsync<1>::SharedStorage);
+  constexpr auto mainloop_pipeline_bytes = sizeof(typename cutlass::PipelineDmaAuroraAsync<1>::SharedStorage);
   constexpr auto a_bits = cute::sizeof_bits_v<ElementA>;
   constexpr auto b_bits = cute::sizeof_bits_v<ElementB>;
   constexpr int stage_bytes_ =
@@ -107,7 +110,7 @@ constexpr int
 compute_stage_count_or_override_single_affine_transformed_input(StageCountAutoCarveout<carveout_bytes_> stage_count) {
 
   // 32 bytes to account for barriers etc.
-  constexpr auto mainloop_pipeline_bytes = sizeof(typename cutlass::PipelineTmaAsync<1>::SharedStorage);
+  constexpr auto mainloop_pipeline_bytes = sizeof(typename cutlass::PipelineDmaAuroraAsync<1>::SharedStorage);
   constexpr int scale_zero_k_tile = 1;
   constexpr auto a_bits = cute::sizeof_bits_v<ElementA>;
   constexpr auto b_bits = cute::sizeof_bits_v<ElementB>;
