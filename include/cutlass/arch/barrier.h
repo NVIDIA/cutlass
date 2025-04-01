@@ -329,6 +329,33 @@ class NamedBarrier {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+
+
+// Empty barrier ///////////////////////////////////////////////////////////
+struct ma100ClusterBarrier {
+  using ValueType = uint64_t;
+  ValueType barrier_;  // 仅声明，不做操作
+
+  ma100ClusterBarrier() = default;
+};
+
+
+struct ma100ClusterTransactionBarrier : public ma100ClusterBarrier {
+
+  ma100ClusterTransactionBarrier() = default;
+
+};
+/////////////////////////////////////////////////////////////
+
+
+
+
+
+
+
+
+
 // Hopper introduces a new cluster-wide barrier which handle with Cluster-wide arrive-wait behaviour.
 // This is an extension to the Ampere arrive-wait barriers
 // Note : Ampere arrive-wait Barriers have a larger max-arrive count (2^30) than Hopper arrive-wait Barriers (2^20).
