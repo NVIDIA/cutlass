@@ -147,9 +147,9 @@
 //
 
 #if defined(__CUDACC_RTC__)
-#include <cuda/std/cstdint>
+#  include <cuda/std/cstdint>
 #else
-#include <cstdint>
+#  include <cstdint>
 #endif
 
 //
