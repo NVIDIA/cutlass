@@ -1,0 +1,82 @@
+---
+Language:        Cpp
+BasedOnStyle:  Google
+Standard:        c++17
+IndentWidth:     2
+TabWidth:        2
+UseTab:          Never
+ColumnLimit:     100
+PackConstructorInitializers: Never
+BreakConstructorInitializersBeforeComma: false
+IndentPPDirectives: BeforeHash
+SortIncludes:    Never
+# Reordering #include statements can (and currently will) introduce errors
+IncludeCategories:
+  - Regex:           '^<'
+    Priority:        4
+  - Regex:           '^"(llvm|llvm-c|clang|clang-c|mlir|mlir-c|gtest)/'
+    Priority:        3
+  - Regex:           '^"(smartlog|\.\.)/'
+    Priority:        2
+  - Regex:           '.*'
+    Priority:        1
+
+# 访问修饰符（如 public、private 等）的缩进偏移量，可设置为任意整数值
+AccessModifierOffset: -2
+# 打开括号后的内容是否对齐，可设置值：Align、DontAlign、AlwaysBreak
+AlignAfterOpenBracket: Align
+# 结构体数组的对齐方式，可设置值：None、Left、Right
+AlignArrayOfStructures: Left
+# 连续宏定义的对齐方式，可设置值：None、Left、Right
+AlignConsecutiveMacros: true
+# 连续赋值语句的对齐方式，可设置值：None、Left、Right
+AlignConsecutiveAssignments: true
+# 连续位域的对齐方式，可设置值：None、Left、Right
+AlignConsecutiveBitFields: true
+# 连续声明的对齐方式，可设置值：None、Left、Right
+AlignConsecutiveDeclarations: true
+# 转义换行符的对齐方式，可设置值：Left、Right
+AlignEscapedNewlines: Left
+# 操作数的对齐方式，可设置值：Align、DontAlign
+AlignOperands:   Align
+# 是否对齐行尾注释，可设置值：true、false
+AlignTrailingComments: true
+# 是否允许所有参数都放在下一行，可设置值：true、false
+AllowAllArgumentsOnNextLine: true
+# 是否允许函数声明的所有参数都放在下一行，可设置值：true、false
+AllowAllParametersOfDeclarationOnNextLine: true
+# 是否允许短枚举类型写在同一行，可设置值：true、false
+AllowShortEnumsOnASingleLine: true
+# 是否允许短代码块写在同一行，可设置值：Never、Empty、Always
+AllowShortBlocksOnASingleLine: Never
+# 是否允许短 case 标签写在同一行，可设置值：true、false
+AllowShortCaseLabelsOnASingleLine: false
+# 短函数的单行书写规则，可设置值：None、Inline、Empty、All
+AllowShortFunctionsOnASingleLine: All
+# 短 lambda 表达式的单行书写规则，可设置值：None、Inline、Empty、All
+AllowShortLambdasOnASingleLine: All
+# 短 if 语句的单行书写规则，可设置值：Never、WithoutElse、OnlyFirstIf
+AllowShortIfStatementsOnASingleLine: WithoutElse
+# 短循环语句是否可以写在同一行，可设置值：true、false
+AllowShortLoopsOnASingleLine: true
+# 函数定义返回类型后的换行规则，可设置值：None、All、TopLevel、AllDefinitions、TopLevelDefinitions
+AlwaysBreakAfterDefinitionReturnType: None
+# 返回类型后的换行规则，可设置值：None、All、TopLevel、AllDefinitions、TopLevelDefinitions
+AlwaysBreakAfterReturnType: None
+# 多行字符串前是否总是换行，可设置值：true、false
+AlwaysBreakBeforeMultilineStrings: true
+# 模板声明是否总是换行，可设置值：Yes、No
+AlwaysBreakTemplateDeclarations: Yes
+# 自定义属性宏，可设置为任意符合宏命名规则的字符串列表
+# AttributeMacros:
+#   - __capability
+# 是否对函数参数进行二进制打包，可设置值：true、false
+BinPackArguments: true
+# 是否对函数参数声明进行二进制打包，可设置值：true、false
+BinPackParameters: true
+
+# Force pointers to the type for C++.
+DerivePointerAlignment: false
+PointerAlignment: Left
+
+...

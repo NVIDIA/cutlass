@@ -1,0 +1,109 @@
+Checks: 'cppcoreguidelines-*,
+performance-*,
+modernize-*,
+google-*,
+misc-*
+cert-*,
+readability-*,
+clang-analyzer-*,
+-performance-unnecessary-value-param,
+-modernize-use-trailing-return-type,
+-google-runtime-references,
+-misc-non-private-member-variables-in-classes,
+-readability-braces-around-statements,
+-google-readability-braces-around-statements,
+-cppcoreguidelines-avoid-magic-numbers,
+-readability-magic-numbers,
+-readability-magic-numbers,
+-cppcoreguidelines-pro-type-vararg,
+-cppcoreguidelines-pro-bounds-pointer-arithmetic,
+-cppcoreguidelines-avoid-c-arrays,
+-modernize-avoid-c-arrays,
+-cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+-readability-named-parameter,
+-cert-env33-c
+'
+
+
+WarningsAsErrors: ''
+HeaderFilterRegex: '*spdlog/[^f].*'
+FormatStyle:     none
+
+
+CheckOptions:
+  - key:             google-readability-braces-around-statements.ShortStatementLines
+    value:           '1'
+  - key:             google-readability-function-size.StatementThreshold
+    value:           '800'
+  - key:             google-readability-namespace-comments.ShortNamespaceLines
+    value:           '10'
+  - key:             google-readability-namespace-comments.SpacesBeforeComments
+    value:           '2'
+  - key:             modernize-loop-convert.MaxCopySize
+    value:           '16'
+  - key:             modernize-loop-convert.MinConfidence
+    value:           reasonable
+  - key:             modernize-loop-convert.NamingStyle
+    value:           CamelCase
+  - key:             modernize-pass-by-value.IncludeStyle
+    value:           llvm
+  - key:             modernize-replace-auto-ptr.IncludeStyle
+    value:           llvm
+  - key:             modernize-use-nullptr.NullMacros
+    value:           'NULL'
+# Naming
+  - key: readability-identifier-naming.NamespaceCase
+    value: lower_case
+    # using alias
+  - key: readability-identifier-naming.TypeAliasCase
+    value: lower_case
+    # typedef alias
+  - key: readability-identifier-naming.TypedefCase
+    value: lower_case
+
+  - key: readability-identifier-naming.ClassCase
+    value: CamelCase
+  - key: readability-identifier-naming.StructCase
+    value: CamelCase
+  - key: readability-identifier-naming.UnionCase
+    value: CamelCase
+  - key: readability-identifier-naming.EnumCase
+    value: CamelCase
+
+  - key: readability-identifier-naming.ConstantCase
+    value: UPPER_CASE
+
+    # 模板的 normal param
+  - key: readability-identifier-naming.ValueTemplateParameterCase
+    value: UPPER_CASE
+    # 模板的typename param
+  - key: readability-identifier-naming.TemplateParameterCase
+    value: UPPER_CASE
+    # 模板中的模板的typename param
+  - key: readability-identifier-naming.TemplateTemplateParameterCase
+    value: UPPER_CASE
+    # 模板的typename... param(模板参数列表)
+  - key: readability-identifier-naming.TypeTemplateParameterCase
+    value: UPPER_CASE
+
+  - key: readability-identifier-naming.FunctionCase
+    value: camelBack
+  - key: readability-identifier-naming.LocalVariableCase
+    value: camelBack
+  - key: readability-identifier-naming.VariableCase
+    value: camelBack
+  - key: readability-identifier-naming.ParameterCase
+    value: camelBack
+
+  - key: readability-identifier-naming.StaticVariableCase
+    value: camelBack
+  - key: readability-identifier-naming.StaticVariablePrefix
+    value: 's_'
+  - key: readability-identifier-naming.GlobalVariableCase
+    value: camelBack
+  - key: readability-identifier-naming.GlobalVariablePrefix
+    value: 'g_'
+  - key: readability-identifier-naming.MemberCase
+    value: camelBack
+  - key: readability-identifier-naming.MemberPrefix
+    value: 'm_'
