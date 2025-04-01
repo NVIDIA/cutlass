@@ -146,7 +146,11 @@
 // Type
 //
 
+#if defined(__CUDACC_RTC__)
+#include <cuda/std/cstdint>
+#else
 #include <cstdint>
+#endif
 
 //
 // Debugging utilities
