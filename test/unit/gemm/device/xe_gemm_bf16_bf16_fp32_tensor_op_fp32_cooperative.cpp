@@ -39,146 +39,64 @@
 
 #include "gemm_testbed_3x.hpp"
 
-TEST(XE_Device_Gemm_bf16t_bf16t_f32t_tensor_op_f32_cooperative, 256x256x32) {
+namespace cutlass {
+namespace {
+
+template <typename LayoutA, typename LayoutB>
+struct XE_Device_Gemm_bf16_bf16_f32_tensor_op_f32_cooperative {
   using ElementA = cute::bfloat16_t;
   using ElementB = cute::bfloat16_t;
-  using LayoutA = cutlass::layout::RowMajor;
-  using LayoutB = cutlass::layout::RowMajor;
+  using DispatchPolicy = gemm::MainloopIntelPVC<3, gemm::KernelPVCCooperative>;
 
-  using Config = cutlass::gemm::device::DefaultGemmConfigurationToCutlass3Types<
-    cutlass::arch::OpClassTensorOp, cutlass::arch::IntelPVC,
+  using Config = gemm::device::DefaultGemmConfigurationToCutlass3Types<
+    arch::OpClassTensorOp, arch::IntelPVC,
     ElementA, LayoutA,
     ElementB, LayoutB,
-    float, cutlass::layout::RowMajor,
+    float, layout::RowMajor,
     float>;
 
-  using DispatchPolicy = cutlass::gemm::MainloopIntelPVC<3, cutlass::gemm::KernelPVCCooperative>;
+  using CollectiveMainloop = gemm::collective::CollectiveMma<
+      DispatchPolicy, typename Config::TileShape,
+      ElementA, detail::TagToStrideA_t<LayoutA>,
+      ElementB, detail::TagToStrideB_t<LayoutB>,
+      typename Config::TiledMma,
+      typename Config::GmemTiledCopyA, void, void, cute::identity,  // A
+      typename Config::GmemTiledCopyB, void, void, cute::identity>; // B
 
-  using CollectiveMainloop = cutlass::gemm::collective::CollectiveMma<
-    DispatchPolicy, Config::TileShape,
-    ElementA, cutlass::detail::TagToStrideA_t<LayoutA>,
-    ElementB, cutlass::detail::TagToStrideB_t<LayoutB>,
-    Config::TiledMma,
-    Config::GmemTiledCopyA, void, void, cute::identity,  // A
-    Config::GmemTiledCopyB, void, void, cute::identity   // B
-  >;
+  using Gemm = gemm::device::GemmUniversalAdapter<
+    gemm::kernel::GemmUniversal<
+     cute::Shape<int,int,int,int>,
+     CollectiveMainloop,
+     typename Config::CollectiveEpilogue,
+     gemm::StreamKScheduler>>;
+};
 
-  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
-      cute::Shape<int,int,int,int>,
-      CollectiveMainloop,
-      Config::CollectiveEpilogue,
-      cutlass::gemm::StreamKScheduler
-  >;
-
-  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+TEST(XE_Device_Gemm_bf16t_bf16t_f32t_tensor_op_f32_cooperative, 256x256x32) {
+  using Gemm = XE_Device_Gemm_bf16_bf16_f32_tensor_op_f32_cooperative<
+    layout::RowMajor, layout::RowMajor>::Gemm;
   // TODO(Codeplay): Enable batch tests
   EXPECT_TRUE(test::gemm::device::TestXe<Gemm>(1.0, 0.0, false));
 }
 
 TEST(XE_Device_Gemm_bf16n_bf16t_f32t_tensor_op_f32_cooperative, 256x256x32) {
-  using ElementA = cute::bfloat16_t;
-  using ElementB = cute::bfloat16_t;
-  using LayoutA = cutlass::layout::ColumnMajor;
-  using LayoutB = cutlass::layout::RowMajor;
-
-  using Config = cutlass::gemm::device::DefaultGemmConfigurationToCutlass3Types<
-    cutlass::arch::OpClassTensorOp, cutlass::arch::IntelPVC,
-    ElementA, LayoutA,
-    ElementB, LayoutB,
-    float, cutlass::layout::RowMajor,
-    float>;
-
-  using DispatchPolicy = cutlass::gemm::MainloopIntelPVC<3, cutlass::gemm::KernelPVCCooperative>;
-
-  using CollectiveMainloop = cutlass::gemm::collective::CollectiveMma<
-    DispatchPolicy, Config::TileShape,
-    ElementA, cutlass::detail::TagToStrideA_t<LayoutA>,
-    ElementB, cutlass::detail::TagToStrideB_t<LayoutB>,
-    Config::TiledMma,
-    Config::GmemTiledCopyA, void, void, cute::identity,  // A
-    Config::GmemTiledCopyB, void, void, cute::identity   // B
-  >;
-
-  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
-      cute::Shape<int,int,int,int>,
-      CollectiveMainloop,
-      Config::CollectiveEpilogue,
-      cutlass::gemm::StreamKScheduler
-  >;
-
-  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  using Gemm = XE_Device_Gemm_bf16_bf16_f32_tensor_op_f32_cooperative<
+    layout::ColumnMajor, layout::RowMajor>::Gemm;
   // TODO(Codeplay): Enable batch tests
   EXPECT_TRUE(test::gemm::device::TestXe<Gemm>(1.0, 0.0, false));
 }
 
 TEST(XE_Device_Gemm_bf16t_bf16n_f32t_tensor_op_f32_cooperative, 256x256x32) {
-  using ElementA = cute::bfloat16_t;
-  using ElementB = cute::bfloat16_t;
-  using LayoutA = cutlass::layout::RowMajor;
-  using LayoutB = cutlass::layout::ColumnMajor;
-
-  using Config = cutlass::gemm::device::DefaultGemmConfigurationToCutlass3Types<
-    cutlass::arch::OpClassTensorOp, cutlass::arch::IntelPVC,
-    ElementA, LayoutA,
-    ElementB, LayoutB,
-    float, cutlass::layout::RowMajor,
-    float>;
-
-  using DispatchPolicy = cutlass::gemm::MainloopIntelPVC<3, cutlass::gemm::KernelPVCCooperative>;
-
-  using CollectiveMainloop = cutlass::gemm::collective::CollectiveMma<
-    DispatchPolicy, Config::TileShape,
-    ElementA, cutlass::detail::TagToStrideA_t<LayoutA>,
-    ElementB, cutlass::detail::TagToStrideB_t<LayoutB>,
-    Config::TiledMma,
-    Config::GmemTiledCopyA, void, void, cute::identity,  // A
-    Config::GmemTiledCopyB, void, void, cute::identity   // B
-  >;
-
-  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
-      cute::Shape<int,int,int,int>,
-      CollectiveMainloop,
-      Config::CollectiveEpilogue,
-      cutlass::gemm::StreamKScheduler
-  >;
-
-  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  using Gemm = XE_Device_Gemm_bf16_bf16_f32_tensor_op_f32_cooperative<
+    layout::RowMajor, layout::ColumnMajor>::Gemm;
   // TODO(Codeplay): Enable batch tests
   EXPECT_TRUE(test::gemm::device::TestXe<Gemm>(1.0, 0.0, false));
 }
 
 TEST(XE_Device_Gemm_bf16n_bf16n_f32t_tensor_op_f32_cooperative, 256x256x32) {
-  using ElementA = cute::bfloat16_t;
-  using ElementB = cute::bfloat16_t;
-  using LayoutA = cutlass::layout::ColumnMajor;
-  using LayoutB = cutlass::layout::ColumnMajor;
-
-  using Config = cutlass::gemm::device::DefaultGemmConfigurationToCutlass3Types<
-    cutlass::arch::OpClassTensorOp, cutlass::arch::IntelPVC,
-    ElementA, LayoutA,
-    ElementB, LayoutB,
-    float, cutlass::layout::RowMajor,
-    float>;
-
-  using DispatchPolicy = cutlass::gemm::MainloopIntelPVC<3, cutlass::gemm::KernelPVCCooperative>;
-
-  using CollectiveMainloop = cutlass::gemm::collective::CollectiveMma<
-    DispatchPolicy, Config::TileShape,
-    ElementA, cutlass::detail::TagToStrideA_t<LayoutA>,
-    ElementB, cutlass::detail::TagToStrideB_t<LayoutB>,
-    Config::TiledMma,
-    Config::GmemTiledCopyA, void, void, cute::identity,  // A
-    Config::GmemTiledCopyB, void, void, cute::identity   // B
-  >;
-
-  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
-      cute::Shape<int,int,int,int>,
-      CollectiveMainloop,
-      Config::CollectiveEpilogue,
-      cutlass::gemm::StreamKScheduler
-  >;
-
-  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  using Gemm = XE_Device_Gemm_bf16_bf16_f32_tensor_op_f32_cooperative<
+    layout::ColumnMajor, layout::ColumnMajor>::Gemm;
   // TODO(Codeplay): Enable batch tests
   EXPECT_TRUE(test::gemm::device::TestXe<Gemm>(1.0, 0.0, false));
 }
+}
+} // namespace cutlass

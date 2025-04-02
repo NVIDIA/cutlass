@@ -41,108 +41,60 @@
 #include "default_gemm_group_configuration.hpp"
 #include "gemm_testbed_3x_ptr_array.hpp"
 
-using ProblemShape = cutlass::gemm::GroupProblemShape<cute::Shape<int,int,int>>; // <M,N,K> per group
-
-TEST(XE_Device_Gemm_bf16t_bf16t_f32t_tensor_op_f32_group_gemm, 256x256x32) {
+namespace cutlass {
+namespace {
+template <typename LayoutA, typename LayoutB>
+struct XE_Device_Gemm_bf16_bf16_f32_tensor_op_f32_group_gemm {
   using ElementA = cute::bfloat16_t;
   using ElementB = cute::bfloat16_t;
   using ElementC = float;
   using ElementAccumulator = float;
-  using LayoutA = cutlass::layout::RowMajor;
-  using LayoutB = cutlass::layout::RowMajor;
-  using LayoutC = cutlass::layout::RowMajor;
+  using LayoutC = layout::RowMajor;
+  using ProblemShape = gemm::GroupProblemShape<cute::Shape<int,int,int>>; // <M,N,K> per group
 
-  using Config = cutlass::gemm::device::DefaultGemmGroupConfiguration<
-    cutlass::arch::OpClassTensorOp, cutlass::arch::IntelPVC,
+  using Config = gemm::device::DefaultGemmGroupConfiguration<
+    arch::OpClassTensorOp, arch::IntelPVC,
     ElementA, LayoutA, ElementB, LayoutB, ElementC, LayoutC, ElementAccumulator>;
 
-  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+  using Gemm = gemm::device::GemmUniversalAdapter<
+    gemm::kernel::GemmUniversal<
       ProblemShape,
-      Config::CollectiveMainloop,
-      Config::CollectiveEpilogue,
-      cutlass::gemm::GroupScheduler
-  >;
+      typename Config::CollectiveMainloop,
+      typename Config::CollectiveEpilogue,
+      gemm::GroupScheduler
+    >>;
+};
 
-  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+TEST(XE_Device_Gemm_bf16t_bf16t_f32t_tensor_op_f32_group_gemm, 256x256x32) {
+  using Gemm = XE_Device_Gemm_bf16_bf16_f32_tensor_op_f32_group_gemm<
+    layout::RowMajor, layout::RowMajor>::Gemm;
 
   EXPECT_TRUE(test::gemm::device::TestAll<Gemm>(1.0, 1.0));
   EXPECT_TRUE(test::gemm::device::TestAll<Gemm>(1.0, 0.0));
 }
 
 TEST(XE_Device_Gemm_bf16n_bf16t_f32t_tensor_op_f32_group_gemm, 256x256x32) {
-  using ElementA = cute::bfloat16_t;
-  using ElementB = cute::bfloat16_t;
-  using ElementC = float;
-  using ElementAccumulator = float;
-  using LayoutA = cutlass::layout::ColumnMajor;
-  using LayoutB = cutlass::layout::RowMajor;
-  using LayoutC = cutlass::layout::RowMajor;
-
-  using Config = cutlass::gemm::device::DefaultGemmGroupConfiguration<
-    cutlass::arch::OpClassTensorOp, cutlass::arch::IntelPVC,
-    ElementA, LayoutA, ElementB, LayoutB, ElementC, LayoutC, ElementAccumulator>;
-
-  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
-      ProblemShape,
-      Config::CollectiveMainloop,
-      Config::CollectiveEpilogue,
-      cutlass::gemm::GroupScheduler
-  >;
-
-  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  using Gemm = XE_Device_Gemm_bf16_bf16_f32_tensor_op_f32_group_gemm<
+    layout::ColumnMajor, layout::RowMajor>::Gemm;
 
   EXPECT_TRUE(test::gemm::device::TestAll<Gemm>(1.0, 1.0));
   EXPECT_TRUE(test::gemm::device::TestAll<Gemm>(1.0, 0.0));
 }
 
 TEST(XE_Device_Gemm_bf16t_bf16n_f32t_tensor_op_f32_group_gemm, 256x256x32) {
-  using ElementA = cute::bfloat16_t;
-  using ElementB = cute::bfloat16_t;
-  using ElementC = float;
-  using ElementAccumulator = float;
-  using LayoutA = cutlass::layout::RowMajor;
-  using LayoutB = cutlass::layout::ColumnMajor;
-  using LayoutC = cutlass::layout::RowMajor;
-
-  using Config = cutlass::gemm::device::DefaultGemmGroupConfiguration<
-    cutlass::arch::OpClassTensorOp, cutlass::arch::IntelPVC,
-    ElementA, LayoutA, ElementB, LayoutB, ElementC, LayoutC, ElementAccumulator>;
-
-  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
-      ProblemShape,
-      Config::CollectiveMainloop,
-      Config::CollectiveEpilogue,
-      cutlass::gemm::GroupScheduler
-  >;
-
-  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  using Gemm = XE_Device_Gemm_bf16_bf16_f32_tensor_op_f32_group_gemm<
+    layout::RowMajor, layout::ColumnMajor>::Gemm;
 
   EXPECT_TRUE(test::gemm::device::TestAll<Gemm>(1.0, 1.0));
   EXPECT_TRUE(test::gemm::device::TestAll<Gemm>(1.0, 0.0));
 }
 
 TEST(XE_Device_Gemm_bf16n_bf16n_f32t_tensor_op_f32_group_gemm, 256x256x32) {
-  using ElementA = cute::bfloat16_t;
-  using ElementB = cute::bfloat16_t;
-  using ElementC = float;
-  using ElementAccumulator = float;
-  using LayoutA = cutlass::layout::ColumnMajor;
-  using LayoutB = cutlass::layout::ColumnMajor;
-  using LayoutC = cutlass::layout::RowMajor;
-
-  using Config = cutlass::gemm::device::DefaultGemmGroupConfiguration<
-    cutlass::arch::OpClassTensorOp, cutlass::arch::IntelPVC,
-    ElementA, LayoutA, ElementB, LayoutB, ElementC, LayoutC, ElementAccumulator>;
-
-  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
-      ProblemShape,
-      Config::CollectiveMainloop,
-      Config::CollectiveEpilogue,
-      cutlass::gemm::GroupScheduler
-  >;
-
-  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  using Gemm = XE_Device_Gemm_bf16_bf16_f32_tensor_op_f32_group_gemm<
+    layout::ColumnMajor, layout::ColumnMajor>::Gemm;
 
   EXPECT_TRUE(test::gemm::device::TestAll<Gemm>(1.0, 1.0));
   EXPECT_TRUE(test::gemm::device::TestAll<Gemm>(1.0, 0.0));
 }
+}
+} // namespace cutlass

@@ -43,76 +43,53 @@
 #include "gemm_testbed_3x.hpp"
 
 /* TODO(Codeplay): TF32 copy builtins don't work well with GEMM. Needs more investigation
-TEST(XE_Device_Gemm_tf32t_tf32t_f32t_tensor_op_f32, 256x256x32) {
-  using Config = cutlass::gemm::device::DefaultGemmConfigurationToCutlass3Types<
-    cutlass::arch::OpClassTensorOp, cutlass::arch::IntelPVC,
-    tfloat32_t, cutlass::layout::RowMajor,
-    tfloat32_t, cutlass::layout::RowMajor,
-    float, cutlass::layout::RowMajor,
+namespace cutlass {
+namespace {
+template <typename LayoutA, typename LayoutB>
+struct XE_Device_Gemm_tf32_tf32_f32_tensor_op_f32 {
+  using Config = gemm::device::DefaultGemmConfigurationToCutlass3Types<
+    arch::OpClassTensorOp, arch::IntelPVC,
+    tfloat32_t, LayoutA,
+    tfloat32_t, LayoutB,
+    float, layout::RowMajor,
     float>;
 
-  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+  using GemmKernel = gemm::kernel::GemmUniversal<
       cute::Shape<int,int,int,int>,
       Config::CollectiveMainloop,
-      Config::CollectiveEpilogue
-  >;
+      Config::CollectiveEpilogue>;
 
-  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  using Gemm = gemm::device::GemmUniversalAdapter<GemmKernel>;
+};
+
+TEST(XE_Device_Gemm_tf32t_tf32t_f32t_tensor_op_f32, 256x256x32) {
+  using LayoutA = RowMajor;
+  using LayoutB = RowMajor;
+  using Gemm = XE_Device_Gemm_tf32_tf32_f32_tensor_op_f32<LayoutA, LayoutB>::Gemm;
   EXPECT_TRUE(test::gemm::device::TestXe<Gemm>());
 }
 
  TODO(Codeplay): missing copy transpose builtin and prefetch builtin
 TEST(XE_Device_Gemm_tf32n_tf32t_f32t_tensor_op_f32, 256x256x32) {
-  using Config = cutlass::gemm::device::DefaultGemmConfigurationToCutlass3Types<
-    cutlass::arch::OpClassTensorOp, cutlass::arch::IntelPVC,
-    tfloat32_t, cutlass::layout::ColumnMajor,
-    tfloat32_t, cutlass::layout::RowMajor,
-    float, cutlass::layout::RowMajor,
-    float>;
-
-  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
-      cute::Shape<int,int,int,int>,
-      Config::CollectiveMainloop,
-      Config::CollectiveEpilogue
-  >;
-
-  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  using LayoutA = ColumnMajor;
+  using LayoutB = RowMajor;
+  using Gemm = XE_Device_Gemm_tf32_tf32_f32_tensor_op_f32<LayoutA, LayoutB>::Gemm;
   EXPECT_TRUE(test::gemm::device::TestXe<Gemm>());
 }
 
 TEST(XE_Device_Gemm_tf32t_tf32n_f32t_tensor_op_f32, 256x256x32) {
-  using Config = cutlass::gemm::device::DefaultGemmConfigurationToCutlass3Types<
-    cutlass::arch::OpClassTensorOp, cutlass::arch::IntelPVC,
-    tfloat32_t, cutlass::layout::RowMajor,
-    tfloat32_t, cutlass::layout::ColumnMajor,
-    float, cutlass::layout::RowMajor,
-    float>;
-
-  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
-      cute::Shape<int,int,int,int>,
-      Config::CollectiveMainloop,
-      Config::CollectiveEpilogue
-  >;
-
-  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  using LayoutA = RowMajor;
+  using LayoutB = ColumnMajor;
+  using Gemm = XE_Device_Gemm_tf32_tf32_f32_tensor_op_f32<LayoutA, LayoutB>::Gemm;
   EXPECT_TRUE(test::gemm::device::TestXe<Gemm>());
 }
 
 TEST(XE_Device_Gemm_tf32n_tf32n_f32t_tensor_op_f32, 256x256x32) {
-  using Config = cutlass::gemm::device::DefaultGemmConfigurationToCutlass3Types<
-    cutlass::arch::OpClassTensorOp, cutlass::arch::IntelPVC,
-    tfloat32_t, cutlass::layout::ColumnMajor,
-    tfloat32_t, cutlass::layout::ColumnMajor,
-    float, cutlass::layout::RowMajor,
-    float>;
-
-  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
-      cute::Shape<int,int,int,int>,
-      Config::CollectiveMainloop,
-      Config::CollectiveEpilogue
-  >;
-
-  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  using LayoutA = ColumnMajor;
+  using LayoutB = ColumnMajor;
+  using Gemm = XE_Device_Gemm_tf32_tf32_f32_tensor_op_f32<LayoutA, LayoutB>::Gemm;
   EXPECT_TRUE(test::gemm::device::TestXe<Gemm>());
 }
+}
+} // namespace cutlass
 */
