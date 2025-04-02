@@ -296,6 +296,15 @@ gemm(MMA_Atom<MMA>       const& mma,
       for (int n = 0; n < N; ++n) {
         int ns = (m & 1) ? N-1-n : n;  // Serpentine coordinate
         gemm(mma, D(_,m,ns), A(_,m), B(_,ns), C(_,m,ns));
+        if(thread0()){
+          using ShapeMNK = typename MMA_Atom<MMA>::Shape_MNK; 
+          ShapeMNK shape; 
+          uint32_t msize = size<0>(shape);
+          uint32_t nsize = size<1>(shape);
+          uint32_t ksize = size<2>(shape);
+          printf("MMA_Atom.Shape_MNK:%u, %u, %u", msize, nsize, ksize);
+          printf(" calulate block C.coord:(%d,%d)\n", (int)(m), (int)(ns));
+        }
       }
     }
 #else
