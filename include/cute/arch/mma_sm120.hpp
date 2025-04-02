@@ -3245,7 +3245,7 @@ rr_blockscaled_op_selector_sm120()
 {
   if constexpr (UseF8F6F4) {
     return SM120::BLOCKSCALED::SM120_16x8x32_TN_VS<ElementA, ElementB, ElementC, ElementSF, SFVecSize>{};
-  } 
+  }
   else{
     return SM120::BLOCKSCALED::SM120_16x8x64_TN_VS<ElementA, ElementB, ElementC, ElementSF, SFVecSize>{};
   }

@@ -2449,17 +2449,20 @@ struct HostCollectiveEpilogue {
       // example of how to set kernel activation arguments
       // see ActivationFunctor::Arguments in activation.h for definition
       // if Arguments doesn't exist then fusion_args.activation is empty
+      auto init_activation_args = [] (auto activation, auto& args) {
+        using Activation = cute::remove_cvref_t<decltype(activation)>;
+        if constexpr (cute::is_same_v<Activation, cutlass::epilogue::thread::Clamp<ElementCompute>>) {
+          args.lower_bound = 0; // Treat Clamp as ReLU
+          args.upper_bound = cutlass::platform::identity_for_minimum<ElementCompute>();
+        }
+        if constexpr (cute::is_same_v<Activation, cutlass::epilogue::thread::ScaledGELU_taylor<ElementCompute>>) {
+          args.scale = ElementCompute(1);
+        }
+      };
 
-      if constexpr (cute::is_same_v<ActivationFunctor, cutlass::epilogue::thread::ScaledGELU_taylor<ElementCompute>>) {
-        fusion_args.activation.scale = ElementCompute(1);
+      if constexpr (not cute::is_same_v<ActivationFunctor, cutlass::epilogue::thread::Identity<ElementCompute>>) {
+        init_activation_args(ActivationFunctor{}, fusion_args.activation);
       }
-
-      // Treat Clamp as ReLU
-      if constexpr (cute::is_same_v<ActivationFunctor, cutlass::epilogue::thread::Clamp<ElementCompute>>) {
-        fusion_args.activation.lower_bound = 0;
-        fusion_args.activation.upper_bound = std::numeric_limits<ElementCompute>::max();
-      }
-
       if constexpr (IsAbsMaxEnabledD) {
         fusion_args.amax_D_ptr = abs_max_D.device_data();
       }
