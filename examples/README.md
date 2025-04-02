@@ -286,6 +286,18 @@
 
     Blackwell SM120 MMA kernel targeting GeForce RTX 50 series CUDA Cores
 
+* [80_blackwell_geforce_sparse_gemm](80_blackwell_geforce_sparse_gemm/)
+
+    Blackwell SM120 sparse MMA kernel targeting GeForce RTX 50 series CUDA Cores
+
+* [83_blackwell_sparse_gemm](83_blackwell_sparse_gemm)
+
+    Blackwell SM100 Sparse Gemm kernel
+
+* [84_blackwell_narrow_precision_sparse_gemm](84_blackwell_narrow_precision_sparse_gemm)
+
+    Blackwell Block Scaled SM100 Sparse Gemm kernel
+
 # CuTe - Programming Examples
 
 Examples that do not rely on CUTLASS and directly showcase the features of CuTe are located in [cutlass/examples/cute](./cute/).

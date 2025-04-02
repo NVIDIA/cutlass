@@ -622,6 +622,11 @@ public:
     impl_.producer_acquire(state, barrier_token);
   }
 
+  CUTLASS_DEVICE
+  void producer_expect_transaction(PipelineState state, uint32_t transaction_bytes) {
+    impl_.producer_expect_transaction(state, transaction_bytes);
+  }
+
   // NOP for TMA based mainloop
   CUTLASS_DEVICE
   void producer_commit(PipelineState state, uint32_t bytes) {
