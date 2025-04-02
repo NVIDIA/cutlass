@@ -46,9 +46,6 @@ if(NOT "${DPCPP_SYCL_TARGET}" STREQUAL "")
 endif()
 
 option(DPCPP_DISABLE_ITT_FOR_CUTLASS "Disables linking of the Instrumentation and Tracing Technology (ITT) device libraries for VTune" ON)
-if(DPCPP_DISABLE_ITT_FOR_CUTLASS)
-  list(APPEND DPCPP_FLAGS "-fno-sycl-instrument-device-code")
-endif()
 
 if(NOT "${DPCPP_USER_FLAGS}" STREQUAL "")
   list(APPEND DPCPP_FLAGS "${DPCPP_USER_FLAGS};")
@@ -66,6 +63,11 @@ if("${DPCPP_SYCL_TARGET}" STREQUAL "intel_gpu_pvc" OR
    "${DPCPP_SYCL_TARGET}" STREQUAL "spir64" OR
    "${DPCPP_SYCL_TARGET}" STREQUAL "intel_gpu_bmg_g21")
   list(APPEND DPCPP_FLAGS "-Xspirv-translator;-spirv-ext=+SPV_INTEL_split_barrier")
+
+  if(DPCPP_DISABLE_ITT_FOR_CUTLASS)
+    list(APPEND DPCPP_FLAGS "-fno-sycl-instrument-device-code")
+  endif()
+
 endif()
 
 if(UNIX)

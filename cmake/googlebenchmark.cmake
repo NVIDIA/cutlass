@@ -29,6 +29,7 @@
 include(FetchContent)
 
 set(GOOGLEBENCHMARK_DIR "" CACHE STRING "Location of local GoogleBenchmark repo to build against")
+set(BENCHMARK_ENABLE_ASSEMBLY_TESTS OFF)
 
 if(GOOGLEBENCHMARK_DIR)
   set(FETCHCONTENT_SOURCE_DIR_GOOGLEBENCHMARK ${GOOGLEBENCHMARK_DIR} CACHE STRING "GoogleBenchmark source directory override")
