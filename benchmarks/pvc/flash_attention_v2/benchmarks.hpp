@@ -35,15 +35,17 @@
 #include "fmha_configuration.hpp"
 
 //bfloat16 benchmarks
-using TiledMmaBF16_h64 = TiledMMA<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>, Layout<Shape<_8, _1, _1>, Stride<_1, _1, _1>>,
-                            Tile<Layout<Shape<_8, _8, _2>, Stride<_1, _16, _8>>,
-                                Layout<Shape<_16, _1, _4>, Stride<_1, _64, _16>>,
-                                _64>>;
+using TiledMmaBF16_h64 = typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>, 
+                                                Layout<Shape<_128, _64, _64>>,
+                                                Layout<Shape<_8, _1, _1>, Stride<_1, _1, _1>>>::TiledMMA;
 
-using TiledMmaBF16_h128 = TiledMMA<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>, Layout<Shape<_8, _2, _1>, Stride<_2, _1, _1>>,
-                            Tile<Layout<Shape<_8, _8, _2>, Stride<_1, _16, _8>>,
-                                Layout<Shape<_16, _2, _4>, Stride<_1, _64, _16>>,
-                                _64>>;
+using TiledMmaBF16_h128 = typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>, 
+                                                Layout<Shape<_128, _128, _64>>,
+                                                Layout<Shape<_8, _2, _1>, Stride<_2, _1, _1>>>::TiledMMA;
+
+using TiledMmaBF16_h192 = typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>, 
+                                                Layout<Shape<_256, _64, _64>>,
+                                                Layout<Shape<_16, _1, _1>, Stride<_1, _1, _1>>>::TiledMMA;
 
 using PvcFMHABF16BF16FP32_RCR_h64_Causal = cutlass::flash_attention::FMHAConfig<
         cutlass::bfloat16_t, cutlass::bfloat16_t, cutlass::bfloat16_t,
@@ -51,7 +53,7 @@ using PvcFMHABF16BF16FP32_RCR_h64_Causal = cutlass::flash_attention::FMHAConfig<
         cutlass::layout::ColumnMajor,
         cutlass::layout::RowMajor,
         cutlass::layout::RowMajor, 
-        true, Shape<_128, _64, _64>,
+        true, Shape<_128, _64, _64, _64>,
         TiledMmaBF16_h64>;
 
 using PvcFMHABF16BF16FP32_RCR_h64_NonCausal = cutlass::flash_attention::FMHAConfig<
@@ -60,7 +62,7 @@ using PvcFMHABF16BF16FP32_RCR_h64_NonCausal = cutlass::flash_attention::FMHAConf
         cutlass::layout::ColumnMajor,
         cutlass::layout::RowMajor,
         cutlass::layout::RowMajor,
-        false, Shape<_128, _64, _64>,
+        false, Shape<_128, _64, _64, _64>,
         TiledMmaBF16_h64>;
 
 using PvcFMHABF16BF16FP32_RCR_h128_Causal = cutlass::flash_attention::FMHAConfig<
@@ -69,7 +71,7 @@ using PvcFMHABF16BF16FP32_RCR_h128_Causal = cutlass::flash_attention::FMHAConfig
         cutlass::layout::ColumnMajor,
         cutlass::layout::RowMajor,
         cutlass::layout::RowMajor, 
-        true, Shape<_128, _128, _64>,
+        true, Shape<_128, _128, _64, _64>,
         TiledMmaBF16_h128>;
 
 using PvcFMHABF16BF16FP32_RCR_h128_NonCausal = cutlass::flash_attention::FMHAConfig<
@@ -78,19 +80,39 @@ using PvcFMHABF16BF16FP32_RCR_h128_NonCausal = cutlass::flash_attention::FMHACon
         cutlass::layout::ColumnMajor,
         cutlass::layout::RowMajor,
         cutlass::layout::RowMajor, 
-        false, Shape<_128, _128, _64>,
+        false, Shape<_128, _128, _64, _64>,
         TiledMmaBF16_h128>;
 
-//half benchmarks
-using TiledMmaFP16_h64 = TiledMMA<MMA_Atom<XE_8x16x16_F32F16F16F32_TT>, Layout<Shape<_8, _1, _1>, Stride<_1, _1, _1>>,
-                            Tile<Layout<Shape<_8, _8, _2>, Stride<_1, _16, _8>>,
-                                Layout<Shape<_16, _1, _4>, Stride<_1, _64, _16>>,
-                                _64>>;
+using PvcFMHABF16BF16FP32_RCR_h192_Causal = cutlass::flash_attention::FMHAConfig<
+        cutlass::bfloat16_t, cutlass::bfloat16_t, cutlass::bfloat16_t,
+        cutlass::layout::RowMajor,
+        cutlass::layout::ColumnMajor,
+        cutlass::layout::RowMajor,
+        cutlass::layout::RowMajor, 
+        true, Shape<_256, _64, _64, _64>,
+        TiledMmaBF16_h192>;
 
-using TiledMmaFP16_h128 = TiledMMA<MMA_Atom<XE_8x16x16_F32F16F16F32_TT>, Layout<Shape<_8, _2, _1>, Stride<_2, _1, _1>>,
-                            Tile<Layout<Shape<_8, _8, _2>, Stride<_1, _16, _8>>,
-                                Layout<Shape<_16, _2, _4>, Stride<_1, _64, _16>>,
-                                _64>>;
+using PvcFMHABF16BF16FP32_RCR_h192_NonCausal = cutlass::flash_attention::FMHAConfig<
+        cutlass::bfloat16_t, cutlass::bfloat16_t, cutlass::bfloat16_t,
+        cutlass::layout::RowMajor,
+        cutlass::layout::ColumnMajor,
+        cutlass::layout::RowMajor,
+        cutlass::layout::RowMajor, 
+        false, Shape<_256, _64, _64, _64>,
+        TiledMmaBF16_h192>;
+
+//half benchmarks
+using TiledMmaFP16_h64 = typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32F16F16F32_TT>, 
+                                                Layout<Shape<_128, _64, _64>>,
+                                                Layout<Shape<_8, _1, _1>, Stride<_1, _1, _1>>>::TiledMMA;
+
+using TiledMmaFP16_h128 = typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32F16F16F32_TT>, 
+                                                Layout<Shape<_128, _128, _64>>,
+                                                Layout<Shape<_8, _2, _1>, Stride<_2, _1, _1>>>::TiledMMA;
+
+using TiledMmaFP16_h192 = typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32F16F16F32_TT>, 
+                                                Layout<Shape<_256, _64, _64>>,
+                                                Layout<Shape<_16, _1, _1>, Stride<_1, _1, _1>>>::TiledMMA;
 
 using PvcFMHAFP16FP16FP32_RCR_h64_Causal = cutlass::flash_attention::FMHAConfig<
         cutlass::half_t, cutlass::half_t, cutlass::half_t,
@@ -98,7 +120,7 @@ using PvcFMHAFP16FP16FP32_RCR_h64_Causal = cutlass::flash_attention::FMHAConfig<
         cutlass::layout::ColumnMajor,
         cutlass::layout::RowMajor,
         cutlass::layout::RowMajor, 
-        true, Shape<_128, _64, _64>,
+        true, Shape<_128, _64, _64, _64>,
         TiledMmaFP16_h64>;
 
 using PvcFMHAFP16FP16FP32_RCR_h64_NonCausal = cutlass::flash_attention::FMHAConfig<
@@ -107,7 +129,7 @@ using PvcFMHAFP16FP16FP32_RCR_h64_NonCausal = cutlass::flash_attention::FMHAConf
         cutlass::layout::ColumnMajor,
         cutlass::layout::RowMajor,
         cutlass::layout::RowMajor,
-        false, Shape<_128, _64, _64>,
+        false, Shape<_128, _64, _64, _64>,
         TiledMmaFP16_h64>;
 
 using PvcFMHAFP16FP16FP32_RCR_h128_Causal = cutlass::flash_attention::FMHAConfig<
@@ -116,7 +138,7 @@ using PvcFMHAFP16FP16FP32_RCR_h128_Causal = cutlass::flash_attention::FMHAConfig
         cutlass::layout::ColumnMajor,
         cutlass::layout::RowMajor,
         cutlass::layout::RowMajor, 
-        true, Shape<_128, _128, _64>,
+        true, Shape<_128, _128, _64, _64>,
         TiledMmaFP16_h128>;
 
 using PvcFMHAFP16FP16FP32_RCR_h128_NonCausal = cutlass::flash_attention::FMHAConfig<
@@ -125,14 +147,36 @@ using PvcFMHAFP16FP16FP32_RCR_h128_NonCausal = cutlass::flash_attention::FMHACon
         cutlass::layout::ColumnMajor,
         cutlass::layout::RowMajor,
         cutlass::layout::RowMajor, 
-        false, Shape<_128, _128, _64>,
+        false, Shape<_128, _128, _64, _64>,
         TiledMmaFP16_h128>;
+
+using PvcFMHAFP16FP16FP32_RCR_h192_Causal = cutlass::flash_attention::FMHAConfig<
+        cutlass::half_t, cutlass::half_t, cutlass::half_t,
+        cutlass::layout::RowMajor,
+        cutlass::layout::ColumnMajor,
+        cutlass::layout::RowMajor,
+        cutlass::layout::RowMajor, 
+        true, Shape<_256, _64, _64, _64>,
+        TiledMmaFP16_h192>;
+
+using PvcFMHAFP16FP16FP32_RCR_h192_NonCausal = cutlass::flash_attention::FMHAConfig<
+        cutlass::half_t, cutlass::half_t, cutlass::half_t,
+        cutlass::layout::RowMajor,
+        cutlass::layout::ColumnMajor,
+        cutlass::layout::RowMajor,
+        cutlass::layout::RowMajor, 
+        false, Shape<_256, _64, _64, _64>,
+        TiledMmaFP16_h192>;
 
 CUTLASS_CREATE_FMHA_BENCHMARK(PvcFMHABF16BF16FP32_RCR_h64_Causal);
 CUTLASS_CREATE_FMHA_BENCHMARK(PvcFMHABF16BF16FP32_RCR_h64_NonCausal);
 CUTLASS_CREATE_FMHA_BENCHMARK(PvcFMHABF16BF16FP32_RCR_h128_Causal);
 CUTLASS_CREATE_FMHA_BENCHMARK(PvcFMHABF16BF16FP32_RCR_h128_NonCausal);
+CUTLASS_CREATE_FMHA_BENCHMARK(PvcFMHABF16BF16FP32_RCR_h192_Causal);
+CUTLASS_CREATE_FMHA_BENCHMARK(PvcFMHABF16BF16FP32_RCR_h192_NonCausal);
 CUTLASS_CREATE_FMHA_BENCHMARK(PvcFMHAFP16FP16FP32_RCR_h64_Causal);
 CUTLASS_CREATE_FMHA_BENCHMARK(PvcFMHAFP16FP16FP32_RCR_h64_NonCausal);
 CUTLASS_CREATE_FMHA_BENCHMARK(PvcFMHAFP16FP16FP32_RCR_h128_Causal);
 CUTLASS_CREATE_FMHA_BENCHMARK(PvcFMHAFP16FP16FP32_RCR_h128_NonCausal);
+CUTLASS_CREATE_FMHA_BENCHMARK(PvcFMHAFP16FP16FP32_RCR_h192_Causal);
+CUTLASS_CREATE_FMHA_BENCHMARK(PvcFMHAFP16FP16FP32_RCR_h192_NonCausal);

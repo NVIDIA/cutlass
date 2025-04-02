@@ -73,8 +73,8 @@ public:
 
   static constexpr int SubgroupSize = DispatchPolicy::SubgroupSize;
 
-  static_assert(cute::rank(CtaTileMNK{}) == 3, "CtaTileMNK must be rank-3: [CTA_M, CTA_N, CTA_K]");
-  static_assert(cute::rank(StrideO{}) == 3, "StrideO must be rank-3: [seq_len, head_size, batch * num_heads]");
+  static_assert(cute::rank(CtaTileMNK{}) == 4, "CtaTileMNK must be rank-3: [CTA_M_Q, CTA_N_V, CTA_N_QK, CTA_K_QK]");
+  static_assert(cute::rank(StrideO{}) == 3, "StrideO must be rank-3: [seq_len_qo, head_size_vo, batch * num_heads]");
 
   using Trait_O = Copy_Traits<GmemTiledCopyO, StrideO>;
   using XE_Copy_O = decltype(make_tiled_copy(Copy_Atom<Trait_O, ElementO>{}
@@ -115,12 +115,12 @@ public:
   template <class ProblemShape>
   static constexpr Params to_underlying_arguments(ProblemShape const &problem_shape, Arguments const &args,
                                                   [[maybe_unused]] void *workspace) {
-    auto [batch, num_heads, seq_len, head_size] = problem_shape;
+    auto [batch, num_heads, seq_len_qo, seq_len_kv, head_size_qk, head_size_vo] = problem_shape;
 
     XE_Copy_O xe_store_o = {};
     xe_store_o = make_tiled_copy(Copy_Atom<Trait_O, ElementO>{}.with(
                                       make_tensor(make_gmem_ptr(static_cast<ElementO const*>(args.ptr_O)), 
-                                                  make_layout(make_shape(seq_len, head_size, batch * num_heads), 
+                                                  make_layout(make_shape(seq_len_qo, head_size_vo, batch * num_heads), 
                                                   args.dO))),
                                  Layout<Shape<_1, Int<SubgroupSize>>>{},
                                  make_layout(make_shape(get<0>(typename Trait_O::BlockShape{}),
@@ -157,7 +157,7 @@ public:
     using namespace cute;
 
     using MmaAtomShape = typename TiledMma::AtomShape_MNK;
-    using SubgroupTileShape = decltype(cute::shape_div(CtaTileMNK{}, take<1, 4>(typename TiledMma::ThrLayoutVMNK{}.shape())));
+    using SubgroupTileShape = decltype(cute::shape_div(take<0, 3>(CtaTileMNK{}), take<1, 4>(typename TiledMma::ThrLayoutVMNK{}.shape())));
     using FragsShape = decltype(cute::shape_div(take<0, 2>(SubgroupTileShape{}), take<0, 2>(MmaAtomShape())));
   
     static constexpr int FragsM = get<0>(FragsShape{}); // A frags per sub_group
@@ -181,9 +181,9 @@ public:
     }
 
     // Indexing variables
-    auto [batch, num_heads, seq_len, head_size] = problem_shape;
+    auto [batch, num_heads, seq_len_qo, seq_len_kv, head_size_qk, head_size_vo] = problem_shape;
     // Represent the full output tensor
-    Tensor mO_mnl = cute::get_pvc_tensor(make_shape(seq_len, head_size, batch * num_heads));
+    Tensor mO_mnl = cute::get_pvc_tensor(make_shape(seq_len_qo, head_size_vo, batch * num_heads));
     
     auto [m_coord, n_coord, k_coord, l_coord] = tile_coord;
     // Tile the output tensor per WG

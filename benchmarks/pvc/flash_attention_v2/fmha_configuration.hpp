@@ -76,7 +76,7 @@ struct FMHAConfig {
       GmemTiledCopyV, // V,
       Causal>;
 
-  using GemmKernel = cutlass::gemm::kernel::GemmUniversalAttention<Shape<int, int, int, int>, CollectiveMainloop,
+  using GemmKernel = cutlass::gemm::kernel::GemmUniversalAttention<Shape<int, int, int, int, int, int>, CollectiveMainloop,
                                                                     CollectiveSoftmaxEpilogue, CollectiveEpilogue>;
 };
 

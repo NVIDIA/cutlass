@@ -57,12 +57,12 @@ struct Options {
   bool error;
   bool is_causal;
 
-  int batch, num_heads, seq_len, head_size, iterations;
+  int batch, num_heads, seq_len_qo, seq_len_kv, head_size_qk, head_size_vo, iterations;
   float softmax_scale;
 
   Options()
-      : help(false), error(false), is_causal(false), batch(32), num_heads(16), seq_len(512), head_size(128),
-        iterations(100), softmax_scale(1.f) {}
+      : help(false), error(false), is_causal(false), batch(32), num_heads(16), seq_len_qo(512), head_size_qk(128),
+        seq_len_kv(512), head_size_vo(128), iterations(100), softmax_scale(1.f) {}
 
   // Parses the command line
   void parse(int argc, char const **args) {
@@ -79,11 +79,13 @@ struct Options {
 
     cmd.get_cmd_line_argument("batch", batch, 32);
     cmd.get_cmd_line_argument("num_heads", num_heads, 16);
-    cmd.get_cmd_line_argument("seq_len", seq_len, 512);
-    cmd.get_cmd_line_argument("head_size", head_size, 128);
+    cmd.get_cmd_line_argument("seq_len_qo", seq_len_qo, 512);
+    cmd.get_cmd_line_argument("seq_len_kv", seq_len_kv, seq_len_qo);
+    cmd.get_cmd_line_argument("head_size_vo", head_size_vo, 128);
+    cmd.get_cmd_line_argument("head_size_qk", head_size_qk, head_size_vo);
     cmd.get_cmd_line_argument("iterations", iterations, 100);
 
-    softmax_scale = 1 / sqrt(static_cast<float>(head_size));
+    softmax_scale = 1 / sqrt(static_cast<float>(head_size_qk));
   }
 
   /// Prints the usage statement.
@@ -95,8 +97,10 @@ struct Options {
         << "  --is_causal                 Apply Causal Mask to the output of first Matmul\n"
         << "  --batch=<int>               Sets the Batch Size of the Multi-Head Self Attention module\n"
         << "  --num_heads=<int>           Sets the Number of Attention Heads of the Multi-Head Self Attention module\n"
-        << "  --seq_len=<int>             Sets the Sequence length of the Multi-Head Self Attention module\n"
-        << "  --head_size=<int>           Sets the Attention Head dimension of the Multi-Head Self Attention module\n"
+        << "  --seq_len_qo=<int>          Sets the Sequence length of the Query input in Multi-Head Self Attention module\n"
+        << "  --seq_len_kv=<int>          Sets the Sequence length of the Key-Value pair in Multi-Head Self Attention module\n"
+        << "  --head_size_qk=<int>        Sets the Attention Head dimension of the 1st Matrix Multiplication in Multi-Head Self Attention module\n"
+        << "  --head_size_vo=<int>        Sets the Attention Head dimension of the 2nd Matrix Multiplication in Multi-Head Self Attention module\n"
         << "  --iterations=<int>          Iterations\n\n";
 
     return out;
@@ -151,36 +155,40 @@ template <class GemmKernel> struct ExampleRunner {
   //
 
   bool verify(const ProblemShapeType &problem_size, bool is_causal) {
-    auto [batch, num_heads, seq_len, head_size] = problem_size;
+    auto [batch, num_heads, seq_len_qo, seq_len_kv, head_size_qk, head_size_vo] = problem_size;
 
     int batch_size = batch * num_heads;
 
     // loop over the batch dimension to compute the output
     // to avoid the risk of running out of device memory
-    for (int b = 0, offset = 0; b < batch_size; b++, offset += seq_len * head_size) {
+    for (int b = 0, offset = 0; b < batch_size; b++) {
 
       cutlass::DeviceAllocation<ElementOutput> block_S;
-      block_S.reset(seq_len * seq_len);
+      block_S.reset(seq_len_qo * seq_len_kv);
+      int offset_q = b * seq_len_qo * head_size_qk;
+      int offset_k = b * seq_len_kv * head_size_qk;
+      int offset_v = b * seq_len_kv * head_size_vo;
+      int offset_o = b * seq_len_qo * head_size_vo;
 
-      cutlass::TensorRef ref_Q(block_Q.get() + offset, LayoutQ::packed({seq_len, head_size}));
-      cutlass::TensorRef ref_K(block_K.get() + offset, LayoutK::packed({head_size, seq_len}));
-      cutlass::TensorRef ref_V(block_V.get() + offset, LayoutV::packed({seq_len, head_size}));
-      cutlass::TensorRef ref_S(block_S.get(), LayoutQ::packed({seq_len, seq_len}));
-      cutlass::TensorRef ref_O(block_ref_O.get() + offset, LayoutO::packed({seq_len, head_size}));
+      cutlass::TensorRef ref_Q(block_Q.get() + offset_q, LayoutQ::packed({seq_len_qo, head_size_qk}));
+      cutlass::TensorRef ref_K(block_K.get() + offset_k, LayoutK::packed({head_size_qk, seq_len_kv}));
+      cutlass::TensorRef ref_V(block_V.get() + offset_v, LayoutV::packed({seq_len_kv, head_size_vo}));
+      cutlass::TensorRef ref_S(block_S.get(), LayoutQ::packed({seq_len_qo, seq_len_kv}));
+      cutlass::TensorRef ref_O(block_ref_O.get() + offset_o, LayoutO::packed({seq_len_qo, head_size_vo}));
 
-      cutlass::reference::device::GemmComplex({seq_len, seq_len, head_size}, 1.f, ref_Q,
+      cutlass::reference::device::GemmComplex({seq_len_qo, seq_len_kv, head_size_qk}, 1.f, ref_Q,
                                               cutlass::ComplexTransform::kNone, ref_K, cutlass::ComplexTransform::kNone,
                                               0.f, ref_S, ref_S, ElementAccumulator(0),
                                               1,                   // batch_count
-                                              seq_len * head_size, // batch_stride_Q
-                                              seq_len * head_size, // batch_stride_K
-                                              seq_len * seq_len,   // batch_stride_S
-                                              seq_len * seq_len    // batch_stride_S
+                                              seq_len_qo * head_size_qk, // batch_stride_Q
+                                              seq_len_kv * head_size_qk, // batch_stride_K
+                                              seq_len_qo * seq_len_kv,   // batch_stride_S
+                                              seq_len_qo * seq_len_kv    // batch_stride_S
       );
 
       syclcompat::wait();
 
-      std::vector<ElementOutput> host_S(seq_len * seq_len);
+      std::vector<ElementOutput> host_S(block_S.size());
       syclcompat::memcpy<ElementOutput>(host_S.data(), block_S.get(), host_S.size());
       syclcompat::wait();
 
@@ -189,48 +197,48 @@ template <class GemmKernel> struct ExampleRunner {
 
       if (is_causal) {
         // apply mask to S
-        for (int row = 0; row < seq_len; row++) {
-          for (int col = 0; col < seq_len; col++) {
+        for (int row = 0; row < seq_len_qo; row++) {
+          for (int col = 0; col < seq_len_kv; col++) {
             if (col > row)
-              host_S[col + row * seq_len] = -INFINITY;
+              host_S[col + row * seq_len_kv] = -INFINITY;
           }
         }
       }
 
       // compute max element per row of S
-      std::vector<ElementOutput> max_vec(seq_len, -INFINITY);
-      for (int row = 0; row < seq_len; row++) {
-        int idx = row * seq_len;
+      std::vector<ElementOutput> max_vec(seq_len_qo, -INFINITY);
+      for (int row = 0; row < seq_len_qo; row++) {
+        int idx = row * seq_len_kv;
         int max_idx = row;
         max_vec[max_idx] = host_S[idx++];
-        for (int col = 1; col < seq_len; col++, idx++) {
+        for (int col = 1; col < seq_len_kv; col++, idx++) {
           if (max_vec[max_idx] < host_S[idx])
             max_vec[max_idx] = host_S[idx];
         }
       }
 
       // compute exp of S
-      for (int row = 0; row < seq_len; row++) {
-        int idx = row * seq_len;
+      for (int row = 0; row < seq_len_qo; row++) {
+        int idx = row * seq_len_kv;
         int max_idx = row;
-        for (int col = 0; col < seq_len; col++, idx++) {
-          host_S[idx] = expf((host_S[idx] - max_vec[max_idx]) / sqrt(static_cast<ElementOutput>((head_size))));
+        for (int col = 0; col < seq_len_kv; col++, idx++) {
+          host_S[idx] = expf((host_S[idx] - max_vec[max_idx]) / sqrt(static_cast<ElementOutput>((head_size_qk))));
         }
       }
 
       // compute sum per row of S
-      std::vector<ElementOutput> sum_vec(seq_len, ElementOutput{0});
-      for (int row = 0; row < seq_len; row++) {
-        int idx = row * seq_len;
+      std::vector<ElementOutput> sum_vec(seq_len_qo, ElementOutput{0});
+      for (int row = 0; row < seq_len_qo; row++) {
+        int idx = row * seq_len_kv;
         int sum_idx = row;
-        for (int col = 0; col < seq_len; col++, idx++) {
+        for (int col = 0; col < seq_len_kv; col++, idx++) {
           sum_vec[sum_idx] += host_S[idx];
         }
 
         // scale each row with the sum to compute softmax
-        idx = row * seq_len;
+        idx = row * seq_len_kv;
         sum_idx = row;
-        for (int col = 0; col < seq_len; col++, idx++) {
+        for (int col = 0; col < seq_len_kv; col++, idx++) {
           host_S[idx] /= sum_vec[sum_idx];
         }
       }
@@ -245,16 +253,16 @@ template <class GemmKernel> struct ExampleRunner {
       syclcompat::memcpy<ElementV>(block_P.get(), host_P.data(), host_P.size());
       syclcompat::wait();
 
-      cutlass::TensorRef ref_P(block_P.get(), LayoutQ::packed({seq_len, seq_len}));
+      cutlass::TensorRef ref_P(block_P.get(), LayoutQ::packed({seq_len_qo, seq_len_kv}));
 
-      cutlass::reference::device::GemmComplex({seq_len, head_size, seq_len}, 1.f, ref_P,
+      cutlass::reference::device::GemmComplex({seq_len_qo, head_size_vo, seq_len_kv}, 1.f, ref_P,
                                               cutlass::ComplexTransform::kNone, ref_V, cutlass::ComplexTransform::kNone,
                                               0.f, ref_O, ref_O, ElementAccumulator(0),
                                               1,                   // batch_count
-                                              seq_len * seq_len,   // batch_stride_P
-                                              seq_len * head_size, // batch_stride_V
-                                              seq_len * head_size, // batch_stride_O
-                                              seq_len * head_size  // batch_stride_O
+                                              seq_len_qo * seq_len_kv,   // batch_stride_P
+                                              seq_len_kv * head_size_vo, // batch_stride_V
+                                              seq_len_qo * head_size_vo, // batch_stride_O
+                                              seq_len_qo * head_size_vo  // batch_stride_O
       );
 
       syclcompat::wait();
@@ -274,19 +282,18 @@ template <class GemmKernel> struct ExampleRunner {
   /// Initialize operands to be used in the GEMM and reference GEMM
   void initialize(const ProblemShapeType &problem_size) {
     // auto problem_shape = cute::append<4>(problem_size, 1);
-    auto [batch, num_heads, seq_len, head_size] = problem_size;
+    auto [batch, num_heads, seq_len_qo, seq_len_kv, head_size_qk, head_size_vo] = problem_size;
 
-    stride_Q = cutlass::make_cute_packed_stride(StrideQ{}, cute::make_shape(seq_len, head_size, batch * num_heads));
-    stride_K = cutlass::make_cute_packed_stride(StrideK{}, cute::make_shape(seq_len, head_size, batch * num_heads));
-    stride_V = cutlass::make_cute_packed_stride(StrideV{}, cute::make_shape(head_size, seq_len, batch * num_heads));
-    stride_O = cutlass::make_cute_packed_stride(StrideO{}, cute::make_shape(seq_len, head_size, batch * num_heads));
+    stride_Q = cutlass::make_cute_packed_stride(StrideQ{}, cute::make_shape(seq_len_qo, head_size_qk, batch * num_heads));
+    stride_K = cutlass::make_cute_packed_stride(StrideK{}, cute::make_shape(seq_len_kv, head_size_qk, batch * num_heads));
+    stride_V = cutlass::make_cute_packed_stride(StrideV{}, cute::make_shape(head_size_vo, seq_len_kv, batch * num_heads));
+    stride_O = cutlass::make_cute_packed_stride(StrideO{}, cute::make_shape(seq_len_qo, head_size_vo, batch * num_heads));
 
-    auto count = batch * num_heads * seq_len * head_size;
-    block_Q.reset(count);
-    block_K.reset(count);
-    block_V.reset(count);
-    block_O.reset(count);
-    block_ref_O.reset(count);
+    block_Q.reset(batch * num_heads * seq_len_qo * head_size_qk);
+    block_K.reset(batch * num_heads * seq_len_kv * head_size_qk);
+    block_V.reset(batch * num_heads * seq_len_kv * head_size_vo);
+    block_O.reset(batch * num_heads * seq_len_qo * head_size_vo);
+    block_ref_O.reset(batch * num_heads * seq_len_qo * head_size_vo);
 
     initialize_block(block_Q, seed + 2023);
     initialize_block(block_K, seed + 2022); // assume K is already transposed
@@ -325,7 +332,7 @@ template <class GemmKernel> struct ExampleRunner {
 
   void run(const Options &options, const cutlass::KernelHardwareInfo &hw_info) {
     ProblemShapeType problem_size =
-        ProblemShapeType{options.batch, options.num_heads, options.seq_len, options.head_size};
+        ProblemShapeType{options.batch, options.num_heads, options.seq_len_qo, options.seq_len_kv, options.head_size_qk, options.head_size_vo};
 
     initialize(problem_size);
 
@@ -370,15 +377,16 @@ template <class GemmKernel> struct ExampleRunner {
       syclcompat::wait();
 
       double cute_time = timer.seconds() / options.iterations;
-      double flops_qk = 2.0 * options.batch * options.num_heads * options.seq_len * options.seq_len * options.head_size;
-      double flops_pv = 2.0 * options.batch * options.num_heads * options.seq_len * options.head_size * options.seq_len;
+      double flops_qk = 2.0 * options.batch * options.num_heads * options.seq_len_qo * options.seq_len_kv * options.head_size_qk;
+      double flops_pv = 2.0 * options.batch * options.num_heads * options.seq_len_qo * options.head_size_vo * options.seq_len_kv;
       double tflops = ((flops_qk + flops_pv) * 1e-12) / cute_time;
-      double gbps_qk = 2.0 * options.batch * options.num_heads * (options.seq_len * options.head_size + options.seq_len * options.head_size);
-      double gbps_pv = 2.0 * options.batch * options.num_heads * (options.seq_len * options.head_size + options.seq_len * options.head_size);
+      double gbps_qk = 2.0 * options.batch * options.num_heads * (options.seq_len_qo * options.head_size_qk + options.seq_len_kv * options.head_size_qk);
+      double gbps_pv = 2.0 * options.batch * options.num_heads * (options.seq_len_kv * options.seq_len_qo + options.seq_len_qo * options.head_size_vo);
       double gbps = ((gbps_qk + gbps_pv)  * 1e-9) / (cute_time);
-      std::cout << "Problem Size: " << options.batch << 'x' << options.num_heads << 'x' << options.seq_len << 'x'
-                << options.head_size << (options.is_causal ? "xCausal" : "xNonCausal");
-      printf(":   %4.3f  GB/s   ,    %4.3f  TFlop/s   ,   %6.4f  ms\n", gbps, tflops, cute_time * 1000);
+      std::cout << "Batch: " << options.batch << "\tNumHeads: " << options.num_heads << "\tSeq Length QO: " << options.seq_len_qo
+                << "\tSeq Length KV: " << options.seq_len_kv << "\tHead Size QK: " << options.head_size_qk << "\tHead Size VO: " << options.head_size_vo
+                << "\tCausal Mask: " << (options.is_causal ? "true" : "false");
+      printf("\nPerformance:   %4.3f  GB/s,    %4.3f  TFlop/s,   %6.4f  ms\n\n", gbps, tflops, cute_time * 1000);
     }
 
     return;
@@ -426,7 +434,7 @@ template <bool Causal, typename TileShape, typename TiledMma> struct FMHAConfig 
         GmemTiledCopyV, // V,
         Causal>;
 
-    using GemmKernel = cutlass::gemm::kernel::GemmUniversalAttention<Shape<int, int, int, int>, CollectiveMainloop,
+    using GemmKernel = cutlass::gemm::kernel::GemmUniversalAttention<Shape<int, int, int, int, int, int>, CollectiveMainloop,
                                                                      CollectiveSoftmaxEpilogue, CollectiveEpilogue>;
 
     ExampleRunner<GemmKernel> runner;

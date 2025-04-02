@@ -53,12 +53,13 @@ public:
   //
   using ProblemShape = ProblemShape_;
 
-  static_assert(rank(ProblemShape{}) == 4, "ProblemShape{} should be <batch, num_heads, seq_len, head_size>");
+  static_assert(rank(ProblemShape{}) == 6, "ProblemShape{} should be <batch, num_heads, seq_len_qo, seq_len_kv, head_size_qk, head_size_vo>");
 
   // Mainloop derived types
   using CollectiveMainloop = CollectiveMainloop_;
-  using TileShape = typename CollectiveMainloop::WorkgroupTileShape;
-  using WorkgroupTileShape = TileShape;
+  using WorkgroupTileShape = typename CollectiveMainloop::WorkgroupTileShape;
+  using TileShapeQK = typename CollectiveMainloop::TileShapeQK;
+  using TileShapePV = typename CollectiveMainloop::TileShapePV;
   using TiledMma = typename CollectiveMainloop::TiledMma;
   using ArchTag = typename CollectiveMainloop::ArchTag;
   using ElementQ = typename CollectiveMainloop::ElementQ;
@@ -80,7 +81,7 @@ public:
                 "Intel PVC does not support specializing the tile scheduler.");
   using TileSchedulerTag = TileScheduler_;
   using TileScheduler =
-      typename detail::TileSchedulerSelector<TileScheduler_, ArchTag, WorkgroupTileShape,
+      typename detail::TileSchedulerSelector<TileScheduler_, ArchTag, TileShapePV,
                                              cute::Shape<cute::Int<1>, cute::Int<1>, cute::Int<1>>>::Scheduler;
   using TileSchedulerArguments = typename TileScheduler::Arguments;
 
@@ -101,26 +102,29 @@ public:
   static constexpr int SubgroupSize = CollectiveMainloop::SubgroupSize; // sub_group size
   static constexpr uint32_t MaxThreadsPerBlock = CollectiveMainloop::MaxThreadsPerBlock;
   using MmaAtomShape = typename CollectiveMainloop::MmaAtomShape;           // 8,16,16
-  using SubgroupTileShape = typename CollectiveMainloop::SubgroupTileShape; //(16,64,64)
 
-  static constexpr int BLK_M = CollectiveMainloop::BLK_M; // 128
-  static constexpr int BLK_N = CollectiveMainloop::BLK_N; // 64
-  static constexpr int BLK_K = CollectiveMainloop::BLK_K; // 64
+  static constexpr int QK_BLK_M = CollectiveMainloop::QK_BLK_M;
+  static constexpr int QK_BLK_N = CollectiveMainloop::QK_BLK_N;
+  static constexpr int QK_BLK_K = CollectiveMainloop::QK_BLK_K;
 
-  static constexpr int ATOM_M = CollectiveMainloop::ATOM_M; // 8
-  static constexpr int ATOM_N = CollectiveMainloop::ATOM_N; // 1
-  static constexpr int ATOM_K = CollectiveMainloop::ATOM_K; // 1
+  static constexpr int QK_ATOM_N = CollectiveMainloop::QK_ATOM_N;
+  static constexpr int QK_ATOM_K = CollectiveMainloop::QK_ATOM_K;
 
-  static constexpr int SG_M = CollectiveMainloop::SG_M; // 16
-  static constexpr int SG_N = CollectiveMainloop::SG_N; // 64
-  static constexpr int SG_K = CollectiveMainloop::SG_K; // 64
+  static constexpr int QK_SG_M = CollectiveMainloop::QK_SG_M;
 
-  static_assert(ATOM_K * BLK_N == ATOM_N * BLK_K,
-                "The QKV multiplication in this implementation requires the squar block computation in per subgroup.");
+  static constexpr int PV_BLK_N = CollectiveMainloop::PV_BLK_N;
+  static constexpr int PV_BLK_K = CollectiveMainloop::PV_BLK_K;
 
-  static constexpr auto Num_SGs = ATOM_N * ATOM_M * ATOM_K;
+  static constexpr int PV_ATOM_M = CollectiveMainloop::PV_ATOM_M;
+  static constexpr int PV_ATOM_N = CollectiveMainloop::PV_ATOM_N;
+  static constexpr int PV_ATOM_K = CollectiveMainloop::PV_ATOM_K;
+
+  static_assert(QK_ATOM_K * QK_BLK_N == QK_ATOM_N * QK_BLK_K,
+                "The QKV multiplication in this implementation requires the square block computation per subgroup.");
+
+  static constexpr auto Num_SGs = PV_ATOM_N * PV_ATOM_M * PV_ATOM_K;
   static constexpr int Vec = (get<0>(MmaAtomShape()) * get<1>(MmaAtomShape())) / SubgroupSize; // 8
-  using FragsShape = decltype(cute::shape_div(take<0, 2>(SubgroupTileShape{}), take<0, 2>(MmaAtomShape())));
+  using FragsShape = typename CollectiveMainloop::FragsShape;
   static constexpr int FragsM = get<0>(FragsShape{});                                          // 2
   static constexpr int FragsN = get<1>(FragsShape{});                                          // 4
 
@@ -177,7 +181,7 @@ public:
   }
 
   static dim3 get_grid_shape(Params const &params) {
-    return dim3(cute::size(cute::ceil_div(cute::shape<3>(params.problem_shape), cute::shape<1>(WorkgroupTileShape{}))),
+    return dim3(cute::size(cute::ceil_div(cute::shape<5>(params.problem_shape), cute::shape<1>(WorkgroupTileShape{}))),
                 cute::size(cute::ceil_div(cute::shape<2>(params.problem_shape), cute::shape<0>(WorkgroupTileShape{}))),
                 cute::size(cute::shape<0>(params.problem_shape) * cute::shape<1>(params.problem_shape)));
   }
@@ -188,48 +192,51 @@ public:
   void operator()(Params const &params, char *smem_buf) {
     SharedStorage &shared_storage = *reinterpret_cast<SharedStorage *>(smem_buf);
     // Preconditions
-    CUTE_STATIC_ASSERT(is_static<WorkgroupTileShape>::value);
+    CUTE_STATIC_ASSERT(is_static<TileShapeQK>::value);
+    CUTE_STATIC_ASSERT(is_static<TileShapePV>::value);
     // Separate out problem shape for convenience
     auto batch = get<0>(params.problem_shape);
     auto num_heads = get<1>(params.problem_shape);
-    auto seq_len = get<2>(params.problem_shape);
-    auto head_size = get<3>(params.problem_shape);
+    auto seq_len_qo = get<2>(params.problem_shape);
+    auto seq_len_kv = get<3>(params.problem_shape);
+    auto head_size_qk = get<4>(params.problem_shape);
+    auto head_size_vo = get<5>(params.problem_shape);
     // Preconditions
-    static_assert(cute::rank(StrideQ{}) == 3, "StrideQ must be rank-3: [seq_len, head_size, batch * num_heads].");
-    static_assert(cute::rank(StrideK{}) == 3, "StrideK must be rank-3: [head_size, seq_len, batch * num_heads].");
-    static_assert(cute::rank(StrideV{}) == 3, "StrideV must be rank-3: [seq_len, head_size, batch * num_heads].");
+    static_assert(cute::rank(StrideQ{}) == 3, "StrideQ must be rank-3: [seq_len_qo, head_size_qk, batch * num_heads].");
+    static_assert(cute::rank(StrideK{}) == 3, "StrideK must be rank-3: [head_size_qk, seq_len_kv, batch * num_heads].");
+    static_assert(cute::rank(StrideV{}) == 3, "StrideV must be rank-3: [seq_len_kv, head_size_vo, batch * num_heads].");
 
     int thread_idx = int(ThreadIdxX());
     int sub_group_id = thread_idx / SubgroupSize;
-    constexpr auto subgroup_shape = SubgroupTileShape{};   // (SUB_M,SUB_N,SUB_K)
 
     auto blk_m_coord = BlockIdxY();
     auto blk_n_coord = BlockIdxX();
     auto blk_l_coord = BlockIdxZ();
 
-    Tensor mQ_mkl = cute::get_pvc_tensor(make_shape(seq_len, head_size, batch * num_heads));   //(m,k,l)
-    Tensor mK_nkl = cute::get_pvc_tensor(make_shape(seq_len, head_size, batch * num_heads));   //(m,k,l)
-    Tensor mV_nkl = cute::get_pvc_tensor(make_shape(head_size, seq_len, batch * num_heads));   //(n,k,l)
+    Tensor mQ_mkl = cute::get_pvc_tensor(make_shape(seq_len_qo, head_size_qk, batch * num_heads));   //(m,k,l)
+    Tensor mK_nkl = cute::get_pvc_tensor(make_shape(seq_len_kv, head_size_qk, batch * num_heads));   //(m,k,l)
+    Tensor mV_nkl = cute::get_pvc_tensor(make_shape(head_size_vo, seq_len_kv, batch * num_heads));   //(n,k,l)
     Tensor mQ_mk = mQ_mkl(_,_,blk_l_coord);                                                    // (m,k)
     Tensor mK_nk = mK_nkl(_,_,blk_l_coord);                                                    // (n,k)
     Tensor mV_nk = mV_nkl(_,_,blk_l_coord);                                                    // (n,k)
-    
-    auto gQ = local_tile(mQ_mk, subgroup_shape, make_coord(blk_m_coord * ATOM_M, _, _), Step<_1,  X, _1>{}); // subgroup_shape<16, 64, 64> // Atom_M ->8   // 16x64
-    auto gK = local_tile(mK_nk, subgroup_shape, make_coord(_, _ , _), Step<X, _1, _1>{});                    // subgroup_shape<16, 64, 64>                 // 64x64
-    auto gV = local_tile(mV_nk, subgroup_shape, make_coord(_, blk_n_coord * ATOM_N, _), Step<X, _1, _1>{});  // subgroup_shape<16, 64, 64> // Atom_N -> 2  // 64x64
 
-    const int seq_coord = blk_m_coord * BLK_M + (sub_group_id / ATOM_N) * SG_M;
+    auto gQ = local_tile(mQ_mk, TileShapeQK{}, make_coord(blk_m_coord, _, _), Step<_1,  X, _1>{});
+    auto gK = local_tile(mK_nk, TileShapeQK{}, make_coord(_, _ , _), Step<X, _1, _1>{});
+    auto gV = local_tile(mV_nk, TileShapePV{}, make_coord(_, blk_n_coord, _), Step<X, _1, _1>{});
+
+    const int seq_coord = cute::min(seq_len_kv, blk_m_coord * QK_BLK_M + (sub_group_id / PV_ATOM_N) * QK_SG_M);
     const int l_coord = blk_l_coord;
-    
-    const int causal_seq_len = seq_coord + get<0>(subgroup_shape);
-    const int non_causal_seq_len = seq_len;
 
-    const int nblock_limit = CausalMask ? cute::ceil_div(causal_seq_len, SG_N)
-                                        : cute::ceil_div(non_causal_seq_len, SG_N);
+    const int causal_seq_len = seq_coord + QK_SG_M;
+    const int non_causal_seq_len = seq_len_kv;
 
-    auto tiled_prefetch_q = cute::prefetch_selector<Shape<Int<BLK_M>,Int<BLK_N>>, Num_SGs>(params.mainloop.gmem_tiled_copy_q);   // <M=128 (BLK_M), K=128 (BLK_N)>  // is_reverse_needed=0
-    auto tiled_prefetch_k = cute::prefetch_selector<Shape<Int<BLK_K>,Int<BLK_N>>, Num_SGs>(params.mainloop.gmem_tiled_copy_k);   // <N=64  (BLK_K), K=128 (BLK_N)>  // is_revese_needed=0
-    auto tiled_prefetch_v = cute::prefetch_selector<Shape<Int<BLK_N>,Int<BLK_K>>, Num_SGs>(params.mainloop.gmem_tiled_copy_v);   // <N=128 (BLK_N), K=64  (BLK_K)>  // is_reverse_needed=1 
+    const int nblock_limit = CausalMask ? cute::ceil_div(causal_seq_len, QK_BLK_N)
+                                        : cute::ceil_div(non_causal_seq_len, QK_BLK_N);
+
+    auto tiled_prefetch_q = cute::prefetch_selector<Shape<Int<QK_BLK_M>, Int<QK_BLK_K>>, Num_SGs>(params.mainloop.gmem_tiled_copy_q);
+    auto tiled_prefetch_k = cute::prefetch_selector<Shape<Int<QK_BLK_N>, Int<QK_BLK_K>>, Num_SGs>(params.mainloop.gmem_tiled_copy_k);
+    auto tiled_prefetch_v = cute::prefetch_selector<Shape<Int<PV_BLK_N>, Int<PV_BLK_K>>, Num_SGs>(params.mainloop.gmem_tiled_copy_v);
+
     auto thr_prefetch_Q = tiled_prefetch_q.get_slice(thread_idx);
     auto thr_prefetch_K = tiled_prefetch_k.get_slice(thread_idx);
     auto thr_prefetch_V = tiled_prefetch_v.get_slice(thread_idx);
@@ -249,13 +256,13 @@ public:
       }
     }
 
-    // Allocate the tiled_mma and the accumulators for the (M,N) subgroup_shape
+    // Allocate the tiled_mma and the accumulators for the (M,N) workgroup_shape
     TiledMma tiled_mma;
-    Tensor out_reg = partition_fragment_C(tiled_mma, take<0, 2>(subgroup_shape));
-    // There are 16 workitem and 32 max per subgroup, each worktime containt 2 max and cumulatively, they calculate the
+    Tensor out_reg = partition_fragment_C(tiled_mma, take<0, 2>(TileShapePV{}));
+    // There are 16 workitem and 16 max per subgroup, each worktime containt 1 max and cumulatively, they calculate the
     // max per subgroup
     ElementAccumulator max_reg{-INFINITY};
-    // The sum reg each contains a 2d tesnor for 8 x 4 This is number of sequence lenght process per subgroup
+    // The sum reg each contains a 2d tesnor for 8 x 2 This is number of sequence lenght process per subgroup
     Tensor sum_reg = make_tensor<ElementAccumulator>(Shape<Int<Vec>, Int<FragsM>>{});
 
     clear(sum_reg);
@@ -267,8 +274,7 @@ public:
     // different for each subgroup due to triangular nature of causal based operation
     static constexpr int barrier_scope = CausalMask ? 3 : 2;
     // MAIN LOOP: loop over K and V, perform fused attention + online softmax
-    for (int nblock = 0, load_idx = 0; nblock < nblock_limit - static_cast<int>(CausalMask); nblock++, 
-         load_idx += SG_N) {
+    for (int nblock = 0; nblock < nblock_limit - static_cast<int>(CausalMask); nblock++) {
       barrier_arrive(barrier_scope);
       // 1) Load K (performed inside mmaQK)
       // 2) Create Tensor S
@@ -276,7 +282,7 @@ public:
       clear(tSr);
 
       // 3) Perform GEMM S = Q*K
-      collective_mma.mmaQK(tSr, gQ, gK(_, _, nblock, _), tSr, ceil_div(head_size , SG_N), params.mainloop);
+      collective_mma.mmaQK(tSr, gQ, gK(_, _, nblock, _), tSr, ceil_div(head_size_qk, QK_BLK_K), params.mainloop);
       
       // we only need one block ahead, there is enough gap to prefetch it while doing softmax. because the gap between the two MMA is big,
       // prefetching it the same way as cutlass K matrix does not make sense
@@ -295,6 +301,7 @@ public:
         }
       barrier_wait(barrier_scope);
     }
+
     if constexpr (CausalMask) {
       // BAND Matrix
       // 1) Load K (performed inside mmaQK)
@@ -302,13 +309,13 @@ public:
       Tensor tSr = make_tensor<ElementAccumulator>(Shape<Int<Vec>, Int<FragsM>, Int<FragsN>>{});
       clear(tSr);
       // 3) Perform GEMM S = Q*K
-      collective_mma.mmaQK(tSr, gQ,  gK(_, _, nblock_limit - 1, _), tSr, ceil_div(head_size , SG_N), params.mainloop);
+      collective_mma.mmaQK(tSr, gQ,  gK(_, _, nblock_limit - 1, _), tSr, ceil_div(head_size_qk, QK_BLK_K), params.mainloop);
       // we only need one block ahead, there is enough gap to prefetch it while doing softmax. because the gap between the two MMA is big,
       // prefetching it the same way as cutlass K matrix does not make sense
       prefetch(tiled_prefetch_v, pVgV(_, _, _ , nblock_limit - 1));
       // mask the elements of each tile where j > i
       const int item_id = thread_idx % SubgroupSize;
-      int col_idx = item_id + (nblock_limit - 1) * SG_N;
+      int col_idx = item_id + (nblock_limit - 1) * QK_BLK_N;
       CUTLASS_PRAGMA_UNROLL
       for (int n = 0; n < FragsN; n++, col_idx += get<1>(MmaAtomShape())) { // 4
         CUTLASS_PRAGMA_UNROLL
