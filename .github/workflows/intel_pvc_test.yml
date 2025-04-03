@@ -38,7 +38,7 @@ jobs:
         with:
           DPCPP_RELEASE: ${{ matrix.compiler }}
           DPCPP_VERSION: ${{ inputs.DPCPP_VERSION }}
-      - name: Build
+      - name: Setup virtual environment
         shell: bash
         run: |
           . setvars.sh
@@ -46,6 +46,10 @@ jobs:
           env >> $GITHUB_ENV
           which $CXX
           $CXX --version
+          sycl-ls
+      - name: Build
+        shell: bash
+        run: |
           cmake -G Ninja  \
             -DCUTLASS_ENABLE_SYCL=ON \
             -DDPCPP_SYCL_TARGET=intel_gpu_pvc
