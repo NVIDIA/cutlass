@@ -208,20 +208,6 @@ bool initialize_tensor(
   return true;
 }
 
-template <typename Element>
-bool initialize_quant_tensor(
-  cutlass::DeviceAllocation<Element>& block,
-  uint64_t seed = 2023) {
-  
-  float scope_min = float(cutlass::platform::numeric_limits<Element>::lowest());
-  float scope_max = float(cutlass::platform::numeric_limits<Element>::max());
-
-  cutlass::reference::device::BlockFillRandomUniform(
-    block.get(), block.size(), seed, Element(scope_max), Element(scope_min));
-
-  return true;
-}
-
 template <class Element>
 bool initialize_scale(
   cutlass::DeviceAllocation<Element>& block, 
@@ -232,10 +218,8 @@ bool initialize_scale(
   float scope_max = 1.0f, scope_min = 1.0f;
   if (options.mode != MixedDtypeGemmMode::ConvertOnly) {
     float elt_max_f = float(cutlass::platform::numeric_limits<Element>::max());
-    const float max_dequant_val = 4.f;
-    const float min_dequant_val = 0.5f;
-    scope_max = max_dequant_val / elt_max_f;
-    scope_min = min_dequant_val / elt_max_f;
+    scope_max = 2.f;
+    scope_min = 0.1f;
   }
   cutlass::reference::device::BlockFillRandomUniform(
     block.get(), block.size(), seed, Element(scope_max), Element(scope_min));

@@ -54,4 +54,18 @@ cutlass_example_add_executable(
   TEST_SMALL
 )
 
+cutlass_example_add_executable(
+  81_blackwell_grouped_gemm_blockwise 
+  81_blackwell_grouped_gemm_blockwise.cu
+  TEST_COMMAND_OPTIONS
+  TEST_SMALL
+)
+
+cutlass_example_add_executable(
+  81_blackwell_grouped_gemm_groupwise 
+  81_blackwell_grouped_gemm_groupwise.cu
+  TEST_COMMAND_OPTIONS
+  TEST_SMALL
+)
+
 endif()

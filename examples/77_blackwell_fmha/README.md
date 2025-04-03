@@ -22,6 +22,24 @@ The `apply_mask` function is called with the accumulator of the first GEMM and t
 It is well-suited for applying masks or activations.
 More complex fusions that require memory loads would require modifying the mainloop collective to orchestrate the load via TMA.
 
+# MLA Inference for Blackwell
+
+This sample provides code for fused multi-head latent attention inference in
+the weight-absorbed regime, i.e. for latent head dim 512, and rope head dim 64.
+It supports fp16, bf16, and fp8 input and output types.
+
+To accomodate the large output accumulator due to the large latent head dimension,
+the sample demonstrates how to leverage 2Sm Blackwell tensor cores.
+
+Loading can be done via TMA (either without paging or with page size 128), or using `cp.async`
+for support of any power-of-two page size less than or equal to 128.
+With paging, the code also supports variable sequence length.
+
+The approach of this implementation is to reuse the selection logic of the collective gemm builder and recombine the result into an MLA kernel.
+
+The example builds six binaries, showcasing TMA and `cp.async` usage, as well as a back-to-back gemm (essentially turning the softmax into a no-op) for fp8 and fp16.
+For detailed information on how to invoke them, check out either the tests in `CMakeLists.txt` or the `--help` for them.
+
 # Copyright
 
 Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.

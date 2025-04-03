@@ -115,3 +115,46 @@ TEST(SM90_CuTe_Hopper, CooperativeGemmTilingF16) {
 }
 
 #endif
+
+#if defined(CUTE_ARCH_STSM_SM90_ENABLED)
+
+TEST(SM90_CuTe_Hopper, CooperativeGemmSTSM) {
+
+  constexpr uint32_t thread_block_size = 128;
+  constexpr int MaxVecBits = 128;
+  using TA = cute::half_t;
+  using TB = cute::half_t;
+  using TC = cute::half_t;
+
+  auto tiled_mma =
+      TiledMMA<
+        MMA_Atom<SM80_16x8x16_F16F16F16F16_TN>,
+        Layout<Shape<_2, _2, _1>, Stride<_1, _2, _0>>,
+        Tile<_32, _32, _16>
+      >{};
+
+  auto global_a_layout = make_layout(Shape<_64, _64>{}, LayoutRight{});
+  auto global_b_layout = make_layout(Shape<_64, _64>{}, LayoutRight{});
+  auto global_c_layout = make_layout(Shape<_64, _64>{}, LayoutRight{});
+
+  test_cooperative_gemm<thread_block_size,
+                        MaxVecBits,
+                        TA, TB, TC>
+    (global_a_layout,
+     global_b_layout,
+     global_c_layout,
+     global_a_layout,
+     global_b_layout,
+     global_c_layout,
+     tiled_mma, 
+     identity{}, 
+     identity{},
+     identity{},
+     identity{},
+     SM75_U32x4_LDSM_N{},
+     SM75_U32x4_LDSM_N{},
+     SM75_U32x4_LDSM_N{},
+     SM90_U32x4_STSM_N{});
+}
+
+#endif

@@ -374,7 +374,7 @@ void allocate(Options const& options) {
     auto N = get<1>(problem);
     auto K = get<2>(problem);
 
-    const int scale_k = 1;
+  int const scale_k = cutlass::ceil_div(options.k, options.c);
 
     offset_A.push_back(total_elements_A);
     offset_B.push_back(total_elements_B * cutlass::sizeof_bits<QuantType>::value / 8);
@@ -510,7 +510,7 @@ void initialize(Options &options) {
   beta_device.copy_from_host(ptr_beta_host.data());
 
   initialize_tensor(block_A, seed + 2023);
-  initialize_quant_tensor(block_B, seed + 2022);
+  initialize_tensor(block_B, seed + 2022);
   initialize_tensor(block_C, seed + 2021);
   initialize_scale(block_scale, options);
   initialize_zero(block_zero, options);
@@ -519,13 +519,13 @@ void initialize(Options &options) {
 
   
   for (int32_t i = 0; i < options.groups; ++i) {
-    const int scale_k = 1;
+    int const scale_k = cutlass::ceil_div(options.k, options.c);
     auto shape_B = cute::make_shape(cute::get<1>(options.problem_sizes_host[i]), cute::get<2>(options.problem_sizes_host[i]), Int<1>{});
     auto shape_scale = cute::make_shape(cute::get<1>(options.problem_sizes_host[i]), scale_k, Int<1>{});
     auto layout_B = make_layout(shape_B, stride_B_host.at(i));
     auto layout_scale = make_layout(shape_scale, stride_S_host_ref.at(i));
     cudaStream_t stream = cudaStreamDefault;
-    cutlass::dequantize(block_B_dq.get() + offset_B_dq.at(i), block_B.get() + offset_B.at(i), layout_B, block_scale.get() + offset_scale.at(i), block_zero.get() + offset_zero.at(i), layout_scale, options.k, stream);
+    cutlass::dequantize(block_B_dq.get() + offset_B_dq.at(i), block_B.get() + offset_B.at(i), layout_B, block_scale.get() + offset_scale.at(i), block_zero.get() + offset_zero.at(i), layout_scale, options.c, stream);
   }
 
   problem_sizes.reset(options.groups);
@@ -619,7 +619,7 @@ typename Gemm::Arguments args_from_options(Options const& options, bool host_pro
     arguments = Args {
       cutlass::gemm::GemmUniversalMode::kGrouped,
       {options.groups, problem_sizes.get(), nullptr},
-      {ptr_B.get(), dB, ptr_A.get(), stride_A.get(), ptr_scale.get(), stride_S.get(), options.k},
+      {ptr_B.get(), dB, ptr_A.get(), stride_A.get(), ptr_scale.get(), stride_S.get(), options.c},
       {fusion_args, ptr_C.get(), stride_C.get(), ptr_D.get(), stride_D.get()},
       hw_info
     };
@@ -676,6 +676,7 @@ bool verify(Options const& options) {
 
   for (int32_t i = 0; i < options.groups; ++i) {
     auto problem = options.problem_sizes_host.at(i);
+    // we don't swap and transpose in the verify so revert the problem shape.
     auto N = get<0>(problem);
     auto M = get<1>(problem);
     auto K = get<2>(problem);
@@ -712,7 +713,7 @@ bool verify(Options const& options) {
       CUDA_CHECK(cudaDeviceSynchronize());
 
       passed &= cutlass::reference::device::BlockCompareRelativelyEqual(block_ref_D.get() + offset_D.at(i), block_D.get() + offset_D.at(i), M * N, epsilon, non_zero_floor);
-      std::cout << "Group: " << i << " Status: " << passed << std::endl;
+      std::cout << "Group " << i << ": " << options.problem_sizes_host[i] << ", alpha: " << alpha_host[i] << ", beta: " << beta_host[i] << " Status: " << passed << std::endl;
     }
   }
   return passed;

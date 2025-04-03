@@ -866,6 +866,11 @@ struct CollectiveMma<
     // PIPELINED MAIN LOOP
     //
     tiled_mma.accumulate_ = UMMA::ScaleOut::Zero;
+    if constexpr (not IsOverlappingAccum) {
+      // Wait for tmem accumulator buffer to become empty with a flipped phase
+      accumulator_pipeline.producer_acquire(accumulator_pipe_producer_state);
+    }
+
     CUTLASS_PRAGMA_NO_UNROLL
     while (k_tile_count > 0) {
       // WAIT on mainloop_pipe_consumer_state until its data are available
@@ -884,15 +889,23 @@ struct CollectiveMma<
       // Peek at next iteration
       barrier_token = mainloop_pipeline.consumer_try_wait(mainloop_pipe_consumer_state, skip_wait);
 
-      if (iter % UtccpReuseCnt == 0) {
+      if constexpr (UtccpReuseCnt == 1) {
         if (cute::elect_one_sync()) {
           copy(tiled_copy_s2t_E, thr_tCsE_s2t(_,_,_,_,read_stage), thr_tCtE_s2t);
         }
       }
+      else {
+        if (not (iter & 1)) {
+          if (cute::elect_one_sync()) {
+            copy(tiled_copy_s2t_E, thr_tCsE_s2t(_,_,_,_,read_stage), thr_tCtE_s2t);
+          }
+        }
+      }
 
-      // Wait for tmem accumulator buffer to become empty with a flipped phase
-      if (iter == 0) {
-        accumulator_pipeline.producer_acquire(accumulator_pipe_producer_state);
+      if constexpr (IsOverlappingAccum) {
+        if (iter == 0) {
+          accumulator_pipeline.producer_acquire(accumulator_pipe_producer_state);
+        }
       }
 
       // Unroll the K mode manually so we can set scale C to 1
