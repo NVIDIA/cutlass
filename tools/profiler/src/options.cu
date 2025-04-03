@@ -31,7 +31,8 @@
 /* \file
    \brief Command line options for performance test program
 */
-
+#include <cuda.h>
+#include <cuda_runtime_api.h>
 #include <algorithm>
 #include <fstream>
 #include <set>
@@ -165,9 +166,11 @@ void Options::Device::print_usage(std::ostream &out) const {
         break;
       }
       else {
+        int32_t clock_KHz;
+        cudaDeviceGetAttribute(&clock_KHz, cudaDevAttrClockRate, 0);
         out << "    [" << idx << "] - "
           << prop.name << " - SM " << prop.major << "." << prop.minor << ", "
-          << prop.multiProcessorCount << " SMs @ " << (prop.clockRate / 1000.0) << " MHz, "
+          << prop.multiProcessorCount << " SMs @ " << (clock_KHz / 1000.0) << " MHz, "
           << "L2 cache: " << (prop.l2CacheSize >> 20) << " MB, Global Memory: " << (prop.totalGlobalMem >> 30) << " GB"
           << std::endl;
       }
@@ -216,9 +219,11 @@ void Options::Device::print_options(std::ostream &out, int indent) const {
   for (int device : devices) {
     out << device << ',';
   }
+  int32_t clock_KHz;
+  cudaDeviceGetAttribute(&clock_KHz, cudaDevAttrClockRate, 0);
   out
     << "\n"
-    << indent_str(indent) << "clock: " << int(double(properties[0].clockRate) / 1000.0) << "\n"
+    << indent_str(indent) << "clock: " << int(double(clock_KHz) / 1000.0) << "\n"
     << indent_str(indent) << "compute-capability: " << compute_capability(0) << "\n";
 }
 

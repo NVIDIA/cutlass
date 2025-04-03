@@ -44,6 +44,11 @@
 #include <cuda/atomic>
 #include <cuda/std/atomic>
 
+#include "cute/layout.hpp"
+#include "cute/tensor.hpp"
+#include "cutlass/cutlass.h"
+#include "cutlass/cuda_host_adapter.hpp"
+
 
 namespace cutlass {
 
@@ -114,5 +119,47 @@ struct DistGpuTimer {
     return elapsed;
   }
 };
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+/// Generic device-to-device data movement kernel based for CuTe tensors.
+///
+///   NOTE: this kernel assigns one element copy to every thread, and is by no means
+///   an efficient way of copying tensors. It should only be used for convenience in
+///   reference checks.
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <typename TensorSource, typename TensorDestination>
+void device_copy(TensorSource      tensor_source,
+                 TensorDestination tensor_destination,
+                 cudaStream_t stream);
+
+
+template <typename TensorSource, typename TensorDestination>
+__global__ void device_copy_kernel(TensorSource const tensor_source, 
+                                   TensorDestination tensor_destination) {
+  auto linear_idx = blockIdx.x * blockDim.x + threadIdx.x;
+  using ElementSrc = typename TensorSource::value_type;
+  using ElementDst = typename TensorDestination::value_type;
+  NumericConverter<ElementDst, ElementSrc> converter;
+  if (linear_idx < size(tensor_source)) {
+    tensor_destination(linear_idx) = converter(tensor_source(linear_idx));
+  }
+}
+
+template <typename TensorSource, typename TensorDestination>
+void device_copy(TensorSource      tensor_source,
+                 TensorDestination tensor_destination,
+                 cudaStream_t stream) {
+  
+  assert(tensor_source.size() == tensor_destination.size());
+
+  auto numel = tensor_source.size();
+  static constexpr int NumThreads = 128;
+  auto grid_size = cute::ceil_div(numel, NumThreads);
+
+  dim3 grid(grid_size);
+  dim3 block(NumThreads);
+  device_copy_kernel<<<grid, block, 0, stream>>>(tensor_source, tensor_destination);
+}
 
 } //namespace cutlass
