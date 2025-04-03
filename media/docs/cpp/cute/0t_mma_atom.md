@@ -209,7 +209,7 @@ Volta architecture implements an HMMA instruction where a group of 8 threads cal
 We first take a look at how we would take the ISA semantics of thread and data partitioning for the HMMA instruction, and encode it in a Traits struct. The HMMA NT instruction has the thread-data layout:
 
 <p align="center">
-  <img src="../../images/cute/HMMA.8x8x4.NT.png" alt="HMMA.8x8x4.NT.png" height="400"/>
+  <img src="../../../images/cute/HMMA.8x8x4.NT.png" alt="HMMA.8x8x4.NT.png" height="400"/>
 </p>
 
 ### Types
@@ -251,7 +251,7 @@ Again, this layout function maps the logical thread id [0,8) of the MMA operatio
 Let us look at exactly how the 8 threads within a QP are mapped to the A, B and C matrices. For the C and D matrices, the above image is broken down a bit more below. On the left is shown the whole QP level view, and on the right is shown the values owned by just thread 0.
 
 <p align="center">
-  <img src="../../images/cute/HMMA.8x8x4.quadpair.C.png" alt="HMMA.8x8x4.quadpair.C.png" height="400"/>
+  <img src="../../../images/cute/HMMA.8x8x4.quadpair.C.png" alt="HMMA.8x8x4.quadpair.C.png" height="400"/>
 </p>
 
 The metainformation of this single instruction level view is what we want to encode in CuTe. Specifically, the QP level view in this diagram corresponds to the four MMA traits for [SM70_F32F16F16F32](https://github.com/NVIDIA/cutlass/tree/main/include/cute/arch/mma_sm70.hpp). These structs contain the `Element` types, the `Shape_MNK`, and the `ThrID` mapping we constructed above. Now, let us take a look at the definition of `CLayout`, the thread-data layout of accumulators. The job of `CLayout` is to construct a mapping between the `(logical_thr_id, logical_val_id)` and `(m, n)` coordinate in the C matrix which can then be used to build up more complicated layouts and operations like the 16x16x4 WMMA.
@@ -321,7 +321,7 @@ In the case of F16 accumulators, the layout is way less complex. Each row of acc
 A and B matrix layouts depend on whether the sources are transposed or not. The diagram below shows the thread ID to data ownership map for A and B matrices in the case of NT and TN transposes.
 
 <p align="center">
-  <img src="../../images/cute/HMMA.8x8x4.quadpair.AB.png" alt="HMMA.8x8x4.quadpair.AB.png" height="400"/>
+  <img src="../../../images/cute/HMMA.8x8x4.quadpair.AB.png" alt="HMMA.8x8x4.quadpair.AB.png" height="400"/>
 </p>
 
 Let's look at the TN layout for A matrix first (right side in the diagram). Again, there are the same 8 logical threads, but each threads owns only 4 elements this time. The shape of `ALayout` will then be `Shape<_8, _4>`. As for the strides, we again need a similar mapping between `(m, k) == m + k * M`. Looking down the `M` mode, we go from `(T0, V0)` to `(T1, V0)` which is a stride of 1 for all 8 threads. For the `K` mode, as we go across, we go from `(T0, V0)` to `(T0, V1)`, which makes a stride of 8 for all 4 values. Therefore, the A layout is:
@@ -376,7 +376,7 @@ Accumulators are mapped hierarchically in GMMA, starting from the concept of a c
 
 Each core matrix has the layout as shown in the diagram below.
 <p align="center">
-  <img src="../../images/cute/gmma_coremat_cd_fp16.png" alt="gmma_coremat_cd_fp16.png" height="600"/>
+  <img src="../../../images/cute/gmma_coremat_cd_fp16.png" alt="gmma_coremat_cd_fp16.png" height="600"/>
 </p>
 
 As in the Volta examples, the thread IDs are logical only, and which of the four warps they belong to in the warpgroup is not important.
@@ -384,7 +384,7 @@ As in the Volta examples, the thread IDs are logical only, and which of the four
 Then GMMA tiles this core matrix first vertically along the M mode, and then repeats that column of core matrices along the N mode to construct the full MxN tile. This tiling is shown in the image below.
 
 <p align="center">
-  <img src="../../images/cute/gmma_wg_n_slice.png" alt="gmma_wg_n_slice.png" height="600"/>
+  <img src="../../../images/cute/gmma_wg_n_slice.png" alt="gmma_wg_n_slice.png" height="600"/>
 </p>
 
 With this image, we are again ready to start building the `CLayout` for `SM90_64x128x16_F16F16F16F16_TN` atom. Same as before, we are constructing a mapping between the `(logical_thr_id, logical_val_id) -> (m, n)` coordinate spaces.
@@ -453,7 +453,7 @@ MMA_Atom mma = MMA_Atom<SM70_8x8x4_F32F16F16F32_NT>{};
 print_latex(mma);
 ```
 <p align="center">
-  <img src="../../images/cute/HMMA.8x8x4.NT_Atom.png" alt="HMMA.8x8x4.NT_Atom.png" height="400"/>
+  <img src="../../../images/cute/HMMA.8x8x4.NT_Atom.png" alt="HMMA.8x8x4.NT_Atom.png" height="400"/>
 </p>
 
 The above is equivalent to 
@@ -473,7 +473,7 @@ We can create an object akin to a WMMA by using four of these quadpair MMAs:
     print_latex(mma);
 ```
 <p align="center">
-  <img src="../../images/cute/HMMA.8x8x4.NT_2x2.png" alt="HMMA.8x8x4.NT_2x2.png" height="400"/>
+  <img src="../../../images/cute/HMMA.8x8x4.NT_2x2.png" alt="HMMA.8x8x4.NT_2x2.png" height="400"/>
 </p>
 This `TiledMMA` replicates the `MMA_Atom` across threads as we can see the `T4` and `T8` and `T12` threads in the `C`-matrix that were not used before. Each quadrant of the `C`-matrix is a replica of the atom's partitioning pattern for a new quadpair and this replication follows a `(2,2):(2,1)` layout.
 
@@ -486,7 +486,7 @@ The above represents a 16x16x4 MMA now, but we can immediately expand this "tile
     print_latex(mma);
 ```
 <p align="center">
-  <img src="../../images/cute/HMMA.8x8x4.NT_2x2_32x32x4.png" alt="HMMA.8x8x4.NT_2x2_32x32x4.png" height="400"/>
+  <img src="../../../images/cute/HMMA.8x8x4.NT_2x2_32x32x4.png" alt="HMMA.8x8x4.NT_2x2_32x32x4.png" height="400"/>
 </p>
 This `TiledMMA` replicates the previous `TiledMMA` across values instead of threads. We can see the `T0V8` and `T16V8` and `T8V8` values in the `C`-matrix that were not used before. Each quadrant of the `C`-matrix is a replica of the previous `TiledMMA`'s partitioning pattern for a new set of values.
 
@@ -514,7 +514,7 @@ which are separate, but we might prefer them to be next to each other. That is w
     print_latex(mma);
 ```
 <p align="center">
-  <img src="../../images/cute/HMMA.8x8x4.NT_2x2_32Mx32x4.png" alt="HMMA.8x8x4.NT_2x2_32Mx32x4.png" height="400"/>
+  <img src="../../../images/cute/HMMA.8x8x4.NT_2x2_32Mx32x4.png" alt="HMMA.8x8x4.NT_2x2_32Mx32x4.png" height="400"/>
 </p>
 
 That layout `(4,4,2):(1,8,4)` is read like a scatter permutation, telling the m-coords of the original image where to go in the new image.
