@@ -41,6 +41,7 @@
 #include <cute/tensor.hpp>
 #include <random>
 
+#include "helper.h"
 #include "cutlass/util/command_line.h"
 #include "cutlass/util/device_memory.h"
 #include "cutlass/util/packed_stride.hpp"
@@ -330,7 +331,7 @@ template <class GemmKernel> struct ExampleRunner {
     EventManager::getInstance().addEvent(event);
   }
 
-  void run(const Options &options, const cutlass::KernelHardwareInfo &hw_info) {
+  cutlass::Status run(const Options &options, const cutlass::KernelHardwareInfo &hw_info) {
     ProblemShapeType problem_size =
         ProblemShapeType{options.batch, options.num_heads, options.seq_len_qo, options.seq_len_kv, options.head_size_qk, options.head_size_vo};
 
@@ -349,15 +350,17 @@ template <class GemmKernel> struct ExampleRunner {
     size_t workspace_size = GemmKernel::get_workspace_size(arguments);
     cutlass::device_memory::allocation<uint8_t> workspace(workspace_size);
 
-    GemmKernel::can_implement(arguments);
-
-    // Initialize the workspace
-    auto status = GemmKernel::initialize_workspace(arguments, workspace.get());
-    if (status != cutlass::Status::kSuccess) {
-      return;
+    if (!GemmKernel::can_implement(arguments)) {
+      std::cout << "Invalid Problem Size: " << options.batch << 'x' << options.num_heads << 'x' <<
+        options.seq_len_qo << 'x' << options.seq_len_kv << 'x' << options.head_size_qk << 'x'  << options.head_size_vo 
+        << (options.is_causal ? "xCausal" : "xNonCausal") << std::endl;
+      return cutlass::Status::kErrorInvalidProblem;
     }
 
-    typename GemmKernel::Params params = GemmKernel::to_underlying_arguments(arguments, workspace.get());
+    // Initialize the workspace
+    CUTLASS_CHECK(GemmKernel::initialize_workspace(arguments, workspace.get()));
+
+    auto params = GemmKernel::to_underlying_arguments(arguments, workspace.get());
 
     // Run the GEMM
     run(params);
@@ -368,7 +371,11 @@ template <class GemmKernel> struct ExampleRunner {
     bool passed = verify(problem_size, options.is_causal);
     std::cout << "Disposition: " << (passed ? "Passed" : "Failed") << std::endl;
 
-    if (passed && options.iterations > 0) {
+    if (!passed) {
+      return cutlass::Status::kErrorInternal;
+    }
+
+    if (options.iterations > 0) {
       GPU_Clock timer;
       timer.start();
       for (int i = 0; i < options.iterations; ++i) {
@@ -389,7 +396,7 @@ template <class GemmKernel> struct ExampleRunner {
       printf("\nPerformance:   %4.3f  GB/s,    %4.3f  TFlop/s,   %6.4f  ms\n\n", gbps, tflops, cute_time * 1000);
     }
 
-    return;
+    return cutlass::Status::kSuccess;
   }
 };
 
@@ -439,7 +446,7 @@ template <bool Causal, typename TileShape, typename TiledMma> struct FMHAConfig 
 
     ExampleRunner<GemmKernel> runner;
 
-    runner.run(options, hw_info);
+    CUTLASS_CHECK(runner.run(options, hw_info));
     return 0;
   }
 };
