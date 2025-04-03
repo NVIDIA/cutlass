@@ -120,8 +120,7 @@
 #include "helper.h"
 
 // Distributed GEMM helpers
-#include "util/benchmark.h"
-#include "util/device_copy.h"
+#include "dist_gemm_helpers.h"
 
 using namespace cute;
 

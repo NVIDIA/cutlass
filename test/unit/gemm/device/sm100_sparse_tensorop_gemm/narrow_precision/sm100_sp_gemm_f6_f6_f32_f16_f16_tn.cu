@@ -40,8 +40,8 @@
 #include "cutlass/epilogue/dispatch_policy.hpp"
 #include "cutlass/epilogue/collective/collective_builder.hpp"
 #include "cutlass/epilogue/thread/activation.h"
-#include "../../../common/cutlass_unit_test.h"
-#include "../gemm_testbed_3x.hpp"
+#include "../../../../common/cutlass_unit_test.h"
+#include "../../gemm_testbed_3x.hpp"
 
 using namespace cute;
 
@@ -54,17 +54,17 @@ using namespace cute;
 #if defined(CUTLASS_ARCH_MMA_SM100_SUPPORTED)
 
 // 1. 
-namespace cutlass3x_sm100_sptensorop_s128x128x64spgemm_e2m1_e2m1_f32_f32_f32_128x128x256_0_tnt_align32_q_1sm {
+namespace cutlass3x_sm100_sptensorop_s128x128x64spgemm_e3m2_e3m2_f32_f16_f16_128x128x256_0_tnt_align32_q_1sm {
 
     using LayoutA = cutlass::layout::RowMajor;
     using LayoutB = cutlass::layout::ColumnMajor;
     using LayoutC = cutlass::layout::RowMajor;
     using LayoutD = cutlass::layout::RowMajor;
 
-    using ElementA = cutlass::float_e2m1_t;
-    using ElementB = cutlass::float_e2m1_t;
-    using ElementC = float;
-    using ElementD = float;
+    using ElementA = cutlass::float_e3m2_t;
+    using ElementB = cutlass::float_e3m2_t;
+    using ElementC = cutlass::half_t;
+    using ElementD = cutlass::half_t;
 
     constexpr int kAlignmentA = 256;
     constexpr int kAlignmentB = 128;
@@ -82,7 +82,7 @@ namespace cutlass3x_sm100_sptensorop_s128x128x64spgemm_e2m1_e2m1_f32_f32_f32_128
     using KernelScheduleType = cutlass::gemm::KernelSparseTmaWarpSpecialized1SmSm100;
     using ElementAccumulator = float;
     using ElementEpilogueCompute = float;
-    using ElementBias = float;
+    using ElementBias = cutlass::half_t;
     using TileScheduler = cutlass::gemm::PersistentScheduler;
 
     using CollectiveEpilogue =
@@ -124,17 +124,17 @@ namespace cutlass3x_sm100_sptensorop_s128x128x64spgemm_e2m1_e2m1_f32_f32_f32_128
 }
 
 // 2.
-namespace cutlass3x_sm100_sptensorop_s128x256x64spgemm_e2m1_e2m1_f32_f32_f32_128x256x256_0_tnt_align32_q_1sm {
+namespace cutlass3x_sm100_sptensorop_s128x256x64spgemm_e3m2_e3m2_f32_f16_f16_128x256x256_0_tnt_align32_q_1sm {
 
     using LayoutA = cutlass::layout::RowMajor;
     using LayoutB = cutlass::layout::ColumnMajor;
     using LayoutC = cutlass::layout::RowMajor;
     using LayoutD = cutlass::layout::RowMajor;
 
-    using ElementA = cutlass::float_e2m1_t;
-    using ElementB = cutlass::float_e2m1_t;
-    using ElementC = float;
-    using ElementD = float;
+    using ElementA = cutlass::float_e3m2_t;
+    using ElementB = cutlass::float_e3m2_t;
+    using ElementC = cutlass::half_t;
+    using ElementD = cutlass::half_t;
 
     constexpr int kAlignmentA = 256;
     constexpr int kAlignmentB = 128;
@@ -152,7 +152,7 @@ namespace cutlass3x_sm100_sptensorop_s128x256x64spgemm_e2m1_e2m1_f32_f32_f32_128
     using KernelScheduleType = cutlass::gemm::KernelSparseTmaWarpSpecialized1SmSm100;
     using ElementAccumulator = float;
     using ElementEpilogueCompute = float;
-    using ElementBias = float;
+    using ElementBias = cutlass::half_t;
     using TileScheduler = cutlass::gemm::PersistentScheduler;
 
     using CollectiveEpilogue =
@@ -194,17 +194,17 @@ namespace cutlass3x_sm100_sptensorop_s128x256x64spgemm_e2m1_e2m1_f32_f32_f32_128
 }
 
 // 3.
-namespace cutlass3x_sm100_sptensorop_s256x128x64spgemm_e2m1_e2m1_f32_f32_f32_256x128x256_0_tnt_align32_q_2sm {
+namespace cutlass3x_sm100_sptensorop_s256x128x64spgemm_e3m2_e3m2_f32_f16_f16_256x128x256_0_tnt_align32_q_2sm {
 
     using LayoutA = cutlass::layout::RowMajor;
     using LayoutB = cutlass::layout::ColumnMajor;
     using LayoutC = cutlass::layout::RowMajor;
     using LayoutD = cutlass::layout::RowMajor;
 
-    using ElementA = cutlass::float_e2m1_t;
-    using ElementB = cutlass::float_e2m1_t;
-    using ElementC = float;
-    using ElementD = float;
+    using ElementA = cutlass::float_e3m2_t;
+    using ElementB = cutlass::float_e3m2_t;
+    using ElementC = cutlass::half_t;
+    using ElementD = cutlass::half_t;
 
     constexpr int kAlignmentA = 256;
     constexpr int kAlignmentB = 128;
@@ -222,7 +222,7 @@ namespace cutlass3x_sm100_sptensorop_s256x128x64spgemm_e2m1_e2m1_f32_f32_f32_256
     using KernelScheduleType = cutlass::gemm::KernelSparseTmaWarpSpecialized2SmSm100;
     using ElementAccumulator = float;
     using ElementEpilogueCompute = float;
-    using ElementBias = float;
+    using ElementBias = cutlass::half_t;
     using TileScheduler = cutlass::gemm::PersistentScheduler;
 
     using CollectiveEpilogue =
@@ -264,17 +264,17 @@ namespace cutlass3x_sm100_sptensorop_s256x128x64spgemm_e2m1_e2m1_f32_f32_f32_256
 }
 
 // 4.
-namespace cutlass3x_sm100_sptensorop_s256x256x64spgemm_e2m1_e2m1_f32_f32_f32_256x256x256_0_tnt_align32_q_2sm {
+namespace cutlass3x_sm100_sptensorop_s256x256x64spgemm_e3m2_e3m2_f32_f16_f16_256x256x256_0_tnt_align32_q_2sm {
 
     using LayoutA = cutlass::layout::RowMajor;
     using LayoutB = cutlass::layout::ColumnMajor;
     using LayoutC = cutlass::layout::RowMajor;
     using LayoutD = cutlass::layout::RowMajor;
 
-    using ElementA = cutlass::float_e2m1_t;
-    using ElementB = cutlass::float_e2m1_t;
-    using ElementC = float;
-    using ElementD = float;
+    using ElementA = cutlass::float_e3m2_t;
+    using ElementB = cutlass::float_e3m2_t;
+    using ElementC = cutlass::half_t;
+    using ElementD = cutlass::half_t;
 
     constexpr int kAlignmentA = 256;
     constexpr int kAlignmentB = 128;
@@ -292,7 +292,7 @@ namespace cutlass3x_sm100_sptensorop_s256x256x64spgemm_e2m1_e2m1_f32_f32_f32_256
     using KernelScheduleType = cutlass::gemm::KernelSparseTmaWarpSpecialized2SmSm100;
     using ElementAccumulator = float;
     using ElementEpilogueCompute = float;
-    using ElementBias = float;
+    using ElementBias = cutlass::half_t;
     using TileScheduler = cutlass::gemm::PersistentScheduler;
 
     using CollectiveEpilogue =
@@ -334,8 +334,8 @@ namespace cutlass3x_sm100_sptensorop_s256x256x64spgemm_e2m1_e2m1_f32_f32_f32_256
 }
 
 // 1.
-TEST(cutlass3x_sm100_sptensorop_s128x128x64spgemm_e2m1_e2m1_f32_f32_f32_128x128x256_0_tnt_align32_q_1sm, functional) {
-  namespace gemm = cutlass3x_sm100_sptensorop_s128x128x64spgemm_e2m1_e2m1_f32_f32_f32_128x128x256_0_tnt_align32_q_1sm;
+TEST(cutlass3x_sm100_sptensorop_s128x128x64spgemm_e3m2_e3m2_f32_f16_f16_128x128x256_0_tnt_align32_q_1sm, functional) {
+  namespace gemm = cutlass3x_sm100_sptensorop_s128x128x64spgemm_e3m2_e3m2_f32_f16_f16_128x128x256_0_tnt_align32_q_1sm;
   EXPECT_TRUE(test::gemm::device::TestSmall<gemm::Gemm>(
     1, 1,
     test::gemm::device::CheckEquality::RELATIVE,
@@ -345,8 +345,8 @@ TEST(cutlass3x_sm100_sptensorop_s128x128x64spgemm_e2m1_e2m1_f32_f32_f32_128x128x
 }
 
 // 2.
-TEST(cutlass3x_sm100_sptensorop_s128x256x64spgemm_e2m1_e2m1_f32_f32_f32_128x256x256_0_tnt_align32_q_1sm, functional) {
-  namespace gemm = cutlass3x_sm100_sptensorop_s128x256x64spgemm_e2m1_e2m1_f32_f32_f32_128x256x256_0_tnt_align32_q_1sm;
+TEST(cutlass3x_sm100_sptensorop_s128x256x64spgemm_e3m2_e3m2_f32_f16_f16_128x256x256_0_tnt_align32_q_1sm, functional) {
+  namespace gemm = cutlass3x_sm100_sptensorop_s128x256x64spgemm_e3m2_e3m2_f32_f16_f16_128x256x256_0_tnt_align32_q_1sm;
   EXPECT_TRUE(test::gemm::device::TestSmall<gemm::Gemm>(
     1, 1,
     test::gemm::device::CheckEquality::RELATIVE,
@@ -356,8 +356,8 @@ TEST(cutlass3x_sm100_sptensorop_s128x256x64spgemm_e2m1_e2m1_f32_f32_f32_128x256x
 }
 
 // 3.
-TEST(cutlass3x_sm100_sptensorop_s256x128x64spgemm_e2m1_e2m1_f32_f32_f32_256x128x256_0_tnt_align32_q_2sm, functional) {
-  namespace gemm = cutlass3x_sm100_sptensorop_s256x128x64spgemm_e2m1_e2m1_f32_f32_f32_256x128x256_0_tnt_align32_q_2sm;
+TEST(cutlass3x_sm100_sptensorop_s256x128x64spgemm_e3m2_e3m2_f32_f16_f16_256x128x256_0_tnt_align32_q_2sm, functional) {
+  namespace gemm = cutlass3x_sm100_sptensorop_s256x128x64spgemm_e3m2_e3m2_f32_f16_f16_256x128x256_0_tnt_align32_q_2sm;
   EXPECT_TRUE(test::gemm::device::TestSmall<gemm::Gemm>(
     1, 1,
     test::gemm::device::CheckEquality::RELATIVE,
@@ -367,8 +367,8 @@ TEST(cutlass3x_sm100_sptensorop_s256x128x64spgemm_e2m1_e2m1_f32_f32_f32_256x128x
 }
 
 // 4.
-TEST(cutlass3x_sm100_sptensorop_s256x256x64spgemm_e2m1_e2m1_f32_f32_f32_256x256x256_0_tnt_align32_q_2sm, functional) {
-  namespace gemm = cutlass3x_sm100_sptensorop_s256x256x64spgemm_e2m1_e2m1_f32_f32_f32_256x256x256_0_tnt_align32_q_2sm;
+TEST(cutlass3x_sm100_sptensorop_s256x256x64spgemm_e3m2_e3m2_f32_f16_f16_256x256x256_0_tnt_align32_q_2sm, functional) {
+  namespace gemm = cutlass3x_sm100_sptensorop_s256x256x64spgemm_e3m2_e3m2_f32_f16_f16_256x256x256_0_tnt_align32_q_2sm;
   EXPECT_TRUE(test::gemm::device::TestSmall<gemm::Gemm>(
     1, 1,
     test::gemm::device::CheckEquality::RELATIVE,
@@ -379,15 +379,15 @@ TEST(cutlass3x_sm100_sptensorop_s256x256x64spgemm_e2m1_e2m1_f32_f32_f32_256x256x
 
 
 // 1. 
-namespace cutlass3x_sm100_sptensorop_s128x128x64spgemm_e2m1_e2m1_f32_void_f32_128x128x256_0_tnt_align32_q_1sm {
+namespace cutlass3x_sm100_sptensorop_s128x128x64spgemm_e3m2_e3m2_f32_void_f16_128x128x256_0_tnt_align32_q_1sm {
 
     using LayoutA = cutlass::layout::RowMajor;
     using LayoutB = cutlass::layout::ColumnMajor;
     using LayoutC = cutlass::layout::RowMajor;
     using LayoutD = cutlass::layout::RowMajor;
 
-    using ElementA = cutlass::float_e2m1_t;
-    using ElementB = cutlass::float_e2m1_t;
+    using ElementA = cutlass::float_e3m2_t;
+    using ElementB = cutlass::float_e3m2_t;
     using ElementC = void;
     using ElementD = cutlass::half_t;
 
@@ -407,7 +407,7 @@ namespace cutlass3x_sm100_sptensorop_s128x128x64spgemm_e2m1_e2m1_f32_void_f32_12
     using KernelScheduleType = cutlass::gemm::KernelSparseTmaWarpSpecialized1SmSm100;
     using ElementAccumulator = float;
     using ElementEpilogueCompute = float;
-    using ElementBias = float;
+    using ElementBias = cutlass::half_t;
     using TileScheduler = cutlass::gemm::PersistentScheduler;
 
     using CollectiveEpilogue =
@@ -449,15 +449,15 @@ namespace cutlass3x_sm100_sptensorop_s128x128x64spgemm_e2m1_e2m1_f32_void_f32_12
 }
 
 // 2.
-namespace cutlass3x_sm100_sptensorop_s128x256x64spgemm_e2m1_e2m1_f32_void_f32_128x256x256_0_tnt_align32_q_1sm {
+namespace cutlass3x_sm100_sptensorop_s128x256x64spgemm_e3m2_e3m2_f32_void_f16_128x256x256_0_tnt_align32_q_1sm {
 
     using LayoutA = cutlass::layout::RowMajor;
     using LayoutB = cutlass::layout::ColumnMajor;
     using LayoutC = cutlass::layout::RowMajor;
     using LayoutD = cutlass::layout::RowMajor;
 
-    using ElementA = cutlass::float_e2m1_t;
-    using ElementB = cutlass::float_e2m1_t;
+    using ElementA = cutlass::float_e3m2_t;
+    using ElementB = cutlass::float_e3m2_t;
     using ElementC = void;
     using ElementD = cutlass::half_t;
 
@@ -477,7 +477,7 @@ namespace cutlass3x_sm100_sptensorop_s128x256x64spgemm_e2m1_e2m1_f32_void_f32_12
     using KernelScheduleType = cutlass::gemm::KernelSparseTmaWarpSpecialized1SmSm100;
     using ElementAccumulator = float;
     using ElementEpilogueCompute = float;
-    using ElementBias = float;
+    using ElementBias = cutlass::half_t;
     using TileScheduler = cutlass::gemm::PersistentScheduler;
 
     using CollectiveEpilogue =
@@ -519,15 +519,15 @@ namespace cutlass3x_sm100_sptensorop_s128x256x64spgemm_e2m1_e2m1_f32_void_f32_12
 }
 
 // 3.
-namespace cutlass3x_sm100_sptensorop_s256x128x64spgemm_e2m1_e2m1_f32_void_f32_256x128x256_0_tnt_align32_q_2sm {
+namespace cutlass3x_sm100_sptensorop_s256x128x64spgemm_e3m2_e3m2_f32_void_f16_256x128x256_0_tnt_align32_q_2sm {
 
     using LayoutA = cutlass::layout::RowMajor;
     using LayoutB = cutlass::layout::ColumnMajor;
     using LayoutC = cutlass::layout::RowMajor;
     using LayoutD = cutlass::layout::RowMajor;
 
-    using ElementA = cutlass::float_e2m1_t;
-    using ElementB = cutlass::float_e2m1_t;
+    using ElementA = cutlass::float_e3m2_t;
+    using ElementB = cutlass::float_e3m2_t;
     using ElementC = void;
     using ElementD = cutlass::half_t;
 
@@ -547,7 +547,7 @@ namespace cutlass3x_sm100_sptensorop_s256x128x64spgemm_e2m1_e2m1_f32_void_f32_25
     using KernelScheduleType = cutlass::gemm::KernelSparseTmaWarpSpecialized2SmSm100;
     using ElementAccumulator = float;
     using ElementEpilogueCompute = float;
-    using ElementBias = float;
+    using ElementBias = cutlass::half_t;
     using TileScheduler = cutlass::gemm::PersistentScheduler;
 
     using CollectiveEpilogue =
@@ -589,15 +589,15 @@ namespace cutlass3x_sm100_sptensorop_s256x128x64spgemm_e2m1_e2m1_f32_void_f32_25
 }
 
 // 4.
-namespace cutlass3x_sm100_sptensorop_s256x256x64spgemm_e2m1_e2m1_f32_void_f32_256x256x256_0_tnt_align32_q_2sm {
+namespace cutlass3x_sm100_sptensorop_s256x256x64spgemm_e3m2_e3m2_f32_void_f16_256x256x256_0_tnt_align32_q_2sm {
 
     using LayoutA = cutlass::layout::RowMajor;
     using LayoutB = cutlass::layout::ColumnMajor;
     using LayoutC = cutlass::layout::RowMajor;
     using LayoutD = cutlass::layout::RowMajor;
 
-    using ElementA = cutlass::float_e2m1_t;
-    using ElementB = cutlass::float_e2m1_t;
+    using ElementA = cutlass::float_e3m2_t;
+    using ElementB = cutlass::float_e3m2_t;
     using ElementC = void;
     using ElementD = cutlass::half_t;
 
@@ -617,7 +617,7 @@ namespace cutlass3x_sm100_sptensorop_s256x256x64spgemm_e2m1_e2m1_f32_void_f32_25
     using KernelScheduleType = cutlass::gemm::KernelSparseTmaWarpSpecialized2SmSm100;
     using ElementAccumulator = float;
     using ElementEpilogueCompute = float;
-    using ElementBias = float;
+    using ElementBias = cutlass::half_t;
     using TileScheduler = cutlass::gemm::PersistentScheduler;
 
     using CollectiveEpilogue =
@@ -659,8 +659,8 @@ namespace cutlass3x_sm100_sptensorop_s256x256x64spgemm_e2m1_e2m1_f32_void_f32_25
 }
 
 // 1.
-TEST(cutlass3x_sm100_sptensorop_s128x128x64spgemm_e2m1_e2m1_f32_void_f32_128x128x256_0_tnt_align32_q_1sm, functional) {
-  namespace gemm = cutlass3x_sm100_sptensorop_s128x128x64spgemm_e2m1_e2m1_f32_void_f32_128x128x256_0_tnt_align32_q_1sm;
+TEST(cutlass3x_sm100_sptensorop_s128x128x64spgemm_e3m2_e3m2_f32_void_f16_128x128x256_0_tnt_align32_q_1sm, functional) {
+  namespace gemm = cutlass3x_sm100_sptensorop_s128x128x64spgemm_e3m2_e3m2_f32_void_f16_128x128x256_0_tnt_align32_q_1sm;
   EXPECT_TRUE(test::gemm::device::TestSmall<gemm::Gemm>(
     1, 0,
     test::gemm::device::CheckEquality::RELATIVE,
@@ -670,8 +670,8 @@ TEST(cutlass3x_sm100_sptensorop_s128x128x64spgemm_e2m1_e2m1_f32_void_f32_128x128
 }
 
 // 2.
-TEST(cutlass3x_sm100_sptensorop_s128x256x64spgemm_e2m1_e2m1_f32_void_f32_128x256x256_0_tnt_align32_q_1sm, functional) {
-  namespace gemm = cutlass3x_sm100_sptensorop_s128x256x64spgemm_e2m1_e2m1_f32_void_f32_128x256x256_0_tnt_align32_q_1sm;
+TEST(cutlass3x_sm100_sptensorop_s128x256x64spgemm_e3m2_e3m2_f32_void_f16_128x256x256_0_tnt_align32_q_1sm, functional) {
+  namespace gemm = cutlass3x_sm100_sptensorop_s128x256x64spgemm_e3m2_e3m2_f32_void_f16_128x256x256_0_tnt_align32_q_1sm;
   EXPECT_TRUE(test::gemm::device::TestSmall<gemm::Gemm>(
     1, 0,
     test::gemm::device::CheckEquality::RELATIVE,
@@ -681,8 +681,8 @@ TEST(cutlass3x_sm100_sptensorop_s128x256x64spgemm_e2m1_e2m1_f32_void_f32_128x256
 }
 
 // 3.
-TEST(cutlass3x_sm100_sptensorop_s256x128x64spgemm_e2m1_e2m1_f32_void_f32_256x128x256_0_tnt_align32_q_2sm, functional) {
-  namespace gemm = cutlass3x_sm100_sptensorop_s256x128x64spgemm_e2m1_e2m1_f32_void_f32_256x128x256_0_tnt_align32_q_2sm;
+TEST(cutlass3x_sm100_sptensorop_s256x128x64spgemm_e3m2_e3m2_f32_void_f16_256x128x256_0_tnt_align32_q_2sm, functional) {
+  namespace gemm = cutlass3x_sm100_sptensorop_s256x128x64spgemm_e3m2_e3m2_f32_void_f16_256x128x256_0_tnt_align32_q_2sm;
   EXPECT_TRUE(test::gemm::device::TestSmall<gemm::Gemm>(
     1, 0,
     test::gemm::device::CheckEquality::RELATIVE,
@@ -692,8 +692,8 @@ TEST(cutlass3x_sm100_sptensorop_s256x128x64spgemm_e2m1_e2m1_f32_void_f32_256x128
 }
 
 // 4.
-TEST(cutlass3x_sm100_sptensorop_s256x256x64spgemm_e2m1_e2m1_f32_void_f32_256x256x256_0_tnt_align32_q_2sm, functional) {
-  namespace gemm = cutlass3x_sm100_sptensorop_s256x256x64spgemm_e2m1_e2m1_f32_void_f32_256x256x256_0_tnt_align32_q_2sm;
+TEST(cutlass3x_sm100_sptensorop_s256x256x64spgemm_e3m2_e3m2_f32_void_f16_256x256x256_0_tnt_align32_q_2sm, functional) {
+  namespace gemm = cutlass3x_sm100_sptensorop_s256x256x64spgemm_e3m2_e3m2_f32_void_f16_256x256x256_0_tnt_align32_q_2sm;
   EXPECT_TRUE(test::gemm::device::TestSmall<gemm::Gemm>(
     1, 0,
     test::gemm::device::CheckEquality::RELATIVE,

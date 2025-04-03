@@ -432,6 +432,10 @@ public:
       init_M = get<0>(problem_shape_MNK);
       init_N = get<1>(problem_shape_MNK);
       init_K = get<2>(problem_shape_MNK);
+      if constexpr (SwapAB) {
+        init_M = get<1>(problem_shape_MNK);
+        init_N = get<0>(problem_shape_MNK);
+      }
 
       if constexpr (not SwapAB) {
         dA = args.dA;
@@ -491,7 +495,7 @@ public:
                     : args_setup(args.ptr_A, args.ptr_B);
     }
     else if constexpr (ModeHasScales) {
-      auto scale_k = 1;
+      auto scale_k = ceil_div(init_K, args.chunk_size);
       ElementScale const* ptr_S = reinterpret_cast<ElementScale const*>(args.ptr_S);
       StrideScale dS{};
       Tensor tensor_scale = make_tensor(detail::get_logical_ptr(ptr_S), make_layout(make_shape(init_M,scale_k,mock_L), dS));
@@ -595,7 +599,7 @@ public:
         }
         else if constexpr (ModeHasScales) {
           const int scale_mn = SwapAB ? N : M;
-          const int scale_k = (K + args.chunk_size - 1) / args.chunk_size;
+          const int scale_k = ceil_div(K, args.chunk_size);
           constexpr int min_tma_aligned_elements_scale = tma_alignment_bits / cutlass::sizeof_bits<ElementScale>::value;
           implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_scale>(cute::make_shape(scale_mn,scale_k,L), StrideScale{});
           implementable = implementable && (args.chunk_size == K || ((args.chunk_size % size<2>(TileShape{})) == 0));
@@ -659,14 +663,15 @@ public:
       return cute::make_tuple(gA_mkl, gB_nkl);
     } 
     else if constexpr (ModeHasScales) {
+      const int scale_mn = SwapAB ? N : M;
       auto scale_k = mainloop_params.scale_k;
-      Tensor mS_mkl = mainloop_params.tma_load_scale.get_tma_tensor(make_shape(M,scale_k,L));      // (m,scale_k,l)
+      Tensor mS_mkl = mainloop_params.tma_load_scale.get_tma_tensor(make_shape(scale_mn,scale_k,L));
       Tensor gS_mkl = local_tile(mS_mkl, ScaleTileShape{}, make_coord(_,_));       // (BLK_M,BLK_Scale_K,m,scale_k,l)
       if constexpr (KernelConversionMode == ConversionMode::ConvertAndScale) {
         return cute::make_tuple(gA_mkl, gB_nkl, gS_mkl);
       }
       else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
-        Tensor mZ_mkl = mainloop_params.tma_load_zero.get_tma_tensor(make_shape(M,scale_k,L));      // (m,scale_k,l)
+        Tensor mZ_mkl = mainloop_params.tma_load_zero.get_tma_tensor(make_shape(scale_mn,scale_k,L));
         Tensor gZ_mkl = local_tile(mZ_mkl, ScaleTileShape{}, make_coord(_,_));      // (BLK_M,BLK_Scale_K,m,scale_k,l)
         return cute::make_tuple(gA_mkl, gB_nkl, gS_mkl, gZ_mkl);
       }
@@ -1217,8 +1222,8 @@ public:
       Params const& mainloop_params,
       int32_t next_group,
       ProblemShape_MNKL problem_shape_mnkl) {
-    const uint32_t M = get<0>(problem_shape_mnkl);
-    const uint32_t N = get<1>(problem_shape_mnkl);
+    const uint32_t M = (SwapAB? get<1>(problem_shape_mnkl) : get<0>(problem_shape_mnkl));
+    const uint32_t N = (SwapAB? get<0>(problem_shape_mnkl) : get<1>(problem_shape_mnkl));
     const uint32_t K = get<2>(problem_shape_mnkl);
     
     // Replace all dims for consistency
@@ -1245,14 +1250,14 @@ public:
 
     if constexpr (KernelConversionMode == ConversionMode::ConvertAndScale) {
       NonVoidElementScale const* ptr_S = nullptr;
-      auto scale_k = 1;
+      auto scale_k = ceil_div(K, mainloop_params.chunk_size);
       Tensor tensor_scale = make_tensor(detail::get_logical_ptr(ptr_S), make_shape(M,scale_k,Int<1>{}), mainloop_params.dS[next_group]);
       cute::detail::fill_tma_gmem_shape_stride(mainloop_params.tma_load_scale, tensor_scale, 
                                              prob_shape_scale, prob_stride_scale);
     }
     else if constexpr (KernelConversionMode == ConversionMode::ConvertAndScaleWithZero) {
       ElementZero const* ptr_Z = nullptr;
-      auto scale_k = 1;
+      auto scale_k = ceil_div(K, mainloop_params.chunk_size);
       Tensor tensor_zero = make_tensor(detail::get_logical_ptr(ptr_Z), make_shape(M,scale_k,Int<1>{}), mainloop_params.dS[next_group]);
       cute::detail::fill_tma_gmem_shape_stride(mainloop_params.tma_load_zero, tensor_zero, 
                                                prob_shape_zero, prob_stride_zero);

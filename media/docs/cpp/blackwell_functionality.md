@@ -9,15 +9,15 @@ efficient SM100 GEMM kernels targeting these new mma instructions.
 
 Blackwell SM100 has 7 new `tcgen05.mma` instructions. These instructions are 2x to 4x faster then Hopper Architecture's WGMMA instructions.
 
-| Ptx Instruction                                                                  | Throughput                 | Notes |
-|----------------------------------------------------------------------------------|----------------------------|-------|
-|tcgen05.mma.cta_group::[1\|2].kind::tf32                                          | 2x Hopper Tf32 Tensor Core | MMA with A={tf32} x B={tf32} TN, NT, TT, NN layouts                                                       |
-|tcgen05.mma.cta_group::[1\|2].kind::f16                                           | 2x Hopper Fp16 Tensor Core | MMA with A={f16} x B={f16} or A={bf16} x B={bf16}  TN, NT, TT, NN layouts                                 |
-|tcgen05.mma.cta_group::[1\|2].kind::i8                                            | 2x Hopper I8 Tensor Core   | MMA with A={i8} x B={i8} or A={u8} x B={u8}  TN, NT, TT, NN layouts                                       |
-|tcgen05.mma.cta_group::[1\|2].kind::f8f6f4                                        | 2x Hopper Fp8 Tensor Core  | Mixed precision MMA with A={f4,f6,f8} x B={f4,f6,f8} TN, NT, TT, NN layouts                               |
-|tcgen05.mma.cta_group::[1\|2].kind::mxf8f6f4.block_scale                          | 2x Hopper Fp8 Tensor Core  | Block scaled mixed precision MMA with A={mxf4,mxf6,mxf8} x B={mxf4,mxf6,mxf8} with TN, NT, TT, NN layouts |
-|tcgen05.mma.cta_group::[1\|2].kind::mxf4.block_scale                              | 4x Hopper Fp8 Tensor Core  | Block scaled MMA with A={mxf4} x B={mxf4} with TN layouts                                                 |
-|tcgen05.mma.cta_group::[1\|2].kind::mxf4nvf4.block_scale.scale_vec_size::[2X\|4X] | 4x Hopper Fp8 Tensor Core  | Block scaled MMA with A={mxf4} x B={mxf4} or A={nvf4} x B={nvf4} with TN layouts                          |
+| Ptx Instruction                                                                       | Throughput                 | Notes |
+|---------------------------------------------------------------------------------------|----------------------------|-------|
+|tcgen05.mma(.sp).cta_group::[1\|2].kind::tf32                                          | 2x Hopper Tf32 Tensor Core | MMA with A={tf32} x B={tf32} TN, NT, TT, NN layouts                                                       |
+|tcgen05.mma(.sp).cta_group::[1\|2].kind::f16                                           | 2x Hopper Fp16 Tensor Core | MMA with A={f16} x B={f16} or A={bf16} x B={bf16}  TN, NT, TT, NN layouts                                 |
+|tcgen05.mma(.sp).cta_group::[1\|2].kind::i8                                            | 2x Hopper I8 Tensor Core   | MMA with A={i8} x B={i8} or A={u8} x B={u8}  TN, NT, TT, NN layouts                                       |
+|tcgen05.mma(.sp).cta_group::[1\|2].kind::f8f6f4                                        | 2x Hopper Fp8 Tensor Core  | Mixed precision MMA with A={f4,f6,f8} x B={f4,f6,f8} TN, NT, TT, NN layouts                               |
+|tcgen05.mma(.sp).cta_group::[1\|2].kind::mxf8f6f4.block_scale                          | 2x Hopper Fp8 Tensor Core  | Block scaled mixed precision MMA with A={mxf4,mxf6,mxf8} x B={mxf4,mxf6,mxf8} with TN, NT, TT, NN layouts |
+|tcgen05.mma(.sp).cta_group::[1\|2].kind::mxf4.block_scale                              | 4x Hopper Fp8 Tensor Core  | Block scaled MMA with A={mxf4} x B={mxf4} with TN layouts                                                 |
+|tcgen05.mma(.sp).cta_group::[1\|2].kind::mxf4nvf4.block_scale.scale_vec_size::[2X\|4X] | 4x Hopper Fp8 Tensor Core  | Block scaled MMA with A={mxf4} x B={mxf4} or A={nvf4} x B={nvf4} with TN layouts                          |
 
 For more detailed information see [`tcgen05.mma` PTX documentation](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#tensorcore-5th-generation-family-instructions).
 
@@ -27,7 +27,7 @@ For more detailed information see [`tcgen05.mma` PTX documentation](https://docs
 
 Instructions with `kind` modifiers `mxf8f6f4`, `mxf4`, and `nvf4mxf4` perform matrix multiplication operations with scale
 factors of the form $D = C +( A \times SFA) * (B \times SFB)$. Scale factors are applied to GEMM-K dimension such that
-every 16 or 32 elements of $A$ and $B$ matrices in K dimension have an associated scale factor. For example, an $M\times K$,
+every 16 or 32 elements of $A$ and $B$ matrices in K dimension have an associated scale factor (32 or 64 elements for sparse as sparse gemm compress 2x along k-dim). For example, an $M\times K$,
 $A$ matrix has an associated $M \times \lceil K/32 \rceil$ SFA matrix; and an $N\times K$ $B$, matrix has an associated
 $N \times \lceil K/32 \rceil$ SFB matrix. For block scaled GEMMs, an entry of output D matrix is
 $D_{ij} = C_{ij} + \sum_{k} (A_{i,k} \times SFA_{i,k/SV}) \times (B_{j,k}\times SFB_{j,k/SV})$, in index notation, we SV is the scale factor vector size (16 or 32).
@@ -57,12 +57,12 @@ See [PTX documentation for narrow precision data types](https://docs.nvidia.com/
 Block scaled MMAs use `mx` and `nv` types which are a pair of float8_t, float6_t, float4_t with 2 of the scale factor data types with a predetermined scale factor vector size. `mx` types follow OCP specification (see [OCP Specification](https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf)). The following types provided by CUTLASS can be used as inputs to collective builders to generate the block scaled kernels:
 
 **Blackwell Block Scaled Narrow Precision Data Types**
-| Mx/Nv Data Type            |Scale Factor Type | SF Vector Size | OCP Compliant |
-|----------------------------|------------------|----------------|---------------|
-| mx_float8_t\<Any F8type\>  |float_ue8m0_t     |32              | Yes           |
-| mx_float6_t\<Any F6Type\>  |float_ue8m0_t     |32              | Yes           |
-| mx_float4_t                |float_ue8m0_t     |32              | Yes           |
-| nv_float4_t                |float_ue4m3_t     |16              | No            |
+| Mx/Nv Data Type            |Scale Factor Type | SF Vector Size (Dense) | SF Vector Size (Sparse)| OCP Compliant |
+|----------------------------|------------------|------------------------|------------------------|---------------|
+| mx_float8_t\<Any F8type\>  |float_ue8m0_t     |32                      |64                      | Yes           |
+| mx_float6_t\<Any F6Type\>  |float_ue8m0_t     |32                      |64                      | Yes           |
+| mx_float4_t                |float_ue8m0_t     |32                      |64                      | Yes           |
+| nv_float4_t                |float_ue4m3_t     |16                      |32                      | No            |
 
 ## Layouts, Tensor Alignment Requirements to Target `tcgen05.mma` Instructions
 
@@ -74,13 +74,18 @@ For legacy types (`tf32`, `f16`, `bf16`, `i8` and `u8`) alignment requirements f
 All four layouts (TT, NN, NT, TT) are supported for all legacy data types.
 
 **Table 1: Valid Data Type, Alignment, and Layout Combinations For MMAs with Legacy Types** <a id="legacy_gemm_table" name="legacy_gemm_table"></a>
-|                               | A Type     | B Type     | AB Layout      | A Alignment | B Alignment | Target tcgen05.mma.kind | Unit Test |
-|-------------------------------|------------|------------|----------------|-------------|-------------|-------------------------|-----------|
-|1                              | tfloat32_t | tfloat32_t | TN, NN, NT, TT | 4           | 4           | tf32                    | |
-|2                              | half_t     | half_t     | TN, NN, NT, TT | 8           | 8           | f16                     | [Unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/f16_f16_void_f32.cu)|
-|3                              | bfloat16_t | bfloat16_t | TN, NN, NT, TT | 8           | 8           | f16                     | [Similar to half_t unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/f16_f16_void_f32.cu)|
-|4                              | int8_t     | int8_t     | TN, NN, NT, TT | 16          | 16          | i8                      | [Unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/s8_s8_void_s32.cu)|
-|5                              | uint8_t    | uint8_t    | TN, NN, NT, TT | 16          | 16          | i8                      | [Similar to int8_t unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/s8_s8_void_s32.cu)|
+|                               | Dense / Sparse | A Type     | B Type     | AB Layout      | A Alignment      | B Alignment | Target tcgen05.mma.kind | Unit Test |
+|-------------------------------|----------------|------------|------------|----------------|------------------|-------------|-------------------------|---------- |
+|[1](#legacy_rows)              | Dense          | tfloat32_t | tfloat32_t | TN, NN, NT, TT | 4                | 4           | tf32                    |           |
+|[2](#legacy_rows)              | Dense          | half_t     | half_t     | TN, NN, NT, TT | 8                | 8           | f16                     | [Unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/f16_f16_void_f32.cu)                  |
+|[3](#legacy_rows)              | Dense          | bfloat16_t | bfloat16_t | TN, NN, NT, TT | 8                | 8           | f16                     | [Similar to half_t unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/f16_f16_void_f32.cu)|
+|[4](#legacy_rows)              | Dense          | int8_t     | int8_t     | TN, NN, NT, TT | 16               | 16          | i8                      | [Unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/s8_s8_void_s32.cu)                    |
+|[5](#legacy_rows)              | Dense          | uint8_t    | uint8_t    | TN, NN, NT, TT | 16               | 16          | i8                      | [Similar to int8_t unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/s8_s8_void_s32.cu)  |
+|[6](#legacy_rows)              | Sparse         | tfloat32_t | tfloat32_t | TN, NN, NT, TT |  4  (N) / 8 (T)  | 4           | tf32                    | [Unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_sparse_tensorop_gemm/sm100_sp_gemm_f32_f32_f32_f32_f32_tfmma.cu)                  |
+|[7](#legacy_rows)              | Sparse         | half_t     | half_t     | TN, NN, NT, TT |  8  (N) / 16 (T) | 8           | f16                     | [Unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_sparse_tensorop_gemm/sm100_sp_gemm_f16_f16_f32_f16_f16_hmma.cu)                   |
+|[8](#legacy_rows)              | Sparse         | bfloat16_t | bfloat16_t | TN, NN, NT, TT |  8  (N) / 16 (T) | 8           | f16                     | [Similar to half_t unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_sparse_tensorop_gemm/sm100_sp_gemm_f16_f16_f32_f16_f16_hmma.cu) |
+|[9](#legacy_rows)              | Sparse         | int8_t     | int8_t     | TN, NN, NT, TT |  16 (N) / 32 (T) | 16          | i8                      | [Unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_sparse_tensorop_gemm/sm100_sp_gemm_s8_s8_s32_s8_s8_imma.cu)                       |
+|[10](#legacy_rows)             | Sparse         | uint8_t    | uint8_t    | TN, NN, NT, TT |  16 (N) / 32 (T) | 16          | i8                      | [Similar to int8_t unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_sparse_tensorop_gemm/sm100_sp_gemm_s8_s8_s32_s8_s8_imma.cu)     |
 
 For narrow precision Mmas, not all A/B type, and A/B layout combinations are supported by every `tcgen05.mma` instructions.
 Furthermore, tensor copy instructions for subbyte types impose additional alignment requirements while loading narrow-precision
@@ -91,203 +96,298 @@ Below tables list valid layout, and alignment values for each A and B data type 
 instructions supported by CUTLASS. 
 
 **Table 2: Valid Data Type, Alignment, and Layout Combinations For Narrow Precision MMAs Without Block Scaling** <a id="non_bs_gemm_table" name="non_bs_gemm_table"></a>
-|                               | A Type   | B Type   | AB Layout      | A Alignment | B Alignment | Target tcgen05.mma.kind | Unit Test |
-|-------------------------------|----------|----------|----------------|-------------|-------------|-------------------------|-----------|
-|[1](#nonbs_rows_1_2_3_6)       | float4_t | float4_t | TN, NN, NT, TT | 128         | 128         | f8f6f4                  | [TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f6f4_void_f32_tn_layout.cu) <br> [NT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f6f4_void_f32_nt_layout.cu) <br> [NN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f6f4_void_f32_nn_layout.cu) <br> [TT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f6f4_void_f32_tt_layout.cu) |
-|[2](#nonbs_rows_1_2_3_6)      | float4_t | float6_t | TN, NN, NT, TT | 128         | 128         | f8f6f4                  | [TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f6f4_void_f32_tn_layout.cu) <br> [NT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f6f4_void_f32_nt_layout.cu) <br> [NN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f6f4_void_f32_nn_layout.cu) <br> [TT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f6f4_void_f32_tt_layout.cu) |
-|[3](#nonbs_rows_1_2_3_6)         | float6_t | float4_t | TN, NN, NT, TT | 128         | 128         | f8f6f4                  | [TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f6f4_void_f32_tn_layout.cu) <br> [NT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f6f4_void_f32_nt_layout.cu) <br> [NN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f6f4_void_f32_nn_layout.cu) <br> [TT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f6f4_void_f32_tt_layout.cu) |
-|[4](#nonbs_rows_4_7)           | float4_t | float8_t | TN, NN, NT, TT | 128         | 16          | f8f6f4                  | [TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f8_void_f32_tn_layout.cu) <br> [NT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f8_void_f32_nt_layout.cu) |
-|[5](#nonbs_rows_5_8)           | float8_t | float4_t | TN, NN, NT, TT | 16          | 128         | f8f6f4                  | [TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f8_f6f4_void_f32_tn_layout.cu) <br> [NT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f8_f6f4_void_f32_nt_layout.cu) |
-|[6](#nonbs_rows_1_2_3_6)       | float6_t | float6_t | TN, NN, NT, TT | 128         | 128         | f8f6f4                  | [TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f6f4_void_f32_tn_layout.cu) <br> [NT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f6f4_void_f32_nt_layout.cu) <br> [NN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f6f4_void_f32_nn_layout.cu) <br> [TT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f6f4_void_f32_tt_layout.cu) |
-|[7](#nonbs_rows_4_7)           | float6_t | float8_t | TN, NN, NT, TT | 128         | 16          | f8f6f4                  | [TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f8_void_f32_tn_layout.cu) <br> [NT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f8_void_f32_nt_layout.cu) |
-|[8](#nonbs_rows_5_8)           | float8_t | float6_t | TN, NN, NT, TT | 16          | 128         | f8f6f4                  | [TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f8_f6f4_void_f32_tn_layout.cu) <br> [NT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f8_f6f4_void_f32_nt_layout.cu) |
-|[9](#nonbs_rows_9)             | float8_t | float8_t | TN, NN, NT, TT | 16          | 16          | f8f6f4                  | [Unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/f8_f8_void_f32.cu)|
+|                               | Dense / Sparse | A Type   | B Type   | AB Layout      | A Alignment       | B Alignment | Target tcgen05.mma.kind | Unit Test |
+|-------------------------------|----------------|----------|----------|----------------|-------------------|-------------|-------------------------|-----------|
+|[1](#nonbs_rows_1_2_3_6)       | Dense          | float4_t | float4_t | TN, NN, NT, TT | 128               | 128         | f8f6f4                  | [TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f6f4_void_f32_tn_layout.cu) <br> [NT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f6f4_void_f32_nt_layout.cu) <br> [NN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f6f4_void_f32_nn_layout.cu) <br> [TT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f6f4_void_f32_tt_layout.cu) |
+|[2](#nonbs_rows_1_2_3_6)       | Dense          | float4_t | float6_t | TN, NN, NT, TT | 128               | 128         | f8f6f4                  | [TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f6f4_void_f32_tn_layout.cu) <br> [NT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f6f4_void_f32_nt_layout.cu) <br> [NN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f6f4_void_f32_nn_layout.cu) <br> [TT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f6f4_void_f32_tt_layout.cu) |
+|[3](#nonbs_rows_1_2_3_6)       | Dense          | float6_t | float4_t | TN, NN, NT, TT | 128               | 128         | f8f6f4                  | [TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f6f4_void_f32_tn_layout.cu) <br> [NT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f6f4_void_f32_nt_layout.cu) <br> [NN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f6f4_void_f32_nn_layout.cu) <br> [TT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f6f4_void_f32_tt_layout.cu) |
+|[4](#nonbs_rows_4_7)           | Dense          | float4_t | float8_t | TN, NN, NT, TT | 128               | 16          | f8f6f4                  | [TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f8_void_f32_tn_layout.cu) <br> [NT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f8_void_f32_nt_layout.cu) |
+|[5](#nonbs_rows_5_8)           | Dense          | float8_t | float4_t | TN, NN, NT, TT | 16                | 128         | f8f6f4                  | [TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f8_f6f4_void_f32_tn_layout.cu) <br> [NT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f8_f6f4_void_f32_nt_layout.cu) |
+|[6](#nonbs_rows_1_2_3_6)       | Dense          | float6_t | float6_t | TN, NN, NT, TT | 128               | 128         | f8f6f4                  | [TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f6f4_void_f32_tn_layout.cu) <br> [NT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f6f4_void_f32_nt_layout.cu) <br> [NN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f6f4_void_f32_nn_layout.cu) <br> [TT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f6f4_void_f32_tt_layout.cu) |
+|[7](#nonbs_rows_4_7)           | Dense          | float6_t | float8_t | TN, NN, NT, TT | 128               | 16          | f8f6f4                  | [TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f8_void_f32_tn_layout.cu) <br> [NT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f6f4_f8_void_f32_nt_layout.cu) |
+|[8](#nonbs_rows_5_8)           | Dense          | float8_t | float6_t | TN, NN, NT, TT | 16                | 128         | f8f6f4                  | [TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f8_f6f4_void_f32_tn_layout.cu) <br> [NT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/narrow_precision/f8_f6f4_void_f32_nt_layout.cu) |
+|[9](#nonbs_rows_9)             | Dense          | float8_t | float8_t | TN, NN, NT, TT | 16                | 16          | f8f6f4                  | [Unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_tensorop_gemm/f8_f8_void_f32.cu)|
+|[10](#nonbs_rows_1_2_3_6)      | Sparse         | float4_t | float4_t | TN, NN, NT, TT | 128 (N) / 256 (T) | 128         | f8f6f4                  | [TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_sparse_tensorop_gemm/narrow_precision/sm100_sp_gemm_f4_f4_f32_f16_f16_tn.cu) |
+|[11](#nonbs_rows_1_2_3_6)      | Sparse         | float4_t | float6_t | TN, NN, NT, TT | 128 (N) / 256 (T) | 128         | f8f6f4                  | [TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_sparse_tensorop_gemm/narrow_precision/sm100_sp_gemm_f4_f6_f32_f16_f16_tn.cu) |
+|[12](#nonbs_rows_1_2_3_6)      | Sparse         | float6_t | float4_t | TN, NN, NT, TT | 128 (N) / 256 (T) | 128         | f8f6f4                  | [TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_sparse_tensorop_gemm/narrow_precision/sm100_sp_gemm_f6_f4_f32_f16_f16_tn.cu) |
+|[13](#nonbs_rows_4_7)          | Sparse         | float4_t | float8_t | TN, NN, NT, TT | 128 (N) / 256 (T) | 16          | f8f6f4                  | [TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_sparse_tensorop_gemm/narrow_precision/sm100_sp_gemm_f4_f8_f32_f16_f16_tn.cu) |
+|[14](#nonbs_rows_5_8)          | Sparse         | float8_t | float4_t | TN, NN, NT, TT | 16  (N) / 32  (T) | 128         | f8f6f4                  | [TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_sparse_tensorop_gemm/narrow_precision/sm100_sp_gemm_f8_f4_f32_f16_f16_tn.cu) |
+|[15](#nonbs_rows_1_2_3_6)      | Sparse         | float6_t | float6_t | TN, NN, NT, TT | 128 (N) / 256 (T) | 128         | f8f6f4                  | [TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_sparse_tensorop_gemm/narrow_precision/sm100_sp_gemm_f6_f6_f32_f16_f16_tn.cu) |
+|[16](#nonbs_rows_4_7)          | Sparse         | float6_t | float8_t | TN, NN, NT, TT | 128 (N) / 256 (T) | 16          | f8f6f4                  | [TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_sparse_tensorop_gemm/narrow_precision/sm100_sp_gemm_f6_f8_f32_f16_f16_tn.cu) |
+|[17](#nonbs_rows_5_8)          | Sparse         | float8_t | float6_t | TN, NN, NT, TT | 16  (N) / 32  (T) | 128         | f8f6f4                  | [TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_sparse_tensorop_gemm/narrow_precision/sm100_sp_gemm_f8_f6_f32_f16_f16_tn.cu) |
+|[18](#nonbs_rows_9)            | Sparse         | float8_t | float8_t | TN, NN, NT, TT | 16  (N) / 32  (T) | 16          | f8f6f4                  | [TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_sparse_tensorop_gemm/sm100_sp_gemm_f8_f8_f32_f16_f16_qmma.cu)                |
 
 
 **Table 3: Valid Data Type, Alignment, and Layout Combinations for Block Scaled Narrow Precision MMAs** <a id="bs_gemm_table" name="bs_gemm_table"></a>
-|                         | A Type      | B Type      | AB Layout      | A Alignment | B Alignment | Target tcgen05.mma.kind |Unit Test|
-|-------------------------|-------------|-------------|----------------|-------------|-------------|-------------------------|------|
-|[1](#bs_rows_1)          | nv_float4_t | nv_float4_t | TN             | 32          | 32          | mxf4nvf4                |[TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_tensorop_gemm/nvf4_nvf4_bf16_bf16.cu)|
-|[2](#bs_rows_2)          | mx_float4_t | mx_float4_t | TN             | 32          | 32          | mxf4, mxf4nvf4          |[TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_tensorop_gemm/mxf4_mxf4_void_f16_tn_layout.cu)|
-|[3](#bs_rows_3)          | mx_float4_t | mx_float4_t | TN, NN, NT, TT | 128         | 128         | mxf8f6f4                |[NT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_tensorop_gemm/mxf4_mxf4_void_f16_nt_layout.cu)|
-|[4](#bs_rows_4_5_7_8_10) | mx_float4_t | mx_float6_t | TN, NN, NT, TT | 128         | 128         | mxf8f6f4                |[TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_tensorop_gemm/mxf4_mxf6_f32_f16_tn_layout.cu)<br>[NT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_tensorop_gemm/mxf4_mxf6_f32_f16_nt_layout.cu)|
-|[5](#bs_rows_4_5_7_8_10) | mx_float6_t | mx_float4_t | TN, NN, NT, TT | 128         | 128         | mxf8f6f4                |[TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_tensorop_gemm/mxf6_mxf4_f16_f16_tn_layout.cu)<br>[NT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_tensorop_gemm/mxf6_mxf4_f16_f16_nt_layout.cu)|
-|[6](#bs_rows_6_9_11)     | mx_float4_t | mx_float8_t | TN, NN, NT, TT | 128         | 16          | mxf8f6f4                |[TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_tensorop_gemm/mxf4_mxf8_bf16_bf16_tn_layout.cu)<br>[NT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_tensorop_gemm/mxf4_mxf8_bf16_bf16_nt_layout.cu)|
-|[7](#bs_rows_4_5_7_8_10) | mx_float8_t | mx_float4_t | TN, NN, NT, TT | 16          | 128         | mxf8f6f4                |[TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_tensorop_gemm/mxf8_mxf4_f16_bf16_tn_layout.cu)<br>[NT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_tensorop_gemm/mxf8_mxf4_f16_bf16_nt_layout.cu)|
-|[8](#bs_rows_4_5_7_8_10) | mx_float6_t | mx_float6_t | TN, NN, NT, TT | 128         | 128         | mxf8f6f4                |[TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_tensorop_gemm/mxf6_mxf6_void_bf16_tn_layout.cu)<br>[NT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_tensorop_gemm/mxf6_mxf6_void_bf16_nt_layout.cu)|
-|[9](#bs_rows_6_9_11)     | mx_float6_t | mx_float8_t | TN, NN, NT, TT | 128         | 16          | mxf8f6f4                |[TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_tensorop_gemm/mxf6_mxf8_void_f32_tn_layout.cu)<br>[NT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_tensorop_gemm/mxf6_mxf8_void_f32_nt_layout.cu)|
-|[10](#bs_rows_4_5_7_8_10)| mx_float8_t | mx_float6_t | TN, NN, NT, TT | 16          | 128         | mxf8f6f4                |[TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_tensorop_gemm/mxf8_mxf6_f16_f8_tn_layout.cu)<br>[NT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_tensorop_gemm/mxf8_mxf6_f16_f8_nt_layout.cu)|
-|[11](#bs_rows_6_9_11)    | mx_float8_t | mx_float8_t | TN, NN, NT, TT | 16          | 16          | mxf8f6f4                |[TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_tensorop_gemm/mxf8_mxf8_void_f8_tn_layout.cu.cu)<br>[NT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_tensorop_gemm/mxf8_mxf8_void_f8_nt_layout.cu)|
+|                          | Dense / Sparse | A Type      | B Type      | AB Layout      | A Alignment       | B Alignment | Target tcgen05.mma.kind |Unit Test|
+|--------------------------|----------------|-------------|-------------|----------------|-------------------|-------------|-------------------------|---------|
+|[1](#bs_rows_1)           | Dense          | nv_float4_t | nv_float4_t | TN             | 32                | 32          | mxf4nvf4                |[TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_tensorop_gemm/nvf4_nvf4_bf16_bf16.cu)|
+|[2](#bs_rows_2)           | Dense          | mx_float4_t | mx_float4_t | TN             | 32                | 32          | mxf4, mxf4nvf4          |[TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_tensorop_gemm/mxf4_mxf4_void_f16_tn_layout.cu)|
+|[3](#bs_rows_3)           | Dense          | mx_float4_t | mx_float4_t | TN, NN, NT, TT | 128               | 128         | mxf8f6f4                |[NT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_tensorop_gemm/mxf4_mxf4_void_f16_nt_layout.cu)|
+|[4](#bs_rows_4_5_7_8_10)  | Dense          | mx_float4_t | mx_float6_t | TN, NN, NT, TT | 128               | 128         | mxf8f6f4                |[TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_tensorop_gemm/mxf4_mxf6_f32_f16_tn_layout.cu)<br>[NT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_tensorop_gemm/mxf4_mxf6_f32_f16_nt_layout.cu)|
+|[5](#bs_rows_4_5_7_8_10)  | Dense          | mx_float6_t | mx_float4_t | TN, NN, NT, TT | 128               | 128         | mxf8f6f4                |[TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_tensorop_gemm/mxf6_mxf4_f16_f16_tn_layout.cu)<br>[NT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_tensorop_gemm/mxf6_mxf4_f16_f16_nt_layout.cu)|
+|[6](#bs_rows_6_9_11)      | Dense          | mx_float4_t | mx_float8_t | TN, NN, NT, TT | 128               | 16          | mxf8f6f4                |[TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_tensorop_gemm/mxf4_mxf8_bf16_bf16_tn_layout.cu)<br>[NT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_tensorop_gemm/mxf4_mxf8_bf16_bf16_nt_layout.cu)|
+|[7](#bs_rows_4_5_7_8_10)  | Dense          | mx_float8_t | mx_float4_t | TN, NN, NT, TT | 16                | 128         | mxf8f6f4                |[TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_tensorop_gemm/mxf8_mxf4_f16_bf16_tn_layout.cu)<br>[NT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_tensorop_gemm/mxf8_mxf4_f16_bf16_nt_layout.cu)|
+|[8](#bs_rows_4_5_7_8_10)  | Dense          | mx_float6_t | mx_float6_t | TN, NN, NT, TT | 128               | 128         | mxf8f6f4                |[TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_tensorop_gemm/mxf6_mxf6_void_bf16_tn_layout.cu)<br>[NT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_tensorop_gemm/mxf6_mxf6_void_bf16_nt_layout.cu)|
+|[9](#bs_rows_6_9_11)      | Dense          | mx_float6_t | mx_float8_t | TN, NN, NT, TT | 128               | 16          | mxf8f6f4                |[TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_tensorop_gemm/mxf6_mxf8_void_f32_tn_layout.cu)<br>[NT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_tensorop_gemm/mxf6_mxf8_void_f32_nt_layout.cu)|
+|[10](#bs_rows_4_5_7_8_10) | Dense          | mx_float8_t | mx_float6_t | TN, NN, NT, TT | 16                | 128         | mxf8f6f4                |[TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_tensorop_gemm/mxf8_mxf6_f16_f8_tn_layout.cu)<br>[NT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_tensorop_gemm/mxf8_mxf6_f16_f8_nt_layout.cu)|
+|[11](#bs_rows_6_9_11)     | Dense          | mx_float8_t | mx_float8_t | TN, NN, NT, TT | 16                | 16          | mxf8f6f4                |[TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_tensorop_gemm/mxf8_mxf8_void_f8_tn_layout.cu.cu)<br>[NT unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_tensorop_gemm/mxf8_mxf8_void_f8_nt_layout.cu)|
+|[12](#bs_rows_1)          | Sparse         | nv_float4_t | nv_float4_t | TN             | 32  (N) / 64  (T) | 32          | mxf4nvf4                |[TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_sparse_tensorop_gemm/sm100_bssp_gemm_nvf4_nvf4_f32_void_f16_o_tnn.cu) |
+|[13](#bs_rows_2)          | Sparse         | mx_float4_t | mx_float4_t | TN             | 32  (N) / 64  (T) | 32          | mxf4, mxf4nvf4          |[TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_sparse_tensorop_gemm/sm100_bssp_gemm_mxf4_mxf4_f32_f16_f16_o_tnn.cu)  |
+|[14](#bs_rows_3)          | Sparse         | mx_float4_t | mx_float4_t | TN, NN, NT, TT | 128 (N) / 256 (T) | 128         | mxf8f6f4                |[TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_sparse_tensorop_gemm/sm100_bssp_gemm_mxf4_mxf4_f32_f16_f16_q_tnt.cu)  |
+|[15](#bs_rows_4_5_7_8_10) | Sparse         | mx_float4_t | mx_float6_t | TN, NN, NT, TT | 128 (N) / 256 (T) | 128         | mxf8f6f4                |[TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_sparse_tensorop_gemm/sm100_bssp_gemm_mxf4_mxf6_f32_f16_f16_q_tnt.cu)  |
+|[16](#bs_rows_4_5_7_8_10) | Sparse         | mx_float6_t | mx_float4_t | TN, NN, NT, TT | 128 (N) / 256 (T) | 128         | mxf8f6f4                |[TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_sparse_tensorop_gemm/sm100_bssp_gemm_mxf6_mxf4_f32_f16_f16_q_tnt.cu)  |
+|[17](#bs_rows_6_9_11)     | Sparse         | mx_float4_t | mx_float8_t | TN, NN, NT, TT | 128 (N) / 256 (T) | 16          | mxf8f6f4                |[TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_sparse_tensorop_gemm/sm100_bssp_gemm_mxf4_mxf8_f32_f16_f16_q_tnt.cu)  |
+|[18](#bs_rows_4_5_7_8_10) | Sparse         | mx_float8_t | mx_float4_t | TN, NN, NT, TT | 16  (N) / 32  (T) | 128         | mxf8f6f4                |[TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_sparse_tensorop_gemm/sm100_bssp_gemm_mxf8_mxf4_f32_f16_f16_q_tnt.cu)  |
+|[19](#bs_rows_4_5_7_8_10) | Sparse         | mx_float6_t | mx_float6_t | TN, NN, NT, TT | 128 (N) / 256 (T) | 128         | mxf8f6f4                |[TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_sparse_tensorop_gemm/sm100_bssp_gemm_mxf6_mxf6_f32_f16_f16_q_tnt.cu)  |
+|[20](#bs_rows_6_9_11)     | Sparse         | mx_float6_t | mx_float8_t | TN, NN, NT, TT | 128 (N) / 256 (T) | 16          | mxf8f6f4                |[TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_sparse_tensorop_gemm/sm100_bssp_gemm_mxf6_mxf8_f32_f16_f16_q_tnt.cu)  |
+|[21](#bs_rows_4_5_7_8_10) | Sparse         | mx_float8_t | mx_float6_t | TN, NN, NT, TT | 16  (N) / 32  (T) | 128         | mxf8f6f4                |[TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_sparse_tensorop_gemm/sm100_bssp_gemm_mxf8_mxf6_f32_f16_f16_q_tnt.cu)  |
+|[22](#bs_rows_6_9_11)     | Sparse         | mx_float8_t | mx_float8_t | TN, NN, NT, TT | 16  (N) / 32  (T) | 16          | mxf8f6f4                |[TN unit tests](https://github.com/NVIDIA/cutlass/tree/main/test/unit/gemm/device/sm100_blockscaled_sparse_tensorop_gemm/sm100_bssp_gemm_mxf8_mxf8_f32_f16_f16_q_tnn.cu)  |
 
 ## MMA tile shapes supported
 
 The alignment restrictions also limit the options for Mma Tile Shapes. Tables below list the supported/valid `MmaTileShape`,
 Layout, and Dispatch Policy combinations for each row of [Table 1](#legacy_gemm_table), [Table 2](#non_bs_gemm_table), and [Table 3](#bs_gemm_table).
 
-**Table 4: Valid Tile Shapes and Dispatch Policies for lagacy types (All rows of Table 1)** <a id="legacy_rows" name="legacy_rows"></a> 
-| 1/2 SM | Mma Tile Shape   | TN | TT | NT | NN | Dispatch Policy                    |
-|--------|------------------|----|----|----|----|------------------------------------|
-| 1SM    | 64x64x(4*MMA-K)  | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100` |
-| 1SM    | 64x128x(4*MMA-K) | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100` |
-| 1SM    | 64x192x(4*MMA-K) | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100` |
-| 1SM    | 64x256x(4*MMA-K) | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100` |
-| 1SM    | 128x64x(4*MMA-K) | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100` |
-| 1SM    | 128x128x(4*MMA-K)| Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100` |
-| 1SM    | 128x192x(4*MMA-K)| Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100` |
-| 1SM    | 128x256x(4*MMA-K)| Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100` |
-| 2SM    | 128x64x(4*MMA-K) | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100` |
-| 2SM    | 128x128x(4*MMA-K)| Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100` |
-| 2SM    | 128x192x(4*MMA-K)| Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100` |
-| 2SM    | 128x256x(4*MMA-K)| Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100` |
-| 2SM    | 256x64x(4*MMA-K) | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100` |
-| 2SM    | 256x128x(4*MMA-K)| Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100` |
-| 2SM    | 256x192x(4*MMA-K)| Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100` |
-| 2SM    | 256x256x(4*MMA-K)| Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100` |
+**Table 4: Valid Tile Shapes and Dispatch Policies for legacy types (All rows of Table 1)** <a id="legacy_rows" name="legacy_rows"></a> 
+| Dense / Sparse | 1/2 SM | Mma Tile Shape     | TN | TT | NT | NN | Dispatch Policy                          |
+|----------------|--------|--------------------|----|----|----|----|------------------------------------------|
+| Dense          | 1SM    | 64x64x(4*MMA-K)    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 1SM    | 64x128x(4*MMA-K)   | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 1SM    | 64x192x(4*MMA-K)   | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 1SM    | 64x256x(4*MMA-K)   | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 1SM    | 128x64x(4*MMA-K)   | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 1SM    | 128x128x(4*MMA-K)  | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 1SM    | 128x192x(4*MMA-K)  | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 1SM    | 128x256x(4*MMA-K)  | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 2SM    | 128x64x(4*MMA-K)   | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Dense          | 2SM    | 128x128x(4*MMA-K)  | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Dense          | 2SM    | 128x192x(4*MMA-K)  | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Dense          | 2SM    | 128x256x(4*MMA-K)  | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Dense          | 2SM    | 256x64x(4*MMA-K)   | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Dense          | 2SM    | 256x128x(4*MMA-K)  | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Dense          | 2SM    | 256x192x(4*MMA-K)  | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Dense          | 2SM    | 256x256x(4*MMA-K)  | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Sparse         | 1SM    | 128x64x(2/4*MMA-K) | Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized1SmSm100` |
+| Sparse         | 1SM    | 128x128x(2/4*MMA-K)| Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized1SmSm100` |
+| Sparse         | 1SM    | 128x192x(2/4*MMA-K)| Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized1SmSm100` |
+| Sparse         | 1SM    | 128x256x(2/4*MMA-K)| Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized1SmSm100` |
+| Sparse         | 2SM    | 256x64x(2/4*MMA-K) | Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized2SmSm100` |
+| Sparse         | 2SM    | 256x128x(2/4*MMA-K)| Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized2SmSm100` |
+| Sparse         | 2SM    | 256x192x(2/4*MMA-K)| Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized2SmSm100` |
+| Sparse         | 2SM    | 256x256x(2/4*MMA-K)| Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized2SmSm100` |
 
-**Table 5: Valid Tile Shapes and Dispatch Policies for {float4_t, float6_t} x {float4_t, float6_t} (Rows 1,2,3,6 of Table 2)** <a id="nonbs_rows_1_2_3_6" name="nonbs_rows_1_2_3_6"></a> 
+**Table 5: Valid Tile Shapes and Dispatch Policies for {float4_t, float6_t} x {float4_t, float6_t} (Rows 1,2,3,6,10,11,12,and 15 of Table 2)** <a id="nonbs_rows_1_2_3_6" name="nonbs_rows_1_2_3_6"></a> 
 
-| 1/2 SM | Mma Tile Shape | TN | TT | NT | NN | Dispatch Policy                    |
-|--------|----------------|----|----|----|----|------------------------------------|
-| 1SM    | 64x64x128      | Y  | N  | N  | N  | `KernelTmaWarpSpecialized1SmSm100` |
-| 1SM    | 64x128x128     | Y  | Y  | N  | N  | `KernelTmaWarpSpecialized1SmSm100` |
-| 1SM    | 64x192x128     | Y  | N  | N  | N  | `KernelTmaWarpSpecialized1SmSm100` |
-| 1SM    | 64x256x128     | Y  | Y  | N  | N  | `KernelTmaWarpSpecialized1SmSm100` |
-| 1SM    | 128x64x128     | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized1SmSm100` |
-| 1SM    | 128x128x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100` |
-| 1SM    | 128x192x128    | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized1SmSm100` |
-| 1SM    | 128x256x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100` |
-| 2SM    | 128x64x128     | Y  | N  | N  | N  | `KernelTmaWarpSpecialized2SmSm100` |
-| 2SM    | 128x128x128    | Y  | N  | N  | N  | `KernelTmaWarpSpecialized2SmSm100` |
-| 2SM    | 128x192x128    | Y  | N  | N  | N  | `KernelTmaWarpSpecialized2SmSm100` |
-| 2SM    | 128x256x128    | Y  | Y  | N  | N  | `KernelTmaWarpSpecialized2SmSm100` |
-| 2SM    | 256x64x128     | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized2SmSm100` |
-| 2SM    | 256x128x128    | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized2SmSm100` |
-| 2SM    | 256x192x128    | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized2SmSm100` |
-| 2SM    | 256x256x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100` |
+| Dense / Sparse | 1/2 SM | Mma Tile Shape | TN | TT | NT | NN | Dispatch Policy                          |
+|----------------|--------|----------------|----|----|----|----|------------------------------------------|
+| Dense          | 1SM    | 64x64x128      | Y  | N  | N  | N  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 1SM    | 64x128x128     | Y  | Y  | N  | N  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 1SM    | 64x192x128     | Y  | N  | N  | N  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 1SM    | 64x256x128     | Y  | Y  | N  | N  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 1SM    | 128x64x128     | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 1SM    | 128x128x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 1SM    | 128x192x128    | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 1SM    | 128x256x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 2SM    | 128x64x128     | Y  | N  | N  | N  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Dense          | 2SM    | 128x128x128    | Y  | N  | N  | N  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Dense          | 2SM    | 128x192x128    | Y  | N  | N  | N  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Dense          | 2SM    | 128x256x128    | Y  | Y  | N  | N  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Dense          | 2SM    | 256x64x128     | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Dense          | 2SM    | 256x128x128    | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Dense          | 2SM    | 256x192x128    | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Dense          | 2SM    | 256x256x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Sparse         | 1SM    | 128x128x128    | N  | N  | Y  | Y  | `KernelSparseTmaWarpSpecialized1SmSm100` |
+| Sparse         | 1SM    | 128x128x256    | Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized1SmSm100` |
+| Sparse         | 1SM    | 128x256x128    | N  | N  | Y  | Y  | `KernelSparseTmaWarpSpecialized1SmSm100` |
+| Sparse         | 1SM    | 128x256x256    | Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized1SmSm100` |
+| Sparse         | 2SM    | 256x128x128    | N  | N  | N  | Y  | `KernelSparseTmaWarpSpecialized2SmSm100` |
+| Sparse         | 2SM    | 256x128x256    | Y  | N  | N  | Y  | `KernelSparseTmaWarpSpecialized2SmSm100` |
+| Sparse         | 2SM    | 256x256x128    | N  | N  | Y  | Y  | `KernelSparseTmaWarpSpecialized2SmSm100` |
+| Sparse         | 2SM    | 256x256x256    | Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized2SmSm100` |
 
-**Table 6: Valid Tile Shapes and Dispatch Policies for float8_t x {float4_t, float6_t} (Rows 5,8 of Table 2)** <a id="nonbs_rows_5_8" name="nonbs_rows_5_8"></a> 
+**Table 6: Valid Tile Shapes and Dispatch Policies for float8_t x {float4_t, float6_t} (Rows 5,8,14,and 17 of Table 2)** <a id="nonbs_rows_5_8" name="nonbs_rows_5_8"></a> 
 
-| 1/2 SM | Mma Tile Shape | TN | TT | NT | NN | Dispatch Policy                    |
-|--------|----------------|----|----|----|----|------------------------------------|
-| 1SM    | 64x64x128      | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized1SmSm100` |
-| 1SM    | 64x128x128     | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100` |
-| 1SM    | 64x192x128     | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized1SmSm100` |
-| 1SM    | 64x256x128     | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100` |
-| 1SM    | 128x64x128     | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized1SmSm100` |
-| 1SM    | 128x128x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100` |
-| 1SM    | 128x192x128    | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized1SmSm100` |
-| 1SM    | 128x256x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100` |
-| 2SM    | 128x64x128     | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized2SmSm100` |
-| 2SM    | 128x128x128    | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized2SmSm100` |
-| 2SM    | 128x192x128    | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized2SmSm100` |
-| 2SM    | 128x256x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100` |
-| 2SM    | 256x64x128     | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized2SmSm100` |
-| 2SM    | 256x128x128    | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized2SmSm100` |
-| 2SM    | 256x192x128    | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized2SmSm100` |
-| 2SM    | 256x256x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100` |
+| Dense / Sparse | 1/2 SM | Mma Tile Shape | TN | TT | NT | NN | Dispatch Policy                          |
+|----------------|--------|----------------|----|----|----|----|------------------------------------------|
+| Dense          | 1SM    | 64x64x128      | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 1SM    | 64x128x128     | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 1SM    | 64x192x128     | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 1SM    | 64x256x128     | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 1SM    | 128x64x128     | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 1SM    | 128x128x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 1SM    | 128x192x128    | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 1SM    | 128x256x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 2SM    | 128x64x128     | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Dense          | 2SM    | 128x128x128    | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Dense          | 2SM    | 128x192x128    | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Dense          | 2SM    | 128x256x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Dense          | 2SM    | 256x64x128     | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Dense          | 2SM    | 256x128x128    | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Dense          | 2SM    | 256x192x128    | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Dense          | 2SM    | 256x256x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Sparse         | 1SM    | 128x128x128    | Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized1SmSm100` |
+| Sparse         | 1SM    | 128x128x256    | Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized1SmSm100` |
+| Sparse         | 1SM    | 128x256x128    | Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized1SmSm100` |
+| Sparse         | 1SM    | 128x256x256    | Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized1SmSm100` |
+| Sparse         | 2SM    | 256x128x128    | Y  | Y  | N  | Y  | `KernelSparseTmaWarpSpecialized2SmSm100` |
+| Sparse         | 2SM    | 256x128x256    | Y  | N  | N  | Y  | `KernelSparseTmaWarpSpecialized2SmSm100` |
+| Sparse         | 2SM    | 256x256x128    | Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized2SmSm100` |
+| Sparse         | 2SM    | 256x256x256    | Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized2SmSm100` |
 
-**Table 7: Valid Tile Shapes and Dispatch Policies for {float4_t, float6_t} x float8_t (Rows 4,7 of Table 2)** <a id="nonbs_rows_4_7" name="nonbs_rows_4_7"></a> 
+**Table 7: Valid Tile Shapes and Dispatch Policies for {float4_t, float6_t} x float8_t (Rows 4,7,13,and 16 of Table 2)** <a id="nonbs_rows_4_7" name="nonbs_rows_4_7"></a> 
 
-| 1/2 SM | Mma Tile Shape | TN | TT | NT | NN | Dispatch Policy                    |
-|--------|----------------|----|----|----|----|------------------------------------|
-| 1SM    | 64x64x128      | Y  | Y  | N  | N  | `KernelTmaWarpSpecialized1SmSm100` |
-| 1SM    | 64x128x128     | Y  | Y  | N  | N  | `KernelTmaWarpSpecialized1SmSm100` |
-| 1SM    | 64x192x128     | Y  | Y  | N  | N  | `KernelTmaWarpSpecialized1SmSm100` |
-| 1SM    | 64x256x128     | Y  | Y  | N  | N  | `KernelTmaWarpSpecialized1SmSm100` |
-| 1SM    | 128x64x128     | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100` |
-| 1SM    | 128x128x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100` |
-| 1SM    | 128x192x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100` |
-| 1SM    | 128x256x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100` |
-| 2SM    | 128x64x128     | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100` |
-| 2SM    | 128x128x128    | Y  | Y  | N  | N  | `KernelTmaWarpSpecialized2SmSm100` |
-| 2SM    | 128x192x128    | Y  | Y  | N  | N  | `KernelTmaWarpSpecialized2SmSm100` |
-| 2SM    | 128x256x128    | Y  | Y  | N  | N  | `KernelTmaWarpSpecialized2SmSm100` |
-| 2SM    | 256x64x128     | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100` |
-| 2SM    | 256x128x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100` |
-| 2SM    | 256x192x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100` |
-| 2SM    | 256x256x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100` |
+| Dense / Sparse | 1/2 SM | Mma Tile Shape | TN | TT | NT | NN | Dispatch Policy                          |
+|----------------|--------|----------------|----|----|----|----|------------------------------------------|
+| Dense          | 1SM    | 64x64x128      | Y  | Y  | N  | N  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 1SM    | 64x128x128     | Y  | Y  | N  | N  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 1SM    | 64x192x128     | Y  | Y  | N  | N  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 1SM    | 64x256x128     | Y  | Y  | N  | N  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 1SM    | 128x64x128     | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 1SM    | 128x128x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 1SM    | 128x192x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 1SM    | 128x256x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 2SM    | 128x64x128     | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Dense          | 2SM    | 128x128x128    | Y  | Y  | N  | N  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Dense          | 2SM    | 128x192x128    | Y  | Y  | N  | N  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Dense          | 2SM    | 128x256x128    | Y  | Y  | N  | N  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Dense          | 2SM    | 256x64x128     | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Dense          | 2SM    | 256x128x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Dense          | 2SM    | 256x192x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Dense          | 2SM    | 256x256x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Sparse         | 1SM    | 128x128x128    | N  | N  | Y  | Y  | `KernelSparseTmaWarpSpecialized1SmSm100` |
+| Sparse         | 1SM    | 128x128x256    | Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized1SmSm100` |
+| Sparse         | 1SM    | 128x256x128    | N  | N  | Y  | Y  | `KernelSparseTmaWarpSpecialized1SmSm100` |
+| Sparse         | 1SM    | 128x256x256    | Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized1SmSm100` |
+| Sparse         | 2SM    | 256x128x128    | N  | N  | Y  | Y  | `KernelSparseTmaWarpSpecialized2SmSm100` |
+| Sparse         | 2SM    | 256x128x256    | Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized2SmSm100` |
+| Sparse         | 2SM    | 256x256x128    | N  | N  | Y  | Y  | `KernelSparseTmaWarpSpecialized2SmSm100` |
+| Sparse         | 2SM    | 256x256x256    | Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized2SmSm100` |
 
-**Table 8: Valid Tile Shapes and Dispatch Policies for float8_t x float8_t (Row 9 of Table 2)** <a id="nonbs_rows_9" name="nonbs_rows_9"></a> 
+**Table 8: Valid Tile Shapes and Dispatch Policies for float8_t x float8_t (Row 9,18 of Table 2)** <a id="nonbs_rows_9" name="nonbs_rows_9"></a> 
 
-| 1/2 SM | Mma Tile Shape | TN | TT | NT | NN | Dispatch Policy                    |
-|--------|----------------|----|----|----|----|------------------------------------|
-| 1SM    | 64x64x128      | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100` |
-| 1SM    | 64x128x128     | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100` |
-| 1SM    | 64x192x128     | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100` |
-| 1SM    | 64x256x128     | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100` |
-| 1SM    | 128x64x128     | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100` |
-| 1SM    | 128x128x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100` |
-| 1SM    | 128x192x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100` |
-| 1SM    | 128x256x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100` |
-| 2SM    | 128x64x128     | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100` |
-| 2SM    | 128x128x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100` |
-| 2SM    | 128x192x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100` |
-| 2SM    | 128x256x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100` |
-| 2SM    | 256x64x128     | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100` |
-| 2SM    | 256x128x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100` |
-| 2SM    | 256x192x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100` |
-| 2SM    | 256x256x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100` |
+| Dense / Sparse | 1/2 SM | Mma Tile Shape | TN | TT | NT | NN | Dispatch Policy                          |
+|----------------|--------|----------------|----|----|----|----|------------------------------------------|
+| Dense          | 1SM    | 64x64x128      | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 1SM    | 64x128x128     | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 1SM    | 64x192x128     | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 1SM    | 64x256x128     | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 1SM    | 128x64x128     | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 1SM    | 128x128x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 1SM    | 128x192x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 1SM    | 128x256x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmSm100`       |
+| Dense          | 2SM    | 128x64x128     | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Dense          | 2SM    | 128x128x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Dense          | 2SM    | 128x192x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Dense          | 2SM    | 128x256x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Dense          | 2SM    | 256x64x128     | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Dense          | 2SM    | 256x128x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Dense          | 2SM    | 256x192x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Dense          | 2SM    | 256x256x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmSm100`       |
+| Sparse         | 1SM    | 128x64x128     | Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized1SmSm100` |
+| Sparse         | 1SM    | 128x128x128    | Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized1SmSm100` |
+| Sparse         | 1SM    | 128x192x128    | Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized1SmSm100` |
+| Sparse         | 1SM    | 128x256x128    | Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized1SmSm100` |
+| Sparse         | 2SM    | 256x64x128     | Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized2SmSm100` |
+| Sparse         | 2SM    | 256x128x128    | Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized2SmSm100` |
+| Sparse         | 2SM    | 256x192x128    | Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized2SmSm100` |
+| Sparse         | 2SM    | 256x256x128    | Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized2SmSm100` |
 
+**Table 9: Valid Tile Shapes for nv_float4_t x nv_float4_t (Row 1 and 12 of Table 3)** <a id="bs_rows_1" name="bs_rows_1"></a>
+| Dense / Sparse | 1/2 SM | Mma Tile Shape | TN | TT | NT | NN | Dispatch Policy                               |
+|----------------|--------|----------------|----|----|----|----|----------------------------------------------|
+| Dense          | 1SM    | 128x128x256    | Y  | N  | N  | N  | `KernelTmaWarpSpecialized1SmNvf4Sm100`       |
+| Dense          | 1SM    | 128x192x256    | Y  | N  | N  | N  | `KernelTmaWarpSpecialized1SmNvf4Sm100`       |
+| Dense          | 1SM    | 128x256x256    | Y  | N  | N  | N  | `KernelTmaWarpSpecialized1SmNvf4Sm100`       |
+| Dense          | 2SM    | 256x128x256    | Y  | N  | N  | N  | `KernelTmaWarpSpecialized2SmNvf4Sm100`       |
+| Dense          | 2SM    | 256x192x256    | Y  | N  | N  | N  | `KernelTmaWarpSpecialized2SmNvf4Sm100`       |
+| Dense          | 2SM    | 256x256x256    | Y  | N  | N  | N  | `KernelTmaWarpSpecialized2SmNvf4Sm100`       |
+| Sparse         | 1SM    | 128x128x256    | Y  | N  | N  | N  | `KernelSparseTmaWarpSpecialized1SmNvf4Sm100` |
+| Sparse         | 1SM    | 128x256x256    | Y  | N  | N  | N  | `KernelSparseTmaWarpSpecialized1SmNvf4Sm100` |
+| Sparse         | 2SM    | 256x128x256    | Y  | N  | N  | N  | `KernelSparseTmaWarpSpecialized2SmNvf4Sm100` |
+| Sparse         | 2SM    | 256x256x256    | Y  | N  | N  | N  | `KernelSparseTmaWarpSpecialized2SmNvf4Sm100` |
 
-**Table 9: Valid Tile Shapes for nv_float4_t x nv_float4_t (Row 1 of Table 3)** <a id="bs_rows_1" name="bs_rows_1"></a>
-| 1/2 SM | Mma Tile Shape | TN | TT | NT | NN | Dispatch Policy                       |
-|--------|---------------|----|----|----|----|----------------------------------------|
-| 1SM    | 128x128x256   | Y  | N  | N  | N  | `KernelTmaWarpSpecialized1SmNvf4Sm100` |
-| 1SM    | 128x192x256   | Y  | N  | N  | N  | `KernelTmaWarpSpecialized1SmNvf4Sm100` |
-| 1SM    | 128x256x256   | Y  | N  | N  | N  | `KernelTmaWarpSpecialized1SmNvf4Sm100` |
-| 2SM    | 256x128x256   | Y  | N  | N  | N  | `KernelTmaWarpSpecialized2SmNvf4Sm100` |
-| 2SM    | 256x192x256   | Y  | N  | N  | N  | `KernelTmaWarpSpecialized2SmNvf4Sm100` |
-| 2SM    | 256x256x256   | Y  | N  | N  | N  | `KernelTmaWarpSpecialized2SmNvf4Sm100` |
+**Table 10: Valid Tile Shapes and Dispatch Policies for mx_float4_t x mx_float4_t (Row 2 and 13 of Table 3)** <a id="bs_rows_2" name="bs_rows_2"></a>
+| Dense / Sparse | 1/2 SM | Mma Tile Shape | TN | TT | NT | NN | Dispatch Policy                              |
+|----------------|--------|----------------|----|----|----|----|----------------------------------------------|
+| Dense          | 1SM    | 128x128x256    | Y  | N  | N  | N  | `KernelTmaWarpSpecialized1SmMxf4Sm100`       |
+| Dense          | 1SM    | 128x192x256    | Y  | N  | N  | N  | `KernelTmaWarpSpecialized1SmMxf4Sm100`       |
+| Dense          | 1SM    | 128x256x256    | Y  | N  | N  | N  | `KernelTmaWarpSpecialized1SmMxf4Sm100`       |
+| Dense          | 2SM    | 256x128x256    | Y  | N  | N  | N  | `KernelTmaWarpSpecialized2SmMxf4Sm100`       |
+| Dense          | 2SM    | 256x192x256    | Y  | N  | N  | N  | `KernelTmaWarpSpecialized2SmMxf4Sm100`       |
+| Dense          | 2SM    | 256x256x256    | Y  | N  | N  | N  | `KernelTmaWarpSpecialized2SmMxf4Sm100`       |
+| Sparse         | 1SM    | 128x128x256    | Y  | N  | N  | N  | `KernelSparseTmaWarpSpecialized1SmNvf4Sm100` |
+| Sparse         | 1SM    | 128x256x256    | Y  | N  | N  | N  | `KernelSparseTmaWarpSpecialized1SmNvf4Sm100` |
+| Sparse         | 2SM    | 256x128x256    | Y  | N  | N  | N  | `KernelSparseTmaWarpSpecialized2SmNvf4Sm100` |
+| Sparse         | 2SM    | 256x256x256    | Y  | N  | N  | N  | `KernelSparseTmaWarpSpecialized2SmNvf4Sm100` |
 
-**Table 10: Valid Tile Shapes and Dispatch Policies for mx_float4_t x mx_float4_t (Row 2 of Table 3)** <a id="bs_rows_2" name="bs_rows_2"></a>
-| 1/2 SM | Mma Tile Shape | TN | TT | NT | NN | Dispatch Policy                       |
-|--------|---------------|----|----|----|----|----------------------------------------|
-| 1SM    | 128x128x256   | Y  | N  | N  | N  | `KernelTmaWarpSpecialized1SmMxf4Sm100` |
-| 1SM    | 128x192x256   | Y  | N  | N  | N  | `KernelTmaWarpSpecialized1SmMxf4Sm100` |
-| 1SM    | 128x256x256   | Y  | N  | N  | N  | `KernelTmaWarpSpecialized1SmMxf4Sm100` |
-| 2SM    | 256x128x256   | Y  | N  | N  | N  | `KernelTmaWarpSpecialized2SmMxf4Sm100` |
-| 2SM    | 256x192x256   | Y  | N  | N  | N  | `KernelTmaWarpSpecialized2SmMxf4Sm100` |
-| 2SM    | 256x256x256   | Y  | N  | N  | N  | `KernelTmaWarpSpecialized2SmMxf4Sm100` |
+**Table 11: Valid Tile Shapes and Dispatch Policies for mx_float4_t x mx_float4_t (Row 3 and 14 of Table 3)** <a id="bs_rows_3" name="bs_rows_3"></a>
+| Dense / Sparse | 1/2 SM | Mma Tile Shape | TN | TT | NT | NN | Dispatch Policy                                  |
+|----------------|--------|----------------|----|----|----|----|--------------------------------------------------|
+| Dense          | 1SM    | 128x128x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmMxf8f6f4Sm100`       |
+| Dense          | 1SM    | 128x192x128    | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized1SmMxf8f6f4Sm100`       |
+| Dense          | 1SM    | 128x256x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmMxf8f6f4Sm100`       |
+| Dense          | 2SM    | 256x128x128    | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized2SmMxf8f6f4Sm100`       |
+| Dense          | 2SM    | 256x192x128    | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized2SmMxf8f6f4Sm100`       |
+| Dense          | 2SM    | 256x256x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmMxf8f6f4Sm100`       |
+| Sparse         | 1SM    | 128x128x256    | Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized1SmMxf8f6f4Sm100` |
+| Sparse         | 1SM    | 128x192x256    | Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized1SmMxf8f6f4Sm100` |
+| Sparse         | 1SM    | 128x256x256    | Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized1SmMxf8f6f4Sm100` |
+| Sparse         | 2SM    | 256x128x256    | Y  | N  | N  | Y  | `KernelSparseTmaWarpSpecialized2SmMxf8f6f4Sm100` |
+| Sparse         | 2SM    | 256x192x256    | Y  | N  | N  | Y  | `KernelSparseTmaWarpSpecialized2SmMxf8f6f4Sm100` |
+| Sparse         | 2SM    | 256x256x256    | Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized2SmMxf8f6f4Sm100` |
 
-**Table 11: Valid Tile Shapes and Dispatch Policies for mx_float4_t x mx_float4_t (Row 3 of Table 3)** <a id="bs_rows_3" name="bs_rows_3"></a>
-| 1/2 SM | Mma Tile Shape | TN | TT | NT | NN | Dispatch Policy                            |
-|--------|---------------|----|----|----|----|--------------------------------------------|
-| 1SM    | 128x128x128   | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmMxf8f6f4Sm100` |
-| 1SM    | 128x192x128   | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized1SmMxf8f6f4Sm100` |
-| 1SM    | 128x256x128   | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmMxf8f6f4Sm100` |
-| 2SM    | 256x128x128   | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized2SmMxf8f6f4Sm100` |
-| 2SM    | 256x192x128   | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized2SmMxf8f6f4Sm100` |
-| 2SM    | 256x256x128   | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmMxf8f6f4Sm100` |
+**Table 12: Valid Tile Shapes and Dispatch Policies for {mx_float4_t, mx_float6_t, mx_float8_t} x {mx_float4_t, mx_float6_t} (Rows 4, 5, 7, 8, 10, 15, 16, 18, 19, and 21 of Table 3)** <a id="bs_rows_4_5_7_8_10" name="bs_rows_4_5_7_8_10"></a> 
+| Dense / Sparse | 1/2 SM | Mma Tile Shape | TN | TT | NT | NN | Dispatch Policy                                  |
+|----------------|--------|----------------|----|----|----|----|--------------------------------------------------|
+| Dense          | 1SM    | 128x128x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmMxf8f6f4Sm100`       |
+| Dense          | 1SM    | 128x192x128    | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized1SmMxf8f6f4Sm100`       |
+| Dense          | 1SM    | 128x256x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmMxf8f6f4Sm100`       |
+| Dense          | 2SM    | 256x128x128    | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized2SmMxf8f6f4Sm100`       |
+| Dense          | 2SM    | 256x192x128    | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized2SmMxf8f6f4Sm100`       |
+| Dense          | 2SM    | 256x256x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmMxf8f6f4Sm100`       |
+| Sparse         | 1SM    | 128x128x256    | Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized1SmMxf8f6f4Sm100` |
+| Sparse         | 1SM    | 128x192x256    | Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized1SmMxf8f6f4Sm100` |
+| Sparse         | 1SM    | 128x256x256    | Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized1SmMxf8f6f4Sm100` |
+| Sparse         | 2SM    | 256x128x256    | Y  | N  | N  | Y  | `KernelSparseTmaWarpSpecialized2SmMxf8f6f4Sm100` |
+| Sparse         | 2SM    | 256x192x256    | Y  | N  | N  | Y  | `KernelSparseTmaWarpSpecialized2SmMxf8f6f4Sm100` |
+| Sparse         | 2SM    | 256x256x256    | Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized2SmMxf8f6f4Sm100` |
 
-**Table 12: Valid Tile Shapes and Dispatch Policies for {mx_float4_t, mx_float6_t, mx_float8_t} x {mx_float4_t, mx_float6_t} (Rows 4, 5, 7, 8, 10 of Table 3)** <a id="bs_rows_4_5_7_8_10" name="bs_rows_4_5_7_8_10"></a> 
-| 1/2 SM | Mma Tile Shape | TN | TT | NT | NN | Dispatch Policy                            |
-|--------|---------------|----|----|----|----|--------------------------------------------|
-| 1SM    | 128x128x128   | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmMxf8f6f4Sm100` |
-| 1SM    | 128x192x128   | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized1SmMxf8f6f4Sm100` |
-| 1SM    | 128x256x128   | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmMxf8f6f4Sm100` |
-| 2SM    | 256x128x128   | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized2SmMxf8f6f4Sm100` |
-| 2SM    | 256x192x128   | Y  | N  | N  | Y  | `KernelTmaWarpSpecialized2SmMxf8f6f4Sm100` |
-| 2SM    | 256x256x128   | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmMxf8f6f4Sm100` |
-
-**Table 13: Valid Tile Shapes and Dispatch Policies for {mx_float4_t, mx_float6_t, mx_float8_t} x mx_float8_t (Rows 6, 9, 11 of Table 3)** <a id="bs_rows_6_9_11" name="bs_rows_6_9_11"></a> 
-| 1/2 SM | Mma Tile Shape | TN| TT | NT | NN | Dispatch Policy                            |
-|--------|---------------|----|----|----|----|--------------------------------------------|
-| 1SM    | 128x128x128   | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmMxf8f6f4Sm100` |
-| 1SM    | 128x192x128   | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmMxf8f6f4Sm100` |
-| 1SM    | 128x256x128   | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmMxf8f6f4Sm100` |
-| 2SM    | 256x128x128   | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmMxf8f6f4Sm100` |
-| 2SM    | 256x192x128   | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmMxf8f6f4Sm100` |
-| 2SM    | 256x256x128   | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmMxf8f6f4Sm100` |
+**Table 13: Valid Tile Shapes and Dispatch Policies for {mx_float4_t, mx_float6_t, mx_float8_t} x mx_float8_t (Rows 6, 9, 11, 17, 20, and 22 of Table 3)** <a id="bs_rows_6_9_11" name="bs_rows_6_9_11"></a> 
+| Dense / Sparse | 1/2 SM | Mma Tile Shape | TN | TT | NT | NN | Dispatch Policy                                  |
+|----------------|--------|----------------|----|----|----|----|--------------------------------------------------|
+| Dense          | 1SM    | 128x128x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmMxf8f6f4Sm100`       |
+| Dense          | 1SM    | 128x192x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmMxf8f6f4Sm100`       |
+| Dense          | 1SM    | 128x256x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized1SmMxf8f6f4Sm100`       |
+| Dense          | 2SM    | 256x128x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmMxf8f6f4Sm100`       |
+| Dense          | 2SM    | 256x192x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmMxf8f6f4Sm100`       |
+| Dense          | 2SM    | 256x256x128    | Y  | Y  | Y  | Y  | `KernelTmaWarpSpecialized2SmMxf8f6f4Sm100`       |
+| Sparse         | 1SM    | 128x128x256    | Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized1SmMxf8f6f4Sm100` |
+| Sparse         | 1SM    | 128x192x256    | Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized1SmMxf8f6f4Sm100` |
+| Sparse         | 1SM    | 128x256x256    | Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized1SmMxf8f6f4Sm100` |
+| Sparse         | 2SM    | 256x128x256    | Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized2SmMxf8f6f4Sm100` |
+| Sparse         | 2SM    | 256x192x256    | Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized2SmMxf8f6f4Sm100` |
+| Sparse         | 2SM    | 256x256x256    | Y  | Y  | Y  | Y  | `KernelSparseTmaWarpSpecialized2SmMxf8f6f4Sm100` |
 
 ## Epilogue config supported
 
 **Table 14: Epilogue Dispatch Policy** <a id="epi_dispatch" name="epi_dispatch"></a> 
-| 1/2 SM | Epilogue Dispatch Policy                 |
-|--------|------------------------------------------|
-| 1SM    | cutlass::epilogue::TmaWarpSpecialized1Sm |
-| 1SM    | cutlass::epilogue::NoSmemWarpSpecialized1Sm |
-| 2SM    | cutlass::epilogue::TmaWarpSpecialized2Sm |
-| 2SM    | cutlass::epilogue::NoSmemWarpSpecialized2Sm |
+| Dense / Sparse | Legacy / Narrow Precision   | 1/2 SM | Epilogue Dispatch Policy                           |
+|----------------|-----------------------------|--------|----------------------------------------------------|
+| Dense          | Legacy & Narrow Precision   | 1SM    | `cutlass::epilogue::TmaWarpSpecialized1Sm`         |
+| Dense          | Legacy & Narrow Precision   | 1SM    | `cutlass::epilogue::NoSmemWarpSpecialized1Sm`      |
+| Dense          | Legacy & Narrow Precision   | 2SM    | `cutlass::epilogue::TmaWarpSpecialized2Sm`         |
+| Dense          | Legacy & Narrow Precision   | 2SM    | `cutlass::epilogue::NoSmemWarpSpecialized2Sm`      |
+| Sparse         | Legacy                      | 1SM    | `cutlass::epilogue::TmaWarpSpecialized1Sm`         |
+| Sparse         | Legacy                      | 1SM    | `cutlass::epilogue::NoSmemWarpSpecialized1Sm`      |
+| Sparse         | Legacy                      | 2SM    | `cutlass::epilogue::TmaWarpSpecialized2Sm`         |
+| Sparse         | Legacy                      | 2SM    | `cutlass::epilogue::NoSmemWarpSpecialized2Sm`      |
+| Sparse         | Narrow Precision (nvf4)     | 1SM    | `cutlass::epilogue::TmaWarpSpecialized1SmNvf4`     |
+| Sparse         | Narrow Precision (nvf4)     | 2SM    | `cutlass::epilogue::TmaWarpSpecialized2SmNvf4`     |
+| Sparse         | Narrow Precision (mxf4)     | 1SM    | `cutlass::epilogue::TmaWarpSpecialized1SmMxf4`     |
+| Sparse         | Narrow Precision (mxf4)     | 2SM    | `cutlass::epilogue::TmaWarpSpecialized2SmMxf4`     |
+| Sparse         | Narrow Precision (mxf8f6f4) | 1SM    | `cutlass::epilogue::TmaWarpSpecialized1SmMxf8f6f4` |
+| Sparse         | Narrow Precision (mxf8f6f4) | 2SM    | `cutlass::epilogue::TmaWarpSpecialized2SmMxf8f6f4` |
 
 **Table 15: Epilogue PerSmTileShape_MNK** <a id="epi_persmtileshape" name="epi_persmtileshape"></a> 
 | 1/2 SM | MMA tile Shape           | PerSmTileShape_MNK      |
@@ -314,14 +414,16 @@ MMA_TileShape_K is is generally 4 * MMA-Instruction-K. It depends on the config 
 ### Auto Kernel Dispatch Policies
 
 In addition to direct dispatch policies listed above, the user can also use auto policies for both non-block scaled narrow-precision
-GEMMs, and block scaled narrow-precision GEMMs.
+GEMMs (both sparse and dense), and block scaled narrow-precision GEMMs (only dense).
 
 CUTLASS will do its best to find the most efficient kernel for given parameters, however, the preferred method for building
 these kernels is to use direct kernel dispatch policies shown in the above tables.
 
-* `cutlass::gemm::collective::KernelScheduleAuto`: For a given Mma Tile Size, data type and layout combinations choose instr kind (mxf8f6f4, mxf4, nvf4mxf4) and 1/2 SM `tcgen05.mma`.
+* `cutlass::gemm::collective::KernelScheduleAuto`: For a given Mma Tile Size, data type and layout combinations choose instr kind (mxf8f6f4, mxf4, nvf4mxf4) and 1/2 SM `tcgen05.mma(.sp)`.
 * `KernelTmaWarpSpecialized1SmBlockScaledSm100`: Use 1 SM `tcgen05.mma` instruction and choose instr kind (mxf8f6f4, mxf4, nvf4mxf4) automatically.
 * `KernelTmaWarpSpecialized2SmBlockScaledSm100`: Use 2 SM `tcgen05.mma` instruction and choose instr kind (mxf8f6f4, mxf4, nvf4mxf4) automatically.
+* `KernelSparseTmaWarpSpecialized1SmBlockScaledSm100`: Use 1 SM `tcgen05.mma.sp` instruction and choose instr kind (mxf8f6f4, mxf4, nvf4mxf4) automatically.
+* `KernelSparseTmaWarpSpecialized2SmBlockScaledSm100`: Use 2 SM `tcgen05.mma.sp` instruction and choose instr kind (mxf8f6f4, mxf4, nvf4mxf4) automatically.
 
 Similarly for epilogues, we can use `cutlass::epilogue::collective::EpilogueScheduleAuto`.
 
@@ -330,15 +432,22 @@ Similarly for epilogues, we can use `cutlass::epilogue::collective::EpilogueSche
 For non-blockscaled dense GEMM refer to [quick start page](quickstart.md#instantiating-a-blackwell-sm100-gemm-kernel). An example dense GEMM can be found:
 1. [Blackwell FP16 GEMM example](https://github.com/NVIDIA/cutlass/tree/main/examples/70_blackwell_gemm/).
 
+An example sparse GEMM can be found:
+1. [Blackwell FP16 Sparse GEMM example](https://github.com/NVIDIA/cutlass/tree/main/examples/83_blackwell_sparse_gemm/).
+
 Narrow precision and block scaled narrow precision kernels can be built using CUTLASS 3.x collective builder interface
 (as described in [CUTLASS 3.0 GEMM API](gemm_api_3x.md#cutlass-30-gemm-api)). However, special attention needs to be given to 
 A and B matrix layouts, alignment requirements, and dispatch policies to obtain a functionally correct and performant kernel
 which are listed above.
 
-Several examples of block scaled kernels can be found in [examples/72_blackwell_narrow_precision_gemm](https://github.com/NVIDIA/cutlass/tree/main/examples/72_blackwell_narrow_precision_gemm/) directory:
+Several examples of block scaled dense GEMM kernels can be found in [examples/72_blackwell_narrow_precision_gemm](https://github.com/NVIDIA/cutlass/tree/main/examples/72_blackwell_narrow_precision_gemm/) directory:
 1. [NVF4 Gemm with block scaling](https://github.com/NVIDIA/cutlass/tree/main/examples/72_blackwell_narrow_precision_gemm/72a_blackwell_nvfp4_bf16_gemm.cu)
 2. [NVF4 Gemm with block scaling and NVF4 output matrix](https://github.com/NVIDIA/cutlass/tree/main/examples/72_blackwell_narrow_precision_gemm/72b_blackwell_nvfp4_nvfp4_gemm.cu)
 3. [Mixed precision Nvf4 x Mxf8 GEMM with block scaling](https://github.com/NVIDIA/cutlass/tree/main/examples/72_blackwell_narrow_precision_gemm/72c_blackwell_mixed_mxfp8_bf16_gemm.cu)
+
+Several examples of block scaled sparse GEMM kernels can be found in [examples/84_blackwell_narrow_precision_sparse_gemm](https://github.com/NVIDIA/cutlass/tree/main/examples/84_blackwell_narrow_precision_sparse_gemm) directory:
+1. [NVF4 Gemm with block scaling](https://github.com/NVIDIA/cutlass/tree/main/examples/84_blackwell_narrow_precision_sparse_gemm/84a_blackwell_nvfp4_bf16_sparse_gemm.cu)
+2. [Mixed precision Nvf4 x Mxf8 GEMM with block scaling](https://github.com/NVIDIA/cutlass/tree/main/examples/84_blackwell_narrow_precision_sparse_gemm/84b_blackwell_mixed_mxfp8_bf16_sparse_gemm.cu)
 
 Collective builder interface expects the same arguments as any other CUTLASS 3.x kernels as described
 [here](gemm_api_3x.md#collective-builder-for-collectivemmas) with a small difference for Collective MMA builder interface.
