@@ -60,7 +60,7 @@
 #define CUTLASS_DEVICE inline
 #endif
 
-#if ! defined(_MSC_VER)
+#if ! defined(_MSC_VER) || defined(__INTEL_LLVM_COMPILER)
 #define CUTLASS_LAMBDA_FUNC_INLINE __attribute__((always_inline))
 #else
 #define CUTLASS_LAMBDA_FUNC_INLINE [[msvc::forceinline]]

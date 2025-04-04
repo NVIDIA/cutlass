@@ -274,6 +274,9 @@ set(CUTLASS_LIBRARY_DEBUG_POSTFIX ${CUTLASS_LIBRARY_DEBUG_POSTFIX_INIT} CACHE ST
 if(WIN32)
   # On Windows we link against the shared (DLL) runtime. Change gtest settings to match this.
   set(gtest_force_shared_crt ON CACHE BOOL "Use shared (DLL) run-time lib even when Google Test is built as static lib" FORCE)
+
+  # Disable CRT security warnings and don't include GDI headers (macro RELATIVE causes name collision)
+  add_definitions(-D_CRT_SECURE_NO_WARNINGS -DNOGDI)
 endif()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DCUTLASS_VERSIONS_GENERATED")

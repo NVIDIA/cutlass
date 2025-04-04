@@ -648,7 +648,7 @@ struct Copy_Traits_<XE_2D_U8x1x64_LD_N::PREFETCH, args_t...>
                            Stride<_16,Stride<_1,_8,_256>>>;
   // Reference map from (thr,val) to bit
   using RefLayout = DstLayout;
-  using CopyInternalType = ushort;
+  using CopyInternalType = cute::intel::ushort;
 };
 
 template <class... args_t>
@@ -683,7 +683,7 @@ struct Copy_Traits_<XE_2D_U8x2x64_LD_N::PREFETCH, args_t...>
                            Stride<_16,Stride<_1,_8,_256,_512>>>;
   // Reference map from (thr,val) to bit
   using RefLayout = DstLayout;
-  using CopyInternalType = ushort;
+  using CopyInternalType = cute::intel::ushort;
 };
 
 template <class... args_t>
@@ -717,7 +717,7 @@ struct Copy_Traits_<XE_2D_U8x4x64_LD_N::PREFETCH, args_t...>
                            Stride<_16,Stride<_1,_8,_256,_512>>>;
   // Reference map from (thr,val) to bit
   using RefLayout = DstLayout;
-  using CopyInternalType = ushort;
+  using CopyInternalType = cute::intel::ushort;
 };
 
 template <class... args_t>
@@ -751,7 +751,7 @@ struct Copy_Traits_<XE_2D_U8x8x64_LD_N::PREFETCH, args_t...>
                            Stride<_16,Stride<_1,_8,_256,_512>>>;
   // Reference map from (thr,val) to bit
   using RefLayout = DstLayout;
-  using CopyInternalType = ushort;
+  using CopyInternalType = cute::intel::ushort;
 };
 
 
@@ -1102,7 +1102,7 @@ struct Copy_Traits_<XE_2D_U16x8x32_LD_N::PREFETCH, args_t...>
                            Stride<_32,Stride< _1,_512>>>;
   // Reference map from (thr,val) to bit
   using RefLayout = DstLayout;
-  using CopyInternalType = ushort;
+  using CopyInternalType = cute::intel::ushort;
 };
 
 template <class... args_t>
@@ -1139,7 +1139,7 @@ struct Copy_Traits_<XE_2D_U16x16x32_LD_N::PREFETCH, args_t...>
                            Stride<_32,Stride< _1,_512>>>;
   // Reference map from (thr,val) to bit
   using RefLayout = DstLayout;
-  using CopyInternalType = ushort;
+  using CopyInternalType = cute::intel::ushort;
 };
 
 template <class... args_t>
@@ -1173,7 +1173,7 @@ struct Copy_Traits_<XE_2D_U16x32x32_LD_N::PREFETCH, args_t...>
                            Stride<_32,Stride< _1,_512>>>;
   // Reference map from (thr,val) to bit
   using RefLayout = DstLayout;
-  using CopyInternalType = ushort;
+  using CopyInternalType = cute::intel::ushort;
 };
 
 template <class... args_t>

@@ -57,15 +57,15 @@
 // 64bits No transform Transpose
 SYCL_DEVICE_BUILTIN(
     cute::intel::ulong __builtin_IB_subgroup_block_read_flat_transpose_u64_k1(
-        long baseoffset, int width_minus_one, int height_minus_one,
+        intptr_t baseoffset, int width_minus_one, int height_minus_one,
         int pitch_minus_one, cute::intel::coord_t coord));
 SYCL_DEVICE_BUILTIN(
     cute::intel::ulong2 __builtin_IB_subgroup_block_read_flat_transpose_u64_k2(
-        long baseoffset, int width_minus_one, int height_minus_one,
+        intptr_t baseoffset, int width_minus_one, int height_minus_one,
         int pitch_minus_one, cute::intel::coord_t coord));
 SYCL_DEVICE_BUILTIN(
     cute::intel::ulong4 __builtin_IB_subgroup_block_read_flat_transpose_u64_k4(
-        long baseoffset, int width_minus_one, int height_minus_one,
+        intptr_t baseoffset, int width_minus_one, int height_minus_one,
         int pitch_minus_one, cute::intel::coord_t coord));
 #undef SYCL_DEVICE_BUILTIN
 
@@ -73,7 +73,7 @@ SYCL_DEVICE_BUILTIN(
 #define __global __attribute__((opencl_global))
 
 // 64bits No transform Transpose
-SYCL_DEVICE_OCL(ulong intel_sub_group_block_read_transpose_64b_8r1c(
+SYCL_DEVICE_OCL(cute::intel::ulong intel_sub_group_block_read_transpose_64b_8r1c(
     const __global void *base_address, int width, int height, int pitch,
     cute::intel::coord_t coord));
 SYCL_DEVICE_OCL(cute::intel::ulong2 intel_sub_group_block_read_transpose_64b_8r2c(
@@ -97,7 +97,7 @@ struct XE_2D_U64x8x1_LD_T {
     static_assert(sizeof(T) == 8, "Expected T to have size 8");
     *reinterpret_cast<ulong *>(dst) =
         __builtin_IB_subgroup_block_read_flat_transpose_u64_k1(
-            (long)(baseoffset), width - 1, height - 1, pitch - 1, coord);
+            (intptr_t)(baseoffset), width - 1, height - 1, pitch - 1, coord);
 #else
     CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
 #endif
@@ -115,7 +115,7 @@ struct XE_2D_U64x8x2_LD_T {
     static_assert(sizeof(T) == 8, "Expected T to have size 8");
     *reinterpret_cast<intel::ulong2 *>(dst) =
         __builtin_IB_subgroup_block_read_flat_transpose_u64_k2(
-            (long)(baseoffset), width - 1, height - 1, pitch - 1, coord);
+            (intptr_t)(baseoffset), width - 1, height - 1, pitch - 1, coord);
 #else
     CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
 #endif
@@ -133,7 +133,7 @@ struct XE_2D_U64x8x4_LD_T {
     static_assert(sizeof(T) == 8, "Expected T to have size 8");
     *reinterpret_cast<intel::ulong4 *>(dst) =
         __builtin_IB_subgroup_block_read_flat_transpose_u64_k4(
-            (long)(baseoffset), width - 1, height - 1, pitch - 1, coord);
+            (intptr_t)(baseoffset), width - 1, height - 1, pitch - 1, coord);
 #else
     CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
 #endif

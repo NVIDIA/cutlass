@@ -47,7 +47,7 @@
 #include "cutlass/cutlass.h"
 
 /// Optionally enable GCC's built-in type
-#if (defined(__x86_64) || defined (__aarch64__)) && !((defined(__CUDA_ARCH__) || defined(__SYCL_DEVICE_ONLY__)) && ((__CUDACC_VER_MAJOR__ <= 10) || ((__CUDACC_VER_MAJOR__ == 11) && (__CUDACC_VER_MINOR__ <= 4)))) && defined(__GNUC__)
+#if ((defined(__x86_64) || defined (__aarch64__)) && !((defined(__CUDA_ARCH__) || defined(__SYCL_DEVICE_ONLY__)) && ((__CUDACC_VER_MAJOR__ <= 10) || ((__CUDACC_VER_MAJOR__ == 11) && (__CUDACC_VER_MINOR__ <= 4)))) && defined(__GNUC__)) || defined(__INTEL_LLVM_COMPILER)
 #define CUTLASS_UINT128_NATIVE
 #elif !defined(__CUDA_ARCH__)
 // No custom support for 128b arithmetic on device

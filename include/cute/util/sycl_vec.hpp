@@ -43,8 +43,10 @@ template <class T, int N> using vector_t = T __attribute__((ext_vector_type(N)))
 template <class T, int N> using vector_t = sycl::marray<T, N>;
 #endif
 
-typedef unsigned long ulong;
-typedef unsigned char uchar;
+using uint = unsigned int;
+using ushort = unsigned short;
+using ulong = unsigned long;
+using uchar = unsigned char;
 
 using uchar2 = vector_t<uchar, 2>;
 using uchar4 = vector_t<uchar, 4>;

@@ -71,14 +71,20 @@ void verify(uint32_t m, uint32_t n, uint32_t k, atype *A, btype *B, ctype *C,
 
       ctype val = C[i * n + j];
 
-      if (isnormal(val) && isnormal(expect)) {
-        auto error = std::abs((expect - val) / val);
-        if (error > 0.01f) {
-          cnt++;
+      if constexpr(std::is_floating_point_v<ctype>) {
+        if (isnormal(val) && isnormal(expect)) {
+          auto error = std::abs((expect - val) / val);
+          if (error > 0.01f) {
+            cnt++;
+          }
+        } else {
+          // TODO(codeplay): Assert that at least some values are non-zero.
+          if(!(expect == 0 && val == 0)) is_normal = false;
         }
       } else {
-        // TODO(codeplay): Assert that at least some values are non-zero.
-        if(!(expect == 0 && val == 0)) is_normal = false;
+        if (val != expect) {
+          cnt++;
+        }
       }
     }
   }

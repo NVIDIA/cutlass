@@ -46,5 +46,6 @@ FetchContent_GetProperties(googlebenchmark)
 
 if(NOT googlebenchmark_POPULATED)
   FetchContent_Populate(googlebenchmark)
+  set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
   add_subdirectory(${googlebenchmark_SOURCE_DIR} ${googlebenchmark_BINARY_DIR} EXCLUDE_FROM_ALL)
 endif()
