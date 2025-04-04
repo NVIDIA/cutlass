@@ -259,7 +259,8 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
     int* ptr_page_table = nullptr;
     // page table is [batch, seqlen or similar]
     Stride<_1, int> stride_page_table = {};
-    int page_count = 0;
+    int pages_per_seq = 0;  // maximum number of pages in the page table
+    int total_pages = 0;  // total number of pages in the cache
     int page_size = TileShapeS{};  // powers of two if kIsCpAsync, otherwise TileShapeS
   };
   
@@ -324,10 +325,10 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
     auto [H, K, D, B] = args.problem_shape;
     auto [L, R] = D;
 
-    int paged_B = B;
+    int paged_BC = B;
     int paged_K = K;
     if (args.mainloop.ptr_page_table != nullptr) {
-      paged_B = args.mainloop.page_count;
+      paged_BC = args.mainloop.total_pages;
       paged_K = args.mainloop.page_size;
     }
 
@@ -339,7 +340,7 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
         }, nullptr);
 
     auto params_qk_latent_paged = CollectiveMmaQK::to_underlying_arguments(
-        make_shape(H, paged_K, L, paged_B),
+        make_shape(H, paged_K, L, paged_BC),
         typename CollectiveMmaQK::Arguments {
           args.mainloop.ptr_q_latent, args.mainloop.stride_q_latent,
           args.mainloop.ptr_c_latent, args.mainloop.stride_c_latent,
@@ -353,7 +354,7 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
         }, nullptr);
 
     auto params_qk_rope_paged = CollectiveMmaQK::to_underlying_arguments(
-        make_shape(H, paged_K, R, paged_B),
+        make_shape(H, paged_K, R, paged_BC),
         typename CollectiveMmaQK::Arguments {
           args.mainloop.ptr_q_rope, args.mainloop.stride_q_rope,
           args.mainloop.ptr_k_rope, args.mainloop.stride_k_rope,
@@ -362,7 +363,7 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
 
     auto stride_c_latent_transpose = select<1,0,2>(args.mainloop.stride_c_latent);
     auto params_pv_latent = CollectiveMmaPV::to_underlying_arguments(
-        make_shape(H, L, paged_K, paged_B),
+        make_shape(H, L, paged_K, paged_BC),
         typename CollectiveMmaPV::Arguments {
           args.mainloop.ptr_q_latent, args.mainloop.stride_q_latent,  // dummy, never used
           args.mainloop.ptr_c_latent, stride_c_latent_transpose,
@@ -768,7 +769,7 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
     int batch_coord = get<2>(blk_coord);
 
     auto mPT_l = make_tensor(make_gmem_ptr(mainloop_args.ptr_page_table), 
-                            make_shape(mainloop_args.page_count, B), 
+                            make_shape(mainloop_args.pages_per_seq, B), 
                             mainloop_args.stride_page_table);
     auto mPT = mPT_l(_, batch_coord);
     
@@ -855,9 +856,10 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
     auto mQL = make_tensor(make_gmem_ptr(mainloop_args.ptr_q_latent), make_shape(H, D_latent, B), mainloop_args.stride_q_latent);
     auto mQR = make_tensor(make_gmem_ptr(mainloop_args.ptr_q_rope), make_shape(H, D_rope, B), mainloop_args.stride_q_rope);
 
-    int  paged_B = mainloop_args.page_count;
+    int paged_BT = mainloop_args.pages_per_seq;
+    int paged_BC = mainloop_args.total_pages;
     auto paged_K = Pow2{mainloop_args.page_size};
-    auto mPT_l = make_tensor(make_gmem_ptr(mainloop_args.ptr_page_table), make_shape(paged_B, B), mainloop_args.stride_page_table);
+    auto mPT_l = make_tensor(make_gmem_ptr(mainloop_args.ptr_page_table), make_shape(paged_BT, B), mainloop_args.stride_page_table);
 
     int batch_coord = get<2>(blk_coord);
     auto mPT = mPT_l(_, batch_coord);
@@ -935,28 +937,28 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
         make_gmem_ptr(mainloop_args.ptr_c_latent),
         ComposedLayout{
             make_layout(
-                make_shape(make_shape(paged_K, paged_B), _1{}),
+                make_shape(make_shape(paged_K, paged_BC), _1{}),
                 make_stride(make_stride(get<0>(mainloop_args.stride_c_latent), example::CustomStride(gather, get<2>(mainloop_args.stride_c_latent))), get<1>(mainloop_args.stride_c_latent))),
             make_coord(_0{}, _0{}),
-            make_identity_layout(make_shape(paged_K * paged_B, D_latent))});
+            make_identity_layout(make_shape(paged_K * paged_BC, D_latent))});
 
     auto mKR = make_tensor(
         make_gmem_ptr(mainloop_args.ptr_k_rope),
         ComposedLayout{
             make_layout(
-                make_shape(make_shape(paged_K, paged_B), _1{}),
+                make_shape(make_shape(paged_K, paged_BC), _1{}),
                 make_stride(make_stride(get<0>(mainloop_args.stride_k_rope), example::CustomStride(gather, get<2>(mainloop_args.stride_k_rope))), get<1>(mainloop_args.stride_k_rope))),
             make_coord(_0{}, _0{}),
-            make_identity_layout(make_shape(paged_K * paged_B, D_latent))});
+            make_identity_layout(make_shape(paged_K * paged_BC, D_latent))});
 
     auto mCLT = make_tensor(
         make_gmem_ptr(mainloop_args.ptr_c_latent),
         ComposedLayout{
             make_layout(
-                make_shape(_1{}, make_shape(paged_K, paged_B)),
+                make_shape(_1{}, make_shape(paged_K, paged_BC)),
                 make_stride(get<1>(mainloop_args.stride_c_latent), make_stride(get<0>(mainloop_args.stride_c_latent), example::CustomStride(gather, get<2>(mainloop_args.stride_c_latent))))),
             make_coord(_0{}, _0{}),
-            make_identity_layout(make_shape(D_latent, paged_K * paged_B))});
+            make_identity_layout(make_shape(D_latent, paged_K * paged_BC))});
 
     auto gCL = local_tile(mCL, TileShapeQK{}, make_coord(_,_,_), Step<X, _1, _1>{});
     auto gKR = local_tile(mKR, TileShapeQK{}, make_coord(_,_,_), Step<X, _1, _1>{});
@@ -1113,18 +1115,20 @@ struct Sm100FmhaMlaKernelTmaWarpspecialized {
     auto mQL = mainloop_params.tma_load_q_latent.get_tma_tensor(make_shape(H, D_latent, B));
     auto mQR = mainloop_params.tma_load_q_rope.get_tma_tensor(make_shape(H, D_rope, B));
 
-    int paged_B = B;
+    int paged_BT = B;
+    int paged_BC = B;
     int paged_K = K;
     if constexpr (kIsPaged) {
-      paged_B = mainloop_args.page_count;
+      paged_BT = mainloop_args.pages_per_seq;
+      paged_BC = mainloop_args.total_pages;
       paged_K = mainloop_args.page_size;
     }
-    auto mPT_l = make_tensor(make_gmem_ptr(mainloop_args.ptr_page_table), make_shape(paged_B, B), mainloop_args.stride_page_table);
+    auto mPT_l = make_tensor(make_gmem_ptr(mainloop_args.ptr_page_table), make_shape(paged_BT, B), mainloop_args.stride_page_table);
 
-    auto mCL = mainloop_params.tma_load_c_latent.get_tma_tensor(make_shape(paged_K, D_latent, paged_B));
-    auto mKR = mainloop_params.tma_load_k_rope.get_tma_tensor(make_shape(paged_K, D_rope, paged_B));
+    auto mCL = mainloop_params.tma_load_c_latent.get_tma_tensor(make_shape(paged_K, D_latent, paged_BC));
+    auto mKR = mainloop_params.tma_load_k_rope.get_tma_tensor(make_shape(paged_K, D_rope, paged_BC));
 
-    auto mCLT = mainloop_params.tma_load_c_latent_transpose.get_tma_tensor(make_shape(D_latent, paged_K, paged_B));
+    auto mCLT = mainloop_params.tma_load_c_latent_transpose.get_tma_tensor(make_shape(D_latent, paged_K, paged_BC));
 
     auto gQL = local_tile(mQL, TileShapeQK{}, make_coord(_,_,_), Step<_1, X, _1>{});
     auto gQR = local_tile(mQR, TileShapeQK{}, make_coord(_,_,_), Step<_1, X, _1>{});
