@@ -239,8 +239,7 @@ public:
     class TileShapeMNK,
     class TileCoordMNKL,
     class Accumulator,
-    class TiledMma,
-    class ResidueMNK
+    class TiledMma
   >
   CUTLASS_DEVICE void
   operator() (
@@ -249,13 +248,9 @@ public:
       TileCoordMNKL tile_coord_mnkl,
       Accumulator accumulators, 
       TiledMma tiled_mma,
-      ResidueMNK residue_mnk,
-      int thread_idx,
-      char* smem) {
-    
+      int thread_idx) {
+
     (void) tiled_mma;
-    (void) residue_mnk;
-    (void) smem;
     using namespace cute;
 
     static_assert(cute::rank(CtaTileMNK{}) == 3, "CtaTileMNK must be rank-3: [CTA_M, CTA_N, CTA_K]");

@@ -201,18 +201,14 @@ public:
     if constexpr (is_source_supported) {
       ElementC const* ptr_C_first_batch = reinterpret_cast<ElementC const*>(args.ptr_C);
       TensorC mC_mnl = make_tensor(make_gmem_ptr(ptr_C_first_batch), make_layout(make_shape(M, N, L), InternalStrideC{}));
-      xe_load_c = make_tiled_copy(Copy_Atom<Trait_C, ElementC>{}.with(mC_mnl),
-                                  Layout<CopyThreadShape>{},
-                                  make_layout(shape_div(typename Trait_C::BlockShape{}, CopyThreadShape{})));
+      xe_load_c = {xe_load_c.with(mC_mnl)};
     }
 
     XE_Copy_D xe_store_d = {};
     if constexpr (is_destination_supported) {
       ElementD* ptr_D_first_batch = reinterpret_cast<ElementD*>(args.ptr_D);
       TensorD mD_mnl = make_tensor(make_gmem_ptr(ptr_D_first_batch), make_layout(make_shape(M, N, L), InternalStrideD{}));
-      xe_store_d = make_tiled_copy(Copy_Atom<Trait_D, ElementD>{}.with(mD_mnl),
-                                   Layout<CopyThreadShape>{},
-                                   make_layout(shape_div(typename Trait_D::BlockShape{}, CopyThreadShape{})));
+      xe_store_d = {xe_store_d.with(mD_mnl)};
     }
 
     return {
@@ -273,11 +269,9 @@ public:
       Accumulator accumulators, 
       TiledMma tiled_mma,
       int thread_idx,
-      char* smem,
       LoadStoreTensor const& load_store_tensors) {
     
     (void) tiled_mma;
-    (void) smem;
     using namespace cute;
 
     static_assert(cute::rank(CtaTileMNK{}) == 3, "CtaTileMNK must be rank-3: [CTA_M, CTA_N, CTA_K]");

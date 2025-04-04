@@ -95,16 +95,20 @@ struct CollectiveMma<MainloopIntelPVCGroup<Stages, Schedule>, TileShape_, Elemen
   static constexpr auto Num_SGs = ATOM_N * ATOM_M * ATOM_K;
   static constexpr uint32_t MaxThreadsPerBlock = size(TiledMma{});
 
+  using CopyThreadShape = Shape<_1, Int<SubgroupSize>>;
+
   using traits_load_A = Copy_Traits<GmemTiledCopyA, InternalStrideA>;
   using atom_load_A = Copy_Atom<traits_load_A, ElementA>;
+  using val_layout_load_A = decltype(make_layout(shape_div(typename traits_load_A::BlockShape{}, CopyThreadShape{})));
+  using Copy_A = decltype(make_tiled_copy(atom_load_A{}, Layout<CopyThreadShape>{}, val_layout_load_A{}));
 
   using traits_load_B = Copy_Traits<GmemTiledCopyB, InternalStrideB>;
   using atom_load_B = Copy_Atom<traits_load_B, ElementB>;
+  using val_layout_load_B = decltype(make_layout(shape_div(typename traits_load_B::BlockShape{}, CopyThreadShape{})));
+  using Copy_B = decltype(make_tiled_copy(atom_load_B{}, Layout<CopyThreadShape>{}, val_layout_load_B{}));
 
   using TensorMKL = decltype(make_tensor(make_gmem_ptr(static_cast<ElementA const*>(nullptr)), make_shape(0,0,0), InternalStrideA{}));   //(m, k)
   using TensorNKL = decltype(make_tensor(make_gmem_ptr(static_cast<ElementB const*>(nullptr)), make_shape(0,0,0), InternalStrideB{}));   //(n, k)
-
-  using CopyThreadShape = Shape<_1, Int<SubgroupSize>>;
 
   // Host side kernel arguments
   struct Arguments {
@@ -115,8 +119,6 @@ struct CollectiveMma<MainloopIntelPVCGroup<Stages, Schedule>, TileShape_, Elemen
   };
 
   struct Params {
-    TensorMKL mA;
-    TensorNKL mB;
     ElementA const** ptr_A;
     StrideA dA;
     ElementB const** ptr_B;
@@ -144,12 +146,7 @@ struct CollectiveMma<MainloopIntelPVCGroup<Stages, Schedule>, TileShape_, Elemen
     auto init_N = get<1>(problem_shape_MNK);
     auto init_K = get<2>(problem_shape_MNK);
 
-    TensorMKL mA_mkl = make_tensor(make_gmem_ptr(ptr_A_first_batch), make_layout(make_shape(init_M,init_K,mock_L), InternalStrideA{}/*args.dA*/));
-    TensorNKL mB_nkl = make_tensor(make_gmem_ptr(ptr_B_first_batch), make_layout(make_shape(init_N,init_K,mock_L), InternalStrideB{}/*args.dB*/));
-
     return Params{
-      mA_mkl,
-      mB_nkl,
       args.ptr_A,
       args.dA,
       args.ptr_B,
@@ -162,20 +159,15 @@ struct CollectiveMma<MainloopIntelPVCGroup<Stages, Schedule>, TileShape_, Elemen
             class BlkCoord, class LoadTensors>
   CUTLASS_DEVICE void operator()(FrgTensorD &accum, TensorA gA, TensorB gB, FrgTensorC const &src_accum,
                                  KTileIterator k_tile_iter, int const& k_tile_count,
-                                 BlkCoord const &blk_coord, int const &K_start, int const& thread_idx, char *smem_buf,
+                                 BlkCoord const &blk_coord, int const &K_start, int const& thread_idx,
                                  Params const &mainloop, LoadTensors const& load_tensors) {
     static_assert(is_rmem<FrgTensorD>::value, "D tensor must be rmem resident.");
     static_assert(is_rmem<FrgTensorC>::value, "C tensor must be rmem resident.");
 
     (void)thread_idx;
-    (void)smem_buf;
 
-    auto tiled_copy_a = make_tiled_copy(atom_load_A{}.with(get<0>(load_tensors)),
-                                   Layout<CopyThreadShape>{},
-                                   make_layout(shape_div(typename traits_load_A::BlockShape{}, CopyThreadShape{})));
-    auto tiled_copy_b = make_tiled_copy(atom_load_B{}.with(get<1>(load_tensors)),
-                                   Layout<CopyThreadShape>{},
-                                   make_layout(shape_div(typename traits_load_B::BlockShape{}, CopyThreadShape{})));
+    Copy_A tiled_copy_a{Copy_A{}.with(get<0>(load_tensors))};
+    Copy_B tiled_copy_b{Copy_B{}.with(get<1>(load_tensors))};
 
     auto thr_copy_A = tiled_copy_a.get_slice(thread_idx);
     auto thr_copy_B = tiled_copy_b.get_slice(thread_idx);
@@ -235,7 +227,7 @@ struct CollectiveMma<MainloopIntelPVCGroup<Stages, Schedule>, TileShape_, Elemen
     //
     const auto k_start_idx = crd2idx((*k_tile_iter), make_shape(K_start));
     constexpr int barrier_scope = 2;
-    int prefetch_k = 0;
+    int prefetch_k = k_start_idx;
 
     CUTLASS_PRAGMA_UNROLL
     for (; prefetch_k < DispatchPolicy::Stages; prefetch_k++) {

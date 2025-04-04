@@ -291,7 +291,6 @@ public:
         tile_coord,
         K,
         thread_idx,
-        smem_buf,
         params.mainloop,
         AB_tensors
       );
@@ -314,7 +313,6 @@ public:
           accumulators,
           tiled_mma,
           thread_idx,
-          smem_buf,
           CD_tensors
         );
       }

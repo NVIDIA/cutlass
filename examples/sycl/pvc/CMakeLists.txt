@@ -107,4 +107,6 @@ cutlass_example_add_executable(
 cutlass_example_add_executable(
   pvc_gemm_w8a8
   pvc_gemm_w8a8.cpp
+  TEST_COMMAND_OPTIONS
+  TEST_BATCHES
 )

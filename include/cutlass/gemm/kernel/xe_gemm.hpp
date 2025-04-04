@@ -245,12 +245,6 @@ public:
     Tensor gA = local_tile(mA_mkl, select<0,2>(blk_shape), make_coord(m_coord,_,l_coord));
     Tensor gB = local_tile(mB_nkl, select<1,2>(blk_shape), make_coord(n_coord,_,l_coord));
 
-    // Compute tile residues for predication
-    auto m_max_coord = M - get<0>(subgroup_shape) * m_coord;                             // M - SUB_M * m_coord
-    auto n_max_coord = N - get<1>(subgroup_shape) * n_coord;                             // N - SUB_N * n_coord
-    auto k_residue   = K - get<2>(subgroup_shape) * (K / get<2>(subgroup_shape));        // K - SUB_K * k_coord_max
-    auto residue_mnk = make_tuple(m_max_coord, n_max_coord, k_residue);
-
     // Allocate the tiled_mma and the accumulators for the (M,N) subgroup_shape
     TiledMma tiled_mma;
 
@@ -258,7 +252,7 @@ public:
     clear(accumulators);
 
     auto k_tile_iter  = cute::make_coord_iterator(idx2crd(0, make_shape(K)), make_shape(K));
-    int  k_tile_count = K / get<2>(workgroup_shape);
+    int  k_tile_count = ceil_div(K, get<2>(workgroup_shape));
 
     // Perform the collective scoped MMA
     CollectiveMainloop collective_mma;
@@ -268,11 +262,8 @@ public:
       gB,
       accumulators,
       k_tile_iter, k_tile_count,
-      residue_mnk,
-      blk_coord_mnkl,
       K,
       thread_idx,
-      smem_buf,
       params.mainloop
     );
 
@@ -283,9 +274,7 @@ public:
       blk_coord_mnkl,
       accumulators,
       tiled_mma,
-      residue_mnk,
-      thread_idx,
-      smem_buf
+      thread_idx
     );
   }
 };

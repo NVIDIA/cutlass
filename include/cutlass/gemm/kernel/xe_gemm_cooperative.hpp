@@ -265,13 +265,6 @@ public:
       const int work_k_tile_start = TileScheduler::get_work_k_tile_start(work_tile_info);
       auto k_tile_iter = cute::make_coord_iterator(idx2crd(work_k_tile_start, make_shape(K)), make_shape(K));
 
-      auto k_residue = K - get<2>(subgroup_shape) * (K / get<2>(subgroup_shape));        // K - SUB_K * k_coord_max
-
-      // Compute tile residues for predication
-      auto m_max_coord = M - get<0>(subgroup_shape) * m_coord;                             // M - SUB_M * m_coord
-      auto n_max_coord = N - get<1>(subgroup_shape) * n_coord;                             // N - SUB_N * n_coord
-      auto residue_mnk = make_tuple(m_max_coord, n_max_coord, k_residue);
-
       TiledMma tiled_mma;
       Tensor accumulators = partition_fragment_C(tiled_mma, take<0,2>(workgroup_shape)); 
 
@@ -284,11 +277,8 @@ public:
         gB,
         accumulators,
         k_tile_iter, work_k_tile_count,
-        residue_mnk,
-        tile_coord,
         K,
         thread_idx,
-        smem_buf,
         params.mainloop
       );
 
@@ -305,9 +295,7 @@ public:
           tile_coord,
           accumulators,
           tiled_mma,
-          residue_mnk,
-          thread_idx,
-          smem_buf
+          thread_idx
         );
       }
 
