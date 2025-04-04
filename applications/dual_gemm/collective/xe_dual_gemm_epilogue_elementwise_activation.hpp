@@ -59,7 +59,8 @@ namespace collective {
       class ElementD_,
       class StrideD_,
       class CopyOpG2R_,
-      class CopyOpR2G_>
+      class CopyOpR2G_,
+      class ElemWiseBinary_>
   class DualGemmElemActEpilogue;
 
   /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -71,7 +72,8 @@ namespace collective {
       class ElementD_,
       class StrideD_,
       class CopyOpG2R_,
-      class CopyOpR2G_>
+      class CopyOpR2G_, 
+      class ElemWiseBinary_>
   class DualGemmElemActEpilogue<
       IntelPVCEpilogue,
       CtaTileMNK_,
@@ -80,7 +82,8 @@ namespace collective {
       ElementD_,
       StrideD_,
       CopyOpG2R_,
-      CopyOpR2G_> {
+      CopyOpR2G_,
+      ElemWiseBinary_> {
 public:
   //
   // Type Aliases
@@ -126,8 +129,6 @@ public:
 
   // Host side epilogue arguments
   struct Arguments {
-    ElementC const* ptr_C;
-    StrideC dC;
     ElementD* ptr_D;
     StrideD dD;
   };
@@ -268,29 +269,20 @@ public:
     auto thread_xe_store_d = params.xe_store_d.get_thread_slice(thread_idx);
     Tensor tCgD = thread_xe_store_d.partition_D(gD);
 
-    cutlass::epilogue::thread::SiLu<ElementCompute> silu;
-    cutlass::multiplies<ElementCompute> mul;
+    ElemWiseBinary_ elem_wise_binary;
 
     CUTLASS_PRAGMA_UNROLL
-    for(int j = 0; j < FragsN; j++) {
-
+    for(int epi_n = 0; epi_n < FragsN; epi_n++) {
       CUTLASS_PRAGMA_UNROLL
-      for(int i = 0; i < FragsM; i++) {
+      for(int epi_m = 0; epi_m < FragsM; epi_m++) {
         Tensor trD = make_tensor<ElementAccumulator>(Shape<Int<FragmentSize>>{});
-
         CUTLASS_PRAGMA_UNROLL
-        for (int k = 0; k < FragmentSize; k++) {
-          int offset = k + (i + j * FragsM) * FragmentSize;
-
-          ElementCompute const& const_accum0 = *reinterpret_cast<const ElementCompute*>(accumulators0.data() + offset);
-          ElementCompute const& const_accum1 = *reinterpret_cast<const ElementCompute*>(accumulators1.data() + offset);
-
-          auto silu_lhs = silu(const_accum0);
-          trD(k) = mul(silu_lhs, const_accum1);
+        for (int epi_v = 0; epi_v < FragmentSize; epi_v++) {
+          trD(epi_v) = elem_wise_binary(accumulators0(epi_v,epi_m,epi_n), accumulators1(epi_v,epi_m,epi_n));
         }
 
         if constexpr (is_destination_supported) {
-          copy(params.xe_store_d, trD, tCgD(_, i, j));
+          copy(params.xe_store_d, trD, tCgD(_, epi_m, epi_n));
         }
       }
     }

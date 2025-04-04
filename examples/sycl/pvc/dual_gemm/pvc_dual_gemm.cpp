@@ -49,6 +49,7 @@
 #include "../common.hpp"
 #include "helper.h"
 #include "tensor_silu.h"
+#include "dual_gemm/thread/xe_binary_elem_wise_op.hpp"
 
 using namespace cute;
 
@@ -368,7 +369,7 @@ struct ExampleRunner {
       {block_A.get(), stride_A, block_B0.get(), stride_B, block_B1.get(), stride_B},
       epilogue_arguments0,
       epilogue_arguments1,
-      {nullptr, stride_C, block_D2.get(), stride_D},
+      {block_D2.get(), stride_D},
       hw_info
     };
 
@@ -425,20 +426,20 @@ struct ExampleRunner {
 
 };
 
-template <class ElementOutput, class ElementBias, class ElementCompute, class ElementAccumulator, bool UseBias>
+template <template <class> class ActivationFn, class ElementOutput, class ElementBias, class ElementCompute, class ElementAccumulator, bool UseBias>
 struct EpilogueOp;
 
-template <class ElementOutput, class ElementBias, class ElementCompute, class ElementAccumulator>
-struct EpilogueOp <ElementOutput, ElementBias, ElementCompute, ElementAccumulator, true> {
-  using type = cutlass::epilogue::fusion::LinCombPerRowBias<
+template <template <class>  class ActivationFn, class ElementOutput, class ElementBias, class ElementCompute, class ElementAccumulator>
+struct EpilogueOp <ActivationFn, ElementOutput, ElementBias, ElementCompute, ElementAccumulator, true> {
+  using type = cutlass::epilogue::fusion::LinCombPerRowBiasEltAct<ActivationFn,
       ElementOutput, ElementCompute, ElementBias, ElementAccumulator,
       ElementAccumulator, 128 / sizeof_bits_v<ElementBias>,
       cutlass::FloatRoundStyle::round_to_nearest>;
 };
 
-template <class ElementOutput, class ElementBias, class ElementCompute, class ElementAccumulator>
-struct EpilogueOp <ElementOutput, ElementBias, ElementCompute, ElementAccumulator, false> {
-  using type = cutlass::epilogue::fusion::LinearCombination<ElementOutput, ElementCompute,
+template <template <class> class ActivationFn, class ElementOutput, class ElementBias, class ElementCompute, class ElementAccumulator>
+struct EpilogueOp <ActivationFn, ElementOutput, ElementBias, ElementCompute, ElementAccumulator, false> {
+  using type = cutlass::epilogue::fusion::LinCombEltAct<ActivationFn, ElementOutput, ElementCompute,
           ElementAccumulator, ElementAccumulator, cutlass::FloatRoundStyle::round_to_nearest>;
 };
 
@@ -499,8 +500,8 @@ int run_dual_gemm(int argc, const char** argv)
   using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelPVC<PipelineStages>;
   using EpilogueDispatchPolicy = cutlass::epilogue::IntelPVCEpilogue;
 
-  using EpilogueOp0 = typename EpilogueOp<ElementOutput, ElementBias, ElementComputeEpilogue, ElementAccumulator, UseBias0>::type;
-  using EpilogueOp1 = typename EpilogueOp<ElementOutput, ElementBias, ElementComputeEpilogue, ElementAccumulator, UseBias1>::type;
+  using EpilogueOp0 = typename EpilogueOp<cutlass::epilogue::thread::Identity, ElementOutput, ElementBias, ElementComputeEpilogue, ElementAccumulator, UseBias0>::type;
+  using EpilogueOp1 = typename EpilogueOp<cutlass::epilogue::thread::Identity, ElementOutput, ElementBias, ElementComputeEpilogue, ElementAccumulator, UseBias1>::type;
 
   using FusionCallBacks0 = cutlass::epilogue::fusion::FusionCallbacks<EpilogueDispatchPolicy, EpilogueOp0, TileShape,
           decltype(tile_shape(TiledMma()))>;
@@ -532,6 +533,11 @@ int run_dual_gemm(int argc, const char** argv)
           XE_2D_U32x8x16_LD_N,
           XE_2D_U32x8x16_ST_N,
           WriteEpilogueOutput1>;
+  
+  using EpilogueOutputOp2 = cutlass::epilogue::thread::FusedElementWiseOpDualGemm <ElementOutput, 
+          cutlass::epilogue::thread::SiLu, 
+          cutlass::epilogue::thread::Identity,
+          cutlass::multiplies, ElementAccumulator, ElementAccumulator>;
 
   using CollectiveEpilogueActivation = cutlass::epilogue::collective::DualGemmElemActEpilogue<
           EpilogueDispatchPolicy,
@@ -541,7 +547,8 @@ int run_dual_gemm(int argc, const char** argv)
           ElementOutput,
           cutlass::gemm::TagToStrideC_t<LayoutD>,
           void,
-          XE_2D_U32x8x16_ST_N>;
+          XE_2D_U32x8x16_ST_N,
+          EpilogueOutputOp2>;
 
   // Mainloop
   using CollectiveMainloop = cutlass::gemm::collective::DualGemmMma<

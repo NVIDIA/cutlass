@@ -344,6 +344,8 @@ struct FusionCallbacks<
   using Impl::Impl;
 };
 
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// D = alpha * acc + beta * C + per-row bias
 template <
   class ElementOutput_,
   class ElementCompute_,
@@ -412,6 +414,91 @@ struct FusionCallbacks<
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+// D = activation(alpha * acc + beta * C + per-row bias)
+
+template <
+ // int FragmentSize,
+  //bool ReuseSmemC,
+ // bool DelayTmaStore,
+  template <class> class ActivationFn_,
+  class ElementOutput_,
+  class ElementCompute_,
+  class ElementBias_,
+  class ElementSource_,
+  class ElementScalar_,
+  int AlignmentBias_,
+  FloatRoundStyle RoundStyle_,
+  class CtaTileShapeMNK_,
+  class EpilogueTile_
+>
+struct FusionCallbacks<
+     epilogue::IntelPVCEpilogue,
+    fusion::LinCombPerRowBiasEltAct<
+      ActivationFn_, ElementOutput_, ElementCompute_, ElementBias_, ElementSource_, ElementScalar_, AlignmentBias_, RoundStyle_
+    >,
+    CtaTileShapeMNK_,
+    EpilogueTile_
+> : Sm90LinCombPerRowBiasEltAct<
+      CtaTileShapeMNK_, ActivationFn_, ElementOutput_, ElementCompute_, ElementBias_, ElementSource_, ElementScalar_, AlignmentBias_, RoundStyle_
+    > {
+
+  using ElementOutput = ElementOutput_;
+  using ElementCompute = ElementCompute_;
+  using ElementBias = ElementBias_;
+  using ElementSource = ElementSource_;
+  using ElementScalar = ElementScalar_;
+  static constexpr int AlignmentBias = AlignmentBias_;
+  using Impl =
+    Sm90LinCombPerRowBiasEltAct<
+      CtaTileShapeMNK_, ActivationFn_, ElementOutput, ElementCompute, ElementBias, ElementSource, ElementScalar, AlignmentBias, RoundStyle_
+    >;
+  using Operation =
+    fusion::LinCombPerRowBiasEltAct<
+      ActivationFn_, ElementOutput, ElementCompute, ElementBias, ElementSource, ElementScalar, AlignmentBias, RoundStyle_
+    >;
+
+  struct Arguments {
+    ElementScalar alpha = ElementScalar(1);
+    ElementScalar beta = ElementScalar(0);
+    ElementScalar const* alpha_ptr = nullptr;
+    ElementScalar const* beta_ptr = nullptr;
+
+    using StrideAlpha = Stride<_0,_0,int64_t>;
+    using StrideBeta  = Stride<_0,_0,int64_t>;
+    StrideAlpha dAlpha = {_0{}, _0{}, 0};
+    StrideBeta  dBeta  = {_0{}, _0{}, 0};
+
+    using StrideBias = Stride<_1,_0,int64_t>;
+    ElementBias const* bias_ptr = nullptr;
+    StrideBias dBias = {};
+
+    using ActivationArguments = typename Sm90Compute<ActivationFn_, ElementOutput, ElementCompute, RoundStyle_>::Arguments;
+    ActivationArguments activation = ActivationArguments();
+
+    operator typename Impl::Arguments() const {
+      return
+        {    // unary op : activation(beta * C + (alpha * acc + bias))
+          {    // ternary op : beta * C + (alpha * acc + bias)
+            {{beta}, {beta_ptr}, {dBeta}}, // leaf args : beta
+            {},                   // leaf args : C
+            {                     // ternary op : alpha * acc + bias
+              {{alpha}, {alpha_ptr}, {dAlpha}}, // leaf args : alpha
+              {},                     // leaf args : acc
+              {bias_ptr, ElementBias(0), dBias}, // leaf args : bias
+              {}                  // ternary args : multiply_add
+            },                    // end ternary op
+            {} // ternary args : multiply_add
+          },   // end ternary op
+          activation // unary args : activation
+        };   // end unary op
+    }
+  };
+
+  // Ctor inheritance
+  using Impl::Impl;
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////
 // D = alpha * acc + beta * C, where beta and alpha can be vectors for each batch
 template <
   class ElementOutput_,

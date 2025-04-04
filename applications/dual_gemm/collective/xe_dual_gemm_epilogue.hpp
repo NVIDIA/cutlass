@@ -168,10 +168,6 @@ public:
     typename FusionCallbacks::Params thread{};
     XE_Copy_C xe_load_c;
     XE_Copy_D xe_store_d;
-    ElementC const* ptr_C = nullptr;
-    StrideC dC{};
-    ElementD* ptr_D = nullptr;
-    StrideD dD{};
   };
 
   //
@@ -209,11 +205,7 @@ public:
     return {
       FusionCallbacks::to_underlying_arguments(problem_shape, args.thread, workspace),
       xe_load_c,
-      xe_store_d,
-      args.ptr_C,
-      args.dC,
-      args.ptr_D,
-      args.dD
+      xe_store_d
     };
   }
 
