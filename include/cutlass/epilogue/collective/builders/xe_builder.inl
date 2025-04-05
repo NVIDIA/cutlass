@@ -133,6 +133,7 @@ template <
   class ElementD,
   class GmemLayoutTagD,
   int AlignmentD,
+  class EpilogueScheduleType,
   class FusionOpOrCallbacks
   >
   struct CollectiveBuilder<
@@ -149,12 +150,13 @@ template <
       ElementD,
       GmemLayoutTagD,
       AlignmentD,
-      EpilogueScheduleAuto, // We do not have different type of epilogue support yet
+      EpilogueScheduleType, 
       FusionOpOrCallbacks,
       cute::enable_if_t<
-        cute::is_same_v<GmemLayoutTagC,  cutlass::layout::RowMajor> &&
-        cute::is_same_v<GmemLayoutTagD,  cutlass::layout::RowMajor> &&
+        cute::is_same_v<cute::remove_pointer_t<GmemLayoutTagC>,  cutlass::layout::RowMajor> &&
+        cute::is_same_v<cute::remove_pointer_t<GmemLayoutTagD>,  cutlass::layout::RowMajor> &&
         cute::is_same_v<EpilogueTileType, EpilogueTileAuto> &&
+        cute::is_any_of_v<EpilogueScheduleType, EpilogueScheduleAuto, IntelPVCEpilogue, IntelPVCGroupEpilogue> &&
         detail::FusionOpInfo<FusionOpOrCallbacks>::HasBuilder
       >
     >{
@@ -163,16 +165,15 @@ template <
           "Trying to use Intel pipeline on Non Intel hardware");
       #endif
       static_assert(is_static<TileShape_MNK>::value);
-      static_assert(cute::is_same_v<ElementC, float>, "ElementC needs to be float for the Intel pipeline");
+      static_assert(cute::is_any_of_v<ElementC, float, void>, "ElementC needs to be float for the Intel pipeline");
       
-      // Note, this must match the TiledMma definition in the GEMM builder
-      using TiledMma =
-          TiledMMA<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
-                   Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>,
-                   Tile<Layout<Shape<_8, _8, _4>, Stride<_1, _32, _8>>,
-                        Layout<Shape<_16, _4, _4>, Stride<_1, _64, _16>>, _32>>;
-      
-      using DispatchPolicy = cutlass::epilogue::IntelPVCEpilogue;
+      using EpilogueSchedule = std::conditional_t<cute::is_same_v<EpilogueScheduleType, EpilogueScheduleAuto>, 
+                                                  IntelPVCEpilogue, 
+                                                  EpilogueScheduleType>;
+      static constexpr bool IsGroup = cute::is_same_v<EpilogueSchedule, IntelPVCGroupEpilogue>;
+      using DispatchPolicy = std::conditional_t<IsGroup, 
+                                                IntelPVCGroupEpilogue, 
+                                                IntelPVCEpilogue>;
       using CopyOpG2R = XE_2D_U32x8x16_LD_N;
       using CopyOpR2G = XE_2D_U32x8x16_ST_N;
 
@@ -182,15 +183,17 @@ template <
       using SmemLayoutAtomD_ = void;
       using CopyOpR2S_ = void;
 
-      using FusionCallbacks = typename detail::FusionOpInfo<FusionOpOrCallbacks>::template FusionCallbacks<DispatchPolicy,  TileShape_MNK, decltype(tile_shape(TiledMma())), CopyOpG2R>;
+      //TODO(Codeplay): Should FusionCallbacks use DispatchPolicy IntelPVCGroupEpilogue for group gemm? That does not work.
+      using FusionCallbacks = typename detail::FusionOpInfo<FusionOpOrCallbacks>::template FusionCallbacks<
+                                  IntelPVCEpilogue, TileShape_MNK, TileShape_MNK, CopyOpG2R>;
 
       using CollectiveOp = cutlass::epilogue::collective::CollectiveEpilogue<
             DispatchPolicy,
             TileShape_MNK,
             ElementAccumulator,
-            cutlass::gemm::TagToStrideC_t<GmemLayoutTagC>,
+            cutlass::gemm::TagToStrideC_t<std::conditional_t<IsGroup, GmemLayoutTagC*, GmemLayoutTagC>>,
             ElementD,
-            cutlass::gemm::TagToStrideC_t<GmemLayoutTagD>,
+            cutlass::gemm::TagToStrideC_t<std::conditional_t<IsGroup, GmemLayoutTagD*, GmemLayoutTagD>>,
             FusionCallbacks,
             CopyOpG2R,
             SmemLayoutAtomC_,

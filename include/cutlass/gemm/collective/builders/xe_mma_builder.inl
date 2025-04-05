@@ -67,10 +67,10 @@ struct CollectiveBuilder<
   cutlass::gemm::collective::StageCountAuto, 
   KernelScheduleType,
   cute::enable_if_t<
-    (cute::is_same_v<KernelScheduleType, KernelPVC> ||
-     cute::is_same_v<KernelScheduleType, KernelScheduleAuto>) &&  
-    cute::is_same_v<GmemLayoutATag, cutlass::layout::RowMajor> && // Different struct specialization because this will change copy atoms
-    cute::is_same_v<GmemLayoutBTag, cutlass::layout::RowMajor>
+    cute::is_any_of_v<KernelScheduleType, KernelScheduleAuto, KernelPVC, KernelPVCCooperative, KernelPVCPtrArrayCooperative> &&
+    cute::is_same_v<ElementA, ElementB> &&
+    cute::is_any_of_v<ElementA, bfloat16_t, half_t> &&
+    cute::is_any_of_v<ElementB, bfloat16_t, half_t>
   >
     >{
 
@@ -79,23 +79,43 @@ struct CollectiveBuilder<
           "Trying to use Intel pipeline on Non Intel hardware");
       #endif
       static_assert(is_static<TileShape_MNK>::value);
-      static_assert(cute::is_same_v<ElementA, bfloat16_t>, "Intel multi-stage pipeline requires ElementA to be of type bfloat16_t");
-      static_assert(cute::is_same_v<ElementB, bfloat16_t>, "Intel multi-stage pipeline requires ElementB to be of type bfloat16_t");
       static_assert(cute::is_same_v<ElementAccumulator, float>, "Intel multi-stage pipeline requires ElementC to be of type float");
 
-      //Prepare Template arguments required of CollectiveMainLoop
+      using MMAAtom = MMA_Atom<std::conditional_t<cute::is_same_v<ElementA, bfloat16_t>,
+                                                  XE_8x16x16_F32BF16BF16F32_TT,
+                                                  XE_8x16x16_F32F16F16F32_TT>>;
+      
+      // Prepare Template arguments required of CollectiveMainLoop
+      using atoms_M = _8;
+      using atoms_N = _4;
       using TiledMma =
-          typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
-                                        Layout<TileShape_MNK>,
-                                        Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>>::TiledMMA;
+          typename TiledMMAHelper<MMAAtom,
+                                  Layout<TileShape_MNK>,
+                                  Layout<Shape<atoms_M, atoms_N, _1>, Stride<atoms_N, _1, _0>>>::TiledMMA;
 
-      static constexpr int PipelineStages = 3;
-      using DispatchPolicy = cutlass::gemm::MainloopIntelPVC<PipelineStages>;
+      static constexpr bool IsGroup = cute::is_same_v<KernelScheduleType, KernelPVCPtrArrayCooperative>;
 
-      using GmemTiledCopyA = XE_2D_U16x16x16_LD_N;
-      using GmemTiledCopyB = XE_2D_U16x16x16_LD_V;
+      using KernelSchedule = std::conditional_t<cute::is_same_v<KernelScheduleType, KernelScheduleAuto>, KernelPVC, KernelScheduleType>;
+      static constexpr int PipelineStages = IsGroup ? 2 : 3;
+      using DispatchPolicy = std::conditional_t<IsGroup, 
+                                                cutlass::gemm::MainloopIntelPVCGroup<PipelineStages, KernelSchedule>,
+                                                cutlass::gemm::MainloopIntelPVC<PipelineStages, KernelSchedule>>;
 
-      //PVC pipeline does not use shared memory
+      static constexpr auto tile_M = get<0>(TileShape_MNK{});
+      static constexpr auto tile_N = get<1>(TileShape_MNK{});
+      static constexpr auto tile_K = get<2>(TileShape_MNK{});
+      using GmemTiledCopyA = std::conditional_t<cute::is_same_v<GmemLayoutATag, cutlass::layout::RowMajor>,
+                                                std::conditional_t< tile_M/atoms_M{}>=_32{} && tile_K>=_32{}, 
+                                                                    XE_2D_U16x32x32_LD_N, 
+                                                                    XE_2D_U16x16x16_LD_N>,
+                                                XE_2D_U16x16x16_LD_T>;
+      using GmemTiledCopyB = std::conditional_t<cute::is_same_v<GmemLayoutBTag, cutlass::layout::RowMajor>,
+                                                std::conditional_t< tile_N/atoms_N{}>=_32{} && tile_K>=_32{}, 
+                                                                    XE_2D_U16x32x32_LD_V, 
+                                                                    XE_2D_U16x16x16_LD_V>,
+                                                XE_2D_U16x16x16_LD_T>;
+
+      // PVC pipeline does not use shared memory
       using SmemLayoutAtomA = void; 
       using SmemLayoutAtomB = void; 
       using SmemCopyAtomA = void;
@@ -108,9 +128,9 @@ struct CollectiveBuilder<
               DispatchPolicy,
               TileShape_MNK,
               ElementA,
-              cutlass::gemm::TagToStrideA_t<GmemLayoutATag>,
+              cutlass::gemm::TagToStrideA_t<std::conditional_t<IsGroup, GmemLayoutATag*, GmemLayoutATag>>,
               ElementB,
-              cutlass::gemm::TagToStrideB_t<GmemLayoutBTag>,
+              cutlass::gemm::TagToStrideB_t<std::conditional_t<IsGroup, GmemLayoutBTag*, GmemLayoutBTag>>,
               TiledMma,
               GmemTiledCopyA,
               SmemLayoutAtomA,

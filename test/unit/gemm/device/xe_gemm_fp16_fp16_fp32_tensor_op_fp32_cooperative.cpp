@@ -53,21 +53,20 @@ struct XE_Device_Gemm_fp16_fp16_f32_tensor_op_f32_cooperative {
     float, layout::RowMajor,
     float>;
 
-  using DispatchPolicy = gemm::MainloopIntelPVC<3, gemm::KernelPVCCooperative>;
-
-  using CollectiveMainloop = gemm::collective::CollectiveMma<
-    DispatchPolicy, Config::TileShape,
-    ElementA, detail::TagToStrideA_t<LayoutA>,
-    ElementB, detail::TagToStrideB_t<LayoutB>,
-    Config::TiledMma,
-    Config::GmemTiledCopyA, void, void, cute::identity,  // A
-    Config::GmemTiledCopyB, void, void, cute::identity   // B
-  >;
+  using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+    cutlass::arch::IntelPVC, cutlass::arch::OpClassTensorOp,
+    ElementA, LayoutA, 1,
+    ElementB, LayoutB, 1,
+    float,
+    typename Config::TileShape, Shape<_1, _1, _1>,
+    cutlass::gemm::collective::StageCountAuto,
+    cutlass::gemm::KernelPVCCooperative
+  >::CollectiveOp;
 
   using GemmKernel = gemm::kernel::GemmUniversal<
       cute::Shape<int,int,int,int>,
       CollectiveMainloop,
-      Config::CollectiveEpilogue,
+      typename Config::CollectiveEpilogue,
       gemm::StreamKScheduler
   >;
 

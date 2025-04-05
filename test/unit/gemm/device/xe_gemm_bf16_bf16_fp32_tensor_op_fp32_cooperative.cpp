@@ -46,7 +46,6 @@ template <typename LayoutA, typename LayoutB>
 struct XE_Device_Gemm_bf16_bf16_f32_tensor_op_f32_cooperative {
   using ElementA = cute::bfloat16_t;
   using ElementB = cute::bfloat16_t;
-  using DispatchPolicy = gemm::MainloopIntelPVC<3, gemm::KernelPVCCooperative>;
 
   using Config = gemm::device::DefaultGemmConfigurationToCutlass3Types<
     arch::OpClassTensorOp, arch::IntelPVC,
@@ -55,13 +54,15 @@ struct XE_Device_Gemm_bf16_bf16_f32_tensor_op_f32_cooperative {
     float, layout::RowMajor,
     float>;
 
-  using CollectiveMainloop = gemm::collective::CollectiveMma<
-      DispatchPolicy, typename Config::TileShape,
-      ElementA, detail::TagToStrideA_t<LayoutA>,
-      ElementB, detail::TagToStrideB_t<LayoutB>,
-      typename Config::TiledMma,
-      typename Config::GmemTiledCopyA, void, void, cute::identity,  // A
-      typename Config::GmemTiledCopyB, void, void, cute::identity>; // B
+  using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+    cutlass::arch::IntelPVC, cutlass::arch::OpClassTensorOp,
+    ElementA, LayoutA, 1,
+    ElementB, LayoutB, 1,
+    float,
+    typename Config::TileShape, Shape<_1, _1, _1>,
+    cutlass::gemm::collective::StageCountAuto,
+    cutlass::gemm::KernelPVCCooperative
+  >::CollectiveOp;
 
   using Gemm = gemm::device::GemmUniversalAdapter<
     gemm::kernel::GemmUniversal<

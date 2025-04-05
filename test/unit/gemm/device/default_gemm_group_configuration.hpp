@@ -97,23 +97,26 @@ struct DefaultGemmGroupConfiguration<
     decltype(tile_shape(TiledMma()))
   >;
 
-  using CollectiveEpilogue = cutlass::epilogue::collective::CollectiveEpilogue<
-    epilogue::IntelPVCGroupEpilogue,
-    TileShape,
-    float, TagToStrideC_t<LayoutC*>,
-    float, TagToStrideC_t<LayoutC*>,
-    FusionCallBacks,
-    XE_2D_U32x8x16_LD_N, void, void,
-    XE_2D_U32x8x16_ST_N, void, void>;
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::IntelPVC, cutlass::arch::OpClassTensorOp,
+      TileShape, Shape<_1, _1, _1>,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      float, float,
+      float, LayoutC, 1,
+      float, LayoutC, 1,
+      epilogue::IntelPVCGroupEpilogue,
+      EpilogueOp
+    >::CollectiveOp;
 
-  using CollectiveMainloop = cutlass::gemm::collective::CollectiveMma<
-    MainloopIntelPVCGroup<2>, TileShape,
-    bfloat16_t, cutlass::detail::TagToStrideA_t<LayoutA*>,
-    bfloat16_t, cutlass::detail::TagToStrideB_t<LayoutB*>,
-    TiledMma,
-    GmemTiledCopyA, void, void, cute::identity,  // A
-    GmemTiledCopyB, void, void, cute::identity   // B
-  >;
+  using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+    cutlass::arch::IntelPVC, cutlass::arch::OpClassTensorOp,
+    cute::bfloat16_t, LayoutA, 1,
+    cute::bfloat16_t, LayoutB, 1,
+    float,
+    TileShape, Shape<_1, _1, _1>,
+    cutlass::gemm::collective::StageCountAuto,
+    cutlass::gemm::KernelPVCPtrArrayCooperative
+  >::CollectiveOp;
 };
 
 // Intel XE MMA F32F16
@@ -152,23 +155,26 @@ struct DefaultGemmGroupConfiguration<
     decltype(tile_shape(TiledMma()))
   >;
 
-  using CollectiveEpilogue = cutlass::epilogue::collective::CollectiveEpilogue<
-    epilogue::IntelPVCGroupEpilogue,
-    TileShape,
-    float, TagToStrideC_t<LayoutC*>,
-    float, TagToStrideC_t<LayoutC*>,
-    FusionCallBacks,
-    XE_2D_U32x8x16_LD_N, void, void,
-    XE_2D_U32x8x16_ST_N, void, void>;
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::IntelPVC, cutlass::arch::OpClassTensorOp,
+      TileShape, Shape<_1, _1, _1>,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      float, float,
+      float, LayoutC, 1,
+      float, LayoutC, 1,
+      epilogue::IntelPVCGroupEpilogue,
+      EpilogueOp
+    >::CollectiveOp;
 
-  using CollectiveMainloop = cutlass::gemm::collective::CollectiveMma<
-    MainloopIntelPVCGroup<2>, TileShape,
-    half_t, cutlass::detail::TagToStrideA_t<LayoutA*>,
-    half_t, cutlass::detail::TagToStrideB_t<LayoutB*>,
-    TiledMma,
-    GmemTiledCopyA, void, void, cute::identity,  // A
-    GmemTiledCopyB, void, void, cute::identity   // B
-  >;
+  using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+    cutlass::arch::IntelPVC, cutlass::arch::OpClassTensorOp,
+    cute::bfloat16_t, LayoutA, 1,
+    cute::bfloat16_t, LayoutB, 1,
+    float,
+    TileShape, Shape<_1, _1, _1>,
+    cutlass::gemm::collective::StageCountAuto,
+    cutlass::gemm::KernelPVCPtrArrayCooperative
+  >::CollectiveOp;
 };
 
 
