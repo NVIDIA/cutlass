@@ -913,6 +913,8 @@ ${compile_guard_end}
       stage_count_string = f"cutlass::gemm::collective::StageCount<{str(operation.tile_description.stages)}>"
     elif opcode_class_main == OpcodeClass.SparseTensorOp and operation.arch == 100:
       stage_count_string = f"cutlass::gemm::collective::StageCountAutoCarveoutEpi<{str(operation.procedural_name())}_epilogue>"
+    elif operation.is_xe:
+      stage_count_string = "cutlass::gemm::collective::StageCountAuto"
     else:
       stage_count_string = f"cutlass::gemm::collective::StageCountAutoCarveout<static_cast<int>(sizeof(typename {str(operation.procedural_name())}_epilogue::SharedStorage))>"
 
