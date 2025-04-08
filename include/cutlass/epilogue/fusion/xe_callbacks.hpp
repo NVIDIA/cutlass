@@ -412,6 +412,61 @@ struct FusionCallbacks<
   using Impl::Impl;
 };
 
+template <
+  int TopK,
+  class ElementOutput_,
+  class ElementCompute_,
+  class ElementSource_,
+  class ElementScalar_,
+  FloatRoundStyle RoundStyle,
+  class CtaTileShapeMNK,
+  class EpilogueTile
+>
+struct FusionCallbacks<
+  epilogue::IntelPVCEpilogue,
+  fusion::LinCombTopKSoftmaxCol<TopK, ElementOutput_, ElementCompute_, ElementSource_, ElementScalar_, RoundStyle>,
+  CtaTileShapeMNK,
+  EpilogueTile
+> : Sm90LinCombTopKSoftmaxCol<TopK, 8 /*FragmentSize*/, CtaTileShapeMNK, EpilogueTile, ElementOutput_, ElementCompute_, ElementSource_, ElementScalar_, RoundStyle> {
+
+  static constexpr int FragmentSize = 8;
+  using ElementOutput = ElementOutput_;
+  using ElementCompute = ElementCompute_;
+  using ElementSource = ElementSource_;
+  using ElementScalar = ElementScalar_;
+  using Impl = Sm90LinCombTopKSoftmaxCol<TopK, FragmentSize, CtaTileShapeMNK, EpilogueTile, 
+                                        typename cutlass::detail::get_unpacked_element_type<ElementOutput>::type, 
+                                        ElementCompute, ElementSource, ElementScalar, RoundStyle>;
+  using Operation = fusion::LinCombTopKSoftmaxCol<TopK, ElementOutput, ElementCompute, ElementSource, ElementScalar, RoundStyle>;
+
+  struct Arguments {
+    ElementScalar alpha = ElementScalar(1);
+    ElementScalar beta = ElementScalar(0);
+    ElementScalar const* alpha_ptr = nullptr;
+    ElementScalar const* beta_ptr = nullptr;
+
+    operator typename Impl::Arguments() const {
+      return
+        {    // unary op: activation(beta * C + (alpha * acc))
+          {    // ternary op : beta * C + (alpha * acc)
+            {{beta}, {beta_ptr}}, // leaf args : beta
+            {},                   // leaf args : C
+            {                     // binary op : alpha * acc
+              {{alpha}, {alpha_ptr}}, // leaf args : alpha
+              {},                     // leaf args : acc
+              {}                  // binary args : multiplies
+            },                    // end binary op
+            {} // ternary args : multiply_add
+          },   // end ternary op
+          {} // unary args: activation
+        };   // end unary op
+    }
+  };
+
+  // Ctor inheritance
+  using Impl::Impl;
+};
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 // D = activation(alpha * acc + beta * C + per-row bias)

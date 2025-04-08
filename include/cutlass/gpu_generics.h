@@ -44,7 +44,6 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
-
 static const int NumThreadsPerWarp = 32;
 static const int NumThreadsPerWarpGroup = 128;
 static const int NumWarpsPerWarpGroup = NumThreadsPerWarpGroup / NumThreadsPerWarp;

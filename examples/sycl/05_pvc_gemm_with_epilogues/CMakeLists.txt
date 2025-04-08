@@ -60,3 +60,10 @@ cutlass_example_add_executable(
   TEST_COMMAND_OPTIONS
   TEST_BATCHES
 )
+
+cutlass_example_add_executable(
+  05_pvc_gemm_with_topk_and_softmax
+  05_pvc_gemm_with_topk_and_softmax.cpp
+  TEST_COMMAND_OPTIONS
+  TEST_BATCHES
+)

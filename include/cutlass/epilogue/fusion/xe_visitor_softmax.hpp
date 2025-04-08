@@ -381,8 +381,8 @@ public:
     CUTLASS_DEVICE void
     reduce(STensor&& smem_buffer, SyncFn const& sync_fn, int epi_m, int epi_n, bool is_last_iteration, VTensor visit_results) {
       if(is_last_iteration) {
-      for(int epi_v = 0; epi_v < size(visit_results); epi_v++) {
-        res_tensor(epi_v, epi_m, epi_n) = visit_results(epi_v);
+      for(int epi_v = 0; epi_v < visit_results(0).size(); epi_v++) {
+        res_tensor(epi_v, epi_m, epi_n) = visit_results(0)[epi_v];
       }
       
       constexpr auto vec_size = min(Epi_M, Sg_N);
@@ -441,8 +441,8 @@ public:
       copy(params.xe_store_output, res_tensor, coord);
     }
     else {
-      for(int epi_v = 0; epi_v < size(visit_results); epi_v++) {
-        res_tensor(epi_v, epi_m, epi_n) = visit_results(epi_v);
+      for(int epi_v = 0; epi_v < visit_results(0).size(); epi_v++) {
+        res_tensor(epi_v, epi_m, epi_n) = visit_results(0)[epi_v];
       }
     }
     }

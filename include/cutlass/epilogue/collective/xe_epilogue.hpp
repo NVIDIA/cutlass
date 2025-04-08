@@ -362,6 +362,7 @@ public:
     for (int epi_n = 0; epi_n < FragsN; epi_n++) {
       CUTLASS_PRAGMA_UNROLL
       for (int epi_m = 0; epi_m < FragsM; epi_m++) {
+        cst_callbacks.begin_loop(epi_m, epi_n);
 
         if (is_C_load_needed) {
           //cordinates for C and D are the same
@@ -376,11 +377,13 @@ public:
         for (int epi_v = 0; epi_v < size<0>(trD_frag); ++epi_v) {
           trD_frag(epi_v) = cst_callbacks.visit(acc_frag_mn(epi_v), epi_v, epi_m, epi_n);
         }
-        cst_callbacks.reduce(nullptr, synchronize, epi_m, epi_n, (epi_m == FragsM - 1 && epi_n == FragsN - 1), trD);
+        cst_callbacks.reduce(nullptr, synchronize, epi_m, epi_n, (epi_m == FragsM - 1 && epi_n == FragsN - 1), trD_frag);
         
         if constexpr (is_destination_supported) {
           copy(params.xe_store_d, trD, tCgD(_, epi_m, epi_n));
         }
+        
+        cst_callbacks.end_loop(epi_m, epi_n);
       }
     }
 

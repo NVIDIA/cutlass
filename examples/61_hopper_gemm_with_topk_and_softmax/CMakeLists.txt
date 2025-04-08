@@ -30,3 +30,4 @@ cutlass_example_add_executable(
   61_hopper_gemm_with_topk_and_softmax
   61_hopper_gemm_with_topk_and_softmax.cu
   )
+  
