@@ -47,7 +47,7 @@
 #include "cutlass/util/packed_stride.hpp"
 #include "cutlass/util/reference/device/gemm_complex.h"
 #include "cutlass/util/reference/device/tensor_compare.h"
-#include "../examples/sycl/pvc/common.hpp"
+#include "../examples/common/sycl_common.hpp"
 
 #include "../benchmarks/benchmark_runner.hpp"
 

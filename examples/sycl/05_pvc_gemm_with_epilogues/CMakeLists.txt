@@ -26,11 +26,37 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-
-set(CUTLASS_APPLICATIONS_DIR ${CMAKE_SOURCE_DIR}/applications)
+set(TEST_BATCHES --l=2)
 
 cutlass_example_add_executable(
-  pvc_flash_attention
-  pvc_flash_attn.cpp
+  05_pvc_gemm_with_epilogue_gelu
+  05_pvc_gemm_with_epilogue_gelu.cpp
+  TEST_COMMAND_OPTIONS
+  TEST_BATCHES
 )
 
+#TODO(Codeplay): enable batch > 1 test once implementation is fixed.
+cutlass_example_add_executable(
+  05_pvc_gemm_with_epilogue_lincombdeeltact
+  05_pvc_gemm_with_epilogue_lincombdeeltact.cpp
+)
+
+cutlass_example_add_executable(
+  05_pvc_gemm_with_epilogue_relu
+  05_pvc_gemm_with_epilogue_relu.cpp
+  TEST_COMMAND_OPTIONS
+  TEST_BATCHES
+)
+
+#TODO(Codeplay): enable batch > 1 test once implementation is fixed.
+cutlass_example_add_executable(
+  05_pvc_gemm_with_epilogue_softmax
+  05_pvc_gemm_with_epilogue_softmax.cpp
+)
+
+cutlass_example_add_executable(
+  05_pvc_gemm_with_per_row_bias
+  05_pvc_gemm_with_per_row_bias.cpp
+  TEST_COMMAND_OPTIONS
+  TEST_BATCHES
+)

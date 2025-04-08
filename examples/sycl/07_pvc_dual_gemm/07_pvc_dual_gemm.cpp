@@ -46,7 +46,7 @@
 #include "cutlass/util/reference/device/gemm_complex.h"
 #include "cutlass/util/reference/device/tensor_compare.h"
 #include "cutlass/util/reference/device/tensor_epilogue.h"
-#include "../common.hpp"
+#include "sycl_common.hpp"
 #include "helper.h"
 #include "tensor_silu.h"
 #include "dual_gemm/thread/xe_binary_elem_wise_op.hpp"

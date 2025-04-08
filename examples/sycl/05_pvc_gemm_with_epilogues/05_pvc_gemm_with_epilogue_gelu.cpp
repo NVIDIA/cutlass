@@ -45,7 +45,11 @@
 #include "cutlass/util/packed_stride.hpp"
 #include "cutlass/util/reference/device/gemm_complex.h"
 #include "cutlass/util/reference/device/tensor_compare.h"
-#include "common.hpp"
+#include "cutlass/util/reference/device/tensor_gelu.h"
+#include "cutlass/tensor_view.h"
+#include "cutlass/coord.h"
+
+#include "sycl_common.hpp"
 #include "helper.h"
 
 using namespace cute;
@@ -64,7 +68,7 @@ struct Options {
   Options():
     help(false),
     error(false),
-    m(5120), n(4096), k(4096), l(1), iterations(20),
+    m(5120), n(4096), k(4096), l(1), iterations(100),
     alpha(1.f), beta(0.f)
   { }
 
@@ -182,6 +186,14 @@ struct ExampleRunner {
 
     syclcompat::wait();
 
+    using TensorView = cutlass::TensorView<ElementOutput, LayoutD>;
+    for(int batch = 0, offset = 0; batch < L; batch++, offset += M * N) {
+      cutlass::reference::device::TensorGeLu(TensorView(block_ref_D.get() + offset, LayoutD::packed({M, N}),
+                                                        cutlass::make_Coord(M, N)));
+    }
+
+    syclcompat::wait();
+
     // Check if output from CUTLASS kernel and reference kernel are equal or not
     bool passed = cutlass::reference::device::BlockCompareEqual(
       block_ref_D.get(), block_D.get(), block_D.size());
@@ -228,10 +240,7 @@ struct ExampleRunner {
     size_t workspace_size = Gemm::get_workspace_size(arguments);
     cutlass::device_memory::allocation<uint8_t> workspace(workspace_size);
 
-    if (gemm_op.can_implement(arguments) != cutlass::Status::kSuccess){
-      std::cout << "Invalid Problem Size: " << options.m << 'x' << options.n << 'x' << options.k << 'x' << options.l << std::endl;
-      std::exit(1);
-    }
+    CUTLASS_CHECK(gemm_op.can_implement(arguments));
 
     CUTLASS_CHECK(gemm_op.initialize(arguments, workspace.get()));
 
@@ -318,11 +327,6 @@ int main(int argc, const char** argv)
   // Workgroup-level tile
   using TileShape = Shape<_256, _256, _32>;
 
-  // The Tile of this layout describes how 8x4x1 sub-groups tile the TileShape of <256, 256, 32>. 
-  // This permutation (which can be thought of as a scatter operation on the default tiling) 
-  // ensures that each sub-group operates on a contiguous 32x64x32 chunk (4x4x2 iterations)
-  // See 0t_mma_atom.md#TiledMMAs for more info.
-  // Sub-groups are arranged row-major (stride 4,1,0) for performance reasons.
   using TiledMma =
       typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>, Layout<TileShape>,
                                     Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>>::TiledMMA;
@@ -331,8 +335,8 @@ int main(int argc, const char** argv)
   using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelPVC<PipelineStages>;
   using EpilogueDispatchPolicy = cutlass::epilogue::IntelPVCEpilogue;
 
-  using EpilogueOp = cutlass::epilogue::fusion::LinearCombination<ElementOutput, ElementComputeEpilogue,
-          ElementAccumulator, ElementAccumulator, cutlass::FloatRoundStyle::round_to_nearest>;
+  using EpilogueOp = cutlass::epilogue::fusion::LinCombEltAct<cutlass::epilogue::thread::GELU, ElementOutput,
+          ElementComputeEpilogue, ElementAccumulator, ElementAccumulator, cutlass::FloatRoundStyle::round_to_nearest>;
 
   using FusionCallBacks = cutlass::epilogue::fusion::FusionCallbacks<EpilogueDispatchPolicy, EpilogueOp, TileShape,
           decltype(tile_shape(TiledMma()))>;
@@ -349,7 +353,7 @@ int main(int argc, const char** argv)
           XE_2D_U32x8x16_ST_N,
           void, void>;
 
-  // Mainloop
+// Mainloop
   using CollectiveMainloop = cutlass::gemm::collective::CollectiveMma<
           GEMMDispatchPolicy,
           TileShape,

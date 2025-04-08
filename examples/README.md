@@ -286,6 +286,48 @@
 
     Blackwell SM120 MMA kernel targeting GeForce RTX 50 series CUDA Cores
 
+# CUTLASS SYCL - Programming Examples
+
+* [00_pvc_gemm](./sycl/00_pvc_gemm)
+
+    Simple GEMM implementation on Intel PVC
+
+* [01_pvc_gemm_with_collective_builder](./sycl/01_pvc_gemm_with_collective_builder)
+
+    Demonstrates the use of CollectiveBuilder to construct an Intel PVC GEMM
+
+* [02_pvc_gemm_mixed_dtype](./sycl/02_pvc_gemm_mixed_dtype)
+
+    Mixed Precision PVC GEMM (including support for dequantization)
+
+* [03_pvc_gemm_streamk](./sycl/03_pvc_gemm_streamk)
+
+    PVC GEMM kernel using Stream-K scheduler
+
+* [04_pvc_grouped_gemm](./sycl/04_pvc_grouped_gemm)
+
+    PVC Group GEMM example
+
+* [05_pvc_gemm_with_epilogues](./sycl/05_pvc_gemm_with_epilogues/)
+
+    Various GEMM epilogue examples implemented using Epilogue Visitor Tree (EVT)
+
+* [06_pvc_flash_attention](./sycl/06_pvc_flash_attention/)
+
+    Implementation of V2 of the Flash Attention algorithm on Intel PVC
+
+* [07_pvc_dual_gemm](./sycl/07_pvc_dual_gemm)
+
+    Fuses 2 GEMM operations which share an A-matrix into a single kernel on PVC
+
+* [08_pvc_gemm_f8](./sycl/08_pvc_gemm_f8)
+
+    Demonstrates support for 8-bit float (to 32-bit float output) GEMM on PVC
+
+* [device_agnostic](./sycl/generics/device_agnostic/)
+
+    This example defines a GEMM kernel to be executed on any SYCL device.
+
 # CuTe - Programming Examples
 
 Examples that do not rely on CUTLASS and directly showcase the features of CuTe are located in [cutlass/examples/cute](./cute/).
