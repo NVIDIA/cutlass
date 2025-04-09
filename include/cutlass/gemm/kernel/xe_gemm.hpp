@@ -262,6 +262,7 @@ public:
       gB,
       accumulators,
       k_tile_iter, k_tile_count,
+      blk_coord_mnkl, // TODO(codeplay): Remove this once unneeded in xe_mma_mixed_input.hpp
       K,
       thread_idx,
       params.mainloop

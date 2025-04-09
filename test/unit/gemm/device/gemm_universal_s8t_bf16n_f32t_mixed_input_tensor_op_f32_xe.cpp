@@ -114,7 +114,7 @@ TEST(XE_Device_GemmUniversal_s8t_bf16n_f32t_mixed_input_tensor_op_f32, 128x128x6
   using CollectiveMainloop = cutlass::gemm::collective::CollectiveMma<
           GEMMDispatchPolicy,
           TileShape,
-          ElementInputA,
+          cute::tuple<ElementInputA>,
           cutlass::gemm::TagToStrideA_t<LayoutA>,
           ElementInputB,
           cutlass::gemm::TagToStrideB_t<LayoutB>,

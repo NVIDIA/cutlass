@@ -104,6 +104,9 @@ function(add_sycl_to_target)
   if (NOT target_type STREQUAL "OBJECT_LIBRARY")
     target_link_options(${CUTLASS_ADD_SYCL_TARGET} PUBLIC ${DPCPP_FLAGS})
   endif()
+  # TODO(codeplay): Remove these once IGC block load loop hoisting bug is fixed
+  set_target_properties( ${CUTLASS_ADD_SYCL_TARGET} PROPERTIES CXX_COMPILER_LAUNCHER "IGC_allowDecompose2DBlockFuncs=0" )
+  set_target_properties( ${CUTLASS_ADD_SYCL_TARGET} PROPERTIES CXX_LINKER_LAUNCHER "IGC_allowDecompose2DBlockFuncs=0" )
 endfunction()
 
 function(add_sycl_include_directories_to_target NAME)

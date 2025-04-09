@@ -33,14 +33,22 @@
 */
 
 #pragma once
-
+#ifdef CUTLASS_ENABLE_SYCL
+#include <syclcompat.hpp> 
+#else
 #include <cuda.h>
+#endif
 #include "cute/layout.hpp"
 #include "cute/tensor.hpp"
 #include "cute/arch/mma_sm90.hpp"
 #include "cutlass/cutlass.h"
 #include "cutlass/util/device_memory.h"
+#include "cutlass/gpu_generics.h"
+#ifdef CUTLASS_ENABLE_SYCL
+#include "cutlass/util/reference/device/sycl_tensor_fill.h"
+#else
 #include "cutlass/util/reference/device/tensor_fill.h"
+#endif
 #include "cute/util/type_traits.hpp"
 
 namespace cutlass {
@@ -63,7 +71,7 @@ template <
   class ElementZero,
   class ScaleBroadCastLayout,
   class ThrLayout>
-__global__ void dequantize_kernel(DequantizedElement* dq_buffer,
+CUTLASS_GLOBAL void dequantize_kernel(DequantizedElement* dq_buffer,
                                   QuantizedElement const* q_buffer,
                                   OperandLayout const operand_layout,
                                   ElementScale const* scale_buffer,
@@ -91,7 +99,7 @@ __global__ void dequantize_kernel(DequantizedElement* dq_buffer,
 
   // Assign 1 thread per element in the thread block
   auto blk_shape = cute::make_shape(size<0>(thr_layout), _1{}, _1{}); //
-  auto blk_coord = cute::make_coord(_, blockIdx.x, blockIdx.y);  // (MN, K, L)
+  auto blk_coord = cute::make_coord(_, BlockIdxX(), BlockIdxY());  // (MN, K, L)
 
   // Tile across the block
   auto gOp_dq = cute::local_tile(gmem_op_dq, blk_shape, blk_coord);
@@ -99,10 +107,10 @@ __global__ void dequantize_kernel(DequantizedElement* dq_buffer,
   auto gZero  = cute::local_tile(gmem_zero_broadcasted,  blk_shape, blk_coord);
   auto gOp_q  = cute::local_tile(gmem_op_q, blk_shape, blk_coord);
 
-  auto tOpDq_gOpDq = cute::local_partition(gOp_dq, thr_layout, threadIdx.x);
-  auto tScale_gScale = cute::local_partition(gScale, thr_layout, threadIdx.x);
-  auto tZero_gZero = cute::local_partition(gZero, thr_layout, threadIdx.x);
-  auto tOpQ_gOpQ = cute::local_partition(gOp_q, thr_layout, threadIdx.x);
+  auto tOpDq_gOpDq = cute::local_partition(gOp_dq, thr_layout, ThreadIdxX());
+  auto tScale_gScale = cute::local_partition(gScale, thr_layout, ThreadIdxX());
+  auto tZero_gZero = cute::local_partition(gZero, thr_layout, ThreadIdxX());
+  auto tOpQ_gOpQ = cute::local_partition(gOp_q, thr_layout, ThreadIdxX());
 
   // Make a fragment of registers to hold gmem loads
   cute::Tensor rmem_op_q = cute::make_fragment_like(tOpQ_gOpQ(_, _, _, 0));
@@ -114,7 +122,7 @@ __global__ void dequantize_kernel(DequantizedElement* dq_buffer,
 
   cute::Tensor pred_id = cute::make_identity_tensor(shape(operand_layout));
   auto pred_blk_tile = cute::local_tile(pred_id, blk_shape, blk_coord);
-  auto pred_thr_partition = cute::local_partition(pred_blk_tile, thr_layout, threadIdx.x);
+  auto pred_thr_partition = cute::local_partition(pred_blk_tile, thr_layout, ThreadIdxX());
 
   const auto num_iters = cute::size<3>(tOpDq_gOpDq);
 
@@ -148,7 +156,7 @@ static void dequantize(DequantizedElement* dq_buffer,
                        ElementZero const* zero_buffer,
                        ScaleLayout const scale_layout,
                        int const group_size,
-                       cudaStream_t &stream) {
+                       cudaStream_t stream = 0) {
   using namespace cute;
 
   constexpr int tpb = 128;
@@ -178,8 +186,18 @@ static void dequantize(DequantizedElement* dq_buffer,
   const auto blocks_y = batches;
 
   dim3 blocks(blocks_x, blocks_y, 1);
+#ifdef CUTLASS_ENABLE_SYCL
+  syclcompat::launch<dequantize_kernel<
+      QuantizedElement, DequantizedElement, OperandLayout, ElementScale,
+      ElementZero, decltype(scale_layout_bcast), decltype(thr_layout)>>(
+      blocks, tpb, dq_buffer, q_buffer, operand_layout, scale_buffer,
+      zero_buffer, scale_layout_bcast, thr_layout);
+
+  syclcompat::wait_and_throw();
+#else
   dequantize_kernel<<<blocks, tpb, 0, stream>>>(dq_buffer, q_buffer, operand_layout, scale_buffer, zero_buffer, scale_layout_bcast, thr_layout);
   CUDA_CHECK(cudaStreamSynchronize(stream));
+#endif
 }
 
 template <typename T>
@@ -394,7 +412,7 @@ constexpr auto compute_memory_reordering_atom(AtomLayout atom_layout = {}, ValLa
 }
 
 template <class TileShape, class EngineSrc, class LayoutSrc, class EngineDst, class LayoutDst, class TiledCopy>
-__global__ void reorder_tensor_kernel(
+CUTLASS_GLOBAL void reorder_tensor_kernel(
   cute::Tensor<EngineSrc, LayoutSrc> S,
   cute::Tensor<EngineDst, LayoutDst> D,
   TiledCopy tiled_copy)
@@ -403,10 +421,10 @@ __global__ void reorder_tensor_kernel(
 
   using T = typename EngineDst::value_type;
 
-  Tensor gS = local_tile(S, TileShape{}, make_coord(blockIdx.x, _, blockIdx.z));
-  Tensor gD = local_tile(D, TileShape{}, make_coord(blockIdx.x, _, blockIdx.z));
+  Tensor gS = local_tile(S, TileShape{}, make_coord(BlockIdxX(), _, BlockIdxZ()));
+  Tensor gD = local_tile(D, TileShape{}, make_coord(BlockIdxX(), _, BlockIdxZ()));
 
-  auto thread_copy = tiled_copy.get_slice(threadIdx.x);
+  auto thread_copy = tiled_copy.get_slice(ThreadIdxX());
   Tensor tS = thread_copy.partition_S(gS);
   Tensor tD = thread_copy.partition_D(gD);
 
@@ -445,8 +463,12 @@ void reorder_tensor(
   auto tiled_D = group_modes<3,rank_v<LayoutDst>>(tiled_divide(D, TileShape{}));
   dim3 blocks{unsigned(size<1>(tiled_D)), 1u, unsigned(size<3>(tiled_D))};
 
+#ifndef CUTLASS_ENABLE_SYCL
   reorder_tensor_kernel<TileShape><<<blocks, NumThreads>>>(S, D, tiled_copy);
   CUDA_CHECK(cudaDeviceSynchronize());
+#else
+  CUTE_INVALID_CONTROL_PATH("Unimplemented/untested code path");
+#endif
 }
 
 // In-place version

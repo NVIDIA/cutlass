@@ -115,7 +115,7 @@ TEST(XE_Device_GemmUniversal_f16t_s4t_f32t_mixed_input_tensor_op_f32, 128x128x64
           TileShape,
           ElementInputA,
           cutlass::gemm::TagToStrideA_t<LayoutA>,
-          ElementInputB,
+          cute::tuple<ElementInputB>,
           cutlass::gemm::TagToStrideB_t<LayoutB>,
           TiledMma,
           GmemTiledCopyA, void, void, cute::identity,  // A

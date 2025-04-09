@@ -277,6 +277,7 @@ public:
         gB,
         accumulators,
         k_tile_iter, work_k_tile_count,
+        tile_coord, // TODO(codeplay): Remove this once unneeded in xe_mma_mixed_input.hpp
         K,
         thread_idx,
         params.mainloop

@@ -67,6 +67,11 @@ $ CC=clang CXX=clang++ cmake .. -G Ninja \
   -DCMAKE_CXX_FLAGS="-ftemplate-backtrace-limit=0 -fdiagnostics-color=always"  
 ```
 
+Note: When building with SYCL support, CMake currently sets the following environment variable to work around an IGC bug:
+```
+$ export IGC_allowDecompose2DBlockFuncs=0
+```
+
 CMake will check that DPC++ compiler is available in the system,
 and it will download the MKL library if it cannot find it.
 
