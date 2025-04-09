@@ -60,6 +60,7 @@ function(cutlass_benchmark_add_executable NAME)
     ${NAME}
     PRIVATE
     ${CUTLASS_APPLICATIONS_DIR}
+    ${CUTLASS_EXAMPLES_DIR}
   )
 
   if (CUTLASS_ENABLE_SYCL)
@@ -75,6 +76,7 @@ endfunction()
 
 if (CUTLASS_ENABLE_SYCL)
   set(CUTLASS_APPLICATIONS_DIR ${CMAKE_SOURCE_DIR}/applications)
+  set(CUTLASS_EXAMPLES_DIR ${CMAKE_SOURCE_DIR}/examples)
   cutlass_benchmark_add_executable(
     benchmarks
     main.cpp

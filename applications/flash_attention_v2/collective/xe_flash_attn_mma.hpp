@@ -40,7 +40,7 @@
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-namespace cutlass::gemm::collective {
+namespace cutlass::flash_attention::collective {
 using namespace cute;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -58,7 +58,7 @@ CUTLASS_DEVICE auto convert_type(Tensor<Engine, Layout> const &tensor) {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <class DispatchPolicy, class TileShape_, class ElementQ_, class StrideQ_, class ElementK_, class StrideK_,
+template <class DispatchPolicy, class ProblemShapeType_, class TileShape_, class ElementQ_, class StrideQ_, class ElementK_, class StrideK_,
           class ElementV_, class StrideV_, class TiledMma_, class GmemTiledCopyQ_, class GmemTiledCopyK_,
           class GmemTiledCopyV_, bool CausalMask_>
 struct CollectiveMmaAttention {
@@ -67,17 +67,18 @@ struct CollectiveMmaAttention {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <int Stages, class TileShape_, class ElementQ_, class StrideQ_, class ElementK_, class StrideK_,
+template <int Stages, class ProblemShapeType_, class TileShape_, class ElementQ_, class StrideQ_, class ElementK_, class StrideK_,
           class ElementV_, class StrideV_, class TiledMma_, class GmemTiledCopyQ_, class GmemTiledCopyK_,
           class GmemTiledCopyV_, bool CausalMask_>
-struct CollectiveMmaAttention<MainloopIntelPVC<Stages>, TileShape_, ElementQ_, StrideQ_, ElementK_, StrideK_, ElementV_,
+struct CollectiveMmaAttention<gemm::MainloopIntelPVC<Stages>, ProblemShapeType_, TileShape_, ElementQ_, StrideQ_, ElementK_, StrideK_, ElementV_,
                               StrideV_, TiledMma_, GmemTiledCopyQ_, GmemTiledCopyK_, GmemTiledCopyV_, CausalMask_> {
   //
   // Type Aliases
   //
-  using DispatchPolicy = MainloopIntelPVC<Stages>;
+  using DispatchPolicy = gemm::MainloopIntelPVC<Stages>;
   using TileShape = TileShape_;
   using WorkgroupTileShape = TileShape; // <BLK_M_Q, BLK_N_V, BLK_N_QK, BLK_K_QK>
+  using ProblemShapeType = ProblemShapeType_;
   using ElementQ = ElementQ_;
   using StrideQ = StrideQ_;
   using ElementK = ElementK_;
@@ -131,6 +132,8 @@ struct CollectiveMmaAttention<MainloopIntelPVC<Stages>, TileShape_, ElementQ_, S
   static constexpr auto QK_SG_N = get<1>(SubgroupTileShapeQK{});
   static constexpr auto QK_SG_K = get<2>(SubgroupTileShapeQK{});
 
+  static constexpr bool is_var_len = cutlass::fmha::collective::is_variable_length_v<tuple_element_t<2, ProblemShapeType>>;
+
   using SubgroupTileShapeO = decltype(cute::shape_div(TileShapePV{}, take<1, 4>(typename TiledMmaQVO::ThrLayoutVMNK{}.shape())));
   using FragsShape = decltype(cute::shape_div(take<0, 2>(SubgroupTileShapeO{}), take<0, 2>(MmaAtomShape())));
 
@@ -174,8 +177,7 @@ struct CollectiveMmaAttention<MainloopIntelPVC<Stages>, TileShape_, ElementQ_, S
 
   CollectiveMmaAttention() = default;
 
-  template <class ProblemShape>
-  static constexpr Params to_underlying_arguments(ProblemShape const &problem_shape, Arguments const &args,
+  static constexpr Params to_underlying_arguments(ProblemShapeType const &problem_shape, Arguments const &args,
                                                   void *workspace) {
     (void)workspace;
 
@@ -300,8 +302,52 @@ struct CollectiveMmaAttention<MainloopIntelPVC<Stages>, TileShape_, ElementQ_, S
     copy(params.gmem_tiled_copy_v, tVgV, tVrV);
     cute::gemm(tiled_mma, accum, tPr, tCrV, frag_src);
   }
+
+  template <class ProblemShape>
+  CUTLASS_DEVICE static constexpr Params get_updated_copies(Params const& params, ProblemShape const& problem_shape, int const& l_coord) {
+    if constexpr (!is_var_len) {
+      return params;
+    } else {
+      auto [batch, num_heads, seq_len_qo, seq_len_kv, head_size_qk, head_size_vo] = problem_shape;
+
+      auto qo_cumulative_length = get<2>(problem_shape).cumulative_length;
+      auto kv_cumulative_length = get<3>(problem_shape).cumulative_length;
+
+      int offset_q = num_heads * head_size_qk * qo_cumulative_length[l_coord];
+      int offset_k = num_heads * head_size_qk * kv_cumulative_length[l_coord];
+      int offset_v = num_heads * head_size_vo * kv_cumulative_length[l_coord];
+
+      auto q_traits = static_cast<traits_load_Q const&>(params.gmem_tiled_copy_q);
+      ElementQ* q_ptr = (ElementQ*)q_traits.base_ptr;
+
+      auto k_traits = static_cast<traits_load_K const&>(params.gmem_tiled_copy_k);
+      ElementK* k_ptr = (ElementK*)k_traits.base_ptr;
+
+      auto v_traits = static_cast<traits_load_V const&>(params.gmem_tiled_copy_v);
+      ElementV* v_ptr = (ElementV*)v_traits.base_ptr;
+
+      auto shape_q = make_shape(static_cast<int>(seq_len_qo), head_size_qk, num_heads);
+      StrideQ stride_q = cutlass::make_cute_packed_stride(StrideQ{}, shape_q);
+
+      auto shape_k = make_shape(static_cast<int>(seq_len_kv), head_size_qk, num_heads);
+      StrideK stride_k = cutlass::make_cute_packed_stride(StrideK{}, shape_k);
+
+      auto shape_v = make_shape(head_size_vo, static_cast<int>(seq_len_kv), num_heads);
+      StrideV stride_v = cutlass::make_cute_packed_stride(StrideV{}, shape_v);
+
+      auto tensorQ = make_tensor(make_gmem_ptr(q_ptr + offset_q), make_layout(shape_q, stride_q));
+      auto tensorK = make_tensor(make_gmem_ptr(k_ptr + offset_k), make_layout(shape_k, stride_k));
+      auto tensorV = make_tensor(make_gmem_ptr(v_ptr + offset_v), make_layout(shape_v, stride_v));
+
+      XE_Copy_Q copyQ{XE_Copy_Q{}.with(tensorQ)};
+      XE_Copy_K copyK{XE_Copy_K{}.with(tensorK)};
+      XE_Copy_V copyV{XE_Copy_V{}.with(tensorV)};
+
+      return Params{copyQ, copyK, copyV};
+    }
+  }
 };
 
-} // namespace cutlass::gemm::collective
+} // namespace cutlass::flash_attention::collective
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

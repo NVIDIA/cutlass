@@ -34,7 +34,7 @@ namespace cutlass {
 namespace flash_attention{
 
 template <typename ElementQ_, typename ElementK_, typename ElementV_, typename LayoutQ_,
-          typename LayoutK_, typename LayoutV_, typename LayoutO_, bool Causal_,
+          typename LayoutK_, typename LayoutV_, typename LayoutO_, bool Causal_, bool VarLen_,
           typename TileShape_, typename TiledMma_> 
 struct FMHAConfig {
 
@@ -52,6 +52,7 @@ struct FMHAConfig {
   using TiledMma = TiledMma_;
 
   static constexpr bool Causal = Causal_;
+  static constexpr bool VarLen = VarLen_;
   
   static constexpr int PipelineStages = 2;
   using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelPVC<PipelineStages>;
@@ -61,22 +62,26 @@ struct FMHAConfig {
   using GmemTiledCopyK = XE_2D_U16x16x16_LD_T;
   using GmemTiledCopyV = XE_2D_U16x32x32_LD_V;
   using GmemTiledCopyO = XE_2D_U32x8x16_ST_N;
-  using CollectiveEpilogue = cutlass::epilogue::collective::CollectiveEpilogueAttention<
+  using CollectiveEpilogue = cutlass::flash_attention::collective::CollectiveEpilogueAttention<
       EpilogueDispatchPolicy, TileShape, ElementO, cutlass::gemm::TagToStrideC_t<LayoutO>, ElementO,
       GmemTiledCopyO>;
 
-  using CollectiveSoftmaxEpilogue = cutlass::epilogue::collective::CollectiveSoftmaxEpilogue<Causal, EpilogueDispatchPolicy, ElementO>;
+  using CollectiveSoftmaxEpilogue = cutlass::flash_attention::collective::CollectiveSoftmaxEpilogue<Causal, EpilogueDispatchPolicy, ElementO>;
+
+  using ProblemShapeRegular = cute::tuple<int, int, int, int, int, int>;
+  using ProblemShapeVarlen = cute::tuple<int, int, fmha::collective::VariableLength, fmha::collective::VariableLength, int, int>;
+  using ProblemShapeType = std::conditional_t<VarLen, ProblemShapeVarlen, ProblemShapeRegular>;
 
   // Mainloop
-  using CollectiveMainloop = cutlass::gemm::collective::CollectiveMmaAttention<
-      GEMMDispatchPolicy, TileShape, ElementInputQ, cutlass::gemm::TagToStrideA_t<LayoutQ>, ElementInputK,
+  using CollectiveMainloop = cutlass::flash_attention::collective::CollectiveMmaAttention<
+      GEMMDispatchPolicy, ProblemShapeType, TileShape, ElementInputQ, cutlass::gemm::TagToStrideA_t<LayoutQ>, ElementInputK,
       cutlass::gemm::TagToStrideB_t<LayoutK>, ElementInputV, cutlass::gemm::TagToStrideB_t<LayoutV>, TiledMma,
       GmemTiledCopyQ, // Q
       GmemTiledCopyK, // K
       GmemTiledCopyV, // V,
       Causal>;
 
-  using GemmKernel = cutlass::gemm::kernel::GemmUniversalAttention<Shape<int, int, int, int, int, int>, CollectiveMainloop,
+  using GemmKernel = cutlass::flash_attention::kernel::GemmUniversalAttention<ProblemShapeType, CollectiveMainloop,
                                                                     CollectiveSoftmaxEpilogue, CollectiveEpilogue>;
 };
 
