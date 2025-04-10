@@ -36,9 +36,7 @@
 
 /// Helper to initialize a block of device data
 template <class Element>
-bool initialize_block(
-        cutlass::DeviceAllocation<Element>& block,
-        uint64_t seed=2023) {
+bool initialize_block(Element* block, std::size_t size, uint64_t seed=2023) {
 
   Element scope_max, scope_min;
   int bits_input = cutlass::sizeof_bits<Element>::value;
@@ -55,10 +53,17 @@ bool initialize_block(
   }
 
   cutlass::reference::device::BlockFillRandomUniform(
-       block.get(), block.size(), seed, scope_max, scope_min, 0);
+       block, size, seed, scope_max, scope_min, 0);
 
   syclcompat::wait();
   return true;
+}
+
+template <class Element>
+bool initialize_block(
+        cutlass::DeviceAllocation<Element>& block,
+        uint64_t seed=2023) {
+  return initialize_block<Element>(block.get(), block.size(), seed);
 }
 
 template <typename T1, typename T2>

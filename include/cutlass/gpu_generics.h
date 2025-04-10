@@ -333,7 +333,7 @@ T shfl_xor_sync(
 namespace cutlass {
 
 // Stream
-using cudaStream_t = void *;
+using cudaStream_t = sycl::queue *;
 
 using dim3 = syclcompat::dim3;
 
@@ -391,7 +391,8 @@ CUTLASS_HOST_DEVICE
 cudaError_t cudaMemsetAsync(void *devPtr, unsigned int value, size_t count, cudaStream_t stream = nullptr) {
   static_assert(std::is_same_v<T, void>, "cudaMemsetAsync takes a dummy template parameter, T = "
                                          "void, to instantiate copy kernel only if it is used.");
-  syclcompat::fill_async(devPtr, value, count);
+  sycl::queue q = stream ? *stream : syclcompat::get_default_queue();
+  syclcompat::fill_async(devPtr, value, count, q);
   return cudaSuccess;
 }
 
@@ -405,7 +406,8 @@ CUresult cuMemsetD32Async(CUdeviceptr devPtr, uint32_t value, size_t count, cuda
   static_assert(std::is_same_v<T, void>, "cuMemsetD32Async takes a dummy template parameter, T = "
                                          "void, to instantiate copy kernel only if it is used.");
   void *ptr = reinterpret_cast<void *>(devPtr);
-  syclcompat::fill_async(ptr, value, count);
+  sycl::queue q = stream ? *stream : syclcompat::get_default_queue();
+  syclcompat::fill_async(ptr, value, count, q);
   return cudaSuccess;
 }
 
@@ -415,7 +417,8 @@ CUresult cuMemsetD16Async(CUdeviceptr devPtr, uint16_t value, size_t count, cuda
   static_assert(std::is_same_v<T, void>, "cuMemsetD16Async takes a dummy template parameter, T = "
                                          "void, to instantiate copy kernel only if it is used.");
   void *ptr = reinterpret_cast<void *>(devPtr);
-  syclcompat::fill_async(ptr, value, count);
+  sycl::queue q = stream ? *stream : syclcompat::get_default_queue();
+  syclcompat::fill_async(ptr, value, count, q);
   return cudaSuccess;
 }
 
@@ -425,7 +428,8 @@ CUresult cuMemsetD8Async(CUdeviceptr devPtr, uint8_t value, size_t count, cudaSt
   static_assert(std::is_same_v<T, void>, "cuMemsetD8Async takes a dummy template parameter, T = "
                                          "void, to instantiate copy kernel only if it is used.");
   void *ptr = reinterpret_cast<void *>(devPtr);
-  syclcompat::fill_async(ptr, value, count);
+  sycl::queue q = stream ? *stream : syclcompat::get_default_queue();
+  syclcompat::fill_async(ptr, value, count, q);
   return cudaSuccess;
 }
 

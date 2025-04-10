@@ -462,7 +462,17 @@ public:
       const auto sycl_block = syclcompat::dim3(block.x, block.y, block.z);
       const auto sycl_grid = syclcompat::dim3(grid.x, grid.y, grid.z);
 
-      syclcompat::launch<Kernel2<GemmKernel>>(sycl_grid, sycl_block, kSharedStorageSize, params_);
+      sycl::queue q = stream ? *stream : syclcompat::get_default_queue();
+      syclcompat::experimental::launch<Kernel2<GemmKernel>>(
+        syclcompat::experimental::launch_policy{
+          sycl_grid, sycl_block,
+#if defined(SYCL_EXT_ONEAPI_WORK_GROUP_SCRATCH_MEMORY)
+          sycl::ext::oneapi::experimental::work_group_scratch_size(kSharedStorageSize)
+#else
+          syclcompat::experimental::local_mem_size{static_cast<std::size_t>(kSharedStorageSize)}
+#endif
+        },
+        q, params_);
 #else
       Kernel2<GemmKernel><<<grid, block, kSharedStorageSize, stream>>>(params_);
 #endif

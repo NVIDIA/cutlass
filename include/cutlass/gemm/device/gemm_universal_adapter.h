@@ -545,12 +545,13 @@ public:
       else {
         CUTLASS_ASSERT(cuda_adapter == nullptr);
 #if defined(CUTLASS_ENABLE_SYCL)
+        sycl::queue q = stream ? *stream : syclcompat::get_default_queue();
 #if !defined(SYCL_EXT_ONEAPI_WORK_GROUP_SCRATCH_MEMORY)
         using namespace syclcompat::experimental;
         if constexpr (cute::is_same_v<DispatchPolicy, MainloopDeviceAgnostic>) {
           auto event = launch<device_kernel<GemmKernel>>(launch_policy{
             sycl_grid, sycl_block, local_mem_size{static_cast<std::size_t>(smem_size)}
-          }, params);
+          }, q, params);
           EventManager::getInstance().addEvent(event);
         } else {
           auto event = launch<device_kernel<GemmKernel>>(launch_policy{
@@ -558,7 +559,7 @@ public:
 #if defined(SYCL_INTEL_TARGET)
             , kernel_properties{sycl_exp::sub_group_size<DispatchPolicy::SubgroupSize>}
 #endif
-          }, params);
+          }, q, params);
           EventManager::getInstance().addEvent(event);
         }
 #else
@@ -585,7 +586,7 @@ public:
         syclcompat::experimental::launch_policy policy{
           sycl_grid, sycl_block, launch_props, kernel_props
         };
-        auto event = syclcompat::experimental::launch<device_kernel<GemmKernel>>(policy, params);
+        auto event = syclcompat::experimental::launch<device_kernel<GemmKernel>>(policy, q, params);
         EventManager::getInstance().addEvent(event);
 #endif // !defined(SYCL_EXT_ONEAPI_WORK_GROUP_SCRATCH_MEMORY)
 #else
