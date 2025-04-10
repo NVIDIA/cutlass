@@ -131,16 +131,19 @@ public:
   static constexpr bool IsGdcEnabled = cutlass::arch::IsGdcGloballyEnabled;
 
   // Warp specialization thread count per threadblock
-  static constexpr uint32_t NumSchedThreads        = NumThreadsPerWarp; // 1 warp
-  static constexpr uint32_t NumMMAThreads          = NumThreadsPerWarp; // 1 warp
-  static constexpr uint32_t NumMainloopLoadThreads = NumThreadsPerWarp; // 1 warp
-  static constexpr uint32_t NumEpilogueLoadThreads = NumThreadsPerWarp; // 1 warp
-  static constexpr uint32_t NumEpilogueThreads     = CollectiveEpilogue::ThreadCount;
-  static constexpr uint32_t NumEpilogueWarps       = NumEpilogueThreads / NumThreadsPerWarp;
+  static constexpr uint32_t NumSchedThreads          = NumThreadsPerWarp; // 1 warp
+  static constexpr uint32_t NumMMAThreads            = NumThreadsPerWarp; // 1 warp
+  static constexpr uint32_t NumMainloopABLoadThreads = NumThreadsPerWarp; // 1 warp
+  static constexpr uint32_t NumEpilogueLoadThreads   = NumThreadsPerWarp; // 1 warp
+  static constexpr uint32_t NumEpilogueThreads       = CollectiveEpilogue::ThreadCount;
+  static constexpr uint32_t NumEpilogueWarps         = NumEpilogueThreads / NumThreadsPerWarp;
+  static constexpr uint32_t NumMainloopSFLoadThreads = NumThreadsPerWarp; // 1 warp
 
-  static constexpr uint32_t MaxThreadsPerBlock = NumSchedThreads +
-                                                 NumMainloopLoadThreads + NumMMAThreads +
-                                                 NumEpilogueLoadThreads + NumEpilogueThreads;
+
+  static constexpr uint32_t MaxThreadsPerBlock = cute::round_up(NumSchedThreads +
+                                                 NumMainloopABLoadThreads + NumMMAThreads +
+                                                 NumEpilogueLoadThreads + NumEpilogueThreads + 
+                                                 NumMainloopSFLoadThreads, 128);
   static constexpr uint32_t MinBlocksPerMultiprocessor = 1;
 
   static constexpr uint32_t NumEpilogueSubTiles = CollectiveEpilogue::get_load_pipe_increment(CtaShape_MNK{});
@@ -152,8 +155,8 @@ public:
   static constexpr uint32_t CLCResponseSize = sizeof(typename TileScheduler::CLCResponse);
 
   // Pipeline and pipeline state types
-  using MainloopPipeline = typename CollectiveMainloop::MainloopPipeline;
-  using MainloopPipelineState = typename CollectiveMainloop::MainloopPipelineState;
+  using MainloopABPipeline = typename CollectiveMainloop::MainloopABPipeline;
+  using MainloopABPipelineState = typename CollectiveMainloop::MainloopABPipelineState;
 
   using EpiLoadPipeline = typename CollectiveEpilogue::LoadPipeline;
   using EpiLoadPipelineState = typename CollectiveEpilogue::LoadPipelineState;
@@ -163,11 +166,11 @@ public:
 
   using LoadOrderBarrier = cutlass::OrderedSequenceBarrier<1,2>;
 
-  using Mma2TransformPipeline = typename CollectiveMainloop::Mma2TransformPipeline;
-  using Mma2TransformPipelineState = typename Mma2TransformPipeline::PipelineState;
+  using AccumulatorPipeline = typename CollectiveMainloop::AccumulatorPipeline;
+  using AccumulatorPipelineState = typename AccumulatorPipeline::PipelineState;
 
-  using Load2TransformPipeline = typename CollectiveMainloop::Load2TransformPipeline;
-  using Load2TransformPipelineState = typename Load2TransformPipeline::PipelineState;
+  using MainloopSFPipeline = typename CollectiveMainloop::MainloopSFPipeline;
+  using MainloopSFPipelineState = typename MainloopSFPipeline::PipelineState;
 
   using CLCPipeline = cutlass::PipelineCLCFetchAsync<SchedulerPipelineStageCount, ClusterShape>;
   using CLCPipelineState = typename CLCPipeline::PipelineState;
@@ -178,7 +181,7 @@ public:
   using TmemAllocator = cute::conditional_t<cute::size(cute::shape<0>(typename TiledMma::ThrLayoutVMNK{})) == 1,
       cute::TMEM::Allocator1Sm, cute::TMEM::Allocator2Sm>;
 
-  static constexpr uint32_t GenericRegisterRequirement = 104;
+  static constexpr uint32_t GenericRegisterRequirement = 48;
   static constexpr uint32_t AccumRegisterRequirement = 256;
 
   // Kernel level shared memory storage
@@ -186,19 +189,15 @@ public:
     // Barriers should be allocated in lower 8KB of SMEM for SM100
     struct PipelineStorage : cute::aligned_struct<16, _1> {
       using MainloopPipelineStorage = typename CollectiveMainloop::PipelineStorage;
-      using Load2TransformPipelineStorage = typename CollectiveMainloop::Load2TransformPipelineStorage;
       using EpiLoadPipelineStorage = typename CollectiveEpilogue::PipelineStorage;
       using LoadOrderBarrierStorage = typename LoadOrderBarrier::SharedStorage;
       using CLCPipelineStorage = typename CLCPipeline::SharedStorage;
-      using Mma2TransformPipelineStorage = typename CollectiveMainloop::Mma2TransformPipelineStorage;
       using CLCThrottlePipelineStorage = typename CLCThrottlePipeline::SharedStorage;
 
       alignas(16) MainloopPipelineStorage mainloop;
-      alignas(16) Load2TransformPipelineStorage load2transform;
       alignas(16) EpiLoadPipelineStorage epi_load;
       alignas(16) LoadOrderBarrierStorage load_order;
       alignas(16) CLCPipelineStorage clc;
-      alignas(16) Mma2TransformPipelineStorage mma2transform;
       alignas(16) CLCThrottlePipelineStorage clc_throttle;
       alignas(16) arch::ClusterBarrier tmem_dealloc;
       alignas(16) arch::ClusterBarrier epilogue_throttle;
@@ -240,19 +239,23 @@ public:
   };
 
   enum class WarpCategory : int32_t {
-    MMA          = 0,
-    Sched        = 1,
-    MainloopLoad = 2,
-    EpilogueLoad = 3,
-    Epilogue     = 4
+    MMA            = 0,
+    Sched          = 1,
+    MainloopABLoad = 2,
+    EpilogueLoad   = 3,
+    Epilogue       = 4, // 4 warps
+    MainloopSFLoad = 8,
+    Unused         = 9,
   };
 
   struct IsParticipant {
-    uint32_t mma       = false;
-    uint32_t sched     = false;
-    uint32_t main_load = false;
-    uint32_t epi_load  = false;
-    uint32_t epilogue  = false;
+    uint32_t mma          = false;
+    uint32_t sched        = false;
+    uint32_t main_ab_load = false;
+    uint32_t epi_load     = false;
+    uint32_t epilogue     = false;
+    uint32_t main_sf_load = false;
+    uint32_t unused       = false;
   };
 
   //
@@ -407,8 +410,20 @@ public:
 
     // Account for more than one epilogue warp
     int warp_idx = canonical_warp_idx_sync();
-    WarpCategory warp_category = warp_idx < static_cast<int>(WarpCategory::Epilogue) ? WarpCategory(warp_idx)
-                                                                                     : WarpCategory::Epilogue;
+    WarpCategory warp_category = [&] () CUTLASS_LAMBDA_FUNC_INLINE {
+      if (warp_idx < static_cast<int>(WarpCategory::Epilogue)) {
+        return WarpCategory(warp_idx);
+      } 
+      else if (warp_idx < static_cast<int>(WarpCategory::MainloopSFLoad)) {
+        return WarpCategory::Epilogue;
+      } 
+      else if (warp_idx == static_cast<int>(WarpCategory::MainloopSFLoad)) {
+        return WarpCategory::MainloopSFLoad;
+      } 
+      else {
+        return WarpCategory::Unused;
+      }
+    }();
 
     uint32_t lane_predicate = cute::elect_one_sync();
     auto cluster_shape = cutlass::detail::select_cluster_shape(ClusterShape{});
@@ -440,41 +455,43 @@ public:
     IsParticipant is_participant = {
       (warp_category == WarpCategory::MMA),                                 // mma
       (warp_category == WarpCategory::Sched) && is_first_cta_in_cluster,    // sched
-      (warp_category == WarpCategory::MainloopLoad),                        // main_load
+      (warp_category == WarpCategory::MainloopABLoad),                      // main_ab_load
       (warp_category == WarpCategory::EpilogueLoad) && is_epi_load_needed,  // epi_load
-      (warp_category == WarpCategory::Epilogue)                             // epilogue
+      (warp_category == WarpCategory::Epilogue),                            // epilogue
+      (warp_category == WarpCategory::MainloopSFLoad),                      // main_sf_load
+      (warp_category == WarpCategory::Unused)                               // unused
     };
 
     // Mainloop Load pipeline
-    typename MainloopPipeline::Params mainloop_pipeline_params;
-    if (WarpCategory::MainloopLoad == warp_category) {
-      mainloop_pipeline_params.role = MainloopPipeline::ThreadCategory::Producer;
+    typename MainloopABPipeline::Params mainloop_ab_pipeline_params;
+    if (WarpCategory::MainloopABLoad == warp_category) {
+      mainloop_ab_pipeline_params.role = MainloopABPipeline::ThreadCategory::Producer;
     }
     if (WarpCategory::MMA == warp_category) {
-      mainloop_pipeline_params.role = MainloopPipeline::ThreadCategory::Consumer;
+      mainloop_ab_pipeline_params.role = MainloopABPipeline::ThreadCategory::Consumer;
     }
-    mainloop_pipeline_params.is_leader = lane_predicate && is_mma_leader_cta && is_participant.main_load;
-    mainloop_pipeline_params.transaction_bytes = CollectiveMainloop::TmaTransactionBytes;
-    mainloop_pipeline_params.initializing_warp = 0;
-    MainloopPipeline mainloop_pipeline(shared_storage.pipelines.mainloop,
-                                       mainloop_pipeline_params,
-                                       cluster_shape,
-                                       cute::true_type{},   // Perform barrier init
-                                       cute::false_type{}); // Delay mask calculation
+    mainloop_ab_pipeline_params.is_leader = lane_predicate && is_mma_leader_cta && is_participant.main_ab_load;
+    mainloop_ab_pipeline_params.transaction_bytes = CollectiveMainloop::TmaTransactionBytes;
+    mainloop_ab_pipeline_params.initializing_warp = 0;
+    MainloopABPipeline mainloop_ab_pipeline(shared_storage.pipelines.mainloop.pipeline_ab,
+                                            mainloop_ab_pipeline_params,
+                                            cluster_shape,
+                                            cute::true_type{},   // Perform barrier init
+                                            cute::false_type{}); // Delay mask calculation
 
-    typename Load2TransformPipeline::Params load2transform_pipeline_params;
-    if (WarpCategory::MainloopLoad == warp_category) {
-      load2transform_pipeline_params.role = Load2TransformPipeline::ThreadCategory::Producer;
+    typename MainloopSFPipeline::Params mainloop_sf_pipeline_params;
+    if (WarpCategory::MainloopSFLoad == warp_category) {
+      mainloop_sf_pipeline_params.role = MainloopSFPipeline::ThreadCategory::Producer;
     }
     if (WarpCategory::Epilogue == warp_category) {
-      load2transform_pipeline_params.role = Load2TransformPipeline::ThreadCategory::Consumer;
+      mainloop_sf_pipeline_params.role = MainloopSFPipeline::ThreadCategory::Consumer;
     }
-    load2transform_pipeline_params.initializing_warp = 0;
-    load2transform_pipeline_params.producer_arv_count = CollectiveMainloop::NumLoad2TransformProducerThreadEvents;
-    load2transform_pipeline_params.consumer_arv_count = NumEpilogueThreads;
+    mainloop_sf_pipeline_params.initializing_warp = 8;
+    mainloop_sf_pipeline_params.producer_arv_count = CollectiveMainloop::NumMainloopSFProducerThreadEvents;
+    mainloop_sf_pipeline_params.consumer_arv_count = NumEpilogueThreads;
 
-    Load2TransformPipeline load2transform_pipeline(shared_storage.pipelines.load2transform,
-                                          load2transform_pipeline_params);
+    MainloopSFPipeline mainloop_sf_pipeline(shared_storage.pipelines.mainloop.pipeline_sf,
+                                            mainloop_sf_pipeline_params);
 
     // Epilogue Load pipeline
     typename EpiLoadPipeline::Params epi_load_pipeline_params;
@@ -498,8 +515,8 @@ public:
 
     // Load order barrier
     typename LoadOrderBarrier::Params load_order_barrier_params;
-    load_order_barrier_params.group_id = (warp_category == WarpCategory::MainloopLoad) ? 0 : 1;
-    load_order_barrier_params.group_size = NumMainloopLoadThreads;
+    load_order_barrier_params.group_id = (warp_category == WarpCategory::MainloopABLoad) ? 0 : 1;
+    load_order_barrier_params.group_size = NumMainloopABLoadThreads;
     load_order_barrier_params.initializing_warp = 5;
     LoadOrderBarrier load_order_barrier(shared_storage.pipelines.load_order, load_order_barrier_params);
 
@@ -514,7 +531,8 @@ public:
     clc_pipeline_params.producer_blockid = 0;
     clc_pipeline_params.producer_arv_count = 1;
     clc_pipeline_params.consumer_arv_count = NumSchedThreads + cluster_size *
-                                                 (NumMainloopLoadThreads + NumEpilogueThreads + NumMMAThreads);
+                                                 (NumMainloopABLoadThreads + NumEpilogueThreads + 
+                                                  NumMMAThreads + NumMainloopSFLoadThreads);
     if (is_epi_load_needed) {
       clc_pipeline_params.consumer_arv_count += cluster_size * NumEpilogueLoadThreads;
     }
@@ -523,30 +541,30 @@ public:
     CLCPipeline clc_pipeline(shared_storage.pipelines.clc, clc_pipeline_params, cluster_shape);
 
     // Mainloop-Epilogue pipeline
-    typename Mma2TransformPipeline::Params mma2transform_pipeline_params;
+    typename AccumulatorPipeline::Params accumulator_pipeline_params;
     if (WarpCategory::MMA == warp_category) {
-      mma2transform_pipeline_params.role = Mma2TransformPipeline::ThreadCategory::Producer;
+      accumulator_pipeline_params.role = AccumulatorPipeline::ThreadCategory::Producer;
     }
     if (WarpCategory::Epilogue == warp_category) {
-      mma2transform_pipeline_params.role = Mma2TransformPipeline::ThreadCategory::Consumer;
+      accumulator_pipeline_params.role = AccumulatorPipeline::ThreadCategory::Consumer;
     }
     // Only one producer thread arrives on this barrier.
-    mma2transform_pipeline_params.producer_arv_count = 1;
-    mma2transform_pipeline_params.consumer_arv_count = size(AtomThrShapeMNK{}) * NumEpilogueThreads;
-    mma2transform_pipeline_params.initializing_warp = 2;
-    Mma2TransformPipeline mma2transform_pipeline(shared_storage.pipelines.mma2transform,
-                                                 mma2transform_pipeline_params,
+    accumulator_pipeline_params.producer_arv_count = 1;
+    accumulator_pipeline_params.consumer_arv_count = size(AtomThrShapeMNK{}) * NumEpilogueThreads;
+    accumulator_pipeline_params.initializing_warp = 2;
+    AccumulatorPipeline accumulator_pipeline(shared_storage.pipelines.mainloop.pipeline_accum,
+                                                 accumulator_pipeline_params,
                                                  cluster_shape);
 
     // CLC throttle pipeline
     typename CLCThrottlePipeline::Params clc_throttle_pipeline_params;
-    if (WarpCategory::MainloopLoad == warp_category) {
+    if (WarpCategory::MainloopABLoad == warp_category) {
       clc_throttle_pipeline_params.role = CLCThrottlePipeline::ThreadCategory::Producer;
     }
     if (WarpCategory::Sched == warp_category) {
       clc_throttle_pipeline_params.role = CLCThrottlePipeline::ThreadCategory::Consumer;
     }
-    clc_throttle_pipeline_params.producer_arv_count = NumMainloopLoadThreads;
+    clc_throttle_pipeline_params.producer_arv_count = NumMainloopABLoadThreads;
     clc_throttle_pipeline_params.consumer_arv_count = NumSchedThreads;
     clc_throttle_pipeline_params.dst_blockid = 0;
     clc_throttle_pipeline_params.initializing_warp = 3;
@@ -573,7 +591,7 @@ public:
     if (WarpCategory::MMA == warp_category && lane_predicate) {
       epilogue_throttle_barrier.init(                          NumMMAThreads +
                                     (is_first_cta_in_cluster ? NumSchedThreads : 0) +
-                                                               NumMainloopLoadThreads +
+                                                               NumMainloopABLoadThreads +
                                     (is_epi_load_needed      ? NumEpilogueLoadThreads : 0));
     }
 
@@ -581,11 +599,11 @@ public:
     // To all producers and consumer threadblocks in the cluster
     pipeline_init_arrive_relaxed(cluster_size);
 
-    auto load_inputs = collective_mainloop.load_init(
+    auto load_inputs = collective_mainloop.load_ab_init(
         problem_shape_MNKL, params.mainloop, shared_storage.tensors.mainloop);
 
-    MainloopPipelineState mainloop_pipe_consumer_state;
-    MainloopPipelineState mainloop_pipe_producer_state = cutlass::make_producer_start_state<MainloopPipeline>();
+    MainloopABPipelineState mainloop_ab_pipe_consumer_state;
+    MainloopABPipelineState mainloop_ab_pipe_producer_state = cutlass::make_producer_start_state<MainloopABPipeline>();
 
     EpiLoadPipelineState epi_load_pipe_consumer_state;
     EpiLoadPipelineState epi_load_pipe_producer_state = cutlass::make_producer_start_state<EpiLoadPipeline>();
@@ -596,17 +614,17 @@ public:
     CLCPipelineState clc_pipe_consumer_state;
     CLCPipelineState clc_pipe_producer_state = cutlass::make_producer_start_state<CLCPipeline>();
 
-    Mma2TransformPipelineState mma2transform_pipe_consumer_state;
-    Mma2TransformPipelineState mma2transform_pipe_producer_state = cutlass::make_producer_start_state<Mma2TransformPipeline>();
+    AccumulatorPipelineState accumulator_pipe_consumer_state;
+    AccumulatorPipelineState accumulator_pipe_producer_state = cutlass::make_producer_start_state<AccumulatorPipeline>();
 
-    Load2TransformPipelineState load2transform_pipe_consumer_state;
-    Load2TransformPipelineState load2transform_pipe_producer_state = cutlass::make_producer_start_state<Load2TransformPipeline>();
+    MainloopSFPipelineState mainloop_sf_pipe_consumer_state;
+    MainloopSFPipelineState mainloop_sf_pipe_producer_state = cutlass::make_producer_start_state<MainloopSFPipeline>();
 
     dim3 block_id_in_cluster = cute::block_id_in_cluster();
 
     // Calculate mask after cluster barrier arrival
-    mainloop_pipeline.init_masks(cluster_shape, block_id_in_cluster);
-    mma2transform_pipeline.init_masks(cluster_shape, block_id_in_cluster);
+    mainloop_ab_pipeline.init_masks(cluster_shape, block_id_in_cluster);
+    accumulator_pipeline.init_masks(cluster_shape, block_id_in_cluster);
 
     // TileID scheduler
     TileScheduler scheduler(&shared_storage.clc_response[0], params.scheduler, block_id_in_cluster);
@@ -619,7 +637,7 @@ public:
 
     pipeline_init_wait(cluster_size);
 
-    if (is_participant.main_load) {
+    if (is_participant.main_ab_load) {
       // Register reconfiguration
       arch::warpgroup_reg_dealloc<GenericRegisterRequirement>();
 
@@ -633,15 +651,12 @@ public:
       epilogue_throttle_barrier.arrive();
       bool requires_clc_query = true;
 
-      auto pipelines = cute::make_tuple(mainloop_pipeline, load2transform_pipeline);
-      auto states = cute::make_tuple(mainloop_pipe_producer_state, load2transform_pipe_producer_state);
-
       do {
 
         // Get the number of K tiles to compute for this work as well as the starting K tile offset of the work.
         auto k_tile_iter = scheduler.get_k_tile_iterator(work_tile_info, problem_shape_MNKL, CtaShape_MNK{}, load_inputs.k_tiles);
         auto k_tile_count = TileScheduler::get_work_k_tile_count(work_tile_info, problem_shape_MNKL, CtaShape_MNK{});
-        auto k_tile_prologue = min(MainloopPipeline::Stages, k_tile_count);
+        auto k_tile_prologue = min(MainloopABPipeline::Stages, k_tile_count);
 
         if constexpr (IsSchedDynamicPersistent) {
           if (is_first_cta_in_cluster && requires_clc_query) {
@@ -652,34 +667,28 @@ public:
         }
 
         // Start mainloop prologue loads, arrive on the epilogue residual load barrier, resume mainloop loads
-        auto [mainloop_producer_state_next, load2transform_producer_state_next, k_tile_iter_next] = collective_mainloop.load(
-          mainloop_pipeline,
-          load2transform_pipeline,
-          mainloop_pipe_producer_state,
-          load2transform_pipe_producer_state,
+        auto [mainloop_ab_producer_state_next, k_tile_iter_next] = collective_mainloop.load_ab(
+          mainloop_ab_pipeline,
+          mainloop_ab_pipe_producer_state,
           load_inputs,
           cta_coord_mnkl,
           k_tile_iter, k_tile_prologue
         );
-        mainloop_pipe_producer_state = mainloop_producer_state_next;
-        load2transform_pipe_producer_state = load2transform_producer_state_next;
+        mainloop_ab_pipe_producer_state = mainloop_ab_producer_state_next;
 
         if (do_load_order_arrive) {
           load_order_barrier.arrive();
           do_load_order_arrive = false;
         }
 
-        auto [mainloop_producer_state_next_, load2transform_producer_state_next_, unused_] = collective_mainloop.load(
-          mainloop_pipeline,
-          load2transform_pipeline,
-          mainloop_pipe_producer_state,
-          load2transform_pipe_producer_state,
+        auto [mainloop_ab_producer_state_next_, unused_] = collective_mainloop.load_ab(
+          mainloop_ab_pipeline,
+          mainloop_ab_pipe_producer_state,
           load_inputs,
           cta_coord_mnkl,
           k_tile_iter_next, k_tile_count - k_tile_prologue
         );
-        mainloop_pipe_producer_state = mainloop_producer_state_next_;
-        load2transform_pipe_producer_state = load2transform_producer_state_next_;
+        mainloop_ab_pipe_producer_state = mainloop_ab_producer_state_next_;
 
         // Sync warp to prevent non-participating threads entering next wave early
         __syncwarp();
@@ -697,11 +706,61 @@ public:
         }
       } while (work_tile_info.is_valid());
 
-      collective_mainloop.load_tail(
-        mainloop_pipeline, 
-        load2transform_pipeline, 
-        mainloop_pipe_producer_state, 
-        load2transform_pipe_producer_state
+      collective_mainloop.load_ab_tail(
+        mainloop_ab_pipeline, 
+        mainloop_ab_pipe_producer_state
+      );
+      
+    }
+
+    else if (is_participant.main_sf_load) {
+      auto mainloop_sf_inputs = collective_mainloop.load_sf_init(
+        problem_shape_MNKL, params.mainloop, shared_storage.tensors.mainloop);
+
+      // Register reconfiguration
+      arch::warpgroup_reg_dealloc<GenericRegisterRequirement>();
+
+      // Ensure that the prefetched kernel does not touch
+      // unflushed global memory prior to this instruction
+      cutlass::arch::wait_on_dependent_grids();
+
+      bool requires_clc_query = true;
+
+      do {
+
+        // Get the number of K tiles to compute for this work as well as the starting K tile offset of the work.
+        auto k_tile_iter = scheduler.get_k_tile_iterator(work_tile_info, problem_shape_MNKL, CtaShape_MNK{}, mainloop_sf_inputs.k_tiles);
+        auto k_tile_count = TileScheduler::get_work_k_tile_count(work_tile_info, problem_shape_MNKL, CtaShape_MNK{});
+
+        // Start mainloop prologue loads, arrive on the epilogue residual load barrier, resume mainloop loads
+        auto [mainloop_sf_producer_state_next, k_tile_iter_next] = collective_mainloop.load_sf(
+          mainloop_sf_pipeline,
+          mainloop_sf_pipe_producer_state,
+          mainloop_sf_inputs,
+          cta_coord_mnkl,
+          k_tile_iter, k_tile_count
+        );
+        mainloop_sf_pipe_producer_state = mainloop_sf_producer_state_next;
+
+        // Sync warp to prevent non-participating threads entering next wave early
+        __syncwarp();
+
+        auto [next_work_tile_info, increment_pipe] = scheduler.fetch_next_work(
+          work_tile_info,
+          clc_pipeline,
+          clc_pipe_consumer_state
+        );
+        work_tile_info = next_work_tile_info;
+        cta_coord_mnkl = scheduler.work_tile_to_cta_coord(work_tile_info);
+        requires_clc_query = increment_pipe;
+        if (increment_pipe) {
+          ++clc_pipe_consumer_state;
+        }
+      } while (work_tile_info.is_valid());
+
+      collective_mainloop.load_sf_tail(
+        mainloop_sf_pipeline, 
+        mainloop_sf_pipe_producer_state
       );
       
     }
@@ -791,16 +850,16 @@ public:
         }
 
         if (is_mma_leader_cta) {
-          auto [mainloop_pipe_consumer_state_, mma2transform_pipe_producer_state_] = collective_mainloop.mma(
-            cute::make_tuple(mainloop_pipeline, mma2transform_pipeline),
-            cute::make_tuple(mainloop_pipe_consumer_state, mma2transform_pipe_producer_state),
+          auto [mainloop_ab_pipe_consumer_state_, accumulator_pipe_producer_state_] = collective_mainloop.mma(
+            cute::make_tuple(mainloop_ab_pipeline, accumulator_pipeline),
+            cute::make_tuple(mainloop_ab_pipe_consumer_state, accumulator_pipe_producer_state),
             tmem_storage,
             mma_inputs,
             cta_coord_mnkl,
             k_tile_count
           );
-          mainloop_pipe_consumer_state = mainloop_pipe_consumer_state_;
-          mma2transform_pipe_producer_state = mma2transform_pipe_producer_state_;
+          mainloop_ab_pipe_consumer_state = mainloop_ab_pipe_consumer_state_;
+          accumulator_pipe_producer_state = accumulator_pipe_producer_state_;
         }
 
         work_tile_info = next_work_tile_info;
@@ -817,7 +876,7 @@ public:
 
       // Leader MMA waits for leader + peer epilogues to release stage
       if (is_mma_leader_cta) {
-        mma2transform_pipeline.producer_tail(mma2transform_pipe_producer_state);
+        accumulator_pipeline.producer_tail(accumulator_pipe_producer_state);
       }
       // Signal to peer MMA that entire tmem allocation can be deallocated
       if constexpr (has_mma_peer_cta) {
@@ -912,13 +971,13 @@ public:
       uint32_t tmem_base_ptr = shared_storage.tmem_base_ptr;
       collective_mainloop.set_tmem_offsets(tmem_storage, tmem_base_ptr);
 
-      auto transform_inputs = collective_mainloop.transform_init(
+      auto accum_inputs = collective_mainloop.accum_init(
         problem_shape_MNKL, 
         shared_storage.tensors.mainloop
       );
 
-      auto pipelines = cute::make_tuple(mma2transform_pipeline, load2transform_pipeline);
-      auto states = cute::make_tuple(mma2transform_pipe_consumer_state, load2transform_pipe_consumer_state);
+      auto pipelines = cute::make_tuple(accumulator_pipeline, mainloop_sf_pipeline);
+      auto states = cute::make_tuple(accumulator_pipe_consumer_state, mainloop_sf_pipe_consumer_state);
       bool do_tail_store = false;
       do {
 
@@ -935,11 +994,11 @@ public:
           ++clc_pipe_consumer_state;
         }
 
-        auto [accum, tiled_t2r, next_state] = collective_mainloop.transform(
+        auto [accum, tiled_t2r, next_state] = collective_mainloop.accum(
           pipelines,
           states,
           tmem_storage,
-          transform_inputs,
+          accum_inputs,
           cta_coord_mnkl,
           typename CollectiveEpilogue::CopyOpT2R{},
           typename CollectiveEpilogue::EpilogueTile{},

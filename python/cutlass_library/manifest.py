@@ -522,7 +522,9 @@ class Manifest:
 
       arch_conditional_cc = [
         '90a', 
-        '100a' 
+        '100a',
+        '101a',
+        '120a' 
       ]
       architectures = [x if x not in arch_conditional_cc else x.split('a')[0] for x in architectures]
 

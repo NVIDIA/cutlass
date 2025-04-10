@@ -65,10 +65,10 @@ endfunction()
 
 if(CUTLASS_BUILD_FOR_PROFILER_REGRESSIONS)
 
-    set(PROFILER_ARCH_LIST 100a)
+    set(PROFILER_ARCH_LIST 100a 101a 120a)
     foreach(ARCH IN LISTS CUTLASS_NVCC_ARCHS)
       if(NOT (ARCH IN_LIST PROFILER_ARCH_LIST))
-        message(FATAL_ERROR "Only SM100a compute capability is supported with profiler-based unit tests")
+        message(FATAL_ERROR "Only SM100a/101a/120a compute capability is supported with profiler-based unit tests")
       endif()
     endforeach()
 

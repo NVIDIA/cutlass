@@ -119,7 +119,7 @@ struct CollectiveMma<
   using PipelineParams = typename MainloopPipeline::Params;
 
   // Two threads per CTA are producers (1 for operand tile `tma`, and 32 for scales `cp.async`)
-  static constexpr int NumProducerThreadEvents = 33; 
+  static constexpr int NumProducerThreadEvents = 33;
 
   static constexpr int ScaleGranularityM = ScaleGranularityM_ == 0 ? size<0>(TileShape{}) : ScaleGranularityM_;
   static constexpr int ScaleGranularityN = ScaleGranularityN_ == 0 ? size<1>(TileShape{}) : ScaleGranularityN_;
@@ -335,9 +335,9 @@ struct CollectiveMma<
     auto tK = get<3>(gA_mkl.shape());
 
     // Make the tiled views of scale tensors
-    auto scaleA_shape = make_shape(M / ScaleGranularityM, tK, L); // (scale_m,k,l)
+    auto scaleA_shape = make_shape(ceil_div(M, ScaleGranularityM), tK, L); // (scale_m,k,l)
     auto scaleA_layout = make_ordered_layout(scaleA_shape, Step<_0, _1, _2>{});
-    auto scaleB_shape = make_shape(N / ScaleGranularityN, tK, L); // (scale_n,k,l)
+    auto scaleB_shape = make_shape(ceil_div(N, ScaleGranularityN), tK, L); // (scale_n,k,l)
     auto scaleB_layout = make_ordered_layout(scaleB_shape, Step<_0, _1, _2>{});
 
     // Note that mScaleA_mkl and mScaleB_nkl are already blocked tiled in the `m` host and
@@ -401,26 +401,26 @@ struct CollectiveMma<
     Tensor cScaleA_mkl = make_identity_tensor(mScaleA_mkl.shape());
     Tensor cScaleB_nkl = make_identity_tensor(mScaleB_nkl.shape());
 
-    Tensor gScaleA = local_tile( 
-      mScaleA_mkl, make_tile(Int<ScaleMsPerTile>{}), 
+    Tensor gScaleA = local_tile(
+      mScaleA_mkl, make_tile(Int<ScaleMsPerTile>{}),
       make_coord(m_coord,_,l_coord));                   // (ScaleMsPerTile,k,1)
-    Tensor cScaleA = local_tile( 
-      cScaleA_mkl, make_tile(Int<ScaleMsPerTile>{}), 
+    Tensor cScaleA = local_tile(
+      cScaleA_mkl, make_tile(Int<ScaleMsPerTile>{}),
       make_coord(m_coord,_,l_coord));
-    Tensor gScaleB = local_tile( 
+    Tensor gScaleB = local_tile(
       mScaleB_nkl, make_tile(Int<ScaleNsPerTile>{}),
       make_coord(n_coord,_,l_coord));                   // (ScaleNsPerTile,k,1)
-    Tensor cScaleB = local_tile( 
-      cScaleB_nkl, make_tile(Int<ScaleNsPerTile>{}), 
+    Tensor cScaleB = local_tile(
+      cScaleB_nkl, make_tile(Int<ScaleNsPerTile>{}),
       make_coord(n_coord,_,l_coord));
 
-    TiledCopy scale_copy_a = make_tiled_copy(SmemBlockScalingCopyAtomA{}, 
+    TiledCopy scale_copy_a = make_tiled_copy(SmemBlockScalingCopyAtomA{},
       Layout<Shape<_32>>{}, Layout<Shape<_1>>{});
     TiledCopy scale_copy_b = make_tiled_copy(SmemBlockScalingCopyAtomB{}, 
       Layout<Shape<_32>>{}, Layout<Shape<_1>>{});
     ThrCopy thr_scale_copy_a = scale_copy_a.get_slice(threadIdx.x);
     ThrCopy thr_scale_copy_b = scale_copy_b.get_slice(threadIdx.x);
-    
+
     Tensor tAgA_ScaleA = thr_scale_copy_a.partition_S(gScaleA);
     Tensor tAcA_ScaleA = thr_scale_copy_a.partition_S(cScaleA);
     Tensor tAsA_ScaleA = thr_scale_copy_a.partition_D(sScaleA);
@@ -441,13 +441,13 @@ struct CollectiveMma<
 
     #pragma unroll
     for (int i = 0; i < size(tApA_ScaleA); ++i) {
-      tApA_ScaleA(i) = get<0>(tAcA_ScaleA(i)) < 
+      tApA_ScaleA(i) = get<0>(tAcA_ScaleA(i)) <
         std::min(scales_m, (m_coord + 1) * ScaleMsPerTile);
     }
 
     #pragma unroll
     for (int i = 0; i < size(tBpB_ScaleB); ++i) {
-      tBpB_ScaleB(i) = get<0>(tBcB_ScaleB(i)) < 
+      tBpB_ScaleB(i) = get<0>(tBcB_ScaleB(i)) <
         std::min(scales_n, (n_coord + 1) * ScaleNsPerTile);
     }
 

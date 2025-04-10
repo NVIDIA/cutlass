@@ -26,11 +26,13 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-include_directories(
-  .
-)
+set(TEST_PREFETCH_CASE --m=8192 --n=64 --k=8192 --iterations=0) 
 
 cutlass_example_add_executable(
   63_hopper_gemm_with_weight_prefetch
   63_hopper_gemm_with_weight_prefetch.cu
-  )
+  TEST_COMMAND_OPTIONS
+  TEST_PREFETCH_CASE
+)
+
+target_include_directories(63_hopper_gemm_with_weight_prefetch PUBLIC .)

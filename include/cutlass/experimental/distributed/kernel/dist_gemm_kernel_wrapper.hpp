@@ -82,7 +82,7 @@ struct DistributedGemmKernelWrapper<
   using BaseArguments = typename BaseKernel::Arguments;
   using BaseParams = typename BaseKernel::Params;
 
-  static_assert(BaseKernel::ArchTag::kMinComputeCapability == 90, "DistGEMM only supports Hopper GEMMs for now.");
+  //static_assert(BaseKernel::ArchTag::kMinComputeCapability == 90, "DistGEMM only supports Hopper GEMMs for now.");
   static_assert(not cute::is_same_v<typename BaseKernel::ElementC, void>, "DistributedGEMM epilogues must have a source.");
 
   using ElementFlag = uint32_t;

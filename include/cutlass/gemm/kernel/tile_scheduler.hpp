@@ -52,10 +52,16 @@ struct StreamKScheduler { };
 
 struct GroupScheduler { }; // Only used for Grouped GEMMs
 
+struct DynamicPersistentScheduler { };
+
+struct StaticPersistentScheduler { };
+
 } // namespace cutlass::gemm
 ////////////////////////////////////////////////////////////////////////////////
 
 #include "cutlass/gemm/kernel/sm90_tile_scheduler.hpp"
+#include "cutlass/gemm/kernel/sm100_static_tile_scheduler.hpp" 
+
 #include "cutlass/gemm/kernel/sm90_tile_scheduler_stream_k.hpp"
 #include "cutlass/gemm/kernel/sm90_tile_scheduler_group.hpp"
 #include "cutlass/gemm/kernel/sm100_tile_scheduler.hpp"            
@@ -137,10 +143,26 @@ struct TileSchedulerSelector<
 };
 
 template <
+  class ArchTag,
   class TileShape,
-  class ClusterShape
-  , uint32_t SchedulerPipelineStageCount     
-  , class GroupProblemShape
+  class ClusterShape, 
+  uint32_t SchedulerPipelineStageCount     
+>
+struct TileSchedulerSelector<
+    StaticPersistentScheduler,
+    ArchTag,
+    TileShape,
+    ClusterShape
+    , SchedulerPipelineStageCount              
+  > {
+  using Scheduler = PersistentTileSchedulerSm90;
+};
+
+template <
+  class TileShape,
+  class ClusterShape, 
+  uint32_t SchedulerPipelineStageCount, 
+  class GroupProblemShape
 >
 struct TileSchedulerSelector<
     GroupScheduler,
@@ -191,12 +213,10 @@ struct TileSchedulerSelector<
     TileShape,
     ClusterShape,
     SchedulerPipelineStageCount> {
-  using Scheduler = typename TileSchedulerSelector<
-      PersistentScheduler,
-      arch::Sm100,
-      TileShape,
-      ClusterShape,
-      SchedulerPipelineStageCount>::Scheduler;
+    using Scheduler = PersistentTileSchedulerSm100<
+                ClusterShape,
+                SchedulerPipelineStageCount
+                >;
 };
 
 // Default (void) for Sm100 maps to PersistentTileSchedulerSm100
@@ -252,7 +272,72 @@ struct TileSchedulerSelector<
                         SchedulerPipelineStageCount>;
 };
 
+// SM100 dynamic tile scheduler
+template <class TileShape, class ClusterShape, uint32_t SchedulerPipelineStageCount>
+struct TileSchedulerSelector<
+    DynamicPersistentScheduler,
+    arch::Sm100,
+    TileShape,
+    ClusterShape,
+    SchedulerPipelineStageCount> {
+  using Scheduler = PersistentTileSchedulerSm100<
+                        ClusterShape,
+                        SchedulerPipelineStageCount>;
+};
 
+template <
+  class TileShape,
+  class ClusterShape,
+  uint32_t SchedulerPipelineStageCount
+>
+struct TileSchedulerSelector<
+    StaticPersistentScheduler,
+    arch::Sm100,
+    TileShape,
+    ClusterShape,
+    SchedulerPipelineStageCount> {
+  using Scheduler = StaticPersistentTileScheduler100;
+};
+
+// Default (void) for Sm120 maps to PersistentTileSchedulerSm100
+template <class TileShape, class ClusterShape, uint32_t SchedulerPipelineStageCount>
+struct TileSchedulerSelector<
+    void,
+    arch::Sm120,
+    TileShape,
+    ClusterShape,
+    SchedulerPipelineStageCount> {
+    using Scheduler = PersistentTileSchedulerSm100<
+                ClusterShape,
+                SchedulerPipelineStageCount
+                >;
+};
+
+// PersistentScheduler for Sm120 maps to PersistentTileSchedulerSm100
+template <class TileShape, class ClusterShape, uint32_t SchedulerPipelineStageCount>
+struct TileSchedulerSelector<
+    PersistentScheduler,
+    arch::Sm120,
+    TileShape,
+    ClusterShape,
+    SchedulerPipelineStageCount> {
+  using Scheduler = PersistentTileSchedulerSm100<ClusterShape, SchedulerPipelineStageCount>;
+};
+
+
+// StreamKScheduler for Sm120 maps to PersistentTileSchedulerSm100StreamK
+template <class TileShape, class ClusterShape, uint32_t SchedulerPipelineStageCount>
+struct TileSchedulerSelector<
+    StreamKScheduler,
+    arch::Sm120,
+    TileShape,
+    ClusterShape,
+    SchedulerPipelineStageCount> {
+  using Scheduler = PersistentTileSchedulerSm100StreamK<
+                        TileShape,
+                        ClusterShape,
+                        SchedulerPipelineStageCount>;
+};
 
 ////////////////////////////////////////////////////////////////////////////////
 

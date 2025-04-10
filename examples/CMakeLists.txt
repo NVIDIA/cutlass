@@ -157,7 +157,12 @@ foreach(EXAMPLE
   76_blackwell_conv                             
   77_blackwell_fmha                             
   78_blackwell_emulated_bf16x9_gemm             
+  79_blackwell_geforce_gemm             
+  80_blackwell_geforce_sparse_gemm
   81_blackwell_gemm_blockwise 
+  82_blackwell_distributed_gemm
+  83_blackwell_sparse_gemm
+  84_blackwell_narrow_precision_sparse_gemm
   )
 
   add_subdirectory(${EXAMPLE})

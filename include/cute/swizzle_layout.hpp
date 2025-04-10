@@ -573,8 +573,8 @@ logical_product(Layout<Shape,Stride>                          const& layout,
   auto active_Y = swizzle_active_bits & typename Swizzle<B,M,S>::yyy_msk{};
 
   // Pass the identifiers through the old layout and new layout to make a new swizzle identifier, L*(L[(P o L)(c*)])
-  auto new_active_Z = new_layout(Int<0>{}, tiler.layout_b()[active_Z]);
-  auto new_active_Y = new_layout(Int<0>{}, tiler.layout_b()[active_Y]);
+  auto new_active_Z = new_layout(Int<0>{}, tiler.layout_b()(active_Z));
+  auto new_active_Y = new_layout(Int<0>{}, tiler.layout_b()(active_Y));
 
   // Use this new swizzle identifier to construxt the new swizzle for new_layout
   //   (this also makes sure it's a "valid" swizzle that Swizzle can represent)
