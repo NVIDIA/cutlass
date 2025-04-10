@@ -1092,7 +1092,8 @@ struct CollectiveMma<
     cute::tma_descriptor_fence_acquire(get<1>(input_tensormaps));
   }
 
-private:
+protected:
+
   template <class ProblemShape_MNKL>
   CUTLASS_DEVICE
   constexpr auto

@@ -30,7 +30,6 @@
  **************************************************************************************************/
 
 
-
 #pragma once
 
 #include "cutlass/cutlass.h"
@@ -421,6 +420,7 @@ struct CollectiveMma<
   can_implement(
       ProblemShape const& problem_shape,
       [[maybe_unused]] Arguments const& args) {
+
     auto problem_shape_MNKL = append<4>(problem_shape, 1);
     auto [M,N,K,L] = problem_shape_MNKL;
 
@@ -672,6 +672,9 @@ struct CollectiveMma<
     // PIPELINED MAIN LOOP
     //
     tiled_mma.accumulate_ = UMMA::ScaleOut::Zero;
+    // Wait for tmem accumulator buffer to become empty with a flipped phase
+    accumulator_pipeline.producer_acquire(accumulator_pipe_producer_state);
+
     CUTLASS_PRAGMA_NO_UNROLL
     while (k_tile_count > 0) {
       // WAIT on mainloop_pipe_consumer_state until its data are available
@@ -706,11 +709,10 @@ struct CollectiveMma<
     return mainloop_pipe_consumer_state;
   }
 
-private:
+protected:
 
   typename Params::TMA_A const* observed_tma_load_a_{nullptr};
   typename Params::TMA_B const* observed_tma_load_b_{nullptr};
-
   RuntimeDataTypeA runtime_data_type_a_{};
   RuntimeDataTypeB runtime_data_type_b_{};
 

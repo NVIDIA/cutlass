@@ -178,3 +178,96 @@ void reference_abs_diff(
   max_diff = result_host[0];
   mean_diff = result_host[1] / static_cast<double>(data.size());
 }
+
+template<typename Element>
+__global__ void reference_rel_diff_kernel(
+    Element* data, Element* data_ref, size_t count,
+    double* max_diff, double* sum_diff,
+    bool print_diff ) {
+
+    double thread_max_diff = 0;
+    double thread_sum_diff = 0;
+
+    __shared__ double block_max_diff;
+    __shared__ double block_sum_diff;
+
+    for (size_t i = threadIdx.x + blockIdx.x * blockDim.x; i < count; i += blockDim.x * gridDim.x) {
+      double diff = fabs(data[i] - data_ref[i]) / fabs(data_ref[i]);
+      if (print_diff) if (diff != diff || diff > 0.01f) printf("difference at %lld: %f ... %f vs %f\n", static_cast<long long int>(i), diff, (double)data[i], (double)data_ref[i]);
+      thread_max_diff = fmax(diff, thread_max_diff);
+      thread_sum_diff += diff;
+    }
+
+    for (int i = 0; i < blockDim.x; i++) {
+      if (i == threadIdx.x) {
+        if (i == 0) {
+          block_max_diff = thread_max_diff;
+          block_sum_diff = thread_sum_diff;
+        }
+        else {
+          block_max_diff = fmax(block_max_diff, thread_max_diff);
+          block_sum_diff += thread_sum_diff;
+        }
+      }
+      __syncthreads();
+   }
+
+   if (threadIdx.x == 0) {
+     atomicAdd(sum_diff, block_sum_diff);
+
+     for (;;) {
+       unsigned long long prev = *reinterpret_cast<unsigned long long*>(max_diff);
+       double prev_diff = reinterpret_cast<double const&>(prev);
+       double new_max_diff = fmax(block_max_diff, prev_diff);
+       unsigned long long found = atomicCAS(reinterpret_cast<unsigned long long*>(max_diff), prev, reinterpret_cast<unsigned long long const&>(new_max_diff));
+       if (found == prev) break;
+    }
+   }
+}
+
+template<typename Element>
+void reference_rel_diff(
+    DeviceAllocation<Element> const& data,
+    DeviceAllocation<Element> const& data_ref,
+    double& max_diff, double& mean_diff) {
+
+  static bool kPrintDiff = getenv("REF_PRINT_DIFF") && atoi(getenv("REF_PRINT_DIFF")) == 1;
+
+  DeviceAllocation<double> result;
+  result.reset(2);
+  assert(data.size() == data_ref.size());
+
+  cudaError_t err = cudaMemset(result.get(), 0, result.size() * sizeof(double));
+  if (err != cudaSuccess) {
+    std::cerr << "Memset failed. Last CUDA error: "
+              << cudaGetErrorString(err) << std::endl;
+    max_diff = mean_diff = 1e20;
+    return;
+  }
+
+  dim3 block(256, 1, 1);
+  dim3 grid(1024, 1, 1);
+  reference_rel_diff_kernel<<<block, grid>>>(
+      data.get(), data_ref.get(), data.size(),
+      result.get(), result.get() + 1, kPrintDiff);
+
+  err = cudaDeviceSynchronize();
+  if (err != cudaSuccess) {
+    std::cerr << "Difference kernel failed. Last CUDA error: "
+              << cudaGetErrorString(err) << std::endl;
+    max_diff = mean_diff = 1e20;
+    return;
+  }
+
+  double result_host[2];
+  err = cudaMemcpy(result_host, result.get(), result.size() * sizeof(double), cudaMemcpyDefault);
+  if (err != cudaSuccess) {
+    std::cerr << "Copy failed. Last CUDA error: "
+              << cudaGetErrorString(err) << std::endl;
+    max_diff = mean_diff = 1e20;
+    return;
+  }
+
+  max_diff = result_host[0];
+  mean_diff = result_host[1] / static_cast<double>(data.size());
+}

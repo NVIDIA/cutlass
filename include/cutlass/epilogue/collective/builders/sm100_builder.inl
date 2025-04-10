@@ -29,9 +29,6 @@
  *
  **************************************************************************************************/
 #pragma once
-//
-
-//
 
 #include "cute/layout.hpp"     // cute::Shape
 #include "cute/numeric/numeric_types.hpp" // cute::sizeof_bits_v
@@ -97,6 +94,485 @@ sm100_get_epilogue_smem_swizzle_layout_atom() {
     static_assert(cutlass::detail::dependent_false<GmemStrideType>, "Unsupported gmem layout.");
   }
 }
+
+namespace sparse {
+
+template <
+  class CtaTileShape_MNK,
+  class EpilogueTileType,
+  class TmemWarpShape_MN,
+  class ElementC,
+  class StrideC,
+  class ElementD,
+  class StrideD,
+  class EpilogueScheduleType,
+  class FusionOp
+>
+constexpr auto
+sm100_sparse_compute_tile_shape_or_override() {
+  if constexpr (cute::is_same_v<EpilogueTileType, EpilogueTileAuto>) {
+    constexpr int CtaM = size<0>(CtaTileShape_MNK{});
+    constexpr int CtaN = size<1>(CtaTileShape_MNK{});
+    constexpr int CtaK = size<2>(CtaTileShape_MNK{});
+    constexpr int WarpM = size<0>(TmemWarpShape_MN{});
+    constexpr int WarpN = size<1>(TmemWarpShape_MN{});
+    constexpr bool DisableSource = cute::is_void_v<ElementC>;
+
+    // For SM100 SP BSSP kernel, we always have EpiTileM = CtaM
+    constexpr int EpiTileM = CtaM;
+
+    constexpr bool Is1Sm = cute::is_base_of_v<TmaWarpSpecialized1Sm, EpilogueScheduleType>;
+    constexpr bool Is2Sm = cute::is_base_of_v<TmaWarpSpecialized2Sm, EpilogueScheduleType>;
+
+    constexpr bool IsBsspMxf8f6f4 = cute::is_same_v<cutlass::epilogue::TmaWarpSpecialized1SmMxf8f6f4, EpilogueScheduleType> ||
+                                    cute::is_same_v<cutlass::epilogue::TmaWarpSpecialized2SmMxf8f6f4, EpilogueScheduleType>;
+    constexpr bool IsBsspNvf4 = cute::is_same_v<cutlass::epilogue::TmaWarpSpecialized1SmNvf4, EpilogueScheduleType> ||
+                                cute::is_same_v<cutlass::epilogue::TmaWarpSpecialized2SmNvf4, EpilogueScheduleType>;
+    constexpr bool IsBsspMxf4 = cute::is_same_v<cutlass::epilogue::TmaWarpSpecialized1SmMxf4, EpilogueScheduleType> ||
+                                cute::is_same_v<cutlass::epilogue::TmaWarpSpecialized2SmMxf4, EpilogueScheduleType>;
+    constexpr bool IsBssp = (IsBsspMxf8f6f4 || IsBsspNvf4 || IsBsspMxf4);
+    constexpr bool IsSp = not IsBssp;
+
+    constexpr auto compute_epi_tile_n = [&](int epi_smem_size_kb, int num_epi_stage, int element_bit_size) constexpr -> int {
+      // Use Epi Smem + Num Epi Stage to compute Epi Tile N
+      return cutlass::bytes_to_bits(epi_smem_size_kb * 1024) / num_epi_stage / EpiTileM / element_bit_size;
+    };
+
+    // Row major SFD, EpiTileN = SFD_VS multiplier
+    constexpr bool is_sfd_row_major = (not cute::is_void_v<typename FusionOp::GmemLayoutTagScalefactor>) && 
+                                      cute::is_same_v<typename FusionOp::GmemLayoutTagScalefactor, cutlass::layout::RowMajor>;
+    constexpr bool is_sfd_row_major_vs64 = is_sfd_row_major ? (FusionOp::SFVecSize == 64) : false;
+
+    constexpr auto EpiTileN = [&]() constexpr -> int {
+      // VoidC Kernel
+      if (DisableSource) {
+        auto d_bits = cute::sizeof_bits_v<ElementD>;
+        if (IsSp) {
+          if (d_bits == 32) {
+            if (Is1Sm && CtaN ==  64) { return compute_epi_tile_n(32, 2, d_bits); }
+            if (Is1Sm && CtaN == 128) { return compute_epi_tile_n(32, 2, d_bits); }
+            if (Is1Sm && CtaN == 192) { return compute_epi_tile_n(48, 3, d_bits); }
+            if (Is1Sm && CtaN == 256) { return compute_epi_tile_n(48, 3, d_bits); }
+            if (Is2Sm && CtaN ==  64) { return compute_epi_tile_n(32, 2, d_bits); }
+            if (Is2Sm && CtaN == 128) {
+              bool Is4KBlock = (CtaK == 64 || CtaK == 256);
+              if (Is4KBlock)  { return compute_epi_tile_n(16, 2, d_bits); }
+                                return compute_epi_tile_n(32, 2, d_bits);
+            }
+            if (Is2Sm && CtaN == 192) { return compute_epi_tile_n(48, 3, d_bits); }
+            if (Is2Sm && CtaN == 256) {
+              bool Is4KBlock = (CtaK == 64 || CtaK == 256);
+              if (Is4KBlock)  { return compute_epi_tile_n(16, 2, d_bits); }
+                                return compute_epi_tile_n(32, 2, d_bits);
+            }
+          }
+          if (d_bits == 16) {
+            if (Is1Sm && CtaN ==  64) { return compute_epi_tile_n(16, 2, d_bits); }
+            if (Is1Sm && CtaN == 128) { return compute_epi_tile_n(32, 2, d_bits); }
+            if (Is1Sm && CtaN == 192) { return compute_epi_tile_n(48, 3, d_bits); }
+            if (Is1Sm && CtaN == 256) { return compute_epi_tile_n(48, 3, d_bits); }
+            if (Is2Sm && CtaN ==  64) { return compute_epi_tile_n(16, 2, d_bits); }
+            if (Is2Sm && CtaN == 128) {
+              // Prioritize Mxf8f6f4 kernel
+              bool Is4KBlock = (CtaK == 256);
+              if (Is4KBlock)  { return compute_epi_tile_n(16, 2, d_bits); }
+                                return compute_epi_tile_n(32, 2, d_bits);
+            }
+            if (Is2Sm && CtaN == 192) { return compute_epi_tile_n(48, 3, d_bits); }
+            if (Is2Sm && CtaN == 256) {
+              // Prioritize Mxf8f6f4 kernel
+              bool IsHmma2KBlock = (CtaK == 64);
+
+              if (IsHmma2KBlock)  { return compute_epi_tile_n(32, 2, d_bits); } 
+                                    return compute_epi_tile_n(16, 2, d_bits);
+            }
+          }
+          if (d_bits == 8) {
+            if (Is1Sm && CtaN ==  64) { return compute_epi_tile_n( 8, 2, d_bits); }
+            if (Is1Sm && CtaN == 128) { return compute_epi_tile_n(16, 2, d_bits); }
+            if (Is1Sm && CtaN == 192) { return compute_epi_tile_n(16, 2, d_bits); }
+            if (Is1Sm && CtaN == 256) { return compute_epi_tile_n(16, 2, d_bits); }
+            if (Is2Sm && CtaN ==  64) { return compute_epi_tile_n( 8, 2, d_bits); }
+            if (Is2Sm && CtaN == 128) { return compute_epi_tile_n(16, 2, d_bits); }
+            if (Is2Sm && CtaN == 192) { return compute_epi_tile_n(24, 3, d_bits); }
+            if (Is2Sm && CtaN == 256) { return compute_epi_tile_n(16, 2, d_bits); }
+          }
+        }
+        if (IsBsspMxf8f6f4) {
+          if (d_bits == 32) {
+            if (Is1Sm && CtaN == 128) { return compute_epi_tile_n(64, 4, d_bits); }
+            if (Is1Sm && CtaN == 192) { return compute_epi_tile_n(16, 2, d_bits); }
+            if (Is1Sm && CtaN == 256) { return compute_epi_tile_n(48, 3, d_bits); }
+            if (Is2Sm && CtaN == 128) { return compute_epi_tile_n(32, 2, d_bits); }
+            if (Is2Sm && CtaN == 192) { return compute_epi_tile_n(32, 2, d_bits); }
+            if (Is2Sm && CtaN == 256) { return compute_epi_tile_n(64, 4, d_bits); }
+          }
+          if (d_bits == 16) {
+            if (Is1Sm && CtaN == 128) { return compute_epi_tile_n(32, 2, d_bits); }
+            if (Is1Sm && CtaN == 192) { return compute_epi_tile_n(16, 2, d_bits); }
+            if (Is1Sm && CtaN == 256) { return compute_epi_tile_n(48, 3, d_bits); }
+            if (Is2Sm && CtaN == 128) { return compute_epi_tile_n(32, 2, d_bits); }
+            if (Is2Sm && CtaN == 192) { return compute_epi_tile_n(32, 2, d_bits); }
+            if (Is2Sm && CtaN == 256) { return compute_epi_tile_n(64, 4, d_bits); }
+          }
+          if (d_bits == 8) {
+            if (Is1Sm && CtaN == 128) { 
+              // SFD VS64 require EpiTileN to be multiplier of 64
+              if (is_sfd_row_major_vs64) { return compute_epi_tile_n(24, 3, d_bits); }
+              else                       { return compute_epi_tile_n(12, 3, d_bits); }}
+            if (Is1Sm && CtaN == 192) { return compute_epi_tile_n(16, 2, d_bits); }
+            if (Is1Sm && CtaN == 256) { return compute_epi_tile_n(32, 4, d_bits); }
+            if (Is2Sm && CtaN == 128) { return compute_epi_tile_n(16, 2, d_bits); }
+            if (Is2Sm && CtaN == 192) { return compute_epi_tile_n(24, 3, d_bits); }
+            if (Is2Sm && CtaN == 256) {
+              // SFD VS64 require EpiTileN to be multiplier of 64
+              if (is_sfd_row_major_vs64) { return compute_epi_tile_n(16, 2, d_bits); }
+              else                       { return compute_epi_tile_n( 8, 2, d_bits); }}
+          }
+        }
+        if (IsBsspNvf4) {
+          if (d_bits == 32) {
+            if (Is1Sm && CtaN == 128) { return compute_epi_tile_n(48, 3, d_bits); }
+            if (Is1Sm && CtaN == 192) { return compute_epi_tile_n(32, 2, d_bits); }
+            if (Is1Sm && CtaN == 256) {
+              bool Is4KBlock = (CtaK == 512);
+              if (Is4KBlock) { return compute_epi_tile_n(64, 2, d_bits); }
+                               return compute_epi_tile_n(32, 2, d_bits);
+            }
+            if (Is2Sm && CtaN == 128) { return compute_epi_tile_n(32, 2, d_bits); }
+            if (Is2Sm && CtaN == 192) { return compute_epi_tile_n(48, 3, d_bits); }
+            if (Is2Sm && CtaN == 256) {
+              bool Is4KBlock = (CtaK == 512);
+              if (Is4KBlock) { return compute_epi_tile_n(64, 2, d_bits); }
+                               return compute_epi_tile_n(48, 3, d_bits);
+            }
+          }
+          if (d_bits == 16) {
+            if (Is1Sm && CtaN == 128) { return compute_epi_tile_n(32, 2, d_bits); }
+            if (Is1Sm && CtaN == 192) { return compute_epi_tile_n(32, 2, d_bits); }
+            if (Is1Sm && CtaN == 256) { return compute_epi_tile_n(32, 2, d_bits); }
+            if (Is2Sm && CtaN == 128) { return compute_epi_tile_n(32, 2, d_bits); }
+            if (Is2Sm && CtaN == 192) { return compute_epi_tile_n(48, 3, d_bits); }
+            if (Is2Sm && CtaN == 256) { return compute_epi_tile_n(48, 3, d_bits); }
+          }
+          if (d_bits == 4) {
+            if (Is1Sm && CtaN == 128) { return compute_epi_tile_n( 8, 2, d_bits); }
+            if (Is1Sm && CtaN == 192) { return compute_epi_tile_n(12, 3, d_bits); }
+            if (Is1Sm && CtaN == 256) { return compute_epi_tile_n(16, 4, d_bits); }
+            if (Is2Sm && CtaN == 128) { return compute_epi_tile_n( 8, 2, d_bits); }
+            if (Is2Sm && CtaN == 192) { return compute_epi_tile_n(12, 3, d_bits); }
+            if (Is2Sm && CtaN == 256) { return compute_epi_tile_n(16, 4, d_bits); }
+          }
+        }
+        if (IsBsspMxf4) {
+          if (d_bits == 32) {
+            if (CtaN == 256) {
+              return compute_epi_tile_n(32, 2, d_bits);
+            }
+          }
+        }
+        // Fallback
+        return compute_epi_tile_n(16, 2, d_bits);
+      }
+      // NonVoidC Kernel
+      if (not DisableSource) {
+        auto d_bits = cute::sizeof_bits_v<ElementD>;
+        auto c_bits = cute::sizeof_bits_v<ElementC>;
+        if (IsSp) {
+          if (c_bits == 32 && d_bits == 32) {
+            if (Is1Sm && CtaN ==  64) { return compute_epi_tile_n(32, 4, c_bits); }
+            if (Is1Sm && CtaN == 128) { return compute_epi_tile_n(64, 4, c_bits); }
+            if (Is1Sm && CtaN == 192) { return compute_epi_tile_n(48, 3, c_bits); }
+            if (Is1Sm && CtaN == 256) { return compute_epi_tile_n(48, 3, c_bits); }
+            if (Is2Sm && CtaN ==  64) { return compute_epi_tile_n(32, 4, c_bits); }
+            if (Is2Sm && CtaN == 128) {
+              bool Is4KBlock = (CtaK == 64 || CtaK == 256);
+              if (Is4KBlock) { return compute_epi_tile_n(32, 4, c_bits); }
+                               return compute_epi_tile_n(64, 4, c_bits);
+            }
+            if (Is2Sm && CtaN == 192) { return compute_epi_tile_n(48, 3, c_bits); }
+            if (Is2Sm && CtaN == 256) {
+              bool IsTfmma2KBlock = (CtaK == 32);
+              if (IsTfmma2KBlock) { return compute_epi_tile_n(32, 4, c_bits); }
+                                    return compute_epi_tile_n(64, 4, c_bits);
+            }
+          }
+          if (c_bits == 16 && (d_bits == 16 || d_bits == 8)) {
+            if (Is1Sm && CtaN ==  64) { return compute_epi_tile_n(16, 4, c_bits); }
+            if (Is1Sm && CtaN == 128) { return compute_epi_tile_n(32, 4, c_bits); }
+            if (Is1Sm && CtaN == 192) { return compute_epi_tile_n(48, 3, c_bits); }
+            if (Is1Sm && CtaN == 256) { return compute_epi_tile_n(48, 3, c_bits); }
+            if (Is2Sm && CtaN ==  64) { return compute_epi_tile_n(16, 4, c_bits); }
+            if (Is2Sm && CtaN == 128) { return compute_epi_tile_n(32, 4, c_bits); }
+            if (Is2Sm && CtaN == 192) { return compute_epi_tile_n(48, 3, c_bits); }
+            if (Is2Sm && CtaN == 256) { return compute_epi_tile_n(64, 4, c_bits); }
+          }
+          if (c_bits == 8 && d_bits == 8) {
+            // 8 bit C assume no SMEM reuse between C and D. Smem size mentioned below is ONLY for C.
+            if (Is1Sm && CtaN ==  64) { return compute_epi_tile_n( 8, 2, c_bits); }
+            if (Is1Sm && CtaN == 128) { return compute_epi_tile_n(16, 2, c_bits); }
+            if (Is1Sm && CtaN == 192) { return compute_epi_tile_n(24, 3, c_bits); }
+            if (Is1Sm && CtaN == 256) { return compute_epi_tile_n(32, 4, c_bits); }
+            if (Is2Sm && CtaN ==  64) { return compute_epi_tile_n( 8, 2, c_bits); }
+            if (Is2Sm && CtaN == 128) { return compute_epi_tile_n(16, 2, c_bits); }
+            if (Is2Sm && CtaN == 192) { return compute_epi_tile_n(24, 3, c_bits); }
+            if (Is2Sm && CtaN == 256) {
+              bool Is4KBlock = (CtaK == 256);
+              if (Is4KBlock) { return compute_epi_tile_n(32, 4, c_bits); }
+                               return compute_epi_tile_n(16, 2, c_bits);
+            }
+          }
+        }
+        if (IsBsspMxf8f6f4) {
+          if (c_bits == 32 && d_bits == 32) {
+            if (Is1Sm && CtaN == 128) { return compute_epi_tile_n(64, 4, c_bits); }
+            if (Is1Sm && CtaN == 192) { return compute_epi_tile_n(64, 4, c_bits); }
+            if (Is1Sm && CtaN == 256) { return compute_epi_tile_n(48, 3, c_bits); }
+            if (Is2Sm && CtaN == 128) { return compute_epi_tile_n(32, 4, c_bits); }
+            if (Is2Sm && CtaN == 192) { return compute_epi_tile_n(32, 4, c_bits); }
+            if (Is2Sm && CtaN == 256) { return compute_epi_tile_n(64, 4, c_bits); }
+          }
+          if (c_bits == 16 && d_bits == 16) {
+            if (Is1Sm && CtaN == 128) { return compute_epi_tile_n(32, 4, c_bits); }
+            if (Is1Sm && CtaN == 192) { return compute_epi_tile_n(48, 3, c_bits); }
+            if (Is1Sm && CtaN == 256) { return compute_epi_tile_n(48, 3, c_bits); }
+            if (Is2Sm && CtaN == 128) { return compute_epi_tile_n(32, 4, c_bits); }
+            if (Is2Sm && CtaN == 192) { return compute_epi_tile_n(32, 4, c_bits); }
+            if (Is2Sm && CtaN == 256) { return compute_epi_tile_n(64, 4, c_bits); }
+          }
+          if (c_bits == 16 && d_bits == 8) {
+            if (Is1Sm && CtaN == 128) { return compute_epi_tile_n(32, 2, c_bits); }
+            if (Is1Sm && CtaN == 192) { return compute_epi_tile_n(48, 3, c_bits); }
+            if (Is1Sm && CtaN == 256) { return compute_epi_tile_n(48, 3, c_bits); }
+            if (Is2Sm && CtaN == 128) { return compute_epi_tile_n(32, 2, c_bits); }
+            if (Is2Sm && CtaN == 192) {
+              // SFD VS64 require EpiTileN to be multiplier of 64
+              if (is_sfd_row_major_vs64) { return compute_epi_tile_n(64, 4, c_bits); }
+              else                       { return compute_epi_tile_n(32, 4, c_bits); }}
+            if (Is2Sm && CtaN == 256) { return compute_epi_tile_n(64, 4, c_bits); }
+          }
+        }
+        if (IsBsspNvf4) {
+          if (c_bits == 32 && d_bits == 32) {
+            if (Is1Sm && CtaN == 128) { return compute_epi_tile_n(48, 3, c_bits); }
+            if (Is1Sm && CtaN == 192) { return compute_epi_tile_n(64, 4, c_bits); }
+            if (Is1Sm && CtaN == 256) {
+              bool Is4KBlock = (CtaK == 512);
+              if (Is4KBlock) { return compute_epi_tile_n(64, 2, c_bits); }
+                               return compute_epi_tile_n(64, 4, c_bits);
+            }
+            if (Is2Sm && CtaN == 128) { return compute_epi_tile_n(64, 4, c_bits); }
+            if (Is2Sm && CtaN == 192) { return compute_epi_tile_n(48, 3, c_bits); }
+            if (Is2Sm && CtaN == 256) {
+              bool Is4KBlock = (CtaK == 512);
+              if (Is4KBlock) { return compute_epi_tile_n(64, 2, c_bits); }
+                               return compute_epi_tile_n(48, 3, c_bits);
+            }
+          }
+          if (c_bits == 16 && d_bits == 16) {
+            if (Is1Sm && CtaN == 128) { return compute_epi_tile_n(32, 4, c_bits); }
+            if (Is1Sm && CtaN == 192) { return compute_epi_tile_n(48, 3, c_bits); }
+            if (Is1Sm && CtaN == 256) {
+              bool Is4KBlock = (CtaK == 512);
+              if (Is4KBlock) { return compute_epi_tile_n(64, 4, c_bits); }
+                               return compute_epi_tile_n(32, 4, c_bits);
+            }
+            if (Is2Sm && CtaN == 128) { return compute_epi_tile_n(32, 4, c_bits); }
+            if (Is2Sm && CtaN == 192) { return compute_epi_tile_n(48, 3, c_bits); }
+            if (Is2Sm && CtaN == 256) { return compute_epi_tile_n(48, 3, c_bits); }
+          }
+          if (c_bits == 16 && d_bits == 4) {
+            if (Is1Sm && CtaN == 128) { return compute_epi_tile_n(32, 2, c_bits); }
+            if (Is1Sm && CtaN == 192) { return compute_epi_tile_n(32, 2, c_bits); }
+            if (Is1Sm && CtaN == 256) { return compute_epi_tile_n(32, 2, c_bits); }
+            if (Is2Sm && CtaN == 128) { return compute_epi_tile_n(32, 2, c_bits); }
+            if (Is2Sm && CtaN == 192) { return compute_epi_tile_n(48, 3, c_bits); }
+            if (Is2Sm && CtaN == 256) { return compute_epi_tile_n(48, 3, c_bits); }
+          }
+        }
+        if (IsBsspMxf4) {
+          if (c_bits == 32 && d_bits == 32) {
+            if (CtaN == 256) {
+              return compute_epi_tile_n(64, 4, d_bits);
+            }
+          }
+        }
+        // Fallback
+        return compute_epi_tile_n(32, 4, c_bits);
+      }
+    }();
+
+    // stride by tmem warp layout and return a by-mode tiler
+    auto tile_m = Layout<Int<EpiTileM>>{};
+    auto tile_n = Layout<Shape <Int<EpiTileN / WarpN>,Int<        WarpN>>,
+                         Stride<Int<               1>,Int<CtaN / WarpN>>>{};
+
+    return make_tile(tile_m, coalesce(tile_n));
+  }
+  else if constexpr (cute::is_tuple<EpilogueTileType>::value) {
+    return EpilogueTileType{};
+  }
+  else {
+    static_assert(cutlass::detail::dependent_false<EpilogueTileType>, "Invalid type for EpilogueTileType.");
+  }
+}
+
+template <
+  class CtaTileShape_MNK,
+  class EpilogueTile_MN,
+  class ElementC,
+  class ElementD,
+  class EpilogueScheduleType
+>
+constexpr auto
+sm100_sparse_get_tma_dispatch_policy() {
+  using EpilogueTileShape_MN = decltype(product_each(shape(EpilogueTile_MN{})));
+  constexpr int EpiTiles = size(shape_div(take<0,2>(CtaTileShape_MNK{}), EpilogueTileShape_MN{}));
+  constexpr int FragmentSize = size(EpilogueTileShape_MN{}) / NumThreadsPerWarpGroup;
+  constexpr int CtaN = cute::size<1>(CtaTileShape_MNK{});
+  constexpr int CtaK = cute::size<2>(CtaTileShape_MNK{});
+
+  constexpr bool IsBsspMxf8f6f4 = cute::is_same_v<cutlass::epilogue::TmaWarpSpecialized1SmMxf8f6f4, EpilogueScheduleType> ||
+                                  cute::is_same_v<cutlass::epilogue::TmaWarpSpecialized2SmMxf8f6f4, EpilogueScheduleType>;
+  constexpr bool IsBsspNvf4 = cute::is_same_v<cutlass::epilogue::TmaWarpSpecialized1SmNvf4, EpilogueScheduleType> ||
+                              cute::is_same_v<cutlass::epilogue::TmaWarpSpecialized2SmNvf4, EpilogueScheduleType>;
+  constexpr bool IsBsspMxf4 = cute::is_same_v<cutlass::epilogue::TmaWarpSpecialized1SmMxf4, EpilogueScheduleType> ||
+                              cute::is_same_v<cutlass::epilogue::TmaWarpSpecialized2SmMxf4, EpilogueScheduleType>;
+  constexpr bool IsBssp = (IsBsspMxf8f6f4 || IsBsspNvf4 || IsBsspMxf4);
+  constexpr bool IsSp = not IsBssp;
+  constexpr bool Is1Sm = cute::is_base_of_v<TmaWarpSpecialized1Sm, EpilogueScheduleType>;
+  constexpr bool Is2Sm = cute::is_base_of_v<TmaWarpSpecialized2Sm, EpilogueScheduleType>;
+
+  // 8b residuals load fast and consume little smem, so the perf cost of waiting on stores to finish outweighs the cost of extra allocation
+  constexpr bool ReuseSmem = sizeof_bits_v<ElementC> > 8;
+
+  // TMA store delay performs worse with residual loads
+  constexpr bool DelayTmaStore = is_void_v<ElementC>;
+
+  constexpr auto ExpectedStagesD = [&]() constexpr -> int {
+    auto d_bits = cute::sizeof_bits_v<ElementD>;
+    auto c_bits = cute::sizeof_bits_v<ElementC>;
+    // None void_c kernel pick 2stageD here, in reality it may choose reuse smemC
+    if (not cute::is_void_v<ElementC>) {
+      return 2;
+    }
+    // Void_C kernel have fine tunned stageD
+    else {
+      if (IsSp) {
+        if (((d_bits == 32 || d_bits == 16) && ((Is1Sm && CtaN == 192) ||
+                                                (Is1Sm && CtaN == 256) ||
+                                                (Is2Sm && CtaN == 192))) ||
+            (d_bits == 8 && Is2Sm && CtaN == 192)) {
+          return 3;
+        }
+        return 2;
+      }
+      if (IsBsspMxf8f6f4) {
+        if (((d_bits == 32 || d_bits == 16) && Is1Sm && CtaN == 256) ||
+            (d_bits == 8 && ((Is1Sm && CtaN == 128) ||
+                             (Is2Sm && CtaN == 192)))) {
+          return 3;
+        }
+        if ((d_bits == 32 && Is1Sm && CtaN == 128) ||
+            (d_bits == 32 && Is2Sm && CtaN == 256) ||
+            (d_bits == 16 && Is2Sm && CtaN == 256) ||
+            (d_bits ==  8 && Is1Sm && CtaN == 256)) {
+          return 4;
+        }
+        return 2;
+      }
+      if (IsBsspNvf4) {
+        if ((d_bits == 32 && ((Is1Sm && CtaN == 128) ||
+                              (Is2Sm && CtaN == 192) ||
+                              (Is2Sm && CtaN == 256 && CtaK == 256))) ||
+            (d_bits == 16 && ((Is2Sm && CtaN == 192) ||
+                              (Is2Sm && CtaN == 256))) ||
+            (d_bits ==  4 && ((Is1Sm && CtaN == 192) ||
+                              (Is2Sm && CtaN == 192)))) {
+          return 3;
+        }
+        if ((d_bits == 4 && ((Is1Sm && CtaN == 256) ||
+                             (Is2Sm && CtaN == 256)))) {
+          return 4;
+        }
+        return 2;
+      }
+      return 2;
+    }
+  }();
+
+  constexpr auto ExpectedStagesC = [&]() constexpr -> int {
+    auto d_bits = cute::sizeof_bits_v<ElementD>;
+    auto c_bits = cute::sizeof_bits_v<ElementC>;
+    // Void_c kernel only use smemD. StageC doesn't matter
+    if (cute::is_void_v<ElementC>) {
+      return 4;
+    }
+    // None VoidC kernel have fine tunned stageC
+    else {
+      if (IsSp) {
+        if ((((c_bits == 32 && d_bits == 32) ||
+              (c_bits == 16 && d_bits == 16) ||
+              (c_bits == 16 && d_bits  == 8)) && ((Is1Sm && CtaN == 192) ||
+                                                  (Is1Sm && CtaN == 256) ||
+                                                  (Is2Sm && CtaN == 192))) ||
+            (c_bits == 8 && d_bits == 8 && ((Is1Sm && CtaN == 192) ||
+                                            (Is2Sm && CtaN == 192)))) {
+          return 3;
+        }
+        if (c_bits == 8 && d_bits == 8 && ((Is1Sm && CtaN ==  64) ||
+                                           (Is1Sm && CtaN == 128) ||
+                                           (Is2Sm && CtaN ==  64) ||
+                                           (Is2Sm && CtaN == 128) ||
+                                           (Is2Sm && CtaN == 256 && CtaK == 128))) {
+          return 2;
+        }
+        return 4;
+      }
+      if (IsBsspMxf8f6f4) {
+        if ((c_bits == 32 && d_bits == 32 && Is1Sm && CtaN == 256) ||
+            (c_bits == 16 && d_bits == 16 && ((Is1Sm && CtaN == 192) ||
+                                              (Is1Sm && CtaN == 256))) ||
+            (c_bits == 16 && d_bits ==  8 && ((Is1Sm && CtaN == 128) ||
+                                              (Is1Sm && CtaN == 256) ||
+                                              (Is1Sm && CtaN == 128) ||
+                                              (Is2Sm && CtaN == 128)))) {
+          return 3;
+        }
+        return 4;
+      }
+      if (IsBsspNvf4) {
+        if ((c_bits == 32 && d_bits == 32 && ((Is1Sm && CtaN == 128) ||
+                                              (Is2Sm && CtaN == 192) ||
+                                              (Is2Sm && CtaN == 256))) ||
+            (c_bits == 16 && d_bits == 16 && ((Is1Sm && CtaN == 192) ||
+                                              (Is2Sm && CtaN == 192) ||
+                                              (Is2Sm && CtaN == 256))) ||
+            (c_bits == 16 && d_bits == 4 && ((Is2Sm && CtaN == 192) ||
+                                             (Is2Sm && CtaN == 256)))) {
+          return 3;
+        }
+        if ((c_bits == 32 && d_bits == 32 && CtaN == 256 && CtaK == 512 ) ||
+            (c_bits == 16 && d_bits == 4 && ((Is1Sm && CtaN == 128) ||
+                                             (Is1Sm && CtaN == 192) ||
+                                             (Is1Sm && CtaN == 256) ||
+                                             (Is2Sm && CtaN == 128)))) {
+          return 2;
+        }
+        return 4;
+      }
+      return 4;
+    }
+  }();
+
+  constexpr int StagesD = cute::min(EpiTiles, ExpectedStagesD);
+  constexpr int StagesC = cute::min(EpiTiles, ExpectedStagesC);
+
+  using DispatchPolicy = Sm100TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmem, DelayTmaStore>;
+  return DispatchPolicy{};
+}
+
+} // namespace sparse
 
 /*
  * Returns the TMEM_LOAD copy op to be used for the epilogue
@@ -390,6 +866,45 @@ struct CallbacksBuilder<
   >;
 };
 
+// ptr array aux fusion callbacks builder for sm100 tma epilogue
+template <
+  int StagesC,
+  int StagesD,
+  int FragmentSize,
+  bool ReuseSmemC,
+  bool DelayTmaStore,
+  class FusionOp,
+  class CtaTileShape_MNK,
+  class EpilogueTile_MN,
+  class ElementAccumulator,
+  class AccLoadOp
+>
+struct CallbacksBuilder<
+  Sm100PtrArrayTmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore>,
+  FusionOp,
+  CtaTileShape_MNK,
+  EpilogueTile_MN,
+  ElementAccumulator,
+  AccLoadOp,
+  cute::enable_if_t<(FusionOp::IsAuxOutSupported ^ FusionOp::IsAuxInSupported) // only one aux tensor
+              && not cute::is_subbyte_v<typename FusionOp::ElementAux>>
+> {
+  using GmemStrideTypeAux = gemm::TagToStrideC_t<typename FusionOp::GmemLayoutTagAux>;
+  using SmemLayoutAtomAux = decltype(detail::sm100_get_epilogue_smem_swizzle_layout_atom<
+    GmemStrideTypeAux, typename FusionOp::ElementAux, EpilogueTile_MN>());
+  using CopyOpR2S = decltype(detail::sm100_get_smem_store_op<
+    GmemStrideTypeAux, typename FusionOp::ElementAux, ElementAccumulator, AccLoadOp>());
+  using CopyOpS2R = decltype(detail::sm100_get_smem_load_op<
+    GmemStrideTypeAux, typename FusionOp::ElementAux, ElementAccumulator, AccLoadOp>());
+  using SmemCopyOpAux = cute::conditional_t<FusionOp::IsAuxOutSupported, CopyOpR2S, CopyOpS2R>;
+
+  using Callbacks = fusion::FusionCallbacks<
+    Sm100PtrArrayTmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore>,
+    FusionOp, CtaTileShape_MNK, EpilogueTile_MN,
+    SmemLayoutAtomAux, SmemCopyOpAux
+  >;
+};
+
 template <
   int StagesC,
   int StagesD,
@@ -454,7 +969,7 @@ template <
   class ElementC_,
   class GmemLayoutTagC_,
   int AlignmentC,
-  class ElementD,
+  class ElementD_,
   class GmemLayoutTagD,
   int AlignmentD,
   class Schedule,
@@ -466,6 +981,9 @@ private:
   static constexpr bool Is2SmMma = is_base_of_v<TmaWarpSpecialized2Sm, Schedule>;
   static_assert(Is1SmMma ^ Is2SmMma, "unsupported schedule");
   static_assert(not (Is2SmMma && size<0>(ClusterShape_MNK{}) % 2 == 1), "schedule + cluster mismatch");
+
+  static constexpr bool DisableDestination = cute::is_void_v<ElementD_>;
+  using ElementD = cute::conditional_t<DisableDestination,fusion::get_element_aux_t<FusionOpOrCallbacks>,ElementD_>; // prevents void ref breakages
 
   // Passing void C disables source load + smem allocation
   static constexpr bool DisableSource = cute::is_void_v<ElementC_>;
@@ -512,7 +1030,14 @@ private:
   epilogue_tile() {
     using namespace cute;
     
-    if constexpr (is_same_v<OpClass, arch::OpClassBlockScaledTensorOp> && 
+    if constexpr (is_same_v<OpClass, arch::OpClassSparseTensorOp> ||
+                  is_same_v<OpClass, arch::OpClassBlockScaledSparseTensorOp>) {
+      return detail::sparse::sm100_sparse_compute_tile_shape_or_override<
+                        CtaTileShape_MNK, EpilogueTileType, TmemWarpShape_MN,
+                        ElementC_, GmemStrideTypeC, ElementD, GmemStrideTypeD, Schedule,
+                        FusionOp>();
+    }
+    else if constexpr (is_same_v<OpClass, arch::OpClassBlockScaledTensorOp> && 
                   is_same_v<EpilogueTileType, EpilogueTileAuto> && 
                   size<1>(CtaTileShape_MNK{}) == 256) {
       constexpr int CtaM = size<0>(CtaTileShape_MNK{});
@@ -613,8 +1138,12 @@ private:
     constexpr int StagesC = ReuseSmem ? cute::max(cute::min(EpiTiles, 4), StagesD+1)
                                       : cute::min(EpiTiles, 4);
 
-    if constexpr (is_same_v<Schedule, PtrArrayTmaWarpSpecialized1Sm> ||
-                  is_same_v<Schedule, PtrArrayTmaWarpSpecialized2Sm>) {
+    if constexpr (is_same_v<OpClass, arch::OpClassSparseTensorOp> ||
+                  is_same_v<OpClass, arch::OpClassBlockScaledSparseTensorOp>) {
+      return detail::sparse::sm100_sparse_get_tma_dispatch_policy<CtaTileShape_MNK, EpilogueTile_MN, ElementC_, ElementD, Schedule>();
+    }
+    else if constexpr (is_same_v<Schedule, PtrArrayTmaWarpSpecialized1Sm> ||
+                       is_same_v<Schedule, PtrArrayTmaWarpSpecialized2Sm>) {
       constexpr bool DelayTmaStore_ = false; // TMA store delay complicates tensormap updates for Ptr-Array GEMMs
       return Sm100PtrArrayTmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmem, DelayTmaStore_>{};
     }
@@ -681,7 +1210,7 @@ public:
       EpilogueTile_MN,
       ElementC_, // Need to pass void through to expose via GemmUniversal
       GmemStrideTypeC,
-      ElementD,
+      ElementD_, // Need to pass void through to expose via GemmUniversal
       GmemStrideTypeD,
       decltype(fusion_callbacks()),
       AccLoadOp,

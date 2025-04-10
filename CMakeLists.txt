@@ -102,6 +102,8 @@ set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
 list(APPEND CUTLASS_CUDA_NVCC_FLAGS --expt-relaxed-constexpr)
 
+list(APPEND CUTLASS_CUDA_NVCC_FLAGS -ftemplate-backtrace-limit=0)
+
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
   set(CMAKE_INSTALL_PREFIX install CACHE PATH "Default installation location." FORCE)
 endif()
@@ -173,7 +175,7 @@ if (CUDA_VERSION VERSION_GREATER_EQUAL 12.0)
 endif()
 
 if (CUDA_VERSION VERSION_GREATER_EQUAL 12.8)
-  list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 100 100a)
+  list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 100 100a 101 101a 120 120a)
 endif()
 
 set(CUTLASS_NVCC_ARCHS ${CUTLASS_NVCC_ARCHS_SUPPORTED} CACHE STRING "The SM architectures requested.")
@@ -382,7 +384,21 @@ endif()
 
 if (CUTLASS_ENABLE_GDC_FOR_SM90)
   message(STATUS "Grid Dependency Control (GDC) is enabled for SM90 kernels (required for programmatic dependent launches).")
-  list(APPEND CUTLASS_CUDA_NVCC_FLAGS -DCUTLASS_ENABLE_GDC_FOR_SM90=1)
+  list(APPEND CUTLASS_CUDA_FLAGS -DCUTLASS_ENABLE_GDC_FOR_SM90=1)
+endif()
+
+if (NOT DEFINED CUTLASS_ENABLE_GDC_FOR_SM100_DEFAULT)
+  set(CUTLASS_ENABLE_GDC_FOR_SM100_DEFAULT ON)
+endif()
+
+set(CUTLASS_ENABLE_GDC_FOR_SM100
+    ${CUTLASS_ENABLE_GDC_FOR_SM100_DEFAULT}
+    CACHE BOOL
+    "Enables Grid Dependency Control (GDC) for SM100 kernels (required for PDL).")
+
+if (CUTLASS_ENABLE_GDC_FOR_SM100)
+  message(STATUS "Grid Dependency Control (GDC) is enabled for SM100 kernels (required for programmatic dependent launches).")
+  list(APPEND CUTLASS_CUDA_FLAGS -DCUTLASS_ENABLE_GDC_FOR_SM100=1)
 endif()
 
 set(CUTLASS_ENABLE_SYNCLOG OFF CACHE BOOL "Enable synchronization event logging for race condition debugging. WARNING: This redefines __syncthreads() and __syncwarp() in all downstream code!")
@@ -427,7 +443,7 @@ if (NOT MSVC AND CUTLASS_NVCC_KEEP)
   # MSVC flow handles caching already, but for other generators we handle it here.
   set(CUTLASS_NVCC_KEEP_DIR ${CMAKE_CURRENT_BINARY_DIR}/tmp CACHE PATH "Location to store NVCC scratch files")
   file(MAKE_DIRECTORY ${CUTLASS_NVCC_KEEP_DIR})
-  list(APPEND CUTLASS_CUDA_NVCC_FLAGS --keep -v) # --keep-dir may not work with nvcc for some directories.
+  list(APPEND CUTLASS_CUDA_NVCC_FLAGS --keep -v -objtemp) # --keep-dir may not work with nvcc for some directories.
   list(APPEND CUTLASS_CUDA_CLANG_FLAGS -save-temps=${CUTLASS_NVCC_KEEP_DIR})
 endif()
 
@@ -452,6 +468,13 @@ endif()
 if(UNIX)
   list(APPEND CUTLASS_CUDA_NVCC_FLAGS -Xcompiler=-Wconversion)
   list(APPEND CUTLASS_CUDA_NVCC_FLAGS -Xcompiler=-fno-strict-aliasing)
+endif()
+
+# Known ctk11.4 issue (fixed later)
+# Also see https://stackoverflow.com/questions/64523302/cuda-missing-return-statement-at-end-of-non-void-function-in-constexpr-if-fun
+if (CUDA_VERSION VERSION_LESS 11.5.0)
+  list(APPEND CUTLASS_CUDA_NVCC_FLAGS -Xcudafe "--diag_suppress=implicit_return_from_non_void_function" )
+  message("CUDA_VERSION check pass ${CUDA_VERSION}")
 endif()
 
 # Don't leak lineinfo in release builds
@@ -1031,6 +1054,7 @@ function(cutlass_generate_profiler_tests NAME)
       string(REGEX REPLACE "_cluster_k_fallback=[0-9]+" "" TEST_NAME "${TEST_NAME}")
       string(REPLACE "runtime_input_datatype_a=" "" TEST_NAME "${TEST_NAME}")
       string(REPLACE "runtime_input_datatype_b=" "" TEST_NAME "${TEST_NAME}")
+      string(REPLACE "swizzle_size=" "" TEST_NAME "${TEST_NAME}")
       string(REGEX REPLACE "verification_enabled=(true|false)" "" TEST_NAME "${TEST_NAME}")
       string(REGEX REPLACE "warmup_iterations=[0-9]+" "" TEST_NAME "${TEST_NAME}")
       string(REGEX REPLACE "profiling_iterations=[0-9]+" "" TEST_NAME "${TEST_NAME}")

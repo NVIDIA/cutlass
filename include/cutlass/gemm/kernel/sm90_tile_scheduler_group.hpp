@@ -98,6 +98,19 @@ public:
   using RasterOrderOptions = typename Params::RasterOrderOptions;
   static constexpr bool IsDynamicPersistent = false;
 
+  using Pipeline = PipelineEmpty;
+  using PipelineStorage = typename Pipeline::SharedStorage;
+  using ThrottlePipeline = PipelineEmpty;
+  using ThrottlePipelineStorage = typename ThrottlePipeline::SharedStorage;
+  struct CLCResponse {};
+
+  class SharedStorage {
+  public:
+    CUTLASS_DEVICE PipelineStorage pipeline() { return PipelineStorage{}; }
+    CUTLASS_DEVICE ThrottlePipelineStorage throttle_pipeline() { return ThrottlePipelineStorage{}; }
+    CUTLASS_DEVICE CLCResponse* data() { return nullptr; }
+  };
+  
   struct Arguments {
     int max_swizzle_size = 1;
     // Not applying Heuristics for Grouped problems, since largest dimension can change per group

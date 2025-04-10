@@ -210,7 +210,7 @@ static_assert(is_valid_tile_scheduler, "SM70 kernel does not support specializin
     int thread_idx = int(threadIdx.x);
     auto blk_shape = TileShape{};                                                                // (BLK_M,BLK_N,BLK_K)
     auto [m_coord, n_coord, l_coord] = static_cast<uint3>(blockIdx);
-    auto blk_coord_mnkl = make_coord(m_coord, n_coord, _, l_coord);                                        // (m,n,k,l)
+    auto blk_coord_mnkl = make_coord(int(m_coord), int(n_coord), _, int(l_coord));                         // (m,n,k,l)
 
     // Represent the full tensors
     Tensor mA_mkl = make_tensor(make_gmem_ptr(params.mainloop.ptr_A), make_shape(M,K,L), params.mainloop.dA); //(m,k,l)

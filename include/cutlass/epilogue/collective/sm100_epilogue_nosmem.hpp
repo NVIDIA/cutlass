@@ -646,12 +646,12 @@ public:
       thread_idx
     };
 
-    auto cst_callbacks = fusion_callbacks.get_consumer_store_callbacks<RefSrc>(cst_args);
-    bool is_C_load_needed = fusion_callbacks.is_C_load_needed();
-
     auto synchronize = [] () CUTLASS_LAMBDA_FUNC_INLINE { cutlass::arch::NamedBarrier::sync(ThreadCount, cutlass::arch::ReservedNamedBarriers::EpilogueBarrier); };
 
+    // The Epilogue Loop
     auto epi_loop_fn = [&] (auto& cst_callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
+      bool is_C_load_needed = fusion_callbacks.is_C_load_needed();
+
       // Ensure there are no threads from the previous wave writing to shared memory being utilized for the current wave.
       synchronize();
       cst_callbacks.begin();
@@ -740,7 +740,6 @@ public:
           using VecType = uint_bit_t<VD * sizeof_bits_v<ElementD>>;
             Tensor tTR_gD_frg = recast<VecType>(coalesce(tTR_gD(_,_,_,epi_m,epi_n)));
             Tensor tTR_rD_frg = recast<VecType>(coalesce(tTR_rD));
-
             copy_if(pred_fn_D, tTR_rD_frg, tTR_gD_frg);
         } // for epi_m
       } // for epi_n
@@ -748,6 +747,10 @@ public:
       cst_callbacks.end();
     };
 
+    //
+    // BEGIN EPILOGUE
+    //
+    auto cst_callbacks = fusion_callbacks.template get_consumer_store_callbacks<RefSrc>(cst_args);
     epi_loop_fn(cst_callbacks);
     return cute::make_tuple(acc_pipe_consumer_state);
   }

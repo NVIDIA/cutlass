@@ -57,7 +57,7 @@ template <class T, class U,
 CUTE_HOST_DEVICE constexpr
 auto
 min(T const& t, U const& u) {
-  return t < u ? t : u;
+  return static_cast<cute::common_type_t<T,U>>(t) < static_cast<cute::common_type_t<T,U>>(u) ? t : u;
 }
 
 template <class T,

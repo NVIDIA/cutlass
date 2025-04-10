@@ -581,11 +581,6 @@ public:
       , params_(params)
       , empty_barrier_ptr_(&storage.empty_barrier_[0])
       , full_barrier_ptr_(&storage.full_barrier_[0]) {
-    dim3 block_id = block_id_in_cluster();
-
-    int warp_idx = canonical_warp_idx_sync();
-    auto atom_thr_shape = AtomThrShape_MNK{};
-
     static_assert(cute::is_same_v<InitBarriers, cute::true_type> || cute::is_same_v<InitBarriers, cute::false_type>);
     if constexpr (cute::is_same_v<InitBarriers, cute::true_type>) {
       init_barriers(storage, params_, cluster_shape, mcast_direction);
@@ -625,6 +620,11 @@ public:
   CUTLASS_DEVICE
   void producer_acquire(PipelineState state, ProducerToken barrier_token = {BarrierStatus::WaitAgain}) {
     impl_.producer_acquire(state, barrier_token);
+  }
+
+  CUTLASS_DEVICE
+  void producer_expect_transaction(PipelineState state, uint32_t transaction_bytes) {
+    impl_.producer_expect_transaction(state, transaction_bytes);
   }
 
   // NOP for TMA based mainloop
@@ -990,7 +990,7 @@ public:
     consumer_release(state.index());
   }
 
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   uint32_t producer_get_barrier(PipelineState state) {
     return cute::cast_smem_ptr_to_uint(reinterpret_cast<void*>(&full_barrier_ptr_[state.index()]));
   }
@@ -1093,6 +1093,163 @@ public:
   CUTLASS_DEVICE
   void consumer_release(PipelineState state) {
   }
+};
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// TMA (producer - consumer) Async Pipeline classes for Blackwell Sparse UMMA
+// This is designed for the parttern that kernel has two different staged tensors. (AB and metadata)
+//
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Producer-consumer pipeline implementation
+// for UMMA producer. In this case, UMMA barrier arrives are used
+// by producer_commit. Use case, accumulator generation as
+// the result of MMA instructions.
+template <
+  int Stages_,
+  class ClusterShape = Shape<int,int,_1>,
+  class AtomThrShape_MNK_ = Shape<_1,_1,_1>
+>
+class PipelineTmaSparseUmmaAsync {
+public:
+  static constexpr uint32_t Stages = Stages_;
+  using AtomThrShape_MNK = AtomThrShape_MNK_;
+private:
+  using Impl = PipelineTmaUmmaAsync<Stages, ClusterShape, AtomThrShape_MNK>;
+public:
+  using FullBarrier  = typename Impl::FullBarrier;
+  using EmptyBarrier = typename Impl::EmptyBarrier;
+  using ProducerBarrierType = typename Impl::ProducerBarrierType;
+  using ConsumerBarrierType = typename Impl::ConsumerBarrierType;
+  using PipelineState = typename Impl::PipelineState;
+  using SharedStorage = typename Impl::SharedStorage;
+  using ThreadCategory = typename Impl::ThreadCategory;
+  using Params = typename Impl::Params;
+
+  struct ParamsMetadata {
+    uint32_t transaction_bytes = 0;
+    uint32_t metadata_transaction_bytes = 0;
+  };
+
+  static
+  CUTLASS_DEVICE
+  void
+  init_barriers(SharedStorage& storage, Params params, ClusterShape cluster_shape) {
+    Impl::init_barriers(storage, params, cluster_shape);
+  }
+
+  CUTLASS_DEVICE
+  void init_masks(ClusterShape cluster_shape, dim3 block_id_in_cluster = cute::block_id_in_cluster()) {
+    impl_.init_masks(cluster_shape, block_id_in_cluster);
+  }
+
+  // Constructor by default initializes barriers and calculates masks. 
+  // These operations can be deferred by specifying InitBarriers and InitMasks. 
+  // If deferred, user code needs to guarantee init_masks and/or init_barriers is/are called. 
+  template<typename InitBarriers = cute::true_type, typename InitMasks = cute::true_type>
+  CUTLASS_DEVICE
+  PipelineTmaSparseUmmaAsync(SharedStorage& storage, Params params, ParamsMetadata params_metadata, ClusterShape cluster_shape, InitBarriers = {}, InitMasks = {})
+      : impl_(storage, params, cluster_shape, cute::false_type{}, cute::false_type{})
+      , params_(params)
+      , params_metadata_(params_metadata)
+      , empty_barrier_ptr_(&storage.empty_barrier_[0])
+      , full_barrier_ptr_(&storage.full_barrier_[0]) {
+    static_assert(cute::is_same_v<InitBarriers, cute::true_type> || cute::is_same_v<InitBarriers, cute::false_type>);
+    if constexpr (cute::is_same_v<InitBarriers, cute::true_type>) {
+      init_barriers(storage, params_, cluster_shape);
+    }
+
+    static_assert(cute::is_same_v<InitMasks, cute::true_type> || cute::is_same_v<InitMasks, cute::false_type>);
+    if constexpr (cute::is_same_v<InitMasks, cute::true_type>) {
+      init_masks(cluster_shape);
+    }
+  }
+
+  ////////////////////
+  // Producer APIs
+  ////////////////////
+  // Four member functions are always used in pairs:
+  //
+  // * producer_try_acquire and producer_acquire, and
+  // * consumer_try_wait and consumer_wait.
+  //
+  // The two functions with "try" in their names are called "try" functions,
+  // and the other two are conceptually "finalize" functions.
+  // The "try" function in each pair starts the process of waiting on the barrier to flip.
+  // It opportunistically waits for an implementation-dependent timeout.
+  // Whether or not the barrier has flipped yet, the try function will return a token.
+  // If the token indicates that the barrier has not flipped,
+  // then the token must be passed into the corresponding "finalize" function.
+  // The finalize function will then block until the barrier has flipped.
+  // If the token indicates that the barrier _has_ flipped,
+  // then it is still correct to pass it into the finalize function.
+  // The finalize function will return immediately in that case.
+  CUTLASS_DEVICE
+  ProducerToken producer_try_acquire(PipelineState state, uint32_t skip_wait = false) {
+    return impl_.producer_try_acquire(state, skip_wait);
+  }
+
+  // Customized for metadata load
+  CUTLASS_DEVICE
+  void producer_acquire(PipelineState state, bool load_e, ProducerToken barrier_token = {BarrierStatus::WaitAgain}) {
+    producer_acquire(state.index(), state.phase(), load_e, barrier_token);
+  }
+
+  // Customized for metadata load
+  CUTLASS_DEVICE
+  void producer_acquire(PipelineState state, ProducerToken barrier_token = {BarrierStatus::WaitAgain}) {
+    producer_acquire(state, true, barrier_token);
+  }
+
+  CUTLASS_DEVICE
+  void producer_tail(PipelineState state) {
+    return impl_.producer_tail(state);
+  }
+
+  CUTLASS_DEVICE
+  ProducerBarrierType* producer_get_barrier(PipelineState state) {
+    return impl_.producer_get_barrier(state);
+  }
+
+  ////////////////////
+  // Consumer APIs
+  ////////////////////
+  CUTLASS_DEVICE
+  ConsumerToken consumer_try_wait(PipelineState state, uint32_t skip_wait = false) {
+    return impl_.consumer_try_wait(state, skip_wait);
+  }
+
+  CUTLASS_DEVICE
+  void consumer_wait(PipelineState state, ConsumerToken barrier_token = {BarrierStatus::WaitAgain}) {
+    return impl_.consumer_wait(state, barrier_token);
+  }
+
+  CUTLASS_DEVICE
+  void consumer_release(PipelineState state) {
+    return impl_.consumer_release(state);
+  }
+
+private:
+  Impl impl_;
+  Params params_;
+  ParamsMetadata params_metadata_;
+  EmptyBarrier *empty_barrier_ptr_{nullptr};
+  FullBarrier *full_barrier_ptr_{nullptr};
+
+  CUTLASS_DEVICE
+  void producer_acquire(uint32_t stage, uint32_t phase, bool load_e, ProducerToken barrier_token) {
+    detail::pipeline_check_is_producer(params_.role);
+    if (barrier_token == BarrierStatus::WaitAgain) {
+      empty_barrier_ptr_[stage].wait(phase);
+    }
+    uint32_t bytes_now = load_e ? params_metadata_.transaction_bytes + params_metadata_.metadata_transaction_bytes : params_metadata_.transaction_bytes;
+
+    if (params_.is_leader) {
+      full_barrier_ptr_[stage].arrive_and_expect_tx(bytes_now);
+    }
+  }
+
 };
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

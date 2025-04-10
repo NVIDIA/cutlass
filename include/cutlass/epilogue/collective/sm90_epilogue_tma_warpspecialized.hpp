@@ -41,6 +41,7 @@
 #include "cutlass/epilogue/thread/scale_type.h"
 #include "cutlass/epilogue/fusion/callbacks.hpp"
 #include "cutlass/epilogue/fusion/sm90_callbacks_tma_warpspecialized.hpp"
+#include "cutlass/epilogue/fusion/sm120_callbacks_tma_warpspecialized.hpp"
 #include "cutlass/detail/collective.hpp"
 #include "cutlass/detail/layout.hpp"
 #include "cutlass/detail/helper_macros.hpp"
@@ -669,7 +670,14 @@ public:
 
     CUTE_STATIC_ASSERT(epi_tile_m % mma_tile_m == 0, "MMA_TILE_M must divide EPI_TILE_M");
 
-    CUTE_STATIC_ASSERT(mma_tile_n % epi_tile_n == 0, "EPI_TILE_N must divide MMA_TILE_N");
+    if constexpr (epi_tile_m * epi_tile_n > mma_tile_m * mma_tile_n) {
+      // When the epilogue subtile is larger than the MMA tiles, loop over multiple MMA tiles
+      CUTE_STATIC_ASSERT(epi_tile_n % mma_tile_n == 0, "MMA_TILE_N must divide EPI_TILE_N");
+    }
+    else {
+      CUTE_STATIC_ASSERT(mma_tile_n % epi_tile_n == 0, "EPI_TILE_N must divide MMA_TILE_N");
+    }
+
     // Get TiledCopy for partition reference when consumer store.
     TiledCopy tiled_copy_partition_ref = make_tiled_copy_S(Copy_Atom<CopyOpR2S,SmemElementD>{}, tiled_copy_C_atom);
     // Get the fusion callbacks for the consumer store warps
@@ -793,6 +801,10 @@ public:
           if (is_C_load_needed) {
             // Copy source tile from smem to register
             copy(tiled_s2r, tSR_sC(_,_,_,load_wait_state.index()), tSR_rC);
+            // Ensure smem loads are complete before reusing smem for mixed types/layouts
+            if constexpr (ReuseSmemC && not (SmemLayoutC{} == SmemLayoutD{})) {
+              synchronize();
+            }
           }
         }
 
@@ -809,17 +821,41 @@ public:
           ++load_wait_state;
         }
 
-        int mma_m = epi_m;
-        int mma_n = (epi_n * size<1>(EpilogueTile{})) / mma_tile_n;
-        Tensor tRS_rAcc_frg_mn = tRS_rAcc_frg(_,mma_m,mma_n);
+        if constexpr (epi_tile_m * epi_tile_n > mma_tile_m * mma_tile_n) {
+          // When the epilogue subtile is larger than the MMA tiles, loop over multiple
+          // MMA tiles
+          static constexpr int MmaMPerEpiM = epi_tile_m / mma_tile_m;
+          static constexpr int MmaNPerEpiN = epi_tile_n / mma_tile_n;
 
-        // Vectorized fragment loop with visitor callback entry point
-        int epi_n_in_mma = epi_n % (mma_tile_n / epi_tile_n);
-        int r2s_v = epi_n_in_mma * size(tRS_rCompute_frg);
-        CUTLASS_PRAGMA_UNROLL
-        for (int epi_v = 0; epi_v < size(tRS_rCompute_frg); ++epi_v) {
-          tRS_rCompute_frg(epi_v) = cst_callbacks.visit(tRS_rAcc_frg_mn(r2s_v + epi_v), epi_v, epi_m, epi_n);
+          CUTLASS_PRAGMA_UNROLL
+          for (int mma_n_in_epi = 0; mma_n_in_epi < MmaNPerEpiN; ++mma_n_in_epi) {
+            int mma_n = (epi_n * MmaNPerEpiN) + mma_n_in_epi;
+
+            CUTLASS_PRAGMA_UNROLL
+            for (int mma_m_in_epi = 0; mma_m_in_epi < MmaMPerEpiM; ++mma_m_in_epi) {
+              int mma_m = (epi_m * MmaMPerEpiM) + mma_m_in_epi;
+              Tensor tRS_rAcc_frg_mn = tRS_rAcc_frg(_,mma_m,mma_n);
+              int idx_in_epi_subtile = (mma_n_in_epi * MmaMPerEpiM + mma_m_in_epi);
+
+              tRS_rCompute_frg(idx_in_epi_subtile) = cst_callbacks.visit(
+                tRS_rAcc_frg_mn(0), idx_in_epi_subtile, epi_m, epi_n);
+            }
+          }
         }
+        else {
+          int mma_m = epi_m;
+          int mma_n = (epi_n * size<1>(EpilogueTile{})) / mma_tile_n;
+          Tensor tRS_rAcc_frg_mn = tRS_rAcc_frg(_,mma_m,mma_n);
+
+          // Vectorized fragment loop with visitor callback entry point
+          int epi_n_in_mma = epi_n % (mma_tile_n / epi_tile_n);
+          int r2s_v = epi_n_in_mma * size(tRS_rCompute_frg);
+          CUTLASS_PRAGMA_UNROLL
+          for (int epi_v = 0; epi_v < size(tRS_rCompute_frg); ++epi_v) {
+            tRS_rCompute_frg(epi_v) = cst_callbacks.visit(tRS_rAcc_frg_mn(r2s_v + epi_v), epi_v, epi_m, epi_n);
+          }
+        }
+
         // The latest we can delay the TMA store is right before the smem store of the next iteration
         // since the current TMA store needs to be committed before we can acquire the next smem buffer
         if constexpr (DelayTmaStore) {

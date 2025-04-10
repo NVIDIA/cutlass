@@ -199,6 +199,15 @@ class TestComposition(unittest.TestCase):
     layoutB = Layout((4,2,2), (2,8,1))
     self.helper_test_composition(layoutA, layoutB)
 
+    # Pre-coalesced LHS
+    layoutA = Layout((4,6,8),(1,4,7))
+    layoutB = Layout((6),(1))
+    self.helper_test_composition(layoutA, layoutB)
+
+    # Mid-layout truncation
+    layoutA = Layout((4,6,8,10),(2,3,5,7))
+    layoutB = Layout(6,12)
+    self.helper_test_composition(layoutA, layoutB)
 
 if __name__ == "__main__":
   unittest.main()

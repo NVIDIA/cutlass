@@ -891,6 +891,7 @@ ${compile_guard_end}
 
       if opcode_class_main in [OpcodeClass.TensorOp 
                                , OpcodeClass.BlockScaledTensorOp 
+                               , OpcodeClass.SparseTensorOp
                               ]:
         tile_shape_m = instruction_shape[0]
         tile_shape_n = instruction_shape[1]
@@ -899,6 +900,8 @@ ${compile_guard_end}
     # stage count set to zero indicates builder automatic stage selection
     if operation.tile_description.stages > 0:
       stage_count_string = f"cutlass::gemm::collective::StageCount<{str(operation.tile_description.stages)}>"
+    elif opcode_class_main == OpcodeClass.SparseTensorOp and operation.arch == 100:
+      stage_count_string = f"cutlass::gemm::collective::StageCountAutoCarveoutEpi<{str(operation.procedural_name())}_epilogue>"
     else:
       stage_count_string = f"cutlass::gemm::collective::StageCountAutoCarveout<static_cast<int>(sizeof(typename {str(operation.procedural_name())}_epilogue::SharedStorage))>"
 

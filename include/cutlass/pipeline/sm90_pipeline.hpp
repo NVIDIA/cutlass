@@ -452,6 +452,11 @@ public:
     return producer_get_barrier(state.index());
   }
 
+  CUTLASS_DEVICE
+  void producer_expect_transaction(PipelineState state, uint32_t transaction_bytes) {
+    producer_expect_transaction(state.index(), transaction_bytes);
+  }
+
   ////////////////////
   // Consumer APIs
   ////////////////////
@@ -517,6 +522,14 @@ private:
       asm volatile ("brkpt;\n" ::);
     }
     #endif
+  }
+
+  CUTLASS_DEVICE
+  void producer_expect_transaction(uint32_t stage, uint32_t transaction_bytes) {
+    detail::pipeline_check_is_producer(params_.role);
+    if (params_.is_leader) {
+      full_barrier_ptr_[stage].expect_transaction(transaction_bytes);
+    }
   }
 
   // NOP for TMA based mainloop

@@ -33,10 +33,6 @@
     \brief Unit test for the PipelineCLCFetchAsync class
 */
 
-//
-
-//
-
 #define KERNEL_DBG_TRACE false
 
 #include <cuda/atomic>
@@ -73,7 +69,7 @@ template <uint32_t Stages, typename ClusterShape>
 struct SharedStorage
 {
   alignas(16) typename PersistentTileSchedulerSm100<ClusterShape, Stages>::CLCResponse clc_response[Stages];
-  alignas(8) typename PersistentTileSchedulerSm100<ClusterShape, Stages>::PipelineStorage storage ;
+  alignas(16) typename PipelineCLCFetchAsync<Stages, ClusterShape>::SharedStorage storage;
 };
 
 //////////////////// Kernel /////////////////////////
@@ -90,7 +86,7 @@ void pipeline_device(int *d_workerCount)
 
   using SharedStorage = SharedStorage<Stages, ClusterShape>;
   using Scheduler = PersistentTileSchedulerSm100<ClusterShape, Stages>;
-  using TileSchedulingPipeline = typename Scheduler::Pipeline;
+  using TileSchedulingPipeline = PipelineCLCFetchAsync<Stages, ClusterShape>;
   SharedStorage& shared_storage = *reinterpret_cast<SharedStorage*>(shared_memory);
 
   // Logistics
@@ -110,7 +106,6 @@ void pipeline_device(int *d_workerCount)
   dim3 block_id_in_cluster = cute::block_id_in_cluster();
   // mbarrier.init
   TileSchedulingPipeline scheduler_pipeline(shared_storage.storage, params );
-  Scheduler scheduler(&shared_storage.clc_response[0], typename Scheduler::Params{}, block_id_in_cluster);
 
   // Ensure All CTAs in Cluster have completed init before issuing commits
   cute::cluster_arrive_relaxed();
@@ -136,7 +131,16 @@ void pipeline_device(int *d_workerCount)
     // Producer
     if (is_producer) {
       // Only 1 thread of the entire cluster issues the query.
-      scheduler_pipe_state_write = scheduler.advance_to_next_work(scheduler_pipeline, scheduler_pipe_state_write);
+      uint32_t mbarrier_addr = scheduler_pipeline.producer_get_barrier(scheduler_pipe_state_write);
+
+      // Wait for clcID buffer to become empty with a flipped phase
+      scheduler_pipeline.producer_acquire(scheduler_pipe_state_write);
+
+      if (cute::elect_one_sync()) {
+        Scheduler::issue_clc_query(scheduler_pipe_state_write, mbarrier_addr, shared_storage.clc_response);
+      }
+
+      ++scheduler_pipe_state_write;
     }
 
     // Consumers
@@ -151,7 +155,8 @@ void pipeline_device(int *d_workerCount)
     // Union of all consumers. Note that the producer here is its own consumer.
     if (is_producer || is_consumer) {
       scheduler_pipeline.consumer_wait(scheduler_pipe_state);
-      work_tile_info = scheduler.get_current_work(scheduler_pipe_state);
+      uint32_t smem_addr = cute::cast_smem_ptr_to_uint(&shared_storage.clc_response[scheduler_pipe_state.index()]);
+      work_tile_info = Scheduler::work_tile_info_from_clc_response(smem_addr);
       scheduler_pipeline.consumer_release(scheduler_pipe_state);
       ++scheduler_pipe_state;
 

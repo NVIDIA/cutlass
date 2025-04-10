@@ -46,7 +46,7 @@
 #endif
 
 
-#if (defined(CUTLASS_ARCH_MMA_SM100A_ENABLED))
+#if (defined(CUTLASS_ARCH_MMA_SM100A_ENABLED) || defined(CUTLASS_ARCH_MMA_SM101A_ENABLED))
 #define CUTLASS_ARCH_TCGEN_ENABLED 1
 #endif
 
@@ -167,7 +167,8 @@ enum class ReservedNamedBarriers {
   StreamkBarrier0 = 4,
   StreamkBarrier1 = 5
   , TmemAllocBarrier = 6 
-  , FirstUserBarrier = StreamkBarrier1 + 1
+  , Sm120MainloopBarrier = 7
+  , FirstUserBarrier = Sm120MainloopBarrier + 1
 };
 
 
@@ -380,7 +381,7 @@ public:
   //
   //  Static Versions
   //
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   static void init(ValueType const* smem_ptr, uint32_t arrive_count) {
 #if CUDA_BARRIER_ENABLED
     uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
@@ -397,7 +398,7 @@ public:
   }
 
   // Static version of wait - in case we don't want to burn a register
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   static void wait(ValueType const* smem_ptr, uint32_t phase) {
 #if CUDA_BARRIER_ENABLED
     uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
@@ -421,7 +422,7 @@ public:
 #endif
   }
 
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   static bool test_wait(ValueType const* smem_ptr, uint32_t phase, uint32_t pred) {
 #if CUDA_BARRIER_ENABLED
     uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
@@ -446,7 +447,7 @@ public:
     return 0;
   }
 
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   static bool try_wait(ValueType const* smem_ptr, uint32_t phase) {
 #if CUDA_BARRIER_ENABLED
     uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
@@ -470,7 +471,7 @@ public:
   }
 
   // Static Predicated version of the above - in case we know the address.
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   static void arrive(ValueType const* smem_ptr, uint32_t cta_id, uint32_t pred) {
 #if CUDA_BARRIER_ENABLED
     uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
@@ -492,7 +493,7 @@ public:
   }
 
   // Barrier arrive on local smem
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   static void arrive(ValueType const* smem_ptr) {
 #if CUDA_BARRIER_ENABLED
     uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
@@ -508,7 +509,7 @@ public:
 #endif
   }
 
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   static void invalidate(ValueType const* smem_ptr) {
 #if CUDA_BARRIER_ENABLED
     uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
@@ -569,7 +570,7 @@ struct ClusterTransactionBarrier : public ClusterBarrier {
   //
 
   // Performs an arrive operation + expected transaction bytes increment
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   static void arrive_and_expect_tx(ValueType const* smem_ptr, uint32_t transaction_bytes) {
 #if CUDA_BARRIER_ENABLED
     uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
@@ -586,7 +587,7 @@ struct ClusterTransactionBarrier : public ClusterBarrier {
   }
 
   // Performs an arrive operation + expected transaction bytes increment for a remote cta_id in a Cluster
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   static void arrive_and_expect_tx(
       ValueType const* smem_ptr, uint32_t transaction_bytes, uint32_t cta_id, uint32_t pred) {
 #if CUDA_BARRIER_ENABLED
@@ -607,7 +608,7 @@ struct ClusterTransactionBarrier : public ClusterBarrier {
   }
 
   // Performs an expected transaction bytes increment without doing an arrive operation
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   static void expect_transaction(ValueType const* smem_ptr, uint32_t transaction_bytes) {
 #if CUDA_BARRIER_ENABLED
     uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
@@ -624,7 +625,7 @@ struct ClusterTransactionBarrier : public ClusterBarrier {
   }
 
   // Performs an expected transaction bytes decrement without doing an arrive operation
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   static void complete_transaction(
       ValueType const* smem_ptr, uint32_t dst_cta_id, uint32_t transaction_bytes, uint32_t pred = 1) {
 #if CUDA_BARRIER_ENABLED
@@ -719,7 +720,7 @@ void fence_view_async_shared() {
 }
 
 // Arrive on completion of in-flight cp.async operations issued by the calling thread 
-CUTLASS_DEVICE
+CUTLASS_HOST_DEVICE
 void cpasync_barrier_arrive(uint64_t const* smem_ptr) {
 #if CUDA_BARRIER_ENABLED
   uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
@@ -736,7 +737,7 @@ void cpasync_barrier_arrive(uint64_t const* smem_ptr) {
 }
 
 // Arrive on completion of in-flight cp.async operations issued by the calling thread (noinc)
-CUTLASS_DEVICE
+CUTLASS_HOST_DEVICE
 void cpasync_barrier_arrive_noinc(uint64_t const* smem_ptr) {
 #if CUDA_BARRIER_ENABLED
   uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
@@ -755,7 +756,7 @@ void cpasync_barrier_arrive_noinc(uint64_t const* smem_ptr) {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
-CUTLASS_DEVICE
+CUTLASS_HOST_DEVICE
 void umma_arrive(uint64_t const* smem_ptr) {
 #if defined(CUTLASS_ARCH_TCGEN_ENABLED)
   uint32_t bar_intptr = cute::cast_smem_ptr_to_uint(smem_ptr);
@@ -770,7 +771,7 @@ void umma_arrive(uint64_t const* smem_ptr) {
 }
 
 //UMMA arrive for MMA_2x1SM
-CUTLASS_DEVICE
+CUTLASS_HOST_DEVICE
 void umma_arrive_2x1SM(uint64_t const* smem_ptr) {
 #if defined(CUTLASS_ARCH_TCGEN_ENABLED)
   uint32_t bar_intptr = cute::cast_smem_ptr_to_uint(smem_ptr);
@@ -785,7 +786,7 @@ void umma_arrive_2x1SM(uint64_t const* smem_ptr) {
 }
 
 // UMMA arrive for MMA_1sm + TMA_LOAD_MULTICAST combination
-CUTLASS_DEVICE
+CUTLASS_HOST_DEVICE
 void umma_arrive_multicast(uint64_t const* smem_ptr, uint16_t cta_mask) {
 #if defined(CUTLASS_ARCH_TCGEN_ENABLED)
   uint32_t bar_intptr = cute::cast_smem_ptr_to_uint(smem_ptr);
@@ -803,7 +804,7 @@ void umma_arrive_multicast(uint64_t const* smem_ptr, uint16_t cta_mask) {
 }
 
 // UMMA arrive for MMA_2x1SM + TMA_LOAD_MULTICAST combination
-CUTLASS_DEVICE
+CUTLASS_HOST_DEVICE
 void umma_arrive_multicast_2x1SM(uint64_t const* smem_ptr, uint16_t cta_mask) {
 #if defined(CUTLASS_ARCH_TCGEN_ENABLED)
   uint32_t bar_intptr = cute::cast_smem_ptr_to_uint(smem_ptr);
@@ -815,14 +816,14 @@ void umma_arrive_multicast_2x1SM(uint64_t const* smem_ptr, uint16_t cta_mask) {
       :
       :"r"(bar_intptr), "h"(cta_mask));
   }
-#else
+#elif defined(__CUDA_ARCH__)
   asm volatile ("brkpt;\n" ::);
 #endif
 }
 
 // Temporary solution for sparse kernel.
 // Will remove this when we done tightly elect_one wrap.
-CUTLASS_DEVICE
+CUTLASS_HOST_DEVICE
 void umma_arrive_multicast_no_elect(uint64_t const* smem_ptr, uint16_t cta_mask) {
 #if defined(CUTLASS_ARCH_TCGEN_ENABLED)
   uint32_t bar_intptr = cute::cast_smem_ptr_to_uint(smem_ptr);
@@ -841,7 +842,7 @@ void umma_arrive_multicast_no_elect(uint64_t const* smem_ptr, uint16_t cta_mask)
 
 // Temporary solution for sparse kernel.
 // UMMA arrive for MMA_2x1SM + TMA_LOAD_MULTICAST combination
-CUTLASS_DEVICE
+CUTLASS_HOST_DEVICE
 void umma_arrive_multicast_2x1SM_no_elect(uint64_t const* smem_ptr, uint16_t cta_mask) {
 #if defined(CUTLASS_ARCH_TCGEN_ENABLED)
   uint32_t bar_intptr = cute::cast_smem_ptr_to_uint(smem_ptr);
@@ -859,7 +860,7 @@ void umma_arrive_multicast_2x1SM_no_elect(uint64_t const* smem_ptr, uint16_t cta
 }
 
 // Always arrive on even SM of collaborating 2 SMs.
-CUTLASS_DEVICE
+CUTLASS_HOST_DEVICE
 void umma_arrive_2x1SM_sm0(uint64_t const* smem_ptr) {
 #if defined(CUTLASS_ARCH_TCGEN_ENABLED)
   uint32_t bar_intptr = cute::cast_smem_ptr_to_uint(smem_ptr) & cute::Sm100MmaPeerBitMask;
@@ -870,7 +871,7 @@ void umma_arrive_2x1SM_sm0(uint64_t const* smem_ptr) {
     :
     : "r"(bar_intptr));
 
-#else
+#elif defined(__CUDA_ARCH__)
   asm volatile ("brkpt;\n" ::);
 #endif
 }

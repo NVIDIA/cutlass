@@ -29,6 +29,8 @@
  *
  **************************************************************************************************/
 
+//#define CUTLASS_DEBUG_TRACE_LEVEL 1
+
 #include "cutlass_unit_test.h"
 
 #include <cutlass/trace.h>
@@ -67,6 +69,9 @@ test_complement(Layout const& layout, CoTarget const& cotarget)
   EXPECT_GE(cosize(result), size(cotarget) / size(filter(layout)));
   if constexpr (is_static<decltype(stride(completed))>::value) {  // If we can apply complement again
     EXPECT_EQ(size(complement(completed)), 1);                    // There's no more codomain left over
+  }
+  if constexpr (is_static<decltype(result)>::value && is_static<decltype(layout)>::value) {
+    EXPECT_TRUE(bool(complement(complement(result,cosize(layout)),cotarget) == result));
   }
 }
 

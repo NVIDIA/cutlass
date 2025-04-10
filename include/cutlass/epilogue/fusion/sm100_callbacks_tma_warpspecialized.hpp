@@ -233,6 +233,89 @@ struct FusionCallbacks<
   using Impl::Impl;
 };
 
+// D = alpha * acc + beta * C
+// With Col BlockScaleFactor Generation.
+template<
+  int SFVecsize,
+  class EpilogueTile,
+  class ElementOutput,
+  class ElementCompute,
+  class ElementBlockScaleFactor, 
+  class ElementSource = ElementOutput,
+  class ElementScalar = ElementCompute,
+  FloatRoundStyle RoundStyle = FloatRoundStyle::round_to_nearest
+>
+using Sm100LinearCombColBlockScaleFactor =
+  Sm90EVT<Sm100BlockScaleFactorColStore<SFVecsize, EpilogueTile, ElementOutput, ElementCompute, ElementBlockScaleFactor, RoundStyle>, // gen scalefactor
+    Sm90LinearCombination<ElementCompute, ElementCompute, ElementSource, ElementScalar, RoundStyle> // beta * C + (alpha * acc)
+  >;
+
+template <
+  int StagesC,
+  int StagesD,
+  int FragmentSize,
+  bool ReuseSmemC,
+  bool DelayTmaStore,
+  class ElementOutput,
+  class ElementCompute,
+  class ElementBlockScaleFactor,
+  int SFVecSize,
+  class ElementSource,
+  class ElementScalar,
+  FloatRoundStyle RoundStyle,
+  class CtaTileShapeMNK,
+  class EpilogueTile
+>
+struct FusionCallbacks<
+    epilogue::Sm100TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore>,
+    fusion::LinCombBlockScaleFactor<SFVecSize, ElementOutput, ElementCompute, ElementBlockScaleFactor, cutlass::layout::ColumnMajor, ElementSource, ElementScalar, RoundStyle>,
+    CtaTileShapeMNK,
+    EpilogueTile
+> : Sm100LinearCombColBlockScaleFactor<SFVecSize, EpilogueTile, typename cutlass::detail::get_unpacked_element_type<ElementOutput>::type, ElementCompute, ElementBlockScaleFactor, ElementSource, ElementScalar, RoundStyle> {
+
+  using Impl =  Sm100LinearCombColBlockScaleFactor<SFVecSize, EpilogueTile, typename cutlass::detail::get_unpacked_element_type<ElementOutput>::type, ElementCompute, ElementBlockScaleFactor, ElementSource, ElementScalar, RoundStyle>;
+  using Operation = fusion::LinCombBlockScaleFactor<SFVecSize, ElementOutput, ElementCompute, ElementBlockScaleFactor, cutlass::layout::ColumnMajor,  ElementSource, ElementScalar, RoundStyle>;  
+
+  struct Arguments {
+    ElementScalar alpha = ElementScalar(1);
+    ElementScalar beta = ElementScalar(0);
+    ElementScalar const* alpha_ptr = nullptr;
+    ElementScalar const* beta_ptr = nullptr;
+    ElementBlockScaleFactor * block_scale_factor_ptr = nullptr;
+    // A matrix wide constant value to scale the output matrix
+    // Avoids generating small FP4 values.
+    using StrideNormConst = Stride<_0,_0,int64_t>;
+    ElementCompute const* norm_constant_ptr = nullptr;
+    StrideNormConst dNormConst = {_0{}, _0{}, 0};
+
+    using StrideAlpha = Stride<_0,_0,int64_t>;
+    using StrideBeta  = Stride<_0,_0,int64_t>;
+    StrideAlpha dAlpha = {_0{}, _0{}, 0};
+    StrideBeta  dBeta  = {_0{}, _0{}, 0};
+
+    operator typename Impl::Arguments() const {
+      return
+        {
+          {
+            // ternary op : beta * C + (alpha * acc)
+            {{beta}, {beta_ptr}, {dBeta}}, // leaf args : beta
+            {},                   // leaf args : C
+            {                     // binary op : alpha * acc
+              {{alpha}, {alpha_ptr}, {dAlpha}}, // leaf args : alpha
+              {},                     // leaf args : acc
+              {}                  // binary args : multiplies
+            },                    // end binary op
+            {}                    // ternary args : multiply_add
+          },
+          {block_scale_factor_ptr, norm_constant_ptr, dNormConst} // BlockScaleFactor args
+        };   // end ternary op
+    }
+  };
+
+  // Ctor inheritance
+  using Impl::Impl;
+};
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 // For Ptr-Array and Grouped GEMM
@@ -544,6 +627,129 @@ struct FusionCallbacks<
   using Impl::Impl;
 };
 
+/////////////////////////////////////////////////////////////////////////////////////////////////
+// D = alpha * acc + beta * C + per-row bias
+//   with col blockScaled generation
+template<
+  int SFVecsize,
+  class CtaTileShapeMNK,
+  class EpilogueTile,
+  class ElementOutput,
+  class ElementCompute,
+  class ElementBlockScaleFactor,
+  class ElementBias = ElementOutput,
+  class ElementSource = ElementOutput,
+  class ElementScalar = ElementCompute,
+  int AlignmentBias = 128 / sizeof_bits_v<ElementBias>,
+  FloatRoundStyle RoundStyle = FloatRoundStyle::round_to_nearest
+>
+using Sm100LinCombPerRowBiasColBlockScaleFactor =
+  Sm90EVT<
+    Sm100BlockScaleFactorColStore<
+      SFVecsize, EpilogueTile, ElementOutput, 
+      ElementCompute, ElementBlockScaleFactor, RoundStyle
+    >,
+    Sm90LinCombPerRowBias<
+      CtaTileShapeMNK, ElementCompute, ElementCompute, 
+      ElementBias, ElementSource, ElementScalar, 
+      AlignmentBias, RoundStyle
+    >
+  >;
+
+template <
+  int StagesC,
+  int StagesD,
+  int FragmentSize,
+  bool ReuseSmemC,
+  bool DelayTmaStore,
+  class ElementOutput,
+  class ElementCompute,
+  class ElementBlockScaleFactor,
+  int SFVecSize,
+  class ElementBias,
+  class ElementSource,
+  class ElementScalar,
+  int AlignmentBias,
+  FloatRoundStyle RoundStyle,
+  class CtaTileShapeMNK,
+  class EpilogueTile
+>
+struct FusionCallbacks<
+    epilogue::Sm100TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore>,
+    fusion::LinCombPerRowBiasBlockScaleFactor<
+      SFVecSize, ElementOutput, ElementCompute, 
+      ElementBlockScaleFactor, cutlass::layout::ColumnMajor,
+      ElementBias, 
+      ElementSource, ElementScalar, AlignmentBias, RoundStyle
+    >,
+    CtaTileShapeMNK,
+    EpilogueTile
+> : Sm100LinCombPerRowBiasColBlockScaleFactor<
+      SFVecSize, CtaTileShapeMNK, EpilogueTile, 
+      typename cutlass::detail::get_unpacked_element_type<ElementOutput>::type, 
+      ElementCompute, ElementBlockScaleFactor, ElementBias, 
+      ElementSource, ElementScalar, AlignmentBias, RoundStyle
+    > 
+{
+
+  using Impl = 
+    Sm100LinCombPerRowBiasColBlockScaleFactor<
+      SFVecSize, CtaTileShapeMNK, EpilogueTile, 
+      typename cutlass::detail::get_unpacked_element_type<ElementOutput>::type, 
+      ElementCompute, ElementBlockScaleFactor, ElementBias, 
+      ElementSource, ElementScalar, AlignmentBias, RoundStyle
+    >;
+
+  using Operation = 
+    fusion::LinCombPerRowBiasBlockScaleFactor<
+      SFVecSize, ElementOutput, ElementCompute, 
+      ElementBlockScaleFactor, cutlass::layout::ColumnMajor, 
+      ElementBias, ElementSource, ElementScalar, AlignmentBias, RoundStyle
+    >;
+
+  struct Arguments {
+    ElementScalar alpha = ElementScalar(1);
+    ElementScalar beta = ElementScalar(0);
+    ElementScalar const* alpha_ptr = nullptr;
+    ElementScalar const* beta_ptr = nullptr;
+    ElementBlockScaleFactor * block_scale_factor_ptr = nullptr;
+    // A matrix wide constant value to scale the output matrix
+    // Avoids generating small FP4 values.
+    using StrideNormConst = Stride<_0,_0,int64_t>;
+    ElementCompute const* norm_constant_ptr = nullptr;
+    StrideNormConst dNormConst = {_0{}, _0{}, 0};
+
+    using StrideAlpha = Stride<_0,_0,int64_t>;
+    using StrideBeta  = Stride<_0,_0,int64_t>;
+    StrideAlpha dAlpha = {_0{}, _0{}, 0};
+    StrideBeta  dBeta  = {_0{}, _0{}, 0};
+
+    using StrideBias = Stride<_1,_0,int64_t>;
+    ElementBias const* bias_ptr = nullptr;
+    StrideBias dBias = {};
+
+    operator typename Impl::Arguments() const {
+      return
+        {
+          {  // ternary op : beta * C + (alpha * acc + bias)
+            {{beta}, {beta_ptr}, {dBeta}}, // leaf args : beta
+            {},                   // leaf args : C
+            {                     // ternary op : alpha * acc + bias
+              {{alpha}, {alpha_ptr}, {dAlpha}}, // leaf args : alpha
+              {},                     // leaf args : acc
+              {bias_ptr, ElementBias(0), dBias}, // leaf args : bias
+              {}                  // ternary args : multiply_add
+            },                    // end ternary op
+            {} // ternary args : multiply_add
+          },  // end ternary op
+          {block_scale_factor_ptr, norm_constant_ptr, dNormConst} // BlockScaleFactor args
+        };   // end ternary op
+    }
+  };
+
+  // Ctor inheritance
+  using Impl::Impl;
+};
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -805,9 +1011,138 @@ struct FusionCallbacks<
   using Impl::Impl;
 };
 
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+// D = activation(alpha * acc + beta * C + per-row bias) 
+//   with col blockScaled generation
+template<
+  int SFVecsize,
+  class CtaTileShapeMNK,
+  class EpilogueTile,
+  template <class> class ActivationFn,
+  class ElementOutput,
+  class ElementCompute,
+  class ElementBlockScaleFactor, 
+  class ElementBias = ElementOutput,
+  class ElementSource = ElementOutput,
+  class ElementScalar = ElementCompute,
+  int AlignmentBias = 128 / sizeof_bits_v<ElementBias>,
+  FloatRoundStyle RoundStyle = FloatRoundStyle::round_to_nearest
+>
+using Sm100LinCombPerRowBiasEltActColBlockScaleFactor =
+  Sm90EVT<
+    Sm100BlockScaleFactorColStore<
+      SFVecsize, EpilogueTile, 
+      ElementOutput, ElementCompute, 
+      ElementBlockScaleFactor, RoundStyle
+    >,
+    Sm90LinCombPerRowBiasEltAct<
+      CtaTileShapeMNK, ActivationFn, 
+      ElementCompute, ElementCompute, ElementBias, 
+      ElementSource, ElementScalar, AlignmentBias, RoundStyle
+    >
+  >;
+
+template <
+  int StagesC,
+  int StagesD,
+  int FragmentSize,
+  bool ReuseSmemC,
+  bool DelayTmaStore,
+  template <class> class ActivationFn,
+  class ElementOutput,
+  class ElementCompute,
+  class ElementBlockScaleFactor,
+  int SFVecSize,
+  class ElementBias,
+  class ElementSource,
+  class ElementScalar,
+  int AlignmentBias,
+  FloatRoundStyle RoundStyle,
+  class CtaTileShapeMNK,
+  class EpilogueTile
+>
+struct FusionCallbacks<
+    epilogue::Sm100TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore>,
+    fusion::LinCombPerRowBiasEltActBlockScaleFactor<
+      ActivationFn, SFVecSize, ElementOutput, ElementCompute, 
+      ElementBlockScaleFactor, cutlass::layout::ColumnMajor, 
+      ElementBias, ElementSource, ElementScalar, AlignmentBias, RoundStyle
+    >,
+    CtaTileShapeMNK,
+    EpilogueTile
+> : Sm100LinCombPerRowBiasEltActColBlockScaleFactor<
+      SFVecSize, CtaTileShapeMNK, EpilogueTile, ActivationFn,
+      typename cutlass::detail::get_unpacked_element_type<ElementOutput>::type, 
+      ElementCompute, ElementBlockScaleFactor, ElementBias, ElementSource, ElementScalar, 
+      AlignmentBias, RoundStyle
+    > {
+
+  using Impl = 
+    Sm100LinCombPerRowBiasEltActColBlockScaleFactor<
+      SFVecSize, CtaTileShapeMNK, EpilogueTile, ActivationFn, 
+      typename cutlass::detail::get_unpacked_element_type<ElementOutput>::type, 
+      ElementCompute, ElementBlockScaleFactor, ElementBias, ElementSource, ElementScalar, 
+      AlignmentBias, RoundStyle
+    >;
+
+  using Operation = 
+    fusion::LinCombPerRowBiasEltActBlockScaleFactor<
+      ActivationFn, SFVecSize, ElementOutput, ElementCompute, 
+      ElementBlockScaleFactor, cutlass::layout::ColumnMajor, 
+      ElementBias, ElementSource, ElementScalar, AlignmentBias, RoundStyle
+    >;
+
+  struct Arguments {
+    ElementScalar alpha = ElementScalar(1);
+    ElementScalar beta = ElementScalar(0);
+    ElementScalar const* alpha_ptr = nullptr;
+    ElementScalar const* beta_ptr = nullptr;
+    ElementBlockScaleFactor * block_scale_factor_ptr = nullptr;
+    // A matrix wide constant value to scale the output matrix
+    // Avoids generating small FP4 values.
+    using StrideNormConst = Stride<_0,_0,int64_t>;
+    ElementCompute const* norm_constant_ptr = nullptr;
+    StrideNormConst dNormConst = {_0{}, _0{}, 0};
+
+    using StrideAlpha = Stride<_0,_0,int64_t>;
+    using StrideBeta  = Stride<_0,_0,int64_t>;
+    StrideAlpha dAlpha = {_0{}, _0{}, 0};
+    StrideBeta  dBeta  = {_0{}, _0{}, 0};
 
 
+    using StrideBias = Stride<_1,_0,int64_t>;
+    ElementBias const* bias_ptr = nullptr;
+    StrideBias dBias = {};
+    
+    using ActivationArguments = typename Sm90Compute<ActivationFn, ElementOutput, ElementCompute, RoundStyle>::Arguments;
+    ActivationArguments activation = ActivationArguments();
 
+    operator typename Impl::Arguments() const {
+      return
+        {
+          {    // unary op : activation(beta * C + (alpha * acc + bias))
+            {    // ternary op : beta * C + (alpha * acc + bias)
+              {{beta}, {beta_ptr}, {dBeta}}, // leaf args : beta
+              {},                   // leaf args : C
+              {                     // ternary op : alpha * acc + bias
+                {{alpha}, {alpha_ptr}, {dAlpha}}, // leaf args : alpha
+                {},                     // leaf args : acc
+                {bias_ptr, ElementBias(0), dBias}, // leaf args : bias
+                {}                  // ternary args : multiply_add
+              },                    // end ternary op
+              {} // ternary args : multiply_add
+            },   // end ternary op
+            activation // unary args : activation
+          },   // end unary op
+          {block_scale_factor_ptr, norm_constant_ptr, dNormConst} // BlockScaleFactor args
+        };   // end ternary op
+    }
+  };
+
+  // Ctor inheritance
+  using Impl::Impl;
+};
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
