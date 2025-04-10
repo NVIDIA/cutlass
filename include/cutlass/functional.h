@@ -417,6 +417,8 @@ struct maximum {
     else {
       return (lhs < rhs ? rhs : lhs);
     }
+
+    CUTE_GCC_UNREACHABLE;
   }
 };
 

@@ -381,6 +381,8 @@ struct MakeTensor
         return Tensor<Engine,Layout>();
       }
     }
+
+    CUTE_GCC_UNREACHABLE;
   }
 };
 
