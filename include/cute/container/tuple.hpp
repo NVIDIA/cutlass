@@ -151,6 +151,8 @@ getv(ESO<F, R, T, Rest...> const& s)
   } else {
     return getv<N-1>(s.rest_);
   }
+
+  CUTE_GCC_UNREACHABLE;
 }
 
 template <size_t N, bool F, bool R, class T, class... Rest>
@@ -164,6 +166,8 @@ getv(ESO<F, R, T, Rest...>& s)
   } else {
     return getv<N-1>(s.rest_);
   }
+
+  CUTE_GCC_UNREACHABLE;
 }
 
 template <size_t N, bool F, bool R, class T, class... Rest>
@@ -177,6 +181,8 @@ getv(ESO<F, R, T, Rest...>&& s)
   } else {
     return getv<N-1>(static_cast<ESO_t<Rest...>&&>(s.rest_));
   }
+
+  CUTE_GCC_UNREACHABLE;
 }
 
 template <class X, size_t N,
