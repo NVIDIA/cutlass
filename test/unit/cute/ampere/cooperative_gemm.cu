@@ -569,7 +569,7 @@ TEST(SM89_CuTe_Ada, CooperativeGemm_e4m3e5m2f32_MMA) {
         MMA_Atom<SM89_16x8x32_F32E4M3E5M2F32_TN>,
         Layout<Shape<_2, _2, _1>>
       >{};
-  
+
   test_cooperative_gemm_col_major_layout<thread_block_size, MaxVecBits, TA, TB, TC>(shape_mnk, tiled_mma);
 }
 
@@ -587,7 +587,7 @@ TEST(SM89_CuTe_Ada, CooperativeGemm_e5m2e4m3f32_MMA) {
         MMA_Atom<SM89_16x8x32_F32E5M2E4M3F32_TN>,
         Layout<Shape<_2, _2, _1>>
       >{};
-  
+
   test_cooperative_gemm_col_major_layout<thread_block_size, MaxVecBits, TA, TB, TC>(shape_mnk, tiled_mma);
 }
 
@@ -608,4 +608,3 @@ TEST(SM89_CuTe_Ada, CooperativeGemm_e5m2e5m2f32_MMA) {
 
   test_cooperative_gemm_col_major_layout<thread_block_size, MaxVecBits, TA, TB, TC>(shape_mnk, tiled_mma);
 }
-
