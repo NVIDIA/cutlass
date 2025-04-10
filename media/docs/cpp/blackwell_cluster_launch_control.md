@@ -43,7 +43,7 @@ __device__ non_persistent_kernel(...) {
   setup_common_data_structures();
   dim3 workCoordinates = blockIdx;
   coordinate_specific_compute(workCoordinates);
-} 
+}
 ```
 #### Static Persistent Kernel
 ``` c++
@@ -51,9 +51,10 @@ __device__ non_persistent_kernel(...) {
 __device__ static_persistent_kernel(...) {
   setup_common_data_structures(...);
   dim3 workCoordinates = blockIdx;
+  bool isValidId;
   do {
     coordinate_specific_compute(workCoordinates);
-    isValidId, workCoordinates = staticTileScheduler.fetch_next_work();
+    std::tie(isValidId, workCoordinates) = staticTileScheduler.fetch_next_work();
   } while (isValidId);
 }
 ```
@@ -65,9 +66,11 @@ __device__ static_persistent_kernel(...) {
 __device__ clc_dynamic_persistent_kernel(...) {
   setup_common_data_structures(...);
   dim3 workCoordinates = blockIdx;
+  dim3 newClcID;
+  bool isValidId;
   do {
     coordinate_specific_compute(workCoordinates);
-    isValidId, newClcID = clcTileScheduler.fetch_next_work();
+    std::tie(isValidId, newClcID) = clcTileScheduler.fetch_next_work();
     workCoordinates = newClcID;
   } while (isValidId);
 }
@@ -76,7 +79,7 @@ __device__ clc_dynamic_persistent_kernel(...) {
 
 ### Cluster Launch Control Pipeline Class
 
-Please refer to the `PipelineCLCFetchAsync` pipeline class defined in [Cluster launch control pipeline class](https://github.com/NVIDIA/cutlass/tree/main/include/cutlass/pipeline/sm100_pipeline.hpp). Cluster launch control queries can be pipelined and mananged by an asynchronous pipeline with producer-consumer relationship (See
+Please refer to the `PipelineCLCFetchAsync` pipeline class defined in [Cluster launch control pipeline class](https://github.com/NVIDIA/cutlass/tree/main/include/cutlass/pipeline/sm100_pipeline.hpp). Cluster launch control queries can be pipelined and managed by an asynchronous pipeline with producer-consumer relationship (See
 [pipeline](pipeline.md) document). The producer is the scheduler warp of the 0th CTA in the cluster and the consumers are all warps that need `ClcID`s. 
 
 To setup a CLC pipeline correctly, we need to make sure the params are set to the right values:
