@@ -1356,7 +1356,7 @@ left_inverse(Layout<Shape,Stride> const& layout)
       CUTE_GCC_UNREACHABLE;
     });
 
-  return coalesce(make_layout(append(result_shape, get<back(sorted_seq)>(lshape)),
+  return coalesce(make_layout(append(result_shape, get<decltype(back(sorted_seq))::value>(lshape)),
                               result_stride));
 }
 
