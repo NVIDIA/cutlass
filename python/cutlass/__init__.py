@@ -99,7 +99,7 @@ this = sys.modules[__name__]
 this.logger = logging.getLogger(__name__)
 
 # RMM is only supported for Python 3.9+
-if (sys.version_info.major == 3 and sys.version_info.major > 8) or sys.version_info.major > 3:
+if (sys.version_info.major == 3 and sys.version_info.minor > 8) or sys.version_info.major > 3:
     try:
         import rmm
         this.use_rmm = True
