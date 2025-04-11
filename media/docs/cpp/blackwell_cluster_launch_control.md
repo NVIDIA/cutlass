@@ -6,7 +6,7 @@ A GEMM workload usually consists of three phases: prologue, mainloop and epilogu
 
 Consider a GEMM that has `20x20x1` output tiles, running on a GPU with `100` SMs. There is another kernel occupying all the resources of `20` SMs so only `80` SMs can be used. Assume cluster shape is `1x1x1`. The following diagram shows how the schedule would look like for such a kernel. 
 
-<p align="center"><img src=../../images/non_persistent.png alt="A beautiful sunset" title="Sunset over the mountains"></p>
+<p align="center"><img src=../../images/non_persistent.png alt="GEMM tiles are evenly divided among available SMs" title="GEMM Scheduling with Limited SM Resources"></p>
 
 
 ### Static Scheduler
@@ -14,7 +14,7 @@ CUTLASS has adopted a software technique named **persistent kernels**. Persisten
 
 However, static scheduler is susceptible to workload imbalance if the resources of some SMs are unavailable. The following diagram illustrates this issue. 
 
-<p align="center"><img src=../../images/persistent_static.png alt="A beautiful sunset" title="Sunset over the mountains"></p>
+<p align="center"><img src=../../images/persistent_static.png alt="GEMM tiles are unevenly divided among available SMs, leading to workload imbalance" title="Imbalanced Workload Scheduling due to Static Scheduler"></p>
 
 ### Dynamic Scheduler with Cluster Launch Control
 A fundamental limitation of persistent scheduling is that the number of SMs this kernel can utilize is unknown in real time. Some SMs might be occupied by another kernel and thus their resources are unavailable. This makes it challenging to load-balance work across SMs.
@@ -32,7 +32,7 @@ Cluster launch control follows the below rules:
 
 The following diagram shows how the schedule would look like with cluster launch control.
 
-<p align="center"><img src=../../images/persistent_clc.png alt="A beautiful sunset" title="Sunset over the mountains"></p>
+<p align="center"><img src=../../images/persistent_clc.png alt="GEMM tiles are dynamically allocated among available SMs, leading to a balanced workload" title="Dynamic Scheduler with Cluster Launch Control"></p>
 
 ## Programming Model
 ### Pseudo Code
