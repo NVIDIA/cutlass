@@ -111,6 +111,63 @@ struct TensorPerRowBiasFunc {
   }
 };
 
+template <
+  typename Element,               ///< Element type
+  typename Layout,                ///< Layout function
+  typename ElementBias,           ///< Bias element type
+  typename LayoutBias>            ///< Bias layout function
+struct TensorPerColBiasFunc {
+
+  /// View type
+  using TensorViewD = TensorView<Element, Layout>;
+  using BiasView = TensorView<ElementBias, LayoutBias>;
+
+  /// Coordinate in tensor's index space
+  using TensorCoord = typename TensorViewD::TensorCoord;
+
+  /// Parameters structure
+  struct Params {
+
+    //
+    // Data members
+    //
+
+    TensorViewD view;
+    BiasView bias_view;
+
+
+    //
+    // Methods
+    //
+
+    Params(
+      TensorViewD view_ = TensorViewD(),
+      BiasView bias_view_ = BiasView()
+    ):
+      view(view_), bias_view{bias_view_} { }
+  };
+
+  //
+  // Data members
+  //
+
+  Params params;
+
+  //
+  // Methods
+  //
+
+  CUTLASS_DEVICE
+  TensorPerColBiasFunc(Params const &params): params(params) { }
+
+  CUTLASS_DEVICE
+  void operator()(TensorCoord const &coord) {
+    Element const & value = params.view.at(coord);
+    TensorCoord bias_coord = cutlass::make_Coord(0, coord.column());
+    params.view.at(coord) = value + params.bias_view.at(bias_coord);
+  }
+};
+
 } // namespace detail
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -133,19 +190,28 @@ void TensorPerRowBias(
     Params(view, bias_view)
   );
 }
+
+/// Apply PerColBias on a tensor
+template <
+  typename Element,               ///< Element type
+  typename Layout,                ///< Layout function
+  typename ElementBias,
+  typename LayoutBias>
+void TensorPerColBias(
+  TensorView<Element, Layout> view,       ///< destination tensor
+  TensorView<ElementBias, LayoutBias> bias_view) {         ///< bias tensor 
+  
+  using Func = detail::TensorPerColBiasFunc<Element, Layout, ElementBias, LayoutBias>;
+  using Params = typename Func::Params;
+
+  TensorForEach<Func, Layout::kRank, Params>(
+    view.extent(),
+    Params(view, bias_view)
+  );
+}
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace device
 } // namespace reference
 } // namespace cutlass
-
-#if (CUTLASS_ENABLE_SYCL)
-namespace sycl {
-  template <>
-  struct is_device_copyable<
-      cutlass::reference::device::detail::TensorPerRowBiasFunc<
-          float, cutlass::layout::RowMajor, float,
-          cutlass::layout::ColumnMajor>::Params> : std::true_type {};
-  } // namespace sycl
-#endif

@@ -167,5 +167,36 @@ TEST(XE_Device_Gemm_bf16t_bf16t_f32_tensor_op_gmma_f32_epilogue, 256x256x32_LinC
   bool passed = test::gemm::device::TestXe<Gemm>(1.0, 0.0);
   EXPECT_TRUE(passed);
 }
+
+TEST(XE_Device_Gemm_bf16t_bf16t_f32_tensor_op_gmma_f32_epilogue, 256x256x32_LinCombPerColBias) {
+  using ElementBias = float;
+
+  using EpilogueDispatchPolicy = epilogue::IntelPVCEpilogue;
+  using EpilogueOp = epilogue::fusion::LinCombPerColBias<
+      ElementOutput, ElementComputeEpilogue, ElementBias, ElementAccumulator,
+      ElementAccumulator, 128 / sizeof_bits_v<ElementBias>,
+      FloatRoundStyle::round_to_nearest>;
+  using FusionCallBacks = epilogue::fusion::FusionCallbacks<
+      EpilogueDispatchPolicy, EpilogueOp, TileShape_MNK,
+      decltype(tile_shape(CollectiveMainloop::TiledMma()))>;
+
+  using CollectiveEpilogue = epilogue::collective::CollectiveEpilogue<
+          EpilogueDispatchPolicy,
+          TileShape_MNK,
+          ElementAccumulator,
+          gemm::TagToStrideC_t<LayoutC>,
+          ElementOutput,
+          gemm::TagToStrideC_t<LayoutD>,
+          FusionCallBacks,
+          XE_2D_U32x8x16_LD_N,
+          void, void,
+          XE_2D_U32x8x16_ST_N,
+          void, void>;
+
+  using Gemm = XE_Device_Gemm_bf16_bf16_f32_tensor_op_gmma_f32_epilogue<CollectiveEpilogue>::Gemm;
+
+  bool passed = test::gemm::device::TestXe<Gemm>(1.0, 0.0);
+  EXPECT_TRUE(passed);
+}
 }
 } // namespace cutlass
