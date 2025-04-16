@@ -186,8 +186,10 @@ struct ExampleRunner {
     syclcompat::wait();
 
     using TensorView = cutlass::TensorView<ElementOutput, LayoutD>;
-    cutlass::reference::device::TensorReLu(TensorView(block_ref_D.get(), LayoutD::packed({M, N}),
-                                                      cutlass::make_Coord(M, N)));
+    for (int batch = 0, offset = 0; batch < L; batch++, offset += M * N) {
+      cutlass::reference::device::TensorReLu(TensorView(
+          block_ref_D.get() + offset, LayoutD::packed({M, N}), cutlass::make_Coord(M, N)));
+    }
 
     syclcompat::wait();
 

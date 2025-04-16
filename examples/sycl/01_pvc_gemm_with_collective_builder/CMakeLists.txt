@@ -28,8 +28,9 @@
 
 set(TEST_BATCHES --l=2)
 
-#TODO: enable batch > 1 test once implementation is fixed.
 cutlass_example_add_executable(
   01_pvc_gemm_with_collective_builder
   01_pvc_gemm_with_collective_builder.cpp
+  TEST_COMMAND_OPTIONS
+  TEST_BATCHES
 )
