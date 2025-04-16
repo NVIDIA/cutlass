@@ -122,6 +122,7 @@ struct Options {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+// Flash Attention takes 3 input matrices: (K)eys, (Q)ueries and (V)alues.
 using LayoutQ = cutlass::layout::RowMajor;
 using LayoutK = cutlass::layout::ColumnMajor;
 using LayoutV = cutlass::layout::RowMajor;
@@ -229,6 +230,7 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
         // delete this memory as it is no longer needed
         block_S.reset();
 
+        // Apply upper-diagonal masking if required
         if (is_causal) {
           // apply mask to S
           for (int row = 0; row < seq_len_qo; row++) {
@@ -431,6 +433,8 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
     return problem_shape;
   }
 
+  // Note that the GemmUniversalAdapter currently doesn't support flash attention, which is why this
+  // secondary `run` function is required to launch the kernel.
   static void run(typename GemmKernel::Params params) {
     dim3 const block = GemmKernel::get_block_shape();
     dim3 const grid = GemmKernel::get_grid_shape(params);
@@ -441,6 +445,7 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
     const auto sycl_block = syclcompat::dim3(block.x, block.y, block.z);
     const auto sycl_grid = syclcompat::dim3(grid.x, grid.y, grid.z);
 
+// Launch parameters depend on whether SYCL compiler supports work-group scratch memory extension
 #if !defined(SYCL_EXT_ONEAPI_WORK_GROUP_SCRATCH_MEMORY)
     using namespace syclcompat::experimental;
     auto event = launch<cutlass::device_kernel<GemmKernel>>(
@@ -475,6 +480,7 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
 
     // GemmKernel gemm_op;
 
+    // Define device-global scratch memory
     size_t workspace_size = GemmKernel::get_workspace_size(arguments);
     cutlass::device_memory::allocation<uint8_t> workspace(workspace_size);
 
@@ -488,6 +494,7 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
     // Initialize the workspace
     CUTLASS_CHECK(GemmKernel::initialize_workspace(arguments, workspace.get()));
 
+    // Convert host-side arguments to device-side arguments to be passed to the kernel
     auto params = GemmKernel::to_underlying_arguments(arguments, workspace.get());
 
     // Run the GEMM
@@ -554,7 +561,7 @@ template <bool Causal, typename TileShape, typename TiledMma> struct FMHAConfig 
     using EpilogueDispatchPolicy = cutlass::epilogue::IntelPVCEpilogue;
 
     using GmemTiledCopyQ = XE_2D_U16x16x32_LD_N;
-    using GmemTiledCopyK = XE_2D_U16x16x16_LD_T;
+    using GmemTiledCopyK = XE_2D_U16x16x16_LD_T; // _T designates a transposed block load operation
     using GmemTiledCopyV = XE_2D_U16x32x32_LD_V;
     using GmemTiledCopyStore = XE_2D_U32x8x16_ST_N;
     using CollectiveEpilogue = cutlass::flash_attention::collective::CollectiveEpilogueAttention<

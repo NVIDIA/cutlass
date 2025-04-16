@@ -28,22 +28,39 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
-/***************************************
-* Mixed Precision PVC Gemm Example
-*
-* This example demonstrates how to dispatch a mixed precision GEMM on PVC, with optional dequantization.
-* The GemmMode enum describes the 3 modes of operation:
-*
-* - ConvertOnly: Narrower type is simply converted to the wider type before MMA
-* - ConvertAndScale:   Narrower type is converted to wider type, then scaled
-* - ConvertAndScaleWithZeroPoint:   Narrower type is converted to wider type, then scaled and shifted by zero point
-* - Limitations:
-*    - group must be multiple of k-block size
-*    - scales & zeros must be MN-major
-*
-* Note: due to a bug in the IGC compiler, it's currently necessary to build this example with the following
-* environment variable set:
-*   export IGC_allowDecompose2DBlockFuncs=0
+/*! \file
+    \brief CUTLASS Intel PVC Gemm with mixed input types
+
+  This example demonstrates how to dispatch a mixed precision GEMM (int8 and bfloat16) on PVC, with
+  optional dequantization. The GemmMode enum describes the 3 modes of operation:
+
+  - ConvertOnly:                   Narrower type is simply converted to the wider type before MMA
+  - ConvertAndScale:               Narrower type is converted to wider type, then scaled
+  - ConvertAndScaleWithZeroPoint:  Narrower type is converted to wider type, scaled and offset
+
+  - Requirements:
+      - dequantization group size (options.g) must be multiple of k-block size
+      - scales & zeros must be MN-major
+
+  The MMA operation itself takes bfloat16 input for both A and B, and so the narrower type is first
+  upcasted (inside the mainloop) prior to being passed into the MMA atom.
+
+  Verification for this example is performed against a standard reference GEMM in the wider type.
+  The narrow-type input data are upcasted (or dequantized) externally before executing the
+  reference GEMM.
+
+  Note: due to a bug in the IGC compiler, it's currently necessary to build this example with the
+  following environment variable set (CMake handles this for AOT compilation; for JIT, please set
+  this in your environment):
+
+    export IGC_allowDecompose2DBlockFuncs=0
+
+  To build & run this example (from your build dir):
+
+    $ ninja 02_pvc_gemm_mixed_dtype
+    $ ./examples/sycl/02_pvc_gemm_mixed_dtype/02_pvc_gemm_mixed_dtype
+
+  Call with `--help` for information about available options
 */
 
 #include "cutlass/epilogue/collective/default_epilogue.hpp"
@@ -518,21 +535,23 @@ int main(int argc, const char** argv)
   using ElementScale = MmaType;
 
   // Note: XE_2D_U18x32x32_LD_N is incompatible with our bf16 MMA atoms
-  using GmemTiledCopyA = XE_2D_U8x32x32_LD_V;
-  using GmemTiledCopyB = XE_2D_U16x32x32_LD_V;
+  using GmemTiledCopyA = XE_2D_U8x32x32_LD_V;  // U8  (1-byte) block copy for A (narrower type)
+  using GmemTiledCopyB = XE_2D_U16x32x32_LD_V; // U16 (2-byte) block copy for B (wider type)
   static_assert(sizeof(ElementInputA) == 1, "ElementA width must match GmemTiledCopyA U8");
 
   // Workgroup-level tile
   using TileShape = Shape<_256, _256, _32>;
 
-  using TiledMma =
+  // Although this is a mixed type example, the actual MMA accepts bf16 input for both A and B:
+  using TiledMma =                    // M=8,N=16,K=16, D=f32,A=bf16,B=bf16,C=f32
       typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>, Layout<TileShape>,
                                     Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>>::TiledMMA;
 
-  constexpr int PipelineStages = 3;
+  constexpr int PipelineStages = 3; // prefetch 3 iters of data for A and B
   using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelPVCMixedPrecision<PipelineStages>;
   using EpilogueDispatchPolicy = cutlass::epilogue::IntelPVCEpilogue;
 
+  // Default (Linear Combination) epilogue
   using EpilogueOp = cutlass::epilogue::fusion::LinearCombination<ElementOutput, ElementComputeEpilogue,
           ElementAccumulator, ElementAccumulator, cutlass::FloatRoundStyle::round_to_nearest>;
 

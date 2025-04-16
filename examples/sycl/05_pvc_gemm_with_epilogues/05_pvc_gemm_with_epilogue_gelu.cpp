@@ -28,6 +28,27 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
+/*! \file
+    \brief CUTLASS Intel PVC Gemm with GELU Activation Fn epilogue
+
+    This example constructs and executes a standard GEMM fused with a GELU (Gaussian Error Linear
+    Unit) activation epilogue. Aside from the epilogue operation, it is identical to 00_pvc_gemm.
+
+    CUTLASS 3.x epilogues are implemented using the Epilogue Visitor Tree design pattern, and
+    typically combine 'Linear Combination' (i.e. `D = alpha * A*B + beta * C`) with an additional
+    epilogue operation.
+
+    In this case, the GELU Element-wise activation function is applied:
+
+    // D = GELU(alpha * (A*B) + beta * C)
+
+    To build & run this example (from your build dir):
+
+      $ ninja 05_pvc_gemm_with_epilogue_gelu
+      $ ./examples/sycl/05_pvc_gemm_with_epilogues/05_pvc_gemm_with_epilogue_gelu
+
+    Call with `--help` for information about available options
+*/
 
 #include "cutlass/epilogue/collective/default_epilogue.hpp"
 #include "cutlass/epilogue/collective/xe_epilogue.hpp"
@@ -310,11 +331,11 @@ int main(int argc, const char** argv)
 
   // The code section below describes datatype for input, output matrices and computation between
   // elements in input matrices.
-  using ElementAccumulator = float;                   // <- data type of accumulator
-  using ElementComputeEpilogue = float;  // <- data type of epilogue operations
-  using ElementInputA = bfloat16_t;                        // <- data type of elements in input matrix A
-  using ElementInputB = bfloat16_t;                        // <- data type of elements in input matrix B
-  using ElementOutput = float;                        // <- data type of elements in output matrix D
+  using ElementAccumulator = float;     // <- data type of accumulator
+  using ElementComputeEpilogue = float; // <- data type of epilogue operations
+  using ElementInputA = bfloat16_t;     // <- data type of elements in input matrix A
+  using ElementInputB = bfloat16_t;     // <- data type of elements in input matrix B
+  using ElementOutput = float;          // <- data type of elements in output matrix D
 
   using LayoutA = cutlass::layout::RowMajor;
   using LayoutB = cutlass::layout::RowMajor;
@@ -335,6 +356,7 @@ int main(int argc, const char** argv)
   using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelPVC<PipelineStages>;
   using EpilogueDispatchPolicy = cutlass::epilogue::IntelPVCEpilogue;
 
+  // Linear Combination + element-wise GELU epilogue
   using EpilogueOp = cutlass::epilogue::fusion::LinCombEltAct<cutlass::epilogue::thread::GELU, ElementOutput,
           ElementComputeEpilogue, ElementAccumulator, ElementAccumulator, cutlass::FloatRoundStyle::round_to_nearest>;
 

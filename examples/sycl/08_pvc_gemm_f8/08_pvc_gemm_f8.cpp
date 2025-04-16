@@ -28,6 +28,24 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
+/*! \file
+    \brief CUTLASS Intel PVC Gemm with float8 (float_e4m3_t) input
+
+    This example demonstrates GEMM on PVC with float8 input. cutlass::float_e4m3_t is an 8-bit
+    floating point type with 4-bit exponent, 3-bit mantissa and 1 sign bit. The GEMM in this example
+    performs the MMA with fp16 input, first upcasting the float_e4m3_t data for both A and B.
+
+    Aside from the input datatypes, this example is identical to 00_pvc_gemm.
+
+    Verification for this example is a standard fp16 GEMM, with input data upcasted on the host.
+
+    To build & run this example (from your build dir):
+
+      $ ninja 08_pvc_gemm_f8
+      $ ./examples/sycl/08_pvc_gemm_f8/08_pvc_gemm_f8
+
+    Call with `--help` for information about available options
+*/
 
 #include "cutlass/epilogue/collective/default_epilogue.hpp"
 #include "cutlass/epilogue/collective/xe_epilogue.hpp"

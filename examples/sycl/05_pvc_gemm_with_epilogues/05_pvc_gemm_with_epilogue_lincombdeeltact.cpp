@@ -33,16 +33,28 @@
     \brief GEMM + Binary Activation Function using CUTLASS 3 APIs for Intel PVC architecture.
 
     This example demonstates an implementation of GEMM + element-wise binary activation function,
-    with an auxillary tensor. This examples makes use of PVCs subgroup cooperative 2d-block copy
-    operations and DPAS instructions. All copy are using the cooperative 2d-block copy operations,
-    so input sizes must be divisible by the global copy atom, CopyOpG2R.
+    with an auxiliary tensor. Aside from the epilogue operation, it is identical to 00_pvc_gemm.
 
-    To run this example:
-      $ ./examples/sylc/pvc/pvc_gemm_with_epilogue_lincombdeeltact --m=5120 --n=4096 --k=4096 --l=20
+    CUTLASS 3.x epilogues are implemented using the Epilogue Visitor Tree design pattern, and
+    typically combine 'Linear Combination' (i.e. `D = alpha * A*B + beta * C`) with an additional
+    epilogue operation.
 
-    This will launch a batch of 20 gemms of size 5120x4096x4096. The auxillary vector is created as
-    a 2-D tensor of size MxN. 1-D auxillary tensors are not yet supported. The input values are
-    randomized and the results are verified against a reference implementation.
+    In this case, an element-wise binary activation function is applied:
+
+    // Z = Aux
+    // dY = alpha * (A*B) + beta * C
+    // D = d_activation(dY, Z)
+
+    The auxiliary vector is created as a 2-D tensor of size MxN. 1-D auxiliary tensors are not yet
+    supported. The input values are randomized and the results are verified against a reference
+    implementation.
+
+    To build & run this example (from your build dir):
+
+      $ ninja 05_pvc_gemm_with_epilogue_lincombdeeltact
+      $ ./examples/sycl/05_pvc_gemm_with_epilogues/05_pvc_gemm_with_epilogue_lincombdeeltact
+
+    Call with `--help` for information about available options
 */
 
 #include "cutlass/epilogue/collective/default_epilogue.hpp"

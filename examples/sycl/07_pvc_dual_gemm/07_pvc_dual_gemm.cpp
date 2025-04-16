@@ -28,6 +28,25 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
+/*! \file
+    \brief CUTLASS Intel PVC Dual Gemm + Per Row Bias Epilogue
+
+    This example demonstrates combining 2 GEMM operations which share an A matrix into one kernel.
+    The two B matrices are assumed to have the same shape. Separate linear combination scales (alpha
+    & beta) are provided for each B matrix, as well as separate C and D matrices.
+
+    See 05_pvc_gemm_with_epilogues/05_pvc_gemm_with_per_row_bias for more info about per-row-bias
+    epilogue.
+
+    Verification for this example is two independent reference GEMM executions.
+
+    To build & run this example (from your build dir):
+
+      $ ninja 07_pvc_dual_gemm
+      $ ./examples/sycl/07_pvc_dual_gemm/07_pvc_dual_gemm
+
+    Call with `--help` for information about available options
+*/
 
 #include "cutlass/epilogue/collective/default_epilogue.hpp"
 #include "cutlass/epilogue/fusion/xe_callbacks.hpp"
@@ -296,6 +315,8 @@ struct ExampleRunner {
     }
   }
 
+  // Note that the GemmUniversalAdapter currently doesn't support dual gemm, which is why this
+  // secondary `run` function is required to launch the kernel.
   static cutlass::Status run(typename GemmKernel::Params params) {
     dim3 const block = GemmKernel::get_block_shape();
     dim3 const grid = GemmKernel::get_grid_shape(params);
@@ -334,14 +355,16 @@ struct ExampleRunner {
     using EpilogueArguments0 = typename GemmKernel::EpilogueArguments0;
     using EpilogueArguments1 = typename GemmKernel::EpilogueArguments1;
 
+    // Separate epilogue args are passed for each B matrix
     EpilogueArguments0 epilogue_arguments0{{options.alpha0, options.beta0}, block_C0.get(), stride_C, block_D0.get(), stride_D};
     EpilogueArguments1 epilogue_arguments1{{options.alpha1, options.beta1}, block_C1.get(), stride_C, block_D1.get(), stride_D};
 
+    // per row bias is optional for each B matrix
     if constexpr (UseBias0) {
       using StrideBias = Stride<_1, _0, int64_t>;
       StrideBias dBias0 = {};
       if(options.l > 1) {
-        cute::get<2>(dBias0) = static_cast<int64_t>(options.m);
+        cute::get<2>(dBias0) = static_cast<int64_t>(options.m); // Stride between bias vectors in batch
       } else {
         cute::get<2>(dBias0) = static_cast<int64_t>(0);
       }
@@ -479,12 +502,12 @@ int run_dual_gemm(int argc, const char** argv)
 
   // The code section below describes datatype for input, output matrices and computation between
   // elements in input matrices.
-  using ElementAccumulator = float;                   // <- data type of accumulator
-  using ElementComputeEpilogue = float;               // <- data type of epilogue operations
-  using ElementBias = float;                          // <- data type of bias
-  using ElementInputA = bfloat16_t;                   // <- data type of elements in input matrix A
-  using ElementInputB = bfloat16_t;                   // <- data type of elements in input matrix B
-  using ElementOutput = float;                        // <- data type of elements in output matrix D
+  using ElementAccumulator = float;     // <- data type of accumulator
+  using ElementComputeEpilogue = float; // <- data type of epilogue operations
+  using ElementBias = float;            // <- data type of bias
+  using ElementInputA = bfloat16_t;     // <- data type of elements in input matrix A
+  using ElementInputB = bfloat16_t;     // <- data type of elements in input matrix B
+  using ElementOutput = float;          // <- data type of elements in output matrix D
 
   using GmemTiledCopyA = XE_2D_U16x16x32_LD_N;
   using GmemTiledCopyB = XE_2D_U16x32x32_LD_V;

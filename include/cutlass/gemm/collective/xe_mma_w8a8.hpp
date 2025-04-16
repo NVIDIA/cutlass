@@ -82,6 +82,9 @@ struct CollectiveMma<MainloopIntelW8A8<Stages, Schedule>, TileShape_, ElementA_,
   static_assert(std::is_same_v<ElementA, float_e4m3_t>, "ElementA must be fp8 (E4M3)");
   static_assert(std::is_same_v<ElementB, float_e4m3_t>, "ElementB must be fp8 (E4M3)");
 
+  static_assert(std::is_same_v<TransformA, cute::identity>, "Transformation for A is not currently supported on Intel PVC");
+  static_assert(std::is_same_v<TransformB, cute::identity>, "Transformation for B is not currently supported on Intel PVC");
+
   static constexpr int SubgroupSize = DispatchPolicy::SubgroupSize;
 
   using MmaAtomShape = typename TiledMma::AtomShape_MNK;

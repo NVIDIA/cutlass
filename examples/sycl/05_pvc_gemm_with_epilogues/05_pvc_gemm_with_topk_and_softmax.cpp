@@ -49,6 +49,13 @@
     Note that some numerical error (smaller than 1e-5) is to be expected, but this is true
     in most efficient reduction kernels, because floating point addition is not necessarily
     associative.
+
+    To build & run this example (from your build dir):
+
+      $ ninja 05_pvc_gemm_with_topk_and_softmax
+      $ ./examples/sycl/05_pvc_gemm_with_epilogues/05_pvc_gemm_with_topk_and_softmax
+
+    Call with `--help` for information about available options
 */
 #include "cutlass/epilogue/collective/default_epilogue.hpp"
 #include "cutlass/epilogue/collective/xe_epilogue.hpp"

@@ -28,6 +28,27 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
+/*! \file
+    \brief CUTLASS Intel PVC Gemm with row-wise softmax epilogue
+
+    This example constructs and executes a standard GEMM fused with a softmax epilogue.
+    Aside from the epilogue operation, it is identical to 00_pvc_gemm.
+
+    CUTLASS 3.x epilogues are implemented using the Epilogue Visitor Tree design pattern, and
+    typically combine 'Linear Combination' (i.e. `D = alpha * A*B + beta * C`) with an additional
+    epilogue operation.
+
+    In this case, a row-wise softmax is applied:
+
+    // D = softmax(alpha * (A*B) + beta * C)
+
+    To build & run this example (from your build dir):
+
+      $ ninja 05_pvc_gemm_with_epilogue_softmax
+      $ ./examples/sycl/05_pvc_gemm_with_epilogues/05_pvc_gemm_with_epilogue_softmax
+
+    Call with `--help` for information about available options
+*/
 
 #include "cutlass/epilogue/collective/default_epilogue.hpp"
 #include "cutlass/epilogue/collective/xe_epilogue.hpp"
@@ -186,12 +207,15 @@ struct ExampleRunner {
 
     syclcompat::wait();
 
-    ElementOutput *ptr =
-        (ElementOutput *)std::malloc(M * N * L * sizeof(ElementOutput));
-    syclcompat::memcpy(ptr, block_ref_D.get(),
-                       M * N * L * sizeof(ElementOutput));
-    syclcompat::wait();
+    std::vector<ElementOutput> ptr(M*N*L);
+    std::vector<ElementOutput> ptr_refD(M*N*L);
 
+    syclcompat::memcpy(ptr.data(), block_ref_D.get(),
+                       M * N * L * sizeof(ElementOutput));
+    syclcompat::memcpy(ptr_refD.data(), block_D.get(),
+                       (size_t)M * N * L * sizeof(ElementOutput));
+
+    // Verify using a manual row-wise softmax on the host
     for (int l = 0; l < L; l++) {
       for (int i = 0; i < M; i++) {
 
@@ -212,16 +236,6 @@ struct ExampleRunner {
         }
       }
     }
-
-    syclcompat::memcpy(block_ref_D.get(), ptr,
-                       M * N * L * sizeof(ElementOutput));
-    syclcompat::wait();
-
-    ElementOutput *ptr_refD =
-        (ElementOutput *)std::malloc((size_t)M * N * L * sizeof(ElementOutput));
-    syclcompat::memcpy(ptr_refD, block_D.get(),
-                       (size_t)M * N * L * sizeof(ElementOutput));
-    syclcompat::wait();
 
     uint32_t err_cnt = 0;
 
@@ -251,8 +265,6 @@ struct ExampleRunner {
       }
     }
 
-    std::free(ptr_refD);
-    std::free(ptr);
     std::cout << "err count: " << err_cnt
               << ", pass rate: " << 100 - (100 * err_cnt / (M * N * L)) << "%"
               << std::endl;
@@ -378,11 +390,11 @@ int main(int argc, const char** argv)
 
   // The code section below describes datatype for input, output matrices and computation between
   // elements in input matrices.
-  using ElementAccumulator = float;                   // <- data type of accumulator
-  using ElementComputeEpilogue = float;  // <- data type of epilogue operations
-  using ElementInputA = bfloat16_t;                        // <- data type of elements in input matrix A
-  using ElementInputB = bfloat16_t;                        // <- data type of elements in input matrix B
-  using ElementOutput = float;                        // <- data type of elements in output matrix D
+  using ElementAccumulator = float;     // <- data type of accumulator
+  using ElementComputeEpilogue = float; // <- data type of epilogue operations
+  using ElementInputA = bfloat16_t;     // <- data type of elements in input matrix A
+  using ElementInputB = bfloat16_t;     // <- data type of elements in input matrix B
+  using ElementOutput = float;          // <- data type of elements in output matrix D
 
   using LayoutA = cutlass::layout::RowMajor;
   using LayoutB = cutlass::layout::RowMajor;
@@ -404,6 +416,7 @@ int main(int argc, const char** argv)
   using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelPVC<PipelineStages>;
   using EpilogueDispatchPolicy = cutlass::epilogue::IntelPVCEpilogue;
 
+  // Linear Combination + Row-wise Softmax Epilogue
   using EpilogueOp = cutlass::epilogue::fusion::LinCombSoftmaxRow<ElementOutput,
           ElementComputeEpilogue, XE_2D_U32x8x16_ST_N, ElementAccumulator, ElementAccumulator, cutlass::FloatRoundStyle::round_to_nearest>;
 

@@ -28,7 +28,25 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
+/*! \file
+    \brief CUTLASS Intel PVC Gemm with ReLU epilogue using Collective Builder.
 
+    The Collective Builder classes provide a simplified interface for constructing the mainloop
+    and epilogue for given data layouts & types, on selected hardware. Compared to `00_pvc_gemm`,
+    this example omits the MMA and copy operation definitions, as the CollectiveBuilder will select
+    these. Additionally, instead of specifying the DispatchPolicy, we provide only the device architecture
+    (cutlass::arch::IntelPVC).
+
+    This example also demonstrates the use of a ReLU activation epilogue, fusing the ReLU operation
+    with the GEMM in a single kernel.
+
+    To build & run this example (from your build dir):
+
+      $ ninja 01_pvc_gemm_with_collective_builder
+      $ ./01_pvc_gemm_with_collective_builder
+
+    Call with `--help` for information about available options
+*/
 
 #include "cutlass/gemm/device/gemm_universal.h"
 #include "cutlass/gemm/device/gemm_universal_adapter.h"
@@ -309,11 +327,11 @@ int main(int argc, const char** argv)
 
   // The code section below describes datatype for input, output matrices and computation between
   // elements in input matrices.
-  using ElementAccumulator = float;                   // <- data type of accumulator
-  using ElementComputeEpilogue = float;  // <- data type of epilogue operations
-  using ElementInputA = bfloat16_t;                        // <- data type of elements in input matrix A
-  using ElementInputB = bfloat16_t;                        // <- data type of elements in input matrix B
-  using ElementOutput = float;                        // <- data type of elements in output matrix D
+  using ElementAccumulator = float;     // <- data type of accumulator
+  using ElementComputeEpilogue = float; // <- data type of epilogue operations
+  using ElementInputA = bfloat16_t;     // <- data type of elements in input matrix A
+  using ElementInputB = bfloat16_t;     // <- data type of elements in input matrix B
+  using ElementOutput = float;          // <- data type of elements in output matrix D
 
   constexpr int AlignmentA = sizeof(ElementInputA);
   constexpr int AlignmentB = sizeof(ElementInputB);
@@ -333,11 +351,12 @@ int main(int argc, const char** argv)
     ElementInputA, LayoutA, AlignmentA,
     ElementInputB, LayoutB, AlignmentB,
     ElementAccumulator,
-    TileShape, Shape<_1, _1, _1>,
-    cutlass::gemm::collective::StageCountAuto,
-    cutlass::gemm::collective::KernelScheduleAuto
+    TileShape, Shape<_1, _1, _1>,                 // the ClusterShape is always <1,1,1> on IntelPVC
+    cutlass::gemm::collective::StageCountAuto,    // let the builder select the number of pipeline stages (i.e. prefetch iters)
+    cutlass::gemm::collective::KernelScheduleAuto // let the builder select the mainloop schedule
   >::CollectiveOp;
 
+  // Define a Linear Combination, Elementwise Activation (LinCombEltAct) epilogue with ReLU activation
   using EpilogueOp = cutlass::epilogue::fusion::LinCombEltAct<cutlass::epilogue::thread::ReLu, 
           ElementOutput, ElementComputeEpilogue, ElementAccumulator, 
           ElementAccumulator, cutlass::FloatRoundStyle::round_to_nearest>;

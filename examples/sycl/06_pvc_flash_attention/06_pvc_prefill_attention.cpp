@@ -28,6 +28,28 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
+/*! \file
+    \brief Flash Attention V2 Prefill for Intel PVC
+
+    This example constructs and executes a Flash Attention Prefill kernel on Intel PVC. The
+    definition of the GEMM, options etc for this example are defined in the associated
+    pvc_flash_attn_runner.hpp header file.
+
+    See https://arxiv.org/pdf/2307.08691 for details of Flash Attention V2 algorithm
+
+    To run this example:
+      $ ./examples/sycl/06_pvc_flash_attention/06_pvc_prefill_attention --seq_len_qo=512
+        --seq_len_kv=512 --head_size_vo=128 --head_size_qk=128
+
+    Causal masking of the first matrix multiplication is supported (`--is_causal`)
+
+    To build & run this example (from your build dir):
+
+      $ ninja 06_pvc_prefill_attention
+      $ ./examples/sycl/06_pvc_flash_attention/06_pvc_prefill_attention
+
+    Call with `--help` for information about available options
+*/
 
 #include "pvc_flash_attn_runner.hpp"
 
@@ -50,6 +72,7 @@ int main(int argc, const char **argv) {
     return -1;
   }
 
+  // Define the work-group tile shape depending on the head-size of the second matmul
   if (options.head_size_vo == 64 || options.head_size_vo == 96) {
 
     using TiledMma =
@@ -57,6 +80,7 @@ int main(int argc, const char **argv) {
                                       Layout<Shape<_128, _64, _64>>,
                                       Layout<Shape<_8, _1, _1>, Stride<_1, _1, _1>>>::TiledMMA;
 
+    // Define whether or not to apply causal masking to the first matmul
     return options.is_causal ? FMHAConfig<true, Shape<_128, _64, _64, _64>, TiledMma>::run(options)
                              : FMHAConfig<false, Shape<_128, _64, _64, _64>, TiledMma>::run(options);
   } else if (options.head_size_vo == 192) {

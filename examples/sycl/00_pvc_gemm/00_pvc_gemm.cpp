@@ -28,6 +28,36 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
+/*! \file
+    \brief CUTLASS Intel PVC Gemm Example.
+
+    This example constructs and executes a simple CUTLASS GEMM kernel on Intel PVC hardware, and
+    verifies its correctness with a reference implementation
+    (cutlass::reference::device::GemmComplex). The example also provides a performance measurement
+    for the GEMM in TFLOPS.
+
+    This example makes use of PVCs subgroup cooperative 2d-block copy operations and DPAS instructions.
+
+    The shapes of the A and B matrix are defined at runtime by `options.m`, `.n` and `.k`, and the
+    batch size is defined by `options.l`. The tile shape, which defines how much work is executed by
+    a single work-group, is defined at compile time by:
+    ```
+      using TileShape = Shape<_256, _256, _32>;
+    ```
+    That is, each work-group processes a tile of M=256, N=256, and iterates over `options.k` in
+    blocks of K=32.
+
+    Performance of GEMM on PVC is heavily dependent on prefetching the A and B matrices. That is,
+    executing Intel specific prefetch instructions for future iterations to ensure that the required
+    blocks of A and B are resident in cache before they are needed.
+
+    To build & run this example (from your build dir):
+
+      $ ninja 00_pvc_gemm
+      $ ./examples/sycl/00_pvc_gemm/00_pvc_gemm
+
+    Call with `--help` for information about available options
+*/
 
 #include "cutlass/epilogue/collective/default_epilogue.hpp"
 #include "cutlass/epilogue/collective/xe_epilogue.hpp"
@@ -148,7 +178,7 @@ struct ExampleRunner {
   cutlass::DeviceAllocation<ElementB> block_B;
   cutlass::DeviceAllocation<ElementC> block_C;
   cutlass::DeviceAllocation<ElementOutput> block_D;
-  cutlass::DeviceAllocation<ElementOutput> block_ref_D;
+  cutlass::DeviceAllocation<ElementOutput> block_ref_D; // Reference GEMM result for verification
 
   //
   // Methods
@@ -180,6 +210,7 @@ struct ExampleRunner {
           M * N  // batch_stride_D
         );
 
+    // CUTLASS on SYCL uses the compatibility library syclcompat for e.g. default in-order queue
     syclcompat::wait();
 
     // Check if output from CUTLASS kernel and reference kernel are equal or not
@@ -194,6 +225,7 @@ struct ExampleRunner {
     auto problem_shape_MNKL = cute::append<4>(problem_size, 1);
     auto [M, N, K, L] = problem_shape_MNKL;
 
+    // Complete the stride by combining static layout info (StrideA) with runtime size info (M,K,L)
     stride_A = cutlass::make_cute_packed_stride(StrideA{}, cute::make_shape(M, K, L));
     stride_B = cutlass::make_cute_packed_stride(StrideB{}, cute::make_shape(N, K, L));
     stride_C = cutlass::make_cute_packed_stride(StrideC{}, cute::make_shape(M, N, L));
@@ -301,73 +333,91 @@ int main(int argc, const char** argv)
 
   // The code section below describes datatype for input, output matrices and computation between
   // elements in input matrices.
-  using ElementAccumulator = float;                   // <- data type of accumulator
+  using ElementAccumulator = float;      // <- data type of accumulator
   using ElementComputeEpilogue = float;  // <- data type of epilogue operations
-  using ElementInputA = bfloat16_t;                        // <- data type of elements in input matrix A
-  using ElementInputB = bfloat16_t;                        // <- data type of elements in input matrix B
-  using ElementOutput = float;                        // <- data type of elements in output matrix D
+  using ElementInputA = bfloat16_t;      // <- data type of elements in input matrix A
+  using ElementInputB = bfloat16_t;      // <- data type of elements in input matrix B
+  using ElementOutput = float;           // <- data type of elements in output matrix D
 
   using LayoutA = cutlass::layout::RowMajor;
   using LayoutB = cutlass::layout::RowMajor;
   using LayoutC = cutlass::layout::RowMajor;
   using LayoutD = cutlass::layout::RowMajor;
 
+  // The 2D block copy operations used for the A and B matrices
   using GmemTiledCopyA = XE_2D_U16x32x32_LD_N;
   using GmemTiledCopyB = XE_2D_U16x32x32_LD_V;
 
   // Workgroup-level tile
   using TileShape = Shape<_256, _256, _32>;
 
-  // The Tile of this layout describes how 8x4x1 sub-groups tile the TileShape of <256, 256, 32>. 
-  // This permutation (which can be thought of as a scatter operation on the default tiling) 
-  // ensures that each sub-group operates on a contiguous 32x64x32 chunk (4x4x2 iterations)
-  // See 0t_mma_atom.md#TiledMMAs for more info.
-  // Sub-groups are arranged row-major (stride 4,1,0) for performance reasons.
-  using TiledMma =
+  // A TiledMMA struct defines a tiling of an MMA atom over M, N and K, combining both additional
+  // hardware (sub-groups for Intel PVC) and iterations by each sub-group.
+  //
+  // The TiledMMAHelper struct defines a specific TiledMMA for a given MMA atom
+  // (XE_8x16x16_F32BF16BF16F32_TT), TileShape (<256, 256, 32>) and sub-group layout (8x4x1). The
+  // TiledMMA constructed using TiledMMAHelper has the property that each sub-group operates on a
+  // single contiguous chunk of the work-group TileShape. For this configuration, this implies that
+  // each sub-group operates on a contiguous 32x64x32 chunk (4x4x2 iterations). See
+  // 0t_mma_atom.md#TiledMMAs for more info. Sub-groups are arranged row-major (stride 4,1,0) for
+  // performance reasons.
+  using TiledMma =                    // M=8,N=16,K=16, D=f32,A=bf16,B=bf16,C=f32
       typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>, Layout<TileShape>,
                                     Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>>::TiledMMA;
 
+  // For Intel PVC, PipelineStages defines how many k-blocks ahead to prefetch from A and B.
   constexpr int PipelineStages = 2;
   using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelPVC<PipelineStages>;
   using EpilogueDispatchPolicy = cutlass::epilogue::IntelPVCEpilogue;
 
+  // This is the 'default' epilogue operation (Linear Combination) which performs everything in:
+  // (D = alpha * (A*B) + beta * C)
+  // aside from the (A*B), which is handled by the GEMM. See 05_pvc_gemm_with_epilogues for more
+  // complex epilogue examples.
   using EpilogueOp = cutlass::epilogue::fusion::LinearCombination<ElementOutput, ElementComputeEpilogue,
           ElementAccumulator, ElementAccumulator, cutlass::FloatRoundStyle::round_to_nearest>;
 
+  // FusionCallbacks ties the EpilogueOp to an implementation (based on the dispatch
+  // policy/architecture) and defines the epilogue arguments.
   using FusionCallBacks = cutlass::epilogue::fusion::FusionCallbacks<EpilogueDispatchPolicy, EpilogueOp, TileShape,
           decltype(tile_shape(TiledMma()))>;
+  // GEMM Epilogue - loads & stores C/D matrices, performs epilogue operations & load/stores any
+  // auxiliary data required
   using CollectiveEpilogue = cutlass::epilogue::collective::CollectiveEpilogue<
           EpilogueDispatchPolicy,
           TileShape,
           ElementAccumulator,
-          cutlass::gemm::TagToStrideC_t<LayoutC>,
+          cutlass::gemm::TagToStrideC_t<LayoutC>, // Converts CUTLASS 2.x to CUTLASS 3.x representation
           ElementOutput,
-          cutlass::gemm::TagToStrideC_t<LayoutD>,
+          cutlass::gemm::TagToStrideC_t<LayoutD>, // Converts CUTLASS 2.x to CUTLASS 3.x representation
           FusionCallBacks,
-          XE_2D_U32x8x16_LD_N,
+          XE_2D_U32x8x16_LD_N, // The copy atom used to load matrix C
           void, void,
-          XE_2D_U32x8x16_ST_N,
+          XE_2D_U32x8x16_ST_N, // The copy atom used to store matrix D
           void, void>;
 
-  // Mainloop
+  // GEMM Mainloop - iteration over blocks in K dimension
   using CollectiveMainloop = cutlass::gemm::collective::CollectiveMma<
           GEMMDispatchPolicy,
           TileShape,
           ElementInputA,
-          cutlass::gemm::TagToStrideA_t<LayoutA>,
+          cutlass::gemm::TagToStrideA_t<LayoutA>, // Converts CUTLASS 2.x to CUTLASS 3.x representation
           ElementInputB,
-          cutlass::gemm::TagToStrideB_t<LayoutB>,
+          cutlass::gemm::TagToStrideB_t<LayoutB>, // Converts CUTLASS 2.x to CUTLASS 3.x representation
           TiledMma,
           GmemTiledCopyA, void, void, cute::identity,  // A
           GmemTiledCopyB, void, void, cute::identity   // B
   >;
 
+  // Define the whole kernel (mainloop and epilogue)
   using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
-  Shape<int, int, int, int>,
+  Shape<int, int, int, int>, // Defer global problem shape definition to runtime
   CollectiveMainloop,
   CollectiveEpilogue
   >;
 
+  // The GemmUniversalAdapter wraps the defined GEMM kernel and handles the launch, and e.g.
+  // persistent scratch memory if required.
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
 
   ExampleRunner<Gemm> runner;

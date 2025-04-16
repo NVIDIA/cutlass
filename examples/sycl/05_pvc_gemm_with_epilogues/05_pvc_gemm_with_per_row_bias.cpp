@@ -28,7 +28,29 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
+/*! \file
+    \brief CUTLASS Intel PVC Gemm with per-row-bias epilogue
 
+    This example constructs and executes a standard GEMM fused with a per-row-bias epilogue.
+    Aside from the epilogue operation, it is identical to 00_pvc_gemm.
+
+    CUTLASS 3.x epilogues are implemented using the Epilogue Visitor Tree design pattern, and
+    typically combine 'Linear Combination' (i.e. `D = alpha * A*B + beta * C`) with an additional
+    epilogue operation.
+
+    In this case, a row-wise bias value is added:
+
+    // D = alpha * (A*B) + beta * C + bias
+
+    This implies loading auxiliary data (containing the bias values) of shape M*L (each row shares a single bias value)
+
+    To build & run this example (from your build dir):
+
+      $ ninja 05_pvc_gemm_with_per_row_bias
+      $ ./examples/sycl/05_pvc_gemm_with_epilogues/05_pvc_gemm_with_per_row_bias
+
+    Call with `--help` for information about available options
+*/
 #include "cutlass/epilogue/collective/default_epilogue.hpp"
 #include "cutlass/epilogue/collective/xe_epilogue.hpp"
 #include "cutlass/epilogue/fusion/xe_callbacks.hpp"
@@ -240,16 +262,18 @@ struct ExampleRunner {
     StrideBias dBias = {};
 
     if(options.l > 1) {
-      cute::get<2>(dBias) = static_cast<int64_t>(options.m);
+      cute::get<2>(dBias) = static_cast<int64_t>(options.m); // Stride between bias vectors in batch
     } else {
       cute::get<2>(dBias) = static_cast<int64_t>(0);
     }
 
+    // The epilogue operation requires a pointer to the bias data and information about its layout
+    // in memory, in addition to the usual C and D matrix info
     using EpilogueArguments = typename Gemm::GemmKernel::EpilogueArguments;
     EpilogueArguments epilogue_arguments{
       {options.alpha, options.beta}, block_C.get(), stride_C, block_D.get(), stride_D};
-    epilogue_arguments.thread.bias_ptr = block_bias.get();
-    epilogue_arguments.thread.dBias = dBias; 
+    epilogue_arguments.thread.bias_ptr = block_bias.get(); // per-row-bias data
+    epilogue_arguments.thread.dBias = dBias;               // and its stride
 
     typename Gemm::GemmKernel::Arguments arguments{
       cutlass::gemm::GemmUniversalMode::kGemm,
@@ -358,6 +382,7 @@ int main(int argc, const char** argv)
   using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelPVC<PipelineStages>;
   using EpilogueDispatchPolicy = cutlass::epilogue::IntelPVCEpilogue;
 
+  // The Linear Combination + Per Row Bias epilogue operation
   using EpilogueOp = cutlass::epilogue::fusion::LinCombPerRowBias<
       ElementOutput, ElementComputeEpilogue, ElementBias, ElementAccumulator,
       ElementAccumulator, 128 / sizeof_bits_v<ElementBias>,

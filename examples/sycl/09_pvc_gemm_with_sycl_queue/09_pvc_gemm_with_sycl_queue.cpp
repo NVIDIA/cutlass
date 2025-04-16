@@ -29,6 +29,18 @@
  *
  **************************************************************************************************/
 
+/*! \file
+    \brief CUTLASS Intel PVC Gemm Example with non-default SYCL queue.
+    This example modifies 00_pvc_gemm to use a non-default queue. The main changes are passing the
+    queue to gemm_op.initialize and gemm_op.run. Otherwise, changes are made to allocate memory with
+    the correct queue.
+
+    To build & run this example (from your build dir):
+      $ ninja 09_pvc_gemm_with_sycl_queue
+      $ ./examples/sycl/09_pvc_gemm_with_sycl_queue/09_pvc_gemm_with_sycl_queue
+    Call with `--help` for information about available options
+*/
+
 #include "cutlass/epilogue/collective/default_epilogue.hpp"
 #include "cutlass/epilogue/collective/xe_epilogue.hpp"
 #include "cutlass/epilogue/fusion/xe_callbacks.hpp"
@@ -324,11 +336,11 @@ int main(int argc, const char** argv)
 
   // The code section below describes datatype for input, output matrices and computation between
   // elements in input matrices.
-  using ElementAccumulator = float;                   // <- data type of accumulator
-  using ElementComputeEpilogue = float;  // <- data type of epilogue operations
-  using ElementInputA = bfloat16_t;                        // <- data type of elements in input matrix A
-  using ElementInputB = bfloat16_t;                        // <- data type of elements in input matrix B
-  using ElementOutput = float;                        // <- data type of elements in output matrix D
+  using ElementAccumulator = float;     // <- data type of accumulator
+  using ElementComputeEpilogue = float; // <- data type of epilogue operations
+  using ElementInputA = bfloat16_t;     // <- data type of elements in input matrix A
+  using ElementInputB = bfloat16_t;     // <- data type of elements in input matrix B
+  using ElementOutput = float;          // <- data type of elements in output matrix D
 
   using LayoutA = cutlass::layout::RowMajor;
   using LayoutB = cutlass::layout::RowMajor;

@@ -344,7 +344,7 @@ public:
   }
 
   /// Primary run() entry point API that is static allowing users to create and manage their own params.
-  /// Supplied params struct must be construct by calling GemmKernel::to_underling_arguments()
+  /// Supplied params struct must be construct by calling GemmKernel::to_underlying_arguments()
   static Status
   run(Params& params,
       cudaStream_t stream = nullptr,

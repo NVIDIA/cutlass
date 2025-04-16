@@ -75,6 +75,9 @@ struct CollectiveMma<MainloopIntelPVCGroup<Stages, Schedule>, TileShape_, Elemen
 
   static_assert(platform::is_same<ElementA, ElementB>::value, "MainloopIntelPVCArray requires that A and B have same type.");
 
+  static_assert(std::is_same_v<TransformA, cute::identity>, "Transformation for A is not currently supported on Intel PVC");
+  static_assert(std::is_same_v<TransformB, cute::identity>, "Transformation for B is not currently supported on Intel PVC");
+
   static constexpr int SubgroupSize = DispatchPolicy::SubgroupSize;
 
   using MmaAtomShape = typename TiledMma::AtomShape_MNK;

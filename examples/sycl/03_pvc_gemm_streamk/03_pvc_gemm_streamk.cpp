@@ -28,6 +28,38 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
+/*! \file
+    \brief CUTLASS Intel PVC Gemm with 2 Tile Hybrid Stream-K Scheduling (https://arxiv.org/pdf/2301.03598)
+
+    This example implements a Stream-K scheduled GEMM on Intel PVC hardware. Stream-K avoids tail
+    effects on performance where conventional tiling wouldn't evenly divide the work across hardware.
+    Whereas the conventional GEMM implementation requires that each work-group handle a 'whole' tile
+    (i.e. iterate across the entire range of K), Stream-K permits the scheduler to split tiles along
+    the K dimension between work-groups. This requires inter work-group communication to combine
+    partial tile results. The hybrid variant of the StreamK scheduling combines the best of vanilla
+    GEMM and basic StreamK to maximize performance.
+
+    This example demonstrates 3 scheduling modes (DecompositionModes):
+    - DataParallel - conventional GEMM
+    - Split-K  - split all the output tiles into fixed size chunks along the K dimension
+    - 2 Tile Hybrid Stream-K - apply basic StreamK scheduling to (sk_tiles = num_wgs + total_tiles % num_wgs)
+      and split them along the K dimension across multiple workgroups if needed. Apply Data Parallel scheduling
+      to the remaining tiles (total_tiles - sk_tiles).
+
+    Verification for this example is a conventional GEMM, since Split/Stream-K is just a performance optimization of GEMM.
+
+    To build & run this example (from your build dir):
+
+      $ ninja 03_pvc_gemm_streamk
+      $ ./examples/sycl/03_pvc_gemm_streamk/03_pvc_gemm_streamk
+
+    Call with `--help` for information about available options.
+
+    Note: the code may spill registers once compiled which will result in sub-optimal performance. This is because
+    of an issue inside Intel Graphics Compiler (IGC) related to VectorAliasBBThreshold being debugged internally. 
+    To avoid register spills, build the example by setting the environment variable:
+      $ export IGC_VectorAliasBBThreshold=10000
+*/
 
 #include "cutlass/epilogue/collective/default_epilogue.hpp"
 #include "cutlass/epilogue/collective/xe_epilogue.hpp"
@@ -242,7 +274,8 @@ struct ExampleRunner {
       {block_A.get(), stride_A, block_B.get(), stride_B},
       {{options.alpha, options.beta}, block_C.get(), stride_C, block_D.get(), stride_D},
       hw_info,
-      {options.splits, 
+      {options.splits, // Setting splits > 1 will force SplitK decomposition
+      // Set the decomposition mode based on user provided options
       options.dp ? cutlass::gemm::kernel::detail::PersistentTileSchedulerXeStreamKParams::DecompositionMode::DataParallel :
       options.splitk ? cutlass::gemm::kernel::detail::PersistentTileSchedulerXeStreamKParams::DecompositionMode::SplitK :
                           cutlass::gemm::kernel::detail::PersistentTileSchedulerXeStreamKParams::DecompositionMode::StreamK}
@@ -272,17 +305,6 @@ struct ExampleRunner {
       GPU_Clock timer;
       float elapsed_time_seconds = 0.f;
       for (int i = 0; i < options.iterations; ++i) {
-        typename Gemm::GemmKernel::Arguments arguments{
-          cutlass::gemm::GemmUniversalMode::kGemm,
-          problem_size,
-          {block_A.get(), stride_A, block_B.get(), stride_B},
-          {{options.alpha, options.beta}, block_C.get(), stride_C, block_D.get(), stride_D},
-          hw_info,
-          {options.splits, 
-          options.dp ? cutlass::gemm::kernel::detail::PersistentTileSchedulerXeStreamKParams::DecompositionMode::DataParallel :
-          options.splitk ? cutlass::gemm::kernel::detail::PersistentTileSchedulerXeStreamKParams::DecompositionMode::SplitK :
-                              cutlass::gemm::kernel::detail::PersistentTileSchedulerXeStreamKParams::DecompositionMode::StreamK}
-        };
         gemm_op.initialize(arguments, workspace.get());
         timer.start();
         gemm_op.run();
@@ -335,11 +357,11 @@ int main(int argc, const char** argv)
 
   // The code section below describes datatype for input, output matrices and computation between
   // elements in input matrices.
-  using ElementAccumulator = float;                   // <- data type of accumulator
-  using ElementComputeEpilogue = float;  // <- data type of epilogue operations
-  using ElementInputA = bfloat16_t;                        // <- data type of elements in input matrix A
-  using ElementInputB = bfloat16_t;                        // <- data type of elements in input matrix B
-  using ElementOutput = float;                        // <- data type of elements in output matrix D
+  using ElementAccumulator = float;     // <- data type of accumulator
+  using ElementComputeEpilogue = float; // <- data type of epilogue operations
+  using ElementInputA = bfloat16_t;     // <- data type of elements in input matrix A
+  using ElementInputB = bfloat16_t;     // <- data type of elements in input matrix B
+  using ElementOutput = float;          // <- data type of elements in output matrix D
 
   using LayoutA = cutlass::layout::RowMajor;
   using LayoutB = cutlass::layout::RowMajor;

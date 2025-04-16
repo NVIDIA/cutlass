@@ -72,6 +72,8 @@ struct CollectiveMma<MainloopIntelPVC<Stages, Schedule>, TileShape_, ElementA_, 
   using ArchTag = typename DispatchPolicy::ArchTag;
 
   static_assert(platform::is_same<ElementA, ElementB>::value, "MainloopIntelPVC requires that A and B have same type.");
+  static_assert(std::is_same_v<TransformA, cute::identity>, "Transformation for A is not currently supported on Intel PVC");
+  static_assert(std::is_same_v<TransformB, cute::identity>, "Transformation for B is not currently supported on Intel PVC");
 
   static constexpr int SubgroupSize = DispatchPolicy::SubgroupSize;
 
