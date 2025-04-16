@@ -62,11 +62,11 @@ struct Options {
   bool varlen = false;
   std::string scheduler;
 
-  int batch, num_heads, seq_len_qo, seq_len_kv, head_size_qk, head_size_vo, iterations;
+  int batch, num_heads_q, num_heads_kv, seq_len_qo, seq_len_kv, head_size_qk, head_size_vo, iterations;
   float softmax_scale;
 
   Options()
-      : help(false), error(false), is_causal(false), varlen(false), batch(32), num_heads(16), seq_len_qo(512), head_size_qk(128),
+      : help(false), error(false), is_causal(false), varlen(false), batch(32), num_heads_q(16), num_heads_kv(16), seq_len_qo(512), head_size_qk(128),
         seq_len_kv(512), head_size_vo(128), iterations(100), softmax_scale(1.f), scheduler("Individual") {}
 
   // Parses the command line
@@ -89,7 +89,8 @@ struct Options {
     cmd.get_cmd_line_argument("scheduler", scheduler, std::string("Individual"));
 
     cmd.get_cmd_line_argument("batch", batch, 32);
-    cmd.get_cmd_line_argument("num_heads", num_heads, 16);
+    cmd.get_cmd_line_argument("num_heads_q", num_heads_q, 16);
+    cmd.get_cmd_line_argument("num_heads_kv", num_heads_kv, num_heads_q);
     cmd.get_cmd_line_argument("seq_len_qo", seq_len_qo, 512);
     cmd.get_cmd_line_argument("seq_len_kv", seq_len_kv, seq_len_qo);
     cmd.get_cmd_line_argument("head_size_vo", head_size_vo, 128);
@@ -107,9 +108,10 @@ struct Options {
         << "  --help                      If specified, displays this usage statement\n\n"
         << "  --is_causal                 Apply Causal Mask to the output of first Matmul\n"
         << "  --varlen                    Enable variable sequence length\n"
-        << "  --scheduler                 Choose between Individual or Persistent Scheduler\n"
+        << "  --scheduler=\"Value\"       Choose between Individual or Persistent Scheduler\n"
         << "  --batch=<int>               Sets the Batch Size of the Multi-Head Self Attention module\n"
-        << "  --num_heads=<int>           Sets the Number of Attention Heads of the Multi-Head Self Attention module\n"
+        << "  --num_heads_q=<int>         Sets the Number of Attention Heads for Key-Value pair the Multi-Head Self Attention module\n"
+        << "  --num_heads_kv=<int>        Sets the Number of Attention Heads for Query input in the Multi-Head Self Attention module\n"
         << "  --seq_len_qo=<int>          Sets the Sequence length of the Query input in Multi-Head Self Attention module\n"
         << "  --seq_len_kv=<int>          Sets the Sequence length of the Key-Value pair in Multi-Head Self Attention module\n"
         << "  --head_size_qk=<int>        Sets the Attention Head dimension of the 1st Matrix Multiplication in Multi-Head Self Attention module\n"
@@ -176,13 +178,13 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
   bool verify(ProblemShapeType problem_size, bool is_causal) {
     
     if constexpr (isVarLen) {
-      int max_seq_len_q = static_cast<int>(get<2>(problem_size));
-      int max_seq_len_kv = static_cast<int>(get<3>(problem_size));
-      get<2>(problem_size) = cutlass::fmha::collective::VariableLength{max_seq_len_q, cumulative_seqlen_q.data()};
-      get<3>(problem_size) = cutlass::fmha::collective::VariableLength{max_seq_len_kv, cumulative_seqlen_kv.data()};
+      int max_seq_len_q = static_cast<int>(get<3>(problem_size));
+      int max_seq_len_kv = static_cast<int>(get<4>(problem_size));
+      get<3>(problem_size) = cutlass::fmha::collective::VariableLength{max_seq_len_q, cumulative_seqlen_q.data()};
+      get<4>(problem_size) = cutlass::fmha::collective::VariableLength{max_seq_len_kv, cumulative_seqlen_kv.data()};
     }
 
-    auto [batch, num_heads, head_size_qk, head_size_vo] = cute::select<0,1,4,5>(problem_size);
+    auto [batch, num_heads_q, num_heads_kv, head_size_qk, head_size_vo] = cute::select<0,1,2,5,6>(problem_size);
     int seq_len_qo, seq_len_kv;
 
     int offset_q = 0;
@@ -191,17 +193,18 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
     int offset_o = 0;
     // loop over the batch dimension to compute the output
     // to avoid the risk of running out of device memory
+    int q_group_size = num_heads_q/num_heads_kv;
     for (int b = 0; b < batch; b++) {
       if constexpr (isVarLen) {
         auto logical_problem_shape = cutlass::fmha::collective::apply_variable_length(problem_size, b);
-        seq_len_qo = get<2>(logical_problem_shape);
-        seq_len_kv = get<3>(logical_problem_shape);
+        seq_len_qo = get<3>(logical_problem_shape);
+        seq_len_kv = get<4>(logical_problem_shape);
       } else {
-        seq_len_qo = get<2>(problem_size);
-        seq_len_kv = get<3>(problem_size);
+        seq_len_qo = get<3>(problem_size);
+        seq_len_kv = get<4>(problem_size);
       }
-
-      for (int h = 0; h < num_heads; h++) {
+      int kv_group_update=1;
+      for (int h = 0; h < num_heads_q; h++) {
         cutlass::DeviceAllocation<ElementOutput> block_S;
         block_S.reset(seq_len_qo * seq_len_kv);
 
@@ -306,8 +309,11 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
         block_P.reset();
 
         offset_q += seq_len_qo * head_size_qk;
-        offset_k += seq_len_kv * head_size_qk;
-        offset_v += seq_len_kv * head_size_vo;
+        if(kv_group_update % q_group_size==0) {
+          offset_k += seq_len_kv * head_size_qk;
+          offset_v += seq_len_kv * head_size_vo;
+        }
+        kv_group_update++;
         offset_o += seq_len_qo * head_size_vo;
       }
     }
@@ -329,8 +335,8 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
     //    gaussian (--Q, --Q / 2) sampled positive
     //    track cumulative 
     std::mt19937 rng(0x202305151552ull);
-    std::normal_distribution<double> dist_q(get<2>(problem_size), get<2>(problem_size) / 2);
-    std::normal_distribution<double> dist_kv(get<3>(problem_size), get<3>(problem_size) / 2);
+    std::normal_distribution<double> dist_q(get<3>(problem_size), get<3>(problem_size) / 2);
+    std::normal_distribution<double> dist_kv(get<4>(problem_size), get<4>(problem_size) / 2);
 
     auto generate_positive_int = [](auto& dist, auto& gen) {
       int result = 0;
@@ -349,8 +355,8 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
     int max_seqlen_kv = 0;
 
     for (int i = 0; i < num_batches; i++) {
-      int seqlen_q = VarlenSame ? get<2>(problem_size) : generate_positive_int(dist_q, rng);
-      int seqlen_kv = VarlenSame ? get<3>(problem_size) : generate_positive_int(dist_kv, rng);
+      int seqlen_q = VarlenSame ? get<3>(problem_size) : generate_positive_int(dist_q, rng);
+      int seqlen_kv = VarlenSame ? get<4>(problem_size) : generate_positive_int(dist_kv, rng);
 
       total_seqlen_q += seqlen_q;
       total_seqlen_kv += seqlen_kv;
@@ -364,17 +370,19 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
 
     ProblemShape problem_size_for_init = problem_size;
     get<0>(problem_size_for_init) = 1;
-    get<2>(problem_size_for_init) = total_seqlen_q;
-    get<3>(problem_size_for_init) = total_seqlen_kv;
+    get<3>(problem_size_for_init) = total_seqlen_q;
+    get<4>(problem_size_for_init) = total_seqlen_kv;
 
     ProblemShapeType problem_size_for_launch;
 
-    get<2>(problem_size_for_launch) = cutlass::fmha::collective::VariableLength{max_seqlen_q};
-    get<3>(problem_size_for_launch) = cutlass::fmha::collective::VariableLength{max_seqlen_kv};
-    get<4>(problem_size_for_launch) = get<4>(problem_size);
+    get<3>(problem_size_for_launch) = cutlass::fmha::collective::VariableLength{max_seqlen_q};
+    get<4>(problem_size_for_launch) = cutlass::fmha::collective::VariableLength{max_seqlen_kv};
     get<5>(problem_size_for_launch) = get<5>(problem_size);
+    get<6>(problem_size_for_launch) = get<6>(problem_size);
     get<0>(problem_size_for_launch) = get<0>(problem_size);
     get<1>(problem_size_for_launch) = get<1>(problem_size);
+    get<2>(problem_size_for_launch) = get<2>(problem_size);
+
 
     return cute::make_tuple(problem_size_for_init, problem_size_for_launch);
   }
@@ -382,7 +390,7 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
   /// Initialize operands to be used in the GEMM and reference GEMM
   ProblemShapeType initialize(const Options &options) {
     auto problem_shape_in =
-        cute::make_tuple(options.batch, options.num_heads, options.seq_len_qo, options.seq_len_kv, options.head_size_qk, options.head_size_vo);
+        cute::make_tuple(options.batch, options.num_heads_q, options.num_heads_kv, options.seq_len_qo, options.seq_len_kv, options.head_size_qk, options.head_size_vo);
 
     ProblemShapeType problem_shape;
     decltype(problem_shape_in) problem_size;
@@ -397,18 +405,18 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
       problem_shape = problem_shape_in;
     }
 
-    auto [batch, num_heads, seq_len_qo, seq_len_kv, head_size_qk, head_size_vo] = problem_size;
+    auto [batch, num_heads_q, num_heads_kv, seq_len_qo, seq_len_kv, head_size_qk, head_size_vo] = problem_size;
 
-    stride_Q = cutlass::make_cute_packed_stride(StrideQ{}, cute::make_shape(seq_len_qo, head_size_qk, batch * num_heads));
-    stride_K = cutlass::make_cute_packed_stride(StrideK{}, cute::make_shape(seq_len_kv, head_size_qk, batch * num_heads));
-    stride_V = cutlass::make_cute_packed_stride(StrideV{}, cute::make_shape(head_size_vo, seq_len_kv, batch * num_heads));
-    stride_O = cutlass::make_cute_packed_stride(StrideO{}, cute::make_shape(seq_len_qo, head_size_vo, batch * num_heads));
+    stride_Q = cutlass::make_cute_packed_stride(StrideQ{}, cute::make_shape(seq_len_qo, head_size_qk, batch * num_heads_q));
+    stride_K = cutlass::make_cute_packed_stride(StrideK{}, cute::make_shape(seq_len_kv, head_size_qk, batch * num_heads_kv));
+    stride_V = cutlass::make_cute_packed_stride(StrideV{}, cute::make_shape(head_size_vo, seq_len_kv, batch * num_heads_kv));
+    stride_O = cutlass::make_cute_packed_stride(StrideO{}, cute::make_shape(seq_len_qo, head_size_vo, batch * num_heads_q));
 
-    block_Q.reset(batch * num_heads * seq_len_qo * head_size_qk);
-    block_K.reset(batch * num_heads * seq_len_kv * head_size_qk);
-    block_V.reset(batch * num_heads * seq_len_kv * head_size_vo);
-    block_O.reset(batch * num_heads * seq_len_qo * head_size_vo);
-    block_ref_O.reset(batch * num_heads * seq_len_qo * head_size_vo);
+    block_Q.reset(batch * num_heads_q * seq_len_qo * head_size_qk);
+    block_K.reset(batch * num_heads_kv * seq_len_kv * head_size_qk);
+    block_V.reset(batch * num_heads_kv * seq_len_kv * head_size_vo);
+    block_O.reset(batch * num_heads_q * seq_len_qo * head_size_vo);
+    block_ref_O.reset(batch * num_heads_q * seq_len_qo * head_size_vo);
 
     initialize_block(block_Q, seed + 2023);
     initialize_block(block_K, seed + 2022);
@@ -426,8 +434,8 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
     }
 
     if constexpr (isVarLen) {
-      get<2>(problem_shape).cumulative_length = device_cumulative_seqlen_q.get();
-      get<3>(problem_shape).cumulative_length = device_cumulative_seqlen_kv.get();
+      get<3>(problem_shape).cumulative_length = device_cumulative_seqlen_q.get();
+      get<4>(problem_shape).cumulative_length = device_cumulative_seqlen_kv.get();
     }
 
     return problem_shape;
@@ -485,7 +493,7 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
     cutlass::device_memory::allocation<uint8_t> workspace(workspace_size);
 
     if (!GemmKernel::can_implement(arguments)) {
-      std::cout << "Invalid Problem Size: " << options.batch << 'x' << options.num_heads << 'x' <<
+      std::cout << "Invalid Problem Size: " << options.batch << 'x' << options.num_heads_q << 'x' <<
         options.seq_len_qo << 'x' << options.seq_len_kv << 'x' << options.head_size_qk << 'x'  << options.head_size_vo 
         << (options.is_causal ? "xCausal" : "xNonCausal") << std::endl;
       return cutlass::Status::kErrorInvalidProblem;
@@ -519,13 +527,13 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
       syclcompat::wait();
 
       double cute_time = timer.seconds() / options.iterations;
-      double flops_qk = 2.0 * options.batch * options.num_heads * options.seq_len_qo * options.seq_len_kv * options.head_size_qk;
-      double flops_pv = 2.0 * options.batch * options.num_heads * options.seq_len_qo * options.head_size_vo * options.seq_len_kv;
+      double flops_qk = 2.0 * options.batch * options.num_heads_q * options.seq_len_qo * options.seq_len_kv * options.head_size_qk;
+      double flops_pv = 2.0 * options.batch * options.num_heads_q * options.seq_len_qo * options.head_size_vo * options.seq_len_kv;
       double tflops = ((flops_qk + flops_pv) * 1e-12) / cute_time;
-      double gbps_qk = 2.0 * options.batch * options.num_heads * (options.seq_len_qo * options.head_size_qk + options.seq_len_kv * options.head_size_qk);
-      double gbps_pv = 2.0 * options.batch * options.num_heads * (options.seq_len_kv * options.seq_len_qo + options.seq_len_qo * options.head_size_vo);
+      double gbps_qk = 2.0 * options.batch * options.num_heads_q * (options.seq_len_qo * options.head_size_qk + options.seq_len_kv * options.head_size_qk);
+      double gbps_pv = 2.0 * options.batch * options.num_heads_q * (options.seq_len_kv * options.seq_len_qo + options.seq_len_qo * options.head_size_vo);
       double gbps = ((gbps_qk + gbps_pv)  * 1e-9) / (cute_time);
-      std::cout << "Batch: " << options.batch << "\tNumHeads: " << options.num_heads << "\tSeq Length QO: " << options.seq_len_qo
+      std::cout << "Batch: " << options.batch << "\tNumHeads_q: " << options.num_heads_q  << "\tNumHeads_kv: " << options.num_heads_kv  << "\tSeq Length QO: " << options.seq_len_qo
                 << "\tSeq Length KV: " << options.seq_len_kv << "\tHead Size QK: " << options.head_size_qk << "\tHead Size VO: " << options.head_size_vo
                 << "\tCausal Mask: " << (options.is_causal ? "true" : "false") << "\tVariable Sequence Length: " << (options.varlen ? "true" : "false")
                 << "\t Scheduler: " << options.scheduler;
@@ -569,9 +577,9 @@ template <bool Causal, typename TileShape, typename TiledMma> struct FMHAConfig 
         GmemTiledCopyStore>;
     using CollectiveSoftmaxEpilogue = cutlass::flash_attention::collective::CollectiveSoftmaxEpilogue<Causal, EpilogueDispatchPolicy, ElementAccumulator>;
 
-    using ProblemShapeRegular = cute::tuple<int, int, int, int, int, int>;
+    using ProblemShapeRegular = cute::tuple<int, int, int, int, int, int, int>;
     using namespace cutlass::fmha::collective;
-    using ProblemShapeVarlen = cute::tuple<int, int, VariableLength, VariableLength, int, int>;
+    using ProblemShapeVarlen = cute::tuple<int, int, int, VariableLength, VariableLength, int, int>;
     using ProblemShapeType = std::conditional_t<isVarLen, ProblemShapeVarlen, ProblemShapeRegular>;
 
     // Mainloop

@@ -116,10 +116,10 @@ public:
   template <class ProblemShape>
   static constexpr Params to_underlying_arguments(ProblemShape const &problem_shape, Arguments const &args,
                                                   [[maybe_unused]] void *workspace) {
-    auto [batch, num_heads, seq_len_qo, seq_len_kv, head_size_qk, head_size_vo] = problem_shape;
+    auto [batch, num_heads_q, num_heads_kv, seq_len_qo, seq_len_kv, head_size_qk, head_size_vo] = problem_shape;
 
     auto tensorO = make_tensor(make_gmem_ptr(static_cast<ElementO const*>(args.ptr_O)), 
-                                                  make_layout(make_shape(seq_len_qo, head_size_vo, batch * num_heads), 
+                                                  make_layout(make_shape(seq_len_qo, head_size_vo, batch * num_heads_q), 
                                                   args.dO));
     XE_Copy_O xe_store_o{XE_Copy_O{}.with(tensorO)};
     return {
@@ -179,9 +179,9 @@ public:
     }
 
     // Indexing variables
-    auto [batch, num_heads, seq_len_qo, seq_len_kv, head_size_qk, head_size_vo] = problem_shape;
+    auto [batch, num_heads_q, num_heads_kv, seq_len_qo, seq_len_kv, head_size_qk, head_size_vo] = problem_shape;
     // Represent the full output tensor
-    Tensor mO_mnl = cute::get_pvc_tensor(make_shape(seq_len_qo, head_size_vo, (is_var_len ? batch : 1) * num_heads));
+    Tensor mO_mnl = cute::get_pvc_tensor(make_shape(seq_len_qo, head_size_vo, (is_var_len ? batch : 1) * num_heads_q));
     
     auto [m_coord, n_coord, k_coord, l_coord] = tile_coord;
     // Tile the output tensor per WG
@@ -204,14 +204,14 @@ public:
     if constexpr (!VarLen) {
       return params;
     } else {
-      auto [batch, num_heads, seq_len_qo, seq_len_kv, head_size_qk, head_size_vo] = problem_shape;
+      auto [batch, num_heads_q, num_heads_kv, seq_len_qo, seq_len_kv, head_size_qk, head_size_vo] = problem_shape;
 
-      auto qo_cumulative_length = get<2>(problem_shape).cumulative_length;
-      int offset_o = num_heads * head_size_vo * qo_cumulative_length[l_coord];
+      auto qo_cumulative_length = get<3>(problem_shape).cumulative_length;
+      int offset_o = num_heads_q * head_size_vo * qo_cumulative_length[l_coord];
       auto store_traits = static_cast<traits_store_O const&>(params.xe_store_o);
 
       ElementO* base_ptr = (ElementO*)store_traits.base_ptr;
-      auto shape_o = make_shape(static_cast<int>(seq_len_qo), head_size_vo, num_heads);
+      auto shape_o = make_shape(static_cast<int>(seq_len_qo), head_size_vo, num_heads_q);
       StrideO stride_o = cutlass::make_cute_packed_stride(StrideO{}, shape_o);
 
       auto tensorO = make_tensor(make_gmem_ptr(base_ptr + offset_o), make_layout(shape_o, stride_o));

@@ -68,8 +68,8 @@ struct FMHAConfig {
 
   using CollectiveSoftmaxEpilogue = cutlass::flash_attention::collective::CollectiveSoftmaxEpilogue<Causal, EpilogueDispatchPolicy, ElementO>;
 
-  using ProblemShapeRegular = cute::tuple<int, int, int, int, int, int>;
-  using ProblemShapeVarlen = cute::tuple<int, int, fmha::collective::VariableLength, fmha::collective::VariableLength, int, int>;
+  using ProblemShapeRegular = cute::tuple<int, int, int, int, int, int, int>;
+  using ProblemShapeVarlen = cute::tuple<int, int, int, fmha::collective::VariableLength, fmha::collective::VariableLength, int, int>;
   using ProblemShapeType = std::conditional_t<VarLen, ProblemShapeVarlen, ProblemShapeRegular>;
 
   // Mainloop

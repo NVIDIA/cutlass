@@ -53,7 +53,7 @@ public:
   //
   using ProblemShape = ProblemShape_;
 
-  static_assert(rank(ProblemShape{}) == 6, "ProblemShape{} should be <batch, num_heads, seq_len_qo, seq_len_kv, head_size_qk, head_size_vo>");
+  static_assert(rank(ProblemShape{}) == 7, "ProblemShape{} should be <batch, num_heads_q, num_head_kv, seq_len_qo, seq_len_kv, head_size_qk, head_size_vo>");
 
   // Mainloop derived types
   using CollectiveMainloop = CollectiveMainloop_;
@@ -190,7 +190,7 @@ public:
   static dim3 get_block_shape() { return dim3(MaxThreadsPerBlock, 1, 1); }
 
   CUTLASS_DEVICE
-  Shape<int, int, int, int, int, int> get_logical_problem_shape(ProblemShape const& problem_shape, int const& batch) {
+  Shape<int, int, int, int, int, int, int> get_logical_problem_shape(ProblemShape const& problem_shape, int const& batch) {
     if constexpr (is_var_len) {
       return cutlass::fmha::collective::apply_variable_length(problem_shape, batch);
     } else {
@@ -205,14 +205,16 @@ public:
     CUTE_STATIC_ASSERT(is_static<TileShapeQK>::value);
     CUTE_STATIC_ASSERT(is_static<TileShapePV>::value);
     // Separate out problem shape for convenience
-    auto batch = get<0>(params.problem_shape);
-    auto num_heads = get<1>(params.problem_shape);
-    auto head_size_qk = get<4>(params.problem_shape);
-    auto head_size_vo = get<5>(params.problem_shape);
+    auto& batch = get<0>(params.problem_shape);
+    auto& num_heads_q = get<1>(params.problem_shape);
+    auto& num_head_kv = get<2>(params.problem_shape);
+    auto group_heads_q = num_heads_q / num_head_kv;
+    auto& head_size_qk = get<5>(params.problem_shape);
+    auto& head_size_vo = get<6>(params.problem_shape);
     // Preconditions
-    static_assert(cute::rank(StrideQ{}) == 3, "StrideQ must be rank-3: [seq_len_qo, head_size_qk, batch * num_heads].");
-    static_assert(cute::rank(StrideK{}) == 3, "StrideK must be rank-3: [head_size_qk, seq_len_kv, batch * num_heads].");
-    static_assert(cute::rank(StrideV{}) == 3, "StrideV must be rank-3: [seq_len_kv, head_size_vo, batch * num_heads].");
+    static_assert(cute::rank(StrideQ{}) == 3, "StrideQ must be rank-3: [seq_len_qo, head_size_qk, batch * num_heads_q].");
+    static_assert(cute::rank(StrideK{}) == 3, "StrideK must be rank-3: [head_size_qk, seq_len_kv, batch * num_heads_kv].");
+    static_assert(cute::rank(StrideV{}) == 3, "StrideV must be rank-3: [seq_len_kv, head_size_vo, batch * num_heads_kv].");
 
     int thread_idx = int(ThreadIdxX());
     int sub_group_id = thread_idx / SubgroupSize;
@@ -233,7 +235,7 @@ public:
       // Flash Attention implementation combines batch and num_heads to calculate the total batch_size.
       // iff is_var_len: batch_size = num_heads (as each batch would have it's own seq_len_qo and seq_len_kv)
       // iff !is_var_len: batch_size = batch * num_heads
-      auto blk_l_coord = is_var_len ? num_heads_coord : batch_coord * num_heads + num_heads_coord;
+      auto blk_l_coord = is_var_len ? num_heads_coord : batch_coord * num_heads_q + num_heads_coord;
 
       // Get problem shape for the current batch_blk_idx. For variable sequence length, it loads the sequence length
       // from Global memory for the given batch_blk_idx and returns the appropriate problem_shape. For fixed sequence
@@ -241,7 +243,7 @@ public:
       // logical_problem_shape = [batch, num_heads, seq_len_qo, seq_len_kv, head_size_qk, head_size_vo]
       auto logical_problem_shape = get_logical_problem_shape(params.problem_shape, batch_coord);
 
-      auto [seq_len_qo, seq_len_kv] = select<2, 3>(logical_problem_shape);
+      auto [seq_len_qo, seq_len_kv] = select<3, 4>(logical_problem_shape);
 
       // Calculate the seq_len_idx (blk_m_coord * get<0>(WorkgroupTileShape{})) and check if it is still
       // within bounds of the actual seq_len_qo (get<2>(logical_problem_shape)).
@@ -249,19 +251,18 @@ public:
         continue;
       }
 
-      Tensor mQ_mkl = cute::get_pvc_tensor(make_shape(seq_len_qo, head_size_qk, (is_var_len ? 1 : batch) * num_heads));   //(m,k,l)
-      Tensor mK_nkl = cute::get_pvc_tensor(make_shape(seq_len_kv, head_size_qk, (is_var_len ? 1 : batch) * num_heads));   //(n,k,l)
-      Tensor mV_nkl = cute::get_pvc_tensor(make_shape(head_size_vo, seq_len_kv, (is_var_len ? 1 : batch) * num_heads));   //(n,k,l)
+      Tensor mQ_mkl = cute::get_pvc_tensor(make_shape(seq_len_qo, head_size_qk, (is_var_len ? 1 : batch) * num_heads_q));   //(m,k,l)
+      Tensor mK_nkl = cute::get_pvc_tensor(make_shape(seq_len_kv, head_size_qk, (is_var_len ? 1 : batch) * num_head_kv));   //(n,k,l)
+      Tensor mV_nkl = cute::get_pvc_tensor(make_shape(head_size_vo, seq_len_kv, (is_var_len ? 1 : batch) * num_head_kv));   //(n,k,l)
       Tensor mQ_mk = mQ_mkl(_, _, blk_l_coord);                                                    // (m,k)
-      Tensor mK_nk = mK_nkl(_, _, blk_l_coord);                                                    // (n,k)
-      Tensor mV_nk = mV_nkl(_, _, blk_l_coord);                                                    // (n,k)
+      Tensor mK_nk = mK_nkl(_, _, blk_l_coord/group_heads_q);                                                    // (n,k)
+      Tensor mV_nk = mV_nkl(_, _, blk_l_coord/group_heads_q);                                                    // (n,k)
 
       auto gQ = local_tile(mQ_mk, TileShapeQK{}, make_coord(blk_m_coord, _, _), Step<_1,  X, _1>{});
       auto gK = local_tile(mK_nk, TileShapeQK{}, make_coord(_, _ , _), Step<X, _1, _1>{});
       auto gV = local_tile(mV_nk, TileShapePV{}, make_coord(_, blk_n_coord, _), Step<X, _1, _1>{});
 
       const int seq_coord = cute::min(seq_len_qo, blk_m_coord * QK_BLK_M + (sub_group_id / PV_ATOM_N) * QK_SG_M);
-      const int l_coord = blk_l_coord;
 
       const int causal_seq_len = cute::min(seq_len_kv, seq_coord) + QK_SG_M;
       const int non_causal_seq_len = seq_len_kv;

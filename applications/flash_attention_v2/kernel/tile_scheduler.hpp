@@ -59,9 +59,9 @@ struct XeFlashIndividualTileScheduler {
       ProblemSize const& problem_size, KernelHardwareInfo hw_info,
       TileShape const& tile_shape) {
     using namespace cute;
-    // problem_size = [batch, num_heads, seq_len_qo, seq_len_kv, head_size_qk, head_size_vo]
-    dim3 grid(size(ceil_div(shape<5>(problem_size), shape<1>(tile_shape))),
-              size(ceil_div(shape<2>(problem_size), shape<0>(tile_shape))),
+    // problem_size = [batch, num_heads_q, num_heads_kv, seq_len_qo, seq_len_kv, head_size_qk, head_size_vo]
+    dim3 grid(size(ceil_div(shape<6>(problem_size), shape<1>(tile_shape))),
+              size(ceil_div(shape<3>(problem_size), shape<0>(tile_shape))),
               size(shape<0>(problem_size) * shape<1>(problem_size)));
     return Params{ grid, {shape<1>(problem_size)} };
   }
@@ -127,9 +127,9 @@ struct XeFlashPersistentTileScheduler {
     CUTLASS_TRACE_HOST("to_underlying_arguments(): Setting persistent grid SM count to " << sm_count);
     hw_info.sm_count = sm_count;
 
-    // problem_size = [batch, num_heads, seq_len_qo, seq_len_kv, head_size_qk, head_size_vo]
-    int num_head_size_blocks = size(ceil_div(shape<5>(problem_size), shape<1>(tile_shape)));
-    int num_seq_len_blocks = size(ceil_div(shape<2>(problem_size), shape<0>(tile_shape)));
+    // problem_size = [batch, num_heads_q, numhead_kv, seq_len_qo, seq_len_kv, head_size_qk, head_size_vo]
+    int num_head_size_blocks = size(ceil_div(shape<6>(problem_size), shape<1>(tile_shape)));
+    int num_seq_len_blocks = size(ceil_div(shape<3>(problem_size), shape<0>(tile_shape)));
     int num_blocks = num_seq_len_blocks * num_head_size_blocks * size(shape<0>(problem_size) * shape<1>(problem_size));
 
     return Params {
