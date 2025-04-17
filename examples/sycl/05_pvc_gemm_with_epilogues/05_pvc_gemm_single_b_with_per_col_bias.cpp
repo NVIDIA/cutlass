@@ -29,10 +29,13 @@
  *
  **************************************************************************************************/
 /*! \file
-    \brief CUTLASS Intel PVC Gemm with per-col-bias epilogue
+    \brief CUTLASS Intel PVC Gemm with per-col-bias epilogue (aka Linear layer)
 
-    This example constructs and executes a standard GEMM fused with a per-col-bias epilogue.
-    Aside from the epilogue operation, it is identical to 00_pvc_gemm.
+    This example constructs and executes a standard GEMM (with ColumnMajor B) fused with a
+    per-col-bias epilogue. Batch size is also treated differently in this example: when a batch size
+    is defined by e.g. `--l=16`, this defines the number of A matrices. A single B (weights) matrix
+    is used for the whole batch. Note the use of `LayoutA` but `StrideB`, as we need to communicate
+    the 'batch broadcast' stride (_0).
 
     CUTLASS 3.x epilogues are implemented using the Epilogue Visitor Tree design pattern, and
     typically combine 'Linear Combination' (i.e. `D = alpha * A*B + beta * C`) with an additional
@@ -42,7 +45,8 @@
 
     // D = alpha * (A*B) + beta * C + bias
 
-    This implies loading auxiliary data (containing the bias values) of shape M*L (each col shares a single bias value)
+    This implies loading auxiliary data (containing the bias values) of shape M*L (each col shares a
+    single bias value)
 
     To build & run this example (from your build dir):
 
@@ -143,6 +147,8 @@ struct ExampleRunner {
   using StrideD = typename Gemm::GemmKernel::StrideD;
 
   using LayoutA = typename Gemm::LayoutA;
+  // Gemm::LayoutB is `ColumnMajor` which drops the _0 batch stride, but due to the implementation
+  // of cutlass::TensorRef, this isn't an issue for our verification.
   using LayoutB = typename Gemm::LayoutB;
   using LayoutC = typename Gemm::LayoutC;
   using LayoutD = typename Gemm::LayoutD;
@@ -201,10 +207,10 @@ struct ExampleRunner {
           ref_D,
           ElementAccumulator(0),
           L,     // batch_count
-          M * K, // batch_stride_A
-          K * N, // batch_stride_B
-          M * N, // batch_stride_C
-          M * N  // batch_stride_D
+          get<2>(stride_A), // batch_stride_A
+          get<2>(stride_B), // batch_stride_B
+          get<2>(stride_C), // batch_stride_C
+          get<2>(stride_D)  // batch_stride_D
         );
 
     syclcompat::wait();
@@ -240,11 +246,11 @@ struct ExampleRunner {
     stride_C = cutlass::make_cute_packed_stride(StrideC{}, cute::make_shape(M, N, L));
     stride_D = cutlass::make_cute_packed_stride(StrideD{}, cute::make_shape(M, N, L));
 
-    block_A.reset(M * K * L);
-    block_B.reset(K * N * L);
-    block_C.reset(M * N * L);
-    block_D.reset(M * N * L);
-    block_ref_D.reset(M * N * L);
+    block_A.reset(cute::cosize(make_layout(cute::make_shape(M, K, L), stride_A)));
+    block_B.reset(cute::cosize(make_layout(cute::make_shape(N, K, L), stride_B)));
+    block_C.reset(cute::cosize(make_layout(cute::make_shape(M, N, L), stride_C)));
+    block_D.reset(cute::cosize(make_layout(cute::make_shape(M, N, L), stride_D)));
+    block_ref_D.reset(cute::cosize(make_layout(cute::make_shape(M, N, L), stride_D)));
     block_bias.reset(N * L);
 
     initialize_block(block_A, seed + 2023);
@@ -362,7 +368,7 @@ int main(int argc, const char** argv)
   using ElementOutput = float;              // <- data type of elements in output matrix D
 
   using LayoutA = cutlass::layout::RowMajor;
-  using LayoutB = cutlass::layout::ColumnMajor;
+  using StrideB = cute::Stride<int64_t, _1, _0>; // Stride for batch is _0 (re-use the same B matrix)
   using LayoutC = cutlass::layout::RowMajor;
   using LayoutD = cutlass::layout::RowMajor;
 
@@ -401,7 +407,7 @@ int main(int argc, const char** argv)
           ElementInputA,
           cutlass::gemm::TagToStrideA_t<LayoutA>,
           ElementInputB,
-          cutlass::gemm::TagToStrideB_t<LayoutB>,
+          StrideB,
           TiledMma,
           GmemTiledCopyA, void, void, cute::identity,  // A
           GmemTiledCopyB, void, void, cute::identity   // B

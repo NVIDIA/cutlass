@@ -179,8 +179,14 @@ CUTE_HOST_DEVICE auto prefetch_selector(TiledCopy<TiledCopyArgs...> const& tiled
   int L = 1;
   auto data = make_gmem_ptr(static_cast<const typename Tiled_Copy::ValType*>(tiled_copy.base_ptr));
   auto shape = make_shape(M, N, L);
-  auto order = std::conditional_t<Tiled_Copy::is_need_reversed, Step<_0, _1, _2>, Step<_1, _0, _2>>{};
-  auto tensor = make_tensor(data, make_ordered_layout(shape, order));
+  auto stride = [=](){
+      if constexpr (Tiled_Copy::is_need_reversed){
+        return make_stride(_1{}, tiled_copy.pitch, tiled_copy.stride_l);
+      }else{
+        return make_stride(tiled_copy.pitch, _1{}, tiled_copy.stride_l);
+      }
+    }();
+  auto tensor = make_tensor(data, make_layout(shape, stride));
   return cute::prefetch_selector<TileShape, Num_SGs, subgroup_size>(tensor);
 }
 

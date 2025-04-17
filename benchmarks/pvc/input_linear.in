@@ -1,0 +1,205 @@
+# These cases benchmark a linear layer (RowMajor A, ColumnMajor B, per col bias epilogue)
+# with a batch implementation using a *single* B matrix.
+# l = bs = 1, 16, 32, 64, 128
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=1 --m=64 --k=5120 --n=1280
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=1 --m=64 --k=1280 --n=1280
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=1 --m=64 --k=1280 --n=10240
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=1 --m=77 --k=768 --n=768
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=1 --m=77 --k=768 --n=3072
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=1 --m=77 --k=768 --n=320
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=1 --m=77 --k=768 --n=640
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=1 --m=77 --k=768 --n=1280
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=1 --m=77 --k=3072 --n=768
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=1 --m=256 --k=5120 --n=1280
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=1 --m=256 --k=1280 --n=1280
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=1 --m=256 --k=1280 --n=10240
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=1 --m=1 --k=256 --n=320
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=1 --m=257 --k=4096 --n=1024
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=1 --m=257 --k=1024 --n=1024
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=1 --m=257 --k=1024 --n=4096
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=1 --m=1 --k=320 --n=1280
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=1 --m=1024 --k=640 --n=640
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=1 --m=1024 --k=640 --n=5120
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=1 --m=1024 --k=2560 --n=640
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=1 --m=1 --k=1024 --n=768
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=1 --m=1 --k=1280 --n=1280
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=1 --m=1 --k=1280 --n=320
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=1 --m=1 --k=1280 --n=640
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=1 --m=4096 --k=512 --n=512
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=1 --m=4096 --k=320 --n=320
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=1 --m=4096 --k=320 --n=2560
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=1 --m=4096 --k=1280 --n=320
+
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=16 --m=64 --k=5120 --n=1280
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=16 --m=64 --k=1280 --n=1280
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=16 --m=64 --k=1280 --n=10240
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=16 --m=77 --k=768 --n=768
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=16 --m=77 --k=768 --n=3072
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=16 --m=77 --k=768 --n=320
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=16 --m=77 --k=768 --n=640
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=16 --m=77 --k=768 --n=1280
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=16 --m=77 --k=3072 --n=768
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=16 --m=256 --k=5120 --n=1280
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=16 --m=256 --k=1280 --n=1280
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=16 --m=256 --k=1280 --n=10240
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=16 --m=1 --k=256 --n=320
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=16 --m=257 --k=4096 --n=1024
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=16 --m=257 --k=1024 --n=1024
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=16 --m=257 --k=1024 --n=4096
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=16 --m=1 --k=320 --n=1280
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=16 --m=1024 --k=640 --n=640
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=16 --m=1024 --k=640 --n=5120
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=16 --m=1024 --k=2560 --n=640
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=16 --m=1 --k=1024 --n=768
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=16 --m=1 --k=1280 --n=1280
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=16 --m=1 --k=1280 --n=320
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=16 --m=1 --k=1280 --n=640
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=16 --m=4096 --k=512 --n=512
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=16 --m=4096 --k=320 --n=320
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=16 --m=4096 --k=320 --n=2560
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=16 --m=4096 --k=1280 --n=320
+
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=32 --m=64 --k=5120 --n=1280
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=32 --m=64 --k=1280 --n=1280
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=32 --m=64 --k=1280 --n=10240
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=32 --m=77 --k=768 --n=768
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=32 --m=77 --k=768 --n=3072
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=32 --m=77 --k=768 --n=320
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=32 --m=77 --k=768 --n=640
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=32 --m=77 --k=768 --n=1280
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=32 --m=77 --k=3072 --n=768
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=32 --m=256 --k=5120 --n=1280
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=32 --m=256 --k=1280 --n=1280
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=32 --m=256 --k=1280 --n=10240
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=32 --m=1 --k=256 --n=320
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=32 --m=257 --k=4096 --n=1024
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=32 --m=257 --k=1024 --n=1024
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=32 --m=257 --k=1024 --n=4096
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=32 --m=1 --k=320 --n=1280
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=32 --m=1024 --k=640 --n=640
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=32 --m=1024 --k=640 --n=5120
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=32 --m=1024 --k=2560 --n=640
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=32 --m=1 --k=1024 --n=768
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=32 --m=1 --k=1280 --n=1280
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=32 --m=1 --k=1280 --n=320
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=32 --m=1 --k=1280 --n=640
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=32 --m=4096 --k=512 --n=512
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=32 --m=4096 --k=320 --n=320
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=32 --m=4096 --k=320 --n=2560
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=32 --m=4096 --k=1280 --n=320
+
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=64 --m=64 --k=5120 --n=1280
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=64 --m=64 --k=1280 --n=1280
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=64 --m=64 --k=1280 --n=10240
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=64 --m=77 --k=768 --n=768
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=64 --m=77 --k=768 --n=3072
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=64 --m=77 --k=768 --n=320
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=64 --m=77 --k=768 --n=640
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=64 --m=77 --k=768 --n=1280
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=64 --m=77 --k=3072 --n=768
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=64 --m=256 --k=5120 --n=1280
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=64 --m=256 --k=1280 --n=1280
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=64 --m=256 --k=1280 --n=10240
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=64 --m=1 --k=256 --n=320
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=64 --m=257 --k=4096 --n=1024
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=64 --m=257 --k=1024 --n=1024
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=64 --m=257 --k=1024 --n=4096
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=64 --m=1 --k=320 --n=1280
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=64 --m=1024 --k=640 --n=640
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=64 --m=1024 --k=640 --n=5120
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=64 --m=1024 --k=2560 --n=640
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=64 --m=1 --k=1024 --n=768
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=64 --m=1 --k=1280 --n=1280
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=64 --m=1 --k=1280 --n=320
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=64 --m=1 --k=1280 --n=640
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=64 --m=4096 --k=512 --n=512
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=64 --m=4096 --k=320 --n=320
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=64 --m=4096 --k=320 --n=2560
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=64 --m=4096 --k=1280 --n=320
+
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=128 --m=64 --k=5120 --n=1280
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=128 --m=64 --k=1280 --n=1280
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=128 --m=64 --k=1280 --n=10240
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=128 --m=77 --k=768 --n=768
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=128 --m=77 --k=768 --n=3072
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=128 --m=77 --k=768 --n=320
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=128 --m=77 --k=768 --n=640
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=128 --m=77 --k=768 --n=1280
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=128 --m=77 --k=3072 --n=768
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=128 --m=256 --k=5120 --n=1280
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=128 --m=256 --k=1280 --n=1280
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=128 --m=256 --k=1280 --n=10240
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=128 --m=1 --k=256 --n=320
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=128 --m=257 --k=4096 --n=1024
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=128 --m=257 --k=1024 --n=1024
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=128 --m=257 --k=1024 --n=4096
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=128 --m=1 --k=320 --n=1280
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=128 --m=1024 --k=640 --n=640
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=128 --m=1024 --k=640 --n=5120
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=128 --m=1024 --k=2560 --n=640
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=128 --m=1 --k=1024 --n=768
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=128 --m=1 --k=1280 --n=1280
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=128 --m=1 --k=1280 --n=320
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=128 --m=1 --k=1280 --n=640
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=128 --m=4096 --k=512 --n=512
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=128 --m=4096 --k=320 --n=320
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=128 --m=4096 --k=320 --n=2560
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=128 --m=4096 --k=1280 --n=320
+
+# bs = 1, 16, 32, 64, 128
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=1 --m=1 --k=7168 --n=1536 
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=1 --m=1 --k=1536 --n=24576
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=1 --m=1 --k=7168 --n=576
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=1 --m=1 --k=512 --n=32768
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=1 --m=1 --k=16384 --n=7168
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=1 --m=1 --k=7168 --n=36864
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=1 --m=1 --k=18432 --n=7168
+
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=16 --m=1 --k=7168 --n=1536 
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=16 --m=1 --k=1536 --n=24576
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=16 --m=1 --k=7168 --n=576
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=16 --m=1 --k=512 --n=32768
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=16 --m=1 --k=16384 --n=7168
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=16 --m=1 --k=7168 --n=36864
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=16 --m=1 --k=18432 --n=7168
+
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=32 --m=1 --k=7168 --n=1536 
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=32 --m=1 --k=1536 --n=24576
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=32 --m=1 --k=7168 --n=576
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=32 --m=1 --k=512 --n=32768
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=32 --m=1 --k=16384 --n=7168
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=32 --m=1 --k=7168 --n=36864
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=32 --m=1 --k=18432 --n=7168
+
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=64 --m=1 --k=7168 --n=1536 
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=64 --m=1 --k=1536 --n=24576
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=64 --m=1 --k=7168 --n=576
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=64 --m=1 --k=512 --n=32768
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=64 --m=1 --k=16384 --n=7168
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=64 --m=1 --k=7168 --n=36864
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=64 --m=1 --k=18432 --n=7168
+
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=128 --m=1 --k=7168 --n=1536 
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=128 --m=1 --k=1536 --n=24576
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=128 --m=1 --k=7168 --n=576
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=128 --m=1 --k=512 --n=32768
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=128 --m=1 --k=16384 --n=7168
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=128 --m=1 --k=7168 --n=36864
+PvcGemmBF16BF16FP32_RCR_Linear --bm_name=bf16_bf16_fp32 --l=128 --m=1 --k=18432 --n=7168
+
+# TODO(codeplay): These are intended to benchmark a 256 MoE case:
+# A (bs, 7168), B (256, 4096, 7168)
+# A (bs, 2048), B (256, 7168, 2048)
+# The larger cases fail because e.g. cute::cosize(large_layout) overflows...
+# This is deprioritised for now, but will be needed at a later date.
+
+# PvcGemmBF16BF16FP32_RCR_Linear_MoE --bm_name=bf16_bf16_fp32 --l=256 --m=1 --k=7168 --n=4096
+PvcGemmBF16BF16FP32_RCR_Linear_MoE --bm_name=bf16_bf16_fp32 --l=256 --m=1 --k=2048 --n=7168
+# PvcGemmBF16BF16FP32_RCR_Linear_MoE --bm_name=bf16_bf16_fp32 --l=256 --m=16 --k=7168 --n=4096
+PvcGemmBF16BF16FP32_RCR_Linear_MoE --bm_name=bf16_bf16_fp32 --l=256 --m=16 --k=2048 --n=7168
+# PvcGemmBF16BF16FP32_RCR_Linear_MoE --bm_name=bf16_bf16_fp32 --l=256 --m=32 --k=7168 --n=4096
+PvcGemmBF16BF16FP32_RCR_Linear_MoE --bm_name=bf16_bf16_fp32 --l=256 --m=32 --k=2048 --n=7168
+# PvcGemmBF16BF16FP32_RCR_Linear_MoE --bm_name=bf16_bf16_fp32 --l=256 --m=64 --k=7168 --n=4096
+PvcGemmBF16BF16FP32_RCR_Linear_MoE --bm_name=bf16_bf16_fp32 --l=256 --m=64 --k=2048 --n=7168
+# PvcGemmBF16BF16FP32_RCR_Linear_MoE --bm_name=bf16_bf16_fp32 --l=256 --m=128 --k=7168 --n=4096
+PvcGemmBF16BF16FP32_RCR_Linear_MoE --bm_name=bf16_bf16_fp32 --l=256 --m=128 --k=2048 --n=7168

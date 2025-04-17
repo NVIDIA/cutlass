@@ -215,10 +215,10 @@ struct BenchmarkRunnerGemm {
             ref_D,
             ElementAccumulator(0),
             L,     // batch_count
-            M * K, // batch_stride_A
-            K * N, // batch_stride_B
-            M * N, // batch_stride_C
-            M * N  // batch_stride_D
+            get<2>(stride_A), // batch_stride_A
+            get<2>(stride_B), // batch_stride_B
+            get<2>(stride_C), // batch_stride_C
+            get<2>(stride_D)  // batch_stride_D
     );
 
 #if defined(CUTLASS_ENABLE_SYCL)
@@ -244,8 +244,12 @@ struct BenchmarkRunnerGemm {
     stride_C = cutlass::make_cute_packed_stride(StrideC{}, cute::make_shape(M, N, L));
     stride_D = cutlass::make_cute_packed_stride(StrideD{}, cute::make_shape(M, N, L));
 
-    std::size_t mem_occupied_ABC = (M * K * L * sizeof(ElementA)) + (K * N * L * sizeof(ElementB)) + 
-                                   (M * N * L * sizeof(ElementC));
+    // TODO(codeplay): cute::cosize(some_large_layout) will overflow int32. What can we do about this?
+    std::size_t size_A = cute::cosize(make_layout(cute::make_shape(M, K, L), stride_A));
+    std::size_t size_B = cute::cosize(make_layout(cute::make_shape(N, K, L), stride_B));
+    std::size_t size_C = cute::cosize(make_layout(cute::make_shape(M, N, L), stride_C));
+    std::size_t mem_occupied_ABC = (size_A * sizeof(ElementA)) + (size_B * sizeof(ElementB)) + 
+                                   (size_C * sizeof(ElementC));
     count = std::ceil(static_cast<float>(cutlass::get_llc_size()) / static_cast<float>(mem_occupied_ABC)) + 1;
 
     for(int i=0; i < count; i++) {
@@ -255,16 +259,16 @@ struct BenchmarkRunnerGemm {
     }
 
     for (int i=0; i < count; i++) {
-      block_A[i].reset(M * K * L);
-      block_B[i].reset(K * N * L);
-      block_C[i].reset(M * N * L);
+      block_A[i].reset(size_A);
+      block_B[i].reset(size_B);
+      block_C[i].reset(size_C);
       initialize_block(block_A[i], seed + i);
       initialize_block(block_B[i], seed + i);
       initialize_block(block_C[i], seed + i);
     }
 
-    block_D.reset(M * N * L);
-    block_ref_D.reset(M * N * L);
+    block_D.reset(size_C);
+    block_ref_D.reset(size_C);
 
   }
 

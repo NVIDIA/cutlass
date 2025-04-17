@@ -62,8 +62,8 @@ cutlass_example_add_executable(
 )
 
 cutlass_example_add_executable(
-  05_pvc_gemm_with_per_col_bias
-  05_pvc_gemm_with_per_col_bias.cpp
+  05_pvc_gemm_single_b_with_per_col_bias
+  05_pvc_gemm_single_b_with_per_col_bias.cpp
   TEST_COMMAND_OPTIONS
   TEST_BATCHES
 )
