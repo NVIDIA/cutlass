@@ -113,7 +113,8 @@
 
         args.sync()
 """
-
+from __future__ import annotations
+from typing import Optional
 from math import prod
 
 from cutlass.utils.lazy_import import lazy_import
@@ -624,7 +625,7 @@ class Gemm(OperationBase):
 
     def run(self, A=None, B=None, C=None, D=None,
             alpha=None, beta=None, sync: bool = True, print_module: bool = False, visitor_args: dict = None,
-            stream: cuda.CUstream = cuda.CUstream(0)) -> GemmArguments:
+            stream: Optional[cuda.CUstream] = None) -> GemmArguments:
         """
         Runs the kernel currently specified. If it has not already been, the kernel is emitted and
         compiled. Tensors holding operands and outputs of the kernel are sourced either from the
@@ -653,6 +654,8 @@ class Gemm(OperationBase):
         :return: arguments passed in to the kernel
         :rtype: cutlass.backend.GemmArguments
         """
+        if not stream:
+            stream = cuda.CUStream(0)
         super().run_setup()
         A = self._verify_tensor(A, self.A, self._element_a, self._layout_a, "A")
         B = self._verify_tensor(B, self.B, self._element_b, self._layout_b, "B")
