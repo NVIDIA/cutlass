@@ -67,10 +67,10 @@ class EVTFrontendBase:
         "reshape": reshape
     }
 
-    def __init__(self, element_compute=DataType.f32, cc=None, additional_passes=[], **kwargs) -> None:
-        self.cc = cc if cc else device_cc()
+    def __init__(self, cc, element_compute=DataType.f32, additional_passes=[], **kwargs) -> None:
+        self.cc = cc
         self.element_compute = library_type(element_compute)
-        self.dag_ir = DAGIR(self.element_compute, self.cc)
+        self.dag_ir = DAGIR(self.cc, self.element_compute)
         self.compute_cnt = 0
         self.layout_cnt = 0
 
