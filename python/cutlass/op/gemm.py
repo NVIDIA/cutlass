@@ -116,7 +116,8 @@
 
 from math import prod
 
-from cuda import cuda
+from cutlass.utils.lazy_import import lazy_import
+cuda = lazy_import("cuda.cuda")
 from cutlass_library import (
     DataType,
     DataTypeSize,

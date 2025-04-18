@@ -53,7 +53,8 @@
 
 from cutlass_library import DataTypeSize
 
-from cuda import cuda
+from cutlass.utils.lazy_import import lazy_import
+cuda = lazy_import("cuda.cuda")
 from cutlass.backend.gemm_operation import (
     GemmGroupedArguments,
     GemmOperationGrouped,

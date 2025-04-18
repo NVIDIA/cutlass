@@ -112,7 +112,9 @@
         args.sync()
 """
 
-from cuda import cuda
+from cutlass.utils.lazy_import import lazy_import
+cuda = lazy_import("cuda.cuda")
+cudart =  lazy_import("cuda.cudart")
 from cutlass_library import (
     ConvKind,
     ConvMode,

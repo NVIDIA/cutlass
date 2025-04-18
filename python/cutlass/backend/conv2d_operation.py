@@ -29,11 +29,13 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 #################################################################################################
+from __future__ import annotations
 
 import ctypes
 from typing import Union
 
-from cuda import cuda
+from cutlass.utils.lazy_import import lazy_import
+cuda = lazy_import("cuda.cuda")
 from cutlass_library import SubstituteTemplate
 import numpy as np
 
