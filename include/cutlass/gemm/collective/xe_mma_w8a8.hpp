@@ -102,6 +102,9 @@ struct CollectiveMma<MainloopIntelW8A8<Stages, Schedule>, TileShape_, ElementA_,
   static constexpr auto SG_K = ceil_div(BLK_K, ATOM_K);
 
   using SubgroupTileShape = Shape<decltype(SG_M), decltype(SG_N), decltype(SG_K)>;
+
+  // 32
+  static constexpr auto Num_SGs = ATOM_N * ATOM_M * ATOM_K;
   static constexpr uint32_t MaxThreadsPerBlock = size(TiledMma{});
 
   using CopyThreadShape = Shape<_1, Int<SubgroupSize>>;
@@ -238,15 +241,31 @@ struct CollectiveMma<MainloopIntelW8A8<Stages, Schedule>, TileShape_, ElementA_,
     // Retile global tile for copies
     Tensor tAgA = thr_copy_A.retile_S(tCgA);
     Tensor tBgB = thr_copy_B.retile_S(tCgB);
+    
+    auto tiled_prefetch_a = cute::prefetch_selector<Shape<Int<BLK_M>,Int<BLK_K>>, Num_SGs>(mainloop.tiled_copy_a);
+    auto tiled_prefetch_b = cute::prefetch_selector<Shape<Int<BLK_N>,Int<BLK_K>>, Num_SGs>(mainloop.tiled_copy_b);
+    auto thr_prefetch_A = tiled_prefetch_a.get_slice(thread_idx);
+    auto thr_prefetch_B = tiled_prefetch_b.get_slice(thread_idx);
+    
+    // Partition global tile for prefetch
+    auto pAgA = thr_prefetch_A.partition_S(gA);
+    auto pBgB = thr_prefetch_B.partition_S(gB);
 
     //
     // Mainloop
     //
     const auto k_start_idx = crd2idx((*k_tile_iter), make_shape(K_start));
     constexpr int barrier_scope = 2;
+    int prefetch_k = k_start_idx;
 
     CUTLASS_PRAGMA_UNROLL
-    for (int k_tile = k_start_idx; k_tile < k_tile_count + k_start_idx; k_tile++) {
+    for (; prefetch_k < DispatchPolicy::Stages; prefetch_k++) {
+      prefetch(tiled_prefetch_a, pAgA(_, _, _, prefetch_k));
+      prefetch(tiled_prefetch_b, pBgB(_, _, _, prefetch_k));
+    }
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int k_tile = k_start_idx; k_tile < k_tile_count + k_start_idx; k_tile++, prefetch_k++) {
       barrier_arrive(barrier_scope);
 
       // copy fp8 into uint8
@@ -256,6 +275,11 @@ struct CollectiveMma<MainloopIntelW8A8<Stages, Schedule>, TileShape_, ElementA_,
       // TODO: register pressure
       convert_E4M3_to_FP16(tCrA, tCrA_fp16);
       convert_E4M3_to_FP16(tCrB, tCrB_fp16);
+
+      if (prefetch_k < k_tile_count) {
+        prefetch(tiled_prefetch_a, pAgA(_, _, _, prefetch_k));
+        prefetch(tiled_prefetch_b, pBgB(_, _, _, prefetch_k));
+      }
 
       // compute using fp16
       cute::gemm(tiled_mma, tCrA_fp16, tCrB_fp16, accum);
