@@ -29,11 +29,11 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 #################################################################################################
+from __future__ import annotations
 
 import subprocess
 
 from cutlass_library import DataTypeTag
-import pydot
 
 from cutlass.backend.evt.ir.dag_ir import DAGIR
 
@@ -113,6 +113,7 @@ class EVTGraphDrawer:
         graph: DAGIR,
         name: str
     ):
+        import pydot
         dot_graph = pydot.Dot(name, randir="TB")
         for node in graph.nodes_meta:
             style = self._get_node_style(node)
