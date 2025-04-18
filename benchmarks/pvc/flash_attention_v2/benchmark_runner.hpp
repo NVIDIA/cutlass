@@ -179,7 +179,7 @@ template <class FMHAConfiguration> struct BenchmarkRunnerFMHA {
     int offset_o = 0;
     // loop over the batch dimension to compute the output
     // to avoid the risk of running out of device memory
-    int q_group_size = num_heads_q/num_heads_kv;
+    int q_group_size = num_heads_q / num_heads_kv;
     for (int b = 0; b < batch; b++) {
       if constexpr (isVarLen) {
         auto logical_problem_shape = cutlass::fmha::collective::apply_variable_length(problem_size, b);
@@ -218,12 +218,14 @@ template <class FMHAConfiguration> struct BenchmarkRunnerFMHA {
 
         // delete this memory as it is no longer needed
         block_S.reset();
-
+        auto offset = cute::min(seq_len_qo, seq_len_kv);
+        auto discard_seq_coord = seq_len_qo - offset;
+        auto full_tile_offset = seq_len_kv - offset;
         if constexpr (Causal) {
           // apply mask to S
           for (int row = 0; row < seq_len_qo; row++) {
             for (int col = 0; col < seq_len_kv; col++) {
-              if (col > row)
+              if ((col - full_tile_offset) > (row - discard_seq_coord))
                 host_S[col + row * seq_len_kv] = -INFINITY;
             }
           }
@@ -263,7 +265,11 @@ template <class FMHAConfiguration> struct BenchmarkRunnerFMHA {
           idx = row * seq_len_kv;
           sum_idx = row;
           for (int col = 0; col < seq_len_kv; col++, idx++) {
-            host_S[idx] /= sum_vec[sum_idx];
+            if(Causal && row < discard_seq_coord) {
+              host_S[idx] = 0;
+            } else {
+              host_S[idx] /= sum_vec[sum_idx];
+            }
           }
         }
 

@@ -251,6 +251,17 @@ public:
         continue;
       }
 
+      auto offset = cute::min(seq_len_qo, seq_len_kv); //(2048, 1024)
+      auto discard_seq_coord = seq_len_qo - offset; //1024
+      auto full_tile_offset = seq_len_kv - offset; //0
+      const int seq_coord = cute::min(seq_len_qo, blk_m_coord * QK_BLK_M + (sub_group_id / PV_ATOM_N) * QK_SG_M) ;
+      
+      const int seq_len = CausalMask ? full_tile_offset + cute::min(seq_len_kv, seq_coord - discard_seq_coord) + QK_SG_M : seq_len_kv;
+      const int nblock_limit = cute::ceil_div(seq_len, QK_BLK_N);
+      if(CausalMask && seq_coord < discard_seq_coord ) { // 1024 =0
+        continue;
+      }
+    
       Tensor mQ_mkl = cute::get_pvc_tensor(make_shape(seq_len_qo, head_size_qk, (is_var_len ? 1 : batch) * num_heads_q));   //(m,k,l)
       Tensor mK_nkl = cute::get_pvc_tensor(make_shape(seq_len_kv, head_size_qk, (is_var_len ? 1 : batch) * num_head_kv));   //(n,k,l)
       Tensor mV_nkl = cute::get_pvc_tensor(make_shape(head_size_vo, seq_len_kv, (is_var_len ? 1 : batch) * num_head_kv));   //(n,k,l)
@@ -261,15 +272,7 @@ public:
       auto gQ = local_tile(mQ_mk, TileShapeQK{}, make_coord(blk_m_coord, _, _), Step<_1,  X, _1>{});
       auto gK = local_tile(mK_nk, TileShapeQK{}, make_coord(_, _ , _), Step<X, _1, _1>{});
       auto gV = local_tile(mV_nk, TileShapePV{}, make_coord(_, blk_n_coord, _), Step<X, _1, _1>{});
-
-      const int seq_coord = cute::min(seq_len_qo, blk_m_coord * QK_BLK_M + (sub_group_id / PV_ATOM_N) * QK_SG_M);
-
-      const int causal_seq_len = cute::min(seq_len_kv, seq_coord) + QK_SG_M;
-      const int non_causal_seq_len = seq_len_kv;
-
-      const int nblock_limit = CausalMask ? cute::ceil_div(causal_seq_len, QK_BLK_N)
-                                          : cute::ceil_div(non_causal_seq_len, QK_BLK_N);
-
+      
       auto mainloop_params = CollectiveMainloop::get_updated_copies(params.mainloop, params.problem_shape, batch_coord);
 
       auto tiled_prefetch_q = cute::prefetch_selector<Shape<Int<QK_BLK_M>, Int<QK_BLK_K>>, Num_SGs>(mainloop_params.gmem_tiled_copy_q);
@@ -361,7 +364,7 @@ public:
             int row_idx = m * Vec + seq_coord;
             CUTLASS_PRAGMA_UNROLL
             for (int row = 0; row < Vec; row++, row_idx++) { // 8
-              if (col_idx > row_idx)
+              if ((col_idx - full_tile_offset) > (row_idx - discard_seq_coord))
                 tSr(row, m, n) = -INFINITY;
             }
           }

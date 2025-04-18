@@ -232,13 +232,14 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
 
         // delete this memory as it is no longer needed
         block_S.reset();
-
-        // Apply upper-diagonal masking if required
+        auto offset = cute::min(seq_len_qo, seq_len_kv);
+        auto discard_seq_coord = seq_len_qo - offset;
+        auto full_tile_offset = seq_len_kv - offset;
         if (is_causal) {
           // apply mask to S
           for (int row = 0; row < seq_len_qo; row++) {
             for (int col = 0; col < seq_len_kv; col++) {
-              if (col > row)
+              if ((col - full_tile_offset) > (row - discard_seq_coord))
                 host_S[col + row * seq_len_kv] = -INFINITY;
             }
           }
@@ -278,7 +279,11 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
           idx = row * seq_len_kv;
           sum_idx = row;
           for (int col = 0; col < seq_len_kv; col++, idx++) {
-            host_S[idx] /= sum_vec[sum_idx];
+            if(is_causal && row < discard_seq_coord) { 
+              host_S[idx] = 0;
+            } else {
+              host_S[idx] /= sum_vec[sum_idx];
+            }
           }
         }
 
