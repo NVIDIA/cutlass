@@ -36,7 +36,8 @@ Epilogue Visitor interface for compiling, and running visitor-based epilogue.
 
 import ctypes
 
-from cuda import cuda
+from cutlass.utils.lazy_import import lazy_import
+cuda = lazy_import("cuda.cuda")
 from cutlass_library import DataType
 import numpy as np
 

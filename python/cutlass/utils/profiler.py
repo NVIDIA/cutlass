@@ -37,7 +37,9 @@ Profiler based on the cuda events
 import re
 import subprocess
 
-from cuda import cuda, cudart
+from cutlass.utils.lazy_import import lazy_import
+cuda = lazy_import("cuda.cuda")
+cudart =  lazy_import("cuda.cudart")
 import numpy as np
 
 from cutlass import CUTLASS_PATH
@@ -54,18 +56,27 @@ class GpuTimer:
             cuda.cuEventCreate(cuda.CUevent_flags.CU_EVENT_DEFAULT)[1],
         ]
 
-    def start(self, stream=cuda.CUstream(0)):
+    def start(self, stream=None):
+        if not stream:
+            stream = cuda.CUstream(0)
+
         (err,) = cuda.cuEventRecord(self.events[0], stream)
         if err != cuda.CUresult.CUDA_SUCCESS:
             raise RuntimeError(f"CUDA Error {str(err)}")
 
-    def stop(self, stream=cuda.CUstream(0)):
+    def stop(self, stream=None):
+        if not stream:
+            stream = cuda.CUstream(0)
+
         (err,) = cuda.cuEventRecord(self.events[1], stream)
         if err != cuda.CUresult.CUDA_SUCCESS:
             raise RuntimeError(f"CUDA Error {str(err)}")
         pass
 
-    def stop_and_wait(self, stream=cuda.CUstream(0)):
+    def stop_and_wait(self, stream=None):
+        if not stream:
+            stream = cuda.CUstream(0)
+
         self.stop(stream)
         if stream:
             (err,) = cuda.cuStreamSynchronize(stream)
@@ -182,4 +193,3 @@ class CUDAEventProfiler:
             flops_ += m * n * batch_count * 2
 
         return flops_
-

@@ -50,10 +50,12 @@
         plan = cutlass.op.GroupedGemm(element=cutlass.DataType.f16, layout=cutlass.LayoutType.RowMajor)
         plan.run([A0, A1], [B0, B1], [C0, C1], [D0, D1])
 """
-
+from __future__ import annotations
+from typing import Optional
 from cutlass_library import DataTypeSize
 
-from cuda import cuda
+from cutlass.utils.lazy_import import lazy_import
+cuda = lazy_import("cuda.cuda")
 from cutlass.backend.gemm_operation import (
     GemmGroupedArguments,
     GemmOperationGrouped,
@@ -196,7 +198,7 @@ class GroupedGemm(Gemm):
     def run(self, A, B, C, D,
             alpha=None, beta=None, sync: bool = True,
             print_module: bool = False,
-            stream: cuda.CUstream = cuda.CUstream(0)) -> GemmGroupedArguments:
+            stream: Optional[cuda.CUstream] = None) -> GemmGroupedArguments:
         """
         Runs the kernel currently specified.
 
@@ -225,6 +227,9 @@ class GroupedGemm(Gemm):
         :return: arguments passed in to the kernel
         :rtype: cutlass.backend.GemmGroupedArguments
         """
+        if not stream:
+            stream = cuda.CUstream(0)
+
         super().run_setup()
 
         if len(A) != len(B) or len(A) != len(C) or len(A) != len(D):

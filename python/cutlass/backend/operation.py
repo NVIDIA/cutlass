@@ -31,16 +31,17 @@
 #################################################################################################
 
 import ctypes
-
-from cuda import __version__, cuda
+from cutlass.utils.lazy_import import lazy_import
+cuda = lazy_import("cuda.cuda")
 
 from cutlass.backend.utils.device import device_cc
 
-_version_splits = [int(x) for x in __version__.split("rc")[0].split(".post")[0].split(".")]
 _supports_cluster_launch = None
 
 
 def supports_cluster_launch():
+    from cuda import __version__ 
+    _version_splits = [int(x) for x in __version__.split("rc")[0].split(".post")[0].split(".")]
     global _supports_cluster_launch
     if _supports_cluster_launch is None:
         major, minor = _version_splits[0], _version_splits[1]
@@ -79,10 +80,12 @@ class ExecutableOperation:
     def plan(self, arguments):
         raise NotImplementedError()
 
-    def initialize(self, host_workspace, device_workspace, launch_config, arguments, stream=cuda.CUstream(0)):
+    def initialize(self, host_workspace, device_workspace, launch_config, arguments, stream=None):
         raise NotImplementedError()
 
-    def run_with_clusters(self, launch_config, kernel_params, stream=cuda.CUstream(0)):
+    def run_with_clusters(self, launch_config, kernel_params, stream=None):
+        if not stream:
+            stream = cuda.CUstream(0)
         if hasattr(self.operation, "tile_description") and hasattr(self.operation.tile_description, "cluster_shape"):
             attr = cuda.CUlaunchAttribute()
             attr.value.clusterDim.x, attr.value.clusterDim.y, attr.value.clusterDim.z = self.operation.tile_description.cluster_shape
@@ -110,7 +113,9 @@ class ExecutableOperation:
             config, f=self.kernel, kernelParams=kernel_params, extra=0)
         return err
 
-    def run_without_clusters(self, launch_config, kernel_params, stream=cuda.CUstream(0)):
+    def run_without_clusters(self, launch_config, kernel_params, stream=None):
+        if not stream:
+            stream = cuda.CUstream(0)
         err, = cuda.cuLaunchKernel(
             self.kernel,
             launch_config.grid[0], launch_config.grid[1], launch_config.grid[2],
@@ -122,7 +127,9 @@ class ExecutableOperation:
 
         return err
 
-    def run(self, host_workspace, device_workspace, launch_config, stream=cuda.CUstream(0)):
+    def run(self, host_workspace, device_workspace, launch_config, stream=None):
+        if not stream:
+            stream = cuda.CUstream(0)
         cArg = (ctypes.c_char * len(host_workspace)).from_buffer(host_workspace)
         packed = (ctypes.c_void_p * 1)()
         packed[0] = ctypes.addressof(cArg)
