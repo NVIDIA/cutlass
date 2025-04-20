@@ -834,7 +834,7 @@ coalesce_x(Layout<Shape,Stride> const& layout)
   } else {
     return detail::bw_coalesce<R-2>(flat_shape, flat_stride, get<R-1>(flat_shape), get<R-1>(flat_stride));
   }
-
+  
   CUTE_GCC_UNREACHABLE;
 }
 

@@ -59,3 +59,26 @@ cutlass_example_add_executable(
   TEST_SMALL
   TEST_SMALL_LARGE_GROUP
   )
+
+# MSVC will fail to compile this example with the following error:
+# fatal error C1083: Cannot open source file: <Some Mojibake>: No such file or directory [...\examples\68_hopper_fp8_warp_specialized_grouped_gemm_with_blockwise_scaling\68_hopper_fp8_warp_specialized_grouped_gemm_with_blockwise_scaling_with_sparse_groups.vcxproj]
+# This is a known issue and we are working on a fix.
+if (NOT MSVC)
+
+cutlass_example_add_executable(
+  68_hopper_fp8_warp_specialized_grouped_gemm_with_blockwise_scaling_with_sparse_groups
+  68_hopper_fp8_warp_specialized_grouped_gemm_with_blockwise_scaling_with_sparse_groups.cu
+  TEST_COMMAND_OPTIONS
+  TEST_RANDOM
+  TEST_RANDOM_LARGE_GROUP
+  TEST_EPILOGUE
+  TEST_EPILOGUE_LARGE_GROUP
+  TEST_EPILOGUE_OP
+  TEST_EPILOGUE_OP_LARGE_GROUP
+  TEST_FIXED
+  TEST_FIXED_LARGE_GROUP
+  TEST_SMALL
+  TEST_SMALL_LARGE_GROUP
+  )
+
+endif()

@@ -138,8 +138,12 @@ public:
   static_assert(MaxThreadsPerBlock == 384, "Pingpong kernel must have 384 threads in total.");
 
   /// Register requirement for Load and Math WGs
-  static constexpr uint32_t LoadRegisterRequirement = 40;
-  static constexpr uint32_t MmaRegisterRequirement = 232;
+  static constexpr int RegsPerThread =
+    (size<0>(TileShape{}) * size<1>(TileShape{}) * sizeof(ElementAccumulator))
+    / (NumMMAThreads * sizeof(uint32_t));
+  static constexpr bool HeavyRegisterPressure = RegsPerThread >= 208;
+  static constexpr uint32_t LoadRegisterRequirement = !HeavyRegisterPressure ? 40 : 24;
+  static constexpr uint32_t MmaRegisterRequirement = !HeavyRegisterPressure ? 232 : 240;
 
   // 1 stage ordered sequence between mainloop and epilogue producer load threads
   using LoadWarpOrderBarrier = cutlass::OrderedSequenceBarrier<1,2>;
@@ -348,7 +352,7 @@ public:
     using namespace cute;
     using X = Underscore;
 
-#if (defined(__CUDA_ARCH_FEAT_SM90_ALL) || defined(__CUDA_ARCH_FEAT_SM120_ALL))
+#if (defined(__CUDA_ARCH_FEAT_SM90_ALL) || defined(__CUDA_ARCH_FEAT_SM120_ALL) || CUDA_ARCH_CONDITIONAL_OR_FAMILY(1200))
 #  define ENABLE_SM90_KERNEL_LEVEL 1
 #endif
 // Any Tensor Op MMA Atom in the ISA is arch conditional.

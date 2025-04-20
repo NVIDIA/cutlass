@@ -179,9 +179,108 @@ struct Sm100BlockwiseScaleConfig {
 
 };
 
+template<UMMA::Major majorSFA = UMMA::Major::MN, UMMA::Major majorSFB = UMMA::Major::MN>
+struct RuntimeBlockwiseScaleConfig {
+
+  using ShapeSFA = Shape<Shape<int32_t, int32_t>, Shape<int32_t, int32_t>, int32_t>;
+  using ShapeSFB = Shape<Shape<int32_t, int32_t>, Shape<int32_t, int32_t>, int32_t>;
+
+  using StrideSFA = conditional_t<majorSFA == UMMA::Major::MN, 
+      Stride<Stride<_0,_1>,Stride<_0,int32_t>, int32_t>, 
+      Stride<Stride<_0,int32_t>,Stride<_0,_1>, int32_t>>;
+
+  using StrideSFB = conditional_t<majorSFB == UMMA::Major::MN, 
+      Stride<Stride<_0,_1>,Stride<_0,int32_t>, int32_t>, 
+      Stride<Stride<_0,int32_t>,Stride<_0,_1>, int32_t>>;
+
+  using LayoutSFA = Layout<ShapeSFA, StrideSFA>;
+  using LayoutSFB = Layout<ShapeSFB, StrideSFB>;
+
+  CUTE_HOST_DEVICE
+  static constexpr auto
+  deduce_layoutSFA() {
+    return LayoutSFA{};
+  }
+
+  CUTE_HOST_DEVICE
+  static constexpr auto
+  deduce_layoutSFB() {
+    return LayoutSFB{};
+  }
+
+  // The following function is provided for user fill dynamic problem size to the layout_SFA.
+  template <class ProblemShape, class SFVecShape>
+  CUTE_HOST_DEVICE
+  static constexpr auto 
+  tile_atom_to_shape_SFA(ProblemShape problem_shape, SFVecShape sf_vec_shape) {
+    auto problem_shape_MNKL = append<4>(problem_shape, 1);
+
+    auto strides = [&]() CUTLASS_LAMBDA_FUNC_INLINE {
+      auto [M, N, K, L] = problem_shape_MNKL;
+      auto [sfm, sfn, sfk] = sf_vec_shape;
+      if constexpr (majorSFA == UMMA::Major::MN) {
+        return make_stride(make_stride(_0{}, _1{}), make_stride(_0{}, cute::ceil_div(M, sfm)));
+      }
+      else {
+        return make_stride(make_stride(_0{}, cute::ceil_div(K, sfk)), make_stride(_0{}, _1{}));
+      }
+    }();
+
+    auto [M, N, K, L] = problem_shape_MNKL;
+    auto [sfm, sfn, sfk] = sf_vec_shape;
+    auto mk_layout = make_layout(
+      make_shape(make_shape(sfm, cute::ceil_div(M, sfm)),
+                 make_shape(sfk, cute::ceil_div(K, sfk))),
+      strides
+    );
+
+    return make_layout(append(shape(mk_layout), L), append(stride(mk_layout), size(filter_zeros(mk_layout))));
+  }
+
+  // The following function is provided for user fill dynamic problem size to the layout_SFB.
+  template <class ProblemShape, class SFVecShape>
+  CUTE_HOST_DEVICE
+  static constexpr auto 
+  tile_atom_to_shape_SFB(ProblemShape problem_shape, SFVecShape sf_vec_shape) {
+    auto problem_shape_MNKL = append<4>(problem_shape, 1);
+
+    auto strides = [&]() CUTLASS_LAMBDA_FUNC_INLINE {
+      auto [M, N, K, L] = problem_shape_MNKL;
+      auto [sfm, sfn, sfk] = sf_vec_shape;
+
+      if constexpr (majorSFB == UMMA::Major::MN) {
+        return make_stride(make_stride(_0{}, _1{}), make_stride(_0{}, cute::ceil_div(N, sfn)));
+      }
+      else {
+        return make_stride(make_stride(_0{}, cute::ceil_div(K, sfk)), make_stride(_0{}, _1{}));
+      }
+    }();
+
+    auto [M, N, K, L] = problem_shape_MNKL;
+    auto [sfm, sfn, sfk] = sf_vec_shape;
+    auto nk_layout = make_layout(
+      make_shape(make_shape(sfn, cute::ceil_div(N, sfn)),
+                 make_shape(sfk, cute::ceil_div(K, sfk))),
+      strides
+    );
+
+    return make_layout(append(shape(nk_layout), L), append(stride(nk_layout), size(filter_zeros(nk_layout))));
+  }
+
+};
+
+// Sm90 only supports MN major for SFA and SFB for now
+template<int SFVecSizeM, int SFVecSizeN, int SFVecSizeK>
+using Sm90BlockwiseScaleConfig = Sm100BlockwiseScaleConfig<SFVecSizeM, SFVecSizeN, SFVecSizeK>;
+
 template<class MmaTileShape_MNK>
 constexpr auto sm100_trivial_blockwise_scale_config(MmaTileShape_MNK) {
   return Sm100BlockwiseScaleConfig<size<0>(MmaTileShape_MNK{}), size<1>(MmaTileShape_MNK{}), size<2>(MmaTileShape_MNK{})>{};
+}
+
+template<class MmaTileShape_MNK>
+constexpr auto sm90_trivial_blockwise_scale_config(MmaTileShape_MNK) {
+  return Sm90BlockwiseScaleConfig<size<0>(MmaTileShape_MNK{}), size<1>(MmaTileShape_MNK{}), size<2>(MmaTileShape_MNK{})>{};
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

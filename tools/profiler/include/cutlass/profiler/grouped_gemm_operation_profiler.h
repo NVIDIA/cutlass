@@ -198,6 +198,11 @@ private:
       arguments.SFD = block_scaled_ws.SFD_ptr_array_device[0]->data();
       arguments.norm_constant = block_scaled_ws.norm_constant->data();
     }
+    else if (is_blockwise) {
+      auto& block_scaled_ws = gemm_workspace_.block_scales.value();
+      arguments.SFA = block_scaled_ws.SFA_ptr_array_device[0]->data();
+      arguments.SFB = block_scaled_ws.SFB_ptr_array_device[0]->data();
+    }
   }
 
 protected:
@@ -208,6 +213,7 @@ protected:
   GroupedGemmWorkspace gemm_workspace_;
 
   bool is_block_scaled{false};
+  bool is_blockwise{false};
 
 public:
   GroupedGemmOperationProfiler(Options const& options);

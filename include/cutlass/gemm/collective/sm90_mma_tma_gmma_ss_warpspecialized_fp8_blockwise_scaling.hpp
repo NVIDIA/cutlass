@@ -45,6 +45,8 @@
 #include "cute/tensor_predicate.hpp"
 #include "cute/numeric/arithmetic_tuple.hpp"
 
+#include "cutlass/detail/blockwise_scale_layout.hpp"
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass::gemm::collective {
@@ -57,14 +59,11 @@ template <
   int Stages,
   class ClusterShape,
   class KernelSchedule,
-  int ScaleGranularityM_,
-  int ScaleGranularityN_,
-  int ScalePromotionInterval_,
   class TileShape_,
   class ElementA_,
-  class StrideA_,
+  class StridePairA_,
   class ElementB_,
-  class StrideB_,
+  class StridePairB_,
   class TiledMma_,
   class GmemTiledCopyA_,
   class SmemLayoutAtomA_,
@@ -75,12 +74,12 @@ template <
   class SmemCopyAtomB_,
   class TransformB_>
 struct CollectiveMma<
-    MainloopSm90TmaGmmaWarpSpecializedBlockScalingFP8<Stages, ClusterShape, KernelSchedule, ScaleGranularityM_, ScaleGranularityN_, ScalePromotionInterval_>,
+    MainloopSm90TmaGmmaWarpSpecializedBlockScalingFP8<Stages, ClusterShape, KernelSchedule>,
     TileShape_,
     ElementA_,
-    StrideA_,
+    StridePairA_,
     ElementB_,
-    StrideB_,
+    StridePairB_,
     TiledMma_,
     GmemTiledCopyA_,
     SmemLayoutAtomA_,
@@ -89,17 +88,18 @@ struct CollectiveMma<
     GmemTiledCopyB_,
     SmemLayoutAtomB_,
     SmemCopyAtomB_,
-    TransformB_>
-{
+    TransformB_> {
   //
   // Type Aliases
   //
-  using DispatchPolicy = MainloopSm90TmaGmmaWarpSpecializedBlockScalingFP8<Stages, ClusterShape, KernelSchedule, ScaleGranularityM_, ScaleGranularityN_, ScalePromotionInterval_>;
+  using DispatchPolicy = MainloopSm90TmaGmmaWarpSpecializedBlockScalingFP8<Stages, ClusterShape, KernelSchedule>;
   using TileShape = TileShape_;
   using ElementA = ElementA_;
-  using StrideA = StrideA_;
+  using StrideA = cute::tuple_element_t<0,StridePairA_>;
+  using LayoutSFA = cute::tuple_element_t<1,StridePairA_>;
   using ElementB = ElementB_;
-  using StrideB = StrideB_;
+  using StrideB = cute::tuple_element_t<0,StridePairB_>;
+  using LayoutSFB = cute::tuple_element_t<1,StridePairB_>;
   using TiledMma = TiledMma_;
   using ElementAccumulator = typename TiledMma::ValTypeC;
   using ElementBlockScale = ElementAccumulator;
@@ -118,12 +118,17 @@ struct CollectiveMma<
   using PipelineState = cutlass::PipelineState<DispatchPolicy::Stages>;
   using PipelineParams = typename MainloopPipeline::Params;
 
-  // Two threads per CTA are producers (1 for operand tile `tma`, and 32 for scales `cp.async`)
+  // 33 threads per CTA are producers (1 for operand tile `tma`, and 32 for scales `cp.async`)
   static constexpr int NumProducerThreadEvents = 33;
 
-  static constexpr int ScaleGranularityM = ScaleGranularityM_ == 0 ? size<0>(TileShape{}) : ScaleGranularityM_;
-  static constexpr int ScaleGranularityN = ScaleGranularityN_ == 0 ? size<1>(TileShape{}) : ScaleGranularityN_;
-  static constexpr int ScalePromotionInterval = ScalePromotionInterval_;
+  static constexpr int ScaleGranularityM = size<0,0>(LayoutSFA{});
+  static constexpr int ScaleGranularityN = size<0,0>(LayoutSFB{});
+  static constexpr int ScaleGranularityK = size<1,0>(LayoutSFA{});
+
+  static_assert(size<2>(TileShape{}) % ScaleGranularityK == 0);
+  static_assert(ScaleGranularityK % size<2>(typename TiledMma::AtomShape_MNK{}) == 0);
+
+  static constexpr int ScalePromotionInterval = ScaleGranularityK / size<2>(typename TiledMma::AtomShape_MNK{});
   static_assert(ScalePromotionInterval % 4 == 0, "ScalePromotionInterval must be a multiple of 4.");
   static constexpr int ScaleMsPerTile = size<0>(TileShape{}) / ScaleGranularityM;
   static constexpr int ScaleNsPerTile = size<1>(TileShape{}) / ScaleGranularityN;
@@ -139,6 +144,10 @@ struct CollectiveMma<
   static_assert((size<0>(TileShape{}) % ScaleGranularityM) == 0, "FP8 scaling granularity must evenly divide tile shape along M.");
   static_assert((size<1>(TileShape{}) % ScaleGranularityN) == 0, "FP8 scaling granularity must evenly divide tile shape along N.");
 
+  using ScaleConfig = ::cutlass::detail::Sm90BlockwiseScaleConfig<ScaleGranularityM, ScaleGranularityN, ScaleGranularityK>;
+  using SmemLayoutAtomSFA = decltype(ScaleConfig::smem_atom_layoutSFA(TileShape{}));
+  using SmemLayoutAtomSFB = decltype(ScaleConfig::smem_atom_layoutSFB(TileShape{}));
+
   // Tile along modes in a way that maximizes the TMA box size.
   using SmemLayoutA = decltype(tile_to_shape(
       SmemLayoutAtomA{},
@@ -151,12 +160,22 @@ struct CollectiveMma<
 
   // Block scaling gmem-to-smem copy atom 
   //  we can have partial tiles in M or N, so don't vectorize those loads
-  using SmemBlockScalingCopyAtomA = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<ElementBlockScale>, ElementBlockScale>;
-  using SmemBlockScalingCopyAtomB = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<ElementBlockScale>, ElementBlockScale>;
+  using CopyAtomSFA = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<ElementBlockScale>, ElementBlockScale>;
+  using CopyAtomSFB = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<ElementBlockScale>, ElementBlockScale>;
+
+  static constexpr int AlignmentSFA = 1;
+  static constexpr int AlignmentSFB = 1;
 
   // Block scaling smem layout
-  using SmemLayoutScaleA = Layout<Shape<Int<ScaleMsPerTile>, Int<DispatchPolicy::Stages>>>;
-  using SmemLayoutScaleB = Layout<Shape<Int<ScaleNsPerTile>, Int<DispatchPolicy::Stages>>>;
+  using SmemLayoutSFA = decltype(make_layout(
+    append(shape(SmemLayoutAtomSFA{}), Int<DispatchPolicy::Stages>{}),
+    append(stride(SmemLayoutAtomSFA{}), size(filter_zeros(SmemLayoutAtomSFA{})))
+  ));
+  using SmemLayoutSFB = decltype(make_layout(
+    append(shape(SmemLayoutAtomSFB{}), Int<DispatchPolicy::Stages>{}),
+    append(stride(SmemLayoutAtomSFB{}), size(filter_zeros(SmemLayoutAtomSFB{})))
+  ));
+
 
   static_assert(DispatchPolicy::Stages >= 2, "Specialization requires Stages set to value 1 or more.");
   static_assert(cute::is_base_of<cute::GMMA::DescriptorIterator, typename TiledMma::FrgTypeA>::value &&
@@ -174,8 +193,8 @@ struct CollectiveMma<
     struct TensorStorage : cute::aligned_struct<128> {
       cute::array_aligned<typename TiledMma::ValTypeA, cute::cosize_v<SmemLayoutA>> smem_A;  // mxk
       cute::array_aligned<typename TiledMma::ValTypeB, cute::cosize_v<SmemLayoutB>> smem_B;  // nxk
-      cute::array_aligned<ElementBlockScale, cute::cosize_v<SmemLayoutScaleA>> smem_scale_A; // ScaleMsPerTile x k
-      cute::array_aligned<ElementBlockScale, cute::cosize_v<SmemLayoutScaleB>> smem_scale_B; // ScaleNsPerTile x k
+      cute::array_aligned<ElementBlockScale, cute::cosize_v<SmemLayoutSFA>> smem_SFA; // ScaleMsPerTile x k
+      cute::array_aligned<ElementBlockScale, cute::cosize_v<SmemLayoutSFB>> smem_SFB; // ScaleNsPerTile x k
     } tensors;
 
     using PipelineStorage = typename MainloopPipeline::SharedStorage;
@@ -191,8 +210,10 @@ struct CollectiveMma<
     ElementB const* ptr_B;
     StrideB dB;
     uint32_t mma_promotion_interval = 4;
-    ElementBlockScale const* ptr_scale_A; 
-    ElementBlockScale const* ptr_scale_B;
+    ElementBlockScale const* ptr_SFA; 
+    LayoutSFA layout_SFA;
+    ElementBlockScale const* ptr_SFB;
+    LayoutSFB layout_SFB;
   };
 
   // Device side kernel params
@@ -217,8 +238,10 @@ struct CollectiveMma<
     uint32_t tma_transaction_bytes_mk = TmaTransactionBytesMK;
     uint32_t tma_transaction_bytes_nk = TmaTransactionBytesNK;
     // Block scaling factors for A and B
-    ElementBlockScale const* ptr_scale_A; 
-    ElementBlockScale const* ptr_scale_B;
+    ElementBlockScale const* ptr_SFA; 
+    LayoutSFA layout_SFA;
+    ElementBlockScale const* ptr_SFB;
+    LayoutSFB layout_SFB;
   };
 
   //
@@ -261,8 +284,10 @@ struct CollectiveMma<
       transaction_bytes,
       transaction_bytes_mk,
       transaction_bytes_nk,
-      args.ptr_scale_A,
-      args.ptr_scale_B
+      args.ptr_SFA,
+      args.layout_SFA,
+      args.ptr_SFB,
+      args.layout_SFB
     };
   }
 
@@ -325,27 +350,19 @@ struct CollectiveMma<
 
     // TMA requires special handling of strides to deal with coord codomain mapping
     // Represent the full tensors -- get these from TMA
-    Tensor mA_mkl = mainloop_params.tma_load_a.get_tma_tensor(make_shape(M,K,L));                            // (m,k,l)
-    Tensor mB_nkl = mainloop_params.tma_load_b.get_tma_tensor(make_shape(N,K,L));                            // (n,k,l)
+    Tensor mA_mkl = mainloop_params.tma_load_a.get_tma_tensor(make_shape(M,K,L));                             // (m,k,l)
+    Tensor mB_nkl = mainloop_params.tma_load_b.get_tma_tensor(make_shape(N,K,L));                             // (n,k,l)
 
     // Make tiled views, defer the slice
-    Tensor gA_mkl = local_tile(mA_mkl, TileShape{}, make_coord(_,_,_), Step<_1, X,_1>{});        // (BLK_M,BLK_K,m,k,l)
-    Tensor gB_nkl = local_tile(mB_nkl, TileShape{}, make_coord(_,_,_), Step< X,_1,_1>{});        // (BLK_N,BLK_K,n,k,l)
-
-    auto tK = get<3>(gA_mkl.shape());
-
-    // Make the tiled views of scale tensors
-    auto scaleA_shape = make_shape(ceil_div(M, ScaleGranularityM), tK, L); // (scale_m,k,l)
-    auto scaleA_layout = make_ordered_layout(scaleA_shape, Step<_0, _1, _2>{});
-    auto scaleB_shape = make_shape(ceil_div(N, ScaleGranularityN), tK, L); // (scale_n,k,l)
-    auto scaleB_layout = make_ordered_layout(scaleB_shape, Step<_0, _1, _2>{});
+    Tensor gA_mkl = local_tile(mA_mkl, TileShape{}, make_coord(_,_,_), Step<_1, X,_1>{});         // (BLK_M,BLK_K,m,k,l)
+    Tensor gB_nkl = local_tile(mB_nkl, TileShape{}, make_coord(_,_,_), Step< X,_1,_1>{});         // (BLK_N,BLK_K,n,k,l)
 
     // Note that mScaleA_mkl and mScaleB_nkl are already blocked tiled in the `m` host and
     // gScaleA_mkl and gScaleB_nkl in `g` global memory are same as mScaleA_mkl and mScaleB_nkl.
-    Tensor mScaleA_mkl = make_tensor(make_gmem_ptr(mainloop_params.ptr_scale_A), scaleA_layout); // (scale_m,k,l)
-    Tensor mScaleB_nkl = make_tensor(make_gmem_ptr(mainloop_params.ptr_scale_B), scaleB_layout); // (scale_n,k,l)
+    Tensor mSFA_mkl = make_tensor(make_gmem_ptr(mainloop_params.ptr_SFA), mainloop_params.layout_SFA);  // (scale_m,k,l)
+    Tensor mSFB_nkl = make_tensor(make_gmem_ptr(mainloop_params.ptr_SFB), mainloop_params.layout_SFB);  // (scale_n,k,l)
 
-    return cute::make_tuple(gA_mkl, gB_nkl, mScaleA_mkl, mScaleB_nkl);
+    return cute::make_tuple(gA_mkl, gB_nkl, mSFA_mkl, mSFB_nkl);
   }
 
   /// Perform a collective-scoped matrix multiply-accumulate
@@ -370,8 +387,8 @@ struct CollectiveMma<
     // Blockscaling: Tma loads for load_input and CpAsync for load_scale
     Tensor sA = make_tensor(make_smem_ptr(shared_tensors.smem_A.data()), SmemLayoutA{});        // (BLK_M,BLK_K,PIPE)
     Tensor sB = make_tensor(make_smem_ptr(shared_tensors.smem_B.data()), SmemLayoutB{});        // (BLK_N,BLK_K,PIPE)
-    Tensor sScaleA = make_tensor(cute::make_smem_ptr(shared_tensors.smem_scale_A.data()), SmemLayoutScaleA{}); // (ScaleMsPerTile,k)
-    Tensor sScaleB = make_tensor(cute::make_smem_ptr(shared_tensors.smem_scale_B.data()), SmemLayoutScaleB{}); // (ScaleNsPerTile,k)
+    Tensor sSFA = make_tensor(cute::make_smem_ptr(shared_tensors.smem_SFA.data()), SmemLayoutSFA{}); // (BLK_M,BLK_K,PIPE)
+    Tensor sSFB = make_tensor(cute::make_smem_ptr(shared_tensors.smem_SFB.data()), SmemLayoutSFB{}); // (BLK_M,BLK_K,PIPE)
 
     //
     // Prepare the TMA loads for A and B
@@ -393,63 +410,46 @@ struct CollectiveMma<
 
 
     // Block scaling: load_scale has scaling tensors in global memory which are not tiled
-    Tensor mScaleA_mkl = get<2>(load_inputs);
-    Tensor mScaleB_nkl = get<3>(load_inputs);
-    auto scales_m = get<0>(mScaleA_mkl.shape());
-    auto scales_n = get<0>(mScaleB_nkl.shape());
+    Tensor mSFA_mkl = get<2>(load_inputs);
+    Tensor mSFB_nkl = get<3>(load_inputs);
 
-    Tensor cScaleA_mkl = make_identity_tensor(mScaleA_mkl.shape());
-    Tensor cScaleB_nkl = make_identity_tensor(mScaleB_nkl.shape());
+    Tensor iSFA_mkl = make_identity_tensor(shape(mainloop_params.layout_SFA));                                // (m,k,l)
+    Tensor iSFB_nkl = make_identity_tensor(shape(mainloop_params.layout_SFB));                                // (n,k,l)
 
-    Tensor gScaleA = local_tile(
-      mScaleA_mkl, make_tile(Int<ScaleMsPerTile>{}),
-      make_coord(m_coord,_,l_coord));                   // (ScaleMsPerTile,k,1)
-    Tensor cScaleA = local_tile(
-      cScaleA_mkl, make_tile(Int<ScaleMsPerTile>{}),
-      make_coord(m_coord,_,l_coord));
-    Tensor gScaleB = local_tile(
-      mScaleB_nkl, make_tile(Int<ScaleNsPerTile>{}),
-      make_coord(n_coord,_,l_coord));                   // (ScaleNsPerTile,k,1)
-    Tensor cScaleB = local_tile(
-      cScaleB_nkl, make_tile(Int<ScaleNsPerTile>{}),
-      make_coord(n_coord,_,l_coord));
+    Tensor gSFA_mkl = local_tile(mSFA_mkl, TileShape{}, make_coord(_,_,_), Step<_1, X,_1>{});     // (BLK_M,BLK_K,m,k,l)
+    Tensor cSFA_mkl = local_tile(iSFA_mkl, TileShape{}, make_coord(_,_,_), Step<_1, X,_1>{});     // (BLK_M,BLK_K,m,k,l)
+    Tensor gSFB_nkl = local_tile(mSFB_nkl, TileShape{}, make_coord(_,_,_), Step< X,_1,_1>{});     // (BLK_N,BLK_K,n,k,l)
+    Tensor cSFB_nkl = local_tile(iSFB_nkl, TileShape{}, make_coord(_,_,_), Step< X,_1,_1>{});     // (BLK_N,BLK_K,n,k,l)
 
-    TiledCopy scale_copy_a = make_tiled_copy(SmemBlockScalingCopyAtomA{},
+    Tensor gSFA_k = gSFA_mkl(_,_,m_coord,_,l_coord);
+    Tensor cSFA_k = cSFA_mkl(_,_,m_coord,_,l_coord);
+    Tensor gSFB_k = gSFB_nkl(_,_,n_coord,_,l_coord);
+    Tensor cSFB_k = cSFB_nkl(_,_,n_coord,_,l_coord);
+
+    TiledCopy scale_copy_a = make_tiled_copy(CopyAtomSFA{},
       Layout<Shape<_32>>{}, Layout<Shape<_1>>{});
-    TiledCopy scale_copy_b = make_tiled_copy(SmemBlockScalingCopyAtomB{}, 
+    TiledCopy scale_copy_b = make_tiled_copy(CopyAtomSFB{}, 
       Layout<Shape<_32>>{}, Layout<Shape<_1>>{});
-    ThrCopy thr_scale_copy_a = scale_copy_a.get_slice(threadIdx.x);
-    ThrCopy thr_scale_copy_b = scale_copy_b.get_slice(threadIdx.x);
+    ThrCopy thr_scale_copy_a = scale_copy_a.get_slice(thread_idx);
+    ThrCopy thr_scale_copy_b = scale_copy_b.get_slice(thread_idx);
 
-    Tensor tAgA_ScaleA = thr_scale_copy_a.partition_S(gScaleA);
-    Tensor tAcA_ScaleA = thr_scale_copy_a.partition_S(cScaleA);
-    Tensor tAsA_ScaleA = thr_scale_copy_a.partition_D(sScaleA);
+    Tensor tSFAgSFA_k = thr_scale_copy_a.partition_S(gSFA_k);
+    Tensor tSFAcSFA_k = thr_scale_copy_a.partition_S(cSFA_k);
+    Tensor tSFAsSFA   = thr_scale_copy_a.partition_D(sSFA);
 
-    Tensor tBgB_ScaleB = thr_scale_copy_b.partition_S(gScaleB);
-    Tensor tBcB_ScaleB = thr_scale_copy_b.partition_S(cScaleB);
-    Tensor tBsB_ScaleB = thr_scale_copy_b.partition_D(sScaleB);
+    Tensor tSFBgSFB_k = thr_scale_copy_b.partition_S(gSFB_k);
+    Tensor tSFBcSFB_k = thr_scale_copy_b.partition_S(cSFB_k);
+    Tensor tSFBsSFB   = thr_scale_copy_b.partition_D(sSFB);
 
     // Applies the mapping from block_tma_a
-    Tensor tAgA = block_tma_a.partition_S(gA);                                              // (TMA,TMA_M,TMA_K,k)
-    Tensor tAsA = block_tma_a.partition_D(sA);                                              // (TMA,TMA_M,TMA_K,PIPE)
+    Tensor tAgA = block_tma_a.partition_S(gA);                                                 // (TMA,TMA_M,TMA_K,k)
+    Tensor tAsA = block_tma_a.partition_D(sA);                                                 // (TMA,TMA_M,TMA_K,PIPE)
 
-    Tensor tBgB = block_tma_b.partition_S(gB);                                              // (TMA,TMA_N,TMA_K,k)
-    Tensor tBsB = block_tma_b.partition_D(sB);                                              // (TMA,TMA_N,TMA_K,PIPE)
+    Tensor tBgB = block_tma_b.partition_S(gB);                                                 // (TMA,TMA_N,TMA_K,k)
+    Tensor tBsB = block_tma_b.partition_D(sB);                                                 // (TMA,TMA_N,TMA_K,PIPE)
 
-    Tensor tApA_ScaleA = make_tensor<bool>(shape(tAsA_ScaleA(_,_,0)));
-    Tensor tBpB_ScaleB = make_tensor<bool>(shape(tBsB_ScaleB(_,_,0)));
-
-    #pragma unroll
-    for (int i = 0; i < size(tApA_ScaleA); ++i) {
-      tApA_ScaleA(i) = get<0>(tAcA_ScaleA(i)) <
-        std::min(scales_m, (m_coord + 1) * ScaleMsPerTile);
-    }
-
-    #pragma unroll
-    for (int i = 0; i < size(tBpB_ScaleB); ++i) {
-      tBpB_ScaleB(i) = get<0>(tBcB_ScaleB(i)) <
-        std::min(scales_n, (n_coord + 1) * ScaleNsPerTile);
-    }
+    Tensor tSFApSFA = make_tensor<bool>(shape(filter_zeros(tSFAsSFA(_,_,_,_0{}))));                 // (CPY,CPY_M,CPY_K)
+    Tensor tSFBpSFB = make_tensor<bool>(shape(filter_zeros(tSFBsSFB(_,_,_,_0{}))));                 // (CPY,CPY_N,CPY_K)
 
     uint16_t mcast_mask_a = 0;
     uint16_t mcast_mask_b = 0;
@@ -470,11 +470,31 @@ struct CollectiveMma<
       }
     }
 
+    auto SFA_shape = shape(mainloop_params.layout_SFA);
+    auto SFB_shape = shape(mainloop_params.layout_SFB);
+
     // Mainloop
     CUTLASS_PRAGMA_NO_UNROLL
     for ( ; k_tile_count > 0; --k_tile_count) {
       // LOCK smem_pipe_write for _writing_
       pipeline.producer_acquire(smem_pipe_write);
+
+      // Since scale granularity K is multiple of BLK_K we do not have to consider if that is OOB
+      Tensor tSFAcSFA = tSFAcSFA_k(_,_,_,*k_tile_iter);
+      Tensor tSFAcSFA_compact = filter_zeros(tSFAcSFA);
+      bool load_sfa = thread_idx < ScaleMsPerTile;
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 0; i < size(tSFApSFA); ++i) {
+        tSFApSFA(i) = load_sfa && elem_less(get<0>(tSFAcSFA_compact(i)), get<0>(SFA_shape));
+      }
+
+      bool load_sfb = thread_idx < ScaleNsPerTile;
+      Tensor tSFBcSFB = tSFBcSFB_k(_,_,_,*k_tile_iter);
+      Tensor tSFBcSFB_compact = filter_zeros(tSFBcSFB);
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 0; i < size(tSFBpSFB); ++i) {
+        tSFBpSFB(i) = load_sfb && elem_less(get<0>(tSFBcSFB_compact(i)), get<0>(SFB_shape));
+      }
 
       //
       // Copy gmem to smem for *k_tile_iter
@@ -488,8 +508,8 @@ struct CollectiveMma<
       if (lane_predicate) copy(mainloop_params.tma_load_b.with(*tma_barrier, mcast_mask_b), tBgB(_,_,_,*k_tile_iter), tBsB(_,_,_,write_stage));
 
       // Copy scale tensors from global memory to shared memory
-      copy_if(scale_copy_a, tApA_ScaleA, tAgA_ScaleA(_,_,*k_tile_iter), tAsA_ScaleA(_,_,write_stage));
-      copy_if(scale_copy_b, tBpB_ScaleB, tBgB_ScaleB(_,_,*k_tile_iter), tBsB_ScaleB(_,_,write_stage));
+      copy_if(scale_copy_a, tSFApSFA, filter_zeros(tSFAgSFA_k(_,_,_,*k_tile_iter)), filter_zeros(tSFAsSFA(_,_,_,write_stage)));
+      copy_if(scale_copy_b, tSFBpSFB, filter_zeros(tSFBgSFB_k(_,_,_,*k_tile_iter)), filter_zeros(tSFBsSFB(_,_,_,write_stage)));
       pipeline.producer_commit(smem_pipe_write, cutlass::arch::cpasync_barrier_arrive_noinc);
 
       ++k_tile_iter;
@@ -577,16 +597,24 @@ struct CollectiveMma<
     Tensor sB = make_tensor(make_smem_ptr(shared_tensors.smem_B.data()), SmemLayoutB{});          // (BLK_N,BLK_K,PIPE)
 
     // Block scaling
-    Tensor sScaleAViewAsC = make_tensor(cute::make_smem_ptr(shared_tensors.smem_scale_A.data()),
-      Layout<
-        Shape<Shape<Int<ScaleGranularityM>, Int<ScaleMsPerTile>>, cute::tuple_element_t<1, TileShape>, Int<DispatchPolicy::Stages>>,
-        Stride<Stride<_0, _1>, _0, Int<ScaleMsPerTile>>
-      >{}); // ((ScaleGranularityM,ScaleMsPerTile),n,k)
-    Tensor sScaleBViewAsC = make_tensor(cute::make_smem_ptr(shared_tensors.smem_scale_B.data()),
-      Layout<
-        Shape<cute::tuple_element_t<0, TileShape>, Shape<Int<ScaleGranularityN>, Int<ScaleNsPerTile>>, Int<DispatchPolicy::Stages>>,
-        Stride<_0, Stride<_0, _1>, Int<ScaleNsPerTile>>
-      >{}); // (m,(ScaleGranularityN,ScaleNsPerTile),k)
+    Tensor sSFA = make_tensor(cute::make_smem_ptr(shared_tensors.smem_SFA.data()), make_layout(
+        make_shape(get<0>(shape(SmemLayoutSFA{})), 
+                   get<1>(TileShape{}), 
+                   make_shape(get<1>(shape(SmemLayoutSFA{})), 
+                   get<2>(shape(SmemLayoutSFA{})))),
+        make_stride(get<0>(stride(SmemLayoutSFA{})), _0{}, 
+                    make_stride(get<1>(stride(SmemLayoutSFA{})), get<2>(stride(SmemLayoutSFA{}))))
+      ));                                                                                       // (BLK_M,BLK_N,(BLK_K,P))
+    Tensor sSFB = make_tensor(cute::make_smem_ptr(shared_tensors.smem_SFB.data()), make_layout(
+        make_shape(get<0>(TileShape{}), 
+                   get<0>(shape(SmemLayoutSFB{})), 
+                   make_shape(get<1>(shape(SmemLayoutSFB{})), 
+                   get<2>(shape(SmemLayoutSFB{})))),
+        make_stride(_0{}, 
+                    get<0>(stride(SmemLayoutSFB{})), 
+                    make_stride(get<1>(stride(SmemLayoutSFB{})), 
+                    get<2>(stride(SmemLayoutSFB{}))))
+      ));                                                                                       // (BLK_M,BLK_N,(BLK_K,P))
 
     //
     // Define C accumulators and A/B partitioning
@@ -609,22 +637,22 @@ struct CollectiveMma<
     TiledMma tiled_mma;
     auto thread_mma = tiled_mma.get_slice(warp_group_thread_layout(warp_group_idx));
 
-    Tensor tCsScaleAViewAsC = tiled_mma.get_slice(thread_idx).partition_C(sScaleAViewAsC);    // (MMA,MMA_M,MMA_N,PIPE), `thread_mma` above is correct when partitioning A and B, but it is not correct when partitioning C.
-    Tensor tCsScaleBViewAsC = tiled_mma.get_slice(thread_idx).partition_C(sScaleBViewAsC);    // (MMA,MMA_M,MMA_N,PIPE), `thread_mma` above is correct when partitioning A and B, but it is not correct when partitioning C.
+    Tensor tCsSFA = tiled_mma.get_slice(thread_idx).partition_C(sSFA);                 // (MMA,MMA_M,MMA_N,(MMA_K,PIPE))
+    Tensor tCsSFB = tiled_mma.get_slice(thread_idx).partition_C(sSFB);                 // (MMA,MMA_M,MMA_N,(MMA_K,PIPE))
 
-    Tensor tCsA = thread_mma.partition_A(sA);                                                 // (MMA,MMA_M,MMA_K,PIPE)
-    Tensor tCsB = thread_mma.partition_B(sB);                                                 // (MMA,MMA_N,MMA_K,PIPE)
+    Tensor tCsA = thread_mma.partition_A(sA);                                                  // (MMA,MMA_M,MMA_K,PIPE)
+    Tensor tCsB = thread_mma.partition_B(sB);                                                  // (MMA,MMA_N,MMA_K,PIPE)
 
     // Allocate "fragments/descriptors"
-    Tensor tCrA = thread_mma.make_fragment_A(tCsA);                                           // (MMA,MMA_M,MMA_K,PIPE)
-    Tensor tCrB = thread_mma.make_fragment_B(tCsB);                                           // (MMA,MMA_N,MMA_K,PIPE)
+    Tensor tCrA = thread_mma.make_fragment_A(tCsA);                                            // (MMA,MMA_M,MMA_K,PIPE)
+    Tensor tCrB = thread_mma.make_fragment_B(tCsB);                                            // (MMA,MMA_N,MMA_K,PIPE)
 
-    CUTE_STATIC_ASSERT_V(size<1>(tCsA) == size<1>(accum));                                                         // M
-    CUTE_STATIC_ASSERT_V(size<1>(tCsB) == size<2>(accum));                                                         // N
-    CUTE_STATIC_ASSERT_V(size<2>(tCsA) == size<2>(tCsB));                                                          // K
-    CUTE_STATIC_ASSERT_V(size<3>(tCsA) == size<3>(tCsB));                                                       // PIPE
-    CUTE_STATIC_ASSERT_V(Int<DispatchPolicy::Stages>{} == size<2>(sA));                                         // PIPE
-    CUTE_STATIC_ASSERT_V(Int<DispatchPolicy::Stages>{} == size<2>(sB));                                         // PIPE
+    CUTE_STATIC_ASSERT_V(size<1>(tCsA) == size<1>(accum));                                                          // M
+    CUTE_STATIC_ASSERT_V(size<1>(tCsB) == size<2>(accum));                                                          // N
+    CUTE_STATIC_ASSERT_V(size<2>(tCsA) == size<2>(tCsB));                                                           // K
+    CUTE_STATIC_ASSERT_V(size<3>(tCsA) == size<3>(tCsB));                                                        // PIPE
+    CUTE_STATIC_ASSERT_V(Int<DispatchPolicy::Stages>{} == size<2>(sA));                                          // PIPE
+    CUTE_STATIC_ASSERT_V(Int<DispatchPolicy::Stages>{} == size<2>(sB));                                          // PIPE
 
     //
     // PIPELINED MAIN LOOP
@@ -636,8 +664,9 @@ struct CollectiveMma<
     PipelineState smem_pipe_release = smem_pipe_read;
 
     // Per block scale values for operand A and B
-    Tensor tCrScaleAViewAsC = make_tensor_like<ElementBlockScale>(tCsScaleAViewAsC(_, _, _, 0));    // (MMA,MMA_M,MMA_N)
-    Tensor tCrScaleBViewAsC = make_tensor_like<ElementBlockScale>(tCsScaleBViewAsC(_, _, _, 0));    // (MMA,MMA_M,MMA_N)
+    // Since scale factors always broadcast across MMA_K we slice that away
+    Tensor tCrSFA = make_tensor_like<ElementBlockScale>(tCsSFA(_, _, _, _0{}));                     // (MMA,MMA_M,MMA_N)
+    Tensor tCrSFB = make_tensor_like<ElementBlockScale>(tCsSFB(_, _, _, _0{}));                     // (MMA,MMA_M,MMA_N)
 
     // Prologue GMMAs
     int prologue_mma_count = min(K_PIPE_MMAS, k_tile_count);
@@ -645,9 +674,6 @@ struct CollectiveMma<
     tiled_mma.accumulate_ = GMMA::ScaleOut::Zero;
 
     GmmaFP8Accumulation accumulation(accum, ScalePromotionInterval, size<2>(tCrA));
-    warpgroup_fence_operand(accumulation());
-    CUTLASS_PRAGMA_UNROLL
-    for (int k_tile_prologue = prologue_mma_count; k_tile_prologue > 0; --k_tile_prologue)
     {
       // WAIT on smem_pipe_read until its data are available (phase bit flips from rdPhaseBit value)
       auto barrier_token = pipeline.consumer_try_wait(smem_pipe_read);
@@ -666,23 +692,24 @@ struct CollectiveMma<
       int read_stage = smem_pipe_read.index();
 
       // Load per block scale values from shared memory to registers
-      copy(tCsScaleAViewAsC(_, _, _, read_stage), tCrScaleAViewAsC);
-      copy(tCsScaleBViewAsC(_, _, _, read_stage), tCrScaleBViewAsC);
+      copy(tCsSFA(_,_,_,make_coord(_0{},read_stage)), tCrSFA);
+      copy(tCsSFB(_,_,_,make_coord(_0{},read_stage)), tCrSFB);
+
       if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile == 1) {
-        tCrScaleAViewAsC.data()[0] = tCrScaleAViewAsC.data()[0] * tCrScaleBViewAsC.data()[0];
+        tCrSFA(_0{}) = tCrSFA(_0{}) * tCrSFB(_0{});
       }
       if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile == 1) {
-        ElementBlockScale scale_b = tCrScaleBViewAsC.data()[0];
+        ElementBlockScale scale_b = tCrSFB(_0{});
         CUTLASS_PRAGMA_UNROLL
-        for (int i = 0; i < size(tCrScaleAViewAsC); i++) {
-          tCrScaleAViewAsC.data()[i] = tCrScaleAViewAsC.data()[i] * scale_b;
+        for (int i = 0; i < size(filter_zeros(tCrSFA)); i++) {
+          filter_zeros(tCrSFA)(i) = filter_zeros(tCrSFA)(i) * scale_b;
         }
       }
       if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile  > 1) {
-        ElementBlockScale scale_a = tCrScaleAViewAsC.data()[0];
+        ElementBlockScale scale_a = tCrSFA(_0{});
         CUTLASS_PRAGMA_UNROLL
-        for (int i = 0; i < size(tCrScaleBViewAsC); i++) {
-          tCrScaleBViewAsC.data()[i] = tCrScaleBViewAsC.data()[i] * scale_a;
+        for (int i = 0; i < size(filter_zeros(tCrSFB)); i++) {
+          filter_zeros(tCrSFB)(i) = filter_zeros(tCrSFB)(i) * scale_a;
         }
       }
 
@@ -696,19 +723,88 @@ struct CollectiveMma<
       }
       warpgroup_commit_batch();
 
-      // Block scale the accumulators with reg tensor `tCrScaleAViewAsC` and `tCrScaleBViewAsC`
+      // Block scale the accumulators with reg tensor `tCrSFA` and `tCrSFB`
       if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile == 1) {
-        ElementBlockScale scale_ab = tCrScaleAViewAsC.data()[0];
+        ElementBlockScale scale_ab = tCrSFA(_0{});
         scale_if_needed(accumulation, scale_ab);
       }
       if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile == 1) {
-        scale_if_needed(accumulation, tCrScaleAViewAsC);
+        scale_if_needed(accumulation, tCrSFA);
       }
       if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile  > 1) {
-        scale_if_needed(accumulation, tCrScaleBViewAsC);
+        scale_if_needed(accumulation, tCrSFB);
       }
       if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile  > 1) {
-        scale_if_needed(accumulation, tCrScaleAViewAsC, tCrScaleBViewAsC);
+        scale_if_needed(accumulation, tCrSFA, tCrSFB);
+      }
+
+      ++smem_pipe_read;
+    }
+    warpgroup_fence_operand(accumulation());
+    CUTLASS_PRAGMA_UNROLL
+    for (int k_tile_prologue = prologue_mma_count - 1; k_tile_prologue > 0; --k_tile_prologue)
+    {
+      // WAIT on smem_pipe_read until its data are available (phase bit flips from rdPhaseBit value)
+      auto barrier_token = pipeline.consumer_try_wait(smem_pipe_read);
+      pipeline.consumer_wait(smem_pipe_read, barrier_token);
+
+      if constexpr (ScalePromotionInterval != 4) {
+        if (accumulation.prepare_if_needed()) {
+          tiled_mma.accumulate_ = GMMA::ScaleOut::Zero;
+        }
+      }
+      else {
+        // Always zero out the accumulator for finest granularity
+        tiled_mma.accumulate_ = GMMA::ScaleOut::Zero;
+      }
+
+      int read_stage = smem_pipe_read.index();
+
+      // Load per block scale values from shared memory to registers
+      copy(tCsSFA(_,_,_,make_coord(_0{},read_stage)), tCrSFA);
+      copy(tCsSFB(_,_,_,make_coord(_0{},read_stage)), tCrSFB);
+
+      if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile == 1) {
+        tCrSFA(_0{}) = tCrSFA(_0{}) * tCrSFB(_0{});
+      }
+      if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile == 1) {
+        ElementBlockScale scale_b = tCrSFB(_0{});
+        CUTLASS_PRAGMA_UNROLL
+        for (int i = 0; i < size(filter_zeros(tCrSFA)); i++) {
+          filter_zeros(tCrSFA)(i) = filter_zeros(tCrSFA)(i) * scale_b;
+        }
+      }
+      if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile  > 1) {
+        ElementBlockScale scale_a = tCrSFA(_0{});
+        CUTLASS_PRAGMA_UNROLL
+        for (int i = 0; i < size(filter_zeros(tCrSFB)); i++) {
+          filter_zeros(tCrSFB)(i) = filter_zeros(tCrSFB)(i) * scale_a;
+        }
+      }
+
+      warpgroup_arrive();
+      // Unroll the K mode manually to set scale D to 1
+      CUTLASS_PRAGMA_UNROLL
+      for (int k_block = 0; k_block < size<2>(tCrA); ++k_block) {
+        // (V,M,K) x (V,N,K) => (V,M,N)
+        cute::gemm(tiled_mma, tCrA(_,_,k_block,read_stage), tCrB(_,_,k_block,read_stage), accumulation());
+        tiled_mma.accumulate_ = GMMA::ScaleOut::One;
+      }
+      warpgroup_commit_batch();
+
+      // Block scale the accumulators with reg tensor `tCrSFA` and `tCrSFB`
+      if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile == 1) {
+        ElementBlockScale scale_ab = tCrSFA(_0{});
+        scale_if_needed(accumulation, scale_ab);
+      }
+      if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile == 1) {
+        scale_if_needed(accumulation, tCrSFA);
+      }
+      if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile  > 1) {
+        scale_if_needed(accumulation, tCrSFB);
+      }
+      if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile  > 1) {
+        scale_if_needed(accumulation, tCrSFA, tCrSFB);
       }
 
       ++smem_pipe_read;
@@ -732,25 +828,27 @@ struct CollectiveMma<
       int read_stage = smem_pipe_read.index();
 
       // Load per block scale values from shared memory to registers (at most twice per block along M and/or N)
-      copy(tCsScaleAViewAsC(_, _, _, read_stage), tCrScaleAViewAsC);
-      copy(tCsScaleBViewAsC(_, _, _, read_stage), tCrScaleBViewAsC);
+      copy(tCsSFA(_,_,_,make_coord(_0{},read_stage)), tCrSFA);
+      copy(tCsSFB(_,_,_,make_coord(_0{},read_stage)), tCrSFB);
+
       if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile == 1) {
-        tCrScaleAViewAsC.data()[0] = tCrScaleAViewAsC.data()[0] * tCrScaleBViewAsC.data()[0];
+        tCrSFA(_0{}) = tCrSFA(_0{}) * tCrSFB(_0{});
       }
       if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile == 1) {
-        ElementBlockScale scale_b = tCrScaleBViewAsC.data()[0];
+        ElementBlockScale scale_b = tCrSFB(_0{});
         CUTLASS_PRAGMA_UNROLL
-        for (int i = 0; i < size(tCrScaleAViewAsC); i++) {
-          tCrScaleAViewAsC.data()[i] = tCrScaleAViewAsC.data()[i] * scale_b;
+        for (int i = 0; i < size(filter_zeros(tCrSFA)); i++) {
+          filter_zeros(tCrSFA)(i) = filter_zeros(tCrSFA)(i) * scale_b;
         }
       }
       if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile  > 1) {
-        ElementBlockScale scale_a = tCrScaleAViewAsC.data()[0];
+        ElementBlockScale scale_a = tCrSFA(_0{});
         CUTLASS_PRAGMA_UNROLL
-        for (int i = 0; i < size(tCrScaleBViewAsC); i++) {
-          tCrScaleBViewAsC.data()[i] = tCrScaleBViewAsC.data()[i] * scale_a;
+        for (int i = 0; i < size(filter_zeros(tCrSFB)); i++) {
+          filter_zeros(tCrSFB)(i) = filter_zeros(tCrSFB)(i) * scale_a;
         }
       }
+
 
       if constexpr (ScalePromotionInterval != 4) {
         if (accumulation.prepare_if_needed()) {
@@ -777,19 +875,19 @@ struct CollectiveMma<
       warpgroup_wait<K_PIPE_MMAS>();
       warpgroup_fence_operand(accumulation());
 
-      // Block scale the accumulators with reg tensor `tCrScaleAViewAsC` and `tCrScaleBViewAsC`
+      // Block scale the accumulators with reg tensor `tCrSFA` and `tCrSFB`
       if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile == 1) {
-        ElementBlockScale scale_ab = tCrScaleAViewAsC.data()[0];
+        ElementBlockScale scale_ab = tCrSFA(_0{});
         scale_if_needed(accumulation, scale_ab);
       }
       if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile == 1) {
-        scale_if_needed(accumulation, tCrScaleAViewAsC);
+        scale_if_needed(accumulation, tCrSFA);
       }
       if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile  > 1) {
-        scale_if_needed(accumulation, tCrScaleBViewAsC);
+        scale_if_needed(accumulation, tCrSFB);
       }
       if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile  > 1) {
-        scale_if_needed(accumulation, tCrScaleAViewAsC, tCrScaleBViewAsC);
+        scale_if_needed(accumulation, tCrSFA, tCrSFB);
       }
 
       pipeline.consumer_release(smem_pipe_release);                 // UNLOCK smem_pipe_release, done _computing_ on it
@@ -802,17 +900,17 @@ struct CollectiveMma<
     if constexpr (ScalePromotionInterval != 4) {
       // residues only exists when granularity is not the finnest
       if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile == 1) {
-        ElementBlockScale scale_ab = tCrScaleAViewAsC.data()[0];
-        accumulation.scale_residue_if_needed(scale_ab);
+        ElementBlockScale scale_ab = tCrSFA(_0{});
+        scale_if_needed(accumulation, scale_ab);
       }
       if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile == 1) {
-        accumulation.scale_residue_if_needed(tCrScaleAViewAsC);
+        scale_if_needed(accumulation, tCrSFA);
       }
       if constexpr (ScaleMsPerTile == 1 && ScaleNsPerTile  > 1) {
-        accumulation.scale_residue_if_needed(tCrScaleBViewAsC);
+        scale_if_needed(accumulation, tCrSFB);
       }
       if constexpr (ScaleMsPerTile  > 1 && ScaleNsPerTile  > 1) {
-        accumulation.scale_residue_if_needed(tCrScaleAViewAsC, tCrScaleBViewAsC);
+        scale_if_needed(accumulation, tCrSFA, tCrSFB);
       }
     }
 
@@ -827,7 +925,6 @@ struct CollectiveMma<
     k_tile_count -= prologue_mma_count;
 
     smem_pipe_release.advance(k_tile_count);
-
     // Wait on all GMMAs to complete
     warpgroup_wait<0>();
 

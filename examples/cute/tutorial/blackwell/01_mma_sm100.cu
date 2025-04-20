@@ -61,7 +61,8 @@
 #include <cute/tensor.hpp>                      // CuTe tensor implementation
 #include <cute/arch/cluster_sm90.hpp>           // CuTe functions for querying the details of cluster launched
 #include <cute/numeric/integral_constant.hpp>   // Compile time in constants such as _1, _256 etc.
-#include <cute/algorithm/cooperative_copy.hpp>
+#include <cute/algorithm/cooperative_copy.hpp>  // Auto vectorized copy operation
+#include <cute/arch/tmem_allocator_sm100.hpp>   // TMEM allocator for SM100
 
 // Tutorial helpers
 #include "example_utils.hpp"
@@ -122,7 +123,9 @@ struct SharedStorage
   alignas(128) cute::ArrayEngine<TypeA, cute::cosize_v<ASmemLayout>> A;
   alignas(128) cute::ArrayEngine<TypeB, cute::cosize_v<BSmemLayout>> B;
 
-  alignas(16) cute::uint64_t mma_barrier;  // Barrier to track MMA computation on SMEM
+  alignas(16) cute::uint64_t mma_barrier;   // Barrier to track MMA computation on SMEM
+
+  alignas(16) cute::uint32_t tmem_base_ptr; // Base pointer for TMEM allocation
 
   CUTE_DEVICE constexpr auto tensor_sA() { return make_tensor(make_smem_ptr(A.begin()), ASmemLayout{}); }
   CUTE_DEVICE constexpr auto tensor_sB() { return make_tensor(make_smem_ptr(B.begin()), BSmemLayout{}); }
@@ -225,6 +228,18 @@ gemm_device(ATensor mA,                      // (Gemm_M, Gemm_K)
   // ThrMma's make_fragment_C() creates a TMEM tensor with the appropriate layout for the accumulator.
   Tensor tCtAcc = cta_mma.make_fragment_C(tCgC);    // (MmaC, NumMma_M, NumMma_N)
 
+  uint32_t elect_one_thr  = cute::elect_one_sync();
+  uint32_t elect_one_warp = (threadIdx.x / 32 == 0);
+
+  using TmemAllocator = cute::TMEM::Allocator1Sm;
+  TmemAllocator tmem_allocator{};
+
+  if (elect_one_warp) {
+    tmem_allocator.allocate(TmemAllocator::Sm100TmemCapacityColumns, &shared_storage.tmem_base_ptr);
+  }
+  __syncthreads(); // Wait for all threads until warp0 allocates TMEM
+  tCtAcc.data() = shared_storage.tmem_base_ptr;
+
   if (thread0()) {
     print("tCsA:\t"); print(tCsA); print("\n");     // tCsA:   Sw<3,4,3>_smem_ptr[16b](SMEM_ADDR_A) o ((_128,_16),_1,_4):((_64,_1),_0,_16)
     print("tCsB:\t"); print(tCsB); print("\n");     // tCsB:   Sw<3,4,3>_smem_ptr[16b](SMEM_ADDR_B) o ((_256,_16),_1,_4):((_64,_1),_0,_16)
@@ -233,10 +248,8 @@ gemm_device(ATensor mA,                      // (Gemm_M, Gemm_K)
     print("tCtAcc:\t"); print(tCtAcc); print("\n"); // tCtAcc: tmem_[32b](TMEM_ADDR) o ((_128,_256),_1,_1):((_65536,_1),_0,_0)
   } __syncthreads();
 
-  // Barrier Initialization
-  uint32_t elect_one_thr  = cute::elect_one_sync();
-  uint32_t elect_one_warp = (threadIdx.x / 32 == 0);
 
+  // Barrier Initialization
   // Barriers in SMEM initialized by a single thread.
   if (elect_one_warp && elect_one_thr) {
     cute::initialize_barrier(shared_storage.mma_barrier, /* num_ctas */ 1);
@@ -306,6 +319,15 @@ gemm_device(ATensor mA,                      // (Gemm_M, Gemm_K)
   axpby(alpha, tDrAcc, beta, tDrC);
   // Store RMEM -> GMEM
   copy(tDrC, tDgD);
+
+  __syncthreads();
+
+  // Release the right to allocate before deallocations so that the next CTA can rasterize
+  // Then deallocate TMEM
+  if (elect_one_warp) {
+    tmem_allocator.release_allocation_lock();
+    tmem_allocator.free(shared_storage.tmem_base_ptr, TmemAllocator::Sm100TmemCapacityColumns);
+  }
 }
 
 template <class TypeA, class LayoutA,

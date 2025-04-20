@@ -421,7 +421,12 @@ public:
   }
 
   CUTLASS_DEVICE
-  void producer_acquire(PipelineState state, ProducerToken barrier_token = {BarrierStatus::WaitAgain}) {
+  void producer_acquire(PipelineState state) {
+    producer_acquire(state.index(), state.phase());
+  }
+
+  CUTLASS_DEVICE
+  void producer_acquire(PipelineState state, ProducerToken barrier_token) {
     producer_acquire(state.index(), state.phase(), barrier_token);
   }
 
@@ -500,6 +505,25 @@ private:
     }
     bool barrier_status = empty_barrier_ptr_[stage].try_wait(phase);
     return {static_cast<BarrierStatus>(barrier_status)};
+  }
+
+  CUTLASS_DEVICE
+  void producer_acquire(uint32_t stage, uint32_t phase) {
+    empty_barrier_ptr_[stage].wait(phase);
+
+    if (params_.is_leader) {
+      full_barrier_ptr_[stage].arrive_and_expect_tx(params_.transaction_bytes);
+    }
+    #ifndef NDEBUG
+    if (params_.role == ThreadCategory::Consumer || params_.role == ThreadCategory::NonParticipant) {
+      asm volatile ("brkpt;\n" ::);
+    }
+
+    // Most likely you have elected more than one leader
+    if (params_.is_leader && (threadIdx.x % 32 != 0)) {
+      asm volatile ("brkpt;\n" ::);
+    }
+    #endif
   }
 
   CUTLASS_DEVICE

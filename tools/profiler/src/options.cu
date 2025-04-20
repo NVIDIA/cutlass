@@ -610,6 +610,7 @@ Options::Verification::Verification(cutlass::CommandLine const &cmdline) {
   else {
     providers.push_back(library::Provider::kCUBLAS);
     providers.push_back(library::Provider::kReferenceDevice);
+    providers.push_back(library::Provider::kReferenceHost);
     providers.push_back(library::Provider::kCUDNN);
   }
 }

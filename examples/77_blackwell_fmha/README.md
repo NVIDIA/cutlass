@@ -22,6 +22,21 @@ The `apply_mask` function is called with the accumulator of the first GEMM and t
 It is well-suited for applying masks or activations.
 More complex fusions that require memory loads would require modifying the mainloop collective to orchestrate the load via TMA.
 
+# FMHA for Blackwell: Backward
+
+This sample provides code for fused multi-head attention backward pass.
+It supports HeadDims of 64 and 128, and fp8, fp16, and bf16 input data types.
+The blocking in sequence length Q and K is 128, loads are done via TMA.
+We support causal masking.
+The structure of this code is very similar to the forward pass, and the techniques are analogous.
+
+There are three kernels to compute backwards:
+1. `FmhaKernelBwdSumOdO` to compute the sum of the outer product of O and dO.
+3. `Sm100FmhaBwdKernelTmaWarpSpecialized` to compute the backward pass.
+2. `FmhaKernelBwdConvert` to convert the dQ from fp32 to the final output precision.
+
+`Sm100FmhaBwdKernelTmaWarpSpecialized` is the main point of this sample, as it demonstrates how to use tensor cores to achieve a high performance fused kernel.
+
 # MLA Inference for Blackwell
 
 This sample provides code for fused multi-head latent attention inference in

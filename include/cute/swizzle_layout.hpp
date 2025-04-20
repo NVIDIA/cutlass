@@ -128,8 +128,6 @@ make_fragment_like(ComposedLayout<Swizzle<B,M,S>,Offset,Layout> const& layout)
 // Utilities
 //
 
-namespace detail {
-
 // Get just the Swizzle part of a composed layout.
 template <int B, int M, int S, class Offset, class LayoutB>
 CUTE_HOST_DEVICE constexpr
@@ -166,8 +164,6 @@ get_nonswizzle_portion(Layout<Shape,Stride> const& slayout)
 {
   return slayout;
 }
-
-} // namespace detail
 
 //
 // Slice a Swizzled ComposedLayout
