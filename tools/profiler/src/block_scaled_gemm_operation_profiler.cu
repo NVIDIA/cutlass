@@ -905,7 +905,7 @@ Status BlockScaledGemmOperationProfiler::initialize_workspace(
     gemm_workspace_.arguments.use_pdl = problem_.use_pdl;
 
     /* Query device SM count to pass onto the kernel as an argument, where needed */
-    gemm_workspace_.arguments.sm_count = options.device.properties[0].multiProcessorCount;
+    gemm_workspace_.arguments.sm_count = options.device.get_sm_count(0);
   }
 
   //

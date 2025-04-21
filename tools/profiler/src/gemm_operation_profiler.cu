@@ -976,7 +976,7 @@ Status GemmOperationProfiler::initialize_workspace(
       gemm_workspace_[i].arguments.batch_stride_D = gemm_workspace_[i].Computed->batch_stride();
 
       /* Query device SM count to pass onto the kernel as an argument, where needed */
-      gemm_workspace_[i].arguments.sm_count = options.device.properties[i].multiProcessorCount;
+      gemm_workspace_[i].arguments.sm_count = options.device.get_sm_count(i);
       gemm_workspace_[i].arguments.device_index = static_cast<int>(i);
     }
   }
