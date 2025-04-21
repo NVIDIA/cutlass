@@ -1030,7 +1030,7 @@ template <class LShape, class LStride,
           class RShape, class RStride>
 CUTE_HOST_DEVICE constexpr
 auto
-composition_impl(LShape const& lhs_shape, LStride const& lhs_stride,
+composition_impl(LShape const& lhs_shape, [[maybe_unused]] LStride const& lhs_stride,
                  RShape const& rhs_shape, RStride const& rhs_stride)
 {
   if constexpr (is_tuple<RShape>::value) {                 // Right-distributivity of Layout composition for RHS tuple
@@ -1067,7 +1067,7 @@ composition_impl(LShape const& lhs_shape, LStride const& lhs_stride,
                    auto rest_stride   = get<3>(init);
 
                    auto curr_shape  = get<curr_i>(lhs_shape);
-                   auto curr_stride = get<curr_i>(lhs_stride);
+                   [[maybe_unused]] auto curr_stride = get<curr_i>(lhs_stride);
 
                    // Strong divisibility condition -- requires composition to be statically verifiable.
                    //CUTE_STATIC_ASSERT_V(((rest_stride % curr_shape) == Int<0>{}) or (rest_stride < curr_shape), "Stride Divisibility Condition");
