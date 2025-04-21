@@ -1126,7 +1126,9 @@ struct CollectiveBuilder<
       GmmaMajorB, ElementBMma, decltype(cute::get<1>(TileShape_MNK{})), decltype(cute::get<2>(TileShape_MNK{}))>());
 
   static constexpr size_t TensorMapStorage = IsArrayOfPointersGemm ? sizeof(cute::TmaDescriptor) * 2 /* for A and B */ : 0;
-  static constexpr int KernelSmemCarveout = static_cast<int>(TensorMapStorage);
+  // Reserve 128B for 8 stages of tile scheduling
+  static constexpr size_t TileSchedulerCarveout = IsArrayOfPointersGemm ? 128 : 0;
+  static constexpr int KernelSmemCarveout = static_cast<int>(TensorMapStorage) + static_cast<int>(TileSchedulerCarveout);
 
   static constexpr int ScaleMsPerTile = size<0>(TileShape_MNK{}) / ScaleGranularityM;
   static constexpr int ScaleNsPerTile = size<1>(TileShape_MNK{}) / ScaleGranularityN;
