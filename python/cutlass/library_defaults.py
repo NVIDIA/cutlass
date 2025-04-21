@@ -568,6 +568,9 @@ class OptionRegistry:
     def __init__(self, target_cc: int):
         self.registry = {}
 
+        if target_cc > 90:
+            raise Exception(f"Unsupported compute capability {target_cc}. The CUTLASS Python interface only supports compute capabilities up to 90.")
+
         gemm_kinds = [cutlass_library.GemmKind.Universal, cutlass_library.GemmKind.Universal3x]
         operation_kinds = [cutlass_library.OperationKind.Gemm, cutlass_library.OperationKind.Conv2d]
         # Construct options for each CC

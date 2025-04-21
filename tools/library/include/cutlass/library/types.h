@@ -143,6 +143,7 @@ enum class Provider {
 enum class OperationKind {
   kGemm,
   kBlockScaledGemm,
+  kBlockwiseGemm,
   kRankK,
   kRank2K,
   kTrmm,

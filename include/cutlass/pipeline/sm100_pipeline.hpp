@@ -1071,6 +1071,10 @@ public:
 
   // Constructor
   CUTLASS_DEVICE
+  PipelineEmpty(SharedStorage& storage, Params const& params) {}
+
+  // Constructor
+  CUTLASS_DEVICE
   PipelineEmpty(SharedStorage&& storage, Params const& params) {}
 
   // Constructor with throwaway ClusterShape

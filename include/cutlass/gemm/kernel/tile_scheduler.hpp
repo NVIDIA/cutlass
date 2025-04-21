@@ -172,9 +172,8 @@ struct TileSchedulerSelector<
     , SchedulerPipelineStageCount              
     , GroupProblemShape
   > {
-  using Scheduler = PersistentTileSchedulerSm90Group<GroupProblemShape>;
+  using Scheduler = PersistentTileSchedulerSm90Group<GroupProblemShape, SchedulerPipelineStageCount>;
 };
-
 
 template <class TileShape, class ClusterShape, uint32_t SchedulerPipelineStageCount>
 struct TileSchedulerSelector<
@@ -255,7 +254,7 @@ struct TileSchedulerSelector<
     SchedulerPipelineStageCount,
     GroupProblemShape
   > {
-  using Scheduler = PersistentTileSchedulerSm100Group<GroupProblemShape>;
+  using Scheduler = PersistentTileSchedulerSm100Group<GroupProblemShape, SchedulerPipelineStageCount>;
 };
 
 // SM100 stream-K scheduler
@@ -337,6 +336,24 @@ struct TileSchedulerSelector<
                         TileShape,
                         ClusterShape,
                         SchedulerPipelineStageCount>;
+};
+
+// SM120 Group tile scheduler
+template <
+  class TileShape,
+  class ClusterShape, 
+  uint32_t SchedulerPipelineStageCount, 
+  class GroupProblemShape
+>
+struct TileSchedulerSelector<
+    GroupScheduler,
+    arch::Sm120,
+    TileShape,
+    ClusterShape,
+    SchedulerPipelineStageCount,
+    GroupProblemShape
+  > {
+  using Scheduler = PersistentTileSchedulerSm90Group<GroupProblemShape, SchedulerPipelineStageCount>;
 };
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -1097,6 +1097,10 @@ struct PersistentTileSchedulerSm90StreamKParams {
         return 0;
       }
     }
+    // Ensure that the number of SK tiles is divisible by cluster size so that it can be evenly
+    // divided among SK clusters.
+    sk_tiles = (sk_tiles / cluster_size) * cluster_size;
+
     return static_cast<uint32_t>(sk_tiles);
   }
 

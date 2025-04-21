@@ -54,7 +54,7 @@ __device__ static_persistent_kernel(...) {
   bool isValidId;
   do {
     coordinate_specific_compute(workCoordinates);
-    std::tie(isValidId, workCoordinates) = staticTileScheduler.fetch_next_work();
+     std::tie(isValidId, workCoordinates) = staticTileScheduler.fetch_next_work();
   } while (isValidId);
 }
 ```

@@ -94,6 +94,8 @@ struct Sm120BlockScaleFactorRowStore {
 
   using Params = Arguments;
 
+  using UnderlyingElementBlockScaleFactor = cute::remove_pointer_t<ElementBlockScaleFactor>;
+
   template <class ProblemShape>
   static constexpr Params
   to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
@@ -390,21 +392,21 @@ struct Sm120BlockScaleFactorRowStore {
         }
 
         ElementCompute pvscale = mul(amax, norm_constant_scaled_down);
-        ElementBlockScaleFactor qpvscale = NumericConverter<ElementBlockScaleFactor, ElementCompute>{}(pvscale);
+        UnderlyingElementBlockScaleFactor qpvscale = NumericConverter<UnderlyingElementBlockScaleFactor, ElementCompute>{}(pvscale);
         tC_rSFD_flt(coord) = qpvscale;
 
         //
         // Apply the scale factor to the output
         //
         ElementCompute qpvscale_rcp = [&]() {
-          if constexpr (cute::is_same_v<ElementBlockScaleFactor, float_ue8m0_t>) {
+          if constexpr (cute::is_same_v<UnderlyingElementBlockScaleFactor, float_ue8m0_t>) {
             // UE8M0: Use integer subtraction to do the fast rcp in ue8m0 and then convert to float.
-            auto e8m0_qpvscale_rcp = cutlass::reciprocal_approximate<ElementBlockScaleFactor>{}(qpvscale);
-            return cutlass::NumericConverter<ElementCompute, ElementBlockScaleFactor>{}(e8m0_qpvscale_rcp);
+            auto e8m0_qpvscale_rcp = cutlass::reciprocal_approximate<UnderlyingElementBlockScaleFactor>{}(qpvscale);
+            return cutlass::NumericConverter<ElementCompute, UnderlyingElementBlockScaleFactor>{}(e8m0_qpvscale_rcp);
           }
           else {
             // UE4M3: Do the rcp in fp32 data type.
-            auto qpvscale_up = cutlass::NumericConverter<ElementCompute, ElementBlockScaleFactor>{}(qpvscale);
+            auto qpvscale_up = cutlass::NumericConverter<ElementCompute, UnderlyingElementBlockScaleFactor>{}(qpvscale);
             return cutlass::reciprocal_approximate_ftz<decltype(qpvscale_up)>{}(qpvscale_up);
           }
         }();
@@ -458,15 +460,24 @@ struct Sm120BlockScaleFactorRowStore {
     auto [M, N, K, L] = args.problem_shape_mnkl;
     auto [m, n, k, l] = args.tile_coord_mnkl;
     using Sm1xxBlockScaledOutputConfig = cutlass::detail::Sm1xxBlockScaledOutputConfig<SFVecSize>;
+    UnderlyingElementBlockScaleFactor* ptr_scale_factor = nullptr;
+    // If Ptr-Array/Grouped GEMM with BlockScaleFactor per batch/group
+    if constexpr (!cute::is_same_v<UnderlyingElementBlockScaleFactor, ElementBlockScaleFactor>) {
+      ptr_scale_factor = params_ptr->ptr_scale_factor[l];
+      l = 0;
+    }
+    else {
+      ptr_scale_factor = params_ptr->ptr_scale_factor;
+    }
 
     auto epi_tile_mn = shape<1>(zipped_divide(make_layout(take<0,2>(args.tile_shape_mnk)), args.epi_tile));
-    Tensor mSFD = make_tensor(make_gmem_ptr(params_ptr->ptr_scale_factor), Sm1xxBlockScaledOutputConfig::tile_atom_to_shape_SFD(args.problem_shape_mnkl));
+    Tensor mSFD = make_tensor(make_gmem_ptr(ptr_scale_factor), Sm1xxBlockScaledOutputConfig::tile_atom_to_shape_SFD(args.problem_shape_mnkl));
 
     static_assert(size<1>(EpilogueTile{}) && ((size<1>(EpilogueTile{}) & (size<1>(EpilogueTile{}) - 1)) == 0), "Epilogue Tile N should be pow of 2");
     Tensor gSFD = local_tile(mSFD, args.epi_tile, make_coord(_, _,l));                             // (EPI_M,EPI_N, #EPI_Ms, #EPI_Ns)
     Tensor tCgSFD = sm90_partition_for_epilogue<ReferenceSrc>(                                     // (CPY,CPY_M,CPY_N,EPI_M,EPI_N,#EPI_Ms, #EPI_Ns)
                         gSFD, args.epi_tile, args.tiled_copy, args.thread_idx);
-    Tensor tCrSFD = make_tensor_like<ElementBlockScaleFactor>(take<0,3>(cute::layout(tCgSFD)));    // (CPY,CPY_M,CPY_N)
+    Tensor tCrSFD = make_tensor_like<UnderlyingElementBlockScaleFactor>(take<0,3>(cute::layout(tCgSFD)));    // (CPY,CPY_M,CPY_N)
 
     auto tile_coord_mn = make_coord(m * size<0>(epi_tile_mn), n * size<1>(epi_tile_mn));
 
@@ -536,6 +547,8 @@ struct Sm120BlockScaleFactorColStore {
     NormalConstStrideMNL norm_constant_stride = {};
   };
   using Params = Arguments;
+
+  using UnderlyingElementBlockScaleFactor = cute::remove_pointer_t<ElementBlockScaleFactor>;
 
   template <class ProblemShape>
   static constexpr Params
@@ -770,21 +783,21 @@ struct Sm120BlockScaleFactorColStore {
           synchronize();
 
           ElementCompute pvscale = mul(amax, norm_constant_scaled_down);
-          ElementBlockScaleFactor qpvscale = NumericConverter<ElementBlockScaleFactor, ElementCompute>{}(pvscale);
+          UnderlyingElementBlockScaleFactor qpvscale = NumericConverter<UnderlyingElementBlockScaleFactor, ElementCompute>{}(pvscale);
           filter(tC_rSFD)(sf_id + mma_in_epi*ColsPerThreadAccFrag) = qpvscale;
 
           //
           // Apply the scale factor to the output
           //
           ElementCompute qpvscale_rcp = [&]() {
-            if constexpr (cute::is_same_v<ElementBlockScaleFactor, float_ue8m0_t>) {
+            if constexpr (cute::is_same_v<UnderlyingElementBlockScaleFactor, float_ue8m0_t>) {
               // UE8M0: Use integer subtraction to do the fast rcp in ue8m0 and then convert to float.
-              auto e8m0_qpvscale_rcp = cutlass::reciprocal_approximate<ElementBlockScaleFactor>{}(qpvscale);
-              return cutlass::NumericConverter<ElementCompute, ElementBlockScaleFactor>{}(e8m0_qpvscale_rcp);
+              auto e8m0_qpvscale_rcp = cutlass::reciprocal_approximate<UnderlyingElementBlockScaleFactor>{}(qpvscale);
+              return cutlass::NumericConverter<ElementCompute, UnderlyingElementBlockScaleFactor>{}(e8m0_qpvscale_rcp);
             }
             else {
               // UE4M3: Do the rcp in fp32 data type.
-              auto qpvscale_up = cutlass::NumericConverter<ElementCompute, ElementBlockScaleFactor>{}(qpvscale);
+              auto qpvscale_up = cutlass::NumericConverter<ElementCompute, UnderlyingElementBlockScaleFactor>{}(qpvscale);
               return cutlass::reciprocal_approximate_ftz<decltype(qpvscale_up)>{}(qpvscale_up);
             }
           }();
@@ -829,18 +842,27 @@ struct Sm120BlockScaleFactorColStore {
     auto [M, N, K, L] = args.problem_shape_mnkl;
     auto [m, n, k, l] = args.tile_coord_mnkl;
     using Sm1xxBlockScaledOutputConfig= cutlass::detail::Sm1xxBlockScaledOutputConfig<SFVecSize, UMMA::Major::MN>;
+    UnderlyingElementBlockScaleFactor* ptr_scale_factor = nullptr;
+    // If Ptr-Array/Grouped GEMM with BlockScaleFactor per batch/group
+    if constexpr (!cute::is_same_v<UnderlyingElementBlockScaleFactor, ElementBlockScaleFactor>) {
+      ptr_scale_factor = params_ptr->ptr_scale_factor[l];
+      l = 0;
+    }
+    else {
+      ptr_scale_factor = params_ptr->ptr_scale_factor;
+    }
 
     static_assert(size<0>(EpilogueTile{}) && ((size<0>(EpilogueTile{}) & (size<1>(EpilogueTile{}) - 1)) == 0),
       "Epilogue Tile N should be pow of 2");
 
     auto epi_tile_mn = shape<1>(zipped_divide(make_layout(take<0,2>(args.tile_shape_mnk)), args.epi_tile));
-    Tensor mSFD = make_tensor(make_gmem_ptr(params_ptr->ptr_scale_factor),
+    Tensor mSFD = make_tensor(make_gmem_ptr(ptr_scale_factor),
                     Sm1xxBlockScaledOutputConfig::tile_atom_to_shape_SFD(args.problem_shape_mnkl));
 
     Tensor gSFD = local_tile(mSFD, args.epi_tile, make_coord(_, _,l));               // (EPI_M,EPI_N, #EPI_Ms, #EPI_Ns)
     Tensor tCgSFD = sm90_partition_for_epilogue<ReferenceSrc>(        // (CPY,CPY_M,CPY_N,EPI_M,EPI_N,#EPI_Ms, #EPI_Ns)
                       gSFD, args.epi_tile, args.tiled_copy, args.thread_idx);
-    Tensor tCrSFD = make_tensor_like<ElementBlockScaleFactor>(take<0,3>(cute::layout(tCgSFD)));    // (CPY,CPY_M,CPY_N)
+    Tensor tCrSFD = make_tensor_like<UnderlyingElementBlockScaleFactor>(take<0,3>(cute::layout(tCgSFD)));    // (CPY,CPY_M,CPY_N)
 
     auto tile_coord_mn = make_coord(m * size<0>(epi_tile_mn), n * size<1>(epi_tile_mn));
 

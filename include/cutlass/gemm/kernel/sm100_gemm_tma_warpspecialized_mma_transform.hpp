@@ -769,6 +769,10 @@ public:
       // Register reconfiguration
       arch::warpgroup_reg_dealloc<GenericRegisterRequirement>();
 
+      if constexpr (IsSchedDynamicPersistent) {
+        cutlass::arch::wait_on_dependent_grids();
+      }
+
       // Signal the epilogue warps to proceed once the prologue is complete
       epilogue_throttle_barrier.arrive();
 
