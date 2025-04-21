@@ -128,8 +128,12 @@ public:
   static constexpr uint32_t NumProducerThreads = CollectiveMainloop::NumProducerThreadEvents;
 
   /// Register requirement for Load and Math WGs
-  static constexpr uint32_t LoadRegisterRequirement = 40;
-  static constexpr uint32_t MmaRegisterRequirement = 232;
+  static constexpr int RegsPerThread =
+    size<0>(TileShape{}) * size<1>(TileShape{}) / NumMMAThreads *
+    sizeof(ElementAccumulator) / sizeof(uint32_t);
+  static constexpr bool HeavyRegisterPressure = RegsPerThread >= 208;
+  static constexpr uint32_t LoadRegisterRequirement = !HeavyRegisterPressure ? 40 : 24;
+  static constexpr uint32_t MmaRegisterRequirement = !HeavyRegisterPressure ? 232 : 240;
 
   // 1 stage ordered sequence between mainloop and epilogue producer load threads
   using LoadWarpOrderBarrier = cutlass::OrderedSequenceBarrier<1,2>;
