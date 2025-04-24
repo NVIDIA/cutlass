@@ -41,7 +41,7 @@
 #include "cutlass/trace.h"
 #include "cutlass/kernel_hardware_info.hpp"
 #include "cutlass/detail/sm100_tmem_helper.hpp"
-#include "cutlass/detail/sm100_blockwise_scale_layout.hpp"
+#include "cutlass/detail/blockwise_scale_layout.hpp"
 
 #include "cute/algorithm/functional.hpp"
 #include "cute/arch/cluster_sm90.hpp"
@@ -200,6 +200,9 @@ struct CollectiveMma<
                                   AccumulatorPipelineStageCount,
                                   AtomThrShapeMNK>;
   using AccumulatorPipelineState = typename AccumulatorPipeline::PipelineState;
+
+  static constexpr int AlignmentSFA = GmemTiledCopySFA::AtomNumVal::value * sizeof(typename GmemTiledCopySFA::ValType) / sizeof(ElementAccumulator);
+  static constexpr int AlignmentSFB = GmemTiledCopySFB::AtomNumVal::value * sizeof(typename GmemTiledCopySFB::ValType) / sizeof(ElementAccumulator);
 
   // Two arrivals per thread in the warp (1 arrival and 1 arrival through cp.async.mbarrier)
   static constexpr int NumMainloopSFProducerThreadEvents = 64;
@@ -563,8 +566,8 @@ struct CollectiveMma<
       CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Problem Size doesn't meet the minimum alignment requirements for TMA.\n");
     }
 
-    bool implementable_sf = cutlass::detail::check_alignment<sizeof(typename GmemTiledCopySFA::ValType) / sizeof(ElementAccumulator)>(args.layout_SFA);
-    implementable_sf = implementable_sf && cutlass::detail::check_alignment<sizeof(typename GmemTiledCopySFB::ValType) / sizeof(ElementAccumulator)>(args.layout_SFB);
+    bool implementable_sf = cutlass::detail::check_alignment<AlignmentSFA>(args.layout_SFA);
+    implementable_sf = implementable_sf && cutlass::detail::check_alignment<AlignmentSFB>(args.layout_SFB);
 
     if (!implementable_sf) {
       CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Problem Size doesn't meet the minimum alignment requirements for Scale Factors.\n");

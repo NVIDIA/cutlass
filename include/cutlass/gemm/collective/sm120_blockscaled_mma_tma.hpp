@@ -285,14 +285,14 @@ struct CollectiveMma<
     using TMA_A = decltype(make_tma_copy(
         GmemTiledCopyA{},
         make_tensor(recast_ptr<TmaInternalElementA>(nullptr), repeat_like(StrideA{}, int32_t(0)), StrideA{}),
-        SmemLayoutA{}(_,_,0),
+        SmemLayoutA{}(_,_,cute::Int<0>{}),
         make_shape(shape<0>(TileShape{}), shape<2>(TileShape{})),
         _1{}));  // No programmatic multicast
     // Assumption: StrideB is congruent with Problem_NK
     using TMA_B = decltype(make_tma_copy(
         GmemTiledCopyB{},
         make_tensor(recast_ptr<TmaInternalElementB>(nullptr), repeat_like(StrideB{}, int32_t(0)), StrideB{}),
-        SmemLayoutB{}(_,_,0),
+        SmemLayoutB{}(_,_,cute::Int<0>{}),
         make_shape(shape<1>(TileShape{}), shape<2>(TileShape{})),
         _1{}));  // No programmatic multicast
 

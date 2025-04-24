@@ -301,6 +301,9 @@ std::ostream& operator<<(std::ostream& out, library::OperationKind op_kind) {
   else if (op_kind == library::OperationKind::kBlockScaledGemm) {
     out << "kBlockScaledGemm";
   }
+  else if (op_kind == library::OperationKind::kBlockwiseGemm) {
+    out << "kBlockwiseGemm";
+  }
   else if (op_kind == library::OperationKind::kRankK) {
     out << "kRankK";
   }

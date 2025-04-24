@@ -688,6 +688,9 @@ public:
 
     else if (is_participant.sched) {
       if constexpr (IsSchedDynamicPersistent) {
+        cutlass::arch::wait_on_dependent_grids();
+      }
+      if constexpr (IsSchedDynamicPersistent) {
         // Whether a new CLC query must be performed.
         // See comment below where this variable is updated for a description of
         // why this variable is needed.

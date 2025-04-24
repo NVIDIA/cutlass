@@ -53,21 +53,6 @@ namespace thread {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-// If kIsHeavy is a member, use it.  Otherwise, assume that it's false.
-namespace { // (anonymous)
-template<class Op, class Enable = void>
-struct kIsHeavy_member_or_false {
-  static constexpr bool value = false;
-};
-template<class Op>
-struct kIsHeavy_member_or_false<Op, typename cutlass::platform::enable_if<Op::kIsHeavy>::type> {
-  static constexpr bool value = Op::kIsHeavy;
-};
-
-} // namespace (anonymous)
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
 namespace detail {
 
 struct EmptyArguments {};

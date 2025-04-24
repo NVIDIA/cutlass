@@ -502,6 +502,9 @@ check_input_datatypes() {
             || (cute::is_same_v<BuilderScheduleTag, KernelScheduleBlockScaledGemmSm120>)
             || (cute::is_same_v<BuilderScheduleTag, KernelTmaWarpSpecializedPingpong>)
             || (cute::is_same_v<BuilderScheduleTag, KernelTmaWarpSpecializedCooperative>)
+            // SM120 BS ptr_array
+            || (cute::is_same_v<BuilderScheduleTag, KernelPtrArrayTmaWarpSpecializedPingpong>)
+            || (cute::is_same_v<BuilderScheduleTag, KernelPtrArrayTmaWarpSpecializedCooperative>)
             // SM120 BSSP
             || (cute::is_same_v<BuilderScheduleTag, KernelScheduleBlockScaledSparseGemmSm120>)
             );

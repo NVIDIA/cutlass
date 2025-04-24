@@ -65,7 +65,8 @@ class GemmOperation:
       epilogue_functor = EpilogueFunctor.LinearCombination, swizzling_functor = SwizzlingFunctor.Identity8, D = None,
       kernel_schedule = KernelScheduleType.ScheduleAuto, epilogue_schedule = EpilogueScheduleType.ScheduleAuto,
       tile_scheduler = TileSchedulerType.Default, mixed_input_mode = None, mixed_input_shuffle = False,
-      ScaleFactorA = None, ScaleFactorB = None, ScaleFactorD = None):
+      ScaleFactorA = None, ScaleFactorB = None, ScaleFactorD = None, 
+      ScaleFactorMVecSize = None, ScaleFactorNVecSize = None, ScaleFactorKVecSize = None):
 
     kinds_3x = {
       GemmKind.Universal3x,
@@ -73,6 +74,8 @@ class GemmOperation:
       GemmKind.BlockScaledUniversal3x, 
       GemmKind.GroupedUniversal3x,
       GemmKind.GroupedBlockScaledUniversal3x,
+      GemmKind.BlockwiseUniversal3x,
+      GemmKind.GroupedBlockwiseUniversal3x,
     }
     self.is_3x = gemm_kind in kinds_3x
     self.prefix = "3x" if self.is_3x else ""
@@ -90,6 +93,11 @@ class GemmOperation:
       self.ScaleFactorB = ScaleFactorB
       self.ScaleFactorD = ScaleFactorD["tensor"]
       self.ScaleFactorVectorSize = ScaleFactorD["vector_size"]
+
+    if is_blockwise(gemm_kind):
+      self.ScaleFactorMVecSize = ScaleFactorMVecSize
+      self.ScaleFactorNVecSize = ScaleFactorNVecSize
+      self.ScaleFactorKVecSize = ScaleFactorKVecSize
 
     if self.D == None:
       self.D = self.C
@@ -191,6 +199,8 @@ class GemmOperation:
   # Generates a string representing the MMA instruction.
   def extended_name(self):
     ''' Append data types if they differ from compute type. '''
+    element_sfa = ""
+    element_sfb = ""
     if self.is_complex():
       extended_name = "${core_name}"
     else:
@@ -198,6 +208,10 @@ class GemmOperation:
         extended_name = "${core_name}_${element_a}_${element_b}"
         if self.C.element != self.tile_description.math_instruction.element_accumulator:
           extended_name = "${element_c}_" + extended_name
+      elif is_blockwise(self.gemm_kind):
+        extended_name = "${core_name}_${element_sfa}x${element_a}_${element_sfb}x${element_b}"
+        element_sfa = DataTypeNames[self.accumulator_type()]
+        element_sfb = DataTypeNames[self.accumulator_type()]
       else:
         extended_name = "${core_name}"
         if self.C.element != self.tile_description.math_instruction.element_accumulator:
@@ -207,7 +221,9 @@ class GemmOperation:
 
     extended_name = SubstituteTemplate(extended_name, {
       'element_a': DataTypeNames[self.A.element],
+      'element_sfa' : element_sfa,
       'element_b': DataTypeNames[self.B.element],
+      'element_sfb' : element_sfb,
       'element_c': DataTypeNames[self.C.element],
       'core_name': self.core_name()
       })
@@ -250,6 +266,22 @@ class GemmOperation:
         element_acc = DataTypeNames[self.accumulator_type()],
         element_c = DataTypeNames[self.C.element],
         element_d = d_type_names,
+        core_name = self.core_name())
+
+    if is_blockwise(self.gemm_kind):
+      d_type_names = DataTypeNames[self.D.element]
+
+      extended_name = "{core_name}_{sfvec_m_size}x{sfvec_k_size}{element_sfa}x{element_a}_{sfvec_n_size}x{sfvec_k_size}{element_sfb}x{element_b}_{element_acc}_{element_c}_{element_d}".format(
+        element_sfa = DataTypeNames[self.accumulator_type()],
+        element_a = DataTypeNames[self.A.element],
+        element_sfb = DataTypeNames[self.accumulator_type()],
+        element_b = DataTypeNames[self.B.element],
+        element_acc = DataTypeNames[self.accumulator_type()],
+        element_c = DataTypeNames[self.C.element],
+        element_d = d_type_names,
+        sfvec_m_size = self.ScaleFactorMVecSize,
+        sfvec_n_size = self.ScaleFactorNVecSize,
+        sfvec_k_size = self.ScaleFactorKVecSize,
         core_name = self.core_name())
 
     if self.mixed_input_mode != None:
@@ -761,6 +793,7 @@ class EmitGemmUniversal3xInstance:
       "cutlass/gemm/kernel/gemm_universal.hpp",
       "cutlass/gemm/collective/collective_builder.hpp",
       "cutlass/epilogue/collective/collective_builder.hpp",
+      "cutlass/detail/blockwise_scale_layout.hpp",
     ]
     self.builtin_epilogue_functor_template = \
 """${epilogue_functor}<
@@ -786,6 +819,7 @@ using ${operation_name}_epilogue =
   >::CollectiveOp;
 
 ${mixed_dtype_prepare_code}
+${blockwise_prepare_code}
 
 using ${operation_name}_mainloop =
   typename cutlass::gemm::collective::CollectiveBuilder<
@@ -852,6 +886,18 @@ ${compile_guard_end}
   @staticmethod
   def pointerize_if_grouped(operation, layout):
     return layout if not is_grouped(operation.gemm_kind) else layout + "* "
+
+  @staticmethod
+  def transform_layout_A_if_blockwise(operation, layout):
+    layout_sfa = f"{operation.procedural_name()}_LayoutSFA"
+    layout_sfa = layout_sfa if not is_grouped(operation.gemm_kind) else layout_sfa + "* "
+    return layout if not is_blockwise(operation.gemm_kind) else f"cute::tuple<{layout}, {layout_sfa}>"
+
+  @staticmethod
+  def transform_layout_B_if_blockwise(operation, layout):
+    layout_sfb = f"{operation.procedural_name()}_LayoutSFB"
+    layout_sfb = layout_sfb if not is_grouped(operation.gemm_kind) else layout_sfb + "* "
+    return layout if not is_blockwise(operation.gemm_kind) else f"cute::tuple<{layout}, {layout_sfb}>"
 
   @staticmethod
   def problem_shape(operation):
@@ -1017,14 +1063,25 @@ using {operation_name_str}_LayoutNarrowReordered = decltype(cute::tile_to_shape(
       else:
         element_b = narrow_element
 
+    blockwise_prepare_code = ""
+    if is_blockwise(operation.gemm_kind):
+      sfm_vec_size = operation.ScaleFactorMVecSize
+      sfn_vec_size = operation.ScaleFactorNVecSize
+      sfk_vec_size = operation.ScaleFactorKVecSize
+      blockwise_prepare_code = f"""
+using {operation_name_str}_ScaleConfig = cutlass::detail::Sm{operation.arch}BlockwiseScaleConfig<{sfm_vec_size}, {sfn_vec_size}, {sfk_vec_size}>;
+using {operation_name_str}_LayoutSFA = decltype({operation_name_str}_ScaleConfig::deduce_layoutSFA());
+using {operation_name_str}_LayoutSFB = decltype({operation_name_str}_ScaleConfig::deduce_layoutSFB());
+      """
+
     values = {
       'operation_name': operation_name_str,
       'operation_suffix': self.operation_suffix,
       'problem_shape': self.problem_shape(operation),
       'element_a': element_a,
-      'layout_a': self.pointerize_if_grouped(operation, layout_a_str),
+      'layout_a': self.transform_layout_A_if_blockwise(operation, self.pointerize_if_grouped(operation, layout_a_str)),
       'element_b': element_b,
-      'layout_b': self.pointerize_if_grouped(operation, layout_b_str),
+      'layout_b': self.transform_layout_B_if_blockwise(operation, self.pointerize_if_grouped(operation, layout_b_str)),
       'element_c': DataTypeTag[operation.C.element],
       'layout_c': self.pointerize_if_grouped(operation, LayoutTag[instance_layout_C]),
       'element_d': DataTypeTag[operation.D.element],
@@ -1057,7 +1114,8 @@ using {operation_name_str}_LayoutNarrowReordered = decltype(cute::tile_to_shape(
       'epilogue_vector_length': str(epilogue_vector_length),
       'element_epilogue': str(DataTypeTag[operation.element_epilogue]),
       'tile_scheduler': str(TileSchedulerTag[operation.tile_scheduler]),
-      'mixed_dtype_prepare_code': mixed_dtype_prepare_code
+      'mixed_dtype_prepare_code': mixed_dtype_prepare_code,
+      'blockwise_prepare_code' : blockwise_prepare_code
     }
 
     return SubstituteTemplate(self.gemm_template, values)
@@ -1387,6 +1445,8 @@ class EmitGemmConfigurationLibrary:
       GemmKind.Grouped: EmitGemmGroupedInstance,
       GemmKind.GroupedUniversal3x: EmitGemmUniversal3xInstance,
       GemmKind.GroupedBlockScaledUniversal3x: EmitGemmUniversal3xInstance,
+      GemmKind.BlockwiseUniversal3x: EmitGemmUniversal3xInstance,
+      GemmKind.GroupedBlockwiseUniversal3x: EmitGemmUniversal3xInstance,
     }
 
     self.gemm_kind_wrappers = {
@@ -1401,6 +1461,8 @@ class EmitGemmConfigurationLibrary:
       GemmKind.Grouped: 'GemmGroupedOperation',
       GemmKind.GroupedUniversal3x: 'GroupedGemmUniversal3xOperation',
       GemmKind.GroupedBlockScaledUniversal3x: 'GroupedBlockScaledGemmUniversal3xOperation',
+      GemmKind.BlockwiseUniversal3x: 'BlockwiseGemmUniversal3xOperation',
+      GemmKind.GroupedBlockwiseUniversal3x: 'GroupedBlockwiseGemmUniversal3xOperation',
     }
 
     self.wmma_guard_start = "#if defined(CUTLASS_ARCH_WMMA_SM${sm_number}_ENABLED)"
@@ -1460,6 +1522,7 @@ void initialize_${configuration_name}(Manifest &manifest) {
       ("grouped_gemm_operation_3x.hpp", None),
       ("sparse_gemm_operation_3x.hpp", None),
       ("block_scaled_gemm_operation_3x.hpp", None),   
+      ("blockwise_gemm_operation_3x.hpp", None),   
       ("cutlass/arch/wmma.h", None),
       ("cutlass/numeric_types.h", None)
     ])

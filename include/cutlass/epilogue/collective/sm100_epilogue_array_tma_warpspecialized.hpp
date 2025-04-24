@@ -144,7 +144,6 @@ private:
   static_assert(StagesD >= 1, "StagesD must be >= 1");
   
   constexpr static bool ReuseSmemC = ReuseSmemC_ && is_destination_supported;
-  constexpr static bool DelayTmaStore = DelayTmaStore_;
 
   constexpr static bool is_m_major_C = detail::is_m_major<InternalStrideC>();
   constexpr static bool is_m_major_D = detail::is_m_major<InternalStrideD>();
@@ -171,6 +170,12 @@ private:
   constexpr static size_t SmemAlignmentC = cutlass::detail::alignment_for_swizzle(SmemLayoutC{});
   constexpr static size_t SmemAlignmentD = cutlass::detail::alignment_for_swizzle(SmemLayoutD{});
   constexpr static size_t MaxSmemAlignment = cute::max(SmemAlignmentC, SmemAlignmentD);
+
+  // Not unroll epi subtile loop when the activation op is heavy to reduce instruction size and register pressure.
+  constexpr static bool UnrollEpiLoop =
+    not cutlass::epilogue::thread::kIsHeavy_member_or_false<typename ThreadEpilogueOp::ActivationFn>::value;
+  // TMA store delay only benefits with loop unrolling
+  constexpr static bool DelayTmaStore = DelayTmaStore_ and UnrollEpiLoop;
 
   struct CollectiveStorageWithC {
     alignas(SmemAlignmentC) ArrayEngine<SmemElementC, cosize_v<SmemLayoutC>> smem_C;
@@ -860,10 +865,12 @@ public:
         synchronize();
       }
       // For each epilogue subtile within the CTA tile
-      CUTLASS_PRAGMA_UNROLL
-      for (int iter_n = 0; iter_n < size<3>(gD_epi); ++iter_n) {
-        CUTLASS_PRAGMA_UNROLL
-        for (int iter_m = 0; iter_m < size<2>(gD_epi); ++iter_m) {
+      constexpr int NumEpiSubtilesN = CUTE_STATIC_V(size<3>(gD_epi));
+      constexpr int NumEpiSubtilesM = CUTE_STATIC_V(size<2>(gD_epi));
+      #pragma unroll(UnrollEpiLoop ? NumEpiSubtilesN : 1)
+      for (int iter_n = 0; iter_n < NumEpiSubtilesN; ++iter_n) {
+        #pragma unroll(UnrollEpiLoop ? NumEpiSubtilesM : 1)
+        for (int iter_m = 0; iter_m < NumEpiSubtilesM; ++iter_m) {
           int epi_m = iter_m, epi_n = iter_n;
           bool is_first_iteration = iter_m == 0 && iter_n == 0;
           bool is_last_iteration = iter_m == size<2>(gD_epi)-1 && iter_n == size<3>(gD_epi)-1;
@@ -1215,10 +1222,12 @@ public:
     }
 
     // For each epilogue subtile within the CTA tile
-    CUTLASS_PRAGMA_UNROLL
-    for (int iter_n = 0; iter_n < size<3>(gD_epi); ++iter_n) {
-      CUTLASS_PRAGMA_UNROLL
-      for (int iter_m = 0; iter_m < size<2>(gD_epi); ++iter_m) {
+    constexpr int NumEpiSubtilesN = CUTE_STATIC_V(size<3>(gD_epi));
+    constexpr int NumEpiSubtilesM = CUTE_STATIC_V(size<2>(gD_epi));
+    #pragma unroll(UnrollEpiLoop ? NumEpiSubtilesN : 1)
+    for (int iter_n = 0; iter_n < NumEpiSubtilesN; ++iter_n) {
+      #pragma unroll(UnrollEpiLoop ? NumEpiSubtilesM : 1)
+      for (int iter_m = 0; iter_m < NumEpiSubtilesM; ++iter_m) {
         int epi_m = iter_m, epi_n = iter_n;
         bool is_first_iteration = iter_m == 0 && iter_n == 0;
         bool is_last_iteration = iter_m == size<2>(gD_epi)-1 && iter_n == size<3>(gD_epi)-1;
@@ -1478,16 +1487,23 @@ public:
   tensormaps_cp_fence_release(
       TensorMapStorage& shared_tensormap,
       cute::TmaDescriptor const* tensormap) {
+    // Commit and wait for all TMA load/store instructions before updating the tensormap in gmem.
+    // This operation only happens when the group/batch changes between consecutive tiles.
+    // If there are no uncommitted instructions then tma_desc_commit_group results in an empty bulk async-group.
+    auto tma_desc_wait_all_fn = [] () CUTLASS_LAMBDA_FUNC_INLINE {
+      if (cute::elect_one_sync()) {
+        cute::tma_desc_commit_group();
+        cute::tma_desc_wait_group();
+      }
+    };
     // Entire warp must do this (ie its aligned)
     if constexpr (IsLoad) {
       if (is_source_supported) {
-        if (cute::elect_one_sync()) {
-          cute::tma_desc_commit_group();
-          cute::tma_desc_wait_group();
-        }
+        tma_desc_wait_all_fn();
         tma_descriptor_cp_fence_release(tensormap, shared_tensormap.smem_tensormap_C);
       }
     } else if constexpr (is_destination_supported) {
+      tma_desc_wait_all_fn();
       tma_descriptor_cp_fence_release(tensormap, shared_tensormap.smem_tensormap_D);
     }
   }
