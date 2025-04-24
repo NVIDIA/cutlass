@@ -171,6 +171,7 @@ struct CollectiveMma<
       ScaleGranularityK, 
       size<0,1>(InternalLayoutSFA{}.stride()) == 1 ? UMMA::Major::MN : UMMA::Major::K,
       size<0,1>(InternalLayoutSFB{}.stride()) == 1 ? UMMA::Major::MN : UMMA::Major::K>;
+  
 
   using SmemLayoutAtomSFA = decltype(ScaleConfig::smem_atom_layoutSFA(CtaShape_MNK{}));
   using SmemLayoutAtomSFB = decltype(ScaleConfig::smem_atom_layoutSFB(CtaShape_MNK{}));
@@ -188,6 +189,9 @@ struct CollectiveMma<
   using TransformA = TransformA_;
   using TransformB = TransformB_;
   using ArchTag = typename DispatchPolicy::ArchTag;
+
+  static constexpr int AlignmentSFA = GmemTiledCopySFA::AtomNumVal::value * sizeof(typename GmemTiledCopySFA::ValType) / sizeof(ElementAccumulator);
+  static constexpr int AlignmentSFB = GmemTiledCopySFB::AtomNumVal::value * sizeof(typename GmemTiledCopySFB::ValType) / sizeof(ElementAccumulator);
 
   using MainloopABPipeline = cutlass::PipelineTmaUmmaAsync<
                                 DispatchPolicy::Stages,
@@ -510,6 +514,7 @@ struct CollectiveMma<
     constexpr int min_tma_aligned_elements_B = tma_alignment_bits_B / cute::sizeof_bits<ElementB>::value;
 
     bool implementable = true;
+    bool implementable_sf = true;
     if (problem_shapes.is_host_problem_shape_available()) {
       // Check alignment for all problem sizes
       for (int i = 0; i < problem_shapes.groups(); i++) {
@@ -517,19 +522,21 @@ struct CollectiveMma<
         auto [M,N,K,L] = problem_shape_MNKL;
         implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_A>(cute::make_shape(M,K,L), InternalStrideA{});
         implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_B>(cute::make_shape(N,K,L), InternalStrideB{});
-        bool implementable_sf = cutlass::detail::check_alignment<sizeof(typename GmemTiledCopySFA::ValType) / sizeof(ElementAccumulator)>(InternalLayoutSFA{});
-        implementable_sf = implementable_sf && cutlass::detail::check_alignment<sizeof(typename GmemTiledCopySFB::ValType) / sizeof(ElementAccumulator)>(InternalLayoutSFB{});
-
+        implementable_sf = implementable_sf && cutlass::detail::check_alignment<AlignmentSFA>(ScaleConfig::tile_atom_to_shape_SFA(problem_shape_MNKL));
+        implementable_sf = implementable_sf && cutlass::detail::check_alignment<AlignmentSFB>(ScaleConfig::tile_atom_to_shape_SFB(problem_shape_MNKL));
         if (!implementable_sf) {
           CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Problem Size doesn't meet the minimum alignment requirements for Scale Factors.\n");
         }
-        implementable = implementable && implementable_sf;
       }
+    }
+    else {
+      CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Ignoring check to can implement because host problem shape is not available.\n");
     }
 
     if (!implementable) {
       CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Problem Size doesn't meet the minimum alignment requirements for TMA.\n");
     }
+    implementable = implementable && implementable_sf;
     return implementable;
   }
 

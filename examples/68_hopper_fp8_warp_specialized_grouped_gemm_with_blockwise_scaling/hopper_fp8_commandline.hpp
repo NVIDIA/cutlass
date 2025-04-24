@@ -30,12 +30,11 @@
  **************************************************************************************************/
 
 // Command line options parsing
-template<typename _RasterOrderOptions, typename _ProblemShape, typename _GroupScaleConfig>
+template<typename _RasterOrderOptions, typename _ProblemShape>
 struct Options {
 
   using RasterOrderOptions = _RasterOrderOptions;
   using ProblemShape = _ProblemShape;
-  using GroupScaleConfig = _GroupScaleConfig;
 
   bool help = false;
 
@@ -43,6 +42,7 @@ struct Options {
   int iterations = 1000;
   int m = 1024, n = 512, k = 1024, groups = 10;
   std::string benchmark_path;
+  std::vector<typename ProblemShape::UnderlyingProblemShape> problem_sizes_after_alignment_host;
   std::vector<typename ProblemShape::UnderlyingProblemShape> problem_sizes_host;
   int const tma_alignment_bits = 128;
   int const alignment = tma_alignment_bits / cutlass::sizeof_bits<cutlass::float_e4m3_t>::value;
@@ -89,6 +89,7 @@ struct Options {
     // Decide how to initialize the problems
     if (!benchmark_path.empty()) {
       if (!benchmark_problems()) {
+        problem_sizes_after_alignment_host.clear();
         problem_sizes_host.clear();
         return;
       }
@@ -105,8 +106,8 @@ struct Options {
     cmd.get_cmd_line_argument("n", cmd_line_n);
     cmd.get_cmd_line_argument("k", cmd_line_k);
 
+    problem_sizes_after_alignment_host.reserve(groups);
     problem_sizes_host.reserve(groups);
-
     for (int i = groups; i > 0; i--) {
       int m = cmd_line_m;
       int n = cmd_line_n;
@@ -120,6 +121,7 @@ struct Options {
       if (k < 1) {
         k = k_alignment * ((rand() % (32 * alignment / k_alignment)) + 1);
       }
+      problem_sizes_after_alignment_host.push_back({m, n, k});
       problem_sizes_host.push_back({m, n, k});
     }
   }
@@ -142,7 +144,7 @@ struct Options {
         break;
       }
 
-      cutlass::gemm::GemmCoord extent;
+      cutlass::gemm::GemmCoord extent_after_alignment, extent;
       std::vector<std::string> tokens;
 
       cutlass::CommandLine::tokenize(tokens, extent_str, 'x');
@@ -150,21 +152,79 @@ struct Options {
       for (int i = 0; i < int(tokens.size()); ++i) {
         int x = std::atoi(tokens.at(i).c_str());
 
+        extent.at(i) = x;
         // round up
         if (x % alignment) {
           x += (alignment - (x % alignment));
         }
 
-        extent.at(i) = x;
+        extent_after_alignment.at(i) = x;
       }
 
-      if (extent.product()) {
-        problem_sizes_host.push_back({extent.m(), extent.n(), extent.k()});
-      }
+      problem_sizes_after_alignment_host.push_back({extent_after_alignment.m(), extent_after_alignment.n(), extent_after_alignment.k()});
+      problem_sizes_host.push_back({extent.m(), extent.n(), extent.k()});
     }
-    groups = static_cast<int>(problem_sizes_host.size());
+    groups = static_cast<int>(problem_sizes_after_alignment_host.size());
 
     return true;
+  }
+
+  /// Calculate memory bandwidth statistics
+  template <class ElementA, 
+            class ElementB,
+            class ElementC,
+            class ElementD,
+            class ElementBlockScale,
+            class TileShape,
+            int ScaleMsPerTile,
+            int ScaleNsPerTile>
+  auto gbps(double runtime_s) const {
+    double total_read_bytes = 0;
+    double total_write_bytes = 0;
+    
+    // Calculate bytes read and written for each problem
+    for (int i = 0; i < groups; ++i) {
+      auto problem = problem_sizes_host.at(i);
+      auto M = cute::get<0>(problem);
+      auto N = cute::get<1>(problem);
+      auto K = cute::get<2>(problem);
+      
+      if (M > 0) {  // Only count active problems
+        // Matrix A: M*K elements read
+        total_read_bytes += M * K * sizeof(ElementA);
+        
+        // Matrix B: K*N elements read
+        total_read_bytes += K * N * sizeof(ElementB);
+        
+        // Matrix C: M*N elements read (for beta operation)
+        total_read_bytes += M * N * sizeof(ElementC);
+        
+        // Block scales for A and B
+        auto blockscale_shape = cute::shape(cute::get<1>(cute::zipped_divide(cute::make_layout(problem), TileShape{})));
+        auto blockscale_m = cute::get<0>(blockscale_shape);
+        auto blockscale_n = cute::get<1>(blockscale_shape);
+        auto blockscale_k = cute::get<2>(blockscale_shape);
+        auto groupscale_m = blockscale_m * ScaleMsPerTile;
+        auto groupscale_n = blockscale_n * ScaleNsPerTile;
+        
+        total_read_bytes += groupscale_m * blockscale_k * sizeof(ElementBlockScale);  // A scales
+        total_read_bytes += groupscale_n * blockscale_k * sizeof(ElementBlockScale);  // B scales
+        
+        // Matrix D: M*N elements written
+        total_write_bytes += M * N * sizeof(ElementD);
+      }
+    }
+
+    return (total_read_bytes + total_write_bytes) / 1.0e9 / runtime_s;
+  }
+
+  double bandwidth_util(double eff_bandwidth) const {
+    int memoryClockRate;
+    int memoryBusWidth;
+    cudaDeviceGetAttribute(&memoryClockRate, cudaDevAttrMemoryClockRate, 0);
+    cudaDeviceGetAttribute(&memoryBusWidth, cudaDevAttrGlobalMemoryBusWidth , 0);
+    double bw = 2.0 * memoryClockRate * (memoryBusWidth / 8) / 1.0e6;
+    return eff_bandwidth / bw * 100.0;
   }
 
   /// Prints the usage statement.

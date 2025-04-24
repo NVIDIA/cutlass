@@ -69,6 +69,8 @@ struct CollectiveBuilder<
       (cute::is_base_of_v<KernelScheduleBlockScaledGemmSm120, BuilderScheduleTag> ||
        cute::is_base_of_v<KernelTmaWarpSpecializedPingpong, BuilderScheduleTag> ||
        cute::is_base_of_v<KernelTmaWarpSpecializedCooperative, BuilderScheduleTag> ||
+       cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedPingpong, BuilderScheduleTag> ||
+       cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedCooperative, BuilderScheduleTag> ||
        cute::is_same_v<KernelScheduleAuto, BuilderScheduleTag>)
        &&
       // Alignment check
@@ -90,6 +92,7 @@ struct CollectiveBuilder<
 
   static constexpr cute::UMMA::Major UmmaMajorA = cutlass::gemm::collective::detail::tag_to_umma_major_A<GmemLayoutATag>();
   static constexpr cute::UMMA::Major UmmaMajorB = cutlass::gemm::collective::detail::tag_to_umma_major_B<GmemLayoutBTag>();
+  static_assert((UmmaMajorA == UMMA::Major::K && UmmaMajorB == UMMA::Major::K), "Only TN layout is supported.");
 
   static_assert(cute::is_static_v<TileShape_MNK>, "TileShape has to be static");
   static_assert(cute::is_static_v<ClusterShape_MNK>, "Cluster has to be static");
@@ -109,7 +112,8 @@ struct CollectiveBuilder<
   using PermTileK = cute::conditional_t<(UseMxf8f6f4
                                         ), _32, _64>;
 
-  static constexpr bool IsCooperative = !cute::is_base_of_v<KernelTmaWarpSpecializedPingpong, BuilderScheduleTag>;
+  static constexpr bool IsCooperative = !(cute::is_base_of_v<KernelTmaWarpSpecializedPingpong, BuilderScheduleTag> ||
+                                          cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedPingpong, BuilderScheduleTag>);
   // Data type used by MMA instruction
   using ElementAMma = decltype(cutlass::gemm::collective::detail::sm1xx_kernel_input_element_to_mma_input_element<ElementA>());
   using ElementBMma = decltype(cutlass::gemm::collective::detail::sm1xx_kernel_input_element_to_mma_input_element<ElementB>());
@@ -210,16 +214,49 @@ struct CollectiveBuilder<
 
   static constexpr uint32_t SchedulerPipelineStageCount = 3;
 
-  using DispatchPolicy = MainloopSm120TmaWarpSpecializedBlockScaled<PipelineStages,
+  using StrideA = cutlass::gemm::TagToStrideA_t<GmemLayoutATag>;
+  using StrideB = cutlass::gemm::TagToStrideB_t<GmemLayoutBTag>;
+  using InternalStrideA  = cute::remove_pointer_t<StrideA>;
+  using InternalStrideB  = cute::remove_pointer_t<StrideB>;
+  using InternalLayoutSFA = decltype(Sm1xxBlkScaledConfig::deduce_layoutSFA());
+  using InternalLayoutSFB = decltype(Sm1xxBlkScaledConfig::deduce_layoutSFB());
+  using LayoutSFA = cute::conditional_t<cute::is_same_v<InternalStrideA, StrideA>, InternalLayoutSFA, InternalLayoutSFA *>;
+  using LayoutSFB = cute::conditional_t<cute::is_same_v<InternalStrideB, StrideB>, InternalLayoutSFB, InternalLayoutSFB *>;
+  using StridePairA = decltype(cute::make_tuple(StrideA{}, LayoutSFA{}));
+  using StridePairB = decltype(cute::make_tuple(StrideB{}, LayoutSFB{}));
+
+  static constexpr bool IsGroupedGemmKernel = !cute::is_same_v<InternalStrideA, StrideA>;
+  static_assert(!IsGroupedGemmKernel || 
+                cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedCooperative, BuilderScheduleTag> ||
+                cute::is_base_of_v<KernelScheduleAuto, BuilderScheduleTag> ||
+                cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedPingpong, BuilderScheduleTag>,
+                "Invalid builder schedule tag for grouped GEMM");
+
+  using KernelSchedule = cute::conditional_t<IsGroupedGemmKernel, 
+                                              // PtrArray
+                                              cute::conditional_t<IsCooperative, 
+                                                KernelPtrArrayTmaWarpSpecializedCooperativeBlockScaledSm120<SchedulerPipelineStageCount>, 
+                                                KernelPtrArrayTmaWarpSpecializedPingpongBlockScaledSm120<SchedulerPipelineStageCount>>,
+                                              // Non-PtrArray
+                                              cute::conditional_t<IsCooperative, 
+                                                KernelTmaWarpSpecializedCooperativeBlockScaledSm120<SchedulerPipelineStageCount>, 
+                                                KernelTmaWarpSpecializedPingpongBlockScaledSm120<SchedulerPipelineStageCount>>>;
+
+  using DispatchPolicy = cute::conditional_t<IsGroupedGemmKernel,
+                                              MainloopSm120ArrayTmaWarpSpecializedBlockScaled<PipelineStages,
                                                                     SchedulerPipelineStageCount,
                                                                     ClusterShape_MNK,
-                                                                    BuilderScheduleTag>;
+                                                                    KernelSchedule>,
+                                              MainloopSm120TmaWarpSpecializedBlockScaled<PipelineStages,
+                                                                    SchedulerPipelineStageCount,
+                                                                    ClusterShape_MNK,
+                                                                    KernelSchedule>>;
+                                                                    
   static_assert(cute::is_base_of_v<KernelTmaWarpSpecializedCooperative, typename DispatchPolicy::Schedule> ||
-                cute::is_base_of_v<KernelTmaWarpSpecializedPingpong, typename DispatchPolicy::Schedule>, 
+                cute::is_base_of_v<KernelTmaWarpSpecializedPingpong, typename DispatchPolicy::Schedule> ||
+                cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedCooperative, typename DispatchPolicy::Schedule> ||
+                cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedPingpong, typename DispatchPolicy::Schedule>, 
                 "Unsupported kernel schedule by this collective mainloop dispatch policy.");
-
-  using StridePairA = decltype(cute::make_tuple(cutlass::gemm::TagToStrideA_t<GmemLayoutATag>{}, Sm1xxBlkScaledConfig::deduce_layoutSFA()));
-  using StridePairB = decltype(cute::make_tuple(cutlass::gemm::TagToStrideB_t<GmemLayoutBTag>{}, Sm1xxBlkScaledConfig::deduce_layoutSFB()));
 
   using CollectiveOp = CollectiveMma<
       DispatchPolicy,

@@ -270,7 +270,7 @@ public:
     using namespace cute;
     using X = Underscore;
 
-#if defined(__CUDA_ARCH_FEAT_SM90_ALL)
+#if (defined(__CUDA_ARCH_FEAT_SM90_ALL) || defined(__CUDA_ARCH_FEAT_SM120_ALL) || CUDA_ARCH_CONDITIONAL_OR_FAMILY(1200))
 #  define ENABLE_SM90_KERNEL_LEVEL 1
 #endif
 // Any Tensor Op MMA Atom in the WGMMA ISA is arch conditional to sm90a.

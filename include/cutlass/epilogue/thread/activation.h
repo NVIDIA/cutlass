@@ -52,6 +52,18 @@ namespace thread {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+// If kIsHeavy is a member, use it.  Otherwise, assume that it's false.
+template<class Op, class Enable = void>
+struct kIsHeavy_member_or_false {
+  static constexpr bool value = false;
+};
+template<class Op>
+struct kIsHeavy_member_or_false<Op, typename cutlass::platform::enable_if<Op::kIsHeavy>::type> {
+  static constexpr bool value = Op::kIsHeavy;
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 // Identity operator
 template <typename T>
 struct Identity {
@@ -113,6 +125,8 @@ template <template <class> class Activation, typename T>
 struct Scale<Activation<T>> {
   using Arguments = typename Scale<T>::Arguments;
 
+  static const bool kIsHeavy = Activation<T>::kIsHeavy;
+
   CUTLASS_HOST_DEVICE
   T operator()(T value, typename Arguments::scale_type scale) const {
     multiplies<T> mul;
@@ -127,21 +141,22 @@ struct Scale<Activation<T>> {
 };
 
 /// ReLu operator - propagates NaNs
-/// Always put threshold in the right hand side of max to propagate NaN.
 template <typename T>
 struct ReLu {
   static const bool kIsHeavy = false;
 
   CUTLASS_HOST_DEVICE
   T operator()(T threshold, T value) const {
-    maximum<T> mx;
+    constexpr bool PropagateNaN = true;
+    maximum<T, PropagateNaN> mx;
 
     return mx(value, threshold);
   }
 
   CUTLASS_HOST_DEVICE
   T operator()(T value) const {
-    maximum<T> mx;
+    constexpr bool PropagateNaN = true;
+    maximum<T, PropagateNaN> mx;
 
     return mx(value, T(0));
   }
@@ -156,14 +171,16 @@ struct ReLu<Array<T, N>> {
 
   CUTLASS_HOST_DEVICE
   Array<T, N> operator()(T const & threshold, Array<T, N> const &frag) const {
-    maximum<Array<T, N>> mx;
+    constexpr bool PropagateNaN = true;
+    maximum<Array<T, N>, PropagateNaN> mx;
 
     return mx(frag, threshold);
   }
 
   CUTLASS_HOST_DEVICE
   Array<T, N> operator()(Array<T, N> const &frag) const {
-    maximum<Array<T, N>> mx;
+    constexpr bool PropagateNaN = true;
+    maximum<Array<T, N>, PropagateNaN> mx;
     return mx(frag, T(0));
   }
 };

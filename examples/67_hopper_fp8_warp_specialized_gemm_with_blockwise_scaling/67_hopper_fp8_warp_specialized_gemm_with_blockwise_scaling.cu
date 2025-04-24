@@ -75,11 +75,11 @@
 #include "cutlass/util/reference/host/tensor_copy.h"
 #include "cutlass/util/reference/host/tensor_compare.h"
 #include "cutlass/util/reference/host/tensor_norm.h"
+#include "cutlass/util/reference/host/gett.hpp"
 
 // Includes from examples directory
 #include "helper.h"
 #include "hopper_fp8_commandline.hpp"
-#include "reference/host/gemm_with_blockwise_scaling.h"
 
 using namespace cute;
 
@@ -123,7 +123,13 @@ using ArchTag             = cutlass::arch::Sm90;                            // T
 using OperatorClass       = cutlass::arch::OpClassTensorOp;                 // Operator class tag
 using TileShape           = Shape<_128,_128,_128>;                           // Threadblock-level tile size
 using ClusterShape        = Shape<_1,_2,_1>;                                // Shape of the threadblocks in a cluster
-using KernelSchedule      = cutlass::gemm::KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum<>;
+
+using ScaleConfig = decltype(cutlass::detail::sm90_trivial_blockwise_scale_config(TileShape{}));
+
+using LayoutSFA             = decltype(ScaleConfig::deduce_layoutSFA());                     // Layout type for SFA matrix operand
+using LayoutSFB             = decltype(ScaleConfig::deduce_layoutSFB());                     // Layout type for SFB matrix operand
+
+using KernelSchedule      = cutlass::gemm::KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum; 
 using EpilogueSchedule    = cutlass::epilogue::TmaWarpSpecializedCooperative;
 
 using EpilogueTileType    = cutlass::epilogue::collective::EpilogueTileAuto;
@@ -143,8 +149,8 @@ using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBui
 
 using CollectiveMainloopWithBlockWiseScaling = typename cutlass::gemm::collective::CollectiveBuilder<
     ArchTag, OperatorClass,
-    ElementA, LayoutA, AlignmentA,
-    ElementB, LayoutB, AlignmentB,
+    ElementA, cute::tuple<LayoutA, LayoutSFA>, AlignmentA,
+    ElementB, cute::tuple<LayoutB, LayoutSFB>, AlignmentB,
     ElementAccumulator,
     TileShape, ClusterShape,
     cutlass::gemm::collective::StageCountAutoCarveout<
@@ -190,20 +196,22 @@ StrideB stride_B;
 StrideC stride_C;
 StrideD stride_D;
 StrideAux stride_aux;
+LayoutSFA layout_SFA;
+LayoutSFB layout_SFB;
 uint64_t seed;
 
+using LayoutScalar = cutlass::layout::PackedVectorLayout;
 cutlass::HostTensor<ElementA  , LayoutA  > tensor_A;
 cutlass::HostTensor<ElementB  , LayoutB  > tensor_B;
 cutlass::HostTensor<ElementC  , LayoutC  > tensor_C;
 cutlass::HostTensor<ElementD  , LayoutD  > tensor_D;
 uint32_t mma_promotion_interval;
-cutlass::HostTensor<ElementBlockScale, LayoutA> blockscale_tensor_A;
-cutlass::HostTensor<ElementBlockScale, LayoutB> blockscale_tensor_B;
+cutlass::HostTensor<ElementBlockScale, LayoutScalar> blockscale_tensor_A;
+cutlass::HostTensor<ElementBlockScale, LayoutScalar> blockscale_tensor_B;
 cutlass::HostTensor<ElementD  , LayoutD  > tensor_ref_D;
 cutlass::HostTensor<ElementAux, LayoutAux> tensor_aux;
 cutlass::HostTensor<ElementAux, LayoutAux> tensor_ref_aux;
 
-using LayoutScalar = cutlass::layout::PackedVectorLayout;
 cutlass::HostTensor<ElementScalar, LayoutScalar> scalar_alpha;
 cutlass::HostTensor<ElementScalar, LayoutScalar> scalar_beta;
 cutlass::HostTensor<ElementScalar, LayoutScalar> scale_A;
@@ -342,26 +350,25 @@ bool initialize_scale_tensor(
 /// Initialize operands to be used in the GEMM and reference GEMM
 void initialize(const Options<RasterOrderOptions> &options) {
 
-  // Find Block Scaling tensor shapes based on problem shape and TileShape
-  auto gemm_problem_shape = cute::make_shape(options.m, options.n, options.k);
-  auto blockscale_shape = shape(get<1>(cute::zipped_divide(cute::make_layout(gemm_problem_shape), TileShape{})));
-  auto blockscale_m = cute::get<0>(blockscale_shape);
-  auto blockscale_n = cute::get<1>(blockscale_shape);
-  auto blockscale_k = cute::get<2>(blockscale_shape);
-
   stride_A = cutlass::make_cute_packed_stride(StrideA{}, cute::make_shape(options.m, options.k, options.l));
   stride_B = cutlass::make_cute_packed_stride(StrideB{}, cute::make_shape(options.n, options.k, options.l));
   stride_C = cutlass::make_cute_packed_stride(StrideC{}, cute::make_shape(options.m, options.n, options.l));
   stride_D = cutlass::make_cute_packed_stride(StrideD{}, cute::make_shape(options.m, options.n, options.l));
   stride_aux = stride_D;
 
+  // Layout SFA and SFB represent logically broadcasting data in CuTe.
+  // E.g., if Layout SFA has shape ((ScaleGranularityM, M / ScaleGranularityM), (ScaleGraunularityK, K / ScaleGranularityK))
+  // and strides ((0, 1), (0, M / ScaleGraunuarlityM)), then each collection of ScaleGranularityM x ScaleGranularityK
+  // indecies in the tensor map to the same offset.
 
+  layout_SFA = ScaleConfig::tile_atom_to_shape_SFA(make_shape(options.m, options.n, options.k, options.l));
+  layout_SFB = ScaleConfig::tile_atom_to_shape_SFB(make_shape(options.m, options.n, options.k, options.l));
 
   auto a_coord = cutlass::make_Coord(options.m * options.l, options.k);
   auto c_coord = cutlass::make_Coord(options.m * options.l, options.n);
   auto b_coord = cutlass::make_Coord(options.k, options.n * options.l);
-  auto blockscale_a_coord = cutlass::make_Coord(blockscale_m * options.l, blockscale_k);
-  auto blockscale_b_coord = cutlass::make_Coord(blockscale_k, blockscale_n * options.l);
+  auto blockscale_a_coord = cutlass::make_Coord(size(filter_zeros(layout_SFA)));
+  auto blockscale_b_coord = cutlass::make_Coord(size(filter_zeros(layout_SFB)));
 
   tensor_A.resize(a_coord);
   blockscale_tensor_A.resize(blockscale_a_coord);
@@ -465,7 +472,9 @@ typename Gemm::Arguments args_from_options(const Options<RasterOrderOptions> &op
      stride_B,
      mma_promotion_interval,
      blockscale_tensor_A.device_data(),
-     blockscale_tensor_B.device_data()
+     layout_SFA,
+     blockscale_tensor_B.device_data(),
+     layout_SFB
      },
     {
       {}, // epilogue.thread
@@ -519,12 +528,6 @@ bool verify(const Options<RasterOrderOptions> &options) {
   // Compute reference output
   //
 
-  // Block scaling tensors shapes based CTA Block (TileShape) and GEMM Problem shape
-  auto gemm_problem_shape = cute::make_shape(options.m, options.n, options.k);
-  auto blockscale_m = ceil_div(options.m, get<0>(TileShape{}));
-  auto blockscale_n = ceil_div(options.n, get<1>(TileShape{}));
-  auto blockscale_k = ceil_div(options.k, get<2>(TileShape{}));
-
   // Create instantiation for device reference gemm kernel
   auto A = cute::make_tensor(tensor_A.host_data(),
                              cute::make_layout(
@@ -557,28 +560,18 @@ bool verify(const Options<RasterOrderOptions> &options) {
                                 )
                               );
 
-  auto blockscale_A = cute::make_tensor(blockscale_tensor_A.host_data(),
-                                        cute::make_layout(
-                                          cute::make_shape(blockscale_m, blockscale_k, options.l),
-                                          cute::make_stride(1, blockscale_m, blockscale_m * blockscale_k)
-                                        )
-                                      );
-  auto blockscale_B = cute::make_tensor(blockscale_tensor_B.host_data(),
-                                        cute::make_layout(
-                                          cute::make_shape(blockscale_n, blockscale_k, options.l),
-                                          cute::make_stride(1, blockscale_n, blockscale_n * blockscale_k)
-                                        )
-                                      );
+  auto SFA = cute::make_tensor(blockscale_tensor_A.host_data(), layout_SFA);
+  auto SFB = cute::make_tensor(blockscale_tensor_B.host_data(), layout_SFB);
 
   using unused_t = decltype(D);
 
-  cutlass::reference::host::GettMainloopParams<ElementAccumulator,
-                                               decltype(A), decltype(B),
-                                               decltype(blockscale_A), decltype(blockscale_B),
-                                               TileShape> mainloop_params{
-                                               A, B,                         // Operand Tensors
-                                               blockscale_A, blockscale_B    // Blockwise scaling Tensors
-                                              };
+  cutlass::reference::host::GettBlockScalingMainloopParams<
+      ElementAccumulator,
+      decltype(A),
+      decltype(SFA),
+      decltype(B),
+      decltype(SFB)
+    > mainloop_params{A, SFA, B, SFB};
 
   cutlass::reference::host::GettEpilogueParams<
       ElementScalar,

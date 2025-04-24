@@ -128,7 +128,7 @@ void __global__ fmha_reference_kernel(
       }
 
       if (threadIdx.x == 0) {
-        mLSE(idx_Q + offset_Q, idx_L) = log(sum) + maxS;
+        mLSE(idx_Q + offset_Q, idx_L) = log(sum) + softmax_scale * maxS;
       }
 
     }

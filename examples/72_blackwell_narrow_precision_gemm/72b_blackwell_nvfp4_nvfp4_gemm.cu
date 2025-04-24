@@ -480,7 +480,12 @@ bool verify(const Options &options) {
   passed &= (cutlass::reference::host::TensorNorm(block_reference_D.host_view()) > 0);
   passed &= (cutlass::reference::host::TensorNorm(block_D.host_view()) > 0);
 
-  return passed;
+  block_SFD.sync_host();
+  bool passed_sfd = cutlass::reference::host::TensorEquals(block_reference_SFD.host_view(), block_SFD.host_view());
+  passed_sfd &= (cutlass::reference::host::TensorNorm(block_reference_SFD.host_view()) > 0);
+  passed_sfd &= (cutlass::reference::host::TensorNorm(block_SFD.host_view()) > 0);
+
+  return passed && passed_sfd;
 }
 
 /// Execute a given example GEMM computation

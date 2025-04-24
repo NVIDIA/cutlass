@@ -34,7 +34,7 @@
   addressable memory, and then store it back into addressable memory.
 
   TileIterator is a core concept in CUTLASS that enables efficient loading and storing of data to
-  and from addressable memory. The PredicateTileIterator accepts a ThreadMap type, which defines
+  and from addressable memory. The PredicatedTileIterator accepts a ThreadMap type, which defines
   the mapping of threads to a "tile" in memory. This separation of concerns enables user-defined
   thread mappings to be specified. 
 
