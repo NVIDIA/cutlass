@@ -19,7 +19,7 @@ runs:
       if: inputs.DPCPP_RELEASE == 'NIGHTLY'
       shell: bash
       run: |
-        sudo apt update && sudo apt install -y intel-opencl-icd
+        sudo apt update && sudo apt install -y intel-opencl-icd ocl-icd-opencl-dev
         dpkg -l | grep libhwloc15 > /dev/null || sudo apt install -y libhwloc15
         export DPCPP_PATH=${{ inputs.DPCPP_PATH }}
         mkdir -p $DPCPP_PATH

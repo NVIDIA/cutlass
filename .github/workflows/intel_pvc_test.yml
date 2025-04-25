@@ -23,7 +23,9 @@ jobs:
   run-tests:
     strategy:
       matrix:
-        compiler: [ NIGHTLY, RELEASE ]
+# Disable the release check due to an issue with IGC versions 2.7 to 2.10.8.
+#        compiler: [ NIGHTLY, RELEASE ]
+        compiler: [ NIGHTLY ]
     name: Run Intel PVC tests
     runs-on: cp-gpumax-1100-gpu
     timeout-minutes: 30
