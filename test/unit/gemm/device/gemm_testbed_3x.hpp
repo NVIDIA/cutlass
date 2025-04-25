@@ -4018,7 +4018,7 @@ template <typename Gemm, template <class T> class ActivationFunctor =
 // TODO(Codeplay): remove the test_batch option once batching is enabled for all tests
 bool TestXe(
     double alpha = 1.0, double beta = 0.0,
-    bool test_batch = true, int max_alignment = 4,
+    bool test_batch = true, int max_alignment = 8,
     CheckEquality check_relative_equality = CheckEquality::RELATIVE) {
   using ElementScalar = typename Gemm::EpilogueOutputOp::ElementScalar;
   using ProblemShapeType = typename Gemm::GemmKernel::ProblemShape;
@@ -4040,7 +4040,7 @@ bool TestXe(
   std::vector<int> problem_size_l = test_batch ? std::vector{1, 3, 4} : std::vector{1};
 
   constexpr int TileShapeK = cute::size<2>(typename Gemm::GemmKernel::TileShape{});
-  std::vector<int> problem_size_k{TileShapeK};
+  std::vector<int> problem_size_k{TileShapeK, TileShapeK*32};
 
   using DecompositionMode = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerXeStreamKParams::DecompositionMode;
   std::vector decomposition_modes = {DecompositionMode::Heuristic};

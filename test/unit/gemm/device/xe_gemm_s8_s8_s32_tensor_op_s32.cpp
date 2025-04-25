@@ -65,7 +65,7 @@ TEST(XE_Device_Gemm_s8t_s8t_s32t_tensor_op_s32, 256x256x32) {
   using LayoutA = layout::RowMajor;
   using LayoutB = layout::RowMajor;
   using Gemm = XE_Device_Gemm_s8_s8_s32_tensor_op_s32<LayoutA, LayoutB>::Gemm;
-  EXPECT_TRUE(test::gemm::device::TestXe<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestXe<Gemm>(1.0, 0.0, true, 16));
 }
 
 /*  TODO(Codeplay): Transposed copy are not implemented

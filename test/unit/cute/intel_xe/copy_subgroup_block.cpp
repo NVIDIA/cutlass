@@ -43,7 +43,7 @@ using namespace syclcompat::experimental;
 
 template <class TensorS, class TensorD, uint32_t wg_tile_m, uint32_t wg_tile_n,
           uint32_t sg_tile_m, uint32_t sg_tile_n>
-void copy_kernel_vectorized(TensorS S, TensorD D, uint32_t M, uint32_t N) {
+void copy_kernel_vectorized(TensorS S, TensorD D) {
   using namespace cute;
 
   using Element = typename TensorS::value_type;
@@ -158,15 +158,19 @@ bool copy(uint32_t M, uint32_t N) {
   // Given a 2D shape, perform an efficient copy
   //
 
+  constexpr int elem_alignment = 16 / sizeof(dtype);
+  int row_pitch = cute::ceil_div(N, elem_alignment) * elem_alignment;
+
   auto tensor_shape = make_shape(M, N);
+  auto tensor_layout = make_layout(tensor_shape, make_stride(row_pitch, 1));
   auto block_shape = make_shape(Int<wg_tile_m>{}, Int<wg_tile_n>{});
   auto subgroup_shape = make_shape(Int<sg_tile_m>{}, Int<sg_tile_n>{});
 
   //
   // Allocate and initialize
   //
-  cutlass::host_vector<dtype> host_src(size(tensor_shape));
-  cutlass::host_vector<dtype> host_output(size(tensor_shape));
+  cutlass::host_vector<dtype> host_src(cute::cosize(tensor_layout));
+  cutlass::host_vector<dtype> host_output(cute::cosize(tensor_layout));
 
   for (size_t i = 0; i < host_src.size(); ++i) {
     host_src[i] = static_cast<dtype>(i);
@@ -179,10 +183,8 @@ bool copy(uint32_t M, uint32_t N) {
   // Make tensors
   //
 
-  Tensor tensor_S = make_tensor(make_gmem_ptr(device_src.data()),
-                                make_layout(tensor_shape, make_stride(N, 1)));
-  Tensor tensor_D = make_tensor(make_gmem_ptr(device_output.data()),
-                                make_layout(tensor_shape, make_stride(N, 1)));
+  Tensor tensor_S = make_tensor(make_gmem_ptr(device_src.data()), tensor_layout);
+  Tensor tensor_D = make_tensor(make_gmem_ptr(device_output.data()), tensor_layout);
 
   //
   // Tile tensors
@@ -216,7 +218,7 @@ bool copy(uint32_t M, uint32_t N) {
                                 wg_tile_m, wg_tile_n, sg_tile_m, sg_tile_n>>(
       launch_policy{gridDim, blockDim,
                     kernel_properties{sycl_exp::sub_group_size<SUBGROUP_SIZE>}},
-      tensor_S, tensor_D, M, N);
+      tensor_S, tensor_D);
 
   syclcompat::wait_and_throw();
 
@@ -226,22 +228,21 @@ bool copy(uint32_t M, uint32_t N) {
 
   host_output = device_output;
 
-  auto surface_pitch = N;
   for (int i = 0; i < sg_tile_m && i < M; i++) {
     for (int j = 0; j < sg_tile_n && j < N; j++) {
-      EXPECT_EQ(host_output[surface_pitch * i + j], surface_pitch * i + j);
+      EXPECT_EQ(host_output[row_pitch * i + j], row_pitch * i + j);
     }
   }
 
   for (int i = sg_tile_m; i < sg_tile_m + 1 && i < M; i++) {
     for (int j = 0; j < sg_tile_n && j < N; j++) {
-      EXPECT_NE(host_output[surface_pitch * i + j], surface_pitch * i + j);
+      EXPECT_NE(host_output[row_pitch * i + j], row_pitch * i + j);
     }
   }
 
   for (int i = 0; i < sg_tile_m && i < M; i++) {
     for (int j = sg_tile_n; j < sg_tile_n + 1 && j < N; j++) {
-      EXPECT_NE(host_output[surface_pitch * i + j], surface_pitch * i + j);
+      EXPECT_NE(host_output[row_pitch * i + j], row_pitch * i + j);
     }
   }
   return true;

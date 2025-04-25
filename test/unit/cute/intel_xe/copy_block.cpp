@@ -42,6 +42,7 @@ using namespace cutlass;
 using namespace syclcompat::experimental;
 
 #define SUBGROUP_SIZE (16)
+constexpr int row_alignment = 16; // Alignment requirement for Xe 2D Block Copy Instructions
 
 template <class TensorS, class TensorD, class TiledLoad, class TiledStore,
           class CopyOp = void>
@@ -265,31 +266,34 @@ struct copy_op<uint32_t, load, store, M, N, true> {
     // Allocate and initialize
     //
     using dtype = uint32_t;
-    cutlass::host_vector<dtype> host_src(M * N);
-    cutlass::host_vector<dtype> host_output(M * N);
 
-    for (size_t i = 0; i < host_src.size(); ++i) {
-      host_src[i] = static_cast<dtype>(i);
+    constexpr int elem_alignment = row_alignment / sizeof(dtype);
+    constexpr int row_pitch_S = cute::ceil_div(N, elem_alignment) * elem_alignment;
+    constexpr int row_pitch_D = cute::ceil_div(M, elem_alignment) * elem_alignment;
+    using TensorLayoutS = decltype(make_layout(Shape<Int<M>, Int<N>>{}, make_stride(Int<row_pitch_S>{}, _1{})));
+    using TensorLayoutD = decltype(make_layout(Shape<Int<N>, Int<M>>{}, make_stride(Int<row_pitch_D>{}, _1{})));
+
+    cutlass::host_vector<dtype> host_src(M * row_pitch_S);
+    cutlass::host_vector<dtype> host_output(N * row_pitch_D);
+
+    for (size_t i = 0; i < cute::cosize(TensorLayoutS{}); ++i) {
+      host_src[TensorLayoutS{}(i)] = static_cast<dtype>(i);
     }
 
     cutlass::device_vector<dtype> device_src = host_src;
     cutlass::device_vector<dtype> device_output = host_output;
 
-    Tensor S =
-        make_tensor(make_gmem_ptr(device_src.data()),
-                    make_layout(Shape<Int<M>, Int<N>>{}, Stride<Int<N>, _1>{}));
-    Tensor D =
-        make_tensor(make_gmem_ptr(device_output.data()),
-                    make_layout(Shape<Int<N>, Int<M>>{}, Stride<Int<M>, _1>{}));
+    Tensor S = make_tensor(make_gmem_ptr(device_src.data()), TensorLayoutS{});
+    Tensor D = make_tensor(make_gmem_ptr(device_output.data()), TensorLayoutD{});
 
     auto tiled_load = make_tiled_copy(
-        Copy_Atom<Copy_Traits<load, decltype(S)>, dtype>{}.with(device_src.data(), M, N),
+        Copy_Atom<Copy_Traits<load, decltype(S)>, dtype>{}.with(S),
         Layout<Shape<Int<SUBGROUP_SIZE>, _1>>{},
         make_layout(shape_div(typename Copy_Traits<load, decltype(S)>::BlockShape{}, Shape<_16, _1>{})));
     auto tiled_store = make_tiled_copy(
-        Copy_Atom<Copy_Traits<store, decltype(D)>, dtype>{}.with(device_output.data(), N, M),
+        Copy_Atom<Copy_Traits<store, decltype(D)>, dtype>{}.with(D),
         Layout<Shape<_1, Int<SUBGROUP_SIZE>>>{},
-        make_layout(shape_div(typename Copy_Traits<store, decltype(S)>::BlockShape{}, Shape<_1, _16>{})));
+        make_layout(shape_div(typename Copy_Traits<store, decltype(D)>::BlockShape{}, Shape<_1, _16>{})));
     auto blockDim = syclcompat::dim3(size(tiled_load));
     //
     // Launch the kernel
@@ -306,7 +310,7 @@ struct copy_op<uint32_t, load, store, M, N, true> {
     host_output = device_output;
     for (int i = 0; i < N; ++i) {
       for (int j = 0; j < M; ++j) {
-        EXPECT_EQ(host_output[i * M + j], host_src[j * N + i]);
+        EXPECT_EQ(host_output[i * row_pitch_D + j], host_src[j * row_pitch_S + i]);
       }
     }
   }
