@@ -539,7 +539,15 @@ struct NumericConverter<cutlass::bfloat16_t, float, FloatRoundStyle::round_to_ne
 
   CUTLASS_HOST_DEVICE
   static result_type convert(source_type const & s) {
+    #if defined(__INTEL_LLVM_COMPILER) && (__INTEL_LLVM_COMPILER < 20250200) && defined(__SYCL_DEVICE_ONLY__)
+    // Temporary patch to avoid linking in the devicelib fallback unconditionally.
+    // This is the work around to fix performance regression in 2025.1 
+    result_type res;
+    res.storage=(__spirv_ConvertFToBF16INTEL(s));
+    return res;
+    #else
     return static_cast<cutlass::bfloat16_t>(s);
+    #endif
   }
 
   CUTLASS_HOST_DEVICE
