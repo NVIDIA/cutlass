@@ -286,17 +286,17 @@ struct ExampleRunner {
     stride_C = cutlass::make_cute_packed_stride(StrideC{}, cute::make_shape(M, N, L));
     stride_D = cutlass::make_cute_packed_stride(StrideD{}, cute::make_shape(M, N, L));
 
-    block_A.reset(M * K * L);
-    block_B0.reset(K * N * L);
-    block_B1.reset(K * N * L);
-    block_C0.reset(M * N * L);
-    block_C1.reset(M * N * L);
-    block_D0.reset(M * N * L);
-    block_D1.reset(M * N * L);
-    block_D2.reset(M * N * L);
-    block_ref_D0.reset(M * N * L);
-    block_ref_D1.reset(M * N * L);
-    block_ref_D2.reset(M * N * L);
+    block_A.reset(static_cast<std::size_t>(M) * K * L);
+    block_B0.reset(static_cast<std::size_t>(K) * N * L);
+    block_B1.reset(static_cast<std::size_t>(K) * N * L);
+    block_C0.reset(static_cast<std::size_t>(M) * N * L);
+    block_C1.reset(static_cast<std::size_t>(M) * N * L);
+    block_D0.reset(static_cast<std::size_t>(M) * N * L);
+    block_D1.reset(static_cast<std::size_t>(M) * N * L);
+    block_D2.reset(static_cast<std::size_t>(M) * N * L);
+    block_ref_D0.reset(static_cast<std::size_t>(M) * N * L);
+    block_ref_D1.reset(static_cast<std::size_t>(M) * N * L);
+    block_ref_D2.reset(static_cast<std::size_t>(M) * N * L);
 
     initialize_block(block_A, seed + 2023);
     initialize_block(block_B0, seed + 2022);
@@ -305,12 +305,12 @@ struct ExampleRunner {
     initialize_block(block_C1, seed + 2019);
 
     if constexpr (UseBias0) {
-      block_bias0.reset(M * L);
+      block_bias0.reset(static_cast<std::size_t>(M) * L);
       initialize_block(block_bias0, seed + 2018);
     }
 
     if constexpr (UseBias1) {
-      block_bias1.reset(M * L);
+      block_bias1.reset(static_cast<std::size_t>(M) * L);
       initialize_block(block_bias1, seed + 2017);
     }
   }

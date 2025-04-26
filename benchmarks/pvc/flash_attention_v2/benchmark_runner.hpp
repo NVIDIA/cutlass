@@ -402,10 +402,10 @@ template <class FMHAConfiguration> struct BenchmarkRunnerFMHA {
     stride_V = cutlass::make_cute_packed_stride(StrideV{}, cute::make_shape(head_size_vo, seq_len_kv, batch * num_heads_kv));
     stride_O = cutlass::make_cute_packed_stride(StrideO{}, cute::make_shape(seq_len_qo, head_size_vo, batch * num_heads_q));
 
-    auto mem_size_q = batch * num_heads_q * seq_len_qo * head_size_qk;
-    auto mem_size_k = batch * num_heads_kv * seq_len_kv * head_size_qk;
-    auto mem_size_v = batch * num_heads_kv * seq_len_kv * head_size_vo;
-    auto mem_size_o = batch * num_heads_q * seq_len_qo * head_size_vo;
+    std::size_t mem_size_q = static_cast<std::size_t>(batch) * num_heads_q * seq_len_qo * head_size_qk;
+    std::size_t mem_size_k = static_cast<std::size_t>(batch) * num_heads_kv * seq_len_kv * head_size_qk;
+    std::size_t mem_size_v = static_cast<std::size_t>(batch) * num_heads_kv * seq_len_kv * head_size_vo;
+    std::size_t mem_size_o = static_cast<std::size_t>(batch) * num_heads_q * seq_len_qo * head_size_vo;
 
     std::size_t mem_occupied_QKV = (mem_size_q * sizeof(ElementQ)) + (mem_size_k * sizeof(ElementK)) + 
                                    (mem_size_v * sizeof(ElementV));

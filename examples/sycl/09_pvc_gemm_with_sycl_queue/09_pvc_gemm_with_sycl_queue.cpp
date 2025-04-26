@@ -166,11 +166,11 @@ struct ExampleRunner {
 
     Memory(sycl::queue q, ProblemShapeType problem_shape_MNKL) : q(q) {
       auto [M, N, K, L] = problem_shape_MNKL;
-      block_A = sycl::malloc_device<ElementA>(M * K * L, q);
-      block_B = sycl::malloc_device<ElementB>(N * K * L, q);
-      block_C = sycl::malloc_device<ElementC>(M * N * L, q);
-      block_D = sycl::malloc_device<ElementOutput>(M * N * L, q);
-      block_ref_D = sycl::malloc_device<ElementOutput>(M * N * L, q);
+      block_A = sycl::malloc_device<ElementA>(static_cast<std::size_t>(M) * K * L, q);
+      block_B = sycl::malloc_device<ElementB>(static_cast<std::size_t>(N) * K * L, q);
+      block_C = sycl::malloc_device<ElementC>(static_cast<std::size_t>(M) * N * L, q);
+      block_D = sycl::malloc_device<ElementOutput>(static_cast<std::size_t>(M) * N * L, q);
+      block_ref_D = sycl::malloc_device<ElementOutput>(static_cast<std::size_t>(M) * N * L, q);
     }
 
     ~Memory() {
