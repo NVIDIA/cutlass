@@ -36,6 +36,7 @@
 #include "cutlass/kernel_hardware_info.hpp"
 
 #include "flash_attention_v2/collective/xe_flash_attn_mma.hpp"
+#include "flash_attention_v2/kernel/tile_scheduler.hpp"
 
 namespace cutlass::flash_attention::kernel {
 

@@ -81,7 +81,6 @@ if(CUTLASS_ENABLE_SYCL)
       test_unit_gemm_device_tensorop_epilogue_fusion_xe
       test_unit_gemm_device_mixed_input_tensorop_xe
       test_unit_gemm_device_tensorop_xe_group_gemm
-      test_unit_gemm_device_tensorop_xe
     )
   else()
     # Dummy targets if not building for Intel

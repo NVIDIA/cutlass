@@ -85,6 +85,7 @@ function(cutlass_test_unit_add_executable NAME)
     PRIVATE
     ${CUTLASS_UNIT_TEST_COMMON_DIR}
     ${__EXTRA_INCLUDE_DIRS}
+    ${CUTLASS_APPLICATIONS_DIR}
   )
   if (__WITHOUT_CUDA)
     # Avoid CUDA dependencies for host-only unit tests that provide the
@@ -108,6 +109,7 @@ function(cutlass_test_unit_add_executable NAME)
   endif()
 
   if(CUTLASS_ENABLE_SYCL)
+    add_onemkl_to_target(TARGET ${NAME})
     add_sycl_to_target(TARGET ${NAME})
   endif()
 
@@ -188,6 +190,7 @@ if (CUTLASS_ENABLE_SYCL)
   set(SUBDIRS
     cute
     gemm
+    flash_attention
   )
 else()
   set(SUBDIRS
