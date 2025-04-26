@@ -199,7 +199,7 @@ struct CollectiveMma<MainloopIntelPVC<Stages, Schedule>, TileShape_, ElementA_, 
 
       PRINT(tCrA);
       PRINT(tArA);
-      PRINT(mainloop.copy_A);
+      PRINT(mainloop.tiled_copy_a);
 
       print("======================= B: \n");
       PRINT(tCgB);
@@ -207,7 +207,7 @@ struct CollectiveMma<MainloopIntelPVC<Stages, Schedule>, TileShape_, ElementA_, 
 
       PRINT(tCrB);
       PRINT(tBrB);
-      PRINT(mainloop.copy_B);
+      PRINT(mainloop.tiled_copy_b);
       }
 #undef PRINT
 #endif

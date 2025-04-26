@@ -427,14 +427,16 @@ CUTE_HOST_DEVICE constexpr auto make_fragment_layout(TiledCopy &tiled_copy,
   Int mma_atom_iters_in_copy_N = copy_size_N / mma_atom_size_N;
   Int copy_iters_M = total_mma_atom_iters_M / mma_atom_iters_in_copy_M;
   Int copy_iters_N = total_mma_atom_iters_N / mma_atom_iters_in_copy_N;
+
   auto order = std::conditional_t<TiledCopy::is_convention_MN,
                                   Step<Step<_0, _1>, Step<_2, _4>, Step<_3, _5>>,
                                   Step<Step<_0, _1>, Step<_3, _5>, Step<_2, _4>>>{};
-
-  return make_ordered_layout(make_shape(mma_atom_shape_2d,
-                                        make_shape(mma_atom_iters_in_copy_M, copy_iters_M),
-                                        make_shape(mma_atom_iters_in_copy_N, copy_iters_N)),
-                             order);
+  auto res =  make_ordered_layout(make_shape(mma_atom_shape_2d,
+                                             make_shape(mma_atom_iters_in_copy_M, copy_iters_M),
+                                             make_shape(mma_atom_iters_in_copy_N, copy_iters_N)),
+                                  order);
+  static_assert(size(res) > 0, "Error in make_fragment_layout(), tile size might be smaller than copy atom");
+  return res;
 };
 
 // clang-format off
@@ -1655,8 +1657,8 @@ struct Copy_Traits_<XE_2D_U16x16x8_LD_T, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x16x8_LD_T, args_t...> {
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape <_16,_16>,
-                           Stride< _0, _1>>;
+  using SrcLayout = Layout<Shape <_16, Shape <_16, _8>>,
+                           Stride< _0, Stride< _1,_16>>>;
   // Map from (dst-thr,dst-val) to bit
   using DstLayout = Layout<Shape < _16,Shape <_16, _8>>,
                            Stride<_128,Stride< _1,_16>>>;
