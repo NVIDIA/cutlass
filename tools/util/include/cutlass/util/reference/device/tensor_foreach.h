@@ -30,6 +30,7 @@
  **************************************************************************************************/
 #pragma once
 
+#include <limits>
 #include <stdexcept>
 #include "cutlass/cutlass.h"
 #include "cutlass/util/reference/device/kernel/tensor_foreach.h"
@@ -133,7 +134,8 @@ struct BlockForEach {
 #if defined (CUTLASS_ENABLE_SYCL)
       // TODO: query the queue for block size
       block_size = 128;
-      grid_size = cute::ceil_div(capacity, block_size);
+      // Ensure global range doesn't overflow int
+      grid_size = std::min(capacity, static_cast<size_t>(std::numeric_limits<int>::max())) / block_size;
 #else
       // if grid_size or block_size are zero, query occupancy using the CUDA Occupancy API
       cudaError_t result = cudaOccupancyMaxPotentialBlockSize(
