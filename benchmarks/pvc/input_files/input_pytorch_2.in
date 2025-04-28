@@ -1,0 +1,49 @@
+# Benchmarks for required shapes for GEMM shape for the first Pytorch release
+
+# TODO(codeplay): Confirm that these are the right layout for what's required
+# q_mm 1,8 4096 4096 Btranspose
+PvcGemmBF16BF16FP32_RCR_5 --bm_name=bf16_bf16_fp32 --l=1 --m=8 --k=4096 --n=4096
+PvcGemmBF16BF16FP32_RCR_5 --bm_name=bf16_bf16_fp32 --l=1 --m=1 --k=4096 --n=4096 #best
+#PvcGemmBF16BF16FP32_RRR_7 --m=1 --k=4096 --n=4096
+#PvcGemmBF16BF16FP32_RRR_6 --m=8 --k=4096 --n=4096
+
+# k_mm 1,8 4096 1024 Btranspose
+# v_mm 1,8 4096 1024 Btranspose
+PvcGemmBF16BF16FP32_RCR_13 --bm_name=bf16_bf16_fp32 --l=1 --m=8 --k=4096 --n=1024 #best 
+PvcGemmBF16BF16FP32_RCR_13 --bm_name=bf16_bf16_fp32 --l=1 --m=1 --k=4096 --n=1024 #best
+#PvcGemmBF16BF16FP32_RRR_9 --m=1 --k=4096 --n=1024
+#PvcGemmBF16BF16FP32_RRR_9 --m=8 --k=4096 --n=1024
+
+# qkv_fusion 1,8 4096 6144 = (4096 + 1024 + 1024) Btranspose
+PvcGemmBF16BF16FP32_RCR_7 --bm_name=bf16_bf16_fp32 --l=1 --m=8 --k=4096 --n=6144 #best
+PvcGemmBF16BF16FP32_RCR_9 --bm_name=bf16_bf16_fp32 --l=1 --m=1 --k=4096 --n=6144 #best
+#PvcGemmBF16BF16FP32_RRR_7 --m=1 --k=4096 --n=6144
+#PvcGemmBF16BF16FP32_RRR_6 --m=8 --k=4096 --n=6144
+
+# Define the gemm configurations required for these:
+# mm_silu 1,8 4096 14336 Btranspose
+PvcGemmBF16BF16FP32_SplitK_RCR_5 --bm_name=bf16_bf16_fp32 --l=1 --m=8 --k=4096 --n=14336 #best 
+PvcGemmBF16BF16FP32_SplitK_RCR_5 --bm_name=bf16_bf16_fp32 --l=1 --m=1 --k=4096 --n=14336  #best
+#PvcGemmBF16BF16FP32_RCR_5 --bm_name=bf16_bf16_fp32 --l=1 --m=1 --k=4096 --n=14336 #broken
+#PvcGemmBF16BF16FP32_RRR_10 --m=1 --k=4096 --n=14336
+#PvcGemmBF16BF16FP32_RRR_10 --m=8 --k=4096 --n=14336
+
+# mm_fusion 1,8 4096 28672 = (2x14336) Btranspose
+PvcGemmBF16BF16FP32_SplitK_RCR_5 --bm_name=bf16_bf16_fp32 --l=1 --m=1 --k=4096 --n=28672 #best
+PvcGemmBF16BF16FP32_SplitK_RCR_5 --bm_name=bf16_bf16_fp32 --l=1 --m=8 --k=4096 --n=28672 #best
+#PvcGemmBF16BF16FP32_RRR_11 --m=1 --k=4096 --n=28672
+#PvcGemmBF16BF16FP32_RRR_11 --m=8 --k=4096 --n=28672
+
+# mm_add 1,8 14336 4096 Btranspose
+#PvcGemmBF16BF16FP32_SplitK_RCR_3 --bm_name=bf16_bf16_fp32 --l=1 --m=8 --k=14336 --n=4096 #best
+#PvcGemmBF16BF16FP32_SplitK_RCR_4 --bm_name=bf16_bf16_fp32 --l=1 --m=1 --k=14336 --n=4096 #best
+##PvcGemmBF16BF16FP32_RCR_5 --bm_name=bf16_bf16_fp32 --l=1 --m=1 --k=14336 --n=4096 #broken
+#PvcGemmBF16BF16FP32_RRR_7 --m=1 --k=14336 --n=4096
+#PvcGemmBF16BF16FP32_RRR_6 --m=8 --k=14336 --n=4096
+
+# lmhead_mm 1,8 4096 128256 Btranspose
+PvcGemmBF16BF16FP32_SplitK_RCR_5 --bm_name=bf16_bf16_fp32 --l=1 --m=8 --k=4096 --n=128256  #best
+PvcGemmBF16BF16FP32_SplitK_RCR_5 --bm_name=bf16_bf16_fp32 --l=1 --m=1 --k=4096 --n=128256 #best
+##PvcGemmBF16BF16FP32_RCR_5 --bm_name=bf16_bf16_fp32 --l=1 --m=1 --k=4096 --n=128256 #broken
+#PvcGemmBF16BF16FP32_RRR_12 --m=1 --k=4096 --n=128256
+#PvcGemmBF16BF16FP32_RRR_12 --m=8 --k=4096 --n=128256

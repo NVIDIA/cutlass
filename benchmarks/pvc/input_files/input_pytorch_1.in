@@ -1,0 +1,40 @@
+# Benchmarks for required shapes for first Pytorch release
+
+# TODO(codeplay): Confirm that these are the right layout for what's required
+# q_mm 1,8 4096 4096
+PvcGemmBF16BF16FP32_RCR_6 --bm_name=q_mm --m=1 --k=4096 --n=4096
+PvcGemmBF16BF16FP32_RCR_6 --bm_name=q_mm --m=8 --k=4096 --n=4096
+
+# k_mm 1,8 4096 1024
+# v_mm 1,8 4096 1024
+PvcGemmBF16BF16FP32_RCR_6 --bm_name=k_v_mm --m=1 --k=4096 --n=1024
+PvcGemmBF16BF16FP32_RCR_6 --bm_name=k_v_mm --m=8 --k=4096 --n=1024
+
+# qkv_fusion 1,8 4096 6144 = (4096 + 1024 + 1024)
+PvcGemmBF16BF16FP32_RCR_6 --bm_name=qkv_fusion --m=1 --k=4096 --n=6144
+PvcGemmBF16BF16FP32_RCR_6 --bm_name=qkv_fusion --m=8 --k=4096 --n=6144
+
+# mm_common 1,8 4096 4096
+PvcGemmBF16BF16FP32_RCR_6 --bm_name=mm_common --m=1 --k=4096 --n=4096
+PvcGemmBF16BF16FP32_RCR_6 --bm_name=mm_common --m=8 --k=4096 --n=4096
+
+# mm_silu 1,8 4096 14336
+PvcGemmBF16BF16FP32_RCR_6_silu --bm_name=mm_silu --m=1 --k=4096 --n=14336
+PvcGemmBF16BF16FP32_RCR_6_silu --bm_name=mm_silu --m=8 --k=4096 --n=14336
+
+# mm_mul 1,8 4096 14336
+PvcGemmBF16BF16FP32_RCR_6_mul --bm_name=mm_mul --m=1 --k=4096 --n=14336
+PvcGemmBF16BF16FP32_RCR_6_mul --bm_name=mm_mul --m=8 --k=4096 --n=14336
+
+# mm_fusion 1,8 4096 28672 = (2x14336)
+PvcGemmBF16BF16FP32_RCR_6 --bm_name=mm_fusion --m=1 --k=4096 --n=28672
+PvcGemmBF16BF16FP32_RCR_6 --bm_name=mm_fusion --m=8 --k=4096 --n=28672
+
+# mm_add 1,8 14336 4096
+PvcGemmBF16BF16FP32_RCR_6 --bm_name=mm_add --m=1 --k=14336 --n=4096 --beta=1
+PvcGemmBF16BF16FP32_RCR_6 --bm_name=mm_add --m=8 --k=14336 --n=4096 --beta=1
+
+# lmhead_mm 1,8 4096 128256
+PvcGemmBF16BF16FP32_RCR_6 --bm_name=lmhead_mm --m=1 --k=4096 --n=128256
+PvcGemmBF16BF16FP32_RCR_6 --bm_name=lmhead_mm --m=8 --k=4096 --n=128256
+
