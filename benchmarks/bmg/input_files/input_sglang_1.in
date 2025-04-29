@@ -1,6 +1,5 @@
-# Benchmarks for required shapes for first Pytorch release
+# Benchmarks for required shapes for first SGLang release
 
-# TODO(codeplay): Confirm that these are the right layout for what's required
 # q_mm 1,8 4096 4096
 PvcGemmBF16BF16FP32_RCR_6 --bm_name=q_mm --m=1 --k=4096 --n=4096
 PvcGemmBF16BF16FP32_RCR_6 --bm_name=q_mm --m=8 --k=4096 --n=4096
@@ -38,3 +37,11 @@ PvcGemmBF16BF16FP32_RCR_6 --bm_name=mm_add --m=8 --k=14336 --n=4096 --beta=1
 PvcGemmBF16BF16FP32_RCR_6 --bm_name=lmhead_mm --m=1 --k=4096 --n=128256
 PvcGemmBF16BF16FP32_RCR_6 --bm_name=lmhead_mm --m=8 --k=4096 --n=128256
 
+# Flash attention extend
+# cached(0) input(1024) query(1, 1024, 128, 192) key(1, 2048, 128, 192) value(1, 2048, 128, 128)
+PvcFMHABF16BF16FP32_RCR_h128_Causal_FixedLen --bm_name=attention_extend --seq_len_qo=1024 --seq_len_kv=2048 --batch=1 --num_heads_q=128 --num_heads_kv=128 --head_size_qk=192 --head_size_vo=128
+PvcFMHABF16BF16FP32_RCR_h128_NonCausal_FixedLen --bm_name=attention_extend --seq_len_qo=1024 --seq_len_kv=2048 --batch=1 --num_heads_q=128 --num_heads_kv=128 --head_size_qk=192 --head_size_vo=128
+
+# cached(0) input(1024) query(1, 1024, 32, 128) key(1, 2048, 8, 128) value(1, 2048, 8, 128)
+PvcFMHABF16BF16FP32_RCR_h64_Causal_FixedLen --bm_name=attention_extend --seq_len_qo=1024 --seq_len_kv=2048 --batch=1 --num_heads_q=32 --num_heads_kv=8 --head_size_qk=128 --head_size_vo=128
+PvcFMHABF16BF16FP32_RCR_h64_NonCausal_FixedLen --bm_name=attention_extend --seq_len_qo=1024 --seq_len_kv=2048 --batch=1 --num_heads_q=32 --num_heads_kv=8 --head_size_qk=128 --head_size_vo=128

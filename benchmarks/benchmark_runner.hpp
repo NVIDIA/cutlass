@@ -441,7 +441,7 @@ private:
   static void initialize_counters(::benchmark::State& state) {
     state.counters["avg_runtime_ms"] = 0;
     state.counters["best_runtime_ms"] = std::numeric_limits<double>::max();
-    state.counters["worst_runtime_ms"] = -std::numeric_limits<double>::max();
+    state.counters["worst_runtime_ms"] = std::numeric_limits<double>::lowest();
   }
 
   static void update_counters(::benchmark::State& state, double ms_elapsed) {
