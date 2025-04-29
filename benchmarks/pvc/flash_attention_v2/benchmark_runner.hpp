@@ -543,11 +543,13 @@ template <class FMHAConfiguration> struct BenchmarkRunnerFMHA {
     auto effective_seq_len_kv = Causal ? full_tile_offset + ((offset + 1) / 2.0): options.seq_len_kv;
     auto effective_seq_len_qo = Causal ? options.seq_len_qo - discard_seq_coord  : options.seq_len_qo;
    
-    double flops_qk = sizeof (ElementQ) * options.batch * options.num_heads_q * effective_seq_len_qo * effective_seq_len_kv * options.head_size_qk;
-    double flops_pv = sizeof (ElementQ) * options.batch * options.num_heads_q * effective_seq_len_qo * options.head_size_vo * effective_seq_len_kv;
+    double flops_qk = 2.0 * options.batch * options.num_heads_q * effective_seq_len_qo * effective_seq_len_kv * options.head_size_qk;
+    double flops_pv = 2.0 * options.batch * options.num_heads_q * effective_seq_len_qo * options.head_size_vo * effective_seq_len_kv;
     double gflops = (flops_qk + flops_pv) * 1e-9;
-    double gbps_qk = sizeof (ElementQ) * options.batch * options.num_heads_q * (effective_seq_len_qo * options.head_size_qk + effective_seq_len_kv * options.head_size_qk);
-    double gbps_pv = sizeof (ElementQ) * options.batch * options.num_heads_q * effective_seq_len_kv * options.head_size_vo   +  sizeof(ElementOutput) * options.batch * options.num_heads_q * effective_seq_len_qo * options.head_size_vo;
+    double gbps_qk =  options.batch * (sizeof(ElementQ) * options.num_heads_q * effective_seq_len_qo * options.head_size_qk + 
+                      sizeof(ElementK) * options.num_heads_kv * effective_seq_len_kv * options.head_size_qk);    
+    double gbps_pv = sizeof(ElementV) * options.batch * options.num_heads_kv * effective_seq_len_kv * options.head_size_vo +
+                     sizeof(ElementOutput) * options.batch * options.num_heads_q * effective_seq_len_qo * options.head_size_vo;
     double mega_bytes_transferred = (gbps_qk + gbps_pv) * (1e-6);
 
     initialize_counters(state);

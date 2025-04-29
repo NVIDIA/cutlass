@@ -539,11 +539,13 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
       auto effective_seq_len_kv = options.is_causal ? full_tile_offset + ((offset + 1) / 2.0): options.seq_len_kv;
       auto effective_seq_len_qo = options.is_causal ? options.seq_len_qo - discard_seq_coord : options.seq_len_qo;
       double cute_time = timer.seconds() / options.iterations;
-      double flops_qk = sizeof(ElementQ) * options.batch * options.num_heads_q * effective_seq_len_qo * effective_seq_len_kv * options.head_size_qk;
-      double flops_pv = sizeof(ElementQ) *  options.batch * options.num_heads_q * effective_seq_len_qo * options.head_size_vo * effective_seq_len_kv;
+      double flops_qk = 2.0 * options.batch * options.num_heads_q * effective_seq_len_qo * effective_seq_len_kv * options.head_size_qk;
+      double flops_pv = 2.0 *  options.batch * options.num_heads_q * effective_seq_len_qo * options.head_size_vo * effective_seq_len_kv;
       double tflops = ((flops_qk + flops_pv) * 1e-12) / cute_time;
-      double gbps_qk = sizeof (ElementQ) * options.batch * options.num_heads_q * (effective_seq_len_qo * options.head_size_qk + effective_seq_len_kv * options.head_size_qk);
-      double gbps_pv = sizeof (ElementQ) * options.batch * options.num_heads_q * (effective_seq_len_kv * options.head_size_vo) + sizeof (ElementOutput) * options.batch * options.num_heads_q* effective_seq_len_qo * options.head_size_vo;
+      double gbps_qk =  options.batch * (sizeof(ElementQ) * options.num_heads_q * effective_seq_len_qo * options.head_size_qk + 
+                                         sizeof(ElementK) * options.num_heads_kv * effective_seq_len_kv * options.head_size_qk);
+      double gbps_pv = sizeof(ElementV) * options.batch * options.num_heads_kv * effective_seq_len_kv * options.head_size_vo +
+                     sizeof(ElementOutput) * options.batch * options.num_heads_q * effective_seq_len_qo * options.head_size_vo;
       double gbps = ((gbps_qk + gbps_pv)  * 1e-9) / (cute_time);
       std::cout << "Batch: " << options.batch << "\tNumHeads_q: " << options.num_heads_q  << "\tNumHeads_kv: " << options.num_heads_kv  << "\tSeq Length QO: " << options.seq_len_qo
                 << "\tSeq Length KV: " << options.seq_len_kv << "\tHead Size QK: " << options.head_size_qk << "\tHead Size VO: " << options.head_size_vo
