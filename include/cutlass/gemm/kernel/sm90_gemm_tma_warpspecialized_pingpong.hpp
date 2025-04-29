@@ -130,9 +130,11 @@ public:
   static constexpr uint32_t NumEpilogueLoadThreads = NumThreadsPerWarp;      // 1 warp for C
   static constexpr uint32_t NumLoadWarpGroups = 1;
   static constexpr uint32_t NumMmaWarpGroups = 2;
+  static constexpr uint32_t NumProducerThreads = CollectiveMainloop::NumProducerThreadEvents;
   static constexpr uint32_t NumMMAThreads = size(TiledMma{});                 // 4 warp 
   static constexpr uint32_t MaxThreadsPerBlock = NumMMAThreads * NumMmaWarpGroups + (NumLoadWarpGroups * NumThreadsPerWarpGroup);
   static constexpr uint32_t MinBlocksPerMultiprocessor = 1;
+  static constexpr bool     IsMainloopAuxiliaryLoadNeeded = detail::HasAuxiliaryLoad_v<typename CollectiveMainloop::DispatchPolicy>;
   
   static_assert(NumMMAThreads == 128, "Pingpong kernel must have TiledMMA operating using 128 threads.");
   static_assert(MaxThreadsPerBlock == 384, "Pingpong kernel must have 384 threads in total.");
@@ -375,7 +377,7 @@ public:
       Mainloop = 0,
       Warp1 = 1,
       Epilogue = 2,
-      Warp3 = 3
+      MainloopAux = 3
     };
 
     // Kernel level shared memory storage
@@ -453,6 +455,7 @@ public:
     }
     mainloop_pipeline_params.is_leader = warp_group_thread_idx == 0;
     mainloop_pipeline_params.num_consumers = NumThreadsPerWarpGroup;
+    mainloop_pipeline_params.num_producers = NumProducerThreads;
     mainloop_pipeline_params.transaction_bytes = params.mainloop.tma_transaction_bytes;
     MainloopPipeline mainloop_pipeline(shared_storage.pipelines.mainloop, mainloop_pipeline_params, ClusterShape{});
 
@@ -683,6 +686,52 @@ public:
         }
         
       } // Mainloop Producer Warp End
+
+      else if (producer_warp_role == ProducerWarpRole::MainloopAux) {
+        if constexpr (IsMainloopAuxiliaryLoadNeeded) {
+          // Ensure that the prefetched kernel does not touch
+          // unflushed global memory prior to this instruction
+          cutlass::arch::wait_on_dependent_grids();
+          while (work_tile_info.is_valid()) {
+            // Compute m_coord, n_coord, l_coord with the post-tiled m-shape and n-shape
+            auto m_coord = idx2crd(work_tile_info.M_idx, shape<2>(gA_mkl));
+            auto n_coord = idx2crd(work_tile_info.N_idx, shape<2>(gB_nkl));
+            auto l_coord = idx2crd(work_tile_info.L_idx, shape<4>(gB_nkl));
+            auto blk_coord = make_coord(m_coord, n_coord, _, l_coord);
+
+            auto k_tile_iter = cute::make_coord_iterator(shape<3>(gA_mkl));
+            collective_mainloop.load_auxiliary(
+              params.mainloop,
+              mainloop_pipeline,
+              mainloop_pipe_producer_state,
+              load_inputs,
+              blk_coord,
+              k_tile_iter, k_tile_count,
+              lane_idx,
+              block_rank_in_cluster,
+              shared_storage.tensors.mainloop
+            );
+            // Update starting pipeline state for the next tile
+            mainloop_pipe_producer_state.advance(k_tile_count);
+
+            scheduler.advance_to_next_work();
+            work_tile_info = scheduler.get_current_work();
+          } // Scheduler work fetch loop
+
+          // Make sure all Consumer Warp Groups have been waited upon
+          collective_mainloop.load_tail(mainloop_pipeline, mainloop_pipe_producer_state);
+
+          if constexpr (IsSchedDynamicPersistent) {  
+            auto [next_work_tile_info, increment_pipe] = 
+              scheduler.fetch_next_work(
+                work_tile_info,
+                scheduler_pipeline,
+                scheduler_pipe_consumer_state
+              );
+          }
+          
+        }
+      }
 
       // Epilogue Producer Warp
       else if (producer_warp_role == ProducerWarpRole::Epilogue && collective_epilogue.is_producer_load_needed()) {
