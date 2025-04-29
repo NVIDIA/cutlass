@@ -54,7 +54,8 @@ jobs:
         run: |
           cmake -G Ninja  \
             -DCUTLASS_ENABLE_SYCL=ON \
-            -DDPCPP_SYCL_TARGET=intel_gpu_bmg_g21
+            -DDPCPP_SYCL_TARGET=intel_gpu_bmg_g21 \
+            -DCUTLASS_SYCL_RUNNING_CI=ON
           cmake --build .
 
       - name: Unit test

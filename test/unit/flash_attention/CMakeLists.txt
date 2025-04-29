@@ -36,10 +36,22 @@ cutlass_test_unit_add_executable(
   xe_flash_attention_fp16.cpp
 )
 
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_flash_decode_xe
+  xe_flash_decode_bf16.cpp
+  xe_flash_decode_fp16.cpp
+)
+
 add_custom_target(
   cutlass_test_unit_flash_attention
   DEPENDS
   cutlass_test_unit_flash_attention_xe
+)
+
+add_custom_target(
+  cutlass_test_unit_flash_decode
+  DEPENDS
+  cutlass_test_unit_flash_decode_xe
 )
 
 add_custom_target(
@@ -48,9 +60,18 @@ add_custom_target(
   test_unit_flash_attention_xe
 )
 
+add_custom_target(
+  test_unit_flash_decode
+  DEPENDS
+  test_unit_flash_decode_xe
+)
+
 else()
   # Dummy targets if not building for Intel
   add_custom_target(cutlass_test_unit_flash_attention)
   add_custom_target(test_unit_flash_attention)
+
+  add_custom_target(cutlass_test_unit_flash_decode)
+  add_custom_target(test_unit_flash_decode)
 
 endif()

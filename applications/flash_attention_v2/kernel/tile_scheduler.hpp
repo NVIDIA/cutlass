@@ -92,6 +92,57 @@ struct XeFlashIndividualTileScheduler {
   }
 };
 
+struct XeFlashDecodeIndividualTileScheduler {
+
+  struct Params {
+    dim3 grid;
+    FastDivmod divmod_num_heads;
+  };
+
+  bool valid_ = true;
+  Params params;
+
+  CUTLASS_DEVICE
+  XeFlashDecodeIndividualTileScheduler(Params const& params) : params(params) {}
+
+  template<class ProblemSize, class TileShape>
+  static Params to_underlying_arguments(
+      ProblemSize const& problem_size, KernelHardwareInfo hw_info,
+      TileShape const& tile_shape) {
+    using namespace cute;
+    // problem_size = [batch, num_heads_q, num_heads_kv, seq_len_qo, seq_len_kv, seq_len_kv_cache, head_size_qk, head_size_vo]
+    dim3 grid(size(ceil_div(shape<7>(problem_size), shape<1>(tile_shape))),
+              size(ceil_div(shape<3>(problem_size), 8)), // we want to process only 8 tokens per workgroup
+              size(shape<0>(problem_size) * shape<1>(problem_size)));
+    return Params{ grid, {shape<1>(problem_size)} };
+  }
+
+  template <int Num_SGs>
+  static dim3 get_grid_shape(Params const& params) {
+    return params.grid;
+  }
+
+  CUTLASS_DEVICE
+  bool is_valid() {
+    return valid_;
+  }
+
+  CUTLASS_DEVICE
+  auto get_block_coord() {
+    using namespace cute;
+    int block_decode = BlockIdxZ();
+    int bidh;
+    params.divmod_num_heads(block_decode, bidh, block_decode);
+    return make_coord(BlockIdxX(), BlockIdxY(), block_decode, bidh);
+  }
+
+  CUTLASS_DEVICE
+  XeFlashDecodeIndividualTileScheduler& operator++() {
+    valid_ = false;
+    return *this;
+  }
+};
+
 ////////////////////////////////////////////////////////////////////////////////
 
 struct XeFlashPersistentTileScheduler {
@@ -180,6 +231,7 @@ struct XeFlashPersistentTileScheduler {
 
   struct IndividualScheduler{};
   struct PersistentScheduler{};
+  struct FlashDecodeIndividualScheduler{};
 
   namespace detail
   {
@@ -222,6 +274,15 @@ struct XeFlashPersistentTileScheduler {
         cute::enable_if_t<cute::is_same_v<ArchTag, cutlass::arch::IntelPVC>>>
     {
       using Scheduler = kernel::XeFlashPersistentTileScheduler;
+    };
+
+    template <class ArchTag>
+    struct TileSchedulerSelector<
+        FlashDecodeIndividualScheduler,
+        ArchTag,
+        cute::enable_if_t<cute::is_same_v<ArchTag, cutlass::arch::IntelPVC>>>
+    {
+      using Scheduler = kernel::XeFlashDecodeIndividualTileScheduler;
     };
   } // namespace detail
 

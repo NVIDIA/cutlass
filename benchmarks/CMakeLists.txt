@@ -60,7 +60,6 @@ function(cutlass_benchmark_add_executable NAME)
     ${NAME}
     PRIVATE
     ${CUTLASS_APPLICATIONS_DIR}
-    ${CUTLASS_EXAMPLES_DIR}
   )
 
   if (CUTLASS_ENABLE_SYCL)

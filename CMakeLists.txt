@@ -105,7 +105,9 @@ endif()
 
 option(CUTLASS_ENABLE_SYCL "Enable SYCL" OFF)
 option(CUTLASS_SYCL_PROFILING_ENABLED "Use SYCL events to calculate device execution time" OFF)
-
+option(CUTLASS_SYCL_RUNNING_CI "Enable this option when building in a CI environment.
+                                It activates CI specific configurations, such as additional checks or selectively
+                                disabling tests that cannot run in CI." OFF)
 if (CUTLASS_ENABLE_SYCL)
   set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 

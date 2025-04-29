@@ -28,9 +28,17 @@
 
 
 set(CUTLASS_APPLICATIONS_DIR ${CMAKE_SOURCE_DIR}/applications)
-set(CUTLASS_EXAMPLES_DIR ${CMAKE_SOURCE_DIR}/examples)
 
 cutlass_example_add_executable(
   06_pvc_prefill_attention
   06_pvc_prefill_attention.cpp
 )
+
+# Disable decode attention on CI to avoid an issue with the current version of IGC
+if (NOT CUTLASS_SYCL_RUNNING_CI)
+  # TODO (Codeplay): Re-enable this example once the IGC issue is resolved
+  cutlass_example_add_executable(
+    06_pvc_decode_attention
+    06_pvc_decode_attention.cpp
+  )
+endif()
