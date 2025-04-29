@@ -1,4 +1,4 @@
-# Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
+# Copyright (c) 2024 - 2025 Codeplay Software Ltd. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -27,20 +27,10 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-if(SYCL_INTEL_TARGET)
-  add_subdirectory(00_pvc_gemm)
-  add_subdirectory(01_pvc_gemm_with_collective_builder)
-  add_subdirectory(02_pvc_gemm_mixed_dtype)
-  add_subdirectory(03_pvc_gemm_streamk)
-  add_subdirectory(04_pvc_grouped_gemm)
-  add_subdirectory(05_pvc_gemm_with_epilogues)
-  add_subdirectory(06_pvc_flash_attention)
-  add_subdirectory(07_pvc_dual_gemm)
-  add_subdirectory(08_pvc_gemm_f8)
-  add_subdirectory(09_pvc_gemm_with_sycl_queue)
-  add_subdirectory(10_pvc_flash_attention_cachedKV)
-endif()
+set(CUTLASS_APPLICATIONS_DIR ${CMAKE_SOURCE_DIR}/applications)
+set(CUTLASS_EXAMPLES_DIR ${CMAKE_SOURCE_DIR}/examples)
 
-if (CUTLASS_ENABLE_SYCL)
-  add_subdirectory(generics)
-endif()
+cutlass_example_add_executable(
+  10_pvc_prefill_attention_cachedKV
+  10_pvc_prefill_attention_cachedKV.cpp
+)
