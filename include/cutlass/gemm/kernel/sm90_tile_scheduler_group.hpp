@@ -66,18 +66,18 @@ public:
     int32_t M_idx = 0;
     int32_t N_idx = 0;
     int32_t L_idx = 0;
-    bool is_valid_tile = false;
+    int32_t is_valid_tile = 0;
 
     CUTLASS_HOST_DEVICE
     bool
     is_valid() const {
-      return is_valid_tile;
+      return is_valid_tile != 0;
     }
 
     CUTLASS_HOST_DEVICE
     static WorkTileInfo
     invalid_work_tile() {
-      return {-1, -1, -1, false};
+      return {-1, -1, -1, 0};
     }
 
     CUTLASS_HOST_DEVICE
@@ -304,7 +304,7 @@ public:
       int32_t log_swizzle_size, 
       RasterOrder raster_order) {
 
-    bool valid_tile = true;
+    int32_t valid_tile = 1;
 
     // Use a warp to "speculatively" check if the work tile maps to the next 32 groups
     int lane_idx = canonical_lane_idx();
