@@ -535,13 +535,19 @@ template <class FMHAConfiguration> struct BenchmarkRunnerFMHA {
     extra_label << "layoutV=RowMajor ";
 
     state.SetLabel(extra_label.str());
-
-    double flops_qk = 2.0 * options.batch * options.num_heads_q * options.seq_len_qo * options.seq_len_kv * options.head_size_qk;
-    double flops_pv = 2.0 * options.batch * options.num_heads_q * options.seq_len_qo * options.head_size_vo * options.seq_len_kv;
+    // when seq_len_qo is not equal to seq_len_kv we use bottom up approach for the masking. 
+    // Following changes will adjust the effective_seq_len_kv when masking applied for such cases. 
+    auto offset = cute::min(options.seq_len_qo, options.seq_len_kv);
+    auto discard_seq_coord = options.seq_len_qo - offset;
+    auto full_tile_offset = options.seq_len_kv - offset;
+    auto effective_seq_len_kv = Causal ? full_tile_offset + (options.seq_len_kv / 2.0): options.seq_len_kv;
+    auto effective_seq_len_qo = Causal ? options.seq_len_qo - discard_seq_coord : options.seq_len_qo;
+   
+    double flops_qk = 2.0 * options.batch * options.num_heads_q * effective_seq_len_qo * effective_seq_len_kv * options.head_size_qk;
+    double flops_pv = 2.0 * options.batch * options.num_heads_q * effective_seq_len_qo * options.head_size_vo * effective_seq_len_kv;
     double gflops = (flops_qk + flops_pv) * 1e-9;
-
-    double gbps_qk = 2.0 * options.batch * options.num_heads_q * (options.seq_len_qo * options.head_size_qk + options.seq_len_kv * options.head_size_qk);
-    double gbps_pv = 2.0 * options.batch * options.num_heads_q * (options.seq_len_kv * options.seq_len_qo + options.seq_len_qo * options.head_size_vo);
+    double gbps_qk = 2.0 * options.batch * options.num_heads_q * (effective_seq_len_qo * options.head_size_qk + effective_seq_len_kv * options.head_size_qk);
+    double gbps_pv = 2.0 * options.batch * options.num_heads_q * (effective_seq_len_kv * effective_seq_len_qo + effective_seq_len_qo * options.head_size_vo);
     double mega_bytes_transferred = (gbps_qk + gbps_pv) * (1e-6);
 
     initialize_counters(state);
