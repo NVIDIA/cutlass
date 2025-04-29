@@ -94,6 +94,13 @@ struct Has_SwapAB <T, CUTE_STL_NAMESPACE::void_t<decltype(T::SwapAB)>>
 template <typename T>
 static constexpr bool Has_SwapAB_v = Has_SwapAB<T>::value;
 
+// additional producer warp role check for block scaling mainloop
+template<typename T>
+struct HasAuxiliaryLoad : cute::false_type{};
+
+template <typename T>
+static constexpr bool HasAuxiliaryLoad_v = HasAuxiliaryLoad<T>::value;
+
 } // namespace kernel::detail
 
 //////////////////////////////////////////////////////////////////////////////
@@ -119,6 +126,7 @@ struct KernelPtrArrayTmaWarpSpecializedPingpong { };
 
 // FP8 related policies (including Blocked Scaled Accumulation)
 struct KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum: KernelTmaWarpSpecializedCooperative { };
+struct KernelTmaWarpSpecializedPingpongFP8BlockScaledAccum: KernelTmaWarpSpecializedPingpong { };
 struct KernelPtrArrayTmaWarpSpecializedCooperativeFP8BlockScaledAccum: KernelPtrArrayTmaWarpSpecializedCooperative { };
 struct KernelPtrArrayTmaWarpSpecializedPingpongFP8BlockScaledAccum: KernelPtrArrayTmaWarpSpecializedPingpong { };
 
@@ -302,13 +310,14 @@ struct MainloopSm90TmaGmmaWarpSpecializedFP8
 template<
   int Stages_,
   class ClusterShape_ = Shape<_1,_1,_1>,
-  class KernelSchedule = KernelTmaWarpSpecialized
+  class KernelSchedule = KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum
 >
 struct MainloopSm90TmaGmmaWarpSpecializedBlockScalingFP8
   : MainloopSm90TmaGmmaWarpSpecialized<Stages_, ClusterShape_, KernelSchedule> {
   static_assert(
-    cute::is_same_v<KernelSchedule, KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum>,
-    "KernelSchedule must be one of the warp specialized policies");
+    cute::is_same_v<KernelSchedule, KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum> ||
+    cute::is_same_v<KernelSchedule, KernelTmaWarpSpecializedPingpongFP8BlockScaledAccum>,
+    "KernelSchedule must be one of the warp specialized FP8 block scale policies");
 };
 
 // n-buffer in smem (Hopper TMA), pipelined with Hopper GMMA and TMA, Warp specialized dynamic schedule for Ptr-Array and Grouped Gemm
@@ -389,7 +398,7 @@ struct MainloopSm90ArrayTmaGmmaWarpSpecializedMixedInput {
 template<
   int Stages_,
   class ClusterShape_ = Shape<_1,_1,_1>,
-  class KernelSchedule = KernelPtrArrayTmaWarpSpecializedCooperative
+  class KernelSchedule = KernelPtrArrayTmaWarpSpecializedCooperativeFP8BlockScaledAccum
 >
 struct MainloopSm90ArrayTmaGmmaWarpSpecializedBlockScaling
   : MainloopSm90ArrayTmaGmmaWarpSpecialized<Stages_, ClusterShape_, KernelSchedule> {
@@ -399,7 +408,7 @@ struct MainloopSm90ArrayTmaGmmaWarpSpecializedBlockScaling
       KernelPtrArrayTmaWarpSpecializedCooperativeFP8BlockScaledAccum,
       KernelPtrArrayTmaWarpSpecializedPingpongFP8BlockScaledAccum
     >,
-    "KernelSchedule must be one of the warp specialized policies");
+    "KernelSchedule must be one of the warp specialized FP8 block scale policies");
 };
 
 
@@ -559,21 +568,35 @@ struct KernelTmaWarpSpecializedCooperativeSparseBlockScaledSm120 {
 
 // Auxiliary Load Tag.
 
-template<class Policy>
-struct IsAuxiliaryLoadNeeded : cute::false_type{};
+namespace kernel::detail {
 
 template<
   int Stages,
   class ClusterShape,
   class KernelSchedule
 >
-struct IsAuxiliaryLoadNeeded<
+struct HasAuxiliaryLoad<
   MainloopSm90ArrayTmaGmmaWarpSpecializedBlockScaling<
     Stages,
     ClusterShape,
     KernelSchedule
   >
 > : cute::true_type{};
+
+template<
+  int Stages,
+  class ClusterShape,
+  class KernelSchedule
+>
+struct HasAuxiliaryLoad<
+  MainloopSm90TmaGmmaWarpSpecializedBlockScalingFP8<
+    Stages,
+    ClusterShape,
+    KernelSchedule
+  >
+> : cute::true_type{};
+
+} // namespace kernel::detail
 
 //////////////////////////////////////////////////////////////////////////////
 

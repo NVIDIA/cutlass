@@ -166,7 +166,7 @@ public:
   static constexpr uint32_t MaxThreadsPerBlock = CUTE_STATIC_V(size(TiledMma{})) + (NumMmaWarpGroups * NumThreadsPerWarpGroup);
   static constexpr uint32_t MinBlocksPerMultiprocessor = 1;
   static constexpr uint32_t NumProducerThreads = CollectiveMainloop::NumProducerThreadEvents;
-  static constexpr bool     IsMainloopAuxiliaryLoadNeeded = IsAuxiliaryLoadNeeded<typename CollectiveMainloop::DispatchPolicy>::value;
+  static constexpr bool     IsMainloopAuxiliaryLoadNeeded = detail::HasAuxiliaryLoad_v<typename CollectiveMainloop::DispatchPolicy>;
 
   /// Register requirement for Load and Math WGs
   static constexpr uint32_t LoadRegisterRequirement = 40;
