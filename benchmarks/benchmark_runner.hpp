@@ -283,7 +283,7 @@ struct BenchmarkRunnerGemm {
   }
 
   /// Initialize operands to be used in the GEMM and reference GEMM
-  void initialize(const ProblemShapeType& problem_size) {
+  void initialize(::benchmark::State& state, const ProblemShapeType& problem_size) {
     auto problem_shape_MNKL = cute::append<4>(problem_size, 1);
     auto [M, N, K, L] = problem_shape_MNKL;
 
@@ -309,28 +309,31 @@ struct BenchmarkRunnerGemm {
       }
     }
 
-    for (int i=0; i < count; i++) {
-      block_A[i].reset(size_A);
-      block_B[i].reset(size_B);
-      block_C[i].reset(size_C);
-      initialize_block(block_A[i], seed + i);
-      initialize_block(block_B[i], seed + i);
-      initialize_block(block_C[i], seed + i);
-      if constexpr (epi_is_deeltactmul) {
-        block_Aux[i].reset(size_C);
-        initialize_block(block_Aux[i], seed + i);
+    try {
+      for (int i = 0; i < count; i++) {
+        block_A[i].reset(size_A);
+        block_B[i].reset(size_B);
+        block_C[i].reset(size_C);
+        initialize_block(block_A[i], seed + i);
+        initialize_block(block_B[i], seed + i);
+        initialize_block(block_C[i], seed + i);
+        if constexpr (epi_is_deeltactmul) {
+          block_Aux[i].reset(size_C);
+          initialize_block(block_Aux[i], seed + i);
+        }
       }
+
+      block_D.reset(size_C);
+      block_ref_D.reset(size_C);
+    } catch (std::exception const &e) {
+      state.SkipWithError(e.what());
     }
-
-    block_D.reset(size_C);
-    block_ref_D.reset(size_C);
-
   }
 
   void run(::benchmark::State& state, const GEMMOptions& options, const KernelHardwareInfo& hw_info) {
     ProblemShapeType problem_size = ProblemShapeType{options.m, options.n, options.k, options.l};
 
-    initialize(problem_size);
+    initialize(state, problem_size);
 
     typename Gemm::GemmKernel::Arguments arguments = GemmConfiguration::defaultArguments();
     arguments.mode = gemm::GemmUniversalMode::kGemm;
@@ -349,9 +352,13 @@ struct BenchmarkRunnerGemm {
     size_t workspace_size = Gemm::get_workspace_size(arguments);
     device_memory::allocation<uint8_t> workspace(workspace_size);
 
-    gemm_op.can_implement(arguments);
+    if (gemm_op.can_implement(arguments) != cutlass::Status::kSuccess)
+      state.SkipWithError("GEMM unable to implement given args.");
 
-    gemm_op.initialize(arguments, workspace.get());
+    if (gemm_op.initialize(arguments, workspace.get()) != cutlass::Status::kSuccess)
+      state.SkipWithError("GEMM failed to initialize.");
+
+    if (state.error_occurred()) return;
 
     // Run the GEMM
     gemm_op.run();
