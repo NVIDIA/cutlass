@@ -126,6 +126,7 @@ public:
   static constexpr uint32_t MinBlocksPerMultiprocessor = 1;
   static constexpr uint32_t NumFixupBarriers = NumMmaWarpGroups;
   static constexpr uint32_t NumProducerThreads = CollectiveMainloop::NumProducerThreadEvents;
+  static constexpr bool     IsMainloopAuxiliaryLoadNeeded = detail::HasAuxiliaryLoad_v<typename CollectiveMainloop::DispatchPolicy>;
 
   /// Register requirement for Load and Math WGs
   static constexpr int RegsPerThread =
@@ -369,7 +370,7 @@ public:
       Mainloop = 0,
       Warp1 = 1,
       Epilogue = 2,
-      Warp3 = 3
+      MainloopAux = 3
     };
 
 
@@ -643,7 +644,53 @@ public:
         // Make sure all Consumer Warp Groups have been waited upon
         collective_mainloop.load_tail(mainloop_pipeline, mainloop_pipe_producer_state);
 
-      } // Mainloop Producer Warp End
+      }
+      else if (producer_warp_role == ProducerWarpRole::MainloopAux) {
+        if constexpr (IsMainloopAuxiliaryLoadNeeded) {
+          while (work_tile_info.is_valid()) {
+            if (!TileScheduler::valid_warpgroup_in_work_tile(work_tile_info)) {
+              auto [next_work_tile_info, increment_pipe] = scheduler.fetch_next_work(work_tile_info);
+              work_tile_info = next_work_tile_info;
+              continue;
+            }
+
+            // Compute m_coord, n_coord, l_coord with the post-tiled m-shape and n-shape
+            auto m_coord = idx2crd(work_tile_info.M_idx, shape<2>(gA_mkl));
+            auto n_coord = idx2crd(work_tile_info.N_idx, shape<2>(gB_nkl));
+            auto l_coord = idx2crd(work_tile_info.L_idx, shape<4>(gB_nkl));
+            auto blk_coord = make_coord(m_coord, n_coord, _, l_coord);
+
+            // Get the number of K tiles to compute for this work as well as the starting K tile offset of the work.
+            auto work_k_tile_count = TileScheduler::get_work_k_tile_count(work_tile_info, problem_shape_MNKL, blk_shape);
+            auto work_k_tile_start = TileScheduler::get_work_k_tile_start(work_tile_info);
+            auto k_tile_iter = cute::make_coord_iterator(idx2crd(work_k_tile_start, shape<3>(gA_mkl)), shape<3>(gA_mkl));
+
+            collective_mainloop.load_auxiliary(
+              params.mainloop,
+              mainloop_pipeline,
+              mainloop_pipe_producer_state,
+              load_inputs,
+              blk_coord,
+              k_tile_iter, work_k_tile_count,
+              lane_idx,
+              block_rank_in_cluster,
+              shared_storage.tensors.mainloop
+            );
+            // Update starting pipeline state for the next tile
+            mainloop_pipe_producer_state.advance(work_k_tile_count);
+
+            // Get next work tile
+            auto [next_work_tile_info, increment_pipe] = scheduler.fetch_next_work(
+              work_tile_info,
+              scheduler_pipeline,
+              scheduler_pipe_consumer_state
+            );
+
+            work_tile_info = next_work_tile_info;
+          } // Scheduler work fetch loop
+
+        }
+      }
 
       // Epilogue Producer Warp
       else if (producer_warp_role == ProducerWarpRole::Epilogue && is_epi_load_needed) {

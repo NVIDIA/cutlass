@@ -322,7 +322,11 @@ struct DescriptorIterator
   CUTE_HOST_DEVICE constexpr
   DescriptorIterator operator+(Index const& offset) const
   {
-    return { GmmaDescriptor{desc_ + uint64_t(offset)} };
+    // Use 32bit calculation rather than 64 bit calculation as we only update the part of desc
+    GmmaDescriptor ret;
+    ret.reg32_[0] = desc_.reg32_[0] + uint32_t(offset);
+    ret.reg32_[1] = desc_.reg32_[1];
+    return { ret };
   }
 };
 

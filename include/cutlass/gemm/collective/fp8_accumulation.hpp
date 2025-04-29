@@ -77,7 +77,6 @@ private:
   // `multiply` scale the partial accumulators and `add` to main accumulator (FFMA).
   CUTLASS_DEVICE
   void scale_core(ElementAccumulator const &scale) {
-    warpgroup_wait<0>();
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < size(accum_); ++i) {
       accum_(i) += accum_temp_(i) * scale;
@@ -96,7 +95,6 @@ private:
 
     static_assert(LayoutAccum{}.shape() == LayoutScale{}.shape(), "Accumulator and scale must have same shape.");
 
-    warpgroup_wait<0>();
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < size(accum_); ++i) {
       accum_(i) += accum_temp_(i) * scale(i);
@@ -121,7 +119,6 @@ private:
     static_assert(LayoutAccum{}.shape() == LayoutScaleA{}.shape(), "Accumulator and scaleA must have same shape.");
     static_assert(LayoutAccum{}.shape() == LayoutScaleB{}.shape(), "Accumulator and scaleB must have same shape.");
 
-    warpgroup_wait<0>();
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < size(accum_); ++i) {
       accum_(i) += accum_temp_(i) * scaleA(i) * scaleB(i);
