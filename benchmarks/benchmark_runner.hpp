@@ -349,8 +349,13 @@ struct BenchmarkRunnerGemm {
 
     Gemm gemm_op;
 
+    device_memory::allocation<uint8_t> workspace;
     size_t workspace_size = Gemm::get_workspace_size(arguments);
-    device_memory::allocation<uint8_t> workspace(workspace_size);
+    try {
+      workspace.reset(workspace_size);
+    } catch (std::exception const &e) {
+      state.SkipWithError(e.what());
+    }
 
     if (gemm_op.can_implement(arguments) != cutlass::Status::kSuccess)
       state.SkipWithError("GEMM unable to implement given args.");
