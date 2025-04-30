@@ -43,5 +43,5 @@ PvcFMHABF16BF16FP32_RCR_h128_Causal_FixedLen --bm_name=attention_extend --seq_le
 PvcFMHABF16BF16FP32_RCR_h128_NonCausal_FixedLen --bm_name=attention_extend --seq_len_qo=1024 --seq_len_kv=2048 --batch=1 --num_heads_q=128 --num_heads_kv=128 --head_size_qk=192 --head_size_vo=128
 
 # cached(0) input(1024) query(1, 1024, 32, 128) key(1, 2048, 8, 128) value(1, 2048, 8, 128)
-PvcFMHABF16BF16FP32_RCR_h64_Causal_FixedLen --bm_name=attention_extend --seq_len_qo=1024 --seq_len_kv=2048 --batch=1 --num_heads_q=32 --num_heads_kv=8 --head_size_qk=128 --head_size_vo=128
-PvcFMHABF16BF16FP32_RCR_h64_NonCausal_FixedLen --bm_name=attention_extend --seq_len_qo=1024 --seq_len_kv=2048 --batch=1 --num_heads_q=32 --num_heads_kv=8 --head_size_qk=128 --head_size_vo=128
+PvcFMHAFP16FP16FP32_RCR_h128_Causal_FixedLen --bm_name=attention_extend --seq_len_qo=1024 --seq_len_kv=2048 --batch=1 --num_heads_q=32 --num_heads_kv=8 --head_size_qk=128 --head_size_vo=128
+PvcFMHAFP16FP16FP32_RCR_h128_NonCausal_FixedLen --bm_name=attention_extend --seq_len_qo=1024 --seq_len_kv=2048 --batch=1 --num_heads_q=32 --num_heads_kv=8 --head_size_qk=128 --head_size_vo=128
