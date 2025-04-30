@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2025 - 2025 Codeplay Software Ltd. All rights reserved.
+ * Copyright (c) 2024 - 2025 Codeplay Software Ltd. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -29,7 +29,7 @@
  *
  **************************************************************************************************/
 /*! \file
-    \brief Tests for device-wide Flash Attention interface
+    \brief Tests for device-wide Flash Attention Decode interface
 */
 
 #pragma once
@@ -39,9 +39,9 @@
 #include "flash_attention_v2/collective/fmha_fusion.hpp"
 #include "flash_attention_v2/kernel/tile_scheduler.hpp"
 #include "cutlass/util/packed_stride.hpp"
-#include "flash_attention_v2/kernel/xe_flash_attn_gemm.hpp"
-#include "flash_attention_v2/collective/xe_flash_attn_epilogue.hpp"
-#include "flash_attention_v2/collective/xe_flash_attn_softmax_epilogue.hpp"
+#include "flash_attention_v2/kernel/xe_flash_attn_decode_gemm.hpp"
+#include "flash_attention_v2/collective/xe_flash_attn_decode_epilogue.hpp"
+#include "flash_attention_v2/collective/xe_flash_attn_decode_softmax_epilogue.hpp"
 #include "cutlass/util/GPU_Clock.hpp"
 #include "cutlass/util/sycl_event_manager.hpp"
 
@@ -92,46 +92,53 @@ bool initialize_block(
   return true;
 }
 
-template <typename FlashAttention>
+template <typename FlashDecode>
 struct TestbedImpl {
   using LayoutQ = cutlass::layout::RowMajor;
   using LayoutK = cutlass::layout::ColumnMajor;
   using LayoutV = cutlass::layout::RowMajor;
   using LayoutO = cutlass::layout::RowMajor;
 
-  using StrideQ = typename FlashAttention::StrideQ;
-  using StrideK = typename FlashAttention::StrideK;
-  using StrideV = typename FlashAttention::StrideV;
-  using StrideO = typename FlashAttention::StrideO;
+  using StrideQ = typename FlashDecode::StrideQ;
+  using StrideK = typename FlashDecode::StrideK;
+  using StrideV = typename FlashDecode::StrideV;
+  using StrideO = typename FlashDecode::StrideO;
 
-  using ElementQ = typename FlashAttention::ElementQ;
-  using ElementK = typename FlashAttention::ElementK;
-  using ElementV = typename FlashAttention::ElementV;
-  using ElementAcc = typename FlashAttention::ElementAccumulator;
+  using ElementQ = typename FlashDecode::ElementQ;
+  using ElementK = typename FlashDecode::ElementK;
+  using ElementV = typename FlashDecode::ElementV;
+  using ElementAcc = typename FlashDecode::ElementAccumulator;
 
-  using CollectiveMainloop = typename FlashAttention::CollectiveMainloop;
-  using CollectiveEpilogue = typename FlashAttention::CollectiveEpilogue;
+  using CollectiveMainloop = typename FlashDecode::CollectiveMainloop;
+  using CollectiveEpilogue = typename FlashDecode::CollectiveEpilogue;
   using ElementOutput = typename CollectiveEpilogue::ElementOutput;
   using ElementCompute = typename CollectiveEpilogue::ElementCompute;
   using ElementAccumulator = typename CollectiveEpilogue::ElementAccumulator;
 
-  using ProblemShapeType = typename FlashAttention::ProblemShape;
+  using ProblemShapeType = typename FlashDecode::ProblemShape;
   static constexpr bool HasCausalMask = CollectiveMainloop::CausalMask;
   static constexpr bool isVarLen = CollectiveMainloop::is_var_len;
 
   StrideQ stride_Q;
   StrideK stride_K;
   StrideV stride_V;
+  StrideK stride_K_cache;
+  StrideV stride_V_cache;
   StrideO stride_O;
   uint64_t seed = 0;
+  bool use_kv_cache;
 
   std::vector<int> cumulative_seqlen_q;
   std::vector<int> cumulative_seqlen_kv;
+  std::vector<int> cumulative_seqlen_kv_cache;
   cutlass::DeviceAllocation<int> device_cumulative_seqlen_q;
   cutlass::DeviceAllocation<int> device_cumulative_seqlen_kv;
+  cutlass::DeviceAllocation<int> device_cumulative_seqlen_kv_cache;
   cutlass::DeviceAllocation<ElementQ> block_Q;
   cutlass::DeviceAllocation<ElementK> block_K;
   cutlass::DeviceAllocation<ElementV> block_V;
+  cutlass::DeviceAllocation<ElementK> block_K_cache;
+  cutlass::DeviceAllocation<ElementV> block_V_cache;
   cutlass::DeviceAllocation<ElementOutput> block_O;
   cutlass::DeviceAllocation<ElementOutput> block_ref_O;
 
@@ -158,22 +165,34 @@ struct TestbedImpl {
       problem_shape = problem_shape_in;
     }
 
-    auto [batch, num_heads_q, num_heads_kv, seq_len_qo, seq_len_kv, head_size_qk, head_size_vo] = problem_size;
+    auto [batch, num_heads_q, num_heads_kv, seq_len_qo, seq_len_kv, seq_len_kv_cache, head_size_qk, head_size_vo] = problem_size;
 
     stride_Q = cutlass::make_cute_packed_stride(StrideQ{}, cute::make_shape(seq_len_qo, head_size_qk, batch * num_heads_q));
     stride_K = cutlass::make_cute_packed_stride(StrideK{}, cute::make_shape(seq_len_kv, head_size_qk, batch * num_heads_kv));
     stride_V = cutlass::make_cute_packed_stride(StrideV{}, cute::make_shape(head_size_vo, seq_len_kv, batch * num_heads_kv));
+    stride_K_cache = cutlass::make_cute_packed_stride(StrideK{}, cute::make_shape(seq_len_kv_cache, head_size_qk, batch * num_heads_kv));
+    stride_V_cache = cutlass::make_cute_packed_stride(StrideV{}, cute::make_shape(head_size_vo, seq_len_kv_cache, batch * num_heads_kv));
     stride_O = cutlass::make_cute_packed_stride(StrideO{}, cute::make_shape(seq_len_qo, head_size_vo, batch * num_heads_q));
 
     block_Q.reset(batch * num_heads_q * seq_len_qo * head_size_qk);
     block_K.reset(batch * num_heads_kv * seq_len_kv * head_size_qk);
     block_V.reset(batch * num_heads_kv * seq_len_kv * head_size_vo);
+    block_K_cache.reset(batch * num_heads_kv * seq_len_kv_cache * head_size_qk);
+    block_V_cache.reset(batch * num_heads_kv * seq_len_kv_cache * head_size_vo);
     block_O.reset(batch * num_heads_q * seq_len_qo * head_size_vo);
     block_ref_O.reset(batch * num_heads_q * seq_len_qo * head_size_vo);
 
     initialize_block(block_Q, seed + 2023);
     initialize_block(block_K, seed + 2022);
     initialize_block(block_V, seed + 2021);
+    initialize_block(block_K_cache, seed + 2024);
+    initialize_block(block_V_cache, seed + 2025);
+
+    if (seq_len_kv_cache > 0) {
+      use_kv_cache = true;
+    } else {
+      use_kv_cache = false;
+    }
 
     if (!cumulative_seqlen_q.empty()) {
       device_cumulative_seqlen_q.reset(cumulative_seqlen_q.size());
@@ -186,9 +205,15 @@ struct TestbedImpl {
         cumulative_seqlen_kv.data(), cumulative_seqlen_kv.size());
     }
 
+    if (!cumulative_seqlen_kv_cache.empty()) {
+      device_cumulative_seqlen_kv_cache.reset(cumulative_seqlen_kv_cache.size());
+      device_cumulative_seqlen_kv_cache.copy_from_host(
+        cumulative_seqlen_kv_cache.data(), cumulative_seqlen_kv_cache.size());
+    }
     if constexpr (isVarLen) {
       cute::get<3>(problem_shape).cumulative_length = device_cumulative_seqlen_q.get();
       cute::get<4>(problem_shape).cumulative_length = device_cumulative_seqlen_kv.get();
+      cute::get<5>(problem_shape).cumulative_length = device_cumulative_seqlen_kv_cache.get();
     }
 
     return problem_shape;
@@ -204,6 +229,7 @@ struct TestbedImpl {
     std::mt19937 rng(0x202305151552ull);
     std::normal_distribution<double> dist_q(cute::get<3>(problem_size), cute::get<3>(problem_size) / 2);
     std::normal_distribution<double> dist_kv(cute::get<4>(problem_size), cute::get<4>(problem_size) / 2);
+    std::normal_distribution<double> dist_kv_cache(cute::get<5>(problem_size), cute::get<5>(problem_size) / 2);
 
     auto generate_positive_int = [](auto& dist, auto& gen) {
       int result = 0;
@@ -215,37 +241,46 @@ struct TestbedImpl {
 
     cumulative_seqlen_q = {0};
     cumulative_seqlen_kv = {0};
+    cumulative_seqlen_kv_cache = {0};
 
     int total_seqlen_q = 0;
     int total_seqlen_kv = 0;
+    int total_seqlen_kv_cache = 0;
     int max_seqlen_q = 0;
     int max_seqlen_kv = 0;
+    int max_seqlen_kv_cache = 0;
 
     for (int i = 0; i < num_batches; i++) {
       int seqlen_q = VarlenSame ? cute::get<3>(problem_size) : generate_positive_int(dist_q, rng);
       int seqlen_kv = VarlenSame ? cute::get<4>(problem_size) : generate_positive_int(dist_kv, rng);
+      int seqlen_kv_cache = VarlenSame ? cute::get<5>(problem_size) : generate_positive_int(dist_kv_cache, rng);
 
       total_seqlen_q += seqlen_q;
       total_seqlen_kv += seqlen_kv;
+      total_seqlen_kv_cache += seqlen_kv_cache;
 
       max_seqlen_q = std::max(max_seqlen_q, seqlen_q);
       max_seqlen_kv = std::max(max_seqlen_kv, seqlen_kv);
+      max_seqlen_kv_cache = std::max(max_seqlen_kv_cache, seqlen_kv_cache);
 
       cumulative_seqlen_q.push_back(cumulative_seqlen_q.back() + seqlen_q);
       cumulative_seqlen_kv.push_back(cumulative_seqlen_kv.back() + seqlen_kv);
+      cumulative_seqlen_kv_cache.push_back(cumulative_seqlen_kv_cache.back() + seqlen_kv_cache);
     }
 
     ProblemShape problem_size_for_init = problem_size;
     cute::get<0>(problem_size_for_init) = 1;
     cute::get<3>(problem_size_for_init) = total_seqlen_q;
     cute::get<4>(problem_size_for_init) = total_seqlen_kv;
+    cute::get<5>(problem_size_for_init) = total_seqlen_kv_cache;
 
     ProblemShapeType problem_size_for_launch;
 
     cute::get<3>(problem_size_for_launch) = cutlass::fmha::collective::VariableLength{max_seqlen_q};
     cute::get<4>(problem_size_for_launch) = cutlass::fmha::collective::VariableLength{max_seqlen_kv};
-    cute::get<5>(problem_size_for_launch) = cute::get<5>(problem_size);
     cute::get<6>(problem_size_for_launch) = cute::get<6>(problem_size);
+    cute::get<5>(problem_size_for_launch) = cutlass::fmha::collective::VariableLength{max_seqlen_kv_cache};
+    cute::get<7>(problem_size_for_launch) = cute::get<7>(problem_size);
     cute::get<0>(problem_size_for_launch) = cute::get<0>(problem_size);
     cute::get<1>(problem_size_for_launch) = cute::get<1>(problem_size);
     cute::get<2>(problem_size_for_launch) = cute::get<2>(problem_size);
@@ -255,53 +290,102 @@ struct TestbedImpl {
   }
 
   /// Verifies the result
-  bool verify(ProblemShapeType problem_size, float softmax_scale)
-  {
+  bool verify(ProblemShapeType problem_size, float softmax_scale) {
     if constexpr (isVarLen) {
       int max_seq_len_q = static_cast<int>(cute::get<3>(problem_size));
       int max_seq_len_kv = static_cast<int>(cute::get<4>(problem_size));
+      int max_seq_len_kv_cache = static_cast<int>(cute::get<5>(problem_size));
       cute::get<3>(problem_size) = cutlass::fmha::collective::VariableLength{max_seq_len_q, cumulative_seqlen_q.data()};
       cute::get<4>(problem_size) = cutlass::fmha::collective::VariableLength{max_seq_len_kv, cumulative_seqlen_kv.data()};
+      cute::get<5>(problem_size) = cutlass::fmha::collective::VariableLength{max_seq_len_kv_cache, cumulative_seqlen_kv_cache.data()};
     }
 
-    auto [batch, num_heads_q, num_heads_kv, head_size_qk, head_size_vo] = cute::select<0,1,2,5,6>(problem_size);
-    int seq_len_qo, seq_len_kv;
+    auto [batch, num_heads_q, num_heads_kv, head_size_qk, head_size_vo] = cute::select<0,1,2,6,7>(problem_size);
+    int seq_len_qo, seq_len_kv, seq_len_kv_cache;
 
     int offset_q = 0;
     int offset_k = 0;
     int offset_v = 0;
+    int offset_k_cache = 0;
+    int offset_v_cache = 0;
     int offset_o = 0;
+
+    int q_group_size = num_heads_q / num_heads_kv;
     // loop over the batch dimension to compute the output
     // to avoid the risk of running out of device memory
-    int q_group_size = num_heads_q/num_heads_kv;
     for (int b = 0; b < batch; b++) {
       if constexpr (isVarLen) {
         auto logical_problem_shape = cutlass::fmha::collective::apply_variable_length(problem_size, b);
         seq_len_qo = cute::get<3>(logical_problem_shape);
         seq_len_kv = cute::get<4>(logical_problem_shape);
+	      seq_len_kv_cache = cute::get<5>(logical_problem_shape);
       } else {
         seq_len_qo = cute::get<3>(problem_size);
         seq_len_kv = cute::get<4>(problem_size);
+	      seq_len_kv_cache = cute::get<5>(problem_size);
       }
-      int kv_group_update=1;
+
+      int seq_len_kv_total = seq_len_kv_cache + seq_len_kv;
+
+      int kv_group_update = 1;
       for (int h = 0; h < num_heads_q; h++) {
         cutlass::DeviceAllocation<ElementOutput> block_S;
-        block_S.reset(seq_len_qo * seq_len_kv);
+        block_S.reset(seq_len_qo * seq_len_kv_total);
+
+        ElementK* k_ptr;
+        ElementV* v_ptr;
+
+        if (use_kv_cache) {
+            cutlass::DeviceAllocation<ElementK> block_K_concat(head_size_qk * seq_len_kv_total);
+            cutlass::DeviceAllocation<ElementV> block_V_concat(seq_len_kv_total * head_size_vo);
+
+            // Concatenate K_cache and K
+            syclcompat::memcpy<ElementK>(
+                block_K_concat.get(),
+                block_K_cache.get() + offset_k_cache,
+                seq_len_kv_cache * head_size_qk
+            );
+            syclcompat::memcpy<ElementK>(
+                block_K_concat.get() + seq_len_kv_cache * head_size_qk,
+                block_K.get() + offset_k,
+                seq_len_kv * head_size_qk
+            );
+
+            // Concatenate V_cache and V
+            syclcompat::memcpy<ElementV>(
+                block_V_concat.get(),
+                block_V_cache.get() + offset_v_cache,
+                seq_len_kv_cache * head_size_vo
+            );
+            syclcompat::memcpy<ElementV>(
+                block_V_concat.get() + seq_len_kv_cache * head_size_vo,
+                block_V.get() + offset_v,
+                seq_len_kv * head_size_vo
+            );
+            syclcompat::wait();
+
+            k_ptr = block_K_concat.get();
+            v_ptr = block_V_concat.get();
+        }
+        else {
+            k_ptr = block_K.get() + offset_k;
+            v_ptr = block_V.get() + offset_v;
+        }
 
         cutlass::TensorRef ref_Q(block_Q.get() + offset_q, LayoutQ::packed({seq_len_qo, head_size_qk}));
-        cutlass::TensorRef ref_K(block_K.get() + offset_k, LayoutK::packed({head_size_qk, seq_len_kv}));
-        cutlass::TensorRef ref_V(block_V.get() + offset_v, LayoutV::packed({seq_len_kv, head_size_vo}));
-        cutlass::TensorRef ref_S(block_S.get(), LayoutQ::packed({seq_len_qo, seq_len_kv}));
+        cutlass::TensorRef ref_K(k_ptr, LayoutK::packed({head_size_qk, seq_len_kv_total}));
+        cutlass::TensorRef ref_V(v_ptr, LayoutV::packed({seq_len_kv_total, head_size_vo}));
+        cutlass::TensorRef ref_S(block_S.get(), LayoutQ::packed({seq_len_qo, seq_len_kv_total}));
         cutlass::TensorRef ref_O(block_ref_O.get() + offset_o, LayoutO::packed({seq_len_qo, head_size_vo}));
 
-        cutlass::reference::device::GemmComplex({seq_len_qo, seq_len_kv, head_size_qk}, 1.f, ref_Q,
+        cutlass::reference::device::GemmComplex({seq_len_qo, seq_len_kv_total, head_size_qk}, 1.f, ref_Q,
                                                 cutlass::ComplexTransform::kNone, ref_K, cutlass::ComplexTransform::kNone,
                                                 0.f, ref_S, ref_S, ElementAccumulator(0),
                                                 1,                   // batch_count
                                                 seq_len_qo * head_size_qk, // batch_stride_Q
-                                                seq_len_kv * head_size_qk, // batch_stride_K
-                                                seq_len_qo * seq_len_kv,   // batch_stride_S
-                                                seq_len_qo * seq_len_kv    // batch_stride_S
+                                                seq_len_kv_total * head_size_qk, // batch_stride_K
+                                                seq_len_qo * seq_len_kv_total,   // batch_stride_S
+                                                seq_len_qo * seq_len_kv_total    // batch_stride_S
         );
 
         syclcompat::wait();
@@ -312,15 +396,16 @@ struct TestbedImpl {
 
         // delete this memory as it is no longer needed
         block_S.reset();
-        auto offset = cute::min(seq_len_qo, seq_len_kv);
-        auto discard_seq_coord = seq_len_qo - offset;
-        auto full_tile_offset = seq_len_kv - offset;
+
         if (HasCausalMask) {
           // apply mask to S
+          int start_col = use_kv_cache ? seq_len_kv_cache : 0;
+          // apply mask to S
+          int column_offset = seq_len_kv - seq_len_qo;
           for (int row = 0; row < seq_len_qo; row++) {
-            for (int col = 0; col < seq_len_kv; col++) {
-              if ((col - full_tile_offset) > (row - discard_seq_coord))
-                host_S[col + row * seq_len_kv] = -INFINITY;
+            for (int col = start_col; col < seq_len_kv_total; col++) {
+              if (col - column_offset > row + start_col)
+                host_S[col + row * seq_len_kv_total] = -INFINITY;
             }
           }
         }
@@ -328,10 +413,10 @@ struct TestbedImpl {
         // compute max element per row of S
         std::vector<ElementOutput> max_vec(seq_len_qo, -INFINITY);
         for (int row = 0; row < seq_len_qo; row++) {
-          int idx = row * seq_len_kv;
+          int idx = row * seq_len_kv_total;
           int max_idx = row;
           max_vec[max_idx] = host_S[idx++];
-          for (int col = 1; col < seq_len_kv; col++, idx++) {
+          for (int col = 1; col < seq_len_kv_total; col++, idx++) {
             if (max_vec[max_idx] < host_S[idx])
               max_vec[max_idx] = host_S[idx];
           }
@@ -339,31 +424,27 @@ struct TestbedImpl {
 
         // compute exp of S
         for (int row = 0; row < seq_len_qo; row++) {
-          int idx = row * seq_len_kv;
+          int idx = row * seq_len_kv_total;
           int max_idx = row;
-          for (int col = 0; col < seq_len_kv; col++, idx++) {
-            host_S[idx] = expf((host_S[idx] - max_vec[max_idx]) / sqrt(static_cast<ElementOutput>((head_size_qk))));
+          for (int col = 0; col < seq_len_kv_total; col++, idx++) {
+            host_S[idx] = expf((host_S[idx] - max_vec[max_idx]) * softmax_scale);
           }
         }
 
         // compute sum per row of S
         std::vector<ElementOutput> sum_vec(seq_len_qo, ElementOutput{0});
         for (int row = 0; row < seq_len_qo; row++) {
-          int idx = row * seq_len_kv;
+          int idx = row * seq_len_kv_total;
           int sum_idx = row;
-          for (int col = 0; col < seq_len_kv; col++, idx++) {
+          for (int col = 0; col < seq_len_kv_total; col++, idx++) {
             sum_vec[sum_idx] += host_S[idx];
           }
 
           // scale each row with the sum to compute softmax
-          idx = row * seq_len_kv;
+          idx = row * seq_len_kv_total;
           sum_idx = row;
-          for (int col = 0; col < seq_len_kv; col++, idx++) {
-            if(HasCausalMask && row < discard_seq_coord) {
-              host_S[idx] = 0;
-            } else {
-              host_S[idx] /= sum_vec[sum_idx];
-            }
+          for (int col = 0; col < seq_len_kv_total; col++, idx++) {
+            host_S[idx] /= sum_vec[sum_idx];
           }
         }
 
@@ -377,14 +458,14 @@ struct TestbedImpl {
         syclcompat::memcpy<ElementV>(block_P.get(), host_P.data(), host_P.size());
         syclcompat::wait();
 
-        cutlass::TensorRef ref_P(block_P.get(), LayoutQ::packed({seq_len_qo, seq_len_kv}));
+        cutlass::TensorRef ref_P(block_P.get(), LayoutQ::packed({seq_len_qo, seq_len_kv_total}));
 
-        cutlass::reference::device::GemmComplex({seq_len_qo, head_size_vo, seq_len_kv}, 1.f, ref_P,
+        cutlass::reference::device::GemmComplex({seq_len_qo, head_size_vo, seq_len_kv_total}, 1.f, ref_P,
                                                 cutlass::ComplexTransform::kNone, ref_V, cutlass::ComplexTransform::kNone,
                                                 0.f, ref_O, ref_O, ElementAccumulator(0),
                                                 1,                   // batch_count
-                                                seq_len_qo * seq_len_kv,   // batch_stride_P
-                                                seq_len_kv * head_size_vo, // batch_stride_V
+                                                seq_len_qo * seq_len_kv_total,   // batch_stride_P
+                                                seq_len_kv_total * head_size_vo, // batch_stride_V
                                                 seq_len_qo * head_size_vo, // batch_stride_O
                                                 seq_len_qo * head_size_vo  // batch_stride_O
         );
@@ -394,9 +475,11 @@ struct TestbedImpl {
         block_P.reset();
 
         offset_q += seq_len_qo * head_size_qk;
-        if(kv_group_update % q_group_size==0) {
+        if(kv_group_update % q_group_size == 0) {
           offset_k += seq_len_kv * head_size_qk;
           offset_v += seq_len_kv * head_size_vo;
+          offset_k_cache += seq_len_kv_cache * head_size_qk;
+          offset_v_cache += seq_len_kv_cache * head_size_vo;
         }
         kv_group_update++;
         offset_o += seq_len_qo * head_size_vo;
@@ -445,27 +528,31 @@ struct TestbedImpl {
     // Initialize the Flash attention operator
     //
     cutlass::KernelHardwareInfo hw_info;
-    typename FlashAttention::Arguments arguments{
+    typename FlashDecode::Arguments arguments{
       cutlass::gemm::GemmUniversalMode::kGemm,
       problem_size,
-      {block_Q.get(), stride_Q, block_K.get(), stride_K, block_V.get(), stride_V},
+      {block_Q.get(), stride_Q,
+      block_K.get(), stride_K,
+      block_V.get(), stride_V,
+      block_K_cache.get(), stride_K_cache,
+      block_V_cache.get(), stride_V_cache},
       {softmax_scale},
       {block_O.get(), stride_O},
       hw_info};
 
 #if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
-    CUTLASS_TRACE_HOST("TestbedImpl::run: Calling FlashAttention::get_workspace_size");
+    CUTLASS_TRACE_HOST("TestbedImpl::run: Calling FlashDecode::get_workspace_size");
 #endif
-    size_t workspace_size = FlashAttention::get_workspace_size(arguments);
+    size_t workspace_size = FlashDecode::get_workspace_size(arguments);
 #if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
     CUTLASS_TRACE_HOST("TestbedImpl::run: Allocating workspace of size " << workspace_size);
 #endif
     cutlass::device_memory::allocation<uint8_t> workspace(workspace_size);
 
 #if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
-    CUTLASS_TRACE_HOST("TestbedImpl::run: Calling FlashAttention::can_implement");
+    CUTLASS_TRACE_HOST("TestbedImpl::run: Calling FlashDecode::can_implement");
 #endif
-    auto can_implement = FlashAttention::can_implement(arguments);
+    auto can_implement = FlashDecode::can_implement(arguments);
 
     if (!can_implement) {
       std::cerr << "This test is not supported." << "\n";
@@ -478,35 +565,35 @@ struct TestbedImpl {
 #if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
     CUTLASS_TRACE_HOST("TestbedImpl::run: Calling to_underlying_arguments");
 #endif
-    auto params = FlashAttention::to_underlying_arguments(arguments, workspace.get());
+    auto params = FlashDecode::to_underlying_arguments(arguments, workspace.get());
 
 #if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
     CUTLASS_TRACE_HOST("TestbedImpl::run: Calling run");
 #endif
-    auto const block = FlashAttention::get_block_shape();
-    auto const grid = FlashAttention::get_grid_shape(params);
+    auto const block = FlashDecode::get_block_shape();
+    auto const grid = FlashDecode::get_grid_shape(params);
 
     // configure smem size and carveout
-    int smem_size = FlashAttention::SharedStorageSize;
+    int smem_size = FlashDecode::SharedStorageSize;
 
     const auto sycl_block = syclcompat::dim3(block.x, block.y, block.z);
     const auto sycl_grid = syclcompat::dim3(grid.x, grid.y, grid.z);
 
 #if !defined(SYCL_EXT_ONEAPI_WORK_GROUP_SCRATCH_MEMORY)
     using namespace syclcompat::experimental;
-    auto event = launch<cutlass::device_kernel<FlashAttention>>(
+    auto event = launch<cutlass::device_kernel<FlashDecode>>(
         launch_policy{sycl_grid, sycl_block, local_mem_size{static_cast<std::size_t>(smem_size)},
-                      kernel_properties{sycl_exp::sub_group_size<FlashAttention::DispatchPolicy::SubgroupSize>}},
+                      kernel_properties{sycl_exp::sub_group_size<FlashDecode::DispatchPolicy::SubgroupSize>}},
         params);
 #else
     syclcompat::experimental::launch_properties launch_props {
       sycl::ext::oneapi::experimental::work_group_scratch_size(smem_size),
     };
     syclcompat::experimental::kernel_properties kernel_props{
-      sycl::ext::oneapi::experimental::sub_group_size<FlashAttention::DispatchPolicy::SubgroupSize>
+      sycl::ext::oneapi::experimental::sub_group_size<FlashDecode::DispatchPolicy::SubgroupSize>
     };
     syclcompat::experimental::launch_policy policy{sycl_grid, sycl_block, launch_props, kernel_props};
-    auto event = syclcompat::experimental::launch<cutlass::device_kernel<FlashAttention>>(policy, params);
+    auto event = syclcompat::experimental::launch<cutlass::device_kernel<FlashDecode>>(policy, params);
 #endif
     EventManager::getInstance().addEvent(event);
 
@@ -546,10 +633,10 @@ struct TestbedImpl {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <
-  typename FlashAttention
+  typename FlashDecode
 >
 struct Testbed3x {
-  using TestBedImpl = typename detail::TestbedImpl<FlashAttention>;
+  using TestBedImpl = typename detail::TestbedImpl<FlashDecode>;
   TestBedImpl impl_;
 
   //
@@ -568,63 +655,67 @@ struct Testbed3x {
   }
 };
 
-template <typename FlashAttention>
-bool TestAll(int head_size) {
-  Testbed3x<FlashAttention> testbed;
+template <typename FlashDecode>
+bool TestFlashDecodeAll(int head_size) {
+  Testbed3x<FlashDecode> testbed;
 
-  std::vector<int> problem_size_batch{32};
-  std::vector<int> problem_size_num_heads{16};
-  std::vector<int> problem_size_seq_len{512};
+  std::vector<int> problem_size_batch{16};
+  std::vector<int> problem_size_num_heads{32};
+  std::vector<int> problem_size_seq_len{1024};
+  std::vector<int> problem_size_seq_len_cache{0, 1024};
   std::vector<float> problem_size_softmax_scale{ 1.f / sqrt(static_cast<float>(head_size)) };
   bool passed = true;
 
   for (int batch : problem_size_batch) {
     for (int num_heads : problem_size_num_heads) {
       for (int seq_len : problem_size_seq_len) {
-        for (float softmax_scale : problem_size_softmax_scale) {
-          auto num_heads_q = num_heads;
-          auto num_heads_kv = num_heads;
-          auto seq_len_qo = seq_len;
-          auto seq_len_kv = seq_len;
-          auto head_size_qk = head_size;
-          auto head_size_vo = head_size;
+        for (int seq_len_cache : problem_size_seq_len_cache) {
+          for (float softmax_scale : problem_size_softmax_scale) {
+            auto num_heads_q = num_heads;
+            auto num_heads_kv = num_heads;
+            auto seq_len_qo = 1;
+            auto seq_len_kv = seq_len;
+            auto seq_len_kv_cache = seq_len_cache;
+            auto head_size_qk = head_size;
+            auto head_size_vo = head_size;
 
-          auto problem_size = cute::make_tuple(
-            batch, num_heads_q, num_heads_kv, seq_len_qo, seq_len_kv, head_size_qk, head_size_vo);
-          try {
-            passed = testbed.run(problem_size, softmax_scale);
-          }
-          catch (std::exception const& e) {
-            EXPECT_TRUE(false) << "TestAll: testbed.run {"
+            auto problem_size = cute::make_tuple(
+              batch, num_heads_q, num_heads_kv, seq_len_qo, seq_len_kv, seq_len_kv_cache, head_size_qk, head_size_vo);
+            try {
+              passed = testbed.run(problem_size, softmax_scale);
+            }
+            catch (std::exception const& e) {
+              EXPECT_TRUE(false) << "TestFlashDecodeAll: testbed.run {"
+                << "batch: " << batch << ", num_heads_q: " << num_heads_q << ", num_heads_kv: " << num_heads_kv
+                << ", seq_len_qo: " << seq_len_qo << ", seq_len_kv: " << seq_len_kv << ", seq_len_kv_cache: "
+                << seq_len_cache << ", head_size_vo: " << head_size_vo << ", head_size_qk: " << head_size_qk
+                << ", scale: " << softmax_scale
+                << "} threw an exception: " << e.what();
+              throw;
+            }
+            catch (...) {
+              EXPECT_TRUE(false) << "TestFlashDecodeAll: testbed.run {"
+                << "batch: " << batch << ", num_heads_q: " << num_heads_q << ", num_heads_kv: " << num_heads_kv
+                << ", seq_len_qo: " << seq_len_qo << ", seq_len_kv: " << seq_len_kv << ", seq_len_kv_cache: "
+                << seq_len_cache << ", head_size_vo: " << head_size_vo << ", head_size_qk: " << head_size_qk
+                << ", scale: " << softmax_scale
+                << "} threw an exception (unknown)";
+              throw;
+            }
+
+            EXPECT_TRUE(passed) << "TestFlashDecodeAll: testbed.run {"
               << "batch: " << batch << ", num_heads_q: " << num_heads_q << ", num_heads_kv: " << num_heads_kv
-              << ", seq_len_qo: " << seq_len_qo << ", seq_len_kv: " << seq_len_kv
-              << ", head_size_vo: " << head_size_vo << ", head_size_qk: " << head_size_qk
+              << ", seq_len_qo: " << seq_len_qo << ", seq_len_kv: " << seq_len_kv << ", seq_len_kv_cache: "
+              << seq_len_cache << ", head_size_vo: " << head_size_vo << ", head_size_qk: " << head_size_qk
               << ", scale: " << softmax_scale
-              << "} threw an exception: " << e.what();
-            throw;
-          }
-          catch (...) {
-            EXPECT_TRUE(false) << "TestAll: testbed.run {"
-              << "batch: " << batch << ", num_heads_q: " << num_heads_q << ", num_heads_kv: " << num_heads_kv
-              << ", seq_len_qo: " << seq_len_qo << ", seq_len_kv: " << seq_len_kv
-              << ", head_size_vo: " << head_size_vo << ", head_size_qk: " << head_size_qk
-              << ", scale: " << softmax_scale
-              << "} threw an exception (unknown)";
-            throw;
-          }
+              << "} failed";
 
-          EXPECT_TRUE(passed) << "TestAll: testbed.run {"
-            << "batch: " << batch << ", num_heads_q: " << num_heads_q << ", num_heads_kv: " << num_heads_kv
-            << ", seq_len_qo: " << seq_len_qo << ", seq_len_kv: " << seq_len_kv
-            << ", head_size_vo: " << head_size_vo << ", head_size_qk: " << head_size_qk
-            << ", scale: " << softmax_scale
-            << "} failed";
-
-          if (!passed) {
-            std::cout << __FILE__ << ':' << __LINE__ << " : Flash attention FAILED.\n";
-            return false;
-          }
-        } // softmax_scale
+            if (!passed) {
+              std::cout << __FILE__ << ':' << __LINE__ << " : Flash Decode FAILED.\n";
+              return false;
+            }
+          } // softmax_scale
+        } // seq_len_cache
       } // seq_len
     } // num_heads
   }  // batch

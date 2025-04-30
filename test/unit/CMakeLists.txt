@@ -190,8 +190,11 @@ if (CUTLASS_ENABLE_SYCL)
   set(SUBDIRS
     cute
     gemm
-    flash_attention
   )
+  # Enable Intel hardware specific tests
+  if(SYCL_INTEL_TARGET)
+    list(APPEND SUBDIRS flash_attention)
+  endif()
 else()
   set(SUBDIRS
     core
