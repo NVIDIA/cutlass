@@ -9,8 +9,8 @@ PvcGemmBF16BF16FP32_RCR_5 --bm_name=bf16_bf16_fp32 --l=1 --m=1 --k=4096 --n=4096
 
 # k_mm 1,8 4096 1024 Btranspose
 # v_mm 1,8 4096 1024 Btranspose
-PvcGemmBF16BF16FP32_RCR_13 --bm_name=bf16_bf16_fp32 --l=1 --m=8 --k=4096 --n=1024 #best 
-PvcGemmBF16BF16FP32_RCR_13 --bm_name=bf16_bf16_fp32 --l=1 --m=1 --k=4096 --n=1024 #best
+PvcGemmBF16BF16FP32_RCR_16 --bm_name=bf16_bf16_fp32 --l=1 --m=8 --k=4096 --n=1024 #best 
+PvcGemmBF16BF16FP32_RCR_7 --bm_name=bf16_bf16_fp32 --l=1 --m=1 --k=4096 --n=1024 #best
 #PvcGemmBF16BF16FP32_RRR_9 --m=1 --k=4096 --n=1024
 #PvcGemmBF16BF16FP32_RRR_9 --m=8 --k=4096 --n=1024
 
@@ -35,8 +35,8 @@ PvcGemmBF16BF16FP32_SplitK_RCR_5 --bm_name=bf16_bf16_fp32 --l=1 --m=8 --k=4096 -
 #PvcGemmBF16BF16FP32_RRR_11 --m=8 --k=4096 --n=28672
 
 # mm_add 1,8 14336 4096 Btranspose
-#PvcGemmBF16BF16FP32_SplitK_RCR_3 --bm_name=bf16_bf16_fp32 --l=1 --m=8 --k=14336 --n=4096 #best
-#PvcGemmBF16BF16FP32_SplitK_RCR_4 --bm_name=bf16_bf16_fp32 --l=1 --m=1 --k=14336 --n=4096 #best
+PvcGemmBF16BF16FP32_SplitK_RCR_5 --bm_name=bf16_bf16_fp32 --l=1 --m=8 --k=14336 --n=4096 #best
+PvcGemmBF16BF16FP32_SplitK_RCR_5 --bm_name=bf16_bf16_fp32 --l=1 --m=1 --k=14336 --n=4096 #best
 ##PvcGemmBF16BF16FP32_RCR_5 --bm_name=bf16_bf16_fp32 --l=1 --m=1 --k=14336 --n=4096 #broken
 #PvcGemmBF16BF16FP32_RRR_7 --m=1 --k=14336 --n=4096
 #PvcGemmBF16BF16FP32_RRR_6 --m=8 --k=14336 --n=4096

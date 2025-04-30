@@ -616,6 +616,36 @@ using PvcGemmBF16BF16FP32_RCR_6_silu = cutlass::gemm::device::GemmConfiguration<
             float, float, float, float,
             cutlass::FloatRoundStyle::round_to_nearest>>;
 
+using PvcGemmBF16BF16FP32_RCR_7_silu = cutlass::gemm::device::GemmConfiguration<
+        cutlass::arch::IntelXe,
+        cutlass::bfloat16_t, cutlass::layout::RowMajor,
+        cutlass::bfloat16_t, cutlass::layout::ColumnMajor,
+        float, cutlass::layout::RowMajor,
+        float, Shape<_8, _64, _32>,
+        typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>, Layout<Shape<_8, _64, _32>>,
+                                      Layout<Shape<_1, _4, _1>, Stride<_4, _1, _0>>>::TiledMMA,
+        XE_2D_U16x8x32_LD_N, XE_2D_U16x16x16_LD_T,
+        Scheduler::GemmSplitK,
+        cutlass::epilogue::fusion::LinCombEltAct<
+            cutlass::epilogue::thread::SiLu,
+            float, float, float, float,
+            cutlass::FloatRoundStyle::round_to_nearest>>;
+
+using PvcGemmBF16BF16FP32_RCR_8_silu = cutlass::gemm::device::GemmConfiguration<
+        cutlass::arch::IntelXe,
+        cutlass::bfloat16_t, cutlass::layout::RowMajor,
+        cutlass::bfloat16_t, cutlass::layout::ColumnMajor,
+        float, cutlass::layout::RowMajor,
+        float, Shape<_8, _64, _32>,
+        typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>, Layout<Shape<_8, _64, _32>>,
+                                      Layout<Shape<_1, _4, _1>, Stride<_4, _1, _0>>>::TiledMMA,
+        XE_2D_U16x8x32_LD_N, XE_2D_U16x16x16_LD_T,
+        Scheduler::GemmSplitK,
+        cutlass::epilogue::fusion::LinCombEltAct<
+            cutlass::epilogue::thread::SiLu,
+            float, float, float, float,
+            cutlass::FloatRoundStyle::round_to_nearest>>;
+
 using PvcGemmBF16BF16FP32_RCR_6_mul = cutlass::gemm::device::GemmConfiguration<
         cutlass::arch::IntelXe,
         cutlass::bfloat16_t, cutlass::layout::RowMajor,
@@ -632,6 +662,18 @@ using PvcGemmBF16BF16FP32_RCR_6_mul = cutlass::gemm::device::GemmConfiguration<
         cutlass::epilogue::fusion::LinCombDeEltAct<
             cutlass::layout::RowMajor, std::multiplies, float, float>>;
 
+using PvcGemmBF16BF16FP32_RCR_7_mul = cutlass::gemm::device::GemmConfiguration<
+        cutlass::arch::IntelXe,
+        cutlass::bfloat16_t, cutlass::layout::RowMajor,
+        cutlass::bfloat16_t, cutlass::layout::ColumnMajor,
+        float, cutlass::layout::RowMajor,
+        float, Shape<_8, _64, _32>,
+        typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>, Layout<Shape<_8, _64, _32>>,
+                                      Layout<Shape<_1, _4, _1>, Stride<_4, _1, _0>>>::TiledMMA,
+        XE_2D_U16x8x32_LD_N, XE_2D_U16x16x16_LD_T,
+        Scheduler::GemmSplitK,
+        cutlass::epilogue::fusion::LinCombDeEltAct<
+            cutlass::layout::RowMajor, std::multiplies, float, float>>;
 using PvcGemmBF16BF16FP32_CRR_7 = cutlass::gemm::device::GemmConfiguration<
         cutlass::arch::IntelXe,
         cutlass::bfloat16_t, cutlass::layout::ColumnMajor,
@@ -683,7 +725,10 @@ CUTLASS_CREATE_GEMM_BENCHMARK(PvcGemmBF16BF16FP32_RCR_12);
 // CUTLASS_CREATE_GEMM_BENCHMARK(PvcGemmBF16BF16FP32_RCR_Linear);
 // CUTLASS_CREATE_GEMM_BENCHMARK(PvcGemmBF16BF16FP32_RCR_Linear_MoE);
 CUTLASS_CREATE_GEMM_BENCHMARK(PvcGemmBF16BF16FP32_RCR_6_silu);
+CUTLASS_CREATE_GEMM_BENCHMARK(PvcGemmBF16BF16FP32_RCR_7_silu);
+CUTLASS_CREATE_GEMM_BENCHMARK(PvcGemmBF16BF16FP32_RCR_8_silu);
 CUTLASS_CREATE_GEMM_BENCHMARK(PvcGemmBF16BF16FP32_RCR_6_mul);
+CUTLASS_CREATE_GEMM_BENCHMARK(PvcGemmBF16BF16FP32_RCR_7_mul);
 CUTLASS_CREATE_GEMM_BENCHMARK(PvcGemmBF16BF16FP32_RCR_13);
 CUTLASS_CREATE_GEMM_BENCHMARK(PvcGemmBF16BF16FP32_RCR_14);
 CUTLASS_CREATE_GEMM_BENCHMARK(PvcGemmBF16BF16FP32_RCR_15);
@@ -1307,7 +1352,10 @@ static void register_benchmarks() {
   // CUTLASS_BENCHMARK(PvcGemmBF16BF16FP32_RCR_Linear);
   // CUTLASS_BENCHMARK(PvcGemmBF16BF16FP32_RCR_Linear_MoE);
   CUTLASS_BENCHMARK(PvcGemmBF16BF16FP32_RCR_6_silu);
+  CUTLASS_BENCHMARK(PvcGemmBF16BF16FP32_RCR_7_silu);
+  CUTLASS_BENCHMARK(PvcGemmBF16BF16FP32_RCR_8_silu);
   CUTLASS_BENCHMARK(PvcGemmBF16BF16FP32_RCR_6_mul);
+  CUTLASS_BENCHMARK(PvcGemmBF16BF16FP32_RCR_7_mul);
   CUTLASS_BENCHMARK(PvcGemmBF16BF16FP32_RCR_13);
   CUTLASS_BENCHMARK(PvcGemmBF16BF16FP32_RCR_14);
   CUTLASS_BENCHMARK(PvcGemmBF16BF16FP32_RCR_15);
