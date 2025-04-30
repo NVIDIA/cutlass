@@ -368,8 +368,8 @@ using TiledMma =
                                   Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>>::TiledMMA;
 
 constexpr int PipelineStages = 2;
-using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelPVC<PipelineStages>;
-using EpilogueDispatchPolicy = cutlass::epilogue::IntelPVCEpilogue;
+using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelXeXMX16<PipelineStages>;
+using EpilogueDispatchPolicy = cutlass::epilogue::IntelXeXMX16;
 
 using CopyOpG2R = XE_2D_U32x8x16_LD_N;
 template <template <class> class ActivationFn>
@@ -392,7 +392,7 @@ using FusionCallBacks = cutlass::epilogue::fusion::FusionCallbacks<
 
 template <template <class> class ActivationFn>
 using CollectiveEpilogue = cutlass::epilogue::collective::CollectiveEpilogue<
-        EpilogueDispatchPolicy,                 // IntelPVCEpilogue
+        EpilogueDispatchPolicy,                 // IntelXeXMX16
         TileShape,                              // CtaTileMNK
         ElementAccumulator,                     // ElementC
         cutlass::gemm::TagToStrideC_t<LayoutC>, // StrideC

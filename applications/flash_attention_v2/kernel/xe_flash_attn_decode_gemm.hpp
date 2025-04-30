@@ -249,9 +249,9 @@ public:
 
       auto [seq_len_qo, seq_len_kv, seq_len_kv_cache] = select<3, 4, 5>(logical_problem_shape);
 
-      Tensor mQ_mkl = cute::get_pvc_tensor(make_shape(seq_len_qo, head_size_qk, (is_var_len ? 1 : batch) * num_heads_q));   //(m,k,l)
-      Tensor mK_nkl = cute::get_pvc_tensor(make_shape(cute::max(seq_len_kv, seq_len_kv_cache), head_size_qk, (is_var_len ? 1 : batch) * num_heads_kv));   //(n,k,l)
-      Tensor mV_nkl = cute::get_pvc_tensor(make_shape(head_size_vo, cute::max(seq_len_kv, seq_len_kv_cache), (is_var_len ? 1 : batch) * num_heads_kv));   //(n,k,l)
+      Tensor mQ_mkl = cute::get_xe_tensor(make_shape(seq_len_qo, head_size_qk, (is_var_len ? 1 : batch) * num_heads_q));   //(m,k,l)
+      Tensor mK_nkl = cute::get_xe_tensor(make_shape(cute::max(seq_len_kv, seq_len_kv_cache), head_size_qk, (is_var_len ? 1 : batch) * num_heads_kv));   //(n,k,l)
+      Tensor mV_nkl = cute::get_xe_tensor(make_shape(head_size_vo, cute::max(seq_len_kv, seq_len_kv_cache), (is_var_len ? 1 : batch) * num_heads_kv));   //(n,k,l)
 
       Tensor mQ_mk = mQ_mkl(_, _, blk_l_coord);                                                    // (m,k)
       Tensor mK_nk = mK_nkl(_, _, blk_l_coord / group_heads_q);                                                    // (n,k)

@@ -159,9 +159,9 @@ struct KernelTmaWarpSpecializedMixedInput : KernelTmaWarpSpecialized { };
 struct KernelTmaWarpSpecializedPingpongMixedInput : KernelTmaWarpSpecializedPingpong { };
 struct KernelTmaWarpSpecializedCooperativeMixedInput: KernelTmaWarpSpecializedCooperative { };
 
-struct KernelPVC { };
-struct KernelPVCCooperative { };
-struct KernelPVCPtrArrayCooperative { };
+struct KernelXe { };
+struct KernelXeCooperative { };
+struct KernelXePtrArrayCooperative { };
 //////////////////////////////////////////////////////////////////////////////
 
 //
@@ -964,39 +964,33 @@ struct MainloopSm100ArrayTmaUmmaWarpSpecializedFastF32 {
 
 
 #if defined(SYCL_INTEL_TARGET)
-template<int Stages_, class KernelSchedule = KernelPVC>
-struct MainloopIntelPVC {
+
+// Specialization of the GEMM mainloop for Intel Xe architectures.
+// This version is tuned for operations using DPAS instructions with a subgroup size of 16.
+// Suitable for use with Intel Battlemage (Xe2) and PVC (Xe) architectures.
+template<int Stages_, class KernelSchedule = KernelXe>
+struct MainloopIntelXeXMX16 {
   constexpr static int Stages = Stages_;
   constexpr static int SubgroupSize = 16;
-  using ArchTag = arch::IntelPVC;
+  using ArchTag = arch::IntelXe;
   using Schedule = KernelSchedule;
   using ClusterShape = Shape<_1,_1,_1>;
 };
 
-template<int Stages_, class KernelScheduler = KernelPVCPtrArrayCooperative>
-struct MainloopIntelPVCGroup {
-  constexpr static int Stages = Stages_;
-  constexpr static int SubgroupSize = 16;
-  using ArchTag = arch::IntelPVC;
-  using Schedule = KernelScheduler;
-  using ClusterShape = Shape<_1,_1,_1>;
+template<int Stages_, class KernelScheduler = KernelXePtrArrayCooperative>
+struct MainloopIntelXeXMX16Group : MainloopIntelXeXMX16<Stages_, KernelScheduler> {
 };
 
 template<int Stages_>
-struct MainloopIntelPVCMixedPrecision {
-  constexpr static int Stages = Stages_;
-  constexpr static int SubgroupSize = 16;
-  using ArchTag = arch::IntelPVC;
-  using Schedule = KernelPVC;
-  using ClusterShape = Shape<_1,_1,_1>;
+struct MainloopIntelXeXMX16MixedPrecision : MainloopIntelXeXMX16<Stages_> {
 };
 
-template<int Stages_, class KernelSchedule = KernelPVC>
+template<int Stages_, class KernelSchedule = KernelXe>
 struct MainloopIntelW8A8 {
     constexpr static int Stages = Stages_;
     constexpr static int SubgroupSize = 16;
-    using ArchTag = arch::IntelPVC;
-    using Schedule = KernelPVC;
+    using ArchTag = arch::IntelXe;
+    using Schedule = KernelXe;
     using ClusterShape = Shape<_1, _1, _1>;
 };
 #endif

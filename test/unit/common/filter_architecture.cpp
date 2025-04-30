@@ -92,7 +92,6 @@ void FilterArchitecture() {
 #if defined(CUTLASS_ENABLE_SYCL)
   using namespace sycl::ext::oneapi::experimental;
 
-  // We might be adding PVC unit tests someday
   std::map<architecture, int> arch_map {
     {architecture::nvidia_gpu_sm_50, 50},
     {architecture::nvidia_gpu_sm_52, 52},
@@ -166,7 +165,7 @@ void FilterArchitecture() {
     { "SM89*",                      89, 89},
     { "SM90*",                      90, 90},
     { "SM100*",                    100, 100},
-    { "IntelPVC",                   0,  0},
+    { "IntelXe",                   0,  0},
     { "IntelBMG",                   1,  1},
     { 0, 0, false }
   };

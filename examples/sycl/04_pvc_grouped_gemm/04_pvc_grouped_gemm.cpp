@@ -59,7 +59,7 @@
     Call with `--help` for information about available options.
 
     Note: the code may spill registers once compiled which will result in sub-optimal performance. This is because
-    of an issue inside Intel Graphics Compiler (IGC) related to VectorAliasBBThreshold being debugged internally. 
+    of an issue inside Intel Graphics Compiler (IGC) related to VectorAliasBBThreshold being debugged internally.
     To avoid register spills, build the example by setting the environment variable:
       $ export IGC_VectorAliasBBThreshold=10000
 */
@@ -314,7 +314,7 @@ void allocate(const Options &options) {
     auto N = get<1>(problem);
     auto K = get<2>(problem);
 
-    // Offset into block allocation of each matrix base pointer 
+    // Offset into block allocation of each matrix base pointer
     offset_A.push_back(total_elements_A);
     offset_B.push_back(total_elements_B);
     offset_C.push_back(total_elements_C);
@@ -581,8 +581,8 @@ int main(int argc, const char** argv)
 
   constexpr int PipelineStages = 2;
   // Dispatch to grouped gemm algorithm
-  using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelPVCGroup<PipelineStages>;
-  using EpilogueDispatchPolicy = cutlass::epilogue::IntelPVCGroupEpilogue;
+  using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelXeXMX16Group<PipelineStages>;
+  using EpilogueDispatchPolicy = cutlass::epilogue::IntelXeXMX16Group;
 
   using EpilogueOp = cutlass::epilogue::fusion::LinearCombination<ElementOutput, ElementComputeEpilogue,
           ElementAccumulator, ElementAccumulator, cutlass::FloatRoundStyle::round_to_nearest>;

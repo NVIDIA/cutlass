@@ -186,7 +186,7 @@ template <
 >
 struct TileSchedulerSelector<
   StreamKScheduler,
-  arch::IntelPVC,
+  arch::IntelXe,
   TileShape,
   ClusterShape,
   ThreadsPerBlock
@@ -202,7 +202,7 @@ template <
 >
 struct TileSchedulerSelector<
     GroupScheduler,
-    arch::IntelPVC,
+    arch::IntelXe,
     TileShape,
     ClusterShape, 
     SchedulerPipelineStageCount,
@@ -216,7 +216,7 @@ template <
 >
 struct TileSchedulerSelector<
   PersistentScheduler,
-  arch::IntelPVC,
+  arch::IntelXe,
   TileShape,
   ClusterShape
   > {

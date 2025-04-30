@@ -70,12 +70,12 @@ struct FlashDecodeMma {
 template <int Stages, class ProblemShapeType_, class TileShape_, class ElementQ_, class StrideQ_, class ElementK_, class StrideK_,
           class ElementV_, class StrideV_, class TiledMma_, class GmemTiledCopyQ_, class GmemTiledCopyK_,
           class GmemTiledCopyV_, bool CausalMask_>
-struct FlashDecodeMma<gemm::MainloopIntelPVC<Stages>, ProblemShapeType_, TileShape_, ElementQ_, StrideQ_, ElementK_, StrideK_, ElementV_,
+struct FlashDecodeMma<gemm::MainloopIntelXeXMX16<Stages>, ProblemShapeType_, TileShape_, ElementQ_, StrideQ_, ElementK_, StrideK_, ElementV_,
                               StrideV_, TiledMma_, GmemTiledCopyQ_, GmemTiledCopyK_, GmemTiledCopyV_, CausalMask_> {
   //
   // Type Aliases
   //
-  using DispatchPolicy = gemm::MainloopIntelPVC<Stages>;
+  using DispatchPolicy = gemm::MainloopIntelXeXMX16<Stages>;
   using TileShape = TileShape_;
   using WorkgroupTileShape = TileShape; // <BLK_N_K, BLK_N_V, BLK_K_PV, BLK_K_QK>
   using ProblemShapeType = ProblemShapeType_;

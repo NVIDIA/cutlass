@@ -75,7 +75,7 @@ namespace collective {
       class CopyOpR2G_, 
       class ElemWiseBinary_>
   class DualGemmElemActEpilogue<
-      IntelPVCEpilogue,
+      IntelXeXMX16,
       CtaTileMNK_,
       ElementC_,
       StrideC_,
@@ -88,7 +88,7 @@ public:
   //
   // Type Aliases
   //
-  using DispatchPolicy = IntelPVCEpilogue;
+  using DispatchPolicy = IntelXeXMX16;
   using CtaTileMNK = CtaTileMNK_;
   using ElementC = ElementC_;
   using ElementAccumulator = ElementD_;
@@ -258,7 +258,7 @@ public:
     auto n_sg = get_sub_group_id() % ATOM_N;
     
     // Represent the full output tensor
-    Tensor mD_mnl = cute::get_pvc_tensor(make_shape(M,N,L));
+    Tensor mD_mnl = cute::get_xe_tensor(make_shape(M,N,L));
 
     // Tile the output tensor per WG and select the tile for current WG
     Tensor g_wg_D = local_tile(mD_mnl, take<0,2>(CtaTileMNK{}), make_coord(m_coord,n_coord,l_coord));  // (BLK_M,BLK_N)

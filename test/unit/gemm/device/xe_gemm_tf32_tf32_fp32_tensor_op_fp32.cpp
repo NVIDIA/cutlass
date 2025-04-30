@@ -48,7 +48,7 @@ namespace {
 template <typename LayoutA, typename LayoutB>
 struct XE_Device_Gemm_tf32_tf32_f32_tensor_op_f32 {
   using Config = gemm::device::DefaultGemmConfigurationToCutlass3Types<
-    arch::OpClassTensorOp, arch::IntelPVC,
+    arch::OpClassTensorOp, arch::IntelXe,
     tfloat32_t, LayoutA,
     tfloat32_t, LayoutB,
     float, layout::RowMajor,

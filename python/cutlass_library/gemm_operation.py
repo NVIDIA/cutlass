@@ -1073,9 +1073,9 @@ using {operation_name_str}_LayoutNarrowReordered = decltype(cute::tile_to_shape(
       'mixed_dtype_prepare_code': mixed_dtype_prepare_code
     }
 
-    # Overriding values for Intel PVC
+    # Overriding values for Intel Xe
     if operation.is_xe:  
-      values['arch'] = "cutlass::arch::IntelPVC"
+      values['arch'] = "cutlass::arch::IntelXe"
 
     return SubstituteTemplate(self.gemm_template, values)
 

@@ -30,7 +30,7 @@
  **************************************************************************************************/
 
 /*! \file
-  \brief Visitor tree operations for the PVC epilogue
+  \brief Visitor tree operations for the Xe epilogue
 */
 
 #pragma once
@@ -193,7 +193,7 @@ struct XeAuxLoad {
     auto [M, N, K, L] = args.problem_shape_mnkl;
     auto [m_coord, n_coord, k_coord, l_coord] = args.tile_coord_mnkl;
 
-    Tensor mAux_mnl = cute::get_pvc_tensor(make_shape(M,N,L));
+    Tensor mAux_mnl = cute::get_xe_tensor(make_shape(M,N,L));
     // Tiling is done differently than in epilogue as we get in coordinates of subgroup in kernel
     Tensor gAux = local_tile(mAux_mnl, select<0,1>(args.tile_shape_mnk), make_coord(m_coord,n_coord,l_coord));
     Tensor tCgAux = args.tiled_copy.get_thread_slice(args.thread_idx).partition_D(gAux);

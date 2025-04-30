@@ -99,7 +99,7 @@ struct XE_2D_U64x8x1_LD_T {
         __builtin_IB_subgroup_block_read_flat_transpose_u64_k1(
             (intptr_t)(baseoffset), width - 1, height - 1, pitch - 1, coord);
 #else
-    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
+    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
 #endif
   }
 };
@@ -117,7 +117,7 @@ struct XE_2D_U64x8x2_LD_T {
         __builtin_IB_subgroup_block_read_flat_transpose_u64_k2(
             (intptr_t)(baseoffset), width - 1, height - 1, pitch - 1, coord);
 #else
-    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
+    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
 #endif
   }
 };
@@ -135,7 +135,7 @@ struct XE_2D_U64x8x4_LD_T {
         __builtin_IB_subgroup_block_read_flat_transpose_u64_k4(
             (intptr_t)(baseoffset), width - 1, height - 1, pitch - 1, coord);
 #else
-    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
+    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
 #endif
   }
 };

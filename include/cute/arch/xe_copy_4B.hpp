@@ -282,7 +282,7 @@ struct XE_2D_U32x1x16_LD_N {
         __builtin_IB_subgroup_block_read_flat_u32_m1k16v1(
             (intptr_t)(baseoffset), width - 1, height - 1, pitch - 1, coord);
 #else
-    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
+    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
 #endif
   }
 };
@@ -300,7 +300,7 @@ struct XE_2D_U32x2x16_LD_N {
         __builtin_IB_subgroup_block_read_flat_u32_m2k16v1(
             (intptr_t)(baseoffset), width - 1, height - 1, pitch - 1, coord);
 #else
-    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
+    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
 #endif
   }
 };
@@ -318,7 +318,7 @@ struct XE_2D_U32x4x16_LD_N {
         __builtin_IB_subgroup_block_read_flat_u32_m4k16v1(
             (intptr_t)(baseoffset), width - 1, height - 1, pitch - 1, coord);
 #else
-    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
+    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
 #endif
   }
 };
@@ -336,7 +336,7 @@ struct XE_2D_U32x8x16_LD_N {
         __builtin_IB_subgroup_block_read_flat_u32_m8k16v1(
             (intptr_t)(baseoffset), width - 1, height - 1, pitch - 1, coord);
 #else
-    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
+    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
 #endif
   }
 };
@@ -354,7 +354,7 @@ struct XE_2D_U32x16x16_LD_N {
         __builtin_IB_subgroup_block_read_flat_u32_m16k16v1(
             (intptr_t)(baseoffset), width - 1, height - 1, pitch - 1, coord);
 #else
-    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
+    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
 #endif
   }
 };
@@ -372,7 +372,7 @@ struct XE_2D_U32x32x16_LD_N {
         __builtin_IB_subgroup_block_read_flat_u32_m32k16v1(
             (intptr_t)(baseoffset), width - 1, height - 1, pitch - 1, coord);
 #else
-    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
+    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
 #endif
   }
 };
@@ -390,7 +390,7 @@ struct XE_2D_TF32x1x8_LD_N {
         __builtin_IB_subgroup_block_read_flat_u32_m1k8v1(
             (intptr_t)(baseoffset), width - 1, height - 1, pitch - 1, coord);
 #else
-    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
+    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
 #endif
   }
 };
@@ -409,7 +409,7 @@ struct XE_2D_TF32x2x8_LD_N {
         __builtin_IB_subgroup_block_read_flat_u32_m2k8v1(
             (intptr_t)(baseoffset), width - 1, height - 1, pitch - 1, coord);
 #else
-    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
+    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
 #endif
   }
 };
@@ -428,7 +428,7 @@ struct XE_2D_TF32x4x8_LD_N {
         __builtin_IB_subgroup_block_read_flat_u32_m4k8v1(
             (intptr_t)(baseoffset), width - 1, height - 1, pitch - 1, coord);
 #else
-    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
+    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
 #endif
   }
 };
@@ -447,7 +447,7 @@ struct XE_2D_TF32x8x8_LD_N {
         __builtin_IB_subgroup_block_read_flat_u32_m8k8v1(
             (intptr_t)(baseoffset), width - 1, height - 1, pitch - 1, coord);
 #else
-    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
+    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
 #endif
   }
 };
@@ -466,7 +466,7 @@ struct XE_2D_TF32x16x8_LD_N {
         __builtin_IB_subgroup_block_read_flat_u32_m16k8v1(
             (intptr_t)(baseoffset), width - 1, height - 1, pitch - 1, coord);
 #else
-    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
+    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
 #endif
   }
 };
@@ -485,7 +485,7 @@ struct XE_2D_TF32x32x8_LD_N {
         __builtin_IB_subgroup_block_read_flat_u32_m32k8v1(
             (intptr_t)(baseoffset), width - 1, height - 1, pitch - 1, coord);
 #else
-    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
+    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
 #endif
   }
 };
@@ -503,7 +503,7 @@ struct XE_2D_TF32x1x16_LD_N {
         __builtin_IB_subgroup_block_read_flat_u32_m1k8v2(
             (intptr_t)(baseoffset), width - 1, height - 1, pitch - 1, coord);
 #else
-    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
+    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
 #endif
   }
 };
@@ -522,7 +522,7 @@ struct XE_2D_TF32x2x16_LD_N {
         __builtin_IB_subgroup_block_read_flat_u32_m2k8v2(
             (intptr_t)(baseoffset), width - 1, height - 1, pitch - 1, coord);
 #else
-    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
+    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
 #endif
   }
 };
@@ -541,7 +541,7 @@ struct XE_2D_TF32x4x16_LD_N {
         __builtin_IB_subgroup_block_read_flat_u32_m4k8v2(
             (intptr_t)(baseoffset), width - 1, height - 1, pitch - 1, coord);
 #else
-    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
+    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
 #endif
   }
 };
@@ -560,7 +560,7 @@ struct XE_2D_TF32x8x16_LD_N {
         __builtin_IB_subgroup_block_read_flat_u32_m8k8v2(
             (intptr_t)(baseoffset), width - 1, height - 1, pitch - 1, coord);
 #else
-    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
+    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
 #endif
   }
 };
@@ -579,7 +579,7 @@ struct XE_2D_TF32x16x16_LD_N {
         __builtin_IB_subgroup_block_read_flat_u32_m16k8v2(
             (intptr_t)(baseoffset), width - 1, height - 1, pitch - 1, coord);
 #else
-    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
+    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
 #endif
   }
 
@@ -612,7 +612,7 @@ struct XE_2D_TF32x32x16_LD_N {
         __builtin_IB_subgroup_block_read_flat_u32_m32k8v2(
             (intptr_t)(baseoffset), width - 1, height - 1, pitch - 1, coord);
 #else
-    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
+    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
 #endif
   }
 };
@@ -631,7 +631,7 @@ struct XE_2D_U32x16x1_LD_T {
         __builtin_IB_subgroup_block_read_flat_transpose_u32_k1(
             (intptr_t)(baseoffset), width - 1, height - 1, pitch - 1, coord);
 #else
-    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
+    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
 #endif
   }
 };
@@ -651,7 +651,7 @@ struct XE_2D_U32x16x2_LD_T {
         __builtin_IB_subgroup_block_read_flat_transpose_u32_k2(
             (intptr_t)(baseoffset), width - 1, height - 1, pitch - 1, coord);
 #else
-    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
+    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
 #endif
   }
 };
@@ -671,7 +671,7 @@ struct XE_2D_U32x16x4_LD_T {
         __builtin_IB_subgroup_block_read_flat_transpose_u32_k4(
             (intptr_t)(baseoffset), width - 1, height - 1, pitch - 1, coord);
 #else
-    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
+    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
 #endif
   }
 };
@@ -691,7 +691,7 @@ struct XE_2D_U32x16x8_LD_T {
         __builtin_IB_subgroup_block_read_flat_transpose_u32_k8(
             (intptr_t)(baseoffset), width - 1, height - 1, pitch - 1, coord);
 #else
-    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
+    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
 #endif
   }
 
@@ -704,7 +704,7 @@ struct XE_2D_U32x16x8_LD_T {
           (__global void*)baseoffset, width, height, pitch, coord);
 #else
       CUTE_INVALID_CONTROL_PATH(
-          "Trying to use block prefetch on non-PVC hardware");
+          "Trying to use block prefetch on non-Xe hardware");
 #endif
     }
   };
@@ -723,7 +723,7 @@ struct XE_2D_U32x1x16_ST_N {
         (intptr_t)(baseoffset), width - 1, height - 1, pitch - 1, coord,
         *(cute::intel::uint *)(src));
 #else
-    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
+    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
 #endif
   }
 };
@@ -741,7 +741,7 @@ struct XE_2D_U32x2x16_ST_N {
         (intptr_t)(baseoffset), width - 1, height - 1, pitch - 1, coord,
         *(intel::uint2 *)(src));
 #else
-    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
+    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
 #endif
   }
 };
@@ -759,7 +759,7 @@ struct XE_2D_U32x4x16_ST_N {
         (intptr_t)(baseoffset), width - 1, height - 1, pitch - 1, coord,
         *(intel::uint4 *)(src));
 #else
-    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
+    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
 #endif
   }
 };
@@ -777,7 +777,7 @@ struct XE_2D_U32x8x16_ST_N {
         (intptr_t)(baseoffset), width - 1, height - 1, pitch - 1, coord,
         *(intel::uint8 *)(src));
 #else
-    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
+    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
 #endif
   }
 };

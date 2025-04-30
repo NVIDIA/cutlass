@@ -55,13 +55,13 @@ template <bool CausalMask_, class DispatchPolicy, class... Args> class FlashDeco
 
 
 template <bool CausalMask_, class Element_>
-class FlashDecodeSoftmaxEpilogue<CausalMask_, epilogue::IntelPVCEpilogue, Element_> {
+class FlashDecodeSoftmaxEpilogue<CausalMask_, epilogue::IntelXeXMX16, Element_> {
 public:
 
   //
   // Type Aliases
   //
-  using DispatchPolicy = epilogue::IntelPVCEpilogue;
+  using DispatchPolicy = epilogue::IntelXeXMX16;
   using Element = Element_;
 
   static constexpr bool CausalMask = CausalMask_;

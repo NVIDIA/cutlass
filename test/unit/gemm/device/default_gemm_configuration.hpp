@@ -1430,7 +1430,7 @@ struct DefaultGemm_TensorOpXe_OperandB<bfloat16_t, layout::ColumnMajor, 32, Size
 // Intel XE MMA F32BF16
 template <typename LayoutA, typename LayoutB, typename LayoutC>
 struct DefaultGemmConfigurationToCutlass3Types<
-    arch::OpClassTensorOp, arch::IntelPVC,
+    arch::OpClassTensorOp, arch::IntelXe,
     bfloat16_t, LayoutA,
     bfloat16_t, LayoutB,
     float, LayoutC,
@@ -1456,7 +1456,7 @@ struct DefaultGemmConfigurationToCutlass3Types<
   using GmemTiledCopyB = typename DefaultOperandB::GmemTiledCopy;
 
   using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
-      cutlass::arch::IntelPVC, cutlass::arch::OpClassTensorOp,
+      cutlass::arch::IntelXe, cutlass::arch::OpClassTensorOp,
       cute::bfloat16_t, LayoutA, 1,
       cute::bfloat16_t, LayoutB, 1,
       float,
@@ -1468,14 +1468,14 @@ struct DefaultGemmConfigurationToCutlass3Types<
   using EpilogueOp = epilogue::fusion::LinearCombination<float, float>;
 
   using FusionCallBacks = cutlass::epilogue::fusion::FusionCallbacks<
-    epilogue::IntelPVCEpilogue,
+    epilogue::IntelXeXMX16,
     EpilogueOp,
     TileShape,
     decltype(tile_shape(TiledMma()))
   >;
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
-      cutlass::arch::IntelPVC, cutlass::arch::OpClassTensorOp,
+      cutlass::arch::IntelXe, cutlass::arch::OpClassTensorOp,
       TileShape, Shape<_1, _1, _1>,
       cutlass::epilogue::collective::EpilogueTileAuto,
       float, float,
@@ -1537,7 +1537,7 @@ struct DefaultGemm_TensorOpXe_OperandB<half_t, layout::ColumnMajor, 32, SizeK>
 // Intel XE MMA F32F16
 template <typename LayoutA, typename LayoutB, typename LayoutC>
 struct DefaultGemmConfigurationToCutlass3Types<
-    arch::OpClassTensorOp, arch::IntelPVC,
+    arch::OpClassTensorOp, arch::IntelXe,
     half_t, LayoutA,
     half_t, LayoutB,
     float, LayoutC,
@@ -1564,7 +1564,7 @@ struct DefaultGemmConfigurationToCutlass3Types<
 
   // Mainloop
   using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
-    cutlass::arch::IntelPVC, cutlass::arch::OpClassTensorOp,
+    cutlass::arch::IntelXe, cutlass::arch::OpClassTensorOp,
     cute::bfloat16_t, LayoutA, 1,
     cute::bfloat16_t, LayoutB, 1,
     float,
@@ -1576,14 +1576,14 @@ struct DefaultGemmConfigurationToCutlass3Types<
   using EpilogueOp = epilogue::fusion::LinearCombination<float, float>;
 
   using FusionCallBacks = cutlass::epilogue::fusion::FusionCallbacks<
-    epilogue::IntelPVCEpilogue,
+    epilogue::IntelXeXMX16,
     EpilogueOp,
     TileShape,
     decltype(tile_shape(TiledMma()))
   >;
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
-      cutlass::arch::IntelPVC, cutlass::arch::OpClassTensorOp,
+      cutlass::arch::IntelXe, cutlass::arch::OpClassTensorOp,
       TileShape, Shape<_1, _1, _1>,
       cutlass::epilogue::collective::EpilogueTileAuto,
       float, float,
@@ -1647,7 +1647,7 @@ struct DefaultGemm_TensorOpXe_OperandB<int8_t, layout::ColumnMajor, 32, SizeK>
 // Intel XE MMA S32S8
 template <typename LayoutA, typename LayoutB, typename LayoutC>
 struct DefaultGemmConfigurationToCutlass3Types<
-    arch::OpClassTensorOp, arch::IntelPVC,
+    arch::OpClassTensorOp, arch::IntelXe,
     int8_t, LayoutA,
     int8_t, LayoutB,
     int32_t, LayoutC,
@@ -1655,7 +1655,7 @@ struct DefaultGemmConfigurationToCutlass3Types<
 {
   using TileShape = Shape<_256, _256, _32>;
 
-  using DispatchPolicy = MainloopIntelPVC<3>;
+  using DispatchPolicy = MainloopIntelXeXMX16<3>;
   using TiledMma =
       typename TiledMMAHelper<MMA_Atom<XE_8x16x32_S32S8S8S32_TT>,
                Layout<TileShape>,
@@ -1686,14 +1686,14 @@ struct DefaultGemmConfigurationToCutlass3Types<
   using EpilogueOp = epilogue::fusion::LinearCombination<float, float>;
 
   using FusionCallBacks = cutlass::epilogue::fusion::FusionCallbacks<
-    epilogue::IntelPVCEpilogue,
+    epilogue::IntelXeXMX16,
     EpilogueOp,
     TileShape,
     decltype(tile_shape(TiledMma()))
   >;
 
   using CollectiveEpilogue = cutlass::epilogue::collective::CollectiveEpilogue<
-    epilogue::IntelPVCEpilogue,
+    epilogue::IntelXeXMX16,
     TileShape,
     int32_t, TagToStrideC_t<LayoutC>,
     int32_t, TagToStrideC_t<LayoutC>,
@@ -1754,7 +1754,7 @@ struct DefaultGemm_TensorOpXe_OperandB<tfloat32_t, layout::ColumnMajor, 32, Size
 // Intel XE MMA S32S8
 template <typename LayoutA, typename LayoutB, typename LayoutC>
 struct DefaultGemmConfigurationToCutlass3Types<
-    arch::OpClassTensorOp, arch::IntelPVC,
+    arch::OpClassTensorOp, arch::IntelXe,
     tfloat32_t, LayoutA,
     tfloat32_t, LayoutB,
     float, LayoutC,
@@ -1762,7 +1762,7 @@ struct DefaultGemmConfigurationToCutlass3Types<
 {
   using TileShape = Shape<_256, _256, _32>;
 
-  using DispatchPolicy = MainloopIntelPVC<3>;
+  using DispatchPolicy = MainloopIntelXeXMX16<3>;
   using TiledMma =
       typename TiledMMAHelper<MMA_Atom<XE_8x16x8_F32TF32TF32F32_TT>,
                Layout<TileShape>,
@@ -1793,14 +1793,14 @@ struct DefaultGemmConfigurationToCutlass3Types<
   using EpilogueOp = epilogue::fusion::LinearCombination<float, float>;
 
   using FusionCallBacks = cutlass::epilogue::fusion::FusionCallbacks<
-    epilogue::IntelPVCEpilogue,
+    epilogue::IntelXeXMX16,
     EpilogueOp,
     TileShape,
     decltype(tile_shape(TiledMma()))
   >;
 
   using CollectiveEpilogue = cutlass::epilogue::collective::CollectiveEpilogue<
-    epilogue::IntelPVCEpilogue,
+    epilogue::IntelXeXMX16,
     TileShape,
     float, TagToStrideC_t<LayoutC>,
     float, TagToStrideC_t<LayoutC>,

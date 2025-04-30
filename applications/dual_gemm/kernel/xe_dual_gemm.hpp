@@ -89,7 +89,7 @@ public:
   using MainloopParams = typename DualGemmMainloop::Params;
 
   static_assert(cute::is_void_v<TileScheduler_> or cute::is_same_v<TileScheduler_, PersistentScheduler>,
-    "Intel PVC does not support specializing the tile scheduler.");
+    "Intel Xe does not support specializing the tile scheduler.");
   using TileSchedulerTag = TileScheduler_;
   using TileScheduler = typename detail::TileSchedulerSelector<
     TileScheduler_, ArchTag, WorkgroupTileShape,
@@ -269,8 +269,8 @@ public:
     constexpr auto workgroup_shape = WorkgroupTileShape{};                                                  // (SUB_M,SUB_N,SUB_K)
     constexpr auto subgroup_shape = SubgroupTileShape{};                   
 
-    Tensor mA_mkl = cute::get_pvc_tensor(make_shape(M,K,L));   //(m,k,l)
-    Tensor mB_nkl = cute::get_pvc_tensor(make_shape(N,K,L));   //(n,k,l)
+    Tensor mA_mkl = cute::get_xe_tensor(make_shape(M,K,L));   //(m,k,l)
+    Tensor mB_nkl = cute::get_xe_tensor(make_shape(N,K,L));   //(n,k,l)
 
     Tensor gA = local_tile(mA_mkl, select<0,2>(blk_shape), make_coord(m_coord,_,l_coord));
     Tensor gB = local_tile(mB_nkl, select<1,2>(blk_shape), make_coord(n_coord,_,l_coord));

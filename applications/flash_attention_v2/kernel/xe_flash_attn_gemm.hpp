@@ -80,7 +80,7 @@ public:
 
   static_assert(cute::is_void_v<TileScheduler_> or cute::is_same_v<TileScheduler_, PersistentScheduler> or 
                 cute::is_same_v<TileScheduler_, IndividualScheduler>,
-                "Unsupported TileScheduler for Intel PVC.");
+                "Unsupported TileScheduler for Intel Xe.");
   using TileSchedulerTag = TileScheduler_;
   using TileScheduler =
       typename detail::TileSchedulerSelector<TileScheduler_, ArchTag>::Scheduler;
@@ -256,16 +256,16 @@ public:
       auto discard_seq_coord = seq_len_qo - offset; //1024
       auto full_tile_offset = seq_len_kv - offset; //0
       const int seq_coord = cute::min(seq_len_qo, blk_m_coord * QK_BLK_M + (sub_group_id / PV_ATOM_N) * QK_SG_M) ;
-      
+
       const int seq_len = CausalMask ? full_tile_offset + cute::min(seq_len_kv, seq_coord - discard_seq_coord) + QK_SG_M : seq_len_kv;
       const int nblock_limit = cute::ceil_div(seq_len, QK_BLK_N);
       if(CausalMask && seq_coord < discard_seq_coord ) { // 1024 =0
         continue;
       }
-    
-      Tensor mQ_mkl = cute::get_pvc_tensor(make_shape(seq_len_qo, head_size_qk, (is_var_len ? 1 : batch) * num_heads_q));   //(m,k,l)
-      Tensor mK_nkl = cute::get_pvc_tensor(make_shape(seq_len_kv, head_size_qk, (is_var_len ? 1 : batch) * num_head_kv));   //(n,k,l)
-      Tensor mV_nkl = cute::get_pvc_tensor(make_shape(head_size_vo, seq_len_kv, (is_var_len ? 1 : batch) * num_head_kv));   //(n,k,l)
+
+      Tensor mQ_mkl = cute::get_xe_tensor(make_shape(seq_len_qo, head_size_qk, (is_var_len ? 1 : batch) * num_heads_q));   //(m,k,l)
+      Tensor mK_nkl = cute::get_xe_tensor(make_shape(seq_len_kv, head_size_qk, (is_var_len ? 1 : batch) * num_head_kv));   //(n,k,l)
+      Tensor mV_nkl = cute::get_xe_tensor(make_shape(head_size_vo, seq_len_kv, (is_var_len ? 1 : batch) * num_head_kv));   //(n,k,l)
       Tensor mQ_mk = mQ_mkl(_, _, blk_l_coord);                                                    // (m,k)
       Tensor mK_nk = mK_nkl(_, _, blk_l_coord/group_heads_q);                                                    // (n,k)
       Tensor mV_nk = mV_nkl(_, _, blk_l_coord/group_heads_q);                                                    // (n,k)
@@ -273,7 +273,7 @@ public:
       auto gQ = local_tile(mQ_mk, TileShapeQK{}, make_coord(blk_m_coord, _, _), Step<_1,  X, _1>{});
       auto gK = local_tile(mK_nk, TileShapeQK{}, make_coord(_, _ , _), Step<X, _1, _1>{});
       auto gV = local_tile(mV_nk, TileShapePV{}, make_coord(_, blk_n_coord, _), Step<X, _1, _1>{});
-      
+
       auto mainloop_params = CollectiveMainloop::get_updated_copies(params.mainloop, params.problem_shape, batch_coord);
 
       auto tiled_prefetch_q = cute::prefetch_selector<Shape<Int<QK_BLK_M>, Int<QK_BLK_K>>, Num_SGs>(mainloop_params.gmem_tiled_copy_q);

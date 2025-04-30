@@ -119,7 +119,7 @@ struct Sm120 {
 };
 
 #if defined(CUTLASS_ENABLE_SYCL)
-struct IntelPVC {
+struct IntelXe {
   static int const kMinComputeCapability = 0;
 };
 

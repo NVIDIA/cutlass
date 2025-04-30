@@ -251,7 +251,7 @@ struct XeFlashPersistentTileScheduler {
     struct TileSchedulerSelector<
         void,
         ArchTag,
-        cute::enable_if_t<cute::is_same_v<ArchTag, cutlass::arch::IntelPVC>>>
+        cute::enable_if_t<cute::is_same_v<ArchTag, cutlass::arch::IntelXe>>>
     {
       using Scheduler = typename TileSchedulerSelector<
           IndividualScheduler,
@@ -262,7 +262,7 @@ struct XeFlashPersistentTileScheduler {
     struct TileSchedulerSelector<
         IndividualScheduler,
         ArchTag,
-        cute::enable_if_t<cute::is_same_v<ArchTag, cutlass::arch::IntelPVC>>>
+        cute::enable_if_t<cute::is_same_v<ArchTag, cutlass::arch::IntelXe>>>
     {
       using Scheduler = kernel::XeFlashIndividualTileScheduler;
     };
@@ -271,7 +271,7 @@ struct XeFlashPersistentTileScheduler {
     struct TileSchedulerSelector<
         PersistentScheduler,
         ArchTag,
-        cute::enable_if_t<cute::is_same_v<ArchTag, cutlass::arch::IntelPVC>>>
+        cute::enable_if_t<cute::is_same_v<ArchTag, cutlass::arch::IntelXe>>>
     {
       using Scheduler = kernel::XeFlashPersistentTileScheduler;
     };
@@ -280,7 +280,7 @@ struct XeFlashPersistentTileScheduler {
     struct TileSchedulerSelector<
         FlashDecodeIndividualScheduler,
         ArchTag,
-        cute::enable_if_t<cute::is_same_v<ArchTag, cutlass::arch::IntelPVC>>>
+        cute::enable_if_t<cute::is_same_v<ArchTag, cutlass::arch::IntelXe>>>
     {
       using Scheduler = kernel::XeFlashDecodeIndividualTileScheduler;
     };

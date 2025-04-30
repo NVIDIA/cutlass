@@ -53,7 +53,7 @@ struct XE_Device_Gemm_bf16_bf16_f32_tensor_op_f32_group_gemm {
   using ProblemShape = gemm::GroupProblemShape<cute::Shape<int,int,int>>; // <M,N,K> per group
 
   using Config = gemm::device::DefaultGemmGroupConfiguration<
-    arch::OpClassTensorOp, arch::IntelPVC,
+    arch::OpClassTensorOp, arch::IntelXe,
     ElementA, LayoutA, ElementB, LayoutB, ElementC, LayoutC, ElementAccumulator>;
 
   using Gemm = gemm::device::GemmUniversalAdapter<

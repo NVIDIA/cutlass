@@ -70,7 +70,7 @@ void copy_kernel(TensorS S) {
 
   static_assert(actual_fragment_size::value >= Atom_load::NumValDst, "fragment is too small to hold all results!");
   Tensor fragment_copy_view = make_tensor(fragment.data(), make_shape(C<Atom_load::NumValDst>{},_1{},_1{}));
-  auto blk_load_S = cute::get_pvc_tensor(S.shape());
+  auto blk_load_S = cute::get_xe_tensor(S.shape());
   // preferably we would not partition to be generic in case layouts in copies are wrong, but now that copies check size we need to
   auto thread_s = thr_copy_load.partition_S(blk_load_S(_,_,0));
 

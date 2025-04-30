@@ -108,7 +108,7 @@ struct XE_ATOMIC {
                                   sycl::access::address_space::global_space>(*&dst);
       v += static_cast<D_>(*&src);
     #else
-      CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
+      CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
     #endif
   }
 };
@@ -137,7 +137,7 @@ struct XE_1D_LDSM {
       sycl::ext::oneapi::experimental::group_load(
           sg, &src, *reinterpret_cast<sycl::vec<S_, N> *>(&dst), props);
     #else
-      CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
+      CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
     #endif 
   }
 };
@@ -180,7 +180,7 @@ struct PREFETCH {
     }
 #else
       CUTE_INVALID_CONTROL_PATH(
-          "Trying to use block prefetch on non-PVC hardware");
+          "Trying to use block prefetch on non-Xe hardware");
 #endif
     }
 };
@@ -209,7 +209,7 @@ struct XE_1D_LOAD_GLOBAL {
       sycl::ext::oneapi::experimental::group_load(
           sg, &src, *reinterpret_cast<sycl::vec<S_, N> *>(&dst), props);
     #else
-      CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
+      CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
     #endif 
   }
 
@@ -239,7 +239,7 @@ struct XE_1D_STSM {
       sycl::ext::oneapi::experimental::group_store(
           sg, *reinterpret_cast<sycl::vec<D_, N> const *>(&src), &dst, props);
     #else
-      CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
+      CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
     #endif
   }
 };
@@ -266,7 +266,7 @@ struct XE_1D_STORE_GLOBAL {
       sycl::ext::oneapi::experimental::group_store(
           sg, *reinterpret_cast<sycl::vec<D_, N> const *>(&src), &dst, props);
     #else
-      CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
+      CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
     #endif
   }
 };

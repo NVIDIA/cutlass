@@ -47,13 +47,13 @@ struct XE_Device_Gemm_tf32_tf32_f32_tensor_op_f32_cooperative {
   using ElementB = cute::tfloat32_t;
 
   using Config = gemm::device::DefaultGemmConfigurationToCutlass3Types<
-    arch::OpClassTensorOp, arch::IntelPVC,
+    arch::OpClassTensorOp, arch::IntelXe,
     ElementA, LayoutA,
     ElementB, LayoutB,
     float, layout::RowMajor,
     float>;
 
-  using DispatchPolicy = gemm::MainloopIntelPVC<3, gemm::KernelPVCCooperative>;
+  using DispatchPolicy = gemm::MainloopIntelXeXMX16<3, gemm::KernelXeCooperative>;
 
   using CollectiveMainloop = gemm::collective::CollectiveMma<
     DispatchPolicy, typename Config::TileShape,

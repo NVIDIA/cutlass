@@ -55,7 +55,7 @@ class GemmUniversal<
   CollectiveMainloop_,
   CollectiveEpilogue_,
   TileScheduler_,
-  cute::enable_if_t<cute::is_base_of_v<KernelPVCCooperative, typename CollectiveMainloop_::DispatchPolicy::Schedule>>>
+  cute::enable_if_t<cute::is_base_of_v<KernelXeCooperative, typename CollectiveMainloop_::DispatchPolicy::Schedule>>>
 {
 public:
   //
@@ -251,8 +251,8 @@ public:
       const int l_coord = work_tile_info.L_idx;
       const auto tile_coord = make_coord(m_coord, n_coord, _, l_coord);
       
-      Tensor mA_mkl = cute::get_pvc_tensor(make_shape(M,K,L));   //(m,k,l)
-      Tensor mB_nkl = cute::get_pvc_tensor(make_shape(N,K,L));   //(n,k,l)
+      Tensor mA_mkl = cute::get_xe_tensor(make_shape(M,K,L));   //(m,k,l)
+      Tensor mB_nkl = cute::get_xe_tensor(make_shape(N,K,L));   //(n,k,l)
 
       Tensor mA_mk = mA_mkl(_,_,l_coord);                                                                        // (m,k)
       Tensor mB_nk = mB_nkl(_,_,l_coord);                                                                        // (n,k)

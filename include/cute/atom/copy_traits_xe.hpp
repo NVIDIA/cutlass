@@ -2313,11 +2313,11 @@ COPY_TRAIT_ST_DEF(XE_2D_U32x2x16_ST_N)
 COPY_TRAIT_ST_DEF(XE_2D_U32x4x16_ST_N)
 COPY_TRAIT_ST_DEF(XE_2D_U32x8x16_ST_N)
 
-// Generate the PVC coordinate tensor
+// Generate the Xe coordinate tensor
 template <class GShape>
 CUTE_HOST_DEVICE constexpr
 auto
-get_pvc_tensor(GShape const& g_shape) {
+get_xe_tensor(GShape const& g_shape) {
   return make_counting_tensor(make_identity_layout(g_shape));
 }
 

@@ -54,12 +54,12 @@ template <class DispatchPolicy, class... Args> class CollectiveEpilogueAttention
 };
 
 template <class CtaTileMNK_, class ElementO_, class StrideO_, class ElementLSE_, class CopyOpO_>
-class CollectiveEpilogueAttention<epilogue::IntelPVCEpilogue, CtaTileMNK_, ElementO_, StrideO_, ElementLSE_, CopyOpO_> {
+class CollectiveEpilogueAttention<epilogue::IntelXeXMX16, CtaTileMNK_, ElementO_, StrideO_, ElementLSE_, CopyOpO_> {
 public:
   //
   // Type Aliases
   //
-  using DispatchPolicy = epilogue::IntelPVCEpilogue;
+  using DispatchPolicy = epilogue::IntelXeXMX16;
   using CtaTileMNK = CtaTileMNK_;
   using ElementO = ElementO_;
   using ElementAccumulator = ElementO_;
@@ -181,7 +181,7 @@ public:
     // Indexing variables
     auto [batch, num_heads_q, num_heads_kv, seq_len_qo, seq_len_kv, seq_len_kv_cache, head_size_qk, head_size_vo] = problem_shape;
     // Represent the full output tensor
-    Tensor mO_mnl = cute::get_pvc_tensor(make_shape(seq_len_qo, head_size_vo, (is_var_len ? batch : 1) * num_heads_q));
+    Tensor mO_mnl = cute::get_xe_tensor(make_shape(seq_len_qo, head_size_vo, (is_var_len ? batch : 1) * num_heads_q));
     
     auto [m_coord, n_coord, k_coord, l_coord] = tile_coord;
     // Tile the output tensor per WG

@@ -60,8 +60,8 @@ void copy_kernel_vectorized(TensorS S, TensorD D) {
                                           Layout<Shape<_1, _16>>{},
                                           make_layout(shape_div(typename traits_store::BlockShape{}, Shape<_1, _16>{})));
 
-  auto S_coord = cute::get_pvc_tensor(append(S.shape(),_1{}))(_,_,0);
-  auto D_coord = cute::get_pvc_tensor(append(D.shape(),_1{}))(_,_,0);
+  auto S_coord = cute::get_xe_tensor(append(S.shape(),_1{}))(_,_,0);
+  auto D_coord = cute::get_xe_tensor(append(D.shape(),_1{}))(_,_,0);
 
   Tensor tiled_tensor_S = tiled_divide(
     S_coord, Shape<Int<wg_tile_m>, Int<wg_tile_n>>{}); // ((M, N), m', n')

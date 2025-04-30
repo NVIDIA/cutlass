@@ -256,11 +256,14 @@ struct Sm120TmaWarpSpecialized {
 };
 
 #if defined (SYCL_INTEL_TARGET)
-struct IntelPVCEpilogue {
+// Specialization of the GEMM Epilogue for Intel Xe architectures.
+// This version is tuned for operations with a subgroup size of 16.
+// Suitable for use with Intel Battlemage (Xe2) and PVC (Xe) architectures.
+struct IntelXeXMX16 {
   static constexpr int SubgroupSize = 16;
 };
 
-struct IntelPVCGroupEpilogue {
+struct IntelXeXMX16Group {
   static constexpr int SubgroupSize = 16;
 };
 #endif

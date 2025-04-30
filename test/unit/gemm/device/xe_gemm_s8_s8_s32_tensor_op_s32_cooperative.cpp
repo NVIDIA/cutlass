@@ -46,13 +46,13 @@ struct XE_Device_Gemm_s8_s8_s32_tensor_op_s32_cooperative {
   using ElementB = int8_t;
 
   using Config = gemm::device::DefaultGemmConfigurationToCutlass3Types<
-    arch::OpClassTensorOp, arch::IntelPVC,
+    arch::OpClassTensorOp, arch::IntelXe,
     ElementA, LayoutA,
     ElementB, LayoutB,
     int32_t, layout::RowMajor,
     int32_t>;
 
-  using DispatchPolicy = gemm::MainloopIntelPVC<3, gemm::KernelPVCCooperative>;
+  using DispatchPolicy = gemm::MainloopIntelXeXMX16<3, gemm::KernelPVCCooperative>;
 
   using CollectiveMainloop = gemm::collective::CollectiveMma<
     DispatchPolicy, Config::TileShape,

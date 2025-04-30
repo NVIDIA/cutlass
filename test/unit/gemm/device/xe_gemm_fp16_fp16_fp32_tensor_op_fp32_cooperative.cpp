@@ -47,20 +47,20 @@ struct XE_Device_Gemm_fp16_fp16_f32_tensor_op_f32_cooperative {
   using ElementB = cute::half_t;
 
   using Config = gemm::device::DefaultGemmConfigurationToCutlass3Types<
-    arch::OpClassTensorOp, arch::IntelPVC,
+    arch::OpClassTensorOp, arch::IntelXe,
     ElementA, LayoutA,
     ElementB, LayoutB,
     float, layout::RowMajor,
     float>;
 
   using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
-    cutlass::arch::IntelPVC, cutlass::arch::OpClassTensorOp,
+    cutlass::arch::IntelXe, cutlass::arch::OpClassTensorOp,
     ElementA, LayoutA, 1,
     ElementB, LayoutB, 1,
     float,
     typename Config::TileShape, Shape<_1, _1, _1>,
     cutlass::gemm::collective::StageCountAuto,
-    cutlass::gemm::KernelPVCCooperative
+    cutlass::gemm::KernelXeCooperative
   >::CollectiveOp;
 
   using GemmKernel = gemm::kernel::GemmUniversal<

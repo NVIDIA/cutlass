@@ -67,7 +67,7 @@ constexpr static int AlignmentC = sizeof(ElementAccumulator);
 constexpr static int AlignmentD = sizeof(ElementOutput);
 
 using CollectiveMainloop = typename gemm::collective::CollectiveBuilder<
-    arch::IntelPVC, arch::OpClassTensorOp,
+    arch::IntelXe, arch::OpClassTensorOp,
     ElementInputA, LayoutA, AlignmentA,
     ElementInputB, LayoutB, AlignmentB,
     ElementAccumulator,
@@ -94,7 +94,7 @@ TEST(XE_Device_Gemm_bf16t_bf16t_f32t_tensor_op_gmma_f32_epilogue, 256x256x32_Lin
           ElementAccumulator, FloatRoundStyle::round_to_nearest>;
 
   using CollectiveEpilogue = typename epilogue::collective::CollectiveBuilder<
-      arch::IntelPVC, arch::OpClassTensorOp,
+      arch::IntelXe, arch::OpClassTensorOp,
       TileShape_MNK, ClusterShape_MNK,
       epilogue::collective::EpilogueTileAuto,
       ElementComputeEpilogue, ElementAccumulator,
@@ -120,7 +120,7 @@ TEST(Xe_Gemm_bf16t_bf16t_f32_tensor_op_gmma_f32_epilogue_drelu, 256x256x32) {
     ElementComputeEpilogue>;
 
   using CollectiveEpilogue = typename epilogue::collective::CollectiveBuilder<
-      arch::IntelPVC, arch::OpClassTensorOp,
+      arch::IntelXe, arch::OpClassTensorOp,
       TileShape_MNK, ClusterShape_MNK,
       epilogue::collective::EpilogueTileAuto,
       ElementComputeEpilogue, ElementAccumulator,
@@ -140,7 +140,7 @@ TEST(Xe_Gemm_bf16t_bf16t_f32_tensor_op_gmma_f32_epilogue_drelu, 256x256x32) {
 TEST(XE_Device_Gemm_bf16t_bf16t_f32_tensor_op_gmma_f32_epilogue, 256x256x32_LinCombPerRowBias) {
   using ElementBias = float;
 
-  using EpilogueDispatchPolicy = epilogue::IntelPVCEpilogue;
+  using EpilogueDispatchPolicy = epilogue::IntelXeXMX16;
   using EpilogueOp = epilogue::fusion::LinCombPerRowBias<
       ElementOutput, ElementComputeEpilogue, ElementBias, ElementAccumulator,
       ElementAccumulator, 128 / sizeof_bits_v<ElementBias>,
@@ -171,7 +171,7 @@ TEST(XE_Device_Gemm_bf16t_bf16t_f32_tensor_op_gmma_f32_epilogue, 256x256x32_LinC
 TEST(XE_Device_Gemm_bf16t_bf16t_f32_tensor_op_gmma_f32_epilogue, 256x256x32_LinCombPerColBias) {
   using ElementBias = float;
 
-  using EpilogueDispatchPolicy = epilogue::IntelPVCEpilogue;
+  using EpilogueDispatchPolicy = epilogue::IntelXeXMX16;
   using EpilogueOp = epilogue::fusion::LinCombPerColBias<
       ElementOutput, ElementComputeEpilogue, ElementBias, ElementAccumulator,
       ElementAccumulator, 128 / sizeof_bits_v<ElementBias>,

@@ -616,7 +616,7 @@ make_tiled_mma(MMA_Op       const&,
 // to cover a larger tile (i.e. CTALayout) than the hardware can handle
 // at once. 
 //
-// Consider an example for PVC hardware:
+// Consider an example for Xe hardware:
 //   using TiledMma =
 //       TiledMMA<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
 //                Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>,

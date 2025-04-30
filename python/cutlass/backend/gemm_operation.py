@@ -1337,7 +1337,7 @@ using DeviceKernel = cutlass::gemm::device::GemmUniversalAdapter<${operation_nam
         if operation.tile_description.tile_scheduler is not None:
             tschedule = operation.tile_description.tile_scheduler
 
-        arch = "cutlass::arch::IntelPVC" if operation.arch == 11 else f"cutlass::arch::Sm{operation.arch}"
+        arch = "cutlass::arch::IntelXe" if operation.arch == 11 else f"cutlass::arch::Sm{operation.arch}"
         values = {
             "operation_name": operation.procedural_name(),
             "operation_suffix": self.operation_suffix,

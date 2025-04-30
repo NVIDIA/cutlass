@@ -53,7 +53,7 @@ struct XE_Device_Gemm_fp16_fp16_f32_tensor_op_f32_group_gemm {
   using LayoutC = layout::RowMajor;
 
   using Config = gemm::device::DefaultGemmGroupConfiguration<
-    arch::OpClassTensorOp, arch::IntelPVC,
+    arch::OpClassTensorOp, arch::IntelXe,
     ElementA, LayoutA, ElementB, LayoutB, ElementC, LayoutC, ElementAccumulator>;
 
   using GemmKernel = gemm::kernel::GemmUniversal<

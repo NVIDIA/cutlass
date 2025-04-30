@@ -650,8 +650,8 @@ template <bool Causal, typename TileShape, typename TiledMma> struct FMHAConfig 
     using ElementOutput = float;          // <- data type of elements in output matrix D
         
     constexpr int PipelineStages = 2;
-    using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelPVC<PipelineStages>;
-    using EpilogueDispatchPolicy = cutlass::epilogue::IntelPVCEpilogue;
+    using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelXeXMX16<PipelineStages>;
+    using EpilogueDispatchPolicy = cutlass::epilogue::IntelXeXMX16;
 
     using GmemTiledCopyQ = XE_2D_U16x8x32_LD_N;
     using GmemTiledCopyK = XE_2D_U16x16x16_LD_T;

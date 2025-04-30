@@ -69,7 +69,7 @@ template <
   class CopyOpR2S_
 >
 class CollectiveEpilogue<
-    IntelPVCGroupEpilogue,
+    IntelXeXMX16Group,
     CtaTileMNK_,
     ElementC_,
     StrideC_,
@@ -87,7 +87,7 @@ public:
   //
   // Type Aliases
   //
-  using DispatchPolicy = IntelPVCGroupEpilogue;
+  using DispatchPolicy = IntelXeXMX16Group;
   using CtaTileMNK = CtaTileMNK_;
   using FusionCallbacks = FusionCallbacks_;
   using ElementC = ElementC_;
@@ -320,7 +320,7 @@ public:
     bool is_C_load_needed = is_source_supported && fusion_callbacks.is_C_load_needed();
     
     // Represent the full output tensor
-    Tensor mD_mnl = cute::get_pvc_tensor(make_shape(M,N,L));
+    Tensor mD_mnl = cute::get_xe_tensor(make_shape(M,N,L));
 
     // Tile the output tensor per WG and select the tile for current WG
     Tensor g_wg_D = local_tile(mD_mnl, take<0,2>(CtaTileMNK{}), make_coord(m_coord,n_coord,l_coord));  // (BLK_M,BLK_N)
