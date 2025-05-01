@@ -48,9 +48,6 @@ from cutlass.utils.datatypes import td_from_profiler_td, td_from_profiler_op
 _generator_ccs = [50, 60, 61, 70, 75, 80, 90]
 
 
-
-
-
 class KernelsForDataType:
     """
     Container class for keeping track of kernels that correspond to a particular combination
@@ -277,7 +274,7 @@ class ArchOptions:
         ]
         manifest_args = cutlass_library.generator.define_parser().parse_args(args)
         manifest = cutlass_library.manifest.Manifest(manifest_args)
-        generate_function(manifest, _nvcc_version)
+        generate_function(manifest, cutlass._nvcc_version)
 
         if operation_kind not in manifest.operations:
             # No kernels generated for this architecture, this could be because the CUDA
@@ -552,6 +549,9 @@ class OptionRegistry:
 
     def __init__(self, target_cc: int):
         self.registry = {}
+
+        if target_cc > 90:
+            raise Exception(f"Unsupported compute capability {target_cc}. The CUTLASS Python interface only supports compute capabilities up to 90.")
 
         gemm_kinds = [cutlass_library.GemmKind.Universal, cutlass_library.GemmKind.Universal3x]
         operation_kinds = [cutlass_library.OperationKind.Gemm, cutlass_library.OperationKind.Conv2d]

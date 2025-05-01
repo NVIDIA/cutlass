@@ -98,7 +98,7 @@ this = sys.modules[__name__]
 this.logger = logging.getLogger(__name__)
 
 # RMM is only supported for Python 3.9+
-if (sys.version_info.major == 3 and sys.version_info.major > 8) or sys.version_info.major > 3:
+if (sys.version_info.major == 3 and sys.version_info.minor > 8) or sys.version_info.major > 3:
     try:
         import rmm
         this.use_rmm = True
@@ -156,32 +156,32 @@ def get_memory_pool():
     return this.memory_pool
 
 
+base_cuda = lazy_import("cuda")
 cuda = lazy_import("cuda.cuda")
 cudart = lazy_import("cuda.cudart")
 
 this._device_id = None
+this._nvcc_version = None
 
 def check_cuda_versions():
     # Strip any additional information from the CUDA version
-    _cuda_version = cuda.__version__.split("rc")[0]
+    _cuda_version = base_cuda.__version__.split("rc")[0]
     # Check that Python CUDA version exceeds NVCC version
-    _nvcc_version = cutlass.nvcc_version()
+    this._nvcc_version = nvcc_version()
     _cuda_list = _cuda_version.split('.')
-    _nvcc_list = _nvcc_version.split('.')
+    _nvcc_list = this._nvcc_version.split('.')
     for val_cuda, val_nvcc in zip(_cuda_list, _nvcc_list):
         if int(val_cuda) < int(val_nvcc):
-            raise Exception(f"Python CUDA version of {_cuda_version} must be greater than or equal to NVCC version of {_nvcc_version}")
+            raise Exception(f"Python CUDA version of {_cuda_version} must be greater than or equal to NVCC version of {this._nvcc_version}")
 
     if len(_nvcc_list) > len(_cuda_list):
         if len(_nvcc_list) != len(_cuda_list) + 1:
-            raise Exception(f"Malformatted NVCC version of {_nvcc_version}")
+            raise Exception(f"Malformatted NVCC version of {this._nvcc_version}")
         if _nvcc_list[:-1] == _cuda_list and int(_nvcc_list[-1]) != 0:
-            raise Exception(f"Python CUDA version of {_cuda_version} must be greater than or equal to NVCC version of {_nvcc_version}")
-
+            raise Exception(f"Python CUDA version of {_cuda_version} must be greater than or equal to NVCC version of {this._nvcc_version}")
 
 def initialize_cuda_context():
     check_cuda_versions()
-
 
     if this._device_id is not None:
         return

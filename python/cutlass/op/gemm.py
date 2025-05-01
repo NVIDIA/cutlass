@@ -655,7 +655,7 @@ class Gemm(OperationBase):
         :rtype: cutlass.backend.GemmArguments
         """
         if not stream:
-            stream = cuda.CUStream(0)
+            stream = cuda.CUstream(0)
         super().run_setup()
         A = self._verify_tensor(A, self.A, self._element_a, self._layout_a, "A")
         B = self._verify_tensor(B, self.B, self._element_b, self._layout_b, "B")
