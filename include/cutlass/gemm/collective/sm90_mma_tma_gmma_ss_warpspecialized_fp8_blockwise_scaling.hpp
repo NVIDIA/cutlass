@@ -1001,7 +1001,7 @@ struct CollectiveMma<
       // Advance smem_pipe_read and smem_pipe_release
       ++smem_pipe_release;
     }
-    {
+    if (k_tile_count == 1) {
       pipeline.consumer_wait(smem_pipe_read, barrier_token);
 
       //
