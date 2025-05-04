@@ -1,5 +1,11 @@
 # NVIDIA CUTLASS Changelog
 
+## [3.9.2](https://github.com/NVIDIA/cutlass/releases/tag/v3.9.2) (2025-05-03)
+
+* Fixed [Blockwise](./examples/67_hopper_fp8_warp_specialized_gemm_with_blockwise_scaling/67_hopper_fp8_warp_specialized_gemm_with_blockwise_scaling.cu) and [Groupwise](./examples/67_hopper_fp8_warp_specialized_gemm_with_blockwise_scaling/67_hopper_fp8_warp_specialized_gemm_with_groupwise_scaling.cu) GEMM hang issue when problem size K is 128.
+* Optimal code generation with CUDA toolkit versions 12.9.
+
+
 ## [3.9.1](https://github.com/NVIDIA/cutlass/releases/tag/v3.9.1) (2025-04-30)
 
 * Fixed Group Gemm hang issue in CUTLASS 3.x
