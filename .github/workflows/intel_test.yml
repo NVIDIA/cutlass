@@ -1,0 +1,103 @@
+name: "SYCL Intel Test"
+
+on:
+  push:
+    branches: [ "sycl-develop" ]
+  pull_request:
+    branches: [ "sycl-develop" ]
+  merge_group:
+    branches: [ "sycl-develop" ]
+  workflow_dispatch:
+    inputs:
+      DPCPP_VERSION:
+        description: "DPCPP version to use"
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  run-tests:
+    strategy:
+      matrix:
+        include:
+          - compiler: NIGHTLY
+            gpu: BMG
+            intel_graphics: STAGING
+            sycl_target: intel_gpu_bmg_g21
+            runner: cp-b580-gpu
+          - compiler: RELEASE
+            gpu: BMG
+            intel_graphics: STAGING
+            sycl_target: intel_gpu_bmg_g21
+            runner: cp-b580-gpu
+
+            # disable because IGC bug
+#          - compiler: NIGHTLY
+#            gpu: PVC
+#            intel_graphics: RELEASE
+#            sycl_target: intel_gpu_pvc
+#            runner: cp-gpumax-1100-gpu
+#          - compiler: RELEASE
+#            gpu: PVC
+#            intel_graphics: RELEASE
+#            sycl_target: intel_gpu_pvc
+#            runner: cp-gpumax-1100-gpu
+#          - compiler: RELEASE
+#            gpu: BMG
+#            intel_graphics: RELEASE
+#            sycl_target: intel_gpu_bmg_g21
+#            runner: cp-b580-gpu
+#          - compiler: NIGHTLY
+#            gpu: BMG
+#            intel_graphics: RELEASE
+#            sycl_target: intel_gpu_bmg_g21
+#            runner: cp-b580-gpu
+
+    name: Run Intel ${{ matrix.compiler }} tests on ${{ matrix.gpu }} with intel-graphics ${{ matrix.intel_graphics }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+      # For a specific DPC++ nightly build define the repository variable DPCPP_VERSION
+      # for example using the tag: 'nightly-2024-04-22'
+      - name: Install DPC++
+        uses: ./.github/actions/install-dpcpp
+        with:
+          DPCPP_RELEASE: ${{ matrix.compiler }}
+          DPCPP_VERSION: ${{ inputs.DPCPP_VERSION }}
+          GPU: ${{ matrix.gpu }}
+          IGC: ${{ matrix.intel_graphics }}
+      - name: Setup virtual environment
+        shell: bash
+        run: |
+          . setvars.sh
+          # Persist environment variables to following steps
+          env >> $GITHUB_ENV
+          which $CXX
+          $CXX --version
+          sycl-ls
+      - name: Build
+        shell: bash
+        run: |
+          cmake -G Ninja  \
+            -DCUTLASS_ENABLE_SYCL=ON \
+            -DDPCPP_SYCL_TARGET=${{ matrix.sycl_target }} \
+            -DCUTLASS_SYCL_RUNNING_CI=ON
+          cmake --build .
+      - name: Unit test
+        shell: bash
+        run: |
+          cmake --build . --target test_unit -j $(nproc)
+      - name: Examples
+        shell: bash
+        run: |
+          # Disable test examples on BMG due to flakiness 
+          if [[ "${{ matrix.GPU }}" != "BMG" ]]; then
+            cmake --build . --target test_examples -j $(nproc)
+          fi
