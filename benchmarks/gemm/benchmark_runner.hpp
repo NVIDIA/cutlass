@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
+ * Copyright (c) 2024 - 2025 Codeplay Software Ltd. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -50,24 +50,11 @@
 #include "cutlass/util/reference/device/tensor_fill.h"
 #include "cutlass/util/reference/device/tensor_silu.h"
 
+#include "../common.hpp"
+
 #include <benchmark/benchmark.h>
 
 using namespace cute;
-
-namespace cutlass {
-    std::size_t get_llc_size() {
-      #if defined(CUTLASS_ENABLE_SYCL)
-        return syclcompat::get_default_queue().get_device().get_info<sycl::info::device::global_mem_cache_size>();   
-      #else
-        cudaDeviceProp prop_struct;
-        auto result = cudaGetDeviceProperties(&prop_struct, 0);
-        if (result != cudaSuccess) {
-          throw std::runtime_error(cudaGetErrorString(result));
-        }
-        return static_cast<std::size_t>(prop_struct.l2CacheSize);
-      #endif
-    }
-}
 
 namespace cutlass::benchmark {
 
@@ -464,42 +451,6 @@ private:
     state.counters["avg_throughput"] = mega_bytes_transferred / state.counters["avg_runtime_ms"];
     state.counters["best_tflop"] = gflop / state.counters["best_runtime_ms"];
     state.counters["best_bandwidth"] = mega_bytes_transferred / state.counters["best_runtime_ms"];
-  }
-};
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
-
-template<typename Options>
-class BenchmarkRegistry {
-  using BM_Lambda = std::function<void(::benchmark::State& state, Options const&, KernelHardwareInfo const &)>;
-  std::map<const std::string, BM_Lambda> benchmarks;
-
-  static BenchmarkRegistry& get_instance() {
-    static BenchmarkRegistry runner;
-    return runner;
-  }
-
-  BenchmarkRegistry() = default;
-public:
-  BenchmarkRegistry(BenchmarkRegistry const&) = delete;
-  void operator=(BenchmarkRegistry const&) = delete;
-
-  static auto const& get_benchmark(std::string const& name) {
-    auto& benchs = get_instance().benchmarks;
-    auto it = benchs.find(name);
-    if (it == benchs.end()) {
-      throw std::runtime_error("Benchmark not found");
-    }
-    return it->second;
-  }
-
-  static void Register(std::string const& key, BM_Lambda const func) {
-    auto& benchs = get_instance().benchmarks;
-    if (benchs.find(key) == benchs.end()) {
-      benchs.insert(std::make_pair(key, func));
-    } else {
-      std::cerr << "Benchmark " << key << " duplicated." << std::endl;
-    }
   }
 };
 

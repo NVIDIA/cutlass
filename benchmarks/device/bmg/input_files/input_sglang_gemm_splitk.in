@@ -1,0 +1,13 @@
+# Benchmarks for required shapes for first SGLang release
+
+# mm_fusion 1,8 4096 28672 = (2x14336)
+PvcGemmBF16BF16FP32_SplitK_RCR_5 --bm_name=mm_fusion --m=1 --k=4096 --n=28672
+PvcGemmBF16BF16FP32_SplitK_RCR_5 --bm_name=mm_fusion --m=8 --k=4096 --n=28672
+
+# mm_add 1,8 14336 4096
+PvcGemmBF16BF16FP32_SplitK_RCR_5 --bm_name=mm_add --m=1 --k=14336 --n=4096 --beta=1
+PvcGemmBF16BF16FP32_SplitK_RCR_5 --bm_name=mm_add --m=8 --k=14336 --n=4096 --beta=1
+
+# lmhead_mm 1,8 4096 128256
+PvcGemmBF16BF16FP32_SplitK_RCR_5 --bm_name=lmhead_mm --m=1 --k=4096 --n=128256
+PvcGemmBF16BF16FP32_SplitK_RCR_5 --bm_name=lmhead_mm --m=8 --k=4096 --n=128256

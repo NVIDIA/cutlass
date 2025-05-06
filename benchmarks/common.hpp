@@ -1,5 +1,5 @@
 /***************************************************************************************************
-* Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
+* Copyright (c) 2024 - 2025 Codeplay Software Ltd. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -29,18 +29,6 @@
  *
  **************************************************************************************************/
 
-#include "cutlass/cutlass.h"
-#include "cutlass/kernel_hardware_info.h"
-#include "cutlass/util/command_line.h"
-
-#include "benchmark_runner.hpp"
-#if defined(SYCL_NVIDIA_TARGET) || !defined(CUTLASS_ENABLE_SYCL)
-#include "ampere/benchmarks.hpp"
-#elif defined(SYCL_INTEL_TARGET)
-#include "pvc/benchmarks.hpp"
-#include "pvc/flash_attention_v2/benchmarks.hpp"
-#endif
-
 #include <benchmark/benchmark.h>
 #include <iostream>
 #include <sstream>
@@ -48,6 +36,62 @@
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+namespace cutlass {
+  static inline std::size_t get_llc_size() {
+    #if defined(CUTLASS_ENABLE_SYCL)
+      return syclcompat::get_default_queue().get_device().get_info<sycl::info::device::global_mem_cache_size>();   
+    #else
+      cudaDeviceProp prop_struct;
+      auto result = cudaGetDeviceProperties(&prop_struct, 0);
+      if (result != cudaSuccess) {
+        throw std::runtime_error(cudaGetErrorString(result));
+      }
+      return static_cast<std::size_t>(prop_struct.l2CacheSize);
+    #endif
+  }
+
+
+namespace benchmark {
+
+  template<typename Options>
+  class BenchmarkRegistry {
+    using BM_Lambda = std::function<void(::benchmark::State& state, Options const&, cutlass::KernelHardwareInfo const &)>;
+    std::map<const std::string, BM_Lambda> benchmarks;
+
+    static BenchmarkRegistry& get_instance() {
+      static BenchmarkRegistry runner;
+      return runner;
+    }
+
+    BenchmarkRegistry() = default;
+  public:
+    BenchmarkRegistry(BenchmarkRegistry const&) = delete;
+    void operator=(BenchmarkRegistry const&) = delete;
+
+    static auto const& get_benchmark(std::string const& name) {
+      auto& benchs = get_instance().benchmarks;
+      auto it = benchs.find(name);
+      if (it == benchs.end()) {
+        throw std::runtime_error("Benchmark not found");
+      }
+      return it->second;
+    }
+
+    static void Register(std::string const& key, BM_Lambda const func) {
+      auto& benchs = get_instance().benchmarks;
+      if (benchs.find(key) == benchs.end()) {
+        benchs.insert(std::make_pair(key, func));
+      } else {
+        std::cerr << "Benchmark " << key << " duplicated." << std::endl;
+      }
+    }
+  };
+} // namespace benchmark
+} // namespace cutlass
+
+
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
 
 // Command line options parsing
 struct BenckmarkOptions {
@@ -78,7 +122,7 @@ struct BenckmarkOptions {
 
     out << "Benchmark\n\n"
         << "Options:\n\n"
-        << "  --config_file               Configuration file\n\n";
+        << "  --config_file=/path/to/config_file.in\n\n";
 
     return out;
   }
@@ -108,76 +152,26 @@ auto benchmark_main(int argc, const char **argv) -> int {
   return 0;
 }
 
-int main(int argc, const char** argv) {
 
-  BenckmarkOptions options;
+template <typename BenchOptions>
+void register_benchmarks(std::string line) {
+  // Split the line into arguments
+  std::istringstream iss(line);
+  std::vector<std::string> args;
+  std::string arg;
 
-  options.parse(argc, argv);
-
-  if (options.help) {
-    options.print_usage(std::cout) << std::endl;
-    return 0;
+  while (iss >> arg) {
+    args.push_back(arg);
   }
 
-  if (options.config_file.empty()) {
-    std::cerr << "Benchmark configuration file not found." << std::endl;
-    options.error = true;
+  // Prepare argc and argv for secondary_main
+  int line_argc = static_cast<int>(args.size());
+  std::vector<const char*> line_argv(line_argc);
+
+  for (int i = 0; i < line_argc; ++i) {
+    line_argv[i] = args[i].c_str();
   }
 
-  if (options.error) {
-    std::cerr << "Aborting execution." << std::endl;
-    return -1;
-  }
-
-  std::ifstream file(options.config_file);
-
-  if (!file.is_open()) {
-    std::cerr << "Failed to open configuration file: " << options.config_file << std::endl;
-    return 1;
-  }
-
-  register_benchmarks();
-
-  std::string line;
-  while (std::getline(file, line)) {
-    if (!line.empty() && line.find("#") != 0) {
-      // Split the line into arguments
-      std::istringstream iss(line);
-      std::vector<std::string> args;
-      std::string arg;
-
-      while (iss >> arg) {
-        args.push_back(arg);
-      }
-
-      // Prepare argc and argv for secondary_main
-      int line_argc = static_cast<int>(args.size());
-      std::vector<const char*> line_argv(line_argc);
-
-      for (int i = 0; i < line_argc; ++i) {
-        line_argv[i] = &args[i][0]; // Convert std::string to char*
-      }
-
-      std::string const& benchmark_config = line_argv.data()[0];
-
-      // Call the secondary main function with the parsed arguments
-      if(benchmark_config.find("Gemm") != std::string::npos) {
-        benchmark_main<cutlass::benchmark::GEMMOptions>(line_argc, line_argv.data());
-      } else {
-#if defined SYCL_INTEL_TARGET
-        benchmark_main<cutlass::benchmark::FMHAOptions>(line_argc, line_argv.data());
-#endif
-      }
-    }
-  }
-  file.close();
-
-  int argc_bm = 0;
-  ::benchmark::SetDefaultTimeUnit(::benchmark::kMillisecond);
-  ::benchmark::Initialize(&argc_bm, nullptr);
-
-  ::benchmark::RunSpecifiedBenchmarks();
-  ::benchmark::Shutdown();
-
-  return 0;
+  // Call the secondary main function with the parsed arguments
+  benchmark_main<BenchOptions>(line_argc, line_argv.data());
 }

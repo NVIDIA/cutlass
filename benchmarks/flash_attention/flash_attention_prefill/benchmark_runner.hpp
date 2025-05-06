@@ -49,8 +49,7 @@
 #include "cutlass/util/reference/device/gemm_complex.h"
 #include "cutlass/util/reference/device/tensor_compare.h"
 #include "../examples/common/sycl_common.hpp"
-
-#include "../benchmarks/benchmark_runner.hpp"
+#include "../../common.hpp"
 
 using namespace cute;
 
@@ -104,14 +103,14 @@ struct FMHAOptions {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <class FMHAConfiguration> struct BenchmarkRunnerFMHA {
+template <class FMHAPrefillConfiguration> struct BenchmarkRunnerFMHA {
 
-  using GemmKernel = typename FMHAConfiguration::GemmKernel;
+  using GemmKernel = typename FMHAPrefillConfiguration::GemmKernel;
   
-  using LayoutQ = typename FMHAConfiguration::LayoutQ;
-  using LayoutK = typename FMHAConfiguration::LayoutK;
-  using LayoutV = typename FMHAConfiguration::LayoutV;
-  using LayoutO = typename FMHAConfiguration::LayoutO;
+  using LayoutQ = typename FMHAPrefillConfiguration::LayoutQ;
+  using LayoutK = typename FMHAPrefillConfiguration::LayoutK;
+  using LayoutV = typename FMHAPrefillConfiguration::LayoutV;
+  using LayoutO = typename FMHAPrefillConfiguration::LayoutO;
 
   using StrideQ = typename GemmKernel::StrideQ;
   using StrideK = typename GemmKernel::StrideK;
@@ -129,8 +128,8 @@ template <class FMHAConfiguration> struct BenchmarkRunnerFMHA {
   using ElementAccumulator = typename CollectiveEpilogue::ElementAccumulator;
 
   using ProblemShapeType = typename GemmKernel::ProblemShape;
-  static constexpr bool Causal = FMHAConfiguration::Causal;
-  static constexpr bool isVarLen = FMHAConfiguration::VarLen;
+  static constexpr bool Causal = FMHAPrefillConfiguration::Causal;
+  static constexpr bool isVarLen = FMHAPrefillConfiguration::VarLen;
 
   int32_t count;
 
@@ -617,9 +616,9 @@ private:
 
 }
 
-#define CUTLASS_FMHA_BENCHMARK(F) cutlass::benchmark::BenchmarkRegistry<cutlass::benchmark::FMHAOptions>::Register(#F, &F##_func)
+#define CUTLASS_FMHA_PREFILL_BENCHMARK(F) cutlass::benchmark::BenchmarkRegistry<cutlass::benchmark::FMHAOptions>::Register(#F, &F##_func)
 
-#define CUTLASS_CREATE_FMHA_BENCHMARK(F)                          \
+#define CUTLASS_CREATE_FMHA_PREFILL_BENCHMARK(F)                          \
   static void F##_func(                                           \
       ::benchmark::State& state,                                  \
       cutlass::benchmark::FMHAOptions const& options,                 \

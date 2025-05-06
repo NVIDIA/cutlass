@@ -1,4 +1,4 @@
-# Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
+# Copyright (c) 2024 - 2025 Codeplay Software Ltd. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -28,19 +28,44 @@
 
 
 add_custom_target(cutlass_benchmarks)
+add_custom_target(benchmarks)
+
+
+function(cutlass_benchmark_add_suite NAME)
+
+  set(options)
+  set(oneValueArgs SUPERSUITE)
+  set(multiValueArgs)
+  cmake_parse_arguments(_ "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+
+  string(REGEX REPLACE cutlass_ "" NAME_STEM ${NAME})
+  add_custom_target(${NAME})
+  add_custom_target(${NAME_STEM})
+
+  if(DEFINED __SUPERSUITE)
+    string(REGEX REPLACE cutlass_ "" SUPERSUITE_STEM ${__SUPERSUITE})
+    add_dependencies(${__SUPERSUITE} ${NAME})
+    add_dependencies(${SUPERSUITE_STEM} ${NAME_STEM})
+  else()
+    add_dependencies(cutlass_benchmarks ${NAME})
+    add_dependencies(benchmarks ${NAME_STEM})
+  endif()
+endfunction()
 
 function(cutlass_benchmark_add_executable NAME)
 
   set(options)
-  set(oneValueArgs DISABLE_TESTS)
+  set(oneValueArgs DISABLE_TESTS SUITE)
   set(multiValueArgs DEPENDS DEPENDEES TEST_COMMAND_OPTIONS)
   cmake_parse_arguments(_ "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+
+  if(NOT DEFINED __SUITE)
+    message(FATAL_ERROR "Missing required benchmark suite (SUITE)")
+  endif()
 
   set(__DISABLE_TESTS ON)
 
   cutlass_add_executable(${NAME} ${__UNPARSED_ARGUMENTS} BATCH_SOURCES OFF)
-
-  add_dependencies(cutlass_benchmarks ${NAME})
 
   if (NOT CUTLASS_ENABLE_SYCL)
     SET(ADD_CUDA ON)
@@ -67,22 +92,33 @@ function(cutlass_benchmark_add_executable NAME)
     add_sycl_to_target(TARGET ${NAME})
   endif()
 
+  string(REGEX REPLACE cutlass_ "" NAME_STEM ${NAME})
+  string(REGEX REPLACE cutlass_ "" SUITE_STEM ${__SUITE})
+
+  add_dependencies(${__SUITE} ${NAME})
+  add_dependencies(${SUITE_STEM} ${NAME_STEM})
+
+  cutlass_add_executable_tests(
+    ${NAME_STEM} ${NAME}
+    DEPENDS ${__DEPENDS}
+    DEPENDEES ${__DEPENDEES}
+    TEST_COMMAND_OPTIONS ${__TEST_COMMAND_OPTIONS}
+    )
+
   install(
     TARGETS ${NAME}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
   )
 endfunction()
 
-if (CUTLASS_ENABLE_SYCL)
-  set(CUTLASS_APPLICATIONS_DIR ${CMAKE_SOURCE_DIR}/applications)
-  set(CUTLASS_EXAMPLES_DIR ${CMAKE_SOURCE_DIR}/examples)
-  cutlass_benchmark_add_executable(
-    benchmarks
-    main.cpp
-    )
-else()
-  cutlass_benchmark_add_executable(
-    benchmarks
-    main.cu
-    )
+set(SUBDIRS gemm)
+
+if(SYCL_INTEL_TARGET)
+  list(APPEND SUBDIRS flash_attention)
 endif()
+
+foreach(SUBDIR ${SUBDIRS})
+
+  add_subdirectory(${SUBDIR})
+
+endforeach()

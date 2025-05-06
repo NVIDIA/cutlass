@@ -37,7 +37,7 @@ namespace flash_attention{
 template <typename ElementQ_, typename ElementK_, typename ElementV_, typename LayoutQ_,
           typename LayoutK_, typename LayoutV_, typename LayoutO_, bool Causal_, bool VarLen_,
           typename TileShape_, typename TiledMma_> 
-struct FMHAConfig {
+struct FMHAPrefillConfig {
 
   using ElementO = float;     // <- data type of accumulator
   using ElementInputQ = ElementQ_;     // <- data type of elements in input matrix Q

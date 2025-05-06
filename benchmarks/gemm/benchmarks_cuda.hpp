@@ -31,8 +31,7 @@
 
 #pragma once
 
-#include "../benchmark_runner.hpp"
-#include "gemm_configuration.hpp"
+#include "gemm_configuration_cuda.hpp"
 
 using AmpereGemmBF16BF16FP32_CCC = cutlass::gemm::device::GemmConfiguration<
         cutlass::arch::Sm80,
@@ -125,7 +124,7 @@ CUTLASS_CREATE_GEMM_BENCHMARK(AmpereGemmTF32TF32FP32_CCC);
 CUTLASS_CREATE_GEMM_BENCHMARK(AmpereGemmTF32TF32FP32_CCC_kAlignment1);
 CUTLASS_CREATE_GEMM_BENCHMARK(AmpereGemmTF32TF32FP32_CCC_kAlignmentA1);
 
-static void register_benchmarks() {
+static void register_gemm_benchmarks() {
   CUTLASS_BENCHMARK(AmpereGemmBF16BF16FP32_CCC);
   CUTLASS_BENCHMARK(AmpereGemmBF16BF16FP32_CCC_kAlignment1);
   CUTLASS_BENCHMARK(AmpereGemmBF16BF16FP32_CCC_kAlignmentA1);
