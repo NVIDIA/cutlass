@@ -99,4 +99,3 @@ jobs:
         run: |
           cmake --build . --target test_examples -j $(nproc) || true
           sleep 3600
-
