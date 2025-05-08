@@ -97,5 +97,4 @@ jobs:
       - name: Examples
         shell: bash
         run: |
-          cmake --build . --target test_examples -j $(nproc) || true
-          sleep 3600
+          cmake --build . --target test_examples -j 1
