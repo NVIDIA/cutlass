@@ -268,12 +268,17 @@ struct ExampleRunner {
     stride_C = cutlass::make_cute_packed_stride(StrideC{}, cute::make_shape(M, N, L));
     stride_D = cutlass::make_cute_packed_stride(StrideD{}, cute::make_shape(M, N, L));
 
-    block_A.reset(static_cast<std::size_t>(M) * K * L);
-    block_B.reset(static_cast<std::size_t>(K) * N * L);
-    block_C.reset(static_cast<std::size_t>(M) * N * L);
-    block_D.reset(static_cast<std::size_t>(M) * N * L);
-    block_ref_D.reset(static_cast<std::size_t>(M) * N * L);
-    block_Aux.reset(static_cast<std::size_t>(M) * N * L);
+    try{
+      block_A.reset(static_cast<std::size_t>(M) * K * L);
+      block_B.reset(static_cast<std::size_t>(K) * N * L);
+      block_C.reset(static_cast<std::size_t>(M) * N * L);
+      block_D.reset(static_cast<std::size_t>(M) * N * L);
+      block_ref_D.reset(static_cast<std::size_t>(M) * N * L);
+      block_Aux.reset(static_cast<std::size_t>(M) * N * L);
+    } catch(...){
+      std::cerr << "Failed to allocate device memory. Aborting." << std::endl;
+      std::exit(1);
+    }
 
     initialize_block(block_A, seed + 2023);
     initialize_block(block_B, seed + 2022);

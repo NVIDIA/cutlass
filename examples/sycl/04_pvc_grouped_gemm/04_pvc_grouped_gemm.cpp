@@ -337,13 +337,18 @@ void allocate(const Options &options) {
 
   }
 
-  block_A.reset(total_elements_A);
-  block_B.reset(total_elements_B);
-  block_C.reset(total_elements_C);
-  block_D.reset(total_elements_D);
-  block_ref_D.reset(total_elements_D);
-  block_alpha.reset(options.groups);
-  block_beta.reset(options.groups);
+  try{
+    block_A.reset(total_elements_A);
+    block_B.reset(total_elements_B);
+    block_C.reset(total_elements_C);
+    block_D.reset(total_elements_D);
+    block_ref_D.reset(total_elements_D);
+    block_alpha.reset(options.groups);
+    block_beta.reset(options.groups);
+  } catch(...){
+    std::cerr << "Failed to allocate device memory. Aborting." << std::endl;
+    std::exit(1);
+  }
 }
 
 /// Initialize operands to be used in the GEMM and reference GEMM

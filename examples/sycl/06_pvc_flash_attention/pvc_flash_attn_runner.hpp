@@ -417,23 +417,38 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
     stride_V = cutlass::make_cute_packed_stride(StrideV{}, cute::make_shape(head_size_vo, seq_len_kv, batch * num_heads_kv));
     stride_O = cutlass::make_cute_packed_stride(StrideO{}, cute::make_shape(seq_len_qo, head_size_vo, batch * num_heads_q));
 
-    block_Q.reset(static_cast<std::size_t>(batch) * num_heads_q * seq_len_qo * head_size_qk);
-    block_K.reset(static_cast<std::size_t>(batch) * num_heads_kv * seq_len_kv * head_size_qk);
-    block_V.reset(static_cast<std::size_t>(batch) * num_heads_kv * seq_len_kv * head_size_vo);
-    block_O.reset(static_cast<std::size_t>(batch) * num_heads_q * seq_len_qo * head_size_vo);
-    block_ref_O.reset(static_cast<std::size_t>(batch) * num_heads_q * seq_len_qo * head_size_vo);
+    try{
+      block_Q.reset(static_cast<std::size_t>(batch) * num_heads_q * seq_len_qo * head_size_qk);
+      block_K.reset(static_cast<std::size_t>(batch) * num_heads_kv * seq_len_kv * head_size_qk);
+      block_V.reset(static_cast<std::size_t>(batch) * num_heads_kv * seq_len_kv * head_size_vo);
+      block_O.reset(static_cast<std::size_t>(batch) * num_heads_q * seq_len_qo * head_size_vo);
+      block_ref_O.reset(static_cast<std::size_t>(batch) * num_heads_q * seq_len_qo * head_size_vo);
+    } catch(...){
+      std::cerr << "Failed to allocate device memory. Aborting." << std::endl;
+      std::exit(1);
+    }
 
     initialize_block(block_Q, seed + 2023);
     initialize_block(block_K, seed + 2022);
     initialize_block(block_V, seed + 2021);
 
     if (!cumulative_seqlen_q.empty()) {
-      device_cumulative_seqlen_q.reset(cumulative_seqlen_q.size());
+      try{
+        device_cumulative_seqlen_q.reset(cumulative_seqlen_q.size());
+      } catch(...){
+        std::cerr << "Failed to allocate device memory. Aborting." << std::endl;
+        std::exit(1);
+      }
       device_cumulative_seqlen_q.copy_from_host(
         cumulative_seqlen_q.data(), cumulative_seqlen_q.size());
     }
     if (!cumulative_seqlen_kv.empty()) {
-      device_cumulative_seqlen_kv.reset(cumulative_seqlen_kv.size());
+      try{
+        device_cumulative_seqlen_kv.reset(cumulative_seqlen_kv.size());
+      } catch(...){
+        std::cerr << "Failed to allocate device memory. Aborting." << std::endl;
+        std::exit(1);
+      }
       device_cumulative_seqlen_kv.copy_from_host(
         cumulative_seqlen_kv.data(), cumulative_seqlen_kv.size());
     }
