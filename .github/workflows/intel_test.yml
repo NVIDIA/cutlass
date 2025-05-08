@@ -98,3 +98,4 @@ jobs:
         shell: bash
         run: |
           cmake --build . --target test_examples -j 1
+
