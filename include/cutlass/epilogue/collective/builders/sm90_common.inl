@@ -75,6 +75,13 @@ sm90_get_smem_load_op_for_source() {
   }
 }
 
+template <class ElementC, int AlignmentC, class ElementD, int AlignmentD, int RequiredAlignment, bool IsVoidC, bool IsVoidD>
+constexpr bool
+is_aligned() {
+  return (IsVoidC || (sizeof(ElementC) * AlignmentC) % RequiredAlignment == 0) &&
+         (IsVoidD || (sizeof(ElementD) * AlignmentD) % RequiredAlignment == 0);
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
 } // namespace cutlass::epilogue::collective::detail

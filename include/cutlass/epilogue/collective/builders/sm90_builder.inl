@@ -300,6 +300,11 @@ struct Sm90TmaBuilderImpl {
   using ElementC = cute::conditional_t<cute::is_void_v<ElementC_>,ElementD,ElementC_>; // prevents void ref breakages
   using GmemLayoutTagC = cute::conditional_t<cute::is_void_v<ElementC_>,GmemLayoutTagD,GmemLayoutTagC_>;
 
+  // C/D should meet TMA alignment requirement if not void
+  static_assert(detail::is_aligned<
+    ElementC, AlignmentC, ElementD, AlignmentD, cutlass::gemm::collective::detail::tma_alignment_bytes,
+    cute::is_void_v<ElementC_>, cute::is_void_v<ElementD_>>(), "C/D Should meet TMA alignment requirement");
+
   using GmemStrideTypeC = cutlass::detail::TagToStrideC_t<GmemLayoutTagC>;
   using GmemStrideTypeD = cutlass::detail::TagToStrideC_t<GmemLayoutTagD>;
   
