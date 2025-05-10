@@ -165,7 +165,7 @@ template <
           "Trying to use Intel pipeline on Non Intel hardware");
       #endif
       static_assert(is_static<TileShape_MNK>::value);
-      static_assert(cute::is_any_of_v<ElementC, float, void>, "ElementC needs to be float for the Intel pipeline");
+      static_assert(cute::is_any_of_v<ElementC, float, bfloat16_t, void>, "ElementC needs to be float or bfloat for the Intel pipeline");
       
       using EpilogueSchedule = std::conditional_t<cute::is_same_v<EpilogueScheduleType, EpilogueScheduleAuto>, 
                                                   IntelXeXMX16,
@@ -174,8 +174,8 @@ template <
       using DispatchPolicy = std::conditional_t<IsGroup, 
                                                 IntelXeXMX16Group,
                                                 IntelXeXMX16>;
-      using CopyOpG2R = XE_2D_U32x8x16_LD_N;
-      using CopyOpR2G = XE_2D_U32x8x16_ST_N;
+      using CopyOpG2R = std::conditional_t<cutlass::sizeof_bits_v<ElementC> == 32, XE_2D_U32x8x16_LD_N, XE_2D_U16x8x16_LD_N>;
+      using CopyOpR2G = std::conditional_t<cutlass::sizeof_bits_v<ElementD> == 32, XE_2D_U32x8x16_ST_N, XE_2D_U16x8x16_ST_N>;
 
       // Intel Epilogue with Linear Combination does not use shared memory
       using SmemLayoutAtomC_ = void;

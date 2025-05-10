@@ -1644,6 +1644,68 @@ struct DefaultGemm_TensorOpXe_OperandB<int8_t, layout::ColumnMajor, 32, SizeK>
 
 ///////////////////////////////////////////////////////////////////////////////
 
+// Intel XE MMA F32F16
+template <typename LayoutA, typename LayoutB, typename LayoutC>
+struct DefaultGemmConfigurationToCutlass3Types<
+    arch::OpClassTensorOp, arch::IntelXe,
+    bfloat16_t, LayoutA,
+    bfloat16_t, LayoutB,
+    bfloat16_t, LayoutC,
+    bfloat16_t>
+{
+  using TileShape = Shape<_256, _256, _32>;
+
+  using TiledMma =
+      typename TiledMMAHelper<MMA_Atom<XE_8x16x16_BF16BF16BF16BF16_TT>,
+               Layout<TileShape>,
+               Layout<Shape<_8, _4, _1>, Stride<_4, _1, _0>>>::TiledMMA;
+
+  // A
+  static constexpr int kAlignmentA = 32;
+  using DefaultOperandA = detail::DefaultGemm_TensorOpXe_OperandA<
+    bfloat16_t, LayoutA, kAlignmentA, 32>;
+  using GmemTiledCopyA = typename DefaultOperandA::GmemTiledCopy;
+
+  // B
+  static constexpr int kAlignmentB = 32;
+  using DefaultOperandB = detail::DefaultGemm_TensorOpXe_OperandB<
+    bfloat16_t, LayoutB, kAlignmentB, 32>;
+  using GmemTiledCopyB = typename DefaultOperandB::GmemTiledCopy;
+
+  // Mainloop
+  using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+    cutlass::arch::IntelXe, cutlass::arch::OpClassTensorOp,
+    bfloat16_t, LayoutA, 1,
+    bfloat16_t, LayoutB, 1,
+    bfloat16_t,
+    TileShape, Shape<_1, _1, _1>,
+    cutlass::gemm::collective::StageCountAuto,
+    cutlass::gemm::collective::KernelScheduleAuto
+  >::CollectiveOp;
+
+  using EpilogueOp = epilogue::fusion::LinearCombination<bfloat16_t, bfloat16_t>;
+
+  using FusionCallBacks = cutlass::epilogue::fusion::FusionCallbacks<
+    epilogue::IntelXeXMX16,
+    EpilogueOp,
+    TileShape,
+    decltype(tile_shape(TiledMma()))
+  >;
+
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::IntelXe, cutlass::arch::OpClassTensorOp,
+      TileShape, Shape<_1, _1, _1>,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      bfloat16_t, bfloat16_t,
+      bfloat16_t, LayoutC, 1,
+      bfloat16_t, LayoutC, 1,
+      cutlass::epilogue::collective::EpilogueScheduleAuto,
+      EpilogueOp
+    >::CollectiveOp;
+};
+
+///////////////////////////////////////////////////////////////////////////////
+
 // Intel XE MMA S32S8
 template <typename LayoutA, typename LayoutB, typename LayoutC>
 struct DefaultGemmConfigurationToCutlass3Types<

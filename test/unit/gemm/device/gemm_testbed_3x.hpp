@@ -307,6 +307,10 @@ bool initialize_tensor(
       }
     
     }
+    else if (std::is_same_v<Element, cutlass::bfloat16_t>) {
+      scope_max = 1;
+      scope_min = -1;
+    }
     else{
       scope_max = 4;
       scope_min = -4;

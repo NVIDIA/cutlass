@@ -38,6 +38,70 @@
 namespace cute
 {
 template <>
+struct MMA_Traits<XE_8x16x16_BF16BF16BF16BF16_TT>
+{
+  using ValTypeD = bfloat16_t;
+  using ValTypeA = bfloat16_t;
+  using ValTypeB = bfloat16_t;
+  using ValTypeC = bfloat16_t;
+
+  using Shape_MNK = Shape<_8,_16,_16>;
+  using ThrID   = Layout<_16>;
+
+  using ALayout = Layout<Shape<_16, _8>, Stride<_8, _1>>;
+  using BLayout = Layout<Shape<_16, _16>, Stride<_1, _16>>;
+  using CLayout = Layout<Shape<_16, _8>, Stride<_8, _1>>;
+};
+
+template <>
+struct MMA_Traits<XE_4x16x16_BF16BF16BF16BF16_TT>
+{
+  using ValTypeD = bfloat16_t;
+  using ValTypeA = bfloat16_t;
+  using ValTypeB = bfloat16_t;
+  using ValTypeC = bfloat16_t;
+
+  using Shape_MNK = Shape<_4,_16,_16>;
+  using ThrID   = Layout<_16>;
+
+  using ALayout = Layout<Shape<_16, _4>, Stride<_4, _1>>;
+  using BLayout = Layout<Shape<_16, _16>, Stride<_1, _16>>;
+  using CLayout = Layout<Shape<_16, _4>, Stride<_4, _1>>;
+};
+
+template <>
+struct MMA_Traits<XE_2x16x16_BF16BF16BF16BF16_TT>
+{
+  using ValTypeD = bfloat16_t;
+  using ValTypeA = bfloat16_t;
+  using ValTypeB = bfloat16_t;
+  using ValTypeC = bfloat16_t;
+
+  using Shape_MNK = Shape<_2,_16,_16>;
+  using ThrID   = Layout<_16>;
+
+  using ALayout = Layout<Shape<_16, _2>, Stride<_2, _1>>;
+  using BLayout = Layout<Shape<_16, _16>, Stride<_1, _16>>;
+  using CLayout = Layout<Shape<_16, _2>, Stride<_2, _1>>;
+};
+
+template <>
+struct MMA_Traits<XE_1x16x16_BF16BF16BF16BF16_TT>
+{
+  using ValTypeD = bfloat16_t;
+  using ValTypeA = bfloat16_t;
+  using ValTypeB = bfloat16_t;
+  using ValTypeC = bfloat16_t;
+
+  using Shape_MNK = Shape<_1,_16,_16>;
+  using ThrID   = Layout<_16>;
+
+  using ALayout = Layout<Shape<_16, _1>, Stride<_1, _1>>;
+  using BLayout = Layout<Shape<_16, _16>, Stride<_1, _16>>;
+  using CLayout = Layout<Shape<_16, _1>, Stride<_1, _1>>;
+};
+
+template <>
 struct MMA_Traits<XE_8x16x16_F32BF16BF16F32_TT>
 {
   using ValTypeD = float;

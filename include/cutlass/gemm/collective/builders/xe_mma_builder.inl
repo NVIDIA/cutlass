@@ -56,7 +56,7 @@ template<bool is_t, bool is_v, typename T_m, typename T_n>
 constexpr auto select_copy_atom_16b(T_m tile_m, T_n tile_n){
   #define RETURN_ATOM(WIDTH, HEIGHT, LETTER) \
     return XE_2D_U16x##WIDTH##x##HEIGHT##_LD_##LETTER {};
-  
+
   if constexpr(is_t){
     // tile_m and tile_n have swapped role in case of _T
     static_assert(tile_n % 16 == 0 && "Invalid tile_m");
@@ -102,7 +102,7 @@ constexpr auto select_copy_atom_16b(T_m tile_m, T_n tile_n){
       } else { \
         static_assert(dependent_false<T_m> && "Invalid tile_m"); \
       }
-    
+
     if constexpr(tile_n == 16){
       SELECT_WIDTH_N(16)
     } else if constexpr(tile_n % 32 == 0){
@@ -115,6 +115,24 @@ constexpr auto select_copy_atom_16b(T_m tile_m, T_n tile_n){
   #undef RETURN_ATOM
 }
 
+namespace {
+template <typename ElementAB, typename ElementCD>
+struct pick_mma_atom{
+  static_assert(dependent_false<ElementAB> && "no mma atom for this combination of types");
+};
+
+#define PICK_MMA(ElementAB, ElementCD, ATOM)             \
+template <> struct pick_mma_atom<ElementAB, ElementCD> { \
+  using atom = MMA_Atom<ATOM>;                           \
+};
+
+PICK_MMA(bfloat16_t, float, XE_8x16x16_F32BF16BF16F32_TT);
+PICK_MMA(bfloat16_t, bfloat16_t, XE_8x16x16_BF16BF16BF16BF16_TT);
+PICK_MMA(half_t, float, XE_8x16x16_F32F16F16F32_TT);
+
+#undef PICK_MMA
+}
+
 template <
   class ElementA,
   class GmemLayoutATag,
@@ -125,7 +143,7 @@ template <
   class ElementAccumulator,
   class TileShape_MNK,
   class KernelScheduleType
-  > 
+  >
 struct CollectiveBuilder<
   arch::IntelXe,
   arch::OpClassTensorOp,   // Reusing opClassTensorOp for Intel devices
@@ -138,7 +156,7 @@ struct CollectiveBuilder<
   ElementAccumulator,
   TileShape_MNK,
   Shape<_1, _1, _1>,    // Cluster Shape
-  cutlass::gemm::collective::StageCountAuto, 
+  cutlass::gemm::collective::StageCountAuto,
   KernelScheduleType,
   cute::enable_if_t<
     cute::is_any_of_v<KernelScheduleType, KernelScheduleAuto, KernelXe, KernelXeCooperative, KernelXePtrArrayCooperative> &&
@@ -153,12 +171,10 @@ struct CollectiveBuilder<
           "Trying to use Intel pipeline on Non Intel hardware");
       #endif
       static_assert(is_static<TileShape_MNK>::value);
-      static_assert(cute::is_same_v<ElementAccumulator, float>, "Intel multi-stage pipeline requires ElementC to be of type float");
+      static_assert(cute::is_any_of_v<ElementAccumulator, float, bfloat16_t>, "Intel multi-stage pipeline requires ElementC to be of type float or bfloat");
 
-      using MMAAtom = MMA_Atom<std::conditional_t<cute::is_same_v<ElementA, bfloat16_t>,
-                                                  XE_8x16x16_F32BF16BF16F32_TT,
-                                                  XE_8x16x16_F32F16F16F32_TT>>;
-      
+      using MMAAtom = typename pick_mma_atom<ElementA, ElementAccumulator>::atom;
+
       static constexpr auto tile_M = get<0>(TileShape_MNK{});
       static constexpr auto tile_N = get<1>(TileShape_MNK{});
       static constexpr auto tile_K = get<2>(TileShape_MNK{});
@@ -175,7 +191,7 @@ struct CollectiveBuilder<
 
       using KernelSchedule = std::conditional_t<cute::is_same_v<KernelScheduleType, KernelScheduleAuto>, KernelXe, KernelScheduleType>;
       static constexpr int PipelineStages = IsGroup ? 2 : 3;
-      using DispatchPolicy = std::conditional_t<IsGroup, 
+      using DispatchPolicy = std::conditional_t<IsGroup,
                                                 cutlass::gemm::MainloopIntelXeXMX16Group<PipelineStages, KernelSchedule>,
                                                 cutlass::gemm::MainloopIntelXeXMX16<PipelineStages, KernelSchedule>>;
 
@@ -183,8 +199,8 @@ struct CollectiveBuilder<
       using GmemTiledCopyB = decltype(select_copy_atom_16b<cute::is_same_v<GmemLayoutBTag, cutlass::layout::ColumnMajor>, true>(tile_K, tile_N/atoms_N{}));
 
       // Xe pipeline does not use shared memory
-      using SmemLayoutAtomA = void; 
-      using SmemLayoutAtomB = void; 
+      using SmemLayoutAtomA = void;
+      using SmemLayoutAtomB = void;
       using SmemCopyAtomA = void;
       using SmemCopyAtomB = void;
 
