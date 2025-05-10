@@ -114,6 +114,7 @@ struct RandomUniformFunc {
   /// Parameters object
   Params params;
   oneapi::mkl::rng::device::uniform<FloatType> distribution;
+  oneapi::mkl::rng::device::philox4x32x10<> generator;
 
   //
   // Methods
@@ -121,13 +122,12 @@ struct RandomUniformFunc {
 
   explicit RandomUniformFunc(Params const &params):
       params(params),
-      distribution(static_cast<FloatType>(params.min), static_cast<FloatType>(params.max)){}
+      distribution(static_cast<FloatType>(params.min), static_cast<FloatType>(params.max)),
+      generator(params.seed, {0, ThreadIdxX() + BlockIdxX() * BlockDimX()}) {}
 
   /// Compute random value and update RNG state
   CUTLASS_HOST_DEVICE
   Element operator()() {
-    oneapi::mkl::rng::device::philox4x32x10<> generator(params.seed,
-      ThreadIdxX() + BlockIdxX() * BlockDimX());
     FloatType rnd = oneapi::mkl::rng::device::generate(distribution, generator);
     // Random values are cast to integer after scaling by a power of two to facilitate error
     // testing

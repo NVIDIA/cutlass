@@ -282,7 +282,7 @@ struct XE_2D_LD_Unpack {
 
     constexpr auto inst_size_bits = detail::size_of_inst_bits<CopyOp, dtype>;
 
-    CopyOp::copy(base_addr + l * traits.stride_l,
+    CopyOp::copy(base_addr + static_cast<size_t>(l) * traits.stride_l,
                  (traits.width * sizeof_bits_v<dtype>) / sizeof_bits_v<int8_t>, traits.height,
                  (traits.pitch * sizeof_bits_v<dtype>) / sizeof_bits_v<int8_t>,
                  intel::coord_t{(int)(x * sizeof_bits_v<dtype> / inst_size_bits), y},
@@ -384,7 +384,7 @@ template <class CopyOp, class StrideIndicator = cute::Stride<int64_t, cute::Int<
     
     auto [m, n, l] = dst.data().coord_;
 
-    CopyOp::copy(base_addr + l * traits.stride_l,
+    CopyOp::copy(base_addr + static_cast<size_t>(l) * traits.stride_l,
                  traits.width * sizeof(dtype), traits.height,
                  traits.pitch * sizeof(dtype),
                  intel::coord_t{(int)n, (int)m}, &*src.data());
