@@ -405,12 +405,14 @@ template <class CopyOp, class StrideIndicator = cute::Stride<int64_t, cute::Int<
 template <class TiledCopy, class TLShape>
 CUTE_HOST_DEVICE constexpr auto make_fragment_layout(TiledCopy &tiled_copy,
                                                      TLShape &&fragment_top_level_shape) {
-  auto [mma_atom_shape, total_mma_atom_iters_M, total_mma_atom_iters_N] = fragment_top_level_shape;
-  auto mma_atom_shape_2d = prepend<2>(mma_atom_shape, _1{});
+  constexpr auto mma_atom_shape = get<0>(TLShape{});
+  constexpr int total_mma_atom_iters_M = get<1>(TLShape{});
+  constexpr int total_mma_atom_iters_N = get<2>(TLShape{});
+  constexpr auto mma_atom_shape_2d = prepend<2>(mma_atom_shape, _1{});
 
-  Int mma_atom_size_M =
+  constexpr int mma_atom_size_M =
       Int<!TiledCopy::is_convention_MN ? size<0>(mma_atom_shape_2d) : size<1>(mma_atom_shape_2d)>{};
-  Int mma_atom_size_N =
+  constexpr int mma_atom_size_N =
       Int<!TiledCopy::is_convention_MN ? size<1>(mma_atom_shape_2d) : size<0>(mma_atom_shape_2d)>{};
 
   using ThreadLayout_ = Shape<_1, Int<size(typename TiledCopy::Traits_LD_t::ThrID{})>>;
@@ -418,23 +420,24 @@ CUTE_HOST_DEVICE constexpr auto make_fragment_layout(TiledCopy &tiled_copy,
                                           ThreadLayout_,
                                           decltype(cute::reverse(ThreadLayout_{}))>;
   auto thread_copy_shape = shape_div(typename TiledCopy::BlockShape{}, ThreadLayout{});
-  Int copy_size_M = size<0>(thread_copy_shape);
-  Int copy_size_N = size<1>(thread_copy_shape);
+  auto copy_size_M = size<0>(thread_copy_shape);
+  auto copy_size_N = size<1>(thread_copy_shape);
 
   static_assert(copy_size_M >= mma_atom_size_M, "MMA atom larger than copy atom is not currently supported.");
   static_assert(copy_size_N >= mma_atom_size_N, "MMA atom larger than copy atom is not currently supported.");
-  Int mma_atom_iters_in_copy_M = copy_size_M / mma_atom_size_M;
-  Int mma_atom_iters_in_copy_N = copy_size_N / mma_atom_size_N;
-  Int copy_iters_M = total_mma_atom_iters_M / mma_atom_iters_in_copy_M;
-  Int copy_iters_N = total_mma_atom_iters_N / mma_atom_iters_in_copy_N;
+  constexpr int mma_atom_iters_in_copy_M = copy_size_M / mma_atom_size_M;
+  constexpr int mma_atom_iters_in_copy_N = copy_size_N / mma_atom_size_N;
+  constexpr int copy_iters_M = total_mma_atom_iters_M / mma_atom_iters_in_copy_M;
+  constexpr int copy_iters_N = total_mma_atom_iters_N / mma_atom_iters_in_copy_N;
 
   auto order = std::conditional_t<TiledCopy::is_convention_MN,
                                   Step<Step<_0, _1>, Step<_2, _4>, Step<_3, _5>>,
                                   Step<Step<_0, _1>, Step<_3, _5>, Step<_2, _4>>>{};
-  auto res =  make_ordered_layout(make_shape(mma_atom_shape_2d,
-                                             make_shape(mma_atom_iters_in_copy_M, copy_iters_M),
-                                             make_shape(mma_atom_iters_in_copy_N, copy_iters_N)),
-                                  order);
+  auto res = make_ordered_layout(
+      make_shape(mma_atom_shape_2d,
+                 make_shape(Int<mma_atom_iters_in_copy_M>{}, Int<copy_iters_M>{}),
+                 make_shape(Int<mma_atom_iters_in_copy_N>{}, Int<copy_iters_N>{})),
+      order);
   static_assert(size(res) > 0, "Error in make_fragment_layout(), tile size might be smaller than copy atom");
   return res;
 };
