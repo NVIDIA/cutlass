@@ -40,6 +40,7 @@ cutlass_example_add_executable(
   TEST_MODE_0
   TEST_A_NARROW
 )
+if(NOT DPCPP_SYCL_TARGET STREQUAL "spir64")
   # TODO(codeplay): Remove these once IGC block load loop hoisting bug is fixed
-  set_target_properties( 02_pvc_gemm_mixed_dtype PROPERTIES CXX_COMPILER_LAUNCHER "IGC_allowDecompose2DBlockFuncs=0" )
-  set_target_properties( 02_pvc_gemm_mixed_dtype PROPERTIES CXX_LINKER_LAUNCHER "IGC_allowDecompose2DBlockFuncs=0" )
+  target_link_options( 02_pvc_gemm_mixed_dtype PRIVATE -Xs "-options \"-igc_opts 'allowDecompose2DBlockFuncs=0'\"" )
+endif()
