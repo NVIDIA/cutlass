@@ -27,10 +27,21 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 set(TEST_BATCHES --l=2)
+set(TEST_SMALL_SHAPE --m=4 --n=8 --k=8 --l=2)
 
 cutlass_example_add_executable(
   00_pvc_gemm
   00_pvc_gemm.cpp
   TEST_COMMAND_OPTIONS
   TEST_BATCHES
+  TEST_SMALL_SHAPE
+)
+
+set(TEST_SMALL_SHAPE_PADDABLE --m=1 --n=1 --k=2 --l=2)
+cutlass_example_add_executable(
+  00_pvc_gemm_padded
+  00_pvc_gemm_padded.cpp
+  TEST_COMMAND_OPTIONS
+  TEST_BATCHES
+  TEST_SMALL_SHAPE_PADDABLE
 )
