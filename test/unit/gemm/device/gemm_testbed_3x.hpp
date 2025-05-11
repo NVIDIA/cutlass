@@ -4060,7 +4060,7 @@ bool TestXe(
 
     // Use larger K sizes for stream-K tests
     static constexpr int min_tiles_per_sk_unit = cutlass::gemm::kernel::detail::PersistentTileSchedulerXeStreamKParams::min_iters_per_sk_unit_;
-    problem_size_k = {TileShapeK * min_tiles_per_sk_unit, TileShapeK * 3 * min_tiles_per_sk_unit - max_alignment};
+    problem_size_k = {TileShapeK * min_tiles_per_sk_unit, TileShapeK * 3 * min_tiles_per_sk_unit};
   }
 
   using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90::RasterOrderOptions;
@@ -4076,7 +4076,7 @@ bool TestXe(
           for (auto raster_order : raster_orders) {
             for (auto max_swizzle_size : max_swizzle_sizes) {
               for (DecompositionMode decomp_mode : decomposition_modes) {
-                            std::vector problem_splits = {detail::Splits{1}};
+                std::vector problem_splits = {detail::Splits{1}};
                 if (decomp_mode == DecompositionMode::Heuristic || decomp_mode == DecompositionMode::SplitK) {
                   auto max_splits = (k + TileShapeK - 1) / TileShapeK;
                   if (max_splits > 2) {

@@ -164,7 +164,7 @@ TEST(XE_Device_Gemm_bf16t_bf16t_f32_tensor_op_gmma_f32_epilogue, 256x256x32_LinC
 
   using Gemm = XE_Device_Gemm_bf16_bf16_f32_tensor_op_gmma_f32_epilogue<CollectiveEpilogue>::Gemm;
 
-  bool passed = test::gemm::device::TestXe<Gemm>(1.0, 0.0);
+  bool passed = test::gemm::device::TestXe<Gemm>();
   EXPECT_TRUE(passed);
 }
 

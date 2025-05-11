@@ -77,7 +77,7 @@ TEST(XE_Device_Gemm_s8t_s8t_s32t_tensor_op_s32_cooperative, 64x128x32) {
   using LayoutB = layout::RowMajor;
   using Gemm = XE_Device_Gemm_s8_s8_s32_tensor_op_s32_cooperative<LayoutA, LayoutB>::Gemm;
   // TODO(Codeplay): Enable batch tests
-  EXPECT_TRUE(test::gemm::device::TestXe<Gemm>(1.0, 0.0, false));
+  EXPECT_TRUE(test::gemm::device::TestXe<Gemm>());
 }
 
 /* TODO(Codeplay): Transposed copy are not implemented
@@ -86,7 +86,7 @@ TEST(XE_Device_Gemm_s8n_s8t_s32t_tensor_op_s32_cooperative, 64x128x32) {
   using LayoutB = layout::RowMajor;
   using Gemm = XE_Device_Gemm_s8_s8_s32_tensor_op_s32_cooperative<LayoutA, LayoutB>::Gemm;
   // TODO(Codeplay): Enable batch tests
-  EXPECT_TRUE(test::gemm::device::TestXe<Gemm>(1.0, 0.0, false));
+  EXPECT_TRUE(test::gemm::device::TestXe<Gemm>());
 }
 
 TEST(XE_Device_Gemm_s8t_s8n_s32t_tensor_op_s32_cooperative, 64x128x32) {
@@ -94,7 +94,7 @@ TEST(XE_Device_Gemm_s8t_s8n_s32t_tensor_op_s32_cooperative, 64x128x32) {
   using LayoutB = layout::ColumnMajor;
   using Gemm = XE_Device_Gemm_s8_s8_s32_tensor_op_s32_cooperative<LayoutA, LayoutB>::Gemm;
   // TODO(Codeplay): Enable batch tests
-  EXPECT_TRUE(test::gemm::device::TestXe<Gemm>(1.0, 0.0, false));
+  EXPECT_TRUE(test::gemm::device::TestXe<Gemm>());
 }
 
 TEST(XE_Device_Gemm_s8n_s8n_s32t_tensor_op_s32_cooperative, 64x128x32) {
@@ -102,7 +102,7 @@ TEST(XE_Device_Gemm_s8n_s8n_s32t_tensor_op_s32_cooperative, 64x128x32) {
   using LayoutB = layout::ColumnMajor;
   using Gemm = XE_Device_Gemm_s8_s8_s32_tensor_op_s32_cooperative<LayoutA, LayoutB>::Gemm;
   // TODO(Codeplay): Enable batch tests
-  EXPECT_TRUE(test::gemm::device::TestXe<Gemm>(1.0, 0.0, false));
+  EXPECT_TRUE(test::gemm::device::TestXe<Gemm>());
 }
 */
 }
