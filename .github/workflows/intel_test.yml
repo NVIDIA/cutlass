@@ -34,6 +34,16 @@ jobs:
             intel_graphics: STAGING
             sycl_target: intel_gpu_bmg_g21
             runner: cp-b580-gpu
+          - compiler: RELEASE
+            gpu: BMG
+            intel_graphics: RELEASE
+            sycl_target: intel_gpu_bmg_g21
+            runner: cp-b580-gpu
+          - compiler: NIGHTLY
+            gpu: BMG
+            intel_graphics: RELEASE
+            sycl_target: intel_gpu_bmg_g21
+            runner: cp-b580-gpu
 
             # disable because IGC bug
 #          - compiler: NIGHTLY
@@ -46,16 +56,6 @@ jobs:
 #            intel_graphics: RELEASE
 #            sycl_target: intel_gpu_pvc
 #            runner: cp-gpumax-1100-gpu
-#          - compiler: RELEASE
-#            gpu: BMG
-#            intel_graphics: RELEASE
-#            sycl_target: intel_gpu_bmg_g21
-#            runner: cp-b580-gpu
-#          - compiler: NIGHTLY
-#            gpu: BMG
-#            intel_graphics: RELEASE
-#            sycl_target: intel_gpu_bmg_g21
-#            runner: cp-b580-gpu
 
     name: Run Intel ${{ matrix.compiler }} tests on ${{ matrix.gpu }} with intel-graphics ${{ matrix.intel_graphics }}
     runs-on: ${{ matrix.runner }}

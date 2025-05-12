@@ -76,28 +76,28 @@ TEST(XE_Device_Gemm_bf16t_bf16t_f32t_tensor_op_f32_cooperative, 256x256x32) {
   using Gemm = XE_Device_Gemm_bf16_bf16_f32_tensor_op_f32_cooperative<
     layout::RowMajor, layout::RowMajor>::Gemm;
   // TODO(Codeplay): Enable batch tests
-  EXPECT_TRUE(test::gemm::device::TestXe<Gemm>(1.0, 0.0, false));
+  EXPECT_TRUE(test::gemm::device::TestXe<Gemm>());
 }
 
 TEST(XE_Device_Gemm_bf16n_bf16t_f32t_tensor_op_f32_cooperative, 256x256x32) {
   using Gemm = XE_Device_Gemm_bf16_bf16_f32_tensor_op_f32_cooperative<
     layout::ColumnMajor, layout::RowMajor>::Gemm;
   // TODO(Codeplay): Enable batch tests
-  EXPECT_TRUE(test::gemm::device::TestXe<Gemm>(1.0, 0.0, false));
+  EXPECT_TRUE(test::gemm::device::TestXe<Gemm>());
 }
 
 TEST(XE_Device_Gemm_bf16t_bf16n_f32t_tensor_op_f32_cooperative, 256x256x32) {
   using Gemm = XE_Device_Gemm_bf16_bf16_f32_tensor_op_f32_cooperative<
     layout::RowMajor, layout::ColumnMajor>::Gemm;
   // TODO(Codeplay): Enable batch tests
-  EXPECT_TRUE(test::gemm::device::TestXe<Gemm>(1.0, 0.0, false));
+  EXPECT_TRUE(test::gemm::device::TestXe<Gemm>());
 }
 
 TEST(XE_Device_Gemm_bf16n_bf16n_f32t_tensor_op_f32_cooperative, 256x256x32) {
   using Gemm = XE_Device_Gemm_bf16_bf16_f32_tensor_op_f32_cooperative<
     layout::ColumnMajor, layout::ColumnMajor>::Gemm;
   // TODO(Codeplay): Enable batch tests
-  EXPECT_TRUE(test::gemm::device::TestXe<Gemm>(1.0, 0.0, false));
+  EXPECT_TRUE(test::gemm::device::TestXe<Gemm>());
 }
 }
 } // namespace cutlass

@@ -30,80 +30,63 @@
  **************************************************************************************************/
 
 /*! \file
-    \brief Tests for Xe s8_s8_s32
+    \brief Tests for Xe bf16_bf16_bf16
 */
+
+
+#include "cutlass/cutlass.h"
 
 #include "cutlass/gemm/device/gemm_universal_adapter.h"
 #include "cutlass/gemm/kernel/gemm_universal.hpp"
 #include "default_gemm_configuration.hpp"
 
 #include "gemm_testbed_3x.hpp"
+
 namespace cutlass {
 namespace {
 template <typename LayoutA, typename LayoutB>
-struct XE_Device_Gemm_s8_s8_s32_tensor_op_s32_cooperative {
-  using ElementA = int8_t;
-  using ElementB = int8_t;
+struct XE_Device_Gemm_bf16_bf16_bf16_tensor_op_bf16 {
+  using Config =
+    gemm::device::DefaultGemmConfigurationToCutlass3Types<
+      arch::OpClassTensorOp, arch::IntelXe,
+      cute::bfloat16_t, LayoutA,
+      cute::bfloat16_t, LayoutB,
+      cute::bfloat16_t, layout::RowMajor,
+      cute::bfloat16_t>;
 
-  using Config = gemm::device::DefaultGemmConfigurationToCutlass3Types<
-    arch::OpClassTensorOp, arch::IntelXe,
-    ElementA, LayoutA,
-    ElementB, LayoutB,
-    int32_t, layout::RowMajor,
-    int32_t>;
-
-  using DispatchPolicy = gemm::MainloopIntelXeXMX16<3, gemm::KernelPVCCooperative>;
-
-  using CollectiveMainloop = gemm::collective::CollectiveMma<
-    DispatchPolicy, Config::TileShape,
-    ElementA, detail::TagToStrideA_t<LayoutA>,
-    ElementB, detail::TagToStrideB_t<LayoutB>,
-    Config::TiledMma,
-    Config::GmemTiledCopyA, void, void, cute::identity,  // A
-    Config::GmemTiledCopyB, void, void, cute::identity   // B
-  >;
-
-  using GemmKernel = gemm::kernel::GemmUniversal<
+  using Gemm = gemm::device::GemmUniversalAdapter<
+    gemm::kernel::GemmUniversal<
       cute::Shape<int,int,int,int>,
-      CollectiveMainloop,
-      Config::CollectiveEpilogue,
-      gemm::StreamKScheduler>;
-
-  using Gemm = gemm::device::GemmUniversalAdapter<GemmKernel>;
+      typename Config::CollectiveMainloop,
+      typename Config::CollectiveEpilogue>>;
 };
 
-TEST(XE_Device_Gemm_s8t_s8t_s32t_tensor_op_s32_cooperative, 64x128x32) {
+TEST(XE_Device_Gemm_bf16t_bf16t_bf16t_tensor_op_bf16, 256x256x32) {
   using LayoutA = layout::RowMajor;
   using LayoutB = layout::RowMajor;
-  using Gemm = XE_Device_Gemm_s8_s8_s32_tensor_op_s32_cooperative<LayoutA, LayoutB>::Gemm;
-  // TODO(Codeplay): Enable batch tests
+  using Gemm = XE_Device_Gemm_bf16_bf16_bf16_tensor_op_bf16<LayoutA, LayoutB>::Gemm;
   EXPECT_TRUE(test::gemm::device::TestXe<Gemm>());
 }
 
-/* TODO(Codeplay): Transposed copy are not implemented
-TEST(XE_Device_Gemm_s8n_s8t_s32t_tensor_op_s32_cooperative, 64x128x32) {
+TEST(XE_Device_Gemm_bf16n_bf16t_bf16t_tensor_op_bf16, 256x256x32) {
   using LayoutA = layout::ColumnMajor;
   using LayoutB = layout::RowMajor;
-  using Gemm = XE_Device_Gemm_s8_s8_s32_tensor_op_s32_cooperative<LayoutA, LayoutB>::Gemm;
-  // TODO(Codeplay): Enable batch tests
+  using Gemm = XE_Device_Gemm_bf16_bf16_bf16_tensor_op_bf16<LayoutA, LayoutB>::Gemm;
   EXPECT_TRUE(test::gemm::device::TestXe<Gemm>());
 }
 
-TEST(XE_Device_Gemm_s8t_s8n_s32t_tensor_op_s32_cooperative, 64x128x32) {
+TEST(XE_Device_Gemm_bf16t_bf16n_bf16t_tensor_op_bf16, 256x256x32) {
   using LayoutA = layout::RowMajor;
   using LayoutB = layout::ColumnMajor;
-  using Gemm = XE_Device_Gemm_s8_s8_s32_tensor_op_s32_cooperative<LayoutA, LayoutB>::Gemm;
-  // TODO(Codeplay): Enable batch tests
+  using Gemm = XE_Device_Gemm_bf16_bf16_bf16_tensor_op_bf16<LayoutA, LayoutB>::Gemm;
   EXPECT_TRUE(test::gemm::device::TestXe<Gemm>());
 }
 
-TEST(XE_Device_Gemm_s8n_s8n_s32t_tensor_op_s32_cooperative, 64x128x32) {
+TEST(XE_Device_Gemm_bf16n_bf16n_bf16t_tensor_op_bf16, 256x256x32) {
   using LayoutA = layout::ColumnMajor;
   using LayoutB = layout::ColumnMajor;
-  using Gemm = XE_Device_Gemm_s8_s8_s32_tensor_op_s32_cooperative<LayoutA, LayoutB>::Gemm;
-  // TODO(Codeplay): Enable batch tests
+  using Gemm = XE_Device_Gemm_bf16_bf16_bf16_tensor_op_bf16<LayoutA, LayoutB>::Gemm;
   EXPECT_TRUE(test::gemm::device::TestXe<Gemm>());
 }
-*/
 }
 } // namespace cutlass
