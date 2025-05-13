@@ -5,7 +5,7 @@ Clang as host compiler, and NVCC as device compiler.
 This is NOT the same as building with
 Clang as both host and device compiler ("CUDA Clang").
 
-# Software prerequisites
+## Software prerequisites
 
 1. Clang (regularly tested with Clang 17;
    occasionally tested with Clang 10 and greater)
@@ -29,9 +29,9 @@ A symptom of not installing all needed dependencies
 is the following error when attempting to use clang:
 `"/usr/bin/ld: cannot find -lstdc++: No such file or directory"`.
 
-# Running CMake
+## Running CMake
 
-## Required CMake options
+### Required CMake options
 
 The Clang build requires specifying the following CMake options.
 Replace `<path-to-clang++>` with the path to your `clang++` executable.
@@ -55,7 +55,7 @@ then one can set `CMAKE_CUDA_COMPILER` as follows.
 
 * `CMAKE_CUDA_COMPILER=${PATH_TO_CUDA_TOOLKIT}/bin/nvcc`
 
-## Copyright
+### Copyright
 
 Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: BSD-3-Clause

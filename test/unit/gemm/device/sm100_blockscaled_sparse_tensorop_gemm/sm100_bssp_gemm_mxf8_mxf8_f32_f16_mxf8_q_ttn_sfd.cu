@@ -60,7 +60,7 @@ using namespace cute;
 #if defined(CUTLASS_ARCH_MMA_SM100_SUPPORTED)
 
 // 1. 
-namespace cutlass3x_sm100_bssptensorop_s128x128x64bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_f16_ue8m0xe4m3_128x128x256_0_vs64_ttn_align32_q_1sm_epiVs64n {
+namespace cutlass3x_sm100_bssptensorop_bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_f16_ue8m0xe4m3_128x128x256_0_vs64_ttn_align32_q_1sm_epiVs64n {
 
     using LayoutA = cutlass::layout::RowMajor;
     using LayoutB = cutlass::layout::RowMajor;
@@ -141,7 +141,7 @@ namespace cutlass3x_sm100_bssptensorop_s128x128x64bsspgemm_ue8m0xe4m3_ue8m0xe4m3
 }
 
 // 2.
-namespace cutlass3x_sm100_bssptensorop_s128x192x64bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_f16_ue8m0xe4m3_128x192x256_0_vs64_ttn_align32_q_1sm_epiVs64n {
+namespace cutlass3x_sm100_bssptensorop_bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_f16_ue8m0xe4m3_128x192x256_0_vs64_ttn_align32_q_1sm_epiVs64n {
 
     using LayoutA = cutlass::layout::RowMajor;
     using LayoutB = cutlass::layout::RowMajor;
@@ -222,7 +222,7 @@ namespace cutlass3x_sm100_bssptensorop_s128x192x64bsspgemm_ue8m0xe4m3_ue8m0xe4m3
 }
 
 // 3.
-namespace cutlass3x_sm100_bssptensorop_s128x256x64bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_f16_ue8m0xe4m3_128x256x256_0_vs64_ttn_align32_q_1sm_epiVs64n {
+namespace cutlass3x_sm100_bssptensorop_bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_f16_ue8m0xe4m3_128x256x256_0_vs64_ttn_align32_q_1sm_epiVs64n {
 
     using LayoutA = cutlass::layout::RowMajor;
     using LayoutB = cutlass::layout::RowMajor;
@@ -303,7 +303,7 @@ namespace cutlass3x_sm100_bssptensorop_s128x256x64bsspgemm_ue8m0xe4m3_ue8m0xe4m3
 }
 
 // 4.
-namespace cutlass3x_sm100_bssptensorop_s256x128x64bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_f16_ue8m0xe4m3_256x128x256_0_vs64_ttn_align32_q_2sm_epiVs64n {
+namespace cutlass3x_sm100_bssptensorop_bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_f16_ue8m0xe4m3_256x128x256_0_vs64_ttn_align32_q_2sm_epiVs64n {
 
     using LayoutA = cutlass::layout::RowMajor;
     using LayoutB = cutlass::layout::RowMajor;
@@ -384,7 +384,7 @@ namespace cutlass3x_sm100_bssptensorop_s256x128x64bsspgemm_ue8m0xe4m3_ue8m0xe4m3
 }
 
 // 5.
-namespace cutlass3x_sm100_bssptensorop_s256x192x64bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_f16_ue8m0xe4m3_256x192x256_0_vs64_ttn_align32_q_2sm_epiVs64n {
+namespace cutlass3x_sm100_bssptensorop_bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_f16_ue8m0xe4m3_256x192x256_0_vs64_ttn_align32_q_2sm_epiVs64n {
 
     using LayoutA = cutlass::layout::RowMajor;
     using LayoutB = cutlass::layout::RowMajor;
@@ -465,7 +465,7 @@ namespace cutlass3x_sm100_bssptensorop_s256x192x64bsspgemm_ue8m0xe4m3_ue8m0xe4m3
 }
 
 // 6.
-namespace cutlass3x_sm100_bssptensorop_s256x256x64bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_f16_ue8m0xe4m3_256x256x256_0_vs64_ttn_align32_q_2sm_epiVs64n {
+namespace cutlass3x_sm100_bssptensorop_bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_f16_ue8m0xe4m3_256x256x256_0_vs64_ttn_align32_q_2sm_epiVs64n {
 
     using LayoutA = cutlass::layout::RowMajor;
     using LayoutB = cutlass::layout::RowMajor;
@@ -546,8 +546,8 @@ namespace cutlass3x_sm100_bssptensorop_s256x256x64bsspgemm_ue8m0xe4m3_ue8m0xe4m3
 }
 
 // 1.
-TEST(cutlass3x_sm100_bssptensorop_s128x128x64bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_f16_ue8m0xe4m3_128x128x256_0_vs64_ttn_align32_q_1sm_epiVs64n, sfd_fusion) {
-  namespace gemm = cutlass3x_sm100_bssptensorop_s128x128x64bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_f16_ue8m0xe4m3_128x128x256_0_vs64_ttn_align32_q_1sm_epiVs64n;
+TEST(cutlass3x_sm100_bssptensorop_bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_f16_ue8m0xe4m3_128x128x256_0_vs64_ttn_align32_q_1sm_epiVs64n, sfd_fusion) {
+  namespace gemm = cutlass3x_sm100_bssptensorop_bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_f16_ue8m0xe4m3_128x128x256_0_vs64_ttn_align32_q_1sm_epiVs64n;
   EXPECT_TRUE(test::gemm::device::TestSmallFusion<gemm::Gemm>(
     1, 1,
     test::gemm::device::CheckEquality::RELATIVE,
@@ -557,8 +557,8 @@ TEST(cutlass3x_sm100_bssptensorop_s128x128x64bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_
 }
 
 // 2.
-TEST(cutlass3x_sm100_bssptensorop_s128x192x64bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_f16_ue8m0xe4m3_128x192x256_0_vs64_ttn_align32_q_1sm_epiVs64n, sfd_fusion) {
-  namespace gemm = cutlass3x_sm100_bssptensorop_s128x192x64bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_f16_ue8m0xe4m3_128x192x256_0_vs64_ttn_align32_q_1sm_epiVs64n;
+TEST(cutlass3x_sm100_bssptensorop_bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_f16_ue8m0xe4m3_128x192x256_0_vs64_ttn_align32_q_1sm_epiVs64n, sfd_fusion) {
+  namespace gemm = cutlass3x_sm100_bssptensorop_bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_f16_ue8m0xe4m3_128x192x256_0_vs64_ttn_align32_q_1sm_epiVs64n;
   EXPECT_TRUE(test::gemm::device::TestSmallFusion<gemm::Gemm>(
     1, 1,
     test::gemm::device::CheckEquality::RELATIVE,
@@ -568,8 +568,8 @@ TEST(cutlass3x_sm100_bssptensorop_s128x192x64bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_
 }
 
 // 3.
-TEST(cutlass3x_sm100_bssptensorop_s128x256x64bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_f16_ue8m0xe4m3_128x256x256_0_vs64_ttn_align32_q_1sm_epiVs64n, sfd_fusion) {
-  namespace gemm = cutlass3x_sm100_bssptensorop_s128x256x64bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_f16_ue8m0xe4m3_128x256x256_0_vs64_ttn_align32_q_1sm_epiVs64n;
+TEST(cutlass3x_sm100_bssptensorop_bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_f16_ue8m0xe4m3_128x256x256_0_vs64_ttn_align32_q_1sm_epiVs64n, sfd_fusion) {
+  namespace gemm = cutlass3x_sm100_bssptensorop_bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_f16_ue8m0xe4m3_128x256x256_0_vs64_ttn_align32_q_1sm_epiVs64n;
   EXPECT_TRUE(test::gemm::device::TestSmallFusion<gemm::Gemm>(
     1, 1,
     test::gemm::device::CheckEquality::RELATIVE,
@@ -579,8 +579,8 @@ TEST(cutlass3x_sm100_bssptensorop_s128x256x64bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_
 }
 
 // 4.
-TEST(cutlass3x_sm100_bssptensorop_s256x128x64bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_f16_ue8m0xe4m3_256x128x256_0_vs64_ttn_align32_q_2sm_epiVs64n, sfd_fusion) {
-  namespace gemm = cutlass3x_sm100_bssptensorop_s256x128x64bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_f16_ue8m0xe4m3_256x128x256_0_vs64_ttn_align32_q_2sm_epiVs64n;
+TEST(cutlass3x_sm100_bssptensorop_bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_f16_ue8m0xe4m3_256x128x256_0_vs64_ttn_align32_q_2sm_epiVs64n, sfd_fusion) {
+  namespace gemm = cutlass3x_sm100_bssptensorop_bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_f16_ue8m0xe4m3_256x128x256_0_vs64_ttn_align32_q_2sm_epiVs64n;
   EXPECT_TRUE(test::gemm::device::TestSmallFusion<gemm::Gemm>(
     1, 1,
     test::gemm::device::CheckEquality::RELATIVE,
@@ -590,8 +590,8 @@ TEST(cutlass3x_sm100_bssptensorop_s256x128x64bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_
 }
 
 // 5.
-TEST(cutlass3x_sm100_bssptensorop_s256x192x64bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_f16_ue8m0xe4m3_256x192x256_0_vs64_ttn_align32_q_2sm_epiVs64n, sfd_fusion) {
-  namespace gemm = cutlass3x_sm100_bssptensorop_s256x192x64bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_f16_ue8m0xe4m3_256x192x256_0_vs64_ttn_align32_q_2sm_epiVs64n;
+TEST(cutlass3x_sm100_bssptensorop_bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_f16_ue8m0xe4m3_256x192x256_0_vs64_ttn_align32_q_2sm_epiVs64n, sfd_fusion) {
+  namespace gemm = cutlass3x_sm100_bssptensorop_bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_f16_ue8m0xe4m3_256x192x256_0_vs64_ttn_align32_q_2sm_epiVs64n;
   EXPECT_TRUE(test::gemm::device::TestSmallFusion<gemm::Gemm>(
     1, 1,
     test::gemm::device::CheckEquality::RELATIVE,
@@ -601,8 +601,8 @@ TEST(cutlass3x_sm100_bssptensorop_s256x192x64bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_
 }
 
 // 6.
-TEST(cutlass3x_sm100_bssptensorop_s256x256x64bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_f16_ue8m0xe4m3_256x256x256_0_vs64_ttn_align32_q_2sm_epiVs64n, sfd_fusion) {
-  namespace gemm = cutlass3x_sm100_bssptensorop_s256x256x64bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_f16_ue8m0xe4m3_256x256x256_0_vs64_ttn_align32_q_2sm_epiVs64n;
+TEST(cutlass3x_sm100_bssptensorop_bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_f16_ue8m0xe4m3_256x256x256_0_vs64_ttn_align32_q_2sm_epiVs64n, sfd_fusion) {
+  namespace gemm = cutlass3x_sm100_bssptensorop_bsspgemm_ue8m0xe4m3_ue8m0xe4m3_f32_f16_ue8m0xe4m3_256x256x256_0_vs64_ttn_align32_q_2sm_epiVs64n;
   EXPECT_TRUE(test::gemm::device::TestSmallFusion<gemm::Gemm>(
     1, 1,
     test::gemm::device::CheckEquality::RELATIVE,

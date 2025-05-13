@@ -861,7 +861,7 @@ int run(Options &options, bool host_problem_shapes_available = true)
     result.gflops          = options.gflops(result.avg_runtime_ms / 1000.0, options.problem_sizes_host);
 
     std::cout << "  Avg runtime : " << result.avg_runtime_ms << " ms" << std::endl;
-    std::cout << "  GFLOPS      : " << result.gflops << std::endl;
+    std::cout << "  TFLOPS      : " << result.gflops / 1000.0 << std::endl;
   }
 
   return 0;

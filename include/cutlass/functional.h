@@ -722,7 +722,7 @@ struct has_unqualified_conj : cutlass::platform::false_type
 template<typename T>
 struct has_unqualified_conj<
     T,
-    decltype(conj(cutlass::platform::declval<T>()), void())
+    decltype(static_cast<void>(conj(cutlass::platform::declval<T>())), void())
   > : cutlass::platform::true_type
 {};
 

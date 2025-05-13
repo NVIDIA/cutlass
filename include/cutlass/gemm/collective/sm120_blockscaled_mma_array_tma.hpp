@@ -353,13 +353,12 @@ struct CollectiveMma<
     (void) workspace;
     // These tensor shapes (only applicable for grouped gemm) and pointers are only used to create tensormap/tma desc.
     // These will be replaced with correct values before the initial tma load.
-    auto init_shape = repeat_like(typename ProblemShape::UnderlyingProblemShape{}, int32_t(1));
-    constexpr int tma_alignment_bits = 128;
-    auto init_M = tma_alignment_bits;
-    auto init_N = tma_alignment_bits;
-    auto init_K = tma_alignment_bits;
+    auto init_M = int32_t(size<0>(TileShape{}));
+    auto init_N = int32_t(size<1>(TileShape{}));
+    auto init_K = int32_t(size<2>(TileShape{}));
+    auto init_L = 1;
+
     // Batches/Groups are managed by using appropriate pointers to input matrices
-    const uint32_t init_L = 1;
     TmaInternalElementA const* ptr_A_first_batch = nullptr;
     TmaInternalElementB const* ptr_B_first_batch = nullptr;
     ElementSF const* ptr_SFA_first_batch = nullptr;
@@ -1058,11 +1057,11 @@ struct CollectiveMma<
 
     Tensor tensor_sfb = make_tensor(ptr_SF, mainloop_params.layout_SFB[next_group]);
 
-    cute::detail::fill_tma_gmem_shape_stride(mainloop_params.tma_load_a, tensor_a, 
+    cute::detail::fill_tma_gmem_shape_stride(mainloop_params.tma_load_a, tensor_a,
                                              prob_shape_A, prob_stride_A);
     cute::detail::fill_tma_gmem_shape_stride(mainloop_params.tma_load_sfa, tensor_sfa,
                                              prob_shape_SFA, prob_stride_SFA);
-    cute::detail::fill_tma_gmem_shape_stride(mainloop_params.tma_load_b, tensor_b, 
+    cute::detail::fill_tma_gmem_shape_stride(mainloop_params.tma_load_b, tensor_b,
                                              prob_shape_B, prob_stride_B);
     cute::detail::fill_tma_gmem_shape_stride(mainloop_params.tma_load_sfb, tensor_sfb,
                                              prob_shape_SFB, prob_stride_SFB);
@@ -1091,7 +1090,7 @@ struct CollectiveMma<
                                                             prob_stride_B);
     cute::tma_descriptor_replace_dims_strides_in_shared_mem(shared_tensormaps.smem_tensormap_SFB,
                                                             prob_shape_SFB,
-                                                            prob_stride_SFB);                                                   
+                                                            prob_stride_SFB);
   }
 
   // The entire warp must call this function collectively (that is, the instructions are aligned)
@@ -1122,6 +1121,10 @@ struct CollectiveMma<
   tensormaps_cp_fence_release (
       TensorMapStorage& shared_tensormaps,
       cute::tuple<TensorMapA, TensorMapB, TensorMapSFA, TensorMapSFB> const& input_tensormaps) {
+    if (cute::elect_one_sync()) {
+      cute::tma_desc_commit_group();
+      cute::tma_desc_wait_group();
+    }
     // Entire warp must do this (i.e. it's aligned)
     tma_descriptor_cp_fence_release(get<0>(input_tensormaps), shared_tensormaps.smem_tensormap_A);
     tma_descriptor_cp_fence_release(get<1>(input_tensormaps), shared_tensormaps.smem_tensormap_B);

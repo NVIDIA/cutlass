@@ -105,10 +105,8 @@
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-
-
 // SM101 and SM101a
-#if !CUTLASS_CLANG_CUDA && (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 8))
+#if !CUTLASS_CLANG_CUDA && (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 8)
   #define CUTLASS_ARCH_MMA_SM101_SUPPORTED 1
   #if (!defined(CUTLASS_ARCH_MMA_SM101_ENABLED) && defined(__CUDA_ARCH__) && __CUDA_ARCH__ == 1010)
     #define CUTLASS_ARCH_MMA_SM101_ENABLED 1
@@ -118,7 +116,7 @@
     #endif
 
     // SM101f
-    #if (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 9))
+    #if !CUTLASS_CLANG_CUDA && (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 9)
     #define CUTLASS_ARCH_MMA_SM101F_SUPPORTED 1
     #endif
 
@@ -127,6 +125,8 @@
     #endif
   #endif
 #endif
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

@@ -114,7 +114,7 @@ In this way, CuTe reifies the thread-to-data-layout mapping,
 makes it easier to write code that is "correct by construction".
 If the code compiles, it's probably correct.
 
-## Copyright
+### Copyright
 
 Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: BSD-3-Clause

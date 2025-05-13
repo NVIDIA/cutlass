@@ -193,3 +193,4 @@ class CUDAEventProfiler:
             flops_ += m * n * batch_count * 2
 
         return flops_
+

@@ -249,9 +249,7 @@ auto same_r = make_layout(composition(layout<0>(a), get<0>(tiler)),
 We often use the `<LayoutA, LayoutB, ...>` notation to distinguish `Tiler`s from the concatenation-of-sublayouts notation `(LayoutA, LayoutB, ...)` that we used previously.
 
 The `result` in the above code can be depicted as the 3x8 sublayout of the original layout highlighted in the figure below.
-<p align="center">
-  <img src="../../../images/cute/composition1.png" alt="composition1.png" height="250"/>
-</p>
+![composition1.png](../../../images/cute/composition1.png)
 
 For convenience, CuTe also interprets `Shape`s as a tiler as well. A `Shape` is interpreted as tuple-of-layouts-with-stride-1:
 ```cpp
@@ -268,9 +266,7 @@ auto tiler = make_shape(Int<3>{}, Int<8>{});
 auto result = composition(a, tiler);
 ```
 where `result` can be depicted as the 3x8 sublayout of the original layout highlighted in the figure below.
-<p align="center">
-  <img src="../../../images/cute/composition2.png" alt="composition2.png" height="250"/>
-</p>
+![composition2.png](../../../images/cute/composition2.png)
 
 ## Composition Tilers
 
@@ -323,9 +319,7 @@ The `cotarget` parameter above is most commonly an integer -- you can see we onl
 
 * `complement((2,2):(1,6), 24)` is `(3,2):(2,12)`. Note that `((2,2),(3,2)):((1,6),(2,12))` has cosize `24` and produces unique indices.
 
-<p align="center">
-  <img src="../../../images/cute/complement1.png" alt="complement1.png" height="75"/>
-</p>
+![complement1.png](../../../images/cute/complement1.png)
 As a visualization, the above figure depicts the codomain of the last example. The image of the original layout `(2,2):(1,6)` is colored in gray. The complement effectively "repeats" the original layout (displayed in the other colors) such that the codomain size of the result is `24`. The complement `(3,2):(2,12)` can be viewed as the "layout of the repetition."
 
 ## Division (Tiling)
@@ -371,9 +365,7 @@ This is computed in the three steps described in the implementation above.
 * Concantenation of `(B,B*) = (4,(2,3)):(2,(1,8))`.
 * Composition of `A = (4,2,3):(2,1,8)` with `(B,B*)` is then `((2,2),(2,3)):((4,1),(2,8))`.
 
-<p align="center">
-  <img src="../../../images/cute/divide1.png" alt="divide1.png" height="150"/>
-</p>
+![divide1.png](../../../images/cute/divide1.png)
 
 The above figure depicts `A` as a 1-D layout with the elements pointed to by `B` highlighted in gray. The layout `B` describes our "tile" of data, and there are six of those tiles in `A` shown by each of the colors. After the divide, the first mode of the result is the tile of data and the second mode of the result iterates over each tile.
 
@@ -383,9 +375,7 @@ Using the `Tiler` concept defined above, this immediately generalizes to multidi
 
 Similar to the 2-D composition example above, consider a 2-D layout `A = (9,(4,8)):(59,(13,1))` and want to apply `3:3` down the columns (mode-0) and `(2,4):(1,8)` across the rows (mode-1). This means the tiler can be written as `B = <3:3, (2,4):(1,8)>`.
 
-<p align="center">
-  <img src="../../../images/cute/divide2.png" alt="divide2.png" height="450"/>
-</p>
+![divide2.png](../../../images/cute/divide2.png)
 
 The above figure depicts `A` as a 2-D layout with the elements pointed to by `B` highlighted in gray. The layout `B` describes our "tile" of data, and there are twelve of those tiles in `A` shown by each of the colors. After the divide, the first mode of each mode of the result is the tile of data and the second mode of each mode iterates over each tile. In that sense, this operation can be viewed as a kind of `gather` operation or as simply a permutation on the rows and cols.
 
@@ -429,9 +419,7 @@ We note that `logical_divide` preserves the *semantics* of the modes while permu
 
 This is not the case with `zipped_divide`. The mode-0 in the `zipped_divide` result is the `Tile` itself (of whatever rank the `Tiler` was) and mode-1 is the layout of those tiles. It doesn't always make sense to plot these as 2-D layouts, because the `M`-mode is now more aptly the "tile-mode" and the `N`-mode is more aptly the "rest-mode". Regardless, we still can plot the resulting layout as 2-D as shown below.
 
-<p align="center">
-  <img src="../../../images/cute/divide3.png" alt="divide3.png" height="450"/>
-</p>
+![divide3.png](../../../images/cute/divide3.png)
 
 We've kept each tile as its color in the previous images for clarity. Clearly, iterating across tiles is now equivalent to iterating across a row of this layout and iterating over elements within a tile is equivalent to iterating down a column of this layout. As we'll see in the `Tensor` section, this can be used to great effect in partitioning within or across tiles of data.
 
@@ -476,9 +464,7 @@ This is computed in the three steps described in the implementation above.
 * Composition of `A* = (2,3):(2,8)` with `B = 6:1` is then `(2,3):(2,8)`.
 * Concatenation of `(A,A* o B) = ((2,2),(2,3)):((4,1),(2,8))`.
 
-<p align="center">
-  <img src="../../../images/cute/product1.png" alt="product1.png" height="175"/>
-</p>
+![product1.png](../../../images/cute/product1.png)
 
 The above figure depicts `A` and `B` as a 1-D layouts. The layout `B` describes the number and order of repetitions of `A` and they are colored for clarity. After the product, the first mode of the result is the tile of data and the second mode of the result iterates over each tile.
 
@@ -486,9 +472,7 @@ Note that the result is identical to the result of the 1-D Logical Divide exampl
 
 Of course, we can change the number and order of the tiles in the product by changing `B`.
 
-<p align="center">
-  <img src="../../../images/cute/product2.png" alt="product2.png" height="175"/>
-</p>
+![product2.png](../../../images/cute/product2.png)
 
 For example, in the above image with `B = (4,2):(2,1)`, there are 8 repeated tiles instead of 6 and the tiles are in a different order.
 
@@ -496,9 +480,7 @@ For example, in the above image with `B = (4,2):(2,1)`, there are 8 repeated til
 
 We can use the by-mode `tiler` strategies previously developed to write multidimensional products as well.
 
-<p align="center">
-  <img src="../../../images/cute/product2d.png" alt="product2d.png" height="250"/>
-</p>
+![product2d.png](../../../images/cute/product2d.png)
 
 The above image demonstates the use of a `tiler` to apply `logical_product` by-mode. Despite this **not being the recommended approach**, the result is a rank-2 layout consisting of 2x5 row-major block that is tiled across a 3x4 column-major arrangement.
 
@@ -519,17 +501,13 @@ Because `A` is always compatible with mode-0 of the result and `B` is always com
 
 This is exactly what `blocked_product` and `raked_product` do and it is why they are called rank-sensitive. Unlike other CuTe functions that take `Layout` arguments, these care about the top-level rank of the arguments so that each mode can be reassociated after the `logical_product`.
 
-<p align="center">
-  <img src="../../../images/cute/productblocked2d.png" alt="productblocked2d.png" height="250"/>
-</p>
+![productblocked2d.png](../../../images/cute/productblocked2d.png)
 
 The above image shows the same result as the `tiler` approach, but with much more intuitive arguments. A 2x5 row-major layout is arranged as a tile in a 3x4 column-major arrangement. Also note that `blocked_product` went ahead and `coalesced` mode-0 for us.
 
 Similarly, `raked_product` combines the modes slightly differently. Instead of the resulting "column" mode being constructed from the `A` "column" mode then the `B` "column" mode, the resulting "column" mode is constructed from the `B` "column" mode then the `A` "column" mode.
 
-<p align="center">
-  <img src="../../../images/cute/productraked2d.png" alt="productraked2d.png" height="250"/>
-</p>
+![productraked2d.png](../../../images/cute/productraked2d.png)
 
 This results in the "tile" `A` now being interleaved or "raked" with the "layout-of-tiles" `B` instead of appearing as blocks. Other references call this a "cyclic distribution."
 

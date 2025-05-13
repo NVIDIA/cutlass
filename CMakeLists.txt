@@ -178,6 +178,10 @@ if (CUDA_VERSION VERSION_GREATER_EQUAL 12.8)
   list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 100 100a 101 101a 120 120a)
 endif()
 
+if (CUDA_VERSION VERSION_GREATER_EQUAL 12.9)
+  list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 100f 101f 120f)
+endif()
+
 set(CUTLASS_NVCC_ARCHS ${CUTLASS_NVCC_ARCHS_SUPPORTED} CACHE STRING "The SM architectures requested.")
 set(CUTLASS_NVCC_ARCHS_ENABLED ${CUTLASS_NVCC_ARCHS} CACHE STRING "The SM architectures to build code for.")
 
@@ -674,25 +678,6 @@ target_compile_features(CUTLASS INTERFACE cxx_std_11)
 
 if (NOT CUTLASS_NAMESPACE STREQUAL "cutlass")
   target_compile_definitions(CUTLASS INTERFACE CUTLASS_NAMESPACE=${CUTLASS_NAMESPACE})
-endif()
-
-if (NOT DEFINED CUTLASS_REVISION)
-
-  find_package(Git QUIET)
-
-  execute_process(
-    COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
-    RESULT_VARIABLE CUTLASS_REVISION_RESULT
-    OUTPUT_VARIABLE CUTLASS_REVISION
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-  )
-
-  if (CUTLASS_REVISION_RESULT)
-    message(STATUS "CUTLASS Revision: Unable to detect, Git returned code ${CUTLASS_REVISION_RESULT}.")
-  else()
-    message(STATUS "CUTLASS Revision: ${CUTLASS_REVISION}")
-  endif()
-
 endif()
 
 configure_file(

@@ -1157,7 +1157,7 @@ has shape `((X, Y), K)` and stride `((1, X), X*Y)`.
 `get<0>(stride)` is the tuple `(1, X)`, not a single integer.
 However, A is certainly M major if interpreted as a matrix.
 
-# Copyright
+### Copyright
 
 Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: BSD-3-Clause

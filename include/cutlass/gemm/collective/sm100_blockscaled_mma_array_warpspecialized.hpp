@@ -427,10 +427,9 @@ struct CollectiveMma<
     cutlass::KernelHardwareInfo const& hw_info = cutlass::KernelHardwareInfo{}) {
     // These tensor shapes (only applicable for grouped gemm) and pointers are only used to create tensormap/tma desc.
     // These will be replaced with correct values before the initial tma load.
-    constexpr int tma_alignment_bits = 128;
-    auto init_M = tma_alignment_bits;
-    auto init_N = tma_alignment_bits;
-    auto init_K = tma_alignment_bits;
+    auto init_M = int32_t(size<0>(TileShape{}));
+    auto init_N = int32_t(size<1>(TileShape{}));
+    auto init_K = int32_t(size<2>(TileShape{}));
     auto init_L = 1;
 
     // Tensor pointers will be fixed before the first access
