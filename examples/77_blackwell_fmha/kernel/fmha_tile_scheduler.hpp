@@ -90,8 +90,8 @@ struct PersistentTileScheduler {
   struct Params {
     int num_blocks;
     FastDivmod divmod_m_block;
-    FastDivmod divmod_b;
     FastDivmod divmod_h;
+    FastDivmod divmod_b;
 
     KernelHardwareInfo hw_info;
   };
