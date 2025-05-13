@@ -146,7 +146,7 @@ struct PersistentTileScheduler {
     params.divmod_m_block(block_decode, m_block, block_decode);
     params.divmod_b(block_decode, bidb, block_decode);
     params.divmod_h(block_decode, bidh, block_decode);
-    return make_coord(m_block, _0{}, make_coord(bidb, bidh));
+    return make_coord(m_block, _0{}, make_coord(bidh, bidb));
   }
 
   CUTLASS_DEVICE
