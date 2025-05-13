@@ -431,7 +431,7 @@ Additional information may appear at the end of each line, such as shared memory
 
 Please note that `synclog` is an experimental feature, and its functionality is not always guaranteed. We encourage its use in custom kernels and CUTLASS examples, though it is known to be incompatible with profiler kernels.
 
-# Copyright
+### Copyright
 
 Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: BSD-3-Clause

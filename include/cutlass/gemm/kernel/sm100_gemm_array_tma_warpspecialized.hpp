@@ -824,9 +824,6 @@ public:
     }
 
     else if (is_participant.sched) {
-      if constexpr (IsSchedDynamicPersistent) {
-        cutlass::arch::wait_on_dependent_grids();
-      }
       // Signal the epilogue warps to proceed once the prologue is complete
       epilogue_throttle_barrier.arrive();
 
@@ -836,6 +833,8 @@ public:
         // See comment below where this variable is updated for a description of
         // why this variable is needed.
         bool requires_clc_query = true;
+
+        cutlass::arch::wait_on_dependent_grids();
 
         do {
           if (requires_clc_query) {
@@ -872,6 +871,9 @@ public:
         clc_pipeline.producer_tail(clc_pipe_producer_state);
       }
       else {
+
+        cutlass::arch::wait_on_dependent_grids();
+
         do {
           auto [next_work_tile_info, increment_pipe] = scheduler.advance_to_next_work(clc_pipeline, clc_pipe_producer_state);
           work_tile_info = next_work_tile_info;

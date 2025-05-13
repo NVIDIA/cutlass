@@ -1003,14 +1003,11 @@ class ConvOperation3x:
       math_op = self.tile_description.math_instruction.math_operation
       math_op_string = math_operations_map[math_op] if math_op in math_operations_map.keys() else ''
 
-      inst_shape = "{0}x{1}x{2}".format(*tuple(self.tile_description.math_instruction.instruction_shape))
-      inst_shape += math_op_string
-
       if self.tile_description.math_instruction.element_a != self.A.element and \
         self.tile_description.math_instruction.element_a != self.tile_description.math_instruction.element_accumulator:
         intermediate_type = DataTypeNames[self.tile_description.math_instruction.element_a]
 
-    return "%s%s%s%s" % (self.short_math_name(), inst_shape, intermediate_type, ConvKindNames[self.conv_kind])
+    return "%s%s%s" % (math_op_string, intermediate_type, ConvKindNames[self.conv_kind])
 
   def extended_name(self):
     '''Generates a string representing the MMA atom. Assumes accumulator type is C type.'''
@@ -5997,8 +5994,8 @@ def GenerateSM90_TensorOp_mixed_dtype_WGMMA_gemm(manifest, cuda_version):
 
   math_instructions = generate_mixed_dtype_math_instructions_sm90(instantiation_level, valid_types_for_a_b_acc)
 
-  valid_types_for_d = [DataType.f32]
-  valid_types_for_c = [DataType.f32]
+  valid_types_for_d = [DataType.f32, DataType.bf16, DataType.f16, DataType.e4m3, DataType.e5m2]
+  valid_types_for_c = copy.deepcopy(valid_types_for_d)
 
   tile_descriptions = generate_tile_descriptions_sm90(
     math_instructions=math_instructions,
@@ -6008,6 +6005,12 @@ def GenerateSM90_TensorOp_mixed_dtype_WGMMA_gemm(manifest, cuda_version):
   for tile_desc in tile_descriptions:
     math_inst = tile_desc.math_instruction
     data_types = []
+
+    # Limit C/D types to avoid a giant number of instantiations.
+    # A typical use case for mixed dtype in DL is weight quantization (tensor A),
+    # therefore we can limit the output type to that of activation (tensor B).
+    valid_types_for_c = [math_inst.element_b]
+    valid_types_for_d = [math_inst.element_b]
 
     for c_type, d_type in product(valid_types_for_c, valid_types_for_d):
       data_types.append(
@@ -6791,6 +6794,11 @@ def GenerateSM100_TensorOp_32b_UMMA_gemm(manifest, cuda_version):
                         , DynamicClusterShape
                        ]
 
+  if 101 in manifest.compute_capabilities :
+    cluster_shapes_1sm = [[1,2,1], [1,1,1], [1,4,1]
+                          , DynamicClusterShape
+                         ]
+
   tile_schedulers = [
     TileSchedulerType.Default
   ]
@@ -6838,6 +6846,11 @@ def GenerateSM100_TensorOp_32b_UMMA_gemm(manifest, cuda_version):
   cluster_shapes_2sm = [[2,1,1], [2,2,1], [2,4,1], [4,1,1], [4,2,1], [4,4,1]
                         , DynamicClusterShape
                        ]
+  
+  if 101 in manifest.compute_capabilities :
+    cluster_shapes_2sm = [[2,1,1], [2,2,1], [2,4,1], [4,1,1], [4,2,1]
+                          , DynamicClusterShape
+                         ]
 
   for math_inst in math_instructions_2sm:
     tile_descriptions = []
@@ -6936,6 +6949,11 @@ def GenerateSM100_TensorOp_16b_UMMA_gemm(manifest, cuda_version, gemm_kind=GemmK
   cluster_shapes_1sm = [[1,2,1], [1,1,1], [1,4,1],[4,4,1]
                         , DynamicClusterShape
                        ]
+
+  if 101 in manifest.compute_capabilities :
+    cluster_shapes_1sm = [[1,2,1], [1,1,1], [1,4,1]
+                          , DynamicClusterShape
+                         ]
 
   tile_schedulers = [
     TileSchedulerType.Default
@@ -7089,6 +7107,11 @@ def GenerateSM100_TensorOp_16b_UMMA_gemm(manifest, cuda_version, gemm_kind=GemmK
   cluster_shapes_2sm = [[2,1,1], [2,2,1], [2,4,1], [4,1,1], [4,2,1], [4,4,1]
                         , DynamicClusterShape
                        ]
+
+  if 101 in manifest.compute_capabilities :
+    cluster_shapes_2sm = [[2,1,1], [2,2,1], [2,4,1], [4,1,1], [4,2,1]
+                          , DynamicClusterShape
+                         ]
 
   for math_inst in math_instructions_2sm:
     tile_descriptions = []
@@ -7246,6 +7269,11 @@ def GenerateSM100_TensorOp_fp8_UMMA_gemm(manifest, cuda_version, gemm_kind=GemmK
   cluster_shapes_1sm = [[1,2,1], [2,1,1], [1,1,1], [1,4,1], [4,4,1]
                         , DynamicClusterShape
                        ]
+
+  if 101 in manifest.compute_capabilities :
+    cluster_shapes_1sm = [[1,2,1], [2,1,1], [1,1,1], [1,4,1]
+                          , DynamicClusterShape
+                         ]
 
   tile_schedulers = [
     TileSchedulerType.Default,
@@ -7455,6 +7483,11 @@ def GenerateSM100_TensorOp_fp8_UMMA_gemm(manifest, cuda_version, gemm_kind=GemmK
   cluster_shapes_2sm = [[2,1,1], [2,2,1], [2,4,1], [4,1,1], [4,2,1], [4,4,1]
                         , DynamicClusterShape
                        ]
+
+  if 101 in manifest.compute_capabilities :
+    cluster_shapes_2sm = [[2,1,1], [2,2,1], [2,4,1], [4,1,1], [4,2,1]
+                          , DynamicClusterShape
+                         ]                   
 
   for math_inst in math_instructions_2sm:
     tile_descriptions = []
@@ -7916,6 +7949,13 @@ def GenerateSM100_TensorOp_mixed_8bits_UMMA_gemm(manifest, cuda_version):
     , DynamicClusterShape
     ]
 
+  if 101 in manifest.compute_capabilities :
+    cluster_shapes_1sm = [
+      [2,1,1],
+      [1,1,1]
+      , DynamicClusterShape
+      ]
+
   # 1xSM MMA kernels
   for math_inst in math_instructions_1sm:
     tile_descriptions = []
@@ -7984,6 +8024,12 @@ def GenerateSM100_TensorOp_mixed_8bits_UMMA_gemm(manifest, cuda_version):
     [4,4,1]
     , DynamicClusterShape
   ]
+
+  if 101 in manifest.compute_capabilities :
+    cluster_shapes_2sm = [
+      [2,1,1]
+      , DynamicClusterShape
+    ]
 
   for math_inst in math_instructions_2sm:
     tile_descriptions = []
@@ -8138,6 +8184,13 @@ def GenerateSM100_TensorOp_mixed_8bits_UMMA_gemm_with_block_scaled(manifest, cud
     , DynamicClusterShape
   ]
 
+  if 101 in manifest.compute_capabilities :
+    cluster_shapes_1sm = [
+      [1,1,1],
+      [2,1,1]
+      , DynamicClusterShape
+    ]
+
   # 1xSM MMA kernels
   for math_inst in math_instructions_1sm:
     tile_descriptions = []
@@ -8210,6 +8263,13 @@ def GenerateSM100_TensorOp_mixed_8bits_UMMA_gemm_with_block_scaled(manifest, cud
     [4,4,1]
     , DynamicClusterShape
   ]
+
+  if 101 in manifest.compute_capabilities :
+    cluster_shapes_2sm = [
+      [2,1,1],
+      [4,1,1]
+      , DynamicClusterShape
+    ]
 
   for math_inst in math_instructions_2sm:
     tile_descriptions = []
@@ -8417,6 +8477,13 @@ def GenerateSM100_TensorOp_fp4_UMMA_gemm_with_block_scaled(manifest, cuda_versio
     , DynamicClusterShape
   ]
 
+  if 101 in manifest.compute_capabilities :
+    cluster_shapes_1sm = [
+      [1,1,1],
+      [2,1,1]
+      , DynamicClusterShape
+    ]
+
   # 1xSM MMA kernels
   for math_inst in math_instructions_1sm:
     tile_descriptions = []
@@ -8536,6 +8603,13 @@ def GenerateSM100_TensorOp_fp4_UMMA_gemm_with_block_scaled(manifest, cuda_versio
     [4,4,1]
     , DynamicClusterShape
   ]
+
+  if 101 in manifest.compute_capabilities :
+    cluster_shapes_2sm = [
+      [2,1,1],
+      [4,1,1]
+      , DynamicClusterShape
+    ]
 
   for math_inst in math_instructions_2sm:
     tile_descriptions = []
@@ -8689,6 +8763,11 @@ def GenerateSM100_TensorOp_int8_UMMA_gemm(manifest, cuda_version):
                         , DynamicClusterShape
                        ]
 
+  if 101 in manifest.compute_capabilities :
+    cluster_shapes_1sm = [[1,2,1], [2,1,1], [1,1,1], [1,4,1]
+                          , DynamicClusterShape
+                         ]                    
+
   tile_schedulers = [
     TileSchedulerType.Default,
   ]
@@ -8787,6 +8866,11 @@ def GenerateSM100_TensorOp_int8_UMMA_gemm(manifest, cuda_version):
   cluster_shapes_2sm = [[2,1,1], [2,2,1], [2,4,1], [4,1,1], [4,2,1], [4,4,1]
                         , DynamicClusterShape
                        ]
+
+  if 101 in manifest.compute_capabilities :
+    cluster_shapes_2sm = [[2,1,1], [2,2,1], [2,4,1], [4,1,1], [4,2,1]
+                          , DynamicClusterShape
+                         ]
 
   for math_inst in math_instructions_2sm:
     tile_descriptions = []
@@ -8925,6 +9009,9 @@ def GenerateSM100_SparseTensorOp_32b_UMMA_gemm(manifest, cuda_version):
   for math_inst in math_instructions_1sm:
     tile_descriptions = []
     for cluster_shape in sm100_cluster_shape_1sm:
+      if 101 in manifest.compute_capabilities :
+        if cluster_shape == [4,4,1] :
+          continue
       multiplier_1sm = (1, 1, 1) if cluster_shape == DynamicClusterShape else cluster_shape
       tile_descriptions.append(
         TileDescription([
@@ -8953,6 +9040,9 @@ def GenerateSM100_SparseTensorOp_32b_UMMA_gemm(manifest, cuda_version):
   for math_inst in math_instructions_2sm:
     tile_descriptions = []
     for cluster_shape in sm100_cluster_shape_2sm:
+      if 101 in manifest.compute_capabilities :
+        if cluster_shape == [4,4,1] :
+          continue
       multiplier_2sm = (1, 1, 1) if cluster_shape == DynamicClusterShape else (cluster_shape[0] // 2, cluster_shape[1], cluster_shape[2])
       tile_descriptions.append(
         TileDescription([
@@ -9044,6 +9134,9 @@ def GenerateSM100_SparseTensorOp_16b_UMMA_gemm(manifest, cuda_version):
   for math_inst in math_instructions_1sm:
     tile_descriptions = []
     for cluster_shape in sm100_cluster_shape_1sm:
+      if 101 in manifest.compute_capabilities :
+        if cluster_shape == [4,4,1] :
+          continue
       multiplier_1sm = (1, 1, 1) if cluster_shape == DynamicClusterShape else cluster_shape
       tile_descriptions.append(
         TileDescription([
@@ -9072,6 +9165,9 @@ def GenerateSM100_SparseTensorOp_16b_UMMA_gemm(manifest, cuda_version):
   for math_inst in math_instructions_2sm:
     tile_descriptions = []
     for cluster_shape in sm100_cluster_shape_2sm:
+      if 101 in manifest.compute_capabilities :
+        if cluster_shape == [4,4,1] :
+          continue
       multiplier_2sm = (1, 1, 1) if cluster_shape == DynamicClusterShape else (cluster_shape[0] // 2, cluster_shape[1], cluster_shape[2])
       tile_descriptions.append(
         TileDescription([
@@ -9163,6 +9259,9 @@ def GenerateSM100_SparseTensorOp_int8_UMMA_gemm(manifest, cuda_version):
   for math_inst in math_instructions_1sm:
     tile_descriptions = []
     for cluster_shape in sm100_cluster_shape_1sm:
+      if 101 in manifest.compute_capabilities :
+        if cluster_shape == [4,4,1] :
+          continue
       multiplier_1sm = (1, 1, 1) if cluster_shape == DynamicClusterShape else cluster_shape
       tile_descriptions.append(
         TileDescription([
@@ -9191,6 +9290,9 @@ def GenerateSM100_SparseTensorOp_int8_UMMA_gemm(manifest, cuda_version):
   for math_inst in math_instructions_2sm:
     tile_descriptions = []
     for cluster_shape in sm100_cluster_shape_2sm:
+      if 101 in manifest.compute_capabilities :
+        if cluster_shape == [4,4,1] :
+          continue
       multiplier_2sm = (1, 1, 1) if cluster_shape == DynamicClusterShape else (cluster_shape[0] // 2, cluster_shape[1], cluster_shape[2])
       tile_descriptions.append(
         TileDescription([
@@ -9287,6 +9389,9 @@ def GenerateSM100_SparseTensorOp_fp8_UMMA_gemm(manifest, cuda_version):
   for math_inst in math_instructions_1sm:
     tile_descriptions = []
     for cluster_shape in sm100_cluster_shape_1sm:
+      if 101 in manifest.compute_capabilities :
+        if cluster_shape == [4,4,1] :
+          continue
       multiplier_1sm = (1, 1, 1) if cluster_shape == DynamicClusterShape else cluster_shape
       tile_descriptions.append(
         TileDescription([
@@ -9319,6 +9424,9 @@ def GenerateSM100_SparseTensorOp_fp8_UMMA_gemm(manifest, cuda_version):
   for math_inst in math_instructions_2sm:
     tile_descriptions = []
     for cluster_shape in sm100_cluster_shape_2sm:
+      if 101 in manifest.compute_capabilities :
+        if cluster_shape == [4,4,1] :
+          continue
       multiplier_2sm = (1, 1, 1) if cluster_shape == DynamicClusterShape else (cluster_shape[0] // 2, cluster_shape[1], cluster_shape[2])
       tile_descriptions.append(
         TileDescription([
@@ -9417,6 +9525,9 @@ def GenerateSM100_SparseTensorOp_mixed_8bits_UMMA_gemm(manifest, cuda_version):
   for math_inst in math_instructions_1sm:
     tile_descriptions = []
     for cluster_shape in sm100_cluster_shape_1sm:
+      if 101 in manifest.compute_capabilities :
+        if cluster_shape == [4,4,1] :
+          continue
       multiplier_1sm = (1, 1, 1) if cluster_shape == DynamicClusterShape else cluster_shape
       tile_descriptions.append(
         TileDescription([
@@ -9476,6 +9587,9 @@ def GenerateSM100_SparseTensorOp_mixed_8bits_UMMA_gemm(manifest, cuda_version):
   for math_inst in math_instructions_2sm:
     tile_descriptions = []
     for cluster_shape in sm100_cluster_shape_2sm:
+      if 101 in manifest.compute_capabilities :
+        if cluster_shape == [4,4,1] :
+          continue
       multiplier_2sm = (1, 1, 1) if cluster_shape == DynamicClusterShape else (cluster_shape[0] // 2, cluster_shape[1], cluster_shape[2])
       tile_descriptions.append(
         TileDescription([
@@ -9578,6 +9692,12 @@ def GenerateSM100_TensorOp_32b_UMMA_gemm_stream_k(manifest, cuda_version):
     , DynamicClusterShape
     ]
 
+  if 101 in manifest.compute_capabilities :
+    cluster_shapes_1sm = [
+      [1,2,1], [1,1,1], [1,4,1]
+      , DynamicClusterShape
+      ]
+
   tile_schedulers = [
     TileSchedulerType.StreamK,
   ]
@@ -9611,6 +9731,12 @@ def GenerateSM100_TensorOp_32b_UMMA_gemm_stream_k(manifest, cuda_version):
     [2,1,1], [2,2,1], [2,4,1], [4,1,1], [4,4,1]
     , DynamicClusterShape
   ]
+
+  if 101 in manifest.compute_capabilities :
+    cluster_shapes_2sm = [
+      [2,1,1], [2,2,1], [2,4,1], [4,1,1]
+      , DynamicClusterShape
+    ]
 
   for math_inst in math_instructions_2sm:
     tile_descriptions = []
@@ -9657,6 +9783,12 @@ def GenerateSM100_TensorOp_16b_UMMA_gemm_stream_k(manifest, cuda_version):
     [1,2,1], [1,1,1], [4,4,1]
     , DynamicClusterShape
     ]
+
+  if 101 in manifest.compute_capabilities :
+    cluster_shapes_1sm = [
+      [1,2,1], [1,1,1]
+      , DynamicClusterShape
+      ]
 
   tile_schedulers = [
     TileSchedulerType.StreamK
@@ -9725,6 +9857,12 @@ def GenerateSM100_TensorOp_16b_UMMA_gemm_stream_k(manifest, cuda_version):
     [2,1,1], [2,2,1], [2,4,1], [4,1,1], [4,4,1]
     , DynamicClusterShape
     ]
+
+  if 101 in manifest.compute_capabilities :
+    cluster_shapes_2sm = [
+      [2,1,1], [2,2,1], [2,4,1], [4,1,1]
+      , DynamicClusterShape
+      ]
 
   for math_inst in math_instructions_2sm:
     tile_descriptions = []
@@ -9809,6 +9947,12 @@ def GenerateSM100_TensorOp_fp8_UMMA_gemm_stream_k(manifest, cuda_version):
     , DynamicClusterShape
   ]
 
+  if 101 in manifest.compute_capabilities :
+    cluster_shapes_1sm = [
+      [1,2,1], [2,1,1], [1,1,1]
+      , DynamicClusterShape
+    ]
+
   tile_schedulers = [
     TileSchedulerType.StreamK,
   ]
@@ -9860,6 +10004,12 @@ def GenerateSM100_TensorOp_fp8_UMMA_gemm_stream_k(manifest, cuda_version):
     [2,1,1], [2,2,1], [2,4,1], [4,1,1], [4,4,1]
     , DynamicClusterShape
     ]
+
+  if 101 in manifest.compute_capabilities :
+    cluster_shapes_2sm = [
+      [2,1,1], [2,2,1], [2,4,1], [4,1,1]
+      , DynamicClusterShape
+      ]
 
   for math_inst in math_instructions_2sm:
     tile_descriptions = []
@@ -9960,6 +10110,9 @@ def GenerateSM100_TensorOp_16b_UMMA_conv3x(manifest, cuda_version,
 
   cluster_shapes_1sm = [[1,1,1], [1,2,1], [1,4,1],[4,4,1]]
 
+  if 101 in manifest.compute_capabilities :
+    cluster_shapes_1sm = [[1,1,1], [1,2,1], [1,4,1]]
+
   # tile_descriptions is a 2-level list.
   # Each inner list is for each cluster shape.
   for math_inst, output_type in math_instructions_w_output_1sm:
@@ -10023,6 +10176,8 @@ def GenerateSM100_TensorOp_16b_UMMA_conv3x(manifest, cuda_version,
                           data_types_and_instruction_shapes_2sm)
 
   cluster_shapes_2sm = [[2,1,1], [2,2,1], [2,4,1], [4,1,1], [4,2,1], [4,4,1]]
+  if 101 in manifest.compute_capabilities :
+    cluster_shapes_2sm = [[2,1,1], [2,2,1], [2,4,1], [4,1,1], [4,2,1]]
 
   for math_inst, output_type in math_instructions_w_output_2sm:
     tile_descriptions = []
@@ -10103,6 +10258,8 @@ def GenerateSM100_TensorOp_fp8_UMMA_conv3x(manifest, cuda_version,
                           data_types_and_instruction_shapes_1sm)
 
   cluster_shapes_1sm = [[1,1,1], [1,2,1], [1,4,1],[4,4,1]]
+  if 101 in manifest.compute_capabilities :
+    cluster_shapes_1sm = [[1,1,1], [1,2,1], [1,4,1]]
 
   for math_inst, output_type in math_instructions_w_output_1sm:
     tile_descriptions = []
@@ -10166,6 +10323,8 @@ def GenerateSM100_TensorOp_fp8_UMMA_conv3x(manifest, cuda_version,
                           data_types_and_instruction_shapes_2sm)
 
   cluster_shapes_2sm = [[2,1,1], [2,2,1], [2,4,1], [4,1,1], [4,2,1], [4,4,1]]
+  if 101 in manifest.compute_capabilities :
+    cluster_shapes_2sm = [[2,1,1], [2,2,1], [2,4,1], [4,1,1], [4,2,1]]
 
   for math_inst, output_type in math_instructions_w_output_2sm:
     tile_descriptions = []
@@ -10629,6 +10788,8 @@ def GenerateSM100(manifest, cuda_version):
   #
   # Dense Gemm
   #
+  architectures = manifest.args.architectures.split(';') if len(args.architectures) else ['50',]
+
   GenerateSM100_TensorOp_16b_UMMA_gemm(manifest, cuda_version)
 
   GenerateSM100_TensorOp_32b_UMMA_gemm(manifest, cuda_version)
@@ -10636,7 +10797,8 @@ def GenerateSM100(manifest, cuda_version):
 
   GenerateSM100_TensorOp_16b_UMMA_gemm_stream_k(manifest, cuda_version)
 
-  GenerateSM100_TensorOp_int8_UMMA_gemm(manifest, cuda_version)
+  if '100f' not in architectures and '101f' not in architectures:
+    GenerateSM100_TensorOp_int8_UMMA_gemm(manifest, cuda_version)
 
   GenerateSM100_TensorOp_fp8_UMMA_gemm(manifest, cuda_version)
   # grouped GEMM
@@ -10657,7 +10819,8 @@ def GenerateSM100(manifest, cuda_version):
   #
   GenerateSM100_SparseTensorOp_32b_UMMA_gemm(manifest, cuda_version)
   GenerateSM100_SparseTensorOp_16b_UMMA_gemm(manifest, cuda_version)
-  GenerateSM100_SparseTensorOp_int8_UMMA_gemm(manifest, cuda_version)
+  if '100f' not in architectures and '101f' not in architectures:
+    GenerateSM100_SparseTensorOp_int8_UMMA_gemm(manifest, cuda_version)
   GenerateSM100_SparseTensorOp_fp8_UMMA_gemm(manifest, cuda_version)
   GenerateSM100_SparseTensorOp_mixed_8bits_UMMA_gemm(manifest, cuda_version)
 
@@ -11166,7 +11329,7 @@ if __name__ == "__main__":
   GenerateSM89(manifest, args.cuda_version)
   GenerateSM90(manifest, args.cuda_version)
    
-  blackwell_enabled_arch = any(arch in ["100a", "101a", "120a"] for arch in archs)
+  blackwell_enabled_arch = any(arch in ["100a", "100f", "101a", "101f", "120a", "120f"] for arch in archs)
   if blackwell_enabled_arch:
     GenerateSM100(manifest, args.cuda_version)
     GenerateSM120(manifest, args.cuda_version)

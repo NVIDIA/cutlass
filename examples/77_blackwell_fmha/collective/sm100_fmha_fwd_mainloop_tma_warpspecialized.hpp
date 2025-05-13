@@ -505,12 +505,12 @@ struct Sm100FmhaFwdMainloopTmaWarpspecialized {
     // Q1 * K1  , Q2 * K1  , S11 * V1 , Q1 * K2  , S21 * V1  , Q2 * K2 , S12 * V2 , Q1 * K3  , S22 * K2 , ...
   }
 
-  template<bool need_apply_mask, class Stage, class BlkCoord, class CountingTensor, class ProblemShape>
+  template<bool need_apply_mask, class Stage, class BlkCoord, class CoordTensor, class ProblemShape>
   CUTLASS_DEVICE auto
   softmax_step(
       float& row_max, float& row_sum,
       Stage stage, bool final_call,
-      BlkCoord const& blk_coord, CountingTensor const& cS,
+      BlkCoord const& blk_coord, CoordTensor const& cS,
       Params const& params, ProblemShape const& problem_shape,
       PipelineS& pipeline_s, typename PipelineS::PipelineState& pipeline_s_consumer_state,
       PipelineC& pipeline_c, typename PipelineC::PipelineState& pipeline_c_producer_state,

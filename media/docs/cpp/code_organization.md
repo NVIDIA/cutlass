@@ -1,6 +1,6 @@
 ![ALT](../../images/gemm-hierarchy-with-epilogue-no-labels.png "CUTLASS Code Organization")
 
-# CUTLASS Code Organization
+# Code Organization
 
 This document describes the layout of the CUTLASS repository. The main components are:
 

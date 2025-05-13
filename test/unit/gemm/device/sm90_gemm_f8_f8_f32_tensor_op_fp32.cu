@@ -550,5 +550,77 @@ TEST(SM90_Device_Gemm_e4m3t_e4m3n_f32t_tensor_op_gmma_f32, 64x128x128_tma_epilog
   EXPECT_TRUE(test::gemm::device::TestAll<Gemm>());
 }
 
+#if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
+TEST(SM90_Device_Gemm_e4m3t_e4m3n_f32t_tensor_op_gmma_f32, 128x56x128_tma_epilogue_fp8_fast_accum) {
+  using LayoutA = cutlass::layout::RowMajor;
+  using LayoutB = cutlass::layout::ColumnMajor;
+  using LayoutC = cutlass::layout::ColumnMajor;
+  using TileMNK = Shape<_128,_56,_128>;
 
+  using EpilogueOp = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+      TileMNK, Shape<_1,_1,_1>,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      float, float,
+      void, LayoutC, 4,
+      cutlass::half_t, LayoutC, 8,
+      cutlass::epilogue::TmaWarpSpecialized
+    >::CollectiveOp;
+
+  using CollectiveOp = typename cutlass::gemm::collective::CollectiveBuilder<
+      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+      cutlass::float_e4m3_t, LayoutA, 16,
+      cutlass::float_e4m3_t, LayoutB, 16,
+      float,
+      TileMNK, Shape<_1,_1,_1>,
+      cutlass::gemm::collective::StageCountAutoCarveout<sizeof(typename EpilogueOp::SharedStorage)>,
+      cutlass::gemm::KernelTmaWarpSpecializedPingpongFP8FastAccum
+    >::CollectiveOp;
+
+  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+      Shape<int,int,int,int>,
+      CollectiveOp,
+      EpilogueOp
+  >;
+
+  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  EXPECT_TRUE(test::gemm::device::TestAll<Gemm>());
+}
+
+  TEST(SM90_Device_Gemm_e4m3t_e4m3n_f32t_tensor_op_gmma_f32, 128x112x128_tma_epilogue_fp8_fast_accum) {
+  using LayoutA = cutlass::layout::RowMajor;
+  using LayoutB = cutlass::layout::ColumnMajor;
+  using LayoutC = cutlass::layout::ColumnMajor;
+  using TileMNK = Shape<_128,_112,_128>;
+
+  using EpilogueOp = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+      TileMNK, Shape<_1,_1,_1>,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      float, float,
+      void, LayoutC, 4,
+      cutlass::half_t, LayoutC, 8,
+      cutlass::epilogue::TmaWarpSpecialized
+    >::CollectiveOp;
+
+  using CollectiveOp = typename cutlass::gemm::collective::CollectiveBuilder<
+      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+      cutlass::float_e4m3_t, LayoutA, 16,
+      cutlass::float_e4m3_t, LayoutB, 16,
+      float,
+      TileMNK, Shape<_1,_1,_1>,
+      cutlass::gemm::collective::StageCountAutoCarveout<sizeof(typename EpilogueOp::SharedStorage)>,
+      cutlass::gemm::KernelTmaWarpSpecializedPingpongFP8FastAccum
+    >::CollectiveOp;
+
+  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+      Shape<int,int,int,int>,
+      CollectiveOp,
+      EpilogueOp
+  >;
+
+  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  EXPECT_TRUE(test::gemm::device::TestAll<Gemm>());
+}
+#endif // defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 #endif // defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)

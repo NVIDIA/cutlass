@@ -304,11 +304,9 @@ public:
       [[maybe_unused]] void* workspace) {
     // These tensor shapes (only applicable for grouped gemm) and pointers are only used to create tensormap/tma desc.
     // These will be replaced with correct values before the initial tma load.
-    auto init_shape = repeat_like(append<4>(typename ProblemShape::UnderlyingProblemShape{}, 1), int32_t(1));
-    constexpr int tma_alignment_bits = 128;
-    auto init_M = tma_alignment_bits;
-    auto init_N = tma_alignment_bits;
-    auto init_L = get<3>(init_shape);
+    auto init_M = int32_t(size<0>(CtaTileMNK{}));
+    auto init_N = int32_t(size<1>(CtaTileMNK{}));
+    auto init_L = 1;
 
     static_assert(!is_im2col_C and !is_im2col_D, "Im2Col not supported on C or D");
 
@@ -324,8 +322,6 @@ public:
       auto problem_shape_MNKL = append<4>(problem_shape.get_host_problem_shape(0), 1);
       init_M = get<0>(problem_shape_MNKL);
       init_N = get<1>(problem_shape_MNKL);
-      init_L = get<3>(problem_shape_MNKL);
-
       stride_c = args.dC;
       stride_d = args.dD;
     }
@@ -755,8 +751,8 @@ public:
     Tensor cD_mn = local_tile(mD_crd, take<0,2>(CtaTileMNK{}), make_coord(m_coord, n_coord));          // (CTA_M,CTA_N)
     Tensor tRS_cD_mn = thread_r2s.partition_S(flat_divide(cD_mn, EpilogueTile{}));     // (R2S,R2S_M,R2S_N,EPI_M,EPI_N)
     // Relative coordinate tensors (static)
-    Tensor cD = make_counting_tensor(cD_mn.layout());                                                  // (CTA_M,CTA_N)
-    Tensor tRS_cD = make_counting_tensor(tRS_cD_mn.layout());                          // (R2S,R2S_M,R2S_N,EPI_M,EPI_N)
+    Tensor cD = make_coord_tensor(cD_mn.layout());                                                  // (CTA_M,CTA_N)
+    Tensor tRS_cD = make_coord_tensor(tRS_cD_mn.layout());                          // (R2S,R2S_M,R2S_N,EPI_M,EPI_N)
     // Subtract the global "bottom right" corner from the local "top left" corner to get the max relative coordinate
     auto residue_cD = make_coord(M,N) - cD_mn(_0{});                                                           // (m,n)
     auto residue_tRS_cD = make_coord(M,N) - tRS_cD_mn(_0{});                                                   // (m,n)
@@ -803,8 +799,8 @@ public:
     // to ensure visibility of smem reads/writes to threads or TMA unit
     auto synchronize = [&] () { cutlass::arch::NamedBarrier::sync(size(TiledMma{}), cutlass::arch::ReservedNamedBarriers::EpilogueBarrier); };
 
-    // Predication for TMA store (one warp issues TMA store)
-    bool issue_tma_store = (thread_idx / NumThreadsPerWarp) == 0;
+    // Predication for TMA store (a single thread from one warp issues TMA store)
+    bool issue_tma_store = ((thread_idx / NumThreadsPerWarp) == 0) && cute::elect_one_sync();
 
     // In the reuse smem configuration we have StagesC smem buffers and at most StagesD committed TMA stores in flight.
     // The TMA store pipeline producer acquire returns when at most StagesD-1 committed stores are in-flight, so we can

@@ -217,7 +217,7 @@ and `TensorRef` objects for each of the operands whose extents are implied as a 
 redundant storage of extent quantities, CUTLASS minimizes capacity utilization of precious resources such as constant memory.
 This is consistent with BLAS conventions.
 
-# Summary:
+## Summary:
 
 The design patterns described in this document form a hierarchy:
 * `T *ptr;` is a pointer to a contiguous sequence of elements of type `T`
@@ -225,7 +225,7 @@ The design patterns described in this document form a hierarchy:
 * `TensorRef<T, Layout> ref(ptr, layout);` is an object pointing to an _unbounded_ tensor containing elements of type `T` and a layout of type `Layout`
 * `TensorView<T, Layout> view(ref, extent);` is an object pointing to a _bounded_ tensor containing elements of type `T` and a layout of type `Layout`
 
-# Appendix: Existing Layouts
+### Appendix: Existing Layouts
 
 This section enumerates several existing Layout types defined in CUTLASS.
 
@@ -268,7 +268,7 @@ Permuted Shared Memory Layouts:
 - `TensorOpCrosswise<ElementSize>`
 
 
-# Copyright
+### Copyright
 
 Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: BSD-3-Clause

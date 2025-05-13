@@ -5,7 +5,7 @@
 CUTLASS presents a uniform programming model for matrix multiply-accumulate operations at each level of the hierarchy. This document
 focuses on device-level, threadblock-level GEMMs, warp-level GEMMs, thread-level GEMMs, and instruction-level GEMMs.
 
-# CUTLASS GEMM Model
+## CUTLASS GEMM Model
 
 CUTLASS implements the basic GEMM triple loop nest with a tiled structure mirroring the execution model hierarchy.
 
@@ -62,7 +62,7 @@ warp-synchronous matrix multiply instructions targeting Tensor Cores.
 Alternatively, GEMMs targeting single-thread instructions may have an additional series of nested loops corresponding to 
 thread-level concurrency.
 
-# CUTLASS GEMM Components
+## CUTLASS GEMM Components
 
 This loop nest is expressed in CUTLASS via the following components which are specialized for data type, layout, and
 math instruction.
@@ -71,7 +71,7 @@ math instruction.
 
 These components are described in the following sections.
 
-## Device-wide GEMM API
+### Device-wide GEMM API
 
 The device-level GEMM API is intended to streamline instantiation and execution of the standard
 GEMM computation across the GPU. This operator is intended to be used in host-side .cu code and
@@ -119,7 +119,7 @@ The device-wide GEMM API is embodied by the following operators:
 ```
 
 
-## Threadblock-level GEMM API
+### Threadblock-level GEMM API
 
 GEMMs at this scope are expected to efficiently load tiles of data from global memory into internal storage and then compute matrix
 products with warp-level GEMM operators.
@@ -196,7 +196,7 @@ struct Mma {
 };
 ```
 
-## Warp-level Matrix Multiply API
+### Warp-level Matrix Multiply API
 
 Warp-level GEMM operators load tiles from shared memory into registers and then compute matrix multiplies using either 
 Tensor Cores or CUDA Cores. The result is accumulated in a register tile. Iterators are defined for each
@@ -416,7 +416,7 @@ class MmaSimt;
 ```
 
 
-## Thread-level GEMM API
+### Thread-level GEMM API
 
 Thread-level GEMM operations perform matrix multiply-accumulate on data held in registers. These target CUDA Cores exclusively.
 
@@ -502,7 +502,7 @@ struct Mma;
 } // namespace cutlass
 ```
 
-## Efficient Epilogue 
+### Efficient Epilogue 
 
 CUTLASS GEMM operators perform mma followed by epilogue operation similar 
 to cuBLAS. CUTLASS implements an efficient row-major epilogue. Thus, to achieve 
@@ -529,7 +529,7 @@ of input layouts. Thus, CUTLASS supports the following layout combinations for i
 
 - `{N,T} x {N,T} => {N,T}` - NN, TN, TN, TT GEMM for both row-major and column-major output
 
-## Instruction-level operations
+### Instruction-level operations
 
 CUTLASS defines a template-based interface to Tensor Core operations to avoid resorting
 to inline PTX.
@@ -538,7 +538,7 @@ to inline PTX.
 - [mma_sm75.h](https://github.com/NVIDIA/cutlass/tree/main/include/cutlass/arch/mma_sm75.h) - Turing TensorCore operations
 
 
-# Copyright
+### Copyright
 
 Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: BSD-3-Clause

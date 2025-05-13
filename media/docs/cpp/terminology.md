@@ -78,7 +78,10 @@ replaced by [MMA and Copy atoms from CuTe](cute/0t_mma_atom.md).
 **Thread Map**: abstraction for defining how threads are mapped to a given tile. Deprecated starting CUTLASS 3.0.
   Replaced by `cute::Layout` in equivalent usage scenarios to represent thread tensors.
 
-# Copyright
+[comment]: <> (Don't remove this. This "##" is to prevent Sphinx from throwing build WARNING.)
+## 
+
+### Copyright
 
 Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: BSD-3-Clause

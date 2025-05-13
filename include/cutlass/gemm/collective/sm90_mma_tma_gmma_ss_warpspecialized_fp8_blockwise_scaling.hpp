@@ -128,6 +128,10 @@ struct CollectiveMma<
 
   static constexpr int ScalePromotionInterval = ScaleGranularityK / size<2>(typename TiledMma::AtomShape_MNK{});
   static_assert(ScalePromotionInterval % 4 == 0, "ScalePromotionInterval must be a multiple of 4.");
+  static_assert(ScalePromotionInterval >= size<2>(TileShape{}) / tile_size<2>(TiledMma{}),
+    "ScalePromotionInterval must be greater than or equal to the number of stages of the MMA atom.");
+  static_assert(ScalePromotionInterval % (size<2>(TileShape{}) / tile_size<2>(TiledMma{})) == 0,
+    "ScalePromotionInterval must be a multiple of the number of stages of the MMA atom.");
   static constexpr int ScaleMsPerTile = size<0>(TileShape{}) / ScaleGranularityM;
   static constexpr int ScaleNsPerTile = size<1>(TileShape{}) / ScaleGranularityN;
 
@@ -213,7 +217,6 @@ struct CollectiveMma<
     StrideA dA;
     ElementB const* ptr_B;
     StrideB dB;
-    uint32_t mma_promotion_interval = 4;
     ElementBlockScale const* ptr_SFA; 
     LayoutSFA layout_SFA;
     ElementBlockScale const* ptr_SFB;
@@ -380,16 +383,6 @@ struct CollectiveMma<
     if (IsTmaLoadSFB && !cutlass::detail::check_alignment<min_tma_aligned_elements_S>(args.layout_SFB)) {
       implementable = false;
       CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Problem size doesn't meet the minimum alignment requirements for using TMA to load scale B.\n");
-    }
-
-    /* MMA promotion interval should be a multiple of 4, since each mainloop iteration would issue 4 MMA instructions. */
-    constexpr int pipe_k = size<2>(TileShape{}) / tile_size<2>(TiledMma{});
-    if (args.mma_promotion_interval % 4 != 0 ||
-        args.mma_promotion_interval != ScalePromotionInterval ||
-        args.mma_promotion_interval % pipe_k != 0 ||
-        pipe_k > args.mma_promotion_interval) {
-      implementable = false;
-      CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Argument mma_promotion_interval is invalid.\n");
     }
 
     // We expect full tiles in K
@@ -1001,7 +994,7 @@ struct CollectiveMma<
       // Advance smem_pipe_read and smem_pipe_release
       ++smem_pipe_release;
     }
-    if (k_tile_count == 1) {
+    if (k_tile_count) {
       pipeline.consumer_wait(smem_pipe_read, barrier_token);
 
       //
