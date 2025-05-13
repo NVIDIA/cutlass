@@ -504,6 +504,9 @@ That layout `(4,4,2):(1,8,4)` is read like a scatter permutation, telling the m-
 old m-coord:  0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31
 new m-coord:  0  1  2  3  8  9 10 11 16 17 18 19 24 25 26 27  4  5  6  7 12 13 14 15 20 21 22 23 28 29 30 31
 ```
+
+Note that the shape & strides of M are listed in the order of the innermost dimension to the outermost dimension.
+
 This permutes only the M-mode (in `A` and `C` accordingly) and brings the access of all threads to be contiguous in m-coordinates in the `A`-matrix. This is convenient when designing layouts for shared memory or registers, for example. The MMA instructions contained within the image above are now effectively interleaved in the logical m-coordinates. Of course, permutations in the N-mode and K-mode are also valid.
 
 To see how these `TiledMMA`s are used to partition data tensors, see the [`0x_gemm_tutorial.md`](./0x_gemm_tutorial.md).
