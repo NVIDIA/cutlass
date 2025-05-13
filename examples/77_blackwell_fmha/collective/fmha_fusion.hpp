@@ -158,7 +158,7 @@ struct CausalMask : NoMask {
       ProblemSize const& problem_size) {
 
     int trip_count = get_trip_count(blk_coord, tile_shape, problem_size);
-    return std::min(trip_count int(ceil_div(get<0>(tile_shape), get<1>(tile_shape))));
+    return std::min(trip_count, int(ceil_div(get<0>(tile_shape), get<1>(tile_shape))));
   }
 
   template<class BlkCoord, class TileShape, class ProblemSize>
