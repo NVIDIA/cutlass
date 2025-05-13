@@ -48,6 +48,7 @@ set(CUTLASS_TOOLS_PROFILER_SOURCES
   src/gemm_operation_profiler.cu
   src/grouped_gemm_operation_profiler.cu
   src/block_scaled_gemm_operation_profiler.cu
+  src/blockwise_gemm_operation_profiler.cu
   src/rank_k_operation_profiler.cu
   src/rank_2k_operation_profiler.cu
   src/trmm_operation_profiler.cu

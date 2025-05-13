@@ -235,6 +235,10 @@ if (NOT CUTLASS_ENABLE_SYCL)
   src/reference/gemm_f6_f8_f32.cu
   src/reference/gemm_f8_f4_f32.cu
   src/reference/gemm_f8_f6_f32.cu
+
+  src/reference/blockwise_gemm_fp8_fp16out.cu   
+  src/reference/blockwise_gemm_fp8_fp32out.cu   
+  src/reference/blockwise_gemm_fp8_bf16out.cu   
   
   src/reference/gemm_s8_s8_s32.cu
   src/reference/gemm_u8_u8_s32.cu

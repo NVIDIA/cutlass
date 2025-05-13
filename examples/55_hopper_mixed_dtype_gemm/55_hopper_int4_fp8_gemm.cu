@@ -318,7 +318,7 @@ struct Options : MixedDtypeOptions {
 void initialize(Options const& options) {
 
   auto shape_B = cute::make_shape(options.n, options.k, options.l);
-  int const scale_k = (options.k + options.g - 1) / options.g;
+  int const scale_k = cutlass::ceil_div(options.k, options.g);
   stride_A = cutlass::make_cute_packed_stride(StrideA{}, cute::make_shape(options.m, options.k, options.l));
   stride_B = cutlass::make_cute_packed_stride(StrideB{}, shape_B);
   // Reverse stride here due to swap and transpose
@@ -347,7 +347,7 @@ void initialize(Options const& options) {
   block_zero.reset(scale_k * options.l * options.n);
 
   initialize_tensor(block_A, seed + 2022);
-  initialize_quant_tensor(block_B, seed + 2021);
+  initialize_tensor(block_B, seed + 2021);
   cutlass::unified_encode_int4b(block_B.get(), block_B_modified.get(), block_B.size());
   initialize_tensor(block_C, seed + 2020);
   initialize_scale(block_scale, options);

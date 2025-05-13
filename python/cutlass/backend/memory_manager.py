@@ -34,11 +34,12 @@ import numpy as np
 
 import cutlass
 from cutlass.utils.datatypes import is_numpy_tensor
+from cutlass.utils.lazy_import import lazy_import
 
 if cutlass.use_rmm:
     import rmm
 else:
-    from cuda import cudart
+    cudart = lazy_import("cuda.cudart")
 
 from dpctl.memory import MemoryUSMDevice
 

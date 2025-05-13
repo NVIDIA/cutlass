@@ -67,9 +67,6 @@
             --b=2048 --h=2048 --d=2048 --q=2048 --k=2048
 */
 
-#define DSHOW(x) print(#x ": "); print(x); print("\n");
-#define DSHOWT(x) print(#x ": "); print_tensor(x); print("\n");
-
 #include <iostream>
 #include <random>
 #include <regex>
@@ -247,8 +244,8 @@ struct Options {
       << "                              and are split B-ways, alternatingly +10% and -10%\n"
       << "                              with the last batch sized to make it fit\n"
       << "                              implies at least residual masking for correctness\n"
-      << " --sm-count                   Sets SM count rather than querying it\n"
-      << " --kernel-filter=<filter>     Sets regexp to match kernel against\n"
+      << "  --sm-count                  Sets SM count rather than querying it\n"
+      << "  --kernel-filter=<filter>    Sets regexp to match kernel against\n"
       << "\n";
 
     return out;

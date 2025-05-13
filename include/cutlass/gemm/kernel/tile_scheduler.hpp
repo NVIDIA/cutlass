@@ -60,7 +60,7 @@ struct StaticPersistentScheduler { };
 ////////////////////////////////////////////////////////////////////////////////
 
 #include "cutlass/gemm/kernel/sm90_tile_scheduler.hpp"
-#include "cutlass/gemm/kernel/sm100_static_tile_scheduler.hpp"
+#include "cutlass/gemm/kernel/sm100_static_tile_scheduler.hpp" 
 
 #include "cutlass/gemm/kernel/sm90_tile_scheduler_stream_k.hpp"
 #include "cutlass/gemm/kernel/sm90_tile_scheduler_group.hpp"
@@ -148,23 +148,23 @@ struct TileSchedulerSelector<
 template <
   class ArchTag,
   class TileShape,
-  class ClusterShape,
-  uint32_t SchedulerPipelineStageCount
+  class ClusterShape, 
+  uint32_t SchedulerPipelineStageCount     
 >
 struct TileSchedulerSelector<
     StaticPersistentScheduler,
     ArchTag,
     TileShape,
     ClusterShape
-    , SchedulerPipelineStageCount
+    , SchedulerPipelineStageCount              
   > {
   using Scheduler = PersistentTileSchedulerSm90;
 };
 
 template <
   class TileShape,
-  class ClusterShape,
-  uint32_t SchedulerPipelineStageCount,
+  class ClusterShape, 
+  uint32_t SchedulerPipelineStageCount, 
   class GroupProblemShape
 >
 struct TileSchedulerSelector<
@@ -175,7 +175,7 @@ struct TileSchedulerSelector<
     , SchedulerPipelineStageCount              
     , GroupProblemShape
   > {
-  using Scheduler = PersistentTileSchedulerSm90Group<GroupProblemShape>;
+  using Scheduler = PersistentTileSchedulerSm90Group<GroupProblemShape, SchedulerPipelineStageCount>;
 };
 
 #if defined (SYCL_INTEL_TARGET)
@@ -204,7 +204,7 @@ struct TileSchedulerSelector<
     GroupScheduler,
     arch::IntelXe,
     TileShape,
-    ClusterShape, 
+    ClusterShape,
     SchedulerPipelineStageCount,
     GroupProblemShape
   > {
@@ -303,7 +303,7 @@ struct TileSchedulerSelector<
     SchedulerPipelineStageCount,
     GroupProblemShape
   > {
-  using Scheduler = PersistentTileSchedulerSm100Group<GroupProblemShape>;
+  using Scheduler = PersistentTileSchedulerSm100Group<GroupProblemShape, SchedulerPipelineStageCount>;
 };
 
 // SM100 stream-K scheduler
@@ -385,6 +385,24 @@ struct TileSchedulerSelector<
                         TileShape,
                         ClusterShape,
                         SchedulerPipelineStageCount>;
+};
+
+// SM120 Group tile scheduler
+template <
+  class TileShape,
+  class ClusterShape,
+  uint32_t SchedulerPipelineStageCount,
+  class GroupProblemShape
+>
+struct TileSchedulerSelector<
+    GroupScheduler,
+    arch::Sm120,
+    TileShape,
+    ClusterShape,
+    SchedulerPipelineStageCount,
+    GroupProblemShape
+  > {
+  using Scheduler = PersistentTileSchedulerSm90Group<GroupProblemShape, SchedulerPipelineStageCount>;
 };
 
 ////////////////////////////////////////////////////////////////////////////////

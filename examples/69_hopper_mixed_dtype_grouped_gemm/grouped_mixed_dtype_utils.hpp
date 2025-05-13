@@ -58,6 +58,7 @@ public:
     void parse(int argc, char const **args) {
         cutlass::CommandLine cmd(argc, args);
         cmd.get_cmd_line_argument("groups", groups);
+        cmd.get_cmd_line_argument("benchmark", benchmark_path);
         cmd.get_cmd_line_argument("c", c);
         MixedDtypeOptions::parse(argc, args);
 
@@ -71,6 +72,7 @@ public:
             << "  --m=<int>                   Sets the M extent of the GEMM for all groups\n"
             << "  --n=<int>                   Sets the N extent of the GEMM for all groups\n"
             << "  --k=<int>                   Sets the K extent of the GEMM for all groups\n"
+            << "  --c=<int>                   Sets the chunk size for scaling the quantized weights\n"
             << "  --groups=<int>              Sets the number of individual GEMM problems\n"
             << "  --mode=<int>                The mode to run the gemm\n"
             << "  --alpha=<f32>               Epilogue scalar alpha\n"
@@ -183,11 +185,6 @@ void grouped_mixed_dtype_profiling(
 
     result.avg_runtime_ms = std::accumulate(runtimes.begin(), runtimes.end(), 0.0f) / runtimes.size();
     result.gflops = options.gflops(result.avg_runtime_ms / 1000.0);
-
-    std::cout << "  Problem Sizes, Alpha, Beta\n";
-    for (int32_t i = 0; i < options.groups; ++i) {
-        std::cout << "    " << options.problem_sizes_host[i] << ", " << alpha_host[i] << ", " << beta_host[i] << '\n';
-    }
     std::cout << "  Groups      : " << options.groups << '\n'
               << "  Avg runtime : " << result.avg_runtime_ms << " ms\n"
               << "  GFLOPS      : " << result.gflops << '\n';

@@ -43,7 +43,7 @@ code like the following for GEMM:
     plan.activation = cutlass.epilogue.relu
 """
 
-from cutlass.backend import epilogue
+from cutlass.backend import epilogue, device_cc
 
 
 gelu = epilogue.gelu
@@ -147,8 +147,10 @@ def trace(fn, example_tensors, **kwargs):
     """
     if callable(fn):
         class EpilogueFunctor(PythonASTFrontend):
-            def __init__(self, **kwargs):
-                super().__init__(**kwargs)
+            def __init__(self, cc=None, **kwargs):
+                if not cc:
+                    cc = device_cc()
+                super().__init__(cc, **kwargs)
             pass
         setattr(EpilogueFunctor, "__call__", staticmethod(fn))
 

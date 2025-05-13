@@ -50,6 +50,7 @@ set(TEST_RANDOM_PERF_LARGE_GROUP --groups=100 --iterations=10)                  
 set(TEST_DIRECT_BATCHED --m=2048 --n=5120 --k=8192 --mode=0 --iterations=0)              # Direct conversion
 
 set(TEST_SCALE_PERCOL --m=4096 --n=5120 --k=8192 --c=8192 --mode=1 --iterations=0)       # Per Column scaling
+set(TEST_SCALE_GROUP --m=2048 --n=5120 --k=8192 --c=512 --mode=1 --iterations=0)         # Group-wise scaling
 
 cutlass_example_add_executable(
   69_hopper_mixed_dtype_grouped_gemm
@@ -69,6 +70,7 @@ cutlass_example_add_executable(
   TEST_RANDOM_PERF_LARGE_GROUP
   TEST_DIRECT_BATCHED
   TEST_SCALE_PERCOL
+  TEST_SCALE_GROUP
 )
 
 cutlass_example_add_executable(
@@ -89,6 +91,7 @@ cutlass_example_add_executable(
   TEST_RANDOM_PERF_LARGE_GROUP
   TEST_DIRECT_BATCHED
   TEST_SCALE_PERCOL
+  TEST_SCALE_GROUP
 )
 
 cutlass_example_add_executable(
@@ -109,4 +112,5 @@ cutlass_example_add_executable(
   TEST_RANDOM_PERF_LARGE_GROUP
   TEST_DIRECT_BATCHED
   TEST_SCALE_PERCOL
+  TEST_SCALE_GROUP
 )

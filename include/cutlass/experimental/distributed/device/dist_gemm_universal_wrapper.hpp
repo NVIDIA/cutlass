@@ -340,7 +340,7 @@ public:
         base_args.epilogue.thread,
         reinterpret_cast<const ElementC*>(tensor_c_iter.data()),
         tensor_c_iter.stride(),
-        reinterpret_cast<const ElementD*>(tensor_d_iter.data()),
+        reinterpret_cast<ElementD*>(tensor_d_iter.data()),
         tensor_d_iter.stride()
       };
 

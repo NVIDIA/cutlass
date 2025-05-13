@@ -113,10 +113,12 @@
 
         args.sync()
 """
-
+from __future__ import annotations
+from typing import Optional
 from math import prod
 
-from cuda import cuda
+from cutlass.utils.lazy_import import lazy_import
+cuda = lazy_import("cuda.cuda")
 from cutlass_library import (
     DataType,
     DataTypeSize,
@@ -653,6 +655,8 @@ class Gemm(OperationBase):
         :return: arguments passed in to the kernel
         :rtype: cutlass.backend.GemmArguments
         """
+        if not stream:
+            stream = cuda.CUstream(0)
         super().run_setup()
         A = self._verify_tensor(A, self.A, self._element_a, self._layout_a, "A")
         B = self._verify_tensor(B, self.B, self._element_b, self._layout_b, "B")

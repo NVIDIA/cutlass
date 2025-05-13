@@ -159,17 +159,21 @@ foreach(EXAMPLE
   67_hopper_fp8_warp_specialized_gemm_with_blockwise_scaling
   68_hopper_fp8_warp_specialized_grouped_gemm_with_blockwise_scaling
   69_hopper_mixed_dtype_grouped_gemm
-  70_blackwell_gemm
-  71_blackwell_gemm_with_collective_builder
-  72_blackwell_narrow_precision_gemm
-  73_blackwell_gemm_preferred_cluster
-  74_blackwell_gemm_streamk
-  75_blackwell_grouped_gemm
-  76_blackwell_conv
-  77_blackwell_fmha
-  78_blackwell_emulated_bf16x9_gemm
+  70_blackwell_gemm                             
+  71_blackwell_gemm_with_collective_builder     
+  72_blackwell_narrow_precision_gemm            
+  73_blackwell_gemm_preferred_cluster           
+  74_blackwell_gemm_streamk                     
+  75_blackwell_grouped_gemm                     
+  76_blackwell_conv                             
+  77_blackwell_fmha                             
+  78_blackwell_emulated_bf16x9_gemm             
   79_blackwell_geforce_gemm
+  80_blackwell_geforce_sparse_gemm
   81_blackwell_gemm_blockwise 
+  82_blackwell_distributed_gemm
+  83_blackwell_sparse_gemm
+  84_blackwell_narrow_precision_sparse_gemm
   )
     add_subdirectory(${EXAMPLE})
   endforeach()

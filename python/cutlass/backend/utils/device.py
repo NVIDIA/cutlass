@@ -33,8 +33,11 @@
 """
 Utility functions for interacting with the device
 """
+from __future__ import annotations
 
-from cuda import cuda, cudart
+from cutlass.utils.lazy_import import lazy_import
+cuda = lazy_import("cuda.cuda")
+cudart =  lazy_import("cuda.cudart")
 import dpctl
 
 import cutlass

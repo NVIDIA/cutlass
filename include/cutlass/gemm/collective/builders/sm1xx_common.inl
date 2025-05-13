@@ -189,6 +189,100 @@ template<
   bool Is2sm = false
 >
 constexpr bool sm1xx_gemm_check_for_f8f6f4_mix8bit_requirement(){
+  // * 1SM Dense
+  //    * A_K(t) : TileShape_K % 128 == 0
+  //    * A_M(n) : TileShape_M % 128 == 0
+  //    * B_N(t) : TileSize_N % 128 == 0
+  //    * B_K(n) : TileSize_K % 128 == 0
+  //
+  // * 2SM Dense
+  //    * A_K(t) : TileShape_K % 128 == 0
+  //    * A_M(n) : TileShape_M % 128 == 0
+  //    * B_N(t) : TileSize_N % 256 == 0
+  //        each sm load half the data along tile_n (split vertically), each sm needs to be 128 elts aligned.
+  //        full tile_n needs to be 256 elts aligned
+  //    * B_K(n) : TileShape_K % 128 == 0
+  //
+  // * 1SM Sparse
+  //    * A_K(t) : TileShape_K % 256 == 0
+  //        num of physical elems needs to be 128 elts aligned
+  //        num of logical elems needs to be 256 elts aligned
+  //    * A_M(n) : TileShape_M % 128 == 0
+  //    * B_N(t) : TileSize_N % 128 == 0
+  //    * B_K(n) : TileSize_K % 128 == 0
+  //
+  // * 2SM Sparse
+  //    * A_K(t) : TileShape_K % 256 == 0
+  //        num of physical elems needs to be 128 elts aligned
+  //        num of logical elems needs to be 256 elts aligned
+  //    * A_M(n) : TileShape_M % 128 == 0
+  //    * B_N(t) : TileSize_N % 256 == 0
+  //        each sm load half the data along tile_n (split vertically), each sm needs to be 128 elts aligned.
+  //        full tile_n needs to be 256 elts aligned
+  //    * B_K(n) : TileShape_K % 128 == 0
+  //
+  // * Valid TileShape_MNK Dense
+  //    * Notation: 
+  //          mma_instruction_tile_shape-cta_tile_shape
+  //    * s128x128x64
+  //          s128x128x32_128x128x128_nn YES
+  //          s128x128x32_128x128x128_nt YES
+  //          s128x128x32_128x128x128_tn YES
+  //          s128x128x32_128x128x128_tt YES
+  //    * s128x256x64
+  //          s128x256x32_128x256x128_nn YES
+  //          s128x256x32_128x256x128_nt YES
+  //          s128x256x32_128x256x128_tn YES
+  //          s128x256x32_128x256x128_tt YES
+  //    * s256x128x64
+  //          s256x128x32_256x128x128_nn YES
+  //          s256x128x32_256x128x128_nt NO (2SM B_N TileSize_N % 256 != 0)
+  //          s256x128x32_256x128x128_tn YES
+  //          s256x128x32_256x128x128_tt NO (2SM B_N TileSize_N % 256 != 0)
+  //    * s256x256x64
+  //          s256x256x32_256x256x128_nn YES
+  //          s256x256x32_256x256x128_nt YES
+  //          s256x256x32_256x256x128_tn YES
+  //          s256x256x32_256x256x128_tt YES
+  //
+  // * Valid TileShape_MNK Sparse
+  //    * s128x128x64
+  //          s128x128x64_128x128x128_nn YES
+  //          s128x128x64_128x128x128_nt YES
+  //          s128x128x64_128x128x128_tn NO (A_K TileShape_K % 256 != 0)
+  //          s128x128x64_128x128x128_tt NO (A_K TileShape_K % 256 != 0)
+  //          s128x128x64_128x128x256_nn YES
+  //          s128x128x64_128x128x256_nt YES
+  //          s128x128x64_128x128x256_tn YES
+  //          s128x128x64_128x128x256_tt YES
+  //    * s128x256x64
+  //          s128x256x64_128x256x128_nn YES
+  //          s128x256x64_128x256x128_nt YES
+  //          s128x256x64_128x256x128_tn NO (A_K TileShape_K % 256 != 0)
+  //          s128x256x64_128x256x128_tt NO (A_K TileShape_K % 256 != 0)
+  //          s128x256x64_128x256x256_nn YES
+  //          s128x256x64_128x256x256_nt YES
+  //          s128x256x64_128x256x256_tn YES
+  //          s128x256x64_128x256x256_tt YES
+  //    * s256x128x64
+  //          s256x128x64_128x128x128_nn YES
+  //          s256x128x64_128x128x128_nt NO (2SM B_N TileSize_N % 256 != 0)
+  //          s256x128x64_128x128x128_tn NO (A_K TileShape_K % 256 != 0)
+  //          s256x128x64_128x128x128_tt NO (A_K TileShape_K % 256 != 0)
+  //          s256x128x64_128x128x256_nn YES
+  //          s256x128x64_128x128x256_nt NO (2SM B_N TileSize_N % 256 != 0)
+  //          s256x128x64_128x128x256_tn YES
+  //          s256x128x64_128x128x256_tt NO (2SM B_N TileSize_N % 256 != 0)
+  //    * s256x256x64
+  //          s256x256x64_128x256x128_nn YES
+  //          s256x256x64_128x256x128_nt YES
+  //          s256x256x64_128x256x128_tn NO (A_K TileShape_K % 256 != 0)
+  //          s256x256x64_128x256x128_tt NO (A_K TileShape_K % 256 != 0)
+  //          s256x256x64_128x256x256_nn YES
+  //          s256x256x64_128x256x256_nt YES
+  //          s256x256x64_128x256x256_tn YES
+  //          s256x256x64_128x256x256_tt YES
+
   [[maybe_unused]] constexpr int TileShape_M = Is2sm ? size<0>(TileShape_MNK{}) / 2 : size<0>(TileShape_MNK{});
   [[maybe_unused]] constexpr int TileShape_N = size<1>(TileShape_MNK{});
   [[maybe_unused]] constexpr int TileShape_K = size<2>(TileShape_MNK{});
@@ -408,6 +502,9 @@ check_input_datatypes() {
             || (cute::is_same_v<BuilderScheduleTag, KernelScheduleBlockScaledGemmSm120>)
             || (cute::is_same_v<BuilderScheduleTag, KernelTmaWarpSpecializedPingpong>)
             || (cute::is_same_v<BuilderScheduleTag, KernelTmaWarpSpecializedCooperative>)
+            // SM120 BS ptr_array
+            || (cute::is_same_v<BuilderScheduleTag, KernelPtrArrayTmaWarpSpecializedPingpong>)
+            || (cute::is_same_v<BuilderScheduleTag, KernelPtrArrayTmaWarpSpecializedCooperative>)
             // SM120 BSSP
             || (cute::is_same_v<BuilderScheduleTag, KernelScheduleBlockScaledSparseGemmSm120>)
             );
@@ -467,6 +564,8 @@ check_input_datatypes() {
       //   SfVectorSize = 64 for blockscaled sparse gemm
       static_assert(
         ((SfVectorSizeA == 32 && cute::is_same_v<KernelScheduleAuto, BuilderScheduleTag>)
+      || (SfVectorSizeA == 32 && cute::is_same_v<KernelTmaWarpSpecializedPingpong, BuilderScheduleTag>)
+      || (SfVectorSizeA == 32 && cute::is_same_v<KernelTmaWarpSpecializedCooperative, BuilderScheduleTag>)
       || (SfVectorSizeA == 32 && cute::is_base_of_v<KernelScheduleBlockScaledGemmSm100, BuilderScheduleTag>)
       || (SfVectorSizeA == 32 && cute::is_base_of_v<KernelSchedulePtrArrayBlockScaledGemmSm100, BuilderScheduleTag>)
       || (SfVectorSizeA == 64 && cute::is_base_of_v<KernelScheduleBlockScaledSparseGemmSm100, BuilderScheduleTag>)
@@ -645,6 +744,8 @@ select_instr() {
       static_assert(
          (SfVectorSize == 32 && cute::is_same_v<KernelScheduleAuto, BuilderScheduleTag>)
       || (SfVectorSize == 32 && cute::is_base_of_v<KernelScheduleBlockScaledGemmSm100, BuilderScheduleTag>)
+      || (SfVectorSize == 32 && cute::is_base_of_v<KernelTmaWarpSpecializedPingpong, BuilderScheduleTag>)
+      || (SfVectorSize == 32 && cute::is_base_of_v<KernelTmaWarpSpecializedCooperative, BuilderScheduleTag>)
       || (SfVectorSize == 32 && cute::is_base_of_v<KernelSchedulePtrArrayBlockScaledGemmSm100, BuilderScheduleTag>)
       || (SfVectorSize == 64 && cute::is_base_of_v<KernelScheduleBlockScaledSparseGemmSm100, BuilderScheduleTag>
       || (SfVectorSize == 32 && cute::is_base_of_v<KernelScheduleBlockScaledGemmSm120, BuilderScheduleTag>)
@@ -666,6 +767,8 @@ select_instr() {
       else {
         static_assert(
         ((SfVectorSize == 32 && cute::is_same_v<KernelScheduleAuto, BuilderScheduleTag>)
+      || (SfVectorSize == 32 && cute::is_base_of_v<KernelTmaWarpSpecializedPingpong, BuilderScheduleTag>)
+      || (SfVectorSize == 32 && cute::is_base_of_v<KernelTmaWarpSpecializedCooperative, BuilderScheduleTag>)
       || (SfVectorSize == 32 && cute::is_base_of_v<KernelScheduleBlockScaledGemmSm100, BuilderScheduleTag>)
       || (SfVectorSize == 32 && cute::is_base_of_v<KernelSchedulePtrArrayBlockScaledGemmSm100, BuilderScheduleTag>)
       || (SfVectorSize == 64 && cute::is_base_of_v<KernelScheduleBlockScaledSparseGemmSm100, BuilderScheduleTag>)

@@ -56,7 +56,7 @@
 #include <intrin.h>
 #endif // _MSC_VER
 
-#if defined(CUTLASS_ARCH_MMA_SM100A_ENABLED)
+#if defined(CUTLASS_ARCH_MMA_SM100A_ENABLED) || defined(CUTLASS_ARCH_MMA_SM100F_ENABLED)
 #  define CUTLASS_ARCH_CREDUX_ENABLED
 #endif
 
@@ -419,6 +419,8 @@ struct maximum {
     else {
       return (lhs < rhs ? rhs : lhs);
     }
+
+    CUTE_GCC_UNREACHABLE;
   }
 };
 
