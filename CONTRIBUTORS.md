@@ -2,7 +2,7 @@
 
 [README](./README.md#documentation) > **Contributors**
 
-# CUTLASS Developers **
+# CUTLASS C++ Developers **
 
 Andrew Kerr<br />
 Paul Springer<br />
@@ -70,8 +70,49 @@ Shreya Gaur<br />
 
 ** _The list is sorted in order of the author's first contribution to the CUTLASS project._
 
+# CUTLASS DSL Developers ***
 
-# CUTE Developers
+Albert Di<br />
+Albert Xu<br />
+Anakin Zheng<br />
+Arvin Jou<br />
+Brandon Sun<br />
+Chenyang Xu<br />
+Chunyu Wang<br />
+Cris Cecka<br />
+dePaul Miller<br />
+Edward Cao<br />
+Fung Xie<br />
+Guray Ozen<br />
+Hao Hu<br />
+Hong Wang<br />
+Jeremy Furtek<br />
+Jie Fang <br />
+JingZe Cui<br />
+Kihiro Bando<br />
+Linfeng Zheng<br />
+Longsheng Du<br />
+Mina Sun<br />
+Mindy Li<br />
+Pradeep Ramani<br />
+Questa Wang<br />
+Serif Yesil<br />
+Tao Xie<br />
+Tina Li<br />
+Vicki Wang<br />
+Vincent Zhang<br />
+Vijay Thakkar<br />
+Xiao Dong<br />
+Xiaolei Shi<br />
+Xinyu Wang<br />
+Yihan Chen<br />
+Yuhan Li<br />
+Zekun Fan<br />
+
+*** _Sorted in alphabetical order._
+
+
+# CuTe Developers
 
 Cris Cecka<br />
 Vijay Thakkar<br />
@@ -100,6 +141,9 @@ David Tanner<br />
 
 Tri Dao<br />
 Jay Shah<br />
+Mehdi Amini<br />
+Larry Wu<br />
+Justin Holewinski<br />
 Timothy Costa<br />
 Julien Demouth<br />
 Brian Fahs<br />
@@ -108,14 +152,11 @@ Michael Goldfarb<br />
 Mostafa Hagog<br />
 Fei Hu<br />
 Alan Kaatz<br />
-Tina Li<br />
 Wei Liu<br />
 Tim Martin<br />
 Kevin Siu<br />
 Markus Tavenrath<br />
 John Tran<br />
-Vicki Wang<br />
-Fung Xie<br />
 Yang Xu<br />
 Scott Yokim<br />
 Girish Bharambe<br />

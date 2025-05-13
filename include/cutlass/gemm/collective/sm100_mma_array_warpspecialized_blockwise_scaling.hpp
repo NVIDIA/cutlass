@@ -190,8 +190,14 @@ struct CollectiveMma<
   using TransformB = TransformB_;
   using ArchTag = typename DispatchPolicy::ArchTag;
 
-  static constexpr int AlignmentSFA = GmemTiledCopySFA::AtomNumVal::value * sizeof(typename GmemTiledCopySFA::ValType) / sizeof(ElementAccumulator);
-  static constexpr int AlignmentSFB = GmemTiledCopySFB::AtomNumVal::value * sizeof(typename GmemTiledCopySFB::ValType) / sizeof(ElementAccumulator);
+  static constexpr int CopyAlignmentSFA = GmemTiledCopySFA::AtomNumVal::value * sizeof(typename GmemTiledCopySFA::ValType) / sizeof(ElementAccumulator);
+  static constexpr int CopyAlignmentSFB = GmemTiledCopySFB::AtomNumVal::value * sizeof(typename GmemTiledCopySFB::ValType) / sizeof(ElementAccumulator);
+
+  static constexpr int AlignmentSFA = CopyAlignmentSFA * (GmemTiledCopySFA::AtomNumVal::value > 1 ? 
+      (size<0,1>(InternalLayoutSFA{}.stride()) == 1 ? ScaleGranularityM : ScaleGranularityK) : 1);
+  static constexpr int AlignmentSFB = CopyAlignmentSFB * (GmemTiledCopySFB::AtomNumVal::value > 1 ? 
+      (size<0,1>(InternalLayoutSFB{}.stride()) == 1 ? ScaleGranularityN : ScaleGranularityK) : 1);
+
 
   using MainloopABPipeline = cutlass::PipelineTmaUmmaAsync<
                                 DispatchPolicy::Stages,
@@ -522,8 +528,8 @@ struct CollectiveMma<
         auto [M,N,K,L] = problem_shape_MNKL;
         implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_A>(cute::make_shape(M,K,L), InternalStrideA{});
         implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_B>(cute::make_shape(N,K,L), InternalStrideB{});
-        implementable_sf = implementable_sf && cutlass::detail::check_alignment<AlignmentSFA>(ScaleConfig::tile_atom_to_shape_SFA(problem_shape_MNKL));
-        implementable_sf = implementable_sf && cutlass::detail::check_alignment<AlignmentSFB>(ScaleConfig::tile_atom_to_shape_SFB(problem_shape_MNKL));
+        implementable_sf = implementable_sf && cutlass::detail::check_alignment<CopyAlignmentSFA>(ScaleConfig::tile_atom_to_shape_SFA(problem_shape_MNKL));
+        implementable_sf = implementable_sf && cutlass::detail::check_alignment<CopyAlignmentSFB>(ScaleConfig::tile_atom_to_shape_SFB(problem_shape_MNKL));
         if (!implementable_sf) {
           CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Problem Size doesn't meet the minimum alignment requirements for Scale Factors.\n");
         }

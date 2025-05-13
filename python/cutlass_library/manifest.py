@@ -523,10 +523,14 @@ class Manifest:
       arch_conditional_cc = [
         '90a', 
         '100a',
+        '100f',
         '101a',
-        '120a' 
+        '101f',
+        '120a',
+        '120f' 
       ]
       architectures = [x if x not in arch_conditional_cc else x.split('a')[0] for x in architectures]
+      architectures = [x if x not in arch_conditional_cc else x.split('f')[0] for x in architectures]
 
       self.compute_capabilities = [int(x) for x in architectures]
 

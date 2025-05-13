@@ -5,7 +5,7 @@ Users and developers may build either
 in Visual Studio's graphical integrated development environment,
 or on the command line with `cmake --build`.
 
-# Software prerequisites
+## Software prerequisites
 
 1. Windows 10 or 11
 
@@ -22,7 +22,7 @@ or on the command line with `cmake --build`.
 Visual Studio must be installed *before* the CUDA Toolkit.
 Otherwise, Visual Studio's build system won't know about CUDA.
 
-# Operating system settings
+## Operating system settings
 
 By default, Windows restricts the maximum file path length (`MAX_PATH`) to 260 characters.
 CUTLASS has many files and directory paths that challenge this requirement.
@@ -48,7 +48,7 @@ before attempting to clone or build CUTLASS.
 [This Microsoft help article](https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation?tabs=registry)
 explains different ways to change the registry setting.
 
-# Set up build environment
+## Set up build environment
 
 1. Run "git bash" to get a familiar command-line interface
 
@@ -62,7 +62,7 @@ explains different ways to change the registry setting.
 
 Alternate approaches may rely on the CMake GUI and/or Windows' native command line.
 
-# Building
+## Building
 
 A successful CMake run will create a `CUTLASS.sln` Visual Studio "solution" file in the build directory.
 One can open this in Visual Studio and build the entire solution or any subset of projects as desired.
@@ -77,7 +77,7 @@ Unlike with CMake's Makefile or Ninja generators,
 `CMAKE_BUILD_TYPE` has no effect on the Visual Studio generator,
 because the Visual Studio generator creates all build configurations.
 
-# Tips
+## Tips
 
 With Windows builds, one may find that CMake reruns unnecessarily.
 For example, cancelling a build and starting it again may rerun CMake.
@@ -86,7 +86,7 @@ One work-around is to set the CMake option `CMAKE_SUPPRESS_REGENERATION=ON`.
 However, this turns off CMake's ability to detect on its own when it needs to rerun.
 As a result, one will need to know when to rerun CMake by hand.
 
-## Copyright
+### Copyright
 
 Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: BSD-3-Clause

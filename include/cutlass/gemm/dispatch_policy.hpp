@@ -1016,6 +1016,8 @@ struct MainloopSm100ArrayTmaUmmaWarpSpecializedFastF32 {
 
 
 
+// Mainloop schedule for array-based TMA
+
 template<
   int Stages_,
   int SchedulerPipelineStageCount_,

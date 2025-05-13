@@ -606,8 +606,8 @@ public:
     // Construct the EVT consumer callbacks
     auto residue_cD = make_coord(M,N) - cD(_0{});
     auto residue_tTR_cD = make_coord(M,N) - tTR_cD(_0{});
-    Tensor cD_ = make_counting_tensor(cD.layout());
-    Tensor tTR_cD_ = make_counting_tensor(tTR_cD.layout());
+    Tensor cD_ = make_coord_tensor(cD.layout());
+    Tensor tTR_cD_ = make_coord_tensor(tTR_cD.layout());
     constexpr bool RefSrc = false;
 
     Tensor mC = make_tensor(make_gmem_ptr<GmemElementC>(params.ptr_C), make_shape(M,N,L), params.dC);

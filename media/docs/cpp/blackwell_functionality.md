@@ -723,7 +723,7 @@ Specialized policies must be used to generate mixed-input-datatype `mx_float4_t`
 |----------------|----|----|----|----|------------------------------------|
  128x128x128    | Y  | N  | N  | N  | `KernelTmaWarpSpecializedPingpong` or `KernelTmaWarpSpecializedCooperative` |
 
-# Copyright
+### Copyright
 
 Copyright (c) 2025 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: BSD-3-Clause
