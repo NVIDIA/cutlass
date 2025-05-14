@@ -703,8 +703,8 @@ target_include_directories(
 
 install(
   DIRECTORY
-  ${CUTLASS_INCLUDE_DIR}/
-  ${CMAKE_CURRENT_BINARY_DIR}/include/
+  ${CUTLASS_INCLUDE_DIR}
+  ${CMAKE_CURRENT_BINARY_DIR}/include
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
   )
 
