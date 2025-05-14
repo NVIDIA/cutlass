@@ -731,8 +731,8 @@ struct CollectiveMma<
     GmemTiledCopySFA scale_copy_a{};
     GmemTiledCopySFB scale_copy_b{};
 
-    ThrCopy thr_scale_copy_a = scale_copy_a.get_slice(threadIdx.x % size(scale_copy_a));
-    ThrCopy thr_scale_copy_b = scale_copy_b.get_slice(threadIdx.x % size(scale_copy_b));
+    ThrCopy thr_scale_copy_a = scale_copy_a.get_slice(ThreadIdxX() % size(scale_copy_a));
+    ThrCopy thr_scale_copy_b = scale_copy_b.get_slice(ThreadIdxX() % size(scale_copy_b));
 
     Tensor sSFA = make_tensor(make_smem_ptr(shared_tensors.smem_SFA.begin()), 
         SmemLayoutScaleA{});                                                                          // (CTA_M,CTA_K,P)
@@ -945,13 +945,13 @@ struct CollectiveMma<
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < size(thr_tile_pSFA); ++i) {
         Tensor thr_tile_SFA = filter_zeros(thr_tile_SFA_k(_,_,*k_tile_iter), tSFAgSFA(_0{},_,_,_0{}).stride()); 
-        thr_tile_pSFA(i) = elem_less(thr_tile_SFA(i), shape(filter_zeros(layout_SFA))) && threadIdx.x % 32 < size(scale_copy_a);
+        thr_tile_pSFA(i) = elem_less(thr_tile_SFA(i), shape(filter_zeros(layout_SFA))) && ThreadIdxX() % 32 < size(scale_copy_a);
       }
       
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < size(thr_tile_pSFB); ++i) {
         Tensor thr_tile_SFB = filter_zeros(thr_tile_SFB_k(_,_,*k_tile_iter), tSFBgSFB(_0{},_,_,_0{}).stride()); 
-        thr_tile_pSFB(i) = elem_less(thr_tile_SFB(i), shape(filter_zeros(layout_SFB))) && threadIdx.x % 32 < size(scale_copy_b);
+        thr_tile_pSFB(i) = elem_less(thr_tile_SFB(i), shape(filter_zeros(layout_SFB))) && ThreadIdxX() % 32 < size(scale_copy_b);
       }
 
       copy_if(scale_copy_a, thr_tile_pSFA, filter_zeros(tSFAgSFA(_,_,_,*k_tile_iter)), filter_zeros(tSFAsSFA(_,_,_,mainloop_sf_pipe_producer_state.index())));

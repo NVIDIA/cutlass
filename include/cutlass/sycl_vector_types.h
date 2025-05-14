@@ -103,3 +103,9 @@ int4 make_int4(int x, int y, int z, int w) {
   return int4 {x,y,z,w};
 }
 }
+
+namespace cute {
+
+using float2 = cutlass::float2;
+
+}

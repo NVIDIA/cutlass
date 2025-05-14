@@ -208,7 +208,7 @@ struct TileSchedulerSelector<
     SchedulerPipelineStageCount,
     GroupProblemShape
   > {
-  using Scheduler = PersistentTileSchedulerSm90Group<GroupProblemShape>;
+  using Scheduler = PersistentTileSchedulerSm90Group<GroupProblemShape, SchedulerPipelineStageCount>;
 };
 template <
   class TileShape,

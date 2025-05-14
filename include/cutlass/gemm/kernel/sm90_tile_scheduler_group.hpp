@@ -340,26 +340,26 @@ public:
         // Calculate prefix sum for start_linear_idx.
         #pragma unroll
         for (int i = 1; i < NumThreadsPerWarp; i *= 2) {
-          auto n = __shfl_up_sync(0xffffffff, curr_total_tiles, i);
+          auto n = shfl_up_sync(0xffffffff, curr_total_tiles, i);
           curr_total_tiles = lane_idx >= i ? curr_total_tiles + n : curr_total_tiles;
         }
         group_info.start_linear_idx += curr_total_tiles - group_info.total_tiles;
 
-        uint32_t thread_succeed = __ballot_sync(0xffffffff, linear_idx < group_info.start_linear_idx + group_info.total_tiles);
+        uint32_t thread_succeed = ballot_sync(0xffffffff, linear_idx < group_info.start_linear_idx + group_info.total_tiles);
         if (thread_succeed) {
           // Use the first succeeding thread.
-          int first_succeeding_thread = __ffs(thread_succeed) - 1;
-          group_info.group_idx = __shfl_sync(0xffffffff, group_info.group_idx, first_succeeding_thread);
-          group_info.start_linear_idx = __shfl_sync(0xffffffff, group_info.start_linear_idx, first_succeeding_thread);
-          group_info.total_tiles = __shfl_sync(0xffffffff, group_info.total_tiles, first_succeeding_thread);
-          group_info.problem_blocks_along_raster_order = __shfl_sync(0xffffffff, group_info.problem_blocks_along_raster_order, first_succeeding_thread);
+          int first_succeeding_thread = ffs(thread_succeed) - 1;
+          group_info.group_idx = shfl_sync(0xffffffff, group_info.group_idx, first_succeeding_thread);
+          group_info.start_linear_idx = shfl_sync(0xffffffff, group_info.start_linear_idx, first_succeeding_thread);
+          group_info.total_tiles = shfl_sync(0xffffffff, group_info.total_tiles, first_succeeding_thread);
+          group_info.problem_blocks_along_raster_order = shfl_sync(0xffffffff, group_info.problem_blocks_along_raster_order, first_succeeding_thread);
           if (group_info.group_idx + lane_idx < total_problem_groups) {
             cached_problem_shapes[1] = problem_shapes[group_info.group_idx + lane_idx];
           }
           break;
         }
         // Update the start_linear_idx for all threads so that they're ready for the next iteration.
-        group_info.start_linear_idx = __shfl_sync(0xffffffff, group_info.start_linear_idx + group_info.total_tiles, NumThreadsPerWarp - 1);
+        group_info.start_linear_idx = shfl_sync(0xffffffff, group_info.start_linear_idx + group_info.total_tiles, NumThreadsPerWarp - 1);
       }
     }
 

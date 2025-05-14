@@ -588,7 +588,7 @@ struct CollectiveMma<
     Tensor gB_nkl = local_tile(mB_nkl, TileShape{}, make_coord(_,_,_), Step< X,_1,_1>{});     // (BLK_N, BLK_K, n, k, l)
 
     // Partition for this CTA
-    ThrMMA cta_mma = TiledMma{}.get_slice(blockIdx.x % size(typename TiledMma::AtomThrID{}));
+    ThrMMA cta_mma = TiledMma{}.get_slice(BlockIdxX() % size(typename TiledMma::AtomThrID{}));
 
     Tensor tCgA_mkl = cta_mma.partition_A(gA_mkl);                                       // (MMA, MMA_M, MMA_K, m, k, l)
     Tensor tCgB_nkl = cta_mma.partition_B(gB_nkl);                                       // (MMA, MMA_N, MMA_K, n, k, l)
@@ -701,8 +701,8 @@ struct CollectiveMma<
     GmemTiledCopySFA scale_copy_a{};
     GmemTiledCopySFB scale_copy_b{};
 
-    ThrCopy thr_scale_copy_a = scale_copy_a.get_slice(threadIdx.x % size(scale_copy_a));
-    ThrCopy thr_scale_copy_b = scale_copy_b.get_slice(threadIdx.x % size(scale_copy_b));
+    ThrCopy thr_scale_copy_a = scale_copy_a.get_slice(ThreadIdxX() % size(scale_copy_a));
+    ThrCopy thr_scale_copy_b = scale_copy_b.get_slice(ThreadIdxX() % size(scale_copy_b));
 
     Tensor sSFA = make_tensor(make_smem_ptr(shared_tensors.smem_SFA.begin()), 
         SmemLayoutScaleA{});                                                                          // (CTA_M,CTA_K,P)
@@ -916,20 +916,20 @@ struct CollectiveMma<
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < size(thr_tile_pSFA); ++i) {
         Tensor thr_tile_SFA = filter_zeros(thr_tile_SFA_k(_,_,*k_tile_iter), tSFAgSFA(_0{},_,_,_0{}).stride()); 
-        thr_tile_pSFA(i) = elem_less(thr_tile_SFA(i), shape(filter_zeros(layout_SFA))) && threadIdx.x % 32 < size(scale_copy_a);
+        thr_tile_pSFA(i) = elem_less(thr_tile_SFA(i), shape(filter_zeros(layout_SFA))) && ThreadIdxX() % 32 < size(scale_copy_a);
       }
       
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < size(thr_tile_pSFB); ++i) {
         Tensor thr_tile_SFB = filter_zeros(thr_tile_SFB_k(_,_,*k_tile_iter), tSFBgSFB(_0{},_,_,_0{}).stride()); 
-        thr_tile_pSFB(i) = elem_less(thr_tile_SFB(i), shape(filter_zeros(layout_SFB))) && threadIdx.x % 32 < size(scale_copy_b);
+        thr_tile_pSFB(i) = elem_less(thr_tile_SFB(i), shape(filter_zeros(layout_SFB))) && ThreadIdxX() % 32 < size(scale_copy_b);
       }
 
       copy_if(scale_copy_a, thr_tile_pSFA, filter_zeros(tSFAgSFA(_,_,_,*k_tile_iter)), filter_zeros(tSFAsSFA(_,_,_,mainloop_sf_pipe_producer_state.index())));
       copy_if(scale_copy_b, thr_tile_pSFB, filter_zeros(tSFBgSFB(_,_,_,*k_tile_iter)), filter_zeros(tSFBsSFB(_,_,_,mainloop_sf_pipe_producer_state.index())));
       mainloop_sf_pipeline.producer_commit(mainloop_sf_pipe_producer_state, cutlass::arch::cpasync_barrier_arrive_noinc);        
 
-      __syncwarp();
+      syncwarp();
 
       ++mainloop_sf_pipe_producer_state;
       --k_tile_count;
@@ -1092,7 +1092,7 @@ struct CollectiveMma<
 
     TiledCopy tiled_t2r_epi = make_tmem_copy(CopyOpT2R{}, tAcc_epi(_,_,_0{},_0{}));
 
-    int thread_idx = threadIdx.x % size(tiled_t2r_epi);
+    int thread_idx = ThreadIdxX() % size(tiled_t2r_epi);
 
     ThrCopy thread_t2r_epi = tiled_t2r_epi.get_slice(thread_idx);   
 
@@ -1205,7 +1205,7 @@ struct CollectiveMma<
       copy(recast<uint128_t>(pA_tensormap), recast<uint128_t>(sA_tensormap));
       copy(recast<uint128_t>(pB_tensormap), recast<uint128_t>(sB_tensormap));
     }
-    __syncwarp();
+    syncwarp();
 
     return cute::make_tuple(tma_desc_a, tma_desc_b);
   }
@@ -1292,7 +1292,7 @@ struct CollectiveMma<
       }
     }
     // Ensure warp is converged before issuing tensormap fence release
-    __syncwarp();
+    syncwarp();
     // Entire warp must do this (ie its aligned)
     tensormaps_cp_fence_release(shared_tensormaps, input_tensormaps);
   }
