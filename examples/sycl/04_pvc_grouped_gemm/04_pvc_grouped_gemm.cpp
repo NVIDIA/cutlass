@@ -450,7 +450,7 @@ void initialize(const Options &options) {
       fusion_args.dAlpha = {cute::_0{}, cute::_0{}, 1};
       fusion_args.dBeta = {cute::_0{}, cute::_0{}, 1};
     }
-    using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90Group<ProblemShape>::RasterOrderOptions;
+    using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerXeGroup<ProblemShape>::RasterOrderOptions;
 
     // Per-GEMM problem shape info may only exist on the device.
     if (host_problem_shapes_available) {
