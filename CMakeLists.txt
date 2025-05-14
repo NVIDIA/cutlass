@@ -745,9 +745,9 @@ if(NOT WIN32)
   # Add common library search paths so executables and libraries can load and run
   # without LD_LIBRARY_PATH being set.
   link_libraries(
-    "-Wl,-rpath,'$ORIGIN'"
-    "-Wl,-rpath,'$ORIGIN/../lib64'"
-    "-Wl,-rpath,'$ORIGIN/../lib'"
+    "-Wl,-rpath,'$$ORIGIN'"
+    "-Wl,-rpath,'$$ORIGIN/../lib64'"
+    "-Wl,-rpath,'$$ORIGIN/../lib'"
     "-Wl,-rpath,'${CUDA_TOOLKIT_ROOT_DIR}/lib64'"
     "-Wl,-rpath,'${CUDA_TOOLKIT_ROOT_DIR}/lib'"
     ${CMAKE_DL_LIBS}
