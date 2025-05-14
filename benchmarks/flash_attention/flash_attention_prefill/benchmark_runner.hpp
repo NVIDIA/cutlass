@@ -35,9 +35,9 @@
 #include "flash_attention_v2/kernel/tile_scheduler.hpp"
 #include "cutlass/gemm/device/gemm_universal_adapter.h"
 #include "cutlass/util/packed_stride.hpp"
-#include "flash_attention_v2/kernel/xe_flash_attn_gemm.hpp"
-#include "flash_attention_v2/collective/xe_flash_attn_epilogue.hpp"
-#include "flash_attention_v2/collective/xe_flash_attn_softmax_epilogue.hpp"
+#include "flash_attention_v2/kernel/xe_flash_attn_prefill.hpp"
+#include "flash_attention_v2/collective/xe_flash_attn_prefill_epilogue.hpp"
+#include "flash_attention_v2/collective/xe_flash_attn_prefill_softmax_epilogue.hpp"
 #include "cutlass/util/GPU_Clock.hpp"
 #include "cutlass/util/sycl_event_manager.hpp"
 

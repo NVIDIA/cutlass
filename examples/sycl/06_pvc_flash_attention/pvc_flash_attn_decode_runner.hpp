@@ -35,7 +35,7 @@
 #include "flash_attention_v2/collective/fmha_fusion.hpp"
 #include "flash_attention_v2/kernel/tile_scheduler.hpp"
 #include "cutlass/util/packed_stride.hpp"
-#include "flash_attention_v2/kernel/xe_flash_attn_decode_gemm.hpp"
+#include "flash_attention_v2/kernel/xe_flash_attn_decode.hpp"
 #include "flash_attention_v2/collective/xe_flash_attn_decode_epilogue.hpp"
 #include "flash_attention_v2/collective/xe_flash_attn_decode_softmax_epilogue.hpp"
 #include "cutlass/util/GPU_Clock.hpp"
@@ -567,8 +567,6 @@ template <class FMHAKernel, bool isVarLen> struct ExampleRunner {
         {options.softmax_scale},
         {block_O.get(), stride_O},
         hw_info};
-
-    // FMHAKernel gemm_op;
 
     size_t workspace_size = FMHAKernel::get_workspace_size(arguments);
     cutlass::device_memory::allocation<uint8_t> workspace(workspace_size);

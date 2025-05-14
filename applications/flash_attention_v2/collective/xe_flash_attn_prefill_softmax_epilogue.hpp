@@ -49,13 +49,13 @@ namespace collective {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <bool CausalMask_, class DispatchPolicy, class... Args> class CollectiveSoftmaxEpilogue {
+template <bool CausalMask_, class DispatchPolicy, class... Args> class FlashPrefillSoftmaxEpilogue {
   static_assert(cutlass::detail::dependent_false<DispatchPolicy>, "Could not find an epilogue specialization.");
 };
 
 
 template <bool CausalMask_, class Element_>
-class CollectiveSoftmaxEpilogue<CausalMask_, epilogue::IntelXeXMX16, Element_> {
+class FlashPrefillSoftmaxEpilogue<CausalMask_, epilogue::IntelXeXMX16, Element_> {
 public:
 
   //
@@ -102,7 +102,7 @@ public:
   }
 
   CUTLASS_HOST_DEVICE
-  CollectiveSoftmaxEpilogue(Params const &params_) : params(params_) {}
+  FlashPrefillSoftmaxEpilogue(Params const &params_) : params(params_) {}
 
   template <int Vec, int FragsM, int FragsN, class FragAcc, class FragMax, class FragSum>
   CUTLASS_DEVICE void scale_exp_log2(FragAcc &frag_s, FragMax const &max, FragSum &sum) {

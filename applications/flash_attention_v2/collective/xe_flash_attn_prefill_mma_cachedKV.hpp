@@ -36,9 +36,7 @@
 #include "cute/algorithm/functional.hpp"
 #include "cute/atom/mma_atom.hpp"
 #include "cute/algorithm/gemm.hpp"
-#include "cutlass/util/packed_stride.hpp"
-
-#include "fmha_fusion.hpp"
+#include "cute/tensor_predicate.hpp"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -49,11 +47,11 @@ using namespace cute;
 
 template <typename To_type, typename Engine, typename Layout>
 CUTLASS_DEVICE auto convert_type(Tensor<Engine, Layout> const &tensor) {
-  using From_type = typename Engine::value_type;
-  constexpr int numel = decltype(size(tensor))::value;
-  cutlass::NumericArrayConverter<To_type, From_type, numel> convert_op;
-  auto frag = convert_op(*reinterpret_cast<const cutlass::Array<From_type, numel> *>(tensor.data()));
-  return make_tensor(make_rmem_ptr<To_type>(&frag), tensor.layout());
+    using From_type = typename Engine::value_type;
+    constexpr int numel = decltype(size(tensor))::value;
+    cutlass::NumericArrayConverter<To_type, From_type, numel> convert_op;
+    auto frag = convert_op(*reinterpret_cast<const cutlass::Array<From_type, numel> *>(tensor.data()));
+    return make_tensor(make_rmem_ptr<To_type>(&frag), tensor.layout());
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -63,7 +61,7 @@ CUTLASS_DEVICE auto convert_type(Tensor<Engine, Layout> const &tensor) {
 template <class DispatchPolicy, class ProblemShapeType_, class TileShape_, class ElementQ_, class StrideQ_, class ElementK_, class StrideK_,
           class ElementV_, class StrideV_, class TiledMma_, class GmemTiledCopyQ_, class GmemTiledCopyK_,
           class GmemTiledCopyV_, bool CausalMask_>
-struct CollectiveMmaAttention {
+struct FlashPrefillCachedMma {
   static_assert(cutlass::detail::dependent_false<ElementQ_>, "Could not find a mainloop specialization.");
 };
 
@@ -72,7 +70,7 @@ struct CollectiveMmaAttention {
 template <int Stages, class ProblemShapeType_, class TileShape_, class ElementQ_, class StrideQ_, class ElementK_, class StrideK_,
           class ElementV_, class StrideV_, class TiledMma_, class GmemTiledCopyQ_, class GmemTiledCopyK_,
           class GmemTiledCopyV_, bool CausalMask_>
-struct CollectiveMmaAttention<gemm::MainloopIntelXeXMX16<Stages>, ProblemShapeType_, TileShape_, ElementQ_, StrideQ_, ElementK_, StrideK_, ElementV_,
+struct FlashPrefillCachedMma<gemm::MainloopIntelXeXMX16<Stages>, ProblemShapeType_, TileShape_, ElementQ_, StrideQ_, ElementK_, StrideK_, ElementV_,
                               StrideV_, TiledMma_, GmemTiledCopyQ_, GmemTiledCopyK_, GmemTiledCopyV_, CausalMask_> {
   //
   // Type Aliases
@@ -156,7 +154,8 @@ struct CollectiveMmaAttention<gemm::MainloopIntelXeXMX16<Stages>, ProblemShapeTy
   using atom_load_V = Copy_Atom<traits_load_V, ElementV>;
   using val_layout_load_V = decltype(make_layout(shape_div(typename traits_load_V::BlockShape{}, CopyThreadShape{})));
   using XE_Copy_V = decltype(make_tiled_copy(atom_load_V{}, Layout<CopyThreadShape>{}, val_layout_load_V{}));
-
+  using TensorK = decltype(make_tensor(make_gmem_ptr(static_cast<ElementK const*>(nullptr)), make_shape(0,0,0), StrideK{}));   //(m, k)
+  using TensorV = decltype(make_tensor(make_gmem_ptr(static_cast<ElementV const*>(nullptr)), make_shape(0,0,0), StrideV{}));   //(n, k)
   // Host side kernel arguments
   struct Arguments {
     ElementQ const *ptr_Q;
@@ -165,43 +164,56 @@ struct CollectiveMmaAttention<gemm::MainloopIntelXeXMX16<Stages>, ProblemShapeTy
     StrideK dK;
     ElementV const *ptr_V;
     StrideV dV;
+    ElementK const* ptr_K_cache;
+    StrideK dK_cache;
+    ElementV const* ptr_V_cache;
+    StrideV dV_cache;
   };
 
   struct Params {
     XE_Copy_Q gmem_tiled_copy_q;
     XE_Copy_K gmem_tiled_copy_k;
     XE_Copy_V gmem_tiled_copy_v;
+    XE_Copy_K gmem_tiled_copy_k_cache;
+    XE_Copy_V gmem_tiled_copy_v_cache;
   };
 
   //
   // Methods
   //
 
-  CollectiveMmaAttention() = default;
+  FlashPrefillCachedMma() = default;
 
   static constexpr Params to_underlying_arguments(ProblemShapeType const &problem_shape, Arguments const &args,
                                                   void *workspace) {
     (void)workspace;
 
-    auto [batch, num_heads_q, num_heads_kv, seq_len_qo, seq_len_kv, head_size_qk, head_size_vo] = problem_shape;
+    auto [batch, num_heads_q, num_heads_kv, seq_len_qo, seq_len_kv, seq_len_kv_cache, head_size_qk, head_size_vo] = problem_shape;
 
     auto tensorQ = make_tensor(make_gmem_ptr(args.ptr_Q), make_layout(make_shape(seq_len_qo, head_size_qk, batch * num_heads_q), args.dQ));
     auto tensorK = make_tensor(make_gmem_ptr(args.ptr_K), make_layout(make_shape(seq_len_kv, head_size_qk, batch * num_heads_kv), args.dK));
     auto tensorV = make_tensor(make_gmem_ptr(args.ptr_V), make_layout(make_shape(head_size_vo, seq_len_kv, batch * num_heads_kv), args.dV));
+    auto tensorK_cache = make_tensor(make_gmem_ptr(args.ptr_K_cache), make_layout(make_shape(seq_len_kv_cache, head_size_qk, batch * num_heads_kv), args.dK_cache));
+    auto tensorV_cache = make_tensor(make_gmem_ptr(args.ptr_V_cache), make_layout(make_shape(head_size_vo, seq_len_kv_cache, batch * num_heads_kv), args.dV_cache));
+
     XE_Copy_Q copyQ{XE_Copy_Q{}.with(tensorQ)};
     XE_Copy_K copyK{XE_Copy_K{}.with(tensorK)};
     XE_Copy_V copyV{XE_Copy_V{}.with(tensorV)};
-  
-    return Params{copyQ, copyK, copyV};
+    XE_Copy_K copyK_cache{XE_Copy_K{}.with(tensorK_cache)};
+    XE_Copy_V copyV_cache{XE_Copy_V{}.with(tensorV_cache)};
+
+    return Params{copyQ, copyK, copyV, copyK_cache, copyV_cache};
   }
 
   template <class FragQccum, class TensorQ, class TensorK, class FragSrc>
   CUTLASS_DEVICE void mmaQK(FragQccum &accum, TensorQ gQ, TensorK gK, FragSrc const &frag_src,
-                            int const &k_tile_count, Params const &params) {
+                            int const &k_tile_count, Params const &params, bool is_KV_cache) {
+
+    auto& gmem_tiled_copy_k = is_KV_cache ? params.gmem_tiled_copy_k_cache : params.gmem_tiled_copy_k;
 
     int thread_idx = static_cast<int>(ThreadIdxX());
     auto thr_copy_Q = params.gmem_tiled_copy_q.get_slice(thread_idx);
-    auto thr_copy_K = params.gmem_tiled_copy_k.get_slice(thread_idx);
+    auto thr_copy_K = gmem_tiled_copy_k.get_slice(thread_idx);
     // Instantiate the MMA object
     TiledMmaK tiled_mma_k;
     TiledMmaQVO tiled_mma_q;
@@ -218,7 +230,7 @@ struct CollectiveMmaAttention<gemm::MainloopIntelXeXMX16<Stages>, ProblemShapeTy
     // Create fragments
     // TODO(Codeplay): fix this, this is probably not general
     Tensor tCrQ = make_tensor<ElementQ>(make_fragment_layout(params.gmem_tiled_copy_q, take<0,3>(tCgQ.shape())));
-    Tensor tCrK = make_tensor<ElementK>(make_fragment_layout(params.gmem_tiled_copy_k, take<0,3>(tCgK.shape())));
+    Tensor tCrK = make_tensor<ElementK>(make_fragment_layout(gmem_tiled_copy_k, take<0,3>(tCgK.shape())));
     
     // Retile registers for copies
     Tensor tQrQ = thr_copy_Q.retile_D(tCrQ);
@@ -235,14 +247,12 @@ struct CollectiveMmaAttention<gemm::MainloopIntelXeXMX16<Stages>, ProblemShapeTy
     PRINT(gQ);
     PRINT(tCrQ);
     PRINT(tCgQ);
-    PRINT(tQrQ);
     PRINT(tQgQ);
 
     print("=====================  K :\n");
     PRINT(gK);
     PRINT(tCrK);
     PRINT(tCgK);
-    PRINT(tKrK);
     PRINT(tKgK);
 
     print("=====================  Config: \n");
@@ -258,14 +268,16 @@ struct CollectiveMmaAttention<gemm::MainloopIntelXeXMX16<Stages>, ProblemShapeTy
 
     for (int k_tile = 0; k_tile < k_tile_count; ++k_tile) {
       copy(params.gmem_tiled_copy_q, tQgQ(_,_,_,k_tile), tQrQ);
-      copy(params.gmem_tiled_copy_k, tKgK(_,_,_,k_tile), tKrK);
+      copy(gmem_tiled_copy_k, tKgK(_,_,_,k_tile), tKrK);
       cute::gemm(tiled_mma_q, accum, tCrQ, tCrK, frag_src);
     }
   }
 
   template <class FragQccum, class FragS, class TensorV, class FragSrc>
   CUTLASS_DEVICE void mmaPV(FragQccum &accum, FragS const &tSr, TensorV gV,
-                            FragSrc const &frag_src, Params const &params) {
+                            FragSrc const &frag_src, Params const &params, bool is_KV_cache) {
+
+    auto& gmem_tiled_copy_v = is_KV_cache ? params.gmem_tiled_copy_v_cache : params.gmem_tiled_copy_v;
 
     int thread_idx = static_cast<int>(ThreadIdxX());
     // Instantiate the MMA object
@@ -274,10 +286,10 @@ struct CollectiveMmaAttention<gemm::MainloopIntelXeXMX16<Stages>, ProblemShapeTy
     auto first_thread_in_sg_idx = sg.get_group_id()[0] * DispatchPolicy::SubgroupSize;
     auto thread_mma = tiled_mma.get_slice(first_thread_in_sg_idx);  
     Tensor tCgV = thread_mma.partition_B(gV);
-    Tensor tCrV = make_tensor<ElementV>(make_fragment_layout(params.gmem_tiled_copy_v, tCgV.shape()));
+    Tensor tCrV = make_tensor<ElementV>(make_fragment_layout(gmem_tiled_copy_v, tCgV.shape()));
 
     // Partition the copying of A and B tiles across the threads
-    auto gmem_thr_copy_V = params.gmem_tiled_copy_v.get_slice(thread_idx);
+    auto gmem_thr_copy_V = gmem_tiled_copy_v.get_slice(thread_idx);
     Tensor tVrV = gmem_thr_copy_V.retile_D(tCrV);
     Tensor tVgV = gmem_thr_copy_V.retile_S(tCgV);
 
@@ -288,7 +300,6 @@ struct CollectiveMmaAttention<gemm::MainloopIntelXeXMX16<Stages>, ProblemShapeTy
     PRINT(gV);
     PRINT(tCrV);
     PRINT(tCgV);
-    PRINT(tVrV);
     PRINT(tVgV);
 
     print("=====================  Config: \n");
@@ -304,7 +315,7 @@ struct CollectiveMmaAttention<gemm::MainloopIntelXeXMX16<Stages>, ProblemShapeTy
     //
     // Mainloop
     //
-    copy(params.gmem_tiled_copy_v, tVgV, tVrV);
+    copy(gmem_tiled_copy_v, tVgV, tVrV);
     cute::gemm(tiled_mma, accum, tPr, tCrV, frag_src);
   }
 
@@ -313,7 +324,7 @@ struct CollectiveMmaAttention<gemm::MainloopIntelXeXMX16<Stages>, ProblemShapeTy
     if constexpr (!is_var_len) {
       return params;
     } else {
-      auto [batch, num_heads_q, num_heads_kv, seq_len_qo, seq_len_kv, head_size_qk, head_size_vo] = problem_shape;
+      auto [batch, num_heads_q, num_heads_kv, seq_len_qo, seq_len_kv, seq_len_kv_cache, head_size_qk, head_size_vo] = problem_shape;
 
       auto qo_cumulative_length = get<3>(problem_shape).cumulative_length;
       auto kv_cumulative_length = get<4>(problem_shape).cumulative_length;
@@ -321,15 +332,23 @@ struct CollectiveMmaAttention<gemm::MainloopIntelXeXMX16<Stages>, ProblemShapeTy
       int offset_q = num_heads_q * head_size_qk * qo_cumulative_length[l_coord];
       int offset_k = num_heads_kv * head_size_qk * kv_cumulative_length[l_coord];
       int offset_v = num_heads_kv * head_size_vo * kv_cumulative_length[l_coord];
+      int offset_k_cache = num_heads_kv * head_size_qk * seq_len_kv_cache;
+      int offset_v_cache = num_heads_kv * head_size_vo * seq_len_kv_cache;
 
       auto q_traits = static_cast<traits_load_Q const&>(params.gmem_tiled_copy_q);
-      ElementQ* q_ptr = (ElementQ*)q_traits.base_ptr;
+      const ElementQ* q_ptr = (const ElementQ*)q_traits.base_ptr;
 
       auto k_traits = static_cast<traits_load_K const&>(params.gmem_tiled_copy_k);
-      ElementK* k_ptr = (ElementK*)k_traits.base_ptr;
+      const ElementK* k_ptr = (const ElementK*)k_traits.base_ptr;
 
       auto v_traits = static_cast<traits_load_V const&>(params.gmem_tiled_copy_v);
-      ElementV* v_ptr = (ElementV*)v_traits.base_ptr;
+      const ElementV* v_ptr = (const ElementV*)v_traits.base_ptr;
+
+      auto k_traits_cache = static_cast<traits_load_K const&>(params.gmem_tiled_copy_k_cache);
+      const ElementK* k_cache_ptr = (const ElementK*)k_traits_cache.base_ptr;
+
+      auto v_traits_cache = static_cast<traits_load_V const&>(params.gmem_tiled_copy_v_cache);
+      const ElementV* v_cache_ptr = (const ElementV*)v_traits_cache.base_ptr;
 
       auto shape_q = make_shape(static_cast<int>(seq_len_qo), head_size_qk, num_heads_q);
       StrideQ stride_q = cutlass::make_cute_packed_stride(StrideQ{}, shape_q);
@@ -340,15 +359,25 @@ struct CollectiveMmaAttention<gemm::MainloopIntelXeXMX16<Stages>, ProblemShapeTy
       auto shape_v = make_shape(head_size_vo, static_cast<int>(seq_len_kv), num_heads_kv);
       StrideV stride_v = cutlass::make_cute_packed_stride(StrideV{}, shape_v);
 
+      auto shape_k_cache = make_shape(static_cast<int>(seq_len_kv_cache), head_size_qk, num_heads_kv);
+      StrideK stride_k_cache = cutlass::make_cute_packed_stride(StrideK{}, shape_k_cache);
+
+      auto shape_v_cache = make_shape(head_size_vo, static_cast<int>(seq_len_kv_cache), num_heads_kv);
+      StrideV stride_v_cache = cutlass::make_cute_packed_stride(StrideV{}, shape_v_cache);
+
       auto tensorQ = make_tensor(make_gmem_ptr(q_ptr + offset_q), make_layout(shape_q, stride_q));
       auto tensorK = make_tensor(make_gmem_ptr(k_ptr + offset_k), make_layout(shape_k, stride_k));
       auto tensorV = make_tensor(make_gmem_ptr(v_ptr + offset_v), make_layout(shape_v, stride_v));
+      auto tensorK_cache = make_tensor(make_gmem_ptr(k_cache_ptr + offset_k_cache), make_layout(shape_k_cache, stride_k_cache));
+      auto tensorV_cache = make_tensor(make_gmem_ptr(v_cache_ptr + offset_v_cache), make_layout(shape_v_cache, stride_v_cache));
 
       XE_Copy_Q copyQ{XE_Copy_Q{}.with(tensorQ)};
       XE_Copy_K copyK{XE_Copy_K{}.with(tensorK)};
       XE_Copy_V copyV{XE_Copy_V{}.with(tensorV)};
+      XE_Copy_K copyK_cache{XE_Copy_K{}.with(tensorK_cache)};
+      XE_Copy_V copyV_cache{XE_Copy_V{}.with(tensorV_cache)};
 
-      return Params{copyQ, copyK, copyV};
+      return Params{copyQ, copyK, copyV, copyK_cache, copyV_cache};
     }
   }
 };

@@ -63,18 +63,18 @@ struct FMHAPrefillConfig {
   using GmemTiledCopyK = XE_2D_U16x16x16_LD_T;
   using GmemTiledCopyV = XE_2D_U16x32x32_LD_V;
   using GmemTiledCopyO = XE_2D_U32x8x16_ST_N;
-  using CollectiveEpilogue = cutlass::flash_attention::collective::CollectiveEpilogueAttention<
+  using CollectiveEpilogue = cutlass::flash_attention::collective::FlashPrefillEpilogue<
       EpilogueDispatchPolicy, TileShape, ElementO, cutlass::gemm::TagToStrideC_t<LayoutO>, ElementO,
       GmemTiledCopyO>;
 
-  using CollectiveSoftmaxEpilogue = cutlass::flash_attention::collective::CollectiveSoftmaxEpilogue<Causal, EpilogueDispatchPolicy, ElementO>;
+  using CollectiveSoftmaxEpilogue = cutlass::flash_attention::collective::FlashPrefillSoftmaxEpilogue<Causal, EpilogueDispatchPolicy, ElementO>;
 
   using ProblemShapeRegular = cute::tuple<int, int, int, int, int, int, int>;
   using ProblemShapeVarlen = cute::tuple<int, int, int, fmha::collective::VariableLength, fmha::collective::VariableLength, int, int>;
   using ProblemShapeType = std::conditional_t<VarLen, ProblemShapeVarlen, ProblemShapeRegular>;
 
   // Mainloop
-  using CollectiveMainloop = cutlass::flash_attention::collective::CollectiveMmaAttention<
+  using CollectiveMainloop = cutlass::flash_attention::collective::FlashPrefillMma<
       GEMMDispatchPolicy, ProblemShapeType, TileShape, ElementInputQ, cutlass::gemm::TagToStrideA_t<LayoutQ>, ElementInputK,
       cutlass::gemm::TagToStrideB_t<LayoutK>, ElementInputV, cutlass::gemm::TagToStrideB_t<LayoutV>, TiledMma,
       GmemTiledCopyQ, // Q
@@ -82,7 +82,7 @@ struct FMHAPrefillConfig {
       GmemTiledCopyV, // V,
       Causal>;
 
-  using GemmKernel = cutlass::flash_attention::kernel::GemmUniversalAttention<ProblemShapeType, CollectiveMainloop,
+  using GemmKernel = cutlass::flash_attention::kernel::FMHAPrefill<ProblemShapeType, CollectiveMainloop,
                                                                     CollectiveSoftmaxEpilogue, CollectiveEpilogue>;
 };
 
