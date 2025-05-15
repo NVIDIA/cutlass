@@ -147,9 +147,9 @@ public:
   CUTLASS_HOST_DEVICE
   FlashPrefillEpilogue(Params const &params_, TensorStorage const &) : params(params_) {}
 
-  template <class ProblemShape, class TileCoord, class FragOut, class FragMax, class FragSum, class TiledMma>
-  CUTLASS_DEVICE void operator()(ProblemShape problem_shape, TileCoord tile_coord, FragOut &out, FragMax const &max,
-                                 FragSum &sum, TiledMma tiled_mma, ElementCompute const &softmax_scale) {
+  template <class ProblemShape, class SequenceLengthShape, class TileCoord, class FragOut, class FragMax, class FragSum, class TiledMma>
+  CUTLASS_DEVICE void operator()(ProblemShape problem_shape, SequenceLengthShape sequence_length_shape, TileCoord tile_coord, FragOut &out,
+                                 FragMax const &max, FragSum &sum, TiledMma tiled_mma, ElementCompute const &softmax_scale) {
 
     using namespace cute;
 
@@ -179,7 +179,8 @@ public:
     }
 
     // Indexing variables
-    auto [batch, num_heads_q, num_heads_kv, seq_len_qo, seq_len_kv, head_size_qk, head_size_vo] = problem_shape;
+    auto [batch, num_heads_q, head_size_vo] = select<0, 1, 6>(problem_shape);
+    auto [seq_len_qo] = select<0>(sequence_length_shape);
     // Represent the full output tensor
     Tensor mO_mnl = cute::get_xe_tensor(make_shape(seq_len_qo, head_size_vo, (is_var_len ? batch : 1) * num_heads_q));
     
@@ -199,12 +200,17 @@ public:
     copy(params.xe_store_o, out, tOgO);
   }
 
-  template <bool VarLen, class ProblemShapeType>
-  CUTLASS_DEVICE static constexpr Params get_updated_copies(Params const& params, ProblemShapeType const& problem_shape, int const& l_coord) {
+  // SequenceLengthShapeType = Shape<int, int>
+  // For Fixed Sequence Length, ProblemShapeType = Shape<int, int, int, int, int, int, int>
+  // For Variable Sequence Length, ProblemShapeType = Shape<int, int, int, VariableSeqlen, VariableSeqlen, int, int>
+  template <bool VarLen, class ProblemShapeType, class SequenceLengthShapeType>
+  CUTLASS_DEVICE static constexpr Params get_updated_copies(Params const& params, ProblemShapeType const& problem_shape, 
+                                                            SequenceLengthShapeType const& sequence_length_shape, int const& l_coord) {
     if constexpr (!VarLen) {
       return params;
     } else {
-      auto [batch, num_heads_q, num_heads_kv, seq_len_qo, seq_len_kv, head_size_qk, head_size_vo] = problem_shape;
+      auto [num_heads_q, head_size_vo] = select<1, 6>(problem_shape);
+      auto [seq_len_qo] = select<0>(sequence_length_shape);
 
       auto qo_cumulative_length = get<3>(problem_shape).cumulative_length;
       int offset_o = num_heads_q * head_size_vo * qo_cumulative_length[l_coord];

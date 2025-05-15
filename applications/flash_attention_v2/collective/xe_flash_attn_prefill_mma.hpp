@@ -308,12 +308,17 @@ struct FlashPrefillMma<gemm::MainloopIntelXeXMX16<Stages>, ProblemShapeType_, Ti
     cute::gemm(tiled_mma, accum, tPr, tCrV, frag_src);
   }
 
-  template <class ProblemShape>
-  CUTLASS_DEVICE static constexpr Params get_updated_copies(Params const& params, ProblemShape const& problem_shape, int const& l_coord) {
+  // SequenceLengthShape = Shape<int, int>
+  // For Fixed Sequence Length, ProblemShape = Shape<int, int, int, int, int, int, int>
+  // For Variable Sequence Length, ProblemShape = Shape<int, int, int, VariableSeqlen, VariableSeqlen, int, int>
+  template <class ProblemShape, class SequenceLengthShape>
+  CUTLASS_DEVICE static constexpr Params get_updated_copies(Params const& params, ProblemShape const& problem_shape, 
+                                                            SequenceLengthShape const& sequence_length_shape, int const& l_coord) {
     if constexpr (!is_var_len) {
       return params;
     } else {
-      auto [batch, num_heads_q, num_heads_kv, seq_len_qo, seq_len_kv, head_size_qk, head_size_vo] = problem_shape;
+      auto [num_heads_q, num_heads_kv, head_size_qk, head_size_vo] = select<1, 2, 5, 6>(problem_shape);
+      auto [seq_len_qo, seq_len_kv] = sequence_length_shape;
 
       auto qo_cumulative_length = get<3>(problem_shape).cumulative_length;
       auto kv_cumulative_length = get<4>(problem_shape).cumulative_length;
