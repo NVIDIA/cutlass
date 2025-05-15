@@ -875,7 +875,7 @@ function(cutlass_add_executable_tests NAME TARGET)
 
      install(
        FILES ${__RESULT_CACHE_FILE}
-       DESTINATION ${CUTLASS_TEST_INSTALL_BINDIR}/
+       DESTINATION ${CUTLASS_TEST_INSTALL_BINDIR}
        )
 
     endif()
@@ -1003,7 +1003,7 @@ function(cutlass_generate_profiler_tests NAME)
 
   install(
     FILES ${CUTLASS_PROFILER_REGRESSION_LIST_FILE}
-    DESTINATION ${CMAKE_INSTALL_INFODIR}/cutlass/
+    DESTINATION ${CMAKE_INSTALL_INFODIR}/cutlass
     RENAME profiler_regressions.csv
     )
 
@@ -1125,7 +1125,7 @@ if (CUTLASS_INSTALL_TESTS)
 
   install(
     FILES "${CMAKE_BINARY_DIR}/ctest/CTestTestfile.cmake"
-    DESTINATION "${CUTLASS_TEST_INSTALL_PREFIX}/"
+    DESTINATION "${CUTLASS_TEST_INSTALL_PREFIX}"
     )
 
 endif()
@@ -1148,13 +1148,13 @@ install(
   FILES
     ${CMAKE_CURRENT_BINARY_DIR}/NvidiaCutlassConfig.cmake
     ${CMAKE_CURRENT_BINARY_DIR}/NvidiaCutlassConfigVersion.cmake
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/NvidiaCutlass/
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/NvidiaCutlass
   )
 
 install(
   EXPORT NvidiaCutlass
   NAMESPACE nvidia::cutlass::
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/NvidiaCutlass/
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/NvidiaCutlass
   FILE NvidiaCutlassTargets.cmake
   )
 
