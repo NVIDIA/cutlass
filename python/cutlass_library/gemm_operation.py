@@ -1074,7 +1074,7 @@ using {operation_name_str}_LayoutNarrowReordered = decltype(cute::tile_to_shape(
     }
 
     # Overriding values for Intel Xe
-    if operation.is_xe:  
+    if operation.is_xe:
       values['arch'] = "cutlass::arch::IntelXe"
 
     return SubstituteTemplate(self.gemm_template, values)

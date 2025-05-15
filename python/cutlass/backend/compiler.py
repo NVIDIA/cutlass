@@ -37,6 +37,7 @@ import os
 import sqlite3
 import subprocess
 import tempfile
+from functools import lru_cache
 
 from cuda import cuda, nvrtc
 from cutlass_library import SubstituteTemplate
@@ -166,6 +167,7 @@ class ArtifactManager:
                                        "-shared", "-fPIC",
                                        "-fno-sycl-dead-args-optimization",
                                        "-Xspirv-translator -spirv-ext=+SPV_INTEL_split_barrier",
+                                       "-fno-sycl-instrument-device-code",
                                        "-fsycl-range-rounding=disable"]
         self.nvcc()
         self.compiled_cache_device = {}
@@ -373,6 +375,7 @@ class ArtifactManager:
                 # subgroup size.
                 q = dpctl.SyclQueue(cutlass.sycl_device())
                 op_name = f"__sycl_kernel_{operation_list[0].name()}"
+                cubin_image = None
                 for f in spv_files:
                     with open(f, "rb") as spirv_file:
                         spirv_image = spirv_file.read()
@@ -465,7 +468,7 @@ class ArtifactManager:
                 self._nvcc_compile_options, arch, include_paths, False)
         else:
             cutlass.initialize_sycl_context()
-            arch = "spir64"
+            arch = "intel_gpu_pvc"
             host_compile_options = CompilationOptions(
                 ["-std=c++17", "-DCUTLASS_ENABLE_SYCL", "-DSYCL_INTEL_TARGET"],
                 arch, include_paths, True)
@@ -505,6 +508,8 @@ class ArtifactManager:
                 operation_list, compile_options, host_compile_options)
 
             if self._is_sycl():
+                if cubin_image is None:
+                    raise RuntimeError("SYCL compilation failed, see debug log")
                 q = dpctl.SyclQueue(cutlass.sycl_device())
                 program = dpctl.program.create_program_from_spirv(
                     q, cubin_image)
