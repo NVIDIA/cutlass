@@ -35,8 +35,8 @@ include(GNUInstallDirs)
 set(CUTLASS_BUILD_MONO_LIBRARY OFF CACHE BOOL 
   "Determines whether the cutlass library is generated as a single file or multiple files.")
 
-option(BUILD_SHARED_LIBS "Build shared libraries" ON)
-option(BUILD_STATIC_LIBS "Build static libraries" OFF)
+option(CUTLASS_BUILD_SHARED_LIBS "Build shared libraries" ON)
+option(CUTLASS_BUILD_STATIC_LIBS "Build static libraries" OFF)
 
 ################################################################################
 
@@ -127,18 +127,18 @@ function(cutlass_add_cutlass_library)
 
     # If we're only building a single monolithic library then we
     # simply link the generated object files to the default library.
-    if(BUILD_SHARED_LIBS)
+    if(CUTLASS_BUILD_SHARED_LIBS)
       target_link_libraries(${DEFAULT_NAME} PRIVATE $<BUILD_INTERFACE:${__NAME}_objs>)
     endif()
 
-    if(BUILD_STATIC_LIBS)
+    if(CUTLASS_BUILD_STATIC_LIBS)
       target_link_libraries(${DEFAULT_NAME}_static PRIVATE $<BUILD_INTERFACE:${__NAME}_objs>)
     endif()
 
   else()
 
-    # Shared library (honors CMake's standard BUILD_SHARED_LIBS)
-    if(BUILD_SHARED_LIBS)
+    # Shared library (honors CMake's standard CUTLASS_BUILD_SHARED_LIBS)
+    if(CUTLASS_BUILD_SHARED_LIBS)
       cutlass_add_library(
         ${__NAME}
         SHARED
@@ -175,7 +175,7 @@ function(cutlass_add_cutlass_library)
     endif()
 
     # Static library
-    if(BUILD_STATIC_LIBS)
+    if(CUTLASS_BUILD_STATIC_LIBS)
       cutlass_add_library(
         ${__NAME}_static
         STATIC
@@ -281,11 +281,11 @@ cutlass_add_cutlass_library(
   )
 
 # For backward compatibility with the old name
-if(BUILD_SHARED_LIBS)
+if(CUTLASS_BUILD_SHARED_LIBS)
   add_library(cutlass_lib ALIAS cutlass_library)
 endif()
 
-if(BUILD_STATIC_LIBS)
+if(CUTLASS_BUILD_STATIC_LIBS)
   add_library(cutlass_lib_static ALIAS cutlass_library_static)
 endif()
 
