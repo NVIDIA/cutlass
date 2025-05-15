@@ -35,29 +35,29 @@
 #include "fmha_prefill_configuration.hpp"
 
 //bfloat16 benchmarks
-using TiledMmaBF16_h64 = typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>, 
+using TiledMmaBF16_h64 = typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
                                                 Layout<Shape<_128, _64, _64>>,
                                                 Layout<Shape<_8, _1, _1>, Stride<_1, _1, _1>>>::TiledMMA;
 
-using TiledMmaBF16_h128 = typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>, 
+using TiledMmaBF16_h128 = typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
                                                 Layout<Shape<_128, _128, _64>>,
                                                 Layout<Shape<_8, _2, _1>, Stride<_2, _1, _1>>>::TiledMMA;
 
-using TiledMmaBF16_h192 = typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>, 
+using TiledMmaBF16_h192 = typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
                                                 Layout<Shape<_256, _64, _64>>,
                                                 Layout<Shape<_16, _1, _1>, Stride<_1, _1, _1>>>::TiledMMA;
 
 
 //half benchmarks
-using TiledMmaFP16_h64 = typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32F16F16F32_TT>, 
+using TiledMmaFP16_h64 = typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32F16F16F32_TT>,
                                                 Layout<Shape<_128, _64, _64>>,
                                                 Layout<Shape<_8, _1, _1>, Stride<_1, _1, _1>>>::TiledMMA;
 
-using TiledMmaFP16_h128 = typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32F16F16F32_TT>, 
+using TiledMmaFP16_h128 = typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32F16F16F32_TT>,
                                                 Layout<Shape<_128, _128, _64>>,
                                                 Layout<Shape<_8, _2, _1>, Stride<_2, _1, _1>>>::TiledMMA;
 
-using TiledMmaFP16_h192 = typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32F16F16F32_TT>, 
+using TiledMmaFP16_h192 = typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32F16F16F32_TT>,
                                                 Layout<Shape<_256, _64, _64>>,
                                                 Layout<Shape<_16, _1, _1>, Stride<_1, _1, _1>>>::TiledMMA;
 
@@ -68,9 +68,9 @@ using Shape_h192 = Shape<_256, _64, _64, _64>;
 template<class QKVType, bool Causal, bool VarLen, class TileShape, class TiledMma>
 struct FMHAPrefillConfigGen {
 using type = cutlass::flash_attention::FMHAPrefillConfig<
-      QKVType, QKVType, QKVType, 
-      cutlass::layout::RowMajor, 
-      cutlass::layout::ColumnMajor, 
+      QKVType, QKVType, QKVType,
+      cutlass::layout::RowMajor,
+      cutlass::layout::ColumnMajor,
       cutlass::layout::RowMajor,
       cutlass::layout::RowMajor,
       Causal, VarLen, TileShape,
