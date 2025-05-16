@@ -319,21 +319,27 @@ struct FlashPrefillCachedMma<gemm::MainloopIntelXeXMX16<Stages>, ProblemShapeTyp
     cute::gemm(tiled_mma, accum, tPr, tCrV, frag_src);
   }
 
-  template <class ProblemShape>
-  CUTLASS_DEVICE static constexpr Params get_updated_copies(Params const& params, ProblemShape const& problem_shape, int const& l_coord) {
+  // SequenceLengthShape = Shape<int, int, int>
+  // For Fixed Sequence Length, ProblemShape = Shape<int, int, int, int, int, int, int, int>
+  // For Variable Sequence Length, ProblemShape = Shape<int, int, int, VariableSeqlen, VariableSeqlen, VariableSeqlen, int, int>
+  template <class ProblemShape, class SequenceLengthShape>
+  CUTLASS_DEVICE static constexpr Params get_updated_copies(Params const& params, ProblemShape const& problem_shape, 
+                                                            SequenceLengthShape const& sequence_length_shape, int const& l_coord) {
     if constexpr (!is_var_len) {
       return params;
     } else {
-      auto [batch, num_heads_q, num_heads_kv, seq_len_qo, seq_len_kv, seq_len_kv_cache, head_size_qk, head_size_vo] = problem_shape;
+      auto [num_heads_q, num_heads_kv, head_size_qk, head_size_vo] = select<1, 2, 6, 7>(problem_shape);
+      auto [seq_len_qo, seq_len_kv, seq_len_kv_cache] = sequence_length_shape;
 
       auto qo_cumulative_length = get<3>(problem_shape).cumulative_length;
       auto kv_cumulative_length = get<4>(problem_shape).cumulative_length;
+      auto kv_cached_cumulative_length = get<5>(problem_shape).cumulative_length;
 
       int offset_q = num_heads_q * head_size_qk * qo_cumulative_length[l_coord];
       int offset_k = num_heads_kv * head_size_qk * kv_cumulative_length[l_coord];
       int offset_v = num_heads_kv * head_size_vo * kv_cumulative_length[l_coord];
-      int offset_k_cache = num_heads_kv * head_size_qk * seq_len_kv_cache;
-      int offset_v_cache = num_heads_kv * head_size_vo * seq_len_kv_cache;
+      int offset_k_cache = seq_len_kv_cache == 0 ? 0 : num_heads_kv * head_size_qk * kv_cached_cumulative_length[l_coord];
+      int offset_v_cache = seq_len_kv_cache == 0 ? 0 : num_heads_kv * head_size_vo * kv_cached_cumulative_length[l_coord];
 
       auto q_traits = static_cast<traits_load_Q const&>(params.gmem_tiled_copy_q);
       const ElementQ* q_ptr = (const ElementQ*)q_traits.base_ptr;
