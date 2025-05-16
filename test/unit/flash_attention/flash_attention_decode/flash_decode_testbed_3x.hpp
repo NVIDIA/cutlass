@@ -155,6 +155,12 @@ struct TestbedImpl {
     ProblemShapeType problem_shape;
     ProblemShape problem_size;
 
+    if (cute::get<5>(problem_shape_in) > 0) {
+      use_kv_cache = true;
+    } else {
+      use_kv_cache = false;
+    }
+
     if constexpr (isVarLen) {
       auto [problem_shape_init, problem_shape_launch] = initialize_varlen(problem_shape_in);
       problem_shape = problem_shape_launch;
@@ -188,12 +194,6 @@ struct TestbedImpl {
     initialize_block(block_K_cache, seed + 2024);
     initialize_block(block_V_cache, seed + 2025);
 
-    if (seq_len_kv_cache > 0) {
-      use_kv_cache = true;
-    } else {
-      use_kv_cache = false;
-    }
-
     if (!cumulative_seqlen_q.empty()) {
       device_cumulative_seqlen_q.reset(cumulative_seqlen_q.size());
       device_cumulative_seqlen_q.copy_from_host(
@@ -210,6 +210,7 @@ struct TestbedImpl {
       device_cumulative_seqlen_kv_cache.copy_from_host(
         cumulative_seqlen_kv_cache.data(), cumulative_seqlen_kv_cache.size());
     }
+
     if constexpr (isVarLen) {
       cute::get<3>(problem_shape).cumulative_length = device_cumulative_seqlen_q.get();
       cute::get<4>(problem_shape).cumulative_length = device_cumulative_seqlen_kv.get();
@@ -231,6 +232,11 @@ struct TestbedImpl {
     std::normal_distribution<double> dist_kv(cute::get<4>(problem_size), cute::get<4>(problem_size) / 2);
     std::normal_distribution<double> dist_kv_cache(cute::get<5>(problem_size), cute::get<5>(problem_size) / 2);
 
+    // Use Cacheline Size to calculate alignment
+    constexpr int cacheline_bytes = 64;
+    constexpr int AlignmentQ = cacheline_bytes / sizeof(ElementQ);    // Alignment of Q matrix in units of elements
+    constexpr int AlignmentKV = cacheline_bytes / sizeof(ElementK);   // Alignment of Kand V matrix in units of elements
+
     auto generate_positive_int = [](auto& dist, auto& gen) {
       int result = 0;
       do {
@@ -251,9 +257,10 @@ struct TestbedImpl {
     int max_seqlen_kv_cache = 0;
 
     for (int i = 0; i < num_batches; i++) {
-      int seqlen_q = VarlenSame ? cute::get<3>(problem_size) : generate_positive_int(dist_q, rng);
-      int seqlen_kv = VarlenSame ? cute::get<4>(problem_size) : generate_positive_int(dist_kv, rng);
-      int seqlen_kv_cache = VarlenSame ? cute::get<5>(problem_size) : generate_positive_int(dist_kv_cache, rng);
+      //seqlen_q is usually set to 1 for decode.
+      int seqlen_q = cute::get<3>(problem_size) == 1 ? 1 : std::min(cute::get<3>(problem_size), cutlass::round_up(generate_positive_int(dist_q, rng), AlignmentQ));
+      int seqlen_kv = cutlass::round_up(generate_positive_int(dist_kv, rng), AlignmentKV);
+      int seqlen_kv_cache = cute::get<5>(problem_size) == 0 ? 0 : cutlass::round_up(generate_positive_int(dist_kv_cache, rng), AlignmentKV);
 
       total_seqlen_q += seqlen_q;
       total_seqlen_kv += seqlen_kv;
@@ -397,14 +404,16 @@ struct TestbedImpl {
         // delete this memory as it is no longer needed
         block_S.reset();
 
+        auto offset = cute::min(seq_len_qo, seq_len_kv);
+        auto discard_seq_coord = seq_len_qo - offset;
+        auto full_tile_offset = seq_len_kv - offset;
+        int start_col = use_kv_cache ? seq_len_kv_cache : 0;
+
         if (HasCausalMask) {
           // apply mask to S
-          int start_col = use_kv_cache ? seq_len_kv_cache : 0;
-          // apply mask to S
-          int column_offset = seq_len_kv - seq_len_qo;
           for (int row = 0; row < seq_len_qo; row++) {
             for (int col = start_col; col < seq_len_kv_total; col++) {
-              if (col - column_offset > row + start_col)
+              if (col - full_tile_offset > row + start_col - discard_seq_coord)
                 host_S[col + row * seq_len_kv_total] = -INFINITY;
             }
           }
@@ -444,7 +453,11 @@ struct TestbedImpl {
           idx = row * seq_len_kv_total;
           sum_idx = row;
           for (int col = 0; col < seq_len_kv_total; col++, idx++) {
-            host_S[idx] /= sum_vec[sum_idx];
+            if(HasCausalMask && row < discard_seq_coord) { 
+              host_S[idx] = 0;
+            } else {
+              host_S[idx] /= sum_vec[sum_idx];
+            }
           }
         }
 

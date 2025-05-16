@@ -290,13 +290,15 @@ template <class FMHAKernel, bool isVarLen> struct ExampleRunner {
         // delete this memory as it is no longer needed
         block_S.reset();
 
+        auto offset = cute::min(seq_len_qo, seq_len_kv);
+        auto discard_seq_coord = seq_len_qo - offset;
+        auto full_tile_offset = seq_len_kv - offset;
+        int start_col = use_kv_cache ? seq_len_kv_cache : 0;
         if (is_causal) {
-          int start_col = use_kv_cache ? seq_len_kv_cache : 0;
           // apply mask to S
-          int column_offset = seq_len_kv - seq_len_qo;
           for (int row = 0; row < seq_len_qo; row++) {
             for (int col = start_col; col < seq_len_kv_total; col++) {
-              if (col - column_offset > row + start_col)
+              if (col - full_tile_offset > row + start_col - discard_seq_coord)
                 host_S[col + row * seq_len_kv_total] = -INFINITY;
             }
           }
@@ -336,7 +338,11 @@ template <class FMHAKernel, bool isVarLen> struct ExampleRunner {
           idx = row * seq_len_kv_total;
           sum_idx = row;
           for (int col = 0; col < seq_len_kv_total; col++, idx++) {
-            host_S[idx] /= sum_vec[sum_idx];
+            if(is_causal && row < discard_seq_coord) { 
+              host_S[idx] = 0;
+            } else {
+              host_S[idx] /= sum_vec[sum_idx];
+            }
           }
         }
 
@@ -388,7 +394,7 @@ template <class FMHAKernel, bool isVarLen> struct ExampleRunner {
   }
 
   template<class ProblemShape>
-  auto initialize_varlen(const ProblemShape& problem_size, const bool VarlenSame = true) {
+  auto initialize_varlen(const ProblemShape& problem_size) {
     int num_batches = get<0>(problem_size);
 
     // generate Q as --b times
@@ -398,6 +404,11 @@ template <class FMHAKernel, bool isVarLen> struct ExampleRunner {
     std::normal_distribution<double> dist_q(get<3>(problem_size), get<3>(problem_size) / 2);
     std::normal_distribution<double> dist_kv(get<4>(problem_size), get<4>(problem_size) / 2);
     std::normal_distribution<double> dist_kv_cache(get<5>(problem_size), get<5>(problem_size) / 2);
+
+    // Use Cacheline Size to calculate alignment
+    constexpr int cacheline_bytes = 64;
+    constexpr int AlignmentQ = cacheline_bytes / sizeof(ElementQ);    // Alignment of Q matrix in units of elements
+    constexpr int AlignmentKV = cacheline_bytes / sizeof(ElementK);   // Alignment of Kand V matrix in units of elements
 
     auto generate_positive_int = [](auto& dist, auto& gen) {
       int result = 0;
@@ -419,9 +430,10 @@ template <class FMHAKernel, bool isVarLen> struct ExampleRunner {
     int max_seqlen_kv_cache = 0;
 
     for (int i = 0; i < num_batches; i++) {
-      int seqlen_q = VarlenSame ? get<3>(problem_size) : generate_positive_int(dist_q, rng);
-      int seqlen_kv = VarlenSame ? get<4>(problem_size) : generate_positive_int(dist_kv, rng);
-      int seqlen_kv_cache = VarlenSame ? get<5>(problem_size) : generate_positive_int(dist_kv_cache, rng);
+      //seqlen_q is usually set to 1 for decode.
+      int seqlen_q = cute::get<3>(problem_size) == 1 ? 1 : std::min(cute::get<3>(problem_size), cutlass::round_up(generate_positive_int(dist_q, rng), AlignmentQ));
+      int seqlen_kv = cutlass::round_up(generate_positive_int(dist_kv, rng), AlignmentKV);
+      int seqlen_kv_cache = cute::get<5>(problem_size) == 0 ? 0 : cutlass::round_up(generate_positive_int(dist_kv_cache, rng), AlignmentKV);
 
       total_seqlen_q += seqlen_q;
       total_seqlen_kv += seqlen_kv;
@@ -606,15 +618,21 @@ template <class FMHAKernel, bool isVarLen> struct ExampleRunner {
       syclcompat::wait();
 
       double cute_time = timer.seconds() / options.iterations;
-      auto full_tile_offset = options.seq_len_kv - options.seq_len_qo;
-      auto effective_seq_len_kv = options.seq_len_kv_cache + (options.is_causal ? full_tile_offset + (options.seq_len_qo + 1) / 2.0 : options.seq_len_kv);
 
-      double flops_qk = 2.0 * options.batch * options.num_heads_q * options.seq_len_qo * effective_seq_len_kv * options.head_size_qk;
-      double flops_pv = 2.0 * options.batch * options.num_heads_q * options.seq_len_qo * options.head_size_vo * effective_seq_len_kv;
+      auto offset = cute::min(options.seq_len_qo, options.seq_len_kv);
+      auto discard_seq_coord = options.seq_len_qo - offset;
+      auto full_tile_offset = options.seq_len_kv - offset;
+      // offset + 1 is going to be ceil_div
+      auto effective_seq_len_kv = options.seq_len_kv_cache + (options.is_causal ? full_tile_offset + ((offset + 1) / 2.0) : options.seq_len_kv);
+      auto effective_seq_len_qo = options.is_causal ? options.seq_len_qo - discard_seq_coord : options.seq_len_qo;
+
+      double flops_qk = 2.0 * options.batch * options.num_heads_q * effective_seq_len_qo * effective_seq_len_kv * options.head_size_qk;
+      double flops_pv = 2.0 *  options.batch * options.num_heads_q * effective_seq_len_qo * options.head_size_vo * effective_seq_len_kv;
       double tflops = ((flops_qk + flops_pv) * 1e-12) / cute_time;
-      double gbps_qk = sizeof(ElementQ) * options.batch * (options.num_heads_q * options.seq_len_qo * options.head_size_qk + options.num_heads_kv * effective_seq_len_kv * options.head_size_qk);
+      double gbps_qk =  options.batch * (sizeof(ElementQ) * options.num_heads_q * effective_seq_len_qo * options.head_size_qk + 
+                                         sizeof(ElementK) * options.num_heads_kv * effective_seq_len_kv * options.head_size_qk);
       double gbps_pv = sizeof(ElementV) * options.batch * options.num_heads_kv * effective_seq_len_kv * options.head_size_vo +
-                       sizeof(ElementOutput) * options.batch * options.num_heads_q * options.seq_len_qo * options.head_size_vo;
+                       sizeof(ElementOutput) * options.batch * options.num_heads_q * effective_seq_len_qo * options.head_size_vo;
       double gbps = ((gbps_qk + gbps_pv) * 1e-9) / (cute_time);
       std::cout << "Batch: " << options.batch << "\tNumHeads_q: " << options.num_heads_q << "\tNumHeads_kv: " << options.num_heads_kv << "\tSeq Length QO: " << options.seq_len_qo
                 << "\tSeq Length KV: " << options.seq_len_kv << "\tSeq Length KV Cache: " << options.seq_len_kv_cache << "\tHead Size QK: " << options.head_size_qk
