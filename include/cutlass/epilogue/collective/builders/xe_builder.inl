@@ -118,10 +118,10 @@ namespace detail {
         CopyOpG2R
       >;
   };
-}
+} // namespace detail
 
-  // Intel epilogue builder
 
+// Intel epilogue builder
 template <
   class TileShape_MNK,
   class EpilogueTileType,
@@ -138,7 +138,7 @@ template <
   >
   struct CollectiveBuilder<
       arch::IntelXe,
-      arch::OpClassTensorOp, 
+      arch::OpClassTensorOp,
       TileShape_MNK,
       Shape<_1, _1, _1>,    // Cluster Shape
       EpilogueTileType,
@@ -150,11 +150,9 @@ template <
       ElementD,
       GmemLayoutTagD,
       AlignmentD,
-      EpilogueScheduleType, 
+      EpilogueScheduleType,
       FusionOpOrCallbacks,
       cute::enable_if_t<
-        cute::is_same_v<cute::remove_pointer_t<GmemLayoutTagC>,  cutlass::layout::RowMajor> &&
-        cute::is_same_v<cute::remove_pointer_t<GmemLayoutTagD>,  cutlass::layout::RowMajor> &&
         cute::is_same_v<EpilogueTileType, EpilogueTileAuto> &&
         cute::is_any_of_v<EpilogueScheduleType, EpilogueScheduleAuto, IntelXeXMX16, IntelXeXMX16Group> &&
         detail::FusionOpInfo<FusionOpOrCallbacks>::HasBuilder
@@ -166,14 +164,22 @@ template <
       #endif
       static_assert(is_static<TileShape_MNK>::value);
       static_assert(cute::is_any_of_v<ElementC, float, bfloat16_t, void>, "ElementC needs to be float or bfloat for the Intel pipeline");
-      
-      using EpilogueSchedule = std::conditional_t<cute::is_same_v<EpilogueScheduleType, EpilogueScheduleAuto>, 
+      using EpilogueSchedule = std::conditional_t<cute::is_same_v<EpilogueScheduleType, EpilogueScheduleAuto>,
                                                   IntelXeXMX16,
                                                   EpilogueScheduleType>;
       static constexpr bool IsGroup = cute::is_same_v<EpilogueSchedule, IntelXeXMX16Group>;
-      using DispatchPolicy = std::conditional_t<IsGroup, 
+      using DispatchPolicy = std::conditional_t<IsGroup,
                                                 IntelXeXMX16Group,
                                                 IntelXeXMX16>;
+
+      using StrideC = std::conditional_t<cute::is_tuple_v<std::remove_pointer_t<GmemLayoutTagC>>, GmemLayoutTagC, cutlass::detail::TagToStrideC_t<std::conditional_t<IsGroup, GmemLayoutTagC*, GmemLayoutTagC>>>;
+      using StrideD = std::conditional_t<cute::is_tuple_v<std::remove_pointer_t<GmemLayoutTagD>>, GmemLayoutTagD, cutlass::detail::TagToStrideC_t<std::conditional_t<IsGroup, GmemLayoutTagD*, GmemLayoutTagD>>>;
+
+      static_assert(IsGroup == std::is_pointer_v<StrideC>, "Group GEMM should have a pointer to strides");
+      static_assert(IsGroup == std::is_pointer_v<StrideD>, "Group GEMM should have a pointer to strides");
+      static_assert(get<1>(std::remove_pointer_t<StrideC>{}) == 1, "Only N-Major/Row-Major layouts for C are supported in the xe epilogue collective builder");
+      static_assert(get<1>(std::remove_pointer_t<StrideD>{}) == 1, "Only N-Major/Row-Major layouts for D are supported in the xe epilogue collective builder");
+
       using CopyOpG2R = std::conditional_t<cutlass::sizeof_bits_v<ElementC> == 32, XE_2D_U32x8x16_LD_N, XE_2D_U16x8x16_LD_N>;
       using CopyOpR2G = std::conditional_t<cutlass::sizeof_bits_v<ElementD> == 32, XE_2D_U32x8x16_ST_N, XE_2D_U16x8x16_ST_N>;
 
@@ -191,16 +197,16 @@ template <
             DispatchPolicy,
             TileShape_MNK,
             ElementAccumulator,
-            cutlass::gemm::TagToStrideC_t<std::conditional_t<IsGroup, GmemLayoutTagC*, GmemLayoutTagC>>,
+            StrideC,
             ElementD,
-            cutlass::gemm::TagToStrideC_t<std::conditional_t<IsGroup, GmemLayoutTagD*, GmemLayoutTagD>>,
+            StrideD,
             FusionCallbacks,
             CopyOpG2R,
             SmemLayoutAtomC_,
             CopyOpS2R_,
             CopyOpR2G,
             SmemLayoutAtomD_,
-            CopyOpR2S_   
+            CopyOpR2S_
         >;
     };
-}
+} // namespace cutlass::epilogue::collective
