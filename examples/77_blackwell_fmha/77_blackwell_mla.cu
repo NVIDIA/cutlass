@@ -76,6 +76,7 @@ struct Options {
   bool is_var_split_kv = false;
   int max_split_kv = 16;
   int page = -1;
+  int total_pages = 10000;
   float spread = 0.2f;
   int iterations = 3;
   bool verify = false;
@@ -137,6 +138,7 @@ struct Options {
 
     cmd.get_cmd_line_argument("split_kv", split_kv, defaults.split_kv);
     cmd.get_cmd_line_argument("page", page, defaults.page);
+    cmd.get_cmd_line_argument("total_pages", total_pages, defaults.total_pages);
     cmd.get_cmd_line_argument("spread", spread, defaults.spread);
     cmd.get_cmd_line_argument("is_var_split_kv", is_var_split_kv, false);
     if (page == -1) {
@@ -308,7 +310,8 @@ struct Runner {
   uint64_t seed = 0;
 
   int page_size = -1;
-  int page_count = -1;
+  int pages_per_seq = -1;
+  int total_pages = -1;
 
   // We allocate Q and C as first latent, then rope
   // This means that we offset the pointer by HeadDim_latent to get the rope
@@ -338,7 +341,7 @@ struct Runner {
     int page_B = B;
     if (block_PT.get() != nullptr) {
       page_K = page_size;
-      page_B = page_count;
+      page_B = total_pages;
     }
 
     Tensor mQ_latent = make_tensor(make_gmem_ptr(block_Q.get()),
@@ -445,17 +448,18 @@ struct Runner {
       int max_K = static_cast<int>((1 + spread) * K);
       int min_K = static_cast<int>((1 - spread) * K);
       page_size = options.page;
-      page_count = B * ceil_div(max_K, page_size);
-      stride_PT = cute::make_stride(_1{}, page_count);
+      pages_per_seq = ceil_div(max_K, page_size);
+      total_pages = options.total_pages;
+      stride_PT = cute::make_stride(_1{}, pages_per_seq);
 
       std::vector<int> host_seq(B);
-      std::vector<int> host_PT(page_count * B);
+      std::vector<int> host_PT(pages_per_seq * B);
 
       for (int i = 0; i < B; i++) {
         int seq = min_K + rand() % (max_K - min_K + 1);
         host_seq[i] = seq;
         for (int j = 0; j < ceil_div(seq, page_size); j++) {
-          host_PT[page_count * i + j] = i + j * B;
+          host_PT[pages_per_seq * i + j] = rand() % total_pages;
         }
       }
 
@@ -469,7 +473,7 @@ struct Runner {
       stride_C_latent = cute::make_tuple(static_cast<int64_t>(0 + D_latent + D_rope), _1{}, page_size * static_cast<int64_t>((D_latent + D_rope)));
       stride_K_rope = stride_C_latent;
 
-      block_C.reset(page_count * page_size * static_cast<int64_t>((D_latent + D_rope)));
+      block_C.reset(total_pages * page_size * static_cast<int64_t>((D_latent + D_rope)));
 
       if (options.is_var_split_kv == true) {
         std::vector<int> host_split_kv(B);
@@ -505,7 +509,7 @@ struct Runner {
         block_C.get() + D_latent, stride_K_rope,
         block_seq.get(),
         block_PT.get(), stride_PT,
-        page_count, page_size},
+        total_pages, page_size},
       { block_O.get(), 
         stride_O,
         block_LSE.get(),
