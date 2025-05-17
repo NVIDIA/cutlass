@@ -28,11 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
- /*
- * This implements W8A8 GEMM (FP8 weights and activations) using FP16 compute as a workaround,
- * since current Intel GPUs (e.g., PVC, BMG) lack native FP8 support.
- * The kernel converts FP8 inputs to FP16 on-the-fly and performs GEMM using FP16 MMA.
- */
 #pragma once
 
 #include "cutlass/cutlass.h"
@@ -78,10 +73,6 @@ struct CollectiveMma<MainloopIntelW8A8<Stages, Schedule>, TileShape_, ElementA_,
   using ArchTag = typename DispatchPolicy::ArchTag;
 
   static_assert(platform::is_same<ElementA, ElementB>::value, "MainloopIntelW8A8 requires that A and B have same type.");
-  // TODO: support E5M2
-  static_assert(std::is_same_v<ElementA, float_e4m3_t>, "ElementA must be fp8 (E4M3)");
-  static_assert(std::is_same_v<ElementB, float_e4m3_t>, "ElementB must be fp8 (E4M3)");
-
   static_assert(std::is_same_v<TransformA, cute::identity>, "Transformation for A is not currently supported on Intel PVC");
   static_assert(std::is_same_v<TransformB, cute::identity>, "Transformation for B is not currently supported on Intel PVC");
 
@@ -97,10 +88,13 @@ struct CollectiveMma<MainloopIntelW8A8<Stages, Schedule>, TileShape_, ElementA_,
   static constexpr auto ATOM_N = get<2>(typename TiledMma::ThrLayoutVMNK{}.shape());
   static constexpr auto ATOM_K = get<3>(typename TiledMma::ThrLayoutVMNK{}.shape());
 
+  static_assert(BLK_M % TiledMma{}.template tile_size_mnk<0>() == 0, "TiledMma permutation size must match block size.");
+  static_assert(BLK_N % TiledMma{}.template tile_size_mnk<1>() == 0, "TiledMma permutation size must match block size.");
+  static_assert(BLK_K % TiledMma{}.template tile_size_mnk<2>() == 0, "TiledMma permutation size must match block size.");
+
   static constexpr auto SG_M = ceil_div(BLK_M, ATOM_M);
   static constexpr auto SG_N = ceil_div(BLK_N, ATOM_N);
   static constexpr auto SG_K = ceil_div(BLK_K, ATOM_K);
-
   using SubgroupTileShape = Shape<decltype(SG_M), decltype(SG_N), decltype(SG_K)>;
 
   // 32
@@ -121,7 +115,7 @@ struct CollectiveMma<MainloopIntelW8A8<Stages, Schedule>, TileShape_, ElementA_,
 
   // Host side kernel arguments
   struct Arguments {
-    ElementA  const* ptr_A;
+    ElementA const* ptr_A;
     StrideA dA;
     ElementB const* ptr_B;
     StrideB dB;
@@ -144,15 +138,12 @@ struct CollectiveMma<MainloopIntelW8A8<Stages, Schedule>, TileShape_, ElementA_,
     (void) workspace;
 
     auto [M,N,K,L] = problem_shape;
-    
-    auto mA_mkl = make_tensor(make_gmem_ptr(static_cast<ElementA const*>(args.ptr_A)),
-                              make_layout(make_shape(M, K, L), args.dA));
-    auto mB_nkl = make_tensor(make_gmem_ptr(static_cast<ElementB const*>(args.ptr_B)),
-                              make_layout(make_shape(N, K, L), args.dB));
 
+    auto mA_mkl = make_tensor(make_gmem_ptr(args.ptr_A), make_layout(make_shape(M, K, L), args.dA));
+    auto mB_nkl = make_tensor(make_gmem_ptr(args.ptr_B), make_layout(make_shape(N, K, L), args.dB));
     Copy_A tiled_copy_a{Copy_A{}.with(mA_mkl)};
     Copy_B tiled_copy_b{Copy_B{}.with(mB_nkl)};
-
+    
     return Params{tiled_copy_a, tiled_copy_b};
   }
 
@@ -162,51 +153,65 @@ struct CollectiveMma<MainloopIntelW8A8<Stages, Schedule>, TileShape_, ElementA_,
       class LayoutOut,
       class... Ts>
   CUTLASS_DEVICE
-  void convert_E4M3_to_FP16(
+  void convert_FP8_to_FP16(
           Tensor<EngineIn, LayoutIn> const& in,
           Tensor<EngineOut, LayoutOut>& out) {
 
-      static_assert(is_rmem<EngineIn>::value, "Input tensor for A conversion must come from registers");
-      static_assert(is_rmem<EngineOut>::value, "Output tensor for A conversion must come from registers");
-      static_assert(cosize_v<LayoutIn> == cosize_v<LayoutOut>);
-      static_assert(size_v<LayoutIn> == cosize_v<LayoutIn>);
-      static_assert(size_v<LayoutOut> == cosize_v<LayoutOut>);
+    static_assert(is_rmem<EngineIn>::value, "Input tensor for A conversion must come from registers");
+    static_assert(is_rmem<EngineOut>::value, "Output tensor for A conversion must come from registers");
+    static_assert(cosize_v<LayoutIn> == cosize_v<LayoutOut>);
+    static_assert(size_v<LayoutIn> == cosize_v<LayoutIn>);
+    static_assert(size_v<LayoutOut> == cosize_v<LayoutOut>);
 
-      using SrcType = typename EngineIn::value_type;
-      using DstType = typename EngineOut::value_type;
+    using SrcType = typename EngineIn::value_type;
+    using DstType = typename EngineOut::value_type;
 
-      static_assert(std::is_same_v<SrcType, uint8_t>, "Expected fp8 (E4M3) input as uint8_t");
-      static_assert(std::is_same_v<DstType, half_t>, "Expected fp16 output as half_t");
+    static_assert(std::is_same_v<SrcType, uint8_t>, "Expected fp8 (E4M3) input as uint8_t");
+    static_assert(std::is_same_v<DstType, half_t>, "Expected fp16 output as half_t");
 
-      auto const& src = in(_, _, _);
-      auto const& dst = out(_, _, _);
+    auto const& src = in(_, _, _);
+    auto const& dst = out(_, _, _);
 
-      SrcType const* pSrc = src.data();
-      DstType* pDst = dst.data();
+    SrcType const* pSrc = src.data();
+    DstType* pDst = dst.data();
 
-      constexpr int num_elements = decltype(size(src))::value;
-      constexpr int vec_size = 16;
-      // TODO(Codeplay): Move conversion to NumericArrayConverter
+    constexpr int num_elements = decltype(size(src))::value;
+    // TODO(Codeplay): Move conversion to NumericArrayConverter
+    if constexpr (std::is_same_v<ElementA, float_e5m2_t>) {
+      // Using something as simple as the following code surprisingly
+      // leads to poor performance.
+      // CUTLASS_PRAGMA_UNROLL
+      // for (int i = 0; i < num_elements; i++) {
+      //   reinterpret_cast<uint16_t*>(pDst)[i] = (static_cast<uint16_t>((pSrc[i]))) << 8;
+      // }
+      // The root-cause is unknown, but private memory use is seen in this case.
+      using SrcArray = cutlass::Array<uint8_t, num_elements>;
+      using DstArray = cutlass::Array<uint16_t, num_elements>;
+      SrcArray const* pSrcArr = reinterpret_cast<SrcArray const*>(pSrc);
+      DstArray* pDstArr = reinterpret_cast<DstArray*>(pDst);
+      E5M2_to_FP16<num_elements>(*pSrcArr, *pDstArr);
+    } else {
+      // E4M3 -> FP16 conversion
+      constexpr int chunk_size = 16;
+      constexpr int iters = num_elements / chunk_size;
       CUTLASS_PRAGMA_UNROLL
-      for (int i = 0; i < num_elements / vec_size; ++i) {
-          // vectorized load
-          cute::intel::uchar16 src_vec;
-          CUTLASS_PRAGMA_UNROLL
-          for (int j = 0; j < vec_size; ++j) {
-              src_vec[j] = pSrc[i * vec_size + j];
-          }
-          // vectorized convert fp8 -> fp16
-          cute::intel::ushort16 dst_vec = E4M3_to_FP16_vec16(src_vec);
-          // vectorized store
-          CUTLASS_PRAGMA_UNROLL
-          for (int j = 0; j < vec_size; ++j) {
-              reinterpret_cast<uint16_t*>(pDst)[i * vec_size + j] = dst_vec[j];
-
-          }
+      for (int i = 0; i < iters; ++i) {
+        cute::intel::uchar16 src_vec;
+        CUTLASS_PRAGMA_UNROLL
+        for (int j = 0; j < chunk_size; ++j) {
+          src_vec[j] = pSrc[i * chunk_size + j];
+        }
+        cute::intel::ushort16 dst_vec;
+        dst_vec = E4M3_to_FP16_chunk16(src_vec);
+        CUTLASS_PRAGMA_UNROLL
+        for (int j = 0; j < chunk_size; ++j) {
+          reinterpret_cast<uint16_t*>(pDst)[i * chunk_size + j] = dst_vec[j];
+        }
       }
+    }
   }
-  
-  // Perform a subgroup-scoped matrix multiply-accumulate
+
+  /// Perform a subgroup-scoped matrix multiply-accumulate
   template <class FrgTensorD, class TensorA, class TensorB, class FrgTensorC, class KTileIterator, class BlkCoord>
   CUTLASS_DEVICE void operator()(FrgTensorD &accum, TensorA gA, TensorB gB, FrgTensorC const &src_accum,
                                  KTileIterator k_tile_iter, int k_tile_count, BlkCoord const &blk_coord, int const &K_start, int thread_idx,
@@ -220,17 +225,19 @@ struct CollectiveMma<MainloopIntelW8A8<Stages, Schedule>, TileShape_, ElementA_,
 
     // Instantiate the MMA object and get thread slice
     TiledMma tiled_mma;
+    // TODO(Codeplay): see if we can make this nicer
+    // To make all work items in a subgroup have the same global tensors pass in the index of work item 0 in each subgroup
     auto sg = syclcompat::get_nd_item<1>().get_sub_group();
     auto first_thread_in_sg_idx = sg.get_group_linear_id() * DispatchPolicy::SubgroupSize;
     auto thr_mma = tiled_mma.get_slice(first_thread_in_sg_idx);
 
-    // Partition
+    // Partition global counting tensors for MMA
     Tensor tCgA = thr_mma.partition_A(gA);
     Tensor tCgB = thr_mma.partition_B(gB);
 
     Tensor tCrA = make_tensor<uint8_t>(make_fragment_layout(mainloop.tiled_copy_a, tCgA(_,_,_,0).shape()));
     Tensor tCrB = make_tensor<uint8_t>(make_fragment_layout(mainloop.tiled_copy_b, tCgB(_,_,_,0).shape()));
-    
+
     Tensor tCrA_fp16 = make_fragment_like<half_t>(tCrA);
     Tensor tCrB_fp16 = make_fragment_like<half_t>(tCrB);
 
@@ -238,7 +245,7 @@ struct CollectiveMma<MainloopIntelW8A8<Stages, Schedule>, TileShape_, ElementA_,
     Tensor tArA = thr_copy_A.retile_D(tCrA);
     Tensor tBrB = thr_copy_B.retile_D(tCrB);
     
-    // Retile global tile for copies
+    // Retile global counting tensors for copies
     Tensor tAgA = thr_copy_A.retile_S(tCgA);
     Tensor tBgB = thr_copy_B.retile_S(tCgB);
     
@@ -267,28 +274,24 @@ struct CollectiveMma<MainloopIntelW8A8<Stages, Schedule>, TileShape_, ElementA_,
     CUTLASS_PRAGMA_UNROLL
     for (int k_tile = k_start_idx; k_tile < k_tile_count + k_start_idx; k_tile++, prefetch_k++) {
       barrier_arrive(barrier_scope);
-
-      // copy fp8 into uint8
+      // Copy gmem to rmem for the first k_tile
       copy(mainloop.tiled_copy_a, tAgA(_,_,_,k_tile), tArA);
       copy(mainloop.tiled_copy_b, tBgB(_,_,_,k_tile), tBrB);
-      
+
       // TODO: register pressure
-      convert_E4M3_to_FP16(tCrA, tCrA_fp16);
-      convert_E4M3_to_FP16(tCrB, tCrB_fp16);
+      convert_FP8_to_FP16(tCrA, tCrA_fp16);
+      convert_FP8_to_FP16(tCrB, tCrB_fp16);
 
       if (prefetch_k < k_tile_count) {
         prefetch(tiled_prefetch_a, pAgA(_, _, _, prefetch_k));
         prefetch(tiled_prefetch_b, pBgB(_, _, _, prefetch_k));
       }
 
-      // compute using fp16
       cute::gemm(tiled_mma, tCrA_fp16, tCrB_fp16, accum);
 
       barrier_wait(barrier_scope);
     }
-    
   }
-  
 };
 
 } // namespace cutlass::gemm::collective
