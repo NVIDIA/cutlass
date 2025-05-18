@@ -354,7 +354,7 @@ tools/
                              #                            CUTLASS Library
 
   util/                      # CUTLASS Utilities        - contains numerous helper classes for
-    include/                 #                            manging tensors in device memory, reference
+    include/                 #                            managing tensors in device memory, reference
       cutlass/               #                            implementations for GEMM, random initialization
         util/                #                            of tensors, and I/O.
 ```
