@@ -12,7 +12,7 @@ To install the CUTLASS DSL, run:
 
 .. code-block:: bash
 
-   pip install nvidia-cutlass-dsl
+   pip install nvidia-cutlass-dsl==4.0.0.dev1
 
 The ``nvidia-cutlass-dsl`` wheel includes everything needed to generate GPU kernels. It requires 
 the same NVIDIA driver version as the 
