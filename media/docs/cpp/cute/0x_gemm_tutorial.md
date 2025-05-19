@@ -207,7 +207,7 @@ With the static smem layouts, the `gemm_device` kernel can allocate the required
 ```cpp
   // Shared memory buffers
   __shared__ TA smemA[cosize_v<ASmemLayout>];
-  __shared__ TB smemB[cosize_v<ASmemLayout>];
+  __shared__ TB smemB[cosize_v<BSmemLayout>];
   Tensor sA = make_tensor(make_smem_ptr(smemA), sA_layout);  // (BLK_M,BLK_K)
   Tensor sB = make_tensor(make_smem_ptr(smemB), sB_layout);  // (BLK_N,BLK_K)
 ```
