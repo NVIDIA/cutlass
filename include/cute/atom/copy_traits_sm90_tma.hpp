@@ -146,7 +146,7 @@ struct Copy_Traits<SM90_TMA_LOAD, NumBitsPerTMA, AuxParams_>
   auto
   get_tma_tensor(GShape const& g_shape) const {
     static_assert(is_congruent<decltype(g_shape), decltype(aux_params_.g_stride_)>::value);
-    return make_counting_tensor(make_layout(g_shape, aux_params_.g_stride_));
+    return make_coord_tensor(make_layout(g_shape, aux_params_.g_stride_));
   }
 
   // Don't try to execute a copy with SM90_TMA_LOAD before calling .with()
@@ -276,7 +276,7 @@ struct Copy_Traits<SM90_TMA_LOAD_MULTICAST, NumBitsPerTMA, AuxParams_>
   auto
   get_tma_tensor(GShape const& g_shape) const {
     static_assert(is_congruent<decltype(g_shape), decltype(aux_params_.g_stride_)>::value);
-    return make_counting_tensor(make_layout(g_shape, aux_params_.g_stride_));
+    return make_coord_tensor(make_layout(g_shape, aux_params_.g_stride_));
   }
 
   // Don't try to execute a copy with SM90_TMA_LOAD_MULTICAST before calling .with()
@@ -350,7 +350,7 @@ struct Copy_Traits<SM90_TMA_STORE, NumBitsPerTMA, AuxParams_>
   auto
   get_tma_tensor(GShape const& g_shape) const {
     static_assert(is_congruent<decltype(g_shape), decltype(aux_params_.g_stride_)>::value);
-    return make_counting_tensor(make_layout(g_shape, aux_params_.g_stride_));
+    return make_coord_tensor(make_layout(g_shape, aux_params_.g_stride_));
   }
 
   // Construct new TMA_STORE with (unsafe) swapped out TMA descriptor ptr (for grouped gemm/ptr array gemm)
@@ -463,7 +463,7 @@ struct Copy_Traits<SM90_TMA_REDUCE_ADD, NumBitsPerTMA, AuxParams_>
   auto
   get_tma_tensor(GShape const& g_shape) const {
     static_assert(is_congruent<decltype(g_shape), decltype(aux_params_.g_stride_)>::value);
-    return make_counting_tensor(make_layout(g_shape, aux_params_.g_stride_));
+    return make_coord_tensor(make_layout(g_shape, aux_params_.g_stride_));
   }
 
   template <class Coord, int... Is>

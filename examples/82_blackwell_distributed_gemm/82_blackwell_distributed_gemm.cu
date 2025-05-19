@@ -132,7 +132,7 @@ using namespace cute;
 using TP = _8;
 static constexpr int TP_ = TP{};
 
-#if defined(CUTLASS_ARCH_MMA_SM100_SUPPORTED) && \
+#if defined(CUTLASS_ARCH_MMA_SM100A_ENABLED) && \
   (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 4))
 
 // Distributed GEMM tiling/sharding schedule
@@ -254,7 +254,7 @@ HostTensorB tensor_B_arr[TP_];
 HostTensorD tensor_C_arr[TP_];
 HostTensorD tensor_D_arr[TP_];
 
-#endif // (defined(CUTLASS_ARCH_MMA_SM100_SUPPORTED) && (__CUDACC_VER_MAJOR__ >= 12) && (__CUDACC_VER_MINOR__ >= 4))
+#endif // (defined(CUTLASS_ARCH_MMA_SM100A_ENABLED) && (__CUDACC_VER_MAJOR__ >= 12) && (__CUDACC_VER_MINOR__ >= 4))
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /// Testbed utility types
@@ -346,7 +346,7 @@ struct Result {
 
 };
 
-#if defined(CUTLASS_ARCH_MMA_SM100_SUPPORTED) && \
+#if defined(CUTLASS_ARCH_MMA_SM100A_ENABLED) && \
   (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 4))
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -805,7 +805,7 @@ int run(Options &options) {
   return 0;
 }
 
-#endif // (defined(CUTLASS_ARCH_MMA_SM100_SUPPORTED) && (__CUDACC_VER_MAJOR__ >= 12) && (__CUDACC_VER_MINOR__ >= 4))
+#endif // (defined(CUTLASS_ARCH_MMA_SM100A_ENABLED) && (__CUDACC_VER_MAJOR__ >= 12) && (__CUDACC_VER_MINOR__ >= 4))
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -861,8 +861,12 @@ int main(int argc, char const **args) {
   // Evaluate CUTLASS kernels
   //
 
-#if (defined(CUTLASS_ARCH_MMA_SM100_SUPPORTED) && (__CUDACC_VER_MAJOR__ >= 12) && (__CUDACC_VER_MINOR__ >= 4))
+#if (defined(CUTLASS_ARCH_MMA_SM100A_ENABLED) && (__CUDACC_VER_MAJOR__ >= 12) && (__CUDACC_VER_MINOR__ >= 4))
   run(options);
+#else
+    std::cerr
+      << "This example must be compiled with `sm100a` and CUDA Toolkit 12.4 or later." << std::endl;
+    return 0;
 #endif
 
   return 0;

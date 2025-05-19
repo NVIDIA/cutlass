@@ -215,8 +215,8 @@ public:
     Tensor cD_mn = local_tile(mD_crd, take<0,2>(blk_shape_MNK), make_coord(m_coord, n_coord));         // (BLK_M,BLK_N)
     Tensor tCcD_mn = thr_mma.partition_C(cD_mn);                                                   // (VEC,THR_M,THR_N)
     // Relative coordinate tensors (static)
-    Tensor cD = make_counting_tensor(cD_mn.layout());                                                  // (BLK_M,BLK_N)
-    Tensor tCcD = make_counting_tensor(tCcD_mn.layout());                                          // (VEC,THR_M,THR_N)
+    Tensor cD = make_coord_tensor(cD_mn.layout());                                                  // (BLK_M,BLK_N)
+    Tensor tCcD = make_coord_tensor(tCcD_mn.layout());                                          // (VEC,THR_M,THR_N)
     // Subtract the global "bottom right" corner from the local "top left" corner to get the max relative coordinate
     auto residue_cD = shape_MN - cD_mn(_0{});                                                                  // (m,n)
     auto residue_tCcD = shape_MN - tCcD_mn(_0{});                                                              // (m,n)

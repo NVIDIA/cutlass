@@ -124,7 +124,7 @@ struct CooperativeConfig {
   using KernelSchedule = cutlass::gemm::KernelPtrArrayTmaWarpSpecializedCooperativeFP8FastAccum;
   using EpilogueSchedule = cutlass::epilogue::PtrArrayTmaWarpSpecializedCooperative;
   using TileShape           = Shape<_256,_128,_128>;
-  using ClusterShape        = Shape<_2,_2,_1>;
+  using ClusterShape        = Shape<_1,_2,_1>;
 };
 
 struct PingpongConfig {
@@ -296,14 +296,14 @@ struct Options {
       int m = cmd_line_m;
       int n = cmd_line_n;
       int k = cmd_line_k;
-      if (m < 1) {
-        m = alignment * ((rand() % 64) + 1);
+      if (m < 0) {
+        m = alignment * ((rand() % 64));
       }
-      if (n < 1) {
-        n = alignment * ((rand() % 64) + 1);
+      if (n < 0) {
+        n = alignment * ((rand() % 64));
       }
-      if (k < 1) {
-        k = alignment * ((rand() % 64) + 1);
+      if (k < 0) {
+        k = alignment * ((rand() % 64));
       }
       problem_sizes_host.push_back({m, n, k});
     }
@@ -333,19 +333,9 @@ struct Options {
       cutlass::CommandLine::tokenize(tokens, extent_str, 'x');
 
       for (int i = 0; i < int(tokens.size()); ++i) {
-        int x = std::atoi(tokens.at(i).c_str());
-
-        // round up
-        if (x % alignment) {
-          x += (alignment - (x % alignment));
-        }
-
-        extent.at(i) = x;
+        extent.at(i) = std::atoi(tokens.at(i).c_str());
       }
-
-      if (extent.product()) {
-        problem_sizes_host.push_back({extent.m(), extent.n(), extent.k()});
-      }
+      problem_sizes_host.push_back({extent.m(), extent.n(), extent.k()});
     }
     groups = static_cast<int>(problem_sizes_host.size());
 
@@ -500,10 +490,27 @@ void initialize(const Options &options) {
   std::vector<ElementAccumulator *> ptr_beta_host(options.groups);
 
   for (int32_t i = 0; i < options.groups; ++i) {
-    ptr_A_host.at(i) = block_A.get() + offset_A.at(i);
-    ptr_B_host.at(i) = block_B.get() + offset_B.at(i);
-    ptr_C_host.at(i) = block_C.get() + offset_C.at(i);
-    ptr_D_host.at(i) = block_D.get() + offset_D.at(i);
+    // If the current group's matrix has size 0, set the pointer to nullptr
+    if (i < options.groups - 1 && offset_A.at(i) == offset_A.at(i + 1)) {
+      ptr_A_host.at(i) = nullptr;
+    } else {
+      ptr_A_host.at(i) = block_A.get() + offset_A.at(i);
+    }
+    if (i < options.groups - 1 && offset_B.at(i) == offset_B.at(i + 1)) {
+      ptr_B_host.at(i) = nullptr;
+    } else {
+      ptr_B_host.at(i) = block_B.get() + offset_B.at(i);
+    }
+    if (i < options.groups - 1 && offset_C.at(i) == offset_C.at(i + 1)) {
+      ptr_C_host.at(i) = nullptr;
+    } else {
+      ptr_C_host.at(i) = block_C.get() + offset_C.at(i);
+    }
+    if (i < options.groups - 1 && offset_D.at(i) == offset_D.at(i + 1)) {
+      ptr_D_host.at(i) = nullptr;
+    } else {
+      ptr_D_host.at(i) = block_D.get() + offset_D.at(i);
+    }
     alpha_host.push_back((options.alpha == FLT_MAX) ? static_cast<ElementAccumulator>((rand() % 5) + 1) : options.alpha);
     beta_host.push_back((options.beta == FLT_MAX) ? static_cast<ElementAccumulator>(rand() % 5) : options.beta);
     ptr_alpha_host.at(i) = block_alpha.get() + i;
@@ -539,9 +546,10 @@ void initialize(const Options &options) {
   beta_device.reset(options.groups);
   beta_device.copy_from_host(ptr_beta_host.data());
 
-  initialize_block(block_A, seed + 2023);
+  initialize_block(block_A, seed + 2021);
   initialize_block(block_B, seed + 2022);
-  initialize_block(block_C, seed + 2021);
+  initialize_block(block_C, seed + 2023);
+  initialize_block(block_D, seed + 2024);
   block_alpha.copy_from_host(alpha_host.data());
   block_beta.copy_from_host(beta_host.data());
 }
@@ -653,6 +661,13 @@ int run(Options &options, bool host_problem_shapes_available = true)
   allocate(options);
   initialize(options);
 
+  std::cout << "  Problem Sizes, Alpha, Beta " << std::endl;
+  for (int32_t i = 0; i < options.groups; ++i) {
+    std::cout << "    " << options.problem_sizes_host.at(i);
+    std::cout << ", "   << alpha_host.at(i) << ", " << beta_host.at(i) << std::endl;
+  }
+  std::cout << "  Groups      : " << options.groups  << std::endl;
+
   // Instantiate CUTLASS kernel depending on templates
   GemmT gemm;
 
@@ -700,14 +715,8 @@ int run(Options &options, bool host_problem_shapes_available = true)
     result.avg_runtime_ms  = double(elapsed_ms) / double(options.iterations);
     result.gflops          = options.gflops(result.avg_runtime_ms / 1000.0, options.problem_sizes_host);
 
-    std::cout << "  Problem Sizes, Alpha, Beta " << std::endl;
-    for (int32_t i = 0; i < options.groups; ++i) {
-      std::cout << "    " << options.problem_sizes_host.at(i);
-      std::cout << ", " << alpha_host.at(i) << ", " << beta_host.at(i) << std::endl;
-    }
-    std::cout << "  Groups      : " << options.groups  << std::endl;
     std::cout << "  Avg runtime : " << result.avg_runtime_ms << " ms" << std::endl;
-    std::cout << "  GFLOPS      : " << result.gflops << std::endl;
+    std::cout << "  TFLOPS      : " << result.gflops / 1000.0 << std::endl;
   }
 
   return 0;

@@ -474,14 +474,14 @@ make_fragment_like(Tensor<Engine,Layout> const& tensor)
 }
 
 //
-// make_counting_tensor
+// make_coord_tensor
 //   Make a tensor from a layout by binding it to a counting iter with 0-offset of the same profile as the codomain.
 //
 
 template <class Layout, __CUTE_REQUIRES(is_layout<Layout>::value)>
 CUTE_HOST_DEVICE constexpr
 auto
-make_counting_tensor(Layout const& layout)
+make_coord_tensor(Layout const& layout)
 {
   return make_tensor(make_inttuple_iter(coprofile(layout)), layout);
 }
@@ -496,7 +496,7 @@ CUTE_HOST_DEVICE constexpr
 auto
 make_identity_tensor(Shape const& shape)
 {
-  return make_counting_tensor(make_identity_layout(shape));
+  return make_coord_tensor(make_identity_layout(shape));
 }
 
 //
