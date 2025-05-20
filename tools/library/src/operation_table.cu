@@ -85,7 +85,42 @@ void OperationTable::append(Manifest const &manifest) {
 
       block_scaled_gemm_operations[functional_key][preference_key].push_back(op);
     }
-    
+
+    if (desc.kind == OperationKind::kBlockwiseGemm) {
+      BlockwiseGemmDescription const &gemm_desc = static_cast<BlockwiseGemmDescription const &>(desc);
+
+      BlockwiseGemmFunctionalKey functional_key(
+        gemm_desc.provider,
+        gemm_desc.gemm_kind,
+        gemm_desc.kind,
+        gemm_desc.tile_description.math_instruction.element_accumulator,
+        gemm_desc.element_epilogue,        
+        gemm_desc.A.element,
+        gemm_desc.A.layout,
+        gemm_desc.SFA.element,
+        gemm_desc.B.element,
+        gemm_desc.B.layout,
+        gemm_desc.SFB.element,
+        gemm_desc.C.element,
+        gemm_desc.C.layout,
+        gemm_desc.D.element,
+        gemm_desc.D.layout,
+        gemm_desc.SFMVecSize,
+        gemm_desc.SFNVecSize,
+        gemm_desc.SFKVecSize
+      );
+ 
+      Operation const *op = operation.get();
+
+      int cc = gemm_desc.tile_description.minimum_compute_capability;
+        
+      int alignment = std::max(std::max(
+        gemm_desc.A.alignment, gemm_desc.B.alignment), gemm_desc.C.alignment);
+
+      GemmPreferenceKey preference_key(cc, alignment);
+
+      blockwise_gemm_operations[functional_key][preference_key].push_back(op);
+    }
 
     // insert all gemm operation into operation table
     if (desc.kind == OperationKind::kGemm) {
@@ -119,6 +154,96 @@ void OperationTable::append(Manifest const &manifest) {
       GemmPreferenceKey preference_key(cc, alignment);
 
       gemm_operations[functional_key][preference_key].push_back(op);
+    }
+
+    // insert all grouped gemm operation into operation table
+    if (desc.kind == OperationKind::kGroupedGemm) {
+      GroupedGemmDescription const &grouped_gemm_desc = static_cast<GroupedGemmDescription const &>(desc);
+      GemmDescription const &gemm_desc = grouped_gemm_desc.gemm;
+
+      int cc = gemm_desc.tile_description.minimum_compute_capability;
+
+      int alignment = std::max(std::max(
+        gemm_desc.A.alignment, gemm_desc.B.alignment), gemm_desc.C.alignment);
+
+      GemmPreferenceKey preference_key(cc, alignment);
+
+      Operation const *op = operation.get();
+
+      if (!grouped_gemm_desc.block_scales.has_value()) {
+        GemmFunctionalKey functional_key(
+          gemm_desc.provider,
+          gemm_desc.gemm_kind,
+          gemm_desc.tile_description.math_instruction.element_accumulator,
+          gemm_desc.element_epilogue,
+          gemm_desc.A.element,
+          gemm_desc.A.layout,
+          gemm_desc.transform_A,
+          gemm_desc.B.element,
+          gemm_desc.B.layout,
+          gemm_desc.transform_B,
+          gemm_desc.C.element,
+          gemm_desc.C.layout,
+          gemm_desc.D.element,
+          gemm_desc.D.layout
+        );
+
+        gemm_operations[functional_key][preference_key].push_back(op);
+      }
+      else {
+        const BlockScaleDescription &block_scale_desc = grouped_gemm_desc.block_scales.value();
+        if (block_scale_desc.kind == OperationKind::kBlockScaledGemm) {
+          
+          BlockScaledGemmFunctionalKey functional_key(
+            gemm_desc.provider,
+            gemm_desc.gemm_kind,
+            gemm_desc.kind,
+            gemm_desc.tile_description.math_instruction.element_accumulator,
+            gemm_desc.element_epilogue,
+            gemm_desc.A.element,
+            gemm_desc.A.layout,
+            block_scale_desc.SFA.element,
+            gemm_desc.B.element,
+            gemm_desc.B.layout,
+            block_scale_desc.SFB.element,
+            gemm_desc.C.element,
+            gemm_desc.C.layout,
+            gemm_desc.D.element,
+            gemm_desc.D.layout,
+            block_scale_desc.SFD.element,
+            block_scale_desc.SFD.layout,
+            block_scale_desc.SFKVecSize,
+            block_scale_desc.EpilogueSFVecSize
+          );
+
+          block_scaled_gemm_operations[functional_key][preference_key].push_back(op);
+        }
+        else {
+          assert(block_scale_desc.kind == OperationKind::kBlockwiseGemm);
+          BlockwiseGemmFunctionalKey functional_key(
+            gemm_desc.provider,
+            gemm_desc.gemm_kind,
+            gemm_desc.kind,
+            gemm_desc.tile_description.math_instruction.element_accumulator,
+            gemm_desc.element_epilogue,        
+            gemm_desc.A.element,
+            gemm_desc.A.layout,
+            block_scale_desc.SFA.element,
+            gemm_desc.B.element,
+            gemm_desc.B.layout,
+            block_scale_desc.SFB.element,
+            gemm_desc.C.element,
+            gemm_desc.C.layout,
+            gemm_desc.D.element,
+            gemm_desc.D.layout,
+            block_scale_desc.SFMVecSize,
+            block_scale_desc.SFNVecSize,
+            block_scale_desc.SFKVecSize
+          );
+
+          blockwise_gemm_operations[functional_key][preference_key].push_back(op);
+        }
+      }
     }
 
     // insert all conv2d or conv3d operation into operation table

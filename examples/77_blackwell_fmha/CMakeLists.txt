@@ -28,12 +28,14 @@
 
 
 set_property(
-  SOURCE 77_blackwell_fmha.cu
-  PROPERTY COMPILE_FLAGS "--use_fast_math -ftemplate-backtrace-limit=0")
-
-set_property(
-  SOURCE 77_blackwell_fmha_gen.cu
-  PROPERTY COMPILE_FLAGS "--use_fast_math -ftemplate-backtrace-limit=0")
+  SOURCE
+      77_blackwell_fmha.cu
+      77_blackwell_fmha_gen.cu
+      77_blackwell_mla.cu
+      77_blackwell_fmha_bwd.cu
+  PROPERTY
+      COMPILE_FLAGS "--use_fast_math -ftemplate-backtrace-limit=0"
+)
 
 set(TEST_BASIC --b=1 --h=4 --q=512 --k=512 --d=128 --verify --mask=no)
 set(TEST_CAUSAL --b=1 --h=4 --q=512 --k=512 --d=128 --verify --mask=causal)
@@ -48,58 +50,98 @@ set(TEST_GEN_GQA --b=2 --h=4 --h_k=2 --k=512 --d=64 --verify)
 set(TEST_GEN_REMAP --b=2 --h=4 --h_k=2 --k=512 --d=128 --verify --remap)
 set(TEST_GEN_CACHEONLY --b=2 --h=4 --h_k=2 --k=512 --d=128 --verify --cache-only)
 
-if(NOT WIN32 AND (NOT (CMAKE_CXX_COMPILER_ID MATCHES "Clang")))
-  if (CUTLASS_NVCC_ARCHS MATCHES 100a)
-  cutlass_example_add_executable(
-      77_blackwell_fmha_fp8
-      77_blackwell_fmha.cu
-      TEST_COMMAND_OPTIONS
-      TEST_BASIC
-      # TEST_CAUSAL
-      # TEST_VARLEN
-      # TEST_HDIM64
-      # TEST_GQA)
-      )
-  target_include_directories(77_blackwell_fmha_fp8 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-  target_compile_definitions(77_blackwell_fmha_fp8 PRIVATE FP8)
+set(TEST_MLA_BASIC --b=1 --k=512 --verify)
 
-  cutlass_example_add_executable(
-      77_blackwell_fmha_gen_fp8
-      77_blackwell_fmha_gen.cu
-      TEST_COMMAND_OPTIONS
-      TEST_GEN_BASIC
-      # TEST_GEN_VARLEN
-      # TEST_GEN_HDIM64
-      # TEST_GEN_GQA
-      # TEST_GEN_REMAP
-      # TEST_GEN_CACHEONLY)
-      )
-  target_include_directories(77_blackwell_fmha_gen_fp8 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-  target_compile_definitions(77_blackwell_fmha_gen_fp8 PRIVATE FP8)
+if(NOT WIN32 AND (NOT (CMAKE_CXX_COMPILER_ID MATCHES "Clang")) AND (CUTLASS_NVCC_ARCHS MATCHES 100a))
 
-  cutlass_example_add_executable(
-      77_blackwell_fmha_fp16
-      77_blackwell_fmha.cu
-      TEST_COMMAND_OPTIONS
-      TEST_BASIC
-      # TEST_CAUSAL
-      # TEST_VARLEN
-      # TEST_HDIM64
-      # TEST_GQA)
-      )
-  target_include_directories(77_blackwell_fmha_fp16 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  foreach(PREC fp8 fp16)
+    string(TOUPPER "${PREC}" PREC_MACRO)
 
-  cutlass_example_add_executable(
-      77_blackwell_fmha_gen_fp16
-      77_blackwell_fmha_gen.cu
-      TEST_COMMAND_OPTIONS
-      TEST_GEN_BASIC
-      # TEST_GEN_VARLEN
-      # TEST_GEN_HDIM64
-      # TEST_GEN_GQA
-      # TEST_GEN_REMAP
-      # TEST_GEN_CACHEONLY)
-      )
-  target_include_directories(77_blackwell_fmha_gen_fp16 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-  endif()
+    cutlass_example_add_executable(
+        77_blackwell_fmha_${PREC}
+        77_blackwell_fmha.cu
+        TEST_COMMAND_OPTIONS
+        TEST_BASIC
+        # TEST_CAUSAL
+        # TEST_VARLEN
+        # TEST_HDIM64
+        # TEST_GQA)
+        )
+    target_include_directories(77_blackwell_fmha_${PREC} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_compile_definitions(77_blackwell_fmha_${PREC} PRIVATE ${PREC_MACRO})
+  
+    cutlass_example_add_executable(
+        77_blackwell_fmha_gen_${PREC}
+        77_blackwell_fmha_gen.cu
+        TEST_COMMAND_OPTIONS
+        TEST_GEN_BASIC
+        # TEST_GEN_VARLEN
+        # TEST_GEN_HDIM64
+        # TEST_GEN_GQA
+        # TEST_GEN_REMAP
+        # TEST_GEN_CACHEONLY)
+        )
+    target_include_directories(77_blackwell_fmha_gen_${PREC} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_compile_definitions(77_blackwell_fmha_gen_${PREC} PRIVATE ${PREC_MACRO})
+
+    cutlass_example_add_executable(
+        77_blackwell_mla_2sm_${PREC}
+        77_blackwell_mla.cu
+        TEST_COMMAND_OPTIONS
+        TEST_MLA_BASIC
+        )
+    target_include_directories(77_blackwell_mla_2sm_${PREC} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_compile_definitions(77_blackwell_mla_2sm_${PREC} PRIVATE ${PREC_MACRO})
+    target_compile_options(77_blackwell_mla_2sm_${PREC} PRIVATE -Xptxas -v)
+
+    cutlass_example_add_executable(
+        77_blackwell_mla_2sm_cpasync_${PREC}
+        77_blackwell_mla.cu
+        TEST_COMMAND_OPTIONS
+        TEST_MLA_BASIC
+        )
+    target_include_directories(77_blackwell_mla_2sm_cpasync_${PREC} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_compile_definitions(77_blackwell_mla_2sm_cpasync_${PREC} PRIVATE ${PREC_MACRO} CPASYNC)
+    target_compile_options(77_blackwell_mla_2sm_cpasync_${PREC} PRIVATE -Xptxas -v)
+
+    cutlass_example_add_executable(
+        77_blackwell_mla_b2b_2sm_${PREC}
+        77_blackwell_mla.cu
+        TEST_COMMAND_OPTIONS
+        TEST_MLA_BASIC
+        )
+    target_include_directories(77_blackwell_mla_b2b_2sm_${PREC} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_compile_definitions(77_blackwell_mla_b2b_2sm_${PREC} PRIVATE ${PREC_MACRO} B2B)
+    target_compile_options(77_blackwell_mla_b2b_2sm_${PREC} PRIVATE -Xptxas -v)
+
+    cutlass_example_add_executable(
+        77_blackwell_fmha_bwd_${PREC}
+        77_blackwell_fmha_bwd.cu
+        TEST_COMMAND_OPTIONS
+        TEST_BASIC
+        # TEST_GEN_VARLEN
+        # TEST_GEN_HDIM64
+        # TEST_GEN_GQA
+        # TEST_GEN_REMAP
+        # TEST_GEN_CACHEONLY)
+        )
+    target_include_directories(77_blackwell_fmha_bwd_${PREC} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_compile_definitions(77_blackwell_fmha_bwd_${PREC} PRIVATE ${PREC_MACRO})
+    target_compile_options(77_blackwell_fmha_bwd_${PREC} PRIVATE -Xptxas -v)
+
+    cutlass_example_add_executable(
+        77_blackwell_fmha_bwd_sat_${PREC}
+        77_blackwell_fmha_bwd.cu
+        TEST_COMMAND_OPTIONS
+        TEST_BASIC
+        # TEST_GEN_VARLEN
+        TEST_GEN_HDIM64
+        # TEST_GEN_GQA
+        # TEST_GEN_REMAP
+        # TEST_GEN_CACHEONLY)
+        )
+    target_include_directories(77_blackwell_fmha_bwd_sat_${PREC} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_compile_definitions(77_blackwell_fmha_bwd_sat_${PREC} PRIVATE ${PREC_MACRO} SKIP_ATOMIC)
+    target_compile_options(77_blackwell_fmha_bwd_sat_${PREC} PRIVATE -Xptxas -v)
+  endforeach()
 endif()

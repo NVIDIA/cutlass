@@ -29,22 +29,25 @@
 if (CUTLASS_NVCC_ARCHS MATCHES 100a)
 
 add_custom_target(
-  cutlass_test_unit_gemm_device_sm100_bssp
+  cutlass_test_unit_gemm_device_sm100_blockscaled_sparse
   DEPENDS
-  cutlass_test_unit_gemm_device_sm100_bssp_nvf4_nvf4_f32_f32_f32_o
-  cutlass_test_unit_gemm_device_sm100_bssp_nvf4_nvf4_f32_f16_f16_o
-  cutlass_test_unit_gemm_device_sm100_bssp_nvf4_nvf4_f32_f16_nvf4_o
-  cutlass_test_unit_gemm_device_sm100_bssp_mxf8_mxf8_f32_f32_f32_q
-  cutlass_test_unit_gemm_device_sm100_bssp_mxf8_mxf8_f32_f16_f16_q
-  cutlass_test_unit_gemm_device_sm100_bssp_mxf8_mxf8_f32_f16_mxf8_q
-  cutlass_test_unit_gemm_device_sm100_bssp_mxf8_mxf4_f32_q
-  cutlass_test_unit_gemm_device_sm100_bssp_mxf4_mxf4_f32_q
-  cutlass_test_unit_gemm_device_sm100_bssp_mxf4_mxf4_f32_o
-  cutlass_test_unit_gemm_device_sm100_bssp_streamk
+  cutlass_test_unit_gemm_device_sm100_blockscaled_sparse_nvf4_nvf4_f32_f32_f32_o
+  cutlass_test_unit_gemm_device_sm100_blockscaled_sparse_nvf4_nvf4_f32_f16_f16_o
+  cutlass_test_unit_gemm_device_sm100_blockscaled_sparse_nvf4_nvf4_f32_f16_nvf4_o
+  cutlass_test_unit_gemm_device_sm100_blockscaled_sparse_mxf8_mxf8_f32_f32_f32_q
+  cutlass_test_unit_gemm_device_sm100_blockscaled_sparse_mxf8_mxf8_f32_f16_f16_q
+  cutlass_test_unit_gemm_device_sm100_blockscaled_sparse_mxf8_mxf8_f32_f16_mxf8_q
+  cutlass_test_unit_gemm_device_sm100_blockscaled_sparse_mxf8mxf4_mxf4mxf8_f32_q
+  cutlass_test_unit_gemm_device_sm100_blockscaled_sparse_mxf8mxf6_mxf6mxf8_f32_q
+  cutlass_test_unit_gemm_device_sm100_blockscaled_sparse_mxf4mxf6_mxf4mxf6_f32_q
+  cutlass_test_unit_gemm_device_sm100_blockscaled_sparse_mxf6_mxf6_f32_q
+  cutlass_test_unit_gemm_device_sm100_blockscaled_sparse_mxf4_mxf4_f32_q
+  cutlass_test_unit_gemm_device_sm100_blockscaled_sparse_mxf4_mxf4_f32_o
+  cutlass_test_unit_gemm_device_sm100_blockscaled_sparse_streamk
 )
 
 cutlass_test_unit_gemm_device_add_executable_split_file(
-  cutlass_test_unit_gemm_device_sm100_bssp_nvf4_nvf4_f32_f32_f32_o
+  cutlass_test_unit_gemm_device_sm100_blockscaled_sparse_nvf4_nvf4_f32_f32_f32_o
 
   BATCH_SOURCES ON
   BATCH_SIZE 1
@@ -57,7 +60,7 @@ cutlass_test_unit_gemm_device_add_executable_split_file(
 )
 
 cutlass_test_unit_gemm_device_add_executable_split_file(
-  cutlass_test_unit_gemm_device_sm100_bssp_nvf4_nvf4_f32_f16_f16_o
+  cutlass_test_unit_gemm_device_sm100_blockscaled_sparse_nvf4_nvf4_f32_f16_f16_o
 
   BATCH_SOURCES ON
   BATCH_SIZE 1
@@ -70,7 +73,7 @@ cutlass_test_unit_gemm_device_add_executable_split_file(
 )
 
 cutlass_test_unit_gemm_device_add_executable_split_file(
-  cutlass_test_unit_gemm_device_sm100_bssp_nvf4_nvf4_f32_f16_nvf4_o
+  cutlass_test_unit_gemm_device_sm100_blockscaled_sparse_nvf4_nvf4_f32_f16_nvf4_o
 
   BATCH_SOURCES ON
   BATCH_SIZE 1
@@ -83,7 +86,7 @@ cutlass_test_unit_gemm_device_add_executable_split_file(
 )
 
 cutlass_test_unit_gemm_device_add_executable_split_file(
-  cutlass_test_unit_gemm_device_sm100_bssp_mxf8_mxf8_f32_f32_f32_q
+  cutlass_test_unit_gemm_device_sm100_blockscaled_sparse_mxf8_mxf8_f32_f32_f32_q
 
   BATCH_SOURCES ON
   BATCH_SIZE 1
@@ -96,7 +99,7 @@ cutlass_test_unit_gemm_device_add_executable_split_file(
 )
 
 cutlass_test_unit_gemm_device_add_executable_split_file(
-  cutlass_test_unit_gemm_device_sm100_bssp_mxf8_mxf8_f32_f16_f16_q
+  cutlass_test_unit_gemm_device_sm100_blockscaled_sparse_mxf8_mxf8_f32_f16_f16_q
 
   BATCH_SOURCES ON
   BATCH_SIZE 1
@@ -109,7 +112,7 @@ cutlass_test_unit_gemm_device_add_executable_split_file(
 )
 
 cutlass_test_unit_gemm_device_add_executable_split_file(
-  cutlass_test_unit_gemm_device_sm100_bssp_mxf8_mxf8_f32_f16_mxf8_q
+  cutlass_test_unit_gemm_device_sm100_blockscaled_sparse_mxf8_mxf8_f32_f16_mxf8_q
 
   BATCH_SOURCES ON
   BATCH_SIZE 1
@@ -127,7 +130,7 @@ cutlass_test_unit_gemm_device_add_executable_split_file(
 )
 
 cutlass_test_unit_gemm_device_add_executable_split_file(
-  cutlass_test_unit_gemm_device_sm100_bssp_mxf4_mxf4_f32_o
+  cutlass_test_unit_gemm_device_sm100_blockscaled_sparse_mxf4_mxf4_f32_o
 
   BATCH_SOURCES ON
   BATCH_SIZE 1
@@ -140,7 +143,7 @@ cutlass_test_unit_gemm_device_add_executable_split_file(
 )
 
 cutlass_test_unit_gemm_device_add_executable_split_file(
-  cutlass_test_unit_gemm_device_sm100_bssp_mxf8_mxf4_f32_q
+  cutlass_test_unit_gemm_device_sm100_blockscaled_sparse_mxf8mxf4_mxf4mxf8_f32_q
 
   BATCH_SOURCES ON
   BATCH_SIZE 1
@@ -148,10 +151,32 @@ cutlass_test_unit_gemm_device_add_executable_split_file(
   sm100_bssp_gemm_mxf8_mxf4_f32_f16_mxf8_q_tnt.cu
   sm100_bssp_gemm_mxf8_mxf4_f32_f16_f16_q_tnt.cu
   sm100_bssp_gemm_mxf8_mxf4_f32_f32_f32_q_tnt.cu
+
+  sm100_bssp_gemm_mxf4_mxf8_f32_f16_f16_q_tnt.cu
 )
 
 cutlass_test_unit_gemm_device_add_executable_split_file(
-  cutlass_test_unit_gemm_device_sm100_bssp_mxf4_mxf4_f32_q
+  cutlass_test_unit_gemm_device_sm100_blockscaled_sparse_mxf8mxf6_mxf6mxf8_f32_q
+
+  BATCH_SOURCES ON
+  BATCH_SIZE 1
+
+  sm100_bssp_gemm_mxf6_mxf8_f32_f16_f16_q_tnt.cu
+  sm100_bssp_gemm_mxf8_mxf6_f32_f16_f16_q_tnt.cu
+)
+
+cutlass_test_unit_gemm_device_add_executable_split_file(
+  cutlass_test_unit_gemm_device_sm100_blockscaled_sparse_mxf4mxf6_mxf4mxf6_f32_q
+
+  BATCH_SOURCES ON
+  BATCH_SIZE 1
+
+  sm100_bssp_gemm_mxf4_mxf6_f32_f16_f16_q_tnt.cu
+  sm100_bssp_gemm_mxf6_mxf4_f32_f16_f16_q_tnt.cu
+)
+
+cutlass_test_unit_gemm_device_add_executable_split_file(
+  cutlass_test_unit_gemm_device_sm100_blockscaled_sparse_mxf4_mxf4_f32_q
 
   BATCH_SOURCES ON
   BATCH_SIZE 1
@@ -162,7 +187,16 @@ cutlass_test_unit_gemm_device_add_executable_split_file(
 )
 
 cutlass_test_unit_gemm_device_add_executable_split_file(
-  cutlass_test_unit_gemm_device_sm100_bssp_streamk
+  cutlass_test_unit_gemm_device_sm100_blockscaled_sparse_mxf6_mxf6_f32_q
+
+  BATCH_SOURCES ON
+  BATCH_SIZE 1
+
+  sm100_bssp_gemm_mxf6_mxf6_f32_f16_f16_q_tnt.cu
+)
+
+cutlass_test_unit_gemm_device_add_executable_split_file(
+  cutlass_test_unit_gemm_device_sm100_blockscaled_sparse_streamk
 
   BATCH_SOURCES ON
   BATCH_SIZE 1

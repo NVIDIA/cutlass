@@ -765,6 +765,7 @@ target_include_directories(
   CUTLASS
   SYSTEM INTERFACE
   $<BUILD_INTERFACE:${CUDA_TOOLKIT_ROOT_DIR}/include>
+  $<BUILD_INTERFACE:${CUDA_TOOLKIT_ROOT_DIR}/include/cccl>
   )
 
 install(

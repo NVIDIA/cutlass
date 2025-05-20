@@ -92,7 +92,7 @@ TEST(SM75_Device_GemmSplitKSerial_f16n_f16n_f16t_tensor_op_f32, 128x256x32_64x64
     cutlass::gemm::GemmShape<128, 256, 32>,
     cutlass::gemm::GemmShape<64, 64, 32>,
     cutlass::gemm::GemmShape<16, 8, 8>,
-    cutlass::epilogue::thread::LinearCombinationRelu<
+    cutlass::epilogue::thread::LinearCombination<
       ElementOutput,
       128 / cutlass::sizeof_bits<ElementOutput>::value,
       ElementAccumulator,
@@ -105,7 +105,7 @@ TEST(SM75_Device_GemmSplitKSerial_f16n_f16n_f16t_tensor_op_f32, 128x256x32_64x64
     kSplitKSerial
   >;
 
-  bool result = test::gemm::device::TestAllGemm<Gemm, true>();
+  bool result = test::gemm::device::TestAllGemm<Gemm, false>();
   EXPECT_TRUE(result);
 }
 

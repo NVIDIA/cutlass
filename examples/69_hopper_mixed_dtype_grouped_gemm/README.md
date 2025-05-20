@@ -7,11 +7,11 @@ This example shows how to perform Grouped GEMMs on Hopper when A and B have diff
 - in the arguments, pass the group size, array of the problem sizes, and the array of strides for matrix A and B.
 - if scales and zero-points are included, also pass the array of their strides in the arguments.
 
-Note that in Example 55, the argument `--g` is used to determine the block scale size. It is important not to confuse this with the `--groups` argument in this example, which specifies the number of GEMMs.
+Note that in Example 55, the argument `--g` is used to determine the group size of scaling. To avoid confusion with the `--groups` argument in this example, which defines the number of GEMMs, `--c` is used here to represent the group size for scaling.
 
 ## Upcoming features
 
-Currently, the Mixed-input Grouped GEMM only supports row-wise scaling. Please contact us if zero-points or block-wise scaling are needed.
+Currently, the Mixed-input Grouped GEMM only supports row-wise scaling, and group-wise scaling for identical problem shapes across all groups. Please contact us if zero-points or block-wise scaling are needed.
 
 ## Copyright
 

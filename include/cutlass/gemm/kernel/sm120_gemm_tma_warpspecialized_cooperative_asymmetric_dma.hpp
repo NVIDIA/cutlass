@@ -552,6 +552,10 @@ public:
         work_tile_info = scheduler.initial_work_tile_info(ClusterShape{});
 
         if constexpr (IsSchedDynamicPersistent) {
+          cutlass::arch::wait_on_dependent_grids();
+        }
+
+        if constexpr (IsSchedDynamicPersistent) {
           bool requires_clc_query = true;
           TileSchedulerPipelineState scheduler_pipe_producer_state = cutlass::make_producer_start_state<TileSchedulerPipeline>();
           while (work_tile_info.is_valid()) {

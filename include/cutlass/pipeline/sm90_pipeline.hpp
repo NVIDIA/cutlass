@@ -421,7 +421,12 @@ public:
   }
 
   CUTLASS_DEVICE
-  void producer_acquire(PipelineState state, ProducerToken barrier_token = {BarrierStatus::WaitAgain}) {
+  void producer_acquire(PipelineState state) {
+    producer_acquire(state.index(), state.phase());
+  }
+
+  CUTLASS_DEVICE
+  void producer_acquire(PipelineState state, ProducerToken barrier_token) {
     producer_acquire(state.index(), state.phase(), barrier_token);
   }
 
@@ -450,6 +455,11 @@ public:
   CUTLASS_DEVICE
   ProducerBarrierType* producer_get_barrier(PipelineState state) {
     return producer_get_barrier(state.index());
+  }
+
+  CUTLASS_DEVICE
+  void producer_expect_transaction(PipelineState state, uint32_t transaction_bytes) {
+    producer_expect_transaction(state.index(), transaction_bytes);
   }
 
   ////////////////////
@@ -498,6 +508,25 @@ private:
   }
 
   CUTLASS_DEVICE
+  void producer_acquire(uint32_t stage, uint32_t phase) {
+    empty_barrier_ptr_[stage].wait(phase);
+
+    if (params_.is_leader) {
+      full_barrier_ptr_[stage].arrive_and_expect_tx(params_.transaction_bytes);
+    }
+    #ifndef NDEBUG
+    if (params_.role == ThreadCategory::Consumer || params_.role == ThreadCategory::NonParticipant) {
+      asm volatile ("brkpt;\n" ::);
+    }
+
+    // Most likely you have elected more than one leader
+    if (params_.is_leader && (ThreadIdxX() % 32 != 0)) {
+      asm volatile ("brkpt;\n" ::);
+    }
+    #endif
+  }
+
+  CUTLASS_DEVICE
   void producer_acquire(uint32_t stage, uint32_t phase, ProducerToken barrier_token) {
     detail::pipeline_check_is_producer(params_.role);
     if (barrier_token != BarrierStatus::WaitDone) {
@@ -517,6 +546,14 @@ private:
       asm volatile ("brkpt;\n" ::);
     }
     #endif
+  }
+
+  CUTLASS_DEVICE
+  void producer_expect_transaction(uint32_t stage, uint32_t transaction_bytes) {
+    detail::pipeline_check_is_producer(params_.role);
+    if (params_.is_leader) {
+      full_barrier_ptr_[stage].expect_transaction(transaction_bytes);
+    }
   }
 
   // NOP for TMA based mainloop

@@ -54,18 +54,19 @@ namespace cutlass::gemm::kernel::detail {
 // If we had access to host-side problem shapes, one could to use it to figure out the grid shape
 // and thereafter use CLC query (which can then be linearized and mapped to an approriate tile coord).
 
-template<class GroupProblemShape>
+template<class GroupProblemShape, int SchedulerPipelineStageCount>
 class PersistentTileSchedulerSm100Group {
 
 public:
-  using UnderlyingScheduler = PersistentTileSchedulerSm90Group<GroupProblemShape>;
+  using UnderlyingScheduler = PersistentTileSchedulerSm90Group<GroupProblemShape, SchedulerPipelineStageCount>;
   using UnderlyingProblemShape = typename GroupProblemShape::UnderlyingProblemShape;
   using Params = PersistentTileSchedulerSm100GroupParams<UnderlyingProblemShape>;
   using WorkTileInfo = typename UnderlyingScheduler::WorkTileInfo;
   using Arguments = typename UnderlyingScheduler::Arguments;
   using RasterOrder = typename Params::RasterOrder;
   using RasterOrderOptions = typename Params::RasterOrderOptions;
-  struct CLCResponse { uint32_t data[4]; };
+
+  using CLCResponse = WorkTileInfo;
   
   static constexpr bool IsDynamicPersistent = UnderlyingScheduler::IsDynamicPersistent;
 
@@ -123,18 +124,19 @@ public:
   PersistentTileSchedulerSm100Group() { }
 
   CUTLASS_DEVICE
-  PersistentTileSchedulerSm100Group(CLCResponse* /* clc_response_ptr */, Params const& params)
+  PersistentTileSchedulerSm100Group(CLCResponse* clc_response_ptr, Params const& params)
     : scheduler_params(params),
-      scheduler_sm90(params.params_sm90_) { }
+      scheduler_sm90(params.params_sm90_, clc_response_ptr) { }
 
   CUTLASS_DEVICE
-  PersistentTileSchedulerSm100Group(CLCResponse* /* clc_response_ptr */, Params const& params, dim3 /* block_id_in_cluster */)
+  PersistentTileSchedulerSm100Group(CLCResponse* clc_response_ptr, Params const& params, dim3 /* block_id_in_cluster */)
     : scheduler_params(params),
-      scheduler_sm90(params.params_sm90_) { }
+      scheduler_sm90(params.params_sm90_, clc_response_ptr) { }
 
-  template <class ClusterShape>
+  // Returns the initial work tile info that will be computed over
+  template <typename ClusterShape>
   CUTLASS_DEVICE
-  WorkTileInfo
+  auto
   initial_work_tile_info(ClusterShape cluster_shape) {
     return scheduler_sm90.initial_work_tile_info(cluster_shape);
   }
@@ -192,6 +194,17 @@ public:
       _,
       work_tile_info.L_idx
     );
+  }
+
+  template <typename CLCPipeline, typename CLCPipelineState>
+  CUTLASS_DEVICE
+  auto
+  advance_to_next_work(
+    CLCPipeline& clc_pipeline,
+    CLCPipelineState clc_pipe_producer_state,
+    uint32_t advance_count = 1) {
+
+    return scheduler_sm90.advance_to_next_work(clc_pipeline, clc_pipe_producer_state, advance_count);
   }
 
   //
@@ -282,10 +295,10 @@ public:
   auto
   fetch_next_work(
     WorkTileInfo work_tile_info,
-    [[maybe_unused]] CLCPipeline& clc_pipeline,
-    [[maybe_unused]] CLCPipelineState clc_pipe_consumer_state) {
+    CLCPipeline& clc_pipeline,
+    CLCPipelineState clc_pipe_consumer_state) {
 
-    return scheduler_sm90.fetch_next_work(work_tile_info);
+    return scheduler_sm90.fetch_next_work(work_tile_info, clc_pipeline, clc_pipe_consumer_state);
   }
 
 private:
@@ -300,7 +313,6 @@ private:
   //
   // Storage
   //
-  CLCResponse *clc_response_ptr_ = nullptr;
   Params scheduler_params;
 };
 

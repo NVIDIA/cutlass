@@ -622,6 +622,11 @@ public:
     impl_.producer_acquire(state, barrier_token);
   }
 
+  CUTLASS_DEVICE
+  void producer_expect_transaction(PipelineState state, uint32_t transaction_bytes) {
+    impl_.producer_expect_transaction(state, transaction_bytes);
+  }
+
   // NOP for TMA based mainloop
   CUTLASS_DEVICE
   void producer_commit(PipelineState state, uint32_t bytes) {
@@ -985,7 +990,7 @@ public:
     consumer_release(state.index());
   }
 
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   uint32_t producer_get_barrier(PipelineState state) {
     return cute::cast_smem_ptr_to_uint(reinterpret_cast<void*>(&full_barrier_ptr_[state.index()]));
   }
@@ -1063,6 +1068,10 @@ public:
   using PipelineState = cutlass::PipelineState<0>;
   struct Params {};
   struct SharedStorage {};
+
+  // Constructor
+  CUTLASS_DEVICE
+  PipelineEmpty(SharedStorage& storage, Params const& params) {}
 
   // Constructor
   CUTLASS_DEVICE

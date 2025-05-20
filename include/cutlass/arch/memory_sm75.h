@@ -60,7 +60,7 @@ CUTLASS_DEVICE void ldsm(Array<unsigned, MatrixCount> & D, void const* ptr);
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// CUTLASS helper to get SMEM pointer
-CUTLASS_DEVICE unsigned cutlass_get_smem_pointer(void *ptr) {
+CUTLASS_HOST_DEVICE unsigned cutlass_get_smem_pointer(void *ptr) {
   return cute::cast_smem_ptr_to_uint(ptr);
 }
 

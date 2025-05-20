@@ -29,12 +29,15 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 #################################################################################################
+from __future__ import annotations
 
 import copy
 import ctypes
 import enum
 
-from cuda import cuda, cudart
+from cutlass.utils.lazy_import import lazy_import
+cuda = lazy_import("cuda.cuda")
+cudart = lazy_import("cuda.cudart")
 from cutlass_library import SubstituteTemplate
 import numpy as np
 

@@ -154,7 +154,7 @@ function(cutlass_test_unit_add_executable_split_file NAME)
   if (CUTLASS_UNIT_TEST_SPLIT_FILES)
     execute_process(
       WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
-      COMMAND ${Python3_EXECUTABLE} ${CUTLASS_SOURCE_DIR}/tools/scripts/split_test_cmake.py
+      COMMAND ${Python3_EXECUTABLE} ${CUTLASS_SOURCE_DIR}/tools/util/scripts/split_test_cmake.py
         ${NAME}
         ${CMAKE_CURRENT_SOURCE_DIR}
         --src_files ${SUBARGV}

@@ -124,6 +124,23 @@ struct sm90_is_ptr_array_tma_dispatch_policy<
                                    NumEpilogueWarpGroups>> 
     : cute::true_type {};
 
+template<
+  int StagesC,
+  int StagesD,
+  int FragmentSize,
+  bool ReuseSmemC,
+  bool DelayTmaStore,
+  int NumEpilogueWarpGroups
+>
+struct sm90_is_ptr_array_tma_dispatch_policy<
+    Sm120PtrArrayTmaWarpSpecialized<StagesC, 
+                                   StagesD, 
+                                   FragmentSize,
+                                   ReuseSmemC, 
+                                   DelayTmaStore, 
+                                   NumEpilogueWarpGroups>> 
+    : cute::true_type {};
+
 template<class DispatchPolicy>
 static constexpr bool sm90_is_ptr_array_tma_dispatch_policy_v = sm90_is_ptr_array_tma_dispatch_policy<DispatchPolicy>::value;
 

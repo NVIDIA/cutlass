@@ -319,6 +319,24 @@ T shfl_xor_sync(
 #endif
 }
 
+CUTLASS_DEVICE
+int ffs(int x) {
+#if defined(__CUDA_ARCH__)
+  return __ffs(x);
+#else
+  return 0;
+#endif
+}
+
+CUTLASS_DEVICE
+int ballot_sync(unsigned mask, int predicate) {
+#if defined(__CUDA_ARCH__)
+  return __ballot_sync(mask, predicate);
+#else
+  return 0;
+#endif
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /*

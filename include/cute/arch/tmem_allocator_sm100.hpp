@@ -28,18 +28,33 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
-//
 
-//
 #pragma once
 
 #include <cute/arch/config.hpp>
-#include <cute/arch/cluster_sm90.hpp>
-#include <cute/atom/copy_traits_sm100.hpp>
-
-#include <cutlass/pipeline/sm90_pipeline.hpp>
+#include <cute/arch/util.hpp>
+#include <cute/numeric/integral_constant.hpp>
+#include <cute/pointer.hpp>
 
 namespace cute::TMEM {
+
+//
+// TMEM Addressing Constants
+//
+
+// 128 DP x 512 COL x uint32_t-addressing
+using MAX_CAPACITY_BITS = Int<128*512*32>;
+
+// TMEM DP stride in bit-addressing (shift by 5 for conversion from uint32_t)
+using DP_b = cute::constant<int32_t, (1 << 21)>;
+
+// TMEM DP stride in type-T addressing
+template <class T = uint32_t>
+using DP = cute::constant<int32_t, shiftl((1 << 16), tmem_ptr<T>::OffsetShift)>;
+
+//
+// TMEM Allocators
+//
 
 // All operations of this class require that only a single warp uniformly participates
 class Allocator1Sm {
@@ -57,7 +72,7 @@ public:
    * @pre Must never be issued by more than one warp at the same time.
    * @pre For repeated allocations, the same warp must be used to issue all allocations.
   **/
-  CUTLASS_DEVICE void
+  CUTE_HOST_DEVICE void
   allocate(int num_columns, uint32_t* dst_ptr) {
   #if defined(CUTE_ARCH_TCGEN05_TMEM_ENABLED)
     uint32_t dst_intptr = cute::cast_smem_ptr_to_uint(dst_ptr);
@@ -77,8 +92,8 @@ public:
     asm volatile(
       "{\n\t"
       "tcgen05.dealloc.cta_group::1.sync.aligned.b32  %0, %1; \n\t"
-      "}" 
-      : 
+      "}"
+      :
       : "r"(tmem_ptr), "r"(num_columns));
   #else
     CUTE_INVALID_CONTROL_PATH("Attempting to use TMEM allocation PTX without CUTE_ARCH_TCGEN05_TMEM_ENABLED");
@@ -116,7 +131,7 @@ public:
    * @pre For repeated allocations, the same warp must be used to issue all allocations.
    * @pre The 2 warps from participating CTAs have the same logical warp ID.
   **/
-  CUTLASS_DEVICE void
+  CUTE_HOST_DEVICE void
   allocate(int num_columns, uint32_t* dst_ptr) {
   #if defined(CUTE_ARCH_TCGEN05_TMEM_ENABLED)
     uint32_t dst_intptr = cute::cast_smem_ptr_to_uint(dst_ptr);
@@ -130,7 +145,7 @@ public:
   }
 
   /**
-   * Frees the TMEM corresponding to the pointer and slice count provided. 
+   * Frees the TMEM corresponding to the pointer and slice count provided.
    * Release the TMEM after checking that the CTA issuing the free does indeed own the corresponding slices.
    * @param tmem_ptr Base address of the TMEM address space being freed.
    * @param num_columns Number of columns being freed. Must be 32 <= num_columns <= 512 and power of 2.
@@ -146,8 +161,8 @@ public:
     asm volatile(
       "{\n\t"
       "tcgen05.dealloc.cta_group::2.sync.aligned.b32  %0, %1; \n\t"
-      "}" 
-      : 
+      "}"
+      :
       : "r"(tmem_ptr), "r"(num_columns));
   #else
     CUTE_INVALID_CONTROL_PATH("Attempting to use TMEM allocation PTX without CUTE_ARCH_TCGEN05_TMEM_ENABLED");

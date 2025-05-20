@@ -49,9 +49,8 @@ template<
   class ElementScalar,
   class ScaleShapeMNK,
   class TileShapeMNK,
-  class MainloopPipelineStorage,
-  class TransformLoadPipelineStorage,
-  class TransformPipelineStorage,
+  class MainloopABPipelineStorage,
+  class MainloopSFPipelineStorage,
   int stages
 >
 constexpr int
@@ -67,9 +66,8 @@ template<
   class ElementScalar,
   class ScaleShapeMNK,
   class TileShapeMNK,
-  class MainloopPipelineStorage,
-  class TransformLoadPipelineStorage,
-  class TransformPipelineStorage,
+  class MainloopABPipelineStorage,
+  class MainloopSFPipelineStorage,
   int stages
 >
 constexpr int
@@ -85,9 +83,8 @@ template<
   class ElementScalar,
   class ScaleShapeMNK,
   class TileShapeMNK,
-  class MainloopPipelineStorage,
-  class TransformLoadPipelineStorage,
-  class TransformPipelineStorage,
+  class MainloopABPipelineStorage,
+  class MainloopSFPipelineStorage,
   int carveout_bytes>
 constexpr int
 sm100_compute_stage_count_or_override_blockwise(StageCountAutoCarveout<carveout_bytes> stage_count) {
@@ -96,21 +93,139 @@ sm100_compute_stage_count_or_override_blockwise(StageCountAutoCarveout<carveout_
   // Each stage include (CollectiveMma::SharedStorage)
   // 1. smem for A and smem for B (CollectiveMma::SharedStorage::TensorStorage)
   // 2. one of each of the pipelines
-  constexpr auto pipeline_bytes = sizeof(MainloopPipelineStorage) + 
-      sizeof(TransformLoadPipelineStorage) + sizeof(TransformPipelineStorage);
+  constexpr auto pipeline_bytes = sizeof(MainloopABPipelineStorage) + 
+      sizeof(MainloopSFPipelineStorage);
 
   constexpr auto a_bits = cute::sizeof_bits_v<ElementA>;
   constexpr auto b_bits = cute::sizeof_bits_v<ElementB>;
   constexpr auto scale_bits = cute::sizeof_bits_v<ElementScalar>;
 
   constexpr int stage_bytes =
-    cutlass::bits_to_bytes(a_bits * size<0>(TileShapeMNK{}) * size<2>(TileShapeMNK{})) +
-    cutlass::bits_to_bytes(b_bits * size<1>(TileShapeMNK{}) * size<2>(TileShapeMNK{})) +
-    cutlass::bits_to_bytes(scale_bits * size<0>(ScaleShapeMNK{}) * size<2>(ScaleShapeMNK{})) +
-    cutlass::bits_to_bytes(scale_bits * size<1>(ScaleShapeMNK{}) * size<2>(ScaleShapeMNK{})) +
+    cutlass::round_nearest(
+      cutlass::bits_to_bytes(a_bits * size<0>(TileShapeMNK{}) * size<2>(TileShapeMNK{})) +
+      cutlass::bits_to_bytes(b_bits * size<1>(TileShapeMNK{}) * size<2>(TileShapeMNK{})) +
+      cutlass::bits_to_bytes(scale_bits * size<0>(ScaleShapeMNK{}) * size<2>(ScaleShapeMNK{})) +
+      cutlass::bits_to_bytes(scale_bits * size<1>(ScaleShapeMNK{}) * size<2>(ScaleShapeMNK{})),
+      128) +
     static_cast<int>(pipeline_bytes);
 
   return (CapacityBytes - carveout_bytes) / stage_bytes;
+}
+
+template<class Element, typename LayoutSFA, class CtaShape_MNK>
+auto sm100_make_simt_gmem_tiled_copy_SFA() {
+
+  // we have at most a warp to perform the loads
+
+  constexpr int ScaleGranularityM = size<0,0>(LayoutSFA{});
+  constexpr int ScaleMsPerTile = size<0>(CtaShape_MNK{}) / ScaleGranularityM;
+  constexpr int ScaleGranularityK = size<1,0>(LayoutSFA{});
+  constexpr int ScaleKsPerTile = size<2>(CtaShape_MNK{}) / ScaleGranularityK;
+
+  if constexpr (size<0,1>(LayoutSFA{}.stride()) == 1) {
+    constexpr int LeadingScalesPerTileSFA = ScaleMsPerTile;
+    if constexpr (LeadingScalesPerTileSFA >= 32) {
+      constexpr int Alignment = cute::min(static_cast<int>(LeadingScalesPerTileSFA * sizeof(Element)) / 32, 16);
+      using ScaleCopyTypeA = cute::uint_byte_t<Alignment>; 
+      using SmemScalingCopyAtomA = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<ScaleCopyTypeA>, Element>;
+      constexpr int ElementsPerSFACopy = static_cast<int>(sizeof(ScaleCopyTypeA) / sizeof(Element));
+      return make_tiled_copy(SmemScalingCopyAtomA{}, Layout<Shape<_32>>{}, Layout<Shape<Int<ElementsPerSFACopy>>>{});
+    } 
+    else {
+      using SmemScalingCopyAtomA = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<Element>, Element>;
+      return make_tiled_copy(SmemScalingCopyAtomA{}, Layout<Shape<Int<LeadingScalesPerTileSFA>>>{}, Layout<Shape<_1>>{});
+    }
+  } 
+  else {
+    // we expect scale Ks per tile to be small
+    constexpr int LeadingScalesPerTileSFA = ScaleKsPerTile;
+    using SmemScalingCopyAtomA = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<Element>, Element>;
+    return make_tiled_copy(SmemScalingCopyAtomA{}, Layout<Shape<_1, Int<LeadingScalesPerTileSFA>>>{}, Layout<Shape<_1,_1>>{});
+  }
+}
+
+template<class Element, typename LayoutSFB, class CtaShape_MNK>
+auto sm100_make_simt_gmem_tiled_copy_SFB() {
+
+  // we have at most a warp to perform the loads
+
+  constexpr int ScaleGranularityN = size<0,0>(LayoutSFB{});
+  constexpr int ScaleNsPerTile = size<1>(CtaShape_MNK{}) / ScaleGranularityN;
+  constexpr int ScaleGranularityK = size<1,0>(LayoutSFB{});
+  constexpr int ScaleKsPerTile = size<2>(CtaShape_MNK{}) / ScaleGranularityK;
+
+  if constexpr (size<0,1>(LayoutSFB{}.stride()) == 1) {
+    constexpr int LeadingScalesPerTileSFB = ScaleNsPerTile;
+    if constexpr (LeadingScalesPerTileSFB >= 32) {
+      constexpr int Alignment = cute::min(static_cast<int>(LeadingScalesPerTileSFB * sizeof(Element)) / 32, 16);
+      using ScaleCopyTypeB = cute::uint_byte_t<Alignment>; 
+      using SmemScalingCopyAtomB = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<ScaleCopyTypeB>, Element>;
+      constexpr int ElementsPerSFBCopy = static_cast<int>(sizeof(ScaleCopyTypeB) / sizeof(Element));
+      return make_tiled_copy(SmemScalingCopyAtomB{}, Layout<Shape<_32>>{}, Layout<Shape<Int<ElementsPerSFBCopy>>>{});
+    } 
+    else {
+      using SmemScalingCopyAtomB = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<Element>, Element>;
+      return make_tiled_copy(SmemScalingCopyAtomB{}, Layout<Shape<Int<LeadingScalesPerTileSFB>>>{}, Layout<Shape<_1>>{});
+    }
+  } 
+  else {
+    // we expect scale Ks per tile to be small
+    constexpr int LeadingScalesPerTileSFB = ScaleKsPerTile;
+    using SmemScalingCopyAtomB = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<Element>, Element>;
+    return make_tiled_copy(SmemScalingCopyAtomB{}, Layout<Shape<_1, Int<LeadingScalesPerTileSFB>>>{}, Layout<Shape<_1,_1>>{});
+  }
+}
+
+// For new MMA construction and partitioning that supports both dynamic and static cluster shape.
+// Used in conjunction with make_tma_atom_(A|B)_sm100
+// TileShape_MNK is always static and has shape (MmaAtomShapeM, MmaAtomShapeN, TileK)
+// ClusterShape_MNK can be dynamic or static.
+template<
+  class ElementAMma,
+  class ElementBMma,
+  class ElementAccumulator,
+  class TileShape_MNK,
+  class ClusterShape_MNK,
+  UMMA::Major UmmaMajorA,
+  UMMA::Major UmmaMajorB,
+  class BuilderScheduleTag,
+  UMMA::ScaleIn ANeg = UMMA::ScaleIn::One,
+  UMMA::ScaleIn BNeg = UMMA::ScaleIn::One
+>
+constexpr auto
+sm100_make_trivial_tiled_mma_blockwise() {
+  // MMA_2SM requested
+  if constexpr (cute::is_base_of_v<KernelSchedule2Sm, BuilderScheduleTag> ) {
+    return sm100_make_2sm_trivial_tiled_mma<ElementAMma, ElementBMma, ElementAccumulator,
+                                    TileShape_MNK, ClusterShape_MNK, UmmaMajorA, UmmaMajorB, ANeg, BNeg>();
+  }
+  // MMA_1SM requested
+  else if constexpr (cute::is_base_of_v<KernelSchedule1Sm, BuilderScheduleTag> ) {
+    return sm100_make_1sm_trivial_tiled_mma<ElementAMma, ElementBMma, ElementAccumulator,
+                                    TileShape_MNK, ClusterShape_MNK, UmmaMajorA, UmmaMajorB, ANeg, BNeg>();
+  }
+  // Auto scheduling requested
+  else if constexpr (cute::is_same_v<BuilderScheduleTag, KernelScheduleSm100Blockwise>) {
+    // Static cluster
+    if constexpr (cute::is_static_v<ClusterShape_MNK>) {
+      // For MMA_2SM we need a cluster shape that is multiple of 2x1
+      // and only M=128 and M=256 are supported, otherwise, fall back to MMA_1SM
+      if constexpr (cute::size<0>(ClusterShape_MNK{}) % 2 == 0 &&
+                    cute::size<0>(TileShape_MNK{}) % 128 == 0) {
+        return sm100_make_2sm_trivial_tiled_mma<ElementAMma, ElementBMma, ElementAccumulator,
+                                        TileShape_MNK, ClusterShape_MNK, UmmaMajorA, UmmaMajorB, ANeg, BNeg>();
+      }
+      else {
+        return sm100_make_1sm_trivial_tiled_mma<ElementAMma, ElementBMma, ElementAccumulator,
+                                        TileShape_MNK, ClusterShape_MNK, UmmaMajorA, UmmaMajorB, ANeg, BNeg>();
+      }
+    // Dynamic cluster shape means we cannot assume we can use 2SM MMA 
+    }
+    else {
+        return sm100_make_1sm_trivial_tiled_mma<ElementAMma, ElementBMma, ElementAccumulator,
+                                        TileShape_MNK, ClusterShape_MNK, UmmaMajorA, UmmaMajorB, ANeg, BNeg>();
+    }
+  }
 }
 
 } // namespace detail
@@ -161,9 +276,11 @@ struct CollectiveBuilder<
   using GmemLayoutBTag   = cute::remove_cvref_t<decltype(get<0>(GmemLayoutBTagPair{}))>;
   using GmemLayoutSFBTag = cute::remove_cvref_t<decltype(get<1>(GmemLayoutBTagPair{}))>;
 
-  static_assert(cute::depth(GmemLayoutSFATag{}) == 2 and cute::depth(GmemLayoutSFBTag{}) == 2, 
+  static_assert(cute::depth(cute::remove_pointer_t<GmemLayoutSFATag>{}) == 2 and 
+                cute::depth(cute::remove_pointer_t<GmemLayoutSFBTag>{}) == 2, 
       "Expect SFA and SFB layout to be depth of two with shape ((SFVecMN, restMN),(SFVecK, restK), L)");
-  static_assert(size<1,0>(GmemLayoutSFATag{}) == size<1, 0>(GmemLayoutSFBTag{}), 
+  static_assert(size<1,0>(cute::remove_pointer_t<GmemLayoutSFATag>{}) == 
+                size<1,0>(cute::remove_pointer_t<GmemLayoutSFBTag>{}), 
       "SFA and SFB must have equivalent SF vector sizes along K");
 
   static constexpr cute::UMMA::Major UmmaMajorA = cutlass::gemm::collective::detail::tag_to_umma_major_A<GmemLayoutATag>();
@@ -183,7 +300,7 @@ struct CollectiveBuilder<
                                                                       TileShape_MNK, ClusterShape_MNK,
                                                                       GmemLayoutATag, GmemLayoutBTag, false /*is_sparse*/, is_2sm>(),
                 "TileSize and MNK Major does not met with MMA Mix 8-bit TMA load requirement" );
-  using TiledMma =  decltype(detail::sm100_make_trivial_tiled_mma<
+  using TiledMma =  decltype(detail::sm100_make_trivial_tiled_mma_blockwise<
       ElementAMma, ElementBMma, ElementAccumulator,
       decltype(cute::product_each(TileShape_MNK{})), ClusterShape_MNK,
       UmmaMajorA, UmmaMajorB, BuilderScheduleTag>());
@@ -238,28 +355,38 @@ struct CollectiveBuilder<
   // SchedulerPipelineStageCount could be set to zero for Grouped GEMM, but we shouldn't define CLC Pipeline's barrier arrays of size zero.
   static constexpr uint32_t SchedulerPipelineStageCount = cute::is_same_v<InternalStrideA, StrideA> ? (AccumulatorPipelineStageCount + 1) : 1;
 
+  static constexpr bool IsArrayOfPointersGemm = (cute::is_base_of_v<KernelScheduleSm100PtrArrayBlockwise, BuilderScheduleTag>);
+
   static constexpr uint32_t KernelSmemCarveout = detail::Sm100DenseGemmTmaUmmaCarveout<
       ClusterShape_MNK,
       AccumulatorPipelineStageCount,
       SchedulerPipelineStageCount,
       detail::CLCResponseSize,
-      false
+      IsArrayOfPointersGemm
     >::KernelSmemCarveout;
   // Reduce SMEM capacity available for buffers considering barrier allocations.
   static constexpr int Sm100ReducedSmemCapacityBytes = cutlass::gemm::collective::detail::sm100_smem_capacity_bytes - KernelSmemCarveout;
 
   using SmemTileShape = cute::Shape<BlockTileA_M, BlockTileB_N, BlockTileA_K>;
-  using MainloopPipelineStorage = typename cutlass::PipelineTmaUmmaAsync<1>::SharedStorage;
-  using TransformLoadPipelineStorage = typename cutlass::PipelineAsync<1>::SharedStorage;
-  using TransformPipelineStorage = typename cutlass::PipelineUmmaAsync<1>::SharedStorage;
+  using MainloopABPipelineStorage = typename cutlass::PipelineTmaUmmaAsync<1>::SharedStorage;
+  using MainloopSFPipelineStorage = typename cutlass::PipelineAsync<1>::SharedStorage;
 
-  static constexpr int ScaleGranularityM = size<0,0>(GmemLayoutSFATag{});
-  static constexpr int ScaleGranularityN = size<0,0>(GmemLayoutSFBTag{});
-  static constexpr int ScaleGranularityK = size<1,0>(GmemLayoutSFBTag{});
+  static constexpr int ScaleGranularityM = size<0,0>(cute::remove_pointer_t<GmemLayoutSFATag>{});
+  static constexpr int ScaleGranularityN = size<0,0>(cute::remove_pointer_t<GmemLayoutSFBTag>{});
+  static constexpr int ScaleGranularityK = size<1,0>(cute::remove_pointer_t<GmemLayoutSFBTag>{});
 
   static_assert(size<0>(CtaTileShape_MNK{}) >= ScaleGranularityM, "Scale Granularity must be smaller than or equal to the tile shape");
   static_assert(size<1>(CtaTileShape_MNK{}) >= ScaleGranularityN, "Scale Granularity must be smaller than or equal to the tile shape");
   static_assert(size<2>(CtaTileShape_MNK{}) >= ScaleGranularityK, "Scale Granularity must be smaller than or equal to the tile shape");
+
+  using GmemTiledCopySFA = decltype(detail::sm100_make_simt_gmem_tiled_copy_SFA<
+      ElementAccumulator,
+      cute::remove_pointer_t<GmemLayoutSFATag>,
+      CtaTileShape_MNK>());
+  using GmemTiledCopySFB = decltype(detail::sm100_make_simt_gmem_tiled_copy_SFB<
+      ElementAccumulator,
+      cute::remove_pointer_t<GmemLayoutSFBTag>,
+      CtaTileShape_MNK>());
 
   using BlockTileScale_M = Int<size<0>(TileShape_MNK{}) / ScaleGranularityM>;
   using BlockTileScale_N = Int<size<1>(TileShape_MNK{}) / ScaleGranularityN>;
@@ -269,15 +396,22 @@ struct CollectiveBuilder<
 
   static constexpr int PipelineStages = cutlass::gemm::collective::detail::sm100_compute_stage_count_or_override_blockwise<
       Sm100ReducedSmemCapacityBytes, ElementAMma_SmemAllocType, ElementBMma_SmemAllocType, 
-      ElementAccumulator, ScaleTileShape, SmemTileShape, MainloopPipelineStorage,
-      TransformLoadPipelineStorage, TransformPipelineStorage>(StageCountType{});
+      ElementAccumulator, ScaleTileShape, SmemTileShape, MainloopABPipelineStorage,
+      MainloopSFPipelineStorage>(StageCountType{});
   static_assert(PipelineStages > 0, "Smem usage is too high. Can't create any SMEM buffers for A, B, and scales.");
 
-  using DispatchPolicy = cutlass::gemm::MainloopSm100TmaUmmaWarpSpecializedBlockwiseScaling<
+  using DispatchPolicy = cute::conditional_t<
+    IsArrayOfPointersGemm,
+    cutlass::gemm::MainloopSm100ArrayTmaUmmaWarpSpecializedBlockwiseScaling<
       PipelineStages,
       SchedulerPipelineStageCount,
       AccumulatorPipelineStageCount,
-      ClusterShape_MNK>;
+      ClusterShape_MNK>,
+    cutlass::gemm::MainloopSm100TmaUmmaWarpSpecializedBlockwiseScaling<
+      PipelineStages,
+      SchedulerPipelineStageCount,
+      AccumulatorPipelineStageCount,
+      ClusterShape_MNK>>;
 
   using CollectiveOp = cutlass::gemm::collective::CollectiveMma<
       DispatchPolicy,
@@ -287,11 +421,11 @@ struct CollectiveBuilder<
       ElementB,
       cute::tuple<cutlass::gemm::TagToStrideB_t<GmemLayoutBTag>, cutlass::gemm::TagToStrideB_t<GmemLayoutSFBTag>>,
       TiledMma,
-      GmemTiledCopyA,
+      cute::tuple<GmemTiledCopyA, GmemTiledCopySFA>,
       SmemLayoutAtomA,
       void,
       cute::identity,
-      GmemTiledCopyB,
+      cute::tuple<GmemTiledCopyB, GmemTiledCopySFB>,
       SmemLayoutAtomB,
       void,
       cute::identity

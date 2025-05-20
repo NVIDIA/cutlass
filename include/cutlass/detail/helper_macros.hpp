@@ -217,6 +217,35 @@ namespace cutlass {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+// __CUDA_ARCH_SPECIFIC__ is introduced in CUDA 12.9
+#if !defined(CUDA_ARCH_CONDITIONAL)
+
+#if defined(__CUDA_ARCH_SPECIFIC__)
+#define CUDA_ARCH_CONDITIONAL(ARCH_XXYY) (__CUDA_ARCH_SPECIFIC__ == ARCH_XXYY)
+#else
+#define CUDA_ARCH_CONDITIONAL(ARCH_XXYY) (false)
+#endif
+
+#endif
+
+// __CUDA_ARCH_FAMILY_SPECIFIC__ is introduced in CUDA 12.9
+#if !defined(CUDA_ARCH_FAMILY)
+
+#if defined(__CUDA_ARCH_FAMILY_SPECIFIC__)
+#define CUDA_ARCH_FAMILY(ARCH_XXYY) (__CUDA_ARCH_FAMILY_SPECIFIC__ == ARCH_XXYY)
+#else
+#define CUDA_ARCH_FAMILY(ARCH_XXYY) (false)
+#endif
+
+#endif
+
+#if !defined(CUDA_ARCH_CONDITIONAL_OR_FAMILY)
+#define CUDA_ARCH_CONDITIONAL_OR_FAMILY(ARCH_XXYY) \
+  (CUDA_ARCH_CONDITIONAL(ARCH_XXYY) || CUDA_ARCH_FAMILY(ARCH_XXYY))
+#endif
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
 }; // namespace cutlass
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

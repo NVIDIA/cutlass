@@ -116,13 +116,13 @@ sm90_compute_tile_shape_or_override() {
     auto epi_tile = [&] () {
       if constexpr (detail::sm90_is_cooperative_v<Schedule>) {
         auto tile_m = cute::min(_128{}, size<0>(TileShape_MNK{}));
-        auto tile_n = cute::min(_32{}, size<1>(TileShape_MNK{}));
+        auto tile_n = cute::gcd(cute::min(_32{}, size<1>(TileShape_MNK{})), size<1>(TileShape_MNK{}));
         return make_shape(tile_m, tile_n);
       }
       else if constexpr (detail::sm90_is_warp_specialized_v<Schedule>) {
         constexpr int N_perf = sizeof_bits_v<ElementD> == 8 ? 64 : 32;
         auto tile_m = cute::min(_64{}, size<0>(TileShape_MNK{}));
-        auto tile_n = cute::min(Int<N_perf>{}, size<1>(TileShape_MNK{}));
+        auto tile_n = cute::gcd(cute::min(Int<N_perf>{}, size<1>(TileShape_MNK{})), size<1>(TileShape_MNK{}));
         return make_shape(tile_m, tile_n);
       }
       else {
@@ -201,6 +201,46 @@ struct CallbacksBuilder<
 
   using Callbacks = fusion::FusionCallbacks<
     Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore>,
+    FusionOp, TileShape_MNK, EpilogueTile_MN,
+    SmemLayoutAtomAux, SmemCopyOpAux
+  >;
+};
+
+// ptr array aux fusion callbacks builder for sm90 tma epilogue
+template <
+  int StagesC,
+  int StagesD,
+  int FragmentSize,
+  bool ReuseSmemC,
+  bool DelayTmaStore,
+  int NumEpilogueWarpGroups,
+  class FusionOp,
+  class TileShape_MNK,
+  class EpilogueTile_MN,
+  class AccLoadOp,
+  class ElementAccumulator
+>
+struct CallbacksBuilder<
+  Sm90PtrArrayTmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore, NumEpilogueWarpGroups>,
+  FusionOp,
+  TileShape_MNK,
+  EpilogueTile_MN,
+  ElementAccumulator,
+  AccLoadOp,
+  cute::enable_if_t<(FusionOp::IsAuxOutSupported ^ FusionOp::IsAuxInSupported) // only one aux tensor
+              && not cute::is_subbyte_v<typename FusionOp::ElementAux>> // aux subbyte tensor doesn't use smem
+> {
+  using GmemStrideTypeAux = gemm::TagToStrideC_t<typename FusionOp::GmemLayoutTagAux>;
+  using SmemLayoutAtomAux = decltype(detail::sm90_get_epilogue_smem_swizzle_layout_atom<
+    GmemStrideTypeAux, typename FusionOp::ElementAux, EpilogueTile_MN>());
+  using CopyOpR2S = decltype(detail::sm90_get_smem_store_op_for_accumulator<
+    GmemStrideTypeAux, typename FusionOp::ElementAux>());
+  using CopyOpS2R = decltype(detail::sm90_get_smem_load_op_for_source<
+    GmemStrideTypeAux, typename FusionOp::ElementAux>());
+  using SmemCopyOpAux = cute::conditional_t<FusionOp::IsAuxOutSupported, CopyOpR2S, CopyOpS2R>;
+
+  using Callbacks = fusion::FusionCallbacks<
+    Sm90PtrArrayTmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore, NumEpilogueWarpGroups>,
     FusionOp, TileShape_MNK, EpilogueTile_MN,
     SmemLayoutAtomAux, SmemCopyOpAux
   >;

@@ -39,7 +39,10 @@ import subprocess
 import tempfile
 from functools import lru_cache
 
-from cuda import cuda, nvrtc
+from cutlass.utils.lazy_import import lazy_import
+cuda = lazy_import("cuda.cuda")
+cudart = lazy_import("cuda.cudart")
+nvrtc = lazy_import("cuda.nvrtc")
 from cutlass_library import SubstituteTemplate
 
 import dpctl
