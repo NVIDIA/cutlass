@@ -166,21 +166,24 @@ this._device_id = None
 this._nvcc_version = None
 
 def check_cuda_versions():
-    # Strip any additional information from the CUDA version
-    _cuda_version = base_cuda.__version__.split("rc")[0]
-    # Check that Python CUDA version exceeds NVCC version
-    this._nvcc_version = nvcc_version()
-    _cuda_list = _cuda_version.split('.')
-    _nvcc_list = this._nvcc_version.split('.')
-    for val_cuda, val_nvcc in zip(_cuda_list, _nvcc_list):
-        if int(val_cuda) < int(val_nvcc):
-            raise Exception(f"Python CUDA version of {_cuda_version} must be greater than or equal to NVCC version of {this._nvcc_version}")
+    if not os.getenv("CUTLASS_USE_SYCL"):
+        # Strip any additional information from the CUDA version
+        _cuda_version = base_cuda.__version__.split("rc")[0]
+        # Check that Python CUDA version exceeds NVCC version
+        this._nvcc_version = nvcc_version()
+        _cuda_list = _cuda_version.split('.')
+        _nvcc_list = this._nvcc_version.split('.')
+        for val_cuda, val_nvcc in zip(_cuda_list, _nvcc_list):
+            if int(val_cuda) < int(val_nvcc):
+                raise Exception(f"Python CUDA version of {_cuda_version} must be greater than or equal to NVCC version of {this._nvcc_version}")
 
-    if len(_nvcc_list) > len(_cuda_list):
-        if len(_nvcc_list) != len(_cuda_list) + 1:
-            raise Exception(f"Malformatted NVCC version of {this._nvcc_version}")
-        if _nvcc_list[:-1] == _cuda_list and int(_nvcc_list[-1]) != 0:
-            raise Exception(f"Python CUDA version of {_cuda_version} must be greater than or equal to NVCC version of {this._nvcc_version}")
+        if len(_nvcc_list) > len(_cuda_list):
+            if len(_nvcc_list) != len(_cuda_list) + 1:
+                raise Exception(f"Malformatted NVCC version of {this._nvcc_version}")
+            if _nvcc_list[:-1] == _cuda_list and int(_nvcc_list[-1]) != 0:
+                raise Exception(f"Python CUDA version of {_cuda_version} must be greater than or equal to NVCC version of {this._nvcc_version}")
+    else:
+        this._nvcc_version = "2025.0"
 
 def initialize_cuda_context():
     check_cuda_versions()
