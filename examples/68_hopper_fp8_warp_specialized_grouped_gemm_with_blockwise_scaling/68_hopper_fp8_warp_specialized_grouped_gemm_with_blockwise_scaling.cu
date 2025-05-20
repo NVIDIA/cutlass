@@ -250,7 +250,7 @@ cutlass::DeviceAllocation<ElementAccumulator> block_beta;
 /// Testbed utility types
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90GroupParams<Shape<int,int,int>>::RasterOrderOptions;
+using RasterOrderOptions = typename GemmKernel::TileScheduler::RasterOrderOptions;
 
 /// Result structure
 struct Result
