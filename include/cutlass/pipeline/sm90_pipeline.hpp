@@ -520,7 +520,7 @@ private:
     }
 
     // Most likely you have elected more than one leader
-    if (params_.is_leader && (threadIdx.x % 32 != 0)) {
+    if (params_.is_leader && (ThreadIdxX() % 32 != 0)) {
       asm volatile ("brkpt;\n" ::);
     }
     #endif
