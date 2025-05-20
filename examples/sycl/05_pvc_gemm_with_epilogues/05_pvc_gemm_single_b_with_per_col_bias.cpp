@@ -246,17 +246,12 @@ struct ExampleRunner {
     stride_C = cutlass::make_cute_packed_stride(StrideC{}, cute::make_shape(M, N, L));
     stride_D = cutlass::make_cute_packed_stride(StrideD{}, cute::make_shape(M, N, L));
 
-    try{
-      block_A.reset(cute::cosize(make_layout(cute::make_shape(M, K, L), stride_A)));
-      block_B.reset(cute::cosize(make_layout(cute::make_shape(N, K, L), stride_B)));
-      block_C.reset(cute::cosize(make_layout(cute::make_shape(M, N, L), stride_C)));
-      block_D.reset(cute::cosize(make_layout(cute::make_shape(M, N, L), stride_D)));
-      block_ref_D.reset(cute::cosize(make_layout(cute::make_shape(M, N, L), stride_D)));
-      block_bias.reset(N * L);
-    } catch(...){
-      std::cerr << "Failed to allocate device memory. Aborting." << std::endl;
-      std::exit(1);
-    }
+    block_A.reset(cute::cosize(make_layout(cute::make_shape(M, K, L), stride_A)));
+    block_B.reset(cute::cosize(make_layout(cute::make_shape(N, K, L), stride_B)));
+    block_C.reset(cute::cosize(make_layout(cute::make_shape(M, N, L), stride_C)));
+    block_D.reset(cute::cosize(make_layout(cute::make_shape(M, N, L), stride_D)));
+    block_ref_D.reset(cute::cosize(make_layout(cute::make_shape(M, N, L), stride_D)));
+    block_bias.reset(N * L);
 
     initialize_block(block_A, seed + 2023);
     initialize_block(block_B, seed + 2022);

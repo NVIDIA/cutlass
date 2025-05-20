@@ -483,18 +483,13 @@ template <class FMHAKernel, bool isVarLen> struct ExampleRunner {
     stride_V_cache = cutlass::make_cute_packed_stride(StrideV{}, cute::make_shape(head_size_vo, seq_len_kv_cache, batch * num_heads_kv));
     stride_O = cutlass::make_cute_packed_stride(StrideO{}, cute::make_shape(seq_len_qo, head_size_vo, batch * num_heads_q));
 
-    try{
-      block_Q.reset(batch * num_heads_q * seq_len_qo * head_size_qk);
-      block_K.reset(batch * num_heads_kv * seq_len_kv * head_size_qk);
-      block_V.reset(batch * num_heads_kv * seq_len_kv * head_size_vo);
-      block_K_cache.reset(batch * num_heads_kv * seq_len_kv_cache * head_size_qk);
-      block_V_cache.reset(batch * num_heads_kv * seq_len_kv_cache * head_size_vo);
-      block_O.reset(batch * num_heads_q * seq_len_qo * head_size_vo);
-      block_ref_O.reset(batch * num_heads_q * seq_len_qo * head_size_vo);
-    } catch(...){
-      std::cerr << "Failed to allocate device memory. Aborting." << std::endl;
-      std::exit(1);
-    }
+    block_Q.reset(batch * num_heads_q * seq_len_qo * head_size_qk);
+    block_K.reset(batch * num_heads_kv * seq_len_kv * head_size_qk);
+    block_V.reset(batch * num_heads_kv * seq_len_kv * head_size_vo);
+    block_K_cache.reset(batch * num_heads_kv * seq_len_kv_cache * head_size_qk);
+    block_V_cache.reset(batch * num_heads_kv * seq_len_kv_cache * head_size_vo);
+    block_O.reset(batch * num_heads_q * seq_len_qo * head_size_vo);
+    block_ref_O.reset(batch * num_heads_q * seq_len_qo * head_size_vo);
 
     initialize_block(block_Q, seed + 2023);
     initialize_block(block_K, seed + 2022);
@@ -503,33 +498,18 @@ template <class FMHAKernel, bool isVarLen> struct ExampleRunner {
     initialize_block(block_V_cache, seed + 2025);
 
     if (!cumulative_seqlen_q.empty()) {
-      try{
-        device_cumulative_seqlen_q.reset(cumulative_seqlen_q.size());
-      } catch(...){
-        std::cerr << "Failed to allocate device memory. Aborting." << std::endl;
-        std::exit(1);
-      }
+      device_cumulative_seqlen_q.reset(cumulative_seqlen_q.size());
       device_cumulative_seqlen_q.copy_from_host(
         cumulative_seqlen_q.data(), cumulative_seqlen_q.size());
     }
     if (!cumulative_seqlen_kv.empty()) {
-      try{
-        device_cumulative_seqlen_kv.reset(cumulative_seqlen_kv.size());
-      } catch(...){
-        std::cerr << "Failed to allocate device memory. Aborting." << std::endl;
-        std::exit(1);
-      }
+      device_cumulative_seqlen_kv.reset(cumulative_seqlen_kv.size());
       device_cumulative_seqlen_kv.copy_from_host(
         cumulative_seqlen_kv.data(), cumulative_seqlen_kv.size());
     }
 
     if (!cumulative_seqlen_kv_cache.empty()) {
-      try{
-        device_cumulative_seqlen_kv_cache.reset(cumulative_seqlen_kv_cache.size());
-      } catch(...){
-        std::cerr << "Failed to allocate device memory. Aborting." << std::endl;
-        std::exit(1);
-      }
+      device_cumulative_seqlen_kv_cache.reset(cumulative_seqlen_kv_cache.size());
       device_cumulative_seqlen_kv_cache.copy_from_host(
         cumulative_seqlen_kv_cache.data(), cumulative_seqlen_kv_cache.size());
     }

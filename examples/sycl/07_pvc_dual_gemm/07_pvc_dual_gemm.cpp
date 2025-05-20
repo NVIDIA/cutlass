@@ -286,22 +286,17 @@ struct ExampleRunner {
     stride_C = cutlass::make_cute_packed_stride(StrideC{}, cute::make_shape(M, N, L));
     stride_D = cutlass::make_cute_packed_stride(StrideD{}, cute::make_shape(M, N, L));
 
-    try{
-      block_A.reset(static_cast<std::size_t>(M) * K * L);
-      block_B0.reset(static_cast<std::size_t>(K) * N * L);
-      block_B1.reset(static_cast<std::size_t>(K) * N * L);
-      block_C0.reset(static_cast<std::size_t>(M) * N * L);
-      block_C1.reset(static_cast<std::size_t>(M) * N * L);
-      block_D0.reset(static_cast<std::size_t>(M) * N * L);
-      block_D1.reset(static_cast<std::size_t>(M) * N * L);
-      block_D2.reset(static_cast<std::size_t>(M) * N * L);
-      block_ref_D0.reset(static_cast<std::size_t>(M) * N * L);
-      block_ref_D1.reset(static_cast<std::size_t>(M) * N * L);
-      block_ref_D2.reset(static_cast<std::size_t>(M) * N * L);
-    } catch(...){
-      std::cerr << "Failed to allocate device memory. Aborting." << std::endl;
-      std::exit(1);
-    }
+    block_A.reset(static_cast<std::size_t>(M) * K * L);
+    block_B0.reset(static_cast<std::size_t>(K) * N * L);
+    block_B1.reset(static_cast<std::size_t>(K) * N * L);
+    block_C0.reset(static_cast<std::size_t>(M) * N * L);
+    block_C1.reset(static_cast<std::size_t>(M) * N * L);
+    block_D0.reset(static_cast<std::size_t>(M) * N * L);
+    block_D1.reset(static_cast<std::size_t>(M) * N * L);
+    block_D2.reset(static_cast<std::size_t>(M) * N * L);
+    block_ref_D0.reset(static_cast<std::size_t>(M) * N * L);
+    block_ref_D1.reset(static_cast<std::size_t>(M) * N * L);
+    block_ref_D2.reset(static_cast<std::size_t>(M) * N * L);
 
     initialize_block(block_A, seed + 2023);
     initialize_block(block_B0, seed + 2022);

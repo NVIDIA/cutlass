@@ -303,15 +303,10 @@ struct Result {
     auto c_coord = cutlass::make_Coord(options.m * options.l, options.n);
     auto b_coord = cutlass::make_Coord(options.k, options.n * options.l);
 
-    try{
-      tensor_A.resize(a_coord);
-      tensor_B.resize(b_coord);
-      tensor_D.resize(c_coord);
-      tensor_ref_D.resize(c_coord);
-    } catch(...){
-      std::cerr << "Failed to allocate device memory. Aborting." << std::endl;
-      std::exit(1);
-    }
+    tensor_A.resize(a_coord);
+    tensor_B.resize(b_coord);
+    tensor_D.resize(c_coord);
+    tensor_ref_D.resize(c_coord);
 
     initialize_tensor(tensor_A.host_view(), seed + 2022);
     initialize_tensor(tensor_B.host_view(), seed + 2023);
