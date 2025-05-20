@@ -29,13 +29,15 @@
  *
  **************************************************************************************************/
 /*! \file
-    \brief CUTLASS Intel PVC Gemm with float8 (float_e4m3_t) input
+    \brief CUTLASS Intel PVC Gemm with float8 (float_e4m3_t or float_e5m2_t) input
 
-    This example demonstrates GEMM on PVC with float8 input. cutlass::float_e4m3_t is an 8-bit
-    floating point type with 4-bit exponent, 3-bit mantissa and 1 sign bit. The GEMM in this example
-    performs the MMA with fp16 input, first upcasting the float_e4m3_t data for both A and B.
+    This example demonstrates GEMM on PVC with float8 input. The GEMM in this example
+    performs the MMA with fp16 input, first upcasting the fp8 data for both A and B.
 
-    Aside from the input datatypes, this example is identical to 00_pvc_gemm.
+    Aside from the input datatypes, this example is identical to 00_pvc_gemm, except that
+    we're currently being forced to load A with VNNI layout, which probably degrades
+    performance. Ref: https://github.com/codeplaysoftware/cutlass-sycl/issues/357
+
 
     Verification for this example is a standard fp16 GEMM, with input data upcasted on the host.
 
@@ -172,7 +174,7 @@ struct ExampleRunner {
   // Methods
   //
   template <typename SrcT, typename DstT>
-  void convert_e4m3_to_fp16(const SrcT* d_src, DstT* d_dst, size_t size) {
+  void convert_fp8_to_fp16(const SrcT* d_src, DstT* d_dst, size_t size) {
       SrcT* h_src = new SrcT[size];
       syclcompat::memcpy(h_src, d_src, size * sizeof(SrcT));
       syclcompat::wait();
@@ -193,12 +195,12 @@ struct ExampleRunner {
       cutlass::DeviceAllocation<half_t> block_B_fp16(block_B.size());
 
       // fp8 -> fp16
-      convert_e4m3_to_fp16<float_e4m3_t, half_t>(
+      convert_fp8_to_fp16<ElementA, half_t>(
           block_A.get(),
           block_A_fp16.get(),
           block_A.size()
       );
-      convert_e4m3_to_fp16<float_e4m3_t, half_t>(
+      convert_fp8_to_fp16<ElementA, half_t>(
           block_B.get(),
           block_B_fp16.get(),
           block_B.size()
@@ -307,6 +309,11 @@ struct ExampleRunner {
       float cute_time = timer.seconds() / options.iterations;
       double tflops = (2.0 * options.m * options.n * options.k * options.l) * 1e-12;
       std::cout << "Problem Size: " << options.m << 'x' << options.n << 'x' << options.k << 'x' << options.l << std::endl;
+      if constexpr (std::is_same_v<ElementA, float_e4m3_t>) {
+        std::cout << "Datatype: float_e4m3_t"<< std::endl;
+      } else if constexpr (std::is_same_v<ElementA, float_e5m2_t>) {
+        std::cout << "Datatype: float_e5m2_t"<< std::endl;
+      }
       printf("Cutlass GEMM Performance:     [%4.3f]TFlop/s  (%6.4f)ms\n", tflops / cute_time, cute_time*1000);
     }
 
@@ -315,26 +322,9 @@ struct ExampleRunner {
 
 };
 
-int main(int argc, const char** argv)
+template<typename ElementType>
+int launcher(Options& options)
 {
-  //
-  // Parse options
-  //
-
-  Options options;
-
-  options.parse(argc, argv);
-
-  if (options.help) {
-    options.print_usage(std::cout) << std::endl;
-    return 0;
-  }
-
-  if (options.error) {
-    std::cerr << "Aborting execution." << std::endl;
-    return -1;
-  }
-
   //
   // Run examples
   //
@@ -346,10 +336,9 @@ int main(int argc, const char** argv)
   bool passed;
 
   using ElementAccumulator = float;
-  using ElementComputeEpilogue = float; 
-  // TODO: support E5M2
-  using ElementInputA = cutlass::float_e4m3_t; 
-  using ElementInputB = cutlass::float_e4m3_t; 
+  using ElementComputeEpilogue = float;
+  using ElementInputA = ElementType; 
+  using ElementInputB = ElementType; 
   using ElementOutput = float;
 
   using LayoutA = cutlass::layout::RowMajor;
@@ -414,5 +403,28 @@ int main(int argc, const char** argv)
 
   CUTLASS_CHECK(runner.run(options, hw_info));
 
+  return 0;
+}
+
+int main(int argc, const char** argv) {
+  //
+  // Parse options
+  //
+
+  Options options;
+
+  options.parse(argc, argv);
+
+  if (options.help) {
+    options.print_usage(std::cout) << std::endl;
+    return 0;
+  }
+
+  if (options.error) {
+    std::cerr << "Aborting execution." << std::endl;
+    return -1;
+  }
+  launcher<cutlass::float_e5m2_t>(options);
+  launcher<cutlass::float_e4m3_t>(options);
   return 0;
 }

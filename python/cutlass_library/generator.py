@@ -11095,11 +11095,19 @@ def GenerateSM90(manifest, cuda_version):
 ###################################################################################################
 
 def GeneratePVC_TensorOp_16b_gemm(manifest, cuda_version):
-    layouts = [
-      [[LayoutType.RowMajor, 2], [LayoutType.RowMajor, 2], [LayoutType.RowMajor, 4]],
-      [[LayoutType.RowMajor, 2], [LayoutType.ColumnMajor, 2], [LayoutType.RowMajor, 4]],
-      [[LayoutType.ColumnMajor, 2], [LayoutType.RowMajor, 2], [LayoutType.RowMajor, 4]],
-      [[LayoutType.ColumnMajor, 2], [LayoutType.ColumnMajor, 2], [LayoutType.RowMajor, 4]],
+    layout_list = [
+      [
+        [[LayoutType.RowMajor, 2], [LayoutType.RowMajor, 2], [LayoutType.RowMajor, 4]],
+        [[LayoutType.RowMajor, 2], [LayoutType.ColumnMajor, 2], [LayoutType.RowMajor, 4]],
+        [[LayoutType.ColumnMajor, 2], [LayoutType.RowMajor, 2], [LayoutType.RowMajor, 4]],
+        [[LayoutType.ColumnMajor, 2], [LayoutType.ColumnMajor, 2], [LayoutType.RowMajor, 4]],
+      ],
+      [
+        [[LayoutType.RowMajor, 2], [LayoutType.RowMajor, 2], [LayoutType.RowMajor, 2]],
+        [[LayoutType.RowMajor, 2], [LayoutType.ColumnMajor, 2], [LayoutType.RowMajor, 2]],
+        [[LayoutType.ColumnMajor, 2], [LayoutType.RowMajor, 2], [LayoutType.RowMajor, 2]],
+        [[LayoutType.ColumnMajor, 2], [LayoutType.ColumnMajor, 2], [LayoutType.RowMajor, 2]],
+      ]
     ]
 
     math_instructions = [
@@ -11107,13 +11115,18 @@ def GeneratePVC_TensorOp_16b_gemm(manifest, cuda_version):
           [8, 16, 16],
           DataType.bf16, DataType.bf16, DataType.f32,
           OpcodeClass.TensorOp,
+          MathOperation.multiply_add),
+      MathInstruction(
+          [8, 16, 16],
+          DataType.bf16, DataType.bf16, DataType.bf16,
+          OpcodeClass.TensorOp,
           MathOperation.multiply_add)
     ]
 
     min_cc = 11
     max_cc = 11
 
-    for math_inst in math_instructions:
+    for math_inst, layouts in zip(math_instructions, layout_list):
       tile_descriptions = [
         TileDescription([256, 256, 32],
             0, [8, 4, 1], math_inst, min_cc, max_cc, [1, 1, 1]),

@@ -51,7 +51,7 @@
     Call with `--help` for information about available options
 */
 
-#include "pvc_flash_attn_runner.hpp"
+#include "pvc_flash_attn_prefill_runner.hpp"
 
 int main(int argc, const char **argv) {
   //

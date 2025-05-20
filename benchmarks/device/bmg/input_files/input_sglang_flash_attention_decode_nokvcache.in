@@ -1,0 +1,30 @@
+# Flash attention decode (without kv-cache)
+
+PvcFMHADecodeBF16BF16FP32_RCR_h128_NonCausal_FixedLen --bm_name=attention_decode_no_kv_cache --batch=1 --seq_len_qo=1 --num_heads_q=32 --head_size_qk=128 --head_size_vo=128 --seq_len_kv=2048 --seq_len_kv_cache=0 --num_heads_kv=8
+PvcFMHADecodeBF16BF16FP32_RCR_h128_Causal_FixedLen --bm_name=attention_decode_no_kv_cache --batch=1 --seq_len_qo=1 --num_heads_q=32 --head_size_qk=128 --head_size_vo=128 --seq_len_kv=2048 --seq_len_kv_cache=0 --num_heads_kv=8
+PvcFMHADecodeBF16BF16FP32_RCR_h128_NonCausal_FixedLen --bm_name=attention_decode_no_kv_cache --batch=8 --seq_len_qo=1 --num_heads_q=32 --head_size_qk=128 --head_size_vo=128 --seq_len_kv=1024 --seq_len_kv_cache=0 --num_heads_kv=8
+PvcFMHADecodeBF16BF16FP32_RCR_h128_Causal_FixedLen --bm_name=attention_decode_no_kv_cache --batch=8 --seq_len_qo=1 --num_heads_q=32 --head_size_qk=128 --head_size_vo=128 --seq_len_kv=1024 --seq_len_kv_cache=0 --num_heads_kv=8
+PvcFMHADecodeBF16BF16FP32_RCR_h128_NonCausal_FixedLen --bm_name=attention_decode_no_kv_cache --batch=16 --seq_len_qo=1 --num_heads_q=32 --head_size_qk=128 --head_size_vo=128 --seq_len_kv=1024 --seq_len_kv_cache=0 --num_heads_kv=8
+PvcFMHADecodeBF16BF16FP32_RCR_h128_Causal_FixedLen --bm_name=attention_decode_no_kv_cache --batch=16 --seq_len_qo=1 --num_heads_q=32 --head_size_qk=128 --head_size_vo=128 --seq_len_kv=1024 --seq_len_kv_cache=0 --num_heads_kv=8
+
+PvcFMHADecodeBF16BF16FP32_RCR_h128_NonCausal_VarLen --bm_name=attention_decode_no_kv_cache --batch=1 --seq_len_qo=1 --num_heads_q=32 --head_size_qk=128 --head_size_vo=128 --seq_len_kv=2048 --seq_len_kv_cache=0 --num_heads_kv=8
+PvcFMHADecodeBF16BF16FP32_RCR_h128_Causal_VarLen --bm_name=attention_decode_no_kv_cache --batch=1 --seq_len_qo=1 --num_heads_q=32 --head_size_qk=128 --head_size_vo=128 --seq_len_kv=2048 --seq_len_kv_cache=0 --num_heads_kv=8
+PvcFMHADecodeBF16BF16FP32_RCR_h128_NonCausal_VarLen --bm_name=attention_decode_no_kv_cache --batch=8 --seq_len_qo=1 --num_heads_q=32 --head_size_qk=128 --head_size_vo=128 --seq_len_kv=1024 --seq_len_kv_cache=0 --num_heads_kv=8
+PvcFMHADecodeBF16BF16FP32_RCR_h128_Causal_VarLen --bm_name=attention_decode_no_kv_cache --batch=8 --seq_len_qo=1 --num_heads_q=32 --head_size_qk=128 --head_size_vo=128 --seq_len_kv=1024 --seq_len_kv_cache=0 --num_heads_kv=8
+PvcFMHADecodeBF16BF16FP32_RCR_h128_NonCausal_VarLen --bm_name=attention_decode_no_kv_cache --batch=16 --seq_len_qo=1 --num_heads_q=32 --head_size_qk=128 --head_size_vo=128 --seq_len_kv=1024 --seq_len_kv_cache=0 --num_heads_kv=8
+PvcFMHADecodeBF16BF16FP32_RCR_h128_Causal_VarLen --bm_name=attention_decode_no_kv_cache --batch=16 --seq_len_qo=1 --num_heads_q=32 --head_size_qk=128 --head_size_vo=128 --seq_len_kv=1024 --seq_len_kv_cache=0 --num_heads_kv=8
+
+#FP16 benchmarks
+PvcFMHADecodeFP16FP16FP32_RCR_h128_NonCausal_FixedLen --bm_name=attention_decode_no_kv_cache --batch=1 --seq_len_qo=1 --num_heads_q=32 --head_size_qk=128 --head_size_vo=128 --seq_len_kv=2048 --seq_len_kv_cache=0 --num_heads_kv=8
+PvcFMHADecodeFP16FP16FP32_RCR_h128_Causal_FixedLen --bm_name=attention_decode_no_kv_cache --batch=1 --seq_len_qo=1 --num_heads_q=32 --head_size_qk=128 --head_size_vo=128 --seq_len_kv=2048 --seq_len_kv_cache=0 --num_heads_kv=8
+PvcFMHADecodeFP16FP16FP32_RCR_h128_NonCausal_FixedLen --bm_name=attention_decode_no_kv_cache --batch=8 --seq_len_qo=1 --num_heads_q=32 --head_size_qk=128 --head_size_vo=128 --seq_len_kv=1024 --seq_len_kv_cache=0 --num_heads_kv=8
+PvcFMHADecodeFP16FP16FP32_RCR_h128_Causal_FixedLen --bm_name=attention_decode_no_kv_cache --batch=8 --seq_len_qo=1 --num_heads_q=32 --head_size_qk=128 --head_size_vo=128 --seq_len_kv=1024 --seq_len_kv_cache=0 --num_heads_kv=8
+PvcFMHADecodeFP16FP16FP32_RCR_h128_NonCausal_FixedLen --bm_name=attention_decode_no_kv_cache --batch=16 --seq_len_qo=1 --num_heads_q=32 --head_size_qk=128 --head_size_vo=128 --seq_len_kv=1024 --seq_len_kv_cache=0 --num_heads_kv=8
+PvcFMHADecodeFP16FP16FP32_RCR_h128_Causal_FixedLen --bm_name=attention_decode_no_kv_cache --batch=16 --seq_len_qo=1 --num_heads_q=32 --head_size_qk=128 --head_size_vo=128 --seq_len_kv=1024 --seq_len_kv_cache=0 --num_heads_kv=8
+
+PvcFMHADecodeFP16FP16FP32_RCR_h128_NonCausal_VarLen --bm_name=attention_decode_no_kv_cache --batch=1 --seq_len_qo=1 --num_heads_q=32 --head_size_qk=128 --head_size_vo=128 --seq_len_kv=2048 --seq_len_kv_cache=0 --num_heads_kv=8
+PvcFMHADecodeFP16FP16FP32_RCR_h128_Causal_VarLen --bm_name=attention_decode_no_kv_cache --batch=1 --seq_len_qo=1 --num_heads_q=32 --head_size_qk=128 --head_size_vo=128 --seq_len_kv=2048 --seq_len_kv_cache=0 --num_heads_kv=8
+PvcFMHADecodeFP16FP16FP32_RCR_h128_NonCausal_VarLen --bm_name=attention_decode_no_kv_cache --batch=8 --seq_len_qo=1 --num_heads_q=32 --head_size_qk=128 --head_size_vo=128 --seq_len_kv=1024 --seq_len_kv_cache=0 --num_heads_kv=8
+PvcFMHADecodeFP16FP16FP32_RCR_h128_Causal_VarLen --bm_name=attention_decode_no_kv_cache --batch=8 --seq_len_qo=1 --num_heads_q=32 --head_size_qk=128 --head_size_vo=128 --seq_len_kv=1024 --seq_len_kv_cache=0 --num_heads_kv=8
+PvcFMHADecodeFP16FP16FP32_RCR_h128_NonCausal_VarLen --bm_name=attention_decode_no_kv_cache --batch=16 --seq_len_qo=1 --num_heads_q=32 --head_size_qk=128 --head_size_vo=128 --seq_len_kv=1024 --seq_len_kv_cache=0 --num_heads_kv=8
+PvcFMHADecodeFP16FP16FP32_RCR_h128_Causal_VarLen --bm_name=attention_decode_no_kv_cache --batch=16 --seq_len_qo=1 --num_heads_q=32 --head_size_qk=128 --head_size_vo=128 --seq_len_kv=1024 --seq_len_kv_cache=0 --num_heads_kv=8

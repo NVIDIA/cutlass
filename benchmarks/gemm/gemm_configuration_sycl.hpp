@@ -41,6 +41,7 @@
 #include "cutlass/layout/layout.h"
 #include "cutlass/gemm/dispatch_policy.hpp"
 #include "cutlass/gemm/collective/collective_mma.hpp"
+#include "cutlass/gemm/collective/collective_builder.hpp"
 #include "cutlass/epilogue/collective/collective_builder.hpp"
 
 #include "cutlass/epilogue/collective/default_epilogue.hpp"
@@ -48,9 +49,7 @@
 
 using namespace cute;
 
-namespace cutlass {
-namespace gemm {
-namespace device {
+namespace cutlass::gemm::device {
 
 enum class Scheduler { Gemm, GemmSplitK, GemmStreamK };
 
@@ -60,9 +59,8 @@ template<
   class ElementB, class LayoutB,
   class ElementC, class LayoutC,
   class ElementAccumulator,
-  class TileShape, class TiledMma,
-  class GmemTiledCopyA, class GmemTiledCopyB,
-  Scheduler TileScheduler,
+  class TileShape, Scheduler TileScheduler, class TiledMma = void,
+  class GmemTiledCopyA = void, class GmemTiledCopyB = void,
   class EpilogueOp = epilogue::fusion::LinearCombination<float, float, float, float, FloatRoundStyle::round_to_nearest>>
 struct GemmConfiguration {
   static_assert(sizeof(ElementA) == 0, "No valid GemmConfiguration configuration exists.");
@@ -73,54 +71,65 @@ struct GemmConfiguration {
 // bfloat16
 
 template<typename LayoutA, typename LayoutB, typename LayoutC,
-  class TileShape, class TiledMma, class GmemTiledCopyA, class GmemTiledCopyB, Scheduler TileScheduler, class EpilogueOp>
+  class TileShape, Scheduler TileScheduler,
+  class TiledMma, class GmemTiledCopyA, class GmemTiledCopyB,  class EpilogueOp>
 struct GemmConfiguration<
       arch::IntelXe,
       bfloat16_t, LayoutA,
       bfloat16_t, LayoutB,
       float, LayoutC,
-      float, TileShape, TiledMma,
-      GmemTiledCopyA, GmemTiledCopyB, TileScheduler, EpilogueOp> {
-  using DispatchPolicy = MainloopIntelXeXMX16<3, std::conditional_t<TileScheduler == Scheduler::Gemm, cutlass::gemm::KernelXe, cutlass::gemm::KernelXeCooperative>>;
+      float,
+      TileShape, TileScheduler, TiledMma,
+      GmemTiledCopyA, GmemTiledCopyB, EpilogueOp>
+{
+  using KernelScheduleType = std::conditional_t<TileScheduler == Scheduler::Gemm,
+    cutlass::gemm::KernelXe, cutlass::gemm::KernelXeCooperative>;
+  using DispatchPolicy = MainloopIntelXeXMX16<3, KernelScheduleType>;
 
   // Configurations in benchmarks.hpp can pass either a layout tag (e.g. RowMajor) or a Stride directly
   using StrideA = std::conditional_t<cute::is_tuple_v<LayoutA>, LayoutA, TagToStrideA_t<LayoutA>>;
   using StrideB = std::conditional_t<cute::is_tuple_v<LayoutB>, LayoutB, TagToStrideB_t<LayoutB>>;
   using StrideC = std::conditional_t<cute::is_tuple_v<LayoutC>, LayoutC, TagToStrideC_t<LayoutC>>;
 
+  using ClusterShape = Shape<_1, _1, _1>;
+  static constexpr bool use_collective_mma_builder = std::is_void_v<TiledMma>;
+  static_assert(
+    use_collective_mma_builder == std::is_void_v<GmemTiledCopyA> and
+    use_collective_mma_builder == std::is_void_v<GmemTiledCopyB>,
+    "TiledMma, GmemTileCopyA, and GmemTileCopyB must be all void or none of them may be void."
+  );
   // Mainloop
-  using CollectiveMainloop = collective::CollectiveMma<
-    DispatchPolicy, TileShape,
-    bfloat16_t, StrideA,
-    bfloat16_t, StrideB,
-    TiledMma,
-    GmemTiledCopyA, void, void, identity, // A
-    GmemTiledCopyB, void, void, identity // B
-  >;
+  using CollectiveMainloop =
+    std::conditional_t<use_collective_mma_builder,
+      typename cutlass::gemm::collective::CollectiveBuilder<
+        cutlass::arch::IntelXe, cutlass::arch::OpClassTensorOp,
+        bfloat16_t, LayoutA, sizeof(bfloat16_t),
+        bfloat16_t, LayoutB, sizeof(bfloat16_t),
+        float,
+        TileShape, ClusterShape,
+        cutlass::gemm::collective::StageCountAuto,
+        KernelScheduleType
+      >::CollectiveOp,
+      collective::CollectiveMma<
+        DispatchPolicy, TileShape,
+        bfloat16_t, StrideA,
+        bfloat16_t, StrideB,
+        TiledMma,
+        GmemTiledCopyA, void, void, identity, // A
+        GmemTiledCopyB, void, void, identity // B
+  >>;
 
   // Epilogue
-  using EpilogueDispatchPolicy = epilogue::IntelXeXMX16;
-
-  // TODO(codeplay): Refactor this following Testbed3x approach. See benchmark_runner.hpp
-  using FusionCallBacks = std::conditional_t<
-      EpilogueOp::IsAuxInSupported, // ~Is mul_add
-      epilogue::fusion::FusionCallbacks<EpilogueDispatchPolicy, EpilogueOp, TileShape,
-                                        decltype(tile_shape(TiledMma())), XE_2D_U32x8x16_LD_N>,
-      epilogue::fusion::FusionCallbacks<EpilogueDispatchPolicy, EpilogueOp, TileShape,
-                                        decltype(tile_shape(TiledMma()))>>;
-
-  using CollectiveEpilogue = epilogue::collective::CollectiveEpilogue<
-        EpilogueDispatchPolicy,
-        TileShape,
-        float,
-        StrideC,
-        float,
-        StrideC,
-        FusionCallBacks,
-        XE_2D_U32x8x16_LD_N,
-        void, void,
-        XE_2D_U32x8x16_ST_N,
-        void, void>;
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+    cutlass::arch::IntelXe, cutlass::arch::OpClassTensorOp,
+    TileShape, ClusterShape,
+    cutlass::epilogue::collective::EpilogueTileAuto, float,
+    float,
+    float, LayoutC, sizeof(float),
+    float, LayoutC, sizeof(float),
+    cutlass::epilogue::collective::EpilogueScheduleAuto,
+    EpilogueOp
+  >::CollectiveOp;
 
   using GemmKernel = kernel::GemmUniversal<
     Shape<int, int, int, int>,
@@ -149,6 +158,4 @@ struct GemmConfiguration<
   }
 };
 
-} // namespace device
-} // namespace gemm
-} // namespace cutlass
+} // namespace cutlass::gemm::device

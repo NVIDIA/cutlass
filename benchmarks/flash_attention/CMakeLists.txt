@@ -28,3 +28,4 @@
 
 cutlass_benchmark_add_suite(cutlass_benchmarks_flash_attention)
 add_subdirectory(flash_attention_prefill)
+add_subdirectory(flash_attention_decode)

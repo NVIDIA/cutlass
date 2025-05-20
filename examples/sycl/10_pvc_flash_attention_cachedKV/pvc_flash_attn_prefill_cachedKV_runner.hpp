@@ -35,9 +35,9 @@
 #include "flash_attention_v2/collective/fmha_fusion.hpp"
 #include "flash_attention_v2/kernel/tile_scheduler_cachedKV.hpp"
 #include "cutlass/util/packed_stride.hpp"
-#include "flash_attention_v2/kernel/xe_flash_attn_gemm_cachedKV.hpp"
-#include "flash_attention_v2/collective/xe_flash_attn_epilogue_cachedKV.hpp"
-#include "flash_attention_v2/collective/xe_flash_attn_softmax_epilogue.hpp"
+#include "flash_attention_v2/kernel/xe_flash_attn_prefill_cachedKV.hpp"
+#include "flash_attention_v2/collective/xe_flash_attn_prefill_epilogue_cachedKV.hpp"
+#include "flash_attention_v2/collective/xe_flash_attn_prefill_softmax_epilogue.hpp"
 #include "cutlass/util/GPU_Clock.hpp"
 #include "cutlass/util/sycl_event_manager.hpp"
 
@@ -132,24 +132,24 @@ using LayoutK = cutlass::layout::ColumnMajor;
 using LayoutV = cutlass::layout::RowMajor;
 using LayoutO = cutlass::layout::RowMajor;
 
-template <class GemmKernel, bool isVarLen> struct ExampleRunner {
+template <class FMHAPrefillCachedKernel, bool isVarLen> struct ExampleRunner {
 
-  using StrideQ = typename GemmKernel::StrideQ;
-  using StrideK = typename GemmKernel::StrideK;
-  using StrideV = typename GemmKernel::StrideV;
-  using StrideO = typename GemmKernel::StrideO;
+  using StrideQ = typename FMHAPrefillCachedKernel::StrideQ;
+  using StrideK = typename FMHAPrefillCachedKernel::StrideK;
+  using StrideV = typename FMHAPrefillCachedKernel::StrideV;
+  using StrideO = typename FMHAPrefillCachedKernel::StrideO;
 
-  using ElementQ = typename GemmKernel::ElementQ;
-  using ElementK = typename GemmKernel::ElementK;
-  using ElementV = typename GemmKernel::ElementV;
-  using ElementAcc = typename GemmKernel::ElementAccumulator;
+  using ElementQ = typename FMHAPrefillCachedKernel::ElementQ;
+  using ElementK = typename FMHAPrefillCachedKernel::ElementK;
+  using ElementV = typename FMHAPrefillCachedKernel::ElementV;
+  using ElementAcc = typename FMHAPrefillCachedKernel::ElementAccumulator;
 
-  using CollectiveEpilogue = typename GemmKernel::CollectiveEpilogue;
+  using CollectiveEpilogue = typename FMHAPrefillCachedKernel::CollectiveEpilogue;
   using ElementOutput = typename CollectiveEpilogue::ElementOutput;
   using ElementCompute = typename CollectiveEpilogue::ElementCompute;
   using ElementAccumulator = typename CollectiveEpilogue::ElementAccumulator;
 
-  using ProblemShapeType = typename GemmKernel::ProblemShape;
+  using ProblemShapeType = typename FMHAPrefillCachedKernel::ProblemShape;
 
   //
   // Data members
@@ -174,8 +174,10 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
 
   std::vector<int> cumulative_seqlen_q;
   std::vector<int> cumulative_seqlen_kv;
+  std::vector<int> cumulative_seqlen_kv_cache;
   cutlass::DeviceAllocation<int> device_cumulative_seqlen_q;
   cutlass::DeviceAllocation<int> device_cumulative_seqlen_kv;
+  cutlass::DeviceAllocation<int> device_cumulative_seqlen_kv_cache;
 
   //
   // Methods
@@ -186,8 +188,10 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
     if constexpr (isVarLen) {
       int max_seq_len_q = static_cast<int>(get<3>(problem_size));
       int max_seq_len_kv = static_cast<int>(get<4>(problem_size));
+      int max_seq_len_kv_cache = static_cast<int>(get<5>(problem_size));
       get<3>(problem_size) = cutlass::fmha::collective::VariableLength{max_seq_len_q, cumulative_seqlen_q.data()};
       get<4>(problem_size) = cutlass::fmha::collective::VariableLength{max_seq_len_kv, cumulative_seqlen_kv.data()};
+      get<5>(problem_size) = cutlass::fmha::collective::VariableLength{max_seq_len_kv_cache, cumulative_seqlen_kv_cache.data()};
     }
 
     auto [batch, num_heads_q, num_heads_kv, head_size_qk, head_size_vo] = cute::select<0,1,2,6,7>(problem_size);
@@ -214,7 +218,7 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
         seq_len_kv_cache = get<5>(problem_size);
       }
       int seq_len_kv_total = seq_len_kv_cache + seq_len_kv;
-      int kv_group_update=1;
+      int kv_group_update = 1;
 
       for (int h = 0; h < num_heads_q; h++) {
         cutlass::DeviceAllocation<ElementOutput> block_S;
@@ -293,7 +297,7 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
           // apply mask to S
           for (int row = 0; row < seq_len_qo; row++) {
             for (int col = start_col; col < seq_len_kv_total; col++) {
-              if ((col - full_tile_offset) > (row + start_col - discard_seq_coord))
+              if (col - full_tile_offset > row + start_col - discard_seq_coord)
                 host_S[col + row * seq_len_kv_total] = -INFINITY;
             }
           }
@@ -389,7 +393,7 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
   }
 
   template<class ProblemShape>
-  auto initialize_varlen(const ProblemShape& problem_size, const bool VarlenSame = true) {
+  auto initialize_varlen(const ProblemShape& problem_size) {
     int num_batches = get<0>(problem_size);
     int seq_len_kv_cache = get<5>(problem_size);
 
@@ -399,6 +403,12 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
     std::mt19937 rng(0x202305151552ull);
     std::normal_distribution<double> dist_q(get<3>(problem_size), get<3>(problem_size) / 2);
     std::normal_distribution<double> dist_kv(get<4>(problem_size), get<4>(problem_size) / 2);
+    std::normal_distribution<double> dist_kv_cache(get<5>(problem_size), get<5>(problem_size) / 2);
+
+    // Use Cacheline Size to calculate alignment
+    constexpr int cacheline_bytes = 64;
+    constexpr int AlignmentQ = cacheline_bytes / sizeof(ElementQ);    // Alignment of Q matrix in units of elements
+    constexpr int AlignmentKV = cacheline_bytes / sizeof(ElementK);   // Alignment of Kand V matrix in units of elements
 
     auto generate_positive_int = [](auto& dist, auto& gen) {
       int result = 0;
@@ -410,37 +420,44 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
 
     cumulative_seqlen_q = {0};
     cumulative_seqlen_kv = {0};
+    cumulative_seqlen_kv_cache = {0};
 
     int total_seqlen_q = 0;
     int total_seqlen_kv = 0;
+    int total_seqlen_kv_cache = 0;
     int max_seqlen_q = 0;
     int max_seqlen_kv = 0;
+    int max_seqlen_kv_cache = 0;
 
     for (int i = 0; i < num_batches; i++) {
-      int seqlen_q = VarlenSame ? get<3>(problem_size) : generate_positive_int(dist_q, rng);
-      int seqlen_kv = VarlenSame ? get<4>(problem_size) : generate_positive_int(dist_kv, rng);
+      int seqlen_q = cutlass::round_up(generate_positive_int(dist_q, rng), AlignmentQ);
+      int seqlen_kv = cutlass::round_up(generate_positive_int(dist_kv, rng), AlignmentKV);
+      int seqlen_kv_cache = cute::get<5>(problem_size) == 0 ? 0 : cutlass::round_up(generate_positive_int(dist_kv_cache, rng), AlignmentKV);
 
       total_seqlen_q += seqlen_q;
       total_seqlen_kv += seqlen_kv;
+      total_seqlen_kv_cache += seqlen_kv_cache;
 
       max_seqlen_q = std::max(max_seqlen_q, seqlen_q);
       max_seqlen_kv = std::max(max_seqlen_kv, seqlen_kv);
+      max_seqlen_kv_cache = std::max(max_seqlen_kv_cache, seqlen_kv_cache);
 
       cumulative_seqlen_q.push_back(cumulative_seqlen_q.back() + seqlen_q);
       cumulative_seqlen_kv.push_back(cumulative_seqlen_kv.back() + seqlen_kv);
+      cumulative_seqlen_kv_cache.push_back(cumulative_seqlen_kv_cache.back() + seqlen_kv_cache);
     }
 
     ProblemShape problem_size_for_init = problem_size;
     get<0>(problem_size_for_init) = 1;
     get<3>(problem_size_for_init) = total_seqlen_q;
     get<4>(problem_size_for_init) = total_seqlen_kv;
-    get<5>(problem_size_for_init) = seq_len_kv_cache;
+    get<5>(problem_size_for_init) = total_seqlen_kv_cache;
 
     ProblemShapeType problem_size_for_launch;
 
     get<3>(problem_size_for_launch) = cutlass::fmha::collective::VariableLength{max_seqlen_q};
     get<4>(problem_size_for_launch) = cutlass::fmha::collective::VariableLength{max_seqlen_kv};
-    get<5>(problem_size_for_launch) = get<5>(problem_size);
+    get<5>(problem_size_for_launch) = cutlass::fmha::collective::VariableLength{max_seqlen_kv_cache};
     get<6>(problem_size_for_launch) = get<6>(problem_size);
     get<7>(problem_size_for_launch) = get<7>(problem_size);
     get<0>(problem_size_for_launch) = get<0>(problem_size);
@@ -497,15 +514,23 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
       device_cumulative_seqlen_q.copy_from_host(
         cumulative_seqlen_q.data(), cumulative_seqlen_q.size());
     }
+
     if (!cumulative_seqlen_kv.empty()) {
       device_cumulative_seqlen_kv.reset(cumulative_seqlen_kv.size());
       device_cumulative_seqlen_kv.copy_from_host(
         cumulative_seqlen_kv.data(), cumulative_seqlen_kv.size());
     }
 
+    if (!cumulative_seqlen_kv_cache.empty()) {
+      device_cumulative_seqlen_kv_cache.reset(cumulative_seqlen_kv_cache.size());
+      device_cumulative_seqlen_kv_cache.copy_from_host(
+        cumulative_seqlen_kv_cache.data(), cumulative_seqlen_kv_cache.size());
+    }
+
     if constexpr (isVarLen) {
       get<3>(problem_shape).cumulative_length = device_cumulative_seqlen_q.get();
       get<4>(problem_shape).cumulative_length = device_cumulative_seqlen_kv.get();
+      get<5>(problem_shape).cumulative_length = device_cumulative_seqlen_kv_cache.get();
     }
 
     return problem_shape;
@@ -513,12 +538,12 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
 
   // Note that the GemmUniversalAdapter currently doesn't support flash attention, which is why this
   // secondary `run` function is required to launch the kernel.
-  static void run(typename GemmKernel::Params params) {
-    dim3 const block = GemmKernel::get_block_shape();
-    dim3 const grid = GemmKernel::get_grid_shape(params);
+  static void run(typename FMHAPrefillCachedKernel::Params params) {
+    dim3 const block = FMHAPrefillCachedKernel::get_block_shape();
+    dim3 const grid = FMHAPrefillCachedKernel::get_grid_shape(params);
 
     // configure smem size and carveout
-    int smem_size = GemmKernel::SharedStorageSize;
+    int smem_size = FMHAPrefillCachedKernel::SharedStorageSize;
 
     const auto sycl_block = syclcompat::dim3(block.x, block.y, block.z);
     const auto sycl_grid = syclcompat::dim3(grid.x, grid.y, grid.z);
@@ -526,19 +551,19 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
 // Launch parameters depend on whether SYCL compiler supports work-group scratch memory extension
 #if !defined(SYCL_EXT_ONEAPI_WORK_GROUP_SCRATCH_MEMORY)
     using namespace syclcompat::experimental;
-    auto event = launch<cutlass::device_kernel<GemmKernel>>(
+    auto event = launch<cutlass::device_kernel<FMHAPrefillCachedKernel>>(
         launch_policy{sycl_grid, sycl_block, local_mem_size{static_cast<std::size_t>(smem_size)},
-                      kernel_properties{sycl_exp::sub_group_size<GemmKernel::DispatchPolicy::SubgroupSize>}},
+                      kernel_properties{sycl_exp::sub_group_size<FMHAPrefillCachedKernel::DispatchPolicy::SubgroupSize>}},
         params);
 #else
     syclcompat::experimental::launch_properties launch_props {
       sycl::ext::oneapi::experimental::work_group_scratch_size(smem_size),
     };
     syclcompat::experimental::kernel_properties kernel_props{
-      sycl::ext::oneapi::experimental::sub_group_size<GemmKernel::DispatchPolicy::SubgroupSize>
+      sycl::ext::oneapi::experimental::sub_group_size<FMHAPrefillCachedKernel::DispatchPolicy::SubgroupSize>
     };
     syclcompat::experimental::launch_policy policy{sycl_grid, sycl_block, launch_props, kernel_props};
-    auto event = syclcompat::experimental::launch<cutlass::device_kernel<GemmKernel>>(policy, params);
+    auto event = syclcompat::experimental::launch<cutlass::device_kernel<FMHAPrefillCachedKernel>>(policy, params);
 #endif
 
     EventManager::getInstance().addEvent(event);
@@ -548,7 +573,7 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
 
     ProblemShapeType problem_size = initialize(options);
 
-    typename GemmKernel::Arguments arguments{
+    typename FMHAPrefillCachedKernel::Arguments arguments{
         cutlass::gemm::GemmUniversalMode::kGemm,
         problem_size,
         {block_Q.get(), stride_Q,
@@ -560,13 +585,11 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
         {block_O.get(), stride_O},
         hw_info};
 
-    // GemmKernel gemm_op;
-
     // Define device-global scratch memory
-    size_t workspace_size = GemmKernel::get_workspace_size(arguments);
+    size_t workspace_size = FMHAPrefillCachedKernel::get_workspace_size(arguments);
     cutlass::device_memory::allocation<uint8_t> workspace(workspace_size);
 
-    if (!GemmKernel::can_implement(arguments)) {
+    if (!FMHAPrefillCachedKernel::can_implement(arguments)) {
       std::cout << "Invalid Problem Size: " << options.batch << 'x' << options.num_heads_q << 'x' <<
         options.seq_len_qo << 'x' << options.seq_len_kv << 'x' << options.head_size_qk << 'x'  << options.head_size_vo 
         << (options.is_causal ? "xCausal" : "xNonCausal") << std::endl;
@@ -574,12 +597,12 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
     }
 
     // Initialize the workspace
-    CUTLASS_CHECK(GemmKernel::initialize_workspace(arguments, workspace.get()));
+    CUTLASS_CHECK(FMHAPrefillCachedKernel::initialize_workspace(arguments, workspace.get()));
 
     // Convert host-side arguments to device-side arguments to be passed to the kernel
-    auto params = GemmKernel::to_underlying_arguments(arguments, workspace.get());
+    auto params = FMHAPrefillCachedKernel::to_underlying_arguments(arguments, workspace.get());
 
-    // Run the GEMM
+    // Run the Flash Attention implementation.
     run(params);
 
     syclcompat::wait();
@@ -656,18 +679,18 @@ template <bool Causal, typename TileShape, typename TiledMma> struct FMHAConfig 
     using GmemTiledCopyK = XE_2D_U16x16x16_LD_T; // _T designates a transposed block load operation
     using GmemTiledCopyV = XE_2D_U16x32x32_LD_V;
     using GmemTiledCopyStore = XE_2D_U32x8x16_ST_N;
-    using CollectiveEpilogue = cutlass::flash_attention::collective::CollectiveEpilogueAttention<
+    using CollectiveEpilogue = cutlass::flash_attention::collective::FlashPrefillCachedEpilogue<
         EpilogueDispatchPolicy, TileShape, ElementAccumulator, cutlass::gemm::TagToStrideC_t<LayoutO>, ElementOutput,
         GmemTiledCopyStore>;
-    using CollectiveSoftmaxEpilogue = cutlass::flash_attention::collective::CollectiveSoftmaxEpilogue<Causal, EpilogueDispatchPolicy, ElementAccumulator>;
+    using CollectiveSoftmaxEpilogue = cutlass::flash_attention::collective::FlashPrefillSoftmaxEpilogue<Causal, EpilogueDispatchPolicy, ElementAccumulator>;
 
     using ProblemShapeRegular = cute::tuple<int, int, int, int, int, int, int, int>;
     using namespace cutlass::fmha::collective;
-    using ProblemShapeVarlen = cute::tuple<int, int, int, VariableLength, VariableLength, int, int, int>;
+    using ProblemShapeVarlen = cute::tuple<int, int, int, VariableLength, VariableLength, VariableLength, int, int>;
     using ProblemShapeType = std::conditional_t<isVarLen, ProblemShapeVarlen, ProblemShapeRegular>;
 
     // Mainloop
-    using CollectiveMainloop = cutlass::flash_attention::collective::CollectiveMmaAttention<
+    using CollectiveMainloop = cutlass::flash_attention::collective::FlashPrefillCachedMma<
         GEMMDispatchPolicy, ProblemShapeType, TileShape, ElementInputQ, cutlass::gemm::TagToStrideA_t<LayoutQ>, ElementInputKV,
         cutlass::gemm::TagToStrideB_t<LayoutK>, ElementInputKV, cutlass::gemm::TagToStrideB_t<LayoutV>, TiledMma,
         GmemTiledCopyQ, // Q
@@ -675,10 +698,10 @@ template <bool Causal, typename TileShape, typename TiledMma> struct FMHAConfig 
         GmemTiledCopyV, // V,
         Causal>;
 
-    using GemmKernel = cutlass::flash_attention::kernel::GemmUniversalAttention<ProblemShapeType, CollectiveMainloop,
+    using FMHAPrefillCachedKernel = cutlass::flash_attention::kernel::FMHAPrefillCached<ProblemShapeType, CollectiveMainloop,
                                                                      CollectiveSoftmaxEpilogue, CollectiveEpilogue, Scheduler>;
 
-    ExampleRunner<GemmKernel, isVarLen> runner;
+    ExampleRunner<FMHAPrefillCachedKernel, isVarLen> runner;
 
     CUTLASS_CHECK(runner.run(options, hw_info));
     return 0;    
