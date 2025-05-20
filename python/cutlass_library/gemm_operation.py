@@ -355,6 +355,10 @@ class GemmOperation:
 
   # Generates the full kernel function name
   def procedural_name(self):
+    return self._procedural_name
+
+  @functools.cached_property
+  def _procedural_name(self):
     ''' The full procedural name indicates architecture, extended name, tile size, and layout. '''
     opcode_class_name = OpcodeClassNames[self.tile_description.math_instruction.opcode_class]
     if self.arch >= 90:
