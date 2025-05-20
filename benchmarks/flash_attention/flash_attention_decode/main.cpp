@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2024 - 2025 Codeplay Software Ltd. All rights reserved.
+* Copyright (c) 2024 - 2025 Codeplay Software Ltd. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -29,14 +29,16 @@
  *
  **************************************************************************************************/
 
-#include "pvc_flash_attn_decode_runner.hpp"
+#include "cutlass/cutlass.h"
+#include "cutlass/kernel_hardware_info.h"
+#include "cutlass/util/command_line.h"
 
-int main(int argc, const char **argv) {
-  //
-  // Parse options
-  //
+#include "benchmark_runner.hpp"
+#include "benchmarks.hpp"
 
-  Options options;
+int main(int argc, const char** argv) {
+
+  BenckmarkOptions options;
 
   options.parse(argc, argv);
 
@@ -45,30 +47,39 @@ int main(int argc, const char **argv) {
     return 0;
   }
 
+  if (options.config_file.empty()) {
+    std::cerr << "Benchmark configuration file not found." << std::endl;
+    options.error = true;
+  }
+
   if (options.error) {
     std::cerr << "Aborting execution." << std::endl;
     return -1;
   }
 
-  if (options.head_size_vo == 64 || options.head_size_vo == 96 || options.head_size_vo == 192) {
+  std::ifstream file(options.config_file);
 
-    using TiledMma =
-        typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
-                                      Layout<Shape<_512, _64, _64>>,
-                                      Layout<Shape<_8, _1, _1>, Stride<_1, _1, _1>>>::TiledMMA;
-
-    return options.is_causal ? FMHAConfig<true, Shape<_512, _64, _64, _64>, TiledMma>::run(options)
-                             : FMHAConfig<false, Shape<_512, _64, _64, _64>, TiledMma>::run(options);
-  } else if (options.head_size_vo == 128) {
-    using TiledMma =
-        typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
-                                      Layout<Shape<_512, _128, _64>>,
-                                      Layout<Shape<_8, _2, _1>, Stride<_2, _1, _1>>>::TiledMMA;
-
-    return options.is_causal ? FMHAConfig<true, Shape<_512, _128, _64, _64>, TiledMma>::run(options)
-                             : FMHAConfig<false, Shape<_512, _128, _64, _64>, TiledMma>::run(options);
-  } else {
-    std::cerr << "Aborting execution." << std::endl;
-    return -1;
+  if (!file.is_open()) {
+    std::cerr << "Failed to open configuration file: " << options.config_file << std::endl;
+    return 1;
   }
+
+  register_flash_attention_decode_benchmarks();
+
+  std::string line;
+  while (std::getline(file, line)) {
+    if (!line.empty() && line.find("#") != 0) {
+      register_benchmarks<cutlass::benchmark::FMHADecodeOptions>(line);
+    }
+  }
+  file.close();
+
+  int argc_bm = 0;
+  ::benchmark::SetDefaultTimeUnit(::benchmark::kMillisecond);
+  ::benchmark::Initialize(&argc_bm, nullptr);
+
+  ::benchmark::RunSpecifiedBenchmarks();
+  ::benchmark::Shutdown();
+
+  return 0;
 }

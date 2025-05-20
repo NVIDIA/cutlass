@@ -180,7 +180,9 @@ public:
     };
     bool strides_valid = check_stride(args.mainloop.dA, sizeof(ElementA)) &&
                          check_stride(args.mainloop.dB, sizeof(ElementB)) &&
-                         check_stride(args.epilogue.dC, sizeof(ElementC)) &&
+                         // TODO(Codeplay): Use proper check when ElementC is correctly set.
+                         ((args.epilogue.ptr_C == nullptr) ||
+                          check_stride(args.epilogue.dC, sizeof(ElementC))) &&
                          check_stride(args.epilogue.dD, sizeof(ElementD));
     // TODO(codeplay): base *_valid on the atom shapes
     auto check_dim = [](int dimm, int el_size, bool do_check){

@@ -24,4 +24,4 @@ runs:
         python scripts/build_locally.py --c-compiler=$(which $CC) \
           --cxx-compiler=$(which $CXX) \
           --compiler-root=$(dirname `which $CXX`) \
-          --cmake-opts="-DCMAKE_INCLUDE_PATH=/lib/x86_64-linux-gnu -DLIBZE_LOADER_FILENAME=libze_loader.so.1"
+          --cmake-opts="-DCMAKE_INCLUDE_PATH=/lib/x86_64-linux-gnu"

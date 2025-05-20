@@ -20,6 +20,7 @@ PvcGemmBF16BF16FP32_RCR_5 --bm_name=mm_common --m=8 --k=4096 --n=4096
 # mm_silu 1,8 4096 14336
 PvcGemmBF16BF16FP32_RCR_8_silu --bm_name=mm_silu --m=1 --k=4096 --n=14336
 PvcGemmBF16BF16FP32_RCR_8_silu --bm_name=mm_silu --m=8 --k=4096 --n=14336
+PvcGemmCollectiveBF16BF16FP32_RCR_silu_8x64x32 --bm_name=mm_silu_collective --m=8 --k=4096 --n=14336
 
 # mm_mul 1,8 4096 14336
 PvcGemmBF16BF16FP32_RCR_7_mul --bm_name=mm_mul --m=1 --k=4096 --n=14336

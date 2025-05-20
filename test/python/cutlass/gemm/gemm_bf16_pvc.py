@@ -31,7 +31,7 @@
 #################################################################################################
 
 """
-Low-level functionality tests for GEMM with F16 operands on PVC
+Low-level functionality tests for GEMM with BF16 operands on PVC
 """
 
 from functools import partial
@@ -60,28 +60,44 @@ class GemmBF16PVC(unittest.TestCase):
 
 add_test_pvc_bf16 = partial(add_test_gemm, cls=GemmBF16PVC, cc=11,
                             element=dtype,
-                            element_C=cutlass.DataType.f32,
-                            element_output=cutlass.DataType.f32,
-                            element_accumulator=cutlass.DataType.f32,
                             compilation_modes=["dpcpp"],
                             opclass=cutlass.OpcodeClass.TensorOp,
+                            stages=0,
                             cluster_shape=[1, 1, 1])
 
-add_test_pvc_bf16(layouts=LayoutCombination.TTT,
-                  alignments=[2, 2, 4], threadblock_shape=[256, 256, 32],
-                  stages=0, warp_count=[8, 4, 1])
+add_test_f32_acc = partial(add_test_pvc_bf16, alignments=[2, 2, 4],
+                           element_C=cutlass.DataType.f32,
+                           element_output=cutlass.DataType.f32,
+                           element_accumulator=cutlass.DataType.f32)
+add_test_bf16_acc = partial(add_test_pvc_bf16, alignments=[2, 2, 2],
+                            element_C=cutlass.DataType.bf16,
+                            element_output=cutlass.DataType.bf16,
+                            element_accumulator=cutlass.DataType.bf16)
 
-add_test_pvc_bf16(layouts=LayoutCombination.TTT,
-                  alignments=[2, 2, 4], threadblock_shape=[128, 512, 32],
-                  stages=0, warp_count=[4, 8, 1])
+add_test_f32_acc(layouts=LayoutCombination.TTT,
+                 threadblock_shape=[256, 256, 32], warp_count=[8, 4, 1])
 
-add_test_pvc_bf16(layouts=LayoutCombination.TTT,
-                  alignments=[2, 2, 4], threadblock_shape=[256, 128, 32],
-                  stages=0, warp_count=[8, 4, 1])
+add_test_f32_acc(layouts=LayoutCombination.TTT,
+                 threadblock_shape=[128, 512, 32], warp_count=[4, 8, 1])
 
-add_test_pvc_bf16(layouts=LayoutCombination.TTT,
-                  alignments=[2, 2, 4], threadblock_shape=[128, 256, 16],
-                  stages=0, warp_count=[4, 8, 1])
+add_test_f32_acc(layouts=LayoutCombination.TTT,
+                 threadblock_shape=[256, 128, 32], warp_count=[8, 4, 1])
+
+add_test_f32_acc(layouts=LayoutCombination.TTT,
+                 threadblock_shape=[128, 256, 16], warp_count=[4, 8, 1])
+
+add_test_bf16_acc(layouts=LayoutCombination.TTT,
+                  threadblock_shape=[256, 256, 32], warp_count=[8, 4, 1])
+
+add_test_bf16_acc(layouts=LayoutCombination.TTT,
+                  threadblock_shape=[128, 512, 32], warp_count=[4, 8, 1])
+
+add_test_bf16_acc(layouts=LayoutCombination.TTT,
+                  threadblock_shape=[256, 128, 32], warp_count=[8, 4, 1])
+
+add_test_bf16_acc(layouts=LayoutCombination.TTT,
+                  threadblock_shape=[128, 256, 16], warp_count=[4, 8, 1])
+
 
 # TODO: Test more configurations as soon as they're supported by the
 # CollectiveBuilder

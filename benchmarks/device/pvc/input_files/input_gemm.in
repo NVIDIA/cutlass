@@ -1,5 +1,6 @@
 # GEMM BFloat16 benchmarks
 PvcGemmBF16BF16FP32_RRR_1 --bm_name=bf16_bf16_fp32 --l=1 --m=4096 --k=4096 --n=4096
+PvcGemmCollectiveBF16BF16FP32_RRR_256x256x32 --bm_name=bf16_bf16_fp32 --l=1 --m=4096 --k=4096 --n=4096
 PvcGemmBF16BF16FP32_RRR_1 --bm_name=bf16_bf16_fp32 --l=1 --m=8192 --k=8192 --n=8192
 PvcGemmBF16BF16FP32_RRR_1 --bm_name=bf16_bf16_fp32 --l=1 --m=1 --k=5120 --n=13824
 PvcGemmBF16BF16FP32_RRR_2 --bm_name=bf16_bf16_fp32 --l=1 --m=1024 --k=28672 --n=8192

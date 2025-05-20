@@ -1132,7 +1132,7 @@ using {operation_name_str}_LayoutSFB = decltype({operation_name_str}_ScaleConfig
     }
 
     # Overriding values for Intel Xe
-    if operation.is_xe:  
+    if operation.is_xe:
       values['arch'] = "cutlass::arch::IntelXe"
 
     return SubstituteTemplate(self.gemm_template, values)

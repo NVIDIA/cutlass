@@ -130,8 +130,8 @@ class ExecutableOperation:
         return err
 
     def run_with_sycl(self, launch_config, kernel_params, param_size, stream):
-        local_mem = dpctl.experimental.WorkGroupMemory(launch_config.shared_memory_capacity)
-        raw_arg = dpctl.experimental.RawKernelArg(param_size, kernel_params)
+        local_mem = dpctl.WorkGroupMemory(launch_config.shared_memory_capacity)
+        raw_arg = dpctl.RawKernelArg(param_size, kernel_params)
         globalSize = [g * l for g, l in zip(launch_config.grid, launch_config.block)]
         globalSize.reverse()
         localSize = launch_config.block

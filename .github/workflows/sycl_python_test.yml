@@ -56,8 +56,8 @@ jobs:
         id: install_dpctl
         uses: ./.github/actions/install-dpctl
         with:
-          DPCTL_URL: https://github.com/sommerlukas/dpctl.git
-          DPCTL_BRANCH: rebase-kernel-param
+          DPCTL_URL: https://github.com/IntelPython/dpctl.git
+          DPCTL_BRANCH: master
           DPCTL_PATH: ~/dpctl
           VENV_PATH: ~/.venv
       - name: Install Torch XPU
