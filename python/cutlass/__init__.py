@@ -218,6 +218,7 @@ import dpctl
 this._sycl_device: dpctl.SyclDevice = None
 
 def initialize_sycl_context():
+    check_cuda_versions()
     if this._device_id is not None and this._sycl_device is not None:
         return
 
