@@ -26,25 +26,20 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-set(CUTLASS_APPLICATIONS_DIR ${CMAKE_SOURCE_DIR}/applications)
-
-add_subdirectory(flash_attention_prefill)
-add_subdirectory(flash_attention_decode)
-add_subdirectory(flash_attention_prefill_cachedkv)
-
-
-add_custom_target(
-  cutlass_test_unit_flash_attention
-  DEPENDS
-  cutlass_test_unit_flash_attention_prefill
-  cutlass_test_unit_flash_attention_decode
-  cutlass_test_unit_flash_attention_prefill_cachedkv
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_flash_attention_prefill_cachedkv_xe
+  xe_flash_prefill_cachedkv_bf16.cpp
+  xe_flash_prefill_cachedkv_fp16.cpp
 )
 
 add_custom_target(
-  test_unit_flash_attention
+  cutlass_test_unit_flash_attention_prefill_cachedkv
   DEPENDS
-  test_unit_flash_attention_prefill
-  test_unit_flash_attention_decode
+  cutlass_test_unit_flash_attention_prefill_cachedkv_xe
+)
+
+add_custom_target(
   test_unit_flash_attention_prefill_cachedkv
+  DEPENDS
+  test_unit_flash_attention_prefill_cachedkv_xe
 )

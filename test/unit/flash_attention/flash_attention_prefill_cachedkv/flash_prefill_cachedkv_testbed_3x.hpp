@@ -29,7 +29,7 @@
  *
  **************************************************************************************************/
 /*! \file
-    \brief Tests for device-wide Flash Attention Decode interface
+    \brief Tests for device-wide Flash Attention Prefill Cached KV interface
 */
 
 #pragma once
@@ -37,11 +37,11 @@
 #include "cutlass/epilogue/collective/default_epilogue.hpp"
 #include "cutlass/gemm/device/gemm_universal_adapter.h"
 #include "flash_attention_v2/collective/fmha_fusion.hpp"
-#include "flash_attention_v2/kernel/tile_scheduler.hpp"
+#include "flash_attention_v2/kernel/tile_scheduler_cachedKV.hpp"
 #include "cutlass/util/packed_stride.hpp"
-#include "flash_attention_v2/kernel/xe_flash_attn_decode.hpp"
-#include "flash_attention_v2/collective/xe_flash_attn_decode_epilogue.hpp"
-#include "flash_attention_v2/collective/xe_flash_attn_decode_softmax_epilogue.hpp"
+#include "flash_attention_v2/kernel/xe_flash_attn_prefill_cachedKV.hpp"
+#include "flash_attention_v2/collective/xe_flash_attn_prefill_epilogue_cachedKV.hpp"
+#include "flash_attention_v2/collective/xe_flash_attn_prefill_softmax_epilogue.hpp"
 #include "cutlass/util/GPU_Clock.hpp"
 #include "cutlass/util/sycl_event_manager.hpp"
 
@@ -92,30 +92,30 @@ bool initialize_block(
   return true;
 }
 
-template <typename FlashDecode>
+template <typename FlashPrefillCachedKV>
 struct TestbedImpl {
   using LayoutQ = cutlass::layout::RowMajor;
   using LayoutK = cutlass::layout::ColumnMajor;
   using LayoutV = cutlass::layout::RowMajor;
   using LayoutO = cutlass::layout::RowMajor;
 
-  using StrideQ = typename FlashDecode::StrideQ;
-  using StrideK = typename FlashDecode::StrideK;
-  using StrideV = typename FlashDecode::StrideV;
-  using StrideO = typename FlashDecode::StrideO;
+  using StrideQ = typename FlashPrefillCachedKV::StrideQ;
+  using StrideK = typename FlashPrefillCachedKV::StrideK;
+  using StrideV = typename FlashPrefillCachedKV::StrideV;
+  using StrideO = typename FlashPrefillCachedKV::StrideO;
 
-  using ElementQ = typename FlashDecode::ElementQ;
-  using ElementK = typename FlashDecode::ElementK;
-  using ElementV = typename FlashDecode::ElementV;
-  using ElementAcc = typename FlashDecode::ElementAccumulator;
+  using ElementQ = typename FlashPrefillCachedKV::ElementQ;
+  using ElementK = typename FlashPrefillCachedKV::ElementK;
+  using ElementV = typename FlashPrefillCachedKV::ElementV;
+  using ElementAcc = typename FlashPrefillCachedKV::ElementAccumulator;
 
-  using CollectiveMainloop = typename FlashDecode::CollectiveMainloop;
-  using CollectiveEpilogue = typename FlashDecode::CollectiveEpilogue;
+  using CollectiveMainloop = typename FlashPrefillCachedKV::CollectiveMainloop;
+  using CollectiveEpilogue = typename FlashPrefillCachedKV::CollectiveEpilogue;
   using ElementOutput = typename CollectiveEpilogue::ElementOutput;
   using ElementCompute = typename CollectiveEpilogue::ElementCompute;
   using ElementAccumulator = typename CollectiveEpilogue::ElementAccumulator;
 
-  using ProblemShapeType = typename FlashDecode::ProblemShape;
+  using ProblemShapeType = typename FlashPrefillCachedKV::ProblemShape;
   static constexpr bool HasCausalMask = CollectiveMainloop::CausalMask;
   static constexpr bool isVarLen = CollectiveMainloop::is_var_len;
 
@@ -221,7 +221,7 @@ struct TestbedImpl {
   }
 
   template<class ProblemShape>
-  auto initialize_varlen(const ProblemShape& problem_size, const bool VarlenSame = true) {
+  auto initialize_varlen(const ProblemShape& problem_size) {
     int num_batches = cute::get<0>(problem_size);
 
     // generate Q as --b times
@@ -257,10 +257,9 @@ struct TestbedImpl {
     int max_seqlen_kv_cache = 0;
 
     for (int i = 0; i < num_batches; i++) {
-      //seqlen_q is usually set to 1 for decode.
-      int seqlen_q = cute::get<3>(problem_size) == 1 ? 1 : std::min(cute::get<3>(problem_size), cutlass::round_up(generate_positive_int(dist_q, rng), AlignmentQ));
+      int seqlen_q = cutlass::round_up(generate_positive_int(dist_q, rng), AlignmentQ);
       int seqlen_kv = cutlass::round_up(generate_positive_int(dist_kv, rng), AlignmentKV);
-      int seqlen_kv_cache = cute::get<5>(problem_size) == 0 ? 0 : cutlass::round_up(generate_positive_int(dist_kv_cache, rng), AlignmentKV);
+      int seqlen_kv_cache = !use_kv_cache ? 0 : cutlass::round_up(generate_positive_int(dist_kv_cache, rng), AlignmentKV);
 
       total_seqlen_q += seqlen_q;
       total_seqlen_kv += seqlen_kv;
@@ -285,13 +284,12 @@ struct TestbedImpl {
 
     cute::get<3>(problem_size_for_launch) = cutlass::fmha::collective::VariableLength{max_seqlen_q};
     cute::get<4>(problem_size_for_launch) = cutlass::fmha::collective::VariableLength{max_seqlen_kv};
-    cute::get<6>(problem_size_for_launch) = cute::get<6>(problem_size);
     cute::get<5>(problem_size_for_launch) = cutlass::fmha::collective::VariableLength{max_seqlen_kv_cache};
-    cute::get<7>(problem_size_for_launch) = cute::get<7>(problem_size);
     cute::get<0>(problem_size_for_launch) = cute::get<0>(problem_size);
     cute::get<1>(problem_size_for_launch) = cute::get<1>(problem_size);
     cute::get<2>(problem_size_for_launch) = cute::get<2>(problem_size);
-
+    cute::get<6>(problem_size_for_launch) = cute::get<6>(problem_size);
+    cute::get<7>(problem_size_for_launch) = cute::get<7>(problem_size);
 
     return cute::make_tuple(problem_size_for_init, problem_size_for_launch);
   }
@@ -408,7 +406,6 @@ struct TestbedImpl {
         auto discard_seq_coord = seq_len_qo - offset;
         auto full_tile_offset = seq_len_kv - offset;
         int start_col = use_kv_cache ? seq_len_kv_cache : 0;
-
         if (HasCausalMask) {
           // apply mask to S
           for (int row = 0; row < seq_len_qo; row++) {
@@ -541,7 +538,7 @@ struct TestbedImpl {
     // Initialize the Flash attention operator
     //
     cutlass::KernelHardwareInfo hw_info;
-    typename FlashDecode::Arguments arguments{
+    typename FlashPrefillCachedKV::Arguments arguments{
       cutlass::gemm::GemmUniversalMode::kGemm,
       problem_size,
       {block_Q.get(), stride_Q,
@@ -554,18 +551,18 @@ struct TestbedImpl {
       hw_info};
 
 #if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
-    CUTLASS_TRACE_HOST("TestbedImpl::run: Calling FlashDecode::get_workspace_size");
+    CUTLASS_TRACE_HOST("TestbedImpl::run: Calling FlashPrefillCachedKV::get_workspace_size");
 #endif
-    size_t workspace_size = FlashDecode::get_workspace_size(arguments);
+    size_t workspace_size = FlashPrefillCachedKV::get_workspace_size(arguments);
 #if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
     CUTLASS_TRACE_HOST("TestbedImpl::run: Allocating workspace of size " << workspace_size);
 #endif
     cutlass::device_memory::allocation<uint8_t> workspace(workspace_size);
 
 #if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
-    CUTLASS_TRACE_HOST("TestbedImpl::run: Calling FlashDecode::can_implement");
+    CUTLASS_TRACE_HOST("TestbedImpl::run: Calling FlashPrefillCachedKV::can_implement");
 #endif
-    auto can_implement = FlashDecode::can_implement(arguments);
+    auto can_implement = FlashPrefillCachedKV::can_implement(arguments);
 
     if (!can_implement) {
       std::cerr << "This test is not supported." << "\n";
@@ -578,35 +575,35 @@ struct TestbedImpl {
 #if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
     CUTLASS_TRACE_HOST("TestbedImpl::run: Calling to_underlying_arguments");
 #endif
-    auto params = FlashDecode::to_underlying_arguments(arguments, workspace.get());
+    auto params = FlashPrefillCachedKV::to_underlying_arguments(arguments, workspace.get());
 
 #if (CUTLASS_DEBUG_TRACE_LEVEL > 1)
     CUTLASS_TRACE_HOST("TestbedImpl::run: Calling run");
 #endif
-    auto const block = FlashDecode::get_block_shape();
-    auto const grid = FlashDecode::get_grid_shape(params);
+    auto const block = FlashPrefillCachedKV::get_block_shape();
+    auto const grid = FlashPrefillCachedKV::get_grid_shape(params);
 
     // configure smem size and carveout
-    int smem_size = FlashDecode::SharedStorageSize;
+    int smem_size = FlashPrefillCachedKV::SharedStorageSize;
 
     const auto sycl_block = syclcompat::dim3(block.x, block.y, block.z);
     const auto sycl_grid = syclcompat::dim3(grid.x, grid.y, grid.z);
 
 #if !defined(SYCL_EXT_ONEAPI_WORK_GROUP_SCRATCH_MEMORY)
     using namespace syclcompat::experimental;
-    auto event = launch<cutlass::device_kernel<FlashDecode>>(
+    auto event = launch<cutlass::device_kernel<FlashPrefillCachedKV>>(
         launch_policy{sycl_grid, sycl_block, local_mem_size{static_cast<std::size_t>(smem_size)},
-                      kernel_properties{sycl_exp::sub_group_size<FlashDecode::DispatchPolicy::SubgroupSize>}},
+                      kernel_properties{sycl_exp::sub_group_size<FlashPrefillCachedKV::DispatchPolicy::SubgroupSize>}},
         params);
 #else
     syclcompat::experimental::launch_properties launch_props {
       sycl::ext::oneapi::experimental::work_group_scratch_size(smem_size),
     };
     syclcompat::experimental::kernel_properties kernel_props{
-      sycl::ext::oneapi::experimental::sub_group_size<FlashDecode::DispatchPolicy::SubgroupSize>
+      sycl::ext::oneapi::experimental::sub_group_size<FlashPrefillCachedKV::DispatchPolicy::SubgroupSize>
     };
     syclcompat::experimental::launch_policy policy{sycl_grid, sycl_block, launch_props, kernel_props};
-    auto event = syclcompat::experimental::launch<cutlass::device_kernel<FlashDecode>>(policy, params);
+    auto event = syclcompat::experimental::launch<cutlass::device_kernel<FlashPrefillCachedKV>>(policy, params);
 #endif
     EventManager::getInstance().addEvent(event);
 
@@ -646,10 +643,10 @@ struct TestbedImpl {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <
-  typename FlashDecode
+  typename FlashPrefillCachedKV
 >
 struct Testbed3x {
-  using TestBedImpl = typename detail::TestbedImpl<FlashDecode>;
+  using TestBedImpl = typename detail::TestbedImpl<FlashPrefillCachedKV>;
   TestBedImpl impl_;
 
   //
@@ -668,12 +665,12 @@ struct Testbed3x {
   }
 };
 
-template <typename FlashDecode>
-bool TestFlashDecodeAll(int head_size) {
-  Testbed3x<FlashDecode> testbed;
+template <typename FlashPrefillCachedKV>
+bool TestFlashPrefillCachedKVAll(int head_size) {
+  Testbed3x<FlashPrefillCachedKV> testbed;
 
-  std::vector<int> problem_size_batch{16};
-  std::vector<int> problem_size_num_heads{32};
+  std::vector<int> problem_size_batch{8};
+  std::vector<int> problem_size_num_heads{8};
   std::vector<int> problem_size_seq_len{1024};
   std::vector<int> problem_size_seq_len_cache{0, 1024};
   std::vector<float> problem_size_softmax_scale{ 1.f / sqrt(static_cast<float>(head_size)) };
@@ -686,7 +683,7 @@ bool TestFlashDecodeAll(int head_size) {
           for (float softmax_scale : problem_size_softmax_scale) {
             auto num_heads_q = num_heads;
             auto num_heads_kv = num_heads;
-            auto seq_len_qo = 1;
+            auto seq_len_qo = seq_len;
             auto seq_len_kv = seq_len;
             auto seq_len_kv_cache = seq_len_cache;
             auto head_size_qk = head_size;
@@ -698,7 +695,7 @@ bool TestFlashDecodeAll(int head_size) {
               passed = testbed.run(problem_size, softmax_scale);
             }
             catch (std::exception const& e) {
-              EXPECT_TRUE(false) << "TestFlashDecodeAll: testbed.run {"
+              EXPECT_TRUE(false) << "TestFlashPrefillCachedKVAll: testbed.run {"
                 << "batch: " << batch << ", num_heads_q: " << num_heads_q << ", num_heads_kv: " << num_heads_kv
                 << ", seq_len_qo: " << seq_len_qo << ", seq_len_kv: " << seq_len_kv << ", seq_len_kv_cache: "
                 << seq_len_cache << ", head_size_vo: " << head_size_vo << ", head_size_qk: " << head_size_qk
@@ -707,7 +704,7 @@ bool TestFlashDecodeAll(int head_size) {
               throw;
             }
             catch (...) {
-              EXPECT_TRUE(false) << "TestFlashDecodeAll: testbed.run {"
+              EXPECT_TRUE(false) << "TestFlashPrefillCachedKVAll: testbed.run {"
                 << "batch: " << batch << ", num_heads_q: " << num_heads_q << ", num_heads_kv: " << num_heads_kv
                 << ", seq_len_qo: " << seq_len_qo << ", seq_len_kv: " << seq_len_kv << ", seq_len_kv_cache: "
                 << seq_len_cache << ", head_size_vo: " << head_size_vo << ", head_size_qk: " << head_size_qk
@@ -716,7 +713,7 @@ bool TestFlashDecodeAll(int head_size) {
               throw;
             }
 
-            EXPECT_TRUE(passed) << "TestFlashDecodeAll: testbed.run {"
+            EXPECT_TRUE(passed) << "TestFlashPrefillCachedKVAll: testbed.run {"
               << "batch: " << batch << ", num_heads_q: " << num_heads_q << ", num_heads_kv: " << num_heads_kv
               << ", seq_len_qo: " << seq_len_qo << ", seq_len_kv: " << seq_len_kv << ", seq_len_kv_cache: "
               << seq_len_cache << ", head_size_vo: " << head_size_vo << ", head_size_qk: " << head_size_qk

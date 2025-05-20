@@ -147,9 +147,9 @@ public:
   CUTLASS_HOST_DEVICE
   FlashDecodeEpilogue(Params const &params_, TensorStorage const &) : params(params_) {}
 
-  template <class ProblemShape, class TileShape, class TileCoord, class STensorOut, class FragSum, class STensorSum, class TiledMma>
-  CUTLASS_DEVICE void operator()(ProblemShape problem_shape, TileShape tile_shape, TileCoord tile_coord, STensorOut &shmem_tensor_out,
-                                 FragSum &sum, STensorSum& shmem_tensor_sum, TiledMma tiled_mma) {
+  template <class ProblemShape, class SequenceLengthShape, class TileShape, class TileCoord, class STensorOut, class FragSum, class STensorSum, class TiledMma>
+  CUTLASS_DEVICE void operator()(ProblemShape problem_shape, SequenceLengthShape sequence_length_shape, TileShape tile_shape, TileCoord tile_coord,
+                                STensorOut &shmem_tensor_out, FragSum &sum, STensorSum& shmem_tensor_sum, TiledMma tiled_mma) {
 
     using namespace cute;
 
@@ -229,7 +229,8 @@ public:
       }
 
       // Indexing variables
-      auto [batch, num_heads_q, seq_len_qo, head_size_vo] = select<0, 1, 3, 7>(problem_shape);
+      auto [batch, num_heads_q, head_size_vo] = select<0, 1, 7>(problem_shape);
+      auto [seq_len_qo] = select<0>(sequence_length_shape);
       // Represent the full output tensor
       Tensor mO_mnl = cute::get_xe_tensor(make_shape(seq_len_qo, head_size_vo, (is_var_len ? batch : 1) * num_heads_q));
       
@@ -248,12 +249,17 @@ public:
     }
   }
 
-  template <bool VarLen, class ProblemShapeType>
-  CUTLASS_DEVICE static constexpr Params get_updated_copies(Params const& params, ProblemShapeType const& problem_shape, int const& l_coord) {
+  // SequenceLengthShapeType = Shape<int, int, int>
+  // For Fixed Sequence Length, ProblemShapeType = Shape<int, int, int, int, int, int, int, int>
+  // For Variable Sequence Length, ProblemShapeType = Shape<int, int, int, VariableSeqlen, VariableSeqlen, VariableSeqlen, int, int>
+  template <bool VarLen, class ProblemShapeType, class SequenceLengthShapeType>
+  CUTLASS_DEVICE static constexpr Params get_updated_copies(Params const& params, ProblemShapeType const& problem_shape,
+                                                            SequenceLengthShapeType const& sequence_length_shape, int const& l_coord) {
     if constexpr (!VarLen) {
       return params;
     } else {
-      auto [batch, num_heads_q, seq_len_qo, head_size_vo] = select<0, 1, 3, 7>(problem_shape);
+      auto [num_heads_q, head_size_vo] = select<1, 7>(problem_shape);
+      auto [seq_len_qo] = select<0>(sequence_length_shape);
 
       auto qo_cumulative_length = get<3>(problem_shape).cumulative_length;
       int offset_o = num_heads_q * head_size_vo * qo_cumulative_length[l_coord];

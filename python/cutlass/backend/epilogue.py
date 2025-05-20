@@ -81,6 +81,9 @@ def to_ctype_value(value, dtype):
     if dtype == DataType.f16:
         # Convert f16 value into an integer
         return int.from_bytes(np.float16(scalar).tobytes(), "little")
+    elif dtype == DataType.bf16:
+        assert is_torch_available()
+        return int(torch.tensor(scalar, dtype=torch.bfloat16).view(torch.uint16).item())
     else:
         return scalar
 
@@ -193,7 +196,16 @@ class LinearCombination(EpilogueFunctorBase):
                 self.beta = to_ctype_value(beta, element_epilogue)
 
             def to_evt_params(self) -> _EpilogueOutputOpParamsEVT:
-                return _EpilogueOutputOpParamsEVT(self.alpha, self.beta)
+                alpha = self.alpha
+                beta = self.beta
+                if element_epilogue == DataType.bf16:
+                    assert is_torch_available()
+                    alpha = torch.tensor(alpha, dtype=torch.uint16).view(
+                        torch.bfloat16).item()
+                    beta = torch.tensor(beta, dtype=torch.uint16).view(
+                        torch.bfloat16).item()
+
+                return _EpilogueOutputOpParamsEVT(alpha, beta)
 
         self.epilogue_type = _EpilogueOutputOpParams
         self.epilogue_type_evt = _EpilogueOutputOpParamsEVT

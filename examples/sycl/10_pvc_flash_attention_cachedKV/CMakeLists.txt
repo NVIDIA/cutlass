@@ -28,9 +28,8 @@
 
 
 set(CUTLASS_APPLICATIONS_DIR ${CMAKE_SOURCE_DIR}/applications)
-set(CUTLASS_EXAMPLES_DIR ${CMAKE_SOURCE_DIR}/examples)
 
 cutlass_example_add_executable(
   10_pvc_prefill_attention_cachedKV
-  10_pvc_prefill_attention_cachedKV.cpp
+  10_pvc_prefill_attention_prefill_cachedKV.cpp
 )

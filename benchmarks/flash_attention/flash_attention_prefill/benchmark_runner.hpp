@@ -35,9 +35,9 @@
 #include "flash_attention_v2/kernel/tile_scheduler.hpp"
 #include "cutlass/gemm/device/gemm_universal_adapter.h"
 #include "cutlass/util/packed_stride.hpp"
-#include "flash_attention_v2/kernel/xe_flash_attn_gemm.hpp"
-#include "flash_attention_v2/collective/xe_flash_attn_epilogue.hpp"
-#include "flash_attention_v2/collective/xe_flash_attn_softmax_epilogue.hpp"
+#include "flash_attention_v2/kernel/xe_flash_attn_prefill.hpp"
+#include "flash_attention_v2/collective/xe_flash_attn_prefill_epilogue.hpp"
+#include "flash_attention_v2/collective/xe_flash_attn_prefill_softmax_epilogue.hpp"
 #include "cutlass/util/GPU_Clock.hpp"
 #include "cutlass/util/sycl_event_manager.hpp"
 
@@ -317,7 +317,7 @@ template <class FMHAPrefillConfiguration> struct BenchmarkRunnerFMHA {
   }
 
   template<class ProblemShape>
-  auto initialize_varlen(const ProblemShape& problem_size, const bool VarlenSame = true) {
+  auto initialize_varlen(const ProblemShape& problem_size) {
     int num_batches = get<0>(problem_size);
 
     // generate Q as --b times
@@ -326,6 +326,11 @@ template <class FMHAPrefillConfiguration> struct BenchmarkRunnerFMHA {
     std::mt19937 rng(0x202305151552ull);
     std::normal_distribution<double> dist_q(get<3>(problem_size), get<3>(problem_size) / 2);
     std::normal_distribution<double> dist_kv(get<4>(problem_size), get<4>(problem_size) / 2);
+
+    // Use Cacheline Size to calculate alignment
+    constexpr int cacheline_bytes = 64;
+    constexpr int AlignmentQ = cacheline_bytes / sizeof(ElementQ);    // Alignment of Q matrix in units of elements
+    constexpr int AlignmentKV = cacheline_bytes / sizeof(ElementK);   // Alignment of Kand V matrix in units of elements
 
     auto generate_positive_int = [](auto& dist, auto& gen) {
       int result = 0;
@@ -344,8 +349,8 @@ template <class FMHAPrefillConfiguration> struct BenchmarkRunnerFMHA {
     int max_seqlen_kv = 0;
 
     for (int i = 0; i < num_batches; i++) {
-      int seqlen_q = VarlenSame ? get<3>(problem_size) : generate_positive_int(dist_q, rng);
-      int seqlen_kv = VarlenSame ? get<4>(problem_size) : generate_positive_int(dist_kv, rng);
+      int seqlen_q = cutlass::round_up(generate_positive_int(dist_q, rng), AlignmentQ);
+      int seqlen_kv = cutlass::round_up(generate_positive_int(dist_kv, rng), AlignmentKV);
 
       total_seqlen_q += seqlen_q;
       total_seqlen_kv += seqlen_kv;

@@ -35,9 +35,9 @@
 #include "flash_attention_v2/collective/fmha_fusion.hpp"
 #include "flash_attention_v2/kernel/tile_scheduler.hpp"
 #include "cutlass/util/packed_stride.hpp"
-#include "flash_attention_v2/kernel/xe_flash_attn_gemm.hpp"
-#include "flash_attention_v2/collective/xe_flash_attn_epilogue.hpp"
-#include "flash_attention_v2/collective/xe_flash_attn_softmax_epilogue.hpp"
+#include "flash_attention_v2/kernel/xe_flash_attn_prefill.hpp"
+#include "flash_attention_v2/collective/xe_flash_attn_prefill_epilogue.hpp"
+#include "flash_attention_v2/collective/xe_flash_attn_prefill_softmax_epilogue.hpp"
 #include "cutlass/util/GPU_Clock.hpp"
 #include "cutlass/util/sycl_event_manager.hpp"
 
@@ -130,24 +130,24 @@ using LayoutK = cutlass::layout::ColumnMajor;
 using LayoutV = cutlass::layout::RowMajor;
 using LayoutO = cutlass::layout::RowMajor;
 
-template <class GemmKernel, bool isVarLen> struct ExampleRunner {
+template <class FMHAPrefillKernel, bool isVarLen> struct ExampleRunner {
 
-  using StrideQ = typename GemmKernel::StrideQ;
-  using StrideK = typename GemmKernel::StrideK;
-  using StrideV = typename GemmKernel::StrideV;
-  using StrideO = typename GemmKernel::StrideO;
+  using StrideQ = typename FMHAPrefillKernel::StrideQ;
+  using StrideK = typename FMHAPrefillKernel::StrideK;
+  using StrideV = typename FMHAPrefillKernel::StrideV;
+  using StrideO = typename FMHAPrefillKernel::StrideO;
 
-  using ElementQ = typename GemmKernel::ElementQ;
-  using ElementK = typename GemmKernel::ElementK;
-  using ElementV = typename GemmKernel::ElementV;
-  using ElementAcc = typename GemmKernel::ElementAccumulator;
+  using ElementQ = typename FMHAPrefillKernel::ElementQ;
+  using ElementK = typename FMHAPrefillKernel::ElementK;
+  using ElementV = typename FMHAPrefillKernel::ElementV;
+  using ElementAcc = typename FMHAPrefillKernel::ElementAccumulator;
 
-  using CollectiveEpilogue = typename GemmKernel::CollectiveEpilogue;
+  using CollectiveEpilogue = typename FMHAPrefillKernel::CollectiveEpilogue;
   using ElementOutput = typename CollectiveEpilogue::ElementOutput;
   using ElementCompute = typename CollectiveEpilogue::ElementCompute;
   using ElementAccumulator = typename CollectiveEpilogue::ElementAccumulator;
 
-  using ProblemShapeType = typename GemmKernel::ProblemShape;
+  using ProblemShapeType = typename FMHAPrefillKernel::ProblemShape;
 
   //
   // Data members
@@ -333,7 +333,7 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
   }
 
   template<class ProblemShape>
-  auto initialize_varlen(const ProblemShape& problem_size, const bool VarlenSame = true) {
+  auto initialize_varlen(const ProblemShape& problem_size) {
     int num_batches = get<0>(problem_size);
 
     // generate Q as --b times
@@ -342,6 +342,11 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
     std::mt19937 rng(0x202305151552ull);
     std::normal_distribution<double> dist_q(get<3>(problem_size), get<3>(problem_size) / 2);
     std::normal_distribution<double> dist_kv(get<4>(problem_size), get<4>(problem_size) / 2);
+
+    // Use Cacheline Size to calculate alignment
+    constexpr int cacheline_bytes = 64;
+    constexpr int AlignmentQ = cacheline_bytes / sizeof(ElementQ);    // Alignment of Q matrix in units of elements
+    constexpr int AlignmentKV = cacheline_bytes / sizeof(ElementK);   // Alignment of Kand V matrix in units of elements
 
     auto generate_positive_int = [](auto& dist, auto& gen) {
       int result = 0;
@@ -360,8 +365,8 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
     int max_seqlen_kv = 0;
 
     for (int i = 0; i < num_batches; i++) {
-      int seqlen_q = VarlenSame ? get<3>(problem_size) : generate_positive_int(dist_q, rng);
-      int seqlen_kv = VarlenSame ? get<4>(problem_size) : generate_positive_int(dist_kv, rng);
+      int seqlen_q = cutlass::round_up(generate_positive_int(dist_q, rng), AlignmentQ);
+      int seqlen_kv = cutlass::round_up(generate_positive_int(dist_kv, rng), AlignmentKV);
 
       total_seqlen_q += seqlen_q;
       total_seqlen_kv += seqlen_kv;
@@ -448,12 +453,12 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
 
   // Note that the GemmUniversalAdapter currently doesn't support flash attention, which is why this
   // secondary `run` function is required to launch the kernel.
-  static void run(typename GemmKernel::Params params) {
-    dim3 const block = GemmKernel::get_block_shape();
-    dim3 const grid = GemmKernel::get_grid_shape(params);
+  static void run(typename FMHAPrefillKernel::Params params) {
+    dim3 const block = FMHAPrefillKernel::get_block_shape();
+    dim3 const grid = FMHAPrefillKernel::get_grid_shape(params);
 
     // configure smem size and carveout
-    int smem_size = GemmKernel::SharedStorageSize;
+    int smem_size = FMHAPrefillKernel::SharedStorageSize;
 
     const auto sycl_block = syclcompat::dim3(block.x, block.y, block.z);
     const auto sycl_grid = syclcompat::dim3(grid.x, grid.y, grid.z);
@@ -461,19 +466,19 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
 // Launch parameters depend on whether SYCL compiler supports work-group scratch memory extension
 #if !defined(SYCL_EXT_ONEAPI_WORK_GROUP_SCRATCH_MEMORY)
     using namespace syclcompat::experimental;
-    auto event = launch<cutlass::device_kernel<GemmKernel>>(
+    auto event = launch<cutlass::device_kernel<FMHAPrefillKernel>>(
         launch_policy{sycl_grid, sycl_block, local_mem_size{static_cast<std::size_t>(smem_size)},
-                      kernel_properties{sycl_exp::sub_group_size<GemmKernel::DispatchPolicy::SubgroupSize>}},
+                      kernel_properties{sycl_exp::sub_group_size<FMHAPrefillKernel::DispatchPolicy::SubgroupSize>}},
         params);
 #else
     syclcompat::experimental::launch_properties launch_props {
       sycl::ext::oneapi::experimental::work_group_scratch_size(smem_size),
     };
     syclcompat::experimental::kernel_properties kernel_props{
-      sycl::ext::oneapi::experimental::sub_group_size<GemmKernel::DispatchPolicy::SubgroupSize>
+      sycl::ext::oneapi::experimental::sub_group_size<FMHAPrefillKernel::DispatchPolicy::SubgroupSize>
     };
     syclcompat::experimental::launch_policy policy{sycl_grid, sycl_block, launch_props, kernel_props};
-    auto event = syclcompat::experimental::launch<cutlass::device_kernel<GemmKernel>>(policy, params);
+    auto event = syclcompat::experimental::launch<cutlass::device_kernel<FMHAPrefillKernel>>(policy, params);
 #endif
 
     EventManager::getInstance().addEvent(event);
@@ -483,7 +488,7 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
 
     ProblemShapeType problem_size = initialize(options);
 
-    typename GemmKernel::Arguments arguments{
+    typename FMHAPrefillKernel::Arguments arguments{
         cutlass::gemm::GemmUniversalMode::kGemm,
         problem_size,
         {block_Q.get(), stride_Q, block_K.get(), stride_K, block_V.get(), stride_V},
@@ -491,13 +496,11 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
         {block_O.get(), stride_O},
         hw_info};
 
-    // GemmKernel gemm_op;
-
     // Define device-global scratch memory
-    size_t workspace_size = GemmKernel::get_workspace_size(arguments);
+    size_t workspace_size = FMHAPrefillKernel::get_workspace_size(arguments);
     cutlass::device_memory::allocation<uint8_t> workspace(workspace_size);
 
-    if (!GemmKernel::can_implement(arguments)) {
+    if (!FMHAPrefillKernel::can_implement(arguments)) {
       std::cout << "Invalid Problem Size: " << options.batch << 'x' << options.num_heads_q << 'x' <<
         options.seq_len_qo << 'x' << options.seq_len_kv << 'x' << options.head_size_qk << 'x'  << options.head_size_vo 
         << (options.is_causal ? "xCausal" : "xNonCausal") << std::endl;
@@ -505,10 +508,10 @@ template <class GemmKernel, bool isVarLen> struct ExampleRunner {
     }
 
     // Initialize the workspace
-    CUTLASS_CHECK(GemmKernel::initialize_workspace(arguments, workspace.get()));
+    CUTLASS_CHECK(FMHAPrefillKernel::initialize_workspace(arguments, workspace.get()));
 
     // Convert host-side arguments to device-side arguments to be passed to the kernel
-    auto params = GemmKernel::to_underlying_arguments(arguments, workspace.get());
+    auto params = FMHAPrefillKernel::to_underlying_arguments(arguments, workspace.get());
 
     // Run the GEMM
     run(params);
@@ -586,10 +589,10 @@ template <bool Causal, typename TileShape, typename TiledMma> struct FMHAConfig 
     using GmemTiledCopyK = XE_2D_U16x16x16_LD_T; // _T designates a transposed block load operation
     using GmemTiledCopyV = XE_2D_U16x32x32_LD_V;
     using GmemTiledCopyStore = XE_2D_U32x8x16_ST_N;
-    using CollectiveEpilogue = cutlass::flash_attention::collective::CollectiveEpilogueAttention<
+    using CollectiveEpilogue = cutlass::flash_attention::collective::FlashPrefillEpilogue<
         EpilogueDispatchPolicy, TileShape, ElementAccumulator, cutlass::gemm::TagToStrideC_t<LayoutO>, ElementOutput,
         GmemTiledCopyStore>;
-    using CollectiveSoftmaxEpilogue = cutlass::flash_attention::collective::CollectiveSoftmaxEpilogue<Causal, EpilogueDispatchPolicy, ElementAccumulator>;
+    using CollectiveSoftmaxEpilogue = cutlass::flash_attention::collective::FlashPrefillSoftmaxEpilogue<Causal, EpilogueDispatchPolicy, ElementAccumulator>;
 
     using ProblemShapeRegular = cute::tuple<int, int, int, int, int, int, int>;
     using namespace cutlass::fmha::collective;
@@ -597,7 +600,7 @@ template <bool Causal, typename TileShape, typename TiledMma> struct FMHAConfig 
     using ProblemShapeType = std::conditional_t<isVarLen, ProblemShapeVarlen, ProblemShapeRegular>;
 
     // Mainloop
-    using CollectiveMainloop = cutlass::flash_attention::collective::CollectiveMmaAttention<
+    using CollectiveMainloop = cutlass::flash_attention::collective::FlashPrefillMma<
         GEMMDispatchPolicy, ProblemShapeType, TileShape, ElementInputQ, cutlass::gemm::TagToStrideA_t<LayoutQ>, ElementInputKV,
         cutlass::gemm::TagToStrideB_t<LayoutK>, ElementInputKV, cutlass::gemm::TagToStrideB_t<LayoutV>, TiledMma,
         GmemTiledCopyQ, // Q
@@ -605,10 +608,10 @@ template <bool Causal, typename TileShape, typename TiledMma> struct FMHAConfig 
         GmemTiledCopyV, // V,
         Causal>;
 
-    using GemmKernel = cutlass::flash_attention::kernel::GemmUniversalAttention<ProblemShapeType, CollectiveMainloop,
+    using FMHAPrefillKernel = cutlass::flash_attention::kernel::FMHAPrefill<ProblemShapeType, CollectiveMainloop,
                                                                      CollectiveSoftmaxEpilogue, CollectiveEpilogue, Scheduler>;
 
-    ExampleRunner<GemmKernel, isVarLen> runner;
+    ExampleRunner<FMHAPrefillKernel, isVarLen> runner;
 
     CUTLASS_CHECK(runner.run(options, hw_info));
     return 0;    
