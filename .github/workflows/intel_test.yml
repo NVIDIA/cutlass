@@ -97,7 +97,4 @@ jobs:
       - name: Examples
         shell: bash
         run: |
-          # Disable test examples on BMG due to flakiness 
-          if [[ "${{ matrix.GPU }}" != "BMG" ]]; then
-            cmake --build . --target test_examples -j $(nproc)
-          fi
+          cmake --build . --target test_examples -j 1
