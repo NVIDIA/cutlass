@@ -834,6 +834,8 @@ coalesce_x(Layout<Shape,Stride> const& layout)
   } else {
     return detail::bw_coalesce<R-2>(flat_shape, flat_stride, get<R-1>(flat_shape), get<R-1>(flat_stride));
   }
+  
+  CUTE_GCC_UNREACHABLE;
 }
 
 // Apply coalesce_x at the terminals of trg_profile
@@ -903,6 +905,8 @@ coalesce(Shape const& shape)
     } else {
       return append(init, a);                     // Can't coalesce, so append
     }
+
+    CUTE_GCC_UNREACHABLE;
   });
 }
 
@@ -1026,7 +1030,7 @@ template <class LShape, class LStride,
           class RShape, class RStride>
 CUTE_HOST_DEVICE constexpr
 auto
-composition_impl(LShape const& lhs_shape, LStride const& lhs_stride,
+composition_impl(LShape const& lhs_shape, [[maybe_unused]] LStride const& lhs_stride,
                  RShape const& rhs_shape, RStride const& rhs_stride)
 {
   if constexpr (is_tuple<RShape>::value) {                 // Right-distributivity of Layout composition for RHS tuple
@@ -1063,7 +1067,7 @@ composition_impl(LShape const& lhs_shape, LStride const& lhs_stride,
                    auto rest_stride   = get<3>(init);
 
                    auto curr_shape  = get<curr_i>(lhs_shape);
-                   auto curr_stride = get<curr_i>(lhs_stride);
+                   [[maybe_unused]] auto curr_stride = get<curr_i>(lhs_stride);
 
                    // Strong divisibility condition -- requires composition to be statically verifiable.
                    //CUTE_STATIC_ASSERT_V(((rest_stride % curr_shape) == Int<0>{}) or (rest_stride < curr_shape), "Stride Divisibility Condition");
@@ -1105,6 +1109,8 @@ composition_impl(LShape const& lhs_shape, LStride const& lhs_stride,
                                              rest_shape / new_shape,
                                              next_stride);
                    }
+
+                   CUTE_GCC_UNREACHABLE;
                  });
 
     if constexpr (tuple_size<decltype(result_shape)>::value == 0) {
@@ -1289,6 +1295,8 @@ right_inverse(Layout<Shape,Stride> const& layout)
       } else {
         return init;
       }
+
+      CUTE_GCC_UNREACHABLE;
     });
 
   return coalesce(make_layout(result_shape, result_stride));
@@ -1344,9 +1352,11 @@ left_inverse(Layout<Shape,Stride> const& layout)
         return make_tuple(append(result_shape,  istride / size(result_shape)),
                           append(result_stride, get<i>(preprod_shape)));
       }
+
+      CUTE_GCC_UNREACHABLE;
     });
 
-  return coalesce(make_layout(append(result_shape, get<back(sorted_seq)>(lshape)),
+  return coalesce(make_layout(append(result_shape, get<decltype(back(sorted_seq))::value>(lshape)),
                               result_stride));
 }
 
@@ -1499,7 +1509,7 @@ nullspace(Layout<Shape,Stride> const& layout)
 {
   auto flat_layout = flatten(layout);
 
-  auto iseq = detail::nullspace_seq<0>(flat_layout.stride(), seq<>{});
+  [[maybe_unused]] auto iseq = detail::nullspace_seq<0>(flat_layout.stride(), seq<>{});
 
   if constexpr (iseq.size() == 0) {
     return Layout<_1,_0>{};     // Empty case, nothing found

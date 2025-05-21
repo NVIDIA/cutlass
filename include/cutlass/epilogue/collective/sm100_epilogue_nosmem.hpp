@@ -462,6 +462,10 @@ private:
                                                || is_same_v<ThreadEpilogueOp, epilogue::fusion::FusionOperation>; // alloc reduction buffer for custom EVTs
   constexpr static size_t ImplicitSharedStorageSize = IsReductionBufferNeeded ? size(EpilogueTile{}) : 0;
 
+  // Not unroll epi subtile loop when the activation op is heavy to reduce instruction size and register pressure.
+  constexpr static bool UnrollEpiLoop =
+    not cutlass::epilogue::thread::kIsHeavy_member_or_false<typename ThreadEpilogueOp::ActivationFn>::value;
+
 public:
   constexpr static int ThreadCount = 128;
   constexpr static uint32_t TmaTransactionBytes = 0;
@@ -646,12 +650,12 @@ public:
       thread_idx
     };
 
-    auto cst_callbacks = fusion_callbacks.get_consumer_store_callbacks<RefSrc>(cst_args);
-    bool is_C_load_needed = fusion_callbacks.is_C_load_needed();
-
     auto synchronize = [] () CUTLASS_LAMBDA_FUNC_INLINE { cutlass::arch::NamedBarrier::sync(ThreadCount, cutlass::arch::ReservedNamedBarriers::EpilogueBarrier); };
 
+    // The Epilogue Loop
     auto epi_loop_fn = [&] (auto& cst_callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
+      bool is_C_load_needed = fusion_callbacks.is_C_load_needed();
+
       // Ensure there are no threads from the previous wave writing to shared memory being utilized for the current wave.
       synchronize();
       cst_callbacks.begin();
@@ -669,10 +673,12 @@ public:
       static_assert(not (ReuseTmem && AccumulatorPipeline::Stages != 1), "Tmem reuse requires 1 accumulator stage");
 
       // For each epilogue subtile within the CTA tile
-      CUTLASS_PRAGMA_UNROLL
-      for (int iter_n = 0; iter_n < size<4>(tTR_tAcc); ++iter_n) {
-        CUTLASS_PRAGMA_UNROLL
-        for (int iter_m = 0; iter_m < size<3>(tTR_tAcc); ++iter_m) {
+      constexpr int NumEpiSubtilesN = CUTE_STATIC_V(size<4>(tTR_tAcc));
+      constexpr int NumEpiSubtilesM = CUTE_STATIC_V(size<3>(tTR_tAcc));
+      #pragma unroll(UnrollEpiLoop ? NumEpiSubtilesN : 1)
+      for (int iter_n = 0; iter_n < NumEpiSubtilesN; ++iter_n) {
+        #pragma unroll(UnrollEpiLoop ? NumEpiSubtilesM : 1)
+        for (int iter_m = 0; iter_m < NumEpiSubtilesM; ++iter_m) {
           int epi_m = iter_m, epi_n = iter_n;
 
           bool is_last_iteration = iter_m == size<3>(tTR_tAcc)-1 && iter_n == size<4>(tTR_tAcc)-1;
@@ -747,6 +753,10 @@ public:
       cst_callbacks.end();
     };
 
+    //
+    // BEGIN EPILOGUE
+    //
+    auto cst_callbacks = fusion_callbacks.template get_consumer_store_callbacks<RefSrc>(cst_args);
     epi_loop_fn(cst_callbacks);
     return cute::make_tuple(acc_pipe_consumer_state);
   }

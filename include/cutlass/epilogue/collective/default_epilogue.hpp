@@ -35,6 +35,7 @@
 #pragma once
 
 #include "cutlass/cutlass.h"
+#include "cutlass/arch/memory.h"
 #include "cutlass/gemm/dispatch_policy.hpp"
 #include "cutlass/epilogue/collective/detail.hpp"
 
@@ -225,22 +226,27 @@ public:
       return;
     }
 
+    using FragCType = remove_cvref_t<decltype(tCgC(0))>;
+    using FragDType = remove_cvref_t<decltype(tCgD(0))>;
+
     // source is needed
     if (epilogue_op.is_source_needed()) {
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < size(accumulators); ++i) {
-        if (elem_less(tCcD(i), residue_tCcD)) {
-          tCgD(i) = epilogue_op(accumulators(i), tCgC(i));
-        }
+        FragCType fragC;
+        bool pred = elem_less(tCcD(i), residue_tCcD);
+        arch::global_load<FragCType, sizeof(FragCType)>(fragC, &tCgC(i), pred);
+        FragDType fragD = epilogue_op(accumulators(i), fragC);
+        arch::global_store<FragDType, sizeof(FragDType)>(fragD, &tCgD(i), pred);
       }
     }
     // source is not needed, avoid load
     else {
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < size(accumulators); ++i) {
-        if (elem_less(tCcD(i), residue_tCcD)) {
-          tCgD(i) = epilogue_op(accumulators(i));
-        }
+        bool pred = elem_less(tCcD(i), residue_tCcD);
+        FragDType fragD = epilogue_op(accumulators(i));
+        arch::global_store<FragDType, sizeof(FragDType)>(fragD, &tCgD(i), pred);
       }
     }
   }

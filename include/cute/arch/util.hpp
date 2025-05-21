@@ -88,7 +88,7 @@ namespace cute
 {
 
 /// CUTE helper to cast SMEM pointer to unsigned
-CUTE_DEVICE
+CUTE_HOST_DEVICE
 uint32_t
 cast_smem_ptr_to_uint(void const* const ptr)
 {

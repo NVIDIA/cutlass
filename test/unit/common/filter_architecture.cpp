@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
-
 #if !defined(CUTLASS_ENABLE_SYCL)
 #include <cuda_runtime_api.h>
 #endif
@@ -67,7 +66,10 @@ std::ostream &operator<<(std::ostream &out, cudaDeviceProp const &deviceProperti
 
   int deviceMajorMinor = deviceProperties.major * 10 + deviceProperties.minor;
   if (deviceMajorMinor) {
-    int32_t clock_MHz = deviceProperties.clockRate / 1000;
+    int32_t clock_MHz;
+    int32_t clock_KHz;
+    cudaDeviceGetAttribute(&clock_KHz, cudaDevAttrClockRate, 0);
+    clock_MHz = clock_KHz / 1000;
     out << "GPU(compute_"
       << deviceMajorMinor << ", "
       << deviceProperties.multiProcessorCount << " SMs @ " << clock_MHz << " MHz)";
@@ -131,7 +133,6 @@ void FilterArchitecture() {
               << " [" << cudaGetErrorString(err) << "]" << std::endl;
     exit(1);
   }
-
   cudaDeviceProp deviceProperties;
   err = cudaGetDeviceProperties(&deviceProperties, cudaDeviceId);
   if (cudaSuccess != err) {
@@ -152,9 +153,9 @@ void FilterArchitecture() {
     /// Minimum compute capability for the kernels in the named test
     int min_compute_capability;
 
-    /// Maximum compute capability for which the kernels are enabled
+    /// Maximum compute capability for which the kernels are enabled 
     int max_compute_capability;
-  }
+  } 
   test_filters[] = {
     { "SM50*",                      50, kMaxDevice},
     { "SM60*",                      60, kMaxDevice},
@@ -165,8 +166,8 @@ void FilterArchitecture() {
     { "SM89*",                      89, 89},
     { "SM90*",                      90, 90},
     { "SM100*",                    100, 100},
-    { "IntelXe",                   0,  0},
-    { "IntelBMG",                   1,  1},
+    { "IntelPVC",                    0,   0},
+    { "IntelBMG",                    1,   1},
     { 0, 0, false }
   };
 

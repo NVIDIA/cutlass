@@ -193,7 +193,8 @@ template<uint32_t ThreadBlockSize,
          class CStoreTransform,
          class SMemCopyOpA,
          class SMemCopyOpB,
-         class SMemCopyOpC>
+         class SMemCopyLdOpC,
+         class SMemCopyStOpC>
 void
 cooperative_gemm_kernel(GMemALayout gmem_a_layout,
                         GMemBLayout gmem_b_layout,
@@ -214,7 +215,8 @@ cooperative_gemm_kernel(GMemALayout gmem_a_layout,
                         CStoreTransform c_store_transform,
                         SMemCopyOpA     a_copy_op,
                         SMemCopyOpB     b_copy_op,
-                        SMemCopyOpC     c_copy_op,
+                        SMemCopyLdOpC   c_copy_ld_op,
+                        SMemCopyStOpC   c_copy_st_op,
                         sycl::local_ptr<char> base_smem)
 {
     using namespace cute;
@@ -249,7 +251,7 @@ cooperative_gemm_kernel(GMemALayout gmem_a_layout,
       ThreadIdxX(), tiled_mma,
       alpha, s_a_tensor, s_b_tensor, beta, s_c_tensor,
       a_load_transform, b_load_transform, c_load_transform, c_store_transform,
-      a_copy_op, b_copy_op, c_copy_op
+      a_copy_op, b_copy_op, c_copy_ld_op, c_copy_st_op
     );
     syncthreads();
 
@@ -376,7 +378,8 @@ template<uint32_t ThreadBlockSize,
          class CStoreTransform,
          class SMemCopyOpA,
          class SMemCopyOpB,
-         class SMemCopyOpC>
+         class SMemCopyLdOpC,
+         class SMemCopyStOpC>
 __launch_bounds__(ThreadBlockSize) __global__ void
 cooperative_gemm_kernel(GMemALayout gmem_a_layout,
                         GMemBLayout gmem_b_layout,
@@ -397,7 +400,8 @@ cooperative_gemm_kernel(GMemALayout gmem_a_layout,
                         CStoreTransform c_store_transform,
                         SMemCopyOpA     a_copy_op,
                         SMemCopyOpB     b_copy_op,
-                        SMemCopyOpC     c_copy_op)
+                        SMemCopyLdOpC   c_copy_ld_op,
+                        SMemCopyStOpC   c_copy_st_op)
 {
     using namespace cute;
 
@@ -430,7 +434,7 @@ cooperative_gemm_kernel(GMemALayout gmem_a_layout,
       threadIdx.x, tiled_mma,
       alpha, s_a_tensor, s_b_tensor, beta, s_c_tensor,
       a_load_transform, b_load_transform, c_load_transform, c_store_transform,
-      a_copy_op, b_copy_op, c_copy_op
+      a_copy_op, b_copy_op, c_copy_ld_op, c_copy_st_op
     );
     __syncthreads();
 
@@ -555,7 +559,8 @@ template<uint32_t ThreadBlockSize,
          class CStoreTransform = cute::identity,
          class ASMemCopyOp = AutoVectorizingCopyWithAssumedAlignment<CopyMaxVecBits>,
          class BSMemCopyOp = AutoVectorizingCopyWithAssumedAlignment<CopyMaxVecBits>,
-         class CSMemCopyOp = AutoVectorizingCopyWithAssumedAlignment<CopyMaxVecBits>>
+         class CSMemCopyLdOp = AutoVectorizingCopyWithAssumedAlignment<CopyMaxVecBits>,
+         class CSMemCopyStOp = AutoVectorizingCopyWithAssumedAlignment<CopyMaxVecBits>>
 void test_cooperative_gemm(GMemALayout     gmem_a_layout,
                            GMemBLayout     gmem_b_layout,
                            GMemCLayout     gmem_c_layout,
@@ -569,7 +574,8 @@ void test_cooperative_gemm(GMemALayout     gmem_a_layout,
                            CStoreTransform c_store_transform = {},
                            ASMemCopyOp     a_smem_copy_op = {},
                            BSMemCopyOp     b_smem_copy_op = {},
-                           CSMemCopyOp     c_smem_copy_op = {})
+                           CSMemCopyLdOp   c_smem_copy_ld_op = {},
+                           CSMemCopyStOp   c_smem_copy_st_op = {})
 {
   static_assert(std::is_same_v<typename fp64_tester<TA>::value_type, typename fp64_tester<TB>::value_type>);
   static_assert(std::is_same_v<typename fp64_tester<TB>::value_type, typename fp64_tester<TC>::value_type>);
@@ -618,7 +624,7 @@ void test_cooperative_gemm(GMemALayout     gmem_a_layout,
     TA, TB, TC, decltype(alpha), decltype(beta),
     TiledMma,
     ALoadTransform, BLoadTransform, CLoadTransform, CStoreTransform,
-    ASMemCopyOp, BSMemCopyOp, CSMemCopyOp
+    ASMemCopyOp, BSMemCopyOp, CSMemCopyLdOp, CSMemCopyStOp
   >>
   ( sc_exp::launch_policy{sc::dim3(1), sc::dim3(ThreadBlockSize), sc_exp::local_mem_size{shared_memory_size}},
        gmem_a_layout,
@@ -640,7 +646,8 @@ void test_cooperative_gemm(GMemALayout     gmem_a_layout,
        c_store_transform,
        a_smem_copy_op,
        b_smem_copy_op,
-       c_smem_copy_op
+       c_smem_copy_ld_op,
+       c_smem_copy_st_op
      );
 #else
     auto kernel = cooperative_gemm_kernel<
@@ -650,7 +657,7 @@ void test_cooperative_gemm(GMemALayout     gmem_a_layout,
     TA, TB, TC, decltype(alpha), decltype(beta),
     TiledMma,
     ALoadTransform, BLoadTransform, CLoadTransform, CStoreTransform,
-    ASMemCopyOp, BSMemCopyOp, CSMemCopyOp
+    ASMemCopyOp, BSMemCopyOp, CSMemCopyLdOp, CSMemCopyStOp
   >;
 
   ASSERT_EQ(cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, static_cast<int>(shared_memory_size)), 0);
@@ -675,7 +682,8 @@ void test_cooperative_gemm(GMemALayout     gmem_a_layout,
     c_store_transform,
     a_smem_copy_op,
     b_smem_copy_op,
-    c_smem_copy_op
+    c_smem_copy_ld_op,
+    c_smem_copy_st_op
   );
 
   cudaError_t result = cudaDeviceSynchronize();

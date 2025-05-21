@@ -510,7 +510,7 @@ void test_sizes_and_not_storing_empty_types() {
 
 } // namespace test
 
-TEST(CuTe_core, PackedTuple2)
+TEST(CuTe_core, PackedTuple)
 {
   CUTLASS_TRACE_HOST("-------------------------------");
   CUTLASS_TRACE_HOST("tuple");
@@ -522,7 +522,7 @@ TEST(CuTe_core, PackedTuple2)
   pt_test::test_sizes_and_not_storing_empty_types();
 }
 
-TEST(CuTe_core, PackedTuple2Get) {
+TEST(CuTe_core, PackedTupleGet) {
   using cute::tuple;
   using pt_test::Empty;
   using pt_test::Nonempty;
@@ -678,6 +678,42 @@ TEST(CuTe_core, PackedTuple2Get) {
   }
 }
 
+TEST(CuTe_core, PackedTupleGetValueCategory) {
+  using cute::tuple;
+  using pt_test::Empty;
+  using pt_test::Nonempty;
+
+  tuple<Nonempty<int>, int, Empty<42>> tup(Nonempty<int>{42}, 7, Empty<42>{});
+
+  // Lvalue ref
+  decltype(auto) t0 = cute::get<0>(tup);
+  decltype(auto) t1 = cute::get<1>(tup);
+  decltype(auto) t2 = cute::get<2>(tup);
+
+  EXPECT_TRUE((cute::is_same_v<decltype(t0), Nonempty<int>&>));
+  EXPECT_TRUE((cute::is_same_v<decltype(t1), int&>));
+  EXPECT_TRUE((cute::is_same_v<decltype(t2), Empty<42>>));
+
+  // Const lvalue ref
+  auto const& ctup = tup;
+  decltype(auto) ct0 = cute::get<0>(ctup);
+  decltype(auto) ct1 = cute::get<1>(ctup);
+  decltype(auto) ct2 = cute::get<2>(ctup);
+
+  EXPECT_TRUE((cute::is_same_v<decltype(ct0), Nonempty<int> const&>));
+  EXPECT_TRUE((cute::is_same_v<decltype(ct1), int const&>));
+  EXPECT_TRUE((cute::is_same_v<decltype(ct2), Empty<42>>));
+
+  // Rvalue ref
+  decltype(auto) r0 = cute::get<0>(cute::move(tup));
+  decltype(auto) r1 = cute::get<1>(cute::move(tup));
+  decltype(auto) r2 = cute::get<2>(cute::move(tup));
+
+  EXPECT_TRUE((cute::is_same_v<decltype(r0), Nonempty<int>&&>));
+  EXPECT_TRUE((cute::is_same_v<decltype(r1), int&&>));
+  EXPECT_TRUE((cute::is_same_v<decltype(r2), Empty<42>>));
+}
+
 namespace pt_test {
 
 // An empty class type to which Empty is convertible.
@@ -705,14 +741,14 @@ TEST(CuTe_core, PackedTupleConstexprDefaultConstruction) {
 
   using pt_test::Empty;
   {
-    [[maybe_unused]] constexpr cute::detail::ESO_t<Empty<0>> eso1{};
-    [[maybe_unused]] constexpr cute::detail::ESO_t<int64_t> eso2{};
+    [[maybe_unused]] constexpr cute::eso::ESO_t<Empty<0>> eso1{};
+    [[maybe_unused]] constexpr cute::eso::ESO_t<int64_t> eso2{};
   }
   {
-    [[maybe_unused]] constexpr cute::detail::ESO_t<Empty<0>, Empty<1>> eso0{};
-    [[maybe_unused]] constexpr cute::detail::ESO_t<int64_t, Empty<1>> eso1{};
-    [[maybe_unused]] constexpr cute::detail::ESO_t<Empty<0>, int64_t> eso2{};
-    [[maybe_unused]] constexpr cute::detail::ESO_t<int64_t, int64_t> eso3{};
+    [[maybe_unused]] constexpr cute::eso::ESO_t<Empty<0>, Empty<1>> eso0{};
+    [[maybe_unused]] constexpr cute::eso::ESO_t<int64_t, Empty<1>> eso1{};
+    [[maybe_unused]] constexpr cute::eso::ESO_t<Empty<0>, int64_t> eso2{};
+    [[maybe_unused]] constexpr cute::eso::ESO_t<int64_t, int64_t> eso3{};
   }
 }
 

@@ -717,7 +717,9 @@ public:
       // Register reconfiguration
       arch::warpgroup_reg_dealloc<GenericRegisterRequirement>();
 
-      
+      if constexpr (IsSchedDynamicPersistent) {
+        cutlass::arch::wait_on_dependent_grids();
+      }
 
       // Signal the epilogue warps to proceed once the prologue is complete
       epilogue_throttle_barrier.arrive();
@@ -1006,6 +1008,39 @@ public:
 
           // Advance the mm2accum pipe
           mma2accum_pipeline_consumer_state = mma2accum_pipeline_consumer_state_next;
+        }
+        else if constexpr (InputTransformType == cutlass::gemm::detail::KernelInputTransformType::MixedInput) {
+
+          mma2accum_pipeline.consumer_wait(mma2accum_pipeline_consumer_state);
+
+          // Accumulators
+          Tensor accumulators = bulk_tmem(_,_,_,mma2accum_pipeline_consumer_state.index()); // ((MMA_TILE_M,MMA_TILE_N),MMA_M,MMA_N)
+
+          mma2accum_pipeline_consumer_state = scheduler.template fixup<IsComplex>(
+            TiledMma{},
+            work_tile_info,
+            accumulators,
+            mma2accum_pipeline,
+            mma2accum_pipeline_consumer_state,
+            typename CollectiveEpilogue::CopyOpT2R{}
+          );
+
+          //
+          // Epilogue and write to gD
+          //
+          if (scheduler.compute_epilogue(work_tile_info)) {
+            auto [mma2accum_pipeline_state_next] = collective_epilogue(
+              mma2accum_pipeline,
+              mma2accum_pipeline_consumer_state,
+              problem_shape_MNKL,
+              CtaShape_MNK{},
+              cta_coord_mnkl,
+              accumulators,
+              shared_storage.tensors.epilogue
+            );
+            // Advance the mma2accum pipe
+            mma2accum_pipeline_consumer_state = mma2accum_pipeline_state_next;
+          }
         }
         // Complex kernels use a collective epilogue
         else {

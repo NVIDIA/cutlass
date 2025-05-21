@@ -121,6 +121,13 @@ public:
     void *device_workspace = nullptr,
     cudaStream_t stream = nullptr) const = 0;
 
+  // Set arguments that should only be set once before verifying or profiling the kernel.
+  // This should encompass any expensive operations that don't vary from run to run
+  // (e.g., max_active_clusters).
+  virtual Status initialize_with_arguments(void* arguments_ptr) const {
+    return Status::kSuccess;
+  }
+
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -389,6 +396,56 @@ struct BlockScaledGemmArguments {
   bool use_pdl{false};
 };
 
+/// Blockwise GEMM
+//
+// OperationKind: kBlockwiseGemm
+// GemmKind:      Universal
+
+struct BlockwiseGemmArguments {
+  // NOTE: these are replicated for 3.0 interfaces
+  gemm::GemmCoord problem_size{};
+  gemm::GemmCoord cluster_shape{};  
+  gemm::GemmCoord cluster_shape_fallback{}; 
+  int batch_count{1};
+
+  void const *A{nullptr};
+  void const *B{nullptr};
+  void const *SFA{nullptr};
+  void const *SFB{nullptr};
+  void const *C{nullptr};
+  void *D{nullptr};
+
+  void const *alpha{nullptr};
+  void const *beta{nullptr};
+  ScalarPointerMode pointer_mode{};
+
+  // NOTE: these are replicated for 3.0 interfaces
+  int64_t lda{0};
+  int64_t ldb{0};
+  int64_t ldc{0};
+  int64_t ldd{0};
+
+  int64_t batch_stride_A{0};
+  int64_t batch_stride_B{0};
+  int64_t batch_stride_C{0};
+  int64_t batch_stride_D{0};
+
+  int sf_m_vec_size{0};
+  int sf_n_vec_size{0};
+  int sf_k_vec_size{0};
+
+  // Needed for some 3.x kernels
+  int sm_count{0};
+  library::RasterOrder raster_order{};
+  int swizzle_size{1};
+  int split_k_slices{1};
+
+  library::RuntimeDatatype runtime_input_datatype_a{library::RuntimeDatatype::kStatic}; 
+  library::RuntimeDatatype runtime_input_datatype_b{library::RuntimeDatatype::kStatic}; 
+
+  bool use_pdl{false};
+};
+
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -521,6 +578,8 @@ struct GemmGroupedArguments {
 
   // these should really be in the configuration but staying consistent with GEMM
   int sm_count{0};
+  int max_active_clusters{0};
+
   // The user is responsible for allocating storage for problem sizes.
   // Since GemmGroupedArguments is used by both the 2.x and 3.x APIs, we
   // unfortunately need to have both options in this struct, and the
@@ -535,6 +594,12 @@ struct GroupedGemmBlockScaledArguments : GemmGroupedArguments {
   void* SFD{nullptr};
   void* norm_constant{nullptr};
 };
+
+struct GroupedGemmBlockwiseArguments : GemmGroupedArguments {
+  void* SFA{nullptr};
+  void* SFB{nullptr};
+};
+
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 //

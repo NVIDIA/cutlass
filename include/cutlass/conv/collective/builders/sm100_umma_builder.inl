@@ -168,7 +168,7 @@ private:
 
   // Calculate SMEM matrix A and B buffers' pipeline stages
   static constexpr uint32_t AccumulatorPipelineStageCount = 2;
-  static constexpr uint32_t SchedulerPipelineStageCount = 2;
+  static constexpr uint32_t SchedulerPipelineStageCount = 1;
   static constexpr uint32_t CLCResponseSize = 16;
 
   // AccumulatorPipeline = PipelineUmmaAsync
@@ -179,8 +179,6 @@ private:
   static constexpr auto LoadOrderBarrierStorage = sizeof(typename cutlass::OrderedSequenceBarrier<1,2>::SharedStorage);
   // CLC (scheduler) response
   static constexpr auto CLCResponseStorage = SchedulerPipelineStageCount * CLCResponseSize;
-  // CLC Throttle pipeline storage
-  static constexpr auto CLCThrottlePipelineStorage = sizeof(typename cutlass::PipelineAsync<SchedulerPipelineStageCount>::SharedStorage);
   // Tmem dealloc
   static constexpr auto TmemDeallocStorage = sizeof(cutlass::arch::ClusterBarrier);
   // Tmem ptr storage
@@ -190,7 +188,6 @@ private:
                                                                CLCPipelineStorage +
                                                                LoadOrderBarrierStorage +
                                                                TmemDeallocStorage +
-                                                               CLCThrottlePipelineStorage +
                                                                CLCResponseStorage +
                                                                TmemBasePtrsStorage);
   // Reduce SMEM capacity available for buffers considering barrier allocations.
@@ -204,7 +201,12 @@ private:
   constexpr static int NumSpatialDimensions = detail::gmem_layout_tags_to_spatial_dims<GmemLayoutA, GmemLayoutB>();
 
   using DispatchPolicy = cutlass::conv::MainloopSm100TmaUmmaWarpSpecializedImplicitGemm<
-      ConvOp, PipelineStages, NumSpatialDimensions, ClusterShape_MNK>;
+      ConvOp,
+      PipelineStages,
+      NumSpatialDimensions,
+      SchedulerPipelineStageCount,
+      AccumulatorPipelineStageCount,
+      ClusterShape_MNK>;
 
 public:
   using CollectiveOp = cutlass::conv::collective::CollectiveConv<

@@ -313,10 +313,16 @@ struct BlockScaleDescription {
   TensorDescription SFD;
 
   /// Describes the input ScaleFactor VectorSize
-  int SFVecSize;
+  int SFMVecSize;
+  int SFNVecSize;
+  int SFKVecSize;
 
   /// Describes the Output ScaleFactor VectorSize
   int EpilogueSFVecSize;
+
+  /// Describes the underlying kind of scaling: 
+  /// Tensor Core supported (BlockScaled) or manual scaling (Blockwise)
+  OperationKind kind;
 };
 
 struct GroupedGemmDescription : public OperationDescription {
@@ -395,6 +401,96 @@ struct BlockScaledGemmDescription : public OperationDescription {
     transform_B(transform_B) {} 
 
   BlockScaledGemmDescription(
+    OperationDescription op_desc,
+    GemmKind gemm_kind,
+    TensorDescription const& A,
+    TensorDescription const& B,
+    TensorDescription const& C,
+    TensorDescription const& D,
+    NumericTypeID element_epilogue,
+    SplitKMode split_k_mode,
+    ComplexTransform transform_A,
+    ComplexTransform transform_B
+  ):
+    OperationDescription(op_desc),
+    gemm_kind(gemm_kind),
+    A(A),
+    B(B),
+    C(C),
+    D(D),
+    element_epilogue(element_epilogue),
+    split_k_mode(split_k_mode),
+    transform_A(transform_A),
+    transform_B(transform_B) {}
+};
+
+/// Description of all GEMM computations
+struct BlockwiseGemmDescription : public OperationDescription {
+
+  /// Indicates the kind of GEMM performed
+  GemmKind gemm_kind;
+
+  /// Describes the A operand
+  TensorDescription A;
+
+  /// Describes the B operand
+  TensorDescription B;
+
+  /// Describes the source matrix
+  TensorDescription C;
+
+  /// Describes the destination matrix
+  TensorDescription D;
+
+  /// Describes the SFA operand
+  TensorDescription SFA;
+
+  /// Describes the SFB operand
+  TensorDescription SFB;
+
+  /// Describes the data type of the scalars passed to the epilogue
+  NumericTypeID element_epilogue;
+
+  /// Describes the structure of parallel reductions
+  SplitKMode split_k_mode;
+
+  /// Transformation on A operand
+  ComplexTransform transform_A;
+
+  /// Transformation on B operand
+  ComplexTransform transform_B;
+
+  /// Describes the input ScaleFactor VectorSize 
+  int SFMVecSize;
+  int SFNVecSize;
+  int SFKVecSize;
+
+  //
+  // Methods
+  //
+
+  BlockwiseGemmDescription(
+    GemmKind gemm_kind = GemmKind::kGemm,
+    TensorDescription const& A = TensorDescription(),
+    TensorDescription const& B = TensorDescription(),
+    TensorDescription const& C = TensorDescription(),
+    TensorDescription const& D = TensorDescription(),
+    NumericTypeID element_epilogue = NumericTypeID::kInvalid,
+    SplitKMode split_k_mode = SplitKMode::kNone,
+    ComplexTransform transform_A = ComplexTransform::kNone,
+    ComplexTransform transform_B = ComplexTransform::kNone
+  ):
+    gemm_kind(gemm_kind),
+    A(A),
+    B(B),
+    C(C),
+    D(D),
+    element_epilogue(element_epilogue),
+    split_k_mode(split_k_mode),
+    transform_A(transform_A),
+    transform_B(transform_B) {} 
+
+  BlockwiseGemmDescription(
     OperationDescription op_desc,
     GemmKind gemm_kind,
     TensorDescription const& A,

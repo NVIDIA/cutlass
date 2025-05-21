@@ -426,7 +426,7 @@ public:
       return { tma_load_a, tma_load_b, tma_load_scale, tma_load_zero, 0, 0, tma_transaction_bytes, 1, dA, dB };
     } 
     else if constexpr (ModeHasScales) {
-      auto scale_k = (K + args.group_size - 1) / args.group_size;
+      auto scale_k = ceil_div(K, args.group_size);
       ElementScale const* ptr_S = args.ptr_S;
       StrideScale dS = args.dS;
       Tensor tensor_scale = make_tensor(detail::get_logical_ptr(ptr_S), make_layout(make_shape(M,scale_k,L), dS));
@@ -483,7 +483,7 @@ public:
     } 
     else if constexpr (ModeHasScales) {
       const int scale_mn = SwapAB ? N : M;
-      const int scale_k = (K + args.group_size - 1) / args.group_size;
+      const int scale_k = ceil_div(K, args.group_size);
       constexpr int min_tma_aligned_elements_scale = tma_alignment_bits / cutlass::sizeof_bits<ElementScale>::value;
       check_aligned_S = cutlass::detail::check_alignment<min_tma_aligned_elements_scale>(cute::make_shape(scale_mn,scale_k,L), args.dS);
       check_mode_args = check_mode_args && (args.group_size == K || ((args.group_size % size<2>(TileShape{})) == 0));

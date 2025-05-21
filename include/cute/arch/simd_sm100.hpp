@@ -37,7 +37,6 @@
 #include <cute/config.hpp>
 #include <cute/arch/config.hpp>
 #include <cute/numeric/real.hpp>
-
 namespace cute {
 
 CUTE_HOST_DEVICE

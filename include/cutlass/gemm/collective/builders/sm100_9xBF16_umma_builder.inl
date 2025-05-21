@@ -60,16 +60,18 @@ sm100_compute_stage_count_or_override_fast_fp32(StageCountAutoCarveout<carveout_
   static_assert(CtaN <= 128, "Can't support CtaN>128 tiles");
   constexpr int CtaK = get<2>(CtaTileShape_MNK{});
   using AtomThrID = typename TiledMma::AtomThrID;
+  constexpr int TmemColumns = 512;
+
   // Detect 2x2 TMEM layout
   constexpr int TmemAccWordsPerDP = (CtaM == 64 && size(AtomThrID{}) == 2) ? CtaN/2 : CtaN;
   constexpr int TmemAWordsPerDP = ComplexComponent * NumComputeMtxs * CtaK / 2;
   constexpr bool IsAComputeinTmem = UmmaMajorA == cute::UMMA::Major::K && !cute::is_base_of_v<KernelTmaWarpSpecializedFastFP32SmemSm100, BuilderScheduleTag>;
   constexpr bool IsAComputeinSmem = !IsAComputeinTmem;
-  constexpr int AccumulatorStageCount = (IsAComputeinTmem) ? (((TmemAccWordsPerDP * ComplexComponent == 128) ? 2 : 3) * ComplexComponent) : (512 / TmemAccWordsPerDP);
+  constexpr int AccumulatorStageCount = (IsAComputeinTmem) ? (((TmemAccWordsPerDP * ComplexComponent == 128) ? 2 : 3) * ComplexComponent) : (TmemColumns / TmemAccWordsPerDP);
   
   constexpr int SmemCapacityAfterMma2AccumCarveout = CapacityBytes - (carveout_bytes + AccumulatorStageCount * 32);
 
-  constexpr int TmemInAStageCount_Potential = (IsAComputeinTmem) ? (512 - AccumulatorStageCount * TmemAccWordsPerDP) / TmemAWordsPerDP : 10000;
+  constexpr int TmemInAStageCount_Potential = (IsAComputeinTmem) ? (TmemColumns - AccumulatorStageCount * TmemAccWordsPerDP) / TmemAWordsPerDP : 10000;
   
   constexpr auto load2transform_pipeline_bytes = sizeof(typename cutlass::PipelineTmaTransformAsync<1>::SharedStorage);
   constexpr auto a_bits = cute::sizeof_bits_v<float> * ComplexComponent;

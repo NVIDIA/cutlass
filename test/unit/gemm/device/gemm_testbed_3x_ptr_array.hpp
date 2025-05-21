@@ -379,7 +379,6 @@ struct HostCollectiveMainloop {
     //
     // Allocate the GEMM workspace
     //
-
     // for pointer array problem_shapes.groups() is 1
 
     tensors_A.clear();
@@ -565,7 +564,7 @@ struct HostCollectiveMainloop<cutlass::gemm::KernelPtrArrayTmaWarpSpecializedBlo
 
   static constexpr int SFVecSize = Gemm::GemmKernel::CollectiveMainloop::SFVecSize;
 
-  using ElementSF = typename Gemm::GemmKernel::ElementSF;
+  using ElementSF = typename Gemm::GemmKernel::CollectiveMainloop::ElementSF;
   using Sm1xxBlkScaledConfig =  typename Gemm::GemmKernel::CollectiveMainloop::Sm1xxBlkScaledConfig;
   using Blk_MN   = typename Sm1xxBlkScaledConfig::Blk_MN;
   using Blk_SF   = typename Sm1xxBlkScaledConfig::Blk_SF;
@@ -633,6 +632,7 @@ struct HostCollectiveMainloop<cutlass::gemm::KernelPtrArrayTmaWarpSpecializedBlo
     //
     // Allocate the GEMM workspace
     //
+
     tensors_A.clear();
     tensors_B.clear();
     stride_a_host.clear();
@@ -798,6 +798,56 @@ struct HostCollectiveMainloop<cutlass::gemm::KernelPtrArrayTmaWarpSpecializedBlo
     EXPECT_GT(cutlass::reference::host::TensorNorm(tensors_SFB[batch].host_view()), 0);
     return true;
   }
+};
+
+//
+// Block Scaled Gemm Input Operands : A , B, scalefactorA, scalefactorB
+//
+template<
+  class Gemm,
+  int SchedulerPipelineStageCount_,
+  class ElementA_,
+  class ElementB_
+>
+struct HostCollectiveMainloop<cutlass::gemm::KernelPtrArrayTmaWarpSpecializedPingpongBlockScaledSm120<SchedulerPipelineStageCount_>, 
+                              Gemm, ElementA_, ElementB_> : public
+       HostCollectiveMainloop<cutlass::gemm::KernelPtrArrayTmaWarpSpecializedBlockScaledSm100<0,0>,
+                              Gemm, ElementA_, ElementB_> {
+  using Base = HostCollectiveMainloop<cutlass::gemm::KernelPtrArrayTmaWarpSpecializedBlockScaledSm100<0,0>,
+                                      Gemm, ElementA_, ElementB_>;
+  HostCollectiveMainloop(
+    CheckEquality check_relative_equality_ = CheckEquality::EXACT,
+    cutlass::Distribution::Kind init_A_ = cutlass::Distribution::Uniform,
+    cutlass::Distribution::Kind init_B_ = cutlass::Distribution::Uniform,
+    uint64_t seed_ = Base::kDefaultSeed,
+    typename Base::LayoutTagA::Stride stride_factor_A_ = typename Base::LayoutTagA::Stride(),
+    typename Base::LayoutTagB::Stride stride_factor_B_ = typename Base::LayoutTagB::Stride()
+  ) : Base::HostCollectiveMainloop(check_relative_equality_, init_A_, init_B_, seed_, stride_factor_A_, stride_factor_B_) {}
+};
+
+//
+// Block Scaled Gemm Input Operands : A , B, scalefactorA, scalefactorB
+//
+template<
+  class Gemm,
+  int SchedulerPipelineStageCount_,
+  class ElementA_,
+  class ElementB_
+>
+struct HostCollectiveMainloop<cutlass::gemm::KernelPtrArrayTmaWarpSpecializedCooperativeBlockScaledSm120<SchedulerPipelineStageCount_>, 
+                              Gemm, ElementA_, ElementB_> : public
+       HostCollectiveMainloop<cutlass::gemm::KernelPtrArrayTmaWarpSpecializedBlockScaledSm100<0,0>,
+                              Gemm, ElementA_, ElementB_> {
+  using Base = HostCollectiveMainloop<cutlass::gemm::KernelPtrArrayTmaWarpSpecializedBlockScaledSm100<0,0>,
+                                      Gemm, ElementA_, ElementB_>;
+  HostCollectiveMainloop(
+    CheckEquality check_relative_equality_ = CheckEquality::EXACT,
+    cutlass::Distribution::Kind init_A_ = cutlass::Distribution::Uniform,
+    cutlass::Distribution::Kind init_B_ = cutlass::Distribution::Uniform,
+    uint64_t seed_ = Base::kDefaultSeed,
+    typename Base::LayoutTagA::Stride stride_factor_A_ = typename Base::LayoutTagA::Stride(),
+    typename Base::LayoutTagB::Stride stride_factor_B_ = typename Base::LayoutTagB::Stride()
+  ) : Base::HostCollectiveMainloop(check_relative_equality_, init_A_, init_B_, seed_, stride_factor_A_, stride_factor_B_) {}
 };
 
 
@@ -1535,6 +1585,12 @@ struct HostCollectiveEpilogue {
       file
         << "\n\nReference Aux =\n" << references_Aux[batch].host_view()
         << "\n\nComputed Aux =\n" << tensors_Aux[batch].host_view();
+    }
+
+    if constexpr (IsBlockScaleSupported) {
+      file
+        << "\n\nReference SFD =\n" << references_SFD[batch].host_view()
+        << "\n\nComputed SFD =\n" << tensors_SFD[batch].host_view();
     }
 
     file
