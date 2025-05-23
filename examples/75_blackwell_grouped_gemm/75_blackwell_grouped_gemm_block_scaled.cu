@@ -300,7 +300,7 @@ auto make_iterator(T* ptr) {
 /// Testbed utility types
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm100GroupParams<typename ProblemShape::UnderlyingProblemShape>::RasterOrderOptions;
+using RasterOrderOptions = typename GemmKernel2SM::TileScheduler::RasterOrderOptions;
 // Command line options parsing
 struct Options {
 
