@@ -298,7 +298,7 @@ struct PitchLinearWarpRakedThreadMap {
   static_assert(Iterations::kCount,
     "Number of iterations must be non-zero");
 
-  ///< Delta betweeen accesses (units of elements, concept: PitchLinearShape)
+  ///< Delta between accesses (units of elements, concept: PitchLinearShape)
   using Delta = layout::PitchLinearShape<
     Detail::WarpThreadArrangement::kContiguous * kElementsPerAccess,
     Detail::WarpThreadArrangement::kStrided
@@ -427,7 +427,7 @@ struct PitchLinearStridedWarpRakedThreadMap {
   static_assert(Iterations::kCount,
     "Number of iterations must be non-zero");
 
-  ///< Delta betweeen accesses (units of elements, concept: PitchLinearShape)
+  ///< Delta between accesses (units of elements, concept: PitchLinearShape)
   using Delta = typename BaseThreadMap::Delta;
 
   /// Maps thread ID to a coordinate offset within the tensor's logical coordinate space
@@ -531,7 +531,7 @@ struct TransposePitchLinearThreadMap {
 
   static_assert(Iterations::kCount, "Number of iterations must be non-zero");
 
-  ///< Delta betweeen accesses (units of elements, concept: PitchLinearShape)
+  ///< Delta between accesses (units of elements, concept: PitchLinearShape)
   using Delta =
       layout::PitchLinearShape<Detail::WarpThreadArrangement::kContiguous *
                                    kElementsPerAccess,
@@ -613,7 +613,7 @@ struct TransposePitchLinearThreadMapSimt {
     /// Shape of access by each thread
     using ThreadAccessShape = typename ThreadMap::ThreadAccessShape;
 
-    ///< Delta betweeen accesses (units of elements, concept: PitchLinearShape)
+    ///< Delta between accesses (units of elements, concept: PitchLinearShape)
     using Delta =
         layout::PitchLinearShape<ThreadMap::Delta::kStrided,
         ThreadMap::Delta::kContiguous>;
@@ -716,7 +716,7 @@ struct PitchLinearWarpStripedThreadMap {
   static_assert(Iterations::kCount,
     "Number of iterations must be non-zero");
 
-  ///< Delta betweeen accesses (units of elements, concept: PitchLinearShape)
+  ///< Delta between accesses (units of elements, concept: PitchLinearShape)
   using Delta = layout::PitchLinearShape<
     Detail::WarpThreadArrangement::kContiguous * kElementsPerAccess,
     Detail::WarpThreadArrangement::kStrided * Detail::WarpArrangement::kStrided
@@ -897,7 +897,7 @@ struct TransposePitchLinearThreadMap2DThreadTile {
     /// Shape of access by each thread
     using ThreadAccessShape = typename ThreadMap::ThreadAccessShape;
 
-    ///< Delta betweeen accesses (units of elements, concept: PitchLinearShape)
+    ///< Delta between accesses (units of elements, concept: PitchLinearShape)
     using Delta =
         layout::PitchLinearShape<ThreadMap::Delta::kStrided,
         ThreadMap::Delta::kContiguous>;

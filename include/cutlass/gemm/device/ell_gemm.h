@@ -99,7 +99,7 @@ namespace device {
 
     Description of parameters and tensors used to represent the Blocked-Ellpack (ELL) format:
       a_rows              - Rows in the sparse matrix.
-      a_cols              - Colums in the sparse matrix.
+      a_cols              - Columns in the sparse matrix.
       BlockedEllA         - Packed matrix (ellValue matrix) that stores non-zero values in 
                             consecutive blocks, whose size is (a_rows * a_ell_num_columns)
       ell_idx             - Blocked-ELL Column indices (ellColInd) matrix, whose size is
@@ -715,7 +715,7 @@ public:
   /// Constructs the GEMM.
   EllGemm() { }
 
-  /// Helper to construct a transposed equivalent for the underying GEMM operator
+  /// Helper to construct a transposed equivalent for the underlying GEMM operator
   static UnderlyingArguments to_underlying_arguments(Arguments const &args) {
     return UnderlyingArguments(
       {args.problem_size.n(), args.problem_size.m(), args.problem_size.k()},

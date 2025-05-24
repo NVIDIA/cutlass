@@ -118,7 +118,7 @@ struct Array<T, N, false> {
     // result[0] = xxx;
     // ```
     // 
-    // Will leads to compiler warning on use of unintialized member variable. Although we know
+    // Will leads to compiler warning on use of uninitialized member variable. Although we know
     //      this read of uninitialized member variable is harmeless.
 
 #if defined(__clang__)

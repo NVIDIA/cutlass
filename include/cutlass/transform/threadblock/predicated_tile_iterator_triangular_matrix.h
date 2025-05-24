@@ -76,10 +76,10 @@ namespace threadblock {
 /// accesses may be performed without updating internal predicates and are efficient in terms of
 /// live register state and pointer arithmetic instructions.
 ///
-/// To be efficient, this assumes the iteraor will be dereferenced and advanced at least once
+/// To be efficient, this assumes the iterator will be dereferenced and advanced at least once
 /// outside any looping structure to minimize integer arithmetic. 
 ///
-/// Acceses out of bounds are safe so long as `clear_mask()` is called prior to dereferencing
+/// Accesses out of bounds are safe so long as `clear_mask()` is called prior to dereferencing
 /// the iterator.
 ///
 ///

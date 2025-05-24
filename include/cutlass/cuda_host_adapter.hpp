@@ -30,7 +30,7 @@
  **************************************************************************************************/
 
 /*! \file
-    \brief Interface betweeen a CUTLASS device-wide operator and CUDA.
+    \brief Interface between a CUTLASS device-wide operator and CUDA.
 */
 
 #pragma once
@@ -392,7 +392,7 @@ protected:
 
   /**
    * Fills a buffer in Global Memory with a byte sequence copied from host memory.
-   * This function can be overriden to dispatch to the appropriate cuMemsetD*Async API
+   * This function can be overridden to dispatch to the appropriate cuMemsetD*Async API
   */
   virtual Status memsetDeviceImpl(
     void* destination, ///< Device memory pointer to be filled

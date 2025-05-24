@@ -52,7 +52,7 @@ namespace cutlass::gemm::kernel::detail {
 // Therefore, we don't how many tiles there will be for the scheduler to hand out.
 // Hence, we have a SM90 style static group scheduler that launches the largest grid possible.
 // If we had access to host-side problem shapes, one could to use it to figure out the grid shape
-// and thereafter use CLC query (which can then be linearized and mapped to an approriate tile coord).
+// and thereafter use CLC query (which can then be linearized and mapped to an appropriate tile coord).
 
 template<class GroupProblemShape, int SchedulerPipelineStageCount>
 class PersistentTileSchedulerSm100Group {

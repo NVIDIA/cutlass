@@ -528,7 +528,7 @@ public:
   /// Constructs the Symm.
   Symm() { }
 
-  /// Helper to construct a transposed equivalent for the underying SYMM operator
+  /// Helper to construct a transposed equivalent for the underlying SYMM operator
   static Arguments to_underlying_arguments(Arguments const &args) {
     return args.transposed_problem_size();
   }

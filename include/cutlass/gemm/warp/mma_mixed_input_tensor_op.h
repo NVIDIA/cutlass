@@ -427,7 +427,7 @@ public:
   using TransformedFragmentA =
       Array<ElementAMma, FragmentA::kElements>;
 
-  /// Underlying arch::Mma instruction operand fragement for matrix A
+  /// Underlying arch::Mma instruction operand fragment for matrix A
   using MmaOperandA = typename ArchMmaOperator::FragmentA;
 
   /// Iterates over the B operand in Shared Memory
@@ -443,7 +443,7 @@ public:
   using TransformedFragmentB =
       Array<ElementBMma, FragmentB::kElements>;
 
-  /// Underlying arch::Mma instruction operand fragement for matrix B
+  /// Underlying arch::Mma instruction operand fragment for matrix B
   using MmaOperandB = typename ArchMmaOperator::FragmentB;
 
   /// Iterates over the C operand in memory
@@ -454,7 +454,7 @@ public:
   /// Storage for C tile
   using FragmentC = typename IteratorC::Fragment;
 
-  /// Underlying arch::Mma instruction operand fragement for matrix C
+  /// Underlying arch::Mma instruction operand fragment for matrix C
   using MmaOperandC = typename ArchMmaOperator::FragmentC;
 
   /// Number of mma operations performed
