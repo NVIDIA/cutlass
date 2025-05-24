@@ -126,6 +126,7 @@ struct KernelPtrArrayTmaWarpSpecializedCooperative { };
 struct KernelPtrArrayTmaWarpSpecializedPingpong { };
 
 // FP8 related policies (including Blocked Scaled Accumulation)
+struct KernelMultistageBlockScaledAccum { };
 struct KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum: KernelTmaWarpSpecializedCooperative { };
 struct KernelTmaWarpSpecializedPingpongFP8BlockScaledAccum: KernelTmaWarpSpecializedPingpong { };
 struct KernelPtrArrayTmaWarpSpecializedCooperativeFP8BlockScaledAccum: KernelPtrArrayTmaWarpSpecializedCooperative { };
@@ -207,6 +208,18 @@ struct MainloopSm80ArrayCpAsync {
   constexpr static int Stages = Stages_;
   using ArchTag = cute::conditional_t<(size(ClusterShape_{}) > 1), arch::Sm90, arch::Sm80>;
   using Schedule = KernelPtrArrayMultistage;
+  using ClusterShape = ClusterShape_;
+};
+
+// n-buffer in smem (cp.async), pipelined with registers, with predicated gmem loads
+template<
+  int Stages_,
+  class ClusterShape_ = Shape<_1,_1,_1>
+>
+struct MainloopSm80CpAsyncBlockScaling {
+  constexpr static int Stages = Stages_;
+  using ArchTag = cute::conditional_t<(size(ClusterShape_{}) > 1), arch::Sm90, arch::Sm80>;
+  using Schedule = KernelMultistageBlockScaledAccum;
   using ClusterShape = ClusterShape_;
 };
 

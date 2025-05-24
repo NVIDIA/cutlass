@@ -163,6 +163,7 @@ foreach(EXAMPLE
   82_blackwell_distributed_gemm
   83_blackwell_sparse_gemm
   84_blackwell_narrow_precision_sparse_gemm
+  85_ada_ampere_gemm_with_blockwise_scaling
   88_hopper_fmha
   )
 
