@@ -43,7 +43,7 @@ This sample provides code for fused multi-head latent attention inference in
 the weight-absorbed regime, i.e. for latent head dim 512, and rope head dim 64.
 It supports fp16, bf16, and fp8 input and output types.
 
-To accomodate the large output accumulator due to the large latent head dimension,
+To accommodate the large output accumulator due to the large latent head dimension,
 the sample demonstrates how to leverage 2Sm Blackwell tensor cores.
 
 Loading can be done via TMA (either without paging or with page size 128), or using `cp.async`

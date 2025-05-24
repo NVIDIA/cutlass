@@ -36,7 +36,7 @@
     APIs on NVIDIA Blackwell SM100 architecture.
 
     The basic computation logic of wgrad convolution kernel is, take 3D convolution as an example:
-        Xformed Actication (NZPQK) * Activation (NDHWC) = Weight/Filter (KTRSC)
+        Xformed Activation (NZPQK) * Activation (NDHWC) = Weight/Filter (KTRSC)
 
     where in terms of GEMM perspective,
         Matrix A = Xformed Activation, Matrix B = Activation, Matrix C = Weight/Filter

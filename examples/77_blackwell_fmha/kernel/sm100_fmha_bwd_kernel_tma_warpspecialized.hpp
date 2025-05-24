@@ -274,7 +274,7 @@ struct Sm100FmhaBwdKernelTmaWarpSpecialized {
   static constexpr int SharedStorageSize = offsetof(SharedStorage, tmem_base_ptr) + sizeof(uint32_t);
   static_assert(SharedStorageSize <= cutlass::arch::sm100_smem_capacity_bytes, "using too much smem");
 
-  using ProblemShape = Shape<int, int, int, Shape<int, int>>;  // Q K D (H B), eventuall D = (D_QK, D_VO)
+  using ProblemShape = Shape<int, int, int, Shape<int, int>>;  // Q K D (H B), eventually D = (D_QK, D_VO)
   using TensorStride = TensorStrideContiguousK;  // S D (H B)
   using RowTensorStride = Stride<_1, Stride<int, int>>;    // S (H B)
 
