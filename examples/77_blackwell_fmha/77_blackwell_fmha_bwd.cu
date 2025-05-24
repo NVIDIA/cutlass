@@ -32,7 +32,7 @@
     \brief Example implementation of fused multi-head attention for Blackwell using CUTLASS 3.
 
     This example showcases the use of CUTLASS to build backward fused
-    multi-head attantion (FMHA) collectives from existing CUTLASS collectives targeting
+    multi-head attention (FMHA) collectives from existing CUTLASS collectives targeting
     the NVIDIA Blackwell architecture.
 
     Background and motivation

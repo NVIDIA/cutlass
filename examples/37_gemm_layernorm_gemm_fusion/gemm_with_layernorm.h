@@ -87,7 +87,7 @@ public:
   using ElementLayernormCompute = ElementLayernormCompute_;
   using ThreadblockShape = ThreadblockShape_;
 
-  // Pre-processing has ensured the layout equivelent to RowMajor
+  // Pre-processing has ensured the layout equivalent to RowMajor
   using Layout = cutlass::layout::RowMajor;
 
   using TensorVariance = TensorRef<ElementVariance, Layout>;

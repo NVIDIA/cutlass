@@ -358,7 +358,7 @@ void initialize(const Options<RasterOrderOptions> &options) {
   // Layout SFA and SFB represent logically broadcasting data in CuTe.
   // E.g., if Layout SFA has shape ((ScaleGranularityM, M / ScaleGranularityM), (ScaleGraunularityK, K / ScaleGranularityK))
   // and strides ((0, 1), (0, M / ScaleGraunuarlityM)), then each collection of ScaleGranularityM x ScaleGranularityK
-  // indecies in the tensor map to the same offset.
+  // indices in the tensor map to the same offset.
 
   layout_SFA = ScaleConfig::tile_atom_to_shape_SFA(make_shape(options.m, options.n, options.k, options.l));
   layout_SFB = ScaleConfig::tile_atom_to_shape_SFB(make_shape(options.m, options.n, options.k, options.l));

@@ -78,7 +78,7 @@
     a single default value.
 
     CUTLASS 3.x provides builders for both collective mainloops and epilogues. The particular implementation of
-    the collective is specified via the schedule tags that corresond to the underlying collective's
+    the collective is specified via the schedule tags that correspond to the underlying collective's
     dispatch policy. `gemm::collective::KernelScheduleAuto` and `epilogue::collective::EpilogueScheduleAuto`
     are special cases of these schedules that allow the builder to also decide the dispatch policy for you,
     therefore letting the builder pick the collective specialization.

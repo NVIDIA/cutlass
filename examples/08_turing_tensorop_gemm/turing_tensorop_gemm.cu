@@ -64,7 +64,7 @@ ElementComputeEpilogue (int32_t), ElementInputA (int8_t), ElementInputB (int8_t)
 (int32_t). Communicating just the data type is not enough. As the data is laid out linearly in
 memory, we have to convey the layout of matrices. We do that by initializing template variable
 LayoutInputA to column major cutlass variable, LayoutInputB to row major and LayoutOutput to row
-major. Next, we setup rules to comptue alpha * X + beta * C which is called epilogue of the kernel.
+major. Next, we setup rules to compute alpha * X + beta * C which is called epilogue of the kernel.
 We initialize template variable EpilogueOp, which takes the data type of output ElementOutput
 (int32_t), the number of elements per vector memory access (16), data type of accumulator (int32_t)
 and data type of computation of linear combination (alpha * X + beta * C).
