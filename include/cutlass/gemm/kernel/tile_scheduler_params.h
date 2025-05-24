@@ -401,7 +401,7 @@ struct PersistentTileSchedulerSm90StreamKParams {
   FastDivmodU64 divmod_clusters_mnl_{};
 
   // We divide up the number of stream-K tiles amongst G groups of stream-K units.
-  // The stream-K units within a group collaborate to comptue over the `sk_tiles / G`
+  // The stream-K units within a group collaborate to compute over the `sk_tiles / G`
   // tiles assigned to that group. Non-unit group sizes can help to preserve L2 locality of
   // partial chunks computed by stream-K units -- units 0 in each group will compute identical K extents
   // of tiles that would be assigned in the same wave according to the rasterization order of the
@@ -925,7 +925,7 @@ struct PersistentTileSchedulerSm90StreamKParams {
     }
   }
 
-  // Given decomposition mode output from heuristic, set all feilds of params.
+  // Given decomposition mode output from heuristic, set all fields of params.
   void set_params(
     DecompositionMode heuristic_mode,
     uint32_t groups,
@@ -947,7 +947,7 @@ struct PersistentTileSchedulerSm90StreamKParams {
     , uint32_t ktile_start_alignment_count 
     ) {
     // The highest priority when customers set as splitk mode, may set
-    // with a adpated splits value rather than the original splits
+    // with a adapted splits value rather than the original splits
     // even it does not make sense
     if (splits > 1 && heuristic_mode == DecompositionMode::SplitK) {
       set_params_basic(

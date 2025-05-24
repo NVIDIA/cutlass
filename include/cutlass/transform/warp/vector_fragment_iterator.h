@@ -34,7 +34,7 @@
     \brief This defines a "fragment" iterator for visiting the fragments of a warp vector
       that participate in one warp-level mma operation.
 
-      Typically, this is used to access the scale/bias fragement of a warp-level mma operation.
+      Typically, this is used to access the scale/bias fragment of a warp-level mma operation.
       The scale/bias vector is then partitioned into smaller fragments that can be fed into 
       next warp-level mma operation. 
 
