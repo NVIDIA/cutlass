@@ -251,7 +251,7 @@ struct Options {
   float alpha = 1.f, beta = 0.f;
   int iterations = 1000;
   int warmup = 1000;
-  int m = 1024, n = 512, k = 1024, l = 1;
+  int m = 1024, n = 1024, k = 1024, l = 1;
   float epsilon = 0.02f;
   float non_zero_floor = 1.f;
 

@@ -454,9 +454,6 @@ struct CollectiveMma<
       // Prefetch the first rmem from the first k-tile
       copy(smem_tiled_copy_A, tCsA_p(_,_,Int<0>{}), tCrA_copy_view(_,_,Int<0>{}));
       copy(smem_tiled_copy_B, tCsB_p(_,_,Int<0>{}), tCrB_copy_view(_,_,Int<0>{}));
-      // Load per block scale values from shared memory to registers
-      copy(tCsSFA(_,_,_,make_coord(_0{}, _0{})), tCrSFA);
-      copy(tCsSFB(_,_,_,make_coord(_0{}, _0{})), tCrSFB);
     }
 
     CUTLASS_PRAGMA_NO_UNROLL
@@ -485,6 +482,9 @@ struct CollectiveMma<
         // Copy gmem to smem before computing gemm on each k-pipe
         if (k_block == 0)
         {
+          // Load per block scale values from shared memory to registers
+          copy(tCsSFA(_,_,_,make_coord(_0{}, smem_pipe_read)), tCrSFA);
+          copy(tCsSFB(_,_,_,make_coord(_0{}, smem_pipe_read)), tCrSFB);
           // Set all predicates to false if we are going to overshoot bounds
           if (k_tile_count <= 0) {
             clear(tApA);
@@ -552,9 +552,6 @@ struct CollectiveMma<
           tCrAccum(i) = 0;
         }
       }
-      // Load per block scale values from shared memory to registers
-      copy(tCsSFA(_,_,_,make_coord(_0{}, smem_pipe_read)), tCrSFA);
-      copy(tCsSFB(_,_,_,make_coord(_0{}, smem_pipe_read)), tCrSFB);
     }
 
     cp_async_wait<0>();
