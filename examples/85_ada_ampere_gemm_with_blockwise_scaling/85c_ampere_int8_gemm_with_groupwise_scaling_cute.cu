@@ -91,16 +91,16 @@ constexpr int AlignmentB  = 128 / cutlass::sizeof_bits<ElementB>::value;    // M
 // C matrix configuration
 using         ElementC    = int;                                            // Element type for C and D matrix operands
 using         LayoutC     = cutlass::layout::ColumnMajor;                   // Layout type for C and D matrix operands
-constexpr int AlignmentC  = 128 / cutlass::sizeof_bits<ElementC>::value;    // Memory access granularity/alignment of C matrix in units of elements (up to 16 bytes)
+//constexpr int AlignmentC  = 128 / cutlass::sizeof_bits<ElementC>::value;    // Memory access granularity/alignment of C matrix in units of elements (up to 16 bytes)
 
 // D matrix configuration
-using         ElementD    = ElementC;
+using         ElementD    = float;
 using         LayoutD     = LayoutC;
-constexpr int AlignmentD  = AlignmentC;
+constexpr int AlignmentD  = 128 / cutlass::sizeof_bits<ElementD>::value;
 
 using ArchTag       = cutlass::arch::Sm89;                          // Tag indicating the minimum SM that supports the intended feature
 using TileShape     = Shape<_128,_128,_128>;                        // Threadblock-level tile size
-//using ClusterShape  = Shape<_1,_2,_1>;                              // Shape of the threadblocks in a cluster
+using ClusterShape  = Shape<_1,_1,_1>;                              // Shape of the threadblocks in a cluster
 using ScaleConfig   = cutlass::detail::Sm90BlockwiseScaleConfig<1, 128, 128>;
 
 using LayoutSFA     = decltype(ScaleConfig::deduce_layoutSFA());    // Layout type for SFA matrix operand
@@ -112,13 +112,13 @@ using LayoutSFB     = decltype(ScaleConfig::deduce_layoutSFB());    // Layout ty
 
 // Number of pipelines you want to use
 constexpr int PipelineStages = 3;
-using DispatchPolicy = cutlass::gemm::MainloopSm80CpAsyncBlockScaling<PipelineStages>;
+using DispatchPolicy = cutlass::gemm::MainloopSm80CpAsyncBlockScaling<PipelineStages, ClusterShape>;
 
 // This code section describes the MMA op and the tile size a warp will compute
 using TiledMma = TiledMMA<
   MMA_Atom<SM80_16x8x32_S32S8S8S32_TN>,
   Layout<Shape<_2,_2,_1>>, // 2x2x1 thread group
-  Tile<_32,_32,_32>>;      // 16x16x32 MMA for LDSM, 1x2x1 value group
+  Tile<_32,_32,_32>>;
 
 // A (M,K)  K-major
 using SmemLayoutAtomA = decltype(
@@ -163,23 +163,24 @@ using CollectiveMainloop = cutlass::gemm::collective::CollectiveMma<
 
 using ElementAccumulator  = typename CollectiveMainloop::ElementAccumulator;    // Element type for internal accumulation
 using ElementBlockScale   = typename CollectiveMainloop::ElementBlockScale;     // Element type for blockscaling during accumulation
-using ElementCompute      = ElementAccumulator;                                 // Element type for epilogue computation
 
 //
 // Assembling the Collective Epilogue Type
 //
 
 using CollectiveEpilogue = cutlass::epilogue::collective::DefaultEpilogue<
-        ElementD,
+        ElementC,
         cutlass::detail::TagToStrideC_t<LayoutC>,
         cutlass::detail::TagToStrideC_t<LayoutD>,
         cutlass::epilogue::thread::LinearCombination<
           ElementD,
           AlignmentD,
           ElementAccumulator,
-          ElementCompute>,
+          ElementD,
+          cutlass::epilogue::thread::ScaleType::Default,
+          cutlass::FloatRoundStyle::round_to_nearest,
+          ElementC>,                                                            // Provide if ElementD differs from ElementC
         cutlass::gemm::EpilogueDefault>;
-
 //
 // Assembling the GemmKernel
 //
@@ -232,7 +233,7 @@ struct Options {
   bool help = false;
   bool verify = true;
 
-  ElementAccumulator alpha = 1, beta = 0;
+  float alpha = 1.f, beta = 0.f;
   int iterations = 1000;
   int warmup = 1000;
   int m = 1024, n = 512, k = 1024, l = 1;
@@ -252,8 +253,8 @@ struct Options {
     cmd.get_cmd_line_argument("n", n);
     cmd.get_cmd_line_argument("k", k);
     cmd.get_cmd_line_argument("l", l);
-    cmd.get_cmd_line_argument("alpha", alpha, 1);
-    cmd.get_cmd_line_argument("beta", beta, 0);
+    cmd.get_cmd_line_argument("alpha", alpha, 1.f);
+    cmd.get_cmd_line_argument("beta", beta, 0.f);
     cmd.get_cmd_line_argument("warmup", warmup);
     cmd.get_cmd_line_argument("iterations", iterations);
     cmd.get_cmd_line_argument("verify", verify);
@@ -490,8 +491,8 @@ GemmArguments args_from_options(const Options &options)
 
   auto &fusion_args = arguments.epilogue.thread;
 
-  fusion_args.alpha = options.alpha;
-  fusion_args.beta = options.beta;
+  fusion_args.alpha = CollectiveEpilogue::ThreadEpilogueOp::ElementCompute(options.alpha);
+  fusion_args.beta = CollectiveEpilogue::ThreadEpilogueOp::ElementCompute(options.beta);
 
   return arguments;
 }
@@ -534,7 +535,7 @@ bool verify(const Options &options) {
   using unused_t = decltype(D);
 
   cutlass::reference::host::GettBlockScalingMainloopParams<
-      ElementAccumulator,
+      CollectiveMainloop::ElementAccumulator,
       decltype(A),
       decltype(SFA),
       decltype(B),
@@ -542,10 +543,10 @@ bool verify(const Options &options) {
     > mainloop_params{A, SFA, B, SFB};
 
   cutlass::reference::host::GettEpilogueParams<
-      ElementScalar,
-      ElementScalar,
-      ElementAccumulator,
-      ElementCompute,
+      CollectiveEpilogue::ThreadEpilogueOp::ElementCompute,
+      CollectiveEpilogue::ThreadEpilogueOp::ElementCompute,
+      CollectiveEpilogue::ThreadEpilogueOp::ElementAccumulator,
+      CollectiveEpilogue::ThreadEpilogueOp::ElementCompute,
       decltype(C),
       decltype(D),
       unused_t, // bias
@@ -556,8 +557,8 @@ bool verify(const Options &options) {
 
   epilogue_params.C = C;
   epilogue_params.D = D;
-  epilogue_params.alpha = options.alpha;
-  epilogue_params.beta = options.beta;
+  epilogue_params.alpha = CollectiveEpilogue::ThreadEpilogueOp::ElementCompute(options.alpha);
+  epilogue_params.beta = CollectiveEpilogue::ThreadEpilogueOp::ElementCompute(options.beta);
 
   // get reference result
   cutlass::reference::host::Gemm3x(mainloop_params, epilogue_params);
