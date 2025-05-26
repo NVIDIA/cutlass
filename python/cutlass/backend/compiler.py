@@ -163,10 +163,12 @@ class ArtifactManager:
             "--expt-relaxed-constexpr",
             "-Xcudafe --diag_suppress=esa_on_defaulted_function_ignored",
         ]
+        # TODO(Codeplay): remove CUTLASS_SYCL_BUILTIN_ENABLE when the spirv functions are available for PVC
         self._dpcpp_compile_options = ["-fsycl", "-std=c++17",
                                        "-DCUTLASS_ENABLE_SYCL",
                                        "-fsycl-rtc-mode",
                                        "-DSYCL_INTEL_TARGET",
+                                       "-DCUTLASS_SYCL_BUILTIN_ENABLE",
                                        "-shared", "-fPIC",
                                        "-fno-sycl-dead-args-optimization",
                                        "-Xspirv-translator -spirv-ext=+SPV_INTEL_split_barrier",

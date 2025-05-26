@@ -165,7 +165,6 @@ struct MMA_Traits<XE_1x16x16_F32BF16BF16F32_TT>
   using CLayout = Layout<Shape<_16, _1>, Stride<_1, _1>>;
 };
 
-
 template <>
 struct MMA_Traits<XE_8x16x16_F32F16F16F32_TT>
 {

@@ -108,6 +108,8 @@ option(CUTLASS_SYCL_PROFILING_ENABLED "Use SYCL events to calculate device execu
 option(CUTLASS_SYCL_RUNNING_CI "Enable this option when building in a CI environment.
                                 It activates CI specific configurations, such as additional checks or selectively
                                 disabling tests that cannot run in CI." OFF)
+option(CUTLASS_SYCL_BUILTIN_ENABLE "Enable this option to use builtin functions instead of SPIR-V for Block Copy & MMA operations" OFF)
+
 if (CUTLASS_ENABLE_SYCL)
   set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
@@ -128,6 +130,10 @@ if (CUTLASS_ENABLE_SYCL)
   if (CUTLASS_SYCL_PROFILING_ENABLED)
     add_compile_definitions(CUTLASS_SYCL_PROFILING_ENABLED)
     add_compile_definitions(SYCLCOMPAT_PROFILING_ENABLED)
+  endif()
+
+  if (CUTLASS_SYCL_BUILTIN_ENABLE)
+    add_compile_definitions(CUTLASS_SYCL_BUILTIN_ENABLE)
   endif()
 
   include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/onemkl.cmake)

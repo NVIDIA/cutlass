@@ -2141,23 +2141,6 @@ struct Copy_Traits<XE_1D_LOAD_GLOBAL<S, D>> {
 };
 
 template<class S, class D>
-struct Copy_Traits<PREFETCH<S, D>> {
-    // Logical thread id to thread idx
-    using ThrID = Layout<_16>;
-    // Map from (src-thr,src-val) to bit
-    using SrcLayout = Layout<Shape<_16, Int<sizeof_bits<S>::value>>, Stride<_0, _1>>;
-    // Map from (dst-thr,dst-val) to bit
-    using DstLayout = Layout<Shape <                       _16,Int<sizeof_bits<D>::value>>,
-                             Stride<Int<sizeof_bits<D>::value>,                        _1>>;
-    // Reference map from (thr,val) to bit
-    using RefLayout = DstLayout;
-
-    template <class... CopyArgs>
-    CUTE_HOST_DEVICE
-    Copy_Traits(Copy_Traits<CopyArgs...> const& traits) {}
-};
-
-template<class S, class D>
 struct Copy_Traits<XE_1D_STSM<S, D>> {
     // Logical thread id to thread idx
     using ThrID = Layout<_16>;

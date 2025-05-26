@@ -29,48 +29,22 @@
  *
  **************************************************************************************************/
 #pragma once
-#include <cute/arch/xe_copy_1B.hpp>
-#include <cute/arch/xe_copy_2B.hpp>
-#include <cute/arch/xe_copy_4B.hpp>
-#include <cute/arch/xe_copy_8B.hpp>
-#ifdef __SYCL_DEVICE_ONLY__
-#define SYCL_DEVICE_BUILTIN(x) SYCL_EXTERNAL extern "C" x
-#else
-#define SYCL_DEVICE_BUILTIN(x) inline x { assert(false); }
+
+#if defined(__SYCL_DEVICE_ONLY__) && defined(SYCL_INTEL_TARGET)
+#define CUTE_ARCH_COPY_XE_ENABLED
 #endif
 
-// prefetch
-SYCL_DEVICE_BUILTIN(void __builtin_IB_lsc_prefetch_global_uchar(
-    const __attribute__((opencl_global)) uint8_t *base, int immElemOff,
-    enum CacheControl cacheOpt));
-SYCL_DEVICE_BUILTIN(void __builtin_IB_lsc_prefetch_global_ushort(
-    const __attribute__((opencl_global)) uint16_t *base, int immElemOff,
-    enum CacheControl cacheOpt));
-SYCL_DEVICE_BUILTIN(void __builtin_IB_lsc_prefetch_global_uint(
-    const __attribute__((opencl_global)) uint32_t *base, int immElemOff,
-    enum CacheControl cacheOpt));
-SYCL_DEVICE_BUILTIN(void __builtin_IB_lsc_prefetch_global_uint2(
-    const __attribute__((opencl_global)) uint32_t *base, int immElemOff,
-    enum CacheControl cacheOpt));
-SYCL_DEVICE_BUILTIN(void __builtin_IB_lsc_prefetch_global_uint4(
-    const __attribute__((opencl_global)) uint32_t *base, int immElemOff,
-    enum CacheControl cacheOpt));
-SYCL_DEVICE_BUILTIN(void __builtin_IB_lsc_prefetch_global_uint8(
-    const __attribute__((opencl_global)) uint32_t *base, int immElemOff,
-    enum CacheControl cacheOpt));
-SYCL_DEVICE_BUILTIN(void __builtin_IB_lsc_prefetch_global_ulong(
-    const __attribute__((opencl_global)) uint64_t *base, int immElemOff,
-    enum CacheControl cacheOpt));
-SYCL_DEVICE_BUILTIN(void __builtin_IB_lsc_prefetch_global_ulong2(
-    const __attribute__((opencl_global)) uint64_t *base, int immElemOff,
-    enum CacheControl cacheOpt));
-SYCL_DEVICE_BUILTIN(void __builtin_IB_lsc_prefetch_global_ulong4(
-    const __attribute__((opencl_global)) uint64_t *base, int immElemOff,
-    enum CacheControl cacheOpt));
-SYCL_DEVICE_BUILTIN(void __builtin_IB_lsc_prefetch_global_ulong8(
-    const __attribute__((opencl_global)) uint64_t *base, int immElemOff,
-    enum CacheControl cacheOpt));
-#undef SYCL_DEVICE_BUILTIN
+#if defined(CUTE_ARCH_COPY_XE_ENABLED) && ((defined(__INTEL_LLVM_COMPILER) && (__INTEL_LLVM_COMPILER < 20250200)) || defined(CUTLASS_SYCL_BUILTIN_ENABLE))
+#include <cute/arch/copy_xe_builtin.hpp>
+#elif defined(CUTE_ARCH_COPY_XE_ENABLED)
+#include <cute/arch/copy_xe_spirv.hpp>
+#endif
+
+#include <cute/arch/copy_xe_U4.hpp>
+#include <cute/arch/copy_xe_U8.hpp>
+#include <cute/arch/copy_xe_U16.hpp>
+#include <cute/arch/copy_xe_U32.hpp>
+#include <cute/arch/copy_xe_U64.hpp>
 
 #ifdef __SYCL_DEVICE_ONLY__
 SYCL_EXTERNAL __attribute__((convergent)) void __spirv_ControlBarrierWaitINTEL(int execution_scope, int memory_scope, int memory_semantics);
@@ -143,49 +117,6 @@ struct XE_1D_LDSM {
 };
 
 template <class S, class D = S>
-struct PREFETCH {
-  using SRegisters = S[1];
-  using DRegisters = D[1];
-
-  template <class S_, class D_>
-  CUTE_HOST_DEVICE static void copy(const S_ &src, D_ &dst) {
-#if defined(SYCL_INTEL_TARGET)
-    if constexpr(sizeof(D) == 1) {
-      __builtin_IB_lsc_prefetch_global_uchar(
-          (const __attribute__((opencl_global)) uint8_t *)(&*&src), 0, CacheControl::kL1C_L3C);
-    }
-    else if constexpr(sizeof(D) == 2) {
-      __builtin_IB_lsc_prefetch_global_ushort(
-          (const __attribute__((opencl_global)) uint16_t *)(&*&src), 0, CacheControl::kL1C_L3C);
-    }
-    else if constexpr(sizeof(D) == 4) {
-      __builtin_IB_lsc_prefetch_global_uint(
-          (const __attribute__((opencl_global)) uint32_t *)(&*&src), 0, CacheControl::kL1C_L3C);
-    }
-    else if constexpr(sizeof(D) == 8) {
-      __builtin_IB_lsc_prefetch_global_uint2(
-          (const __attribute__((opencl_global)) uint32_t *)(&*&src), 0, CacheControl::kL1C_L3C);
-    }
-    else if constexpr(sizeof(D) == 16) {
-      __builtin_IB_lsc_prefetch_global_uint4(
-          (const __attribute__((opencl_global)) uint32_t *)(&*&src), 0, CacheControl::kL1C_L3C);
-    }
-    else if constexpr(sizeof(D) == 32) {
-      __builtin_IB_lsc_prefetch_global_uint8(
-          (const __attribute__((opencl_global)) uint32_t *)(&*&src), 0, CacheControl::kL1C_L3C);
-    }
-    else if constexpr(sizeof(D) == 64) {
-      __builtin_IB_lsc_prefetch_global_ulong8(
-          (const __attribute__((opencl_global)) uint64_t *)(&*&src), 0, CacheControl::kL1C_L3C);
-    }
-#else
-      CUTE_INVALID_CONTROL_PATH(
-          "Trying to use block prefetch on non-Xe hardware");
-#endif
-    }
-};
-
-template <class S, class D = S>
 struct XE_1D_LOAD_GLOBAL {
   using SRegisters = S[1];
   using DRegisters = D[1];
@@ -212,9 +143,6 @@ struct XE_1D_LOAD_GLOBAL {
       CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-Xe hardware");
     #endif 
   }
-
-  using PREFETCH = PREFETCH<S, D>;
-
 };
 
 template<class S, class D = S>

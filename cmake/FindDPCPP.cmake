@@ -62,8 +62,11 @@ endif()
 if("${DPCPP_SYCL_TARGET}" STREQUAL "intel_gpu_pvc" OR
    "${DPCPP_SYCL_TARGET}" STREQUAL "spir64" OR
    "${DPCPP_SYCL_TARGET}" STREQUAL "intel_gpu_bmg_g21")
-  list(APPEND DPCPP_FLAGS "-Xspirv-translator;-spirv-ext=+SPV_INTEL_split_barrier")
-
+  if ((CMAKE_CXX_COMPILER_ID MATCHES "IntelLLVM" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 2025.2) OR CUTLASS_SYCL_BUILTIN_ENABLE)
+    list(APPEND DPCPP_FLAGS "-Xspirv-translator;-spirv-ext=+SPV_INTEL_split_barrier")
+  else()
+    list(APPEND DPCPP_FLAGS "-Xspirv-translator;-spirv-ext=+SPV_INTEL_split_barrier,+SPV_INTEL_2d_block_io,+SPV_INTEL_subgroup_matrix_multiply_accumulate")
+ endif()
   if(DPCPP_DISABLE_ITT_FOR_CUTLASS)
     list(APPEND DPCPP_FLAGS "-fno-sycl-instrument-device-code")
   endif()
