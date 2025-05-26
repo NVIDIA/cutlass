@@ -73,6 +73,52 @@
 
 using namespace cute;
 
+template <typename ArchTag, typename Element, int BLK_M, int BLK_N, int BLK_K, int PipelineStages = 3, int WARP_M = 2, int WARP_N = 2>
+struct SM8x_Byte_Gemm_Traits {
+  static constexpr int MMA_WARP_M = WARP_M * 16;
+  static constexpr int MMA_WARP_N = WARP_N * 16;
+  static constexpr int MMA_WARP_K = 32;
+  static constexpr int NUM_WARPS = WARP_M * WARP_N;
+  static constexpr int NUM_THREADS = NUM_WARPS * 32;
+  static constexpr int ELEMS_PER_COPY = sizeof(uint128_t) / sizeof(Element);
+  static constexpr int THREADS_PER_ROW = BLK_K / ELEMS_PER_COPY;
+
+  static_assert(
+    !(std::is_same<Element, cutlass::float_e4m3_t>::value &&
+      !std::is_same<ArchTag, cutlass::arch::Sm89>::value),
+    "cutlass::float_e4m3_t is only supported on cutlass::arch::Sm89."
+  );
+
+  using MmaAtom = cute::conditional_t<cute::is_same_v<Element, cutlass::float_e4m3_t>,
+    MMA_Atom<SM89_16x8x32_F32E4M3E4M3F32_TN>,
+    MMA_Atom<SM80_16x8x32_S32S8S8S32_TN>>;
+
+  using TileShape = Shape<Int<BLK_M>, Int<BLK_N>, Int<BLK_K>>;              // Threadblock-level tile size
+  using ClusterShape  = Shape<_1,_1,_1>;                                    // Shape of the threadblocks in a cluster
+  // This code section describes the MMA op and the tile size a warp will compute
+  using TiledMma = TiledMMA<
+    MmaAtom,
+    Layout<Shape<Int<WARP_M>, Int<WARP_N>, _1>>, // WARP_M x WARP_N x 1 thread group
+    Tile<Int<MMA_WARP_M>, Int<MMA_WARP_N>, Int<MMA_WARP_K>>>;
+
+  using SmemLayoutAtom = decltype(composition(
+      Swizzle<2,4,3>{},
+      Layout<Shape <_8, Int<BLK_K>>,
+              Stride<Int<BLK_K>, _1>>{}));
+  using SmemLayoutAtomA = SmemLayoutAtom;
+  using SmemLayoutAtomB = SmemLayoutAtom;
+
+  using GmemTiledCopy = decltype(make_tiled_copy(
+    Copy_Atom<SM80_CP_ASYNC_CACHEGLOBAL<cute::uint128_t>, Element>{},
+    Layout<Shape <Int<NUM_THREADS / THREADS_PER_ROW>, Int<THREADS_PER_ROW>>,
+           Stride<Int<THREADS_PER_ROW>, _1>>{},
+    Layout<Shape<_1,Int<ELEMS_PER_COPY>>>{}));
+  using GmemTiledCopyA = GmemTiledCopy;
+  using GmemTiledCopyB = GmemTiledCopy;
+
+  using SmemCopyAtomA = Copy_Atom<SM75_U32x4_LDSM_N, Element>;
+  using SmemCopyAtomB = Copy_Atom<SM75_U32x4_LDSM_N, Element>;
+};
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /// GEMM kernel configurations
@@ -81,17 +127,14 @@ using namespace cute;
 // A matrix configuration
 using         ElementA    = cutlass::float_e4m3_t;                          // Element type for A matrix operand
 using         LayoutA     = cutlass::layout::RowMajor;                      // Layout type for A matrix operand
-constexpr int AlignmentA  = 128 / cutlass::sizeof_bits<ElementA>::value;    // Memory access granularity/alignment of A matrix in units of elements (up to 16 bytes)
 
 // B matrix configuration
 using         ElementB    = cutlass::float_e4m3_t;                          // Element type for B matrix operand
 using         LayoutB     = cutlass::layout::ColumnMajor;                   // Layout type for B matrix operand
-constexpr int AlignmentB  = 128 / cutlass::sizeof_bits<ElementB>::value;    // Memory access granularity/alignment of B matrix in units of elements (up to 16 bytes)
 
 // C matrix configuration
 using         ElementC    = float;                                          // Element type for C and D matrix operands
 using         LayoutC     = cutlass::layout::ColumnMajor;                   // Layout type for C and D matrix operands
-//constexpr int AlignmentC  = 128 / cutlass::sizeof_bits<ElementC>::value;    // Memory access granularity/alignment of C matrix in units of elements (up to 16 bytes)
 
 // D matrix configuration
 using         ElementD    = float;
@@ -99,56 +142,25 @@ using         LayoutD     = LayoutC;
 constexpr int AlignmentD  = 128 / cutlass::sizeof_bits<ElementD>::value;
 
 using ArchTag       = cutlass::arch::Sm89;                          // Tag indicating the minimum SM that supports the intended feature
-using TileShape     = Shape<_128,_128,_128>;                        // Threadblock-level tile size
-using ClusterShape  = Shape<_1,_1,_1>;                              // Shape of the threadblocks in a cluster
-using ScaleConfig   = cutlass::detail::Sm90BlockwiseScaleConfig<1, 128, 128>;
-
-using LayoutSFA     = decltype(ScaleConfig::deduce_layoutSFA());    // Layout type for SFA matrix operand
-using LayoutSFB     = decltype(ScaleConfig::deduce_layoutSFB());    // Layout type for SFB matrix operand
 
 //
 // Assembling the CollectiveMainloop type
 //
 
 // Number of pipelines you want to use
-constexpr int PipelineStages = 3;
-using DispatchPolicy = cutlass::gemm::MainloopSm80CpAsyncBlockScaling<PipelineStages, ClusterShape>;
+// 4: (64*128 + 128*128 + 64 + 1) * 4 = 98564 < 102400 (SM89 Shared Memory Size)
+// 3: (128*128 + 128*128 + 128 + 1) * 3 = 98691 < 102400 (SM89 Shared Memory Size)
+constexpr int PipelineStages = 4;
+constexpr int BLK_M = 64;
+constexpr int BLK_N = 128;
+constexpr int BLK_K = 128;
+using GemmTrait = SM8x_Byte_Gemm_Traits<ArchTag, ElementA, BLK_M, BLK_N, BLK_K, PipelineStages>;
+using TileShape = GemmTrait::TileShape;
+using DispatchPolicy = cutlass::gemm::MainloopSm80CpAsyncBlockScaling<PipelineStages, GemmTrait::ClusterShape>;
 
-// This code section describes the MMA op and the tile size a warp will compute
-using TiledMma = TiledMMA<
-  MMA_Atom<SM89_16x8x32_F32E4M3E4M3F32_TN>,
-  Layout<Shape<_2,_2,_1>>, // 2x2x1 thread group
-  Tile<_32,_32,_32>>;
-
-// A (M,K)  K-major
-using SmemLayoutAtomA = decltype(
-  composition(
-    Swizzle<2,4,3>{},
-    Layout<Shape <_32,_64>,
-            Stride<_64, _1>>{}));
-using GmemTiledCopyA = decltype(
-  make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<cute::uint128_t>, ElementA>{},
-                  Layout<Shape <_32,_4>,
-                          Stride< _4,_1>>{},
-                  Layout<Shape<_1,Int<AlignmentA>>>{}));
-// LDS.32- or LDSM-based copy atom
-using SmemCopyAtomA = Copy_Atom<SM75_U32x4_LDSM_N, ElementA>;  // LDSM works
-
-// B (N,K)  K-major
-using SmemLayoutAtomB = decltype(
-  composition(
-    Swizzle<2,4,3>{},
-    Layout<Shape <_16,_64>,
-            Stride<_64, _1>>{}));
-using GmemTiledCopyB = decltype(
-  make_tiled_copy(Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<cute::uint128_t>, ElementB>{},
-                  Layout<Shape <_32,_4>,
-                          Stride< _4,_1>>{},
-                  Layout<Shape<_1,Int<AlignmentB>>>{}));
-
-// LDS.32- or LDSM-based copy atom
-using SmemCopyAtomB = Copy_Atom<SM75_U32x4_LDSM_N, ElementB>;  // LDSM works
-
+using ScaleConfig   = cutlass::detail::Sm90BlockwiseScaleConfig<1, BLK_N, BLK_K>;
+using LayoutSFA     = decltype(ScaleConfig::deduce_layoutSFA());    // Layout type for SFA matrix operand
+using LayoutSFB     = decltype(ScaleConfig::deduce_layoutSFB());    // Layout type for SFB matrix operand
 // Mainloop
 using CollectiveMainloop = cutlass::gemm::collective::CollectiveMma<
         DispatchPolicy, TileShape,
@@ -156,9 +168,9 @@ using CollectiveMainloop = cutlass::gemm::collective::CollectiveMma<
         cute::tuple<cutlass::detail::TagToStrideA_t<LayoutA>, LayoutSFA>,
         ElementB,
         cute::tuple<cutlass::detail::TagToStrideB_t<LayoutB>, LayoutSFB>,
-        TiledMma,
-        GmemTiledCopyA, SmemLayoutAtomA, SmemCopyAtomA, cute::identity,  // A
-        GmemTiledCopyB, SmemLayoutAtomB, SmemCopyAtomB, cute::identity   // B
+        GemmTrait::TiledMma,
+        GemmTrait::GmemTiledCopyA, GemmTrait::SmemLayoutAtomA, GemmTrait::SmemCopyAtomA, cute::identity,  // A
+        GemmTrait::GmemTiledCopyB, GemmTrait::SmemLayoutAtomB, GemmTrait::SmemCopyAtomB, cute::identity   // B
 >;
 
 using ElementAccumulator  = typename CollectiveMainloop::ElementAccumulator;    // Element type for internal accumulation
