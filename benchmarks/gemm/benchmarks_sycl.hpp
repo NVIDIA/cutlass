@@ -29,7 +29,7 @@
  *
  **************************************************************************************************/
 
-#pragma once
+ #pragma once
 
 #include "gemm_configuration_sycl.hpp"
 
@@ -232,7 +232,95 @@ CUTLASS_CREATE_GEMM_BENCHMARK(PvcGemmBF16BF16FP32_CCR_8);
 // CUTLASS_CREATE_GEMM_BENCHMARK(PvcGemmBF16BF16FP32_RCR_Linear);
 // CUTLASS_CREATE_GEMM_BENCHMARK(PvcGemmBF16BF16FP32_RCR_Linear_MoE);
 //
+using PvcGemmFP16FP16FP32_RCR_5 = cutlass::gemm::device::GemmConfiguration<
+        cutlass::arch::IntelXe,
+        cutlass::half_t, cutlass::layout::RowMajor,
+        cutlass::half_t, cutlass::layout::ColumnMajor,
+        float, cutlass::layout::RowMajor,
+        float, Shape<_8, _128, _32>, Scheduler::Gemm,
+        typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32F16F16F32_TT>, Layout<Shape<_8, _128, _32>>,
+        Layout<Shape<_1, _4, _1>, Stride<_0, _1, _0>>>::TiledMMA,
+        XE_2D_U16x8x32_LD_N, XE_2D_U16x16x16_LD_T
+        >;
 
+using PvcGemmFP16FP16FP32_RCR_7 = cutlass::gemm::device::GemmConfiguration<
+        cutlass::arch::IntelXe,
+        cutlass::half_t, cutlass::layout::RowMajor,
+        cutlass::half_t, cutlass::layout::ColumnMajor,
+        float, cutlass::layout::RowMajor,
+        float, Shape<_8, _128, _32>, Scheduler::Gemm,
+        typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32F16F16F32_TT>, Layout<Shape<_8, _128, _32>>,
+                                      Layout<Shape<_1, _8, _1>, Stride<_8, _1, _0>>>::TiledMMA,
+        XE_2D_U16x8x32_LD_N, XE_2D_U16x16x16_LD_T
+        >;
+
+using PvcGemmFP16FP16FP32_RCR_9 = cutlass::gemm::device::GemmConfiguration<
+        cutlass::arch::IntelXe,
+        cutlass::half_t, cutlass::layout::RowMajor,
+        cutlass::half_t, cutlass::layout::ColumnMajor,
+        float, cutlass::layout::RowMajor,
+        float, Shape<_8, _64, _32>, Scheduler::Gemm,
+        typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32F16F16F32_TT>, Layout<Shape<_8, _64, _32>>,
+                                      Layout<Shape<_1, _4, _1>, Stride<_4, _1, _0>>>::TiledMMA,
+        XE_2D_U16x8x32_LD_N, XE_2D_U16x16x16_LD_T
+        >;
+
+using PvcGemmFP16FP16FP32_RCR_16 = cutlass::gemm::device::GemmConfiguration<
+        cutlass::arch::IntelXe,
+        cutlass::half_t, cutlass::layout::RowMajor,
+        cutlass::half_t, cutlass::layout::ColumnMajor,
+        float, cutlass::layout::RowMajor,
+        float, Shape<_16, _64, _32>, Scheduler::Gemm,
+        typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32F16F16F32_TT>, Layout<Shape<_16, _64, _32>>,
+                                      Layout<Shape<_2, _4, _1>, Stride<_4, _1, _0>>>::TiledMMA,
+        XE_2D_U16x8x32_LD_N, XE_2D_U16x16x16_LD_T
+        >;
+
+using PvcGemmFP16FP16FP32_RCR_7_mul = cutlass::gemm::device::GemmConfiguration<
+        cutlass::arch::IntelXe,
+        cutlass::half_t, cutlass::layout::RowMajor,
+        cutlass::half_t, cutlass::layout::ColumnMajor,
+        float, cutlass::layout::RowMajor,
+        float, Shape<_8, _64, _32>, Scheduler::GemmSplitK,
+        typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32F16F16F32_TT>, Layout<Shape<_8, _64, _32>>,
+                                        Layout<Shape<_1, _4, _1>, Stride<_4, _1, _0>>>::TiledMMA,
+        XE_2D_U16x8x32_LD_N, XE_2D_U16x16x16_LD_T,
+        cutlass::epilogue::fusion::LinCombDeEltAct<
+        cutlass::layout::RowMajor, std::multiplies, float, float>
+        >;
+
+using PvcGemmFP16FP16FP32_RCR_8_silu = cutlass::gemm::device::GemmConfiguration<
+        cutlass::arch::IntelXe,
+        cutlass::half_t, cutlass::layout::RowMajor,
+        cutlass::half_t, cutlass::layout::ColumnMajor,
+        float, cutlass::layout::RowMajor,
+        float, Shape<_8, _64, _32>, Scheduler::GemmSplitK,
+        typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32F16F16F32_TT>, Layout<Shape<_8, _64, _32>>,
+                                      Layout<Shape<_1, _4, _1>, Stride<_4, _1, _0>>>::TiledMMA,
+        XE_2D_U16x8x32_LD_N, XE_2D_U16x16x16_LD_T,
+        cutlass::epilogue::fusion::LinCombEltAct<
+            cutlass::epilogue::thread::SiLu,
+            float, float, float, float,
+            cutlass::FloatRoundStyle::round_to_nearest>>;
+
+using PvcGemmFP16FP16FP32_SplitK_RCR_5 = cutlass::gemm::device::GemmConfiguration<
+        cutlass::arch::IntelXe,
+        cutlass::half_t, cutlass::layout::RowMajor,
+        cutlass::half_t, cutlass::layout::ColumnMajor,
+        float, cutlass::layout::RowMajor,
+        float, Shape<_8, _64, _32>,  Scheduler::GemmSplitK,
+        typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32F16F16F32_TT>, Layout<Shape<_8, _64, _32>>,
+                                        Layout<Shape<_1, _4, _1>, Stride<_4, _1, _0>>>::TiledMMA,
+        XE_2D_U16x8x32_LD_N, XE_2D_U16x16x16_LD_T
+        >;
+
+CUTLASS_CREATE_GEMM_BENCHMARK(PvcGemmFP16FP16FP32_RCR_5);
+CUTLASS_CREATE_GEMM_BENCHMARK(PvcGemmFP16FP16FP32_RCR_7);
+CUTLASS_CREATE_GEMM_BENCHMARK(PvcGemmFP16FP16FP32_RCR_9);
+CUTLASS_CREATE_GEMM_BENCHMARK(PvcGemmFP16FP16FP32_RCR_16);
+CUTLASS_CREATE_GEMM_BENCHMARK(PvcGemmFP16FP16FP32_RCR_7_mul);
+CUTLASS_CREATE_GEMM_BENCHMARK(PvcGemmFP16FP16FP32_RCR_8_silu);
+CUTLASS_CREATE_GEMM_BENCHMARK(PvcGemmFP16FP16FP32_SplitK_RCR_5);
 
 using PvcGemmBF16BF16FP32_SplitK_RRR_1 = cutlass::gemm::device::GemmConfiguration<
         cutlass::arch::IntelXe,
@@ -285,6 +373,14 @@ static void register_gemm_benchmarks() {
   CUTLASS_BENCHMARK(PvcGemmBF16BF16FP32_SplitK_RRR_1);
   CUTLASS_BENCHMARK(PvcGemmBF16BF16FP32_SplitK_RCR_5);
   CUTLASS_BENCHMARK(PvcGemmBF16BF16FP32_StreamK_RRR_1);
+
+  CUTLASS_BENCHMARK(PvcGemmFP16FP16FP32_RCR_5);
+  CUTLASS_BENCHMARK(PvcGemmFP16FP16FP32_RCR_7);
+  CUTLASS_BENCHMARK(PvcGemmFP16FP16FP32_RCR_9);
+  CUTLASS_BENCHMARK(PvcGemmFP16FP16FP32_RCR_16);
+  CUTLASS_BENCHMARK(PvcGemmFP16FP16FP32_RCR_7_mul);
+  CUTLASS_BENCHMARK(PvcGemmFP16FP16FP32_RCR_8_silu);
+  CUTLASS_BENCHMARK(PvcGemmFP16FP16FP32_SplitK_RCR_5);
 
   // CUTLASS_BENCHMARK(PvcGemmBF16BF16FP32_RCR_Linear);
   // CUTLASS_BENCHMARK(PvcGemmBF16BF16FP32_RCR_Linear_MoE);

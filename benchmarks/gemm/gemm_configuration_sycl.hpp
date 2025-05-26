@@ -70,13 +70,14 @@ struct GemmConfiguration {
 
 // bfloat16
 
-template<typename LayoutA, typename LayoutB, typename LayoutC,
+template<class ElementA, class LayoutA,
+  class ElementB, class LayoutB, typename LayoutC,
   class TileShape, Scheduler TileScheduler,
   class TiledMma, class GmemTiledCopyA, class GmemTiledCopyB,  class EpilogueOp>
 struct GemmConfiguration<
       arch::IntelXe,
-      bfloat16_t, LayoutA,
-      bfloat16_t, LayoutB,
+      ElementA, LayoutA,
+      ElementB, LayoutB,
       float, LayoutC,
       float,
       TileShape, TileScheduler, TiledMma,
@@ -103,8 +104,8 @@ struct GemmConfiguration<
     std::conditional_t<use_collective_mma_builder,
       typename cutlass::gemm::collective::CollectiveBuilder<
         cutlass::arch::IntelXe, cutlass::arch::OpClassTensorOp,
-        bfloat16_t, LayoutA, sizeof(bfloat16_t),
-        bfloat16_t, LayoutB, sizeof(bfloat16_t),
+        ElementA, LayoutA, sizeof(ElementA),
+        ElementB, LayoutB, sizeof(ElementB),
         float,
         TileShape, ClusterShape,
         cutlass::gemm::collective::StageCountAuto,
@@ -112,8 +113,8 @@ struct GemmConfiguration<
       >::CollectiveOp,
       collective::CollectiveMma<
         DispatchPolicy, TileShape,
-        bfloat16_t, StrideA,
-        bfloat16_t, StrideB,
+        ElementA, StrideA,
+        ElementB, StrideB,
         TiledMma,
         GmemTiledCopyA, void, void, identity, // A
         GmemTiledCopyB, void, void, identity // B
