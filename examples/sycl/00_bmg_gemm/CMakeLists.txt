@@ -1,4 +1,4 @@
-# Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
+# Copyright (c) 2024 - 2025 Codeplay Software Ltd. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -26,19 +26,32 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+set(TEST_BATCHES --l=2)
+set(TEST_LARGE "--l=513 --m=8 --n=16384 --k=512") # B matrix capacity > uint32_max
+set(TEST_SMALL_SHAPE --m=4 --n=8 --k=8 --l=2)
 
-if(SYCL_INTEL_TARGET)
-  add_subdirectory(00_bmg_gemm)
-  add_subdirectory(01_bmg_gemm_with_collective_builder)
-  add_subdirectory(02_bmg_gemm_mixed_dtype)
-  add_subdirectory(03_bmg_gemm_streamk)
-  add_subdirectory(04_bmg_grouped_gemm)
-  add_subdirectory(05_bmg_gemm_with_epilogues)
-  add_subdirectory(06_bmg_flash_attention)
-  add_subdirectory(07_bmg_dual_gemm)
-  add_subdirectory(08_bmg_gemm_f8)
-endif()
 
-if (CUTLASS_ENABLE_SYCL)
-  add_subdirectory(generics)
-endif()
+cutlass_example_add_executable(
+  00_bmg_gemm
+  00_bmg_gemm.cpp
+  TEST_COMMAND_OPTIONS
+  TEST_BATCHES
+  TEST_LARGE
+  TEST_SMALL_SHAPE
+)
+
+set(TEST_SMALL_SHAPE_PADDABLE --m=1 --n=1 --k=2 --l=2)
+cutlass_example_add_executable(
+  00_bmg_gemm_padded
+  00_bmg_gemm_padded.cpp
+  TEST_COMMAND_OPTIONS
+  TEST_BATCHES
+  TEST_SMALL_SHAPE_PADDABLE
+)
+
+cutlass_example_add_executable(
+  00_bmg_gemm_with_sycl_queue
+  00_bmg_gemm_with_sycl_queue.cpp
+  TEST_COMMAND_OPTIONS
+  TEST_BATCHES
+)

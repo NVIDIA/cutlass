@@ -1,4 +1,4 @@
-# Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
+# Copyright (c) 2024 - 2025 Codeplay Software Ltd. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -26,19 +26,21 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+set(TEST_BATCHES --l=2)
+set(TEST_MODE_1 --l=2 --mode=1)
+set(TEST_MODE_0 --l=2 --mode=0)
+set(TEST_A_NARROW l=2 --a_narrower)
 
-if(SYCL_INTEL_TARGET)
-  add_subdirectory(00_bmg_gemm)
-  add_subdirectory(01_bmg_gemm_with_collective_builder)
-  add_subdirectory(02_bmg_gemm_mixed_dtype)
-  add_subdirectory(03_bmg_gemm_streamk)
-  add_subdirectory(04_bmg_grouped_gemm)
-  add_subdirectory(05_bmg_gemm_with_epilogues)
-  add_subdirectory(06_bmg_flash_attention)
-  add_subdirectory(07_bmg_dual_gemm)
-  add_subdirectory(08_bmg_gemm_f8)
-endif()
-
-if (CUTLASS_ENABLE_SYCL)
-  add_subdirectory(generics)
+cutlass_example_add_executable(
+  02_bmg_gemm_mixed_dtype
+  02_bmg_gemm_mixed_dtype.cpp
+  TEST_COMMAND_OPTIONS
+  TEST_BATCHES
+  TEST_MODE_1
+  TEST_MODE_0
+  TEST_A_NARROW
+)
+if(NOT DPCPP_SYCL_TARGET STREQUAL "spir64")
+  # TODO(codeplay): Remove these once IGC block load loop hoisting bug is fixed
+  target_link_options( 02_bmg_gemm_mixed_dtype PRIVATE -Xs "-options \"-igc_opts 'allowDecompose2DBlockFuncs=0'\"" )
 endif()

@@ -1,4 +1,4 @@
-# Copyright (c) 2024 - 2024 Codeplay Software Ltd. All rights reserved.
+# Copyright (c) 2024 - 2025 Codeplay Software Ltd. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -26,19 +26,58 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+set(TEST_BATCHES --l=2)
 
-if(SYCL_INTEL_TARGET)
-  add_subdirectory(00_bmg_gemm)
-  add_subdirectory(01_bmg_gemm_with_collective_builder)
-  add_subdirectory(02_bmg_gemm_mixed_dtype)
-  add_subdirectory(03_bmg_gemm_streamk)
-  add_subdirectory(04_bmg_grouped_gemm)
-  add_subdirectory(05_bmg_gemm_with_epilogues)
-  add_subdirectory(06_bmg_flash_attention)
-  add_subdirectory(07_bmg_dual_gemm)
-  add_subdirectory(08_bmg_gemm_f8)
-endif()
+cutlass_example_add_executable(
+  05_bmg_gemm_with_epilogue_gelu
+  05_bmg_gemm_with_epilogue_gelu.cpp
+  TEST_COMMAND_OPTIONS
+  TEST_BATCHES
+)
 
-if (CUTLASS_ENABLE_SYCL)
-  add_subdirectory(generics)
-endif()
+#TODO(Codeplay): enable batch > 1 test once implementation is fixed.
+cutlass_example_add_executable(
+  05_bmg_gemm_with_epilogue_lincombdeeltact
+  05_bmg_gemm_with_epilogue_lincombdeeltact.cpp
+)
+
+cutlass_example_add_executable(
+  05_bmg_gemm_with_epilogue_relu
+  05_bmg_gemm_with_epilogue_relu.cpp
+  TEST_COMMAND_OPTIONS
+  TEST_BATCHES
+)
+
+cutlass_example_add_executable(
+  05_bmg_gemm_with_epilogue_silu
+  05_bmg_gemm_with_epilogue_silu.cpp
+  TEST_COMMAND_OPTIONS
+  TEST_BATCHES
+)
+
+#TODO(Codeplay): enable batch > 1 test once implementation is fixed.
+cutlass_example_add_executable(
+  05_bmg_gemm_with_epilogue_softmax
+  05_bmg_gemm_with_epilogue_softmax.cpp
+)
+
+cutlass_example_add_executable(
+  05_bmg_gemm_with_per_row_bias
+  05_bmg_gemm_with_per_row_bias.cpp
+  TEST_COMMAND_OPTIONS
+  TEST_BATCHES
+)
+
+cutlass_example_add_executable(
+  05_bmg_gemm_single_b_with_per_col_bias
+  05_bmg_gemm_single_b_with_per_col_bias.cpp
+  TEST_COMMAND_OPTIONS
+  TEST_BATCHES
+)
+
+cutlass_example_add_executable(
+  05_bmg_gemm_with_topk_and_softmax
+  05_bmg_gemm_with_topk_and_softmax.cpp
+  TEST_COMMAND_OPTIONS
+  TEST_BATCHES
+)

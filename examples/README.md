@@ -300,39 +300,39 @@
 
 # CUTLASS SYCL - Programming Examples
 
-* [00_pvc_gemm](./sycl/00_pvc_gemm)
+* [00_bmg_gemm](sycl/00_bmg_gemm)
 
     Simple GEMM implementation on Intel PVC
 
-* [01_pvc_gemm_with_collective_builder](./sycl/01_pvc_gemm_with_collective_builder)
+* [01_bmg_gemm_with_collective_builder](sycl/01_bmg_gemm_with_collective_builder)
 
     Demonstrates the use of CollectiveBuilder to construct an Intel PVC GEMM
 
-* [02_pvc_gemm_mixed_dtype](./sycl/02_pvc_gemm_mixed_dtype)
+* [02_bmg_gemm_mixed_dtype](sycl/02_bmg_gemm_mixed_dtype)
 
     Mixed Precision PVC GEMM (including support for dequantization)
 
-* [03_pvc_gemm_streamk](./sycl/03_pvc_gemm_streamk)
+* [03_bmg_gemm_streamk](sycl/03_bmg_gemm_streamk)
 
     PVC GEMM kernel using Stream-K scheduler
 
-* [04_pvc_grouped_gemm](./sycl/04_pvc_grouped_gemm)
+* [04_bmg_grouped_gemm](sycl/04_bmg_grouped_gemm)
 
     PVC Group GEMM example
 
-* [05_pvc_gemm_with_epilogues](./sycl/05_pvc_gemm_with_epilogues/)
+* [05_bmg_gemm_with_epilogues](sycl/05_bmg_gemm_with_epilogues/)
 
     Various GEMM epilogue examples implemented using Epilogue Visitor Tree (EVT)
 
-* [06_pvc_flash_attention](./sycl/06_pvc_flash_attention/)
+* [06_bmg_flash_attention](sycl/06_bmg_flash_attention/)
 
     Implementation of V2 of the Flash Attention algorithm on Intel PVC
 
-* [07_pvc_dual_gemm](./sycl/07_pvc_dual_gemm)
+* [07_bmg_dual_gemm](sycl/07_bmg_dual_gemm)
 
     Fuses 2 GEMM operations which share an A-matrix into a single kernel on PVC
 
-* [08_pvc_gemm_f8](./sycl/08_pvc_gemm_f8)
+* [08_bmg_gemm_f8](sycl/08_bmg_gemm_f8)
 
     Demonstrates support for 8-bit float (to 32-bit float output) GEMM on PVC
 
