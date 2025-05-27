@@ -397,8 +397,8 @@ bool initialize_scale_tensor(
 
     double scope_max, scope_min;
 
-    scope_min = -1;
-    scope_max = 1;
+    scope_min = -5;
+    scope_max = 5;
 
     cutlass::reference::host::TensorFillRandomUniform(
       view, seed, scope_max, scope_min);
@@ -454,7 +454,7 @@ void initialize(const Options &options) {
 
   cutlass::Distribution::Kind dist_A = cutlass::Distribution::Uniform;
   cutlass::Distribution::Kind dist_B = cutlass::Distribution::Uniform;
-  cutlass::Distribution::Kind dist_C = cutlass::Distribution::Identity;
+  cutlass::Distribution::Kind dist_C = cutlass::Distribution::Uniform;
   cutlass::Distribution::Kind dist_scaleA = cutlass::Distribution::Uniform;
   cutlass::Distribution::Kind dist_scaleB = cutlass::Distribution::Uniform;
 

@@ -235,9 +235,9 @@ public:
     Tensor gSFB = local_tile(mSFB_nk, blk_shape, take<0,3>(blk_coord_mnkl), Step< X,_1,_1>{});       // (BLK_N,BLK_K,k)
 
     // Compute tile residues for predication
-    auto m_max_coord = M - size<0>(gA) * get<0>(blk_coord_mnkl);                             // M - BLK_M * m_coord
-    auto n_max_coord = N - size<0>(gB) * get<1>(blk_coord_mnkl);                             // N - BLK_N * n_coord
-    auto k_residue   = K - size<1>(gA) * size<2>(gA);                                        // K - BLK_K * k_coord_max
+    auto m_max_coord = cute::min(M - size<0>(gA) * get<0>(blk_coord_mnkl), get<0>(blk_shape));  // M - BLK_M * m_coord or BLK_M
+    auto n_max_coord = cute::min(N - size<0>(gB) * get<1>(blk_coord_mnkl), get<1>(blk_shape));  // N - BLK_N * n_coord or BLK_N
+    auto k_residue   = K - size<1>(gA) * size<2>(gA);                                           // K - BLK_K * k_coord_max
     auto residue_mnk = make_tuple(m_max_coord, n_max_coord, k_residue);
 
     // Allocate the tiled_mma and the accumulators for the (M,N) blk_shape

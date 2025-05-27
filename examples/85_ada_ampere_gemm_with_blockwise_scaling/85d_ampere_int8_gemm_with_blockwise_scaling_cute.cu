@@ -152,8 +152,8 @@ using ArchTag       = cutlass::arch::Sm89;                          // Tag indic
 // 4: (128*128 + 128*128 + 128 + 1) * 4 = 131588 < 163840 (SM80 Shared Memory Size)
 // 4: (64*128 + 128*128 + 64 + 1) * 4 = 98564 < 102400 (SM89 Shared Memory Size)
 // 3: (128*128 + 128*128 + 128 + 1) * 3 = 98691 < 102400 (SM89 Shared Memory Size)
-constexpr int PipelineStages = 4;
-constexpr int BLK_M = 64;
+constexpr int PipelineStages = 3;
+constexpr int BLK_M = 128;
 constexpr int BLK_N = 128;
 constexpr int BLK_K = 128;
 using GemmTrait = SM8x_Byte_Gemm_Traits<ArchTag, ElementA, BLK_M, BLK_N, BLK_K, PipelineStages>;
@@ -398,8 +398,8 @@ bool initialize_scale_tensor(
 
     double scope_max, scope_min;
 
-    scope_min = -1;
-    scope_max = 1;
+    scope_min = -5;
+    scope_max = 5;
 
     cutlass::reference::host::TensorFillRandomUniform(
       view, seed, scope_max, scope_min);
@@ -455,7 +455,7 @@ void initialize(const Options &options) {
 
   cutlass::Distribution::Kind dist_A = cutlass::Distribution::Uniform;
   cutlass::Distribution::Kind dist_B = cutlass::Distribution::Uniform;
-  cutlass::Distribution::Kind dist_C = cutlass::Distribution::Identity;
+  cutlass::Distribution::Kind dist_C = cutlass::Distribution::Uniform;
   cutlass::Distribution::Kind dist_scaleA = cutlass::Distribution::Uniform;
   cutlass::Distribution::Kind dist_scaleB = cutlass::Distribution::Uniform;
 

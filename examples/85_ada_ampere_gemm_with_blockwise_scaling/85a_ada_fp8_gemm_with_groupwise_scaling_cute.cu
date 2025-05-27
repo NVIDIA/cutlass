@@ -452,7 +452,7 @@ void initialize(const Options &options) {
 
   cutlass::Distribution::Kind dist_A = cutlass::Distribution::Uniform;
   cutlass::Distribution::Kind dist_B = cutlass::Distribution::Uniform;
-  cutlass::Distribution::Kind dist_C = cutlass::Distribution::Identity;
+  cutlass::Distribution::Kind dist_C = cutlass::Distribution::Uniform;
   cutlass::Distribution::Kind dist_scaleA = cutlass::Distribution::Uniform;
   cutlass::Distribution::Kind dist_scaleB = cutlass::Distribution::Uniform;
 
