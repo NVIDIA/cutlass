@@ -13,8 +13,8 @@ PvcFMHAPrefillBF16BF16FP32_RCR_h64_Causal_FixedLen --bm_name=bf16_bf16_fp32 --se
 PvcFMHAPrefillBF16BF16FP32_RCR_h64_NonCausal_FixedLen --bm_name=bf16_bf16_fp32 --seq_len_qo=8192 --seq_len_kv=8192  --batch=32 --num_heads_q=2 --num_heads_kv=2  --head_size_qk=64  --head_size_vo=64 
 PvcFMHAPrefillBF16BF16FP32_RCR_h64_Causal_FixedLen --bm_name=bf16_bf16_fp32 --seq_len_qo=16384 --seq_len_kv=16384 --batch=32 --num_heads_q=1 --num_heads_kv=1  --head_size_qk=64 --head_size_vo=64
 PvcFMHAPrefillBF16BF16FP32_RCR_h64_NonCausal_FixedLen --bm_name=bf16_bf16_fp32 --seq_len_qo=16384 --seq_len_kv=16384 --batch=32 --num_heads_q=1 --num_heads_kv=1  --head_size_qk=64  --head_size_vo=64
-PvcFMHAPrefillBF16BF16FP32_RCR_h64_Causal_FixedLen --bm_name=bf16_bf16_fp32 --seq_len_qo=1024  --seq_len_kv=1024  --batch=8 --num_heads_q=32  --num_heads_kv=32    --head_size_vo=96 --head_size_qk=96
-PvcFMHAPrefillBF16BF16FP32_RCR_h64_NonCausal_FixedLen --bm_name=bf16_bf16_fp32 --seq_len_qo=1024  --seq_len_kv=1024  --batch=8 --num_heads_q=32  --num_heads_kv=32    --head_size_vo=96 --head_size_qk=96
+PvcFMHAPrefillBF16BF16FP32_RCR_h96_Causal_FixedLen --bm_name=bf16_bf16_fp32 --seq_len_qo=1024  --seq_len_kv=1024  --batch=8 --num_heads_q=32  --num_heads_kv=32    --head_size_vo=96 --head_size_qk=96
+PvcFMHAPrefillBF16BF16FP32_RCR_h96_NonCausal_FixedLen --bm_name=bf16_bf16_fp32 --seq_len_qo=1024  --seq_len_kv=1024  --batch=8 --num_heads_q=32  --num_heads_kv=32    --head_size_vo=96 --head_size_qk=96
 
 PvcFMHAPrefillBF16BF16FP32_RCR_h128_Causal_FixedLen --bm_name=bf16_bf16_fp32 --seq_len_qo=512 --seq_len_kv=512   --batch=32 --num_heads_q=16  --num_heads_kv=16  --head_size_qk=128 --head_size_vo=128
 PvcFMHAPrefillBF16BF16FP32_RCR_h128_NonCausal_FixedLen --bm_name=bf16_bf16_fp32 --seq_len_qo=512 --seq_len_kv=512   --batch=32 --num_heads_q=16  --num_heads_kv=16  --head_size_qk=128 --head_size_vo=128
@@ -28,8 +28,8 @@ PvcFMHAPrefillBF16BF16FP32_RCR_h128_Causal_FixedLen --bm_name=bf16_bf16_fp32 --s
 PvcFMHAPrefillBF16BF16FP32_RCR_h128_NonCausal_FixedLen --bm_name=bf16_bf16_fp32 --seq_len_qo=8192 --seq_len_kv=8192  --batch=16 --num_heads_q=2 --num_heads_kv=2  --head_size_qk=128 --head_size_vo=128
 PvcFMHAPrefillBF16BF16FP32_RCR_h128_Causal_FixedLen --bm_name=bf16_bf16_fp32 --seq_len_qo=2048 --seq_len_kv=2048  --batch=8 --num_heads_q=32  --num_heads_kv=32   --head_size_qk=128 --head_size_vo=128
 PvcFMHAPrefillBF16BF16FP32_RCR_h128_NonCausal_FixedLen --bm_name=bf16_bf16_fp32 --seq_len_qo=2048 --seq_len_kv=2048  --batch=8 --num_heads_q=32  --num_heads_kv=32   --head_size_qk=128 --head_size_vo=128
-PvcFMHAPrefillBF16BF16FP32_RCR_h128_Causal_FixedLen --bm_name=bf16_bf16_fp32 --seq_len_qo=2048 --seq_len_kv=2048  --batch=8 --num_heads_q=96--num_heads_kv=96  --head_size_qk=128 --head_size_vo=128
-PvcFMHAPrefillBF16BF16FP32_RCR_h128_NonCausal_FixedLen --bm_name=bf16_bf16_fp32 --seq_len_qo=2048 --seq_len_kv=2048  --batch=8 --num_heads_q=96--num_heads_kv=96  --head_size_qk=128 --head_size_vo=128
+PvcFMHAPrefillBF16BF16FP32_RCR_h96_Causal_FixedLen --bm_name=bf16_bf16_fp32 --seq_len_qo=2048 --seq_len_kv=2048  --batch=8 --num_heads_q=96--num_heads_kv=96  --head_size_qk=128 --head_size_vo=128
+PvcFMHAPrefillBF16BF16FP32_RCR_h96_NonCausal_FixedLen --bm_name=bf16_bf16_fp32 --seq_len_qo=2048 --seq_len_kv=2048  --batch=8 --num_heads_q=96--num_heads_kv=96  --head_size_qk=128 --head_size_vo=128
 PvcFMHAPrefillBF16BF16FP32_RCR_h128_Causal_FixedLen --bm_name=bf16_bf16_fp32 --seq_len_qo=16384 --seq_len_kv=16384 --batch=16 --num_heads_q=1 --num_heads_kv=1  --head_size_qk=128 --head_size_vo=128
 PvcFMHAPrefillBF16BF16FP32_RCR_h128_NonCausal_FixedLen --bm_name=bf16_bf16_fp32 --seq_len_qo=16384 --seq_len_kv=16384 --batch=16 --num_heads_q=1 --num_heads_kv=1  --head_size_qk=128 --head_size_vo=128
 
@@ -53,8 +53,8 @@ PvcFMHAPrefillBF16BF16FP32_RCR_h64_Causal_VarLen --bm_name=bf16_bf16_fp32 --seq_
 PvcFMHAPrefillBF16BF16FP32_RCR_h64_NonCausal_VarLen --bm_name=bf16_bf16_fp32 --seq_len_qo=8192 --seq_len_kv=8192  --batch=32 --num_heads_q=2 --num_heads_kv=2  --head_size_qk=64  --head_size_vo=64 
 PvcFMHAPrefillBF16BF16FP32_RCR_h64_Causal_VarLen --bm_name=bf16_bf16_fp32 --seq_len_qo=16384 --seq_len_kv=16384 --batch=32 --num_heads_q=1 --num_heads_kv=1  --head_size_qk=64 --head_size_vo=64
 PvcFMHAPrefillBF16BF16FP32_RCR_h64_NonCausal_VarLen --bm_name=bf16_bf16_fp32 --seq_len_qo=16384 --seq_len_kv=16384 --batch=32 --num_heads_q=1 --num_heads_kv=1  --head_size_qk=64  --head_size_vo=64
-PvcFMHAPrefillBF16BF16FP32_RCR_h64_Causal_VarLen --bm_name=bf16_bf16_fp32 --seq_len_qo=1024  --seq_len_kv=1024  --batch=8 --num_heads_q=32  --num_heads_kv=32    --head_size_vo=96 --head_size_qk=96
-PvcFMHAPrefillBF16BF16FP32_RCR_h64_NonCausal_VarLen --bm_name=bf16_bf16_fp32 --seq_len_qo=1024  --seq_len_kv=1024  --batch=8 --num_heads_q=32  --num_heads_kv=32    --head_size_vo=96 --head_size_qk=96
+PvcFMHAPrefillBF16BF16FP32_RCR_h96_Causal_VarLen --bm_name=bf16_bf16_fp32 --seq_len_qo=1024  --seq_len_kv=1024  --batch=8 --num_heads_q=32  --num_heads_kv=32    --head_size_vo=96 --head_size_qk=96
+PvcFMHAPrefillBF16BF16FP32_RCR_h96_NonCausal_VarLen --bm_name=bf16_bf16_fp32 --seq_len_qo=1024  --seq_len_kv=1024  --batch=8 --num_heads_q=32  --num_heads_kv=32    --head_size_vo=96 --head_size_qk=96
 
 PvcFMHAPrefillBF16BF16FP32_RCR_h128_Causal_VarLen --bm_name=bf16_bf16_fp32 --seq_len_qo=512 --seq_len_kv=512   --batch=32 --num_heads_q=16  --num_heads_kv=16  --head_size_qk=128 --head_size_vo=128
 PvcFMHAPrefillBF16BF16FP32_RCR_h128_NonCausal_VarLen --bm_name=bf16_bf16_fp32 --seq_len_qo=512 --seq_len_kv=512   --batch=32 --num_heads_q=16  --num_heads_kv=16  --head_size_qk=128 --head_size_vo=128
@@ -68,8 +68,8 @@ PvcFMHAPrefillBF16BF16FP32_RCR_h128_Causal_VarLen --bm_name=bf16_bf16_fp32 --seq
 PvcFMHAPrefillBF16BF16FP32_RCR_h128_NonCausal_VarLen --bm_name=bf16_bf16_fp32 --seq_len_qo=8192 --seq_len_kv=8192  --batch=16 --num_heads_q=2 --num_heads_kv=2  --head_size_qk=128 --head_size_vo=128
 PvcFMHAPrefillBF16BF16FP32_RCR_h128_Causal_VarLen --bm_name=bf16_bf16_fp32 --seq_len_qo=2048 --seq_len_kv=2048  --batch=8 --num_heads_q=32  --num_heads_kv=32   --head_size_qk=128 --head_size_vo=128
 PvcFMHAPrefillBF16BF16FP32_RCR_h128_NonCausal_VarLen --bm_name=bf16_bf16_fp32 --seq_len_qo=2048 --seq_len_kv=2048  --batch=8 --num_heads_q=32  --num_heads_kv=32   --head_size_qk=128 --head_size_vo=128
-PvcFMHAPrefillBF16BF16FP32_RCR_h128_Causal_VarLen --bm_name=bf16_bf16_fp32 --seq_len_qo=2048 --seq_len_kv=2048  --batch=8 --num_heads_q=96--num_heads_kv=96  --head_size_qk=128 --head_size_vo=128
-PvcFMHAPrefillBF16BF16FP32_RCR_h128_NonCausal_VarLen --bm_name=bf16_bf16_fp32 --seq_len_qo=2048 --seq_len_kv=2048  --batch=8 --num_heads_q=96--num_heads_kv=96  --head_size_qk=128 --head_size_vo=128
+PvcFMHAPrefillBF16BF16FP32_RCR_h96_Causal_VarLen --bm_name=bf16_bf16_fp32 --seq_len_qo=2048 --seq_len_kv=2048  --batch=8 --num_heads_q=96--num_heads_kv=96  --head_size_qk=128 --head_size_vo=128
+PvcFMHAPrefillBF16BF16FP32_RCR_h96_NonCausal_VarLen --bm_name=bf16_bf16_fp32 --seq_len_qo=2048 --seq_len_kv=2048  --batch=8 --num_heads_q=96--num_heads_kv=96  --head_size_qk=128 --head_size_vo=128
 PvcFMHAPrefillBF16BF16FP32_RCR_h128_Causal_VarLen --bm_name=bf16_bf16_fp32 --seq_len_qo=16384 --seq_len_kv=16384 --batch=16 --num_heads_q=1 --num_heads_kv=1  --head_size_qk=128 --head_size_vo=128
 PvcFMHAPrefillBF16BF16FP32_RCR_h128_NonCausal_VarLen --bm_name=bf16_bf16_fp32 --seq_len_qo=16384 --seq_len_kv=16384 --batch=16 --num_heads_q=1 --num_heads_kv=1  --head_size_qk=128 --head_size_vo=128
 
@@ -99,8 +99,8 @@ PvcFMHAPrefillFP16FP16FP32_RCR_h64_Causal_FixedLen --bm_name=fp16_fp16_fp32 --se
 PvcFMHAPrefillFP16FP16FP32_RCR_h64_NonCausal_FixedLen --bm_name=fp16_fp16_fp32 --seq_len_qo=8192 --seq_len_kv=8192  --batch=32 --num_heads_q=2 --num_heads_kv=2  --head_size_qk=64  --head_size_vo=64 
 PvcFMHAPrefillFP16FP16FP32_RCR_h64_Causal_FixedLen --bm_name=fp16_fp16_fp32 --seq_len_qo=16384 --seq_len_kv=16384 --batch=32 --num_heads_q=1 --num_heads_kv=1  --head_size_qk=64 --head_size_vo=64
 PvcFMHAPrefillFP16FP16FP32_RCR_h64_NonCausal_FixedLen --bm_name=fp16_fp16_fp32 --seq_len_qo=16384 --seq_len_kv=16384 --batch=32 --num_heads_q=1 --num_heads_kv=1  --head_size_qk=64  --head_size_vo=64
-PvcFMHAPrefillFP16FP16FP32_RCR_h64_Causal_FixedLen --bm_name=fp16_fp16_fp32 --seq_len_qo=1024  --seq_len_kv=1024  --batch=8 --num_heads_q=32  --num_heads_kv=32    --head_size_vo=96 --head_size_qk=96
-PvcFMHAPrefillFP16FP16FP32_RCR_h64_NonCausal_FixedLen --bm_name=fp16_fp16_fp32 --seq_len_qo=1024  --seq_len_kv=1024  --batch=8 --num_heads_q=32  --num_heads_kv=32    --head_size_vo=96 --head_size_qk=96
+PvcFMHAPrefillFP16FP16FP32_RCR_h96_Causal_FixedLen --bm_name=fp16_fp16_fp32 --seq_len_qo=1024  --seq_len_kv=1024  --batch=8 --num_heads_q=32  --num_heads_kv=32    --head_size_vo=96 --head_size_qk=96
+PvcFMHAPrefillFP16FP16FP32_RCR_h96_NonCausal_FixedLen --bm_name=fp16_fp16_fp32 --seq_len_qo=1024  --seq_len_kv=1024  --batch=8 --num_heads_q=32  --num_heads_kv=32    --head_size_vo=96 --head_size_qk=96
 
 PvcFMHAPrefillFP16FP16FP32_RCR_h128_Causal_FixedLen --bm_name=fp16_fp16_fp32 --seq_len_qo=512 --seq_len_kv=512   --batch=32 --num_heads_q=16  --num_heads_kv=16  --head_size_qk=128 --head_size_vo=128
 PvcFMHAPrefillFP16FP16FP32_RCR_h128_NonCausal_FixedLen --bm_name=fp16_fp16_fp32 --seq_len_qo=512 --seq_len_kv=512   --batch=32 --num_heads_q=16  --num_heads_kv=16  --head_size_qk=128 --head_size_vo=128
@@ -114,8 +114,8 @@ PvcFMHAPrefillFP16FP16FP32_RCR_h128_Causal_FixedLen --bm_name=fp16_fp16_fp32 --s
 PvcFMHAPrefillFP16FP16FP32_RCR_h128_NonCausal_FixedLen --bm_name=fp16_fp16_fp32 --seq_len_qo=8192 --seq_len_kv=8192  --batch=16 --num_heads_q=2 --num_heads_kv=2  --head_size_qk=128 --head_size_vo=128
 PvcFMHAPrefillFP16FP16FP32_RCR_h128_Causal_FixedLen --bm_name=fp16_fp16_fp32 --seq_len_qo=2048 --seq_len_kv=2048  --batch=8 --num_heads_q=32  --num_heads_kv=32   --head_size_qk=128 --head_size_vo=128
 PvcFMHAPrefillFP16FP16FP32_RCR_h128_NonCausal_FixedLen --bm_name=fp16_fp16_fp32 --seq_len_qo=2048 --seq_len_kv=2048  --batch=8 --num_heads_q=32  --num_heads_kv=32   --head_size_qk=128 --head_size_vo=128
-PvcFMHAPrefillFP16FP16FP32_RCR_h128_Causal_FixedLen --bm_name=fp16_fp16_fp32 --seq_len_qo=2048 --seq_len_kv=2048  --batch=8 --num_heads_q=96--num_heads_kv=96  --head_size_qk=128 --head_size_vo=128
-PvcFMHAPrefillFP16FP16FP32_RCR_h128_NonCausal_FixedLen --bm_name=fp16_fp16_fp32 --seq_len_qo=2048 --seq_len_kv=2048  --batch=8 --num_heads_q=96--num_heads_kv=96  --head_size_qk=128 --head_size_vo=128
+PvcFMHAPrefillFP16FP16FP32_RCR_h96_Causal_FixedLen --bm_name=fp16_fp16_fp32 --seq_len_qo=2048 --seq_len_kv=2048  --batch=8 --num_heads_q=96--num_heads_kv=96  --head_size_qk=128 --head_size_vo=128
+PvcFMHAPrefillFP16FP16FP32_RCR_h96_NonCausal_FixedLen --bm_name=fp16_fp16_fp32 --seq_len_qo=2048 --seq_len_kv=2048  --batch=8 --num_heads_q=96--num_heads_kv=96  --head_size_qk=128 --head_size_vo=128
 PvcFMHAPrefillFP16FP16FP32_RCR_h128_Causal_FixedLen --bm_name=fp16_fp16_fp32 --seq_len_qo=16384 --seq_len_kv=16384 --batch=16 --num_heads_q=1 --num_heads_kv=1  --head_size_qk=128 --head_size_vo=128
 PvcFMHAPrefillFP16FP16FP32_RCR_h128_NonCausal_FixedLen --bm_name=fp16_fp16_fp32 --seq_len_qo=16384 --seq_len_kv=16384 --batch=16 --num_heads_q=1 --num_heads_kv=1  --head_size_qk=128 --head_size_vo=128
 
@@ -141,8 +141,8 @@ PvcFMHAPrefillFP16FP16FP32_RCR_h64_Causal_VarLen --bm_name=fp16_fp16_fp32 --seq_
 PvcFMHAPrefillFP16FP16FP32_RCR_h64_NonCausal_VarLen --bm_name=fp16_fp16_fp32 --seq_len_qo=8192 --seq_len_kv=8192  --batch=32 --num_heads_q=2 --num_heads_kv=2  --head_size_qk=64  --head_size_vo=64 
 PvcFMHAPrefillFP16FP16FP32_RCR_h64_Causal_VarLen --bm_name=fp16_fp16_fp32 --seq_len_qo=16384 --seq_len_kv=16384 --batch=32 --num_heads_q=1 --num_heads_kv=1  --head_size_qk=64 --head_size_vo=64
 PvcFMHAPrefillFP16FP16FP32_RCR_h64_NonCausal_VarLen --bm_name=fp16_fp16_fp32 --seq_len_qo=16384 --seq_len_kv=16384 --batch=32 --num_heads_q=1 --num_heads_kv=1  --head_size_qk=64  --head_size_vo=64
-PvcFMHAPrefillFP16FP16FP32_RCR_h64_Causal_VarLen --bm_name=fp16_fp16_fp32 --seq_len_qo=1024  --seq_len_kv=1024  --batch=8 --num_heads_q=32  --num_heads_kv=32    --head_size_vo=96 --head_size_qk=96
-PvcFMHAPrefillFP16FP16FP32_RCR_h64_NonCausal_VarLen --bm_name=fp16_fp16_fp32 --seq_len_qo=1024  --seq_len_kv=1024  --batch=8 --num_heads_q=32  --num_heads_kv=32    --head_size_vo=96 --head_size_qk=96
+PvcFMHAPrefillFP16FP16FP32_RCR_h96_Causal_VarLen --bm_name=fp16_fp16_fp32 --seq_len_qo=1024  --seq_len_kv=1024  --batch=8 --num_heads_q=32  --num_heads_kv=32    --head_size_vo=96 --head_size_qk=96
+PvcFMHAPrefillFP16FP16FP32_RCR_h96_NonCausal_VarLen --bm_name=fp16_fp16_fp32 --seq_len_qo=1024  --seq_len_kv=1024  --batch=8 --num_heads_q=32  --num_heads_kv=32    --head_size_vo=96 --head_size_qk=96
 
 PvcFMHAPrefillFP16FP16FP32_RCR_h128_Causal_VarLen --bm_name=fp16_fp16_fp32 --seq_len_qo=1024 --seq_len_kv=2048 --batch=1 --num_heads_q=32, --num_heads_kv=8  --head_size_vo=128 --head_size_qk=128 
 PvcFMHAPrefillFP16FP16FP32_RCR_h128_NonCausal_VarLen --bm_name=fp16_fp16_fp32 --seq_len_qo=1024 --seq_len_kv=2048 --batch=1 --num_heads_q=32, --num_heads_kv=8  --head_size_vo=128 --head_size_qk=128 
@@ -159,8 +159,8 @@ PvcFMHAPrefillFP16FP16FP32_RCR_h128_Causal_VarLen --bm_name=fp16_fp16_fp32 --seq
 PvcFMHAPrefillFP16FP16FP32_RCR_h128_NonCausal_VarLen --bm_name=fp16_fp16_fp32 --seq_len_qo=8192 --seq_len_kv=8192  --batch=16 --num_heads_q=2 --num_heads_kv=2  --head_size_qk=128 --head_size_vo=128
 PvcFMHAPrefillFP16FP16FP32_RCR_h128_Causal_VarLen --bm_name=fp16_fp16_fp32 --seq_len_qo=2048 --seq_len_kv=2048  --batch=8 --num_heads_q=32  --num_heads_kv=32   --head_size_qk=128 --head_size_vo=128
 PvcFMHAPrefillFP16FP16FP32_RCR_h128_NonCausal_VarLen --bm_name=fp16_fp16_fp32 --seq_len_qo=2048 --seq_len_kv=2048  --batch=8 --num_heads_q=32  --num_heads_kv=32   --head_size_qk=128 --head_size_vo=128
-PvcFMHAPrefillFP16FP16FP32_RCR_h128_Causal_VarLen --bm_name=fp16_fp16_fp32 --seq_len_qo=2048 --seq_len_kv=2048  --batch=8 --num_heads_q=96--num_heads_kv=96  --head_size_qk=128 --head_size_vo=128
-PvcFMHAPrefillFP16FP16FP32_RCR_h128_NonCausal_VarLen --bm_name=fp16_fp16_fp32 --seq_len_qo=2048 --seq_len_kv=2048  --batch=8 --num_heads_q=96--num_heads_kv=96  --head_size_qk=128 --head_size_vo=128
+PvcFMHAPrefillFP16FP16FP32_RCR_h96_Causal_VarLen --bm_name=fp16_fp16_fp32 --seq_len_qo=2048 --seq_len_kv=2048  --batch=8 --num_heads_q=96--num_heads_kv=96  --head_size_qk=128 --head_size_vo=128
+PvcFMHAPrefillFP16FP16FP32_RCR_h96_NonCausal_VarLen --bm_name=fp16_fp16_fp32 --seq_len_qo=2048 --seq_len_kv=2048  --batch=8 --num_heads_q=96--num_heads_kv=96  --head_size_qk=128 --head_size_vo=128
 PvcFMHAPrefillFP16FP16FP32_RCR_h128_Causal_VarLen --bm_name=fp16_fp16_fp32 --seq_len_qo=16384 --seq_len_kv=16384 --batch=16 --num_heads_q=1 --num_heads_kv=1  --head_size_qk=128 --head_size_vo=128
 PvcFMHAPrefillFP16FP16FP32_RCR_h128_NonCausal_VarLen --bm_name=fp16_fp16_fp32 --seq_len_qo=16384 --seq_len_kv=16384 --batch=16 --num_heads_q=1 --num_heads_kv=1  --head_size_qk=128 --head_size_vo=128
 

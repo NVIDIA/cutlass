@@ -144,11 +144,13 @@ public:
   CUTLASS_DEVICE void operator()(bool is_first, FragAcc &frag_s, FragMax &max, FragSum &sum, FragOut &out) {
     auto max_prev = max;
     using FragAccLayout = typename FragAcc::layout_type;
+    using FragOutLayout = typename FragOut::layout_type;
     constexpr int Vec = get<0>(FragAccLayout{}.shape());
     constexpr int FragsM = get<1>(FragAccLayout{}.shape());
-    constexpr int FragsN = get<2>(FragAccLayout{}.shape());
-    reduce_max<Vec, FragsM, FragsN>(frag_s, max);
-    static_assert(Vec * FragsM == 16, " the number of reg_max per workitem should be adopted accordingly.");
+    constexpr int FragsNAcc = get<2>(FragAccLayout{}.shape());
+    constexpr int FragsNOut = size(select<2,3>(FragOutLayout{}.shape()));
+    reduce_max<Vec, FragsM, FragsNAcc>(frag_s, max);
+    static_assert(Vec * FragsM  % 8 ==0, " No. of attention rows per subgroup should be >= 1 MMA Atom worth of rows.");
     if (!is_first) {
       auto g = syclcompat::get_nd_item<1>().get_sub_group();
       Element max_scale{max * params.scale};
@@ -159,15 +161,19 @@ public:
         auto exp_scale_bcast = group_broadcast(g, exp_scale, indx);
         sum(indx) *= exp_scale_bcast;
         CUTLASS_PRAGMA_UNROLL
-        for (int z = 0; z < FragsN; z++) {
+        for (int z = 0; z < FragsNAcc; z++) {
           auto base_indx = indx + (z * Vec * FragsM);
-          out(base_indx) *= exp_scale_bcast;
           frag_s(base_indx) = sycl::native::exp2((frag_s(base_indx) - max_scale_bcast));
-          sum(indx) += frag_s(base_indx);
+          sum(indx) += frag_s(base_indx);  
+        }
+        CUTLASS_PRAGMA_UNROLL
+        for (int z = 0; z < FragsNOut; z++) {
+          auto base_indx = indx + (z * Vec * FragsM);
+          out(base_indx ) *= exp_scale_bcast;     
         }
       }
     } else {
-      scale_exp_log2<Vec, FragsM, FragsN>(frag_s, max, sum);
+      scale_exp_log2<Vec, FragsM, FragsNAcc>(frag_s, max, sum);
     }
   }
   Params params;

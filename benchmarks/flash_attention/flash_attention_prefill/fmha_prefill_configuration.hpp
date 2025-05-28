@@ -33,54 +33,62 @@
 
 namespace cutlass {
 namespace flash_attention{
-
-template <typename ElementQ_, typename ElementK_, typename ElementV_, typename LayoutQ_,
-          typename LayoutK_, typename LayoutV_, typename LayoutO_, bool Causal_, bool VarLen_,
-          typename TileShape_, typename TiledMma_> 
+  template<typename DispatchPolicy, typename input, typename output> struct MMAOP {
+    static_assert(cutlass::detail::dependent_false<DispatchPolicy>, "Could not find a supported MMA ATOM Operation for flash attention");
+  };
+  
+  template <typename DispatchPolicy> struct MMAOP <DispatchPolicy, bfloat16_t, float> {
+    using Type=cute::XE_8x16x16_F32BF16BF16F32_TT;
+  };
+  
+  template <typename DispatchPolicy> struct MMAOP <DispatchPolicy, half_t, float> {
+    using Type = cute::XE_8x16x16_F32F16F16F32_TT;
+  };
+  
+template<typename ElementInputType, typename ElementAccumulatorType, typename ElementOutputType,  
+          typename GmemTiledCopyQ, typename GmemTiledCopyK, typename GmemTiledCopyV, typename GmemTiledCopyO,
+          typename TileShapeQK, typename TileShapePV, typename TileShapeOutput, typename SubgroupLayout, 
+          bool HasCausal, bool IsVarLen, int PipelineStages>
 struct FMHAPrefillConfig {
 
-  using ElementO = float;     // <- data type of accumulator
-  using ElementInputQ = ElementQ_;     // <- data type of elements in input matrix Q
-  using ElementInputK = ElementK_;    // <- data type of elements in input matrix K
-  using ElementInputV = ElementV_;    // <- data type of elements in input matrix V
-
-  using LayoutQ = LayoutQ_;
-  using LayoutK = LayoutK_;
-  using LayoutV = LayoutV_;
-  using LayoutO = LayoutO_;
-
-  using TileShape = TileShape_;
-  using TiledMma = TiledMma_;
-
-  static constexpr bool Causal = Causal_;
-  static constexpr bool VarLen = VarLen_;
-  
-  static constexpr int PipelineStages = 2;
+  using ElementOutput = ElementOutputType;        // <- data type of output
+  using ElementInputQ = ElementInputType;    // <- data type of elements in input matrix Q
+  using ElementInputK = ElementInputType;    // <- data type of elements in input matrix K
+  using ElementInputV = ElementInputType;    // <- data type of elements in input matrix V
+  using ElementAccumulator = ElementAccumulatorType;   // <- data type of accumulator for mma operation
+  using LayoutQ = cutlass::layout::RowMajor;
+  using LayoutK = cutlass::layout::ColumnMajor;
+  using LayoutV = cutlass::layout::RowMajor;
+  using LayoutO = cutlass::layout::RowMajor;
+  static constexpr bool Causal = HasCausal;
+  static constexpr bool VarLen = IsVarLen;
   using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelXeXMX16<PipelineStages>;
   using EpilogueDispatchPolicy = cutlass::epilogue::IntelXeXMX16;
-
-  using GmemTiledCopyQ = XE_2D_U16x16x32_LD_N;
-  using GmemTiledCopyK = XE_2D_U16x16x16_LD_T;
-  using GmemTiledCopyV = XE_2D_U16x32x32_LD_V;
-  using GmemTiledCopyO = XE_2D_U32x8x16_ST_N;
+  using MMAOperation = typename MMAOP<GEMMDispatchPolicy, ElementInputType,ElementAccumulator>::Type;
   using CollectiveEpilogue = cutlass::flash_attention::collective::FlashPrefillEpilogue<
-      EpilogueDispatchPolicy, TileShape, ElementO, cutlass::gemm::TagToStrideC_t<LayoutO>, ElementO,
-      GmemTiledCopyO>;
+                                    EpilogueDispatchPolicy, MMAOperation, TileShapeOutput, 
+                                    SubgroupLayout, ElementAccumulator, 
+                                    cutlass::gemm::TagToStrideC_t<LayoutO>, ElementOutput,
+                                    GmemTiledCopyO>;
 
-  using CollectiveSoftmaxEpilogue = cutlass::flash_attention::collective::FlashPrefillSoftmaxEpilogue<Causal, EpilogueDispatchPolicy, ElementO>;
+ using CollectiveSoftmaxEpilogue = cutlass::flash_attention::collective::FlashPrefillSoftmaxEpilogue<Causal, 
+                                EpilogueDispatchPolicy, ElementAccumulator>;
 
   using ProblemShapeRegular = cute::tuple<int, int, int, int, int, int, int>;
   using ProblemShapeVarlen = cute::tuple<int, int, int, fmha::collective::VariableLength, fmha::collective::VariableLength, int, int>;
   using ProblemShapeType = std::conditional_t<VarLen, ProblemShapeVarlen, ProblemShapeRegular>;
 
   // Mainloop
-  using CollectiveMainloop = cutlass::flash_attention::collective::FlashPrefillMma<
-      GEMMDispatchPolicy, ProblemShapeType, TileShape, ElementInputQ, cutlass::gemm::TagToStrideA_t<LayoutQ>, ElementInputK,
-      cutlass::gemm::TagToStrideB_t<LayoutK>, ElementInputV, cutlass::gemm::TagToStrideB_t<LayoutV>, TiledMma,
-      GmemTiledCopyQ, // Q
-      GmemTiledCopyK, // K
-      GmemTiledCopyV, // V,
-      Causal>;
+  using CollectiveMainloop = 
+        cutlass::flash_attention::collective::FlashPrefillMma<GEMMDispatchPolicy, ProblemShapeType, 
+                                                              ElementInputQ, cutlass::gemm::TagToStrideA_t<LayoutQ>, 
+                                                              ElementInputK,cutlass::gemm::TagToStrideB_t<LayoutK>, 
+                                                              ElementInputV, cutlass::gemm::TagToStrideB_t<LayoutV>, 
+                                                              MMAOperation, TileShapeQK, TileShapePV, SubgroupLayout,
+                                                              GmemTiledCopyQ, 
+                                                              GmemTiledCopyK, 
+                                                              GmemTiledCopyV, 
+                                                              Causal>;
 
   using GemmKernel = cutlass::flash_attention::kernel::FMHAPrefill<ProblemShapeType, CollectiveMainloop,
                                                                     CollectiveSoftmaxEpilogue, CollectiveEpilogue>;

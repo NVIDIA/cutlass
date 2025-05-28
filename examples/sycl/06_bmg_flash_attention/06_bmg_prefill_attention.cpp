@@ -73,33 +73,46 @@ int main(int argc, const char **argv) {
   }
 
   // Define the work-group tile shape depending on the head-size of the second matmul
-  if (options.head_size_vo == 64 || options.head_size_vo == 96) {
-
-    using TiledMma =
-        typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
-                                      Layout<Shape<_128, _64, _64>>,
-                                      Layout<Shape<_8, _1, _1>, Stride<_1, _1, _1>>>::TiledMMA;
-
+ // Shape<_SequenceLenthOutputBLOCK, _HeadSizeout(NV), SequenceLengthKVBLOCK_KN/KV, HeadSizeQKBLOCK_KQK, HEADSIZEOutSlicerBlock>
+ //
+   if (options.head_size_vo == 64) {
+    constexpr int PipelineStages = 2;
+    using ShapeQK = Shape<_128, _64, _64>;
+    using ShapePV = Shape<_128, _32, _64>;
+    using ShapeOutPut = Shape<_128, _64, _64>;
+    using SubgroupLayout = Layout<Shape<_8, _1, _1>, Stride<_1, _1, _1>>; 
+    
     // Define whether or not to apply causal masking to the first matmul
-    return options.is_causal ? FMHAConfig<true, Shape<_128, _64, _64, _64>, TiledMma>::run(options)
-                             : FMHAConfig<false, Shape<_128, _64, _64, _64>, TiledMma>::run(options);
-  } else if (options.head_size_vo == 192) {
+    return options.is_causal ? FMHAConfig<true, ShapeQK, ShapePV, ShapeOutPut, SubgroupLayout, PipelineStages>::run(options)
+                             : FMHAConfig<false, ShapeQK, ShapePV, ShapeOutPut, SubgroupLayout, PipelineStages>::run(options);
+  } else if (options.head_size_vo == 96) {
+    constexpr int PipelineStages = 2;
+    using ShapeQK = Shape<_128, _64, _32>;
+    using ShapePV = Shape<_128, _32, _64>;
+    using ShapeOutPut = Shape<_128, _96, _64>;
+    using SubgroupLayout = Layout<Shape<_8, _1, _1>, Stride<_1, _1, _1>>; 
 
-    using TiledMma =
-        typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
-                                      Layout<Shape<_256, _64, _64>>,
-                                      Layout<Shape<_16, _1, _1>, Stride<_1, _1, _1>>>::TiledMMA;
+    return options.is_causal ? FMHAConfig<true, ShapeQK, ShapePV, ShapeOutPut, SubgroupLayout, PipelineStages>::run(options)
+                             : FMHAConfig<false, ShapeQK, ShapePV, ShapeOutPut, SubgroupLayout, PipelineStages>::run(options);
 
-    return options.is_causal ? FMHAConfig<true, Shape<_256, _64, _64, _64>, TiledMma>::run(options)
-                             : FMHAConfig<false, Shape<_256, _64, _64, _64>, TiledMma>::run(options);
-  } else if (options.head_size_vo == 128) {
-    using TiledMma =
-        typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
-                                      Layout<Shape<_128, _128, _64>>,
-                                      Layout<Shape<_8, _2, _1>, Stride<_2, _1, _1>>>::TiledMMA;
+  } else  if (options.head_size_vo == 128) {
+    constexpr int PipelineStages = 2;
+    using ShapeQK = Shape<_128, _64, _64>;
+    using ShapePV = Shape<_128, _32, _64>;
+    using ShapeOutPut = Shape<_128, _128, _64>;
+    using SubgroupLayout = Layout<Shape<_16, _1, _1>, Stride<_1, _1, _1>>; 
 
-    return options.is_causal ? FMHAConfig<true, Shape<_128, _128, _64, _64>, TiledMma>::run(options)
-                             : FMHAConfig<false, Shape<_128, _128, _64, _64>, TiledMma>::run(options);
+    return options.is_causal ? FMHAConfig<true, ShapeQK, ShapePV, ShapeOutPut, SubgroupLayout, PipelineStages>::run(options)
+                             : FMHAConfig<false, ShapeQK, ShapePV, ShapeOutPut, SubgroupLayout, PipelineStages>::run(options);
+  }  else if (options.head_size_vo == 192) {
+    constexpr int PipelineStages = 2;
+    using ShapeQK = Shape<_256, _64, _64>;
+    using ShapePV = Shape<_256, _32, _64>;
+    using ShapeOutPut = Shape<_256, _192, _64>;
+    using SubgroupLayout = Layout<Shape<_32, _1, _1>, Stride<_1, _1, _1>>; 
+
+    return options.is_causal ? FMHAConfig<true, ShapeQK, ShapePV, ShapeOutPut, SubgroupLayout, PipelineStages>::run(options)
+                             : FMHAConfig<false, ShapeQK, ShapePV, ShapeOutPut, SubgroupLayout, PipelineStages>::run(options);
   } else {
     std::cerr << "Aborting execution." << std::endl;
     return -1;

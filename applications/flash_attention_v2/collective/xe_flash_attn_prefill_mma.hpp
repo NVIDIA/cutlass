@@ -36,8 +36,7 @@
 #include "cute/algorithm/functional.hpp"
 #include "cute/atom/mma_atom.hpp"
 #include "cute/algorithm/gemm.hpp"
-#include "cutlass/util/packed_stride.hpp"
-
+#include "cute/tensor_predicate.hpp"
 #include "fmha_fusion.hpp"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -60,8 +59,8 @@ CUTLASS_DEVICE auto convert_type(Tensor<Engine, Layout> const &tensor) {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <class DispatchPolicy, class ProblemShapeType_, class TileShape_, class ElementQ_, class StrideQ_, class ElementK_, class StrideK_,
-          class ElementV_, class StrideV_, class TiledMma_, class GmemTiledCopyQ_, class GmemTiledCopyK_,
+template <class DispatchPolicy, class ProblemShapeType_, class ElementQ_, class StrideQ_, class ElementK_, class StrideK_,
+          class ElementV_, class StrideV_, class MMAOperation_, class TileShapeQK_, class TileShapePV_, class SubgroupLayout_, class GmemTiledCopyQ_, class GmemTiledCopyK_,
           class GmemTiledCopyV_, bool CausalMask_>
 struct FlashPrefillMma {
   static_assert(cutlass::detail::dependent_false<ElementQ_>, "Could not find a mainloop specialization.");
@@ -69,17 +68,18 @@ struct FlashPrefillMma {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <int Stages, class ProblemShapeType_, class TileShape_, class ElementQ_, class StrideQ_, class ElementK_, class StrideK_,
-          class ElementV_, class StrideV_, class TiledMma_, class GmemTiledCopyQ_, class GmemTiledCopyK_,
+template <int Stages, class ProblemShapeType_, class ElementQ_, class StrideQ_, class ElementK_, class StrideK_,
+          class ElementV_, class StrideV_, class MMAOperation_, class TileShapeQK_, class TileShapePV_, class SubgroupLayout_, class GmemTiledCopyQ_, class GmemTiledCopyK_,
           class GmemTiledCopyV_, bool CausalMask_>
-struct FlashPrefillMma<gemm::MainloopIntelXeXMX16<Stages>, ProblemShapeType_, TileShape_, ElementQ_, StrideQ_, ElementK_, StrideK_, ElementV_,
-                              StrideV_, TiledMma_, GmemTiledCopyQ_, GmemTiledCopyK_, GmemTiledCopyV_, CausalMask_> {
+struct FlashPrefillMma<gemm::MainloopIntelXeXMX16<Stages>, ProblemShapeType_, ElementQ_, StrideQ_, ElementK_, StrideK_, ElementV_,
+                              StrideV_,  MMAOperation_, TileShapeQK_,  TileShapePV_,  SubgroupLayout_, GmemTiledCopyQ_, GmemTiledCopyK_, GmemTiledCopyV_, CausalMask_> {
   //
   // Type Aliases
   //
   using DispatchPolicy = gemm::MainloopIntelXeXMX16<Stages>;
-  using TileShape = TileShape_;
-  using WorkgroupTileShape = TileShape; // <BLK_M_Q, BLK_N_V, BLK_N_QK, BLK_K_QK>
+  using TileShapeQK = TileShapeQK_;
+  using TileShapePV = TileShapePV_;
+  using SubgroupLayout = SubgroupLayout_;
   using ProblemShapeType = ProblemShapeType_;
   using ElementQ = ElementQ_;
   using StrideQ = StrideQ_;
@@ -87,48 +87,36 @@ struct FlashPrefillMma<gemm::MainloopIntelXeXMX16<Stages>, ProblemShapeType_, Ti
   using StrideK = StrideK_;
   using ElementV = ElementV_;
   using StrideV = StrideV_;
-  using TiledMma = TiledMma_;
-  using TiledMmaQVO = TiledMma;
-  using ElementAccumulator = typename TiledMma::ValTypeC;
   using GmemTiledCopyQ = GmemTiledCopyQ_;
   using GmemTiledCopyK = GmemTiledCopyK_;
   using GmemTiledCopyV = GmemTiledCopyV_;
   using ArchTag = typename DispatchPolicy::ArchTag;
-
+  using MmaAtom = MMA_Atom<MMAOperation_>;
+  using TiledMmaQK = typename TiledMMAHelper<MmaAtom, Layout<TileShapeQK>, SubgroupLayout>::TiledMMA;
+  using TiledMmaPV = typename TiledMMAHelper<MmaAtom, Layout<TileShapePV>, SubgroupLayout>::TiledMMA;
+  using ElementAccumulator = typename TiledMmaQK::ValTypeC;
   static constexpr bool CausalMask = CausalMask_;
   static constexpr int SubgroupSize = DispatchPolicy::SubgroupSize;
 
-  using MmaAtomShape = typename TiledMma::AtomShape_MNK;
+  using MmaAtomShape = typename MmaAtom::Shape_MNK;
 
-  using TileShapeQK = decltype(select<0, 2, 3>(WorkgroupTileShape{})); // <BLK_M_Q, BLK_N_QK, BLK_K_QK>
-  using TileShapePV = decltype(select<0, 1, 2>(WorkgroupTileShape{})); // <BLK_M_PV, BLK_N_V, BLK_N_QK>
+  static constexpr auto PV_ATOM_M = decltype(get<0>(SubgroupLayout{}.shape()))::value;
+  static constexpr auto PV_ATOM_N = decltype(get<1>(SubgroupLayout{}.shape()))::value;
+  static constexpr auto PV_ATOM_K = decltype(get<2>(SubgroupLayout{}.shape()))::value;
 
-  static constexpr auto PV_BLK_N = get<1>(TileShapePV{});
-  static constexpr auto PV_BLK_K = get<2>(TileShapePV{});
-
-  static constexpr auto PV_ATOM_M = get<1>(typename TiledMmaQVO::ThrLayoutVMNK{}.shape());
-  static constexpr auto PV_ATOM_N = get<2>(typename TiledMmaQVO::ThrLayoutVMNK{}.shape());
-  static constexpr auto PV_ATOM_K = get<3>(typename TiledMmaQVO::ThrLayoutVMNK{}.shape());
-
-  using SubgroupTileShapePV = decltype(cute::shape_div(TileShapePV{}, take<1, 4>(typename TiledMmaQVO::ThrLayoutVMNK{}.shape())));
+  using SubgroupTileShapePV = decltype(cute::shape_div(TileShapePV{}, (SubgroupLayout{}.shape())));
 
   static constexpr auto QK_BLK_M = get<0>(TileShapeQK{});
   static constexpr auto QK_BLK_N = get<1>(TileShapeQK{});
   static constexpr auto QK_BLK_K = get<2>(TileShapeQK{});
 
-  using K_Atom_Shape = decltype(Shape<Int<PV_ATOM_M>, _1, _1>{});
-
   // This TiledMma is only required to serve the specific tiling requirements for matrix K.
   // This is due to the consumption of matrix K by all subgroups within a workgroup.
-  using TiledMmaK = typename TiledMMAHelper<typename TiledMmaQVO::Atom, 
-                                            Layout<TileShapeQK>,
-                                            Layout<K_Atom_Shape, Stride<_1, _1, _1>>>::TiledMMA;
+  static constexpr auto QK_ATOM_M = PV_ATOM_M;  // 8
+  static constexpr auto QK_ATOM_N = PV_ATOM_N;  // 1
+  static constexpr auto QK_ATOM_K = PV_ATOM_K;  // 1
 
-  static constexpr auto QK_ATOM_M = get<1>(typename TiledMmaK::ThrLayoutVMNK{}.shape()); // 8
-  static constexpr auto QK_ATOM_N = get<2>(typename TiledMmaK::ThrLayoutVMNK{}.shape()); // 1
-  static constexpr auto QK_ATOM_K = get<3>(typename TiledMmaK::ThrLayoutVMNK{}.shape()); // 1
-
-  using SubgroupTileShapeQK = decltype(cute::shape_div(TileShapeQK{}, take<1, 4>(typename TiledMmaK::ThrLayoutVMNK{}.shape())));
+  using SubgroupTileShapeQK = decltype(cute::shape_div(TileShapeQK{}, SubgroupLayout{}.shape())); // 128, 64, 32 / 16, 1, 1 = (8, 64, 32 ) 
 
   static constexpr auto QK_SG_M = get<0>(SubgroupTileShapeQK{});
   static constexpr auto QK_SG_N = get<1>(SubgroupTileShapeQK{});
@@ -136,10 +124,13 @@ struct FlashPrefillMma<gemm::MainloopIntelXeXMX16<Stages>, ProblemShapeType_, Ti
 
   static constexpr bool is_var_len = cutlass::fmha::collective::is_variable_length_v<tuple_element_t<3, ProblemShapeType>>;
 
-  using SubgroupTileShapeO = decltype(cute::shape_div(TileShapePV{}, take<1, 4>(typename TiledMmaQVO::ThrLayoutVMNK{}.shape())));
-  using FragsShape = decltype(cute::shape_div(take<0, 2>(SubgroupTileShapeO{}), take<0, 2>(MmaAtomShape())));
+  using FragsShapeS= decltype(cute::shape_div(take<0, 2>(SubgroupTileShapeQK{}), take<0, 2>(MmaAtomShape()))); //8, 64, 32 /  8, 16, 16 (1, 4)
+  static constexpr int Vec = (get<0>(MmaAtomShape()) * get<1>(MmaAtomShape())) / SubgroupSize; // 8
+  static constexpr int FragsM = get<0>(FragsShapeS{});      
+  static constexpr int FragsNS = get<1>(FragsShapeS{});   //4   
 
-  static constexpr uint32_t MaxThreadsPerBlock = size(TiledMmaQVO{});
+
+  static constexpr uint32_t MaxThreadsPerBlock = size(SubgroupLayout{}) * SubgroupSize;
   using CopyThreadShape = Shape<_1, Int<SubgroupSize>>;
   
   using traits_load_Q = Copy_Traits<GmemTiledCopyQ, StrideQ>;
@@ -203,13 +194,12 @@ struct FlashPrefillMma<gemm::MainloopIntelXeXMX16<Stages>, ProblemShapeType_, Ti
     auto thr_copy_Q = params.gmem_tiled_copy_q.get_slice(thread_idx);
     auto thr_copy_K = params.gmem_tiled_copy_k.get_slice(thread_idx);
     // Instantiate the MMA object
-    TiledMmaK tiled_mma_k;
-    TiledMmaQVO tiled_mma_q;
+    TiledMmaQK tiled_mma;
     // To make all threads in a warp have the same global tensors pass in the index of thread 0 in each warp
     auto sg = syclcompat::get_nd_item<1>().get_sub_group();
     auto first_thread_in_sg_idx = sg.get_group_id()[0] * DispatchPolicy::SubgroupSize;
-    auto thread_mma_k = tiled_mma_k.get_slice(first_thread_in_sg_idx);
-    auto thread_mma_q = tiled_mma_q.get_slice(first_thread_in_sg_idx);
+    auto thread_mma_k = tiled_mma.get_slice(0);
+    auto thread_mma_q = tiled_mma.get_slice(first_thread_in_sg_idx);
 
     // Partition
     Tensor tCgQ = thread_mma_q.partition_A(gQ);
@@ -259,22 +249,24 @@ struct FlashPrefillMma<gemm::MainloopIntelXeXMX16<Stages>, ProblemShapeType_, Ti
     for (int k_tile = 0; k_tile < k_tile_count; ++k_tile) {
       copy(params.gmem_tiled_copy_q, tQgQ(_,_,_,k_tile), tQrQ);
       copy(params.gmem_tiled_copy_k, tKgK(_,_,_,k_tile), tKrK);
-      cute::gemm(tiled_mma_q, accum, tCrQ, tCrK, frag_src);
+      cute::gemm(tiled_mma, accum, tCrQ, tCrK, frag_src);
     }
   }
 
-  template <class FragQccum, class FragS, class TensorV, class FragSrc>
+  template <int tile_count, class FragQccum, class FragS, class TensorV, class FragSrc>
   CUTLASS_DEVICE void mmaPV(FragQccum &accum, FragS const &tSr, TensorV gV,
                             FragSrc const &frag_src, Params const &params) {
 
     int thread_idx = static_cast<int>(ThreadIdxX());
     // Instantiate the MMA object
-    TiledMmaQVO tiled_mma;
+    TiledMmaPV tiled_mma;
+    // Tile GV to the shape of <64,64> and loop over the HeadSize/64 to avoid Register spill 
+    Tensor gV_ = take<0,3>(local_tile(gV, select<1,2>(TileShapePV{}), make_coord(_, _))); 
     auto sg = syclcompat::get_nd_item<1>().get_sub_group();
     auto first_thread_in_sg_idx = sg.get_group_id()[0] * DispatchPolicy::SubgroupSize;
     auto thread_mma = tiled_mma.get_slice(first_thread_in_sg_idx);  
-    Tensor tCgV = thread_mma.partition_B(gV);
-    Tensor tCrV = make_tensor<ElementV>(make_fragment_layout(params.gmem_tiled_copy_v, tCgV.shape()));
+    Tensor tCgV = thread_mma.partition_B(gV_);
+    Tensor tCrV = make_tensor<ElementV>(make_fragment_layout(params.gmem_tiled_copy_v, take<0,3>(tCgV.shape())));
 
     // Partition the copying of A and B tiles across the threads
     auto gmem_thr_copy_V = params.gmem_tiled_copy_v.get_slice(thread_idx);
@@ -299,13 +291,15 @@ struct FlashPrefillMma<gemm::MainloopIntelXeXMX16<Stages>, ProblemShapeType_, Ti
 #endif
 
     // 7) Convert S to P (FP32 -> BF16)
-    Tensor tPr = convert_type<typename TiledMmaQVO::ValTypeA>(tSr);
-
+    Tensor tPr = convert_type<typename TiledMmaPV::ValTypeA>(tSr); 
     //
     // Mainloop
     //
-    copy(params.gmem_tiled_copy_v, tVgV, tVrV);
-    cute::gemm(tiled_mma, accum, tPr, tCrV, frag_src);
+    CUTLASS_PRAGMA_UNROLL
+    for(int i = 0; i< tile_count; i++) {
+      copy(params.gmem_tiled_copy_v, tVgV(_,_,_,i), tVrV);
+      cute::gemm(tiled_mma, accum(_,_,_,i), tPr, tCrV, frag_src(_,_,_,i));
+    }
   }
 
   // SequenceLengthShape = Shape<int, int>

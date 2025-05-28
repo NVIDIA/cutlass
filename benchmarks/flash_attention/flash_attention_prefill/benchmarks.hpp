@@ -34,86 +34,110 @@
 #include "benchmark_runner.hpp"
 #include "fmha_prefill_configuration.hpp"
 
-//bfloat16 benchmarks
-using TiledMmaBF16_h64 = typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
-                                                Layout<Shape<_128, _64, _64>>,
-                                                Layout<Shape<_8, _1, _1>, Stride<_1, _1, _1>>>::TiledMMA;
 
-using TiledMmaBF16_h128 = typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
-                                                Layout<Shape<_128, _128, _64>>,
-                                                Layout<Shape<_8, _2, _1>, Stride<_2, _1, _1>>>::TiledMMA;
-
-using TiledMmaBF16_h192 = typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
-                                                Layout<Shape<_256, _64, _64>>,
-                                                Layout<Shape<_16, _1, _1>, Stride<_1, _1, _1>>>::TiledMMA;
-
-
-//half benchmarks
-using TiledMmaFP16_h64 = typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32F16F16F32_TT>,
-                                                Layout<Shape<_128, _64, _64>>,
-                                                Layout<Shape<_8, _1, _1>, Stride<_1, _1, _1>>>::TiledMMA;
-
-using TiledMmaFP16_h128 = typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32F16F16F32_TT>,
-                                                Layout<Shape<_128, _128, _64>>,
-                                                Layout<Shape<_8, _2, _1>, Stride<_2, _1, _1>>>::TiledMMA;
-
-using TiledMmaFP16_h192 = typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32F16F16F32_TT>,
-                                                Layout<Shape<_256, _64, _64>>,
-                                                Layout<Shape<_16, _1, _1>, Stride<_1, _1, _1>>>::TiledMMA;
-
-using Shape_h64 = Shape<_128, _64, _64, _64>;
-using Shape_h128 = Shape<_128, _128, _64, _64>;
-using Shape_h192 = Shape<_256, _64, _64, _64>;
-
-template<class QKVType, bool Causal, bool VarLen, class TileShape, class TiledMma>
-struct FMHAPrefillConfigGen {
-using type = cutlass::flash_attention::FMHAPrefillConfig<
-      QKVType, QKVType, QKVType,
-      cutlass::layout::RowMajor,
-      cutlass::layout::ColumnMajor,
-      cutlass::layout::RowMajor,
-      cutlass::layout::RowMajor,
-      Causal, VarLen, TileShape,
-      TiledMma>;
+struct Shape_h64 {
+  static constexpr int PipelineStages = 2;
+  using ShapeQK = Shape<_128, _64, _64>;
+  using ShapePV = Shape<_128, _32, _64>;
+  using ShapeOutPut = Shape<_128, _64, _64>;
+  using SubgroupLayout = Layout<Shape<_8, _1, _1>, Stride<_1, _1, _1>>;
 };
 
-using PvcFMHAPrefillBF16BF16FP32_RCR_h64_Causal_FixedLen = FMHAPrefillConfigGen<cutlass::bfloat16_t,  true, false, Shape_h64, TiledMmaBF16_h64>::type;
-using PvcFMHAPrefillBF16BF16FP32_RCR_h128_Causal_FixedLen = FMHAPrefillConfigGen<cutlass::bfloat16_t, true, false, Shape_h128, TiledMmaBF16_h128>::type;
-using PvcFMHAPrefillBF16BF16FP32_RCR_h192_Causal_FixedLen = FMHAPrefillConfigGen<cutlass::bfloat16_t, true, false, Shape_h192, TiledMmaBF16_h192>::type;
-using PvcFMHAPrefillBF16BF16FP32_RCR_h64_Causal_VarLen = FMHAPrefillConfigGen<cutlass::bfloat16_t,  true, true, Shape_h64, TiledMmaBF16_h64>::type;
-using PvcFMHAPrefillBF16BF16FP32_RCR_h128_Causal_VarLen = FMHAPrefillConfigGen<cutlass::bfloat16_t, true, true, Shape_h128, TiledMmaBF16_h128>::type;
-using PvcFMHAPrefillBF16BF16FP32_RCR_h192_Causal_VarLen = FMHAPrefillConfigGen<cutlass::bfloat16_t, true, true, Shape_h192, TiledMmaBF16_h192>::type;
+struct Shape_h96 {
+  static constexpr int PipelineStages = 2;
+  using ShapeQK = Shape<_128, _64, _32>;
+  using ShapePV = Shape<_128, _32, _64>;
+  using ShapeOutPut = Shape<_128, _96, _64>;
+  using SubgroupLayout = Layout<Shape<_8, _1, _1>, Stride<_1, _1, _1>>; 
+};
 
-using PvcFMHAPrefillBF16BF16FP32_RCR_h64_NonCausal_FixedLen = FMHAPrefillConfigGen<cutlass::bfloat16_t,  false, false, Shape_h64, TiledMmaBF16_h64>::type;
-using PvcFMHAPrefillBF16BF16FP32_RCR_h128_NonCausal_FixedLen = FMHAPrefillConfigGen<cutlass::bfloat16_t, false, false, Shape_h128, TiledMmaBF16_h128>::type;
-using PvcFMHAPrefillBF16BF16FP32_RCR_h192_NonCausal_FixedLen = FMHAPrefillConfigGen<cutlass::bfloat16_t, false, false, Shape_h192, TiledMmaBF16_h192>::type;
-using PvcFMHAPrefillBF16BF16FP32_RCR_h64_NonCausal_VarLen = FMHAPrefillConfigGen<cutlass::bfloat16_t,  false, true, Shape_h64, TiledMmaBF16_h64>::type;
-using PvcFMHAPrefillBF16BF16FP32_RCR_h128_NonCausal_VarLen = FMHAPrefillConfigGen<cutlass::bfloat16_t, false, true, Shape_h128, TiledMmaBF16_h128>::type;
-using PvcFMHAPrefillBF16BF16FP32_RCR_h192_NonCausal_VarLen = FMHAPrefillConfigGen<cutlass::bfloat16_t, false, true, Shape_h192, TiledMmaBF16_h192>::type;
+struct Shape_h128 {
+  static constexpr int PipelineStages = 2;
+  using ShapeQK = Shape<_128, _64, _64>;
+  using ShapePV = Shape<_128, _32, _64>;
+  using ShapeOutPut = Shape<_128, _128, _64>;
+  using SubgroupLayout = Layout<Shape<_16, _1, _1>, Stride<_1, _1, _1>>; 
+};
 
-using PvcFMHAPrefillFP16FP16FP32_RCR_h64_Causal_FixedLen = FMHAPrefillConfigGen<cutlass::half_t,  true, false, Shape_h64, TiledMmaFP16_h64>::type;
-using PvcFMHAPrefillFP16FP16FP32_RCR_h128_Causal_FixedLen = FMHAPrefillConfigGen<cutlass::half_t, true, false, Shape_h128, TiledMmaFP16_h128>::type;
-using PvcFMHAPrefillFP16FP16FP32_RCR_h192_Causal_FixedLen = FMHAPrefillConfigGen<cutlass::half_t, true, false, Shape_h192, TiledMmaFP16_h192>::type;
-using PvcFMHAPrefillFP16FP16FP32_RCR_h64_Causal_VarLen = FMHAPrefillConfigGen<cutlass::half_t,  true, true, Shape_h64, TiledMmaFP16_h64>::type;
-using PvcFMHAPrefillFP16FP16FP32_RCR_h128_Causal_VarLen = FMHAPrefillConfigGen<cutlass::half_t, true, true, Shape_h128, TiledMmaFP16_h128>::type;
-using PvcFMHAPrefillFP16FP16FP32_RCR_h192_Causal_VarLen = FMHAPrefillConfigGen<cutlass::half_t, true, true, Shape_h192, TiledMmaFP16_h192>::type;
+struct Shape_h192 {
+  static constexpr int PipelineStages = 2;
+  using ShapeQK = Shape<_256, _64, _64>;
+  using ShapePV = Shape<_256, _32, _64>;
+  using ShapeOutPut = Shape<_256, _192, _64>;
+  using SubgroupLayout = Layout<Shape<_32, _1, _1>, Stride<_1, _1, _1>>; 
+};
 
-using PvcFMHAPrefillFP16FP16FP32_RCR_h64_NonCausal_FixedLen = FMHAPrefillConfigGen<cutlass::half_t,  false, false, Shape_h64, TiledMmaFP16_h64>::type;
-using PvcFMHAPrefillFP16FP16FP32_RCR_h128_NonCausal_FixedLen = FMHAPrefillConfigGen<cutlass::half_t, false, false, Shape_h128, TiledMmaFP16_h128>::type;
-using PvcFMHAPrefillFP16FP16FP32_RCR_h192_NonCausal_FixedLen = FMHAPrefillConfigGen<cutlass::half_t, false, false, Shape_h192, TiledMmaFP16_h192>::type;
-using PvcFMHAPrefillFP16FP16FP32_RCR_h64_NonCausal_VarLen = FMHAPrefillConfigGen<cutlass::half_t,  false, true, Shape_h64, TiledMmaFP16_h64>::type;
-using PvcFMHAPrefillFP16FP16FP32_RCR_h128_NonCausal_VarLen = FMHAPrefillConfigGen<cutlass::half_t, false, true, Shape_h128, TiledMmaFP16_h128>::type;
-using PvcFMHAPrefillFP16FP16FP32_RCR_h192_NonCausal_VarLen = FMHAPrefillConfigGen<cutlass::half_t, false, true, Shape_h192, TiledMmaFP16_h192>::type;
+template<class QKVType, bool Causal, bool VarLen, class TileShapeConfig>
+struct FMHAPrefillConfigGen {
+ // Todo(codeplay) this type should be passed as parameter as well since come shape may get better performace
+ // with different copy
+  using GmemTiledCopyQ = XE_2D_U16x8x32_LD_N;
+  using GmemTiledCopyK = XE_2D_U16x16x16_LD_T; // _T designates a transposed block load operation
+  using GmemTiledCopyV = XE_2D_U16x16x32_LD_V;
+  using GmemTiledCopyO = XE_2D_U32x8x16_ST_N;
+  using type = cutlass::flash_attention::FMHAPrefillConfig<
+     // todo(codeplay) : accumulator type and output type should be pass as template parameter
+      QKVType, float, float,  
+      GmemTiledCopyQ ,
+      GmemTiledCopyK,
+      GmemTiledCopyV ,
+      GmemTiledCopyO,
+      typename TileShapeConfig::ShapeQK,
+      typename TileShapeConfig::ShapePV,
+      typename TileShapeConfig::ShapeOutPut,
+      typename TileShapeConfig::SubgroupLayout,
+      Causal, VarLen, TileShapeConfig::PipelineStages>;
+};
+
+using PvcFMHAPrefillBF16BF16FP32_RCR_h64_Causal_FixedLen = FMHAPrefillConfigGen<cutlass::bfloat16_t,  true, false, Shape_h64>::type;
+using PvcFMHAPrefillBF16BF16FP32_RCR_h96_Causal_FixedLen = FMHAPrefillConfigGen<cutlass::bfloat16_t, true, false, Shape_h96>::type;
+using PvcFMHAPrefillBF16BF16FP32_RCR_h128_Causal_FixedLen = FMHAPrefillConfigGen<cutlass::bfloat16_t, true, false, Shape_h128>::type;
+using PvcFMHAPrefillBF16BF16FP32_RCR_h192_Causal_FixedLen = FMHAPrefillConfigGen<cutlass::bfloat16_t, true, false, Shape_h192>::type;
+using PvcFMHAPrefillBF16BF16FP32_RCR_h64_Causal_VarLen = FMHAPrefillConfigGen<cutlass::bfloat16_t,  true, true, Shape_h64>::type;
+using PvcFMHAPrefillBF16BF16FP32_RCR_h96_Causal_VarLen = FMHAPrefillConfigGen<cutlass::bfloat16_t, true, true, Shape_h96>::type;
+using PvcFMHAPrefillBF16BF16FP32_RCR_h128_Causal_VarLen = FMHAPrefillConfigGen<cutlass::bfloat16_t, true, true, Shape_h128>::type;
+using PvcFMHAPrefillBF16BF16FP32_RCR_h192_Causal_VarLen = FMHAPrefillConfigGen<cutlass::bfloat16_t, true, true, Shape_h192>::type;
+
+using PvcFMHAPrefillBF16BF16FP32_RCR_h64_NonCausal_FixedLen = FMHAPrefillConfigGen<cutlass::bfloat16_t,  false, false, Shape_h64>::type;
+using PvcFMHAPrefillBF16BF16FP32_RCR_h96_NonCausal_FixedLen = FMHAPrefillConfigGen<cutlass::bfloat16_t, false, false, Shape_h96>::type;
+using PvcFMHAPrefillBF16BF16FP32_RCR_h128_NonCausal_FixedLen = FMHAPrefillConfigGen<cutlass::bfloat16_t, false, false, Shape_h128>::type;
+using PvcFMHAPrefillBF16BF16FP32_RCR_h192_NonCausal_FixedLen = FMHAPrefillConfigGen<cutlass::bfloat16_t, false, false, Shape_h192>::type;
+using PvcFMHAPrefillBF16BF16FP32_RCR_h64_NonCausal_VarLen = FMHAPrefillConfigGen<cutlass::bfloat16_t,  false, true, Shape_h64>::type;
+using PvcFMHAPrefillBF16BF16FP32_RCR_h96_NonCausal_VarLen = FMHAPrefillConfigGen<cutlass::bfloat16_t,  false, true, Shape_h96>::type;
+using PvcFMHAPrefillBF16BF16FP32_RCR_h128_NonCausal_VarLen = FMHAPrefillConfigGen<cutlass::bfloat16_t, false, true, Shape_h128>::type;
+using PvcFMHAPrefillBF16BF16FP32_RCR_h192_NonCausal_VarLen = FMHAPrefillConfigGen<cutlass::bfloat16_t, false, true, Shape_h192>::type;
+
+using PvcFMHAPrefillFP16FP16FP32_RCR_h64_Causal_FixedLen = FMHAPrefillConfigGen<cutlass::half_t,  true, false, Shape_h64>::type;
+using PvcFMHAPrefillFP16FP16FP32_RCR_h96_Causal_FixedLen = FMHAPrefillConfigGen<cutlass::half_t, true, false, Shape_h96>::type;
+using PvcFMHAPrefillFP16FP16FP32_RCR_h128_Causal_FixedLen = FMHAPrefillConfigGen<cutlass::half_t, true, false, Shape_h128>::type;
+using PvcFMHAPrefillFP16FP16FP32_RCR_h192_Causal_FixedLen = FMHAPrefillConfigGen<cutlass::half_t, true, false, Shape_h192>::type;
+using PvcFMHAPrefillFP16FP16FP32_RCR_h64_Causal_VarLen = FMHAPrefillConfigGen<cutlass::half_t,  true, true, Shape_h64>::type;
+using PvcFMHAPrefillFP16FP16FP32_RCR_h96_Causal_VarLen = FMHAPrefillConfigGen<cutlass::half_t,  true, true, Shape_h96>::type;
+using PvcFMHAPrefillFP16FP16FP32_RCR_h128_Causal_VarLen = FMHAPrefillConfigGen<cutlass::half_t, true, true, Shape_h128>::type;
+using PvcFMHAPrefillFP16FP16FP32_RCR_h192_Causal_VarLen = FMHAPrefillConfigGen<cutlass::half_t, true, true, Shape_h192>::type;
+
+using PvcFMHAPrefillFP16FP16FP32_RCR_h64_NonCausal_FixedLen = FMHAPrefillConfigGen<cutlass::half_t,  false, false, Shape_h64>::type;
+using PvcFMHAPrefillFP16FP16FP32_RCR_h96_NonCausal_FixedLen = FMHAPrefillConfigGen<cutlass::half_t,  false, false, Shape_h96>::type;
+using PvcFMHAPrefillFP16FP16FP32_RCR_h128_NonCausal_FixedLen = FMHAPrefillConfigGen<cutlass::half_t, false, false, Shape_h128>::type;
+using PvcFMHAPrefillFP16FP16FP32_RCR_h192_NonCausal_FixedLen = FMHAPrefillConfigGen<cutlass::half_t, false, false, Shape_h192>::type;
+using PvcFMHAPrefillFP16FP16FP32_RCR_h64_NonCausal_VarLen = FMHAPrefillConfigGen<cutlass::half_t,  false, true, Shape_h64>::type;
+using PvcFMHAPrefillFP16FP16FP32_RCR_h96_NonCausal_VarLen = FMHAPrefillConfigGen<cutlass::half_t,  false, true, Shape_h96>::type;
+using PvcFMHAPrefillFP16FP16FP32_RCR_h128_NonCausal_VarLen = FMHAPrefillConfigGen<cutlass::half_t, false, true, Shape_h128>::type;
+using PvcFMHAPrefillFP16FP16FP32_RCR_h192_NonCausal_VarLen = FMHAPrefillConfigGen<cutlass::half_t, false, true, Shape_h192>::type;
 
 
 CUTLASS_CREATE_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillBF16BF16FP32_RCR_h64_Causal_FixedLen);
 CUTLASS_CREATE_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillBF16BF16FP32_RCR_h64_NonCausal_FixedLen);
+CUTLASS_CREATE_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillBF16BF16FP32_RCR_h96_Causal_FixedLen);
+CUTLASS_CREATE_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillBF16BF16FP32_RCR_h96_NonCausal_FixedLen);
 CUTLASS_CREATE_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillBF16BF16FP32_RCR_h128_Causal_FixedLen);
 CUTLASS_CREATE_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillBF16BF16FP32_RCR_h128_NonCausal_FixedLen);
 CUTLASS_CREATE_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillBF16BF16FP32_RCR_h192_Causal_FixedLen);
 CUTLASS_CREATE_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillBF16BF16FP32_RCR_h192_NonCausal_FixedLen);
 CUTLASS_CREATE_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillFP16FP16FP32_RCR_h64_Causal_FixedLen);
 CUTLASS_CREATE_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillFP16FP16FP32_RCR_h64_NonCausal_FixedLen);
+CUTLASS_CREATE_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillFP16FP16FP32_RCR_h96_Causal_FixedLen);
+CUTLASS_CREATE_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillFP16FP16FP32_RCR_h96_NonCausal_FixedLen);
 CUTLASS_CREATE_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillFP16FP16FP32_RCR_h128_Causal_FixedLen);
 CUTLASS_CREATE_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillFP16FP16FP32_RCR_h128_NonCausal_FixedLen);
 CUTLASS_CREATE_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillFP16FP16FP32_RCR_h192_Causal_FixedLen);
@@ -121,12 +145,16 @@ CUTLASS_CREATE_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillFP16FP16FP32_RCR_h192_NonCau
 
 CUTLASS_CREATE_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillBF16BF16FP32_RCR_h64_Causal_VarLen);
 CUTLASS_CREATE_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillBF16BF16FP32_RCR_h64_NonCausal_VarLen);
+CUTLASS_CREATE_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillBF16BF16FP32_RCR_h96_Causal_VarLen);
+CUTLASS_CREATE_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillBF16BF16FP32_RCR_h96_NonCausal_VarLen);
 CUTLASS_CREATE_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillBF16BF16FP32_RCR_h128_Causal_VarLen);
 CUTLASS_CREATE_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillBF16BF16FP32_RCR_h128_NonCausal_VarLen);
 CUTLASS_CREATE_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillBF16BF16FP32_RCR_h192_Causal_VarLen);
 CUTLASS_CREATE_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillBF16BF16FP32_RCR_h192_NonCausal_VarLen);
 CUTLASS_CREATE_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillFP16FP16FP32_RCR_h64_Causal_VarLen);
 CUTLASS_CREATE_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillFP16FP16FP32_RCR_h64_NonCausal_VarLen);
+CUTLASS_CREATE_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillFP16FP16FP32_RCR_h96_Causal_VarLen);
+CUTLASS_CREATE_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillFP16FP16FP32_RCR_h96_NonCausal_VarLen);
 CUTLASS_CREATE_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillFP16FP16FP32_RCR_h128_Causal_VarLen);
 CUTLASS_CREATE_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillFP16FP16FP32_RCR_h128_NonCausal_VarLen);
 CUTLASS_CREATE_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillFP16FP16FP32_RCR_h192_Causal_VarLen);
@@ -135,12 +163,16 @@ CUTLASS_CREATE_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillFP16FP16FP32_RCR_h192_NonCau
 static void register_flash_attention_prefill_benchmarks() {
   CUTLASS_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillBF16BF16FP32_RCR_h64_Causal_FixedLen);
   CUTLASS_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillBF16BF16FP32_RCR_h64_NonCausal_FixedLen);
+  CUTLASS_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillBF16BF16FP32_RCR_h96_Causal_FixedLen);
+  CUTLASS_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillBF16BF16FP32_RCR_h96_NonCausal_FixedLen);
   CUTLASS_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillBF16BF16FP32_RCR_h128_Causal_FixedLen);
   CUTLASS_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillBF16BF16FP32_RCR_h128_NonCausal_FixedLen);
   CUTLASS_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillBF16BF16FP32_RCR_h192_Causal_FixedLen);
   CUTLASS_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillBF16BF16FP32_RCR_h192_NonCausal_FixedLen);
   CUTLASS_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillFP16FP16FP32_RCR_h64_Causal_FixedLen);
   CUTLASS_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillFP16FP16FP32_RCR_h64_NonCausal_FixedLen);
+  CUTLASS_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillFP16FP16FP32_RCR_h96_NonCausal_FixedLen);
+  CUTLASS_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillFP16FP16FP32_RCR_h96_Causal_FixedLen);
   CUTLASS_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillFP16FP16FP32_RCR_h128_Causal_FixedLen);
   CUTLASS_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillFP16FP16FP32_RCR_h128_NonCausal_FixedLen);
   CUTLASS_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillFP16FP16FP32_RCR_h192_Causal_FixedLen);
@@ -148,12 +180,16 @@ static void register_flash_attention_prefill_benchmarks() {
 
   CUTLASS_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillBF16BF16FP32_RCR_h64_Causal_VarLen);
   CUTLASS_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillBF16BF16FP32_RCR_h64_NonCausal_VarLen);
+  CUTLASS_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillBF16BF16FP32_RCR_h96_Causal_VarLen);
+  CUTLASS_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillBF16BF16FP32_RCR_h96_NonCausal_VarLen);
   CUTLASS_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillBF16BF16FP32_RCR_h128_Causal_VarLen);
   CUTLASS_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillBF16BF16FP32_RCR_h128_NonCausal_VarLen);
   CUTLASS_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillBF16BF16FP32_RCR_h192_Causal_VarLen);
   CUTLASS_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillBF16BF16FP32_RCR_h192_NonCausal_VarLen);
   CUTLASS_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillFP16FP16FP32_RCR_h64_Causal_VarLen);
   CUTLASS_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillFP16FP16FP32_RCR_h64_NonCausal_VarLen);
+  CUTLASS_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillFP16FP16FP32_RCR_h96_Causal_VarLen);
+  CUTLASS_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillFP16FP16FP32_RCR_h96_NonCausal_VarLen);
   CUTLASS_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillFP16FP16FP32_RCR_h128_Causal_VarLen);
   CUTLASS_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillFP16FP16FP32_RCR_h128_NonCausal_VarLen);
   CUTLASS_FMHA_PREFILL_BENCHMARK(PvcFMHAPrefillFP16FP16FP32_RCR_h192_Causal_VarLen);
