@@ -29,20 +29,19 @@
  *
  **************************************************************************************************/
 
- // Inspired by: sm90_mma_tma_gmma_ss_warpspecialized_fp8_blockwise_scaling.hpp
+// Inspired by: sm90_mma_tma_gmma_ss_warpspecialized_fp8_blockwise_scaling.hpp
 
 #pragma once
 
 #include "cutlass/cutlass.h"
+#include "cutlass/detail/blockwise_scale_layout.hpp"
 #include "cutlass/gemm/dispatch_policy.hpp"
 
 #include "cute/algorithm/functional.hpp"
 #include "cute/atom/mma_atom.hpp"
 #include "cute/algorithm/gemm.hpp"
-#include "cute/tensor_predicate.hpp"
 #include "cute/numeric/arithmetic_tuple.hpp"
 
-#include "cutlass/detail/blockwise_scale_layout.hpp"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -325,14 +324,17 @@ struct CollectiveMma<
     Tensor tSFBcSFB_compact = filter_zeros(tSFBcSFB, tSFBsSFB(_,_,_,_0{}).stride());
 
     // Since scale granularity K is multiple of BLK_K we do not have to consider if that is OOB
+    // Only a few threads participate in copying and clearing scale factors in shared memory. Because
+    // the scale factor is broadcast across certain dimensions, multiple threads end up accessing
+    // the same location in shared memory.
     bool load_sfa = thread_idx < cute::min(32, ScaleMsPerTile);
+    bool load_sfb = thread_idx < cute::min(32, ScaleNsPerTile);
     auto residue_sf = cute::shape_div(residue_mnk,
                         ResidueMNK{ScaleGranularityM, ScaleGranularityN, ScaleGranularityK});
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < size(tSFApSFA); ++i) {
       tSFApSFA(i) = load_sfa && elem_less(get<0, 1>(tSFAcSFA_compact(i)), get<0>(residue_sf));
     }
-    bool load_sfb = thread_idx < cute::min(32, ScaleNsPerTile);
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < size(tSFBpSFB); ++i) {
       tSFBpSFB(i) = load_sfb && elem_less(get<0, 1>(tSFBcSFB_compact(i)), get<1>(residue_sf));
@@ -345,8 +347,13 @@ struct CollectiveMma<
     // Clear the smem tiles to account for predicated off loads
     clear(tAsA);
     clear(tBsB);
-    clear(tSFAsSFA);
-    clear(tSFBsSFB);
+    // Only a few threads participate in copying and clearing scale factors in shared memory.
+    if (load_sfa) {
+      clear(tSFAsSFA);
+    }
+    if (load_sfb) {
+      clear(tSFBsSFB);
+    }
     // Start async loads, no k-residue handling needed
     CUTLASS_PRAGMA_UNROLL
     for (int k_pipe = 0; k_pipe < DispatchPolicy::Stages-1; ++k_pipe) {
