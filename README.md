@@ -6,8 +6,8 @@ _CUTLASS 3.9.2 - May 2025_
 
 **This repository fast-follows NVIDIA CUTLASS repository adding SYCL support for Intel GPUs.**
   The CUDA support is unmodified from upstream and can be used interchangeably.
-**
-**For SYCL support instructions, refer to the [SYCL build documentation](./media/docs/build/building_with_sycl_support.md)**
+
+**For SYCL support instructions, refer to the [SYCL build documentation](./media/docs/cpp/build/building_with_sycl_support.md)**
 
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/codeplaysoftware/cutlass-fork/badge)](https://scorecard.dev/viewer/?uri=github.com/codeplaysoftware/cutlass-fork)
 
