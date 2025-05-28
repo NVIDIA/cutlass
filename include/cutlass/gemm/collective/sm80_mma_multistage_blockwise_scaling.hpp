@@ -159,11 +159,11 @@ struct CollectiveMma<
   using CopyAtomSFB = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<ElementBlockScale>, ElementBlockScale>;
   using GmemTiledCopySFA = decltype(make_tiled_copy(
     CopyAtomSFA{},
-    Layout<Shape<Int<GmemTiledCopyA::TiledNumThr::value>>>{},
+    Layout<Shape<Int<32>>>{},
     Layout<Shape<_1>>{}));
   using GmemTiledCopySFB = decltype(make_tiled_copy(
     CopyAtomSFB{},
-    Layout<Shape<Int<GmemTiledCopyB::TiledNumThr::value>>>{},
+    Layout<Shape<Int<32>>>{},
     Layout<Shape<_1>>{}));
 
   static constexpr int AlignmentSFA = 1;
@@ -325,14 +325,14 @@ struct CollectiveMma<
     Tensor tSFBcSFB_compact = filter_zeros(tSFBcSFB, tSFBsSFB(_,_,_,_0{}).stride());
 
     // Since scale granularity K is multiple of BLK_K we do not have to consider if that is OOB
-    bool load_sfa = thread_idx < cute::min(GmemTiledCopyA::TiledNumThr::value, ScaleMsPerTile);
+    bool load_sfa = thread_idx < cute::min(32, ScaleMsPerTile);
     auto residue_sf = cute::shape_div(residue_mnk,
                         ResidueMNK{ScaleGranularityM, ScaleGranularityN, ScaleGranularityK});
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < size(tSFApSFA); ++i) {
       tSFApSFA(i) = load_sfa && elem_less(get<0, 1>(tSFAcSFA_compact(i)), get<0>(residue_sf));
     }
-    bool load_sfb = thread_idx < cute::min(GmemTiledCopyB::TiledNumThr::value, ScaleNsPerTile);
+    bool load_sfb = thread_idx < cute::min(32, ScaleNsPerTile);
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < size(tSFBpSFB); ++i) {
       tSFBpSFB(i) = load_sfb && elem_less(get<0, 1>(tSFBcSFB_compact(i)), get<1>(residue_sf));
