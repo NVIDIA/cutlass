@@ -45,7 +45,8 @@ ninja benchmarks_gemm_sycl
 cmake .. -GNinja -DCUTLASS_ENABLE_SYCL=ON -DDPCPP_SYCL_TARGET=$target -DCUTLASS_ENABLE_BENCHMARKS=ON -DCUTLASS_ENABLE_TESTS=ON
 
 ninja cutlass_benchmarks_flash_attention
-./benchmarks/flash_attention/flash_attention_prefill/cutlass_benchmarks_flash_attention_prefill_xe --config_file=../benchmarks/device/pvc/input_files/input_flash_attention_prefill.in
+./benchmarks/flash_attention/flash_attention_prefill/cutlass_benchmarks_flash_attention_prefill_xe --config_file=../benchmarks/device/bmg/input_files/input_sglang_flash_attention_prefill_extend_nokvcache.in
+./benchmarks/flash_attention/flash_attention_prefill_cachedKV/cutlass_benchmarks_flash_attention_prefill_cachedkv_xe --config_file=../benchmarks/device/bmg/input_files/input_sglang_flash_attention_prefill_extend_kvcache.in
 ./benchmarks/flash_attention/flash_attention_decode/cutlass_benchmarks_flash_attention_decode_xe --config_file=../benchmarks/device/bmg/input_files/input_sglang_flash_attention_decode_kvcache.in
 ```
 

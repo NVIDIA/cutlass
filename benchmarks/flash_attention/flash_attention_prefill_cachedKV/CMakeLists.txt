@@ -29,17 +29,15 @@
 set(CUTLASS_APPLICATIONS_DIR ${CMAKE_SOURCE_DIR}/applications)
 
 # Pass these configuration files for the CI
-set(CONFIG_FILE_PVC --config_file=${CMAKE_SOURCE_DIR}/benchmarks/device/pvc/input_files/input_flash_attention_prefill.in)
-set(CONFIG_FILE_BMG --config_file=${CMAKE_SOURCE_DIR}/benchmarks/device/bmg/input_files/input_sglang_flash_attention_prefill_extend_nokvcache.in)
+set(CONFIG_FILE_BMG --config_file=${CMAKE_SOURCE_DIR}/benchmarks/device/bmg/input_files/input_sglang_flash_attention_prefill_extend_kvcache.in)
 
-cutlass_benchmark_add_suite(cutlass_benchmarks_flash_attention_prefill
+cutlass_benchmark_add_suite(cutlass_benchmarks_flash_attention_prefill_cachedkv
                             SUPERSUITE cutlass_benchmarks_flash_attention)
 
 cutlass_benchmark_add_executable(
-    cutlass_benchmarks_flash_attention_prefill_xe
+    cutlass_benchmarks_flash_attention_prefill_cachedkv_xe
     main.cpp
     TEST_COMMAND_OPTIONS
-    CONFIG_FILE_PVC
     CONFIG_FILE_BMG
-    SUITE cutlass_benchmarks_flash_attention_prefill
+    SUITE cutlass_benchmarks_flash_attention_prefill_cachedkv
 )
