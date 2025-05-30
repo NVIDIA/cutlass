@@ -62,6 +62,11 @@ cutlass_example_add_executable(
 )
 
 cutlass_example_add_executable(
+  05_bmg_gemm_with_epilogue_splitk
+  05_bmg_gemm_with_epilogue_splitk.cpp
+)
+
+cutlass_example_add_executable(
   05_bmg_gemm_with_per_row_bias
   05_bmg_gemm_with_per_row_bias.cpp
   TEST_COMMAND_OPTIONS

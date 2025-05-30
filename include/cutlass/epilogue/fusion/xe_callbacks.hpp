@@ -48,6 +48,7 @@
 #include "cutlass/epilogue/fusion/sm90_visitor_store_tma_warpspecialized.hpp"
 #include "cutlass/epilogue/fusion/sm90_visitor_compute_tma_warpspecialized.hpp"
 #include "cutlass/epilogue/fusion/xe_visitor_softmax.hpp"
+#include "cutlass/epilogue/fusion/xe_visitor_splitk.hpp"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -162,6 +163,81 @@ struct FusionCallbacks<
                         },   // end ternary op
                         activation // unary args: activation
                 };   // end unary op
+    }
+  };
+
+  // Ctor inheritance
+  using Impl::Impl;
+};
+
+// D = splitk(alpha * acc + beta * C)
+template<
+  // int FragmentSize,
+  class CtaTileShapeMNK,
+  class EpilogueTile,
+  class ElementOutput,
+  class ElementCompute,
+  class CopyOpR2G,
+  class ElementSource = ElementOutput,
+  class ElementScalar = ElementCompute,
+  FloatRoundStyle RoundStyle = FloatRoundStyle::round_to_nearest
+>
+using XeLinCombSplitK =
+  Sm90EVT<XeSplitK<CtaTileShapeMNK, EpilogueTile, ElementOutput, ElementCompute, CopyOpR2G, RoundStyle>, // splitk(beta * C + (alpha * acc))
+    Sm90LinearCombination<ElementCompute, ElementCompute, ElementSource, ElementScalar, RoundStyle> // beta * C + (alpha * acc)
+  >;
+
+template <
+  // int FragmentSize,
+  class ElementOutput_,
+  class ElementCompute_,
+  class ElementSource_,
+  class ElementScalar_,
+  class CopyOpR2G_,
+  FloatRoundStyle RoundStyle,
+  class CtaTileShapeMNK,
+  class EpilogueTile
+>
+struct FusionCallbacks<
+    epilogue::IntelXeXMX16,
+    fusion::LinCombSplitK<ElementOutput_, ElementCompute_, CopyOpR2G_, ElementSource_, ElementScalar_, RoundStyle>,
+    CtaTileShapeMNK,
+    EpilogueTile
+> : XeLinCombSplitK<CtaTileShapeMNK, EpilogueTile, ElementOutput_, ElementCompute_, CopyOpR2G_, ElementSource_, ElementScalar_, RoundStyle> {
+
+  using ElementOutput = ElementOutput_;
+  using ElementCompute = ElementCompute_;
+  using ElementSource = ElementSource_;
+  using ElementScalar = ElementScalar_;
+  using Impl = XeLinCombSplitK<CtaTileShapeMNK, EpilogueTile, typename cutlass::detail::get_unpacked_element_type<ElementOutput>::type, ElementCompute, CopyOpR2G_, ElementSource, ElementScalar, RoundStyle>;
+  using Operation = fusion::LinCombSplitK<ElementOutput_, ElementCompute, CopyOpR2G_, ElementSource, ElementScalar, RoundStyle>;
+
+  struct Arguments {
+    ElementScalar alpha = ElementScalar(1);
+    ElementScalar beta = ElementScalar(0);
+    ElementScalar const* alpha_ptr = nullptr;
+    ElementScalar const* beta_ptr = nullptr;
+    ElementOutput* output_ptr = nullptr;
+    ElementOutput *output_ptr1 = nullptr;
+    ElementOutput *output_ptr2 = nullptr;
+    size_t NUM_HEAD = 0;
+    size_t NOPE_DIM = 0;
+    size_t ROPE_DIM = 0;
+    operator typename Impl::Arguments() const {
+      return
+        {    // unary op: activation(beta * C + (alpha * acc))
+          {    // ternary op : beta * C + (alpha * acc)
+            {{beta}, {beta_ptr}}, // leaf args : beta
+            {},                   // leaf args : C
+            {                     // binary op : alpha * acc
+              {{alpha}, {alpha_ptr}}, // leaf args : alpha
+              {},                     // leaf args : acc
+              {}                  // binary args : multiplies
+            },                    // end binary op
+            {} // ternary args : multiply_add
+          },   // end ternary op
+          {output_ptr, output_ptr1, output_ptr2, NUM_HEAD, NOPE_DIM, ROPE_DIM} // unary args: activation
+        };   // end unary op
     }
   };
 

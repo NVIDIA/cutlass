@@ -31,6 +31,7 @@
 
 #pragma once
 
+#include "cutlass/cutlass.h"
 #include "cutlass/util/device_memory.h"
 #include "cutlass/util/reference/device/sycl_tensor_fill.h"
 
@@ -132,5 +133,31 @@ void initialize_mixed_dtype_block(cutlass::DeviceAllocation<T1>& block_device,
                                     block_host_dq.data(),
                                     tail_size);
     }
+  }
+}
+
+template<typename T>
+inline
+bool is_close(T a, T b, float atol, float rtol) {
+  return std::abs((float)a - (float)b) <= atol + rtol * std::abs((float)b);
+}
+
+// TODO(Codeplay): use on device initialisation for this
+template<typename T>
+inline
+void random_fill(T *src, int seed, size_t N, float max, float min) {
+  if constexpr(std::is_same_v<T, float> || std::is_same_v<T, cute::bfloat16_t> || std::is_same_v<T, cute::half_t>) {
+    std::random_device rd;
+    std::mt19937 gen(seed);
+    std::uniform_real_distribution<float> dis(min, max);
+    auto buff = std::vector<T>(N);
+
+    for (size_t i = 0; i < N; ++i) {
+      buff[i] = (T)(dis(gen));
+    }
+    syclcompat::memcpy<T>(src, buff.data(), N);
+    syclcompat::wait();
+  } else {
+    assert(0 & "Not supported dtype");
   }
 }
