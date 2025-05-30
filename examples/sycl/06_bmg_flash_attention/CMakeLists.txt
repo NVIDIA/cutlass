@@ -39,7 +39,13 @@ cutlass_example_add_executable(
   06_bmg_decode_attention.cpp
 )
 
+set(TEST_NO_PAGED "")
+set(TEST_PAGED "--use_paged_kv")
+
 cutlass_example_add_executable(
   06_bmg_prefill_attention_cachedKV
   06_bmg_prefill_attention_prefill_cachedKV.cpp
+  TEST_COMMAND_OPTIONS
+  TEST_NO_PAGED
+  TEST_PAGED
 )

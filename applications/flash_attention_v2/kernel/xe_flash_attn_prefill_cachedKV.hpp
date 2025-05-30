@@ -101,6 +101,8 @@ public:
   static constexpr int SharedStorageSize = 0;
 
   static constexpr bool CausalMask = CollectiveMainloop::CausalMask;
+  static constexpr bool PagedKV = CollectiveMainloop::PagedKV;
+
   static constexpr int SubgroupSize = CollectiveMainloop::SubgroupSize; // sub_group size
   static constexpr uint32_t MaxThreadsPerBlock = CollectiveMainloop::MaxThreadsPerBlock;
   using MmaAtomShape = typename CollectiveMainloop::MmaAtomShape;           // 8,16,16
@@ -265,6 +267,8 @@ public:
       const int nblock_cache = cute::ceil_div(seq_len_kv_cache, QK_BLK_N);
       const int nblock_limit = nblock_cache + nblock_new;
 
+      int tiles_per_page = params.mainloop.page_size / QK_BLK_N;
+
       if(CausalMask && seq_coord < discard_seq_coord ) { // 1024 =0
         continue;
       }
@@ -341,9 +345,21 @@ public:
 
         bool is_KV_cache = nblock < nblock_cache;
 
+        int cached_nblock = nblock;
+        if constexpr (PagedKV) {
+          if (is_KV_cache) {
+            // get physical page idx from page table
+            cached_nblock = params.mainloop.ptr_page_table[
+                  batch_coord * params.mainloop.num_pages_per_seq +     // page table for this batch
+                  nblock * QK_BLK_N / params.mainloop.page_size       // nblock (tile idx) to logical page idx
+                  ] * tiles_per_page +                                  // base block idx of physical page
+                  nblock % tiles_per_page;                            // offset within page
+          }
+        }
+
         // 1) Load KV (performed inside mmaQK)
-        auto gK_ = is_KV_cache ? gK_cache(_, _, nblock, _) : gK(_, _, nblock - nblock_cache, _);
-        auto gV_ = is_KV_cache ? gV_cache(_, _, nblock) : gV(_, _, nblock - nblock_cache);
+        auto gK_ = is_KV_cache ? gK_cache(_, _, cached_nblock, _) : gK(_, _, nblock - nblock_cache, _);
+        auto gV_ = is_KV_cache ? gV_cache(_, _, cached_nblock) : gV(_, _, nblock - nblock_cache);
 
         // 2) Create Tensor S
         Tensor tSr = make_tensor<ElementAccumulator>(Shape<Int<Vec>, Int<FragsM>, Int<FragsN>>{});

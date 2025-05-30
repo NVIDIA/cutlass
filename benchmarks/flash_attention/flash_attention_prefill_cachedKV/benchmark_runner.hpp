@@ -133,6 +133,7 @@ template <class FMHAPrefillConfiguration> struct BenchmarkRunnerFMHA {
   using ProblemShapeType = typename GemmKernel::ProblemShape;
   static constexpr bool Causal = FMHAPrefillConfiguration::Causal;
   static constexpr bool isVarLen = FMHAPrefillConfiguration::VarLen;
+  static constexpr bool isPagdKV = FMHAPrefillConfiguration::PagdKV;
 
   int32_t count;
 
@@ -584,7 +585,14 @@ template <class FMHAPrefillConfiguration> struct BenchmarkRunnerFMHA {
           block_K[0].get(), stride_K,
           block_V[0].get(), stride_V,
           block_K_cache[0].get(), stride_K_cache,
-          block_V_cache[0].get(), stride_V_cache
+          block_V_cache[0].get(), stride_V_cache,
+          //TODO:: the following 3 parameters need to be parametrised when the benchmark for paged KV has been added.
+          // page table
+          nullptr,
+          //page size
+          0,
+          // num pages per seq lengh
+          0
         },
         {options.softmax_scale},
         {block_O.get(), stride_O},
@@ -666,7 +674,14 @@ template <class FMHAPrefillConfiguration> struct BenchmarkRunnerFMHA {
             block_K[input_num].get(), stride_K,
             block_V[input_num].get(), stride_V,
             block_K_cache[input_num].get(), stride_K_cache,
-            block_V_cache[input_num].get(), stride_V_cache
+            block_V_cache[input_num].get(), stride_V_cache,
+            //TODO:: the following 3 parameters need to be parametrised when the benchmark for paged KV has been added.
+            // page table
+            nullptr,
+            //page size
+            0,
+            // num pages per seq lengh
+            0
           },
           {options.softmax_scale},
           {block_O.get(), stride_O},

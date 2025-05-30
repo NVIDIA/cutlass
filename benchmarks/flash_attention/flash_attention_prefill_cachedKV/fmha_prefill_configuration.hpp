@@ -49,7 +49,7 @@ template <typename DispatchPolicy> struct MMAOP <DispatchPolicy, half_t, float> 
 template<typename ElementInputType, typename ElementAccumulatorType, typename ElementOutputType,
           typename GmemTiledCopyQ, typename GmemTiledCopyK, typename GmemTiledCopyV, typename GmemTiledCopyO,
           typename TileShapeQK, typename TileShapePV, typename TileShapeOutput, typename SubgroupLayout,
-          bool HasCausal, bool IsVarLen, int PipelineStages>
+          bool HasCausal, bool IsVarLen, bool IsPagedKV, int PipelineStages>
 struct FMHAPrefillConfig {
 
   using ElementOutput = ElementOutputType;        // <- data type of output
@@ -63,6 +63,7 @@ struct FMHAPrefillConfig {
   using LayoutO = cutlass::layout::RowMajor;
   static constexpr bool Causal = HasCausal;
   static constexpr bool VarLen = IsVarLen;
+  static constexpr bool PagedKV = IsPagedKV;
   using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelXeXMX16<PipelineStages>;
   using EpilogueDispatchPolicy = cutlass::epilogue::IntelXeXMX16;
   using MMAOperation = typename MMAOP<GEMMDispatchPolicy, ElementInputType,ElementAccumulator>::Type;
@@ -91,7 +92,7 @@ struct FMHAPrefillConfig {
                                                             GmemTiledCopyQ,
                                                             GmemTiledCopyK,
                                                             GmemTiledCopyV,
-                                                            Causal>;
+                                                            Causal, PagedKV>;
 
   using GemmKernel = cutlass::flash_attention::kernel::FMHAPrefillCached<ProblemShapeType, CollectiveMainloop,
                                                                     CollectiveSoftmaxEpilogue, CollectiveEpilogue>;

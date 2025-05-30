@@ -85,7 +85,9 @@ struct FMHAPrefillConfigGen {
       typename TileShapeConfig::ShapePV,
       typename TileShapeConfig::ShapeOutPut,
       typename TileShapeConfig::SubgroupLayout,
-      Causal, VarLen, TileShapeConfig::PipelineStages>;
+      //TODO: the pagedKV has been set to false, the benchmark for the PagedKV needs to be added here and the parameter need to be set similar 
+      // to causal
+      Causal, VarLen, false, TileShapeConfig::PipelineStages>;
 };
 
 using PvcFMHAPrefillCachedKVBF16BF16FP32_RCR_h64_Causal_FixedLen = FMHAPrefillConfigGen<cutlass::bfloat16_t,  true, false, Shape_h64>::type;

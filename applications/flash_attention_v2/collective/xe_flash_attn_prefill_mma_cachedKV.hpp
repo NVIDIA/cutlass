@@ -61,7 +61,7 @@ CUTLASS_DEVICE auto convert_type(Tensor<Engine, Layout> const &tensor) {
 
 template <class DispatchPolicy, class ProblemShapeType_, class ElementQ_, class StrideQ_, class ElementK_, class StrideK_,
           class ElementV_, class StrideV_, class MMAOperation_, class TileShapeQK_, class TileShapePV_, class SubgroupLayout_, class GmemTiledCopyQ_, class GmemTiledCopyK_,
-          class GmemTiledCopyV_, bool CausalMask_>
+          class GmemTiledCopyV_, bool CausalMask_, bool PagedKV_>
 struct FlashPrefillCachedMma {
   static_assert(cutlass::detail::dependent_false<ElementQ_>, "Could not find a mainloop specialization.");
 };
@@ -70,9 +70,9 @@ struct FlashPrefillCachedMma {
 
 template <int Stages, class ProblemShapeType_, class ElementQ_, class StrideQ_, class ElementK_, class StrideK_,
           class ElementV_, class StrideV_, class MMAOperation_, class TileShapeQK_, class TileShapePV_, class SubgroupLayout_, class GmemTiledCopyQ_, class GmemTiledCopyK_,
-          class GmemTiledCopyV_, bool CausalMask_>
+          class GmemTiledCopyV_, bool CausalMask_, bool PagedKV_>
 struct FlashPrefillCachedMma<gemm::MainloopIntelXeXMX16<Stages>, ProblemShapeType_, ElementQ_, StrideQ_, ElementK_, StrideK_, ElementV_,
-                              StrideV_,  MMAOperation_, TileShapeQK_,  TileShapePV_,  SubgroupLayout_, GmemTiledCopyQ_, GmemTiledCopyK_, GmemTiledCopyV_, CausalMask_> {
+                              StrideV_,  MMAOperation_, TileShapeQK_,  TileShapePV_,  SubgroupLayout_, GmemTiledCopyQ_, GmemTiledCopyK_, GmemTiledCopyV_, CausalMask_, PagedKV_> {
   //
   // Type Aliases
   //
@@ -96,6 +96,8 @@ struct FlashPrefillCachedMma<gemm::MainloopIntelXeXMX16<Stages>, ProblemShapeTyp
   using TiledMmaPV = typename TiledMMAHelper<MmaAtom, Layout<TileShapePV>, SubgroupLayout>::TiledMMA;
   using ElementAccumulator = typename TiledMmaQK::ValTypeC;
   static constexpr bool CausalMask = CausalMask_;
+  static constexpr bool PagedKV = PagedKV_;
+
   static constexpr int SubgroupSize = DispatchPolicy::SubgroupSize;
 
   using MmaAtomShape = typename MmaAtom::Shape_MNK;
@@ -159,6 +161,10 @@ struct FlashPrefillCachedMma<gemm::MainloopIntelXeXMX16<Stages>, ProblemShapeTyp
     StrideK dK_cache;
     ElementV const* ptr_V_cache;
     StrideV dV_cache;
+    // Paged KV Cache
+    int const* ptr_page_table;
+    int page_size;
+    int num_pages_per_seq;
   };
 
   struct Params {
@@ -167,6 +173,10 @@ struct FlashPrefillCachedMma<gemm::MainloopIntelXeXMX16<Stages>, ProblemShapeTyp
     XE_Copy_V gmem_tiled_copy_v;
     XE_Copy_K gmem_tiled_copy_k_cache;
     XE_Copy_V gmem_tiled_copy_v_cache;
+    // Paged KV Cache
+    int const* ptr_page_table;
+    int page_size;
+    int num_pages_per_seq;
   };
 
   //
@@ -193,7 +203,7 @@ struct FlashPrefillCachedMma<gemm::MainloopIntelXeXMX16<Stages>, ProblemShapeTyp
     XE_Copy_K copyK_cache{XE_Copy_K{}.with(tensorK_cache)};
     XE_Copy_V copyV_cache{XE_Copy_V{}.with(tensorV_cache)};
 
-    return Params{copyQ, copyK, copyV, copyK_cache, copyV_cache};
+    return Params{copyQ, copyK, copyV, copyK_cache, copyV_cache, args.ptr_page_table, args.page_size, args.num_pages_per_seq};
   }
 
   template <class FragQccum, class TensorQ, class TensorK, class FragSrc>
@@ -380,7 +390,7 @@ struct FlashPrefillCachedMma<gemm::MainloopIntelXeXMX16<Stages>, ProblemShapeTyp
       XE_Copy_K copyK_cache{XE_Copy_K{}.with(tensorK_cache)};
       XE_Copy_V copyV_cache{XE_Copy_V{}.with(tensorV_cache)};
 
-      return Params{copyQ, copyK, copyV, copyK_cache, copyV_cache};
+      return Params{copyQ, copyK, copyV, copyK_cache, copyV_cache, params.ptr_page_table, params.page_size, params.num_pages_per_seq};
     }
   }
 };

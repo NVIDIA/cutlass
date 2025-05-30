@@ -45,7 +45,7 @@ TEST(XE_Flash_Attention_Prefill_fp16_192, causal) {
   using SubgroupLayout = Layout<Shape<_32, _1, _1>, Stride<_1, _1, _1>>; 
   using MMAOperation = XE_8x16x16_F32F16F16F32_TT;
   using Kernel = test::flash_attention::XE_Flash_Attention_Prefill_CachedKV<half_t, float, float, ShapeQK, ShapePV,ShapeOutPut, 
-                                            SubgroupLayout, MMAOperation,	true, false, 2>::Kernel;
+                                            SubgroupLayout, MMAOperation, true, false, false, 2>::Kernel;
   EXPECT_TRUE(test::flash_attention::TestFlashPrefillCachedKVAll<Kernel>(192));
 }
 
@@ -57,7 +57,7 @@ TEST(XE_Flash_Attention_Prefill_fp16_192, noncausal) {
   using SubgroupLayout = Layout<Shape<_32, _1, _1>, Stride<_1, _1, _1>>; 
   using MMAOperation = XE_8x16x16_F32F16F16F32_TT;
   using Kernel = test::flash_attention::XE_Flash_Attention_Prefill_CachedKV<half_t, float, float, ShapeQK, ShapePV,ShapeOutPut, 
-                                            SubgroupLayout, MMAOperation,	false, false, 2>::Kernel;
+                                            SubgroupLayout, MMAOperation, false, false, false, 2>::Kernel;
   EXPECT_TRUE(test::flash_attention::TestFlashPrefillCachedKVAll<Kernel>(192));
 }
 
@@ -69,7 +69,7 @@ TEST(XE_Flash_Attention_Prefill_fp16_192, varlen_causal) {
   using SubgroupLayout = Layout<Shape<_32, _1, _1>, Stride<_1, _1, _1>>;   
   using MMAOperation = XE_8x16x16_F32F16F16F32_TT;
   using Kernel = test::flash_attention::XE_Flash_Attention_Prefill_CachedKV<half_t, float, float, ShapeQK, ShapePV,ShapeOutPut, 
-                                            SubgroupLayout, MMAOperation,	true, true, 2>::Kernel;
+                                            SubgroupLayout, MMAOperation, true, false, true, 2>::Kernel;
   EXPECT_TRUE(test::flash_attention::TestFlashPrefillCachedKVAll<Kernel>(192));
 
 }
@@ -82,7 +82,7 @@ TEST(XE_Flash_Attention_Prefill_fp16_192, varlen_noncausal) {
   using SubgroupLayout = Layout<Shape<_32, _1, _1>, Stride<_1, _1, _1>>;  
   using MMAOperation = XE_8x16x16_F32F16F16F32_TT;
   using Kernel = test::flash_attention::XE_Flash_Attention_Prefill_CachedKV<half_t, float, float, ShapeQK, ShapePV,ShapeOutPut, 
-                                            SubgroupLayout, MMAOperation,	false, true, 2>::Kernel;
+                                            SubgroupLayout, MMAOperation, false, false, true, 2>::Kernel;
   EXPECT_TRUE(test::flash_attention::TestFlashPrefillCachedKVAll<Kernel>(192));
 }
 
