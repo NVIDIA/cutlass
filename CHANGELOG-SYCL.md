@@ -1,5 +1,10 @@
 # SYCL CUTLASS Changelog
 
+## [Cutlass 3.9.2 SYCL backend Version 0.2](https://github.com/codeplay/cutlass-fork/releases/tag/v3.9.2-0.2) (2025-05-30)
+- GEMM/StreamK/SplitK with support for FP16 data type
+- Flash attention prefill with Paged KV cache with support for FP16 data type
+- Performance improvements for flash attention prefill and decode
+
 ## [Cutlass 3.9 SYCL backend Version 0.1](https://github.com/codeplay/cutlass-fork/releases/tag/v3.9-0.1) (2025-04-30)
 - Support for Intel GPU Data Center Max (1100 and 1550) 
 - Support for Intel Arc B580 Battlemage 
