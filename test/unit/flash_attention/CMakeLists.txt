@@ -29,9 +29,8 @@
 set(CUTLASS_APPLICATIONS_DIR ${CMAKE_SOURCE_DIR}/applications)
 
 add_subdirectory(flash_attention_prefill)
-add_subdirectory(flash_attention_decode)
 add_subdirectory(flash_attention_prefill_cachedkv)
-
+add_subdirectory(flash_attention_decode)
 
 add_custom_target(
   cutlass_test_unit_flash_attention

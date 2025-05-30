@@ -49,31 +49,44 @@ namespace collective {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <class DispatchPolicy, class... Args> class FlashDecodeEpilogue {
+template <class DispatchPolicy, class MMAOp_, class TileShapeOutput_, class SubgroupLayout_, class... Args> class FlashDecodeEpilogue {
   static_assert(cutlass::detail::dependent_false<DispatchPolicy>, "Could not find an epilogue specialization.");
 };
 
-template <class CtaTileMNK_, class ElementO_, class StrideO_, class ElementLSE_, class CopyOpO_>
-class FlashDecodeEpilogue<epilogue::IntelXeXMX16, CtaTileMNK_, ElementO_, StrideO_, ElementLSE_, CopyOpO_> {
+template <class MMAOp_, class TileShapeOutput_, class SubgroupLayout_, class ElementO_, class StrideO_, class ElementLSE_, class CopyOpO_>
+class FlashDecodeEpilogue<epilogue::IntelXeXMX16, MMAOp_, TileShapeOutput_, SubgroupLayout_, ElementO_, StrideO_, ElementLSE_, CopyOpO_> {
 public:
   //
   // Type Aliases
   //
   using DispatchPolicy = epilogue::IntelXeXMX16;
-  using CtaTileMNK = CtaTileMNK_;
   using ElementO = ElementO_;
   using ElementAccumulator = ElementO_;
   using StrideO = StrideO_;
   using ElementLSE = ElementLSE_;
   using CopyOpO = CopyOpO_;
 
+  using SubgroupLayout = SubgroupLayout_;
+  using TileShapeOutput = TileShapeOutput_;
+  using MmaAtom = MMA_Atom<MMAOp_>;
+  using MmaAtomShape = typename MmaAtom::Shape_MNK;
+  using TiledMmaOutput = typename TiledMMAHelper<MmaAtom, Layout<TileShapeOutput>, SubgroupLayout>::TiledMMA;
+
+  static constexpr int ATOM_M = get<1>(typename TiledMmaOutput::ThrLayoutVMNK{}.shape());
+  static constexpr int ATOM_N = get<2>(typename TiledMmaOutput::ThrLayoutVMNK{}.shape());
+  static constexpr int SubgroupSize = DispatchPolicy::SubgroupSize;
+
+  using SubgroupTileShape = decltype(cute::make_shape(get<0>(TileShapeOutput{}), Int<get<1>(TileShapeOutput{}) / ATOM_N>{}, Int<get<2>(TileShapeOutput{}) / ATOM_M>{}));
+  using FragsShape = decltype(cute::shape_div(take<0, 2>(SubgroupTileShape{}), take<0, 2>(MmaAtomShape())));
+  static constexpr int Vec = (get<0>(MmaAtomShape()) * get<1>(MmaAtomShape())) / SubgroupSize; // 8
+  static constexpr int FragsM = get<0>(FragsShape{});
+  static constexpr int FragsN = get<1>(FragsShape{});
+
   using GmemTiledCopyO = CopyOpO;
   using ElementOutput = ElementO_;
   using ElementCompute = ElementO_;
 
-  static constexpr int SubgroupSize = DispatchPolicy::SubgroupSize;
-
-  static_assert(cute::rank(CtaTileMNK{}) == 4, "CtaTileMNK must be rank-4: [CTA_M_Q, CTA_N_V, CTA_N_QK, CTA_K_QK]");
+  static_assert(cute::rank(TileShapeOutput{}) == 3, "TileShapeOutput must be rank-3: [CTA_M_Q, CTA_N_O, CTA_K_PV]");
   static_assert(cute::rank(StrideO{}) == 3, "StrideO must be rank-3: [seq_len_qo, head_size_vo, batch * num_heads]");
 
   using CopyThreadShape = Shape<_1, Int<SubgroupSize>>;
@@ -147,23 +160,12 @@ public:
   CUTLASS_HOST_DEVICE
   FlashDecodeEpilogue(Params const &params_, TensorStorage const &) : params(params_) {}
 
-  template <class ProblemShape, class SequenceLengthShape, class TileShape, class TileCoord, class STensorOut, class FragSum, class STensorSum, class TiledMma>
-  CUTLASS_DEVICE void operator()(ProblemShape problem_shape, SequenceLengthShape sequence_length_shape, TileShape tile_shape, TileCoord tile_coord,
-                                STensorOut &shmem_tensor_out, FragSum &sum, STensorSum& shmem_tensor_sum, TiledMma tiled_mma) {
+  template <class ProblemShape, class SequenceLengthShape, class TileCoord, class STensorOut, class FragSum, class STensorSum>
+  CUTLASS_DEVICE void operator()(ProblemShape problem_shape, SequenceLengthShape sequence_length_shape, TileCoord tile_coord,
+                                STensorOut &shmem_tensor_out, FragSum &sum, STensorSum& shmem_tensor_sum) {
 
     using namespace cute;
-
-    using MmaAtomShape = typename TiledMma::AtomShape_MNK;
-    using TempShape = decltype(cute::shape_div(take<1, 3>(tile_shape), take<2, 4>(typename TiledMma::ThrLayoutVMNK{}.shape())));
-    using SubgroupTileShape = decltype(make_shape(get<0>(tile_shape), get<0>(TempShape{}), get<1>(TempShape{})));
-    using FragsShape = decltype(cute::shape_div(take<0, 2>(SubgroupTileShape{}), take<0, 2>(MmaAtomShape())));
     static constexpr bool is_var_len = cutlass::fmha::collective::is_variable_length_v<tuple_element_t<2, ProblemShape>>;
-  
-    static constexpr int FragsM = get<0>(FragsShape{}); // A frags per sub_group
-    static constexpr int FragsN = get<1>(FragsShape{}); // B frags per sub_group
-    static constexpr int Vec = (get<0>(MmaAtomShape()) * get<1>(MmaAtomShape())) / SubgroupSize;
-    static constexpr int ATOM_M = get<1>(typename TiledMma::ThrLayoutVMNK{}.shape());
-    static constexpr int ATOM_N = get<2>(typename TiledMma::ThrLayoutVMNK{}.shape());
 
     auto sg = syclcompat::get_nd_item<1>().get_sub_group();
     auto group = syclcompat::get_nd_item<1>().get_group();
@@ -173,17 +175,10 @@ public:
     // reduce sum across the whole workgroup through SLM
     // rest of the epilogue stays the same as prefill
 
-    CUTLASS_PRAGMA_UNROLL
-    for (int y = 0; y < FragsM; y++) {
-      CUTLASS_PRAGMA_UNROLL
-      for (int x = 0; x < Vec; x++) {
-        int indx = y * Vec + x;
-        auto cur_sum = reduce_over_group(sg, sum(indx), sycl::plus<>());
+    auto cur_sum = reduce_over_group(sg, sum, sycl::plus<>());
 
-        if(sg_local_id == 0) {
-          shmem_tensor_sum(indx + sg_group_id * FragsM * Vec) = cur_sum;
-        }
-      }
+    if(sg_local_id == 0) {
+      shmem_tensor_sum(sg_group_id) = cur_sum;
     }
 
     sycl::group_barrier(group);
@@ -193,39 +188,28 @@ public:
     // only ATOM_N subgroups are needed to do reduction across the whole workgroup
     // using SLM, and write the final output to Global Memory.
 
-    if(sg_group_id < ATOM_N) {
+    if(sg_group_id==0) {
+     
+      ElementCompute cur_sum = ElementCompute{0};
       CUTLASS_PRAGMA_UNROLL
-      for (int y = 0; y < FragsM; y++) {
+      for(int i = 0; i < ATOM_M; i++) {
+          cur_sum += shmem_tensor_sum(i);
+      }
+
+      auto cur_scale = (cur_sum == 0.0f || cur_sum != cur_sum) ? 1.0f : sycl::native::recip(cur_sum);
+
+      CUTLASS_PRAGMA_UNROLL
+      for (int z = 0; z < FragsN; z++) {
+        const int slm_curr_idx = sg_local_id + z * SubgroupSize;
+
+        ElementOutput out_val_curr = ElementOutput{0};
         CUTLASS_PRAGMA_UNROLL
-        for (int x = 0; x < Vec; x++) {
-          int indx = y * Vec + x;
-          ElementCompute cur_sum = ElementCompute{0};
-          CUTLASS_PRAGMA_UNROLL
-          for(int i = 0; i < ATOM_M * ATOM_N; i ++) {
-            if (i % ATOM_N == sg_group_id) {
-              cur_sum += shmem_tensor_sum(i * Vec * FragsM + indx);
-            }
-          }
-
-          auto cur_scale = (cur_sum == 0.f || cur_sum != cur_sum) ? 1.f : sycl::native::recip(cur_sum);
-
-          CUTLASS_PRAGMA_UNROLL
-          for (int z = 0; z < FragsN; z++) {
-            auto base_indx = indx + (z * Vec * FragsM);
-            const int slm_curr_idx = sg_local_id + base_indx * SubgroupSize;
-
-            ElementOutput out_val_curr = ElementOutput{0};
-            CUTLASS_PRAGMA_UNROLL
-            for(int i = 0; i < ATOM_M * ATOM_N; i++) {
-              if (i % ATOM_N == sg_group_id) {
-               auto out_val_prev = shmem_tensor_out(slm_curr_idx + i * out_reg.size() * SubgroupSize);
-               out_val_curr += out_val_prev;
-              }
-            }
-
-            out_reg(x, y, z) = out_val_curr * cur_scale;
-          }
+        for(int i = 0; i < ATOM_M; i++) {
+            auto out_val_prev = shmem_tensor_out(slm_curr_idx + i * (out_reg.size()) * SubgroupSize);
+            out_val_curr += out_val_prev;
         }
+
+        out_reg(0, 0, z) = out_val_curr * cur_scale;
       }
 
       // Indexing variables
@@ -236,7 +220,7 @@ public:
       
       auto [m_coord, n_coord, k_coord, l_coord] = tile_coord;
       // Tile the output tensor per WG
-      Tensor g_wg_O = local_tile(mO_mnl, select<0,1>(tile_shape), make_coord(m_coord,n_coord,l_coord));             // (BLK_M,BLK_N,m,n,l)
+      Tensor g_wg_O = local_tile(mO_mnl, select<0,1>(TileShapeOutput{}), make_coord(m_coord,n_coord,l_coord));             // (BLK_M,BLK_N,m,n,l)
       const int m_sg = 0;
       const int n_sg = sg_group_id;
       // Tile the output tensor per SG

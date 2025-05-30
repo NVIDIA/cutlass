@@ -422,7 +422,6 @@ CUTE_HOST_DEVICE constexpr auto make_fragment_layout(TiledCopy &tiled_copy,
   auto thread_copy_shape = shape_div(typename TiledCopy::BlockShape{}, ThreadLayout{});
   auto copy_size_M = size<0>(thread_copy_shape);
   auto copy_size_N = size<1>(thread_copy_shape);
-  
   constexpr int mma_atom_iters_in_copy_M = copy_size_M > mma_atom_size_M ? copy_size_M / mma_atom_size_M : 1;
   constexpr int mma_atom_iters_in_copy_N = copy_size_N > mma_atom_size_N ? copy_size_N / mma_atom_size_N : 1;
   constexpr int copy_iters_M = total_mma_atom_iters_M / mma_atom_iters_in_copy_M;
@@ -835,11 +834,12 @@ struct Copy_Traits_<XE_2D_U16x1x16_LD_N, args_t...>
     : XE_2D_LD_Unpack<XE_2D_U16x1x16_LD_N, args_t...> {
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape <_16,_16>,
-                           Stride< _0, _1>>;
+
+  using SrcLayout = Layout<Shape <_16,Shape <_16,  _1>>,
+                           Stride< _0,Stride< _1,_256>>>;
   // Map from (dst-thr,dst-val) to bit
-  using DstLayout = Layout<Shape <_16,_16>,
-                           Stride<_16, _1>>;
+  using DstLayout = Layout<Shape <_16,Shape <_16,  _1>>,
+                           Stride<_16,Stride< _1,_256>>>;
   // Reference map from (thr,val) to bit
   using RefLayout = DstLayout;
 

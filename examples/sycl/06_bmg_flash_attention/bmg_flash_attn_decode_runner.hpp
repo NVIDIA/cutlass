@@ -66,7 +66,7 @@ struct Options {
   float softmax_scale;
 
   Options()
-      : help(false), error(false), is_causal(false), varlen(false), batch(32), num_heads_q(16), num_heads_kv(16), seq_len_qo(512), head_size_qk(128),
+      : help(false), error(false), is_causal(false), varlen(false), batch(32), num_heads_q(16), num_heads_kv(16), seq_len_qo(1), head_size_qk(128),
         seq_len_kv(512), seq_len_kv_cache(0), head_size_vo(128), iterations(100), softmax_scale(1.f), scheduler("Individual") {}
 
   // Parses the command line
@@ -91,7 +91,7 @@ struct Options {
     cmd.get_cmd_line_argument("batch", batch, 32);
     cmd.get_cmd_line_argument("num_heads_q", num_heads_q, 16);
     cmd.get_cmd_line_argument("num_heads_kv", num_heads_kv, num_heads_q);
-    cmd.get_cmd_line_argument("seq_len_qo", seq_len_qo, 16);
+    cmd.get_cmd_line_argument("seq_len_qo", seq_len_qo, 1);
     cmd.get_cmd_line_argument("seq_len_kv", seq_len_kv, 512);
     cmd.get_cmd_line_argument("seq_len_kv_cache", seq_len_kv_cache, 0);
     cmd.get_cmd_line_argument("head_size_vo", head_size_vo, 128);
@@ -645,9 +645,9 @@ template <class FMHAKernel, bool isVarLen> struct ExampleRunner {
   }
 };
 
-template <bool Causal, typename TileShape, typename TiledMma> struct FMHAConfig {
+template <bool Causal, typename TileShapeQK, typename TileShapePV, typename TileShapeOutput, typename SubgroupLayout, bool isVarLen> struct FMHAConfig {
 
-  template <bool isVarLen, class Scheduler>
+  template <class Scheduler = cutlass::flash_attention::FlashDecodeIndividualScheduler>
   static int run(const Options &options) {
     //
     // Run examples
@@ -669,13 +669,14 @@ template <bool Causal, typename TileShape, typename TiledMma> struct FMHAConfig 
     using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelXeXMX16<PipelineStages>;
     using EpilogueDispatchPolicy = cutlass::epilogue::IntelXeXMX16;
 
-    using GmemTiledCopyQ = XE_2D_U16x8x32_LD_N;
+    using MMAOperation = XE_1x16x16_F32BF16BF16F32_TT;
+    using GmemTiledCopyQ = XE_2D_U16x1x16_LD_N;
     using GmemTiledCopyK = XE_2D_U16x16x16_LD_T;
     using GmemTiledCopyV = XE_2D_U16x32x32_LD_V;
-    using GmemTiledCopyStore = XE_2D_U32x8x16_ST_N;
+    using GmemTiledCopyStore = XE_2D_U32x1x16_ST_N;
     using CollectiveEpilogue = cutlass::flash_attention::collective::FlashDecodeEpilogue<
-        EpilogueDispatchPolicy, TileShape, ElementAccumulator, cutlass::gemm::TagToStrideC_t<LayoutO>, ElementOutput,
-        GmemTiledCopyStore>;
+        EpilogueDispatchPolicy, MMAOperation, TileShapeOutput, SubgroupLayout, ElementAccumulator, cutlass::gemm::TagToStrideC_t<LayoutO>,
+        ElementOutput, GmemTiledCopyStore>;
     using CollectiveSoftmaxEpilogue = cutlass::flash_attention::collective::FlashDecodeSoftmaxEpilogue<Causal, EpilogueDispatchPolicy, ElementAccumulator>;
 
     using ProblemShapeRegular = cute::tuple<int, int, int, int, int, int, int, int>;
@@ -685,12 +686,10 @@ template <bool Causal, typename TileShape, typename TiledMma> struct FMHAConfig 
 
     // Mainloop
     using CollectiveMainloop = cutlass::flash_attention::collective::FlashDecodeMma<
-        GEMMDispatchPolicy, ProblemShapeType, TileShape, ElementInputQ, cutlass::gemm::TagToStrideA_t<LayoutQ>, ElementInputKV,
-        cutlass::gemm::TagToStrideB_t<LayoutK>, ElementInputKV, cutlass::gemm::TagToStrideB_t<LayoutV>, TiledMma,
-        GmemTiledCopyQ, // Q
-        GmemTiledCopyK, // K
-        GmemTiledCopyV, // V,
-        Causal>;
+        GEMMDispatchPolicy, ProblemShapeType, ElementInputQ, cutlass::gemm::TagToStrideA_t<LayoutQ>, ElementInputKV,
+        cutlass::gemm::TagToStrideB_t<LayoutK>, ElementInputKV, cutlass::gemm::TagToStrideB_t<LayoutV>, MMAOperation,
+        TileShapeQK, TileShapePV, SubgroupLayout, GmemTiledCopyQ/* Q */, GmemTiledCopyK/* K */,
+        GmemTiledCopyV/* V */, Causal>;
 
     using FMHAKernel = cutlass::flash_attention::kernel::FMHADecode<ProblemShapeType, CollectiveMainloop,
                                                                      CollectiveSoftmaxEpilogue, CollectiveEpilogue, Scheduler>;
@@ -699,13 +698,5 @@ template <bool Causal, typename TileShape, typename TiledMma> struct FMHAConfig 
 
     CUTLASS_CHECK(runner.run(options, hw_info));
     return 0;    
-  }
-
-  static int run(const Options &options) {
-    if(options.varlen) {
-      return run<true, cutlass::flash_attention::FlashDecodeIndividualScheduler>(options);
-    } else {
-      return run<false, cutlass::flash_attention::FlashDecodeIndividualScheduler>(options);
-    }
   }
 };

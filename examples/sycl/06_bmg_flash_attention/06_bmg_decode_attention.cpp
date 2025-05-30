@@ -30,6 +30,8 @@
  **************************************************************************************************/
 
 #include "bmg_flash_attn_decode_runner.hpp"
+#include "06_bmg_run_decode_kv512.hpp"
+#include "06_bmg_run_decode_kv1024.hpp"
 
 int main(int argc, const char **argv) {
   //
@@ -50,25 +52,16 @@ int main(int argc, const char **argv) {
     return -1;
   }
 
-  if (options.head_size_vo == 64 || options.head_size_vo == 96 || options.head_size_vo == 192) {
+  const int seq_len_kv_total = options.seq_len_kv + options.seq_len_kv_cache;
+  const bool kv_tile_block = (seq_len_kv_total % 1024) == 0;
 
-    using TiledMma =
-        typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
-                                      Layout<Shape<_512, _64, _64>>,
-                                      Layout<Shape<_8, _1, _1>, Stride<_1, _1, _1>>>::TiledMMA;
-
-    return options.is_causal ? FMHAConfig<true, Shape<_512, _64, _64, _64>, TiledMma>::run(options)
-                             : FMHAConfig<false, Shape<_512, _64, _64, _64>, TiledMma>::run(options);
-  } else if (options.head_size_vo == 128) {
-    using TiledMma =
-        typename TiledMMAHelper<MMA_Atom<XE_8x16x16_F32BF16BF16F32_TT>,
-                                      Layout<Shape<_512, _128, _64>>,
-                                      Layout<Shape<_8, _2, _1>, Stride<_2, _1, _1>>>::TiledMMA;
-
-    return options.is_causal ? FMHAConfig<true, Shape<_512, _128, _64, _64>, TiledMma>::run(options)
-                             : FMHAConfig<false, Shape<_512, _128, _64, _64>, TiledMma>::run(options);
-  } else {
-    std::cerr << "Aborting execution." << std::endl;
-    return -1;
+  if(!kv_tile_block && !options.varlen) {
+    return run_decode_512<false>(options);
+  } else if(kv_tile_block && !options.varlen) {
+    return run_decode_1024<false>(options);
+  } else if(!kv_tile_block && options.varlen) {
+    return run_decode_512<true>(options);
+  } else if(kv_tile_block && options.varlen) {
+    return run_decode_1024<true>(options);
   }
 }

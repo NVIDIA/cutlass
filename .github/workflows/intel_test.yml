@@ -93,12 +93,15 @@ jobs:
             -DCUTLASS_ENABLE_SYCL=ON \
             -DDPCPP_SYCL_TARGET=${{ matrix.sycl_target }} \
             -DCUTLASS_SYCL_RUNNING_CI=ON
-          cmake --build .
       - name: Unit test
         shell: bash
         run: |
-          cmake --build . --target test_unit -j $(( ($(nproc) + 1) / 2 ))
+          cmake --build . --target test_unit -j
       - name: Examples
         shell: bash
         run: |
           cmake --build . --target test_examples -j 1
+      - name: Benchmarks
+        shell: bash
+        run: |
+          cmake --build . --target cutlass_benchmarks

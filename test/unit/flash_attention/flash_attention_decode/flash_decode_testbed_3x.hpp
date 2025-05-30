@@ -61,6 +61,94 @@
 namespace test {
 namespace flash_attention {
 
+using namespace cute;
+
+using MMAOperationBF16 = XE_1x16x16_F32BF16BF16F32_TT;
+using MMAOperationFP16 = XE_1x16x16_F32F16F16F32_TT;
+
+template <int KVTile, int NumSGs>
+struct Shape_h64 {
+  using ShapeQK = Shape<_1, Int<KVTile>, _64>;
+  using ShapePV = Shape<_1, _32, Int<KVTile>>;
+  using ShapeOutput = Shape<_1, _64, Int<KVTile>>;
+  using SubgroupLayout = Layout<Shape<Int<NumSGs>, _1, _1>>;
+};
+
+template <int KVTile, int NumSGs>
+struct Shape_h96 {
+  using ShapeQK = Shape<_1, Int<KVTile>, _64>;
+  using ShapePV = Shape<_1, _32, Int<KVTile>>;
+  using ShapeOutput = Shape<_1, _96, Int<KVTile>>;
+  using SubgroupLayout = Layout<Shape<Int<NumSGs>, _1, _1>>;
+};
+
+template <int KVTile, int NumSGs>
+struct Shape_h128 {
+  using ShapeQK = Shape<_1, Int<KVTile>, _64>;
+  using ShapePV = Shape<_1, _32, Int<KVTile>>;
+  using ShapeOutput = Shape<_1, _128, Int<KVTile>>;
+  using SubgroupLayout = Layout<Shape<Int<NumSGs>, _1, _1>>;
+};
+
+template <int KVTile, int NumSGs>
+struct Shape_h192 {
+  using ShapeQK = Shape<_1, Int<KVTile>, _64>;
+  using ShapePV = Shape<_1, _32, Int<KVTile>>;
+  using ShapeOutput = Shape<_1, _192, Int<KVTile>>;
+  using SubgroupLayout = Layout<Shape<Int<NumSGs>, _1, _1>>;
+};
+
+template<typename ElementInputType, typename ElementAccumulatorType, typename ElementOutputType,  
+         typename TileShapeQK, typename TileShapePV, typename TileShapeOutput, typename SubgroupLayout, 
+         typename MMAOperation, bool HasCausalMask, bool isVarLen>
+struct XE_Flash_Attention_Decode {
+  using LayoutQ = cutlass::layout::RowMajor;
+  using LayoutK = cutlass::layout::ColumnMajor;
+  using LayoutV = cutlass::layout::RowMajor;
+  using LayoutO = cutlass::layout::RowMajor;
+
+  using ElementAccumulator = ElementAccumulatorType;
+  using ElementComputeEpilogue = ElementOutputType;
+  using ElementInputQ = ElementInputType;
+  using ElementInputKV = ElementInputType;
+  using ElementOutput = ElementOutputType;
+
+  using ProblemShapeRegular = cute::tuple<int, int, int, int, int, int, int, int>;
+  using ProblemShapeVarlen = cute::tuple<int, int, int, cutlass::fmha::collective::VariableLength,
+                                         cutlass::fmha::collective::VariableLength, cutlass::fmha::collective::VariableLength,
+                                         int, int>;
+  using ProblemShapeType = std::conditional_t<isVarLen, ProblemShapeVarlen, ProblemShapeRegular>;
+
+  static constexpr int PipelineStages = 2;
+  using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelXeXMX16<PipelineStages>;
+  using EpilogueDispatchPolicy = cutlass::epilogue::IntelXeXMX16;
+
+  using GmemTiledCopyQ = cute::XE_2D_U16x1x16_LD_N;
+  using GmemTiledCopyK = cute::XE_2D_U16x16x16_LD_T;
+  using GmemTiledCopyV = cute::XE_2D_U16x32x32_LD_V;
+  using GmemTiledCopyStore = cute::XE_2D_U32x1x16_ST_N;
+  using CollectiveEpilogue = cutlass::flash_attention::collective::FlashDecodeEpilogue<
+        EpilogueDispatchPolicy, MMAOperation, TileShapeOutput, SubgroupLayout, ElementAccumulator, cutlass::gemm::TagToStrideC_t<LayoutO>,
+        ElementOutput, GmemTiledCopyStore>;
+  using CollectiveSoftmaxEpilogue = cutlass::flash_attention::collective::FlashDecodeSoftmaxEpilogue<
+        HasCausalMask, EpilogueDispatchPolicy, ElementAccumulator>;
+
+  // Mainloop
+  using CollectiveMainloop = cutlass::flash_attention::collective::FlashDecodeMma<
+        GEMMDispatchPolicy, ProblemShapeType, ElementInputQ,
+        cutlass::gemm::TagToStrideA_t<LayoutQ>, ElementInputKV,
+        cutlass::gemm::TagToStrideB_t<LayoutK>, ElementInputKV,
+        cutlass::gemm::TagToStrideB_t<LayoutV>, MMAOperation,
+        TileShapeQK, TileShapePV, SubgroupLayout,
+        GmemTiledCopyQ, // Q
+        GmemTiledCopyK, // K
+        GmemTiledCopyV, // V,
+        HasCausalMask>;
+
+    using Kernel = cutlass::flash_attention::kernel::FMHADecode<ProblemShapeType, CollectiveMainloop,
+                                                       CollectiveSoftmaxEpilogue, CollectiveEpilogue>;
+};
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace detail {

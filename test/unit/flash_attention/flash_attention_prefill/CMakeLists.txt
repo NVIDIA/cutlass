@@ -27,25 +27,43 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 cutlass_test_unit_add_executable(
-  cutlass_test_unit_flash_attention_prefill_xe
+  cutlass_test_unit_flash_attention_prefill_64_xe
   xe_flash_prefill_bf16_fp32_fp32_64.cpp
-  xe_flash_prefill_bf16_fp32_fp32_96.cpp
-  xe_flash_prefill_bf16_fp32_fp32_128.cpp
-  xe_flash_prefill_bf16_fp32_fp32_192.cpp
   xe_flash_prefill_fp16_fp32_fp32_64.cpp
+)
+
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_flash_attention_prefill_96_xe
+  xe_flash_prefill_bf16_fp32_fp32_96.cpp
   xe_flash_prefill_fp16_fp32_fp32_96.cpp
+)
+
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_flash_attention_prefill_128_xe
+  xe_flash_prefill_bf16_fp32_fp32_128.cpp
   xe_flash_prefill_fp16_fp32_fp32_128.cpp
+)
+
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_flash_attention_prefill_192_xe
+  xe_flash_prefill_bf16_fp32_fp32_192.cpp
   xe_flash_prefill_fp16_fp32_fp32_192.cpp
 )
 
 add_custom_target(
   cutlass_test_unit_flash_attention_prefill
   DEPENDS
-  cutlass_test_unit_flash_attention_prefill_xe
+  cutlass_test_unit_flash_attention_prefill_64_xe
+  cutlass_test_unit_flash_attention_prefill_96_xe
+  cutlass_test_unit_flash_attention_prefill_128_xe
+  cutlass_test_unit_flash_attention_prefill_192_xe
 )
 
 add_custom_target(
   test_unit_flash_attention_prefill
   DEPENDS
-  test_unit_flash_attention_prefill_xe
+  test_unit_flash_attention_prefill_64_xe
+  test_unit_flash_attention_prefill_96_xe
+  test_unit_flash_attention_prefill_128_xe
+  test_unit_flash_attention_prefill_192_xe
 )
