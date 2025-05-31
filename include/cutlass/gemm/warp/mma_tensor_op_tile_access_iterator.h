@@ -62,7 +62,7 @@ namespace warp {
 
 
 /// Tile access iterator
-/// Each iteration acess in the tile is
+/// Each iteration access in the tile is
 /// used as multiplicand for one
 /// warp-level matrix multiplication
 template <

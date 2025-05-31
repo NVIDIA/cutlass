@@ -160,7 +160,7 @@ struct DefaultSymmComplex<
   Operator, SplitKSerial, BlasMode::kSymmetric> {
 
   static BlasMode const kBlasMode = BlasMode::kSymmetric;
-  // Complex Transform don't appply to A or B for SYMM
+  // Complex Transform don't apply to A or B for SYMM
   static ComplexTransform const TransformA = ComplexTransform::kNone; 
   static ComplexTransform const TransformB = ComplexTransform::kNone; 
 
@@ -353,7 +353,7 @@ struct DefaultSymmComplex<
   Operator, SplitKSerial, BlasMode::kSymmetric> {
 
   static BlasMode const kBlasMode = BlasMode::kSymmetric;
-  // Complex Transform don't appply to A or B for SYMM
+  // Complex Transform don't apply to A or B for SYMM
   static ComplexTransform const TransformA = ComplexTransform::kNone; 
   static ComplexTransform const TransformB = ComplexTransform::kNone; 
 

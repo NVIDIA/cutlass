@@ -51,7 +51,7 @@ namespace cutlass {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Floating-point rounding style similare to Standard Library's formats but supporting
+/// Floating-point rounding style similar to Standard Library's formats but supporting
 /// additional rounding options.
 enum class FloatRoundStyle {
   round_indeterminate,          ///< rounding mode unknown
@@ -6059,7 +6059,7 @@ private:
       asm volatile("prmt.b32 %0,%1,%1,%2;\n" : "=r"(r[ii]) : "r"(src_reg), "r"(prmt_indices[ii]));
     }
 
-    // In the absense of add.s16x2 instruction, use bit-wise operation to execute signed addition with magic numbers to achieve
+    // In the absence of add.s16x2 instruction, use bit-wise operation to execute signed addition with magic numbers to achieve
     // the same result as add.s16x2 instruction.
     // (See https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#logic-and-shift-instructions-lop3)
     // For a logical operation F(a, b, c) the value of kImmLut can be computed by applying the same operation to

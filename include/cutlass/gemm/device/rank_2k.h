@@ -473,7 +473,7 @@ public:
   /// Constructs the Rank2K.
   Rank2K() { }
 
-  /// Helper to construct a transposed equivalent for the underying Rank2K operator
+  /// Helper to construct a transposed equivalent for the underlying Rank2K operator
   static Arguments to_underlying_arguments(Arguments const &args) {
     return args.transposed_problem();
   }

@@ -38,7 +38,7 @@
    instructions.
 
       SM80 Multi stage kernel expects stage number to be larger or equal to 3
-   to use asyncronous copy.
+   to use asynchronous copy.
 */
 
 #pragma once
