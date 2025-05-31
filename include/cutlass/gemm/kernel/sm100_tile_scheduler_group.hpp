@@ -59,8 +59,7 @@ class PersistentTileSchedulerSm100Group {
 
 public:
   using UnderlyingScheduler = PersistentTileSchedulerSm90Group<GroupProblemShape, SchedulerPipelineStageCount>;
-  using UnderlyingProblemShape = typename GroupProblemShape::UnderlyingProblemShape;
-  using Params = PersistentTileSchedulerSm100GroupParams<UnderlyingProblemShape>;
+  using Params = PersistentTileSchedulerSm100GroupParams<GroupProblemShape>;
   using WorkTileInfo = typename UnderlyingScheduler::WorkTileInfo;
   using Arguments = typename UnderlyingScheduler::Arguments;
   using RasterOrder = typename Params::RasterOrder;
@@ -77,7 +76,7 @@ public:
   template <class TileShape, class AtomThrShape, class ClusterShape>
   static Params
   to_underlying_arguments(
-    GroupProblemShape problem_shapes,
+    GroupProblemShape group_problem_shapes,
     TileShape tile_shape_mnk,
     AtomThrShape atom_thr_shape_mnk,
     ClusterShape cluster_shape_mnk,
@@ -94,17 +93,14 @@ public:
         shape_div(tile_shape_mnk, selected_cluster_shape)); // Static Cluster: Blackwell builders expects TileShape to be Cluster's Tile Shape, Hopper doesn't
 
     dim3 problem_blocks = get_tiled_cta_shape_mnl(
-      problem_shapes.groups(),
-      problem_shapes,
+      group_problem_shapes,
       hw_info,
       cta_shape, selected_cluster_shape);
 
     Params params;
     params.initialize(
       problem_blocks,
-      problem_shapes.groups(),
-      problem_shapes.problem_shapes,
-      problem_shapes.host_problem_shapes,
+      group_problem_shapes,
       to_gemm_coord(cta_shape),
       to_gemm_coord(selected_cluster_shape),
       hw_info,
@@ -144,8 +140,8 @@ public:
   template<class BlockShape, class ClusterShape>
   CUTLASS_HOST_DEVICE static
   dim3
-  get_tiled_cta_shape_mnl(int groups, GroupProblemShape problem_shapes, KernelHardwareInfo hw_info, BlockShape cta_shape, ClusterShape cluster_shape) {
-    return UnderlyingScheduler::get_tiled_cta_shape_mnl(groups, problem_shapes, hw_info, cta_shape, cluster_shape);
+  get_tiled_cta_shape_mnl(GroupProblemShape const &problem_shapes, KernelHardwareInfo hw_info, BlockShape cta_shape, ClusterShape cluster_shape) {
+    return UnderlyingScheduler::get_tiled_cta_shape_mnl(problem_shapes, hw_info, cta_shape, cluster_shape);
   }
 
   // Given the inputs, computes the physical grid we should launch.
@@ -154,14 +150,13 @@ public:
   static dim3
   get_grid_shape(
       Params const& params,
-      GroupProblemShape problem_shapes,
+      GroupProblemShape const& group_problem_shape,
       BlockShape cta_shape,
       [[maybe_unused]] AtomThrShape atom_thr_shape,
       ClusterShape cluster_shape,
       KernelHardwareInfo hw_info) {
     dim3 problem_blocks = get_tiled_cta_shape_mnl(
-      problem_shapes.groups(),
-      problem_shapes,
+      group_problem_shape,
       hw_info,
       cta_shape,
       cluster_shape);

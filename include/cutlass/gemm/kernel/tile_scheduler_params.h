@@ -1616,7 +1616,7 @@ struct PersistentTileSchedulerSm90StreamKParams {
 ////////////////////////////////////////////////////////////////////////////////
 
 // Parameters for SM90 persistent group scheduler (only used for Grouped Gemms)
-template<class ProblemShape>
+template<class GroupProblemShape>
 struct PersistentTileSchedulerSm90GroupParams {
 
   enum class RasterOrder {
@@ -1640,8 +1640,7 @@ struct PersistentTileSchedulerSm90GroupParams {
   int32_t log_swizzle_size_ = 0;
   RasterOrder raster_order_ = RasterOrder::AlongN;
 
-  int32_t groups_ = 0;
-  ProblemShape* problem_shapes_ = nullptr;
+  GroupProblemShape problem_shape_;
   GemmCoord cta_shape_;
   GemmCoord cluster_shape_;
 
@@ -1651,9 +1650,7 @@ struct PersistentTileSchedulerSm90GroupParams {
   void
   initialize(
     dim3 problem_blocks,
-    int32_t groups,
-    ProblemShape* problem_shapes,
-    ProblemShape const* host_problem_shapes,
+    GroupProblemShape problem_shape,
     GemmCoord cta_shape,
     GemmCoord cluster_shape,
     KernelHardwareInfo const& hw_info,
@@ -1677,13 +1674,12 @@ struct PersistentTileSchedulerSm90GroupParams {
     //
     // Set members
     //
-    groups_ = groups;
-    problem_shapes_ = problem_shapes;
+    problem_shape_ = problem_shape;
     cta_shape_ = cta_shape;
     cluster_shape_ = cluster_shape;
 
     blocks_across_problem_ = problem_blocks.x * problem_blocks.y * problem_blocks.z;
-    pre_processed_problem_shapes = (host_problem_shapes == nullptr) ? false : true;
+    pre_processed_problem_shapes = problem_shape.is_host_problem_shape_available();
     log_swizzle_size_ = log_swizzle_size;
     raster_order_ = raster_order;
 
@@ -2442,10 +2438,10 @@ struct PersistentTileSchedulerSm100StreamKParams {
 
 ////////////////////////////////////////////////////////////////////////////////
 // Parameters for SM100 persistent group scheduler (only used for Grouped Gemms)
-template<class ProblemShape>
+template<class GroupProblemShape>
 struct PersistentTileSchedulerSm100GroupParams {
 
-  using UnderlyingSm90Params = PersistentTileSchedulerSm90GroupParams<ProblemShape>;
+  using UnderlyingSm90Params = PersistentTileSchedulerSm90GroupParams<GroupProblemShape>;
   using RasterOrder = typename UnderlyingSm90Params::RasterOrder;
   using RasterOrderOptions = typename UnderlyingSm90Params::RasterOrderOptions;
 
@@ -2457,9 +2453,7 @@ struct PersistentTileSchedulerSm100GroupParams {
   void
   initialize(
     dim3 problem_blocks,
-    int32_t groups,
-    ProblemShape* problem_shapes,
-    ProblemShape const* host_problem_shapes,
+    GroupProblemShape problem_shape,
     GemmCoord cta_shape,
     GemmCoord cluster_shape,
     KernelHardwareInfo const& hw_info,
@@ -2469,9 +2463,7 @@ struct PersistentTileSchedulerSm100GroupParams {
 
     params_sm90_.initialize(
       problem_blocks,
-      groups,
-      problem_shapes,
-      host_problem_shapes,
+      problem_shape,
       cta_shape,
       cluster_shape,
       hw_info,
