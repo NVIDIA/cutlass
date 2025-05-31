@@ -66,7 +66,7 @@ ElementComputeEpilogue (float), ElementInputA (cutlass::int4b_t), ElementInputB 
 ElementOutput (int32_t). Communicating just the data type is not enough. As the data is laid out 
 linearly in memory, we have to convey the layout of tensors. We do that by initializing template
 variables LayoutInputA, LayoutInputB and LayoutOutput to TensorNHWC cutlass variable. Next, we setup
-rules to comptue alpha * X + beta * C which is called epilogue of the kernel. We initialize template
+rules to compute alpha * X + beta * C which is called epilogue of the kernel. We initialize template
 variable EpilogueOp, which takes the data type of output ElementOutput (int32_t), the number of
 elements per vector memory access (32), data type of accumulator (int32_t) and data type of
 computation of linear combination (alpha * X + beta * C).

@@ -86,7 +86,7 @@ parser.add_argument('-la', "--layout_a", default="RowMajor", type=str, choices=[
                     "RowMajor", "ColumnMajor", "RowMajorInterleaved32", "ColumnMajorInterleaved32"], 
                     help="Memory layout of input tensor A")
 parser.add_argument('-aa', '--alignment_a', default=1,
-                    type=int, help="Memory alignement of input tensor A")
+                    type=int, help="Memory alignment of input tensor A")
 # B
 parser.add_argument('-lb', "--layout_b", default="RowMajor", type=str, choices=[
                     "RowMajor", "ColumnMajor", "RowMajorInterleaved32", "ColumnMajorInterleaved32"], 

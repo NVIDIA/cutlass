@@ -856,7 +856,7 @@ int run(Options &options, bool host_problem_shapes_available = true)
     }
   }
   else {
-    std::cout << "  Verfication is turned off for this run." << std::endl;
+    std::cout << "  Verification is turned off for this run." << std::endl;
   } 
 
   // Run profiling loop
