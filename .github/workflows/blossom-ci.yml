@@ -37,8 +37,6 @@ jobs:
     # This job only runs for pull request comments
     if: |
         (startsWith(github.event.comment.body, '/bot run') ||
-        startsWith(github.event.comment.body, '/bot skip --comment') ||
-        startsWith(github.event.comment.body, '/bot reuse-pipeline') ||
         startsWith(github.event.comment.body, '/bot kill')) && contains(
         fromJson('["zekunf-nv"]'),
         github.actor)
