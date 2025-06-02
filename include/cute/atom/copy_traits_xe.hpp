@@ -66,11 +66,11 @@ template <class T>
 static constexpr bool is_stride_leftmost<T, cute::void_t<decltype(T{}.stride())>> = std::is_same_v<_1, decltype(get<0>(T{}.stride()))>;
 
 // Swap the Src or Dst Layout of a Copy_Traits if the logical/memory layouts differ 
-template <bool is_convention_MN, typename LayoutIn, typename BlockShape>
+template <bool is_matrix_B, typename LayoutIn, typename BlockShape>
 auto get_logical_layout(LayoutIn &&, BlockShape &&) {
   static_assert(cute::rank(BlockShape{}) == 2, "Expected 2D BlockShape for XE_2D copy op.");
   static_assert(cute::rank(LayoutIn{}) == 2, "Expected 2D LayoutIn for XE_2D copy op.");
-  if constexpr (is_convention_MN) {
+  if constexpr (!is_matrix_B) {
     return LayoutIn{};
   } else {
     // (16, (32, 2))
@@ -91,13 +91,13 @@ CUTE_HOST_DEVICE auto prefetch_selector(Tensor const& tensor) {
   constexpr size_t cacheline_bytes = 64;
   using dtype = typename Tensor::value_type;
   constexpr size_t dtype_size_bits = sizeof_bits_v<dtype>;
-  constexpr bool is_need_reversed = detail::is_stride_leftmost<decltype(tensor.stride())>;
-  using CopyThreadShape = std::conditional_t<is_need_reversed,
+  constexpr bool is_tensor_M_major = detail::is_stride_leftmost<decltype(tensor.stride())>;
+  using CopyThreadShape = std::conditional_t<is_tensor_M_major,
                                              Shape<Int<SubgroupSize>, _1>,
                                              Shape<_1, Int<SubgroupSize>>>;
 
-  constexpr int tile_contig_size = is_need_reversed ? size<0>(TileShape{}) : size<1>(TileShape{});
-  constexpr int tile_non_contig_size = is_need_reversed ? size<1>(TileShape{}) : size<0>(TileShape{});
+  constexpr int tile_contig_size = is_tensor_M_major ? size<0>(TileShape{}) : size<1>(TileShape{});
+  constexpr int tile_non_contig_size = is_tensor_M_major ? size<1>(TileShape{}) : size<0>(TileShape{});
 
   // block here is what is prefetched in one atom execution
   // min(32,32)-> 32 (256, 32) -> 32
@@ -112,7 +112,7 @@ CUTE_HOST_DEVICE auto prefetch_selector(Tensor const& tensor) {
 
   constexpr auto block_non_contig_size = tile_non_contig_size / sgs_non_contig;
 
-  using PrefetchTilingLayout = std::conditional_t<is_need_reversed,
+  using PrefetchTilingLayout = std::conditional_t<is_tensor_M_major,
            Layout<Shape<Shape<Int<SubgroupSize >, Int<sgs_contig>>, Int<sgs_non_contig>>,
                   Stride<Stride<_1, Int<SubgroupSize >>,            Int<SubgroupSize  * sgs_contig>>>,
     Layout<Shape<Int<sgs_non_contig>, Shape<Int<SubgroupSize >, Int<sgs_contig>>>,
@@ -123,7 +123,7 @@ CUTE_HOST_DEVICE auto prefetch_selector(Tensor const& tensor) {
     using PrefetchTraits = Copy_Traits<XE_2D_U##DTYPE_SIZE##x##NON_CONTIG##x##CONTIG##_LD_N, decltype(tensor.stride())>; \
     using PrefetchAtom = Copy_Atom<PrefetchTraits, dtype>; \
     using Scalar = Int<cute::max(1, DTYPE_SIZE / dtype_size_bits)>; \
-    using ScalarLayout = std::conditional_t<is_need_reversed, Layout<Shape<Scalar, _1>>, Layout<Shape<_1, Scalar>>>; \
+    using ScalarLayout = std::conditional_t<is_tensor_M_major, Layout<Shape<Scalar, _1>>, Layout<Shape<_1, Scalar>>>; \
     using ScalarPrefetchShape =  decltype(product_each(raked_product(ScalarLayout{}, \
                                                         Layout<typename PrefetchTraits::BlockShape>{}).shape())); \
     using PrefetchValLayout = decltype(make_layout(shape_div(ScalarPrefetchShape{}, CopyThreadShape{}))); \
@@ -168,7 +168,7 @@ CUTE_HOST_DEVICE auto prefetch_selector(TiledCopy<TiledCopyArgs...> const& tiled
   using Tiled_Copy = TiledCopy<TiledCopyArgs...>;
   constexpr int subgroup_size = size(typename Tiled_Copy::Traits_LD_t::ThrID{});
   int M, N;
-  if constexpr (Tiled_Copy::is_need_reversed) {
+  if constexpr (Tiled_Copy::is_tensor_M_major) {
     M = tiled_copy.width;
     N = tiled_copy.height;
   } else{
@@ -180,7 +180,7 @@ CUTE_HOST_DEVICE auto prefetch_selector(TiledCopy<TiledCopyArgs...> const& tiled
   auto data = make_gmem_ptr(static_cast<const typename Tiled_Copy::ValType*>(tiled_copy.base_ptr));
   auto shape = make_shape(M, N, L);
   auto stride = [=](){
-      if constexpr (Tiled_Copy::is_need_reversed){
+      if constexpr (Tiled_Copy::is_tensor_M_major){
         return make_stride(_1{}, tiled_copy.pitch, tiled_copy.stride_l);
       }else{
         return make_stride(tiled_copy.pitch, _1{}, tiled_copy.stride_l);
@@ -191,24 +191,24 @@ CUTE_HOST_DEVICE auto prefetch_selector(TiledCopy<TiledCopyArgs...> const& tiled
 }
 
 
-template <class CopyOp, class StrideIndicator = cute::Stride<int64_t, cute::Int<1>, int64_t>>
+template <class CopyOp, class StrideOrTensor = cute::Stride<int64_t, cute::Int<1>, int64_t>>
 struct XE_2D_LD_Unpack {
-
   using BlockShape = typename CopyOp::BlockShape;
-  using Traits_LD_t = Copy_Traits<CopyOp, StrideIndicator>;
+  using Traits_LD_t = Copy_Traits<CopyOp, StrideOrTensor>;
 
-  static constexpr auto stride_rank = rank(StrideIndicator{});
+  static constexpr auto stride_rank = rank(StrideOrTensor{});
   static_assert(stride_rank == 2 || stride_rank == 3);
 
-  // Assume LD_T/LD_N will indicate ColumnMajor and RowMajor
-  static constexpr bool is_column_major = detail::is_transpose_load<CopyOp>;
+  // Assume LD_T/LD_N will be used for column/row major matrices respectively
+  static constexpr bool is_transpose_copy = detail::is_transpose_load<CopyOp>;
 
-  // We need reverse some parameters becasue intel xe 2d copy intrinsic always assume the matrix is (M, N):(N, 1) convention
-  static constexpr bool is_need_reversed = detail::is_stride_leftmost<StrideIndicator>;
+  // We need to reverse some parameters becasue intel xe 2d copy intrinsic always assume the matrix use (M, N):(N, 1) layout
+  // M-major if we label the matrix shape (M,N,L). M-major for matrix A or C is col-major. For matrix B it is row-major.
+  static constexpr bool is_tensor_M_major = detail::is_stride_leftmost<StrideOrTensor>;
 
-  // For a logic matrix M-rows and N-columns, user can pass it with the convention (M, N):(N, 1), also can pass it with convention (N, M):(1, N).
-  // It mean (M, N):(N, 1) convention if 'is_convention_MN' is true, (N, M):(1, N) convention otherwise.
-  static constexpr bool is_convention_MN = !(is_need_reversed ^ is_column_major);
+  // For matrix B cute internally has transposed representation compared to other matrices, for cute its shape is (N,K)
+  // Intel copy instructions, on the other hand follow blas convention, where matrix B has shape (K,N)
+  static constexpr bool is_matrix_B = is_tensor_M_major ^ is_transpose_copy;
 
   // 2d copy parameters
   const void *base_ptr;
@@ -221,7 +221,7 @@ struct XE_2D_LD_Unpack {
 
   XE_2D_LD_Unpack(const void *ptr, uint32_t y,
                  uint32_t x, uint32_t p = 0) : base_ptr(ptr) {
-    if constexpr (is_need_reversed) {
+    if constexpr (is_tensor_M_major) {
       width = y;
       height = x;
     }
@@ -237,7 +237,7 @@ struct XE_2D_LD_Unpack {
   XE_2D_LD_Unpack(Tensor<TensorArgs...> const &tensor) {
     base_ptr = tensor.data().get();
 
-    if constexpr (is_need_reversed)
+    if constexpr (is_tensor_M_major)
     {
       width = size<0>(tensor.shape());
       height = size<1>(tensor.shape());
@@ -277,8 +277,8 @@ struct XE_2D_LD_Unpack {
     dtype *base_addr = (dtype *)traits.base_ptr;
   
     auto [m, n, l] = src.data().coord_;
-    int x = is_need_reversed ? m : n;
-    int y = is_need_reversed ? n : m;
+    int x = is_tensor_M_major ? m : n;
+    int y = is_tensor_M_major ? n : m;
 
     constexpr auto inst_size_bits = detail::size_of_inst_bits<CopyOp, dtype>;
 
@@ -303,8 +303,8 @@ struct XE_2D_LD_Unpack {
 
     auto [m, n, l] = src.data().coord_;
 
-    int x = is_need_reversed ? m : n;
-    int y = is_need_reversed ? n : m;
+    int x = is_tensor_M_major ? m : n;
+    int y = is_tensor_M_major ? n : m;
 
     constexpr auto inst_size_bits = detail::size_of_inst_bits<CopyOp, dtype>;
 
@@ -325,14 +325,14 @@ struct XE_2D_LD_Unpack {
   }
 };
 
-template <class CopyOp, class StrideIndicator = cute::Stride<int64_t, cute::Int<1>, int64_t>> struct XE_2D_ST_Unpack {
-  using Traits_ST_t = Copy_Traits<CopyOp, StrideIndicator>;
+template <class CopyOp, class StrideOrTensor = cute::Stride<int64_t, cute::Int<1>, int64_t>> struct XE_2D_ST_Unpack {
+  using Traits_ST_t = Copy_Traits<CopyOp, StrideOrTensor>;
   using BlockShape = typename CopyOp::BlockShape;
 
-  static constexpr auto stride_rank = rank(StrideIndicator{});
+  static constexpr auto stride_rank = rank(StrideOrTensor{});
   static_assert(stride_rank == 2 || stride_rank == 3);
 
-  static constexpr bool is_convention_MN = true;
+  static constexpr bool is_matrix_B = false;
 
   const void *base_ptr;
   uint32_t width;
@@ -411,14 +411,14 @@ CUTE_HOST_DEVICE constexpr auto make_fragment_layout(TiledCopy &tiled_copy,
   constexpr auto mma_atom_shape_2d = prepend<2>(mma_atom_shape, _1{});
 
   constexpr int mma_atom_size_M =
-      Int<!TiledCopy::is_convention_MN ? size<0>(mma_atom_shape_2d) : size<1>(mma_atom_shape_2d)>{};
+      Int<TiledCopy::is_matrix_B ? size<0>(mma_atom_shape_2d) : size<1>(mma_atom_shape_2d)>{};
   constexpr int mma_atom_size_N =
-      Int<!TiledCopy::is_convention_MN ? size<1>(mma_atom_shape_2d) : size<0>(mma_atom_shape_2d)>{};
+      Int<TiledCopy::is_matrix_B ? size<1>(mma_atom_shape_2d) : size<0>(mma_atom_shape_2d)>{};
 
   using ThreadLayout_ = Shape<_1, Int<size(typename TiledCopy::Traits_LD_t::ThrID{})>>;
-  using ThreadLayout = std::conditional_t<TiledCopy::is_convention_MN,
-                                          ThreadLayout_,
-                                          decltype(cute::reverse(ThreadLayout_{}))>;
+  using ThreadLayout = std::conditional_t<TiledCopy::is_matrix_B,
+                                          decltype(cute::reverse(ThreadLayout_{})),
+                                          ThreadLayout_>;
   auto thread_copy_shape = shape_div(typename TiledCopy::BlockShape{}, ThreadLayout{});
   auto copy_size_M = size<0>(thread_copy_shape);
   auto copy_size_N = size<1>(thread_copy_shape);
@@ -427,13 +427,9 @@ CUTE_HOST_DEVICE constexpr auto make_fragment_layout(TiledCopy &tiled_copy,
   constexpr int copy_iters_M = total_mma_atom_iters_M / mma_atom_iters_in_copy_M;
   constexpr int copy_iters_N = total_mma_atom_iters_N / mma_atom_iters_in_copy_N;
 
-  // This case would need to rearrange data in registers between copy and mma calls
-  static_assert(copy_size_M >= mma_atom_size_M || copy_size_N <= mma_atom_size_N, 
-    "It is not possible to have MMA atom be bigger than copy atom in one dimension and smaller in other dimension!");
-
-  auto order = std::conditional_t<TiledCopy::is_convention_MN,
-                                  Step<Step<_0, _1>, Step<_2, _4>, Step<_3, _5>>,
-                                  Step<Step<_0, _1>, Step<_3, _5>, Step<_2, _4>>>{};
+  auto order = std::conditional_t<TiledCopy::is_matrix_B,
+                                  Step<Step<_0, _1>, Step<_3, _5>, Step<_2, _4>>,
+                                  Step<Step<_0, _1>, Step<_2, _4>, Step<_3, _5>>>{};
   auto res = make_ordered_layout(
       make_shape(mma_atom_shape_2d,
                  make_shape(Int<mma_atom_iters_in_copy_M>{}, Int<copy_iters_M>{}),
@@ -2180,11 +2176,11 @@ template <class... args_t> \
 struct Copy_Traits<COPY_OP, args_t...> : Copy_Traits_<COPY_OP, args_t...>{ \
   using CopyOp = COPY_OP; \
   using Base = Copy_Traits_<CopyOp, args_t...>; \
-  using XE_2D_LD_Unpack<CopyOp, args_t...>::is_convention_MN; \
+  using XE_2D_LD_Unpack<CopyOp, args_t...>::is_matrix_B; \
   using typename Base::ThrID; \
-  using BlockShape = std::conditional_t<is_convention_MN, typename Base::BlockShape, decltype(cute::reverse(typename Base::BlockShape{}))>; \
-  using SrcLayout = decltype(detail::get_logical_layout<is_convention_MN>(typename Base::SrcLayout{}, typename Base::BlockShape{})); \
-  using DstLayout = decltype(detail::get_logical_layout<is_convention_MN>(typename Base::DstLayout{}, typename Base::BlockShape{})); \
+  using BlockShape = std::conditional_t<is_matrix_B, decltype(cute::reverse(typename Base::BlockShape{})), typename Base::BlockShape>; \
+  using SrcLayout = decltype(detail::get_logical_layout<is_matrix_B>(typename Base::SrcLayout{}, typename Base::BlockShape{})); \
+  using DstLayout = decltype(detail::get_logical_layout<is_matrix_B>(typename Base::DstLayout{}, typename Base::BlockShape{})); \
   using RefLayout = DstLayout; \
   template <class... ArgTs> \
   Copy_Traits(ArgTs... args) \
@@ -2196,11 +2192,11 @@ template <class... args_t> \
 struct Copy_Traits<COPY_OP, args_t...> : Copy_Traits_<COPY_OP, args_t...>{ \
   using CopyOp = COPY_OP; \
   using Base = Copy_Traits_<CopyOp, args_t...>; \
-  using XE_2D_ST_Unpack<CopyOp, args_t...>::is_convention_MN; \
+  using XE_2D_ST_Unpack<CopyOp, args_t...>::is_matrix_B; \
   using typename Base::ThrID; \
-  using BlockShape = std::conditional_t<is_convention_MN, typename Base::BlockShape, decltype(cute::reverse(typename Base::BlockShape{}))>; \
-  using SrcLayout = decltype(detail::get_logical_layout<is_convention_MN>(typename Base::SrcLayout{}, typename Base::BlockShape{})); \
-  using DstLayout = decltype(detail::get_logical_layout<is_convention_MN>(typename Base::DstLayout{}, typename Base::BlockShape{})); \
+  using BlockShape = std::conditional_t<is_matrix_B, decltype(cute::reverse(typename Base::BlockShape{})), typename Base::BlockShape>; \
+  using SrcLayout = decltype(detail::get_logical_layout<is_matrix_B>(typename Base::SrcLayout{}, typename Base::BlockShape{})); \
+  using DstLayout = decltype(detail::get_logical_layout<is_matrix_B>(typename Base::DstLayout{}, typename Base::BlockShape{})); \
   using RefLayout = SrcLayout; \
   template <class... ArgTs> \
   Copy_Traits(ArgTs... args) \
