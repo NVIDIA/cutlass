@@ -90,8 +90,8 @@ struct PersistentTileScheduler {
   struct Params {
     int num_blocks;
     FastDivmod divmod_m_block;
-    FastDivmod divmod_h;
     FastDivmod divmod_b;
+    FastDivmod divmod_h;
 
     KernelHardwareInfo hw_info;
   };
@@ -146,7 +146,7 @@ struct PersistentTileScheduler {
     params.divmod_m_block(block_decode, m_block, block_decode);
     params.divmod_b(block_decode, bidb, block_decode);
     params.divmod_h(block_decode, bidh, block_decode);
-    return make_coord(m_block, _0{}, make_coord(bidh, bidb));
+    return make_coord(m_block, _0{}, make_coord(bidb, bidh));
   }
 
   CUTLASS_DEVICE

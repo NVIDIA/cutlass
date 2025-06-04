@@ -394,6 +394,7 @@ struct ExampleRunner {
     fmha_fwd_gen_reference<ElementAcc>(
         problem_shape, block_seqlen_kv.get(), block_cache_batch_idx.get(),
         mQ, mNewK, mNewV, mCacheK, mCacheV, mO);
+
     cudaError_t result = cudaDeviceSynchronize();
     if (result != cudaSuccess) {
       std::cerr << "Reference kernel failed. Last CUDA error: "
@@ -408,6 +409,7 @@ struct ExampleRunner {
     double max_diff = 0;
     double mean_diff = 0;
     reference_abs_diff(block_o, block_ref_o, max_diff, mean_diff);
+
     bool passed_O = (max_diff < kMaxDiffThresh) && (mean_diff < kMeanDiffThresh);
     if (! passed_O) {
       std::cerr << "failed O: max diff " << max_diff 
@@ -415,6 +417,7 @@ struct ExampleRunner {
     }
 
     reference_abs_diff(block_cache_k, block_ref_cache_k, max_diff, mean_diff);
+
     bool passed_K = (max_diff < kMaxDiffThresh) && (mean_diff < kMeanDiffThresh);
     if ( ! passed_K) {
       std::cerr << "failed Cache K: max diff " << max_diff 
@@ -422,6 +425,7 @@ struct ExampleRunner {
     }
 
     reference_abs_diff(block_cache_v, block_ref_cache_v, max_diff, mean_diff);
+
     bool passed_V = (max_diff < kMaxDiffThresh) && (mean_diff < kMeanDiffThresh);
     if ( ! passed_V) {
       std::cerr << "failed Cache V: max diff " << max_diff 
@@ -503,6 +507,7 @@ struct ExampleRunner {
 
     block_ref_cache_k.copy_from_device(block_cache_k.get(), block_cache_k.size());
     block_ref_cache_v.copy_from_device(block_cache_v.get(), block_cache_v.size());
+
     block_seqlen_kv.reset(seqlen_kv.size());
     block_seqlen_kv.copy_from_host(seqlen_kv.data(), seqlen_kv.size());
 
@@ -721,6 +726,7 @@ int main_single(int argc, char const **args) {
       << "later (compute capability 90 or greater) and CUDA 12.0 or greater.\n";
     return 0;
   }
+
   //
   // Parse options
   //

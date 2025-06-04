@@ -637,7 +637,7 @@ struct Sm100FmhaFwdMainloopTmaWarpspecialized {
       }
       tTMEM_STORErS_x4_e[i / kConversionsPerStep] = convert(in_conv);
 
-      
+
       if (i == size(tTMEM_LOADrS) - kReleasePipeCount) {
         order_s.arrive();
       }
@@ -691,7 +691,7 @@ struct Sm100FmhaFwdMainloopTmaWarpspecialized {
     cute::add(local_row_sum_2, local_row_sum_2, local_row_sum_3);
     cute::add(local_row_sum_f32x2, local_row_sum_f32x2, local_row_sum_2);
     float local_row_sum = local_row_sum_f32x2.x + local_row_sum_f32x2.y;
-    
+
     row_sum = local_row_sum;
 
     if (final_call) {
@@ -787,14 +787,14 @@ struct Sm100FmhaFwdMainloopTmaWarpspecialized {
     // good values would be either 32 or 64
     const int kCorrectionTileSize = 32 / sizeof(ElementOut);
 
-    using TMEM_LOAD = std::conditional_t<kCorrectionTileSize == 32, SM100_TMEM_LOAD_32dp32b32x, SM100_TMEM_LOAD_32dp32b16x>;  // 4x32 threads with 64 cols of 32b elem 
+    using TMEM_LOAD = std::conditional_t<kCorrectionTileSize == 32, SM100_TMEM_LOAD_32dp32b32x, SM100_TMEM_LOAD_32dp32b16x>;  // 4x32 threads with 64 cols of 32b elem
 
     typename CollectiveMmaPV::TiledMma mma;
     Tensor cO = make_identity_tensor(select<0,1>(TileShapePV{}));
     Tensor tOtO = partition_fragment_C(mma, select<0,1>(TileShapePV{}));
     Tensor tOcO = mma.get_slice(0).partition_C(cO);
     Tensor tOsO = mma.get_slice(0).partition_C(sO);
-    
+
     Tensor tOtO_i = logical_divide(tOtO, make_layout(make_shape(_128{}, Int<kCorrectionTileSize>{})));
     Tensor tOcO_i = logical_divide(tOcO, make_layout(make_shape(_128{}, Int<kCorrectionTileSize>{})));
     Tensor tOsO_i = logical_divide(tOsO, make_layout(make_shape(_128{}, Int<kCorrectionTileSize>{})));
@@ -809,7 +809,7 @@ struct Sm100FmhaFwdMainloopTmaWarpspecialized {
 
     auto tiled_tmem_load = make_tmem_copy(TMEM_LOAD{}, tOtO_i(make_coord(_, _), _0{}));
     auto thr_tmem_load   = tiled_tmem_load.get_slice(thread_idx);
-    
+
     Tensor tTMEM_LOADtO = thr_tmem_load.partition_S(tOtO_i(make_coord(_, _), _));
     Tensor tTMEM_LOADcO = thr_tmem_load.partition_D(tOcO_i(make_coord(_, _), _));
     Tensor tTMEM_LOADsO = thr_tmem_load.partition_D(tOsO_i(make_coord(_, _), _));
@@ -824,9 +824,9 @@ struct Sm100FmhaFwdMainloopTmaWarpspecialized {
       Tensor tTMEM_LOADsO_i = tTMEM_LOADsO(_, _0{}, _0{}, i);
 
       Tensor tTMrO = make_tensor<ElementPV>(shape(tTMEM_LOADcO(_, _0{}, _0{}, i)));
-      
+
       copy(tiled_tmem_load, tTMEM_LOADtO_i, tTMrO);
-      
+
 #ifndef ONLY_SOFTMAX
       CUTLASS_PRAGMA_UNROLL
       for (int j = 0; j < size(tTMrO); j += 2) {
@@ -872,24 +872,24 @@ struct Sm100FmhaFwdMainloopTmaWarpspecialized {
     // good values would be either 32 or 64
     const int kCorrectionTileSize = 16;
 
-    using TMEM_LOAD = SM100_TMEM_LOAD_32dp32b16x;  // 4x32 threads with 64 cols of 32b elem 
+    using TMEM_LOAD = SM100_TMEM_LOAD_32dp32b16x;  // 4x32 threads with 64 cols of 32b elem
     using TMEM_STORE = SM100_TMEM_STORE_32dp32b16x;  // 4x32 threads with 64 cols of 32b elem
 
     typename CollectiveMmaPV::TiledMma mma;
     Tensor cO = make_identity_tensor(select<0,1>(TileShapePV{}));
     Tensor tOtO = partition_fragment_C(mma, select<0,1>(TileShapePV{}));
     Tensor tOcO = mma.get_slice(0).partition_C(cO);
-    
+
     Tensor tOtO_i = tOtO.compose(make_layout(make_shape(_128{}, Int<kCorrectionTileSize>{})));
     Tensor tOcO_i = tOcO.compose(make_layout(make_shape(_128{}, Int<kCorrectionTileSize>{})));
 
     tOtO_i.data() = tOtO_i.data().get() + tmem_O;
-    
+
     auto tiled_tmem_load = make_tmem_copy(TMEM_LOAD{}, tOtO_i);
     auto thr_tmem_load   = tiled_tmem_load.get_slice(thread_idx);
     auto tiled_tmem_store = make_tmem_copy(TMEM_STORE{}, tOtO_i);
     auto thr_tmem_store   = tiled_tmem_store.get_slice(thread_idx);
-    
+
     Tensor tTMEM_LOADtO = thr_tmem_load.partition_S(tOtO_i);
     Tensor tTMEM_LOADcO = thr_tmem_load.partition_D(tOcO_i);
     Tensor tTMEM_STOREtO = thr_tmem_store.partition_D(tOtO_i);
@@ -899,7 +899,7 @@ struct Sm100FmhaFwdMainloopTmaWarpspecialized {
     float2 scale_f32x2 = make_float2(scale, scale);
 
     Tensor tTMrO = make_tensor<ElementPV>(make_shape(shape(tTMEM_LOADcO), Int<128 / kCorrectionTileSize>{}));
-    
+
     auto copy_in = [&](int i) {
       Tensor tTMEM_LOADtO_i = tTMEM_LOADtO;
       tTMEM_LOADtO_i.data() = tTMEM_LOADtO_i.data().get() + uint32_t(i * kCorrectionTileSize);
@@ -942,7 +942,7 @@ struct Sm100FmhaFwdMainloopTmaWarpspecialized {
     }
   }
 
-  template<class BlkCoord, class ProblemShape, class TensorStorageEpi>
+  template<class BlkCoord, class ProblemShape, class TensorStorageEpi, class CollectiveEpilogue>
   CUTLASS_DEVICE auto
   correction(
       BlkCoord const& blk_coord,
@@ -951,7 +951,8 @@ struct Sm100FmhaFwdMainloopTmaWarpspecialized {
       PipelineC& pipeline_s0_c, typename PipelineC::PipelineState& pipeline_s0_c_consumer_state,
       PipelineC& pipeline_s1_c, typename PipelineC::PipelineState& pipeline_s1_c_consumer_state,
       PipelineO& pipeline_o, typename PipelineO::PipelineState& pipeline_o_consumer_state,
-      PipelineE& pipeline_epi, typename PipelineE::PipelineState& pipeline_epi_producer_state) {
+      PipelineE& pipeline_epi, typename PipelineE::PipelineState& pipeline_epi_producer_state,
+      CollectiveEpilogue& epilogue) {
 
     int mask_tile_count = Mask{}.get_trip_count(blk_coord, TileShape{}, problem_shape);
 
@@ -961,7 +962,7 @@ struct Sm100FmhaFwdMainloopTmaWarpspecialized {
 
     Tensor cS = make_identity_tensor(select<0,1>(TileShapeQK{}));
     Tensor tScS = typename CollectiveMmaQK::TiledMma{}.get_slice(0).partition_C(cS);
-    
+
     Tensor tStS_v = tStS.compose(make_layout(make_shape(_128{}, _2{})));
     Tensor tScS_v = tScS.compose(make_layout(make_shape(_128{}, _2{})));
 
@@ -1060,13 +1061,25 @@ struct Sm100FmhaFwdMainloopTmaWarpspecialized {
     //    F2FP
     //    store to smem
     Tensor sO = make_tensor(make_smem_ptr(shared_storage_epi.smem_o.data()), typename TensorStorageEpi::SmemLayoutO{});
+    Tensor gLSE = make_tensor(make_gmem_ptr(epilogue.params.ptr_LSE), repeat_like(typename CollectiveEpilogue::StrideLSE{}, _1{}), epilogue.params.dLSE);
+    
     correction_epilogue(params.scale_output / tTMEM_LOADVrS(kIdxFinalRowSum), _0{}, sO);
+
+    if (epilogue.params.ptr_LSE != nullptr) {
+      int row_idx = get<0>(tTMEM_LOADVcS(_0{})) + get<0>(TileShape{}) * get<0>(blk_coord);
+
+      ElementPV lse = cutlass::fast_log(tTMEM_LOADVrS(kIdxFinalRowSum)) + params.scale_softmax * tTMEM_LOADVrS(kIdxFinalRowMax);
+
+      if (row_idx < get<0>(problem_shape)) {
+        gLSE(row_idx, get<2>(blk_coord)) = lse;
+      }
+    }
 
     cutlass::arch::fence_view_async_tmem_load();
 
     pipeline_o.consumer_release(pipeline_o_consumer_state);
     ++pipeline_o_consumer_state;
-    
+
     pipeline_epi.producer_commit(pipeline_epi_producer_state);
     ++pipeline_epi_producer_state;
 
@@ -1082,6 +1095,16 @@ struct Sm100FmhaFwdMainloopTmaWarpspecialized {
     pipeline_epi.producer_acquire(pipeline_epi_producer_state);
 
     correction_epilogue(params.scale_output / tTMEM_LOADVrS(kIdxFinalRowSum), _1{}, sO);
+
+    if (epilogue.params.ptr_LSE != nullptr) {
+      int row_idx = get<0>(tTMEM_LOADVcS(_0{})) + get<0>(TileShape{}) * get<0>(blk_coord) + get<0>(TileShapeQK{});
+
+      ElementPV lse = cutlass::fast_log(tTMEM_LOADVrS(kIdxFinalRowSum)) + params.scale_softmax * tTMEM_LOADVrS(kIdxFinalRowMax);
+
+      if (row_idx < get<0>(problem_shape)) {
+        gLSE(row_idx, get<2>(blk_coord)) = lse;
+      }
+    }
 
     cutlass::arch::fence_view_async_tmem_load();
 
