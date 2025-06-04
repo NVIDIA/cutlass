@@ -523,7 +523,7 @@ using std::is_trivially_copyable;
 
 #endif
 
-#if defined(_MSC_VER) || (201703L <=__cplusplus)
+#if (201703L <=__cplusplus)
 
 /// std::is_unsigned_v
 using CUTLASS_STL_NAMESPACE::is_integral_v;
