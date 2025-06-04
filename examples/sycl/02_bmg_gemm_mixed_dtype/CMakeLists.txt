@@ -29,7 +29,7 @@
 set(TEST_BATCHES --l=2)
 set(TEST_MODE_1 --l=2 --mode=1)
 set(TEST_MODE_0 --l=2 --mode=0)
-set(TEST_A_NARROW l=2 --a_narrower)
+set(TEST_A_NARROW --l=2 --a_narrower)
 
 cutlass_example_add_executable(
   02_bmg_gemm_mixed_dtype

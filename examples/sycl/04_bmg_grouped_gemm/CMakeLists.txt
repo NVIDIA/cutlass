@@ -26,13 +26,15 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-set(TEST_BATCHES --l=2)
+set(TEST_GROUPS_2 --groups=2)
+set(TEST_GROUPS_4 --groups=4)
 
 cutlass_example_add_executable(
   04_bmg_grouped_gemm
   04_bmg_grouped_gemm.cpp
   TEST_COMMAND_OPTIONS
-  TEST_BATCHES
+  TEST_GROUPS_2
+  TEST_GROUPS_4
 )
 if(NOT DPCPP_SYCL_TARGET STREQUAL "spir64")
   # TODO(codeplay): Remove these once IGC VectorAliasThreshold issue is fixed

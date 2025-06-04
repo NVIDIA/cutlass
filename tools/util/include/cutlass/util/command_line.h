@@ -61,6 +61,8 @@ struct CommandLine {
   std::vector<std::string> keys;
   std::vector<std::string> values;
   std::vector<std::string> args;
+  mutable std::vector<bool> keys_used;
+  mutable std::vector<bool> args_used;
 
   /**
    * Constructor
@@ -71,8 +73,12 @@ struct CommandLine {
     for (int i = 1; i < argc; i++) {
       string arg = argv[i];
 
+      if(arg[0] == '#'){
+        break;
+      }
       if ((arg[0] != '-') || (arg[1] != '-')) {
         args.push_back(arg);
+        args_used.push_back(false);
         continue;
       }
 
@@ -87,7 +93,28 @@ struct CommandLine {
       }
 
       keys.push_back(key);
+      keys_used.push_back(false);
       values.push_back(val);
+    }
+  }
+
+  ~CommandLine() noexcept(false){
+    bool err = false;
+    for (int i = 0; i < keys_used.size(); ++i){
+      if(!keys_used[i]){
+        std::cout << "Unused argument: " << keys[i] << std::endl;
+        err = true;
+      }
+    }
+    for (int i = 0; i < args_used.size(); ++i){
+      if(!args_used[i]){
+        std::cout << "Unused argument: " << args[i] << std::endl;
+        err = true;
+      }
+    }
+
+    if(err){
+      throw std::runtime_error("Unused arguments!");
     }
   }
 
@@ -98,7 +125,10 @@ struct CommandLine {
     using namespace std;
 
     for (int i = 0; i < int(keys.size()); ++i) {
-      if (keys[i] == string(arg_name)) return true;
+      if (keys[i] == string(arg_name)){
+        keys_used[i] = true;
+        return true;
+      }
     }
     return false;
   }
@@ -126,6 +156,7 @@ struct CommandLine {
   void get_cmd_line_argument(size_t index, value_t& val) const {
     using namespace std;
     if (index < args.size()) {
+      args_used[index] = true;
       istringstream str_stream(args[index]);
       str_stream >> val;
     }
@@ -167,6 +198,7 @@ struct CommandLine {
 
     for (int i = 0; i < int(keys.size()); ++i) {
       if (keys[i] == string(arg_name)) {
+        keys_used[i] = true;
         istringstream str_stream(values[i]);
         str_stream >> val;
       }
@@ -189,6 +221,7 @@ struct CommandLine {
       // Recover from multi-value string
       for (size_t i = 0; i < keys.size(); ++i) {
         if (keys[i] == string(arg_name)) {
+          keys_used[i] = true;
           string val_string(values[i]);
           separate_string(val_string, vals, sep);
         }
