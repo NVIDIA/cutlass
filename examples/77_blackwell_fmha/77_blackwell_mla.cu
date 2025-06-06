@@ -59,7 +59,7 @@ using namespace cutlass::fmha::kernel;
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 enum class InitStyle {
-  kOne, kLinearStride128, kLinearStride1, kRandom, kRandomLarge, kNone
+  kOne, kLinearStride128, kLinearStride1, kRandom, kNone
 };
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -97,9 +97,6 @@ struct Options {
     else {
       if (s == "r") {
         dst = InitStyle::kRandom;
-      }
-      else if (s == "l") {
-        dst = InitStyle::kRandomLarge;
       }
       else if (s == "1") {
         dst = InitStyle::kOne;
@@ -204,11 +201,6 @@ void initialize_block(
     case InitStyle::kRandom: {
       cutlass::reference::device::BlockFillRandomGaussian(
         block.get(), block.size(), seed, (Element) -1, (Element) 1);
-      break;
-    }
-    case InitStyle::kRandomLarge: {
-      cutlass::reference::device::BlockFillRandomGaussian(
-        block.get(), block.size(), seed, (Element) -1, (Element) 100);
       break;
     }
     case InitStyle::kLinearStride1: {

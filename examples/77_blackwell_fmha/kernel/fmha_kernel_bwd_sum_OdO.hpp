@@ -39,11 +39,11 @@ namespace cutlass::fmha::kernel {
 
 using namespace cute;
 
-template<class ProblemShape, class Element, class ElementAcc>
+template<class Element, class ElementAcc>
 struct FmhaKernelBwdSumOdO {
 
   struct Arguments {
-    ProblemShape problem_shape;
+    cute::tuple<int, int, int, cute::tuple<int, int>> problem_size;
 
     const Element* ptr_O;
     cute::tuple<int, cute::_1, cute::tuple<int, int>> stride_O;
@@ -86,11 +86,11 @@ struct FmhaKernelBwdSumOdO {
   static const int kIterationsQ = kBlockQ / kNumThreadsQ;
 
   static bool can_implement(Arguments const& args) {
-    return get<2>(args.problem_shape) % kElementsPerLoad == 0;
+    return get<2>(args.problem_size) % kElementsPerLoad == 0;
   }
 
   static dim3 get_grid_shape(Params const& params) {
-    dim3 grid(ceil_div(size<0>(params.problem_shape), kBlockQ), size<3,0>(params.problem_shape), size<3,1>(params.problem_shape));
+    dim3 grid(ceil_div(size<0>(params.problem_size), kBlockQ), size<3,0>(params.problem_size), size<3,1>(params.problem_size));
     return grid;
   }
 
@@ -110,20 +110,10 @@ struct FmhaKernelBwdSumOdO {
     auto ptr_lse_bh = params.ptr_lse + blockIdx.y * get<1,0>(params.stride_lse) + blockIdx.z * get<1,1>(params.stride_lse);
     auto ptr_scaled_lse_bh = params.ptr_scaled_lse + blockIdx.y * get<1,0>(params.stride_scaled_lse) + blockIdx.z * get<1,1>(params.stride_scaled_lse);
 
-    auto problem_q = get<0>(params.problem_shape);
-    int seqlen_q = problem_q;
-    if constexpr (is_variable_length_v<decltype(problem_q)>) {
-      int offset = problem_q.cumulative_length[blockIdx.z];
-      ptr_O_bh += offset * get<0>(params.stride_O);
-      ptr_dO_bh += offset * get<0>(params.stride_dO);
-      ptr_lse_bh += offset * get<0>(params.stride_lse);
-      seqlen_q = problem_q.cumulative_length[blockIdx.z + 1] - offset;
-    }
-
     CUTLASS_PRAGMA_UNROLL
     for (int idx_q_t = threadIdx.y; idx_q_t < kBlockQ; idx_q_t += kNumThreadsQ) {
       int idx_q = idx_q_t + kBlockQ * blockIdx.x;
-      if (idx_q >= seqlen_q) continue;
+      if (idx_q >= get<0>(params.problem_size)) continue;
       ElementAcc acc = 0;
       auto ptr_O_bhq = ptr_O_bh + idx_q * get<0>(params.stride_O);
       auto ptr_dO_bhq = ptr_dO_bh + idx_q * get<0>(params.stride_dO);
@@ -131,7 +121,7 @@ struct FmhaKernelBwdSumOdO {
       auto ptr_lse_bhq = ptr_lse_bh + idx_q * get<0>(params.stride_lse);
       auto ptr_scaled_lse_bhq = ptr_scaled_lse_bh + idx_q * get<0>(params.stride_scaled_lse);
 
-      for (int idx_d = threadIdx.x * kElementsPerLoad; idx_d < get<2>(params.problem_shape); idx_d += kElementsPerLoad * kNumThreadsD) {
+      for (int idx_d = threadIdx.x * kElementsPerLoad; idx_d < get<2>(params.problem_size); idx_d += kElementsPerLoad * kNumThreadsD) {
         Element value_O[kElementsPerLoad];
         Element value_dO[kElementsPerLoad];
         
