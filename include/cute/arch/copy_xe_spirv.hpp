@@ -35,6 +35,11 @@
 
 // TODO(Codeplay): These builtins are not available on SPIRV
 SYCL_EXTERNAL extern "C"
+cute::intel::uchar64 __builtin_IB_subgroup_block_read_flat_u8_m32k16v2(
+  long baseoffset, int width_minus_one, int height_minus_one,
+  int pitch_minus_one, cute::intel::coord_t coord);
+
+SYCL_EXTERNAL extern "C"
 cute::intel::uint2 __builtin_IB_subgroup_block_read_flat_transpose_u32_k2(
   intptr_t baseoffset, int width_minus_one, int height_minus_one,
   int pitch_minus_one, cute::intel::coord_t coord);
@@ -268,6 +273,17 @@ struct XeSubgroup2DBlockStore {
                                       (void *)(srcPointer), dstBasePointer,
                                       memoryWidth, memoryHeight,
                                       memoryPitch, coordinate);
+  }
+};
+
+template<>
+struct XeSubgroup2DBlockLoad<1, 16, 32, 2> {
+  template<typename T>
+  CUTE_HOST_DEVICE void
+  operator()(const void* srcBasePointer, int memoryWidth, int memoryHeight, int memoryPitch,
+          cute::intel::coord_t coordinate, T* dstPointer) {
+    *reinterpret_cast<intel::uchar64 *>(dstPointer) =  __builtin_IB_subgroup_block_read_flat_u8_m32k16v2(
+       (intptr_t)(srcBasePointer), memoryWidth - 1, memoryHeight - 1, memoryPitch - 1, coordinate);
   }
 };
 

@@ -534,8 +534,7 @@ int main(int argc, const char** argv)
   using ElementZero = MmaType;
   using ElementScale = MmaType;
 
-  // Note: XE_2D_U18x32x32_LD_N is incompatible with our bf16 MMA atoms
-  using GmemTiledCopyA = XE_2D_U8x32x32_LD_V;  // U8  (1-byte) block copy for A (narrower type)
+  using GmemTiledCopyA = XE_2D_U8x32x32_LD_N;  // U8  (1-byte) block copy for A (narrower type)
   using GmemTiledCopyB = XE_2D_U16x32x32_LD_V; // U16 (2-byte) block copy for B (wider type)
   static_assert(sizeof(ElementInputA) == 1, "ElementA width must match GmemTiledCopyA U8");
 

@@ -334,11 +334,11 @@ TEST(PVC_CuTe_Xe, block_2d_32bits_n) {
 }
 
 TEST(PVC_CuTe_Xe, block_2d_8bits_n) {
-  copy_op<char, XE_2D_U8x2x32_LD_N, XE_2D_U8x2x32_ST_N, 2, 32>{}();
-  copy_op<char, XE_2D_U8x4x32_LD_N, XE_2D_U8x2x32_ST_N, 4, 32>{}();
-  copy_op<char, XE_2D_U8x8x32_LD_N, XE_2D_U8x2x32_ST_N, 8, 32>{}();
-  copy_op<char, XE_2D_U8x16x32_LD_N, XE_2D_U8x2x32_ST_N, 16, 32>{}();
-  copy_op<char, XE_2D_U8x32x32_LD_N, XE_2D_U8x2x32_ST_N, 32, 32>{}();
+  copy_op<char, XE_2D_Packed_U8x2x32_LD_N, XE_2D_U8x2x32_ST_N, 2, 32>{}();
+  copy_op<char, XE_2D_Packed_U8x4x32_LD_N, XE_2D_U8x2x32_ST_N, 4, 32>{}();
+  copy_op<char, XE_2D_Packed_U8x8x32_LD_N, XE_2D_U8x2x32_ST_N, 8, 32>{}();
+  copy_op<char, XE_2D_Packed_U8x16x32_LD_N, XE_2D_U8x2x32_ST_N, 16, 32>{}();
+  copy_op<char, XE_2D_Packed_U8x32x32_LD_N, XE_2D_U8x2x32_ST_N, 32, 32>{}();
 }
 
 TEST(PVC_CuTE_Xe, block_2d_16bits_n_v2) {

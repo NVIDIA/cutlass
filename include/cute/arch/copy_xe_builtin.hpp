@@ -146,7 +146,10 @@ SYCL_DEVICE_BUILTIN(
     cute::intel::ushort64 __builtin_IB_subgroup_block_read_flat_u8_m32k32v2(
         intptr_t baseoffset, int width_minus_one, int height_minus_one,
         int pitch_minus_one, cute::intel::coord_t coord));
-
+SYCL_DEVICE_BUILTIN(
+    cute::intel::uchar64 __builtin_IB_subgroup_block_read_flat_u8_m32k16v2(
+        long baseoffset, int width_minus_one, int height_minus_one,
+        int pitch_minus_one, cute::intel::coord_t coord));
 
 // 8bits VNNI transform No transpose
 SYCL_DEVICE_BUILTIN(
@@ -519,6 +522,17 @@ struct XeSubgroup2DBlockLoad<1, 32, 32, 1> {
     operator()(const void* srcBasePointer, int memoryWidth, int memoryHeight, int memoryPitch,
             cute::intel::coord_t coordinate, T* dstPointer) {
         *reinterpret_cast<intel::ushort32 *>(dstPointer) =  __builtin_IB_subgroup_block_read_flat_u8_m32k32v1(
+           (intptr_t)(srcBasePointer), memoryWidth - 1, memoryHeight - 1, memoryPitch - 1, coordinate);
+    }
+};
+
+template<>
+struct XeSubgroup2DBlockLoad<1, 16, 32, 2> {
+    template<typename T>
+    CUTE_HOST_DEVICE void
+    operator()(const void* srcBasePointer, int memoryWidth, int memoryHeight, int memoryPitch,
+            cute::intel::coord_t coordinate, T* dstPointer) {
+        *reinterpret_cast<intel::uchar64 *>(dstPointer) =  __builtin_IB_subgroup_block_read_flat_u8_m32k16v2(
            (intptr_t)(srcBasePointer), memoryWidth - 1, memoryHeight - 1, memoryPitch - 1, coordinate);
     }
 };

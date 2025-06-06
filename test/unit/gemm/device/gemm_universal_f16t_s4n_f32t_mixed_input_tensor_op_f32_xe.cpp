@@ -75,7 +75,6 @@ TEST(XE_Device_GemmUniversal_f16t_s4n_f32t_mixed_input_tensor_op_f32, 128x128x64
   using LayoutC = cutlass::layout::RowMajor;
   using LayoutD = cutlass::layout::RowMajor;
 
-  // Note: XE_2D_U18x32x32_LD_N is incompatible with our bf16 MMA atoms
   using GmemTiledCopyA = XE_2D_U16x32x32_LD_N;
   using GmemTiledCopyB = XE_2D_U4x16x16_LD_T;
 
