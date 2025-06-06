@@ -190,7 +190,7 @@ private:
     gemm_workspace_.arguments.cluster_shape_fallback = {int(problem_.cluster_m_fallback), int(problem_.cluster_n_fallback), int(problem_.cluster_k_fallback)};
 
     /* Query device SM count to pass onto the kernel as an argument, where needed */
-    arguments.sm_count = options.device.properties[0].multiProcessorCount;
+    arguments.sm_count = options.device.get_sm_count(0);
     if (is_block_scaled) {
       auto& block_scaled_ws = gemm_workspace_.block_scales.value();
       arguments.SFA = block_scaled_ws.SFA_ptr_array_device[0]->data();
