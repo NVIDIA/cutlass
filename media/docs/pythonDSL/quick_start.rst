@@ -29,3 +29,12 @@ To run examples and begin development, we recommend installing:
 .. code-block:: bash
 
    pip install torch jupyter
+
+Recommended Python environment variables for jupyter notebooks
+--------------------------------------------------------------
+
+We recommend setting the following environment variable when running jupyter notebooks.
+
+.. code-block:: bash
+
+   export PYTHONUNBUFFERED=1

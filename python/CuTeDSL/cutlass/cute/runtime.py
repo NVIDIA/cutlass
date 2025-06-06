@@ -124,7 +124,7 @@ class _Pointer(Pointer):
         )
 
     @property
-    def element_type(self) -> Type[Numeric]:
+    def dtype(self) -> Type[Numeric]:
         return self._dtype
 
     @property

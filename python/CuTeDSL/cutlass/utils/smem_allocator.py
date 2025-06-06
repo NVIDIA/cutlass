@@ -185,7 +185,7 @@ class SmemAllocator:
             and isinstance(layout.inner, cute.Swizzle)
         ) and (swizzle is not None):
             raise TypeError(
-                f"iterator swizzle with swizzle layout is currently not supported"
+                f"Invalid tensor type: cannot be both iterator swizzle (PDSL) and swizzle layout(PISL) at the same time."
             )
 
         if isinstance(layout, int):

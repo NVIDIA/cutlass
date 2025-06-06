@@ -124,7 +124,8 @@ Technical
 
 License
 ---------------------
-**Q:What is the license for CuTe DSL and the associated GitHub samples?**
+**What is the license for CuTe DSL and the associated GitHub samples?**
+
     CuTe DSL components available `on Github <https://github.com/NVIDIA/cutlass/tree/main/python/CuTeDSL>`__ and via the nvidia-cutlass-dsl Python pip wheel
     are released under the `"NVIDIA Software End User License Agreement (EULA)" <https://github.com/NVIDIA/cutlass/tree/main/EULA.txt>`__.
     Because the pip package includes a compiler that shares several components with the CUDA Toolkit,

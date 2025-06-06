@@ -560,18 +560,18 @@ struct Sm90TreeVisitor<
         Tensor tC_rAux_vec = recast<VecType>(tC_rAux);
         Tensor tC_gAux_vec = recast<VecType>(tC_gAux);
         Tensor tC_cAux_vec = tensor<1>(zipped_divide(tC_cAux, MCL.compose(Int<V>{})));
-        auto predicate_fn = [&] (auto&&... coords) CUTLASS_LAMBDA_FUNC_INLINE { return elem_less(tC_cAux_vec(coords...), residue_tC_cAux); };
-        copy_if(predicate_fn, tC_rAux_vec, tC_gAux_vec);
+        Tensor tC_pAux_vec = cute::lazy::transform(tC_cAux_vec, [&](auto const& c){ return elem_less(c, residue_tC_cAux); });
+        copy_if(tC_pAux_vec, tC_rAux_vec, tC_gAux_vec);
       }
       // sub-byte vectorization, must serialize threads
       else {
         // Assumes no inter-warp sharing of bytes (most copy layouts should satisfy this)
         int lane_idx = canonical_lane_idx();
-        auto predicate_fn = [&] (auto&&... coords) CUTLASS_LAMBDA_FUNC_INLINE { return elem_less(tC_cAux(coords...), residue_tC_cAux); };
+        Tensor tC_pAux = cute::lazy::transform(tC_cAux, [&](auto const& c){ return elem_less(c, residue_tC_cAux); });
         CUTLASS_PRAGMA_NO_UNROLL
         for (int i = 0; i < NumThreadsPerWarp; ++i) {
           if (lane_idx == i) {
-            copy_if(predicate_fn, tC_rAux, tC_gAux);
+            copy_if(tC_pAux, tC_rAux, tC_gAux);
           }
           __syncwarp();
         }
@@ -719,12 +719,12 @@ struct Sm90AuxLoad<
           Tensor tC_gAux_vec = recast<VecType>(tC_gAux);
           Tensor tC_rAux_vec = recast<VecType>(tC_rAux);
           Tensor tC_cAux_vec = tensor<1>(zipped_divide(tC_cAux, MCL.compose(Int<V>{})));
-          auto predicate_fn = [&] (auto&&... coords) CUTLASS_LAMBDA_FUNC_INLINE { return elem_less(tC_cAux_vec(coords...), residue_tC_cAux); };
-          copy_if(predicate_fn, tC_gAux_vec, tC_rAux_vec);
+          Tensor tC_pAux_vec = cute::lazy::transform(tC_cAux_vec, [&](auto const& c){ return elem_less(c, residue_tC_cAux); });
+          copy_if(tC_pAux_vec, tC_gAux_vec, tC_rAux_vec);
         }
         else {
-          auto predicate_fn = [&] (auto&&... coords) CUTLASS_LAMBDA_FUNC_INLINE { return elem_less(tC_cAux(coords...), residue_tC_cAux); };
-          copy_if(predicate_fn, tC_gAux, tC_rAux);
+          Tensor tC_pAux = cute::lazy::transform(tC_cAux, [&](auto const& c){ return elem_less(c, residue_tC_cAux); });
+          copy_if(tC_pAux, tC_gAux, tC_rAux);
         }
       }
     }
@@ -738,8 +738,8 @@ struct Sm90AuxLoad<
           }
         }
 
-        auto predicate_fn = [&] (auto&&... coords) CUTLASS_LAMBDA_FUNC_INLINE { return elem_less(tC_cAux(_,_,_,epi_m,epi_n)(coords...), residue_tC_cAux); };
-        copy_if(predicate_fn, tC_gAux(_,_,_,epi_m,epi_n), tC_rAux);
+        Tensor tC_pAux = cute::lazy::transform(tC_cAux(_,_,_,epi_m,epi_n), [&](auto const& c){ return elem_less(c, residue_tC_cAux); });
+        copy_if(tC_pAux, tC_gAux(_,_,_,epi_m,epi_n), tC_rAux);
       }
     }
 

@@ -141,33 +141,60 @@ class JitExecutor:
         to get rid of mlir context.
         """
 
+        # Process positional arguments with defaults
+        rectified_args = list(args)
+        if args_spec.defaults and len(args) < len(args_spec.args):
+            rectified_args.extend(args_spec.defaults[len(args) - len(args_spec.args) :])
+        for k, v in kwargs.items():
+            if k in args_spec.args:
+                idx = args_spec.args.index(k)
+                if idx < len(rectified_args):
+                    rectified_args[idx] = v
+                else:
+                    rectified_args.append(v)
+
+        # Process keyword arguments
+        rectified_kwargs = {k: v for k, v in kwargs.items() if k not in args_spec.args}
+        if args_spec.kwonlydefaults and len(rectified_kwargs) < len(
+            args_spec.kwonlyargs
+        ):
+            rectified_kwargs.update(args_spec.kwonlydefaults)
+
         # args/kwargs must match arg_specs
-        # No canonicalization of args/kwargs to avoid extra latency
-        if len(args) != len(args_spec.args) or len(kwargs) != len(args_spec.kwonlyargs):
+        if len(rectified_args) != len(args_spec.args) or len(rectified_kwargs) != len(
+            args_spec.kwonlyargs
+        ):
             raise DSLRuntimeError(
                 "input args/kwargs length does not match runtime function signature!",
                 context={
-                    "input args length": len(args),
-                    "input kwargs length": len(kwargs),
+                    "input args length": len(rectified_args),
+                    "input kwargs length": len(rectified_kwargs),
                     "function signature args length": len(args_spec.args),
                     "function signature kwonlyargs length": len(args_spec.kwonlyargs),
                 },
             )
 
         exe_args = []
-        input_args = [*args, *kwargs.values()]
-        input_arg_names = [*args_spec.args, *args_spec.kwonlyargs]
-        for i, arg in enumerate(input_args):
-            arg_type = args_spec.annotations.get(input_arg_names[i], None)
+        input_args = rectified_args + list(rectified_kwargs.values())
+        input_arg_names = args_spec.args + args_spec.kwonlyargs
+        for arg, arg_name in zip(input_args, input_arg_names):
+            # short-cut for args already converted
+            if hasattr(arg, "__c_pointers__"):
+                exe_args.extend(arg.__c_pointers__())
+                continue
+
+            arg_type = args_spec.annotations.get(arg_name, None)
 
             # Implicit cast to NumericMeta
             if isinstance(arg_type, t.NumericMeta):
                 arg = t.cast(arg, arg_type)
+            else:
+                # If not any known type, try registered adapter to do the conversion
+                adapter = JitArgAdapterRegistry.get_registered_adapter(type(arg))
+                if adapter:
+                    arg = adapter(arg)
 
-            # If not any known type, try registered adapter to do the conversion
-            adapter = JitArgAdapterRegistry.get_registered_adapter(type(arg))
-            adapted_arg = adapter(arg) if adapter else arg
-            exe_args.extend(get_c_pointers(adapted_arg))
+            exe_args.extend(get_c_pointers(arg))
 
         return exe_args
 

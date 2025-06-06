@@ -293,6 +293,9 @@ template <
   class DispatchPolicy
 >
 struct Sm90TmaBuilderImpl {
+  // C/D should meet TMA alignment requirement if not void
+  static_assert(detail::is_aligned<ElementC_, AlignmentC, ElementD_, AlignmentD>(),
+                "C/D Should meet TMA alignment requirement\n");
   // Passing void D disables destination store + smem allocation
   using ElementD = cute::conditional_t<cute::is_void_v<ElementD_>,
                      fusion::get_element_aux_t<FusionOpOrCallbacks>, ElementD_>;

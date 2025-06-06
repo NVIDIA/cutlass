@@ -123,6 +123,56 @@ struct Copy_Atom<Copy_Traits<Args...>, CopyInternalType>
   {
     return call(src, dst);
   }
+
+  // Check and call instruction, or recurse
+  template <class PEngine, class PLayout,
+            class SEngine, class SLayout,
+            class DEngine, class DLayout>
+  CUTE_HOST_DEVICE
+  void
+  call(Tensor<PEngine,PLayout> const& prd,
+       Tensor<SEngine,SLayout> const& src,
+       Tensor<DEngine,DLayout>      & dst) const
+  {
+    static_assert(PLayout::rank == 1, "Expected rank-1 prd tensor");
+    static_assert(SLayout::rank == 1, "Expected rank-1 src tensor");
+    static_assert(DLayout::rank == 1, "Expected rank-1 dst tensor");
+
+    if constexpr (is_constant<NumValSrc, decltype(size(src))>::value ||
+                  is_constant<NumValDst, decltype(size(dst))>::value) {
+      // Dispatch to unpack to execute instruction
+      Traits const& traits = static_cast<Traits const&>(*this);
+      auto has_with_bool = cute::is_valid([](auto t)->void_t<decltype(t.with(true))>{}, traits);
+      if constexpr (has_with_bool) {
+        copy_unpack(traits.with(prd(Int<0>{})), src, dst);
+      } else {
+        if (prd(Int<0>{})) { copy_unpack(traits, src, dst); }
+      }
+    } else if constexpr (is_tuple<decltype(shape(prd))>::value &&
+                         is_tuple<decltype(shape(src))>::value &&
+                         is_tuple<decltype(shape(dst))>::value) {
+      // If the size of the src/dst doesn't match the instruction,
+      //   recurse this rank-1 layout by peeling off the mode
+      //   ((A,B,C,...)) -> (A,B,C,...)
+      return copy_if(*this, tensor<0>(prd), tensor<0>(src), tensor<0>(dst));
+    } else {
+      static_assert(dependent_false<SEngine>,
+                    "CopyAtom: Src/Dst partitioning does not match the instruction requirement.");
+    }
+  }
+
+  // Accept mutable temporaries
+  template <class PEngine, class PLayout,
+            class SEngine, class SLayout,
+            class DEngine, class DLayout>
+  CUTE_HOST_DEVICE
+  void
+  call(Tensor<PEngine,PLayout> const& prd,
+       Tensor<SEngine,SLayout> const& src,
+       Tensor<DEngine,DLayout>     && dst) const
+  {
+    return call(prd, src, dst);
+  }
 };
 
 //
@@ -733,13 +783,13 @@ print_latex_copy(LayoutS const& S, ThrIDS const& TS,  // (m,n) -> (tid,vid)  and
 #include <cute/atom/copy_traits_sm75.hpp>
 #include <cute/atom/copy_traits_sm80.hpp>
 #include <cute/atom/copy_traits_sm90.hpp>
-#include <cute/atom/copy_traits_sm100.hpp> 
+#include <cute/atom/copy_traits_sm100.hpp>
 
 
 // Config
 #if (__CUDACC_VER_MAJOR__ >= 12)
 #  define CUTE_COPY_ATOM_TMA_SM90_ENABLED
-#  define CUTE_COPY_ATOM_TMA_SM100_ENABLED 
+#  define CUTE_COPY_ATOM_TMA_SM100_ENABLED
 #endif
 
 

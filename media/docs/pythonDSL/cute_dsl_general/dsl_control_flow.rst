@@ -4,11 +4,8 @@
 .. |DSL|       replace:: CuTe DSL
 .. |Constexpr| replace:: **Constexpr** (compile-time Python value)
 
-|DSL| Control Flow
+Control Flow
 ==================
-.. contents::
-   :depth: 2
-   :local:
 
 
 Overview

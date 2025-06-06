@@ -30,6 +30,7 @@ class Agent(enum.Enum):
     """
     Agent indicates what is participating in the pipeline synchronization.
     """
+
     # Arbitrary grouping of N threads
     Thread = enum.auto()
     # Same as AsyncThread, but includes all threads in the block
@@ -42,6 +43,7 @@ class CooperativeGroup:
     """
     CooperativeGroup contains size and alignment restrictions for an Agent.
     """
+
     def __init__(self, agent: Agent, size: int = 1, alignment: int = 1):
         if agent is Agent.Thread:
             assert size > 0
@@ -76,6 +78,7 @@ class _PipelineOp(enum.Enum):
     """
     PipelineOp assigns an operation to an agent corresponding to a specific hardware feature.
     """
+
     # async-threads
     AsyncThread = enum.auto()
     # Blackwell (SM100a) MMA instruction
@@ -140,12 +143,8 @@ class MbarrierArray(SyncObjectArray):
                 "Error: Mbarrier tx count must be greater than 0 for TMA ops."
             )
 
-        # Using a tensor to store mbarrier i64 ptrs
-        self.mbarrier_array = cute.make_fragment(cute.make_layout(num_stages), Int64)
-        for i in range(num_stages):
-            self.mbarrier_array[i] = _cute_ir.ptrtoint(
-                T.i64(), (self.barrier_storage + i).value
-            )
+        # Store mbarrier base pointer
+        self.mbarrier_base = self.barrier_storage
 
         # Mbarrier initialization in constructor
         self.mbarrier_init()
@@ -155,10 +154,11 @@ class MbarrierArray(SyncObjectArray):
         """
         Initializes an array of mbarriers using warp 0.
         """
+
         def then_body():
             for index in range(self.num_stages):
                 cute.arch.mbarrier_init_arrive_cnt(
-                    _mbarrier_i64_to_ptr(self.mbarrier_array[index]), self.arrive_count
+                    self.get_barrier(index), self.arrive_count
                 )
 
         warp_idx = cute.arch.warp_idx()
@@ -166,7 +166,12 @@ class MbarrierArray(SyncObjectArray):
 
         if_generate(warp_idx == 0, then_body)
 
-    def arrive(self, index: int, dst: int):
+    def arrive(
+        self,
+        index: int,
+        dst: int,
+        cta_group: Optional[cute.nvgpu.tcgen05.CtaGroup] = None,
+    ):
         """
         Select the arrive corresponding to this MbarrierArray's PipelineOp
         :param index: Index of the mbarrier in the array to arrive on
@@ -175,55 +180,53 @@ class MbarrierArray(SyncObjectArray):
         - For TCGen05Mma, dst serves as a multicast mask (e.g., 0b1011 allows arrive signal to be multicast to CTAs in the cluster with rank = 0, 1, and 3).
         - For AsyncThread, dst serves as a destination cta rank (e.g., 3 means threads will arrive on the mbarrier with rank = 3 in the cluster).
         :type dst: int | None
+        :param cta_group: CTA group for TCGen05Mma, defaults to None for other op types
+        :type cta_group: cute.nvgpu.tcgen05.CtaGroup, optional
         """
         if self.op_type is _PipelineOp.AsyncThread:
             self.arrive_mbarrier(index, dst)
         elif self.op_type is _PipelineOp.TCGen05Mma:
-            self.arrive_tcgen05mma(index, dst)
+            assert (
+                cta_group is not None
+            ), "Error: CTA group must be provided for TCGen05Mma."
+            self.arrive_tcgen05mma(index, dst, cta_group)
         elif self.op_type in [_PipelineOp.TmaLoad]:
             self.arrive_and_expect_tx(index, self.tx_count)
         else:
-            print(_get_pipeline_op(self.op_type))
-            assert False, "Error: MbarrierArray is not supported for this PipelineOp."
+            assert False, f"Error: MbarrierArray is not supported for PipelineOp: {_get_pipeline_op(self.op_type)}."
 
     def arrive_mbarrier(self, index: int, dst_rank: int):
         if dst_rank is None:
-            cute.arch.mbarrier_arrive(_mbarrier_i64_to_ptr(self.mbarrier_array[index]))
+            cute.arch.mbarrier_arrive(self.get_barrier(index))
         else:
-            cute.arch.mbarrier_arrive(
-                _mbarrier_i64_to_ptr(self.mbarrier_array[index]), dst_rank
-            )
+            cute.arch.mbarrier_arrive(self.get_barrier(index), dst_rank)
 
-    def arrive_tcgen05mma(self, index: int, mask: int):
+    def arrive_tcgen05mma(
+        self, index: int, mask: int, cta_group: cute.nvgpu.tcgen05.CtaGroup
+    ):
         if mask is None:
             with cute.arch.elect_one():
-                cute.nvgpu.tcgen05.commit(
-                    _mbarrier_i64_to_ptr(self.mbarrier_array[index])
-                )
+                cute.nvgpu.tcgen05.commit(self.get_barrier(index))
         else:
             with cute.arch.elect_one():
                 cute.nvgpu.tcgen05.commit(
-                    _mbarrier_i64_to_ptr(self.mbarrier_array[index]),
+                    self.get_barrier(index),
                     mask,
-                    cute.nvgpu.tcgen05.CtaGroup.TWO,
+                    cta_group,
                 )
 
     def arrive_and_expect_tx(self, index: int, tx_count: int):
         with cute.arch.elect_one():
-            cute.arch.mbarrier_init_tx_bytes(
-                _mbarrier_i64_to_ptr(self.mbarrier_array[index]), tx_count
-            )
+            cute.arch.mbarrier_init_tx_bytes(self.get_barrier(index), tx_count)
 
     def try_wait(self, index: int, phase: int):
-        return cute.arch.mbarrier_try_wait(
-            _mbarrier_i64_to_ptr(self.mbarrier_array[index]), phase
-        )
+        return cute.arch.mbarrier_try_wait(self.get_barrier(index), phase)
 
     def wait(self, index: int, phase: int):
-        cute.arch.mbarrier_wait(_mbarrier_i64_to_ptr(self.mbarrier_array[index]), phase)
+        cute.arch.mbarrier_wait(self.get_barrier(index), phase)
 
     def get_barrier(self, index: int) -> cute.Pointer:
-        return _mbarrier_i64_to_ptr(self.mbarrier_array[index])
+        return self.mbarrier_base + index
 
 
 class TmaStoreFence(SyncObjectArray):
@@ -390,6 +393,7 @@ class PipelineAsync:
     PipelineAsync is a generic pipeline class where both the producer and consumer are
     AsyncThreads. It also serves as a base class for specialized pipeline classes.
     """
+
     sync_object_array_full: SyncObjectArray
     sync_object_array_empty: SyncObjectArray
     num_stages: Int32
@@ -522,6 +526,7 @@ class PipelineTmaAsync(PipelineAsync):
     """
     PipelineTmaAsync is used for TMA producers and AsyncThread consumers (e.g. Hopper mainloops).
     """
+
     is_signalling_thread: bool
 
     @staticmethod
@@ -628,7 +633,6 @@ class PipelineTmaAsync(PipelineAsync):
         )
         self.sync_object_array_full.arrive(state.index, self.producer_mask)
 
-
     def producer_commit(self, state: PipelineState):
         """
         TMA producer commit is a NOP. The transaction barrier signals the commit upon completion of the TMA.
@@ -646,12 +650,15 @@ class PipelineTmaAsync(PipelineAsync):
             ),
         )
 
+
 @dataclass(frozen=True)
 class PipelineTmaUmma(PipelineAsync):
     """
     PipelineTmaUmma is used for TMA producers and UMMA consumers (e.g. Blackwell mainloops).
     """
+
     is_leader_cta: bool
+    cta_group: cute.nvgpu.tcgen05.CtaGroup
 
     @staticmethod
     def _compute_mcast_arrival_mask(cta_layout_vmnk: cute.Layout):
@@ -748,6 +755,12 @@ class PipelineTmaUmma(PipelineAsync):
             producer_mask = PipelineTmaUmma._compute_mcast_arrival_mask(cta_layout_vmnk)
             is_leader_cta = PipelineTmaUmma._compute_is_leader_cta(cta_layout_vmnk)
 
+        cta_group = (
+            cute.nvgpu.tcgen05.CtaGroup.ONE
+            if cta_layout_vmnk is None or cute.size(cta_layout_vmnk, mode=[0]) == 1
+            else cute.nvgpu.tcgen05.CtaGroup.TWO
+        )
+
         consumer_mask = producer_mask
 
         pipeline_init_wait(cta_layout_vmnk)
@@ -759,6 +772,15 @@ class PipelineTmaUmma(PipelineAsync):
             producer_mask,
             consumer_mask,
             is_leader_cta,
+            cta_group,
+        )
+
+    def consumer_release(self, state: PipelineState):
+        """
+        UMMA consumer release buffer empty, cta_group needs to be provided.
+        """
+        self.sync_object_array_empty.arrive(
+            state.index, self.consumer_mask, self.cta_group
         )
 
     def producer_acquire(
@@ -788,6 +810,8 @@ class PipelineUmmaAsync(PipelineAsync):
     """
     PipelineTmaUmma is used for UMMA producers and AsyncThread consumers (e.g. Blackwell accumulator pipelines).
     """
+
+    cta_group: cute.nvgpu.tcgen05.CtaGroup
 
     @staticmethod
     def _compute_tmem_sync_mask(cta_layout_vmnk: cute.Layout):
@@ -858,6 +882,12 @@ class PipelineUmmaAsync(PipelineAsync):
         else:
             consumer_mask = PipelineUmmaAsync._compute_peer_cta_rank()
 
+        cta_group = (
+            cute.nvgpu.tcgen05.CtaGroup.ONE
+            if cta_layout_vmnk is None or cute.size(cta_layout_vmnk, mode=[0]) == 1
+            else cute.nvgpu.tcgen05.CtaGroup.TWO
+        )
+
         pipeline_init_wait(cta_layout_vmnk)
 
         return PipelineUmmaAsync(
@@ -866,6 +896,15 @@ class PipelineUmmaAsync(PipelineAsync):
             num_stages,
             producer_mask,
             consumer_mask,
+            cta_group,
+        )
+
+    def producer_commit(self, state: PipelineState):
+        """
+        UMMA producer commit buffer full, cta_group needs to be provided.
+        """
+        self.sync_object_array_full.arrive(
+            state.index, self.producer_mask, self.cta_group
         )
 
     def producer_tail(self, state: PipelineState):

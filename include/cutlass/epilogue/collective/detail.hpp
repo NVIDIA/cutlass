@@ -218,6 +218,16 @@ struct IsThreadEpilogueOpWithActivation <ThreadEpilogueOp, cute::enable_if_t<Thr
 };
 
 template <typename ThreadEpilogueOp, typename = void>
+struct IsThreadEpilogueOpWithPerChannelScaled {
+  static constexpr bool value = false;
+};
+
+template <typename ThreadEpilogueOp>
+struct IsThreadEpilogueOpWithPerChannelScaled <ThreadEpilogueOp, cute::void_t<decltype(ThreadEpilogueOp::IsPerRowScaleSupported)>> {
+  static constexpr bool value = ThreadEpilogueOp::IsPerRowScaleSupported || ThreadEpilogueOp::IsPerColScaleSupported;
+};
+
+template <typename ThreadEpilogueOp, typename = void>
 struct IsThreadEpilogueOpWithElementwiseArguments : cute::false_type {};
 
 template <typename ThreadEpilogueOp>

@@ -371,11 +371,14 @@ template <
 constexpr int
 get_input_alignment_bits() {
   if constexpr (IsF8F6F4SubBytes && sizeof_bits<ElementType>::value == 4) {
+    // 16U4 format: The inner tensor size dimension should be multiple of 64B.
     return 64 * 8;
   }
   else if constexpr (IsF8F6F4SubBytes && sizeof_bits<ElementType>::value == 6) {
+    // 16U6 format : The inner tensor size dimension must be a multiple of 96B.
     return 96 * 8;
   }
+  // TMA 16B alignment requirement
   return 128;
 }
 
@@ -383,12 +386,11 @@ get_input_alignment_bits() {
 template <class ElementType>
 constexpr int
 get_output_alignment_bits() {
-
   if constexpr (sizeof_bits<ElementType>::value == 6) {
-    // U6 format : The inner tensor size dimension must be a multiple of 96B.
+    // 16U6 format : The inner tensor size dimension must be a multiple of 96B.
     return 96 * 8;
   }
-
+  // TMA 16B alignment requirement
   return 128;
 }
 

@@ -3,10 +3,6 @@
 Debugging
 =========
 
-.. contents:: Table of Contents
-   :depth: 2
-   :local:
-
 This page provides an overview of debugging techniques and tools for CuTe DSL programs.
 
 

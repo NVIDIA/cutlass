@@ -45,7 +45,6 @@
 #include "cute/atom/mma_atom.hpp"
 #include "cute/algorithm/functional.hpp"
 #include "cute/algorithm/gemm.hpp"
-#include "cute/tensor_predicate.hpp"
 #include "cute/numeric/arithmetic_tuple.hpp"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -114,7 +113,7 @@ struct CollectiveMma<
   using ElementB = remove_cvref_t<decltype(get<0>(ElementPairB{}))>;
   using StrideB  = remove_cvref_t<decltype(get<0>(StridePairB{}))>;
   using InternalStrideB  = cute::remove_pointer_t<StrideB>;
-  
+
   // SFA and SFB
   using ElementSF = remove_cvref_t<decltype(get<1>(ElementPairA{}))>;
   using LayoutSFA = remove_cvref_t<decltype(get<1>(StridePairA{}))>;
@@ -466,7 +465,7 @@ struct CollectiveMma<
     constexpr int tma_alignment_bits_B = cutlass::detail::get_input_alignment_bits<ElementB, IsF8F6F4>();
     constexpr int min_tma_aligned_elements_A = tma_alignment_bits_A / cutlass::sizeof_bits<ElementA>::value;
     constexpr int min_tma_aligned_elements_B = tma_alignment_bits_B / cutlass::sizeof_bits<ElementB>::value;
-    
+
     bool implementable = true;
     if (problem_shapes.is_host_problem_shape_available()) {
       // Check alignment for all problem sizes
@@ -642,7 +641,7 @@ struct CollectiveMma<
     // Represent the full tensors -- get these from TMA
     Tensor mA_mkl = params.tma_load_a.get_tma_tensor(make_shape(M,K,init_L));                          // (m,k,l)
     Tensor mB_nkl = params.tma_load_b.get_tma_tensor(make_shape(N,K,init_L));                          // (n,k,l)
-    
+
     // Represent the full tensor of Scale factors
     InternalLayoutSFA layout_SFA{};
     InternalLayoutSFB layout_SFB{};
@@ -883,7 +882,7 @@ struct CollectiveMma<
     auto tCsB_stage   = tCsB(_,_,_,read_stage);
     auto tCsSFA_stage = tCsSFA(_,_,_,read_stage);
     auto tCsSFB_stage = tCsSFB(_,_,_,read_stage);
-    
+
     auto copy_kblock = [&](auto k_block) {
         // copy smem->rmem for A/B operand
       copy(smem_tiled_copy_A, tCsA_stage(_,_,k_block), tCrA_copy_view(_,_,k_block));
@@ -894,7 +893,7 @@ struct CollectiveMma<
       fp4_shift_A(MMAOp{}, tCrA_copy_view(_,_,k_block));
       fp4_shift_B(MMAOp{}, tCrB_copy_view(_,_,k_block));
 
-      
+
       // Copy smem->rmem for SFA/SFB operand
       copy(tCsSFA_stage(_,_,k_block), tCrSFA_copy_view(_,_,k_block));
       copy(tCsSFB_stage(_,_,k_block), tCrSFB_copy_view(_,_,k_block));
@@ -916,7 +915,7 @@ struct CollectiveMma<
       for_each(make_int_sequence<K_BLOCK_MAX>{}, [&] (auto k_block) {
 
         auto k_block_next = ((k_block + 1) == K_BLOCK_MAX) ? 0 : (k_block + 1);
-        
+
         if (k_block == K_BLOCK_MAX - 1) {
           cutlass::arch::NamedBarrier::sync(
           thr_size(tiled_mma), cutlass::arch::ReservedNamedBarriers::Sm120MainloopBarrier);
@@ -943,7 +942,7 @@ struct CollectiveMma<
     for_each(make_int_sequence<K_BLOCK_MAX>{}, [&] (auto k_block) {
 
       auto k_block_next = ((k_block + 1) == K_BLOCK_MAX) ? 0 : (k_block + 1);
-      
+
       if (k_block == K_BLOCK_MAX - 1) {
         cutlass::arch::NamedBarrier::sync(
         thr_size(tiled_mma), cutlass::arch::ReservedNamedBarriers::Sm120MainloopBarrier);
@@ -1154,7 +1153,7 @@ struct CollectiveMma<
       [[maybe_unused]] int32_t next_batch) {
     return input_tensors;
   }
-  
+
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

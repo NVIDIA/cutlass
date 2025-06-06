@@ -6,10 +6,6 @@
 End-to-End Code Generation
 ==========================
 
-.. contents::
-   :depth: 2
-   :local:
-
 
 1. Techniques for Turning Python into |IR|
 ------------------------------------------

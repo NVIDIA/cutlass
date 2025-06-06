@@ -37,6 +37,7 @@ from cutlass.cutlass_dsl import (
 )
 
 from cutlass._mlir import ir
+from cutlass._mlir.dialects._ods_common import get_op_result_or_op_results
 from cutlass._mlir.dialects import cute as _cute_ir
 from cutlass._mlir.dialects.cute import (
     ScaledBasis as _ScaledBasis,
@@ -962,6 +963,9 @@ class _Pointer(Pointer):
         # Cut off the MLIR type's string for making pretty_str more concise
         return self.type.__str__()[6:]
 
+    def __get_mlir_types__(self):
+        return [self.value.type]
+
     def __extract_mlir_values__(self):
         return [self.value]
 
@@ -979,7 +983,7 @@ class _Pointer(Pointer):
 
     @property
     @lru_cache_ir()
-    def value_type(self) -> Type[Numeric]:
+    def dtype(self) -> Type[Numeric]:
         return Numeric.from_mlir_type(self.value.type.value_type)
 
     @property
@@ -993,7 +997,7 @@ class _Pointer(Pointer):
     @property
     @lru_cache_ir()
     def memspace(self) -> AddressSpace:
-        return self.type.address_space
+        return AddressSpace(self.type.address_space)
 
     # Make it behave as if it inherited from ir.Value
     @property
@@ -1015,7 +1019,7 @@ class _Pointer(Pointer):
         :return: The LLVM pointer representation
         :rtype: ir.Value
         """
-        llvm_ptr_ty = llvm.PointerType.get(self.type.address_space)
+        llvm_ptr_ty = llvm.PointerType.get(self.memspace.value)
         return builtin.unrealized_conversion_cast(
             [llvm_ptr_ty], [self.value], loc=loc, ip=ip
         )
@@ -1034,10 +1038,7 @@ class _Pointer(Pointer):
 
     @dsl_user_op
     def toint(self, *, loc=None, ip=None):
-        if self.type.address_space in (
-            _cute_ir.AddressSpace.gmem,
-            _cute_ir.AddressSpace.generic,
-        ):
+        if self.memspace in (AddressSpace.gmem, AddressSpace.generic):
             res_type = Int64
         else:
             res_type = Int32
@@ -1067,25 +1068,26 @@ class _Pointer(Pointer):
             raise ValueError("Alignment must be a power of 2")
 
         assert isinstance(self.type, _cute_ir.PtrType)
-        if self.type.address_space is AddressSpace.tmem:
+        if self.memspace is AddressSpace.tmem:
             raise ValueError("aligning a TMEM pointer is not supported")
 
         if min_align <= self.alignment:
             return self
-        else:
-            # Convert pointer to integer
-            address_int = self.toint(loc=loc, ip=ip)
-            # Align the address
-            aligned_address = (address_int + min_align - 1) & ~(min_align - 1)
-            # Create and return the aligned pointer
-            return make_ptr(
-                Numeric.from_mlir_type(self.type.value_type),
-                aligned_address,
-                self.type.address_space,
-                assumed_align=min_align,
-                loc=loc,
-                ip=ip,
-            )
+
+        dtype = Numeric.from_mlir_type(self.type.value_type)
+        # Convert pointer to integer
+        address_int = self.toint(loc=loc, ip=ip)
+        # Align the address
+        aligned_address = (address_int + min_align - 1) & ~(min_align - 1)
+
+        return make_ptr(
+            dtype,
+            aligned_address,
+            self.memspace,
+            assumed_align=min_align,
+            loc=loc,
+            ip=ip,
+        )
 
 
 @ir.register_value_caster(_cute_ir.MemRefType.get_static_typeid(), replace=True)
@@ -1138,8 +1140,34 @@ class _Tensor(Tensor):
         self._dtype = dtype
         if isinstance(value, ir.Value):
             self.value = value
+        elif isinstance(value, _Tensor):
+            self.value = value.value
         else:
-            raise TypeError(f"Expected ir.Value, got {type(value)}")
+            raise TypeError(f"Expected ir.Value or core._Tensor, got {type(value)}")
+
+        # Set iterator
+        iter_val = _cute_ir.get_iter(self.value)
+        if isinstance(iter_val, Pointer):
+            self._iterator = iter_val
+        elif isinstance(iter_val.type, _cute_ir.IntTupleType):
+            self._iterator = _unpack_x_tuple(iter_val)
+        elif isinstance(iter_val, ir.Value):
+            # Example: SMEM descriptor iterator, not well supported today
+            self._iterator = iter_val
+        else:
+            raise TypeError(f"unsupported iterator type, got {type(iter_val)}")
+
+        # Set dtype
+        if self._dtype is None:
+            if is_int_tuple(self.iterator):
+                self._dtype = IntTuple
+            elif isinstance(self.iterator, Pointer):
+                self._dtype = self.iterator.value_type
+            elif isinstance(self.type, _cute_nvgpu_ir.SmemDescViewType):
+                # SmemDescViewType do not need dtype
+                self._dtype = None
+            else:
+                raise TypeError(f"unsupported iterator type, got {type(self.iterator)}")
 
     def __str__(self):
         return f"tensor<{pretty_str(self.iterator)} o {pretty_str(self.layout)}>"
@@ -1157,7 +1185,7 @@ class _Tensor(Tensor):
         ), f"Expected _Tensor or ir.Value, but got {type(values[0])}"
         return _Tensor(
             values[0] if isinstance(values[0], ir.Value) else values[0].value,
-            self._dtype,
+            dtype=self.element_type,
         )
 
     # Cheat to let `Type(_Tensor())` to return cute.Tensor
@@ -1252,9 +1280,6 @@ class _Tensor(Tensor):
             return self.element_type(data_val)
 
     def _cvt_to_dest(self, data: Union["TensorSSA", Numeric], *, loc=None, ip=None):
-        if data.dtype is self.element_type:
-            return data.ir_value(loc=loc, ip=ip)
-
         orig_dtype = data.dtype
         # Implicit upcast to wider type
         if (
@@ -1269,11 +1294,11 @@ class _Tensor(Tensor):
                 f"to Tensor with element type {self.element_type}"
             )
 
-        val = data.ir_value(loc=loc, ip=ip)
-        if isinstance(data.dtype, (Int8, Boolean)) and (self.element_type is Boolean):
-            zero = Int8(0).ir_value(loc=loc, ip=ip)
-            val = arith.cmpi(arith.CmpIPredicate.ne, val, zero, loc=loc, ip=ip)
-
+        if data.dtype is Boolean and self.element_type is Boolean:
+            # Boolean Numeric and Boolean TensorSSA both hold i1 value, but we need int8 value store to memory
+            val = data.ir_value_int8()
+        else:
+            val = data.ir_value()
         return val
 
     @dsl_user_op
@@ -1340,7 +1365,7 @@ class _Tensor(Tensor):
 
             # Implicit upcast to wider type
             val = self._cvt_to_dest(data, loc=loc, ip=ip)
-            if val.type != self.element_type.mlir_type:
+            if val.type != self.type.value_type:
                 raise ValueError(
                     f"type mismatch, store {val.type} to {self.element_type}"
                 )
@@ -1365,16 +1390,7 @@ class _Tensor(Tensor):
 
     @property
     def iterator(self) -> Union[Pointer, IntTuple]:
-        res = _cute_ir.get_iter(self.value)
-        if isinstance(res, Pointer):
-            return res
-        elif isinstance(res.type, _cute_ir.IntTupleType):
-            return _unpack_x_tuple(res)
-        elif isinstance(res, ir.Value):
-            # Example: SMEM descriptor iterator, not well supported today
-            return res
-        else:
-            raise TypeError(f"unsupported iterator type, got {type(res)}")
+        return self._iterator
 
     @property
     def layout(self) -> Layout:
@@ -1405,12 +1421,7 @@ class _Tensor(Tensor):
     @property
     @lru_cache_ir()
     def element_type(self) -> Union[Type[Numeric], Type[IntTuple]]:
-        if is_integer(self.iterator) or isinstance(self.iterator, tuple):
-            return IntTuple
-        elif isinstance(self.iterator, Pointer):
-            return self.iterator.value_type
-        else:
-            raise TypeError(f"unsupported iterator type, got {type(self.iterator)}")
+        return self._dtype
 
     @property
     @lru_cache_ir()
@@ -1443,7 +1454,14 @@ class _Tensor(Tensor):
         self._check_can_load_store()
 
         res_vect = _cute_ir.memref_load_vec(self.value, row_major=True, loc=loc, ip=ip)
-
+        if self.element_type is Boolean:
+            assert (
+                res_vect.type.element_type == T.i8()
+            ), f"Boolean tensor must be stored as i8 in memory, but got {res_vect.type.element_type}"
+            zeros = full_like(self, 0, Int8, loc=loc, ip=ip)
+            res_vect = arith.cmpi(
+                arith.CmpIPredicate.ne, res_vect, zeros, loc=loc, ip=ip
+            )
         return TensorSSA(res_vect, self.shape, self.element_type)
 
     @dsl_user_op
@@ -1532,9 +1550,7 @@ class _Tensor(Tensor):
         self[None] = full(self.shape, fill_value=value, dtype=dst_type, loc=loc, ip=ip)
 
     def _check_can_load_store(self):
-        if not isinstance(
-            self.type, _cute_ir.MemRefType
-        ) or not self.type.address_space in (
+        if not isinstance(self.type, _cute_ir.MemRefType) or not self.memspace in (
             AddressSpace.rmem,
             AddressSpace.smem,
             AddressSpace.gmem,
@@ -1734,10 +1750,6 @@ def printf(*args, loc=None, ip=None) -> None:
         arg0 = arg.value if isinstance(arg, Numeric) else arg
 
         if isinstance(arg0, ir.Value):
-            if isinstance(arg0.type, ir.FloatType) and (arg0.type != T.f32()):
-                raise TypeError(
-                    f"cute.printf only supports 32-bit floating-point type, but got {arg0.type}"
-                )
             return arg0
         elif isinstance(arg0, bool):
             return const(arg0, Boolean)
@@ -2212,11 +2224,13 @@ def group_modes(input, begin: int, end: int = -1, *, loc=None, ip=None):
         shape = make_shape(2, 3, 4, 5)
         grouped_shape = group_modes(shape, 0, 2)  # Shape ((2, 3), 4, 5)
     """
-    if depth(input) == 0:
+    if depth(input) == 0 and is_integer(input):
         return (input,)
     if isinstance(input, tuple):
         return (*input[:begin], (input[begin:end]), *input[end:])
-    return _cute_ir.group_modes(input.value, begin, end, loc=loc, ip=ip)
+    return _cute_ir.group_modes(
+        input.value if isinstance(input, Tensor) else input, begin, end, loc=loc, ip=ip
+    )
 
 
 @overload
@@ -2315,10 +2329,13 @@ def slice_(src, coord: Coord, *, loc=None, ip=None):
         else:
             return ()
 
+    res_type = None
     if isinstance(src, Tensor):
+        res_type = src.element_type
         src = src.value
     coord_val = _pack_coord(coord, loc=loc, ip=ip)
-    return _cute_ir.slice(input=src, coord=coord_val, loc=loc, ip=ip)
+    res = _cute_ir.slice(input=src, coord=coord_val, loc=loc, ip=ip)
+    return _Tensor(res, dtype=res_type) if isinstance(res, _Tensor) else res
 
 
 @overload
@@ -2751,7 +2768,8 @@ def filter_zeros(input, *, target_profile=None, loc=None, ip=None):
     """Filter out zeros from a layout or tensor.
 
     This function removes zero-stride dimensions from a layout or tensor.
-    See Section 3.3 in the CuTe Whitepaper for more details on layout operations.
+    Refer to https://github.com/NVIDIA/cutlass/blob/main/media/docs/cpp/cute/02_layout_algebra.md
+    for more layout algebra operations.
 
     :param input: The input layout or tensor to filter
     :type input: Layout or Tensor
@@ -2913,7 +2931,8 @@ def size(
 
     Computes the size (number of elements) in the domain of a layout or tensor.
     For layouts, this corresponds to the shape of the coordinate space.
-    See Section 3.2 in the CuTe Whitepaper for more details on layout domains.
+    See https://github.com/NVIDIA/cutlass/blob/main/media/docs/cpp/cute/01_layout.md
+    for more details on layout domains.
 
     :param a: The input object whose size to compute
     :type a: IntTuple, Shape, Layout, ComposedLayout or Tensor
@@ -3177,7 +3196,7 @@ def make_composed_layout(
 ) -> ComposedLayout:
     """Create a composed layout by composing an inner transformation with an outer layout.
 
-    As described in the CuTe whitepaper, a composed layout applies a sequence of transformations
+    A composed layout applies a sequence of transformations
     to coordinates. The composition is defined as (inner ∘ offset ∘ outer), where the operations
     are applied from right to left.
 
@@ -3416,12 +3435,7 @@ def recast_ptr(
 
     value_type = ptr.type.value_type if dtype is None else dtype
     swizzle = swizzle_.type.attribute if swizzle_ is not None else None
-    res_ty = _cute_ir.PtrType.get(
-        value_type,
-        AddressSpace(ptr.type.address_space),
-        ptr.alignment,
-        swizzle,
-    )
+    res_ty = _cute_ir.PtrType.get(value_type, ptr.memspace, ptr.alignment, swizzle)
     return _cute_ir.recast_iter(res_ty, ptr.value, loc=loc, ip=ip)
 
 
@@ -3438,8 +3452,15 @@ def make_ptr(
     if dtype is None or not isinstance(dtype, NumericMeta):
         raise TypeError(f"expects dtype to be a type of Numeric, but got {dtype}")
 
+    if not isinstance(mem_space, AddressSpace):
+        raise TypeError(f"expects mem_space to be an AddressSpace, but got {mem_space}")
+
+    if isinstance(value, ir.Value) and llvm.PointerType.isinstance(value.type):
+        value = llvm.ptrtoint(T.i64(), value)
+
     if not is_integer(value):
         raise TypeError(f"expects integer value, but got {type(value)}")
+    value = Int32(value) if mem_space == AddressSpace.tmem else Int64(value)
 
     bytes_per_elt = max(1, dtype.width // 8)
     if assumed_align is None:
@@ -3450,13 +3471,11 @@ def make_ptr(
             f"{bytes_per_elt=} is not a multiple of {assumed_align=} and vice versa."
         )
 
-    value = Int32(value) if mem_space == AddressSpace.tmem else Int64(value)
     aligned_ty = _cute_ir.ConstrainedIntType.get(assumed_align, type(value).width)
     aligned_intptr = _cute_ir.assume(aligned_ty, value.ir_value(), loc=loc, ip=ip)
 
-    ptr_ty = _cute_ir.PtrType.get(
-        T.i8() if dtype is None else dtype.mlir_type, mem_space, assumed_align
-    )
+    data_ty = T.i8() if dtype is None else dtype.mlir_type
+    ptr_ty = _cute_ir.PtrType.get(data_ty, mem_space, assumed_align)
     return _cute_ir.inttoptr(ptr_ty, aligned_intptr, loc=loc, ip=ip)
 
 
@@ -3582,7 +3601,7 @@ def make_fragment(
 ) -> Tensor:
     if not issubclass(dtype, Numeric):
         raise TypeError(f"value_type must be a type of Numeric, but got {type(dtype)}")
-    elem_ty = dtype.mlir_type
+    elem_ty = dtype.mlir_type if dtype is not Boolean else T.i8()
 
     # Alignment for register memory is useless(?), pick-up large enough number
     # to allow .128 (> 16B) load store
@@ -3691,16 +3710,12 @@ def make_fragment_like(src, dtype=None, *, loc=None, ip=None):
             )
             return make_fragment(new_layout, dtype, loc=loc, ip=ip)
         else:
-            if dtype is None:
-                ty = src.element_type.mlir_type
-            else:
-                ty = dtype.mlir_type
+            dtype = src.element_type if dtype is None else dtype
+            ty = dtype.mlir_type if dtype is not Boolean else T.i8()
             new_tensor = _cute_ir.make_fragment_like(
                 src.value, elem_type=ty, loc=loc, ip=ip
             )
-            return _Tensor(
-                new_tensor.value, dtype if dtype is not None else src.element_type
-            )
+            return _Tensor(new_tensor.value, dtype)
     else:
         raise TypeError(
             f"src must be a Layout or ComposedLayout or tensor, got {type(src)}"
@@ -3958,11 +3973,14 @@ def logical_divide(target: Tensor, tiler: Tiler, *, loc=None, ip=None) -> Tensor
 
 @dsl_user_op
 def logical_divide(target, tiler: Tiler, *, loc=None, ip=None):
+    res_type = None
     if isinstance(target, _Tensor):
+        res_type = target.element_type
         target = target.value
     if isinstance(tiler, tuple):
         tiler = _pack_tile(tiler, loc=loc, ip=ip)
-    return _cute_ir.logical_divide(input=target, tiler=tiler, loc=loc, ip=ip)
+    res = _cute_ir.logical_divide(input=target, tiler=tiler, loc=loc, ip=ip)
+    return _Tensor(res, dtype=res_type) if isinstance(res, _Tensor) else res
 
 
 @overload
@@ -3973,11 +3991,14 @@ def zipped_divide(target: Tensor, tiler: Tiler, *, loc=None, ip=None) -> Tensor:
 
 @dsl_user_op
 def zipped_divide(target, tiler: Tiler, *, loc=None, ip=None):
+    res_type = None
     if isinstance(target, _Tensor):
+        res_type = target.element_type
         target = target.value
     if isinstance(tiler, tuple):
         tiler = _pack_tile(tiler, loc=loc, ip=ip)
-    return _cute_ir.zipped_divide(input=target, tiler=tiler, loc=loc, ip=ip)
+    res = _cute_ir.zipped_divide(input=target, tiler=tiler, loc=loc, ip=ip)
+    return _Tensor(res, dtype=res_type) if isinstance(res, _Tensor) else res
 
 
 @overload
@@ -3988,11 +4009,14 @@ def tiled_divide(target: Tensor, tiler: Tiler, *, loc=None, ip=None) -> Tensor: 
 
 @dsl_user_op
 def tiled_divide(target, tiler: Tiler, *, loc=None, ip=None):
+    res_type = None
     if isinstance(target, _Tensor):
+        res_type = target.element_type
         target = target.value
     if isinstance(tiler, tuple):
         tiler = _pack_tile(tiler, loc=loc, ip=ip)
-    return _cute_ir.tiled_divide(input=target, tiler=tiler, loc=loc, ip=ip)
+    res = _cute_ir.tiled_divide(input=target, tiler=tiler, loc=loc, ip=ip)
+    return _Tensor(res, dtype=res_type) if isinstance(res, _Tensor) else res
 
 
 @overload
@@ -4003,11 +4027,14 @@ def flat_divide(target: Tensor, tiler: Tiler, *, loc=None, ip=None) -> Tensor: .
 
 @dsl_user_op
 def flat_divide(target, tiler: Tiler, *, loc=None, ip=None):
+    res_type = None
     if isinstance(target, _Tensor):
+        res_type = target.element_type
         target = target.value
     if isinstance(tiler, tuple):
         tiler = _pack_tile(tiler, loc=loc, ip=ip)
-    return _cute_ir.flat_divide(input=target, tiler=tiler, loc=loc, ip=ip)
+    res = _cute_ir.flat_divide(input=target, tiler=tiler, loc=loc, ip=ip)
+    return _Tensor(res, dtype=res_type) if isinstance(res, _Tensor) else res
 
 
 #
@@ -4075,14 +4102,22 @@ def tile_to_shape(
 def local_partition(
     target: Tensor,
     tiler: Union[Layout, Shape],
-    index,
+    index: Union[int, Numeric],
     proj: XTuple = 1,
     *,
     loc=None,
     ip=None,
 ) -> Tensor:
+    if isinstance(index, cutlass_arith.ArithValue):
+        index_val = index
+    else:
+        index_val = index.ir_value()
+    if index_val.type.width > 32:
+        raise NotImplementedError(
+            f"Index value should be 32-bit or smaller integer type, but got {index_val.type}"
+        )
     return _cute_ir.local_partition(
-        input=target.value, tiler=dice(tiler, proj), index=index, loc=loc, ip=ip
+        input=target.value, tiler=dice(tiler, proj), index=index_val, loc=loc, ip=ip
     )
 
 
@@ -4332,6 +4367,8 @@ class MmaAtom(Atom):
     def make_fragment_A(self, input, *, loc=None, ip=None):
         # input could be memref/shape/layout for tmem based fragment
         if isinstance(input, _Tensor):
+            if self.op is not None:
+                self.op._verify_fragment_A(input, loc=loc, ip=ip)
             input = input.value
         if isinstance(input, tuple):
             input = _pack_shape(input, loc=loc, ip=ip)
@@ -4343,9 +4380,12 @@ class MmaAtom(Atom):
             ip=ip,
         )
 
+
     @dsl_user_op
     def make_fragment_B(self, input, *, loc=None, ip=None):
         if isinstance(input, _Tensor):
+            if self.op is not None:
+                self.op._verify_fragment_B(input, loc=loc, ip=ip)
             input = input.value
         return _cute_ir.mma_make_fragment(
             _cute_ir.MmaOperand.B,
@@ -5193,7 +5233,7 @@ def copy(
     src: Tensor,
     dst: Tensor,
     *,
-    pred: Tensor = None,
+    pred: Optional[Tensor] = None,
     loc=None,
     ip=None,
     **kwargs,
@@ -5334,7 +5374,7 @@ class TensorSSA(cutlass_arith.ArithValue):
             other = as_numeric(other)
 
         # Promote types
-        lhs, rhs, res_type = _binary_op_type_promote(self, other, True)
+        lhs, rhs, res_type = _binary_op_type_promote(self, other)
 
         # Promote scalar to vector
         if not isinstance(rhs, TensorSSA):
@@ -5826,6 +5866,28 @@ class TensorSSA(cutlass_arith.ArithValue):
 
     def ir_value(self, *, loc=None, ip=None):
         return self
+
+    def ir_value_int8(self, *, loc=None, ip=None):
+        """
+        Returns int8 ir value of Boolean tensor.
+        When we need to store Boolean tensor ssa, use ir_value_int8().
+
+        :param loc: Source location information, defaults to None
+        :type loc: Optional[Location], optional
+        :param ip: Insertion point for MLIR operations, defaults to None
+        :type ip: Optional[InsertionPoint], optional
+        :return: The int8 value of this Boolean
+        :rtype: ir.Value
+        """
+        assert (
+            self.element_type is Boolean
+        ), f"Only boolean type needs to be converted to int8, got {self.element_type}"
+
+        if not hasattr(self, "_value_int8"):
+            self._value_int8 = arith.extsi(
+                T.vector(self.type.shape[0], T.i8()), self, loc=loc, ip=ip
+            )
+        return self._value_int8
 
     def reduce(self, op, init_val, reduction_profile: Coord, *, loc=None, ip=None):
         """

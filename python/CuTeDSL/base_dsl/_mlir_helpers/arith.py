@@ -578,7 +578,7 @@ class ArithValue(ir.Value):
 
     # Unary operators
     def __invert__(self, *, loc=None, ip=None) -> "ArithValue":
-        return arith.xori(self, arith.const(self.type, -1))
+        return arith.xori(self, arith.constant(self.type, -1))
 
     # Bitwise operations
     @_dispatch_to_rhs_r_op

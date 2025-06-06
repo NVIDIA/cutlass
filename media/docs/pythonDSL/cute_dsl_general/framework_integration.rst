@@ -4,10 +4,6 @@
 Integration with Frameworks
 =============================
 
-.. contents:: Table of Contents
-   :depth: 2
-   :local:
-
 In order to facilitate the integration of CUTLASS Python with popular frameworks, we leverage the
 `DLPack protocol <https://github.com/dmlc/dlpack>`_ and transform tensors originating from these
 frameworks to CuTe tensors. The present page documents the conventions, the API available to the
@@ -257,8 +253,7 @@ layouts. The full signature of ``mark_compact_shape_dynamic`` is as follows:
 
 The ``mode`` parameter determines which shape dimension becomes dynamic. After calling this function,
 the specific shape dimension given by ``mode`` is marked as dynamic immediately. The stride will be
-updated accordingly but this process is delayed until the C ABI of the tensor is constructed.
-For modes that have a shape of size 1, their stride are canonicalized to 0.
+updated accordingly. For modes that have a shape of size 1, their stride are canonicalized to 0.
 
 The ``stride_order`` parameter specifies the ordering of strides in the tensor. It is consistent
 with ``torch.Tensor.dim_order()`` and defaults to ``None``. The parameter indicates the order of
@@ -322,10 +317,6 @@ The following example demonstrates how to use ``mark_compact_shape_dynamic`` to 
     import torch
     from cutlass.cute.runtime import from_dlpack
 
-    @cute.jit
-    def kernel(t: cute.Tensor):
-        pass
-
     # (8,4,16,2):(2,16,64,1)
     a = torch.empty(16, 4, 8, 2).permute(2, 1, 0, 3)
     # (1,4,1,32,1):(4,1,4,4,4) => torch tensor when dimension has shape 1, its stride is degenerated to 1,
@@ -337,14 +328,12 @@ The following example demonstrates how to use ``mark_compact_shape_dynamic`` to 
     t0 = from_dlpack(a).mark_compact_shape_dynamic(
         mode=0, divisibility=2
     )
-    kernel(t0)
     # (?{div=2},4,16,2):(2,?{div=4},?{div=16},1)
     print(t0)
 
     t1 = from_dlpack(a).mark_compact_shape_dynamic(
         mode=1, divisibility=2
     )
-    kernel(t1)
     # (8,?{div=2},16,2):(2,16,?{div=32},1)
     print(t1)
 
@@ -353,21 +342,18 @@ The following example demonstrates how to use ``mark_compact_shape_dynamic`` to 
     ).mark_compact_shape_dynamic(
         mode=3, divisibility=2
     )
-    kernel(t2)
     # (8,?{div=2},16,?{div=2}):(?{div=2},?{div=16},?{div=32},1)
     print(t2)
 
     t3 = from_dlpack(b).mark_compact_shape_dynamic(
         mode=2, divisibility=1, stride_order=(3, 0, 2, 4, 1)
     )
-    kernel(t3)
     # (1,4,?,32,1):(0,1,4,?{div=4},0)
     print(t3)
 
     t4 = from_dlpack(b).mark_compact_shape_dynamic(
         mode=2, divisibility=1, stride_order=(2, 3, 4, 0, 1)
     )
-    kernel(t4)
     # (1,4,?,32,1):(0,1,128,4,0)
     print(t4)
 

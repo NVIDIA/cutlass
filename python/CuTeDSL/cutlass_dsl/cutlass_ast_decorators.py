@@ -331,11 +331,7 @@ def _if_execute_dynamic(
         # Assume final result types match the dynamic yields
         result_types = [arg.type for arg in dyn_yield_ops]
 
-        pred_ = t.as_numeric(pred)
-
-        if not isinstance(pred_, Boolean):
-            # Convert to Boolean through comparison
-            pred_ = pred_ == True
+        pred_ = Boolean(pred)
 
         try:
             if_op = scf.IfOp(

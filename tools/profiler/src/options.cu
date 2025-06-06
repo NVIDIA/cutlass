@@ -141,7 +141,16 @@ Options::Device::Device(cutlass::CommandLine const &cmdline) {
       }
     }
 
+    // Permit overriding the sm_count
+    cmdline.get_cmd_line_argument("sm-count", sm_count, 0);
   }
+}
+
+int Options::Device::get_sm_count(int device_index) const {
+  if (sm_count <= 0) {
+    return properties[device_index].multiProcessorCount;
+  }
+  return sm_count;
 }
 
 void Options::Device::print_usage(std::ostream &out) const {
@@ -185,7 +194,12 @@ void Options::Device::print_usage(std::ostream &out) const {
     << "  --llc-capacity=<capacity in KiB>             "
     << "    Capacity of last-level cache in kilobytes. If this is non-zero," << end_of_line
     << "      profiling phases cycle through different input tensors to induce" << end_of_line
-    << "      capacity misses in the L2.\n\n";
+    << "      capacity misses in the L2.\n\n"
+
+     << "  --sm-count=<int>                             "
+     << "    Override the number of SMs. This is used to limit the number of " << end_of_line
+     << "      during profiling. If this is set, profiling attempts to limit the sm_count " << end_of_line
+     << "      to user-set value. This is not possible on all architectures and all kernel types. \n\n";
 
 }
 

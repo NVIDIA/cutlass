@@ -576,6 +576,11 @@ struct GemmGroupedArguments {
   gemm::GemmCoord cluster_shape{};
   gemm::GemmCoord cluster_shape_fallback{};
 
+  library::RasterOrder raster_order{};
+  library::RuntimeDatatype runtime_input_datatype_a{library::RuntimeDatatype::kStatic};
+  library::RuntimeDatatype runtime_input_datatype_b{library::RuntimeDatatype::kStatic};
+  int swizzle_size{1};
+
   // these should really be in the configuration but staying consistent with GEMM
   int sm_count{0};
   int max_active_clusters{0};

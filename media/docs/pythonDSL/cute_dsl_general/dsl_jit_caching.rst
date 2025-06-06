@@ -3,11 +3,9 @@
 
 .. _JIT_Caching:
 
-|DSL| JIT Caching
+JIT Caching
 ====================
-.. contents:: Table of Contents
-   :depth: 2
-   :local:
+
 
 Zero Compile and JIT Executor
 -----------------------------
