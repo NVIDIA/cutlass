@@ -442,7 +442,8 @@ public:
     // Mainloop Load pipeline
     using MainloopPipeline = typename CollectiveMainloop::MainloopPipeline;
     typename MainloopPipeline::Params mainloop_pipeline_params;
-    if (warp_group_role == WarpGroupRole::Producer && producer_warp_role == ProducerWarpRole::Mainloop) {
+    if (warp_group_role == WarpGroupRole::Producer && (producer_warp_role == ProducerWarpRole::Mainloop || 
+        producer_warp_role == ProducerWarpRole::MainloopAux)) {
       mainloop_pipeline_params.role = MainloopPipeline::ThreadCategory::Producer;
     }
     if (warp_group_role == WarpGroupRole::Consumer0 || warp_group_role == WarpGroupRole::Consumer1) {

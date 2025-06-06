@@ -237,7 +237,7 @@ cutlass::DeviceAllocation<ElementAccumulator> block_beta;
 /// Testbed utility types
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm100GroupParams<typename ProblemShape::UnderlyingProblemShape>::RasterOrderOptions;
+using RasterOrderOptions = cutlass::gemm::kernel::detail::RasterOrderOptions;
 // Command line options parsing
 struct Options {
 

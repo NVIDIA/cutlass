@@ -981,6 +981,9 @@ private:
   static constexpr bool Is2SmMma = is_base_of_v<TmaWarpSpecialized2Sm, Schedule>;
   static_assert(Is1SmMma ^ Is2SmMma, "unsupported schedule");
   static_assert(not (Is2SmMma && size<0>(ClusterShape_MNK{}) % 2 == 1), "schedule + cluster mismatch");
+  // C/D should meet TMA alignment requirement if not void
+  static_assert(detail::is_aligned<ElementC_, AlignmentC, ElementD_, AlignmentD>(),
+                "C/D Should meet TMA alignment requirement\n");
 
   static constexpr bool DisableDestination = cute::is_void_v<ElementD_>;
   using ElementD = cute::conditional_t<DisableDestination,fusion::get_element_aux_t<FusionOpOrCallbacks>,ElementD_>; // prevents void ref breakages

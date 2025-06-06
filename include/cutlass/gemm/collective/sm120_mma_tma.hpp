@@ -44,7 +44,6 @@
 #include "cute/atom/mma_atom.hpp"
 #include "cute/algorithm/functional.hpp"
 #include "cute/algorithm/gemm.hpp"
-#include "cute/tensor_predicate.hpp"
 #include "cute/numeric/arithmetic_tuple.hpp"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -113,7 +112,7 @@ struct CollectiveMma<
 
   using RuntimeDataTypeA = void*;
   using RuntimeDataTypeB = void*;
-  
+
   static constexpr int ThreadCount = size(TiledMma{});
 
   using MainloopPipeline = cutlass::PipelineTmaAsync<DispatchPolicy::Stages>;
@@ -505,7 +504,7 @@ struct CollectiveMma<
     int read_stage = smem_pipe_read.index();
     auto tCsA_stage   = tCsA(_,_,_,read_stage);
     auto tCsB_stage   = tCsB(_,_,_,read_stage);
-    
+
     auto copy_kblock = [&](auto k_block) {
         // copy smem->rmem for A/B operand
       copy(smem_tiled_copy_A, tCsA_stage(_,_,k_block), tCrA_copy_view(_,_,k_block));
@@ -533,7 +532,7 @@ struct CollectiveMma<
       for_each(make_int_sequence<K_BLOCK_MAX>{}, [&] (auto k_block) {
 
         auto k_block_next = ((k_block + 1) == K_BLOCK_MAX) ? 0 : (k_block + 1);
-        
+
         if (k_block == K_BLOCK_MAX - 1) {
           cutlass::arch::NamedBarrier::sync(
           thr_size(tiled_mma), cutlass::arch::ReservedNamedBarriers::Sm120MainloopBarrier);
@@ -558,7 +557,7 @@ struct CollectiveMma<
     for_each(make_int_sequence<K_BLOCK_MAX>{}, [&] (auto k_block) {
 
       auto k_block_next = ((k_block + 1) == K_BLOCK_MAX) ? 0 : (k_block + 1);
-      
+
       if (k_block == K_BLOCK_MAX - 1) {
         cutlass::arch::NamedBarrier::sync(
         thr_size(tiled_mma), cutlass::arch::ReservedNamedBarriers::Sm120MainloopBarrier);

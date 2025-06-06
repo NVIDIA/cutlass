@@ -66,6 +66,8 @@ struct CollectiveBuilder<
     StageCountType,
     BuilderScheduleTag,
     cute::enable_if_t<
+      not cute::is_tuple_v<ElementA> && not cute::is_tuple_v<ElementB> &&
+      not cute::is_tuple_v<GmemLayoutATag> && not cute::is_tuple_v<GmemLayoutBTag> &&
       // Dense Gemm
       (cute::is_base_of_v<KernelScheduleSm120DenseGemm, BuilderScheduleTag> ||
        cute::is_base_of_v<KernelTmaWarpSpecializedPingpong, BuilderScheduleTag> ||

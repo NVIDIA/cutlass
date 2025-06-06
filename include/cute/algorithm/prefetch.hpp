@@ -90,18 +90,19 @@ constexpr bool has_prefetch<CopyOp, void_t<typename CopyOp::PREFETCH>> = true;
 
 } // end namespace detail
 
-template <class CopyOp, class... CT_Args, class... CA_Args,
+template <class CopyOp, class... CT_Args, class CopyType,
           class GEngine, class GLayout>
 CUTE_HOST_DEVICE
 void
-prefetch(Copy_Atom<Copy_Traits<CopyOp, CT_Args...>, CA_Args...> const& atom,
-         Tensor<GEngine, GLayout>                               const& src)
+prefetch(Copy_Atom<Copy_Traits<CopyOp, CT_Args...>, CopyType> const& atom,
+         Tensor<GEngine, GLayout>                             const& src)
 {
   if constexpr (detail::has_prefetch<CopyOp>) {
     using Prefetch_Traits = Copy_Traits<typename CopyOp::PREFETCH, CT_Args...>;
-    using Prefetch_Atom = Copy_Atom<Prefetch_Traits, CA_Args...>;
+    using Prefetch_Atom = Copy_Atom<Prefetch_Traits, CopyType>;
     Prefetch_Atom prefetch_atom{atom};
-    auto& dst = const_cast<Tensor<GEngine, GLayout>&>(src); // dst is ignored for prefetch atoms
+    //auto& dst = const_cast<Tensor<GEngine, GLayout>&>(src); // dst is ignored for prefetch atoms
+    Tensor dst = make_tensor(make_smem_ptr<CopyType>(nullptr), shape(src));
     return copy(prefetch_atom, src, dst);
   } else {
     return prefetch(src);

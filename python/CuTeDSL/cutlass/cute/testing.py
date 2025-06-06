@@ -35,20 +35,7 @@ from inspect import isclass
 
 
 def assert_(cond, msg=None):
-    if isinstance(cond, ir.Value):
-        if ir.VectorType.isinstance(cond.type):
-            assert (
-                cond.type.element_type == T.bool()
-            ), f"only expects vector type with boolean elements, but got {cond.type}"
-            cond_val = vector.multi_reduction(
-                vector.CombiningKind.AND, cond, const(True), range(cond.type.rank)
-            )
-        else:
-            cond_val = cond
-    else:
-        cond_val = const(cond, t.Boolean)
-
-    cf.assert_(cond_val, msg if msg else "")
+    cf.assert_(t.Boolean(cond).ir_value(), msg if msg else "")
 
 
 def _maybe_recast_tensor_from_f4(src: core.Tensor, tv_layout: core.Layout):

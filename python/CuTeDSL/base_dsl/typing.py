@@ -629,7 +629,7 @@ def _binary_op_type_promote(a, b, promote_bool: bool = False):
     b_type = b.dtype
 
     # Early return for same types (except when they're bools that need promotion)
-    if a_type == b_type and not (promote_bool and a_type.width == 1):
+    if a_type == b_type and not (promote_bool and a_type is Boolean):
         return a, b, a_type
 
     # Handle floating point promotions
@@ -1315,10 +1315,7 @@ class Integer(Numeric, metaclass=IntegerMeta, mlir_type=T.i32, is_abstract=True)
 
     def __invert__(self, *, loc=None, ip=None):
         res_type = type(self)
-        # Create a constant of -1 (all bits set to 1) of the same type as value
-        all_ones = arith.constant(res_type.mlir_type, -1)
-        # XOR with -1 gives us bitwise NOT
-        return res_type(arith.xori(self.ir_value(), all_ones, loc=loc, ip=ip))
+        return res_type(self.ir_value(loc=loc, ip=ip).__invert__(loc=loc, ip=ip))
 
     def __lshift__(self, other, *, loc=None, ip=None):
         return _binary_op(operator.lshift)(self, other, loc=loc, ip=ip)
@@ -1457,18 +1454,14 @@ class Boolean(Integer, metaclass=IntegerMeta, width=1, signed=True, mlir_type=T.
        - Converted using Python's bool() function
        - Example: Boolean(1) -> True, Boolean(0) -> False
 
-    2. Boolean:
-       - Direct value assignment
-       - Example: Boolean(Boolean(True)) -> True
+    2. Numeric:
+       - Uses the Numeric.value to construct Boolean recursively
 
-    3. Numeric:
-       - Uses the __dsl_bool__ method of the Numeric type
-
-    4. MLIR Value with IntegerType:
+    3. MLIR Value with IntegerType:
        - If width is 1: Direct assignment
        - Otherwise: Compares with 0 using arith.cmpi
 
-    5. MLIR Value with FloatType:
+    4. MLIR Value with FloatType:
        - Compares with 0.0 using arith.cmpf
        - Uses unordered comparison to handle NaN values
     """
@@ -1479,19 +1472,35 @@ class Boolean(Integer, metaclass=IntegerMeta, width=1, signed=True, mlir_type=T.
         value = None
         if isinstance(a, (bool, int, float)):
             value = bool(a)
-        elif isinstance(a, Boolean):
-            value = a.value
         elif isinstance(a, Numeric):
-            value = a.__dsl_bool__(loc=loc, ip=ip)
+            Boolean.__init__(self, a.value, loc=loc, ip=ip)
+            return
         elif isinstance(a, ArithValue):
             if a.type == T.bool():
                 value = a
             else:
-                value = a != arith_helper.const(0, a.type)
-
+                value = a != arith_helper.const(0, a.type, loc=loc, ip=ip)
         if value is None:
             raise DSLRuntimeError(f"Cannot convert {a} to Boolean")
         super().__init__(value, loc=loc, ip=ip)
+        self._value_int8 = None
+
+    def ir_value_int8(self, *, loc=None, ip=None):
+        """
+        Returns int8 ir value of Boolean.
+        When we need to store Boolean tensor element, use ir_value_int8().
+
+        :param loc: Source location information, defaults to None
+        :type loc: Optional[Location], optional
+        :param ip: Insertion point for MLIR operations, defaults to None
+        :type ip: Optional[InsertionPoint], optional
+        :return: The int8 value of this Boolean
+        :rtype: ir.Value
+        """
+        if self._value_int8 is not None:
+            return self._value_int8
+        self._value_int8 = Int8(self.value, loc=loc, ip=ip).ir_value()
+        return self._value_int8
 
     def __neg__(self, *, loc=None, ip=None):
         """Negation operator is not supported for boolean type.

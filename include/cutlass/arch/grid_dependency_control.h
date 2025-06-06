@@ -41,7 +41,8 @@
 #include "cutlass/gemm/dispatch_policy.hpp"
 
 #ifndef CUTLASS_GDC_ENABLED
-  #if (defined(CUTLASS_ENABLE_GDC_FOR_SM90) && \
+  #if (CUDA_BARRIER_ENABLED && \
+    defined(CUTLASS_ENABLE_GDC_FOR_SM90) && \
      __CUDACC_VER_MAJOR__ >= 12 && \
      defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 900 && defined(__CUDA_ARCH_FEAT_SM90_ALL))
     #define CUTLASS_GDC_ENABLED

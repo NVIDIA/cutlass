@@ -42,7 +42,7 @@ template<
   class ElementAcc,
   class TileShape,  // Q, D, _
   class StrideO,    // Q, D, B
-  class StrideLSE   // Q, B
+  class StrideLSE_   // Q, B
 >
 struct Sm100FmhaFwdEpilogueTmaWarpspecialized {
     
@@ -54,6 +54,7 @@ struct Sm100FmhaFwdEpilogueTmaWarpspecialized {
 //  using SmemLayoutAtomO = decltype(make_ordered_layout(select<0,1>(TileShape{}), Step<_1, _0>{}));
   using SmemLayoutO = decltype(tile_to_shape(SmemLayoutAtomO{}, replace<2>(TileShape{}, _2{}), Step<_2, _1, _3>{}));
   using SmemLayoutO_ = SmemLayoutO;
+  using StrideLSE = StrideLSE_;
   
   struct TensorStorage {
 
@@ -79,6 +80,9 @@ struct Sm100FmhaFwdEpilogueTmaWarpspecialized {
 
   struct Params {
     TMA_O tma_store_o;
+
+    ElementAcc* ptr_LSE;
+    StrideLSE dLSE;
   };
 
   template<class ProblemShape>
@@ -110,7 +114,9 @@ struct Sm100FmhaFwdEpilogueTmaWarpspecialized {
     );
 
     return {
-      tma_store_o
+      tma_store_o,
+      args.ptr_LSE,
+      args.dLSE
     };
   }
 
@@ -118,6 +124,10 @@ struct Sm100FmhaFwdEpilogueTmaWarpspecialized {
   static void prefetch_tma_descriptors(Params const& params) {
     cute::prefetch_tma_descriptor(params.tma_store_o.get_tma_descriptor());
   }
+
+  const Params& params;
+
+  CUTLASS_DEVICE Sm100FmhaFwdEpilogueTmaWarpspecialized(const Params& params) : params(params) {}
 
   template<class BlkCoord, class ProblemShape, class ParamsProblemShape>
   CUTLASS_DEVICE auto

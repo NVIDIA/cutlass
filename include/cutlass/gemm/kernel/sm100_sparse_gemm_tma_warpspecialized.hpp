@@ -178,6 +178,9 @@ public:
   using CLCPipeline = cutlass::PipelineCLCFetchAsync<SchedulerPipelineStageCount, ClusterShape>;
   using CLCPipelineState = typename CLCPipeline::PipelineState;
 
+  using CLCThrottlePipeline = cutlass::PipelineAsync<SchedulerPipelineStageCount>;
+  using CLCThrottlePipelineState = typename CLCThrottlePipeline::PipelineState;
+
   using TmemAllocator = cute::conditional_t<cute::size(cute::shape<0>(typename TiledMma::ThrLayoutVMNK{})) == 1,
       cute::TMEM::Allocator1Sm, cute::TMEM::Allocator2Sm>;
 
@@ -190,12 +193,14 @@ public:
       using LoadOrderBarrierStorage = typename LoadOrderBarrier::SharedStorage;
       using CLCPipelineStorage = typename CLCPipeline::SharedStorage;
       using AccumulatorPipelineStorage = typename AccumulatorPipeline::SharedStorage;
+      using CLCThrottlePipelineStorage = typename CLCThrottlePipeline::SharedStorage;
 
       alignas(16) MainloopPipelineStorage mainloop;
       alignas(16) EpiLoadPipelineStorage epi_load;
       alignas(16) LoadOrderBarrierStorage load_order;
       alignas(16) CLCPipelineStorage clc;
       alignas(16) AccumulatorPipelineStorage accumulator;
+      alignas(16) CLCThrottlePipelineStorage clc_throttle;
       alignas(16) arch::ClusterBarrier tmem_dealloc;
     } pipelines;
 
@@ -580,6 +585,22 @@ public:
                                              cute::true_type{},   // Perform barrier init
                                              cute::false_type{}); // Delay mask calculation
 
+    // CLC throttle pipeline
+    typename CLCThrottlePipeline::Params clc_throttle_pipeline_params;
+    if (WarpCategory::MainloopLoad == warp_category) {
+      clc_throttle_pipeline_params.role = CLCThrottlePipeline::ThreadCategory::Producer;
+    }
+    if (WarpCategory::Sched == warp_category) {
+      clc_throttle_pipeline_params.role = CLCThrottlePipeline::ThreadCategory::Consumer;
+    }
+    clc_throttle_pipeline_params.producer_arv_count = NumMainloopLoadThreads;
+    clc_throttle_pipeline_params.consumer_arv_count = NumSchedThreads;
+    clc_throttle_pipeline_params.dst_blockid = 0;
+    clc_throttle_pipeline_params.initializing_warp = 3;
+    CLCThrottlePipeline clc_throttle_pipeline(shared_storage.pipelines.clc_throttle, clc_throttle_pipeline_params);
+    CLCThrottlePipelineState clc_pipe_throttle_consumer_state;
+    CLCThrottlePipelineState clc_pipe_throttle_producer_state = cutlass::make_producer_start_state<CLCThrottlePipeline>();
+
     // Tmem allocator
     TmemAllocator tmem_allocator{};
 
@@ -649,11 +670,20 @@ public:
       cutlass::arch::wait_on_dependent_grids();
 
       bool do_load_order_arrive = is_epi_load_needed;
+      bool requires_clc_query = true;
 
       do {
         // Get the number of K tiles to compute for this work as well as the starting K tile offset of the work.
         auto k_tile_iter = scheduler.get_k_tile_iterator(work_tile_info, problem_shape_MNKL, CtaShape_MNK{}, load_inputs.k_tiles);
         auto k_tile_count = TileScheduler::get_work_k_tile_count(work_tile_info, problem_shape_MNKL, CtaShape_MNK{});
+
+        if constexpr (IsSchedDynamicPersistent) {
+          if (is_first_cta_in_cluster && requires_clc_query) {
+            clc_throttle_pipeline.producer_acquire(clc_pipe_throttle_producer_state);
+            clc_throttle_pipeline.producer_commit(clc_pipe_throttle_producer_state);
+            ++clc_pipe_throttle_producer_state;
+          }
+        }
 
         // Start mainloop prologue loads, arrive on the epilogue residual load barrier, resume mainloop loads
         auto [mainloop_producer_state_next, unused_] = collective_mainloop.load(
@@ -678,6 +708,7 @@ public:
         );
         work_tile_info = next_work_tile_info;
         cta_coord_mnkl = scheduler.work_tile_to_cta_coord(work_tile_info);
+        requires_clc_query = increment_pipe;
         if (increment_pipe) {
           ++clc_pipe_consumer_state;
         }
@@ -697,6 +728,11 @@ public:
 
         do {
           if (requires_clc_query) {
+            // Throttle CLC query to mitigate workload imbalance caused by skews among persistent workers.
+            clc_throttle_pipeline.consumer_wait(clc_pipe_throttle_consumer_state);
+            clc_throttle_pipeline.consumer_release(clc_pipe_throttle_consumer_state);
+            ++clc_pipe_throttle_consumer_state;
+
             // Query next clcID and update producer state
             clc_pipe_producer_state = scheduler.advance_to_next_work(clc_pipeline, clc_pipe_producer_state);
           }

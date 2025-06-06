@@ -540,6 +540,23 @@ struct HardSwish<Array<T, N> > {
   }
 };
 
+template <int N>
+struct HardSwish<Array<half_t, N> > {
+  using T = half_t;
+  static const bool kIsHeavy = false;
+  static constexpr float kOneSixth = 0.16666667f;
+
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &value) const {
+    minimum<Array<T, N> > mn;
+    maximum<Array<T, N> > mx;
+    multiplies<Array<T, N> > mul;
+    plus<Array<T, N> > add;
+
+    return mul(mul(mn(mx(add(value, T(3)), T(0)), T(6)), value), T(kOneSixth));
+  }
+};
+
 template <typename T>
 using ScaledHardSwish = Scale<HardSwish<T>>;
 

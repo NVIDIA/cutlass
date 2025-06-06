@@ -527,13 +527,13 @@ def pack_from_irvalue(
     """
     Packs MLIR values into a list of mixed values.
     """
-    log().info("===--- Values Pack (%d)", len(ir_values))
+    log().debug("===--- Values Pack (%d)", len(ir_values))
     for idx, packed in enumerate(ir_values):
-        log().info("[%d]: will-packed: %s", idx, ir_values)
+        log().debug("[%d]: will-packed: %s", idx, ir_values)
     for idx, unpacked in indices.items():
-        log().info("[%d]: indices: %s", idx, unpacked)
+        log().debug("[%d]: indices: %s", idx, unpacked)
     for idx, c in enumerate(class_types):
-        log().info("[%d]: obj-types: %s", idx, type(c))
+        log().debug("[%d]: obj-types: %s", idx, type(c))
 
     mixed_values = [None] * len(indices)
     for idx, (start, length) in sorted(indices.items()):
@@ -552,10 +552,10 @@ def pack_from_irvalue(
             except DSLRuntimeError as e:
                 mixed_values[idx] = chunk[0]
 
-    log().info("------------------ ")
+    log().debug("------------------ ")
     for idx, packed in enumerate(mixed_values):
-        log().info("[%d]: packed: %s", idx, packed)
-    log().info("------------------ ")
+        log().debug("[%d]: packed: %s", idx, packed)
+    log().debug("------------------ ")
     return mixed_values
 
 
@@ -571,9 +571,9 @@ def unpack_to_irvalue(
     class_types = []
     current_offset = 0
 
-    log().info("===--- Values UNPack (%d)", len(mixed_values))
+    log().debug("===--- Values UNPack (%d)", len(mixed_values))
     for idx, packed in enumerate(mixed_values):
-        log().info("[%d]: will-unpacked: [type:%s] %s", idx, type(packed), packed)
+        log().debug("[%d]: will-unpacked: [type:%s] %s", idx, type(packed), packed)
     for idx, item in enumerate(mixed_values):
         class_types.append(item)
         try:
@@ -612,16 +612,16 @@ def unpack_to_irvalue(
                 ),
             ) from e
 
-    log().info("------------------ ")
+    log().debug("------------------ ")
     for idx, unpacked in enumerate(unpacked_values):
-        log().info("[%d]: unpacked values: %s", idx, unpacked)
+        log().debug("[%d]: unpacked values: %s", idx, unpacked)
     for idx, unpacked in enumerate(ir_values):
-        log().info("[%d]: unpacked ir_values: %s", idx, unpacked)
+        log().debug("[%d]: unpacked ir_values: %s", idx, unpacked)
     for idx, unpacked in indices.items():
-        log().info("[%d]: indices: %s", idx, unpacked)
+        log().debug("[%d]: indices: %s", idx, unpacked)
     for idx, unpacked in enumerate(class_types):
-        log().info("[%d]: initial-class-types: %s", idx, unpacked)
-    log().info("------------------ ")
+        log().debug("[%d]: initial-class-types: %s", idx, unpacked)
+    log().debug("------------------ ")
 
     return ir_values, unpacked_values, indices, class_types
 
@@ -1302,7 +1302,6 @@ class WhileLoopContext:
 
     def __exit__(self, exc_type, exc_value, traceback):
         self.ipoint_op.__exit__(exc_type, exc_value, traceback)
-        return True
 
     @property
     def results(self):

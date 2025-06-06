@@ -43,7 +43,6 @@
 #include "cute/algorithm/functional.hpp"
 #include "cute/atom/mma_atom.hpp"
 #include "cute/algorithm/gemm.hpp"
-#include "cute/tensor_predicate.hpp"
 #include "cute/numeric/arithmetic_tuple.hpp"
 
 #include "cutlass/detail/blockwise_scale_layout.hpp"
@@ -168,11 +167,11 @@ struct CollectiveMma<
       make_shape(shape<1>(TileShape{}), shape<2>(TileShape{}), Int<DispatchPolicy::Stages>{}),
       cute::conditional_t< ::cutlass::gemm::detail::is_major<0,StrideB>(), Step<_2,_1,_3>, Step<_1,_2,_3>>{}));
 
-  // Block scaling gmem-to-smem copy atom 
+  // Block scaling gmem-to-smem copy atom
   //  we can have partial tiles in M or N, so don't vectorize those loads
   using CopyAtomSFA = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<ElementBlockScale>, ElementBlockScale>;
   using CopyAtomSFB = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<ElementBlockScale>, ElementBlockScale>;
-  
+
   static constexpr int AlignmentSFA = 1;
   static constexpr int AlignmentSFB = 1;
 
@@ -265,7 +264,7 @@ struct CollectiveMma<
     InternalElementB const** ptr_B;
     StrideB dB;
     // Block scaling factors for A and B
-    ElementBlockScale const** ptr_SFA; 
+    ElementBlockScale const** ptr_SFA;
     LayoutSFA layout_SFA;
     ElementBlockScale const** ptr_SFB;
     LayoutSFB layout_SFB;
@@ -423,9 +422,9 @@ struct CollectiveMma<
 
     // Make the tiled views of scale tensors
 
-    Tensor mSFA_mkl = make_tensor(make_gmem_ptr(ptr_SFA), 
+    Tensor mSFA_mkl = make_tensor(make_gmem_ptr(ptr_SFA),
         ScaleConfig::tile_atom_to_shape_SFA(make_shape(M, N, K, init_L)));                              // (scale_m,k,l)
-    Tensor mSFB_nkl = make_tensor(make_gmem_ptr(ptr_SFB), 
+    Tensor mSFB_nkl = make_tensor(make_gmem_ptr(ptr_SFB),
         ScaleConfig::tile_atom_to_shape_SFB(make_shape(M, N, K, init_L)));                              // (scale_n,k,l)
 
     return cute::make_tuple(gA_mkl, gB_nkl, mSFA_mkl, mSFB_nkl);
@@ -443,7 +442,7 @@ struct CollectiveMma<
   CUTLASS_DEVICE void
   load(
       Params const& mainloop_params,
-      MainloopPipeline pipeline, 
+      MainloopPipeline pipeline,
       PipelineState smem_pipe_write,
       cute::tuple<TensorA, TensorB, TensorScaleA, TensorScaleB> const& load_inputs,
       cute::tuple<TensorMapA, TensorMapB> const& input_tensormaps,
@@ -457,9 +456,9 @@ struct CollectiveMma<
     if (lane_predicate) {
       Tensor sA = make_tensor(make_smem_ptr(shared_tensors.smem_A.data()), SmemLayoutA{});         // (BLK_M,BLK_K,PIPE)
       Tensor sB = make_tensor(make_smem_ptr(shared_tensors.smem_B.data()), SmemLayoutB{});         // (BLK_N,BLK_K,PIPE)
-      Tensor sSFA = make_tensor(cute::make_smem_ptr(shared_tensors.smem_SFA.data()), 
+      Tensor sSFA = make_tensor(cute::make_smem_ptr(shared_tensors.smem_SFA.data()),
           SmemLayoutSFA{});                                                                           // (BLK_M,BLK_K,P)
-      Tensor sSFB = make_tensor(cute::make_smem_ptr(shared_tensors.smem_SFB.data()), 
+      Tensor sSFB = make_tensor(cute::make_smem_ptr(shared_tensors.smem_SFB.data()),
           SmemLayoutSFB{});                                                                           // (BLK_N,BLK_K,P)
 
       //
@@ -561,9 +560,9 @@ struct CollectiveMma<
     // Issue the epilogue waits
     if (lane_predicate) {
       // This helps avoid early exit of blocks in Cluster.
-      // Waits for all stages to either be released (all 
+      // Waits for all stages to either be released (all
       // Consumer UNLOCKs), or if the stage was never used
-      // then it would just be acquired since the phase was 
+      // then it would just be acquired since the phase was
       // still inverted from make_producer_start_state.
       pipeline.producer_tail(smem_pipe_write);
     }
@@ -579,11 +578,11 @@ struct CollectiveMma<
   CUTLASS_DEVICE void
   load_auxiliary(
       Params const& mainloop_params,
-      MainloopPipeline pipeline, 
+      MainloopPipeline pipeline,
       PipelineState smem_pipe_write,
-      cute::tuple<TensorA, 
-                  TensorB, 
-                  TensorSFA, 
+      cute::tuple<TensorA,
+                  TensorB,
+                  TensorSFA,
                   TensorSFB> const& load_inputs,
       BlockCoord const& blk_coord,
       KTileIterator k_tile_iter, int k_tile_count,
@@ -591,9 +590,9 @@ struct CollectiveMma<
       uint32_t block_rank_in_cluster,
       TensorStorage& shared_tensors) {
     int lane_predicate = cute::elect_one_sync();
-    Tensor sSFA = make_tensor(cute::make_smem_ptr(shared_tensors.smem_SFA.data()), 
+    Tensor sSFA = make_tensor(cute::make_smem_ptr(shared_tensors.smem_SFA.data()),
         SmemLayoutSFA{});                                                                             // (BLK_M,BLK_K,P)
-    Tensor sSFB = make_tensor(cute::make_smem_ptr(shared_tensors.smem_SFB.data()), 
+    Tensor sSFB = make_tensor(cute::make_smem_ptr(shared_tensors.smem_SFB.data()),
         SmemLayoutSFB{});                                                                             // (BLK_N,BLK_K,P)
 
     // Partition the inputs based on the current block coordinates.
@@ -741,22 +740,22 @@ struct CollectiveMma<
 
     // Block scaling
     Tensor sSFA = make_tensor(cute::make_smem_ptr(shared_tensors.smem_SFA.data()), make_layout(
-        make_shape(shape<0>(SmemLayoutSFA{}), 
-                   get<1>(TileShape{}), 
-                   make_shape(shape<1>(SmemLayoutSFA{}), 
+        make_shape(shape<0>(SmemLayoutSFA{}),
+                   get<1>(TileShape{}),
+                   make_shape(shape<1>(SmemLayoutSFA{}),
                               shape<2>(SmemLayoutSFA{}))),
-        make_stride(stride<0>(SmemLayoutSFA{}), _0{}, 
-                    make_stride(stride<1>(SmemLayoutSFA{}), 
+        make_stride(stride<0>(SmemLayoutSFA{}), _0{},
+                    make_stride(stride<1>(SmemLayoutSFA{}),
                                 stride<2>(SmemLayoutSFA{})))
       ));                                                                                     // (BLK_M,BLK_N,(BLK_K,P))
     Tensor sSFB = make_tensor(cute::make_smem_ptr(shared_tensors.smem_SFB.data()), make_layout(
-        make_shape(get<0>(TileShape{}), 
-                   shape<0>(SmemLayoutSFB{}), 
-                   make_shape(shape<1>(SmemLayoutSFB{}), 
+        make_shape(get<0>(TileShape{}),
+                   shape<0>(SmemLayoutSFB{}),
+                   make_shape(shape<1>(SmemLayoutSFB{}),
                               shape<2>(SmemLayoutSFB{}))),
-        make_stride(_0{}, 
-                    stride<0>(SmemLayoutSFB{}), 
-                    make_stride(stride<1>(SmemLayoutSFB{}), 
+        make_stride(_0{},
+                    stride<0>(SmemLayoutSFB{}),
+                    make_stride(stride<1>(SmemLayoutSFB{}),
                                 stride<2>(SmemLayoutSFB{})))
       ));                                                                                     // (BLK_M,BLK_N,(BLK_K,P))
 
@@ -767,10 +766,10 @@ struct CollectiveMma<
 
     // Layout of warp group to thread mapping
 
-    static_assert(stride<0>(typename TiledMma::ALayout{}) == 0 and 
+    static_assert(stride<0>(typename TiledMma::ALayout{}) == 0 and
                   stride<0>(typename TiledMma::BLayout{}) == 0 and
                   size<0>(typename TiledMma::ALayout{}) == NumThreadsPerWarpGroup and
-                  size<0>(typename TiledMma::BLayout{}) == NumThreadsPerWarpGroup, 
+                  size<0>(typename TiledMma::BLayout{}) == NumThreadsPerWarpGroup,
                   "Stride of the first mode must be 0 and the size of the mode must be NumThreadsPerWarpGroup");
 
     constexpr int MmaWarpGroups = size(TiledMma{}) / NumThreadsPerWarpGroup;
@@ -1139,9 +1138,9 @@ struct CollectiveMma<
     InternalElementB const* ptr_B = nullptr;
     Tensor tensor_b = make_tensor(ptr_B, make_shape(N,K,Int<1>{}), mainloop_params.dB[next_group]);
 
-    cute::detail::fill_tma_gmem_shape_stride(mainloop_params.tma_load_a, tensor_a, 
+    cute::detail::fill_tma_gmem_shape_stride(mainloop_params.tma_load_a, tensor_a,
                                              prob_shape_A, prob_stride_A);
-    cute::detail::fill_tma_gmem_shape_stride(mainloop_params.tma_load_b, tensor_b, 
+    cute::detail::fill_tma_gmem_shape_stride(mainloop_params.tma_load_b, tensor_b,
                                              prob_shape_B, prob_stride_B);
 
     // Convert strides to byte strides

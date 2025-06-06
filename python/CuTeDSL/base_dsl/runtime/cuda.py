@@ -457,7 +457,7 @@ class StreamAdapter:
 
     def __init__(self, arg):
         self._arg = arg
-        self._c_pointer = ctypes.cast(self._arg.getPtr(), ctypes.c_void_p)
+        self._c_pointer = self._arg.getPtr()
 
     def __new_from_mlir_values__(self, values):
         assert len(values) == 1

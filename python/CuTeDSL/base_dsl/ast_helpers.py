@@ -95,7 +95,7 @@ class Executor:
         unroll=bool,
         unroll_full=int,
     ):
-        log().info("start [%s] stop [%s] step [%s]", start, stop, step)
+        log().debug("start [%s] stop [%s] step [%s]", start, stop, step)
         return self._loop_execute_range_dynamic(
             func,
             start,
@@ -117,7 +117,7 @@ class Executor:
         used_args: list,
         iter_args: list,
     ):
-        log().info("start [%s] stop [%s] step [%s]", start, stop, step)
+        log().debug("start [%s] stop [%s] step [%s]", start, stop, step)
         loop_results = iter_args
         log().debug("iter_args [%s]", iter_args)
         for i in range(start, stop, step):
@@ -374,7 +374,7 @@ def loop_selector(
     unroll_full=False,
     constexpr=None,
 ):
-    log().info(
+    log().debug(
         "start [%s] stop [%s] step [%s] used_args [%s] iter_args [%s] unroll [%s] unroll_full [%s] constexpr [%s]",
         start,
         stop,
@@ -415,7 +415,7 @@ def loop_selector(
 
 
 def if_selector(pred, used_args=[], yield_args=[]):
-    log().info("pred [%s] used_args [%s] yield_args [%s]", pred, used_args, yield_args)
+    log().debug("pred [%s] used_args [%s] yield_args [%s]", pred, used_args, yield_args)
     # Handle Numeric types here?
 
     from .typing import Numeric

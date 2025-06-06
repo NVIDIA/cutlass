@@ -35,6 +35,7 @@ import sys
 
 from . import conv2d_operation
 from . import conv3d_operation
+from . import emit_kernel_listing
 from . import gemm_operation
 
 if '-m' not in sys.argv:
@@ -53,7 +54,7 @@ from . import trmm_operation
 from .library import *
 
 # Set up `source` to point to the path containing the CUTLASS source.
-# Check first if the path cotains a `source` subdirectory -- this will
+# Check first if the path contains a `source` subdirectory -- this will
 # be the case when the package has been installed via pip. Otherwise,
 # default to the root of CUTLASS.
 install_source_path = os.path.join(__path__[0], 'source')

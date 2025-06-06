@@ -42,7 +42,6 @@
 #include "cute/algorithm/functional.hpp"
 #include "cute/atom/mma_atom.hpp"
 #include "cute/algorithm/gemm.hpp"
-#include "cute/tensor_predicate.hpp"
 #include "cute/numeric/arithmetic_tuple.hpp"
 
 #include "cutlass/detail/blockwise_scale_layout.hpp"
@@ -166,7 +165,7 @@ struct CollectiveMma<
       make_shape(shape<1>(TileShape{}), shape<2>(TileShape{}), Int<DispatchPolicy::Stages>{}),
       cute::conditional_t< ::cutlass::gemm::detail::is_major<0,StrideB>(), Step<_2,_1,_3>, Step<_1,_2,_3>>{}));
 
-  // Block scaling gmem-to-smem copy atom 
+  // Block scaling gmem-to-smem copy atom
   //  we can have partial tiles in M or N, so don't vectorize those loads
   using CopyAtomSFA = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<ElementBlockScale>, ElementBlockScale>;
   using CopyAtomSFB = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<ElementBlockScale>, ElementBlockScale>;
@@ -217,7 +216,7 @@ struct CollectiveMma<
     StrideA dA;
     ElementB const* ptr_B;
     StrideB dB;
-    ElementBlockScale const* ptr_SFA; 
+    ElementBlockScale const* ptr_SFA;
     LayoutSFA layout_SFA;
     ElementBlockScale const* ptr_SFB;
     LayoutSFB layout_SFB;
@@ -607,7 +606,7 @@ struct CollectiveMma<
   CUTLASS_DEVICE void
   load_auxiliary(
       Params const& mainloop_params,
-      MainloopPipeline pipeline, 
+      MainloopPipeline pipeline,
       PipelineState smem_pipe_write,
       cute::tuple<TensorA, TensorB, TensorScaleA, TensorScaleB> const& load_inputs,
       BlockCoord const& blk_coord,
@@ -639,7 +638,7 @@ struct CollectiveMma<
 
     TiledCopy scale_copy_a = make_tiled_copy(CopyAtomSFA{},
       Layout<Shape<_32>>{}, Layout<Shape<_1>>{});
-    TiledCopy scale_copy_b = make_tiled_copy(CopyAtomSFB{}, 
+    TiledCopy scale_copy_b = make_tiled_copy(CopyAtomSFB{},
       Layout<Shape<_32>>{}, Layout<Shape<_1>>{});
     ThrCopy thr_scale_copy_a = scale_copy_a.get_slice(thread_idx);
     ThrCopy thr_scale_copy_b = scale_copy_b.get_slice(thread_idx);
@@ -778,21 +777,21 @@ struct CollectiveMma<
 
     // Block scaling
     Tensor sSFA = make_tensor(cute::make_smem_ptr(shared_tensors.smem_SFA.data()), make_layout(
-        make_shape(get<0>(shape(SmemLayoutSFA{})), 
-                   get<1>(TileShape{}), 
-                   make_shape(get<1>(shape(SmemLayoutSFA{})), 
+        make_shape(get<0>(shape(SmemLayoutSFA{})),
+                   get<1>(TileShape{}),
+                   make_shape(get<1>(shape(SmemLayoutSFA{})),
                    get<2>(shape(SmemLayoutSFA{})))),
-        make_stride(get<0>(stride(SmemLayoutSFA{})), _0{}, 
+        make_stride(get<0>(stride(SmemLayoutSFA{})), _0{},
                     make_stride(get<1>(stride(SmemLayoutSFA{})), get<2>(stride(SmemLayoutSFA{}))))
       ));                                                                                       // (BLK_M,BLK_N,(BLK_K,P))
     Tensor sSFB = make_tensor(cute::make_smem_ptr(shared_tensors.smem_SFB.data()), make_layout(
-        make_shape(get<0>(TileShape{}), 
-                   get<0>(shape(SmemLayoutSFB{})), 
-                   make_shape(get<1>(shape(SmemLayoutSFB{})), 
+        make_shape(get<0>(TileShape{}),
+                   get<0>(shape(SmemLayoutSFB{})),
+                   make_shape(get<1>(shape(SmemLayoutSFB{})),
                    get<2>(shape(SmemLayoutSFB{})))),
-        make_stride(_0{}, 
-                    get<0>(stride(SmemLayoutSFB{})), 
-                    make_stride(get<1>(stride(SmemLayoutSFB{})), 
+        make_stride(_0{},
+                    get<0>(stride(SmemLayoutSFB{})),
+                    make_stride(get<1>(stride(SmemLayoutSFB{})),
                     get<2>(stride(SmemLayoutSFB{}))))
       ));                                                                                       // (BLK_M,BLK_N,(BLK_K,P))
 
@@ -802,14 +801,14 @@ struct CollectiveMma<
 
     // Layout of warp group to thread mapping
 
-    static_assert(stride<0>(typename TiledMma::ALayout{}) == 0 and 
+    static_assert(stride<0>(typename TiledMma::ALayout{}) == 0 and
                   stride<0>(typename TiledMma::BLayout{}) == 0 and
                   size<0>(typename TiledMma::ALayout{}) == NumThreadsPerWarpGroup and
-                  size<0>(typename TiledMma::BLayout{}) == NumThreadsPerWarpGroup, 
+                  size<0>(typename TiledMma::BLayout{}) == NumThreadsPerWarpGroup,
                   "Stride of the first mode must be 0 and the size of the mode must be NumThreadsPerWarpGroup");
 
     constexpr int MmaWarpGroups = size(TiledMma{}) / NumThreadsPerWarpGroup;
-    Layout warp_group_thread_layout = make_layout(Int<MmaWarpGroups>{}, 
+    Layout warp_group_thread_layout = make_layout(Int<MmaWarpGroups>{},
                                                   Int<NumThreadsPerWarpGroup>{});
 
     int warp_group_idx = __shfl_sync(0xFFFFFFFF, thread_idx / NumThreadsPerWarpGroup, 0);

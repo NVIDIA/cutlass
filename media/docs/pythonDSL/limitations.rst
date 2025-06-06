@@ -3,9 +3,6 @@
 Limitations
 ====================
 
-.. contents::
-   :depth: 2
-   :local:
 
 Overview
 ---------------------

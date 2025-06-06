@@ -144,4 +144,23 @@ if(NOT WIN32 AND (NOT (CMAKE_CXX_COMPILER_ID MATCHES "Clang")) AND (CUTLASS_NVCC
     target_compile_definitions(77_blackwell_fmha_bwd_sat_${PREC} PRIVATE ${PREC_MACRO} SKIP_ATOMIC)
     target_compile_options(77_blackwell_fmha_bwd_sat_${PREC} PRIVATE -Xptxas -v)
   endforeach()
+
+  # Add a target that builds all examples
+  add_custom_target(77_blackwell_fmha_all
+    DEPENDS
+      77_blackwell_fmha_fp8
+      77_blackwell_fmha_fp16
+      77_blackwell_fmha_gen_fp8
+      77_blackwell_fmha_gen_fp16
+      77_blackwell_mla_2sm_fp8
+      77_blackwell_mla_2sm_fp16
+      77_blackwell_mla_2sm_cpasync_fp8
+      77_blackwell_mla_2sm_cpasync_fp16
+      77_blackwell_mla_b2b_2sm_fp8
+      77_blackwell_mla_b2b_2sm_fp16
+      77_blackwell_fmha_bwd_fp8
+      77_blackwell_fmha_bwd_fp16
+      77_blackwell_fmha_bwd_sat_fp8
+      77_blackwell_fmha_bwd_sat_fp16
+  )
 endif()

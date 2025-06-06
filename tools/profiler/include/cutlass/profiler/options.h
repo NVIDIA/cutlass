@@ -94,10 +94,15 @@ public:
     /// Total memory allocation on each device
     size_t maximum_capacity;
 
+  private:
+    /// SM Count
+    /// Limits the number of SMs to use on each device 
+    int sm_count;
+
     //
     // Methods
     //
-
+  public:
     explicit Device(CommandLine const &cmdline);
 
     void print_usage(std::ostream &out) const;
@@ -107,7 +112,10 @@ public:
     /// Returns the device ID from a device index
     int device_id(size_t device_index) const;
 
-    /// Returns the compute capability of the listed devices (e.g. 61, 60, 70, 75)
+    /// Returns the sm_count if set, otherwise returns the number of SMs on the device
+    int get_sm_count(int device_index) const;
+
+    /// Returns the compute capability of the listed devices (e.g. 70, 75, 80, etc.)
     int compute_capability(int device_index) const;
   };
 
