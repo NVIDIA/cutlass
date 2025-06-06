@@ -75,8 +75,6 @@ struct DeviceAllocation {
 
   size_t size() const { return size_; }
 
-  size_t get_storage_size() const { return (size_ + offset_) * sizeof(T); }
-
   void copy_from_host(const T* ptr, size_t sz) {
     auto ret = cudaMemcpy(ptr_, ptr, sz * sizeof(T), cudaMemcpyDefault);
     assert(ret == cudaSuccess);

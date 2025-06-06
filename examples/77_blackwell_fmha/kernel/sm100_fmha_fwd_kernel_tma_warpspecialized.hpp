@@ -356,7 +356,7 @@ struct Sm100FmhaFwdKernelTmaWarpspecialized {
     typename CollectiveMainloop::PipelineO::PipelineState pipeline_mma_corr_producer_state = cutlass::make_producer_start_state<typename CollectiveMainloop::PipelineO>();
 
     CollectiveMainloop mainloop;
-    CollectiveEpilogue epilogue{params.epilogue};
+    CollectiveEpilogue epilogue;
 
     if (role == WarpRole::Softmax0 || role == WarpRole::Softmax1) {
       warpgroup_reg_set<NumRegsSoftmax>();
@@ -407,8 +407,7 @@ struct Sm100FmhaFwdKernelTmaWarpspecialized {
           pipeline_s0_corr, pipeline_s0_corr_consumer_state,
           pipeline_s1_corr, pipeline_s1_corr_consumer_state,
           pipeline_mma_corr, pipeline_mma_corr_consumer_state,
-          pipeline_corr_epi, pipeline_corr_epi_producer_state,
-          epilogue
+          pipeline_corr_epi, pipeline_corr_epi_producer_state
         );
 
 
