@@ -169,13 +169,7 @@ struct CollectiveMma<MainloopIntelW8A8<Stages, Schedule>, TileShape_, ElementA_,
     static_assert(std::is_same_v<SrcType, uint8_t>, "Expected fp8 (E4M3) input as uint8_t");
     static_assert(std::is_same_v<DstType, half_t>, "Expected fp16 output as half_t");
 
-    auto const& src = in(_, _, _);
-    auto const& dst = out(_, _, _);
-
-    SrcType const* pSrc = src.data();
-    DstType* pDst = dst.data();
-
-    constexpr int num_elements = decltype(size(src))::value;
+    constexpr int num_elements = decltype(size(in))::value;
     // TODO(Codeplay): Move conversion to NumericArrayConverter
     if constexpr (std::is_same_v<ElementA, float_e5m2_t>) {
       // Using something as simple as the following code surprisingly
@@ -187,25 +181,25 @@ struct CollectiveMma<MainloopIntelW8A8<Stages, Schedule>, TileShape_, ElementA_,
       // The root-cause is unknown, but private memory use is seen in this case.
       using SrcArray = cutlass::Array<uint8_t, num_elements>;
       using DstArray = cutlass::Array<uint16_t, num_elements>;
-      SrcArray const* pSrcArr = reinterpret_cast<SrcArray const*>(pSrc);
-      DstArray* pDstArr = reinterpret_cast<DstArray*>(pDst);
+      SrcArray const* pSrcArr = reinterpret_cast<SrcArray const*>(in.data());
+      DstArray* pDstArr = reinterpret_cast<DstArray*>(out.data());
       E5M2_to_FP16<num_elements>(*pSrcArr, *pDstArr);
     } else {
       // E4M3 -> FP16 conversion
       constexpr int chunk_size = 16;
       constexpr int iters = num_elements / chunk_size;
       CUTLASS_PRAGMA_UNROLL
-      for (int i = 0; i < iters; ++i) {
+      for (int i = iters - 1; i >= 0; i--) {
         cute::intel::uchar16 src_vec;
         CUTLASS_PRAGMA_UNROLL
         for (int j = 0; j < chunk_size; ++j) {
-          src_vec[j] = pSrc[i * chunk_size + j];
+          src_vec[j] = in.data()[i * chunk_size + j];
         }
         cute::intel::ushort16 dst_vec;
         dst_vec = E4M3_to_FP16_chunk16(src_vec);
         CUTLASS_PRAGMA_UNROLL
         for (int j = 0; j < chunk_size; ++j) {
-          reinterpret_cast<uint16_t*>(pDst)[i * chunk_size + j] = dst_vec[j];
+          reinterpret_cast<uint16_t*>(out.data())[i * chunk_size + j] = dst_vec[j];
         }
       }
     }
@@ -235,11 +229,11 @@ struct CollectiveMma<MainloopIntelW8A8<Stages, Schedule>, TileShape_, ElementA_,
     Tensor tCgA = thr_mma.partition_A(gA);
     Tensor tCgB = thr_mma.partition_B(gB);
 
-    Tensor tCrA = make_tensor<uint8_t>(make_fragment_layout(mainloop.tiled_copy_a, tCgA(_,_,_,0).shape()));
-    Tensor tCrB = make_tensor<uint8_t>(make_fragment_layout(mainloop.tiled_copy_b, tCgB(_,_,_,0).shape()));
+    Tensor tCrA_fp16 = make_tensor<half_t>(make_fragment_layout(mainloop.tiled_copy_a, tCgA(_,_,_,0).shape()));
+    Tensor tCrB_fp16 = make_tensor<half_t>(make_fragment_layout(mainloop.tiled_copy_b, tCgB(_,_,_,0).shape()));
 
-    Tensor tCrA_fp16 = make_fragment_like<half_t>(tCrA);
-    Tensor tCrB_fp16 = make_fragment_like<half_t>(tCrB);
+    Tensor tCrA = make_tensor(reinterpret_cast<uint8_t*>(tCrA_fp16.data()), tCrA_fp16.layout());
+    Tensor tCrB = make_tensor(reinterpret_cast<uint8_t*>(tCrB_fp16.data()), tCrB_fp16.layout());
 
     // Retile registers for copies
     Tensor tArA = thr_copy_A.retile_D(tCrA);
@@ -278,14 +272,13 @@ struct CollectiveMma<MainloopIntelW8A8<Stages, Schedule>, TileShape_, ElementA_,
       copy(mainloop.tiled_copy_a, tAgA(_,_,_,k_tile), tArA);
       copy(mainloop.tiled_copy_b, tBgB(_,_,_,k_tile), tBrB);
 
-      // TODO: register pressure
-      convert_FP8_to_FP16(tCrA, tCrA_fp16);
-      convert_FP8_to_FP16(tCrB, tCrB_fp16);
-
       if (prefetch_k < k_tile_count) {
         prefetch(tiled_prefetch_a, pAgA(_, _, _, prefetch_k));
         prefetch(tiled_prefetch_b, pBgB(_, _, _, prefetch_k));
       }
+
+      convert_FP8_to_FP16(tCrA, tCrA_fp16);
+      convert_FP8_to_FP16(tCrB, tCrB_fp16);
 
       cute::gemm(tiled_mma, tCrA_fp16, tCrB_fp16, accum);
 

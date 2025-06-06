@@ -1041,12 +1041,7 @@ struct MainloopIntelXeXMX16MixedPrecision : MainloopIntelXeXMX16<Stages_> {
 };
 
 template<int Stages_, class KernelSchedule = KernelXe>
-struct MainloopIntelW8A8 {
-    constexpr static int Stages = Stages_;
-    constexpr static int SubgroupSize = 16;
-    using ArchTag = arch::IntelXe;
-    using Schedule = KernelXe;
-    using ClusterShape = Shape<_1, _1, _1>;
+struct MainloopIntelW8A8 : MainloopIntelXeXMX16<Stages_, KernelSchedule> {
 };
 #endif
 
