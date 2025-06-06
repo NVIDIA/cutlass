@@ -728,7 +728,7 @@ private:
     auto cluster_start_linear_id = sm_count * wave_idx + cluster_idx;
 
     // Determine the offset of this CTA in the preferred cluster shape.
-    // This calculation aims to accomodate both cases in which this CTA is part of a preferred cluster
+    // This calculation aims to accommodate both cases in which this CTA is part of a preferred cluster
     // and those in which it is part of a fallback cluster.
     //
     // The calculation is performed by computing the starting M and N index of the preferred cluster that

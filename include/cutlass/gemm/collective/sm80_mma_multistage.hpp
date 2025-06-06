@@ -101,7 +101,7 @@ struct CollectiveMma<
   using TransformB = TransformB_;
   using ArchTag = typename DispatchPolicy::ArchTag;
   // Follow the change in TestSmall: TileShape switch to CtaShape 
-  // For sm80 arch, CtaShape should euqal to TileShape
+  // For sm80 arch, CtaShape should equal to TileShape
   using CtaShape_MNK = TileShape;
 
   static_assert(cute::rank(SmemLayoutAtomA{}) == 2, "SmemLayoutAtom must be rank 2 (M/N, K)");

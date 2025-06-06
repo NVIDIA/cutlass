@@ -117,7 +117,7 @@ public:
   /// Shape of the warp in units of thread (concept: MmaLanePolicySimt)
   using Policy = Policy_;
 
-  /// Equivalant base dense mma
+  /// Equivalent base dense mma
   using Base = MmaTensorOp<Shape, ElementA, LayoutA, ElementB, LayoutB,
                            ElementC, LayoutC, Policy, PartitionsK_,
                            AccumulatorsInRowMajor, Enable>;

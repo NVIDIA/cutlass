@@ -329,7 +329,7 @@ public:
   /// Constructs the GEMM.
   GemmUniversalWithAbsMax() { }
 
-  /// Helper to construct a transposed equivalent for the underying GEMM operator
+  /// Helper to construct a transposed equivalent for the underlying GEMM operator
   static Arguments to_underlying_arguments(Arguments const &args) {
     return args.transposed_problem();
   }
