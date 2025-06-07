@@ -177,4 +177,119 @@ struct SM89_16x8x32_F32E5M2E4M3F32_TN
   }
 };
 
+struct SM89_16x8x32_F16E4M3E4M3F16_TN
+{
+  using DRegisters = uint32_t[2];
+  using ARegisters = uint32_t[4];
+  using BRegisters = uint32_t[2];
+  using CRegisters = uint32_t[2];
+
+  CUTE_HOST_DEVICE static void
+  fma(uint32_t      & d0, uint32_t      & d1,
+      uint32_t const& a0, uint32_t const& a1, uint32_t const& a2, uint32_t const& a3,
+      uint32_t const& b0, uint32_t const& b1,
+      uint32_t const& c0, uint32_t const& c1)
+  {
+#if defined(CUTE_ARCH_MMA_F16_SM89_ENABLED)
+    asm(
+      "mma.sync.aligned.m16n8k32.row.col.f16.e4m3.e4m3.f16 "
+      "{%0,%1}, {%2,%3,%4,%5}, {%6,%7}, {%8,%9};\n"
+      : "=r"(d0), "=r"(d1)
+      :
+        "r"(a0), "r"(a1), "r"(a2), "r"(a3),
+        "r"(b0), "r"(b1),
+        "r"(c0), "r"(c1)
+  );
+#else
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM89_16x8x32_F16E4M3E4M3F16_TN without CUTE_ARCH_MMA_F16_SM89_ENABLED");
+#endif
+  }
+};
+
+struct SM89_16x8x32_F16E4M3E5M2F16_TN
+{
+  using DRegisters = uint32_t[2];
+  using ARegisters = uint32_t[4];
+  using BRegisters = uint32_t[2];
+  using CRegisters = uint32_t[2];
+
+  CUTE_HOST_DEVICE static void
+  fma(uint32_t      & d0, uint32_t      & d1,
+      uint32_t const& a0, uint32_t const& a1, uint32_t const& a2, uint32_t const& a3,
+      uint32_t const& b0, uint32_t const& b1,
+      uint32_t const& c0, uint32_t const& c1)
+  {
+#if defined(CUTE_ARCH_MMA_F16_SM89_ENABLED)
+    asm(
+      "mma.sync.aligned.m16n8k32.row.col.f16.e4m3.e5m2.f16 "
+      "{%0,%1}, {%2,%3,%4,%5}, {%6,%7}, {%8,%9};\n"
+      : "=r"(d0), "=r"(d1)
+      :
+        "r"(a0), "r"(a1), "r"(a2), "r"(a3),
+        "r"(b0), "r"(b1),
+        "r"(c0), "r"(c1)
+  );
+#else
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM89_16x8x32_F16E4M3E5M2F16_TN without CUTE_ARCH_MMA_F16_SM89_ENABLED");
+#endif
+  }
+};
+
+struct SM89_16x8x32_F16E5M2E4M3F16_TN
+{
+  using DRegisters = uint32_t[2];
+  using ARegisters = uint32_t[4];
+  using BRegisters = uint32_t[2];
+  using CRegisters = uint32_t[2];
+
+  CUTE_HOST_DEVICE static void
+  fma(uint32_t      & d0, uint32_t      & d1,
+      uint32_t const& a0, uint32_t const& a1, uint32_t const& a2, uint32_t const& a3,
+      uint32_t const& b0, uint32_t const& b1,
+      uint32_t const& c0, uint32_t const& c1)
+  {
+#if defined(CUTE_ARCH_MMA_F16_SM89_ENABLED)
+    asm(
+      "mma.sync.aligned.m16n8k32.row.col.f16.e5m2.e4m3.f16 "
+      "{%0,%1}, {%2,%3,%4,%5}, {%6,%7}, {%8,%9};\n"
+      : "=r"(d0), "=r"(d1)
+      :
+        "r"(a0), "r"(a1), "r"(a2), "r"(a3),
+        "r"(b0), "r"(b1),
+        "r"(c0), "r"(c1)
+  );
+#else
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM89_16x8x32_F16E5M2E4M3F16_TN without CUTE_ARCH_MMA_F16_SM89_ENABLED");
+#endif
+  }
+};
+
+struct SM89_16x8x32_F16E5M2E5M2F16_TN
+{
+  using DRegisters = uint32_t[2];
+  using ARegisters = uint32_t[4];
+  using BRegisters = uint32_t[2];
+  using CRegisters = uint32_t[2];
+
+  CUTE_HOST_DEVICE static void
+  fma(uint32_t      & d0, uint32_t      & d1,
+      uint32_t const& a0, uint32_t const& a1, uint32_t const& a2, uint32_t const& a3,
+      uint32_t const& b0, uint32_t const& b1,
+      uint32_t const& c0, uint32_t const& c1)
+  {
+#if defined(CUTE_ARCH_MMA_F16_SM89_ENABLED)
+    asm(
+      "mma.sync.aligned.m16n8k32.row.col.f16.e5m2.e5m2.f16 "
+      "{%0,%1}, {%2,%3,%4,%5}, {%6,%7}, {%8,%9};\n"
+      : "=r"(d0), "=r"(d1)
+      :
+        "r"(a0), "r"(a1), "r"(a2), "r"(a3),
+        "r"(b0), "r"(b1),
+        "r"(c0), "r"(c1)
+  );
+#else
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM89_16x8x32_F16E5M2E5M2F16_TN without CUTE_ARCH_MMA_F16_SM89_ENABLED");
+#endif
+  }
+};
 } // namespace cute

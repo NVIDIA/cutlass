@@ -93,4 +93,41 @@ MMA_Traits<SM89_16x8x32_F32E4M3E4M3F32_TN> {
   using ValTypeC = float;
 };
 
+template <>
+struct MMA_Traits<SM89_16x8x32_F16E4M3E4M3F16_TN> :
+MMA_Traits<SM89_16x8x32_F32E4M3E4M3F32_TN> {
+  using ValTypeD = cutlass::half_t;
+  using ValTypeA = cutlass::float_e4m3_t;
+  using ValTypeB = cutlass::float_e4m3_t;
+  using ValTypeC = cutlass::half_t;
+};
+
+template <>
+struct MMA_Traits<SM89_16x8x32_F16E4M3E5M2F16_TN> :
+MMA_Traits<SM89_16x8x32_F32E4M3E4M3F32_TN> {
+  using ValTypeD = cutlass::half_t;
+  using ValTypeA = cutlass::float_e4m3_t;
+  using ValTypeB = cutlass::float_e5m2_t;
+  using ValTypeC = cutlass::half_t;
+};
+
+template <>
+struct MMA_Traits<SM89_16x8x32_F16E5M2E5M2F16_TN> :
+MMA_Traits<SM89_16x8x32_F32E4M3E4M3F32_TN> {
+  using ValTypeD = cutlass::half_t;
+  using ValTypeA = cutlass::float_e5m2_t;
+  using ValTypeB = cutlass::float_e5m2_t;
+  using ValTypeC = cutlass::half_t;
+};
+
+template <>
+struct MMA_Traits<SM89_16x8x32_F16E5M2E4M3F16_TN> :
+MMA_Traits<SM89_16x8x32_F32E4M3E4M3F32_TN> {
+  using ValTypeD = cutlass::half_t;
+  using ValTypeA = cutlass::float_e5m2_t;
+  using ValTypeB = cutlass::float_e4m3_t;
+  using ValTypeC = cutlass::half_t;
+};
+
+
 } // end namespace cute
