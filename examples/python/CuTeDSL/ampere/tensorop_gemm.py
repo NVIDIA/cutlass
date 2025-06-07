@@ -49,7 +49,7 @@ A dense GEMM (C = A * B) example for the NVIDIA Ampere architecture using CUTE D
 This GEMM kernel supports the following features:
     - Utilizes Ampere's tensor cores for matrix multiply-accumulate (MMA) operations
     - Supports multi-stage pipeline to overlap computation and memory access
-    - Implements shared memory buffering for epilogue to increase coalesed global memory access
+    - Implements shared memory buffering for epilogue to increase coalesced global memory access
 
 This GEMM works as follows:
 1. Load A and B matrices from global memory (GMEM) to shared memory (SMEM) using asynchronous copies.
@@ -212,7 +212,7 @@ class TensorOpGemm:
             atom_async_copy, mB.element_type, self.b_major_mode, ab_copy_bits
         )
 
-        # Creates a synchonous copy atom and thread layouts for the epilogue
+        # Creates a synchronous copy atom and thread layouts for the epilogue
         c_copy_bits = 128
         atom_sync_copy = cute.make_copy_atom(
             cute.nvgpu.CopyUniversalOp(),

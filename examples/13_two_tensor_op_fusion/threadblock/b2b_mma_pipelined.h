@@ -277,7 +277,7 @@ public:
     IteratorAccumulatorScaleBias iterator_A1_scale,    ///< iterator over A1 operand scale vectors in global memory
     IteratorAccumulatorScaleBias iterator_A1_bias,     ///< iterator over A1 operand bias vectors in global memory
     IteratorB1 iterator_B1,                              ///< iterator over B1 operand in global memory  
-    FragmentC0 const &src_accum,                         ///< source accumualtor tile
+    FragmentC0 const &src_accum,                         ///< source accumulator tile
     OutputOp output_op_0,                                ///< epilogue operation after 1st Gemm
     TransformA0 transform_A0 = TransformA0(),            ///< transformation applied to A0 fragment
     TransformB0 transform_B0 = TransformB0(),            ///< transformation applied to B0 fragment

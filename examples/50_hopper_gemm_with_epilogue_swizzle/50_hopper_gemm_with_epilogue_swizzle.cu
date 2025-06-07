@@ -425,7 +425,7 @@ int main(int argc, char const **args) {
   // Pipeline Depth to be used i.e number of A, B buffers in shared memory
   constexpr int PipelineStages = 8;
 
-  // Let's choose a Warp-Specialized Mainloop implemention which uses TMA
+  // Let's choose a Warp-Specialized Mainloop implementation which uses TMA
   // Note : This requires / assumes the tensors to be 16B aligned
   using DispatchPolicy = cutlass::gemm::MainloopSm90TmaGmmaWarpSpecialized<PipelineStages, ClusterShape,
                            cutlass::gemm::KernelTmaWarpSpecialized>;

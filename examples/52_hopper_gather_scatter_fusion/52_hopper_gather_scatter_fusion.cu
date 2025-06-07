@@ -32,7 +32,7 @@
   \brief Example of a Hopper gather+GEMM+scatter kernel fusion.
 
   This example fuses gather before GEMM and scatter after GEMM into the same
-  GEMM kernel. Gather and scatter operation is controled by an index vector
+  GEMM kernel. Gather and scatter operation is controlled by an index vector
   to select rows or columns from A, B, C or D matrices.
 
   Gather/scatter operations are always performed along a strided dimension 

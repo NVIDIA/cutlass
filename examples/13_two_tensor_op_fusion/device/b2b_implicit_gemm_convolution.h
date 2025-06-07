@@ -177,7 +177,7 @@ public:
     if(args.split_k_mode == SplitKMode::kParallel) {
 
       // Split-K parallel: CTAs in k-dimension write the partial results in a temporary workspace.
-      // The user needs to call a reduction operator to optain the final output tensor
+      // The user needs to call a reduction operator to obtain the final output tensor
       workspace_bytes = 
         sizeof(ElementAccumulator) *
         size_t(cutlass::conv::implicit_gemm_tensor_c_size(kConvolutionalOperator, args.problem_size_0)) *
