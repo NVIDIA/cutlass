@@ -41,6 +41,7 @@
 #include "cutlass/platform/platform.h"
 #include "cutlass/fast_math.h"
 #include "cutlass/gemm_coord.h"
+#include "cutlass/gemm/kernel/tile_scheduler_detail.hpp"
 ////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
@@ -50,43 +51,42 @@ namespace detail {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-  CUTLASS_HOST_DEVICE
-  static uint32_t
-  get_max_cta_occupancy(
-    int max_sm_per_gpc,
-    GemmCoord cluster_shape,
-    int sm_count) {
-      // Provided SM count could possibly be less than the assumed maximum SMs per GPC
-      auto cluster_size = cluster_shape.m() * cluster_shape.n();
-      int const min_num_gpc = sm_count < max_sm_per_gpc ? 1 : sm_count / max_sm_per_gpc;
-      int const max_cta_occupancy_per_gpc = max_sm_per_gpc - (max_sm_per_gpc % cluster_size);
-      int cta_per_device = min_num_gpc * max_cta_occupancy_per_gpc;
+CUTLASS_HOST_DEVICE
+static uint32_t
+get_max_cta_occupancy(int max_sm_per_gpc, GemmCoord cluster_shape, int sm_count) {
+  // Provided SM count could possibly be less than the assumed maximum SMs per GPC
+  auto cluster_size = cluster_shape.m() * cluster_shape.n();
+  int const min_num_gpc = sm_count < max_sm_per_gpc ? 1 : sm_count / max_sm_per_gpc;
+  int const max_cta_occupancy_per_gpc = max_sm_per_gpc - (max_sm_per_gpc % cluster_size);
+  int cta_per_device = min_num_gpc * max_cta_occupancy_per_gpc;
+  // Suppose max_sm_per_gpc = 20, cluster_size = 8, sm_count = 148
+  // min_num_gpc = 148 / 20 = 7
+  // max_cta_occupancy_per_gpc = 20 - (20 % 8) = 16
+  // cta_per_device = 7 * 16 = 112
+  // num_gpc_residual = 148 % 20 = 8
+  // max_cta_occupancy_per_residual_gpc = 8 - (8 % 8) = 8
+  // cta_per_device += 8 = 120
+  // cta_per_device = 120 < 148 ? 148 : 120 = 148
 
-      // The calculation below allows for larger grid size launch for different GPUs.
-      int const num_gpc_residual = sm_count < max_sm_per_gpc ? 0 : sm_count % max_sm_per_gpc;
-      int const max_cta_occupancy_per_residual_gpc = num_gpc_residual - (num_gpc_residual % cluster_size);
-      cta_per_device += max_cta_occupancy_per_residual_gpc;
+  // The calculation below allows for larger grid size launch for different GPUs.
+  int const num_gpc_residual = sm_count < max_sm_per_gpc ? 0 : sm_count % max_sm_per_gpc;
+  int const max_cta_occupancy_per_residual_gpc = num_gpc_residual - (num_gpc_residual % cluster_size);
+  cta_per_device += max_cta_occupancy_per_residual_gpc;
 
-      cta_per_device = sm_count < cta_per_device ? sm_count : cta_per_device;
-      return cta_per_device;
-   }
+  cta_per_device = sm_count < cta_per_device ? sm_count : cta_per_device;
+  return cta_per_device;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 //
 // Parameters for SM90 tile schedulers
 //
 
 // Parameters for SM90 persistent tile scheduler
 struct PersistentTileSchedulerSm90Params {
-
-  enum class RasterOrder {
-    AlongM,
-    AlongN
-  };
-
-  enum class RasterOrderOptions {
-    Heuristic,
-    AlongM,
-    AlongN
-  };
+  using RasterOrder = cutlass::gemm::kernel::detail::RasterOrder;
+  using RasterOrderOptions = cutlass::gemm::kernel::detail::RasterOrderOptions;
 
   FastDivmodU64Pow2 divmod_cluster_shape_major_{};
   FastDivmodU64Pow2 divmod_cluster_shape_minor_{};
@@ -189,7 +189,7 @@ struct PersistentTileSchedulerSm90Params {
     int max_swizzle_size,
     RasterOrderOptions raster_order_option,
     bool truncate_by_problem_size=true,
-    bool bypass_sm90_occupancy_calculation=false
+    bool bypass_sm90_occupancy_calculation=false 
     ) {
 
     dim3 problem_blocks = get_tiled_cta_shape_mnl(problem_shape, cta_shape, cluster_shape);
@@ -200,7 +200,7 @@ struct PersistentTileSchedulerSm90Params {
       max_swizzle_size,
       raster_order_option,
       truncate_by_problem_size,
-      bypass_sm90_occupancy_calculation
+      bypass_sm90_occupancy_calculation 
     );
   }
 
@@ -216,7 +216,7 @@ struct PersistentTileSchedulerSm90Params {
     int max_swizzle_size,
     RasterOrderOptions raster_order_option,
     bool truncate_by_problem_size=true,
-    bool bypass_sm90_occupancy_calculation=false
+    bool bypass_sm90_occupancy_calculation=false 
     ) {
 
     int const sm_count = hw_info.sm_count;
@@ -270,6 +270,7 @@ struct PersistentTileSchedulerSm90Params {
         launch_grid.y = possibly_truncate(
             max_active_clusters * cluster_shape.n(),
             problem_blocks_total / cluster_shape.m());
+
       }
       else {
         launch_grid.x = possibly_truncate(
@@ -281,7 +282,7 @@ struct PersistentTileSchedulerSm90Params {
     }
     else {
       int cta_per_device = sm_count;
-      if (!bypass_sm90_occupancy_calculation) {
+      if (!bypass_sm90_occupancy_calculation) { 
         /*
         * Optimal grid size calculation is based on
         * GH100: 8 GPCs, 72 TPCs (9 TPCs/GPC), 2 SMs/TPC, 144 SMs per full GPU
@@ -386,43 +387,13 @@ struct PersistentTileSchedulerSm90Params {
 
 // Parameters for SM90 persistent stream-K scheduler
 struct PersistentTileSchedulerSm90StreamKParams {
+  using ReductionMode = cutlass::gemm::kernel::detail::ReductionMode;
+  using DecompositionMode = cutlass::gemm::kernel::detail::DecompositionMode;
 
-  // Strategies for computing reductions between CTAs computing portions of a given output tile
-  enum class ReductionMode {
-    // Participating CTAs perform reduction in a turnstile fashion in order of the K extent
-    // covered by each CTA. This requires a lock to be held exclusively by the CTA that is
-    // currently accumulating.
-    //
-    // Turnstile accumulation ensures deterministic numeric behavior when using this mode.
-    Deterministic,
-
-    // Participating CTAs perform reduction atomically to the same workspace (mostly) without locking.
-    // Locks are used only to wait for the first CTA to write its partial values (to initialize the
-    // workspace), and for all but the final CTA to have accumulated (so that the final CTA can load
-    // the accumulated value and accumulate it into registers on top of which the epilogue will
-    // be performed).
-    //
-    // Due to the nondeterminsitic ordering of accumulation, deterministic numeric behavior cannot
-    // be guaranteed with this mode (e.g., floating-point rounding error will depend on the order
-    // of accumulation)
-    Nondeterministic
-  };
-
-  // Strategies for decomposing the problem
-  enum class DecompositionMode {
-    // Use a heuristic to determine whether data-parallel, split-K, or stream-K decomposition should be performed
-    Heuristic,
-    // Force a data-parallel decomposition
-    DataParallel,
-    // Force a split-K decomposition. This should be paired with setting the `splits` parameter
-    SplitK,
-    // Force a stream-K decomposition
-    StreamK
-  };
 
   using UnderlyingParams = PersistentTileSchedulerSm90Params;
-  using RasterOrder = UnderlyingParams::RasterOrder;
-  using RasterOrderOptions = UnderlyingParams::RasterOrderOptions;
+  using RasterOrder = cutlass::gemm::kernel::detail::RasterOrder;
+  using RasterOrderOptions = cutlass::gemm::kernel::detail::RasterOrderOptions;
 
   // Cluster dimensions are typically always a power of 2, so use
   // the power-of-two variants of FastDivmod for these.
@@ -620,7 +591,7 @@ struct PersistentTileSchedulerSm90StreamKParams {
     DecompositionMode decomposition_mode,
     void* workspace,
     const uint32_t epilogue_subtile = 1,
-    uint32_t ktile_start_alignment_count = 1u, 
+    uint32_t ktile_start_alignment_count = 1u,
     bool bypass_sm90_occupancy_calculation=false
   ) {
 
@@ -695,7 +666,6 @@ struct PersistentTileSchedulerSm90StreamKParams {
     // number of K tiles per stream-K unit remains above min_iters_per_sk_unit_
 
     uint32_t groups = platform::min(max_groups_problem, uint32_t(max_sk_groups_));
-
     // Grouping is disabled when separate reduction is used because grouping is primarily an attempt
     // to improve L2 locality, and L2-locality optimizations are unnecessary when the the kernel
     // is a single wave (which is the case for separate reduction).
@@ -821,7 +791,7 @@ struct PersistentTileSchedulerSm90StreamKParams {
       epilogue_subtile,
       reduction_mode,
       ktile_start_alignment_count
-      );
+    );
   }
 
   // Return the optimal decomposition result by heuristic.
@@ -888,7 +858,7 @@ struct PersistentTileSchedulerSm90StreamKParams {
         cluster_size,
         k_tiles_per_output_tile,
         decomposition_mode,
-        ctas_per_wave_in_full_clusters
+        ctas_per_wave_in_full_clusters 
       );
       uint64_t dp_tiles = output_tiles - sk_tiles;
       // Calculate the number of work units covering the data-parallel and stream-K tiles.
@@ -1086,7 +1056,7 @@ struct PersistentTileSchedulerSm90StreamKParams {
       max_swizzle_size,
       raster_order_option,
       /* truncate_by_problem_size = */false,
-      bypass_sm90_occupancy_calculation
+      bypass_sm90_occupancy_calculation 
     );
   }
 
@@ -1134,6 +1104,10 @@ struct PersistentTileSchedulerSm90StreamKParams {
         return 0;
       }
     }
+    // Ensure that the number of SK tiles is divisible by cluster size so that it can be evenly
+    // divided among SK clusters.
+    sk_tiles = (sk_tiles / cluster_size) * cluster_size;
+
     return static_cast<uint32_t>(sk_tiles);
   }
 
@@ -1649,19 +1623,10 @@ struct PersistentTileSchedulerSm90StreamKParams {
 ////////////////////////////////////////////////////////////////////////////////
 
 // Parameters for SM90 persistent group scheduler (only used for Grouped Gemms)
-template<class ProblemShape>
+template<class GroupProblemShape>
 struct PersistentTileSchedulerSm90GroupParams {
-
-  enum class RasterOrder {
-    AlongM,
-    AlongN
-  };
-
-  enum class RasterOrderOptions {
-    Heuristic,
-    AlongM,
-    AlongN
-  };
+  using RasterOrder = cutlass::gemm::kernel::detail::RasterOrder;
+  using RasterOrderOptions = cutlass::gemm::kernel::detail::RasterOrderOptions;
 
   FastDivmodU64Pow2 divmod_cluster_shape_major_{};
   FastDivmodU64Pow2 divmod_cluster_shape_minor_{};
@@ -1673,8 +1638,7 @@ struct PersistentTileSchedulerSm90GroupParams {
   int32_t log_swizzle_size_ = 0;
   RasterOrder raster_order_ = RasterOrder::AlongN;
 
-  int32_t groups_ = 0;
-  ProblemShape* problem_shapes_ = nullptr;
+  GroupProblemShape problem_shapes_;
   GemmCoord cta_shape_;
   GemmCoord cluster_shape_;
 
@@ -1684,9 +1648,7 @@ struct PersistentTileSchedulerSm90GroupParams {
   void
   initialize(
     dim3 problem_blocks,
-    int32_t groups,
-    ProblemShape* problem_shapes,
-    ProblemShape const* host_problem_shapes,
+    GroupProblemShape problem_shapes,
     GemmCoord cta_shape,
     GemmCoord cluster_shape,
     KernelHardwareInfo const& hw_info,
@@ -1710,13 +1672,12 @@ struct PersistentTileSchedulerSm90GroupParams {
     //
     // Set members
     //
-    groups_ = groups;
     problem_shapes_ = problem_shapes;
     cta_shape_ = cta_shape;
     cluster_shape_ = cluster_shape;
 
     blocks_across_problem_ = problem_blocks.x * problem_blocks.y * problem_blocks.z;
-    pre_processed_problem_shapes = (host_problem_shapes == nullptr) ? false : true;
+    pre_processed_problem_shapes = problem_shapes.is_host_problem_shape_available();
     log_swizzle_size_ = log_swizzle_size;
     raster_order_ = raster_order;
 
@@ -1908,9 +1869,9 @@ struct PersistentTileSchedulerSm100Params {
   uint32_t problem_tiles_l_ = 0;
   FastDivmod divmod_cluster_shape_m_{};
   FastDivmod divmod_cluster_shape_n_{};
+  FastDivmod divmod_swizzle_size_{};
   RasterOrder raster_order_ = RasterOrder::AlongM;
   int32_t log_swizzle_size_ = 0;
-
   // Initializes members. This variant of the method should only be used when
   // problem_shape and tile_shape contain modes of only rank 1.
   void
@@ -1932,27 +1893,12 @@ struct PersistentTileSchedulerSm100Params {
     );
   }
 
-  // Version of initialize that takes in as input the number of CTAs in the M and N and L dimensions.
-  // This is useful for calculating the tiled shape when a mode of problem and/or CTA shape has rank > 1,
-  // for which using CuTe algebra for calculating tile shapes is easiest.
-  void
-  initialize(
-    dim3 problem_blocks,
-    GemmCoord cluster_shape,
-    KernelHardwareInfo const& hw_info,
-    int max_swizzle_size,
-    RasterOrderOptions raster_order_option
-  ) {
-
-    CUTLASS_UNUSED(hw_info);
-    CUTLASS_UNUSED(max_swizzle_size);
-
-    // Cluster counters in m, n and l dimensions of the problem tiles
-    problem_tiles_m_ = problem_blocks.x / cluster_shape.m();
-    problem_tiles_n_ = problem_blocks.y / cluster_shape.n();
-    problem_tiles_l_ = problem_blocks.z;
-    divmod_cluster_shape_m_ = FastDivmod(cluster_shape.m());
-    divmod_cluster_shape_n_ = FastDivmod(cluster_shape.n());
+  void initialize_swizzle(
+      dim3 problem_blocks,
+      GemmCoord cluster_shape,
+      KernelHardwareInfo const& hw_info,
+      int max_swizzle_size,
+      RasterOrderOptions raster_order_option) {
 
     raster_order_ = UnderlyingParams::get_rasterization_order(problem_tiles_m_, problem_tiles_n_, raster_order_option);
     if (raster_order_option == RasterOrderOptions::Heuristic && raster_order_ == RasterOrder::AlongN) {
@@ -1964,13 +1910,42 @@ struct PersistentTileSchedulerSm100Params {
       // Overflow in the swapped X dimension is not possible. At worst, there will be ((1 << 16) - 1) clusters
       // along the original Y dimension of the grid. Even if the cluster M mode is 16, the new grid X value
       // will be at most ((1 << 16) - 1) * 16, which is less than the grid X limit of ((1 << 31) - 1).
-      uint32_t cluster_m = static_cast<uint32_t>(problem_blocks.x) / static_cast<uint32_t>(cluster_shape.m());
-      uint32_t new_grid_y = cluster_m * static_cast<uint32_t>(cluster_shape.n());
+      uint32_t new_grid_y = problem_tiles_m_ * static_cast<uint32_t>(cluster_shape.n());
 
       if (new_grid_y > (1 << 16) - 1) {
         raster_order_ = RasterOrder::AlongM;
       }
     }
+
+    if (max_swizzle_size <= 1) {
+      // Set divisors directly to be zero to mark as unused
+      divmod_swizzle_size_.divisor = 0;
+    }
+    else {
+      divmod_swizzle_size_ = FastDivmod(max_swizzle_size);
+    }
+  }
+
+  // Version of initialize that takes in as input the number of CTAs in the M and N and L dimensions.
+  // This is useful for calculating the tiled shape when a mode of problem and/or CTA shape has rank > 1,
+  // for which using CuTe algebra for calculating tile shapes is easiest.
+  void
+  initialize(
+      dim3 problem_blocks,
+      GemmCoord cluster_shape,
+      KernelHardwareInfo const& hw_info,
+      int max_swizzle_size,
+      RasterOrderOptions raster_order_option
+  ) {
+
+    // Cluster counters in m, n and l dimensions of the problem tiles
+    problem_tiles_m_ = problem_blocks.x / cluster_shape.m();
+    problem_tiles_n_ = problem_blocks.y / cluster_shape.n();
+    problem_tiles_l_ = problem_blocks.z;
+    divmod_cluster_shape_m_ = FastDivmod(cluster_shape.m());
+    divmod_cluster_shape_n_ = FastDivmod(cluster_shape.n());
+
+    initialize_swizzle(problem_blocks, cluster_shape, hw_info, max_swizzle_size, raster_order_option);
   }
 
   // Given the inputs, computes the physical grid we should launch.
@@ -2107,7 +2082,6 @@ struct PersistentTileSchedulerSm100Params {
 
 // Parameters for SM100 persistent stream-K tile scheduler
 struct PersistentTileSchedulerSm100StreamKParams {
-
   using UnderlyingParams = PersistentTileSchedulerSm100Params;
   using UnderlyingStreamKParams = PersistentTileSchedulerSm90StreamKParams;
   using RasterOrderOptions = UnderlyingParams::RasterOrderOptions;
@@ -2197,7 +2171,7 @@ struct PersistentTileSchedulerSm100StreamKParams {
       problem_blocks,
       cluster_shape,
       hw_info,
-      max_swizzle_size,
+      0, // Override max_swizzle_size to be 0, since the SM100 stream-K scheduler handles swizzling on its own
       RasterOrderOptions::AlongM // Override raster_order to be AlongM, since the SM100 stream-K scheduler does not require grid swapping for raster order selection
     );
   }
@@ -2462,12 +2436,12 @@ struct PersistentTileSchedulerSm100StreamKParams {
 
 ////////////////////////////////////////////////////////////////////////////////
 // Parameters for SM100 persistent group scheduler (only used for Grouped Gemms)
-template<class ProblemShape>
+template<class GroupProblemShape>
 struct PersistentTileSchedulerSm100GroupParams {
 
-  using UnderlyingSm90Params = PersistentTileSchedulerSm90GroupParams<ProblemShape>;
-  using RasterOrder = typename UnderlyingSm90Params::RasterOrder;
-  using RasterOrderOptions = typename UnderlyingSm90Params::RasterOrderOptions;
+  using UnderlyingSm90Params = PersistentTileSchedulerSm90GroupParams<GroupProblemShape>;
+  using RasterOrder = cutlass::gemm::kernel::detail::RasterOrder;
+  using RasterOrderOptions = cutlass::gemm::kernel::detail::RasterOrderOptions;
 
   UnderlyingSm90Params params_sm90_{};
 
@@ -2477,9 +2451,7 @@ struct PersistentTileSchedulerSm100GroupParams {
   void
   initialize(
     dim3 problem_blocks,
-    int32_t groups,
-    ProblemShape* problem_shapes,
-    ProblemShape const* host_problem_shapes,
+    GroupProblemShape problem_shapes,
     GemmCoord cta_shape,
     GemmCoord cluster_shape,
     KernelHardwareInfo const& hw_info,
@@ -2489,9 +2461,7 @@ struct PersistentTileSchedulerSm100GroupParams {
 
     params_sm90_.initialize(
       problem_blocks,
-      groups,
       problem_shapes,
-      host_problem_shapes,
       cta_shape,
       cluster_shape,
       hw_info,

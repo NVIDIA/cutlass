@@ -53,6 +53,13 @@ endfunction()
 
 add_subdirectory(sm100_blockscaled_tensorop_gemm)
 add_subdirectory(sm100_tensorop_gemm)
+add_subdirectory(sm100_blockscaled_sparse_tensorop_gemm)
+add_subdirectory(sm100_sparse_tensorop_gemm)
+add_subdirectory(sm120_blockscaled_sparse_tensorop_gemm)
+add_subdirectory(sm120_sparse_tensorop_gemm)
+add_subdirectory(sm120_tensorop_gemm)
+add_subdirectory(sm120_blockscaled_tensorop_gemm)
+
 cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_simt
 
@@ -330,6 +337,11 @@ cutlass_test_unit_gemm_device_add_executable(
 cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_tensorop_sm90_group_gemm
   sm90_gemm_f16_f16_f16_tensor_op_f32_group_gemm.cu
+)
+
+# Group Gemm pingpong test
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_sm90_group_gemm_pingpong
   sm90_gemm_f16_f16_f16_tensor_op_f32_group_gemm_pingpong.cu
 )
 
@@ -646,7 +658,6 @@ cutlass_test_unit_gemm_device_add_executable(
   # Syrk SM80 complex f64 tests
   syrk_cf64n_cf64t_tensor_op_f64_sm80.cu
   syrk_cf64n_cf64n_tensor_op_f64_sm80.cu
-  syrk_cf64n_cf64t_tensor_op_f64_gaussian_sm80.cu
 
   # Syrk SM80 complex f32 tests
   syrk_cf32n_cf32t_tensor_op_f32_sm80.cu
@@ -691,7 +702,6 @@ cutlass_test_unit_gemm_device_add_executable(
 
   # Trmm SM80 complex f64 tests
   trmm_cf64n_cf64n_cf64t_tensor_op_f64_sm80.cu
-  trmm_cf64n_cf64n_cf64t_tensor_op_f64_gaussian_sm80.cu
 
   # Trmm SM80 complex f32 tests
   trmm_cf32n_cf32n_cf32t_tensor_op_f32_sm80.cu
@@ -764,7 +774,6 @@ cutlass_test_unit_gemm_device_add_executable(
   # Symm SM80 complex f64 tests
   symm_cf64n_cf64n_cf64n_tensor_op_ls_f64_sm80.cu
   symm_cf64n_cf64n_cf64n_tensor_op_rs_f64_sm80.cu
-  symm_cf64n_cf64n_cf64n_tensor_op_ls_f64_gaussian_sm80.cu
 
   # Symm SM80 complex f32 tests
   symm_cf32n_cf32n_tensor_op_f32_ls_sm80.cu
@@ -781,7 +790,6 @@ cutlass_test_unit_gemm_device_add_executable(
   # Hemm SM80 complex f64 tests
   hemm_cf64h_cf64n_cf64n_tensor_op_ls_f64_sm80.cu
   hemm_cf64h_cf64n_cf64n_tensor_op_rs_f64_sm80.cu
-  hemm_cf64h_cf64n_cf64n_tensor_op_ls_f64_gaussian_sm80.cu
 
   # Hemm SM80 complex f32 tests
   hemm_cf32h_cf32n_tensor_op_f32_ls_sm80.cu
@@ -792,6 +800,20 @@ cutlass_test_unit_gemm_device_add_executable(
   # Hemm SM90 complex f64 tests
   hemm_cf64_cf64_cf64_tensor_op_f64_sm90.cu
 )
+
+if (NOT CUTLASS_NVCC_ARCHS MATCHES 101|101a|101f|103|103a|103f)
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_gemm_device_blas3_gaussian
+
+  BATCH_SOURCES ON
+  BATCH_SIZE 4
+
+  syrk_cf64n_cf64t_tensor_op_f64_gaussian_sm80.cu
+  trmm_cf64n_cf64n_cf64t_tensor_op_f64_gaussian_sm80.cu
+  symm_cf64n_cf64n_cf64n_tensor_op_ls_f64_gaussian_sm80.cu
+  hemm_cf64h_cf64n_cf64n_tensor_op_ls_f64_gaussian_sm80.cu
+)
+endif()
 
 cutlass_test_unit_gemm_device_add_executable(
   cutlass_test_unit_gemm_device_grouped_blas3
@@ -918,6 +940,13 @@ cutlass_test_unit_gemm_device_add_executable(
   # 8 unit tests
   sm100_gemm_f6_f6_f32_tensor_op_f32_ptr_array.cu
 )
+
+cutlass_test_unit_gemm_device_add_executable(
+  cutlass_test_unit_blockwise_gemm_sm100
+
+  sm100_gemm_f8_f8_f8_tensor_op_f32_blockwise.cu
+)
+
 endif()
 
 

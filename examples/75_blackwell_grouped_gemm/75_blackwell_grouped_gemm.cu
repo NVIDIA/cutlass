@@ -237,11 +237,12 @@ cutlass::DeviceAllocation<ElementAccumulator> block_beta;
 /// Testbed utility types
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm100GroupParams<typename ProblemShape::UnderlyingProblemShape>::RasterOrderOptions;
+using RasterOrderOptions = cutlass::gemm::kernel::detail::RasterOrderOptions;
 // Command line options parsing
 struct Options {
 
   bool help = false;
+  bool use_pdl = false;
 
   float alpha = FLT_MAX;
   float beta  = FLT_MAX;
@@ -263,6 +264,9 @@ struct Options {
     if (cmd.check_cmd_line_flag("help")) {
       help = true;
       return;
+    }
+    if (cmd.check_cmd_line_flag("use_pdl")) {
+      use_pdl = true;
     }
 
     cmd.get_cmd_line_argument("m", m);
@@ -350,19 +354,9 @@ struct Options {
       cutlass::CommandLine::tokenize(tokens, extent_str, 'x');
 
       for (int i = 0; i < int(tokens.size()); ++i) {
-        int x = std::atoi(tokens.at(i).c_str());
-
-        // round up
-        if (x % alignment) {
-          x += (alignment - (x % alignment));
-        }
-
-        extent.at(i) = x;
+        extent.at(i) = std::atoi(tokens.at(i).c_str());
       }
-
-      if (extent.product()) {
-        problem_sizes_host.push_back({extent.m(), extent.n(), extent.k()});
-      }
+      problem_sizes_host.push_back({extent.m(), extent.n(), extent.k()});
     }
     groups = static_cast<int>(problem_sizes_host.size());
 
@@ -387,7 +381,8 @@ struct Options {
       << "  --raster=<char>                                              CTA Rasterization direction (N for along N, M for along M)\n\n"
       << "  --iterations=<int>                                           Number of profiling iterations to perform\n\n"
       << "  --benchmark=<str>                                            Executes a benchmark problem size\n"
-      << "  --max_sm_count=<int>                                         Run kernels using only these number of SMs\n";
+      << "  --max_sm_count=<int>                                         Run kernels using only these number of SMs\n"
+      << "  --use_pdl                                                    Launch kernel with PDL (Programmatic Dependent Launch) enabled\n";
                                                                                              
     out
       << "\n\nExamples:\n\n"
@@ -711,7 +706,7 @@ int run(Options &options, bool host_problem_shapes_available = true)
   CUTLASS_CHECK(gemm.initialize(arguments, workspace.get()));
 
   // Correctness / Warmup iteration
-  CUTLASS_CHECK(gemm.run());
+  CUTLASS_CHECK(gemm.run(/* stream = */ nullptr, /* cuda_adapter = */ nullptr, /* launch_with_pdl = */ options.use_pdl));
 
   // Check if output from CUTLASS kernel and reference kernel are equal or not
   Result result;
@@ -730,7 +725,7 @@ int run(Options &options, bool host_problem_shapes_available = true)
     timer.start();
     for (int iter = 0; iter < options.iterations; ++iter) {
       CUTLASS_CHECK(gemm.initialize(arguments, workspace.get()));
-      CUTLASS_CHECK(gemm.run());
+      CUTLASS_CHECK(gemm.run(/* stream = */ nullptr, /* cuda_adapter = */ nullptr, /* launch_with_pdl = */ options.use_pdl));
     }
     timer.stop();
 
@@ -740,7 +735,7 @@ int run(Options &options, bool host_problem_shapes_available = true)
     result.gflops          = options.gflops(result.avg_runtime_ms / 1000.0, options.problem_sizes_host);
 
     std::cout << "  Avg runtime : " << result.avg_runtime_ms << " ms" << std::endl;
-    std::cout << "  GFLOPS      : " << result.gflops << std::endl;
+    std::cout << "  TFLOPS      : " << result.gflops / 1000.0 << std::endl;
   }
 
   return 0;

@@ -58,7 +58,7 @@ struct IndexedGather
   operator()(I i) const { return indices_[i]; }
 
   CUTE_HOST_DEVICE friend
-  void 
+  void
   print(IndexedGather const &s) {
     cute::print("Indexed");
   }
@@ -80,7 +80,7 @@ struct StridedGather
   operator()(I i) const { return i * stride_; }
 
   CUTE_HOST_DEVICE friend
-  void 
+  void
   print(StridedGather const &s) {
     cute::print("Strided{");
     print(s.stride_);
@@ -153,7 +153,7 @@ make_custom_stride_layout(Stride const &stride, Func&& func)
 /// Helper function to optionally create a gather tensor
 template<class Iterator, class Shape, class Stride, class Func>
 CUTLASS_HOST_DEVICE
-auto 
+auto
 make_gather_tensor(Iterator iter, Shape const &shape, Stride const &stride, Func &&func)
 {
   if constexpr (not cutlass::platform::is_same<remove_cvref_t<Func>, NoGather>::value) {
@@ -180,7 +180,7 @@ upcast(Shape const& shape, Stride const& stride)
     return transform_layout(shape, stride, [](auto const& s, auto const& d) { return upcast<N,I>(s,d); });
   } else if constexpr (is_scaled_basis<Stride>::value) {
     if constexpr (Stride::mode() == I) {
-      return make_layout(shape_div(shape, Int<N>{}), shape_div(stride, Int<N>{}));
+      return make_layout(ceil_div(shape, Int<N>{}), ceil_div(stride, Int<N>{}));
     } else {
       return make_layout(shape, stride);
     }

@@ -75,15 +75,10 @@ audit_csv_runtime_fields = [
 ]
 
 def hash_cutlass_string(input_string):
-  # Regex pattern to match instruction shape
-  instruction_shape_pattern = r"[a-zA-Z]\d+x\d+x\d+"  # Matches '_s128x128x64', '_h64x128x16', etc.
   mma_cluster_shape_pattern = r"_\d+x\d+x\d+"         # Matches MMA and Cluster shapes (e.g., '_128x128x256', '_0x0x1')
 
-  # Remove instruction shape (e.g., '_s128x128x64', '_h64x128x16')
-  output = re.sub(instruction_shape_pattern, "", input_string)
-
   # Remove MMA and Cluster shapes (e.g., '_128x128x256', '_0x0x1')
-  output = re.sub(mma_cluster_shape_pattern, "", output)
+  output = re.sub(mma_cluster_shape_pattern, "", input_string)
 
   return output
 
@@ -258,7 +253,8 @@ def _getInstType(input_precision, accumulate_precision, math_instruction):
 
   return inst
 # TODO: Computes FLOps/Bytes for GEMM - revisit for conv
-def _computeFlopsPerByte(operation, m, n, k, batch_count=1, beta=0.0):
+def _computeFlopsPerByte(operation, m, n, k, batch_count=1, beta=0.0, num_groups=1):
+  assert not (batch_count > 1 and num_groups > 1)
 
   # TODO: adjust for sparsity
   gmem_bytes = (
@@ -274,8 +270,9 @@ def _computeFlopsPerByte(operation, m, n, k, batch_count=1, beta=0.0):
     gmem_bytes += (DataTypeSize[operation.C.element] * m // 8) * n
     flops += 2 * m * n
 
-  gmem_bytes *= batch_count
-  flops *= batch_count
+  multiplier = max(batch_count, num_groups)
+  gmem_bytes *= multiplier
+  flops *= multiplier
 
   return flops / gmem_bytes
 
@@ -286,7 +283,7 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
   # TODO: randomize beta values for wider coverage
   beta_values = [0.5]
 
-  is_supported_arch = (arch in ["100a"])
+  is_supported_arch = (arch in ["100a", "100f", "101a", "101f", "120a", "120f"])
 
   is_runtime_datatype_enabled = mode == "functional_L0" and is_supported_arch
 
@@ -298,23 +295,17 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
     #
 
     sm100_mma_data_type_general = [
-      'x16gemm_f16_f16_f16_f16_f16',
-      'x16gemm_f16_f16_f16_void_f16',
-      'x16gemm_f16_f16_f32_f16_f16',
-      'x8tf32gemm_f32_f32_f32_f32_f32',
-      'x16bf16gemm_f32_f32_f32_f32_f32',
+      'gemm_f16_f16_f16_f16_f16',
+      'gemm_f16_f16_f16_void_f16',
+      'gemm_f16_f16_f32_f16_f16',
+      'tf32gemm_f32_f32_f32_f32_f32',
+      'bf16gemm_f32_f32_f32_f32_f32',
     ]
 
     sm100_mma_data_type_runtime_dtype = [
-      'x32gemm_f4_f4_f32_f32_f32',
-      'x32gemm_f6_f6_f32_f32_f32',
-      'x32gemm_f8_f8_f32_f32_f32',
-    ]
-
-    sm100_mma_data_type_mergeable = [
-      'x32gemm_e4m3_e4m3_f32_f32_f32',# mask out one instance for verification
-      'x32gemm_e2m1_e2m1_f32_f32_f32',
-      'x32gemm_e3m2_e3m2_f32_f32_f32',
+      'gemm.*f4_f4_f32_f32_f32',
+      'gemm.*f6_f6_f32_f32_f32',
+      'gemm.*f8_f8_f32_f32_f32',
     ]
 
     sm100_mma_cluster_size = [
@@ -329,45 +320,25 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
       'ntn' 
     ]
 
-    sm100_mma_instruction_shape = [
-      # [0] .1CTA, General
-      ['64x128', '128x128', '128x256'],
-      # [1] .2CTA, General
-      ['128x128', '256x128', '256x256'],
-    ]
-
     # regex list must be in kernel procedural name order
-    mergeable_sm100_mma_filter_regex_1sm = "cutlass3x_sm100_tensorop.*(" + ").*(".join([ "|".join(x) for x in [sm100_mma_instruction_shape[0], sm100_mma_data_type_mergeable, sm100_mma_cluster_size, sm100_mma_layouts]]) + ").*1sm.*"
-    mergeable_sm100_mma_filter_regex_2sm = "cutlass3x_sm100_tensorop.*(" + ").*(".join([ "|".join(x) for x in [sm100_mma_instruction_shape[1], sm100_mma_data_type_mergeable, sm100_mma_cluster_size, sm100_mma_layouts]]) + ").*2sm.*"
+    sm100_mma_filter_regex_1sm = "cutlass3x_sm100_tensorop.*(" + ").*(".join([ "|".join(x) for x in [sm100_mma_data_type_general, sm100_mma_cluster_size, sm100_mma_layouts]]) + ").*1sm.*"
+    sm100_mma_filter_regex_2sm = "cutlass3x_sm100_tensorop.*(" + ").*(".join([ "|".join(x) for x in [sm100_mma_data_type_general, sm100_mma_cluster_size, sm100_mma_layouts]]) + ").*2sm.*"
 
-    sm100_mma_filter_regex_1sm = "cutlass3x_sm100_tensorop.*(" + ").*(".join([ "|".join(x) for x in [sm100_mma_instruction_shape[0], sm100_mma_data_type_general, sm100_mma_cluster_size, sm100_mma_layouts]]) + ").*1sm.*"
-    sm100_mma_filter_regex_2sm = "cutlass3x_sm100_tensorop.*(" + ").*(".join([ "|".join(x) for x in [sm100_mma_instruction_shape[1], sm100_mma_data_type_general, sm100_mma_cluster_size, sm100_mma_layouts]]) + ").*2sm.*"
-
-    sm100_mma_filter_regex_1sm_runtime = "cutlass3x_sm100_tensorop.*(" + ").*(".join([ "|".join(x) for x in [sm100_mma_instruction_shape[0], sm100_mma_data_type_runtime_dtype, sm100_mma_cluster_size, sm100_mma_layouts]]) + ").*1sm.*"
-    sm100_mma_filter_regex_2sm_runtime = "cutlass3x_sm100_tensorop.*(" + ").*(".join([ "|".join(x) for x in [sm100_mma_instruction_shape[1], sm100_mma_data_type_runtime_dtype, sm100_mma_cluster_size, sm100_mma_layouts]]) + ").*2sm.*"
+    sm100_mma_filter_regex_1sm_runtime = "cutlass3x_sm100_tensorop.*(" + ").*(".join([ "|".join(x) for x in [sm100_mma_data_type_runtime_dtype, sm100_mma_cluster_size, sm100_mma_layouts]]) + ").*1sm.*"
+    sm100_mma_filter_regex_2sm_runtime = "cutlass3x_sm100_tensorop.*(" + ").*(".join([ "|".join(x) for x in [sm100_mma_data_type_runtime_dtype, sm100_mma_cluster_size, sm100_mma_layouts]]) + ").*2sm.*"
 
     #
     # Block Scale Gemm
     #
 
-    block_scaled_data_type_base = [
+    block_scaled_data_type = [
       # runtime datatypes
-      'x32gemm.*ue8m0xf4_ue8m0xf4_f32_f16_e5m2',
-      'x64gemm.*ue8m0xf4_ue8m0xf4_f32_f16_e5m2',
-      'x32gemm.*ue8m0xf4_ue8m0xf6_f32_f16_e5m2',
-      'x64gemm.*ue8m0xf4_ue8m0xf4_f32_f16_ue8m0xe2m1',
-      'x32gemm.*ue8m0xf6_ue8m0xf6_f32_f16_ue8m0xe3m2',
+      'gemm.*ue8m0xf4_ue8m0xf4_f32_f16_e5m2',
+      'gemm.*ue4m3xf4_ue4m3xf4_f32_f16_e5m2',
+      'gemm.*ue8m0xf4_ue8m0xf6_f32_f16_e5m2',
+      'gemm.*ue8m0xf4_ue8m0xf4_f32_f16_ue8m0xe2m1',
+      'gemm.*ue8m0xf6_ue8m0xf6_f32_f16_ue8m0xe3m2',
     ]
-
-    block_scaled_data_type_mergeable = [
-      'x32gemm.*ue8m0xe2m1_ue8m0xe2m1_f32_f16_e5m2',
-      'x64gemm.*ue8m0xe2m1_ue8m0xe2m1_f32_f16_e5m2',
-      'x32gemm.*ue8m0xe2m1_ue8m0xe2m3_f32_f16_e5m2',
-      'x64gemm.*ue8m0xe2m1_ue8m0xe2m1_f32_f16_ue8m0xe2m1',
-      'x32gemm.*ue8m0xe2m3_ue8m0xe2m3_f32_f16_ue8m0xe3m2',
-    ]
-
-    block_scaled_data_type = block_scaled_data_type_base + block_scaled_data_type_mergeable
 
     block_scaled_cluster_size = [
       '4x4x1', '2x1x1',
@@ -375,54 +346,51 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
     ]
 
     block_scaled_layouts = ['tnt']
-    block_scaled_instruction_shape = [
-      # .1CTA
-      ['128x128', '128x192', '128x256'],
-      # .2CTA
-      ['256x128', '256x192', '256x256'],
-    ]
     # regex list must be in kernel procedural name order
-    mergeable_block_scaled_filter_regex_1sm = "cutlass3x_sm100_bstensorop.*(" + ").*(".join([ "|".join(x) for x in [block_scaled_instruction_shape[0], block_scaled_data_type_mergeable, block_scaled_cluster_size, block_scaled_layouts]]) + ").*1sm.*"
-    mergeable_block_scaled_filter_regex_2sm = "cutlass3x_sm100_bstensorop.*(" + ").*(".join([ "|".join(x) for x in [block_scaled_instruction_shape[1], block_scaled_data_type_mergeable, block_scaled_cluster_size, block_scaled_layouts]]) + ").*2sm.*"
-
-    block_scaled_filter_regex_1sm = "cutlass3x_sm100_bstensorop.*(" + ").*(".join([ "|".join(x) for x in [block_scaled_instruction_shape[0], block_scaled_data_type, block_scaled_cluster_size, block_scaled_layouts]]) + ").*1sm.*"
-    block_scaled_filter_regex_2sm = "cutlass3x_sm100_bstensorop.*(" + ").*(".join([ "|".join(x) for x in [block_scaled_instruction_shape[1], block_scaled_data_type, block_scaled_cluster_size, block_scaled_layouts]]) + ").*2sm.*"
+    block_scaled_filter_regex_1sm = "cutlass3x_sm100_bstensorop.*(" + ").*(".join([ "|".join(x) for x in [block_scaled_data_type, block_scaled_cluster_size, block_scaled_layouts]]) + ").*1sm.*"
+    block_scaled_filter_regex_2sm = "cutlass3x_sm100_bstensorop.*(" + ").*(".join([ "|".join(x) for x in [block_scaled_data_type, block_scaled_cluster_size, block_scaled_layouts]]) + ").*2sm.*"
     
-    if arch == "100a":
+    if arch in ["100a", "100f"]:
       kernel_filter = f"({sm100_mma_filter_regex_1sm})|" \
                       f"({sm100_mma_filter_regex_2sm})|" \
                       f"({sm100_mma_filter_regex_1sm_runtime})|" \
                       f"({sm100_mma_filter_regex_2sm_runtime})|" \
                       f"({block_scaled_filter_regex_1sm})|" \
                       f"({block_scaled_filter_regex_2sm})"
-    else:
-      error_message = "unsupported arch, only support sm100a"
-      raise Exception(error_message)
-    
-    # Statically encoded kernels are still added to generated_kernels 
-    # but are filtered out from the testing commands to reduce test duration.
-    # The mergeable_kernel_filter specifies the kernels that are already covered 
-    # by the runtime datatype tests so that we safely mark them off
-    # without changing the test coverage.
-    mergeable_kernel_filter = f"({mergeable_sm100_mma_filter_regex_1sm})|" \
-                              f"({mergeable_sm100_mma_filter_regex_2sm})|" \
-                              f"({mergeable_block_scaled_filter_regex_1sm})|" \
-                              f"({mergeable_block_scaled_filter_regex_2sm})"
-  elif mode == "functional_L1":
+    elif arch in ["101a", "101f",
+                  ]:
+      kernel_filter = f"({sm100_mma_filter_regex_1sm})|" \
+                      f"({sm100_mma_filter_regex_2sm})|" \
+                      f"({sm100_mma_filter_regex_1sm_runtime})|" \
+                      f"({sm100_mma_filter_regex_2sm_runtime})|" \
+                      f"({block_scaled_filter_regex_1sm})|" \
+                      f"({block_scaled_filter_regex_2sm})"
+    elif arch in ["120a", "120f"]:
 
+      # blockscaled sm120_mma kernels
+      blockscaled_sm120_mma_kernel_cta_tiles = [
+        [ '128x128' ]
+      ]
+
+      # Restrict to two layouts to reduce L0 build and test time.
+      blockscaled_sm120_mma_layouts = [ 'tn' ]
+      filter_regex_blockscaled_sm120_mma = "cutlass3x_sm120_bstensorop.*(" + ").*(".join([ "|".join(x) for x in [blockscaled_sm120_mma_kernel_cta_tiles[0], blockscaled_sm120_mma_layouts]]) + ").*"
+      
+      problem_waves = [0.5, 1.25, 2.5]
+
+      kernel_filter = f"({filter_regex_blockscaled_sm120_mma})"
+    else:
+      error_message = "unsupported arch, only support sm100a, sm100f, sm101a, sm101f, sm120a, sm120f"
+      raise Exception(error_message)
+
+  elif mode == "functional_L1":
     sm100_mma_cluster_size = [
                     '0x0x1' # dynamic cluster
                      ]
     # Restrict to two layouts to reduce L1 build and test time.
     sm100_mma_layouts = ['tnt', 'ntn']
-    sm100_mma_instruction_shape = [
-      # .1CTA
-      ['64x128', '128x128', '128x256'],
-      # .2CTA
-      ['128x128', '256x128', '256x256']
-    ]
-    sm100_mma_filter_regex_1sm = "cutlass3x_sm100_tensorop.*(" + ").*(".join([ "|".join(x) for x in [sm100_mma_instruction_shape[0], sm100_mma_cluster_size, sm100_mma_layouts]]) + ").*1sm.*"
-    sm100_mma_filter_regex_2sm = "cutlass3x_sm100_tensorop.*(" + ").*(".join([ "|".join(x) for x in [sm100_mma_instruction_shape[1], sm100_mma_cluster_size, sm100_mma_layouts]]) + ").*2sm.*"
+    sm100_mma_filter_regex_1sm = "cutlass3x_sm100_tensorop.*(" + ").*(".join([ "|".join(x) for x in [sm100_mma_cluster_size, sm100_mma_layouts]]) + ").*1sm.*"
+    sm100_mma_filter_regex_2sm = "cutlass3x_sm100_tensorop.*(" + ").*(".join([ "|".join(x) for x in [sm100_mma_cluster_size, sm100_mma_layouts]]) + ").*2sm.*"
     block_scaled_data_type = [
       'ue8m0xe2m1_ue8m0xe2m1_f32_f16_e5m2',
       'ue8m0xe2m1_ue8m0xe2m3_f32_f16_e5m2',
@@ -433,21 +401,16 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
 
     block_scaled_cluster_size = ['4x4x1', '2x1x1', '0x0x1']
     block_scaled_layouts = ['tnt']
-    block_scaled_instruction_shape = [
-      # .1CTA
-      ['128x128', '128x192', '128x256'],
-      # .2CTA
-      ['256x128', '256x192', '256x256'],
-    ]
+
     # regex list must be in kernel procedural name order
-    block_scaled_filter_regex_1sm = "cutlass3x_sm100_bstensorop.*(" + ").*(".join([ "|".join(x) for x in [block_scaled_instruction_shape[0], block_scaled_data_type, block_scaled_cluster_size, block_scaled_layouts]]) + ").*1sm.*"
-    block_scaled_filter_regex_2sm = "cutlass3x_sm100_bstensorop.*(" + ").*(".join([ "|".join(x) for x in [block_scaled_instruction_shape[1], block_scaled_data_type, block_scaled_cluster_size, block_scaled_layouts]]) + ").*2sm.*"
+    block_scaled_filter_regex_1sm = "cutlass3x_sm100_bstensorop.*(" + ").*(".join([ "|".join(x) for x in [block_scaled_data_type, block_scaled_cluster_size, block_scaled_layouts]]) + ").*1sm.*"
+    block_scaled_filter_regex_2sm = "cutlass3x_sm100_bstensorop.*(" + ").*(".join([ "|".join(x) for x in [block_scaled_data_type, block_scaled_cluster_size, block_scaled_layouts]]) + ").*2sm.*"
     filter_regex_sm100_mma = f"({sm100_mma_filter_regex_1sm})|" \
                           f"({sm100_mma_filter_regex_2sm})|" \
                           f"({block_scaled_filter_regex_1sm})|" \
                           f"({block_scaled_filter_regex_2sm})|" 
-    # CTA tiles for super MMA - only run one tile size to reduce build/test times
-    supermma_kernel_cta_tiles = [
+    # CTA tiles for sm120 MMA - only run one tile size to reduce build/test times
+    sm120_mma_kernel_cta_tiles = [
       # h1688, s1688, i16832, i8816
       [ '256x128' ],
       # d884, c1688,
@@ -458,8 +421,8 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
       [ '64x64' ]
     ]
 
-    # super MMA instruction shapes, planar complex type excluded as they are not required
-    supermma_instruction_shapes = [
+    # sm120 MMA instruction shapes, planar complex type excluded as they are not required
+    sm120_mma_instruction_shapes = [
       [ 'h1688gemm_(?!planar_complex)',
         's1688gemm_f16',
         's1688gemm_bf16',
@@ -473,16 +436,16 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
     ]
 
     # It's not pretty, but not sure why different instructions support different tile sizes.
-    filter_regex_supermma_0 = "cutlass_tensorop.*(" + ").*(".join([ "|".join(x) for x in [supermma_instruction_shapes[0], supermma_kernel_cta_tiles[0]]]) + ").*"
-    filter_regex_supermma_1 = "cutlass_tensorop.*(" + ").*(".join([ "|".join(x) for x in [supermma_instruction_shapes[1], supermma_kernel_cta_tiles[1]]]) + ").*"
-    filter_regex_supermma_2 = "cutlass_tensorop.*(" + ").*(".join([ "|".join(x) for x in [supermma_instruction_shapes[2], supermma_kernel_cta_tiles[2]]]) + ").*"
-    filter_regex_supermma_3 = "cutlass_tensorop.*(" + ").*(".join([ "|".join(x) for x in [supermma_instruction_shapes[3], supermma_kernel_cta_tiles[3]]]) + ").*"
+    filter_regex_sm120_mma_0 = "cutlass_tensorop.*(" + ").*(".join([ "|".join(x) for x in [sm120_mma_instruction_shapes[0], sm120_mma_kernel_cta_tiles[0]]]) + ").*"
+    filter_regex_sm120_mma_1 = "cutlass_tensorop.*(" + ").*(".join([ "|".join(x) for x in [sm120_mma_instruction_shapes[1], sm120_mma_kernel_cta_tiles[1]]]) + ").*"
+    filter_regex_sm120_mma_2 = "cutlass_tensorop.*(" + ").*(".join([ "|".join(x) for x in [sm120_mma_instruction_shapes[2], sm120_mma_kernel_cta_tiles[2]]]) + ").*"
+    filter_regex_sm120_mma_3 = "cutlass_tensorop.*(" + ").*(".join([ "|".join(x) for x in [sm120_mma_instruction_shapes[3], sm120_mma_kernel_cta_tiles[3]]]) + ").*"
 
-    filter_regex_supermma = f"({filter_regex_supermma_0})|({filter_regex_supermma_1})|({filter_regex_supermma_2})|({filter_regex_supermma_3})"
+    filter_regex_sm120_mma = f"({filter_regex_sm120_mma_0})|({filter_regex_sm120_mma_1})|({filter_regex_sm120_mma_2})|({filter_regex_sm120_mma_3})"
 
     problem_waves = [0.5, 1.25, 2.5]
 
-    kernel_filter = f"({filter_regex_sm100_mma})|({filter_regex_supermma})"
+    kernel_filter = f"({filter_regex_sm100_mma})|({filter_regex_sm120_mma})"
   else:
     raise ValueError()
 
@@ -492,8 +455,6 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
 
   audit_file_params_name = os.path.join(curr_build_dir, f"FK_{mode}_audit_params_SM{arch}_cutlass3x_gemm.csv")
 
-  if is_runtime_datatype_enabled: 
-    mergeable_kernel_filter_re = re.compile(mergeable_kernel_filter)
   kernel_filter_re = re.compile(kernel_filter)
   testcase_counter = 0
   kernels_emitted = 0
@@ -520,12 +481,6 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
       if '_void_' in kernel_name and  'perf_' not in mode:
         if 'f16_f16_f16_void_f16' not in kernel_name :
           continue
-
-      # Filter out the statically encoded tests which are 
-      # covered by runtime datatype tests to avoid repetition.
-      if is_runtime_datatype_enabled and len(mergeable_kernel_filter_re.findall(kernel_name)) != 0:
-        continue
-
 
       kernels_emitted += 1
       kernel_name_set.add(kernel_name)
@@ -630,6 +585,7 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
         max_k = (cta_tile_shape_k*8) - alignment_ab_max
         problem_shapes_k = [min_k, max_k]
         sm_count = 16
+        swizzle_sizes = [0]
         # Larger k and less than half wave trigger streamk +separate reduction case to be generated
         if 'stream_k' in kernel_name:
           problem_shapes_k = [max_k, cta_tile_shape_k*32]
@@ -649,145 +605,157 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
           for beta in beta_values:
             for cluster_shape in runtime_cluster_shapes:
               for runtime_input_datatype in runtime_input_datatypes:
-                grid_size = waves * sm_count
-                cluster_shape_m, cluster_shape_n, cluster_shape_k = tuple(cluster_shape)
-                if cluster_shape_m >= cluster_shape_n:
-                  grid_m = cluster_shape_m
-                  grid_n = grid_size / grid_m
-                  grid_n = max( int((grid_n + cluster_shape_n - 1) / cluster_shape_n) * cluster_shape_n, 1)
-                else:
-                  grid_n = cluster_shape_n
-                  grid_m = grid_size / grid_n
-                  grid_m = max( int((grid_m + cluster_shape_m - 1) / cluster_shape_m) * cluster_shape_m, 1)
+                for swizzle_size in swizzle_sizes:
+                  grid_size = waves * sm_count
+                  cluster_shape_m, cluster_shape_n, cluster_shape_k = tuple(cluster_shape)
+                  if cluster_shape_m >= cluster_shape_n:
+                    grid_m = cluster_shape_m
+                    grid_n = grid_size / grid_m
+                    grid_n = max( int((grid_n + cluster_shape_n - 1) / cluster_shape_n) * cluster_shape_n, 1)
+                  else:
+                    grid_n = cluster_shape_n
+                    grid_m = grid_size / grid_n
+                    grid_m = max( int((grid_m + cluster_shape_m - 1) / cluster_shape_m) * cluster_shape_m, 1)
 
-                verification_required = False
-                if mode == "functional_L0" or mode == "functional_L1":
-                  if '_void_' not in kernel_name:
-                    verification_required = True
+                  verification_required = False
+                  if mode == "functional_L0" or mode == "functional_L1":
+                    if '_void_' not in kernel_name:
+                      verification_required = True
 
-                  m = max(int(grid_m * cta_tile_shape_m), alignment_ab_max)
-                  n = max(int(grid_n * cta_tile_shape_n), alignment_ab_max)
-                  k = int(k)
+                    m = max(int(grid_m * cta_tile_shape_m), alignment_ab_max)
+                    n = max(int(grid_n * cta_tile_shape_n), alignment_ab_max)
+                    k = int(k)
 
-                  # For functional testing, we want to perturb just a little from even shapes.
-                  # Only do this if the perturbation does not cause one of the dimensions of the
-                  # problem size to go to zero. This can occur for blockscaling kernels for which
-                  # the alignment requirements for A and B can be quite large (e.g., 256).
-                  if m > alignment_shift_m:
-                    m -= alignment_shift_m
-                  if n > alignment_shift_n:
-                    n -= alignment_shift_n
+                    # For functional testing, we want to perturb just a little from even shapes.
+                    # Only do this if the perturbation does not cause one of the dimensions of the
+                    # problem size to go to zero. This can occur for blockscaling kernels for which
+                    # the alignment requirements for A and B can be quite large (e.g., 256).
+                    if m > alignment_shift_m:
+                      m -= alignment_shift_m
+                    if n > alignment_shift_n:
+                      n -= alignment_shift_n
 
-                  if '_n32t32_' in kernel_name:
-                    continue
-                batch_count = 1
-                if mode == "functional_L0" or mode == "functional_L1" :
-                  if index_waves == 0 and index_k == 0 :
-                    batch_count = 3 if mode == "functional_L0" else 5
-                gemm_op = "gemm"
+                    if '_n32t32_' in kernel_name:
+                      continue
+                  batch_count = 1
+                  if mode == "functional_L0" or mode == "functional_L1" :
+                    if index_waves == 0 and index_k == 0 :
+                      batch_count = 3 if mode == "functional_L0" else 5
+                  gemm_op = "gemm"
 
-                profiler_reference_computing_override = profiler_reference_computing
-                if "bstensorop" in kernel_name:
-                  profiler_reference_computing_override = "--mode=trace"
-                  gemm_op = "block_scaled_gemm"
+                  profiler_reference_computing_override = profiler_reference_computing
+                  grouped = is_grouped(manifest.operations_by_name[kernel_name].gemm_kind)
+                  num_groups = 1
+                  if "bstensorop" in kernel_name:
+                    profiler_reference_computing_override = "--mode=trace"
+                  if grouped:
+                    gemm_op = "grouped_gemm"
+                    num_groups = 3 # small to limit test time in host block-scaled reference kernels
+                    batch_count = 1
+                  elif "bstensorop" in kernel_name:
+                    gemm_op = "block_scaled_gemm"
+                  elif is_blockwise(manifest.operations_by_name[kernel_name].gemm_kind):
+                    gemm_op = "blockwise_gemm"
 
-                problem_size_category = ['smallK','largeK'][index_k] + '_' + ['beta==0','beta!=0'][bool(beta)]
+                  problem_size_category = ['smallK','largeK'][index_k] + '_' + ['beta==0','beta!=0'][bool(beta)]
 
-                assert m > 0 and n > 0 and k > 0
+                  assert m > 0 and n > 0 and k > 0
 
-                # Emit per-testcase metadata for perf testing usage, eventually in perf database
-                metadata_dict = {
-                  "input_params": {
-                    'problem_size_category' : problem_size_category,
-                    'operation' : _getSubOperationType(operation),
-                    'datatype' : data_types,
-                    'layout' : layout3x,
-                    'm' : m,
-                    'n' : n,
-                    'k' : k,
-                    'beta' : beta,
-                    'flops_per_byte' : _computeFlopsPerByte(operation, m, n, k, batch_count, beta)
-                  },
-                  "runtime_params": {
-                    'ctas_per_mma_instruction' : ctas_per_mma_instruction,
-                    'tilesize_m' : cta_tile_shape_m,
-                    'tilesize_n' : cta_tile_shape_n,
-                    'tilesize_k' : cta_tile_shape_k,
-                    'cluster_shape_m' : cluster_shape_m,
-                    'cluster_shape_n' : cluster_shape_n,
-                  }
-                }
-
-                cluster_m_fallback = ctas_per_mma_instruction if dynamic_cluster else cluster_shape_m
-                cluster_n_fallback = 1 if dynamic_cluster else cluster_shape_n
-                cluster_k_fallback = 1 if dynamic_cluster else cluster_shape_k
-
-
-                if dynamic_datatype:
-                  runtime_datatype_a, runtime_datatype_b = tuple(runtime_input_datatype)
-                  metadata_dict["runtime_params"]["runtime_datatype_a"] = runtime_datatype_a
-                  metadata_dict["runtime_params"]["runtime_datatype_b"] = runtime_datatype_b
-
-                testcase_metadata = [
-                  f"cutlass_profiler --operation={gemm_op} {profiler_reference_computing_override} --error-on-no-match --error-if-nothing-is-profiled" +
-                  f" --kernels={kernel_name}" +
-                  f" --m={str(m)}" +
-                  f" --n={str(n)}" +
-                  f" --k={str(k)}" +
-                  f" --cluster_m={str(cluster_shape_m)}" +
-                  f" --cluster_n={str(cluster_shape_n)}" +
-                  f" --cluster_k={str(cluster_shape_k)}" +
-                  f" --cluster_m_fallback={str(cluster_m_fallback)}" +
-                  f" --cluster_n_fallback={str(cluster_n_fallback)}" +
-                  f" --cluster_k_fallback={str(cluster_k_fallback)}" +
-                  f" --beta={str(beta)}" +
-                  f" --batch_count={str(batch_count)}" +
-                  f" --verification-required={str(verification_required).lower()}"
-                ] \
-
-                output_dynamic_datatype = dynamic_datatype
-                if output_dynamic_datatype:
-                  testcase_metadata[0] += (f" --runtime_input_datatype_a={runtime_datatype_a}" +
-                                            f" --runtime_input_datatype_b={runtime_datatype_b}")
-
-                testcase_metadata.append(json.dumps(metadata_dict))
-                testlist_csv_rows.append(testcase_metadata)
-                testcase_counter += 1
-  
-                alpha = 1.0
-
-                if dynamic_datatype:
-                  hashed_kernel_name = transform_hashed_string(hashed_kernel_name, runtime_datatype_a, runtime_datatype_b)
-
-                # If kernel_name is new, initialize its feature set with defaults
-                if hashed_kernel_name not in kernel_features:
-                  kernel_features[hashed_kernel_name] = {
-                    "is_support_dynamic_cluster": False,
-                    "is_support_dynamic_datatype": False,
+                  # Emit per-testcase metadata for perf testing usage, eventually in perf database
+                  metadata_dict = {
+                    "input_params": {
+                      'problem_size_category' : problem_size_category,
+                      'operation' : _getSubOperationType(operation),
+                      'datatype' : data_types,
+                      'layout' : layout3x,
+                      'm' : m,
+                      'n' : n,
+                      'k' : k,
+                      'beta' : beta,
+                      'flops_per_byte' : _computeFlopsPerByte(operation, m, n, k, batch_count, beta, num_groups)
+                    },
+                    "runtime_params": {
+                      'ctas_per_mma_instruction' : ctas_per_mma_instruction,
+                      'tilesize_m' : cta_tile_shape_m,
+                      'tilesize_n' : cta_tile_shape_n,
+                      'tilesize_k' : cta_tile_shape_k,
+                      'cluster_shape_m' : cluster_shape_m,
+                      'cluster_shape_n' : cluster_shape_n,
+                    }
                   }
 
-                # Update features for the hashed kernel name
-                kernel_features[hashed_kernel_name]["is_support_dynamic_cluster"] |= dynamic_cluster
-                kernel_features[hashed_kernel_name]["is_support_dynamic_datatype"] |= dynamic_datatype
+                  cluster_m_fallback = ctas_per_mma_instruction if dynamic_cluster else cluster_shape_m
+                  cluster_n_fallback = 1 if dynamic_cluster else cluster_shape_n
+                  cluster_k_fallback = 1 if dynamic_cluster else cluster_shape_k
 
-                if hashed_kernel_name not in auditlist_csv_params_map:
-                  auditlist_csv_params_map[hashed_kernel_name] = []
 
-                audit_row_params = get_kernel_params(
-                  operation,
-                  hashed_kernel_name,
-                  (cluster_shape_m, cluster_shape_n, cluster_shape_k),
-                  (cluster_m_fallback, cluster_n_fallback, cluster_k_fallback),
-                  (m, n, k, batch_count),
-                  alpha, beta,
-                  dynamic_datatype, dynamic_cluster
-                )
+                  if dynamic_datatype:
+                    runtime_datatype_a, runtime_datatype_b = tuple(runtime_input_datatype)
+                    metadata_dict["runtime_params"]["runtime_datatype_a"] = runtime_datatype_a
+                    metadata_dict["runtime_params"]["runtime_datatype_b"] = runtime_datatype_b
 
-                auditlist_csv_params_map[hashed_kernel_name].append(audit_row_params)
+                  testcase_metadata = [
+                    f"cutlass_profiler --operation={gemm_op} {profiler_reference_computing_override} --error-on-no-match --error-if-nothing-is-profiled" +
+                    f" --kernels={kernel_name}" +
+                    f" --m={str(m)}" +
+                    f" --n={str(n)}" +
+                    f" --k={str(k)}" +
+                    (f" --num_groups={str(num_groups)}" if grouped else "") +
+                    f" --cluster_m={str(cluster_shape_m)}" +
+                    f" --cluster_n={str(cluster_shape_n)}" +
+                    f" --cluster_k={str(cluster_shape_k)}" +
+                    f" --cluster_m_fallback={str(cluster_m_fallback)}" +
+                    f" --cluster_n_fallback={str(cluster_n_fallback)}" +
+                    f" --cluster_k_fallback={str(cluster_k_fallback)}" +
+                    f" --beta={str(beta)}" +
+                    ("" if grouped else f" --batch_count={str(batch_count)}") +
+                    f" --swizzle_size={str(swizzle_size)}" +
+                    f" --verification-required={str(verification_required).lower()}"
+                  ] \
 
-                if hashed_kernel_name not in auditlist_csv_map:
-                  audit_row = get_kernel_features(operation, hashed_kernel_name, dynamic_datatype, runtime_input_datatype)
-                  auditlist_csv_map[hashed_kernel_name] = audit_row
+                  output_dynamic_datatype = dynamic_datatype
+                  if output_dynamic_datatype:
+                    testcase_metadata[0] += (f" --runtime_input_datatype_a={runtime_datatype_a}" +
+                                              f" --runtime_input_datatype_b={runtime_datatype_b}")
+
+                  testcase_metadata.append(json.dumps(metadata_dict))
+                  testlist_csv_rows.append(testcase_metadata)
+                  testcase_counter += 1
+
+                  alpha = 1.0
+
+                  if dynamic_datatype:
+                    hashed_kernel_name = transform_hashed_string(hashed_kernel_name, runtime_datatype_a, runtime_datatype_b)
+
+                  # If kernel_name is new, initialize its feature set with defaults
+                  if hashed_kernel_name not in kernel_features:
+                    kernel_features[hashed_kernel_name] = {
+                      "is_support_dynamic_cluster": False,
+                      "is_support_dynamic_datatype": False,
+                    }
+
+                  # Update features for the hashed kernel name
+                  kernel_features[hashed_kernel_name]["is_support_dynamic_cluster"] |= dynamic_cluster
+                  kernel_features[hashed_kernel_name]["is_support_dynamic_datatype"] |= dynamic_datatype
+
+                  if hashed_kernel_name not in auditlist_csv_params_map:
+                    auditlist_csv_params_map[hashed_kernel_name] = []
+
+                  audit_row_params = get_kernel_params(
+                    operation,
+                    hashed_kernel_name,
+                    (cluster_shape_m, cluster_shape_n, cluster_shape_k),
+                    (cluster_m_fallback, cluster_n_fallback, cluster_k_fallback),
+                    (m, n, k, batch_count),
+                    alpha, beta,
+                    dynamic_datatype, dynamic_cluster
+                  )
+
+                  auditlist_csv_params_map[hashed_kernel_name].append(audit_row_params)
+
+                  if hashed_kernel_name not in auditlist_csv_map:
+                    audit_row = get_kernel_features(operation, hashed_kernel_name, dynamic_datatype, runtime_input_datatype)
+                    auditlist_csv_map[hashed_kernel_name] = audit_row
 
   with open(outfile_name, 'w') as testlist_csv:
     csv_writer = csv.writer(testlist_csv, delimiter=',')
@@ -826,7 +794,7 @@ def emit_gemm_kernel_testlist(manifest, curr_build_dir, arch, mode
       for kernel_name in kernel_name_set:
           file.write(kernel_name + "\n")
 
-  # Sort L0 and L1 kernel list and csv file to avoid mixing cutlass3.x kernels and superMMA kernels in cutlass2.x generated together.
+  # Sort L0 and L1 kernel list and csv file to avoid mixing cutlass3.x kernels and sm120_mma kernels in cutlass2.x generated together.
   if mode == "functional_L0" or mode == "functional_L1":
     # Sort the .csv file
     outfile_name = os.path.join(curr_build_dir, f"FK_{mode}_testlist_SM{arch}_cutlass3x_gemm.csv")

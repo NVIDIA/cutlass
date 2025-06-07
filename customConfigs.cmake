@@ -36,7 +36,7 @@ set(CUTLASS_PROFILER_REGRESSION_TEST_LEVEL  ${CUTLASS_TEST_LEVEL} CACHE STRING "
 
 find_package(Python3 3.5 COMPONENTS Interpreter REQUIRED)
 
-function(cutlass_generate_kernel_filter_and_testlists_files)
+function(cutlass_generate_kernel_filter_and_testlist_files)
 
   set(options)
   set(oneValueArgs TEST_SET_NAME)
@@ -59,30 +59,30 @@ function(cutlass_generate_kernel_filter_and_testlists_files)
   )
 
   if(NOT cutlass_FILTER_GENERATION_RESULT EQUAL 0)
-    message(FATAL_ERROR "Error generating kernel filters and testlists files. See ${CMAKE_CURRENT_BINARY_DIR}/library_filter_generation.log")
+    message(FATAL_ERROR "Error generating kernel filters and testlist files. See ${CMAKE_CURRENT_BINARY_DIR}/library_filter_generation.log")
   endif()
 endfunction()
 
 if(CUTLASS_BUILD_FOR_PROFILER_REGRESSIONS)
 
-    set(PROFILER_ARCH_LIST 100a)
+    set(PROFILER_ARCH_LIST 100a 100f 101a 101f 120a 120f)
     foreach(ARCH IN LISTS CUTLASS_NVCC_ARCHS)
       if(NOT (ARCH IN_LIST PROFILER_ARCH_LIST))
-        message(FATAL_ERROR "Only SM100a compute capability is supported with profiler-based unit tests")
+        message(FATAL_ERROR "Only SM${PROFILER_ARCH_LIST} compute capabilities are supported with profiler-based unit tests")
       endif()
     endforeach()
 
     if(CUTLASS_PROFILER_REGRESSION_TEST_LEVEL  EQUAL 0)
 
       message(STATUS "Building for L0 profiler-based functional regressions")
-      cutlass_generate_kernel_filter_and_testlists_files(TEST_SET_NAME kernel_testlist_l0)
+      cutlass_generate_kernel_filter_and_testlist_files(TEST_SET_NAME kernel_testlist_l0)
       set(KERNEL_FILTER_FILE ${CMAKE_CURRENT_BINARY_DIR}/FK_functional_L0_testlist_SM${CUTLASS_NVCC_ARCHS}_cutlass3x_gemm_kernel_filter.list CACHE STRING "Kernel set")
       set(CUTLASS_PROFILER_REGRESSION_LIST_FILE ${CMAKE_CURRENT_BINARY_DIR}/FK_functional_L0_testlist_SM${CUTLASS_NVCC_ARCHS}_cutlass3x_gemm.csv CACHE STRING "Regression set")
 
     elseif (CUTLASS_PROFILER_REGRESSION_TEST_LEVEL  EQUAL 1)
       
       message(STATUS "Building for L1 profiler-based functional regressions")
-      cutlass_generate_kernel_filter_and_testlists_files(TEST_SET_NAME kernel_testlist_l1)
+      cutlass_generate_kernel_filter_and_testlist_files(TEST_SET_NAME kernel_testlist_l1)
       set(KERNEL_FILTER_FILE ${CMAKE_CURRENT_BINARY_DIR}/FK_functional_L1_testlist_SM${CUTLASS_NVCC_ARCHS}_cutlass3x_gemm_kernel_filter.list CACHE STRING "Kernel set")
       set(CUTLASS_PROFILER_REGRESSION_LIST_FILE ${CMAKE_CURRENT_BINARY_DIR}/FK_functional_L1_testlist_SM${CUTLASS_NVCC_ARCHS}_cutlass3x_gemm.csv CACHE STRING "Regression set")
 

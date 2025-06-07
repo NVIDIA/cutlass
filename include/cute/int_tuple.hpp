@@ -34,6 +34,7 @@
 #include <cute/container/array.hpp>             // cute::array
 #include <cute/container/tuple.hpp>             // cute::is_tuple
 #include <cute/numeric/integral_constant.hpp>   // cute::Int
+#include <cute/numeric/integer_sequence.hpp>    // cute::seq
 #include <cute/algorithm/tuple_algorithms.hpp>  // cute::transform
 
 /** IntTuple is an integer or a tuple of IntTuples.
@@ -349,7 +350,6 @@ ceil_div(IntTupleA const& a, IntTupleB const& b)
 //
 // round_up
 //   Round @a a up to the nearest multiple of @a b.
-//   For negative numbers, rounds away from zero.
 //
 
 template <class IntTupleA, class IntTupleB>
@@ -378,7 +378,7 @@ round_up(IntTupleA const& a, IntTupleB const& b)
  *   Return shape_div(a, product(b))
  * Case Int Int:
  *   Enforce the divisibility condition a % b == 0 || b % a == 0 when possible
- *   Return a / b with rounding away from 0 (that is, 1 or -1 when a < b)
+ *   Return ceil_div(a, b)
  */
 template <class IntTupleA, class IntTupleB>
 CUTE_HOST_DEVICE constexpr
@@ -399,32 +399,19 @@ shape_div(IntTupleA const& a, IntTupleB const& b)
   } else
   if constexpr (is_tuple<IntTupleB>::value) {    // int tuple
     return shape_div(a, product(b));
-  } else
-  if constexpr (is_static<IntTupleA>::value && is_static<IntTupleB>::value) {
-    static_assert(IntTupleA::value % IntTupleB::value == 0 || IntTupleB::value % IntTupleA::value == 0, "Static shape_div failure");
-    return C<shape_div(IntTupleA::value, IntTupleB::value)>{};
-  } else {                                       // int int
-    //assert(a % b == 0 || b % a == 0);          // Waive dynamic assertion
-    return a / b != 0 ? a / b : signum(a) * signum(b);  // Division with rounding away from zero
-  }
-
-  CUTE_GCC_UNREACHABLE;
-}
-
-/** Minimum for Shapes
- */
-template <class IntTupleA, class IntTupleB>
-CUTE_HOST_DEVICE constexpr
-auto
-shape_min(IntTupleA const& a, IntTupleB const& b)
-{
-  if constexpr (is_tuple<IntTupleA>::value || is_tuple<IntTupleB>::value) {
-    static_assert(dependent_false<IntTupleA>, "Not implemented.");
-  } else
-  if constexpr (is_constant<1, IntTupleA>::value || is_constant<1, IntTupleB>::value) {
-    return Int<1>{};            // _1 is less than all other shapes, preserve static
   } else {
-    return cute::min(a, b);
+    // Strong divisibility condition
+    //static_assert((IntTupleA::value % IntTupleB::value == 0) or (IntTupleB::value % IntTupleA::value == 0), "Divisibility Condition");
+
+    // Weak divisibility condition
+    if constexpr (is_static<IntTupleA>::value and is_static<IntTupleB>::value) {
+      static_assert(((IntTupleA::value % IntTupleB::value) == 0) or ((IntTupleB::value % IntTupleA::value) == 0), "Divisibility Condition");
+    } else {
+      // DEBUG assert can cause extra registers and inappropriate compile-time/run-time failure
+      //assert((((a % b) == 0) or ((a % b) == 0)) && "Divisibility Condition");
+    }
+
+    return (a + b - Int<1>{}) / b;
   }
 
   CUTE_GCC_UNREACHABLE;
@@ -571,6 +558,72 @@ filter_zeros(Tuple const& t)
 {
   return filter_zeros(t, t);
 }
+
+//
+// Static sorting utilities in detail::
+//
+
+namespace detail {
+
+// Some compilers fail to constexpr evaluate quick_sort
+// template <class T, size_t N>
+// constexpr cute::array<T,N> quick_sort(cute::array<T,N> a, int lo = 0, int hi = N-1) {
+//   if (hi <= lo) return;
+//   int p = lo;
+//   for (int i = lo; i < hi; ++i) {
+//     if (a[i] < a[hi]) {
+//       T tmp = a[p]; a[p] = a[i]; a[i] = tmp;
+//       ++p;
+//     }
+//   }
+//   T tmp = a[p]; a[p] = a[hi]; a[hi] = tmp;
+//   a = quick_sort(a, lo, p-1);
+//   a = quick_sort(a, p+1, hi);
+//   return a;
+// }
+
+template <class T, size_t N>
+constexpr cute::array<T,N> exchange_sort(cute::array<T,N> a) {
+  for (size_t i = 0; i < N; ++i) {
+    for (size_t j = i+1; j < N; ++j) {
+      if (a[j] < a[i]) {
+        T tmp = a[j]; a[j] = a[i]; a[i] = tmp;
+      }
+    }
+  }
+  return a;
+}
+
+template <class V, class I = cute::make_int_sequence<cute::tuple_size_v<V>>>
+struct Sort : Sort<to_seq_t<V>, to_seq_t<I>> {};
+
+template <int... Vs, int... Is>
+struct Sort<seq<Vs...>, seq<Is...>> {
+  static_assert(sizeof...(Vs) == sizeof...(Is));
+  static constexpr cute::array<int,sizeof...(Is)> orig_array = {Vs...};
+  static constexpr cute::array<int,sizeof...(Is)> sort_array = exchange_sort(orig_array);
+  using type = seq<sort_array[Is]...>;
+};
+
+struct kvpair {
+  int key, val;
+  constexpr bool operator<(kvpair const& o) const { return key < o.key; };
+};
+
+template <class K, class V, class I = cute::make_int_sequence<cute::tuple_size_v<K>>>
+struct SortByKey : SortByKey<to_seq_t<K>, to_seq_t<V>, to_seq_t<I>> {};
+
+template <int... Ks, int... Vs, int... Is>
+struct SortByKey<seq<Ks...>, seq<Vs...>, seq<Is...>> {
+  static_assert(sizeof...(Ks) == sizeof...(Vs));
+  static_assert(sizeof...(Ks) == sizeof...(Is));
+  static constexpr cute::array<kvpair,sizeof...(Is)> orig_array = {kvpair{Ks,Vs}...};
+  static constexpr cute::array<kvpair,sizeof...(Is)> sort_array = exchange_sort(orig_array);
+  using key_type = seq<sort_array[Is].key...>;
+  using val_type = seq<sort_array[Is].val...>;
+};
+
+} // end namespace detail
 
 //
 // Converters and constructors with arrays and params

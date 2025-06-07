@@ -412,17 +412,13 @@ struct Sm90AuxStore<
       constexpr auto MCL = decltype(max_common_layout(tC_gAux(_,_,_,_0{},_0{}), tC_rAux)){};
       constexpr int V = cute::min(Alignment, size(MCL));
 
-      Tensor tC_cAux_mn = tC_cAux(_,_,_,epi_m,epi_n);
-      Tensor tC_cAux_vec = tensor<1>(zipped_divide(coalesce(tC_cAux_mn), MCL.compose(Int<V>{})));
-
       Tensor tC_gAux_vec = recast<Array<Element, V>>(coalesce(tC_gAux(_,_,_,epi_m,epi_n)));
       Tensor tC_rAux_vec = recast<Array<Element, V>>(coalesce(tC_rAux));
 
-      auto pred_fn = [&] (auto const&... coords) {
-        return elem_less(tC_cAux_vec(coords...), problem_shape_mnl);
-      };
+      Tensor tC_cAux_vec = tensor<1>(zipped_divide(coalesce(tC_cAux(_,_,_,epi_m,epi_n)), MCL.compose(Int<V>{})));
+      Tensor tC_pAux_vec = cute::lazy::transform(tC_cAux_vec, [&](auto const& c){ return elem_less(c, problem_shape_mnl); });
 
-      copy_if(pred_fn, tC_rAux_vec, tC_gAux_vec);
+      copy_if(tC_pAux_vec, tC_rAux_vec, tC_gAux_vec);
     }
   };
 
@@ -680,13 +676,13 @@ public:
 
   struct Arguments {
     void* ptr_row = nullptr; // ElementOutput* if FinalReduction, else ElementCompute*
-    ElementCompute reduction_identity = 0;
+    ElementCompute reduction_identity = ElementCompute(0);
     StrideMNL dRow = {};
   };
 
   struct Params {
     void* ptr_row = nullptr;
-    ElementCompute reduction_identity = 0;
+    ElementCompute reduction_identity = ElementCompute(0);
     StrideMNL dRow = {};
     ElementCompute* reduction_buffer = nullptr;
     int* tile_counters = nullptr;
@@ -1267,13 +1263,13 @@ public:
 
   struct Arguments {
     void* ptr_col = nullptr; // ElementOutput* if FinalReduction, else ElementCompute*
-    ElementCompute reduction_identity = 0;
+    ElementCompute reduction_identity = ElementCompute(0);
     StrideMNL dCol = {};
   };
 
   struct Params {
     void* ptr_col = nullptr;
-    ElementCompute reduction_identity = 0;
+    ElementCompute reduction_identity = ElementCompute(0);
     StrideMNL dCol = {};
     ElementCompute* reduction_buffer = nullptr;
     int* tile_counters = nullptr;

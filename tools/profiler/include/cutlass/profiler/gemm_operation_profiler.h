@@ -35,6 +35,7 @@
 #pragma once
 
 #include <vector>
+#include <array>
 #include <string>
 #include <memory>
 #include <algorithm>
@@ -68,6 +69,14 @@ public:
   struct GemmProblem {
 
     cutlass::library::GemmUniversalMode mode{library::GemmUniversalMode::kGemm};
+
+    /// For profiling purposes
+    std::vector<gemm::GemmCoord> problem_sizes;
+    std::vector<std::array<int64_t, 3>> leading_dims;
+    std::vector<std::array<int64_t, 3>> preferred_clusters;
+    std::vector<std::array<int64_t, 3>> fallback_clusters;
+    std::vector<cutlass::library::RasterOrder> raster_orders;
+    std::vector<int> swizzle_sizes;
 
     int64_t m{16};
     int64_t n{16};
@@ -119,6 +128,14 @@ public:
       library::GemmDescription const &operation_desc,
       ProblemSpace const &problem_space,
       ProblemSpace::Problem const &problem);
+
+    int64_t bytes_with_problem_shape(
+      library::GemmDescription const &operation_desc,
+      gemm::GemmCoord const &problem_shape) const;
+
+    int64_t flops_with_problem_shape(
+      library::GemmDescription const &operation_desc,
+      gemm::GemmCoord const &problem_shape) const;
 
     /// Total number of bytes loaded
     int64_t bytes(library::GemmDescription const &operation_desc) const;
@@ -243,6 +260,26 @@ public:
     ProblemSpace::Problem const &problem);
 
 protected:
+  /// Update workspace configuration according to flexible user setups
+  void update_workspace_(
+    GemmWorkspace &gemm_workspace,
+    gemm::GemmCoord const &problem_shape,
+    std::array<int64_t, 3> const &leading_dim,
+    std::array<int64_t, 3> const &preferred_cluster,
+    std::array<int64_t, 3> const &fallback_cluster,
+    cutlass::library::RasterOrder const &raster_order,
+    int swizzle_size);
+
+  /// Update performance result configuration according to flexible user setups
+  void update_result_(
+    PerformanceResult &result,
+    library::GemmDescription const &operation_desc,
+    ProblemSpace const &problem_space,
+    gemm::GemmCoord const &problem_shape,
+    cutlass::library::RasterOrder const &raster_order,
+    std::array<int64_t, 3> const &preferred_cluster,
+    std::array<int64_t, 3> const &fallback_cluster,
+    int swizzle_size);
 
   /// Initializes the performance result
   void initialize_result_(

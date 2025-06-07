@@ -52,6 +52,18 @@ namespace thread {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+// If kIsHeavy is a member, use it.  Otherwise, assume that it's false.
+template<class Op, class Enable = void>
+struct kIsHeavy_member_or_false {
+  static constexpr bool value = false;
+};
+template<class Op>
+struct kIsHeavy_member_or_false<Op, typename cutlass::platform::enable_if<Op::kIsHeavy>::type> {
+  static constexpr bool value = Op::kIsHeavy;
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 // Identity operator
 template <typename T>
 struct Identity {
@@ -113,6 +125,8 @@ template <template <class> class Activation, typename T>
 struct Scale<Activation<T>> {
   using Arguments = typename Scale<T>::Arguments;
 
+  static const bool kIsHeavy = Activation<T>::kIsHeavy;
+
   CUTLASS_HOST_DEVICE
   T operator()(T value, typename Arguments::scale_type scale) const {
     multiplies<T> mul;
@@ -127,21 +141,22 @@ struct Scale<Activation<T>> {
 };
 
 /// ReLu operator - propagates NaNs
-/// Always put threshold in the right hand side of max to propagate NaN.
 template <typename T>
 struct ReLu {
   static const bool kIsHeavy = false;
 
   CUTLASS_HOST_DEVICE
   T operator()(T threshold, T value) const {
-    maximum<T> mx;
+    constexpr bool PropagateNaN = true;
+    maximum<T, PropagateNaN> mx;
 
     return mx(value, threshold);
   }
 
   CUTLASS_HOST_DEVICE
   T operator()(T value) const {
-    maximum<T> mx;
+    constexpr bool PropagateNaN = true;
+    maximum<T, PropagateNaN> mx;
 
     return mx(value, T(0));
   }
@@ -156,14 +171,16 @@ struct ReLu<Array<T, N>> {
 
   CUTLASS_HOST_DEVICE
   Array<T, N> operator()(T const & threshold, Array<T, N> const &frag) const {
-    maximum<Array<T, N>> mx;
+    constexpr bool PropagateNaN = true;
+    maximum<Array<T, N>, PropagateNaN> mx;
 
     return mx(frag, threshold);
   }
 
   CUTLASS_HOST_DEVICE
   Array<T, N> operator()(Array<T, N> const &frag) const {
-    maximum<Array<T, N>> mx;
+    constexpr bool PropagateNaN = true;
+    maximum<Array<T, N>, PropagateNaN> mx;
     return mx(frag, T(0));
   }
 };
@@ -207,6 +224,45 @@ struct Clamp<Array<T,N>> {
   CUTLASS_HOST_DEVICE
   Array<T,N> operator()(Array<T,N> const& values, Arguments const& args = Arguments()) const {
     return this->operator()(values, args.lower_bound, args.upper_bound);
+  }
+};
+
+// Lower Bound
+template <typename T>
+struct LowerBound {
+  struct Arguments {
+    T lower_bound;
+  };
+
+  CUTLASS_HOST_DEVICE
+  T operator()(T const& value, T const& lower_bound) const {
+    constexpr bool PropagateNaN = true;
+    maximum<T, PropagateNaN> mx;
+
+    return mx(value, lower_bound);
+  }
+
+  CUTLASS_HOST_DEVICE
+  T operator()(T const& value, Arguments const& args = Arguments()) const {
+    return this->operator()(value, args.lower_bound);
+  }
+};
+
+template <typename T, int N>
+struct LowerBound<Array<T,N>> {
+  using Arguments = typename LowerBound<T>::Arguments;
+
+  CUTLASS_HOST_DEVICE
+  Array<T,N> operator()(Array<T,N> const& values, T const& lower_bound) const {
+    constexpr bool PropagateNaN = true;
+    maximum<Array<T,N>, PropagateNaN> mx;
+
+    return mx(values, lower_bound);
+  }
+
+  CUTLASS_HOST_DEVICE
+  Array<T,N> operator()(Array<T,N> const& values, Arguments const& args = Arguments()) const {
+    return this->operator()(values, args.lower_bound);
   }
 };
 
@@ -440,13 +496,29 @@ template <>
 struct HardSwish<float> {
   using T = float;
   static const bool kIsHeavy = false;
+  static constexpr float kOneSixth = 0.16666667f;
 
   CUTLASS_HOST_DEVICE
   T operator()(T const &x) const {
     minimum<T> mn;
     maximum<T> mx;
     T relu6 = mn(mx(x + T(3), T(0)), T(6));
-    return x * relu6 * 0.16666667f;
+    return x * relu6 * kOneSixth;
+  }
+};
+
+template <>
+struct HardSwish<cutlass::half_t> {
+  using T = cutlass::half_t;
+  static const bool kIsHeavy = false;
+  static constexpr float kOneSixth = 0.16666667f;
+
+  CUTLASS_HOST_DEVICE
+  T operator()(T const &x) const {
+    minimum<T> mn;
+    maximum<T> mx;
+    T relu6 = mn(mx(x + T(3), T(0)), T(6));
+    return x * relu6 * T(kOneSixth);
   }
 };
 
@@ -472,6 +544,7 @@ template <int N>
 struct HardSwish<Array<half_t, N> > {
   using T = half_t;
   static const bool kIsHeavy = false;
+  static constexpr float kOneSixth = 0.16666667f;
 
   CUTLASS_HOST_DEVICE
   Array<T, N> operator()(Array<T, N> const &value) const {
@@ -480,7 +553,7 @@ struct HardSwish<Array<half_t, N> > {
     multiplies<Array<T, N> > mul;
     plus<Array<T, N> > add;
 
-    return mul(mul(mn(mx(add(value, T(3)), T(0)), T(6)), value), T(0.16666667f));
+    return mul(mul(mn(mx(add(value, T(3)), T(0)), T(6)), value), T(kOneSixth));
   }
 };
 
@@ -567,6 +640,28 @@ struct GELU_taylor {
   }
 };
 
+template <>
+struct GELU_taylor <float>{
+  static const bool kIsHeavy = true;
+  using T = float;
+  CUTLASS_HOST_DEVICE
+  T operator()(T const &z) const {
+    // 0.5f * (x + x * tanh(x * (0.797885f + 0.0356774f * x * x)));
+    T k0 = T(0.7978845608028654);
+    T tmp = T(0.044715);
+    T k1 = T(k0*tmp);
+    multiply_add<T> fma;
+    multiplies<T> mul;
+    T v0 = mul(k1, z);
+    T v1 = fma(v0, z, k0);
+    T v2 = mul(z, v1);
+    T v3 = fast_tanh(v2);
+    T v4 = fma(z, v3, z);
+    T v5 = mul(cutlass::constants::half<T>(), v4);
+    return v5;
+  }
+};
+
 template <int N>
 struct GELU_taylor<Array<half_t, N> > {
   static const bool kIsHeavy = true;
@@ -591,6 +686,30 @@ struct GELU_taylor<Array<half_t, N> > {
     y = mul(mul(z, cutlass::constants::half<T>()), add(cutlass::constants::one<T>(), tanh(u)));
 
     return y;
+  }
+};
+
+template <int N>
+struct GELU_taylor<Array<float, N> > {
+  static const bool kIsHeavy = true;
+
+  CUTLASS_HOST_DEVICE
+  Array<float, N> operator()(Array<float, N> const &value) const {
+    multiply_add<Array<float, N>> fma;
+    multiplies<Array<float, N>> mul;
+    fast_tanh_op<Array<float, N>> tanh;
+    // 0.5f * (x + x * tanh(x * (0.797885f + 0.0356774f * x * x)));
+    float k0 = float(0.7978845608028654);
+    float tmp = float(0.044715);
+    float k1 = float(k0*tmp);
+
+    Array<float, N> v0 = mul(k1, value);
+    Array<float, N> v1 = fma(v0, value, k0);
+    Array<float, N> v2 = mul(value, v1);
+    Array<float, N> v3 = tanh(v2);
+    Array<float, N> v4 = fma(value, v3, value);
+    Array<float, N> v5 = mul(cutlass::constants::half<float>(), v4);
+    return v5;
   }
 };
 

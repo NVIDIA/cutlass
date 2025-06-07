@@ -32,7 +32,6 @@
 
 #include "cutlass/cutlass.h"
 
-#include "cute/tensor_predicate.hpp"
 #include "cute/arch/cluster_sm90.hpp"
 #include "cute/arch/copy_sm90.hpp"
 #include "cute/atom/mma_atom.hpp"
@@ -103,7 +102,7 @@ struct CollectiveConv<
 
   using PipelineParams = typename MainloopPipeline::Params;
   using PipelineState  = typename cutlass::PipelineState<DispatchPolicy::Stages>;
-  
+
   using ProblemShape = ConvProblemShape<ConvOp, NumSpatialDimensions>;
 
   static_assert(rank(SmemLayoutA{}) == 3, "SmemLayout must be rank 3 (M/N, K, PIPE)");
@@ -332,7 +331,7 @@ public:
       TmaTransactionBytes
     };
   }
-  
+
   template <class ProblemShape>
   static bool
   can_implement(
@@ -409,12 +408,12 @@ public:
     if constexpr (ConvOp == conv::Operator::kWgrad) {
 #if defined(CUTLASS_DEBUG_TRACE_LEVEL) && (CUTLASS_DEBUG_TRACE_LEVEL > 1)
       std::ostringstream os;
-#endif        
+#endif
       const auto & input_shape  = problem_shape.shape_A;
       const auto & input_stride  = problem_shape.stride_A;
 
       implementable &= input_stride[ProblemShape::RankT - 1] == 1;
-      int input_shape_size = 1;
+      int64_t input_shape_size = 1;
       for (int i = ProblemShape::RankT - 2; i >= 0; --i) {
         input_shape_size *= input_shape[i + 1];
         implementable &= input_stride[i] == input_shape_size;
@@ -431,11 +430,11 @@ public:
            << "\n    input_shape: " << input_shape
            << "\n    input_stride: " << input_stride
            << "\n";
-#endif        
+#endif
         CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Wgrad kernels don't support non-packed input strides.\n");
 #if defined(CUTLASS_DEBUG_TRACE_LEVEL) && (CUTLASS_DEBUG_TRACE_LEVEL > 1)
         CUTLASS_TRACE_HOST(os.str());
-#endif        
+#endif
         return false;
       }
 
@@ -443,7 +442,7 @@ public:
       const auto & output_stride  = problem_shape.stride_C;
 
       implementable &= output_stride[ProblemShape::RankT - 1] == 1;
-      int output_shape_size = 1;
+      int64_t output_shape_size = 1;
       for (int i = ProblemShape::RankT - 2; i >= 0; --i) {
         output_shape_size *= output_shape[i + 1];
         implementable &= output_stride[i] == output_shape_size;
@@ -464,7 +463,7 @@ public:
         CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Wgrad kernels don't support non-packed output strides.\n");
 #if defined(CUTLASS_DEBUG_TRACE_LEVEL) && (CUTLASS_DEBUG_TRACE_LEVEL > 1)
         CUTLASS_TRACE_HOST(os.str());
-#endif        
+#endif
         return false;
       }
     }
@@ -480,6 +479,24 @@ public:
     if (problem_shape.groups > 1) {
       CUTLASS_TRACE_HOST("  CAN IMPLEMENT: This kernel does not support conv groups > 1.\n");
       return false;
+    }
+
+    if constexpr (is_im2col_A || is_im2col_B) {
+      auto [M, N, K, L] = cutlass::conv::detail::get_transformed_problem_shape_MNKL(problem_shape);
+      auto to_64b = [](auto S) { return transform_leaf(S, [](auto s) { return static_cast<int64_t>(s); }); };
+
+      if constexpr (ConvOp == conv::Operator::kFprop || ConvOp == conv::Operator::kDgrad) {
+        implementable &= (cute::product(to_64b(M)) <= cutlass::platform::numeric_limits<int32_t>::max()) &
+                         (cute::product(to_64b(L)) <= cutlass::platform::numeric_limits<int32_t>::max());
+      }
+      else if constexpr (ConvOp == conv::Operator::kWgrad) {
+        implementable &= (cute::product(to_64b(K)) <= cutlass::platform::numeric_limits<int32_t>::max());
+      }
+
+      if (!implementable) {
+        CUTLASS_TRACE_HOST("  CAN IMPLEMENT: the extents exceed the maximum number.\n");
+        return false;
+      }
     }
 
     return true;
@@ -498,8 +515,8 @@ public:
   /// gA_mk - The tma tensor, A after a local tile so it has shape  (BLK_M,BLK_K,m,k)
   /// gB_nk - The tma tensor, B after a local tile so it has shape  (BLK_N,BLK_K,n,k)
   /// The rest of the tensors can be specified as needed by this collective.
-  /// The dimensions of gA_mk and gA_nk do not contain L to maintain consistency with 
-  /// StrideA and StrideB set up for TMA 
+  /// The dimensions of gA_mk and gA_nk do not contain L to maintain consistency with
+  /// StrideA and StrideB set up for TMA
   template <class ProblemShapeMNKL>
   CUTLASS_DEVICE auto
   load_init(ProblemShapeMNKL const& problem_shape_MNKL, Params const& mainloop_params){

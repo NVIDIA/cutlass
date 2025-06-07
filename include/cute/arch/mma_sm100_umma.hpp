@@ -28,9 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
-//
-
-//
 
 #pragma once
 
@@ -306,6 +303,92 @@ struct SM100_MMA_F16BF16_TS_SCALED
 template <class a_type, class b_type, class c_type,
           int M, int N, UMMA::Major a_major, UMMA::Major b_major,
           UMMA::ScaleIn a_neg = UMMA::ScaleIn::One, UMMA::ScaleIn b_neg = UMMA::ScaleIn::One>
+struct SM100_MMA_TF32_SS_SPARSE
+{
+  static_assert(M == 64 || M == 128, "SM100_MMA_TF32_SS_SPARSE M-mode size should be 64 or 128 for 1 CTA cluster MMA.");
+  static_assert((M == 64  && (N % 8 == 0)  && (8 <= N)  && (N <= 256)) ||
+                (M == 128 && (N % 16 == 0) && (16 <= N) && (N <= 256)),
+                "SM100_MMA_TF32_SS_SPARSE N-mode size should be a multiple of 8 between 8 and 256 for M=64,\
+                 or a multiple of 16 between 16 and 256 for M=128.");
+
+  using DRegisters = void;
+  using ARegisters = uint64_t[1];
+  using BRegisters = uint64_t[1];
+  using CRegisters = uint32_t[1];
+
+  CUTE_HOST_DEVICE static void
+  fma(uint64_t const& desc_a,
+      uint64_t const& desc_b,
+      uint32_t const& tmem_c,
+      uint32_t const& scaleC,
+      uint64_t const& idescE,
+      uint32_t const& tmem_e)
+  {
+#if defined(CUTE_ARCH_TCGEN05_TF32_MMA_ENABLED)
+    if (cute::elect_one_sync()) {
+      uint32_t mask[4] = {0, 0, 0, 0};
+      asm volatile(
+        "{\n\t"
+        ".reg .pred p;\n\t"
+        "setp.ne.b32 p, %4, 0;\n\t"
+        "tcgen05.mma.sp.cta_group::1.kind::tf32 [%0], %1, %2, [%9], %3, {%5, %6, %7, %8}, p; \n\t"
+        "}\n"
+        :
+        : "r"(tmem_c), "l"(desc_a), "l"(desc_b), "r"(uint32_t(idescE>>32)), "r"(scaleC),
+          "r"(mask[0]), "r"(mask[1]), "r"(mask[2]), "r"(mask[3]), "r"(tmem_e));
+    }
+#else
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM100_MMA_TF32_SS_SPARSE without CUTE_ARCH_TCGEN05_TF32_MMA_ENABLED");
+#endif
+  }
+};
+
+template <class a_type, class b_type, class c_type,
+          int M, int N, UMMA::Major a_major, UMMA::Major b_major,
+          UMMA::ScaleIn a_neg = UMMA::ScaleIn::One, UMMA::ScaleIn b_neg = UMMA::ScaleIn::One>
+struct SM100_MMA_F16BF16_SS_SPARSE
+{
+  static_assert(M == 64 || M == 128, "SM100_MMA_F16BF16_SS_SPARSE M-mode size should be 64 or 128 for 1 CTA cluster MMA.");
+  static_assert((M == 64  && (N % 8 == 0)  && (8 <= N)  && (N <= 256)) ||
+                (M == 128 && (N % 16 == 0) && (16 <= N) && (N <= 256)),
+                "SM100_MMA_F16BF16_SS_SPARSE N-mode size should be a multiple of 8 between 8 and 256 for M=64,\
+                 or a multiple of 16 between 16 and 256 for M=128.");
+
+  using DRegisters = void;
+  using ARegisters = uint64_t[1];
+  using BRegisters = uint64_t[1];
+  using CRegisters = uint32_t[1];
+
+  CUTE_HOST_DEVICE static void
+  fma(uint64_t const& desc_a,
+      uint64_t const& desc_b,
+      uint32_t const& tmem_c,
+      uint32_t const& scaleC,
+      uint64_t const& idescE,
+      uint32_t const& tmem_e)
+  {
+#if defined(CUTE_ARCH_TCGEN05_F16F32_MMA_ENABLED)
+    if (cute::elect_one_sync()) {
+      uint32_t mask[4] = {0, 0, 0, 0};
+      asm volatile(
+        "{\n\t"
+        ".reg .pred p;\n\t"
+        "setp.ne.b32 p, %4, 0;\n\t"
+        "tcgen05.mma.sp.cta_group::1.kind::f16 [%0], %1, %2, [%9], %3, {%5, %6, %7, %8}, p; \n\t"
+        "}\n"
+        :
+        : "r"(tmem_c), "l"(desc_a), "l"(desc_b), "r"(uint32_t(idescE>>32)), "r"(scaleC),
+          "r"(mask[0]), "r"(mask[1]), "r"(mask[2]), "r"(mask[3]), "r"(tmem_e));
+    }
+#else
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM100_MMA_F16BF16_SS_SPARSE without CUTE_ARCH_TCGEN05_F16F32_MMA_ENABLED");
+#endif
+  }
+};
+
+template <class a_type, class b_type, class c_type,
+          int M, int N, UMMA::Major a_major, UMMA::Major b_major,
+          UMMA::ScaleIn a_neg = UMMA::ScaleIn::One, UMMA::ScaleIn b_neg = UMMA::ScaleIn::One>
 struct SM100_MMA_TF32_2x1SM_SS
 {
   static_assert(M == 128 || M == 256, "SM100_MMA_TF32_2x1SM_SS M-mode size should be 128 or 256 for 2 CTA cluster MMA.");
@@ -553,6 +636,88 @@ struct SM100_MMA_F16BF16_2x1SM_TS_SCALED
 
 template <class a_type, class b_type, class c_type,
           int M, int N, UMMA::Major a_major, UMMA::Major b_major,
+          UMMA::ScaleIn a_neg = UMMA::ScaleIn::One, UMMA::ScaleIn b_neg = UMMA::ScaleIn::One>
+struct SM100_MMA_TF32_2x1SM_SS_SPARSE
+{
+  static_assert(M == 128 || M == 256, "SM100_MMA_TF32_2x1SM_SS_SPARSE M-mode size should be 128 or 256 for 2 CTA cluster MMA.");
+  static_assert((N % 32 == 0) && (32 <= N) && (N <= 256), "SM100_MMA_TF32_2x1SM_SS_SPARSE N-mode size should be a multiple of 32 between 32 and 256.");
+
+  using DRegisters = void;
+  using ARegisters = uint64_t[1];
+  using BRegisters = uint64_t[1];
+  using CRegisters = uint32_t[1];
+
+  CUTE_HOST_DEVICE static void
+  fma(uint64_t const& desc_a,
+      uint64_t const& desc_b,
+      uint32_t const& tmem_c,
+      uint32_t const& scaleC,
+      uint64_t const& idescE,
+      uint32_t const& tmem_e)
+  {
+#if defined(CUTE_ARCH_TCGEN05_TF32_MMA_ENABLED)
+    if (cute::elect_one_sync()) {
+      uint32_t mask[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+      asm volatile(
+        "{\n\t"
+        ".reg .pred p;\n\t"
+        "setp.ne.b32 p, %4, 0;\n\t"
+        "tcgen05.mma.sp.cta_group::2.kind::tf32 [%0], %1, %2, [%13], %3, {%5, %6, %7, %8, %9, %10, %11, %12}, p; \n\t"
+        "}\n"
+        :
+        : "r"(tmem_c), "l"(desc_a), "l"(desc_b), "r"(uint32_t(idescE>>32)), "r"(scaleC),
+          "r"(mask[0]), "r"(mask[1]), "r"(mask[2]), "r"(mask[3]),
+          "r"(mask[4]), "r"(mask[5]), "r"(mask[6]), "r"(mask[7]), "r"(tmem_e));
+    }
+#else
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM100_MMA_TF32_2x1SM_SS_SPARSE without CUTE_ARCH_TCGEN05_TF32_MMA_ENABLED");
+#endif
+  }
+};
+
+template <class a_type, class b_type, class c_type,
+          int M, int N, UMMA::Major a_major, UMMA::Major b_major,
+          UMMA::ScaleIn a_neg = UMMA::ScaleIn::One, UMMA::ScaleIn b_neg = UMMA::ScaleIn::One>
+struct SM100_MMA_F16BF16_2x1SM_SS_SPARSE
+{
+  static_assert(M == 128 || M == 256, "SM100_MMA_F16BF16_2x1SM_SS_SPARSE M-mode size should be 128 or 256 for 2 CTA cluster MMA.");
+  static_assert((N % 32 == 0) && (32 <= N) && (N <= 256), "SM100_MMA_F16BF16_2x1SM_SS_SPARSE N-mode size should be a multiple of 32 between 32 and 256.");
+
+  using DRegisters = void;
+  using ARegisters = uint64_t[1];
+  using BRegisters = uint64_t[1];
+  using CRegisters = uint32_t[1];
+
+  CUTE_HOST_DEVICE static void
+  fma(uint64_t const& desc_a,
+      uint64_t const& desc_b,
+      uint32_t const& tmem_c,
+      uint32_t const& scaleC,
+      uint64_t const& idescE,
+      uint32_t const& tmem_e)
+  {
+#if defined(CUTE_ARCH_TCGEN05_F16F32_MMA_ENABLED)
+    if (cute::elect_one_sync()) {
+      uint32_t mask[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+      asm volatile(
+        "{\n\t"
+        ".reg .pred p;\n\t"
+        "setp.ne.b32 p, %4, 0;\n\t"
+        "tcgen05.mma.sp.cta_group::2.kind::f16 [%0], %1, %2, [%13], %3, {%5, %6, %7, %8, %9, %10, %11, %12}, p; \n\t"
+        "}\n"
+        :
+        : "r"(tmem_c), "l"(desc_a), "l"(desc_b), "r"(uint32_t(idescE>>32)), "r"(scaleC),
+          "r"(mask[0]), "r"(mask[1]), "r"(mask[2]), "r"(mask[3]),
+          "r"(mask[4]), "r"(mask[5]), "r"(mask[6]), "r"(mask[7]), "r"(tmem_e));
+    }
+#else
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM100_MMA_F16BF16_2x1SM_SS_SPARSE without CUTE_ARCH_TCGEN05_F16F32_MMA_ENABLED");
+#endif
+  }
+};
+
+template <class a_type, class b_type, class c_type,
+          int M, int N, UMMA::Major a_major, UMMA::Major b_major,
           UMMA::Saturate c_sat = UMMA::Saturate::False>
 struct SM100_MMA_S8_SS
 {
@@ -628,6 +793,47 @@ struct SM100_MMA_S8_TS
     }
 #else
     CUTE_INVALID_CONTROL_PATH("Attempting to use SM100_MMA_S8_TS without CUTE_ARCH_TCGEN05_S8_MMA_ENABLED");
+#endif
+  }
+};
+
+template <class a_type, class b_type, class c_type,
+          int M, int N, UMMA::Major a_major, UMMA::Major b_major,
+          UMMA::Saturate c_sat = UMMA::Saturate::False>
+struct SM100_MMA_S8_SS_SPARSE
+{
+  static_assert(is_same_v<c_type, int32_t>, "SM100_MMA_S8_SS_SPARSE result type can only be int32_t.");
+  static_assert(M == 64 || M == 128, "SM100_MMA_S8_SS_SPARSE M-mode size should be 64 or 128 for 1 CTA cluster MMA.");
+  static_assert(N == 8 || ((N % 16 == 0) && (16 <= N) && (N <= 256)), "SM100_MMA_S8_SS_SPARSE N-mode size should be 8 or a multiple of 16 between 16 and 256.");
+
+  using DRegisters = void;
+  using ARegisters = uint64_t[1];
+  using BRegisters = uint64_t[1];
+  using CRegisters = uint32_t[1];
+
+  CUTE_HOST_DEVICE static void
+  fma(uint64_t const& desc_a,
+      uint64_t const& desc_b,
+      uint32_t const& tmem_c,
+      uint32_t const& scaleC,
+      uint64_t const& idescE,
+      uint32_t const& tmem_e)
+  {
+#if defined(CUTE_ARCH_TCGEN05_S8_MMA_ENABLED)
+    if (cute::elect_one_sync()) {
+      uint32_t mask[4] = {0, 0, 0, 0};
+      asm volatile(
+        "{\n\t"
+        ".reg .pred p;\n\t"
+        "setp.ne.b32 p, %4, 0;\n\t"
+        "tcgen05.mma.sp.cta_group::1.kind::i8 [%0], %1, %2, [%9], %3, {%5, %6, %7, %8}, p; \n\t"
+        "}\n"
+        :
+        : "r"(tmem_c), "l"(desc_a), "l"(desc_b), "r"(uint32_t(idescE>>32)), "r"(scaleC),
+          "r"(mask[0]), "r"(mask[1]), "r"(mask[2]), "r"(mask[3]), "r"(tmem_e));
+    }
+#else
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM100_MMA_S8_SS_SPARSE without CUTE_ARCH_TCGEN05_S8_MMA_ENABLED");
 #endif
   }
 };
@@ -714,10 +920,49 @@ struct SM100_MMA_S8_2x1SM_TS
   }
 };
 
+template <class a_type, class b_type, class c_type,
+          int M, int N, UMMA::Major a_major, UMMA::Major b_major,
+          UMMA::Saturate c_sat = UMMA::Saturate::False>
+struct SM100_MMA_S8_2x1SM_SS_SPARSE
+{
+  static_assert(M == 128 || M == 256, "SM100_MMA_S8 M-mode size should be 128 or 256 for 2 CTA cluster MMA.");
+  static_assert((N % 32 == 0) && (32 <= N) && (N <= 256), "SM100_MMA_S8 N-mode size should be a multiple of 32 between 32 and 256.");
+
+  using DRegisters = void;
+  using ARegisters = uint64_t[1];
+  using BRegisters = uint64_t[1];
+  using CRegisters = uint32_t[1];
+
+  CUTE_HOST_DEVICE static void
+  fma(uint64_t const& desc_a,
+      uint64_t const& desc_b,
+      uint32_t const& tmem_c,
+      uint32_t const& scaleC,
+      uint64_t const& idescE,
+      uint32_t const& tmem_e)
+  {
+#if defined(CUTE_ARCH_TCGEN05_S8_MMA_ENABLED)
+    if (cute::elect_one_sync()) {
+      uint32_t mask[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+      asm volatile(
+        "{\n\t"
+        ".reg .pred p;\n\t"
+        "setp.ne.b32 p, %4, 0;\n\t"
+        "tcgen05.mma.sp.cta_group::2.kind::i8 [%0], %1, %2, [%13], %3, {%5, %6, %7, %8, %9, %10, %11, %12}, p; \n\t"
+        "}\n"
+        :
+        : "r"(tmem_c), "l"(desc_a), "l"(desc_b), "r"(uint32_t(idescE>>32)), "r"(scaleC),
+          "r"(mask[0]), "r"(mask[1]), "r"(mask[2]), "r"(mask[3]),
+          "r"(mask[4]), "r"(mask[5]), "r"(mask[6]), "r"(mask[7]), "r"(tmem_e));
+    }
+#else
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM100_MMA_S8_2x1SM_SS_SPARSE without CUTE_ARCH_TCGEN05_S8_MMA_ENABLED");
+#endif
+  }
+};
+
 struct SM100_MMA_F8F6F4_SS
 {
-
-
   using DRegisters = void;
   using ARegisters = uint64_t[1];
   using BRegisters = uint64_t[1];
@@ -876,6 +1121,91 @@ struct SM100_MMA_F8F6F4_2x1SM_TS
   }
 };
 
+template <class a_type, class b_type, class c_type,
+          int M, int N, UMMA::Major a_major, UMMA::Major b_major,
+          UMMA::ScaleIn a_neg = UMMA::ScaleIn::One, UMMA::ScaleIn b_neg = UMMA::ScaleIn::One>
+struct SM100_MMA_F8F6F4_SS_SPARSE
+{
+  static_assert(M == 64 || M == 128, "SM100_MMA_F8F6F4_SS_SPARSE M-mode size should be 64 or 128 for 1 CTA cluster MMA.");
+  static_assert((M == 64  && (N % 8 == 0)  && (8 <= N)  && (N <= 256)) ||
+                (M == 128 && (N % 16 == 0) && (16 <= N) && (N <= 256)),
+                "SM100_MMA_F8F6F4_SS_SPARSE N-mode size should be a multiple of 8 between 8 and 256 for M=64,\
+                 or a multiple of 16 between 16 and 256 for M=128.");
+
+  using DRegisters = void;
+  using ARegisters = uint64_t[1];
+  using BRegisters = uint64_t[1];
+  using CRegisters = uint32_t[1];
+
+  CUTE_HOST_DEVICE static void
+  fma(uint64_t const& desc_a,
+      uint64_t const& desc_b,
+      uint32_t const& tmem_c,
+      uint32_t const& scaleC,
+      uint64_t const& idescE,
+      uint32_t const& tmem_e)
+  {
+#if defined(CUTE_ARCH_TCGEN05_MXF8F6F4_MMA_ENABLED)
+    if (cute::elect_one_sync()) {
+      uint32_t mask[4] = {0, 0, 0, 0}; // %5, %6, %7, %8
+      asm volatile(
+        "{\n\t"
+        ".reg .pred p;\n\t"
+        "setp.ne.b32 p, %4, 0;\n\t"
+        "tcgen05.mma.sp.cta_group::1.kind::f8f6f4 [%0], %1, %2, [%9], %3, {%5, %6, %7, %8}, p; \n\t"
+        "}\n"
+        :
+        : "r"(tmem_c), "l"(desc_a), "l"(desc_b), "r"(uint32_t(idescE>>32)), "r"(scaleC),
+          "r"(mask[0]), "r"(mask[1]), "r"(mask[2]), "r"(mask[3]), "r"(tmem_e));
+    }
+#else
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM100_MMA_F8F6F4_SS_SPARSE without CUTE_ARCH_TCGEN05_MXF8F6F4_MMA_ENABLED");
+#endif
+  }
+};
+
+template <class a_type, class b_type, class c_type, class sf_type,
+          int M, int N, UMMA::Major a_major, UMMA::Major b_major,
+          UMMA::ScaleIn a_neg = UMMA::ScaleIn::One, UMMA::ScaleIn b_neg = UMMA::ScaleIn::One>
+struct SM100_MMA_MXF8F6F4_SS_SPARSE
+{
+  static_assert(M == 128, "SM100_MMA_MXF8F6F4_SS_SPARSE M-mode size should be 128 for 1 CTA cluster MMA.");
+  static_assert((N % 8 == 0) && (8 <= N) && (N <= 256), "SM100_MMA_MXF8F6F4_SS_SPARSE N-mode size should be a multiple of 8 between 8 and 256.");
+
+  using DRegisters = void;
+  using ARegisters = uint64_t[1];
+  using BRegisters = uint64_t[1];
+  using CRegisters = uint32_t[1];
+  using SFARegisters = uint32_t[1];
+  using SFBRegisters = uint32_t[1];
+
+  CUTE_HOST_DEVICE static void
+  fma(uint64_t const& desc_a,
+      uint64_t const& desc_b,
+      uint32_t const& tmem_c,
+      uint32_t const& scaleC,
+      uint64_t const& idescE,
+      uint32_t const& tsfa_addr,
+      uint32_t const& tsfb_addr,
+      uint32_t const& tmem_e)
+  {
+#if defined(CUTE_ARCH_TCGEN05_MXF8F6F4_MMA_ENABLED)
+    if (cute::elect_one_sync()) {
+      asm volatile(
+        "{\n\t"
+        ".reg .pred p;\n\t"
+        "setp.ne.b32 p, %4, 0;\n\t"
+        "tcgen05.mma.sp.cta_group::1.kind::mxf8f6f4.block_scale [%0], %1, %2, [%7], %3, [%5], [%6], p; \n\t"
+        "}\n"
+        :
+        : "r"(tmem_c), "l"(desc_a), "l"(desc_b), "r"(uint32_t(idescE>>32)), "r"(scaleC), "r"(tsfa_addr), "r"(tsfb_addr), "r"(tmem_e));
+    }
+#else
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM100_MMA_MXF8F6F4_SS_SPARSE without CUTE_ARCH_TCGEN05_MXF8F6F4_MMA_ENABLED");
+#endif
+  }
+};
+
 struct SM100_MMA_F8F6F4_2x1SM_SS
 {  
   using DRegisters = void;
@@ -906,6 +1236,47 @@ struct SM100_MMA_F8F6F4_2x1SM_SS
     }
 #else
     CUTE_INVALID_CONTROL_PATH("Attempting to use SM100_MMA_F8F6F4_2x1SM_SS without CUTE_ARCH_TCGEN05_MXF8F6F4_MMA_ENABLED");
+#endif
+  }
+};
+
+template <class a_type, class b_type, class c_type, class sf_type,
+          int M, int N, UMMA::Major a_major, UMMA::Major b_major,
+          UMMA::ScaleIn a_neg = UMMA::ScaleIn::One, UMMA::ScaleIn b_neg = UMMA::ScaleIn::One>
+struct SM100_MMA_MXF8F6F4_2x1SM_SS_SPARSE
+{
+  static_assert(M == 256, "SM100_MMA_MXF8F6F4_2x1SM_SS_SPARSE M-mode size should be 256 for 2 CTA cluster MMA.");
+  static_assert((N % 16 == 0) && (16 <= N) && (N <= 256), "SM100_MMA_MXF8F6F4_2x1SM_SS_SPARSE N-mode size should be a multiple of 16 between 16 and 256.");
+
+  using DRegisters = void;
+  using ARegisters = uint64_t[1];
+  using BRegisters = uint64_t[1];
+  using CRegisters = uint32_t[1];
+
+  CUTE_HOST_DEVICE static void
+  fma(uint64_t const& desc_a,
+      uint64_t const& desc_b,
+      uint32_t const& tmem_c,
+      uint32_t const& scaleC,
+      uint64_t const& idescE,
+      uint32_t const& tsfa_addr,
+      uint32_t const& tsfb_addr,
+      uint32_t const& tmem_e)
+  {
+#if defined(CUTE_ARCH_TCGEN05_MXF8F6F4_MMA_ENABLED)
+    if (cute::elect_one_sync()) {
+      asm volatile(
+        "{\n\t"
+        ".reg .pred p;\n\t"
+        "setp.ne.b32 p, %4, 0;\n\t"
+        "tcgen05.mma.sp.cta_group::2.kind::mxf8f6f4.block_scale [%0], %1, %2, [%7], %3, [%5], [%6], p; \n\t"
+        "}\n"
+        :
+        : "r"(tmem_c), "l"(desc_a), "l"(desc_b), "r"(uint32_t(idescE>>32)), "r"(scaleC),
+          "r"(tsfa_addr), "r"(tsfb_addr), "r"(tmem_e));
+    }
+#else
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM100_MMA_MXF8F6F4_2x1SM_SS_SPARSE without CUTE_ARCH_TCGEN05_MXF8F6F4_MMA_ENABLED");
 #endif
   }
 };
@@ -950,6 +1321,46 @@ struct SM100_MMA_MXF8F6F4_2x1SM_SS
   }
 };
 
+template <class a_type, class b_type, class c_type,
+          int M, int N, UMMA::Major a_major, UMMA::Major b_major,
+          UMMA::ScaleIn a_neg = UMMA::ScaleIn::One, UMMA::ScaleIn b_neg = UMMA::ScaleIn::One>
+struct SM100_MMA_F8F6F4_2x1SM_SS_SPARSE
+{
+  static_assert(M == 128 || M == 256, "SM100_MMA_F8F6F4_2x1SM_SS_SPARSE M-mode size should be 128 or 256 for 2 CTA cluster MMA.");
+  static_assert((N % 32 == 0) && (32 <= N) && (N <= 256), "SM100_MMA_F8F6F4_2x1SM_SS_SPARSE N-mode size should be a multiple of 32 between 32 and 256.");
+
+  using DRegisters = void;
+  using ARegisters = uint64_t[1];
+  using BRegisters = uint64_t[1];
+  using CRegisters = uint32_t[1];
+
+  CUTE_HOST_DEVICE static void
+  fma(uint64_t const& desc_a,
+      uint64_t const& desc_b,
+      uint32_t const& tmem_c,
+      uint32_t const& scaleC,
+      uint64_t const& idescE,
+      uint32_t const& tmem_e)
+  {
+#if defined(CUTE_ARCH_TCGEN05_MXF8F6F4_MMA_ENABLED)
+    if (cute::elect_one_sync()) {
+      uint32_t mask[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+      asm volatile(
+        "{\n\t"
+        ".reg .pred p;\n\t"
+        "setp.ne.b32 p, %4, 0;\n\t"
+        "tcgen05.mma.sp.cta_group::2.kind::f8f6f4 [%0], %1, %2, [%13], %3, {%5, %6, %7, %8, %9, %10, %11, %12}, p; \n\t"
+        "}\n"
+        :
+        : "r"(tmem_c), "l"(desc_a), "l"(desc_b), "r"(uint32_t(idescE>>32)), "r"(scaleC),
+          "r"(mask[0]), "r"(mask[1]), "r"(mask[2]), "r"(mask[3]),
+          "r"(mask[4]), "r"(mask[5]), "r"(mask[6]), "r"(mask[7]), "r"(tmem_e));
+    }
+#else
+    CUTE_INVALID_CONTROL_PATH("Attempting to use SM100_MMA_F8F6F4_2x1SM_SS_SPARSE without CUTE_ARCH_TCGEN05_MXF8F6F4_MMA_ENABLED");
+#endif
+  }
+};
 
 template <class a_type, class b_type, class c_type, class sf_type,
           int M, int N, int VS, UMMA::Major a_major, UMMA::Major b_major,
@@ -983,7 +1394,11 @@ struct SM100_MMA_MXF4_SS
           "{\n\t"
           ".reg .pred p;\n\t"
           "setp.ne.b32 p, %4, 0;\n\t"
+#if (__CUDACC_VER_MAJOR__ > 12) || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 9)
+          "tcgen05.mma.cta_group::1.kind::mxf4nvf4.block_scale.block16 [%0], %1, %2, %3, [%5], [%6], p; \n\t"
+#else
           "tcgen05.mma.cta_group::1.kind::mxf4nvf4.block_scale.scale_vec::4X [%0], %1, %2, %3, [%5], [%6], p; \n\t"
+#endif
           "}\n"
           :
           : "r"(tmem_c), "l"(desc_a), "l"(desc_b), "r"(uint32_t(idescE>>32)), "r"(scaleC),
@@ -1000,7 +1415,11 @@ struct SM100_MMA_MXF4_SS
           "{\n\t"
           ".reg .pred p;\n\t"
           "setp.ne.b32 p, %4, 0;\n\t"
+#if (__CUDACC_VER_MAJOR__ > 12) || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 9)
+          "tcgen05.mma.cta_group::1.kind::mxf4.block_scale.block32 [%0], %1, %2, %3, [%5], [%6], p; \n\t"
+#else
           "tcgen05.mma.cta_group::1.kind::mxf4.block_scale.scale_vec::2X [%0], %1, %2, %3, [%5], [%6], p; \n\t"
+#endif
           "}\n"
           :
           : "r"(tmem_c), "l"(desc_a), "l"(desc_b), "r"(uint32_t(idescE>>32)), "r"(scaleC),
@@ -1014,7 +1433,76 @@ struct SM100_MMA_MXF4_SS
 
 };
 
+template <class a_type, class b_type, class c_type, class sf_type,
+          int M, int N, int VS, UMMA::Major a_major, UMMA::Major b_major,
+          UMMA::ScaleIn a_neg = UMMA::ScaleIn::One, UMMA::ScaleIn b_neg = UMMA::ScaleIn::One>
+struct SM100_MMA_MXF4NVF4_SS_SPARSE
+{
+  static_assert(M == 128, "SM100_MMA_MXF4NVF4_SS_SPARSE M-mode size should be 128 for 1 CTA cluster MMA.");
+  static_assert((N % 8 == 0) && (8 <= N) && (N <= 256), "SM100_MMA_MXF4NVF4_SS_SPARSE N-mode size should be a multiple of 8 between 8 and 256.");
 
+  using DRegisters = void;
+  using ARegisters = uint64_t[1];
+  using BRegisters = uint64_t[1];
+  using CRegisters = uint32_t[1];
+  using SFARegisters = uint32_t[1];
+  using SFBRegisters = uint32_t[1];
+
+  CUTE_HOST_DEVICE static void
+  fma(uint64_t const& desc_a,
+      uint64_t const& desc_b,
+      uint32_t const& tmem_c,
+      uint32_t const& scaleC,
+      uint64_t const& idescE,
+      uint32_t const& tsfa_addr,
+      uint32_t const& tsfb_addr,
+      uint32_t const& tmem_e)
+  {
+    if constexpr (VS == 32) {
+#if defined(CUTE_ARCH_TCGEN05_MXF4NVF4_MMA_ENABLED)
+      if (cute::elect_one_sync()) {
+        asm volatile(
+          "{\n\t"
+          ".reg .pred p;\n\t"
+          "setp.ne.b32 p, %4, 0;\n\t"
+#if (__CUDACC_VER_MAJOR__ > 12) || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 9)
+          "tcgen05.mma.sp.cta_group::1.kind::mxf4nvf4.block_scale.block16 [%0], %1, %2, [%7], %3, [%5], [%6], p; \n\t"
+#else
+          "tcgen05.mma.sp.cta_group::1.kind::mxf4nvf4.block_scale.scale_vec::4X [%0], %1, %2, [%7], %3, [%5], [%6], p; \n\t"
+#endif
+          "}\n"
+          :
+          : "r"(tmem_c), "l"(desc_a), "l"(desc_b), "r"(uint32_t(idescE>>32)), "r"(scaleC),
+            "r"(tsfa_addr), "r"(tsfb_addr), "r"(tmem_e));
+      }
+#else
+      CUTE_INVALID_CONTROL_PATH("Attempting to use SM100_MMA_MXF4NVF4_SS_SPARSE (VS = 32) without CUTE_ARCH_TCGEN05_MXF4NVF4_MMA_ENABLED");
+#endif
+    }
+
+    if constexpr (VS == 64) {
+#if defined(CUTE_ARCH_TCGEN05_MXF4_MMA_ENABLED)
+      if (cute::elect_one_sync()) {
+        asm volatile(
+          "{\n\t"
+          ".reg .pred p;\n\t"
+          "setp.ne.b32 p, %4, 0;\n\t"
+#if (__CUDACC_VER_MAJOR__ > 12) || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 9)
+          "tcgen05.mma.sp.cta_group::1.kind::mxf4.block_scale.block32 [%0], %1, %2, [%7], %3, [%5], [%6], p; \n\t"
+#else
+          "tcgen05.mma.sp.cta_group::1.kind::mxf4.block_scale.scale_vec::2X [%0], %1, %2, [%7], %3, [%5], [%6], p; \n\t"
+#endif
+          "}\n"
+          :
+          : "r"(tmem_c), "l"(desc_a), "l"(desc_b), "r"(uint32_t(idescE>>32)), "r"(scaleC),
+            "r"(tsfa_addr), "r"(tsfb_addr), "r"(tmem_e));
+      }
+#else
+      CUTE_INVALID_CONTROL_PATH("Attempting to use SM100_MMA_MXF4NVF4_SS_SPARSE (VS = 64) without CUTE_ARCH_TCGEN05_MXF4_MMA_ENABLED");
+#endif
+    }
+  }
+};
 
 template <class a_type, class b_type, class c_type, class sf_type,
           int M, int N, int VS, UMMA::Major a_major, UMMA::Major b_major,
@@ -1048,7 +1536,11 @@ struct SM100_MMA_MXF4_2x1SM_SS
           "{\n\t"
           ".reg .pred p;\n\t"
           "setp.ne.b32 p, %4, 0;\n\t"
+#if (__CUDACC_VER_MAJOR__ > 12) || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 9)
+          "tcgen05.mma.cta_group::2.kind::mxf4nvf4.block_scale.block16 [%0], %1, %2, %3, [%5], [%6], p; \n\t"
+#else
           "tcgen05.mma.cta_group::2.kind::mxf4nvf4.block_scale.scale_vec::4X [%0], %1, %2, %3, [%5], [%6], p; \n\t"
+#endif
           "}\n"
           :
           : "r"(tmem_c), "l"(desc_a), "l"(desc_b), "r"(uint32_t(idescE>>32)), "r"(scaleC),
@@ -1065,7 +1557,11 @@ struct SM100_MMA_MXF4_2x1SM_SS
           "{\n\t"
           ".reg .pred p;\n\t"
           "setp.ne.b32 p, %4, 0;\n\t"
+#if (__CUDACC_VER_MAJOR__ > 12) || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 9)
+          "tcgen05.mma.cta_group::2.kind::mxf4.block_scale.block32 [%0], %1, %2, %3, [%5], [%6], p; \n\t"
+#else
           "tcgen05.mma.cta_group::2.kind::mxf4.block_scale.scale_vec::2X [%0], %1, %2, %3, [%5], [%6], p; \n\t"
+#endif
           "}\n"
           :
           : "r"(tmem_c), "l"(desc_a), "l"(desc_b), "r"(uint32_t(idescE>>32)), "r"(scaleC),
@@ -1078,5 +1574,75 @@ struct SM100_MMA_MXF4_2x1SM_SS
   }
 };
 
+template <class a_type, class b_type, class c_type, class sf_type,
+          int M, int N, int VS, UMMA::Major a_major, UMMA::Major b_major,
+          UMMA::ScaleIn a_neg = UMMA::ScaleIn::One, UMMA::ScaleIn b_neg = UMMA::ScaleIn::One>
+struct SM100_MMA_MXF4NVF4_2x1SM_SS_SPARSE
+{
+  static_assert((N % 16 == 0) && (16 <= N) && (N <= 256), "SM100_MMA_MXF4NVF4_2x1SM_SS_SPARSE N-mode size should be a multiple of 16 between 16 and 256.");
+  static_assert((VS == 32) || (VS == 64), "SM100_MMA_MXF4NVF4_2x1SM_SS_SPARSE Vector size can only be 32 or 64.");
+
+  using DRegisters   = void;
+  using ARegisters   = uint64_t[1];
+  using BRegisters   = uint64_t[1];
+  using CRegisters   = uint32_t[1];
+  using SFARegisters = uint32_t[1];
+  using SFBRegisters = uint32_t[1];
+
+  CUTE_HOST_DEVICE static void
+  fma(uint64_t const& desc_a,
+      uint64_t const& desc_b,
+      uint32_t const& tmem_c,
+      uint32_t const& scaleC,
+      uint64_t const& idescE,
+      uint32_t const& tsfa_addr,
+      uint32_t const& tsfb_addr,
+      uint32_t const& tmem_e)
+  {
+    if constexpr (VS == 32) {
+#if defined(CUTE_ARCH_TCGEN05_MXF4NVF4_MMA_ENABLED)
+      if (cute::elect_one_sync()) {
+        asm volatile(
+          "{\n\t"
+          ".reg .pred p;\n\t"
+          "setp.ne.b32 p, %4, 0;\n\t"
+#if (__CUDACC_VER_MAJOR__ > 12) || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 9)
+          "tcgen05.mma.sp.cta_group::2.kind::mxf4nvf4.block_scale.block16 [%0], %1, %2, [%7], %3, [%5], [%6], p; \n\t"
+#else
+          "tcgen05.mma.sp.cta_group::2.kind::mxf4nvf4.block_scale.scale_vec::4X [%0], %1, %2, [%7], %3, [%5], [%6], p; \n\t"
+#endif
+          "}\n"
+          :
+          : "r"(tmem_c), "l"(desc_a), "l"(desc_b), "r"(uint32_t(idescE>>32)), "r"(scaleC),
+            "r"(tsfa_addr), "r"(tsfb_addr), "r"(tmem_e));
+      }
+#else
+      CUTE_INVALID_CONTROL_PATH("Attempting to use SM100_MMA_MXF4NVF4_2x1SM_SS_SPARSE (VS = 32) without CUTE_ARCH_TCGEN05_MXF4NVF4_MMA_ENABLED");
+#endif
+    }
+
+    if constexpr (VS == 64) {
+#if defined(CUTE_ARCH_TCGEN05_MXF4_MMA_ENABLED)
+      if (cute::elect_one_sync()) {
+        asm volatile(
+          "{\n\t"
+          ".reg .pred p;\n\t"
+          "setp.ne.b32 p, %4, 0;\n\t"
+#if (__CUDACC_VER_MAJOR__ > 12) || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 9)
+          "tcgen05.mma.sp.cta_group::2.kind::mxf4.block_scale.block32 [%0], %1, %2, [%7], %3, [%5], [%6], p; \n\t"
+#else
+          "tcgen05.mma.sp.cta_group::2.kind::mxf4.block_scale.scale_vec::2X [%0], %1, %2, [%7], %3, [%5], [%6], p; \n\t"
+#endif
+          "}\n"
+          :
+          : "r"(tmem_c), "l"(desc_a), "l"(desc_b), "r"(uint32_t(idescE>>32)), "r"(scaleC),
+            "r"(tsfa_addr), "r"(tsfb_addr), "r"(tmem_e));
+      }
+#else
+      CUTE_INVALID_CONTROL_PATH("Attempting to use SM100_MMA_MXF4NVF4_2x1SM_SS_SPARSE (VS = 64) without CUTE_ARCH_TCGEN05_MXF4_MMA_ENABLED");
+#endif
+    }
+  }
+};
 
 } // end namespace cute

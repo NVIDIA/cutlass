@@ -124,6 +124,7 @@ constexpr int AlignmentD  = 128 / cutlass::sizeof_bits<ElementD>::value;    // A
 using ElementAccumulator  = float;                                          // Element type for internal accumulation
 
 // using ElementD = cutlass::float_e2m1_t; // Enable for SF Output          // Element type for D matrix operands
+
 using ElementSFD  = cutlass::float_ue4m3_t;                                 // Element type for SF Output operands
 constexpr int OutputSFVectorSize = 16;
 using FusionOperation = cutlass::epilogue::fusion::LinCombEltActBlockScaleFactor<
@@ -219,14 +220,14 @@ using StrideD = typename Gemm::GemmKernel::InternalStrideD;
 
 using LayoutSFA = typename Gemm::GemmKernel::CollectiveMainloop::InternalLayoutSFA;
 using LayoutSFB = typename Gemm::GemmKernel::CollectiveMainloop::InternalLayoutSFB;
-using Sm100BlkScaledConfig =  typename Gemm::GemmKernel::CollectiveMainloop::Sm100BlkScaledConfig;
-using Sm100BlockScaledOutputConfig = cutlass::detail::Sm100BlockScaledOutputConfig<
+using Sm1xxBlkScaledConfig =  typename Gemm::GemmKernel::CollectiveMainloop::Sm1xxBlkScaledConfig;
+using Sm1xxBlockScaledOutputConfig= cutlass::detail::Sm1xxBlockScaledOutputConfig<
                                         OutputSFVectorSize, 
                                         cute::is_same_v<typename FusionOperation::GmemLayoutTagScalefactor,
                                             cutlass::layout::RowMajor> ? cute::UMMA::Major::K : cute::UMMA::Major::MN
                                      >;
-using OutputSFAtom = typename Sm100BlockScaledOutputConfig::SfAtom;
-using LayoutSFD = typename Sm100BlockScaledOutputConfig::LayoutSF;
+using OutputSFAtom = typename Sm1xxBlockScaledOutputConfig::SfAtom;
+using LayoutSFD = typename Sm1xxBlockScaledOutputConfig::LayoutSF;
 
 // Host-side allocations
 std::vector<StrideA> stride_A_host;
@@ -299,12 +300,13 @@ auto make_iterator(T* ptr) {
 /// Testbed utility types
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm100GroupParams<typename ProblemShape::UnderlyingProblemShape>::RasterOrderOptions;
+using RasterOrderOptions = cutlass::gemm::kernel::detail::RasterOrderOptions;
 // Command line options parsing
 struct Options {
 
   bool help = false;
   bool verification = true;
+  bool use_pdl = false;
 
   float alpha = FLT_MAX;
   float beta  = FLT_MAX;
@@ -328,8 +330,11 @@ struct Options {
       help = true;
       return;
     }
-    if (cmd.check_cmd_line_flag("no-verif")) {
+    if (cmd.check_cmd_line_flag("no_verif")) {
       verification = false;
+    }
+    if (cmd.check_cmd_line_flag("use_pdl")) {
+      use_pdl = true;
     }
 
     cmd.get_cmd_line_argument("m", m);
@@ -418,19 +423,9 @@ struct Options {
       cutlass::CommandLine::tokenize(tokens, extent_str, 'x');
 
       for (int i = 0; i < int(tokens.size()); ++i) {
-        int x = std::atoi(tokens.at(i).c_str());
-
-        // round up
-        if (x % alignment) {
-          x += (alignment - (x % alignment));
-        }
-
-        extent.at(i) = x;
+        extent.at(i) = std::atoi(tokens.at(i).c_str());
       }
-
-      if (extent.product()) {
-        problem_sizes_host.push_back({extent.m(), extent.n(), extent.k()});
-      }
+      problem_sizes_host.push_back({extent.m(), extent.n(), extent.k()});
     }
     groups = static_cast<int>(problem_sizes_host.size());
 
@@ -457,7 +452,8 @@ struct Options {
       << "  --iterations=<int>                                           Number of profiling iterations to perform\n\n"
       << "  --benchmark=<str>                                            Executes a benchmark problem size\n"
       << "  --max_sm_count=<int>                                         Run kernels using only these number of SMs\n"
-      << "  --no-verif                                                   Do not run (host-side) verification kernels\n";
+      << "  --no_verif                                                   Do not run (host-side) verification kernels\n"
+      << "  --use_pdl                                                    Launch kernel with PDL (Programmatic Dependent Launch) enabled\n";
 
     out
       << "\n\nExamples:\n\n"
@@ -554,9 +550,9 @@ void allocate(const Options &options) {
     auto layout_B = make_layout(make_shape(N, K, 1), stride_B);
     auto layout_C = make_layout(make_shape(M, N, 1), stride_C);
     auto layout_D = make_layout(make_shape(M, N, 1), stride_D);
-    auto layout_SFA = Sm100BlkScaledConfig::tile_atom_to_shape_SFA(cute::make_shape(M, N, K, 1));
-    auto layout_SFB = Sm100BlkScaledConfig::tile_atom_to_shape_SFB(cute::make_shape(M, N, K, 1));
-    auto layout_SFD = Sm100BlockScaledOutputConfig::tile_atom_to_shape_SFD(cute::make_shape(M, N, K, 1));
+    auto layout_SFA = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFA(cute::make_shape(M, N, K, 1));
+    auto layout_SFB = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFB(cute::make_shape(M, N, K, 1));
+    auto layout_SFD = Sm1xxBlockScaledOutputConfig::tile_atom_to_shape_SFD(cute::make_shape(M, N, K, 1));
 
     stride_A_host.push_back(stride_A);
     stride_B_host.push_back(stride_B);
@@ -775,9 +771,9 @@ bool verify(const Options &options) {
     auto layout_B = make_layout(make_shape(N, K, 1), stride_B);
     auto layout_C = make_layout(make_shape(M, N, 1), stride_C);
     auto layout_D = make_layout(make_shape(M, N, 1), stride_D);
-    auto layout_SFA = Sm100BlkScaledConfig::tile_atom_to_shape_SFA(cute::make_shape(M, N, K, 1));
-    auto layout_SFB = Sm100BlkScaledConfig::tile_atom_to_shape_SFB(cute::make_shape(M, N, K, 1));
-    auto layout_SFD = Sm100BlockScaledOutputConfig::tile_atom_to_shape_SFD(cute::make_shape(M, N, K, 1));
+    auto layout_SFA = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFA(cute::make_shape(M, N, K, 1));
+    auto layout_SFB = Sm1xxBlkScaledConfig::tile_atom_to_shape_SFB(cute::make_shape(M, N, K, 1));
+    auto layout_SFD = Sm1xxBlockScaledOutputConfig::tile_atom_to_shape_SFD(cute::make_shape(M, N, K, 1));
 
     // Create the arguments for host reference implementation
     Tensor tensor_A = make_tensor(make_iterator(block_A.at(i).host_data()), layout_A);
@@ -845,7 +841,7 @@ int run(Options &options, bool host_problem_shapes_available = true)
   CUTLASS_CHECK(gemm.initialize(arguments, workspace.get()));
 
   // Correctness / Warmup iteration
-  CUTLASS_CHECK(gemm.run());
+  CUTLASS_CHECK(gemm.run(/* stream = */ nullptr, /* cuda_adapter = */ nullptr, /* launch_with_pdl = */ options.use_pdl));
 
   cudaDeviceSynchronize();
 
@@ -870,7 +866,7 @@ int run(Options &options, bool host_problem_shapes_available = true)
     timer.start();
     for (int iter = 0; iter < options.iterations; ++iter) {
       CUTLASS_CHECK(gemm.initialize(arguments, workspace.get()));
-      CUTLASS_CHECK(gemm.run());
+      CUTLASS_CHECK(gemm.run(/* stream = */ nullptr, /* cuda_adapter = */ nullptr, /* launch_with_pdl = */ options.use_pdl));
     }
     timer.stop();
 
@@ -880,7 +876,7 @@ int run(Options &options, bool host_problem_shapes_available = true)
     result.gflops          = options.gflops(result.avg_runtime_ms / 1000.0, options.problem_sizes_host);
 
     std::cout << "  Avg runtime : " << result.avg_runtime_ms << " ms" << std::endl;
-    std::cout << "  GFLOPS      : " << result.gflops << std::endl;
+    std::cout << "  TFLOPS      : " << result.gflops / 1000.0 << std::endl;
   }
 
   return 0;

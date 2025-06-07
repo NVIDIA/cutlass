@@ -130,7 +130,6 @@ public:
   using TileSchedulerParams = typename TileScheduler::Params;
 
   static constexpr bool IsSchedDynamicPersistent = TileScheduler::IsDynamicPersistent;
-
   static constexpr bool IsDynamicCluster = not cute::is_static_v<ClusterShape>;
   static constexpr bool IsGdcEnabled = cutlass::arch::IsGdcGloballyEnabled;
 
@@ -181,7 +180,6 @@ public:
 
   // Kernel level shared memory storage
   struct SharedStorage {
-    // Barriers should be allocated in lower 8KB of SMEM for SM100
     struct PipelineStorage : cute::aligned_struct<16, _1> {
       using MainloopPipelineStorage = typename CollectiveMainloop::PipelineStorage;
       using EpiLoadPipelineStorage = typename CollectiveEpilogue::PipelineStorage;
@@ -197,7 +195,6 @@ public:
       alignas(16) AccumulatorPipelineStorage accumulator;
       alignas(16) CLCThrottlePipelineStorage clc_throttle;
       alignas(16) arch::ClusterBarrier tmem_dealloc;
-      alignas(16) arch::ClusterBarrier epilogue_throttle;
     } pipelines;
 
     alignas(16) typename TileScheduler::CLCResponse clc_response[SchedulerPipelineStageCount];
@@ -486,7 +483,7 @@ public:
     epi_load_pipeline_params.producer_arv_count = NumEpilogueLoadThreads;
     epi_load_pipeline_params.consumer_arv_count = NumEpilogueThreads;
     epi_load_pipeline_params.transaction_bytes = CollectiveEpilogue::TmaTransactionBytes;
-    epi_load_pipeline_params.initializing_warp = 4;
+    epi_load_pipeline_params.initializing_warp = 1;
     EpiLoadPipeline epi_load_pipeline(shared_storage.pipelines.epi_load, epi_load_pipeline_params);
 
     // Epilogue Store pipeline
@@ -498,7 +495,7 @@ public:
     typename LoadOrderBarrier::Params load_order_barrier_params;
     load_order_barrier_params.group_id = (warp_category == WarpCategory::MainloopLoad) ? 0 : 1;
     load_order_barrier_params.group_size = NumMainloopLoadThreads;
-    load_order_barrier_params.initializing_warp = 5;
+    load_order_barrier_params.initializing_warp = 3;
     LoadOrderBarrier load_order_barrier(shared_storage.pipelines.load_order, load_order_barrier_params);
 
     // CLC pipeline
@@ -517,7 +514,7 @@ public:
       clc_pipeline_params.consumer_arv_count += cluster_size * NumEpilogueLoadThreads;
     }
     clc_pipeline_params.transaction_bytes = CLCResponseSize;
-    clc_pipeline_params.initializing_warp = 1;
+    clc_pipeline_params.initializing_warp = 4;
     CLCPipeline clc_pipeline(shared_storage.pipelines.clc, clc_pipeline_params, cluster_shape);
 
     // Mainloop-Epilogue pipeline
@@ -531,7 +528,7 @@ public:
     // Only one producer thread arrives on this barrier.
     accumulator_pipeline_params.producer_arv_count = 1;
     accumulator_pipeline_params.consumer_arv_count = size(AtomThrShapeMNK{}) * NumEpilogueThreads;
-    accumulator_pipeline_params.initializing_warp = 2;
+    accumulator_pipeline_params.initializing_warp = 5;
     AccumulatorPipeline accumulator_pipeline(shared_storage.pipelines.accumulator,
                                              accumulator_pipeline_params,
                                              cluster_shape,
@@ -576,15 +573,6 @@ public:
           tmem_deallocation_result_barrier.init(NumEpilogueThreads);
         }
       }
-    }
-
-    // Initialize smem barrier for prologue throttling. Epilogue warps are stalled until the prologue finishes.
-    arch::ClusterBarrier& epilogue_throttle_barrier = shared_storage.pipelines.epilogue_throttle;
-    if (WarpCategory::MMA == warp_category && lane_predicate) {
-      epilogue_throttle_barrier.init(                          NumMMAThreads +
-                                    (is_first_cta_in_cluster ? NumSchedThreads : 0) +
-                                                               NumMainloopLoadThreads +
-                                    (is_epi_load_needed      ? NumEpilogueLoadThreads : 0));
     }
 
     // We need this to guarantee that the Pipeline init is visible
@@ -632,9 +620,6 @@ public:
       cutlass::arch::wait_on_dependent_grids();
 
       bool do_load_order_arrive = is_epi_load_needed;
-
-      // Signal the epilogue warps to proceed once the prologue is complete
-      epilogue_throttle_barrier.arrive();
       bool requires_clc_query = true;
 
       do {
@@ -694,14 +679,13 @@ public:
     }
 
     else if (is_participant.sched) {
-      // Signal the epilogue warps to proceed once the prologue is complete
-      epilogue_throttle_barrier.arrive();
-
       if constexpr (IsSchedDynamicPersistent) {
         // Whether a new CLC query must be performed.
         // See comment below where this variable is updated for a description of
         // why this variable is needed.
         bool requires_clc_query = true;
+
+        cutlass::arch::wait_on_dependent_grids();
 
         do {
           if (requires_clc_query) {
@@ -751,9 +735,6 @@ public:
         tmem_storage,
         shared_storage.tensors.mainloop);
 
-      // Signal the epilogue warps to proceed once the prologue is complete
-      epilogue_throttle_barrier.arrive();
-
       do {
         auto k_tile_count = TileScheduler::get_work_k_tile_count(work_tile_info, problem_shape_MNKL, CtaShape_MNK{});
 
@@ -766,13 +747,6 @@ public:
 
         if (increment_pipe) {
           ++clc_pipe_consumer_state;
-        }
-
-        // Wait for tmem accumulator buffer to become empty with a flipped phase
-        if constexpr (!IsOverlappingAccum) {
-          if (is_mma_leader_cta) {
-            accumulator_pipeline.producer_acquire(accumulator_pipe_producer_state);
-          }
         }
 
         // Accumulator stage slice
@@ -839,9 +813,6 @@ public:
       bool do_tail_load = false;
       int current_wave = 0;
 
-      // Signal the epilogue warps to proceed once the prologue is complete
-      epilogue_throttle_barrier.arrive();
-
       do {
         bool compute_epilogue = TileScheduler::compute_epilogue(work_tile_info, params.scheduler);
 
@@ -896,10 +867,6 @@ public:
     }
 
     else if (is_participant.epilogue) {
-      // Throttle the epilogue warps to improve prologue performance
-      static constexpr int epilogue_throttle_phase_bit = 0;
-      epilogue_throttle_barrier.wait(epilogue_throttle_phase_bit);
-
       // Wait for tmem allocate here
       tmem_allocation_result_barrier.arrive_and_wait();
       uint32_t tmem_base_ptr = shared_storage.tmem_base_ptr;

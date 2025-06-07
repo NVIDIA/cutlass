@@ -54,7 +54,7 @@
 #include <intrin.h>
 #endif // _MSC_VER
 
-#if defined(CUTLASS_ARCH_MMA_SM100A_ENABLED)
+#if defined(CUTLASS_ARCH_MMA_SM100A_ENABLED) || defined(CUTLASS_ARCH_MMA_SM100F_ENABLED)
 #  define CUTLASS_ARCH_CREDUX_ENABLED
 #endif
 
@@ -69,7 +69,7 @@ namespace detail {
     return __popc(x);
     #elif defined(__GNUC__) || defined(__clang__)
     return __builtin_popcount(x);
-    #elif defined(_MSC_VER)
+    #elif (defined(_MSC_VER) && !defined(_M_ARM64))
     return __popcnt(x);
     #else
     int32_t count = 0;
@@ -86,7 +86,7 @@ namespace detail {
     return __popcll(x);
     #elif defined(__GNUC__) || defined(__clang__)
     return __builtin_popcountll(x);
-    #elif defined(_MSC_VER)
+    #elif (defined(_MSC_VER) && !defined(_M_ARM64))
     return __popcnt64(x);
     #else
     int64_t count = 0;
@@ -417,6 +417,8 @@ struct maximum {
     else {
       return (lhs < rhs ? rhs : lhs);
     }
+
+    CUTE_GCC_UNREACHABLE;
   }
 };
 
@@ -720,7 +722,7 @@ struct has_unqualified_conj : cutlass::platform::false_type
 template<typename T>
 struct has_unqualified_conj<
     T,
-    decltype(conj(cutlass::platform::declval<T>()), void())
+    decltype(static_cast<void>(conj(cutlass::platform::declval<T>())), void())
   > : cutlass::platform::true_type
 {};
 

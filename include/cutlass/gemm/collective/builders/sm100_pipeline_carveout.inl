@@ -87,16 +87,13 @@ struct Sm100SparseGemmTmaUmmaCarveout {
   static constexpr auto CLCThrottlePipelineStorage = sizeof(typename cutlass::PipelineAsync<SchedulerPipelineStageCount>::SharedStorage);
   // Tmem dealloc
   static constexpr auto TmemDeallocStorage = sizeof(cutlass::arch::ClusterBarrier);
-  // Epilogue Throttle 
-  static constexpr auto EpilogueThrottleStorage = sizeof(arch::ClusterBarrier);
 
   static constexpr auto PipelineStorage = static_cast<int>(cutlass::round_up(
                                                       cutlass::round_up(LoadOrderBarrierStorage, 16) +
                                                       cutlass::round_up(CLCPipelineStorage, 16) +
                                                       cutlass::round_up(AccumulatorPipelineStorage, 16) +
                                                       cutlass::round_up(CLCThrottlePipelineStorage, 16) +
-                                                      cutlass::round_up(TmemDeallocStorage, 8) +
-                                                      cutlass::round_up(EpilogueThrottleStorage, 8),
+                                                      cutlass::round_up(TmemDeallocStorage, 16),
                                                     16));
 
   // * GemmUniversal::SharedStorage::Others

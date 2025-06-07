@@ -163,7 +163,7 @@ template <
   class TileShape_MNK,
   class ClusterShape_MNK,
   class StageCountType,
-  class KernelScheduleType
+  class BuilderScheduleTag
 >
 struct CollectiveBuilder<
     arch::Sm100,
@@ -178,16 +178,16 @@ struct CollectiveBuilder<
     TileShape_MNK,    // (MmaAtomShapeM, MmaAtomShapeN, TileK)
     ClusterShape_MNK, // Static cluster shape or dynamic (int, int, _1)
     StageCountType,
-    KernelScheduleType,
+    BuilderScheduleTag,
     cute::enable_if_t<
       not cute::is_tuple_v<ElementA>   && not cute::is_tuple_v<ElementB> &&
       not cute::is_complex_v<ElementA> && not cute::is_complex_v<ElementB> &&
       // Dense Gemm / PtrArrayDenseGemm
       (
-       (cute::is_base_of_v<KernelScheduleSm100DenseGemm, KernelScheduleType> ||
-        cute::is_same_v<KernelScheduleAuto, KernelScheduleType>)) &&
+       (cute::is_base_of_v<KernelScheduleSm100DenseGemm, BuilderScheduleTag> ||
+        cute::is_same_v<KernelScheduleAuto, BuilderScheduleTag>)) &&
       // Alignment check
-      detail::sm1xx_gemm_is_aligned<ElementA, AlignmentA, ElementB, AlignmentB, KernelScheduleType>()>>
+      detail::sm1xx_gemm_is_aligned<ElementA, AlignmentA, ElementB, AlignmentB, BuilderScheduleTag>()>>
 {
   static_assert(cute::is_static_v<TileShape_MNK>, "TileShape has to be static");
   static_assert(detail::check_input_datatypes<ElementA, ElementB>(), "Incorrect input types");
@@ -196,23 +196,24 @@ struct CollectiveBuilder<
   static constexpr cute::UMMA::Major UmmaMajorB = cutlass::gemm::collective::detail::tag_to_umma_major_B<GmemLayoutBTag>();
 
   // Data type used by MMA instruction
-  using ElementAMma = decltype(cutlass::gemm::collective::detail::sm100_kernel_input_element_to_mma_input_element<ElementA>());
-  using ElementBMma = decltype(cutlass::gemm::collective::detail::sm100_kernel_input_element_to_mma_input_element<ElementB>());
+  using ElementAMma = decltype(cutlass::gemm::collective::detail::sm1xx_kernel_input_element_to_mma_input_element<ElementA>());
+  using ElementBMma = decltype(cutlass::gemm::collective::detail::sm1xx_kernel_input_element_to_mma_input_element<ElementB>());
 
-  static constexpr bool is_2sm = cute::is_base_of_v<KernelSchedule2Sm, KernelScheduleType> ||
-                        (not cute::is_base_of_v<KernelSchedule1Sm, KernelScheduleType> &&
-                          not cute::is_base_of_v<KernelSchedule2Sm, KernelScheduleType> &&
+  static constexpr bool is_2sm = cute::is_base_of_v<KernelSchedule2Sm, BuilderScheduleTag> ||
+                        (not cute::is_base_of_v<KernelSchedule1Sm, BuilderScheduleTag> &&
+                          not cute::is_base_of_v<KernelSchedule2Sm, BuilderScheduleTag> &&
                           cute::is_static_v<ClusterShape_MNK> &&
                           cute::get<0>(ClusterShape_MNK{}) % 2 == 0 );
 
-  static_assert(detail::sm100_gemm_check_for_f8f6f4_mix8bit_requirement<ElementAMma, ElementBMma,
-                                                                      TileShape_MNK, ClusterShape_MNK,
-                                                                      UmmaMajorA, UmmaMajorB, KernelScheduleType, is_2sm>(),
+  static_assert(detail::sm1xx_gemm_check_for_f8f6f4_mix8bit_requirement<ElementAMma, ElementBMma,
+                                                                        TileShape_MNK, ClusterShape_MNK,
+                                                                        GmemLayoutATag, GmemLayoutBTag, false /*is_sparse*/, is_2sm>(),
                 "TileSize and MNK Major does not met with MMA Mix 8-bit TMA load requirement" );
-  using TiledMma =  decltype(detail::sm100_make_trivial_tiled_mma<
+
+  using TiledMma = decltype(detail::sm100_make_trivial_tiled_mma<
       ElementAMma, ElementBMma, ElementAccumulator,
       decltype(cute::product_each(TileShape_MNK{})), ClusterShape_MNK,
-      UmmaMajorA, UmmaMajorB, KernelScheduleType>());
+      UmmaMajorA, UmmaMajorB, BuilderScheduleTag>());
 
   using ElementAMma_SmemAllocType = cute::conditional_t<cute::sizeof_bits_v<ElementAMma> < 8, uint8_t, ElementAMma>;
   using ElementBMma_SmemAllocType = cute::conditional_t<cute::sizeof_bits_v<ElementBMma> < 8, uint8_t, ElementBMma>;
@@ -253,18 +254,21 @@ struct CollectiveBuilder<
   static constexpr uint32_t TotalTmemRows = 128;
   static constexpr uint32_t Sm100TmemCapacityColumns = 512;
   static constexpr uint32_t TotalTmem = TotalTmemRows * Sm100TmemCapacityColumns;
-  static constexpr uint32_t AccumulatorPipelineStageCount = (is_2sm || (!is_2sm && size(shape<0,0>(MmaShapeA_MK{}) > 64))) ? 
+  static constexpr uint32_t AccumulatorPipelineStageCount_ = (is_2sm || (!is_2sm && size(shape<0,0>(MmaShapeA_MK{}) > 64))) ? 
                                                               TotalTmem / (cute::size<0>(CtaTileShape_MNK{}) * cute::size<1>(CtaTileShape_MNK{}))
                                                             : (Sm100TmemCapacityColumns / cute::size<1>(CtaTileShape_MNK{})) * 2;                       // 1SM MMA_M = 64 case
+  // 4 accumulator stages works well to buffer the accumulators, while also preventing overhead in the epilogue tail on small tile sizes.
+  static constexpr uint32_t AccumulatorPipelineStageCount = cute::min(4u, AccumulatorPipelineStageCount_);                                              // Cap at 4 accumulator stages
   static_assert(AccumulatorPipelineStageCount > 0, "Accumulator pipeline stage count must be positive.  This error probably means that TileShape_MNK and/or TiledMma::ThrLayoutVMNK are wrong.");
 
   // Calculate scheduler pipeline stages. Having one more stage than the accumulator allows more latency hiding.
   using StrideA = cutlass::gemm::TagToStrideA_t<GmemLayoutATag>;
   using InternalStrideA  = cute::remove_pointer_t<StrideA>;
-  // Grouped GEMM (where Stride type is Stride*) does not use CLC based scheduler.
-  // SchedulerPipelineStageCount could be set to zero for Grouped GEMM, but we shouldn't define CLC Pipeline's barrier arrays of size zero.
-  static constexpr uint32_t SchedulerPipelineStageCount = cute::is_same_v<InternalStrideA, StrideA> ? (AccumulatorPipelineStageCount + 1) : 1;
-  static constexpr bool IsArrayOfPointersGemm = (cute::is_base_of_v<KernelScheduleSm100PtrArrayDenseGemm, KernelScheduleType>);
+  static constexpr bool IsArrayOfPointersGemm = (cute::is_base_of_v<KernelScheduleSm100PtrArrayDenseGemm, BuilderScheduleTag>);
+  // Grouped GEMM(where Stride type is Stride*) uses specific static tile scheduler.
+  static constexpr bool IsGroupGemm = !cute::is_same_v<StrideA, InternalStrideA>;
+  static constexpr uint32_t SchedulerPipelineStageCount = cute::conditional_return<IsGroupGemm>(8, 2);
+  
   static constexpr uint32_t KernelSmemCarveout = detail::Sm100DenseGemmTmaUmmaCarveout<
       ClusterShape_MNK,
       AccumulatorPipelineStageCount,

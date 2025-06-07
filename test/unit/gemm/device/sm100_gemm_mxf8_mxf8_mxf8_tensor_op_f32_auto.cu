@@ -112,6 +112,60 @@ TEST(SM100_Device_Gemm_e4m3t_e4m3n_f32t_tensorop_2sm_f32_auto, 512x512x128_4x4x1
   EXPECT_TRUE(pass);
 }
 
+/// A Row B Col
+TEST(SM100_Device_Gemm_e4m3t_e4m3n_f32t_tensorop_2sm_f32_auto, 512x256x128_4x4x1) {
+  using ElementA = cutlass::mx_float8_t<cutlass::float_e4m3_t>;
+  using ElementB = cutlass::mx_float8_t<cutlass::float_e4m3_t>;
+  using ElementC = void;
+  using ElementD = float;
+  using ElementCompute = float;
+  using ElementAccumulator = float;
+  using ElementAccumulator = float;
+  using GmemLayoutA = cutlass::layout::RowMajor;
+  using GmemLayoutB = cutlass::layout::ColumnMajor;
+  using GmemLayoutC = cutlass::layout::RowMajor;
+  using MmaTileShape_MNK = Shape<_256,_64,_128>;
+  using ClusterShape_MNK = Shape<_4,_4,_1>;
+  
+  //
+  // Construct CollectiveEpilogue
+  //
+
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm100, cutlass::arch::OpClassTensorOp,
+      MmaTileShape_MNK, ClusterShape_MNK,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      ElementAccumulator, ElementCompute,
+      ElementC, GmemLayoutC, 4,
+      ElementD, GmemLayoutC, 4,
+      cutlass::epilogue::collective::EpilogueScheduleAuto
+    >::CollectiveOp;
+
+  //
+  // Construct CollectiveMainloop
+  //
+  using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+      cutlass::arch::Sm100, cutlass::arch::OpClassBlockScaledTensorOp,
+      ElementA, GmemLayoutA, 16,
+      ElementB, GmemLayoutB, 16,
+      ElementAccumulator,
+      MmaTileShape_MNK, ClusterShape_MNK,
+      cutlass::gemm::collective::StageCountAutoCarveout<static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
+      cutlass::gemm::collective::KernelScheduleAuto
+    >::CollectiveOp;
+
+  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+      Shape<int,int,int,int>,
+      CollectiveMainloop,
+      CollectiveEpilogue
+    >;
+  
+  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  auto pass = test::gemm::device::TestSmallFusion<Gemm>(1.0, 0);
+  EXPECT_TRUE(pass);
+}
+
+
 /// A Col B Row
 TEST(SM100_Device_Gemm_e4m3n_e4m3t_f32t_tensorop_2sm_f32_auto, 512x512x128_4x4x1) {
   using ElementA = cutlass::mx_float8_t<cutlass::float_e4m3_t>;

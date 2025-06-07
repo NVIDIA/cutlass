@@ -34,7 +34,7 @@
   addressable memory, and then store it back into addressable memory.
 
   TileIterator is a core concept in CUTLASS that enables efficient loading and storing of data to
-  and from addressable memory. The PredicateTileIterator accepts a ThreadMap type, which defines
+  and from addressable memory. The PredicatedTileIterator accepts a ThreadMap type, which defines
   the mapping of threads to a "tile" in memory. This separation of concerns enables user-defined
   thread mappings to be specified. 
 
@@ -124,7 +124,7 @@ __global__ void copy(
 
 cudaError_t TestTileIterator(int M, int K) {
 
-    // For this example, we chose a <64, 4> tile shape. The PredicateTileIterator expects
+    // For this example, we chose a <64, 4> tile shape. The PredicatedTileIterator expects
     // PitchLinearShape and PitchLinear layout.
     using Shape = cutlass::layout::PitchLinearShape<64, 4>;
     using Layout = cutlass::layout::PitchLinear;
@@ -136,7 +136,7 @@ cudaError_t TestTileIterator(int M, int K) {
     // dimension then along the strided dimension.
     using ThreadMap = cutlass::transform::PitchLinearStripminedThreadMap<Shape, kThreads>;
 
-    // Define the PredicateTileIterator, using TileShape, Element, Layout, and ThreadMap types
+    // Define the PredicatedTileIterator, using TileShape, Element, Layout, and ThreadMap types
     using Iterator = cutlass::transform::threadblock::PredicatedTileIterator<
         Shape, Element, Layout, 1, ThreadMap>;
 

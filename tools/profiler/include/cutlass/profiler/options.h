@@ -94,10 +94,15 @@ public:
     /// Total memory allocation on each device
     size_t maximum_capacity;
 
+  private:
+    /// SM Count
+    /// Limits the number of SMs to use on each device 
+    int sm_count;
+
     //
     // Methods
     //
-
+  public:
     explicit Device(CommandLine const &cmdline);
 
     void print_usage(std::ostream &out) const;
@@ -107,7 +112,10 @@ public:
     /// Returns the device ID from a device index
     int device_id(size_t device_index) const;
 
-    /// Returns the compute capability of the listed devices (e.g. 61, 60, 70, 75)
+    /// Returns the sm_count if set, otherwise returns the number of SMs on the device
+    int get_sm_count(int device_index) const;
+
+    /// Returns the compute capability of the listed devices (e.g. 70, 75, 80, etc.)
     int compute_capability(int device_index) const;
   };
 
@@ -208,7 +216,22 @@ public:
     /// Minimum number of iterations to profile
     int min_iterations{10};
 
+    /// If true, profiling with cuda graph enabled.
     bool use_cuda_graphs{false};
+
+    /// If enabled, the CUTLASS profiler searches for the best-performing kernel 
+    /// within the subset of kernels matching a kernel filter regex. The best 
+    /// performance is determined by screening over a set of predefined M/N/K 
+    /// sizes and performance-related parameters, including cluster shapes, 
+    /// swizzle sizes, and rasterization orders.
+    /// For now, it only supports legacy GEMM and blockscaled GEMM.
+    bool enable_kernel_performance_search{false};
+
+    /// If enabled, the CUTLASS profiler searches for the best-performing kernel 
+    /// for a given M/N/K problem size by evaluating various performance-related 
+    /// parameters such as cluster shapes, swizzle sizes, and rasterization orders.
+    /// For now, it only supports legacy GEMM and blockscaled GEMM.
+    bool enable_best_kernel_for_fixed_shape{false};
 
     /// Number of ms to sleep between profiling periods (ms)
     int sleep_duration{50};
@@ -264,8 +287,11 @@ public:
     /// Prints human-readable text to stdout. If false, nothing is written to stdout
     bool verbose;
 
-    /// Sort results by (currently by flops-per-byte)
-    bool sort_results;
+    /// Sort results by flops-per-byte
+    bool sort_flops_per_byte;
+
+    /// Sort results by flops-per-second
+    bool sort_flops_per_sec;
 
     /// Prints the name of the kernel being profiled before running the kernel.
     /// This is useful for determining which kernel is causing a run of the profiler to hang

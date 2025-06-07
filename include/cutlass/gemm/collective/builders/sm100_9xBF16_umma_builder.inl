@@ -47,7 +47,7 @@ template<
   int CapacityBytes,
   class CtaTileShape_MNK,
   class TiledMma,
-  class KernelScheduleType,
+  class BuilderScheduleTag,
   UMMA::Major UmmaMajorA,
   int ComplexComponent = 1,
   int NumComputeMtxs = 3,
@@ -60,16 +60,18 @@ sm100_compute_stage_count_or_override_fast_fp32(StageCountAutoCarveout<carveout_
   static_assert(CtaN <= 128, "Can't support CtaN>128 tiles");
   constexpr int CtaK = get<2>(CtaTileShape_MNK{});
   using AtomThrID = typename TiledMma::AtomThrID;
+  constexpr int TmemColumns = 512;
+
   // Detect 2x2 TMEM layout
   constexpr int TmemAccWordsPerDP = (CtaM == 64 && size(AtomThrID{}) == 2) ? CtaN/2 : CtaN;
   constexpr int TmemAWordsPerDP = ComplexComponent * NumComputeMtxs * CtaK / 2;
-  constexpr bool IsAComputeinTmem = UmmaMajorA == cute::UMMA::Major::K && !cute::is_base_of_v<KernelTmaWarpSpecializedFastFP32SmemSm100, KernelScheduleType>;
+  constexpr bool IsAComputeinTmem = UmmaMajorA == cute::UMMA::Major::K && !cute::is_base_of_v<KernelTmaWarpSpecializedFastFP32SmemSm100, BuilderScheduleTag>;
   constexpr bool IsAComputeinSmem = !IsAComputeinTmem;
-  constexpr int AccumulatorStageCount = (IsAComputeinTmem) ? (((TmemAccWordsPerDP * ComplexComponent == 128) ? 2 : 3) * ComplexComponent) : (512 / TmemAccWordsPerDP);
+  constexpr int AccumulatorStageCount = (IsAComputeinTmem) ? (((TmemAccWordsPerDP * ComplexComponent == 128) ? 2 : 3) * ComplexComponent) : (TmemColumns / TmemAccWordsPerDP);
   
   constexpr int SmemCapacityAfterMma2AccumCarveout = CapacityBytes - (carveout_bytes + AccumulatorStageCount * 32);
 
-  constexpr int TmemInAStageCount_Potential = (IsAComputeinTmem) ? (512 - AccumulatorStageCount * TmemAccWordsPerDP) / TmemAWordsPerDP : 10000;
+  constexpr int TmemInAStageCount_Potential = (IsAComputeinTmem) ? (TmemColumns - AccumulatorStageCount * TmemAccWordsPerDP) / TmemAWordsPerDP : 10000;
   
   constexpr auto load2transform_pipeline_bytes = sizeof(typename cutlass::PipelineTmaTransformAsync<1>::SharedStorage);
   constexpr auto a_bits = cute::sizeof_bits_v<float> * ComplexComponent;
@@ -112,7 +114,7 @@ template <
   class TileShape_MNK,  // The Cluster-level TileShape
   class ClusterShape_MNK,
   class StageCountType,
-  class KernelScheduleType
+  class BuilderScheduleTag
 >
 struct CollectiveBuilder<
     arch::Sm100,
@@ -127,10 +129,10 @@ struct CollectiveBuilder<
     TileShape_MNK,    // (MmaAtomShapeM, MmaAtomShapeN, TileK)
     ClusterShape_MNK, // Static cluster shape or dynamic (int, int, int)
     StageCountType,
-    KernelScheduleType,
+    BuilderScheduleTag,
     cute::enable_if_t<
       (not cute::is_tuple<GmemLayoutATag>::value && not cute::is_tuple<GmemLayoutBTag>::value) &&
-      (cute::is_base_of_v<KernelScheduleSm100FastFP32Gemm, KernelScheduleType>) &&
+      (cute::is_base_of_v<KernelScheduleSm100FastFP32Gemm, BuilderScheduleTag>) &&
       ((sizeof(float) * AlignmentA) % detail::tma_alignment_bytes == 0) &&
       ((sizeof(float) * AlignmentB) % detail::tma_alignment_bytes == 0)>>
 {
@@ -143,7 +145,7 @@ struct CollectiveBuilder<
   using ElementBMma = cutlass::bfloat16_t;
   static constexpr int ScalingFactor = 8;
 
-  using TiledMma = decltype(detail::sm100_make_trivial_fastFP32_tiled_mma<ElementAMma, ElementBMma, ElementAccumulator, TileShape_MNK, ClusterShape_MNK, UmmaMajorA, UmmaMajorB, ScalingFactor, KernelScheduleType>());
+  using TiledMma = decltype(detail::sm100_make_trivial_fastFP32_tiled_mma<ElementAMma, ElementBMma, ElementAccumulator, TileShape_MNK, ClusterShape_MNK, UmmaMajorA, UmmaMajorB, ScalingFactor, BuilderScheduleTag>());
   using AtomThrID = typename TiledMma::AtomThrID;
   using AtomThrShapeMNK = Shape<decltype(shape<0>(typename TiledMma::ThrLayoutVMNK{})), _1, _1>;
   using CtaTileShape_MNK = decltype(shape_div(TileShape_MNK{}, AtomThrShapeMNK{}));
@@ -172,7 +174,7 @@ struct CollectiveBuilder<
   static constexpr int MMA_M = cute::size<0,0>(MmaShapeA_MK{});
   using CopyAtomPairA = cutlass::gemm::collective::detail::CollectiveMmaEmulatedCopyType<
     Copy_Atom<AutoVectorizingCopyWithAssumedAlignment<128>, ElementA>,
-    cute::conditional_t<(UmmaMajorA == cute::UMMA::Major::K && !cute::is_base_of_v<KernelTmaWarpSpecializedFastFP32SmemSm100, KernelScheduleType>),
+    cute::conditional_t<(UmmaMajorA == cute::UMMA::Major::K && !cute::is_base_of_v<KernelTmaWarpSpecializedFastFP32SmemSm100, BuilderScheduleTag>),
                         cute::conditional_t<(MMA_M == 64 && size(AtomThrID{}) == 1), SM100_TMEM_STORE_16dp256b1x, SM100_TMEM_STORE_32dp32b8x>, // TS Implementation
                         Copy_Atom<AutoVectorizingCopyWithAssumedAlignment<128>, ElementA>>                                         // SS Implementation
   >;
@@ -200,7 +202,7 @@ struct CollectiveBuilder<
   static constexpr int NumBandsToCompute = 5;
   static constexpr int AccPromotionInterval = 1;
   static constexpr int SchedulerPipelineStageCount = 3;
-  static constexpr bool IsArrayOfPointersGemm = (cute::is_base_of_v<KernelScheduleSm100PtrArrayFastFP32Gemm, KernelScheduleType>);
+  static constexpr bool IsArrayOfPointersGemm = (cute::is_base_of_v<KernelScheduleSm100PtrArrayFastFP32Gemm, BuilderScheduleTag>);
 
   // CLCPipeline = PipelineCLCFetchAsync
   static constexpr auto CLCPipelineStorage = sizeof(typename cutlass::PipelineCLCFetchAsync<SchedulerPipelineStageCount, ClusterShape_MNK>::SharedStorage);
@@ -226,7 +228,7 @@ struct CollectiveBuilder<
   // Reduce SMEM capacity available for buffers considering extra B smem and barrier smem allocations
   static constexpr int Sm100ReducedSmemCapacityBytes = detail::sm100_smem_capacity_bytes - KernelSmemCarveout;
   static constexpr auto stage_info = cutlass::gemm::collective::detail::sm100_compute_stage_count_or_override_fast_fp32<
-    Sm100ReducedSmemCapacityBytes, CtaTileShape_MNK, TiledMma, KernelScheduleType, UmmaMajorA>(StageCountType{});
+    Sm100ReducedSmemCapacityBytes, CtaTileShape_MNK, TiledMma, BuilderScheduleTag, UmmaMajorA>(StageCountType{});
   
   static constexpr int Load2TransformPipelineStageCount = get<0>(stage_info);
   static constexpr int Transform2MmaPipelineStageCount = get<1>(stage_info);

@@ -35,6 +35,7 @@
 #pragma once
 
 #include "cutlass/cutlass.h"
+#include "cutlass/arch/memory.h"
 #include "cutlass/gemm/dispatch_policy.hpp"
 #include "cutlass/epilogue/collective/detail.hpp"
 
@@ -158,7 +159,7 @@ public:
     class TiledMma,
     class ResidueMNK
   >
-  CUTLASS_HOST_DEVICE void
+  CUTLASS_DEVICE void
   operator()(
       ProblemShapeMNKL problem_shape_mnkl,
       BlockShapeMNK blk_shape_MNK,
@@ -207,27 +208,45 @@ public:
     CUTE_STATIC_ASSERT_V(size(tCgD) == size(accumulators),
         "Accumulator count must have the same destination element count.");
 
+    // OOB predication for tile quantization "residue"
     // Absolute coordinate tensors (dynamic)
-    Tensor mD_crd = make_identity_tensor(make_shape(M,N));                                                     // (M,N)
+    auto shape_MN = make_shape(M,N);
+    Tensor mD_crd = make_identity_tensor(shape_MN);                                                            // (M,N)
     Tensor cD_mn = local_tile(mD_crd, take<0,2>(blk_shape_MNK), make_coord(m_coord, n_coord));         // (BLK_M,BLK_N)
-    Tensor tCcD = thr_mma.partition_C(cD_mn);                                                      // (VEC,THR_M,THR_N)
+    Tensor tCcD_mn = thr_mma.partition_C(cD_mn);                                                   // (VEC,THR_M,THR_N)
+    // Relative coordinate tensors (static)
+    Tensor cD = make_coord_tensor(cD_mn.layout());                                                  // (BLK_M,BLK_N)
+    Tensor tCcD = make_coord_tensor(tCcD_mn.layout());                                          // (VEC,THR_M,THR_N)
+    // Subtract the global "bottom right" corner from the local "top left" corner to get the max relative coordinate
+    auto residue_cD = shape_MN - cD_mn(_0{});                                                                  // (m,n)
+    auto residue_tCcD = shape_MN - tCcD_mn(_0{});                                                              // (m,n)
+
+    // Fully OOB tile
+    if (not elem_less(repeat_like(residue_cD, _0{}), residue_cD)) {
+      return;
+    }
+
+    using FragCType = remove_cvref_t<decltype(tCgC(0))>;
+    using FragDType = remove_cvref_t<decltype(tCgD(0))>;
 
     // source is needed
     if (epilogue_op.is_source_needed()) {
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < size(accumulators); ++i) {
-        if (elem_less(tCcD(i), make_shape(M,N))) {
-          tCgD(i) = epilogue_op(accumulators(i), tCgC(i));
-        }
+        FragCType fragC;
+        bool pred = elem_less(tCcD(i), residue_tCcD);
+        arch::global_load<FragCType, sizeof(FragCType)>(fragC, &tCgC(i), pred);
+        FragDType fragD = epilogue_op(accumulators(i), fragC);
+        arch::global_store<FragDType, sizeof(FragDType)>(fragD, &tCgD(i), pred);
       }
     }
     // source is not needed, avoid load
     else {
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < size(accumulators); ++i) {
-        if (elem_less(tCcD(i), make_shape(M,N))) {
-          tCgD(i) = epilogue_op(accumulators(i));
-        }
+        bool pred = elem_less(tCcD(i), residue_tCcD);
+        FragDType fragD = epilogue_op(accumulators(i));
+        arch::global_store<FragDType, sizeof(FragDType)>(fragD, &tCgD(i), pred);
       }
     }
   }

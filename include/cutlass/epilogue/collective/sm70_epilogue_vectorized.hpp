@@ -59,7 +59,7 @@ template <
 >
 class Epilogue {
   static_assert(cute::is_same_v<EpilogueScheduleType, EpilogueSimtVectorized> ||
-                cute::is_same_v<EpilogueScheduleType, EpiloguePtrArraySimtVectorized>, 
+                cute::is_same_v<EpilogueScheduleType, EpiloguePtrArraySimtVectorized>,
                 "Could not find an epilogue specialization.");
 };
 
@@ -141,7 +141,7 @@ public:
     ElementScalar const* beta_ptr = nullptr;
     ElementBias const* bias_ptr = nullptr;
     StrideBias dBias{};
-  };  
+  };
 
   template<class ThreadEpiOp>
   struct ThreadEpilogueOpArguments<
@@ -202,7 +202,7 @@ public:
   to_underlying_arguments(
       [[maybe_unused]] ProblemShape const& _,
       Arguments const& args,
-      [[maybe_unused]] void* workspace) { 
+      [[maybe_unused]] void* workspace) {
     typename ThreadEpilogueOp::Params thread_op_args;
     thread_op_args.alpha = args.thread.alpha;
     thread_op_args.beta = args.thread.beta;
@@ -317,7 +317,7 @@ public:
     Tensor gC = gC_mnl(_,_,m_coord,n_coord,l_coord);                                                   // (BLK_M,BLK_N)
     Tensor gD = gD_mnl(_,_,m_coord,n_coord,l_coord);                                                   // (BLK_M,BLK_N)
     Tensor gBias = gBias_mnl(_,_,m_coord,n_coord,l_coord);                                             // (BLK_M,BLK_N)
-  
+
     // Construct a tensor in SMEM that we can partition for rearranging data
     SharedStorage& storage = *reinterpret_cast<SharedStorage*>(smem_buf);
     Tensor sAcc = make_tensor(make_smem_ptr(storage.smem_epilogue.data()), SmemLayout{});            // (SMEM_M,SMEM_N)
@@ -389,10 +389,10 @@ public:
         Tensor tSR_gBias_flt = filter_zeros(tSR_gBias);
         Tensor tSR_rBias_flt = filter_zeros(tSR_rBias);
         Tensor tSR_cD_flt = filter_zeros(tSR_cD, tSR_gBias.stride());
+        Tensor tSR_pD_flt = cute::lazy::transform(tSR_cD_flt, [&](auto const& c){ return elem_less(c, take<0,2>(residue_mnk)); });
 
         // Step 0. Copy Bias from GMEM to fragment
-        auto pred_fn = [&] (auto const&... coords) { return elem_less(tSR_cD_flt(coords...), take<0, 2>(residue_mnk)); };
-        copy_if(pred_fn, tSR_gBias_flt, tSR_rBias_flt);    
+        copy_if(tSR_pD_flt, tSR_gBias_flt, tSR_rBias_flt);
       }
     }
 

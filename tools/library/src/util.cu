@@ -334,6 +334,7 @@ static struct {
   {"eq_gemm", "EqGemm", OperationKind::kEqGemm},
   {"gemm", "Gemm", OperationKind::kGemm},
   {"block_scaled_gemm", "blockScaledGemm", OperationKind::kBlockScaledGemm}, 
+  {"blockwise_gemm", "blockwiseGemm", OperationKind::kBlockwiseGemm}, 
   {"rank_k", "RankK", OperationKind::kRankK},
   {"rank_2k", "Rank2K", OperationKind::kRank2K},
   {"trmm", "Trmm", OperationKind::kTrmm},

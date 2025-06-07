@@ -102,6 +102,8 @@ set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
 list(APPEND CUTLASS_CUDA_NVCC_FLAGS --expt-relaxed-constexpr)
 
+list(APPEND CUTLASS_CUDA_NVCC_FLAGS -ftemplate-backtrace-limit=0)
+
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
   set(CMAKE_INSTALL_PREFIX install CACHE PATH "Default installation location." FORCE)
 endif()
@@ -173,7 +175,13 @@ if (CUDA_VERSION VERSION_GREATER_EQUAL 12.0)
 endif()
 
 if (CUDA_VERSION VERSION_GREATER_EQUAL 12.8)
-  list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 100 100a)
+  list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 100 100a 120 120a)
+  list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 101 101a)
+endif()
+
+if (CUDA_VERSION VERSION_GREATER_EQUAL 12.9)
+  list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 100f 120f)
+  list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 101f)
 endif()
 
 set(CUTLASS_NVCC_ARCHS ${CUTLASS_NVCC_ARCHS_SUPPORTED} CACHE STRING "The SM architectures requested.")
@@ -338,6 +346,10 @@ if(CUTLASS_ENABLE_SM90_EXTENDED_MMA_SHAPES)
   list(APPEND CUTLASS_CUDA_NVCC_FLAGS -DCUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
 endif()
 
+if (CUTLASS_NVCC_ARCHS MATCHES 100f OR CUTLASS_NVCC_ARCHS MATCHES 101f)
+list(APPEND CUTLASS_CUDA_NVCC_FLAGS -DCUTLASS_SM100_FAMILY_ARCHS_ENABLED)
+endif()
+
 set(CUTLASS_SKIP_REDUCTION_INIT OFF CACHE BOOL "Disable init reduction workspace")
 
 #
@@ -441,7 +453,7 @@ if (NOT MSVC AND CUTLASS_NVCC_KEEP)
   # MSVC flow handles caching already, but for other generators we handle it here.
   set(CUTLASS_NVCC_KEEP_DIR ${CMAKE_CURRENT_BINARY_DIR}/tmp CACHE PATH "Location to store NVCC scratch files")
   file(MAKE_DIRECTORY ${CUTLASS_NVCC_KEEP_DIR})
-  list(APPEND CUTLASS_CUDA_NVCC_FLAGS --keep -v) # --keep-dir may not work with nvcc for some directories.
+  list(APPEND CUTLASS_CUDA_NVCC_FLAGS --keep -v -objtemp) # --keep-dir may not work with nvcc for some directories.
   list(APPEND CUTLASS_CUDA_CLANG_FLAGS -save-temps=${CUTLASS_NVCC_KEEP_DIR})
 endif()
 
@@ -466,6 +478,13 @@ endif()
 if(UNIX)
   list(APPEND CUTLASS_CUDA_NVCC_FLAGS -Xcompiler=-Wconversion)
   list(APPEND CUTLASS_CUDA_NVCC_FLAGS -Xcompiler=-fno-strict-aliasing)
+endif()
+
+# Known ctk11.4 issue (fixed later)
+# Also see https://stackoverflow.com/questions/64523302/cuda-missing-return-statement-at-end-of-non-void-function-in-constexpr-if-fun
+if (CUDA_VERSION VERSION_LESS 11.5.0)
+  list(APPEND CUTLASS_CUDA_NVCC_FLAGS -Xcudafe "--diag_suppress=implicit_return_from_non_void_function" )
+  message("CUDA_VERSION check pass ${CUDA_VERSION}")
 endif()
 
 # Don't leak lineinfo in release builds
@@ -667,25 +686,6 @@ if (NOT CUTLASS_NAMESPACE STREQUAL "cutlass")
   target_compile_definitions(CUTLASS INTERFACE CUTLASS_NAMESPACE=${CUTLASS_NAMESPACE})
 endif()
 
-if (NOT DEFINED CUTLASS_REVISION)
-
-  find_package(Git QUIET)
-
-  execute_process(
-    COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
-    RESULT_VARIABLE CUTLASS_REVISION_RESULT
-    OUTPUT_VARIABLE CUTLASS_REVISION
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-  )
-
-  if (CUTLASS_REVISION_RESULT)
-    message(STATUS "CUTLASS Revision: Unable to detect, Git returned code ${CUTLASS_REVISION_RESULT}.")
-  else()
-    message(STATUS "CUTLASS Revision: ${CUTLASS_REVISION}")
-  endif()
-
-endif()
-
 configure_file(
   ${CMAKE_CURRENT_SOURCE_DIR}/cmake/version_extended.h.in
   ${CMAKE_CURRENT_BINARY_DIR}/include/cutlass/version_extended.h
@@ -704,6 +704,7 @@ target_include_directories(
   CUTLASS
   SYSTEM INTERFACE
   $<BUILD_INTERFACE:${CUDA_TOOLKIT_ROOT_DIR}/include>
+  $<BUILD_INTERFACE:${CUDA_TOOLKIT_ROOT_DIR}/include/cccl>
   )
 
 install(
@@ -1045,6 +1046,7 @@ function(cutlass_generate_profiler_tests NAME)
       string(REGEX REPLACE "_cluster_k_fallback=[0-9]+" "" TEST_NAME "${TEST_NAME}")
       string(REPLACE "runtime_input_datatype_a=" "" TEST_NAME "${TEST_NAME}")
       string(REPLACE "runtime_input_datatype_b=" "" TEST_NAME "${TEST_NAME}")
+      string(REPLACE "swizzle_size=" "" TEST_NAME "${TEST_NAME}")
       string(REGEX REPLACE "verification_enabled=(true|false)" "" TEST_NAME "${TEST_NAME}")
       string(REGEX REPLACE "warmup_iterations=[0-9]+" "" TEST_NAME "${TEST_NAME}")
       string(REGEX REPLACE "profiling_iterations=[0-9]+" "" TEST_NAME "${TEST_NAME}")

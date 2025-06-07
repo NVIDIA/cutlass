@@ -41,6 +41,7 @@
 #include "cutlass/epilogue/thread/scale_type.h"
 #include "cutlass/epilogue/fusion/callbacks.hpp"
 #include "cutlass/epilogue/fusion/sm90_callbacks_tma_warpspecialized.hpp"
+#include "cutlass/epilogue/fusion/sm120_callbacks_tma_warpspecialized.hpp"
 #include "cutlass/detail/collective.hpp"
 #include "cutlass/detail/layout.hpp"
 #include "cutlass/trace.h"
@@ -221,6 +222,7 @@ public:
   constexpr static bool RequiresTransactionBytes = true;
 
   constexpr static int NumEpilogueWarpGroups = NumEpilogueWarpGroups_;
+  constexpr static uint32_t MinTensorMapWorkspaceAlignment = 64;
 
   // TMA pipeline for storing D
   using StorePipeline = cute::conditional_t<ReuseSmemC,
@@ -302,10 +304,9 @@ public:
       [[maybe_unused]] void* workspace) {
     // These tensor shapes (only applicable for grouped gemm) and pointers are only used to create tensormap/tma desc.
     // These will be replaced with correct values before the initial tma load.
-    auto init_shape = repeat_like(append<4>(typename ProblemShape::UnderlyingProblemShape{}, 1), int32_t(1));
-    auto init_M = get<0>(init_shape);
-    auto init_N = get<1>(init_shape);
-    auto init_L = get<3>(init_shape);
+    auto init_M = int32_t(size<0>(CtaTileMNK{}));
+    auto init_N = int32_t(size<1>(CtaTileMNK{}));
+    auto init_L = 1;
 
     static_assert(!is_im2col_C and !is_im2col_D, "Im2Col not supported on C or D");
 
@@ -321,8 +322,6 @@ public:
       auto problem_shape_MNKL = append<4>(problem_shape.get_host_problem_shape(0), 1);
       init_M = get<0>(problem_shape_MNKL);
       init_N = get<1>(problem_shape_MNKL);
-      init_L = get<3>(problem_shape_MNKL);
-
       stride_c = args.dC;
       stride_d = args.dD;
     }
@@ -330,7 +329,8 @@ public:
     uint32_t transaction_bytes = TmaTransactionBytes;
     typename Params::TMA_C tma_load_c{};
     if constexpr (is_source_supported) {
-      ElementC const* ptr_C_first_batch = reinterpret_cast<ElementC const*>(args.ptr_C); 
+    // NOTE: Since TMA desc creation with nullptr not possible until 12.6, we use an initial address even when tensor addresses are on device. This address is never used.
+      ElementC const* ptr_C_first_batch = reinterpret_cast<ElementC const*>(reinterpret_cast<uint64_t>(args.ptr_C) & 0xFFFFFFFFFFFFFFF0);  // Address must be 16B-aligned
       Tensor tensor_c = make_tensor(ptr_C_first_batch, make_layout(make_shape(init_M,init_N,init_L), append<3>(stride_c, _0{})));
       tma_load_c = make_tma_copy(
           CopyOpG2S{},
@@ -342,7 +342,8 @@ public:
 
     typename Params::TMA_D tma_store_d{};
     if constexpr (is_destination_supported) {
-      ElementD const* ptr_D_first_batch = reinterpret_cast<ElementD const*>(args.ptr_D);
+    // NOTE: Since TMA desc creation with nullptr not possible until 12.6, we use an initial address even when tensor addresses are on device. This address is never used.
+      ElementD const* ptr_D_first_batch = reinterpret_cast<ElementD const*>(reinterpret_cast<uint64_t>(args.ptr_D) & 0xFFFFFFFFFFFFFFF0);  // Address must be 16B-aligned
       Tensor tensor_d = make_tensor(ptr_D_first_batch, make_layout(make_shape(init_M,init_N,init_L), append<3>(stride_d, _0{})));
       tma_store_d = make_tma_copy(
           CopyOpS2G{},
@@ -353,7 +354,7 @@ public:
     }
 
     auto fusion_workspace = static_cast<char*>(workspace);
-    auto fusion_workspace_size = FusionCallbacks::get_workspace_size(problem_shape, args.thread);
+    auto fusion_workspace_size = round_nearest(FusionCallbacks::get_workspace_size(problem_shape, args.thread), MinTensorMapWorkspaceAlignment);
     auto tma_descriptor_workspace = reinterpret_cast<cute::TmaDescriptor*>(
                                       static_cast<char*>(workspace) + fusion_workspace_size);
 
@@ -373,13 +374,12 @@ public:
   template <class ProblemShape>
   static size_t
   get_workspace_size(ProblemShape const& problem_shape, Arguments const& args, int sm_count) {
-    
     constexpr uint32_t NumInputTensors = NumEpilogueWarpGroups + (cute::is_void_v<ElementC> ? 0 : 1);
     auto descriptors_shape = cute::make_shape(sm_count, Int<NumInputTensors>{});
     constexpr size_t SizeOfCuTensorMap = sizeof(cute::TmaDescriptor);
-
     // Allocate gmem space for input tensormaps per each SM, A tensormap copies followed by B tensormap copies
-    return (size(descriptors_shape) * SizeOfCuTensorMap) + FusionCallbacks::get_workspace_size(problem_shape, args.thread);
+    return (size(descriptors_shape) * SizeOfCuTensorMap) + 
+        (round_nearest(FusionCallbacks::get_workspace_size(problem_shape, args.thread), MinTensorMapWorkspaceAlignment));
   }
 
   template <class ProblemShape>
@@ -751,15 +751,22 @@ public:
     Tensor cD_mn = local_tile(mD_crd, take<0,2>(CtaTileMNK{}), make_coord(m_coord, n_coord));          // (CTA_M,CTA_N)
     Tensor tRS_cD_mn = thread_r2s.partition_S(flat_divide(cD_mn, EpilogueTile{}));     // (R2S,R2S_M,R2S_N,EPI_M,EPI_N)
     // Relative coordinate tensors (static)
-    Tensor cD = make_counting_tensor(cD_mn.layout());                                                  // (CTA_M,CTA_N)
-    Tensor tRS_cD = make_counting_tensor(tRS_cD_mn.layout());                          // (R2S,R2S_M,R2S_N,EPI_M,EPI_N)
+    Tensor cD = make_coord_tensor(cD_mn.layout());                                                  // (CTA_M,CTA_N)
+    Tensor tRS_cD = make_coord_tensor(tRS_cD_mn.layout());                          // (R2S,R2S_M,R2S_N,EPI_M,EPI_N)
     // Subtract the global "bottom right" corner from the local "top left" corner to get the max relative coordinate
     auto residue_cD = make_coord(M,N) - cD_mn(_0{});                                                           // (m,n)
     auto residue_tRS_cD = make_coord(M,N) - tRS_cD_mn(_0{});                                                   // (m,n)
 
     CUTE_STATIC_ASSERT(epi_tile_m % mma_tile_m == 0, "MMA_TILE_M must divide EPI_TILE_M");
 
+    if constexpr (epi_tile_m * epi_tile_n > mma_tile_m * mma_tile_n) {
+      // When the epilogue subtile is larger than the MMA tiles, loop over multiple MMA tiles
+      CUTE_STATIC_ASSERT(epi_tile_n % mma_tile_n == 0, "MMA_TILE_N must divide EPI_TILE_N");
+    }
+    else {
     CUTE_STATIC_ASSERT(mma_tile_n % epi_tile_n == 0, "EPI_TILE_N must divide MMA_TILE_N");
+    }
+
     // Get TiledCopy for partition reference when consumer store.
     TiledCopy tiled_copy_partition_ref = make_tiled_copy_S(Copy_Atom<CopyOpR2S,SmemElementD>{}, tiled_copy_C_atom);
     // Get the fusion callbacks for the consumer store warps
@@ -782,12 +789,18 @@ public:
     bool is_producer_load_needed = fusion_callbacks.is_producer_load_needed();
     bool is_C_load_needed = is_source_supported && fusion_callbacks.is_C_load_needed();
 
+    using FragmentVisit = decltype(cst_callbacks.visit(tRS_rAcc_frg(0), 0, 0, 0));
+    constexpr bool IsDirectR2S = cute::is_same_v<FragmentVisit, Array<SmemElementD, FragmentSize>>;
+    using RegisterElementD = cute::conditional_t<!IsDirectR2S, ElementCompute, SmemElementD>;
+    Tensor tRS_rCompute = make_tensor<RegisterElementD>(tRS_rD_layout);                         // (R2S,R2S_M,R2S_N)
+    Tensor tRS_rCompute_frg = recast<Array<RegisterElementD, FragmentSize>>(tRS_rCompute);
+
     // Thread synchronizer for previously issued waits or fences
     // to ensure visibility of smem reads/writes to threads or TMA unit
     auto synchronize = [&] () { cutlass::arch::NamedBarrier::sync(size(TiledMma{}), cutlass::arch::ReservedNamedBarriers::EpilogueBarrier); };
 
-    // Predication for TMA store (one warp issues TMA store)
-    bool issue_tma_store = (thread_idx / NumThreadsPerWarp) == 0;
+    // Predication for TMA store (a single thread from one warp issues TMA store)
+    bool issue_tma_store = ((thread_idx / NumThreadsPerWarp) == 0) && cute::elect_one_sync();
 
     // In the reuse smem configuration we have StagesC smem buffers and at most StagesD committed TMA stores in flight.
     // The TMA store pipeline producer acquire returns when at most StagesD-1 committed stores are in-flight, so we can
@@ -892,17 +905,41 @@ public:
           ++load_wait_state;
         }
 
-        int mma_m = epi_m;
-        int mma_n = (epi_n * size<1>(EpilogueTile{})) / mma_tile_n;
-        Tensor tRS_rAcc_frg_mn = tRS_rAcc_frg(_,mma_m,mma_n);
+        if constexpr (epi_tile_m * epi_tile_n > mma_tile_m * mma_tile_n) {
+          // When the epilogue subtile is larger than the MMA tiles, loop over multiple
+          // MMA tiles
+          static constexpr int MmaMPerEpiM = epi_tile_m / mma_tile_m;
+          static constexpr int MmaNPerEpiN = epi_tile_n / mma_tile_n;
 
-        // Vectorized fragment loop with visitor callback entry point
-        int epi_n_in_mma = epi_n % (mma_tile_n / epi_tile_n);
-        int r2s_v = epi_n_in_mma * size(tRS_rD_frg);
-        CUTLASS_PRAGMA_UNROLL
-        for (int epi_v = 0; epi_v < size(tRS_rD_frg); ++epi_v) {
-          tRS_rD_frg(epi_v) = cst_callbacks.visit(tRS_rAcc_frg_mn(r2s_v + epi_v), epi_v, epi_m, epi_n);
+          CUTLASS_PRAGMA_UNROLL
+          for (int mma_n_in_epi = 0; mma_n_in_epi < MmaNPerEpiN; ++mma_n_in_epi) {
+            int mma_n = (epi_n * MmaNPerEpiN) + mma_n_in_epi;
+
+            CUTLASS_PRAGMA_UNROLL
+            for (int mma_m_in_epi = 0; mma_m_in_epi < MmaMPerEpiM; ++mma_m_in_epi) {
+              int mma_m = (epi_m * MmaMPerEpiM) + mma_m_in_epi;
+              Tensor tRS_rAcc_frg_mn = tRS_rAcc_frg(_,mma_m,mma_n);
+              int idx_in_epi_subtile = (mma_n_in_epi * MmaMPerEpiM + mma_m_in_epi);
+
+              tRS_rCompute_frg(idx_in_epi_subtile) = cst_callbacks.visit(
+                tRS_rAcc_frg_mn(0), idx_in_epi_subtile, epi_m, epi_n);
+            }
+          }
         }
+        else {
+          int mma_m = epi_m;
+          int mma_n = (epi_n * size<1>(EpilogueTile{})) / mma_tile_n;
+          Tensor tRS_rAcc_frg_mn = tRS_rAcc_frg(_,mma_m,mma_n);
+
+          // Vectorized fragment loop with visitor callback entry point
+          int epi_n_in_mma = epi_n % (mma_tile_n / epi_tile_n);
+          int r2s_v = epi_n_in_mma * size(tRS_rCompute_frg);
+          CUTLASS_PRAGMA_UNROLL
+          for (int epi_v = 0; epi_v < size(tRS_rCompute_frg); ++epi_v) {
+            tRS_rCompute_frg(epi_v) = cst_callbacks.visit(tRS_rAcc_frg_mn(r2s_v + epi_v), epi_v, epi_m, epi_n);
+          }
+        }
+
         // The latest we can delay the TMA store is right before the smem store of the next iteration
         // since the current TMA store needs to be committed before we can acquire the next smem buffer
         if constexpr (DelayTmaStore) {
@@ -916,7 +953,7 @@ public:
 
         // Smem reduction callback entry point using current store buffer for workspace
         cst_callbacks.reduce(sD_epi(_,_,store_pipe_producer_state.index()),
-                              synchronize, epi_m, epi_n, is_last_iteration, tRS_rD_frg);
+                              synchronize, epi_m, epi_n, is_last_iteration, tRS_rCompute_frg);
 
         // Copy tile from register to regiser if needed
         if constexpr (IsUseR2R) {
@@ -928,6 +965,11 @@ public:
           copy(tiled_r2r, tRR_rD_src, tRR_rD_dst);
         }
 
+        CUTLASS_PRAGMA_UNROLL
+        for (int i = 0; i < size(tRS_rD_frg); ++i) {
+          tRS_rD_frg(i) = cutlass::NumericArrayConverter<SmemElementD, RegisterElementD, FragmentSize>{}(tRS_rCompute_frg(i));
+        }
+        
         // Copy tile from register to smem
         if constexpr (is_destination_supported) {
           copy(tiled_r2s, tRS_rD, tRS_sD(_,_,_,store_pipe_producer_state.index()));
@@ -1138,7 +1180,6 @@ public:
       ProblemShape_MNKL problem_shape_mnkl,
       int32_t next_batch,
       int32_t warp_group_idx) {
-
     if (cute::elect_one_sync()) {
       // Replacing global_address for the next batch
       tensormaps_replace_global_address<IsLoad>(shared_tensormaps, params, next_batch, warp_group_idx);
@@ -1159,14 +1200,24 @@ public:
       TensorMapStorage& shared_tensormaps,
       cute::TmaDescriptor const* tensormap,
       const int32_t warp_group_idx = 0) {
-
+    // Commit and wait for all TMA load/store instructions before updating the tensormap in gmem.
+    // This operation only happens when the group/batch changes between consecutive tiles.
+    // If there are no uncommitted instructions then tma_desc_commit_group results in an empty bulk async-group.
+    auto tma_desc_wait_all_fn = [] () CUTLASS_LAMBDA_FUNC_INLINE {
+      if (cute::elect_one_sync()) {
+        cute::tma_desc_commit_group();
+        cute::tma_desc_wait_group();
+      }
+    };
     // Entire warp must do this (ie its aligned)
     if constexpr (IsLoad) {
       if constexpr (is_source_supported) {
+        tma_desc_wait_all_fn();
         tma_descriptor_cp_fence_release(tensormap, shared_tensormaps.smem_tensormap_C);
       }
     }
     else if constexpr (is_destination_supported) {
+      tma_desc_wait_all_fn();
       tma_descriptor_cp_fence_release(tensormap, shared_tensormaps.smem_tensormap_D[warp_group_idx]);
     }
   }

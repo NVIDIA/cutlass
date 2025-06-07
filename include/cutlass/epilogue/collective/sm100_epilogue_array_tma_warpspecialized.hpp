@@ -129,8 +129,13 @@ public:
   static_assert(rank(EpilogueTile{}) == 2, "EpilogueTile must be rank-2: [EPI_TILE_M, EPI_TILE_N]");
 
 private:
-  using GmemElementD = ElementD;
-  using GmemElementC = cute::conditional_t<cute::is_void_v<ElementC>,ElementD,ElementC>; // prevents void ref breakages
+
+  constexpr static bool is_source_supported = not cute::is_void_v<ElementC>;
+  constexpr static bool is_destination_supported = not cute::is_void_v<ElementD>;
+  using GmemElementD = cute::conditional_t<is_destination_supported, ElementD, fusion::get_element_aux_t<FusionCallbacks>>;
+  using GmemElementC = cute::conditional_t<is_source_supported, ElementC, GmemElementD>; // prevents void ref breakages
+  static_assert(not cute::is_void_v<GmemElementD>, "GmemElementD is void");
+
   using SmemElementD = typename cutlass::detail::get_unpacked_element_type<GmemElementD>::type;
   using SmemElementC = typename cutlass::detail::get_unpacked_element_type<GmemElementC>::type;
   constexpr static int StagesC = StagesC_;
@@ -138,9 +143,7 @@ private:
   static_assert(StagesC >= 1, "StagesC must be >= 1");
   static_assert(StagesD >= 1, "StagesD must be >= 1");
   
-  constexpr static bool ReuseSmemC = ReuseSmemC_;
-  constexpr static bool DelayTmaStore = DelayTmaStore_;
-  constexpr static bool is_source_supported = not cute::is_void_v<ElementC>;
+  constexpr static bool ReuseSmemC = ReuseSmemC_ && is_destination_supported;
 
   constexpr static bool is_m_major_C = detail::is_m_major<InternalStrideC>();
   constexpr static bool is_m_major_D = detail::is_m_major<InternalStrideD>();
@@ -159,7 +162,7 @@ private:
   using SmemLayoutC = decltype(cute::append<3>(SmemLayoutStageC{}, Layout<Int<StagesC>,                        Int<StrideStageC>>{}));
   using SmemLayoutD = decltype(cute::append<3>(SmemLayoutStageD{}, Layout<Int<ReuseSmemC ? StagesC : StagesD>, Int<StrideStageD>>{}));
 
-  constexpr static bool support_smem_reuse = is_source_supported && StagesD <= StagesC
+  constexpr static bool support_smem_reuse = is_source_supported && is_destination_supported && StagesD <= StagesC
                                               && MaxStageBits % sizeof_bits_v<SmemElementC> == 0
                                               && MaxStageBits % sizeof_bits_v<SmemElementD> == 0;
   static_assert(not (ReuseSmemC && not support_smem_reuse), "Smem reuse requirements not met");
@@ -167,6 +170,12 @@ private:
   constexpr static size_t SmemAlignmentC = cutlass::detail::alignment_for_swizzle(SmemLayoutC{});
   constexpr static size_t SmemAlignmentD = cutlass::detail::alignment_for_swizzle(SmemLayoutD{});
   constexpr static size_t MaxSmemAlignment = cute::max(SmemAlignmentC, SmemAlignmentD);
+
+  // Not unroll epi subtile loop when the activation op is heavy to reduce instruction size and register pressure.
+  constexpr static bool UnrollEpiLoop =
+    not cutlass::epilogue::thread::kIsHeavy_member_or_false<typename ThreadEpilogueOp::ActivationFn>::value;
+  // TMA store delay only benefits with loop unrolling
+  constexpr static bool DelayTmaStore = DelayTmaStore_ and UnrollEpiLoop;
 
   struct CollectiveStorageWithC {
     alignas(SmemAlignmentC) ArrayEngine<SmemElementC, cosize_v<SmemLayoutC>> smem_C;
@@ -188,6 +197,7 @@ public:
   using LoadPipeline = cutlass::PipelineTransactionAsync<StagesC>;
   using LoadPipelineState = cutlass::PipelineState<StagesC>;
   constexpr static uint32_t TmaTransactionBytes = StageCBits / 8;
+  constexpr static uint32_t MinTensorMapWorkspaceAlignment = 64;
 
   // TMA pipeline for storing D
   using StorePipeline = cute::conditional_t<ReuseSmemC,
@@ -238,7 +248,7 @@ public:
     using TMA_C = decltype(make_tma_copy(
         CopyOpG2S{},
         make_tensor(
-            make_gmem_ptr(static_cast<cute::conditional_t<cute::is_void_v<ElementC>,ElementD,ElementC> const*>(nullptr)),
+            make_gmem_ptr(static_cast<GmemElementC const*>(nullptr)),
             TensorShapeC{},
             append<3>(InternalStrideC{}, _0{})),
         SmemLayoutStageC{},
@@ -247,7 +257,7 @@ public:
     using TMA_D = decltype(make_tma_copy(
         CopyOpS2G{},
         make_tensor(
-            make_gmem_ptr(static_cast<ElementD*>(nullptr)),
+            make_gmem_ptr(static_cast<GmemElementD*>(nullptr)),
             TensorShapeD{},
             append<3>(InternalStrideD{}, _0{})),
         SmemLayoutStageD{},
@@ -276,9 +286,8 @@ public:
       void* workspace) {
     // These tensor shapes (only applicable for grouped gemm) and pointers are only used to create tensormap/tma desc.
     // These will be replaced with correct values before the initial tma load.
-    auto init_shape = repeat_like(append<4>(typename ProblemShape::UnderlyingProblemShape{}, 1), int32_t(1));
-    auto init_M = get<0>(init_shape);
-    auto init_N = get<1>(init_shape);
+    auto init_M = int32_t(size<0>(CtaTileShape{}));
+    auto init_N = int32_t(size<1>(CtaTileShape{}));
     auto init_L = 1;
 
     InternalStrideC stride_c;
@@ -306,13 +315,16 @@ public:
       tma_load_c = make_tma_copy(CopyOpG2S{}, tensor_c, SmemLayoutStageC{}, EpilogueTile{}, _1{});
     }
 
-    // Tensor pointers will be fixed before the first access
-    ElementD* ptr_D_first_batch = nullptr;
-    Tensor tensor_d = make_tensor(ptr_D_first_batch, make_layout(make_shape(init_M,init_N,init_L), append<3>(stride_d, _0{})));
-    typename Params::TMA_D tma_store_d = make_tma_copy(CopyOpS2G{}, tensor_d, SmemLayoutStageD{}, EpilogueTile{}, _1{});
+    typename Params::TMA_D tma_store_d{};
+    if constexpr (is_destination_supported) {
+      // Tensor pointers will be fixed before the first access
+      ElementD* ptr_D_first_batch = nullptr;
+      Tensor tensor_d = make_tensor(ptr_D_first_batch, make_layout(make_shape(init_M,init_N,init_L), append<3>(stride_d, _0{})));
+      tma_store_d = make_tma_copy(CopyOpS2G{}, tensor_d, SmemLayoutStageD{}, EpilogueTile{}, _1{});
+    }
 
     auto fusion_workspace = static_cast<char*>(workspace);
-    auto fusion_workspace_size = FusionCallbacks::get_workspace_size(problem_shape, args.thread);
+    auto fusion_workspace_size = round_nearest(FusionCallbacks::get_workspace_size(problem_shape, args.thread), MinTensorMapWorkspaceAlignment);
     auto tma_descriptor_workspace = reinterpret_cast<cute::TmaDescriptor*>(
                                         static_cast<char*>(workspace) + fusion_workspace_size);
 
@@ -334,7 +346,7 @@ public:
     constexpr uint32_t NumInputTensors = cute::is_void_v<ElementC> ? 1 : 2;
     constexpr size_t SizeOfCuTensorMap = sizeof(cute::TmaDescriptor);
     // Allocate gmem space for input tensormaps per each SM, A tensormap copies followed by B tensormap copies
-    return (NumInputTensors * SizeOfCuTensorMap * sm_count) + FusionCallbacks::get_workspace_size(problem_shape, args.thread);
+    return (NumInputTensors * SizeOfCuTensorMap * sm_count) + (round_nearest(FusionCallbacks::get_workspace_size(problem_shape, args.thread), MinTensorMapWorkspaceAlignment));
   }
 
   template <class ProblemShape>
@@ -357,9 +369,11 @@ public:
         auto problem_shape_MNKL = append<4>(problem_shape.get_host_problem_shape(i), 1);
         auto [M,N,K,L] = problem_shape_MNKL;
 
-        constexpr int tma_alignment_bits_D = cutlass::detail::get_output_alignment_bits<ElementD>();
-        constexpr int min_tma_aligned_elements_D = tma_alignment_bits_D / cutlass::sizeof_bits<ElementD>::value;
-        implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_D>(cute::make_shape(M,N,L), InternalStrideD{});
+        if constexpr (is_destination_supported) {
+          constexpr int tma_alignment_bits_D = cutlass::detail::get_output_alignment_bits<ElementD>();
+          constexpr int min_tma_aligned_elements_D = tma_alignment_bits_D / cutlass::sizeof_bits<ElementD>::value;
+          implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_D>(cute::make_shape(M,N,L), InternalStrideD{});
+        }
 
         if constexpr (is_source_supported) {
           constexpr int tma_alignment_bits_C = cutlass::detail::get_input_alignment_bits<ElementC>();
@@ -727,8 +741,8 @@ public:
     Tensor cD_mn = local_tile(mD_crd, take<0,2>(cta_tile_mnk), make_coord(m_coord, n_coord));        // (CTA_M,CTA_N)
     Tensor tTR_cD_mn = thread_t2r.partition_D(flat_divide(cD_mn, EpilogueTile{}));     // (T2R,T2R_M,T2R_N,EPI_M,EPI_N)
     // Relative coordinate tensors (static)
-    Tensor cD = make_counting_tensor(cD_mn.layout());                                                  // (CTA_M,CTA_N)
-    Tensor tTR_cD = make_counting_tensor(tTR_cD_mn.layout());                          // (T2R,T2R_M,T2R_N,EPI_M,EPI_N)
+    Tensor cD = make_coord_tensor(cD_mn.layout());                                                  // (CTA_M,CTA_N)
+    Tensor tTR_cD = make_coord_tensor(tTR_cD_mn.layout());                          // (T2R,T2R_M,T2R_N,EPI_M,EPI_N)
     // Subtract the global "bottom right" corner from the local "top left" corner to get the max relative coordinate
     auto residue_cD = make_coord(M,N) - cD_mn(_0{});                                                           // (m,n)
     auto residue_tTR_cD = make_coord(M,N) - tTR_cD_mn(_0{});                                                   // (m,n)
@@ -750,13 +764,9 @@ public:
                       thread_idx
                     };
 
-    auto cst_callbacks = fusion_callbacks.template get_consumer_store_callbacks<RefSrc>(cst_args);
-    bool is_producer_load_needed = fusion_callbacks.is_producer_load_needed();
-    bool is_C_load_needed = is_source_supported && fusion_callbacks.is_C_load_needed();
-
     // Thread synchronizer for previously issued waits or fences
     // to ensure visibility of smem reads/writes to threads or TMA unit
-    auto synchronize = [] () { cutlass::arch::NamedBarrier::sync(ThreadCount, cutlass::arch::ReservedNamedBarriers::EpilogueBarrier); };
+    auto synchronize = [] () CUTLASS_LAMBDA_FUNC_INLINE { cutlass::arch::NamedBarrier::sync(ThreadCount, cutlass::arch::ReservedNamedBarriers::EpilogueBarrier); };
 
     // Predication for sub-128 thread T2R tiled copy
     Layout tmem_warp_layout = typename decltype(make_tmem_warp_partitioner(tAcc_epi(_,_,0,0)))::TiledLayout_TV{};
@@ -772,8 +782,8 @@ public:
     [[maybe_unused]] bool reverse_epi_n = ReuseTmem && acc_pipe_consumer_state.phase() == 0;
     static_assert(not (ReuseTmem && AccumulatorPipeline::Stages != 1), "Tmem reuse requires 1 accumulator stage");
 
-    // Predication for TMA store (one warp issues TMA store)
-    bool issue_tma_store = warp_idx == 0;
+    // Predication for TMA store (a single thread from one warp issues TMA store)
+    bool issue_tma_store = (warp_idx == 0) && cute::elect_one_sync();
 
     // In the reuse smem configuration we have StagesC smem buffers and at most StagesD committed TMA stores in flight.
     // The TMA store pipeline producer acquire returns when at most StagesD-1 committed stores are in-flight, so we can
@@ -793,31 +803,38 @@ public:
     [[maybe_unused]] int epi_n_prev = 0;
     static_assert(not (DelayTmaStore and ReuseSmemC and StagesC <= StagesD), "This TMA epilogue configuration will deadlock");
 
-    auto epi_loop_fn = [&] (auto& cst_callbacks) {
-      // The TMA store sequence for one subtile iteration
-      auto tma_store_fn = [&] (int epi_m, int epi_n) {
+    // The Epilogue Loop
+    auto epi_loop_fn = [&] (auto& cst_callbacks) CUTLASS_LAMBDA_FUNC_INLINE {
+      bool is_producer_load_needed = fusion_callbacks.is_producer_load_needed();
+      bool is_C_load_needed = is_source_supported && fusion_callbacks.is_C_load_needed();
+
+      // The TMA store sequence for one epilogue loop iteration
+      auto tma_store_fn = [&] (int epi_m, int epi_n) CUTLASS_LAMBDA_FUNC_INLINE {
         // Write the tile from smem to gmem with TMA
         cutlass::arch::fence_view_async_shared(); // ensure smem writes are visible to TMA
         synchronize(); // ensure all threads have issued their async fence
-        if (issue_tma_store) {
-          copy(params.tma_store_d.with(get<0>(store_tensormap_info)), bSG_sD(_,_,_,store_pipe_producer_state.index()), bSG_gD(_,_,_,epi_m,epi_n));
-        }
 
+        if constexpr (is_destination_supported) {
+          if (issue_tma_store) {
+            copy(params.tma_store_d.with(get<0>(store_tensormap_info)), bSG_sD(_,_,_,store_pipe_producer_state.index()), bSG_gD(_,_,_,epi_m,epi_n));
+          }
+        }
+  
         // Post async fence, pre TMA commit callback entry point
         cst_callbacks.tma_store(epi_m, epi_n, store_pipe_producer_state.count(), issue_tma_store);
-
+  
         // Commit the TMA stores for this stage
         if (issue_tma_store) {
           store_pipeline.producer_commit(store_pipe_producer_state);
         }
         ++store_pipe_producer_state;
-
+  
         // Wait for the next smem buffer to be available
         if (issue_tma_store) {
           store_pipeline.producer_acquire(store_pipe_producer_state);
         }
         synchronize();
-
+  
         if constexpr (ReuseSmemC) {
           // producer_acquire returns when at most StagesD-1 committed stores are pending
           bool store_finished = store_pipe_producer_state.count() > StorePipeline::UnacquiredStages;
@@ -829,11 +846,7 @@ public:
             ++load_pipe_consumer_state;
           }
         }
-      };
-
-      //
-      // BEGIN EPILOGUE
-      //
+      }; // tma_store_fn
 
       // Begin the wait for the producer load results
       ConsumerToken load_wait_token{BarrierStatus::WaitDone};
@@ -848,10 +861,12 @@ public:
         synchronize();
       }
       // For each epilogue subtile within the CTA tile
-      CUTLASS_PRAGMA_UNROLL
-      for (int iter_n = 0; iter_n < size<3>(gD_epi); ++iter_n) {
-        CUTLASS_PRAGMA_UNROLL
-        for (int iter_m = 0; iter_m < size<2>(gD_epi); ++iter_m) {
+      constexpr int NumEpiSubtilesN = CUTE_STATIC_V(size<3>(gD_epi));
+      constexpr int NumEpiSubtilesM = CUTE_STATIC_V(size<2>(gD_epi));
+      #pragma unroll(UnrollEpiLoop ? NumEpiSubtilesN : 1)
+      for (int iter_n = 0; iter_n < NumEpiSubtilesN; ++iter_n) {
+        #pragma unroll(UnrollEpiLoop ? NumEpiSubtilesM : 1)
+        for (int iter_m = 0; iter_m < NumEpiSubtilesM; ++iter_m) {
           int epi_m = iter_m, epi_n = iter_n;
           bool is_first_iteration = iter_m == 0 && iter_n == 0;
           bool is_last_iteration = iter_m == size<2>(gD_epi)-1 && iter_n == size<3>(gD_epi)-1;
@@ -951,8 +966,10 @@ public:
 
           // Copy output tile from register to smem
           bool issue_smem_store = issue_tmem_load;
-          if (issue_smem_store) {
-            copy(tiled_r2s, tRS_rD, tRS_sD(_,_,_,store_pipe_producer_state.index()));
+          if constexpr (is_destination_supported) {
+            if (issue_smem_store) {
+              copy(tiled_r2s, tRS_rD, tRS_sD(_,_,_,store_pipe_producer_state.index()));
+            }
           }
 
           // Post reduction, pre TMA store callback entry point
@@ -980,9 +997,11 @@ public:
       cst_callbacks.end();
     };
 
-      epi_loop_fn(cst_callbacks);
-    cst_callbacks.end();
-
+    //
+    // BEGIN EPILOGUE
+    //
+    auto cst_callbacks = fusion_callbacks.template get_consumer_store_callbacks<RefSrc>(cst_args);
+    epi_loop_fn(cst_callbacks);
     return cute::make_tuple(load_pipe_consumer_state, store_pipe_producer_state, acc_pipe_consumer_state);
   }
 
@@ -1095,8 +1114,8 @@ public:
     Tensor cD_mn = local_tile(mD_crd, take<0,2>(cta_tile_mnk), make_coord(m_coord, n_coord));          // (CTA_M,CTA_N)
     Tensor tTR_cD_mn = thread_t2r.partition_D(flat_divide(cD_mn, EpilogueTile{}));     // (T2R,T2R_M,T2R_N,EPI_M,EPI_N)
     // Relative coordinate tensors (static)
-    Tensor cD = make_counting_tensor(cD_mn.layout());                                                  // (CTA_M,CTA_N)
-    Tensor tTR_cD = make_counting_tensor(tTR_cD_mn.layout());                          // (T2R,T2R_M,T2R_N,EPI_M,EPI_N)
+    Tensor cD = make_coord_tensor(cD_mn.layout());                                                  // (CTA_M,CTA_N)
+    Tensor tTR_cD = make_coord_tensor(tTR_cD_mn.layout());                          // (T2R,T2R_M,T2R_N,EPI_M,EPI_N)
     // Subtract the global "bottom right" corner from the local "top left" corner to get the max relative coordinate
     auto residue_cD = make_coord(M,N) - cD_mn(_0{});                                                           // (m,n)
     auto residue_tTR_cD = make_coord(M,N) - tTR_cD_mn(_0{});                                                   // (m,n)
@@ -1199,10 +1218,12 @@ public:
     }
 
     // For each epilogue subtile within the CTA tile
-    CUTLASS_PRAGMA_UNROLL
-    for (int iter_n = 0; iter_n < size<3>(gD_epi); ++iter_n) {
-      CUTLASS_PRAGMA_UNROLL
-      for (int iter_m = 0; iter_m < size<2>(gD_epi); ++iter_m) {
+    constexpr int NumEpiSubtilesN = CUTE_STATIC_V(size<3>(gD_epi));
+    constexpr int NumEpiSubtilesM = CUTE_STATIC_V(size<2>(gD_epi));
+    #pragma unroll(UnrollEpiLoop ? NumEpiSubtilesN : 1)
+    for (int iter_n = 0; iter_n < NumEpiSubtilesN; ++iter_n) {
+      #pragma unroll(UnrollEpiLoop ? NumEpiSubtilesM : 1)
+      for (int iter_m = 0; iter_m < NumEpiSubtilesM; ++iter_m) {
         int epi_m = iter_m, epi_n = iter_n;
         bool is_first_iteration = iter_m == 0 && iter_n == 0;
         bool is_last_iteration = iter_m == size<2>(gD_epi)-1 && iter_n == size<3>(gD_epi)-1;
@@ -1341,7 +1362,7 @@ public:
         }
         __syncwarp();
       }
-    } else {
+    } else if constexpr (is_destination_supported) {
       int const offset_Ddesc = cute::is_void_v<ElementC> ? 0 : sm_count;
       tma_desc = &gmem_tensormap[sm_idx + offset_Ddesc];
       if (cute::elect_one_sync()) {
@@ -1372,7 +1393,7 @@ public:
                                                           params.ptr_C[next_batch]);
         }
       }
-    } else {
+    } else if constexpr (is_destination_supported) {
       cute::tma_descriptor_replace_addr_in_shared_mem(shared_tensormap.smem_tensormap_D,
                                                       params.ptr_D[next_batch]);
     }
@@ -1412,7 +1433,7 @@ public:
         }
       }
     }
-    else {
+    else if constexpr (is_destination_supported) {
       ElementD const* ptr_D = nullptr;
       Tensor tensor_d = make_tensor(ptr_D, make_layout(make_shape(M,N,Int<1>{}), params.dD[next_group]));
 
@@ -1462,16 +1483,23 @@ public:
   tensormaps_cp_fence_release(
       TensorMapStorage& shared_tensormap,
       cute::TmaDescriptor const* tensormap) {
+    // Commit and wait for all TMA load/store instructions before updating the tensormap in gmem.
+    // This operation only happens when the group/batch changes between consecutive tiles.
+    // If there are no uncommitted instructions then tma_desc_commit_group results in an empty bulk async-group.
+    auto tma_desc_wait_all_fn = [] () CUTLASS_LAMBDA_FUNC_INLINE {
+      if (cute::elect_one_sync()) {
+        cute::tma_desc_commit_group();
+        cute::tma_desc_wait_group();
+      }
+    };
     // Entire warp must do this (ie its aligned)
     if constexpr (IsLoad) {
       if (is_source_supported) {
-        if (cute::elect_one_sync()) {
-          cute::tma_desc_commit_group();
-          cute::tma_desc_wait_group();
-        }
+        tma_desc_wait_all_fn();
         tma_descriptor_cp_fence_release(tensormap, shared_tensormap.smem_tensormap_C);
       }
-    } else {
+    } else if constexpr (is_destination_supported) {
+      tma_desc_wait_all_fn();
       tma_descriptor_cp_fence_release(tensormap, shared_tensormap.smem_tensormap_D);
     }
   }
@@ -1484,7 +1512,7 @@ public:
       if (is_source_supported) {
         cute::tma_descriptor_fence_acquire(tensormap);
       }
-    } else {
+    } else if constexpr (is_destination_supported) {
       cute::tma_descriptor_fence_acquire(tensormap);
     }
   }

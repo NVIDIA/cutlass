@@ -127,8 +127,8 @@ void __global__ fmha_reference_kernel(
         mO(idx_Q + offset_Q, idx_D, idx_L) = static_cast<typename TensorO::value_type>(acc * scale);
       }
 
-      if (threadIdx.x == 0) {
-        mLSE(idx_Q + offset_Q, idx_L) = log(sum) + maxS;
+      if (threadIdx.x == 0 && mLSE.data() != nullptr) {
+        mLSE(idx_Q + offset_Q, idx_L) = log(sum) + softmax_scale * maxS;
       }
 
     }

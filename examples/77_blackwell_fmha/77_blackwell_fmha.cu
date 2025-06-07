@@ -67,9 +67,6 @@
             --b=2048 --h=2048 --d=2048 --q=2048 --k=2048
 */
 
-#define DSHOW(x) print(#x ": "); print(x); print("\n");
-#define DSHOWT(x) print(#x ": "); print_tensor(x); print("\n");
-
 #include <iostream>
 #include <random>
 #include <regex>
@@ -120,15 +117,17 @@ struct Options {
   int q = 256;
   int k = 256;
   int d = 128;
+  int warmup_iterations = 1;
   int iterations = 3;
+  int tensor_ring_buffers = 1;
   bool verify = false;
   bool verbose = false;
 
   bool causal = false;
   bool residual = false;
   bool varlen = false;
+  bool persistent = false;
   int sm_count = 0;
-
   std::string kernel_filter;
 
   InitStyle init_style_q = InitStyle::kRandom;
@@ -192,10 +191,15 @@ struct Options {
     if (b == -1) b = 16384 / k;
     if (b == 0) b = 1;
 
+    cmd.get_cmd_line_argument("warmup_iterations", warmup_iterations, defaults.warmup_iterations);
     cmd.get_cmd_line_argument("iterations", iterations, defaults.iterations);
+    cmd.get_cmd_line_argument("tensor_ring_buffers", tensor_ring_buffers, defaults.tensor_ring_buffers);
+
     verify = cmd.check_cmd_line_flag("verify");
     verbose = cmd.check_cmd_line_flag("verbose");
     varlen = cmd.check_cmd_line_flag("varlen");
+    persistent = cmd.check_cmd_line_flag("persistent");
+
     std::string mask;
     cmd.get_cmd_line_argument<std::string>("mask", mask, "");
     if (mask == "no" || mask == "") {
@@ -213,7 +217,6 @@ struct Options {
       causal = false;
     }
     cmd.get_cmd_line_argument("sm-count", sm_count, defaults.sm_count);
-    
     get_init_style_argument(cmd, "init-style", init_style_q, defaults.init_style_q);
     get_init_style_argument(cmd, "init-style", init_style_k, defaults.init_style_q);
     get_init_style_argument(cmd, "init-style", init_style_v, defaults.init_style_q);
@@ -238,17 +241,20 @@ struct Options {
       << "  --q=<int>                   Sets the Q extent\n"
       << "  --k=<int>                   Sets the K extent\n"
       << "  --d=<int>                   Sets the D extentn"
+      << "  --tensor_ring_buffers=<int> Sets the number of tensor ring buffers\n"
+      << "  --warmup_iterations=<int>   Sets the warmup iterations\n"
       << "  --iterations=<int>          Benchmarking iterations\n"
       << "  --verify                    Verify results\n"
       << "  --verbose                   Print smem and execution time per kernel\n"
       << "  --mask=<no|residual|causal> Enables masking\n"
+      << "  --persistent                Enables persistent scheduler\n"
       << "  --varlen                    Enables variable sequence length\n"
       << "                              B*Q and B*K become the total sequence length\n"
       << "                              and are split B-ways, alternatingly +10% and -10%\n"
       << "                              with the last batch sized to make it fit\n"
       << "                              implies at least residual masking for correctness\n"
-      << " --sm-count                   Sets SM count rather than querying it\n"
-      << " --kernel-filter=<filter>     Sets regexp to match kernel against\n"
+      << "  --sm-count                  Sets SM count rather than querying it\n"
+      << "  --kernel-filter=<filter>    Sets regexp to match kernel against\n"
       << "\n";
 
     return out;
@@ -382,40 +388,55 @@ struct FwdRunner {
   StrideLSE stride_LSE;
   uint64_t seed = 0;
 
-  DeviceAllocation<Element> block_Q;
-  DeviceAllocation<Element> block_K;
-  DeviceAllocation<Element> block_V;
-  DeviceAllocation<ElementOut> block_O;
-  DeviceAllocation<ElementAccumulatorPV> block_LSE;
-  DeviceAllocation<ElementOut> block_ref_O;
-  DeviceAllocation<ElementAccumulatorPV> block_ref_LSE;
+  struct DeviceBuffer {
+    DeviceAllocation<Element> block_Q;
+    DeviceAllocation<Element> block_K;
+    DeviceAllocation<Element> block_V;
+    DeviceAllocation<ElementOut> block_O;
+    DeviceAllocation<ElementAccumulatorPV> block_LSE;
+    DeviceAllocation<ElementOut> block_ref_O;
+    DeviceAllocation<ElementAccumulatorPV> block_ref_LSE;
+    DeviceAllocation<int> device_cumulative_seqlen_q;
+    DeviceAllocation<int> device_cumulative_seqlen_kv;
+
+    DeviceBuffer() = default;
+    DeviceBuffer(const DeviceBuffer&) = delete;
+    DeviceBuffer& operator=(const DeviceBuffer&) = delete;
+
+    size_t get_storage_size() const {
+      return block_Q.get_storage_size() + block_K.get_storage_size() + block_V.get_storage_size()
+          + block_O.get_storage_size() + block_LSE.get_storage_size() + block_ref_O.get_storage_size()
+          + block_ref_LSE.get_storage_size() + device_cumulative_seqlen_q.get_storage_size()
+          + device_cumulative_seqlen_kv.get_storage_size();
+    }
+  };
+
+  std::vector<std::unique_ptr<DeviceBuffer>> buffers;
 
   std::vector<int> cumulative_seqlen_q;
   std::vector<int> cumulative_seqlen_kv;
-  DeviceAllocation<int> device_cumulative_seqlen_q;
-  DeviceAllocation<int> device_cumulative_seqlen_kv;
 
   //
   // Methods
   //
-  bool verify(const ProblemShapeType& problem_shape) {
-    Tensor mQ = make_tensor(make_gmem_ptr(block_Q.get()),
+  bool verify(const ProblemShapeType& problem_shape, DeviceBuffer& buffer) {
+    Tensor mQ = make_tensor(make_gmem_ptr(buffer.block_Q.get()),
       select<0,2,3>(problem_shape),
       stride_Q);
 
-    Tensor mK = make_tensor(make_gmem_ptr(block_K.get()),
+    Tensor mK = make_tensor(make_gmem_ptr(buffer.block_K.get()),
       select<1,2,3>(problem_shape),
       stride_K);
 
-    Tensor mV = make_tensor(make_gmem_ptr(block_V.get()),
+    Tensor mV = make_tensor(make_gmem_ptr(buffer.block_V.get()),
       select<1,2,3>(problem_shape),
       stride_V);
 
-    Tensor mO = make_tensor(make_gmem_ptr(block_ref_O.get()),
+    Tensor mO = make_tensor(make_gmem_ptr(buffer.block_ref_O.get()),
       select<0,2,3>(problem_shape),
       stride_O);
 
-    Tensor mLSE = make_tensor(make_gmem_ptr(block_ref_LSE.get()),
+    Tensor mLSE = make_tensor(make_gmem_ptr(buffer.block_ref_LSE.get()),
       select<0,3>(problem_shape),
       stride_LSE);
 
@@ -434,7 +455,7 @@ struct FwdRunner {
     // Check if output from CUTLASS kernel and reference kernel are equal or not
     double max_diff = 0;
     double mean_diff = 0;
-    reference_abs_diff(block_O, block_ref_O, max_diff, mean_diff);
+    reference_abs_diff(buffer.block_O, buffer.block_ref_O, max_diff, mean_diff);
 
     bool passed_O = (max_diff < kMaxDiffThresh) && (mean_diff < kMeanDiffThresh);
     if (! passed_O) {
@@ -442,14 +463,13 @@ struct FwdRunner {
                 << " mean " << mean_diff << std::endl;
     }
 
-    // reference_abs_diff(block_LSE, block_ref_LSE, max_diff, mean_diff);
+    reference_abs_diff(buffer.block_LSE, buffer.block_ref_LSE, max_diff, mean_diff);
 
-    bool passed_LSE = true;  // future work
-    // bool passed_LSE = (max_diff < kMaxDiffThresh) && (mean_diff < kMeanDiffThresh);
-    // if ( ! passed_LSE) {
-    //   std::cerr << "failed LSE: max diff " << max_diff 
-    //             << " mean " << mean_diff << std::endl;
-    // }
+    bool passed_LSE = (max_diff < kMaxDiffThresh) && (mean_diff < kMeanDiffThresh);
+    if ( ! passed_LSE) {
+      std::cerr << "failed LSE: max diff " << max_diff 
+                << " mean " << mean_diff << std::endl;
+    }
 
     return passed_O && passed_LSE;
   }
@@ -562,50 +582,70 @@ struct FwdRunner {
       get<1,1>(stride_LSE) = 0;
     }
 
-    block_Q.reset(size(shape_QO), kIsVarlen ? D*SQ*H : 0);
-    block_K.reset(size(shape_KV), kIsVarlen ? D*SK*H_K : 0);
-    block_V.reset(size(shape_KV), kIsVarlen ? D*SK*H_K : 0);
-    block_O.reset(size(shape_QO), kIsVarlen ? D*SQ*H : 0);
-    block_LSE.reset(size(shape_LSE));
-    block_ref_O.reset(size(shape_QO));
-    block_ref_LSE.reset(size(shape_LSE));
+    auto buffer_init_fn = [&](auto& buffer) {
+      buffer.block_Q.reset(size(shape_QO), kIsVarlen ? D*SQ*H : 0);
+      buffer.block_K.reset(size(shape_KV), kIsVarlen ? D*SK*H_K : 0);
+      buffer.block_V.reset(size(shape_KV), kIsVarlen ? D*SK*H_K : 0);
+      buffer.block_O.reset(size(shape_QO), kIsVarlen ? D*SQ*H : 0);
+      buffer.block_LSE.reset(size(shape_LSE));
 
-    initialize_block(block_Q, seed + 2023, options.init_style_q);
-    initialize_block(block_K, seed + 2022, options.init_style_k);
-    initialize_block(block_V, seed + 2021, options.init_style_v);
+      initialize_block(buffer.block_Q, seed + 2023, options.init_style_q);
+      initialize_block(buffer.block_K, seed + 2022, options.init_style_k);
+      initialize_block(buffer.block_V, seed + 2021, options.init_style_v);
 
-    if ( ! cumulative_seqlen_q.empty()) {
-      device_cumulative_seqlen_q.reset(cumulative_seqlen_q.size());
-      device_cumulative_seqlen_q.copy_from_host(
-        cumulative_seqlen_q.data(), cumulative_seqlen_q.size());
-    }
-    if ( ! cumulative_seqlen_kv.empty()) {
-      device_cumulative_seqlen_kv.reset(cumulative_seqlen_kv.size());
-      device_cumulative_seqlen_kv.copy_from_host(
-        cumulative_seqlen_kv.data(), cumulative_seqlen_kv.size());
+      if ( ! cumulative_seqlen_q.empty()) {
+        buffer.device_cumulative_seqlen_q.reset(cumulative_seqlen_q.size());
+        buffer.device_cumulative_seqlen_q.copy_from_host(
+          cumulative_seqlen_q.data(), cumulative_seqlen_q.size());
+      }
+      if ( ! cumulative_seqlen_kv.empty()) {
+        buffer.device_cumulative_seqlen_kv.reset(cumulative_seqlen_kv.size());
+        buffer.device_cumulative_seqlen_kv.copy_from_host(
+          cumulative_seqlen_kv.data(), cumulative_seqlen_kv.size());
+      }   
+    };
+
+    buffers.push_back(std::make_unique<DeviceBuffer>());
+    buffer_init_fn(*buffers.back());
+
+    int tensor_ring_buffers = options.tensor_ring_buffers;
+    for (int i = 1; i < tensor_ring_buffers; i++) {
+      buffers.push_back(std::make_unique<DeviceBuffer>());
+      buffer_init_fn(*buffers.back());
     }
 
     if constexpr (kIsVarlen) {
-      get<0>(problem_shape).cumulative_length = device_cumulative_seqlen_q.get();
-      get<1>(problem_shape).cumulative_length = device_cumulative_seqlen_kv.get();
+      get<0>(problem_shape).cumulative_length = buffers[0]->device_cumulative_seqlen_q.get();
+      get<1>(problem_shape).cumulative_length = buffers[0]->device_cumulative_seqlen_kv.get();
     }
 
     return problem_shape;
+  }
+
+  auto get_arguments(const ProblemShapeType& problem_shape, const cutlass::KernelHardwareInfo& hw_info, int buffer_index) {
+    auto problem_shape_ = problem_shape;
+    if constexpr (kIsVarlen) {
+      get<0>(problem_shape_).cumulative_length = buffers[buffer_index]->device_cumulative_seqlen_q.get();
+      get<1>(problem_shape_).cumulative_length = buffers[buffer_index]->device_cumulative_seqlen_kv.get();
+    }
+    typename Operation::Arguments arguments{
+      problem_shape_,
+      { buffers[buffer_index]->block_Q.get(), stride_Q,
+        buffers[buffer_index]->block_K.get(), stride_K,
+        buffers[buffer_index]->block_V.get(), stride_V },
+      { buffers[buffer_index]->block_O.get(), stride_O,
+        buffers[buffer_index]->block_LSE.get(), stride_LSE },
+      hw_info
+    };
+    return arguments;
   }
 
   ExampleResult run(const Options& options, const cutlass::KernelHardwareInfo& hw_info) {
 
     ProblemShapeType problem_shape = initialize(options);
 
-    typename Operation::Arguments arguments{
-      problem_shape,
-      { block_Q.get(), stride_Q,
-        block_K.get(), stride_K,
-        block_V.get(), stride_V },
-      { block_O.get(), stride_O,
-      block_LSE.get(), stride_LSE },
-      hw_info
-    };
+    int buffer_index = 0;
+    typename Operation::Arguments arguments = get_arguments(problem_shape, hw_info, buffer_index);
 
     Operation op;
 
@@ -633,11 +673,21 @@ struct FwdRunner {
     }
 
     // Run
-    status = op.run();
-    if (status != cutlass::Status::kSuccess) {
-      std::cerr << "Failed to launch the CUTLASS kernel. Last CUDA error is: "
-                << cudaGetErrorString(cudaGetLastError()) << std::endl;
-      return example_result;
+    for (int i = 0; i < options.warmup_iterations; i++) {
+      status = op.run();
+      if (status != cutlass::Status::kSuccess) {
+        std::cerr << "Failed to launch the CUTLASS kernel. Last CUDA error is: "
+                  << cudaGetErrorString(cudaGetLastError()) << std::endl;
+        return example_result;
+      }
+      buffer_index = (buffer_index + 1) % buffers.size();
+      arguments = get_arguments(problem_shape, hw_info, buffer_index);
+      status = op.update(arguments, workspace.get());
+      if (status != cutlass::Status::kSuccess) {
+        std::cerr << "Failed to update the CUTLASS kernel's parameters. Last CUDA error is: "
+                  << std::endl;
+        return example_result;
+      }
     }
 
     cudaError_t result = cudaDeviceSynchronize();
@@ -673,6 +723,14 @@ struct FwdRunner {
       if (status != cutlass::Status::kSuccess) {
         std::cerr << "Failed to launch the CUTLASS kernel. Last CUDA error is: "
                   << cudaGetErrorString(cudaGetLastError()) << std::endl;
+        return example_result;
+      }
+      buffer_index = (buffer_index + 1) % buffers.size();
+      arguments = get_arguments(problem_shape, hw_info, buffer_index);
+      status = op.update(arguments, workspace.get());
+      if (status != cutlass::Status::kSuccess) {
+        std::cerr << "Failed to update the CUTLASS kernel's parameters. Last CUDA error is: "
+                  << std::endl;
         return example_result;
       }
     }
@@ -737,10 +795,10 @@ struct FwdRunner {
     // Verify that the result is correct
     bool passed = true;
     if (options.verify) {
-      passed = verify(problem_shape);
+      passed = verify(problem_shape, *buffers[0]);
       if (passed) example_result.verified = true;
     }
-    
+
     if (!passed) {
       std::cerr << "Reference check failed" << std::endl;
       return example_result;
@@ -792,10 +850,14 @@ void run_fwd_128(Mask fusion, Options const & options, cutlass::KernelHardwareIn
 
   using HeadDim = _128;
 
-  // Persistent Tile Scheduler
-  run(Shape<_256, _128, HeadDim>{}, "tma ws 256x128 acc fp32 persistent", Option<Tag::kIsPersistent, true_type>{});
-  // Individual Tile Scheduler
-  run(Shape<_256, _128, HeadDim>{}, "tma ws 256x128 acc fp32 individual", Option<Tag::kIsPersistent, false_type>{});
+  if (options.persistent) {
+    // Persistent Tile Scheduler
+    run(Shape<_256, _128, HeadDim>{}, "tma ws 256x128 acc fp32 persistent", Option<Tag::kIsPersistent, true_type>{});
+  }
+  else {
+    // Individual Tile Scheduler
+    run(Shape<_256, _128, HeadDim>{}, "tma ws 256x128 acc fp32 individual", Option<Tag::kIsPersistent, false_type>{});
+  }
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -821,10 +883,14 @@ void run_fwd_64(Mask fusion, Options const & options, cutlass::KernelHardwareInf
 
   using HeadDim = _64;
 
-  // Persistent Tile Scheduler
-  run(Shape<_256, _128, HeadDim>{}, "tma ws 256x128 acc fp32 persistent", Option<Tag::kIsPersistent, true_type>{});
-  // Individual Tile Scheduler
-  run(Shape<_256, _128, HeadDim>{}, "tma ws 256x128 acc fp32 individual", Option<Tag::kIsPersistent, false_type>{});
+  if (options.persistent) {
+    // Persistent Tile Scheduler
+    run(Shape<_256, _128, HeadDim>{}, "tma ws 256x128 acc fp32 persistent", Option<Tag::kIsPersistent, true_type>{});
+  }
+  else {
+    // Individual Tile Scheduler
+    run(Shape<_256, _128, HeadDim>{}, "tma ws 256x128 acc fp32 individual", Option<Tag::kIsPersistent, false_type>{});
+  }
 }
 
 
@@ -848,10 +914,14 @@ void run_fwd_32(Mask fusion, Options const & options, cutlass::KernelHardwareInf
   using HeadDim = _32;
 
 #ifdef FP8
-  // Persistent Tile Scheduler
-  run(Shape<_256, _128, HeadDim>{}, "tma ws 256x128 acc fp32 persistent", Option<Tag::kIsPersistent, true_type>{});
-  // Individual Tile Scheduler
-  run(Shape<_256, _128, HeadDim>{}, "tma ws 256x128 acc fp32 individual", Option<Tag::kIsPersistent, false_type>{});
+  if (options.persistent) {
+    // Persistent Tile Scheduler
+    run(Shape<_256, _128, HeadDim>{}, "tma ws 256x128 acc fp32 persistent", Option<Tag::kIsPersistent, true_type>{});
+  }
+  else {
+    // Individual Tile Scheduler
+    run(Shape<_256, _128, HeadDim>{}, "tma ws 256x128 acc fp32 individual", Option<Tag::kIsPersistent, false_type>{});
+  }
 #endif
 }
 

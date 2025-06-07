@@ -126,6 +126,7 @@ public:
   static constexpr bool IsDynamicCluster = not cute::is_static_v<ClusterShape>;
 
   static constexpr bool IsSchedDynamicPersistent = TileScheduler::IsDynamicPersistent;
+  static constexpr uint32_t MinTensorMapWorkspaceAlignment = 64;
 
   // Warp specialization thread count per threadblock
   static constexpr uint32_t NumSchedThreads           = NumThreadsPerWarp;                             // 1 warp
@@ -169,10 +170,15 @@ public:
 
   using LoadOrderBarrier = cutlass::OrderedSequenceBarrier<1,2>;
 
-  using CLCPipeline = cutlass::PipelineCLCFetchAsync<SchedulerPipelineStageCount, ClusterShape>;
-  using CLCPipelineState = cutlass::PipelineState<SchedulerPipelineStageCount>;
 
-  using CLCThrottlePipeline = cutlass::PipelineAsync<SchedulerPipelineStageCount>;
+  using CLCPipeline = cute::conditional_t<IsSchedDynamicPersistent,
+    cutlass::PipelineCLCFetchAsync<SchedulerPipelineStageCount, ClusterShape>,
+    cutlass::PipelineAsync<SchedulerPipelineStageCount>>;
+  using CLCPipelineState = typename CLCPipeline::PipelineState;
+
+  using CLCThrottlePipeline = cute::conditional_t<IsSchedDynamicPersistent,
+    cutlass::PipelineAsync<SchedulerPipelineStageCount>,
+    cutlass::PipelineEmpty>;
   using CLCThrottlePipelineState = typename CLCThrottlePipeline::PipelineState;
 
   using TmemAllocator = cute::conditional_t<cute::size(cute::shape<0>(typename TiledMma::ThrLayoutVMNK{})) == 1,
@@ -284,17 +290,17 @@ public:
     // Epilogue
     void* epilogue_workspace = workspace_ptr + workspace_offset;
     workspace_offset += CollectiveEpilogue::get_workspace_size(problem_shapes, args.epilogue, args.hw_info.sm_count);
-    workspace_offset = round_nearest(workspace_offset,  MinWorkspaceAlignment);
+    workspace_offset = round_nearest(workspace_offset, MinTensorMapWorkspaceAlignment);
 
     void* mainloop_workspace = workspace_ptr + workspace_offset;
     workspace_offset += CollectiveMainloop::get_workspace_size(problem_shapes, args.mainloop, args.hw_info.sm_count);
-    workspace_offset = round_nearest(workspace_offset,  MinWorkspaceAlignment);
+    workspace_offset = round_nearest(workspace_offset, MinTensorMapWorkspaceAlignment);
 
     // Tile scheduler
     void* scheduler_workspace = workspace_ptr + workspace_offset;
     workspace_offset += TileScheduler::template get_workspace_size<typename ProblemShape::UnderlyingProblemShape, ElementAccumulator>(
       args.scheduler, problem_shapes.get_host_problem_shape(0), args.hw_info, NumFixupBarriers, NumEpilogueSubTiles, CollectiveEpilogue::NumAccumulatorMtxs);
-    workspace_offset = round_nearest(workspace_offset,  MinWorkspaceAlignment);
+    workspace_offset = round_nearest(workspace_offset, MinTensorMapWorkspaceAlignment);
 
     return {
       args.mode,
@@ -337,16 +343,16 @@ public:
 
     // Epilogue
     workspace_size += CollectiveEpilogue::get_workspace_size(args.problem_shape, args.epilogue, args.hw_info.sm_count);
-    workspace_size = round_nearest(workspace_size,  MinWorkspaceAlignment);
+    workspace_size = round_nearest(workspace_size, MinTensorMapWorkspaceAlignment);
 
     // Mainloop
     workspace_size += CollectiveMainloop::get_workspace_size(args.problem_shape, args.mainloop, args.hw_info.sm_count);
-    workspace_size = round_nearest(workspace_size,  MinWorkspaceAlignment);
+    workspace_size = round_nearest(workspace_size, MinTensorMapWorkspaceAlignment);
 
     // Tile scheduler
     workspace_size += TileScheduler::template get_workspace_size<typename ProblemShape::UnderlyingProblemShape, ElementAccumulator>(
       args.scheduler, args.problem_shape.get_host_problem_shape(0), args.hw_info, NumFixupBarriers, NumEpilogueSubTiles, CollectiveEpilogue::NumAccumulatorMtxs);
-    workspace_size = round_nearest(workspace_size,  MinWorkspaceAlignment);
+    workspace_size = round_nearest(workspace_size, MinTensorMapWorkspaceAlignment);
 
     return workspace_size;
   }
@@ -362,7 +368,7 @@ public:
     // Epilogue
     status = CollectiveEpilogue::initialize_workspace(args.problem_shape, args.epilogue, workspace_ptr + workspace_offset, stream, cuda_adapter);
     workspace_offset += CollectiveEpilogue::get_workspace_size(args.problem_shape, args.epilogue, args.hw_info.sm_count);
-    workspace_offset = round_nearest(workspace_offset,  MinWorkspaceAlignment);
+    workspace_offset = round_nearest(workspace_offset, MinTensorMapWorkspaceAlignment);
     if (status != Status::kSuccess) {
       return status;
     }
@@ -370,7 +376,7 @@ public:
     // Mainloop
     status = CollectiveMainloop::initialize_workspace(args.problem_shape, args.mainloop, workspace_ptr + workspace_offset, stream, cuda_adapter);
     workspace_offset += CollectiveMainloop::get_workspace_size(args.problem_shape, args.mainloop, args.hw_info.sm_count);
-    workspace_offset = round_nearest(workspace_offset,  MinWorkspaceAlignment);
+    workspace_offset = round_nearest(workspace_offset, MinTensorMapWorkspaceAlignment);
     if (status != Status::kSuccess) {
       return status;
     }
@@ -380,7 +386,7 @@ public:
       args.scheduler, workspace_ptr + workspace_offset, stream, args.problem_shape.get_host_problem_shape(0), args.hw_info, NumFixupBarriers, NumEpilogueSubTiles, CollectiveEpilogue::NumAccumulatorMtxs, cuda_adapter);
     workspace_offset += TileScheduler::template get_workspace_size<typename ProblemShape::UnderlyingProblemShape, ElementAccumulator>(
       args.scheduler, args.problem_shape.get_host_problem_shape(0), args.hw_info, NumFixupBarriers, NumEpilogueSubTiles, CollectiveEpilogue::NumAccumulatorMtxs);
-    workspace_offset = round_nearest(workspace_offset,  MinWorkspaceAlignment);
+    workspace_offset = round_nearest(workspace_offset, MinTensorMapWorkspaceAlignment);
     if (status != Status::kSuccess) {
       return status;
     }
@@ -427,7 +433,7 @@ public:
     int cta_rank_in_cluster = cute::block_rank_in_cluster();
     auto cluster_shape = cutlass::detail::select_cluster_shape(ClusterShape{}, cute::cluster_shape());
     int cluster_size                = size(cluster_shape);
-    bool is_first_cta_in_cluster    = (cta_rank_in_cluster == 0);
+    bool is_first_cta_in_cluster    = IsSchedDynamicPersistent ? (cta_rank_in_cluster == 0) : true;
     bool is_mma_leader_cta          = (cta_rank_in_cluster % size<0>(TiledMma{}) == 0);
     // Even if this variable is unused, shape_div still performs useful compile-time checks.
     [[maybe_unused]] auto mma_leader_ctas = size(shape_div(cluster_shape, AtomThrShapeMNK{}));
@@ -551,38 +557,61 @@ public:
     // Operates Scheduling Warp <--> All Warps
     typename CLCPipeline::Params clc_pipeline_params;
     if (WarpCategory::Sched == warp_category) {
-      clc_pipeline_params.role = CLCPipeline::ThreadCategory::ProducerConsumer;
+      clc_pipeline_params.role = IsSchedDynamicPersistent ? 
+        CLCPipeline::ThreadCategory::ProducerConsumer :
+        CLCPipeline::ThreadCategory::Producer;
     }
     else {
       clc_pipeline_params.role = CLCPipeline::ThreadCategory::Consumer;
     }
-    clc_pipeline_params.producer_blockid = 0;
-    clc_pipeline_params.producer_arv_count = 1;
-    clc_pipeline_params.consumer_arv_count = NumSchedThreads + cluster_size *
-                                                 (NumMainloopLoadThreads + NumEpilogueThreads +
-                                                  NumMMAThreads + NumTransformationThreads);
-    if (is_epi_load_needed) {
-      clc_pipeline_params.consumer_arv_count += cluster_size * NumEpilogueLoadThreads;
-    }
-    clc_pipeline_params.transaction_bytes = CLCResponseSize;
+
     clc_pipeline_params.initializing_warp = 1;
-    CLCPipeline clc_pipeline(shared_storage.pipelines.clc, clc_pipeline_params, cluster_shape);
+    clc_pipeline_params.producer_arv_count = 1;
+
+    if constexpr (IsSchedDynamicPersistent) {
+      clc_pipeline_params.producer_blockid = 0;
+      clc_pipeline_params.consumer_arv_count = NumSchedThreads + cluster_size *
+                                                  (NumMainloopLoadThreads + NumEpilogueThreads + NumMMAThreads +
+                                                   NumTransformationThreads);
+      if (is_epi_load_needed) {
+        clc_pipeline_params.consumer_arv_count += cluster_size * NumEpilogueLoadThreads;
+      }
+      clc_pipeline_params.transaction_bytes = CLCResponseSize;
+    } 
+    else {
+      clc_pipeline_params.consumer_arv_count = NumMainloopLoadThreads + NumEpilogueThreads + NumMMAThreads +
+                                               NumTransformationThreads;
+      if (is_epi_load_needed) {
+        clc_pipeline_params.consumer_arv_count += NumEpilogueLoadThreads;
+      }
+    }
+    
+    CLCPipeline clc_pipeline = [&]() {
+      if constexpr (IsSchedDynamicPersistent) {
+        return CLCPipeline(shared_storage.pipelines.clc, clc_pipeline_params, cluster_shape);
+      }
+      else {
+        return CLCPipeline(shared_storage.pipelines.clc, clc_pipeline_params);
+      }
+    }();
 
     CLCPipelineState clc_pipeline_consumer_state;
     CLCPipelineState clc_pipeline_producer_state = cutlass::make_producer_start_state<CLCPipeline>();
 
     // CLC throttle pipeline
     typename CLCThrottlePipeline::Params clc_throttle_pipeline_params;
-    if (WarpCategory::MainloopLoad == warp_category) {
-      clc_throttle_pipeline_params.role = CLCThrottlePipeline::ThreadCategory::Producer;
+    if constexpr (IsSchedDynamicPersistent) {
+      if (WarpCategory::MainloopLoad == warp_category) {
+        clc_throttle_pipeline_params.role = CLCThrottlePipeline::ThreadCategory::Producer;
+      }
+      if (WarpCategory::Sched == warp_category) {
+        clc_throttle_pipeline_params.role = CLCThrottlePipeline::ThreadCategory::Consumer;
+      }
+      clc_throttle_pipeline_params.producer_arv_count = NumMainloopLoadThreads;
+      clc_throttle_pipeline_params.consumer_arv_count = NumSchedThreads;
+      clc_throttle_pipeline_params.dst_blockid = 0;
+      clc_throttle_pipeline_params.initializing_warp = 3;
     }
-    if (WarpCategory::Sched == warp_category) {
-      clc_throttle_pipeline_params.role = CLCThrottlePipeline::ThreadCategory::Consumer;
-    }
-    clc_throttle_pipeline_params.producer_arv_count = NumMainloopLoadThreads;
-    clc_throttle_pipeline_params.consumer_arv_count = NumSchedThreads;
-    clc_throttle_pipeline_params.dst_blockid = 0;
-    clc_throttle_pipeline_params.initializing_warp = 3;
     CLCThrottlePipeline clc_throttle_pipeline(shared_storage.pipelines.clc_throttle, clc_throttle_pipeline_params);
     CLCThrottlePipelineState clc_pipe_throttle_consumer_state;
     CLCThrottlePipelineState clc_pipe_throttle_producer_state = cutlass::make_producer_start_state<CLCThrottlePipeline>();
@@ -806,11 +835,14 @@ public:
       // Signal the epilogue warps to proceed once the prologue is complete
       epilogue_throttle_barrier.arrive();
 
+      // Grouped GEMM uses static tile scheduler
       if constexpr (IsSchedDynamicPersistent) {
         // Whether a new CLC query must be performed.
         // See comment below where this variable is updated for a description of
         // why this variable is needed.
         bool requires_clc_query = true;
+
+        cutlass::arch::wait_on_dependent_grids();
         do {
           if (requires_clc_query) {
             // Throttle CLC query to mitigate workload imbalance caused by skews among persistent workers.
@@ -845,6 +877,17 @@ public:
           }
 
           work_tile_info = next_work_tile_info;
+        } while (work_tile_info.is_valid());
+        clc_pipeline.producer_tail(clc_pipeline_producer_state);
+      }
+      else {
+        cutlass::arch::wait_on_dependent_grids();
+        do {
+          auto [next_work_tile_info, increment_pipe] = scheduler.advance_to_next_work(clc_pipeline, clc_pipeline_producer_state);
+          work_tile_info = next_work_tile_info;
+          if (increment_pipe) {
+            ++clc_pipeline_producer_state;
+          }
         } while (work_tile_info.is_valid());
         clc_pipeline.producer_tail(clc_pipeline_producer_state);
       }

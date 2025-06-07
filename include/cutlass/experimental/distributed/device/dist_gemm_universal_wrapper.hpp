@@ -340,7 +340,7 @@ public:
         base_args.epilogue.thread,
         reinterpret_cast<const ElementC*>(tensor_c_iter.data()),
         tensor_c_iter.stride(),
-        reinterpret_cast<const ElementD*>(tensor_d_iter.data()),
+        reinterpret_cast<ElementD*>(tensor_d_iter.data()),
         tensor_d_iter.stride()
       };
 
@@ -446,7 +446,7 @@ public:
 
   Status
   construct_graph(bool launch_with_pdl) {
-#if ((__CUDACC_VER_MAJOR__ >= 12) && (__CUDACC_VER_MINOR__ >= 4))
+#if (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 6))
     Status status = Status::kSuccess;
 
     // Destroy existing graph, if created
