@@ -124,6 +124,23 @@ struct sm90_is_ptr_array_tma_dispatch_policy<
                                    NumEpilogueWarpGroups>> 
     : cute::true_type {};
 
+template<
+  int StagesC,
+  int StagesD,
+  int FragmentSize,
+  bool ReuseSmemC,
+  bool DelayTmaStore,
+  int NumEpilogueWarpGroups
+>
+struct sm90_is_ptr_array_tma_dispatch_policy<
+    Sm120PtrArrayTmaWarpSpecialized<StagesC, 
+                                   StagesD, 
+                                   FragmentSize,
+                                   ReuseSmemC, 
+                                   DelayTmaStore, 
+                                   NumEpilogueWarpGroups>> 
+    : cute::true_type {};
+
 template<class DispatchPolicy>
 static constexpr bool sm90_is_ptr_array_tma_dispatch_policy_v = sm90_is_ptr_array_tma_dispatch_policy<DispatchPolicy>::value;
 
@@ -198,6 +215,16 @@ template <typename ThreadEpilogueOp>
 struct IsThreadEpilogueOpWithActivation <ThreadEpilogueOp, cute::enable_if_t<ThreadEpilogueOp::IsEltActSupported>> {
   static constexpr bool value = true;
   using type = typename ThreadEpilogueOp::ActivationFn;
+};
+
+template <typename ThreadEpilogueOp, typename = void>
+struct IsThreadEpilogueOpWithPerChannelScaled {
+  static constexpr bool value = false;
+};
+
+template <typename ThreadEpilogueOp>
+struct IsThreadEpilogueOpWithPerChannelScaled <ThreadEpilogueOp, cute::void_t<decltype(ThreadEpilogueOp::IsPerRowScaleSupported)>> {
+  static constexpr bool value = ThreadEpilogueOp::IsPerRowScaleSupported || ThreadEpilogueOp::IsPerColScaleSupported;
 };
 
 template <typename ThreadEpilogueOp, typename = void>

@@ -779,6 +779,8 @@ public:
         // why this variable is needed.
         bool requires_clc_query = true;
 
+        cutlass::arch::wait_on_dependent_grids();
+
         do {
           if (requires_clc_query) {
             // Throttle CLC query to mitigate workload imbalance caused by skews among persistent workers.

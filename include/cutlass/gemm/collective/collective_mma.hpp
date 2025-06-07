@@ -64,8 +64,11 @@
 #include "cutlass/gemm/collective/sm100_mma_array_warpspecialized_blockwise_scaling.hpp"
 #include "cutlass/gemm/collective/sm120_mma_tma.hpp"
 #include "cutlass/gemm/collective/sm120_blockscaled_mma_tma.hpp"
+#include "cutlass/gemm/collective/sm120_blockscaled_mma_array_tma.hpp"
 #include "cutlass/gemm/collective/sm120_sparse_mma_tma.hpp"
 #include "cutlass/gemm/collective/sm120_blockscaled_sparse_mma_tma.hpp"
+#include "cutlass/gemm/collective/sm120_mma_tma_blockwise_scaling.hpp"
+#include "cutlass/gemm/collective/sm120_mma_array_tma_blockwise_scaling.hpp"
 #endif // !defined(__CUDACC_RTC__) 
 
 

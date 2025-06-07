@@ -63,6 +63,10 @@
 #  define CUDA_PTX_UE8M0_CVT_ENABLED 1
 #endif
 
+#if (defined(CUTLASS_ARCH_MMA_SM100F_ENABLED) || defined(CUTLASS_ARCH_MMA_SM101F_ENABLED) ||\
+     defined(CUTLASS_ARCH_MMA_SM120F_ENABLED))
+#  define CUDA_PTX_UE8M0_CVT_ENABLED 1
+#endif
 
 #ifdef __GNUC__
 // Ignore checks on reinterpret-casts that are being used for bitcasts.

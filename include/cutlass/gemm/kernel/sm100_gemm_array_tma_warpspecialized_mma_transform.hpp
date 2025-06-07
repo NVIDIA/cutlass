@@ -179,10 +179,14 @@ public:
   using AccumulatorPipeline = typename CollectiveMainloop::AccumulatorPipeline;
   using AccumulatorPipelineState = typename AccumulatorPipeline::PipelineState;
 
-  using CLCPipeline = cutlass::PipelineCLCFetchAsync<SchedulerPipelineStageCount, ClusterShape>;
+  using CLCPipeline = cute::conditional_t<IsSchedDynamicPersistent,
+    cutlass::PipelineCLCFetchAsync<SchedulerPipelineStageCount, ClusterShape>,
+    cutlass::PipelineAsync<SchedulerPipelineStageCount>>;
   using CLCPipelineState = typename CLCPipeline::PipelineState;
 
-  using CLCThrottlePipeline = cutlass::PipelineAsync<SchedulerPipelineStageCount>;
+  using CLCThrottlePipeline = cute::conditional_t<IsSchedDynamicPersistent,
+    cutlass::PipelineAsync<SchedulerPipelineStageCount>,
+    cutlass::PipelineEmpty>;
   using CLCThrottlePipelineState = typename CLCThrottlePipeline::PipelineState;
 
   using TmemAllocator = cute::conditional_t<cute::size(cute::shape<0>(typename TiledMma::ThrLayoutVMNK{})) == 1,
@@ -285,7 +289,12 @@ public:
     ProblemShape problem_shapes = args.problem_shape;
     // Get SM count if needed, otherwise use user supplied SM count
     int sm_count = args.hw_info.sm_count;
-    if (!IsGroupedGemmKernel && sm_count != 0) {
+    if (IsGroupedGemmKernel && sm_count <= 0) {
+      CUTLASS_TRACE_HOST("  WARNING: Arguments do not include a valid SM count.\n"
+          "  For optimal performance, populate the arguments KernelHardwareInfo struct with the SM count.");
+      sm_count = KernelHardwareInfo::query_device_multiprocessor_count(args.hw_info.device_id);
+    }
+    else if (!IsGroupedGemmKernel && sm_count != 0) {
       CUTLASS_TRACE_HOST("  WARNING: SM100 tile scheduler does not allow for user specified SM counts.\n"
           "  To restrict a kernel's resource usage, consider using CUDA driver APIs instead (green contexts).");
     }
@@ -339,7 +348,8 @@ public:
     if constexpr (IsGroupedGemmKernel) {
       // Group GEMM currently only supports rank-3 problem shapes
       implementable &= (args.mode == GemmUniversalMode::kGrouped && rank(typename ProblemShape::UnderlyingProblemShape{}) == 3);
-    } else {
+    }
+    else {
       implementable &= (args.mode == GemmUniversalMode::kArray && rank(typename ProblemShape::UnderlyingProblemShape{}) == 4);
     }
     if (!implementable) {
@@ -490,11 +500,14 @@ public:
     WarpCategory warp_category = [&] () CUTLASS_LAMBDA_FUNC_INLINE {
       if (warp_idx < static_cast<int>(WarpCategory::Epilogue)) {
         return WarpCategory(warp_idx);
-      } else if (warp_idx < static_cast<int>(WarpCategory::MainloopSFLoad)) {
+      }
+      else if (warp_idx < static_cast<int>(WarpCategory::MainloopSFLoad)) {
         return WarpCategory::Epilogue;
-      } else if (warp_idx == static_cast<int>(WarpCategory::MainloopSFLoad)) {
+      }
+      else if (warp_idx == static_cast<int>(WarpCategory::MainloopSFLoad)) {
         return WarpCategory::MainloopSFLoad;
-      } else {
+      }
+      else {
         return WarpCategory::Unused;
       }
     }();
@@ -504,7 +517,7 @@ public:
     auto cluster_shape = cutlass::detail::select_cluster_shape(ClusterShape{}, cute::cluster_shape());
     int cluster_size = size(cluster_shape);
     uint32_t cta_rank_in_cluster = cute::block_rank_in_cluster();
-    bool is_first_cta_in_cluster = cta_rank_in_cluster == 0;
+    bool is_first_cta_in_cluster = IsSchedDynamicPersistent ? (cta_rank_in_cluster == 0) : true;
     int cta_coord_v = cta_rank_in_cluster % size<0>(typename TiledMma::AtomThrID{});
     bool is_mma_leader_cta = cta_coord_v == 0;
     constexpr bool has_mma_peer_cta = size(AtomThrShapeMNK{}) == 2;
@@ -590,22 +603,43 @@ public:
     // CLC pipeline
     typename CLCPipeline::Params clc_pipeline_params;
     if (WarpCategory::Sched == warp_category) {
-      clc_pipeline_params.role = CLCPipeline::ThreadCategory::ProducerConsumer;
+      clc_pipeline_params.role = IsSchedDynamicPersistent ? 
+        CLCPipeline::ThreadCategory::ProducerConsumer :
+        CLCPipeline::ThreadCategory::Producer;
     }
     else {
       clc_pipeline_params.role = CLCPipeline::ThreadCategory::Consumer;
     }
-    clc_pipeline_params.producer_blockid = 0;
-    clc_pipeline_params.producer_arv_count = 1;
-    clc_pipeline_params.consumer_arv_count = NumSchedThreads + cluster_size *
-                                                 (NumMainloopABLoadThreads + NumEpilogueThreads + 
-                                                  NumMainloopSFLoadThreads + NumMMAThreads);
-    if (is_epi_load_needed) {
-      clc_pipeline_params.consumer_arv_count += cluster_size * NumEpilogueLoadThreads;
-    }
-    clc_pipeline_params.transaction_bytes = CLCResponseSize;
+
     clc_pipeline_params.initializing_warp = 1;
-    CLCPipeline clc_pipeline(shared_storage.pipelines.clc, clc_pipeline_params, cluster_shape);
+    clc_pipeline_params.producer_arv_count = 1;
+
+    if constexpr (IsSchedDynamicPersistent) {
+      clc_pipeline_params.producer_blockid = 0;
+      clc_pipeline_params.consumer_arv_count = NumSchedThreads + cluster_size *
+                                                  (NumMainloopABLoadThreads + NumEpilogueThreads + 
+                                                    NumMainloopSFLoadThreads + NumMMAThreads);
+      if (is_epi_load_needed) {
+        clc_pipeline_params.consumer_arv_count += cluster_size * NumEpilogueLoadThreads;
+      }
+      clc_pipeline_params.transaction_bytes = CLCResponseSize;
+    } 
+    else {
+      clc_pipeline_params.consumer_arv_count = NumMainloopABLoadThreads + NumEpilogueThreads + NumMMAThreads +
+                                               NumMainloopSFLoadThreads;
+      if (is_epi_load_needed) {
+        clc_pipeline_params.consumer_arv_count += NumEpilogueLoadThreads;
+      }
+    }
+
+    CLCPipeline clc_pipeline = [&] () {
+      if constexpr (IsSchedDynamicPersistent) {
+        return CLCPipeline(shared_storage.pipelines.clc, clc_pipeline_params, cluster_shape);
+      }
+      else {
+        return CLCPipeline(shared_storage.pipelines.clc, clc_pipeline_params);
+      }
+    } ();
 
     // Mainloop-Epilogue pipeline
     typename AccumulatorPipeline::Params accumulator_pipeline_params;
@@ -625,16 +659,18 @@ public:
 
     // CLC throttle pipeline
     typename CLCThrottlePipeline::Params clc_throttle_pipeline_params;
-    if (WarpCategory::MainloopABLoad == warp_category) {
-      clc_throttle_pipeline_params.role = CLCThrottlePipeline::ThreadCategory::Producer;
+    if constexpr (IsSchedDynamicPersistent) {
+      if (WarpCategory::MainloopABLoad == warp_category) {
+        clc_throttle_pipeline_params.role = CLCThrottlePipeline::ThreadCategory::Producer;
+      }
+      if (WarpCategory::Sched == warp_category) {
+        clc_throttle_pipeline_params.role = CLCThrottlePipeline::ThreadCategory::Consumer;
+      }
+      clc_throttle_pipeline_params.producer_arv_count = NumMainloopABLoadThreads;
+      clc_throttle_pipeline_params.consumer_arv_count = NumSchedThreads;
+      clc_throttle_pipeline_params.dst_blockid = 0;
+      clc_throttle_pipeline_params.initializing_warp = 3;
     }
-    if (WarpCategory::Sched == warp_category) {
-      clc_throttle_pipeline_params.role = CLCThrottlePipeline::ThreadCategory::Consumer;
-    }
-    clc_throttle_pipeline_params.producer_arv_count = NumMainloopABLoadThreads;
-    clc_throttle_pipeline_params.consumer_arv_count = NumSchedThreads;
-    clc_throttle_pipeline_params.dst_blockid = 0;
-    clc_throttle_pipeline_params.initializing_warp = 3;
     CLCThrottlePipeline clc_throttle_pipeline(shared_storage.pipelines.clc_throttle, clc_throttle_pipeline_params);
     CLCThrottlePipelineState clc_pipe_throttle_consumer_state;
     CLCThrottlePipelineState clc_pipe_throttle_producer_state = cutlass::make_producer_start_state<CLCThrottlePipeline>();
@@ -910,6 +946,8 @@ public:
         // why this variable is needed.
         bool requires_clc_query = true;
 
+        cutlass::arch::wait_on_dependent_grids();
+
         do {
           if (requires_clc_query) {
             // Throttle CLC query to mitigate workload imbalance caused by skews among persistent workers.
@@ -941,6 +979,17 @@ public:
           }
 
           work_tile_info = next_work_tile_info;
+        } while (work_tile_info.is_valid());
+        clc_pipeline.producer_tail(clc_pipe_producer_state);
+      }
+      else {
+        cutlass::arch::wait_on_dependent_grids();
+        do {
+          auto [next_work_tile_info, increment_pipe] = scheduler.advance_to_next_work(clc_pipeline, clc_pipe_producer_state);
+          work_tile_info = next_work_tile_info;
+          if (increment_pipe) {
+            ++clc_pipe_producer_state;
+          }
         } while (work_tile_info.is_valid());
         clc_pipeline.producer_tail(clc_pipe_producer_state);
       }

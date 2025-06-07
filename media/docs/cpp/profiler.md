@@ -45,7 +45,7 @@ compile or fail to launch at runtime.
 ```bash
 $ cmake .. \
   -DCUTLASS_NVCC_ARCHS="90a" \
-  -DCUTLASS_LIBRARY_KERNELS="cutlass3x_sm90_tensorop_s64x64x16gemm_f16_f16_f32_void_f32_*" \
+  -DCUTLASS_LIBRARY_KERNELS="cutlass3x_sm90_tensorop_gemm_f16_f16_f32_void_f32_*" \
   -DCUTLASS_LIBRARY_INSTANTIATION_LEVEL="max" \
   -DCUTLASS_UNITY_BUILD_ENABLED=ON
 ```
@@ -525,7 +525,7 @@ To best illustrate this naming convention, we will walk through the meaning of e
 in a GEMM kernel used by the profiler:
 
 ```
-cutlass3x_sm90_tensorop_s64x128x16gemm_f16_f16_f32_f16_f32_{optional-mixed-dtype-config}_128x128x64_2x1x1_0_ntn_align8
+cutlass3x_sm90_tensorop_gemm_f16_f16_f32_f16_f32_{optional-mixed-dtype-config}_128x128x64_2x1x1_0_ntn_align8
 ```
 
 The components within this name are as follows:
@@ -553,7 +553,7 @@ Note that in some special cases where the input A/B types do not match that of t
 instruction's, the MMA facing input type is added to the instruction string as well.
 
 ```
-cutlass3x_sm90_tensorop_s64x128x8tf32gemm_f32_f32_f32_f32_f32_128x128x32_2x1x1_0_tnn_align4
+cutlass3x_sm90_tensorop_tf32gemm_f32_f32_f32_f32_f32_128x128x32_2x1x1_0_tnn_align4
 ```
 
 * `s64x128x8tf32gemm`: indicates that the MMA consumes inputs in `tf32` format, and therefore
@@ -563,7 +563,7 @@ For custom mainloop or epilogue schedules, details of the opted-in schedule are 
 kernel name. For example,
 
 ```
-cutlass3x_sm90_tensorop_h64x128x16gemm_f16_f16_f16_void_f16_128x128x64_1x1x1_0_nnn_align8_warpspecialized_cooperative_epi_tma
+cutlass3x_sm90_tensorop_gemm_f16_f16_f16_void_f16_128x128x64_1x1x1_0_nnn_align8_warpspecialized_cooperative_epi_tma
 ```
 
 * `warpspecialized_cooperative`: Mainloop employs a persistent warp-specialized mainloop and kernel schedule.

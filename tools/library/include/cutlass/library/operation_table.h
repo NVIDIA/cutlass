@@ -427,6 +427,183 @@ using BlockScaledGemmOperationFunctionalMap = std::unordered_map<
   BlockScaledGemmFunctionalKeyHasher
 >;
 
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+//                          Data Structures for Blockwise Gemm Functional Maps
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Tuple uniquely identifying Gemm functional behavior
+struct BlockwiseGemmFunctionalKey {
+
+  Provider provider;
+  GemmKind gemm_kind;
+  OperationKind kind;
+  NumericTypeID element_compute;
+  NumericTypeID element_scalar;
+  NumericTypeID element_A;
+  LayoutTypeID layout_A;
+  NumericTypeID element_SFA;
+  NumericTypeID element_B;
+  LayoutTypeID layout_B;
+  NumericTypeID element_SFB;
+  NumericTypeID element_C;
+  LayoutTypeID layout_C;
+  NumericTypeID element_D;
+  LayoutTypeID layout_D;
+  int SFMVecSize;
+  int SFNVecSize;
+  int SFKVecSize;
+  //
+  // Methods
+  //
+
+  inline
+  BlockwiseGemmFunctionalKey(
+    Provider provider,
+    GemmKind gemm_kind = GemmKind::kGemm,
+    OperationKind kind = OperationKind::kBlockwiseGemm,
+    NumericTypeID element_compute = NumericTypeID::kF32,
+    NumericTypeID element_scalar = NumericTypeID::kF32,
+    NumericTypeID element_A = NumericTypeID::kF16,
+    LayoutTypeID layout_A = LayoutTypeID::kColumnMajor,
+    NumericTypeID element_SFA = NumericTypeID::kF16,
+    NumericTypeID element_B = NumericTypeID::kF16,
+    LayoutTypeID layout_B = LayoutTypeID::kColumnMajor,
+    NumericTypeID element_SFB = NumericTypeID::kF16,
+    NumericTypeID element_C = NumericTypeID::kF16,
+    LayoutTypeID layout_C = LayoutTypeID::kColumnMajor,
+    NumericTypeID element_D = NumericTypeID::kF16,
+    LayoutTypeID layout_D = LayoutTypeID::kColumnMajor,
+    int sfm_vec_size = 32,
+    int sfn_vec_size = 32,
+    int sfk_vec_size = 32
+  ):
+    provider(provider),
+    gemm_kind(gemm_kind),
+    kind(kind),
+    element_compute(element_compute),
+    element_scalar(element_scalar),
+    element_A(element_A),
+    layout_A(layout_A),
+    element_SFA(element_SFA),
+    element_B(element_B),
+    layout_B(layout_B),
+    element_SFB(element_SFB),
+    element_C(element_C),
+    layout_C(layout_C),
+    element_D(element_D),
+    layout_D(layout_D),
+    SFMVecSize(sfm_vec_size),
+    SFNVecSize(sfn_vec_size),
+    SFKVecSize(sfk_vec_size)
+  { }
+
+  inline
+  bool operator==(BlockwiseGemmFunctionalKey const &rhs) const {
+    return
+      (provider == rhs.provider) &&
+      (gemm_kind == rhs.gemm_kind) &&
+      (kind == rhs.kind) &&
+      (element_compute == rhs.element_compute) &&
+      (element_scalar == rhs.element_scalar) &&
+      (element_A == rhs.element_A) &&
+      (layout_A == rhs.layout_A) &&
+      (element_SFA == rhs.element_SFA) &&
+      (element_B == rhs.element_B) &&
+      (layout_B == rhs.layout_B) &&
+      (element_SFB == rhs.element_SFB) &&
+      (element_C == rhs.element_C) &&
+      (layout_C == rhs.layout_C) &&
+      (element_D == rhs.element_D) &&
+      (layout_D == rhs.layout_D) &&
+      (SFMVecSize == rhs.SFMVecSize) &&
+      (SFNVecSize == rhs.SFNVecSize) && 
+      (SFKVecSize == rhs.SFKVecSize);
+  }
+
+  inline
+  bool operator!=(BlockwiseGemmFunctionalKey const &rhs) const {
+    return !(*this == rhs);
+  }
+};
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+inline
+std::ostream & operator<<(std::ostream &out, cutlass::library::BlockwiseGemmFunctionalKey const &k) {
+
+  out << "{\n"
+    << "         provider: " << to_string(k.provider) << "\n"
+    << "        gemm_kind: " << to_string(k.gemm_kind) << "\n"
+    << "             kind: " << to_string(k.kind) << "\n"
+    << "  element_compute: " << to_string(k.element_compute) << "\n"
+    << "   element_scalar: " << to_string(k.element_scalar) << "\n"
+    << "        element_A: " << to_string(k.element_A) << "\n"
+    << "         layout_A: " << to_string(k.layout_A) << "\n"
+    << "      element_SFA: " << to_string(k.element_SFA) << "\n"
+    << "        element_B: " << to_string(k.element_B) << "\n"
+    << "         layout_B: " << to_string(k.layout_B) << "\n"
+    << "      element_SFB: " << to_string(k.element_SFB) << "\n"
+    << "        element_C: " << to_string(k.element_C) << "\n"
+    << "         layout_C: " << to_string(k.layout_C) << "\n"
+    << "        element_D: " << to_string(k.element_D) << "\n"
+    << "         layout_D: " << to_string(k.layout_D) << "\n"
+    << "        SFMVecSize: " << k.SFMVecSize << "\n"
+    << "        SFNVecSize: " << k.SFNVecSize << "\n"
+    << "        SFKVecSize: " << k.SFKVecSize << "\n"
+    << "}";
+
+  return out;
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Hash function for BlockwiseGemmFunctionalKeyHasher
+struct  BlockwiseGemmFunctionalKeyHasher {
+  using IntHash = std::hash<int>;
+
+  inline
+  static size_t rotl(size_t key, int shl) {
+    return (key << shl) | (key >> (sizeof(key)*8u - static_cast<size_t>(shl)));
+  }
+
+  inline
+  size_t operator()(BlockwiseGemmFunctionalKey const &key) const {
+    IntHash hash;
+
+    return
+      rotl(hash(int(key.provider)),           1) ^
+      rotl(hash(int(key.gemm_kind)),          2) ^
+      rotl(hash(int(key.kind)),               3) ^
+      rotl(hash(int(key.element_compute)),    4) ^
+      rotl(hash(int(key.element_scalar)),     5) ^
+      rotl(hash(int(key.element_A)),          6) ^
+      rotl(hash(int(key.layout_A)),           7) ^
+      rotl(hash(int(key.element_SFA)),        8) ^
+      rotl(hash(int(key.element_B)),          9) ^
+      rotl(hash(int(key.layout_B)),          10) ^
+      rotl(hash(int(key.element_SFB)),       11) ^
+      rotl(hash(int(key.element_C)),         12) ^
+      rotl(hash(int(key.layout_C)),          13) ^
+      rotl(hash(int(key.element_D)),         14) ^
+      rotl(hash(int(key.layout_D)),          15) ^
+      rotl(hash(int(key.SFMVecSize)),        16) ^ 
+      rotl(hash(int(key.SFNVecSize)),        17) ^ 
+      rotl(hash(int(key.SFKVecSize)),        18) 
+      ;
+  }
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+/// Maps a GemmFunctionalKey onto a vector of Operation * objects expected to be of kind kGemm
+using BlockwiseGemmOperationFunctionalMap = std::unordered_map<
+  BlockwiseGemmFunctionalKey,
+  GemmOperationVectorMap,
+  BlockwiseGemmFunctionalKeyHasher
+>;
+
+
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 //                          Data Structures for Conv Functional Maps
@@ -696,6 +873,9 @@ public:
 
   // provider (kCUTLASS, kReferenceHost, kReferenceDevice)                        
   BlockScaledGemmOperationFunctionalMap block_scaled_gemm_operations;             
+
+  // provider (kCUTLASS, kReferenceHost, kReferenceDevice)                        
+  BlockwiseGemmOperationFunctionalMap blockwise_gemm_operations;             
 
   /// Map of all operations of type kConv2d
   // provider (kCUTLASS, kReferenceHost, kReferenceDevice)

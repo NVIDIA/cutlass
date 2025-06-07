@@ -334,9 +334,9 @@ public:
       static constexpr bool IsDynamicCluster = not cute::is_static_v<ClusterShape>;
       static_assert(IsDynamicCluster or ((cute::size<0>(cluster_shape) % cute::size<0>(atom_thr_shape) == 0) &&
                     (cute::size<1>(cluster_shape) % cute::size<1>(atom_thr_shape) == 0)));
-      uint32_t const multicast_consumer_arrival_count = (cute::size<0>(cluster_shape) / cute::size<0>(atom_thr_shape)) +
-                                     (cute::size<1>(cluster_shape) / cute::size<1>(atom_thr_shape)) - 1;
-
+      uint32_t const num_consumer_per_cluster = params.num_consumers / NumThreadsPerWarpGroup;
+      uint32_t const multicast_consumer_arrival_count = ((cute::size<0>(cluster_shape) / cute::size<0>(atom_thr_shape)) +
+                                     (cute::size<1>(cluster_shape) / cute::size<1>(atom_thr_shape)) - 1) * num_consumer_per_cluster;
       cutlass::arch::detail::initialize_barrier_array_pair_aligned<decltype(storage.full_barrier_), decltype(storage.empty_barrier_), Stages>(
           storage.full_barrier_, storage.empty_barrier_, producer_arv_cnt, multicast_consumer_arrival_count);
     }
@@ -1068,6 +1068,10 @@ public:
   using PipelineState = cutlass::PipelineState<0>;
   struct Params {};
   struct SharedStorage {};
+
+  // Constructor
+  CUTLASS_DEVICE
+  PipelineEmpty(SharedStorage& storage, Params const& params) {}
 
   // Constructor
   CUTLASS_DEVICE

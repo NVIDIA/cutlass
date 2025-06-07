@@ -462,7 +462,7 @@ int main(int argc, char const **args) {
 }
 ```
 
-# CUTLASS Library
+## CUTLASS Library
 
 The [CUTLASS Library](https://github.com/NVIDIA/cutlass/tree/main/tools/library) defines an API for managing and executing collections of compiled
 kernel instances and launching them from host code without template instantiations in client code.
@@ -585,7 +585,7 @@ int main() {
 }
 ```
 
-# Example CMake Commands
+## Example CMake Commands
 
 To instantiate all operations supporting all tile sizes, data types, and alignment constraints, specify
 `-DCUTLASS_LIBRARY_KERNELS=all` when running `cmake`.
@@ -750,7 +750,7 @@ are needed in the mainloop builder:
 
 We encourage a user to refer to Sm100 unit tests and the generated profiler-based kernels as more comprehensive samples.
 
-# Copyright
+### Copyright
 
 Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: BSD-3-Clause

@@ -1,6 +1,6 @@
 ![ALT](../../images/gemm-hierarchy-with-epilogue-no-labels.png "CUTLASS Grouped Kernel Schedulers")
 
-# CUTLASS Grouped Kernel Schedulers
+# Grouped Kernel Schedulers
 
 CUTLASS's grouped kernel is a persistent kernel which launches multiple problems (e.g., GEMMs, SYR2Ks) within a
 single CUDA kernel launch.

@@ -324,8 +324,12 @@ def is_complex(data_type):
 def is_block_scaled(gemm_kind):
   return gemm_kind in (GemmKind.BlockScaledUniversal3x, GemmKind.GroupedBlockScaledUniversal3x)
 
+def is_blockwise(gemm_kind):
+  return gemm_kind in (GemmKind.BlockwiseUniversal3x, GemmKind.GroupedBlockwiseUniversal3x)
+
 def is_grouped(gemm_kind):
-  return gemm_kind in (GemmKind.GroupedUniversal3x, GemmKind.GroupedBlockScaledUniversal3x)
+  return gemm_kind in (GemmKind.GroupedUniversal3x, 
+    GemmKind.GroupedBlockScaledUniversal3x, GemmKind.GroupedBlockwiseUniversal3x)
 
 #
 def get_complex_from_real(real_type):
@@ -340,6 +344,15 @@ def get_real_from_complex(complex_type):
     if complex_type == c:
       return r
   return DataType.invalid
+
+# TMA requires an alignment of 128 bits for all data types
+def get_tma_alignment(data_type):
+  if data_type == DataType.void:
+    return 0
+  elif DataTypeSize[data_type] == 6:
+    return 128 # 96B alignment for 16U6 format 
+  else:
+    return 128 // DataTypeSize[data_type]
 
 #
 class ComplexMultiplyOp(enum.Enum):
@@ -493,6 +506,9 @@ class KernelScheduleType(enum.Enum):
   PtrArrayTmaWarpSpecializedPingpong = enum_auto()
   PtrArrayTmaWarpSpecializedPingpongFP8FastAccum = enum_auto()
 
+  BlockwiseTmaWarpSpecializedCooperative = enum_auto()
+  PtrArrayBlockwiseTmaWarpSpecializedCooperative = enum_auto()
+
   TmaWarpSpecialized1SmSm100 = enum_auto()
   TmaWarpSpecialized2SmSm100 = enum_auto()
   ImplicitTmaWarpSpecialized1SmSm100 = enum_auto()
@@ -518,6 +534,13 @@ class KernelScheduleType(enum.Enum):
   Mxf8f6f4TmaWarpSpecialized1SmSm100 = enum_auto()
   Mxf8f6f4TmaWarpSpecialized2SmSm100 = enum_auto()
 
+  BlockwiseTmaWarpSpecialized1SmSm100 = enum_auto()
+  BlockwiseTmaWarpSpecialized2SmSm100 = enum_auto()
+
+  PtrArrayBlockwiseTmaWarpSpecialized1SmSm100 = enum_auto()
+  PtrArrayBlockwiseTmaWarpSpecialized2SmSm100 = enum_auto()
+
+
   Mxf4TmaWarpSpecialized1SmSm100 = enum_auto()
   Mxf4TmaWarpSpecialized2SmSm100 = enum_auto()
   Nvf4TmaWarpSpecialized1SmSm100 = enum_auto()
@@ -531,6 +554,9 @@ class KernelScheduleType(enum.Enum):
   Mxf4TmaWarpSpecializedPingpongSm120 = enum_auto()
 
   F8f6f4SparseTmaWarpSpecializedCooperativeSm120 = enum_auto()
+
+  BlockwiseTmaWarpSpecializedCooperativeSm120 = enum_auto()
+  BlockwiseTmaWarpSpecializedPingpongSm120 = enum_auto()
 
 KernelScheduleTag = {
   KernelScheduleType.ScheduleAuto: 'cutlass::gemm::collective::KernelScheduleAuto',
@@ -546,6 +572,8 @@ KernelScheduleTag = {
   KernelScheduleType.TmaWarpSpecializedCooperativeFP8FastAccum: 'cutlass::gemm::KernelTmaWarpSpecializedCooperativeFP8FastAccum',
   KernelScheduleType.TmaWarpSpecializedPingpongFP8FastAccum: 'cutlass::gemm::KernelTmaWarpSpecializedPingpongFP8FastAccum',
   KernelScheduleType.ImplicitTmaWarpSpecializedSm90: 'cutlass::conv::KernelImplicitTmaWarpSpecializedSm90',
+
+  KernelScheduleType.BlockwiseTmaWarpSpecializedCooperative: 'cutlass::gemm::KernelTmaWarpSpecializedCooperativeFP8BlockScaledAccum',
 
   KernelScheduleType.TmaWarpSpecialized1SmSm100: 'cutlass::gemm::KernelTmaWarpSpecialized1SmSm100',
   KernelScheduleType.TmaWarpSpecialized2SmSm100: 'cutlass::gemm::KernelTmaWarpSpecialized2SmSm100',
@@ -564,6 +592,12 @@ KernelScheduleTag = {
   KernelScheduleType.Mxf8f6f4TmaWarpSpecialized1SmSm100: 'cutlass::gemm::KernelTmaWarpSpecialized1SmMxf8f6f4Sm100',
   KernelScheduleType.Mxf8f6f4TmaWarpSpecialized2SmSm100: 'cutlass::gemm::KernelTmaWarpSpecialized2SmMxf8f6f4Sm100',
 
+  KernelScheduleType.BlockwiseTmaWarpSpecialized1SmSm100: 'cutlass::gemm::KernelTmaWarpSpecializedBlockwise1SmSm100',
+  KernelScheduleType.BlockwiseTmaWarpSpecialized2SmSm100: 'cutlass::gemm::KernelTmaWarpSpecializedBlockwise2SmSm100',
+
+  KernelScheduleType.PtrArrayBlockwiseTmaWarpSpecialized1SmSm100: 'cutlass::gemm::KernelPtrArrayTmaWarpSpecializedBlockwise1SmSm100',
+  KernelScheduleType.PtrArrayBlockwiseTmaWarpSpecialized2SmSm100: 'cutlass::gemm::KernelPtrArrayTmaWarpSpecializedBlockwise2SmSm100',
+
   KernelScheduleType.Mxf4TmaWarpSpecialized1SmSm100: 'cutlass::gemm::KernelTmaWarpSpecialized1SmMxf4Sm100',
   KernelScheduleType.Mxf4TmaWarpSpecialized2SmSm100: 'cutlass::gemm::KernelTmaWarpSpecialized2SmMxf4Sm100',
   KernelScheduleType.Nvf4TmaWarpSpecialized1SmSm100: 'cutlass::gemm::KernelTmaWarpSpecialized1SmNvf4Sm100',
@@ -573,6 +607,8 @@ KernelScheduleTag = {
   KernelScheduleType.PtrArrayTmaWarpSpecializedCooperativeFP8FastAccum: 'cutlass::gemm::KernelPtrArrayTmaWarpSpecializedCooperativeFP8FastAccum',
   KernelScheduleType.PtrArrayTmaWarpSpecializedPingpong: 'cutlass::gemm::KernelPtrArrayTmaWarpSpecializedPingpong',
   KernelScheduleType.PtrArrayTmaWarpSpecializedPingpongFP8FastAccum: 'cutlass::gemm::KernelPtrArrayTmaWarpSpecializedPingpongFP8FastAccum',
+
+  KernelScheduleType.PtrArrayBlockwiseTmaWarpSpecializedCooperative: 'cutlass::gemm::KernelPtrArrayTmaWarpSpecializedCooperativeFP8BlockScaledAccum',
 
   KernelScheduleType.PtrArrayTmaWarpSpecialized1SmBlockScaledSm100: "cutlass::gemm::KernelPtrArrayTmaWarpSpecialized1SmBlockScaledSm100",
   KernelScheduleType.PtrArrayTmaWarpSpecialized2SmBlockScaledSm100: "cutlass::gemm::KernelPtrArrayTmaWarpSpecialized2SmBlockScaledSm100",
@@ -590,7 +626,10 @@ KernelScheduleTag = {
   KernelScheduleType.Mxf4TmaWarpSpecializedCooperativeSm120: 'cutlass::gemm::KernelTmaWarpSpecializedMxf4Sm120',
   KernelScheduleType.Mxf4TmaWarpSpecializedPingpongSm120: 'cutlass::gemm::KernelTmaWarpSpecializedPingpongMxf4Sm120',
 
-  KernelScheduleType.F8f6f4SparseTmaWarpSpecializedCooperativeSm120: 'cutlass::gemm::KernelScheduleSparseF8f6f4Sm120'
+  KernelScheduleType.F8f6f4SparseTmaWarpSpecializedCooperativeSm120: 'cutlass::gemm::KernelScheduleSparseF8f6f4Sm120',
+
+  KernelScheduleType.BlockwiseTmaWarpSpecializedCooperativeSm120: 'cutlass::gemm::KernelTmaWarpSpecializedBlockwiseCooperativeSm120',
+  KernelScheduleType.BlockwiseTmaWarpSpecializedPingpongSm120: 'cutlass::gemm::KernelTmaWarpSpecializedBlockwisePingpongSm120',
 }
 
 #
@@ -608,6 +647,8 @@ KernelScheduleSuffixes = {
   KernelScheduleType.TmaWarpSpecializedCooperativeFP8FastAccum: '_warpspecialized_cooperative_fp8_fastaccum',
   KernelScheduleType.TmaWarpSpecializedPingpongFP8FastAccum: '_warpspecialized_pingpong_fp8_fastaccum',
   KernelScheduleType.ImplicitTmaWarpSpecializedSm90: '_warpspecialized',
+
+  KernelScheduleType.BlockwiseTmaWarpSpecializedCooperative: '_warpspecialized_cooperative',
   
   KernelScheduleType.TmaWarpSpecialized1SmSm100: '_1sm',
   KernelScheduleType.TmaWarpSpecialized2SmSm100: '_2sm',
@@ -626,6 +667,11 @@ KernelScheduleSuffixes = {
   KernelScheduleType.Mxf8f6f4TmaWarpSpecialized1SmSm100: '_q_1sm',
   KernelScheduleType.Mxf8f6f4TmaWarpSpecialized2SmSm100: '_q_2sm',
 
+  KernelScheduleType.BlockwiseTmaWarpSpecialized1SmSm100: '_1sm',
+  KernelScheduleType.BlockwiseTmaWarpSpecialized2SmSm100: '_2sm',
+  KernelScheduleType.PtrArrayBlockwiseTmaWarpSpecialized1SmSm100: '_1sm',
+  KernelScheduleType.PtrArrayBlockwiseTmaWarpSpecialized2SmSm100: '_2sm',
+
   KernelScheduleType.Mxf4TmaWarpSpecialized1SmSm100: '_o_vs32_1sm',
   KernelScheduleType.Mxf4TmaWarpSpecialized2SmSm100: '_o_vs32_2sm',
   KernelScheduleType.Nvf4TmaWarpSpecialized1SmSm100: '_o_vs16_1sm',
@@ -635,6 +681,8 @@ KernelScheduleSuffixes = {
   KernelScheduleType.PtrArrayTmaWarpSpecializedCooperativeFP8FastAccum: '_warpspecialized_cooperative_fp8_fastaccum',
   KernelScheduleType.PtrArrayTmaWarpSpecializedPingpong: '_warpspecialized_pingpong',
   KernelScheduleType.PtrArrayTmaWarpSpecializedPingpongFP8FastAccum: '_warpspecialized_pingpong_fp8_fastaccum',
+
+  KernelScheduleType.PtrArrayBlockwiseTmaWarpSpecializedCooperative: '_warpspecialized_cooperative',
 
   KernelScheduleType.PtrArrayTmaWarpSpecialized1SmBlockScaledSm100: '_1sm',
   KernelScheduleType.PtrArrayTmaWarpSpecialized2SmBlockScaledSm100: '_2sm',
@@ -652,7 +700,10 @@ KernelScheduleSuffixes = {
   KernelScheduleType.Mxf4TmaWarpSpecializedCooperativeSm120: '_cooperative_o_vs32',
   KernelScheduleType.Mxf4TmaWarpSpecializedPingpongSm120: '_pingpong_o_vs32',
 
-  KernelScheduleType.F8f6f4SparseTmaWarpSpecializedCooperativeSm120: '_q'
+  KernelScheduleType.F8f6f4SparseTmaWarpSpecializedCooperativeSm120: '_q',
+
+  KernelScheduleType.BlockwiseTmaWarpSpecializedCooperativeSm120: '_cooperative_q',
+  KernelScheduleType.BlockwiseTmaWarpSpecializedPingpongSm120: '_pingpong_q'
 }
 
 class EpilogueScheduleType(enum.Enum):
@@ -723,6 +774,20 @@ EpilogueFunctor3xTag = {
   EpilogueFunctor3x.LinearCombinationBlockScaleFactor: 'cutlass::epilogue::fusion::LinCombBlockScaleFactor',  
 }
 
+# TMA epilogues have certain alignment requirements as calculated in get_tma_alignment(data_type)
+def is_tma_epilogue(epilogue_schedule_type):
+  return epilogue_schedule_type in [
+    EpilogueScheduleType.ScheduleAuto,
+    EpilogueScheduleType.TmaWarpSpecialized,
+    EpilogueScheduleType.TmaWarpSpecializedCooperative,
+    EpilogueScheduleType.TmaWarpSpecialized1Sm,
+    EpilogueScheduleType.TmaWarpSpecialized2Sm,
+    EpilogueScheduleType.PtrArrayTmaWarpSpecialized1Sm,
+    EpilogueScheduleType.PtrArrayTmaWarpSpecialized2Sm,
+    EpilogueScheduleType.PtrArrayTmaWarpSpecializedCooperative,
+    EpilogueScheduleType.PtrArrayTmaWarpSpecializedPingpong,
+  ]
+
 def to_grouped_schedule(schedule, grouped):
   if not grouped:
     return schedule
@@ -730,6 +795,7 @@ def to_grouped_schedule(schedule, grouped):
   group_schedule_map = {
     # SM90
     KernelScheduleType.TmaWarpSpecializedCooperative : KernelScheduleType.PtrArrayTmaWarpSpecializedCooperative,
+    KernelScheduleType.BlockwiseTmaWarpSpecializedCooperative : KernelScheduleType.PtrArrayBlockwiseTmaWarpSpecializedCooperative,
     KernelScheduleType.TmaWarpSpecializedPingpong    : KernelScheduleType.PtrArrayTmaWarpSpecializedPingpong,
     KernelScheduleType.TmaWarpSpecializedCooperativeFP8FastAccum : KernelScheduleType.PtrArrayTmaWarpSpecializedCooperativeFP8FastAccum,
     KernelScheduleType.TmaWarpSpecializedPingpongFP8FastAccum    : KernelScheduleType.PtrArrayTmaWarpSpecializedPingpongFP8FastAccum,
@@ -737,12 +803,16 @@ def to_grouped_schedule(schedule, grouped):
     EpilogueScheduleType.TmaWarpSpecializedCooperative : EpilogueScheduleType.PtrArrayTmaWarpSpecializedCooperative,
     EpilogueScheduleType.NoSmemWarpSpecialized         : EpilogueScheduleType.PtrArrayNoSmemWarpSpecialized,
     # SM100
+    KernelScheduleType.TmaWarpSpecialized1SmSm100: KernelScheduleType.PtrArrayTmaWarpSpecialized1SmSm100,
+    KernelScheduleType.TmaWarpSpecialized2SmSm100: KernelScheduleType.PtrArrayTmaWarpSpecialized2SmSm100,
     KernelScheduleType.Nvf4TmaWarpSpecialized1SmSm100 : KernelScheduleType.PtrArrayNvf4TmaWarpSpecialized1SmSm100,
     KernelScheduleType.Nvf4TmaWarpSpecialized2SmSm100 : KernelScheduleType.PtrArrayNvf4TmaWarpSpecialized2SmSm100,
     KernelScheduleType.Mxf4TmaWarpSpecialized1SmSm100 : KernelScheduleType.PtrArrayMxf4TmaWarpSpecialized1SmSm100,
     KernelScheduleType.Mxf4TmaWarpSpecialized2SmSm100 : KernelScheduleType.PtrArrayMxf4TmaWarpSpecialized2SmSm100,
     KernelScheduleType.Mxf8f6f4TmaWarpSpecialized1SmSm100 : KernelScheduleType.PtrArrayMxf8f6f4TmaWarpSpecialized1SmSm100,
     KernelScheduleType.Mxf8f6f4TmaWarpSpecialized2SmSm100 : KernelScheduleType.PtrArrayMxf8f6f4TmaWarpSpecialized2SmSm100,
+    KernelScheduleType.BlockwiseTmaWarpSpecialized1SmSm100 : KernelScheduleType.PtrArrayBlockwiseTmaWarpSpecialized1SmSm100,
+    KernelScheduleType.BlockwiseTmaWarpSpecialized2SmSm100 : KernelScheduleType.PtrArrayBlockwiseTmaWarpSpecialized2SmSm100,
     EpilogueScheduleType.TmaWarpSpecialized1Sm: EpilogueScheduleType.PtrArrayTmaWarpSpecialized1Sm,
     EpilogueScheduleType.TmaWarpSpecialized2Sm: EpilogueScheduleType.PtrArrayTmaWarpSpecialized2Sm,
   }
@@ -932,6 +1002,8 @@ class GemmKind(enum.Enum):
   BlockScaledUniversal3x = enum_auto()                                   
   GroupedUniversal3x = enum_auto()
   GroupedBlockScaledUniversal3x = enum_auto()
+  BlockwiseUniversal3x = enum_auto()
+  GroupedBlockwiseUniversal3x = enum_auto()
 
 #
 GemmKindNames = {
@@ -945,7 +1017,9 @@ GemmKindNames = {
   GemmKind.Grouped: "gemm_grouped",
   GemmKind.BlockScaledUniversal3x: "gemm",
   GemmKind.GroupedUniversal3x: "gemm_grouped",
-  GemmKind.GroupedBlockScaledUniversal3x: "gemm_grouped"
+  GemmKind.GroupedBlockScaledUniversal3x: "gemm_grouped",
+  GemmKind.BlockwiseUniversal3x: "gemm",
+  GemmKind.GroupedBlockwiseUniversal3x: "gemm_grouped"
 }
 
 #
@@ -1149,7 +1223,7 @@ class MathInstruction:
 #
 class TileDescription:
 
-  def __init__(self, threadblock_shape, stages, warp_count, math_instruction, min_compute, max_compute, cluster_shape = [1,1,1]):
+  def __init__(self, threadblock_shape, stages, warp_count, math_instruction, min_compute, max_compute, cluster_shape = [1,1,1], explicit_vector_sizes = None):
     self.threadblock_shape = threadblock_shape
     self.tile_shape = threadblock_shape
     self.stages = stages
@@ -1158,6 +1232,7 @@ class TileDescription:
     self.minimum_compute_capability = min_compute
     self.maximum_compute_capability = max_compute
     self.cluster_shape = cluster_shape
+    self.explicit_vector_sizes = explicit_vector_sizes
 
   def procedural_name(self):
     if self.minimum_compute_capability >= 90:

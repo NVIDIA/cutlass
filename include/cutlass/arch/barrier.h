@@ -50,6 +50,9 @@
 #define CUTLASS_ARCH_TCGEN_ENABLED 1
 #endif
 
+#if (defined(CUTLASS_ARCH_MMA_SM100F_ENABLED) || defined(CUTLASS_ARCH_MMA_SM101F_ENABLED))
+#define CUTLASS_ARCH_TCGEN_ENABLED 1
+#endif
 
 namespace cutlass {
 /// @brief

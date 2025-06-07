@@ -437,9 +437,11 @@ void BlockScaledGemmOperationProfiler::GemmProblem::initialize_result(
   set_argument(result, "k", problem_space, k);
 
   
-  set_argument(result, "cluster_m", problem_space, cluster_m);
-  set_argument(result, "cluster_n", problem_space, cluster_n);
-  set_argument(result, "cluster_k", problem_space, cluster_k);
+  auto cluster_shape = operation_desc.tile_description.cluster_shape;
+  auto is_dynamic = cluster_shape.m() == 0 || cluster_shape.n() == 0 || cluster_shape.k() == 0;
+  set_argument(result, "cluster_m", problem_space, is_dynamic ? this->cluster_m : cluster_shape.m());
+  set_argument(result, "cluster_n", problem_space, is_dynamic ? this->cluster_n : cluster_shape.n());
+  set_argument(result, "cluster_k", problem_space, is_dynamic ? this->cluster_k : cluster_shape.k());
   set_argument(result, "cluster_m_fallback", problem_space, cluster_m_fallback);
   set_argument(result, "cluster_n_fallback", problem_space, cluster_n_fallback);
   set_argument(result, "cluster_k_fallback", problem_space, cluster_k_fallback);
@@ -905,7 +907,7 @@ Status BlockScaledGemmOperationProfiler::initialize_workspace(
     gemm_workspace_.arguments.use_pdl = problem_.use_pdl;
 
     /* Query device SM count to pass onto the kernel as an argument, where needed */
-    gemm_workspace_.arguments.sm_count = options.device.properties[0].multiProcessorCount;
+    gemm_workspace_.arguments.sm_count = options.device.get_sm_count(0);
   }
 
   //

@@ -144,7 +144,6 @@ private:
   static_assert(StagesD >= 1, "StagesD must be >= 1");
   
   constexpr static bool ReuseSmemC = ReuseSmemC_ && is_destination_supported;
-  constexpr static bool DelayTmaStore = DelayTmaStore_;
 
   constexpr static bool is_m_major_C = detail::is_m_major<InternalStrideC>();
   constexpr static bool is_m_major_D = detail::is_m_major<InternalStrideD>();
@@ -171,6 +170,12 @@ private:
   constexpr static size_t SmemAlignmentC = cutlass::detail::alignment_for_swizzle(SmemLayoutC{});
   constexpr static size_t SmemAlignmentD = cutlass::detail::alignment_for_swizzle(SmemLayoutD{});
   constexpr static size_t MaxSmemAlignment = cute::max(SmemAlignmentC, SmemAlignmentD);
+
+  // Not unroll epi subtile loop when the activation op is heavy to reduce instruction size and register pressure.
+  constexpr static bool UnrollEpiLoop =
+    not cutlass::epilogue::thread::kIsHeavy_member_or_false<typename ThreadEpilogueOp::ActivationFn>::value;
+  // TMA store delay only benefits with loop unrolling
+  constexpr static bool DelayTmaStore = DelayTmaStore_ and UnrollEpiLoop;
 
   struct CollectiveStorageWithC {
     alignas(SmemAlignmentC) ArrayEngine<SmemElementC, cosize_v<SmemLayoutC>> smem_C;
@@ -281,12 +286,8 @@ public:
       void* workspace) {
     // These tensor shapes (only applicable for grouped gemm) and pointers are only used to create tensormap/tma desc.
     // These will be replaced with correct values before the initial tma load.
-    auto init_shape = repeat_like(append<4>(typename ProblemShape::UnderlyingProblemShape{}, 1), int32_t(1));
-    // These tensor shapes (only applicable for grouped gemm) and pointers are only used to create tensormap/tma desc.
-    // These will be replaced with correct values before the initial tma load.
-    constexpr int tma_alignment_bits = 128;
-    auto init_M = tma_alignment_bits;
-    auto init_N = tma_alignment_bits;
+    auto init_M = int32_t(size<0>(CtaTileShape{}));
+    auto init_N = int32_t(size<1>(CtaTileShape{}));
     auto init_L = 1;
 
     InternalStrideC stride_c;
@@ -740,8 +741,8 @@ public:
     Tensor cD_mn = local_tile(mD_crd, take<0,2>(cta_tile_mnk), make_coord(m_coord, n_coord));        // (CTA_M,CTA_N)
     Tensor tTR_cD_mn = thread_t2r.partition_D(flat_divide(cD_mn, EpilogueTile{}));     // (T2R,T2R_M,T2R_N,EPI_M,EPI_N)
     // Relative coordinate tensors (static)
-    Tensor cD = make_counting_tensor(cD_mn.layout());                                                  // (CTA_M,CTA_N)
-    Tensor tTR_cD = make_counting_tensor(tTR_cD_mn.layout());                          // (T2R,T2R_M,T2R_N,EPI_M,EPI_N)
+    Tensor cD = make_coord_tensor(cD_mn.layout());                                                  // (CTA_M,CTA_N)
+    Tensor tTR_cD = make_coord_tensor(tTR_cD_mn.layout());                          // (T2R,T2R_M,T2R_N,EPI_M,EPI_N)
     // Subtract the global "bottom right" corner from the local "top left" corner to get the max relative coordinate
     auto residue_cD = make_coord(M,N) - cD_mn(_0{});                                                           // (m,n)
     auto residue_tTR_cD = make_coord(M,N) - tTR_cD_mn(_0{});                                                   // (m,n)
@@ -781,8 +782,8 @@ public:
     [[maybe_unused]] bool reverse_epi_n = ReuseTmem && acc_pipe_consumer_state.phase() == 0;
     static_assert(not (ReuseTmem && AccumulatorPipeline::Stages != 1), "Tmem reuse requires 1 accumulator stage");
 
-    // Predication for TMA store (one warp issues TMA store)
-    bool issue_tma_store = warp_idx == 0;
+    // Predication for TMA store (a single thread from one warp issues TMA store)
+    bool issue_tma_store = (warp_idx == 0) && cute::elect_one_sync();
 
     // In the reuse smem configuration we have StagesC smem buffers and at most StagesD committed TMA stores in flight.
     // The TMA store pipeline producer acquire returns when at most StagesD-1 committed stores are in-flight, so we can
@@ -860,10 +861,12 @@ public:
         synchronize();
       }
       // For each epilogue subtile within the CTA tile
-      CUTLASS_PRAGMA_UNROLL
-      for (int iter_n = 0; iter_n < size<3>(gD_epi); ++iter_n) {
-        CUTLASS_PRAGMA_UNROLL
-        for (int iter_m = 0; iter_m < size<2>(gD_epi); ++iter_m) {
+      constexpr int NumEpiSubtilesN = CUTE_STATIC_V(size<3>(gD_epi));
+      constexpr int NumEpiSubtilesM = CUTE_STATIC_V(size<2>(gD_epi));
+      #pragma unroll(UnrollEpiLoop ? NumEpiSubtilesN : 1)
+      for (int iter_n = 0; iter_n < NumEpiSubtilesN; ++iter_n) {
+        #pragma unroll(UnrollEpiLoop ? NumEpiSubtilesM : 1)
+        for (int iter_m = 0; iter_m < NumEpiSubtilesM; ++iter_m) {
           int epi_m = iter_m, epi_n = iter_n;
           bool is_first_iteration = iter_m == 0 && iter_n == 0;
           bool is_last_iteration = iter_m == size<2>(gD_epi)-1 && iter_n == size<3>(gD_epi)-1;
@@ -1111,8 +1114,8 @@ public:
     Tensor cD_mn = local_tile(mD_crd, take<0,2>(cta_tile_mnk), make_coord(m_coord, n_coord));          // (CTA_M,CTA_N)
     Tensor tTR_cD_mn = thread_t2r.partition_D(flat_divide(cD_mn, EpilogueTile{}));     // (T2R,T2R_M,T2R_N,EPI_M,EPI_N)
     // Relative coordinate tensors (static)
-    Tensor cD = make_counting_tensor(cD_mn.layout());                                                  // (CTA_M,CTA_N)
-    Tensor tTR_cD = make_counting_tensor(tTR_cD_mn.layout());                          // (T2R,T2R_M,T2R_N,EPI_M,EPI_N)
+    Tensor cD = make_coord_tensor(cD_mn.layout());                                                  // (CTA_M,CTA_N)
+    Tensor tTR_cD = make_coord_tensor(tTR_cD_mn.layout());                          // (T2R,T2R_M,T2R_N,EPI_M,EPI_N)
     // Subtract the global "bottom right" corner from the local "top left" corner to get the max relative coordinate
     auto residue_cD = make_coord(M,N) - cD_mn(_0{});                                                           // (m,n)
     auto residue_tTR_cD = make_coord(M,N) - tTR_cD_mn(_0{});                                                   // (m,n)
@@ -1215,10 +1218,12 @@ public:
     }
 
     // For each epilogue subtile within the CTA tile
-    CUTLASS_PRAGMA_UNROLL
-    for (int iter_n = 0; iter_n < size<3>(gD_epi); ++iter_n) {
-      CUTLASS_PRAGMA_UNROLL
-      for (int iter_m = 0; iter_m < size<2>(gD_epi); ++iter_m) {
+    constexpr int NumEpiSubtilesN = CUTE_STATIC_V(size<3>(gD_epi));
+    constexpr int NumEpiSubtilesM = CUTE_STATIC_V(size<2>(gD_epi));
+    #pragma unroll(UnrollEpiLoop ? NumEpiSubtilesN : 1)
+    for (int iter_n = 0; iter_n < NumEpiSubtilesN; ++iter_n) {
+      #pragma unroll(UnrollEpiLoop ? NumEpiSubtilesM : 1)
+      for (int iter_m = 0; iter_m < NumEpiSubtilesM; ++iter_m) {
         int epi_m = iter_m, epi_n = iter_n;
         bool is_first_iteration = iter_m == 0 && iter_n == 0;
         bool is_last_iteration = iter_m == size<2>(gD_epi)-1 && iter_n == size<3>(gD_epi)-1;
@@ -1478,16 +1483,23 @@ public:
   tensormaps_cp_fence_release(
       TensorMapStorage& shared_tensormap,
       cute::TmaDescriptor const* tensormap) {
+    // Commit and wait for all TMA load/store instructions before updating the tensormap in gmem.
+    // This operation only happens when the group/batch changes between consecutive tiles.
+    // If there are no uncommitted instructions then tma_desc_commit_group results in an empty bulk async-group.
+    auto tma_desc_wait_all_fn = [] () CUTLASS_LAMBDA_FUNC_INLINE {
+      if (cute::elect_one_sync()) {
+        cute::tma_desc_commit_group();
+        cute::tma_desc_wait_group();
+      }
+    };
     // Entire warp must do this (ie its aligned)
     if constexpr (IsLoad) {
       if (is_source_supported) {
-        if (cute::elect_one_sync()) {
-          cute::tma_desc_commit_group();
-          cute::tma_desc_wait_group();
-        }
+        tma_desc_wait_all_fn();
         tma_descriptor_cp_fence_release(tensormap, shared_tensormap.smem_tensormap_C);
       }
     } else if constexpr (is_destination_supported) {
+      tma_desc_wait_all_fn();
       tma_descriptor_cp_fence_release(tensormap, shared_tensormap.smem_tensormap_D);
     }
   }

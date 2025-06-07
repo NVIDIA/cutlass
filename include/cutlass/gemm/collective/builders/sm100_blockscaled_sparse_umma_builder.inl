@@ -268,7 +268,7 @@ struct CollectiveBuilder<
   // Calculate SMEM matrix A and B buffers' pipeline stages and the accumulator stages.
   static constexpr uint32_t AccumulatorNPerCta = cute::size<1>(TileShape_MNK{});
   static constexpr uint32_t AccumulatorPipelineStageCount = (AccumulatorNPerCta == 256) ? 1 : 2;
-  static constexpr uint32_t SchedulerPipelineStageCount = 1;
+  static constexpr uint32_t SchedulerPipelineStageCount = 2;
 
   using SmemTileShape = cute::Shape<BlockTileA_M, BlockTileB_N, BlockTileA_K>;
 

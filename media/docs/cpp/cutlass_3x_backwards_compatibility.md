@@ -438,7 +438,7 @@ obtain the kernel's configuration parameters. Users can use these to approximate
 for 3.0 API kernels.  However, the reflective interfaces cannot always match the types exactly,
 as the mappings are not always bijective.
 
-# Copyright
+### Copyright
 
 Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: BSD-3-Clause

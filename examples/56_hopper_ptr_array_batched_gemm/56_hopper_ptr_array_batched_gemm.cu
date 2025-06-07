@@ -489,7 +489,7 @@ int run(Options &options)
     std::cout << "  Batches     : " << options.l  << std::endl;
     std::cout << "  Alpha, Beta : " << options.alpha << ',' << options.beta << std::endl;
     std::cout << "  Avg runtime : " << result.avg_runtime_ms << " ms" << std::endl;
-    std::cout << "  GFLOPS      : " << result.gflops << std::endl;
+    std::cout << "  TFLOPS      : " << result.gflops / 1000.0 << std::endl;
   }
 
   return 0;

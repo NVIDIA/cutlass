@@ -124,6 +124,7 @@ constexpr int AlignmentD  = 128 / cutlass::sizeof_bits<ElementD>::value;    // A
 using ElementAccumulator  = float;                                          // Element type for internal accumulation
 
 // using ElementD = cutlass::float_e2m1_t; // Enable for SF Output          // Element type for D matrix operands
+
 using ElementSFD  = cutlass::float_ue4m3_t;                                 // Element type for SF Output operands
 constexpr int OutputSFVectorSize = 16;
 using FusionOperation = cutlass::epilogue::fusion::LinCombEltActBlockScaleFactor<
@@ -299,7 +300,7 @@ auto make_iterator(T* ptr) {
 /// Testbed utility types
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm100GroupParams<typename ProblemShape::UnderlyingProblemShape>::RasterOrderOptions;
+using RasterOrderOptions = cutlass::gemm::kernel::detail::RasterOrderOptions;
 // Command line options parsing
 struct Options {
 
@@ -422,19 +423,9 @@ struct Options {
       cutlass::CommandLine::tokenize(tokens, extent_str, 'x');
 
       for (int i = 0; i < int(tokens.size()); ++i) {
-        int x = std::atoi(tokens.at(i).c_str());
-
-        // round up
-        if (x % alignment) {
-          x += (alignment - (x % alignment));
-        }
-
-        extent.at(i) = x;
+        extent.at(i) = std::atoi(tokens.at(i).c_str());
       }
-
-      if (extent.product()) {
-        problem_sizes_host.push_back({extent.m(), extent.n(), extent.k()});
-      }
+      problem_sizes_host.push_back({extent.m(), extent.n(), extent.k()});
     }
     groups = static_cast<int>(problem_sizes_host.size());
 
@@ -885,7 +876,7 @@ int run(Options &options, bool host_problem_shapes_available = true)
     result.gflops          = options.gflops(result.avg_runtime_ms / 1000.0, options.problem_sizes_host);
 
     std::cout << "  Avg runtime : " << result.avg_runtime_ms << " ms" << std::endl;
-    std::cout << "  GFLOPS      : " << result.gflops << std::endl;
+    std::cout << "  TFLOPS      : " << result.gflops / 1000.0 << std::endl;
   }
 
   return 0;

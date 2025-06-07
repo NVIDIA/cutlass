@@ -49,9 +49,8 @@ template<
   class ElementScalar,
   class ScaleShapeMNK,
   class TileShapeMNK,
-  class MainloopPipelineStorage,
-  class TransformLoadPipelineStorage,
-  class TransformPipelineStorage,
+  class MainloopABPipelineStorage,
+  class MainloopSFPipelineStorage,
   int stages
 >
 constexpr int
@@ -67,9 +66,8 @@ template<
   class ElementScalar,
   class ScaleShapeMNK,
   class TileShapeMNK,
-  class MainloopPipelineStorage,
-  class TransformLoadPipelineStorage,
-  class TransformPipelineStorage,
+  class MainloopABPipelineStorage,
+  class MainloopSFPipelineStorage,
   int stages
 >
 constexpr int
@@ -85,9 +83,8 @@ template<
   class ElementScalar,
   class ScaleShapeMNK,
   class TileShapeMNK,
-  class MainloopPipelineStorage,
-  class TransformLoadPipelineStorage,
-  class TransformPipelineStorage,
+  class MainloopABPipelineStorage,
+  class MainloopSFPipelineStorage,
   int carveout_bytes>
 constexpr int
 sm100_compute_stage_count_or_override_blockwise(StageCountAutoCarveout<carveout_bytes> stage_count) {
@@ -96,18 +93,20 @@ sm100_compute_stage_count_or_override_blockwise(StageCountAutoCarveout<carveout_
   // Each stage include (CollectiveMma::SharedStorage)
   // 1. smem for A and smem for B (CollectiveMma::SharedStorage::TensorStorage)
   // 2. one of each of the pipelines
-  constexpr auto pipeline_bytes = sizeof(MainloopPipelineStorage) + 
-      sizeof(TransformLoadPipelineStorage) + sizeof(TransformPipelineStorage);
+  constexpr auto pipeline_bytes = sizeof(MainloopABPipelineStorage) + 
+      sizeof(MainloopSFPipelineStorage);
 
   constexpr auto a_bits = cute::sizeof_bits_v<ElementA>;
   constexpr auto b_bits = cute::sizeof_bits_v<ElementB>;
   constexpr auto scale_bits = cute::sizeof_bits_v<ElementScalar>;
 
   constexpr int stage_bytes =
-    cutlass::bits_to_bytes(a_bits * size<0>(TileShapeMNK{}) * size<2>(TileShapeMNK{})) +
-    cutlass::bits_to_bytes(b_bits * size<1>(TileShapeMNK{}) * size<2>(TileShapeMNK{})) +
-    cutlass::bits_to_bytes(scale_bits * size<0>(ScaleShapeMNK{}) * size<2>(ScaleShapeMNK{})) +
-    cutlass::bits_to_bytes(scale_bits * size<1>(ScaleShapeMNK{}) * size<2>(ScaleShapeMNK{})) +
+    cutlass::round_nearest(
+      cutlass::bits_to_bytes(a_bits * size<0>(TileShapeMNK{}) * size<2>(TileShapeMNK{})) +
+      cutlass::bits_to_bytes(b_bits * size<1>(TileShapeMNK{}) * size<2>(TileShapeMNK{})) +
+      cutlass::bits_to_bytes(scale_bits * size<0>(ScaleShapeMNK{}) * size<2>(ScaleShapeMNK{})) +
+      cutlass::bits_to_bytes(scale_bits * size<1>(ScaleShapeMNK{}) * size<2>(ScaleShapeMNK{})),
+      128) +
     static_cast<int>(pipeline_bytes);
 
   return (CapacityBytes - carveout_bytes) / stage_bytes;
@@ -130,7 +129,10 @@ auto sm100_make_simt_gmem_tiled_copy_SFA() {
       using ScaleCopyTypeA = cute::uint_byte_t<Alignment>; 
       using SmemScalingCopyAtomA = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<ScaleCopyTypeA>, Element>;
       constexpr int ElementsPerSFACopy = static_cast<int>(sizeof(ScaleCopyTypeA) / sizeof(Element));
-      return make_tiled_copy(SmemScalingCopyAtomA{}, Layout<Shape<_32>>{}, Layout<Shape<Int<ElementsPerSFACopy>>>{});
+      return make_tiled_copy(
+          SmemScalingCopyAtomA{}, 
+          Layout<Shape<_32>>{},  // 32 threads
+          Layout<Shape<Shape<Int<ScaleGranularityM>, Int<ElementsPerSFACopy>>>, Stride<Stride<_0, _1>>>{});
     } 
     else {
       using SmemScalingCopyAtomA = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<Element>, Element>;
@@ -139,9 +141,8 @@ auto sm100_make_simt_gmem_tiled_copy_SFA() {
   } 
   else {
     // we expect scale Ks per tile to be small
-    constexpr int LeadingScalesPerTileSFA = ScaleKsPerTile;
     using SmemScalingCopyAtomA = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<Element>, Element>;
-    return make_tiled_copy(SmemScalingCopyAtomA{}, Layout<Shape<_1, Int<LeadingScalesPerTileSFA>>>{}, Layout<Shape<_1,_1>>{});
+    return make_tiled_copy(SmemScalingCopyAtomA{}, Layout<Shape<_32>>{}, Layout<Shape<_1>>{});
   }
 }
 
@@ -162,7 +163,10 @@ auto sm100_make_simt_gmem_tiled_copy_SFB() {
       using ScaleCopyTypeB = cute::uint_byte_t<Alignment>; 
       using SmemScalingCopyAtomB = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<ScaleCopyTypeB>, Element>;
       constexpr int ElementsPerSFBCopy = static_cast<int>(sizeof(ScaleCopyTypeB) / sizeof(Element));
-      return make_tiled_copy(SmemScalingCopyAtomB{}, Layout<Shape<_32>>{}, Layout<Shape<Int<ElementsPerSFBCopy>>>{});
+      return make_tiled_copy(
+          SmemScalingCopyAtomB{}, 
+          Layout<Shape<_32>>{},  // 32 threads
+          Layout<Shape<Shape<Int<ScaleGranularityN>, Int<ElementsPerSFBCopy>>>, Stride<Stride<_0, _1>>>{});
     } 
     else {
       using SmemScalingCopyAtomB = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<Element>, Element>;
@@ -171,9 +175,8 @@ auto sm100_make_simt_gmem_tiled_copy_SFB() {
   } 
   else {
     // we expect scale Ks per tile to be small
-    constexpr int LeadingScalesPerTileSFB = ScaleKsPerTile;
     using SmemScalingCopyAtomB = Copy_Atom<SM80_CP_ASYNC_CACHEALWAYS<Element>, Element>;
-    return make_tiled_copy(SmemScalingCopyAtomB{}, Layout<Shape<_1, Int<LeadingScalesPerTileSFB>>>{}, Layout<Shape<_1,_1>>{});
+    return make_tiled_copy(SmemScalingCopyAtomB{}, Layout<Shape<_32>>{}, Layout<Shape<_1>>{});
   }
 }
 
@@ -369,9 +372,8 @@ struct CollectiveBuilder<
   static constexpr int Sm100ReducedSmemCapacityBytes = cutlass::gemm::collective::detail::sm100_smem_capacity_bytes - KernelSmemCarveout;
 
   using SmemTileShape = cute::Shape<BlockTileA_M, BlockTileB_N, BlockTileA_K>;
-  using MainloopPipelineStorage = typename cutlass::PipelineTmaUmmaAsync<1>::SharedStorage;
-  using TransformLoadPipelineStorage = typename cutlass::PipelineAsync<1>::SharedStorage;
-  using TransformPipelineStorage = typename cutlass::PipelineUmmaAsync<1>::SharedStorage;
+  using MainloopABPipelineStorage = typename cutlass::PipelineTmaUmmaAsync<1>::SharedStorage;
+  using MainloopSFPipelineStorage = typename cutlass::PipelineAsync<1>::SharedStorage;
 
   static constexpr int ScaleGranularityM = size<0,0>(cute::remove_pointer_t<GmemLayoutSFATag>{});
   static constexpr int ScaleGranularityN = size<0,0>(cute::remove_pointer_t<GmemLayoutSFBTag>{});
@@ -398,8 +400,8 @@ struct CollectiveBuilder<
 
   static constexpr int PipelineStages = cutlass::gemm::collective::detail::sm100_compute_stage_count_or_override_blockwise<
       Sm100ReducedSmemCapacityBytes, ElementAMma_SmemAllocType, ElementBMma_SmemAllocType, 
-      ElementAccumulator, ScaleTileShape, SmemTileShape, MainloopPipelineStorage,
-      TransformLoadPipelineStorage, TransformPipelineStorage>(StageCountType{});
+      ElementAccumulator, ScaleTileShape, SmemTileShape, MainloopABPipelineStorage,
+      MainloopSFPipelineStorage>(StageCountType{});
   static_assert(PipelineStages > 0, "Smem usage is too high. Can't create any SMEM buffers for A, B, and scales.");
 
   using DispatchPolicy = cute::conditional_t<

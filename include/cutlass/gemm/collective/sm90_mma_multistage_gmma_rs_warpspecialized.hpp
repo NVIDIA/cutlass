@@ -42,7 +42,6 @@
 #include "cute/algorithm/functional.hpp"
 #include "cute/atom/mma_atom.hpp"
 #include "cute/algorithm/gemm.hpp"
-#include "cute/tensor_predicate.hpp"
 #include "cute/numeric/arithmetic_tuple.hpp"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -162,7 +161,7 @@ struct CollectiveMma<
   static constexpr bool TransposeB = !IsInputSizeTwoBytes && IsLayoutAmnBmn;
   using TransposeOperandB = decltype(cutlass::transform::collective::detail::make_transpose_operand_b(
                                       0, 0, TiledMma{}, SmemLayoutB{}, InternalSmemLayoutAtomB{},
-                                      InternalElementB{}, cute::bool_constant<TransposeB>{})); 
+                                      InternalElementB{}, cute::bool_constant<TransposeB>{}));
 
   static_assert(DispatchPolicy::Stages >= 2, "Specialization requires Stages set to value 2 or more.");
   static_assert(not cute::is_base_of<cute::GMMA::DescriptorIterator, typename TiledMma::FrgTypeA>::value &&
@@ -187,7 +186,7 @@ struct CollectiveMma<
 
   struct SharedStorage
   {
-    struct TensorStorage : cute::aligned_struct<256, _0> { 
+    struct TensorStorage : cute::aligned_struct<256, _0> {
       cute::array_aligned<typename TiledMma::ValTypeA, cute::cosize_v<SmemLayoutA>, 256> smem_A;
       cute::array_aligned<typename TiledMma::ValTypeB, cute::cosize_v<SmemLayoutB>, 256> smem_B;
     } tensors;
@@ -264,7 +263,7 @@ struct CollectiveMma<
 
   static constexpr int K_PIPE_MAX = DispatchPolicy::Stages;
   static constexpr int K_PIPE_MMAS = 1;
-  
+
   /// Perform a collective-scoped matrix multiply-accumulate
   /// Producer Perspective
   template <
@@ -275,7 +274,7 @@ struct CollectiveMma<
   >
   CUTLASS_DEVICE void
   load(
-      MainloopPipeline pipeline, 
+      MainloopPipeline pipeline,
       PipelineState smem_pipe_write,
       TensorA const& gA_in,
       TensorB const& gB_in,
@@ -358,7 +357,7 @@ struct CollectiveMma<
           clear(tBsB(_,_,k,write_stage));
         }
       }
-      
+
       ++k_tile_iter;
       --k_tile_count;
 
@@ -392,13 +391,13 @@ struct CollectiveMma<
   /// Perform a Producer Epilogue to prevent early exit of blocks in a Cluster
   CUTLASS_DEVICE void
   load_tail(
-      MainloopPipeline pipeline, 
+      MainloopPipeline pipeline,
       PipelineState smem_pipe_write) {
     // Issue the epilogue waits
     /* This helps avoid early exit of blocks in Cluster
-     * Waits for all stages to either be released (all 
+     * Waits for all stages to either be released (all
      * Consumer UNLOCKs), or if the stage was never used
-     * then would just be acquired since the phase was 
+     * then would just be acquired since the phase was
      * still inverted from make_producer_start_state
      */
     pipeline.producer_tail(smem_pipe_write);
@@ -432,7 +431,7 @@ struct CollectiveMma<
     // Obtain warp index
     int warp_idx = canonical_warp_idx_sync();
     [[maybe_unused]] int warp_group_thread_idx = thread_idx % 128;
-    
+
     Tensor sA_ = make_tensor(make_smem_ptr(shared_tensors.smem_A.data()), SmemLayoutA{});         // (BLK_M,BLK_K,PIPE)
     Tensor sA  = as_position_independent_swizzle_tensor(sA_);                                     // (BLK_M,BLK_K,PIPE)
     Tensor sB_ = make_tensor(make_smem_ptr(shared_tensors.smem_B.data()), SmemLayoutB{});         // (BLK_N,BLK_K,PIPE)
@@ -448,11 +447,11 @@ struct CollectiveMma<
     // Layout of warp group to thread mapping
 
     static_assert(stride<0>(typename TiledMma::BLayout{}) == 0 and
-                  size<0>(typename TiledMma::BLayout{}) == NumThreadsPerWarpGroup, 
+                  size<0>(typename TiledMma::BLayout{}) == NumThreadsPerWarpGroup,
                   "Stride of the first mode must be 0 and the size of the mode must be NumThreadsPerWarpGroup");
 
     constexpr int MmaWarpGroups = size(TiledMma{}) / NumThreadsPerWarpGroup;
-    Layout warp_group_thread_layout = make_layout(Int<MmaWarpGroups>{}, 
+    Layout warp_group_thread_layout = make_layout(Int<MmaWarpGroups>{},
                                                   Int<NumThreadsPerWarpGroup>{});
 
     int warp_group_idx = __shfl_sync(0xFFFFFFFF, thread_idx / NumThreadsPerWarpGroup, 0);
@@ -499,8 +498,8 @@ struct CollectiveMma<
     tiled_mma.accumulate_ = GMMA::ScaleOut::Zero;
 
     TransposeOperandB transpose = cutlass::transform::collective::detail::make_transpose_operand_b(
-                                    warp_idx, warp_group_thread_idx, tiled_mma, SmemLayoutB{}, 
-                                    InternalSmemLayoutAtomB{}, InternalElementB{}, 
+                                    warp_idx, warp_group_thread_idx, tiled_mma, SmemLayoutB{},
+                                    InternalSmemLayoutAtomB{}, InternalElementB{},
                                     cute::bool_constant<TransposeB>{});
 
     warpgroup_fence_operand(accum);
@@ -535,8 +534,8 @@ struct CollectiveMma<
       }
 
       warpgroup_wait<2>();
-      
-      
+
+
       if (k_tile_count - 1 > 0) {
         if (!skip_wait) {
           pipeline.consumer_wait(smem_pipe_read);
@@ -589,7 +588,7 @@ struct CollectiveMma<
             transpose(sB, gmma_sB, read_stage, 1);
           }
         }
-        
+
         warpgroup_arrive();
         // (V,M) x (V,N) => (V,M,N)
         cute::gemm(tiled_mma, tCrA(_,_,k_block), tCrB(_,_,k_block,read_stage), accum);
@@ -638,7 +637,7 @@ struct CollectiveMma<
           ++smem_pipe_release;
         }
       }
-      
+
       warpgroup_arrive();
       // (V,M) x (V,N) => (V,M,N)
       cute::gemm(tiled_mma, tCrA(_,_,size<2>(tCrA) - 1), tCrB(_,_,size<2>(tCrA) - 1,read_stage), accum);
@@ -659,7 +658,7 @@ struct CollectiveMma<
     k_tile_count -= prologue_mma_count;
 
     smem_pipe_release.advance(k_tile_count);
-    
+
     // Wait on all GMMAs to complete
     warpgroup_wait<0>();
 

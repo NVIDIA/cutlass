@@ -140,7 +140,6 @@ private:
   static_assert(StagesD >= 1, "StagesD must be >= 1");
   
   constexpr static bool ReuseSmemC = ReuseSmemC_;
-  constexpr static bool DelayTmaStore = DelayTmaStore_;
   constexpr static bool is_source_supported = not cute::is_void_v<ElementC>;
 
   constexpr static bool is_m_major_C = detail::is_m_major<StrideC>();
@@ -171,6 +170,12 @@ private:
   constexpr static size_t SmemAlignmentC = cutlass::detail::alignment_for_swizzle(SmemLayoutC{});
   constexpr static size_t SmemAlignmentD = cutlass::detail::alignment_for_swizzle(SmemLayoutD{});
   constexpr static size_t MaxSmemAlignment = cute::max(SmemAlignmentC, SmemAlignmentD);
+
+  // Not unroll epi subtile loop when the activation op is heavy to reduce instruction size and register pressure.
+  constexpr static bool UnrollEpiLoop =
+    not cutlass::epilogue::thread::kIsHeavy_member_or_false<typename ThreadEpilogueOp::ActivationFn>::value;
+  // TMA store delay only benefits with loop unrolling
+  constexpr static bool DelayTmaStore = DelayTmaStore_ and UnrollEpiLoop;
 
   struct CollectiveStorageWithC {
     alignas(SmemAlignmentC) ArrayEngine<SmemElementC, cosize_v<SmemLayoutC>> smem_C;
@@ -690,8 +695,8 @@ public:
     Tensor cD_mn = local_tile(mD_crd, take<0,2>(cta_tile_mnk), make_coord(m_coord, n_coord));          // (CTA_M,CTA_N)
     Tensor tTR_cD_mn = thread_t2r.partition_D(flat_divide(cD_mn, EpilogueTile{}));     // (T2R,T2R_M,T2R_N,EPI_M,EPI_N)
     // Relative coordinate tensors (static)
-    Tensor cD = make_counting_tensor(cD_mn.layout());                                                  // (CTA_M,CTA_N)
-    Tensor tTR_cD = make_counting_tensor(tTR_cD_mn.layout());                          // (T2R,T2R_M,T2R_N,EPI_M,EPI_N)
+    Tensor cD = make_coord_tensor(cD_mn.layout());                                                  // (CTA_M,CTA_N)
+    Tensor tTR_cD = make_coord_tensor(tTR_cD_mn.layout());                          // (T2R,T2R_M,T2R_N,EPI_M,EPI_N)
     // Subtract the global "bottom right" corner from the local "top left" corner to get the max relative coordinate
     auto residue_cD = make_coord(M,N) - cD_mn(_0{});                                                           // (m,n)
     auto residue_tTR_cD = make_coord(M,N) - tTR_cD_mn(_0{});                                                   // (m,n)
@@ -808,10 +813,12 @@ public:
       ConsumerToken acc_wait_token = acc_pipeline.consumer_try_wait(acc_pipe_consumer_state);
 
       // For each epilogue subtile within the CTA tile
-      CUTLASS_PRAGMA_UNROLL
-      for (int iter_n = 0; iter_n < size<3>(gD_epi); ++iter_n) {
-        CUTLASS_PRAGMA_UNROLL
-        for (int iter_m = 0; iter_m < size<2>(gD_epi); ++iter_m) {
+      constexpr int NumEpiSubtilesN = CUTE_STATIC_V(size<3>(gD_epi));
+      constexpr int NumEpiSubtilesM = CUTE_STATIC_V(size<2>(gD_epi));
+      #pragma unroll(UnrollEpiLoop ? NumEpiSubtilesN : 1)
+      for (int iter_n = 0; iter_n < NumEpiSubtilesN; ++iter_n) {
+        #pragma unroll(UnrollEpiLoop ? NumEpiSubtilesM : 1)
+        for (int iter_m = 0; iter_m < NumEpiSubtilesM; ++iter_m) {
           int epi_m = iter_m, epi_n = iter_n;
           bool is_first_iteration = iter_m == 0 && iter_n == 0;
           bool is_last_iteration = iter_m == size<2>(gD_epi)-1 && iter_n == size<3>(gD_epi)-1;
@@ -1058,8 +1065,8 @@ public:
     Tensor cD_mn = local_tile(mD_crd, take<0,2>(cta_tile_mnk), make_coord(m_coord, n_coord));          // (CTA_M,CTA_N)
     Tensor tTR_cD_mn = thread_t2r.partition_D(flat_divide(cD_mn, EpilogueTile{}));     // (T2R,T2R_M,T2R_N,EPI_M,EPI_N)
     // Relative coordinate tensors (static)
-    Tensor cD = make_counting_tensor(cD_mn.layout());                                                  // (CTA_M,CTA_N)
-    Tensor tTR_cD = make_counting_tensor(tTR_cD_mn.layout());                          // (T2R,T2R_M,T2R_N,EPI_M,EPI_N)
+    Tensor cD = make_coord_tensor(cD_mn.layout());                                                  // (CTA_M,CTA_N)
+    Tensor tTR_cD = make_coord_tensor(tTR_cD_mn.layout());                          // (T2R,T2R_M,T2R_N,EPI_M,EPI_N)
     // Subtract the global "bottom right" corner from the local "top left" corner to get the max relative coordinate
     auto residue_cD = make_coord(M,N) - cD_mn(_0{});                                                           // (m,n)
     auto residue_tTR_cD = make_coord(M,N) - tTR_cD_mn(_0{});                                                   // (m,n)
@@ -1162,10 +1169,12 @@ public:
     }
 
     // For each epilogue subtile within the CTA tile
-    CUTLASS_PRAGMA_UNROLL
-    for (int iter_n = 0; iter_n < size<3>(gD_epi); ++iter_n) {
-      CUTLASS_PRAGMA_UNROLL
-      for (int iter_m = 0; iter_m < size<2>(gD_epi); ++iter_m) {
+    constexpr int NumEpiSubtilesN = CUTE_STATIC_V(size<3>(gD_epi));
+    constexpr int NumEpiSubtilesM = CUTE_STATIC_V(size<2>(gD_epi));
+    #pragma unroll(UnrollEpiLoop ? NumEpiSubtilesN : 1)
+    for (int iter_n = 0; iter_n < NumEpiSubtilesN; ++iter_n) {
+      #pragma unroll(UnrollEpiLoop ? NumEpiSubtilesM : 1)
+      for (int iter_m = 0; iter_m < NumEpiSubtilesM; ++iter_m) {
         int epi_m = iter_m, epi_n = iter_n;
         bool is_first_iteration = iter_m == 0 && iter_n == 0;
         bool is_last_iteration = iter_m == size<2>(gD_epi)-1 && iter_n == size<3>(gD_epi)-1;

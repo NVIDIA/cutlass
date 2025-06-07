@@ -45,7 +45,6 @@
 #include "cute/atom/mma_atom.hpp"
 #include "cute/algorithm/functional.hpp"
 #include "cute/algorithm/gemm.hpp"
-#include "cute/tensor_predicate.hpp"
 #include "cute/numeric/arithmetic_tuple.hpp"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -285,14 +284,14 @@ struct CollectiveMma<
     using TMA_A = decltype(make_tma_copy(
         GmemTiledCopyA{},
         make_tensor(recast_ptr<TmaInternalElementA>(nullptr), repeat_like(StrideA{}, int32_t(0)), StrideA{}),
-        SmemLayoutA{}(_,_,0),
+        SmemLayoutA{}(_,_,cute::Int<0>{}),
         make_shape(shape<0>(TileShape{}), shape<2>(TileShape{})),
         _1{}));  // No programmatic multicast
     // Assumption: StrideB is congruent with Problem_NK
     using TMA_B = decltype(make_tma_copy(
         GmemTiledCopyB{},
         make_tensor(recast_ptr<TmaInternalElementB>(nullptr), repeat_like(StrideB{}, int32_t(0)), StrideB{}),
-        SmemLayoutB{}(_,_,0),
+        SmemLayoutB{}(_,_,cute::Int<0>{}),
         make_shape(shape<1>(TileShape{}), shape<2>(TileShape{})),
         _1{}));  // No programmatic multicast
 
@@ -798,7 +797,7 @@ struct CollectiveMma<
     auto tCsB_stage   = tCsB(_,_,_,read_stage);
     auto tCsSFA_stage = tCsSFA(_,_,_,read_stage);
     auto tCsSFB_stage = tCsSFB(_,_,_,read_stage);
-    
+
     auto copy_kblock = [&](auto k_block) {
         // copy smem->rmem for A/B operand
       copy(smem_tiled_copy_A, tCsA_stage(_,_,k_block), tCrA_copy_view(_,_,k_block));
@@ -809,7 +808,7 @@ struct CollectiveMma<
       fp4_shift_A(MMAOp{}, tCrA_copy_view(_,_,k_block));
       fp4_shift_B(MMAOp{}, tCrB_copy_view(_,_,k_block));
 
-      
+
       // Copy smem->rmem for SFA/SFB operand
       copy(tCsSFA_stage(_,_,k_block), tCrSFA_copy_view(_,_,k_block));
       copy(tCsSFB_stage(_,_,k_block), tCrSFB_copy_view(_,_,k_block));
@@ -831,7 +830,7 @@ struct CollectiveMma<
       for_each(make_int_sequence<K_BLOCK_MAX>{}, [&] (auto k_block) {
 
         auto k_block_next = ((k_block + 1) == K_BLOCK_MAX) ? 0 : (k_block + 1);
-        
+
         if (k_block == K_BLOCK_MAX - 1) {
           cutlass::arch::NamedBarrier::sync(
           thr_size(tiled_mma), cutlass::arch::ReservedNamedBarriers::Sm120MainloopBarrier);
@@ -858,7 +857,7 @@ struct CollectiveMma<
     for_each(make_int_sequence<K_BLOCK_MAX>{}, [&] (auto k_block) {
 
       auto k_block_next = ((k_block + 1) == K_BLOCK_MAX) ? 0 : (k_block + 1);
-      
+
       if (k_block == K_BLOCK_MAX - 1) {
         cutlass::arch::NamedBarrier::sync(
         thr_size(tiled_mma), cutlass::arch::ReservedNamedBarriers::Sm120MainloopBarrier);

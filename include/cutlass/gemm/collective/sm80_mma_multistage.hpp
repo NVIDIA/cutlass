@@ -36,7 +36,6 @@
 #include "cute/algorithm/functional.hpp"
 #include "cute/atom/mma_atom.hpp"
 #include "cute/algorithm/gemm.hpp"
-#include "cute/tensor_predicate.hpp"
 #include "cute/numeric/arithmetic_tuple.hpp"
 
 
@@ -100,7 +99,7 @@ struct CollectiveMma<
   using TransformA = TransformA_;
   using TransformB = TransformB_;
   using ArchTag = typename DispatchPolicy::ArchTag;
-  // Follow the change in TestSmall: TileShape switch to CtaShape 
+  // Follow the change in TestSmall: TileShape switch to CtaShape
   // For sm80 arch, CtaShape should euqal to TileShape
   using CtaShape_MNK = TileShape;
 
@@ -318,7 +317,7 @@ struct CollectiveMma<
           copy(gmem_tiled_copy_A, tAgA(_,_,_,*k_tile_iter), tAsA(_,_,_,smem_pipe_write));
           copy(gmem_tiled_copy_B, tBgB(_,_,_,*k_tile_iter), tBsB(_,_,_,smem_pipe_write));
           cp_async_fence();
-          
+
           // Advance the tile
           --k_tile_count;
           if (k_tile_count > 0) { ++k_tile_iter; }
@@ -390,7 +389,7 @@ struct CollectiveMma<
                           Stages,
                           ClusterShape_>;
   using TileShape = TileShape_;
-  // Follow the change in TestSmall: TileShape switch to CtaShape 
+  // Follow the change in TestSmall: TileShape switch to CtaShape
   // In legacy arch, it should be same
   using CtaShape_MNK = TileShape;
   using ElementA = ElementA_;

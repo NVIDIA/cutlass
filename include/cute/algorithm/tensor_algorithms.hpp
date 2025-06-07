@@ -163,4 +163,16 @@ transform(Tensor<EngineIn1,LayoutIn1> const& tensor_in1,
   return transform(tensor_in1, tensor_in2, tensor_out, op);
 }
 
+namespace lazy {
+
+template <class Engine, class Layout, class Fn>
+CUTE_HOST_DEVICE constexpr
+auto
+transform(cute::Tensor<Engine,Layout> const& t, Fn const& fn)
+{
+  return cute::make_tensor(cute::make_transform_iter(fn, t.data()), t.layout());
+}
+
+} // end namespace lazy
+
 } // end namespace cute

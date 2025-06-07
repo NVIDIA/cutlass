@@ -1394,7 +1394,11 @@ struct SM100_MMA_MXF4_SS
           "{\n\t"
           ".reg .pred p;\n\t"
           "setp.ne.b32 p, %4, 0;\n\t"
+#if (__CUDACC_VER_MAJOR__ > 12) || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 9)
+          "tcgen05.mma.cta_group::1.kind::mxf4nvf4.block_scale.block16 [%0], %1, %2, %3, [%5], [%6], p; \n\t"
+#else
           "tcgen05.mma.cta_group::1.kind::mxf4nvf4.block_scale.scale_vec::4X [%0], %1, %2, %3, [%5], [%6], p; \n\t"
+#endif
           "}\n"
           :
           : "r"(tmem_c), "l"(desc_a), "l"(desc_b), "r"(uint32_t(idescE>>32)), "r"(scaleC),
@@ -1411,7 +1415,11 @@ struct SM100_MMA_MXF4_SS
           "{\n\t"
           ".reg .pred p;\n\t"
           "setp.ne.b32 p, %4, 0;\n\t"
+#if (__CUDACC_VER_MAJOR__ > 12) || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 9)
+          "tcgen05.mma.cta_group::1.kind::mxf4.block_scale.block32 [%0], %1, %2, %3, [%5], [%6], p; \n\t"
+#else
           "tcgen05.mma.cta_group::1.kind::mxf4.block_scale.scale_vec::2X [%0], %1, %2, %3, [%5], [%6], p; \n\t"
+#endif
           "}\n"
           :
           : "r"(tmem_c), "l"(desc_a), "l"(desc_b), "r"(uint32_t(idescE>>32)), "r"(scaleC),
@@ -1457,7 +1465,11 @@ struct SM100_MMA_MXF4NVF4_SS_SPARSE
           "{\n\t"
           ".reg .pred p;\n\t"
           "setp.ne.b32 p, %4, 0;\n\t"
+#if (__CUDACC_VER_MAJOR__ > 12) || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 9)
+          "tcgen05.mma.sp.cta_group::1.kind::mxf4nvf4.block_scale.block16 [%0], %1, %2, [%7], %3, [%5], [%6], p; \n\t"
+#else
           "tcgen05.mma.sp.cta_group::1.kind::mxf4nvf4.block_scale.scale_vec::4X [%0], %1, %2, [%7], %3, [%5], [%6], p; \n\t"
+#endif
           "}\n"
           :
           : "r"(tmem_c), "l"(desc_a), "l"(desc_b), "r"(uint32_t(idescE>>32)), "r"(scaleC),
@@ -1475,7 +1487,11 @@ struct SM100_MMA_MXF4NVF4_SS_SPARSE
           "{\n\t"
           ".reg .pred p;\n\t"
           "setp.ne.b32 p, %4, 0;\n\t"
+#if (__CUDACC_VER_MAJOR__ > 12) || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 9)
+          "tcgen05.mma.sp.cta_group::1.kind::mxf4.block_scale.block32 [%0], %1, %2, [%7], %3, [%5], [%6], p; \n\t"
+#else
           "tcgen05.mma.sp.cta_group::1.kind::mxf4.block_scale.scale_vec::2X [%0], %1, %2, [%7], %3, [%5], [%6], p; \n\t"
+#endif
           "}\n"
           :
           : "r"(tmem_c), "l"(desc_a), "l"(desc_b), "r"(uint32_t(idescE>>32)), "r"(scaleC),
@@ -1520,7 +1536,11 @@ struct SM100_MMA_MXF4_2x1SM_SS
           "{\n\t"
           ".reg .pred p;\n\t"
           "setp.ne.b32 p, %4, 0;\n\t"
+#if (__CUDACC_VER_MAJOR__ > 12) || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 9)
+          "tcgen05.mma.cta_group::2.kind::mxf4nvf4.block_scale.block16 [%0], %1, %2, %3, [%5], [%6], p; \n\t"
+#else
           "tcgen05.mma.cta_group::2.kind::mxf4nvf4.block_scale.scale_vec::4X [%0], %1, %2, %3, [%5], [%6], p; \n\t"
+#endif
           "}\n"
           :
           : "r"(tmem_c), "l"(desc_a), "l"(desc_b), "r"(uint32_t(idescE>>32)), "r"(scaleC),
@@ -1537,7 +1557,11 @@ struct SM100_MMA_MXF4_2x1SM_SS
           "{\n\t"
           ".reg .pred p;\n\t"
           "setp.ne.b32 p, %4, 0;\n\t"
+#if (__CUDACC_VER_MAJOR__ > 12) || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 9)
+          "tcgen05.mma.cta_group::2.kind::mxf4.block_scale.block32 [%0], %1, %2, %3, [%5], [%6], p; \n\t"
+#else
           "tcgen05.mma.cta_group::2.kind::mxf4.block_scale.scale_vec::2X [%0], %1, %2, %3, [%5], [%6], p; \n\t"
+#endif
           "}\n"
           :
           : "r"(tmem_c), "l"(desc_a), "l"(desc_b), "r"(uint32_t(idescE>>32)), "r"(scaleC),
@@ -1582,7 +1606,11 @@ struct SM100_MMA_MXF4NVF4_2x1SM_SS_SPARSE
           "{\n\t"
           ".reg .pred p;\n\t"
           "setp.ne.b32 p, %4, 0;\n\t"
+#if (__CUDACC_VER_MAJOR__ > 12) || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 9)
+          "tcgen05.mma.sp.cta_group::2.kind::mxf4nvf4.block_scale.block16 [%0], %1, %2, [%7], %3, [%5], [%6], p; \n\t"
+#else
           "tcgen05.mma.sp.cta_group::2.kind::mxf4nvf4.block_scale.scale_vec::4X [%0], %1, %2, [%7], %3, [%5], [%6], p; \n\t"
+#endif
           "}\n"
           :
           : "r"(tmem_c), "l"(desc_a), "l"(desc_b), "r"(uint32_t(idescE>>32)), "r"(scaleC),
@@ -1600,7 +1628,11 @@ struct SM100_MMA_MXF4NVF4_2x1SM_SS_SPARSE
           "{\n\t"
           ".reg .pred p;\n\t"
           "setp.ne.b32 p, %4, 0;\n\t"
+#if (__CUDACC_VER_MAJOR__ > 12) || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 9)
+          "tcgen05.mma.sp.cta_group::2.kind::mxf4.block_scale.block32 [%0], %1, %2, [%7], %3, [%5], [%6], p; \n\t"
+#else
           "tcgen05.mma.sp.cta_group::2.kind::mxf4.block_scale.scale_vec::2X [%0], %1, %2, [%7], %3, [%5], [%6], p; \n\t"
+#endif
           "}\n"
           :
           : "r"(tmem_c), "l"(desc_a), "l"(desc_b), "r"(uint32_t(idescE>>32)), "r"(scaleC),

@@ -66,10 +66,14 @@ struct CollectiveBuilder<
     StageCountType,
     BuilderScheduleTag,
     cute::enable_if_t<
+      not cute::is_tuple_v<ElementA> && not cute::is_tuple_v<ElementB> &&
+      not cute::is_tuple_v<GmemLayoutATag> && not cute::is_tuple_v<GmemLayoutBTag> &&
       // Dense Gemm
       (cute::is_base_of_v<KernelScheduleSm120DenseGemm, BuilderScheduleTag> ||
        cute::is_base_of_v<KernelTmaWarpSpecializedPingpong, BuilderScheduleTag> ||
        cute::is_base_of_v<KernelTmaWarpSpecializedCooperative, BuilderScheduleTag> ||
+       cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedPingpong, BuilderScheduleTag> ||
+       cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedCooperative, BuilderScheduleTag> ||
        cute::is_same_v<KernelScheduleAuto, BuilderScheduleTag>) &&
       // Alignment check
       detail::sm1xx_gemm_is_aligned<ElementA, AlignmentA, ElementB, AlignmentB, BuilderScheduleTag>()>>
@@ -79,9 +83,11 @@ struct CollectiveBuilder<
                 "SM120 TmaWarpSpecialized builder currently only supports F8F6F4 MMA.");
   static_assert(cute::is_static_v<TileShape_MNK>, "TileShape has to be static");
   static_assert(cute::is_static_v<ClusterShape_MNK>, "Cluster has to be static");
+  static_assert(cute::size(ClusterShape_MNK{}) == Int<1>{}, "no programmatic multicast on this arch");
 
-  static constexpr cute::GMMA::Major GmmaMajorA = detail::gmma_rs_tag_to_major_A<GmemLayoutATag>();
-  static constexpr cute::GMMA::Major GmmaMajorB = detail::gmma_rs_tag_to_major_B<GmemLayoutBTag>();
+  static constexpr cute::UMMA::Major UmmaMajorA = cutlass::gemm::collective::detail::tag_to_umma_major_A<GmemLayoutATag>();
+  static constexpr cute::UMMA::Major UmmaMajorB = cutlass::gemm::collective::detail::tag_to_umma_major_B<GmemLayoutBTag>();
+  static_assert((UmmaMajorA == UMMA::Major::K && UmmaMajorB == UMMA::Major::K), "Only TN layout is supported.");
 
   using PermTileM = decltype(cute::min(size<0>(TileShape_MNK{}), _128{}));
   using PermTileN = decltype(cute::min(size<1>(TileShape_MNK{}),  _32{}));
@@ -127,10 +133,24 @@ struct CollectiveBuilder<
       detail::sm120_smem_capacity_bytes, SmemAllocTypeA,
       SmemAllocTypeB, TileShape_MNK, MainloopPipelineStorage>(StageCountType{});
   static constexpr uint32_t SchedulerPipelineStageCount = 2;
+
+
+  static constexpr bool IsPtrArrayKernel = cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedCooperative, BuilderScheduleTag> ||
+                                           cute::is_base_of_v<KernelPtrArrayTmaWarpSpecializedPingpong, BuilderScheduleTag>;
+  static_assert(!IsPtrArrayKernel, "PtrArray kernel is not supported for this collective builder.");
+  
+  using KernelSchedule = cute::conditional_t<IsCooperative, 
+                                              KernelTmaWarpSpecializedCooperativeSm120<SchedulerPipelineStageCount>, 
+                                              KernelTmaWarpSpecializedPingpongSm120<SchedulerPipelineStageCount>>;
+
   using DispatchPolicy = MainloopSm120TmaWarpSpecialized<PipelineStages,
-                                                         SchedulerPipelineStageCount,
-                                                         ClusterShape_MNK,
-                                                         BuilderScheduleTag>;
+                                                          SchedulerPipelineStageCount,
+                                                          ClusterShape_MNK,
+                                                          KernelSchedule>;
+
+  static_assert(cute::is_base_of_v<KernelTmaWarpSpecializedCooperative, typename DispatchPolicy::Schedule> ||
+                cute::is_base_of_v<KernelTmaWarpSpecializedPingpong, typename DispatchPolicy::Schedule>, 
+                "Unsupported kernel schedule by this collective mainloop dispatch policy.");                                                                    
 
   using SmemCopyAtomA = Copy_Atom<decltype(detail::sm120_rr_smem_copy_selector_A<ElementA, ElementB, UseF8f6f4>()), SmemAllocTypeA>;
   using SmemCopyAtomB = Copy_Atom<decltype(detail::sm120_rr_smem_copy_selector_B<ElementA, ElementB, UseF8f6f4>()), SmemAllocTypeB>;

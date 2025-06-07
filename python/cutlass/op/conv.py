@@ -112,7 +112,11 @@
         args.sync()
 """
 
-from cuda import cuda
+from __future__ import annotations
+from typing import Optional
+from cutlass.utils.lazy_import import lazy_import
+cuda = lazy_import("cuda.cuda")
+cudart =  lazy_import("cuda.cudart")
 from cutlass_library import (
     ConvKind,
     ConvMode,
@@ -735,7 +739,7 @@ class Conv2d(OperationBase):
             alpha=None, beta=None,
             split_k=("serial", 1), sync: bool = True,
             print_module: bool = False,
-            stream: cuda.CUstream = cuda.CUstream(0)) -> Conv2dArguments:
+            stream: Optional[cuda.CUstream] = None) -> Conv2dArguments:
         """
         Runs the kernel currently specified. If it has not already been, the kernel is emitted and
         compiled. Tensors holding operands and outputs of the kernel are sourced either from the
@@ -768,6 +772,8 @@ class Conv2d(OperationBase):
         :return: arguments passed in to the kernel
         :rtype: cutlass.backend.Conv2dArguments
         """
+        if not stream:
+            stream = cuda.CUstream(0)
         super().run_setup()
 
         A = self._verify_tensor(A, self.A, self._element_a, self._layout_a, "A")
@@ -926,7 +932,10 @@ class Conv2dFprop(Conv2d):
         self, input=None, weight=None, C=None, output=None, alpha=None, beta=None,
         stride=(1, 1), padding=(0, 0), dilation=(1, 1), split_k=("serial", 1),
         sync: bool = True, print_module: bool = False,
-        stream: cuda.CUstream = cuda.CUstream(0)) -> Conv2dArguments:
+        stream: Optional[cuda.CUstream] = None) -> Conv2dArguments:
+
+        if not stream:
+            stream = cuda.CUstream(0)
 
         A, B, D = input, weight, output
         return super().run(
@@ -951,8 +960,11 @@ class Conv2dDgrad(Conv2d):
     def run(self, grad_output=None, weight=None, C=None, grad_input=None, alpha=None, beta=None,
         stride=(1, 1), padding=(0, 0), dilation=(1, 1), split_k=("serial", 1),
         sync: bool = True, print_module: bool = False,
-        stream: cuda.CUstream = cuda.CUstream(0)) -> Conv2dArguments:
+        stream: Optional[cuda.CUstream] = None) -> Conv2dArguments:
         #
+        if not stream:
+            stream = cuda.CUstream(0)
+
         A, B, D = grad_output, weight, grad_input
         return super().run(
             A, B, C, D, alpha, beta, stride, padding, dilation, split_k, sync, print_module, stream)
@@ -976,8 +988,10 @@ class Conv2dWgrad(Conv2d):
     def run(self, grad_output=None, input=None, C=None, grad_weight=None, alpha=None, beta=None,
         stride=(1, 1), padding=(0, 0), dilation=(1, 1), split_k=("serial", 1),
         sync: bool = True, print_module: bool = False,
-        stream: cuda.CUstream = cuda.CUstream(0)) -> Conv2dArguments:
-        #
+        stream: Optional[cuda.CUstream] = None) -> Conv2dArguments:
+        if not stream:
+            stream = cuda.CUstream(0)
+
         A, B, D = grad_output, input, grad_weight
         return super().run(
             A, B, C, D, alpha, beta, stride, padding, dilation, split_k, sync, print_module, stream)

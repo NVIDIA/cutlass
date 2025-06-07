@@ -33,6 +33,7 @@
 #include <cute/config.hpp>
 
 #include <cute/util/type_traits.hpp>
+#include <cute/container/type_list.hpp>
 #include <cute/container/tuple.hpp>
 #include <cute/algorithm/functional.hpp>
 #include <cute/numeric/integer_sequence.hpp>
@@ -277,34 +278,13 @@ transform_leaf(T0 const& t0, T1 const& t1, F&& f)
 // find and find_if
 //
 
-namespace detail {
-
-template <class T, class F, int I, int... Is>
-CUTE_HOST_DEVICE constexpr
-auto
-find_if(T const& t, F&& f, seq<I,Is...>)
-{
-  if constexpr (decltype(f(get<I>(t)))::value) {
-    return cute::C<I>{};
-  } else
-  if constexpr (sizeof...(Is) == 0) {
-    return cute::C<I+1>{};
-  } else {
-    return find_if(t, f, seq<Is...>{});
-  }
-
-  CUTE_GCC_UNREACHABLE;
-}
-
-} // end namespace detail
-
 template <class T, class F>
 CUTE_HOST_DEVICE constexpr
 auto
 find_if(T const& t, F&& f)
 {
   if constexpr (is_tuple<T>::value) {
-    return detail::find_if(t, f, tuple_seq<T>{});
+    return detail::tapply(t, f, [] (auto... a) { return cute::C<find_true_v<decltype(a)::value...>>{}; }, tuple_seq<T>{});
   } else {
     return cute::C<decltype(f(t))::value ? 0 : 1>{};
   }
@@ -326,7 +306,7 @@ auto
 any_of(T const& t, F&& f)
 {
   if constexpr (is_tuple<T>::value) {
-    return detail::apply(cute::transform(t, f), [&] (auto const&... a) { return (false_type{} || ... || a); }, tuple_seq<T>{});
+    return detail::tapply(t, f, [] (auto... a) { return (false_type{} || ... || a); }, tuple_seq<T>{});
   } else {
     return f(t);
   }
@@ -340,7 +320,7 @@ auto
 all_of(T const& t, F&& f)
 {
   if constexpr (is_tuple<T>::value) {
-    return detail::apply(cute::transform(t, f), [&] (auto const&... a) { return (true_type{} && ... && a); }, tuple_seq<T>{});
+    return detail::tapply(t, f, [] (auto... a) { return (true_type{} && ... && a); }, tuple_seq<T>{});
   } else {
     return f(t);
   }

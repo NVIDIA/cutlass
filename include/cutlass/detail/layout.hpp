@@ -33,10 +33,10 @@
 #include "cute/layout.hpp"
 #include "cute/pointer_sparse.hpp"       // cute::is_sparse
 #include "cute/swizzle.hpp"              // cute::Swizzle
-#include "cute/swizzle_layout.hpp"       // cute::detail::get_swizzle_portion
+#include "cute/swizzle_layout.hpp"       // cute::get_swizzle_portion
 #include "cute/util/type_traits.hpp"
 #include "cute/arch/copy_sm90_tma.hpp"
-#include "cute/arch/copy_sm100_tma.hpp"  
+#include "cute/arch/copy_sm100_tma.hpp"
 
 #include "cutlass/layout/matrix.h"
 #include "cutlass/layout/tensor.h"
@@ -219,8 +219,8 @@ stride_to_layout_tag_A() {
     return layout::ColumnMajor{};
   }
   // Specialize for sparse layout
-  else if constexpr (cute::get<0>(InternalStrideA{}) == cute::_2{} && 
-                     cute::rank(cute::get<1>(InternalStrideA{})) == 2 && 
+  else if constexpr (cute::get<0>(InternalStrideA{}) == cute::_2{} &&
+                     cute::rank(cute::get<1>(InternalStrideA{})) == 2 &&
                      cute::is_same_v<cute::_1, cute::remove_cvref_t<decltype(cute::get<1,0>(InternalStrideA{}))>>) {
     return layout::ColumnMajor{};
   }
@@ -308,8 +308,8 @@ constexpr bool is_tma_copy_engine() {
                   || cute::is_base_of_v<cute::SM90_TMA_LOAD_IM2COL_MULTICAST,       GmemTiledCopy>
                   || cute::is_base_of_v<cute::SM90_TMA_STORE,                       GmemTiledCopy>
                   || cute::is_base_of_v<cute::SM90_TMA_STORE_IM2COL,                GmemTiledCopy>
-                  || cute::is_base_of_v<cute::SM100_TMA_2SM_LOAD,                   GmemTiledCopy> 
-                  || cute::is_base_of_v<cute::SM100_TMA_2SM_LOAD_MULTICAST,         GmemTiledCopy> 
+                  || cute::is_base_of_v<cute::SM100_TMA_2SM_LOAD,                   GmemTiledCopy>
+                  || cute::is_base_of_v<cute::SM100_TMA_2SM_LOAD_MULTICAST,         GmemTiledCopy>
                   ) {
       return true;
     }
@@ -349,7 +349,7 @@ get_alignment_count_from_gmem_tiled_copy() {
                      cutlass::gemm::collective::detail::is_sm10x_f8f6f4_element<Element>() && cute::is_same_v<typename RawDtype<ElementMma>::type, uint8_t>) {
         return 128;
       }
-      
+
       // For sparse MMA, alignment in logical elements is increased by sparsity factor
       if constexpr (cute::is_sparse_v<ElementMma>) {
         return 128 / sizeof_bits<Element>::value * ElementMma::sparsity;
@@ -366,16 +366,19 @@ get_alignment_count_from_gmem_tiled_copy() {
 // Return alignment bit requirements for the GEMM inputs.
 template <
   class ElementType
-  , bool IsF8F6F4SubBytes=false  
+  , bool IsF8F6F4SubBytes=false
 >
 constexpr int
 get_input_alignment_bits() {
   if constexpr (IsF8F6F4SubBytes && sizeof_bits<ElementType>::value == 4) {
+    // 16U4 format: The inner tensor size dimension should be multiple of 64B.
     return 64 * 8;
   }
   else if constexpr (IsF8F6F4SubBytes && sizeof_bits<ElementType>::value == 6) {
+    // 16U6 format : The inner tensor size dimension must be a multiple of 96B.
     return 96 * 8;
   }
+  // TMA 16B alignment requirement
   return 128;
 }
 
@@ -383,12 +386,11 @@ get_input_alignment_bits() {
 template <class ElementType>
 constexpr int
 get_output_alignment_bits() {
-  
   if constexpr (sizeof_bits<ElementType>::value == 6) {
-    // U6 format : The inner tensor size dimension must be a multiple of 96B.
+    // 16U6 format : The inner tensor size dimension must be a multiple of 96B.
     return 96 * 8;
   }
-  
+  // TMA 16B alignment requirement
   return 128;
 }
 
@@ -424,7 +426,7 @@ template<class Layout>
 CUTLASS_HOST_DEVICE constexpr
 size_t
 alignment_for_swizzle(Layout layout) {
-  return alignment_for_swizzle(cute::detail::get_swizzle_portion(layout));
+  return alignment_for_swizzle(cute::get_swizzle_portion(layout));
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

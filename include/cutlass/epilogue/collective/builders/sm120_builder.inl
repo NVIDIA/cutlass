@@ -63,13 +63,27 @@ struct EpilogueSFVecSize<FusionOp, cute::void_t<decltype(FusionOp::SFVecSize)>> 
   static constexpr int value = FusionOp::SFVecSize;
 };
 
+// Helper to deduce NumEpilogueWarpGroups based on Schedule
+template <class Schedule, class = void>
+struct GetNumEpilogueWarpGroups {
+  static constexpr int value = 2;
+};
+
+template <class Schedule>
+struct GetNumEpilogueWarpGroups<Schedule, cute::void_t<decltype(Schedule::NumEpilogueWarpGroups)>> {
+  static constexpr int value = Schedule::NumEpilogueWarpGroups;
+};
+
 // Returns the parameterized dispatch policy for the TMA epilogue
-template<class TileShapeMNK, class EpilogueTileMN, class ElementC, class ElementD, class StrideD, class Schedule>
+template<class TileShapeMNK, class EpilogueTileMN, class ElementC, class ElementD, class GmemLayoutTagD, class Schedule>
 constexpr auto
 sm120_get_tma_dispatch_policy() {
   using namespace cute;
 
   constexpr int EpiTiles = size(shape_div(take<0,2>(TileShapeMNK{}), EpilogueTileMN{}));
+  using StrideD = cutlass::detail::TagToStrideC_t<GmemLayoutTagD>;
+  using InternalStrideD  = cute::remove_pointer_t<StrideD>;
+  constexpr bool IsGroupedGemmKernel = !cute::is_same_v<InternalStrideD, StrideD>;
 
   // For 120, a FragmentSize of 4 is used to match the
   // output per thread from each MMA. Epilogue subtiles iterate over multiple of these
@@ -86,9 +100,17 @@ sm120_get_tma_dispatch_policy() {
 
   // SM120 epilogues use smaller stage counts in order to fit within the limited shared memory capacity.
   constexpr int StagesC = ReuseSmem ? cute::max(cute::min(EpiTiles, 2), StagesD+1)
-                                    : StagesD;
-                                    
-  return Sm120TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmem, DelayTmaStore>{};
+                                    : StagesD;  
+
+  constexpr int NumEpilogueWarpGroups = GetNumEpilogueWarpGroups<Schedule>::value;
+
+  if constexpr (IsGroupedGemmKernel) {
+    return Sm120PtrArrayTmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmem, 
+                                          DelayTmaStore, NumEpilogueWarpGroups>{};
+  } 
+  else {
+    return Sm120TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmem, DelayTmaStore>{};
+  }
 }
 
 // Returns the smem layout atom to be used for C or D matrix
@@ -262,6 +284,46 @@ struct CallbacksBuilder<
   >;
 };
 
+// Overload CallbacksBuilder to pick the correct copy atoms for PtrArray epilogue fusions
+template <
+  int StagesC,
+  int StagesD,
+  int FragmentSize,
+  bool ReuseSmemC,
+  bool DelayTmaStore,
+  int NumEpilogueWarpgroups,
+  class FusionOp,
+  class TileShape_MNK,
+  class EpilogueTile_MN,
+  class AccLoadOp,
+  class ElementAccumulator
+>
+struct CallbacksBuilder<
+  Sm120PtrArrayTmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore, NumEpilogueWarpgroups>,
+  FusionOp,
+  TileShape_MNK,
+  EpilogueTile_MN,
+  ElementAccumulator,
+  AccLoadOp,
+  cute::enable_if_t<(FusionOp::IsAuxOutSupported ^ FusionOp::IsAuxInSupported) // only one aux tensor
+              && not cute::is_subbyte_v<typename FusionOp::ElementAux>>
+> {
+  using GmemStrideTypeAux = gemm::TagToStrideC_t<typename FusionOp::GmemLayoutTagAux>;
+  using SmemLayoutAtomAux = decltype(detail::sm90_get_epilogue_smem_swizzle_layout_atom<
+    GmemStrideTypeAux, typename FusionOp::ElementAux, EpilogueTile_MN>());
+
+  using CopyOpR2S = decltype(detail::sm120_get_smem_store_op_for_accumulator<GmemStrideTypeAux, typename FusionOp::ElementAux>());
+
+  using CopyOpS2R = decltype(detail::sm120_get_smem_load_op_for_source<GmemStrideTypeAux, typename FusionOp::ElementAux>());
+  
+  using SmemCopyOpAux = cute::conditional_t<FusionOp::IsAuxOutSupported, CopyOpR2S, CopyOpS2R>;
+
+  using Callbacks = fusion::FusionCallbacks<
+    Sm120PtrArrayTmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC, DelayTmaStore, NumEpilogueWarpgroups>,
+    FusionOp, TileShape_MNK, EpilogueTile_MN,
+    SmemLayoutAtomAux, SmemCopyOpAux
+  >;
+};
 
 // Helper for building TMA warp-specialized collective epilogues, specialized by
 // the fusion operation performed and the dispatch policy to use.
@@ -291,6 +353,9 @@ struct Sm120TmaBuilderImpl {
   using GmemStrideTypeC = cutlass::detail::TagToStrideC_t<GmemLayoutTagC>;
   using GmemStrideTypeD = cutlass::detail::TagToStrideC_t<GmemLayoutTagD>;
 
+  using UnderlyingGmemStrideTypeC = cute::remove_pointer_t<GmemStrideTypeC>;
+  using UnderlyingGmemStrideTypeD = cute::remove_pointer_t<GmemStrideTypeD>;
+
   using CopyOpS2G =
     cute::conditional_t<detail::is_im2col_mode<GmemLayoutTagD>,
       SM90_TMA_STORE_IM2COL,
@@ -306,15 +371,15 @@ struct Sm120TmaBuilderImpl {
   // Get the smallest tiled copy we can use to retile the accumulators
   using CopyAtomC = Copy_Atom<SM90_U32x2_STSM_N, cutlass::half_t>;
 
-  using SmemLayoutAtomC = decltype(detail::sm120_get_epilogue_smem_swizzle_layout_atom<GmemStrideTypeC, ElementC, EpilogueTile_MN>());
-  using SmemLayoutAtomD = decltype(detail::sm120_get_epilogue_smem_swizzle_layout_atom<GmemStrideTypeD, ElementD, EpilogueTile_MN>());
+  using SmemLayoutAtomC = decltype(detail::sm120_get_epilogue_smem_swizzle_layout_atom<UnderlyingGmemStrideTypeC, ElementC, EpilogueTile_MN>());
+  using SmemLayoutAtomD = decltype(detail::sm120_get_epilogue_smem_swizzle_layout_atom<UnderlyingGmemStrideTypeD, ElementD, EpilogueTile_MN>());
 
-  using CopyOpS2R = decltype(detail::sm120_get_smem_load_op_for_source<GmemStrideTypeC, ElementC>());
+  using CopyOpS2R = decltype(detail::sm120_get_smem_load_op_for_source<UnderlyingGmemStrideTypeC, ElementC>());
 
-  using CopyOpR2S = decltype(detail::sm120_get_smem_store_op_for_accumulator<GmemStrideTypeD, ElementD>());
+  using CopyOpR2S = decltype(detail::sm120_get_smem_store_op_for_accumulator<UnderlyingGmemStrideTypeD, ElementD>());
 
   // Get register to register tiled copy that happen before shared memory store.
-  using CopyOpR2R = decltype(detail::sm120_get_register_transform_op<GmemStrideTypeD, ElementD>());
+  using CopyOpR2R = decltype(detail::sm120_get_register_transform_op<UnderlyingGmemStrideTypeD, ElementD>());
 
   // TMA builder allows for passing callbacks directly, which is either a fusion::FusionCallbacks
   // instance or a direct visitor implementation, e.g. fusion::Sm90LinearCombination
@@ -334,8 +399,32 @@ struct Sm120TmaBuilderImpl {
   constexpr static bool ReuseSmemC = DispatchPolicy::ReuseSmemC;
   constexpr static bool DelayTmaStore = DispatchPolicy::DelayTmaStore;
 
+  //Helper to deduce BaseDispatchPolicy based on DispatchPolicy
+  template<class T>
+  struct GetBaseDispatchPolicy {
+    using Type = T;
+  };
+
+  template<int StagesC_, int StagesD_, int FragmentSize_, bool ReuseSmemC_, 
+           bool DelayTmaStore_, int NumEpilogueWarpGroups_>
+  struct GetBaseDispatchPolicy<Sm120PtrArrayTmaWarpSpecialized<StagesC_, StagesD_, 
+    FragmentSize_, ReuseSmemC_, DelayTmaStore_, NumEpilogueWarpGroups_>> {
+    using Type = typename cutlass::epilogue::Sm90PtrArrayTmaWarpSpecialized<StagesC_, StagesD_, 
+      FragmentSize_, ReuseSmemC_, DelayTmaStore_, NumEpilogueWarpGroups_>;
+  };
+
+  template<int StagesC_, int StagesD_, int FragmentSize_, bool ReuseSmemC_, 
+           bool DelayTmaStore_>
+  struct GetBaseDispatchPolicy<Sm120TmaWarpSpecialized<StagesC_, StagesD_, 
+    FragmentSize_, ReuseSmemC_, DelayTmaStore_>> {
+    using Type = typename cutlass::epilogue::Sm90TmaWarpSpecialized<StagesC_, StagesD_, 
+      FragmentSize_, ReuseSmemC_, DelayTmaStore_>;
+  };
+
+  using BaseDispatchPolicy = typename GetBaseDispatchPolicy<DispatchPolicy>::Type;
+  
   using CollectiveOp = cutlass::epilogue::collective::CollectiveEpilogue<
-      Sm90TmaWarpSpecialized<StagesC,StagesD,FragmentSize,ReuseSmemC,DelayTmaStore>,
+      BaseDispatchPolicy,
       TileShape_MNK,
       EpilogueTile_MN,
       ElementC_, // Need to pass void through to expose via GemmUniversal
@@ -394,13 +483,15 @@ struct CollectiveBuilder<
     cute::enable_if_t<cute::is_same_v<Schedule, EpilogueScheduleAuto> ||
                       cute::is_same_v<Schedule, TmaWarpSpecialized> ||
                       cute::is_same_v<Schedule, TmaWarpSpecializedCooperative> ||
+                      cute::is_same_v<Schedule, PtrArrayTmaWarpSpecializedPingpong> ||
+                      cute::is_same_v<Schedule, PtrArrayTmaWarpSpecializedCooperative> ||
                       cute::is_same_v<Schedule, SparseTmaWarpSpecializedCooperativeSm120>
                      >> {
 private:
   using EpilogueTile_MN =
     decltype(detail::sm120_compute_tile_shape_or_override<ElementC, ElementD, EpilogueTileType, Schedule, TileShape_MNK, cutlass::detail::TagToStrideC_t<GmemLayoutTagD>, FusionOperation>());
   using DispatchPolicy =
-    decltype(detail::sm120_get_tma_dispatch_policy<TileShape_MNK,EpilogueTile_MN,ElementC,ElementD, cutlass::detail::TagToStrideC_t<GmemLayoutTagD>, Schedule>());
+    decltype(detail::sm120_get_tma_dispatch_policy<TileShape_MNK,EpilogueTile_MN,ElementC,ElementD, GmemLayoutTagD, Schedule>());
 
 
 public:

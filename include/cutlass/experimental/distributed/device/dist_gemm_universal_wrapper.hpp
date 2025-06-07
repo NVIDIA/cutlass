@@ -446,7 +446,7 @@ public:
 
   Status
   construct_graph(bool launch_with_pdl) {
-#if ((__CUDACC_VER_MAJOR__ >= 12) && (__CUDACC_VER_MINOR__ >= 4))
+#if (__CUDACC_VER_MAJOR__ > 12 || (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ >= 6))
     Status status = Status::kSuccess;
 
     // Destroy existing graph, if created

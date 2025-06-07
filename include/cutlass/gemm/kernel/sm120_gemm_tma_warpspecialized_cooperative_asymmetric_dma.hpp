@@ -554,6 +554,9 @@ public:
         if constexpr (IsSchedDynamicPersistent) {
           bool requires_clc_query = true;
           TileSchedulerPipelineState scheduler_pipe_producer_state = cutlass::make_producer_start_state<TileSchedulerPipeline>();
+
+          cutlass::arch::wait_on_dependent_grids();
+
           while (work_tile_info.is_valid()) {
             if (requires_clc_query) {
               // Throttle CLC query to mitigate workload imbalance caused by skews among persistent workers.

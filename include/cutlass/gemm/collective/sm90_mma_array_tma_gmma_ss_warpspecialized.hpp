@@ -42,7 +42,6 @@
 #include "cute/algorithm/functional.hpp"
 #include "cute/atom/mma_atom.hpp"
 #include "cute/algorithm/gemm.hpp"
-#include "cute/tensor_predicate.hpp"
 #include "cute/numeric/arithmetic_tuple.hpp"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -359,7 +358,7 @@ struct CollectiveMma<
   CUTLASS_DEVICE void
   load(
       Params const& mainloop_params,
-      MainloopPipeline pipeline, 
+      MainloopPipeline pipeline,
       PipelineState smem_pipe_write,
       cute::tuple<TensorA, TensorB> const& load_inputs,
       cute::tuple<TensorMapA, TensorMapB> const& input_tensormaps,
@@ -451,9 +450,9 @@ struct CollectiveMma<
     // Issue the epilogue waits
     if (lane_predicate) {
       // This helps avoid early exit of blocks in Cluster.
-      // Waits for all stages to either be released (all 
+      // Waits for all stages to either be released (all
       // Consumer UNLOCKs), or if the stage was never used
-      // then it would just be acquired since the phase was 
+      // then it would just be acquired since the phase was
       // still inverted from make_producer_start_state.
       pipeline.producer_tail(smem_pipe_write);
     }
@@ -489,10 +488,10 @@ struct CollectiveMma<
 
     // Layout of warp group to thread mapping
 
-    static_assert(stride<0>(typename TiledMma::ALayout{}) == 0 and 
+    static_assert(stride<0>(typename TiledMma::ALayout{}) == 0 and
                   stride<0>(typename TiledMma::BLayout{}) == 0 and
                   size<0>(typename TiledMma::ALayout{}) == NumThreadsPerWarpGroup and
-                  size<0>(typename TiledMma::BLayout{}) == NumThreadsPerWarpGroup, 
+                  size<0>(typename TiledMma::BLayout{}) == NumThreadsPerWarpGroup,
                   "Stride of the first mode must be 0 and the size of the mode must be NumThreadsPerWarpGroup");
 
     constexpr int MmaWarpGroups = size(TiledMma{}) / NumThreadsPerWarpGroup;
@@ -529,10 +528,9 @@ struct CollectiveMma<
 
     // Prologue GMMAs
     int prologue_mma_count = min(K_PIPE_MMAS, k_tile_count);
-    assert(k_tile_count >= 1);
     tiled_mma.accumulate_ = GMMA::ScaleOut::Zero;
     warpgroup_fence_operand(accum);
-    {
+    if (k_tile_count > 0) {
       // WAIT on smem_pipe_read until its data are available (phase bit flips from rdPhaseBit value)
       auto barrier_token = pipeline.consumer_try_wait(smem_pipe_read);
       pipeline.consumer_wait(smem_pipe_read, barrier_token);
@@ -612,7 +610,7 @@ struct CollectiveMma<
     k_tile_count -= prologue_mma_count;
 
     smem_pipe_release.advance(k_tile_count);
-    
+
     // Wait on all GMMAs to complete
     warpgroup_wait<0>();
 
@@ -691,9 +689,9 @@ struct CollectiveMma<
     InternalElementB const* ptr_B = nullptr;
     Tensor tensor_b = make_tensor(ptr_B, make_shape(N,K,Int<1>{}), mainloop_params.dB[next_group]);
 
-    cute::detail::fill_tma_gmem_shape_stride(mainloop_params.tma_load_a, tensor_a, 
+    cute::detail::fill_tma_gmem_shape_stride(mainloop_params.tma_load_a, tensor_a,
                                              prob_shape_A, prob_stride_A);
-    cute::detail::fill_tma_gmem_shape_stride(mainloop_params.tma_load_b, tensor_b, 
+    cute::detail::fill_tma_gmem_shape_stride(mainloop_params.tma_load_b, tensor_b,
                                              prob_shape_B, prob_stride_B);
 
     // Convert strides to byte strides
@@ -739,6 +737,10 @@ struct CollectiveMma<
   tensormaps_cp_fence_release (
       TensorMapStorage& shared_tensormaps,
       cute::tuple<TensorMapA, TensorMapB> const& input_tensormaps) {
+    if (cute::elect_one_sync()) {
+      cute::tma_desc_commit_group();
+      cute::tma_desc_wait_group();
+    }
     // Entire warp must do this (i.e. it's aligned)
     tma_descriptor_cp_fence_release(get<0>(input_tensormaps), shared_tensormaps.smem_tensormap_A);
     tma_descriptor_cp_fence_release(get<1>(input_tensormaps), shared_tensormaps.smem_tensormap_B);

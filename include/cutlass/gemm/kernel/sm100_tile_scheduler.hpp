@@ -95,23 +95,6 @@ public:
   };
 
   struct Arguments {
-
-    Arguments() = default;
-    Arguments(Arguments const&) = default;
-    Arguments(Arguments&&) = default;
-
-    CUTLASS_HOST_DEVICE
-    Arguments&
-    operator=(Arguments const&) {
-      return *this;
-    }
-
-    CUTLASS_HOST_DEVICE
-    Arguments&
-    operator=(Arguments &&) {
-      return *this;
-    }
-
     int max_swizzle_size = 0;
     RasterOrderOptions raster_order = RasterOrderOptions::Heuristic;
   };
