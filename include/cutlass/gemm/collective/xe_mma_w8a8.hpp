@@ -189,7 +189,7 @@ struct CollectiveMma<MainloopIntelW8A8<Stages, Schedule>, TileShape_, ElementA_,
       constexpr int chunk_size = 16;
       constexpr int iters = num_elements / chunk_size;
       CUTLASS_PRAGMA_UNROLL
-      for (int i = iters - 1; i >= 0; i--) {
+      for (int i = 0; i < iters; i++) {
         cute::intel::uchar16 src_vec;
         CUTLASS_PRAGMA_UNROLL
         for (int j = 0; j < chunk_size; ++j) {
@@ -229,11 +229,11 @@ struct CollectiveMma<MainloopIntelW8A8<Stages, Schedule>, TileShape_, ElementA_,
     Tensor tCgA = thr_mma.partition_A(gA);
     Tensor tCgB = thr_mma.partition_B(gB);
 
-    Tensor tCrA_fp16 = make_tensor<half_t>(make_fragment_layout(mainloop.tiled_copy_a, tCgA(_,_,_,0).shape()));
-    Tensor tCrB_fp16 = make_tensor<half_t>(make_fragment_layout(mainloop.tiled_copy_b, tCgB(_,_,_,0).shape()));
+    Tensor tCrA = make_tensor<uint8_t>(make_fragment_layout(mainloop.tiled_copy_a, tCgA(_,_,_,0).shape()));
+    Tensor tCrB = make_tensor<uint8_t>(make_fragment_layout(mainloop.tiled_copy_b, tCgB(_,_,_,0).shape()));
 
-    Tensor tCrA = make_tensor(reinterpret_cast<uint8_t*>(tCrA_fp16.data()), tCrA_fp16.layout());
-    Tensor tCrB = make_tensor(reinterpret_cast<uint8_t*>(tCrB_fp16.data()), tCrB_fp16.layout());
+    Tensor tCrA_fp16 = make_fragment_like<half_t>(tCrA);
+    Tensor tCrB_fp16 = make_fragment_like<half_t>(tCrB);
 
     // Retile registers for copies
     Tensor tArA = thr_copy_A.retile_D(tCrA);
@@ -272,13 +272,13 @@ struct CollectiveMma<MainloopIntelW8A8<Stages, Schedule>, TileShape_, ElementA_,
       copy(mainloop.tiled_copy_a, tAgA(_,_,_,k_tile), tArA);
       copy(mainloop.tiled_copy_b, tBgB(_,_,_,k_tile), tBrB);
 
+      convert_FP8_to_FP16(tCrA, tCrA_fp16);
+      convert_FP8_to_FP16(tCrB, tCrB_fp16);
+
       if (prefetch_k < k_tile_count) {
         prefetch(tiled_prefetch_a, pAgA(_, _, _, prefetch_k));
         prefetch(tiled_prefetch_b, pBgB(_, _, _, prefetch_k));
       }
-
-      convert_FP8_to_FP16(tCrA, tCrA_fp16);
-      convert_FP8_to_FP16(tCrB, tCrB_fp16);
 
       cute::gemm(tiled_mma, tCrA_fp16, tCrB_fp16, accum);
 
