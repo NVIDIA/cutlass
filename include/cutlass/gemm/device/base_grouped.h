@@ -426,6 +426,7 @@ public:
     dim3 block(BaseKernel::kThreadCount, 1, 1);
 
     int smem_size = int(sizeof(typename BaseKernel::SharedStorage));
+    CUTLASS_TRACE_HOST(" BaseGrouped::run() - grid: {" << params_.threadblock_count << ", 1, 1}, block: {" << BaseKernel::kThreadCount << ", 1, 1}, problem_count: " << params_.problem_visitor.problem_count);
 
     //
     // Launch kernel

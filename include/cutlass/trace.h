@@ -45,14 +45,38 @@
 
 #if CUTLASS_DEBUG_TRACE_LEVEL
 #include <iostream>
+#include <thread>
 #include "cutlass/core_io.h"
 #if defined(__CUDA_ARCH__)
 #define CUTLASS_TRACE_HOST(x)
 #else
+//#define CUTLASS_TRACE_HOST(x) { std::cout << __FILE__ << ":" << __LINE__ << "][" << std::this_thread::get_id() << "]  " << x << std::endl; }
 #define CUTLASS_TRACE_HOST(x) { std::cout << __FILE__ << ":" << __LINE__ << "  " << x << std::endl; }
 #endif
+
+#define CUTLASS_TRACE_DEVICE(format, ...) { \
+  if (blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0 && threadIdx.x == 0 && threadIdx.y == 0) {  \
+    printf("[DEVICE][%s:%d, %s]" format "\n", __FILE__, __LINE__, __FUNCTION__, ##__VA_ARGS__);         \
+  } \
+}
+
+#define CUTLASS_TRACE_DEVICE_TID_DETAIL(bidz, bidx, tidx, format, ...) { \
+  if (blockIdx.x == bidx && blockIdx.y == 0 && blockIdx.z == bidz && threadIdx.x == tidx && threadIdx.y == 0) {  \
+    printf("[DEVICE][%s:%d, %s][bid={%d,%d,%d}, tid={%d,%d,%d}]" format "\n", __FILE__, __LINE__, __FUNCTION__, blockIdx.x, blockIdx.y, blockIdx.z, threadIdx.x, threadIdx.y, threadIdx.z, ##__VA_ARGS__);         \
+  } \
+}
+
+#define CUTLASS_TRACE_DEVICE_TID(format, ...) { \
+  CUTLASS_TRACE_DEVICE_TID_DETAIL(0, 0, 0, format, ##__VA_ARGS__) \
+  CUTLASS_TRACE_DEVICE_TID_DETAIL(0, 1, 0, format, ##__VA_ARGS__) \
+}
+//#define CUTLASS_TRACE_DEVICE(format, ...)
+//#define CUTLASS_TRACE_DEVICE_TID(format, ...)
+
 #else
 #define CUTLASS_TRACE_HOST(x)
+#define CUTLASS_TRACE_DEVICE(format, ...)
+#define CUTLASS_TRACE_DEVICE_TID(format, ...)
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
