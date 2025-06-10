@@ -33,15 +33,15 @@
 
 using namespace cutlass::flash_attention;
 
-using PvcFMHADecodeBF16BF16FP32_RCR_KVTile1024_h192_Causal_FixedLen = FMHADecodeConfigGen<cutlass::bfloat16_t,  true, false, Shape_h192<1024, 16>>::type;
-using PvcFMHADecodeBF16BF16FP32_RCR_KVTile1024_h192_Causal_VarLen = FMHADecodeConfigGen<cutlass::bfloat16_t,  true, true, Shape_h192<1024, 16>>::type;
-using PvcFMHADecodeBF16BF16FP32_RCR_KVTile1024_h192_NonCausal_FixedLen = FMHADecodeConfigGen<cutlass::bfloat16_t,  false, false, Shape_h192<1024, 16>>::type;
-using PvcFMHADecodeBF16BF16FP32_RCR_KVTile1024_h192_NonCausal_VarLen = FMHADecodeConfigGen<cutlass::bfloat16_t,  false, true, Shape_h192<1024, 16>>::type;
+using PvcFMHADecodeBF16BF16FP32_RCR_KVTile1024_h192_Causal_FixedLen = FMHADecodeConfigGen<cutlass::bfloat16_t, float, float,  true, false, Shape_h192<1024, 16>>::type;
+using PvcFMHADecodeBF16BF16FP32_RCR_KVTile1024_h192_Causal_VarLen = FMHADecodeConfigGen<cutlass::bfloat16_t, float, float,  true, true, Shape_h192<1024, 16>>::type;
+using PvcFMHADecodeBF16BF16FP32_RCR_KVTile1024_h192_NonCausal_FixedLen = FMHADecodeConfigGen<cutlass::bfloat16_t, float, float,  false, false, Shape_h192<1024, 16>>::type;
+using PvcFMHADecodeBF16BF16FP32_RCR_KVTile1024_h192_NonCausal_VarLen = FMHADecodeConfigGen<cutlass::bfloat16_t, float, float,  false, true, Shape_h192<1024, 16>>::type;
 
-using PvcFMHADecodeFP16FP16FP32_RCR_KVTile1024_h192_Causal_FixedLen = FMHADecodeConfigGen<cutlass::half_t,  true, false, Shape_h192<1024, 16>>::type;
-using PvcFMHADecodeFP16FP16FP32_RCR_KVTile1024_h192_Causal_VarLen = FMHADecodeConfigGen<cutlass::half_t,  true, true, Shape_h192<1024, 16>>::type;
-using PvcFMHADecodeFP16FP16FP32_RCR_KVTile1024_h192_NonCausal_FixedLen = FMHADecodeConfigGen<cutlass::half_t,  false, false, Shape_h192<1024, 16>>::type;
-using PvcFMHADecodeFP16FP16FP32_RCR_KVTile1024_h192_NonCausal_VarLen = FMHADecodeConfigGen<cutlass::half_t,  false, true, Shape_h192<1024, 16>>::type;
+using PvcFMHADecodeFP16FP16FP32_RCR_KVTile1024_h192_Causal_FixedLen = FMHADecodeConfigGen<cutlass::half_t, float, float,  true, false, Shape_h192<1024, 16>>::type;
+using PvcFMHADecodeFP16FP16FP32_RCR_KVTile1024_h192_Causal_VarLen = FMHADecodeConfigGen<cutlass::half_t, float, float,  true, true, Shape_h192<1024, 16>>::type;
+using PvcFMHADecodeFP16FP16FP32_RCR_KVTile1024_h192_NonCausal_FixedLen = FMHADecodeConfigGen<cutlass::half_t, float, float,  false, false, Shape_h192<1024, 16>>::type;
+using PvcFMHADecodeFP16FP16FP32_RCR_KVTile1024_h192_NonCausal_VarLen = FMHADecodeConfigGen<cutlass::half_t, float, float,  false, true, Shape_h192<1024, 16>>::type;
 
 
 CUTLASS_CREATE_FMHA_DECODE_BENCHMARK(PvcFMHADecodeBF16BF16FP32_RCR_KVTile1024_h192_Causal_FixedLen);

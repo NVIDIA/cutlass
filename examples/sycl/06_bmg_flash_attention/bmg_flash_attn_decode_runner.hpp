@@ -222,7 +222,7 @@ template <class FMHAKernel, bool isVarLen> struct ExampleRunner {
       int seq_len_kv_total = seq_len_kv_cache + seq_len_kv;
       int kv_group_update = 1;
       for (int h = 0; h < num_heads_q; h++) {
-        cutlass::DeviceAllocation<ElementOutput> block_S;
+        cutlass::DeviceAllocation<ElementAccumulator> block_S;
         block_S.reset(seq_len_qo * seq_len_kv_total);
 
         ElementK* k_ptr;
@@ -269,11 +269,10 @@ template <class FMHAKernel, bool isVarLen> struct ExampleRunner {
         cutlass::TensorRef ref_K(k_ptr, LayoutK::packed({head_size_qk, seq_len_kv_total}));
         cutlass::TensorRef ref_V(v_ptr, LayoutV::packed({seq_len_kv_total, head_size_vo}));
         cutlass::TensorRef ref_S(block_S.get(), LayoutQ::packed({seq_len_qo, seq_len_kv_total}));
-        cutlass::TensorRef ref_O(block_ref_O.get() + offset_o, LayoutO::packed({seq_len_qo, head_size_vo}));
 
-        cutlass::reference::device::GemmComplex({seq_len_qo, seq_len_kv_total, head_size_qk}, 1.f, ref_Q,
+        cutlass::reference::device::GemmComplex({seq_len_qo, seq_len_kv_total, head_size_qk}, ElementAccumulator{1}, ref_Q,
                                                 cutlass::ComplexTransform::kNone, ref_K, cutlass::ComplexTransform::kNone,
-                                                0.f, ref_S, ref_S, ElementAccumulator(0),
+                                                ElementAccumulator{0}, ref_S, ref_S, ElementAccumulator{0},
                                                 1,                   // batch_count
                                                 seq_len_qo * head_size_qk, // batch_stride_Q
                                                 seq_len_kv_total * head_size_qk, // batch_stride_K
@@ -283,8 +282,8 @@ template <class FMHAKernel, bool isVarLen> struct ExampleRunner {
 
         syclcompat::wait();
 
-        std::vector<ElementOutput> host_S(block_S.size());
-        syclcompat::memcpy<ElementOutput>(host_S.data(), block_S.get(), host_S.size());
+        std::vector<ElementAccumulator> host_S(block_S.size());
+        syclcompat::memcpy<ElementAccumulator>(host_S.data(), block_S.get(), host_S.size());
         syclcompat::wait();
 
         // delete this memory as it is no longer needed
@@ -299,13 +298,13 @@ template <class FMHAKernel, bool isVarLen> struct ExampleRunner {
           for (int row = 0; row < seq_len_qo; row++) {
             for (int col = start_col; col < seq_len_kv_total; col++) {
               if (col - full_tile_offset > row + start_col - discard_seq_coord)
-                host_S[col + row * seq_len_kv_total] = -INFINITY;
+                host_S[col + row * seq_len_kv_total] = ElementAccumulator{-INFINITY};
             }
           }
         }
 
         // compute max element per row of S
-        std::vector<ElementOutput> max_vec(seq_len_qo, -INFINITY);
+        std::vector<ElementAccumulator> max_vec(seq_len_qo, ElementAccumulator{-INFINITY});
         for (int row = 0; row < seq_len_qo; row++) {
           int idx = row * seq_len_kv_total;
           int max_idx = row;
@@ -321,12 +320,12 @@ template <class FMHAKernel, bool isVarLen> struct ExampleRunner {
           int idx = row * seq_len_kv_total;
           int max_idx = row;
           for (int col = 0; col < seq_len_kv_total; col++, idx++) {
-            host_S[idx] = expf((host_S[idx] - max_vec[max_idx]) / sqrt(static_cast<ElementOutput>((head_size_qk))));
+            host_S[idx] = expf((host_S[idx] - max_vec[max_idx]) / sqrt(static_cast<ElementAccumulator>((head_size_qk))));
           }
         }
 
         // compute sum per row of S
-        std::vector<ElementOutput> sum_vec(seq_len_qo, ElementOutput{0});
+        std::vector<ElementAccumulator> sum_vec(seq_len_qo, ElementAccumulator{0});
         for (int row = 0; row < seq_len_qo; row++) {
           int idx = row * seq_len_kv_total;
           int sum_idx = row;
@@ -358,9 +357,13 @@ template <class FMHAKernel, bool isVarLen> struct ExampleRunner {
 
         cutlass::TensorRef ref_P(block_P.get(), LayoutQ::packed({seq_len_qo, seq_len_kv_total}));
 
-        cutlass::reference::device::GemmComplex({seq_len_qo, head_size_vo, seq_len_kv_total}, 1.f, ref_P,
+        cutlass::DeviceAllocation<ElementAccumulator> block_acc;
+        block_acc.reset(seq_len_qo * head_size_vo);
+        cutlass::TensorRef ref_acc(block_acc.get(), LayoutO::packed({seq_len_qo, head_size_vo}));
+
+        cutlass::reference::device::GemmComplex({seq_len_qo, head_size_vo, seq_len_kv_total}, ElementAccumulator{1}, ref_P,
                                                 cutlass::ComplexTransform::kNone, ref_V, cutlass::ComplexTransform::kNone,
-                                                0.f, ref_O, ref_O, ElementAccumulator(0),
+                                                ElementAccumulator{0}, ref_acc, ref_acc, ElementAccumulator{0},
                                                 1,                   // batch_count
                                                 seq_len_qo * seq_len_kv_total,   // batch_stride_P
                                                 seq_len_kv_total * head_size_vo, // batch_stride_V
@@ -371,6 +374,19 @@ template <class FMHAKernel, bool isVarLen> struct ExampleRunner {
         syclcompat::wait();
         // delete this memory as it is no longer needed
         block_P.reset();
+
+        std::vector<ElementAccumulator> vec_acc(block_acc.size());
+        syclcompat::memcpy<ElementAccumulator>(vec_acc.data(), block_acc.get(), vec_acc.size());
+        syclcompat::wait();
+
+        // delete this memory as it is no longer needed
+        block_acc.reset();
+        std::vector<ElementOutput> vec_out(vec_acc.size());
+        for(int i = 0; i < vec_out.size(); i++) {
+          vec_out[i] = static_cast<ElementOutput>(vec_acc[i]);
+        }
+        syclcompat::memcpy<ElementOutput>(block_ref_O.get() + offset_o, vec_out.data(), vec_out.size());
+        syclcompat::wait();
 
         offset_q += seq_len_qo * head_size_qk;
         if(kv_group_update % q_group_size == 0) {
@@ -388,7 +404,7 @@ template <class FMHAKernel, bool isVarLen> struct ExampleRunner {
 
     // Check if output from CUTLASS kernel and reference kernel are equal or not
     bool passed = cutlass::reference::device::BlockCompareRelativelyEqual(block_ref_O.get(), block_O.get(),
-                                                                          block_O.size(), 0.5f, 0.5f);
+                                                                          block_O.size(), ElementOutput{0.5}, ElementOutput{0.5});
 
     return passed;
   }
@@ -664,7 +680,7 @@ template <bool Causal, typename TileShapeQK, typename TileShapePV, typename Tile
     using ElementInputQ = bfloat16_t;     // <- data type of elements in input matrix A
     using ElementInputKV = bfloat16_t;    // <- data type of elements in input matrix B
     using ElementOutput = float;          // <- data type of elements in output matrix D
-        
+
     constexpr int PipelineStages = 2;
     using GEMMDispatchPolicy = cutlass::gemm::MainloopIntelXeXMX16<PipelineStages>;
     using EpilogueDispatchPolicy = cutlass::epilogue::IntelXeXMX16;
@@ -675,7 +691,7 @@ template <bool Causal, typename TileShapeQK, typename TileShapePV, typename Tile
     using GmemTiledCopyV = XE_2D_U16x32x32_LD_V;
     using GmemTiledCopyStore = XE_2D_U32x1x16_ST_N;
     using CollectiveEpilogue = cutlass::flash_attention::collective::FlashDecodeEpilogue<
-        EpilogueDispatchPolicy, MMAOperation, TileShapeOutput, SubgroupLayout, ElementAccumulator, cutlass::gemm::TagToStrideC_t<LayoutO>,
+        EpilogueDispatchPolicy, MMAOperation, TileShapeOutput, SubgroupLayout, ElementComputeEpilogue, ElementOutput, cutlass::gemm::TagToStrideC_t<LayoutO>,
         ElementOutput, GmemTiledCopyStore>;
     using CollectiveSoftmaxEpilogue = cutlass::flash_attention::collective::FlashDecodeSoftmaxEpilogue<Causal, EpilogueDispatchPolicy, ElementAccumulator>;
 

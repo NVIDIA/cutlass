@@ -38,29 +38,37 @@
 namespace cutlass {
 
 using MMAOperationBF16 = test::flash_attention::MMAOperationBF16;
+using GmemTiledCopyQ = test::flash_attention::GmemTiledCopyQU16;
+using GmemTiledCopyK = test::flash_attention::GmemTiledCopyKU16;
+using GmemTiledCopyV = test::flash_attention::GmemTiledCopyVU16;
+using GmemTiledCopyStore = test::flash_attention::GmemTiledCopyStoreU32;
 using Shape_h = test::flash_attention::Shape_h128<512, 8>;
 
 TEST(XE_Flash_Attention_Decode_bf16_fp32_fp32_KVTile512_h128, causal) {
   using Kernel = test::flash_attention::XE_Flash_Attention_Decode<bfloat16_t, float, float, typename Shape_h::ShapeQK, typename Shape_h::ShapePV,
-                                            typename Shape_h::ShapeOutput, typename Shape_h::SubgroupLayout, MMAOperationBF16, true, false>::Kernel;
+                                            typename Shape_h::ShapeOutput, typename Shape_h::SubgroupLayout, MMAOperationBF16, true, false,
+                                            GmemTiledCopyQ, GmemTiledCopyK, GmemTiledCopyV, GmemTiledCopyStore>::Kernel;
   EXPECT_TRUE(test::flash_attention::TestFlashDecodeAll<Kernel>(128));
 }
 
 TEST(XE_Flash_Attention_Decode_bf16_fp32_fp32_KVTile512_h128, noncausal) {
   using Kernel = test::flash_attention::XE_Flash_Attention_Decode<bfloat16_t, float, float, typename Shape_h::ShapeQK, typename Shape_h::ShapePV,
-                                            typename Shape_h::ShapeOutput, typename Shape_h::SubgroupLayout, MMAOperationBF16, false, false>::Kernel;
+                                            typename Shape_h::ShapeOutput, typename Shape_h::SubgroupLayout, MMAOperationBF16, false, false,
+                                            GmemTiledCopyQ, GmemTiledCopyK, GmemTiledCopyV, GmemTiledCopyStore>::Kernel;
   EXPECT_TRUE(test::flash_attention::TestFlashDecodeAll<Kernel>(128));
 }
 
 TEST(XE_Flash_Attention_Decode_bf16_fp32_fp32_KVTile512_h128, varlen_causal) {
   using Kernel = test::flash_attention::XE_Flash_Attention_Decode<bfloat16_t, float, float, typename Shape_h::ShapeQK, typename Shape_h::ShapePV,
-                                            typename Shape_h::ShapeOutput, typename Shape_h::SubgroupLayout, MMAOperationBF16, true, true>::Kernel;
+                                            typename Shape_h::ShapeOutput, typename Shape_h::SubgroupLayout, MMAOperationBF16, true, true,
+                                            GmemTiledCopyQ, GmemTiledCopyK, GmemTiledCopyV, GmemTiledCopyStore>::Kernel;
   EXPECT_TRUE(test::flash_attention::TestFlashDecodeAll<Kernel>(128));
 }
 
 TEST(XE_Flash_Attention_Decode_bf16_fp32_fp32_KVTile512_h128, varlen_noncausal) {
   using Kernel = test::flash_attention::XE_Flash_Attention_Decode<bfloat16_t, float, float, typename Shape_h::ShapeQK, typename Shape_h::ShapePV,
-                                            typename Shape_h::ShapeOutput, typename Shape_h::SubgroupLayout, MMAOperationBF16, false, true>::Kernel;
+                                            typename Shape_h::ShapeOutput, typename Shape_h::SubgroupLayout, MMAOperationBF16, false, true,
+                                            GmemTiledCopyQ, GmemTiledCopyK, GmemTiledCopyV, GmemTiledCopyStore>::Kernel;
   EXPECT_TRUE(test::flash_attention::TestFlashDecodeAll<Kernel>(128));
 }
 

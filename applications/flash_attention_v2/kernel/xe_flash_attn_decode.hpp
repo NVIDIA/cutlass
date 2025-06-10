@@ -386,7 +386,7 @@ public:
           CUTLASS_PRAGMA_UNROLL
           for (int n = 0; n < FragsN; n++, col_idx += get<1>(MmaAtomShape())) { // 4
             if (col_idx - column_offset > row_idx + seq_len_kv_cache) {
-              tSr(0, 0, n) = -INFINITY;
+              tSr(0, 0, n) = ElementAccumulator{-INFINITY};
             }
           }
         }

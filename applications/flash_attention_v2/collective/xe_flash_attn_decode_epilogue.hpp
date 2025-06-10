@@ -53,15 +53,14 @@ template <class DispatchPolicy, class MMAOp_, class TileShapeOutput_, class Subg
   static_assert(cutlass::detail::dependent_false<DispatchPolicy>, "Could not find an epilogue specialization.");
 };
 
-template <class MMAOp_, class TileShapeOutput_, class SubgroupLayout_, class ElementO_, class StrideO_, class ElementLSE_, class CopyOpO_>
-class FlashDecodeEpilogue<epilogue::IntelXeXMX16, MMAOp_, TileShapeOutput_, SubgroupLayout_, ElementO_, StrideO_, ElementLSE_, CopyOpO_> {
+template <class MMAOp_, class TileShapeOutput_, class SubgroupLayout_, class ElementCompute_, class ElementO_, class StrideO_, class ElementLSE_, class CopyOpO_>
+class FlashDecodeEpilogue<epilogue::IntelXeXMX16, MMAOp_, TileShapeOutput_, SubgroupLayout_, ElementCompute_, ElementO_, StrideO_, ElementLSE_, CopyOpO_> {
 public:
   //
   // Type Aliases
   //
   using DispatchPolicy = epilogue::IntelXeXMX16;
   using ElementO = ElementO_;
-  using ElementAccumulator = ElementO_;
   using StrideO = StrideO_;
   using ElementLSE = ElementLSE_;
   using CopyOpO = CopyOpO_;
@@ -84,7 +83,8 @@ public:
 
   using GmemTiledCopyO = CopyOpO;
   using ElementOutput = ElementO_;
-  using ElementCompute = ElementO_;
+  using ElementCompute = ElementCompute_;
+  using ElementAccumulator = ElementCompute_;
 
   static_assert(cute::rank(TileShapeOutput{}) == 3, "TileShapeOutput must be rank-3: [CTA_M_Q, CTA_N_O, CTA_K_PV]");
   static_assert(cute::rank(StrideO{}) == 3, "StrideO must be rank-3: [seq_len_qo, head_size_vo, batch * num_heads]");
@@ -202,14 +202,14 @@ public:
       for (int z = 0; z < FragsN; z++) {
         const int slm_curr_idx = sg_local_id + z * SubgroupSize;
 
-        ElementOutput out_val_curr = ElementOutput{0};
+        ElementCompute out_val_curr = ElementCompute{0};
         CUTLASS_PRAGMA_UNROLL
         for(int i = 0; i < ATOM_M; i++) {
             auto out_val_prev = shmem_tensor_out(slm_curr_idx + i * (out_reg.size()) * SubgroupSize);
             out_val_curr += out_val_prev;
         }
 
-        out_reg(0, 0, z) = out_val_curr * cur_scale;
+        out_reg(0, 0, z) = static_cast<ElementOutput>(out_val_curr * cur_scale);
       }
 
       // Indexing variables
