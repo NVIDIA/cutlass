@@ -248,7 +248,12 @@ pretty_print(uint64_t v) {
 
 CUTE_HOST_DEVICE void
 pretty_print(float v) {
+//TODO(Codeplay) Remove this once DPC++ bugfix is in release.
+#if (SYCL_INTEL_TARGET)
+  printf("%*.2f", v);
+#else 
   printf("%*.2e", 10, v);
+#endif  // SYCL_INTEL_TARGET
 }
 
 CUTE_HOST_DEVICE void
