@@ -238,7 +238,6 @@ struct CollectiveMma<MainloopIntelXeXMX16Group<Stages, Schedule>, TileShape_, El
       prefetch(tiled_prefetch_b, pBgB(_, _, _, prefetch_k));
     }
 
-    CUTLASS_PRAGMA_UNROLL
     for (int k_tile = k_start_idx; k_tile < k_tile_count + k_start_idx; k_tile++, prefetch_k++) {
       barrier_arrive(barrier_scope);
       // Copy gmem to rmem for the first k_tile

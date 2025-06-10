@@ -525,7 +525,6 @@ public:
 
     const int k_reload_factor = mainloop.group_size / BLK_K; 
 
-    CUTLASS_PRAGMA_UNROLL
     for (int k_tile = 0, k = k_start_idx; k_tile < k_tile_count; ++k_tile, ++k, ++prefetch_k) {
       // Copy gmem to rmem for the first k_tile
       copy(mainloop.tiled_copy_a, tAgA(_,_,_,k), frag_copy_A);
