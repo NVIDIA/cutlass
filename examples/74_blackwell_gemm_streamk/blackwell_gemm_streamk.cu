@@ -61,7 +61,7 @@
        # Heuristic mode with deterministic reduction
       ./74_blackwell_gemm_streamk" --m=256 --n=256 --k=16384 --decomposition=Heuristic --reduction=Deterministic
 
-      # Stream-K mode with determinsitic reduction
+      # Stream-K mode with deterministic reduction
       ./74_blackwell_gemm_streamk" --m=256 --n=256 --k=16384 --decomposition=StreamK --reduction=Deterministic
 
       # Split-K mode with a splitting factor of 2 and deterministic reduction

@@ -949,7 +949,7 @@ class GroupedGemmKernel:
         # Specialized MMA warp
         #
         if warp_idx == self.mma_warp_id:
-            # initilize tensormap A, B for TMA warp
+            # initialize tensormap A, B for TMA warp
             if cutlass.const_expr(self.delegate_tensormap_ab_init):
                 tensormap_manager.init_tensormap_from_atom(
                     tma_atom_a, tensormap_a_init_ptr, self.mma_warp_id

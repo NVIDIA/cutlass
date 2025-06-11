@@ -522,7 +522,7 @@ class MmaPipelinedFromSharedMemory : public MmaBaseFromSharedMemory<
 
   // For API compatibility with MmaMultistageFromSharedMemory
   // but not supported as it worsens perf: older gpus < sm80 don't
-  // support async tranfers and have to waste registers
+  // support async transfers and have to waste registers
   CUTLASS_DEVICE
   void set_prologue_done(bool value) {}
   CUTLASS_DEVICE
