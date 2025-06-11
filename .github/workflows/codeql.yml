@@ -53,6 +53,8 @@ jobs:
     # for example using the tag: 'nightly-2024-04-22'
     - name: Build
       if: matrix.build-mode == 'manual'
+      with:
+        DPCPP_VERSION: nightly-2025-06-10
       shell: bash
       run: |
         apt update && apt install -y cmake curl git jq libstdc++-12-dev ninja-build python3 wget && \

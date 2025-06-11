@@ -70,7 +70,7 @@ jobs:
         uses: ./.github/actions/install-dpcpp
         with:
           DPCPP_RELEASE: ${{ matrix.compiler }}
-          DPCPP_VERSION: ${{ inputs.DPCPP_VERSION }}
+          DPCPP_VERSION: nightly-2025-06-10
           GPU: ${{ matrix.gpu }}
           IGC: ${{ matrix.intel_graphics }}
       - name: Setup virtual environment
