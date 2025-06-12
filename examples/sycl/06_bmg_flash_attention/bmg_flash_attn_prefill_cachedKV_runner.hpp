@@ -95,7 +95,7 @@ struct Options {
     cmd.get_cmd_line_argument("seq_len_qo", seq_len_qo, 512);
     cmd.get_cmd_line_argument("seq_len_kv", seq_len_kv, seq_len_qo);
     cmd.get_cmd_line_argument("seq_len_kv_cache", seq_len_kv_cache, 512);
-    cmd.get_cmd_line_argument("head_size_vo", head_size_vo, 128);
+    cmd.get_cmd_line_argument("head_size_vo", head_size_vo, HEAD_DIM);
     cmd.get_cmd_line_argument("head_size_qk", head_size_qk, head_size_vo);
     cmd.get_cmd_line_argument("iterations", iterations, 100);
 
@@ -763,8 +763,7 @@ template <bool Causal, typename TileShapeQK, typename TileShapePV, typename Tile
     }
     if(options.varlen) {
         return run<true, false, cutlass::flash_attention::IndividualScheduler>(options);
-    } else {
-        return run<false, false, cutlass::flash_attention::IndividualScheduler>(options);
     }
+    return run<false, false, cutlass::flash_attention::IndividualScheduler>(options);
   }
 };

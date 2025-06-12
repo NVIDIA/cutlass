@@ -29,23 +29,30 @@
 
 set(CUTLASS_APPLICATIONS_DIR ${CMAKE_SOURCE_DIR}/applications)
 
-cutlass_example_add_executable(
-  06_bmg_prefill_attention
-  06_bmg_prefill_attention.cpp
-)
-
-cutlass_example_add_executable(
-  06_bmg_decode_attention
-  06_bmg_decode_attention.cpp
-)
-
 set(TEST_NO_PAGED "")
 set(TEST_PAGED "--use_paged_kv")
 
-cutlass_example_add_executable(
-  06_bmg_prefill_attention_cachedKV
-  06_bmg_prefill_attention_prefill_cachedKV.cpp
-  TEST_COMMAND_OPTIONS
-  TEST_NO_PAGED
-  TEST_PAGED
-)
+foreach(HEAD_DIM 64 96 128 192)
+
+  cutlass_example_add_executable(
+    06_bmg_prefill_attention_hdim${HEAD_DIM}
+    06_bmg_prefill_attention.cpp
+  )
+
+  cutlass_example_add_executable(
+    06_bmg_prefill_attention_cachedKV_hdim${HEAD_DIM}
+    06_bmg_prefill_attention_prefill_cachedKV.cpp
+    TEST_COMMAND_OPTIONS
+    TEST_NO_PAGED
+    TEST_PAGED
+  )
+
+  cutlass_example_add_executable(
+    06_bmg_decode_attention_hdim${HEAD_DIM}
+    06_bmg_decode_attention.cpp
+  )
+
+  target_compile_definitions(06_bmg_prefill_attention_hdim${HEAD_DIM} PRIVATE HEAD_DIM=${HEAD_DIM})
+  target_compile_definitions(06_bmg_prefill_attention_cachedKV_hdim${HEAD_DIM} PRIVATE HEAD_DIM=${HEAD_DIM})
+  target_compile_definitions(06_bmg_decode_attention_hdim${HEAD_DIM} PRIVATE HEAD_DIM=${HEAD_DIM})
+endforeach()

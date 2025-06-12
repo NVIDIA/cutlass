@@ -94,7 +94,7 @@ struct Options {
     cmd.get_cmd_line_argument("seq_len_qo", seq_len_qo, 1);
     cmd.get_cmd_line_argument("seq_len_kv", seq_len_kv, 512);
     cmd.get_cmd_line_argument("seq_len_kv_cache", seq_len_kv_cache, 0);
-    cmd.get_cmd_line_argument("head_size_vo", head_size_vo, 128);
+    cmd.get_cmd_line_argument("head_size_vo", head_size_vo, HEAD_DIM);
     cmd.get_cmd_line_argument("head_size_qk", head_size_qk, head_size_vo);
     cmd.get_cmd_line_argument("iterations", iterations, 100);
 
