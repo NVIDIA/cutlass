@@ -28,39 +28,15 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
-
-      - name: Install dependencies
-        with:
-          DPCPP_VERSION: nightly-2025-06-10
-        shell: bash
-        run: |
-          nvidia-smi
-          mkdir ~/dpcpp
-          pushd ~/dpcpp
-          echo "Will use DPCPP ${{ inputs.DPCPP_VERSION }}."
-          if [[ "${{ inputs.DPCPP_VERSION }}" != "" ]]; then \
-            echo "Downloading DPCPP from https://github.com/intel/llvm/releases/download/${{ inputs.DPCPP_VERSION }}/sycl_linux.tar.gz"; \
-            wget -q https://github.com/intel/llvm/releases/download/${{ inputs.DPCPP_VERSION }}/sycl_linux.tar.gz; \
-          else
-            latest=$(curl -sS https://api.github.com/repos/intel/llvm/releases | jq -r '[.[].tag_name|select(match("nightly-[0-9]{4}-[0-9]{2}-[0-9]{2}"))][0]') && \
-            echo "Downloading DPCPP from https://github.com/intel/llvm/releases/download/${latest}/sycl_linux.tar.gz"; \
-            wget -q https://github.com/intel/llvm/releases/download/${latest}/sycl_linux.tar.gz; \
-          fi
-          tar -xf sycl_linux.tar.gz
-          rm sycl_linux.tar.gz
-          popd
+      - name: Install DPC++
+        uses: ./.github/actions/install-dpcpp
 
       # For a specific DPC++ nightly build define the repository variable DPCPP_VERSION
       # for example using the tag: 'nightly-2024-04-22'
       - name: Build
         shell: bash
         run: |
-          export PATH=~/dpcpp/bin/:$PATH
-          export C_INCLUDE_PATH=~/dpcpp/include/:$C_INCLUDE_PATH
-          export CPLUS_INCLUDE_PATH=~/dpcpp/include/:$CPLUS_INCLUDE_PATH
-          export LD_LIBRARY_PATH=~/dpcpp/lib/:$LD_LIBRARY_PATH
-          export CC=clang
-          export CXX=clang++
+          . setvars.sh
           clang++ --version
           cmake -G Ninja  \
             -DCUTLASS_ENABLE_SYCL=ON \

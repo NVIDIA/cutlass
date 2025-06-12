@@ -44,37 +44,29 @@ jobs:
         build-mode: ${{ matrix.build-mode }}
 
     - name: Install dependencies
+      shell: bash
+      run: |
+        apt update
+        if [[ "${{ matrix.build-mode }}" == "none" ]]; then apt install -y python3 ;
+        else apt install -y python3 cmake curl git jq libstdc++-12-dev ninja-build wget ;
+        fi
+
+    - name: Install dependencies
       if: matrix.build-mode == 'none'
       shell: bash
       run: |
-        apt update && apt install -y python3
+        apt update && apt install -y python3 cmake curl git jq libstdc++-12-dev ninja-build wget
 
     # For a specific DPC++ nightly build define the repository variable DPCPP_VERSION
     # for example using the tag: 'nightly-2024-04-22'
+    - name: Install DPC++
+      if: matrix.build-mode == 'manual'
+      uses: ./.github/actions/install-dpcpp
     - name: Build
       if: matrix.build-mode == 'manual'
-      with:
-        DPCPP_VERSION: nightly-2025-06-10
       shell: bash
       run: |
-        apt update && apt install -y cmake curl git jq libstdc++-12-dev ninja-build python3 wget && \
-        pushd /usr/local && \
-        echo "Will use DPCPP $DPCPP_VERSION."
-        if [[ "$DPCPP_VERSION" != "" ]]; then \
-          echo "Downloading DPCPP from https://github.com/intel/llvm/releases/download/$DPCPP_VERSION/sycl_linux.tar.gz"; \
-          wget -q https://github.com/intel/llvm/releases/download/$DPCPP_VERSION/sycl_linux.tar.gz; \
-        else
-          latest=$(curl -sS https://api.github.com/repos/intel/llvm/releases | jq -r '[.[].tag_name|select(match("nightly-[0-9]{4}-[0-9]{2}-[0-9]{2}"))][0]') && \
-          echo "Downloading DPCPP from https://github.com/intel/llvm/releases/download/${latest}/sycl_linux.tar.gz"; \
-          wget -q https://github.com/intel/llvm/releases/download/${latest}/sycl_linux.tar.gz; \
-        fi && \
-        tar -xf sycl_linux.tar.gz && \
-        export PATH=/usr/local/bin/:$PATH && \
-        export C_INCLUDE_PATH=/usr/local/include/:$C_INCLUDE_PATH && \
-        export LD_LIBRARY_PATH=/usr/local/lib/:$LD_LIBRARY_PATH && \
-        export CC=clang && \
-        export CXX=clang++ && \
-        popd && \
+        . setvars.sh
         clang++ --version && \
         cmake -G Ninja  \
           -DCMAKE_CUDA_HOST_COMPILER=clang++  \

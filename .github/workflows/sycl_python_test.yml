@@ -40,7 +40,7 @@ jobs:
         uses: ./.github/actions/install-dpcpp
         with:
           # DPCPP_RELEASE: ${{ matrix.compiler }}
-          DPCPP_VERSION: nightly-2025-06-10
+          DPCPP_VERSION: ${{ inputs.DPCPP_VERSION }}
           DPCPP_PATH: ~/dpcpp
       - name: Setup virtual environment
         shell: bash

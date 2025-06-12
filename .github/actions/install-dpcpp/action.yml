@@ -26,6 +26,8 @@ runs:
       if: inputs.DPCPP_RELEASE == 'NIGHTLY'
       shell: bash
       run: |
+        shopt -s expand_aliases
+        which sudo || alias sudo=""
         if [[ "${{ inputs.GPU }}" == "BMG" ]]; then
           if [[ "${{ inputs.IGC }}" == "STAGING" ]]; then
             sudo add-apt-repository ppa:kobuk-team/intel-graphics-staging
@@ -45,7 +47,11 @@ runs:
           URL=https://github.com/intel/llvm/releases/download/${{ inputs.DPCPP_VERSION }}/sycl_linux.tar.gz;
         else
           echo "Will use latest DPCPP version"
-          latest=$(curl -sS https://api.github.com/repos/intel/llvm/releases | jq -r '[.[].tag_name|select(match("nightly-[0-9]{4}-[0-9]{2}-[0-9]{2}"))][0]')
+          latest=$(curl -sS https://api.github.com/repos/intel/llvm/releases | \
+            jq -r '[.[]
+            | select(.tag_name | test("^nightly-[0-9]{4}-[0-9]{2}-[0-9]{2}$"))
+            | select(.assets[]?.name == "sycl_linux.tar.gz")
+            ][0].tag_name')
           URL=https://github.com/intel/llvm/releases/download/${latest}/sycl_linux.tar.gz;
         fi
         echo "Downloading DPCPP from ${URL}"
@@ -65,6 +71,8 @@ runs:
       if: inputs.DPCPP_RELEASE == 'RELEASE'
       shell: bash
       run: |
+        shopt -s expand_aliases
+        which sudo || alias sudo=""
         if [[ "${{ inputs.GPU }}" == "BMG" ]]; then
           if [[ "${{ inputs.IGC }}" == "STAGING" ]]; then
             sudo add-apt-repository ppa:kobuk-team/intel-graphics-staging
