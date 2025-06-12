@@ -942,11 +942,15 @@ struct Sm100FmhaFwdMainloopTmaWarpspecialized {
     }
   }
 
-  template<class BlkCoord, class ProblemShape, class TensorStorageEpi, class CollectiveEpilogue>
+  template<
+    class BlkCoord, class ProblemShape, class ParamsProblemShape,
+    class TensorStorageEpi, class CollectiveEpilogue
+  >
   CUTLASS_DEVICE auto
   correction(
       BlkCoord const& blk_coord,
       Params const& params, ProblemShape const& problem_shape,
+      ParamsProblemShape const& params_problem_shape,
       TensorStorageEpi& shared_storage_epi,
       PipelineC& pipeline_s0_c, typename PipelineC::PipelineState& pipeline_s0_c_consumer_state,
       PipelineC& pipeline_s1_c, typename PipelineC::PipelineState& pipeline_s1_c_consumer_state,
@@ -1068,10 +1072,15 @@ struct Sm100FmhaFwdMainloopTmaWarpspecialized {
     if (epilogue.params.ptr_LSE != nullptr) {
       int row_idx = get<0>(tTMEM_LOADVcS(_0{})) + get<0>(TileShape{}) * get<0>(blk_coord);
 
+      int row_offset = 0;
+      if constexpr (is_variable_length_v<tuple_element_t<0, ParamsProblemShape>>) {
+        row_offset = get<0>(params_problem_shape).cumulative_length[get<2,1>(blk_coord)];
+      }
+
       ElementPV lse = cutlass::fast_log(tTMEM_LOADVrS(kIdxFinalRowSum)) + params.scale_softmax * tTMEM_LOADVrS(kIdxFinalRowMax);
 
       if (row_idx < get<0>(problem_shape)) {
-        gLSE(row_idx, get<2>(blk_coord)) = lse;
+        gLSE(row_idx + row_offset, get<2>(blk_coord)) = lse;
       }
     }
 
@@ -1101,8 +1110,13 @@ struct Sm100FmhaFwdMainloopTmaWarpspecialized {
 
       ElementPV lse = cutlass::fast_log(tTMEM_LOADVrS(kIdxFinalRowSum)) + params.scale_softmax * tTMEM_LOADVrS(kIdxFinalRowMax);
 
+      int row_offset = 0;
+      if constexpr (is_variable_length_v<tuple_element_t<0, ParamsProblemShape>>) {
+        row_offset = get<0>(params_problem_shape).cumulative_length[get<2,1>(blk_coord)];
+      }
+
       if (row_idx < get<0>(problem_shape)) {
-        gLSE(row_idx, get<2>(blk_coord)) = lse;
+        gLSE(row_idx + row_offset, get<2>(blk_coord)) = lse;
       }
     }
 

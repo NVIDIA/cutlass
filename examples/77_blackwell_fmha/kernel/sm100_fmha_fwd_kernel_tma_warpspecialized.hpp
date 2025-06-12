@@ -403,6 +403,7 @@ struct Sm100FmhaFwdKernelTmaWarpspecialized {
         mainloop.correction(
           blk_coord,
           params.mainloop, logical_problem_shape,
+          params.problem_shape,
           shared_storage.epilogue,
           pipeline_s0_corr, pipeline_s0_corr_consumer_state,
           pipeline_s1_corr, pipeline_s1_corr_consumer_state,

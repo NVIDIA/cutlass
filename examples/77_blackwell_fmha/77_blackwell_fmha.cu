@@ -116,6 +116,8 @@ struct Options {
   int h_k = 1;
   int q = 256;
   int k = 256;
+  std::vector<int> varlen_q;
+  std::vector<int> varlen_k;
   int d = 128;
   int warmup_iterations = 1;
   int iterations = 3;
@@ -181,13 +183,76 @@ struct Options {
     cmd.get_cmd_line_argument("h_k", h_k, -1);
     if (h_k == -1) h_k = h;
 
+    varlen = cmd.check_cmd_line_flag("varlen");
+
     cmd.get_cmd_line_argument("q", q, -1);
     cmd.get_cmd_line_argument("k", k, -1);
+    cmd.get_cmd_line_argument("b", b, -1);
+
+    std::string varlen_q_str;
+    cmd.get_cmd_line_argument("varlen-q", varlen_q_str);
+    std::string varlen_k_str;
+    cmd.get_cmd_line_argument("varlen-k", varlen_k_str);
+
+    if (varlen && ! varlen_q_str.empty()) {
+      varlen_q.clear();
+      while (! varlen_q_str.empty()) {
+        size_t pos = varlen_q_str.find(':');
+        varlen_q.push_back(std::stoi(varlen_q_str.substr(0, pos)));
+        if (pos == std::string::npos) {
+          break;
+        }
+        varlen_q_str = varlen_q_str.substr(pos + 1);
+      }
+      if (b == -1) {
+        b = static_cast<int>(varlen_q.size());
+      }
+      if (b != static_cast<int>(varlen_q.size())) {
+        std::cout << "Error: Invalid --varlen-q length\n";
+        std::exit(-1);
+      }
+      int new_q = 0;
+      for (auto elem : varlen_q) {
+        new_q += elem;
+      }
+      if (q != -1) {
+        std::cout << "Error: Can't provide --q and --varlen-q\n";
+        std::exit(-1);
+      }
+      q = new_q;
+    }
+
+    if (varlen && ! varlen_k_str.empty()) {
+      varlen_k.clear();
+      while (! varlen_k_str.empty()) {
+        size_t pos = varlen_k_str.find(':');
+        varlen_k.push_back(std::stoi(varlen_k_str.substr(0, pos)));
+        if (pos == std::string::npos) {
+          break;
+        }
+        varlen_k_str = varlen_k_str.substr(pos + 1);
+      }
+      if (b == -1) {
+        b = static_cast<int>(varlen_k.size());
+      }
+      if (b != static_cast<int>(varlen_k.size())) {
+        std::cout << " Error: Invalid --varlen-k length\n";
+        std::exit(-1);
+      }
+      int new_k = 0;
+      for (auto elem : varlen_k) {
+        new_k += elem;
+      }
+      if (k != -1) {
+        std::cout << "Error: Can't provide --k and --varlen-k\n";
+        std::exit(-1);
+      }
+      k = new_k;
+    }
+
     if (q == -1) q = k;
     if (k == -1) k = q;
     if (q == -1 && k == -1) q = k = defaults.q;
-
-    cmd.get_cmd_line_argument("b", b, -1);
     if (b == -1) b = 16384 / k;
     if (b == 0) b = 1;
 
@@ -197,7 +262,6 @@ struct Options {
 
     verify = cmd.check_cmd_line_flag("verify");
     verbose = cmd.check_cmd_line_flag("verbose");
-    varlen = cmd.check_cmd_line_flag("varlen");
     persistent = cmd.check_cmd_line_flag("persistent");
 
     std::string mask;
@@ -240,7 +304,9 @@ struct Options {
       << "  --h_k=<int>                 Sets the H_K/V extent (for GQA/MQA)\n"
       << "  --q=<int>                   Sets the Q extent\n"
       << "  --k=<int>                   Sets the K extent\n"
-      << "  --d=<int>                   Sets the D extentn"
+      << "  --varlen-q=<int>:<int...>   Sets the variable Q extent per batch (colon separated)\n"
+      << "  --varlen-k=<int>:<int...>   Sets the variable K extent per batch (colon separated)\n"
+      << "  --d=<int>                   Sets the D extent\n"
       << "  --tensor_ring_buffers=<int> Sets the number of tensor ring buffers\n"
       << "  --warmup_iterations=<int>   Sets the warmup iterations\n"
       << "  --iterations=<int>          Benchmarking iterations\n"
@@ -475,7 +541,10 @@ struct FwdRunner {
   }
 
   template<class ProblemShape>
-  auto initialize_varlen(const ProblemShape& problem_size, const bool kVarlenSame = true) {
+  auto initialize_varlen(
+      const Options& options, const ProblemShape& problem_size,
+      const bool kVarlenSame = true) {
+
     int num_batches = get<3,1>(problem_size);
 
     // generate Q as --b times
@@ -503,8 +572,12 @@ struct FwdRunner {
     int max_seqlen_kv = 0;
 
     for (int i = 0; i < num_batches; i++) {
-      int seqlen_q = kVarlenSame ? get<0>(problem_size) : generate_positive_int(dist_q, rng);
-      int seqlen_kv = kVarlenSame ? get<1>(problem_size) : generate_positive_int(dist_kv, rng);
+      int seqlen_q = (! options.varlen_q.empty()) ? options.varlen_q.at(i) : 
+              kVarlenSame ? get<0>(problem_size) :
+              generate_positive_int(dist_q, rng);
+      int seqlen_kv = (! options.varlen_k.empty()) ? options.varlen_k.at(i) :
+              kVarlenSame ? get<1>(problem_size) :
+              generate_positive_int(dist_kv, rng);
 
       total_seqlen_q += seqlen_q;
       total_seqlen_kv += seqlen_kv;
@@ -545,7 +618,7 @@ struct FwdRunner {
     decltype(problem_shape_in) problem_size;
 
     if constexpr (kIsVarlen) {
-      auto [problem_shape_init, problem_shape_launch] = initialize_varlen(problem_shape_in);
+      auto [problem_shape_init, problem_shape_launch] = initialize_varlen(options, problem_shape_in);
       problem_shape = problem_shape_launch;
       problem_size = problem_shape_init;
     }
@@ -588,6 +661,8 @@ struct FwdRunner {
       buffer.block_V.reset(size(shape_KV), kIsVarlen ? D*SK*H_K : 0);
       buffer.block_O.reset(size(shape_QO), kIsVarlen ? D*SQ*H : 0);
       buffer.block_LSE.reset(size(shape_LSE));
+      buffer.block_ref_O.reset(size(shape_QO), kIsVarlen ? D*SQ*H : 0);
+      buffer.block_ref_LSE.reset(size(shape_LSE));
 
       initialize_block(buffer.block_Q, seed + 2023, options.init_style_q);
       initialize_block(buffer.block_K, seed + 2022, options.init_style_k);
