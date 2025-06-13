@@ -225,6 +225,25 @@ def barrier(*, barrier_id=None, number_of_threads=None, loc=None, ip=None) -> No
         barrier_id=barrier_id, number_of_threads=number_of_threads, loc=loc, ip=ip
     )
 
+
+@dsl_user_op
+def barrier_arrive(
+    barrier_id: int | Int32,
+    number_of_threads: int | Int32,
+    *,
+    loc=None,
+    ip=None
+) -> None:
+    """
+    Arrive at a named barrier.
+    """
+    barrier_id = Int32(barrier_id).ir_value(loc=loc, ip=ip)
+    number_of_threads = Int32(number_of_threads).ir_value(loc=loc, ip=ip)
+    nvvm.barrier_arrive(
+        barrier_id=barrier_id, number_of_threads=number_of_threads, loc=loc, ip=ip
+    )
+
+
 @dsl_user_op
 def sync_threads(*, loc=None, ip=None) -> None:
     """
