@@ -1428,13 +1428,13 @@ struct DefaultGemm_TensorOpXe_OperandB<bfloat16_t, layout::ColumnMajor, 32, Size
 ///////////////////////////////////////////////////////////////////////////////
 
 // Intel XE MMA F32BF16
-template <typename LayoutA, typename LayoutB, typename LayoutC>
+template <typename LayoutA, typename LayoutB, typename LayoutC, typename ElementOutput>
 struct DefaultGemmConfigurationToCutlass3Types<
     arch::OpClassTensorOp, arch::IntelXe,
     bfloat16_t, LayoutA,
     bfloat16_t, LayoutB,
     float, LayoutC,
-    float>
+    ElementOutput>
 {
   using TileShape = Shape<_256, _256, _32>;
 
@@ -1480,7 +1480,7 @@ struct DefaultGemmConfigurationToCutlass3Types<
       cutlass::epilogue::collective::EpilogueTileAuto,
       float, float,
       float, LayoutC, 1,
-      float, LayoutC, 1,
+      ElementOutput, LayoutC, 1,
       cutlass::epilogue::collective::EpilogueScheduleAuto,
       EpilogueOp
     >::CollectiveOp;
@@ -1489,12 +1489,6 @@ struct DefaultGemmConfigurationToCutlass3Types<
 ///////////////////////////////////////////////////////////////////////////////
 
 namespace detail {
-
-template <typename Element, typename Layout, int Alignment, int SizeK>
-struct DefaultGemm_TensorOpXe_OperandA;
-
-template <typename Element, typename Layout, int Alignment, int SizeK>
-struct DefaultGemm_TensorOpXe_OperandB;
 
 //
 // half
@@ -1535,13 +1529,13 @@ struct DefaultGemm_TensorOpXe_OperandB<half_t, layout::ColumnMajor, 32, SizeK>
 ///////////////////////////////////////////////////////////////////////////////
 
 // Intel XE MMA F32F16
-template <typename LayoutA, typename LayoutB, typename LayoutC>
+template <typename LayoutA, typename LayoutB, typename LayoutC, typename ElementOutput>
 struct DefaultGemmConfigurationToCutlass3Types<
     arch::OpClassTensorOp, arch::IntelXe,
     half_t, LayoutA,
     half_t, LayoutB,
     float, LayoutC,
-    float>
+    ElementOutput>
 {
   using TileShape = Shape<_256, _256, _32>;
 
@@ -1588,7 +1582,7 @@ struct DefaultGemmConfigurationToCutlass3Types<
       cutlass::epilogue::collective::EpilogueTileAuto,
       float, float,
       float, LayoutC, 1,
-      float, LayoutC, 1,
+      ElementOutput, LayoutC, 1,
       cutlass::epilogue::collective::EpilogueScheduleAuto,
       EpilogueOp
     >::CollectiveOp;
@@ -1597,12 +1591,6 @@ struct DefaultGemmConfigurationToCutlass3Types<
 ///////////////////////////////////////////////////////////////////////////////
 
 namespace detail {
-
-template <typename Element, typename Layout, int Alignment, int SizeK>
-struct DefaultGemm_TensorOpXe_OperandA;
-
-template <typename Element, typename Layout, int Alignment, int SizeK>
-struct DefaultGemm_TensorOpXe_OperandB;
 
 //
 // int8
@@ -1745,7 +1733,7 @@ struct DefaultGemmConfigurationToCutlass3Types<
     GmemTiledCopyB, void, void, cute::identity   // B
   >;
 
-  using EpilogueOp = epilogue::fusion::LinearCombination<float, float>;
+  using EpilogueOp = epilogue::fusion::LinearCombination<int32_t, int32_t>;
 
   using FusionCallBacks = cutlass::epilogue::fusion::FusionCallbacks<
     epilogue::IntelXeXMX16,
@@ -1767,12 +1755,6 @@ struct DefaultGemmConfigurationToCutlass3Types<
 ///////////////////////////////////////////////////////////////////////////////
 
 namespace detail {
-
-template <typename Element, typename Layout, int Alignment, int SizeK>
-struct DefaultGemm_TensorOpXe_OperandA;
-
-template <typename Element, typename Layout, int Alignment, int SizeK>
-struct DefaultGemm_TensorOpXe_OperandB;
 
 //
 // tfloat32

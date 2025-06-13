@@ -62,13 +62,13 @@ struct DefaultGemmGroupConfiguration {
 
 
 // Intel XE MMA F32BF16
-template <typename LayoutA, typename LayoutB, typename LayoutC>
+template <typename LayoutA, typename LayoutB, typename LayoutC, typename ElementOutput>
 struct DefaultGemmGroupConfiguration<
     arch::OpClassTensorOp, arch::IntelXe,
     bfloat16_t, LayoutA,
     bfloat16_t, LayoutB,
     float, LayoutC,
-    float>
+    ElementOutput>
 {
   using TileShape = Shape<_256, _256, _32>;
 
@@ -103,7 +103,7 @@ struct DefaultGemmGroupConfiguration<
       cutlass::epilogue::collective::EpilogueTileAuto,
       float, float,
       float, LayoutC, 1,
-      float, LayoutC, 1,
+      ElementOutput, LayoutC, 1,
       epilogue::IntelXeXMX16Group,
       EpilogueOp
     >::CollectiveOp;
@@ -120,13 +120,13 @@ struct DefaultGemmGroupConfiguration<
 };
 
 // Intel XE MMA F32F16
-template <typename LayoutA, typename LayoutB, typename LayoutC>
+template <typename LayoutA, typename LayoutB, typename LayoutC, typename ElementOutput>
 struct DefaultGemmGroupConfiguration<
     arch::OpClassTensorOp, arch::IntelXe,
     half_t, LayoutA,
     half_t, LayoutB,
     float, LayoutC,
-    float>
+    ElementOutput>
 {
   using TileShape = Shape<_256, _256, _32>;
 
@@ -161,7 +161,7 @@ struct DefaultGemmGroupConfiguration<
       cutlass::epilogue::collective::EpilogueTileAuto,
       float, float,
       float, LayoutC, 1,
-      float, LayoutC, 1,
+      ElementOutput, LayoutC, 1,
       epilogue::IntelXeXMX16Group,
       EpilogueOp
     >::CollectiveOp;
