@@ -149,7 +149,6 @@ struct XE_2D_TF32x1x8_LD_N {
 
 struct XE_2D_TF32x2x8_LD_N {
   using BlockShape = Shape<_2, _8>;
-  using ValueShape = Shape<_1, _16>;
 
   template <class T>
   CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
@@ -166,7 +165,6 @@ struct XE_2D_TF32x2x8_LD_N {
 
 struct XE_2D_TF32x4x8_LD_N {
   using BlockShape = Shape<_4, _8>;
-  using ValueShape = Shape<_2, _16>;
 
   template <class T>
   CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
@@ -183,7 +181,6 @@ struct XE_2D_TF32x4x8_LD_N {
 
 struct XE_2D_TF32x8x8_LD_N {
   using BlockShape = Shape<_8, _8>;
-  using ValueShape = Shape<_4, _16>;
 
   template <class T>
   CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
@@ -200,7 +197,6 @@ struct XE_2D_TF32x8x8_LD_N {
 
 struct XE_2D_TF32x16x8_LD_N {
   using BlockShape = Shape<_16, _8>;
-  using ValueShape = Shape<_8, _16>;
 
   template <class T>
   CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
@@ -217,7 +213,6 @@ struct XE_2D_TF32x16x8_LD_N {
 
 struct XE_2D_TF32x32x8_LD_N {
   using BlockShape = Shape<_32, _8>;
-  using ValueShape = Shape<_16, _16>;
 
   template <class T>
   CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
@@ -250,7 +245,6 @@ struct XE_2D_TF32x1x16_LD_N {
 
 struct XE_2D_TF32x2x16_LD_N {
   using BlockShape = Shape<_2, _16>;
-  using ValueShape = Shape<_1, _32>;
 
   template <class T>
   CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
@@ -267,7 +261,6 @@ struct XE_2D_TF32x2x16_LD_N {
 
 struct XE_2D_TF32x4x16_LD_N {
   using BlockShape = Shape<_4, _16>;
-  using ValueShape = Shape<_2, _32>;
 
   template <class T>
   CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
@@ -284,7 +277,6 @@ struct XE_2D_TF32x4x16_LD_N {
 
 struct XE_2D_TF32x8x16_LD_N {
   using BlockShape = Shape<_8, _16>;
-  using ValueShape = Shape<_4, _32>;
 
   template <class T>
   CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
@@ -301,7 +293,6 @@ struct XE_2D_TF32x8x16_LD_N {
 
 struct XE_2D_TF32x16x16_LD_N {
   using BlockShape = Shape<_16, _16>;
-  using ValueShape = Shape<_8, _32>;
 
   template <class T>
   CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
@@ -330,7 +321,6 @@ struct XE_2D_TF32x16x16_LD_N {
 
 struct XE_2D_TF32x32x16_LD_N {
   using BlockShape = Shape<_32, _16>;
-  using ValueShape = Shape<_16, _32>;
 
   template <class T>
   CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
