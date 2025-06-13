@@ -68,6 +68,12 @@ else()
     tiled_copy_sycl.cpp
   )
 
+if (SYCL_INTEL_TARGET)
+  cutlass_example_add_executable(
+    cute_tutorial_bmg
+    sgemm_bmg.cpp
+  )
+endif()
   if (SYCL_NVIDIA_TARGET)
     cutlass_example_add_executable(
       cute_tutorial_sgemm_sm70
