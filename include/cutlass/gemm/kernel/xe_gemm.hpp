@@ -197,7 +197,6 @@ public:
     bool k_valid = k > 0 && check_dim(k, sizeof(ElementA), get<0>(args.mainloop.dA) == _1{}) &&
                             check_dim(k, sizeof(ElementB), get<0>(args.mainloop.dB) == _1{});
     bool shape_implementable = m_valid && n_valid && k_valid && strides_valid;
-
     bool mode_implementable = args.mode == GemmUniversalMode::kGemm ||
           (args.mode == GemmUniversalMode::kBatched && rank(ProblemShape{}) == 4);
     return shape_implementable && mode_implementable && TileScheduler::can_implement(args.scheduler);

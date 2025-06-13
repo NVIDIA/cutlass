@@ -1608,8 +1608,7 @@ template <int SizeK>
 struct DefaultGemm_TensorOpXe_OperandA<int8_t, layout::ColumnMajor, 32, SizeK>
 {
   // Gmem
-  // TODO(Codeplay): transposed version is not implemented
-  using GmemTiledCopy = XE_2D_Packed_U8x32x32_LD_N;
+  using GmemTiledCopy = XE_2D_U8x32x8_LD_T;
 };
 
 /// Operand B - Row-major (N-Major)
@@ -1624,8 +1623,7 @@ template <int SizeK>
 struct DefaultGemm_TensorOpXe_OperandB<int8_t, layout::ColumnMajor, 32, SizeK>
 {
   // Gmem
-  // TODO(Codeplay): transposed version is not implemented
-  using GmemTiledCopy = XE_2D_U8x32x32_LD_V;
+  using GmemTiledCopy = XE_2D_U8x16x32_LD_T;
 };
 
 }

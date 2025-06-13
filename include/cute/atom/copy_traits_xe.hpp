@@ -498,37 +498,39 @@ template <class CopyOp, class StrideOrTensor = cute::Stride<int64_t, cute::Int<1
 template <class TiledCopy, class TLShape>
 CUTE_HOST_DEVICE constexpr auto make_fragment_layout(TiledCopy &tiled_copy,
                                                      TLShape &&fragment_top_level_shape) {
-  constexpr auto mma_atom_shape = get<0>(TLShape{});
-  constexpr int total_mma_atom_iters_M = get<1>(TLShape{});
-  constexpr int total_mma_atom_iters_N = get<2>(TLShape{});
-  constexpr auto mma_atom_shape_2d = prepend<2>(mma_atom_shape, _1{});
+  // Shapes are reversed for col major case between registers and global memory, 
+  // so all variables contain in their name whether they refer to the shape in registers or in global memory
 
-  constexpr int mma_atom_size_M =
-      Int<TiledCopy::is_matrix_B ? size<0>(mma_atom_shape_2d) : size<1>(mma_atom_shape_2d)>{};
-  constexpr int mma_atom_size_N =
-      Int<TiledCopy::is_matrix_B ? size<1>(mma_atom_shape_2d) : size<0>(mma_atom_shape_2d)>{};
+  // TODO(Codeplay): reverse values in 2d (U8) MMA atoms instead
+  constexpr auto mma_atom_regs_shape = cute::reverse(get<0>(TLShape{}));
+  using MmaValsShapeRegs2d = std::conditional_t<TiledCopy::is_matrix_B, 
+                                                decltype(prepend<2>(mma_atom_regs_shape, _1{})), 
+                                                decltype(append<2>(mma_atom_regs_shape, _1{}))>;
 
-  using ThreadLayout_ = Shape<_1, Int<size(typename TiledCopy::Traits_LD_t::ThrID{})>>;
-  using ThreadLayout = std::conditional_t<TiledCopy::is_matrix_B,
-                                          decltype(cute::reverse(ThreadLayout_{})),
-                                          ThreadLayout_>;
-  auto thread_copy_shape = shape_div(typename TiledCopy::BlockShape{}, ThreadLayout{});
-  auto copy_size_M = size<0>(thread_copy_shape);
-  auto copy_size_N = size<1>(thread_copy_shape);
-  constexpr int mma_atom_iters_in_copy_M = copy_size_M > mma_atom_size_M ? copy_size_M / mma_atom_size_M : 1;
-  constexpr int mma_atom_iters_in_copy_N = copy_size_N > mma_atom_size_N ? copy_size_N / mma_atom_size_N : 1;
-  constexpr int copy_iters_M = total_mma_atom_iters_M / mma_atom_iters_in_copy_M;
-  constexpr int copy_iters_N = total_mma_atom_iters_N / mma_atom_iters_in_copy_N;
+  using ThreadLayout_ = Shape<Int<size(typename TiledCopy::Traits_LD_t::ThrID{})>, _1>;
+  using ThreadLayoutRegs = std::conditional_t<TiledCopy::is_matrix_B,
+                                              ThreadLayout_, 
+                                              decltype(cute::reverse(ThreadLayout_{}))>;
+  using BlockShapeRegs = typename TiledCopy::BlockShape;
+  using TotalMmaAtomItersRegs = decltype(select<1,2>(TLShape{}));
+
+  using CopyValsShapeRegs = decltype(shape_div(BlockShapeRegs{}, ThreadLayoutRegs{}));
+  // This case would need to rearrange data in registers between copy and mma calls
+  static_assert(get<0>(CopyValsShapeRegs{}) >= get<0>(MmaValsShapeRegs2d{}) || 
+                  get<1>(CopyValsShapeRegs{}) <= get<1>(MmaValsShapeRegs2d{}), 
+                "It is not currently supported to have MMA atom be bigger than copy atom in one dimension and smaller in other dimension!");
+  using MmaItersInCopyRegs = decltype(ceil_div(CopyValsShapeRegs{}, MmaValsShapeRegs2d{}));
+  using CopyItersRegs = decltype(shape_div(TotalMmaAtomItersRegs{}, MmaItersInCopyRegs{}));
 
   auto order = std::conditional_t<TiledCopy::is_matrix_B,
                                   Step<Step<_0, _1>, Step<_3, _5>, Step<_2, _4>>,
                                   Step<Step<_0, _1>, Step<_2, _4>, Step<_3, _5>>>{};
+                                  
   auto res = make_ordered_layout(
-      make_shape(mma_atom_shape_2d,
-                 make_shape(Int<mma_atom_iters_in_copy_M>{}, Int<copy_iters_M>{}),
-                 make_shape(Int<mma_atom_iters_in_copy_N>{}, Int<copy_iters_N>{})),
+      prepend(cute::zip(MmaItersInCopyRegs{}, CopyItersRegs{}), MmaValsShapeRegs2d{}),
       order);
-  static_assert(size(res) > 0, "Error in make_fragment_layout(), tile size might be smaller than copy atom");
+      
+  static_assert(size(res) == size(TLShape{}), "Internal eror in make_fragment_layout().");
   return res;
 };
 
@@ -617,10 +619,10 @@ struct Copy_Traits_<XE_2D_Packed_U8x16x32_LD_N, args_t...>
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,Shape <_8,  _2, _16>>,
-                           Stride< _0,Stride< _1,_128,_256>>>;
+                           Stride< _0,Stride< _1,_8,_256>>>;
   // Map from (dst-thr,dst-val) to bit
   using DstLayout = Layout<Shape <_16,Shape <_8,  _2, _16>>,
-                           Stride<_16,Stride< _1,_128,_256>>>;
+                           Stride<_16,Stride< _1,_8,_256>>>;
   // Reference map from (thr,val) to bit
   using RefLayout = DstLayout;
 
@@ -653,10 +655,10 @@ struct Copy_Traits_<XE_2D_U8x32x32_LD_N, args_t...>
   using ThrID = Layout<_16>;
   // Map from (src-thr,src-val) to bit
   using SrcLayout = Layout<Shape <_16,Shape <_8,  _2, _32>>,
-                           Stride< _0,Stride< _1,_128,_256>>>;
+                           Stride< _0,Stride< _1,_8,_256>>>;
   // Map from (dst-thr,dst-val) to bit
   using DstLayout = Layout<Shape <_16,Shape <_8,  _2, _32>>,
-                           Stride<_16,Stride< _1,_128,_256>>>;
+                           Stride<_16,Stride< _1,_8,_256>>>;
   // Reference map from (thr,val) to bit
   using RefLayout = DstLayout;
 
@@ -934,6 +936,42 @@ struct Copy_Traits_<XE_2D_Packed_U8x32x64_LD_N::PREFETCH, args_t...>
                            Stride<_16,Stride< _1,_256,_512>>>;
   // Reference map from (thr,val) to bit
   using RefLayout = DstLayout;
+};
+
+template <class... args_t>
+struct Copy_Traits_<XE_2D_U8x32x8_LD_T, args_t...>
+    : XE_2D_LD_Unpack<XE_2D_U8x32x8_LD_T, args_t...> {
+  using ThrID = Layout<_16>;
+  // Map from (src-thr,src-val) to bit
+  using SrcLayout = Layout<Shape <_16,Shape <_8, _2, _8>>,
+                           Stride<_0, Stride<_1, _8, _16>>>;
+  // Map from (dst-thr,dst-val) to bit
+  using DstLayout = Layout<Shape < _16,Shape <_8, _2, _8>>,
+                           Stride<_256,Stride<_1, _8, _16>>>;
+  // Reference map from (thr,val) to bit
+  using RefLayout = DstLayout;
+
+  template <class... ArgT>
+  Copy_Traits_(ArgT... args)
+      : XE_2D_LD_Unpack<XE_2D_U8x32x8_LD_T, args_t...>(args...) {}
+};
+
+template <class... args_t>
+struct Copy_Traits_<XE_2D_U8x32x4_LD_T, args_t...>
+    : XE_2D_LD_Unpack<XE_2D_U8x32x4_LD_T, args_t...> {
+  using ThrID = Layout<_16>;
+  // Map from (src-thr,src-val) to bit
+  using SrcLayout = Layout<Shape <_16,Shape <_8, _2, _4>>,
+                           Stride<_0, Stride<_1, _8, _16>>>;
+  // Map from (dst-thr,dst-val) to bit
+  using DstLayout = Layout<Shape < _16,Shape <_8, _2, _4>>,
+                           Stride<_256,Stride<_1, _8, _16>>>;
+  // Reference map from (thr,val) to bit
+  using RefLayout = DstLayout;
+
+  template <class... ArgT>
+  Copy_Traits_(ArgT... args)
+      : XE_2D_LD_Unpack<XE_2D_U8x32x4_LD_T, args_t...>(args...) {}
 };
 
 template <class... args_t>
@@ -1510,6 +1548,24 @@ struct Copy_Traits_<XE_2D_TF32x32x16_LD_N, args_t...>
   template <class... ArgTs>
   Copy_Traits_(ArgTs... args)
       : XE_2D_LD_Unpack<XE_2D_TF32x32x16_LD_N, args_t...>(args...) {}
+};
+
+template <class... args_t>
+struct Copy_Traits_<XE_2D_TF32x8x8_LD_T, args_t...>
+    : XE_2D_LD_Unpack<XE_2D_TF32x8x8_LD_T, args_t...> {
+  using ThrID = Layout<_16>;
+  // Map from (src-thr,src-val) to bit
+  using SrcLayout = Layout<Shape <_16, Shape <_4,  _32>>,
+                           Stride< _0, Stride<_32, _1>>>;
+  // Map from (dst-thr,dst-val) to bit
+  using DstLayout = Layout<Shape <_16, Shape <_4,  _32>>,
+                           Stride< _32, Stride<_32, _1>>>;
+  // Reference map from (thr,val) to bit
+  using RefLayout = DstLayout;
+
+  template <class... ArgTs>
+  Copy_Traits_(ArgTs... args)
+      : XE_2D_LD_Unpack<XE_2D_TF32x8x8_LD_T, args_t...>(args...) {}
 };
 
 template <class... args_t>
@@ -2382,6 +2438,8 @@ COPY_TRAIT_LD_DEF(XE_2D_Packed_U8x1x64_LD_N)
 COPY_TRAIT_LD_DEF(XE_2D_Packed_U8x2x64_LD_N)
 COPY_TRAIT_LD_DEF(XE_2D_Packed_U8x4x64_LD_N)
 COPY_TRAIT_LD_DEF(XE_2D_Packed_U8x8x64_LD_N)
+COPY_TRAIT_LD_DEF(XE_2D_U8x32x8_LD_T)
+COPY_TRAIT_LD_DEF(XE_2D_U8x32x4_LD_T)
 COPY_TRAIT_LD_DEF(XE_2D_U64x8x1_LD_T)
 COPY_TRAIT_LD_DEF(XE_2D_U64x8x2_LD_T)
 COPY_TRAIT_LD_DEF(XE_2D_U64x8x4_LD_T)
@@ -2403,6 +2461,7 @@ COPY_TRAIT_LD_DEF(XE_2D_TF32x1x8_LD_N)
 COPY_TRAIT_LD_DEF(XE_2D_TF32x2x8_LD_N)
 COPY_TRAIT_LD_DEF(XE_2D_TF32x4x8_LD_N)
 COPY_TRAIT_LD_DEF(XE_2D_TF32x8x8_LD_N)
+COPY_TRAIT_LD_DEF(XE_2D_TF32x8x8_LD_T)
 COPY_TRAIT_LD_DEF(XE_2D_U32x1x16_LD_N)
 COPY_TRAIT_LD_DEF(XE_2D_U32x2x16_LD_N)
 COPY_TRAIT_LD_DEF(XE_2D_U32x4x16_LD_N)

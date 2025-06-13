@@ -419,6 +419,25 @@ struct XE_2D_U32x16x8_LD_T {
   };
 };
 
+struct XE_2D_TF32x8x8_LD_T {
+  using BlockShape = Shape<_8, _8>;
+  using ValueShape = Shape<_4, _16>;
+
+  static constexpr bool is_transpose = true;
+
+  template <class T>
+  CUTE_HOST_DEVICE static void copy(const void *baseoffset, int width,
+                                    int height, int pitch, intel::coord_t coord,
+                                    T *dst) {
+#if defined(CUTE_ARCH_COPY_XE_ENABLED)
+    static_assert(sizeof(T) == 4, "Expected T to have size 4");
+    detail::XeSubgroup2DBlockLoadTranspose<4, 8, 8, 1>{}(baseoffset, width, height, pitch, coord, dst);
+#else
+    CUTE_INVALID_CONTROL_PATH("Trying to use block loads on non-PVC hardware");
+#endif
+    }
+};
+
 struct XE_2D_U32x1x16_ST_N {
   using BlockShape = Shape<_1, _16>;
 
