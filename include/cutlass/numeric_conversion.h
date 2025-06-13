@@ -1715,6 +1715,58 @@ struct NumericArrayConverter<float_e4m3_t, cutlass::half_t, 2, Round> {
   }
 };
 
+#if defined(SYCL_INTEL_TARGET)
+/// Partial specialization for Array<float_e4m3_t, n> <= Array<half, n>
+template <
+  FloatRoundStyle Round
+>
+struct NumericArrayConverter<cutlass::half_t, float_e4m3_t, 8, Round> {
+  using result_element = cutlass::half_t;
+  using source_element = cutlass::float_e4m3_t;
+
+  using result_type = Array<result_element, 8>;
+  using source_type = Array<source_element, 8>;
+  static FloatRoundStyle const round_style = Round;
+
+  using uchar8 = sycl::uchar8;
+  using ushort8 = sycl::ushort8;
+
+  CUTLASS_DEVICE
+  static result_type convert(source_type const & source) {
+    result_type out;
+    auto const& xin = reinterpret_cast<uchar8 const&>(source);
+
+    uchar8 xa = xin & 0x7F;
+    uchar8 sgn_x = xin ^ xa;
+
+    uchar8 zero_mask = (xa==uchar8{0}).as<uchar8>();
+    uchar8 nan_mask = (0x7E - xa) & 0x80;
+    uchar8 den_mask = ((xa - 8) >> 7) & 0x01;
+
+    xa = (xa + (nan_mask >> 1)) | (den_mask & 8);
+    den_mask &= 0x48;
+    xa += 0x40 & ~(zero_mask * 0x40);
+
+    ushort8 x16 = xa.convert<uint16_t>() << 7;
+    ushort8 den_corr = (den_mask & ~zero_mask).convert<uint16_t>() << 7;
+
+    auto& result = reinterpret_cast<ushort8&>(out);
+    result = x16 - den_corr;
+    result &= ~(zero_mask.convert<uint16_t>() << 7);
+
+    ushort8 sign_ext = sgn_x.convert<uint16_t>() << 8;
+    result ^= sign_ext;
+
+    return out;
+  }
+
+  CUTLASS_HOST_DEVICE
+  result_type operator()(source_type const &s) const {
+    return convert(s);
+  }
+};
+#endif
+
 /// Partial specialization for Array<half, 2> <= Array<float_e5m2_t, 2>
 template <
   FloatRoundStyle Round
@@ -1760,6 +1812,41 @@ struct NumericArrayConverter<cutlass::half_t, cutlass::float_e5m2_t, 2, Round> {
   }
 };
 
+#if defined(SYCL_INTEL_TARGET)
+/// Partial specialization for Array<half, 4> <= Array<float_e5m2_t, 4>
+template <
+  FloatRoundStyle Round
+>
+struct NumericArrayConverter<cutlass::half_t, cutlass::float_e5m2_t, 4, Round> {
+  using result_element = cutlass::half_t;
+  using source_element = cutlass::float_e5m2_t;
+
+  using result_type = Array<result_element, 4>;
+  using source_type = Array<source_element, 4>;
+  static FloatRoundStyle const round_style = Round;
+
+  CUTLASS_DEVICE
+  static result_type convert(source_type const & source) {
+    result_type out;
+    auto& reg = reinterpret_cast<sycl::int2&>(out);
+    auto const& src_packed = reinterpret_cast<uint32_t const&>(source);
+
+    uint32_t first = (src_packed & 0x000000FF) << 8;
+    uint32_t second = (src_packed & 0x0000FF00) << 16;
+    uint32_t third = (src_packed & 0x00FF0000) >> 8;
+    uint32_t fourth = (src_packed & 0xFF000000);
+
+    reg = { first | second, third | fourth };
+
+    return out;
+  }
+
+  CUTLASS_HOST_DEVICE
+  result_type operator()(source_type const &s) const {
+    return convert(s);
+  }
+};
+#endif
 /// Partial specialization for Array<float_e5m2_t, 2> <= Array<half, 2>
 template <
   FloatRoundStyle Round
