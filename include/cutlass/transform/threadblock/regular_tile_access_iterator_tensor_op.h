@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -54,11 +60,11 @@ namespace threadblock {
 ///            WriteableContiguousTileIteratorConcept
 ///
 template <typename Shape_, typename Element_, int AdvanceRank,
-          typename ThreadMap_, int Alignment>
+          typename ThreadMap_, int Alignment, int Crosswise>
 class RegularTileAccessIterator<
     Shape_, Element_,
     layout::TensorOpMultiplicandCongruous<sizeof_bits<Element_>::value,
-                                          int(128 / sizeof(Element_))>,
+                                          Crosswise>,
     AdvanceRank, ThreadMap_, Alignment> {
  public:
   static_assert(
@@ -70,9 +76,10 @@ class RegularTileAccessIterator<
   using Element = Element_;
   using Layout =
       layout::TensorOpMultiplicandCongruous<sizeof_bits<Element_>::value,
-                                            int(128 / sizeof(Element_))>;
+                                            Crosswise>;
   static int const kAdvanceRank = AdvanceRank;
   static int const kAlignment = Alignment;
+  static int const kCrosswise = Crosswise;
 
   using Index = typename Layout::Index;
   using LongIndex = typename Layout::LongIndex;
@@ -128,7 +135,7 @@ class RegularTileAccessIterator<
   RegularTileAccessIterator(TensorRef ref,  ///< Pointer to start of tensor
                             int thread_id   ///< ID of each participating thread
                             )
-      : stride_(ref.stride(0) / Layout::kElementsPerAccess),
+      : stride_(ref.stride(0) * Layout::kFactor / Layout::kElementsPerAccess),
         byte_offset_(0) {
     layout::PitchLinearCoord thread_offset_base =
         ThreadMap::initial_offset(thread_id);
@@ -169,7 +176,7 @@ class RegularTileAccessIterator<
     AccessType *access_ptr = pointer_[iteration_strided_ & 1];
     int stride_idx = (iteration_strided_ & ~1);
 
-    int access_offset = stride_idx * ThreadMap::Delta::kStrided * stride_ +
+    int access_offset = stride_idx * ThreadMap::Delta::kStrided * stride_ / Layout::kFactor +
                         iteration_contiguous_ * ThreadMap::Delta::kContiguous /
                             ThreadMap::kElementsPerAccess;
 
@@ -214,9 +221,9 @@ class RegularTileAccessIterator<
   /// Adds a tile offset
   CUTLASS_DEVICE
   void add_tile_offset(TensorCoord const &coord) {
-    add_pointer_offset(coord.contiguous() * Shape::kContiguous +
+    add_pointer_offset(coord.contiguous() * Shape::kContiguous * Layout::kFactor +
                        coord.strided() * Shape::kStrided * stride_ *
-                           Layout::kElementsPerAccess);
+                           Layout::kElementsPerAccess / Layout::kFactor);
   }
 };
 
@@ -230,11 +237,11 @@ class RegularTileAccessIterator<
 ///            WriteableContiguousTileIteratorConcept
 ///
 template <typename Shape_, typename Element_, int AdvanceRank,
-          typename ThreadMap_, int Alignment>
+          typename ThreadMap_, int Alignment, int Crosswise>
 class RegularTileAccessIterator<
     Shape_, Element_,
     layout::ColumnMajorTensorOpMultiplicandCongruous<
-        sizeof_bits<Element_>::value, int(128 / sizeof(Element_))>,
+        sizeof_bits<Element_>::value, Crosswise>,
     AdvanceRank, ThreadMap_, Alignment> {
  public:
   static_assert(
@@ -245,7 +252,7 @@ class RegularTileAccessIterator<
   using Shape = Shape_;
   using Element = Element_;
   using Layout = layout::ColumnMajorTensorOpMultiplicandCongruous<
-      sizeof_bits<Element_>::value, int(128 / sizeof(Element_))>;
+      sizeof_bits<Element_>::value, Crosswise>;
   static int const kAdvanceRank = AdvanceRank;
   static int const kAlignment = Alignment;
 
@@ -261,7 +268,7 @@ class RegularTileAccessIterator<
   using UnderlyingIterator = RegularTileAccessIterator<
       layout::PitchLinearShape<Shape::kRow, Shape::kColumn>, Element,
       layout::TensorOpMultiplicandCongruous<sizeof_bits<Element_>::value,
-                                            int(128 / sizeof(Element_))>,
+                                            Crosswise>,
       (kAdvanceRank == 0 ? 0 : 1), ThreadMap_>;
 
   using AccessType = typename UnderlyingIterator::AccessType;
@@ -327,11 +334,11 @@ class RegularTileAccessIterator<
 ///            WriteableContiguousTileIteratorConcept
 ///
 template <typename Shape_, typename Element_, int AdvanceRank,
-          typename ThreadMap_, int Alignment>
+          typename ThreadMap_, int Alignment, int Crosswise>
 class RegularTileAccessIterator<
     Shape_, Element_,
     layout::RowMajorTensorOpMultiplicandCongruous<sizeof_bits<Element_>::value,
-                                                  int(128 / sizeof(Element_))>,
+                                                  Crosswise>,
     AdvanceRank, ThreadMap_, Alignment> {
  public:
   static_assert(
@@ -342,7 +349,7 @@ class RegularTileAccessIterator<
   using Shape = Shape_;
   using Element = Element_;
   using Layout = layout::RowMajorTensorOpMultiplicandCongruous<
-      sizeof_bits<Element_>::value, int(128 / sizeof(Element_))>;
+      sizeof_bits<Element_>::value, Crosswise>;
   static int const kAdvanceRank = AdvanceRank;
   static int const kAlignment = Alignment;
 
@@ -358,7 +365,7 @@ class RegularTileAccessIterator<
   using UnderlyingIterator = RegularTileAccessIterator<
       layout::PitchLinearShape<Shape::kColumn, Shape::kRow>, Element,
       layout::TensorOpMultiplicandCongruous<sizeof_bits<Element_>::value,
-                                            int(128 / sizeof(Element_))>,
+                                            Crosswise>,
       (kAdvanceRank == 0 ? 1 : 0), ThreadMap_>;
 
   using AccessType = typename UnderlyingIterator::AccessType;
@@ -608,7 +615,7 @@ class RegularTileAccessIterator<Shape_, Element_,
     add_pointer_offset(coord.contiguous() * sections_per_stage_ * stride_ *
                            ThreadMap::kElementsPerAccess / sections_ +
                        coord.strided() * Shape::kStrided * stride_ *
-                           Layout::kElementsPerAccess);
+                           Layout::kElementsPerAccess / Layout::kFactor);
   }
 };
 

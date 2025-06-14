@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -150,20 +156,16 @@ public:
   /// Internal structure exposed for introspection.
   struct Detail {
 
-    static_assert(Base::kWarpGemmIterations > 1,
-                  "The pipelined structure requires at least two warp-level "
-                  "GEMM operations.");
-
     /// Number of async copies to load one stage of operand A
-    static int const TBLDGSTSIterationsA =
+    static int const TBLoadIterationsA =
         IteratorA::ThreadMap::Iterations::kCount;
 
     /// Number of async copies to load one stage of operand B
-    static int const TBLDGSTSIterationsB =
+    static int const TBLoadIterationsB =
         IteratorB::ThreadMap::Iterations::kCount;
 
     /// Number of async copies to load one stage of operand E
-    static int const TBLDGSTSIterationsE =
+    static int const TBLoadIterationsE =
         IteratorE::ThreadMap::Iterations::kCount;
 
     /// Number of stages
@@ -171,15 +173,15 @@ public:
 
     /// Number of async copies to load one group of operand A
     static int const kAccessesPerGroupA =
-        (TBLDGSTSIterationsA + Base::kWarpGemmIterations - 1) / Base::kWarpGemmIterations;
+        (TBLoadIterationsA + Base::kWarpGemmIterations - 1) / Base::kWarpGemmIterations;
 
     /// Number of async copies to load one group of operand B
     static int const kAccessesPerGroupB =
-        (TBLDGSTSIterationsB + Base::kWarpGemmIterations - 1) / Base::kWarpGemmIterations;
+        (TBLoadIterationsB + Base::kWarpGemmIterations - 1) / Base::kWarpGemmIterations;
 
     /// Number of async copies to load one group of operand E
     static int const kAccessesPerGroupE =
-        (TBLDGSTSIterationsE + Base::kWarpGemmIterations - 1) / Base::kWarpGemmIterations;
+        (TBLoadIterationsE + Base::kWarpGemmIterations - 1) / Base::kWarpGemmIterations;
 
     /// E operand is tiny.  For the most of time, not all the warps are needed
     /// to load it from the global memory.
@@ -277,7 +279,7 @@ public:
     // async copy for operand A
     CUTLASS_PRAGMA_UNROLL
     for (int j = 0; j < Detail::kAccessesPerGroupA; ++j) {
-      if (group_start_A + j < Detail::TBLDGSTSIterationsA) {
+      if (group_start_A + j < Detail::TBLoadIterationsA) {
         typename IteratorA::AccessType *dst_ptr =
             reinterpret_cast<typename IteratorA::AccessType *>(
                 this->smem_iterator_A_.get());
@@ -307,7 +309,7 @@ public:
     // async copy for operand B
     CUTLASS_PRAGMA_UNROLL
     for (int j = 0; j < Detail::kAccessesPerGroupB; ++j) {
-      if (group_start_B + j < Detail::TBLDGSTSIterationsB) {
+      if (group_start_B + j < Detail::TBLoadIterationsB) {
         typename IteratorB::AccessType *dst_ptr =
             reinterpret_cast<typename IteratorB::AccessType *>(
                 this->smem_iterator_B_.get());
@@ -335,7 +337,7 @@ public:
     // async copy for operand E
     CUTLASS_PRAGMA_UNROLL
     for (int j = 0; j < Detail::kAccessesPerGroupE; ++j) {
-      if (group_start_E + j < Detail::TBLDGSTSIterationsE) {
+      if (group_start_E + j < Detail::TBLoadIterationsE) {
         typename IteratorE::AccessType *dst_ptr =
             reinterpret_cast<typename IteratorE::AccessType *>(
                 this->smem_iterator_E_.get());
@@ -388,7 +390,7 @@ public:
 
       // async copy for operand A
       CUTLASS_PRAGMA_UNROLL
-      for (int j = 0; j < Detail::TBLDGSTSIterationsA; ++j) {
+      for (int j = 0; j < Detail::TBLoadIterationsA; ++j) {
         typename IteratorA::AccessType *dst_ptr =
             reinterpret_cast<typename IteratorA::AccessType *>(
                 this->smem_iterator_A_.get());
@@ -414,7 +416,7 @@ public:
 
       // async copy for operand B
       CUTLASS_PRAGMA_UNROLL
-      for (int j = 0; j < Detail::TBLDGSTSIterationsB; ++j) {
+      for (int j = 0; j < Detail::TBLoadIterationsB; ++j) {
         typename IteratorB::AccessType *dst_ptr =
             reinterpret_cast<typename IteratorB::AccessType *>(
                 this->smem_iterator_B_.get());
@@ -440,7 +442,7 @@ public:
 
       // async copy for operand E
       CUTLASS_PRAGMA_UNROLL
-      for (int j = 0; j < Detail::TBLDGSTSIterationsE; ++j) {
+      for (int j = 0; j < Detail::TBLoadIterationsE; ++j) {
         typename IteratorE::AccessType *dst_ptr =
             reinterpret_cast<typename IteratorE::AccessType *>(
                 this->smem_iterator_E_.get());
@@ -465,14 +467,13 @@ public:
       this->smem_iterator_B_.add_tile_offset({1, 0});
       this->smem_iterator_E_.add_tile_offset({0, 1});
 
-      // LDGDEPBAR - completes a stage
+      // cp.async.commit_group - completes a stage
       cutlass::arch::cp_async_fence();
     }
 
     // Perform accumulation in the 'd' output operand
     accum = src_accum;
 
-    // DEPBAR+SYNC
     cutlass::arch::cp_async_wait<Base::kStages - 2>();
     __syncthreads();
 
@@ -642,12 +643,18 @@ public:
         // we can start right away on mma instructions
         if (warp_mma_k + 1 == Base::kWarpGemmIterations)
           warp_mma.transform(warp_transformed_frag_A[(warp_mma_k + 1) % 2],
-                             warp_transformed_frag_B[(warp_mma_k + 1) % 2],
+                             warp_transformed_frag_B[(warp_mma_k + 1) % Detail::kBBufferSize],
                              warp_loaded_frag_A[(warp_mma_k + 1) % 2],
-                             warp_loaded_frag_B[(warp_mma_k + 1) % 2]);
+                             warp_loaded_frag_B[(warp_mma_k + 1) % Detail::kBBufferSize]);
       }
 
     }
+
+
+    // Commit and drain all pending and predicated cp.async pnz from the GEMM mainloop
+    cutlass::arch::cp_async_fence();
+    cutlass::arch::cp_async_wait<0>();
+    __syncthreads();
 
   }
 };

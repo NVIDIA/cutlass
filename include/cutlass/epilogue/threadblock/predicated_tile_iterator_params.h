@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -29,6 +35,11 @@
 #pragma once
 
 #include "cutlass/cutlass.h"
+
+#include "cutlass/layout/pitch_linear.h"
+#include "cutlass/layout/matrix.h"
+
+#include "cutlass/conv/conv2d_problem_size.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -74,6 +85,13 @@ struct OutputTileShapeDesc {
   int count() const {
     return column * row * group * cluster * tile;
   }
+
+  #if 0
+  CUTLASS_HOST_DEVICE
+  void print() const {
+    printf("{%d, %d, %d, %d, %d}", column, row, group, cluster, tile);
+  }
+  #endif
 };
 
 /// Helper template to construct an OutputTileShapeDesc from a OutputTileShape template.
@@ -122,7 +140,10 @@ struct OutputTileThreadMapDesc {
     shape(shape_),
     iterations(iterations_),
     delta(delta_),
-    count(count_) { }
+    count(count_) 
+  {
+    
+  }
 };
 
 /// Helper template to construct an OutputTileShapeDesc from a OutputTileThreadMap template.
@@ -226,6 +247,95 @@ struct PredicatedTileIteratorParams {
   }
 };
 
+///////////////////////////////////////////////////////////////////////////////
+
+//
+// Parameters struct for PredicatedTileIteratorDirect2dConv
+//
+
+struct PredicatedTileIteratorDirect2dConvParams{
+  using Index = int32_t;
+  using LongIndex = int64_t;
+
+  //
+  // Data members
+  //
+  FastDivmod pq_divmod;
+  FastDivmod q_divmod;
+
+  LongIndex stride;
+  LongIndex stride_n;
+  LongIndex stride_p;
+
+  int N;
+  int P;
+  int Q;
+
+  //
+  // Methods
+  //
+
+  CUTLASS_HOST_DEVICE
+  Status initialize(LongIndex stride_,
+                    cutlass::conv::Conv2dProblemSize const &problem_size,
+                    MatrixCoord threadblock_output_shape) {
+    stride = stride_; // The stride per row of output tensor (bytes)
+    stride_n = problem_size.P * problem_size.Q;
+    stride_p = problem_size.Q ;
+
+    N = problem_size.N;
+    P = problem_size.P;
+    Q = problem_size.Q;
+
+    // Fastdivmod for output O, P, Q
+    if(threadblock_output_shape.row() != 0 && threadblock_output_shape.column() !=0 ){
+      // MSVC emits a "potential divide by 0" warning as error
+      // if the code just divides without a check and substitution.
+
+      CUTLASS_ASSERT(threadblock_output_shape.row() != 0);
+      const auto row_denom = threadblock_output_shape.row() != 0 ?
+        threadblock_output_shape.row() : cutlass::MatrixCoord::Index(1);
+      int tiles_p =
+          (problem_size.P + (threadblock_output_shape.row() - 1)) / row_denom;
+
+      CUTLASS_ASSERT(threadblock_output_shape.column() != 0);
+      const auto col_denom = threadblock_output_shape.column() != 0 ?
+        threadblock_output_shape.column() : cutlass::MatrixCoord::Index(1);
+      int tiles_q = (problem_size.Q + (threadblock_output_shape.column() - 1)) /
+                    col_denom;
+
+      pq_divmod = FastDivmod(tiles_p * tiles_q);
+      q_divmod = FastDivmod(tiles_q);
+    }
+
+    return Status::kSuccess;
+  }
+
+  CUTLASS_HOST_DEVICE
+  Status initialize(
+      Index stride_,
+      cutlass::conv::Conv2dProblemSize const &problem_size = cutlass::conv::Conv2dProblemSize(),
+      MatrixCoord threadblock_output_shape = MatrixCoord()) {
+    return initialize(LongIndex(stride_), problem_size, threadblock_output_shape);
+  }
+
+  CUTLASS_HOST_DEVICE
+  PredicatedTileIteratorDirect2dConvParams() { initialize(LongIndex(0)); }
+
+  CUTLASS_HOST_DEVICE
+  PredicatedTileIteratorDirect2dConvParams(Index stride,
+                               cutlass::conv::Conv2dProblemSize const &problem_size,
+                               MatrixCoord threadblock_output_shape) {
+    initialize(stride, problem_size, threadblock_output_shape);
+  }
+
+  CUTLASS_HOST_DEVICE
+  PredicatedTileIteratorDirect2dConvParams(LongIndex stride,
+                               cutlass::conv::Conv2dProblemSize const &problem_size,
+                               MatrixCoord threadblock_output_shape) {
+    initialize(stride, problem_size, threadblock_output_shape);
+  }
+};
 
 ///////////////////////////////////////////////////////////////////////////////
 //  InterleavedPredicatedTileIterator

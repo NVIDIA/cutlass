@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -483,6 +489,80 @@ void Functional_multiply_add_QuaternionT() {
 
 TEST(Functional, multiply_add_quaternion_f32) {
   Functional_multiply_add_QuaternionT<float>();
+}
+
+namespace cutlass_test {
+
+__global__ void
+test_cutlass_maximum(cutlass::half_t const* in1, cutlass::half_t const* in2, cutlass::half_t* out)
+{
+  {
+  constexpr bool propagate_NaN = true;
+  cutlass::maximum<cutlass::half_t, propagate_NaN> op;
+  if (threadIdx.x == 0 && threadIdx.y == 0 && threadIdx.z == 0
+    && blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0) {
+    *out = op(*in1, *in2);
+  }
+  }
+  constexpr bool propagate_NaN = false;
+  cutlass::maximum<cutlass::half_t, propagate_NaN> op;
+  if (threadIdx.x == 0 && threadIdx.y == 0 && threadIdx.z == 0
+    && blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0) {
+    *out = op(*in1, *in2);
+  }
+}
+
+} // cutlass_test
+
+// Test compilation on both host and device.
+TEST(Functional, maximum_half_host_propagate_NaN) {
+  constexpr bool propagate_NaN = true;
+  cutlass::maximum<cutlass::half_t, propagate_NaN> op;
+  cutlass::half_t x(1.0f);
+  cutlass::half_t y(2.0f);
+
+  auto result = op(x, y);
+  static_assert(std::is_same_v<decltype(result), cutlass::half_t>);
+  EXPECT_EQ(result, y);
+  result = op(y, x);
+  EXPECT_EQ(result, y);
+}
+
+TEST(Functional, maximum_half_host_dont_propagate_NaN) {
+  constexpr bool propagate_NaN = false;
+  cutlass::maximum<cutlass::half_t, propagate_NaN> op;
+  cutlass::half_t x(1.0f);
+  cutlass::half_t y(2.0f);
+
+  auto result = op(x, y);
+  static_assert(std::is_same_v<decltype(result), cutlass::half_t>);
+  EXPECT_EQ(result, y);
+  result = op(y, x);
+  EXPECT_EQ(result, y);
+}
+
+TEST(FUnction, maximum_half_device) {
+  using Tensor = cutlass::HostTensor<cutlass::half_t, cutlass::layout::RowMajor>;
+
+  Tensor in1({1, 1});
+  Tensor in2({1, 1});
+  Tensor out({1, 1});
+  in1.host_data()[0] = cutlass::half_t(1.0f);
+  in2.host_data()[0] = cutlass::half_t(2.0f);
+  out.host_data()[0] = cutlass::half_t(0.0f);
+
+  in1.sync_device();
+  in2.sync_device();
+  out.sync_device();
+
+  cutlass_test::test_cutlass_maximum<<< 1, 1 >>>(
+    in1.device_data(),
+    in2.device_data(),
+    out.device_data()
+  );
+  out.sync_host();
+
+  EXPECT_EQ(out.host_data()[0], 2.0f);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

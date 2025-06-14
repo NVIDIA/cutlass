@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -321,6 +327,48 @@ TEST(SM80_warp_gemm_sparse_tensor_op_congruous_f16, 128x128x64_32x32x64_16x8x32)
 
 ////////////////////////////////////////////////////////////////////////////////
 
+TEST(SM80_warp_gemm_sparse_tensor_op_congruous_f16, 64x32x64_32x32x64_16x8x32) {
+  using Shape = cutlass::gemm::GemmShape<32, 32, 64>;
+  using InstructionShape = cutlass::gemm::GemmShape<16, 8, 32>;
+  using Element = cutlass::half_t;
+  using ElementC = float;
+  using LayoutA = cutlass::layout::ColumnMajorTensorOpMultiplicandCongruous<
+      cutlass::sizeof_bits<Element>::value, 64>;
+  using LayoutB = cutlass::layout::RowMajorTensorOpMultiplicandCongruous<
+      cutlass::sizeof_bits<Element>::value, 32>;
+
+  using MmaTensorOp = typename cutlass::gemm::warp::DefaultSparseMmaTensorOp<
+      Shape, InstructionShape, Element, LayoutA, Element, LayoutB, ElementC,
+      cutlass::layout::RowMajor>::Type;
+
+  test::gemm::warp::SparseTestbed<MmaTensorOp,
+                            cutlass::gemm::GemmShape<64, 32, 64> >()
+      .run();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+TEST(SM80_warp_gemm_sparse_tensor_op_congruous_f16, 64x16x64_32x16x64_16x8x32) {
+  using Shape = cutlass::gemm::GemmShape<32, 16, 64>;
+  using InstructionShape = cutlass::gemm::GemmShape<16, 8, 32>;
+  using Element = cutlass::half_t;
+  using ElementC = float;
+  using LayoutA = cutlass::layout::ColumnMajorTensorOpMultiplicandCongruous<
+      cutlass::sizeof_bits<Element>::value, 64>;
+  using LayoutB = cutlass::layout::RowMajorTensorOpMultiplicandCongruous<
+      cutlass::sizeof_bits<Element>::value, 16>;
+
+  using MmaTensorOp = typename cutlass::gemm::warp::DefaultSparseMmaTensorOp<
+      Shape, InstructionShape, Element, LayoutA, Element, LayoutB, ElementC,
+      cutlass::layout::RowMajor>::Type;
+
+  test::gemm::warp::SparseTestbed<MmaTensorOp,
+                            cutlass::gemm::GemmShape<64, 16, 64> >()
+      .run();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 TEST(SM80_warp_gemm_sparse_tensor_op_congruous_f16, 128x64x128_64x32x128_16x8x32) {
   using Shape = cutlass::gemm::GemmShape<64, 32, 128>;
   using InstructionShape = cutlass::gemm::GemmShape<16, 8, 32>;
@@ -396,7 +444,7 @@ TEST(SM80_warp_gemm_sparse_tensor_op_crosswise_s8, 128x128x128_64x64x128_16x8x64
 
   using MmaTensorOp = typename cutlass::gemm::warp::DefaultSparseMmaTensorOp<
       Shape, InstructionShape, Element, LayoutA, Element, LayoutB, ElementC,
-      cutlass::layout::RowMajor>::Type;
+      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddSaturate>::Type;
 
   test::gemm::warp::SparseTestbed<MmaTensorOp,
                                   cutlass::gemm::GemmShape<128, 128, 128> >()
@@ -417,7 +465,7 @@ TEST(SM80_warp_gemm_sparse_tensor_op_crosswise_s8, 128x128x128_64x32x128_16x8x64
 
   using MmaTensorOp = typename cutlass::gemm::warp::DefaultSparseMmaTensorOp<
       Shape, InstructionShape, Element, LayoutA, Element, LayoutB, ElementC,
-      cutlass::layout::RowMajor>::Type;
+      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddSaturate>::Type;
 
   test::gemm::warp::SparseTestbed<MmaTensorOp,
                             cutlass::gemm::GemmShape<128, 128, 128> >()
@@ -438,7 +486,7 @@ TEST(SM80_warp_gemm_sparse_tensor_op_crosswise_s8, 128x128x128_32x64x128_16x8x64
 
   using MmaTensorOp = typename cutlass::gemm::warp::DefaultSparseMmaTensorOp<
       Shape, InstructionShape, Element, LayoutA, Element, LayoutB, ElementC,
-      cutlass::layout::RowMajor>::Type;
+      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddSaturate>::Type;
 
   test::gemm::warp::SparseTestbed<MmaTensorOp,
                             cutlass::gemm::GemmShape<128, 128, 128> >()
@@ -459,7 +507,7 @@ TEST(SM80_warp_gemm_sparse_tensor_op_crosswise_s8, 128x128x128_32x32x128_16x8x64
 
   using MmaTensorOp = typename cutlass::gemm::warp::DefaultSparseMmaTensorOp<
       Shape, InstructionShape, Element, LayoutA, Element, LayoutB, ElementC,
-      cutlass::layout::RowMajor>::Type;
+      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddSaturate>::Type;
 
   test::gemm::warp::SparseTestbed<MmaTensorOp,
                             cutlass::gemm::GemmShape<128, 128, 128> >()
@@ -480,7 +528,7 @@ TEST(SM80_warp_gemm_sparse_tensor_op_crosswise_s8, 128x128x128_32x16x128_16x8x64
 
   using MmaTensorOp = typename cutlass::gemm::warp::DefaultSparseMmaTensorOp<
       Shape, InstructionShape, Element, LayoutA, Element, LayoutB, ElementC,
-      cutlass::layout::RowMajor>::Type;
+      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddSaturate>::Type;
 
   test::gemm::warp::SparseTestbed<MmaTensorOp,
                             cutlass::gemm::GemmShape<128, 128, 128> >()
@@ -501,7 +549,7 @@ TEST(SM80_warp_gemm_sparse_tensor_op_crosswise_s8, 128x64x256_64x32x256_16x8x64)
 
   using MmaTensorOp = typename cutlass::gemm::warp::DefaultSparseMmaTensorOp<
       Shape, InstructionShape, Element, LayoutA, Element, LayoutB, ElementC,
-      cutlass::layout::RowMajor>::Type;
+      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddSaturate>::Type;
 
   test::gemm::warp::SparseTestbed<MmaTensorOp,
                             cutlass::gemm::GemmShape<128, 64, 256> >()
@@ -522,7 +570,7 @@ TEST(SM80_warp_gemm_sparse_tensor_op_crosswise_s8, 64x128x256_32x64x256_16x8x64)
 
   using MmaTensorOp = typename cutlass::gemm::warp::DefaultSparseMmaTensorOp<
       Shape, InstructionShape, Element, LayoutA, Element, LayoutB, ElementC,
-      cutlass::layout::RowMajor>::Type;
+      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddSaturate>::Type;
 
   test::gemm::warp::SparseTestbed<MmaTensorOp,
                             cutlass::gemm::GemmShape<64, 128, 256> >()
@@ -543,7 +591,7 @@ TEST(SM80_warp_gemm_sparse_tensor_op_crosswise_s8, 64x64x256_32x32x256_16x8x64) 
 
   using MmaTensorOp = typename cutlass::gemm::warp::DefaultSparseMmaTensorOp<
       Shape, InstructionShape, Element, LayoutA, Element, LayoutB, ElementC,
-      cutlass::layout::RowMajor>::Type;
+      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddSaturate>::Type;
 
   test::gemm::warp::SparseTestbed<MmaTensorOp,
                             cutlass::gemm::GemmShape<64, 64, 256> >()
@@ -564,7 +612,7 @@ TEST(SM80_warp_gemm_sparse_tensor_op_crosswise_s8, 64x32x256_32x16x256_16x8x64) 
 
   using MmaTensorOp = typename cutlass::gemm::warp::DefaultSparseMmaTensorOp<
       Shape, InstructionShape, Element, LayoutA, Element, LayoutB, ElementC,
-      cutlass::layout::RowMajor>::Type;
+      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddSaturate>::Type;
 
   test::gemm::warp::SparseTestbed<MmaTensorOp,
                             cutlass::gemm::GemmShape<64, 32, 256> >()
@@ -921,7 +969,7 @@ TEST(SM80_warp_gemm_sparse_tensor_op_crosswise_s4, 128x128x256_64x64x256_16x8x12
 
   using MmaTensorOp = typename cutlass::gemm::warp::DefaultSparseMmaTensorOp<
       Shape, InstructionShape, Element, LayoutA, Element, LayoutB, ElementC,
-      cutlass::layout::RowMajor>::Type;
+      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddSaturate>::Type;
 
   test::gemm::warp::SparseTestbed<MmaTensorOp,
                                   cutlass::gemm::GemmShape<128, 128, 256> >()
@@ -942,7 +990,7 @@ TEST(SM80_warp_gemm_sparse_tensor_op_crosswise_s4, 128x128x256_64x32x256_16x8x12
 
   using MmaTensorOp = typename cutlass::gemm::warp::DefaultSparseMmaTensorOp<
       Shape, InstructionShape, Element, LayoutA, Element, LayoutB, ElementC,
-      cutlass::layout::RowMajor>::Type;
+      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddSaturate>::Type;
 
   test::gemm::warp::SparseTestbed<MmaTensorOp,
                             cutlass::gemm::GemmShape<128, 128, 256> >()
@@ -963,7 +1011,7 @@ TEST(SM80_warp_gemm_sparse_tensor_op_crosswise_s4, 128x128x256_32x64x256_16x8x12
 
   using MmaTensorOp = typename cutlass::gemm::warp::DefaultSparseMmaTensorOp<
       Shape, InstructionShape, Element, LayoutA, Element, LayoutB, ElementC,
-      cutlass::layout::RowMajor>::Type;
+      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddSaturate>::Type;
 
   test::gemm::warp::SparseTestbed<MmaTensorOp,
                             cutlass::gemm::GemmShape<128, 128, 256> >()
@@ -984,7 +1032,7 @@ TEST(SM80_warp_gemm_sparse_tensor_op_crosswise_s4, 128x128x256_32x32x256_16x8x12
 
   using MmaTensorOp = typename cutlass::gemm::warp::DefaultSparseMmaTensorOp<
       Shape, InstructionShape, Element, LayoutA, Element, LayoutB, ElementC,
-      cutlass::layout::RowMajor>::Type;
+      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddSaturate>::Type;
 
   test::gemm::warp::SparseTestbed<MmaTensorOp,
                             cutlass::gemm::GemmShape<128, 128, 256> >()
@@ -1005,7 +1053,7 @@ TEST(SM80_warp_gemm_sparse_tensor_op_crosswise_s4, 128x128x256_32x16x256_16x8x12
 
   using MmaTensorOp = typename cutlass::gemm::warp::DefaultSparseMmaTensorOp<
       Shape, InstructionShape, Element, LayoutA, Element, LayoutB, ElementC,
-      cutlass::layout::RowMajor>::Type;
+      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddSaturate>::Type;
 
   test::gemm::warp::SparseTestbed<MmaTensorOp,
                             cutlass::gemm::GemmShape<128, 128, 256> >()
@@ -1026,7 +1074,7 @@ TEST(SM80_warp_gemm_sparse_tensor_op_crosswise_s4, 128x64x512_64x32x512_16x8x128
 
   using MmaTensorOp = typename cutlass::gemm::warp::DefaultSparseMmaTensorOp<
       Shape, InstructionShape, Element, LayoutA, Element, LayoutB, ElementC,
-      cutlass::layout::RowMajor>::Type;
+      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddSaturate>::Type;
 
   test::gemm::warp::SparseTestbed<MmaTensorOp,
                             cutlass::gemm::GemmShape<128, 64, 512> >()
@@ -1047,7 +1095,7 @@ TEST(SM80_warp_gemm_sparse_tensor_op_crosswise_s4, 64x128x512_32x64x512_16x8x128
 
   using MmaTensorOp = typename cutlass::gemm::warp::DefaultSparseMmaTensorOp<
       Shape, InstructionShape, Element, LayoutA, Element, LayoutB, ElementC,
-      cutlass::layout::RowMajor>::Type;
+      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddSaturate>::Type;
 
   test::gemm::warp::SparseTestbed<MmaTensorOp,
                             cutlass::gemm::GemmShape<64, 128, 512> >()
@@ -1068,7 +1116,7 @@ TEST(SM80_warp_gemm_sparse_tensor_op_crosswise_s4, 64x64x512_32x32x512_16x8x128)
 
   using MmaTensorOp = typename cutlass::gemm::warp::DefaultSparseMmaTensorOp<
       Shape, InstructionShape, Element, LayoutA, Element, LayoutB, ElementC,
-      cutlass::layout::RowMajor>::Type;
+      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddSaturate>::Type;
 
   test::gemm::warp::SparseTestbed<MmaTensorOp,
                             cutlass::gemm::GemmShape<64, 64, 512> >()
@@ -1089,7 +1137,7 @@ TEST(SM80_warp_gemm_sparse_tensor_op_crosswise_s4, 64x32x512_32x16x512_16x8x128)
 
   using MmaTensorOp = typename cutlass::gemm::warp::DefaultSparseMmaTensorOp<
       Shape, InstructionShape, Element, LayoutA, Element, LayoutB, ElementC,
-      cutlass::layout::RowMajor>::Type;
+      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddSaturate>::Type;
 
   test::gemm::warp::SparseTestbed<MmaTensorOp,
                             cutlass::gemm::GemmShape<64, 32, 512> >()

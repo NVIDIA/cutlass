@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -58,6 +64,9 @@ namespace device {
 template <typename Gemm>
 struct SparseTestbed {
 
+  using ElementA = typename Gemm::ElementA;
+  using ElementB = typename Gemm::ElementB;
+  using ElementC = typename Gemm::ElementC;
   using ElementAccumulator = typename Gemm::ElementAccumulator;
   using ElementCompute = typename Gemm::GemmKernel::Epilogue::OutputOp::ElementCompute;
 
@@ -119,8 +128,8 @@ struct SparseTestbed {
         scope_max = 2;
         scope_min = 0;
       } else if (bits_input <= 8) {
-        scope_max = 2;
-        scope_min = -2;
+        scope_max = 1;
+        scope_min = -1;
       } else if (bits_output == 16) {
         scope_max = 5;
         scope_min = -5;
@@ -146,7 +155,6 @@ struct SparseTestbed {
         view.data(), view.capacity());
     } 
     else {
-      // TODO: Implement the rest
       EXPECT_TRUE(false) << "Not implemented";
       return false;
     }
@@ -183,7 +191,6 @@ struct SparseTestbed {
       cutlass::reference::host::TensorFill(tensor_E.host_view(),
                                            (ElementE)(content));
     } else {
-      // TODO: Implement the rest
       EXPECT_TRUE(false);
     }
 
@@ -301,7 +308,7 @@ struct SparseTestbed {
     // Determine SMEM requirements and waive if not satisfied
     //
 
-    int smem_size = int(sizeof(typename Gemm::GemmKernel::SharedStorage));
+    size_t smem_size = sizeof(typename Gemm::GemmKernel::SharedStorage);
 
     cudaDeviceProp properties;
     int device_idx;
@@ -317,7 +324,7 @@ struct SparseTestbed {
       throw std::runtime_error("cudaGetDeviceProperties() failed");
     }
 
-    if (properties.sharedMemPerMultiprocessor < smem_size) {
+    if (properties.sharedMemPerBlockOptin < smem_size) {
       return false;
     }
 
@@ -346,14 +353,25 @@ struct SparseTestbed {
     //
 
     typename Gemm::Arguments arguments{
+      cutlass::gemm::GemmUniversalMode::kGemm,
       problem_size,
-      tensor_A.device_ref(),
-      tensor_B.device_ref(),
-      tensor_C.device_ref(),
-      tensor_D.device_ref(),
-      tensor_E_reordered.device_ref(),
+      split_k_slices,
       {alpha, beta},
-      split_k_slices
+      tensor_A.device_data(),
+      tensor_B.device_data(),
+      tensor_C.device_data(),
+      tensor_D.device_data(),
+      tensor_E_reordered.device_data(),
+      int64_t(),
+      int64_t(),
+      int64_t(),
+      int64_t(),
+      int64_t(),
+      tensor_A.layout().stride(0),                                     
+      tensor_B.layout().stride(0),
+      tensor_C.layout().stride(0),
+      tensor_D.layout().stride(0),                                     
+      tensor_E_reordered.layout().stride(0)
     };
 
     Gemm gemm_op;
@@ -384,7 +402,7 @@ struct SparseTestbed {
     bool passed = this->verify(problem_size, alpha, beta);
 
     if (!passed) {
-      std::cout << "Error with split_k_slices = " << split_k_slices << ", alpha: " << alpha << std::endl;
+      std::cout << "Error with split_k_slices = " << split_k_slices << ", alpha: " << alpha << ", beta: " << beta << ", m: " << problem_size.m() << ", n: " << problem_size.n() << ", k:" <<problem_size.k() << std::endl;
     }
 
     return passed;
@@ -413,11 +431,10 @@ bool TestAllSparseGemm() {
 
   int problem_size_n[] = {kAlignmentN, 512 - 2 * kAlignmentN};
 
-  int problem_size_k[] = {Gemm::ThreadblockShape::kK,
-                          Gemm::ThreadblockShape::kK * (Gemm::kStages + 1)};
+  int problem_size_k[] = {Gemm::ThreadblockShape::kK * 8};
 
   int split_k_slices[] = {
-    1, 2, 3
+    1, 2
   };
 
   double problem_alpha[] = {
@@ -437,17 +454,8 @@ bool TestAllSparseGemm() {
       for (int k : problem_size_k) {
         for (int split_k : split_k_slices) {
 
-          if (!Gemm::kSplitKSerial && split_k > 1) {
-            continue;
-          }
-
-          if (split_k > 1 && k / Gemm::ThreadblockShape::kK < split_k) {
-            continue;
-          }
-
           for (auto alpha : problem_alpha) {
             for (auto beta : problem_beta) {
-
               cutlass::gemm::GemmCoord problem_size(m, n, k);
 
               passed = testbed.run(

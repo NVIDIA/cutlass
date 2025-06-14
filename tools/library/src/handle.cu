@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -26,7 +32,7 @@
 /*! \file
     \brief CUTLASS Library handle.
 */
-#include <iostream> 
+#include <iostream>
 #include <stdexcept>
 #include <cstdint>
 
@@ -41,24 +47,22 @@ namespace library {
 
 /// Constructor
 Handle::Handle(
-  cudaStream_t stream, 
+  cudaStream_t stream,
   size_t workspace_size
 ):
-  provider_(Provider::kCUTLASS), 
-  stream_(stream), 
-  workspace_(nullptr), 
-  workspace_size_(0), 
-  scalar_pointer_mode_(ScalarPointerMode::kHost), 
+  provider_(Provider::kCUTLASS),
+  stream_(stream),
+  workspace_(nullptr),
+  workspace_size_(0),
+  scalar_pointer_mode_(ScalarPointerMode::kHost),
   last_operation_(nullptr) {
 
-  int device_idx = -1;
-
-  cudaError_t error = cudaGetDevice(&device_idx);
+  cudaError_t error = cudaGetDevice(&device_idx_);
   if (error != cudaSuccess) {
     throw std::runtime_error("cudaGetDevice() failed");
   }
 
-  error = cudaGetDeviceProperties(&device_, device_idx);
+  error = cudaGetDeviceProperties(&device_, device_idx_);
   if (error != cudaSuccess) {
     throw std::runtime_error("cudaGetDeviceProperties() failed");
   }
@@ -72,8 +76,14 @@ Handle::Handle(
 Handle::~Handle() {
   if (workspace_) {
 
-    if (workspace_) {
-      cudaFree(workspace_);
+    int device_before;
+    cudaGetDevice(&device_before);
+    if (device_before != device_idx_) {
+      cudaSetDevice(device_idx_);
+    }
+    cudaFree(workspace_);
+    if (device_before != device_idx_) {
+      cudaSetDevice(device_before);
     }
 
     workspace_ = nullptr;
@@ -83,12 +93,16 @@ Handle::~Handle() {
 
 /// Move constructor
 Handle::Handle(Handle && handle) {
+  cudaError_t error = cudaGetDevice(&device_idx_);
+  if (error != cudaSuccess) {
+    throw std::runtime_error("cudaGetDevice() failed");
+  }
   device_ = handle.device_;
   workspace_size_ = handle.workspace_size_;
   workspace_ = handle.workspace_;
   stream_ = handle.stream_;
   scalar_pointer_mode_ = handle.scalar_pointer_mode_;
-  
+
   handle.workspace_ = nullptr;
   handle.workspace_size_ = 0;
 }
@@ -105,6 +119,8 @@ Handle & Handle::operator=(Handle && handle) {
 
   handle.workspace_ = nullptr;
   handle.workspace_size_ = 0;
+
+  device_idx_ = handle.device_idx_;
 
   return *this;
 }
@@ -145,19 +161,25 @@ void *Handle::get_workspace() const {
 
 /// Sets the size of device workspace, invalidating previous calls to get_device_workspace()
 void Handle::set_workspace_size(size_t bytes) {
+  int device_before;
+  cudaGetDevice(&device_before);
+  if (device_before != device_idx_) {
+    cudaSetDevice(device_idx_);
+  }
+
   if (bytes != workspace_size_) {
 
     if (workspace_) {
       cudaFree(workspace_);
     }
-      
+
     workspace_ = nullptr;
     workspace_size_ = bytes;
 
     if (workspace_size_) {
-  
+
       cudaError_t error = cudaMalloc((void **)&workspace_, workspace_size_);
-  
+
       if (error != cudaSuccess) {
         throw std::runtime_error("Failed to allocate workspace");
       }
@@ -170,6 +192,9 @@ void Handle::set_workspace_size(size_t bytes) {
     if (error != cudaSuccess) {
       throw std::runtime_error("Failed to clear workspace");
     }
+  }
+  if (device_before != device_idx_) {
+    cudaSetDevice(device_before);
   }
 }
 
@@ -233,7 +258,7 @@ static int gemm_problem_alignment(
   };
 
   for (; max_alignment_in_bytes > 0; max_alignment_in_bytes /= 2) {
-    
+
     bool satisfied = true;
 
     // Can pointers satisfy this?
@@ -254,7 +279,7 @@ static int gemm_problem_alignment(
     int max_element_alignment = 0;
 
     for (NumericTypeID type_id : elements) {
-      int element_alignment = max_alignment_in_bytes * 8 / library::sizeof_bits(type_id); 
+      int element_alignment = max_alignment_in_bytes * 8 / library::sizeof_bits(type_id);
       max_element_alignment = std::max(max_element_alignment, element_alignment);
     }
 
@@ -280,7 +305,7 @@ static int gemm_problem_alignment(
 
 /// Find the best kernel in descending order of preference.
 static Operation const * find_gemm_operation(
-  GemmOperationFunctionalMap::const_iterator operators_it, 
+  GemmOperationFunctionalMap::const_iterator operators_it,
   GemmPreferenceKey const preference_key) {
 
   auto cc_it = operators_it->second.upper_bound(preference_key);
@@ -357,7 +382,7 @@ Status Handle::gemm(
   void * ptr_D,                             /// Pointer to D matrix
   int64_t ldd                               /// Leading dimension of D matrix
 ) {
-  
+
   //
   // Find the operation
   //
@@ -373,7 +398,10 @@ Status Handle::gemm(
     element_B,
     layout_B,
     transform_B,
-    element_C
+    element_C,  // C/D are same type and col major default
+    LayoutTypeID::kColumnMajor,
+    element_C,
+    LayoutTypeID::kColumnMajor
   );
 
   auto operators_it = Singleton::get().operation_table.gemm_operations.find(key);
@@ -381,7 +409,7 @@ Status Handle::gemm(
   if (operators_it == Singleton::get().operation_table.gemm_operations.end()) {
     return cutlass::Status::kErrorNotSupported;
   }
-  
+
   if (operators_it->second.empty()) {
     return cutlass::Status::kErrorNotSupported;
   }
@@ -394,7 +422,7 @@ Status Handle::gemm(
   int const kMaximumAlignmentSize = 16;
 
   int alignment = gemm_problem_alignment(
-    M, N, K, 
+    M, N, K,
     element_A, ptr_A, lda, 0,
     element_B, ptr_B, ldb, 0,
     element_C, ptr_C, ldc, 0,
@@ -482,6 +510,14 @@ Status Handle::gemm_universal(
   int M,                                    /// GEMM M dimension
   int N,                                    /// GEMM N dimension
   int K,                                    /// GEMM K dimension
+  
+  int cluster_m,                            /// cluster shape M dimension
+  int cluster_n,                            /// cluster shape N dimension
+  int cluster_k,                            /// cluster shape K dimension
+  int cluster_m_fallback,                   /// Fallback cluster shape M dimension
+  int cluster_n_fallback,                   /// Fallback cluster shape N dimension
+  int cluster_k_fallback,                   /// Fallback cluster shape K dimension
+  
 
   NumericTypeID element_compute,            /// Data type of internal accumulation
 
@@ -492,26 +528,26 @@ Status Handle::gemm_universal(
   NumericTypeID element_A,                  /// Data type of A matrix elements
   LayoutTypeID layout_A,                    /// Layout of A matrix
   ComplexTransform transform_A,             /// Complex transformation applied to A matrix - ignored for real-valued matrices
-
   void const * ptr_A,                       /// Pointer to A matrix in Global Memory
-  int64_t lda,                                  /// Leading dimension of A matrix
+  int64_t lda,                              /// Leading dimension of A matrix
 
   NumericTypeID element_B,                  /// Data type of B matrix elements
   LayoutTypeID layout_B,                    /// Layout of B matrix
   ComplexTransform transform_B,             /// Complex transformation applied to B matrix - ignored for real-valued matrices
-
   void const * ptr_B,                       /// Pointer to B matrix in Global Memory
-  int64_t ldb,                                  /// Leading dimension of B matrix
+  int64_t ldb,                              /// Leading dimension of B matrix
 
   void const * beta,                        /// Pointer to beta scalar
 
-  NumericTypeID element_C,                  /// Data type of C and D matrices
-
+  NumericTypeID element_C,                  /// Data type of C matrix
+  LayoutTypeID layout_C,                    /// Layout of D matrix
   void const * ptr_C,                       /// Pointer to C matrix
-  int64_t ldc,                                  /// Leading dimension of C matrix
+  int64_t ldc,                              /// Leading dimension of C matrix
 
+  NumericTypeID element_D,                  /// Data type of D matrix
+  LayoutTypeID layout_D,                    /// Layout of D matrix
   void * ptr_D,                             /// Pointer to D matrix
-  int64_t ldd,                                  /// Leading dimension of D matrix
+  int64_t ldd,                              /// Leading dimension of D matrix
 
   int batch_count,                          /// Batch count or number of split-K slices
 
@@ -520,7 +556,7 @@ Status Handle::gemm_universal(
   int64_t batch_stride_C,                   /// Batch stride of C operand
   int64_t batch_stride_D                    /// Batch stride of D operand
 ) {
-  
+
   //
   // Find the operation
   //
@@ -536,7 +572,10 @@ Status Handle::gemm_universal(
     element_B,
     layout_B,
     transform_B,
-    element_C
+    element_C,
+    layout_C,
+    element_D,
+    layout_D
   );
 
   auto operators_it = Singleton::get().operation_table.gemm_operations.find(key);
@@ -544,7 +583,7 @@ Status Handle::gemm_universal(
   if (operators_it == Singleton::get().operation_table.gemm_operations.end()) {
     return cutlass::Status::kErrorNotSupported;
   }
-  
+
   if (operators_it->second.empty()) {
     return cutlass::Status::kErrorNotSupported;
   }
@@ -564,14 +603,14 @@ Status Handle::gemm_universal(
   // Ignore alignment of pointers to pointers. We can't check this from the host,
   // as each batch index has its own pointer in device memory.
   if (mode == GemmUniversalMode::kArray) {
-    ptr_A_check = nullptr; 
-    ptr_B_check = nullptr; 
-    ptr_C_check = nullptr; 
-    ptr_D_check = nullptr; 
+    ptr_A_check = nullptr;
+    ptr_B_check = nullptr;
+    ptr_C_check = nullptr;
+    ptr_D_check = nullptr;
   }
 
   int alignment = gemm_problem_alignment(
-    M, N, K, 
+    M, N, K,
     element_A, ptr_A_check, lda, 0,
     element_B, ptr_B_check, ldb, 0,
     element_C, ptr_C_check, ldc, 0,
@@ -599,6 +638,8 @@ Status Handle::gemm_universal(
   GemmUniversalConfiguration configuration{
     mode,
     {M, N, K},
+    {cluster_m, cluster_n, cluster_k}, 
+    {cluster_m_fallback, cluster_n_fallback, cluster_k_fallback}, 
     batch_count,
     lda,
     ldb,
@@ -616,6 +657,10 @@ Status Handle::gemm_universal(
   char host_workspace[kHostWorkspaceSize];
 
   GemmUniversalArguments arguments{
+    {M, N, K},
+    {cluster_m, cluster_n, cluster_k}, 
+    {cluster_m_fallback, cluster_n_fallback, cluster_k_fallback}, 
+    batch_count,
     ptr_A,
     ptr_B,
     ptr_C,
@@ -623,6 +668,10 @@ Status Handle::gemm_universal(
     alpha,
     beta,
     scalar_pointer_mode_,
+    lda,
+    ldb,
+    ldc,
+    ldd,
     batch_stride_A,
     batch_stride_B,
     batch_stride_C,
@@ -648,6 +697,7 @@ Status Handle::gemm_universal(
   }
 
   // Run the operator
+
   return operation->run(&arguments, host_workspace, workspace_, stream_);
 }
 
@@ -728,7 +778,10 @@ Status Handle::gemm_planar_complex(
     element_B,
     layout_B,
     transform_B,
-    element_C
+    element_C,  // C/D are same type
+    LayoutTypeID::kColumnMajor,
+    element_C,
+    LayoutTypeID::kColumnMajor
   );
 
   auto operators_it = Singleton::get().operation_table.gemm_operations.find(key);
@@ -736,7 +789,7 @@ Status Handle::gemm_planar_complex(
   if (operators_it == Singleton::get().operation_table.gemm_operations.end()) {
     return cutlass::Status::kErrorNotSupported;
   }
-  
+
   if (operators_it->second.empty()) {
     return cutlass::Status::kErrorNotSupported;
   }
@@ -750,14 +803,14 @@ Status Handle::gemm_planar_complex(
 
   int alignment = std::max(
     gemm_problem_alignment(
-      M, N, K, 
+      M, N, K,
       element_A, ptr_A_real, lda_real, batch_stride_A_real,
       element_B, ptr_B_real, ldb_real, batch_stride_B_real,
       element_C, ptr_C_real, ldc_real, batch_stride_C_real,
       ptr_D_real, ldd_real, batch_stride_D_real, kMaximumAlignmentSize
     ),
     gemm_problem_alignment(
-      M, N, K, 
+      M, N, K,
       element_A, ptr_A_imag, lda_imag, batch_stride_A_imag,
       element_B, ptr_B_imag, ldb_imag, batch_stride_B_imag,
       element_C, ptr_C_imag, ldc_imag, batch_stride_C_imag,
@@ -895,18 +948,18 @@ Status Handle::gemm_planar_complex_array(
   NumericTypeID element_C,                  /// Data type of C and D matrix
 
   void const * const * ptr_C_real,          /// Pointer to array containing pointers to real part of C matrices
-  void const * const * ptr_C_imag,          /// Pointer to array containing poitners to imaginary part of C matrices
+  void const * const * ptr_C_imag,          /// Pointer to array containing pointers to imaginary part of C matrices
 
   int64_t ldc_real,                             /// Leading dimension of real part of C matrix
   int64_t ldc_imag,                             /// Leading dimension of imaginary part of C matrix
 
   void * const * ptr_D_real,                /// Pointer to array containing pointers to real part of D matrices
-  void * const * ptr_D_imag,                /// Pointer to array containing poitners to imaginary part of D matrices
+  void * const * ptr_D_imag,                /// Pointer to array containing pointers to imaginary part of D matrices
 
   int64_t ldd_real,                             /// Leading dimension of real part of D matrix
   int64_t ldd_imag                              /// Leading dimension of imaginary part of D matrix
 ) {
-  
+
   //
   // Find the operation
   //
@@ -922,7 +975,10 @@ Status Handle::gemm_planar_complex_array(
     element_B,
     layout_B,
     transform_B,
-    element_C
+    element_C,  // C/D are same type
+    LayoutTypeID::kColumnMajor,
+    element_C,
+    LayoutTypeID::kColumnMajor
   );
 
   auto operators_it = Singleton::get().operation_table.gemm_operations.find(key);
@@ -930,7 +986,7 @@ Status Handle::gemm_planar_complex_array(
   if (operators_it == Singleton::get().operation_table.gemm_operations.end()) {
     return cutlass::Status::kErrorNotSupported;
   }
-  
+
   if (operators_it->second.empty()) {
     return cutlass::Status::kErrorNotSupported;
   }
@@ -944,14 +1000,14 @@ Status Handle::gemm_planar_complex_array(
 
   int alignment = std::max(
     gemm_problem_alignment(
-      expected_M, expected_N, expected_K, 
+      expected_M, expected_N, expected_K,
       element_A, nullptr, lda_real, 0,
       element_B, nullptr, ldb_real, 0,
       element_C, nullptr, ldc_real, 0,
       nullptr, ldd_real, 0, kMaximumAlignmentSize
     ),
     gemm_problem_alignment(
-      expected_M, expected_N, expected_K, 
+      expected_M, expected_N, expected_K,
       element_A, nullptr, lda_imag, 0,
       element_B, nullptr, ldb_imag, 0,
       element_C, nullptr, ldc_imag, 0,
@@ -1041,7 +1097,7 @@ Status Handle::gemm_planar_complex_array(
 /// Finds conv operation instances with Conv::ElementC = Reduction::ElementWorkspace
 Operation const* find_conv_operation_for_parallel_reduction(Operation const *operation) {
 
-  ConvDescription const &conv_desc = 
+  ConvDescription const &conv_desc =
     static_cast<ConvDescription const &>(operation->description());
 
   // if the curren conv operation accumulator and output data type match return operation
@@ -1052,19 +1108,19 @@ Operation const* find_conv_operation_for_parallel_reduction(Operation const *ope
   // find conv operation to match conv output and reduction workspace data type
   ConvFunctionalKey key(
     library::Provider::kCUTLASS,
-    conv_desc.conv_kind,        
+    conv_desc.conv_kind,
     conv_desc.A.element,
     conv_desc.A.layout,
     conv_desc.B.element,
     conv_desc.B.layout,
     conv_desc.tile_description.math_instruction.element_accumulator,
     conv_desc.C.layout,
-    conv_desc.tile_description.math_instruction.element_accumulator, 
+    conv_desc.tile_description.math_instruction.element_accumulator,
     conv_desc.element_epilogue);
 
   // conv operation table for conv2d or conv3d
-  auto conv_operations = (conv_desc.kind == OperationKind::kConv2d) ? 
-                          Singleton::get().operation_table.conv2d_operations : 
+  auto conv_operations = (conv_desc.kind == OperationKind::kConv2d) ?
+                          Singleton::get().operation_table.conv2d_operations :
                           Singleton::get().operation_table.conv3d_operations;
 
   // find ConvFunctionalKey in convolution operation table
@@ -1073,18 +1129,18 @@ Operation const* find_conv_operation_for_parallel_reduction(Operation const *ope
   if (operators_it == conv_operations.end()) {
     return nullptr;
   }
-  
+
   if (operators_it->second.empty()) {
     return nullptr;
   }
 
   // conv operation for same compute capability and iterator algorithm
   ConvPreferenceKey preference_key(
-    conv_desc.tile_description.minimum_compute_capability, 
+    conv_desc.tile_description.minimum_compute_capability,
     conv_desc.iterator_algorithm);
 
   auto it = operators_it->second.find(preference_key);
-  
+
   if(it == operators_it->second.end()) {
     return nullptr;
   }
@@ -1104,11 +1160,11 @@ Operation const* find_conv_operation_for_parallel_reduction(Operation const *ope
 /// Finds gemm operation instances with Gemm::ElementC = Reduction::ElementWorkspace
 Operation const* find_gemm_operation_for_parallel_reduction(Operation const *operation) {
 
-  GemmDescription const &gemm_desc = 
+  GemmDescription const &gemm_desc =
     static_cast<GemmDescription const &>(operation->description());
 
   // if the curren gemm operation accumulator and output data type match return operation
-  if(gemm_desc.tile_description.math_instruction.element_accumulator == gemm_desc.C.element) {
+  if(gemm_desc.tile_description.math_instruction.element_accumulator == gemm_desc.D.element) {
     return operation;
   }
 
@@ -1124,7 +1180,10 @@ Operation const* find_gemm_operation_for_parallel_reduction(Operation const *ope
     gemm_desc.B.element,
     gemm_desc.B.layout,
     gemm_desc.transform_B,
-    gemm_desc.tile_description.math_instruction.element_accumulator);
+    gemm_desc.tile_description.math_instruction.element_accumulator, // C/D are same type
+    LayoutTypeID::kColumnMajor,
+    gemm_desc.tile_description.math_instruction.element_accumulator,
+    LayoutTypeID::kColumnMajor);
 
   // gemm operation table
   auto gemm_operations = Singleton::get().operation_table.gemm_operations;
@@ -1140,15 +1199,30 @@ Operation const* find_gemm_operation_for_parallel_reduction(Operation const *ope
     return nullptr;
   }
 
-  // A and B uses the same alignment in the generator.py
-  int alignment = gemm_desc.A.alignment;
+  // gemm operation for same compute capability and max operand alignment
+  int alignment = std::max(
+    gemm_desc.A.alignment,
+    gemm_desc.B.alignment);
 
-  // gemm operation for same compute capability and iterator algorithm
   GemmPreferenceKey preference_key(
-    gemm_desc.tile_description.minimum_compute_capability, 
+    gemm_desc.tile_description.minimum_compute_capability,
     alignment);
 
-  return find_gemm_operation(operators_it, preference_key);
+  auto it = operators_it->second.find(preference_key);
+
+  if(it == operators_it->second.end()) {
+    return nullptr;
+  }
+
+  // return matching gemm opertion (same tile shape, stages, warp count, and instruction)
+  for (auto op : it->second) {
+    if (op->description().tile_description == operation->description().tile_description) {
+      return op;
+    }
+  }
+
+  // return nullptr if no matching gemm operation found for parallel split-k reduction
+  return nullptr;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

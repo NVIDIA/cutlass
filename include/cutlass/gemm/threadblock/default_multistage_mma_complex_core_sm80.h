@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -75,6 +81,8 @@ template <
     typename Shape_,
     /// Shape of warp-level matrix multiply operator (concept: GemmShape)
     typename WarpShape_,
+    /// Shape of one matrix production operation (concept: GemmShape)
+    typename InstructionShape_,
     /// Layout of accumulator
     typename LayoutC_,
     /// Number of stages
@@ -90,7 +98,7 @@ template <
     /// Cache operation of operand B
     cutlass::arch::CacheOperation::Kind CacheOpB>
 struct DefaultMultistageMmaComplexCore<
-    Shape_, WarpShape_, GemmShape<8, 8, 4>, 
+    Shape_, WarpShape_, InstructionShape_, 
     complex<double>, layout::ColumnMajor,
     complex<double>, layout::RowMajor,
     complex<double>, LayoutC_, 
@@ -102,7 +110,7 @@ struct DefaultMultistageMmaComplexCore<
 
   using Shape = Shape_;
   using WarpShape = WarpShape_;
-  using InstructionShape = GemmShape<8, 8, 4>;
+  using InstructionShape = InstructionShape_;
   using ElementA = complex<double>;
   using LayoutA = layout::ColumnMajor;
   using ElementB = complex<double>;
@@ -204,6 +212,8 @@ template <
     typename Shape_,
     /// Shape of warp-level matrix multiply operator (concept: GemmShape)
     typename WarpShape_,
+    /// Shape of one matrix production operation (concept: GemmShape)
+    typename InstructionShape_,
     /// Layout of accumulator
     typename LayoutC_,
     /// Number of stages
@@ -219,7 +229,7 @@ template <
     /// Cache operation of operand B
     cutlass::arch::CacheOperation::Kind CacheOpB>
 struct DefaultMultistageMmaComplexCore<
-    Shape_, WarpShape_, GemmShape<8, 8, 4>, 
+    Shape_, WarpShape_, InstructionShape_, 
     complex<double>, layout::ColumnMajor,
     complex<double>, layout::ColumnMajor,
     complex<double>, LayoutC_, 
@@ -231,7 +241,7 @@ struct DefaultMultistageMmaComplexCore<
 
   using Shape = Shape_;
   using WarpShape = WarpShape_;
-  using InstructionShape = GemmShape<8, 8, 4>;
+  using InstructionShape = InstructionShape_;
   using ElementA = complex<double>;
   using LayoutA = layout::ColumnMajor;
   using ElementB = complex<double>;
@@ -333,6 +343,8 @@ template <
     typename Shape_,
     /// Shape of warp-level matrix multiply operator (concept: GemmShape)
     typename WarpShape_,
+    /// Shape of one matrix production operation (concept: GemmShape)
+    typename InstructionShape_,
     /// Layout of accumulator
     typename LayoutC_,
     /// Number of stages
@@ -348,7 +360,7 @@ template <
     /// Cache operation of operand B
     cutlass::arch::CacheOperation::Kind CacheOpB>
 struct DefaultMultistageMmaComplexCore<
-    Shape_, WarpShape_, GemmShape<8, 8, 4>, 
+    Shape_, WarpShape_, InstructionShape_, 
     complex<double>, layout::RowMajor,
     complex<double>, layout::ColumnMajor,
     complex<double>, LayoutC_, 
@@ -360,7 +372,7 @@ struct DefaultMultistageMmaComplexCore<
 
   using Shape = Shape_;
   using WarpShape = WarpShape_;
-  using InstructionShape = GemmShape<8, 8, 4>;
+  using InstructionShape = InstructionShape_;
   using ElementA = complex<double>;
   using LayoutA = layout::RowMajor;
   using ElementB = complex<double>;
@@ -463,6 +475,8 @@ template <
     typename Shape_,
     /// Shape of warp-level matrix multiply operator (concept: GemmShape)
     typename WarpShape_,
+    /// Shape of one matrix production operation (concept: GemmShape)
+    typename InstructionShape_,
     /// Layout of accumulator
     typename LayoutC_,
     /// Number of stages
@@ -478,7 +492,7 @@ template <
     /// Cache operation of operand B
     cutlass::arch::CacheOperation::Kind CacheOpB>
 struct DefaultMultistageMmaComplexCore<
-    Shape_, WarpShape_, GemmShape<8, 8, 4>, 
+    Shape_, WarpShape_, InstructionShape_, 
     complex<double>, layout::RowMajor,
     complex<double>, layout::RowMajor,
     complex<double>, LayoutC_, 
@@ -490,7 +504,7 @@ struct DefaultMultistageMmaComplexCore<
 
   using Shape = Shape_;
   using WarpShape = WarpShape_;
-  using InstructionShape = GemmShape<8, 8, 4>;
+  using InstructionShape = InstructionShape_;
   using ElementA = complex<double>;
   using LayoutA = layout::RowMajor;
   using ElementB = complex<double>;
@@ -586,7 +600,7 @@ struct DefaultMultistageMmaComplexCore<
 ///   A: column-major
 ///   B: column-major
 ///   Operator: arch::OpMultiplyAddComplex
-///   Math Instruction: MMA.1688.F32.TF32
+///   Math Instruction: mma.sync.aligned.m16n8k8.f32.tf32.tf32.f32
 ///
 /// This uses the default warp-level operator given tile sizes
 template <
@@ -716,7 +730,7 @@ struct DefaultMultistageMmaComplexCore<
 ///   A: column-major
 ///   B: row-major
 ///   Operator: arch::OpMultiplyAddComplex
-///   Math Instruction: MMA.1688.F32.TF32
+///   Math Instruction: mma.sync.aligned.m16n8k8.f32.tf32.tf32.f32
 ///
 /// This uses the default warp-level operator given tile sizes
 template <
@@ -847,7 +861,7 @@ struct DefaultMultistageMmaComplexCore<
 ///   A: row-major
 ///   B: column-major
 ///   Operator: arch::OpMultiplyAddComplex
-///   Math Instruction: MMA.1688.F32.TF32
+///   Math Instruction: mma.sync.aligned.m16n8k8.f32.tf32.tf32.f32
 ///
 /// This uses the default warp-level operator given tile sizes
 template <
@@ -978,7 +992,7 @@ struct DefaultMultistageMmaComplexCore<
 ///   A: row-major
 ///   B: row-major
 ///   Operator: arch::OpMultiplyAddComplex
-///   Math Instruction: MMA.1688.F32.TF32
+///   Math Instruction: mma.sync.aligned.m16n8k8.f32.tf32.tf32.f32
 ///
 /// This uses the default warp-level operator given tile sizes
 template <
@@ -1104,10 +1118,10 @@ struct DefaultMultistageMmaComplexCore<
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/// Partial specialization for complex double-precision
+/// Partial specialization for complex SIMT operation
 ///
 ///   A: column-major
-///   B: row-major
+///   B: column-major
 ///   Operator: arch::OpMultiplyAddComplex or arch::OpMultiplyGaussianComplex
 ///
 /// This uses the default warp-level operator given tile sizes
@@ -1230,7 +1244,7 @@ struct DefaultMultistageMmaComplexCore<
   //
 
   // Define the warp-level op
-  static const int WarpNumThreadsM = 4; // TODO need to extract these from template data
+  static const int WarpNumThreadsM = 4;
   static const int WarpNumThreadsN = 8;
   static_assert(!(WarpShape::kM % WarpNumThreadsM) && !(WarpShape::kN % WarpNumThreadsN),
       "WarpShape must be divisible by ThreadTile shape.");
@@ -1253,15 +1267,18 @@ struct DefaultMultistageMmaComplexCore<
   >;
 
   using MmaWarpSimt = cutlass::gemm::warp::MmaSimt<
-    WarpShape, /// Size of the Gemm problem - concept: gemm::GemmShape<> 128, 128, 8
-    ElementA,  /// Data type of A elements
-    SmemLayoutA,   /// Layout of A matrix (concept: MatrixLayout)
-    ElementB,  /// Data type of B elements
-    SmemLayoutB,   /// Layout of B matrix (concept: MatrixLayout)
-    ElementC,  /// Element type of C matrix
-    LayoutC,   /// Layout of C matrix (concept: MatrixLayout)
-    Policy     /// Policy describing warp-level MmaTensorOp (concept: MmaTensorOp policy)
-    >;         /// Used for partial specialization
+    WarpShape,    /// Size of the Gemm problem - concept: gemm::GemmShape<> 128, 128, 8
+    ElementA,     /// Data type of A elements
+    SmemLayoutA,  /// Layout of A matrix (concept: MatrixLayout)
+    ElementB,     /// Data type of B elements
+    SmemLayoutB,  /// Layout of B matrix (concept: MatrixLayout)
+    ElementC,     /// Element type of C matrix
+    LayoutC,      /// Layout of C matrix (concept: MatrixLayout)
+    Policy,       /// Policy describing warp-level MmaTensorOp (concept: MmaTensorOp policy)
+    1,            /// 1 partition along K dimension
+    kTransformA,  /// Transform for A
+    kTransformB   /// Transform for B
+    >;            /// Used for partial specialization
 
   /// Policy used to define MmaPipelined
   using MmaPolicy = MmaPolicy<
@@ -1271,7 +1288,7 @@ struct DefaultMultistageMmaComplexCore<
     WarpCount::kK>;
 };
 
-/// Partial specialization for complex double-precision
+/// Partial specialization for complex SIMT operation
 ///
 ///   A: column-major
 ///   B: row-major
@@ -1394,7 +1411,7 @@ struct DefaultMultistageMmaComplexCore<
   //
 
   // Define the warp-level op
-  static const int WarpNumThreadsM = 4; // TODO need to extract these from template data
+  static const int WarpNumThreadsM = 4;
   static const int WarpNumThreadsN = 8;
   static_assert(!(WarpShape::kM % WarpNumThreadsM) && !(WarpShape::kN % WarpNumThreadsN),
       "WarpShape must be divisible by ThreadTile shape.");
@@ -1417,15 +1434,18 @@ struct DefaultMultistageMmaComplexCore<
   >;
 
   using MmaWarpSimt = cutlass::gemm::warp::MmaSimt<
-    WarpShape, /// Size of the Gemm problem - concept: gemm::GemmShape<> 128, 128, 8
-    ElementA,  /// Data type of A elements
-    SmemLayoutA,   /// Layout of A matrix (concept: MatrixLayout)
-    ElementB,  /// Data type of B elements
-    SmemLayoutB,   /// Layout of B matrix (concept: MatrixLayout)
-    ElementC,  /// Element type of C matrix
-    LayoutC,   /// Layout of C matrix (concept: MatrixLayout)
-    Policy     /// Policy describing warp-level MmaTensorOp (concept: MmaTensorOp policy)
-    >;         /// Used for partial specialization
+    WarpShape,    /// Size of the Gemm problem - concept: gemm::GemmShape<> 128, 128, 8
+    ElementA,     /// Data type of A elements
+    SmemLayoutA,  /// Layout of A matrix (concept: MatrixLayout)
+    ElementB,     /// Data type of B elements
+    SmemLayoutB,  /// Layout of B matrix (concept: MatrixLayout)
+    ElementC,     /// Element type of C matrix
+    LayoutC,      /// Layout of C matrix (concept: MatrixLayout)
+    Policy,       /// Policy describing warp-level MmaTensorOp (concept: MmaTensorOp policy)
+    1,            /// 1 partition along K dimension
+    kTransformA,  /// Transform for A
+    kTransformB   /// Transform for B
+    >;            /// Used for partial specialization
 
   /// Policy used to define MmaPipelined
   using MmaPolicy = MmaPolicy<
@@ -1435,10 +1455,10 @@ struct DefaultMultistageMmaComplexCore<
     WarpCount::kK>;
 };
 
-/// Partial specialization for complex double-precision
+/// Partial specialization for complex SIMT operation
 ///
-///   A: column-major
-///   B: row-major
+///   A: row-major
+///   B: column-major
 ///   Operator: arch::OpMultiplyAddComplex or arch::OpMultiplyGaussianComplex
 ///
 /// This uses the default warp-level operator given tile sizes
@@ -1564,7 +1584,7 @@ struct DefaultMultistageMmaComplexCore<
   //
 
   // Define the warp-level op
-  static const int WarpNumThreadsM = 4; // TODO need to extract these from template data
+  static const int WarpNumThreadsM = 4;
   static const int WarpNumThreadsN = 8;
   static_assert(!(WarpShape::kM % WarpNumThreadsM) && !(WarpShape::kN % WarpNumThreadsN),
       "WarpShape must be divisible by ThreadTile shape.");
@@ -1587,15 +1607,18 @@ struct DefaultMultistageMmaComplexCore<
   >;
 
   using MmaWarpSimt = cutlass::gemm::warp::MmaSimt<
-    WarpShape, /// Size of the Gemm problem - concept: gemm::GemmShape<> 128, 128, 8
-    ElementA,  /// Data type of A elements
-    SmemLayoutA,   /// Layout of A matrix (concept: MatrixLayout)
-    ElementB,  /// Data type of B elements
-    SmemLayoutB,   /// Layout of B matrix (concept: MatrixLayout)
-    ElementC,  /// Element type of C matrix
-    LayoutC,   /// Layout of C matrix (concept: MatrixLayout)
-    Policy     /// Policy describing warp-level MmaTensorOp (concept: MmaTensorOp policy)
-    >;         /// Used for partial specialization
+    WarpShape,    /// Size of the Gemm problem - concept: gemm::GemmShape<> 128, 128, 8
+    ElementA,     /// Data type of A elements
+    SmemLayoutA,  /// Layout of A matrix (concept: MatrixLayout)
+    ElementB,     /// Data type of B elements
+    SmemLayoutB,  /// Layout of B matrix (concept: MatrixLayout)
+    ElementC,     /// Element type of C matrix
+    LayoutC,      /// Layout of C matrix (concept: MatrixLayout)
+    Policy,       /// Policy describing warp-level MmaTensorOp (concept: MmaTensorOp policy)
+    1,            /// 1 partition along K dimension
+    kTransformA,  /// Transform for A
+    kTransformB   /// Transform for B
+    >;            /// Used for partial specialization
 
   /// Policy used to define MmaPipelined
   using MmaPolicy = MmaPolicy<
@@ -1605,9 +1628,9 @@ struct DefaultMultistageMmaComplexCore<
     WarpCount::kK>;
 };
 
-/// Partial specialization for complex double-precision
+/// Partial specialization for complex SIMT operation
 ///
-///   A: column-major
+///   A: row-major
 ///   B: row-major
 ///   Operator: arch::OpMultiplyAddComplex or arch::OpMultiplyGaussianComplex
 ///
@@ -1731,7 +1754,7 @@ struct DefaultMultistageMmaComplexCore<
   //
 
   // Define the warp-level op
-  static const int WarpNumThreadsM = 4; // TODO need to extract these from template data
+  static const int WarpNumThreadsM = 4;
   static const int WarpNumThreadsN = 8;
   static_assert(!(WarpShape::kM % WarpNumThreadsM) && !(WarpShape::kN % WarpNumThreadsN),
       "WarpShape must be divisible by ThreadTile shape.");
@@ -1754,15 +1777,18 @@ struct DefaultMultistageMmaComplexCore<
   >;
 
   using MmaWarpSimt = cutlass::gemm::warp::MmaSimt<
-    WarpShape, /// Size of the Gemm problem - concept: gemm::GemmShape<> 128, 128, 8
-    ElementA,  /// Data type of A elements
-    SmemLayoutA,   /// Layout of A matrix (concept: MatrixLayout)
-    ElementB,  /// Data type of B elements
-    SmemLayoutB,   /// Layout of B matrix (concept: MatrixLayout)
-    ElementC,  /// Element type of C matrix
-    LayoutC,   /// Layout of C matrix (concept: MatrixLayout)
-    Policy     /// Policy describing warp-level MmaTensorOp (concept: MmaTensorOp policy)
-    >;         /// Used for partial specialization
+    WarpShape,    /// Size of the Gemm problem - concept: gemm::GemmShape<> 128, 128, 8
+    ElementA,     /// Data type of A elements
+    SmemLayoutA,  /// Layout of A matrix (concept: MatrixLayout)
+    ElementB,     /// Data type of B elements
+    SmemLayoutB,  /// Layout of B matrix (concept: MatrixLayout)
+    ElementC,     /// Element type of C matrix
+    LayoutC,      /// Layout of C matrix (concept: MatrixLayout)
+    Policy,       /// Policy describing warp-level MmaTensorOp (concept: MmaTensorOp policy)
+    1,            /// 1 partition along K dimension
+    kTransformA,  /// Transform for A
+    kTransformB   /// Transform for B
+    >;            /// Used for partial specialization
 
   /// Policy used to define MmaPipelined
   using MmaPolicy = MmaPolicy<

@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -29,14 +35,15 @@
 #pragma once
 
 #include "numeric_types.h"
+#include "complex.h"
 
 namespace cutlass {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename T>
+template <typename T, typename U = T>
 CUTLASS_HOST_DEVICE
-bool relatively_equal(T a, T b, T epsilon, T nonzero_floor);
+bool relatively_equal(T a, T b, U epsilon, U nonzero_floor);
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -50,7 +57,11 @@ template <typename T>
 CUTLASS_HOST_DEVICE
 bool relatively_equal_float(T a, T b, T epsilon, T nonzero_floor) {
   
+#if defined(__CUDACC_RTC__)
+  using cuda::std::abs;
+#else
   using std::abs;
+#endif
 
   T abs_A = abs(a);
   T abs_B = abs(b);
@@ -60,7 +71,7 @@ bool relatively_equal_float(T a, T b, T epsilon, T nonzero_floor) {
   if (a == b) {
     return true;
   }
-  else if (a == zero || b == zero || diff < nonzero_floor) {
+  else if (a == zero || b == zero || (abs_A + abs_B) < nonzero_floor) {
     return diff < epsilon * nonzero_floor;
   }
   
@@ -70,6 +81,12 @@ bool relatively_equal_float(T a, T b, T epsilon, T nonzero_floor) {
 } // namespace detail
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <>
+CUTLASS_HOST_DEVICE
+bool relatively_equal<bool>(bool a, bool b, bool, bool) {
+  return (a == b);
+}
 
 template <>
 CUTLASS_HOST_DEVICE
@@ -153,6 +170,18 @@ bool relatively_equal<uint64_t>(uint64_t a, uint64_t b, uint64_t, uint64_t) {
 
 template <>
 CUTLASS_HOST_DEVICE
+bool relatively_equal<float_e4m3_t>(float_e4m3_t a, float_e4m3_t b, float_e4m3_t epsilon, float_e4m3_t nonzero_floor) {
+  return detail::relatively_equal_float<float>(a, b, epsilon, nonzero_floor);
+}
+
+template <>
+CUTLASS_HOST_DEVICE
+bool relatively_equal<float_e5m2_t>(float_e5m2_t a, float_e5m2_t b, float_e5m2_t epsilon, float_e5m2_t nonzero_floor) {
+  return detail::relatively_equal_float<float>(a, b, epsilon, nonzero_floor);
+}
+
+template <>
+CUTLASS_HOST_DEVICE
 bool relatively_equal<half_t>(half_t a, half_t b, half_t epsilon, half_t nonzero_floor) {
   return detail::relatively_equal_float(a, b, epsilon, nonzero_floor);
 }
@@ -190,6 +219,85 @@ template <>
 CUTLASS_HOST_DEVICE
 bool relatively_equal<double>(double a, double b, double epsilon, double nonzero_floor) {
   return detail::relatively_equal_float(a, b, epsilon, nonzero_floor);
+}
+
+template<typename T>
+CUTLASS_HOST_DEVICE
+bool relatively_equal(complex<T> a, complex<T> b, T epsilon, T nonzero_floor) {
+#if defined(__CUDACC_RTC__)
+  using cuda::std::abs;
+#else
+  using std::abs;
+#endif
+
+  T abs_A = abs(a);
+  T abs_B = abs(b);
+  T diff = abs(a - b);
+  complex<T> zero = complex<T>{T{}, T{}};
+
+  if (a == b) {
+    return true;
+  }
+  else if (a == zero || b == zero || diff < nonzero_floor) {
+    return diff < epsilon * nonzero_floor;
+  }
+
+  return diff < epsilon * (abs_A + abs_B);
+}
+
+template <typename T>
+CUTLASS_HOST_DEVICE 
+bool relatively_equal(complex<T> a,  complex<T> b, complex<T> epsilon, complex<T> nonzero_floor) {
+#if defined(__CUDACC_RTC__)
+  using cuda::std::abs;
+#else
+  using std::abs;
+#endif
+
+  T abs_A = abs(a);
+  T abs_B = abs(b);
+  complex<T> diff = a - b;
+  T abs_diff = abs(diff);
+  complex<T> zero = complex<T>{T{}, T{}};
+
+  if (a == b) {
+    return true;
+  }
+  else if (a == zero || b == zero || abs_diff < abs(nonzero_floor)) {
+    return abs_diff < abs(epsilon * nonzero_floor);
+  }
+
+  return abs_diff < abs(epsilon) * (abs_A + abs_B);
+}
+
+
+template <>
+CUTLASS_HOST_DEVICE
+bool relatively_equal<float_e2m3_t>(float_e2m3_t a, float_e2m3_t b, float_e2m3_t epsilon, float_e2m3_t nonzero_floor) {
+  return detail::relatively_equal_float<float>(a, b, epsilon, nonzero_floor);
+}
+
+template <>
+CUTLASS_HOST_DEVICE
+bool relatively_equal<float_e3m2_t>(float_e3m2_t a, float_e3m2_t b, float_e3m2_t epsilon, float_e3m2_t nonzero_floor) {
+  return detail::relatively_equal_float<float>(a, b, epsilon, nonzero_floor);
+}
+
+template <>
+CUTLASS_HOST_DEVICE
+bool relatively_equal<float_e2m1_t>(float_e2m1_t a, float_e2m1_t b, float_e2m1_t epsilon, float_e2m1_t nonzero_floor) {
+  return detail::relatively_equal_float<float>(a, b, epsilon, nonzero_floor);
+}
+template <>
+CUTLASS_HOST_DEVICE
+bool relatively_equal<float_ue8m0_t>(float_ue8m0_t a, float_ue8m0_t b, float_ue8m0_t epsilon, float_ue8m0_t nonzero_floor) {
+  return detail::relatively_equal_float<float>(a, b, epsilon, nonzero_floor);
+}
+
+template <>
+CUTLASS_HOST_DEVICE
+bool relatively_equal<float_ue4m3_t>(float_ue4m3_t a, float_ue4m3_t b, float_ue4m3_t epsilon, float_ue4m3_t nonzero_floor) {
+  return detail::relatively_equal_float<float>(a, b, epsilon, nonzero_floor);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

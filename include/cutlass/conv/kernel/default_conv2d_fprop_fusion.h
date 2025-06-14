@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -39,8 +45,8 @@
 #include "cutlass/conv/threadblock/conv2d_fprop_activation_tile_access_iterator_optimized.h"
 #include "cutlass/conv/threadblock/conv2d_fprop_filter_tile_access_iterator_optimized.h"
 #include "cutlass/conv/threadblock/predicated_scale_bias_vector_access_iterator.h"
-#include "cutlass/conv/threadblock/regular_scale_bias_vector_access_iterator.h"
-#include "cutlass/conv/warp/conv2d_fprop_scale_bias_iterator.h"
+#include "cutlass/transform/threadblock/regular_scale_bias_vector_access_iterator.h"
+#include "cutlass/gemm/warp/scale_bias_tile_iterator.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -70,14 +76,14 @@ template <
   int Stages,
   typename MathOperatorTag,
   conv::IteratorAlgorithm IteratorAlgorithm = IteratorAlgorithm::kOptimized,
-  conv::StrideSupport StrideSupport = StrideSupport::kStrided
+  conv::StrideSupport StrideSupport = StrideSupport::kUnity
 > struct DefaultConv2dFpropFusion;
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 //                         OpClassTensorOp convolutions 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Defines a kernel for Conv2dFprop specialzation for Analytic IteratorAlgorithm and multistage 
+/// Defines a kernel for Conv2dFprop specialization for Analytic IteratorAlgorithm and multistage 
 /// pipeline.
 template <
   typename ElementA,
@@ -155,7 +161,7 @@ struct DefaultConv2dFpropFusion <
           LayoutScaleBias>;
 
   using SmemIteratorScaleBias =
-      cutlass::conv::threadblock::RegularScaleBiasVectorAccessIterator<
+      cutlass::transform::threadblock::RegularScaleBiasVectorAccessIterator<
           cutlass::MatrixShape<1, ThreadblockShape::kK>, ElementScaleBias,
           LayoutScaleBias>;
 
@@ -166,7 +172,7 @@ struct DefaultConv2dFpropFusion <
   static int const kThreadCount = 32;
 
   // Warp-level iterators to load scale and bias vectors
-  using WarpIteratorScaleBias = cutlass::conv::warp::WarpIteratorScaleBias<
+  using WarpIteratorScaleBias = cutlass::gemm::warp::ScaleBiasTileIterator<
       MatrixShape<WarpShape::kM, WarpShape::kK>, ElementScaleBias,
       LayoutScaleBias, MatrixShape<InstructionShape::kM, InstructionShape::kK>,
       typename WarpMmaTensorOp::IteratorA::Base::Policy, kThreadCount,
@@ -209,7 +215,7 @@ struct DefaultConv2dFpropFusion <
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Defines a kernel for Conv2dFprop specialzation for Optimzed IteratorAlgorithm and 
+/// Defines a kernel for Conv2dFprop specialization for Optimzed IteratorAlgorithm and 
 /// multistage pipeline.
 template <
   typename ElementA,
@@ -290,7 +296,7 @@ struct DefaultConv2dFpropFusion <
           LayoutScaleBias>;
 
   using SmemIteratorScaleBias =
-      cutlass::conv::threadblock::RegularScaleBiasVectorAccessIterator<
+      cutlass::transform::threadblock::RegularScaleBiasVectorAccessIterator<
           cutlass::MatrixShape<1, ThreadblockShape::kK>, ElementScaleBias,
           LayoutScaleBias>;
 
@@ -301,7 +307,7 @@ struct DefaultConv2dFpropFusion <
   static int const kThreadCount = 32;
 
   // Warp-level iterators to load scale and bias vectors
-  using WarpIteratorScaleBias = cutlass::conv::warp::WarpIteratorScaleBias<
+  using WarpIteratorScaleBias = cutlass::gemm::warp::ScaleBiasTileIterator<
       MatrixShape<WarpShape::kM, WarpShape::kK>, ElementScaleBias,
       LayoutScaleBias, MatrixShape<InstructionShape::kM, InstructionShape::kK>,
       typename WarpMmaTensorOp::IteratorA::Base::Policy, kThreadCount,

@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -28,8 +34,6 @@
 #pragma once
 
 #include <vector>
-
-#include "../../common/cutlass_unit_test.h"
 
 #include "cutlass/cutlass.h"
 #include "cutlass/layout/matrix.h"
@@ -223,6 +227,75 @@ struct TestbedConv2dProblemSizes {
       {3, 7, 9, minimum_channel_size},   // input size  (NHWC)
       {8, 7, 7, minimum_channel_size},   // filter size (KRSC)
       {1, 1, 1, 1},                      // padding (pad_h, _, pad_w, _)
+      {1, 1},                            // stride (stride_h, stride_w)
+      {1, 1}                             // dilation (dilation_h, dilation_w) 
+    ));
+
+    ////////////////////////////////////////////////////////////////////////////////////////////
+    // Small input size x stride (1,1) asymmetric paddings (1, 0, 1, 0)
+    // C < CTA::K and non-multiples of CTA::K. Typical CTA::K = {32, 64}
+    ////////////////////////////////////////////////////////////////////////////////////////////
+    
+    conv2d_default_sizes.push_back(cutlass::conv::Conv2dProblemSize( 
+      {1, 1, 1, minimum_channel_size},   // input size  (NHWC)
+      {8, 1, 1, minimum_channel_size},   // filter size (KRSC)
+      {1, 0, 1, 0},                      // padding (pad_h, _, pad_w, _)
+      {1, 1},                            // stride (stride_h, stride_w)
+      {1, 1}                             // dilation (dilation_h, dilation_w) 
+    ));
+
+    conv2d_default_sizes.push_back(cutlass::conv::Conv2dProblemSize( 
+      {1, 1, 8, minimum_channel_size},   // input size  (NHWC)
+      {8, 1, 3, minimum_channel_size},   // filter size (KRSC)
+      {1, 0, 1, 0},                      // padding (pad_h, _, pad_w, _)
+      {1, 1},                            // stride (stride_h, stride_w)
+      {1, 1}                             // dilation (dilation_h, dilation_w) 
+    ));
+
+    conv2d_default_sizes.push_back(cutlass::conv::Conv2dProblemSize( 
+      {1, 7, 8, minimum_channel_size},   // input size  (NHWC)
+      {8, 3, 3, minimum_channel_size},   // filter size (KRSC)
+      {1, 0, 1, 0},                      // padding (pad_h, _, pad_w, _)
+      {1, 1},                            // stride (stride_h, stride_w)
+      {1, 1}                             // dilation (dilation_h, dilation_w) 
+    ));
+
+    conv2d_default_sizes.push_back(cutlass::conv::Conv2dProblemSize(
+      {1, 7, 9, minimum_channel_size},  // input size  (NHWC)
+      {8, 4, 4, minimum_channel_size},  // filter size (KRSC)
+      {1, 0, 1, 0},                     // padding (pad_h, _, pad_w, _)
+      {1, 1},                           // stride (stride_h, stride_w)
+      {1, 1}                            // dilation (dilation_h, dilation_w) 
+    ));
+
+    conv2d_default_sizes.push_back(cutlass::conv::Conv2dProblemSize(
+      {2, 7, 9, minimum_channel_size},   // input size  (NHWC)
+      {8, 5, 5, minimum_channel_size},   // filter size (KRSC)
+      {1, 0, 1, 0},                      // padding (pad_h, _, pad_w, _)
+      {1, 1},                            // stride (stride_h, stride_w)
+      {1, 1}                             // dilation (dilation_h, dilation_w) 
+    ));
+
+    conv2d_default_sizes.push_back(cutlass::conv::Conv2dProblemSize(
+      {3, 7, 9, minimum_channel_size},   // input size  (NHWC)
+      {8, 6, 5, minimum_channel_size},   // filter size (KRSC)
+      {1, 0, 1, 0},                      // padding (pad_h, _, pad_w, _)
+      {1, 1},                            // stride (stride_h, stride_w)
+      {1, 1}                             // dilation (dilation_h, dilation_w) 
+    ));
+
+    conv2d_default_sizes.push_back(cutlass::conv::Conv2dProblemSize(
+      {3, 7, 9, minimum_channel_size},   // input size  (NHWC)
+      {8, 6, 6, minimum_channel_size},   // filter size (KRSC)
+      {1, 0, 1, 0},                      // padding (pad_h, _, pad_w, _)
+      {1, 1},                            // stride (stride_h, stride_w)
+      {1, 1}                             // dilation (dilation_h, dilation_w) 
+    ));
+
+    conv2d_default_sizes.push_back(cutlass::conv::Conv2dProblemSize(
+      {3, 7, 9, minimum_channel_size},   // input size  (NHWC)
+      {8, 7, 7, minimum_channel_size},   // filter size (KRSC)
+      {1, 0, 1, 0},                      // padding (pad_h, _, pad_w, _)
       {1, 1},                            // stride (stride_h, stride_w)
       {1, 1}                             // dilation (dilation_h, dilation_w) 
     ));
@@ -486,7 +559,6 @@ struct TestbedConv2dProblemSizes {
       {1, 1},             // dilation (dilation_h, dilation_w)
       {4, 1, 1, 328}      // output size (NPQK)
     ));
-    
   }
 
 
@@ -678,6 +750,177 @@ struct TestbedConv2dProblemSizes {
  }
 
 };
+
+
+////////////////////////////////////////////////////////////////////////////
+/// Structure TestbedGroupConv2dProblemSizes initializes and holds group conv default and
+/// important network sizes
+////////////////////////////////////////////////////////////////////////////
+struct TestbedGroupConv2dProblemSizes {
+
+  //
+  // Data members
+  //
+  int threadblock_n;
+  int threadblock_k;
+  int minimum_channel_size;
+
+  Conv2dProblemVector default_single_group_sizes;
+  Conv2dProblemVector default_multiple_group_sizes;
+
+  //
+  // Methods
+  //
+  /// Default ctor
+  TestbedGroupConv2dProblemSizes(
+    int threadblock_n_,
+    int threadblock_k_,
+    int minimum_channel_size_ = 64)
+  : threadblock_n (threadblock_n_),
+    threadblock_k (threadblock_k_),
+    minimum_channel_size (minimum_channel_size_) {
+    initialize_group_conv2d_default_sizes();
+    filter_all();
+  }
+
+  /// Eliminates some illegal cases
+  void filter_all() {
+
+    Conv2dProblemVector *problems_vectors[] = {
+      &default_single_group_sizes,
+      &default_multiple_group_sizes
+    };
+
+    for (Conv2dProblemVector *problems : problems_vectors) {
+      Conv2dProblemVector filtered;
+
+      for (cutlass::conv::Conv2dProblemSize const & problem : *problems) {
+        if (!((problem.C / problem.groups) % minimum_channel_size)) {
+          filtered.push_back(problem);
+        }
+      }
+
+      *problems = filtered;
+    }
+  }
+
+  // Add a few standard convolution problem sizes
+  void initialize_group_conv2d_default_sizes() {
+
+    ////////////////////////////////////////////////////////////////////////////////////
+    // One group calculated by one or multiple CTAs: k_per_group % CTA::N = 0
+    // One CTA calculates a single group
+    ////////////////////////////////////////////////////////////////////////////////////
+
+    for (int cta_per_group_k = 1; cta_per_group_k < 4; ++cta_per_group_k) {
+      // groups = 2, 3, 4
+      for (int groups = 2; groups < 5; ++groups) {
+
+        int conv_k = cta_per_group_k * threadblock_n * groups;
+        default_single_group_sizes.push_back(cutlass::conv::Conv2dProblemSize(
+          {1, 8, 8, threadblock_k * 2 * groups},        // input size  (NHWC)
+          {conv_k, 3, 3, threadblock_k * 2},            // filter size (KRSC)
+          {1, 1, 1, 1},                                 // padding (pad_h, _, pad_w, _)
+          {1, 1},                                       // stride (stride_h, stride_w)
+          {1, 1},                                       // dilation (dilation_h, dilation_w)
+          cutlass::conv::Mode::kCrossCorrelation,
+          1,                                            // split_k_slices
+          groups                                        // groups
+        ));
+
+      } // loop groups
+    } // loop cta_per_group_k
+
+    // Partial gemm_k: k_per_group == CTA::N && channels_per_group < CTA::K
+    default_single_group_sizes.push_back(cutlass::conv::Conv2dProblemSize(
+      {1, 8, 8, threadblock_k},                       // input size  (NHWC)
+      {threadblock_n * 2, 3, 3, threadblock_k / 2},   // filter size (KRSC)
+      {1, 1, 1, 1},                                   // padding (pad_h, _, pad_w, _)
+      {1, 1},                                         // stride (stride_h, stride_w)
+      {1, 1},                                         // dilation (dilation_h, dilation_w)
+      cutlass::conv::Mode::kCrossCorrelation,
+      1,                                              // split_k_slices
+      2                                               // groups
+    ));
+
+    // Larger problem sizes
+    
+    default_single_group_sizes.push_back(cutlass::conv::Conv2dProblemSize(
+      {1, 56, 56, 696},                               // input size  (NHWC)
+      {768, 3, 3, 232},                               // filter size (KRSC)
+      {1, 1, 1, 1},                                   // padding (pad_h, _, pad_w, _)
+      {2, 2},                                         // stride (stride_h, stride_w)
+      {1, 1},                                         // dilation (dilation_h, dilation_w)
+      cutlass::conv::Mode::kCrossCorrelation,
+      1,                                              // split_k_slices
+      3                                               // groups
+    ));
+    default_single_group_sizes.push_back(cutlass::conv::Conv2dProblemSize(
+      {1, 14, 14, 1392},                              // input size  (NHWC)
+      {1536, 3, 3, 232},                              // filter size (KRSC)
+      {1, 1, 1, 1},                                   // padding (pad_h, _, pad_w, _)
+      {1, 1},                                         // stride (stride_h, stride_w)
+      {1, 1},                                         // dilation (dilation_h, dilation_w)
+      cutlass::conv::Mode::kCrossCorrelation,
+      1,                                              // split_k_slices
+      3                                               // groups
+    ));
+
+    ////////////////////////////////////////////////////////////////////////////////////
+    // One CTA calculate multiple groups: CTA::N % k_per_group = 0
+    ////////////////////////////////////////////////////////////////////////////////////
+
+    // 2 groups per CTA
+    default_multiple_group_sizes.push_back(cutlass::conv::Conv2dProblemSize(
+      {1, 8, 8, threadblock_k * 4},                   // input size  (NHWC)
+      {threadblock_n, 3, 3, threadblock_k * 2},       // filter size (KRSC)
+      {1, 1, 1, 1},                                   // padding (pad_h, _, pad_w, _)
+      {1, 1},                                         // stride (stride_h, stride_w)
+      {1, 1},                                         // dilation (dilation_h, dilation_w)
+      cutlass::conv::Mode::kCrossCorrelation,
+      1,                                              // split_k_slices
+      2                                               // groups
+    ));
+
+    // 2 groups per CTA and partial gemm_k
+    default_multiple_group_sizes.push_back(cutlass::conv::Conv2dProblemSize(
+      {1, 8, 8, threadblock_k},                       // input size  (NHWC)
+      {threadblock_n, 3, 3, threadblock_k / 2},       // filter size (KRSC)
+      {1, 1, 1, 1},                                   // padding (pad_h, _, pad_w, _)
+      {1, 1},                                         // stride (stride_h, stride_w)
+      {1, 1},                                         // dilation (dilation_h, dilation_w)
+      cutlass::conv::Mode::kCrossCorrelation,
+      1,                                              // split_k_slices
+      2                                               // groups
+    ));
+
+    // 4 groups per CTA
+    default_multiple_group_sizes.push_back(cutlass::conv::Conv2dProblemSize(
+      {1, 8, 8, threadblock_k * 8},                   // input size  (NHWC)
+      {threadblock_n / 2, 3, 3, threadblock_k * 2},   // filter size (KRSC)
+      {1, 1, 1, 1},                                   // padding (pad_h, _, pad_w, _)
+      {1, 1},                                         // stride (stride_h, stride_w)
+      {1, 1},                                         // dilation (dilation_h, dilation_w)
+      cutlass::conv::Mode::kCrossCorrelation,
+      1,                                              // split_k_slices
+      4                                               // groups
+    ));
+
+    // 4 groups per CTA and partial gemm_k
+    default_multiple_group_sizes.push_back(cutlass::conv::Conv2dProblemSize(
+      {1, 8, 8, threadblock_k * 2},                   // input size  (NHWC)
+      {threadblock_n / 2, 3, 3, threadblock_k / 2},   // filter size (KRSC)
+      {1, 1, 1, 1},                                   // padding (pad_h, _, pad_w, _)
+      {1, 1},                                         // stride (stride_h, stride_w)
+      {1, 1},                                         // dilation (dilation_h, dilation_w)
+      cutlass::conv::Mode::kCrossCorrelation,
+      1,                                              // split_k_slices
+      4                                               // groups
+    ));
+  }
+
+};
+
 
 } // namespace device
 } // namespace conv

@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -28,10 +34,13 @@
 */
 #pragma once
 
-#if !defined(__CUDACC_RTC__)
+#if defined(__CUDACC_RTC__)
+#include "cutlass/floating_point_nvrtc.h"
+#else
 #include <cmath>
 #include <limits>
 #include <cstdint>
+#include <cstring> // std::memcpy
 #endif
 
 #include "cutlass/cutlass.h"
@@ -53,7 +62,19 @@ struct alignas(4) tfloat32_t {
   //
   // Methods
   //
+  private:
+    CUTLASS_HOST_DEVICE
+    static uint32_t float_to_storage(float s) {
+  #if defined(__CUDA_ARCH__)
+      uint32_t result = reinterpret_cast<uint32_t const &>(s);
+  #else
+      uint32_t result;
+      std::memcpy(&result, &s, sizeof(float));
+  #endif
+      return result;
+    }
 
+  public:
   /// Constructs from an unsigned int
   CUTLASS_HOST_DEVICE
   static tfloat32_t bitcast(uint32_t x) {
@@ -65,7 +86,7 @@ struct alignas(4) tfloat32_t {
   /// Emulated rounding is fast in device code
   CUTLASS_HOST_DEVICE
   static tfloat32_t round_half_ulp_truncate(float const &s) {
-    uint32_t x = reinterpret_cast<uint32_t const &>(s);
+    uint32_t x = float_to_storage(s);
 
     #if defined(__CUDA_ARCH__)
     if (::isfinite(s)) {
@@ -80,19 +101,15 @@ struct alignas(4) tfloat32_t {
     return tfloat32_t::bitcast(x);
   }
 
-  /// Default constructor
-  CUTLASS_HOST_DEVICE
-  tfloat32_t() : storage(0) { }
+  tfloat32_t() = default;
 
   /// Floating-point conversion - round toward nearest even
   CUTLASS_HOST_DEVICE
-  explicit tfloat32_t(float x): storage(round_half_ulp_truncate(x).storage) { }
+  explicit tfloat32_t(float x): storage(round_half_ulp_truncate(x).raw()) { }
 
-  /// Floating-point conversion - round toward nearest even
+  // Conversion from double (this rounds twice)
   CUTLASS_HOST_DEVICE
-  explicit tfloat32_t(double x): tfloat32_t(float(x)) {
-
-  }
+  explicit tfloat32_t(double x): tfloat32_t(float(x)) { }
 
   /// Integer conversion - round toward zero
   CUTLASS_HOST_DEVICE
@@ -105,7 +122,7 @@ struct alignas(4) tfloat32_t {
     #endif
   }
 
-  /// Converts to float
+  // Conversion to float
   CUTLASS_HOST_DEVICE
   operator float() const {
 
@@ -113,7 +130,7 @@ struct alignas(4) tfloat32_t {
     // of the mantissa.
     unsigned bits = (storage & ~0x1fffu);
 
-    #if defined(__CUDA_ARCH__)    
+    #if defined(__CUDA_ARCH__)
     return reinterpret_cast<float const &>(bits);
     #else
     float flt;
@@ -122,7 +139,7 @@ struct alignas(4) tfloat32_t {
     #endif
   }
 
-  /// Converts to float
+  /// Converts to double
   CUTLASS_HOST_DEVICE
   explicit operator double() const {
     return double(float(*this));
@@ -244,11 +261,11 @@ cutlass::tfloat32_t sqrt(cutlass::tfloat32_t const& h) {
 CUTLASS_HOST_DEVICE
 tfloat32_t copysign(tfloat32_t const& a, tfloat32_t const& b) {
 
-  uint32_t a_mag = (reinterpret_cast<uint32_t const &>(a) & 0x7fffffff);  
-  uint32_t b_sign = (reinterpret_cast<uint32_t const &>(b) & 0x80000000);
+  uint32_t a_mag = (a.raw() & 0x7fffffff);
+  uint32_t b_sign = (b.raw() & 0x80000000);
   uint32_t result = (a_mag | b_sign);
 
-  return reinterpret_cast<tfloat32_t const &>(result);
+  return tfloat32_t::bitcast(result);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -363,13 +380,7 @@ tfloat32_t operator+(tfloat32_t const& lhs, tfloat32_t const& rhs) {
 
 CUTLASS_HOST_DEVICE
 tfloat32_t operator-(tfloat32_t const& lhs) {
-  union u_tff32 {
-    float val_f32;
-    tfloat32_t val_tf;
-    CUTLASS_HOST_DEVICE u_tff32() : val_f32(0) { }
-  };
-  union u_tff32 x; x.val_f32 = -reinterpret_cast<float const &>(lhs);
-  return x.val_tf;
+  return tfloat32_t::bitcast(0x80000000 ^ lhs.raw());
 }
 
 CUTLASS_HOST_DEVICE

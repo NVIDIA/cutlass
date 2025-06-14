@@ -1,29 +1,35 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
 /*! \file
-    \brief Templates implementing how threads are mapped to a given tile. 
+    \brief Templates implementing how threads are mapped to a given tile.
 
 */
 
@@ -82,20 +88,15 @@ struct PitchLinearStripminedThreadMap {
 
     static_assert(!(Shape::kContiguous % kElementsPerAccess), "");
 
-    static_assert(!((Shape::kContiguous * Shape::kStrided) % (kThreads * kElementsPerAccess)), 
-      "Shape must be divisible thread count.");
-
     /// Shape of the tile in units of vectors
     using ShapeVec = layout::PitchLinearShape<
       Shape::kContiguous / kElementsPerAccess,
       Shape::kStrided
     >;
 
-    static_assert(
-      (Threads < ShapeVec::kContiguous && !(ShapeVec::kContiguous % kThreads)) ||
-      (!(kThreads % ShapeVec::kContiguous) && !(ShapeVec::kStrided % (kThreads / ShapeVec::kContiguous))),
-      "Shape must be divisible by number of iterations of each thread."
-    );
+    static_assert((Threads < ShapeVec::kContiguous && !(ShapeVec::kContiguous % kThreads)) ||
+                      (!(kThreads % ShapeVec::kContiguous)),
+                  "Shape must be divisible by number of iterations of each thread.");
   };
 
   /// Number of iterations by each thread
@@ -106,11 +107,12 @@ struct PitchLinearStripminedThreadMap {
           // Redo the comparison here to work around divide by zero compiler
           // error.  The compiler evaluates both path of platform::conditional.
           (Threads >= Detail::ShapeVec::kContiguous
-               ? Detail::ShapeVec::kStrided /
+               ? (Detail::ShapeVec::kStrided + (kThreads / Detail::ShapeVec::kContiguous - 1)) /
                      (kThreads / Detail::ShapeVec::kContiguous)
                : 0)>,
       layout::PitchLinearShape<Detail::ShapeVec::kContiguous / kThreads,
                                Detail::ShapeVec::kStrided>>::type;
+  
 
   /// Interval between accesses along each dimension of the tensor's logical coordinate space
   /// (in units of Elements)
@@ -125,6 +127,13 @@ struct PitchLinearStripminedThreadMap {
       1
     >
   >::type;
+
+  /// Shape of the tile in units of vectors
+  using StorageShape = typename platform::conditional<
+      Threads >= Detail::ShapeVec::kContiguous,
+      layout::PitchLinearShape<Shape::kContiguous,
+                               Iterations::kStrided*(kThreads / Detail::ShapeVec::kContiguous)>,
+      layout::PitchLinearShape<Shape::kContiguous, Shape::kStrided>>::type;
 
   /// Maps thread ID to a coordinate offset within the tensor's logical coordinate space
   /// (in units of Elements)
@@ -154,9 +163,9 @@ struct PitchLinearTilePolicyStripminedThreadContiguous
 
   using Iterations = layout::PitchLinearShape<
                       Shape::kContiguous / (kThreads * kElementsPerAccess),
-                      Shape::kStrided>;                      
+                      Shape::kStrided>;
 
-  using Delta = layout::PitchLinearShape<1, 1>;  
+  using Delta = layout::PitchLinearShape<1, 1>;
 
   CUTLASS_HOST_DEVICE
   static TensorCoord initial_offset(int thread_id)
@@ -174,7 +183,7 @@ struct PitchLinearTilePolicyStripminedThreadStrided
 {
   static_assert((Shape::kStrided % Threads == 0),
                 "Strided shape must divide number of threads");
-  
+
   using TensorCoord = layout::PitchLinearCoord;
 
   static int const kThreads = Threads;
@@ -182,16 +191,16 @@ struct PitchLinearTilePolicyStripminedThreadStrided
 
   using Iterations = layout::PitchLinearShape<
                       Shape::kContiguous / kElementsPerAccess,
-                      Shape::kStrided / kThreads>;       
+                      Shape::kStrided / kThreads>;
 
-  using Delta = layout::PitchLinearShape<1, 1>;  
+  using Delta = layout::PitchLinearShape<1, 1>;
 
   using ShapeVec = Shape;
 
   CUTLASS_HOST_DEVICE
   static TensorCoord initial_offset(int thread_id)
   {
-    
+
     return TensorCoord(0, thread_id * Iterations::kStrided);
   }
 };
@@ -325,7 +334,7 @@ struct PitchLinearWarpRakedThreadMap {
     };
 
     // This is the offset of a thread within a threadblock tile (units of vectors)
-    layout::PitchLinearCoord thread_offset_in_threadblock_tile_vec = 
+    layout::PitchLinearCoord thread_offset_in_threadblock_tile_vec =
       warp_footprint * warp_offset + thread_offset_in_warp;
 
     // This is the offset of a thread within a threadblock tile (units of elements)
@@ -451,7 +460,7 @@ struct PitchLinearStridedWarpRakedThreadMap {
     };
 
     // This is the offset of a thread within a threadblock tile (units of vectors)
-    layout::PitchLinearCoord thread_offset_in_threadblock_tile_vec = 
+    layout::PitchLinearCoord thread_offset_in_threadblock_tile_vec =
       warp_footprint * warp_offset + thread_offset_in_warp;
 
     // This is the offset of a thread within a threadblock tile (units of elements)
@@ -592,7 +601,7 @@ struct TransposePitchLinearThreadMapSimt {
 
     static_assert(kElementsPerAccess == 1 , "Simt transpose requires elements per access to be 1");
     ///< Iterations along each dimension (concept: PitchLinearShape)
-    using Iterations = 
+    using Iterations =
         layout::PitchLinearShape<ThreadMap::Iterations::kStrided,
         ThreadMap::Iterations::kContiguous>;
 
@@ -606,7 +615,7 @@ struct TransposePitchLinearThreadMapSimt {
 
     ///< Delta betweeen accesses (units of elements, concept: PitchLinearShape)
     using Delta =
-        layout::PitchLinearShape<ThreadMap::Delta::kStrided, 
+        layout::PitchLinearShape<ThreadMap::Delta::kStrided,
         ThreadMap::Delta::kContiguous>;
 
 
@@ -684,12 +693,12 @@ struct PitchLinearWarpStripedThreadMap {
 
     // Divide it into the number of warps, first partitioning the strided dimension then the
     // contiguous.
-    static int const kWarpsStrided = 
-      (WarpAccessIterations::kStrided >= kWarpCount 
+    static int const kWarpsStrided =
+      (WarpAccessIterations::kStrided >= kWarpCount
         ? kWarpCount : (kWarpCount / WarpAccessIterations::kStrided));
 
-    static int const kWarpsContiguous = 
-      (kWarpCount > WarpAccessIterations::kStrided ? 
+    static int const kWarpsContiguous =
+      (kWarpCount > WarpAccessIterations::kStrided ?
         WarpAccessIterations::kContiguous / kWarpsStrided : 1);
 
     /// Arrangement of warps within a threadblock-scoped tile
@@ -743,7 +752,7 @@ struct PitchLinearWarpStripedThreadMap {
     };
 
     // This is the offset of a thread within a threadblock tile (units of vectors)
-    layout::PitchLinearCoord thread_offset_in_threadblock_tile_vec = 
+    layout::PitchLinearCoord thread_offset_in_threadblock_tile_vec =
       warp_footprint * warp_offset + thread_offset_in_warp;
 
     // This is the offset of a thread within a threadblock tile (units of elements)
@@ -767,7 +776,7 @@ struct PitchLinearWarpStripedThreadMap {
 template <
   typename Shape_,
   int Threads,
-	typename ThreadTileShape
+        typename ThreadTileShape
 >
 struct PitchLinear2DThreadTileStripminedThreadMap;
 
@@ -858,7 +867,7 @@ struct PitchLinear2DThreadTileStripminedThreadMap <Shape_, Threads, cutlass::lay
   }
 };
 
-/// Thread Mapping a 2D threadtiled mapping as a tranposed Pitchlinear2DThreadTile mapping
+/// Thread Mapping a 2D threadtiled mapping as a transposed Pitchlinear2DThreadTile mapping
 template <typename ThreadMap_>
 struct TransposePitchLinearThreadMap2DThreadTile {
     /// Underlying ThreadMap
@@ -879,7 +888,7 @@ struct TransposePitchLinearThreadMap2DThreadTile {
 
     static_assert(kElementsPerAccess > 1 , "Simt transpose requires elements per access to be 1");
     ///< Iterations along each dimension (concept: PitchLinearShape)
-    using Iterations = 
+    using Iterations =
         layout::PitchLinearShape<ThreadMap::Iterations::kStrided,
         ThreadMap::Iterations::kContiguous>;
 
@@ -890,7 +899,7 @@ struct TransposePitchLinearThreadMap2DThreadTile {
 
     ///< Delta betweeen accesses (units of elements, concept: PitchLinearShape)
     using Delta =
-        layout::PitchLinearShape<ThreadMap::Delta::kStrided, 
+        layout::PitchLinearShape<ThreadMap::Delta::kStrided,
         ThreadMap::Delta::kContiguous>;
 
 

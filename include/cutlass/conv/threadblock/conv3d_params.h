@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -298,8 +304,8 @@ struct Conv3dDgradOutputGradientIteratorOptimizedParams {
     // logical offset added to internal channel counter - units are elements, not bytes
     filter_k_delta = threadblock_shape.column() * problem_size.split_k_slices;
   }
-
 };
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Parameters object for Conv2d DGRAD Filter (w) iterator
@@ -337,18 +343,18 @@ struct Conv3dDgradFilterIteratorOptimizedParams {
     TRACE_CONV_INITIALIZERS("conv3d_dgrad", "filter", 
       element_size_bits, threadblock_shape, thread_count, access_size, threadmap_iterations, threadmap_delta);
 
-    inc_next_strided = (layout.stride()[3] * threadmap_delta.strided() * element_size_bits) / 8;
+    inc_next_strided = ((int64_t)layout.stride()[3] * threadmap_delta.strided() * element_size_bits) / 8;
 
     inc_next_trs =
-      ( layout.stride()[0]
-        - (threadmap_iterations.strided() - 1) * threadmap_delta.strided() * layout.stride()[3]
+      ( (int64_t)layout.stride()[0]
+        - (threadmap_iterations.strided() - 1) * threadmap_delta.strided() * (int64_t)layout.stride()[3]
       ) * element_size_bits / 8;
 
     inc_next_k =
       (
-        threadblock_shape.row() * problem_size.split_k_slices * layout.stride()[3]
-        - (problem_size.T * problem_size.R * problem_size.S - 1) * layout.stride()[0]
-        - (threadmap_iterations.strided() - 1) * threadmap_delta.strided() * layout.stride()[3]
+        threadblock_shape.row() * problem_size.split_k_slices * (int64_t)layout.stride()[3]
+        - (problem_size.T * problem_size.R * problem_size.S - 1) * (int64_t)layout.stride()[0]
+        - (threadmap_iterations.strided() - 1) * threadmap_delta.strided() * (int64_t)layout.stride()[3]
       ) * element_size_bits / 8;
 
     filter_k_delta = threadblock_shape.row() * problem_size.split_k_slices;
@@ -402,13 +408,13 @@ struct Conv3dWgradOutputGradientIteratorOptimizedParams {
     element_size_bits, threadblock_shape, thread_count, access_size, threadmap_iterations, threadmap_delta);
 
   // Incremental offsets in unites of bytes (number of elements) * element_size_bits / 8
-  offset_next_strided = (threadmap_delta.strided() * layout.stride()[0])
+  offset_next_strided = (threadmap_delta.strided() * (int64_t)layout.stride()[0])
                       * element_size_bits / 8;
 
   offset_next_contiguous = (threadmap_delta.contiguous()) 
                           * element_size_bits / 8;
 
-  inc_next_nzpq = (threadblock_shape.column() * problem_size.split_k_slices * layout.stride()[0])
+  inc_next_nzpq = (threadblock_shape.column() * problem_size.split_k_slices * (int64_t)layout.stride()[0])
                     * element_size_bits / 8;
 
   // Precompute several quantities for fast modulo arithmetic.

@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -42,6 +48,8 @@ namespace layout {
 
 /// Template based on element size (in bits) - defined in terms of pitch-linear
 /// memory and Crosswise size (in elements).
+/// This one is the base class of all Ampere/Turing fp16/bf16/int8/int4/int1
+/// tensor core kernels.  tf32 TN uses this too.
 template <int ElementSize, int Crosswise>
 struct TensorOpMultiplicand {
   /// Logical rank of tensor
@@ -252,6 +260,8 @@ struct TensorOpMultiplicandCongruous {
 
   static int const kElementSize = Base::kElementSize;
   static int const kElementsPerAccess = Base::kElementsPerAccess;
+  static int const kCrosswise = Base::kCrosswise;
+  static int const kFactor = Base::kFactor;
   using PartitionCount =  typename Base::PartitionCount;
   using AccessCount = typename Base::AccessCount;
 
@@ -315,6 +325,7 @@ struct TensorOpMultiplicandCongruous {
 
 /// Template based on element size (in bits) - defined in terms of pitch-linear
 /// memory and Crosswise size (in elements).
+/// This one is just for TF32 NT kernel.
 template <int Crosswise>
 struct TensorOpMultiplicandCongruous<32, Crosswise> {
   /// Logical rank of tensor
@@ -360,6 +371,8 @@ struct TensorOpMultiplicandCongruous<32, Crosswise> {
   //
   static int const kElementSize = 32;
   static int const kElementsPerAccess = kAccessSize / kElementSize;
+  static int const kCrosswise = Crosswise;
+  static int const kFactor = 1;
 
  private:
   //
@@ -462,6 +475,8 @@ struct ColumnMajorTensorOpMultiplicandCongruous {
 
   static int const kElementSize = Base::kElementSize;
   static int const kElementsPerAccess = Base::kElementsPerAccess;
+  static int const kCrosswise = Base::kCrosswise;
+  static int const kFactor = Base::kFactor;
   using PartitionCount =  typename Base::PartitionCount;
   using AccessCount = typename Base::AccessCount;
 
@@ -567,6 +582,8 @@ struct RowMajorTensorOpMultiplicandCongruous {
 
   static int const kElementSize = Base::kElementSize;
   static int const kElementsPerAccess = Base::kElementsPerAccess;
+  static int const kCrosswise = Base::kCrosswise;
+  static int const kFactor = Base::kFactor;
   using PartitionCount =  typename Base::PartitionCount;
   using AccessCount = typename Base::AccessCount;
 

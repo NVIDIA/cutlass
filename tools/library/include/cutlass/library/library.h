@@ -1,43 +1,50 @@
 /***************************************************************************************************
- * Copyright (c) 2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
-/*! 
+/*!
   \file
 
   \brief CUTLASS Library is an object-oriented approach to managing operations implemented by CUTLASS.
 
   Generally,
-    
+
     description   - compile-time constant parameters used to instantiate an operation
 
-    configuration - runtime parameters with computationally expensive initialization 
-    
+    configuration - runtime parameters with computationally expensive initialization
+
     arguments     - runtime parameters that may be passed to an initialized operation with low
                     computational overhead
 */
 
-#pragma once
+#ifndef CUTLASS_LIBRARY_LIBRARY_H
+#define CUTLASS_LIBRARY_LIBRARY_H
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -48,9 +55,13 @@
 #include <cuda_runtime.h>
 
 #include "cutlass/cutlass.h"
+#include "cutlass/library/types.h"
+#include "cutlass/library/descriptions.h"
 #include "cutlass/matrix_coord.h"
 #include "cutlass/tensor_coord.h"
 #include "cutlass/layout/tensor.h"
+#include "cutlass/blas3.h"
+
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/conv/convolution.h"
 #include "cutlass/conv/conv2d_problem_size.h"
@@ -63,514 +74,8 @@ namespace library {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Layout type identifier
-enum class LayoutTypeID {
-  kUnknown,
-  kColumnMajor,
-  kRowMajor,
-  kColumnMajorInterleavedK2,
-  kRowMajorInterleavedK2,
-  kColumnMajorInterleavedK4,
-  kRowMajorInterleavedK4,
-  kColumnMajorInterleavedK16,
-  kRowMajorInterleavedK16,
-  kColumnMajorInterleavedK32,
-  kRowMajorInterleavedK32,
-  kColumnMajorInterleavedK64,
-  kRowMajorInterleavedK64,
-  kTensorNCHW,
-  kTensorNCDHW,
-  kTensorNHWC,
-  kTensorNDHWC,
-  kTensorNC32HW32,
-  kTensorC32RSK32,
-  kTensorNC64HW64,
-  kTensorC64RSK64,
-  kInvalid
-};
-  
-/// Numeric data type
-enum class NumericTypeID {
-  kUnknown,
-  kVoid,
-  kB1,
-  kU2,
-  kU4,
-  kU8,
-  kU16,
-  kU32,
-  kU64,
-  kS2,
-  kS4,
-  kS8,
-  kS16,
-  kS32,
-  kS64,
-  kF16,
-  kBF16, 
-  kTF32,
-  kF32,
-  kF64,
-  kCF16,
-  kCBF16,
-  kCF32,
-  kCTF32,
-  kCF64,
-  kCS2,
-  kCS4,
-  kCS8,
-  kCS16,
-  kCS32,
-  kCS64,
-  kCU2,
-  kCU4,
-  kCU8,
-  kCU16,
-  kCU32,
-  kCU64,
-  kInvalid
-};
-
-/// Enumerated type describing a transformation on a complex value.
-enum class ComplexTransform {
-  kNone,
-  kConjugate,
-  kInvalid
-};
-
-/// Providers
-enum class Provider {
-  kNone,
-  kCUTLASS,
-  kReferenceHost,
-  kReferenceDevice,
-  kCUBLAS,
-  kCUDNN,               
-  kInvalid
-};
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
-/// Enumeration indicating the kind of operation
-enum class OperationKind {
-  kGemm,
-  kConv2d,              
-  kConv3d,             
-  kEqGemm,
-  kSparseGemm,
-  kReduction,
-  kInvalid
-};
-
-/// Enumeration indicating whether scalars are in host or device memory
-enum class ScalarPointerMode {
-  kHost,
-  kDevice,
-  kInvalid
-};
-
-/// Describes how reductions are performed across threadblocks
-enum class SplitKMode {
-  kNone,
-  kSerial,
-  kParallel,
-  kParallelSerial,
-  kInvalid
-};
-
-/// Indicates the classificaition of the math instruction
-enum class OpcodeClassID {
-  kSimt,
-  kTensorOp,
-  kWmmaTensorOp,
-  kSparseTensorOp,
-  kInvalid
-};
-
-enum class MathOperationID {
-  kAdd,
-  kMultiplyAdd,
-  kMultiplyAddSaturate,
-  kMultiplyAddFastBF16,
-  kMultiplyAddFastF16,
-  kMultiplyAddFastF32,              
-  kMultiplyAddComplex,
-  kMultiplyAddComplexFastF32,      
-  kMultiplyAddGaussianComplex,
-  kXorPopc,
-  kInvalid
-};
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
-/// Enumeration indicating what kind of GEMM operation to perform
-enum class GemmKind {
-  kGemm,
-  kSparse,
-  kUniversal,
-  kPlanarComplex,
-  kPlanarComplexArray,
-  kInvalid
-};
-
 /// Mode of Universal GEMM
 using GemmUniversalMode = cutlass::gemm::GemmUniversalMode;
-
-/// Enumeration indicating what kind of Conv2d operation to perform
-enum class ConvKind {
-  kUnknown,
-  kFprop,
-  kDgrad,
-  kWgrad,
-  kInvalid
-};
-
-enum class ConvModeID {
-  kCrossCorrelation,
-  kConvolution,
-  kInvalid
-};
-
-// Iterator algorithm enum in order of general performance-efficiency
-enum class IteratorAlgorithmID {
-  kNone,
-  kAnalytic,
-  kOptimized,
-  kInvalid
-};
-
-
-enum class EpilogueKind {
-  kUnknown,
-  kConversion,
-  kLinearCombination,
-  kLinearCombinationClamp,
-  kLinearCombinationPlanarComplex,
-  kLinearCombinationRelu,
-  kLinearCombinationSigmoid,
-  kInvalid
-};
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
-struct MathInstructionDescription {
-
-  /// Shape of the target math instruction
-  cutlass::gemm::GemmCoord instruction_shape;
-
-  /// Describes the data type of the internal accumulator
-  NumericTypeID element_accumulator;
-
-  /// Classification of math instruction
-  OpcodeClassID opcode_class;
-
-  /// Type of math operation performed
-  MathOperationID math_operation;
-
-  //
-  // Methods
-  //
-
-  MathInstructionDescription(
-    cutlass::gemm::GemmCoord instruction_shape = cutlass::gemm::GemmCoord(),
-    NumericTypeID element_accumulator = NumericTypeID::kInvalid,
-    OpcodeClassID opcode_class = OpcodeClassID::kInvalid,
-    MathOperationID math_operation = MathOperationID::kMultiplyAdd
-  ):
-    instruction_shape(instruction_shape), 
-    element_accumulator(element_accumulator), 
-    opcode_class(opcode_class),
-    math_operation(math_operation) {}
-
-  // Equality operator
-  inline
-  bool operator==(MathInstructionDescription const& rhs) const{
-    return (
-      (instruction_shape == rhs.instruction_shape) &&
-      (element_accumulator == rhs.element_accumulator) &&
-      (opcode_class == rhs.opcode_class) &&
-      (math_operation == rhs.math_operation));
-  }
-
-  // Inequality operator
-  inline
-  bool operator!=(MathInstructionDescription const& rhs) const {
-    return !(*this == rhs);
-  }
-
-};
-
-/// Structure describing the tiled structure of a GEMM-like computation
-struct TileDescription {
-
-  /// Describes the shape of a threadblock (in elements)
-  cutlass::gemm::GemmCoord threadblock_shape;
-
-  /// Describes the number of pipeline stages in the threadblock-scoped mainloop
-  int threadblock_stages;
-
-  /// Number of warps in each logical dimension
-  cutlass::gemm::GemmCoord warp_count;
-
-  /// Core math instruction
-  MathInstructionDescription math_instruction;
-
-  /// Minimum compute capability (e.g. 70, 75) of a device eligible to run the operation.
-  int minimum_compute_capability;
-
-  /// Minimum compute capability (e.g. 70, 75) of a device eligible to run the operation.
-  int maximum_compute_capability;
-
-  //
-  // Methods
-  //
-
-  TileDescription(
-    cutlass::gemm::GemmCoord threadblock_shape = cutlass::gemm::GemmCoord(),
-    int threadblock_stages = 0,
-    cutlass::gemm::GemmCoord warp_count = cutlass::gemm::GemmCoord(),
-    MathInstructionDescription math_instruction = MathInstructionDescription(),
-    int minimum_compute_capability = 0,
-    int maximum_compute_capability = 0
-  ):
-    threadblock_shape(threadblock_shape), 
-    threadblock_stages(threadblock_stages), 
-    warp_count(warp_count),
-    math_instruction(math_instruction),
-    minimum_compute_capability(minimum_compute_capability),
-    maximum_compute_capability(maximum_compute_capability) { }
-
-  // Equality operator
-  inline
-  bool operator==(TileDescription const& rhs) const{
-    return (
-      (threadblock_shape == rhs.threadblock_shape) &&
-      (threadblock_stages == rhs.threadblock_stages) &&
-      (warp_count == rhs.warp_count) &&
-      (math_instruction == rhs.math_instruction) &&
-      (minimum_compute_capability == rhs.minimum_compute_capability) &&
-      (maximum_compute_capability == rhs.maximum_compute_capability));
-  }
-
-  // Inequality operator
-  inline
-  bool operator!=(TileDescription const& rhs) const {
-    return !(*this == rhs);
-  }
-};
-
-/// High-level description of an operation
-struct OperationDescription {
-
-  /// Unique identifier describing the operation
-  char const * name;
-
-  /// Operation provider
-  Provider provider;
-
-  /// Kind of operation
-  OperationKind kind;
-
-  /// Describes the tiled structure of a GEMM-like computation
-  TileDescription tile_description;
-
-  //
-  // Methods
-  //
-  OperationDescription(
-    char const * name = "unknown",
-    Provider Provider = Provider::kInvalid,
-    OperationKind kind = OperationKind::kInvalid, 
-    TileDescription const & tile_description = TileDescription()
-  ):
-    name(name), kind(kind), tile_description(tile_description) { }
-};
-
-/// Structure describing the properties of a tensor
-struct TensorDescription {
-
-  /// Numeric type of an individual element
-  NumericTypeID element;
-
-  /// Enumerant identifying the layout function for the tensor
-  LayoutTypeID layout;
-
-  /// Alignment restriction on pointers, strides, and extents
-  int alignment;
-
-  /// log2() of the maximum extent of each dimension
-  int log_extent_range;
-
-  /// log2() of the maximum value each relevant stride may have
-  int log_stride_range;
-  
-  //
-  // Methods
-  //
-
-  TensorDescription(
-    NumericTypeID element = NumericTypeID::kInvalid,
-    LayoutTypeID layout = LayoutTypeID::kInvalid,
-    int alignment = 1,
-    int log_extent_range = 24,
-    int log_stride_range = 24
-  ):
-    element(element), 
-    layout(layout), 
-    alignment(alignment), 
-    log_extent_range(log_extent_range), 
-    log_stride_range(log_stride_range)  { }
-};
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
-/// Description of all GEMM computations
-struct GemmDescription : public OperationDescription {
-
-  /// Indicates the kind of GEMM performed
-  GemmKind gemm_kind;
-  
-  /// Describes the A operand
-  TensorDescription A;
-
-  /// Describes the B operand
-  TensorDescription B;
-
-  /// Describes the source and destination matrices
-  TensorDescription C;
-
-  /// Describes the sparse meta matrices
-  TensorDescription E;
-
-  /// Describes the data type of the scalars passed to the epilogue
-  NumericTypeID element_epilogue;
-
-  /// Describes the structure of parallel reductions
-  SplitKMode split_k_mode;
-
-  /// Transformation on A operand
-  ComplexTransform transform_A;
-
-  /// Transformation on B operand
-  ComplexTransform transform_B;
-
-  //
-  // Methods
-  //
-
-  GemmDescription(
-    GemmKind gemm_kind = GemmKind::kGemm,
-    TensorDescription const &A = TensorDescription(),
-    TensorDescription const &B = TensorDescription(),
-    TensorDescription const &C = TensorDescription(),
-    NumericTypeID element_epilogue = NumericTypeID::kInvalid,
-    SplitKMode split_k_mode = SplitKMode::kNone,
-    ComplexTransform transform_A = ComplexTransform::kNone,
-    ComplexTransform transform_B = ComplexTransform::kNone
-  ):
-    gemm_kind(gemm_kind),
-    A(A),
-    B(B),
-    C(C),
-    element_epilogue(element_epilogue),
-    split_k_mode(split_k_mode),
-    transform_A(transform_A),
-    transform_B(transform_B) {} 
-};
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
-/// Desciprion for structured sparse GEMMs.
-struct SparseGemmDescription : public GemmDescription {
-
-  /// Description structure for structured sparse GEMM
-  SparseGemmDescription(
-    GemmKind gemm_kind = GemmKind::kGemm,
-    TensorDescription const &A = TensorDescription(),
-    TensorDescription const &B = TensorDescription(),
-    TensorDescription const &C = TensorDescription(),
-    TensorDescription const &E = TensorDescription(),
-    NumericTypeID element_epilogue = NumericTypeID::kInvalid,
-    SplitKMode split_k_mode = SplitKMode::kNone,
-    ComplexTransform transform_A = ComplexTransform::kNone,
-    ComplexTransform transform_B = ComplexTransform::kNone
-  ):
-    GemmDescription(gemm_kind, A, B, C, element_epilogue, split_k_mode, transform_A, transform_B)
-     {this->E = E;}
-};
-
-/// Description of all Reduction operations
-struct ReductionDescription : public OperationDescription {
-
-  /// Describes the data type of workspace
-  NumericTypeID element_workspace;
-
-  /// Describes the data type of final output
-  NumericTypeID element_output;
-
-  /// Describes the data type of the scalars passed to the epilogue
-  NumericTypeID element_epilogue;
-};
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
-/// Description of all Conv2d operations
-struct ConvDescription : public OperationDescription {
-  /// Describes the convolution dimension support (2D or 3D)
-  int conv_dim;
-  
-  /// Describes the kind of convolution
-  ConvKind conv_kind;
-
-  /// Describes the type of iterator algorithm (analytic or precomputed)
-  IteratorAlgorithmID iterator_algorithm;
-
-  /// Describes the A operand
-  TensorDescription A;
-
-  /// Describes the B operand
-  TensorDescription B;
-
-  /// Describes the C operand
-  TensorDescription C;
-
-  /// Describes the data type of the scalars passed to the epilogue
-  NumericTypeID element_epilogue;
-
-  //
-  // Methods
-  //
-  // Returns Activation TensorDescription
-  TensorDescription activation() const {
-    switch(conv_kind) {
-      case library::ConvKind::kFprop : return A;
-      case library::ConvKind::kDgrad : return C;
-      case library::ConvKind::kWgrad : return B;
-      default : throw std::runtime_error("Invalid Conv Operator (fprop, dgrad, wgrad)");
-    }
-  }
-
-  // Returns Filter TensorDescription
-  TensorDescription filter() const {
-    switch(conv_kind) {
-      case library::ConvKind::kFprop : return B;
-      case library::ConvKind::kDgrad : return B;
-      case library::ConvKind::kWgrad : return C;
-      default : throw std::runtime_error("Invalid Conv Operator (fprop, dgrad, wgrad)");
-    }
-  }
-
-  // Returns Output TensorDescription
-  TensorDescription output() const {
-    switch(conv_kind) {
-      case library::ConvKind::kFprop : return C;
-      case library::ConvKind::kDgrad : return A;
-      case library::ConvKind::kWgrad : return A;
-      default : throw std::runtime_error("Invalid Conv Operator (fprop, dgrad, wgrad)");
-    }
-  }
-
-};
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -583,27 +88,45 @@ public:
   virtual OperationDescription const & description() const = 0;
 
   virtual Status can_implement(
-    void const *configuration, 
+    void const *configuration,
     void const *arguments) const = 0;
-  
+
   virtual uint64_t get_host_workspace_size(
     void const *configuration) const = 0;
-  
+
   virtual uint64_t get_device_workspace_size(
     void const *configuration,
     void const *arguments = nullptr) const = 0;
-  
+
   virtual Status initialize(
-    void const *configuration, 
-    void *host_workspace, 
-    void *device_workspace = nullptr, 
+    void const *configuration,
+    void *host_workspace,
+    void *device_workspace = nullptr,
     cudaStream_t stream = nullptr) const = 0;
+
+  // Originally designed for metadata, but should be useful for FP8/6/4 too.  
+  virtual Status initialize_with_profiler_workspace(
+    void const *configuration,
+    void *host_workspace,
+    void *device_workspace,
+    uint8_t **profiler_workspace_ptrs,
+    int problem_count,
+    cudaStream_t stream = nullptr) {
+    return Status::kErrorNotSupported;
+  }
 
   virtual Status run(
     void const *arguments,
-    void *host_workspace, 
-    void *device_workspace = nullptr, 
+    void *host_workspace,
+    void *device_workspace = nullptr,
     cudaStream_t stream = nullptr) const = 0;
+
+  // Set arguments that should only be set once before verifying or profiling the kernel.
+  // This should encompass any expensive operations that don't vary from run to run
+  // (e.g., max_active_clusters).
+  virtual Status initialize_with_arguments(void* arguments_ptr) const {
+    return Status::kSuccess;
+  }
 
 };
 
@@ -617,47 +140,50 @@ public:
 struct GemmConfiguration {
 
   /// GEMM problem size
-  gemm::GemmCoord problem_size;
+  gemm::GemmCoord problem_size{};
 
   /// Leading dimension of A matrix
-  int64_t lda;
+  int64_t lda{0};
 
   /// Leading dimension of B matrix
-  int64_t ldb;
+  int64_t ldb{0};
 
   /// Leading dimension of C matrix
-  int64_t ldc;
+  int64_t ldc{0};
 
   /// Leading dimension of D matrix
-  int64_t ldd;
+  int64_t ldd{0};
 
   /// Number of partitions of K dimension
-  int split_k_slices;
+  int split_k_slices{0};
 };
 
 /// Arguments for GEMM
 struct GemmArguments {
 
   /// Pointer to A matrix
-  void const *A;
+  void const *A{nullptr};
 
   /// Pointer to B matrix
-  void const *B;
+  void const *B{nullptr};
 
   /// Pointer to C matrix
-  void const *C;
+  void const *C{nullptr};
 
   /// Pointer to D matrix
-  void *D;
+  void *D{nullptr};
 
   /// Host or device pointer to alpha scalar
-  void const *alpha;
+  void const *alpha{nullptr};
 
   /// Host or device pointer to beta scalar
-  void const *beta;
+  void const *beta{nullptr};
 
   /// Enumerant indicating whether alpha/beta point to host or device memory
-  ScalarPointerMode pointer_mode;
+  ScalarPointerMode pointer_mode{};
+  
+  /// Whether to use PDL when launching the kernel
+  bool use_pdl{false};
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -670,34 +196,34 @@ struct GemmArguments {
 struct GemmBatchedConfiguration {
 
   /// GEMM problem size
-  gemm::GemmCoord problem_size;
+  gemm::GemmCoord problem_size{};
 
   /// Leading dimension of A matrix
-  int64_t lda;
+  int64_t lda{0};
 
   /// Leading dimension of B matrix
-  int64_t ldb;
+  int64_t ldb{0};
 
   /// Leading dimension of C matrix
-  int64_t ldc;
+  int64_t ldc{0};
 
   /// Leading dimension of D matrix
-  int64_t ldd;
+  int64_t ldd{0};
 
   /// Stride between instances of the A matrix in memory
-  int64_t batch_stride_A;
+  int64_t batch_stride_A{0};
 
   /// Stride between instances of the B matrix in memory
-  int64_t batch_stride_B;
+  int64_t batch_stride_B{0};
 
   /// Stride between instances of the C matrix in memory
-  int64_t batch_stride_C;
+  int64_t batch_stride_C{0};
 
   /// Stride between instances of the D matrix in memory
-  int64_t batch_stride_D;
+  int64_t batch_stride_D{0};
 
   /// Number of GEMMs in batch
-  int batch_count;
+  int batch_count{1};
 };
 
 /// Arguments to batched GEMM
@@ -712,32 +238,33 @@ using GemmBatchedArguments = GemmArguments;
 
 struct GemmArrayConfiguration {
 
-  gemm::GemmCoord problem_size;
-  
+  gemm::GemmCoord problem_size{};
+
   /// Leading dimension of A matrix
-  int64_t lda;
+  int64_t lda{0};
 
   /// Leading dimension of B matrix
-  int64_t ldb;
+  int64_t ldb{0};
 
   /// Leading dimension of C matrix
-  int64_t ldc;
+  int64_t ldc{0};
 
   /// Leading dimension of D matrix
-  int64_t ldd;
+  int64_t ldd{0};
 
-  int batch_count;
+  int batch_count{1};
 };
 
 /// Arguments for GEMM - used by all the GEMM operations
 struct GemmArrayArguments {
-  void const * const *A;
-  void const * const *B;
-  void const * const *C;
-  void * const *D;
-  void const *alpha;
-  void const *beta;
-  ScalarPointerMode pointer_mode;  
+  void const * const *A{nullptr};
+  void const * const *B{nullptr};
+  void const * const *C{nullptr};
+  void * const *D{nullptr};
+  void const *alpha{nullptr};
+  void const *beta{nullptr};
+  ScalarPointerMode pointer_mode{};
+  bool use_pdl{false};
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -749,32 +276,176 @@ struct GemmArrayArguments {
 
 struct GemmUniversalConfiguration {
 
-  GemmUniversalMode mode;
-  gemm::GemmCoord problem_size;
-  int batch_count;
+  GemmUniversalMode mode{GemmUniversalMode::kGemm};
+  gemm::GemmCoord problem_size{};
+  gemm::GemmCoord cluster_shape{};           
+  gemm::GemmCoord cluster_shape_fallback{};  
+  int batch_count{1};
 
-  int64_t lda;
-  int64_t ldb;
-  int64_t ldc;
-  int64_t ldd;
+  int64_t lda{0};
+  int64_t ldb{0};
+  int64_t ldc{0};
+  int64_t ldd{0};
+
+  int device_count{1};
+};
+
+enum class Sm90MixedInputWiderOperand {
+  A = 0,
+  B = 1
 };
 
 struct GemmUniversalArguments {
+  // NOTE: these are replicated for 3.0 interfaces
+  gemm::GemmCoord problem_size{};
+  gemm::GemmCoord cluster_shape{};          
+  gemm::GemmCoord cluster_shape_fallback{}; 
+  int batch_count{1};
 
-  void const *A;
-  void const *B;
-  void const *C;
-  void *D;
+  void const *A{nullptr};
+  void const *B{nullptr};
+  void const *C{nullptr};
+  void *D{nullptr};
 
-  void const *alpha;
-  void const *beta;
-  ScalarPointerMode pointer_mode;
+  void const *alpha{nullptr};
+  void const *beta{nullptr};
+  ScalarPointerMode pointer_mode{};
 
-  int64_t batch_stride_A;
-  int64_t batch_stride_B;
-  int64_t batch_stride_C;
-  int64_t batch_stride_D;
+  // NOTE: these are replicated for 3.0 interfaces
+  int64_t lda{0};
+  int64_t ldb{0};
+  int64_t ldc{0};
+  int64_t ldd{0};
+
+  int64_t batch_stride_A{0};
+  int64_t batch_stride_B{0};
+  int64_t batch_stride_C{0};
+  int64_t batch_stride_D{0};
+
+  // Needed for some 3.x kernels
+  int sm_count{0};
+  library::RasterOrder raster_order{};
+  library::RuntimeDatatype runtime_input_datatype_a{};
+  library::RuntimeDatatype runtime_input_datatype_b{};
+  int swizzle_size{1};
+  int split_k_slices{1};
+
+  // For SM90 mixed input dtype kernels
+  bool is_sm90_mixed_dtype{false};
+  Sm90MixedInputWiderOperand wider_operand{Sm90MixedInputWiderOperand::B};
+  bool generate_scale_and_zero{false};
+  bool generate_dequantized_AB{false};
+  void *Scale{nullptr};                 // Scale tensor
+  void *Zero{nullptr};                  // Zero tensor
+  void *dequantized_AB{nullptr};        // Dequantized A or B tensor for verification
+  void *encoded_AB{nullptr};            // Encoded A or B in int4 x fp8 or shuffle
+  void *packed_Scale{nullptr};          // Packed scale for int4 * fp8
+
+  int device_index{0};
+
+  bool use_pdl{false};
 };
+
+/// Block Scaled GEMM
+//
+// OperationKind: kBlockScaledGemm
+// GemmKind:      Universal
+
+struct BlockScaledGemmArguments {
+  // NOTE: these are replicated for 3.0 interfaces
+  gemm::GemmCoord problem_size{};
+  gemm::GemmCoord cluster_shape{};  
+  gemm::GemmCoord cluster_shape_fallback{}; 
+  int batch_count{1};
+
+  void const *A{nullptr};
+  void const *B{nullptr};
+  void const *SFA{nullptr};
+  void const *SFB{nullptr};
+  void const *C{nullptr};
+  void *D{nullptr};
+  void *SFD{nullptr}; 
+
+  void const *alpha{nullptr};
+  void const *beta{nullptr};
+  ScalarPointerMode pointer_mode{};
+
+  // NOTE: these are replicated for 3.0 interfaces
+  int64_t lda{0};
+  int64_t ldb{0};
+  int64_t ldc{0};
+  int64_t ldd{0};
+
+  int64_t batch_stride_A{0};
+  int64_t batch_stride_B{0};
+  int64_t batch_stride_C{0};
+  int64_t batch_stride_D{0};
+
+  // Needed for ScaleFactor Generation
+  void const *norm_constant{nullptr};
+
+  // Needed for some 3.x kernels
+  int sm_count{0};
+  library::RasterOrder raster_order{};
+  int swizzle_size{1};
+  int split_k_slices{1};
+
+  library::RuntimeDatatype runtime_input_datatype_a{library::RuntimeDatatype::kStatic}; 
+  library::RuntimeDatatype runtime_input_datatype_b{library::RuntimeDatatype::kStatic}; 
+
+  bool use_pdl{false};
+};
+
+/// Blockwise GEMM
+//
+// OperationKind: kBlockwiseGemm
+// GemmKind:      Universal
+
+struct BlockwiseGemmArguments {
+  // NOTE: these are replicated for 3.0 interfaces
+  gemm::GemmCoord problem_size{};
+  gemm::GemmCoord cluster_shape{};  
+  gemm::GemmCoord cluster_shape_fallback{}; 
+  int batch_count{1};
+
+  void const *A{nullptr};
+  void const *B{nullptr};
+  void const *SFA{nullptr};
+  void const *SFB{nullptr};
+  void const *C{nullptr};
+  void *D{nullptr};
+
+  void const *alpha{nullptr};
+  void const *beta{nullptr};
+  ScalarPointerMode pointer_mode{};
+
+  // NOTE: these are replicated for 3.0 interfaces
+  int64_t lda{0};
+  int64_t ldb{0};
+  int64_t ldc{0};
+  int64_t ldd{0};
+
+  int64_t batch_stride_A{0};
+  int64_t batch_stride_B{0};
+  int64_t batch_stride_C{0};
+  int64_t batch_stride_D{0};
+
+  int sf_m_vec_size{0};
+  int sf_n_vec_size{0};
+  int sf_k_vec_size{0};
+
+  // Needed for some 3.x kernels
+  int sm_count{0};
+  library::RasterOrder raster_order{};
+  int swizzle_size{1};
+  int split_k_slices{1};
+
+  library::RuntimeDatatype runtime_input_datatype_a{library::RuntimeDatatype::kStatic}; 
+  library::RuntimeDatatype runtime_input_datatype_b{library::RuntimeDatatype::kStatic}; 
+
+  bool use_pdl{false};
+};
+
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -785,53 +456,43 @@ struct GemmUniversalArguments {
 
 struct GemmPlanarComplexConfiguration {
 
-  GemmUniversalMode mode;
-  gemm::GemmCoord problem_size;
-  int batch_count;
-
-  int64_t lda_real;
-  int64_t lda_imag;
-
-  int64_t ldb_real;
-  int64_t ldb_imag;
-
-  int64_t ldc_real;
-  int64_t ldc_imag;
-
-  int64_t ldd_real;
-  int64_t ldd_imag;
+  GemmUniversalMode mode{GemmUniversalMode::kGemm};
+  gemm::GemmCoord problem_size{};
+  int batch_count{1};
+  int64_t lda_real{0};
+  int64_t lda_imag{0};
+  int64_t ldb_real{0};
+  int64_t ldb_imag{0};
+  int64_t ldc_real{0};
+  int64_t ldc_imag{0};
+  int64_t ldd_real{0};
+  int64_t ldd_imag{0};
 };
 
 /// Arguments for planar complex GEMMs
 struct GemmPlanarComplexArguments {
 
-  void const *A_real;
-  void const *A_imag;
+  void const *A_real{nullptr};
+  void const *A_imag{nullptr};
+  void const *B_real{nullptr};
+  void const *B_imag{nullptr};
+  void const *C_real{nullptr};
+  void const *C_imag{nullptr};
+  void *D_real{nullptr};
+  void *D_imag{nullptr};
+  void const *alpha{nullptr};
+  void const *beta{nullptr};
+  ScalarPointerMode pointer_mode{};
 
-  void const *B_real;
-  void const *B_imag;
-
-  void const *C_real;
-  void const *C_imag;
-
-  void *D_real;
-  void *D_imag;
-
-  void const *alpha;
-  void const *beta;
-  ScalarPointerMode pointer_mode;
-
-  int64_t batch_stride_A_real;
-  int64_t batch_stride_A_imag;
-
-  int64_t batch_stride_B_real;
-  int64_t batch_stride_B_imag;
-
-  int64_t batch_stride_C_real;
-  int64_t batch_stride_C_imag;
-
-  int64_t batch_stride_D_real;
-  int64_t batch_stride_D_imag;
+  int64_t batch_stride_A_real{0};
+  int64_t batch_stride_A_imag{0};
+  int64_t batch_stride_B_real{0};
+  int64_t batch_stride_B_imag{0};
+  int64_t batch_stride_C_real{0};
+  int64_t batch_stride_C_imag{0};
+  int64_t batch_stride_D_real{0};
+  int64_t batch_stride_D_imag{0};
+  bool use_pdl{false};
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -840,85 +501,319 @@ struct GemmPlanarComplexArguments {
 /// from memory.
 struct GemmPlanarComplexArrayConfiguration {
 
-  gemm::GemmCoord problem_size;
-  int batch_count;
+  gemm::GemmCoord problem_size{};
+  int batch_count{1};
 
-  int64_t lda_real;
-  int64_t lda_imag;
-
-  int64_t ldb_real;
-  int64_t ldb_imag;
-
-  int64_t ldc_real;
-  int64_t ldc_imag;
-
-  int64_t ldd_real;
-  int64_t ldd_imag;
+  int64_t lda_real{0};
+  int64_t lda_imag{0};
+  int64_t ldb_real{0};
+  int64_t ldb_imag{0};
+  int64_t ldc_real{0};
+  int64_t ldc_imag{0};
+  int64_t ldd_real{0};
+  int64_t ldd_imag{0};
 };
 
 /// Arguments for planar complex GEMMs
 struct GemmPlanarComplexArrayArguments {
 
-  int const *M;
-  int const *N;
-  int const *K;
+  int const *M{nullptr};
+  int const *N{nullptr};
+  int const *K{nullptr};
 
-  void const * const * A_real;
-  void const * const * A_imag;
-  void const * const * B_real;
-  void const * const * B_imag;
-  void const * const * C_real;
-  void const * const * C_imag;
-  void * const * D_real;
-  void * const * D_imag;
+  void const * const * A_real{nullptr};
+  void const * const * A_imag{nullptr};
+  void const * const * B_real{nullptr};
+  void const * const * B_imag{nullptr};
+  void const * const * C_real{nullptr};
+  void const * const * C_imag{nullptr};
+  void * const * D_real{nullptr};
+  void * const * D_imag{nullptr};
 
-  void const * alpha;
-  void const * beta;
-  ScalarPointerMode pointer_mode;
+  void const * alpha{nullptr};
+  void const * beta{nullptr};
+  ScalarPointerMode pointer_mode{};
+  bool use_pdl{false};
 };
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Grouped GEMM supporting
+//
+// OperationKind: Gemm
+// GemmKind:      Grouped
+
+struct GemmGroupedConfiguration {
+  int problem_count{0};
+  // GemmGroupedConfiguration is passed to initialize(), which
+  // is responsible for allocating the device-side stride storage.
+  int64_t* lda;
+  int64_t* ldb;
+  int64_t* ldc;
+
+  cute::Shape<int, int, int>* problem_sizes_3x_host;
+};
+
+struct GemmGroupedArguments {
+  int problem_count{};
+  gemm::GemmCoord* problem_sizes{nullptr};
+
+  void* ptr_A{nullptr};
+  void* ptr_B{nullptr};
+  void* ptr_C{nullptr};
+  void* ptr_D{nullptr};
+
+  int64_t* lda{nullptr};
+  int64_t* ldb{nullptr};
+  int64_t* ldc{nullptr};
+  int64_t* ldd{nullptr};
+
+  void const *alpha{nullptr};
+  void const *beta{nullptr};
+  ScalarPointerMode pointer_mode{};
+  bool use_pdl{false};
+
+  gemm::GemmCoord cluster_shape{};
+  gemm::GemmCoord cluster_shape_fallback{};
+
+  library::RasterOrder raster_order{};
+  library::RuntimeDatatype runtime_input_datatype_a{library::RuntimeDatatype::kStatic};
+  library::RuntimeDatatype runtime_input_datatype_b{library::RuntimeDatatype::kStatic};
+  int swizzle_size{1};
+
+  // these should really be in the configuration but staying consistent with GEMM
+  int sm_count{0};
+  int max_active_clusters{0};
+
+  // The user is responsible for allocating storage for problem sizes.
+  // Since GemmGroupedArguments is used by both the 2.x and 3.x APIs, we
+  // unfortunately need to have both options in this struct, and the
+  // underlying operation uses the one it needs.
+  cute::Shape<int, int, int>* problem_sizes_3x;
+  cute::Shape<int, int, int>* problem_sizes_3x_host;
+};
+
+struct GroupedGemmBlockScaledArguments : GemmGroupedArguments {
+  void* SFA{nullptr};
+  void* SFB{nullptr};
+  void* SFD{nullptr};
+  void* norm_constant{nullptr};
+};
+
+struct GroupedGemmBlockwiseArguments : GemmGroupedArguments {
+  void* SFA{nullptr};
+  void* SFB{nullptr};
+};
+
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 //
 // OperationKind: kSparseGemm
 //
 
-/// Computes GEMM assumine one of the inputs has 2:4 structured sparsity.
+/// Computes GEMM assuming one of the inputs has 2:4 structured sparsity.
 struct SparseGemmConfiguration {
 
-  GemmUniversalMode mode;
-  gemm::GemmCoord problem_size;
-  int batch_count;                /// number of sparse matrix products in batch
-
-  int64_t lda;                    /// leading dimension of A operand
-  int64_t ldb;                    /// leading dimension of B operand
-  int64_t ldc;                    /// leading dimension of C operand
-  int64_t ldd;                    /// leading dimension of D operand
-  int64_t lde;                    /// leading dimension of E operand (metadata matrix)
-
-  int64_t batch_stride_A;         // stride between matrices
-  int64_t batch_stride_B;         // stride between matrices
-  int64_t batch_stride_C;         // stride between matrices
-  int64_t batch_stride_D;         // stride between matrices
-  int64_t batch_stride_E;         // stride between matrices
+  GemmUniversalMode mode{GemmUniversalMode::kGemm};
+  gemm::GemmCoord problem_size{};
+  int batch_count{1};         /// number of sparse matrix products in batch
+  int64_t lda{0};             /// leading dimension of A operand
+  int64_t ldb{0};             /// leading dimension of B operand
+  int64_t ldc{0};             /// leading dimension of C operand
+  int64_t ldd{0};             /// leading dimension of D operand
+  int64_t lde{0};             /// leading dimension of E operand (metadata matrix)
+  int64_t batch_stride_A{0};  // stride between matrices
+  int64_t batch_stride_B{0};  // stride between matrices
+  int64_t batch_stride_C{0};  // stride between matrices
+  int64_t batch_stride_D{0};  // stride between matrices
+  int64_t batch_stride_E{0};  // stride between matrices
 };
 
 /// Arguments for sparse GEMMs
 struct SparseGemmArguments {
-
-  void const *A;                    /// pointer to A matrix
-  void const *B;                    /// pointer to B matrix
-  void const *C;                    /// pointer to C matrix
-  void *D;                          /// pointer to D matrix
-  void const *E;                    /// pointer to E matric (metadata)
-
-  void const *alpha;                /// pointer to alpha scalar
-  void const *beta;                 /// pointer to beta scalar
-  ScalarPointerMode pointer_mode;   /// enumerant indicating whether alpha/beta pointers are host
+  void const *A{nullptr};          /// pointer to A matrix
+  void const *B{nullptr};          /// pointer to B matrix
+  void const *C{nullptr};          /// pointer to C matrix
+  void *D{nullptr};                  /// pointer to D matrix
+  void const *E{nullptr};          /// pointer to E matrix (metadata)
+  void const *alpha{nullptr};      /// pointer to alpha scalar
+  void const *beta{nullptr};       /// pointer to beta scalar
+  ScalarPointerMode pointer_mode{}; /// enumerant indicating whether alpha/beta pointers are host
                                     ///   or device pointers.
+  bool use_pdl{false};              /// Whether to use PDL when launching the kernel
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+/// Configuration for basic Rank K update operations
+//
+// OperationKind: (Syrk, Herk, Syr2k, Her2k)
+// RankKKind:      Universal
+//
+struct RankKConfiguration {
+
+  /// SYRK problem size
+  gemm::GemmCoord problem_size{};
+
+  /// Leading dimension of A matrix
+  int64_t lda{0};
+
+  /// Leading dimension of B matrix
+  int64_t ldb{0};
+
+  /// Leading dimension of C matrix
+  int64_t ldc{0};
+
+  /// Leading dimension of D matrix
+  int64_t ldd{0};
+
+  /// Batch Count
+  int batch_count{1};
+};
+
+/// Arguments for (Syrk, Herk, Syr2k, Her2k)
+struct RankKArguments {
+
+  /// Pointer to A matrix
+  void const *A{nullptr};
+
+  /// Pointer to B matrix (used only for Syr2k and Her2k)
+  void const *B{nullptr};
+
+  /// Pointer to C matrix
+  void const *C{nullptr};
+
+  /// Pointer to D matrix
+  void *D{nullptr};
+
+  /// Host or device pointer to alpha scalar
+  void const *alpha{nullptr};
+
+  /// Host or device pointer to beta scalar
+  void const *beta{nullptr};
+
+  /// Enumerant indicating whether alpha/beta point to host or device memory
+  ScalarPointerMode pointer_mode{};
+
+  int64_t batch_stride_A{0};
+  int64_t batch_stride_B{0};
+  int64_t batch_stride_C{0};
+  int64_t batch_stride_D{0};
+  bool use_pdl{false};
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Configuration for basic TRMM operations
+//
+// OperationKind: Trmm
+// TrmmKind:      Universal
+//
+struct TrmmConfiguration {
+
+  /// TRMM problem size
+  gemm::GemmCoord problem_size{};
+
+  /// Leading dimension of A matrix
+  int64_t lda{0};
+
+  /// Leading dimension of B matrix
+  int64_t ldb{0};
+
+  /// Leading dimension of D matrix
+  int64_t ldd{0};
+
+  /// Batch Count
+  int batch_count{1};
+};
+
+/// Arguments for TRMM
+struct TrmmArguments {
+
+  /// Pointer to A matrix
+  void const *A{nullptr};
+
+  /// Pointer to B matrix
+  void const *B{nullptr};
+
+  /// Pointer to D matrix
+  void *D{nullptr};
+
+  /// Host or device pointer to alpha scalar
+  void const *alpha{nullptr};
+
+  /// Host or device pointer to beta scalar
+  void const *beta{nullptr};
+
+  /// Enumerant indicating whether alpha/beta point to host or device memory
+  ScalarPointerMode pointer_mode{};
+
+  int64_t batch_stride_A{0};
+  int64_t batch_stride_B{0};
+  int64_t batch_stride_D{0};
+  bool use_pdl{false};
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Configuration for basic SYMM/HEMM update operations
+//
+// OperationKind: (Symm, Hemm)
+// SymmKind:      Universal
+//
+struct SymmConfiguration {
+
+  /// SYMM/HEMM problem size
+  gemm::GemmCoord problem_size{};
+
+  /// Leading dimension of A matrix
+  int64_t lda{0};
+
+  /// Leading dimension of B matrix
+  int64_t ldb{0};
+
+  /// Leading dimension of C matrix
+  int64_t ldc{0};
+
+  /// Leading dimension of D matrix
+  int64_t ldd{0};
+
+  /// Batch Count
+  int batch_count{1};
+};
+
+/// Arguments for (Symm, Hemm)
+struct SymmArguments {
+
+  /// Pointer to A matrix
+  void const *A{nullptr};
+
+  /// Pointer to B matrix
+  void const *B{nullptr};
+
+  /// Pointer to C matrix
+  void const *C{nullptr};
+
+  /// Pointer to D matrix
+  void *D{nullptr};
+
+  /// Host or device pointer to alpha scalar
+  void const *alpha{nullptr};
+
+  /// Host or device pointer to beta scalar
+  void const *beta{nullptr};
+
+  /// Enumerant indicating whether alpha/beta point to host or device memory
+  ScalarPointerMode pointer_mode{};
+
+  int64_t batch_stride_A{0};
+  int64_t batch_stride_B{0};
+  int64_t batch_stride_C{0};
+  int64_t batch_stride_D{0};
+  bool use_pdl{false};
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Two dimensional convolution
@@ -928,20 +823,20 @@ struct SparseGemmArguments {
 struct Conv2dConfiguration {
 
   conv::SplitKMode split_k_mode;
-  
-  /// Conv2d problem size 
+
+  /// Conv2d problem size
   //  contains strictly conv2d size (N,H,W,C,K,R,S,P,Q,padding,stride,dilation,mode)
   //  also includes (split_k_slices, groups)
-  conv::Conv2dProblemSize problem_size;
+  conv::Conv2dProblemSize problem_size{};
 
   // stride of operand A
-  std::vector<int64_t> stride_a;
+  std::vector<int64_t> stride_a{};
 
   // stride of operand B
-  std::vector<int64_t> stride_b;
+  std::vector<int64_t> stride_b{};
 
   // stride of operand C
-  std::vector<int64_t> stride_c;
+  std::vector<int64_t> stride_c{};
 };
 
 
@@ -951,27 +846,27 @@ struct Conv2dConfiguration {
 //
 struct Conv3dConfiguration {
 
-  conv::SplitKMode split_k_mode;
-  
-  /// Conv2d problem size 
+  conv::SplitKMode split_k_mode{};
+
+  /// Conv2d problem size
   //  contains strictly conv2d size (N,D,H,W,C,K,T,R,S,Z,P,Q,padding,stride,dilation,mode)
   //  also includes (split_k_slices, groups)
-  conv::Conv3dProblemSize problem_size;
+  conv::Conv3dProblemSize problem_size{};
 
   /// Layout object for activations tensor
-  layout::TensorNDHWC layout_activations;
+  layout::TensorNDHWC layout_activations{};
 
   /// Layout object for filters tensor
-  layout::TensorNDHWC layout_filters;
+  layout::TensorNDHWC layout_filters{};
 
   /// Layout object for source tensor
-  layout::TensorNDHWC layout_source;
+  layout::TensorNDHWC layout_source{};
 
   /// Layout object for output tensor
-  layout::TensorNDHWC layout_output;
+  layout::TensorNDHWC layout_output{};
 
   //
-  // Methods 
+  // Methods
   //
 
   // Mapping functions (A,B,C -> activation,filter,output)
@@ -1010,26 +905,31 @@ struct ConvArguments {
   /// ImplicitGemm matrices A, B, C, D
   /////////////////////////////////////////////////////////
   /// pointer to implicit gemm matrix A
-  void const *A;
+  void const *A{nullptr};
 
   /// pointer to implicit gemm matrix B
-  void const *B;
+  void const *B{nullptr};
+
+  /// pointer to reordered matrix B
+  void const *reordered_B{nullptr};
 
   /// pointer to implicit gemm matrix C
-  void const *C;
+  void const *C{nullptr};
 
-  /// pointer to implicit gemm desitination matrix D
-  void *D;
+  /// pointer to implicit gemm destination matrix D
+  void *D{nullptr};
 
   /// Host or device pointer to alpha scalar
-  void const *alpha;
+  void const *alpha{nullptr};
 
   /// Host or device pointer to beta scalar
-  void const *beta;
+  void const *beta{nullptr};
 
   /// Enumerant indicating whether alpha/beta point to host or device memory
-  ScalarPointerMode pointer_mode;
-
+  ScalarPointerMode pointer_mode{};
+  
+  /// Whether to use PDL when launching the kernel
+  bool use_pdl{false};
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1040,51 +940,56 @@ struct ConvArguments {
 //
 struct ReductionConfiguration {
 
-  /// Redcution problem size
-  MatrixCoord problem_size;
+  /// Reduction problem size
+  MatrixCoord problem_size{};
 
   /// Number of partitions to reduce
-  int partitions;
+  int partitions{0};
 
-  /// Number of lements between each partition
-  int64_t partition_stride;
+  /// Number of elements between each partition
+  int64_t partition_stride{0};
 
-  /// leading dimension of 'w'orksace operand
-  int64_t ldw; 
+  /// leading dimension of 'w'orkspace operand
+  int64_t ldw{0};
 
   /// leading dimension of 's'ource operand
-  int64_t lds;
+  int64_t lds{0};
 
   /// leading dimension of 'd'estination operand
-  int64_t ldd;
+  int64_t ldd{0};
 };
 
 /// Arguments for Reduction
 struct ReductionArguments {
 
   /// Pointer to workspace matrix
-  void const *workspace;
+  void const *workspace{nullptr};
 
   /// Pointer to source matrix
-  void const *source;
+  void const *source{nullptr};
 
   /// Pointer to destination matrix
-  void *destination;
+  void *destination{nullptr};
 
   /// pointer to reference matrix
-  void *reference;
+  void *reference{nullptr};
 
   /// Host or device pointer to alpha scalar
-  void const *alpha;
+  void const *alpha{nullptr};
 
   /// Host or device pointer to beta scalar
-  void const *beta;
+  void const *beta{nullptr};
 
   /// Enumerant indicating whether alpha/beta point to host or device memory
-  ScalarPointerMode pointer_mode;
+  ScalarPointerMode pointer_mode{};
+
+  /// Whether to use PDL when launching the kernel
+  bool use_pdl{false};
 };
 
 } // namespace library
 } // namespace cutlass
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+
+#endif

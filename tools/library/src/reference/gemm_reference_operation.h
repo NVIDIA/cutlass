@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -61,7 +67,8 @@ template <
   typename LayoutC_,
   typename ElementCompute_,
   typename ElementAccumulator_ = ElementCompute_,
-  typename ConvertOp_ = NumericConverter<ElementC_, ElementCompute_>,
+  typename ElementD_ = ElementC_,
+  typename ConvertOp_ = NumericConverter<ElementD_, ElementCompute_>,
   typename InnerProductOp_ = multiply_add<ElementAccumulator_>
 >
 class GemmReferenceOperation : public Operation {
@@ -78,7 +85,9 @@ public:
   static cutlass::ComplexTransform const kTransformB = TransformB;
   using ElementC = ElementC_;
   using LayoutC = LayoutC_;
+  using ElementD = ElementD_;
   using TensorRefC = TensorRef<ElementC, LayoutC>;
+  using TensorRefD = TensorRef<ElementD, LayoutC>;
   using ElementCompute = ElementCompute_;
   using ElementAccumulator = ElementAccumulator_;
   using ConvertOp = ConvertOp_;
@@ -108,6 +117,7 @@ public:
     description_.B = make_TensorDescription<ElementB, LayoutB>();
     description_.transform_B = ComplexTransformMap<kTransformB>::kId;
     description_.C = make_TensorDescription<ElementC, LayoutC>();
+    description_.D = make_TensorDescription<ElementD, LayoutC>();
     
     // Epilogue compute and accumulator type description
     description_.element_epilogue = NumericTypeMap<ElementCompute>::kId;
@@ -190,7 +200,7 @@ public:
     TensorRefA ref_A{static_cast<ElementA *>(const_cast<void *>(args.A)), LayoutA(int(config.lda))};
     TensorRefB ref_B{static_cast<ElementB *>(const_cast<void *>(args.B)), LayoutB(int(config.ldb))};
     TensorRefC ref_C{static_cast<ElementC *>(const_cast<void *>(args.C)), LayoutC(int(config.ldc))};
-    TensorRefC ref_D{static_cast<ElementC *>(args.D), LayoutC(int(config.ldd))};
+    TensorRefD ref_D{static_cast<ElementD *>(args.D), LayoutC(int(config.ldd))};
 
     if (kProvider == Provider::kReferenceHost) {
 
@@ -203,6 +213,7 @@ public:
         LayoutC,
         ElementCompute,
         ElementAccumulator,
+        ElementD,
         ConvertOp,
         InnerProductOp
       >(
@@ -236,6 +247,7 @@ public:
         LayoutC,
         ElementCompute,
         ElementAccumulator,
+        ElementD,
         ConvertOp,
         InnerProductOp
       >(
@@ -276,11 +288,12 @@ template <
   typename LayoutC_,
   typename ElementCompute_,
   typename ElementAccumulator_ = ElementCompute_,
-  typename ConvertOp_ = NumericConverter<ElementC_, ElementCompute_>,
+  typename ElementD_ = ElementC_,
+  typename ConvertOp_ = NumericConverter<ElementD_, ElementCompute_>,
   typename InnerProductOp_ = multiply_add<ElementAccumulator_>
 >
 void make_gemm(Manifest &manifest) {
-  
+#if !defined(CUTLASS_PROFILER_DISABLE_REFERENCE)
   manifest.append(new GemmReferenceOperation<
     Provider::kReferenceHost,
     ElementA_, LayoutA_, TransformA,
@@ -288,6 +301,7 @@ void make_gemm(Manifest &manifest) {
     ElementC_, LayoutC_,
     ElementCompute_,
     ElementAccumulator_,
+    ElementD_,
     ConvertOp_,
     InnerProductOp_
   >);
@@ -299,9 +313,11 @@ void make_gemm(Manifest &manifest) {
     ElementC_, LayoutC_,
     ElementCompute_,
     ElementAccumulator_,
+    ElementD_,
     ConvertOp_,
     InnerProductOp_
   >);
+#endif
 }
 
 /// Helper to create NN, NT, TN, and TT GEMM layouts.
@@ -311,37 +327,42 @@ template <
   typename ElementC_,
   typename ElementCompute_,
   typename ElementAccumulator_ = ElementCompute_,
-  typename ConvertOp_ = NumericConverter<ElementC_, ElementCompute_>,
+  typename ElementD_ = ElementC_,
+  typename ConvertOp_ = NumericConverter<ElementD_, ElementCompute_>,
   typename InnerProductOp_ = multiply_add<ElementAccumulator_>
 >
 void make_gemm_canonical_layouts(Manifest &manifest) {
 
+  // M Major outputs
   make_gemm<
     ElementA_, cutlass::layout::ColumnMajor, TransformA,
     ElementB_, cutlass::layout::ColumnMajor, TransformB,
     ElementC_, cutlass::layout::ColumnMajor,
     ElementCompute_,
     ElementAccumulator_,
+    ElementD_,
     ConvertOp_,
     InnerProductOp_
   >(manifest);
-  
+
   make_gemm<
     ElementA_, cutlass::layout::ColumnMajor, TransformA,
     ElementB_, cutlass::layout::RowMajor, TransformB,
     ElementC_, cutlass::layout::ColumnMajor,
     ElementCompute_,
     ElementAccumulator_,
+    ElementD_,
     ConvertOp_,
     InnerProductOp_
   >(manifest);
-  
+
   make_gemm<
     ElementA_, cutlass::layout::RowMajor, TransformA,
     ElementB_, cutlass::layout::ColumnMajor, TransformB,
     ElementC_, cutlass::layout::ColumnMajor,
     ElementCompute_,
     ElementAccumulator_,
+    ElementD_,
     ConvertOp_,
     InnerProductOp_
   >(manifest);
@@ -352,6 +373,52 @@ void make_gemm_canonical_layouts(Manifest &manifest) {
     ElementC_, cutlass::layout::ColumnMajor,
     ElementCompute_,
     ElementAccumulator_,
+    ElementD_,
+    ConvertOp_,
+    InnerProductOp_
+  >(manifest);
+
+  // N Major outputs
+  make_gemm<
+    ElementA_, cutlass::layout::ColumnMajor, TransformA,
+    ElementB_, cutlass::layout::ColumnMajor, TransformB,
+    ElementC_, cutlass::layout::RowMajor,
+    ElementCompute_,
+    ElementAccumulator_,
+    ElementD_,
+    ConvertOp_,
+    InnerProductOp_
+  >(manifest);
+
+  make_gemm<
+    ElementA_, cutlass::layout::ColumnMajor, TransformA,
+    ElementB_, cutlass::layout::RowMajor, TransformB,
+    ElementC_, cutlass::layout::RowMajor,
+    ElementCompute_,
+    ElementAccumulator_,
+    ElementD_,
+    ConvertOp_,
+    InnerProductOp_
+  >(manifest);
+
+  make_gemm<
+    ElementA_, cutlass::layout::RowMajor, TransformA,
+    ElementB_, cutlass::layout::ColumnMajor, TransformB,
+    ElementC_, cutlass::layout::RowMajor,
+    ElementCompute_,
+    ElementAccumulator_,
+    ElementD_,
+    ConvertOp_,
+    InnerProductOp_
+  >(manifest);
+
+  make_gemm<
+    ElementA_, cutlass::layout::RowMajor, TransformA,
+    ElementB_, cutlass::layout::RowMajor, TransformB,
+    ElementC_, cutlass::layout::RowMajor,
+    ElementCompute_,
+    ElementAccumulator_,
+    ElementD_,
     ConvertOp_,
     InnerProductOp_
   >(manifest);
@@ -366,6 +433,7 @@ template <
   typename ElementC_,
   typename ElementCompute_,
   typename ElementAccumulator_ = ElementCompute_,
+  typename ElementD_ = ElementC_,
   typename ConvertOp_ = NumericConverter<ElementC_, ElementCompute_>,
   typename InnerProductOp_ = multiply_add<ElementAccumulator_>
 >
@@ -377,6 +445,7 @@ void make_gemm_interleaved_layouts(Manifest &manifest) {
     ElementC_, cutlass::layout::ColumnMajor,
     ElementCompute_,
     ElementAccumulator_,
+    ElementD_,
     ConvertOp_,
     InnerProductOp_
   >(manifest);
@@ -390,7 +459,8 @@ template <
   typename ElementC_,
   typename ElementCompute_,
   typename ElementAccumulator_ = ElementCompute_,
-  typename ConvertOp_ = NumericConverter<ElementC_, ElementCompute_>,
+  typename ElementD_ = ElementC_,
+  typename ConvertOp_ = NumericConverter<ElementD_, ElementCompute_>,
   typename InnerProductOp_ = multiply_add<ElementAccumulator_>
 >
 void make_gemm_real_canonical_layouts(Manifest &manifest) {
@@ -400,6 +470,7 @@ void make_gemm_real_canonical_layouts(Manifest &manifest) {
     ElementC_,
     ElementCompute_,
     ElementAccumulator_,
+    ElementD_,
     ConvertOp_,
     InnerProductOp_
   >(manifest);  
@@ -412,7 +483,8 @@ template <
   typename ElementC_,
   typename ElementCompute_,
   typename ElementAccumulator_ = ElementCompute_,
-  typename ConvertOp_ = NumericConverter<ElementC_, ElementCompute_>,
+  typename ElementD_ = ElementC_,
+  typename ConvertOp_ = NumericConverter<ElementD_, ElementCompute_>,
   typename InnerProductOp_ = multiply_add<ElementAccumulator_>
 >
 void make_gemm_complex_canonical_layouts(Manifest &manifest) {
@@ -423,6 +495,7 @@ void make_gemm_complex_canonical_layouts(Manifest &manifest) {
     ElementC_,
     ElementCompute_,
     ElementAccumulator_,
+    ElementD_,
     ConvertOp_,
     InnerProductOp_
   >(manifest);
@@ -433,6 +506,7 @@ void make_gemm_complex_canonical_layouts(Manifest &manifest) {
     ElementC_,
     ElementCompute_,
     ElementAccumulator_,
+    ElementD_,
     ConvertOp_,
     InnerProductOp_
   >(manifest);
@@ -443,6 +517,7 @@ void make_gemm_complex_canonical_layouts(Manifest &manifest) {
     ElementC_,
     ElementCompute_,
     ElementAccumulator_,
+    ElementD_,
     ConvertOp_,
     InnerProductOp_
   >(manifest);
@@ -453,6 +528,7 @@ void make_gemm_complex_canonical_layouts(Manifest &manifest) {
     ElementC_,
     ElementCompute_,
     ElementAccumulator_,
+    ElementD_,
     ConvertOp_,
     InnerProductOp_
   >(manifest);

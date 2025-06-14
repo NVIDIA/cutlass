@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -49,6 +55,7 @@
  *   (2) Re-implementations of STL functions and types:
  *       - C++ features that need the \p __device__ annotation.  These are
  *         placed into the \p platform namespace.
+ *           - \p abs
  *           - \p plus
  *           - \p less
  *           - \p greater
@@ -83,9 +90,6 @@
  *           - \p alignment_of
  *           - \p aligned_storage
  *
- *   (4) Functions and types that are STL-like (but aren't in the STL):
- *           - \p TODO: min and max functors?
- *
  * The idea is that, as we drop support for older compilers, we can simply #define
  * the \p __NV_STD_XYZ macros and \p platform namespace to alias their C++
  * counterparts (or trivially find-and-replace their occurrences in code text).
@@ -96,9 +100,17 @@
 //-----------------------------------------------------------------------------
 
 #if defined(__CUDACC_RTC__)
+#include <cuda/std/type_traits>
+#include <cuda/std/utility>
+#include <cuda/std/cstddef>
 #include <cuda/std/cstdint>
+#include <cuda/std/limits>
 #else
-#include <stdint.h>
+#include <type_traits>
+#include <utility>
+#include <cstddef>
+#include <cstdint>
+#include <limits>
 #endif
 
 #if !defined(__CUDACC_RTC__)
@@ -110,11 +122,13 @@
 #include <cstddef>     // nullptr_t
 #include <functional>  // Arithmetic operations
 #include <utility>     // For methods on std::pair
+#include <limits>      // float_round_style, float_denorm_style
 #if (!defined(_MSC_VER) && (__cplusplus >= 201103L)) || (defined(_MSC_VER) && (_MS_VER >= 1500))
 #include <type_traits>  // For integral constants, conditional metaprogramming, and type traits
 #endif
 
-#include "cutlass/cutlass.h"
+#include <vector_types.h>
+#include <cutlass/cutlass.h>
 
 #endif
 
@@ -125,9 +139,31 @@
 #define CUTLASS_OS_WINDOWS
 #endif
 
+#if defined(__clang__) && defined(__CUDA__)
+#define CUTLASS_CLANG_CUDA 1
+#endif
+
 /******************************************************************************
  * Macros
  ******************************************************************************/
+/// std
+#if !defined(CUTLASS_STL_NAMESPACE)
+#if defined(__CUDACC_RTC__)
+#define CUTLASS_STL_NAMESPACE cuda::std
+#else
+#define CUTLASS_STL_NAMESPACE std
+#endif
+#endif
+
+/// builtin_unreachable
+#if !defined(CUTLASS_GCC_UNREACHABLE)
+#  if defined(__GNUC__)
+#    define CUTLASS_GCC_UNREACHABLE __builtin_unreachable()
+#  else
+#    define CUTLASS_GCC_UNREACHABLE
+#  endif
+#endif
+
 //-----------------------------------------------------------------------------
 // Keywords
 //-----------------------------------------------------------------------------
@@ -177,6 +213,22 @@
  ******************************************************************************/
 namespace cutlass {
 namespace platform {
+
+//-----------------------------------------------------------------------------
+// Abs operations <algorithm>
+//-----------------------------------------------------------------------------
+
+#if defined(__CUDACC_RTC__)
+/// std::abs
+CUTLASS_HOST_DEVICE constexpr int abs(int a) {
+    return (a < 0) ? -a : a;
+}
+CUTLASS_HOST_DEVICE constexpr long long abs(long long a) {
+    return (a < 0) ? -a : a;
+}
+#else
+using std::abs;
+#endif
 
 //-----------------------------------------------------------------------------
 // Minimum/maximum operations <algorithm>
@@ -255,47 +307,16 @@ namespace platform {
 
 #if defined(__CUDACC_RTC__) || (!defined(_MSC_VER) && (__cplusplus < 201103L)) || (defined(_MSC_VER) && (_MSC_VER < 1500))
 
-/// std::integral_constant
-template <typename value_t, value_t V>
-struct integral_constant;
-
-/// std::integral_constant
-template <typename value_t, value_t V>
-struct integral_constant {
-  static const value_t value = V;
-
-  typedef value_t value_type;
-  typedef integral_constant<value_t, V> type;
-
-  CUTLASS_HOST_DEVICE operator value_type() const { return value; }
-
-  CUTLASS_HOST_DEVICE const value_type operator()() const { return value; }
-};
-
 #else
 
-using std::integral_constant;
 using std::pair;
 
 #endif
 
-/// The type used as a compile-time boolean with true value.
-typedef integral_constant<bool, true> true_type;
-
-/// The type used as a compile-time boolean with false value.
-typedef integral_constant<bool, false> false_type;
-
-#if defined(__CUDACC_RTC__) || (!defined(_MSC_VER) && (__cplusplus <= 201402L)) || (defined(_MSC_VER) && (_MSC_VER < 1900))
-
-/// std::bool_constant
-template <bool V>
-struct bool_constant : platform::integral_constant<bool, V> {};
-
-#else
-
-using std::bool_constant;
-
-#endif
+using CUTLASS_STL_NAMESPACE::integral_constant;
+using CUTLASS_STL_NAMESPACE::bool_constant;
+using CUTLASS_STL_NAMESPACE::true_type;
+using CUTLASS_STL_NAMESPACE::false_type;
 
 #if defined(__CUDACC_RTC__) || (!defined(_MSC_VER) && (__cplusplus < 201103L)) || (defined(_MSC_VER) && (_MSC_VER < 1700))
 
@@ -312,78 +333,41 @@ using std::nullptr_t;
 // Conditional metaprogramming <type_traits>
 //-----------------------------------------------------------------------------
 
-#if defined(__CUDACC_RTC__) || (!defined(_MSC_VER) && (__cplusplus < 201103L)) || (defined(_MSC_VER) && (_MSC_VER < 1600))
-
-/// std::enable_if (true specialization)
-template <bool C, typename T = void>
-struct enable_if {
-  typedef T type;
-};
-
-/// std::enable_if (false specialization)
-template <typename T>
-struct enable_if<false, T> {};
-
-/// std::conditional (true specialization)
-template <bool B, class T, class F>
-struct conditional {
-  typedef T type;
-};
-
-/// std::conditional (false specialization)
-template <class T, class F>
-struct conditional<false, T, F> {
-  typedef F type;
-};
-
-#else
-
-using std::enable_if;
-using std::conditional;
-
-#endif
+using CUTLASS_STL_NAMESPACE::conditional;
+using CUTLASS_STL_NAMESPACE::conditional_t;
+using CUTLASS_STL_NAMESPACE::enable_if;
+using CUTLASS_STL_NAMESPACE::enable_if_t;
+using CUTLASS_STL_NAMESPACE::void_t;
 
 //-----------------------------------------------------------------------------
 // Const/volatility specifiers <type_traits>
 //-----------------------------------------------------------------------------
 
-#if defined(__CUDACC_RTC__) || (!defined(_MSC_VER) && (__cplusplus < 201103L)) || (defined(_MSC_VER) && (_MSC_VER < 1500))
+using CUTLASS_STL_NAMESPACE::remove_const;
+using CUTLASS_STL_NAMESPACE::remove_const_t;
+using CUTLASS_STL_NAMESPACE::remove_cv;
+using CUTLASS_STL_NAMESPACE::remove_cv_t;
+using CUTLASS_STL_NAMESPACE::remove_reference;
+using CUTLASS_STL_NAMESPACE::remove_reference_t;
+using CUTLASS_STL_NAMESPACE::remove_volatile;
+using CUTLASS_STL_NAMESPACE::remove_volatile_t;
 
-/// std::remove_const (non-const specialization)
-template <typename T>
-struct remove_const {
-  typedef T type;
-};
+// remove_cvref and remove_cvref_t are C++20 features,
+// but CUTLASS finds them useful enough to back-port.
+#if defined(__cpp_lib_remove_cvref)
 
-/// std::remove_const (const specialization)
-template <typename T>
-struct remove_const<const T> {
-  typedef T type;
-};
-
-/// std::remove_volatile (non-volatile specialization)
-template <typename T>
-struct remove_volatile {
-  typedef T type;
-};
-
-/// std::remove_volatile (volatile specialization)
-template <typename T>
-struct remove_volatile<volatile T> {
-  typedef T type;
-};
-
-/// std::remove_cv
-template <typename T>
-struct remove_cv {
-  typedef typename remove_volatile<typename remove_const<T>::type>::type type;
-};
+using CUTLASS_STL_NAMESPACE::remove_cvref;
+using CUTLASS_STL_NAMESPACE::remove_cvref_t;
 
 #else
 
-using std::remove_const;
-using std::remove_volatile;
-using std::remove_cv;
+template <class T>
+struct remove_cvref {
+  using type = remove_cv_t<remove_reference_t<T>>;
+};
+
+template <class T>
+using remove_cvref_t = typename remove_cvref<T>::type;
 
 #endif
 
@@ -391,15 +375,10 @@ using std::remove_cv;
 // Type relationships <type_traits>
 //-----------------------------------------------------------------------------
 
+using CUTLASS_STL_NAMESPACE::is_same;
+using CUTLASS_STL_NAMESPACE::is_same_v;
+
 #if defined(__CUDACC_RTC__) || (!defined(_MSC_VER) && (__cplusplus < 201103L)) || (defined(_MSC_VER) && (_MSC_VER < 1500))
-
-/// std::is_same (false specialization)
-template <typename A, typename B>
-struct is_same : false_type {};
-
-/// std::is_same (true specialization)
-template <typename A>
-struct is_same<A, A> : true_type {};
 
 /// Helper for std::is_base_of
 template <typename BaseT, typename DerivedT>
@@ -432,7 +411,6 @@ struct is_base_of
 
 #else
 
-using std::is_same;
 using std::is_base_of;
 
 #endif
@@ -440,6 +418,11 @@ using std::is_base_of;
 //-----------------------------------------------------------------------------
 // Type properties <type_traits>
 //-----------------------------------------------------------------------------
+
+using CUTLASS_STL_NAMESPACE::is_arithmetic;
+using CUTLASS_STL_NAMESPACE::is_arithmetic_v;
+using CUTLASS_STL_NAMESPACE::is_void;
+using CUTLASS_STL_NAMESPACE::is_void_v;
 
 #if defined(__CUDACC_RTC__) || (!defined(_MSC_VER) && (__cplusplus < 201103L)) || (defined(_MSC_VER) && (_MSC_VER < 1500))
 
@@ -460,10 +443,6 @@ struct is_pointer_helper<T*> : true_type {};
 /// std::is_pointer
 template <typename T>
 struct is_pointer : is_pointer_helper<typename remove_cv<T>::type> {};
-
-/// std::is_void
-template <typename T>
-struct is_void : is_same<void, typename remove_cv<T>::type> {};
 
 /// std::is_integral
 template <typename T>
@@ -504,11 +483,6 @@ struct is_floating_point
                         (is_same<float, typename remove_cv<T>::type>::value ||
                          is_same<double, typename remove_cv<T>::type>::value)> {};
 
-/// std::is_arithmetic
-template <typename T>
-struct is_arithmetic
-    : integral_constant<bool, (is_integral<T>::value || is_floating_point<T>::value)> {};
-
 /// std::is_fundamental
 template <typename T>
 struct is_fundamental
@@ -520,10 +494,8 @@ struct is_fundamental
 
 using std::is_volatile;
 using std::is_pointer;
-using std::is_void;
 using std::is_integral;
 using std::is_floating_point;
-using std::is_arithmetic;
 using std::is_fundamental;
 
 #endif
@@ -550,6 +522,41 @@ struct is_trivially_copyable
 using std::is_trivially_copyable;
 
 #endif
+
+#if (201703L <=__cplusplus)
+
+/// std::is_unsigned_v
+using CUTLASS_STL_NAMESPACE::is_integral_v;
+/// std::is_unsigned_v
+using CUTLASS_STL_NAMESPACE::is_unsigned_v;
+
+#endif
+
+//-----------------------------------------------------------------------------
+// <utility>
+//-----------------------------------------------------------------------------
+
+using CUTLASS_STL_NAMESPACE::declval;
+
+//-----------------------------------------------------------------------------
+// bit_cast <bit>
+//-----------------------------------------------------------------------------
+
+template< class To, class From >
+constexpr To CUTLASS_HOST_DEVICE bit_cast(const From& from ) noexcept;
+
+template <class To, class From>
+constexpr To CUTLASS_HOST_DEVICE bit_cast(const From& src) noexcept
+{
+  static_assert(sizeof(To) == sizeof(From), "sizes must match");
+  return reinterpret_cast<To const &>(src);
+}
+
+//-----------------------------------------------------------------------------
+// Convertable
+//-----------------------------------------------------------------------------
+using CUTLASS_STL_NAMESPACE::is_convertible;
+using CUTLASS_STL_NAMESPACE::is_convertible_v;
 
 //-----------------------------------------------------------------------------
 // Alignment and layout utilities
@@ -794,6 +801,7 @@ struct numeric_limits<int32_t> {
   CUTLASS_HOST_DEVICE
   static constexpr int32_t max() noexcept { return 2147483647;}
   static constexpr bool is_integer = true;
+  static constexpr bool has_infinity = false;
 };
 
 template <>
@@ -803,6 +811,7 @@ struct numeric_limits<int16_t> {
   CUTLASS_HOST_DEVICE
   static constexpr int16_t max() noexcept { return 32767;}
   static constexpr bool is_integer = true;
+  static constexpr bool has_infinity = false;
 };
 
 template <>
@@ -812,6 +821,7 @@ struct numeric_limits<int8_t> {
   CUTLASS_HOST_DEVICE
   static constexpr int8_t max() noexcept { return 127;}
   static constexpr bool is_integer = true;
+  static constexpr bool has_infinity = false;
 };
 
 
@@ -820,8 +830,9 @@ struct numeric_limits<uint32_t> {
   CUTLASS_HOST_DEVICE
   static constexpr uint32_t lowest() noexcept { return 0;}
   CUTLASS_HOST_DEVICE
-  static constexpr uint32_t max() noexcept { return 4294967295;}
+  static constexpr uint32_t max() noexcept { return 4294967295U;}
   static constexpr bool is_integer = true;
+  static constexpr bool has_infinity = false;
 };
 
 template <>
@@ -829,8 +840,9 @@ struct numeric_limits<uint16_t> {
   CUTLASS_HOST_DEVICE
   static constexpr uint16_t lowest() noexcept { return 0;}
   CUTLASS_HOST_DEVICE
-  static constexpr uint16_t max() noexcept { return 65535;}
+  static constexpr uint16_t max() noexcept { return 65535U;}
   static constexpr bool is_integer = true;
+  static constexpr bool has_infinity = false;
 };
 
 template <>
@@ -838,9 +850,56 @@ struct numeric_limits<uint8_t> {
   CUTLASS_HOST_DEVICE
   static constexpr uint8_t lowest() noexcept { return 0;}
   CUTLASS_HOST_DEVICE
-  static constexpr uint8_t max() noexcept { return 255;}
+  static constexpr uint8_t max() noexcept { return 255U;}
   static constexpr bool is_integer = true;
+  static constexpr bool has_infinity = false;
 };
+
+template <>
+struct numeric_limits<float> {
+  CUTLASS_HOST_DEVICE
+  static constexpr float infinity() noexcept { return bit_cast<float, int32_t>(0x7f800000);}
+  CUTLASS_HOST_DEVICE
+  static constexpr float max() noexcept { return bit_cast<float, int32_t>(0x7f7fffff);}
+  static constexpr bool is_integer = false;
+  static constexpr bool has_infinity = true;
+};
+
+/// Returns a value that curries the `std::maximum()` function into the identity
+/// function. No value will compare < than this value.
+template <typename T>
+constexpr T identity_for_maximum() {
+  if constexpr (numeric_limits<T>::has_infinity) {
+    return -numeric_limits<T>::infinity();
+  } else {
+    return numeric_limits<T>::lowest();
+  }
+}
+
+/// Returns a value that curries the `std::minimum()` function into the identity
+/// function. No value will compare > than this value.
+template <typename T>
+constexpr T identity_for_minimum() {
+  if constexpr (numeric_limits<T>::has_infinity) {
+    return numeric_limits<T>::infinity();
+  } else {
+    return numeric_limits<T>::max();
+  }
+}
+
+/// std::float_round_style
+using CUTLASS_STL_NAMESPACE::float_round_style;
+using CUTLASS_STL_NAMESPACE::round_indeterminate;
+using CUTLASS_STL_NAMESPACE::round_toward_zero;
+using CUTLASS_STL_NAMESPACE::round_to_nearest;
+using CUTLASS_STL_NAMESPACE::round_toward_infinity;
+using CUTLASS_STL_NAMESPACE::round_toward_neg_infinity;
+
+/// std::float_denorm_style
+using CUTLASS_STL_NAMESPACE::float_denorm_style;
+using CUTLASS_STL_NAMESPACE::denorm_indeterminate;
+using CUTLASS_STL_NAMESPACE::denorm_absent;
+using CUTLASS_STL_NAMESPACE::denorm_present;
 
 }  // namespace platform
 }  // namespace cutlass

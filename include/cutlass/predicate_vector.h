@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -29,15 +35,14 @@
 #pragma once
 
 #if defined(__CUDACC_RTC__)
-#include <cuda/std/cassert>
 #include <cuda/std/cstdint>
 #else
-#include <assert.h>
-#include <stdint.h>
+#include <cstdint>
 #endif
 
-#include "cutlass/cutlass.h"
+#include <cuda/std/cassert>
 
+#include "cutlass/cutlass.h"
 #include "cutlass/platform/platform.h"
 
 namespace cutlass {
@@ -100,7 +105,7 @@ tile_traits_concept and a \ref predicate_vector_concept.
 
 /// Statically sized array of bits implementing @concept{predicate_vector_concept}.
 template <
-    /// Number of predicates conatined in predicate vector
+    /// Number of predicates contained in predicate vector
     int kPredicates_,
     /// Number of predicates contained in each byte of internal storage
     int kPredicatesPerByte_ = 4,
@@ -108,13 +113,13 @@ template <
     int kPredicateStart_ = 0>
 struct PredicateVector {
   /// Number of bits stored by the PredicateVector
-  static int const kPredicates = kPredicates_;
+  static constexpr int kPredicates = kPredicates_;
 
   /// Number of bits stored within each byte of the predicate bit vector
-  static int const kPredicatesPerByte = kPredicatesPerByte_;
+  static constexpr int kPredicatesPerByte = kPredicatesPerByte_;
 
-  /// First bit withing each byte containing predicates
-  static int const kPredicateStart = kPredicateStart_;
+  /// First bit within each byte containing predicates
+  static constexpr int kPredicateStart = kPredicateStart_;
 
   // Make sure no one tries to put more than 8 bits in a byte :)
   static_assert(kPredicatesPerByte <= 8, "kPredicatesPerByte must fit within an actual byte");
@@ -126,10 +131,13 @@ struct PredicateVector {
   typedef uint32_t Storage;
 
   /// Number of bytes needed
-  static int const kBytes = (kPredicates + kPredicatesPerByte - 1) / kPredicatesPerByte;
+  static constexpr int kBytes = (kPredicates + kPredicatesPerByte - 1) / kPredicatesPerByte;
 
   /// Number of storage elements needed
-  static int const kWordCount = (kBytes + int(sizeof(Storage)) - 1) / int(sizeof(Storage));
+  static constexpr int kWordCount = (kBytes + int(sizeof(Storage)) - 1) / int(sizeof(Storage));
+
+  /// The byte mask corresponding to predicates
+  static constexpr Storage kByteMask = (((1 << kPredicatesPerByte) - 1) << kPredicateStart);
 
  private:
   //
@@ -154,6 +162,26 @@ struct PredicateVector {
     int byte_offset = (byte % sizeof(Storage));
 
     bit = byte_offset * 8 + bit_offset + kPredicateStart;
+  }
+
+  /// Returns word mask.
+  CUTLASS_HOST_DEVICE static constexpr bool computeWordMask() {
+    Storage mask(0);
+    CUTLASS_PRAGMA_UNROLL
+    for (size_t byte = 0; byte < sizeof(Storage); ++byte) {
+      mask |= (kByteMask << (byte * 8));
+    }
+    return mask;
+  }
+
+  /// Returns mask of last word.
+  CUTLASS_HOST_DEVICE static constexpr bool computeLastWordMask() {
+    Storage mask(0);
+    CUTLASS_PRAGMA_UNROLL
+    for (int byte = 0; byte < kBytes % sizeof(Storage); ++byte) {
+      mask |= (kByteMask << (byte * 8));
+    }
+    return mask;
   }
 
   /// Accesses a given word with optional assertions
@@ -484,15 +512,15 @@ struct PredicateVector {
 
   /// Returns true if entire predicate array is zero.
   CUTLASS_HOST_DEVICE bool is_zero() const {
-    Storage mask(0);
-    for (int byte = 0; byte < sizeof(Storage); ++byte) {
-      Storage byte_mask = (((1 << kPredicatesPerByte) - 1) << kPredicateStart);
-      mask |= (byte_mask << (byte * 8));
+   constexpr Storage mask = computeWordMask();
+    Storage result = 0;
+    CUTLASS_PRAGMA_UNROLL
+    for (int word = 0; word < kWordCount - 1; ++word) {
+      result |= (storage(word) & mask);
     }
-    uint32_t result = 0;
-    for (int word = 0; word < kWordCount; ++word) {
-      result |= storage(word);
-    }
+    constexpr Storage last_word_mask = computeLastWordMask();
+    result |= (storage(kWordCount - 1) & last_word_mask);
+    
     return result == 0;
   }
 

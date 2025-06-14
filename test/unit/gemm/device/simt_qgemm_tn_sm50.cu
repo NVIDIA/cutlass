@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -70,7 +76,7 @@ CUTLASS_TEST_L1(SM50_device_qgemm_tn, 8x32x8_8x32x1_2x4_4x8_1x1, {
         cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
-    EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+    EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 } )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -100,7 +106,7 @@ CUTLASS_TEST_L0(SM50_device_qgemm_tn, 16x32x8_16x32x1_4x4_4x8_1x1, {
         cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
-    EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+    EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 } )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -130,7 +136,7 @@ CUTLASS_TEST_L2(SM50_device_qgemm_tn, 8x32x8_8x16x1_2x2_4x8_1x2, {
         cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
-    EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+    EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 } )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -160,7 +166,7 @@ CUTLASS_TEST_L1(SM50_device_qgemm_tn, 8x64x8_8x32x1_2x4_4x8_1x2, {
         cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
-    EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+    EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 } )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -190,7 +196,7 @@ CUTLASS_TEST_L1(SM50_device_qgemm_tn, 16x32x8_16x16x1_4x2_4x8_1x2, {
         cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
-    EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+    EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 } )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -220,7 +226,7 @@ CUTLASS_TEST_L1(SM50_device_qgemm_tn, 16x64x8_16x32x1_4x4_4x8_1x2, {
         cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
-    EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+    EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 } )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -250,7 +256,7 @@ CUTLASS_TEST_L1(SM50_device_qgemm_tn, 32x32x8_32x16x1_4x4_8x4_1x2, {
         cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
-    EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+    EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 } )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -280,7 +286,7 @@ CUTLASS_TEST_L2(SM50_device_qgemm_tn, 32x32x8_16x32x1_4x4_4x8_2x1, {
         cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
-    EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+    EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 } )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -310,7 +316,7 @@ CUTLASS_TEST_L2(SM50_device_qgemm_tn, 16x32x8_8x16x1_2x2_4x8_2x2, {
         cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
-    EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+    EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 } )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -340,7 +346,7 @@ CUTLASS_TEST_L2(SM50_device_qgemm_tn, 16x64x8_8x32x1_2x4_4x8_2x2, {
         cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
-    EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+    EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 } )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -370,7 +376,7 @@ CUTLASS_TEST_L2(SM50_device_qgemm_tn, 32x32x8_16x16x1_4x2_4x8_2x2, {
         cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
-    EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+    EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 } )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -400,7 +406,7 @@ CUTLASS_TEST_L0(SM50_device_qgemm_tn, 32x64x8_16x32x1_4x4_4x8_2x2, {
         cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
-    EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+    EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 } )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -430,7 +436,7 @@ CUTLASS_TEST_L1(SM50_device_qgemm_tn, 64x32x8_32x16x1_4x4_8x4_2x2, {
         cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
-    EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+    EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 } )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -460,7 +466,7 @@ CUTLASS_TEST_L2(SM50_device_qgemm_tn, 16x64x16_8x16x1_2x2_4x8_2x4, {
         cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
-    EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+    EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 } )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -490,7 +496,7 @@ CUTLASS_TEST_L2(SM50_device_qgemm_tn, 32x32x8_16x8x1_2x2_8x4_2x4, {
         cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
-    EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+    EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 } )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -520,7 +526,7 @@ CUTLASS_TEST_L1(SM50_device_qgemm_tn, 32x64x8_16x16x1_4x2_4x8_2x4, {
         cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
-    EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+    EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 } )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -550,7 +556,7 @@ CUTLASS_TEST_L1(SM50_device_qgemm_tn, 32x128x8_16x32x1_4x4_4x8_2x4, {
         cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
-    EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+    EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 } )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -580,7 +586,7 @@ CUTLASS_TEST_L1(SM50_device_qgemm_tn, 64x64x8_32x16x1_4x4_8x4_2x4, {
         cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
-    EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+    EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 } )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -610,7 +616,7 @@ CUTLASS_TEST_L2(SM50_device_qgemm_tn, 32x32x8_8x16x1_2x2_4x8_4x2, {
         cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
-    EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+    EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 } )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -640,7 +646,7 @@ CUTLASS_TEST_L2(SM50_device_qgemm_tn, 64x32x8_16x16x1_4x2_4x8_4x2, {
         cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
-    EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+    EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 } )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -670,7 +676,7 @@ CUTLASS_TEST_L2(SM50_device_qgemm_tn, 64x64x8_16x32x1_4x4_4x8_4x2, {
         cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
-    EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+    EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 } )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -700,7 +706,7 @@ CUTLASS_TEST_L1(SM50_device_qgemm_tn, 128x32x8_32x16x1_4x4_8x4_4x2, {
         cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
-    EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+    EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 } )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -730,7 +736,7 @@ CUTLASS_TEST_L2(SM50_device_qgemm_tn, 32x64x16_8x16x1_2x2_4x8_4x4, {
         cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
-    EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+    EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 } )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -760,7 +766,7 @@ CUTLASS_TEST_L2(SM50_device_qgemm_tn, 64x32x16_16x8x1_2x2_8x4_4x4, {
         cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
-    EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+    EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 } )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -790,7 +796,7 @@ CUTLASS_TEST_L2(SM50_device_qgemm_tn, 64x64x8_16x16x1_4x2_4x8_4x4, {
         cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
-    EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+    EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 } )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -820,7 +826,7 @@ CUTLASS_TEST_L1(SM50_device_qgemm_tn, 64x128x8_16x32x1_4x4_4x8_4x4, {
         cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
-    EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+    EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 } )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -850,6 +856,6 @@ CUTLASS_TEST_L1(SM50_device_qgemm_tn, 128x64x8_32x16x1_4x4_8x4_4x4, {
         cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
-    EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+    EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 } )
 

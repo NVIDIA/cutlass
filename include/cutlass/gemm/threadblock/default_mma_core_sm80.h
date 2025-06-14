@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -30,6 +36,9 @@
 
       Partial specializations for threadblock::Mma operations targeting TensorOp
    instructions.
+
+      SM80 Multi stage kernel expects stage number to be larger or equal to 3
+   to use asyncronous copy.
 */
 
 #pragma once
@@ -996,7 +1005,8 @@ struct DefaultMmaCore<
 
   static_assert(
     platform::is_same<Operator, arch::OpMultiplyAddComplex>::value ||
-    platform::is_same<Operator, arch::OpMultiplyAddGaussianComplex>::value,
+    platform::is_same<Operator, arch::OpMultiplyAddGaussianComplex>::value ||
+    platform::is_same<Operator, arch::OpMultiplyAddComplexFastF32>::value,
     "The operator tag must indicate complex multiplication.");
 
   //
@@ -1069,6 +1079,8 @@ template <
     typename Shape_,
     /// Shape of warp-level matrix multiply operator (concept: GemmShape)
     typename WarpShape_,
+    /// Shape of one matrix production operation (concept: GemmShape)
+    typename InstructionShape_,
     /// Layout for A operand
     typename LayoutA_,
     /// Layout for B operand
@@ -1089,7 +1101,7 @@ template <
     ComplexTransform TransformB_
     >
 struct DefaultMmaCore<
-  Shape_, WarpShape_, GemmShape<8, 8, 4>, 
+  Shape_, WarpShape_, InstructionShape_, 
   complex<double>, LayoutA_, 
   complex<double>, LayoutB_, 
   complex<double>, LayoutC_, 
@@ -1103,7 +1115,7 @@ struct DefaultMmaCore<
 
   using Shape = Shape_;
   using WarpShape = WarpShape_;
-  using InstructionShape = GemmShape<8, 8, 4>;
+  using InstructionShape = InstructionShape_;
   using ElementA = complex<double>;
   using LayoutA = LayoutA_;
   using ElementB = complex<double>;
@@ -1273,16 +1285,32 @@ struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, ElementA_,
   /// Default Operator
   using Operator = Operator_;
 
+  // Warp thread arrangement
+  static int const kWarpThreadArrangementContiguousA =
+      platform::min(Shape::kM / (kAccessSizeInBits / sizeof_bits<ElementA>::value), 8);
+
+  static int const kWarpThreadArrangementStridedA =
+      kWarpSize / kWarpThreadArrangementContiguousA;
+
+  static int const kWarpThreadArrangementContiguousB =
+      platform::min(Shape::kN / (kAccessSizeInBits / sizeof_bits<ElementB>::value), 8);
+
+  static int const kWarpThreadArrangementStridedB =
+      kWarpSize / kWarpThreadArrangementContiguousB;
+
   //
   // Shared memory layouts
   //
-
+  static int const Crosswise_A = platform::min(int(128 / sizeof(ElementA)),
+                                               Shape::kM);
   using SmemLayoutA = layout::ColumnMajorTensorOpMultiplicandCongruous<
-      sizeof_bits<ElementA>::value, int(128 / sizeof(ElementA))>;
+      sizeof_bits<ElementA>::value, Crosswise_A>;
 
   // Shared memory layout
+  static int const Crosswise_B = platform::min(int(128 / sizeof(ElementB)),
+                                               Shape::kN);
   using SmemLayoutB = layout::RowMajorTensorOpMultiplicandCongruous<
-      sizeof_bits<ElementB>::value, int(128 / sizeof(ElementB))>;
+      sizeof_bits<ElementB>::value, Crosswise_B>;
 
   //
   // Iterators to write to shared memory
@@ -1291,7 +1319,8 @@ struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, ElementA_,
   /// ThreadMap of iterator A
   using IteratorThreadMapA = transform::PitchLinearWarpRakedThreadMap<
       layout::PitchLinearShape<Shape::kM, Shape::kK>, kThreads,
-      layout::PitchLinearShape<8, 4>,
+      layout::PitchLinearShape<kWarpThreadArrangementContiguousA,
+                               kWarpThreadArrangementStridedA>,
       kAccessSizeInBits / sizeof_bits<ElementA>::value>;
 
   /// Shared memory iterator to A operand
@@ -1302,7 +1331,8 @@ struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, ElementA_,
   /// ThreadMap of iterator B
   using IteratorThreadMapB = transform::PitchLinearWarpRakedThreadMap<
       layout::PitchLinearShape<Shape::kN, Shape::kK>, kThreads,
-      layout::PitchLinearShape<8, 4>,
+      layout::PitchLinearShape<kWarpThreadArrangementContiguousB,
+                               kWarpThreadArrangementStridedB>,
       kAccessSizeInBits / sizeof_bits<ElementB>::value>;
 
   /// Shared memory iterator to B operand
@@ -1404,7 +1434,7 @@ struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, ElementA_,
       kWarpSize / kWarpThreadArrangementContiguousA;
 
   static int const kWarpThreadArrangementContiguousB =
-      Shape::kK / (kAccessSizeInBits / sizeof_bits<ElementA>::value);
+      Shape::kK / (kAccessSizeInBits / sizeof_bits<ElementB>::value);
 
   static int const kWarpThreadArrangementStridedB =
       kWarpSize / kWarpThreadArrangementContiguousB;
@@ -1537,6 +1567,12 @@ struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, ElementA_,
   using Operator = Operator_;
 
   // Warp thread arrangement
+  static int const kWarpThreadArrangementContiguousA =
+      platform::min(Shape::kM / (kAccessSizeInBits / sizeof_bits<ElementA>::value), 8);
+
+  static int const kWarpThreadArrangementStridedA =
+      kWarpSize / kWarpThreadArrangementContiguousA;
+
   static int const kWarpThreadArrangementContiguousB =
       Shape::kK / (kAccessSizeInBits / sizeof_bits<ElementA>::value);
 
@@ -1546,9 +1582,10 @@ struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, ElementA_,
   //
   // Shared memory layouts
   //
-
+  static int const Crosswise_A = platform::min(int(128 / sizeof(ElementA)),
+                                               Shape::kM);
   using SmemLayoutA = layout::ColumnMajorTensorOpMultiplicandCongruous<
-      sizeof_bits<ElementA>::value, int(128 / sizeof(ElementA))>;
+      sizeof_bits<ElementA>::value, Crosswise_A>;
 
   // Shared memory layout
   using SmemLayoutB = layout::ColumnMajorTensorOpMultiplicandCrosswise<
@@ -1561,7 +1598,8 @@ struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, ElementA_,
   /// ThreadMap of iterator A
   using IteratorThreadMapA = transform::PitchLinearWarpRakedThreadMap<
       layout::PitchLinearShape<Shape::kM, Shape::kK>, kThreads,
-      layout::PitchLinearShape<8, 4>,
+      layout::PitchLinearShape<kWarpThreadArrangementContiguousA,
+                               kWarpThreadArrangementStridedA>,
       kAccessSizeInBits / sizeof_bits<ElementA>::value>;
 
   /// Shared memory iterator to A operand
@@ -1674,6 +1712,12 @@ struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, ElementA_,
   static int const kWarpThreadArrangementStridedA =
       kWarpSize / kWarpThreadArrangementContiguousA;
 
+  static int const kWarpThreadArrangementContiguousB =
+      platform::min(Shape::kN / (kAccessSizeInBits / sizeof_bits<ElementB>::value), 8);
+
+  static int const kWarpThreadArrangementStridedB =
+      kWarpSize / kWarpThreadArrangementContiguousB;
+
   //
   // Shared memory layouts
   //
@@ -1682,8 +1726,10 @@ struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, ElementA_,
       sizeof_bits<ElementA>::value, Shape::kK>;
 
   // Shared memory layout
+  static int const Crosswise_B = platform::min(int(128 / sizeof(ElementB)),
+                                               Shape::kN);
   using SmemLayoutB = layout::RowMajorTensorOpMultiplicandCongruous<
-      sizeof_bits<ElementB>::value, int(128 / sizeof(ElementB))>;
+      sizeof_bits<ElementB>::value, Crosswise_B>;
 
   //
   // Iterators to write to shared memory
@@ -1704,7 +1750,8 @@ struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, ElementA_,
   /// ThreadMap of iterator B
   using IteratorThreadMapB = transform::PitchLinearWarpRakedThreadMap<
       layout::PitchLinearShape<Shape::kN, Shape::kK>, kThreads,
-      layout::PitchLinearShape<8, 4>,
+      layout::PitchLinearShape<kWarpThreadArrangementContiguousB,
+                               kWarpThreadArrangementStridedB>,
       kAccessSizeInBits / sizeof_bits<ElementB>::value>;
 
   /// Shared memory iterator to B operand
@@ -2001,7 +2048,7 @@ struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, ElementA_,
   //
 
   // Define the warp-level op
-  static const int WarpNumThreadsM = 4; // TODO need to extract these from template data
+  static const int WarpNumThreadsM = 4;
   static const int WarpNumThreadsN = 8;
   static_assert(!(WarpShape::kM % WarpNumThreadsM) && !(WarpShape::kN % WarpNumThreadsN),
       "WarpShape must be divisible by ThreadTile shape.");
@@ -2156,7 +2203,7 @@ struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, ElementA_,
   //
 
   // Define the warp-level op
-  static const int WarpNumThreadsM = 4; // TODO need to extract these from template data
+  static const int WarpNumThreadsM = 4;
   static const int WarpNumThreadsN = 8;
   static_assert(!(WarpShape::kM % WarpNumThreadsM) && !(WarpShape::kN % WarpNumThreadsN),
       "WarpShape must be divisible by ThreadTile shape.");
@@ -2313,7 +2360,7 @@ struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, ElementA_,
   //
 
   // Define the warp-level op
-  static const int WarpNumThreadsM = 4; // TODO need to extract these from template data
+  static const int WarpNumThreadsM = 4;
   static const int WarpNumThreadsN = 8;
   static_assert(!(WarpShape::kM % WarpNumThreadsM) && !(WarpShape::kN % WarpNumThreadsN),
       "WarpShape must be divisible by ThreadTile shape.");
@@ -2470,7 +2517,7 @@ struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, ElementA_,
   //
 
   // Define the warp-level op
-  static const int WarpNumThreadsM = 4; // TODO need to extract these from template data
+  static const int WarpNumThreadsM = 4;
   static const int WarpNumThreadsN = 8;
   static_assert(!(WarpShape::kM % WarpNumThreadsM) && !(WarpShape::kN % WarpNumThreadsN),
       "WarpShape must be divisible by ThreadTile shape.");

@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -56,6 +62,7 @@ struct Mma<
 
   using Shape = gemm::GemmShape<2, 1, 1>;
   using Operator = OpMultiplyAdd;
+  using ElementC = half_t;
 
   CUTLASS_HOST_DEVICE
   void operator()(
@@ -101,6 +108,7 @@ struct Mma<
 
   using Shape = gemm::GemmShape<1, 2, 1>;
   using Operator = OpMultiplyAdd;
+  using ElementC = half_t;
 
   CUTLASS_HOST_DEVICE
   void operator()(
@@ -146,6 +154,7 @@ struct Mma <
 
   using Shape = gemm::GemmShape<2, 2, 1>;
   using Operator = OpMultiplyAdd;
+  using ElementC = half_t;
 
   CUTLASS_HOST_DEVICE
   void operator()(
@@ -200,7 +209,8 @@ struct Mma<
 
   using Shape = gemm::GemmShape<2, 2, 1>;
   using Operator = OpMultiplyAdd;
-  
+  using ElementC = half_t;
+
   CUTLASS_HOST_DEVICE
   void operator()(
     Array<half_t, 4> &d,
@@ -214,12 +224,12 @@ struct Mma<
     __half2 Alo = __low2half2(reinterpret_cast<__half2 const &>(a));
     __half2 Ahi = __high2half2(reinterpret_cast<__half2 const &>(a));
     __half2 const & B = reinterpret_cast<__half2 const &>(b);
-    
+
     __half2 const *C = reinterpret_cast<__half2 const *>(&c);
 
     __half2 Dlo = __hfma2(Alo, B, C[0]);
-    __half2 Dhi = __hfma2(Ahi, B, C[0]);
-    
+    __half2 Dhi = __hfma2(Ahi, B, C[1]);
+
     Array<half_t, 2> * D = reinterpret_cast<Array<half_t, 2> *>(&d);
 
     D[0] = reinterpret_cast<Array<half_t, 2> &>(Dlo);
@@ -240,4 +250,3 @@ struct Mma<
 
 }
 }
-

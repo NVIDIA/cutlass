@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -30,6 +36,7 @@
 #pragma once
 
 #include <iostream>
+#include <fstream>
 
 #include "../../common/cutlass_unit_test.h"
 #include "cutlass/cutlass.h"
@@ -410,51 +417,26 @@ struct TestbedGrouped {
     return passed;
   }
 
-  /// Returns the number of threadblocks to launch if the kernel can run on the target
-  /// device. Otherwise, returns zero.
-  int sufficient() const {
-    //
-    // Determine SMEM requirements and waive if not satisfied
-    //
-
-    int smem_size = int(sizeof(typename Gemm::GemmKernel::SharedStorage));
-
-    cudaDeviceProp properties;
-    int device_idx;
-    cudaError_t result = cudaGetDevice(&device_idx);
-
-    if (result != cudaSuccess) {
-      throw std::runtime_error("cudaGetDevice() API call failed.");
-    }
-
-    result = cudaGetDeviceProperties(&properties, device_idx);
-
-    if (result != cudaSuccess) {
-      throw std::runtime_error("cudaGetDeviceProperties() failed");
-    }
-
-    int occupancy = std::min(2, int(properties.sharedMemPerMultiprocessor / smem_size));
-
-    return properties.multiProcessorCount * occupancy;
-  }
-
   /// Executes one test
   bool run(
     int problem_count,
     ElementCompute alpha = ElementCompute(1), 
     ElementCompute beta = ElementCompute(0)) {
 
-    int threadblock_count = sufficient();
-
-    // Early exit
-    if (!threadblock_count) {
-      return false;
-    }
-
     this->problem_count = problem_count;
 
     // Initialize the problem
     initialize();
+
+    int threadblock_count = Gemm::sufficient(problem_sizes_host.data(), problem_count);
+
+    // Early exit
+    if (!threadblock_count) {
+      if (CUTLASS_TEST_UNIT_ENABLE_WARNINGS) {
+        std::cerr << "Test waived due to insufficient CUDA device resources." << std::endl;
+      }
+      return true;
+    }
 
     // Configure the GEMM arguments
     typename EpilogueOutputOp::Params epilogue_op(alpha, beta);
@@ -472,13 +454,17 @@ struct TestbedGrouped {
       lda.get(),
       ldb.get(),
       ldc.get(),
-      ldd.get()
+      ldd.get(),
+      problem_sizes_host.data()
     );
 
     // Initialize the GEMM object
     Gemm gemm;
 
-    cutlass::Status status = gemm.initialize(args);
+    size_t workspace_size = gemm.get_workspace_size(args);
+    cutlass::DeviceAllocation<uint8_t> workspace(workspace_size);
+
+    cutlass::Status status = gemm.initialize(args, workspace.get());
 
     if (status != cutlass::Status::kSuccess) {
       return false;

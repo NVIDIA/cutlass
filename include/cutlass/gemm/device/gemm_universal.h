@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -28,6 +34,7 @@
 
 #pragma once
 
+#include "cutlass/arch/mma.h"
 #include "cutlass/cutlass.h"
 #include "cutlass/numeric_types.h"
 #include "cutlass/arch/arch.h"
@@ -41,6 +48,8 @@
 #include "cutlass/gemm/device/default_gemm_configuration.h"
 #include "cutlass/gemm/device/gemm_universal_base.h"
 
+#include "cutlass/layout/permute.h"
+
 ////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
@@ -50,6 +59,11 @@ namespace device {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /*! 
+  GemmUniversal is a stateful, reusable GEMM handle.  Once initialized for a given GEMM computation
+  (problem geometry and data references), it can be reused across different GEMM problems having the
+  geometry.  (Once initialized, details regarding problem geometry and references to workspace memory
+  cannot be updated.)
+
   The universal GEMM accommodates serial reductions, parallel reductions, batched strided, and 
   batched array variants.
 */
@@ -111,10 +125,22 @@ template <
     /// Complex elementwise transformation on A operand
     ComplexTransform TransformA = ComplexTransform::kNone,
     /// Complex elementwise transformation on B operand
-    ComplexTransform TransformB = ComplexTransform::kNone
+    ComplexTransform TransformB = ComplexTransform::kNone,
+    /// Gather operand A by using an index array
+    bool GatherA = false,
+    /// Gather operand B by using an index array
+    bool GatherB = false,
+    /// Scatter result D by using an index array
+    bool ScatterD = false,
+    /// Permute result D
+    typename PermuteDLayout_ = layout::NoPermute,
+    /// Permute operand A
+    typename PermuteALayout_ = layout::NoPermute,
+    /// Permute operand B
+    typename PermuteBLayout_ = layout::NoPermute
 >
 class GemmUniversal : 
-  GemmUniversalBase<
+  public GemmUniversalBase<
     typename kernel::DefaultGemmUniversal<
       ElementA_,
       LayoutA_,
@@ -135,7 +161,14 @@ class GemmUniversal :
       EpilogueOutputOp_,
       ThreadblockSwizzle_,
       Stages,
-      Operator_
+      Operator_,
+      SharedMemoryClearOption::kNone,
+      GatherA,
+      GatherB,
+      ScatterD,
+      PermuteDLayout_,
+      PermuteALayout_,
+      PermuteBLayout_
     >::GemmKernel
   > {
 
@@ -150,6 +183,9 @@ class GemmUniversal :
   using EpilogueOutputOp = EpilogueOutputOp_;
   using ThreadblockSwizzle = ThreadblockSwizzle_;
   using Operator = Operator_;
+  using PermuteDLayout = PermuteDLayout_;
+  using PermuteALayout = PermuteALayout_;
+  using PermuteBLayout = PermuteBLayout_;
   static int const kStages = Stages;
   static int const kAlignmentA = AlignmentA;
   static int const kAlignmentB = AlignmentB;
@@ -178,7 +214,14 @@ class GemmUniversal :
       EpilogueOutputOp_,
       ThreadblockSwizzle_,
       Stages,
-      Operator_
+      Operator_,
+      SharedMemoryClearOption::kNone,
+      GatherA,
+      GatherB,
+      ScatterD,
+      PermuteDLayout_,
+      PermuteALayout_,
+      PermuteBLayout_
     >::GemmKernel
   >;
 
@@ -188,7 +231,7 @@ class GemmUniversal :
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/// Parital specialization for column-major output exchanges problem size and operand.
+/// Partial specialization for column-major output exchanges problem size and operand.
 template <
     /// Element type for A matrix operand
     typename ElementA_,
@@ -229,13 +272,27 @@ template <
     /// Complex elementwise transformation on A operand
     ComplexTransform TransformA,
     /// Complex elementwise transformation on B operand
-    ComplexTransform TransformB>
+    ComplexTransform TransformB,
+    /// Gather operand A by using an index array
+    bool GatherA,
+    /// Gather operand B by using an index array
+    bool GatherB,
+    /// Scatter result D by using an index array
+    bool ScatterD,
+    /// Permute result D
+    typename PermuteDLayout_,
+    /// Permute operand A
+    typename PermuteALayout_,
+    /// Permute operand B
+    typename PermuteBLayout_
+>
 class GemmUniversal<ElementA_, LayoutA_, ElementB_, LayoutB_, ElementC_,
            layout::ColumnMajor,  // partially specialized on LayoutC
            ElementAccumulator_, OperatorClass_, ArchTag_, ThreadblockShape_,
            WarpShape_, InstructionShape_, EpilogueOutputOp_,
            ThreadblockSwizzle_, Stages, AlignmentA, AlignmentB,
-           Operator_, TransformA, TransformB> {
+           Operator_, TransformA, TransformB, GatherA, GatherB, ScatterD,
+           PermuteDLayout_, PermuteALayout_, PermuteBLayout_> {
  public:
 
   using ElementA = ElementA_;
@@ -257,6 +314,9 @@ class GemmUniversal<ElementA_, LayoutA_, ElementB_, LayoutB_, ElementC_,
   using EpilogueOutputOp = EpilogueOutputOp_;
   using ThreadblockSwizzle = ThreadblockSwizzle_;
   using Operator = Operator_;
+  using PermuteDLayout = PermuteDLayout_;
+  using PermuteALayout = PermuteALayout_;
+  using PermuteBLayout = PermuteBLayout_;
   static int const kStages = Stages;
   static int const kAlignmentA = AlignmentA;
   static int const kAlignmentB = AlignmentB;
@@ -283,7 +343,13 @@ class GemmUniversal<ElementA_, LayoutA_, ElementB_, LayoutB_, ElementC_,
     kAlignmentA,
     Operator,
     kTransformB,
-    kTransformA
+    kTransformA,
+    GatherB,
+    GatherA,
+    ScatterD,
+    PermuteDLayout,
+    PermuteBLayout,
+    PermuteALayout
   >::Base;
 
   using GemmKernel = typename UnderlyingOperator::GemmKernel;

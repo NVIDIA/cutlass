@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -34,6 +40,10 @@
 
 #include "cutlass/transform/threadblock/predicated_tile_iterator.h"
 #include "cutlass/transform/threadblock/predicated_tile_iterator_2dthreadtile.h"
+#include "cutlass/transform/threadblock/predicated_vector_access_iterator.h"
+#include "cutlass/transform/threadblock/vector_iterator.h"
+#include "cutlass/transform/warp/vector_fragment_iterator.h"
+
 #include "cutlass/gemm/threadblock/default_mma_core_sm70.h"
 #include "cutlass/gemm/threadblock/default_mma_core_sm75.h"
 #include "cutlass/gemm/threadblock/default_mma_core_sm80.h"
@@ -89,7 +99,9 @@ template <
     typename EpilogueOutputOp,
     /// Store the accumulators in row major or column major.  Row major is used
     /// when output layout is interleaved.
-    bool AccumulatorsInRowMajor = false>
+    bool AccumulatorsInRowMajor = false,
+    /// Staging the accumulators in shared memory.
+    bool SmemAccumulator = false>
 struct DefaultB2bMma;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -162,6 +174,22 @@ struct DefaultB2bMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
           MmaCore1::Shape::kK, //kBlocksColumn
           ElementAccumulator, ElementA, AccumulatorLayout, InstructionShape, EpilogueOutputOp>;
 
+  using ElementScaleBias = typename EpilogueOutputOp::ElementCompute;
+  using LayoutScaleBias = layout::RowMajor; //vector layout doesn't really matter
+  static int const kElementsPerAccess = 2;
+  using IteratorAccumulatorScaleBias =
+    cutlass::transform::threadblock::VectorIterator<
+      cutlass::transform::threadblock::PredicatedVectorAccessIterator<
+          cutlass::MatrixShape<ThreadblockShape0::kM, ThreadblockShape0::kN>,
+          cutlass::MatrixShape<WarpShape1::kM, WarpShape1::kK>,
+          ElementScaleBias, LayoutScaleBias, kElementsPerAccess>
+    >;
+
+  // Warp-level iterators to load scale and bias vectors
+  using FragmentIteratorA1ScaleBias = cutlass::transform::warp::VectorFragmentIterator<
+      MatrixShape<1, IteratorAccumulatorScaleBias::Fragment::kElements>, ElementScaleBias,
+      LayoutScaleBias, InstructionShape, kElementsPerAccess>;
+
   // Define iterators over tiles from the B operand
   using IteratorB1 =
       cutlass::transform::threadblock::PredicatedTileIterator<
@@ -173,6 +201,7 @@ struct DefaultB2bMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
       typename MmaCore0::Shape, IteratorA0, typename MmaCore0::SmemIteratorA,
       IteratorB0, typename MmaCore0::SmemIteratorB, 
       typename MmaCore1::Shape, FragmentIteratorA1,
+      IteratorAccumulatorScaleBias, FragmentIteratorA1ScaleBias,
       IteratorB1, typename MmaCore1::SmemIteratorB, 
       ElementAccumulator, layout::RowMajor,
       EpilogueOutputOp,
@@ -268,6 +297,24 @@ struct DefaultB2bMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
           MmaCore1::Shape::kK, //kBlocksColumn
           ElementAccumulator, ElementA, AccumulatorLayout, InstructionShape, EpilogueOutputOp>;
 
+  /// Define iterators over tiles from scale/bias vectors
+  using ElementScaleBias = typename EpilogueOutputOp::ElementCompute;
+  using LayoutScaleBias = layout::RowMajor; //vector layout doesn't really matter
+  static int const kElementsPerAccess = 2;
+  using IteratorAccumulatorScaleBias =
+    cutlass::transform::threadblock::VectorIterator<
+      cutlass::transform::threadblock::PredicatedVectorAccessIterator<
+          cutlass::MatrixShape<ThreadblockShape0::kM, ThreadblockShape0::kN>,
+          cutlass::MatrixShape<WarpShape1::kM, WarpShape1::kK>,
+          ElementScaleBias, LayoutScaleBias, kElementsPerAccess>
+    >;
+
+  // Warp-level iterators to load scale and bias vectors
+  using FragmentIteratorA1ScaleBias = cutlass::transform::warp::VectorFragmentIterator<
+      MatrixShape<1, IteratorAccumulatorScaleBias::Fragment::kElements>, ElementScaleBias,
+      LayoutScaleBias, InstructionShape, kElementsPerAccess>;
+
+
   // Define iterators over tiles from the B operand
   using ThreadMapB1 = typename MmaCore1::IteratorThreadMapB;
   using AccessTypeB1 = cutlass::Array<ElementB, kAlignmentB>;
@@ -282,6 +329,7 @@ struct DefaultB2bMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
       MmaCore0::kCacheOpA, 
       IteratorB0, typename MmaCore0::SmemIteratorB, MmaCore0::kCacheOpB, 
       typename MmaCore1::Shape, FragmentIteratorA1,
+      IteratorAccumulatorScaleBias, FragmentIteratorA1ScaleBias,
       IteratorB1, typename MmaCore1::SmemIteratorB, MmaCore1::kCacheOpB,
       ElementAccumulator, layout::RowMajor,
       EpilogueOutputOp,
@@ -369,6 +417,22 @@ struct DefaultB2bMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
           ElementAccumulator, ElementA, AccumulatorLayout, 
           InstructionShape, EpilogueOutputOp>;
 
+  using ElementScaleBias = typename EpilogueOutputOp::ElementCompute;
+  using LayoutScaleBias = layout::RowMajor; //vector layout doesn't really matter
+  static int const kElementsPerAccess = 4;
+  using IteratorAccumulatorScaleBias =
+    cutlass::transform::threadblock::VectorIterator<
+      cutlass::transform::threadblock::PredicatedVectorAccessIterator<
+          cutlass::MatrixShape<ThreadblockShape0::kM, ThreadblockShape0::kN>,
+          cutlass::MatrixShape<WarpShape1::kM, WarpShape1::kK>,
+          ElementScaleBias, LayoutScaleBias, kElementsPerAccess>
+    >;
+
+  // Warp-level iterators to load scale and bias vectors
+  using FragmentIteratorA1ScaleBias = cutlass::transform::warp::VectorFragmentIterator<
+      MatrixShape<1, IteratorAccumulatorScaleBias::Fragment::kElements>, ElementScaleBias,
+      LayoutScaleBias, InstructionShape, kElementsPerAccess>;
+
   // Define iterators over tiles from the B operand
   using IteratorB1 =
       cutlass::transform::threadblock::PredicatedTileIterator<
@@ -376,12 +440,12 @@ struct DefaultB2bMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
           ElementB, LayoutB, 0, typename MmaCore1::IteratorThreadMapB>;
 
 
-
   // Define the threadblock-scoped pipelined matrix multiply
   using ThreadblockB2bMma = cutlass::gemm::threadblock::B2bMmaPipelined<
       typename MmaCore0::Shape, IteratorA0, typename MmaCore0::SmemIteratorA,
       IteratorB0, typename MmaCore0::SmemIteratorB, 
       typename MmaCore1::Shape, FragmentIteratorA1,
+      IteratorAccumulatorScaleBias, FragmentIteratorA1ScaleBias,
       IteratorB1, typename MmaCore1::SmemIteratorB, 
       ElementAccumulator, layout::ColumnMajorInterleaved<InterleavedK>,
       EpilogueOutputOp,
@@ -471,6 +535,23 @@ struct DefaultB2bMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
           ElementAccumulator, ElementA, AccumulatorLayout, 
           InstructionShape, EpilogueOutputOp>;
 
+  /// Define iterators over tiles from scale/bias vectors
+  using ElementScaleBias = typename EpilogueOutputOp::ElementCompute;
+  using LayoutScaleBias = layout::RowMajor; //vector layout doesn't really matter
+  static int const kElementsPerAccess = 4;
+  using IteratorAccumulatorScaleBias =
+    cutlass::transform::threadblock::VectorIterator<
+      cutlass::transform::threadblock::PredicatedVectorAccessIterator<
+          cutlass::MatrixShape<ThreadblockShape0::kM, ThreadblockShape0::kN>, 
+          cutlass::MatrixShape<WarpShape1::kM, WarpShape1::kK>, 
+          ElementScaleBias, LayoutScaleBias, kElementsPerAccess>
+    >;
+
+  // Warp-level iterators to load scale and bias vectors
+  using FragmentIteratorA1ScaleBias = cutlass::transform::warp::VectorFragmentIterator<
+      MatrixShape<1, IteratorAccumulatorScaleBias::Fragment::kElements>, ElementScaleBias,
+      LayoutScaleBias, InstructionShape, kElementsPerAccess>;
+
   // Define iterators over tiles from the B operand
   using ThreadMapB1 = typename MmaCore1::IteratorThreadMapB;
   using IteratorB1 =
@@ -486,6 +567,7 @@ struct DefaultB2bMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
       MmaCore0::kCacheOpA, 
       IteratorB0, typename MmaCore0::SmemIteratorB, MmaCore0::kCacheOpB, 
       typename MmaCore1::Shape, FragmentIteratorA1,
+      IteratorAccumulatorScaleBias, FragmentIteratorA1ScaleBias,
       IteratorB1, typename MmaCore1::SmemIteratorB, MmaCore1::kCacheOpB, 
       ElementAccumulator, layout::ColumnMajorInterleaved<InterleavedK>,
       EpilogueOutputOp,

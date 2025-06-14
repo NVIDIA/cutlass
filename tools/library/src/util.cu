@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -28,6 +34,8 @@
 #include "cutlass/cutlass.h"
 #include "cutlass/numeric_types.h"
 #include "cutlass/complex.h"
+#include "cutlass/blas3.h"
+
 #include "cutlass/layout/matrix.h"
 
 #include "cutlass/library/library.h"
@@ -97,6 +105,7 @@ GemmKind_enumerants[] = {
   {"universal", "<Universal>", GemmKind::kUniversal},
   {"planar_complex", "<PlanarComplex>", GemmKind::kPlanarComplex},
   {"planar_complex_array", "<PlanarComplexArray>", GemmKind::kPlanarComplexArray},
+  {"grouped", "<Grouped>", GemmKind::kGrouped},
 };
 
 /// Converts a GemmKind enumerant to a string
@@ -118,19 +127,222 @@ char const *to_string(GemmKind type, bool pretty) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+static struct {
+  char const *text;
+  char const *pretty;
+  RankKKind enumerant;
+}
+RankKKind_enumerants[] = {
+  {"universal", "<Universal>", RankKKind::kUniversal},
+};
+
+/// Converts a SyrkKind enumerant to a string
+char const *to_string(RankKKind type, bool pretty) {
+
+  for (auto const & possible :RankKKind_enumerants) {
+    if (type == possible.enumerant) {
+      if (pretty) {
+        return possible.pretty;
+      }
+      else {
+        return possible.text;
+      }
+    }
+  }
+
+  return pretty ? "Invalid" : "invalid";
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+static struct {
+  char const *text;
+  char const *pretty;
+  TrmmKind enumerant;
+}
+TrmmKind_enumerants[] = {
+  {"universal", "<Universal>", TrmmKind::kUniversal},
+};
+
+/// Converts a TrmmKind enumerant to a string
+char const *to_string(TrmmKind type, bool pretty) {
+
+  for (auto const & possible :TrmmKind_enumerants) {
+    if (type == possible.enumerant) {
+      if (pretty) {
+        return possible.pretty;
+      }
+      else {
+        return possible.text;
+      }
+    }
+  }
+
+  return pretty ? "Invalid" : "invalid";
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+static struct {
+  char const *text;
+  char const *pretty;
+  SymmKind enumerant;
+}
+SymmKind_enumerants[] = {
+  {"universal", "<Universal>", SymmKind::kUniversal},
+};
+
+/// Converts a SymmKind enumerant to a string
+char const *to_string(SymmKind type, bool pretty) {
+
+  for (auto const & possible :SymmKind_enumerants) {
+    if (type == possible.enumerant) {
+      if (pretty) {
+        return possible.pretty;
+      }
+      else {
+        return possible.text;
+      }
+    }
+  }
+
+  return pretty ? "Invalid" : "invalid";
+}
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+static struct {
+  char const *text;
+  char const *pretty;
+  SideMode enumerant;
+}
+SideMode_enumerants[] = {
+  {"left", "Left", SideMode::kLeft},
+  {"right", "Right", SideMode::kRight}
+};
+
+/// Converts a SideMode enumerant to a string
+char const *to_string(SideMode type, bool pretty) {
+
+  for (auto const & possible :SideMode_enumerants) {
+    if (type == possible.enumerant) {
+      if (pretty) {
+        return possible.pretty;
+      }
+      else {
+        return possible.text;
+      }
+    }
+  }
+
+  return pretty ? "Invalid" : "invalid";
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+static struct {
+  char const *text;
+  char const *pretty;
+  FillMode enumerant;
+}
+FillMode_enumerants[] = {
+  {"lower", "Lower", FillMode::kLower},
+  {"upper", "Upper", FillMode::kUpper}
+};
+
+/// Converts a FillMode enumerant to a string
+char const *to_string(FillMode type, bool pretty) {
+
+  for (auto const & possible :FillMode_enumerants) {
+    if (type == possible.enumerant) {
+      if (pretty) {
+        return possible.pretty;
+      }
+      else {
+        return possible.text;
+      }
+    }
+  }
+
+  return pretty ? "Invalid" : "invalid";
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+static struct {
+  char const *text;
+  char const *pretty;
+  BlasMode enumerant;
+}
+BlasMode_enumerants[] = {
+  {"symmetric", "Symmetric", BlasMode::kSymmetric},
+  {"hermitian", "Hermitian", BlasMode::kHermitian}
+};
+
+/// Converts a BlasMode enumerant to a string
+char const *to_string(BlasMode type, bool pretty) {
+
+  for (auto const & possible :BlasMode_enumerants) {
+    if (type == possible.enumerant) {
+      if (pretty) {
+        return possible.pretty;
+      }
+      else {
+        return possible.text;
+      }
+    }
+  }
+
+  return pretty ? "Invalid" : "invalid";
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+static struct {
+  char const *text;
+  char const *pretty;
+  DiagType enumerant;
+}
+DiagType_enumerants[] = {
+  {"nonunit", "NonUnit", DiagType::kNonUnit},
+  {"unit", "Unit", DiagType::kUnit}
+};
+
+/// Converts a DiagType enumerant to a string
+char const *to_string(DiagType type, bool pretty) {
+
+  for (auto const & possible :DiagType_enumerants) {
+    if (type == possible.enumerant) {
+      if (pretty) {
+        return possible.pretty;
+      }
+      else {
+        return possible.text;
+      }
+    }
+  }
+
+  return pretty ? "Invalid" : "invalid";
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 static struct {
   char const *text;
   char const *pretty;
   OperationKind enumerant;
-}
-OperationKind_enumerants[] = {
-  {"eq_gemm", "EqGemm", OperationKind::kEqGemm}, 
-  {"gemm", "Gemm", OperationKind::kGemm},               
-  {"conv2d", "Conv2d", OperationKind::kConv2d},           
-  {"conv3d", "Conv3d", OperationKind::kConv3d},           
+} OperationKind_enumerants[] = {
+  {"eq_gemm", "EqGemm", OperationKind::kEqGemm},
+  {"gemm", "Gemm", OperationKind::kGemm},
+  {"block_scaled_gemm", "blockScaledGemm", OperationKind::kBlockScaledGemm}, 
+  {"blockwise_gemm", "blockwiseGemm", OperationKind::kBlockwiseGemm}, 
+  {"rank_k", "RankK", OperationKind::kRankK},
+  {"rank_2k", "Rank2K", OperationKind::kRank2K},
+  {"trmm", "Trmm", OperationKind::kTrmm},
+  {"symm", "Symm", OperationKind::kSymm},
+  {"conv2d", "Conv2d", OperationKind::kConv2d},
+  {"conv3d", "Conv3d", OperationKind::kConv3d},
   {"spgemm", "SparseGemm", OperationKind::kSparseGemm},
+  {"grouped_gemm", "GroupedGemm", OperationKind::kGroupedGemm},
 };
 
 /// Converts a Status enumerant to a string
@@ -212,13 +424,62 @@ Status from_string<Status>(std::string const &str) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+static struct {
+  char const *text;
+  char const *pretty;
+  RuntimeDatatype enumerant;
+}
+RuntimeDatatype_enumerants[] = {
+  {"e4m3", "<e4m3>", RuntimeDatatype::kE4M3},
+  {"e5m2", "<e5m2>", RuntimeDatatype::kE5M2},
+  {"e3m2", "<e3m2>", RuntimeDatatype::kE3M2},
+  {"e2m3", "<e2m3>", RuntimeDatatype::kE2M3},
+  {"e2m1", "<e2m1>", RuntimeDatatype::kE2M1}
+};
+
+/// Converts a RuntimeDatatype enumerant to a string
+char const *to_string(RuntimeDatatype type, bool pretty) {
+
+  for (auto const & possible : RuntimeDatatype_enumerants) {
+    if (type == possible.enumerant) {
+      if (pretty) {
+        return possible.pretty;
+      }
+      else {
+        return possible.text;
+      }
+    }
+  }
+
+  return pretty ? "Invalid" : "invalid";
+}
+
+
+/// Converts a RuntimeDatatype enumerant from a string
+template <>
+RuntimeDatatype from_string<RuntimeDatatype>(std::string const &str) {
+
+  for (auto const & possible : RuntimeDatatype_enumerants) {
+    if ((str.compare(possible.text) == 0) ||
+        (str.compare(possible.pretty) == 0)) {
+      return possible.enumerant;
+    }
+  }
+
+  return RuntimeDatatype::kInvalid;
+}
+
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
 static struct {
   char const *text;
   char const *pretty;
   NumericTypeID enumerant;
 }
 NumericTypeID_enumerants[] = {
-  {"unknown", "<unkown>", NumericTypeID::kUnknown},
+  {"unknown", "<unknown>", NumericTypeID::kUnknown},
   {"void", "Void", NumericTypeID::kVoid},
   {"b1", "B1", NumericTypeID::kB1},
   {"u2", "U2", NumericTypeID::kU2},
@@ -233,6 +494,17 @@ NumericTypeID_enumerants[] = {
   {"s16", "S16", NumericTypeID::kS16},
   {"s32", "S32", NumericTypeID::kS32},
   {"s64", "S64", NumericTypeID::kS64},
+  {"fe4m3", "FE4M3", NumericTypeID::kFE4M3},
+  {"fe5m2", "FE5M2", NumericTypeID::kFE5M2},
+  
+  {"f8", "F8", NumericTypeID::kF8},
+  {"f6", "F6", NumericTypeID::kF6},
+  {"f4", "F4", NumericTypeID::kF4},
+  {"fe2m3", "FE2M3", NumericTypeID::kFE2M3},
+  {"fe3m2", "FE3M2", NumericTypeID::kFE3M2},
+  {"fe2m1", "FE2M1", NumericTypeID::kFE2M1},
+  {"fue8m0", "FUE8M0", NumericTypeID::kFUE8M0},
+  {"fue4m3", "FUE4M3", NumericTypeID::kFUE4M3},
   {"f16", "F16", NumericTypeID::kF16},
   {"bf16", "BF16", NumericTypeID::kBF16},
   {"f32", "F32", NumericTypeID::kF32},
@@ -255,7 +527,7 @@ NumericTypeID_enumerants[] = {
   {"cs16", "CS16", NumericTypeID::kCS16},
   {"cs32", "CS32", NumericTypeID::kCS32},
   {"cs64", "CS64", NumericTypeID::kCS64},
-  {"*", "<unkown/enumerate all>", NumericTypeID::kUnknown}
+  {"*", "<unknown/enumerate all>", NumericTypeID::kUnknown}
 };
 
 /// Converts a NumericTypeID enumerant to a string
@@ -294,6 +566,17 @@ NumericTypeID from_string<NumericTypeID>(std::string const &str) {
 /// Returns the size of a data type in bits
 int sizeof_bits(NumericTypeID type) {
   switch (type) {
+    case NumericTypeID::kFE4M3: return 8;
+    case NumericTypeID::kFE5M2: return 8;
+    
+    case NumericTypeID::kF8: return 8;
+    case NumericTypeID::kF6: return 6;
+    case NumericTypeID::kF4: return 4;
+    case NumericTypeID::kFE2M3: return 6;
+    case NumericTypeID::kFE3M2: return 6;
+    case NumericTypeID::kFE2M1: return 4;
+    case NumericTypeID::kFUE8M0: return 8;
+    case NumericTypeID::kFUE4M3: return 8;
     case NumericTypeID::kF16: return 16;
     case NumericTypeID::kBF16: return 16;
     case NumericTypeID::kTF32: return 32;
@@ -371,6 +654,17 @@ bool is_integer_type(NumericTypeID type) {
 /// Returns true if numeric type is signed
 bool is_signed_type(NumericTypeID type) {
   switch (type) {
+    case NumericTypeID::kFE4M3: return true;
+    case NumericTypeID::kFE5M2: return true;
+    
+    case NumericTypeID::kF8: return true;
+    case NumericTypeID::kF6: return true;
+    case NumericTypeID::kF4: return true;
+    case NumericTypeID::kFE2M3: return true;
+    case NumericTypeID::kFE3M2: return true;
+    case NumericTypeID::kFE2M1: return true;
+    case NumericTypeID::kFUE8M0: return false;
+    case NumericTypeID::kFUE4M3: return false;
     case NumericTypeID::kF16: return true;
     case NumericTypeID::kBF16: return true;
     case NumericTypeID::kTF32: return true;
@@ -400,6 +694,17 @@ bool is_unsigned_integer(NumericTypeID type) {
 /// Returns true if numeric type is floating-point type
 bool is_float_type(NumericTypeID type) {
   switch (type) {
+  case NumericTypeID::kFE4M3: return true;
+  case NumericTypeID::kFE5M2: return true;
+  
+  case NumericTypeID::kF8: return true;
+  case NumericTypeID::kF6: return true;
+  case NumericTypeID::kF4: return true;
+  case NumericTypeID::kFE2M3: return true;
+  case NumericTypeID::kFE3M2: return true;
+  case NumericTypeID::kFE2M1: return true;
+  case NumericTypeID::kFUE8M0: return true;
+  case NumericTypeID::kFUE4M3: return true;
   case NumericTypeID::kF16: return true;
   case NumericTypeID::kBF16: return true;
   case NumericTypeID::kTF32: return true;
@@ -536,6 +841,7 @@ OpcodeClassID_enumerants[] = {
   {"tensorop", "<tensorop>", OpcodeClassID::kTensorOp},
   {"wmmatensorop", "<wmmatensorop>", OpcodeClassID::kWmmaTensorOp},
   {"wmma", "<wmma>", OpcodeClassID::kWmmaTensorOp},
+  {"sptensorop", "<sptensorop>", OpcodeClassID::kSparseTensorOp}
 };
 
 /// Converts a OpcodeClassID enumerant to a string
@@ -706,6 +1012,8 @@ IteratorAlgorithmID_enumerants[] = {
   {"none", "<none>", IteratorAlgorithmID::kNone},
   {"analytic", "<analytic>", IteratorAlgorithmID::kAnalytic},
   {"optimized", "<optimized>", IteratorAlgorithmID::kOptimized},
+  {"fixed_channels", "<fixed_channels>", IteratorAlgorithmID::kFixedChannels},
+  {"few_channels", "<few_channels>", IteratorAlgorithmID::kFewChannels},
 };
 
 /// Converts a ConvModeID enumerant to a string
@@ -746,7 +1054,7 @@ static struct {
   ConvKind enumerant;
 }
 ConvKind_enumerants[] = {
-  {"unknown", "<unkown>", ConvKind::kUnknown},
+  {"unknown", "<unknown>", ConvKind::kUnknown},
   {"fprop", "<fprop>", ConvKind::kFprop},
   {"dgrad", "<dgrad>", ConvKind::kDgrad},
   {"wgrad", "<wgrad>", ConvKind::kWgrad},
@@ -783,6 +1091,99 @@ ConvKind from_string<ConvKind>(std::string const &str) {
 
   return ConvKind::kInvalid;
 }
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+static struct {
+  char const *text;
+  char const *pretty;
+  char const *character;
+  RasterOrder enumerant;
+}
+RasterOrder_enumerants[] = {
+  {"along_n", "<along_n>", "N", RasterOrder::kAlongN},
+  {"along_m", "<along_m>", "M", RasterOrder::kAlongM},
+  {"heuristic", "<heuristic>", "H", RasterOrder::kHeuristic},
+};
+
+/// Converts a RasterOrder enumerant to a string
+char const *to_string(RasterOrder type, bool pretty) {
+
+  for (auto const & possible : RasterOrder_enumerants) {
+    if (type == possible.enumerant) {
+      if (pretty) {
+        return possible.pretty;
+      }
+      else {
+        return possible.text;
+      }
+    }
+  }
+
+  return pretty ? "Invalid" : "invalid";
+}
+
+
+/// Converts a RasterOrder enumerant from a string
+template <>
+RasterOrder from_string<RasterOrder>(std::string const &str) {
+
+  for (auto const & possible : RasterOrder_enumerants) {
+    if ((str.compare(possible.text) == 0) ||
+        (str.compare(possible.pretty) == 0) ||
+        (str.compare(possible.character) == 0)) {
+      return possible.enumerant;
+    }
+  }
+
+  return RasterOrder::kInvalid;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+static struct {
+  char const *text;
+  char const *pretty;
+  char const *character;
+  bool enumerant;
+}
+Bool_enumerants[] = {
+  {"true", "<true>", "t", true},
+  {"false", "<false>", "f", false},
+};
+
+/// Converts a RasterOrder enumerant to a string
+char const *to_string(bool type, bool pretty) {
+
+  for (auto const & possible : Bool_enumerants) {
+    if (type == possible.enumerant) {
+      if (pretty) {
+        return possible.pretty;
+      }
+      else {
+        return possible.text;
+      }
+    }
+  }
+
+  return pretty ? "Invalid" : "invalid";
+}
+
+
+/// Converts a RasterOrder enumerant from a string
+template <>
+bool from_string<bool>(std::string const &str) {
+
+  for (auto const & possible : Bool_enumerants) {
+    if ((str.compare(possible.text) == 0) ||
+        (str.compare(possible.pretty) == 0) ||
+        (str.compare(possible.character) == 0)) {
+      return possible.enumerant;
+    }
+  }
+
+  return false;
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Lexical cast a string to a byte array. Returns true if cast is successful or false if invalid.
@@ -836,6 +1237,55 @@ bool lexical_cast(std::vector<uint8_t> &bytes, NumericTypeID type, std::string c
   case NumericTypeID::kS64:
   {
     ss >> *reinterpret_cast<int64_t *>(bytes.data());
+  }
+    break;
+  case NumericTypeID::kFE4M3:
+  {
+    float tmp;
+    ss >> tmp;
+    *reinterpret_cast<float_e4m3_t *>(bytes.data()) = static_cast<float_e4m3_t>(tmp);
+  }
+    break;
+  case NumericTypeID::kFE5M2:
+  {
+    float tmp;
+    ss >> tmp;
+    *reinterpret_cast<float_e5m2_t *>(bytes.data()) = static_cast<float_e5m2_t>(tmp);
+  }
+    break;
+  case NumericTypeID::kFE2M3:
+  {
+    float tmp;
+    ss >> tmp;
+    *reinterpret_cast<float_e2m3_t *>(bytes.data()) = static_cast<float_e2m3_t>(tmp);
+  }
+    break;
+  case NumericTypeID::kFE3M2:
+  {
+    float tmp;
+    ss >> tmp;
+    *reinterpret_cast<float_e3m2_t *>(bytes.data()) = static_cast<float_e3m2_t>(tmp);
+  }
+    break;
+  case NumericTypeID::kFE2M1:
+  {
+    float tmp;
+    ss >> tmp;
+    *reinterpret_cast<float_e2m1_t *>(bytes.data()) = static_cast<float_e2m1_t>(tmp);
+  }
+    break;
+  case NumericTypeID::kFUE8M0:
+  {
+    float tmp;
+    ss >> tmp;
+    *reinterpret_cast<float_ue8m0_t *>(bytes.data()) = static_cast<float_ue8m0_t>(tmp);
+  }
+    break;
+  case NumericTypeID::kFUE4M3:
+  {
+    float tmp;
+    ss >> tmp;
+    *reinterpret_cast<float_ue4m3_t *>(bytes.data()) = static_cast<float_ue4m3_t>(tmp);
   }
     break;
   case NumericTypeID::kF16:
@@ -924,7 +1374,7 @@ std::string lexical_cast(int64_t int_value) {
 /// Lexical cast TO a string FROM a byte array. Returns true if cast is successful or false if invalid.
 std::string lexical_cast(std::vector<uint8_t> &bytes, NumericTypeID type) {
 
-  int size_bytes = sizeof_bits(type) / 8;
+  size_t size_bytes = sizeof_bits(type) / 8;
 
   if (!size_bytes || size_bytes != bytes.size()) {
     return "<invalid>";
@@ -975,6 +1425,49 @@ std::string lexical_cast(std::vector<uint8_t> &bytes, NumericTypeID type) {
     ss << *reinterpret_cast<int64_t *>(bytes.data());
   }
     break;
+  case NumericTypeID::kFE4M3:
+  {
+    float tmp = *reinterpret_cast<float_e4m3_t *>(bytes.data());
+    ss << tmp;
+  }
+    break;
+  case NumericTypeID::kFE5M2:
+  {
+    float tmp = *reinterpret_cast<float_e5m2_t *>(bytes.data());
+    ss << tmp;
+  }
+    break;
+  
+  case NumericTypeID::kFE2M3:
+  {
+    float tmp = *reinterpret_cast<float_e2m3_t *>(bytes.data());
+    ss << tmp;
+  }
+    break;
+  case NumericTypeID::kFE3M2:
+  {
+    float tmp = *reinterpret_cast<float_e3m2_t *>(bytes.data());
+    ss << tmp;
+  }
+    break;
+  case NumericTypeID::kFE2M1:
+  {
+    float tmp = *reinterpret_cast<float_e2m1_t *>(bytes.data());
+    ss << tmp;
+  }
+    break;
+  case NumericTypeID::kFUE8M0:
+  {
+    float tmp = *reinterpret_cast<float_ue8m0_t *>(bytes.data());
+    ss << tmp;
+  }
+    break;
+  case NumericTypeID::kFUE4M3:
+  {
+    float tmp = *reinterpret_cast<float_ue4m3_t *>(bytes.data());
+    ss << tmp;
+  }
+    break;
   case NumericTypeID::kF16:
   {
     float tmp = *reinterpret_cast<half_t *>(bytes.data());
@@ -983,13 +1476,13 @@ std::string lexical_cast(std::vector<uint8_t> &bytes, NumericTypeID type) {
     break;
   case NumericTypeID::kBF16:
   {
-    float tmp = *reinterpret_cast<bfloat16_t *>(bytes.data());;
+    float tmp = *reinterpret_cast<bfloat16_t *>(bytes.data());
     ss << tmp;
   }
     break;
   case NumericTypeID::kTF32:
   {
-    float tmp = *reinterpret_cast<tfloat32_t *>(bytes.data());;
+    float tmp = *reinterpret_cast<tfloat32_t *>(bytes.data());
     ss << tmp;
   }
     break;
@@ -1117,6 +1610,42 @@ bool cast_from_int64(std::vector<uint8_t> &bytes, NumericTypeID type, int64_t sr
     *reinterpret_cast<int64_t *>(bytes.data()) = static_cast<int64_t>(src);
   }
     break;
+  case NumericTypeID::kFE4M3:
+  {
+    *reinterpret_cast<float_e4m3_t *>(bytes.data()) = static_cast<float_e4m3_t>(float(src));
+  }
+    break;
+  case NumericTypeID::kFE5M2:
+  {
+    *reinterpret_cast<float_e5m2_t *>(bytes.data()) = static_cast<float_e5m2_t>(float(src));
+  }
+    break;
+  
+  case NumericTypeID::kFE2M3:
+  {
+    *reinterpret_cast<float_e2m3_t *>(bytes.data()) = static_cast<float_e2m3_t>(float(src));
+  }
+    break;
+  case NumericTypeID::kFE3M2:
+  {
+    *reinterpret_cast<float_e3m2_t *>(bytes.data()) = static_cast<float_e3m2_t>(float(src));
+  }
+    break;
+  case NumericTypeID::kFE2M1:
+  {
+    *reinterpret_cast<float_e2m1_t *>(bytes.data()) = static_cast<float_e2m1_t>(float(src));
+  }
+    break;
+  case NumericTypeID::kFUE8M0:
+  {
+    *reinterpret_cast<float_ue8m0_t *>(bytes.data()) = static_cast<float_ue8m0_t>(float(src));
+  }
+    break;
+  case NumericTypeID::kFUE4M3:
+  {
+    *reinterpret_cast<float_ue4m3_t *>(bytes.data()) = static_cast<float_ue4m3_t>(float(src));
+  }
+    break;
   case NumericTypeID::kF16:
   {
     *reinterpret_cast<half_t *>(bytes.data()) = static_cast<half_t>(float(src));
@@ -1215,6 +1744,42 @@ bool cast_from_uint64(std::vector<uint8_t> &bytes, NumericTypeID type, uint64_t 
   case NumericTypeID::kS64:
   {
     *reinterpret_cast<int64_t *>(bytes.data()) = static_cast<int64_t>(src);
+  }
+    break;
+  case NumericTypeID::kFE4M3:
+  {
+    *reinterpret_cast<float_e4m3_t *>(bytes.data()) = static_cast<float_e4m3_t>(float(src));
+  }
+    break;
+  case NumericTypeID::kFE5M2:
+  {
+    *reinterpret_cast<float_e5m2_t *>(bytes.data()) = static_cast<float_e5m2_t>(float(src));
+  }
+    break;
+  
+  case NumericTypeID::kFE2M3:
+  {
+    *reinterpret_cast<float_e2m3_t *>(bytes.data()) = static_cast<float_e2m3_t>(float(src));
+  }
+    break;
+  case NumericTypeID::kFE3M2:
+  {
+    *reinterpret_cast<float_e3m2_t *>(bytes.data()) = static_cast<float_e3m2_t>(float(src));
+  }
+    break;
+  case NumericTypeID::kFE2M1:
+  {
+    *reinterpret_cast<float_e2m1_t *>(bytes.data()) = static_cast<float_e2m1_t>(float(src));
+  }
+    break;
+  case NumericTypeID::kFUE8M0:
+  {
+    *reinterpret_cast<float_ue8m0_t *>(bytes.data()) = static_cast<float_ue8m0_t>(float(src));
+  }
+    break;
+  case NumericTypeID::kFUE4M3:
+  {
+    *reinterpret_cast<float_ue4m3_t *>(bytes.data()) = static_cast<float_ue4m3_t>(float(src));
   }
     break;
   case NumericTypeID::kF16:
@@ -1318,6 +1883,42 @@ bool cast_from_double(std::vector<uint8_t> &bytes, NumericTypeID type, double sr
     *reinterpret_cast<int64_t *>(bytes.data()) = static_cast<int64_t>(src);
   }
     break;
+  case NumericTypeID::kFE4M3:
+  {
+    *reinterpret_cast<float_e4m3_t *>(bytes.data()) = static_cast<float_e4m3_t>(float(src));
+  }
+    break;
+  case NumericTypeID::kFE5M2:
+  {
+    *reinterpret_cast<float_e5m2_t *>(bytes.data()) = static_cast<float_e5m2_t>(float(src));
+  }
+    break;
+  
+  case NumericTypeID::kFE2M3:
+  {
+    *reinterpret_cast<float_e2m3_t *>(bytes.data()) = static_cast<float_e2m3_t>(float(src));
+  }
+    break;
+  case NumericTypeID::kFE3M2:
+  {
+    *reinterpret_cast<float_e3m2_t *>(bytes.data()) = static_cast<float_e3m2_t>(float(src));
+  }
+    break;
+  case NumericTypeID::kFE2M1:
+  {
+    *reinterpret_cast<float_e2m1_t *>(bytes.data()) = static_cast<float_e2m1_t>(float(src));
+  }
+    break;
+  case NumericTypeID::kFUE8M0:
+  {
+    *reinterpret_cast<float_ue8m0_t *>(bytes.data()) = static_cast<float_ue8m0_t>(float(src));
+  }
+    break;
+  case NumericTypeID::kFUE4M3:
+  {
+    *reinterpret_cast<float_ue4m3_t *>(bytes.data()) = static_cast<float_ue4m3_t>(float(src));
+  }
+    break;
   case NumericTypeID::kF16:
   {
     *reinterpret_cast<half_t *>(bytes.data()) = static_cast<half_t>(float(src));
@@ -1378,6 +1979,35 @@ bool cast_from_double(std::vector<uint8_t> &bytes, NumericTypeID type, double sr
 
   return true;
 }
+
+
+NumericTypeID dynamic_datatype_to_id(RuntimeDatatype type) {
+  NumericTypeID element{};
+  switch (type) {
+    case RuntimeDatatype::kE4M3:
+      element = NumericTypeID::kFE4M3;
+      break;
+    case RuntimeDatatype::kE5M2:
+      element = NumericTypeID::kFE5M2;
+      break;
+    
+    case RuntimeDatatype::kE2M3:
+      element = NumericTypeID::kFE2M3;
+      break;
+    case RuntimeDatatype::kE3M2:
+      element = NumericTypeID::kFE3M2;
+      break;
+    case RuntimeDatatype::kE2M1:
+      element = NumericTypeID::kFE2M1;
+      break;
+    
+    default:
+      assert("illegal runtime datatype!");
+      break;
+  }
+  return element;
+}
+
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 

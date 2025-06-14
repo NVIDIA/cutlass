@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -28,7 +34,7 @@
   addressable memory, and then store it back into addressable memory.
 
   TileIterator is a core concept in CUTLASS that enables efficient loading and storing of data to
-  and from addressable memory. The PredicateTileIterator accepts a ThreadMap type, which defines
+  and from addressable memory. The PredicatedTileIterator accepts a ThreadMap type, which defines
   the mapping of threads to a "tile" in memory. This separation of concerns enables user-defined
   thread mappings to be specified. 
 
@@ -44,7 +50,6 @@
 #include <iostream>
 #include <sstream>
 #include <vector>
-#include <fstream>
 
 // CUTLASS includes
 #include "cutlass/transform/threadblock/predicated_tile_iterator.h"
@@ -89,7 +94,7 @@ __global__ void copy(
 
     typename Iterator::Fragment fragment;
 
-    for(int i = 0; i < fragment.size(); ++i) {
+    for(size_t i = 0; i < fragment.size(); ++i) {
       fragment[i] = 0;
     }
 
@@ -119,7 +124,7 @@ __global__ void copy(
 
 cudaError_t TestTileIterator(int M, int K) {
 
-    // For this example, we chose a <64, 4> tile shape. The PredicateTileIterator expects
+    // For this example, we chose a <64, 4> tile shape. The PredicatedTileIterator expects
     // PitchLinearShape and PitchLinear layout.
     using Shape = cutlass::layout::PitchLinearShape<64, 4>;
     using Layout = cutlass::layout::PitchLinear;
@@ -131,7 +136,7 @@ cudaError_t TestTileIterator(int M, int K) {
     // dimension then along the strided dimension.
     using ThreadMap = cutlass::transform::PitchLinearStripminedThreadMap<Shape, kThreads>;
 
-    // Define the PredicateTileIterator, using TileShape, Element, Layout, and ThreadMap types
+    // Define the PredicatedTileIterator, using TileShape, Element, Layout, and ThreadMap types
     using Iterator = cutlass::transform::threadblock::PredicatedTileIterator<
         Shape, Element, Layout, 1, ThreadMap>;
 

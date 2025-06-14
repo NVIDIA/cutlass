@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -70,10 +76,15 @@ struct GemmWithBroadcastReferenceOp {
   void operator()(ElementZ &Z, ElementT &T, ElementCompute gemm, ElementCompute bias) {
 
     ElementCompute t_full = binary_op(gemm, bias);
-    T = ElementT(t_full);
 
-    ElementCompute z_full = elementwise_op(t_full);
-    Z = ElementZ(z_full);
+    if (OutputOp::kStoreT) {
+      T = ElementT(t_full);
+    }
+
+    if (OutputOp::kStoreZ) {
+      ElementCompute z_full = elementwise_op(t_full);
+      Z = ElementZ(z_full);
+    }
   }
 };
 
@@ -83,7 +94,7 @@ struct GemmWithBroadcastReferenceOp {
 //
 //  Y = GEMM(AB, C)
 //
-//  T[i, j] = ReductionOp(Y[i, j], Broadcast[i])
+//  T[i, j] = BinaryOp(Y[i, j], Broadcast[i])
 //
 //  Z[i, j] = Elementwise(T[i, j])
 //
@@ -94,10 +105,13 @@ template <
 >
 struct TestbedGemmWithBroadcast {
 
+  using ElementA = typename Gemm::ElementA;
+  using ElementB = typename Gemm::ElementB;
   using OutputOp = typename Gemm::GemmKernel::Epilogue::OutputOp;
   using ElementC = typename Gemm::ElementC;
   using ElementAccumulator = typename Gemm::ElementAccumulator;
-  using ElementCOmpute = typename OutputOp::ElementCompute;
+  using ElementCompute = typename OutputOp::ElementCompute;
+  using ElementVector = typename OutputOp::ElementVector;
   using ElementZ = typename OutputOp::ElementZ;
   using ElementT = typename OutputOp::ElementT;
 
@@ -110,7 +124,7 @@ struct TestbedGemmWithBroadcast {
   cutlass::HostTensor<typename Gemm::ElementA, typename Gemm::LayoutA> tensor_A;          // Input A
   cutlass::HostTensor<typename Gemm::ElementB, typename Gemm::LayoutB> tensor_B;          // Input B
   cutlass::HostTensor<ElementC, typename Gemm::LayoutC> tensor_C;                         // Input C
-  cutlass::HostTensor<ElementC, typename Gemm::LayoutC> tensor_Broadcast;                 // Input Broadcast
+  cutlass::HostTensor<ElementVector, typename Gemm::LayoutC> tensor_Broadcast;            // Input Broadcast
 
   cutlass::HostTensor<ElementZ, typename Gemm::LayoutC> tensor_Z;
   cutlass::HostTensor<ElementT, typename Gemm::LayoutC> tensor_T;
@@ -147,7 +161,7 @@ struct TestbedGemmWithBroadcast {
       int bits_output = cutlass::sizeof_bits<typename Gemm::ElementC>::value;
 
       if (bits_input == 1) {
-        scope_max = 2;
+        scope_max = 1;
         scope_min = 0;
       } else if (bits_input <= 8) {
         scope_max = 2;
@@ -177,7 +191,6 @@ struct TestbedGemmWithBroadcast {
         view.data(), view.capacity());
     } 
     else {
-      // TODO: Implement the rest
       EXPECT_TRUE(false) << "Not implemented";
       return false;
     }
@@ -244,12 +257,16 @@ struct TestbedGemmWithBroadcast {
     EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_A.host_view()), 0);
     EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_B.host_view()), 0);
     EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_C.host_view()), 0);
-    
-    EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_Z.host_view()), 0);
-    EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_T.host_view()), 0);
 
-    EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_Z_ref.host_view()), 0);
-    EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_T_ref.host_view()), 0);
+    if (OutputOp::kStoreZ) {
+      EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_Z.host_view()), 0);
+      EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_Z_ref.host_view()), 0);
+    }
+
+    if (OutputOp::kStoreT) {
+      EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_T.host_view()), 0);
+      EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_T_ref.host_view()), 0);
+    }
 
     bool passed = true;
     float norm_diff = 0;
@@ -351,8 +368,13 @@ struct TestbedGemmWithBroadcast {
 
         reference_op(z, t, tensor_Y_ref.at({m, n}), tensor_Broadcast.at({m, 0}));
 
-        tensor_Z_ref.at({m, n}) = z;
-        tensor_T_ref.at({m, n}) = t;
+        if (OutputOp::kStoreZ) {
+          tensor_Z_ref.at({m, n}) = z;
+        }
+
+        if (OutputOp::kStoreT) {
+          tensor_T_ref.at({m, n}) = t;
+        }
       }
     }
 
@@ -366,7 +388,7 @@ struct TestbedGemmWithBroadcast {
     // Determine SMEM requirements and waive if not satisfied
     //
 
-    int smem_size = int(sizeof(typename Gemm::GemmKernel::SharedStorage));
+    size_t smem_size = sizeof(typename Gemm::GemmKernel::SharedStorage);
 
     cudaDeviceProp properties;
     int device_idx;
@@ -382,7 +404,7 @@ struct TestbedGemmWithBroadcast {
       throw std::runtime_error("cudaGetDeviceProperties() failed");
     }
 
-    if (properties.sharedMemPerMultiprocessor < smem_size) {
+    if (properties.sharedMemPerBlockOptin < smem_size) {
       return false;
     }
 
@@ -443,7 +465,6 @@ struct TestbedGemmWithBroadcast {
     cutlass::device_memory::allocation<uint8_t> workspace(workspace_size);
 
     cutlass::Status status = gemm_op.initialize(arguments, workspace.get());
-
 
     EXPECT_TRUE(status == cutlass::Status::kSuccess) << to_string(status);
 
@@ -622,7 +643,7 @@ bool TestAllGemmWithBroadcast() {
               cutlass::from_real<ElementAccumulator>(alpha), 
               cutlass::from_real<ElementAccumulator>(beta)
             );
-            
+
             EXPECT_TRUE(passed) 
               << "M: " << M << ", N: " << N << ", K: " << K << ", alpha: " << alpha << ", beta: " << beta;
 

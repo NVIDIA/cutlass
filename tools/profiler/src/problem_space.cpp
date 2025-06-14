@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -32,7 +38,7 @@
 
 #include "cutlass/library/util.h"
 
-#include "problem_space.h"
+#include "cutlass/profiler/problem_space.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -388,10 +394,6 @@ std::unique_ptr<KernelArgument::ValueIterator> EnumeratedTypeArgument::end() con
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
-
-ProblemSpace::Iterator::Iterator() {
-
-}
 
 ProblemSpace::Iterator::Iterator(ProblemSpace const &problem_space) {
   for (auto const & arg_ptr : problem_space.arguments) {
@@ -798,6 +800,44 @@ bool arg_as_int(
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+/// Lexically casts an argument to an bool if it is defined. Returns true if not null.
+bool arg_as_bool(bool &bool_value, KernelArgument::Value const *value_ptr) {
+  if (value_ptr->not_null) {
+    if (value_ptr->argument->description->type == ArgumentTypeID::kInteger) {
+      int64_t value64;
+      arg_as_int(value64, value_ptr);
+      bool_value = static_cast<bool>(value64); 
+    }
+    else if (value_ptr->argument->description->type == ArgumentTypeID::kEnumerated) {
+      bool_value = library::from_string<bool>(
+        static_cast<EnumeratedTypeArgument::EnumeratedTypeValue const *>(value_ptr)->element);
+    }
+    else {
+      throw std::runtime_error(
+        "arg_as_bool() - illegal cast. Problem space argument must be integer or enumerated");
+    }
+
+    return true;
+  }
+
+  return false;
+}
+
+/// Lexically casts an argument to a bool
+bool arg_as_bool(
+  bool &bool_value,
+  char const *name,
+  ProblemSpace const &problem_space,
+  ProblemSpace::Problem const &problem) {
+
+  size_t idx = problem_space.argument_index(name);
+  KernelArgument::Value const *value_ptr = problem.at(idx).get();
+
+  return arg_as_bool(bool_value, value_ptr);
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 /// Lexically casts an argument to an int64 if it is defined. Returns true if not null.
 bool arg_as_NumericTypeID(
   library::NumericTypeID &numeric_type, 
@@ -839,6 +879,72 @@ bool arg_as_NumericTypeID(
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+/// Lexically casts an argument to an int64 if it is defined. Returns true if not null.
+bool arg_as_RuntimeDatatype(
+  library::RuntimeDatatype &runtime_datatype, 
+  KernelArgument::Value const *value_ptr) {
+  
+  if (value_ptr->not_null) {
+    if (value_ptr->argument->description->type == ArgumentTypeID::kEnumerated) {
+      
+      runtime_datatype = library::from_string<library::RuntimeDatatype>(
+        static_cast<EnumeratedTypeArgument::EnumeratedTypeValue const *>(value_ptr)->element);
+      if (runtime_datatype == library::RuntimeDatatype::kInvalid) {
+        throw std::runtime_error(
+          "arg_as_RuntimeDatatype() - illegal cast.");
+      }
+    }
+    else {
+      throw std::runtime_error(
+        "arg_as_RuntimeDatatype() - illegal cast.");
+    }
+    return true;
+  }
+  return false;
+}
+
+
+/// Lexically casts an argument to an int64 if it is defined. Returns true if not null.
+bool arg_as_RasterOrder(
+  library::RasterOrder &raster_order, 
+  KernelArgument::Value const *value_ptr) {
+  
+  if (value_ptr->not_null) {
+    if (value_ptr->argument->description->type == ArgumentTypeID::kEnumerated) {
+
+      raster_order = library::from_string<library::RasterOrder>(
+        static_cast<EnumeratedTypeArgument::EnumeratedTypeValue const *>(value_ptr)->element);
+
+      if (raster_order == library::RasterOrder::kInvalid) {
+        throw std::runtime_error(
+          "arg_as_RasterOrder() - illegal cast.");
+      }
+    }
+    else {
+      throw std::runtime_error(
+        "arg_as_RasterOrder() - illegal cast.");
+    }
+    return true;
+  }
+  return false;
+}
+
+/// Lexically casts an argument to an int64 if it is defined. Returns true if not null.
+bool arg_as_RasterOrder(
+  library::RasterOrder &raster_order,
+  char const *name,
+  ProblemSpace const &problem_space, 
+  ProblemSpace::Problem const &problem) {
+
+  size_t idx = problem_space.argument_index(name);
+  KernelArgument::Value const *value_ptr = problem.at(idx).get();
+
+  return arg_as_RasterOrder(raster_order, value_ptr);
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 /// Lexically casts an argument to an int64 if it is defined. Returns true if not null.
 bool arg_as_LayoutTypeID(
   library::LayoutTypeID &layout_type, 
@@ -864,6 +970,21 @@ bool arg_as_LayoutTypeID(
   }
   return false;
 }
+
+
+/// Lexically casts an argument to an int64 if it is defined. Returns true if not null.
+bool arg_as_RuntimeDatatype(
+  library::RuntimeDatatype &runtime_datatype,
+  char const *name,
+  ProblemSpace const &problem_space, 
+  ProblemSpace::Problem const &problem) {
+
+  size_t idx = problem_space.argument_index(name);
+  KernelArgument::Value const *value_ptr = problem.at(idx).get();
+
+  return arg_as_RuntimeDatatype(runtime_datatype, value_ptr);
+}
+
 
 /// Lexically casts an argument to an int64 if it is defined. Returns true if not null.
 bool arg_as_LayoutTypeID(
@@ -1080,6 +1201,34 @@ bool arg_as_scalar(
   KernelArgument::Value const *value_ptr = problem.at(idx).get();
 
   return arg_as_scalar(bytes, numeric_type, value_ptr);
+}
+
+/// Returns a copy of the string passed to the argument.
+/// (kScalar arguments are stored as strings).
+bool arg_as_string(
+  std::string& arg,
+  char const* name,
+  ProblemSpace const& problem_space,
+  ProblemSpace::Problem const& problem) {
+
+  size_t idx = problem_space.argument_index(name);
+  KernelArgument::Value const* value_ptr = problem.at(idx).get();
+
+  if (value_ptr->not_null) {
+    if (value_ptr->argument->description->type == ArgumentTypeID::kScalar) {
+      std::string const& str_value =
+        static_cast<ScalarArgument::ScalarValue const*>(value_ptr)->value;
+      arg = std::string(str_value);
+    }
+    else {
+      throw std::runtime_error(
+        "arg_as_string() - illegal cast. Problem space argument must be scalar");
+    }
+
+    return true;
+  }
+
+  return false;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

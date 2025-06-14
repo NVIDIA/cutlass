@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -39,6 +45,7 @@
 #include "cutlass/library/util.h"
 #include "library_internal.h"
 
+#include "cutlass/conv/convolution.h"
 #include "cutlass/util/reference/host/convolution.h"
 #include "cutlass/util/reference/device/convolution.h"
 
@@ -53,7 +60,7 @@ namespace detail {
 
 template <
   Provider kProvider,
-  conv::Operator ConvolutionalOperator,
+  cutlass::conv::Operator ConvolutionalOperator,
   int ConvDim,
   typename ElementA_,
   typename LayoutA_,
@@ -68,10 +75,10 @@ template <
 >
 struct ConvReferenceDispatcher;
 
-/// Dispatcher for Conv2d (partially specialied for kConvDim == 2)
+/// Dispatcher for Conv2d (partially specialized for kConvDim == 2)
 template <
   Provider kProvider,
-  conv::Operator kConvolutionalOperator,
+  cutlass::conv::Operator kConvolutionalOperator,
   typename ElementA,
   typename LayoutA,
   typename ElementB,
@@ -140,6 +147,7 @@ struct ConvReferenceDispatcher<
         LayoutC,
         ElementCompute,
         ElementAccumulator,
+        ElementC,
         ConvertOp,
         InnerProductOp
       >(
@@ -186,7 +194,7 @@ struct ConvReferenceDispatcher<
 /// Dispatcher for Conv3d (partially specialized for kConvDim == 3)
 template <
   Provider kProvider,
-  conv::Operator kConvolutionalOperator,
+  cutlass::conv::Operator kConvolutionalOperator,
   typename ElementA,
   typename LayoutA,
   typename ElementB,
@@ -285,7 +293,7 @@ struct ConvReferenceDispatcher<
 
 template <
   Provider Provider_,
-  conv::Operator ConvolutionalOperator,
+  cutlass::conv::Operator ConvolutionalOperator,
   int ConvDim,
   typename ElementA_,
   typename LayoutA_,
@@ -301,7 +309,7 @@ template <
 class ConvReferenceOperation : public Operation {
 public:
   static Provider const kProvider = Provider_;
-  static conv::Operator const kConvolutionalOperator = ConvolutionalOperator;
+  static cutlass::conv::Operator const kConvolutionalOperator = ConvolutionalOperator;
   static int const kConvDim = ConvDim;
 
   using ElementA = ElementA_;
@@ -481,10 +489,10 @@ template <
   typename InnerProductOp_ = multiply_add<ElementAccumulator_>
 >
 void make_conv_fprop(Manifest &manifest) {
-  
+#if !defined(CUTLASS_PROFILER_DISABLE_REFERENCE)
   manifest.append(new ConvReferenceOperation<
     Provider::kReferenceHost,
-    conv::Operator::kFprop,
+    cutlass::conv::Operator::kFprop,
     kConvDim,
     ElementA_, LayoutA_,
     ElementB_, LayoutB_,
@@ -497,7 +505,7 @@ void make_conv_fprop(Manifest &manifest) {
 
   manifest.append(new ConvReferenceOperation<
     Provider::kReferenceDevice,
-    conv::Operator::kFprop,
+    cutlass::conv::Operator::kFprop,
     kConvDim,
     ElementA_, LayoutA_,
     ElementB_, LayoutB_,
@@ -507,6 +515,7 @@ void make_conv_fprop(Manifest &manifest) {
     ConvertOp_,
     InnerProductOp_
   >);
+#endif // !defined(CUTLASS_PROFILER_DISABLE_REFERENCE)
 }
 
 /// Constructs Dgrad and Wgrad reference operators.
@@ -524,10 +533,10 @@ template <
   typename InnerProductOp_ = multiply_add<ElementAccumulator_>
 >
 void make_conv_backwards(Manifest &manifest) {
-  
+#if !defined(CUTLASS_PROFILER_DISABLE_REFERENCE)
   manifest.append(new ConvReferenceOperation<
     Provider::kReferenceHost,
-    conv::Operator::kDgrad,
+    cutlass::conv::Operator::kDgrad,
     kConvDim,
     ElementA_, LayoutA_,
     ElementB_, LayoutB_,
@@ -540,7 +549,7 @@ void make_conv_backwards(Manifest &manifest) {
 
   manifest.append(new ConvReferenceOperation<
     Provider::kReferenceDevice,
-    conv::Operator::kDgrad,
+    cutlass::conv::Operator::kDgrad,
     kConvDim,
     ElementA_, LayoutA_,
     ElementB_, LayoutB_,
@@ -553,7 +562,7 @@ void make_conv_backwards(Manifest &manifest) {
 
   manifest.append(new ConvReferenceOperation<
     Provider::kReferenceHost,
-    conv::Operator::kWgrad,
+    cutlass::conv::Operator::kWgrad,
     kConvDim,
     ElementA_, LayoutA_,
     ElementB_, LayoutB_,
@@ -566,7 +575,7 @@ void make_conv_backwards(Manifest &manifest) {
 
   manifest.append(new ConvReferenceOperation<
     Provider::kReferenceDevice,
-    conv::Operator::kWgrad,
+    cutlass::conv::Operator::kWgrad,
     kConvDim,
     ElementA_, LayoutA_,
     ElementB_, LayoutB_,
@@ -576,6 +585,7 @@ void make_conv_backwards(Manifest &manifest) {
     ConvertOp_,
     InnerProductOp_
   >);
+#endif // !defined(CUTLASS_PROFILER_DISABLE_REFERENCE)
 }
 
 /// Six operators for the price of one.

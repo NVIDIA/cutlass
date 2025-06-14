@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.                                 
- *                                                                                                    
- * Redistribution and use in source and binary forms, with or without modification, are permitted     
- * provided that the following conditions are met:                                                    
- *     * Redistributions of source code must retain the above copyright notice, this list of          
- *       conditions and the following disclaimer.                                                     
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of       
- *       conditions and the following disclaimer in the documentation and/or other materials          
- *       provided with the distribution.                                                              
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used     
- *       to endorse or promote products derived from this software without specific prior written     
- *       permission.                                                                                  
- *                                                                                                    
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR     
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND   
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE    
- * FOR ANY DIRECT,INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,      
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;    
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,      
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE     
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  *
  **************************************************************************************************/
@@ -42,6 +48,7 @@
 #include "cutlass/coord.h"
 #include "cutlass/cutlass.h"
 #include "cutlass/layout/matrix.h"
+#include "cutlass/layout/permute.h"
 #include "cutlass/layout/pitch_linear.h"
 #include "cutlass/matrix_shape.h"
 #include "cutlass/predicate_vector.h"
@@ -215,7 +222,10 @@ class PredicatedTileAccessIteratorPredicates {
     set_iteration_index(0);
   }
 
-    /// Constructs a TileIterator from its precomputed state, threadblock offset,
+  /// Default constructor
+  PredicatedTileAccessIteratorPredicates() = default;
+
+  /// Constructs a TileIterator from its precomputed state, threadblock offset,
   /// and thread ID
   CUTLASS_HOST_DEVICE
   PredicatedTileAccessIteratorPredicates(
@@ -283,7 +293,7 @@ class PredicatedTileAccessIteratorPredicates {
 
   /// Returns whether access is valid or not
   CUTLASS_HOST_DEVICE
-  bool valid() {
+  bool valid() const {
 
     
     int pred_idx = 
@@ -305,7 +315,8 @@ class PredicatedTileAccessIteratorPredicates {
 /// PredicatedTileAccessIterator
 ///
 template <typename Shape, typename Element, typename Layout, int AdvanceRank,
-          typename ThreadMap, typename AccessType>
+          typename ThreadMap, typename AccessType, bool Gather = false,
+          typename PermuteLayout = layout::NoPermute>
 class PredicatedTileAccessIterator;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -313,9 +324,11 @@ class PredicatedTileAccessIterator;
 /// Specialization of PredicatedTileAccessIterator for pitch-linear data.
 ///
 template <typename Shape_, typename Element_, int AdvanceRank,
-          typename ThreadMap_, typename AccessType_>
+          typename ThreadMap_, typename AccessType_, bool Gather,
+          typename PermuteLayout>
 class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
-                                   AdvanceRank, ThreadMap_, AccessType_> {
+                                   AdvanceRank, ThreadMap_, AccessType_, Gather,
+                                   PermuteLayout> {
  public:
   static_assert(
       AdvanceRank == 0 || AdvanceRank == 1,
@@ -347,6 +360,9 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
   static_assert(!(ThreadMap::kElementsPerAccess % AccessType::kElements), 
     "Vectors implied by the thread map must be divisible by the access type.");
 
+  static bool constexpr Permute = !platform::is_same<PermuteLayout, layout::NoPermute>::value
+                               && !platform::is_same<PermuteLayout, layout::InversePermute<layout::NoPermute>>::value;
+
   using Mask = typename UnderlyingPredicates::Mask;
 
   /// Uses a non-template class
@@ -354,9 +370,8 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
     
     using Base = PredicatedTileAccessIteratorParams;
 
-    // Default ctor
-    CUTLASS_HOST_DEVICE
-    Params() { }
+    /// Default constructor
+    Params() = default;
 
     /// Construct the Params object given a pitch-linear tensor's layout
     CUTLASS_HOST_DEVICE
@@ -382,13 +397,30 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
   UnderlyingPredicates the_predicates;
 
   /// Parameters object with precomputed internal state
-  Params const &params_;
+  Params params_;
 
   /// Internal pointer to first access of tile
   BytePointer pointer_;
 
   /// Used for out-of-order visitation
   bool is_residue_tile_;
+
+  /// Below is used when Gather is turned on.  We need to record strided_offset
+  /// and contiguous_offset separated to compute the offset by using
+  ///
+  /// offset = contiguous_offset + indices[strided_offset]
+
+  /// Gather indices
+  int const *indices_;
+
+  /// Function to perform layout permutation and offset computation
+  PermuteLayout permute_layout_;
+
+  /// Tracks thread's coordinate offset in the matrix for current tile.
+  /// This is only used in the following cases:
+  /// - when Gather is true, strided coordinate needed to access indices (contiguous offset is tracked via pointer_)
+  /// - when Permute is true, both coordinates are neeeded as input into permutation function (pointer_ is fixed)
+  TensorCoord coord_offset_;
 
  private:
   /// Computes predicates based on internally tracked per-thread offset.
@@ -402,7 +434,10 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
   }
 
  public:
-          
+
+  /// Default constructor
+  PredicatedTileAccessIterator() = default;
+
   /// Constructs a TileIterator from its precomputed state, threadblock offset,
   /// and thread ID
   CUTLASS_HOST_DEVICE
@@ -416,19 +451,34 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
       /// ID of each participating thread
       int thread_id,
       /// Initial offset of threadblock
-      TensorCoord const &threadblock_offset)
+      TensorCoord const &threadblock_offset,
+      /// Gather indices
+      int const *indices = nullptr)
       : params_(params),
-	pointer_(reinterpret_cast<BytePointer>(
-            const_cast<NonConstPointer>(pointer))),
-	the_predicates(extent),
-        is_residue_tile_(true) {
+	      pointer_(reinterpret_cast<BytePointer>(
+                 const_cast<NonConstPointer>(pointer))),
+	      the_predicates(extent),
+        is_residue_tile_(true),
+        indices_(indices),
+        permute_layout_(TensorCoord(extent.contiguous(), extent.strided()), params.stride_) {
 
     the_predicates.set_predicates(thread_id, threadblock_offset);
           
+    if (Gather) {
+      assert(indices_);
+    }
+
     // update internal pointers
     Layout layout(params_.stride_);
-    add_pointer_offset(layout(the_predicates.thread_offset_));
 
+    if (!Gather && !Permute) {
+      add_pointer_offset(layout(the_predicates.thread_offset_));
+    } else {
+      coord_offset_ = the_predicates.thread_offset_;
+      if (!Permute) {
+        add_pointer_offset(layout(make_Coord(coord_offset_.contiguous(), 0)));
+      }
+    }
   }
 
   /// Construct a PredicatedTileAccessIterator with zero threadblock offset
@@ -465,33 +515,71 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
 
       the_predicates.thread_offset_ += the_predicates.residue_offset_;
 
-      Layout layout(params_.stride_);
-      add_pointer_offset(layout(the_predicates.residue_offset_));
-
       the_predicates.compute_predicates_(the_predicates.extent_, true);
 
-      if (kAdvanceRank) {
-        pointer_ += params_.inc_advance_ * LongIndex(tile_offset.strided() - 1);
-        pointer_ += Shape::kContiguous * tile_offset.contiguous();
+      Layout layout(params_.stride_);
+
+      if (!Gather && !Permute) {
+        add_pointer_offset(layout(the_predicates.residue_offset_));
+
+        if (kAdvanceRank) {
+          pointer_ += params_.inc_advance_ * LongIndex(tile_offset.strided() - 1);
+          pointer_ += Shape::kContiguous * tile_offset.contiguous() * sizeof_bits<Element>::value / 8;
+        } else {
+          pointer_ += params_.inc_advance_ * LongIndex(tile_offset.contiguous() - 1);
+          pointer_ += Shape::kStrided * tile_offset.strided() * sizeof_bits<Element>::value / 8;
+        }
       } else {
-        pointer_ += params_.inc_advance_ * LongIndex(tile_offset.contiguous() - 1);
-        pointer_ += Shape::kStrided * tile_offset.strided();
+        coord_offset_.strided() = the_predicates.thread_offset_.strided() + Shape::kStrided * (tile_offset.strided() - kAdvanceRank);
+        if (!Permute) {
+          add_pointer_offset(layout(make_Coord(the_predicates.residue_offset_.contiguous(), 0)));
+          add_pointer_offset(Shape::kContiguous * (tile_offset.contiguous() - (1 - kAdvanceRank)));
+        } else {
+          coord_offset_.contiguous() = the_predicates.thread_offset_.contiguous() + Shape::kContiguous * (tile_offset.contiguous() - (1 - kAdvanceRank));
+        }
       }
     } else {
-      if (kAdvanceRank) {
-        pointer_ += params_.inc_advance_ * LongIndex(tile_offset.strided());
-        pointer_ += Shape::kContiguous * tile_offset.contiguous();
+      if (!Gather && !Permute) {
+        if (kAdvanceRank) {
+          pointer_ += params_.inc_advance_ * LongIndex(tile_offset.strided());
+          pointer_ += Shape::kContiguous * tile_offset.contiguous();
+        } else {
+          pointer_ += params_.inc_advance_ * LongIndex(tile_offset.contiguous());
+          pointer_ += Shape::kStrided * tile_offset.strided();
+        }
       } else {
-        pointer_ += params_.inc_advance_ * LongIndex(tile_offset.contiguous());
-        pointer_ += Shape::kStrided * tile_offset.strided();
+        coord_offset_.strided() += Shape::kStrided * tile_offset.strided();
+        if (!Permute) {
+          add_pointer_offset(Shape::kContiguous * tile_offset.contiguous());
+        } else {
+          coord_offset_.contiguous() += Shape::kContiguous * tile_offset.contiguous();
+        }
       }
     }
+
     is_residue_tile_ = false;
   }
 
   /// Returns a pointer
   CUTLASS_HOST_DEVICE
   AccessType *get() const {
+
+    if (Gather || Permute)
+    {
+      if (!valid()) {
+        return nullptr;
+      }
+
+      Index coord_contig  = (Permute ? coord_offset_.contiguous() : 0) + the_predicates.iteration_contiguous_ * ThreadMap::Delta::kContiguous + the_predicates.iteration_vector_ * AccessType::kElements;
+      Index coord_strided = coord_offset_.strided() + the_predicates.iteration_strided_ * ThreadMap::Delta::kStrided;
+      if (Gather) {
+        coord_strided = indices_[coord_strided];
+      }
+
+      LongIndex offset = Permute ? permute_layout_(TensorCoord(coord_contig, coord_strided)) : (coord_strided * LongIndex(params_.stride_) + coord_contig);
+      return reinterpret_cast<AccessType *>(pointer_ + OffsetBytes<Element>(offset));
+    }
+
     return reinterpret_cast<AccessType *>(
         pointer_ + 
         the_predicates.iteration_contiguous_ * (ThreadMap::Delta::kContiguous * sizeof_bits<Element>::value) / 8) + the_predicates.iteration_vector_;
@@ -515,13 +603,15 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
       return *this;
     }
 
-    // Enter here only if (iteration_contiguous_ ==
-    // ThreadMap::Iteration::kContiguous)
+    // Enter here only if (iteration_contiguous_ == ThreadMap::Iteration::kContiguous)
     the_predicates.iteration_contiguous_ = 0;
     ++the_predicates.iteration_strided_;
 
     if (the_predicates.iteration_strided_ < ThreadMap::Iterations::kStrided) {
-      pointer_ += params_.inc_strided_;
+      if (!Gather && !Permute) {
+        pointer_ += params_.inc_strided_;
+      }
+
       return *this;
     }
 
@@ -529,13 +619,15 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
     // which means we enter the next tile.
     the_predicates.iteration_strided_ = 0;
 
-    // advance to next tile
-    pointer_ += params_.inc_next_;
-
-    // now return to start tile - if the iterator is subsequently advanced, this
-    // subtraction as well as the subsequent integer addition are both elided by
-    // the compiler.
-    pointer_ -= params_.inc_advance_;
+    if (!Gather && !Permute) {
+      // advance to next tile
+      pointer_ += params_.inc_next_;
+  
+      // now return to start tile - if the iterator is subsequently advanced, this
+      // subtraction as well as the subsequent integer addition are both elided by
+      // the compiler.
+      pointer_ -= params_.inc_advance_;
+    }
 
     return *this;
   }
@@ -574,10 +666,9 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
 
   /// Returns whether access is valid or not
   CUTLASS_HOST_DEVICE
-  bool valid() {
+  bool valid() const {
     return the_predicates.valid();
   }
-
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -590,9 +681,11 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
 ///            MaskedTileIteratorConcept
 ///
 template <typename Shape_, typename Element_, int AdvanceRank,
-          typename ThreadMap_, typename AccessType_>
+          typename ThreadMap_, typename AccessType_, bool Gather,
+          typename PermuteLayout>
 class PredicatedTileAccessIterator<Shape_, Element_, layout::ColumnMajor,
-                                   AdvanceRank, ThreadMap_, AccessType_> {
+                                   AdvanceRank, ThreadMap_, AccessType_, Gather,
+                                   PermuteLayout> {
  public:
   static_assert(
       AdvanceRank == 0 || AdvanceRank == 1,
@@ -618,7 +711,8 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::ColumnMajor,
 
   using UnderlyingIterator = PredicatedTileAccessIterator<
       layout::PitchLinearShape<Shape::kRow, Shape::kColumn>, Element,
-      layout::PitchLinear, (kAdvanceRank == 0 ? 0 : 1), ThreadMap, AccessType>;
+      layout::PitchLinear, (kAdvanceRank == 0 ? 0 : 1), ThreadMap, AccessType,
+      Gather, PermuteLayout>;
 
   /// Predicate vector stores mask to guard accesses
   using Mask = typename UnderlyingIterator::Mask;
@@ -635,9 +729,8 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::ColumnMajor,
 
    public:
 
-    /// Default ctor
-    CUTLASS_HOST_DEVICE
-    Params() { }
+    /// Default constructor
+    Params() = default;
 
     /// Construct the Params object given a pitch-linear tensor's layout
     CUTLASS_HOST_DEVICE
@@ -659,6 +752,10 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::ColumnMajor,
   UnderlyingIterator iterator_;
 
  public:
+
+  /// Default constructor
+  PredicatedTileAccessIterator() = default;
+
   /// Constructs a TileIterator from its precomputed state, threadblock offset,
   /// and thread ID
   CUTLASS_HOST_DEVICE
@@ -672,12 +769,15 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::ColumnMajor,
       ///< ID of each participating thread
       int thread_id,
       ///< Initial offset of threadblock
-      TensorCoord const &threadblock_offset)
+      TensorCoord const &threadblock_offset,
+      int const *indices = nullptr     ///< gather/scatter indices, note no support for gather/scatter at this specialization
+      )
       : iterator_(params.params_, pointer,
                   layout::PitchLinearCoord(extent.row(), extent.column()),
                   thread_id,
                   layout::PitchLinearCoord(threadblock_offset.row(),
-                                           threadblock_offset.column())) {}
+                                           threadblock_offset.column()),
+                  indices) {}
 
   /// Construct a PredicatedTileAccessIterator with zero threadblock offset
   CUTLASS_HOST_DEVICE
@@ -771,9 +871,11 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::ColumnMajor,
 ///            MaskedTileIteratorConcept
 ///
 template <typename Shape_, typename Element_, int AdvanceRank,
-          typename ThreadMap_, typename AccessType_>
+          typename ThreadMap_, typename AccessType_, bool Gather,
+          typename PermuteLayout>
 class PredicatedTileAccessIterator<Shape_, Element_, layout::RowMajor,
-                                   AdvanceRank, ThreadMap_, AccessType_> {
+                                   AdvanceRank, ThreadMap_, AccessType_, Gather,
+                                   PermuteLayout> {
  public:
   static_assert(
       AdvanceRank == 0 || AdvanceRank == 1,
@@ -799,7 +901,8 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::RowMajor,
 
   using UnderlyingIterator = PredicatedTileAccessIterator<
       layout::PitchLinearShape<Shape::kColumn, Shape::kRow>, Element,
-      layout::PitchLinear, (kAdvanceRank == 0 ? 1 : 0), ThreadMap, AccessType>;
+      layout::PitchLinear, (kAdvanceRank == 0 ? 1 : 0), ThreadMap, AccessType, 
+      Gather, PermuteLayout>;
 
   static int const kAccessesPerVector = UnderlyingIterator::kAccessesPerVector;
 
@@ -816,9 +919,8 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::RowMajor,
 
    public:
 
-    /// Default ctor
-    CUTLASS_HOST_DEVICE
-    Params() { }
+    /// Default constructor
+    Params() = default;
 
     /// Construct the Params object given a pitch-linear tensor's layout
     CUTLASS_HOST_DEVICE
@@ -840,6 +942,10 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::RowMajor,
   UnderlyingIterator iterator_;
 
  public:
+
+  /// Default constructor
+  PredicatedTileAccessIterator() = default;
+
   /// Constructs a TileIterator from its precomputed state, threadblock offset,
   /// and thread ID
   CUTLASS_HOST_DEVICE
@@ -853,12 +959,15 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::RowMajor,
       ///< ID of each participating thread
       int thread_id,
       ///< Initial offset of threadblock
-      TensorCoord const &threadblock_offset)
+      TensorCoord const &threadblock_offset,
+      /// Gather indices
+      int const *indices = nullptr)
       : iterator_(params.params_, pointer,
                   layout::PitchLinearCoord(extent.column(), extent.row()),
                   thread_id,
                   layout::PitchLinearCoord(threadblock_offset.column(),
-                                           threadblock_offset.row())) {}
+                                           threadblock_offset.row()),
+                  indices) {}
 
   /// Construct a PredicatedTileAccessIterator with zero threadblock offset
   CUTLASS_HOST_DEVICE
@@ -954,7 +1063,8 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::RowMajor,
 template <typename Shape_, typename Element_, int AdvanceRank,
           typename ThreadMap_, typename AccessType_>
 class PredicatedTileAccessIterator<Shape_, Element_, layout::AffineRankN<2>,
-                                   AdvanceRank, ThreadMap_, AccessType_> {
+                                   AdvanceRank, ThreadMap_, AccessType_, false,
+                                   layout::NoPermute> {
  public:
   static_assert(
       AdvanceRank == 0 || AdvanceRank == 1,
@@ -1052,7 +1162,7 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::AffineRankN<2>,
   //
 
   /// Parameters object with precomputed internal state
-  Params const &params_;
+  Params params_;
 
   /// Internal pointer to first access of tile
   BytePointer pointer_;
@@ -1074,6 +1184,10 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::AffineRankN<2>,
   }
 
  public:
+
+  /// Default constructor
+  PredicatedTileAccessIterator() = default;
+
   /// Constructs a TileIterator from its precomputed state, threadblock offset,
   /// and thread ID
   CUTLASS_HOST_DEVICE
@@ -1087,7 +1201,9 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::AffineRankN<2>,
       ///< ID of each participating thread
       int thread_id,
       ///< Initial offset of threadblock
-      TensorCoord const &threadblock_offset)
+      TensorCoord const &threadblock_offset,
+      int const *indices = nullptr     ///< gather/scatter indices, note no support for gather/scatter at this specialization
+      )
       : params_(params),
         pointer_(reinterpret_cast<BytePointer>(
             const_cast<NonConstPointer>(pointer))),
@@ -1099,7 +1215,6 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::AffineRankN<2>,
     // update internal pointers
     Layout layout(params_.stride_);
     add_pointer_offset(layout(the_predicates.thread_offset_));
-
   }
 
   /// Construct a PredicatedTileAccessIterator with zero threadblock offset
@@ -1256,7 +1371,8 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::AffineRankN<2>,
 template <typename Shape_, typename Element_, int AdvanceRank,
           typename ThreadMap_, typename AccessType_>
 class PredicatedTileAccessIterator<Shape_, Element_, layout::AffineRank2ColumnMajor,
-                                   AdvanceRank, ThreadMap_, AccessType_> {
+                                   AdvanceRank, ThreadMap_, AccessType_, false,
+                                   layout::NoPermute> {
  public:
   static_assert(
       AdvanceRank == 0 || AdvanceRank == 1,
@@ -1300,9 +1416,8 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::AffineRank2ColumnMa
 
    public:
 
-    /// Default ctor
-    CUTLASS_HOST_DEVICE
-    Params() { }
+    /// Default constructor
+    Params() = default;
 
     /// Construct the Params object given an AffineRankN<2> tensor's layout
     CUTLASS_HOST_DEVICE
@@ -1319,6 +1434,10 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::AffineRank2ColumnMa
   UnderlyingIterator iterator_;
 
  public:
+
+  /// Default constructor
+  PredicatedTileAccessIterator() = default;
+
   /// Constructs a TileIterator from its precomputed state, threadblock offset,
   /// and thread ID
   CUTLASS_HOST_DEVICE
@@ -1332,7 +1451,9 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::AffineRank2ColumnMa
       ///< ID of each participating thread
       int thread_id,
       ///< Initial offset of threadblock
-      TensorCoord const &threadblock_offset)
+      TensorCoord const &threadblock_offset,
+      int const *indices = nullptr     ///< gather/scatter indices, note no support for gather/scatter at this specialization
+      )
       : iterator_(params.params_, pointer,
                   layout::PitchLinearCoord(extent.row(), extent.column()),
                   thread_id,
@@ -1433,7 +1554,8 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::AffineRank2ColumnMa
 template <typename Shape_, typename Element_, int AdvanceRank,
           typename ThreadMap_, typename AccessType_>
 class PredicatedTileAccessIterator<Shape_, Element_, layout::AffineRank2RowMajor,
-                                   AdvanceRank, ThreadMap_, AccessType_> {
+                                   AdvanceRank, ThreadMap_, AccessType_, false,
+                                   layout::NoPermute> {
  public:
   static_assert(
       AdvanceRank == 0 || AdvanceRank == 1,
@@ -1477,9 +1599,8 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::AffineRank2RowMajor
 
    public:
 
-    /// Default ctor
-    CUTLASS_HOST_DEVICE
-    Params() { }
+    /// Default constructor
+    Params() = default;
 
     /// Construct the Params object given an AffineRankN<2> tensor's layout
     CUTLASS_HOST_DEVICE
@@ -1496,6 +1617,10 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::AffineRank2RowMajor
   UnderlyingIterator iterator_;
 
  public:
+
+  /// Default constructor
+  PredicatedTileAccessIterator() = default;
+
   /// Constructs a TileIterator from its precomputed state, threadblock offset,
   /// and thread ID
   CUTLASS_HOST_DEVICE
@@ -1509,7 +1634,9 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::AffineRank2RowMajor
       ///< ID of each participating thread
       int thread_id,
       ///< Initial offset of threadblock
-      TensorCoord const &threadblock_offset)
+      TensorCoord const &threadblock_offset,
+      int const *indices = nullptr     ///< gather/scatter indices, note no support for gather/scatter at this specialization
+      )
       : iterator_(params.params_, pointer,
                   layout::PitchLinearCoord(extent.column(), extent.row()),
                   thread_id,
@@ -1613,7 +1740,8 @@ template <typename Shape_, typename Element_, int AdvanceRank,
           typename ThreadMap_, typename AccessType_, int InterleavedK>
 class PredicatedTileAccessIterator<Shape_, Element_,
                                    layout::ColumnMajorInterleaved<InterleavedK>,
-                                   AdvanceRank, ThreadMap_, AccessType_> {
+                                   AdvanceRank, ThreadMap_, AccessType_, false,
+                                   layout::NoPermute> {
  public:
   static_assert(
       AdvanceRank == 0 || AdvanceRank == 1,
@@ -1658,8 +1786,9 @@ class PredicatedTileAccessIterator<Shape_, Element_,
     typename UnderlyingIterator::Params params_;
 
    public:
-    CUTLASS_HOST_DEVICE
-    Params() {}
+
+    /// Default constructor
+    Params() = default;
 
     /// Construct the Params object given a pitch-linear tensor's layout
     CUTLASS_HOST_DEVICE
@@ -1680,6 +1809,10 @@ class PredicatedTileAccessIterator<Shape_, Element_,
   UnderlyingIterator iterator_;
 
  public:
+
+  /// Default constructor
+  PredicatedTileAccessIterator() = default;
+
   /// Constructs a TileIterator from its precomputed state, threadblock offset,
   /// and thread ID
   CUTLASS_HOST_DEVICE
@@ -1693,7 +1826,9 @@ class PredicatedTileAccessIterator<Shape_, Element_,
       /// ID of each participating thread
       int thread_id,
       /// Initial offset of threadblock
-      TensorCoord const &threadblock_offset)
+      TensorCoord const &threadblock_offset,
+      int const *indices = nullptr     ///< gather/scatter indices, note no support for gather/scatter at this specialization
+      )
       : iterator_(params.params_, pointer,
                   layout::PitchLinearCoord(extent.row() * kInterleavedK,
                                            extent.column() / kInterleavedK),
@@ -1796,7 +1931,8 @@ template <typename Shape_, typename Element_, int AdvanceRank,
           typename ThreadMap_, typename AccessType_, int InterleavedK>
 class PredicatedTileAccessIterator<Shape_, Element_,
                                    layout::RowMajorInterleaved<InterleavedK>,
-                                   AdvanceRank, ThreadMap_, AccessType_> {
+                                   AdvanceRank, ThreadMap_, AccessType_, false,
+                                   layout::NoPermute> {
  public:
   static_assert(
       AdvanceRank == 0 || AdvanceRank == 1,
@@ -1842,8 +1978,9 @@ class PredicatedTileAccessIterator<Shape_, Element_,
     typename UnderlyingIterator::Params params_;
 
    public:
-    CUTLASS_HOST_DEVICE
-    Params() {}
+
+    /// Default constructor
+    Params() = default;
 
     /// Construct the Params object given a pitch-linear tensor's layout
     CUTLASS_HOST_DEVICE
@@ -1864,6 +2001,10 @@ class PredicatedTileAccessIterator<Shape_, Element_,
   UnderlyingIterator iterator_;
 
  public:
+
+  /// Default constructor
+  PredicatedTileAccessIterator() = default;
+
   /// Constructs a TileIterator from its precomputed state, threadblock offset,
   /// and thread ID
   CUTLASS_HOST_DEVICE
@@ -1877,7 +2018,9 @@ class PredicatedTileAccessIterator<Shape_, Element_,
       /// ID of each participating thread
       int thread_id,
       /// Initial offset of threadblock
-      TensorCoord const &threadblock_offset)
+      TensorCoord const &threadblock_offset,
+      int const *indices = nullptr     ///< gather/scatter indices, note no support for gather/scatter at this specialization
+      )
       : iterator_(params.params_, pointer,
                   layout::PitchLinearCoord(extent.column() * kInterleavedK,
                                            extent.row() / kInterleavedK),

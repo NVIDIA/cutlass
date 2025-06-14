@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -36,6 +42,7 @@
 
 namespace cutlass {
 
+// uncompress sparse tensor core A matrix
 template <typename ElementA, typename LayoutA, typename ElementE,
           typename LayoutE>
 void uncompress(TensorRef<ElementA, LayoutA> uncompressed_tensor_a,
@@ -113,5 +120,38 @@ void uncompress(TensorRef<ElementA, LayoutA> uncompressed_tensor_a,
     }
   }
 }
+
+// uncompress ELL block sparse matrix
+template <typename ElementA, typename LayoutA,
+          typename ElementE, typename LayoutE>
+void uncompress_ell_block_sparse(
+                TensorRef<ElementA, LayoutA> uncompressed_tensor_a,
+                TensorRef<ElementA, LayoutA> tensor_a,
+                TensorRef<ElementE, LayoutE> ell_idx,
+                int rows, int cols,
+                int ell_num_cols, int ell_blocksize) {
+
+  for (int r = 0; r < rows / ell_blocksize; ++r) {
+    for (int c = 0; c < ell_num_cols / ell_blocksize; ++c) {
+
+      ElementE idx = ell_idx.at(MatrixCoord(r, c));
+
+      if (idx != -1) {
+        int row_begin = r * ell_blocksize;
+        int col_begin_real = idx * ell_blocksize;
+        int col_begin = c * ell_blocksize;
+  
+        for (int i = 0; i < ell_blocksize; ++i) {
+          for (int j = 0; j < ell_blocksize; ++j) {
+            uncompressed_tensor_a.at(MatrixCoord(row_begin + i, col_begin_real + j)) =
+                tensor_a.at(
+                    MatrixCoord(row_begin + i, col_begin +j));
+          }
+        }
+      }
+    }
+  }
+}
+
 } // namespace cutlass
 

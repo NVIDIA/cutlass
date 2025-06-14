@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -34,7 +40,7 @@
 #pragma warning( disable : 4503)
 
 /*
-This example demonstrates how to use cutlass to compute a batched gemm in two different ways:
+This example demonstrates how to use cutlass to compute a batched strided gemm in two different ways:
   1. By specifying pointers to the first matrices of the batch and the stride between the consecutive
      matrices of the batch (this is called a strided batched gemm).
   2. By copying pointers to all matrices of the batch to the device memory (this is called an array gemm).
@@ -75,7 +81,7 @@ matrix A can be seen as
 ---------------------------------------
      batch 0      |      batch 1
 , where batch size is 2, M is 6 and K is 2
-The stride (batch_stride_B) between the first element of two batches is lda * k
+The stride (batch_stride_A) between the first element of two batches is lda * k
 
 matrix B can be seen as
 -----------------------------
@@ -88,7 +94,7 @@ matrix B can be seen as
 (1,1,0) | (1,1,1) | (1,1,2) |
 -----------------------------
 , where the batch size is 2, N is 3 and K is 2
-The stride (batch_stride_C) between the first element of two batches is k
+The stride (batch_stride_B) between the first element of two batches is k
 
 
 */
@@ -201,15 +207,15 @@ cudaError_t strided_batched_gemm_nn_reference(
   
   cudaError_t result = cudaSuccess;
 
-  if (A.size() < lda * k * batch_count) {
+  if (A.size() < size_t(lda * k * batch_count)) {
     std::cout << "the size of A is too small" << std::endl;
     return cudaErrorInvalidValue;
   }
-  if (B.size() < ldb * n) {
+  if (B.size() < size_t(ldb * n)) {
     std::cout << "the size of B is too small" << std::endl;
     return cudaErrorInvalidValue;
   }
-  if (C.size() < ldc * n * batch_count) {
+  if (C.size() < size_t(ldc * n * batch_count)) {
     std::cout << "the size of C is too small" << std::endl;
     return cudaErrorInvalidValue;
   }
@@ -230,6 +236,7 @@ cudaError_t strided_batched_gemm_nn_reference(
 
   return result;
 }
+
 
 cudaError_t run_batched_gemm(bool use_array) {
 

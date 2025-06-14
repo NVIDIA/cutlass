@@ -1,44 +1,53 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
-/*! 
+/*!
   \file
-  \brief The universal GEMM accommodates serial reductions, parallel reductions, batched strided, and 
-    batched array variants.
+  \brief The universal GEMM accommodates streamk, batched strided, and batched array variants.
 */
 
 #pragma once
 
+#if defined(__CUDACC_RTC__)
+#include <cuda/std/limits>
+#else
 #include <limits>
+#endif
 
 #include "cutlass/cutlass.h"
 #include "cutlass/numeric_types.h"
 #include "cutlass/arch/arch.h"
 #include "cutlass/device_kernel.h"
+#include "cutlass/cuda_host_adapter.hpp"
 
 #include "cutlass/gemm/gemm.h"
-#include "cutlass/gemm/threadblock/threadblock_swizzle.h"
 #include "cutlass/gemm/kernel/gemm_universal.h"
 
 #include "cutlass/gemm/kernel/default_gemm_universal.h"
@@ -46,7 +55,7 @@
 
 #include "cutlass/trace.h"
 
-////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
 namespace gemm {
@@ -60,8 +69,12 @@ class GemmUniversalBase {
 public:
 
   using GemmKernel = GemmKernel_;
+
+  /// Boolean indicating whether the CudaHostAdapter is enabled
+  static bool const kEnableCudaHostAdapter = CUTLASS_ENABLE_CUDA_HOST_ADAPTER;
+
   using ThreadblockShape = typename GemmKernel::Mma::Shape;
-  
+
   using ElementA = typename GemmKernel::ElementA;
   using LayoutA = typename GemmKernel::LayoutA;
   using TensorRefA = TensorRef<ElementA const, LayoutA>;
@@ -77,7 +90,8 @@ public:
   using TensorRefC = TensorRef<ElementC const, LayoutC>;
   using TensorRefD = TensorRef<ElementC, LayoutC>;
 
-  using ElementAccumulator = typename GemmKernel::Mma::Policy::Operator::ElementC;
+  /// Numerical accumulation element type
+  using ElementAccumulator = typename GemmKernel::Mma::ElementC;
 
   using EpilogueOutputOp = typename GemmKernel::EpilogueOutputOp;
   using ThreadblockSwizzle = typename GemmKernel::ThreadblockSwizzle;
@@ -86,243 +100,370 @@ public:
   /// Argument structure
   using Arguments = typename GemmKernel::Arguments;
 
+
+  /// Index of the GEMM Kernel within the CudaHostAdapter
+  static int32_t const kGemmKernelIndex = 0;
+
+  /// Kernel dynamic shared memory allocation requirement
+  /// Update the kernel function's shared memory configuration for the current device
+  static constexpr size_t kSharedStorageSize = sizeof(typename GemmKernel::SharedStorage);
+
 protected:
 
-  /// Kernel parameters object
-  typename GemmKernel::Params params_;
+  //
+  // Device properties (uniform across all instances of the current thread)
+  //
+
+  // Device ordinal
+  CUTLASS_THREAD_LOCAL static int device_ordinal_;
+
+  /// Device SM count
+  CUTLASS_THREAD_LOCAL static int device_sms_;
+
+  /// Kernel SM occupancy (in thread blocks)
+  CUTLASS_THREAD_LOCAL static int sm_occupancy_;
 
 protected:
 
-  /// Private helper to obtain the grid dimensions with fix-up for split-K
-  static void get_grid_shape_(gemm::GemmCoord &grid_tiled_shape, int &gemm_k_size, Arguments const &args) {
+  /// Initialize static thread-local members for the thread's current device,
+  /// if necessary.
+  static Status init_device_props()
+  {
+    CUTLASS_TRACE_HOST("GemmUniversalBase::init_device_props()");
 
-    // Determine grid shape
-    ThreadblockSwizzle threadblock_swizzle;
+    cudaError_t cudart_result;
 
-    grid_tiled_shape = threadblock_swizzle.get_tiled_shape(
-      args.problem_size, 
-      {ThreadblockShape::kM, ThreadblockShape::kN, ThreadblockShape::kK},
-      args.batch_count);
-    
-    gemm_k_size = args.problem_size.k();
+    // Get current device ordinal
+    int current_ordinal;
+    cudart_result = cudaGetDevice(&current_ordinal);
+    if (cudart_result != cudaSuccess) {
+      CUTLASS_TRACE_HOST("  cudaGetDevice() returned error " << cudaGetErrorString(cudart_result));
+      return Status::kErrorInternal;
+    }
 
-    if (args.mode == GemmUniversalMode::kGemm || args.mode == GemmUniversalMode::kGemmSplitKParallel) {
+    // Done if matches the current static member
+    if (current_ordinal == device_ordinal_) {
+      // Already initialized
+      return Status::kSuccess;
+    }
 
-      int const kAlignK = const_max(const_max(128 / sizeof_bits<ElementA>::value, 128 / sizeof_bits<ElementB>::value), 1);
+    // Update SM count member
+    cudart_result = cudaDeviceGetAttribute (&device_sms_, cudaDevAttrMultiProcessorCount, current_ordinal);
+    if (cudart_result != cudaSuccess) {
+      CUTLASS_TRACE_HOST("  cudaDeviceGetAttribute() returned error " << cudaGetErrorString(cudart_result));
+      return Status::kErrorInternal;
+    }
 
-      gemm_k_size = round_up(ceil_div(args.problem_size.k(), args.batch_count), kAlignK);
-      
-      if (gemm_k_size) {
-        grid_tiled_shape.k() = ceil_div(args.problem_size.k(), gemm_k_size);
+    // If requires more than 48KB: configure for extended, dynamic shared memory
+    if constexpr (kSharedStorageSize >= (48 << 10))
+    {
+      cudart_result = cudaFuncSetAttribute(
+        Kernel2<GemmKernel>,
+        cudaFuncAttributeMaxDynamicSharedMemorySize,
+        kSharedStorageSize);
+      if (cudart_result != cudaSuccess) {
+        CUTLASS_TRACE_HOST("  cudaFuncSetAttribute() returned error " << cudaGetErrorString(cudart_result));
+        return Status::kErrorInternal;
       }
     }
+
+    // Update SM occupancy member
+    cudart_result = cudaOccupancyMaxActiveBlocksPerMultiprocessorWithFlags(
+      &sm_occupancy_,
+      Kernel2<GemmKernel>,
+      GemmKernel::kThreadCount,
+      kSharedStorageSize,
+      cudaOccupancyDisableCachingOverride);
+    if (cudart_result != cudaSuccess) {
+      CUTLASS_TRACE_HOST("  cudaOccupancyMaxActiveBlocksPerMultiprocessorWithFlags() returned error " << cudaGetErrorString(cudart_result));
+      return Status::kErrorInternal;
+    }
+
+    // Update device ordinal member on success
+    device_ordinal_ = current_ordinal;
+
+    CUTLASS_TRACE_HOST("  "
+      "device_ordinal: (" << device_ordinal_ << "), "
+      "device_sms: (" << device_sms_ << "), "
+      "sm_occupancy: (" << sm_occupancy_ << ") "
+      "smem_size: (" << kSharedStorageSize << ") "
+      "GemmKernel::kThreadCount: (" << GemmKernel::kThreadCount << ")");
+
+    return Status::kSuccess;
+  }
+
+
+protected:
+
+  //
+  // Instance data members
+  //
+
+  /// Kernel parameters
+  typename GemmKernel::Params params_;
+
+
+  /// Initialize params member
+  Status init_params(Arguments const &args, CudaHostAdapter *cuda_adapter = nullptr)
+  {
+    int32_t device_sms = 0;
+    int32_t sm_occupancy = 0;
+
+    if constexpr (kEnableCudaHostAdapter) {
+      CUTLASS_ASSERT(cuda_adapter);
+
+      //
+      // Occupancy query using CudaHostAdapter::query_occupancy().
+      //
+
+      if (cuda_adapter) {
+
+        Status status = cuda_adapter->query_occupancy(
+          &device_sms,
+          &sm_occupancy,
+          kGemmKernelIndex,
+          GemmKernel::kThreadCount,
+          kSharedStorageSize);
+
+        CUTLASS_ASSERT(status == Status::kSuccess);
+
+        if (status != Status::kSuccess) {
+          return status;
+        }
+      }
+      else {
+        return Status::kErrorInternal;
+      }
+    }
+    else {
+      CUTLASS_ASSERT(cuda_adapter == nullptr);
+
+      // Initialize static device properties, if necessary
+      Status result = init_device_props();
+
+      if (result != Status::kSuccess) {
+        return result;
+      }
+
+      //
+      // Use thread-local static members for occupancy query initialized by call to
+      // `init_device_props()`
+      //
+
+      device_sms   = device_sms_;
+      sm_occupancy = sm_occupancy_;
+    }
+
+    // Initialize params member
+    params_ = typename GemmKernel::Params(args, device_sms, sm_occupancy);
+    return Status::kSuccess;
   }
 
 public:
 
-  /// Constructs the GEMM.
-  GemmUniversalBase() { }
+  //---------------------------------------------------------------------------------------------
+  // Stateless API
+  //---------------------------------------------------------------------------------------------
 
   /// Determines whether the GEMM can execute the given problem.
-  static Status can_implement(Arguments const &args) {
-    
-    // Determine grid shape
-    cutlass::gemm::GemmCoord grid_tiled_shape;
-    int gemm_k_size = 0;
-    
-    get_grid_shape_(grid_tiled_shape, gemm_k_size, args);
-    
-    ThreadblockSwizzle threadblock_swizzle;
-    dim3 grid = threadblock_swizzle.get_grid_shape(grid_tiled_shape);
-  
-    if (!(grid.y <= std::numeric_limits<uint16_t>::max() && 
-          grid.z <= std::numeric_limits<uint16_t>::max())) {
+  static Status can_implement(Arguments const &args, CudaHostAdapter *cuda_adapter = nullptr)
+  {
+    CUTLASS_TRACE_HOST("GemmUniversalBase::can_implement()");
 
-      return Status::kErrorInvalidProblem;
-    } 
+    if (!kEnableCudaHostAdapter || cuda_adapter) {
+
+      dim3 grid = get_grid_shape(args, cuda_adapter);
+
+      if (!(grid.y <= std::numeric_limits<uint16_t>::max() &&
+            grid.z <= std::numeric_limits<uint16_t>::max()))
+      {
+        return Status::kErrorInvalidProblem;
+      }
+    }
+    else {
+      //
+      // With a null host adapter, a conservative grid shape is computed and required to conform to CUDA grid
+      // dimension limits.
+      //
+
+      int64_t logicalGridM = (int64_t(args.problem_size.m()) + ThreadblockShape::kM - 1) / ThreadblockShape::kM;
+      int64_t logicalGridN = (int64_t(args.problem_size.n()) + ThreadblockShape::kN - 1) / ThreadblockShape::kN;
+      int32_t logicalGridL = args.batch_count;
+
+      if ((int64_t(std::numeric_limits<uint32_t>::max()) < logicalGridM) ||
+          (int64_t(std::numeric_limits<uint16_t>::max()) < logicalGridN) ||
+          (int32_t(std::numeric_limits<uint16_t>::max()) < logicalGridL)) {
+
+        return Status::kErrorInvalidProblem;
+      }
+
+    }
 
     return GemmKernel::can_implement(args);
   }
 
-  /// Gets the workspace size
-  static size_t get_workspace_size(Arguments const &args) {
 
+  /// Returns the workspace size (in bytes) needed for the problem
+  /// geometry expressed by these arguments
+  static size_t get_workspace_size(Arguments const &args, CudaHostAdapter *cuda_adapter = nullptr)
+  {
     CUTLASS_TRACE_HOST("GemmUniversalBase::get_workspace_size()");
- 
-    size_t workspace_bytes = 0;
 
-    // Determine grid shape
-    cutlass::gemm::GemmCoord grid_tiled_shape;
-    int gemm_k_size = 0;
-    
-    get_grid_shape_(grid_tiled_shape, gemm_k_size, args);
-    
-    if (args.mode == GemmUniversalMode::kGemmSplitKParallel) {
-
-      // Split-K parallel always requires a temporary workspace
-      workspace_bytes = 
-        sizeof(ElementC) *
-        size_t(args.batch_stride_D) *
-        size_t(grid_tiled_shape.k());
+    // Initialize parameters from args
+    GemmUniversalBase base;
+    if (base.init_params(args, cuda_adapter) != Status::kSuccess) {
+      return 0;
     }
-    else if (args.mode == GemmUniversalMode::kGemm && grid_tiled_shape.k() > 1) {
 
-      // Serial split-K only requires a temporary workspace if the number of partitions along the
-      // GEMM K dimension is greater than one.
-      workspace_bytes = sizeof(int) * size_t(grid_tiled_shape.m()) * size_t(grid_tiled_shape.n());
-    }
+    // Get size from parameters
+    size_t workspace_bytes = base.params_.get_workspace_size();
 
     CUTLASS_TRACE_HOST("  workspace_bytes: " << workspace_bytes);
-
-    workspace_bytes += GemmKernel::get_extra_workspace_size(args, grid_tiled_shape);
- 
     return workspace_bytes;
   }
 
-  /// Computes the grid shape
-  static dim3 get_grid_shape(Arguments const &args) {
 
+  /// Returns the grid extents in thread blocks to launch
+  static dim3 get_grid_shape(Arguments const &args, CudaHostAdapter *cuda_adapter = nullptr)
+  {
     CUTLASS_TRACE_HOST("GemmUniversalBase::get_grid_shape()");
 
-    ThreadblockSwizzle threadblock_swizzle;
+    // Initialize parameters from args
+    GemmUniversalBase base;
+    if (base.init_params(args, cuda_adapter) != Status::kSuccess) {
+      return dim3(0,0,0);
+    }
 
-    cutlass::gemm::GemmCoord grid_tiled_shape;
-    int gemm_k_size = 0;
+    // Get dims from parameters
+    dim3 grid_dims = base.params_.get_grid_dims();
 
-    get_grid_shape_(grid_tiled_shape, gemm_k_size, args);
-    dim3 result = threadblock_swizzle.get_grid_shape(grid_tiled_shape);    
-    
     CUTLASS_TRACE_HOST(
-         "  grid_tiled_shape: " << grid_tiled_shape  << "\n"
-      << "  result = {" << result << "}");
+         "  tiled_shape: " << base.params_.get_tiled_shape()  << "\n"
+      << "  grid_dims: {" << grid_dims << "}");
 
-    return result;
+    return grid_dims;
   }
 
-  /// Computes the maximum number of active blocks per multiprocessor
-  static int maximum_active_blocks(int smem_capacity = -1) {
 
+  /// Returns the maximum number of active thread blocks per multiprocessor
+  static int maximum_active_blocks(CudaHostAdapter *cuda_adapter = nullptr)
+  {
     CUTLASS_TRACE_HOST("GemmUniversalBase::maximum_active_blocks()");
 
-    int max_active_blocks = -1;
-    int smem_size = int(sizeof(typename GemmKernel::SharedStorage));
+    int32_t device_sms   = 0;
+    int32_t sm_occupancy = 0;
 
-    CUTLASS_TRACE_HOST("  smem_size: " << smem_size << " bytes");
 
-    if (smem_size <= (48 << 10)) {
+    if constexpr (kEnableCudaHostAdapter) {
+      CUTLASS_ASSERT(cuda_adapter);
 
-      cudaError_t result = cudaOccupancyMaxActiveBlocksPerMultiprocessor(
-        &max_active_blocks,
-        Kernel<GemmKernel>,
-        GemmKernel::kThreadCount,
-        smem_size);
+      if (cuda_adapter) {
 
-      if (result == cudaSuccess) {
-        CUTLASS_TRACE_HOST("  max_active_blocks: " << max_active_blocks);
-        return max_active_blocks;
+        Status status = cuda_adapter->query_occupancy(
+          &device_sms,
+          &sm_occupancy,
+          kGemmKernelIndex,
+          GemmKernel::kThreadCount,
+          kSharedStorageSize);
+
+        CUTLASS_ASSERT(status == Status::kSuccess);
+
+        if (status != Status::kSuccess) {
+        return -1;
+        }
+      }
+      else {
+        return -1;
       }
     }
     else {
-
-      // Query assuming zero shared memory then compute occupancy limit based on SMEM
-      cudaError_t result = cudaOccupancyMaxActiveBlocksPerMultiprocessor(
-        &max_active_blocks,
-        Kernel<GemmKernel>,
-        GemmKernel::kThreadCount,
-        0);
-
-      if (result != cudaSuccess) {
-
-        CUTLASS_TRACE_HOST(
-          "  cudaOccupancyMaxActiveBlocksPerMultiprocessor() returned error "
-          << cudaGetErrorString(result));
-
+      CUTLASS_ASSERT(cuda_adapter == nullptr);
+      // Initialize static device properties, if necessary
+      if (init_device_props() != Status::kSuccess) {
         return -1;
       }
 
-      if (smem_capacity < 0) {
-        int device_idx = 0;
-        result = cudaGetDevice(&device_idx);
-
-        if (result != cudaSuccess) {
-          return -1;
-        }
-
-        cudaDeviceProp properties;
-        result = cudaGetDeviceProperties(&properties, device_idx);
-
-        if (result != cudaSuccess) {
-          return -1;
-        }
-
-        smem_capacity = static_cast<int>(properties.sharedMemPerMultiprocessor);
-      }
-
-      int occupancy = std::min(max_active_blocks, smem_capacity / smem_size);
-
-      CUTLASS_TRACE_HOST("  occupancy: " << occupancy);
-
-      return occupancy;
+      sm_occupancy = sm_occupancy_;
     }
 
-    CUTLASS_TRACE_HOST("  returning internal error");
-
-    return -1;
+    CUTLASS_TRACE_HOST("  max_active_blocks: " << sm_occupancy_);
+    return sm_occupancy;
   }
 
-  /// Initializes GEMM state from arguments.
-  Status initialize(Arguments const &args, void *workspace = nullptr, cudaStream_t stream = nullptr) {
 
-    CUTLASS_TRACE_HOST("GemmUniversalBase::initialize() - workspace " 
+  //---------------------------------------------------------------------------------------------
+  // Stateful API
+  //---------------------------------------------------------------------------------------------
+
+  /// Initializes GEMM state from arguments and workspace memory
+  Status initialize(
+    Arguments const &args,
+    void *workspace = nullptr,
+    cudaStream_t stream = nullptr,
+    CudaHostAdapter *cuda_adapter = nullptr)
+  {
+    CUTLASS_TRACE_HOST("GemmUniversalBase::initialize() - workspace "
       << workspace << ", stream: " << (stream ? "non-null" : "null"));
 
-    size_t workspace_bytes = get_workspace_size(args);
-
-    CUTLASS_TRACE_HOST("  workspace_bytes: " << workspace_bytes);
-
-    if (workspace_bytes) {
-      
-      if (!workspace) {
-        CUTLASS_TRACE_HOST("  error: device workspace must not be null");
-
-        return Status::kErrorWorkspaceNull;
-      }
-
-      if (args.mode == GemmUniversalMode::kGemm) {
-        CUTLASS_TRACE_HOST("  clearing device workspace");
-        cudaError_t result = cudaMemsetAsync(workspace, 0, workspace_bytes, stream);
-
-        if (result != cudaSuccess) {
-          CUTLASS_TRACE_HOST("  cudaMemsetAsync() returned error " << cudaGetErrorString(result));
-
-          return Status::kErrorInternal;
-        }
-      }
+    // Initialize parameters from args
+    Status result = init_params(args, cuda_adapter);
+    if (result != Status::kSuccess) {
+      return result;
     }
 
-    // Get CUDA grid shape
-    cutlass::gemm::GemmCoord grid_tiled_shape;
-    int gemm_k_size = 0;
+    // Assign and prepare workspace memory
+    if (args.mode == GemmUniversalMode::kGemm) {
+      return params_.init_workspace(workspace, stream);
+    }
 
-    get_grid_shape_(grid_tiled_shape, gemm_k_size, args);
+    return Status::kSuccess;
+  }
 
-    // Initialize the Params structure
-    params_ = typename GemmKernel::Params(
-      args,
-      grid_tiled_shape,
-      gemm_k_size,
-      static_cast<int *>(workspace)
-    );
-   
-    // Specify shared memory capacity for kernel. 
-    int smem_size = int(sizeof(typename GemmKernel::SharedStorage));
 
-    if (smem_size >= (48 << 10)) {
-      cudaError_t result = cudaFuncSetAttribute(Kernel<GemmKernel>,
-                                    cudaFuncAttributeMaxDynamicSharedMemorySize,
-                                    smem_size);
+  /// Lightweight update given a subset of arguments.
+  Status update(Arguments const &args)
+  {
+    CUTLASS_TRACE_HOST("GemmUniversalBase()::update()");
+    params_.update(args);
+    return Status::kSuccess;
+  }
 
+  /// Runs the kernel using initialized state.
+  Status run(cudaStream_t stream = nullptr, CudaHostAdapter *cuda_adapter = nullptr)
+  {
+    CUTLASS_TRACE_HOST("GemmUniversalBase::run()");
+
+    // Configure grid and block dimensions
+    dim3 block(GemmKernel::kThreadCount, 1, 1);
+    dim3 grid = params_.get_grid_dims();
+
+    // Launch kernel
+    CUTLASS_TRACE_HOST("  "
+      "grid: (" << grid << "), "
+      "block: (" << block << "), "
+      "SMEM: (" << kSharedStorageSize << ")");
+
+    cutlass::arch::synclog_setup();
+
+    if constexpr (kEnableCudaHostAdapter) {
+      CUTLASS_ASSERT(cuda_adapter);
+      if (cuda_adapter) {
+        void* kernel_params[] = {&params_};
+        return cuda_adapter->launch(grid, block, kSharedStorageSize, stream, kernel_params, 0);
+      }
+      else {
+        return Status::kErrorInternal;
+      }
+    }
+    else {
+      CUTLASS_ASSERT(cuda_adapter == nullptr);
+
+      Kernel2<GemmKernel><<<grid, block, kSharedStorageSize, stream>>>(params_);
+
+      // Query for errors
+      cudaError_t result = cudaGetLastError();
       if (result != cudaSuccess) {
+        CUTLASS_TRACE_HOST("  grid launch failed with error " << cudaGetErrorString(result));
         return Status::kErrorInternal;
       }
     }
@@ -330,80 +471,47 @@ public:
     return Status::kSuccess;
   }
 
-  /// Lightweight update given a subset of arguments
-  Status update(Arguments const &args, void *workspace = nullptr) {
-
-    CUTLASS_TRACE_HOST("GemmUniversalBase()::update() - workspace: " << workspace);
-
-    size_t workspace_bytes = get_workspace_size(args);
-
-    if (workspace_bytes && !workspace) {
-      return Status::kErrorWorkspaceNull;
-    }
-    
-    params_.update(args, workspace);
-    
-    return Status::kSuccess;
-  }
 
   /// Runs the kernel using initialized state.
-  Status run(cudaStream_t stream = nullptr) {
-    CUTLASS_TRACE_HOST("GemmUniversalBase::run()");
-
-    //
-    // Configure grid and block dimensions
-    //
-
-    ThreadblockSwizzle threadblock_swizzle;
-
-    dim3 grid = threadblock_swizzle.get_grid_shape(params_.grid_tiled_shape);
-    dim3 block(GemmKernel::kThreadCount, 1, 1);
-
-    int smem_size = int(sizeof(typename GemmKernel::SharedStorage));
-
-    //
-    // Launch kernel
-    //
-
-    CUTLASS_TRACE_HOST("  grid: (" << grid << "),  block: (" << block 
-      << "),  SMEM: " << smem_size << " bytes");
-
-    // Launch
-    cutlass::Kernel<GemmKernel><<<grid, block, smem_size, stream>>>(params_);
-
-    //
-    // Query for errors
-    //
-    cudaError_t result = cudaGetLastError();
-
-    if (result != cudaSuccess) {
-      CUTLASS_TRACE_HOST("  grid launch failed with error " << cudaGetErrorString(result));
-      return Status::kErrorInternal;
-    }
-  
-    return Status::kSuccess;
+  Status operator()(cudaStream_t stream = nullptr, CudaHostAdapter *cuda_adapter = nullptr)
+  {
+    return run(stream, cuda_adapter);
   }
 
-  /// Runs the kernel using initialized state.
-  Status operator()(cudaStream_t stream = nullptr) {
-    return run(stream);
-  }
 
   /// Runs the kernel using initialized state.
   Status operator()(
     Arguments const &args, 
     void *workspace = nullptr, 
-    cudaStream_t stream = nullptr) {
-    
-    Status status = initialize(args, workspace, stream);
-    
+    cudaStream_t stream = nullptr,
+    CudaHostAdapter *cuda_adapter = nullptr)
+  {
+    Status status = initialize(args, workspace, stream, cuda_adapter);
+
     if (status == Status::kSuccess) {
-      status = run(stream);
+      status = run(stream, cuda_adapter);
     }
 
     return status;
   }
 };
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+/// Static initializers
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Device ordinal
+template <typename GemmKernel_>
+CUTLASS_THREAD_LOCAL int GemmUniversalBase<GemmKernel_>::device_ordinal_ = -1;
+
+/// Device SM count
+template <typename GemmKernel_>
+CUTLASS_THREAD_LOCAL int GemmUniversalBase<GemmKernel_>::device_sms_ = -1;
+
+/// Kernel SM occupancy (in thread blocks)
+template <typename GemmKernel_>
+CUTLASS_THREAD_LOCAL int GemmUniversalBase<GemmKernel_>::sm_occupancy_ = -1;
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

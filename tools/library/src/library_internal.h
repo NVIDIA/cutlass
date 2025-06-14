@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -58,8 +64,16 @@ namespace library {
 
 template <typename T> struct NumericTypeMap;
 
+template <> struct NumericTypeMap<void> {
+  static NumericTypeID const kId = NumericTypeID::kVoid;
+};
+
 template <> struct NumericTypeMap<cutlass::uint1b_t> {
   static NumericTypeID const kId = NumericTypeID::kB1;
+};
+
+template <> struct NumericTypeMap<cutlass::int2b_t> {
+  static NumericTypeID const kId = NumericTypeID::kS2;
 };
 
 template <> struct NumericTypeMap<cutlass::int4b_t> {
@@ -82,6 +96,10 @@ template <> struct NumericTypeMap<int64_t> {
   static NumericTypeID const kId = NumericTypeID::kS64;
 };
 
+template <> struct NumericTypeMap<cutlass::uint2b_t> {
+  static NumericTypeID const kId = NumericTypeID::kU2;
+};
+
 template <> struct NumericTypeMap<cutlass::uint4b_t> {
   static NumericTypeID const kId = NumericTypeID::kU4;
 };
@@ -89,6 +107,35 @@ template <> struct NumericTypeMap<cutlass::uint4b_t> {
 template <> struct NumericTypeMap<uint8_t> {
   static NumericTypeID const kId = NumericTypeID::kU8;
 };
+
+template <> struct NumericTypeMap<cutlass::float_e4m3_t> {
+  static NumericTypeID const kId = NumericTypeID::kFE4M3;
+};
+
+template <> struct NumericTypeMap<cutlass::float_e5m2_t> {
+  static NumericTypeID const kId = NumericTypeID::kFE5M2;
+};
+
+
+template <> struct NumericTypeMap<cutlass::float_e2m3_t> {
+  static NumericTypeID const kId = NumericTypeID::kFE2M3;
+};
+
+template <> struct NumericTypeMap<cutlass::float_e3m2_t> {
+  static NumericTypeID const kId = NumericTypeID::kFE3M2;
+};
+
+template <> struct NumericTypeMap<cutlass::float_e2m1_t> {
+  static NumericTypeID const kId = NumericTypeID::kFE2M1;
+};
+template <> struct NumericTypeMap<cutlass::float_ue8m0_t> {
+  static NumericTypeID const kId = NumericTypeID::kFUE8M0;
+};
+
+template <> struct NumericTypeMap<cutlass::float_ue4m3_t> {
+  static NumericTypeID const kId = NumericTypeID::kFUE4M3;
+};
+
 
 template <> struct NumericTypeMap<uint16_t> {
   static NumericTypeID const kId = NumericTypeID::kU16;
@@ -134,6 +181,22 @@ template <> struct NumericTypeMap<cutlass::tfloat32_t> {
   static NumericTypeID const kId = NumericTypeID::kTF32;
 };
 
+
+
+
+template <> struct NumericTypeMap<cutlass::type_erased_dynamic_float8_t> {
+  static NumericTypeID const kId = NumericTypeID::kF8;
+};
+
+template <> struct NumericTypeMap<cutlass::type_erased_dynamic_float6_t> {
+  static NumericTypeID const kId = NumericTypeID::kF6;
+};
+
+template <> struct NumericTypeMap<cutlass::type_erased_dynamic_float4_t> {
+  static NumericTypeID const kId = NumericTypeID::kF4;
+};
+
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename T> struct MathOperationMap {
@@ -154,6 +217,10 @@ template <> struct MathOperationMap<cutlass::arch::OpMultiplyAddFastF16> {
 
 template <> struct MathOperationMap<cutlass::arch::OpMultiplyAddSaturate> {
   static MathOperationID const kId = MathOperationID::kMultiplyAddSaturate;
+};
+
+template <> struct MathOperationMap<cutlass::arch::OpMultiplyAddMixedInputUpcast> {
+  static MathOperationID const kId = MathOperationID::kMultiplyAddMixedInputUpcast;
 };
 
 template <> struct MathOperationMap<cutlass::arch::OpMultiplyAddComplex> {
@@ -265,6 +332,16 @@ template <> struct OpcodeClassMap<arch::OpClassTensorOp> {
   static OpcodeClassID const kId = OpcodeClassID::kTensorOp;
 };
 
+template <> struct OpcodeClassMap<arch::OpClassSparseTensorOp> {
+  static OpcodeClassID const kId = OpcodeClassID::kSparseTensorOp;
+};
+
+
+template <> struct OpcodeClassMap<arch::OpClassBlockScaledTensorOp> {
+  static OpcodeClassID const kId = OpcodeClassID::kBlockScaledOp;
+};
+
+
 template <> struct OpcodeClassMap<arch::OpClassWmmaTensorOp> {
   static OpcodeClassID const kId = OpcodeClassID::kWmmaTensorOp;
 };
@@ -318,6 +395,15 @@ template <> struct IteratorAlgorithmMap<conv::IteratorAlgorithm::kAnalytic> {
 template <> struct IteratorAlgorithmMap<conv::IteratorAlgorithm::kOptimized> {
   static IteratorAlgorithmID const kId = IteratorAlgorithmID::kOptimized;
 };
+
+template <> struct IteratorAlgorithmMap<conv::IteratorAlgorithm::kFixedChannels> {
+  static IteratorAlgorithmID const kId = IteratorAlgorithmID::kFixedChannels;
+};
+
+template <> struct IteratorAlgorithmMap<conv::IteratorAlgorithm::kFewChannels> {
+  static IteratorAlgorithmID const kId = IteratorAlgorithmID::kFewChannels;
+};
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename Element, typename Layout>

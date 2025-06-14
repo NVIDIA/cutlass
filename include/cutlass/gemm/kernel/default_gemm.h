@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -59,10 +65,11 @@
 #include "cutlass/epilogue/threadblock/default_epilogue_simt.h"
 #include "cutlass/transform/threadblock/predicated_tile_iterator.h"
 
+#include "cutlass/layout/permute.h"
+
 #if defined(CUTLASS_ARCH_WMMA_ENABLED)
 #include "cutlass/epilogue/threadblock/default_epilogue_wmma_tensor_op.h"
 #endif //CUTLASS_ARCH_WMMA_ENABLED
-
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -113,11 +120,180 @@ template <
     /// Operation performed by GEMM
     typename Operator,
     /// Use zfill or predicate for out-of-bound cp.async
-    SharedMemoryClearOption SharedMemoryClear = SharedMemoryClearOption::kNone
+    SharedMemoryClearOption SharedMemoryClear = SharedMemoryClearOption::kNone,
+    /// Gather operand A by using an index array
+    bool GatherA = false,
+    /// Gather operand B by using an index array
+    bool GatherB = false,
+    /// Scatter result D by using an index array
+    bool ScatterD = false,
+    /// Permute result D
+    typename PermuteDLayout = layout::NoPermute,
+    /// Permute operand A
+    typename PermuteALayout = layout::NoPermute,
+    /// Permute operand B
+    typename PermuteBLayout = layout::NoPermute,
+    ///
+    typename Enable = void
 >
 struct DefaultGemm;
 
 ////////////////////////////////////////////////////////////////////////////////
+
+/// Partial specialization for Hopper Architecture
+template <
+    /// Element type for A matrix operand
+    typename ElementA,
+    /// Layout type for A matrix operand
+    typename LayoutA,
+    /// Access granularity of A matrix in units of elements
+    int kAlignmentA,
+    /// Element type for B matrix operand
+    typename ElementB,
+    /// Layout type for B matrix operand
+    typename LayoutB,
+    /// Access granularity of A matrix in units of elements
+    int kAlignmentB,
+    /// Element type for C and D matrix operands
+    typename ElementC,
+    /// Element type for internal accumulation
+    typename ElementAccumulator,
+    /// Threadblock-level tile size (concept: GemmShape)
+    typename ThreadblockShape,
+    /// Warp-level tile size (concept: GemmShape)
+    typename WarpShape,
+    /// Warp-level tile size (concept: GemmShape)
+    typename InstructionShape,
+    /// Epilogue output operator
+    typename EpilogueOutputOp,
+    /// Threadblock-level swizzling operator
+    typename ThreadblockSwizzle,
+    /// Number of stages used in the pipelined mainloop
+    int Stages,
+    /// If true, kernel is configured to support serial reduction in the
+    /// epilogue
+    bool SplitKSerial,
+    /// Operation performed by GEMM
+    typename Operator,
+    /// Use zfill or predicate for out-of-bound cp.async
+    SharedMemoryClearOption SharedMemoryClear,
+    /// Gather operand A by using an index array
+    bool GatherA,
+    /// Gather operand B by using an index array
+    bool GatherB,
+    /// Scatter result D by using an index array
+    bool ScatterD,
+    /// Permute result D
+    typename PermuteDLayout,
+    /// Permute operand A
+    typename PermuteALayout,
+    /// Permute operand B
+    typename PermuteBLayout
+>
+struct DefaultGemm<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignmentB, ElementC,
+                   layout::RowMajor, ElementAccumulator, arch::OpClassTensorOp,
+                   arch::Sm90, ThreadblockShape, WarpShape, InstructionShape,
+                   EpilogueOutputOp, ThreadblockSwizzle, Stages, SplitKSerial,
+                   Operator, SharedMemoryClear, GatherA, GatherB, ScatterD,
+                   PermuteDLayout, PermuteALayout, PermuteBLayout> {
+  /// Define the threadblock-scoped matrix multiply-accumulate
+  using Mma = typename cutlass::gemm::threadblock::DefaultMma<
+      ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignmentB,
+      ElementAccumulator, layout::RowMajor, arch::OpClassTensorOp, arch::Sm90,
+      ThreadblockShape, WarpShape, InstructionShape, Stages,
+      Operator, false, SharedMemoryClear, GatherA, GatherB, 
+      PermuteALayout, PermuteBLayout>::ThreadblockMma;
+
+  static const int kPartitionsK = ThreadblockShape::kK / WarpShape::kK;
+
+  /// Define the epilogue
+  using Epilogue =
+      typename cutlass::epilogue::threadblock::DefaultEpilogueTensorOp<
+          ThreadblockShape, typename Mma::Operator, kPartitionsK, EpilogueOutputOp,
+          EpilogueOutputOp::kCount, ScatterD, PermuteDLayout>::Epilogue;
+
+  /// Define the kernel-level GEMM operator.
+  using GemmKernel = kernel::Gemm<Mma, Epilogue, ThreadblockSwizzle, SplitKSerial>;
+};
+
+////////////////////////////////////////////////////////////////////////////////
+
+/// Partial specialization for Ada Architecture
+template <
+    /// Element type for A matrix operand
+    typename ElementA,
+    /// Layout type for A matrix operand
+    typename LayoutA,
+    /// Access granularity of A matrix in units of elements
+    int kAlignmentA,
+    /// Element type for B matrix operand
+    typename ElementB,
+    /// Layout type for B matrix operand
+    typename LayoutB,
+    /// Access granularity of A matrix in units of elements
+    int kAlignmentB,
+    /// Element type for C and D matrix operands
+    typename ElementC,
+    /// Element type for internal accumulation
+    typename ElementAccumulator,
+    /// Threadblock-level tile size (concept: GemmShape)
+    typename ThreadblockShape,
+    /// Warp-level tile size (concept: GemmShape)
+    typename WarpShape,
+    /// Warp-level tile size (concept: GemmShape)
+    typename InstructionShape,
+    /// Epilogue output operator
+    typename EpilogueOutputOp,
+    /// Threadblock-level swizzling operator
+    typename ThreadblockSwizzle,
+    /// Number of stages used in the pipelined mainloop
+    int Stages,
+    /// If true, kernel is configured to support serial reduction in the
+    /// epilogue
+    bool SplitKSerial,
+    /// Operation performed by GEMM
+    typename Operator,
+    /// Use zfill or predicate for out-of-bound cp.async
+    SharedMemoryClearOption SharedMemoryClear,
+    /// Gather operand A by using an index array
+    bool GatherA,
+    /// Gather operand B by using an index array
+    bool GatherB,
+    /// Scatter result D by using an index array
+    bool ScatterD,
+    /// Permute result D
+    typename PermuteDLayout,
+    /// Permute operand A
+    typename PermuteALayout,
+    /// Permute operand B
+    typename PermuteBLayout
+>
+struct DefaultGemm<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignmentB, ElementC,
+                   layout::RowMajor, ElementAccumulator, arch::OpClassTensorOp,
+                   arch::Sm89, ThreadblockShape, WarpShape, InstructionShape,
+                   EpilogueOutputOp, ThreadblockSwizzle, Stages, SplitKSerial,
+                   Operator, SharedMemoryClear, GatherA, GatherB, ScatterD, 
+                   PermuteDLayout, PermuteALayout, PermuteBLayout> {
+  /// Define the threadblock-scoped matrix multiply-accumulate
+  using Mma = typename cutlass::gemm::threadblock::DefaultMma<
+      ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignmentB,
+      ElementAccumulator, layout::RowMajor, arch::OpClassTensorOp, arch::Sm89,
+      ThreadblockShape, WarpShape, InstructionShape, Stages,
+      Operator, false, SharedMemoryClear, GatherA, GatherB,
+      PermuteALayout, PermuteBLayout>::ThreadblockMma;
+
+  static const int kPartitionsK = ThreadblockShape::kK / WarpShape::kK;
+
+  /// Define the epilogue
+  using Epilogue =
+      typename cutlass::epilogue::threadblock::DefaultEpilogueTensorOp<
+          ThreadblockShape, typename Mma::Operator, kPartitionsK, EpilogueOutputOp,
+          EpilogueOutputOp::kCount, ScatterD, PermuteDLayout>::Epilogue;
+
+  /// Define the kernel-level GEMM operator.
+  using GemmKernel = kernel::Gemm<Mma, Epilogue, ThreadblockSwizzle, SplitKSerial>;
+};
+
 ////////////////////////////////////////////////////////////////////////////////
 
 /// Partial specialization for Ampere Architecture
@@ -158,23 +334,38 @@ template <
     /// Operation performed by GEMM
     typename Operator,
     /// Use zfill or predicate for out-of-bound cp.async
-    SharedMemoryClearOption SharedMemoryClear>
+    SharedMemoryClearOption SharedMemoryClear,
+    /// Gather operand A by using an index array
+    bool GatherA,
+    /// Gather operand B by using an index array
+    bool GatherB,
+    /// Scatter result D by using an index array
+    bool ScatterD,
+    /// Permute result D
+    typename PermuteDLayout,
+    /// Permute operand A
+    typename PermuteALayout,
+    /// Permute operand B
+    typename PermuteBLayout
+>
 struct DefaultGemm<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignmentB, ElementC,
                    LayoutC, ElementAccumulator, arch::OpClassTensorOp,
                    arch::Sm80, ThreadblockShape, WarpShape, InstructionShape,
                    EpilogueOutputOp, ThreadblockSwizzle, Stages, SplitKSerial,
-                   Operator, SharedMemoryClear> {
+                   Operator, SharedMemoryClear, GatherA, GatherB, ScatterD,
+                   PermuteDLayout, PermuteALayout, PermuteBLayout> {
 
-  static_assert(platform::is_same<LayoutC, layout::RowMajor>::value
-             || platform::is_same<LayoutC, layout::AffineRankN<2>>::value,
-             "simt epilogue must be row major");
+  static_assert((platform::is_same<LayoutC, layout::RowMajor>::value
+             || platform::is_same<LayoutC, layout::AffineRankN<2>>::value),
+             "Epilogue in the kernel level must be row major");
 
   /// Define the threadblock-scoped matrix multiply-accumulate
   using Mma = typename cutlass::gemm::threadblock::DefaultMma<
       ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignmentB,
       ElementAccumulator, LayoutC, arch::OpClassTensorOp, arch::Sm80,
       ThreadblockShape, WarpShape, InstructionShape, Stages,
-      Operator, false, SharedMemoryClear>::ThreadblockMma;
+      Operator, false, SharedMemoryClear, GatherA, GatherB,
+      PermuteALayout, PermuteBLayout>::ThreadblockMma;
 
   static const int kPartitionsK = ThreadblockShape::kK / WarpShape::kK;
 
@@ -182,14 +373,14 @@ struct DefaultGemm<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignment
   using RegularEpilogue =
       typename cutlass::epilogue::threadblock::DefaultEpilogueTensorOp<
           ThreadblockShape, typename Mma::Operator, kPartitionsK, EpilogueOutputOp,
-          EpilogueOutputOp::kCount>::Epilogue;
+          EpilogueOutputOp::kCount, ScatterD, PermuteDLayout>::Epilogue;
 
   using Affine2Epilogue =
       typename cutlass::epilogue::threadblock::DefaultEpilogueTensorOpAffineRankN<
           2, ThreadblockShape, typename Mma::Operator, kPartitionsK, EpilogueOutputOp,
           EpilogueOutputOp::kCount>::Epilogue;
 
-  using Epilogue = typename cutlass::platform::conditional<cutlass::platform::is_same<LayoutC, layout::RowMajor>::value,
+  using Epilogue = typename platform::conditional<platform::is_same<LayoutC, layout::RowMajor>::value,
                                                   RegularEpilogue,
                                                   Affine2Epilogue>::type;
 
@@ -232,7 +423,19 @@ template <
   /// Operation performed by GEMM
   typename Operator,
   /// Use zfill or predicate for out-of-bound cp.async
-  SharedMemoryClearOption SharedMemoryClear
+  SharedMemoryClearOption SharedMemoryClear,
+  /// Gather operand A by using an index array
+  bool GatherA,
+  /// Gather operand B by using an index array
+  bool GatherB,
+  /// Scatter result D by using an index array
+  bool ScatterD,
+  /// Permute result D
+  typename PermuteDLayout,
+  /// Permute operand A
+  typename PermuteALayout,
+  /// Permute operand B
+  typename PermuteBLayout
 >
 struct DefaultGemm<
   ElementA, LayoutA, kAlignmentA,
@@ -249,7 +452,13 @@ struct DefaultGemm<
   2,
   SplitKSerial,
   Operator,
-  SharedMemoryClear
+  SharedMemoryClear,
+  GatherA,
+  GatherB,
+  ScatterD,
+  PermuteDLayout,
+  PermuteALayout,
+  PermuteBLayout
 > {
 
   /// Define the threadblock-scoped matrix multiply-accumulate
@@ -268,7 +477,13 @@ struct DefaultGemm<
     WarpShape,
     InstructionShape,
     2,
-    Operator
+    Operator,
+    false,
+    SharedMemoryClear,
+    GatherA,
+    GatherB,
+    PermuteALayout,
+    PermuteBLayout
   >::ThreadblockMma;
 
   static const int kPartitionsK = ThreadblockShape::kK / WarpShape::kK;
@@ -279,7 +494,9 @@ struct DefaultGemm<
     typename Mma::Operator,
     kPartitionsK,
     EpilogueOutputOp,
-    EpilogueOutputOp::kCount
+    EpilogueOutputOp::kCount,
+    ScatterD,
+    PermuteDLayout
   >::Epilogue;
 
   /// Define the kernel-level GEMM operator.
@@ -327,7 +544,7 @@ struct DefaultGemm<
     layout::ColumnMajorInterleaved<InterleavedK>, int32_t,
     arch::OpClassTensorOp, arch::Sm80, ThreadblockShape, WarpShape,
     InstructionShape, EpilogueOutputOp, ThreadblockSwizzle, Stages,
-    SplitKSerial, Operator, SharedMemoryClear> {
+    SplitKSerial, Operator, SharedMemoryClear, false, false, false> {
 
   using LayoutA = layout::ColumnMajorInterleaved<InterleavedK>;
   using LayoutB = layout::RowMajorInterleaved<InterleavedK>;
@@ -393,7 +610,8 @@ struct DefaultGemm<ElementA, layout::ColumnMajorInterleaved<InterleavedK>,
                    ElementC, layout::ColumnMajorInterleaved<InterleavedK>,
                    int32_t, arch::OpClassTensorOp, arch::Sm75, ThreadblockShape,
                    WarpShape, InstructionShape, EpilogueOutputOp,
-                   ThreadblockSwizzle, 2, SplitKSerial, Operator, SharedMemoryClear> {
+                   ThreadblockSwizzle, 2, SplitKSerial, Operator, SharedMemoryClear,
+                   false, false, false> {
 
   using LayoutA = layout::ColumnMajorInterleaved<InterleavedK>;
   using LayoutB = layout::RowMajorInterleaved<InterleavedK>;
@@ -452,7 +670,19 @@ template <
   /// Operation performed by GEMM
   typename Operator,
   /// Use zfill or predicate for out-of-bound cp.async
-  SharedMemoryClearOption SharedMemoryClear
+  SharedMemoryClearOption SharedMemoryClear,
+  /// Gather operand A by using an index array
+  bool GatherA,
+  /// Gather operand B by using an index array
+  bool GatherB,
+  /// Scatter result D by using an index array
+  bool ScatterD,
+  /// Permute result D
+  typename PermuteDLayout,
+  /// Permute operand A
+  typename PermuteALayout,
+  /// Permute operand B
+  typename PermuteBLayout
 >
 struct DefaultGemm<
   ElementA, LayoutA, kAlignmentA,
@@ -469,7 +699,13 @@ struct DefaultGemm<
   2,
   SplitKSerial,
   Operator,
-  SharedMemoryClear
+  SharedMemoryClear,
+  GatherA,
+  GatherB,
+  ScatterD,
+  PermuteDLayout,
+  PermuteALayout,
+  PermuteBLayout
 > {
 
   /// Define the threadblock-scoped matrix multiply-accumulate
@@ -488,7 +724,13 @@ struct DefaultGemm<
     WarpShape,
     GemmShape<8, 8, 4>,
     2,
-    Operator
+    Operator,
+    false,
+    SharedMemoryClear,
+    GatherA,
+    GatherB,
+    PermuteALayout,
+    PermuteBLayout
   >::ThreadblockMma;
 
   static const int kPartitionsK = ThreadblockShape::kK / WarpShape::kK;
@@ -499,7 +741,9 @@ struct DefaultGemm<
     typename Mma::Operator,
     kPartitionsK,
     EpilogueOutputOp,
-    EpilogueOutputOp::kCount
+    EpilogueOutputOp::kCount,
+    ScatterD,
+    PermuteDLayout
   >::Epilogue;
 
   /// Define the kernel-level GEMM operator.
@@ -543,7 +787,19 @@ template <
     /// Operation performed by GEMM
     typename Operator,
     /// Use zfill or predicate for out-of-bound cp.async
-    SharedMemoryClearOption SharedMemoryClear
+    SharedMemoryClearOption SharedMemoryClear,
+    /// Gather operand A by using an index array
+    bool GatherA,
+    /// Gather operand B by using an index array
+    bool GatherB,
+    /// Scatter result D by using an index array
+    bool ScatterD,
+    /// Permute result D
+    typename PermuteDLayout,
+    /// Permute operand A
+    typename PermuteALayout,
+    /// Permute operand B
+    typename PermuteBLayout
   >
 struct DefaultGemm<
     ElementA,
@@ -565,11 +821,18 @@ struct DefaultGemm<
     2,
     SplitKSerial,
     Operator,
-    SharedMemoryClear> {
+    SharedMemoryClear,
+    GatherA,
+    GatherB,
+    ScatterD,
+    PermuteDLayout,
+    PermuteALayout,
+    PermuteBLayout,
+    typename platform::enable_if< ! platform::is_same<ArchTag, arch::Sm80>::value >::type > {
 
-  static_assert(platform::is_same<LayoutC, layout::RowMajor>::value
-             || platform::is_same<LayoutC, layout::AffineRankN<2>>::value,
-             "simt epilogue must be row major");
+  static_assert((platform::is_same<LayoutC, layout::RowMajor>::value
+             || platform::is_same<LayoutC, layout::AffineRankN<2>>::value),
+             "Epilogue in the kernel level must be row major");
 
   /// Define the threadblock-scoped matrix multiply-accumulate
   using Mma = typename cutlass::gemm::threadblock::DefaultMma<
@@ -587,7 +850,13 @@ struct DefaultGemm<
       WarpShape,
       GemmShape<1, 1, 1>,
       2,
-      Operator>::ThreadblockMma;
+      Operator,
+      false,
+      SharedMemoryClear,
+      GatherA,
+      GatherB,
+      PermuteALayout,
+      PermuteBLayout>::ThreadblockMma;
 
   static int const kEpilogueElementsPerAccess = EpilogueOutputOp::kCount;
   static_assert(kEpilogueElementsPerAccess == 1, "simt epilogue must operate on scalars");
@@ -597,7 +866,9 @@ struct DefaultGemm<
       ThreadblockShape,
       typename Mma::Operator,
       EpilogueOutputOp,
-      kEpilogueElementsPerAccess
+      kEpilogueElementsPerAccess,
+      ScatterD,
+      PermuteDLayout
       >::Epilogue;
 
   using Affine2Epilogue = typename cutlass::epilogue::threadblock::DefaultEpilogueSimtAffineRankN<
@@ -608,7 +879,7 @@ struct DefaultGemm<
       kEpilogueElementsPerAccess
       >::Epilogue;
 
-  using Epilogue = typename cutlass::platform::conditional<cutlass::platform::is_same<LayoutC, layout::RowMajor>::value,
+  using Epilogue = typename platform::conditional<platform::is_same<LayoutC, layout::RowMajor>::value,
                                                   RegularEpilogue,
                                                   Affine2Epilogue>::type;
 
@@ -653,7 +924,19 @@ template <
     /// Operation performed by GEMM
     typename Operator,
     /// Use zfill or predicate for out-of-bound cp.async
-    SharedMemoryClearOption SharedMemoryClear
+    SharedMemoryClearOption SharedMemoryClear,
+    /// Gather operand A by using an index array
+    bool GatherA,
+    /// Gather operand B by using an index array
+    bool GatherB,
+    /// Scatter result D by using an index array
+    bool ScatterD,
+    /// Permute result D
+    typename PermuteDLayout,
+    /// Permute operand A
+    typename PermuteALayout,
+    /// Permute operand B
+    typename PermuteBLayout
 >
 struct DefaultGemm<ElementA,
                    LayoutA,
@@ -674,18 +957,25 @@ struct DefaultGemm<ElementA,
                    Stages,
                    SplitKSerial,
                    Operator,
-                   SharedMemoryClear> {
+                   SharedMemoryClear,
+                   GatherA,
+                   GatherB,
+                   ScatterD,
+                   PermuteDLayout,
+                   PermuteALayout,
+                   PermuteBLayout> {
 
-  static_assert(platform::is_same<LayoutC, layout::RowMajor>::value
-             || platform::is_same<LayoutC, layout::AffineRankN<2>>::value,
-             "simt epilogue must be row major");
+  static_assert((platform::is_same<LayoutC, layout::RowMajor>::value
+             || platform::is_same<LayoutC, layout::AffineRankN<2>>::value),
+             "Epilogue in the kernel level must be row major");
 
   /// Define the threadblock-scoped matrix multiply-accumulate
   using Mma = typename cutlass::gemm::threadblock::DefaultMma<
       ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignmentB,
       ElementAccumulator, LayoutC, arch::OpClassSimt, arch::Sm80,
       ThreadblockShape, WarpShape, GemmShape<1, 1, 1>, Stages,
-      Operator, false, SharedMemoryClear>::ThreadblockMma;
+      Operator, false, SharedMemoryClear, GatherA, GatherB,
+      PermuteALayout, PermuteBLayout>::ThreadblockMma;
 
   static int const kEpilogueElementsPerAccess = EpilogueOutputOp::kCount;
   static_assert(kEpilogueElementsPerAccess == 1, "simt epilogue must operate on scalars");
@@ -695,7 +985,9 @@ struct DefaultGemm<ElementA,
       ThreadblockShape,
       typename Mma::Operator,
       EpilogueOutputOp,
-      kEpilogueElementsPerAccess
+      kEpilogueElementsPerAccess,
+      ScatterD,
+      PermuteDLayout
       >::Epilogue;
 
   using Affine2Epilogue = typename cutlass::epilogue::threadblock::DefaultEpilogueSimtAffineRankN<
@@ -706,7 +998,7 @@ struct DefaultGemm<ElementA,
       kEpilogueElementsPerAccess
       >::Epilogue;
 
-  using Epilogue = typename cutlass::platform::conditional<cutlass::platform::is_same<LayoutC, layout::RowMajor>::value,
+  using Epilogue = typename platform::conditional<platform::is_same<LayoutC, layout::RowMajor>::value,
                                                   RegularEpilogue,
                                                   Affine2Epilogue>::type;
 
@@ -754,14 +1046,16 @@ struct DefaultGemm<int8_t, LayoutA, kAlignmentA, int8_t, LayoutB, kAlignmentB,
                    ElementC, LayoutC, ElementAccumulator, arch::OpClassSimt,
                    ArchTag, ThreadblockShape, WarpShape, GemmShape<1, 1, 4>,
                    EpilogueOutputOp, ThreadblockSwizzle, 2, SplitKSerial,
-                   Operator, SharedMemoryClear> {
+                   Operator, SharedMemoryClear, false, false, false,
+                   layout::NoPermute, layout::NoPermute> {
   using InstructionShape = GemmShape<1, 1, 4>;
   using ElementA = int8_t;
   using ElementB = int8_t;
 
   using OperatorClass =  arch::OpClassSimt;
   /// Define the threadblock-scoped matrix multiply-accumulate
-  using Mma = typename cutlass::gemm::threadblock::DefaultMma<ElementA,
+  using Mma = typename cutlass::gemm::threadblock::DefaultMma<
+      ElementA,
       LayoutA,
       kAlignmentA,
       ElementB,
@@ -850,7 +1144,13 @@ struct DefaultGemm<
   Stages, 
   SplitKSerial,
   Operator,
-  SharedMemoryClear> {
+  SharedMemoryClear,
+  false,
+  false,
+  false,
+  layout::NoPermute,
+  layout::NoPermute
+> {
   /// Define the threadblock-scoped matrix multiply-accumulate
   using Mma = typename cutlass::gemm::threadblock::DefaultMma<
       ElementA, LayoutA, kAlignmentA,

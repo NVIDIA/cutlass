@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -141,9 +147,7 @@ struct Mma_HFMA2 <
         CUTLASS_PRAGMA_UNROLL
         for(auto n=0; n < Shape::kN / Mma::Shape::kN; n++){
 
-            Array<half_t, 2> tmp;
-            Array<half_t, 2> *ptr_tmp = &tmp;
-            ptr_tmp[0] = ptr_D[n*Shape::kM/2 + m];
+            Array<half_t, 2> tmp { ptr_D[n*Shape::kM/2 + m] };
 
             mma(
                 tmp,
@@ -151,7 +155,7 @@ struct Mma_HFMA2 <
                 ptr_B[n*Shape::kK + k],
                 tmp);
 
-            ptr_D[n*Shape::kM/2 + m] = ptr_tmp[0];
+            ptr_D[n*Shape::kM/2 + m] = tmp;
         }
       }
     }
@@ -233,9 +237,7 @@ struct Mma_HFMA2<
           CUTLASS_PRAGMA_UNROLL
           for(auto m=0; m < Shape::kM / Mma::Shape::kM; m++){
 
-            Array<half_t, 2> tmp;
-            Array<half_t, 2> *ptr_tmp = &tmp;
-            ptr_tmp[0] = ptr_D[m*Shape::kN/2 + n];
+            Array<half_t, 2> tmp { ptr_D[m*Shape::kN/2 + n] };
 
             Array<half_t, 2> tmp_B;
             tmp_B[0] = ptr_B->at(2*n*Shape::kK + k);
@@ -247,7 +249,7 @@ struct Mma_HFMA2<
                 tmp_B,
                 tmp);
 
-            ptr_D[m*Shape::kN/2 + n] = ptr_tmp[0];
+            ptr_D[m*Shape::kN/2 + n] = tmp;
         }
       }
     }
@@ -329,10 +331,7 @@ struct Mma_HFMA2 <
           CUTLASS_PRAGMA_UNROLL
           for (int n = 0; n < Shape::kN / Mma::Shape::kN; ++n) {
 
-          Array<half_t, 2> tmp;
-          Array<half_t, 2> *ptr_tmp = &tmp;
-
-          ptr_tmp[0] = ptr_D[m + n * Shape::kM/2];
+          Array<half_t, 2> tmp { ptr_D[m + n * Shape::kM/2] };
 
           mma(
             tmp,
@@ -340,7 +339,7 @@ struct Mma_HFMA2 <
             ptr_B[k * Shape::kN + n],
             tmp);
 
-          ptr_D[m + n * Shape::kM/2] = ptr_tmp[0];
+          ptr_D[m + n * Shape::kM/2] = tmp;
         }
       }
     }
@@ -422,9 +421,7 @@ struct Mma_HFMA2<
           CUTLASS_PRAGMA_UNROLL
           for(auto m=0; m < Shape::kM / Mma::Shape::kM; m++){
 
-            Array<half_t, 2> tmp;
-            Array<half_t, 2> *ptr_tmp = &tmp;
-            ptr_tmp[0] = ptr_D[m*Shape::kN/2 + n];
+            Array<half_t, 2> tmp { ptr_D[m*Shape::kN/2 + n] };
 
             mma(
                 tmp,
@@ -432,7 +429,7 @@ struct Mma_HFMA2<
                 ptr_B[k*Shape::kN/2 + n],
                 tmp);
 
-            ptr_D[m*Shape::kN/2 + n] = ptr_tmp[0];
+            ptr_D[m*Shape::kN/2 + n] = tmp;
         }
       }
     }
@@ -515,9 +512,7 @@ struct Mma_HFMA2 <
         CUTLASS_PRAGMA_UNROLL
         for(auto n=0; n < Shape::kN / Mma::Shape::kN; n++){
 
-            Array<half_t, 2> tmp;
-            Array<half_t, 2> *ptr_tmp = &tmp;
-            ptr_tmp[0] = ptr_D[n*Shape::kM/2 + m];
+            Array<half_t, 2> tmp { ptr_D[n*Shape::kM/2 + m] };
 
             Array<half_t, 2> tmp_A;
             tmp_A[0] = ptr_A->at(2*m*Shape::kK + k);
@@ -529,7 +524,7 @@ struct Mma_HFMA2 <
                 ptr_B[n*Shape::kK + k],
                 tmp);
 
-            ptr_D[n*Shape::kM/2 + m] = ptr_tmp[0];
+            ptr_D[n*Shape::kM/2 + m] = tmp;
         }
       }
     }
@@ -611,9 +606,7 @@ struct Mma_HFMA2 <
           CUTLASS_PRAGMA_UNROLL
           for(auto m=0; m < Shape::kM / Mma::Shape::kM; m++){
 
-            Array<half_t, 2> tmp;
-            Array<half_t, 2> *ptr_tmp = &tmp;
-            ptr_tmp[0] = ptr_D[m*Shape::kN/2 + n];
+            Array<half_t, 2> tmp { ptr_D[m*Shape::kN/2 + n] };
 
             Array<half_t, 2> tmp_B;
             tmp_B[0] = ptr_B->at(2*n*Shape::kK + k);
@@ -625,7 +618,7 @@ struct Mma_HFMA2 <
                 tmp_B,
                 tmp);
 
-            ptr_D[m*Shape::kN/2 + n] = ptr_tmp[0];
+            ptr_D[m*Shape::kN/2 + n] = tmp;
         }
       }
     }
@@ -707,9 +700,7 @@ struct Mma_HFMA2 <
         CUTLASS_PRAGMA_UNROLL
         for(auto n=0; n < Shape::kN / Mma::Shape::kN; n++){
 
-            Array<half_t, 2> tmp;
-            Array<half_t, 2> *ptr_tmp = &tmp;
-            ptr_tmp[0] = ptr_D[n*Shape::kM/2 + m];
+            Array<half_t, 2> tmp { ptr_D[n*Shape::kM/2 + m] };
 
             Array<half_t, 2> tmp_A;
             tmp_A[0] = ptr_A->at(2*m*Shape::kK + k);
@@ -721,7 +712,7 @@ struct Mma_HFMA2 <
                 ptr_B[k*Shape::kN + n],
                 tmp);
 
-            ptr_D[n*Shape::kM/2 + m] = ptr_tmp[0];
+            ptr_D[n*Shape::kM/2 + m] = tmp;
         }
       }
     }
@@ -804,9 +795,7 @@ struct Mma_HFMA2<
           CUTLASS_PRAGMA_UNROLL
           for(auto m=0; m < Shape::kM / Mma::Shape::kM; m++){
 
-            Array<half_t, 2> tmp;
-            Array<half_t, 2> *ptr_tmp = &tmp;
-            ptr_tmp[0] = ptr_D[m*Shape::kN/2 + n];
+            Array<half_t, 2> tmp { ptr_D[m*Shape::kN/2 + n] };
 
             mma(
                 tmp,
@@ -814,7 +803,7 @@ struct Mma_HFMA2<
                 ptr_B[k*Shape::kN/2 + n],
                 tmp);
 
-            ptr_D[m*Shape::kN/2 + n] = ptr_tmp[0];
+            ptr_D[m*Shape::kN/2 + n] = tmp;
         }
       }
     }

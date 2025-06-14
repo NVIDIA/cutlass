@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -64,8 +70,9 @@ template <
   int ElementSizeBits_,      ///< Size of accumulator in bits
   int OutputSizeBits_,       ///< Size of output element in bits
   int ElementsPerAccess,     ///< Vector length of output vector
-  int ContiguousLanes        ///< Number of lanes in the warp writing to contiguous elements
+  int ContiguousLanes,       ///< Number of lanes in the warp writing to contiguous elements
                              ///  in the global memory tensor
+  bool EightBitsOutputOrLess = (OutputSizeBits_ <= 8)
 >
 class SharedLoadIteratorMixed;
 
@@ -79,7 +86,7 @@ template <
   typename ThreadMap_,       ///< Thread map (conept: OutputTileThreadMap)
   typename Element_          ///< Accumulator data type
 >
-class SharedLoadIteratorMixed<ThreadMap_, Element_, 32, 16, 8, 8> {
+class SharedLoadIteratorMixed<ThreadMap_, Element_, 32, 16, 8, 8, false> {
 public:
   using ThreadMap = ThreadMap_;
   using Shape = typename ThreadMap::Shape;
@@ -228,6 +235,10 @@ public:
     }
   }
 
+  /// Set base smem address
+  CUTLASS_DEVICE
+  void set_smem_base_address(Index address) {}
+
   /// Loads a fragment
   CUTLASS_DEVICE
   void load(Fragment &frag) const {
@@ -238,16 +249,21 @@ public:
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Partial specialization for int32_t x 8 => int8_t x 8
+/// Partial specialization for
+///   int32_t x 16 => int8_t/int4b_t x 16 and
+///   float x 16 => float_e4m3_t/float_e5m2_t x 16
 template <
-  typename ThreadMap_       ///< Thread map (conept: OutputTileThreadMap)
+  typename ThreadMap_,      ///< Thread map (concept: OutputTileThreadMap)
+  typename Element_,
+  int OutputSizeBits_       ///< Size of output element in bits
 >
-class SharedLoadIteratorMixed<ThreadMap_, int32_t, 32, 8, 16, 8> {
+class SharedLoadIteratorMixed<ThreadMap_, Element_, 32, OutputSizeBits_, 16, 8, true> {
 public:
   using ThreadMap = ThreadMap_;
   using Shape = typename ThreadMap::Shape;
 
-  using Element = int32_t;
+  using Element = Element_;
+  static_assert(sizeof_bits<Element>::value == 32, "Element size in bits must be 32.");
 
   using Layout = layout::RowMajor;
   using TensorRef = TensorRef<Element, Layout>;
@@ -388,6 +404,10 @@ public:
     }
   }
 
+  /// Set base smem address
+  CUTLASS_DEVICE
+  void set_smem_base_address(Index address) {}
+
   /// Loads a fragment
   CUTLASS_DEVICE
   void load(Fragment &frag) {
@@ -398,16 +418,21 @@ public:
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Partial specialization for int32_t x 8 => int8_t x 8
+/// Partial specialization for:
+///   int32_t x 8 => int8_t/int4b_t x 8 and
+///   float x 8 => float_e4m3_t/float_e5m2_t x 8
 template <
-  typename ThreadMap_       ///< Thread map (conept: OutputTileThreadMap)
+  typename ThreadMap_,      ///< Thread map (concept: OutputTileThreadMap)
+  typename Element_,
+  int OutputSizeBits_
 >
-class SharedLoadIteratorMixed<ThreadMap_, int32_t, 32, 8, 8, 8> {
+class SharedLoadIteratorMixed<ThreadMap_, Element_, 32, OutputSizeBits_, 8, 8, true> {
 public:
   using ThreadMap = ThreadMap_;
   using Shape = typename ThreadMap::Shape;
 
-  using Element = int32_t;
+  using Element = Element_;
+  static_assert(sizeof_bits<Element>::value == 32, "Element size in bits must be 32.");
 
   using Layout = layout::RowMajor;
   using TensorRef = TensorRef<Element, Layout>;
@@ -547,6 +572,10 @@ public:
       }
     }
   }
+
+  /// Set base smem address
+  CUTLASS_DEVICE
+  void set_smem_base_address(Index address) {}
 
   /// Loads a fragment
   CUTLASS_DEVICE

@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -72,7 +78,7 @@ __global__ void kernel(
   if (threadIdx.x == 0) {
     typename Mma::ElementA *smem_ptr_A = smem_buffer_A.data();
     #pragma unroll 1
-    for (int i = 0; i < smem_buffer_A.size(); ++i) {
+    for (size_t i = 0; i < smem_buffer_A.size(); ++i) {
       cutlass::ReferenceFactory<typename Mma::ElementA>::get(smem_ptr_A, i) =
           cutlass::ReferenceFactory<typename cutlass::platform::remove_const<
               typename Mma::ElementA>::type>::get(input_A, i);
@@ -80,7 +86,7 @@ __global__ void kernel(
 
     typename Mma::ElementB *smem_ptr_B = smem_buffer_B.data();
     #pragma unroll 1
-    for (int i = 0; i < smem_buffer_B.size(); ++i) {
+    for (size_t i = 0; i < smem_buffer_B.size(); ++i) {
       cutlass::ReferenceFactory<typename Mma::ElementB>::get(smem_ptr_B, i) =
           cutlass::ReferenceFactory<typename cutlass::platform::remove_const<
               typename Mma::ElementB>::type>::get(input_B, i);
@@ -185,10 +191,47 @@ struct Testbed {
     tensor_D_reference.reset(cutlass::make_Coord(Shape::kM, Shape::kN), false);
   }
 
+  /// Returns true if the CUDA device is sufficient to execute the kernel.
+  bool sufficient() const {
+
+    cudaDeviceProp properties;
+    int device_idx;
+    cudaError_t result = cudaGetDevice(&device_idx);
+
+    if (result != cudaSuccess) {
+      throw std::runtime_error("cudaGetDevice() API call failed.");
+    }
+
+    result = cudaGetDeviceProperties(&properties, device_idx);
+
+    if (result != cudaSuccess) {
+      throw std::runtime_error("cudaGetDeviceProperties() failed");
+    }
+
+    if (properties.major == 9) {
+      // NVIDIA Hopper drops support for several data types
+      if (
+        cutlass::sizeof_bits<ElementA>::value < 8 ||
+        cutlass::sizeof_bits<ElementB>::value < 8 ||
+        cutlass::sizeof_bits<ElementC>::value < 8) {
+
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+
   /// Runs the test
   bool run(
       cutlass::Distribution::Kind init_A = cutlass::Distribution::Uniform,
       cutlass::Distribution::Kind init_B = cutlass::Distribution::Uniform) {
+
+    if (!sufficient()) {
+      return true;
+    }
+
     //
     // initialize device memory
     //
@@ -216,7 +259,6 @@ struct Testbed {
     } else if (init_A == cutlass::Distribution::Identity) {
       cutlass::reference::host::TensorFillIdentity(tensor_A.host_view());
     } else {
-      // TODO: Implement the rest
       return false;
     }
 
@@ -243,7 +285,6 @@ struct Testbed {
     } else if (init_B == cutlass::Distribution::Identity) {
       cutlass::reference::host::TensorFillIdentity(tensor_B.host_view());
     } else {
-      // TODO: Implement the rest
       return false;
     }
 
@@ -395,10 +436,46 @@ struct TestbedComplex {
     tensor_D_reference.reset(cutlass::make_Coord(Shape::kM, Shape::kN), false);
   }
 
+  /// Returns true if the CUDA device is sufficient to execute the kernel.
+  bool sufficient() const {
+
+    cudaDeviceProp properties;
+    int device_idx;
+    cudaError_t result = cudaGetDevice(&device_idx);
+
+    if (result != cudaSuccess) {
+      throw std::runtime_error("cudaGetDevice() API call failed.");
+    }
+
+    result = cudaGetDeviceProperties(&properties, device_idx);
+
+    if (result != cudaSuccess) {
+      throw std::runtime_error("cudaGetDeviceProperties() failed");
+    }
+
+    if (properties.major == 9) {
+      // NVIDIA Hopper drops support for several data types
+      if (
+        cutlass::sizeof_bits<ElementA>::value < 8 ||
+        cutlass::sizeof_bits<ElementB>::value < 8 ||
+        cutlass::sizeof_bits<ElementC>::value < 8) {
+
+        return false;
+      }
+    }
+
+    return true;
+  }
+
   /// Runs the test
   bool run(
       cutlass::Distribution::Kind init_A = cutlass::Distribution::Uniform,
       cutlass::Distribution::Kind init_B = cutlass::Distribution::Uniform) {
+
+    if (!sufficient()) {
+      return true;
+    }
+
     //
     // initialize device memory
     //
@@ -413,7 +490,6 @@ struct TestbedComplex {
     } else if (init_A == cutlass::Distribution::Identity) {
       cutlass::reference::host::TensorFillIdentity(tensor_A.host_view());
     } else {
-      // TODO: Implement the rest
       return false;
     }
 
@@ -427,7 +503,6 @@ struct TestbedComplex {
     } else if (init_B == cutlass::Distribution::Identity) {
       cutlass::reference::host::TensorFillIdentity(tensor_B.host_view());
     } else {
-      // TODO: Implement the rest
       return false;
     }
 
@@ -549,7 +624,7 @@ __global__ void kernel_transform(
   if (threadIdx.x == 0) {
     typename Mma::ElementA *smem_ptr_A = smem_buffer_A.data();
     #pragma unroll 1
-    for (int i = 0; i < smem_buffer_A.size(); ++i) {
+    for (size_t i = 0; i < smem_buffer_A.size(); ++i) {
       cutlass::ReferenceFactory<typename Mma::ElementA>::get(smem_ptr_A, i) =
           cutlass::ReferenceFactory<typename cutlass::platform::remove_const<
               typename Mma::ElementA>::type>::get(input_A, i);
@@ -557,7 +632,7 @@ __global__ void kernel_transform(
 
     typename Mma::ElementB *smem_ptr_B = smem_buffer_B.data();
     #pragma unroll 1
-    for (int i = 0; i < smem_buffer_B.size(); ++i) {
+    for (size_t i = 0; i < smem_buffer_B.size(); ++i) {
       cutlass::ReferenceFactory<typename Mma::ElementB>::get(smem_ptr_B, i) =
           cutlass::ReferenceFactory<typename cutlass::platform::remove_const<
               typename Mma::ElementB>::type>::get(input_B, i);
@@ -670,10 +745,46 @@ struct TransformTestbed {
     tensor_D_reference.reset(cutlass::make_Coord(Shape::kM, Shape::kN), false);
   }
 
+  /// Returns true if the CUDA device is sufficient to execute the kernel.
+  bool sufficient() const {
+
+    cudaDeviceProp properties;
+    int device_idx;
+    cudaError_t result = cudaGetDevice(&device_idx);
+
+    if (result != cudaSuccess) {
+      throw std::runtime_error("cudaGetDevice() API call failed.");
+    }
+
+    result = cudaGetDeviceProperties(&properties, device_idx);
+
+    if (result != cudaSuccess) {
+      throw std::runtime_error("cudaGetDeviceProperties() failed");
+    }
+
+    if (properties.major == 9) {
+      // NVIDIA Hopper drops support for several data types
+      if (
+        cutlass::sizeof_bits<ElementA>::value < 8 ||
+        cutlass::sizeof_bits<ElementB>::value < 8 ||
+        cutlass::sizeof_bits<ElementC>::value < 8) {
+
+        return false;
+      }
+    }
+
+    return true;
+  }
+
   /// Runs the test
   bool run(
       cutlass::Distribution::Kind init_A = cutlass::Distribution::Uniform,
       cutlass::Distribution::Kind init_B = cutlass::Distribution::Uniform) {
+
+    if (!sufficient()) {
+      return true;
+    }
+
     //
     // initialize device memory
     //
@@ -699,7 +810,6 @@ struct TransformTestbed {
     } else if (init_A == cutlass::Distribution::Identity) {
       cutlass::reference::host::TensorFillIdentity(tensor_A.host_view());
     } else {
-      // TODO: Implement the rest
       return false;
     }
 
@@ -724,7 +834,6 @@ struct TransformTestbed {
     } else if (init_B == cutlass::Distribution::Identity) {
       cutlass::reference::host::TensorFillIdentity(tensor_B.host_view());
     } else {
-      // TODO: Implement the rest
       return false;
     }
 
@@ -872,10 +981,46 @@ struct TransformedTestbedComplex {
     tensor_D_reference.reset(cutlass::make_Coord(Shape::kM, Shape::kN), false);
   }
 
+  /// Returns true if the CUDA device is sufficient to execute the kernel.
+  bool sufficient() const {
+
+    cudaDeviceProp properties;
+    int device_idx;
+    cudaError_t result = cudaGetDevice(&device_idx);
+
+    if (result != cudaSuccess) {
+      throw std::runtime_error("cudaGetDevice() API call failed.");
+    }
+
+    result = cudaGetDeviceProperties(&properties, device_idx);
+
+    if (result != cudaSuccess) {
+      throw std::runtime_error("cudaGetDeviceProperties() failed");
+    }
+
+    if (properties.major == 9) {
+      // NVIDIA Hopper drops support for several data types
+      if (
+        cutlass::sizeof_bits<ElementA>::value < 8 ||
+        cutlass::sizeof_bits<ElementB>::value < 8 ||
+        cutlass::sizeof_bits<ElementC>::value < 8) {
+
+        return false;
+      }
+    }
+
+    return true;
+  }
+
   /// Runs the test
   bool run(
       cutlass::Distribution::Kind init_A = cutlass::Distribution::Uniform,
       cutlass::Distribution::Kind init_B = cutlass::Distribution::Uniform) {
+
+    if (!sufficient()) {
+      return true;
+    }
+
     //
     // initialize device memory
     //
@@ -890,7 +1035,6 @@ struct TransformedTestbedComplex {
     } else if (init_A == cutlass::Distribution::Identity) {
       cutlass::reference::host::TensorFillIdentity(tensor_A.host_view());
     } else {
-      // TODO: Implement the rest
       return false;
     }
 
@@ -904,7 +1048,6 @@ struct TransformedTestbedComplex {
     } else if (init_B == cutlass::Distribution::Identity) {
       cutlass::reference::host::TensorFillIdentity(tensor_B.host_view());
     } else {
-      // TODO: Implement the rest
       return false;
     }
 
@@ -1036,7 +1179,7 @@ __global__ void sparse_kernel(
   if (threadIdx.x == 0) {
     typename Mma::ElementA *smem_ptr_A = smem_buffer_A.data();
     #pragma unroll 1
-    for (int i = 0; i < smem_buffer_A.size(); ++i) {
+    for (size_t i = 0; i < smem_buffer_A.size(); ++i) {
       cutlass::ReferenceFactory<typename Mma::ElementA>::get(smem_ptr_A, i) =
           cutlass::ReferenceFactory<typename cutlass::platform::remove_const<
               typename Mma::ElementA>::type>::get(input_A, i);
@@ -1044,7 +1187,7 @@ __global__ void sparse_kernel(
 
     typename Mma::ElementB *smem_ptr_B = smem_buffer_B.data();
     #pragma unroll 1
-    for (int i = 0; i < smem_buffer_B.size(); ++i) {
+    for (size_t i = 0; i < smem_buffer_B.size(); ++i) {
       cutlass::ReferenceFactory<typename Mma::ElementB>::get(smem_ptr_B, i) =
           cutlass::ReferenceFactory<typename cutlass::platform::remove_const<
               typename Mma::ElementB>::type>::get(input_B, i);
@@ -1052,7 +1195,7 @@ __global__ void sparse_kernel(
 
     typename Mma::ElementE *smem_ptr_E = smem_buffer_E.data();
     #pragma unroll 1
-    for (int i = 0; i < smem_buffer_E.size(); ++i) {
+    for (size_t i = 0; i < smem_buffer_E.size(); ++i) {
       cutlass::ReferenceFactory<typename Mma::ElementE>::get(smem_ptr_E, i) =
           cutlass::ReferenceFactory<typename cutlass::platform::remove_const<
               typename Mma::ElementE>::type>::get(input_E, i);
@@ -1193,11 +1336,46 @@ struct SparseTestbed {
         Shape::kM, Shape::kK / Sparse / ElementsPerElementE));
   }
 
+  /// Returns true if the CUDA device is sufficient to execute the kernel.
+  bool sufficient() const {
+
+    cudaDeviceProp properties;
+    int device_idx;
+    cudaError_t result = cudaGetDevice(&device_idx);
+
+    if (result != cudaSuccess) {
+      throw std::runtime_error("cudaGetDevice() API call failed.");
+    }
+
+    result = cudaGetDeviceProperties(&properties, device_idx);
+
+    if (result != cudaSuccess) {
+      throw std::runtime_error("cudaGetDeviceProperties() failed");
+    }
+
+    if (properties.major == 9) {
+      // NVIDIA Hopper drops support for several data types
+      if (
+        cutlass::sizeof_bits<ElementA>::value < 8 ||
+        cutlass::sizeof_bits<ElementB>::value < 8 ||
+        cutlass::sizeof_bits<ElementC>::value < 8) {
+
+        return false;
+      }
+    }
+
+    return true;
+  }
+
   /// Runs the test
   bool run(
       cutlass::Distribution::Kind init_A = cutlass::Distribution::Uniform,
       cutlass::Distribution::Kind init_B = cutlass::Distribution::Uniform,
       cutlass::Distribution::Kind init_E = cutlass::Distribution::Uniform) {
+
+    if (!sufficient()) {
+      return true;
+    }
 
     //
     // initialize device memory
@@ -1224,7 +1402,6 @@ struct SparseTestbed {
     } else if (init_A == cutlass::Distribution::Identity) {
       cutlass::reference::host::TensorFillIdentity(tensor_A.host_view());
     } else {
-      // TODO: Implement the rest
       return false;
     }
 
@@ -1249,7 +1426,6 @@ struct SparseTestbed {
     } else if (init_B == cutlass::Distribution::Identity) {
       cutlass::reference::host::TensorFillIdentity(tensor_B.host_view());
     } else {
-      // TODO: Implement the rest
       return false;
     }
 
@@ -1277,7 +1453,6 @@ struct SparseTestbed {
       cutlass::reference::host::TensorFill(tensor_E.host_view(),
                                            (ElementE)(content));
     } else {
-      // TODO: Implement the rest
       return false;
     }
 

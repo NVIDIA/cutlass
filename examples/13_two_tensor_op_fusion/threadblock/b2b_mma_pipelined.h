@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -70,6 +76,11 @@ template <
   /// Iterates over the intermediate accumulator tile
   //  (concept::MmaTensorOpFragmentIterator) 
   typename FragmentIteratorA1_,
+  /// Iterates over vectors of scale and bias vector in global memory
+  //  (concept: VectorIterator)
+  typename IteratorAccumulatorScaleBias_,
+  /// FragmentIterator to load Scale or Bias vector from threadblock fragment
+  typename FragmentIteratorA1ScaleBias_,
   /// Iterates over tiles of B operand in global memory
   //  (concept: ReadableTileIterator | ForwardTileIterator | MaskedTileIterator)
   typename IteratorB1_,
@@ -106,7 +117,8 @@ template <
   /// Used for partial specialization
   typename Enable = bool
 >
-class B2bMmaPipelined : public B2bMmaBase<Shape0_, Shape1_, Policy0_, Policy1_, 2> {
+class B2bMmaPipelined : 
+  public B2bMmaBase<Shape0_, Shape1_, Policy0_, Policy1_, 2> {
 public:
 
   ///< Base class
@@ -114,7 +126,9 @@ public:
 
   using Shape0 = Shape0_;             ///< Size of the Gemm problem - concept: gemm::GemmShape<>
   using IteratorA0 = IteratorA0_;     ///< Iterates over tiles of A operand in global memory
+  using IteratorA = IteratorA0;
   using IteratorB0 = IteratorB0_;     ///< Iterates over tiles of B operand in global memory
+  using IteratorB = IteratorB0;
   using Policy0 = Policy0_;           ///< Policy describing tuning details
 
   using SmemIteratorA0 = SmemIteratorA0_;
@@ -122,16 +136,24 @@ public:
 
   using Shape1 = Shape1_;             ///< Size of the Gemm problem - concept: gemm::GemmShape<>
   using FragmentIteratorA1 = FragmentIteratorA1_; ///< Iterates over intermediate accumulator tile
+  using IteratorAccumulatorScaleBias = IteratorAccumulatorScaleBias_;   ///< Iterates over tiles of the scale and bias vectors in global memory
+  using FragmentIteratorA1ScaleBias = 
+    FragmentIteratorA1ScaleBias_;     ///< WarpIterator to load Scale or Bias vector from the threadblock fragment
   using IteratorB1 = IteratorB1_;     ///< Iterates over tiles of B operand in global memory
   using Policy1 = Policy1_;           ///< Policy describing tuning details
+  using Policy = Policy1;             ///< Export Policy1 as the threadblock-level Mma's policy
+  using Shape = Shape1;
 
   using SmemIteratorB1 = SmemIteratorB1_;
 
 
   using ElementC = ElementC_;       ///< Data type of accumulator matrix
   using LayoutC = LayoutC_;         ///< Layout of accumulator matrix
-
+  
   using OutputOp = OutputOp_;       ///< Epilogue after 1st Gemm
+
+  static const bool PerChannelScale = (OutputOp::kScale ==
+      epilogue::thread::ScaleType::OnlyAlphaPerChannelScaling);
 
   using TransformA0 = TransformA0_;
   using TransformB0 = TransformB0_;
@@ -152,6 +174,9 @@ public:
 
   /// Warp-level Mma
   using Operator0 = typename Policy0::Operator;
+  
+  /// Fragment of Scale and Bias loaded from global memory
+  using FragmentA1ScaleBias = typename IteratorAccumulatorScaleBias::Fragment;
 
   /// Fragment of operand B loaded from global memory
   using FragmentB1 = typename IteratorB1::Fragment;
@@ -161,7 +186,7 @@ public:
 
   /// Warp-level Mma
   using Operator1 = typename Policy1::Operator;
-  
+ 
   /// Obtain the arch tag from the warp-level operator
   using ArchTag = typename Policy0::Operator::ArchTag;
 
@@ -174,7 +199,11 @@ public:
   /// Complex transform on B1 operand
   static ComplexTransform const kTransformB1 = Operator1::kTransformB;
 
-  // staticaly assert kStages for MmaPipelined is two (Double-buffered pipeline)
+  /// Complex transform exports needed by higher-level kernels
+  static ComplexTransform const kTransformA = kTransformA0;
+  static ComplexTransform const kTransformB = kTransformB0;
+
+  /// staticaly assert kStages for MmaPipelined is two (Double-buffered pipeline)
   static_assert((Base::kStages==2), "MmaPipelined requires kStages set to value 2");
 
 private:
@@ -183,6 +212,9 @@ private:
   using WarpFragmentB0 = typename Operator0::FragmentB;
   /// Warp Fragment of operand A1 loaded from accmulator tile
   using WarpFragmentA1 = typename FragmentIteratorA1::Fragment;
+  /// Warp Fragment of operand A1 scale and bias loaded from threadblock fragment
+  using WarpFragmentA1ScaleBias =
+      typename FragmentIteratorA1ScaleBias::Fragment;
   using WarpFragmentB1 = typename Operator1::FragmentB;
 
 protected:
@@ -204,7 +236,8 @@ public:
     typename Base::B2bMmaSharedStorage &shared_storage, ///< Shared storage needed for internal use by threadblock-scoped GEMM
     int thread_idx,                                     ///< ID within the threadblock
     int warp_idx,                                       ///< ID of warp
-    int lane_idx                                        ///< ID of each thread within a warp
+    int lane_idx,                                       ///< ID of each thread within a warp
+    int problem_size_0_n                                ///< GEMM0 N is used for accumulator extent
   ):
     Base(shared_storage, thread_idx, warp_idx, lane_idx),
     smem_iterator_A_(shared_storage.shared_storage0.operand_A_ref(), thread_idx), 
@@ -237,16 +270,18 @@ public:
   /// Perform a threadblock-scoped matrix multiply-accumulate
   CUTLASS_DEVICE
   void operator()(
-    int gemm_k_iterations_0,                            ///< number of iterations of the mainloop
-    FragmentC1 &accum,                                  ///< destination accumulator tile
-    IteratorA0 iterator_A,                              ///< iterator over A operand in global memory
-    IteratorB0 iterator_B0,                             ///< iterator over B0 operand in global memory
-    IteratorB1 iterator_B1,                             ///< iterator over B1 operand in global memory  
-    FragmentC0 const &src_accum,                        ///< source accumualtor tile
-    OutputOp output_op_0,                               ///< epilogue operation after 1st Gemm
+    int gemm_k_iterations_0,                             ///< number of iterations of the mainloop
+    FragmentC1 &accum,                                   ///< destination accumulator tile
+    IteratorA0 iterator_A,                               ///< iterator over A operand in global memory
+    IteratorB0 iterator_B0,                              ///< iterator over B0 operand in global memory
+    IteratorAccumulatorScaleBias iterator_A1_scale,    ///< iterator over A1 operand scale vectors in global memory
+    IteratorAccumulatorScaleBias iterator_A1_bias,     ///< iterator over A1 operand bias vectors in global memory
+    IteratorB1 iterator_B1,                              ///< iterator over B1 operand in global memory  
+    FragmentC0 const &src_accum,                         ///< source accumualtor tile
+    OutputOp output_op_0,                                ///< epilogue operation after 1st Gemm
     TransformA0 transform_A0 = TransformA0(),            ///< transformation applied to A0 fragment
-    TransformB0 transform_B0 = TransformB0(),           ///< transformation applied to B0 fragment
-    TransformB1 transform_B1 = TransformB1()) {         ///< transformation applied to B1 fragment
+    TransformB0 transform_B0 = TransformB0(),            ///< transformation applied to B0 fragment
+    TransformB1 transform_B1 = TransformB1()) {          ///< transformation applied to B1 fragment
 
     //
     // Prologue
@@ -268,8 +303,8 @@ public:
     ++iterator_A;
     ++iterator_B0;
 
-    this->smem_iterator_A_.store(tb_frag_A);
-    this->smem_iterator_B0_.store(tb_frag_B0);
+    this->smem_iterator_A_.store(transform_A0(tb_frag_A));
+    this->smem_iterator_B0_.store(transform_B0(tb_frag_B0));
 
     ++this->smem_iterator_A_;
     ++this->smem_iterator_B0_;
@@ -294,23 +329,19 @@ public:
     int smem_write_stage_idx = 1;
 
     // Avoid reading out of bounds
-    if (gemm_k_iterations_0 <= 1) {
-      iterator_A.clear_mask();
-      iterator_B0.clear_mask();
-    }
+    iterator_A.clear_mask(gemm_k_iterations_0 <= 1);
+    iterator_B0.clear_mask(gemm_k_iterations_0 <= 1);
 
     // Issue loads during the first warp-level matrix multiply-add *AFTER* issuing 
-    // shared memory loads (which have the tighest latency requirement).
-    iterator_A.load(tb_frag_A);
+    // shared memory loads (which have the tightest latency requirement).
 
     //
     // Mainloop
     //
 
-    // Note: The main loop does not support Base::WarpGemmIterations == 2.
+    // Note: The main loop does not support Base::kWarpGemmIterations == 2.
     CUTLASS_GEMM_LOOP
     for (; gemm_k_iterations_0 > 0; --gemm_k_iterations_0) {
-
       //
       // Loop over GEMM K dimension
       //
@@ -324,19 +355,14 @@ public:
         if (warp_mma_k == Base::kWarpGemmIterations0 - 1) {
 
           // Write fragments to shared memory
-          this->smem_iterator_A_.store(tb_frag_A);
+          this->smem_iterator_A_.store(transform_A0(tb_frag_A));
 
-          this->smem_iterator_B0_.store(tb_frag_B0);
+          this->smem_iterator_B0_.store(transform_B0(tb_frag_B0));
 
           __syncthreads();
-
-          // Issue loads during the first warp-level matrix multiply-add *AFTER* issuing 
-          // shared memory loads (which have the tighest latency requirement).
-          iterator_A.load(tb_frag_A);
           
-          ++this->smem_iterator_B0_;
           ++this->smem_iterator_A_;
-        
+          ++this->smem_iterator_B0_;
 
           // Add negative offsets to return iterators to the 'start' of the circular buffer in shared memory
           if (smem_write_stage_idx == 1) {
@@ -365,19 +391,18 @@ public:
 
         if (warp_mma_k == 0) {
 
+          iterator_A.load(tb_frag_A);
           iterator_B0.load(tb_frag_B0);
-
           ++iterator_A;
           ++iterator_B0;
 
           // Avoid reading out of bounds if this was the last loop iteration
-          if (gemm_k_iterations_0 <= 2) {
-            iterator_A.clear_mask();
-            iterator_B0.clear_mask();
-          }
+          iterator_A.clear_mask(gemm_k_iterations_0 <= 2);
+          iterator_B0.clear_mask(gemm_k_iterations_0 <= 2);
         }
 
-        warp_mma0(accum0, warp_frag_A0[warp_mma_k % 2], warp_frag_B0[warp_mma_k % 2], accum0);
+        warp_mma0(accum0, warp_frag_A0[warp_mma_k % 2],
+                  warp_frag_B0[warp_mma_k % 2], accum0);
       }
     }
 
@@ -390,32 +415,53 @@ public:
     // Prologue
     //
 
+    FragmentA1ScaleBias tb_frag_A1_scale;
+    FragmentA1ScaleBias tb_frag_A1_bias;
+    FragmentIteratorA1ScaleBias warp_tile_iterator_A1_scale_(tb_frag_A1_scale);
+    FragmentIteratorA1ScaleBias warp_tile_iterator_A1_bias_(tb_frag_A1_bias);
     FragmentB1 tb_frag_B1;
 
+    if(PerChannelScale)
+        tb_frag_A1_scale.clear();
+    tb_frag_A1_bias.clear();
     tb_frag_B1.clear();
 
     // The last kblock is loaded in the prolog
+    if(PerChannelScale)
+        iterator_A1_scale.load(tb_frag_A1_scale);
+    iterator_A1_bias.load(tb_frag_A1_bias);
     iterator_B1.load(tb_frag_B1);
 
+    if(PerChannelScale)
+        ++iterator_A1_scale;
+    ++iterator_A1_bias;
     ++iterator_B1;
 
-    this->smem_iterator_B1_.store(tb_frag_B1);
+    this->smem_iterator_B1_.store(transform_B1(tb_frag_B1));
 
     ++this->smem_iterator_B1_;
 
     __syncthreads();
 
     // Pair of fragments used to overlap shared memory loads and math instructions
+    WarpFragmentA1ScaleBias warp_frag_A1_scale[2];
+    WarpFragmentA1ScaleBias warp_frag_A1_bias[2];
     WarpFragmentA1 warp_frag_A1[2];
     WarpFragmentB1 warp_frag_B1[2];
 
-    //warp_tile_iterator_A1_.set_kgroup_index(0);
     this->warp_tile_iterator_B1_.set_kgroup_index(0);
 
-    warp_tile_iterator_A1_.load(warp_frag_A1[0], output_op_0);
+    if(PerChannelScale)
+        warp_tile_iterator_A1_scale_.load(warp_frag_A1_scale[0]);
+    warp_tile_iterator_A1_bias_.load(warp_frag_A1_bias[0]);
+    warp_tile_iterator_A1_.load(warp_frag_A1[0], warp_frag_A1_scale[0],
+        warp_frag_A1_bias[0], output_op_0);
     this->warp_tile_iterator_B1_.load(warp_frag_B1[0]);
 
     ++warp_tile_iterator_A1_;
+    if(PerChannelScale)
+        ++warp_tile_iterator_A1_scale_;
+    ++warp_tile_iterator_A1_bias_;
     ++this->warp_tile_iterator_B1_;
 
     Operator1 warp_mma1;
@@ -425,9 +471,7 @@ public:
     int gemm_k_iterations_1 = FragmentIteratorA1::Policy::kIterations / Base::kWarpGemmIterations1;
 
     // Avoid reading out of bounds
-    if (gemm_k_iterations_1 <= 1) {
-      iterator_B1.clear_mask();
-    }
+    iterator_B1.clear_mask(gemm_k_iterations_1 <= 1);
 
     //
     // Mainloop
@@ -450,8 +494,7 @@ public:
         if (warp_mma_k == Base::kWarpGemmIterations1 - 1) {
 
           // Write fragments to shared memory
-
-          this->smem_iterator_B1_.store(tb_frag_B1);
+          this->smem_iterator_B1_.store(transform_B1(tb_frag_B1));
 
           __syncthreads();
           ++this->smem_iterator_B1_;
@@ -468,14 +511,31 @@ public:
           }
 
           smem_write_stage_idx ^= 1;
+
+          if(PerChannelScale) {
+              tb_frag_A1_scale.clear();
+              iterator_A1_scale.load(tb_frag_A1_scale);
+              ++iterator_A1_scale;
+            }
+            tb_frag_A1_bias.clear();
+            iterator_A1_bias.load(tb_frag_A1_bias);
+            ++iterator_A1_bias;
         }
 
         this->warp_tile_iterator_B1_.set_kgroup_index((warp_mma_k + 1) % Base::kWarpGemmIterations1);
-        
-        warp_tile_iterator_A1_.load(warp_frag_A1[(warp_mma_k + 1) % 2], output_op_0);
+
+        if(PerChannelScale)
+          warp_tile_iterator_A1_scale_.load(warp_frag_A1_scale[(warp_mma_k + 1) % 2]);
+        warp_tile_iterator_A1_bias_.load(warp_frag_A1_bias[(warp_mma_k + 1) % 2]);
+        warp_tile_iterator_A1_.load(warp_frag_A1[(warp_mma_k + 1) % 2], 
+            warp_frag_A1_scale[(warp_mma_k + 1) % 2], 
+            warp_frag_A1_bias[(warp_mma_k + 1) % 2], 
+            output_op_0);
         this->warp_tile_iterator_B1_.load(warp_frag_B1[(warp_mma_k + 1) % 2]);
 
-
+        if(PerChannelScale)
+          ++warp_tile_iterator_A1_scale_;
+        ++warp_tile_iterator_A1_bias_;
         ++warp_tile_iterator_A1_;
         ++this->warp_tile_iterator_B1_;
 
@@ -484,17 +544,14 @@ public:
           iterator_B1.load(tb_frag_B1);
           ++iterator_B1;
 
-
           // Avoid reading out of bounds if this was the last loop iteration
-          if (gemm_k_iterations_1 <= 2) {
-            iterator_B1.clear_mask();
-          }
+          iterator_B1.clear_mask(gemm_k_iterations_1 <= 2);
         }
 
-        warp_mma1(accum, warp_frag_A1[warp_mma_k % 2], warp_frag_B1[warp_mma_k % 2], accum);
+        warp_mma1(accum, warp_frag_A1[warp_mma_k % 2], 
+                  warp_frag_B1[warp_mma_k % 2], accum);
       }
     }
-
   }
 };
 

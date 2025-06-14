@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -59,12 +65,14 @@ private:
 
   /// Size of device workspace in bytes
   size_t workspace_size_;
-    
+
   /// Indicates whether scalars are host or device pointers
   ScalarPointerMode scalar_pointer_mode_;
 
   /// Pointer to the most recently executed operation
   Operation const *last_operation_;
+
+  int device_idx_;
 
 public:
 
@@ -83,7 +91,7 @@ public:
   //
   // Persistent state accessors
   //
-  
+
   /// Returns compute capability of the selected device
   int compute_capability() const;
 
@@ -129,7 +137,7 @@ public:
     int K,                                    /// GEMM K dimension
 
     NumericTypeID element_compute,            /// Data type of internal accumulation
-    
+
     NumericTypeID element_scalar,             /// Data type of alpha/beta scalars
 
     void const *alpha,                        /// Pointer to alpha scalar
@@ -158,7 +166,7 @@ public:
     void * ptr_D,                             /// Pointer to D matrix
     int64_t ldd                               /// Leading dimension of D matrix
   );
-  
+
   /// Executes a GEMM computation: D <= alpha * A*B + beta * C.
   //
   // Supports batched-strided, batched array or split-K serial or split-K parallel.
@@ -170,9 +178,17 @@ public:
     int M,                                    /// GEMM M dimension
     int N,                                    /// GEMM N dimension
     int K,                                    /// GEMM K dimension
-
-    NumericTypeID element_compute,            /// Data type of internal accumulation
     
+    int cluster_m,                            /// cluster shape M dimension
+    int cluster_n,                            /// cluster shape N dimension
+    int cluster_k,                            /// cluster shape K dimension
+    int cluster_m_fallback,                   /// Fallback cluster shape M dimension
+    int cluster_n_fallback,                   /// Fallback cluster shape N dimension
+    int cluster_k_fallback,                   /// Fallback cluster shape K dimension
+    
+    
+    NumericTypeID element_compute,            /// Data type of internal accumulation
+
     NumericTypeID element_scalar,             /// Data type of alpha/beta scalars
 
     void const *alpha,                        /// Pointer to alpha scalar
@@ -180,29 +196,29 @@ public:
     NumericTypeID element_A,                  /// Data type of A matrix elements
     LayoutTypeID layout_A,                    /// Layout of A matrix
     ComplexTransform transform_A,             /// Complex transformation applied to A matrix - ignored for real-valued matrices
-
     void const * ptr_A,                       /// Pointer to A matrix in Global Memory
-    int64_t lda,                                  /// Leading dimension of A matrix
+    int64_t lda,                              /// Leading dimension of A matrix
 
     NumericTypeID element_B,                  /// Data type of B matrix elements
     LayoutTypeID layout_B,                    /// Layout of B matrix
     ComplexTransform transform_B,             /// Complex transformation applied to B matrix - ignored for real-valued matrices
-
     void const * ptr_B,                       /// Pointer to B matrix in Global Memory
-    int64_t ldb,                                  /// Leading dimension of B matrix
+    int64_t ldb,                              /// Leading dimension of B matrix
 
     void const * beta,                        /// Pointer to beta scalar
 
-    NumericTypeID element_C,                  /// Data type of C and D matrices
-
+    NumericTypeID element_C,                  /// Data type of C matrix
+    LayoutTypeID layout_C,                    /// Layout of D matrix
     void const * ptr_C,                       /// Pointer to C matrix
-    int64_t ldc,                                  /// Leading dimension of C matrix
+    int64_t ldc,                              /// Leading dimension of C matrix
 
+    NumericTypeID element_D,                  /// Data type of D matrix
+    LayoutTypeID layout_D,                    /// Layout of D matrix
     void * ptr_D,                             /// Pointer to D matrix
-    int64_t ldd,                                  /// Leading dimension of D matrix
-   
+    int64_t ldd,                              /// Leading dimension of D matrix
+
     int batch_count = 1,                      /// Batch count or number of split-K slices
- 
+
     int64_t batch_stride_A = 0,               /// Batch stride of A operand
     int64_t batch_stride_B = 0,               /// Batch stride of B operand
     int64_t batch_stride_C = 0,               /// Batch stride of C operand
@@ -212,7 +228,7 @@ public:
   /// Planar complex GEMM
   ///
   /// Note, all data types are the real-valued base types used by the planar-complex GEMM kernel.
-  ///                       
+  ///
   Status gemm_planar_complex(
 
     int M,                                    /// GEMM M dimension
@@ -239,7 +255,7 @@ public:
     ComplexTransform transform_B,             /// Complex transformation applied to B matrix
 
     void const * ptr_B_real,                  /// Pointer to real part of B matrix
-    void const * ptr_B_imag,                  /// Pointer to imaginary part of B matrix 
+    void const * ptr_B_imag,                  /// Pointer to imaginary part of B matrix
     int64_t ldb_real,                         /// Leading dimension of real part of B matrix
     int64_t ldb_imag,                         /// Leading dimension of imaginary part of B matrix
 
@@ -295,7 +311,7 @@ public:
     ComplexTransform transform_A,             /// Complex transformation applied to A matrix
 
     void const * const * ptr_A_real,          /// Pointer to array containing pointers to real part of A matrices
-    void const * const * ptr_A_imag,          /// Pointer to array containing pointers to imaginary part of A matrices 
+    void const * const * ptr_A_imag,          /// Pointer to array containing pointers to imaginary part of A matrices
 
     int64_t lda_real,                         /// Leading dimension of real part of A matrix
     int64_t lda_imag,                         /// Leading dimension of imaginary part of A matrix
@@ -315,13 +331,13 @@ public:
     NumericTypeID element_C,                  /// Data type of C and D matrix
 
     void const * const * ptr_C_real,          /// Pointer to array containing pointers to real part of C matrices
-    void const * const * ptr_C_imag,          /// Pointer to array containing poitners to imaginary part of C matrices
+    void const * const * ptr_C_imag,          /// Pointer to array containing pointers to imaginary part of C matrices
 
     int64_t ldc_real,                         /// Leading dimension of real part of C matrix
     int64_t ldc_imag,                         /// Leading dimension of imaginary part of C matrix
 
     void * const * ptr_D_real,                /// Pointer to array containing pointers to real part of D matrices
-    void * const * ptr_D_imag,                /// Pointer to array containing poitners to imaginary part of D matrices
+    void * const * ptr_D_imag,                /// Pointer to array containing pointers to imaginary part of D matrices
 
     int64_t ldd_real,                         /// Leading dimension of real part of D matrix
     int64_t ldd_imag                          /// Leading dimension of imaginary part of D matrix

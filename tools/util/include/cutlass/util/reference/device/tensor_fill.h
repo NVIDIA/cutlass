@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -50,6 +56,11 @@
 #include "cutlass/array.h"
 #include "cutlass/complex.h"
 #include "cutlass/tensor_view.h"
+#include "cutlass/blas3.h"
+#include "cutlass/numeric_types.h"
+
+#include "cutlass/layout/vector.h"
+
 #include "cutlass/util/reference/device/tensor_foreach.h"
 #include "cutlass/util/distribution.h"
 
@@ -107,6 +118,7 @@ struct RandomGaussianFunc {
     int int_scale;
     FloatType float_scale_up;
     FloatType float_scale_down;
+    int exclude_zero;           ///< If non-negative, excludes zeros
 
     //
     // Methods
@@ -117,15 +129,16 @@ struct RandomGaussianFunc {
       uint64_t seed_ = 0,
       Element mean_ = 0, 
       Element stddev_ = 1,
-      int int_scale_ = -1
+      int int_scale_ = -1,
+      int exclude_zero_ = -1
     ):
       seed(seed_), 
       mean(static_cast<FloatType>(mean_)), 
       stddev(static_cast<FloatType>(stddev_)), 
-      int_scale(int_scale_) {
+      int_scale(int_scale_),
+      exclude_zero(exclude_zero_) {
 
-      float_scale_up = FloatType(IntType(1) << int_scale);
-      float_scale_up += FloatType(0.5) * float_scale_up;
+      float_scale_up = FloatType(IntType(1) << int_scale); // scale up to clamp low order bits
       float_scale_down = FloatType(1) / FloatType(IntType(1) << int_scale);
     }
   };
@@ -162,10 +175,19 @@ struct RandomGaussianFunc {
 
     Element result;
     if (params.int_scale >= 0) {
-      rnd = FloatType(IntType(rnd * params.float_scale_up));
+      rnd = FloatType(std::llround(rnd * params.float_scale_up));
       result = Element(rnd * params.float_scale_down);
     }
     else {
+      result = Element(rnd);
+    }
+
+    if (params.exclude_zero >=0 && result == Element(0.0)) {
+      if (rnd > FloatType(0)) {
+        rnd += FloatType(1);
+      } else {
+        rnd -= FloatType(1);
+      }
       result = Element(rnd);
     }
 
@@ -194,6 +216,7 @@ struct RandomGaussianFunc<complex<Real>> {
     int int_scale;
     FloatType float_scale_up;
     FloatType float_scale_down;
+    int exclude_zero;           ///< If non-negative, excludes zeros
 
     //
     // Methods
@@ -204,15 +227,16 @@ struct RandomGaussianFunc<complex<Real>> {
       uint64_t seed_ = 0,
       Real mean_ = 0, 
       Real stddev_ = 1,
-      int int_scale_ = -1
+      int int_scale_ = -1,
+      int exclude_zero_ = -1
     ):
       seed(seed_), 
       mean(static_cast<FloatType>(mean_)), 
       stddev(static_cast<FloatType>(stddev_)), 
-      int_scale(int_scale_) {
+      int_scale(int_scale_),
+      exclude_zero(exclude_zero_) {
 
       float_scale_up = FloatType(IntType(1) << int_scale);
-      float_scale_up += FloatType(0.5) * float_scale_up;
       float_scale_down = FloatType(1) / FloatType(IntType(1) << int_scale);
     }
   };
@@ -251,8 +275,8 @@ struct RandomGaussianFunc<complex<Real>> {
 
     Element result;
     if (params.int_scale >= 0) {
-      rnd_r = FloatType(IntType(rnd_r * params.float_scale_up));
-      rnd_i = FloatType(IntType(rnd_i * params.float_scale_down));
+      rnd_r = FloatType(std::llround(rnd_r * params.float_scale_up));
+      rnd_i = FloatType(std::llround(rnd_i * params.float_scale_up));
 
       result = {
         Real(rnd_r * params.float_scale_down),
@@ -260,6 +284,18 @@ struct RandomGaussianFunc<complex<Real>> {
       };
     }
     else {
+      result = Element(Real(rnd_r), Real(rnd_i));
+    }
+
+    if (params.exclude_zero >= 0 && 
+        result.real() == Real(0.0) &&
+        result.imag() == Real(0.0)) {
+
+      if (rnd_r > FloatType(0)) {
+        rnd_r += FloatType(1);
+      } else {
+        rnd_r -= FloatType(1);
+      }
       result = Element(Real(rnd_r), Real(rnd_i));
     }
 
@@ -344,19 +380,23 @@ template <
 void TensorFillRandomGaussian(
   TensorView<Element, Layout> view,       ///< destination tensor
   uint64_t seed,                          ///< seed for RNG
-  Element mean = Element(0),              ///< Gaussian distribution's mean
-  Element stddev = Element(1),            ///< Gaussian distribution's standard deviation
-  int bits = -1) {                        ///< If non-negative, specifies number of fractional bits that 
+  typename RealType<Element>::Type mean = Element(0),   ///< Gaussian distribution's mean
+  typename RealType<Element>::Type stddev = Element(1), ///< Gaussian distribution's standard deviation
+  int bits = -1,                          ///< If non-negative, specifies number of fractional bits that
                                           ///  are not truncated to zero. Permits reducing precision of
                                           ///  data.
-  
+  int exclude_zero = -1,                  ///< If non-negative, excludes zeros from tensor init
+  cudaStream_t stream = nullptr) {
+
   using RandomFunc = detail::RandomGaussianFunc<Element>;
   using Func = detail::TensorFillRandomGaussianFunc<Element, Layout>;
   using Params = typename Func::Params;
 
   TensorForEach<Func, Layout::kRank, Params>(
     view.extent(),
-    Params(view, typename RandomFunc::Params(seed, mean, stddev, bits))
+    Params(view, typename RandomFunc::Params(seed, mean, stddev, bits, exclude_zero)),
+    /*grid_size*/0, /*block_size*/0,
+    stream
   );
 }
 
@@ -370,15 +410,16 @@ void BlockFillRandomGaussian(
   uint64_t seed,                              ///< seed for RNG
   typename RealType<Element>::Type mean,      ///< Gaussian distribution's mean
   typename RealType<Element>::Type stddev,    ///< Gaussian distribution's standard deviation
-  int bits = -1) {                            ///< If non-negative, specifies number of fractional bits that 
+  int bits = -1,                              ///< If non-negative, specifies number of fractional bits that
                                               ///  are not truncated to zero. Permits reducing precision of
                                               ///  data.
-  
+  cudaStream_t stream = nullptr) {
+
   using RandomFunc = detail::RandomGaussianFunc<Element>;
 
   typename RandomFunc::Params params(seed, mean, stddev, bits);
 
-  BlockForEach<Element, RandomFunc>(ptr, capacity, params);
+  BlockForEach<Element, RandomFunc>(ptr, capacity, params, /*grid_size*/0, /*block_size*/0, stream);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -386,7 +427,7 @@ void BlockFillRandomGaussian(
 
 namespace detail {
 
-/// Computes a random Gaussian distribution
+/// Computes a random uniform distribution
 template <typename Element>                ///< Element type 
 struct RandomUniformFunc {
 
@@ -411,8 +452,10 @@ struct RandomUniformFunc {
     FloatType range;
     FloatType max;
     int int_scale;
+    double pnan;
     FloatType float_scale_up;
     FloatType float_scale_down;
+    int exclude_zero;           ///< If non-negative, excludes zeros
 
     /// Default ctor
     CUTLASS_HOST_DEVICE
@@ -427,16 +470,25 @@ struct RandomUniformFunc {
       uint64_t seed_ = 0, 
       Element max_ = 1,
       Element min = 0,
-      int int_scale_ = -1
+      int int_scale_ = -1,
+      double pnan_ = 0,
+      int exclude_zero_ = -1
     ):
       seed(seed_), 
-      range(static_cast<FloatType>(max_ - min)), 
+      range(static_cast<FloatType>(max_) - static_cast<FloatType>(min)), 
       max(static_cast<FloatType>(max_)),
-      int_scale(int_scale_) {
-
-      float_scale_up = FloatType(IntType(1) << int_scale);
-      float_scale_up += FloatType(0.5) * float_scale_up;
+      int_scale(int_scale_),
+      pnan(pnan_),
+      exclude_zero(exclude_zero_) {
+      
+      float_scale_up = FloatType(IntType(1) << int_scale); // scale up to clamp low order bits
       float_scale_down = FloatType(1) / FloatType(IntType(1) << int_scale);
+
+      // Handle cases where min = 0 or max = 0 for excluding zeros
+      if (exclude_zero >= 0) {
+        range = (min == Element(0)) ? range - FloatType(1): range;
+        max = (max_ == Element(0)) ? max - FloatType(1): max; 
+      }
     }
   };
 
@@ -467,6 +519,13 @@ struct RandomUniformFunc {
   CUTLASS_DEVICE
   Element operator()() {
 
+    // Draw random float in [0.0, 1.0] to determine if element should be NaN.
+    if constexpr (std::numeric_limits<Element>::has_quiet_NaN) {
+      if (params.pnan > 0 && (curand_uniform(&rng_state) < (params.pnan))) {
+        return Element(NAN);
+      }
+    }
+
     FloatType rnd = random_uniform_float<FloatType>(&rng_state);
     rnd = params.max - params.range * rnd;
 
@@ -475,10 +534,19 @@ struct RandomUniformFunc {
     Element result;
 
     if (params.int_scale >= 0) {
-      rnd = FloatType(IntType(rnd * params.float_scale_up));
+      rnd = FloatType(std::llround(rnd * params.float_scale_up));
       result = Element(rnd * params.float_scale_down);
     }
     else {
+      result = Element(rnd);
+    }
+
+    if (params.exclude_zero >=0 && result == Element(0.0)) {
+      if (rnd > FloatType(0)) {
+        rnd = std::min(params.max, rnd + FloatType(1));
+      } else {
+        rnd = std::max((params.max - params.range), rnd - FloatType(1));
+      }
       result = Element(rnd);
     }
 
@@ -513,8 +581,10 @@ struct RandomUniformFunc<complex<Real>> {
     FloatType range;
     FloatType min;
     int int_scale;
+    double pnan;
     FloatType float_scale_up;
     FloatType float_scale_down;
+    int exclude_zero;           ///< If non-negative, excludes zeros
 
     /// Default ctor
     CUTLASS_HOST_DEVICE
@@ -529,16 +599,25 @@ struct RandomUniformFunc<complex<Real>> {
       uint64_t seed_ = 0, 
       FloatType max = 1,
       FloatType min_ = 0,
-      int int_scale_ = -1
+      int int_scale_ = -1,
+      double pnan_ = 0,
+      int exclude_zero_ = -1
     ):
       seed(seed_), 
       range(static_cast<FloatType>(max - min_)), 
       min(static_cast<FloatType>(min_)), 
-      int_scale(int_scale_) {
+      int_scale(int_scale_),
+      pnan(pnan_),
+      exclude_zero(exclude_zero_) {
 
       float_scale_up = FloatType(IntType(1) << int_scale);
-      float_scale_up += FloatType(0.5) * float_scale_up;
       float_scale_down = FloatType(1) / FloatType(IntType(1) << int_scale);
+
+      // Handle cases where min = 0 or max = 0 for excluding zeros
+      if (exclude_zero >= 0) {
+        min = (min == FloatType(0)) ? min + FloatType(1): min;
+        range = (max == FloatType(0)) ? range - FloatType(1): range; 
+      }
     }
   };
 
@@ -569,6 +648,13 @@ struct RandomUniformFunc<complex<Real>> {
   CUTLASS_DEVICE
   Element operator()() {
 
+    // Draw random float in [0.0, 1.0] to determine if element should be NaN.
+    if constexpr (std::numeric_limits<Element>::has_quiet_NaN) {
+      if (params.pnan > 0 && (curand_uniform(&rng_state) < (params.pnan))) {
+        return Element(Real(NAN), Real(NAN));
+      }
+    }
+
     FloatType rnd_r = random_uniform_float<FloatType>(&rng_state);
     FloatType rnd_i = random_uniform_float<FloatType>(&rng_state);
 
@@ -580,8 +666,8 @@ struct RandomUniformFunc<complex<Real>> {
     Element result;
 
     if (params.int_scale >= 0) {
-      rnd_r = FloatType(IntType(rnd_r * params.float_scale_up));
-      rnd_i = FloatType(IntType(rnd_i * params.float_scale_up));
+      rnd_r = FloatType(std::llround(rnd_r * params.float_scale_up));
+      rnd_i = FloatType(std::llround(rnd_i * params.float_scale_up));
 
       result = {
         Real(rnd_r * params.float_scale_down),
@@ -592,11 +678,23 @@ struct RandomUniformFunc<complex<Real>> {
       result = Element(Real(rnd_r), Real(rnd_i));
     }
 
+    if (params.exclude_zero >= 0 && 
+        result.real() == Real(0.0) &&
+        result.imag() == Real(0.0)) {
+
+      if (rnd_r > FloatType(0)) {
+        rnd_r = std::min(params.min + params.range, rnd_r + FloatType(1));
+      } else {
+        rnd_r = std::max((params.min), rnd_r - FloatType(1));
+      }
+      result = Element(Real(rnd_r), Real(rnd_i));
+    }
+
     return result;
   }
 };
 
-/// Computes a random Gaussian distribution
+/// Computes a random uniform distribution
 template <
   typename Element,               ///< Element type
   typename Layout>                ///< Layout function
@@ -676,21 +774,26 @@ template <
 void TensorFillRandomUniform(
   TensorView<Element, Layout> view,       ///< destination tensor
   uint64_t seed,                          ///< seed for RNG
-  Element max = Element(1),               ///< upper bound of distribution
-  Element min = Element(0),               ///< lower bound for distribution
-  int bits = -1) {                        ///< If non-negative, specifies number of fractional bits that 
+  typename RealType<Element>::Type max = Element(1), ///< upper bound of distribution
+  typename RealType<Element>::Type min = Element(0), ///< lower bound for distribution
+  int bits = -1,                          ///< If non-negative, specifies number of fractional bits that
                                           ///  are not truncated to zero. Permits reducing precision of
-                                          ///  data.                 
-  
+                                          ///  data.
+  double pnan = 0,                        ///< Percentage of NaN elements.
+  int exclude_zero = -1,               ///< If non-negative, excludes zeros from tensor init
+  cudaStream_t stream = nullptr) {
+
   using RandomFunc = detail::RandomUniformFunc<Element>;
   using Func = detail::TensorFillRandomUniformFunc<Element, Layout>;
   using Params = typename Func::Params;
 
-  typename RandomFunc::Params random(seed, max, min, bits);
+  typename RandomFunc::Params random(seed, max, min, bits, pnan, exclude_zero);
 
   TensorForEach<Func, Layout::kRank, Params>(
     view.extent(),
-    Params(view, random)
+    Params(view, random),
+    /*grid_size*/0, /*block_size*/0,
+    stream
   );
 }
 
@@ -704,15 +807,17 @@ void BlockFillRandomUniform(
   uint64_t seed,                          ///< seed for RNG
   typename RealType<Element>::Type max,   ///< upper bound of distribution
   typename RealType<Element>::Type min,   ///< lower bound for distribution
-  int bits = -1) {                        ///< If non-negative, specifies number of fractional bits that 
+  int bits = -1,                          ///< If non-negative, specifies number of fractional bits that
                                           ///  are not truncated to zero. Permits reducing precision of
-                                          ///  data.                 
-  
-  using RandomFunc = detail::RandomUniformFunc<Element>;
-  
-  typename RandomFunc::Params params(seed, max, min, bits);
+                                          ///  data.
+  double pnan = 0,                        ///< Percentage of NaN elements.
+  cudaStream_t stream = nullptr) {
 
-  BlockForEach<Element, RandomFunc>(ptr, capacity, params);
+  using RandomFunc = detail::RandomUniformFunc<Element>;
+
+  typename RandomFunc::Params params(seed, max, min, bits, pnan);
+
+  BlockForEach<Element, RandomFunc>(ptr, capacity, params, /*grid_size*/0, /*block_size*/0, stream);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -756,8 +861,12 @@ struct RandomSparseMetaFunc {
       MetaSizeInBits(MetaSizeInBits_) {
       if (MetaSizeInBits_ == 2) {
         range = 6;
-      } else if (MetaSizeInBits_ == 4) {
+      }
+      else if (MetaSizeInBits_ == 4) {
         range = 2;
+      }
+      else {
+        throw std::invalid_argument("Invalid MetaSizeInBits");
       }
     }
   };
@@ -889,10 +998,9 @@ template <
 void TensorFillRandomSparseMeta(
   TensorView<Element, Layout> view,       ///< destination tensor
   uint64_t seed,                          ///< seed for RNG
-  int MetaSizeInBits = 2) {                        ///< If non-negative, specifies number of fractional bits that 
-                                          ///  are not truncated to zero. Permits reducing precision of
-                                          ///  data.                 
-  
+  int MetaSizeInBits = 2,                 ///< meta data size
+  cudaStream_t stream = nullptr) {
+
   using RandomFunc = detail::RandomSparseMetaFunc<Element>;
   using Func = detail::TensorFillRandomUniformFunc<Element, Layout>;
   using Params = typename Func::Params;
@@ -901,7 +1009,9 @@ void TensorFillRandomSparseMeta(
 
   TensorForEach<Func, Layout::kRank, Params>(
     view.extent(),
-    Params(view, random)
+    Params(view, random),
+    /*grid_size*/0, /*block_size*/0,
+    stream
   );
 }
 
@@ -913,13 +1023,14 @@ void BlockFillRandomSparseMeta(
   Element *ptr,
   size_t capacity,
   uint64_t seed,                          ///< seed for RNG
-  int MetaSizeInBits = 2) {               ///< meta data size
-  
+  int MetaSizeInBits = 2,                 ///< meta data size
+  cudaStream_t stream = nullptr) {
+
   using RandomFunc = detail::RandomSparseMetaFunc<Element>;
-  
+
   typename RandomFunc::Params params(seed, MetaSizeInBits);
 
-  BlockForEach<Element, RandomFunc>(ptr, capacity, params);
+  BlockForEach<Element, RandomFunc>(ptr, capacity, params, /*grid_size*/0, /*block_size*/0, stream);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1006,6 +1117,200 @@ struct TensorFillDiagonalFunc {
   }
 };
 
+// Overwrites the elements of a tensor with a uniform value depending on fill mode
+template <
+  typename Element,               ///< Element type
+  typename Layout>                ///< Layout function
+struct TensorFillPartialFunc {
+
+  /// View type
+  using TensorView = TensorView<Element, Layout>;
+
+  /// Scalar type
+  typedef typename TensorView::Element T;
+
+  /// Coordinate in tensor's index space
+  typedef typename TensorView::TensorCoord TensorCoord;
+
+  /// Parameters structure
+  struct Params {
+
+    //
+    // Data members
+    //
+
+    TensorView view;
+    Element element;
+    FillMode fill_mode;
+
+    /// Default ctor
+    CUTLASS_HOST_DEVICE
+    Params(): fill_mode(FillMode::kNone) { }
+
+    //
+    // Methods
+    //
+
+    /// Construction of Gaussian RNG functor.
+    Params(
+      TensorView view_,
+      Element element_,
+      FillMode fill_mode_
+    ):
+      view(view_), element(element_), fill_mode(fill_mode_) {
+
+    }
+  };
+
+  //
+  // Data members
+  //
+
+  /// Parameters object
+  Params params;
+
+  //
+  // Methods
+  //
+
+  CUTLASS_DEVICE
+  TensorFillPartialFunc(Params const &params): params(params) {
+
+  }
+
+  /// Overwrites the element if it is within the covered region.
+  CUTLASS_DEVICE
+  void operator()(TensorCoord const &coord) {
+
+    bool predicate = true;
+      
+    switch (params.fill_mode) {
+    case FillMode::kFull:
+      predicate = true;
+      break;
+
+    case FillMode::kLower:
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 1; i < Layout::kRank; ++i) {
+        if (coord[i - 1] < coord[i]) {
+          predicate = false;
+          break;
+        }
+      }
+      break;
+
+    case FillMode::kUpper:
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 1; i < Layout::kRank; ++i) {
+        if (coord[i - 1] > coord[i]) {
+          predicate = false;
+          break;
+        }
+      }
+      break;
+
+    case FillMode::kDiagonal:
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 1; i < Layout::kRank; ++i) {
+        if (coord[i - 1] != coord[i]) {
+          predicate = false;
+          break;
+        }
+      }
+      break;
+
+    case FillMode::kNone: // fall-through
+    
+    default:
+      predicate = false;
+      break;
+    }
+    
+    if (predicate) {
+      params.view.at(coord) = params.element;
+    }
+  }
+};
+
+
+template <
+  typename Element,               ///< Element type
+  typename Layout>                ///< Layout function
+struct TensorClearPartialFunc {
+
+  /// View type
+  using TensorView = TensorView<Element, Layout>;
+
+  /// Scalar type
+  typedef typename TensorView::Element T;
+
+  /// Coordinate in tensor's index space
+  typedef typename TensorView::TensorCoord TensorCoord;
+
+  /// 
+  static_assert((Layout::kRank == 2), "TensorClearPartial is only supported for matrices");
+
+  /// Parameters structure
+  struct Params {
+    TensorView view{};
+    Element element{};
+    FillMode fill_mode{FillMode::kNone};
+    int alignment{0};
+  };
+
+  //
+  // Data members
+  //
+
+  /// Parameters object
+  Params params;
+
+  //
+  // Methods
+  //
+
+  CUTLASS_DEVICE
+  TensorClearPartialFunc(Params const &params): params(params) {
+
+  }
+
+  /// Overwrites the element if it is within the covered region.
+  CUTLASS_DEVICE
+  void operator()(TensorCoord const &coord) {
+
+    bool predicate = true;
+      
+    switch (params.fill_mode) {
+
+    case FillMode::kLower:
+      if ((coord[0] >= coord[1]) || 
+          ((coord[1] - coord[0]) >= params.alignment))  {
+          predicate = false;
+        break;
+      }
+      break;
+
+    case FillMode::kUpper:
+      if ((coord[0] <= coord[1]) ||
+          ((coord[0] - coord[1]) >= params.alignment))  {
+          predicate = false;
+        break;
+      }
+      break;
+
+    case FillMode::kNone: // fall-through
+    
+    default:
+      predicate = false;
+      break;
+    }
+    
+    if (predicate) {
+      params.view.at(coord) = params.element;
+    }
+  }
+};
+
 } // namespace detail
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1017,14 +1322,61 @@ template <
 void TensorFillDiagonal(
   TensorView<Element, Layout> view,       ///< destination tensor
   Element diag = Element(1),              ///< value to write in the diagonal
-  Element other = Element(0)) {           ///< value to write off the diagonal
-  
+  Element other = Element(0),             ///< value to write off the diagonal
+  cudaStream_t stream = nullptr) {
+
   typedef detail::TensorFillDiagonalFunc<Element, Layout> Func;
   typedef typename Func::Params Params;
 
   TensorForEach<Func, Layout::kRank, Params>(
     view.extent(),
-    Params(view, diag, other)
+    Params(view, diag, other),
+    /*grid_size*/0, /*block_size*/0,
+    stream
+  );
+}
+
+/// Fills a tensor partially depending on fill mode. Elements not covered by the fillmode are
+/// not written.
+template <
+  typename Element,               ///< Element type
+  typename Layout>                ///< Layout function
+void TensorFillPartial(
+  TensorView<Element, Layout> view,       ///< destination tensor
+  Element element,
+  FillMode fill_mode,
+  cudaStream_t stream = nullptr) {
+
+  typedef detail::TensorFillPartialFunc<Element, Layout> Func;
+  typedef typename Func::Params Params;
+
+  TensorForEach<Func, Layout::kRank, Params>(
+    view.extent(),
+    Params(view, element, fill_mode),
+    stream
+  );
+}
+
+/// Clears a tensor partially depending on fill mode and alignment. Elements on the wrong-side
+/// of fillmode (upto the alignment) are overwritten with the user supplied element (typically zeros)
+template <
+  typename Element,               ///< Element type
+  typename Layout>                ///< Layout function
+void TensorClearPartial(
+  TensorView<Element, Layout> view,       ///< destination tensor
+  Element element,
+  FillMode fill_mode,
+  int alignment,
+  cudaStream_t stream = nullptr) {
+
+  typedef detail::TensorClearPartialFunc<Element, Layout> Func;
+  typedef typename Func::Params Params;
+
+  TensorForEach<Func, Layout::kRank, Params>(
+    view.extent(),
+    Params{view, element, fill_mode, alignment},
+    /*grid_size*/0, /*block_size*/0,
+    stream
   );
 }
 
@@ -1035,22 +1387,24 @@ template <
   typename Element,               ///< Element type
   typename Layout>                ///< Layout function
 void TensorFill(
-  TensorView<Element, Layout> view,         ///< destination tensor 
-  Element val = Element(0)) {               ///< value to uniformly fill it with
+  TensorView<Element, Layout> view,         ///< destination tensor
+  Element val = Element(0),                 ///< value to uniformly fill it with
+  cudaStream_t stream = nullptr) {
 
-  TensorFillDiagonal(view, val, val);
+  TensorFillDiagonal(view, val, val, stream);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Fills a tensor's digonal with 1 and 0 everywhere else.
+/// Fills a tensor's diagonal with 1 and 0 everywhere else.
 template <
   typename Element,               ///< Element type
   typename Layout>                ///< Layout function
 void TensorFillIdentity(
-  TensorView<Element, Layout> view) {               ///< destination tensor
+  TensorView<Element, Layout> view,                 ///< destination tensor
+  cudaStream_t stream = nullptr) {
 
-  TensorFillDiagonal(view, Element(1), Element(0));
+  TensorFillDiagonal(view, Element(1), Element(0), stream);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1148,14 +1502,17 @@ template <
   typename Layout>                ///< Layout function
 void TensorUpdateDiagonal(
   TensorView<Element, Layout> view,                 ///< destination tensor
-  Element diag = Element(1)) {
+  Element diag = Element(1),
+  cudaStream_t stream = nullptr) {
 
   typedef detail::TensorUpdateDiagonalFunc<Element, Layout> Func;
   typedef typename Func::Params Params;
 
   TensorForEach<Func, Layout::kRank, Params>(
     view.extent(),
-    Params(view, diag)
+    Params(view, diag),
+    /*grid_size*/0, /*block_size*/0,
+    stream
   );
 }
 
@@ -1254,14 +1611,17 @@ template <
   typename Layout>                ///< Layout function
 void TensorUpdateOffDiagonal(
   TensorView<Element, Layout> view,      ///< destination tensor
-  Element other = Element(1)) {
+  Element other = Element(1),
+  cudaStream_t stream = nullptr) {
 
   typedef detail::TensorUpdateOffDiagonalFunc<Element, Layout> Func;
   typedef typename Func::Params Params;
 
   TensorForEach<Func, Layout::kRank, Params>(
     view.extent(),
-    Params(view, other)
+    Params(view, other),
+    /*grid_size*/0, /*block_size*/0,
+    stream
   );
 }
 
@@ -1335,11 +1695,30 @@ struct TensorFillLinearFunc {
   /// Compute random value and update RNG state
   CUTLASS_DEVICE
   void operator()(TensorCoord const &coord) {
+
     Element sum = params.s;
     
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < Layout::kRank; ++i) {
-      sum += params.v[i] * Element(coord[i]);
+      if constexpr (is_complex<Element>::value) {
+        if constexpr (sizeof_bits<Element>::value <= 32) {
+          sum = Element(static_cast<complex<float>>(sum) + 
+                  static_cast<complex<float>>(params.v[i]) * static_cast<complex<float>>(coord[i]));
+        }
+      }
+      else if constexpr (sizeof_bits<Element>::value <= 32) {
+        if constexpr (std::numeric_limits<Element>::is_integer) {
+          sum = Element(static_cast<int32_t>(sum) + 
+                  static_cast<int32_t>(params.v[i]) * static_cast<int32_t>(coord[i]));
+        }
+        else {
+          sum = Element(static_cast<float>(sum) + 
+                  static_cast<float>(params.v[i]) * static_cast<float>(coord[i]));
+        }
+      }
+      else {
+        sum += params.v[i] * coord[i];
+      }
     }
 
     params.view.at(coord) = sum;
@@ -1357,15 +1736,59 @@ template <
 void TensorFillLinear(
   TensorView<Element, Layout> view,      ///< destination tensor
   Array<Element, Layout::kRank> const & v,
-  Element s = Element(0)) {
+  Element s = Element(0),
+  cudaStream_t stream = nullptr) {
 
   using Func = detail::TensorFillLinearFunc<Element, Layout>;
   using Params = typename Func::Params;
 
   TensorForEach<Func, Layout::kRank, Params>(
     view.extent(),
-    Params(view, v, s)
+    Params(view, v, s),
+    /*grid_size*/0, /*block_size*/0,
+    stream
   );
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Fills a tensor with random values from a distribution.
+template <
+  typename Element,               ///< Element type
+  typename Layout>                ///< Layout function
+void TensorFillRandom(
+  TensorView<Element, Layout> view,       ///< destination tensor
+  uint64_t seed,
+  Distribution dist,
+  cudaStream_t stream = nullptr,
+  int exclude_zero = -1                   ///< If non-negative, excludes 0.
+                                          ///  Note that setting this flag will result in more 1's,
+                                          ///  as we use a simple mechanism to replace 0's by adding/subtracting 1's.
+  ) {
+
+  using Real = typename RealType<Element>::Type;
+
+  if (dist.kind == Distribution::Gaussian) {
+    TensorFillRandomGaussian<Element, Layout>(
+      view,
+      seed,
+      static_cast<Real>(dist.gaussian.mean),
+      static_cast<Real>(dist.gaussian.stddev),
+      dist.int_scale,
+      exclude_zero,
+      stream);
+  } else if (dist.kind == Distribution::Uniform) {
+    TensorFillRandomUniform<Element, Layout>(
+      view,
+      seed,
+      static_cast<Real>(dist.uniform.max),
+      static_cast<Real>(dist.uniform.min),
+      dist.int_scale,
+      dist.uniform.pnan,
+      exclude_zero,
+      stream);
+  }
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1381,6 +1804,15 @@ void BlockFillSequential(
   Element v = Element(1),
   Element s = Element(0)) {
 
+  using Layout = layout::PackedVectorLayout;
+  Layout::TensorCoord size(static_cast<Layout::Index>(capacity)); // -Wconversion
+  Layout layout = Layout::packed(size);
+  TensorView<Element, Layout> view(ptr, layout, size);
+
+  Array<Element, Layout::kRank> c{};
+  c[0] = v;
+
+  TensorFillLinear(view, c, s);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1394,27 +1826,31 @@ void BlockFillRandom(
   Element *ptr,
   size_t capacity,
   uint64_t seed,
-  Distribution dist) {
+  Distribution dist,
+  cudaStream_t stream = nullptr) {
 
   using Real = typename RealType<Element>::Type;
 
   if (dist.kind == Distribution::Gaussian) {
     BlockFillRandomGaussian<Element>(
-      ptr, 
-      capacity, 
-      seed, 
-      static_cast<Real>(dist.gaussian.mean), 
-      static_cast<Real>(dist.gaussian.stddev), 
-      dist.int_scale);
+      ptr,
+      capacity,
+      seed,
+      static_cast<Real>(dist.gaussian.mean),
+      static_cast<Real>(dist.gaussian.stddev),
+      dist.int_scale,
+      stream);
   }
   else if (dist.kind == Distribution::Uniform) {
     BlockFillRandomUniform<Element>(
-      ptr, 
-      capacity, 
-      seed, 
+      ptr,
+      capacity,
+      seed,
       static_cast<Real>(dist.uniform.max),
-      static_cast<Real>(dist.uniform.min), 
-      dist.int_scale);
+      static_cast<Real>(dist.uniform.min),
+      dist.int_scale,
+      dist.uniform.pnan,
+      stream);
   }
 }
 
@@ -1510,14 +1946,17 @@ template <
   typename Layout>                ///< Layout function
 void TensorCopyDiagonalIn(
   TensorView<Element, Layout> view,   ///< destination tensor
-  Element const *ptr) {                     ///< dense buffer of elements
+  Element const *ptr,                        ///< dense buffer of elements
+  cudaStream_t stream = nullptr) {
 
   using Func = detail::TensorCopyDiagonalInFunc<Element, Layout>;
   using Params = typename Func::Params;
 
   TensorForEach<Func, Layout::kRank, Params>(
     view.extent(),
-    Params(view, ptr)
+    Params(view, ptr),
+    /*grid_size*/0, /*block_size*/0,
+    stream
   );
 }
 
@@ -1614,14 +2053,17 @@ template <
   typename Layout>                ///< Layout function
 void TensorCopyDiagonalOut(
   Element *ptr,                               ///< dense buffer of elements
-  TensorView<Element, Layout> view) {    ///< source tensor
+  TensorView<Element, Layout> view,      ///< source tensor
+  cudaStream_t stream = nullptr) {
 
   using Func = detail::TensorCopyDiagonalOutFunc<Element, Layout>;
   using Params = typename Func::Params;
 
   TensorForEach<Func, Layout::kRank, Params>(
     view.extent(),
-    Params(view, ptr)
+    Params(view, ptr),
+    /*grid_size*/0, /*block_size*/0,
+    stream
   );
 }
 

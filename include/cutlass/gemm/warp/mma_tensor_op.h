@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -132,7 +138,7 @@ struct ConvertAndPack<half_t, float, N, Round> {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Structure to compute the matrix product targeting CUDA cores and SIMT math instructions.
+/// Structure to compute the matrix product targeting Tensor Cores.
 template <
   /// Size of the Gemm problem - concept: gemm::GemmShape<>
   typename Shape_,
@@ -211,6 +217,14 @@ public:
   /// Number of partitions along K dimension
   static int const kPartitionsK = PartitionsK_;
 
+  #if defined(__CUDA_ARCH__) && ((__CUDA_ARCH__ < 800) || (__CUDA_ARCH__ == 890)) 
+    static int const kVerticalVisit = true;
+  #elif defined(__CUDA_ARCH__) && (__CUDA_ARCH__ == 1200) 
+    static int const kVerticalVisit = true;
+  #else
+    static int const kVerticalVisit = false;
+  #endif
+
 public:
 
   /// Iterates over the A operand in memory
@@ -287,8 +301,8 @@ public:
     MmaOperandB const *ptr_B = reinterpret_cast<MmaOperandB const *>(&B);
     MmaOperandC *ptr_D = reinterpret_cast<MmaOperandC *>(&D);
 
-    #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ < 800)
-      // Serpentine visitation order maximizing reuse of Rb
+      
+    if (kVerticalVisit) {
       CUTLASS_PRAGMA_UNROLL
       for (int n = 0; n < MmaIterations::kColumn; ++n) {
 
@@ -312,8 +326,7 @@ public:
           }
         }
       }
-    #elif defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)
-      // Serpentine visitation order maximizing reuse of Ra
+    } else {
       CUTLASS_PRAGMA_UNROLL
       for (int m = 0; m < MmaIterations::kRow; ++m) {
 
@@ -336,9 +349,7 @@ public:
           }
         }
       }
-    #else
-      assert(0);
-    #endif
+    }
   }
 
   /// Transform the mma operands to the required types
@@ -355,7 +366,7 @@ public:
     FloatRoundStyle const kRoundB =
         PreferredRoundingMode<typename ArchMmaOperator::ElementB,
                               ElementB>::kRound;
-    #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ < 800)
+    if (kVerticalVisit) {    
       detail::ConvertAndPack<typename ArchMmaOperator::ElementA, ElementA,
                             FragmentA::kElements, kRoundA>
           convert_A;
@@ -372,8 +383,7 @@ public:
   
       ptr_dst_B[0] = convert_B(ptr_B[0]);
       ptr_dst_B[1] = convert_B(ptr_B[1]);
-
-    #elif defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)
+    } else {
       detail::ConvertAndPack<typename ArchMmaOperator::ElementA, ElementA,
                             FragmentA::kElements / 2, kRoundA>
           convert_A;
@@ -390,9 +400,7 @@ public:
   
       ptr_dst_A[0] = convert_A(ptr_A[0]);
       ptr_dst_A[1] = convert_A(ptr_A[1]);
-    #else
-      assert(0);
-    #endif
+    }
   }
 };
 

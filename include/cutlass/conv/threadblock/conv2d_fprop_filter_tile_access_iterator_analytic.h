@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -60,7 +66,9 @@ template <
   typename Element_,
   typename Layout_,
   typename ThreadMap_,
-  typename AccessType_ = cutlass::AlignedArray<Element_, ThreadMap_::kElementsPerAccess>
+  typename AccessType_ = cutlass::AlignedArray<Element_, ThreadMap_::kElementsPerAccess>,
+  conv::GroupMode GroupMode_ = conv::GroupMode::kNone,
+  bool IsDeconv_ = false
 >
 class Conv2dFpropFilterTileAccessIteratorAnalytic {
 public:
@@ -78,16 +86,18 @@ public:
   using TensorCoord = typename Layout::TensorCoord;
   using Index = typename Layout::Index;
   using LongIndex = typename Layout::LongIndex;
+  static bool const IsDeconv = IsDeconv_;
   static IteratorAlgorithm const kIteratorAlgorithm = conv::IteratorAlgorithm::kAnalytic;
   static StrideSupport const kStrideSupport = conv::StrideSupport::kStrided;
   static int const kConvDim = 2;
   using ConvProblemSize = typename conv::Conv2dProblemSize;
+  static conv::GroupMode const kGroupMode = GroupMode_;
  
   static int const kAccessesPerVector = ThreadMap::kElementsPerAccess / AccessType::kElements;
   
   static_assert(!(ThreadMap::kElementsPerAccess % AccessType::kElements), 
     "Vectors implied by the thread map must be divisible by the access type.");
- 
+
   //
   // Simplifying assertions
   //
@@ -112,8 +122,14 @@ private:
   int filter_r_;
   int filter_s_;
   int filter_c_;
+  int filter_c_init_;
+  int crs_cnt_;
+  int crs_per_group_;  
+  int group_idx_offset_c_;
+  int channels_per_group_;
 
   int offset_k_[ThreadMap::Iterations::kStrided];
+  int group_idx_offset_k_[ThreadMap::Iterations::kStrided];
 
 public:
 
@@ -128,6 +144,8 @@ public:
     params_(params), 
     problem_size_(problem_size), 
     pointer_(reinterpret_cast<char const *>(ptr)), 
+    crs_cnt_(0),
+    group_idx_offset_c_(0),
     filter_r_(0),
     filter_s_(0),
     filter_c_(0) {
@@ -136,9 +154,26 @@ public:
 
     filter_c_ = threadblock_offset.row() + thread_coord.contiguous();
 
+    auto input_channels = (IsDeconv ? problem_size_.K : problem_size_.C);
+    auto output_channels = (IsDeconv ? problem_size_.C : problem_size_.K);
+
+    if (kGroupMode != conv::GroupMode::kNone) {
+      filter_c_init_ = filter_c_;
+      if (kGroupMode == conv::GroupMode::kDepthwise){
+        channels_per_group_ = 1;
+        crs_per_group_ = problem_size_.S * problem_size_.R;
+      } else {
+        channels_per_group_ = input_channels / problem_size_.groups;
+        crs_per_group_ = problem_size_.S * problem_size_.R * ((channels_per_group_ + Shape::kRow - 1) / Shape::kRow);
+      }
+    }
+
     CUTLASS_PRAGMA_UNROLL
     for (int s = 0; s < ThreadMap::Iterations::kStrided; ++s) {
       offset_k_[s] = threadblock_offset.column() + thread_coord.strided() + s * ThreadMap::Delta::kStrided;
+      if (kGroupMode != conv::GroupMode::kNone && kGroupMode != conv::GroupMode::kDepthwise) {
+        group_idx_offset_k_[s] = (thread_coord.strided() + s * ThreadMap::Delta::kStrided) / (output_channels / problem_size_.groups);
+      }
     }
 
     set_iteration_index(0);
@@ -162,6 +197,10 @@ public:
   CUTLASS_HOST_DEVICE
   void advance() {
     // moves to the next tile
+    if (kGroupMode != conv::GroupMode::kNone) {
+      ++crs_cnt_;
+    }
+
     ++filter_s_;
     if (filter_s_ < problem_size_.S) {
       return;
@@ -173,8 +212,21 @@ public:
       return;
     }
     filter_r_ = 0;
-    
-    filter_c_ += Shape::kRow * problem_size_.split_k_slices;
+
+    if (kGroupMode == conv::GroupMode::kNone) {
+      filter_c_ += Shape::kRow * problem_size_.split_k_slices;
+    } else {
+      if (crs_cnt_ == crs_per_group_) {
+        crs_cnt_ = 0;
+        filter_c_ = filter_c_init_;
+        if (kGroupMode != conv::GroupMode::kDepthwise) {
+          // moves to next group
+          ++group_idx_offset_c_;
+        }
+      } else {
+        filter_c_ += Shape::kRow * problem_size_.split_k_slices;
+      }
+    }
   }
 
   /// Returns the coordinate in the filter tensor W that is currently pointed to
@@ -194,8 +246,17 @@ public:
 
     TensorCoord coord = at();
 
-    return coord.n() < problem_size_.K &&
-      coord.c() < problem_size_.C;
+    auto input_channels = (IsDeconv ? problem_size_.K : problem_size_.C);
+    auto output_channels = (IsDeconv ? problem_size_.C : problem_size_.K);
+
+    if (kGroupMode == conv::GroupMode::kNone) {
+      return coord.n() < output_channels && coord.c() < input_channels;
+    } else if (kGroupMode == conv::GroupMode::kDepthwise) {
+      return coord.n() < output_channels && coord.c() < 1; // channels_per_group_ is always equal to ONE.
+    } else {
+      return coord.n() < output_channels && coord.c() < channels_per_group_ &&
+             group_idx_offset_c_ == group_idx_offset_k_[iteration_strided_];
+    }
   }
 
   /// Returns a pointer to the vector starting at the current coordinate
@@ -236,19 +297,22 @@ public:
   CUTLASS_HOST_DEVICE
   static Status can_implement(Conv2dProblemSize const &problem_size) {
 
+    auto input_channels = (IsDeconv ? problem_size.K : problem_size.C);
+    auto output_channels = (IsDeconv ? problem_size.C : problem_size.K);
+
     // check alignment constraint on iterator's contiguous dimension
-    if (problem_size.K % AccessType::kElements) {
+    if ((input_channels / problem_size.groups) % AccessType::kElements) {
       return Status::kErrorInvalidProblem;
     }
 
     if (platform::is_same<Layout, layout::TensorCxRSKx<32>>::value) {
-      if (problem_size.K % 32) {
+      if (output_channels % 32) {
         return Status::kErrorInvalidProblem;
       }
     }
 
     if (platform::is_same<Layout, layout::TensorCxRSKx<64>>::value) {
-      if (problem_size.K % 64) {
+      if (output_channels % 64) {
         return Status::kErrorInvalidProblem;
       }
     }

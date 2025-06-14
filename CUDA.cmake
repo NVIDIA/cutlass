@@ -1,68 +1,71 @@
-# Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: BSD-3-Clause
 #
-# Redistribution and use in source and binary forms, with or without modification, are permitted
-# provided that the following conditions are met:
-#     * Redistributions of source code must retain the above copyright notice, this list of
-#       conditions and the following disclaimer.
-#     * Redistributions in binary form must reproduce the above copyright notice, this list of
-#       conditions and the following disclaimer in the documentation and/or other materials
-#       provided with the distribution.
-#     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
-#       to endorse or promote products derived from this software without specific prior written
-#       permission.
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
 #
-# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
-# IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
-# FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
-# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
-# BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
-# OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
-# STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# 1. Redistributions of source code must retain the above copyright notice, this
+# list of conditions and the following disclaimer.
+#
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+# this list of conditions and the following disclaimer in the documentation
+# and/or other materials provided with the distribution.
+#
+# 3. Neither the name of the copyright holder nor the names of its
+# contributors may be used to endorse or promote products derived from
+# this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-if(CUDA_COMPILER MATCHES "[Cc]lang")
-  set(CUTLASS_NATIVE_CUDA_INIT ON)
-elseif(CMAKE_VERSION VERSION_LESS 3.12.4)
-  set(CUTLASS_NATIVE_CUDA_INIT OFF)
-else()
-  set(CUTLASS_NATIVE_CUDA_INIT ON)
+if (CUDA_COMPILER MATCHES "[Cc]lang")
+  message(WARNING "CUDA_COMPILER flag is deprecated, set CMAKE_CUDA_COMPILER to desired compiler executable.")
+  set(__CLANG_DEVICE_COMPILATION_REQUESTED ON)
+elseif(CUDA_COMPILER)
+  message(WARNING "Deprecated flag CUDA_COMPILER used with unknown argument ${CUDA_COMPILER}, ignoring.")
 endif()
 
-set(CUTLASS_NATIVE_CUDA ${CUTLASS_NATIVE_CUDA_INIT} CACHE BOOL "Utilize the CMake native CUDA flow")
-
-if(NOT DEFINED ENV{CUDACXX} AND NOT DEFINED ENV{CUDA_BIN_PATH} AND DEFINED ENV{CUDA_PATH})
-  # For backward compatibility, allow use of CUDA_PATH.
-  set(ENV{CUDACXX} $ENV{CUDA_PATH}/bin/nvcc)
+if (__CLANG_DEVICE_COMPILATION_REQUESTED AND NOT DEFINED CMAKE_CUDA_COMPILER)
+  set(CMAKE_CUDA_COMPILER clang++) # We will let the system find Clang or error out
 endif()
 
-if(CUTLASS_NATIVE_CUDA)
+enable_language(CUDA)
+find_package(CUDAToolkit REQUIRED)
 
-  enable_language(CUDA)
+if(NOT CUDA_VERSION)
+  # For backward compatibility with older CMake code.
+  set(CUDA_VERSION ${CUDAToolkit_VERSION})
+  set(CUDA_VERSION_MAJOR ${CUDAToolkit_VERSION_MAJOR})
+  set(CUDA_VERSION_MINOR ${CUDAToolkit_VERSION_MINOR})
+endif()
+if(NOT CUDA_TOOLKIT_ROOT_DIR)
+  # In some scenarios, such as clang device compilation, the toolkit root may not be set, so we 
+  # force it here to the nvcc we found via the CUDAToolkit package.
+  get_filename_component(CUDA_TOOLKIT_ROOT_DIR "${CUDAToolkit_NVCC_EXECUTABLE}/../.." ABSOLUTE)
+endif()
 
-  if(NOT CUDA_VERSION)
-    set(CUDA_VERSION ${CMAKE_CUDA_COMPILER_VERSION})
-  endif()
-  if(NOT CUDA_TOOLKIT_ROOT_DIR)
-    get_filename_component(CUDA_TOOLKIT_ROOT_DIR "${CMAKE_CUDA_COMPILER}/../.." ABSOLUTE)
-  endif()
-
+if (CMAKE_CUDA_COMPILER_ID MATCHES "(nvcc|[Nn][Vv][Ii][Dd][Ii][Aa])")
+  set(CUTLASS_NVCC_DEVICE_COMPILE ON CACHE BOOL "Using nvcc tools for device compilation")
+elseif (CMAKE_CUDA_COMPILER_ID MATCHES "[Cc]lang")
+  set(CUTLASS_CLANG_DEVICE_COMPILE ON CACHE BOOL "Using Clang tools for device compilation")
 else()
+  message(FATAL_ERROR "Unknown device-side compiler ${CMAKE_CUDA_COMPILER_ID} found. Set CMAKE_CUDA_COMPILER to either nvcc or clang++.")
+endif()
 
-  find_package(CUDA REQUIRED)
-  # We workaround missing variables with the native flow by also finding the CUDA toolkit the old way.
-
-  if(NOT CMAKE_CUDA_COMPILER_VERSION)
-    set(CMAKE_CUDA_COMPILER_VERSION ${CUDA_VERSION})
-  endif()
-
+if (CUTLASS_CLANG_DEVICE_COMPILE AND CMAKE_VERSION VERSION_LESS_EQUAL "3.30")
+  message(FATAL_ERROR "Clang device compilation for CUTLASS requires CMake 3.30 or higher.")
 endif()
 
 if (CUDA_VERSION VERSION_LESS 9.2)
-  message(FATAL_ERROR "CUDA 9.2+ Required, Found ${CUDA_VERSION}.")
-endif()
-if(NOT CUTLASS_NATIVE_CUDA OR CUDA_COMPILER MATCHES "[Cc]lang")
-  set(CMAKE_CUDA_COMPILER ${CUDA_TOOLKIT_ROOT_DIR}/bin/nvcc)
-  message(STATUS "CUDA Compiler: ${CMAKE_CUDA_COMPILER}")
+  message(FATAL_ERROR "CUDA 9.2+ required, found ${CUDA_VERSION}.")
 endif()
 
 find_library(
@@ -70,11 +73,12 @@ find_library(
   PATHS
   ${CUDA_TOOLKIT_ROOT_DIR}
   PATH_SUFFIXES
+  lib/x86_64-linux-gnu
   lib/x64
   lib64
   lib
   NO_DEFAULT_PATH
-  # We aren't going to search any system paths. We want to find the runtime
+  # We aren't going to search any system paths. We want to find the runtime 
   # in the CUDA toolkit we're building against.
   )
 
@@ -89,10 +93,10 @@ if(NOT TARGET cudart AND CUDART_LIBRARY)
     # from the PATH search.
   else()
     add_library(cudart SHARED IMPORTED GLOBAL)
-  endif()
+  endif()  
 
   add_library(nvidia::cudart ALIAS cudart)
-
+  
   set_property(
     TARGET cudart
     PROPERTY IMPORTED_LOCATION
@@ -114,13 +118,14 @@ find_library(
   PATHS
   ${CUDA_TOOLKIT_ROOT_DIR}
   PATH_SUFFIXES
+  lib/x86_64-linux-gnu
   lib/x64
   lib64
   lib
   lib64/stubs
   lib/stubs
   NO_DEFAULT_PATH
-  # We aren't going to search any system paths. We want to find the runtime
+  # We aren't going to search any system paths. We want to find the runtime 
   # in the CUDA toolkit we're building against.
   )
 
@@ -135,10 +140,10 @@ if(NOT TARGET cuda_driver AND CUDA_DRIVER_LIBRARY)
     # from the PATH search.
   else()
     add_library(cuda_driver SHARED IMPORTED GLOBAL)
-  endif()
+  endif()  
 
   add_library(nvidia::cuda_driver ALIAS cuda_driver)
-
+  
   set_property(
     TARGET cuda_driver
     PROPERTY IMPORTED_LOCATION
@@ -164,7 +169,7 @@ find_library(
   lib64
   lib
   NO_DEFAULT_PATH
-  # We aren't going to search any system paths. We want to find the runtime
+  # We aren't going to search any system paths. We want to find the runtime 
   # in the CUDA toolkit we're building against.
   )
 
@@ -179,10 +184,10 @@ if(NOT TARGET nvrtc AND NVRTC_LIBRARY)
     # from the PATH search.
   else()
     add_library(nvrtc SHARED IMPORTED GLOBAL)
-  endif()
-
+  endif()  
+  
   add_library(nvidia::nvrtc ALIAS nvrtc)
-
+  
   set_property(
     TARGET nvrtc
     PROPERTY IMPORTED_LOCATION
@@ -203,25 +208,21 @@ include_directories(SYSTEM ${CUDA_INCLUDE_DIRS})
 # Some platforms (e.g. Visual Studio) don't add the CUDA include directories to the system include
 # paths by default, so we add it explicitly here.
 
-function(cutlass_correct_source_file_language_property)
-  if(CUDA_COMPILER MATCHES "[Cc]lang")
-    foreach(File ${ARGN})
-      if(File MATCHES ".*\.cu$")
-        set_source_files_properties(${File} PROPERTIES LANGUAGE CXX)
-      endif()
-    endforeach()
-  endif()
-endfunction()
-
-# If building with all kernels, set UNITY build on by default.
-if (CUTLASS_LIBRARY_KERNELS MATCHES "all")
+if (MSVC OR CUTLASS_LIBRARY_KERNELS MATCHES "all")
   set(CUTLASS_UNITY_BUILD_ENABLED_INIT ON)
 else()
   set(CUTLASS_UNITY_BUILD_ENABLED_INIT OFF)
 endif()
 
 set(CUTLASS_UNITY_BUILD_ENABLED ${CUTLASS_UNITY_BUILD_ENABLED_INIT} CACHE BOOL "Enable combined source compilation")
-set(CUTLASS_UNITY_BUILD_BATCH_SIZE 16 CACHE STRING "Batch size for unified source files")
+
+if (MSVC)
+  set(CUTLASS_UNITY_BUILD_BATCH_SIZE_INIT 8)
+else()
+  set(CUTLASS_UNITY_BUILD_BATCH_SIZE_INIT 16)
+endif()
+
+set(CUTLASS_UNITY_BUILD_BATCH_SIZE ${CUTLASS_UNITY_BUILD_BATCH_SIZE_INIT} CACHE STRING "Batch size for unified source files")
 
 function(cutlass_unify_source_files TARGET_ARGS_VAR)
 
@@ -234,15 +235,19 @@ function(cutlass_unify_source_files TARGET_ARGS_VAR)
     message(FATAL_ERROR "TARGET_ARGS_VAR parameter is required")
   endif()
 
+  if (NOT DEFINED __BATCH_SOURCES)
+    set(__BATCH_SOURCES ON)
+  endif()
+
   if (__BATCH_SOURCES AND NOT DEFINED __BATCH_SIZE)
     set(__BATCH_SIZE ${CUTLASS_UNITY_BUILD_BATCH_SIZE})
   endif()
 
-  if (CUTLASS_UNITY_BUILD_ENABLED AND DEFINED __BATCH_SIZE AND __BATCH_SIZE GREATER 1)
+  if (CUTLASS_UNITY_BUILD_ENABLED AND __BATCH_SOURCES AND __BATCH_SIZE GREATER 1)
 
     set(CUDA_FILE_ARGS)
     set(TARGET_SOURCE_ARGS)
-
+    
     foreach(ARG ${__UNPARSED_ARGUMENTS})
       if(${ARG} MATCHES ".*\.cu$")
         list(APPEND CUDA_FILE_ARGS ${ARG})
@@ -250,7 +255,7 @@ function(cutlass_unify_source_files TARGET_ARGS_VAR)
         list(APPEND TARGET_SOURCE_ARGS ${ARG})
       endif()
     endforeach()
-
+    
     list(LENGTH CUDA_FILE_ARGS NUM_CUDA_FILE_ARGS)
     while(NUM_CUDA_FILE_ARGS GREATER 0)
       list(SUBLIST CUDA_FILE_ARGS 0 ${__BATCH_SIZE} CUDA_FILE_BATCH)
@@ -282,29 +287,34 @@ function(cutlass_unify_source_files TARGET_ARGS_VAR)
 endfunction()
 function(cutlass_add_library NAME)
 
-  set(options)
+  set(options SKIP_GENCODE_FLAGS)
   set(oneValueArgs EXPORT_NAME)
   set(multiValueArgs)
   cmake_parse_arguments(_ "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
   cutlass_unify_source_files(TARGET_SOURCE_ARGS ${__UNPARSED_ARGUMENTS})
-
-  if(CUTLASS_NATIVE_CUDA OR CUDA_COMPILER MATCHES "clang")
-    cutlass_correct_source_file_language_property(${TARGET_SOURCE_ARGS})
-    add_library(${NAME} ${TARGET_SOURCE_ARGS})
-  else()
-    set(CUDA_LINK_LIBRARIES_KEYWORD PRIVATE)
-    cuda_add_library(${NAME} ${TARGET_SOURCE_ARGS})
-  endif()
+  
+  add_library(${NAME} ${TARGET_SOURCE_ARGS} "")
 
   cutlass_apply_standard_compile_options(${NAME})
-  cutlass_apply_cuda_gencode_flags(${NAME})
+
+  if (NOT __SKIP_GENCODE_FLAGS)
+    cutlass_apply_cuda_gencode_flags(${NAME})
+  endif()
 
   target_compile_features(
    ${NAME}
    INTERFACE
    cxx_std_11
    )
+
+  get_target_property(TARGET_TYPE ${NAME} TYPE)
+
+  if (TARGET_TYPE MATCHES "SHARED")
+    set_target_properties(${NAME} PROPERTIES CUDA_RUNTIME_LIBRARY Shared)
+  elseif(TARGET_TYPE MATCHES "STATIC")
+    set_target_properties(${NAME} PROPERTIES CUDA_RUNTIME_LIBRARY Static)
+  endif()
 
   if(__EXPORT_NAME)
     add_library(nvidia::cutlass::${__EXPORT_NAME} ALIAS ${NAME})
@@ -316,19 +326,22 @@ endfunction()
 function(cutlass_add_executable NAME)
 
   set(options)
-  set(oneValueArgs)
+  set(oneValueArgs CUDA_RUNTIME_LIBRARY)
   set(multiValueArgs)
   cmake_parse_arguments(_ "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
+  if (NOT DEFINED __CUDA_RUNTIME_LIBRARY)
+    set(__CUDA_RUNTIME_LIBRARY Shared)
+  endif()
+
+  set(__CUDA_RUNTIME_LIBRARY_ALLOWED None Shared Static)
+  if (NOT __CUDA_RUNTIME_LIBRARY IN_LIST __CUDA_RUNTIME_LIBRARY_ALLOWED)
+    message(FATAL_ERROR "CUDA_RUNTIME_LIBRARY value '${__CUDA_RUNTIME_LIBRARY}' is not in allowed list of '${__CUDA_RUNTIME_LIBRARY_ALLOWED}'")
+  endif()
+
   cutlass_unify_source_files(TARGET_SOURCE_ARGS ${__UNPARSED_ARGUMENTS})
 
-  if(CUTLASS_NATIVE_CUDA OR CUDA_COMPILER MATCHES "clang")
-    cutlass_correct_source_file_language_property(${TARGET_SOURCE_ARGS})
-    add_executable(${NAME} ${TARGET_SOURCE_ARGS})
-  else()
-    set(CUDA_LINK_LIBRARIES_KEYWORD PRIVATE)
-    cuda_add_executable(${NAME} ${TARGET_SOURCE_ARGS})
-  endif()
+  add_executable(${NAME} ${TARGET_SOURCE_ARGS})
 
   cutlass_apply_standard_compile_options(${NAME})
   cutlass_apply_cuda_gencode_flags(${NAME})
@@ -338,6 +351,8 @@ function(cutlass_add_executable NAME)
    INTERFACE
    cxx_std_11
    )
+
+  set_target_properties(${NAME} PROPERTIES CUDA_RUNTIME_LIBRARY ${__CUDA_RUNTIME_LIBRARY})
 
 endfunction()
 
@@ -349,7 +364,6 @@ function(cutlass_target_sources NAME)
   cmake_parse_arguments(_ "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
   cutlass_unify_source_files(TARGET_SOURCE_ARGS ${__UNPARSED_ARGUMENTS})
-  cutlass_correct_source_file_language_property(${TARGET_SOURCE_ARGS})
   target_sources(${NAME} ${TARGET_SOURCE_ARGS})
 
 endfunction()

@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -26,6 +32,8 @@
     \brief Implicit GEMM testbed
 */
 #pragma once
+
+#include <fstream>
 
 #include "../../common/cutlass_unit_test.h"
 #include "cutlass/cutlass.h"
@@ -47,7 +55,7 @@
 #include "conv3d_problems.h"
 #include "cutlass/core_io.h"
 
-#include "cache_testbed_output.h"
+#include "../cache_testbed_output.h"
 
 namespace test {
 namespace conv {
@@ -161,7 +169,7 @@ public:
     tensor_D_reference.resize(implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size));
 
     initialize_tensor(tensor_A.host_view(), init_A, seed); 
-    initialize_tensor(tensor_B.host_view(), init_B, seed * 17); 
+    initialize_tensor(tensor_B.host_view(), init_B, seed * 17);
     initialize_tensor(tensor_C.host_view(), init_C, seed * 39);
 
     tensor_A.sync_device();
@@ -176,7 +184,7 @@ public:
     // Determine SMEM requirements and waive if not satisfied
     //
 
-    int smem_size = int(sizeof(typename Conv3d::ImplicitGemmKernel::SharedStorage));
+    size_t smem_size = sizeof(typename Conv3d::UnderlyingKernel::SharedStorage);
 
     cudaDeviceProp properties;
     int device_idx;
@@ -192,7 +200,7 @@ public:
       throw std::runtime_error("cudaGetDeviceProperties() failed");
     }
 
-    if (properties.sharedMemPerMultiprocessor < smem_size) {
+    if (properties.sharedMemPerBlockOptin < smem_size) {
       return false;
     }
 
@@ -238,12 +246,18 @@ public:
       split_k_mode
     );
 
+    cutlass::Status status = conv3d_op.can_implement(conv3d_args);
+    if (status != cutlass::Status::kSuccess) {
+      std::cerr << "can_implement failed for the given problem_size: \n";
+      return false;
+    }
+
     // find workspace requirement for parallel split-k reduction
     size_t workspace_size = Conv3d::get_workspace_size(conv3d_args);
 
     cutlass::device_memory::allocation<uint8_t> workspace(workspace_size);
 
-    cutlass::Status status = conv3d_op.initialize(conv3d_args, workspace.get());
+    status = conv3d_op.initialize(conv3d_args, workspace.get());
 
     if (status != cutlass::Status::kSuccess) {
       cudaError_t error = cudaGetLastError();
@@ -286,15 +300,15 @@ public:
         cutlass::conv::implicit_gemm_tensor_c_size(kConvolutionalOperator, problem_size),
         {
           reinterpret_cast<ElementAccumulator*> (workspace.get()),
-          ReductionStrideIndex(tensor_C.stride()[Conv3d::ImplicitGemmKernel::kTensorCStrideIdx])
+          ReductionStrideIndex(tensor_C.stride()[Conv3d::UnderlyingKernel::kTensorCStrideIdx])
         },
         {
           tensor_D_computed.device_data(),
-          ReductionStrideIndex(tensor_C.stride()[Conv3d::ImplicitGemmKernel::kTensorCStrideIdx])
+          ReductionStrideIndex(tensor_C.stride()[Conv3d::UnderlyingKernel::kTensorCStrideIdx])
         },
         {
           tensor_C.device_data(),
-          ReductionStrideIndex(tensor_C.stride()[Conv3d::ImplicitGemmKernel::kTensorCStrideIdx])
+          ReductionStrideIndex(tensor_C.stride()[Conv3d::UnderlyingKernel::kTensorCStrideIdx])
         },
         // apply alpha, beta to obtain the following equation alpha * ReduceAdd(A * B) + beta * C 
         {alpha, beta}
@@ -350,12 +364,12 @@ public:
     bool cached_result_loaded = false;
     CachedTestResult cached_test_result;
 
-    std::string conv2d_result_cache_name = 
+    std::string conv3d_result_cache_name =
       std::string("cached_results_") + CUTLASS_TARGET_NAME + ".txt";
-    
+
     if (CUTLASS_TEST_ENABLE_CACHED_RESULTS) {
 
-      CachedTestResultListing cached_results(conv2d_result_cache_name);
+      CachedTestResultListing cached_results(conv3d_result_cache_name);
 
       auto cached = cached_results.find(cached_test_key);
 
@@ -368,7 +382,7 @@ public:
     if (!cached_result_loaded) {
 
 #if CUTLASS_CONV_TEST_UNIT_REFERENCE_DEVICE_ENABLED
-    
+
     cutlass::reference::device::Conv3d<
       ElementA,
       LayoutA,
@@ -418,15 +432,14 @@ public:
 
         cached_test_result.D = TensorHash(tensor_D_reference.host_view());
 
-        CachedTestResultListing cached_results(conv2d_result_cache_name);
+        CachedTestResultListing cached_results(conv3d_result_cache_name);
 
         cached_results.append(cached_test_key, cached_test_result);
-        cached_results.write(conv2d_result_cache_name);
+        cached_results.write(conv3d_result_cache_name);
       }
     } // if (!cached_result_loaded)
 
     uint32_t tensor_D_hash = TensorHash(tensor_D_computed.host_view());
-    
     if (CUTLASS_TEST_ENABLE_CACHED_RESULTS) {
       passed = (tensor_D_hash == cached_test_result.D);
 
@@ -448,7 +461,8 @@ public:
       fname << "error_Conv3d_ImplicitGemm_device_"
         << (split_k_mode == cutlass::conv::SplitKMode::kSerial ? "serial_reduction_" : "parallel_reduction_")
         << (Conv3d::kConvolutionalOperator == cutlass::conv::Operator::kFprop ? "fprop_" :
-            (Conv3d::kConvolutionalOperator == cutlass::conv::Operator::kDgrad ? "dgrad_" : "wgrad_")) 
+            (Conv3d::kConvolutionalOperator == cutlass::conv::Operator::kDgrad ? "dgrad_" :
+              (Conv3d::kConvolutionalOperator == cutlass::conv::Operator::kDeconv ? "deconv_" : "wgrad_")))
         << "ndhwc_"
         << problem_size.N << "x"
         << problem_size.D << "x"
@@ -514,7 +528,7 @@ public:
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 // TestAllConv: Runs cutlass::conv::device::ImplicitGemmConvolution operator and compares it with reference
 // TestAllConv runs conv operator on default conv problem sizes from test::conv::device::TestbedConv2dProblemSizes
-// Additionaly, each conv3d test can provide conv problem sizes (conv_test_sizes) and blacklist of sizes 
+// Additionally, each conv3d test can provide conv problem sizes (conv_test_sizes) and blacklist of sizes 
 // (conv_blacklist_sizes)
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -563,11 +577,11 @@ bool TestAllConv3d(
       //
   
       // CUTLASS DGRAD's unity stride specialization only support stride {1, 1, 1} 
-      if ((ImplicitGemm::kConvolutionalOperator == 
-            cutlass::conv::Operator::kDgrad) && 
-          ((ImplicitGemm::ImplicitGemmKernel::Mma::IteratorA::kStrideSupport == 
+      if ((ImplicitGemm::kConvolutionalOperator == cutlass::conv::Operator::kDgrad ||
+            ImplicitGemm::kConvolutionalOperator == cutlass::conv::Operator::kDeconv) &&
+          ((ImplicitGemm::UnderlyingKernel::Mma::IteratorA::kStrideSupport == 
             cutlass::conv::StrideSupport::kUnity) ||
-           (ImplicitGemm::ImplicitGemmKernel::Mma::IteratorB::kStrideSupport == 
+           (ImplicitGemm::UnderlyingKernel::Mma::IteratorB::kStrideSupport == 
             cutlass::conv::StrideSupport::kUnity))) {
         if (!((conv_problem.stride_d == 1) &&
               (conv_problem.stride_h == 1) && 
@@ -605,7 +619,7 @@ bool TestAllConv3d(
 
   // Sweep split-k-slice using serial reduction with non-unity alpha and non-zero beta for 
   // a single conv2d problem size. Convolution unit tests take a long time to run so only sweep parameters 
-  // which are abolutely neccessary to catch functional bugs. The below code does provide option to sweep 
+  // which are abolutely necessary to catch functional bugs. The below code does provide option to sweep
   // alpha and beta for local testing, but only runs one value for alpha and beta.
   cutlass::conv::Conv3dProblemSize conv3d_split_k_test_size (
     {1, 8, 8, 8, 32},            // input size  (NDHWC)
@@ -652,6 +666,47 @@ bool TestAllConv3d(
   }
 
   return passed;
+}
+
+template <typename ImplicitGemm>
+bool TestSpecificConv3d(
+  const Conv3dProblemVector & problem_sizes) {
+
+  bool passed = true;
+
+  //
+  // Testbed object
+  //
+
+  TestbedConv3d<ImplicitGemm> testbed;
+
+  // Sweep conv3d problem sizes (split-k-mode=kSerial, split-k-slice=1, alpha=1.0, beta=0.0)
+  for(auto conv_problem : problem_sizes) {
+
+    //
+    // Test
+    //
+
+    // test mode = xcross
+    passed = testbed.run(
+      conv_problem,
+      cutlass::conv::SplitKMode::kSerial);
+
+    if (!passed) {
+      return false;
+    }
+
+    // test mode = convolution
+    passed = testbed.run(
+      conv_problem.reset_mode(cutlass::conv::Mode::kConvolution),
+      cutlass::conv::SplitKMode::kSerial);
+
+    if (!passed) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

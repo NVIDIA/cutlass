@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -30,7 +36,7 @@ implicitly to tf32 inside the GEMM kernel which means no change is needed to acc
 fp32 data by using NVIDIA Ampere architecture.
 
 We can use the tf32 mode of tensor core to emulate a fast accurate SGEMM kernel which is accelerated
-using Ampere Tensor Cores (see include/cutlass/gemm/warp/mma_tensor_op_fast_f32.h). 
+using Ampere Tensor Cores (see include/cutlass/gemm/warp/mma_tensor_op_fast_f32.h).
 
 The trick is very simple
   a x b = (a_big + a_small) x (b_big + b_small) = a_big x b_big + a_big x b_small + a_small x b_big
@@ -39,11 +45,11 @@ The trick is very simple
 
 a_small x b_small is discarded because they are too small.
 
-This example demonstrates usage of this kernel, along with accuracy measurements w.r.t. actual FP32 
+This example demonstrates usage of this kernel, along with accuracy measurements w.r.t. actual FP32
 results (SGEMM using SIMT) and against FP64 results (DGEMM)
 
-To enable this feature, the only change needs to make is to change the default OpMultiplyAdd to 
-OpMultiplyAddFastF32. 
+To enable this feature, the only change needs to make is to change the default OpMultiplyAdd to
+OpMultiplyAddFastF32.
 
 Now, we have several different flavors of sgemm now in the profiler for Ampere.  Here are the difference
 
@@ -91,14 +97,14 @@ struct Result {
   double l2_norm_fp32_vs_fp64;
 
   // ctor
-  Result(  
+  Result(
     int m, int n, int k,
     double runtime_ms, double gflops,
     double l2_norm_3xtf32_vs_fp64,
     double l2_norm_1xtf32_vs_fp64,
-    double l2_norm_fp32_vs_fp64) : 
+    double l2_norm_fp32_vs_fp64) :
     m(m), n(n), k(k),
-    runtime_ms(runtime_ms), gflops(gflops), 
+    runtime_ms(runtime_ms), gflops(gflops),
     l2_norm_3xtf32_vs_fp64(l2_norm_3xtf32_vs_fp64),
     l2_norm_1xtf32_vs_fp64(l2_norm_1xtf32_vs_fp64),
     l2_norm_fp32_vs_fp64(l2_norm_fp32_vs_fp64)   {}
@@ -141,7 +147,7 @@ struct Options {
   int iterations;
   int seed;
   bool benchmark;
-  
+
   Options():
     help(false),
     problem_size({3456, 4096, 4096}),
@@ -184,7 +190,7 @@ struct Options {
 
     cmd.get_cmd_line_argument("alpha", alpha);
     cmd.get_cmd_line_argument("beta", beta);
-    
+
     cmd.get_cmd_line_argument("iterations", iterations);
     cmd.get_cmd_line_argument("seed", seed);
     cmd.get_cmd_line_argument("rand_mode", rand_mode);
@@ -201,14 +207,14 @@ struct Options {
       << "  This example uses the CUTLASS Library to emulate FP32 with TF32 tensorop GEMM computations.\n\n"
       << "Options:\n\n"
       << "  --help                      If specified, displays this usage statement.\n\n"
-      << "  --m <int>                   GEMM M dimension\n"
-      << "  --n <int>                   GEMM N dimension\n"
-      << "  --k <int>                   GEMM K dimension\n"
-      << "  --alpha <f32>               Epilogue scalar alpha\n"
-      << "  --beta <f32>                Epilogue scalar beta\n\n"
-      << "  --rand_mode <string>        gauss / uniform*\n\n"
-      << "  --seed <int>                Random number seed (1*)\n\n"
-      << "  --iterations <int>          Number of profiling iterations to perform.\n\n"
+      << "  --m=<int>                   GEMM M dimension\n"
+      << "  --n=<int>                   GEMM N dimension\n"
+      << "  --k=<int>                   GEMM K dimension\n"
+      << "  --alpha=<f32>               Epilogue scalar alpha\n"
+      << "  --beta=<f32>                Epilogue scalar beta\n\n"
+      << "  --rand_mode=<string>        gauss / uniform*\n\n"
+      << "  --seed=<int>                Random number seed (1*)\n\n"
+      << "  --iterations=<int>          Number of profiling iterations to perform.\n\n"
       << "  --benchmark                 If set (true), performance benchmarking on several layers and batch-size.\n\n";
 
     out << "\n\nExamples:\n\n"
@@ -221,9 +227,9 @@ struct Options {
   /// Compute performance in GFLOP/s
   double gflops(double runtime_s) const {
 
-    // Number of real-valued multiply-adds 
+    // Number of real-valued multiply-adds
     int64_t fmas = problem_size.product();
-    
+
     // Two flops per multiply-add
     return 2.0 * double(fmas) / double(1.0e9) / runtime_s;
   }
@@ -252,7 +258,7 @@ using ShapeMMAWarp = cutlass::gemm::GemmShape<64, 32, 16>;  // <- warp tile M = 
 using ShapeMMAOp = cutlass::gemm::GemmShape<16, 8, 8>;  // <- MMA Op tile M = 16, N = 8, K = 8
 
 // This code section describes how threadblocks are scheduled on GPU
-using SwizzleThreadBlock = cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>;  // <- ??
+using SwizzleThreadBlock = cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>;
 
 // This code section describes the epilogue part of the kernel
 using EpilogueOp = cutlass::epilogue::thread::LinearCombination<
@@ -266,10 +272,10 @@ using EpilogueOp = cutlass::epilogue::thread::LinearCombination<
 
 // Number of pipelines you want to use
 constexpr int NumStages = 3;
-// Alignment 
+// Alignment
 constexpr int Alignment = 4;
 
-// 
+//
 // Gemm Operators (Gemm_3xTF32, Gemm_1xTF32, GEMM_F32, GEMM_F64)
 //
 
@@ -290,7 +296,7 @@ using Gemm_3xTF32 = cutlass::gemm::device::Gemm<
                                               EpilogueOp,
                                               SwizzleThreadBlock,
                                               NumStages,
-                                              Alignment, 
+                                              Alignment,
                                               Alignment,
                                               false,
                                               cutlass::arch::OpMultiplyAddFastF32>;
@@ -312,7 +318,7 @@ using Gemm_1xTF32 = cutlass::gemm::device::Gemm<
                                               EpilogueOp,
                                               SwizzleThreadBlock,
                                               NumStages,
-                                              Alignment, 
+                                              Alignment,
                                               Alignment,
                                               false,
                                               cutlass::arch::OpMultiplyAdd>;
@@ -350,7 +356,7 @@ bool run(Options &options) {
   cutlass::HostTensor<float, LayoutInputA> tensor_a_F32(problem_size.mk());  // <- Create matrix A with dimensions M x K
   cutlass::HostTensor<float, LayoutInputB> tensor_b_F32(problem_size.kn());  // <- Create matrix B with dimensions K x N
   cutlass::HostTensor<float, LayoutOutput> tensor_c_F32(problem_size.mn());  // <- Create matrix C with dimensions M x N
-  cutlass::HostTensor<float, LayoutOutput> tensor_d_F32(problem_size.mn());  // <- Create matrix D with dimensions M x N 
+  cutlass::HostTensor<float, LayoutOutput> tensor_d_F32(problem_size.mn());  // <- Create matrix D with dimensions M x N
 
   if (options.rand_mode == "uniform") {
     const float min = -1;
@@ -391,7 +397,7 @@ bool run(Options &options) {
   }
   cutlass::reference::host::TensorFill(
       tensor_d_F32.host_view());  // <- fill matrix D on host with zeros
-  
+
   // Copy data from host to GPU
   tensor_a_F32.sync_device();
   tensor_b_F32.sync_device();
@@ -405,7 +411,7 @@ bool run(Options &options) {
   cutlass::HostTensor<double, LayoutInputA> tensor_a_F64(problem_size.mk());  // <- Create matrix A with dimensions M x K
   cutlass::HostTensor<double, LayoutInputB> tensor_b_F64(problem_size.kn());  // <- Create matrix B with dimensions K x N
   cutlass::HostTensor<double, LayoutOutput> tensor_c_F64(problem_size.mn());  // <- Create matrix C with dimensions M x N
-  
+
   // Gemm output (D) for GEMM_F64
   cutlass::HostTensor<double, LayoutOutput> tensor_d_F64(problem_size.mn());  // <- Create matrix D with dimensions M x N
   // Gemm output (D) for GEMM_3xTF32
@@ -420,7 +426,7 @@ bool run(Options &options) {
   cutlass::reference::host::TensorCopy(tensor_d_F64.host_view(), tensor_d_F32.host_view());
   cutlass::reference::host::TensorCopy(tensor_d_3xTF32.host_view(), tensor_d_F32.host_view());
   cutlass::reference::host::TensorCopy(tensor_d_1xTF32.host_view(), tensor_d_F32.host_view());
-  
+
   // Copy data from host to GPU
   tensor_a_F64.sync_device();
   tensor_b_F64.sync_device();
@@ -458,7 +464,7 @@ bool run(Options &options) {
   // Instantiate CUTLASS kernel depending on templates
   Gemm_3xTF32 gemm_op_3xTF32;
 
-  // Check the problem size is supported or not 
+  // Check the problem size is supported or not
   cutlass::Status status_3xtf32 = gemm_op_3xTF32.can_implement(arguments_3xtf32);
   CUTLASS_CHECK(status_3xtf32);
 
@@ -562,7 +568,7 @@ bool run(Options &options) {
   // Instantiate CUTLASS kernel depending on templates
   Gemm_1xTF32 gemm_op_1xtf32;
 
-  // Check the problem size is supported or not 
+  // Check the problem size is supported or not
   cutlass::Status status_1xtf32 = gemm_op_1xtf32.can_implement(arguments_1xtf32);
   CUTLASS_CHECK(status_1xtf32);
 
@@ -621,7 +627,7 @@ bool run(Options &options) {
   tensor_d_F32.sync_host();
 
   ////////////////////////////////////////////////////////////////////////////////
-  ///////               Compute l2 norms 
+  ///////               Compute l2 norms
   ////////////////////////////////////////////////////////////////////////////////
 
   // l2 norm 3xTF32 vs F64
@@ -658,7 +664,7 @@ bool run(Options &options) {
   std::cout << "GFLOPs: " << result.gflops << std::endl;
   std::cout << "Normalized L2 norm of" << std::endl;
   std::cout.precision(8);
-  std::cout << std::scientific 
+  std::cout << std::scientific
             << " - 3xTF32 error with FP64 reference : " << result.l2_norm_3xtf32_vs_fp64 << std::endl
             << " - 1xTF32 error with FP64 reference : " << result.l2_norm_1xtf32_vs_fp64 << std::endl
             << " - FP32 error with FP64 reference   : " << result.l2_norm_fp32_vs_fp64 << std::endl;
@@ -667,11 +673,11 @@ bool run(Options &options) {
 }
 
 int main(int argc, const char **argv) {
-  
+
   bool notSupported = false;
 
   // Ampere Tensor Core operations exposed with mma.sync and ldmatrix are first available
-  // in CUDA 11.0. 
+  // in CUDA 11.0.
   //
   // CUTLASS must be compiled with CUDA 11.0 Toolkit to run these examples.
   if (!(__CUDACC_VER_MAJOR__ >= 11)) {
@@ -684,7 +690,7 @@ int main(int argc, const char **argv) {
   cudaError_t error = cudaGetDeviceProperties(&props, 0);
   if (error != cudaSuccess) {
     std::cerr << "cudaGetDeviceProperties() returned an error: " << cudaGetErrorString(error) << std::endl;
-    return false;
+    return -1;
   }
 
   if (!((props.major * 10 + props.minor) >= 80)) {
@@ -710,17 +716,17 @@ int main(int argc, const char **argv) {
 
   if (options.benchmark) {
     for (int k = 4; k <= 65536; k *= 2) {
-  
+
       options.problem_size[2] = k;
-  
+
       printf("Gemm problem size: %d x %d x %d\n", \
         options.problem_size.m(), options.problem_size.n(), options.problem_size.k());
-  
+
       if (!options.valid()) {
         std::cerr << "Invalid problem." << std::endl;
         return -1;
       }
-  
+
       result &= run(options);
     }
   } else {

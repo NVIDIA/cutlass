@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -152,6 +158,7 @@ public:
   /// Max ID2
   static int const kMaxID2 = Policy::Operator::kMaxID2;
 
+    static int const kVerticalVisit = false;
   /// Data type of meta E that is moved at the same time
   using ElementE =
       typename cutlass::platform::conditional<kMaxID2 == 1, uint32_t,
@@ -245,8 +252,6 @@ public:
     using MmaOperandC = typename Policy::Operator::FragmentC;
     using MmaOperandE = typename Policy::Operator::FragmentE;
 
-    #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)
-
     D = C;
 
     MmaOperandA const *ptr_A = reinterpret_cast<MmaOperandA const *>(&A);
@@ -254,6 +259,36 @@ public:
     MmaOperandC *ptr_D = reinterpret_cast<MmaOperandC *>(&D);
     MmaOperandE const *ptr_E = reinterpret_cast<MmaOperandE const *>(&E);
 
+    if (kVerticalVisit) {
+      CUTLASS_PRAGMA_UNROLL
+      for (int n = 0; n < MmaIterations::kColumn; ++n) {
+
+        CUTLASS_PRAGMA_UNROLL
+        for (int m = 0; m < MmaIterations::kRow; ++m) {
+
+          int m_serpentine = ((n % 2) ? (MmaIterations::kRow - 1 - m) : m);
+          int id2 = m_serpentine % kMaxID2;
+
+          if (AccumulatorsInRowMajor) {  // matrix B is reordered
+            mma(
+              ptr_D[n + m_serpentine * MmaIterations::kColumn],
+              ptr_A[m_serpentine],
+              ptr_B[n],
+              ptr_D[n + m_serpentine * MmaIterations::kColumn],
+              ptr_E[(m_serpentine / kMaxID2)],
+              id2);
+          } else {
+            mma(
+              ptr_D[m_serpentine + n * MmaIterations::kRow],
+              ptr_A[m_serpentine],
+              ptr_B[n],
+              ptr_D[m_serpentine + n * MmaIterations::kRow],
+              ptr_E[(m_serpentine / kMaxID2)],
+              id2);
+          }
+        }
+      }
+    } else {
       CUTLASS_PRAGMA_UNROLL
       for (int m = 0; m < MmaIterations::kRow; ++m) {
 
@@ -282,9 +317,7 @@ public:
           }
         }
       }
-    #else
-      assert(0);
-    #endif
+    }
   }
 
   /// Transform the mma operands to the required types
@@ -292,7 +325,6 @@ public:
   void transform(TransformedFragmentA &dst_A, TransformedFragmentB &dst_B,
                  FragmentA const &A, FragmentB const &B) const {
 
-    #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)
     //
     // Define conversions from source type to instruction type
     //
@@ -302,25 +334,42 @@ public:
     FloatRoundStyle const kRoundB =
         PreferredRoundingMode<typename ArchMmaOperator::ElementB,
                               ElementB>::kRound;
-    detail::ConvertAndPack<typename ArchMmaOperator::ElementA, ElementA,
-                           FragmentA::kElements / 2, kRoundA>
-        convert_A;
-    NumericArrayConverter<typename ArchMmaOperator::ElementB, ElementB,
-                          FragmentB::kElements, kRoundB>
-        convert_B;
-    Array<ElementA, FragmentA::kElements / 2> const *ptr_A =
-        reinterpret_cast<Array<ElementA, FragmentA::kElements / 2> const *>(&A);
-    Array<typename ArchMmaOperator::ElementA, FragmentA::kElements / 2> *
-        ptr_dst_A = reinterpret_cast<Array<typename ArchMmaOperator::ElementA,
-                                           FragmentA::kElements / 2> *>(&dst_A);
 
-    dst_B = convert_B(B);
-
-    ptr_dst_A[0] = convert_A(ptr_A[0]);
-    ptr_dst_A[1] = convert_A(ptr_A[1]);
-    #else
-      assert(0);
-    #endif
+    if (kVerticalVisit) {
+      detail::ConvertAndPack<typename ArchMmaOperator::ElementA, ElementA,
+                            FragmentA::kElements, kRoundA>
+          convert_A;
+      NumericArrayConverter<typename ArchMmaOperator::ElementB, ElementB,
+                            FragmentB::kElements / 2, kRoundB>
+          convert_B;
+      Array<ElementB, FragmentB::kElements / 2> const *ptr_B =
+          reinterpret_cast<Array<ElementB, FragmentB::kElements / 2> const *>(&B);
+      Array<typename ArchMmaOperator::ElementB, FragmentB::kElements / 2> *
+          ptr_dst_B = reinterpret_cast<Array<typename ArchMmaOperator::ElementB,
+                                             FragmentB::kElements / 2> *>(&dst_B);
+  
+      dst_A = convert_A(A);
+  
+      ptr_dst_B[0] = convert_B(ptr_B[0]);
+      ptr_dst_B[1] = convert_B(ptr_B[1]);
+    } else {
+      detail::ConvertAndPack<typename ArchMmaOperator::ElementA, ElementA,
+                             FragmentA::kElements / 2, kRoundA>
+          convert_A;
+      NumericArrayConverter<typename ArchMmaOperator::ElementB, ElementB,
+                            FragmentB::kElements, kRoundB>
+          convert_B;
+      Array<ElementA, FragmentA::kElements / 2> const *ptr_A =
+          reinterpret_cast<Array<ElementA, FragmentA::kElements / 2> const *>(&A);
+      Array<typename ArchMmaOperator::ElementA, FragmentA::kElements / 2> *
+          ptr_dst_A = reinterpret_cast<Array<typename ArchMmaOperator::ElementA,
+                                             FragmentA::kElements / 2> *>(&dst_A);
+  
+      dst_B = convert_B(B);
+  
+      ptr_dst_A[0] = convert_A(ptr_A[0]);
+      ptr_dst_A[1] = convert_A(ptr_A[1]);
+    }
   }
 };
 

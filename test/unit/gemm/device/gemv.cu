@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -92,7 +98,7 @@ public:
     cutlass::Distribution::Kind init_A_ = cutlass::Distribution::Uniform,
     cutlass::Distribution::Kind init_B_ = cutlass::Distribution::Uniform,
     cutlass::Distribution::Kind init_C_ = cutlass::Distribution::Uniform,
-    uint64_t seed_ = 2080
+    uint64_t seed_ = 2023
   ):
     init_A(init_A_), init_B(init_B_), init_C(init_C_), seed(seed_) { }
 
@@ -140,7 +146,6 @@ public:
         view.data(), view.capacity());
     } 
     else {
-      // TODO: Implement the rest
       EXPECT_TRUE(false) << "Not implemented";
       return false;
     }
@@ -150,22 +155,29 @@ public:
 
   /// Initializes data structures
   void initialize(
-    cutlass::MatrixCoord problem_size
+    cutlass::MatrixCoord problem_size,
+    int32_t batch_count
   ) {
 
     //
-    // Allocate the GEMM workspace
+    // Allocate the GEMV workspace
     //
 
-    tensor_A.resize(problem_size);
-    tensor_B.resize({problem_size.column(), 1});
-    tensor_C.resize({problem_size.row(), 1});
-    tensor_D.resize({problem_size.row(), 1});
-    reference_D.resize({problem_size.row(), 1}, false);
+    if(std::is_same<LayoutA, cutlass::layout::ColumnMajor>::value) {
+      tensor_A.resize({problem_size.row(), batch_count * problem_size.column()});
+    }
+    else {
+      tensor_A.resize({batch_count * problem_size.row(), problem_size.column()});
+    }
+    
+    tensor_B.resize({batch_count * problem_size.column(), 1});
+    tensor_C.resize({batch_count * problem_size.row(), 1});
+    tensor_D.resize({batch_count * problem_size.row(), 1});
+    reference_D.resize({batch_count * problem_size.row(), 1}, false);
 
-    EXPECT_TRUE(initialize_tensor(tensor_A.host_view(), init_A, seed + 2019));
-    EXPECT_TRUE(initialize_tensor(tensor_B.host_view(), init_B, seed + 2018));
-    EXPECT_TRUE(initialize_tensor(tensor_C.host_view(), init_C, seed + 2017));
+    EXPECT_TRUE(initialize_tensor(tensor_A.host_view(), init_A, seed + 1));
+    EXPECT_TRUE(initialize_tensor(tensor_B.host_view(), init_B, seed + 2));
+    EXPECT_TRUE(initialize_tensor(tensor_C.host_view(), init_C, seed + 3));
 
     // It is possible to randomly initialize to all zeros, so override this with non-zeros
     // in the upper left corner of each operand.
@@ -219,9 +231,14 @@ public:
     return passed;
   }
 
-  /// Verifies the result is a GEMM
+  /// Verifies the result
   bool verify(
-    cutlass::MatrixCoord problem_size, 
+    cutlass::MatrixCoord problem_size,
+    int32_t batch_count,
+    int64_t batch_stride_A,
+    int64_t batch_stride_B,
+    int64_t batch_stride_C,
+    int64_t batch_stride_D,
     ElementCompute alpha, 
     ElementCompute beta) {
 
@@ -236,7 +253,7 @@ public:
         ElementCompute, ElementAccumulator
     >(
       {problem_size.row(), 1, problem_size.column()},
-      alpha, 
+      alpha,
       tensor_A.host_ref(),
       Gemv::kTransformA,
       tensor_B.host_ref(),
@@ -244,7 +261,12 @@ public:
       beta, 
       tensor_C.host_ref(), 
       reference_D.host_ref(), 
-      ElementAccumulator(0)
+      ElementAccumulator(0),
+      batch_count,
+      batch_stride_A,
+      batch_stride_B,
+      batch_stride_C,
+      batch_stride_D
     );
 
     return compare_reference(problem_size, alpha, beta);
@@ -253,39 +275,50 @@ public:
   /// Runs one problem size
   bool run(
     cutlass::MatrixCoord problem_size, 
+    int32_t batch_count,
+    int64_t batch_stride_A,
+    int64_t batch_stride_B,
+    int64_t batch_stride_C,
+    int64_t batch_stride_D,
     ElementCompute alpha,
     ElementCompute beta) {
 
-    this->initialize(problem_size);
+    this->initialize(problem_size, batch_count);
 
     //
-    // Initialize the GEMM operator
+    // Initialize the GEMV operator
     //
 
     typename Gemv::Arguments arguments{
       problem_size,
+      batch_count,
       {alpha, beta},
       tensor_A.device_ref(),
       tensor_B.device_data(),
       tensor_C.device_data(),
       tensor_D.device_data(),
-      tensor_B.layout().stride(0),
-      tensor_C.layout().stride(0),
-      tensor_D.layout().stride(0)
+      batch_stride_A,
+      batch_stride_B,
+      batch_stride_C,
+      batch_stride_D
     };
 
     Gemv gemm_op;
+
+    cutlass::Status status = gemm_op.can_implement(arguments);
+
+    EXPECT_TRUE(status == cutlass::Status::kSuccess) << to_string(status);
 
     size_t workspace_size = Gemv::get_workspace_size(arguments);
 
     cutlass::device_memory::allocation<uint8_t> workspace(workspace_size);
 
-    cutlass::Status status = gemm_op.initialize(arguments, workspace.get());
+    status = gemm_op.initialize(arguments, workspace.get());
 
     EXPECT_TRUE(status == cutlass::Status::kSuccess) << to_string(status);
 
     //
-    // Run the GEMM
+    // Run the GEMV
     //
 
     status = gemm_op();
@@ -296,8 +329,15 @@ public:
     // Verify
     //
 
-    bool passed = this->verify(problem_size, alpha, beta);
-
+    bool passed = this->verify(
+        problem_size,
+        batch_count,
+        batch_stride_A,
+        batch_stride_B,
+        batch_stride_C,
+        batch_stride_D,
+        alpha,
+        beta);
     return passed;
   }
 };
@@ -309,12 +349,16 @@ bool TestAllGemv() {
 
   using ElementCompute = typename Gemv::EpilogueOutputOp::ElementCompute;
 
+  int Batch[] = {
+    1, 520, 1314
+  };
+
   int M[] = {
-    8, 48, 192, 520
+    1, 5, 16
   };
 
   int K[] = {
-    8, 192, 528
+    8, 128, 256
   };
 
   double Alpha[] = {
@@ -325,15 +369,25 @@ bool TestAllGemv() {
     0, 1, 1.25
   };
 
-  for (int m : M) {
-    for (int k : K) {
-      for (double alpha : Alpha) {
-        for (double beta : Beta) {
+  for (int b : Batch) {
+    for (int m : M) {
+      for (int k : K) {
+        for (double alpha : Alpha) {
+          for (double beta : Beta) {
 
-          TestbedGemv<Gemv> testbed;
+            TestbedGemv<Gemv> testbed;
 
-          if (!testbed.run({m, k}, ElementCompute(alpha), ElementCompute(beta))) {
-            return false;
+            if (!testbed.run(
+                    {m, k},
+                    b,
+                    m * k,
+                    k,
+                    m,
+                    m,
+                    ElementCompute(alpha),
+                    ElementCompute(beta))) {
+              return false;
+            }
           }
         }
       }
@@ -348,9 +402,103 @@ bool TestAllGemv() {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST(SM50_Device_Gemv_f32n_f32_f32_simt_f32, Simple) {
+TEST(SM50_Device_Gemv_f16n_f16_f16_simt_f32, RowMajorA) {
 
+  using ElementInput = cutlass::half_t;
+  using ElementOutput = cutlass::half_t;
+  using LayoutA = cutlass::layout::RowMajor;
+  using ElementAccumulator = float;
+  int const kElementsPerAccess = 8;
+  
+  using EpilogueOp = cutlass::epilogue::thread::LinearCombination<
+      ElementOutput,
+      1,
+      ElementAccumulator,
+      ElementAccumulator>;
+
+  using Gemv = cutlass::gemm::device::Gemv<
+      cutlass::gemm::kernel::Gemv<
+          ElementInput,           // Element A
+          LayoutA,                // Layout A
+          ElementInput,           // Element B
+          ElementOutput,          // Element C
+          ElementAccumulator,     // Element accumulator
+          EpilogueOp,             // Output operator
+          kElementsPerAccess      // Element access granularity
+          >
+      >;
+
+  EXPECT_TRUE(test::gemm::TestAllGemv<Gemv>());
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+TEST(SM50_Device_Gemv_f32n_f32_f32_simt_f32, RowMajorA) {
+
+  using ElementInput = float;
   using ElementOutput = float;
+  using LayoutA = cutlass::layout::RowMajor;
+  using ElementAccumulator = float;
+  int const kElementsPerAccess = 4;
+  
+  using EpilogueOp = cutlass::epilogue::thread::LinearCombination<
+      ElementOutput,
+      1,
+      ElementAccumulator,
+      ElementAccumulator>;
+
+  using Gemv = cutlass::gemm::device::Gemv<
+      cutlass::gemm::kernel::Gemv<
+          ElementInput,           // Element A
+          LayoutA,                // Layout A
+          ElementInput,           // Element B
+          ElementOutput,          // Element C
+          ElementAccumulator,     // Element accumulator
+          EpilogueOp,             // Output operator
+          kElementsPerAccess      // Element access granularity
+          >
+      >;
+
+  EXPECT_TRUE(test::gemm::TestAllGemv<Gemv>());
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+TEST(SM50_Device_Gemv_f64n_f64_f64_simt_f64, RowMajorA) {
+
+  using ElementInput = double;
+  using ElementOutput = double;
+  using LayoutA = cutlass::layout::RowMajor;
+  using ElementAccumulator = double;
+  int const kElementsPerAccess = 2;
+  
+  using EpilogueOp = cutlass::epilogue::thread::LinearCombination<
+      ElementOutput,
+      1,
+      ElementAccumulator,
+      ElementAccumulator>;
+
+  using Gemv = cutlass::gemm::device::Gemv<
+      cutlass::gemm::kernel::Gemv<
+          ElementInput,           // Element A
+          LayoutA,                // Layout A
+          ElementInput,           // Element B
+          ElementOutput,          // Element C
+          ElementAccumulator,     // Element accumulator
+          EpilogueOp,             // Output operator
+          kElementsPerAccess      // Element access granularity
+          >
+      >;
+
+  EXPECT_TRUE(test::gemm::TestAllGemv<Gemv>());
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+TEST(SM50_Device_Gemv_f16n_f16_f16_simt_f32, ColumnMajorA) {
+
+  using ElementInput = cutlass::half_t;
+  using ElementOutput = cutlass::half_t;
   using LayoutA = cutlass::layout::ColumnMajor;
   using ElementAccumulator = float;
 
@@ -362,9 +510,9 @@ TEST(SM50_Device_Gemv_f32n_f32_f32_simt_f32, Simple) {
 
   using Gemv = cutlass::gemm::device::Gemv<
     cutlass::gemm::kernel::Gemv<
-        ElementOutput,          // Element A
+        ElementInput,           // Element A
         LayoutA,                // Layout A
-        ElementOutput,          // Element B
+        ElementInput,           // Element B
         ElementOutput,          // Element C
         ElementAccumulator,     // Element Accumulator
         EpilogueOp              // Output operator
@@ -377,9 +525,9 @@ TEST(SM50_Device_Gemv_f32n_f32_f32_simt_f32, Simple) {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST(SM50_Device_Gemv_f16n_f16_f32_simt_f32, Simple) {
+TEST(SM50_Device_Gemv_f32n_f32_f32_simt_f32, ColumnMajorA) {
 
-  using ElementInput = cutlass::half_t;
+  using ElementInput = float;
   using ElementOutput = float;
   using LayoutA = cutlass::layout::ColumnMajor;
   using ElementAccumulator = float;
@@ -407,12 +555,12 @@ TEST(SM50_Device_Gemv_f16n_f16_f32_simt_f32, Simple) {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST(SM50_Device_Gemv_f16n_f16_f16_simt_f32, Simple) {
+TEST(SM50_Device_Gemv_f64n_f64_f64_simt_f64, ColumnMajorA) {
 
-  using ElementInput = cutlass::half_t;
-  using ElementOutput = cutlass::half_t;
+  using ElementInput = double;
+  using ElementOutput = double;
   using LayoutA = cutlass::layout::ColumnMajor;
-  using ElementAccumulator = float;
+  using ElementAccumulator = double;
 
   using EpilogueOp = cutlass::epilogue::thread::LinearCombination<
       ElementOutput,

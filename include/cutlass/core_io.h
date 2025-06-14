@@ -1,31 +1,36 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
 /*! \file
     \brief Helpers for printing cutlass/core objects
 */
-
 #pragma once
 
 #include <iostream>
@@ -39,7 +44,7 @@
 #include "cutlass/matrix_shape.h"
 #include "cutlass/layout/pitch_linear.h"
 #include "cutlass/tensor_view.h"
-#include "cutlass/gemm/gemm.h"
+#include "cutlass/gemm/gemm_enumerated_types.h"
 #include "cutlass/conv/convolution.h"
 #include "cutlass/conv/conv2d_problem_size.h"
 #include "cutlass/conv/conv3d_problem_size.h"
@@ -104,6 +109,48 @@ inline
 std::ostream & operator<<(std::ostream &out, tfloat32_t const &x) {
   return out << float(x);
 }
+
+
+inline
+std::ostream & operator<<(std::ostream &out, float_e2m1_t const &x) {
+  return out << float(x);
+}
+
+inline
+std::ostream & operator<<(std::ostream &out, detail::float_e2m1_unpacksmem_t const &x) {
+  return out << float(x);
+}
+
+inline
+std::ostream & operator<<(std::ostream &out, float_e3m2_t const &x) {
+  return out << float(x);
+}
+
+inline
+std::ostream & operator<<(std::ostream &out, float_e2m3_t const &x) {
+  return out << float(x);
+}
+
+inline
+std::ostream & operator<<(std::ostream &out, detail::float_e3m2_unpacksmem_t const &x) {
+  return out << float(x);
+}
+
+inline
+std::ostream & operator<<(std::ostream &out, detail::float_e2m3_unpacksmem_t const &x) {
+  return out << float(x);
+}
+
+inline
+std::ostream & operator<<(std::ostream &out, float_ue8m0_t const &x) {
+  return out << float(x);
+}
+
+inline
+std::ostream & operator<<(std::ostream &out, float_ue4m3_t const &x) {
+  return out << float(x);
+}
+
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -222,21 +269,19 @@ std::ostream & operator<<(std::ostream &out, GemmCoord const &gemm_coord) {
 
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-//                       stream operators for cutlass::layout namespace                          //
+//                       stream operators for cutlass namespace                          //
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-namespace layout {
 
 /// Default printing to ostream for PitchLinearShape
 template < int Contiguous, int Strided>
 inline
 std::ostream & operator<<(std::ostream &out, PitchLinearShape<Contiguous, Strided> const &pitch_linear_shape) {
-  out << "cutlass::layout::PitchLinearShape:(kContiguous, kStrided) {"
+  out << "cutlass::PitchLinearShape:(kContiguous, kStrided) {"
     << cutlass::layout::PitchLinearShape<Contiguous,Strided>::kContiguous <<","
     << cutlass::layout::PitchLinearShape<Contiguous,Strided>::kStrided <<"}";
   return out;
 }
 
-} //namespace layout
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 
@@ -248,8 +293,9 @@ namespace conv {
 inline
 std::ostream& operator<<(std::ostream& out, Conv2dProblemSize const& problem) {
   out << "NHWC: (" << problem.N << ", " << problem.H << ", " << problem.W << ", " << problem.C << ")" << std::endl
-      << "KRSC: (" << problem.K << ", " << problem.R << ", " << problem.S << ", " << problem.C << ")" << std::endl
+      << "KRSC: (" << problem.K << ", " << problem.R << ", " << problem.S << ", " << problem.C / problem.groups << ")" << std::endl
       << "NPQK: (" << problem.N << ", " << problem.P << ", " << problem.Q << ", " << problem.K << ")" << std::endl
+      << "groups: (" << problem.groups << ")" << std::endl
       << "Pad_h, Pad_w: (" << problem.pad_h << ", " << problem.pad_w << ")" << std::endl
       << "Stride_h, Stride_w: (" << problem.stride_h << ", " << problem.stride_w << ")" << std::endl
       << "Dilation_h, Dilation_w: (" << problem.dilation_h << ", " << problem.dilation_w << ")" << std::endl

@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -27,10 +33,13 @@
 */
 #pragma once
 
+#include <fstream>
+
 #include "../../common/cutlass_unit_test.h"
 #include "cutlass/cutlass.h"
 
 #include "cutlass/conv/device/implicit_gemm_convolution.h"
+#include "cutlass/reduction/device/tensor_reduce.h"
 #include "cutlass/reduction/device/reduce_split_k.h"
 #include "cutlass/reduction/thread/reduction_operators.h"
 
@@ -47,7 +56,7 @@
 #include "cutlass/core_io.h"
 #include "cutlass/util/tensor_view_io.h"
 
-#include "cache_testbed_output.h"
+#include "../cache_testbed_output.h"
 
 namespace test {
 namespace conv {
@@ -82,8 +91,9 @@ public:
   cutlass::HostTensor<ElementB, LayoutB> tensor_B;
   cutlass::HostTensor<ElementC, LayoutC> tensor_C;
 
-  cutlass::HostTensor<ElementAccumulator, cutlass::layout::RowMajor> tensor_Reduction;
+  cutlass::HostTensor<ElementAccumulator, LayoutC> tensor_Reduction;
   cutlass::HostTensor<ElementT,           cutlass::layout::RowMajor> tensor_Tensor;
+  cutlass::HostTensor<ElementAccumulator, LayoutC> tensor_Final_Reduction;
 
   cutlass::HostTensor<ElementC, LayoutC> tensor_D_computed;
   cutlass::HostTensor<ElementC, LayoutC> tensor_D_reference;
@@ -109,23 +119,8 @@ public:
 
     if (dist_kind == cutlass::Distribution::Uniform) {
 
-      int scope;
-      int bits = cutlass::sizeof_bits<Element>::value;
+      int scope = 2;
 
-      if (bits <= 8) {
-        scope = 2;
-      }
-      else if (bits == 16) {
-        if (cutlass::sizeof_bits<ElementAccumulator>::value <= 16) {
-          scope = 3;
-        }
-        else {
-          scope = 5;
-        }
-      }
-      else {
-        scope = 8;
-      }
       cutlass::reference::host::TensorFillRandomUniform(
         view, seed, scope, -scope, 0);
     } 
@@ -153,8 +148,17 @@ public:
     tensor_C.resize(implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size));
 
     tensor_Reduction.resize({
-      (problem_size.N * problem_size.P * problem_size.Q), 
-      (problem_size.K - 1 + Conv2d::ThreadblockShape::kN) / Conv2d::ThreadblockShape::kN
+      1,
+      1,
+      (problem_size.N * problem_size.P * problem_size.Q - 1 + Conv2d::ThreadblockShape::kM) / Conv2d::ThreadblockShape::kM,
+      (problem_size.K)
+    });
+
+    tensor_Final_Reduction.resize({
+      1,
+      1,
+      1,
+      (problem_size.K)
     });
 
     tensor_Tensor.resize({(problem_size.N * problem_size.P * problem_size.Q), problem_size.K});
@@ -178,7 +182,7 @@ public:
     // Determine SMEM requirements and waive if not satisfied
     //
 
-    int smem_size = int(sizeof(typename Conv2d::ImplicitGemmKernel::SharedStorage));
+    size_t smem_size = sizeof(typename Conv2d::UnderlyingKernel::SharedStorage);
 
     cudaDeviceProp properties;
     int device_idx;
@@ -194,7 +198,7 @@ public:
       throw std::runtime_error("cudaGetDeviceProperties() failed");
     }
 
-    if (properties.sharedMemPerMultiprocessor < smem_size) {
+    if (properties.sharedMemPerBlockOptin < smem_size) {
       return false;
     }
 
@@ -285,51 +289,35 @@ public:
     EXPECT_EQ(result, cudaSuccess) << " device reference error: " 
                                    << cudaGetErrorString(result);
 
+    // Final reduction over the partial reduction tensor
+    using Functor = cutlass::plus<ElementAccumulator>;
+    using TensorReduction = cutlass::reduction::device::TensorReduction<
+      ElementAccumulator,
+      ElementAccumulator,
+      LayoutC, 
+      Functor,
+      8,
+      ElementAccumulator
+    >;
+
+    TensorReduction reduction(tensor_Reduction.extent(), 2);
+
+    cutlass::DeviceAllocation<uint8_t> reduction_device_workspace(reduction.workspace_size());
+
+    status = reduction.reduce(
+      tensor_Final_Reduction.device_ref(),
+      tensor_Reduction.device_ref(),
+      reduction_device_workspace.get(),
+      ElementAccumulator());
+
+    EXPECT_EQ(status, cutlass::Status::kSuccess);
+    EXPECT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+
+    //
+    // Reference check
+    //
+
     tensor_D_computed.sync_host();
-
-    //
-    // Reference check - support caching results
-    //
-
-    CachedTestKey cached_test_key = CreateCachedConv2dWithReductionTestKey<
-        ElementA, LayoutA,
-        ElementB, LayoutB,
-        ElementC, LayoutC,
-        ElementAccumulator,
-        ElementCompute
-      >(
-        kConvolutionalOperator,
-        problem_size, 
-        alpha, 
-        beta, 
-        tensor_A.host_view(),
-        tensor_B.host_view(),
-        tensor_C.host_view()
-      );
-
-    //
-    // Look for the cached key
-    //
-
-    bool cached_result_loaded = false;
-    CachedTestResult cached_test_result;
-
-    std::string conv2d_result_cache_name = 
-      std::string("cached_results_") + CUTLASS_TARGET_NAME + ".txt";
-
-    if (CUTLASS_TEST_ENABLE_CACHED_RESULTS) {
-
-      CachedTestResultListing cached_results(conv2d_result_cache_name);
-
-      auto cached = cached_results.find(cached_test_key);
-
-      cached_result_loaded = cached.first;
-      if (cached_result_loaded) {
-        cached_test_result = cached.second;
-      }
-    }
-    
-    if (!cached_result_loaded) {
 
 #if CUTLASS_CONV_TEST_UNIT_REFERENCE_DEVICE_ENABLED
 
@@ -378,32 +366,44 @@ public:
 
 #endif
 
-      if (CUTLASS_TEST_ENABLE_CACHED_RESULTS) {
+    passed = cutlass::reference::host::TensorEquals(
+      tensor_D_computed.host_view(), 
+      tensor_D_reference.host_view());
 
-        cached_test_result.D = TensorHash(tensor_D_reference.host_view());
+    EXPECT_TRUE(passed);
 
-        CachedTestResultListing cached_results(conv2d_result_cache_name);
+    //
+    // Reference check on reduction results
+    //
 
-        cached_results.append(cached_test_key, cached_test_result);
-        cached_results.write(conv2d_result_cache_name);
+    tensor_Reduction.sync_host();
+    tensor_Final_Reduction.sync_host();
+
+    // compute backwards for reduction results
+    cutlass::HostTensor<ElementAccumulator, LayoutC> reference_Reduction;
+    reference_Reduction.resize({
+      1,
+      1,
+      1,
+      (problem_size.K) 
+    });
+
+    for (int k = 0; k < problem_size.K; ++k) {
+      ElementAccumulator reduced_value = ElementAccumulator();
+      for (int n = 0; n < problem_size.N; ++n) {
+        for (int p = 0; p < problem_size.P; ++p) {
+          for (int q = 0; q < problem_size.Q; ++q) {
+            reduced_value += tensor_D_reference.at({n, p, q, k});
+          }
+        }
       }
-    } // if (!cached_result_loaded)
-
-
-    uint32_t tensor_D_hash = TensorHash(tensor_D_computed.host_view());
-
-    if (CUTLASS_TEST_ENABLE_CACHED_RESULTS) {
-      passed = (tensor_D_hash == cached_test_result.D);
-
-      EXPECT_EQ(tensor_D_hash, cached_test_result.D) 
-        << "Hash-based comparison failed for key:" << "\n" << cached_test_key << "\n";
+      reference_Reduction.at({0, 0, 0, k}) = reduced_value;
     }
-    else {
 
-      passed = cutlass::reference::host::TensorEquals(
-        tensor_D_computed.host_view(), 
-        tensor_D_reference.host_view());
-    }
+    passed = cutlass::reference::host::TensorEquals(
+      tensor_Final_Reduction.host_view(),
+      reference_Reduction.host_view()
+    );
 
     EXPECT_TRUE(passed);
 
@@ -452,19 +452,19 @@ public:
         << "\nB:\n" << tensor_B.host_view() << "\n"
         << "\nC:\n" << tensor_C.host_view() << "\n"
         << "\nD reference:\n" << tensor_D_reference.host_view() << "\n"
-        << "\nD computed:\n" << tensor_D_computed.host_view() << "\n";
-
+        << "\nD computed:\n" << tensor_D_computed.host_view() << "\n"
+        << "\nreduction reference:\n" << reference_Reduction.host_view() << "\n"
+        << "\nreduction computed:\n" << tensor_Reduction.host_view() << "\n";
     }
 
     return passed;
   }
-
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 // TestAllConv: Runs cutlass::conv::device::ImplicitGemmConvolution operator and compares it with reference
 // TestAllConv runs conv operator on default conv problem sizes from test::conv::device::TestbedConv2dProblemSizes
-// Additionaly, each conv2d test can provide conv problem sizes (conv_test_sizes) and blacklist of sizes 
+// Additionally, each conv2d test can provide conv problem sizes (conv_test_sizes) and blacklist of sizes 
 // (conv_blacklist_sizes)
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 template <typename ImplicitGemm>
@@ -516,7 +516,7 @@ bool TestAllConv2dWithReduction(
       // CUTLASS DGRAD's *unity* stride specialization only support stride {1, 1} 
       if ((ImplicitGemm::kConvolutionalOperator == 
             cutlass::conv::Operator::kDgrad) && 
-          (ImplicitGemm::ImplicitGemmKernel::Mma::IteratorA::kStrideSupport == 
+          (ImplicitGemm::UnderlyingKernel::Mma::IteratorA::kStrideSupport == 
             cutlass::conv::StrideSupport::kUnity)) {
         if (!((conv_problem.stride_h == 1) && (conv_problem.stride_w == 1))) {
           continue;
@@ -527,7 +527,7 @@ bool TestAllConv2dWithReduction(
       // CUTLASS DGRAD's *strided* specialization only support stride >= {2, 2} 
       if ((ImplicitGemm::kConvolutionalOperator == 
             cutlass::conv::Operator::kDgrad) && 
-          (ImplicitGemm::ImplicitGemmKernel::Mma::IteratorA::kStrideSupport == 
+          (ImplicitGemm::UnderlyingKernel::Mma::IteratorA::kStrideSupport == 
             cutlass::conv::StrideSupport::kStrided)) {
          if (((conv_problem.stride_h == 1) && (conv_problem.stride_w == 1))) {
            continue;
@@ -564,7 +564,7 @@ bool TestAllConv2dWithReduction(
   // CUTLASS DGRAD's *strided* specialization does not support split-k mode 
   if ((ImplicitGemm::kConvolutionalOperator == 
           cutlass::conv::Operator::kDgrad) && 
-      (ImplicitGemm::ImplicitGemmKernel::Mma::IteratorA::kStrideSupport == 
+      (ImplicitGemm::UnderlyingKernel::Mma::IteratorA::kStrideSupport == 
         cutlass::conv::StrideSupport::kStrided)) {
 
     passed = testbed.run(
@@ -587,7 +587,7 @@ bool TestAllConv2dWithReduction(
 
   // Sweep split-k-slice using serial and prallel reduction with non-unity alpha and non-zero beta for 
   // a single conv2d problem size. Convolution unit tests take a long time to run so only sweep parameters 
-  // which are abolutely neccessary to catch functional bugs. The below code does provide option to sweep 
+  // which are abolutely necessary to catch functional bugs. The below code does provide option to sweep
   // alpha and beta for local testing, but only runs one value for alpha and beta.
   cutlass::conv::Conv2dProblemSize conv2d_split_k_test_size (
       {1, 17, 11, 288},   // input size (NHWC)
@@ -597,9 +597,9 @@ bool TestAllConv2dWithReduction(
       {1, 1}              // dilation (dilation_h, dilation_w)
     );
 
+  // Parallel SplitK is not tested.
   cutlass::conv::SplitKMode split_k_modes [] = {
     cutlass::conv::SplitKMode::kSerial,
-    cutlass::conv::SplitKMode::kParallel,
   };
 
   int split_k_slices[] = {

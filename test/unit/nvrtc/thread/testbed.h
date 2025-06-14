@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -29,12 +35,15 @@
 #pragma once
 
 #include <iostream>
+#include <cstdio>
+#include <vector>
 
 #include "cutlass/gemm/thread/mma.h"
 #include "../kernel/thread/testbed_kernel.h"
 
 #include "cutlass/util/host_tensor.h"
 #include "cutlass/util/tensor_view_io.h"
+#include "cutlass/trace.h"
 
 #include "cutlass/util/reference/host/tensor_copy.h"
 #include "cutlass/util/reference/host/tensor_fill.h"
@@ -51,6 +60,78 @@
 namespace test {
 namespace nvrtc {
 namespace thread {
+
+#define NVRTC_RETURN_IF_ERROR(api)                    \
+  do {                                                \
+    nvrtcResult _result = api;                        \
+    if (_result != NVRTC_SUCCESS) {                   \
+      CUTLASS_TRACE_HOST("Nvrtc error: " << _result); \
+      return false;                                   \
+    }                                                 \
+  } while(0)
+
+inline const char * cuda_source_fmt = R"""(
+
+#include "kernel/thread/contraction.hpp"
+
+using Operator = %s;
+
+extern "C" __global__ void global_entry(__grid_constant__ Operator::Params const params) {
+  extern __shared__ char smem[];
+
+  Operator op;
+  op(params, smem);
+}
+
+)""";
+
+struct TestbedKernel {
+  static bool compile(std::string const &kernel, std::vector<const char *> const &opts) {
+    int sz = std::snprintf(nullptr, 0, cuda_source_fmt, kernel.c_str());
+    std::vector<char> cuda_source(sz + 1);
+    std::snprintf(&cuda_source[0], cuda_source.size(), cuda_source_fmt, kernel.c_str());
+
+    nvrtcProgram program;
+    NVRTC_RETURN_IF_ERROR(
+        nvrtcCreateProgram(
+            &program,
+            cuda_source.data(),
+            nullptr,
+            static_cast<int32_t>(cutlass::nvrtc::kCutlassHeaderCount),
+            cutlass::nvrtc::kCutlassHeaders,
+            cutlass::nvrtc::kCutlassHeaderNames)
+    );
+
+    nvrtcResult compile_result = 
+        nvrtcCompileProgram(
+            program, 
+            static_cast<int32_t>(opts.size()), 
+            opts.data());
+
+    size_t log_size;
+    NVRTC_RETURN_IF_ERROR(
+        nvrtcGetProgramLogSize(program, &log_size)
+    );
+
+    if (log_size > 1) {
+      auto log = std::make_unique<char[]>(log_size);
+
+      NVRTC_RETURN_IF_ERROR(
+          nvrtcGetProgramLog(program, log.get())
+      );
+                
+      std::cout << log.get() << std::endl;
+    }
+
+    NVRTC_RETURN_IF_ERROR(compile_result);
+
+    NVRTC_RETURN_IF_ERROR(
+        nvrtcDestroyProgram(&program)
+    );
+
+    return true;
+  }
+};
 
 /// Structure to compute the matrix product
 template <
@@ -194,7 +275,7 @@ struct Testbed {
     nvrtcAddNameExpression(program, gemm_kernel_instantiation.c_str());
 
     const char *opts[] = {"--gpu-architecture=compute_75",
-                          "--std=c++11",
+                          "--std=c++17",
                           "--include-path=/usr/local/cuda-10.1/include"};
 
     result_nvrtc = nvrtcCompileProgram(program, 3, opts);

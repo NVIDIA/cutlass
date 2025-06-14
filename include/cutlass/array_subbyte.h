@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -42,10 +48,8 @@ template <
   typename T,
   int N
 >
-class Array<T, N, false> {
-public:
-
-  static int const kSizeBits = sizeof_bits<T>::value * N;
+struct Array<T, N, false> {
+  static constexpr int kSizeBits = sizeof_bits<T>::value * N;
 
   /// Storage type
   using Storage = typename platform::conditional<
@@ -62,16 +66,16 @@ public:
   using Element = T;
 
   /// Number of logical elements per stored object
-  static int const kElementsPerStoredItem = int(sizeof(Storage) * 8) / sizeof_bits<T>::value;
+  static constexpr int kElementsPerStoredItem = int(sizeof(Storage) * 8) / sizeof_bits<T>::value;
 
   /// Number of storage elements
-  static size_t const kStorageElements = N / kElementsPerStoredItem;
+  static constexpr size_t kStorageElements = (N + kElementsPerStoredItem - 1) / kElementsPerStoredItem;
 
   /// Number of logical elements
-  static size_t const kElements = N;
+  static constexpr size_t kElements = N;
 
   /// Bitmask for covering one item
-  static Storage const kMask = ((Storage(1) << sizeof_bits<T>::value) - 1);
+  static constexpr Storage kMask = ((Storage(1) << sizeof_bits<T>::value) - 1);
 
   //
   // C++ standard members with pointer types removed
@@ -90,16 +94,14 @@ public:
   /// Reference object inserts or extracts sub-byte items
   class reference {
     /// Pointer to storage element
-    Storage *ptr_;
+    Storage *ptr_{nullptr};
 
     /// Index into elements packed into Storage object
-    int idx_;
+    int idx_{0};
 
   public:
 
-    /// Default ctor
-    CUTLASS_HOST_DEVICE
-    reference(): ptr_(nullptr), idx_(0) { }
+    reference() = default;
 
     /// Ctor
     CUTLASS_HOST_DEVICE
@@ -108,10 +110,37 @@ public:
     /// Assignment
     CUTLASS_HOST_DEVICE
     reference &operator=(T x) {
+    // `*ptr_ & kUpdateMask` will read ptr_ before write to it
+    // This means code pattern like
+    //
+    // ```cpp
+    // Array<half_t, N> result;
+    // result[0] = xxx;
+    // ```
+    // 
+    // Will leads to compiler warning on use of unintialized member variable. Although we know
+    //      this read of uninitialized member variable is harmeless.
+
+#if defined(__clang__)
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wuninitialized"
+#elif defined(__GNUC__)
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wuninitialized"
+#  pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
+
       Storage item = (reinterpret_cast<Storage const &>(x) & kMask);
 
       Storage kUpdateMask = Storage(~(kMask << (idx_ * sizeof_bits<T>::value)));
+
       *ptr_ = Storage(((*ptr_ & kUpdateMask) | (item << idx_ * sizeof_bits<T>::value)));
+
+#if defined(__clang__)
+#  pragma clang diagnostic pop
+#elif defined(__GNUC__)
+#  pragma GCC diagnostic pop
+#endif
 
       return *this;
     }
@@ -145,16 +174,14 @@ public:
   class const_reference {
 
     /// Pointer to storage element
-    Storage const *ptr_;
+    Storage const *ptr_{nullptr};
 
     /// Index into elements packed into Storage object
-    int idx_;
+    int idx_{0};
 
   public:
 
-    /// Default ctor
-    CUTLASS_HOST_DEVICE
-    const_reference(): ptr_(nullptr), idx_(0) { }
+    const_reference() = default;
 
     /// Ctor
     CUTLASS_HOST_DEVICE
@@ -194,15 +221,14 @@ public:
   class iterator {
 
     /// Pointer to storage element
-    Storage *ptr_;
+    Storage *ptr_{nullptr};
 
     /// Index into elements packed into Storage object
-    int idx_;
+    int idx_{0};
 
   public:
 
-    CUTLASS_HOST_DEVICE
-    iterator(): ptr_(nullptr), idx_(0) { }
+    iterator() = default;
 
     CUTLASS_HOST_DEVICE
     iterator(Storage *ptr, int idx = 0): ptr_(ptr), idx_(idx) { }
@@ -273,15 +299,14 @@ public:
   class const_iterator {
 
     /// Pointer to storage element
-    Storage const *ptr_;
+    Storage const *ptr_{nullptr};
 
     /// Index into elements packed into Storage object
-    int idx_;
+    int idx_{0};
 
   public:
 
-    CUTLASS_HOST_DEVICE
-    const_iterator(): ptr_(nullptr), idx_(0) { }
+    const_iterator() = default;
 
     CUTLASS_HOST_DEVICE
     const_iterator(Storage const *ptr, int idx = 0): ptr_(ptr), idx_(idx) { }
@@ -352,61 +377,35 @@ public:
   class reverse_iterator {
 
     /// Pointer to storage element
-    Storage *ptr_;
+    Storage *ptr_{nullptr};
 
     /// Index into elements packed into Storage object
-    int idx_;
+    int idx_{0};
 
   public:
 
-    CUTLASS_HOST_DEVICE
-    reverse_iterator(): ptr_(nullptr), idx_(0) { }
+    reverse_iterator() = default;
 
     CUTLASS_HOST_DEVICE
     reverse_iterator(Storage *ptr, int idx = 0): ptr_(ptr), idx_(idx) { }
-
-    // TODO
   };
 
   /// Bidirectional constant iterator over elements
   class const_reverse_iterator {
 
     /// Pointer to storage element
-    Storage const *ptr_;
+    Storage const *ptr_{nullptr};
 
     /// Index into elements packed into Storage object
-    int idx_;
+    int idx_{0};
 
   public:
 
-    CUTLASS_HOST_DEVICE
-    const_reverse_iterator(): ptr_(nullptr), idx_(0) { }
+    const_reverse_iterator() = default;
 
     CUTLASS_HOST_DEVICE
     const_reverse_iterator(Storage const *ptr, int idx = 0): ptr_(ptr), idx_(idx) { }
-
-    // TODO
   };
-
-private:
-
-  /// Internal storage
-  Storage storage[kStorageElements];
-
-public:
-
-  #if 0
-  CUTLASS_HOST_DEVICE
-  Array() { }
-
-  CUTLASS_HOST_DEVICE
-  Array(Array const &x) {
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < int(kStorageElements); ++i) {
-      storage[i] = x.storage[i];
-    }
-  }
-  #endif
 
   /// Efficient clear method
   CUTLASS_HOST_DEVICE
@@ -478,7 +477,6 @@ public:
     return storage;
   }
 
-
   CUTLASS_HOST_DEVICE
   constexpr bool empty() const {
     return !kElements;
@@ -496,7 +494,17 @@ public:
 
   CUTLASS_HOST_DEVICE
   void fill(T const &value) {
-    // TODO
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < kElementsPerStoredItem; ++i) {
+      reference ref(storage, i);
+      ref = value;
+    }
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 1; i < kStorageElements; ++i) {
+      storage[i] = storage[0];
+    }
   }
 
   CUTLASS_HOST_DEVICE
@@ -539,11 +547,12 @@ public:
     return const_reverse_iterator(storage);
   }
 
-  //
-  // Comparison operators
-  //
-
+private:
+  /// Internal storage
+  Storage storage[kStorageElements];
 };
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 

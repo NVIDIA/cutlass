@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -28,7 +34,8 @@
   \brief Utilities accompanying the CUTLASS library for interacting with Library types.
 */
 
-#pragma once
+#ifndef CUTLASS_LIBRARY_UTIL_H
+#define CUTLASS_LIBRARY_UTIL_H
 
 #include "cutlass/cutlass.h"
 #include "cutlass/library/library.h"
@@ -51,6 +58,27 @@ template <> Provider from_string<Provider>(std::string const &str);
 
 /// Converts a GemmKind enumerant to a string
 char const *to_string(GemmKind type, bool pretty = false);
+
+/// Converts a RankKKind enumerant to a string
+char const *to_string(RankKKind type, bool pretty = false);
+
+/// Converts a TrmmKind enumerant to a string
+char const *to_string(TrmmKind type, bool pretty = false);
+
+/// Converts a SymmKind enumerant to a string
+char const *to_string(SymmKind type, bool pretty = false);
+
+/// Converts a SideMode enumerant to a string
+char const *to_string(SideMode type, bool pretty = false);
+
+/// Converts a FillMode enumerant to a string
+char const *to_string(FillMode type, bool pretty = false);
+
+/// Converts a BlasMode enumerant to a string
+char const *to_string(BlasMode type, bool pretty = false);
+
+/// Converts a DiagType enumerant to a string
+char const *to_string(DiagType type, bool pretty = false);
 
 /// Converts a NumericType enumerant to a string
 char const *to_string(OperationKind type, bool pretty = false);
@@ -143,6 +171,29 @@ char const *to_string(ConvKind type, bool pretty = false);
 template <>
 ConvKind from_string<ConvKind>(std::string const &str);
 
+
+/// Converts a RuntimeDatatype enumerant to a string
+char const *to_string(cutlass::library::RuntimeDatatype type, bool pretty = false);
+
+/// Convers a RuntimeDatatype enumerant from a string
+template<>
+cutlass::library::RuntimeDatatype from_string<cutlass::library::RuntimeDatatype>(std::string const &str);
+
+
+/// Converts a RasterOrder enumerant to a string
+char const *to_string(RasterOrder type, bool pretty = false);
+
+/// Convers a RasterOrder enumerant from a string
+template<>
+RasterOrder from_string<RasterOrder>(std::string const &str);
+
+/// Converts a bool to a string
+char const *to_string(bool type, bool pretty = false);
+
+/// Convers a bool from a string
+template<>
+bool from_string<bool>(std::string const &str);
+
 /// Lexical cast from int64_t to string
 std::string lexical_cast(int64_t int_value);
 
@@ -161,6 +212,65 @@ bool cast_from_uint64(std::vector<uint8_t> &bytes, NumericTypeID type, uint64_t 
 /// Casts from a real value represented as a double to the destination type. Returns true if successful.
 bool cast_from_double(std::vector<uint8_t> &bytes, NumericTypeID type, double src);
 
+NumericTypeID dynamic_datatype_to_id(RuntimeDatatype type); 
+
+#define CUDA_CHECK(call)                                                                           \
+  do {                                                                                             \
+    cudaError_t err = (call);                                                                      \
+    if (err != cudaSuccess) {                                                                      \
+      std::cerr << "CUDA Error: " << cudaGetErrorString(err) << " in " << __func__ << " at "       \
+                << __FILE__ << ":" << __LINE__ << std::endl;                                       \
+      return Status::kInvalid;                                                                     \
+    }                                                                                              \
+  } while (0)
+
+// RAII CUDA buffer container
+class CudaBuffer {
+public:
+  CudaBuffer() : size_(0), d_ptr_(nullptr) {}
+
+  explicit CudaBuffer(size_t size) : size_(size), d_ptr_(nullptr) {
+    cudaError_t err = cudaMalloc(&d_ptr_, size_);
+    if (err != cudaSuccess) {
+      throw std::runtime_error("cudaMalloc failed: " + std::string(cudaGetErrorString(err)));
+    }
+  }
+
+  ~CudaBuffer() {
+    if (d_ptr_) {
+      cudaFree(d_ptr_);
+    }
+  }
+
+  CudaBuffer(CudaBuffer const&) = delete;
+  CudaBuffer& operator=(CudaBuffer const&) = delete;
+
+  CudaBuffer(CudaBuffer&& other) noexcept : size_(other.size_), d_ptr_(other.d_ptr_) {
+    other.d_ptr_ = nullptr;
+    other.size_ = 0;
+  }
+
+  CudaBuffer& operator=(CudaBuffer&& other) noexcept {
+    if (this != &other) {
+      if (d_ptr_) {
+        cudaFree(d_ptr_);
+      }
+      d_ptr_ = other.d_ptr_;
+      size_ = other.size_;
+      other.d_ptr_ = nullptr;
+      other.size_ = 0;
+    }
+    return *this;
+  }
+
+  void* data() const noexcept { return d_ptr_; }
+  size_t size() const noexcept { return size_; }
+
+private:
+  size_t size_;
+  void* d_ptr_;
+};
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace library
@@ -168,3 +278,4 @@ bool cast_from_double(std::vector<uint8_t> &bytes, NumericTypeID type, double sr
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+#endif

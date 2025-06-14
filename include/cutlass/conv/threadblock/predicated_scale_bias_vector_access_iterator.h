@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT,INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -107,12 +113,9 @@ class PredicatedScaleBiasVectorAccessIterator<ThreadblockShape_,
   /// Internal pointer to first access of tile
   BytePointer pointer_;
 
-  /// Size of tensor
-  Conv2dProblemSize problem_size_;
-
-  int filter_c_;
-  int filter_r_;
-  int filter_s_;
+  int problem_size_trs;
+  int problem_size_c;
+  int filter_trs_;
 
   TensorCoord thread_offset_;
 
@@ -134,10 +137,43 @@ class PredicatedScaleBiasVectorAccessIterator<ThreadblockShape_,
       /// Initial offset of threadblock
       TensorCoord const &threadblock_offset)
       : params_(params),
-        problem_size_(problem_size),
-        filter_c_(0),
-        filter_r_(0),
-        filter_s_(0) {
+        problem_size_trs(problem_size.R * problem_size.S),
+        problem_size_c(problem_size.C),
+        filter_trs_(0) {
+    pointer_ = (thread_id < kThreads)
+                   ? reinterpret_cast<BytePointer>(
+                         const_cast<NonConstPointer>(scale_pointer))
+                   : reinterpret_cast<BytePointer>(
+                         const_cast<NonConstPointer>(bias_pointer));
+
+    // Per-thread offset in logical coordinates of tensor
+    int thread_base = (thread_id < kThreads) ? 0 : kThreads;
+
+    thread_offset_ =
+        threadblock_offset +
+        TensorCoord((thread_id - thread_base) * kElementsPerAccess, 0);
+
+    set_iteration_index(0);
+  }
+
+  CUTLASS_HOST_DEVICE
+  PredicatedScaleBiasVectorAccessIterator(
+      /// Precomputed parameters object
+      Params const &params,
+      /// Extent of tensor
+      Conv3dProblemSize const &problem_size,
+      /// Pointer to the start of the scale vector
+      ConstPointer scale_pointer,
+      /// Pointer to the start of the bias vector
+      ConstPointer bias_pointer,
+      /// ID of each participating thread
+      int thread_id,
+      /// Initial offset of threadblock
+      TensorCoord const &threadblock_offset)
+      : params_(params),
+        problem_size_trs(problem_size.T * problem_size.R * problem_size.S),
+        problem_size_c(problem_size.C),
+        filter_trs_(0) {
     pointer_ = (thread_id < kThreads)
                    ? reinterpret_cast<BytePointer>(
                          const_cast<NonConstPointer>(scale_pointer))
@@ -161,6 +197,22 @@ class PredicatedScaleBiasVectorAccessIterator<ThreadblockShape_,
       Params const &params,
       /// Extent of tensor
       Conv2dProblemSize const &problem_size,
+      /// Pointer to start of scale vector
+      ConstPointer scale_pointer,
+      /// Pointer to start of scale vector
+      ConstPointer bias_pointer,
+      ///< ID of each participating thread
+      int thread_id)
+      : PredicatedScaleBiasVectorAccessIterator(params, problem_size,
+                                                scale_pointer, bias_pointer,
+                                                thread_id, make_Coord(0, 0)) {}
+
+  CUTLASS_HOST_DEVICE
+  PredicatedScaleBiasVectorAccessIterator(
+      /// Precomputed parameters object
+      Params const &params,
+      /// Extent of tensor
+      Conv3dProblemSize const &problem_size,
       /// Pointer to start of scale vector
       ConstPointer scale_pointer,
       /// Pointer to start of scale vector
@@ -203,16 +255,10 @@ class PredicatedScaleBiasVectorAccessIterator<ThreadblockShape_,
   CUTLASS_HOST_DEVICE
   void advance() {
     // moves to the next tile
-    ++filter_s_;
-    if (filter_s_ == problem_size_.S) {
-      filter_s_ = 0;
-      ++filter_r_;
-
-      if (filter_r_ < problem_size_.R) {
-      } else {
-        filter_r_ = 0;
-        add_tile_offset(TensorCoord(1, 0));
-      }
+    ++filter_trs_;
+    if (filter_trs_ == problem_size_trs) {
+      filter_trs_ = 0;
+      add_tile_offset(TensorCoord(1, 0));
     }
   }
 
@@ -242,7 +288,7 @@ class PredicatedScaleBiasVectorAccessIterator<ThreadblockShape_,
         "}\n" : "+r"(enabled) :"n"(kThreads * 2));
 #endif
 
-    return ((thread_offset_.contiguous() < problem_size_.C) && enabled);
+    return ((thread_offset_.contiguous() < problem_size_c) && enabled);
   }
 };
 
@@ -316,11 +362,42 @@ class PredicatedScaleBiasVectorAccessIterator<ThreadblockShape_,
                   layout::PitchLinearCoord(threadblock_offset.column(),
                                            threadblock_offset.row())) {}
 
+  CUTLASS_HOST_DEVICE
+  PredicatedScaleBiasVectorAccessIterator(
+      ///< Precomputed parameters object
+      Params const &params,
+      ///< Extent of tensor
+      Conv3dProblemSize const &problem_size,
+      ///< Pointer to the start of the scale vector
+      ConstPointer scale_pointer,
+      ///< Pointer to the start of the bias vector
+      ConstPointer bias_pointer,
+      ///< ID of each participating thread
+      int thread_id,
+      ///< Initial offset of threadblock
+      TensorCoord const &threadblock_offset)
+      : iterator_(params, problem_size, scale_pointer, bias_pointer,
+                  thread_id,
+                  layout::PitchLinearCoord(threadblock_offset.column(),
+                                           threadblock_offset.row())) {}
+
   /// Construct a PredicatedTileAccessIterator with zero threadblock offset
   CUTLASS_HOST_DEVICE
   PredicatedScaleBiasVectorAccessIterator(
       Params const &params,                   ///< Precomputed parameters object
       Conv2dProblemSize const &problem_size,  ///< Extent of tensor
+      ConstPointer scale_pointer,  ///< Pointer to the start of the scale vector
+      ConstPointer bias_pointer,   ///< Pointer to the start of the bias vector
+      int thread_id                ///< ID of each participating thread
+      )
+      : PredicatedScaleBiasVectorAccessIterator(params, problem_size,
+                                                scale_pointer, bias_pointer,
+                                                thread_id, make_Coord(0, 0)) {}
+
+  CUTLASS_HOST_DEVICE
+  PredicatedScaleBiasVectorAccessIterator(
+      Params const &params,                   ///< Precomputed parameters object
+      Conv3dProblemSize const &problem_size,  ///< Extent of tensor
       ConstPointer scale_pointer,  ///< Pointer to the start of the scale vector
       ConstPointer bias_pointer,   ///< Pointer to the start of the bias vector
       int thread_id                ///< ID of each participating thread

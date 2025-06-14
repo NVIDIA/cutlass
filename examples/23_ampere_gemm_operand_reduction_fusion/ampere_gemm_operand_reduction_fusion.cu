@@ -1,44 +1,51 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
 
 /**
-The example demenstrates how to reduce one of the operands of the GEMM along the k-dimension when
+The example demonstrates how to reduce one of the operands of the GEMM along the k-dimension when
 computing GEMM.  So the output also contains either a Mx1 or 1XN vector.  It only works with Ampere
-HMMA 16x8x16 FP16 tensor cores, though it is not difficult to apply to other Turing/Ampere tensor
+16x8x16 FP16/BF16 tensor cores, though it is not difficult to apply to other Turing/Ampere tensor
 core instructions.
 
 Most of the reduction is done in gemm/warp level, see gemm/warp/mma_with_reduction_tensor_op.h
-A few bit of reduction is done in the epilouge before storing the vector, see
+A few bit of reduction is done in the epilogue before storing the vector, see
 epilogue/threadblock/epilogue_gemm_k_reduction.h 
 */
 
 #include <iostream>
+#include <fstream>
 #include <sstream>
 
 #include "cutlass/cutlass.h"
-#include "cutlass/gemm/device/gemm_universal_adapter.h"
+#include "cutlass/gemm/device/gemm_with_k_reduction.h"
 #include "cutlass/gemm/kernel/default_gemm_with_k_reduction.h"
 #include "cutlass/reduction/device/reduce_split_k.h"
 #include "cutlass/reduction/kernel/reduce_split_k.h"
@@ -60,9 +67,9 @@ epilogue/threadblock/epilogue_gemm_k_reduction.h
 // elements 
 using ElementAccumulator = float;                  // Data type of accumulator
 using ElementComputeEpilogue = ElementAccumulator; // Data type of epilogue computation
-using ElementInputA = cutlass::half_t;             // Data type of elements in input tensor
-using ElementInputB = cutlass::half_t;             // Data type of elements in input tensor
-using ElementOutput = cutlass::half_t;             // Data type of elements in output tensor
+using ElementInputA = cutlass::bfloat16_t;         // Data type of elements in input tensor
+using ElementInputB = cutlass::bfloat16_t;         // Data type of elements in input tensor
+using ElementOutput = cutlass::bfloat16_t;         // Data type of elements in output tensor
 
 using LayoutInputA = cutlass::layout::ColumnMajor;
 using LayoutInputB = cutlass::layout::RowMajor;
@@ -94,6 +101,12 @@ constexpr int NumStages = 4;
 // Reduce A or B operand along the K dimension
 constexpr bool ReduceKForA = true;
 
+// Alignment of A operand
+constexpr int AlignmentA = 8;
+
+// Alignment of B operand
+constexpr int AlignmentB = 8;
+
 // This code section describes the epilogue part of the kernel, we use default value
 using EpilogueOp = cutlass::epilogue::thread::LinearCombination<
     ElementOutput,                                        // Data type of output matrix.
@@ -103,9 +116,9 @@ using EpilogueOp = cutlass::epilogue::thread::LinearCombination<
     ElementAccumulator,                                   // Data type of accumulator
     ElementComputeEpilogue>;
 
-using GemmKernel = typename cutlass::gemm::kernel::DefaultGemmWithKReduction<
-  ElementInputA, LayoutInputA, cutlass::ComplexTransform::kNone, 8,
-  ElementInputB, LayoutInputB, cutlass::ComplexTransform::kNone, 8,
+using Gemm = typename cutlass::gemm::device::GemmWithKReduction<
+  ElementInputA, LayoutInputA,
+  ElementInputB, LayoutInputB,
   ElementOutput, LayoutOutput,
   ElementAccumulator,
   MMAOp,
@@ -117,13 +130,15 @@ using GemmKernel = typename cutlass::gemm::kernel::DefaultGemmWithKReduction<
   EpilogueOp,
   SwizzleThreadBlock,
   NumStages,
-  cutlass::arch::OpMultiplyAdd
->::GemmKernel;
-
-using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  AlignmentA,
+  AlignmentB,
+  cutlass::arch::OpMultiplyAdd,
+  cutlass::ComplexTransform::kNone,
+  cutlass::ComplexTransform::kNone
+>;
 
 // Below is the reduction kernel used in the case of parallel split-k
-using ReduceGemmSplitKShape = cutlass::MatrixShape<4, 64>;;
+using ReduceGemmSplitKShape = cutlass::MatrixShape<4, 64>;
 
 using ReduceOp = cutlass::reduction::thread::ReduceAdd<
     ElementAccumulator,
@@ -139,7 +154,7 @@ using ReduceGemmSplitKKernel = cutlass::reduction::kernel::ReduceSplitK<
 
 using ReduceGemmSplitK = cutlass::reduction::device::ReduceSplitK<ReduceGemmSplitKKernel>;
 
-using ReduceVectorSplitKShape = cutlass::MatrixShape<1, 256>;;
+using ReduceVectorSplitKShape = cutlass::MatrixShape<1, 256>;
 
 // This code section describes the epilogue part of the kernel, we use default value
 using DummyEpilogueOp = cutlass::epilogue::thread::LinearCombination<
@@ -264,25 +279,25 @@ struct Options {
   /// Prints the usage statement.
   std::ostream & print_usage(std::ostream &out) const {
 
-    out << "28_ampere_gemm_bias_fusion example\n\n"
+    out << "23_ampere_operand_gemm_reduction_fusion\n\n"
       << "Options:\n\n"
       << "  --help               If specified, displays this usage statement.\n\n"
-      << "  --m <int>            GEMM M\n"
-      << "  --n <int>            GEMM N\n"
-      << "  --k <int>            GEMM K\n"
-      << "  --split-k-slices <int> Split K Slices\n"
-      << "  --alpha <float>      Epilogue scalar alpha\n"
-      << "  --beta <float>       Epilogue scalar beta\n\n"
+      << "  --m=<int>            GEMM M\n"
+      << "  --n=<int>            GEMM N\n"
+      << "  --k=<int>            GEMM K\n"
+      << "  --split-k-slices=<int> Split K Slices\n"
+      << "  --alpha=<float>      Epilogue scalar alpha\n"
+      << "  --beta=<float>       Epilogue scalar beta\n\n"
       << "  --parallel-split-k   If set (true), use parallel split K\n"
       << "  --ref-check          If set (true), reference check on the host is computed\n"
       << "  --perf-check         If set (true), performance is measured.\n"
       << "  --benchmark          If set (true), performance benchmarking on several problem sizes.\n"
-      << "  --iterations <int>   Number of profiling iterations to perform.\n"
+      << "  --iterations=<int>   Number of profiling iterations to perform.\n"
       << "  --save-workspace     If set, workspace is written to a text file.\n"
-      << "  --tag <string>       String to replicate across the first column in the results table\n";
+      << "  --tag=<string>       String to replicate across the first column in the results table\n";
 
     out << "\n\nExamples:\n\n"
-      << "$ ./examples/23_ampere_gemm_operand_reduction_fusion/23_ampere_gemm_operand_reduction_fusion --m=1024 --n=1024 --k=1024 \n\n";
+      << "$ ./examples/23_ampere_gemm_operand_reduction_fusion/23_ampere_gemm_operand_reduction_fusion  --m=1024 --n=1024 --k=1024 \n\n";
 
     return out;
   }
@@ -361,23 +376,23 @@ Result profile(Options const &options) {
   // Fill input and output matrices on host using CUTLASS helper functions
   cutlass::reference::host::TensorFillRandomUniform(
       tensor_a.host_view(),
-      1,
-      ElementInputA(4),
-      ElementInputA(-4),
+      1997,
+      ElementInputA(1),
+      ElementInputA(-1),
       0);  // <- Fill tensor A on host with uniform-distribution random data
 
   cutlass::reference::host::TensorFillRandomUniform(
       tensor_b.host_view(),
-      1,
-      ElementInputB(4),
-      ElementInputB(-4),
+      2003,
+      ElementInputB(1),
+      ElementInputB(-1),
       0);  // <- Fill tensor B on host with uniform-distribution random data
 
   cutlass::reference::host::TensorFillRandomUniform(
       tensor_c.host_view(),
-      1,
-      ElementOutput(4),
-      ElementOutput(-4),
+      2017,
+      ElementOutput(1),
+      ElementOutput(-1),
       0);  // <- Fill matrix C on host with uniform-distribution random data
   cutlass::reference::host::TensorFill(
       tensor_d.host_view());  // <- fill matrix D on host with zeros
@@ -411,16 +426,16 @@ Result profile(Options const &options) {
 
   // Create a tuple of gemm kernel arguments. This is later passed as arguments to launch
   // instantiated CUTLASS kernel
-  typename Gemm::Arguments arguments{
+  typename Gemm::Arguments arguments(
     mode,
     options.problem_size,
     batch_count,
     {alpha, beta},
     tensor_a.device_ref().data(),              // <- reference to tensor A on device
     tensor_b.device_ref().data(),              // <- reference to tensor B on device
-    tensor_c.device_ref().data(),  // <- reference to matrix C on device
-    tensor_d.device_ref().data(),  // <- reference to matrix D on device
-    tensor_reduction.device_ref().data(),              // <- reference to reduction tensor on device
+    tensor_c.device_ref().data(),              // <- reference to matrix C on device
+    tensor_d.device_ref().data(),              // <- reference to matrix D on device
+    tensor_reduction.device_ref().data(),      // <- reference to reduction tensor on device
     options.problem_size.m() * options.problem_size.k(),
     options.problem_size.n() * options.problem_size.k(),
     options.problem_size.m() * options.problem_size.n(),
@@ -430,8 +445,7 @@ Result profile(Options const &options) {
     tensor_b.layout().stride(0),
     tensor_c.layout().stride(0),
     tensor_d.layout().stride(0),
-    tensor_reduction.layout().stride(0)
-  };                    
+    tensor_reduction.layout().stride(0));
 
   // Instantiate CUTLASS kernel depending on templates
   Gemm gemm_op;
@@ -500,15 +514,14 @@ Result profile(Options const &options) {
 
     cutlass::TensorRef<ElementOutput, cutlass::layout::RowMajor> tensor_nullptr_tensorref(nullptr, splitk_vector_layout);
 
-    typename ReduceVectorSplitK::Arguments reduce_vector_splitk_arguments{
+    typename ReduceVectorSplitK::Arguments reduce_vector_splitk_arguments(
       cutlass::MatrixCoord(1, reduce_vector_length),
       batch_count,
       size_t(reduce_vector_length),
       workspace_vector_tensorref,
       tensor_reduction_tensorref,
       tensor_nullptr_tensorref,
-      {1.0f, 0.0f} 
-    };
+      {1.0f, 0.0f});
 
     ReduceVectorSplitK reduce_vector_splitk_op;
    
@@ -554,7 +567,7 @@ Result profile(Options const &options) {
   
     tensor_reduction.sync_host();
   
-    // Compute bias + relu in host code
+    // Reduce K in host code
     if (ReduceKForA) {
       for (int m = 0; m < options.problem_size.m(); ++m) {
         for (int k = 0; k < options.problem_size.k(); ++k) {
@@ -574,7 +587,7 @@ Result profile(Options const &options) {
     // Check if output from CUTLASS kernel and reference kernel are equal or not
     bool pass = cutlass::reference::host::TensorEquals(tensor_d.host_view(),
                                                        tensor_ref_d.host_view());
-  
+
     pass &= cutlass::reference::host::TensorEquals(tensor_ref_reduction.host_view(),
                                                    tensor_reduction.host_view());
 
@@ -605,10 +618,10 @@ Result profile(Options const &options) {
 
     if (options.reference_check) {
       output_workspace << "Reference D = \n" << tensor_ref_d.host_view() << "\n\n";
-      output_workspace << "Reference reduction vector= \n" << tensor_ref_reduction.host_view() << "\n\n";
+      output_workspace << "Reference reduction vector = \n" << tensor_ref_reduction.host_view() << "\n\n";
     }
 
-    output_workspace << "Computed = \n" << tensor_d.host_view() << std::endl;
+    output_workspace << "Computed D = \n" << tensor_d.host_view() << std::endl;
     output_workspace << "Computed reduction vector = \n" << tensor_reduction.host_view() << std::endl;
 
     std::cout << "Results written to '" << ss.str() << "'." << std::endl;
@@ -692,7 +705,7 @@ int main(int argc, char const **args) {
   cudaDeviceProp props;
   CUDA_CHECK(cudaGetDeviceProperties(&props, 0));
 
-  if (!(props.major > 8 || (props.major == 8 && props.minor >= 0))) {
+  if (!(props.major >= 8)) {
     std::cerr << "Ampere Tensor Ops must be run on a machine with compute capability at least 80."
               << std::endl;
     notSupported = true;

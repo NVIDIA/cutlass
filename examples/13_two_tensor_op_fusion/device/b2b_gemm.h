@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -40,6 +46,7 @@
 
 #include "kernel/b2b_gemm.h"
 #include "kernel/default_b2b_gemm.h"
+#include "kernel/default_b2b_gemm_smem_accumulator.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -102,6 +109,8 @@ template <
     int Stages =
         DefaultGemmConfiguration<OperatorClass_, ArchTag_, ElementA_, ElementB_,
                                  ElementC_, ElementAccumulator_>::kStages,
+    /// Stage accumulator in shared memory
+    bool SmemAccumulator = false,
     /// Access granularity of A matrix in units of elements
     int AlignmentA =
         DefaultGemmConfiguration<OperatorClass_, ArchTag_, ElementA_, ElementB_,
@@ -110,8 +119,6 @@ template <
     int AlignmentB =
         DefaultGemmConfiguration<OperatorClass_, ArchTag_, ElementA_, ElementB_,
                                  ElementC_, ElementAccumulator_>::kAlignmentB,
-    /// If true, kernel supports split-K with serial reduction
-    bool SplitKSerial = false,
     /// Operation performed by GEMM
     typename Operator_ = typename DefaultGemmConfiguration<
         OperatorClass_, ArchTag_, ElementA_, ElementB_, ElementC_,
@@ -145,9 +152,12 @@ class B2bGemm {
   static int const kAlignmentA = AlignmentA;
   static int const kAlignmentB = AlignmentB;
   static int const kAlignmentC = EpilogueOutputOp1::kCount;
-  static bool const kSplitKSerial = SplitKSerial;
   static ComplexTransform const kTransformA = ComplexTransform::kNone;
   static ComplexTransform const kTransformB = ComplexTransform::kNone;
+
+  /// Derived types
+  using ElementScaleBias = typename EpilogueOutputOp0::ElementCompute;
+  using LayoutScaleBias = layout::RowMajor;
 
   /// Define the kernel
   using B2bGemmKernel = typename kernel::DefaultB2bGemm<
@@ -171,70 +181,11 @@ class B2bGemm {
     EpilogueOutputOp1,
     ThreadblockSwizzle,
     kStages,
-    kSplitKSerial,
-    Operator
+    Operator,
+    SmemAccumulator
   >::B2bGemmKernel;
 
-  /// Argument structure
-  struct Arguments {
-
-    //
-    // Data members
-    //
-
-    GemmCoord problem_size_0;
-    GemmCoord problem_size_1;
-    TensorRef<ElementA const, LayoutA> ref_A0;
-    TensorRef<ElementB const, LayoutB> ref_B0;
-    TensorRef<ElementC const, LayoutC> ref_C0;
-    TensorRef<ElementB const, LayoutB> ref_B1;
-    TensorRef<ElementC const, LayoutC> ref_C1;
-    TensorRef<ElementC, LayoutC> ref_D1;
-    typename EpilogueOutputOp0::Params epilogue0;
-    typename EpilogueOutputOp1::Params epilogue1;
-    int split_k_slices;
-
-    //
-    // Methods
-    //
-
-    /// Default ctor
-    CUTLASS_HOST_DEVICE
-    Arguments(): problem_size_0(0, 0, 0), problem_size_1(0, 0, 0), split_k_slices(1) {
-
-    }
-
-    /// Constructs an Arguments structure 
-    CUTLASS_HOST_DEVICE
-    Arguments(
-      GemmCoord problem_size_0_,
-      GemmCoord problem_size_1_,
-      TensorRef<ElementA const, LayoutA> ref_A0_,
-      TensorRef<ElementB const, LayoutB> ref_B0_,
-      TensorRef<ElementC const, LayoutC> ref_C0_,
-      TensorRef<ElementB const, LayoutB> ref_B1_,
-      TensorRef<ElementC const, LayoutC> ref_C1_,
-      TensorRef<ElementC, LayoutC> ref_D1_,
-      typename EpilogueOutputOp0::Params epilogue0_ = 
-        typename EpilogueOutputOp0::Params(),
-      typename EpilogueOutputOp1::Params epilogue1_ = 
-        typename EpilogueOutputOp1::Params(),
-      int split_k_slices_ = 1
-    ):
-      problem_size_0(problem_size_0_),
-      problem_size_1(problem_size_1_),
-      ref_A0(ref_A0_),
-      ref_B0(ref_B0_),
-      ref_C0(ref_C0_),
-      ref_B1(ref_B1_),
-      ref_C1(ref_C1_),
-      ref_D1(ref_D1_),
-      epilogue0(epilogue0_),
-      epilogue1(epilogue1_),
-      split_k_slices(split_k_slices_) {
-
-    }
-  };
+  using Arguments = typename B2bGemmKernel::Arguments;
 
 private:
 
@@ -248,10 +199,6 @@ public:
 
   /// Determines whether the GEMM can execute the given problem.
   static Status can_implement(Arguments const &args) {
-
-    if (!kSplitKSerial && args.split_k_slices > 1) {
-      return Status::kErrorInvalidProblem;
-    }
 
     Status status = B2bGemmKernel::can_implement(
       args.problem_size_0,
@@ -275,20 +222,14 @@ public:
   static size_t get_workspace_size(Arguments const &args) {
 
     size_t bytes = 0;
-      
+
     // Determine grid shape
     ThreadblockSwizzle threadblock_swizzle;
 
     cutlass::gemm::GemmCoord tiled_shape = threadblock_swizzle.get_tiled_shape(
-      args.problem_size_0, 
+      args.problem_size_0,
       {ThreadblockShape0::kM, ThreadblockShape0::kN, ThreadblockShape0::kK},
-      args.split_k_slices);
-
-    if (kSplitKSerial && args.split_k_slices > 1) {
-
-
-      bytes += sizeof(int) * size_t(tiled_shape.m()) * size_t(tiled_shape.n());
-    }
+      args.batch_count);
 
     return bytes;
   }
@@ -300,47 +241,35 @@ public:
     ThreadblockSwizzle threadblock_swizzle;
 
     cutlass::gemm::GemmCoord grid_shape = threadblock_swizzle.get_tiled_shape(
-      args.problem_size_0, 
+      args.problem_size_0,
       {ThreadblockShape0::kM, ThreadblockShape0::kN, ThreadblockShape0::kK},
-      args.split_k_slices);
+      args.batch_count);
 //    cutlass::gemm::GemmCoord grid_shape_1 = threadblock_swizzle.get_tiled_shape(
-//      args.problem_size_1, 
+//      args.problem_size_1,
 //      {ThreadblockShape1::kM, ThreadblockShape1::kN, ThreadblockShape1::kK},
-//      args.split_k_slices);
-
-    if (kSplitKSerial) {
-      if (args.split_k_slices > 1) {
-        if (!workspace) {
-          return Status::kErrorWorkspaceNull;
-        }
-
-        size_t bytes = get_workspace_size(args);
-      
-        cudaError_t result = cudaMemsetAsync(workspace, 0, bytes, stream);
-
-        if (result != cudaSuccess) {
-          return Status::kErrorInternal;
-        }
-      }
-    }
-    else {
-
-      if (args.split_k_slices > 1) {
-        return Status::kErrorInvalidProblem;
-      }
-    }
+//      args.batch_count);
 
     // Initialize the Params structure
     params_ = typename B2bGemmKernel::Params{
+      args.mode,
       args.problem_size_0,
       args.problem_size_1,
       grid_shape,
       args.ref_A0.non_const_ref(),
       args.ref_B0.non_const_ref(),
       args.ref_C0.non_const_ref(),
+      args.ref_Scale0.non_const_ref(),
+      args.ref_Bias0.non_const_ref(),
       args.ref_B1.non_const_ref(),
       args.ref_C1.non_const_ref(),
       args.ref_D1,
+      args.batch_stride_A0,
+      args.batch_stride_B0,
+      args.batch_stride_B1,
+      args.batch_stride_C1,
+      args.batch_stride_D1,
+      args.batch_stride_Bias0,
+      args.batch_stride_Scale0,
       args.epilogue0,
       args.epilogue1,
       static_cast<int *>(workspace),
@@ -351,19 +280,15 @@ public:
 
   /// Lightweight update given a subset of arguments
   Status update(Arguments const &args, void *workspace = nullptr) {
-    
-    if (kSplitKSerial && args.split_k_slices > 1) {  
-      if (!workspace) {
-        return Status::kErrorWorkspaceNull;
-      }
-    }
 
-    params_.ref_A0.reset(args.ref_A.non_const_ref().data());
-    params_.ref_B0.reset(args.ref_B.non_const_ref().data());
-    params_.ref_C0.reset(args.ref_C.non_const_ref().data());
-    params_.ref_B1.reset(args.ref_B.non_const_ref().data());
-    params_.ref_C1.reset(args.ref_C.non_const_ref().data());
-    params_.ref_D1.reset(args.ref_D.data());
+    params_.ref_A0.reset(args.ref_A0.non_const_ref().data());
+    params_.ref_B0.reset(args.ref_B0.non_const_ref().data());
+    params_.ref_C0.reset(args.ref_C0.non_const_ref().data());
+    params_.ref_Scale0.reset(args.ref_Scale0.non_const_ref().data());
+    params_.ref_Bias0.reset(args.ref_Bias0.non_const_ref().data());
+    params_.ref_B1.reset(args.ref_B1.non_const_ref().data());
+    params_.ref_C1.reset(args.ref_C1.non_const_ref().data());
+    params_.ref_D1.reset(args.ref_D1.data());
     params_.output_op_0 = args.epilogue0;
     params_.output_op_1 = args.epilogue1;
     params_.semaphore = static_cast<int *>(workspace);
@@ -406,12 +331,12 @@ public:
 
   /// Runs the kernel using initialized state.
   Status operator()(
-    Arguments const &args, 
-    void *workspace = nullptr, 
+    Arguments const &args,
+    void *workspace = nullptr,
     cudaStream_t stream = nullptr) {
-    
+
     Status status = initialize(args, workspace, stream);
-    
+
     if (status == Status::kSuccess) {
       status = run(stream);
     }
