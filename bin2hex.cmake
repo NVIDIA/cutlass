@@ -28,17 +28,26 @@
 
 # A small utility function which generates a C-header from an input file
 function(FILE_TO_C_STRING FILENAME VARIABLE_NAME OUTPUT_STRING ZERO_TERMINATED)
-  FILE(READ "${FILENAME}" HEX_INPUT HEX)
   if (${ZERO_TERMINATED})
-    string(APPEND HEX_INPUT "00")
+    # Read file as plain text and create output as a raw string literal
+    FILE(READ "${FILENAME}" RAW_CONTENT)
+
+    set(RAW_DELIM_END "abc1ae6e1e82e3de")
+    set(RESULT "static char const ${VARIABLE_NAME}[] = R\"${RAW_DELIM_END}(\n${RAW_CONTENT})${RAW_DELIM_END}\";\n")
+
+    set(${OUTPUT_STRING} "${RESULT}" PARENT_SCOPE)
+  else()
+    # Read file as hex and create output as a C-style brace-delimited array
+    # N.B.: this is much slower to compile than the raw string literal above
+    FILE(READ "${FILENAME}" HEX_INPUT HEX)
+
+    string(REGEX REPLACE "(....)" "\\1\n" HEX_OUTPUT ${HEX_INPUT})
+    string(REGEX REPLACE "([0-9a-f][0-9a-f])" "char(0x\\1)," HEX_OUTPUT ${HEX_OUTPUT})
+
+    set(HEX_OUTPUT "static char const ${VARIABLE_NAME}[] = {\n  ${HEX_OUTPUT}\n};\n")
+
+    set(${OUTPUT_STRING} "${HEX_OUTPUT}" PARENT_SCOPE)
   endif()
-
-  string(REGEX REPLACE "(....)" "\\1\n" HEX_OUTPUT ${HEX_INPUT})
-  string(REGEX REPLACE "([0-9a-f][0-9a-f])" "char(0x\\1)," HEX_OUTPUT ${HEX_OUTPUT})
-
-  set(HEX_OUTPUT "static char const ${VARIABLE_NAME}[] = {\n  ${HEX_OUTPUT}\n};\n")
-
-  set(${OUTPUT_STRING} "${HEX_OUTPUT}" PARENT_SCOPE)
 endfunction()
 
 # message("Create header file for ${FILE_IN}")
