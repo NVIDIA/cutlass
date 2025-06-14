@@ -61,13 +61,14 @@ struct FMHADecodeOptions {
 
   bool error;
 
-  int batch, num_heads_q, num_heads_kv, seq_len_qo, seq_len_kv, seq_len_kv_cache, head_size_qk, head_size_vo, iterations;
+  int batch, num_heads_q, num_heads_kv, seq_len_qo, seq_len_kv, seq_len_kv_cache, head_size_qk,
+      head_size_vo, iterations, page_size;
   float softmax_scale;
   std::string bm_name;
 
   FMHADecodeOptions()
       : error(false), batch(32), num_heads_q(16), num_heads_kv(16), seq_len_qo(1), head_size_qk(128),
-        seq_len_kv(512), seq_len_kv_cache(0), head_size_vo(128), iterations(100), softmax_scale(1.f), bm_name("Flash Attention v2 Decode") {}
+        seq_len_kv(512), seq_len_kv_cache(0), page_size(128), head_size_vo(128), iterations(100), softmax_scale(1.f), bm_name("Flash Attention v2 Decode") {}
 
   // Parses the command line
   void parse(int argc, char const **args) {
@@ -79,12 +80,18 @@ struct FMHADecodeOptions {
     cmd.get_cmd_line_argument("seq_len_qo", seq_len_qo, 1);
     cmd.get_cmd_line_argument("seq_len_kv", seq_len_kv, seq_len_qo);
     cmd.get_cmd_line_argument("seq_len_kv_cache", seq_len_kv_cache, 0);
+    cmd.get_cmd_line_argument("page_size", page_size, 128);
     cmd.get_cmd_line_argument("head_size_vo", head_size_vo, 128);
     cmd.get_cmd_line_argument("head_size_qk", head_size_qk, head_size_vo);
     cmd.get_cmd_line_argument("iterations", iterations, 100);
     cmd.get_cmd_line_argument("bm_name", bm_name, std::string("Flash Attention v2"));
 
     softmax_scale = 1 / std::sqrt(static_cast<float>(head_size_qk));
+
+    if (seq_len_kv_cache % page_size != 0) {
+      std::cerr << "Invalid: seq_len_kv_cache must be divisible by page_size" << std::endl;
+      return;
+    }
   }
 
   std::string benchmark_name() const {
@@ -133,6 +140,7 @@ template <class FMHADecodeConfiguration> struct BenchmarkRunnerFMHADecode {
   using ProblemShapeType = typename FMHADecodeKernel::ProblemShape;
   static constexpr bool Causal = FMHADecodeConfiguration::Causal;
   static constexpr bool isVarLen = FMHADecodeConfiguration::VarLen;
+  static constexpr bool PagedKV = FMHADecodeConfiguration::PagedKV;
 
   int32_t count;
 
@@ -164,6 +172,13 @@ template <class FMHADecodeConfiguration> struct BenchmarkRunnerFMHADecode {
   cutlass::DeviceAllocation<int> device_cumulative_seqlen_q;
   cutlass::DeviceAllocation<int> device_cumulative_seqlen_kv;
   cutlass::DeviceAllocation<int> device_cumulative_seqlen_kv_cache;
+
+  struct PagedKVParams {
+      cutlass::DeviceAllocation<int> page_table;
+      int page_size = 0;
+      cutlass::DeviceAllocation<int> num_pages_per_seq;
+  };
+  PagedKVParams paged_kv_cache;
 
   //
   // Methods
@@ -507,6 +522,37 @@ template <class FMHADecodeConfiguration> struct BenchmarkRunnerFMHADecode {
 
     count = std::ceil(static_cast<float>(cutlass::get_llc_size()) / static_cast<float>(mem_occupied_QKV)) + 1;
 
+    if (PagedKV) {
+      paged_kv_cache.page_size = options.page_size;
+      std::vector<int> num_pages_per_seq{0};
+      int num_pages = 0;
+      for(int b = 0; b < get<0>(problem_shape); b++) {
+        int seq_len_cache = isVarLen ? cumulative_seqlen_kv_cache[b + 1] - cumulative_seqlen_kv_cache[b] : seq_len_kv_cache;
+        int pages_per_seq = ceil_div(seq_len_cache, paged_kv_cache.page_size);
+        num_pages_per_seq.push_back(num_pages_per_seq.back() + pages_per_seq);
+        num_pages += pages_per_seq;
+      }
+      paged_kv_cache.page_table.reset(num_pages);
+
+      // initialize block table with random mapping for non-contiguous layout
+      std::vector<int> page_mapping(num_pages);
+      for (int b = 0; b < get<0>(problem_shape); ++b) {
+        std::vector<int> physical_pages(num_pages_per_seq[b + 1] - num_pages_per_seq[b]);
+        std::iota(physical_pages.begin(), physical_pages.end(), 0);
+        // shuffle physical pages
+        std::shuffle(physical_pages.begin(), physical_pages.end(), std::mt19937{ std::random_device{}() });
+        for (int blk = 0; blk < physical_pages.size(); ++blk) {
+          int logical_idx = num_pages_per_seq[b] + blk;
+          page_mapping[logical_idx] = physical_pages[blk];
+        }
+      }
+      syclcompat::memcpy(paged_kv_cache.page_table.get(), page_mapping.data(), page_mapping.size() * sizeof(int));
+
+      paged_kv_cache.num_pages_per_seq.reset(num_pages_per_seq.size());
+      syclcompat::memcpy(paged_kv_cache.num_pages_per_seq.get(), num_pages_per_seq.data(), num_pages_per_seq.size() * sizeof(int));
+      syclcompat::wait();
+    }
+
     for(int i = 0; i < count; i++) {
       block_Q.emplace_back();
       block_K.emplace_back();
@@ -601,7 +647,10 @@ template <class FMHADecodeConfiguration> struct BenchmarkRunnerFMHADecode {
         block_K[0].get(), stride_K,
         block_V[0].get(), stride_V,
         block_K_cache[0].get(), stride_K_cache,
-        block_V_cache[0].get(), stride_V_cache},
+        block_V_cache[0].get(), stride_V_cache,
+        PagedKV ? paged_kv_cache.page_table.get() : nullptr,
+        PagedKV ? paged_kv_cache.page_size : 0,
+        PagedKV ? paged_kv_cache.num_pages_per_seq.get() : nullptr},
         {options.softmax_scale},
         {block_O.get(), stride_O},
         hw_info};
@@ -638,9 +687,11 @@ template <class FMHADecodeConfiguration> struct BenchmarkRunnerFMHADecode {
     state.counters["seq_len_kv_cache"] = options.seq_len_kv_cache;
     state.counters["head_size_kv"] = options.head_size_qk;
     state.counters["head_size_vo"] = options.head_size_vo;
+    state.counters["page_size"] = options.page_size;
     state.counters["scale"] = options.softmax_scale;
     state.counters["causal"] = Causal;
     state.counters["varlen"] = isVarLen;
+    state.counters["paged_kv"] = PagedKV;
 
     std::stringstream extra_label;
     extra_label << "layoutQ=RowMajor ";
@@ -678,7 +729,10 @@ template <class FMHADecodeConfiguration> struct BenchmarkRunnerFMHADecode {
         block_K[input_num].get(), stride_K,
         block_V[input_num].get(), stride_V,
         block_K_cache[input_num].get(), stride_K_cache,
-        block_V_cache[input_num].get(), stride_V_cache},
+        block_V_cache[input_num].get(), stride_V_cache,
+        PagedKV ? paged_kv_cache.page_table.get() : nullptr,
+        PagedKV ? paged_kv_cache.page_size : 0,
+        PagedKV ? paged_kv_cache.num_pages_per_seq.get() : nullptr},
         {options.softmax_scale},
         {block_O.get(), stride_O},
         hw_info};

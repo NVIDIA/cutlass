@@ -31,7 +31,7 @@
 
 #include "bmg_flash_attn_decode_runner.hpp"
 
-template <int KVTile, int NumSG, bool Varlen>
+template <int KVTile, int NumSG, bool PagedKV, bool Varlen>
 int run_decode(Options const& options) {
 
 #if !defined(HEAD_DIM)
@@ -69,8 +69,8 @@ int run_decode(Options const& options) {
 
 #endif
 
-  return options.is_causal ? FMHAConfig<true, ShapeQK, ShapePV, ShapeOutput, SubgroupLayout, Varlen>::run(options)
-                            : FMHAConfig<false, ShapeQK, ShapePV, ShapeOutput, SubgroupLayout, Varlen>::run(options);
+    return options.is_causal ? FMHAConfig<true, PagedKV, ShapeQK, ShapePV, ShapeOutput, SubgroupLayout, Varlen>::run(options)
+                             : FMHAConfig<false, PagedKV, ShapeQK, ShapePV, ShapeOutput, SubgroupLayout, Varlen>::run(options);
 }
 
 int main(int argc, const char **argv) {
@@ -92,9 +92,13 @@ int main(int argc, const char **argv) {
     return -1;
   }
 
-  if(options.varlen) {
-    return run_decode<512, 8, true>(options);
-  } else {
-    return run_decode<512, 8, false>(options);
+  if(options.varlen && !options.use_paged_kv) {
+    return run_decode<512, 8, false, true>(options);
+  } else if(options.varlen && options.use_paged_kv) {
+    return run_decode<512, 8, true, true>(options);
+  } else if(!options.varlen && !options.use_paged_kv) {
+    return run_decode<512, 8, false, false>(options);
+  } else if(!options.varlen && options.use_paged_kv) {
+    return run_decode<512, 8, true, false>(options);
   }
 }

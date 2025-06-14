@@ -29,17 +29,45 @@
 set(CUTLASS_APPLICATIONS_DIR ${CMAKE_SOURCE_DIR}/applications)
 
 # Pass these configuration files for the CI
-set(CONFIG_FILE_KV_CACHE --config_file=${CMAKE_SOURCE_DIR}/benchmarks/device/bmg/input_files/input_sglang_flash_attention_decode_kvcache.in)
 set(CONFIG_FILE_NO_KV_CACHE --config_file=${CMAKE_SOURCE_DIR}/benchmarks/device/bmg/input_files/input_sglang_flash_attention_decode_nokvcache.in)
 
 cutlass_benchmark_add_suite(cutlass_benchmarks_flash_attention_decode
                             SUPERSUITE cutlass_benchmarks_flash_attention)
 
+add_library(decode_h64 SHARED
+            benchmarks_h64_512_nonpaged.cpp
+            benchmarks_h64_1024_nonpaged.cpp
+)
+
+add_library(decode_h96 SHARED
+            benchmarks_h96_512_nonpaged.cpp
+            benchmarks_h96_1024_nonpaged.cpp
+)
+
+add_library(decode_h128 SHARED
+            benchmarks_h128_512_nonpaged.cpp
+            benchmarks_h128_1024_nonpaged.cpp
+)
+
+add_library(decode_h192 SHARED
+            benchmarks_h192_512_nonpaged.cpp
+            benchmarks_h192_1024_nonpaged.cpp
+)
+
+set(LIB_LIST decode_h64 decode_h96 decode_h128 decode_h192)
+
+foreach(name IN LISTS LIB_LIST)
+  target_include_directories(${name} PRIVATE ${CUTLASS_APPLICATIONS_DIR})
+  target_link_libraries(${name} PRIVATE CUTLASS cutlass_tools_util_includes benchmark::benchmark)
+  add_onemkl_to_target(TARGET ${name})
+  add_sycl_to_target(TARGET ${name})
+endforeach()
+
 cutlass_benchmark_add_executable(
     cutlass_benchmarks_flash_attention_decode_xe
     main.cpp
-    TEST_COMMAND_OPTIONS
-    CONFIG_FILE_NO_KV_CACHE
-    CONFIG_FILE_KV_CACHE
+    TEST_COMMAND_OPTIONS CONFIG_FILE_NO_KV_CACHE
+    LIBRARIES decode_h64 decode_h96 decode_h128 decode_h192
+    INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}
     SUITE cutlass_benchmarks_flash_attention_decode
 )

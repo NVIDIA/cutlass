@@ -99,6 +99,7 @@ public:
   static constexpr int SharedStorageSize = 0;
 
   static constexpr bool CausalMask = CollectiveMainloop::CausalMask;
+  static constexpr bool PagedKV = CollectiveMainloop::PagedKV;
   static constexpr int SubgroupSize = CollectiveMainloop::SubgroupSize; // sub_group size
   static constexpr uint32_t MaxThreadsPerBlock = CollectiveMainloop::MaxThreadsPerBlock;
   using MmaAtomShape = typename CollectiveMainloop::MmaAtomShape;           // 8,16,16
@@ -179,7 +180,8 @@ public:
   static bool can_implement(Arguments const &args) {
     bool mode_implementable = args.mode == gemm::GemmUniversalMode::kGemm or
                               (args.mode == gemm::GemmUniversalMode::kBatched && rank(ProblemShape{}) == 4);
-    return mode_implementable;
+    bool valid_page_size = !PagedKV ? true : args.mainloop.page_size >= QK_SG_N && args.mainloop.page_size % QK_SG_N == 0;
+    return mode_implementable && valid_page_size;
   }
 
   static int get_workspace_size(Arguments const &args) { return 0; }
@@ -260,8 +262,8 @@ public:
       Tensor mV_nkl = cute::get_xe_tensor(make_shape(head_size_vo, cute::max(seq_len_kv, seq_len_kv_cache), (is_var_len ? 1 : batch) * num_heads_kv));   //(n,k,l)
 
       Tensor mQ_mk = mQ_mkl(_, _, blk_l_coord);                                                    // (m,k)
-      Tensor mK_nk = mK_nkl(_, _, blk_l_coord / group_heads_q);                                                    // (n,k)
-      Tensor mV_nk = mV_nkl(_, _, blk_l_coord / group_heads_q);                                                    // (n,k)
+      Tensor mK_nk = mK_nkl(_, _, blk_l_coord / group_heads_q);                                    // (n,k)
+      Tensor mV_nk = mV_nkl(_, _, blk_l_coord / group_heads_q);                                    // (n,k)
 
       auto gQ = local_tile(mQ_mk, TileShapeQK{}, make_coord(blk_q_coord, _, _), Step<_1,  X, _1>{});
       auto gK = local_tile(mK_nk, TileShapeQK{}, make_coord(_, _, _), Step<X, _1, _1>{});
@@ -296,6 +298,28 @@ public:
       auto pVgV = thr_prefetch_V.partition_S(gV_prefetch);
 
       int kv_tile_idx = sub_group_id / ATOM_N;
+      int kv_cache_tile_idx = kv_tile_idx;
+      int tiles_per_page = ceil_div(mainloop_params.page_size, QK_SG_N);
+
+      if constexpr (PagedKV) {
+        if (seq_len_kv_cache != 0) {
+          // get physical page idx from page table
+          int curr_batch_pages = is_var_len ? mainloop_params.num_pages_per_seq[batch_coord + 1] - mainloop_params.num_pages_per_seq[batch_coord]
+                                            : ceil_div(seq_len_kv_cache, mainloop_params.page_size);
+          int curr_page_logical_idx = kv_tile_idx * QK_SG_N / mainloop_params.page_size;
+          int batch_offset = is_var_len ? mainloop_params.num_pages_per_seq[batch_coord] : batch_coord * curr_batch_pages;
+          bool valid_page = curr_page_logical_idx < curr_batch_pages;
+          if (valid_page) {
+            kv_cache_tile_idx = mainloop_params.ptr_page_table[
+                      batch_offset +                     // page table for this batch
+                      curr_page_logical_idx              // tile idx to logical page idx
+                  ] * tiles_per_page +               // base block idx of physical page
+                  kv_tile_idx % tiles_per_page;    // offset within page
+          } else {
+            kv_cache_tile_idx = curr_batch_pages * tiles_per_page; // push idx out of bounds to respect the boundary between batches
+          }
+        }
+      }
 
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < size<3>(pQgQ); i++) {
@@ -308,7 +332,7 @@ public:
       CUTLASS_PRAGMA_UNROLL
       for (int j = 0; j < size<4>(pKgK); j++) {
         seq_len_kv_cache == 0 ? prefetch(tiled_prefetch_k, pKgK(_, _, _, kv_tile_idx, j))
-                              : prefetch(tiled_prefetch_k_cache, pKgK(_, _, _, kv_tile_idx, j));
+                              : prefetch(tiled_prefetch_k_cache, pKgK(_, _, _, kv_cache_tile_idx, j));
       }
 
       // Perform the collective scoped MMA
@@ -322,31 +346,53 @@ public:
       auto smem = syclcompat::local_mem<ElementAccumulator[((Int<size(AccumShape{}) + 1>{}) * Num_SGs * SubgroupSize)]>();
       Tensor shmem_max_tensor = make_tensor(make_smem_ptr(smem), make_shape(Int<Num_SGs * FragsM>{}));
 
+      bool is_KV_cache = seq_len_kv_cache != 0;
+
       CUTLASS_PRAGMA_UNROLL
       for(int split = 0; split < kv_splits - CausalMask; split++) {
-        bool is_KV_cache = split < kv_splits_cache;
-        auto gK_ = is_KV_cache ? gK(_, _, split, _) : gK(_, _, split - kv_splits_cache, _);
+        int curr_kv_tile_idx = is_KV_cache ? PagedKV ? kv_cache_tile_idx : split * ATOM_M + kv_tile_idx 
+                                           : (split - kv_splits_cache) * ATOM_M + kv_tile_idx;
 
         Tensor tSr = make_tensor<ElementAccumulator>(Shape<Int<Vec>, Int<FragsM>, Int<FragsN>>{});
         clear(tSr);
 
         // Perform GEMM S = Q*K
-        collective_mma.mmaQK(tSr, gQ, gK_, tSr, ceil_div(head_size_qk, QK_BLK_K), mainloop_params, is_KV_cache);
+        collective_mma.mmaQK(tSr, gQ, gK(_, _, curr_kv_tile_idx / ATOM_M, _), tSr, ceil_div(head_size_qk, QK_BLK_K), mainloop_params, is_KV_cache, curr_kv_tile_idx % ATOM_M);
 
         // each sub-group gets a different base offset for prefetch to load it's own
         // required data for matrix V.
         CUTLASS_PRAGMA_UNROLL
         for(int v = 0; v < VSlicer; v++) {
-          is_KV_cache ? prefetch(tiled_prefetch_v_cache, pVgV(_, _, _, v, split * ATOM_M + kv_tile_idx))
-                      : prefetch(tiled_prefetch_v, pVgV(_, _, _, v, (split - kv_splits_cache) * ATOM_M + kv_tile_idx));
+          is_KV_cache ? prefetch(tiled_prefetch_v_cache, pVgV(_, _, _, v, curr_kv_tile_idx))
+                      : prefetch(tiled_prefetch_v, pVgV(_, _, _, v, curr_kv_tile_idx));
+        }
+
+        bool is_next_KV_cache = split + 1 < kv_splits_cache;
+        int kv_cache_next_tile_idx = kv_cache_tile_idx;
+        if constexpr (PagedKV) {
+          if (is_next_KV_cache) {
+            int curr_batch_pages = is_var_len ? mainloop_params.num_pages_per_seq[batch_coord + 1] - mainloop_params.num_pages_per_seq[batch_coord]
+                                              : ceil_div(seq_len_kv_cache, mainloop_params.page_size);
+            int curr_page_logical_idx = ((split + 1) * QK_BLK_N + kv_tile_idx * QK_SG_N) / mainloop_params.page_size;
+            int batch_offset = is_var_len ? mainloop_params.num_pages_per_seq[batch_coord] : batch_coord * curr_batch_pages;
+            bool valid_page = curr_page_logical_idx < curr_batch_pages;
+            // get physical page idx from page table
+            if (valid_page) {
+              kv_cache_next_tile_idx = mainloop_params.ptr_page_table[
+                        batch_offset +                      // page table for this batch
+                        curr_page_logical_idx               // tile idx to logical page idx
+                    ] * tiles_per_page +                // base block idx of physical page
+                    kv_tile_idx % tiles_per_page;     // offset within page
+            } else {
+              kv_cache_next_tile_idx = curr_batch_pages * tiles_per_page; // push idx out of bounds to respect the boundary between batches
+            }
+          }
         }
 
         CollectiveSoftmaxEpilogue softmax(params.softmax);
         softmax.template operator()<Num_SGs>(split == 0, tSr, max_reg, sum_reg, shmem_max_tensor, out_reg);
 
-        auto gV_ = is_KV_cache ? gV(_, _, split) : gV(_, _, split - kv_splits_cache);
-
-        collective_mma.template mmaPV<VSlicer>(out_reg, tSr, gV_, out_reg, mainloop_params, is_KV_cache);
+        collective_mma.template mmaPV<VSlicer>(out_reg, tSr, gV, out_reg, mainloop_params, is_KV_cache, curr_kv_tile_idx);
 
         // Prefetch the next Q tile
         CUTLASS_PRAGMA_UNROLL
@@ -354,12 +400,14 @@ public:
           prefetch(tiled_prefetch_q, pQgQ(_, _, _, i));
         }
 
+        is_KV_cache = is_next_KV_cache;
+        kv_cache_tile_idx = kv_cache_next_tile_idx;
         // The headsize for both cached and non-cached version is the same.
         // each sub-group gets a different base offset for prefetch to load it's own
         // required data for matrix K.
         CUTLASS_PRAGMA_UNROLL
         for (int j = 0; j < size<4>(pKgK); j++) {
-          is_KV_cache ? prefetch(tiled_prefetch_k_cache, pKgK(_, _, _, (split + 1) * ATOM_M + kv_tile_idx, j))
+          is_KV_cache ? prefetch(tiled_prefetch_k_cache, pKgK(_, _, _, PagedKV ? kv_cache_tile_idx : (split + 1) * ATOM_M + kv_tile_idx, j))
                       : prefetch(tiled_prefetch_k, pKgK(_, _, _,(split - kv_splits_cache + 1) * ATOM_M + kv_tile_idx, j));
         }
       }
@@ -368,14 +416,15 @@ public:
         Tensor tSr = make_tensor<ElementAccumulator>(Shape<Int<Vec>, Int<FragsM>, Int<FragsN>>{});
         clear(tSr);
 
+        int curr_kv_tile_idx = (kv_splits_new - 1) * ATOM_M + kv_tile_idx;
         // Perform GEMM S = Q*K
-        collective_mma.mmaQK(tSr, gQ, gK(_, _, kv_splits_new - 1, _), tSr, ceil_div(head_size_qk, QK_BLK_K), mainloop_params, false);
+        collective_mma.mmaQK(tSr, gQ, gK(_, _, kv_splits_new - 1, _), tSr, ceil_div(head_size_qk, QK_BLK_K), mainloop_params, false, kv_tile_idx);
 
         // each sub-group gets a different base offset for prefetch to load it's own
         // required data for matrix V.
         CUTLASS_PRAGMA_UNROLL
         for(int v = 0; v < VSlicer; v++) {
-          prefetch(tiled_prefetch_v, pVgV(_, _, _, v, (kv_splits_new - 1) * ATOM_M + kv_tile_idx));
+          prefetch(tiled_prefetch_v, pVgV(_, _, _, v, curr_kv_tile_idx));
         }
 
         const int required_sgs = ceil_div(seq_len_kv, QK_SG_N);
@@ -394,7 +443,7 @@ public:
         CollectiveSoftmaxEpilogue softmax(params.softmax);
         softmax.template operator()<Num_SGs>((kv_splits - 1) == 0, tSr, max_reg, sum_reg, shmem_max_tensor, out_reg);
 
-        collective_mma.template mmaPV<VSlicer>(out_reg, tSr, gV(_, _, kv_splits_new - 1), out_reg, mainloop_params, false);
+        collective_mma.template mmaPV<VSlicer>(out_reg, tSr, gV, out_reg, mainloop_params, false, curr_kv_tile_idx);
       }
 
       // need to apply barrier here to avoid race condition

@@ -56,7 +56,7 @@ function(cutlass_benchmark_add_executable NAME)
 
   set(options)
   set(oneValueArgs DISABLE_TESTS SUITE)
-  set(multiValueArgs DEPENDS DEPENDEES TEST_COMMAND_OPTIONS)
+  set(multiValueArgs DEPENDS DEPENDEES TEST_COMMAND_OPTIONS LIBRARIES INCLUDES)
   cmake_parse_arguments(_ "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
   if(NOT DEFINED __SUITE)
@@ -79,12 +79,14 @@ function(cutlass_benchmark_add_executable NAME)
     $<$<BOOL:${CUTLASS_ENABLE_CUBLAS}>:nvidia::cublas>
     $<$<BOOL:${ADD_CUDA}>:cuda>
     benchmark::benchmark
+    ${__LIBRARIES}
   )
 
   target_include_directories(
     ${NAME}
     PRIVATE
     ${CUTLASS_APPLICATIONS_DIR}
+    ${__INCLUDES}
   )
 
   if (CUTLASS_ENABLE_SYCL)
