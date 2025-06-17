@@ -59,8 +59,6 @@ convert_FP8_to_FP16(cute::Tensor<EngineIn, LayoutIn> const &in,
 
   static_assert(std::is_same_v<SrcType, uint8_t>,
                 "Expected fp8 input as uint8_t");
-  static_assert(std::is_same_v<DstType, cute::half_t>,
-                "Expected fp16 output as half_t");
   static_assert(cute::is_any_of_v<Element, cute::float_e5m2_t, cute::float_e4m3_t>,
                 "Expected Element to be float_e5m2_t or float_e4m3_t");
 
@@ -72,10 +70,10 @@ convert_FP8_to_FP16(cute::Tensor<EngineIn, LayoutIn> const &in,
                 "each work-item converts a multiple of fragment_size");
 
   auto in_frag = cute::recast<cutlass::Array<Element, fragment_size>>(in);
-  auto out_frag = cute::recast<cutlass::Array<cutlass::half_t, fragment_size>>(out);
+  auto out_frag = cute::recast<cutlass::Array<DstType, fragment_size>>(out);
 
   CUTLASS_PRAGMA_UNROLL
   for (int i = 0; i < num_elements / fragment_size; ++i) {
-    out_frag(i) = cutlass::NumericArrayConverter<cutlass::half_t, Element, fragment_size>{}(in_frag(i));
+    out_frag(i) = cutlass::NumericArrayConverter<DstType, Element, fragment_size>{}(in_frag(i));
   }
 }

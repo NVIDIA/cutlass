@@ -32,6 +32,7 @@
 
 #include "cutlass/cutlass.h"
 #include "cutlass/gemm/dispatch_policy.hpp"
+#include "cutlass/fp8_to_fp16.h"
 
 #include "cute/algorithm/functional.hpp"
 #include "cute/atom/mma_atom.hpp"
@@ -318,24 +319,29 @@ public:
         tCrA_mma[i] = static_cast<DstType>(tCrA_load[i].get());
       }
     } else {
-      auto const& src = tCrA_load(_, _, _);
-      auto const& dst = tCrA_mma(_, _, _);
-      auto pSrc = const_cast<SrcType*>(raw_pointer_cast(src.data()));
-      auto pDst = const_cast<DstType*>(raw_pointer_cast(dst.data()));
-      constexpr int num_elements = decltype(size(src))::value;
+      if constexpr(cute::is_any_of_v<ElementA,bfloat16_t,half_t,float_e4m3_t,float_e5m2_t>
+                && cute::is_any_of_v<ElementB,bfloat16_t,half_t,float_e4m3_t,float_e5m2_t>) {
+        convert_FP8_to_FP16<ElementQuant>(make_tensor(reinterpret_cast<const uint8_t*>(tCrA_load.data()), tCrA_load.layout()), tCrA_mma);
+      } else {
+        auto const& src = tCrA_load(_, _, _);
+        auto const& dst = tCrA_mma(_, _, _);
+        auto pSrc = const_cast<SrcType*>(raw_pointer_cast(src.data()));
+        auto pDst = const_cast<DstType*>(raw_pointer_cast(dst.data()));
+        constexpr int num_elements = decltype(size(src))::value;
 
-    // TODO(Codeplay): (perf) consider replacing `pack` with `num_elements` here - See xe_flash_attn_mma.hpp
-      constexpr int pack = decltype(select_packing<SrcType, DstType, num_elements>::value())::value;
-      using Converter = cutlass::NumericArrayConverter<DstType, SrcType, pack, cutlass::FloatRoundStyle::round_to_nearest>;
-      using SrcArray = cutlass::Array<SrcType, pack>;
-      using DstArray = cutlass::Array<DstType, pack>;
-      constexpr int iters = num_elements / pack;
+      // TODO(Codeplay): (perf) consider replacing `pack` with `num_elements` here - See xe_flash_attn_mma.hpp
+        constexpr int pack = decltype(select_packing<SrcType, DstType, num_elements>::value())::value;
+        using Converter = cutlass::NumericArrayConverter<DstType, SrcType, pack, cutlass::FloatRoundStyle::round_to_nearest>;
+        using SrcArray = cutlass::Array<SrcType, pack>;
+        using DstArray = cutlass::Array<DstType, pack>;
+        constexpr int iters = num_elements / pack;
 
-      CUTLASS_PRAGMA_UNROLL
-      for (int i = 0; i < iters; ++i) {
-        SrcArray const* pSrcArr = reinterpret_cast<SrcArray const*>(pSrc) + i;
-        DstArray* pDstArr = reinterpret_cast<DstArray*>(pDst) + i;
-        *pDstArr = Converter::convert(*pSrcArr);
+        CUTLASS_PRAGMA_UNROLL
+        for (int i = 0; i < iters; ++i) {
+          SrcArray const* pSrcArr = reinterpret_cast<SrcArray const*>(pSrc) + i;
+          DstArray* pDstArr = reinterpret_cast<DstArray*>(pDst) + i;
+          *pDstArr = Converter::convert(*pSrcArr);
+        }
       }
     }
 
