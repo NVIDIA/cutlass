@@ -16,7 +16,7 @@ inputs:
     description: "Install for PVC or BMG gpu"
     type: string
   IGC:
-    description: "Use RELEASE of STAGING release"
+    description: "Use ROLLING or STAGING release"
     type: string
 
 runs:
@@ -28,17 +28,6 @@ runs:
       run: |
         shopt -s expand_aliases
         which sudo || alias sudo=""
-        if [[ "${{ inputs.GPU }}" == "BMG" ]]; then
-          if [[ "${{ inputs.IGC }}" == "STAGING" ]]; then
-            sudo add-apt-repository ppa:kobuk-team/intel-graphics-staging
-          else
-            sudo add-apt-repository ppa:kobuk-team/intel-graphics
-          fi
-          sudo apt-get install -y libze-intel-gpu1 libze1 intel-metrics-discovery intel-opencl-icd clinfo intel-gsc
-          sudo apt-get install -y libze-dev intel-ocloc
-        fi
-        sudo apt update && sudo apt install -y intel-opencl-icd ocl-icd-opencl-dev g++
-        dpkg -l | grep libhwloc15 > /dev/null || sudo apt install -y libhwloc15
         export DPCPP_PATH=${{ inputs.DPCPP_PATH }}
         mkdir -p $DPCPP_PATH
         pushd $DPCPP_PATH
@@ -47,11 +36,7 @@ runs:
           URL=https://github.com/intel/llvm/releases/download/${{ inputs.DPCPP_VERSION }}/sycl_linux.tar.gz;
         else
           echo "Will use latest DPCPP version"
-          latest=$(curl -sS https://api.github.com/repos/intel/llvm/releases | \
-            jq -r '[.[]
-            | select(.tag_name | test("^nightly-[0-9]{4}-[0-9]{2}-[0-9]{2}$"))
-            | select(.assets[]?.name == "sycl_linux.tar.gz")
-            ][0].tag_name')
+          latest=$(curl -sS https://api.github.com/repos/intel/llvm/releases | jq -r '[.[].tag_name|select(match("nightly-[0-9]{4}-[0-9]{2}-[0-9]{2}"))][0]')
           URL=https://github.com/intel/llvm/releases/download/${latest}/sycl_linux.tar.gz;
         fi
         echo "Downloading DPCPP from ${URL}"
@@ -73,15 +58,6 @@ runs:
       run: |
         shopt -s expand_aliases
         which sudo || alias sudo=""
-        if [[ "${{ inputs.GPU }}" == "BMG" ]]; then
-          if [[ "${{ inputs.IGC }}" == "STAGING" ]]; then
-            sudo add-apt-repository ppa:kobuk-team/intel-graphics-staging
-          else
-            sudo add-apt-repository ppa:kobuk-team/intel-graphics
-          fi
-          sudo apt-get install -y libze-intel-gpu1 libze1 intel-metrics-discovery intel-opencl-icd clinfo intel-gsc
-          sudo apt-get install -y libze-dev intel-ocloc
-        fi
         wget https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
         sudo apt-key add GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
         rm GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB

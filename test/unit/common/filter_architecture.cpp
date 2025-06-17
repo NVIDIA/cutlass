@@ -166,8 +166,8 @@ void FilterArchitecture() {
     { "SM89*",                      89, 89},
     { "SM90*",                      90, 90},
     { "SM100*",                    100, 100},
-    { "IntelPVC",                    0,   0},
-    { "IntelBMG",                    1,   1},
+    { "XE_*",                        0, 1},
+    { "XE2_*",                       1, 1},
     { 0, 0, false }
   };
 

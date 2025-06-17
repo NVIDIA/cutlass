@@ -1,0 +1,50 @@
+name: install-intel-graphics
+description: Download and unpack Intel graphics drivers
+inputs:
+  GPU:
+    description: "Install for PVC or BMG gpu"
+    type: string
+  IGC:
+    description: "Use ROLLING or STAGING release"
+    type: string
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install Intel graphics drivers
+      if: inputs.IGC == 'ROLLING'
+      shell: bash
+      run: |
+        shopt -s expand_aliases
+        which sudo || alias sudo=""
+        if [[ "${{ inputs.GPU }}" == "BMG" ]]; then
+          sudo add-apt-repository ppa:kobuk-team/intel-graphics
+          sudo apt update
+        else
+          sudo apt update
+          sudo apt install -y \
+            intel-media-va-driver-non-free libmfx-gen1 libvpl2 \
+            libegl-mesa0 libegl1-mesa-dev libgl1-mesa-dev  \
+            libgles2-mesa-dev libigdgmm12 libxatracker2 mesa-va-drivers \
+            mesa-vdpau-drivers mesa-vulkan-drivers va-driver-all vainfo \
+            libigc-dev intel-igc-cm libigdfcl-dev libigfxcmrt-dev libze-dev hwinfo
+        fi
+        sudo apt-get install -y libze-intel-gpu1 libze-dev intel-metrics-discovery \
+          intel-opencl-icd ocl-icd-opencl-dev clinfo intel-gsc intel-ocloc g++
+        dpkg -l | grep libhwloc15 > /dev/null || sudo apt install -y libhwloc15
+    - name: Install Intel graphics drivers
+      if: inputs.IGC == 'STAGING'
+      shell: bash
+      run: |
+        shopt -s expand_aliases
+        which sudo || alias sudo=""
+        if [[ "${{ inputs.GPU }}" == "BMG" ]]; then
+          sudo rm /etc/apt/sources.list.d/ppa_kobuk_team_intel_graphics_oracular.list
+          sudo add-apt-repository ppa:kobuk-team/intel-graphics-staging
+          sudo apt update
+          sudo apt-get install -y libze-intel-gpu1 libze-dev intel-metrics-discovery \
+            intel-opencl-icd ocl-icd-opencl-dev clinfo intel-gsc intel-ocloc g++
+          dpkg -l | grep libhwloc15 > /dev/null || sudo apt install -y libhwloc15
+        else
+          exit 1
+        fi

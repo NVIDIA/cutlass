@@ -76,34 +76,30 @@ TEST(XE_Device_Gemm_s8t_s8t_s32t_tensor_op_s32_cooperative, 64x128x32) {
   using LayoutA = layout::RowMajor;
   using LayoutB = layout::RowMajor;
   using Gemm = XE_Device_Gemm_s8_s8_s32_tensor_op_s32_cooperative<LayoutA, LayoutB>::Gemm;
-  // TODO(Codeplay): Enable batch tests
   EXPECT_TRUE(test::gemm::device::TestXe<Gemm>());
 }
 
-/* TODO(Codeplay): Transposed copy are not implemented
-TEST(XE_Device_Gemm_s8n_s8t_s32t_tensor_op_s32_cooperative, 64x128x32) {
+// TODO(Codeplay): Test on XE2 because the copy function is not available in the IGC driver for PVC
+TEST(XE2_Device_Gemm_s8n_s8t_s32t_tensor_op_s32_cooperative, 64x128x32) {
   using LayoutA = layout::ColumnMajor;
   using LayoutB = layout::RowMajor;
   using Gemm = XE_Device_Gemm_s8_s8_s32_tensor_op_s32_cooperative<LayoutA, LayoutB>::Gemm;
-  // TODO(Codeplay): Enable batch tests
-  EXPECT_TRUE(test::gemm::device::TestXe<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestXe<Gemm>(1.0, 0.0, true, 16));
 }
 
 TEST(XE_Device_Gemm_s8t_s8n_s32t_tensor_op_s32_cooperative, 64x128x32) {
   using LayoutA = layout::RowMajor;
   using LayoutB = layout::ColumnMajor;
   using Gemm = XE_Device_Gemm_s8_s8_s32_tensor_op_s32_cooperative<LayoutA, LayoutB>::Gemm;
-  // TODO(Codeplay): Enable batch tests
-  EXPECT_TRUE(test::gemm::device::TestXe<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestXe<Gemm>(1.0, 0.0, true, 16));
 }
 
-TEST(XE_Device_Gemm_s8n_s8n_s32t_tensor_op_s32_cooperative, 64x128x32) {
+// TODO(Codeplay): Test on XE2 because the copy function is not available in the IGC driver for PVC
+TEST(XE2_Device_Gemm_s8n_s8n_s32t_tensor_op_s32_cooperative, 64x128x32) {
   using LayoutA = layout::ColumnMajor;
   using LayoutB = layout::ColumnMajor;
   using Gemm = XE_Device_Gemm_s8_s8_s32_tensor_op_s32_cooperative<LayoutA, LayoutB>::Gemm;
-  // TODO(Codeplay): Enable batch tests
-  EXPECT_TRUE(test::gemm::device::TestXe<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestXe<Gemm>(1.0, 0.0, true, 16));
 }
-*/
 }
 } // namespace cutlass

@@ -36,26 +36,24 @@ jobs:
             runner: cp-b580-gpu
           - compiler: RELEASE
             gpu: BMG
-            intel_graphics: RELEASE
+            intel_graphics: ROLLING
             sycl_target: intel_gpu_bmg_g21
             runner: cp-b580-gpu
           - compiler: NIGHTLY
             gpu: BMG
-            intel_graphics: RELEASE
+            intel_graphics: ROLLING
             sycl_target: intel_gpu_bmg_g21
             runner: cp-b580-gpu
-
-            # disable because IGC bug
-#          - compiler: NIGHTLY
-#            gpu: PVC
-#            intel_graphics: RELEASE
-#            sycl_target: intel_gpu_pvc
-#            runner: cp-gpumax-1100-gpu
-#          - compiler: RELEASE
-#            gpu: PVC
-#            intel_graphics: RELEASE
-#            sycl_target: intel_gpu_pvc
-#            runner: cp-gpumax-1100-gpu
+          - compiler: NIGHTLY
+            gpu: PVC
+            intel_graphics: ROLLING
+            sycl_target: intel_gpu_pvc
+            runner: cp-gpumax-1100-gpu
+          - compiler: RELEASE
+            gpu: PVC
+            intel_graphics: ROLLING
+            sycl_target: intel_gpu_pvc
+            runner: cp-gpumax-1100-gpu
 
     name: Run Intel ${{ matrix.compiler }} tests on ${{ matrix.gpu }} with intel-graphics ${{ matrix.intel_graphics }}
     runs-on: ${{ matrix.runner }}
@@ -66,6 +64,11 @@ jobs:
         uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
       # For a specific DPC++ nightly build define the repository variable DPCPP_VERSION
       # for example using the tag: 'nightly-2024-04-22'
+      - name: Install Intel graphics drivers
+        uses: ./.github/actions/install-intel-graphics
+        with:
+          GPU: ${{ matrix.gpu }}
+          IGC: ${{ matrix.intel_graphics }}
       - name: Install DPC++
         uses: ./.github/actions/install-dpcpp
         with:

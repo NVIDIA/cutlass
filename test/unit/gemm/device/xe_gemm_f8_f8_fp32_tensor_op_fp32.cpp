@@ -68,7 +68,6 @@ TEST(XE_Device_Gemm_f8t_f8t_fp32_tensor_op_fp32, 256x256x32) {
   EXPECT_TRUE(test::gemm::device::TestXe<Gemm>(1.0, 0.0, true, 16));
 }
 
-
 TEST(XE_Device_Gemm_f8n_f8t_fp32t_tensor_op_fp32, 256x256x32) {
   using LayoutA = layout::ColumnMajor;
   using LayoutB = layout::RowMajor;
