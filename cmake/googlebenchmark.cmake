@@ -40,12 +40,9 @@ FetchContent_Declare(
   googlebenchmark
   GIT_REPOSITORY ${GBENCH_REPOSITORY}
   GIT_TAG        v1.9.0
+  EXCLUDE_FROM_ALL
   )
 
-FetchContent_GetProperties(googlebenchmark)
+FetchContent_MakeAvailable(googlebenchmark)
 
-if(NOT googlebenchmark_POPULATED)
-  FetchContent_Populate(googlebenchmark)
-  set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
-  add_subdirectory(${googlebenchmark_SOURCE_DIR} ${googlebenchmark_BINARY_DIR} EXCLUDE_FROM_ALL)
-endif()
+set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)

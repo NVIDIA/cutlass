@@ -39,14 +39,11 @@ FetchContent_Declare(
   googletest
   GIT_REPOSITORY ${GTEST_REPOSITORY}
   GIT_TAG        v1.14.0
+  EXCLUDE_FROM_ALL
   )
 
-FetchContent_GetProperties(googletest)
+FetchContent_MakeAvailable(googletest)
 
-if(NOT googletest_POPULATED)
-  FetchContent_Populate(googletest)
-  if (MSVC)
-    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-  endif()
-  add_subdirectory(${googletest_SOURCE_DIR} ${googletest_BINARY_DIR} EXCLUDE_FROM_ALL)
+if (MSVC)
+  set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 endif()
